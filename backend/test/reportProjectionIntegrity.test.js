@@ -17,15 +17,22 @@ test('an unpublished report has no derived-data inconsistency yet', () => {
   assert.equal(result.consistent, true);
 });
 
-test('manual audit does not falsely require legacy matched-item projection', () => {
+test('manual audit requires matched items to project from the published revision', () => {
   const manualRevision = { ...revision, review: { action: 'approve' }, items: [revision.items[0]] };
-  const result = assessReportProjectionIntegrity({
+  const missing = assessReportProjectionIntegrity({
     revision: manualRevision,
     reviewEvents: [{ reportRevisionId: 'revision-2', action: 'approve', source: 'manual_audit', result: 'published' }],
   });
+  assert.equal(missing.consistent, false);
+  assert.deepEqual(missing.missingProjectionKeys, ['chronic|糖尿病|血糖']);
+  const result = assessReportProjectionIntegrity({
+    revision: manualRevision,
+    reviewEvents: [{ reportRevisionId: 'revision-2', action: 'approve', source: 'manual_audit', result: 'published' }],
+    projections: [{ itemId: 'chronic|糖尿病|血糖', reportRevisionId: 'revision-2' }],
+  });
   assert.equal(result.consistent, true);
   assert.equal(result.projectionMode, 'manual_audit');
-  assert.equal(result.expectedProjectionCount, 0);
+  assert.equal(result.expectedProjectionCount, 1);
 });
 
 test('a published revision is consistent when audit, candidates and projections agree', () => {

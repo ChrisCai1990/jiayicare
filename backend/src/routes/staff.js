@@ -3127,7 +3127,19 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermissionStrict('rep
         { _id: report._id, 'reviewSubmission.requestId': manualRequestId },
         { $unset: { reviewSubmission: 1 } },
       );
-      if (completedReview.result !== 'rejected') await syncBodyCompositionFromReport(report);
+      if (completedReview.result !== 'rejected') {
+        const completedRevision = completedReview.reportRevisionId
+          ? await ReportRevision.findOne({ _id: completedReview.reportRevisionId, reportId: report._id }).lean()
+          : null;
+        if (completedRevision) {
+          await syncScreeningItems(report.user, report._id, completedRevision.items, {
+            reportRevisionId: completedRevision._id,
+            projectionActor: completedReview.actor || null,
+            projectionEventSource: 'review_retry_recovery',
+          });
+        }
+        await syncBodyCompositionFromReport(report);
+      }
       return res.json({ success: true, data: report, meta: { deduplicatedReview: true } });
     }
   }
@@ -3196,12 +3208,17 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermissionStrict('rep
     }
     await report.save();
     if (action === 'approve') {
-      // 非 OCR 的人工审核同样形成正式版本；不在这里额外同步筛查，避免改变既有手工录入筛查的时机。
-      await publishReportRevision(report, {
+      // 非 OCR 的人工审核同样形成正式版本，专项筛查只从该版本派生。
+      const manualReviewContext = {
         requestId: manualRequestId || crypto.randomUUID(),
         action: 'approve', source: 'manual_audit', occurredAt: report.audited_at,
         actor: { id: String(req.staff._id), name: req.staff.name || req.staff.username || '', role: req.staff.role || '' },
         summary: { itemCount: Array.isArray(report.reportItems) ? report.reportItems.length : 0 },
+      };
+      const publishedRevision = await publishReportRevision(report, manualReviewContext);
+      await syncScreeningItems(report.user, report._id, report.reportItems, {
+        reportRevisionId: publishedRevision?._id || null,
+        projectionActor: manualReviewContext.actor,
       });
       await syncBodyCompositionFromReport(report);
     } else {

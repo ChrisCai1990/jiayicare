@@ -20,11 +20,11 @@ function assessReportProjectionIntegrity({ revision, reviewEvents = [], candidat
   const activeCandidates = (candidates || []).filter(item => item.status !== 'superseded');
   const actualCandidateIds = uniq(activeCandidates.map(item => item.sourceItemId));
   const resolvedKeys = uniq(activeCandidates.filter(item => item.status === 'resolved').map(item => item.resolvedScreeningKey));
-  // 纯人工审核沿用旧业务：形成版本和候选，但不自动投影已匹配项；OCR 正式提交才执行自动投影。
+  // OCR 与纯人工审核都只能从正式发布版本生成投影；来源仅用于诊断展示，不再改变完整性标准。
   const isOcrPublication = revision.review?.action === 'submit'
     || (reviewEvents || []).some(event => String(event.reportRevisionId || '') === revisionId && event.source === 'ocr_review');
   const expectedProjectionKeys = uniq([
-    ...(isOcrPublication ? expectedMatchedKeys(revision.items || []) : []),
+    ...expectedMatchedKeys(revision.items || []),
     ...resolvedKeys,
   ]);
   const actualProjectionKeys = uniq((projections || []).map(item => item.itemId));

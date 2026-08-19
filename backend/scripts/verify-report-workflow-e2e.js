@@ -380,10 +380,62 @@ async function main() {
     assert.equal('ossKey' in userReports.data[0], false);
     assert.equal('currentRevisionId' in userReports.data[0], false);
 
+    const manualReport = await MedicalReport.create({
+      user: user._id,
+      tenantId,
+      title: 'E2E手工报告',
+      aiStatus: 'none',
+      audit_status: 'unaudited',
+      reportItems: [{
+        sourceItemId: 'manual-item-1',
+        name: '手工血压',
+        value: '120/80',
+        matchStatus: 'matched',
+        screeningKey: 'cardiovascular|高血压|血压',
+      }],
+    });
+    const manualReviewRequestId = crypto.randomUUID();
+    const manualReviewBody = {
+      action: 'approve',
+      reviewRequestId: manualReviewRequestId,
+      reviewBaseRevisionId: null,
+    };
+    await request(baseUrl, `/api/staff/medical-reports/${manualReport._id}/audit`, staffToken, {
+      method: 'PATCH',
+      body: JSON.stringify(manualReviewBody),
+    });
+    const [manualRevision, manualEvent, manualProjection, manualProjectionEvent] = await Promise.all([
+      ReportRevision.findOne({ reportId: manualReport._id }).lean(),
+      ReportReviewEvent.findOne({ reportId: manualReport._id, requestId: manualReviewRequestId }).lean(),
+      UserScreeningItem.findOne({ reportId: manualReport._id, itemId: 'cardiovascular|高血压|血压' }).lean(),
+      ReportScreeningProjectionEvent.findOne({ reportId: manualReport._id, itemId: 'cardiovascular|高血压|血压', action: 'activated' }).lean(),
+    ]);
+    assert.ok(manualRevision && manualEvent && manualProjection && manualProjectionEvent);
+    assert.equal(manualRevision.review.action, 'approve');
+    assert.equal(String(manualProjection.reportRevisionId), String(manualRevision._id));
+    assert.equal(String(manualProjectionEvent.actor.id), String(staff._id));
+
+    await Promise.all([
+      UserScreeningItem.deleteOne({ _id: manualProjection._id }),
+      ReportScreeningProjectionEvent.deleteOne({ _id: manualProjectionEvent._id }),
+    ]);
+    const recoveredManualReview = await request(baseUrl, `/api/staff/medical-reports/${manualReport._id}/audit`, staffToken, {
+      method: 'PATCH',
+      body: JSON.stringify(manualReviewBody),
+    });
+    assert.equal(recoveredManualReview.meta.deduplicatedReview, true);
+    const recoveredManualProjectionEvent = await ReportScreeningProjectionEvent.findOne({
+      reportId: manualReport._id,
+      itemId: 'cardiovascular|高血压|血压',
+      action: 'activated',
+    }).lean();
+    assert.equal(recoveredManualProjectionEvent.source, 'review_retry_recovery');
+    assert.equal(String(recoveredManualProjectionEvent.actor.id), String(staff._id));
+
     console.log(JSON.stringify({
       success: true,
       database: databaseName,
-      checks: ['verified_original_attached', 'upload_retry_deduplicated', 'ocr_run_claim_is_atomic', 'late_ocr_write_rejected', 'page_ocr_claim_is_atomic', 'review_submission_claim_is_atomic', 'draft_version_bound', 'draft_correction_traced', 'draft_projection_blocked', 'review_finalize_recovered', 'stale_review_version_rejected', 'stale_draft_version_rejected', 'stale_page_parse_rejected', 'revision_published', 'review_event_recorded', 'candidate_created', 'candidate_resolution_serialized', 'projection_created', 'integrity_detected_and_reconciled', 'user_view_sanitized'],
+      checks: ['verified_original_attached', 'upload_retry_deduplicated', 'ocr_run_claim_is_atomic', 'late_ocr_write_rejected', 'page_ocr_claim_is_atomic', 'review_submission_claim_is_atomic', 'draft_version_bound', 'draft_correction_traced', 'draft_projection_blocked', 'review_finalize_recovered', 'stale_review_version_rejected', 'stale_draft_version_rejected', 'stale_page_parse_rejected', 'revision_published', 'review_event_recorded', 'candidate_created', 'candidate_resolution_serialized', 'projection_created', 'integrity_detected_and_reconciled', 'manual_review_projected', 'manual_review_retry_recovered', 'user_view_sanitized'],
     }, null, 2));
   } finally {
     if (server) await new Promise(resolve => server.close(resolve));
