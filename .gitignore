@@ -23,7 +23,6 @@ __pycache__/
 # Local scratch and generated output
 output/
 tmp/
-uploads/
 scripts/.codex_*.py
 
 # Mini Program developer-tool artifacts

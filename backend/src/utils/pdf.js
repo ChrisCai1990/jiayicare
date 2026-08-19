@@ -6,12 +6,6 @@ const https = require('https');
 const http = require('http');
 const { signStoredUrl } = require('./oss');
 
-function pdfTool(name) {
-  const configuredBin = String(process.env.POPPLER_BIN || '').trim();
-  if (!configuredBin) return name;
-  return path.join(configuredBin, process.platform === 'win32' ? `${name}.exe` : name);
-}
-
 // 下载远程文件为 Buffer（跟随一次重定向）
 function downloadBuffer(url, redirects = 3) {
   return new Promise((resolve, reject) => {
@@ -79,33 +73,10 @@ async function fetchReportBuffers(report, uploadsDir) {
 // 用 pdftoppm 获取 PDF 总页数
 function getPdfPageCount(pdfPath) {
   return new Promise((resolve) => {
-    execFile(pdfTool('pdfinfo'), [pdfPath], { timeout: 10000 }, (err, stdout) => {
+    execFile('pdfinfo', [pdfPath], { timeout: 10000 }, (err, stdout) => {
       if (err) { resolve(null); return; }
       const m = stdout.match(/Pages:\s*(\d+)/);
       resolve(m ? parseInt(m[1], 10) : null);
-    });
-  });
-}
-
-// Native PDFs often contain a reliable text layer. It is intentionally an
-// optional evidence source: scanned/garbled documents keep the existing visual
-// OCR path and no report is rejected when pdftotext is unavailable.
-function extractPdfTextLayer(pdfBuffer) {
-  return new Promise((resolve) => {
-    const unavailable = () => resolve({ available: false, pageCount: 0, charCount: 0, pages: [] });
-    const tmpPdf = path.join(os.tmpdir(), `pdf-text-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
-    try {
-      fs.writeFileSync(tmpPdf, pdfBuffer);
-    } catch {
-      unavailable();
-      return;
-    }
-    execFile(pdfTool('pdftotext'), ['-layout', tmpPdf, '-'], { timeout: 30000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
-      try { fs.unlinkSync(tmpPdf); } catch {}
-      const raw = String(stdout || '').replace(/\r/g, '');
-      const pages = raw ? raw.split('\f').map(page => page.trim()).filter(Boolean) : [];
-      const meaningful = raw.replace(/\s/g, '').length;
-      resolve({ available: !err && meaningful >= 80, pageCount: pages.length, charCount: meaningful, pages });
     });
   });
 }
@@ -121,7 +92,7 @@ function convertPdfRange(pdfPath, firstPage, lastPage, dpi, crop = null) {
     const cleanup = () => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {} };
 
     const cropArgs = crop ? ['-x', String(crop.x), '-y', String(crop.y), '-W', String(crop.width), '-H', String(crop.height)] : [];
-    execFile(pdfTool('pdftoppm'), [
+    execFile('pdftoppm', [
       '-png', '-r', String(dpi),
       ...cropArgs,
       '-f', String(firstPage), '-l', String(lastPage),
@@ -276,4 +247,4 @@ function isPdfReport(report) {
     || (report.content || '').startsWith('data:application/pdf');
 }
 
-module.exports = { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, extractPdfTextLayer, renderSinglePage, renderSinglePageRegions, renderSinglePageColumns, splitImageColumns };
+module.exports = { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, renderSinglePage, renderSinglePageRegions, renderSinglePageColumns, splitImageColumns };

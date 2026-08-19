@@ -59,7 +59,6 @@ const PlanTemplate      = require('../models/PlanTemplate');
 const Medication        = require('../models/Medication');
 const Supplement        = require('../models/Supplement');
 const UserScreeningItem = require('../models/UserScreeningItem');
-const { OCR_POLICY_VERSION, OCR_V2_EXTRACTION_CONTRACT } = require('../config/ocrPolicy');
 const { applyCheckupPrecautions } = require('../utils/checkupPrecautions');
 const {
   PEDIATRIC_BODY_COMPOSITION_PROMPT,
@@ -2130,8 +2129,8 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
         if (!it || typeof it !== 'object') return false;
         return !(_blank(it.name) && _blank(it.value) && _blank(it.findings) && _blank(it.diagnosis) && _blank(it.conclusion));
       });
-      if (editSource || report.audit_status === 'audited' || (aiStatus === 'reviewed' && report.ocrVersion)) {
-        const trackedFields = ['name', 'value', 'unit', 'referenceRange', 'status', 'findings', 'diagnosis', 'conclusion', 'screeningKey'];
+      if (editSource || report.audit_status === 'audited') {
+        const trackedFields = ['value', 'unit', 'referenceRange', 'status', 'findings', 'diagnosis', 'conclusion'];
         const oldItems = report.reportItems || [];
         nextItems.forEach((item, index) => trackedFields.forEach(field => {
           const oldValue = String(oldItems[index]?.[field] ?? '');
@@ -2141,13 +2140,6 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
             operatorId: req.staff._id, operatorName: req.staff.name || req.staff.username || '', operatorRole: req.staff.role || '',
             source: editSource || 'report_edit', at: new Date(),
           });
-          if (report.ocrVersion) {
-            if (!Array.isArray(report.ocrCorrectionLog)) report.ocrCorrectionLog = [];
-            report.ocrCorrectionLog.push({
-              itemIndex: index, itemName: item.name || oldItems[index]?.name || '', field, oldValue, newValue,
-              qualityFlags: oldItems[index]?.qualityFlags || [], operatorId: req.staff._id, at: new Date(),
-            });
-          }
         }));
       }
       report.reportItems = nextItems;
@@ -8934,20 +8926,13 @@ function findUnderExtractedPages(items) {
 }
 
 // 后台执行报告 AI 解析（不阻塞 HTTP 响应；完成后状态置 pending 待人工审核）
-async function runReportParse(reportId, options = {}) {
+async function runReportParse(reportId) {
   const { parseImage } = require('../utils/ai');
-  const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, extractPdfTextLayer, renderSinglePage } = require('../utils/pdf');
+  const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, renderSinglePage } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
-  const { assessReportItems, isClearlyNonDetailTextPage } = require('../utils/reportOcrQuality');
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) return;
-  // 生产环境只保留统一的正式 OCR 流程；测试环境另行验证，不再按报告或环境变量切换旧版流程。
-  const useOcrV2 = true;
-  const extractionSource = { ossKeys: report.ossKeys || (report.ossKey ? [report.ossKey] : []) };
-  const extractionHistory = useOcrV2
-    ? await ReportExtraction.find({ reportId }).sort({ version: -1 }).select('version source items').lean()
-    : [];
   const reportUser = await User.findById(report.user).select('age').lean();
   const usePediatricBodyComposition = isPediatricAge(reportUser?.age);
   const bodyCompositionPrompt = usePediatricBodyComposition
@@ -8957,29 +8942,15 @@ async function runReportParse(reportId, options = {}) {
   const useShaoyifuTemplate = shaoyifuTemplate.isShaoyifuReport(report);
   const zheyiTemplate = require('../utils/zheyiReportTemplate');
   const useZheyiTemplate = zheyiTemplate.isZheyiReport(report);
-  const ocrTemplateId = useShaoyifuTemplate ? 'shaoyifu' : (useZheyiTemplate ? 'zheyi' : 'generic');
 
   const isPdf = isPdfReport(report);
   const t0 = Date.now();
-  const setOcrProgress = (stage, message, extra = {}) => {
-    if (!useOcrV2) return;
-    MedicalReport.findByIdAndUpdate(reportId, {
-      ocrProgress: { stage, message, elapsedMs: Date.now() - t0, updatedAt: new Date(), ...extra },
-    }).catch(() => {});
-  };
   try {
     if (isPdf) {
-      setOcrProgress('source', '正在读取报告原件与文字层证据');
       const pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
-      const textLayer = useOcrV2
-        ? await extractPdfTextLayer(pdfBuf)
-        : { available: false, pageCount: 0, charCount: 0, pages: [] };
-      setOcrProgress('text_layer', textLayer.available
-        ? `文字层取证完成（${textLayer.pageCount}页），开始逐页识别`
-        : '文字层不可用，开始逐页视觉识别');
       const isComprehensiveCheckup = report.type === 'annual';
       const baseDpi = useShaoyifuTemplate ? 160 : ((useZheyiTemplate || isComprehensiveCheckup) ? 144 : 96);
-      console.log(`[parse-ai] PDF开始 ${reportId} 大小${(pdfBuf.length/1024/1024).toFixed(1)}MB 分批处理(每批8页/${baseDpi}dpi${useZheyiTemplate ? '/浙一P6-P15' : ''}) 文字层=${textLayer.available ? `可用/${textLayer.pageCount}页` : '不可用'}`);
+      console.log(`[parse-ai] PDF开始 ${reportId} 大小${(pdfBuf.length/1024/1024).toFixed(1)}MB 分批处理(每批8页/${baseDpi}dpi${useZheyiTemplate ? '/浙一P6-P15' : ''})`);
 
       // 邵逸夫21页模板含大量小字号双栏表格，96dpi/plus会稳定漏掉右栏，改为160dpi/max。
       // 同时模板规则会跳过小结及重复报告页，因此实际模型调用页数反而更少。
@@ -9004,9 +8975,6 @@ async function runReportParse(reportId, options = {}) {
         onBatch: async (batchImages, batchIndex) => {
           totalPageCount += batchImages.length;
           console.log(`[parse-ai] PDF批次${batchIndex + 1} ${reportId} ${batchImages.length}页`);
-          setOcrProgress('visual_ocr', `正在识别第${batchIndex + 1}批页面（${batchImages.length}页）`, {
-            batch: batchIndex + 1, pagesStarted: totalPageCount,
-          });
 
           const batchResults = new Array(batchImages.length).fill(null);
           let cursor = 0;
@@ -9014,14 +8982,6 @@ async function runReportParse(reportId, options = {}) {
             while (cursor < batchImages.length) {
               const i = cursor++;
               const pageNum = batchIndex * BATCH_SIZE + i + 1;
-              // Text layer only skips pages that are unequivocally non-clinical.
-              // Detail pages retain the existing visual path until a template is
-              // measured against an approved reference set.
-              if (useOcrV2 && textLayer.available && isClearlyNonDetailTextPage(textLayer.pages[pageNum - 1])) {
-                batchResults[i] = { pageType: 'text_layer_skip', skipPage: true, items: [], _templateSkip: true };
-                console.log(`[parse-ai] P${pageNum} 文字层确认非明细页，跳过视觉模型`);
-                continue;
-              }
               if (useShaoyifuTemplate && ['skip', 'duplicate'].includes(shaoyifuTemplate.pageMode(pageNum))) {
                 batchResults[i] = { pageType: 'template_skip', skipPage: true, items: [], _templateSkip: true };
                 continue;
@@ -9035,7 +8995,6 @@ async function runReportParse(reportId, options = {}) {
                   const firstPassPrompt = report.type === 'body_comp'
                     ? bodyCompositionPrompt
                     : REPORT_PARSE_PROMPT
-                      + (useOcrV2 ? `\n\n${OCR_V2_EXTRACTION_CONTRACT}` : '')
                       + (useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : '')
                       + (useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : '');
                   const firstPassModel = report.type === 'body_comp' ? 'qwen-vl-max' : VL_MODEL;
@@ -9087,9 +9046,6 @@ async function runReportParse(reportId, options = {}) {
               // 通用报告必须复核首尾明细页之间的每一页；中间页即使首轮误判为空，也不得跳过。
               return Array.from({ length: pages[pages.length - 1] - pages[0] + 1 }, (_, i) => pages[0] + i);
             })();
-        setOcrProgress('coverage_audit', coveragePages.length
-          ? `首轮识别完成，正在复核${coveragePages.length}页是否漏项`
-          : '首轮识别完成，未发现需要覆盖复核的页面', { totalPages: totalPageCount, coveragePages: coveragePages.length });
         for (const pageNum of coveragePages) {
           try {
             const img = await renderSinglePage(pdfBuf, pageNum, useShaoyifuTemplate ? 180 : 144);
@@ -9184,7 +9140,6 @@ async function runReportParse(reportId, options = {}) {
       // 数量核对+单页重试：检验单标题写了"N项"但实际条数不够，说明这一页大概率漏提了，只重新识别这一页
       const { pagesToRetry, underOrders } = findUnderExtractedPages(allItems);
       if (pagesToRetry.length) {
-        setOcrProgress('targeted_retry', `正在补提${pagesToRetry.length}页检验明细`, { retryPages: pagesToRetry });
         console.log(`[parse-ai] 数量核对不通过 ${reportId}：${underOrders.map(o => `${o.orderName}(应${o.expected}实${o.actual})`).join('、')}，重试页${pagesToRetry.join(',')}`);
         for (const pageNum of pagesToRetry) {
           try {
@@ -9225,7 +9180,6 @@ async function runReportParse(reportId, options = {}) {
       const CBC_NAME_PATTERN = /白细胞计数|血红蛋白\(HGB\)|WBC|血细胞分析|中性粒细胞|淋巴细胞|单核细胞|嗜酸性粒细胞|嗜碱性粒细胞|红细胞计数|血小板计数|红细胞比积|平均红细胞|血小板比积|血小板体积|大血小板比率|红细胞分布宽度|红细胞体积分布宽度/;
       const { pagesToRetry: cbcRetryPages, missingGroups } = findUnderExtractedCBC(allItems);
       if (cbcRetryPages.length) {
-        setOcrProgress('targeted_retry', `正在复核血常规缺项（${cbcRetryPages.length}页）`, { retryPages: cbcRetryPages });
         console.log(`[parse-ai] 血常规缺项核对不通过 ${reportId}：缺少${missingGroups.join('、')}，重试页${cbcRetryPages.join(',')}`);
         for (const pageNum of cbcRetryPages) {
           try {
@@ -9386,8 +9340,6 @@ async function runReportParse(reportId, options = {}) {
       const departmentNormalized = normalizeSingleExamReportItems(normalizeDepartmentExamItems(mergeInternalMedicineSubparts(cleanedItems)), report);
       let filteredItems = fillEmptyDiagnosisFromFindings(realignUpperAbdomenConclusions(cleanupUltrasoundOverlap(departmentNormalized)));
       const classified = await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems)))))))));
-      setOcrProgress('quality_check', '正在进行模板、数值和双证据质量校验');
-      const qualityItems = useOcrV2 ? assessReportItems(classified, { textLayer }) : classified;
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');
       const failedPages = totalPageCount - okPages;
@@ -9398,25 +9350,10 @@ async function runReportParse(reportId, options = {}) {
           ? `${summaryText}${summaryText ? '\n' : ''}⚠️ 有${failedPages}/${totalPageCount}页识别失败，请核对是否有遗漏项目`
           : summaryText;
       await MedicalReport.findByIdAndUpdate(reportId, {
-        reportItems: qualityItems,
+        reportItems: classified,
         aiSummary:   aiSummaryOut,
         aiStatus:    'pending',
         institution, checkDate,
-        ...(useOcrV2 ? {
-          ocrVersion: OCR_POLICY_VERSION,
-          ocrTemplateId,
-          ocrQualitySummary: {
-          templateId: ocrTemplateId,
-          textLayerAvailable: textLayer.available,
-          textLayerPageCount: textLayer.pageCount,
-          textLayerCharCount: textLayer.charCount,
-          total: qualityItems.length,
-          auto: qualityItems.filter(item => item.reviewPriority === 'auto').length,
-          review: qualityItems.filter(item => item.reviewPriority === 'review').length,
-            high: qualityItems.filter(item => item.reviewPriority === 'high').length,
-          },
-          ocrProgress: { stage: 'completed', message: 'AI解析完成，等待人工审核', elapsedMs: Date.now() - t0, updatedAt: new Date(), totalPages: totalPageCount },
-        } : { ocrVersion: '', ocrTemplateId: '', ocrQualitySummary: null }),
       });
       const totalMs = Date.now() - t0;
       console.log(`[parse-ai] PDF完成 ${reportId} 共${totalPageCount}页 成功${okPages}页 提取${allItems.length}项 归类${matchedCount}项 | 总耗时${(totalMs/1000).toFixed(1)}s`);
@@ -9554,35 +9491,19 @@ async function runReportParse(reportId, options = {}) {
       realignUpperAbdomenConclusions(cleanupUltrasoundOverlap(imageExamNormalized))
     );
     const classifiedImg = await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanedImageItems)))))))));
-    setOcrProgress('quality_check', '正在进行数值和质量校验');
-    const qualityImageItems = useOcrV2 ? assessReportItems(classifiedImg) : classifiedImg;
     const imgSummary = imageOkCount
       ? [...new Set(imageSummaries.map(s => str(s)).filter(Boolean))].join('\n')
       : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${lastRawText ? '\n原始返回(前200字): ' + String(lastRawText).slice(0, 200) : ''}`;
     await MedicalReport.findByIdAndUpdate(reportId, {
-      reportItems: qualityImageItems,
+      reportItems: classifiedImg,
       aiSummary:   imgSummary,
       aiStatus:    'pending',
       institution: sanitizeInstitution(imageInstitution) || report.institution,
       checkDate:   imageCheckDate || report.checkDate,
-      ...(useOcrV2 ? {
-        ocrVersion: OCR_POLICY_VERSION,
-        ocrTemplateId,
-        ocrQualitySummary: {
-          templateId: ocrTemplateId,
-          textLayerAvailable: false,
-          total: qualityImageItems.length,
-          auto: qualityImageItems.filter(item => item.reviewPriority === 'auto').length,
-          review: qualityImageItems.filter(item => item.reviewPriority === 'review').length,
-          high: qualityImageItems.filter(item => item.reviewPriority === 'high').length,
-        },
-        ocrProgress: { stage: 'completed', message: 'AI解析完成，等待人工审核', elapsedMs: Date.now() - t0, updatedAt: new Date(), totalPages: bufs.length },
-      } : { ocrVersion: '', ocrTemplateId: '', ocrQualitySummary: null }),
     });
     console.log(`[parse-ai] 图片完成 ${reportId} 共${bufs.length}张 成功${imageOkCount}张 提取${imageItems.length}项 自动归类${classifiedImg.filter(i=>i.matchStatus==='matched').length}项 | 总耗时${((Date.now()-t0)/1000).toFixed(1)}s`);
   } catch (e) {
     console.error('[parse-ai] 解析失败', String(reportId), e.message);
-    setOcrProgress('failed', `识别失败：${e.message}`);
     await MedicalReport.findByIdAndUpdate(reportId, {
       aiStatus: 'pending',
       aiSummary: '自动识别失败：' + e.message + '（请人工录入或重新识别）',
@@ -9595,7 +9516,6 @@ async function runReportPageParse(reportId, pageNum) {
   const { parseImage } = require('../utils/ai');
   const { fetchReportBuffer, fetchReportBuffers, renderSinglePage, renderSinglePageRegions, renderSinglePageColumns, splitImageColumns, isPdfReport } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
-  const { assessReportItems } = require('../utils/reportOcrQuality');
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) throw new Error('报告不存在');
@@ -9665,8 +9585,7 @@ async function runReportPageParse(reportId, pageNum) {
   const latest = await MedicalReport.findById(reportId);
   const oldPage = (latest.reportItems || []).filter(item => Number(item.sourcePage) === pageNum);
   const mergedPage = mergeCoverageAuditItems(oldPage, newPage);
-  const classifiedRawPage = await classifyItemsAsync(mergedPage);
-  const classifiedPage = latest.ocrVersion ? assessReportItems(classifiedRawPage) : classifiedRawPage;
+  const classifiedPage = await classifyItemsAsync(mergedPage);
   const preserved = (latest.reportItems || []).filter(item => Number(item.sourcePage) !== pageNum);
   const combined = [...preserved, ...classifiedPage]
     .sort((a, b) => Number(a.sourcePage || 0) - Number(b.sourcePage || 0));
@@ -9685,10 +9604,6 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
     const MedicalReport = require('../models/MedicalReport');
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-    const isAuditedReparse = report.audit_status === 'audited';
-    if (isAuditedReparse && req.body?.confirmReparseAudited !== true) {
-      return res.status(409).json({ success: false, message: '已审核报告只能在明确确认后重新解析' });
-    }
 
     const hasFile = !!report.fileUrl || !!report.content;
     const isImage = report.mimeType?.startsWith('image/');
@@ -9722,19 +9637,7 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
     }
 
     // 标记处理中，立即返回；识别在后台进行，避免多页 PDF 阻塞请求超时
-    const processingUpdate = {
-      aiStatus: 'processing',
-      ocrVersion: OCR_POLICY_VERSION,
-      ocrProgress: { stage: 'queued', message: '识别任务已提交，正在准备解析', elapsedMs: 0, updatedAt: new Date() },
-    };
-    if (isAuditedReparse) {
-      Object.assign(processingUpdate, {
-        audit_status: 'unaudited', audited_by: '', audited_at: null,
-        reviewedByStaff: null, reviewedAt: null,
-        familyDoctorAudit: { status: 'pending', by: null, byName: '', at: null, editLog: [] },
-      });
-    }
-    await MedicalReport.findByIdAndUpdate(report._id, processingUpdate);
+    await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'processing' });
     runReportParse(report._id).catch(err => {
       console.error('[parse-ai] 后台任务异常', String(report._id), err.message);
       MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' }).catch(() => {});
@@ -9744,8 +9647,8 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
       success: true,
       processing: true,
       message: isPdf
-        ? 'AI 解析已开始，完成后状态自动变为「待审核」'
-        : 'AI 解析已开始，完成后状态自动变为「待审核」',
+        ? 'PDF识别已开始，多页报告约需 1–3 分钟，完成后状态自动变为「待审核」'
+        : 'AI识别已开始，约需数秒，完成后状态自动变为「待审核」',
     });
   } catch (err) {
     res.status(500).json({ success: false, message: 'AI解析失败：' + err.message });
@@ -10592,10 +10495,5 @@ ${addonListText}
     res.status(500).json({ success: false, message: err.message });
   }
 });
-
-// Local OCR verification scripts reuse the exact production route pipeline
-// without exposing a second implementation. The runner itself enforces a
-// localhost-only database and local uploads path before calling this function.
-router.runReportParse = runReportParse;
 
 module.exports = router;
