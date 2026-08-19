@@ -19,12 +19,14 @@ process.env.NODE_ENV = 'test';
 
 const Admin = require('../src/models/Admin');
 const User = require('../src/models/User');
+const ProjectCategory = require('../src/models/ProjectCategory');
 const MedicalReport = require('../src/models/MedicalReport');
 const TemporaryReportUpload = require('../src/models/TemporaryReportUpload');
 const ReportExtraction = require('../src/models/ReportExtraction');
 const ReportRevision = require('../src/models/ReportRevision');
 const ReportReviewEvent = require('../src/models/ReportReviewEvent');
 const ReportScreeningCandidate = require('../src/models/ReportScreeningCandidate');
+const ReportScreeningProjectionEvent = require('../src/models/ReportScreeningProjectionEvent');
 const UserScreeningItem = require('../src/models/UserScreeningItem');
 const { createReportUploadToken } = require('../src/utils/reportUploadToken');
 const { buildFullOcrClaimFilter, buildPageOcrClaimFilter, buildOcrRunOwnerFilter } = require('../src/utils/reportOcrRun');
@@ -253,6 +255,33 @@ async function main() {
     const integrityBefore = await request(baseUrl, `/api/staff/medical-reports/${reportId}/review-integrity`, staffToken);
     assert.equal(integrityBefore.data.consistent, true, JSON.stringify(integrityBefore.data));
 
+    const screeningRoot = await ProjectCategory.create({ tenantId, name: 'E2E专项检查', status: 'active' });
+    const screeningParent = await ProjectCategory.create({ tenantId, name: '其他检查', parent: screeningRoot._id, status: 'active' });
+    await ProjectCategory.create({ tenantId, name: '待归类检查', parent: screeningParent._id, status: 'active' });
+    const resolvedScreeningKey = `${screeningRoot._id}|其他检查|待归类检查`;
+    const resolvedCandidate = await request(
+      baseUrl,
+      `/api/staff/medical-reports/${reportId}/screening-candidates/${candidate._id}`,
+      staffToken,
+      { method: 'PATCH', body: JSON.stringify({ action: 'resolve', screeningKey: resolvedScreeningKey }) },
+    );
+    assert.equal(resolvedCandidate.data.status, 'resolved');
+    const storedResolvedCandidate = await ReportScreeningCandidate.findById(candidate._id).lean();
+    assert.equal(storedResolvedCandidate.status, 'resolved');
+    assert.equal(storedResolvedCandidate.resolvedScreeningKey, resolvedScreeningKey);
+    const candidateProjection = await UserScreeningItem.findOne({ reportId, itemId: resolvedScreeningKey }).lean();
+    const candidateProjectionEvent = await ReportScreeningProjectionEvent.findOne({
+      reportRevisionId: revision._id,
+      itemId: resolvedScreeningKey,
+      action: 'activated',
+    }).lean();
+    assert.equal(String(candidateProjection.reportRevisionId), String(revision._id));
+    assert.equal(candidateProjectionEvent.source, 'candidate_resolution');
+    assert.equal(String(candidateProjectionEvent.actor.id), String(staff._id));
+    const reportAfterCandidate = await MedicalReport.findById(reportId).select('reviewSubmission currentRevisionId').lean();
+    assert.equal(reportAfterCandidate.reviewSubmission ?? null, null);
+    assert.equal(String(reportAfterCandidate.currentRevisionId), String(revision._id));
+
     await UserScreeningItem.deleteOne({ _id: projection._id });
     const brokenIntegrity = await request(baseUrl, `/api/staff/medical-reports/${reportId}/review-integrity`, staffToken);
     assert.equal(brokenIntegrity.data.consistent, false);
@@ -262,7 +291,7 @@ async function main() {
       method: 'POST',
       body: JSON.stringify({ requestId: crypto.randomUUID() }),
     });
-    assert.equal(reconciled.data.consistent, true);
+    assert.equal(reconciled.data.consistent, true, JSON.stringify(reconciled.data));
 
     const userReports = await request(baseUrl, '/api/reports', userToken);
     assert.equal(userReports.data.length, 1);
@@ -274,7 +303,7 @@ async function main() {
     console.log(JSON.stringify({
       success: true,
       database: databaseName,
-      checks: ['verified_original_attached', 'upload_retry_deduplicated', 'ocr_run_claim_is_atomic', 'late_ocr_write_rejected', 'page_ocr_claim_is_atomic', 'review_submission_claim_is_atomic', 'stale_review_version_rejected', 'revision_published', 'review_event_recorded', 'candidate_created', 'projection_created', 'integrity_detected_and_reconciled', 'user_view_sanitized'],
+      checks: ['verified_original_attached', 'upload_retry_deduplicated', 'ocr_run_claim_is_atomic', 'late_ocr_write_rejected', 'page_ocr_claim_is_atomic', 'review_submission_claim_is_atomic', 'stale_review_version_rejected', 'revision_published', 'review_event_recorded', 'candidate_created', 'candidate_resolution_serialized', 'projection_created', 'integrity_detected_and_reconciled', 'user_view_sanitized'],
     }, null, 2));
   } finally {
     if (server) await new Promise(resolve => server.close(resolve));

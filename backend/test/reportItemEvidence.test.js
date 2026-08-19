@@ -61,3 +61,22 @@ test('mongoose report subdocuments normalize into plain snapshot items', () => {
   assert.deepEqual(item.sourcePages, [8]);
   assert.equal(Object.prototype.hasOwnProperty.call(item, '$__parent'), false);
 });
+
+test('cross-page merge preserves independently reviewable evidence for every source page', () => {
+  const [item] = mergeAdjacentReportItemEvidence([
+    {
+      name: 'Chest CT', itemType: 'imaging', sourceSection: 'CT', sourcePage: 21,
+      findings: 'finding on page 21', evidenceText: 'page 21 evidence', textLayerEvidence: 'verified',
+    },
+    {
+      name: 'Chest CT', itemType: 'imaging', sourceSection: 'CT', sourcePage: 22,
+      diagnosis: 'conclusion on page 22', evidenceText: 'page 22 evidence', textLayerEvidence: 'verified',
+    },
+  ]);
+
+  assert.deepEqual(item.sourcePages, [21, 22]);
+  assert.deepEqual(item.sourceEvidence, [
+    { page: 21, text: 'page 21 evidence', method: 'text_layer' },
+    { page: 22, text: 'page 22 evidence', method: 'text_layer' },
+  ]);
+});

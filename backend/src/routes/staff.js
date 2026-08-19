@@ -2182,8 +2182,9 @@ router.get('/medical-reports/:id/screening-candidates', staffAuth, checkPermissi
 router.patch('/medical-reports/:id/screening-candidates/:candidateId', staffAuth, checkPermissionStrict('reports', 'audit'), async (req, res) => {
   const { action = 'resolve', screeningKey = '', reason = '' } = req.body || {};
   if (!['resolve', 'dismiss'].includes(action)) return res.status(400).json({ success: false, message: '无效的候选处理动作' });
+  let projectionClaimId = '';
   try {
-    const report = await MedicalReport.findById(req.params.id).select('_id currentRevisionId');
+    const report = await MedicalReport.findById(req.params.id).select('_id currentRevisionId currentExtractionId');
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     const candidate = await ReportScreeningCandidate.findOne({
       _id: req.params.candidateId, reportId: report._id, status: 'pending',
@@ -2193,9 +2194,36 @@ router.patch('/medical-reports/:id/screening-candidates/:candidateId', staffAuth
       return res.status(409).json({ success: false, message: '报告已有新的审核版本，请刷新后处理当前版本' });
     }
     const actor = { id: req.staff._id, name: req.staff.name || req.staff.username || '' };
+    let target = null;
+    if (action === 'resolve') {
+      const categories = await ProjectCategory.find({ status: 'active' }).select('name parent').lean();
+      target = resolveActiveScreeningKey(categories, screeningKey);
+      if (!target) return res.status(400).json({ success: false, message: '所选专项筛查分类已失效，请重新选择' });
+    }
+
+    projectionClaimId = crypto.randomUUID();
+    const claimedReport = await MedicalReport.findOneAndUpdate(
+      buildReviewSubmissionClaimFilter(report._id, report.currentExtractionId || null, new Date(), candidate.reportRevisionId),
+      { $set: { reviewSubmission: {
+        claimId: projectionClaimId,
+        action: `candidate_${action}`,
+        extractionId: report.currentExtractionId || null,
+        reportRevisionId: candidate.reportRevisionId,
+        sourceItemId: candidate.sourceItemId,
+        status: 'processing',
+        startedAt: new Date(),
+        actor: { id: actor.id, name: actor.name, role: req.staff.role || '' },
+      } } },
+      { new: true },
+    );
+    if (!claimedReport) {
+      projectionClaimId = '';
+      return res.status(409).json({ success: false, message: '报告版本或处理状态已经变化，请刷新后重试' });
+    }
+
     if (action === 'dismiss') {
       const updated = await ReportScreeningCandidate.findOneAndUpdate(
-        { _id: candidate._id, status: 'pending' },
+        { _id: candidate._id, reportRevisionId: candidate.reportRevisionId, status: 'pending' },
         { $set: { status: 'dismissed', dismissReason: String(reason || '').trim(), resolvedBy: actor.id, resolvedByName: actor.name, resolvedAt: new Date() } },
         { new: true },
       );
@@ -2203,11 +2231,8 @@ router.patch('/medical-reports/:id/screening-candidates/:candidateId', staffAuth
       return res.json({ success: true, data: updated });
     }
 
-    const categories = await ProjectCategory.find({ status: 'active' }).select('name parent').lean();
-    const target = resolveActiveScreeningKey(categories, screeningKey);
-    if (!target) return res.status(400).json({ success: false, message: '所选专项筛查分类已失效，请重新选择' });
     const claimed = await ReportScreeningCandidate.findOneAndUpdate(
-      { _id: candidate._id, status: 'pending' },
+      { _id: candidate._id, reportRevisionId: candidate.reportRevisionId, status: 'pending' },
       { $set: { status: 'resolving' } },
       { new: true },
     );
@@ -2216,7 +2241,11 @@ router.patch('/medical-reports/:id/screening-candidates/:candidateId', staffAuth
       // 同步回医护工作副本，确保后续因事实修正产生新审核版本时沿用本次人工归类；
       // 当前已发布 ReportRevision 保持不可变，归类决策本身由 candidate 留痕。
       const reportItemUpdate = await MedicalReport.updateOne(
-        { _id: candidate.reportId, 'reportItems.sourceItemId': candidate.sourceItemId },
+        {
+          ...buildReviewSubmissionOwnerFilter(candidate.reportId, projectionClaimId),
+          currentRevisionId: candidate.reportRevisionId,
+          'reportItems.sourceItemId': candidate.sourceItemId,
+        },
         { $set: {
           'reportItems.$.screeningKey': target.value,
           'reportItems.$.screeningKeys': [target.value],
@@ -2256,6 +2285,14 @@ router.patch('/medical-reports/:id/screening-candidates/:candidateId', staffAuth
       throw projectionError;
     }
   } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+  finally {
+    if (projectionClaimId) {
+      await MedicalReport.updateOne(
+        buildReviewSubmissionOwnerFilter(req.params.id, projectionClaimId),
+        { $unset: { reviewSubmission: 1 } },
+      ).catch(() => {});
+    }
+  }
 });
 
 router.get('/medical-reports/:id', staffAuth, checkPermissionStrict('reports', 'view'), async (req, res) => {
@@ -2526,6 +2563,9 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
         }
         const completedRevision = await ReportRevision.findById(completedReview.reportRevisionId);
         if (!completedRevision) return res.status(409).json({ success: false, message: '审核事件缺少对应正式版本，请联系管理员核查' });
+        if (String(report.currentRevisionId || '') !== String(completedRevision._id)) {
+          return res.json({ success: true, data: report, meta: { deduplicatedReview: true, supersededReview: true } });
+        }
         // 上一次请求可能在“版本和审核事件已落库”后、专项筛查投影完成前断开。
         // 重试必须对账下游投影，而不是只返回成功；这些同步函数均按报告/版本幂等覆盖。
         await syncReportScreeningCandidates(report, completedRevision);
@@ -10009,13 +10049,10 @@ async function syncScreeningItems(userId, reportId, items, { reportRevisionId = 
       grouped.set(key, current);
     }
     const resolvedCandidates = reportRevisionId
-      ? await ReportScreeningCandidate.find({ reportRevisionId, status: 'resolved' }).select('resolvedScreeningKey sourceItemId').lean()
+      ? await ReportScreeningCandidate.find({ reportRevisionId, status: 'resolved' }).select('status resolvedScreeningKey sourceItemId').lean()
       : [];
     // 候选人工归类已经产生的投影属于当前正式版本，审核重试/重新对账时必须保留。
     const syncedKeys = mergeScreeningProjectionKeys([...grouped.keys()], resolvedCandidates);
-    for (const [key, group] of grouped) {
-      await upsertScreeningKey(userId, reportId, key, group.name, { sourceType: 'ocr_review', reportRevisionId, sourceItemIds: group.sourceItemIds });
-    }
     const resolvedByKey = new Map();
     for (const candidate of resolvedCandidates) {
       const key = String(candidate.resolvedScreeningKey || '');
@@ -10024,11 +10061,27 @@ async function syncScreeningItems(userId, reportId, items, { reportRevisionId = 
       if (candidate.sourceItemId) row.push(candidate.sourceItemId);
       resolvedByKey.set(key, row);
     }
+    for (const [key, group] of grouped) {
+      await upsertScreeningKey(userId, reportId, key, group.name, { sourceType: 'ocr_review', reportRevisionId, sourceItemIds: group.sourceItemIds });
+    }
+    // 人工归类候选也属于正式版本的派生投影。此前这里只把它们加入 syncedKeys 防止删除，
+    // 但投影本身丢失时无法通过“重新对账”恢复。现在对 resolved-only 项重建；若与自动
+    // 匹配落在同一 key，则在自动来源基础上补齐候选 sourceItemId。
+    for (const [key, sourceIds] of resolvedByKey) {
+      const automatic = grouped.get(key);
+      await upsertScreeningKey(userId, reportId, key, automatic?.name || '', {
+        sourceType: 'ocr_review',
+        reportRevisionId,
+        sourceItemIds: sourceIds,
+        replaceSourceItemIds: !automatic,
+      });
+    }
     const nextProjections = syncedKeys.map(key => {
       const automatic = grouped.get(key);
+      const resolvedSourceIds = resolvedByKey.get(key) || [];
       return automatic
-        ? { itemId: key, sourceItemIds: automatic.sourceItemIds, source: 'automatic_match' }
-        : { itemId: key, sourceItemIds: resolvedByKey.get(key) || [], source: 'candidate_resolution' };
+        ? { itemId: key, sourceItemIds: [...new Set([...automatic.sourceItemIds, ...resolvedSourceIds])], source: 'automatic_match' }
+        : { itemId: key, sourceItemIds: resolvedSourceIds, source: 'candidate_resolution' };
     });
     // 只清理本机制写入、且当前发布版本已不再包含的投影；历史/人工筛查记录绝不受影响。
     await UserScreeningItem.deleteMany({
