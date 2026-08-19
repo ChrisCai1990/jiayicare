@@ -166,6 +166,23 @@ function isClearlyNonDetailTextPage(pageText) {
     || (/姓名|性别|身份证|联系电话/.test(compact) && /受检者|基本信息|个人信息/.test(compact));
 }
 
+function isBoilerplateOnlyReportTextPage(pageText) {
+  const source = canonical(pageText).replace(/\u0000/g, '').trim();
+  if (!source) return true;
+  const compact = source.replace(/\s/g, '');
+  if (/参考范围|检查结果|检验结果|检查所见|超声所见|初步意见|诊断意见|mmol|μmol|10\^/i.test(compact)) return false;
+  const meaningfulLines = source.split(/\r?\n/).map(line => line.trim()).filter(Boolean).filter(line => {
+    const dense = line.replace(/\s/g, '');
+    return !/健康体检报告|MEDICALEXAMINATIONREPORT/i.test(dense)
+      && !/[A-F0-9]{32,}/i.test(dense)
+      && !/用[户戶]ID|体检号/.test(dense)
+      && !/报告解读专线|报告解讀專線/.test(dense)
+      && !/^注[:：]?.*自费增项$/.test(dense)
+      && !/^\d+\/\d+$/.test(dense);
+  });
+  return meaningfulLines.length <= 1 && meaningfulLines.join('').replace(/\s/g, '').length < 100;
+}
+
 function formatTextLayerEvidence(pageText, maxChars = 6000) {
   const source = canonical(pageText).replace(/\u0000/g, '').trim();
   if (!source) return '';
@@ -251,4 +268,4 @@ function assessReportItems(items, { textLayer = null } = {}) {
   });
 }
 
-module.exports = { assessReportItems, parseRange, statusFromRange, duplicateKey, isClearlyNonDetailTextPage, formatTextLayerEvidence, formatAdjacentTextLayerContext, selectGenericCoverageAuditPages, textLayerEvidence, dropCoveredSummaryItems, normalizeImagingStatus, recoverInternalMedicineFromTextLayer, recoverExplicitUltrasoundRowsFromTextLayer };
+module.exports = { assessReportItems, parseRange, statusFromRange, duplicateKey, isClearlyNonDetailTextPage, isBoilerplateOnlyReportTextPage, formatTextLayerEvidence, formatAdjacentTextLayerContext, selectGenericCoverageAuditPages, textLayerEvidence, dropCoveredSummaryItems, normalizeImagingStatus, recoverInternalMedicineFromTextLayer, recoverExplicitUltrasoundRowsFromTextLayer };

@@ -10402,6 +10402,8 @@ export default function PatientDetailPage() {
         const activePageParse = Number(ocrReviewReport.pageParseStatus?.pageNum) === activePage ? ocrReviewReport.pageParseStatus : null
         const pageParsing = activePageParse?.status === 'processing'
         const missingPages = expectedPages.filter(page => !sourcePages.includes(page))
+        const pageDispositions = new Map((ocrReviewReport.ocrQualitySummary?.pageDispositions || [])
+          .map(disposition => [Number(disposition?.page), disposition]))
         const coverageRiskPages = ocrExtractionDiff?.pageCoverage?.emptied || []
         // 专项筛查归类：选项分组 + 手动归类
         // screeningCatalog 来自后端 /screening-catalog，数据源为 admin 配置的「专项筛查项目」（LabTestPackage）
@@ -10497,8 +10499,10 @@ export default function PatientDetailPage() {
                   <select value={activePage} aria-label="原件页码" onChange={e => setOcrReviewPage(Number(e.target.value))} style={{ padding: '5px 8px', border: '1px solid #D8EDE3', borderRadius: 6 }}>
                     {expectedPages.map(page => {
                       const coverageRisk = coverageRiskPages.some(item => item.page === page)
+                      const disposition = pageDispositions.get(page)
                       const pageNote = coverageRisk
                         ? '（需核对：本次未识别到项目）'
+                        : disposition?.type === 'image_evidence' ? '（影像证据页，无结构化文字）'
                         : missingPages.includes(page) ? '（本页无结构化项目）' : ''
                       return <option key={page} value={page}>原件第 {page} / {lastSourcePage} 页{pageNote}</option>
                     })}

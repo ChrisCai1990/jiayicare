@@ -8777,7 +8777,7 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
 规则A：跳过会员及报告签署元数据——姓名、性别、年龄、出生日期、身份证号、手机号/电话、单位/工作单位、体检日期、体检编号/报告编号，以及检查者、检查医生、报告医生、审核者、操作医生、录入者等人员署名，一律不作为检查项目提取。
 规则B：跳过汇总页——页面标题含"异常结果""检查结果"等字样再加上"汇总""说明""及建议""及说明""解读"等词的组合（如"异常结果汇总""体检结果汇总""异常结果及建议""体检异常结果及说明"，不要求逐字匹配这几个例子，只要是同类"异常/结果+说明性后缀"的标题都算），或以"尊敬的XX先生/女士"开头的综合小结页，整页跳过不提取。判断汇总页的核心标准：这一页是把多个不同检查项目（胃镜/肠镜/超声/放射等）的结论压缩摘要在同一页里罗列，而不是聚焦单一检查项目的完整详细报告单。这类汇总页有时按科室分组罗列诊断名词（如"放射科：1、右肺结节 2、左肾上腺增粗"／"消化内镜：1、内痔 2、大肠息肉"），即使看起来像分了类别标题，这仍是汇总页，不是具体检查项目，禁止把"放射科""消化内镜""病理科""彩超"等科室/类别标题当成 name 生成条目，也不能把里面的诊断名词列表当作findings/diagnosis提取——这些内容详细报告单里都有，只从详细报告单提取。
 规则B2：跳过"名词解释""检查异常结果解读""温馨提示""健康建议"类科普说明页——这类页面是对某个诊断名词（如"甲状腺结节3类是什么"）的通用医学科普介绍，不是本次检查的具体所见，禁止把这类科普文字当成检查所见/项目提取（如"肾结石多与饮水少有关，建议..."这种句子禁止提取为任何条目）。
-规则B3：必须先判定整页类型并填写 pageType/pageTitle/skipPage。只有逐项展示原始检查数值、检查所见或诊断意见的详细报告页才是 detail。汇总、小结页=summary，封面/会员信息页=cover，目录/清单页=catalog，建议/科普/解读页=advice。凡不是 detail 的页面必须令 skipPage=true 且 items=[]；禁止一边标记跳过一边仍输出条目。
+规则B3：必须先判定整页类型并填写 pageType/pageTitle/skipPage。只有逐项展示原始检查数值、检查所见或诊断意见的详细报告页才是 detail。只有超声、CT、MRI等医学影像，但没有印刷检查所见或诊断意见的页面=image_evidence：必须保留为原件证据，但严禁根据影像自行诊断或生成项目。汇总、小结页=summary，封面/会员信息页=cover，目录/清单页=catalog，建议/科普/解读页=advice。凡不是 detail 的页面必须令 skipPage=true 且 items=[]；禁止一边标记跳过一边仍输出条目。
 规则C：跳过目录页、项目清单页（只有项目名称没有结果的页面）。
 规则D：name 字段必须干净，去除【】[]《》等括号符号和序号前缀，例：✗"内科】" → ✓"内科"。
 规则E：相似项目名称不可混淆，如"碳13"≠"碳14"，"空腹血糖"≠"餐后血糖"。
@@ -8919,7 +8919,7 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
 {
   "institution": "体检机构名称",
   "checkDate": "YYYY-MM-DD",
-  "pageType": "detail | summary | cover | catalog | advice | unknown",
+  "pageType": "detail | image_evidence | summary | cover | catalog | advice | unknown",
   "pageTitle": "本页原始标题，找不到则留空",
   "skipPage": false,
   "items": [
@@ -8947,7 +8947,7 @@ function safeParseJSON(text) {
   catch { return null; }
 }
 
-const SKIPPED_REPORT_PAGE_TYPES = new Set(['summary', 'cover', 'catalog', 'advice', 'education']);
+const SKIPPED_REPORT_PAGE_TYPES = new Set(['image_evidence', 'summary', 'cover', 'catalog', 'advice', 'education']);
 function shouldSkipParsedReportPage(parsed) {
   if (!parsed || typeof parsed !== 'object') return false;
   if (parsed.skipPage === true || SKIPPED_REPORT_PAGE_TYPES.has(str(parsed.pageType).toLowerCase())) return true;
@@ -10276,7 +10276,7 @@ async function runReportParse(reportId, options = {}) {
   const { chat, parseImage } = require('../utils/ai');
   const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, extractPdfTextLayer, renderSinglePage } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
-  const { assessReportItems, isClearlyNonDetailTextPage, formatTextLayerEvidence, formatAdjacentTextLayerContext, selectGenericCoverageAuditPages, recoverExplicitUltrasoundRowsFromTextLayer } = require('../utils/reportOcrQuality');
+  const { assessReportItems, isClearlyNonDetailTextPage, isBoilerplateOnlyReportTextPage, formatTextLayerEvidence, formatAdjacentTextLayerContext, selectGenericCoverageAuditPages, recoverExplicitUltrasoundRowsFromTextLayer } = require('../utils/reportOcrQuality');
   const MedicalReport = require('../models/MedicalReport');
   const runId = str(options.runId);
   const runFilter = buildOcrRunOwnerFilter(reportId, runId);
@@ -10346,6 +10346,11 @@ async function runReportParse(reportId, options = {}) {
         const textResults = await mapWithConcurrency(pageNumbers, 4, async pageNum => {
           const pageText = String(textLayer.pages?.[pageNum - 1] || '').trim();
           if (pageText.replace(/\s/g, '').length < 40) return null;
+          // A native text layer containing only repeated headers/footers cannot
+          // distinguish a cover from a page of diagnostic images. Route it to
+          // visual page classification instead of accepting a text-only cover
+          // label that would hide the original evidence page.
+          if (isBoilerplateOnlyReportTextPage(pageText)) return null;
           const adjacentPageContext = formatAdjacentTextLayerContext(textLayer.pages, pageNum);
           const textPrompt = REPORT_PARSE_PROMPT
             .replace('请分析这张体检报告图片', '请分析下面这一页体检报告的 PDF 原生文字层')
@@ -10403,6 +10408,7 @@ async function runReportParse(reportId, options = {}) {
       let okPages = useTextLayerPrimary ? textPrimaryByPage.size : 0;
       const bodyCompCandidatePages = new Set();
       const detailPages = new Set();
+      const pageDispositions = new Map();
       const consumeParsedPage = (p, pageNum) => {
         if (!p || p._templateSkip) return;
         const firstPassItems = tagReportPageItems(p.items, pageNum);
@@ -10410,10 +10416,16 @@ async function runReportParse(reportId, options = {}) {
         const hasStructuredResults = firstPassItems.some(item => str(item.name)
           && [item.value, item.findings, item.diagnosis, item.conclusion].some(value => str(value)));
         if (shouldSkipParsedReportPage(p) && !hasStructuredResults && report.type !== 'body_comp' && !useShaoyifuTemplate && !useZheyiTemplate) {
+          pageDispositions.set(pageNum, {
+            page: pageNum,
+            type: str(p.pageType).toLowerCase() || 'non_detail',
+            itemCount: 0,
+          });
           console.log(`[parse-ai] 页${pageNum}判定为${str(p.pageType) || '非明细页'}，程序层跳过全部条目`);
           return;
         }
         detailPages.add(pageNum);
+        pageDispositions.set(pageNum, { page: pageNum, type: 'detail', itemCount: firstPassItems.length });
         if (Array.isArray(p.items)) allItems = allItems.concat(firstPassItems);
         if (p.summary) summaries.push(p.summary);
         if (!institution && p.institution && !isSuspiciousInstitution(p.institution)) institution = p.institution;
@@ -10668,7 +10680,8 @@ async function runReportParse(reportId, options = {}) {
       // 只采用重新从原件识别出的结果，不把旧快照内容直接混入新版本；恢复仍失败则保留为空并交由人工确认。
       if (useOcrV2 && extractionHistory.length) {
         const rawEmptiedPages = findHistoricalEmptyPages(allItems, extractionSource, extractionHistory, totalPageCount);
-        const allowedEmptyPages = new Set(budgetedRetryPages(rawEmptiedPages.map(item => item.page), '整页归零恢复'));
+        const recoverableEmptyPages = rawEmptiedPages.filter(item => pageDispositions.get(item.page)?.type !== 'image_evidence');
+        const allowedEmptyPages = new Set(budgetedRetryPages(recoverableEmptyPages.map(item => item.page), '整页归零恢复'));
         const emptiedPages = rawEmptiedPages.filter(item => allowedEmptyPages.has(item.page));
         if (emptiedPages.length) {
           setOcrProgress('historical_recovery', `正在恢复${emptiedPages.length}页历史有项目的识别结果`, {
@@ -10969,6 +10982,7 @@ async function runReportParse(reportId, options = {}) {
             retryBudgetMs: useTextLayerPrimary ? 90_000 : null,
             retryBudgetExceeded: deferredRetryPages.size > 0,
             deferredRetryPages: [...deferredRetryPages].sort((a, b) => a - b),
+            pageDispositions: [...pageDispositions.values()].sort((a, b) => a.page - b.page),
           },
           ocrProgress: { runId, stage: 'versioning', message: '识别完成，正在保存不可变版本', elapsedMs: Date.now() - t0, updatedAt: new Date(), totalPages: totalPageCount },
         } : { ocrVersion: '', ocrTemplateId: '', ocrQualitySummary: null }),

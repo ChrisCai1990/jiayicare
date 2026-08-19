@@ -71,8 +71,9 @@ function comparePageCoverage(currentItems = [], baselineItems = []) {
   };
 }
 
-function compareHistoricalPageCoverage(currentItems = [], historicalExtractions = []) {
+function compareHistoricalPageCoverage(currentItems = [], historicalExtractions = [], ignoredCurrentPages = []) {
   const current = pageCounts(currentItems);
+  const ignored = new Set((ignoredCurrentPages || []).map(Number).filter(Number.isInteger));
   const historicalMax = new Map();
   for (const extraction of historicalExtractions) {
     for (const [page, count] of pageCounts(extraction?.items || [])) {
@@ -82,7 +83,7 @@ function compareHistoricalPageCoverage(currentItems = [], historicalExtractions 
       }
     }
   }
-  const pages = [...new Set([...current.keys(), ...historicalMax.keys()])].sort((a, b) => a - b);
+  const pages = [...new Set([...current.keys(), ...historicalMax.keys()])].filter(page => !ignored.has(page)).sort((a, b) => a - b);
   const changed = pages.flatMap(page => {
     const currentCount = current.get(page) || 0;
     const historical = historicalMax.get(page) || { count: 0, version: null };
@@ -184,7 +185,10 @@ function compareReportExtractionHistory(current, historicalExtractions = []) {
     .sort((a, b) => Number(b.version) - Number(a.version));
   if (!sameSourceHistory.length) return null;
   const result = compareReportExtractions(current, sameSourceHistory[0]);
-  result.pageCoverage = compareHistoricalPageCoverage(current?.items || [], sameSourceHistory);
+  const nonStructuredEvidencePages = (current?.summary?.pageDispositions || [])
+    .filter(disposition => disposition?.type === 'image_evidence')
+    .map(disposition => Number(disposition.page));
+  result.pageCoverage = compareHistoricalPageCoverage(current?.items || [], sameSourceHistory, nonStructuredEvidencePages);
   result.historyVersions = sameSourceHistory.map(item => Number(item.version));
   result.coverageBaseline = 'same_source_history_max';
   if (result.pageCoverage.emptied.length) result.summary.severity = 'high';

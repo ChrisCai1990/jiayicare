@@ -96,6 +96,23 @@ test('counts a cross-page item as evidence on every linked page', () => {
   assert.deepEqual(missingSecondPage.emptied, [{ page: 9, baselineCount: 1, currentCount: 0 }]);
 });
 
+test('pure image evidence pages do not create false historical coverage blockers', () => {
+  const current = {
+    version: 2,
+    source: { ossKeys: ['same.pdf'] },
+    summary: { pageDispositions: [{ page: 16, type: 'image_evidence', itemCount: 0 }] },
+    items: [],
+  };
+  const historical = [{
+    version: 1,
+    source: { ossKeys: ['same.pdf'] },
+    items: [{ sourcePage: 16, name: '腹部超声', findings: '模型从影像推测的旧结论' }],
+  }];
+
+  const diff = compareReportExtractionHistory(current, historical);
+  assert.deepEqual(diff.pageCoverage.emptied, []);
+});
+
 test('requires explicit acknowledgement for every emptied page', () => {
   const diff = { pageCoverage: { emptied: [{ page: 14 }, { page: 16 }, { page: 17 }] } };
   assert.deepEqual(validateCoverageAcknowledgement(diff, [14, 17]), {
