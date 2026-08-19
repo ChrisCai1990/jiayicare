@@ -18,15 +18,17 @@ test('OCR run leases use a bounded recovery window', () => {
 test('full OCR atomically excludes active full and page OCR runs', () => {
   const filter = buildFullOcrClaimFilter('report-1', new Date('2026-08-19T06:00:00.000Z'));
   assert.equal(filter._id, 'report-1');
-  assert.equal(filter.$and.length, 2);
+  assert.equal(filter.$and.length, 3);
   assert.deepEqual(filter.$and[0].$or[1], { 'ocrProgress.updatedAt': { $lte: new Date('2026-08-19T05:30:00.000Z') } });
-  assert.deepEqual(filter.$and[1].$or[1], { 'pageParseStatus.startedAt': { $lte: new Date('2026-08-19T05:30:00.000Z') } });
+  assert.deepEqual(filter.$and[1].$or[1], { 'reviewSubmission.startedAt': { $lte: new Date('2026-08-19T05:50:00.000Z') } });
+  assert.deepEqual(filter.$and[2].$or[1], { 'pageParseStatus.startedAt': { $lte: new Date('2026-08-19T05:30:00.000Z') } });
 });
 
 test('page OCR atomically excludes a full OCR run and another active page run', () => {
   const filter = buildPageOcrClaimFilter('report-1', new Date('2026-08-19T06:00:00.000Z'));
   assert.deepEqual(filter.aiStatus, { $ne: 'processing' });
-  assert.deepEqual(filter.$or[1], { 'pageParseStatus.startedAt': { $lte: new Date('2026-08-19T05:30:00.000Z') } });
+  assert.deepEqual(filter.$and[0].$or[1], { 'pageParseStatus.startedAt': { $lte: new Date('2026-08-19T05:30:00.000Z') } });
+  assert.deepEqual(filter.$and[1].$or[1], { 'reviewSubmission.startedAt': { $lte: new Date('2026-08-19T05:50:00.000Z') } });
 });
 
 test('late OCR writes are scoped to their own run id', () => {

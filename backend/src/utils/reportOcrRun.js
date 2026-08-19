@@ -1,4 +1,5 @@
 const OCR_RUN_STALE_MS = 30 * 60 * 1000;
+const { reviewSubmissionStaleBefore } = require('./reportReviewRun');
 
 function ocrRunStaleBefore(now = new Date()) {
   return new Date(new Date(now).getTime() - OCR_RUN_STALE_MS);
@@ -6,6 +7,7 @@ function ocrRunStaleBefore(now = new Date()) {
 
 function buildFullOcrClaimFilter(reportId, now = new Date()) {
   const staleBefore = ocrRunStaleBefore(now);
+  const staleReviewBefore = reviewSubmissionStaleBefore(now);
   return {
     _id: reportId,
     $and: [
@@ -14,6 +16,13 @@ function buildFullOcrClaimFilter(reportId, now = new Date()) {
           { aiStatus: { $ne: 'processing' } },
           { 'ocrProgress.updatedAt': { $lte: staleBefore } },
           { 'ocrProgress.updatedAt': { $exists: false } },
+        ],
+      },
+      {
+        $or: [
+          { 'reviewSubmission.status': { $ne: 'processing' } },
+          { 'reviewSubmission.startedAt': { $lte: staleReviewBefore } },
+          { 'reviewSubmission.startedAt': { $exists: false } },
         ],
       },
       {
@@ -29,13 +38,21 @@ function buildFullOcrClaimFilter(reportId, now = new Date()) {
 
 function buildPageOcrClaimFilter(reportId, now = new Date()) {
   const staleBefore = ocrRunStaleBefore(now);
+  const staleReviewBefore = reviewSubmissionStaleBefore(now);
   return {
     _id: reportId,
     aiStatus: { $ne: 'processing' },
-    $or: [
-      { 'pageParseStatus.status': { $ne: 'processing' } },
-      { 'pageParseStatus.startedAt': { $lte: staleBefore } },
-      { 'pageParseStatus.startedAt': { $exists: false } },
+    $and: [
+      { $or: [
+        { 'pageParseStatus.status': { $ne: 'processing' } },
+        { 'pageParseStatus.startedAt': { $lte: staleBefore } },
+        { 'pageParseStatus.startedAt': { $exists: false } },
+      ] },
+      { $or: [
+        { 'reviewSubmission.status': { $ne: 'processing' } },
+        { 'reviewSubmission.startedAt': { $lte: staleReviewBefore } },
+        { 'reviewSubmission.startedAt': { $exists: false } },
+      ] },
     ],
   };
 }

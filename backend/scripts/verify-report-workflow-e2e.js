@@ -21,12 +21,14 @@ const Admin = require('../src/models/Admin');
 const User = require('../src/models/User');
 const MedicalReport = require('../src/models/MedicalReport');
 const TemporaryReportUpload = require('../src/models/TemporaryReportUpload');
+const ReportExtraction = require('../src/models/ReportExtraction');
 const ReportRevision = require('../src/models/ReportRevision');
 const ReportReviewEvent = require('../src/models/ReportReviewEvent');
 const ReportScreeningCandidate = require('../src/models/ReportScreeningCandidate');
 const UserScreeningItem = require('../src/models/UserScreeningItem');
 const { createReportUploadToken } = require('../src/utils/reportUploadToken');
 const { buildFullOcrClaimFilter, buildPageOcrClaimFilter, buildOcrRunOwnerFilter } = require('../src/utils/reportOcrRun');
+const { buildReviewSubmissionClaimFilter, buildReviewSubmissionOwnerFilter } = require('../src/utils/reportReviewRun');
 const staffRouter = require('../src/routes/staff');
 const reportsRouter = require('../src/routes/reports');
 
@@ -151,6 +153,59 @@ async function main() {
     assert.equal(Number(Boolean(firstPageClaim)) + Number(Boolean(secondPageClaim)), 1);
     await MedicalReport.updateOne({ _id: reportId }, { $set: { pageParseStatus: null } });
 
+    const extraction = await ReportExtraction.create({
+      reportId,
+      user: user._id,
+      tenantId,
+      version: 1,
+      engine: { ocrVersion: 'v2.0', templateId: 'e2e' },
+      source: {
+        ossKeys: [upload.ossKey],
+        files: [{ ossKey: upload.ossKey, mimeType: upload.mimeType, fileSize: upload.fileSize }],
+        pageCount: 1,
+      },
+      items: [],
+    });
+    await MedicalReport.updateOne(
+      { _id: reportId },
+      { $set: { aiStatus: 'pending', ocrVersion: 'v2.0', currentExtractionId: extraction._id } },
+    );
+
+    const [firstReviewClaim, secondReviewClaim] = await Promise.all([
+      MedicalReport.findOneAndUpdate(
+        buildReviewSubmissionClaimFilter(reportId, extraction._id, new Date(), null),
+        { $set: { reviewSubmission: { claimId: 'e2e-review-1', status: 'processing', startedAt: new Date() } } },
+        { new: true },
+      ),
+      MedicalReport.findOneAndUpdate(
+        buildReviewSubmissionClaimFilter(reportId, extraction._id, new Date(), null),
+        { $set: { reviewSubmission: { claimId: 'e2e-review-2', status: 'processing', startedAt: new Date() } } },
+        { new: true },
+      ),
+    ]);
+    assert.equal(Number(Boolean(firstReviewClaim)) + Number(Boolean(secondReviewClaim)), 1);
+    const activeReviewClaimId = firstReviewClaim?.reviewSubmission?.claimId || secondReviewClaim?.reviewSubmission?.claimId;
+    const staleReviewClaimId = activeReviewClaimId === 'e2e-review-1' ? 'e2e-review-2' : 'e2e-review-1';
+    const staleReviewCleanup = await MedicalReport.updateOne(
+      buildReviewSubmissionOwnerFilter(reportId, staleReviewClaimId),
+      { $unset: { reviewSubmission: 1 } },
+    );
+    assert.equal(staleReviewCleanup.modifiedCount, 0);
+    assert.equal(await MedicalReport.findOneAndUpdate(
+      buildFullOcrClaimFilter(reportId),
+      { $set: { aiStatus: 'processing', ocrProgress: { runId: 'must-not-start', updatedAt: new Date() } } },
+      { new: true },
+    ), null);
+    assert.equal(await MedicalReport.findOneAndUpdate(
+      buildPageOcrClaimFilter(reportId),
+      { $set: { pageParseStatus: { runId: 'must-not-start', status: 'processing', startedAt: new Date() } } },
+      { new: true },
+    ), null);
+    await MedicalReport.updateOne(
+      buildReviewSubmissionOwnerFilter(reportId, activeReviewClaimId),
+      { $unset: { reviewSubmission: 1 } },
+    );
+
     const reviewRequestId = crypto.randomUUID();
     await request(baseUrl, `/api/staff/medical-reports/${reportId}`, staffToken, {
       method: 'PATCH',
@@ -158,12 +213,30 @@ async function main() {
         aiStatus: 'reviewed',
         reviewAction: 'submit',
         reviewRequestId,
+        reviewExtractionId: String(extraction._id),
+        reviewBaseRevisionId: null,
         reportItems: [
           { sourceItemId: 'e2e-item-1', name: '空腹血糖', value: '5.2', unit: 'mmol/L', matchStatus: 'matched', screeningKey: 'chronic|糖尿病|空腹血糖' },
           { sourceItemId: 'e2e-item-2', name: '待归类检查', findings: '未见明显异常', itemType: 'imaging', matchStatus: 'unclassified' },
         ],
       }),
     });
+
+    const staleReviewResponse = await fetch(`${baseUrl}/api/staff/medical-reports/${reportId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${staffToken}` },
+      body: JSON.stringify({
+        aiStatus: 'reviewed',
+        reviewAction: 'submit',
+        reviewRequestId: crypto.randomUUID(),
+        reviewExtractionId: String(extraction._id),
+        reviewBaseRevisionId: null,
+        reportItems: [{ sourceItemId: 'stale-item', name: '过期审核内容', value: '不得覆盖' }],
+      }),
+    });
+    const staleReviewBody = await staleReviewResponse.json();
+    assert.equal(staleReviewResponse.status, 409);
+    assert.equal(staleReviewBody.code, 'REPORT_REVIEW_VERSION_CHANGED');
 
     const [report, revision, event, candidate, projection] = await Promise.all([
       MedicalReport.findById(reportId).lean(),
@@ -201,7 +274,7 @@ async function main() {
     console.log(JSON.stringify({
       success: true,
       database: databaseName,
-      checks: ['verified_original_attached', 'upload_retry_deduplicated', 'ocr_run_claim_is_atomic', 'late_ocr_write_rejected', 'page_ocr_claim_is_atomic', 'revision_published', 'review_event_recorded', 'candidate_created', 'projection_created', 'integrity_detected_and_reconciled', 'user_view_sanitized'],
+      checks: ['verified_original_attached', 'upload_retry_deduplicated', 'ocr_run_claim_is_atomic', 'late_ocr_write_rejected', 'page_ocr_claim_is_atomic', 'review_submission_claim_is_atomic', 'stale_review_version_rejected', 'revision_published', 'review_event_recorded', 'candidate_created', 'projection_created', 'integrity_detected_and_reconciled', 'user_view_sanitized'],
     }, null, 2));
   } finally {
     if (server) await new Promise(resolve => server.close(resolve));

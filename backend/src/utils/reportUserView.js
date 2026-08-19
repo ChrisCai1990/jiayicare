@@ -5,7 +5,7 @@ const USER_HIDDEN_REPORT_FIELDS = [
   'tenantId', 'ossKey', 'ossKeys', 'sourceFiles', 'displayRotation', 'uploadedBy', 'uploadRequestId',
   'planItemId', 'planId', 'screeningItemId',
   'currentExtractionId', 'currentRevisionId', 'ocrReviewMeta', 'ocrCorrectionLog',
-  'ocrVersion', 'ocrTemplateId', 'ocrQualitySummary', 'ocrProgress', 'pageParseStatus', 'dataEditLog',
+  'ocrVersion', 'ocrTemplateId', 'ocrQualitySummary', 'ocrProgress', 'pageParseStatus', 'reviewSubmission', 'dataEditLog',
   'staffAuditSnapshot', 'reviewedByStaff', 'reviewedAt', 'reviewNote',
   'audited_by', 'audited_at', 'familyDoctorViewedAt', 'familyDoctorViewedBy',
   'familyDoctorAudit',

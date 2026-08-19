@@ -87,6 +87,7 @@ const { resolveExtractionPageCount } = require('../utils/reportExtractionSnapsho
 const { compareReportExtractions, compareReportExtractionHistory, findHistoricalEmptyPages, validateCoverageAcknowledgement } = require('../utils/reportExtractionDiff');
 const { mapWithConcurrency } = require('../utils/asyncPool');
 const { buildFullOcrClaimFilter, buildPageOcrClaimFilter, buildOcrRunOwnerFilter, buildPageOcrRunOwnerFilter } = require('../utils/reportOcrRun');
+const { buildReviewSubmissionClaimFilter, buildReviewSubmissionOwnerFilter } = require('../utils/reportReviewRun');
 const { applyCheckupPrecautions } = require('../utils/checkupPrecautions');
 const {
   PEDIATRIC_BODY_COMPOSITION_PROMPT,
@@ -2496,6 +2497,7 @@ function applyAuditedInstitution(report) {
 router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports', 'audit'), async (req, res) => {
   let supplementUploadId = '';
   let supplementAttachAttemptId = '';
+  let reviewClaimId = '';
   try {
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
@@ -2505,12 +2507,20 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
       return res.status(400).json({ success: false, message: '无效的 OCR 审核动作' });
     }
     const reviewRequestId = String(req.body?.reviewRequestId || '').trim();
+    const reviewExtractionId = String(req.body?.reviewExtractionId || '').trim();
+    const hasReviewBaseRevisionId = Object.prototype.hasOwnProperty.call(req.body || {}, 'reviewBaseRevisionId');
+    const reviewBaseRevisionId = String(req.body?.reviewBaseRevisionId || '').trim();
     if (reviewRequestId.length > 120) return res.status(400).json({ success: false, message: '审核请求标识无效' });
     const reviewTransitionError = validateOcrReviewTransition({ aiStatus, reviewAction, reviewRequestId });
     if (reviewTransitionError) return res.status(400).json({ success: false, message: reviewTransitionError });
     if (['submit', 'reject'].includes(reviewAction) && reviewRequestId) {
       const completedReview = await ReportReviewEvent.findOne({ reportId: report._id, requestId: reviewRequestId }).lean();
       if (completedReview) {
+        // 上次请求若在审计事件落库后中断，重试时顺带释放同一请求遗留的提交占用。
+        await MedicalReport.updateOne(
+          { _id: report._id, 'reviewSubmission.requestId': reviewRequestId },
+          { $unset: { reviewSubmission: 1 } },
+        );
         if (completedReview.result === 'rejected') {
           return res.json({ success: true, data: report, meta: { deduplicatedReview: true } });
         }
@@ -2526,6 +2536,17 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
           status: 'pending',
         });
         return res.json({ success: true, data: report, meta: { pendingScreeningCandidateCount, deduplicatedReview: true } });
+      }
+    }
+    if (['submit', 'reject'].includes(reviewAction) && report.ocrVersion) {
+      const currentExtractionId = String(report.currentExtractionId || '');
+      const currentRevisionId = String(report.currentRevisionId || '');
+      if (!reviewExtractionId || reviewExtractionId !== currentExtractionId || !hasReviewBaseRevisionId || reviewBaseRevisionId !== currentRevisionId) {
+        return res.status(409).json({
+          success: false,
+          code: 'REPORT_REVIEW_VERSION_CHANGED',
+          message: '识别或审核版本已经变化，请刷新审核页面后重新核对',
+        });
       }
     }
     let coverageAcknowledgement = { requiredPages: [], missingPages: [], complete: true };
@@ -2794,6 +2815,36 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
       if (mimeType !== undefined) report.mimeType = mimeType;
       if (fileSize !== undefined) report.fileSize = fileSize;
     }
+    if (['submit', 'reject'].includes(reviewAction)) {
+      reviewClaimId = crypto.randomUUID();
+      const claimedReview = await MedicalReport.findOneAndUpdate(
+        buildReviewSubmissionClaimFilter(
+          report._id,
+          report.currentExtractionId || null,
+          new Date(),
+          hasReviewBaseRevisionId ? (reviewBaseRevisionId || null) : undefined,
+        ),
+        { $set: { reviewSubmission: {
+          claimId: reviewClaimId,
+          requestId: reviewRequestId,
+          action: reviewAction,
+          extractionId: report.currentExtractionId || null,
+          status: 'processing',
+          startedAt: new Date(),
+          actor: { id: req.staff._id, name: req.staff.name || req.staff.username || '', role: req.staff.role || '' },
+        } } },
+        { new: true },
+      );
+      if (!claimedReview) {
+        reviewClaimId = '';
+        return res.status(409).json({
+          success: false,
+          code: 'REPORT_REVIEW_IN_PROGRESS',
+          message: '该报告正在由另一审核操作提交，或识别版本已经变化，请刷新后重试',
+        });
+      }
+    }
+
     await report.save();
     if (supplementUploadId) {
       const attached = await TemporaryReportUpload.updateOne(
@@ -2863,8 +2914,21 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
     const pendingScreeningCandidateCount = publishedRevision
       ? await ReportScreeningCandidate.countDocuments({ reportRevisionId: publishedRevision._id, status: 'pending' })
       : 0;
+    if (reviewClaimId) {
+      await MedicalReport.updateOne(
+        buildReviewSubmissionOwnerFilter(report._id, reviewClaimId),
+        { $unset: { reviewSubmission: 1 } },
+      );
+      reviewClaimId = '';
+    }
     res.json({ success: true, data: report, meta: { pendingScreeningCandidateCount } });
   } catch (err) {
+    if (reviewClaimId) {
+      await MedicalReport.updateOne(
+        buildReviewSubmissionOwnerFilter(req.params.id, reviewClaimId),
+        { $unset: { reviewSubmission: 1 } },
+      ).catch(() => {});
+    }
     if (supplementUploadId) {
       await TemporaryReportUpload.updateOne(
         { _id: supplementUploadId, staffId: req.staff._id, status: 'attaching', attachAttemptId: supplementAttachAttemptId },
@@ -2947,6 +3011,8 @@ router.delete('/medical-reports/:id', staffAuth, checkPermissionStrict('reports'
 router.patch('/medical-reports/:id/audit', staffAuth, checkPermissionStrict('reports', 'audit'), async (req, res) => {
   const { action, rejectReason, abnormalItems, reviewReason, reviewHospital, reviewDepartment, reviewDate, notes } = req.body;
   const manualRequestId = String(req.body?.reviewRequestId || '').trim();
+  const hasManualBaseRevisionId = Object.prototype.hasOwnProperty.call(req.body || {}, 'reviewBaseRevisionId');
+  const manualBaseRevisionId = String(req.body?.reviewBaseRevisionId || '').trim();
   if (manualRequestId.length > 120) return res.status(400).json({ success: false, message: '审核请求标识无效' });
   const manualActionError = validateManualAuditAction(action, manualRequestId);
   if (manualActionError) return res.status(400).json({ success: false, message: manualActionError });
@@ -2955,71 +3021,102 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermissionStrict('rep
   if (manualRequestId) {
     const completedReview = await ReportReviewEvent.findOne({ reportId: report._id, requestId: manualRequestId }).lean();
     if (completedReview) {
+      await MedicalReport.updateOne(
+        { _id: report._id, 'reviewSubmission.requestId': manualRequestId },
+        { $unset: { reviewSubmission: 1 } },
+      );
       if (completedReview.result !== 'rejected') await syncBodyCompositionFromReport(report);
       return res.json({ success: true, data: report, meta: { deduplicatedReview: true } });
     }
   }
-  if (action === 'approve') {
-    if (!canDirectlyApproveReport(report.aiStatus)) {
-      return res.status(409).json({ success: false, message: '该报告已有 OCR 识别结果，请先在“审核AI结果”中核对后提交' });
-    }
-    applyAuditedInstitution(report);
-    report.audit_status = 'audited';
-    report.audited_by = req.staff.name;
-    report.audited_at = new Date();
-    // 手工审核与 OCR 审核使用同一组正式审核身份/时间字段，保证后续版本记录不会出现“无审核人”。
-    report.reviewedByStaff = req.staff._id;
-    report.reviewedAt = report.audited_at;
-    // 健管专员审核通过这一刻的 reportItems 存一份只读快照，供健康顾问后续编辑后仍可溯源
-    // "最初健管专员审核的是什么"；健康顾问双审是新功能，只在首次审核通过时补快照，不覆盖已有的
-    report.staffAuditSnapshot = report.staffAuditSnapshot?.snapshotAt
-      ? report.staffAuditSnapshot
-      : { reportItems: report.reportItems, snapshotAt: new Date() };
-    // 如果关联方案项目，自动完成
-    if (report.planId && report.planItemId) {
-      const plan = await HealthPlan.findById(report.planId);
-      if (plan) {
-        const item = plan.items.id(report.planItemId);
-        if (item) { item.status = 'completed'; item.completedAt = new Date(); await plan.save(); }
-      }
-    }
-    // 如果有异常项目，自动创建复查任务 + 用户待办任务
-    if (abnormalItems && abnormalItems.length > 0) {
-      await ensureReportAbnormalReview({
-        report,
-        staff: req.staff,
-        requestId: manualRequestId,
-        abnormalItems,
-        reviewReason,
-        reviewHospital,
-        reviewDepartment,
-        reviewDate,
-        notes,
-      });
-    }
-  } else {
-    report.audit_status = 'rejected';
-    report.reject_reason = rejectReason || '';
+  if (!hasManualBaseRevisionId || manualBaseRevisionId !== String(report.currentRevisionId || '')) {
+    return res.status(409).json({ success: false, code: 'REPORT_REVIEW_VERSION_CHANGED', message: '报告审核版本已经变化，请刷新后重新核对' });
   }
-  await report.save();
-  if (action === 'approve') {
-    // 非 OCR 的人工审核同样形成正式版本；不在这里额外同步筛查，避免改变既有手工录入筛查的时机。
-    await publishReportRevision(report, {
-      requestId: manualRequestId || crypto.randomUUID(),
-      action: 'approve', source: 'manual_audit', occurredAt: report.audited_at,
-      actor: { id: String(req.staff._id), name: req.staff.name || req.staff.username || '', role: req.staff.role || '' },
-      summary: { itemCount: Array.isArray(report.reportItems) ? report.reportItems.length : 0 },
-    });
-    await syncBodyCompositionFromReport(report);
-  } else {
-    await recordReportReviewEvent(report, null, {
+  if (action === 'approve' && !canDirectlyApproveReport(report.aiStatus)) {
+    return res.status(409).json({ success: false, message: '该报告已有 OCR 识别结果，请先在“审核AI结果”中核对后提交' });
+  }
+  const manualClaimId = crypto.randomUUID();
+  const claimedReview = await MedicalReport.findOneAndUpdate(
+    buildReviewSubmissionClaimFilter(report._id, report.currentExtractionId || null, new Date(), manualBaseRevisionId || null),
+    { $set: { reviewSubmission: {
+      claimId: manualClaimId,
       requestId: manualRequestId,
-      action: 'reject', source: 'manual_audit', occurredAt: new Date(),
-      actor: { id: String(req.staff._id), name: req.staff.name || req.staff.username || '', role: req.staff.role || '' },
-      summary: { rejectReason: report.reject_reason || '' },
-    }, 'rejected');
+      action,
+      extractionId: report.currentExtractionId || null,
+      status: 'processing',
+      startedAt: new Date(),
+      actor: { id: req.staff._id, name: req.staff.name || req.staff.username || '', role: req.staff.role || '' },
+    } } },
+    { new: true },
+  );
+  if (!claimedReview) {
+    return res.status(409).json({ success: false, code: 'REPORT_REVIEW_IN_PROGRESS', message: '该报告正在由另一审核操作提交，或识别版本已经变化，请刷新后重试' });
   }
-  res.json({ success: true, data: report });
+  try {
+    if (action === 'approve') {
+      applyAuditedInstitution(report);
+      report.audit_status = 'audited';
+      report.audited_by = req.staff.name;
+      report.audited_at = new Date();
+      // 手工审核与 OCR 审核使用同一组正式审核身份/时间字段，保证后续版本记录不会出现“无审核人”。
+      report.reviewedByStaff = req.staff._id;
+      report.reviewedAt = report.audited_at;
+      // 健管专员审核通过这一刻的 reportItems 存一份只读快照，供健康顾问后续编辑后仍可溯源
+      // "最初健管专员审核的是什么"；健康顾问双审是新功能，只在首次审核通过时补快照，不覆盖已有的
+      report.staffAuditSnapshot = report.staffAuditSnapshot?.snapshotAt
+        ? report.staffAuditSnapshot
+        : { reportItems: report.reportItems, snapshotAt: new Date() };
+      // 如果关联方案项目，自动完成
+      if (report.planId && report.planItemId) {
+        const plan = await HealthPlan.findById(report.planId);
+        if (plan) {
+          const item = plan.items.id(report.planItemId);
+          if (item) { item.status = 'completed'; item.completedAt = new Date(); await plan.save(); }
+        }
+      }
+      // 如果有异常项目，自动创建复查任务 + 用户待办任务
+      if (abnormalItems && abnormalItems.length > 0) {
+        await ensureReportAbnormalReview({
+          report,
+          staff: req.staff,
+          requestId: manualRequestId,
+          abnormalItems,
+          reviewReason,
+          reviewHospital,
+          reviewDepartment,
+          reviewDate,
+          notes,
+        });
+      }
+    } else {
+      report.audit_status = 'rejected';
+      report.reject_reason = rejectReason || '';
+    }
+    await report.save();
+    if (action === 'approve') {
+      // 非 OCR 的人工审核同样形成正式版本；不在这里额外同步筛查，避免改变既有手工录入筛查的时机。
+      await publishReportRevision(report, {
+        requestId: manualRequestId || crypto.randomUUID(),
+        action: 'approve', source: 'manual_audit', occurredAt: report.audited_at,
+        actor: { id: String(req.staff._id), name: req.staff.name || req.staff.username || '', role: req.staff.role || '' },
+        summary: { itemCount: Array.isArray(report.reportItems) ? report.reportItems.length : 0 },
+      });
+      await syncBodyCompositionFromReport(report);
+    } else {
+      await recordReportReviewEvent(report, null, {
+        requestId: manualRequestId,
+        action: 'reject', source: 'manual_audit', occurredAt: new Date(),
+        actor: { id: String(req.staff._id), name: req.staff.name || req.staff.username || '', role: req.staff.role || '' },
+        summary: { rejectReason: report.reject_reason || '' },
+      }, 'rejected');
+    }
+    res.json({ success: true, data: report });
+  } finally {
+    await MedicalReport.updateOne(
+      buildReviewSubmissionOwnerFilter(report._id, manualClaimId),
+      { $unset: { reviewSubmission: 1 } },
+    ).catch(() => {});
+  }
 });
 
 // GET /api/staff/patients/:id/reports/pending-doctor-audit — 该客户所有"健管专员已审核，

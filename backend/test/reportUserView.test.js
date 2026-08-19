@@ -8,6 +8,7 @@ const baseReport = overrides => ({
   currentExtractionId: 'extract-1', currentRevisionId: 'revision-1',
   ocrReviewMeta: { lastActionBy: { name: '审核员' } },
   ocrCorrectionLog: [{ oldValue: '1', newValue: '2' }],
+  reviewSubmission: { claimId: 'internal-claim', status: 'processing' },
   ...overrides,
 });
 
@@ -20,6 +21,7 @@ test('未审核 OCR 草稿不向用户返回', () => {
   assert.equal('ocrReviewMeta' in result, false);
   assert.equal('ocrCorrectionLog' in result, false);
   assert.equal('currentRevisionId' in result, false);
+  assert.equal('reviewSubmission' in result, false);
 });
 
 test('存在发布版本时始终返回发布版本而非当前 OCR 工作副本', () => {

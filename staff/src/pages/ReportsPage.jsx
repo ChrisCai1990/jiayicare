@@ -59,8 +59,9 @@ export default function ReportsPage() {
     finally { setDetailLoading(false) }
   }
 
-  const handleAudit = async (id, action, rejectReason = '') => {
+  const handleAudit = async (report, action, rejectReason = '') => {
     if (auditBusyId) return
+    const id = report._id
     const requestKey = `${id}:${action}`
     const requestId = auditRequestIdsRef.current.get(requestKey)
       || globalThis.crypto?.randomUUID?.()
@@ -68,7 +69,7 @@ export default function ReportsPage() {
     auditRequestIdsRef.current.set(requestKey, requestId)
     setAuditBusyId(id)
     try {
-      await staffAPI.auditReport(id, { action, rejectReason, reviewRequestId: requestId })
+      await staffAPI.auditReport(id, { action, rejectReason, reviewRequestId: requestId, reviewBaseRevisionId: report.currentRevisionId || null })
       auditRequestIdsRef.current.delete(requestKey)
       toast(action === 'approve' ? '审核通过' : '已驳回'); load()
     } catch (err) { toast(err.message) }
@@ -139,7 +140,7 @@ export default function ReportsPage() {
                         <button className="btn btn-secondary btn-sm" onClick={() => { setEditModal(r); setEditForm({ title: r.title || '', type: r.type || 'annual', hospital: r.hospital || '', date: r.date || '', note: r.note || '' }) }}>✏️ 修改</button>
                       )}
                       {can('reports', 'audit') && r.audit_status === 'unaudited' && (!r.aiStatus || r.aiStatus === 'none') && (
-                        <button className="btn btn-primary btn-sm" onClick={() => handleAudit(r._id, 'approve')}>✓ 通过</button>
+                        <button className="btn btn-primary btn-sm" onClick={() => handleAudit(r, 'approve')}>✓ 通过</button>
                       )}
                       {can('reports', 'audit') && r.audit_status === 'unaudited' && r.aiStatus && r.aiStatus !== 'none' && (
                         <button className="btn btn-secondary btn-sm" onClick={() => navigate(`/patients/${r.user?._id}?tab=reports`)}>前往核对 OCR</button>
@@ -242,7 +243,7 @@ export default function ReportsPage() {
                 <button className="btn btn-danger" onClick={() => { setShowDetail(null); setRejectModal(showDetail); setRejectReason('') }}>✗ 驳回</button>
               )}
               {can('reports', 'audit') && showDetail.audit_status === 'unaudited' && (!showDetail.aiStatus || showDetail.aiStatus === 'none') && (
-                <button className="btn btn-primary" onClick={() => { handleAudit(showDetail._id, 'approve'); setShowDetail(null) }}>✓ 审核通过</button>
+                <button className="btn btn-primary" onClick={() => { handleAudit(showDetail, 'approve'); setShowDetail(null) }}>✓ 审核通过</button>
               )}
               {can('reports', 'audit') && showDetail.audit_status === 'unaudited' && showDetail.aiStatus && showDetail.aiStatus !== 'none' && (
                 <button className="btn btn-primary" onClick={() => navigate(`/patients/${showDetail.user?._id}?tab=reports`)}>前往核对 OCR</button>
@@ -317,7 +318,7 @@ export default function ReportsPage() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setRejectModal(null)}>取消</button>
-              <button className="btn btn-danger" onClick={() => { handleAudit(rejectModal._id, 'reject', rejectReason); setRejectModal(null) }}>确认驳回</button>
+              <button className="btn btn-danger" onClick={() => { handleAudit(rejectModal, 'reject', rejectReason); setRejectModal(null) }}>确认驳回</button>
             </div>
           </div>
         </div>

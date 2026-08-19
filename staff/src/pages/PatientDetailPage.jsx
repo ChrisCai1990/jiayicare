@@ -2796,6 +2796,8 @@ export default function PatientDetailPage() {
         aiStatus: 'reviewed',
         reviewAction: 'submit',
         reviewRequestId: ocrReviewRequestIdRef.current,
+        reviewExtractionId: ocrReviewReport.currentExtractionId || '',
+        reviewBaseRevisionId: ocrReviewReport.currentRevisionId || null,
         coverageAcknowledgedPages: coveragePages,
       })
       const candidateCount = Number(result.meta?.pendingScreeningCandidateCount || 0)
@@ -2866,6 +2868,8 @@ export default function PatientDetailPage() {
     try {
       await staffAPI.updateReport(ocrReviewReport._id, {
         aiStatus: 'none', reportItems: [], reviewAction: 'reject', reviewRequestId: ocrReviewRequestIdRef.current,
+        reviewExtractionId: ocrReviewReport.currentExtractionId || '',
+        reviewBaseRevisionId: ocrReviewReport.currentRevisionId || null,
       })
       toast('已驳回，可重新触发AI识别')
       setOcrReviewReport(null)
@@ -3216,7 +3220,12 @@ export default function PatientDetailPage() {
     manualAuditRequestIdsRef.current.set(requestKey, requestId)
     try {
       setAuditLoading(true)
-      await staffAPI.auditReport(showReportDetail._id, { action, rejectReason, reviewRequestId: requestId })
+      await staffAPI.auditReport(showReportDetail._id, {
+        action,
+        rejectReason,
+        reviewRequestId: requestId,
+        reviewBaseRevisionId: showReportDetail.currentRevisionId || null,
+      })
       manualAuditRequestIdsRef.current.delete(requestKey)
       toast(action === 'approve' ? '已审核通过' : '已驳回')
       setShowReportDetail(null)
