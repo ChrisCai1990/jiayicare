@@ -10405,6 +10405,14 @@ export default function PatientDetailPage() {
         const pageDispositions = new Map((ocrReviewReport.ocrQualitySummary?.pageDispositions || [])
           .map(disposition => [Number(disposition?.page), disposition]))
         const coverageRiskPages = ocrExtractionDiff?.pageCoverage?.emptied || []
+        const linkedEvidencePages = [...new Set(ocrEditItems.flatMap(item => {
+          const pages = reportItemEvidencePages(item)
+          return pages.length > 1 && pages.includes(activePage) ? pages : []
+        }).filter(page => page !== activePage))].sort((a, b) => a - b)
+        const pdfPrefetchPages = [...new Set([
+          ...linkedEvidencePages,
+          ...coverageRiskPages.map(item => Number(item.page)),
+        ])].filter(page => Number.isInteger(page) && page > 0)
         // 专项筛查归类：选项分组 + 手动归类
         // screeningCatalog 来自后端 /screening-catalog，数据源为 admin 配置的「专项筛查项目」（LabTestPackage）
         // 格式：[{ label: 'L1分类名', opts: [{value: 'L1|packageName|itemName', label: '...', groupLabel: 'L1分类名'}] }]
@@ -10508,6 +10516,16 @@ export default function PatientDetailPage() {
                     })}
                   </select>
                   <button className="btn btn-secondary btn-sm" disabled={activePage >= lastSourcePage} onClick={() => setOcrReviewPage(p => Math.min(lastSourcePage, (p || firstSourcePage) + 1))}>下一页</button>
+                  {linkedEvidencePages.length > 0 && (
+                    <div aria-label="跨页关联证据" style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4, fontSize: 10, color: '#6D28D9' }}>
+                      <span style={{ fontWeight: 700 }}>跨页关联</span>
+                      {linkedEvidencePages.map(page => (
+                        <button key={page} type="button" onClick={() => setOcrReviewPage(page)} title={`查看原件第 ${page} 页的关联证据`} style={{ border: '1px solid #CFC4F5', background: '#FAF8FF', color: '#6D28D9', borderRadius: 10, padding: '2px 7px', fontSize: 10, cursor: 'pointer' }}>
+                          P{page}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <button className="modal-close" onClick={() => setOcrReviewReport(null)}>✕</button>
               </div>
@@ -10532,7 +10550,7 @@ export default function PatientDetailPage() {
                             <div key={idx} style={{ marginBottom: 8 }}>
                               <div style={{ fontSize: 10, color: '#8AA89C', margin: '4px 0' }}>第 {idx + 1} 张</div>
                               <React.Suspense fallback={<div style={{ padding: 16, color: '#6B7A72', fontSize: 12 }}>正在准备 PDF 阅读器…</div>}>
-                                <PdfPagePreview src={s} pageNumber={activePage} prefetchPages={coverageRiskPages.map(item => item.page)} />
+                                <PdfPagePreview src={s} pageNumber={activePage} prefetchPages={pdfPrefetchPages} />
                               </React.Suspense>
                             </div>
                           ) : (
@@ -10557,7 +10575,7 @@ export default function PatientDetailPage() {
                         <img src={src} alt="报告" style={{ width: '100%', borderRadius: 6, cursor: 'zoom-in' }} onClick={() => setPreviewImageUrl(src)} />
                       ) : isPdf ? (
                         <React.Suspense fallback={<div style={{ padding: 16, color: '#6B7A72', fontSize: 12 }}>正在准备 PDF 阅读器…</div>}>
-                          <PdfPagePreview src={src} pageNumber={activePage} prefetchPages={coverageRiskPages.map(item => item.page)} />
+                          <PdfPagePreview src={src} pageNumber={activePage} prefetchPages={pdfPrefetchPages} />
                         </React.Suspense>
                       ) : (
                         <button className="btn btn-primary btn-sm" onClick={() => window.open(src, '_blank')}>打开文件</button>

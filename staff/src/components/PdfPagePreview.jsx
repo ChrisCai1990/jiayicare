@@ -112,9 +112,9 @@ export default function PdfPagePreview({ src, pageNumber, prefetchPages = [], he
     let cancelled = false
     const timer = setTimeout(async () => {
       const candidates = [...new Set([
+        ...prefetchKey.split(',').map(Number),
         Number(pageNumber) + 1,
         Number(pageNumber) - 1,
-        ...prefetchKey.split(',').map(Number),
       ])].filter(page => Number.isInteger(page) && page > 0 && page <= pdfDocument.numPages && page !== Number(pageNumber)).slice(0, 5)
       for (const target of candidates) {
         if (cancelled) break
