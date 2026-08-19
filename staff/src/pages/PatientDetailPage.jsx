@@ -10327,6 +10327,64 @@ export default function PatientDetailPage() {
         ]
         const updItem = (i, patch) => setOcrEditItems(arr => arr.map((it, idx) => idx === i ? { ...it, ...patch } : it))
         const delItem = (i) => setOcrEditItems(arr => arr.filter((_, idx) => idx !== i))
+        const mergeEvidenceText = (left, right) => {
+          const first = String(left || '').trim()
+          const second = String(right || '').trim()
+          if (!first) return second
+          if (!second || first === second || first.includes(second)) return first
+          if (second.includes(first)) return second
+          return `${first}\n${second}`
+        }
+        const normalizeEvidenceRows = rows => {
+          const byPage = new Map()
+          ;(rows || []).forEach(row => {
+            const page = Number(row?.page)
+            if (!Number.isInteger(page) || page < 1) return
+            const previous = byPage.get(page) || {}
+            const previousMethod = previous.method || 'unknown'
+            const nextMethod = row?.method || 'unknown'
+            byPage.set(page, {
+              ...previous, ...row, page,
+              text: mergeEvidenceText(previous.text, row?.text),
+              method: previousMethod !== 'unknown' && nextMethod !== 'unknown' && previousMethod !== nextMethod
+                ? 'hybrid' : (nextMethod !== 'unknown' ? nextMethod : previousMethod),
+            })
+          })
+          return [...byPage.values()].sort((a, b) => a.page - b.page)
+        }
+        const mergeCrossPageItems = (firstIndex, secondIndex) => {
+          const first = ocrEditItems[firstIndex]
+          const second = ocrEditItems[secondIndex]
+          if (!first || !second) return
+          if (!window.confirm(`确认把“${first.name || '当前项目'}”的 ${reportItemPageLabel(first)} 与 ${reportItemPageLabel(second)} 合并为一条跨页项目？\n\n合并后仍可在保存前继续修改，保存草稿后会记录操作人员、时间和证据页变化。`)) return
+          const pages = [...new Set([...reportItemEvidencePages(first), ...reportItemEvidencePages(second)])].sort((a, b) => a - b)
+          const statusPriority = { abnormal: 4, attention: 3, normal: 2, unknown: 1 }
+          const earlier = reportItemEvidencePages(first)[0] <= reportItemEvidencePages(second)[0] ? first : second
+          const later = earlier === first ? second : first
+          const merged = {
+            ...earlier,
+            sourcePage: pages[0], sourcePages: pages,
+            sourceEvidence: normalizeEvidenceRows([...(earlier.sourceEvidence || []), ...(later.sourceEvidence || [])]),
+            findings: mergeEvidenceText(earlier.findings, later.findings),
+            diagnosis: mergeEvidenceText(earlier.diagnosis, later.diagnosis),
+            conclusion: mergeEvidenceText(earlier.conclusion, later.conclusion),
+            pathologyFindings: mergeEvidenceText(earlier.pathologyFindings, later.pathologyFindings),
+            pathologyDiagnosis: mergeEvidenceText(earlier.pathologyDiagnosis, later.pathologyDiagnosis),
+            status: (statusPriority[later.status] || 0) > (statusPriority[earlier.status] || 0) ? later.status : earlier.status,
+          }
+          setOcrEditItems(arr => arr.flatMap((item, index) => index === firstIndex ? [merged] : index === secondIndex ? [] : [item]))
+        }
+        const splitCrossPageItem = (itemIndex, page) => {
+          const item = ocrEditItems[itemIndex]
+          const pages = reportItemEvidencePages(item)
+          if (!item || pages.length < 2 || !pages.includes(page)) return
+          if (!window.confirm(`确认把 P${page} 从“${item.name || '当前项目'}”拆成一条独立项目？\n\n系统会复制当前内容以避免丢失，请随后分别核对并删除两条中不属于该页的文字。`)) return
+          const remainingPages = pages.filter(sourcePage => sourcePage !== page)
+          const evidenceRows = item.sourceEvidence || []
+          const remaining = { ...item, sourcePage: remainingPages[0], sourcePages: remainingPages, sourceEvidence: evidenceRows.filter(row => Number(row?.page) !== page) }
+          const separated = { ...item, sourceItemId: '', sourcePage: page, sourcePages: [page], sourceEvidence: evidenceRows.filter(row => Number(row?.page) === page) }
+          setOcrEditItems(arr => [...arr.slice(0, itemIndex), remaining, separated, ...arr.slice(itemIndex + 1)])
+        }
         const addItem = () => setOcrEditItems(arr => [...arr, { name: '', value: '', unit: '', referenceRange: '', status: 'normal', itemType: 'lab', sourcePage: ocrReviewPage || 1, sourcePages: [ocrReviewPage || 1] }])
         const abnormalCount = ocrEditItems.filter(it => it.status === 'abnormal' || it.status === 'attention').length
         const sourcePages = [...new Set(ocrEditItems.flatMap(reportItemEvidencePages))].sort((a, b) => a - b)
@@ -10803,6 +10861,12 @@ export default function PatientDetailPage() {
                           const sc = STATUS_OPTS.find(s => s.v === it.status)?.color || '#8AA89C'
                           const isFocusedItem = ocrFocusItemIndex === i
                           const evidencePages = reportItemEvidencePages(it)
+                          const mergeCandidate = isImaging(it) ? indexedAll.find(({ it: candidate, i: candidateIndex }) => {
+                            if (candidateIndex === i || !isImaging(candidate)) return false
+                            if (String(candidate.name || '').trim() !== String(it.name || '').trim()) return false
+                            const candidatePages = reportItemEvidencePages(candidate)
+                            return evidencePages.some(page => candidatePages.some(candidatePage => Math.abs(page - candidatePage) === 1))
+                          }) : null
                           return (
                             <div key={i} ref={node => { if (node) ocrItemRefs.current[i] = node; else delete ocrItemRefs.current[i] }}
                               style={{ border: isFocusedItem ? '2px solid #7C3AED' : '1px solid #E0D9CE', borderRadius: 8, padding: '10px 12px', background: isFocusedItem ? '#F5F3FF' : (isImaging(it) ? '#fafaf8' : '#fff'), boxShadow: isFocusedItem ? '0 0 0 3px rgba(124,58,237,.12)' : 'none' }}>
@@ -10825,7 +10889,15 @@ export default function PatientDetailPage() {
                                       )
                                     })}
                                   </div>
+                                  <button type="button" onClick={() => splitCrossPageItem(i, activePage)} disabled={!evidencePages.includes(activePage)} style={{ marginTop: 6, border: '1px solid #F0B7B7', borderRadius: 5, padding: '4px 7px', background: '#FFF7F7', color: '#B42318', cursor: evidencePages.includes(activePage) ? 'pointer' : 'not-allowed', fontSize: 10 }}>
+                                    将 P{activePage} 拆成独立项目
+                                  </button>
                                 </details>
+                              )}
+                              {mergeCandidate && (
+                                <button type="button" onClick={() => mergeCrossPageItems(i, mergeCandidate.i)} style={{ margin: '-1px 0 7px', border: '1px solid #CFC4F5', borderRadius: 5, padding: '4px 7px', background: '#FAF8FF', color: '#6D28D9', cursor: 'pointer', fontSize: 10 }}>
+                                  与 {reportItemPageLabel(mergeCandidate.it)} 同名项目合并
+                                </button>
                               )}
                               {nonClassificationFlags(it).length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, margin: '-2px 0 6px' }}>
                                 {nonClassificationFlags(it).map(flag => <span key={flag} style={{ fontSize: 10, color: '#B45309', background: '#FFF7E8', borderRadius: 10, padding: '2px 6px' }}>{({ abnormal_unverified: '异常结果待确认', status_conflict: '状态需核对', cross_page_duplicate: '跨页疑似重复', range_missing: '缺参考范围', result_missing: '缺结果', name_missing: '缺名称', text_layer_unverified: '文字层待核对' })[flag] || '识别结果待核对'}</span>)}

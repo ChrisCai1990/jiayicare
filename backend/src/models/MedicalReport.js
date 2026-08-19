@@ -91,6 +91,7 @@ const medicalReportSchema = new mongoose.Schema({
   ocrCorrectionLog: [{
     itemIndex: Number,
     itemName: { type: String, default: '' },
+    sourceItemId: { type: String, default: '' },
     field: { type: String, default: '' },
     oldValue: { type: String, default: '' },
     newValue: { type: String, default: '' },
@@ -208,6 +209,7 @@ const medicalReportSchema = new mongoose.Schema({
   dataEditLog: [{
     itemIndex: Number,
     itemName: { type: String, default: '' },
+    sourceItemId: { type: String, default: '' },
     field: { type: String, default: '' },
     oldValue: { type: String, default: '' },
     newValue: { type: String, default: '' },

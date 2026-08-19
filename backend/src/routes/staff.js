@@ -67,6 +67,7 @@ const ReportScreeningProjectionEvent = require('../models/ReportScreeningProject
 const TemporaryReportUpload = require('../models/TemporaryReportUpload');
 const { buildReportScreeningCandidates, mergeScreeningProjectionKeys, buildScreeningProjectionEvents } = require('../utils/reportScreeningProjection');
 const { ensureReportItemSourceIds } = require('../utils/reportItemSource');
+const { diffReportItemCorrections } = require('../utils/reportItemCorrections');
 const {
   itemTouchesPage,
   linkedReportItemPages,
@@ -2743,25 +2744,25 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
         if (!it || typeof it !== 'object') return false;
         return !(_blank(it.name) && _blank(it.value) && _blank(it.findings) && _blank(it.diagnosis) && _blank(it.conclusion));
       })));
-      if (editSource || report.audit_status === 'audited' || (aiStatus === 'reviewed' && report.ocrVersion)) {
-        const trackedFields = ['name', 'value', 'unit', 'referenceRange', 'status', 'findings', 'diagnosis', 'conclusion', 'screeningKey'];
+      if (editSource || report.audit_status === 'audited' || (report.ocrVersion && ['save_draft', 'submit'].includes(reviewAction))) {
         const oldItems = report.reportItems || [];
-        nextItems.forEach((item, index) => trackedFields.forEach(field => {
-          const oldValue = String(oldItems[index]?.[field] ?? '');
-          const newValue = String(item?.[field] ?? '');
-          if (oldValue !== newValue) report.dataEditLog.push({
-            itemIndex: index, itemName: item.name || oldItems[index]?.name || '', field, oldValue, newValue,
+        const corrections = diffReportItemCorrections(oldItems, nextItems);
+        corrections.forEach(correction => {
+          report.dataEditLog.push({
+            itemIndex: correction.itemIndex, itemName: correction.itemName, sourceItemId: correction.sourceItemId,
+            field: correction.field, oldValue: correction.oldValue, newValue: correction.newValue,
             operatorId: req.staff._id, operatorName: req.staff.name || req.staff.username || '', operatorRole: req.staff.role || '',
             source: editSource || 'report_edit', at: new Date(),
           });
           if (report.ocrVersion) {
             if (!Array.isArray(report.ocrCorrectionLog)) report.ocrCorrectionLog = [];
             report.ocrCorrectionLog.push({
-              itemIndex: index, itemName: item.name || oldItems[index]?.name || '', field, oldValue, newValue,
-              qualityFlags: oldItems[index]?.qualityFlags || [], operatorId: req.staff._id, at: new Date(),
+              itemIndex: correction.itemIndex, itemName: correction.itemName, sourceItemId: correction.sourceItemId,
+              field: correction.field, oldValue: correction.oldValue, newValue: correction.newValue,
+              qualityFlags: correction.qualityFlags, operatorId: req.staff._id, at: new Date(),
             });
           }
-        }));
+        });
       }
       report.reportItems = nextItems;
     }
