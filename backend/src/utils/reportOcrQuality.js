@@ -253,6 +253,7 @@ function assessReportItems(items, { textLayer = null } = {}) {
     const confidencePenalty = [...flags].reduce((sum, flag) => sum + ({
       name_missing: 0.45, result_missing: 0.4, range_missing: 0.1,
       status_conflict: 0.25, unclassified: 0.1, cross_page_duplicate: 0.2,
+      cross_page_continuation_candidate: 0.1,
       abnormal_unverified: 0.2, diagnosis_missing: 0.15,
     }[flag] || 0), 0);
     const confidence = Math.max(0.05, Math.min(0.99, Number((0.98 - confidencePenalty).toFixed(2))));

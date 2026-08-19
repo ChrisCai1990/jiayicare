@@ -115,6 +115,27 @@ function hasComplementaryContinuation(left, right) {
     .some(field => !text(left[field]) && text(right[field]));
 }
 
+function hasSameFieldNarrativeContinuation(left, right) {
+  const narrativeFields = ['findings', 'diagnosis', 'conclusion', 'pathologyFindings', 'pathologyDiagnosis'];
+  return narrativeFields.some(field => {
+    const first = text(left[field]);
+    const second = text(right[field]);
+    return first && second && first !== second;
+  });
+}
+
+function withQualityFlag(item, flag) {
+  return {
+    ...item,
+    qualityFlags: [...new Set([...(Array.isArray(item.qualityFlags) ? item.qualityFlags : []), flag])],
+  };
+}
+
+function withoutQualityFlags(item, flags) {
+  const removed = new Set(flags);
+  return (Array.isArray(item.qualityFlags) ? item.qualityFlags : []).filter(flag => !removed.has(flag));
+}
+
 // Only merge exact, adjacent imaging/data continuations. Numeric lab rows are
 // deliberately excluded because the same analyte can legitimately recur.
 function mergeAdjacentReportItemEvidence(items = []) {
@@ -141,13 +162,23 @@ function mergeAdjacentReportItemEvidence(items = []) {
       && hasComplementaryContinuation(previous, normalized);
 
     if (!canMerge) {
-      result.push(normalized);
+      const isContinuationCandidate = previous
+        && ['imaging', 'data'].includes(normalized.itemType)
+        && pages[0] === previousPages[previousPages.length - 1] + 1
+        && hasSameFieldNarrativeContinuation(previous, normalized);
+      if (isContinuationCandidate) {
+        result[previousIndex] = withQualityFlag(previous, 'cross_page_continuation_candidate');
+        result.push(withQualityFlag(normalized, 'cross_page_continuation_candidate'));
+      } else {
+        result.push(normalized);
+      }
       continue;
     }
 
     const mergedPages = [...new Set([...previousPages, ...pages])].sort((a, b) => a - b);
     const merged = {
       ...previous,
+      qualityFlags: withoutQualityFlags(previous, ['cross_page_continuation_candidate', 'cross_page_duplicate']),
       sourcePage: mergedPages[0],
       sourcePages: mergedPages,
       sourceEvidence: normalizeEvidenceRows({

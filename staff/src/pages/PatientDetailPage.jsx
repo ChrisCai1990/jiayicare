@@ -10363,6 +10363,8 @@ export default function PatientDetailPage() {
           const later = earlier === first ? second : first
           const merged = {
             ...earlier,
+            qualityFlags: [...new Set([...(earlier.qualityFlags || []), ...(later.qualityFlags || [])])]
+              .filter(flag => !['cross_page_continuation_candidate', 'cross_page_duplicate'].includes(flag)),
             sourcePage: pages[0], sourcePages: pages,
             sourceEvidence: normalizeEvidenceRows([...(earlier.sourceEvidence || []), ...(later.sourceEvidence || [])]),
             findings: mergeEvidenceText(earlier.findings, later.findings),
@@ -10381,8 +10383,9 @@ export default function PatientDetailPage() {
           if (!window.confirm(`确认把 P${page} 从“${item.name || '当前项目'}”拆成一条独立项目？\n\n系统会复制当前内容以避免丢失，请随后分别核对并删除两条中不属于该页的文字。`)) return
           const remainingPages = pages.filter(sourcePage => sourcePage !== page)
           const evidenceRows = item.sourceEvidence || []
-          const remaining = { ...item, sourcePage: remainingPages[0], sourcePages: remainingPages, sourceEvidence: evidenceRows.filter(row => Number(row?.page) !== page) }
-          const separated = { ...item, sourceItemId: '', sourcePage: page, sourcePages: [page], sourceEvidence: evidenceRows.filter(row => Number(row?.page) === page) }
+          const remainingFlags = (item.qualityFlags || []).filter(flag => flag !== 'cross_page_continuation_candidate')
+          const remaining = { ...item, qualityFlags: remainingFlags, sourcePage: remainingPages[0], sourcePages: remainingPages, sourceEvidence: evidenceRows.filter(row => Number(row?.page) !== page) }
+          const separated = { ...item, qualityFlags: remainingFlags, sourceItemId: '', sourcePage: page, sourcePages: [page], sourceEvidence: evidenceRows.filter(row => Number(row?.page) === page) }
           setOcrEditItems(arr => [...arr.slice(0, itemIndex), remaining, separated, ...arr.slice(itemIndex + 1)])
         }
         const addItem = () => setOcrEditItems(arr => [...arr, { name: '', value: '', unit: '', referenceRange: '', status: 'normal', itemType: 'lab', sourcePage: ocrReviewPage || 1, sourcePages: [ocrReviewPage || 1] }])
@@ -10922,7 +10925,7 @@ export default function PatientDetailPage() {
                                 </button>
                               )}
                               {nonClassificationFlags(it).length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, margin: '-2px 0 6px' }}>
-                                {nonClassificationFlags(it).map(flag => <span key={flag} style={{ fontSize: 10, color: '#B45309', background: '#FFF7E8', borderRadius: 10, padding: '2px 6px' }}>{({ abnormal_unverified: '异常结果待确认', status_conflict: '状态需核对', cross_page_duplicate: '跨页疑似重复', range_missing: '缺参考范围', result_missing: '缺结果', name_missing: '缺名称', text_layer_unverified: '文字层待核对' })[flag] || '识别结果待核对'}</span>)}
+                                {nonClassificationFlags(it).map(flag => <span key={flag} style={{ fontSize: 10, color: '#B45309', background: '#FFF7E8', borderRadius: 10, padding: '2px 6px' }}>{({ abnormal_unverified: '异常结果待确认', status_conflict: '状态需核对', cross_page_duplicate: '跨页疑似重复', cross_page_continuation_candidate: '疑似跨页续写，请核对后合并', range_missing: '缺参考范围', result_missing: '缺结果', name_missing: '缺名称', text_layer_unverified: '文字层待核对' })[flag] || '识别结果待核对'}</span>)}
                               </div>}
                               <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
                                 <div style={{ flex: 2 }}>

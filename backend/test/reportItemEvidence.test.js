@@ -32,6 +32,15 @@ test('exact adjacent imaging continuations merge without losing page evidence', 
   assert.equal(itemTouchesPage(result[0], 9), true);
 });
 
+test('automatic continuation merge clears stale continuation review flags', () => {
+  const [item] = mergeAdjacentReportItemEvidence([
+    { name: '胸部CT', itemType: 'imaging', sourceSection: 'CT室', sourcePage: 8, findings: '双肺纹理增多', qualityFlags: ['cross_page_continuation_candidate'] },
+    { name: '胸部CT', itemType: 'imaging', sourceSection: 'CT室', sourcePage: 9, diagnosis: '建议复查' },
+  ]);
+
+  assert.ok(!item.qualityFlags.includes('cross_page_continuation_candidate'));
+});
+
 test('lab rows and non-adjacent records are never auto-merged', () => {
   const rows = mergeAdjacentReportItemEvidence([
     { name: '血糖', itemType: 'lab', sourcePage: 8, value: '5.1' },
@@ -61,6 +70,17 @@ test('same-field prose on a later page remains separate for manual continuation 
 
   assert.equal(rows.length, 2);
   assert.deepEqual(rows.map(reportItemSourcePages), [[18], [19]]);
+  assert.ok(rows.every(item => item.qualityFlags.includes('cross_page_continuation_candidate')));
+});
+
+test('identical repeated prose is not labelled as a continuation candidate', () => {
+  const rows = mergeAdjacentReportItemEvidence([
+    { name: '皮肤', itemType: 'imaging', sourceSection: '外科', sourcePage: 8, findings: '未见明显异常' },
+    { name: '皮肤', itemType: 'imaging', sourceSection: '外科', sourcePage: 9, findings: '未见明显异常' },
+  ]);
+
+  assert.equal(rows.length, 2);
+  assert.ok(rows.every(item => !(item.qualityFlags || []).includes('cross_page_continuation_candidate')));
 });
 
 test('multiple evidence inputs are deduplicated and sorted', () => {
