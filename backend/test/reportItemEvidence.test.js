@@ -90,3 +90,42 @@ test('cross-page merge preserves independently reviewable evidence for every sou
     { page: 22, text: 'page 22 evidence', method: 'text_layer' },
   ]);
 });
+
+test('cross-page continuation merges even when another page item is between both fragments', () => {
+  const result = mergeAdjacentReportItemEvidence([
+    {
+      name: 'Chest CT', itemType: 'imaging', sourceSection: 'CT', sourcePage: 21,
+      findings: 'finding on page 21', evidenceText: 'page 21 evidence', textLayerEvidence: 'verified',
+    },
+    {
+      name: 'Bone density', itemType: 'data', sourceSection: 'Imaging', sourcePage: 22,
+      value: 'normal', evidenceText: 'unrelated page 22 evidence', textLayerEvidence: 'verified',
+    },
+    {
+      name: 'Chest CT', itemType: 'imaging', sourceSection: 'CT', sourcePage: 22,
+      diagnosis: 'conclusion on page 22', evidenceText: 'page 22 evidence', textLayerEvidence: 'verified',
+    },
+  ]);
+
+  assert.equal(result.length, 2);
+  assert.equal(result[0].name, 'Chest CT');
+  assert.deepEqual(result[0].sourcePages, [21, 22]);
+  assert.equal(result[0].diagnosis, 'conclusion on page 22');
+  assert.equal(result[1].name, 'Bone density');
+});
+
+test('multiple evidence fragments on one page are retained as hybrid evidence', () => {
+  const [item] = normalizeReportItemEvidence([{
+    name: 'Chest CT', itemType: 'imaging', sourcePage: 21,
+    sourceEvidence: [
+      { page: 21, text: 'text layer evidence', method: 'text_layer' },
+      { page: 21, text: 'visual evidence', method: 'visual' },
+    ],
+  }]);
+
+  assert.deepEqual(item.sourceEvidence, [{
+    page: 21,
+    text: 'text layer evidence\nvisual evidence',
+    method: 'hybrid',
+  }]);
+});

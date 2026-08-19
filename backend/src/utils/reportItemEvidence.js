@@ -21,12 +21,16 @@ function normalizeEvidenceRows(item, pages) {
     const page = positivePage(row?.page);
     if (!page) continue;
     const previous = byPage.get(page) || {};
+    const previousMethod = text(previous.method);
+    const nextMethod = text(row?.method);
     byPage.set(page, {
       ...previous,
       ...row,
       page,
-      text: text(row?.text) || text(previous.text),
-      method: text(row?.method) || text(previous.method) || 'unknown',
+      text: mergeText(previous.text, row?.text),
+      method: previousMethod && nextMethod && previousMethod !== nextMethod
+        ? 'hybrid'
+        : nextMethod || previousMethod || 'unknown',
     });
   }
   for (const page of pages) {
@@ -108,15 +112,22 @@ function mergeAdjacentReportItemEvidence(items = []) {
   for (const normalized of normalizeReportItemEvidence(items)) {
     if (!normalized || typeof normalized !== 'object') continue;
     const pages = reportItemSourcePages(normalized);
-    const previous = result[result.length - 1];
-    const previousPages = reportItemSourcePages(previous);
+    let previousIndex = -1;
+    for (let index = result.length - 1; index >= 0; index -= 1) {
+      const candidate = result[index];
+      const candidatePages = reportItemSourcePages(candidate);
+      if (candidatePages[candidatePages.length - 1] !== pages[0] - 1) continue;
+      if (normalized.itemType !== candidate.itemType) continue;
+      if (!identity(normalized.name) || identity(normalized.name) !== identity(candidate.name)) continue;
+      if (!contextCompatible(candidate, normalized)) continue;
+      previousIndex = index;
+      break;
+    }
+    const previous = previousIndex >= 0 ? result[previousIndex] : null;
+    const previousPages = previous ? reportItemSourcePages(previous) : [];
     const canMerge = previous
       && ['imaging', 'data'].includes(normalized.itemType)
-      && normalized.itemType === previous.itemType
-      && identity(normalized.name)
-      && identity(normalized.name) === identity(previous.name)
-      && pages[0] === previousPages[previousPages.length - 1] + 1
-      && contextCompatible(previous, normalized);
+      && pages[0] === previousPages[previousPages.length - 1] + 1;
 
     if (!canMerge) {
       result.push(normalized);
@@ -136,7 +147,7 @@ function mergeAdjacentReportItemEvidence(items = []) {
       merged[field] = mergeText(previous[field], normalized[field]);
     }
     if (statusPriority(normalized.status) > statusPriority(previous.status)) merged.status = normalized.status;
-    result[result.length - 1] = merged;
+    result[previousIndex] = merged;
   }
   return result;
 }
