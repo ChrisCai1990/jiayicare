@@ -10396,20 +10396,47 @@ async function runReportParse(reportId, options = {}) {
       const summaries = [];
       let institution = report.institution;
       let checkDate = report.checkDate;
-      let totalPageCount = 0;
-      let okPages = 0;
+      const visualFallbackPages = useTextLayerPrimary
+        ? Array.from({ length: textLayer.pageCount }, (_, index) => index + 1).filter(pageNum => !textPrimaryByPage.has(pageNum))
+        : null;
+      let totalPageCount = useTextLayerPrimary ? textLayer.pageCount : 0;
+      let okPages = useTextLayerPrimary ? textPrimaryByPage.size : 0;
       const bodyCompCandidatePages = new Set();
       const detailPages = new Set();
+      const consumeParsedPage = (p, pageNum) => {
+        if (!p || p._templateSkip) return;
+        const firstPassItems = tagReportPageItems(p.items, pageNum);
+        if (isBodyCompositionPage(p, firstPassItems, report.type)) bodyCompCandidatePages.add(pageNum);
+        const hasStructuredResults = firstPassItems.some(item => str(item.name)
+          && [item.value, item.findings, item.diagnosis, item.conclusion].some(value => str(value)));
+        if (shouldSkipParsedReportPage(p) && !hasStructuredResults && report.type !== 'body_comp' && !useShaoyifuTemplate && !useZheyiTemplate) {
+          console.log(`[parse-ai] 页${pageNum}判定为${str(p.pageType) || '非明细页'}，程序层跳过全部条目`);
+          return;
+        }
+        detailPages.add(pageNum);
+        if (Array.isArray(p.items)) allItems = allItems.concat(firstPassItems);
+        if (p.summary) summaries.push(p.summary);
+        if (!institution && p.institution && !isSuspiciousInstitution(p.institution)) institution = p.institution;
+        if (!checkDate && p.checkDate) checkDate = p.checkDate;
+      };
+
+      if (useTextLayerPrimary) {
+        [...textPrimaryByPage.entries()].sort(([left], [right]) => left - right)
+          .forEach(([pageNum, parsed]) => consumeParsedPage(parsed, pageNum));
+      }
 
       // onBatch：每批图片转出后立即识别，识别完就释放这批图片内存
       await pdfBufferToImages(pdfBuf, {
         dpi: DPI,
         batchSize: BATCH_SIZE,
-        onBatch: async (batchImages, batchIndex) => {
-          totalPageCount += batchImages.length;
-          console.log(`[parse-ai] PDF批次${batchIndex + 1} ${reportId} ${batchImages.length}页`);
+        pageNumbers: visualFallbackPages,
+        onBatch: async (batchImages, batchIndex, batchPageNumbers) => {
+          if (!useTextLayerPrimary) totalPageCount += batchImages.length;
+          console.log(`[parse-ai] PDF视觉批次${batchIndex + 1} ${reportId} P${batchPageNumbers.join(',')}`);
           setOcrProgress('visual_ocr', `正在识别第${batchIndex + 1}批页面（${batchImages.length}页）`, {
-            batch: batchIndex + 1, pagesStarted: totalPageCount,
+            batch: batchIndex + 1, visualPages: batchPageNumbers,
+            textPrimaryPages: textPrimaryByPage.size,
+            visualFallbackPages: visualFallbackPages?.length ?? totalPageCount,
           });
 
           const batchResults = new Array(batchImages.length).fill(null);
@@ -10417,7 +10444,7 @@ async function runReportParse(reportId, options = {}) {
           const worker = async () => {
             while (cursor < batchImages.length) {
               const i = cursor++;
-              const pageNum = batchIndex * BATCH_SIZE + i + 1;
+              const pageNum = batchPageNumbers[i];
               // Text layer only skips pages that are unequivocally non-clinical.
               // Detail pages retain the existing visual path until a template is
               // measured against an approved reference set.
@@ -10465,23 +10492,8 @@ async function runReportParse(reportId, options = {}) {
             const p = batchResults[i];
             if (!p) continue;
             okPages++;
-            const pageNum = batchIndex * BATCH_SIZE + i + 1;
-            if (p._templateSkip) continue;
-            const firstPassItems = tagReportPageItems(p.items, pageNum);
-            if (isBodyCompositionPage(p, firstPassItems, report.type)) bodyCompCandidatePages.add(pageNum);
-            const hasStructuredResults = firstPassItems.some(item => str(item.name)
-              && [item.value, item.findings, item.diagnosis, item.conclusion].some(value => str(value)));
-            if (shouldSkipParsedReportPage(p) && !hasStructuredResults && report.type !== 'body_comp' && !useShaoyifuTemplate && !useZheyiTemplate) {
-              console.log(`[parse-ai] 页${pageNum}判定为${str(p.pageType) || '非明细页'}，程序层跳过全部条目`);
-              continue;
-            }
-            detailPages.add(pageNum);
-            if (Array.isArray(p.items)) {
-              allItems = allItems.concat(firstPassItems);
-            }
-            if (p.summary) summaries.push(p.summary);
-            if (!institution && p.institution && !isSuspiciousInstitution(p.institution)) institution = p.institution;
-            if (!checkDate && p.checkDate) checkDate = p.checkDate;
+            const pageNum = batchPageNumbers[i];
+            consumeParsedPage(p, pageNum);
           }
         },
       });

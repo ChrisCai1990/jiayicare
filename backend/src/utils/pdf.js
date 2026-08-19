@@ -155,10 +155,23 @@ function convertPdfRange(pdfPath, firstPage, lastPage, dpi, crop = null) {
  * @param {object} opts
  * @param {number} opts.dpi        默认 96
  * @param {number} opts.batchSize  每批页数，默认 8（内存可控）
- * @param {Function} [opts.onBatch]  async (images: string[], batchIndex: number) => void
+ * @param {number[]} [opts.pageNumbers]  只渲染指定页；用于文字层主提取后的视觉兜底
+ * @param {Function} [opts.onBatch]  async (images: string[], batchIndex: number, pageNumbers: number[]) => void
  * @returns {Promise<string[]>}  若有 onBatch 则返回空数组；否则返回全部图片
  */
-async function pdfBufferToImages(pdfBuffer, { dpi = 96, batchSize = 8, onBatch } = {}) {
+function groupPdfPageNumbers(pageNumbers, batchSize) {
+  const pages = [...new Set((pageNumbers || []).map(Number)
+    .filter(page => Number.isInteger(page) && page > 0))].sort((a, b) => a - b);
+  const groups = [];
+  for (const page of pages) {
+    const current = groups[groups.length - 1];
+    if (!current || current.length >= batchSize || page !== current[current.length - 1] + 1) groups.push([page]);
+    else current.push(page);
+  }
+  return groups;
+}
+
+async function pdfBufferToImages(pdfBuffer, { dpi = 96, batchSize = 8, pageNumbers = null, onBatch } = {}) {
   // 先把 PDF 写到临时文件（保留整个解析过程，批次共用）
   const tmpPdf = path.join(os.tmpdir(), `pdf-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
   fs.writeFileSync(tmpPdf, pdfBuffer);
@@ -171,20 +184,29 @@ async function pdfBufferToImages(pdfBuffer, { dpi = 96, batchSize = 8, onBatch }
     const knownTotal = totalPages || 999;
 
     const allImages = [];
-    let batchIndex = 0;
+    const requestedGroups = Array.isArray(pageNumbers)
+      ? groupPdfPageNumbers(pageNumbers.filter(page => page <= knownTotal), batchSize)
+      : null;
+    const groups = requestedGroups || Array.from(
+      { length: Math.ceil(knownTotal / batchSize) },
+      (_, index) => {
+        const first = index * batchSize + 1;
+        return Array.from({ length: Math.min(batchSize, knownTotal - first + 1) }, (__, offset) => first + offset);
+      },
+    );
 
-    for (let first = 1; first <= knownTotal; first += batchSize) {
-      const last = Math.min(first + batchSize - 1, knownTotal);
+    for (let batchIndex = 0; batchIndex < groups.length; batchIndex += 1) {
+      const batchPages = groups[batchIndex];
+      const first = batchPages[0];
+      const last = batchPages[batchPages.length - 1];
       const images = await convertPdfRange(tmpPdf, first, last, dpi);
       if (images.length === 0) break; // pdftoppm 返回空说明已超出实际页数
 
       if (onBatch) {
-        await onBatch(images, batchIndex);
+        await onBatch(images, batchIndex, batchPages.slice(0, images.length));
       } else {
         allImages.push(...images);
       }
-      batchIndex++;
-
       // 如果实际转出的页数少于请求的，说明已到最后一批
       if (images.length < last - first + 1) break;
     }
@@ -278,4 +300,4 @@ function isPdfReport(report) {
     || (report.content || '').startsWith('data:application/pdf');
 }
 
-module.exports = { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, extractPdfTextLayer, renderSinglePage, renderSinglePageRegions, renderSinglePageColumns, splitImageColumns };
+module.exports = { fetchReportBuffer, fetchReportBuffers, groupPdfPageNumbers, pdfBufferToImages, isPdfReport, extractPdfTextLayer, renderSinglePage, renderSinglePageRegions, renderSinglePageColumns, splitImageColumns };
