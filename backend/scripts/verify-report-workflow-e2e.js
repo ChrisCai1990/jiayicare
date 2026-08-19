@@ -81,6 +81,7 @@ async function main() {
     });
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
 
+    const uploadRequestId = crypto.randomUUID();
     const created = await request(baseUrl, '/api/staff/medical-reports', staffToken, {
       method: 'POST',
       body: JSON.stringify({
@@ -88,7 +89,7 @@ async function main() {
         title: 'E2E年度体检报告',
         type: 'annual',
         date: '2026-08-19',
-        uploadRequestId: crypto.randomUUID(),
+        uploadRequestId,
         uploadTokens: [uploadToken],
       }),
     });
@@ -97,6 +98,23 @@ async function main() {
     const attachedUpload = await TemporaryReportUpload.findById(upload._id).lean();
     assert.equal(attachedUpload.status, 'attached');
     assert.equal(String(attachedUpload.reportId), String(reportId));
+
+    // 模拟服务端已成功建档、客户端却未收到响应后的重试。即使原上传凭证已失效，
+    // 同一医护、会员和请求标识也只能取回原报告，不能重复建档。
+    const replayed = await request(baseUrl, '/api/staff/medical-reports', staffToken, {
+      method: 'POST',
+      body: JSON.stringify({
+        patientId: String(user._id),
+        title: 'E2E年度体检报告',
+        type: 'annual',
+        date: '2026-08-19',
+        uploadRequestId,
+        uploadTokens: ['expired-or-invalid-upload-token'],
+      }),
+    });
+    assert.equal(String(replayed.data._id), String(reportId));
+    assert.equal(replayed.meta?.deduplicated, true);
+    assert.equal(await MedicalReport.countDocuments({ user: user._id, uploadedBy: staff._id, uploadRequestId }), 1);
 
     const reviewRequestId = crypto.randomUUID();
     await request(baseUrl, `/api/staff/medical-reports/${reportId}`, staffToken, {
@@ -148,7 +166,7 @@ async function main() {
     console.log(JSON.stringify({
       success: true,
       database: databaseName,
-      checks: ['verified_original_attached', 'revision_published', 'review_event_recorded', 'candidate_created', 'projection_created', 'integrity_detected_and_reconciled', 'user_view_sanitized'],
+      checks: ['verified_original_attached', 'upload_retry_deduplicated', 'revision_published', 'review_event_recorded', 'candidate_created', 'projection_created', 'integrity_detected_and_reconciled', 'user_view_sanitized'],
     }, null, 2));
   } finally {
     if (server) await new Promise(resolve => server.close(resolve));

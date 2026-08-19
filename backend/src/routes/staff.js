@@ -2272,15 +2272,17 @@ router.post('/medical-reports', staffAuth, checkAnyPermissionStrict('reports', [
     const uploadRequestId = String(req.body?.uploadRequestId || '').trim();
     if (!patientId || !title) return res.status(400).json({ success: false, message: '会员和标题不能为空' });
     if (uploadRequestId.length > 120) return res.status(400).json({ success: false, message: '上传请求标识无效' });
+    // 幂等重放先于临时凭证校验：建档成功但响应丢失后，即使上传凭证随后过期，
+    // 同一医护、同一会员、同一请求仍应返回已经建好的报告，而不是诱导再次上传。
+    if (uploadRequestId && mongoose.isValidObjectId(patientId)) {
+      const completed = await MedicalReport.findOne({ user: patientId, uploadedBy: req.staff._id, uploadRequestId });
+      if (completed) return res.json({ success: true, data: completed, meta: { deduplicated: true } });
+    }
     let verifiedUploadedFiles = [];
     try {
       verifiedUploadedFiles = verifyReportUploadTokens(uploadTokens, { staffId: req.staff._id, secret: process.env.JWT_SECRET });
     } catch (tokenError) {
       return res.status(400).json({ success: false, message: tokenError.message || '临时上传凭证无效，请重新选择文件' });
-    }
-    if (uploadRequestId) {
-      const completed = await MedicalReport.findOne({ uploadedBy: req.staff._id, uploadRequestId });
-      if (completed) return res.json({ success: true, data: completed, meta: { deduplicated: true } });
     }
     try { assertVerifiedReportOriginals(verifiedUploadedFiles); }
     catch (policyError) { return res.status(400).json({ success: false, message: policyError.message }); }
@@ -2363,25 +2365,29 @@ router.post('/medical-reports', staffAuth, checkAnyPermissionStrict('reports', [
       claimedUploadIds = uploadIds;
     }
     if (resolvedScreeningL1 && checkDate) {
-      const existing = await MedicalReport.findOne({ user: patientId, checkDate, screeningL1: resolvedScreeningL1, screeningL2: screeningL2 || '', fileUrl: '' });
+      const placeholderUpdate = {
+        ...(title ? { title } : {}),
+        ...(hospital ? { hospital, institution: hospital } : {}),
+        fileUrl: resolvedFileUrl,
+        fileUrls: resolvedFileUrls,
+        ossKey: resolvedOssKey,
+        ossKeys: resolvedOssKeys,
+        sourceFiles,
+        content: effectiveContent,
+        mimeType: effectiveMimeType,
+        fileSize: String(verifiedFileSize || fileSize || ''),
+        uploadedBy: req.staff._id,
+        ...(uploadRequestId ? { uploadRequestId } : {}),
+      };
+      // 必须在 fileUrl 仍为空时原子抢占。并发请求中只有一个能补入该占位记录，
+      // 其余请求继续创建独立报告，避免后写文件覆盖先写原件。
+      const existing = await MedicalReport.findOneAndUpdate(
+        { user: patientId, checkDate, screeningL1: resolvedScreeningL1, screeningL2: screeningL2 || '', fileUrl: '' },
+        { $set: placeholderUpdate },
+        { new: true, runValidators: true },
+      );
       if (existing) {
-        if (title) existing.title = title;
-        if (hospital) existing.hospital = hospital;
-        if (resolvedFileUrl) {
-          existing.fileUrl = resolvedFileUrl;
-          existing.fileUrls = resolvedFileUrls;
-          existing.ossKey = resolvedOssKey;
-          existing.ossKeys = resolvedOssKeys;
-          existing.sourceFiles = sourceFiles;
-          existing.content = effectiveContent;
-          existing.mimeType = effectiveMimeType;
-          existing.fileSize = String(verifiedFileSize || fileSize || '');
-        }
-        report = await existing.save();
-        if (uploadRequestId && !report.uploadRequestId) {
-          report.uploadRequestId = uploadRequestId;
-          await report.save();
-        }
+        report = existing;
         if (claimedUploadIds.length) {
           await TemporaryReportUpload.updateMany(
             { _id: { $in: claimedUploadIds }, staffId: req.staff._id, status: 'attaching', attachAttemptId: uploadAttachAttemptId },
@@ -2417,7 +2423,7 @@ router.post('/medical-reports', staffAuth, checkAnyPermissionStrict('reports', [
     } catch (createError) {
       // 两次并发重试可能同时通过前面的查询；唯一索引的失败方返回已经创建的报告。
       if (createError?.code === 11000 && uploadRequestId) {
-        const completed = await MedicalReport.findOne({ uploadedBy: req.staff._id, uploadRequestId });
+        const completed = await MedicalReport.findOne({ user: patientId, uploadedBy: req.staff._id, uploadRequestId });
         if (completed) {
           await TemporaryReportUpload.updateMany(
             { _id: { $in: claimedUploadIds }, staffId: req.staff._id, status: 'attaching', attachAttemptId: uploadAttachAttemptId },

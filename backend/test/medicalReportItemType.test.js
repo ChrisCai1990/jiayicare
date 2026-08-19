@@ -38,3 +38,10 @@ test('legacy uploads do not receive an empty idempotency key', () => {
   assert.equal(report.uploadRequestId, undefined);
   assert.equal(report.toObject().uploadRequestId, undefined);
 });
+
+test('staff upload request ids are uniquely scoped and sparse for legacy reports', () => {
+  const index = MedicalReport.schema.indexes().find(([fields]) => fields.uploadedBy === 1 && fields.uploadRequestId === 1);
+  assert.ok(index);
+  assert.equal(index[1].unique, true);
+  assert.equal(index[1].sparse, true);
+});
