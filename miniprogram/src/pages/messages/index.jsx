@@ -209,12 +209,12 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
       ) : (
         <View style={{ width: '100%', boxSizing: 'border-box', padding: `0 ${spacing.md}px` }}>
           <Text style={{ display: 'block', fontSize: '15px', fontWeight: 700, color: colors.textPrimary, margin: `0 ${spacing.xs}px ${spacing.sm}px` }}>{assistantConfig.teamName || '健康服务团队'} · {onlineStatus.label}</Text>
-          <View onClick={onOpenPlanner} style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', padding: '16px', marginBottom: `${spacing.md}px`, backgroundColor: colors.primary, borderRadius: `${radius.lg}px`, boxShadow: shadow.card }}>
+          <View onClick={onOpenPlanner} style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', height: '92px', padding: '14px', boxSizing: 'border-box', marginBottom: `${spacing.md}px`, backgroundColor: colors.primary, borderRadius: `${radius.lg}px`, boxShadow: shadow.card }}>
             <View style={{ position: 'absolute', width: '100px', height: '100px', borderRadius: '50px', right: '-25px', top: '-35px', backgroundColor: 'rgba(255,255,255,0.08)' }} />
             <View style={{ width: '46px', height: '46px', borderRadius: '15px', backgroundColor: 'rgba(255,255,255,0.16)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '12px', flexShrink: 0 }}><Icon name="✨" size={20} color="#fff" /></View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={{ display: 'block', fontSize: '16px', fontWeight: 800, color: '#fff' }}>{assistantConfig.plannerName || '小嘉 | 健康规划师'}</Text>
-              <Text style={{ display: 'block', fontSize: '11px', lineHeight: '17px', color: 'rgba(255,255,255,0.84)', marginTop: '3px' }}>{assistantConfig.plannerCardSubtitle || '承接复查提醒并协助办理'}</Text>
+              <Text style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden', fontSize: '11px', lineHeight: '17px', maxHeight: '34px', color: 'rgba(255,255,255,0.84)', marginTop: '3px' }}>{assistantConfig.plannerCardSubtitle || '承接复查提醒并协助办理'}</Text>
             </View>
             <Text style={{ position: 'relative', color: '#fff', fontSize: '20px', marginLeft: '8px' }}>›</Text>
           </View>
@@ -233,7 +233,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
               ? '仅对年度会员开放，开通后为您配置专属服务团队'
               : conv.last?.content || conv.last?.title || (conv.member ? `已配置：${conv.member.name}` : '暂无消息');
             return (
-                <View key={conv.key} onClick={() => conv.kind === 'role' && openConv(conv)} style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%', minWidth: 0, padding: '13px 14px', boxSizing: 'border-box', backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${unassigned ? colors.border : `${conv.color}30`}`, boxShadow: shadow.xs }}>
+                <View key={conv.key} onClick={() => conv.kind === 'role' && openConv(conv)} style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%', minWidth: 0, height: '92px', overflow: 'hidden', padding: '12px 14px', boxSizing: 'border-box', backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${unassigned ? colors.border : `${conv.color}30`}`, boxShadow: shadow.xs }}>
                   <View style={{
                     position: 'relative', width: '44px', height: '44px', borderRadius: '14px', marginRight: '12px',
                     backgroundColor: unassigned ? colors.border : conv.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
@@ -250,7 +250,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
                       <Text style={{ fontSize: '14px', fontWeight: 750, color: unassigned ? colors.textMuted : colors.textPrimary }}>{conv.member?.name || conv.label}</Text>
                       {!!conv.member?.name && <Text style={{ fontSize: '10px', color: conv.color, backgroundColor: `${conv.color}14`, borderRadius: `${radius.full}px`, padding: '2px 6px' }}>{conv.member.role || conv.label}</Text>}
                     </View>
-                    <Text style={{ display: 'block', marginTop: '5px', fontSize: '11px', color: colors.textMuted, lineHeight: '16px' }} numberOfLines={2}>{conv.member?.name ? (conv.last?.content || conv.last?.title || '已加入您的服务团队，可在这里查看沟通与服务消息') : preview}</Text>
+                    <Text style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden', marginTop: '5px', fontSize: '11px', color: colors.textMuted, lineHeight: '16px', maxHeight: '32px', wordBreak: 'break-all' }}>{conv.member?.name ? (conv.last?.content || conv.last?.title || '已加入您的服务团队，可在这里查看沟通与服务消息') : preview}</Text>
                   </View>
                   {conv.kind === 'role' && !unassigned && <Text style={{ fontSize: '18px', color: colors.textMuted, marginLeft: '8px' }}>›</Text>}
                 </View>
@@ -265,7 +265,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
               { label: '每日关怀', icon: '💜', color: '#8A4AC7', count: careMessages.filter((m) => m.unread).length, tab: '每日关怀' },
               { label: '系统通知', icon: '🔔', color: colors.primary, count: systemMessages.filter((m) => m.unread).length, tab: '系统通知' },
             ].map((item) => (
-              <View key={item.label} onClick={() => { setNotifTab(item.tab); setShowNotif(true); }} style={{ position: 'relative', flex: 1, width: 0, minWidth: 0, minHeight: '96px', padding: '13px 5px 11px', boxSizing: 'border-box', textAlign: 'center', backgroundColor: '#fff', borderRadius: `${radius.md}px`, boxShadow: shadow.xs }}>
+              <View key={item.label} onClick={() => { setNotifTab(item.tab); setShowNotif(true); }} style={{ position: 'relative', flex: 1, width: 0, minWidth: 0, height: '92px', overflow: 'hidden', padding: '11px 5px 9px', boxSizing: 'border-box', textAlign: 'center', backgroundColor: '#fff', borderRadius: `${radius.md}px`, boxShadow: shadow.xs }}>
                 <View style={{ width: '34px', height: '34px', borderRadius: '11px', margin: '0 auto 7px', backgroundColor: `${item.color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={item.icon} size={16} color={item.color} /></View>
                 <Text style={{ fontSize: '12px', fontWeight: 650, color: colors.textPrimary }}>{item.label}</Text>
                 {item.count > 0 && <View style={{ position: 'absolute', top: '7px', right: '12px', minWidth: '17px', height: '17px', borderRadius: '9px', padding: '0 3px', backgroundColor: colors.danger, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#fff', fontSize: '9px', fontWeight: 700 }}>{item.count > 99 ? '99+' : item.count}</Text></View>}
