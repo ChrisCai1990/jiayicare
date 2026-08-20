@@ -10880,19 +10880,23 @@ function formatRecordValue(r) {
 // ── 聊天对话弹窗 ──────────────────────────────────────────────
 function SendMessageModal({ patientId, patientName, onClose }) {
   const { staff } = useStaff()
+  const chatRole = staff?.role === 'familyDoctor' ? 'doctor' : staff?.role === 'nutritionist' ? 'nutritionist' : 'manager'
   const toast = useToast()
   const [msgs, setMsgs] = useState([])
   const [loading, setLoading] = useState(true)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [humanActive, setHumanActive] = useState(false)
+  const [switchingMode, setSwitchingMode] = useState(false)
   const scrollRef = useRef(null)
   const msgCountRef = useRef(0) // 上次渲染的消息条数，用于判断是否真的有新消息（而不是轮询刷新了同样内容）
   const isNearBottomRef = useRef(true) // 用户是否停留在底部附近；往上翻看历史时轮询不应打断
 
   const loadThread = async () => {
     try {
-      const res = await staffAPI.getChatThread(patientId)
+      const res = await staffAPI.getChatThread(patientId, chatRole)
       setMsgs(res.data || [])
+      setHumanActive(!!res.humanActive)
       setTimeout(() => scrollRef.current?.scrollTo({ top: 99999, behavior: 'auto' }), 80)
     } catch {}
     finally { setLoading(false) }
@@ -10904,8 +10908,9 @@ function SendMessageModal({ patientId, patientName, onClose }) {
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
-        const res = await staffAPI.getChatThread(patientId)
+        const res = await staffAPI.getChatThread(patientId, chatRole)
         setMsgs(res.data || [])
+        setHumanActive(!!res.humanActive)
       } catch {}
     }, 3000)
     return () => clearInterval(interval)
@@ -10932,6 +10937,7 @@ function SendMessageModal({ patientId, patientName, onClose }) {
     setSending(true)
     try {
       const res = await staffAPI.replyChatMessage(patientId, input.trim())
+      setHumanActive(true)
       setInput('')
       isNearBottomRef.current = true // 自己发消息后，无论之前翻到哪，都应该跟到底部
       if (res.data) setMsgs(prev => [...prev, res.data])
@@ -10941,6 +10947,17 @@ function SendMessageModal({ patientId, patientName, onClose }) {
   }
 
   const handleKey = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }
+
+  const toggleHumanMode = async () => {
+    if (switchingMode) return
+    setSwitchingMode(true)
+    try {
+      const res = await staffAPI.setChatHumanActive(patientId, !humanActive, chatRole)
+      setHumanActive(!!res.humanActive)
+      toast(res.humanActive ? '已接手，AI助理暂停回复' : '已退出接手，AI助理恢复承接')
+    } catch (err) { toast(err.message || '切换失败') }
+    finally { setSwitchingMode(false) }
+  }
 
   const fmtTime = (t) => new Date(t).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
   const fmtDateDivider = (t) => {
@@ -10966,7 +10983,13 @@ function SendMessageModal({ patientId, patientName, onClose }) {
       <div className="modal" style={{ maxWidth: 520, height: '70vh', display: 'flex', flexDirection: 'column', padding: 0 }}>
         {/* 顶栏 */}
         <div className="modal-header" style={{ borderBottom: '1px solid #E0D9CE', flexShrink: 0 }}>
-          <h3 className="modal-title">与 {patientName} 对话</h3>
+          <div>
+            <h3 className="modal-title">与 {patientName} 对话</h3>
+            <div style={{ fontSize: 11, color: humanActive ? '#D97706' : '#22A06B', marginTop: 3 }}>{humanActive ? '● 人工已接手，AI静默' : '● AI助理承接中'}</div>
+          </div>
+          <button className="btn btn-sm" onClick={toggleHumanMode} disabled={switchingMode} style={{ marginLeft: 'auto', marginRight: 8 }}>
+            {switchingMode ? '切换中…' : humanActive ? '退出接手' : '人工接手'}
+          </button>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 

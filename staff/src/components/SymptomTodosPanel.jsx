@@ -11,12 +11,12 @@ export default function SymptomTodosPanel() {
 
   useEffect(() => {
     staffAPI.getAiTodos()
-      .then(r => setTodos((r.data || []).filter(t => t.type === 'symptom_review')))
+      .then(r => setTodos((r.data || []).filter(t => ['symptom_verify', 'symptom_review'].includes(t.type))))
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
 
-  if (!['familyDoctor', 'superadmin'].includes(staff?.role) || loading) return null
+  if (!['healthManager', 'familyDoctor', 'superadmin'].includes(staff?.role) || loading) return null
 
   const resolve = async (e, todo) => {
     e.stopPropagation()
@@ -32,7 +32,7 @@ export default function SymptomTodosPanel() {
     <div className="card" style={{ marginBottom: 20, border: todos.length ? '1.5px solid #DC354550' : undefined }}>
       <div className="card-header">
         <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span>🩺 不适主诉待处理</span>
+          <span>🩺 {staff?.role === 'healthManager' ? '不适主诉待核实' : '不适主诉待处理'}</span>
           {todos.length > 0 && <span style={{ fontSize: 12, color: '#fff', background: '#DC3545', borderRadius: 99, padding: '2px 8px' }}>{todos.length}</span>}
         </div>
       </div>
@@ -46,7 +46,8 @@ export default function SymptomTodosPanel() {
               <div style={{ fontSize: 14, fontWeight: 700, color: '#1A2B24' }}>{todo.patientName}</div>
               <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>{todo.summary || '客户不适主诉待处理'}</div>
             </div>
-            <button className="btn btn-primary btn-sm" onClick={e => resolve(e, todo)}>处理</button>
+            {todo.type === 'symptom_review' && <button className="btn btn-primary btn-sm" onClick={e => resolve(e, todo)}>处理</button>}
+            {todo.type === 'symptom_verify' && <button className="btn btn-primary btn-sm" onClick={e => { e.stopPropagation(); nav(todo.link) }}>立即核实</button>}
             <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); nav(todo.link) }}>查看档案</button>
           </div>
         ))}

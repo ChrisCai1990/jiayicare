@@ -32,7 +32,6 @@ export default function ChatPage() {
   const [nutritionInput, setNutritionInput] = useState('');
   const [weightInput, setWeightInput] = useState('');
   const [foodImage, setFoodImage] = useState(null);
-  const [plannerScrollTop, setPlannerScrollTop] = useState(999998);
   const historyUserRef = useRef('');
 
   useEffect(() => {
@@ -73,20 +72,6 @@ export default function ChatPage() {
     if (requestedView === 'team') setView('team');
     Taro.removeStorageSync('healthHubView');
   });
-
-  // 微信真机必须让 scroll-view 自身形成固定的可滚动区域。消息布局完成后用
-  // 两个不同但足够大的有限值交替更新 scrollTop，避免同值更新被忽略，也避免
-  // Date.now() 超出小程序滚动属性的可靠数值范围。
-  useEffect(() => {
-    if (view !== 'ai') return undefined;
-    const jumpToLatest = () => setPlannerScrollTop((value) => (value === 999999 ? 999998 : 999999));
-    const layoutTimer = setTimeout(jumpToLatest, 80);
-    const settleTimer = setTimeout(jumpToLatest, 420);
-    return () => {
-      clearTimeout(layoutTimer);
-      clearTimeout(settleTimer);
-    };
-  }, [view, messages.length, sending]);
 
   const send = async () => {
     const text = input.trim();
@@ -134,7 +119,7 @@ export default function ChatPage() {
     setNutritionInput(''); setWeightInput(''); setFoodImage(null); setSending(true);
     try {
       const res = await chatAPI.analyzeNutrition({
-        text, weight: weight || null, image: currentImage?.data || '', mimeType: currentImage?.mimeType || 'image/jpeg',
+        text, weight: weight || null, image: currentImage?.data || '', mimeType: currentImage?.mimeType || 'image/jpeg', saveRecord: true,
       });
       setNutritionMessages((prev) => [...prev, { role: 'assistant', content: res?.data?.content || '已完成初步分析。' }]);
     } catch (err) {
@@ -173,7 +158,8 @@ export default function ChatPage() {
       <ScrollView
         scrollY
         enableFlex
-        scrollTop={plannerScrollTop}
+        scrollIntoView={`planner-bottom-${messages.length}-${sending ? 1 : 0}`}
+        scrollAnchoring
         style={{ flex: 1, height: 0, minHeight: 0, padding: `${spacing.md}px`, boxSizing: 'border-box' }}
       >
         {messages.map((m, i) => (
@@ -191,7 +177,7 @@ export default function ChatPage() {
           </View>
         ))}
         {sending && <Text style={{ fontSize: '12px', color: colors.textMuted }}>正在梳理您的需求...</Text>}
-        <View style={{ height: '1px' }} />
+        <View id={`planner-bottom-${messages.length}-${sending ? 1 : 0}`} style={{ height: '1px' }} />
       </ScrollView>
 
       <View style={{
@@ -204,6 +190,9 @@ export default function ChatPage() {
           value={input}
           onInput={(e) => setInput(e.detail.value)}
           autoHeight
+          fixed
+          adjustPosition={false}
+          cursorSpacing={12}
           maxlength={500}
           confirmType="send"
           onConfirm={send}
@@ -254,7 +243,7 @@ export default function ChatPage() {
             </View>
           </View>
           <View style={{ display: 'flex', alignItems: 'flex-end', gap: '8px' }}>
-            <Textarea value={nutritionInput} onInput={(e) => setNutritionInput(e.detail.value)} placeholder="描述食物、份量或您的目标..." autoHeight maxlength={500} style={{ flex: 1, minHeight: '44px', maxHeight: '100px', boxSizing: 'border-box', backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: '10px 12px', fontSize: '14px' }} />
+            <Textarea value={nutritionInput} onInput={(e) => setNutritionInput(e.detail.value)} placeholder="描述食物、份量或您的目标..." autoHeight fixed adjustPosition={false} cursorSpacing={12} maxlength={500} style={{ flex: 1, minHeight: '44px', maxHeight: '100px', boxSizing: 'border-box', backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: '10px 12px', fontSize: '14px' }} />
             <View onClick={sendNutrition} style={{ padding: '10px 16px', borderRadius: `${radius.full}px`, backgroundColor: (nutritionInput.trim() || weightInput.trim() || foodImage) && !sending ? '#059669' : colors.border }}><Text style={{ color: '#fff', fontSize: '14px', fontWeight: 600 }}>分析</Text></View>
           </View>
           <Text style={{ fontSize: '10px', color: colors.textMuted, display: 'block', marginTop: '6px' }}>照片识别与热量仅为估算，不替代医生或注册营养师意见</Text>

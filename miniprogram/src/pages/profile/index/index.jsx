@@ -6,7 +6,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { ordersAPI, userAPI } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
-import { getOrderCounts } from '../../../utils/orderStatus';
+import { getOrderBadgeCounts } from '../../../utils/orderStatus';
 
 const PACKAGE_LABELS = {
   pkg_1y: '年度会员', pkg_6m: '半年会员', pkg_3m: '季度会员',
@@ -59,7 +59,7 @@ export default function ProfilePage() {
 
   const loadOrderCounts = () => {
     ordersAPI.list().then((res) => {
-      if (res.success) setOrderCounts(getOrderCounts(res.data || []));
+      if (res.success) setOrderCounts(getOrderBadgeCounts(res.data || []));
     }).catch(() => {});
   };
 

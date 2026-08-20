@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { View, Text, Textarea, ScrollView, Image } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
-import { messagesAPI, pushRecordsAPI, questionnaireAPI, servicesAPI, userAPI, chatAPI } from '../../services/api';
+import { messagesAPI, pushRecordsAPI, questionnaireAPI, servicesAPI, userAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
@@ -226,7 +226,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
             </View>
             {assignedTeamCount > 0 && <View style={{ padding: '4px 8px', borderRadius: `${radius.full}px`, backgroundColor: '#E8F5EF' }}><Text style={{ color: colors.primary, fontSize: '10px', fontWeight: 700 }}>服务中</Text></View>}
           </View>
-          <View style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: `${spacing.sm}px`, marginBottom: `${spacing.lg}px` }}>
+          <View style={{ display: 'flex', flexDirection: 'column', gap: `${spacing.sm}px`, margin: `0 ${spacing.xs}px ${spacing.lg}px` }}>
           {[...roleConvs, ...extraTeamMembers].map((conv) => {
             const unassigned = conv.kind === 'role' && conv.assigned === false;
             const preview = unassigned
@@ -583,8 +583,8 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [humanActive, setHumanActive] = useState(false);
   const [foodImages, setFoodImages] = useState([]);
-  const [scrollTop, setScrollTop] = useState(0);
   const meta = ROLE_META[role] || ROLE_META.manager;
   const aiAssistantName = assistantName(member, meta.label);
   const pollRef = useRef(null);
@@ -593,7 +593,7 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
     try {
       const res = await messagesAPI.getThread(role);
       setMsgs(res.data || []);
-      setTimeout(() => setScrollTop((value) => value + 100000), 80);
+      setHumanActive(!!res.humanActive);
     } catch {}
     setLoading(false);
   }, [role]);
@@ -618,24 +618,8 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
       const res = await messagesAPI.send(role, text || '图片记录', extra);
       if (res?.data) setMsgs((prev) => (prev.some((m) => m._id === res.data._id) ? prev : [...prev, res.data]));
       setFoodImages([]);
-      if (role === 'nutritionist') {
-        try {
-          const inputs = foodImages.length ? foodImages : [null];
-          const analyses = [];
-          for (let i = 0; i < inputs.length; i += 1) {
-            const imageItem = inputs[i];
-            const analysis = await chatAPI.analyzeNutrition({
-              text: i === 0 ? text : `这是本次记录的第${i + 1}张图片，请结合前后图片分析`,
-              image: imageItem?.data || '', mimeType: imageItem?.mimeType || 'image/jpeg',
-            });
-            const reply = analysis?.data?.content || analysis?.data?.reply || '';
-            if (reply) analyses.push(imageItem ? `图片${i + 1}：${reply}` : reply);
-          }
-          if (analyses.length) await messagesAPI.submitNutritionAnalysis(analyses.join('\n\n'));
-        } catch {
-          Taro.showToast({ title: '消息已发送，AI分析稍后重试', icon: 'none' });
-        }
-      }
+      // 服务团队频道只负责沟通，不把每轮问答自动写成“日常健康打卡”。
+      // 用户需要形成饮食记录时，应从专门的营养记录入口明确提交餐食/照片。
       setTimeout(loadThread, 500);
     } catch {
       setInput(text);
@@ -665,12 +649,12 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
         <View onClick={onClose} style={{ minWidth: '64px', padding: '8px 0', marginRight: '8px' }}><Text style={{ fontSize: '14px', color: colors.primary, fontWeight: 600 }}>‹ 返回</Text></View>
         <View style={{ flex: 1, textAlign: 'center' }}>
           <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{meta.label}</Text>
-          <Text style={{ fontSize: '11px', color: onlineStatus.mode === 'human' ? '#D97706' : colors.success }}>● {onlineStatus.label}</Text>
+          <Text style={{ fontSize: '11px', color: humanActive ? '#D97706' : colors.success }}>● {humanActive ? '人工服务中' : 'AI在线'}</Text>
         </View>
         <View style={{ width: '20px' }} />
       </View>
 
-      <ScrollView scrollY scrollTop={scrollTop} scrollWithAnimation style={{ flex: 1, height: 0, minHeight: 0, padding: `${spacing.lg}px`, boxSizing: 'border-box' }}>
+      <ScrollView scrollY scrollIntoView={`thread-bottom-${msgs.length}`} scrollAnchoring scrollWithAnimation style={{ flex: 1, height: 0, minHeight: 0, padding: `${spacing.lg}px`, boxSizing: 'border-box' }}>
         {loading ? (
           <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
         ) : msgs.length === 0 ? (
@@ -684,10 +668,14 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
         ) : (
           msgs.map((m, i) => {
             const isMine = m.type === 'user';
-            const showTime = i === 0 || (new Date(m.createdAt) - new Date(msgs[i - 1].createdAt)) > 300000;
+            const currentDate = new Date(m.createdAt);
+            const previousDate = i > 0 ? new Date(msgs[i - 1].createdAt) : null;
+            const showDate = !previousDate || currentDate.toDateString() !== previousDate.toDateString();
+            const dateLabel = currentDate.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
+            const timeLabel = currentDate.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
             return (
               <View key={m._id} id={`thread-msg-${m._id}`}>
-                {showTime && <Text style={{ display: 'block', textAlign: 'center', fontSize: '11px', color: colors.textMuted, margin: '12px 0' }}>{`${String(new Date(m.createdAt).getHours()).padStart(2, '0')}:${String(new Date(m.createdAt).getMinutes()).padStart(2, '0')}`}</Text>}
+                {showDate && <Text style={{ display: 'block', textAlign: 'center', fontSize: '11px', color: colors.textMuted, margin: '14px 0 6px' }}>{dateLabel}</Text>}
                 <View style={{ display: 'flex', width: '100%', minWidth: 0, justifyContent: isMine ? 'flex-end' : 'flex-start', marginBottom: '10px', boxSizing: 'border-box' }}>
                   <View style={{
                     maxWidth: '78%', minWidth: 0, padding: '10px 14px', borderRadius: `${radius.md}px`, boxSizing: 'border-box', overflow: 'hidden',
@@ -699,6 +687,7 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
                         {m.isAI ? aiAssistantName : (normalizeRoleSender(m.sender) || meta.label)}
                       </Text>
                     )}
+                    <Text style={{ display: 'block', textAlign: isMine ? 'right' : 'left', fontSize: '9px', color: isMine ? 'rgba(255,255,255,0.72)' : colors.textMuted, marginBottom: '3px' }}>{timeLabel}</Text>
                     <Text style={{ display: 'block', width: '100%', fontSize: '14px', color: isMine ? '#fff' : colors.textPrimary, lineHeight: '20px', whiteSpace: 'pre-wrap', wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{visibleMessageContent(m)}</Text>
                   </View>
                 </View>
@@ -706,7 +695,7 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
             );
           })
         )}
-        <View id="thread-bottom" style={{ height: '24px' }} />
+        <View id={`thread-bottom-${msgs.length}`} style={{ height: '24px' }} />
       </ScrollView>
 
       {foodImages.length > 0 && (
@@ -720,6 +709,9 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
           placeholder={`发消息给${meta.label}…`}
           value={input}
           onInput={(e) => setInput(e.detail.value)}
+          fixed
+          adjustPosition={false}
+          cursorSpacing={12}
           maxlength={500}
           autoHeight
         />

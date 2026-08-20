@@ -28,6 +28,18 @@ export function getOrderCounts(orders = []) {
   }, { all: 0, payment: 0, service: 0, progress: 0, completed: 0, afterSale: 0 });
 }
 
+// “退款/售后”列表保留历史记录，但个人页红点只表示仍需处理的申请。
+export function getOrderBadgeCounts(orders = []) {
+  const counts = getOrderCounts(orders);
+  counts.afterSale = orders.filter((order) => {
+    if (['refunded', 'partially_refunded', 'closed'].includes(order.tradeStatus)
+      || ['refunded', 'partially_refunded'].includes(order.refundStatus)) return false;
+    return order.tradeStatus === 'refund_pending'
+      || ['requested', 'processing'].includes(order.refundStatus);
+  }).length;
+  return counts;
+}
+
 export function formatOrderTime(value) {
   if (!value) return '';
   const date = new Date(value);

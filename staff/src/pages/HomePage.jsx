@@ -55,8 +55,10 @@ export default function HomePage() {
         setExpiringPatients(notifRes.value.data?.expiringPatients || [])
       }
       if (msgRes.status === 'fulfilled') {
-        setUnreadMsgCount(msgRes.value.unreadCount ?? msgRes.value.data?.filter(m => m.staffUnread)?.length ?? 0)
-        setRecentMessages((msgRes.value.data || []).filter(m => m.staffUnread).slice(0, 5))
+        const messages = msgRes.value.data || []
+        const todayKey = new Date().toDateString()
+        setUnreadMsgCount(msgRes.value.unreadCount ?? messages.filter(m => m.staffUnread).length ?? 0)
+        setRecentMessages(messages.filter(m => new Date(m.createdAt).toDateString() === todayKey).slice(0, 5))
       }
     })
   }, [])
@@ -77,56 +79,6 @@ export default function HomePage() {
           ＋ 新增会员
         </button>
       </div>
-
-      {/* 消息通知：放最上面，确保医护第一时间看到未读留言+待处理转介 */}
-      {(recentMessages.length > 0 || pendingReferralCount > 0) && (
-        <div className="card" style={{ marginBottom: 20 }}>
-          <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span>🔔 消息通知</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#DC3545', background: '#DC354518', padding: '2px 8px', borderRadius: 99 }}>
-                {unreadMsgCount + pendingReferralCount}
-              </span>
-            </div>
-            <button className="btn btn-secondary btn-sm" onClick={() => nav('/notifications')}>查看全部</button>
-          </div>
-          <div className="card-body" style={{ padding: '8px 20px' }}>
-            {pendingReferralCount > 0 && (
-              <div
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '10px 0',
-                  borderBottom: recentMessages.length > 0 ? '1px solid #f0ede8' : 'none',
-                  cursor: 'pointer',
-                }}
-                onClick={() => nav('/notifications')}>
-                <span style={{ fontSize: 14, color: '#1A2B24' }}>🔀 待处理转介 + 未读回复</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#D97706', background: '#D9780618', padding: '2px 8px', borderRadius: 99 }}>
-                  {pendingReferralCount}
-                </span>
-              </div>
-            )}
-            {recentMessages.map((m, i) => (
-              <div key={m._id}
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '10px 0',
-                  borderBottom: i < recentMessages.length - 1 ? '1px solid #f0ede8' : 'none',
-                  cursor: 'pointer',
-                }}
-                onClick={() => nav('/notifications')}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-                  <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24', minWidth: 60, flexShrink: 0 }}>{m.patientName}</span>
-                  <span style={{ fontSize: 13, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.content}</span>
-                </div>
-                <span style={{ fontSize: 12, color: '#aaa', flexShrink: 0, marginLeft: 12 }}>
-                  {new Date(m.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* 待处理服务预约：用户下单商城服务后生成，单独摘出来避免被淹没在普通随访任务列表里 */}
       {pendingOrders.length > 0 && (
@@ -272,6 +224,13 @@ export default function HomePage() {
         </div>
       </div>
 
+      <MessageNotificationCard
+        messages={recentMessages}
+        unreadCount={unreadMsgCount}
+        pendingReferralCount={pendingReferralCount}
+        onOpen={() => nav('/notifications', { state: { tab: 'userMsgs' } })}
+      />
+
       {/* 体检方案回传进度：避免逐个客户查询漏检 */}
       {checkupProgress.length > 0 && (
         <div className="card" style={{ marginBottom: 20 }}>
@@ -339,6 +298,33 @@ export default function HomePage() {
             <div style={{ color: '#aaa', textAlign: 'center', padding: '20px 0', fontSize: 14 }}>暂无慢病数据</div>
           )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+function MessageNotificationCard({ messages, unreadCount, pendingReferralCount, onOpen }) {
+  return (
+    <div className="card" style={{ marginBottom: 20 }}>
+      <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span>🔔 消息通知</span>
+          {(unreadCount + pendingReferralCount) > 0 && <span style={{ fontSize: 12, fontWeight: 600, color: '#DC3545', background: '#DC354518', padding: '2px 8px', borderRadius: 99 }}>{unreadCount + pendingReferralCount}</span>}
+        </div>
+        <button className="btn btn-secondary btn-sm" onClick={onOpen}>查看全部</button>
+      </div>
+      <div className="card-body" style={{ padding: messages.length || pendingReferralCount ? '8px 20px' : '20px' }}>
+        {pendingReferralCount > 0 && <div onClick={onOpen} style={{ padding: '10px 0', cursor: 'pointer', borderBottom: messages.length ? '1px solid #f0ede8' : 'none' }}>🔀 待处理转介与未读回复（{pendingReferralCount}）</div>}
+        {messages.map((m, i) => (
+          <div key={m._id} onClick={onOpen} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: i < messages.length - 1 ? '1px solid #f0ede8' : 'none', cursor: 'pointer' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+              <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24', minWidth: 60, flexShrink: 0 }}>{m.patientName}</span>
+              <span style={{ fontSize: 13, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.content}</span>
+            </div>
+            <span style={{ fontSize: 12, color: '#aaa', flexShrink: 0, marginLeft: 12 }}>{new Date(m.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
+          </div>
+        ))}
+        {!messages.length && !pendingReferralCount && <div style={{ color: '#aaa', textAlign: 'center', fontSize: 14 }}>今日暂无客户沟通</div>}
       </div>
     </div>
   )

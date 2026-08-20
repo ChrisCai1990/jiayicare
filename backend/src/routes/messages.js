@@ -1,6 +1,7 @@
 const express = require('express');
 const auth = require('../middleware/auth');
 const Message = require('../models/Message');
+const ChatConversationState = require('../models/ChatConversationState');
 const PushRecord = require('../models/PushRecord');
 const { QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
 const { uploadBase64 } = require('../utils/oss');
@@ -39,14 +40,17 @@ router.get('/thread/:role', auth, async (req, res) => {
   const VALID = ['doctor', 'nutritionist', 'manager'];
   if (!VALID.includes(role)) return res.status(400).json({ success: false, message: '无效角色' });
   const conversationId = `${req.user._id}_${role}`;
-  const messages = await Message.find({
-    conversationId,
-    recalled: { $ne: true },
-    $or: [{ aiGenerated: { $ne: true } }, { aiReviewStatus: { $in: ['', 'approved'] } }],
-  }).sort({ createdAt: 1 }).limit(100);
+  const [messages, state] = await Promise.all([
+    Message.find({
+      conversationId,
+      recalled: { $ne: true },
+      $or: [{ aiGenerated: { $ne: true } }, { aiReviewStatus: { $in: ['', 'approved'] } }],
+    }).sort({ createdAt: 1 }).limit(100),
+    ChatConversationState.findOne({ conversationId }).select('humanActive takenOverAt').lean(),
+  ]);
   // 标记所有未读为已读
   await Message.updateMany({ conversationId, user: req.user._id, type: { $ne: 'user' }, unread: true }, { unread: false, readAt: new Date() });
-  res.json({ success: true, data: messages, conversationId });
+  res.json({ success: true, data: messages, conversationId, humanActive: !!state?.humanActive, takenOverAt: state?.takenOverAt || null });
 });
 
 router.post('/nutrition-analysis', auth, async (req, res) => {

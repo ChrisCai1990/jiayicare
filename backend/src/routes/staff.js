@@ -5055,13 +5055,44 @@ router.get('/user-messages/:userId/thread', staffAuth, async (req, res) => {
       return res.status(403).json({ success: false, message: '无权查看该频道的对话' });
     }
     const conversationId = `${req.params.userId}_${role}`;
-    const messages = await Message.find({ conversationId, recalled: { $ne: true } }).sort({ createdAt: 1 }).limit(100);
+    const ChatConversationState = require('../models/ChatConversationState');
+    const [messages, state] = await Promise.all([
+      Message.find({ conversationId, recalled: { $ne: true } }).sort({ createdAt: 1 }).limit(100),
+      ChatConversationState.findOne({ conversationId }).select('humanActive takenOverAt takenOverBy').lean(),
+    ]);
     // 标记该会话所有用户消息为医护已读
     await Message.updateMany(
       { conversationId, type: 'user', staffReadAt: null },
       { staffReadAt: new Date() }
     );
-    res.json({ success: true, data: messages, conversationId });
+    res.json({ success: true, data: messages, conversationId, humanActive: !!state?.humanActive, takenOverAt: state?.takenOverAt || null });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// 医护接手/退出只影响自己的角色频道；人工接手期间 AI 助理保持静默。
+router.patch('/user-messages/:userId/ai-mode', staffAuth, async (req, res) => {
+  try {
+    const { role = 'manager', humanActive } = req.body || {};
+    if (!assertRoleMatchesChannel(req.staff.role, role)) {
+      return res.status(403).json({ success: false, message: '无权操作该频道的对话' });
+    }
+    if (typeof humanActive !== 'boolean') return res.status(400).json({ success: false, message: '状态无效' });
+    const ChatConversationState = require('../models/ChatConversationState');
+    const conversationId = `${req.params.userId}_${role}`;
+    const now = new Date();
+    const state = await ChatConversationState.findOneAndUpdate(
+      { conversationId },
+      {
+        $set: {
+          user: req.params.userId, role, humanActive,
+          takenOverBy: humanActive ? req.staff._id : null,
+          takenOverAt: humanActive ? now : null,
+          releasedAt: humanActive ? null : now,
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    res.json({ success: true, humanActive: state.humanActive, takenOverAt: state.takenOverAt });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -5147,6 +5178,14 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
     const roleKey = msgType === 'doctor' ? 'doctor' : msgType === 'nutritionist' ? 'nutritionist' : 'manager';
     const conversationId = `${req.params.userId}_${roleKey}`;
     const senderLabel = staff.title ? `${staff.name}（${staff.title}）` : staff.name;
+
+    // 发送人工回复即视为接手；必须先落状态，阻止正在生成中的 AI 回复继续入库。
+    const ChatConversationState = require('../models/ChatConversationState');
+    await ChatConversationState.findOneAndUpdate(
+      { conversationId },
+      { $set: { user: req.params.userId, role: roleKey, humanActive: true, takenOverBy: staff._id, takenOverAt: new Date(), releasedAt: null } },
+      { upsert: true, setDefaultsOnInsert: true }
+    );
 
     const imageUrls = [];
     for (const item of images.slice(0, 9)) {

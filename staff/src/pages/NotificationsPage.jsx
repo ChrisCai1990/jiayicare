@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast } from '../App'
 
@@ -10,10 +10,11 @@ const REFERRAL_STATUS_COLOR = { pending:'#D97706', accepted:'#0077B6', completed
 
 export default function NotificationsPage() {
   const nav = useNavigate()
+  const location = useLocation()
   const toast = useToast()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState('referrals')
+  const [tab, setTab] = useState(location.state?.tab || 'referrals')
   const [respondModal, setRespondModal] = useState(null)
   const [detailModal, setDetailModal] = useState(null)   // push 消息详情
   const [sentReferrals, setSentReferrals] = useState([])

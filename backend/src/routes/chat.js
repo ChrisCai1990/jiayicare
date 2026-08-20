@@ -383,7 +383,7 @@ router.post('/', auth, async (req, res) => {
 // POST /api/chat/nutrition — AI营养师：支持饮食文字、体重和单张饮食照片。
 // 图片只做食物与份量的保守估算；确定性体重数值同时写入健康记录，便于后续趋势分析。
 router.post('/nutrition', auth, async (req, res) => {
-  const { text = '', weight, image = '', mimeType = 'image/jpeg', mealType = '', recordId = '' } = req.body || {};
+  const { text = '', weight, image = '', mimeType = 'image/jpeg', mealType = '', recordId = '', saveRecord = false } = req.body || {};
   const cleanText = String(text || '').trim().slice(0, 1000);
   const numericWeight = weight === '' || weight === undefined || weight === null ? null : Number(weight);
   const hasImage = typeof image === 'string' && image.length > 0;
@@ -453,12 +453,12 @@ router.post('/nutrition', auth, async (req, res) => {
     }
 
     const records = [];
-    if (numericWeight !== null && existingRecord?.type === 'weight') {
+    if (saveRecord && numericWeight !== null && existingRecord?.type === 'weight') {
       existingRecord.extra = { ...(existingRecord.extra || {}), nutritionAnalysis: safeAnalysis };
       await existingRecord.save();
       records.push(existingRecord);
       await User.updateOne({ _id: req.user._id }, { $set: { weight: numericWeight } });
-    } else if (numericWeight !== null) {
+    } else if (saveRecord && numericWeight !== null) {
       records.push(await HealthRecord.create({
         user: req.user._id, category: 'metabolism', type: 'weight', label: '体重',
         value: String(numericWeight), unit: 'kg', status: 'normal', note: cleanText,
@@ -466,13 +466,13 @@ router.post('/nutrition', auth, async (req, res) => {
       }));
       await User.updateOne({ _id: req.user._id }, { $set: { weight: numericWeight } });
     }
-    if ((hasImage || cleanText) && existingRecord?.type === 'diet') {
+    if (saveRecord && (hasImage || cleanText) && existingRecord?.type === 'diet') {
       existingRecord.extra = { ...(existingRecord.extra || {}), imageUrl: imageUrl || existingRecord.extra?.imageUrl || '', mealType: mealType || existingRecord.extra?.mealType || '', nutritionAnalysis: safeAnalysis };
       existingRecord.imageUrl = imageUrl || existingRecord.imageUrl || '';
       existingRecord.status = safeAnalysis.riskFlags.length ? 'warning' : 'normal';
       await existingRecord.save();
       records.push(existingRecord);
-    } else if (hasImage || cleanText) {
+    } else if (saveRecord && (hasImage || cleanText)) {
       records.push(await HealthRecord.create({
         user: req.user._id, category: 'lifestyle', type: 'diet', label: '饮食记录',
         value: safeAnalysis.mealSummary || cleanText || '饮食照片', unit: '', note: cleanText,

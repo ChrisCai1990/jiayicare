@@ -467,6 +467,9 @@ export default function CheckinPage() {
               placeholder={`记录今天的${checkinModal.label}情况...`}
               value={checkinNote}
               onInput={(e) => setCheckinNote(e.detail.value)}
+              fixed
+              adjustPosition={false}
+              cursorSpacing={12}
               maxlength={1000}
               autoHeight
             />
@@ -536,6 +539,8 @@ export default function CheckinPage() {
                       placeholder={field.placeholder}
                       value={measureValues[field.key] || ''}
                       onInput={(e) => setMeasureValues((prev) => ({ ...prev, [field.key]: e.detail.value }))}
+                      adjustPosition={false}
+                      cursorSpacing={12}
                     />
                     <Text style={{ fontSize: '12px', color: colors.textMuted }}>{field.unit}</Text>
                   </View>
@@ -550,6 +555,9 @@ export default function CheckinPage() {
                 placeholder="如：血压偏高，昨晚熬夜了"
                 value={measureNote}
                 onInput={(e) => setMeasureNote(e.detail.value)}
+                fixed
+                adjustPosition={false}
+                cursorSpacing={12}
                 maxlength={1000}
                 autoHeight
               />
@@ -598,6 +606,9 @@ export default function CheckinPage() {
               placeholder="描述具体不适情况，如部位、持续时间等"
               value={symptomNote}
               onInput={(e) => setSymptomNote(e.detail.value)}
+              fixed
+              adjustPosition={false}
+              cursorSpacing={12}
               maxlength={1000}
               autoHeight
             />

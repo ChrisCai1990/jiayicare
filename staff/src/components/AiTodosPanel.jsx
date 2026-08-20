@@ -53,7 +53,7 @@ export default function AiTodosPanel() {
 
   useEffect(() => {
     staffAPI.getAiTodos()
-      .then(r => setTodos((r.data || []).filter(t => t.type !== 'symptom_review')))
+      .then(r => setTodos((r.data || []).filter(t => !['symptom_verify', 'symptom_review'].includes(t.type))))
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
