@@ -22,6 +22,7 @@ const TASK_CAT = {
   followup: '随访', medication: '用药', exercise: '运动', diet: '饮食',
   checkup: '复查', lifestyle: '生活', other: '其他',
 }
+const fmtExactTime = value => value ? new Date(value).toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false }) : '-'
 
 function SendMessageModal({ userId, onClose, onSent }) {
   const { admin } = useAdmin()
@@ -335,7 +336,7 @@ export default function PatientDetailPage() {
                 { label: '登录手机号', value: user.phone || '--' },
                 { label: '微信小程序身份', value: user.wechatMpOpenid ? '已绑定' : '未绑定' },
                 { label: '最近登录方式', value: LOGIN_METHOD[user.lastLoginMethod] || '--' },
-                { label: '最近登录时间', value: fmtTime(user.lastLoginAt) },
+                { label: '最近登录时间', value: fmtExactTime(user.lastLoginAt) },
                 { label: '累计登录次数', value: Number(user.loginCount || 0) },
                 { label: '累计登录时长', value: `${Math.floor(Number(user.totalLoginSeconds || 0) / 60)} 分钟` },
                 { label: '邀请人', value: user.invitedBy ? `${user.invitedBy.name || '未命名'}${user.invitedBy.phone ? `（${user.invitedBy.phone}）` : ''}` : '无邀请关系' },

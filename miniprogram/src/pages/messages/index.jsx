@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { View, Text, Textarea, ScrollView, Image } from '@tarojs/components';
+import { View, Text, Input, ScrollView, Image } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { messagesAPI, pushRecordsAPI, questionnaireAPI, servicesAPI, userAPI } from '../../services/api';
@@ -155,7 +155,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
     m.type === 'questionnaire' && m.questionnaireId && pendingQuestionnaireIds.has(String(m.questionnaireId))
   ));
   const careMessages = notifMessages.filter((m) => m.type === 'system' && /关怀|打卡|提醒/.test(`${m.title || ''}${m.content || ''}`));
-  const systemMessages = notifMessages.filter((m) => !questionnaireMessages.includes(m) && !careMessages.includes(m));
+  const systemMessages = notifMessages.filter((m) => !questionnaireMessages.includes(m));
 
   const roleConvs = ROLE_DEFS.map((r) => {
     const msgs = messages.filter((m) => m.type === r.key || (m.conversationId && String(m.conversationId).endsWith(`_${r.key}`)));
@@ -209,8 +209,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
         <Text style={{ fontSize: '13px', color: colors.textMuted, padding: `0 ${spacing.lg}px` }}>加载中...</Text>
       ) : (
         <View style={{ width: '100%', boxSizing: 'border-box', padding: `0 ${spacing.sm}px` }}>
-          <Text style={{ display: 'block', fontSize: '15px', fontWeight: 700, color: colors.textPrimary, margin: `0 ${spacing.xs}px ${spacing.sm}px` }}>{assistantConfig.teamName || '健康服务团队'} · {onlineStatus.label}</Text>
-          <View onClick={onOpenPlanner} style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', height: '92px', padding: '14px', boxSizing: 'border-box', marginBottom: `${spacing.md}px`, backgroundColor: colors.primary, borderRadius: `${radius.lg}px`, boxShadow: shadow.card }}>
+          <View onClick={onOpenPlanner} style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', height: '82px', padding: '12px 14px', boxSizing: 'border-box', marginBottom: `${spacing.md}px`, backgroundColor: colors.primary, borderRadius: `${radius.lg}px`, boxShadow: shadow.card }}>
             <View style={{ position: 'absolute', width: '100px', height: '100px', borderRadius: '50px', right: '-25px', top: '-35px', backgroundColor: 'rgba(255,255,255,0.08)' }} />
             <View style={{ width: '46px', height: '46px', borderRadius: '15px', backgroundColor: 'rgba(255,255,255,0.16)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '12px', flexShrink: 0 }}><Icon name="✨" size={20} color="#fff" /></View>
             <View style={{ flex: 1, minWidth: 0 }}>
@@ -232,7 +231,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
             const unassigned = conv.kind === 'role' && conv.assigned === false;
             const preview = unassigned
               ? '仅对年度会员开放，开通后为您配置专属服务团队'
-              : conv.last?.content || conv.last?.title || (conv.member ? `已配置：${conv.member.name}` : '暂无消息');
+              : visibleMessageContent(conv.last) || conv.last?.title || (conv.member ? `已配置：${conv.member.name}` : '暂无消息');
             return (
                 <View key={conv.key} onClick={() => conv.kind === 'role' && openConv(conv)} style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%', minWidth: 0, height: '92px', overflow: 'hidden', padding: '12px 14px', boxSizing: 'border-box', backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${unassigned ? colors.border : `${conv.color}30`}`, boxShadow: shadow.xs }}>
                   <View style={{
@@ -251,7 +250,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
                       <Text style={{ fontSize: '14px', fontWeight: 750, color: unassigned ? colors.textMuted : colors.textPrimary }}>{conv.member?.name || conv.label}</Text>
                       {!!conv.member?.name && <Text style={{ fontSize: '10px', color: conv.color, backgroundColor: `${conv.color}14`, borderRadius: `${radius.full}px`, padding: '2px 6px' }}>{conv.member.role || conv.label}</Text>}
                     </View>
-                    <Text style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden', marginTop: '5px', fontSize: '11px', color: colors.textMuted, lineHeight: '16px', maxHeight: '32px', wordBreak: 'break-all' }}>{conv.member?.name ? (conv.last?.content || conv.last?.title || '已加入您的服务团队，可在这里查看沟通与服务消息') : preview}</Text>
+                    <Text style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden', marginTop: '5px', fontSize: '11px', color: colors.textMuted, lineHeight: '16px', maxHeight: '32px', wordBreak: 'break-all' }}>{conv.member?.name ? (visibleMessageContent(conv.last) || conv.last?.title || '已加入您的服务团队，可在这里查看沟通与服务消息') : preview}</Text>
                   </View>
                   {conv.kind === 'role' && !unassigned && <Text style={{ fontSize: '18px', color: colors.textMuted, marginLeft: '8px' }}>›</Text>}
                 </View>
@@ -263,7 +262,6 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
           <View style={{ display: 'flex', width: '100%', gap: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>
             {[
               { label: '待填问卷', icon: '📝', color: '#0077B6', count: questionnaireMessages.length, tab: '待填问卷' },
-              { label: '每日关怀', icon: '💜', color: '#8A4AC7', count: careMessages.filter((m) => m.unread).length, tab: '每日关怀' },
               { label: '系统通知', icon: '🔔', color: colors.primary, count: systemMessages.filter((m) => m.unread).length, tab: '系统通知' },
             ].map((item) => (
               <View key={item.label} onClick={() => { setNotifTab(item.tab); setShowNotif(true); }} style={{ position: 'relative', flex: 1, width: 0, minWidth: 0, height: '92px', overflow: 'hidden', padding: '11px 5px 9px', boxSizing: 'border-box', textAlign: 'center', backgroundColor: '#fff', borderRadius: `${radius.md}px`, boxShadow: shadow.xs }}>
@@ -297,7 +295,6 @@ function NotifModal({ messages, tab, setTab, onClose, onPress }) {
   const { statusBarHeight } = useNavBar();
   const filtered = messages.filter((m) => {
     if (tab === '待填问卷') return m.type === 'questionnaire';
-    if (tab === '每日关怀') return m.type === 'system' && /关怀|打卡|提醒/.test(`${m.title || ''}${m.content || ''}`);
     if (tab === '系统通知') return !(m.type === 'questionnaire' || (m.type === 'system' && /关怀|打卡|提醒/.test(`${m.title || ''}${m.content || ''}`)));
     return true;
   });
@@ -309,7 +306,7 @@ function NotifModal({ messages, tab, setTab, onClose, onPress }) {
         <Text style={{ flex: 1, fontSize: '16px', fontWeight: 700, color: colors.textPrimary, textAlign: 'center', marginRight: '40px' }}>系统通知</Text>
       </View>
       <View style={{ display: 'flex', margin: `${spacing.sm}px ${spacing.lg}px`, backgroundColor: '#EEEAE3', borderRadius: `${radius.sm}px`, padding: '3px' }}>
-        {['全部', '待填问卷', '每日关怀', '系统通知'].map((t) => (
+        {['全部', '待填问卷', '系统通知'].map((t) => (
           <View key={t} onClick={() => setTab(t)} style={{ flex: 1, textAlign: 'center', padding: '7px 0', borderRadius: `${radius.xs}px`, backgroundColor: tab === t ? '#fff' : 'transparent' }}>
             <Text style={{ fontSize: '13px', color: tab === t ? colors.textPrimary : colors.textMuted, fontWeight: tab === t ? 600 : 500 }}>{t}</Text>
           </View>
@@ -587,6 +584,9 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
   const [humanActive, setHumanActive] = useState(false);
   const [foodImages, setFoodImages] = useState([]);
   const [recording, setRecording] = useState(false);
+  const [voiceMode, setVoiceMode] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const meta = ROLE_META[role] || ROLE_META.manager;
   const aiAssistantName = assistantName(member, meta.label);
   const pollRef = useRef(null);
@@ -757,25 +757,15 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
           {foodImages.map((img, index) => <View key={img.path} style={{ position: 'relative' }}><Image src={img.path} mode="aspectFill" style={{ width: '52px', height: '52px', borderRadius: '8px' }} /><Text onClick={() => setFoodImages((prev) => prev.filter((_, i) => i !== index))} style={{ position: 'absolute', right: 0, top: 0, color: '#fff', backgroundColor: colors.danger }}>×</Text></View>)}
         </View>
       )}
-      <View style={{ flexShrink: 0, padding: `${spacing.sm}px ${spacing.md}px`, paddingBottom: `calc(${spacing.sm}px + env(safe-area-inset-bottom))`, backgroundColor: '#fff', borderTop: `1px solid ${colors.border}` }}>
-        <View style={{ backgroundColor:colors.background, borderRadius:`${radius.md}px`, border:`1.5px solid ${colors.border}`, padding:'5px 8px' }}>
-        <Textarea
-          style={{ width:'100%', backgroundColor:'transparent', padding:'7px 8px', fontSize:'14px', minHeight:'40px', maxHeight:'92px', boxSizing:'border-box' }}
-          placeholder={`发消息给${meta.label}…`}
-          value={input}
-          onInput={(e) => setInput(e.detail.value)}
-          adjustPosition
-          cursorSpacing={88}
-          maxlength={500}
-          autoHeight
-        />
-        <View style={{ display:'flex', alignItems:'center', gap:'14px', padding:'2px 6px 4px' }}>
-          <Text onClick={chooseFoodImage} style={{ fontSize:'18px' }}>📷</Text>
-          <Text onTouchStart={startRecording} onTouchEnd={stopRecording} onTouchCancel={stopRecording} style={{ fontSize:'16px', color:recording ? colors.danger : colors.primary }}>{recording ? '● 松开发送' : '🎙️ 按住说话'}</Text>
-          <View style={{ flex:1 }} />
-          <Text onClick={send} style={{ color:((input.trim() || foodImages.length) && !sending) ? colors.primary : colors.textMuted, fontWeight:700 }}>发送</Text>
+      <View style={{ flexShrink: 0, padding: `7px ${spacing.sm}px`, paddingBottom: `calc(7px + env(safe-area-inset-bottom))`, backgroundColor: '#F7F7F7', borderTop: `1px solid ${colors.border}` }}>
+        <View style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+          <Text onClick={() => { setVoiceMode(v=>!v); setEmojiOpen(false); setMoreOpen(false); }} style={{ fontSize:'23px', lineHeight:'40px' }}>{voiceMode ? '⌨️' : '◉'}</Text>
+          {voiceMode ? <View onTouchStart={startRecording} onTouchEnd={stopRecording} onTouchCancel={stopRecording} style={{ flex:1,height:'40px',borderRadius:'6px',backgroundColor:'#fff',display:'flex',alignItems:'center',justifyContent:'center',border:`1px solid ${colors.border}` }}><Text style={{fontWeight:700,color:recording?colors.danger:colors.textPrimary}}>{recording?'松开发送':'按住说话'}</Text></View> : <Input value={input} onInput={(e)=>setInput(e.detail.value)} placeholder={`发消息给${meta.label}`} confirmType="send" onConfirm={send} adjustPosition cursorSpacing={12} maxlength={500} style={{flex:1,height:'40px',minWidth:0,boxSizing:'border-box',backgroundColor:'#fff',borderRadius:'6px',padding:'0 10px',fontSize:'15px'}} />}
+          <Text onClick={() => { setEmojiOpen(v=>!v); setMoreOpen(false); setVoiceMode(false); }} style={{fontSize:'23px'}}>☺</Text>
+          {(input.trim() || foodImages.length) ? <Text onClick={send} style={{padding:'7px 10px',borderRadius:'5px',backgroundColor:colors.primary,color:'#fff',fontWeight:700}}>发送</Text> : <Text onClick={() => { setMoreOpen(v=>!v); setEmojiOpen(false); }} style={{fontSize:'26px'}}>⊕</Text>}
         </View>
-        </View>
+        {emojiOpen && <View style={{display:'flex',flexWrap:'wrap',gap:'12px',padding:'12px 4px 4px'}}>{['😊','👍','🌙','❤️','谢谢','收到'].map(e=><Text key={e} onClick={()=>setInput(v=>`${v}${e}`)} style={{fontSize:'21px'}}>{e}</Text>)}</View>}
+        {moreOpen && <View style={{display:'flex',padding:'12px 4px 4px'}}><View onClick={chooseFoodImage} style={{textAlign:'center'}}><View style={{width:'48px',height:'48px',borderRadius:'9px',backgroundColor:'#fff',display:'flex',alignItems:'center',justifyContent:'center'}}><Text style={{fontSize:'23px'}}>🖼️</Text></View><Text style={{fontSize:'11px',color:colors.textMuted}}>图片</Text></View></View>}
       </View>
     </View>
   );

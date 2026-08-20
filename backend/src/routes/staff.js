@@ -7267,6 +7267,18 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     }
     const myPatientIdSet = myPatientIds ? new Set(myPatientIds.map(String)) : null;
     const inMyScope = (userId) => !myPatientIdSet || myPatientIdSet.has(String(userId));
+    // 新客户尚未完成健管归属时，上传报告也必须进入健管工作台，避免无人知晓。
+    // 其他类型仍严格按本人名下过滤；仅报告解析/审核补入“未分配健管”的客户。
+    let reportPatientIds = myPatientIds;
+    if (!isSuper && role === 'healthManager') {
+      const unassignedPatients = await User.find({
+        $or: [
+          { assignedHealthManager: null },
+          { assignedHealthManager: { $exists: false } },
+        ],
+      }).select('_id').lean();
+      reportPatientIds = [...new Map([...(myPatientIds || []), ...unassignedPatients.map(p => p._id)].map(id => [String(id), id])).values()];
+    }
 
     if (can('service_proposal_review')) {
       const proposalFilter = { status: 'pending', planner: req.staff._id };
@@ -7293,7 +7305,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           { 'fileUrls.0': { $exists: true } },
           { content: /.+/ },
         ],
-        ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
+        ...(reportPatientIds ? { user: { $in: reportPatientIds } } : {}),
       };
       const toParseReports = await MedicalReport.find(parseFilter)
         .populate('user', 'name phone').sort({ createdAt: -1 }).limit(50).lean();
@@ -7310,7 +7322,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     }
 
     if (can('report_review')) {
-      const reportFilter = { aiStatus: 'pending', ...(myPatientIds ? { user: { $in: myPatientIds } } : {}) };
+      const reportFilter = { aiStatus: 'pending', ...(reportPatientIds ? { user: { $in: reportPatientIds } } : {}) };
       const pendingReports = await MedicalReport.find(reportFilter)
         .populate('user', 'name phone').sort({ updatedAt: -1 }).limit(50).lean();
       pendingReports.forEach(r => {

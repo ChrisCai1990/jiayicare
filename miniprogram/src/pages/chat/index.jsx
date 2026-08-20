@@ -28,6 +28,9 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const [plannerImage, setPlannerImage] = useState(null);
   const [recording, setRecording] = useState(false);
+  const [plannerVoiceMode, setPlannerVoiceMode] = useState(false);
+  const [plannerEmojiOpen, setPlannerEmojiOpen] = useState(false);
+  const [plannerMoreOpen, setPlannerMoreOpen] = useState(false);
   const plannerRecorderRef = useRef(null);
   const plannerAudioRef = useRef(null);
   const [view, setView] = useState('team');
@@ -178,11 +181,10 @@ export default function ChatPage() {
         </View>
       </View>
 
-      {/* 两个区域同时挂载：团队消息进入页面即后台加载，切换时不再临时请求。 */}
-      <View style={{ display: view === 'team' ? 'flex' : 'none', flex: 1, minHeight: 0, width: '100%' }}>
+      {view === 'team' && <View style={{ display: 'flex', flex: 1, minHeight: 0, width: '100%' }}>
         <MessagesPage embedded assistantConfig={assistantConfig} onlineStatus={onlineStatus} onOpenPlanner={() => setView('ai')} />
-      </View>
-      <View style={{ display: view === 'ai' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
+      </View>}
+      {view === 'ai' && <View style={{ display: 'flex', flex: 1, minHeight: 0, flexDirection: 'column' }}>
       <View style={{ margin: `${spacing.sm}px ${spacing.md}px 0`, padding: '9px 12px', borderRadius: `${radius.sm}px`, backgroundColor: '#FFF7E6', border: '1px solid #F5C26B' }}>
         <Text style={{ display: 'block', color: '#9A5B00', fontSize: '12px', fontWeight: 700 }}>本页面回复由人工智能（AI）生成</Text>
         <Text style={{ display: 'block', color: colors.textMuted, fontSize: '10px', marginTop: '2px' }}>{assistantConfig.disclaimer}</Text>
@@ -230,31 +232,21 @@ export default function ChatPage() {
       </ScrollView>
 
       {!!plannerImage && <View style={{ padding:`6px ${spacing.md}px`, backgroundColor:'#fff' }}><Image src={plannerImage.path} mode="aspectFill" style={{ width:'52px', height:'52px', borderRadius:'8px' }} /><Text onClick={() => setPlannerImage(null)} style={{ color:colors.danger, marginLeft:'8px' }}>移除</Text></View>}
-      <View style={{
-        padding: `${spacing.sm}px ${spacing.md}px`,
-        backgroundColor: '#fff', borderTop: `1px solid ${colors.border}`,
-      }}>
-        <View style={{ backgroundColor:colors.background, borderRadius:`${radius.md}px`, border:`1px solid ${colors.border}`, padding:'6px 8px' }}>
-        <Textarea
-          style={{ width:'100%', minHeight: '40px', maxHeight: '92px', boxSizing: 'border-box', backgroundColor:'transparent', padding: '7px 8px', fontSize: '15px', lineHeight: '22px' }}
-          placeholder="描述您想了解的服务..."
-          value={input}
-          onInput={(e) => setInput(e.detail.value)}
-          autoHeight
-          adjustPosition
-          cursorSpacing={88}
-          maxlength={500}
-          confirmType="send"
-          onConfirm={send}
-        />
-        <View style={{ display:'flex', alignItems:'center', gap:'14px', padding:'2px 6px 4px' }}>
-          <Text onClick={choosePlannerImage} style={{ fontSize:'18px' }}>📷</Text>
-          <Text onTouchStart={startPlannerRecording} onTouchEnd={stopPlannerRecording} onTouchCancel={stopPlannerRecording} style={{ fontSize:'17px', color:recording ? colors.danger : colors.primary }}>{recording ? '● 松开发送' : '🎙️ 按住说话'}</Text>
-          <View style={{ flex:1 }} /><Text onClick={() => send()} style={{ color:(input.trim() || plannerImage) ? colors.primary : colors.textMuted, fontWeight:700 }}>发送</Text>
+      <View style={{ padding: `7px ${spacing.sm}px`, backgroundColor: '#F7F7F7', borderTop: `1px solid ${colors.border}` }}>
+        <View style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+          <Text onClick={() => { setPlannerVoiceMode(v=>!v); setPlannerEmojiOpen(false); setPlannerMoreOpen(false); }} style={{ fontSize:'23px', lineHeight:'40px' }}>{plannerVoiceMode ? '⌨️' : '◉'}</Text>
+          {plannerVoiceMode ? (
+            <View onTouchStart={startPlannerRecording} onTouchEnd={stopPlannerRecording} onTouchCancel={stopPlannerRecording} style={{ flex:1, height:'40px', borderRadius:'6px', backgroundColor:'#fff', display:'flex', alignItems:'center', justifyContent:'center', border:`1px solid ${colors.border}` }}><Text style={{ fontWeight:700, color:recording ? colors.danger : colors.textPrimary }}>{recording ? '松开发送' : '按住说话'}</Text></View>
+          ) : (
+            <Input value={input} onInput={(e)=>setInput(e.detail.value)} placeholder="输入消息" confirmType="send" onConfirm={() => send()} adjustPosition cursorSpacing={12} maxlength={500} style={{ flex:1, height:'40px', minWidth:0, boxSizing:'border-box', backgroundColor:'#fff', borderRadius:'6px', padding:'0 10px', fontSize:'15px' }} />
+          )}
+          <Text onClick={() => { setPlannerEmojiOpen(v=>!v); setPlannerMoreOpen(false); setPlannerVoiceMode(false); }} style={{ fontSize:'23px' }}>☺</Text>
+          {(input.trim() || plannerImage) ? <Text onClick={() => send()} style={{ padding:'7px 10px', borderRadius:'5px', backgroundColor:colors.primary, color:'#fff', fontWeight:700 }}>发送</Text> : <Text onClick={() => { setPlannerMoreOpen(v=>!v); setPlannerEmojiOpen(false); }} style={{ fontSize:'26px' }}>⊕</Text>}
         </View>
-        </View>
+        {plannerEmojiOpen && <View style={{ display:'flex', flexWrap:'wrap', gap:'12px', padding:'12px 4px 4px' }}>{['😊','👍','🌙','❤️','谢谢','收到'].map(e=><Text key={e} onClick={()=>setInput(v=>`${v}${e}`)} style={{ fontSize:'21px' }}>{e}</Text>)}</View>}
+        {plannerMoreOpen && <View style={{ display:'flex', padding:'12px 4px 4px' }}><View onClick={choosePlannerImage} style={{ textAlign:'center' }}><View style={{ width:'48px',height:'48px',borderRadius:'9px',backgroundColor:'#fff',display:'flex',alignItems:'center',justifyContent:'center' }}><Text style={{fontSize:'23px'}}>🖼️</Text></View><Text style={{fontSize:'11px',color:colors.textMuted}}>图片</Text></View></View>}
       </View>
-      </View>
+      </View>}
 
       <View style={{ display: view === 'nutrition' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
         <View style={{ margin: `${spacing.sm}px ${spacing.md}px 0`, padding: '9px 12px', borderRadius: `${radius.sm}px`, backgroundColor: '#FFF7E6', border: '1px solid #F5C26B' }}>

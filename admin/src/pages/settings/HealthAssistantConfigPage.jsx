@@ -21,12 +21,19 @@ export default function HealthAssistantConfigPage() {
     catch (e) { toast(e.message) } finally { setSaving(false) }
   }
   if (!data) return <div className="page-loading">加载中...</div>
-  return <div className="page">
-    <div className="page-header"><div><h1 className="page-title">健康助手配置</h1><p className="page-subtitle">名称、入口文案、开场语和AI规则保存后由小程序动态读取，无需重新提交微信审核</p></div><button className="btn btn-primary" disabled={saving} onClick={save}>{saving ? '保存中...' : '保存并生效'}</button></div>
-    <div className="card"><div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 16 }}>
-      {fields.map(([key, label]) => <label key={key} style={{ display: 'block', gridColumn: ['plannerCardSubtitle','greeting','disclaimer','transferText'].includes(key) ? '1 / -1' : 'auto' }}><span style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 7 }}>{label}</span>{['plannerCardSubtitle','greeting','disclaimer','transferText'].includes(key) ? <textarea className="form-control" rows="3" value={data[key] || ''} onChange={e => set(key, e.target.value)} /> : <input className="form-control" value={data[key] || ''} onChange={e => set(key, e.target.value)} />}</label>)}
-      <label style={{ gridColumn: '1 / -1' }}><span style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 7 }}>快捷问题（每行一个，最多6个）</span><textarea className="form-control" rows="5" value={(data.quickPrompts || []).join('\n')} onChange={e => set('quickPrompts', e.target.value.split('\n'))} /></label>
-      <label style={{ gridColumn: '1 / -1' }}><span style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 7 }}>AI运营规则</span><textarea className="form-control" rows="8" value={data.behaviorPrompt || ''} onChange={e => set('behaviorPrompt', e.target.value)} /><small style={{ color: '#8AA89C' }}>可调整服务定位和沟通策略；诊断、用药及紧急风险等安全底线由系统固定保护。</small></label>
-    </div></div>
+  const longFields = new Set(['plannerCardSubtitle','greeting','disclaimer','transferText'])
+  const sectionStyle = { background:'#fff', border:'1px solid #E7ECE9', borderRadius:16, padding:24, boxShadow:'0 5px 18px rgba(26,43,36,.05)' }
+  const fieldStyle = { width:'100%', boxSizing:'border-box', border:'1px solid #DCE5E0', borderRadius:10, padding:'11px 13px', fontSize:14, lineHeight:1.6, background:'#FBFCFB' }
+  return <div className="page" style={{maxWidth:1180,margin:'0 auto'}}>
+    <div className="page-header"><div><h1 className="page-title">健康助手配置</h1><p className="page-subtitle">统一管理小程序入口、开场文案和 AI 沟通规则，保存后实时生效。</p></div><button className="btn btn-primary" disabled={saving} onClick={save}>{saving ? '保存中...' : '保存并生效'}</button></div>
+    <div style={{display:'grid',gridTemplateColumns:'minmax(0,1fr) minmax(300px,.42fr)',gap:20,alignItems:'start'}}>
+      <div style={sectionStyle}><h3 style={{margin:'0 0 18px'}}>基础展示与沟通文案</h3><div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:18}}>
+        {fields.map(([key,label])=><label key={key} style={{display:'block',gridColumn:longFields.has(key)?'1 / -1':'auto'}}><span style={{display:'block',fontSize:13,fontWeight:700,marginBottom:7,color:'#344B40'}}>{label}</span>{longFields.has(key)?<textarea rows="3" value={data[key]||''} onChange={e=>set(key,e.target.value)} style={{...fieldStyle,resize:'vertical'}}/>:<input value={data[key]||''} onChange={e=>set(key,e.target.value)} style={fieldStyle}/>}</label>)}
+      </div></div>
+      <div style={{display:'grid',gap:20}}>
+        <div style={sectionStyle}><h3 style={{margin:'0 0 12px'}}>快捷问题</h3><p style={{fontSize:12,color:'#8AA89C'}}>每行一个，最多 6 个，将显示在健康规划师对话顶部。</p><textarea rows="8" value={(data.quickPrompts||[]).join('\n')} onChange={e=>set('quickPrompts',e.target.value.split('\n').slice(0,6))} style={{...fieldStyle,resize:'vertical'}}/></div>
+        <div style={sectionStyle}><h3 style={{margin:'0 0 12px'}}>AI 运营规则</h3><textarea rows="12" value={data.behaviorPrompt||''} onChange={e=>set('behaviorPrompt',e.target.value)} style={{...fieldStyle,resize:'vertical'}}/><small style={{display:'block',color:'#8AA89C',marginTop:8,lineHeight:1.6}}>仅用于服务定位和沟通策略；诊断、用药与紧急风险等安全边界由系统固定保护。</small></div>
+      </div>
+    </div>
   </div>
 }

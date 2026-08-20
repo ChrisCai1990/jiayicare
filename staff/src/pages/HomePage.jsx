@@ -58,7 +58,7 @@ export default function HomePage() {
         const messages = msgRes.value.data || []
         const todayKey = new Date().toDateString()
         setUnreadMsgCount(msgRes.value.unreadCount ?? messages.filter(m => m.staffUnread).length ?? 0)
-        setRecentMessages(messages.filter(m => new Date(m.createdAt).toDateString() === todayKey))
+        setRecentMessages(messages.filter(m => m.staffUnread && new Date(m.createdAt).toDateString() === todayKey))
       }
     })
   }, [])
