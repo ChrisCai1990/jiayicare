@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useStaff } from '../App'
 import { staffAPI } from '../api'
+import AppIcon from './AppIcon'
 
 const PLAN_CHILDREN = [
   { label: '年度体检方案', type: 'annual_checkup' },
@@ -13,22 +14,22 @@ const PLAN_CHILDREN = [
 // moduleKey: 对应 StaffRole 里的权限模块 key，无 key 表示所有人可见
 // roles: 无 customRoleId 时按内置角色过滤（空数组=全部可见）
 const ALL_NAV = [
-  { label: '工作台',       icon: '🏠', path: '/home',             roles: [] },
-  { label: '我的会员',     icon: '👥', path: '/patients',          roles: [],                                                                                  moduleKey: 'patients' },
-  { label: '随访管理',     icon: '📋', path: '/followups',         roles: [],                                                                                  moduleKey: 'followups' },
-  { label: '健康方案',     icon: '📄', path: '/plans',             roles: ['familyDoctor','nutritionist','rehabSpecialist','tcmDoctor','superadmin'],           moduleKey: 'plans', children: PLAN_CHILDREN },
-  { label: '报告管理',     icon: '🔬', path: '/reports',           roles: ['healthManager','familyDoctor','superadmin'],                                        moduleKey: 'reports' },
-  { label: '服务记录',     icon: '🏥', path: '/service-records',   roles: [],                                                                                  moduleKey: 'service_records' },
-  { label: '科普推送',     icon: '📢', path: '/knowledge',         roles: ['healthManager','nutritionist','familyDoctor','superadmin'],                         moduleKey: 'knowledge' },
-  { label: '问卷推送',     icon: '📝', path: '/questionnaires',    roles: ['healthManager','familyDoctor','superadmin'],                                        moduleKey: 'questionnaires' },
-  { label: '产品推送',     icon: '🛍', path: '/products',          roles: [],                                                                                  moduleKey: 'products' },
-  { label: '分佣中心',     icon: '💰', path: '/commission',        roles: [],                                                                                  moduleKey: 'commission' },
-  { label: '会员营销',     icon: '🎯', path: '/marketing',         roles: ['superadmin','manager','healthManager','familyDoctor'],                              moduleKey: 'marketing' },
-  { label: '团队管理',     icon: '🫂', path: '/team',              roles: ['superadmin','familyDoctor','nutritionist','medicalAssistant','healthManager'],      moduleKey: 'team' },
-  { label: '运营看板',     icon: '📊', path: '/operations',        roles: ['superadmin','manager'],                                                            moduleKey: 'operations' },
-  { label: '日常健康打卡', icon: '✅', path: '/daily-checkin',     roles: [],                                                                                  moduleKey: 'daily_checkin' },
-  { label: '消息通知',     icon: '🔔', path: '/notifications',     roles: [] },
-  { label: '个人中心',     icon: '👤', path: '/profile',           roles: [] },
+  { label: '工作台',       icon: 'home', path: '/home',             roles: [] },
+  { label: '我的会员',     icon: 'patients', path: '/patients',     roles: [],                                                                                  moduleKey: 'patients' },
+  { label: '随访管理',     icon: 'followups', path: '/followups',   roles: [],                                                                                  moduleKey: 'followups' },
+  { label: '健康方案',     icon: 'plans', path: '/plans',           roles: ['familyDoctor','nutritionist','rehabSpecialist','tcmDoctor','superadmin'],           moduleKey: 'plans', children: PLAN_CHILDREN },
+  { label: '报告管理',     icon: 'reports', path: '/reports',       roles: ['healthManager','familyDoctor','superadmin'],                                        moduleKey: 'reports' },
+  { label: '服务记录',     icon: 'services', path: '/service-records', roles: [],                                                                                moduleKey: 'service_records' },
+  { label: '科普推送',     icon: 'knowledge', path: '/knowledge',   roles: ['healthManager','nutritionist','familyDoctor','superadmin'],                         moduleKey: 'knowledge' },
+  { label: '问卷推送',     icon: 'questionnaires', path: '/questionnaires', roles: ['healthManager','familyDoctor','superadmin'],                                      moduleKey: 'questionnaires' },
+  { label: '产品推送',     icon: 'products', path: '/products',     roles: [],                                                                                  moduleKey: 'products' },
+  { label: '分佣中心',     icon: 'commission', path: '/commission', roles: [],                                                                                  moduleKey: 'commission' },
+  { label: '会员营销',     icon: 'marketing', path: '/marketing',   roles: ['superadmin','manager','healthManager','familyDoctor'],                              moduleKey: 'marketing' },
+  { label: '团队管理',     icon: 'team', path: '/team',             roles: ['superadmin','familyDoctor','nutritionist','medicalAssistant','healthManager'],      moduleKey: 'team' },
+  { label: '运营看板',     icon: 'operations', path: '/operations', roles: ['superadmin','manager'],                                                            moduleKey: 'operations' },
+  { label: '日常健康打卡', icon: 'checkin', path: '/daily-checkin', roles: [],                                                                                  moduleKey: 'daily_checkin' },
+  { label: '消息通知',     icon: 'notifications', path: '/notifications', roles: [] },
+  { label: '个人中心',     icon: 'profile', path: '/profile',       roles: [] },
 ]
 
 export default function Layout() {
@@ -128,7 +129,7 @@ export default function Layout() {
                     style={{ justifyContent: 'space-between' }}
                   >
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span className="sidebar-item-icon">{item.icon}</span>
+                      <span className="sidebar-item-icon"><AppIcon name={item.icon} /></span>
                       <span>{item.label}</span>
                     </span>
                     <span style={{ fontSize: 10, opacity: 0.6, transition: 'transform 0.2s', display: 'inline-block', transform: planExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>▼</span>
@@ -160,7 +161,7 @@ export default function Layout() {
                 className={`sidebar-item ${isActive ? 'active' : ''}`}
                 onClick={() => handleNavClick(item.path)}
               >
-                <span className="sidebar-item-icon">{item.icon}</span>
+                <span className="sidebar-item-icon"><AppIcon name={item.icon} /></span>
                 <span style={{ flex: 1 }}>{item.label}</span>
                 {item.path === '/notifications' && notifBadge > 0 && (
                   <span style={{ background: '#DC3545', color: '#fff', borderRadius: 99, fontSize: 11, fontWeight: 700, padding: '1px 7px', minWidth: 20, textAlign: 'center' }}>

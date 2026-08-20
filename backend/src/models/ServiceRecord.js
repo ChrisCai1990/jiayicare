@@ -32,6 +32,7 @@ const serviceRecordSchema = new mongoose.Schema({
   // 附件（就医病历/检查单等图片或PDF，2026-07-21新增，专病管理/医院就医场景为主，字段通用）
   attachments: [{
     url:        { type: String, default: '' },
+    ossKey:     { type: String, default: '' }, // OSS 对象路径，删除记录或附件时用于清理
     name:       { type: String, default: '' },
     mimeType:   { type: String, default: '' },
     fileSize:   { type: String, default: '' },

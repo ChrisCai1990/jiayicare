@@ -1,12 +1,23 @@
 const express = require('express');
 const multer = require('multer');
+const jwt = require('jsonwebtoken');
 const auth = require('../middleware/auth');
 const MedicalReport = require('../models/MedicalReport');
 const HealthRecord = require('../models/HealthRecord');
-const { uploadBase64, deleteFile, urlToKey } = require('../utils/oss');
+const { uploadBase64, deleteFile, urlToKey, signStoredUrl } = require('../utils/oss');
 const { parseImage } = require('../utils/ai');
 const { normalizeDepartmentExamItems, normalizeBreathTestItems, normalizeSingleExamReportItems, realignUpperAbdomenConclusions } = require('../utils/reportItemNormalization');
 const router = express.Router();
+
+function withSignedReportFiles(report) {
+  const obj = report.toObject ? report.toObject() : { ...report };
+  const urls = obj.fileUrls?.length ? obj.fileUrls : (obj.fileUrl ? [obj.fileUrl] : []);
+  const keys = obj.ossKeys?.length ? obj.ossKeys : (obj.ossKey ? [obj.ossKey] : []);
+  const signedUrls = urls.map((url, index) => signStoredUrl(url, keys[index] || ''));
+  obj.fileUrls = signedUrls;
+  obj.fileUrl = signedUrls[0] || '';
+  return obj;
+}
 const reportUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024, files: 1 },
@@ -27,6 +38,34 @@ const detectImageMime = (buffer) => {
   if (buffer.toString('ascii', 4, 8) === 'ftyp' && ['heic', 'heix', 'hevc', 'hevx', 'mif1'].includes(brand)) return 'image/heic';
   return '';
 };
+
+const detectReportMime = (buffer) => {
+  const imageMime = detectImageMime(buffer);
+  if (imageMime) return imageMime;
+  return buffer?.subarray(0, 5).toString('ascii') === '%PDF-' ? 'application/pdf' : '';
+};
+
+function createUploadToken(userId, file) {
+  return jwt.sign({
+    scope: 'report-upload',
+    userId: String(userId),
+    key: file.ossKey,
+    url: file.fileUrl,
+    mimeType: file.mimeType,
+  }, process.env.JWT_SECRET, { expiresIn: '30m' });
+}
+
+function verifyUploadTokens(tokens, userId) {
+  if (!Array.isArray(tokens) || !tokens.length) return [];
+  if (!process.env.JWT_SECRET) throw new Error('上传凭证服务暂不可用');
+  return tokens.map((token) => {
+    const claim = jwt.verify(String(token), process.env.JWT_SECRET);
+    if (claim.scope !== 'report-upload' || claim.userId !== String(userId) || !claim.key || !claim.url) {
+      throw new Error('上传凭证无效，请重新上传文件');
+    }
+    return { fileUrl: claim.url, ossKey: claim.key, mimeType: claim.mimeType || '' };
+  });
+}
 
 router.post('/upload', auth, (req, res, next) => {
   reportUpload.single('file')(req, res, async (err) => {
@@ -57,21 +96,35 @@ router.post('/upload-base64', auth, async (req, res, next) => {
     const content = String(req.body?.content || '');
     const declaredMime = String(req.body?.mimeType || '').toLowerCase();
     if (!content || !/^data:[^;]+;base64,/.test(content)) {
-      return res.status(400).json({ success: false, message: '未收到有效图片内容' });
+      return res.status(400).json({ success: false, message: '未收到有效文件内容' });
     }
     const raw = content.replace(/^data:[^;]+;base64,/, '');
     const buffer = Buffer.from(raw, 'base64');
-    if (!buffer.length) return res.status(400).json({ success: false, message: '图片内容为空' });
-    if (buffer.length > 15 * 1024 * 1024) return res.status(413).json({ success: false, message: '单张图片不能超过15MB' });
-    const detectedMime = detectImageMime(buffer);
-    if (!detectedMime) return res.status(400).json({ success: false, message: '图片格式无法识别，请选择 JPG、PNG、WEBP 或 HEIC 图片' });
+    if (!buffer.length) return res.status(400).json({ success: false, message: '文件内容为空' });
+    if (buffer.length > 15 * 1024 * 1024) return res.status(413).json({ success: false, message: '单个文件不能超过15MB' });
+    const detectedMime = detectReportMime(buffer);
+    if (!detectedMime) return res.status(400).json({ success: false, message: '文件格式无法识别，请选择 PDF、JPG、PNG、WEBP 或 HEIC 文件' });
     if (!process.env.OSS_ACCESS_KEY_ID) return res.status(503).json({ success: false, message: '文件存储服务暂不可用，请稍后重试' });
+    if (!process.env.JWT_SECRET) return res.status(503).json({ success: false, message: '上传凭证服务暂不可用，请稍后重试' });
     const result = await uploadBase64(`data:${detectedMime};base64,${raw}`, detectedMime);
     console.info('[report-upload-base64]', { userId: String(req.user._id), size: buffer.length, declaredMime, mimeType: detectedMime, key: result.key });
-    res.status(201).json({ success: true, data: { fileUrl: result.url, ossKey: result.key, mimeType: result.mimeType || detectedMime, fileSize: buffer.length } });
+    const file = { fileUrl: result.url, ossKey: result.key, mimeType: result.mimeType || detectedMime, fileSize: buffer.length };
+    res.status(201).json({ success: true, data: { ...file, uploadToken: createUploadToken(req.user._id, file) } });
   } catch (uploadErr) {
     console.error('[report-upload-base64] failed', { userId: String(req.user?._id || ''), message: uploadErr.message });
     next(uploadErr);
+  }
+});
+
+// 客户端在“文件已上传、报告创建失败”时清理本次上传的临时对象。
+// 仅接受由当前用户上传接口签发、且 30 分钟内有效的凭证，避免删除任意 OSS 对象。
+router.post('/upload-cleanup', auth, async (req, res, next) => {
+  try {
+    const files = verifyUploadTokens(req.body?.uploadTokens, req.user._id);
+    await Promise.all(files.map(({ ossKey }) => deleteFile(ossKey)));
+    res.json({ success: true });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message || '上传清理失败' });
   }
 });
 
@@ -105,7 +158,7 @@ router.get('/by-category', auth, async (req, res) => {
       if (!yearMap[year]) yearMap[year] = {};
       const cat = r.screeningCategory || 'other_routine';
       if (!yearMap[year][cat]) yearMap[year][cat] = [];
-      const obj = r.toObject();
+      const obj = withSignedReportFiles(r);
       obj.hasContent = !!obj.content;
       delete obj.content;
       yearMap[year][cat].push(obj);
@@ -521,7 +574,9 @@ findings、diagnosis、conclusion 字段只放报告原文，绝对禁止写入�
 
     // 优先用 OSS URL（通义千问可直接读取公开 URL，PDF/图片均支持）；fileUrls 存在多张图片时
     // （一份报告拍成多张照片，如"结论页"+"数据页"），一次性把全部图片传给AI合并识别成一份结果
-    const ossUrls = report.fileUrls && report.fileUrls.length ? report.fileUrls : (report.fileUrl ? [report.fileUrl] : []);
+    const storedOssUrls = report.fileUrls && report.fileUrls.length ? report.fileUrls : (report.fileUrl ? [report.fileUrl] : []);
+    const storedOssKeys = report.ossKeys?.length ? report.ossKeys : (report.ossKey ? [report.ossKey] : []);
+    const ossUrls = storedOssUrls.map((url, index) => signStoredUrl(url, storedOssKeys[index] || ''));
     const text = hasOssUrl
       ? await parseImage(ossUrls.length > 1 ? ossUrls : ossUrls[0], prompt, { isUrl: true, maxTokens: 8000 })
       : await parseImage(report.content, prompt, { isUrl: false, maxTokens: 8000 });
@@ -581,7 +636,7 @@ router.get('/', auth, async (req, res) => {
     const reports = await MedicalReport.find({ user: req.user._id })
       .sort({ createdAt: -1 });
     const data = reports.map(r => {
-      const obj = r.toObject();
+      const obj = withSignedReportFiles(r);
       obj.hasContent = !!obj.content;
       delete obj.content;
       return obj;
@@ -597,7 +652,7 @@ router.get('/:id', auth, async (req, res) => {
   try {
     const report = await MedicalReport.findOne({ _id: req.params.id, user: req.user._id });
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-    res.json({ success: true, data: report });
+    res.json({ success: true, data: withSignedReportFiles(report) });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取报告失败', error: err.message });
   }
@@ -608,7 +663,7 @@ router.post('/', auth, async (req, res) => {
   try {
     const { title, type, hospital, date, pages, fileSize, keyFindings, note, content, mimeType,
             screeningCategory, reportYear, checkDate, institution, reportItems, contents,
-            fileUrls: suppliedFileUrls, ossKeys: suppliedOssKeys } = req.body;
+            fileUrls: suppliedFileUrls, ossKeys: suppliedOssKeys, uploadTokens } = req.body;
     let { fileUrl } = req.body;
     if (!title) return res.status(400).json({ success: false, message: '报告标题不能为空' });
 
@@ -618,29 +673,42 @@ router.post('/', auth, async (req, res) => {
 
     // 有 base64 内容且 OSS 已配置 → 逐张上传到 OSS，不存 MongoDB
     let ossKey = '';
-    let ossKeys = Array.isArray(suppliedOssKeys) ? suppliedOssKeys.filter(Boolean) : [];
-    let fileUrls = Array.isArray(suppliedFileUrls) ? suppliedFileUrls.filter(Boolean) : [];
-    if (!fileUrl && fileUrls.length) fileUrl = fileUrls[0];
+    let verifiedUploadedFiles = [];
+    try {
+      verifiedUploadedFiles = verifyUploadTokens(uploadTokens, req.user._id);
+    } catch (tokenError) {
+      return res.status(400).json({ success: false, message: tokenError.message || '上传凭证无效，请重新上传文件' });
+    }
+    let ossKeys = verifiedUploadedFiles.length
+      ? verifiedUploadedFiles.map(file => file.ossKey)
+      : (Array.isArray(suppliedOssKeys) ? suppliedOssKeys.filter(Boolean) : []);
+    let fileUrls = verifiedUploadedFiles.length
+      ? verifiedUploadedFiles.map(file => file.fileUrl)
+      : (Array.isArray(suppliedFileUrls) ? suppliedFileUrls.filter(Boolean) : []);
+    if (verifiedUploadedFiles.length) fileUrl = fileUrls[0];
+    else if (!fileUrl && fileUrls.length) fileUrl = fileUrls[0];
+    if (ossKeys.length) ossKey = ossKeys[0];
     let storedContent = '';
-    let effectiveMimeType = mimeType || '';
-    if (contentList.length && process.env.OSS_ACCESS_KEY_ID) {
+    let effectiveMimeType = verifiedUploadedFiles[0]?.mimeType || mimeType || '';
+    if (contentList.length) {
+      if (!process.env.OSS_ACCESS_KEY_ID) {
+        return res.status(503).json({ success: false, message: '文件存储服务暂不可用，请稍后重试' });
+      }
+      const uploadedKeys = [];
       try {
         for (const c of contentList) {
           const result = await uploadBase64(c, mimeType || 'image/jpeg');
           fileUrls.push(result.url);
           ossKeys.push(result.key);
+          uploadedKeys.push(result.key);
           effectiveMimeType = result.mimeType || effectiveMimeType; // HEIC等会被转成JPEG，字段需跟实际文件保持一致
         }
         fileUrl = fileUrls[0];
         ossKey = ossKeys[0];
       } catch (ossErr) {
-        // OSS 上传失败降级：存首张 base64（限10MB），多图场景下降级只保留第一张，避免整单失败
-        storedContent = contentList[0] && contentList[0].length < 10 * 1024 * 1024 ? contentList[0] : '';
-        fileUrls = [];
-        ossKeys = [];
+        await Promise.all(uploadedKeys.map(key => deleteFile(key)));
+        return res.status(503).json({ success: false, message: '报告存储失败，请稍后重试' });
       }
-    } else if (contentList.length) {
-      storedContent = contentList[0] && contentList[0].length < 10 * 1024 * 1024 ? contentList[0] : '';
     }
 
     const year = reportYear || (date ? new Date(date).getFullYear() : new Date().getFullYear());

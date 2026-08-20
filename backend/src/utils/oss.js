@@ -27,23 +27,32 @@ async function convertHeicBase64IfNeeded(base64Data, mimeType) {
   return { content: `data:${newMime};base64,${buffer.toString('base64')}`, mimeType: newMime };
 }
 
-// 上传 base64 内容到 OSS，返回公开访问 URL
-async function uploadBase64(base64Data, mimeType, folder = 'reports') {
-  const client = getClient();
-
-  const raw = base64Data.replace(/^data:[^;]+;base64,/, '');
-  const rawBuffer = Buffer.from(raw, 'base64');
-  const { buffer, mimeType: effectiveMime } = await convertHeicBufferIfNeeded(rawBuffer, mimeType);
-
-  const ext = effectiveMime === 'application/pdf' ? 'pdf'
-    : effectiveMime === 'image/png' ? 'png'
-    : effectiveMime === 'image/jpeg' || effectiveMime === 'image/jpg' ? 'jpg'
-    : effectiveMime === 'audio/mpeg' ? 'mp3'
-    : effectiveMime === 'audio/mp4' || effectiveMime === 'audio/aac' ? 'm4a'
-    : effectiveMime === 'audio/webm' ? 'webm'
-    : effectiveMime === 'audio/ogg' ? 'ogg'
-    : effectiveMime === 'audio/wav' || effectiveMime === 'audio/x-wav' ? 'wav'
+function extensionForMime(mimeType) {
+  return mimeType === 'application/pdf' ? 'pdf'
+    : mimeType === 'image/png' ? 'png'
+    : mimeType === 'image/jpeg' || mimeType === 'image/jpg' ? 'jpg'
+    : mimeType === 'image/gif' ? 'gif'
+    : mimeType === 'image/webp' ? 'webp'
+    : mimeType === 'audio/mpeg' ? 'mp3'
+    : mimeType === 'audio/mp4' || mimeType === 'audio/aac' ? 'm4a'
+    : mimeType === 'audio/webm' ? 'webm'
+    : mimeType === 'audio/ogg' ? 'ogg'
+    : mimeType === 'audio/wav' || mimeType === 'audio/x-wav' ? 'wav'
     : 'bin';
+}
+
+function assertConfigured() {
+  const required = ['OSS_REGION', 'OSS_ACCESS_KEY_ID', 'OSS_ACCESS_KEY_SECRET', 'OSS_BUCKET'];
+  const missing = required.filter(key => !process.env[key]);
+  if (missing.length) throw new Error('文件存储未配置完整');
+}
+
+// 上传 Buffer 到 OSS，所有新的医疗原件上传入口共用此方法。
+async function uploadBuffer(rawBuffer, mimeType, folder = 'reports') {
+  const client = getClient();
+  const { buffer, mimeType: effectiveMime } = await convertHeicBufferIfNeeded(rawBuffer, mimeType);
+  const ext = effectiveMime === 'application/pdf' ? 'pdf'
+    : extensionForMime(effectiveMime);
 
   const key = `${folder}/${uuidv4()}.${ext}`;
   await client.put(key, buffer, { mime: effectiveMime });
@@ -54,12 +63,25 @@ async function uploadBase64(base64Data, mimeType, folder = 'reports') {
   return { url, key, mimeType: effectiveMime };
 }
 
+// 上传 base64 内容到 OSS，保留为旧上传接口的兼容层。
+async function uploadBase64(base64Data, mimeType, folder = 'reports') {
+  const raw = base64Data.replace(/^data:[^;]+;base64,/, '');
+  return uploadBuffer(Buffer.from(raw, 'base64'), mimeType, folder);
+}
+
 function getClient() {
+  assertConfigured();
+  const configuredTimeout = Number.parseInt(process.env.OSS_TIMEOUT_MS || '', 10);
+  const timeout = Number.isFinite(configuredTimeout) && configuredTimeout >= 60_000
+    ? configuredTimeout
+    : 60_000;
   return new OSS({
     region: process.env.OSS_REGION,
     accessKeyId: process.env.OSS_ACCESS_KEY_ID,
     accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET,
     bucket: process.env.OSS_BUCKET,
+    secure: true,
+    timeout,
   });
 }
 
@@ -73,6 +95,24 @@ async function deleteFile(key) {
   }
 }
 
+// 私有 bucket 不向前端暴露可长期访问的原始 URL。每次已鉴权的 API 读取时再签发短时链接，默认 10 分钟。
+function getSignedUrl(key, expires = 600) {
+  if (!key) return '';
+  return getClient().signatureUrl(key, { expires });
+}
+
+function signStoredUrl(url, key, expires = 600) {
+  const resolvedKey = key || urlToKey(url || '');
+  if (!resolvedKey) return url || '';
+  try { return getSignedUrl(resolvedKey, expires); } catch { return url || ''; }
+}
+
+// 供服务端受控预览使用。浏览器不直接读取私有 OSS 对象，避免对象的下载策略影响内嵌预览。
+async function getObjectStream(key, headers = {}) {
+  if (!key) throw new Error('文件对象不存在');
+  return getClient().getStream(key, { headers });
+}
+
 // 从 OSS URL 提取 key
 function urlToKey(url) {
   const bucket = process.env.OSS_BUCKET;
@@ -80,4 +120,4 @@ function urlToKey(url) {
   return match ? match[1] : null;
 }
 
-module.exports = { uploadBase64, deleteFile, urlToKey, convertHeicBase64IfNeeded };
+module.exports = { uploadBase64, uploadBuffer, deleteFile, getSignedUrl, signStoredUrl, getObjectStream, urlToKey, convertHeicBase64IfNeeded };

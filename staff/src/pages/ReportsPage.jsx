@@ -178,7 +178,7 @@ export default function ReportsPage() {
                   // 才是完整地址——之前直接把相对路径丢给 <img>/<iframe src>，浏览器会基于当前页面
                   // 域名(staff.jiaycare.com)解析，而文件实际只在API域名(jiaycare.com)下可访问，
                   // 导致请求404，AI解析后完全打不开原件（2026-07-13 反馈）
-                  const rawSrc = showDetail.content || showDetail.fileUrl;
+                  const rawSrc = showDetail.content || showDetail.previewUrl || showDetail.fileUrl;
                   const src = rawSrc && rawSrc.startsWith('/') ? API_ORIGIN + rawSrc : rawSrc;
                   if (!src) {
                     return (
