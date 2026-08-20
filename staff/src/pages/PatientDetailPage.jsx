@@ -3547,6 +3547,8 @@ export default function PatientDetailPage() {
 
       {tab === 'aiReview' && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} />}
 
+      {tab === 'aiReview' && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} />}
+
       {/* ── Info Tab ── */}
       {tab === 'info' && (
         <div className="patient-tab-section patient-info-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
