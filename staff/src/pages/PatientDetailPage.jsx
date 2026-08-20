@@ -2235,7 +2235,7 @@ export default function PatientDetailPage() {
       loadScreening()
       if (reports.length === 0) loadReports()
     }
-    else if (tab === 'records' || tab === 'screening') {
+    else if (tab === 'records') {
       loadScreening()
       // 专项筛查页面的"待完成方案项目"提示条需要 plans 数据，但 plans 平时只在"方案"Tab才加载，这里按需补一次
       if (plans.length === 0) loadPlans()
@@ -2246,7 +2246,8 @@ export default function PatientDetailPage() {
     }
     else if (tab === 'consumption') staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {})
     else if (tab === 'ai') {
-      // 健康顾问审核依赖 reports（要展示报告原文对照），同上按需补加载
+      loadScreening()
+      if (plans.length === 0) loadPlans()
       if (reports.length === 0) loadReports()
       loadPendingDoctorAudit()
     }
@@ -3477,14 +3478,13 @@ export default function PatientDetailPage() {
           { key: 'info',          label: '基本信息' },
           { key: 'records',       label: '健康档案' },
           { key: 'reports',       label: '体检报告' },
-          { key: 'screening',     label: '专项筛查' },
+          { key: 'ai',            label: '健康信息核查工作台' },
           { key: 'portrait',      label: '健康画像' },
           { key: 'medications',   label: '用药与营养' },
           { key: 'plans',         label: '管理方案' },
           { key: 'followups',     label: '随访记录' },
         ]
         const secondaryTabs = [
-          { key: 'ai',            label: 'AI健康信息整理' },
           { key: 'serviceRecords', label: '服务记录' },
           { key: 'referrals',     label: '转介记录' },
           { key: 'consumption',   label: '消费记录' },
@@ -4820,6 +4820,12 @@ export default function PatientDetailPage() {
 
 
         <div className="screening-section-wrapper">
+        {tab === 'ai' && <div className="card" style={{ marginBottom: 14, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', border: '1px solid #B7D9CA', background: '#F2FAF6' }}>
+          <strong style={{ color: '#155E48', marginRight: 8 }}>健康信息核查工作台</strong>
+          <button className="btn btn-primary btn-sm">专项筛查</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => setReviewWorkbenchView('analysis')}>AI健康信息整理</button>
+          <span style={{ marginLeft: 'auto', fontSize: 12, color: '#64748B' }}>报告复核 → 专项筛查 → 年度小结 → 趋势分析</span>
+        </div>}
         {/* ── 4.3 专项筛查结果（三层目录树） ── */}
         {(() => {
           const STATUS_TEXT = { normal: '正常', abnormal: '异常', attention: '注意', unknown: '' }
@@ -5178,6 +5184,16 @@ export default function PatientDetailPage() {
                   }}>+ 录入筛查结果</button>
                 </div>
               </div>
+              {['familyDoctor', 'superadmin'].includes(staff?.role) && pendingDoctorAuditReports.length > 0 && (() => {
+                const unviewedCount = pendingDoctorAuditReports.filter(report => !report.familyDoctorViewedAt).length
+                return <div style={{ margin: '0 16px 14px', padding: '12px 14px', border: '1px solid #FCD34D', borderRadius: 10, background: '#FFFBEB', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, color: '#92400E', fontWeight: 700 }}>年度小结前置审核 · 健康顾问复核报告</div>
+                    <div style={{ marginTop: 3, fontSize: 12, color: '#A16207' }}>{unviewedCount > 0 ? `健管专员已审核${pendingDoctorAuditReports.length}份新报告，还有${unviewedCount}份未查看。完成前不能生成年度专项筛查小结。` : `已查看全部${pendingDoctorAuditReports.length}份新报告，请确认完成后再生成年度小结。`}</div>
+                  </div>
+                  <button className="btn btn-primary btn-sm" onClick={() => setShowArchiveReviewModal(true)}>{unviewedCount > 0 ? '逐份核查' : '确认完成'}</button>
+                </div>
+              })()}
               {(() => {
                 const current = screeningYearSummaries.find(item => Number(item.year) === Number(screeningSummaryYear))
                 const summaryRecords = current
@@ -6747,7 +6763,7 @@ export default function PatientDetailPage() {
       )}
 
       {/* ── AI Tab ── */}
-      {tab === 'ai' && (() => {
+      {tab === 'ai' && reviewWorkbenchView === 'analysis' && (() => {
         const aisRoot = user.aiHealthSummary || {}
         // 按年度组织（兼容旧数据：无 byYear 但有 sections → 归到其年份或2026）
         let byYear = aisRoot.byYear || {}
@@ -7057,6 +7073,7 @@ export default function PatientDetailPage() {
 
         return (
           <div>
+            {false && (
             <div className="card" style={{ marginBottom: 16, overflow: 'hidden', border: '1px solid #B7D9CA' }}>
               <div style={{ padding: '14px 16px', background: 'linear-gradient(90deg, #E8F5EF, #F5FAF7)', borderBottom: '1px solid #D9E9E1' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -7164,6 +7181,13 @@ export default function PatientDetailPage() {
                 </section>
               </div>
               <div style={{ padding: '8px 14px', borderTop: '1px solid #E2E8F0', background: '#FFFBEB', fontSize: 11, color: '#92400E' }}>所有AI解析、归类、小结和趋势结论均须人工审核后才可作为正式健康管理信息。</div>
+            </div>
+            )}
+            <div className="card" style={{ marginBottom: 14, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', border: '1px solid #B7D9CA', background: '#F2FAF6' }}>
+              <strong style={{ color: '#155E48', marginRight: 8 }}>健康信息核查工作台</strong>
+              <button className="btn btn-secondary btn-sm" onClick={() => setReviewWorkbenchView('screening')}>专项筛查</button>
+              <button className="btn btn-primary btn-sm">AI健康信息整理</button>
+              <span style={{ marginLeft: 'auto', fontSize: 12, color: '#64748B' }}>报告复核 → 专项筛查 → 年度小结 → 趋势分析</span>
             </div>
             <AiRuleHint scene="health_analysis" />
             {/* 年度选择：下拉 select，✓=已审核 ●=已生成待审核 */}
