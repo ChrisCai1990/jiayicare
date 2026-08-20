@@ -910,7 +910,7 @@ router.get('/annual-mgmt-plans', auth, async (req, res) => {
 const { syncAnnualPlanFollowUps } = require('../utils/annualPlanFollowUps');
 
 // 方案类型 → 随访待审核归属角色（体检方案由健康顾问把关，营养方案由营养师把关）
-const HEALTH_PLAN_REVIEW_ROLE = { annual_checkup: 'familyDoctor', checkup: 'familyDoctor', nutrition: 'nutritionist', medical_assist: 'medicalAssistant' };
+const HEALTH_PLAN_REVIEW_ROLE = { annual_checkup: 'familyDoctor', checkup: 'familyDoctor', nutrition: 'nutritionist', medical_assist: 'healthPlanner' };
 
 // AI体检/营养方案确认后，生成一条初始随访占位提醒对应角色跟进（不同于年度管理方案的周期性批量排期，
 // 这类方案没有频率配置，只需在确认时提醒一次即可）
@@ -918,11 +918,13 @@ async function generateHealthPlanFollowUp(plan) {
   const reviewRole = HEALTH_PLAN_REVIEW_ROLE[plan.type];
   if (!reviewRole) return 0;
   const patient = await User.findById(plan.patientId)
-    .select('assignedHealthManager assignedFamilyDoctor assignedNutritionist').lean();
+    .select('assignedHealthManager assignedFamilyDoctor assignedNutritionist assignedHealthPlanner').lean();
   const assignedTo = plan.type === 'nutrition'
     ? patient?.assignedNutritionist
-    : (patient?.assignedHealthManager || patient?.assignedFamilyDoctor);
-  const typeLabel = plan.type === 'nutrition' ? 'AI营养方案' : 'AI体检方案';
+    : plan.type === 'medical_assist'
+      ? patient?.assignedHealthPlanner
+      : (patient?.assignedHealthManager || patient?.assignedFamilyDoctor);
+  const typeLabel = plan.type === 'nutrition' ? 'AI营养方案' : (plan.type === 'medical_assist' ? 'AI就医协助方案' : 'AI体检方案');
   await FollowUp.findOneAndUpdate(
     { sourceHealthPlanId: plan._id, sourceType: 'health_plan' },
     { $set: {
@@ -1085,29 +1087,33 @@ router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
     const done = req.body.done !== false; // 默认 true，传 false 则取消
     const needFollowUp = req.body.needFollowUp === true;
 
-    followup.completedByUser = done;
-    followup.completedByUserAt = done ? new Date() : null;
+    const changes = {
+      completedByUser: done,
+      completedByUserAt: done ? new Date() : null,
+    };
 
     if (done) {
       if (needFollowUp) {
         // 用户表示还需要人工跟进：保持/回退为 planned，留在医护端"待随访"队列，不算完成
-        if (followup.status !== 'completed' && followup.status !== 'cancelled') followup.status = 'planned';
+        if (followup.status !== 'completed' && followup.status !== 'cancelled') changes.status = 'planned';
       } else {
         // 用户确认不需要跟进：直接闭环为已完成
-        followup.status = 'completed';
-        followup.completedBy = 'user';
-        followup.completedAt = new Date();
+        changes.status = 'completed';
+        changes.completedBy = 'user';
+        changes.completedAt = new Date();
       }
     } else {
       // 取消标记：仅撤销用户自己标记的完成，不影响健管专员执行完成的记录
       if (followup.status === 'completed' && followup.completedBy === 'user') {
-        followup.status = 'planned';
-        followup.completedBy = null;
+        changes.status = 'planned';
+        changes.completedBy = null;
       }
     }
 
-    await followup.save();
-    res.json({ success: true, data: followup });
+    // 使用原子更新，仅修改完成状态字段。部分历史随访由旧版本写入过已废弃的枚举值，
+    // document.save() 会重新校验整条旧记录，导致用户点击“完成”时报 validation failed。
+    const updated = await FollowUp.findByIdAndUpdate(followup._id, { $set: changes }, { new: true });
+    res.json({ success: true, data: updated });
   } catch (err) {
     res.status(500).json({ success: false, message: '操作失败', error: err.message });
   }

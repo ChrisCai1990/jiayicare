@@ -1563,12 +1563,8 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
 // 部分方案类型只归特定角色负责（不论谁生成的），跟"仅制定人可改"是两条独立限制都要满足：
 // 年度体检方案/年度管理方案只有健康顾问能编辑/审核，营养干预方案只有营养师——
 // 2026-07-07 用户明确规则：健康顾问生成的方案营养师不能删改，反之亦然，按会员角色分工而非单纯创建人
-const PLAN_TYPE_OWNER_ROLE = { annual_checkup: 'familyDoctor', nutrition: 'nutritionist', medical_assist: 'medicalAssistant' };
+const PLAN_TYPE_OWNER_ROLE = { annual_checkup: 'familyDoctor', nutrition: 'nutritionist', medical_assist: 'healthPlanner' };
 function checkPlanTypeRole(plan, staffRole) {
-  // 就医协助由健康顾问制定医疗安排、就医专员负责执行；两种角色都需要编辑权限。
-  if (plan.type === 'medical_assist') {
-    return staffRole === 'superadmin' || staffRole === 'familyDoctor' || staffRole === 'medicalAssistant';
-  }
   const requiredRole = PLAN_TYPE_OWNER_ROLE[plan.type];
   if (!requiredRole) return true; // 未限定角色的类型（如医嘱/心理咨询方案）不受此限制
   return staffRole === 'superadmin' || staffRole === requiredRole;
@@ -1598,10 +1594,7 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
   if (!(await planTypeAllowed(req, plan.type))) {
     return res.status(403).json({ success: false, message: '当前角色无权管理该类型的健康方案' });
   }
-  const isSelectedMedicalAssistant = plan.type === 'medical_assist'
-    && plan.content?.staffId
-    && String(plan.content.staffId) === String(req.staff._id);
-  if (req.staff.role !== 'superadmin' && String(plan.staffId) !== String(req.staff._id) && !isSelectedMedicalAssistant) {
+  if (req.staff.role !== 'superadmin' && String(plan.staffId) !== String(req.staff._id)) {
     return res.status(403).json({ success: false, message: '仅方案制定人可修改' });
   }
   const allowed = ['title', 'description', 'year', 'startDate', 'endDate', 'checkupDate', 'items', 'followupFrequency', 'summary', 'status', 'content'];
@@ -1620,12 +1613,8 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
   const visibleIds = await getVisiblePlanPatientIds(req.staff);
   if (visibleIds && !visibleIds.some(id => String(id) === String(plan.patientId?._id || plan.patientId))) return res.status(403).json({ success: false, message: '无权查看该会员的方案' });
-  const isSelectedMedicalAssistant = plan.type === 'medical_assist'
-    && plan.content?.staffId
-    && String(plan.content.staffId) === String(req.staff._id);
   const canPush = req.staff.role === 'superadmin'
-    || String(plan.staffId) === String(req.staff._id)
-    || isSelectedMedicalAssistant;
+    || String(plan.staffId) === String(req.staff._id);
   if (!canPush || !checkPlanTypeRole(plan, req.staff.role) || !(await planTypeAllowed(req, plan.type))) {
     return res.status(403).json({ success: false, message: '无权推送该方案' });
   }
@@ -1820,7 +1809,8 @@ router.delete('/plans/:id', staffAuth, checkPermission('plans', 'delete'), async
   const reason = String(req.body?.reason || '').trim();
   if (!reason) return res.status(400).json({ success: false, message: '请填写删除原因' });
   if (!checkPlanTypeRole(plan, req.staff.role)) {
-    return res.status(403).json({ success: false, message: '该类型方案仅限对应角色（健康顾问/营养师）删除' });
+    const roleLabel = plan.type === 'medical_assist' ? '健康规划师' : (plan.type === 'nutrition' ? '营养师' : '健康顾问');
+    return res.status(403).json({ success: false, message: `该类型方案仅限${roleLabel}删除` });
   }
   if (!(await planTypeAllowed(req, plan.type))) {
     return res.status(403).json({ success: false, message: '当前角色无权管理该类型的健康方案' });
@@ -7210,7 +7200,7 @@ const TODO_REVIEW_ROLE = {
   dietary_survey_review:'nutritionist',
   supplement_review:    'nutritionist',
   nutrition_plan_review:'nutritionist',
-  medical_assist_plan_review: 'medicalAssistant',
+  medical_assist_plan_review: 'healthPlanner',
   followup_review:      'familyDoctor',
   bp_alert_review:      'familyDoctor',
   symptom_review:       'familyDoctor',
@@ -7585,7 +7575,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
-    // ── 就医专员：AI就医协助方案待审核 ──
+    // ── 健康规划师：AI就医协助方案待审核 ──
     if (can('medical_assist_plan_review')) {
       const medicalAssistPlanFilter = { type: 'medical_assist', 'content.aiStatus': 'pending', ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
       const medicalAssistPlans = await HealthPlan.find(medicalAssistPlanFilter)
@@ -7595,7 +7585,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         todos.push({
           id: 'medical_assist_plan_' + p._id, type: 'medical_assist_plan_review', label: 'AI就医协助方案待审核', priority: 3,
           patientName: p.patientId?.name || '未知', patientId: String(p.patientId?._id || ''),
-          summary: 'AI生成就医协助方案，待就医专员审核',
+          summary: 'AI生成就医协助方案，待健康规划师审核',
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/plans/${p._id}`,
         });
@@ -10140,15 +10130,15 @@ ${goal ? goal : '（未填写目标，按会员信息与模板骨架常规定制
   }
 });
 
-// ── 场景9：AI就医协助方案（就医专员审核） ──────────────────────────────────────
+// ── 场景9：AI就医协助方案（健康规划师审核） ────────────────────────────────────
 // POST /api/staff/patients/:id/ai-medical-assist-plan?orderId=xxx
 // 创建 HealthPlan type='medical_assist' status='draft' content.aiStatus='pending'
-// 只有就医专员/超管可生成（与就医协助方案审核角色一致）；orderId 可选——商城订单流转过来的场景会带上，
+// 只有健康规划师/超管可生成（与就医协助方案审核角色一致）；orderId 可选——商城订单流转过来的场景会带上，
 // 用订单里的服务名称/备注作为生成依据，关联 sourceOrderId 便于订单-方案-随访状态联动追溯
 // （2026-07-13 需求：客户商城下单就医类服务 → 转派就医专员 → AI生成方案 → 审核 → 推送 → 自动建随访）
 router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) => {
-  if (!['medicalAssistant', 'superadmin'].includes(req.staff.role)) {
-    return res.status(403).json({ success: false, message: '仅就医专员可生成就医协助方案' });
+  if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) {
+    return res.status(403).json({ success: false, message: '仅健康规划师可生成就医协助方案' });
   }
   try {
     const user = await User.findById(req.params.id)

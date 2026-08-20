@@ -57,7 +57,9 @@ const followUpSchema = new mongoose.Schema({
   sourceOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null }, // sourceType='order'时关联的订单，供详情弹窗展示订单号/金额/支付方式
   aiStatus:   { type: String, enum: ['pending', 'approved', null], default: null },
   // 待审核归属角色：为空时按固定规则由健康顾问审核（年度管理方案）；health_plan来源按方案类型区分（营养方案→营养师，体检方案→健康顾问）
-  reviewRole: { type: String, enum: ['familyDoctor', 'nutritionist', null], default: null },
+  // Keep legacy medicalAssistant values readable/saveable: older medical-assist tasks were
+  // written through findOneAndUpdate without validators. New tasks belong to healthPlanner.
+  reviewRole: { type: String, enum: ['familyDoctor', 'nutritionist', 'medicalAssistant', 'healthPlanner', null], default: null },
 }, { timestamps: true });
 
 followUpSchema.index({ staffId: 1, date: -1 });

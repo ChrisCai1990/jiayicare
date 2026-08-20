@@ -187,14 +187,10 @@ export default function PlanModulesPage() {
   }, [id])
 
   const creatorId = plan?.staffId?._id || plan?.staffId
-  const selectedAssistantId = plan?.content?.staffId
+  const requiredRole = plan?.type === 'medical_assist' ? 'healthPlanner' : plan?.type === 'nutrition' ? 'nutritionist' : null
   const canEdit = !!plan && (
     staff?.role === 'superadmin'
-    || String(creatorId || '') === String(staff?._id || '')
-    || (plan.type === 'nutrition' && staff?.role === 'nutritionist')
-    || (plan.type === 'medical_assist' && (
-      String(selectedAssistantId || '') === String(staff?._id || '')
-    ))
+    || (String(creatorId || '') === String(staff?._id || '') && (!requiredRole || staff?.role === requiredRole))
   )
 
   const handleModuleChange = useCallback((moduleKey, fieldKey, value) => {
