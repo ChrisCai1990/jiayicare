@@ -1,5 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 
 // 解析血型字符串 "A型 Rh+" → { abo: 'A', rh: '阳性' }
 function parseBloodType(str) {
@@ -36,6 +37,9 @@ const Order        = require('../models/Order');
 const Product      = require('../models/Product');
 const Coupon       = require('../models/Coupon');
 const Message      = require('../models/Message');
+const LoginSession = require('../models/LoginSession');
+const VerificationCode = require('../models/VerificationCode');
+const HealthFundTransaction = require('../models/HealthFundTransaction');
 const FollowUp         = require('../models/FollowUp');
 const ExamRequisition  = require('../models/ExamRequisition');
 const AnnualPlan       = require('../models/AnnualPlan');
@@ -43,6 +47,30 @@ const { followUpTaskRequirements } = require('../utils/medicalAssistRequirements
 const { reverseFamilyRelation, synchronizeFamilyGroup } = require('../utils/familyLinks');
 const { isActiveToday } = require('./reminders');
 const router = express.Router();
+
+async function applyOnboardingRewards(user, inviteCode) {
+  const cfgRow = await SystemConfig.findOne({ key: 'healthFundPolicy' }).lean();
+  const cfg = cfgRow?.value || {};
+  const grant = async (userId, amount, remark) => {
+    const value = Math.max(0, Number(amount) || 0);
+    if (!value) return;
+    const updated = await User.findByIdAndUpdate(userId, { $inc: { healthFundBalance: value } }, { new: true });
+    await HealthFundTransaction.create({ userId, type: 'grant', source: 'promotion', amount: value, balanceAfter: updated?.healthFundBalance || 0, remark });
+  };
+  const now = new Date();
+  if (cfg.firstLoginEnabled === true && Number(cfg.firstLoginAmount) > 0) {
+    const claimed = await User.findOneAndUpdate({ _id: user._id, firstLoginFundGrantedAt: null }, { $set: { firstLoginFundGrantedAt: now } }, { new: true });
+    if (claimed) await grant(user._id, cfg.firstLoginAmount, '首次使用小程序健康基金奖励');
+  }
+  if (cfg.inviteEnabled !== true || !inviteCode || user.referralRewardGrantedAt) return;
+  const inviter = await User.findOne({ referralCode: String(inviteCode), isDeleted: { $ne: true }, _id: { $ne: user._id } }).select('_id');
+  if (!inviter) return;
+  const claimed = await User.findOneAndUpdate({ _id: user._id, referralRewardGrantedAt: null, invitedBy: null }, { $set: { referralRewardGrantedAt: now, invitedBy: inviter._id } }, { new: true });
+  if (claimed) await Promise.all([
+    grant(inviter._id, cfg.inviterAmount, '邀请好友首次使用小程序奖励'),
+    grant(user._id, cfg.inviteeAmount, '通过好友邀请首次使用小程序奖励'),
+  ]);
+}
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://dist-maowxvion-jiayihui.vercel.app';
 
@@ -343,25 +371,23 @@ router.put('/me', auth, async (req, res) => {
 // 其余健康信息（既往史/生活方式/心理健康等）交给问卷库分批推送采集，不在此处重复询问
 router.post('/onboarding', auth, async (req, res) => {
   try {
-    const { name, idNumber, idType, contactPhone } = req.body;
+    const { name, idNumber, idType, contactPhone, verificationCode } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ success: false, message: '请填写姓名' });
     if (!idNumber || !idNumber.trim()) return res.status(400).json({ success: false, message: `请填写${idType === 'passport' ? '护照号' : '身份证号'}` });
     if (!contactPhone || !contactPhone.trim()) return res.status(400).json({ success: false, message: '请填写联系电话' });
     const normalizedContactPhone = contactPhone.trim();
-    const normalizedIdNumber = idNumber.trim().toUpperCase();
+    const normalizedIdNumber = idNumber.replace(/\s+/g, '').toUpperCase();
+    if (!/^1[3-9]\d{9}$/.test(normalizedContactPhone)) {
+      return res.status(400).json({ success: false, message: '请输入正确的手机号' });
+    }
 
-    // 联系电话若已经对应另一份正式手机号档案，不能仅凭未验证的表单输入自动合并身份。
-    // 明确提示客户重新走该手机号验证码登录，既避免重复档案，也避免越权绑定他人档案。
-    const phoneOwner = await User.findOne({
-      phone: normalizedContactPhone,
-      _id: { $ne: req.user._id },
-    }).select('_id');
-    if (phoneOwner) {
-      return res.status(409).json({
-        success: false,
-        code: 'PHONE_PROFILE_EXISTS',
-        message: '该手机号已有健康档案，请退出当前页面后使用该手机号验证码重新登录。',
-      });
+    // 手机号登录本身已经完成短信验证；微信首次登录或填写了不同号码时，建档页再次验证手机号。
+    const phoneAlreadyVerified = req.user.phone === normalizedContactPhone;
+    if (!phoneAlreadyVerified) {
+      const stored = await VerificationCode.findOne({ phone: normalizedContactPhone });
+      if (!verificationCode || !stored || stored.code !== String(verificationCode) || stored.expiresAt < new Date()) {
+        return res.status(400).json({ success: false, code: 'PHONE_VERIFICATION_REQUIRED', message: '请先验证该手机号' });
+      }
     }
 
     // 护照号格式各国不一，不做身份证格式校验也不做性别/生日自动解析；仅身份证号走原有解析逻辑
@@ -374,13 +400,11 @@ router.post('/onboarding', auth, async (req, res) => {
       idNumber: normalizedIdNumber,
       _id: { $ne: req.user._id },
       isDeleted: { $ne: true },
-    }).select('_id');
-    if (idOwner) {
-      return res.status(409).json({
-        success: false,
-        code: 'IDENTITY_PROFILE_EXISTS',
-        message: '该证件号已有健康档案，请使用档案预留手机号登录或联系客服核验合并。',
-      });
+    });
+
+    const phoneOwner = await User.findOne({ phone: normalizedContactPhone, isDeleted: { $ne: true } });
+    if (phoneOwner && !phoneOwner._id.equals(req.user._id) && (!idOwner || !phoneOwner._id.equals(idOwner._id))) {
+      return res.status(409).json({ success: false, code: 'PHONE_PROFILE_CONFLICT', message: '该手机号已绑定其他证件档案，请联系客服核验。' });
     }
 
     const updateData = {
@@ -396,17 +420,55 @@ router.post('/onboarding', auth, async (req, res) => {
       updateData.birthDate = parsed.birthDate;
       updateData.age = parsed.age;
     }
-    const user = await User.findByIdAndUpdate(req.user._id, updateData, { new: true });
+    let user;
+    let token;
+    let merged = false;
+    if (idOwner) {
+      // 证件号是主身份：把本次已验证的手机号/微信身份绑定到既有档案，不再新建第二份档案。
+      const current = await User.findById(req.user._id);
+      const oldPhone = idOwner.phone || '';
+      const setData = {
+        phone: normalizedContactPhone,
+        contactPhone: normalizedContactPhone,
+        onboardingCompleted: true,
+        onboardingCompletedAt: idOwner.onboardingCompletedAt || new Date(),
+        lastLoginAt: current.lastLoginAt || new Date(),
+        lastLoginMethod: current.lastLoginMethod || idOwner.lastLoginMethod,
+      };
+      if (current.wechatMpOpenid) setData.wechatMpOpenid = current.wechatMpOpenid;
+      if (!idOwner.name || idOwner.name === '微信用户') setData.name = name.trim();
+
+      // 先释放临时账号上的唯一登录字段，再写入既有档案。
+      await User.updateOne({ _id: current._id }, { $unset: { phone: 1, wechatMpOpenid: 1 } });
+      const update = { $set: setData };
+      if (oldPhone && oldPhone !== normalizedContactPhone) {
+        update.$push = { phoneChangeHistory: { from: oldPhone, to: normalizedContactPhone, changedByName: '客户实名验证', changedAt: new Date() } };
+      }
+      user = await User.findByIdAndUpdate(idOwner._id, update, { new: true });
+      await LoginSession.updateMany({ user: current._id, logoutAt: null }, { $set: { user: user._id } });
+      await User.deleteOne({ _id: current._id });
+      token = jwt.sign({ id: user._id, sessionId: req.authSessionId }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '30d' });
+      merged = true;
+    } else {
+      updateData.phone = normalizedContactPhone;
+      user = await User.findByIdAndUpdate(req.user._id, updateData, { new: true });
+    }
+
+    if (!phoneAlreadyVerified) await VerificationCode.deleteOne({ phone: normalizedContactPhone });
+    const pendingInviteCode = req.user.pendingInviteCode || '';
+    await applyOnboardingRewards(user, pendingInviteCode);
+    if (pendingInviteCode) await User.updateOne({ _id: user._id }, { $unset: { pendingInviteCode: 1 } });
+    user = await User.findById(user._id);
 
     // 立即推送第一批问卷（健康问卷表），失败不影响 onboarding 本身完成
     try {
       const { pushBatch1 } = require('../utils/onboardingPush');
-      await pushBatch1(req.user._id);
+      if (!idOwner) await pushBatch1(user._id);
     } catch (e) {
       console.error('[onboarding] 第一批问卷推送失败', e.message);
     }
 
-    res.json({ success: true, data: { user } });
+    res.json({ success: true, message: merged ? '已关联到您的既有健康档案' : '健康档案创建成功', data: { user, token, merged } });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Onboarding 失败', error: err.message });
   }

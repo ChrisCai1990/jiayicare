@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const loginSessionSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   sessionId: { type: String, required: true, unique: true, index: true },
-  method: { type: String, enum: ['phone_wechat', 'phone'], required: true },
+  method: { type: String, enum: ['phone_wechat', 'phone', 'wechat'], required: true },
   loginAt: { type: Date, default: Date.now },
   lastActivityAt: { type: Date, default: Date.now },
   logoutAt: { type: Date, default: null },

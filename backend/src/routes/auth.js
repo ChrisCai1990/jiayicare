@@ -53,15 +53,14 @@ async function applyFirstLoginRewards(user, inviteCode) {
   const cfgRow = await SystemConfig.findOne({ key: 'healthFundPolicy' }).lean();
   const cfg = cfgRow?.value || {};
   const now = new Date();
-  const isFirstTrackedLogin = Number(user.loginCount || 0) === 0;
-  if (isFirstTrackedLogin && cfg.firstLoginEnabled === true && Number(cfg.firstLoginAmount) > 0) {
+  if (cfg.firstLoginEnabled === true && Number(cfg.firstLoginAmount) > 0) {
     const claimed = await User.findOneAndUpdate(
       { _id: user._id, firstLoginFundGrantedAt: null },
       { $set: { firstLoginFundGrantedAt: now } }, { new: true },
     );
     if (claimed) await grantPromotionFund(user._id, cfg.firstLoginAmount, '首次使用小程序健康基金奖励');
   }
-  if (!isFirstTrackedLogin || cfg.inviteEnabled !== true || !inviteCode || user.referralRewardGrantedAt) return;
+  if (cfg.inviteEnabled !== true || !inviteCode || user.referralRewardGrantedAt) return;
   const inviter = await User.findOne({ referralCode: String(inviteCode), isDeleted: { $ne: true }, _id: { $ne: user._id } }).select('_id');
   if (!inviter) return;
   const claimed = await User.findOneAndUpdate(
@@ -230,7 +229,8 @@ router.post('/login', async (req, res) => {
     user.referralCode = crypto.randomBytes(6).toString('hex');
     await user.save();
   }
-  await applyFirstLoginRewards(user, inviteCode);
+  if (user.onboardingCompleted) await applyFirstLoginRewards(user, inviteCode);
+  else if (inviteCode) await User.updateOne({ _id: user._id }, { $set: { pendingInviteCode: String(inviteCode) } });
   user = await User.findById(user._id);
   const loginMethod = user.wechatMpOpenid ? 'phone_wechat' : 'phone';
   const sessionId = await beginLoginSession(req, user, loginMethod);
@@ -370,7 +370,8 @@ router.post('/wechat-mp', async (req, res) => {
       user.referralCode = crypto.randomBytes(6).toString('hex');
       await user.save();
     }
-    await applyFirstLoginRewards(user, inviteCode);
+    if (user.onboardingCompleted) await applyFirstLoginRewards(user, inviteCode);
+    else if (inviteCode) await User.updateOne({ _id: user._id }, { $set: { pendingInviteCode: String(inviteCode) } });
     user = await User.findById(user._id);
     const sessionId = await beginLoginSession(req, user, 'wechat');
     user = await User.findById(user._id);

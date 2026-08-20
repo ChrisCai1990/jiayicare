@@ -10,15 +10,25 @@ import Icon from '../../components/Icon';
 // 首次登录最小化建档：姓名+身份证号+联系电话，其余健康信息交给问卷库分批采集。
 export default function OnboardingPage() {
   const { statusBarHeight } = useNavBar();
-  const { updateUser } = useAuth();
+  const { login, updateUser } = useAuth();
   const [name, setName] = useState('');
   const [idType, setIdType] = useState('idCard');
   const [idNumber, setIdNumber] = useState('');
   const [contactPhone, setContactPhone] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [codeSending, setCodeSending] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   const canSubmit = name.trim() && idNumber.trim() && contactPhone.trim() && !submitting;
+
+  const sendCode = async () => {
+    if (!/^1[3-9]\d{9}$/.test(contactPhone.trim())) { setErrorMsg('请输入正确的手机号'); return; }
+    setCodeSending(true); setErrorMsg('');
+    try { await userAPI.sendOnboardingCode(contactPhone.trim()); Taro.showToast({ title: '验证码已发送', icon: 'success' }); }
+    catch (err) { setErrorMsg(err.message || '验证码发送失败'); }
+    finally { setCodeSending(false); }
+  };
 
   const submit = async () => {
     setErrorMsg('');
@@ -32,9 +42,11 @@ export default function OnboardingPage() {
         idNumber: idNumber.trim(),
         idType,
         contactPhone: contactPhone.trim(),
+        verificationCode: verificationCode.trim(),
       });
       if (res.success) {
-        updateUser({ ...res.data.user, onboardingCompleted: true });
+        if (res.data.token) await login({ ...res.data.user, onboardingCompleted: true }, res.data.token);
+        else updateUser({ ...res.data.user, onboardingCompleted: true });
         Taro.switchTab({ url: '/pages/home/index' });
       } else {
         setErrorMsg(res.message || '提交失败，请重试');
@@ -103,6 +115,12 @@ export default function OnboardingPage() {
           <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textSecondary, marginBottom: `${spacing.sm}px`, display: 'block' }}>联系电话</Text>
           <View style={{ backgroundColor: colors.surface, borderRadius: `${radius.sm}px`, border: `1.5px solid ${colors.border}`, padding: '8px 12px' }}>
             <Input style={{ fontSize: '15px' }} type="number" placeholder="用于健康团队与您联系" value={contactPhone} onInput={(e) => setContactPhone(e.detail.value)} />
+          </View>
+          <View style={{ display: 'flex', gap: `${spacing.sm}px`, marginTop: `${spacing.sm}px` }}>
+            <View style={{ flex: 1, backgroundColor: colors.surface, borderRadius: `${radius.sm}px`, border: `1.5px solid ${colors.border}`, padding: '8px 12px' }}>
+              <Input style={{ fontSize: '15px' }} type="number" maxlength={6} placeholder="请输入短信验证码" value={verificationCode} onInput={(e) => setVerificationCode(e.detail.value)} />
+            </View>
+            <Button size="mini" loading={codeSending} disabled={codeSending} onClick={sendCode} style={{ color: colors.primary, borderColor: colors.primary, margin: 0, height: '42px', lineHeight: '42px' }}>获取验证码</Button>
           </View>
         </View>
 
