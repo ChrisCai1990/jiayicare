@@ -732,10 +732,10 @@ function RequisitionModal({ patientId, onClose, onSaved, prefillTitle = '', pref
 }
 
 // AI健康分析的卡片与数组编辑框：必须定义在组件外（模块级），否则每次输入重渲染会重建组件导致输入框失焦
-function AISectionCard({ title, icon, color, children }) {
+function AISectionCard({ id, title, icon, color, children }) {
   const [expanded, setExpanded] = useState(false)
   return (
-    <div className="card" style={{ marginBottom: 14 }}>
+    <div id={id} className="card" style={{ marginBottom: 14, scrollMarginTop: 16 }}>
       <button type="button" onClick={() => setExpanded(v => !v)}
         style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '12px 20px 10px',
           border: 'none', borderBottom: expanded ? '1px solid #F0EDE7' : 'none', background: 'transparent',
@@ -6957,6 +6957,30 @@ export default function PatientDetailPage() {
           })
         }
         const openSectionSources = (title, ids) => setAiSourceGroup({ title, ids, reportLabel })
+        const workbenchYearReports = screeningReports
+          .filter(report => Number(String(report.checkDate || report.date || report.createdAt || '').slice(0, 4)) === Number(curYear))
+          .sort((a, b) => String(b.checkDate || b.date || '').localeCompare(String(a.checkDate || a.date || '')))
+        const workbenchScreeningSummary = screeningYearSummaries.find(item => Number(item.year) === Number(curYear))
+        const workbenchSummaryRecords = workbenchScreeningSummary
+          ? (Array.isArray(workbenchScreeningSummary.records) && workbenchScreeningSummary.records.length
+            ? workbenchScreeningSummary.records : [workbenchScreeningSummary])
+          : []
+        const workbenchLatestSummary = workbenchSummaryRecords[0]
+        const workbenchSections = [
+          ['tumor_risk', '肿瘤筛查信息整理', '🔬'],
+          ['cardiovascular_risk', '心脑血管相关信息整理', '❤️'],
+          ['chronic_disease', '慢病及其他健康信息整理', '📊'],
+          ['checkup_completeness', '体检资料覆盖情况', '📋'],
+          ['medical_priority', '优先关注信息', '🏥'],
+        ].filter(([key]) => !!sec[key])
+        const workbenchApprovedSections = workbenchSections.filter(([key]) => doctorRecord.sectionReviews?.[key]?.status === 'approved').length
+        const jumpToAISection = key => {
+          const node = document.getElementById(`ai-review-${key}`)
+          if (!node) return
+          node.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          const contentVisible = node.children.length > 1
+          if (!contentVisible) node.querySelector('button')?.click()
+        }
 
         // 更新编辑中的 sections 字段
         const updSec = (secKey, field, val) => setAiSummaryForm(f => ({
@@ -7018,6 +7042,88 @@ export default function PatientDetailPage() {
 
         return (
           <div>
+            <div className="card" style={{ marginBottom: 16, overflow: 'hidden', border: '1px solid #B7D9CA' }}>
+              <div style={{ padding: '14px 16px', background: 'linear-gradient(90deg, #E8F5EF, #F5FAF7)', borderBottom: '1px solid #D9E9E1' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <strong style={{ color: '#155E48', fontSize: 16 }}>健康信息核查工作台</strong>
+                  <span style={{ fontSize: 12, color: '#166534', background: '#DCFCE7', borderRadius: 999, padding: '3px 9px' }}>{curYear}年度</span>
+                  <span style={{ fontSize: 12, color: workbenchApprovedSections === workbenchSections.length && workbenchSections.length ? '#15803D' : '#B45309' }}>
+                    AI板块已审核 {workbenchApprovedSections}/{workbenchSections.length}
+                  </span>
+                  <span style={{ fontSize: 12, color: workbenchLatestSummary?.status === 'approved' ? '#15803D' : '#B45309' }}>
+                    年度小结：{workbenchLatestSummary ? (workbenchLatestSummary.status === 'approved' ? '已人工审核' : '待人工审核') : '尚未生成'}
+                  </span>
+                </div>
+                <div style={{ marginTop: 10, display: 'flex', gap: 4, alignItems: 'center', overflowX: 'auto', paddingBottom: 2 }}>
+                  {[
+                    ['原件上传', workbenchYearReports.length > 0],
+                    ['AI解析', workbenchYearReports.some(r => r.aiStatus || (r.reportItems || []).length)],
+                    ['健管审核', workbenchYearReports.some(r => r.auditStatus === 'approved' || r.aiStatus === 'reviewed')],
+                    ['专项归类', workbenchYearReports.some(r => r.screeningL1 || r.screeningCategory)],
+                    ['年度小结', !!workbenchLatestSummary],
+                    ['趋势分析', hasDoctorData],
+                    ['人工终审', workbenchSections.length > 0 && workbenchApprovedSections === workbenchSections.length],
+                  ].map(([label, done], index, list) => <React.Fragment key={label}>
+                    <span style={{ whiteSpace: 'nowrap', fontSize: 11, fontWeight: 700, color: done ? '#166534' : '#64748B', background: done ? '#DCFCE7' : '#F1F5F9', borderRadius: 999, padding: '4px 8px' }}>{done ? '✓ ' : '○ '}{label}</span>
+                    {index < list.length - 1 && <span style={{ color: '#94A3B8' }}>›</span>}
+                  </React.Fragment>)}
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', background: '#F8FAF9' }}>
+                <section style={{ padding: 14, borderRight: '1px solid #E2E8F0', minHeight: 240 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: '#334155', marginBottom: 9 }}>① 原始资料 · {workbenchYearReports.length}份</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7, maxHeight: 300, overflowY: 'auto' }}>
+                    {workbenchYearReports.length === 0 && <div style={{ fontSize: 12, color: '#94A3B8' }}>该年度暂无可核查报告</div>}
+                    {workbenchYearReports.map(report => {
+                      const viewed = !!report.familyDoctorViewedAt
+                      return <button key={report._id} type="button" onClick={() => {
+                        if (['familyDoctor', 'superadmin'].includes(staff?.role) && pendingDoctorAuditReports.some(item => String(item._id) === String(report._id))) {
+                          markArchiveReviewViewed(report._id)
+                        }
+                        openReportDetail(report)
+                      }}
+                        style={{ textAlign: 'left', border: '1px solid #E2E8F0', background: '#fff', borderRadius: 8, padding: '8px 10px', cursor: 'pointer' }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#1E293B' }}>{report.screeningL2 || report.title || '检查报告'}</div>
+                        <div style={{ marginTop: 3, fontSize: 11, color: '#64748B' }}>{String(report.checkDate || report.date || '').slice(0, 10)} · {report.hospital || report.institution || '机构待补充'}</div>
+                        <div style={{ marginTop: 4, fontSize: 11, color: viewed ? '#15803D' : '#B45309' }}>{viewed ? '✓ 健康顾问已查看' : '点击查看原件与解析数据'}</div>
+                      </button>
+                    })}
+                  </div>
+                </section>
+                <section style={{ padding: 14, borderRight: '1px solid #E2E8F0', minHeight: 240 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: '#334155', marginBottom: 9 }}>② 专项筛查 · 年度小结</div>
+                  {!workbenchLatestSummary ? <div style={{ fontSize: 12, color: '#94A3B8' }}>该年度尚未生成专项筛查小结</div> : <>
+                    <div style={{ fontSize: 11, color: workbenchLatestSummary.status === 'approved' ? '#15803D' : '#B45309', marginBottom: 8 }}>
+                      {workbenchLatestSummary.status === 'approved' ? `✓ 已审核${workbenchLatestSummary.approvedByName ? ` · ${workbenchLatestSummary.approvedByName}` : ''}` : '● AI草稿，待健康顾问审核'}
+                    </div>
+                    {[['tumor_risk', '肿瘤筛查'], ['cardiovascular_risk', '心脑血管'], ['chronic_disease', '慢病及其他']].map(([key, label]) => {
+                      const summary = workbenchLatestSummary.sections?.[key]?.summary || ''
+                      return <div key={key} style={{ marginBottom: 9, padding: '8px 9px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#155E48' }}>{label}</div>
+                        <div style={{ marginTop: 3, fontSize: 11, color: '#64748B', lineHeight: 1.55, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{summary || '暂无相关资料'}</div>
+                      </div>
+                    })}
+                  </>}
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setScreeningSummaryYear(Number(curYear)); setTab('records'); setTimeout(() => document.getElementById('screening-results')?.scrollIntoView({ behavior: 'smooth' }), 50) }}>进入专项筛查完整核查</button>
+                </section>
+                <section style={{ padding: 14, minHeight: 240 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: '#334155', marginBottom: 9 }}>③ AI趋势分析 · 人工审核</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                    {workbenchSections.length === 0 && <div style={{ fontSize: 12, color: '#94A3B8' }}>该年度尚未生成5维健康信息整理</div>}
+                    {workbenchSections.map(([key, label, icon]) => {
+                      const approved = doctorRecord.sectionReviews?.[key]?.status === 'approved'
+                      const sourceCount = sourceIdsFor(key).length
+                      return <button key={key} type="button" onClick={() => jumpToAISection(key)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 7, textAlign: 'left', border: '1px solid #E2E8F0', background: '#fff', borderRadius: 8, padding: '8px 10px', cursor: 'pointer' }}>
+                        <span>{icon}</span><span style={{ flex: 1, fontSize: 12, fontWeight: 700, color: '#1E293B' }}>{label}<small style={{ display: 'block', marginTop: 2, fontWeight: 400, color: '#64748B' }}>关联原件 {sourceCount}份</small></span>
+                        <span style={{ fontSize: 11, color: approved ? '#15803D' : '#B45309' }}>{approved ? '✓ 已审核' : '待审核 ›'}</span>
+                      </button>
+                    })}
+                  </div>
+                </section>
+              </div>
+              <div style={{ padding: '8px 14px', borderTop: '1px solid #E2E8F0', background: '#FFFBEB', fontSize: 11, color: '#92400E' }}>所有AI解析、归类、小结和趋势结论均须人工审核后才可作为正式健康管理信息。</div>
+            </div>
             <AiRuleHint scene="health_analysis" />
             {/* 前置要求：健康顾问生成AI健康分析/风险评估前必须先查看确认健康档案（2026-07-28改造，
                 不再逐份审核报告数据本身，那是健管专员audit_status的职责） */}
@@ -7293,7 +7399,7 @@ export default function PatientDetailPage() {
                   )
                 })()}
                 {/* 板块一：肿瘤风险筛查分析 */}
-                <AISectionCard title="肿瘤筛查信息整理" icon="🔬" color="#7C3AED">
+                <AISectionCard id="ai-review-tumor_risk" title="肿瘤筛查信息整理" icon="🔬" color="#7C3AED">
                   <AISectionSourceButton title="肿瘤风险筛查分析" ids={sourceIdsFor('tumor_risk')} onOpen={openSectionSources} />
                   {renderSectionActions('tumor_risk')}
                   {docEditing && (!editingAISection || editingAISection === 'tumor_risk') ? (
@@ -7373,7 +7479,7 @@ export default function PatientDetailPage() {
                 <AISummaryDiscussionPanel patientId={id} year={curYear} recordIndex={doctorRecord._recordIndex} discussions={doctorRecord.discussions || []} staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} title="肿瘤筛查 · AI讨论" sectionKey="tumor_risk" />
 
                 {/* 板块二：心脑血管病风险分析 */}
-                <AISectionCard title="心脑血管相关信息整理" icon="❤️" color="#EF4444">
+                <AISectionCard id="ai-review-cardiovascular_risk" title="心脑血管相关信息整理" icon="❤️" color="#EF4444">
                   <AISectionSourceButton title="心脑血管病风险分析" ids={sourceIdsFor('cardiovascular_risk')} onOpen={openSectionSources} />
                   {renderSectionActions('cardiovascular_risk')}
                   {docEditing && (!editingAISection || editingAISection === 'cardiovascular_risk') ? (
@@ -7404,7 +7510,7 @@ export default function PatientDetailPage() {
                 <AISummaryDiscussionPanel patientId={id} year={curYear} recordIndex={doctorRecord._recordIndex} discussions={doctorRecord.discussions || []} staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} title="心脑血管 · AI讨论" sectionKey="cardiovascular_risk" />
 
                 {/* 板块三：慢性病及其他健康指标 */}
-                <AISectionCard title="慢病及其他健康信息整理" icon="📊" color="#0077B6">
+                <AISectionCard id="ai-review-chronic_disease" title="慢病及其他健康信息整理" icon="📊" color="#0077B6">
                   <AISectionSourceButton title="慢性病及其他健康指标分析" ids={sourceIdsFor('chronic_disease')} onOpen={openSectionSources} />
                   {renderSectionActions('chronic_disease')}
                   {docEditing && (!editingAISection || editingAISection === 'chronic_disease') ? (
@@ -7459,7 +7565,7 @@ export default function PatientDetailPage() {
                 <AISummaryDiscussionPanel patientId={id} year={curYear} recordIndex={doctorRecord._recordIndex} discussions={doctorRecord.discussions || []} staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} title="慢病及其他指标 · AI讨论" sectionKey="chronic_disease" />
 
                 {/* 板块四：体检全面性评估 */}
-                <AISectionCard title="体检资料覆盖情况" icon="📋" color="#1E6B50">
+                <AISectionCard id="ai-review-checkup_completeness" title="体检资料覆盖情况" icon="📋" color="#1E6B50">
                   <AISectionSourceButton title="体检全面性评估" ids={sourceIdsFor('checkup_completeness')} onOpen={openSectionSources} />
                   {renderSectionActions('checkup_completeness')}
                   {docEditing && (!editingAISection || editingAISection === 'checkup_completeness') ? (
@@ -7481,7 +7587,7 @@ export default function PatientDetailPage() {
                 <AISummaryDiscussionPanel patientId={id} year={curYear} recordIndex={doctorRecord._recordIndex} discussions={doctorRecord.discussions || []} staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} title="体检资料覆盖 · AI讨论" sectionKey="checkup_completeness" />
 
                 {/* 板块五：需优先解决的医疗问题 */}
-                <AISectionCard title="需优先关注的信息" icon="🏥" color="#DC2626">
+                <AISectionCard id="ai-review-medical_priority" title="需优先关注的信息" icon="🏥" color="#DC2626">
                   <AISectionSourceButton title="需优先解决的医疗问题" ids={sourceIdsFor('medical_priority')} onOpen={openSectionSources} />
                   {renderSectionActions('medical_priority')}
                   {docEditing && (!editingAISection || editingAISection === 'medical_priority') ? (
