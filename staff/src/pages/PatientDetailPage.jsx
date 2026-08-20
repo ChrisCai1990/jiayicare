@@ -526,8 +526,8 @@ const SR_CATEGORY = {
   disease_mgmt:  '专病管理', specialist: '专病管理', psychology: '专病管理', rehab: '专病管理', tcm: '专病管理',
   medical_visit: '医院就医', medical_escort: '医院就医',
   stage_assessment: '阶段性健康评估',
-  routine:       '历史日常随访',
-  doctor_followup: '历史健康顾问跟进',
+  routine:       '历史随访',
+  doctor_followup: '历史随访',
 }
 const SR_CATEGORY_COLOR = { '营养干预':'#22A06B', '专病管理':'#0077B6', '医院就医':'#D97706', '阶段性健康评估':'#8A4AC7', '历史随访':'#8AA89C' }
 
@@ -1617,6 +1617,7 @@ export default function PatientDetailPage() {
   const [symptomForm, setSymptomForm] = useState({ value: '', note: '', decisionNote: '' })
   const [symptomActionSaving, setSymptomActionSaving] = useState(false)
   const [expandedSymptoms, setExpandedSymptoms] = useState(() => new Set())
+  const [riskEvidenceModal, setRiskEvidenceModal] = useState(null)
   // 管理信息下拉选项：服务包(admin商城服务) + 会员来源(admin配置)，替代手工录入（2026-07-10 金娟）
   const [serviceOptions, setServiceOptions] = useState([])
   const [memberTypeOptions, setMemberTypeOptions] = useState([])
@@ -1881,6 +1882,28 @@ export default function PatientDetailPage() {
   }
   const loadReports = async () => {
     try { const res = await staffAPI.getPatientReports(id); setReports(res.data) } catch {}
+  }
+
+  const openRiskEvidence = async (tag, categoryLabel) => {
+    setRiskEvidenceModal({ tag, categoryLabel, loading: true, sources: [] })
+    try {
+      const res = await staffAPI.getPatientReports(id)
+      const rows = res.data || []
+      const sources = []
+      rows.forEach(report => {
+        const add = (itemName, value) => {
+          const text = String(value || '').trim()
+          if (!text || (!text.includes(tag) && !tag.includes(text))) return
+          sources.push({ reportId: report._id, title: report.title || '体检报告', date: report.checkDate || report.date || '', itemName, text })
+        }
+        ;(report.reportItems || []).forEach(item => add(item.name || '', item.diagnosis || item.conclusion || item.findings))
+        Object.entries(report.examMainConclusions || {}).forEach(([name, value]) => add(name, value))
+        add('', report.examConclusion)
+      })
+      setRiskEvidenceModal({ tag, categoryLabel, loading: false, sources })
+    } catch (err) {
+      setRiskEvidenceModal({ tag, categoryLabel, loading: false, sources: [], error: err.message || '来源加载失败' })
+    }
   }
   // 专项筛查目录（供审核 modal 下拉选择）
   useEffect(() => {
@@ -3066,9 +3089,10 @@ export default function PatientDetailPage() {
       {location.state?.sourceTodo && (
         <div style={{ marginBottom: 16, padding: '12px 16px', borderRadius: 10, background: '#FFF8E8', border: '1px solid #F4D58D', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
           <span style={{ fontSize: 18 }}>📌</span>
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: '#8A5A00' }}>当前处理：{location.state.sourceTodo.label || '待处理任务'}</div>
-            <div style={{ fontSize: 13, color: '#4A6558', marginTop: 3 }}>{location.state.sourceTodo.summary || '请核对本页对应信息并完成处理'}</div>
+            <div style={{ fontSize: 13, color: '#4A6558', marginTop: 3, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.6 }}>{location.state.sourceTodo.summary || '请核对本页对应信息并完成处理'}</div>
+            {location.state.sourceTodo.updateLocation && <div style={{ fontSize: 12, color: '#8A5A00', marginTop: 4, fontWeight: 600 }}>更新位置：{location.state.sourceTodo.updateLocation}</div>}
           </div>
           <button className="btn btn-secondary btn-sm" onClick={() => nav(location.pathname + location.search, { replace: true, state: {} })}>关闭提示</button>
         </div>
@@ -3129,7 +3153,7 @@ export default function PatientDetailPage() {
                 <button type="button" className="btn btn-secondary btn-sm" onClick={addTags}>＋ 添加</button>
               </div>
             </div>
-              : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, flex: 1 }}>{values.length ? values.map(v => <span key={v} className="badge badge-danger">{v}</span>) : <span style={{ fontSize: 12, color: '#A0AAA5' }}>暂无</span>}</div>}
+              : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, flex: 1 }}>{values.length ? values.map(v => <button key={v} type="button" onClick={() => openRiskEvidence(v, label)} title="点击查看判定来源" style={{ border: 0, cursor: 'pointer', whiteSpace: 'normal', textAlign: 'left', lineHeight: 1.45 }} className="badge badge-danger">{v} · 查看来源</button>) : <span style={{ fontSize: 12, color: '#A0AAA5' }}>暂无</span>}</div>}
           </div>
         })}
         <div style={{ display: (showTagEditor || hasConfirmedRisk) ? 'flex' : 'none', gap: 8, justifyContent: 'flex-end', marginTop: 6 }}>
@@ -8410,6 +8434,7 @@ export default function PatientDetailPage() {
                           <div style={{ minWidth: 0, flex: 1, cursor: 'pointer' }} onClick={toggleExpanded}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                               <span style={{ color: '#1A2B24', fontSize: 14, lineHeight: 1.6, fontWeight: 700 }}>{record.value || record.note || '未填写具体内容'}</span>
+                              <span style={{ color: '#4A6558', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>{new Date(record.recordedAt).toLocaleDateString('zh-CN')}</span>
                               <span style={{ color: '#8AA89C', fontSize: 12 }}>{isExpanded ? '收起' : '展开详情'} {isExpanded ? '⌃' : '⌄'}</span>
                             </div>
                             {isExpanded && <>
@@ -8725,6 +8750,7 @@ export default function PatientDetailPage() {
         CATS.forEach(c => { grouped[c] = [] })
         serviceRecords.forEach(r => {
           const cat = SR_CATEGORY[r.type] || '历史随访'
+          if (!grouped[cat]) grouped[cat] = []
           grouped[cat].push(r)
         })
         const renderTable = (records) => (
@@ -9664,6 +9690,33 @@ export default function PatientDetailPage() {
                 } catch (err) { toast(err.message) }
                 finally { setEditingReportSaving(false) }
               }}>{editingReportSaving ? '保存中…' : '保存'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {riskEvidenceModal && (
+        <div className="modal-overlay" onClick={() => setRiskEvidenceModal(null)}>
+          <div className="modal" style={{ maxWidth: 620, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <h3 className="modal-title">风险标签来源 · {riskEvidenceModal.tag}</h3>
+                <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>{riskEvidenceModal.categoryLabel}；标签来自已审核报告的异常诊断或检查结论，最终需健康顾问审核确认。</div>
+              </div>
+              <button className="modal-close" onClick={() => setRiskEvidenceModal(null)}>✕</button>
+            </div>
+            <div className="modal-body" style={{ overflowY: 'auto' }}>
+              {riskEvidenceModal.loading ? <div style={{ padding: 24, textAlign: 'center', color: '#8AA89C' }}>正在查找来源…</div>
+                : riskEvidenceModal.error ? <div style={{ color: '#DC3545' }}>{riskEvidenceModal.error}</div>
+                : riskEvidenceModal.sources.length === 0 ? <div style={{ padding: 16, background: '#FFF8E8', borderRadius: 8, color: '#8A5A00', lineHeight: 1.7 }}>未在当前报告原文中找到完全匹配项。该标签可能来自历史数据或人工编辑，请结合体检报告复核，必要时在“人工编辑标签”中修正或删除。</div>
+                : <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{riskEvidenceModal.sources.map((source, index) => (
+                  <div key={`${source.reportId}-${index}`} style={{ padding: 12, border: '1px solid #E0D9CE', borderRadius: 8, background: '#FAFAF8' }}>
+                    <div style={{ fontWeight: 700, color: '#1A2B24' }}>{source.title}{source.itemName ? ` · ${source.itemName}` : ''}</div>
+                    <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>{source.date || '日期未填写'}</div>
+                    <div style={{ fontSize: 13, color: '#4A6558', lineHeight: 1.7, marginTop: 7, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{source.text}</div>
+                    <button className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => { setRiskEvidenceModal(null); setTab('reports'); openReportDetail({ _id: source.reportId, title: source.title }) }}>查看原报告</button>
+                  </div>
+                ))}</div>}
             </div>
           </div>
         </div>
