@@ -7731,6 +7731,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         const critical = ra.overallLevel === 'critical';
         todos.push({
           id: 'risk_' + u._id, type: 'risk_review',
+          year: y,
           label: critical ? '风险预警·危急值' : '风险预警·高风险', priority: 1,
           patientName: u.name || '未知', patientId: String(u._id),
           summary: ra.overallSummary || 'AI检测到高风险，请健康顾问审核',

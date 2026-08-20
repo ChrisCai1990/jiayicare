@@ -2848,8 +2848,20 @@ export default function PatientDetailPage() {
       await staffAPI.updateAIRisk(id, { action: 'approve', year })
       toast('健康关注提示已核对确认')
       load()
-    } catch (err) { toast(err.message || '操作失败') }
+      return true
+    } catch (err) {
+      toast(err.message || '操作失败')
+      return false
+    }
     finally { setRiskApproving(false) }
+  }
+  const handleCloseRiskTodo = async () => {
+    const years = Object.keys(riskByYearFE(data?.user?.aiRiskAssessment || {})).sort((a, b) => Number(b) - Number(a))
+    const latestYear = location.state?.sourceTodo?.year || years[0]
+    if (!latestYear) { toast('未找到可审核的健康关注信息'); return }
+    if (!window.confirm('确认已核对完整风险依据并关闭该待审核任务？')) return
+    const ok = await handleApproveRisk(latestYear)
+    if (ok) nav(location.pathname + location.search, { replace: true, state: {} })
   }
   // 进入编辑态：把当前风险评估复制成可编辑副本
   const startEditRisk = (year) => {
@@ -3129,7 +3141,10 @@ export default function PatientDetailPage() {
             {location.state.sourceTodo.updateLocation && <div style={{ fontSize: 12, color: '#8A5A00', marginTop: 4, fontWeight: 600 }}>更新位置：{location.state.sourceTodo.updateLocation}</div>}
             {location.state.sourceTodo.type === 'risk_review' && tab !== 'ai-risk' && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => setTab('ai-risk')}>查看完整风险依据</button>}
           </div>
-          <button className="btn btn-secondary btn-sm" onClick={() => nav(location.pathname + location.search, { replace: true, state: {} })}>关闭提示</button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {location.state.sourceTodo.type === 'risk_review' && <button type="button" className="btn btn-primary btn-sm" disabled={riskApproving} onClick={handleCloseRiskTodo}>{riskApproving ? '处理中…' : '已核对，确认关闭任务'}</button>}
+            <button className="btn btn-secondary btn-sm" onClick={() => nav(location.pathname + location.search, { replace: true, state: {} })}>{location.state.sourceTodo.type === 'risk_review' ? '仅隐藏提示' : '关闭提示'}</button>
+          </div>
         </div>
       )}
 

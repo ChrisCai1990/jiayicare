@@ -15,11 +15,18 @@ const FREQUENCY_DAYS = {
 // 保证用户端切到"本月"看到的随访计划是完整的，同时不会像365天那样疯狂堆积。
 const HORIZON_DAYS = 30;
 
-// 同一方案、同一客户、同一天、同一主题和内容就是同一个排期。不能依赖数组下标，
-// 因为方案里插入/调整一条记录后下标会变化，旧排期会被误认为新计划再次送审。
+// 同一客户、同一天、同一随访内容就是同一个排期。不能依赖方案版本或数组下标：
+// 年度方案重建/调整后会产生新的 planId 和 key，但不应把同一件事再次送审。
+// 去掉排版标点差异，避免同一内容只因空格/标点变化而重复出现。
+const normalizeScheduleText = (value) => String(value || '')
+  .replace(/\s+/g, '')
+  .replace(/[，,。；;：:（）()\[\]【】]/g, '');
+
 const logicalScheduleKey = (row) => {
   const day = row.date ? new Date(row.date).toISOString().slice(0, 10) : '';
-  return [row.sourceAnnualPlanId, row.patientId, day, String(row.theme || '').trim(), String(row.content || '').trim()].join('|');
+  const content = normalizeScheduleText(row.content);
+  const fallbackTheme = normalizeScheduleText(row.theme);
+  return [row.patientId, day, content || fallbackTheme].join('|');
 };
 
 // 多条记录模块（就医/会诊/复查/接种/检测）：每条记录本身就有明确日期，直接各生成一条随访。
