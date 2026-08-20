@@ -1751,7 +1751,7 @@ export default function PatientDetailPage() {
   const [aiYear, setAiYear] = useState(null)        // 当前查看的AI健康分析年度
   const [aiRecordIndex, setAiRecordIndex] = useState({ doctor: 0, nutrition: 0 })
   const [aiAnalysisView, setAiAnalysisView] = useState('doctor')
-  const [reviewWorkbenchView, setReviewWorkbenchView] = useState('screening')
+  const [reviewWorkbenchView, setReviewWorkbenchView] = useState('analysis')
   const [reviewWorkbenchExpandedReports, setReviewWorkbenchExpandedReports] = useState(() => new Set())
   const [lastRegeneratedItem, setLastRegeneratedItem] = useState('')
   const [aiSourceGroup, setAiSourceGroup] = useState(null) // { title, ids }
@@ -2235,7 +2235,7 @@ export default function PatientDetailPage() {
       loadScreening()
       if (reports.length === 0) loadReports()
     }
-    else if (tab === 'records') {
+    else if (tab === 'records' || tab === 'screening') {
       loadScreening()
       // 专项筛查页面的"待完成方案项目"提示条需要 plans 数据，但 plans 平时只在"方案"Tab才加载，这里按需补一次
       if (plans.length === 0) loadPlans()
@@ -3477,6 +3477,7 @@ export default function PatientDetailPage() {
           { key: 'info',          label: '基本信息' },
           { key: 'records',       label: '健康档案' },
           { key: 'reports',       label: '体检报告' },
+          { key: 'screening',     label: '专项筛查' },
           { key: 'portrait',      label: '健康画像' },
           { key: 'medications',   label: '用药与营养' },
           { key: 'plans',         label: '管理方案' },
@@ -4041,8 +4042,8 @@ export default function PatientDetailPage() {
       )}
 
       {/* ── Records Tab ── */}
-      {tab === 'records' && (
-        <div ref={archiveSectionsRef} className="health-archive-sections" onClick={handleArchiveSectionClick}>
+      {(tab === 'records' || (tab === 'ai' && reviewWorkbenchView === 'screening')) && (
+        <div ref={tab === 'records' ? archiveSectionsRef : null} className={tab === 'records' ? 'health-archive-sections' : 'screening-only-sections'} onClick={tab === 'records' ? handleArchiveSectionClick : undefined}>
         <style>{`.health-archive-sections{display:grid;grid-template-columns:236px minmax(0,1fr);gap:0 18px;align-items:start}.health-archive-sections>.archive-toolbar,.health-archive-sections>.archive-overview{grid-column:1 / -1}.health-archive-sections>.card{grid-column:2;min-width:0;transition:box-shadow .2s}.health-archive-sections .archive-collapsed>:not(.card-header){display:none!important}.health-archive-sections .card-header[data-archive-toggle="true"]{cursor:pointer;min-height:60px;display:flex;align-items:center;gap:12px}.health-archive-sections .card-header[data-archive-toggle="true"] .card-title{order:0;flex:0 0 220px;display:flex;align-items:center;gap:8px}.health-archive-sections .card-header[data-archive-toggle="true"]:before{content:attr(data-archive-summary);order:1;flex:1;min-width:0;font-size:12px;font-weight:400;color:#77958A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.health-archive-sections .card-header[data-archive-toggle="true"]>button,.health-archive-sections .card-header[data-archive-toggle="true"]>div:not(.card-title){order:2;flex-shrink:0}.health-archive-sections .card-header[data-archive-toggle="true"]:after{content:'⌃';order:3;margin-left:2px;color:#1E6B50;font-size:18px}.health-archive-sections .archive-collapsed>.card-header[data-archive-toggle="true"]:after{content:'⌄'}.archive-overview{background:linear-gradient(135deg,#EAF4EF 0%,#FAFCFA 62%,#FFF 100%);border:1px solid #D9E9E0;border-radius:14px;padding:20px 22px;margin-bottom:18px}.archive-overview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:16px}.archive-overview-metric{background:rgba(255,255,255,.86);border:1px solid #E2EEE7;border-radius:10px;padding:12px 13px}.archive-overview-label{font-size:12px;color:#6E8579;margin-bottom:5px}.archive-overview-value{font-size:18px;font-weight:700;color:#173D2B}.archive-overview-task{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#FFF;border:1px solid #DDEBE3;border-radius:8px;padding:9px 10px;margin-top:8px}.archive-overview-task-text{font-size:12px;color:#4A6558;margin-top:2px}.archive-nav{grid-column:1;grid-row:3 / span 80;position:sticky;top:16px;background:#FFF;border:1px solid #E0EBE4;border-radius:12px;padding:12px;box-shadow:0 4px 16px rgba(26,61,43,.04)}.archive-nav-title{font-size:12px;font-weight:700;color:#416554;padding:3px 8px 9px}.archive-nav-group{border-top:1px solid #EEF3EF;padding:9px 0 4px}.archive-nav-group:first-of-type{border-top:0}.archive-nav-group-label{font-size:11px;font-weight:700;color:#8AA89C;padding:0 8px 5px}.archive-nav-item{display:flex;width:100%;align-items:center;justify-content:space-between;gap:8px;border:0;border-radius:7px;background:transparent;color:#395848;cursor:pointer;font-size:13px;padding:8px;text-align:left}.archive-nav-item:hover{background:#EDF6F0;color:#1E6B50}.archive-nav-item span:last-child{color:#9AB2A5;font-size:14px}@media(max-width:1000px){.health-archive-sections{display:block}.health-archive-sections>.card{margin-left:0}.archive-nav{display:none}.archive-overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.health-archive-sections .card-header[data-archive-toggle="true"] .card-title{flex:1}.health-archive-sections .card-header[data-archive-toggle="true"]:before{display:none}}`}</style>
         <style>{`.health-archive-sections{grid-template-columns:220px minmax(0,1fr);gap:0 16px}.health-archive-sections>.archive-toolbar{grid-column:1/-1;border-bottom:1px solid #E3ECE6;padding:0 4px 14px}.health-archive-sections>.archive-overview{display:none}.health-archive-sections>.archive-nav{grid-row:2 / span 80;margin-top:0;border-radius:10px;box-shadow:none}.health-archive-sections>.card{margin-bottom:14px!important}.health-archive-sections>.archive-section-hidden{display:none}.archive-nav-item.is-active{background:#EAF5EE;color:#176B4D;font-weight:700}.archive-nav-item.is-active span:last-child{color:#176B4D}.health-archive-sections .card-header[data-archive-toggle="true"]{cursor:default}.health-archive-sections .card-header[data-archive-toggle="true"]:after{display:none}.health-archive-sections .card-header[data-archive-toggle="true"]:before{color:#8AA89C}.health-archive-sections .archive-collapsed>:not(.card-header){display:block!important}@media(max-width:1000px){.health-archive-sections>.archive-toolbar{padding-bottom:12px}.health-archive-sections>.archive-section-hidden{display:none!important}}`}</style>
         <style>{`.health-archive-sections{display:block}.health-archive-sections>.archive-toolbar{border:0;padding:0 4px 12px;margin-bottom:0!important}.health-archive-sections>.archive-nav{position:static;display:flex;gap:4px;width:100%;padding:0 0 14px;margin:0 0 16px;background:transparent;border:0;border-bottom:1px solid #DDE8E1;border-radius:0;box-shadow:none}.health-archive-sections>.archive-nav .archive-nav-item{position:relative;display:inline-flex;width:auto;align-items:center;gap:6px;padding:10px 16px;border-radius:7px 7px 0 0;color:#668176;font-size:14px;font-weight:600}.health-archive-sections>.archive-nav .archive-nav-item:hover{background:#F1F7F3;color:#1E6B50}.health-archive-sections>.archive-nav .archive-nav-item.is-active{background:transparent;color:#176B4D}.health-archive-sections>.archive-nav .archive-nav-item.is-active:after{content:'';position:absolute;right:12px;bottom:-15px;left:12px;height:2px;background:#1E6B50;border-radius:2px}.health-archive-sections>.archive-nav em{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:10px;background:#FFF1DD;color:#B45309;font-size:11px;font-style:normal}.health-archive-sections>.card{margin-left:0;margin-bottom:16px!important}.health-archive-sections>.archive-section-hidden{display:none!important}@media(max-width:760px){.health-archive-sections>.archive-nav{overflow-x:auto}.health-archive-sections>.archive-nav .archive-nav-item{white-space:nowrap;padding:10px 12px}.health-archive-sections>.archive-toolbar{align-items:flex-start!important;gap:8px;flex-direction:column}}`}</style>
@@ -4818,6 +4819,7 @@ export default function PatientDetailPage() {
         })()}
 
 
+        <div className="screening-section-wrapper">
         {/* ── 4.3 专项筛查结果（三层目录树） ── */}
         {(() => {
           const STATUS_TEXT = { normal: '正常', abnormal: '异常', attention: '注意', unknown: '' }
@@ -5890,6 +5892,7 @@ export default function PatientDetailPage() {
             </div>
           </div>
         )}
+        </div>
 
         {/* ── 体检关键指标 ── */}
         <div className="card" style={{ marginBottom: 16 }}>
@@ -7084,7 +7087,7 @@ export default function PatientDetailPage() {
               <div style={{ background: '#F8FAF9' }}>
                 <section style={{ padding: 18, minWidth: 0 }}>
                   <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-                    <button type="button" className={`btn btn-sm ${reviewWorkbenchView === 'screening' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setReviewWorkbenchView('screening')}>专项筛查核查</button>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => setTab('screening')}>专项筛查核查</button>
                     <button type="button" className={`btn btn-sm ${reviewWorkbenchView === 'analysis' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setReviewWorkbenchView('analysis')}>AI趋势审核</button>
                     <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setAiSourceGroup({ title: `${curYear}年度原始资料`, ids: workbenchYearReports.map(report => String(report._id)), reportLabel })}>🔗 查看本年度原件（{workbenchYearReports.length}份）</button>
                   </div>

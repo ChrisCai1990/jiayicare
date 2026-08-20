@@ -194,6 +194,8 @@ a { text-decoration: none; color: inherit; }
 .report-missing-field { color: #A9B5AF; font-size: 11px; }
 .patient-secondary-tabs { padding: 4px 8px; background: #F7FAF8; border-radius: 8px; }
 .patient-secondary-tabs .tab-btn { font-size: 12px; padding: 7px 10px; }
+.health-archive-sections > .screening-section-wrapper { display: none; }
+.screening-only-sections > :not(.screening-section-wrapper) { display: none !important; }
 @media (max-width: 720px) {
   .report-list-toolbar { align-items: flex-start; flex-direction: column; }
   .report-list-controls { align-self: flex-end; }
