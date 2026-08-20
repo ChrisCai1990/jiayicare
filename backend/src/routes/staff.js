@@ -764,7 +764,7 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
   const recentRecordsByType = await Promise.all(
     recentTypes.map(t => HealthRecord.find({ user: user._id, type: t })
       .sort({ recordedAt: -1 }).limit(10)
-      .select('type value extra recordedAt note imageUrl editedBy'))
+      .select('type value extra recordedAt createdAt note imageUrl imageUrls editedBy'))
   );
   const recentRecords = recentRecordsByType.flat().sort((a, b) => new Date(b.recordedAt) - new Date(a.recordedAt));
 
@@ -5045,7 +5045,7 @@ router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'vie
     const records = await HealthRecord.find({
       user: focusedRecord ? focusedRecord.user : { $in: patientIds },
       recordedAt: { $gte: start, $lte: end },
-    }).select('user type value unit recordedAt imageUrl extra note recordedBy symptomWorkflow status').sort({ recordedAt: -1 }).lean();
+    }).select('user type value unit recordedAt createdAt imageUrl imageUrls extra note recordedBy symptomWorkflow status').sort({ recordedAt: -1 }).lean();
 
     // 按会员分组：同一类型当天可能打卡多次（如血压测3次），全部保留，不只取最新一条
     const byPatient = {};

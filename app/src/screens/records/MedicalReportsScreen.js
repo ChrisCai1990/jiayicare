@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  SafeAreaView, ActivityIndicator, Linking, Alert, Modal, Image, TextInput,
+  SafeAreaView, ActivityIndicator, Linking, Alert, Modal, Image, TextInput, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
@@ -14,8 +14,27 @@ function resolveFileUrl(url) {
   if (/^https?:\/\//i.test(url)) return url;
   return FILE_BASE_URL + url;
 }
-// OSS 未配置时原件以 base64 存 content 字段，data URI 无法用 Linking 交给系统程序打开，
-// 图片走 App 内预览，PDF/其他类型系统查看器不支持 data URI，暂只能提示。
+function toDataUri(content, mimeType) {
+  if (!content) return '';
+  return content.startsWith('data:') ? content : `data:${mimeType};base64,${content}`;
+}
+
+// Web 端将 base64 PDF 转成 Blob URL，避免浏览器拒绝超长 data URI。
+function openPdfContent(content, previewWindow) {
+  const dataUri = toDataUri(content, 'application/pdf');
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return false;
+  const base64 = dataUri.replace(/^data:[^;]+;base64,/, '');
+  const binary = window.atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  const blobUrl = window.URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+  if (previewWindow && !previewWindow.closed) previewWindow.location.href = blobUrl;
+  else window.open(blobUrl, '_blank', 'noopener,noreferrer');
+  window.setTimeout(() => window.URL.revokeObjectURL(blobUrl), 60000);
+  return true;
+}
+
+// OSS URL 交给系统查看器；历史 base64 原件在 Web 端直接转换后预览。
 async function openOriginalFile(report, setPreviewUri) {
   const urls = (report.fileUrls?.length ? report.fileUrls : [report.fileUrl]).filter(Boolean);
   if (urls.length) {
@@ -27,15 +46,26 @@ async function openOriginalFile(report, setPreviewUri) {
     return;
   }
   if (report.hasContent) {
+    // 必须在点击事件的同步阶段先开窗口；等接口返回后再 window.open 会被浏览器当作弹窗拦截。
+    const expectsPdf = report.mimeType === 'application/pdf';
+    const previewWindow = expectsPdf && Platform.OS === 'web' && typeof window !== 'undefined'
+      ? window.open('', '_blank')
+      : null;
     try {
       const res = await reportsAPI.get(report._id);
       const full = res.data;
       if (full?.content && full.mimeType?.startsWith('image/')) {
-        setPreviewUri(`data:${full.mimeType};base64,${full.content}`);
+        setPreviewUri(toDataUri(full.content, full.mimeType));
+      } else if (full?.content && (full.mimeType === 'application/pdf' || /^data:application\/pdf/i.test(full.content))) {
+        if (!openPdfContent(full.content, previewWindow)) {
+          Alert.alert('请在网页版查看', '历史 PDF 原件暂不支持在当前客户端内打开');
+        }
       } else {
-        Alert.alert('暂不支持预览', '该报告为非图片格式原件，暂不支持在App内查看，请联系健管专员');
+        if (previewWindow && !previewWindow.closed) previewWindow.close();
+        Alert.alert('暂不支持预览', '暂不支持该文件格式');
       }
     } catch {
+      if (previewWindow && !previewWindow.closed) previewWindow.close();
       Alert.alert('加载失败', '无法加载原始文件，请稍后重试');
     }
     return;

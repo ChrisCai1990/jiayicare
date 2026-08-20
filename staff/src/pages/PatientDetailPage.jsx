@@ -6366,7 +6366,11 @@ export default function PatientDetailPage() {
                       </tr>
                     )}
                     {records.map(r => {
-                      const imgUrl = r.imageUrl || r.extra?.imageUrl || ''
+                      const imageUrls = [...new Set([
+                        ...(Array.isArray(r.imageUrls) ? r.imageUrls : []),
+                        r.imageUrl,
+                        r.extra?.imageUrl,
+                      ].filter(Boolean))]
                       // 归属时间(recordedAt)与提交时间(createdAt)相差不大时，提交时间列显示"同上"避免冗余
                       const recordedTime = r.recordedAt ? new Date(r.recordedAt) : null
                       const createdTime = r.createdAt ? new Date(r.createdAt) : null
@@ -6383,13 +6387,18 @@ export default function PatientDetailPage() {
                             )}
                           </td>
                           <td>
-                            {imgUrl ? (
-                              <img
-                                src={imgUrl}
-                                alt="打卡图片"
-                                style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6, cursor: 'pointer', border: '1px solid #E0D9CE' }}
-                                onClick={() => setPreviewImageUrl(imgUrl)}
-                              />
+                            {imageUrls.length ? (
+                              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                {imageUrls.map((imgUrl, imageIndex) => (
+                                  <img
+                                    key={`${imgUrl}-${imageIndex}`}
+                                    src={imgUrl}
+                                    alt={`打卡图片${imageIndex + 1}`}
+                                    style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6, cursor: 'pointer', border: '1px solid #E0D9CE' }}
+                                    onClick={() => setPreviewImageUrl(imgUrl)}
+                                  />
+                                ))}
+                              </div>
                             ) : <span style={{ color: '#ccc', fontSize: 12 }}>—</span>}
                           </td>
                           <td style={{ color: '#8AA89C', fontSize: 13 }}>
