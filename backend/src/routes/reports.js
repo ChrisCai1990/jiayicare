@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken');
 const auth = require('../middleware/auth');
 const MedicalReport = require('../models/MedicalReport');
 const HealthRecord = require('../models/HealthRecord');
-const { uploadBase64, deleteFile, urlToKey, signStoredUrl } = require('../utils/oss');
+const { uploadBase64, deleteFile, urlToKey, signStoredUrl, getObjectStream } = require('../utils/oss');
 const { parseImage } = require('../utils/ai');
 const { normalizeDepartmentExamItems, normalizeBreathTestItems, normalizeSingleExamReportItems, realignUpperAbdomenConclusions } = require('../utils/reportItemNormalization');
 const router = express.Router();
@@ -16,6 +16,13 @@ function withSignedReportFiles(report) {
   const signedUrls = urls.map((url, index) => signStoredUrl(url, keys[index] || ''));
   obj.fileUrls = signedUrls;
   obj.fileUrl = signedUrls[0] || '';
+  obj.previewUrls = urls.map((url, index) => {
+    const key = keys[index] || urlToKey(url || '');
+    if (!key || !obj._id || !process.env.JWT_SECRET) return '';
+    const token = jwt.sign({ scope: 'user-report-preview', reportId: String(obj._id), fileIndex: index }, process.env.JWT_SECRET, { expiresIn: '30m' });
+    return `/api/reports/${obj._id}/preview/${index}?token=${encodeURIComponent(token)}`;
+  });
+  obj.previewUrl = obj.previewUrls[0] || '';
   return obj;
 }
 const reportUpload = multer({
@@ -644,6 +651,35 @@ router.get('/', auth, async (req, res) => {
     res.json({ success: true, data });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取报告列表失败', error: err.message });
+  }
+});
+
+// 用户报告原件预览：短时 token 绑定报告与文件序号，由后端以内联方式转发私有 OSS 文件。
+router.get('/:id/preview/:index', async (req, res) => {
+  try {
+    const payload = jwt.verify(req.query.token || '', process.env.JWT_SECRET);
+    const index = Number(req.params.index);
+    if (payload.scope !== 'user-report-preview' || payload.reportId !== String(req.params.id)
+      || payload.fileIndex !== index || !Number.isInteger(index) || index < 0) throw new Error('invalid token');
+    const report = await MedicalReport.findById(req.params.id).select('fileUrl fileUrls ossKey ossKeys mimeType title');
+    if (!report) return res.status(404).end();
+    const urls = report.fileUrls?.length ? report.fileUrls : (report.fileUrl ? [report.fileUrl] : []);
+    const keys = report.ossKeys?.length ? report.ossKeys : (report.ossKey ? [report.ossKey] : []);
+    const key = keys[index] || urlToKey(urls[index] || '');
+    if (!key) return res.status(404).end();
+    const range = req.headers.range;
+    const object = await getObjectStream(key, range ? { Range: range } : {});
+    const headers = object.res?.headers || {};
+    res.status(range && headers['content-range'] ? 206 : 200);
+    res.set('Content-Type', headers['content-type'] || report.mimeType || 'application/octet-stream');
+    res.set('Content-Disposition', `inline; filename="report-${report._id}"`);
+    res.set('Accept-Ranges', 'bytes');
+    if (headers['content-length']) res.set('Content-Length', headers['content-length']);
+    if (headers['content-range']) res.set('Content-Range', headers['content-range']);
+    object.stream.on('error', () => { if (!res.headersSent) res.status(502).end(); else res.destroy(); });
+    object.stream.pipe(res);
+  } catch {
+    return res.status(403).json({ success: false, message: '预览链接无效或已失效' });
   }
 });
 

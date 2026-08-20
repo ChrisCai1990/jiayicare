@@ -74,6 +74,15 @@ const { checkPlanType } = require('../middleware/checkPermission');
 const { uploadBuffer, deleteFile, signStoredUrl, getObjectStream, urlToKey } = require('../utils/oss');
 const router = express.Router();
 
+function withSignedHealthRecord(record) {
+  const obj = record.toObject ? record.toObject() : { ...record };
+  const urls = obj.imageUrls?.length ? obj.imageUrls : (obj.imageUrl ? [obj.imageUrl] : []);
+  obj.imageUrls = urls.map(url => signStoredUrl(url));
+  obj.imageUrl = obj.imageUrls[0] || '';
+  if (obj.extra?.imageUrl) obj.extra = { ...obj.extra, imageUrl: signStoredUrl(obj.extra.imageUrl) };
+  return obj;
+}
+
 function withSignedReportFiles(report) {
   const obj = report.toObject ? report.toObject() : { ...report };
   const urls = obj.fileUrls?.length ? obj.fileUrls : (obj.fileUrl ? [obj.fileUrl] : []);
@@ -766,7 +775,9 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
       .sort({ recordedAt: -1 }).limit(10)
       .select('type value extra recordedAt createdAt note imageUrl imageUrls editedBy'))
   );
-  const recentRecords = recentRecordsByType.flat().sort((a, b) => new Date(b.recordedAt) - new Date(a.recordedAt));
+  const recentRecords = recentRecordsByType.flat()
+    .sort((a, b) => new Date(b.recordedAt) - new Date(a.recordedAt))
+    .map(withSignedHealthRecord);
 
   res.json({ success: true, data: { user, recentFollowUps, recentRecords } });
 });
@@ -4682,7 +4693,7 @@ router.get('/patients/:id/health-records', staffAuth, async (req, res) => {
       if (endDate) { const e = new Date(endDate); e.setHours(23, 59, 59, 999); q.recordedAt.$lte = e; }
     }
     const records = await HealthRecord.find(q).sort({ recordedAt: -1 }).limit(Number(limit));
-    res.json({ success: true, data: records });
+    res.json({ success: true, data: records.map(withSignedHealthRecord) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -5046,6 +5057,7 @@ router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'vie
       user: focusedRecord ? focusedRecord.user : { $in: patientIds },
       recordedAt: { $gte: start, $lte: end },
     }).select('user type value unit recordedAt createdAt imageUrl imageUrls extra note recordedBy symptomWorkflow status').sort({ recordedAt: -1 }).lean();
+    records.forEach((record, index) => { records[index] = withSignedHealthRecord(record); });
 
     // 按会员分组：同一类型当天可能打卡多次（如血压测3次），全部保留，不只取最新一条
     const byPatient = {};

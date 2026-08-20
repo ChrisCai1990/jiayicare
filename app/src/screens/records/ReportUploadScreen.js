@@ -354,7 +354,7 @@ function ReportPreviewModal({ report, onClose }) {
           const data = res.data;
           // 新上传流程走 OSS/服务器存储只有 fileUrl，没有 base64 content——必须优先用 fileUrl，
           // 否则这类报告在预览弹窗里会一直落到"暂无预览"分支（content 字段为空）
-          const fileUrl = data.fileUrls?.[0] || data.fileUrl || '';
+          const fileUrl = data.previewUrls?.[0] || data.previewUrl || data.fileUrls?.[0] || data.fileUrl || '';
           setContent(fileUrl ? resolveFileUrl(fileUrl) : (data.content || ''));
           setMimeType(data.mimeType || '');
         }

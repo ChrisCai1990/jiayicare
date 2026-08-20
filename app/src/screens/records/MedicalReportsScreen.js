@@ -36,7 +36,9 @@ function openPdfContent(content, previewWindow) {
 
 // OSS URL 交给系统查看器；历史 base64 原件在 Web 端直接转换后预览。
 async function openOriginalFile(report, setPreviewUri) {
-  const urls = (report.fileUrls?.length ? report.fileUrls : [report.fileUrl]).filter(Boolean);
+  const urls = (report.previewUrls?.length ? report.previewUrls
+    : report.previewUrl ? [report.previewUrl]
+    : report.fileUrls?.length ? report.fileUrls : [report.fileUrl]).filter(Boolean);
   if (urls.length) {
     try {
       await Linking.openURL(resolveFileUrl(urls[0]));
