@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, Textarea, ScrollView, Input, Image } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius } from '../../theme';
-import { chatAPI } from '../../services/api';
+import { chatAPI, mediaUrl } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
@@ -15,6 +15,7 @@ const DEFAULT_CONFIG = {
   quickPrompts: ['帮我安排已有的复查提醒', '看看我的血压或体重趋势', '我需要陪诊或代办服务'],
   disclaimer: '内容用于健康管理和复查事项整理，不替代医生诊断和建议。',
 };
+const cleanMessageContent = (value) => String(value || '').replace(/^\s*\[\d{4}[/-]\d{1,2}[/-]\d{1,2}\s+\d{1,2}:\d{2}(?::\d{2})?\]\s*/, '');
 
 // 小嘉健康规划师：仅梳理健康管理需求与规划平台服务，不提供医疗咨询。
 export default function ChatPage() {
@@ -25,6 +26,10 @@ export default function ChatPage() {
   const [messages, setMessages] = useState([{ role: 'assistant', content: DEFAULT_CONFIG.greeting }]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [plannerImage, setPlannerImage] = useState(null);
+  const [recording, setRecording] = useState(false);
+  const plannerRecorderRef = useRef(null);
+  const plannerAudioRef = useRef(null);
   const [view, setView] = useState('team');
   const [nutritionMessages, setNutritionMessages] = useState([
     { role: 'assistant', content: '您好，我是AI营养师。您可以描述今天吃了什么、记录体重，或拍一张饮食照片，我会立即做初步分析。' },
@@ -60,8 +65,8 @@ export default function ChatPage() {
       if (historyUserRef.current !== historyUserId) return;
       if (!res?.success || !Array.isArray(res.data) || res.data.length === 0) return;
       const historyMessages = [...res.data].reverse().flatMap((log) => [
-        log.userMessage ? { role: 'user', content: log.userMessage } : null,
-        log.aiReply ? { role: 'assistant', content: log.aiReply } : null,
+        log.userMessage ? { role: 'user', content: log.userMessage, time: log.createdAt, image: log.imageUrl, audioUrl: log.audioUrl, audioDuration: log.audioDuration } : null,
+        log.aiReply ? { role: 'assistant', content: log.aiReply, time: log.createdAt } : null,
       ].filter(Boolean));
       setMessages([greeting, ...historyMessages]);
     }).catch(() => {});
@@ -73,22 +78,56 @@ export default function ChatPage() {
     Taro.removeStorageSync('healthHubView');
   });
 
-  const send = async () => {
+  const send = async (audio = null) => {
     const text = input.trim();
-    if (!text || sending) return;
-    const next = [...messages, { role: 'user', content: text }];
+    if ((!text && !plannerImage && !audio) || sending) return;
+    const content = text || (audio ? '[语音消息]' : '图片记录');
+    const currentImage = plannerImage;
+    const now = new Date().toISOString();
+    const next = [...messages, { role: 'user', content, time: now, image: currentImage?.path, audioUrl: audio?.tempFilePath, audioDuration: Math.max(1, Math.ceil((audio?.duration || 0) / 1000)) }];
     setMessages(next);
     setInput('');
+    setPlannerImage(null);
     setSending(true);
     try {
-      const res = await chatAPI.send(next, { name: user?.name });
+      let audioPayload = null;
+      if (audio?.tempFilePath) {
+        const base64 = Taro.getFileSystemManager().readFileSync(audio.tempFilePath, 'base64');
+        audioPayload = { data: `data:audio/mpeg;base64,${base64}`, mimeType: 'audio/mpeg', duration: Math.max(1, Math.ceil((audio.duration || 0) / 1000)) };
+      }
+      const res = await chatAPI.send(next, { name: user?.name }, { image: currentImage?.data || '', mimeType: currentImage?.mimeType || 'image/jpeg', audio: audioPayload });
       const reply = res?.data?.content || res?.content || '抱歉，我暂时无法回复，请稍后重试。';
-      setMessages((m) => [...m, { role: 'assistant', content: reply }]);
+      setMessages((m) => [...m, { role: 'assistant', content: reply, time: new Date().toISOString() }]);
     } catch (err) {
       setMessages((m) => [...m, { role: 'assistant', content: `请求失败：${err.message || '网络异常'}` }]);
     } finally {
       setSending(false);
     }
+  };
+
+  const choosePlannerImage = async () => {
+    try {
+      const result = await Taro.chooseImage({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'] });
+      const path = result.tempFilePaths?.[0]; if (!path) return;
+      const base64 = Taro.getFileSystemManager().readFileSync(path, 'base64');
+      const ext = (path.split('.').pop() || 'jpg').toLowerCase();
+      const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+      setPlannerImage({ path, mimeType, data: `data:${mimeType};base64,${base64}` });
+    } catch (err) { if (!/cancel/i.test(err?.errMsg || '')) Taro.showToast({ title:'无法读取图片', icon:'none' }); }
+  };
+  const startPlannerRecording = () => {
+    if (sending || recording) return;
+    const recorder = plannerRecorderRef.current || Taro.getRecorderManager(); plannerRecorderRef.current = recorder;
+    recorder.offStart?.(); recorder.offError?.(); recorder.onStart(() => setRecording(true));
+    recorder.onError(() => { setRecording(false); Taro.showToast({ title:'请允许使用麦克风', icon:'none' }); });
+    recorder.start({ duration:60000, format:'mp3', sampleRate:16000, numberOfChannels:1, encodeBitRate:48000 });
+  };
+  const stopPlannerRecording = () => {
+    const recorder = plannerRecorderRef.current; if (!recorder || !recording) return;
+    recorder.offStop?.(); recorder.onStop((result) => { setRecording(false); send(result); }); recorder.stop();
+  };
+  const playPlannerVoice = (url) => {
+    plannerAudioRef.current?.destroy?.(); const player = Taro.createInnerAudioContext(); plannerAudioRef.current = player; player.src = mediaUrl(url); player.play();
   };
 
   const choosePrompt = (text) => {
@@ -162,7 +201,14 @@ export default function ChatPage() {
         scrollAnchoring
         style={{ flex: 1, height: 0, minHeight: 0, padding: `${spacing.md}px`, boxSizing: 'border-box' }}
       >
-        {messages.map((m, i) => (
+        {messages.map((m, i) => {
+          const current = m.time ? new Date(m.time) : null;
+          const previous = i > 0 && messages[i - 1].time ? new Date(messages[i - 1].time) : null;
+          const showTime = current && (!previous || current.toDateString() !== previous.toDateString() || current - previous >= 300000);
+          const label = current ? `${current.toDateString() === new Date().toDateString() ? '' : `${current.getMonth()+1}月${current.getDate()}日 `}${String(current.getHours()).padStart(2,'0')}:${String(current.getMinutes()).padStart(2,'0')}` : '';
+          return (
+          <React.Fragment key={i}>
+          {showTime && <Text style={{ display:'block', textAlign:'center', fontSize:'11px', color:colors.textMuted, margin:'10px 0 6px' }}>{label}</Text>}
           <View key={i} style={{
             display: 'flex', width: '100%', minWidth: 0, justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start', marginBottom: '10px', boxSizing: 'border-box',
           }}>
@@ -172,39 +218,40 @@ export default function ChatPage() {
               border: m.role === 'user' ? 'none' : `1px solid ${colors.border}`,
             }}>
               {m.role === 'assistant' && <Text style={{ display: 'block', color: '#9A5B00', fontSize: '10px', fontWeight: 700, marginBottom: '4px' }}>{onlineStatus.mode === 'human' ? onlineStatus.label : assistantConfig.plannerName}</Text>}
-              <Text style={{ display: 'block', width: '100%', fontSize: '14px', color: m.role === 'user' ? '#fff' : colors.textPrimary, lineHeight: '20px', whiteSpace: 'pre-wrap', wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{m.content}</Text>
+              {!!m.image && <Image src={mediaUrl(m.image)} mode="aspectFill" style={{ width:'190px', height:'140px', borderRadius:'8px', display:'block', marginBottom:'6px' }} />}
+              {!!m.audioUrl && <View onClick={() => playPlannerVoice(m.audioUrl)}><Text style={{ fontSize:'14px', color:m.role === 'user' ? '#fff' : colors.primary }}>▶ 语音 {Math.max(1, Math.round(m.audioDuration || 1))}″</Text></View>}
+              {(!m.audioUrl || m.content !== '[语音消息]') && <Text style={{ display: 'block', width: '100%', fontSize: '14px', color: m.role === 'user' ? '#fff' : colors.textPrimary, lineHeight: '20px', whiteSpace: 'pre-wrap', wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{cleanMessageContent(m.content)}</Text>}
             </View>
           </View>
-        ))}
+          </React.Fragment>);
+        })}
         {sending && <Text style={{ fontSize: '12px', color: colors.textMuted }}>正在梳理您的需求...</Text>}
         <View id={`planner-bottom-${messages.length}-${sending ? 1 : 0}`} style={{ height: '1px' }} />
       </ScrollView>
 
+      {!!plannerImage && <View style={{ padding:`6px ${spacing.md}px`, backgroundColor:'#fff' }}><Image src={plannerImage.path} mode="aspectFill" style={{ width:'52px', height:'52px', borderRadius:'8px' }} /><Text onClick={() => setPlannerImage(null)} style={{ color:colors.danger, marginLeft:'8px' }}>移除</Text></View>}
       <View style={{
-        display: 'flex', alignItems: 'flex-end', gap: '8px', padding: `${spacing.sm}px ${spacing.md}px`,
+        padding: `${spacing.sm}px ${spacing.md}px`,
         backgroundColor: '#fff', borderTop: `1px solid ${colors.border}`,
       }}>
+        <View style={{ backgroundColor:colors.background, borderRadius:`${radius.md}px`, border:`1px solid ${colors.border}`, padding:'6px 8px' }}>
         <Textarea
-          style={{ flex: 1, minHeight: '48px', maxHeight: '112px', boxSizing: 'border-box', backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: '12px 14px', fontSize: '15px', lineHeight: '22px' }}
+          style={{ width:'100%', minHeight: '40px', maxHeight: '92px', boxSizing: 'border-box', backgroundColor:'transparent', padding: '7px 8px', fontSize: '15px', lineHeight: '22px' }}
           placeholder="描述您想了解的服务..."
           value={input}
           onInput={(e) => setInput(e.detail.value)}
           autoHeight
-          fixed
-          adjustPosition={false}
-          cursorSpacing={12}
+          adjustPosition
+          cursorSpacing={88}
           maxlength={500}
           confirmType="send"
           onConfirm={send}
         />
-        <View
-          onClick={send}
-          style={{
-            padding: '10px 18px', borderRadius: `${radius.full}px`,
-            backgroundColor: input.trim() ? colors.primary : colors.border,
-          }}
-        >
-          <Text style={{ color: '#fff', fontSize: '14px', fontWeight: 600 }}>发送</Text>
+        <View style={{ display:'flex', alignItems:'center', gap:'14px', padding:'2px 6px 4px' }}>
+          <Text onClick={choosePlannerImage} style={{ fontSize:'18px' }}>📷</Text>
+          <Text onTouchStart={startPlannerRecording} onTouchEnd={stopPlannerRecording} onTouchCancel={stopPlannerRecording} style={{ fontSize:'17px', color:recording ? colors.danger : colors.primary }}>{recording ? '● 松开发送' : '🎙️ 按住说话'}</Text>
+          <View style={{ flex:1 }} /><Text onClick={() => send()} style={{ color:(input.trim() || plannerImage) ? colors.primary : colors.textMuted, fontWeight:700 }}>发送</Text>
+        </View>
         </View>
       </View>
       </View>
@@ -243,7 +290,7 @@ export default function ChatPage() {
             </View>
           </View>
           <View style={{ display: 'flex', alignItems: 'flex-end', gap: '8px' }}>
-            <Textarea value={nutritionInput} onInput={(e) => setNutritionInput(e.detail.value)} placeholder="描述食物、份量或您的目标..." autoHeight fixed adjustPosition={false} cursorSpacing={12} maxlength={500} style={{ flex: 1, minHeight: '44px', maxHeight: '100px', boxSizing: 'border-box', backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: '10px 12px', fontSize: '14px' }} />
+            <Textarea value={nutritionInput} onInput={(e) => setNutritionInput(e.detail.value)} placeholder="描述食物、份量或您的目标..." autoHeight adjustPosition cursorSpacing={88} maxlength={500} style={{ flex: 1, minHeight: '44px', maxHeight: '100px', boxSizing: 'border-box', backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: '10px 12px', fontSize: '14px' }} />
             <View onClick={sendNutrition} style={{ padding: '10px 16px', borderRadius: `${radius.full}px`, backgroundColor: (nutritionInput.trim() || weightInput.trim() || foodImage) && !sending ? '#059669' : colors.border }}><Text style={{ color: '#fff', fontSize: '14px', fontWeight: 600 }}>分析</Text></View>
           </View>
           <Text style={{ fontSize: '10px', color: colors.textMuted, display: 'block', marginTop: '6px' }}>照片识别与热量仅为估算，不替代医生或注册营养师意见</Text>

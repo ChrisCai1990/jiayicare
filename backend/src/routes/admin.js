@@ -194,7 +194,7 @@ router.get('/patients', adminAuth, async (req, res) => {
 router.get('/patients/:id', adminAuth, async (req, res) => {
   const userId = req.params.id;
   const [user, records, tasks, messages, orders] = await Promise.all([
-    User.findById(userId).select('-password'),
+    User.findById(userId).select('-password').populate('invitedBy', 'name phone'),
     HealthRecord.find({ user: userId }).sort({ recordedAt: -1 }).limit(20),
     Task.find({ user: userId }).sort({ createdAt: -1 }).limit(20),
     Message.find({ user: userId }).sort({ createdAt: -1 }).limit(30),
@@ -1928,6 +1928,7 @@ const DEFAULT_HEALTH_FUND_POLICY = {
   corporateDeductionValue: 200,
   minOrderAmount: 0,
   eligibleCategories: [],
+  eligibleProductIds: [],
   allowCouponStacking: true,
   couponDeductionType: 'unlimited',
   couponDeductionValue: 0,
@@ -1989,6 +1990,7 @@ router.put('/system-config/health-fund', adminAuth, async (req, res) => {
     ['personalDeductionType','corporateDeductionType','couponDeductionType'].forEach(k => { if (!types.includes(value[k])) value[k] = 'unlimited'; });
     ['personalDeductionValue','corporateDeductionValue','couponDeductionValue','minOrderAmount','sharerAmount','recipientAmount','inviterAmount','inviteeAmount','firstLoginAmount'].forEach(k => { value[k] = Math.max(0, Number(value[k]) || 0); });
     value.eligibleCategories = Array.isArray(value.eligibleCategories) ? value.eligibleCategories.map(String).map(v=>v.trim()).filter(Boolean) : [];
+    value.eligibleProductIds = Array.isArray(value.eligibleProductIds) ? [...new Set(value.eligibleProductIds.map(String).filter(Boolean))] : [];
     await SystemConfig.findOneAndUpdate({ key:'healthFundPolicy' }, { key:'healthFundPolicy', value, label:'健康基金使用与退款规则' }, { upsert:true, new:true });
     res.json({ success:true, data:value, message:'健康基金规则已保存' });
   } catch (err) { res.status(500).json({ success:false, message:err.message }); }

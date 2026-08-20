@@ -283,9 +283,9 @@ router.get('/status', auth, async (req, res) => {
 
 // POST /api/chat — 主对话接口
 router.post('/', auth, async (req, res) => {
-  const { messages = [], userInfo = {} } = req.body;
+  const { messages = [], userInfo = {}, image = '', mimeType = 'image/jpeg', audio = null } = req.body;
   const userId = req.user._id;
-  const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content || '';
+  const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content || (audio?.data ? '[语音消息]' : image ? '[图片消息]' : '');
   const t0 = Date.now();
 
   if (!process.env.QWEN_API_KEY) {
@@ -307,6 +307,19 @@ router.post('/', auth, async (req, res) => {
 
   // 意图识别
   const intent = detectIntent(lastUserMsg);
+
+  let imageUrl = '';
+  let audioUrl = '';
+  let audioDuration = 0;
+  if (image) {
+    if (!/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(image) || image.length > 12 * 1024 * 1024) return res.status(400).json({ success:false, message:'图片格式不支持或文件过大' });
+    imageUrl = (await uploadBase64(image, mimeType, 'chat')).url;
+  }
+  if (audio?.data) {
+    if (String(audio.data).length > 12 * 1024 * 1024) return res.status(413).json({ success:false, message:'语音文件过大' });
+    audioDuration = Math.max(1, Math.min(60, Number(audio.duration) || 1));
+    audioUrl = (await uploadBase64(audio.data, audio.mimeType || 'audio/mpeg', 'chat/audio')).url;
+  }
 
   // 专家约诊和体检属于高风险幻觉场景：只引用数据库中实际上架的服务，不交给模型自由生成。
   const verifiedServiceReply = await buildVerifiedServiceReply(lastUserMsg, messages);
@@ -356,6 +369,9 @@ router.post('/', auth, async (req, res) => {
       return { role: m.role, content: dateTag + String(m.content) };
     });
 
+  if (audioUrl && chatMessages.length) chatMessages[chatMessages.length - 1].content = '[用户发送了一条语音。为避免语音识别造成健康信息误差，请温和确认收到，并请用户补充一句文字重点。]';
+  if (imageUrl && chatMessages.length) chatMessages[chatMessages.length - 1].content += '\n[用户同时上传了一张图片，请仅确认收到并围绕健康管理事项交流，不作诊断或医学判断。]';
+
   if (!chatMessages.length || chatMessages[chatMessages.length - 1].role !== 'user') {
     return res.status(400).json({ success: false, message: '消息格式错误' });
   }
@@ -366,14 +382,14 @@ router.post('/', auth, async (req, res) => {
     const durationMs = Date.now() - t0;
 
     // 需要拿到 _id 返回给前端才能支持"当场撤回"（撤回按 logId 定位 ChatLog 记录）
-    const log = await ChatLog.create({ user: userId, intent, userMessage: lastUserMsg, aiReply: replyText, durationMs });
+    const log = await ChatLog.create({ user: userId, intent, userMessage: lastUserMsg, aiReply: replyText, imageUrl, audioUrl, audioDuration, durationMs });
     let proposal = null;
     if (intent === 'service') {
       try { proposal = await maybeCreateServiceProposal({ userId, messages, lastUserMsg }); }
       catch (proposalError) { console.error('Service proposal draft error:', proposalError.message); }
     }
 
-    res.json({ success: true, data: { content: proposal ? `${replyText}\n\n我已把您的服务需求和可选服务提交给专属健康规划师确认。` : replyText, intent, logId: log._id, proposalPending: !!proposal } });
+    res.json({ success: true, data: { content: proposal ? `${replyText}\n\n我已把您的服务需求和可选服务提交给专属健康规划师确认。` : replyText, intent, logId: log._id, imageUrl, audioUrl, audioDuration, proposalPending: !!proposal } });
   } catch (err) {
     console.error('Chat error:', err.message);
     res.status(500).json({ success: false, message: `AI响应失败，请稍后重试。（${err.message}）` });

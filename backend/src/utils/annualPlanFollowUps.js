@@ -207,4 +207,26 @@ async function syncAnnualPlanFollowUps(plan) {
   return created;
 }
 
-module.exports = { buildAnnualPlanFollowUps, syncAnnualPlanFollowUps };
+// 清理修复上线前已生成的历史副本：仅处理同一年度方案、同一客户、同一天且内容相同的自动排期，
+// 优先保留已审核/已执行记录，绝不触碰人工创建的随访。
+async function dedupeAnnualPlanFollowUps() {
+  const rows = await FollowUp.find({ sourceAnnualPlanId: { $ne: null }, sourceType: 'scheduled' })
+    .sort({ createdAt: 1 }).lean();
+  const groups = new Map();
+  rows.forEach(row => {
+    const day = row.date ? new Date(row.date).toISOString().slice(0, 10) : '';
+    const key = [row.sourceAnnualPlanId, row.patientId, row.sourceScheduleKey || '', day, row.theme || '', row.content || ''].join('|');
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  });
+  let removed = 0;
+  for (const items of groups.values()) {
+    if (items.length < 2) continue;
+    const keep = items.find(x => x.status === 'completed') || items.find(x => x.aiStatus === 'approved') || items[0];
+    const ids = items.filter(x => String(x._id) !== String(keep._id)).map(x => x._id);
+    if (ids.length) { const result = await FollowUp.deleteMany({ _id: { $in: ids } }); removed += result.deletedCount || 0; }
+  }
+  return removed;
+}
+
+module.exports = { buildAnnualPlanFollowUps, syncAnnualPlanFollowUps, dedupeAnnualPlanFollowUps };

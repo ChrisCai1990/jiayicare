@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, Textarea, ScrollView, Image, Input } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
-import { servicesAPI, authAPI, userAPI } from '../../../services/api';
+import { servicesAPI, authAPI, userAPI, mediaUrl } from '../../../services/api';
 import { useAuth } from '../../../context/AuthContext';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
@@ -40,7 +40,7 @@ function ServiceCard({ item, onDetail, onPay }) {
       )}
       <View style={{ display: 'flex', flexDirection: 'row', gap: `${spacing.md}px`, alignItems: 'stretch' }}>
         {item.images && item.images.length > 0 && !imageFailed && (
-          <Image src={item.images[0]} mode="aspectFill" lazyLoad onError={() => setImageFailed(true)} style={{ width: isWide ? '160px' : '88px', height: isWide ? '160px' : '88px', flexShrink: 0, borderRadius: `${radius.md}px`, backgroundColor: colors.background }} />
+          <Image src={mediaUrl(item.images[0])} mode="aspectFill" lazyLoad onError={() => setImageFailed(true)} style={{ width: isWide ? '160px' : '88px', height: isWide ? '160px' : '88px', flexShrink: 0, borderRadius: `${radius.md}px`, backgroundColor: colors.background }} />
         )}
         <View style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
       <View style={{ display: 'flex', gap: `${spacing.md}px`, marginBottom: `${spacing.sm}px` }}>
@@ -94,7 +94,7 @@ function ServiceDetailModal({ item, onClose, onConsult, onPay }) {
         </View>
         <ScrollView scrollY style={{ maxHeight: '340px', marginBottom: `${spacing.md}px` }}>
           {item.images && item.images.length > 0 && item.images.map((url, i) => (
-            <Image key={i} src={url} mode="widthFix" style={{ width: '100%', borderRadius: `${radius.md}px`, marginBottom: `${spacing.sm}px`, backgroundColor: colors.background }} />
+            <Image key={i} src={mediaUrl(url)} mode="widthFix" style={{ width: '100%', borderRadius: `${radius.md}px`, marginBottom: `${spacing.sm}px`, backgroundColor: colors.background }} />
           ))}
           {!!item.description && (
             <Text style={{ fontSize: '14px', color: colors.textSecondary, lineHeight: '22px', display: 'block', marginBottom: `${spacing.md}px` }}>{item.description}</Text>
@@ -144,7 +144,9 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
   const personalFund = checkoutUser?.healthFund?.personal || 0;
   const corporateFund = checkoutUser?.healthFund?.corporate || 0;
   const fundRuleDescription = checkoutUser?.healthFund?.rule?.description || '';
-  const canUseFund = fundBalance > 0;
+  const eligibleProductIds = checkoutUser?.healthFund?.policy?.eligibleProductIds || [];
+  const productFundEligible = !eligibleProductIds.length || eligibleProductIds.map(String).includes(String(item?.id || item?._id || ''));
+  const canUseFund = fundBalance > 0 && productFundEligible;
   const [useFund, setUseFund] = useState(false);
   const [fundAmountInput, setFundAmountInput] = useState('');
   const [coupons, setCoupons] = useState([]);
@@ -345,7 +347,7 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
           )}
 
           {isPay && !benefitsLoading && !canUseFund && (
-            <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: `${spacing.md}px` }}>当前账户暂无可用健康基金</Text>
+            <Text style={{ fontSize: '12px', color: productFundEligible ? colors.textMuted : colors.danger, display: 'block', marginBottom: `${spacing.md}px` }}>{productFundEligible ? '当前账户暂无可用健康基金' : '该服务不在健康基金可抵扣范围内'}</Text>
           )}
           {isPay && benefitsError && (
             <Text style={{ fontSize: '12px', color: colors.danger, display: 'block', marginBottom: `${spacing.md}px` }}>{benefitsError}</Text>
@@ -424,6 +426,8 @@ export default function ServiceMallPage() {
   const [shareToken, setShareToken] = useState('');
   const routeParams = Taro.getCurrentInstance()?.router?.params || {};
 
+  useEffect(() => { Taro.showShareMenu({ menus: ['shareAppMessage'] }); }, []);
+
   Taro.useShareAppMessage(() => {
     if (!detailService) return { title: '嘉医汇', path: '/pages/home/index' };
     const query = [
@@ -434,16 +438,12 @@ export default function ServiceMallPage() {
     return {
       title: detailService.name,
       path: `/pages/services/mall/index?${query}`,
-      imageUrl: detailService.images?.[0],
+      imageUrl: mediaUrl(detailService.images?.[0]),
     };
   });
 
   useEffect(() => {
-    if (!detailService) {
-      setShareToken('');
-      Taro.hideShareMenu();
-      return;
-    }
+    if (!detailService) { setShareToken(''); return; }
     // 详情打开后立即恢复微信右上角原生转发，推广令牌异步补齐。
     Taro.showShareMenu({ menus: ['shareAppMessage'] });
     if (!user) {

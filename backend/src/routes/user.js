@@ -138,10 +138,11 @@ async function requireAiEntitlement(user, key, res) {
 router.get('/me', auth, async (req, res) => {
   try {
       const { getCorporateFundAvailable, getPersonalFundAvailable } = require('../utils/healthFundPayment');
-      const [personalAvailable, corporateAvailable, enterprise] = await Promise.all([
+      const [personalAvailable, corporateAvailable, enterprise, platformFundPolicy] = await Promise.all([
         getPersonalFundAvailable(req.user),
         getCorporateFundAvailable(req.user),
         req.user.enterpriseId ? Enterprise.findById(req.user.enterpriseId).select('healthFundPaymentRule').lean() : null,
+        require('../utils/healthFundPayment').getHealthFundPolicy(),
       ]);
       const totalBalance = req.user.healthFundBalance || 0;
       const personal = Math.min(personalAvailable, totalBalance);
@@ -171,6 +172,12 @@ router.get('/me', auth, async (req, res) => {
             description: rule.note?.trim() || `自有基金优先抵扣；${limit}${threshold}${categories}。退款审核通过后，基金按原来源退回。`,
           };
         })(),
+        policy: {
+          enabled: !!platformFundPolicy.enabled,
+          minOrderAmount: Number(platformFundPolicy.minOrderAmount) || 0,
+          eligibleProductIds: platformFundPolicy.eligibleProductIds || [],
+          description: platformFundPolicy.description || '',
+        },
       };
 
     // 查询已分配的责任人员信息（实时 populate）

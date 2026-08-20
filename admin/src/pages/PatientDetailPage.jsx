@@ -225,6 +225,7 @@ export default function PatientDetailPage() {
 
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString('zh-CN') : '--'
   const fmtTime = (d) => d ? new Date(d).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '--'
+  const LOGIN_METHOD = { phone: '手机号验证码', wechat: '微信一键登录', phone_wechat: '微信授权手机号' }
 
   return (
     <>
@@ -324,6 +325,22 @@ export default function PatientDetailPage() {
                   <div className="info-row-value">{r.value}</div>
                 </div>
               ))}
+            </div>
+          </div>
+
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="card-title"><span>🔐</span> 登录与邀请记录</div>
+            <div className="info-grid">
+              {[
+                { label: '登录手机号', value: user.phone || '--' },
+                { label: '微信小程序身份', value: user.wechatMpOpenid ? '已绑定' : '未绑定' },
+                { label: '最近登录方式', value: LOGIN_METHOD[user.lastLoginMethod] || '--' },
+                { label: '最近登录时间', value: fmtTime(user.lastLoginAt) },
+                { label: '累计登录次数', value: Number(user.loginCount || 0) },
+                { label: '累计登录时长', value: `${Math.floor(Number(user.totalLoginSeconds || 0) / 60)} 分钟` },
+                { label: '邀请人', value: user.invitedBy ? `${user.invitedBy.name || '未命名'}${user.invitedBy.phone ? `（${user.invitedBy.phone}）` : ''}` : '无邀请关系' },
+                { label: '本人邀请码', value: user.referralCode || '--' },
+              ].map((r, i) => <div className="info-row" key={i}><div className="info-row-label">{r.label}</div><div className="info-row-value">{r.value}</div></div>)}
             </div>
           </div>
 

@@ -7,7 +7,7 @@ const DEFAULT_HEALTH_FUND_POLICY = {
   title: '健康基金使用规则', description: '', personalPriority: true,
   personalDeductionType: 'unlimited', personalDeductionValue: 0,
   corporateDeductionType: 'fixedAmount', corporateDeductionValue: 200,
-  minOrderAmount: 0, eligibleCategories: [], allowCouponStacking: true,
+  minOrderAmount: 0, eligibleCategories: [], eligibleProductIds: [], allowCouponStacking: true,
   couponDeductionType: 'unlimited', couponDeductionValue: 0,
   refundToOriginalSource: true,
 };
@@ -53,12 +53,13 @@ async function getPersonalFundAvailable(user) {
   return Math.max(0, Math.min(totalBalance, Math.max(recordedPersonal, totalBalance - corporateAvailable)));
 }
 
-async function validateHealthFundDeduction({ user, requested, orderAmount, category }) {
+async function validateHealthFundDeduction({ user, requested, orderAmount, category, productId }) {
   const amount = Number(requested) || 0;
   if (amount <= 0) return { allowed: 0, enterprise: null };
   const policy = await getHealthFundPolicy();
   if (orderAmount < (Number(policy.minOrderAmount) || 0)) throw new Error(`订单满¥${policy.minOrderAmount}方可使用健康基金`);
   if (policy.eligibleCategories?.length && !policy.eligibleCategories.includes(category)) throw new Error('该类服务不在健康基金可抵扣范围内');
+  if (policy.eligibleProductIds?.length && !policy.eligibleProductIds.map(String).includes(String(productId || ''))) throw new Error('该服务不在健康基金可抵扣范围内');
   const personalAvailable = await getPersonalFundAvailable(user);
   const personalLimit = deductionLimit(policy.personalDeductionType, policy.personalDeductionValue, orderAmount);
   const corporateAvailable = user.enterpriseId ? await getCorporateFundAvailable(user) : 0;

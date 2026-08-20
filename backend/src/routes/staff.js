@@ -7302,7 +7302,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         todos.push({
           id: 'reportparse_' + r._id, type: 'report_parse', label: '体检报告待解析', priority: 2,
           patientName: r.user?.name || '未知', patientId: String(r.user?._id || ''),
-          summary: `${r.title} · ${r.uploadedBy ? '医护上传' : '客户上传'}，待AI解析`,
+          summary: `${r.title} · ${r.uploadedBy ? '医护上传' : '客户上传体检报告'}，待处理`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${r.user?._id}?tab=reports&reportId=${r._id}`,
         });

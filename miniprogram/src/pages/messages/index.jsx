@@ -35,6 +35,7 @@ const assistantName = (member, fallback) => {
   return name || title;
 };
 const visibleMessageContent = (message) => String(message?.content || '')
+  .replace(/^\s*\[?\d{4}[/-]\d{1,2}[/-]\d{1,2}\s+\d{1,2}:\d{2}(?::\d{2})?\]?\s*/g, '')
   .replace(/\n?以上为AI初步回复，仅供参考，不构成医疗诊断或建议，您的专属医护人员会尽快跟进。/g, '')
   .replace(/\n?（AI回复，仅供参考）/g, '')
   .replace(/[^。！？\n]*医生目前正忙于诊疗[^。！？\n]*[。！？]?/g, '真人这会儿正在接待其他客户，您可以先和我聊聊，我会陪您一起梳理。')
@@ -207,7 +208,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
       {loading ? (
         <Text style={{ fontSize: '13px', color: colors.textMuted, padding: `0 ${spacing.lg}px` }}>加载中...</Text>
       ) : (
-        <View style={{ width: '100%', boxSizing: 'border-box', padding: `0 ${spacing.md}px` }}>
+        <View style={{ width: '100%', boxSizing: 'border-box', padding: `0 ${spacing.sm}px` }}>
           <Text style={{ display: 'block', fontSize: '15px', fontWeight: 700, color: colors.textPrimary, margin: `0 ${spacing.xs}px ${spacing.sm}px` }}>{assistantConfig.teamName || '健康服务团队'} · {onlineStatus.label}</Text>
           <View onClick={onOpenPlanner} style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', height: '92px', padding: '14px', boxSizing: 'border-box', marginBottom: `${spacing.md}px`, backgroundColor: colors.primary, borderRadius: `${radius.lg}px`, boxShadow: shadow.card }}>
             <View style={{ position: 'absolute', width: '100px', height: '100px', borderRadius: '50px', right: '-25px', top: '-35px', backgroundColor: 'rgba(255,255,255,0.08)' }} />
@@ -226,7 +227,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
             </View>
             {assignedTeamCount > 0 && <View style={{ padding: '4px 8px', borderRadius: `${radius.full}px`, backgroundColor: '#E8F5EF' }}><Text style={{ color: colors.primary, fontSize: '10px', fontWeight: 700 }}>服务中</Text></View>}
           </View>
-          <View style={{ display: 'flex', flexDirection: 'column', gap: `${spacing.sm}px`, margin: `0 ${spacing.xs}px ${spacing.lg}px` }}>
+          <View style={{ display: 'flex', flexDirection: 'column', gap: `${spacing.sm}px`, margin: `0 0 ${spacing.lg}px` }}>
           {[...roleConvs, ...extraTeamMembers].map((conv) => {
             const unassigned = conv.kind === 'role' && conv.assigned === false;
             const preview = unassigned
@@ -720,9 +721,12 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
             const isMine = m.type === 'user';
             const currentDate = new Date(m.createdAt);
             const previousDate = i > 0 ? new Date(msgs[i - 1].createdAt) : null;
-            const showDate = !previousDate || currentDate.toDateString() !== previousDate.toDateString();
-            const dateLabel = currentDate.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
-            const timeLabel = currentDate.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+            const gapMinutes = previousDate ? (currentDate - previousDate) / 60000 : Infinity;
+            const showDate = !previousDate || currentDate.toDateString() !== previousDate.toDateString() || gapMinutes >= 5;
+            const now = new Date();
+            const dayDiff = Math.floor((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate())) / 86400000);
+            const dayLabel = dayDiff === 0 ? '' : dayDiff === 1 ? '昨天 ' : `${currentDate.getMonth() + 1}月${currentDate.getDate()}日 `;
+            const dateLabel = `${dayLabel}${String(currentDate.getHours()).padStart(2, '0')}:${String(currentDate.getMinutes()).padStart(2, '0')}`;
             return (
               <View key={m._id} id={`thread-msg-${m._id}`}>
                 {showDate && <Text style={{ display: 'block', textAlign: 'center', fontSize: '11px', color: colors.textMuted, margin: '14px 0 6px' }}>{dateLabel}</Text>}
@@ -737,7 +741,6 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
                         {m.isAI ? aiAssistantName : (normalizeRoleSender(m.sender) || meta.label)}
                       </Text>
                     )}
-                    <Text style={{ display: 'block', textAlign: isMine ? 'right' : 'left', fontSize: '9px', color: isMine ? 'rgba(255,255,255,0.72)' : colors.textMuted, marginBottom: '3px' }}>{timeLabel}</Text>
                     {m.audioUrl && <View onClick={() => playVoice(m.audioUrl)} style={{ minWidth: '110px', padding: '5px 0' }}><Text style={{ fontSize: '14px', color: isMine ? '#fff' : colors.primary }}>▶ 语音 {Math.max(1, Math.round(m.audioDuration || 1))}″</Text></View>}
                     {(!m.audioUrl || !/^\[语音消息\]$/.test(m.content || '')) && <Text style={{ display: 'block', width: '100%', fontSize: '14px', color: isMine ? '#fff' : colors.textPrimary, lineHeight: '20px', whiteSpace: 'pre-wrap', wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{visibleMessageContent(m)}</Text>}
                   </View>
@@ -754,25 +757,24 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
           {foodImages.map((img, index) => <View key={img.path} style={{ position: 'relative' }}><Image src={img.path} mode="aspectFill" style={{ width: '52px', height: '52px', borderRadius: '8px' }} /><Text onClick={() => setFoodImages((prev) => prev.filter((_, i) => i !== index))} style={{ position: 'absolute', right: 0, top: 0, color: '#fff', backgroundColor: colors.danger }}>×</Text></View>)}
         </View>
       )}
-      <View style={{ display: 'flex', alignItems: 'flex-end', flexShrink: 0, gap: '8px', padding: `${spacing.sm}px ${spacing.lg}px`, paddingBottom: `calc(${spacing.sm}px + env(safe-area-inset-bottom))`, backgroundColor: '#fff', borderTop: `1px solid ${colors.border}` }}>
+      <View style={{ flexShrink: 0, padding: `${spacing.sm}px ${spacing.md}px`, paddingBottom: `calc(${spacing.sm}px + env(safe-area-inset-bottom))`, backgroundColor: '#fff', borderTop: `1px solid ${colors.border}` }}>
+        <View style={{ backgroundColor:colors.background, borderRadius:`${radius.md}px`, border:`1.5px solid ${colors.border}`, padding:'5px 8px' }}>
         <Textarea
-          style={{ flex: 1, width: 0, minWidth: 0, backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: '9px 12px', fontSize: '14px', minHeight: '40px', maxHeight: '100px', border: `1.5px solid ${colors.border}`, boxSizing: 'border-box' }}
+          style={{ width:'100%', backgroundColor:'transparent', padding:'7px 8px', fontSize:'14px', minHeight:'40px', maxHeight:'92px', boxSizing:'border-box' }}
           placeholder={`发消息给${meta.label}…`}
           value={input}
           onInput={(e) => setInput(e.detail.value)}
-          fixed
-          adjustPosition={false}
-          cursorSpacing={12}
+          adjustPosition
+          cursorSpacing={88}
           maxlength={500}
           autoHeight
         />
-        <View onClick={chooseFoodImage} style={{ width: '40px', height: '40px', borderRadius: '20px', backgroundColor: '#E8F5EF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Text style={{ fontSize: '18px' }}>📷</Text></View>
-        <View onTouchStart={startRecording} onTouchEnd={stopRecording} onTouchCancel={stopRecording} style={{ width: '40px', height: '40px', borderRadius: '20px', backgroundColor: recording ? colors.danger : '#E8F5EF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Text style={{ fontSize: '17px' }}>{recording ? '●' : '🎙️'}</Text></View>
-        <View onClick={send} style={{
-          width: '40px', height: '40px', borderRadius: '20px', backgroundColor: ((!input.trim() && !foodImages.length) || sending) ? colors.border : colors.primary,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-        }}>
-          <Icon name="➤" size={16} color="#fff" />
+        <View style={{ display:'flex', alignItems:'center', gap:'14px', padding:'2px 6px 4px' }}>
+          <Text onClick={chooseFoodImage} style={{ fontSize:'18px' }}>📷</Text>
+          <Text onTouchStart={startRecording} onTouchEnd={stopRecording} onTouchCancel={stopRecording} style={{ fontSize:'16px', color:recording ? colors.danger : colors.primary }}>{recording ? '● 松开发送' : '🎙️ 按住说话'}</Text>
+          <View style={{ flex:1 }} />
+          <Text onClick={send} style={{ color:((input.trim() || foodImages.length) && !sending) ? colors.primary : colors.textMuted, fontWeight:700 }}>发送</Text>
+        </View>
         </View>
       </View>
     </View>

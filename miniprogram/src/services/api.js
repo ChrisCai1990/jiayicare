@@ -242,10 +242,10 @@ export const reportsAPI = {
 export const chatAPI = {
   getConfig: () => request('/chat/config'),
   getStatus: () => request('/chat/status'),
-  send: (messages, userInfo) =>
+  send: (messages, userInfo, media = {}) =>
     request('/chat', {
       method: 'POST',
-      body: JSON.stringify({ messages, userInfo }),
+      body: JSON.stringify({ messages, userInfo, ...media }),
       timeout: 50000,
     }),
   transfer: (lastMessage) =>

@@ -292,7 +292,7 @@ router.post('/order', auth, async (req, res) => {
   let fundBreakdown = { personal: 0, corporate: 0 };
   if (useHealthFund > 0) {
     try {
-      const checked = await require('../utils/healthFundPayment').validateHealthFundDeduction({ user:req.user, requested:useHealthFund, orderAmount:priceAfterCoupon, category:service.category || '' });
+      const checked = await require('../utils/healthFundPayment').validateHealthFundDeduction({ user:req.user, requested:useHealthFund, orderAmount:priceAfterCoupon, category:service.category || '', productId: product?._id || serviceId });
       fundUsed = checked.allowed; fundEnterprise = checked.enterprise; fundBreakdown = checked.breakdown;
     } catch (err) { return res.status(400).json({ success:false, message:err.message }); }
   }
