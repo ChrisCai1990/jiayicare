@@ -186,12 +186,7 @@ export default function PlanModulesPage() {
       .finally(() => setLoading(false))
   }, [id])
 
-  const creatorId = plan?.staffId?._id || plan?.staffId
-  const requiredRole = plan?.type === 'medical_assist' ? 'healthPlanner' : plan?.type === 'nutrition' ? 'nutritionist' : null
-  const canEdit = !!plan && (
-    staff?.role === 'superadmin'
-    || (String(creatorId || '') === String(staff?._id || '') && (!requiredRole || staff?.role === requiredRole))
-  )
+  const canEdit = !!plan?.canManage
 
   const handleModuleChange = useCallback((moduleKey, fieldKey, value) => {
     setModuleData(prev => ({

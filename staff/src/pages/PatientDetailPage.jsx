@@ -1872,7 +1872,7 @@ export default function PatientDetailPage() {
     setAiMedicalAssistGenerating(true)
     try {
       await staffAPI.generateAIMedicalAssistPlan(id, orderId, templateId)
-      toast('AI就医协助方案已生成，待就医专员审核')
+      toast('AI就医协助方案已生成，待健康规划师审核')
       loadPlans()
     } catch (err) { toast('AI生成失败：' + (err.message || '未知错误')) }
     finally { setAiMedicalAssistGenerating(false) }
@@ -2053,17 +2053,17 @@ export default function PatientDetailPage() {
   // 来源+当前角色不同，目的地也不同：
   // - 普通随访任务（sourceType!=='order'）：工作台点进来就是要去处理，直接跳"执行随访"弹窗填写结果
   //   （2026-07-13 反馈：应该直接到执行随访界面，不然怎么填写随访内容）。
-  // - 商城服务订单（sourceType==='order'）+ 就医专员本人：目的是去生成就医协助方案，不是转派/执行随访，
-  //   直接跳"管理方案"tab并自动触发AI生成（2026-07-13 需求：就医专员点进来应跳到就医协助方案，
+  // - 商城服务订单（sourceType==='order'）+ 健康规划师本人：目的是去生成就医协助方案，不是执行随访，
+  //   直接跳"管理方案"tab并自动触发AI生成；方案生成后再安排就医专员执行，
   //   AI先生成方案，审核后推送给客户，并自动建立随访计划）。
-  // - 商城服务订单 + 其他角色（如健康规划师）：目的是"选执行人转派"，不是自己执行，
+  // - 商城服务订单 + 其他执行角色：目的是"选执行人转派"，不是自己生成方案，
   //   执行随访弹窗没有转派入口会把这条路堵死（2026-07-13 反馈：跳到执行随访界面，无法选择执行人，
   //   没办法真正转到实际服务的人员）——跳只读详情弹窗，里面"编辑"按钮能选执行人(assignedTo)。
   // 已完成/已取消的记录都没有"执行/转派"的意义，统一退回只读详情。
   useEffect(() => {
     if (tab === 'followups' && location.state?.openFollowUp) {
       const f = location.state.openFollowUp
-      if (f.sourceType === 'order' && staff?.role === 'medicalAssistant') {
+      if (f.sourceType === 'order' && staff?.role === 'healthPlanner') {
         setTab('plans')
         // 订单服务名已能唯一对应到具体模板，无需人工确认，跳转到方案tab后直接自动生成
         // （后端按服务名匹配到templateId后同样走模板固定内容锁定的生成逻辑，不是自由发挥）
@@ -2077,7 +2077,7 @@ export default function PatientDetailPage() {
       nav(location.pathname + location.search, { replace: true, state: {} })
     }
   }, [tab])
-  // 从商城订单待办跳转到"管理方案"tab后，自动触发一次AI生成，不用就医专员自己再点一次按钮；
+  // 从商城订单待办跳转到"管理方案"tab后，自动触发一次AI生成，不用健康规划师再点一次按钮；
   // 后端按订单服务名匹配到templateId后走的是模板固定内容锁定的生成逻辑，不是AI自由发挥
   useEffect(() => {
     if (tab === 'plans' && autoGenMedicalAssistOrderId !== null) {
@@ -7915,7 +7915,7 @@ export default function PatientDetailPage() {
                   ✨ AI体检方案
                 </button>
               )}
-              {['medicalAssistant', 'superadmin'].includes(staff?.role) && (
+              {['healthPlanner', 'superadmin'].includes(staff?.role) && (
                 <button className="btn btn-secondary btn-sm" disabled={aiMedicalAssistGenerating}
                   onClick={() => { setPendingMedicalAssistOrderId(''); setShowSelectTplModal('medical_assist') }}>
                   {aiMedicalAssistGenerating ? '生成中…' : '✨ AI就医协助方案'}
@@ -10766,7 +10766,7 @@ export default function PatientDetailPage() {
               toast('AI营养方案已生成，待营养师审核')
             } else {
               await staffAPI.generateAIMedicalAssistPlan(id, pendingMedicalAssistOrderId, templateId, briefNote)
-              toast('AI就医协助方案已生成，待就医专员审核')
+              toast('AI就医协助方案已生成，待健康规划师审核')
             }
             loadPlans()
           }}

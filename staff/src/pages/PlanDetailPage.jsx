@@ -380,10 +380,7 @@ export default function PlanDetailPage() {
   if (loading) return <div className="page-loading">加载中...</div>
   if (!plan) return <div className="page">方案不存在</div>
 
-  const creatorId = plan.staffId?._id || plan.staffId
-  const isCreator = String(creatorId || '') === String(staff?._id || '')
-  const canEdit = canEditPlanType(plan.type, staff?.role)
-    && (staff?.role === 'superadmin' || isCreator)
+  const canEdit = canEditPlanType(plan.type, staff?.role) && !!plan.canManage
   const completedCount = plan.items?.filter(i => i.status === 'completed').length || 0
   const progress = plan.items?.length ? Math.round((completedCount / plan.items.length) * 100) : 0
   const assistMeta = plan.type === 'medical_assist' ? getAssistTemplateMeta(plan.content?.templateName) : null

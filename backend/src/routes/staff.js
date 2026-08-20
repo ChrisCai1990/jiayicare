@@ -1538,7 +1538,8 @@ router.get('/plans/:id', staffAuth, async (req, res) => {
   const plan = await HealthPlan.findById(req.params.id)
     .populate('patientId', 'name phone gender age').populate('staffId', 'name role title');
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
-  res.json({ success: true, data: plan });
+  const canManage = await canManagePlan(req, plan);
+  res.json({ success: true, data: { ...plan.toObject(), canManage } });
 });
 
 // POST /api/staff/plans
@@ -1570,6 +1571,23 @@ function checkPlanTypeRole(plan, staffRole) {
   return staffRole === 'superadmin' || staffRole === requiredRole;
 }
 
+// 历史就医协助方案曾由健康顾问/就医专员创建。角色调整为健康规划师后，旧 staffId
+// 不能代表现行所有权；仅允许该会员当前绑定的健康规划师继任管理，其他规划师仍然只读。
+// 新方案由健康规划师创建，继续严格按 staffId 判断，不走历史兼容。
+async function canManagePlan(req, plan) {
+  if (req.staff.role === 'superadmin') return true;
+  if (String(plan.staffId?._id || plan.staffId) === String(req.staff._id)) return true;
+  if (plan.type !== 'medical_assist' || req.staff.role !== 'healthPlanner') return false;
+
+  const creatorRole = plan.staffId?.role
+    || (await Admin.findById(plan.staffId).select('role').lean())?.role;
+  if (creatorRole === 'healthPlanner') return false;
+
+  const patientId = plan.patientId?._id || plan.patientId;
+  const patient = await User.findById(patientId).select('assignedHealthPlanner').lean();
+  return String(patient?.assignedHealthPlanner || '') === String(req.staff._id);
+}
+
 // 自定义角色的「方案类型」授权校验（用于 edit/delete：plan 已查出、可拿 plan.type）。
 // 返回 true=放行，false=该角色被管理员关闭了此类方案的管理权。兼容逻辑与中间件 checkPlanType 一致。
 async function planTypeAllowed(req, planType) {
@@ -1594,7 +1612,7 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
   if (!(await planTypeAllowed(req, plan.type))) {
     return res.status(403).json({ success: false, message: '当前角色无权管理该类型的健康方案' });
   }
-  if (req.staff.role !== 'superadmin' && String(plan.staffId) !== String(req.staff._id)) {
+  if (!(await canManagePlan(req, plan))) {
     return res.status(403).json({ success: false, message: '仅方案制定人可修改' });
   }
   const allowed = ['title', 'description', 'year', 'startDate', 'endDate', 'checkupDate', 'items', 'followupFrequency', 'summary', 'status', 'content'];
@@ -1613,8 +1631,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
   const visibleIds = await getVisiblePlanPatientIds(req.staff);
   if (visibleIds && !visibleIds.some(id => String(id) === String(plan.patientId?._id || plan.patientId))) return res.status(403).json({ success: false, message: '无权查看该会员的方案' });
-  const canPush = req.staff.role === 'superadmin'
-    || String(plan.staffId) === String(req.staff._id);
+  const canPush = await canManagePlan(req, plan);
   if (!canPush || !checkPlanTypeRole(plan, req.staff.role) || !(await planTypeAllowed(req, plan.type))) {
     return res.status(403).json({ success: false, message: '无权推送该方案' });
   }
@@ -1815,7 +1832,7 @@ router.delete('/plans/:id', staffAuth, checkPermission('plans', 'delete'), async
   if (!(await planTypeAllowed(req, plan.type))) {
     return res.status(403).json({ success: false, message: '当前角色无权管理该类型的健康方案' });
   }
-  if (req.staff.role !== 'superadmin' && String(plan.staffId) !== String(req.staff._id)) {
+  if (!(await canManagePlan(req, plan))) {
     return res.status(403).json({ success: false, message: '仅方案制定人可删除' });
   }
   const relatedFollowUps = await FollowUp.find({
