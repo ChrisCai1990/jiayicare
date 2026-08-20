@@ -144,6 +144,15 @@ export const staffAPI = {
     return req('/staff/upload/image', { method: 'POST', body: fd });
   },
 
+  // 客户级 AI 辅助研判（供应商可切换，专题与结论保存在本系统）
+  getAiCaseReviewProviders: () => req('/staff/ai-case-review/providers'),
+  getAiCaseReviews: (patientId) => req(`/staff/patients/${patientId}/ai-case-reviews`),
+  createAiCaseReview: (patientId, data) => req(`/staff/patients/${patientId}/ai-case-reviews`, { method: 'POST', body: JSON.stringify(data) }),
+  updateAiCaseReview: (patientId, topicId, data) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  sendAiCaseReviewMessage: (patientId, topicId, data) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/messages`, { method: 'POST', body: JSON.stringify(data) }),
+  generateAiCaseReviewConclusion: (patientId, topicId) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/conclusion`, { method: 'POST' }),
+  confirmAiCaseReviewConclusion: (patientId, topicId, content) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/conclusion`, { method: 'PATCH', body: JSON.stringify({ content }) }),
+
   // Knowledge
   getKnowledge:    (p = {}) => req('/staff/knowledge?' + qs(p)),
   createKnowledge: (data)   => req('/staff/knowledge', { method: 'POST', body: JSON.stringify(data) }),
