@@ -1578,6 +1578,7 @@ export default function PatientDetailPage() {
   const [screeningItems, setScreeningItems] = useState([])
   const [screeningReports, setScreeningReports] = useState([])
   const [showScreeningForm, setShowScreeningForm] = useState(false)
+  const [showScreeningMoreActions, setShowScreeningMoreActions] = useState(false)
   const [screeningForm, setScreeningForm] = useState({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', screeningL3Items: [], checkDate: '', hospital: '', note: '', reportItems: [], examOrderItems: [], funcTestItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
   const [screeningYearSummaries, setScreeningYearSummaries] = useState([])
   const [screeningSummaryYear, setScreeningSummaryYear] = useState(new Date().getFullYear())
@@ -5164,25 +5165,28 @@ export default function PatientDetailPage() {
             <div id="screening-results" className="card" style={{ marginBottom: 16 }}>
               <div className="card-header">
                 <div className="card-title">专项筛查结果</div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn btn-secondary btn-sm" title="清理重复的AI识别筛查记录（同一项目保留最新一条）"
-                    onClick={async () => {
-                      if (!window.confirm('将清理重复的AI识别筛查记录，每个项目只保留最新一条。确认继续？')) return
-                      try {
-                        const res = await staffAPI.dedupPatientScreening(id)
-                        toast(res.message || '去重完成')
-                        loadScreening()
-                      } catch (e) { toast('去重失败：' + (e.message || '')) }
-                    }}>🧹 清理重复</button>
-                  <button className="btn btn-primary btn-sm" onClick={() => {
-                    setScreeningForm({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', screeningL3Items: [], checkDate: '', hospital: '', note: '', reportItems: [], examOrderItems: [], funcTestItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
-                    setScreeningFiles([])
-                    setEditingScreeningId(null)
-                    setScreeningLinkedItem(null)
-                    setScreeningAutoMatches([])
-                    setShowScreeningForm(true)
-                  }}>+ 录入筛查结果</button>
-                </div>
+                {['healthManager', 'familyDoctor', 'superadmin'].includes(staff?.role) && (
+                  <div style={{ position: 'relative' }}>
+                    <button className="btn btn-secondary btn-sm" onClick={() => setShowScreeningMoreActions(v => !v)}>
+                      ⋯ 更多操作
+                    </button>
+                    {showScreeningMoreActions && (
+                      <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 20, minWidth: 176, padding: 6, background: '#fff', border: '1px solid #D8E4DE', borderRadius: 8, boxShadow: '0 8px 24px rgba(24, 66, 50, 0.14)' }}>
+                        <button type="button" onClick={() => {
+                          setShowScreeningMoreActions(false)
+                          setScreeningForm({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', screeningL3Items: [], checkDate: '', hospital: '', note: '', reportItems: [], examOrderItems: [], funcTestItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
+                          setScreeningFiles([])
+                          setEditingScreeningId(null)
+                          setScreeningLinkedItem(null)
+                          setScreeningAutoMatches([])
+                          setShowScreeningForm(true)
+                        }} style={{ width: '100%', padding: '9px 12px', border: 0, borderRadius: 6, background: 'transparent', color: '#28453A', textAlign: 'left', cursor: 'pointer', fontSize: 13 }}>
+                          手工补录筛查结果
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               {['familyDoctor', 'superadmin'].includes(staff?.role) && pendingDoctorAuditReports.length > 0 && (() => {
                 const unviewedCount = pendingDoctorAuditReports.filter(report => !report.familyDoctorViewedAt).length
@@ -5339,7 +5343,7 @@ export default function PatientDetailPage() {
                 )
               })()}
               {!hasAny ? (
-                <div style={{ padding: 30, textAlign: 'center', color: '#aaa', fontSize: 14 }}>暂无专项筛查记录，点击「录入筛查结果」添加</div>
+                <div style={{ padding: 30, textAlign: 'center', color: '#8A9A93', fontSize: 14 }}>暂无专项筛查记录。报告审核并归类后会自动进入这里；特殊情况可通过「更多操作」手工补录。</div>
               ) : (() => {
                 const L1_COLORS = ['#7C3AED','#DC3545','#D97706','#0369A1','#0891B2','#1E6B50','#9D174D']
 
@@ -5556,10 +5560,15 @@ export default function PatientDetailPage() {
           <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setShowScreeningForm(false) }}>
             <div className="modal" style={{ maxWidth: 620, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
               <div className="modal-header" style={{ flexShrink: 0 }}>
-                <h3 className="modal-title">{editingScreeningId ? '修改筛查结果' : '录入筛查结果'}</h3>
+                <h3 className="modal-title">{editingScreeningId ? '修改筛查结果' : '手工补录筛查结果'}</h3>
                 <button className="modal-close" onClick={() => { setShowScreeningForm(false); setEditingScreeningId(null) }}>✕</button>
               </div>
               <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto', flex: 1 }}>
+                {!editingScreeningId && (
+                  <div style={{ padding: '9px 11px', border: '1px solid #F1D7A8', borderRadius: 8, background: '#FFF9ED', color: '#8A5A16', fontSize: 12, lineHeight: 1.6 }}>
+                    仅用于无可上传原件、AI无法解析或历史资料补录；已有原始报告请优先在报告审核环节修正归类。
+                  </div>
+                )}
                 {/* 三级联动选择（从管理端动态加载） */}
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">第一层：筛查大类 *</label>
