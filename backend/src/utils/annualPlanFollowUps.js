@@ -62,7 +62,7 @@ async function buildAnnualPlanFollowUps(plan) {
   // 现在按模块字段拼出有信息量的说明，让客户提前知道这次随访/提醒具体关于什么。
   // assignedTo：随访任务实际归属的执行人（方案里填的"随访人员"），决定随访出现在谁的工作台"名下"；
   // staffId 仅表示创建人，两者语义不同，混用会导致审核通过后随访挂不到指定人名下。
-  const push = (date, theme, content, assignedTo) => {
+  const push = (date, theme, content, assignedTo, sourceScheduleKey) => {
     // 只有明确了随访时间和随访人，才构成可执行的随访计划；否则不向客户或工作台投放半成品。
     if (!date || !assignedTo) return;
     const d = new Date(date);
@@ -77,6 +77,7 @@ async function buildAnnualPlanFollowUps(plan) {
       content: content || '',
       status: 'planned',
       sourceAnnualPlanId: plan._id,
+      sourceScheduleKey,
       sourceType: 'scheduled',
       aiStatus: 'pending',
       reviewRole: 'familyDoctor',
@@ -105,7 +106,8 @@ async function buildAnnualPlanFollowUps(plan) {
         rec.followUpStaff && `随访人员：${staffName(rec.followUpStaff)}`,
         rec.notes && `注意事项：${rec.notes}`,
       ].filter(Boolean);
-      push(rec[mod.dateField], `${mod.theme} · ${label}`, lines.join('\n'), rec.followUpStaff);
+      push(rec[mod.dateField], `${mod.theme} · ${label}`, lines.join('\n'), rec.followUpStaff,
+        `${mod.key}:${i}:${String(rec[mod.dateField]).slice(0, 10)}`);
     });
   }
 
@@ -127,7 +129,8 @@ async function buildAnnualPlanFollowUps(plan) {
         rec.notes && `注意事项：${rec.notes}`,
       ].filter(Boolean).join('\n');
       while (cursor <= horizonEnd) {
-        push(cursor, `日常监测随访 · ${rec.items || ''}`, monitorLines, rec.followUpStaff);
+        push(cursor, `日常监测随访 · ${rec.items || ''}`, monitorLines, rec.followUpStaff,
+          `monitoring:${rec.items || ''}:${cursor.toISOString().slice(0, 10)}`);
         cursor = new Date(cursor.getTime() + days * 86400000);
       }
     });
@@ -144,7 +147,8 @@ async function buildAnnualPlanFollowUps(plan) {
     ].filter(Boolean);
     const evalContent = evalItems.length ? `本次评估内容：${evalItems.join('、')}` : '';
     while (cursor <= horizonEnd) {
-      push(cursor, '季度评估随访', evalContent, quarterlyEval.followUpStaff);
+      push(cursor, '季度评估随访', evalContent, quarterlyEval.followUpStaff,
+        `quarterly_eval:${cursor.toISOString().slice(0, 10)}`);
       cursor = new Date(cursor.getTime() + 90 * 86400000);
     }
   }
@@ -157,21 +161,50 @@ async function buildAnnualPlanFollowUps(plan) {
       annualCheckup.focus && `重点关注：${annualCheckup.focus}`,
       annualCheckup.escort && '已安排陪检服务',
     ].filter(Boolean).join('\n');
-    push(annualCheckup.date, `年度体检提醒 · ${annualCheckup.institution || ''}`, checkupLines, annualCheckup.followUpStaff);
+    push(annualCheckup.date, `年度体检提醒 · ${annualCheckup.institution || ''}`, checkupLines, annualCheckup.followUpStaff,
+      `annual_checkup:${String(annualCheckup.date).slice(0, 10)}`);
   }
 
   return created;
 }
 
-// 保存/更新年度管理方案时同步生成随访占位。幂等策略：只清理此前系统自动生成、
-// 医护还从未审核/编辑过的记录（aiStatus:'pending'）——一旦医护审核通过（approve，含审核时顺带
-// 修改日期/主题/内容）或驳回，aiStatus 变为 'approved' / null，就永久脱离自动清理范围，
-// 避免"跟客户沟通后已手动调整"的随访被下一次保存方案时静默覆盖丢失。
+// 保存/定时刷新都按稳定排期键原位同步。已审核记录永不重建；待审核记录仅更新，
+// 从而既保留人工修改，又避免每天刷新把同一计划再次送审。
 async function syncAnnualPlanFollowUps(plan) {
-  await FollowUp.deleteMany({ sourceAnnualPlanId: plan._id, sourceType: 'scheduled', aiStatus: 'pending' });
   const toCreate = await buildAnnualPlanFollowUps(plan);
-  if (toCreate.length) await FollowUp.insertMany(toCreate);
-  return toCreate.length;
+  const existing = await FollowUp.find({ sourceAnnualPlanId: plan._id, sourceType: 'scheduled' }).sort({ createdAt: 1 });
+  const desiredKeys = new Set(toCreate.map(row => row.sourceScheduleKey));
+  let created = 0;
+
+  for (const row of toCreate) {
+    const sameKey = existing.filter(item => item.sourceScheduleKey === row.sourceScheduleKey);
+    // 兼容修复上线前的旧数据：同日期、标题、内容视为同一排期。
+    const legacy = existing.filter(item => !item.sourceScheduleKey
+      && new Date(item.date).toISOString().slice(0, 10) === row.date.toISOString().slice(0, 10)
+      && item.theme === row.theme && item.content === row.content);
+    const matches = [...sameKey, ...legacy];
+    if (matches.length) {
+      // 优先保留已审核记录；完全相同的其余副本直接清理。
+      const keep = matches.find(item => item.aiStatus === 'approved') || matches[0];
+      if (!keep.sourceScheduleKey) keep.sourceScheduleKey = row.sourceScheduleKey;
+      if (keep.aiStatus === 'pending') {
+        ['patientId', 'staffId', 'assignedTo', 'date', 'theme', 'content', 'reviewRole'].forEach(k => { keep[k] = row[k]; });
+      }
+      await keep.save();
+      const duplicateIds = matches.filter(item => String(item._id) !== String(keep._id)).map(item => item._id);
+      if (duplicateIds.length) await FollowUp.deleteMany({ _id: { $in: duplicateIds } });
+    } else {
+      await FollowUp.create(row);
+      created++;
+    }
+  }
+
+  // 方案中已删除的排期，仅清理尚未审核的占位；已审核历史继续保留。
+  await FollowUp.deleteMany({
+    sourceAnnualPlanId: plan._id, sourceType: 'scheduled', aiStatus: 'pending',
+    sourceScheduleKey: { $nin: [...desiredKeys] },
+  });
+  return created;
 }
 
 module.exports = { buildAnnualPlanFollowUps, syncAnnualPlanFollowUps };

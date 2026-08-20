@@ -10888,7 +10888,11 @@ function SendMessageModal({ patientId, patientName, onClose }) {
   const [sending, setSending] = useState(false)
   const [humanActive, setHumanActive] = useState(false)
   const [switchingMode, setSwitchingMode] = useState(false)
+  const [recording, setRecording] = useState(false)
   const scrollRef = useRef(null)
+  const recorderRef = useRef(null)
+  const recordStreamRef = useRef(null)
+  const recordStartedRef = useRef(0)
   const msgCountRef = useRef(0) // 上次渲染的消息条数，用于判断是否真的有新消息（而不是轮询刷新了同样内容）
   const isNearBottomRef = useRef(true) // 用户是否停留在底部附近；往上翻看历史时轮询不应打断
 
@@ -10903,6 +10907,7 @@ function SendMessageModal({ patientId, patientName, onClose }) {
   }
 
   useEffect(() => { loadThread() }, [patientId])
+  useEffect(() => () => { recorderRef.current?.state === 'recording' && recorderRef.current.stop(); recordStreamRef.current?.getTracks?.().forEach(track => track.stop()) }, [])
 
   // 轮询获取新消息（3秒一次）
   useEffect(() => {
@@ -10947,6 +10952,39 @@ function SendMessageModal({ patientId, patientName, onClose }) {
   }
 
   const handleKey = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }
+
+  const startVoice = async () => {
+    if (recording || sending) return
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find(type => window.MediaRecorder?.isTypeSupported?.(type)) || ''
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+      const chunks = []
+      recorder.ondataavailable = event => { if (event.data?.size) chunks.push(event.data) }
+      recorder.onstop = () => {
+        const duration = Math.max(1, Math.min(60, Math.ceil((Date.now() - recordStartedRef.current) / 1000)))
+        const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
+        const reader = new FileReader()
+        reader.onload = async () => {
+          setSending(true)
+          try {
+            const res = await staffAPI.replyChatMessage(patientId, '', { data: reader.result, mimeType: blob.type || 'audio/webm', duration })
+            setHumanActive(true)
+            if (res.data) setMsgs(prev => [...prev, res.data])
+          } catch (err) { toast(err.message || '语音发送失败') }
+          finally { setSending(false) }
+        }
+        reader.readAsDataURL(blob)
+        stream.getTracks().forEach(track => track.stop())
+        setRecording(false)
+      }
+      recorderRef.current = recorder; recordStreamRef.current = stream; recordStartedRef.current = Date.now()
+      recorder.start(); setRecording(true)
+      setTimeout(() => { if (recorder.state === 'recording') recorder.stop() }, 60000)
+    } catch { toast('无法使用麦克风，请检查浏览器权限') }
+  }
+
+  const stopVoice = () => { if (recorderRef.current?.state === 'recording') recorderRef.current.stop() }
 
   const toggleHumanMode = async () => {
     if (switchingMode) return
@@ -11041,7 +11079,8 @@ function SendMessageModal({ patientId, patientName, onClose }) {
                       boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
                       position: 'relative',
                     }}>
-                      {m.content}
+                      {m.audioUrl && <audio controls preload="none" src={m.audioUrl} style={{ display: 'block', width: 230, maxWidth: '100%', marginBottom: 4 }} />}
+                      {(!m.audioUrl || m.content !== '[语音消息]') && m.content}
                       {canRecall && (
                         <span
                           onClick={() => recallMessage(m)}
@@ -11074,6 +11113,9 @@ function SendMessageModal({ patientId, patientName, onClose }) {
             style={{ padding: '8px 16px', borderRadius: 10, background: '#1E6B50', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14, opacity: (sending || !input.trim()) ? 0.5 : 1 }}
           >
             {sending ? '…' : '发送'}
+          </button>
+          <button type="button" onMouseDown={startVoice} onMouseUp={stopVoice} onMouseLeave={stopVoice} onTouchStart={startVoice} onTouchEnd={stopVoice} disabled={sending} style={{ padding: '8px 12px', borderRadius: 10, background: recording ? '#DC3545' : '#E8F5EF', color: recording ? '#fff' : '#1E6B50', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>
+            {recording ? '松开发送' : '按住说话'}
           </button>
         </div>
       </div>

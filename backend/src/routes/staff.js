@@ -1336,6 +1336,10 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
     if (!['approve', 'reject'].includes(action)) return res.status(400).json({ success: false, message: 'action 必须为 approve 或 reject' });
     const followUp = await FollowUp.findOne({ _id: req.params.id, aiStatus: 'pending' });
     if (!followUp) return res.status(404).json({ success: false, message: '待审核随访计划不存在' });
+    const requiredRole = followUp.reviewRole || 'familyDoctor';
+    if (req.staff.role !== 'superadmin' && req.staff.role !== requiredRole) {
+      return res.status(403).json({ success: false, message: '该随访计划不属于您的审核角色' });
+    }
 
     if (action === 'reject') {
       followUp.status = 'cancelled';
@@ -5159,8 +5163,8 @@ router.patch('/user-messages/:userId/read', staffAuth, async (req, res) => {
 // POST /api/staff/user-messages/:userId/reply
 router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
   try {
-    const { content = '', images = [] } = req.body;
-    if (!content?.trim() && !images.length) {
+    const { content = '', images = [], audio = null } = req.body;
+    if (!content?.trim() && !images.length && !audio?.data) {
       return res.status(400).json({ success: false, message: '回复内容不能为空' });
     }
     const patient = await User.findById(req.params.userId).select('name');
@@ -5191,13 +5195,26 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
     for (const item of images.slice(0, 9)) {
       if (item?.data) imageUrls.push((await require('../utils/oss').uploadBase64(item.data, item.mimeType || 'image/jpeg', 'messages')).url);
     }
+    let audioUrl = '';
+    let audioMimeType = '';
+    let audioDuration = 0;
+    if (audio?.data) {
+      audioMimeType = String(audio.mimeType || 'audio/webm').toLowerCase();
+      if (!['audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/webm', 'audio/ogg', 'audio/wav', 'audio/x-wav'].includes(audioMimeType)) {
+        return res.status(400).json({ success: false, message: '不支持的语音格式' });
+      }
+      if (String(audio.data).length > 12 * 1024 * 1024) return res.status(413).json({ success: false, message: '语音文件过大' });
+      audioDuration = Math.max(1, Math.min(60, Number(audio.duration) || 1));
+      audioUrl = (await require('../utils/oss').uploadBase64(audio.data, audioMimeType, 'messages/audio')).url;
+    }
     const replyMsg = await Message.create({
       user:    req.params.userId,
       type:    msgType,
       sender:  senderLabel,
       title:   `${staff.name} 回复了您的留言`,
-      content: content.trim() || '图片',
+      content: content.trim() || (audioUrl ? '[语音消息]' : '图片'),
       imageUrl: imageUrls[0] || '', imageUrls,
+      audioUrl, audioDuration, audioMimeType,
       unread:  true,
       conversationId,
     });

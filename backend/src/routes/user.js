@@ -978,10 +978,7 @@ router.get('/followup-tasks', auth, async (req, res) => {
     const followups = await FollowUp.find({
       patientId: req.user._id,
       aiStatus: { $ne: 'pending' },
-      $or: [
-        { status: { $in: ['planned', 'in_progress', 'missed', 'completed', 'cancelled'] } }, // 已取消也要展示，供用户端"已取消"筛选查看
-        { completedByUser: true },
-      ],
+      status: { $in: ['planned', 'in_progress', 'missed'] },
     })
       .sort({ date: 1 })
       .populate('staffId', 'name role title')

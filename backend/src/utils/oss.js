@@ -39,6 +39,10 @@ async function uploadBase64(base64Data, mimeType, folder = 'reports') {
     : effectiveMime === 'image/png' ? 'png'
     : effectiveMime === 'image/jpeg' || effectiveMime === 'image/jpg' ? 'jpg'
     : effectiveMime === 'audio/mpeg' ? 'mp3'
+    : effectiveMime === 'audio/mp4' || effectiveMime === 'audio/aac' ? 'm4a'
+    : effectiveMime === 'audio/webm' ? 'webm'
+    : effectiveMime === 'audio/ogg' ? 'ogg'
+    : effectiveMime === 'audio/wav' || effectiveMime === 'audio/x-wav' ? 'wav'
     : 'bin';
 
   const key = `${folder}/${uuidv4()}.${ext}`;

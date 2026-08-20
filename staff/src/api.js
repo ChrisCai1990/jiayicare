@@ -214,7 +214,7 @@ export const staffAPI = {
   // P4 — Direct message to patient
   sendMessageToPatient: (id, data) => req(`/staff/patients/${id}/message`, { method: 'POST', body: JSON.stringify(data) }),
   getChatThread:   (userId, role = 'manager') => req(`/staff/user-messages/${userId}/thread?role=${role}`),
-  replyChatMessage: (userId, content) => req(`/staff/user-messages/${userId}/reply`, { method: 'POST', body: JSON.stringify({ content }) }),
+  replyChatMessage: (userId, content, audio = null) => req(`/staff/user-messages/${userId}/reply`, { method: 'POST', body: JSON.stringify({ content, audio }) }),
   recallChatMessage: (messageId) => req(`/staff/user-messages/${messageId}/recall`, { method: 'PATCH' }),
   setChatHumanActive: (userId, humanActive, role = 'manager') => req(`/staff/user-messages/${userId}/ai-mode`, { method: 'PATCH', body: JSON.stringify({ humanActive, role }) }),
 
@@ -320,7 +320,7 @@ export const staffAPI = {
   getUserMessages: () => req('/staff/user-messages'),
 
   // 回复用户留言
-  replyToUser: (userId, content, images = []) => req(`/staff/user-messages/${userId}/reply`, { method: 'POST', body: JSON.stringify({ content, images }) }),
+  replyToUser: (userId, content, images = [], audio = null) => req(`/staff/user-messages/${userId}/reply`, { method: 'POST', body: JSON.stringify({ content, images, audio }) }),
   // 获取用户对话线程
   getUserMessageThread: (userId, role = 'manager') => req(`/staff/user-messages/${userId}/thread?role=${role}`),
   reviewNutritionAIMessage: (messageId, action, content) => req(`/staff/user-messages/${messageId}/ai-review`, { method: 'PATCH', body: JSON.stringify({ action, content }) }),

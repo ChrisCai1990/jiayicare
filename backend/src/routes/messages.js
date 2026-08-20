@@ -106,8 +106,8 @@ router.patch('/read-all', auth, async (req, res) => {
 // 用户发送消息（给健康顾问/营养师/健管专员）
 router.post('/', auth, async (req, res) => {
   try {
-    const { to, content, imageUrl = '', image = '', images = [], mimeType = 'image/jpeg', aiAnalysis = '', suppressAI = false } = req.body;
-    if (!content?.trim() && !imageUrl && !image && !images.length) {
+    const { to, content = '', imageUrl = '', image = '', images = [], audio = null, mimeType = 'image/jpeg', aiAnalysis = '', suppressAI = false } = req.body;
+    if (!content?.trim() && !imageUrl && !image && !images.length && !audio?.data) {
       return res.status(400).json({ success: false, message: '消息内容不能为空' });
     }
     const VALID_RECIPIENTS = ['doctor', 'nutritionist', 'manager'];
@@ -139,14 +139,27 @@ router.post('/', auth, async (req, res) => {
       const uploaded = await uploadBase64(item.data, item.mimeType || 'image/jpeg', 'messages');
       storedImageUrls.push(uploaded.url);
     }
+    let audioUrl = '';
+    let audioMimeType = '';
+    let audioDuration = 0;
+    if (audio?.data) {
+      audioMimeType = String(audio.mimeType || 'audio/mpeg').toLowerCase();
+      if (!['audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/webm', 'audio/ogg', 'audio/wav', 'audio/x-wav'].includes(audioMimeType)) {
+        return res.status(400).json({ success: false, message: '不支持的语音格式' });
+      }
+      if (String(audio.data).length > 12 * 1024 * 1024) return res.status(413).json({ success: false, message: '语音文件过大' });
+      audioDuration = Math.max(1, Math.min(60, Number(audio.duration) || 1));
+      audioUrl = (await uploadBase64(audio.data, audioMimeType, 'messages/audio')).url;
+    }
     const msg = await Message.create({
       user:    req.user._id,
       type:    'user',
       sender:  senderName,
       title:   `用户留言 → ${TITLE_MAP[to]}`,
-      content: content.trim(),
+      content: content.trim() || '[语音消息]',
       imageUrl: storedImageUrl,
       imageUrls: storedImageUrls,
+      audioUrl, audioDuration, audioMimeType,
       unread:  false,
       recipient: to,
       conversationId,
@@ -170,7 +183,7 @@ router.post('/', auth, async (req, res) => {
     }
     if (to === 'nutritionist') {
       require('../utils/aiMessageFallback').replyWithAI({
-        userId: req.user._id, recipient: to, content: content.trim() || '用户上传了健康记录图片', conversationId,
+        userId: req.user._id, recipient: to, content: content.trim() || (audioUrl ? '用户发来一条语音消息，请温和确认收到并请其在方便时补充文字重点' : '用户上传了健康记录图片'), conversationId,
       });
       return;
     }
@@ -178,7 +191,7 @@ router.post('/', auth, async (req, res) => {
 
     // AI立即先回一句安抚（不阻塞响应），医护看到后仍可正常人工回复追加
     require('../utils/aiMessageFallback').replyWithAI({
-      userId: req.user._id, recipient: to, content: content.trim(), conversationId,
+      userId: req.user._id, recipient: to, content: content.trim() || '用户发来一条语音消息，请温和确认收到并请其在方便时补充文字重点', conversationId,
     });
   } catch (err) {
     res.status(500).json({ success: false, message: '发送失败', error: err.message });

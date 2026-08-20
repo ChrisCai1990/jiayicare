@@ -6,11 +6,6 @@ import { tasksAPI, followupTasksAPI } from '../../services/api';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
 
-const STATUS_TABS = [
-  { key: 'active', label: '未随访' },
-  { key: 'done', label: '已随访' },
-  { key: 'cancelled', label: '已取消' },
-];
 const TIME_TABS = ['全部', '今日', '本周', '本月'];
 
 const dateOf = item => item.dueDate || item.date || item.scheduledAt || item.createdAt;
@@ -20,7 +15,6 @@ export default function TasksPage() {
   const { statusBarHeight } = useNavBar();
   const [tasks, setTasks] = useState([]);
   const [followups, setFollowups] = useState([]);
-  const [statusFilter, setStatusFilter] = useState('active');
   const [timeFilter, setTimeFilter] = useState('全部');
   const [loading, setLoading] = useState(true);
 
@@ -55,8 +49,8 @@ export default function TasksPage() {
   const weekEnd = new Date(today); weekEnd.setDate(today.getDate() + 7);
   const monthEnd = new Date(today); monthEnd.setMonth(today.getMonth() + 1);
   const visible = normalized.filter(item => {
-    if (item._status !== statusFilter) return false;
-    if (statusFilter !== 'active' || timeFilter === '全部') return true;
+    if (item._status !== 'active') return false;
+    if (timeFilter === '全部') return true;
     const key = dateKey(item);
     if (!key) return true;
     if (timeFilter === '今日') return key <= todayKey;
@@ -72,13 +66,10 @@ export default function TasksPage() {
         <View style={{ width: '28px' }} />
       </View>
       <View style={{ padding: `${spacing.md}px ${spacing.lg}px 0` }}>
-        <ScrollView scrollX style={{ whiteSpace: 'nowrap', marginBottom: `${spacing.sm}px` }}><View style={{ display: 'inline-flex', gap: '8px' }}>
-          {STATUS_TABS.map(tab => <View key={tab.key} onClick={() => setStatusFilter(tab.key)} style={{ padding: '7px 15px', borderRadius: `${radius.full}px`, backgroundColor: statusFilter === tab.key ? colors.primary : '#fff', border: `1px solid ${statusFilter === tab.key ? colors.primary : colors.border}` }}><Text style={{ fontSize: '12px', fontWeight: 600, color: statusFilter === tab.key ? '#fff' : colors.textPrimary }}>{tab.label}</Text></View>)}
-        </View></ScrollView>
-        {statusFilter === 'active' && <ScrollView scrollX style={{ whiteSpace: 'nowrap', marginBottom: `${spacing.md}px` }}><View style={{ display: 'inline-flex', gap: '8px' }}>
+        <ScrollView scrollX style={{ whiteSpace: 'nowrap', marginBottom: `${spacing.md}px` }}><View style={{ display: 'inline-flex', gap: '8px' }}>
           {TIME_TABS.map(tab => <View key={tab} onClick={() => setTimeFilter(tab)} style={{ padding: '6px 14px', borderRadius: `${radius.full}px`, backgroundColor: timeFilter === tab ? colors.primary10 : '#fff', border: `1px solid ${timeFilter === tab ? colors.primary : colors.border}` }}><Text style={{ fontSize: '12px', color: timeFilter === tab ? colors.primary : colors.textSecondary }}>{tab}</Text></View>)}
-        </View></ScrollView>}
-        {loading ? <Text style={{ color: colors.textMuted }}>加载中...</Text> : visible.length === 0 ? <View style={{ textAlign: 'center', padding: `${spacing.xxl}px 0` }}><Text style={{ color: colors.textMuted }}>{statusFilter === 'done' ? '暂无已随访记录' : statusFilter === 'cancelled' ? '暂无已取消记录' : '暂无待办任务'}</Text></View> : visible.map(item => (
+        </View></ScrollView>
+        {loading ? <Text style={{ color: colors.textMuted }}>加载中...</Text> : visible.length === 0 ? <View style={{ textAlign: 'center', padding: `${spacing.xxl}px 0` }}><Text style={{ color: colors.textMuted }}>暂无待办任务</Text></View> : visible.map(item => (
           <View key={`${item._kind}-${item._id}`} style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: '10px', boxShadow: shadow.card }}>
             <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
               <View style={{ flex: 1 }}>
@@ -86,7 +77,7 @@ export default function TasksPage() {
                 <Text style={{ fontSize: '12px', color: colors.textMuted }}>{item.staffId?.name || item.assignee || '健康管理团队'} · {dateKey(item)}</Text>
                 {!!item.content && <Text style={{ fontSize: '12px', color: colors.textSecondary, marginTop: '4px' }}>{item.content}</Text>}
               </View>
-              {statusFilter === 'active' && <View onClick={() => item._kind === 'followup' ? doneFollowup(item._id) : completeTask(item._id)} style={{ padding: '7px 14px', backgroundColor: colors.primary10, borderRadius: `${radius.full}px` }}><Text style={{ fontSize: '12px', color: colors.primary, fontWeight: 700 }}>完成</Text></View>}
+              <View onClick={() => item._kind === 'followup' ? doneFollowup(item._id) : completeTask(item._id)} style={{ padding: '7px 14px', backgroundColor: colors.primary10, borderRadius: `${radius.full}px` }}><Text style={{ fontSize: '12px', color: colors.primary, fontWeight: 700 }}>完成</Text></View>
             </View>
           </View>
         ))}

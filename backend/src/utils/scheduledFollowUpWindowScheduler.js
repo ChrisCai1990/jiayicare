@@ -2,9 +2,8 @@ const AnnualPlan = require('../models/AnnualPlan');
 const { syncAnnualPlanFollowUps } = require('./annualPlanFollowUps');
 
 // 年度管理方案的"日常监测/季度评估"随访占位只提前生成未来 HORIZON_DAYS 天（见 annualPlanFollowUps.js）。
-// syncAnnualPlanFollowUps 内部按 Date.now() 重新计算窗口，且是"先删未审核的旧占位、再按当前窗口重建"，
-// 天然幂等——每天重跑一次，就相当于窗口跟着日期往前滚动一天，把新进入窗口的那一天补出来，
-// 不会重复，也不会影响医护已审核/编辑过的记录（那些 aiStatus 已不是 pending，删除条件筛不到）。
+// syncAnnualPlanFollowUps 按稳定排期键原位更新，每天仅补充新进入窗口的日期，
+// 已审核记录不会被重新生成，也不会再次进入审核队列。
 async function scanAndSyncScheduledWindow() {
   const plans = await AnnualPlan.find({}).lean();
   let total = 0;

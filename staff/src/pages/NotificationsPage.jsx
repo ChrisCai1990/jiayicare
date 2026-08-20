@@ -674,7 +674,12 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
   const [draftGenerating, setDraftGenerating] = useState(false)
   const [draftReview, setDraftReview] = useState(null)
   const [replyImages, setReplyImages] = useState([])
+  const [recording, setRecording] = useState(false)
+  const [humanActive, setHumanActive] = useState(false)
   const bottomRef = useRef(null)
+  const recorderRef = useRef(null)
+  const recordStreamRef = useRef(null)
+  const recordStartedRef = useRef(0)
 
   const ROLE_LABEL = { doctor: '健康顾问', nutritionist: '营养师', manager: '健管师' }
 
@@ -692,12 +697,54 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
     try {
       const res = await staffAPI.getUserMessageThread(userId, roleKey)
       setMessages(res.data || [])
+      setHumanActive(!!res.humanActive)
     } catch { /* ignore */ }
     finally { setLoading(false) }
   }
 
   useEffect(() => { loadThread() }, [userId, roleKey])
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
+  useEffect(() => () => { recorderRef.current?.state === 'recording' && recorderRef.current.stop(); recordStreamRef.current?.getTracks?.().forEach(track => track.stop()) }, [])
+
+  const startVoice = async () => {
+    if (recording || submitting) return
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find(type => window.MediaRecorder?.isTypeSupported?.(type)) || ''
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+      const chunks = []
+      recorder.ondataavailable = event => { if (event.data?.size) chunks.push(event.data) }
+      recorder.onstop = () => {
+        const duration = Math.max(1, Math.min(60, Math.ceil((Date.now() - recordStartedRef.current) / 1000)))
+        const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
+        const reader = new FileReader()
+        reader.onload = async () => {
+          setSubmitting(true)
+          try {
+            await staffAPI.replyToUser(userId, '', [], { data: reader.result, mimeType: blob.type || 'audio/webm', duration })
+            onSent(); await loadThread()
+          } catch (e) { setErr(e.message || '语音发送失败') }
+          finally { setSubmitting(false) }
+        }
+        reader.readAsDataURL(blob)
+        stream.getTracks().forEach(track => track.stop())
+        setRecording(false)
+      }
+      recorderRef.current = recorder; recordStreamRef.current = stream; recordStartedRef.current = Date.now()
+      recorder.start(); setRecording(true)
+      setTimeout(() => { if (recorder.state === 'recording') recorder.stop() }, 60000)
+    } catch { setErr('无法使用麦克风，请检查浏览器权限') }
+  }
+
+  const stopVoice = () => { if (recorderRef.current?.state === 'recording') recorderRef.current.stop() }
+
+  const toggleHumanMode = async () => {
+    try {
+      const res = await staffAPI.setChatHumanActive(userId, !humanActive, roleKey)
+      setHumanActive(!!res.humanActive)
+      toast(res.humanActive ? '已接手，AI助理暂停回复' : '已退出接手，AI助理恢复承接')
+    } catch (e) { toast(e.message || '切换失败') }
+  }
 
   const handleSend = async () => {
     if (!content.trim() && !replyImages.length) { setErr('请输入回复内容或选择图片'); return }
@@ -728,7 +775,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
         <div className="modal-header" style={{ flexShrink: 0 }}>
           <div>
             <h3 className="modal-title">与 {userName} 的对话</h3>
-            <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>频道：{ROLE_LABEL[roleKey] || roleKey}</div>
+            <div style={{ fontSize: 12, color: humanActive ? '#D97706' : '#22A06B', marginTop: 2 }}>频道：{ROLE_LABEL[roleKey] || roleKey} · {humanActive ? '人工已接手，AI静默' : 'AI助理承接中'}</div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <select className="form-input" value={draftRange} onChange={e => setDraftRange(e.target.value)}
@@ -738,6 +785,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
             <button className="btn btn-secondary btn-sm" disabled={draftGenerating} onClick={handleGenerateDraft}>
               {draftGenerating ? '生成中…' : '🤖 生成随访草稿'}
             </button>
+            <button className="btn btn-secondary btn-sm" onClick={toggleHumanMode}>{humanActive ? '退出接手' : '人工接手'}</button>
             {onNavigate && <button className="btn btn-secondary btn-sm" onClick={() => { onNavigate(`/patients/${userId}`); onClose() }}>查看档案</button>}
             <button className="modal-close" onClick={onClose}>✕</button>
           </div>
@@ -771,7 +819,8 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
                     boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
                   }}>
                     {(m.imageUrls?.length ? m.imageUrls : (m.imageUrl ? [m.imageUrl] : [])).map(url => <img key={url} src={url} alt="沟通图片" style={{ display: 'block', maxWidth: '100%', maxHeight: 220, borderRadius: 8, marginBottom: 6 }} />)}
-                    {m.content}
+                    {m.audioUrl && <audio controls preload="none" src={m.audioUrl} style={{ display: 'block', width: 230, maxWidth: '100%', marginBottom: 4 }} />}
+                    {(!m.audioUrl || m.content !== '[语音消息]') && m.content}
                   </div>
                   {roleKey === 'nutritionist' && m.aiGenerated && m.aiReviewStatus === 'pending' && (
                     <div style={{ display: 'flex', gap: 6, marginTop: 6, justifyContent: 'flex-end' }}>
@@ -790,6 +839,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
           {replyImages.length > 0 && <div style={{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap'}}>{replyImages.map((img,i)=><div key={i} style={{position:'relative'}}><img src={img.data} alt="待发送" style={{width:58,height:58,objectFit:'cover',borderRadius:8}}/><button type="button" onClick={()=>setReplyImages(v=>v.filter((_,x)=>x!==i))} style={{position:'absolute',right:-4,top:-4,border:0,borderRadius:10,background:'#DC3545',color:'#fff'}}>×</button></div>)}</div>}
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
             <label className="btn btn-secondary" style={{alignSelf:'stretch',display:'flex',alignItems:'center',cursor:'pointer'}}>图片<input type="file" accept="image/*" multiple hidden onChange={e=>{Array.from(e.target.files||[]).slice(0,9-replyImages.length).forEach(file=>{const reader=new FileReader();reader.onload=()=>setReplyImages(v=>[...v,{data:reader.result,mimeType:file.type||'image/jpeg'}].slice(0,9));reader.readAsDataURL(file)});e.target.value='' }}/></label>
+            <button type="button" className={recording ? 'btn btn-danger' : 'btn btn-secondary'} onMouseDown={startVoice} onMouseUp={stopVoice} onMouseLeave={stopVoice} onTouchStart={startVoice} onTouchEnd={stopVoice} disabled={submitting} style={{ alignSelf: 'stretch' }}>{recording ? '松开发送' : '按住说话'}</button>
             <textarea className="form-input" rows={2} value={content}
               onChange={e => { setContent(e.target.value); setErr('') }}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}

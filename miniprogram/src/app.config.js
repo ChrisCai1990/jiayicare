@@ -43,6 +43,9 @@ export default defineAppConfig({
     navigationStyle: 'custom',
     backgroundColor: '#F2EDE3',
   },
+  permission: {
+    'scope.record': { desc: '用于向您的健康服务团队发送语音消息' },
+  },
   tabBar: {
     color: '#8AA89C',
     selectedColor: '#1E6B50',

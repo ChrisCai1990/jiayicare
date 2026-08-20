@@ -585,9 +585,17 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
   const [sending, setSending] = useState(false);
   const [humanActive, setHumanActive] = useState(false);
   const [foodImages, setFoodImages] = useState([]);
+  const [recording, setRecording] = useState(false);
   const meta = ROLE_META[role] || ROLE_META.manager;
   const aiAssistantName = assistantName(member, meta.label);
   const pollRef = useRef(null);
+  const recorderRef = useRef(null);
+  const audioPlayerRef = useRef(null);
+
+  useEffect(() => () => {
+    audioPlayerRef.current?.destroy?.();
+    recorderRef.current?.stop?.();
+  }, []);
 
   const loadThread = useCallback(async () => {
     try {
@@ -643,6 +651,48 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
     }
   };
 
+  const sendVoiceFile = async ({ tempFilePath, duration = 0 }) => {
+    if (!tempFilePath || sending) return;
+    setSending(true);
+    try {
+      const base64 = Taro.getFileSystemManager().readFileSync(tempFilePath, 'base64');
+      const res = await messagesAPI.send(role, '', {
+        audio: { data: `data:audio/mpeg;base64,${base64}`, mimeType: 'audio/mpeg', duration: Math.max(1, Math.ceil(duration / 1000)) },
+      });
+      if (res?.data) setMsgs((prev) => [...prev, res.data]);
+      setTimeout(loadThread, 500);
+    } catch (err) {
+      Taro.showToast({ title: err?.message || '语音发送失败', icon: 'none' });
+    } finally { setSending(false); }
+  };
+
+  const startRecording = () => {
+    if (sending || recording) return;
+    const recorder = recorderRef.current || Taro.getRecorderManager();
+    recorderRef.current = recorder;
+    recorder.offStart?.(); recorder.offError?.();
+    recorder.onStart(() => setRecording(true));
+    recorder.onError(() => { setRecording(false); Taro.showToast({ title: '请允许使用麦克风', icon: 'none' }); });
+    recorder.start({ duration: 60000, format: 'mp3', sampleRate: 16000, numberOfChannels: 1, encodeBitRate: 48000 });
+  };
+
+  const stopRecording = () => {
+    const recorder = recorderRef.current;
+    if (!recorder || !recording) return;
+    recorder.offStop?.();
+    recorder.onStop((result) => { setRecording(false); sendVoiceFile(result); });
+    recorder.stop();
+  };
+
+  const playVoice = (url) => {
+    if (!url) return;
+    audioPlayerRef.current?.destroy?.();
+    const player = Taro.createInnerAudioContext();
+    audioPlayerRef.current = player;
+    player.src = url;
+    player.play();
+  };
+
   return (
     <View style={{ display: 'flex', flexDirection: 'column', height: embedded ? '100%' : '100vh', flex: 1, minHeight: 0, backgroundColor: colors.background }}>
       <View style={{ display: 'flex', alignItems: 'center', flexShrink: 0, position: 'relative', zIndex: 20, padding: `${embedded ? 10 : statusBarHeight + 8}px ${spacing.lg}px ${spacing.sm}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
@@ -688,7 +738,8 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
                       </Text>
                     )}
                     <Text style={{ display: 'block', textAlign: isMine ? 'right' : 'left', fontSize: '9px', color: isMine ? 'rgba(255,255,255,0.72)' : colors.textMuted, marginBottom: '3px' }}>{timeLabel}</Text>
-                    <Text style={{ display: 'block', width: '100%', fontSize: '14px', color: isMine ? '#fff' : colors.textPrimary, lineHeight: '20px', whiteSpace: 'pre-wrap', wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{visibleMessageContent(m)}</Text>
+                    {m.audioUrl && <View onClick={() => playVoice(m.audioUrl)} style={{ minWidth: '110px', padding: '5px 0' }}><Text style={{ fontSize: '14px', color: isMine ? '#fff' : colors.primary }}>▶ 语音 {Math.max(1, Math.round(m.audioDuration || 1))}″</Text></View>}
+                    {(!m.audioUrl || !/^\[语音消息\]$/.test(m.content || '')) && <Text style={{ display: 'block', width: '100%', fontSize: '14px', color: isMine ? '#fff' : colors.textPrimary, lineHeight: '20px', whiteSpace: 'pre-wrap', wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{visibleMessageContent(m)}</Text>}
                   </View>
                 </View>
               </View>
@@ -716,6 +767,7 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
           autoHeight
         />
         <View onClick={chooseFoodImage} style={{ width: '40px', height: '40px', borderRadius: '20px', backgroundColor: '#E8F5EF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Text style={{ fontSize: '18px' }}>📷</Text></View>
+        <View onTouchStart={startRecording} onTouchEnd={stopRecording} onTouchCancel={stopRecording} style={{ width: '40px', height: '40px', borderRadius: '20px', backgroundColor: recording ? colors.danger : '#E8F5EF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Text style={{ fontSize: '17px' }}>{recording ? '●' : '🎙️'}</Text></View>
         <View onClick={send} style={{
           width: '40px', height: '40px', borderRadius: '20px', backgroundColor: ((!input.trim() && !foodImages.length) || sending) ? colors.border : colors.primary,
           display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
