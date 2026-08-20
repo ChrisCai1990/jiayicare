@@ -83,6 +83,7 @@ app.use('/api/share',         require('./routes/share'));
 app.use('/api/admin',         require('./routes/admin'));
 app.use('/api/admin',         require('./routes/settings'));
 app.use('/api/staff',         require('./routes/staff'));
+app.use('/api/staff',         require('./routes/aiCaseReviews'));
 app.use('/api/screening',     require('./routes/screening'));
 app.use('/api/tts',           require('./routes/tts'));
 

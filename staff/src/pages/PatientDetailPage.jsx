@@ -5,6 +5,7 @@ import { useToast, useStaff } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
 import AiRuleHint from '../components/AiRuleHint'
 import AppIcon from '../components/AppIcon'
+import AiCaseReviewPanel from '../components/AiCaseReviewPanel'
 import femalePortraitPhoto from '../assets/health-portrait-female.webp'
 import malePortraitPhoto from '../assets/health-portrait-male.webp'
 
@@ -3482,6 +3483,7 @@ export default function PatientDetailPage() {
           { key: 'ai',            label: '健康信息核查工作台' },
           { key: 'portrait',      label: '健康画像' },
           { key: 'medications',   label: '用药与营养' },
+          { key: 'aiReview',      label: 'AI辅助研判' },
           { key: 'plans',         label: '管理方案' },
           { key: 'followups',     label: '随访记录' },
         ]
@@ -3511,6 +3513,8 @@ export default function PatientDetailPage() {
           {showSecondaryTabs && <div className="tabs patient-secondary-tabs">{secondaryTabs.map(t => renderTab(t, true))}</div>}
         </div>
       })()}
+
+      {tab === 'aiReview' && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} />}
 
       {/* ── Info Tab ── */}
       {tab === 'info' && (

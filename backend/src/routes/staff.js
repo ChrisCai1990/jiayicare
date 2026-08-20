@@ -44,6 +44,7 @@ const Product = require('../models/Product');
 const ProductShare = require('../models/ProductShare');
 const ServiceProposal = require('../models/ServiceProposal');
 const ServicePackage = require('../models/ServicePackage');
+const AiCaseReview = require('../models/AiCaseReview');
 const FollowUpForm      = require('../models/FollowUpForm');
 const FollowUpPlan      = require('../models/FollowUpPlan');
 const SystemConfig      = require('../models/SystemConfig');
@@ -7130,6 +7131,11 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       .sort({ checkDate: -1, createdAt: -1 }).lean();
     const suggestedCheckupDate = nextAnnualCheckupDate(reports);
     const allHepatitisBMarkersNegative = hepatitisBAllNegative(reports);
+    const confirmedCaseReviews = await AiCaseReview.find({ user: user._id, 'conclusion.status': 'confirmed' })
+      .sort({ 'conclusion.confirmedAt': -1 }).limit(20).select('title conclusion.content conclusion.confirmedAt').lean();
+    const confirmedReviewText = confirmedCaseReviews.length
+      ? confirmedCaseReviews.map(item => `【${item.title}】${item.conclusion.content}`).join('\n\n').slice(0, 16000)
+      : '无已确认的专题研判结论';
 
     const medPriorityText = (s.medical_priority?.items || [])
       .map(i => `【${i.urgency === 'high' ? '高' : i.urgency === 'medium' ? '中' : '低'}】${i.name}：${i.current}，建议${i.action}，科室：${i.department}`)
@@ -7168,6 +7174,11 @@ ${missingCheckups}
 
 【本次服务目标（健康顾问填写，方案要朝这个方向靠）】
 ${notes ? notes : '（未填写目标，按会员情况常规定制）'}
+
+【医护团队已确认的AI辅助研判结论】
+${confirmedReviewText}
+
+以上专题结论仅可作为方案制定依据；未确认的讨论不得引用，若与最新体检原始证据冲突，以原始证据为准。
 
 【Admin健康管理方案模板】
 ${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.planDesc || ''}；随访节点：${(selectedTemplate.content?.followUpPlans || []).map(p => p.name).join('、') || '无'}` : '未选择模板'}
