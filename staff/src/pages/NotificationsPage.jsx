@@ -90,6 +90,7 @@ export default function NotificationsPage() {
     }
     return acc
   }, {})).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+  const unreadUserMessageGroups = userMessageGroups.filter(m => m.hasUnread)
 
   return (
     <div className="page">
@@ -154,8 +155,8 @@ export default function NotificationsPage() {
         </button>
         <button className={`tab-btn ${tab === 'userMsgs' ? 'active' : ''}`} onClick={() => setTab('userMsgs')}>
           💬 用户留言
-          {userMessageGroups.length > 0 && (
-            <span style={{ marginLeft: 4, background: '#0077B6', color: '#fff', borderRadius: 99, padding: '0 6px', fontSize: 11 }}>{userMessageGroups.length}位</span>
+          {unreadUserMessageGroups.length > 0 && (
+            <span style={{ marginLeft: 4, background: '#0077B6', color: '#fff', borderRadius: 99, padding: '0 6px', fontSize: 11 }}>{unreadUserMessageGroups.length}位未读</span>
           )}
         </button>
       </div>

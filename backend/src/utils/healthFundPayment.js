@@ -72,7 +72,8 @@ async function validateHealthFundDeduction({ user, requested, orderAmount, categ
     else if (rule?.enabled) {
       if (orderAmount < (Number(rule.minOrderAmount) || 0)) corporateLimit = 0;
       if (rule.eligibleCategories?.length && !rule.eligibleCategories.includes(category)) corporateLimit = 0;
-      corporateLimit = Math.min(corporateLimit, deductionLimit(rule.deductionType, rule.deductionValue, orderAmount));
+      // 单笔抵扣额度以平台“健康基金管理”的统一规则为准；企业规则只控制
+      // 是否启用、最低金额和适用分类，避免旧企业固定额度覆盖平台新比例。
     }
   }
   let remaining = Math.min(amount, orderAmount);

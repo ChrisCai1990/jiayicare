@@ -44,6 +44,21 @@ const visibleMessageContent = (message) => String(message?.content || '')
   .replace(/我马上帮您转给专属顾问跟进[～~。！？]?/g, '您接着说就好，我会认真听着。')
   .trim();
 
+function policyLimit(type, value, amount) {
+  if (type === 'percentage') return amount * Math.min(100, Math.max(0, Number(value) || 0)) / 100;
+  if (type === 'fixedAmount') return Math.max(0, Number(value) || 0);
+  return amount;
+}
+
+function maxFundDeduction(healthFund, amount) {
+  const policy = healthFund?.policy || {};
+  if (amount < (Number(policy.minOrderAmount) || 0)) return 0;
+  const personal = Math.min(Number(healthFund?.personal) || 0, policyLimit(policy.personalDeductionType, policy.personalDeductionValue, amount));
+  let corporateLimit = policyLimit(policy.corporateDeductionType, policy.corporateDeductionValue, amount);
+  const corporate = Math.min(Number(healthFund?.corporate) || 0, corporateLimit);
+  return Math.max(0, Math.min(amount, personal + corporate));
+}
+
 const PUSH_TYPES = new Set(['knowledge', 'plan', 'questionnaire', 'supplement', 'product', 'notice']);
 const NOTIF_TYPES = new Set(['system', ...PUSH_TYPES]);
 
@@ -155,7 +170,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
     m.type === 'questionnaire' && m.questionnaireId && pendingQuestionnaireIds.has(String(m.questionnaireId))
   ));
   const careMessages = notifMessages.filter((m) => m.type === 'system' && /关怀|打卡|提醒/.test(`${m.title || ''}${m.content || ''}`));
-  const systemMessages = notifMessages.filter((m) => !questionnaireMessages.includes(m));
+  const systemMessages = notifMessages.filter((m) => !questionnaireMessages.includes(m) && !careMessages.includes(m));
 
   const roleConvs = ROLE_DEFS.map((r) => {
     const msgs = messages.filter((m) => m.type === r.key || (m.conversationId && String(m.conversationId).endsWith(`_${r.key}`)));
@@ -262,6 +277,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
           <View style={{ display: 'flex', width: '100%', gap: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>
             {[
               { label: '待填问卷', icon: '📝', color: '#0077B6', count: questionnaireMessages.length, tab: '待填问卷' },
+              { label: '每日关怀', icon: '💜', color: '#8A4AC7', count: careMessages.filter((m) => m.unread).length, tab: '每日关怀' },
               { label: '系统通知', icon: '🔔', color: colors.primary, count: systemMessages.filter((m) => m.unread).length, tab: '系统通知' },
             ].map((item) => (
               <View key={item.label} onClick={() => { setNotifTab(item.tab); setShowNotif(true); }} style={{ position: 'relative', flex: 1, width: 0, minWidth: 0, height: '92px', overflow: 'hidden', padding: '11px 5px 9px', boxSizing: 'border-box', textAlign: 'center', backgroundColor: '#fff', borderRadius: `${radius.md}px`, boxShadow: shadow.xs }}>
@@ -295,6 +311,7 @@ function NotifModal({ messages, tab, setTab, onClose, onPress }) {
   const { statusBarHeight } = useNavBar();
   const filtered = messages.filter((m) => {
     if (tab === '待填问卷') return m.type === 'questionnaire';
+    if (tab === '每日关怀') return m.type === 'system' && /关怀|打卡|提醒/.test(`${m.title || ''}${m.content || ''}`);
     if (tab === '系统通知') return !(m.type === 'questionnaire' || (m.type === 'system' && /关怀|打卡|提醒/.test(`${m.title || ''}${m.content || ''}`)));
     return true;
   });
@@ -306,7 +323,7 @@ function NotifModal({ messages, tab, setTab, onClose, onPress }) {
         <Text style={{ flex: 1, fontSize: '16px', fontWeight: 700, color: colors.textPrimary, textAlign: 'center', marginRight: '40px' }}>系统通知</Text>
       </View>
       <View style={{ display: 'flex', margin: `${spacing.sm}px ${spacing.lg}px`, backgroundColor: '#EEEAE3', borderRadius: `${radius.sm}px`, padding: '3px' }}>
-        {['全部', '待填问卷', '系统通知'].map((t) => (
+        {['全部', '待填问卷', '每日关怀', '系统通知'].map((t) => (
           <View key={t} onClick={() => setTab(t)} style={{ flex: 1, textAlign: 'center', padding: '7px 0', borderRadius: `${radius.xs}px`, backgroundColor: tab === t ? '#fff' : 'transparent' }}>
             <Text style={{ fontSize: '13px', color: tab === t ? colors.textPrimary : colors.textMuted, fontWeight: tab === t ? 600 : 500 }}>{t}</Text>
           </View>
@@ -431,7 +448,8 @@ function ProductPushDetail({ msg, onClose }) {
     ? Math.min(selectedCoupon.type === 'amount' ? selectedCoupon.value : Math.round(total * (100 - selectedCoupon.value)) / 100, total)
     : 0;
   const priceAfterCoupon = Math.max(0, Math.round((total - couponDiscount) * 100) / 100);
-  const fundApplied = useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, priceAfterCoupon) : 0;
+  const fundMaximum = maxFundDeduction(checkoutUser?.healthFund, priceAfterCoupon);
+  const fundApplied = useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, fundMaximum) : 0;
   const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundApplied) * 100) / 100);
 
   const handlePay = async () => {
@@ -527,7 +545,7 @@ function ProductPushDetail({ msg, onClose }) {
               <View onClick={() => {
                 const next = !useFund;
                 setUseFund(next);
-                if (next) setFundAmountInput(String(Math.min(fundBalance, priceAfterCoupon)));
+                if (next) setFundAmountInput(String(fundMaximum));
               }} style={{ padding: '6px 12px', borderRadius: `${radius.full}px`, border: `1.5px solid ${useFund ? colors.primary : colors.border}`, backgroundColor: useFund ? colors.primary : '#fff' }}>
                 <Text style={{ fontSize: '12px', fontWeight: 600, color: useFund ? '#fff' : colors.textMuted }}>{useFund ? '已启用' : '使用基金'}</Text>
               </View>

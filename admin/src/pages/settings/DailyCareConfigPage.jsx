@@ -9,15 +9,12 @@ export default function DailyCareConfigPage() {
   const [enabled, setEnabled] = useState(true)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [reviewEnabled, setReviewEnabled] = useState(false)
-  const [reviewSaving, setReviewSaving] = useState(false)
 
   useEffect(() => {
     adminAPI.getDailyCareConfig()
       .then(r => setEnabled(r.data?.enabled !== false))
       .catch(e => toast(e.message))
       .finally(() => setLoading(false))
-    adminAPI.getReviewExperienceConfig().then(r => setReviewEnabled(r.data?.enabled === true)).catch(e => toast(e.message))
   }, [])
 
   const handleToggle = async () => {
@@ -31,17 +28,6 @@ export default function DailyCareConfigPage() {
     finally { setSaving(false) }
   }
 
-  const handleReviewToggle = async () => {
-    const next = !reviewEnabled
-    setReviewSaving(true)
-    try {
-      await adminAPI.updateReviewExperienceConfig(next)
-      setReviewEnabled(next)
-      toast(next ? '已开启审核一键体验' : '已关闭审核一键体验')
-    } catch (err) { toast(err.message) }
-    finally { setReviewSaving(false) }
-  }
-
   if (loading) return <div className="page-loading">加载中...</div>
 
   return (
@@ -50,18 +36,6 @@ export default function DailyCareConfigPage() {
         <div>
           <h1 className="page-title">AI 每日健康关怀</h1>
           <p className="page-subtitle">系统每天主动给活跃客户推一条 AI 生成的专属关怀消息，带「去打卡」入口，提升客户打开率与打卡留存</p>
-        </div>
-      </div>
-
-      <div className="card" style={{ marginBottom: 20 }}>
-        <div className="card-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 16, color: '#1A2B24', marginBottom: 5 }}>小程序审核一键体验</div>
-            <div style={{ fontSize: 13, color: '#8AA89C' }}>{reviewEnabled ? '已开启：小程序登录页显示“审核一键体验”' : '已关闭：真实客户看不到审核体验入口'}</div>
-          </div>
-          <button onClick={handleReviewToggle} disabled={reviewSaving} style={{ minWidth: 92, padding: '9px 16px', border: 0, borderRadius: 8, color: '#fff', fontWeight: 700, cursor: reviewSaving ? 'wait' : 'pointer', background: reviewEnabled ? '#DC3545' : '#1E6B50' }}>
-            {reviewEnabled ? '关闭体验' : '开启体验'}
-          </button>
         </div>
       </div>
 

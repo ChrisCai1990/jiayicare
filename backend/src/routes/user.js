@@ -176,6 +176,10 @@ router.get('/me', auth, async (req, res) => {
           enabled: !!platformFundPolicy.enabled,
           minOrderAmount: Number(platformFundPolicy.minOrderAmount) || 0,
           eligibleProductIds: platformFundPolicy.eligibleProductIds || [],
+          personalDeductionType: platformFundPolicy.personalDeductionType || 'unlimited',
+          personalDeductionValue: Number(platformFundPolicy.personalDeductionValue) || 0,
+          corporateDeductionType: platformFundPolicy.corporateDeductionType || 'unlimited',
+          corporateDeductionValue: Number(platformFundPolicy.corporateDeductionValue) || 0,
           description: platformFundPolicy.description || '',
         },
       };

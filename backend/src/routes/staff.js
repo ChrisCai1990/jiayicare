@@ -7267,17 +7267,11 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     }
     const myPatientIdSet = myPatientIds ? new Set(myPatientIds.map(String)) : null;
     const inMyScope = (userId) => !myPatientIdSet || myPatientIdSet.has(String(userId));
-    // 新客户尚未完成健管归属时，上传报告也必须进入健管工作台，避免无人知晓。
-    // 其他类型仍严格按本人名下过滤；仅报告解析/审核补入“未分配健管”的客户。
+    // 体检报告采用健管共享待处理池。客户刚上传时可能尚未分配、分错或更换健管，
+    // 如果按归属过滤会让报告掉地上；其他待办仍严格按本人名下过滤。
     let reportPatientIds = myPatientIds;
     if (!isSuper && role === 'healthManager') {
-      const unassignedPatients = await User.find({
-        $or: [
-          { assignedHealthManager: null },
-          { assignedHealthManager: { $exists: false } },
-        ],
-      }).select('_id').lean();
-      reportPatientIds = [...new Map([...(myPatientIds || []), ...unassignedPatients.map(p => p._id)].map(id => [String(id), id])).values()];
+      reportPatientIds = null;
     }
 
     if (can('service_proposal_review')) {

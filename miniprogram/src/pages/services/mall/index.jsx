@@ -16,6 +16,21 @@ function formatCouponLabel(c) {
   return c.title || (c.type === 'amount' ? `¥${c.value}抵用券` : `${c.value / 10}折优惠券`);
 }
 
+function policyLimit(type, value, amount) {
+  if (type === 'percentage') return amount * Math.min(100, Math.max(0, Number(value) || 0)) / 100;
+  if (type === 'fixedAmount') return Math.max(0, Number(value) || 0);
+  return amount;
+}
+
+function maxFundDeduction(healthFund, amount) {
+  const policy = healthFund?.policy || {};
+  if (amount < (Number(policy.minOrderAmount) || 0)) return 0;
+  const personal = Math.min(Number(healthFund?.personal) || 0, policyLimit(policy.personalDeductionType, policy.personalDeductionValue, amount));
+  let corporateLimit = policyLimit(policy.corporateDeductionType, policy.corporateDeductionValue, amount);
+  const corporate = Math.min(Number(healthFund?.corporate) || 0, corporateLimit);
+  return Math.max(0, Math.min(amount, personal + corporate));
+}
+
 function Stars({ rating }) {
   const r = Math.round(rating || 5);
   return (
@@ -174,7 +189,8 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
     ? Math.min(selectedCoupon.type === 'amount' ? selectedCoupon.value : Math.round(currentPrice * (100 - selectedCoupon.value)) / 100, currentPrice)
     : 0;
   const priceAfterCoupon = Math.max(0, Math.round((currentPrice - couponDiscount) * 100) / 100);
-  const fundApplied = canUseFund && useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, priceAfterCoupon) : 0;
+  const fundMaximum = canUseFund ? maxFundDeduction(checkoutUser?.healthFund, priceAfterCoupon) : 0;
+  const fundApplied = canUseFund && useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, fundMaximum) : 0;
   const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundApplied) * 100) / 100);
 
   const handleSubmit = async () => {
@@ -325,7 +341,7 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
                 <View onClick={() => {
                   const next = !useFund;
                   setUseFund(next);
-                  if (next) setFundAmountInput(String(Math.min(fundBalance, priceAfterCoupon)));
+                  if (next) setFundAmountInput(String(fundMaximum));
                 }} style={{ padding: '6px 12px', borderRadius: `${radius.full}px`, border: `1.5px solid ${useFund ? colors.primary : colors.border}`, backgroundColor: useFund ? colors.primary : '#fff' }}>
                   <Text style={{ fontSize: '12px', fontWeight: 600, color: useFund ? '#fff' : colors.textSecondary }}>{useFund ? '已启用' : '使用基金'}</Text>
                 </View>
@@ -337,7 +353,7 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
                   <Input
                     type="digit"
                     style={{ border: `1px solid ${colors.border}`, borderRadius: `${radius.md}px`, padding: '10px 12px', fontSize: '14px', marginBottom: `${spacing.md}px`, boxSizing: 'border-box' }}
-                    placeholder={`最多可抵扣 ¥${Math.min(fundBalance, priceAfterCoupon)}`}
+                    placeholder={`最多可抵扣 ¥${fundMaximum.toFixed(2)}`}
                     value={fundAmountInput}
                     onInput={(e) => setFundAmountInput(e.detail.value)}
                   />
