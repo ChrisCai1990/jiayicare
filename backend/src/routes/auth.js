@@ -328,9 +328,7 @@ router.post('/wechat', async (req, res) => {
 // 后端用 code2session 接口换 openid + session_key（无 access_token，无用户信息接口）。
 // 小程序 appid 与网页/公众号 appid 不同，因此 openid 也不同，存到独立字段 wechatMpOpenid。
 router.post('/wechat-mp', async (req, res) => {
-  return res.status(403).json({ success: false, message: '微信免手机号登录已关闭，请使用手机号验证码登录' });
-  /* istanbul ignore next */
-  const { code, userInfo } = req.body;
+  const { code, userInfo, inviteCode } = req.body;
   if (!code) return res.status(400).json({ success: false, message: '缺少 code' });
 
   const appid  = process.env.WECHAT_MP_APPID;
@@ -368,7 +366,15 @@ router.post('/wechat-mp', async (req, res) => {
       user = await User.findByIdAndUpdate(user._id, { name: userInfo.nickName }, { new: true });
     }
 
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+    if (!user.referralCode) {
+      user.referralCode = crypto.randomBytes(6).toString('hex');
+      await user.save();
+    }
+    await applyFirstLoginRewards(user, inviteCode);
+    user = await User.findById(user._id);
+    const sessionId = await beginLoginSession(req, user, 'wechat');
+    user = await User.findById(user._id);
+    const token = jwt.sign({ id: user._id, sessionId }, process.env.JWT_SECRET, {
       expiresIn: process.env.JWT_EXPIRES_IN || '30d',
     });
 

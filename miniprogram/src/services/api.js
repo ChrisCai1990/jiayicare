@@ -99,7 +99,15 @@ export const authAPI = {
   wechatLogin: () =>
     Taro.login().then(({ code }) => {
       if (!code) throw new Error('微信登录失败，请重试');
-      return request('/auth/wechat-mp', { method: 'POST', body: JSON.stringify({ code }) });
+      let inviteCode = '';
+      let deviceInfo = {};
+      try { inviteCode = Taro.getStorageSync('jy_invite_code') || ''; } catch {}
+      try { deviceInfo = Taro.getSystemInfoSync?.() || {}; } catch {}
+      return request('/auth/wechat-mp', { method: 'POST', body: JSON.stringify({ code, inviteCode, deviceInfo }) })
+        .then((result) => {
+          if (result?.success && inviteCode) { try { Taro.removeStorageSync('jy_invite_code'); } catch {} }
+          return result;
+        });
     }),
   bindWechat: () =>
     Taro.login().then(({ code }) => {

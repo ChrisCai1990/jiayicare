@@ -58,7 +58,7 @@ export default function HomePage() {
         const messages = msgRes.value.data || []
         const todayKey = new Date().toDateString()
         setUnreadMsgCount(msgRes.value.unreadCount ?? messages.filter(m => m.staffUnread).length ?? 0)
-        setRecentMessages(messages.filter(m => new Date(m.createdAt).toDateString() === todayKey).slice(0, 5))
+        setRecentMessages(messages.filter(m => new Date(m.createdAt).toDateString() === todayKey))
       }
     })
   }, [])
@@ -116,11 +116,12 @@ export default function HomePage() {
       )}
 
       {/* 数据卡片 */}
-      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: 24 }}>
+      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)', marginBottom: 24 }}>
         <StatCard icon="👥" label="我的会员" value={reports?.totalPatients ?? '-'} color="#1E6B50" onClick={() => nav('/patients')} />
         <StatCard icon="📞" label="今日随访" value={reports?.todayFollowUps ?? '-'} color="#0077B6" onClick={() => nav('/followups')} />
         <StatCard icon="📅" label="本月随访" value={reports?.monthFollowUps ?? '-'} color="#22A06B" onClick={() => nav('/followups')} />
         <StatCard icon="✅" label="今日打卡" value={checkinRecords.length} color="#D97706" onClick={() => nav('/daily-checkin')} />
+        <StatCard icon="🔔" label="消息通知" value={new Set(recentMessages.map(m => String(m.user))).size} color="#DC3545" onClick={() => nav('/notifications', { state: { tab: 'userMsgs' } })} />
       </div>
 
       {/* AI 待审核任务面板 */}
@@ -224,13 +225,6 @@ export default function HomePage() {
         </div>
       </div>
 
-      <MessageNotificationCard
-        messages={recentMessages}
-        unreadCount={unreadMsgCount}
-        pendingReferralCount={pendingReferralCount}
-        onOpen={() => nav('/notifications', { state: { tab: 'userMsgs' } })}
-      />
-
       {/* 体检方案回传进度：避免逐个客户查询漏检 */}
       {checkupProgress.length > 0 && (
         <div className="card" style={{ marginBottom: 20 }}>
@@ -298,33 +292,6 @@ export default function HomePage() {
             <div style={{ color: '#aaa', textAlign: 'center', padding: '20px 0', fontSize: 14 }}>暂无慢病数据</div>
           )}
         </div>
-      </div>
-    </div>
-  )
-}
-
-function MessageNotificationCard({ messages, unreadCount, pendingReferralCount, onOpen }) {
-  return (
-    <div className="card" style={{ marginBottom: 20 }}>
-      <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span>🔔 消息通知</span>
-          {(unreadCount + pendingReferralCount) > 0 && <span style={{ fontSize: 12, fontWeight: 600, color: '#DC3545', background: '#DC354518', padding: '2px 8px', borderRadius: 99 }}>{unreadCount + pendingReferralCount}</span>}
-        </div>
-        <button className="btn btn-secondary btn-sm" onClick={onOpen}>查看全部</button>
-      </div>
-      <div className="card-body" style={{ padding: messages.length || pendingReferralCount ? '8px 20px' : '20px' }}>
-        {pendingReferralCount > 0 && <div onClick={onOpen} style={{ padding: '10px 0', cursor: 'pointer', borderBottom: messages.length ? '1px solid #f0ede8' : 'none' }}>🔀 待处理转介与未读回复（{pendingReferralCount}）</div>}
-        {messages.map((m, i) => (
-          <div key={m._id} onClick={onOpen} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: i < messages.length - 1 ? '1px solid #f0ede8' : 'none', cursor: 'pointer' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-              <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24', minWidth: 60, flexShrink: 0 }}>{m.patientName}</span>
-              <span style={{ fontSize: 13, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.content}</span>
-            </div>
-            <span style={{ fontSize: 12, color: '#aaa', flexShrink: 0, marginLeft: 12 }}>{new Date(m.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
-          </div>
-        ))}
-        {!messages.length && !pendingReferralCount && <div style={{ color: '#aaa', textAlign: 'center', fontSize: 14 }}>今日暂无客户沟通</div>}
       </div>
     </div>
   )

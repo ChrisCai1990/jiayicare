@@ -78,6 +78,18 @@ export default function NotificationsPage() {
   }
 
   const unreadPushes = recentPushes.filter(p => !p.readAt)
+  const userMessageGroups = Object.values(userMessages.reduce((acc, m) => {
+    const roleKey = m.recipient === 'doctor' ? 'doctor' : m.recipient === 'nutritionist' ? 'nutritionist' : 'manager'
+    const key = `${m.user}_${roleKey}`
+    if (!acc[key]) acc[key] = { ...m, roleKey, messageCount: 0, unreadCount: 0, hasUnread: false }
+    acc[key].messageCount += 1
+    if (m.staffUnread) acc[key].unreadCount += 1
+    acc[key].hasUnread = acc[key].unreadCount > 0
+    if (new Date(m.createdAt) > new Date(acc[key].createdAt)) {
+      acc[key] = { ...m, roleKey, messageCount: acc[key].messageCount, unreadCount: acc[key].unreadCount, hasUnread: acc[key].hasUnread }
+    }
+    return acc
+  }, {})).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
 
   return (
     <div className="page">
@@ -142,8 +154,8 @@ export default function NotificationsPage() {
         </button>
         <button className={`tab-btn ${tab === 'userMsgs' ? 'active' : ''}`} onClick={() => setTab('userMsgs')}>
           💬 用户留言
-          {userMessages.length > 0 && (
-            <span style={{ marginLeft: 4, background: '#0077B6', color: '#fff', borderRadius: 99, padding: '0 6px', fontSize: 11 }}>{userMessages.length}</span>
+          {userMessageGroups.length > 0 && (
+            <span style={{ marginLeft: 4, background: '#0077B6', color: '#fff', borderRadius: 99, padding: '0 6px', fontSize: 11 }}>{userMessageGroups.length}位</span>
           )}
         </button>
       </div>
@@ -350,20 +362,12 @@ export default function NotificationsPage() {
       {/* ── 用户留言（会话模式）── */}
       {tab === 'userMsgs' && (
         <div className="card">
-          {userMessages.length === 0 ? (
+          {userMessageGroups.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无用户留言</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-              {Object.values(userMessages.reduce((acc, m) => {
-                const key = `${m.user}_${m.recipient || 'manager'}`
-                if (!acc[key] || new Date(m.createdAt) > new Date(acc[key].createdAt)) {
-                  acc[key] = { ...m, hasUnread: m.staffUnread }
-                } else if (m.staffUnread) {
-                  acc[key].hasUnread = true
-                }
-                return acc
-              }, {})).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map((m, i, arr) => {
-                const roleKey = m.recipient === 'doctor' ? 'doctor' : m.recipient === 'nutritionist' ? 'nutritionist' : 'manager'
+              {userMessageGroups.map((m, i, arr) => {
+                const roleKey = m.roleKey
                 return (
                   <div key={`${m.user}_${roleKey}`} style={{ padding: '14px 20px', borderBottom: i < arr.length - 1 ? '1px solid #f5f2ec' : 'none',
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
@@ -383,6 +387,7 @@ export default function NotificationsPage() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
                           <span style={{ fontWeight: m.hasUnread ? 700 : 600, fontSize: 14 }}>{m.patientName}</span>
                           <span style={{ fontSize: 11, color: '#aaa' }}>{m.patientPhone}</span>
+                          <span style={{ fontSize: 11, color: '#0077B6', background: '#E8F4FB', padding: '1px 7px', borderRadius: 99 }}>共 {m.messageCount} 条{m.unreadCount > 0 ? ` · ${m.unreadCount} 条未读` : ''}</span>
                           <span style={{ fontSize: 11, background: '#f0f0f0', color: '#666', padding: '1px 7px', borderRadius: 99 }}>
                             {roleKey === 'doctor' ? '健康顾问' : roleKey === 'nutritionist' ? '营养师' : '健管师'}
                           </span>

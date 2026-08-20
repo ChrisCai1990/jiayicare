@@ -74,6 +74,22 @@ export default function LoginPage() {
     } finally { setLoading(false); }
   };
 
+  const wechatLogin = async () => {
+    if (!agreed) { setError('请先阅读并勾选同意相关协议'); return; }
+    setError('');
+    try {
+      setLoading(true);
+      const res = await authAPI.wechatLogin();
+      if (res.success) {
+        await login(res.data.user, res.data.token);
+        await waitForAuthCommit();
+        afterLoginSuccess(res.data.user);
+      }
+    } catch (err) {
+      setError(err.message || '微信登录失败，请稍后重试或使用手机号登录');
+    } finally { setLoading(false); }
+  };
+
   const canSend = phone.length === 11 && countdown === 0;
   const canLogin = phone.length === 11 && code.length === 6;
 
@@ -193,8 +209,17 @@ export default function LoginPage() {
           立即登录
         </Button>
 
-        <Text style={{ display: 'block', textAlign: 'center', fontSize: '12px', color: colors.textMuted }}>
-          为保障健康资料安全，不提供游客登录；登录将记录手机号、微信绑定状态及使用时长。
+        <View style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: `0 0 ${spacing.md}px` }}>
+          <View style={{ height: '1px', backgroundColor: colors.border, flex: 1 }} />
+          <Text style={{ fontSize: '12px', color: colors.textMuted }}>或</Text>
+          <View style={{ height: '1px', backgroundColor: colors.border, flex: 1 }} />
+        </View>
+        <Button style={{ height: '48px', lineHeight: '48px', backgroundColor: '#fff', border: `1.5px solid ${colors.border}`, borderRadius: `${radius.md}px`, fontSize: '14px', fontWeight: 700, color: '#07C160' }} onClick={wechatLogin} disabled={loading}>
+          微信一键登录
+        </Button>
+
+        <Text style={{ display: 'block', textAlign: 'center', marginTop: `${spacing.sm}px`, fontSize: '11px', color: colors.textMuted }}>
+          不提供游客访问；新用户微信登录后需完善真实资料。
         </Text>
 
         <View onClick={() => setAgreed(!agreed)} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: '6px', marginTop: `${spacing.md}px` }}>
