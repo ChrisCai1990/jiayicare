@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, Input, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
-import { reportsAPI } from '../../../services/api';
+import { reportsAPI, mediaUrl } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
 
@@ -21,10 +21,12 @@ const ITEM_STATUS_COLOR = { normal: colors.success, abnormal: colors.danger, att
 const ITEM_STATUS_LABEL = { normal: '正常', abnormal: '异常', attention: '关注', unknown: '未知' };
 
 async function openOriginalFile(report) {
-  const urls = (report.fileUrls?.length ? report.fileUrls : [report.fileUrl]).filter(Boolean);
+  const urls = (report.previewUrls?.length ? report.previewUrls
+    : report.previewUrl ? [report.previewUrl]
+    : report.fileUrls?.length ? report.fileUrls : [report.fileUrl]).filter(Boolean).map(mediaUrl);
   if (urls.length) {
     const url = urls[0];
-    const isImage = /\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(url);
+    const isImage = report.mimeType?.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(url);
     if (isImage) {
       Taro.previewImage({ urls: [url], current: url });
     } else {
