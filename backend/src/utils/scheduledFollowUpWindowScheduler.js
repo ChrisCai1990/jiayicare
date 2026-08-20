@@ -1,12 +1,10 @@
 const AnnualPlan = require('../models/AnnualPlan');
-const { syncAnnualPlanFollowUps, dedupeAnnualPlanFollowUps } = require('./annualPlanFollowUps');
+const { syncAnnualPlanFollowUps } = require('./annualPlanFollowUps');
 
 // 年度管理方案的"日常监测/季度评估"随访占位只提前生成未来 HORIZON_DAYS 天（见 annualPlanFollowUps.js）。
 // syncAnnualPlanFollowUps 按稳定排期键原位更新，每天仅补充新进入窗口的日期，
 // 已审核记录不会被重新生成，也不会再次进入审核队列。
 async function scanAndSyncScheduledWindow() {
-  const removed = await dedupeAnnualPlanFollowUps();
-  if (removed > 0) console.log(`[scheduled-followup-window] 已清理 ${removed} 条历史重复随访计划`);
   const plans = await AnnualPlan.find({}).lean();
   let total = 0;
   for (const plan of plans) {

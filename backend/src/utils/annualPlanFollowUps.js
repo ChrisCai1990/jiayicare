@@ -202,8 +202,7 @@ async function syncAnnualPlanFollowUps(plan) {
         ['patientId', 'staffId', 'assignedTo', 'date', 'theme', 'content', 'reviewRole'].forEach(k => { keep[k] = row[k]; });
       }
       await keep.save();
-      const duplicateIds = matches.filter(item => String(item._id) !== String(keep._id)).map(item => item._id);
-      if (duplicateIds.length) await FollowUp.deleteMany({ _id: { $in: duplicateIds } });
+      // 已存在的历史副本不在定时同步中批量删除；这里只阻止继续生成，具体旧数据按核实后定点清理。
     } else {
       await FollowUp.create(row);
       created++;
