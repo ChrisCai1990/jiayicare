@@ -19,6 +19,8 @@ export default function CommissionsPage() {
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(null)
   const [selected, setSelected] = useState([])
+  const [view, setView] = useState('commissions')
+  const [promotions, setPromotions] = useState([])
 
   const load = useCallback(async (p = page) => {
     setLoading(true)
@@ -85,6 +87,11 @@ export default function CommissionsPage() {
       </div>
 
       <div className="card">
+        <div className="search-bar" style={{display:'flex',gap:8}}>
+          <button className={`btn ${view==='commissions'?'btn-primary':'btn-ghost'}`} onClick={()=>setView('commissions')}>佣金审核</button>
+          <button className={`btn ${view==='promotions'?'btn-primary':'btn-ghost'}`} onClick={async()=>{setView('promotions');setLoading(true);try{const r=await adminAPI.promotionRecords();setPromotions(r.data||[])}catch(e){toast('❌ '+e.message)}finally{setLoading(false)}}}>产品推广记录</button>
+        </div>
+        {view==='promotions' ? (loading?<div className="loading-wrap"><div className="spinner"/> 加载中...</div>:<div className="table-wrap"><table><thead><tr><th>推送人</th><th>客户</th><th>产品</th><th>推送时间</th><th>阅读</th><th>成交状态</th><th>推广佣金</th></tr></thead><tbody>{promotions.map(r=><tr key={r._id}><td>{r.staffId?.name||'-'}</td><td>{r.patientId?.name||'-'}<div style={{fontSize:11,color:'var(--text-muted)'}}>{r.patientId?.phone||''}</div></td><td>{r.title||(r.products||[]).map(p=>p.name).join('、')||'-'}</td><td>{fmtTime(r.createdAt)}</td><td>{r.readAt?'已读':'未读'}</td><td>{({pushed:'已推送',read:'已阅读',ordered:'已下单待支付',paid:'已支付待生成',commissioned:'已生成佣金'})[r.stage]||r.stage}</td><td>{r.commission?`¥${r.commission.commissionAmount}（${STATUS_META[r.commission.status]?.label||r.commission.status}）`:'-'}</td></tr>)}{promotions.length===0&&<tr><td colSpan="7"><div className="empty-state"><div className="empty-state-text">暂无产品推广记录</div></div></td></tr>}</tbody></table></div>) : <>
         <div className="search-bar" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {[['pending', '待审核'], ['confirmed', '待打款'], ['paid', '已打款'], ['cancelled', '已驳回'], ['', '全部']].map(([val, label]) => (
             <button
@@ -188,6 +195,7 @@ export default function CommissionsPage() {
             </div>
           </div>
         )}
+        </>}
       </div>
     </>
   )

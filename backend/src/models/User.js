@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 
 const userSchema = new mongoose.Schema({
   phone:    { type: String, required: false, unique: true, sparse: true },
@@ -37,6 +38,14 @@ const userSchema = new mongoose.Schema({
   exercise: { type: String, default: '' },
   onboardingCompleted: { type: Boolean, default: false },
   onboardingCompletedAt: { type: Date, default: null }, // 完成首次登录建档的时间，用于分批推送问卷计时
+  lastLoginAt: { type: Date, default: null },
+  lastLoginMethod: { type: String, enum: ['phone_wechat', 'phone', ''], default: '' },
+  loginCount: { type: Number, default: 0 },
+  totalLoginSeconds: { type: Number, default: 0 },
+  referralCode: { type: String, unique: true, sparse: true, default: () => crypto.randomBytes(6).toString('hex') },
+  invitedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  firstLoginFundGrantedAt: { type: Date, default: null },
+  referralRewardGrantedAt: { type: Date, default: null },
   // 会员删除采用可恢复软删除：业务数据不物理清除，避免误删后无法追溯。
   isDeleted: { type: Boolean, default: false, index: true },
   deletedAt: { type: Date, default: null },

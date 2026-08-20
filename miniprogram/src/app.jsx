@@ -39,8 +39,17 @@ class PageErrorBoundary extends Component {
 }
 
 class App extends Component {
-  componentDidMount() {}
+  componentDidMount() {
+    try {
+      const inviteCode = Taro.getLaunchOptionsSync?.()?.query?.invite;
+      if (inviteCode) Taro.setStorageSync('jy_invite_code', String(inviteCode));
+    } catch {}
+  }
   componentDidShow() {
+    try {
+      const inviteCode = Taro.getEnterOptionsSync?.()?.query?.invite;
+      if (inviteCode) Taro.setStorageSync('jy_invite_code', String(inviteCode));
+    } catch {}
     messagesAPI.unreadCount().then((res) => {
       const count = Number(res?.count || 0);
       if (count > 0) return Taro.setTabBarBadge({ index: 2, text: String(Math.min(count, 99)) });

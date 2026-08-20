@@ -84,6 +84,7 @@ async function confirmPayment({ outTradeNo, transactionId, paidAt, snapshot }) {
   order.paymentStatus = 'paid';
   order.tradeStatus = 'paid';
   await order.save();
+  await require('./commissionSettlement').settleReferralCommission(order);
   await require('./productShareRewards').grantProductShareRewards(order);
   return order;
 }

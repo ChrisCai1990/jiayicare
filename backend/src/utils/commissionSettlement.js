@@ -104,6 +104,35 @@ async function settleOrderCommission(order) {
   return { created };
 }
 
+// 推广佣金以“有效支付”为结算时点，与服务是否已核销无关。服务人员绩效仍在核销时结算。
+async function settleReferralCommission(order) {
+  if (!order?.referrerId || order.paymentStatus !== 'paid') return { created: [] };
+  let productRule = order.performanceRuleSnapshot || null;
+  if (!productRule && (order.orderType === 'product' || mongoose.Types.ObjectId.isValid(order.serviceId))) {
+    const product = await Product.findById(order.serviceId).catch(() => null);
+    productRule = product?.performanceRule || null;
+  }
+  if (!productRule) productRule = (await Service.findOne({ serviceId: order.serviceId }).catch(() => null))?.performanceRule;
+  const staff = await Admin.findById(order.referrerId).select('personalPerformanceRule').catch(() => null);
+  const rule = staff?.personalPerformanceRule?.ruleType !== 'none' ? staff.personalPerformanceRule : productRule;
+  if (!rule || rule.ruleType === 'none') return { created: [] };
+  const base = Number(order.paidAmount || order.paymentExpectedAmount || order.servicePrice || 0);
+  const rate = rule.ruleType === 'percentage' ? (Number(rule.referrerRate) || 0) / 100 : 0;
+  const amount = rule.ruleType === 'fixedAmount' ? Number(rule.referrerAmount) || 0 : Math.round(base * rate * 100) / 100;
+  if (amount <= 0) return { created: [] };
+  const existing = await Commission.findOne({ orderId: order._id, staffId: order.referrerId, role: 'referrer', redemptionSequence: null });
+  if (existing) return { created: [] };
+  const commission = await Commission.create({
+    staffId: order.referrerId, role: 'referrer', tenantId: order.tenantId, patientId: order.user, orderId: order._id,
+    orderAmount: base, commissionRate: rate, commissionAmount: amount, status: 'pending',
+    productName: order.serviceName, productType: order.orderType,
+    remark: '客户完成有效支付后自动生成',
+  });
+  order.commissionStatus = 'pending';
+  await order.save();
+  return { created: [commission] };
+}
+
 // 组合服务按每次子项目核销即时结算。百分比以订单单次均摊实付额为基数；固定金额按每次核销计。
 async function settleRedemptionCommission(order, redemption) {
   if (!order || !redemption?.serviceItemKey || !order.serviceItemsSnapshot?.length) return { created: [] };
@@ -139,4 +168,4 @@ async function settleRedemptionCommission(order, redemption) {
   return { created };
 }
 
-module.exports = { settleOrderCommission, settleRedemptionCommission };
+module.exports = { settleOrderCommission, settleRedemptionCommission, settleReferralCommission };

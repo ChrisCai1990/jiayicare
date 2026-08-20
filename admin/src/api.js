@@ -68,6 +68,7 @@ export const adminAPI = {
 
   // 佣金审核打款
   commissions:        (params = {})      => req('/commissions?' + new URLSearchParams(params).toString()),
+  promotionRecords:   ()                 => req('/promotion-records'),
   confirmCommission:  (id)               => req(`/commissions/${id}/confirm`, { method: 'PATCH' }),
   rejectCommission:   (id, reason)       => req(`/commissions/${id}/reject`, { method: 'PATCH', body: JSON.stringify({ reason }) }),
   payCommission:      (id)               => req(`/commissions/${id}/pay`, { method: 'PATCH' }),
@@ -361,6 +362,7 @@ export const adminAPI = {
   updateReviewExperienceConfig: (enabled) => req('/system-config/review-experience', { method: 'PUT', body: JSON.stringify({ enabled }) }),
   getHealthFundConfig:   ()        => req('/system-config/health-fund'),
   updateHealthFundConfig:(data)    => req('/system-config/health-fund', { method: 'PUT', body: JSON.stringify(data) }),
+  getHealthFundReferrals:()        => req('/system-config/health-fund/referrals'),
 
   // 365 会员管理（需求20）
 }

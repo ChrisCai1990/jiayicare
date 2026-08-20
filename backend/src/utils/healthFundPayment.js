@@ -45,7 +45,12 @@ async function getPersonalFundAvailable(user) {
     { $match: { userId: user._id, source: { $in: ['promotion', 'other'] }, status: 'active', type: 'deduction' } },
     { $group: { _id: null, total: { $sum: '$amount' } } },
   ]);
-  return Math.max(0, Math.min(Number(user.healthFundBalance) || 0, (grants[0]?.total || 0) + (deductions[0]?.total || 0)));
+  const totalBalance = Math.max(0, Number(user.healthFundBalance) || 0);
+  const recordedPersonal = Math.max(0, (grants[0]?.total || 0) + (deductions[0]?.total || 0));
+  const corporateAvailable = await getCorporateFundAvailable(user);
+  // 历史余额可能早于分账流水上线。未能在流水中归类的余额按自有基金处理，
+  // 避免用户端显示有余额、结算却判定可用额为0。
+  return Math.max(0, Math.min(totalBalance, Math.max(recordedPersonal, totalBalance - corporateAvailable)));
 }
 
 async function validateHealthFundDeduction({ user, requested, orderAmount, category }) {
@@ -62,8 +67,8 @@ async function validateHealthFundDeduction({ user, requested, orderAmount, categ
   if (user.enterpriseId && corporateAvailable > 0) {
     enterprise = await Enterprise.findById(user.enterpriseId);
     const rule = enterprise?.healthFundPaymentRule;
-    if (!enterprise || enterprise.status !== 'active' || !rule?.enabled) corporateLimit = 0;
-    else {
+    if (!enterprise || enterprise.status !== 'active') corporateLimit = 0;
+    else if (rule?.enabled) {
       if (orderAmount < (Number(rule.minOrderAmount) || 0)) corporateLimit = 0;
       if (rule.eligibleCategories?.length && !rule.eligibleCategories.includes(category)) corporateLimit = 0;
       corporateLimit = Math.min(corporateLimit, deductionLimit(rule.deductionType, rule.deductionValue, orderAmount));

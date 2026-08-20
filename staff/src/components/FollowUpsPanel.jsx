@@ -2,13 +2,13 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import Pagination from './Pagination'
+import { formatChineseDate } from '../utils/date'
 
 const PAGE_SIZE = 5
 
 function formatDate(date) {
   if (!date) return ''
-  const d = new Date(date)
-  return d.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })
+  return formatChineseDate(date, false)
 }
 
 export default function FollowUpsPanel() {

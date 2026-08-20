@@ -34,6 +34,7 @@ const SystemConfig  = require('../models/SystemConfig');
 const { DEFAULT_CONFIG: DEFAULT_HEALTH_ASSISTANT, normalizeConfig: normalizeHealthAssistant } = require('../utils/healthAssistantConfig');
 const FollowUpPlan  = require('../models/FollowUpPlan');
 const Commission    = require('../models/Commission');
+const PushRecord    = require('../models/PushRecord');
 const adminAuth = require('../middleware/adminAuth');
 const router = express.Router();
 
@@ -636,6 +637,10 @@ router.get('/commissions', adminAuth, async (req, res) => {
   if (!COMMISSION_ADMIN_ROLES.includes(req.admin.role)) {
     return res.status(403).json({ success: false, message: '无权限查看佣金数据' });
   }
+  // 兼容修复前已支付但未触发推广结算的订单；幂等函数只补缺失记录。
+  const historicalPaid = await Order.find({ paymentStatus: 'paid', referrerId: { $ne: null } }).sort({ paidAt: -1 }).limit(200);
+  const { settleReferralCommission } = require('../utils/commissionSettlement');
+  for (const order of historicalPaid) await settleReferralCommission(order).catch(err => console.error('[commission-backfill]', order._id, err.message));
   const { status, role, staffId, page = 1, limit = 20 } = req.query;
   const filter = {};
   if (status) filter.status = status;
@@ -1930,6 +1935,11 @@ const DEFAULT_HEALTH_FUND_POLICY = {
   enabled: false,
   sharerAmount: 0,
   recipientAmount: 0,
+  inviteEnabled: false,
+  inviterAmount: 0,
+  inviteeAmount: 0,
+  firstLoginEnabled: false,
+  firstLoginAmount: 0,
 };
 
 router.get('/system-config/health-fund', adminAuth, async (req, res) => {
@@ -1939,12 +1949,45 @@ router.get('/system-config/health-fund', adminAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success:false, message:err.message }); }
 });
 
+// 服务团队向客户推送产品的完整推广轨迹；未成交也展示，成交后关联订单及佣金。
+router.get('/promotion-records', adminAuth, async (req, res) => {
+  if (!COMMISSION_ADMIN_ROLES.includes(req.admin.role)) return res.status(403).json({ success: false, message: '无权限查看推广数据' });
+  const pushes = await PushRecord.find({ type: 'product' }).sort({ createdAt: -1 }).limit(500)
+    .populate('staffId', 'name role').populate('patientId', 'name phone').lean();
+  const rows = await Promise.all(pushes.map(async push => {
+    const ids = [...new Set([push.productId, ...(push.products || []).map(p => p.productId)].filter(Boolean).map(String))];
+    const order = ids.length ? await Order.findOne({
+      user: push.patientId?._id, referrerId: push.staffId?._id,
+      serviceId: { $in: ids }, createdAt: { $gte: push.createdAt },
+    }).sort({ createdAt: 1 }).select('serviceName paymentStatus paidAmount status createdAt').lean() : null;
+    const commission = order ? await Commission.findOne({ orderId: order._id, staffId: push.staffId?._id, role: 'referrer' }).select('status commissionAmount').lean() : null;
+    return { ...push, order, commission, stage: commission ? 'commissioned' : order?.paymentStatus === 'paid' ? 'paid' : order ? 'ordered' : push.readAt ? 'read' : 'pushed' };
+  }));
+  res.json({ success: true, data: rows, total: rows.length });
+});
+
+router.get('/system-config/health-fund/referrals', adminAuth, async (req, res) => {
+  try {
+    const rows = await User.find({ invitedBy: { $ne: null } })
+      .select('name phone invitedBy referralRewardGrantedAt lastLoginAt')
+      .populate('invitedBy', 'name phone')
+      .sort({ referralRewardGrantedAt: -1 }).limit(500).lean();
+    res.json({ success: true, data: rows.map(row => ({
+      _id: row._id,
+      inviter: row.invitedBy ? { _id: row.invitedBy._id, name: row.invitedBy.name, phone: row.invitedBy.phone } : null,
+      invitee: { _id: row._id, name: row.name, phone: row.phone },
+      firstLoginAt: row.lastLoginAt,
+      rewardedAt: row.referralRewardGrantedAt,
+    })) });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 router.put('/system-config/health-fund', adminAuth, async (req, res) => {
   try {
     const types = ['unlimited', 'percentage', 'fixedAmount'];
     const value = { ...DEFAULT_HEALTH_FUND_POLICY, ...req.body };
     ['personalDeductionType','corporateDeductionType','couponDeductionType'].forEach(k => { if (!types.includes(value[k])) value[k] = 'unlimited'; });
-    ['personalDeductionValue','corporateDeductionValue','couponDeductionValue','minOrderAmount','sharerAmount','recipientAmount'].forEach(k => { value[k] = Math.max(0, Number(value[k]) || 0); });
+    ['personalDeductionValue','corporateDeductionValue','couponDeductionValue','minOrderAmount','sharerAmount','recipientAmount','inviterAmount','inviteeAmount','firstLoginAmount'].forEach(k => { value[k] = Math.max(0, Number(value[k]) || 0); });
     value.eligibleCategories = Array.isArray(value.eligibleCategories) ? value.eligibleCategories.map(String).map(v=>v.trim()).filter(Boolean) : [];
     await SystemConfig.findOneAndUpdate({ key:'healthFundPolicy' }, { key:'healthFundPolicy', value, label:'健康基金使用与退款规则' }, { upsert:true, new:true });
     res.json({ success:true, data:value, message:'健康基金规则已保存' });

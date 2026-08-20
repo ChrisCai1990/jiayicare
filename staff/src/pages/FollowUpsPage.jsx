@@ -4,6 +4,7 @@ import { staffAPI } from '../api'
 import { useToast, useStaff, can } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
 import Pagination from '../components/Pagination'
+import { formatChineseDate, formatChineseDateTime } from '../utils/date'
 
 const TYPE_MAP   = { phone: '电话', wechat: '微信', visit: '上门', video: '视频', other: '其他' }
 const STATUS_MAP = { planned: '待随访', in_progress: '随访中', missed: '随访中', completed: '已随访', cancelled: '已取消' }
@@ -70,7 +71,7 @@ function DetailModal({ item, onClose }) {
         </div>
         <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
           <Row label="会员" value={`${item.patientId?.name}  ${item.patientId?.phone || ''}`} />
-          <Row label="计划日期" value={new Date(item.date).toLocaleDateString('zh-CN')} />
+          <Row label="计划日期" value={formatChineseDate(item.date)} />
           <Row label="随访主题" value={item.theme} />
           <Row label="随访方式" value={FOLLOWUP_TYPE[item.type] || item.type} />
           {item.routinePeriod && <Row label="周期类型" value={ROUTINE_PERIOD[item.routinePeriod] || item.routinePeriod} />}
@@ -84,7 +85,7 @@ function DetailModal({ item, onClose }) {
               <div style={{ margin: '12px 0 6px', fontSize: 12, color: '#1E6B50', fontWeight: 700, borderTop: '2px solid #E8F5EF', paddingTop: 12 }}>随访结果</div>
               <Row label="执行方式" value={FOLLOWUP_TYPE[item.executedType] || item.executedType} />
               <Row label="随访记录" value={item.executedContent} />
-              <Row label="完成时间" value={item.completedAt ? new Date(item.completedAt).toLocaleString('zh-CN') : ''} />
+              <Row label="完成时间" value={item.completedAt ? formatChineseDateTime(item.completedAt) : ''} />
             </>
           )}
           {item.status === 'cancelled' && <Row label="取消原因" value={item.cancelReason} />}
@@ -368,7 +369,7 @@ export default function FollowUpsPage() {
                     <div style={{ fontSize: 13, color: '#4A6558', marginBottom: 4 }}>
                       {f.theme || '常规随访'}
                       <span style={{ color: '#C0B8AE', margin: '0 6px' }}>·</span>
-                      <span style={{ color: '#8AA89C' }}>{new Date(f.date).toLocaleDateString('zh-CN')}</span>
+                      <span style={{ color: '#8AA89C' }}>{formatChineseDate(f.date)}</span>
                       {f.assignedTo?.name && <><span style={{ color: '#C0B8AE', margin: '0 6px' }}>·</span><span style={{ color: '#8AA89C' }}>负责人 {f.assignedTo.name}</span></>}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -446,7 +447,7 @@ export default function FollowUpsPage() {
               <div style={{ background: '#f9f7f3', borderRadius: 8, padding: 12, display: 'grid', gap: 6 }}>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>计划日期：</span>
-                  <span style={{ fontSize: 13 }}>{new Date(execItem.date).toLocaleDateString('zh-CN')}</span>
+                  <span style={{ fontSize: 13 }}>{formatChineseDate(execItem.date)}</span>
                 </div>
                 {execItem.theme && (
                   <div style={{ display: 'flex', gap: 8 }}>

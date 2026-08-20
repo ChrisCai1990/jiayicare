@@ -102,6 +102,7 @@ router.get('/coupons', auth, async (req, res) => {
   const coupons = await Coupon.find({
     patientId: req.user._id,
     status: 'active',
+    $and: [{ $or: [{ validFrom: null }, { validFrom: { $lte: now } }] }],
     $or: [{ validTo: null }, { validTo: { $gte: now } }],
   }).sort({ createdAt: -1 });
   res.json({ success: true, data: coupons });
@@ -271,6 +272,9 @@ router.post('/order', auth, async (req, res) => {
     if (coupon.validTo && new Date(coupon.validTo) < new Date()) {
       return res.status(400).json({ success: false, message: '优惠券已过期' });
     }
+    if (coupon.validFrom && new Date(coupon.validFrom) > new Date()) {
+      return res.status(400).json({ success: false, message: '优惠券尚未到生效时间' });
+    }
     if (coupon.minSpend && service.price < coupon.minSpend) {
       return res.status(400).json({ success: false, message: `订单需满 ¥${coupon.minSpend} 才能使用此券` });
     }
@@ -332,7 +336,9 @@ router.post('/order', auth, async (req, res) => {
     if (productShare?.sharerStaffId) referrerId = productShare.sharerStaffId;
   }
   if (product) {
-    const lastPush = await PushRecord.findOne({ patientId: req.user._id, type: 'product', productId: service.id })
+    const lastPush = await PushRecord.findOne({ patientId: req.user._id, type: 'product', $or: [
+      { productId: service.id }, { 'products.productId': service.id },
+    ] })
       .sort({ createdAt: -1 }).select('staffId servicePerformers');
     if (lastPush && !referrerId) {
       referrerId = lastPush.staffId;
@@ -435,6 +441,7 @@ router.post('/order', auth, async (req, res) => {
   order.fulfillmentId = fulfillment._id;
   order.fulfillmentStatus = fulfillment.status;
   await order.save();
+  await require('../utils/commissionSettlement').settleReferralCommission(order);
   await require('../utils/productShareRewards').grantProductShareRewards(order);
   }
 

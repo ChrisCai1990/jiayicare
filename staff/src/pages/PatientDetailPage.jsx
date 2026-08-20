@@ -3373,6 +3373,10 @@ export default function PatientDetailPage() {
                     return `${user.name || '您'}（自动）`
                   })()} />
                   <InfoRow label="手机号码（用户端登录账号）" value={user.phone || user.contactPhone || '-'} />
+                  <InfoRow label="微信小程序" value={user.wechatMpOpenid ? '已绑定' : '未绑定'} />
+                  <InfoRow label="最近登录" value={user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString('zh-CN') : '-'} />
+                  <InfoRow label="累计登录时长" value={user.totalLoginSeconds ? `${Math.floor(user.totalLoginSeconds / 3600)}小时${Math.floor((user.totalLoginSeconds % 3600) / 60)}分钟` : '0分钟'} />
+                  <InfoRow label="登录次数" value={user.loginCount || 0} />
                   <InfoRow label="性别" value={user.gender} />
                   <InfoRow label="年龄" value={age} />
                   <InfoRow label="身高" value={user.height ? `${user.height} cm` : '-'} />

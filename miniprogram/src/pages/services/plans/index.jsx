@@ -5,6 +5,7 @@ import { colors, spacing, radius, shadow } from '../../../theme';
 import { plansAPI } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
+import { formatChineseDate, formatChineseDateTime } from '../../../utils/date';
 
 // 对齐 app/src/screens/services/ServicePlansScreen.js（852行，全端最复杂页面之一）
 // 简化点：年度管理方案(annual_mgmt)的模块字段中文标签映射只做了最常用的一批（MODULE_NAME/FIELD_LABEL），
@@ -89,7 +90,7 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
   const sm = STATUS_META[plan.status] || STATUS_META.draft;
   const isDraft = plan.status === 'draft';
   const needsConfirm = !plan.confirmedAt && (plan.pushedAt || plan.status === 'active' || isDraft);
-  const formatDate = (d) => (d ? new Date(d).toLocaleDateString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' }) : '未设置');
+  const formatDate = (d) => (d ? formatChineseDate(d) : '未设置');
   const addonItems = (plan.content?.addons || []).map((a, i) => ({ _id: `addon_${i}`, name: a.name, notes: a.reason || '', status: 'pending', isAddon: true }));
   const allItems = [...(plan.items || []), ...addonItems];
   const progressDone = allItems.filter((i) => i.status === 'completed').length;
@@ -375,7 +376,7 @@ export default function ServicePlansPage() {
                   <>
                     <Text style={{ fontSize: '11px', color: colors.textMuted, fontWeight: 600, display: 'block', marginTop: `${spacing.sm}px`, marginBottom: '6px' }}>完成时间</Text>
                     <Text style={{ fontSize: '13px', color: colors.textSecondary, backgroundColor: colors.background, borderRadius: `${radius.xs}px`, padding: `${spacing.sm}px` }}>
-                      {new Date(item.completedAt).toLocaleString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      {formatChineseDateTime(item.completedAt)}
                     </Text>
                   </>
                 )}

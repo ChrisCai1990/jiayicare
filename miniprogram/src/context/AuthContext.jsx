@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import Taro from '@tarojs/taro';
-import { loadToken, saveToken, clearToken, setUnauthorizedHandler, userAPI } from '../services/api';
+import { loadToken, saveToken, clearToken, setUnauthorizedHandler, userAPI, authAPI } from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -49,14 +49,22 @@ export function AuthProvider({ children }) {
     try { Taro.setStorageSync('jy_user', JSON.stringify(userData)); } catch {}
   };
 
-  const logout = async () => {
+  const logout = async (notifyServer = true) => {
+    if (notifyServer) { try { await authAPI.sessionActivity('logout'); } catch {} }
     clearToken();
     setToken(null);
     setUser(null);
   };
 
   useEffect(() => {
-    setUnauthorizedHandler(() => logout());
+    if (!token) return undefined;
+    authAPI.sessionActivity('foreground').catch(() => {});
+    const timer = setInterval(() => authAPI.sessionActivity('heartbeat').catch(() => {}), 60000);
+    return () => clearInterval(timer);
+  }, [token]);
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => logout(false));
     return () => setUnauthorizedHandler(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

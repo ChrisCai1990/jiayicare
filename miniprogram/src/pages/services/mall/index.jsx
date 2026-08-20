@@ -28,6 +28,7 @@ function Stars({ rating }) {
 function ServiceCard({ item, onDetail, onPay }) {
   const windowWidth = Taro.getWindowInfo ? Taro.getWindowInfo().windowWidth : Taro.getSystemInfoSync().windowWidth;
   const isWide = windowWidth >= 768;
+  const [imageFailed, setImageFailed] = useState(false);
   const hasDiscount = item.price < item.originalPrice;
   const discount = hasDiscount ? Math.round((1 - item.price / item.originalPrice) * 10) : 0;
   return (
@@ -37,9 +38,9 @@ function ServiceCard({ item, onDetail, onPay }) {
           <Text style={{ fontSize: '11px', color: '#fff', fontWeight: 700 }}>{item.tag}</Text>
         </View>
       )}
-      <View style={{ display: 'flex', flexDirection: isWide ? 'row' : 'column', gap: `${spacing.md}px`, alignItems: 'stretch' }}>
-        {item.images && item.images.length > 0 && (
-          <Image src={item.images[0]} mode="aspectFit" style={{ width: isWide ? '56%' : '100%', height: isWide ? '390px' : '260px', flexShrink: 0, borderRadius: `${radius.md}px`, backgroundColor: colors.background }} />
+      <View style={{ display: 'flex', flexDirection: 'row', gap: `${spacing.md}px`, alignItems: 'stretch' }}>
+        {item.images && item.images.length > 0 && !imageFailed && (
+          <Image src={item.images[0]} mode="aspectFill" lazyLoad onError={() => setImageFailed(true)} style={{ width: isWide ? '160px' : '88px', height: isWide ? '160px' : '88px', flexShrink: 0, borderRadius: `${radius.md}px`, backgroundColor: colors.background }} />
         )}
         <View style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
       <View style={{ display: 'flex', gap: `${spacing.md}px`, marginBottom: `${spacing.sm}px` }}>
@@ -424,26 +425,35 @@ export default function ServiceMallPage() {
   const routeParams = Taro.getCurrentInstance()?.router?.params || {};
 
   Taro.useShareAppMessage(() => {
-    if (!detailService || !shareToken) return { title: '嘉医汇', path: '/pages/home/index' };
+    if (!detailService) return { title: '嘉医汇', path: '/pages/home/index' };
+    const query = [
+      `productId=${detailService.id}`,
+      shareToken && `shareToken=${shareToken}`,
+      user?.referralCode && `invite=${user.referralCode}`,
+    ].filter(Boolean).join('&');
     return {
       title: detailService.name,
-      path: `/pages/services/mall/index?productId=${detailService.id}&shareToken=${shareToken}`,
+      path: `/pages/services/mall/index?${query}`,
       imageUrl: detailService.images?.[0],
     };
   });
 
   useEffect(() => {
-    if (!detailService || !user) {
+    if (!detailService) {
       setShareToken('');
       Taro.hideShareMenu();
       return;
     }
+    // 详情打开后立即恢复微信右上角原生转发，推广令牌异步补齐。
+    Taro.showShareMenu({ menus: ['shareAppMessage'] });
+    if (!user) {
+      setShareToken('');
+      return;
+    }
     let active = true;
-    Taro.hideShareMenu();
     servicesAPI.createProductShare(detailService.id).then((res) => {
       if (!active || !res.success) return;
       setShareToken(res.data.token);
-      Taro.showShareMenu({ menus: ['shareAppMessage'] });
     }).catch(() => {});
     return () => { active = false; };
   }, [detailService?.id, user?._id]);
@@ -486,6 +496,23 @@ export default function ServiceMallPage() {
     }
     setPurchaseMode(mode);
     setSelectedService(svc);
+  };
+  const closeSharedDetail = () => {
+    if (!user && routeParams.shareToken) {
+      try {
+        const query = [routeParams.productId && `productId=${routeParams.productId}`, routeParams.shareToken && `shareToken=${routeParams.shareToken}`, routeParams.invite && `invite=${routeParams.invite}`].filter(Boolean).join('&');
+        Taro.setStorageSync('jy_post_login_url', `/pages/services/mall/index${query ? `?${query}` : ''}`);
+      } catch {}
+      Taro.showModal({
+        title: '登录后查看更多',
+        content: '当前分享的服务可直接查看；查看其他服务或购买时，需要先完成登录。',
+        confirmText: '去登录',
+      }).then(({ confirm }) => {
+        if (confirm) Taro.navigateTo({ url: '/pages/auth/login/index' });
+      });
+      return;
+    }
+    setDetailService(null);
   };
   const activeParent = categoryTree.find((category) => category.name === activeCategory || category.children?.some((child) => child.name === activeCategory));
   const selectedNames = activeCategory === '全部'
@@ -549,7 +576,7 @@ export default function ServiceMallPage() {
       {detailService && (
         <ServiceDetailModal
           item={detailService}
-          onClose={() => setDetailService(null)}
+          onClose={closeSharedDetail}
           onConsult={() => { openPurchase(detailService, 'consult'); setDetailService(null); }}
           onPay={() => { openPurchase(detailService, 'pay'); setDetailService(null); }}
         />

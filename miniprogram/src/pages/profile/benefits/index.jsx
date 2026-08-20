@@ -6,6 +6,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { giftsAPI, partnerBenefitsAPI, pointsAPI, userAPI } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
+import { formatChineseDate, formatChineseDateTime } from '../../../utils/date';
 
 // 对齐 app/src/screens/profile/BenefitsScreen.js
 const POINTS_SOURCE_LABEL = { checkin: '打卡', consumption: '消费', redeem: '兑换', adjust: '调整' };
@@ -39,7 +40,7 @@ function GiftCard({ gift, onPress }) {
           {gift.giftType === 'fund' ? `健康基金 ¥${gift.fundAmount}（${FUND_TYPE_LABEL[gift.fundType] || '赠送'}）` : `${gift.serviceName}${gift.serviceCount > 1 ? ` × ${gift.serviceCount}次` : ''}`}
         </Text>
         <Text style={{ fontSize: '12px', color: colors.textMuted }}>
-          来自 {gift.staffId?.name || '健管团队'}{gift.validTo ? `  · 有效期至 ${new Date(gift.validTo).toLocaleDateString('zh-CN')}` : ''}
+          来自 {gift.staffId?.name || '健管团队'}{gift.validTo ? `  · 有效期至 ${formatChineseDate(gift.validTo)}` : ''}
         </Text>
       </View>
       <View style={{ padding: '4px 10px', borderRadius: `${radius.full}px`, backgroundColor: STATUS_BG[statusKey], flexShrink: 0 }}>
@@ -126,7 +127,7 @@ export default function BenefitsPage() {
   const dgIcon = dg ? (GIFT_TYPE_ICON[dg.giftType] || '🎁') : '🎁';
   const dgExpired = dg?.validTo && new Date(dg.validTo) < new Date();
   const dgStatusKey = dg?.status === 'used' ? 'used' : dgExpired ? 'expired' : 'active';
-  const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }) : '不限');
+  const fmtDate = (d) => (d ? formatChineseDate(d) : '不限');
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background, paddingBottom: `${spacing.xxl}px` }}>
@@ -176,7 +177,7 @@ export default function BenefitsPage() {
           <View style={{ backgroundColor:'#fff', borderRadius:`${radius.md}px`, border:`1px solid ${colors.border}`, padding:`${spacing.md}px`, marginBottom:`${spacing.md}px` }}>
             <Text style={{fontSize:'13px',fontWeight:700,color:colors.textPrimary,display:'block',marginBottom:'6px'}}>基金收支明细</Text>
             {!fund.transactions?.length ? <Text style={{fontSize:'12px',color:colors.textMuted}}>暂无基金收支记录</Text> : fund.transactions.map(item=><View key={`${item.type}-${item._id}`} style={{display:'flex',justifyContent:'space-between',padding:'9px 0',borderTop:`1px solid ${colors.borderLight}`}}>
-              <View style={{flex:1,minWidth:0}}><Text style={{fontSize:'13px',color:colors.textPrimary,display:'block'}}>{item.remark||item.orderName||'健康基金变动'}</Text><Text style={{fontSize:'11px',color:colors.textMuted}}>{new Date(item.createdAt).toLocaleString('zh-CN')}{item.orderNo?` · ${item.orderNo}`:''}</Text></View>
+              <View style={{flex:1,minWidth:0}}><Text style={{fontSize:'13px',color:colors.textPrimary,display:'block'}}>{item.remark||item.orderName||'健康基金变动'}</Text><Text style={{fontSize:'11px',color:colors.textMuted}}>{formatChineseDateTime(item.createdAt)}{item.orderNo?` · ${item.orderNo}`:''}</Text></View>
               <Text style={{fontSize:'14px',fontWeight:700,color:item.amount>=0?colors.success:colors.danger}}>{item.amount>=0?'+':'-'}¥{Math.abs(item.amount).toFixed(2)}</Text>
             </View>)}
           </View>
@@ -198,7 +199,7 @@ export default function BenefitsPage() {
                     <View key={log._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0' }}>
                       <View style={{ flex: 1 }}>
                         <Text style={{ fontSize: '13px', color: colors.textPrimary, fontWeight: 500, display: 'block' }}>{log.remark || POINTS_SOURCE_LABEL[log.source] || log.source}</Text>
-                        <Text style={{ fontSize: '11px', color: colors.textMuted }}>{new Date(log.createdAt).toLocaleDateString('zh-CN')}</Text>
+                        <Text style={{ fontSize: '11px', color: colors.textMuted }}>{formatChineseDate(log.createdAt)}</Text>
                       </View>
                       <Text style={{ fontSize: '14px', fontWeight: 700, color: log.amount >= 0 ? colors.success : colors.danger }}>{log.amount >= 0 ? '+' : ''}{log.amount}</Text>
                     </View>

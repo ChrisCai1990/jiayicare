@@ -13,6 +13,7 @@ module.exports = async (req, res, next) => {
       return res.status(401).json({ success: false, message: '未登录，请先登录' });
     }
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.authSessionId = decoded.sessionId || '';
 
     const user = await User.findById(decoded.id).select('-password');
     if (!user || user.isDeleted) {

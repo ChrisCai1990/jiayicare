@@ -78,17 +78,21 @@ async function request(path, options = {}) {
 
 // ── Auth ─────────────────────────────────────────────────────────
 export const authAPI = {
-  reviewExperienceStatus: () => request('/auth/review-experience/status'),
-  reviewExperienceLogin: () => request('/auth/review-experience/login', { method: 'POST' }),
   sendCode: (phone) =>
     request('/auth/send-code', { method: 'POST', body: JSON.stringify({ phone }) }),
 
   login: async (phone, code, { bindWechat = true } = {}) => {
     let wxLoginCode = '';
+    let deviceInfo = {};
+    let inviteCode = '';
     if (bindWechat) {
       try { wxLoginCode = (await Taro.login()).code || ''; } catch {}
     }
-    return request('/auth/login', { method: 'POST', body: JSON.stringify({ phone, code, wxLoginCode }) });
+    try { deviceInfo = Taro.getSystemInfoSync?.() || {}; } catch {}
+    try { inviteCode = Taro.getStorageSync('jy_invite_code') || ''; } catch {}
+    const result = await request('/auth/login', { method: 'POST', body: JSON.stringify({ phone, code, wxLoginCode, deviceInfo, inviteCode }) });
+    if (result?.success && inviteCode) { try { Taro.removeStorageSync('jy_invite_code'); } catch {} }
+    return result;
   },
 
   // 小程序登录：不再走网页授权 code，而是 Taro.login() 拿 code 后传给 /auth/wechat-mp
@@ -102,6 +106,7 @@ export const authAPI = {
       if (!code) throw new Error('微信身份获取失败，请重试');
       return request('/auth/wechat-mp/bind', { method: 'POST', body: JSON.stringify({ code }) });
     }),
+  sessionActivity: (event = 'heartbeat') => request('/auth/session/activity', { method: 'POST', body: JSON.stringify({ event }) }),
 };
 
 // ── User ─────────────────────────────────────────────────────────

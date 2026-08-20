@@ -1,7 +1,10 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const https = require('https');
+const crypto = require('crypto');
 const User = require('../models/User');
+const LoginSession = require('../models/LoginSession');
+const HealthFundTransaction = require('../models/HealthFundTransaction');
 const GiftRecord = require('../models/GiftRecord');
 const VerificationCode = require('../models/VerificationCode');
 const SystemConfig = require('../models/SystemConfig');
@@ -13,23 +16,64 @@ const router = express.Router();
 
 router.get('/review-experience/status', async (_req, res) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-  const cfg = await SystemConfig.findOne({ key: 'reviewExperience' }).lean();
-  res.json({ success: true, data: { enabled: cfg?.value?.enabled === true } });
+  res.json({ success: true, data: { enabled: false } });
 });
 
 router.post('/review-experience/login', async (_req, res) => {
-  const cfg = await SystemConfig.findOne({ key: 'reviewExperience' }).lean();
-  if (cfg?.value?.enabled !== true) return res.status(403).json({ success: false, message: '审核体验暂未开放' });
-  let user = await User.findOne({ phone: DEMO_PHONE });
-  if (!user) {
-    user = await User.create({ phone: DEMO_PHONE, name: '审核体验用户', onboardingCompleted: true, onboardingCompletedAt: new Date() });
-    await seedUserData(user._id);
-  }
-  if (user.isDeleted) return res.status(403).json({ success: false, message: '审核体验账号已停用' });
-  const token = jwt.sign({ id: user._id, reviewExperience: true }, process.env.JWT_SECRET, { expiresIn: '1d' });
-  const healthFund = await computeHealthFund(user);
-  res.json({ success: true, data: { token, user: { ...user.toObject(), healthFund, reviewExperience: true }, isNew: false } });
+  return res.status(403).json({ success: false, message: '游客及审核体验登录已关闭，请使用本人手机号登录' });
 });
+
+async function beginLoginSession(req, user, method) {
+  const sessionId = crypto.randomUUID();
+  const now = new Date();
+  const device = req.body?.deviceInfo && typeof req.body.deviceInfo === 'object' ? req.body.deviceInfo : {};
+  await LoginSession.create({
+    user: user._id, sessionId, method, loginAt: now, lastActivityAt: now,
+    ip: String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim(),
+    userAgent: String(req.headers['user-agent'] || '').slice(0, 500), device,
+  });
+  await User.updateOne({ _id: user._id }, {
+    $set: { lastLoginAt: now, lastLoginMethod: method },
+    $inc: { loginCount: 1 },
+  });
+  return sessionId;
+}
+
+async function grantPromotionFund(userId, amount, remark) {
+  const value = Math.max(0, Number(amount) || 0);
+  if (!value) return;
+  const updated = await User.findByIdAndUpdate(userId, { $inc: { healthFundBalance: value } }, { new: true });
+  await HealthFundTransaction.create({
+    userId, type: 'grant', source: 'promotion', amount: value,
+    balanceAfter: updated?.healthFundBalance || 0, remark,
+  });
+}
+
+async function applyFirstLoginRewards(user, inviteCode) {
+  const cfgRow = await SystemConfig.findOne({ key: 'healthFundPolicy' }).lean();
+  const cfg = cfgRow?.value || {};
+  const now = new Date();
+  const isFirstTrackedLogin = Number(user.loginCount || 0) === 0;
+  if (isFirstTrackedLogin && cfg.firstLoginEnabled === true && Number(cfg.firstLoginAmount) > 0) {
+    const claimed = await User.findOneAndUpdate(
+      { _id: user._id, firstLoginFundGrantedAt: null },
+      { $set: { firstLoginFundGrantedAt: now } }, { new: true },
+    );
+    if (claimed) await grantPromotionFund(user._id, cfg.firstLoginAmount, '首次使用小程序健康基金奖励');
+  }
+  if (!isFirstTrackedLogin || cfg.inviteEnabled !== true || !inviteCode || user.referralRewardGrantedAt) return;
+  const inviter = await User.findOne({ referralCode: String(inviteCode), isDeleted: { $ne: true }, _id: { $ne: user._id } }).select('_id');
+  if (!inviter) return;
+  const claimed = await User.findOneAndUpdate(
+    { _id: user._id, referralRewardGrantedAt: null, invitedBy: null },
+    { $set: { referralRewardGrantedAt: now, invitedBy: inviter._id } }, { new: true },
+  );
+  if (!claimed) return;
+  await Promise.all([
+    grantPromotionFund(inviter._id, cfg.inviterAmount, '邀请好友首次使用小程序奖励'),
+    grantPromotionFund(user._id, cfg.inviteeAmount, '通过好友邀请首次使用小程序奖励'),
+  ]);
+}
 
 // 计算用户健康基金汇总（与 /user/me 保持一致）
 async function computeHealthFund(user) {
@@ -143,7 +187,7 @@ router.post('/send-code', async (req, res) => {
 
 // 验证码登录 / 注册
 router.post('/login', async (req, res) => {
-  const { phone, code, wxLoginCode } = req.body;
+  const { phone, code, wxLoginCode, inviteCode } = req.body;
   if (!phone || !code) {
     return res.status(400).json({ success: false, message: '手机号和验证码不能为空' });
   }
@@ -182,7 +226,16 @@ router.post('/login', async (req, res) => {
     }
   }
 
-  const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+  if (!user.referralCode) {
+    user.referralCode = crypto.randomBytes(6).toString('hex');
+    await user.save();
+  }
+  await applyFirstLoginRewards(user, inviteCode);
+  user = await User.findById(user._id);
+  const loginMethod = user.wechatMpOpenid ? 'phone_wechat' : 'phone';
+  const sessionId = await beginLoginSession(req, user, loginMethod);
+  user = await User.findById(user._id);
+  const token = jwt.sign({ id: user._id, sessionId }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN || '30d',
   });
 
@@ -193,6 +246,26 @@ router.post('/login', async (req, res) => {
     message: isNew ? '注册成功' : '登录成功',
     data: { token, user: { ...user.toObject(), healthFund }, isNew },
   });
+});
+
+// 小程序前后台切换与心跳，用于计算实际活跃时长；单次最多计入120秒，避免异常退出后虚增。
+router.post('/session/activity', requireUser, async (req, res) => {
+  try {
+    const sessionId = req.authSessionId;
+    if (!sessionId) return res.json({ success: true });
+    const session = await LoginSession.findOne({ sessionId, user: req.user._id, logoutAt: null });
+    if (!session) return res.json({ success: true });
+    const now = new Date();
+    const delta = Math.max(0, Math.min(120, Math.round((now - session.lastActivityAt) / 1000)));
+    session.activeSeconds += delta;
+    session.lastActivityAt = now;
+    if (req.body?.event === 'logout') session.logoutAt = now;
+    await session.save();
+    if (delta) await User.updateOne({ _id: req.user._id }, { $inc: { totalLoginSeconds: delta } });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '登录时长记录失败' });
+  }
 });
 
 // ── 微信网页授权登录 ──────────────────────────────────────────────
@@ -255,6 +328,8 @@ router.post('/wechat', async (req, res) => {
 // 后端用 code2session 接口换 openid + session_key（无 access_token，无用户信息接口）。
 // 小程序 appid 与网页/公众号 appid 不同，因此 openid 也不同，存到独立字段 wechatMpOpenid。
 router.post('/wechat-mp', async (req, res) => {
+  return res.status(403).json({ success: false, message: '微信免手机号登录已关闭，请使用手机号验证码登录' });
+  /* istanbul ignore next */
   const { code, userInfo } = req.body;
   if (!code) return res.status(400).json({ success: false, message: '缺少 code' });
 

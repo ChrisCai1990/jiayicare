@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { View, Text, Input, Button } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius } from '../../../theme';
@@ -19,13 +19,6 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [notRegistered, setNotRegistered] = useState(false);
   const [agreed, setAgreed] = useState(false);
-  const [reviewExperienceEnabled, setReviewExperienceEnabled] = useState(false);
-
-  useEffect(() => {
-    authAPI.reviewExperienceStatus()
-      .then((res) => setReviewExperienceEnabled(res?.data?.enabled === true))
-      .catch(() => {});
-  }, []);
 
   const waitForAuthCommit = () => new Promise((resolve) => {
     if (typeof Taro.nextTick === 'function') Taro.nextTick(resolve);
@@ -78,37 +71,6 @@ export default function LoginPage() {
     } catch (err) {
       if (err.code === 'NOT_REGISTERED') setNotRegistered(true);
       else setError(err.message || '登录失败，请检查验证码后重试');
-    } finally { setLoading(false); }
-  };
-
-  // 小程序一键登录：wx.login() 拿 code → 后端 /auth/wechat-mp 换 openid + 签发 JWT
-  const wechatLogin = async () => {
-    if (!agreed) { setError('请先阅读并勾选同意相关协议'); return; }
-    setError('');
-    try {
-      setLoading(true);
-      const res = await authAPI.wechatLogin();
-      if (res.success) {
-        await login(res.data.user, res.data.token);
-        await waitForAuthCommit();
-        afterLoginSuccess(res.data.user);
-      }
-    } catch (err) {
-      setError(err.message || '微信登录失败，请稍后重试或使用手机号登录');
-    } finally { setLoading(false); }
-  };
-
-  const reviewExperienceLogin = async () => {
-    if (!agreed) { setError('请先阅读并勾选同意相关协议'); return; }
-    setError('');
-    try {
-      setLoading(true);
-      const res = await authAPI.reviewExperienceLogin();
-      await login(res.data.user, res.data.token);
-      await waitForAuthCommit();
-      Taro.switchTab({ url: '/pages/home/index' });
-    } catch (err) {
-      setError(err.message || '审核体验登录失败，请稍后重试');
     } finally { setLoading(false); }
   };
 
@@ -231,30 +193,9 @@ export default function LoginPage() {
           立即登录
         </Button>
 
-        <View style={{ display: 'flex', alignItems: 'center', marginBottom: `${spacing.md}px` }}>
-          <View style={{ flex: 1, height: '1px', backgroundColor: colors.borderLight }} />
-          <Text style={{ margin: '0 12px', fontSize: '12px', color: colors.textMuted }}>或</Text>
-          <View style={{ flex: 1, height: '1px', backgroundColor: colors.borderLight }} />
-        </View>
-
-        <View style={{ display: 'flex', gap: `${spacing.sm}px` }}>
-          <Button
-            style={{
-              flex: 1, backgroundColor: '#fff', border: `1.5px solid ${colors.border}`,
-              borderRadius: `${radius.md}px`, fontSize: '14px', fontWeight: 600, color: '#07C160',
-            }}
-            onClick={wechatLogin}
-            disabled={loading}
-          >
-            微信一键登录
-          </Button>
-        </View>
-
-        {reviewExperienceEnabled && (
-          <Button style={{ marginTop: `${spacing.sm}px`, backgroundColor: colors.primary10, border: `1px solid ${colors.primary}`, borderRadius: `${radius.md}px`, fontSize: '14px', fontWeight: 700, color: colors.primary }} onClick={reviewExperienceLogin} disabled={loading}>
-            审核一键体验
-          </Button>
-        )}
+        <Text style={{ display: 'block', textAlign: 'center', fontSize: '12px', color: colors.textMuted }}>
+          为保障健康资料安全，不提供游客登录；登录将记录手机号、微信绑定状态及使用时长。
+        </Text>
 
         <View onClick={() => setAgreed(!agreed)} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: '6px', marginTop: `${spacing.md}px` }}>
           <View style={{ width: '15px', height: '15px', borderRadius: '3px', border: `1.5px solid ${agreed ? colors.primary : colors.border}`, backgroundColor: agreed ? colors.primary : '#fff', textAlign: 'center', lineHeight: '13px', flexShrink: 0 }}>
