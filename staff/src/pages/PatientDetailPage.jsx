@@ -1623,7 +1623,7 @@ export default function PatientDetailPage() {
     assessment: { label: '风险与评估', sections: ['健康评分', '心理健康评估', '10年ASCVD风险评估'] },
     lifestyle: { label: '生活方式', sections: ['生活方式（膳食调查）', '生活方式变化记录'] },
     screening: { label: '专项筛查', sections: ['专项筛查结果'] },
-    metrics: { label: '指标与趋势', sections: ['体检关键指标', '身体成分指标', '慢病分级', '健康数据趋势', '日常健康打卡数据'] },
+    metrics: { label: '指标与趋势', sections: ['身体成分指标', '慢病分级', '健康数据趋势', '日常健康打卡数据'] },
   }
   const [archiveActiveGroup, setArchiveActiveGroup] = useState('basics')
 
@@ -5920,6 +5920,7 @@ export default function PatientDetailPage() {
         </div>
 
         {/* ── 体检关键指标 ── */}
+        {tab === 'ai' && reviewWorkbenchView === 'screening' && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-header">
             <div className="card-title">体检关键指标</div>
@@ -6295,6 +6296,7 @@ export default function PatientDetailPage() {
             })()}
           </div>
         </div>
+        )}
 
         {/* ── 4.2 身体成分指标 ── */}
         <div className="card" style={{ marginBottom: 16 }}>
