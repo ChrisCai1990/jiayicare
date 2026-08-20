@@ -7391,42 +7391,44 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     if (can('report_familydoctor_review')) {
       const fdUserFilter = { assignedFamilyDoctor: { $ne: null }, ...(myPatientIds ? { _id: { $in: myPatientIds } } : {}) };
       const candidates = await User.find(fdUserFilter)
-        .select('name archiveReviewStatus archiveReviewSnapshotAt healthProfileUpdatedAt').lean();
+        .select('name archiveReviewStatus archiveReviewSnapshotAt archiveChangeLog archiveAutoLog archiveConfirmLog lifestyleHistory').lean();
       if (candidates.length) {
-        const { hasUnreviewedNewContent } = require('../utils/reportAuditGate');
-        const pendingUsers = candidates.filter(hasUnreviewedNewContent);
-        if (pendingUsers.length) {
-          const pendingIds = pendingUsers.map(u => u._id);
+        const { getLatestArchiveUpdate } = require('../utils/reportAuditGate');
+        const pendingIds = candidates.map(u => u._id);
+        if (pendingIds.length) {
           // 只统计"上次确认之后新增"的报告数，历史已确认过的报告不重复计入（增量原则）
           const newReportCounts = await MedicalReport.aggregate([
             { $match: { user: { $in: pendingIds }, audit_status: 'audited' } },
             { $group: { _id: '$user', reports: { $push: { createdAt: '$createdAt', audited_at: '$audited_at', title: '$title', checkDate: '$checkDate' } } } },
           ]);
-          const userMap = new Map(pendingUsers.map(u => [String(u._id), u]));
+          const userMap = new Map(candidates.map(u => [String(u._id), u]));
           const countMap = new Map(newReportCounts.map(c => {
             const u = userMap.get(String(c._id));
             const snapshotAt = u?.archiveReviewSnapshotAt ? new Date(u.archiveReviewSnapshotAt).getTime() : 0;
             const newReports = c.reports.filter(r => new Date(r.createdAt).getTime() > snapshotAt);
             const latestAt = newReports.length
               ? new Date(Math.max(...newReports.map(r => new Date(r.audited_at || r.createdAt).getTime())))
-              : (u?.healthProfileUpdatedAt || null);
+              : null;
             return [String(c._id), { count: newReports.length, latestAt, reports: newReports }];
           }));
-          pendingUsers.forEach(u => {
+          candidates.forEach(u => {
             const info = countMap.get(String(u._id));
-            const createdAt = info?.latestAt || u.healthProfileUpdatedAt || new Date();
             const hasNewReports = !!(info && info.count > 0);
+            const archiveUpdate = getLatestArchiveUpdate(u, u.archiveReviewSnapshotAt);
+            if (!hasNewReports && !archiveUpdate) return;
+            const createdAt = info?.latestAt || archiveUpdate.at;
             const reportNames = hasNewReports
               ? info.reports.map(report => `${report.title || '未命名报告'}${report.checkDate ? `（${String(report.checkDate).slice(0, 10)}）` : ''}`).slice(0, 5)
               : [];
-            const updatedAtText = u.healthProfileUpdatedAt ? new Date(u.healthProfileUpdatedAt).toLocaleString('zh-CN', { hour12: false }) : '';
+            const updatedAtText = archiveUpdate?.at ? new Date(archiveUpdate.at).toLocaleString('zh-CN', { hour12: false }) : '';
+            const changedItems = (archiveUpdate?.items || []).map(item => item.label || item.path).filter(Boolean).slice(0, 6);
             const summary = hasNewReports
               ? `新增体检报告 ${info.count} 份：${reportNames.join('、')}${info.count > reportNames.length ? '等' : ''}。请逐份查看确认。`
-              : `健康档案资料${updatedAtText ? `于 ${updatedAtText}` : ''}发生更新，请进入“健康档案”查看顶部的自动写入/人工确认记录。`;
+              : `${archiveUpdate.source}${updatedAtText ? `（${updatedAtText}）` : ''}：${changedItems.length ? changedItems.join('、') : '生活方式资料'}。请进入“健康档案”核对具体变更。`;
             todos.push({
               id: 'archivereview_' + u._id, type: 'report_familydoctor_review', label: '健康档案待查看确认', priority: 2,
               patientName: u.name || '未知', patientId: String(u._id),
-              summary, updateLocation: hasNewReports ? 'AI健康信息整理 → 新增体检报告待查看' : '健康档案 → 页面顶部更新记录',
+              summary, updateLocation: hasNewReports ? 'AI健康信息整理 → 新增体检报告待查看' : '健康档案 → 页面顶部档案变更记录',
               createdAt, overdue: (now - new Date(createdAt)) > DAY,
               link: `/patients/${u._id}?tab=${hasNewReports ? 'ai' : 'records'}`,
             });

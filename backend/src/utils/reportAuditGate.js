@@ -19,7 +19,7 @@ const User = require('../models/User');
 // 返回 null 表示放行；返回字符串表示拦截原因（用作 message 直接展示给用户）
 async function checkReportAuditGate(userId) {
   const user = await User.findById(userId)
-    .select('assignedFamilyDoctor archiveReviewStatus archiveReviewSnapshotAt healthProfileUpdatedAt');
+    .select('assignedFamilyDoctor archiveReviewStatus archiveReviewSnapshotAt archiveChangeLog archiveAutoLog archiveConfirmLog lifestyleHistory');
   if (!user || !user.assignedFamilyDoctor) return null; // 无健康顾问的客户不受此拦截，维持原有逻辑
 
   const total = await MedicalReport.countDocuments({ user: userId });
@@ -28,7 +28,8 @@ async function checkReportAuditGate(userId) {
   const notStaffAudited = await MedicalReport.countDocuments({ user: userId, audit_status: { $ne: 'audited' } });
   if (notStaffAudited > 0) return `还有 ${notStaffAudited} 份体检报告健管专员未审核，请先完成审核后再生成`;
 
-  if (hasUnreviewedNewContent(user)) {
+  const newReportCount = await MedicalReport.countDocuments(pendingDoctorAuditFilter(userId, user.archiveReviewSnapshotAt));
+  if (newReportCount > 0 || hasUnreviewedNewContent(user)) {
     return '有新增体检报告或健康档案更新，健康顾问需先查看确认后再生成';
   }
 
@@ -37,10 +38,17 @@ async function checkReportAuditGate(userId) {
 
 // 判断是否存在"自上次确认以来新增、健康顾问尚未确认过"的内容（增量判断，不是整体失效）
 function hasUnreviewedNewContent(user) {
-  if (user.archiveReviewStatus !== 'reviewed' || !user.archiveReviewSnapshotAt) return true; // 从未确认过
-  const snapshotAt = new Date(user.archiveReviewSnapshotAt).getTime();
-  if (user.healthProfileUpdatedAt && new Date(user.healthProfileUpdatedAt).getTime() > snapshotAt) return true;
-  return false;
+  return !!getLatestArchiveUpdate(user, user.archiveReviewSnapshotAt);
+}
+
+function getLatestArchiveUpdate(user, snapshotValue) {
+  const snapshotAt = snapshotValue ? new Date(snapshotValue).getTime() : 0;
+  const candidates = [];
+  (user.archiveChangeLog || []).forEach(entry => candidates.push({ at: entry.changedAt, source: '客户更新', items: entry.items || [] }));
+  (user.archiveAutoLog || []).forEach(entry => candidates.push({ at: entry.appliedAt, source: entry.questionnaireTitle ? `问卷“${entry.questionnaireTitle}”自动写入` : '问卷自动写入', items: entry.items || [] }));
+  (user.archiveConfirmLog || []).forEach(entry => candidates.push({ at: entry.confirmedAt, source: `${entry.confirmedByName || '健管专员'}确认写入`, items: entry.items || [] }));
+  (user.lifestyleHistory || []).forEach(entry => candidates.push({ at: entry.recordedAt, source: entry.recordedByName ? `${entry.recordedByName}更新生活方式` : '生活方式更新', items: Object.entries(entry.changes || {}).map(([label, value]) => ({ label, valueStr: value?.to ?? '' })) }));
+  return candidates.filter(entry => entry.at && new Date(entry.at).getTime() > snapshotAt).sort((a, b) => new Date(b.at) - new Date(a.at))[0] || null;
 }
 
 // 待办面板/前置校验共用的查询条件：健管已审，且晚于健康顾问上次确认快照的新增报告
@@ -51,4 +59,4 @@ function pendingDoctorAuditFilter(userId, snapshotAt) {
   return filter;
 }
 
-module.exports = { checkReportAuditGate, pendingDoctorAuditFilter, hasUnreviewedNewContent };
+module.exports = { checkReportAuditGate, pendingDoctorAuditFilter, hasUnreviewedNewContent, getLatestArchiveUpdate };

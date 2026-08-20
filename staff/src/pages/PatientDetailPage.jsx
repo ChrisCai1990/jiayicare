@@ -518,7 +518,7 @@ const PLAN_TYPE_LABEL = {
 const PLAN_STATUS_COLOR = { draft:'#aaa', active:'#22A06B', completed:'#0077B6' }
 const PLAN_STATUS_LABEL = { draft:'草稿', active:'进行中', completed:'已完成' }
 const SR_TYPE_LABEL = {
-  nutrition:'营养干预', disease_mgmt:'专病管理', medical_visit:'医院就医', stage_assessment:'阶段性健康评估', routine:'历史随访', doctor_followup:'历史随访',
+  nutrition:'营养干预', disease_mgmt:'专病管理', medical_visit:'医院就医', stage_assessment:'阶段性健康评估',
   medical_escort:'就医协助', psychology:'心理咨询', rehab:'运动复健', tcm:'中医评估', specialist:'专科会诊',
 }
 const SR_CATEGORY = {
@@ -526,10 +526,8 @@ const SR_CATEGORY = {
   disease_mgmt:  '专病管理', specialist: '专病管理', psychology: '专病管理', rehab: '专病管理', tcm: '专病管理',
   medical_visit: '医院就医', medical_escort: '医院就医',
   stage_assessment: '阶段性健康评估',
-  routine:       '历史随访',
-  doctor_followup: '历史随访',
 }
-const SR_CATEGORY_COLOR = { '营养干预':'#22A06B', '专病管理':'#0077B6', '医院就医':'#D97706', '阶段性健康评估':'#8A4AC7', '历史随访':'#8AA89C' }
+const SR_CATEGORY_COLOR = { '营养干预':'#22A06B', '专病管理':'#0077B6', '医院就医':'#D97706', '阶段性健康评估':'#8A4AC7' }
 
 // ── 开单弹窗 ─────────────────────────────────────────────
 function RequisitionModal({ patientId, onClose, onSaved, prefillTitle = '', prefillNotes = '', prefillSuggestions = [] }) {
@@ -979,6 +977,30 @@ function ArchiveAutoLogPanel({ log }) {
   )
 }
 
+function ArchiveChangeLogPanel({ log }) {
+  const [open, setOpen] = useState(true)
+  const entries = (log || []).slice().reverse()
+  if (entries.length === 0) return null
+  return (
+    <div style={{ marginBottom: 12, border: '1px solid #F4D58D', borderRadius: 8, background: '#FFF8E8' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 14px', cursor: 'pointer' }} onClick={() => setOpen(v => !v)}>
+        <span style={{ fontSize: 13, color: '#8A5A00', fontWeight: 600 }}>📝 客户健康档案变更记录（{entries.length}次）</span>
+        <span style={{ fontSize: 12, color: '#8AA89C' }}>{open ? '▲' : '▼'}</span>
+      </div>
+      {open && <div style={{ padding: '0 14px 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {entries.map((entry, index) => <div key={index} style={{ borderTop: '1px solid #F4E2B8', paddingTop: 8 }}>
+          <div style={{ fontSize: 12, color: '#8AA89C' }}>{entry.changedByName || '客户本人'} · {entry.changedAt ? new Date(entry.changedAt).toLocaleString('zh-CN') : '时间未记录'}</div>
+          <div style={{ marginTop: 5, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {(entry.items || []).map((item, itemIndex) => <div key={itemIndex} style={{ fontSize: 13, color: '#4A6558', overflowWrap: 'anywhere' }}>
+              <strong>{item.label || item.path}：</strong>{String(item.from ?? '') || '未填写'} → {String(item.to ?? '') || '未填写'}
+            </div>)}
+          </div>
+        </div>)}
+      </div>}
+    </div>
+  )
+}
+
 // 健管专员确认写入档案的留痕（archive-draft/apply 每次写入的操作人+时间+字段，只读展示）
 function ArchiveConfirmLogPanel({ log }) {
   const [open, setOpen] = useState(false)
@@ -1415,6 +1437,7 @@ export default function PatientDetailPage() {
   const [plans, setPlans] = useState([])
   const [reports, setReports] = useState([])
   const [serviceRecords, setServiceRecords] = useState([])
+  const [serviceRecordCategory, setServiceRecordCategory] = useState('营养干预')
   const [patientReferrals, setPatientReferrals] = useState([])
   const [expandedReferralCats, setExpandedReferralCats] = useState({})
   const [reportSearchKw, setReportSearchKw] = useState('')
@@ -1891,12 +1914,23 @@ export default function PatientDetailPage() {
       const rows = res.data || []
       const sources = []
       rows.forEach(report => {
+        const isSubsequence = (needle, haystack) => {
+          let index = 0
+          for (const char of haystack) if (char === needle[index]) index += 1
+          return index === needle.length
+        }
+        const matchesTag = (value) => {
+          const target = String(tag || '').replace(/[\s·，,。；;：:（）()【】\[\]、/\\_-]/g, '')
+          const source = String(value || '').replace(/[\s·，,。；;：:（）()【】\[\]、/\\_-]/g, '')
+          if (!target || !source) return false
+          return source.includes(target) || target.includes(source) || (target.length >= 2 && isSubsequence(target, source))
+        }
         const add = (itemName, value) => {
           const text = String(value || '').trim()
-          if (!text || (!text.includes(tag) && !tag.includes(text))) return
+          if (!text || !matchesTag(`${itemName || ''}${text}`)) return
           sources.push({ reportId: report._id, title: report.title || '体检报告', date: report.checkDate || report.date || '', itemName, text })
         }
-        ;(report.reportItems || []).forEach(item => add(item.name || '', item.diagnosis || item.conclusion || item.findings))
+        ;(report.reportItems || []).forEach(item => add(item.name || '', [item.diagnosis, item.conclusion, item.findings, item.value].filter(Boolean).join('；')))
         Object.entries(report.examMainConclusions || {}).forEach(([name, value]) => add(name, value))
         add('', report.examConclusion)
       })
@@ -3236,6 +3270,7 @@ export default function PatientDetailPage() {
       ))}
 
       {/* 问卷自动写入档案的历史记录（无冲突项，系统已直接写入，供健康顾问核查） */}
+      <ArchiveChangeLogPanel log={user.archiveChangeLog} />
       <ArchiveAutoLogPanel log={user.archiveAutoLog} />
       {/* 健管专员人工审核确认写入档案的记录（有冲突需人工判断的字段） */}
       <ArchiveConfirmLogPanel log={user.archiveConfirmLog} />
@@ -8745,12 +8780,13 @@ export default function PatientDetailPage() {
 
       {/* ── Service Records Tab ── */}
       {tab === 'serviceRecords' && (() => {
-        const CATS = ['营养干预', '专病管理', '医院就医', '阶段性健康评估', '历史随访']
+        const CATS = ['营养干预', '专病管理', '医院就医', '阶段性健康评估']
         const grouped = {}
         CATS.forEach(c => { grouped[c] = [] })
         serviceRecords.forEach(r => {
-          const cat = SR_CATEGORY[r.type] || '历史随访'
-          if (!grouped[cat]) grouped[cat] = []
+          const cat = SR_CATEGORY[r.type]
+          // routine / doctor_followup 等已取消的旧类型不再出现在服务记录页面。
+          if (!cat || !grouped[cat]) return
           grouped[cat].push(r)
         })
         const renderTable = (records) => (
@@ -8760,7 +8796,7 @@ export default function PatientDetailPage() {
               {records.map(r => (
                 <tr key={r._id} style={{ cursor: 'pointer' }} onClick={() => r.aiStatus === 'pending' ? setReviewingDraft(r) : setShowSRDetail(r)}>
                   <td>
-                    <span className="badge badge-success" style={{ background: SR_CATEGORY_COLOR['专病管理'] + '20', color: SR_CATEGORY_COLOR['专病管理'] }}>{SR_TYPE_LABEL[r.type] || r.type}</span>
+                    <span className="badge badge-success" style={{ background: SR_CATEGORY_COLOR[serviceRecordCategory] + '20', color: SR_CATEGORY_COLOR[serviceRecordCategory] }}>{SR_TYPE_LABEL[r.type] || r.type}</span>
                     {r.aiStatus === 'pending' && <span style={{ marginLeft: 6, fontSize: 11, padding: '2px 6px', borderRadius: 999, background: '#7C3AED20', color: '#7C3AED', fontWeight: 600 }}>AI待审</span>}
                   </td>
                   <td style={{ fontWeight: 500, color: '#1E6B50' }}>{r.title || '-'}</td>
@@ -8773,8 +8809,16 @@ export default function PatientDetailPage() {
           </table>
         )
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {CATS.map(cat => {
+          <div>
+            <div className="card" style={{ marginBottom: 16, padding: '0 18px' }}>
+              <div style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '12px 0' }}>
+                {CATS.map(cat => <button key={cat} type="button" onClick={() => setServiceRecordCategory(cat)} style={{ flex: '1 0 auto', minWidth: 150, border: 0, borderBottom: serviceRecordCategory === cat ? `3px solid ${SR_CATEGORY_COLOR[cat]}` : '3px solid transparent', borderRadius: 8, padding: '12px 16px', background: serviceRecordCategory === cat ? `${SR_CATEGORY_COLOR[cat]}14` : 'transparent', color: serviceRecordCategory === cat ? SR_CATEGORY_COLOR[cat] : '#4A6558', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>
+                  {cat}<span style={{ marginLeft: 6, fontSize: 12, fontWeight: 500 }}>({grouped[cat].length})</span>
+                </button>)}
+              </div>
+            </div>
+            {(() => {
+              const cat = serviceRecordCategory
               const isDiseaseMgmt = cat === '专病管理'
               // 专病管理内部按标题二级分组（同一专病的记录只要标题写法一致就会归到一起，组内保持原有按日期倒序）
               let diseaseGroups = null
@@ -8786,8 +8830,7 @@ export default function PatientDetailPage() {
                   diseaseGroups[dn].push(r)
                 })
               }
-              return (
-              <div className="card" key={cat}>
+              return <div className="card" key={cat}>
                 <div className="card-header">
                   <div className="card-title" style={{ color: SR_CATEGORY_COLOR[cat] }}>{cat}</div>
                   <span style={{ fontSize: 13, color: '#aaa' }}>{grouped[cat].length} 条</span>
@@ -8807,8 +8850,7 @@ export default function PatientDetailPage() {
                   renderTable(grouped[cat])
                 )}
               </div>
-              )
-            })}
+            })()}
           </div>
         )
       })()}

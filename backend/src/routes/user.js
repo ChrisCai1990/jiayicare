@@ -269,6 +269,11 @@ router.put('/me', auth, async (req, res) => {
             bloodTypeABO, bloodTypeRH, lifestyle } = req.body;
 
     const updateData = {};
+    const archiveChanges = [];
+    const sameValue = (a, b) => JSON.stringify(a ?? '') === JSON.stringify(b ?? '');
+    const recordArchiveChange = (path, label, from, to) => {
+      if (!sameValue(from, to)) archiveChanges.push({ path, label, from, to });
+    };
     if (name !== undefined)           updateData.name = name;
     if (age !== undefined)            updateData.age = age;
     if (gender !== undefined)         updateData.gender = gender;
@@ -280,8 +285,8 @@ router.put('/me', auth, async (req, res) => {
     if (contactPhone    !== undefined) updateData.contactPhone    = contactPhone;
     if (deliveryAddress !== undefined) updateData.deliveryAddress = deliveryAddress;
     // 血型独立字段（用户端直接传入 ABO/RH）
-    if (bloodTypeABO !== undefined) updateData.bloodTypeABO = bloodTypeABO;
-    if (bloodTypeRH  !== undefined) updateData.bloodTypeRH  = bloodTypeRH;
+    if (bloodTypeABO !== undefined) { updateData.bloodTypeABO = bloodTypeABO; recordArchiveChange('bloodTypeABO', 'ABO血型', req.user.bloodTypeABO, bloodTypeABO); }
+    if (bloodTypeRH  !== undefined) { updateData.bloodTypeRH  = bloodTypeRH; recordArchiveChange('bloodTypeRH', 'RH血型', req.user.bloodTypeRH, bloodTypeRH); }
 
     // 用户新增一条生活方式记录时，只写入实际发生变化的字段，并保留前后值与录入时间。
     // 当前值仍同步到 lifestyle，历史记录用于展示客户变化过程。
@@ -310,6 +315,10 @@ router.put('/me', auth, async (req, res) => {
 
     if (healthProfile !== undefined) {
       const hp = healthProfile;
+      const hpLabels = { bloodType:'血型', allergies:'过敏史', medicalHistory:'疾病史', medications:'用药史', familyHistory:'家族史', familyHistoryNote:'家族史说明', surgeries:'手术史', drugAllergy:'药物过敏', foodAllergy:'食物过敏', pastHistory:'既往史', medicHistory:'用药史', surgeryHistory:'手术史', menstrualHistory:'月经史', maritalHistory:'婚育史', infectiousHistory:'传染病史' };
+      Object.keys(hpLabels).forEach(key => {
+        if (hp[key] !== undefined) recordArchiveChange(key === 'infectiousHistory' ? key : `healthProfile.${key}`, hpLabels[key], key === 'infectiousHistory' ? req.user.infectiousHistory : req.user.healthProfile?.[key], hp[key]);
+      });
       if (hp.bloodType          !== undefined) {
         updateData['healthProfile.bloodType'] = hp.bloodType;
         const { abo, rh } = parseBloodType(hp.bloodType);
@@ -354,14 +363,17 @@ router.put('/me', auth, async (req, res) => {
       }
     }
 
-    // 健康档案有更新时，健康顾问此前的"已查看确认"视为失效，需重新查看（见 reportAuditGate.js）
-    updateData.healthProfileUpdatedAt = new Date();
+    // 只有健康档案字段确实发生变化时才触发健康顾问待办。此前任何个人资料保存都会更新时间戳，
+    // 导致页面提示“档案有更新”但实际没有可查看内容。
+    const archiveChangedAt = archiveChanges.length || lifestyleHistoryEntry ? new Date() : null;
+    if (archiveChangedAt) updateData.healthProfileUpdatedAt = archiveChangedAt;
 
     // 直接用原生 MongoDB driver，完全绕过 Mongoose schema 类型转换
     const updateOps = { $set: updateData };
-    if (lifestyleHistoryEntry) {
-      updateOps.$push = { lifestyleHistory: { $each: [lifestyleHistoryEntry], $slice: -100 } };
-    }
+    const pushData = {};
+    if (lifestyleHistoryEntry) pushData.lifestyleHistory = { $each: [lifestyleHistoryEntry], $slice: -100 };
+    if (archiveChanges.length) pushData.archiveChangeLog = { $each: [{ source: 'customer', changedByName: req.user.name || '客户本人', changedAt: archiveChangedAt, items: archiveChanges }], $slice: -50 };
+    if (Object.keys(pushData).length) updateOps.$push = pushData;
     await User.collection.updateOne({ _id: req.user._id }, updateOps);
 
     // 异步写变更日志（不阻塞主响应）
