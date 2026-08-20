@@ -1751,6 +1751,8 @@ export default function PatientDetailPage() {
   const [aiYear, setAiYear] = useState(null)        // 当前查看的AI健康分析年度
   const [aiRecordIndex, setAiRecordIndex] = useState({ doctor: 0, nutrition: 0 })
   const [aiAnalysisView, setAiAnalysisView] = useState('doctor')
+  const [reviewWorkbenchView, setReviewWorkbenchView] = useState('screening')
+  const [reviewWorkbenchExpandedReports, setReviewWorkbenchExpandedReports] = useState(() => new Set())
   const [lastRegeneratedItem, setLastRegeneratedItem] = useState('')
   const [aiSourceGroup, setAiSourceGroup] = useState(null) // { title, ids }
   // 场景八：健康关注提示（内部沿用既有风险数据结构）
@@ -7069,58 +7071,90 @@ export default function PatientDetailPage() {
                   </React.Fragment>)}
                 </div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', background: '#F8FAF9' }}>
-                <section style={{ padding: 14, borderRight: '1px solid #E2E8F0', minHeight: 240 }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: '#334155', marginBottom: 9 }}>① 原始资料 · {workbenchYearReports.length}份</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7, maxHeight: 300, overflowY: 'auto' }}>
-                    {workbenchYearReports.length === 0 && <div style={{ fontSize: 12, color: '#94A3B8' }}>该年度暂无可核查报告</div>}
-                    {workbenchYearReports.map(report => {
-                      const viewed = !!report.familyDoctorViewedAt
-                      return <button key={report._id} type="button" onClick={() => {
-                        if (['familyDoctor', 'superadmin'].includes(staff?.role) && pendingDoctorAuditReports.some(item => String(item._id) === String(report._id))) {
-                          markArchiveReviewViewed(report._id)
-                        }
+              <div className="health-review-workbench-grid" style={{ background: '#F8FAF9' }}>
+                <section style={{ padding: 16, borderRight: '1px solid #E2E8F0', minWidth: 0 }}>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+                    <button type="button" className={`btn btn-sm ${reviewWorkbenchView === 'screening' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setReviewWorkbenchView('screening')}>专项筛查核查</button>
+                    <button type="button" className={`btn btn-sm ${reviewWorkbenchView === 'analysis' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setReviewWorkbenchView('analysis')}>AI趋势审核</button>
+                    <span style={{ alignSelf: 'center', marginLeft: 'auto', fontSize: 11, color: '#64748B' }}>左侧主核查 · 右侧原件依据</span>
+                  </div>
+
+                  {reviewWorkbenchView === 'screening' ? <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                      <strong style={{ color: '#155E48' }}>{curYear}年度专项筛查小结</strong>
+                      <span style={{ fontSize: 11, color: workbenchLatestSummary?.status === 'approved' ? '#15803D' : '#B45309' }}>
+                        {workbenchLatestSummary ? (workbenchLatestSummary.status === 'approved' ? '✓ 已人工审核' : '● AI草稿待审核') : '尚未生成'}
+                      </span>
+                    </div>
+                    {!workbenchLatestSummary ? <div style={{ padding: 16, background: '#fff', border: '1px dashed #CBD5E1', borderRadius: 9, fontSize: 12, color: '#94A3B8' }}>该年度尚未生成专项筛查小结，仍可在下方逐份核查已归类报告。</div> :
+                      <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
+                        {[['tumor_risk', '肿瘤筛查'], ['cardiovascular_risk', '心脑血管'], ['chronic_disease', '慢病及其他']].map(([key, label]) => {
+                          const summary = workbenchLatestSummary.sections?.[key]?.summary || ''
+                          return <details key={key} open style={{ padding: '9px 11px', background: '#fff', border: '1px solid #DCE8E2', borderRadius: 9 }}>
+                            <summary style={{ cursor: 'pointer', fontSize: 12, fontWeight: 800, color: '#155E48' }}>{label}小结</summary>
+                            <div style={{ marginTop: 7, fontSize: 12, color: '#475569', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{summary || '暂无相关资料'}</div>
+                          </details>
+                        })}
+                      </div>}
+                    <div style={{ fontSize: 12, fontWeight: 800, color: '#334155', margin: '12px 0 8px' }}>本年度已归类报告 · {workbenchYearReports.length}份</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 520, overflowY: 'auto', paddingRight: 3 }}>
+                      {workbenchYearReports.map(report => {
+                        const expanded = reviewWorkbenchExpandedReports.has(String(report._id))
+                        const rows = (report.reportItems || []).filter(item => item?.name || item?.value || item?.conclusion)
+                        const abnormalCount = rows.filter(item => item.abnormal || /高|低|异常|阳性|风险/.test(String(item.status || item.flag || item.conclusion || ''))).length
+                        return <div key={report._id} style={{ border: '1px solid #E2E8F0', background: '#fff', borderRadius: 9, overflow: 'hidden' }}>
+                          <button type="button" onClick={() => setReviewWorkbenchExpandedReports(prev => {
+                            const next = new Set(prev); const key = String(report._id); next.has(key) ? next.delete(key) : next.add(key); return next
+                          })} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left', padding: '9px 11px', border: 0, background: 'transparent', cursor: 'pointer' }}>
+                            <span style={{ flex: 1 }}><b style={{ fontSize: 12, color: '#1E293B' }}>{report.screeningL2 || report.title || '检查报告'}</b><small style={{ display: 'block', marginTop: 3, color: '#64748B' }}>{[report.screeningL1Label || report.screeningL1, report.screeningL2, String(report.checkDate || report.date || '').slice(0, 10)].filter(Boolean).join(' › ')}</small></span>
+                            <span style={{ fontSize: 11, color: abnormalCount ? '#B91C1C' : '#64748B' }}>{rows.length}项{abnormalCount ? ` · ${abnormalCount}项异常` : ''}</span>
+                            <span style={{ color: '#64748B' }}>{expanded ? '▲' : '▼'}</span>
+                          </button>
+                          {expanded && <div style={{ borderTop: '1px solid #F1F5F9', padding: '9px 11px' }}>
+                            {rows.length === 0 ? <div style={{ fontSize: 11, color: '#94A3B8' }}>暂无结构化项目，请核查原始报告。</div> :
+                              <div style={{ display: 'grid', gap: 5 }}>{rows.slice(0, 60).map((item, index) => <div key={`${item.name}-${index}`} style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 1.2fr) minmax(90px, .7fr) minmax(120px, 1fr)', gap: 8, padding: '5px 7px', borderRadius: 6, background: item.abnormal ? '#FEF2F2' : '#F8FAFC', fontSize: 11 }}>
+                                <b style={{ color: '#334155' }}>{item.name || '未命名项目'}</b>
+                                <span style={{ color: item.abnormal ? '#B91C1C' : '#475569' }}>{[item.value, item.unit].filter(Boolean).join(' ') || item.findings || '-'}</span>
+                                <span style={{ color: '#64748B' }}>{item.referenceRange || item.conclusion || item.status || '-'}</span>
+                              </div>)}</div>}
+                            <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 9 }} onClick={() => openReportDetail(report)}>查看原件和完整解析</button>
+                          </div>}
+                        </div>
+                      })}
+                    </div>
+                  </div> : <div>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: '#334155', marginBottom: 10 }}>AI趋势分析 · 逐板块人工审核</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 8 }}>
+                      {workbenchSections.length === 0 && <div style={{ fontSize: 12, color: '#94A3B8' }}>该年度尚未生成5维健康信息整理</div>}
+                      {workbenchSections.map(([key, label, icon]) => {
+                        const approved = doctorRecord.sectionReviews?.[key]?.status === 'approved'
+                        const sourceCount = sourceIdsFor(key).length
+                        return <button key={key} type="button" onClick={() => jumpToAISection(key)} style={{ display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left', border: '1px solid #E2E8F0', background: '#fff', borderRadius: 9, padding: '11px 12px', cursor: 'pointer' }}>
+                          <span style={{ fontSize: 18 }}>{icon}</span><span style={{ flex: 1, fontSize: 12, fontWeight: 800, color: '#1E293B' }}>{label}<small style={{ display: 'block', marginTop: 3, fontWeight: 400, color: '#64748B' }}>关联原件 {sourceCount}份</small></span>
+                          <span style={{ fontSize: 11, color: approved ? '#15803D' : '#B45309' }}>{approved ? '✓ 已审核' : '待审核 ›'}</span>
+                        </button>
+                      })}
+                    </div>
+                  </div>}
+                </section>
+
+                <aside style={{ padding: 14, minWidth: 0, background: '#F1F5F3' }}>
+                  <div style={{ position: 'sticky', top: 10 }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: '#334155', marginBottom: 9 }}>原始资料依据 · {workbenchYearReports.length}份</div>
+                    <div style={{ fontSize: 11, color: '#64748B', marginBottom: 9 }}>核查左侧结论时，可随时打开同年度原件，不再跳离当前功能页。</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7, maxHeight: 620, overflowY: 'auto' }}>
+                      {workbenchYearReports.length === 0 && <div style={{ fontSize: 12, color: '#94A3B8' }}>该年度暂无可核查报告</div>}
+                      {workbenchYearReports.map(report => <button key={report._id} type="button" onClick={() => {
+                        if (['familyDoctor', 'superadmin'].includes(staff?.role) && pendingDoctorAuditReports.some(item => String(item._id) === String(report._id))) markArchiveReviewViewed(report._id)
                         openReportDetail(report)
-                      }}
-                        style={{ textAlign: 'left', border: '1px solid #E2E8F0', background: '#fff', borderRadius: 8, padding: '8px 10px', cursor: 'pointer' }}>
+                      }} style={{ textAlign: 'left', border: '1px solid #D9E2DE', background: '#fff', borderRadius: 8, padding: '8px 10px', cursor: 'pointer' }}>
                         <div style={{ fontSize: 12, fontWeight: 700, color: '#1E293B' }}>{report.screeningL2 || report.title || '检查报告'}</div>
                         <div style={{ marginTop: 3, fontSize: 11, color: '#64748B' }}>{String(report.checkDate || report.date || '').slice(0, 10)} · {report.hospital || report.institution || '机构待补充'}</div>
-                        <div style={{ marginTop: 4, fontSize: 11, color: viewed ? '#15803D' : '#B45309' }}>{viewed ? '✓ 健康顾问已查看' : '点击查看原件与解析数据'}</div>
-                      </button>
-                    })}
-                  </div>
-                </section>
-                <section style={{ padding: 14, borderRight: '1px solid #E2E8F0', minHeight: 240 }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: '#334155', marginBottom: 9 }}>② 专项筛查 · 年度小结</div>
-                  {!workbenchLatestSummary ? <div style={{ fontSize: 12, color: '#94A3B8' }}>该年度尚未生成专项筛查小结</div> : <>
-                    <div style={{ fontSize: 11, color: workbenchLatestSummary.status === 'approved' ? '#15803D' : '#B45309', marginBottom: 8 }}>
-                      {workbenchLatestSummary.status === 'approved' ? `✓ 已审核${workbenchLatestSummary.approvedByName ? ` · ${workbenchLatestSummary.approvedByName}` : ''}` : '● AI草稿，待健康顾问审核'}
+                        <div style={{ marginTop: 4, fontSize: 11, color: report.familyDoctorViewedAt ? '#15803D' : '#1D4ED8' }}>{report.familyDoctorViewedAt ? '✓ 已查看' : '查看原件与解析数据 ›'}</div>
+                      </button>)}
                     </div>
-                    {[['tumor_risk', '肿瘤筛查'], ['cardiovascular_risk', '心脑血管'], ['chronic_disease', '慢病及其他']].map(([key, label]) => {
-                      const summary = workbenchLatestSummary.sections?.[key]?.summary || ''
-                      return <div key={key} style={{ marginBottom: 9, padding: '8px 9px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8 }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: '#155E48' }}>{label}</div>
-                        <div style={{ marginTop: 3, fontSize: 11, color: '#64748B', lineHeight: 1.55, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{summary || '暂无相关资料'}</div>
-                      </div>
-                    })}
-                  </>}
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setScreeningSummaryYear(Number(curYear)); setTab('records'); setTimeout(() => document.getElementById('screening-results')?.scrollIntoView({ behavior: 'smooth' }), 50) }}>进入专项筛查完整核查</button>
-                </section>
-                <section style={{ padding: 14, minHeight: 240 }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: '#334155', marginBottom: 9 }}>③ AI趋势分析 · 人工审核</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                    {workbenchSections.length === 0 && <div style={{ fontSize: 12, color: '#94A3B8' }}>该年度尚未生成5维健康信息整理</div>}
-                    {workbenchSections.map(([key, label, icon]) => {
-                      const approved = doctorRecord.sectionReviews?.[key]?.status === 'approved'
-                      const sourceCount = sourceIdsFor(key).length
-                      return <button key={key} type="button" onClick={() => jumpToAISection(key)}
-                        style={{ display: 'flex', alignItems: 'center', gap: 7, textAlign: 'left', border: '1px solid #E2E8F0', background: '#fff', borderRadius: 8, padding: '8px 10px', cursor: 'pointer' }}>
-                        <span>{icon}</span><span style={{ flex: 1, fontSize: 12, fontWeight: 700, color: '#1E293B' }}>{label}<small style={{ display: 'block', marginTop: 2, fontWeight: 400, color: '#64748B' }}>关联原件 {sourceCount}份</small></span>
-                        <span style={{ fontSize: 11, color: approved ? '#15803D' : '#B45309' }}>{approved ? '✓ 已审核' : '待审核 ›'}</span>
-                      </button>
-                    })}
                   </div>
-                </section>
+                </aside>
               </div>
               <div style={{ padding: '8px 14px', borderTop: '1px solid #E2E8F0', background: '#FFFBEB', fontSize: 11, color: '#92400E' }}>所有AI解析、归类、小结和趋势结论均须人工审核后才可作为正式健康管理信息。</div>
             </div>

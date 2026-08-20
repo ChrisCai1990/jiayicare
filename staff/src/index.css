@@ -194,6 +194,15 @@ a { text-decoration: none; color: inherit; }
 .report-missing-field { color: #A9B5AF; font-size: 11px; }
 .patient-secondary-tabs { padding: 4px 8px; background: #F7FAF8; border-radius: 8px; }
 .patient-secondary-tabs .tab-btn { font-size: 12px; padding: 7px 10px; }
+.health-review-workbench-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(280px, .85fr);
+}
+@media (max-width: 1080px) {
+  .health-review-workbench-grid { grid-template-columns: 1fr; }
+  .health-review-workbench-grid > aside { border-top: 1px solid #E2E8F0; }
+  .health-review-workbench-grid > aside > div { position: static !important; }
+}
 @media (max-width: 720px) {
   .report-list-toolbar { align-items: flex-start; flex-direction: column; }
   .report-list-controls { align-self: flex-end; }
