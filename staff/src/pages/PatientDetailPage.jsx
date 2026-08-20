@@ -7081,12 +7081,12 @@ export default function PatientDetailPage() {
                   </React.Fragment>)}
                 </div>
               </div>
-              <div className="health-review-workbench-grid" style={{ background: '#F8FAF9' }}>
-                <section style={{ padding: 16, borderRight: '1px solid #E2E8F0', minWidth: 0 }}>
+              <div style={{ background: '#F8FAF9' }}>
+                <section style={{ padding: 18, minWidth: 0 }}>
                   <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
                     <button type="button" className={`btn btn-sm ${reviewWorkbenchView === 'screening' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setReviewWorkbenchView('screening')}>专项筛查核查</button>
                     <button type="button" className={`btn btn-sm ${reviewWorkbenchView === 'analysis' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setReviewWorkbenchView('analysis')}>AI趋势审核</button>
-                    <span style={{ alignSelf: 'center', marginLeft: 'auto', fontSize: 11, color: '#64748B' }}>左侧主核查 · 右侧原件依据</span>
+                    <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setAiSourceGroup({ title: `${curYear}年度原始资料`, ids: workbenchYearReports.map(report => String(report._id)), reportLabel })}>🔗 查看本年度原件（{workbenchYearReports.length}份）</button>
                   </div>
 
                   {reviewWorkbenchView === 'screening' ? <div>
@@ -7159,24 +7159,6 @@ export default function PatientDetailPage() {
                     </div>}
                   </div>}
                 </section>
-
-                <aside style={{ padding: 14, minWidth: 0, background: '#F1F5F3' }}>
-                  <div style={{ position: 'sticky', top: 10 }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: '#334155', marginBottom: 9 }}>原始资料依据 · {workbenchYearReports.length}份</div>
-                    <div style={{ fontSize: 11, color: '#64748B', marginBottom: 9 }}>核查左侧结论时，可随时打开同年度原件，不再跳离当前功能页。</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7, maxHeight: 620, overflowY: 'auto' }}>
-                      {workbenchYearReports.length === 0 && <div style={{ fontSize: 12, color: '#94A3B8' }}>该年度暂无可核查报告</div>}
-                      {workbenchYearReports.map(report => <button key={report._id} type="button" onClick={() => {
-                        if (['familyDoctor', 'superadmin'].includes(staff?.role) && pendingDoctorAuditReports.some(item => String(item._id) === String(report._id))) markArchiveReviewViewed(report._id)
-                        openReportDetail(report)
-                      }} style={{ textAlign: 'left', border: '1px solid #D9E2DE', background: '#fff', borderRadius: 8, padding: '8px 10px', cursor: 'pointer' }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: '#1E293B' }}>{report.screeningL2 || report.title || '检查报告'}</div>
-                        <div style={{ marginTop: 3, fontSize: 11, color: '#64748B' }}>{String(report.checkDate || report.date || '').slice(0, 10)} · {report.hospital || report.institution || '机构待补充'}</div>
-                        <div style={{ marginTop: 4, fontSize: 11, color: report.familyDoctorViewedAt ? '#15803D' : '#1D4ED8' }}>{report.familyDoctorViewedAt ? '✓ 已查看' : '查看原件与解析数据 ›'}</div>
-                      </button>)}
-                    </div>
-                  </div>
-                </aside>
               </div>
               <div style={{ padding: '8px 14px', borderTop: '1px solid #E2E8F0', background: '#FFFBEB', fontSize: 11, color: '#92400E' }}>所有AI解析、归类、小结和趋势结论均须人工审核后才可作为正式健康管理信息。</div>
             </div>
