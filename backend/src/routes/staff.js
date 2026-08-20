@@ -40,6 +40,7 @@ const Activity       = require('../models/Activity');
 const SessionPackage = require('../models/SessionPackage');
 const AnnualPlan = require('../models/AnnualPlan');
 const PlanDeletionLog = require('../models/PlanDeletionLog');
+const MedicalReportDeletionLog = require('../models/MedicalReportDeletionLog');
 const Product = require('../models/Product');
 const ProductShare = require('../models/ProductShare');
 const ServiceProposal = require('../models/ServiceProposal');
@@ -2228,10 +2229,18 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
 // DELETE /api/staff/medical-reports/:id — 删除报告（审核前可删）
 router.delete('/medical-reports/:id', staffAuth, checkPermission('reports', 'delete'), async (req, res) => {
   try {
+    const reason = String(req.body?.reason || '').trim();
+    if (!reason) return res.status(400).json({ success: false, message: '请填写删除原因' });
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     if (report.audit_status === 'audited') return res.status(403).json({ success: false, message: '已审核通过的报告不可删除' });
     const keysToDelete = report.ossKeys?.length ? report.ossKeys : (report.ossKey ? [report.ossKey] : []);
+    await MedicalReportDeletionLog.create({
+      reportId: report._id, patientId: report.user, title: report.title || '',
+      uploadedBy: report.uploadedBy || null, deletedBy: req.staff._id,
+      deletedByName: req.staff.name || req.staff.username || '', reason,
+      snapshot: report.toObject(),
+    });
     await report.deleteOne();
     await Promise.all(keysToDelete.map(key => deleteFile(key)));
     // 级联清理：UserScreeningItem 里 reportId 指向这份报告的记录也要一并删除，
@@ -2676,6 +2685,9 @@ router.get('/service-records', staffAuth, checkPermission('service_records', 'vi
 router.post('/service-records', staffAuth, checkPermission('service_records', 'create'), async (req, res) => {
   const { patientId, type, date, title, content, result, nextDate, diseaseName, medicalEscort, tcmRecord, specialistRecord, attachments } = req.body;
   if (!patientId || !type) return res.status(400).json({ success: false, message: '会员和类型不能为空' });
+  if (['routine', 'doctor_followup'].includes(type)) {
+    return res.status(400).json({ success: false, message: '日常随访和健康顾问跟进已停用，请使用阶段性健康评估' });
+  }
   const record = await ServiceRecord.create({
     staffId: req.staff._id, patientId, type,
     date: date ? new Date(date) : new Date(),
@@ -2760,6 +2772,9 @@ router.delete('/service-records/:id', staffAuth, checkPermission('service_record
 //   此后自动从上一次草稿的截止时间接续取到现在，无论中间隔了多久都不会漏掉聊天内容
 router.post('/patients/:id/chat-followup/ai-draft', staffAuth, checkPermission('service_records', 'create'), async (req, res) => {
   try {
+    if (['manager', 'doctor'].includes(req.body?.role || 'manager')) {
+      return res.status(410).json({ success: false, message: '日常随访和健康顾问跟进草稿已停用' });
+    }
     const { generateChatFollowupDraft } = require('../utils/chatFollowupDraft');
     const result = await generateChatFollowupDraft({
       patientId: req.params.id, role: req.body?.role, range: req.body?.range, staffId: req.staff._id,
@@ -6166,13 +6181,31 @@ ${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.pla
 
 注意：所有展示为项目名称的字段必须简单明确，只写“要做什么”，不得把原因、剂量、操作细节或注意事项塞进名称；items、name和templateNodes.title不超过20个汉字，详细内容分别写入reason/content/notes。templateNodes必须与Admin模板“具体方案”逐项对应，index从1开始，不得漏项、合并或自行增加；medical_treatment仅填高优先级就医需求；specialist_collab有会诊需求才填；monitoring根据慢病标签确定项目；乙肝三系五项全阴时必须生成乙肝疫苗记录，流感和肺炎疫苗符合条件时生成对应记录；无相关内容用空数组。`;
 
-    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 2000 });
+    const text = await chat([{ role: 'user', content: prompt }], {
+      maxTokens: 6000,
+      jsonMode: true,
+      timeoutMs: 90000,
+    });
 
     let raw = {};
     try {
       const jsonMatch = text.trim().match(/\{[\s\S]*\}/);
       if (jsonMatch) raw = JSON.parse(jsonMatch[0]);
-    } catch {}
+    } catch (parseError) {
+      console.error('AI annual plan JSON parse failed:', parseError.message, text.slice(0, 500));
+      return res.status(502).json({ success: false, message: 'AI返回的方案内容不完整，请重试' });
+    }
+
+    const generatedCount = [
+      ...(Array.isArray(raw.templateNodes) ? raw.templateNodes : []),
+      ...['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'monitoring']
+        .flatMap(key => Array.isArray(raw[key]) ? raw[key] : []),
+      ...(raw.lifestyle ? [raw.lifestyle] : []),
+      ...(raw.annual_checkup ? [raw.annual_checkup] : []),
+    ].length;
+    if (generatedCount === 0) {
+      return res.status(502).json({ success: false, message: 'AI未生成有效方案内容，请重试或检查AI服务配置' });
+    }
 
     // 转为 moduleData 结构（多条板块用 { records: [...] }）
     // 只输出当前所选方案类型包含的板块，其余板块不生成
@@ -7440,7 +7473,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           summary: [r.value, r.note].filter(Boolean).join(' · ').slice(0, 100),
           createdAt: r.recordedAt || r.createdAt,
           overdue: (now - new Date(r.recordedAt || r.createdAt)) > DAY,
-          link: `/patients/${r.user?._id}?tab=records&healthRecordId=${r._id}`,
+          link: `/patients/${r.user?._id}?tab=portrait&healthRecordId=${r._id}`,
         });
       });
     }
@@ -7702,9 +7735,13 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
 
     // ── 健管专员/健康顾问/营养师：AI从聊天记录提炼的随访草稿待审核（ServiceRecord.aiStatus=pending）──
     if (canServiceDraftReview) {
-      const roleTypeMap = { familyDoctor: 'doctor_followup', nutritionist: 'nutrition', healthManager: 'routine', medicalAssistant: 'routine' };
+      const roleTypeMap = { nutritionist: 'nutrition' };
       const draftFilter = { aiStatus: 'pending' };
-      if (!isSuper) draftFilter.type = roleTypeMap[role];
+      if (!isSuper) {
+        draftFilter.type = roleTypeMap[role] || '__disabled__';
+      } else {
+        draftFilter.type = 'nutrition';
+      }
       if (myPatientIds) draftFilter.patientId = { $in: myPatientIds };
       const draftLabel = { routine: '日常随访', doctor_followup: '健康顾问跟进', nutrition: '营养干预' };
       const pendingDrafts = await ServiceRecord.find(draftFilter)

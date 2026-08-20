@@ -112,7 +112,7 @@ function normalizeShaoyifuItems(inputItems) {
     return pageMode(page) === 'extract' || pageMode(page) === 'ecg_enrichment';
   });
 
-  // P5必须是一条完整全科医学检查，避免内部项目被当作化验/影像散落。
+  // 以下为已停用的旧固定页逻辑；当前入口会在上方直接返回逐项结果。
   const internal = items.filter(item => Number(item._page) === 5);
   if (internal.length) {
     const findings = internal.map(item => {

@@ -518,17 +518,18 @@ const PLAN_TYPE_LABEL = {
 const PLAN_STATUS_COLOR = { draft:'#aaa', active:'#22A06B', completed:'#0077B6' }
 const PLAN_STATUS_LABEL = { draft:'草稿', active:'进行中', completed:'已完成' }
 const SR_TYPE_LABEL = {
-  nutrition:'营养干预', disease_mgmt:'专病管理', medical_visit:'医院就医', routine:'日常随访', doctor_followup:'健康顾问跟进',
+  nutrition:'营养干预', disease_mgmt:'专病管理', medical_visit:'医院就医', stage_assessment:'阶段性健康评估', routine:'历史随访', doctor_followup:'历史随访',
   medical_escort:'就医协助', psychology:'心理咨询', rehab:'运动复健', tcm:'中医评估', specialist:'专科会诊',
 }
 const SR_CATEGORY = {
   nutrition:     '营养干预',
   disease_mgmt:  '专病管理', specialist: '专病管理', psychology: '专病管理', rehab: '专病管理', tcm: '专病管理',
   medical_visit: '医院就医', medical_escort: '医院就医',
-  routine:       '日常随访',
-  doctor_followup: '健康顾问跟进',
+  stage_assessment: '阶段性健康评估',
+  routine:       '历史日常随访',
+  doctor_followup: '历史健康顾问跟进',
 }
-const SR_CATEGORY_COLOR = { '营养干预':'#22A06B', '专病管理':'#0077B6', '医院就医':'#D97706', '日常随访':'#8A4AC7', '健康顾问跟进':'#0088CC' }
+const SR_CATEGORY_COLOR = { '营养干预':'#22A06B', '专病管理':'#0077B6', '医院就医':'#D97706', '阶段性健康评估':'#8A4AC7', '历史随访':'#8AA89C' }
 
 // ── 开单弹窗 ─────────────────────────────────────────────
 function RequisitionModal({ patientId, onClose, onSaved, prefillTitle = '', prefillNotes = '', prefillSuggestions = [] }) {
@@ -1615,6 +1616,7 @@ export default function PatientDetailPage() {
   const [newSymptomSaving, setNewSymptomSaving] = useState(false)
   const [symptomForm, setSymptomForm] = useState({ value: '', note: '', decisionNote: '' })
   const [symptomActionSaving, setSymptomActionSaving] = useState(false)
+  const [expandedSymptoms, setExpandedSymptoms] = useState(() => new Set())
   // 管理信息下拉选项：服务包(admin商城服务) + 会员来源(admin配置)，替代手工录入（2026-07-10 金娟）
   const [serviceOptions, setServiceOptions] = useState([])
   const [memberTypeOptions, setMemberTypeOptions] = useState([])
@@ -1963,6 +1965,18 @@ export default function PatientDetailPage() {
       })
       .catch(() => {})
   }
+
+  useEffect(() => {
+    const reportId = new URLSearchParams(location.search).get('reportId')
+    if (tab === 'reports' && reportId) openReportDetail({ _id: reportId, title: '待处理体检报告' })
+  }, [tab, location.search])
+
+  useEffect(() => {
+    const healthRecordId = new URLSearchParams(location.search).get('healthRecordId')
+    if (tab !== 'portrait' || !healthRecordId) return
+    setExpandedSymptoms(previous => new Set([...previous, String(healthRecordId)]))
+    setTimeout(() => document.getElementById(`symptom-record-${healthRecordId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100)
+  }, [tab, location.search, healthRecords.length])
 
   const openSymptomEditor = record => {
     setEditingSymptom(record)
@@ -2547,11 +2561,12 @@ export default function PatientDetailPage() {
     }
     // 每次打开审核弹窗都重新拉取归类目录，确保管理后端新增/修改的分类实时生效
     staffAPI.getScreeningCatalog().then(res => setScreeningCatalog(res.data || [])).catch(() => {})
-    // 旧数据迁移：影像/检查类若把所见写在 value 里且 findings 为空，迁移到 findings
+    // 旧数据迁移：只有明确标记为 imaging 的旧记录才把 value 搬到 findings。
+    // 不能用“内容长度 > 40”猜类型，否则用户只是打开并保存，字段内容也会被改写。
     const items = JSON.parse(JSON.stringify(r.reportItems || []))
       .filter(it => it.name && String(it.name).trim())
       .map(it => {
-        const isImg = it.itemType === 'imaging' || (it.value || '').length > 40
+        const isImg = it.itemType === 'imaging'
         if (isImg && !it.findings && it.value) return { ...it, findings: it.value, value: '' }
         return it
       })
@@ -3047,6 +3062,17 @@ export default function PatientDetailPage() {
           <button className="btn btn-secondary btn-sm" onClick={() => setShowMessageModal(true)}>💬 发消息</button>
         </div>
       </div>
+
+      {location.state?.sourceTodo && (
+        <div style={{ marginBottom: 16, padding: '12px 16px', borderRadius: 10, background: '#FFF8E8', border: '1px solid #F4D58D', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+          <span style={{ fontSize: 18 }}>📌</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#8A5A00' }}>当前处理：{location.state.sourceTodo.label || '待处理任务'}</div>
+            <div style={{ fontSize: 13, color: '#4A6558', marginTop: 3 }}>{location.state.sourceTodo.summary || '请核对本页对应信息并完成处理'}</div>
+          </div>
+          <button className="btn btn-secondary btn-sm" onClick={() => nav(location.pathname + location.search, { replace: true, state: {} })}>关闭提示</button>
+        </div>
+      )}
 
       {/* AI 从专项筛查异常项生成，健康顾问分三类审核 */}
       <div style={{ marginBottom: 12, padding: showTagEditor || hasConfirmedRisk ? '10px 14px' : '8px 14px', background: '#F7FAF8', borderRadius: 10, border: '1px solid #EDF2EE' }}>
@@ -7053,7 +7079,6 @@ export default function PatientDetailPage() {
                     </div>
                   )}
                 </AISectionCard>
-                <AISummaryDiscussionPanel patientId={id} year={curYear} recordIndex={doctorRecord._recordIndex} discussions={doctorRecord.discussions || []} staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} title="肿瘤筛查 · AI讨论" sectionKey="tumor_risk" />
 
                 {/* 板块二：心脑血管病风险分析 */}
                 <AISectionCard title="心脑血管相关信息整理" icon="❤️" color="#EF4444">
@@ -7084,7 +7109,6 @@ export default function PatientDetailPage() {
                     </div>
                   )}
                 </AISectionCard>
-                <AISummaryDiscussionPanel patientId={id} year={curYear} recordIndex={doctorRecord._recordIndex} discussions={doctorRecord.discussions || []} staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} title="心脑血管 · AI讨论" sectionKey="cardiovascular_risk" />
 
                 {/* 板块三：慢性病及其他健康指标 */}
                 <AISectionCard title="慢病及其他健康信息整理" icon="📊" color="#0077B6">
@@ -7139,7 +7163,6 @@ export default function PatientDetailPage() {
                     )
                   )}
                 </AISectionCard>
-                <AISummaryDiscussionPanel patientId={id} year={curYear} recordIndex={doctorRecord._recordIndex} discussions={doctorRecord.discussions || []} staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} title="慢病及其他指标 · AI讨论" sectionKey="chronic_disease" />
 
                 {/* 板块四：体检全面性评估 */}
                 <AISectionCard title="体检资料覆盖情况" icon="📋" color="#1E6B50">
@@ -8373,17 +8396,29 @@ export default function PatientDetailPage() {
                     const source = record.recordedBy?.source === 'staff' ? (record.recordedBy.staffName || '医护人员录入') : record.recordedBy?.source === 'system' ? '系统记录' : '客户打卡'
                     const year = new Date(record.recordedAt).getFullYear()
                     const previousYear = index > 0 ? new Date(healthRecords[index - 1].recordedAt).getFullYear() : null
+                    const isExpanded = expandedSymptoms.has(String(record._id))
+                    const toggleExpanded = () => setExpandedSymptoms(previous => {
+                      const next = new Set(previous)
+                      const key = String(record._id)
+                      if (next.has(key)) next.delete(key); else next.add(key)
+                      return next
+                    })
                     return <React.Fragment key={record._id}>
                       {year !== previousYear && <div style={{ fontSize: 13, fontWeight: 800, color: '#1E6B50', padding: '6px 2px 2px' }}>{year} 年</div>}
-                      <div style={{ padding: '13px 15px', borderRadius: 11, background: pending ? '#FFF7F6' : '#F7FAF8', borderLeft: `4px solid ${pending ? '#DC3545' : '#1E6B50'}` }}>
+                      <div id={`symptom-record-${record._id}`} style={{ padding: '13px 15px', borderRadius: 11, background: pending ? '#FFF7F6' : '#F7FAF8', borderLeft: `4px solid ${pending ? '#DC3545' : '#1E6B50'}` }}>
                         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-                          <div style={{ minWidth: 0, flex: 1 }}>
-                            <div style={{ color: '#1A2B24', fontSize: 14, lineHeight: 1.6, fontWeight: 700 }}>{record.value || record.note || '未填写具体内容'}</div>
-                            {record.note && record.note !== record.value && <div style={{ fontSize: 12, color: '#4A6558', marginTop: 4 }}>{record.note}</div>}
-                            <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 6 }}>{new Date(record.recordedAt).toLocaleString('zh-CN')} · {source}{workflow.decidedByName ? ` · 处理人：${workflow.decidedByName}` : ''}</div>
-                            <div style={{ marginTop: 9, padding: '9px 11px', background: '#fff', border: '1px solid #E5ECE8', borderRadius: 8, fontSize: 12, color: '#4A6558' }}>
-                              <b style={{ color: '#1A2B24' }}>对应解决方案：</b>{workflow.decisionNote || (pending ? '等待健康管理人员核实并制定方案' : '暂无补充处置说明')}
+                          <div style={{ minWidth: 0, flex: 1, cursor: 'pointer' }} onClick={toggleExpanded}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ color: '#1A2B24', fontSize: 14, lineHeight: 1.6, fontWeight: 700 }}>{record.value || record.note || '未填写具体内容'}</span>
+                              <span style={{ color: '#8AA89C', fontSize: 12 }}>{isExpanded ? '收起' : '展开详情'} {isExpanded ? '⌃' : '⌄'}</span>
                             </div>
+                            {isExpanded && <>
+                              {record.note && record.note !== record.value && <div style={{ fontSize: 12, color: '#4A6558', marginTop: 4 }}>{record.note}</div>}
+                              <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 6 }}>{new Date(record.recordedAt).toLocaleString('zh-CN')} · {source}{workflow.decidedByName ? ` · 处理人：${workflow.decidedByName}` : ''}</div>
+                              <div style={{ marginTop: 9, padding: '9px 11px', background: '#fff', border: '1px solid #E5ECE8', borderRadius: 8, fontSize: 12, color: '#4A6558' }}>
+                                <b style={{ color: '#1A2B24' }}>对应解决方案：</b>{workflow.decisionNote || (pending ? '等待健康管理人员核实并制定方案' : '暂无补充处置说明')}
+                              </div>
+                            </>}
                           </div>
                           <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: 360 }}>
                             <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20, color: pending ? '#B42318' : '#1E6B50', background: pending ? '#FEE4E2' : '#E8F5EE' }}>{workflowLabel}</span>
@@ -8659,8 +8694,11 @@ export default function PatientDetailPage() {
                                 }}>编辑报告</button>
                                 <button className="btn btn-sm" style={{ background: '#fff0f0', color: '#c00', border: '1px solid #fcc' }}
                                   onClick={async () => {
-                                    if (!window.confirm('确认删除这条报告记录？')) return
-                                    try { await staffAPI.deleteReport(r._id); setOpenReportActionId(null); loadReports() } catch (err) { toast(err.message) }
+                                    const reason = window.prompt('删除体检报告前请填写删除原因：', '')
+                                    if (reason === null) return
+                                    if (!reason.trim()) { toast('必须填写删除原因'); return }
+                                    if (!window.confirm(`确认删除这条报告记录？\n\n删除原因：${reason.trim()}\n\n删除后不可恢复。`)) return
+                                    try { await staffAPI.deleteReport(r._id, reason.trim()); toast('报告已删除并记录删除原因'); setOpenReportActionId(null); loadReports() } catch (err) { toast(err.message) }
                                   }}>删除报告</button>
                               </td>
                             </tr>
@@ -8682,11 +8720,11 @@ export default function PatientDetailPage() {
 
       {/* ── Service Records Tab ── */}
       {tab === 'serviceRecords' && (() => {
-        const CATS = ['营养干预', '专病管理', '医院就医', '日常随访', '健康顾问跟进']
+        const CATS = ['营养干预', '专病管理', '医院就医', '阶段性健康评估', '历史随访']
         const grouped = {}
         CATS.forEach(c => { grouped[c] = [] })
         serviceRecords.forEach(r => {
-          const cat = SR_CATEGORY[r.type] || '日常随访'
+          const cat = SR_CATEGORY[r.type] || '历史随访'
           grouped[cat].push(r)
         })
         const renderTable = (records) => (
@@ -8940,7 +8978,11 @@ export default function PatientDetailPage() {
         const ORDER_STATUS_COLOR = { pending:'#D97706', scheduled:'#0077B6', completed:'#22A06B', cancelled:'#DC3545' }
         const thisYear = new Date().getFullYear()
         const yearOrders = patientOrders.filter(o => new Date(o.createdAt).getFullYear() === thisYear)
-        const yearTotal  = yearOrders.reduce((s, o) => s + (o.servicePrice || 0), 0)
+        const billableYearOrders = yearOrders.filter(o => o.status !== 'cancelled' && o.paymentStatus !== 'refunded' && o.tradeStatus !== 'refunded' && o.tradeStatus !== 'closed')
+        const yearTotal = billableYearOrders.reduce((sum, order) => {
+          const paid = Number(order.paidAmount || 0)
+          return sum + (paid > 0 ? paid : Number(order.servicePrice || 0))
+        }, 0)
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* 账户概览 */}

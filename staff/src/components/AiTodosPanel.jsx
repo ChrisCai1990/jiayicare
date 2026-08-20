@@ -148,7 +148,7 @@ export default function AiTodosPanel() {
           return (
             <div
               key={todo.id}
-              onClick={() => nav(todo.link)}
+              onClick={() => nav(todo.link, { state: { sourceTodo: todo } })}
               style={{
                 display: 'flex', alignItems: 'flex-start', gap: 12,
                 borderBottom: i < pageTodos.length - 1 ? '1px solid #f0ede8' : 'none',
@@ -189,7 +189,7 @@ export default function AiTodosPanel() {
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
                 <span style={{ fontSize: 11, color: '#8AA89C' }}>{formatTime(todo.createdAt)}</span>
                 {todo.type === 'symptom_verify' ? (
-                  <button onClick={e => { e.stopPropagation(); nav(todo.link) }}
+                  <button onClick={e => { e.stopPropagation(); nav(todo.link, { state: { sourceTodo: todo } }) }}
                     style={{ fontSize: 11, color: '#D97706', background: 'none', border: '1px solid #D97706', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}>待处理</button>
                 ) : todo.type === 'symptom_review' ? (
                   <div style={{ display: 'flex', gap: 4 }}>

@@ -29,6 +29,9 @@ const reportUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024, files: 1 },
   fileFilter: (_req, file, cb) => {
+    // WeChat uploadFile commonly sends selected images as application/octet-stream.
+    // Validate the actual bytes after receiving the file instead of rejecting a
+    // legitimate phone image based only on this unreliable multipart header.
     if (!/^image\/(jpeg|png|webp|heic|heif)$/i.test(file.mimetype || '') && file.mimetype !== 'application/octet-stream') {
       return cb(new Error('仅支持 JPG、PNG、WEBP 或 HEIC 图片'));
     }
@@ -73,7 +76,6 @@ function verifyUploadTokens(tokens, userId) {
     return { fileUrl: claim.url, ossKey: claim.key, mimeType: claim.mimeType || '' };
   });
 }
-
 router.post('/upload', auth, (req, res, next) => {
   reportUpload.single('file')(req, res, async (err) => {
     if (err) {
@@ -87,7 +89,7 @@ router.post('/upload', auth, (req, res, next) => {
       if (!process.env.OSS_ACCESS_KEY_ID) return res.status(503).json({ success: false, message: '文件存储服务暂不可用，请稍后重试' });
       const dataUrl = `data:${detectedMime};base64,${req.file.buffer.toString('base64')}`;
       const result = await uploadBase64(dataUrl, detectedMime);
-      console.info('[report-upload]', { userId: String(req.user._id), size: req.file.size, mimeType: req.file.mimetype, key: result.key });
+      console.info('[report-upload]', { userId: String(req.user._id), size: req.file.size, mimeType: detectedMime, key: result.key });
       res.status(201).json({ success: true, data: { fileUrl: result.url, ossKey: result.key, mimeType: result.mimeType || detectedMime, fileSize: req.file.size } });
     } catch (uploadErr) {
       console.error('[report-upload] failed', { userId: String(req.user._id), message: uploadErr.message });

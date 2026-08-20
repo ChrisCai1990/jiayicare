@@ -40,15 +40,15 @@ export default function SymptomTodosPanel() {
         {todos.length === 0 ? (
           <div style={{ color: '#8AA89C', fontSize: 13, textAlign: 'center', padding: '16px 0' }}>暂无待处理不适主诉</div>
         ) : todos.map((todo, index) => (
-          <div key={todo.id} onClick={() => nav(todo.link)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', cursor: 'pointer', borderBottom: index < todos.length - 1 ? '1px solid #F0EDE8' : 'none' }}>
+          <div key={todo.id} onClick={() => nav(todo.link, { state: { sourceTodo: todo } })} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', cursor: 'pointer', borderBottom: index < todos.length - 1 ? '1px solid #F0EDE8' : 'none' }}>
             <div style={{ width: 36, height: 36, borderRadius: 10, background: '#DC354515', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>🩺</div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: '#1A2B24' }}>{todo.patientName}</div>
               <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>{todo.summary || '客户不适主诉待处理'}</div>
             </div>
             {todo.type === 'symptom_review' && <button className="btn btn-primary btn-sm" onClick={e => resolve(e, todo)}>处理</button>}
-            {todo.type === 'symptom_verify' && <button className="btn btn-primary btn-sm" onClick={e => { e.stopPropagation(); nav(todo.link) }}>立即核实</button>}
-            <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); nav(todo.link) }}>查看档案</button>
+            {todo.type === 'symptom_verify' && <button className="btn btn-primary btn-sm" onClick={e => { e.stopPropagation(); nav(todo.link, { state: { sourceTodo: todo } }) }}>立即核实</button>}
+            <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); nav(todo.link, { state: { sourceTodo: todo } }) }}>查看档案</button>
           </div>
         ))}
       </div>
