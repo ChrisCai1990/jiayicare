@@ -7256,16 +7256,6 @@ export default function PatientDetailPage() {
                         || (group.key === 'doctor' && staff?.role === 'familyDoctor')
                         || (group.key === 'nutrition' && staff?.role === 'nutritionist')) && (
                         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                          <button className="btn btn-primary btn-sm" disabled={aiSummaryLoading || (group.key === 'nutrition' && !latestDoctorApproved)}
-                            onClick={() => {
-                              const approved = group.key === 'doctor'
-                                ? !!(doctorRecords[0]?.doctorApprovedAt || doctorRecords[0]?.approvedAt)
-                                : !!(nutritionRecords[0]?.nutritionApprovedAt || nutritionRecords[0]?.approvedAt)
-                              if (approved && !window.confirm('最新一次评估已经审核。新增评估不会覆盖旧记录，确定继续？')) return
-                              handleGenerateAISummary(curYear, group.key, approved)
-                            }}>
-                            ＋ 新增{group.key === 'doctor' ? '5维分析' : '生活方式分析'}
-                          </button>
                           <button className="btn btn-sm" style={{ color: '#DC3545', borderColor: '#FCA5A5', background: '#FFF5F5' }}
                             onClick={() => handleDeleteAISummaryRecord(group.key, curYear, group.current._recordIndex, group.current.generatedAt)}>
                             删除本次评估
@@ -7280,15 +7270,6 @@ export default function PatientDetailPage() {
                           ? '等待健康顾问完成并审核本年度5维分析'
                           : '本年度尚未生成'}
                       </div>
-                      {(staff?.role === 'superadmin'
-                        || (group.key === 'doctor' && staff?.role === 'familyDoctor')
-                        || (group.key === 'nutrition' && staff?.role === 'nutritionist')) && (
-                        <button className="btn btn-primary btn-sm"
-                          disabled={aiSummaryLoading || (group.key === 'nutrition' && !latestDoctorApproved)}
-                          onClick={() => handleGenerateAISummary(curYear, group.key, false)}>
-                          ＋ 新增{group.key === 'doctor' ? '5维分析' : '生活方式分析'}
-                        </button>
-                      )}
                     </div>
                   )}
                 </div>
