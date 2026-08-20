@@ -5214,8 +5214,16 @@ router.post('/patients/:id/screening-year-summaries/:year/generate', staffAuth, 
       user: req.params.id,
       audit_status: 'audited',
       $or: [{ reportYear: year }, { checkDate: new RegExp(`^${year}[-/]`) }, { date: new RegExp(`^${year}[-/]`) }],
-    }).select('_id title checkDate date hospital institution screeningCategory screeningL1 screeningL2 reportItems examMainConclusions').lean();
+    }).select('_id title checkDate date hospital institution screeningCategory screeningL1 screeningL2 reportItems examMainConclusions familyDoctorViewedAt').lean();
     if (!reports.length) return res.status(400).json({ success: false, message: `${year}年度没有已审核报告，无法生成小结` });
+    const unviewedReports = reports.filter(report => !report.familyDoctorViewedAt);
+    if (unviewedReports.length) {
+      return res.status(400).json({
+        success: false,
+        code: 'REPORT_REVIEW_REQUIRED',
+        message: `请先由健康顾问逐份核查${year}年度健管已审核报告（还有${unviewedReports.length}份未查看），完成后再生成年度专项筛查小结`,
+      });
+    }
 
     // 小结核对顺序必须与专项筛查目录一致，不能交给 AI 自由重排。
     const categoryNodes = await ProjectCategory.find({ status: 'active' }).select('_id name parent sortOrder createdAt').lean();
