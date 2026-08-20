@@ -15,6 +15,13 @@ const FREQUENCY_DAYS = {
 // 保证用户端切到"本月"看到的随访计划是完整的，同时不会像365天那样疯狂堆积。
 const HORIZON_DAYS = 30;
 
+// 同一方案、同一客户、同一天、同一主题和内容就是同一个排期。不能依赖数组下标，
+// 因为方案里插入/调整一条记录后下标会变化，旧排期会被误认为新计划再次送审。
+const logicalScheduleKey = (row) => {
+  const day = row.date ? new Date(row.date).toISOString().slice(0, 10) : '';
+  return [row.sourceAnnualPlanId, row.patientId, day, String(row.theme || '').trim(), String(row.content || '').trim()].join('|');
+};
+
 // 多条记录模块（就医/会诊/复查/接种/检测）：每条记录本身就有明确日期，直接各生成一条随访。
 // key = moduleData 里的模块 key；dateField = 该条记录里存日期的字段名；theme = 随访主题前缀。
 const DATED_RECORD_MODULES = [
@@ -107,7 +114,7 @@ async function buildAnnualPlanFollowUps(plan) {
         rec.notes && `注意事项：${rec.notes}`,
       ].filter(Boolean);
       push(rec[mod.dateField], `${mod.theme} · ${label}`, lines.join('\n'), rec.followUpStaff,
-        `${mod.key}:${i}:${String(rec[mod.dateField]).slice(0, 10)}`);
+        `${mod.key}:${String(rec[mod.dateField]).slice(0, 10)}:${String(label).trim()}`);
     });
   }
 
@@ -177,16 +184,12 @@ async function syncAnnualPlanFollowUps(plan) {
   let created = 0;
 
   for (const row of toCreate) {
-    const sameKey = existing.filter(item => item.sourceScheduleKey === row.sourceScheduleKey);
-    // 兼容修复上线前的旧数据：同日期、标题、内容视为同一排期。
-    const legacy = existing.filter(item => !item.sourceScheduleKey
-      && new Date(item.date).toISOString().slice(0, 10) === row.date.toISOString().slice(0, 10)
-      && item.theme === row.theme && item.content === row.content);
-    const matches = [...sameKey, ...legacy];
+    // sourceScheduleKey 旧版含数组下标，方案编辑后会变化；始终以业务内容匹配，兼容并清理旧键。
+    const matches = existing.filter(item => logicalScheduleKey(item) === logicalScheduleKey(row));
     if (matches.length) {
-      // 优先保留已审核记录；完全相同的其余副本直接清理。
-      const keep = matches.find(item => item.aiStatus === 'approved') || matches[0];
-      if (!keep.sourceScheduleKey) keep.sourceScheduleKey = row.sourceScheduleKey;
+      // 优先保留已执行，其次保留已审核记录；相同排期的待审副本直接清理。
+      const keep = matches.find(item => item.status === 'completed') || matches.find(item => item.aiStatus === 'approved') || matches[0];
+      if (keep.sourceScheduleKey !== row.sourceScheduleKey) keep.sourceScheduleKey = row.sourceScheduleKey;
       if (keep.aiStatus === 'pending') {
         ['patientId', 'staffId', 'assignedTo', 'date', 'theme', 'content', 'reviewRole'].forEach(k => { keep[k] = row[k]; });
       }
@@ -214,8 +217,7 @@ async function dedupeAnnualPlanFollowUps() {
     .sort({ createdAt: 1 }).lean();
   const groups = new Map();
   rows.forEach(row => {
-    const day = row.date ? new Date(row.date).toISOString().slice(0, 10) : '';
-    const key = [row.sourceAnnualPlanId, row.patientId, row.sourceScheduleKey || '', day, row.theme || '', row.content || ''].join('|');
+    const key = logicalScheduleKey(row);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(row);
   });
@@ -229,4 +231,4 @@ async function dedupeAnnualPlanFollowUps() {
   return removed;
 }
 
-module.exports = { buildAnnualPlanFollowUps, syncAnnualPlanFollowUps, dedupeAnnualPlanFollowUps };
+module.exports = { buildAnnualPlanFollowUps, syncAnnualPlanFollowUps, dedupeAnnualPlanFollowUps, logicalScheduleKey };

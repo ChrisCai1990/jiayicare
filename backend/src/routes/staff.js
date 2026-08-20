@@ -7733,7 +7733,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           id: 'risk_' + u._id, type: 'risk_review',
           label: critical ? '风险预警·危急值' : '风险预警·高风险', priority: 1,
           patientName: u.name || '未知', patientId: String(u._id),
-          summary: (ra.overallSummary || '').slice(0, 60) || 'AI检测到高风险，请健康顾问审核',
+          summary: ra.overallSummary || 'AI检测到高风险，请健康顾问审核',
+          updateLocation: '更多 → 健康关注提示 → 查看四个维度的风险因素和建议',
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${u._id}?tab=ai-risk`,
         });

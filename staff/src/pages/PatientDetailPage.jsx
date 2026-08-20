@@ -1430,7 +1430,7 @@ export default function PatientDetailPage() {
   const [loadError, setLoadError] = useState(null) // 加载会员详情失败时的具体原因（区分"无权限查看"和"会员不存在"，2026-07-13 修复：此前统一误显示成"会员不存在"）
   const [loading, setLoading] = useState(true)
   const requestedTab = new URLSearchParams(location.search).get('tab') || 'info'
-  const initialTab = requestedTab === 'ai-risk' ? 'ai' : requestedTab
+  const initialTab = requestedTab
   const [tab, setTab] = useState(initialTab === 'requisitions' ? 'info' : initialTab)
   const archiveSectionsRef = useRef(null)
   const [followUps, setFollowUps] = useState([])
@@ -3127,6 +3127,7 @@ export default function PatientDetailPage() {
             <div style={{ fontSize: 13, fontWeight: 700, color: '#8A5A00' }}>当前处理：{location.state.sourceTodo.label || '待处理任务'}</div>
             <div style={{ fontSize: 13, color: '#4A6558', marginTop: 3, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.6 }}>{location.state.sourceTodo.summary || '请核对本页对应信息并完成处理'}</div>
             {location.state.sourceTodo.updateLocation && <div style={{ fontSize: 12, color: '#8A5A00', marginTop: 4, fontWeight: 600 }}>更新位置：{location.state.sourceTodo.updateLocation}</div>}
+            {location.state.sourceTodo.type === 'risk_review' && tab !== 'ai-risk' && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => setTab('ai-risk')}>查看完整风险依据</button>}
           </div>
           <button className="btn btn-secondary btn-sm" onClick={() => nav(location.pathname + location.search, { replace: true, state: {} })}>关闭提示</button>
         </div>
@@ -3288,6 +3289,7 @@ export default function PatientDetailPage() {
         ]
         const secondaryTabs = [
           { key: 'ai',            label: 'AI健康信息整理' },
+          { key: 'ai-risk',       label: '健康关注提示' },
           { key: 'serviceRecords', label: '服务记录' },
           { key: 'referrals',     label: '转介记录' },
           { key: 'consumption',   label: '消费记录' },

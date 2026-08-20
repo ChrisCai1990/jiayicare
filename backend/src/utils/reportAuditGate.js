@@ -45,7 +45,8 @@ function getLatestArchiveUpdate(user, snapshotValue) {
   const snapshotAt = snapshotValue ? new Date(snapshotValue).getTime() : 0;
   const candidates = [];
   (user.archiveChangeLog || []).forEach(entry => candidates.push({ at: entry.changedAt, source: '客户更新', items: entry.items || [] }));
-  (user.archiveAutoLog || []).forEach(entry => candidates.push({ at: entry.appliedAt, source: entry.questionnaireTitle ? `问卷“${entry.questionnaireTitle}”自动写入` : '问卷自动写入', items: entry.items || [] }));
+  // 膳食调查由营养师专属复核任务负责，不能再次生成健康顾问的“健康档案待查看”任务。
+  (user.archiveAutoLog || []).filter(entry => !/膳食.*调查|饮食.*调查/.test(String(entry.questionnaireTitle || ''))).forEach(entry => candidates.push({ at: entry.appliedAt, source: entry.questionnaireTitle ? `问卷“${entry.questionnaireTitle}”自动写入` : '问卷自动写入', items: entry.items || [] }));
   (user.archiveConfirmLog || []).forEach(entry => candidates.push({ at: entry.confirmedAt, source: `${entry.confirmedByName || '健管专员'}确认写入`, items: entry.items || [] }));
   (user.lifestyleHistory || []).forEach(entry => candidates.push({ at: entry.recordedAt, source: entry.recordedByName ? `${entry.recordedByName}更新生活方式` : '生活方式更新', items: Object.entries(entry.changes || {}).map(([label, value]) => ({ label, valueStr: value?.to ?? '' })) }));
   return candidates.filter(entry => entry.at && new Date(entry.at).getTime() > snapshotAt).sort((a, b) => new Date(b.at) - new Date(a.at))[0] || null;
