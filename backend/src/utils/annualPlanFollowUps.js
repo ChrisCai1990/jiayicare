@@ -24,7 +24,8 @@ const normalizeScheduleText = (value) => String(value || '')
 
 const logicalScheduleKey = (row) => {
   const day = row.date ? new Date(row.date).toISOString().slice(0, 10) : '';
-  const content = normalizeScheduleText(row.content);
+  // 审核时允许调整执行内容，原始排期会移入 plannedContent；去重必须仍按原排期识别。
+  const content = normalizeScheduleText(row.plannedContent || row.content);
   const fallbackTheme = normalizeScheduleText(row.theme);
   return [row.patientId, day, content || fallbackTheme].join('|');
 };
