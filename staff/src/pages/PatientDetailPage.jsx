@@ -1622,7 +1622,7 @@ export default function PatientDetailPage() {
   const archiveGroups = {
     basics: { label: '建档与基础资料', sections: ['初始健康数据录入', '基本档案'] },
     assessment: { label: '风险与评估', sections: ['健康评分', '心理健康评估', '10年ASCVD风险评估'] },
-    lifestyle: { label: '生活方式', sections: ['生活方式（膳食调查）', '生活方式变化记录'] },
+    lifestyle: { label: '生活方式', sections: ['生活方式', '生活方式变化记录'] },
     metrics: { label: '指标与趋势', sections: ['身体成分指标', '慢病分级', '健康数据趋势', '日常健康打卡数据'] },
   }
   const [archiveActiveGroup, setArchiveActiveGroup] = useState('basics')
@@ -1655,7 +1655,7 @@ export default function PatientDetailPage() {
       '基本档案': archiveOverview.hasBasicProfile ? '已建立，按需更新' : '待补充病史与过敏信息',
       '心理健康评估': '量表结果与历史记录',
       '10年ASCVD风险评估': '心脑血管风险',
-      '生活方式（膳食调查）': archiveOverview.lifestyleFields ? `已填写 ${archiveOverview.lifestyleFields} 项` : '待填写生活方式信息',
+      '生活方式': archiveOverview.lifestyleFields ? `已填写 ${archiveOverview.lifestyleFields} 项` : '待填写生活方式信息',
       '生活方式变化记录': '按时间追踪变化',
       '体检关键指标': '用于评分与风险判断',
       '身体成分指标': '体成分与趋势数据',
