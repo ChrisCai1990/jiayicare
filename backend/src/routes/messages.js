@@ -159,7 +159,6 @@ router.post('/', auth, async (req, res) => {
     let audioUrl = '';
     let audioMimeType = '';
     let audioDuration = 0;
-    let audioTranscript = '';
     if (audio?.data) {
       audioMimeType = String(audio.mimeType || 'audio/mpeg').toLowerCase();
       if (!['audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/webm', 'audio/ogg', 'audio/wav', 'audio/x-wav'].includes(audioMimeType)) {
@@ -168,11 +167,6 @@ router.post('/', auth, async (req, res) => {
       if (String(audio.data).length > 12 * 1024 * 1024) return res.status(413).json({ success: false, message: '语音文件过大' });
       audioDuration = Math.max(1, Math.min(60, Number(audio.duration) || 1));
       audioUrl = (await uploadBase64(audio.data, audioMimeType, 'messages/audio')).url;
-      try {
-        audioTranscript = await require('../utils/asr').transcribeBase64(audio.data, audioMimeType);
-      } catch (error) {
-        console.warn(`[message-asr] ${conversationId} 语音转写失败，将使用文字补充兜底: ${error.message}`);
-      }
     }
     const msg = await Message.create({
       user:    req.user._id,
@@ -182,7 +176,7 @@ router.post('/', auth, async (req, res) => {
       content: content.trim() || '[语音消息]',
       imageUrl: storedImageUrl,
       imageUrls: storedImageUrls,
-      audioUrl, audioDuration, audioMimeType, audioTranscript,
+      audioUrl, audioDuration, audioMimeType,
       unread:  false,
       recipient: to,
       conversationId,
@@ -192,6 +186,21 @@ router.post('/', auth, async (req, res) => {
     ssePublish(conversationId, { type: 'message', data: responseMessage });
     console.log(`✉️  用户留言 [${senderName}] → ${to}: ${content.trim()}`);
     res.json({ success: true, data: responseMessage, message: '消息已发送' });
+
+    // 先让客户端立即拿到已发送的语音气泡，再在响应后完成转写；避免识别耗时或短语音无结果
+    // 被用户误认为“发送失败”。转写完成后通过轮询/SSE补到同一条消息，并供AI理解。
+    if (audio?.data) {
+      try {
+        const audioTranscript = await require('../utils/asr').transcribeBase64(audio.data, audioMimeType);
+        if (audioTranscript) {
+          msg.audioTranscript = audioTranscript;
+          await Message.updateOne({ _id: msg._id }, { $set: { audioTranscript } });
+          ssePublish(conversationId, { type: 'message-update', data: withSignedMessageMedia(msg) });
+        }
+      } catch (error) {
+        console.warn(`[message-asr] ${conversationId} 语音转写失败，将使用原语音兜底: ${error.message}`);
+      }
+    }
 
     if (to === 'nutritionist' && aiAnalysis?.trim()) {
       const aiMsg = await Message.create({

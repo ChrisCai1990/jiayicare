@@ -646,8 +646,8 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
 
   useEffect(() => {
     loadThread();
-    // 小程序无SSE支持，用10秒轮询代替app端的实时推送
-    pollRef.current = setInterval(loadThread, 10000);
+    // 小程序无SSE支持；对话页用短轮询及时接住通常1～2秒生成的AI回复。
+    pollRef.current = setInterval(loadThread, 2000);
     return () => clearInterval(pollRef.current);
   }, [loadThread]);
 
