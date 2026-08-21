@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { View, Text, Input, ScrollView, Image } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
-import { messagesAPI, pushRecordsAPI, questionnaireAPI, servicesAPI, userAPI } from '../../services/api';
+import { messagesAPI, pushRecordsAPI, questionnaireAPI, servicesAPI, userAPI, ttsAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
@@ -10,7 +10,7 @@ import Icon from '../../components/Icon';
 // 完整对齐 app/src/screens/messages/MessagesScreen.js 的固定角色分组方案。
 // 简化点：
 // - 小程序无 EventSource(SSE) 支持，会话内用 10 秒轮询代替实时推送（app端是SSE）
-// - 语音播报(tts.speak)未接入，小程序场景暂不做
+// - 小程序无 EventSource，但会话文字和语音均支持单播放器播放
 const ROLE_DEFS = [
   { key: 'doctor', label: '健康顾问', icon: '🩺', color: colors.primary },
   { key: 'manager', label: '健管专员', icon: '🧑‍💼', color: '#D97706' },
@@ -610,11 +610,20 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
   const pollRef = useRef(null);
   const recorderRef = useRef(null);
   const audioPlayerRef = useRef(null);
+  const [playingMessageId, setPlayingMessageId] = useState('');
+  const [voiceLoadingId, setVoiceLoadingId] = useState('');
+  const [waveFrame, setWaveFrame] = useState(0);
 
   useEffect(() => () => {
     audioPlayerRef.current?.destroy?.();
     recorderRef.current?.stop?.();
   }, []);
+
+  useEffect(() => {
+    if (!playingMessageId) return undefined;
+    const timer = setInterval(() => setWaveFrame((value) => (value + 1) % 3), 260);
+    return () => clearInterval(timer);
+  }, [playingMessageId]);
 
   const loadThread = useCallback(async () => {
     try {
@@ -703,14 +712,47 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
     recorder.stop();
   };
 
-  const playVoice = (url) => {
-    if (!url) return;
+  const stopPlayback = () => {
+    audioPlayerRef.current?.stop?.();
     audioPlayerRef.current?.destroy?.();
+    audioPlayerRef.current = null;
+    setPlayingMessageId('');
+    setVoiceLoadingId('');
+  };
+
+  const playUrl = (messageId, url) => {
+    if (!url) return;
+    if (playingMessageId === messageId) { stopPlayback(); return; }
+    stopPlayback();
     const player = Taro.createInnerAudioContext();
     audioPlayerRef.current = player;
+    player.onPlay?.(() => { setVoiceLoadingId(''); setPlayingMessageId(messageId); });
+    player.onEnded?.(stopPlayback);
+    player.onStop?.(() => { setPlayingMessageId(''); setVoiceLoadingId(''); });
+    player.onError?.(() => { stopPlayback(); Taro.showToast({ title: '语音播放失败，请稍后重试', icon: 'none' }); });
     player.src = url;
     player.play();
   };
+
+  const speakText = async (message) => {
+    const messageId = `tts-${message._id}`;
+    if (playingMessageId === messageId) { stopPlayback(); return; }
+    if (voiceLoadingId) return;
+    const text = visibleMessageContent(message).trim();
+    if (!text) return;
+    stopPlayback();
+    setVoiceLoadingId(messageId);
+    try {
+      const res = await ttsAPI.synthesize(text, 'message');
+      if (!res?.url) throw new Error('未生成语音');
+      playUrl(messageId, res.url);
+    } catch (err) {
+      setVoiceLoadingId('');
+      Taro.showToast({ title: err?.message || '语音生成失败', icon: 'none' });
+    }
+  };
+
+  const waveLabel = (active) => active ? ['▷)', '▷))', '▷)))'][waveFrame] : '▶';
 
   return (
     <View style={{ display: 'flex', flexDirection: 'column', height: embedded ? '100%' : '100vh', flex: 1, minHeight: 0, backgroundColor: colors.background }}>
@@ -759,8 +801,15 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
                         {m.isAI ? aiAssistantName : (normalizeRoleSender(m.sender) || meta.label)}
                       </Text>
                     )}
-                    {m.audioUrl && <View onClick={() => playVoice(m.audioUrl)} style={{ minWidth: '110px', padding: '5px 0' }}><Text style={{ fontSize: '14px', color: isMine ? '#fff' : colors.primary }}>▶ 语音 {Math.max(1, Math.round(m.audioDuration || 1))}″</Text></View>}
+                    {m.audioUrl && <View onClick={() => playUrl(`audio-${m._id}`, m.audioUrl)} style={{ minWidth: '110px', padding: '5px 0' }}><Text style={{ fontSize: '14px', color: isMine ? '#fff' : colors.primary }}>{waveLabel(playingMessageId === `audio-${m._id}`)} {playingMessageId === `audio-${m._id}` ? '播放中' : '语音'} {Math.max(1, Math.round(m.audioDuration || 1))}″</Text></View>}
                     {(!m.audioUrl || !/^\[语音消息\]$/.test(m.content || '')) && <Text style={{ display: 'block', width: '100%', fontSize: '14px', color: isMine ? '#fff' : colors.textPrimary, lineHeight: '20px', whiteSpace: 'pre-wrap', wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{visibleMessageContent(m)}</Text>}
+                    {!isMine && !m.audioUrl && visibleMessageContent(m).trim() && (
+                      <View onClick={() => speakText(m)} style={{ marginTop: '7px', display: 'flex', alignItems: 'center' }}>
+                        <Text style={{ fontSize: '11px', color: playingMessageId === `tts-${m._id}` ? colors.primary : colors.textMuted }}>
+                          {voiceLoadingId === `tts-${m._id}` ? '正在生成语音…' : playingMessageId === `tts-${m._id}` ? `${waveLabel(true)} 播放中，点击停止` : '🔊 朗读'}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                 </View>
               </View>
@@ -777,10 +826,10 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
       )}
       <View style={{ flexShrink: 0, padding: `7px ${spacing.sm}px`, paddingBottom: `calc(7px + env(safe-area-inset-bottom))`, backgroundColor: '#F7F7F7', borderTop: `1px solid ${colors.border}` }}>
         <View style={{ display:'flex', alignItems:'center', gap:'8px' }}>
-          <Text onClick={() => { setVoiceMode(v=>!v); setEmojiOpen(false); setMoreOpen(false); }} style={{ fontSize:'23px', lineHeight:'40px' }}>{voiceMode ? '⌨️' : '◉'}</Text>
+          <View onClick={() => { setVoiceMode(v=>!v); setEmojiOpen(false); setMoreOpen(false); }} style={{ width:'40px', height:'40px', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}><Icon name={voiceMode ? 'keyboard' : 'audio-lines'} size={28} color={colors.textPrimary} /></View>
           {voiceMode ? <View onTouchStart={startRecording} onTouchEnd={stopRecording} onTouchCancel={stopRecording} style={{ flex:1,height:'40px',borderRadius:'6px',backgroundColor:'#fff',display:'flex',alignItems:'center',justifyContent:'center',border:`1px solid ${colors.border}` }}><Text style={{fontWeight:700,color:recording?colors.danger:colors.textPrimary}}>{recording?'松开发送':'按住说话'}</Text></View> : <Input value={input} onInput={(e)=>setInput(e.detail.value)} placeholder={`发消息给${meta.label}`} confirmType="send" onConfirm={send} adjustPosition cursorSpacing={12} maxlength={500} style={{flex:1,height:'40px',minWidth:0,boxSizing:'border-box',backgroundColor:'#fff',borderRadius:'6px',padding:'0 10px',fontSize:'15px'}} />}
-          <Text onClick={() => { setEmojiOpen(v=>!v); setMoreOpen(false); setVoiceMode(false); }} style={{fontSize:'23px'}}>☺</Text>
-          {(input.trim() || foodImages.length) ? <Text onClick={send} style={{padding:'7px 10px',borderRadius:'5px',backgroundColor:colors.primary,color:'#fff',fontWeight:700}}>发送</Text> : <Text onClick={() => { setMoreOpen(v=>!v); setEmojiOpen(false); }} style={{fontSize:'26px'}}>⊕</Text>}
+          <View onClick={() => { setEmojiOpen(v=>!v); setMoreOpen(false); setVoiceMode(false); }} style={{ width:'40px', height:'40px', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}><Icon name="smile" size={28} color={colors.textPrimary} /></View>
+          {(input.trim() || foodImages.length) ? <Text onClick={send} style={{padding:'7px 10px',borderRadius:'5px',backgroundColor:colors.primary,color:'#fff',fontWeight:700}}>发送</Text> : <View onClick={() => { setMoreOpen(v=>!v); setEmojiOpen(false); }} style={{ width:'40px', height:'40px', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}><Icon name="circle-plus" size={28} color={colors.textPrimary} /></View>}
         </View>
         {emojiOpen && <View style={{display:'flex',flexWrap:'wrap',gap:'12px',padding:'12px 4px 4px'}}>{['😊','👍','🌙','❤️','谢谢','收到'].map(e=><Text key={e} onClick={()=>setInput(v=>`${v}${e}`)} style={{fontSize:'21px'}}>{e}</Text>)}</View>}
         {moreOpen && <View style={{display:'flex',padding:'12px 4px 4px'}}><View onClick={chooseFoodImage} style={{textAlign:'center'}}><View style={{width:'48px',height:'48px',borderRadius:'9px',backgroundColor:'#fff',display:'flex',alignItems:'center',justifyContent:'center'}}><Text style={{fontSize:'23px'}}>🖼️</Text></View><Text style={{fontSize:'11px',color:colors.textMuted}}>图片</Text></View></View>}

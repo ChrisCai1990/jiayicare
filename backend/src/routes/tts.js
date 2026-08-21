@@ -1,6 +1,7 @@
 const express = require('express');
 const auth = require('../middleware/auth');
 const { synthesize } = require('../utils/tts');
+const { signStoredUrl } = require('../utils/oss');
 const router = express.Router();
 
 // POST /api/tts/synthesize — 文本转语音，返回可直接播放的 OSS URL
@@ -9,7 +10,7 @@ router.post('/synthesize', auth, async (req, res) => {
   try {
     const { text, sceneType } = req.body;
     const { url } = await synthesize(text);
-    res.json({ success: true, url, sceneType: sceneType || null });
+    res.json({ success: true, url: signStoredUrl(url), sceneType: sceneType || null });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
