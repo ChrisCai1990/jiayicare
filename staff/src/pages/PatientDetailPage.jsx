@@ -3481,9 +3481,9 @@ export default function PatientDetailPage() {
           { key: 'records',       label: '健康档案' },
           { key: 'reports',       label: '体检报告' },
           { key: 'ai',            label: '健康信息核查工作台' },
+          { key: 'aiReview',      label: 'AI辅助研判' },
           { key: 'portrait',      label: '健康画像' },
           { key: 'medications',   label: '用药与营养' },
-          { key: 'aiReview',      label: 'AI辅助研判' },
           { key: 'plans',         label: '管理方案' },
           { key: 'followups',     label: '随访记录' },
         ]
