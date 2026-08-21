@@ -77,4 +77,13 @@ function pageIsComplete(pageNum, items) {
   return true;
 }
 
-module.exports = { isMingzhouReport, pageMode, promptForPage, needsCoverageAudit, normalizeMingzhouItems, pageIsComplete };
+function selectOriginalWeight(items) {
+  return (items || []).find(item => {
+    const name = text(item?.name).replace(/[（(].*?[）)]/g, '').trim();
+    const value = text(item?.value || item?.findings);
+    const unit = text(item?.unit);
+    return name === '体重' && /^\d{2,3}(?:\.\d+)?$/.test(value) && /^kg$/i.test(unit);
+  }) || null;
+}
+
+module.exports = { isMingzhouReport, pageMode, promptForPage, needsCoverageAudit, normalizeMingzhouItems, pageIsComplete, selectOriginalWeight };

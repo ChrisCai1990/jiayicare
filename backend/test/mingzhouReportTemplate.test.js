@@ -29,6 +29,12 @@ test('P7完整性必须有原始体重，P8必须有眼底和咽部', () => {
   assert.equal(template.pageIsComplete(8, [{ _page: 8, name: '眼底' }, { _page: 8, name: '咽部' }]), true);
 });
 
+test('P7局部补提只接受带kg单位的原始体重行', () => {
+  assert.equal(template.selectOriginalWeight([{ name: '体重指数', value: '28.3', unit: 'kg/m²' }]), null);
+  assert.equal(template.selectOriginalWeight([{ name: '体重', value: '78.5', unit: '' }]), null);
+  assert.equal(template.selectOriginalWeight([{ name: '体重', value: '78.5', unit: 'kg' }]).value, '78.5');
+});
+
 test('P8按原页外科眼科耳鼻喉顺序稳定排列', () => {
   const normalized = template.normalizeMingzhouItems([
     { _page: 8, _order: 1, name: '右眼裸视力', findings: '' },

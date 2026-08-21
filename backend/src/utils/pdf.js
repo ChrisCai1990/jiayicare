@@ -239,6 +239,25 @@ async function renderSinglePage(pdfBuffer, pageNum, dpi = 96) {
   }
 }
 
+// Render a fractional page region for a tightly scoped OCR retry. Ratios are
+// converted to pdftoppm pixel coordinates at the requested DPI.
+async function renderSinglePageCrop(pdfBuffer, pageNum, crop, dpi = 240) {
+  const tmpPdf = path.join(os.tmpdir(), `pdf-crop-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
+  fs.writeFileSync(tmpPdf, pdfBuffer);
+  try {
+    const pageWidth = Math.round(8.27 * dpi);
+    const pageHeight = Math.round(11.69 * dpi);
+    const x = Math.round(pageWidth * Number(crop?.x || 0));
+    const y = Math.round(pageHeight * Number(crop?.y || 0));
+    const width = Math.round(pageWidth * Number(crop?.width || 1));
+    const height = Math.round(pageHeight * Number(crop?.height || 1));
+    const images = await convertPdfRange(tmpPdf, pageNum, pageNum, dpi, { x, y, width, height });
+    return images[0] || null;
+  } finally {
+    try { fs.unlinkSync(tmpPdf); } catch {}
+  }
+}
+
 // 高密度表格页分区渲染，减少单次视觉模型输入和输出，避免整页识别超时。
 async function renderSinglePageRegions(pdfBuffer, pageNum, dpi = 160) {
   const tmpPdf = path.join(os.tmpdir(), `pdf-regions-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
@@ -307,4 +326,4 @@ function isPdfReport(report) {
     || (report.content || '').startsWith('data:application/pdf');
 }
 
-module.exports = { fetchReportBuffer, fetchReportBuffers, groupPdfPageNumbers, pdfBufferToImages, isPdfReport, extractPdfTextLayer, renderSinglePage, renderSinglePageRegions, renderSinglePageColumns, splitImageColumns };
+module.exports = { fetchReportBuffer, fetchReportBuffers, groupPdfPageNumbers, pdfBufferToImages, isPdfReport, extractPdfTextLayer, renderSinglePage, renderSinglePageCrop, renderSinglePageRegions, renderSinglePageColumns, splitImageColumns };

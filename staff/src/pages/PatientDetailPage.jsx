@@ -9120,8 +9120,8 @@ export default function PatientDetailPage() {
                           : r.audit_status === 'rejected' ? '#DC3545' : '#D97706'
                         const ocrProgressText = r.aiStatus === 'processing' && r.ocrProgress
                           ? (r.ocrProgress?.message || '正在准备解析') : ''
-                        const interruptedOcrText = r.aiStatus === 'none' && r.ocrProgress?.stage === 'interrupted'
-                          ? (r.ocrProgress.message || '上次识别因服务重启中断，请重新识别') : ''
+                        const interruptedOcrText = r.aiStatus === 'none' && ['interrupted', 'incomplete'].includes(r.ocrProgress?.stage)
+                          ? (r.ocrProgress.message || '上次识别未完成，请重新识别') : ''
                         const ocrRuntime = r.aiStatus === 'processing' ? r.ocrRuntime : null
                         const ocrRuntimeText = ocrRuntime
                           ? `已运行约 ${formatOcrElapsed(ocrRuntime.estimatedElapsedMs)}` : ''

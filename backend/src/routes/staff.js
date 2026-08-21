@@ -10457,7 +10457,7 @@ function findUnderExtractedPages(items) {
 // 后台执行报告 AI 解析（不阻塞 HTTP 响应；完成后状态置 pending 待人工审核）
 async function runReportParse(reportId, options = {}) {
   const { chat, parseImage } = require('../utils/ai');
-  const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, extractPdfTextLayer, renderSinglePage } = require('../utils/pdf');
+  const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, extractPdfTextLayer, renderSinglePage, renderSinglePageCrop } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
   const { assessReportItems, isClearlyNonDetailTextPage, isBoilerplateOnlyReportTextPage, formatTextLayerEvidence, formatAdjacentTextLayerContext, selectGenericCoverageAuditPages, recoverExplicitUltrasoundRowsFromTextLayer } = require('../utils/reportOcrQuality');
   const MedicalReport = require('../models/MedicalReport');
@@ -10777,6 +10777,39 @@ async function runReportParse(reportId, options = {}) {
             allItems = allItems.filter(it => it._page !== pageNum).concat(mergedPage);
             pageDispositions.set(pageNum, { page: pageNum, type: 'detail', itemCount: mergedPage.length });
             console.log(`[parse-ai] 页${pageNum}覆盖复核通过模板完整性校验，替换首轮结果`);
+          }
+        }
+        if (useMingzhouTemplate && !mingzhouTemplate.selectOriginalWeight(allItems.filter(item => item._page === 7))) {
+          setOcrProgress('required_field_retry', '第7页缺少体重，正在局部识别一般检查区域', { page: 7, field: '体重' });
+          try {
+            const generalExamCrop = await renderSinglePageCrop(pdfBuf, 7, { x: 0.03, y: 0.04, width: 0.94, height: 0.34 }, 260);
+            if (generalExamCrop) {
+              const raw = await parseImage(generalExamCrop, `你只负责读取杭州明州体检报告第7页顶部“一般普通检查”表格中的“体重”一行。
+只允许抄录原图印刷的体重数值和单位，禁止根据身高或BMI计算，禁止输出BMI、身高、血压或其他项目。看不清或原图没有体重时返回空items。
+严格返回JSON：{"items":[{"name":"体重","itemType":"data","value":"原图数值","unit":"kg","referenceRange":"","status":"unknown","sourceSection":"一般普通检查","findings":"","diagnosis":"","conclusion":""}]}`, {
+                isUrl: false, model: 'qwen-vl-max', maxTokens: 600, timeoutMs: 120000,
+              });
+              const parsed = safeParseJSON(raw);
+              const weight = mingzhouTemplate.selectOriginalWeight(parsed?.items);
+              if (weight) {
+                const pageItems = allItems.filter(item => item._page === 7);
+                allItems = allItems.filter(item => item._page !== 7)
+                  .concat(mergeCoverageAuditItems(pageItems, tagReportPageItems([weight], 7)));
+                console.log(`[parse-ai] P7一般检查局部补提成功：体重 ${weight.value}${weight.unit}`);
+              }
+            }
+          } catch (error) {
+            console.log(`[parse-ai] P7一般检查局部补提异常: ${error.message}`);
+          }
+          if (!mingzhouTemplate.selectOriginalWeight(allItems.filter(item => item._page === 7))) {
+            const message = '第7页体重未识别，请人工补录体重后再审核';
+            await MedicalReport.updateOne(runFilter, { $set: {
+              aiStatus: 'none',
+              aiSummary: message,
+              ocrProgress: { runId, stage: 'incomplete', message, elapsedMs: Date.now() - t0, updatedAt: new Date(), page: 7, field: '体重' },
+            } });
+            console.log(`[parse-ai] ${reportId} ${message}；本次结果未写入审核草稿`);
+            return;
           }
         }
         const materiallyReducedPages = budgetedRetryPages([...textCoverageRequiredPages].filter(pageNum => {

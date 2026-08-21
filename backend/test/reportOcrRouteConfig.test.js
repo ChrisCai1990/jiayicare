@@ -40,3 +40,11 @@ test('OCR review classification editor is not hidden in a details disclosure', (
   assert.doesNotMatch(nearby, /<details|<summary/);
   assert.match(nearby, /classifyCell\(it, i\)/);
 });
+
+test('Mingzhou P7 missing weight blocks draft persistence after one local retry', () => {
+  const routeSource = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+  assert.match(routeSource, /renderSinglePageCrop\(pdfBuf, 7/);
+  assert.match(routeSource, /selectOriginalWeight\(allItems\.filter\(item => item\._page === 7\)\)/);
+  assert.match(routeSource, /stage: 'incomplete'/);
+  assert.match(routeSource, /本次结果未写入审核草稿/);
+});
