@@ -709,6 +709,22 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
   }
 
   useEffect(() => { loadThread() }, [userId, roleKey])
+  useEffect(() => {
+    let mounted = true
+    const heartbeat = async () => {
+      try {
+        const res = await staffAPI.setChatHumanActive(userId, true, roleKey)
+        if (mounted) setHumanActive(!!res.humanActive)
+      } catch { /* 下次心跳重试 */ }
+    }
+    heartbeat()
+    const timer = setInterval(heartbeat, 30000)
+    return () => {
+      mounted = false
+      clearInterval(timer)
+      staffAPI.setChatHumanActive(userId, false, roleKey).catch(() => {})
+    }
+  }, [userId, roleKey])
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
   useEffect(() => () => { recorderRef.current?.state === 'recording' && recorderRef.current.stop(); recordStreamRef.current?.getTracks?.().forEach(track => track.stop()) }, [])
 
@@ -728,6 +744,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
           setSubmitting(true)
           try {
             await staffAPI.replyToUser(userId, '', [], { data: reader.result, mimeType: blob.type || 'audio/webm', duration })
+            setHumanActive(true)
             onSent(); await loadThread()
           } catch (e) { setErr(e.message || '语音发送失败') }
           finally { setSubmitting(false) }
@@ -757,6 +774,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
     setSubmitting(true); setErr('')
     try {
       await staffAPI.replyToUser(userId, content.trim(), replyImages.map(({data,mimeType})=>({data,mimeType})))
+      setHumanActive(true)
       setContent('')
       setReplyImages([])
       onSent()
@@ -791,7 +809,6 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
             <button className="btn btn-secondary btn-sm" disabled={draftGenerating} onClick={handleGenerateDraft}>
               {draftGenerating ? '生成中…' : '🤖 生成随访草稿'}
             </button>
-            <button className="btn btn-secondary btn-sm" onClick={toggleHumanMode}>{humanActive ? '退出接手' : '人工接手'}</button>
             {onNavigate && <button className="btn btn-secondary btn-sm" onClick={() => { onNavigate(`/patients/${userId}`); onClose() }}>查看档案</button>}
             <button className="modal-close" onClick={onClose}>✕</button>
           </div>
@@ -826,6 +843,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
                   }}>
                     {(m.imageUrls?.length ? m.imageUrls : (m.imageUrl ? [m.imageUrl] : [])).map(url => <img key={url} src={url} alt="沟通图片" style={{ display: 'block', maxWidth: '100%', maxHeight: 220, borderRadius: 8, marginBottom: 6 }} />)}
                     {m.audioUrl && <audio controls preload="none" src={m.audioUrl} style={{ display: 'block', width: 230, maxWidth: '100%', marginBottom: 4 }} />}
+                    {m.audioUrl && m.audioTranscript && <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #E0D9CE', fontSize: 12 }}>转写：{m.audioTranscript}</div>}
                     {(!m.audioUrl || m.content !== '[语音消息]') && m.content}
                   </div>
                   {roleKey === 'nutritionist' && m.aiGenerated && m.aiReviewStatus === 'pending' && (

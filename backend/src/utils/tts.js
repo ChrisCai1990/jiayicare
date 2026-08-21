@@ -85,4 +85,4 @@ async function synthesize(text) {
   return { url };
 }
 
-module.exports = { synthesize, ttsEnabled };
+module.exports = { synthesize, ttsEnabled, fetchNlsToken };

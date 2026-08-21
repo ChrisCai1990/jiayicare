@@ -5197,7 +5197,8 @@ router.get('/user-messages/:userId/thread', staffAuth, async (req, res) => {
       { conversationId, type: 'user', staffReadAt: null },
       { staffReadAt: new Date() }
     );
-    res.json({ success: true, data: messages.map(withSignedMessageMedia), conversationId, humanActive: !!state?.humanActive, takenOverAt: state?.takenOverAt || null });
+    const { isHumanPresent } = require('../utils/chatPresence');
+    res.json({ success: true, data: messages.map(withSignedMessageMedia), conversationId, humanActive: isHumanPresent(state), takenOverAt: state?.takenOverAt || null });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -5326,6 +5327,7 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
     let audioUrl = '';
     let audioMimeType = '';
     let audioDuration = 0;
+    let audioTranscript = '';
     if (audio?.data) {
       audioMimeType = String(audio.mimeType || 'audio/webm').toLowerCase();
       if (!['audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/webm', 'audio/ogg', 'audio/wav', 'audio/x-wav'].includes(audioMimeType)) {
@@ -5334,6 +5336,11 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
       if (String(audio.data).length > 12 * 1024 * 1024) return res.status(413).json({ success: false, message: '语音文件过大' });
       audioDuration = Math.max(1, Math.min(60, Number(audio.duration) || 1));
       audioUrl = (await require('../utils/oss').uploadBase64(audio.data, audioMimeType, 'messages/audio')).url;
+      try {
+        audioTranscript = await require('../utils/asr').transcribeBase64(audio.data, audioMimeType);
+      } catch (error) {
+        console.warn(`[staff-message-asr] ${conversationId} 语音转写失败，保留原语音: ${error.message}`);
+      }
     }
     const replyMsg = await Message.create({
       user:    req.params.userId,
@@ -5342,7 +5349,7 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
       title:   `${staff.name} 回复了您的留言`,
       content: content.trim() || (audioUrl ? '[语音消息]' : '图片'),
       imageUrl: imageUrls[0] || '', imageUrls,
-      audioUrl, audioDuration, audioMimeType,
+      audioUrl, audioDuration, audioMimeType, audioTranscript,
       unread:  true,
       conversationId,
     });

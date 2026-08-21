@@ -11141,6 +11141,22 @@ function SendMessageModal({ patientId, patientName, onClose }) {
   }
 
   useEffect(() => { loadThread() }, [patientId])
+  useEffect(() => {
+    let mounted = true
+    const heartbeat = async () => {
+      try {
+        const res = await staffAPI.setChatHumanActive(patientId, true, chatRole)
+        if (mounted) setHumanActive(!!res.humanActive)
+      } catch { /* 下次心跳重试 */ }
+    }
+    heartbeat()
+    const timer = setInterval(heartbeat, 30000)
+    return () => {
+      mounted = false
+      clearInterval(timer)
+      staffAPI.setChatHumanActive(patientId, false, chatRole).catch(() => {})
+    }
+  }, [patientId, chatRole])
   useEffect(() => () => { recorderRef.current?.state === 'recording' && recorderRef.current.stop(); recordStreamRef.current?.getTracks?.().forEach(track => track.stop()) }, [])
 
   // 轮询获取新消息（3秒一次）
@@ -11259,9 +11275,7 @@ function SendMessageModal({ patientId, patientName, onClose }) {
             <h3 className="modal-title">与 {patientName} 对话</h3>
             <div style={{ fontSize: 11, color: humanActive ? '#D97706' : '#22A06B', marginTop: 3 }}>{humanActive ? '● 人工已接手，AI静默' : '● AI助理承接中'}</div>
           </div>
-          <button className="btn btn-sm" onClick={toggleHumanMode} disabled={switchingMode} style={{ marginLeft: 'auto', marginRight: 8 }}>
-            {switchingMode ? '切换中…' : humanActive ? '退出接手' : '人工接手'}
-          </button>
+          <div style={{ marginLeft: 'auto', marginRight: 8, fontSize: 11, color: '#8AA89C' }}>关闭对话后AI自动恢复</div>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
@@ -11314,6 +11328,7 @@ function SendMessageModal({ patientId, patientName, onClose }) {
                       position: 'relative',
                     }}>
                       {m.audioUrl && <audio controls preload="none" src={m.audioUrl} style={{ display: 'block', width: 230, maxWidth: '100%', marginBottom: 4 }} />}
+                      {m.audioUrl && m.audioTranscript && <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #E0D9CE', fontSize: 12 }}>转写：{m.audioTranscript}</div>}
                       {(!m.audioUrl || m.content !== '[语音消息]') && m.content}
                       {canRecall && (
                         <span

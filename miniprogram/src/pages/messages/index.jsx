@@ -612,6 +612,7 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
   const audioPlayerRef = useRef(null);
   const [playingMessageId, setPlayingMessageId] = useState('');
   const [voiceLoadingId, setVoiceLoadingId] = useState('');
+  const [visibleTranscriptIds, setVisibleTranscriptIds] = useState(() => new Set());
   const [waveFrame, setWaveFrame] = useState(0);
   const [playedVoiceIds, setPlayedVoiceIds] = useState(() => {
     try { return new Set(Taro.getStorageSync('jy_played_voice_ids') || []); } catch { return new Set(); }
@@ -777,6 +778,15 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
 
   const waveLabel = (active) => active ? ['▷)', '▷))', '▷)))'][waveFrame] : '▶';
 
+  const toggleTranscript = (messageId) => {
+    setVisibleTranscriptIds((current) => {
+      const next = new Set(current);
+      if (next.has(messageId)) next.delete(messageId);
+      else next.add(messageId);
+      return next;
+    });
+  };
+
   return (
     <View style={{ display: 'flex', flexDirection: 'column', height: embedded ? '100%' : '100vh', flex: 1, minHeight: 0, backgroundColor: colors.background }}>
       <View style={{ display: 'flex', alignItems: 'center', flexShrink: 0, position: 'relative', zIndex: 20, padding: `${embedded ? 10 : statusBarHeight + 8}px ${spacing.lg}px ${spacing.sm}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
@@ -825,6 +835,14 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
                       </Text>
                     )}
                     {m.audioUrl && <View onClick={() => playUrl(`audio-${m._id}`, m.audioUrl, m)} style={{ minWidth: '110px', padding: '5px 0' }}><Text style={{ fontSize: '14px', color: isMine ? '#fff' : colors.primary }}>{waveLabel(playingMessageId === `audio-${m._id}`)} {playingMessageId === `audio-${m._id}` ? '播放中' : '语音'} {Math.max(1, Math.round(m.audioDuration || 1))}″{!isMine && !playedVoiceIds.has(m._id) ? ' · 未听' : ''}</Text></View>}
+                    {m.audioUrl && m.audioTranscript?.trim() && (
+                      <View>
+                        <Text onClick={() => toggleTranscript(m._id)} style={{ display: 'block', fontSize: '11px', color: isMine ? 'rgba(255,255,255,.82)' : colors.textMuted, paddingTop: '3px' }}>
+                          {visibleTranscriptIds.has(m._id) ? '收起文字' : '转文字'}
+                        </Text>
+                        {visibleTranscriptIds.has(m._id) && <Text style={{ display: 'block', marginTop: '7px', paddingTop: '7px', borderTop: `1px solid ${isMine ? 'rgba(255,255,255,.25)' : colors.border}`, fontSize: '13px', lineHeight: '19px', color: isMine ? '#fff' : colors.textPrimary, whiteSpace: 'pre-wrap' }}>{m.audioTranscript}</Text>}
+                      </View>
+                    )}
                     {(!m.audioUrl || !/^\[语音消息\]$/.test(m.content || '')) && <Text style={{ display: 'block', width: '100%', fontSize: '14px', color: isMine ? '#fff' : colors.textPrimary, lineHeight: '20px', whiteSpace: 'pre-wrap', wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{visibleMessageContent(m)}</Text>}
                     {!isMine && !m.audioUrl && visibleMessageContent(m).trim() && (
                       <View onClick={() => speakText(m)} style={{ marginTop: '7px', display: 'flex', alignItems: 'center' }}>

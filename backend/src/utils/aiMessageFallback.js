@@ -3,6 +3,7 @@ const User = require('../models/User');
 const FollowUp = require('../models/FollowUp');
 const MedicalReport = require('../models/MedicalReport');
 const ChatConversationState = require('../models/ChatConversationState');
+const { humanPresentQuery } = require('./chatPresence');
 const { chat } = require('./ai');
 
 let _ssePublish = null;
@@ -39,11 +40,19 @@ function buildSystemPrompt(isFirstAIReply, title, healthContext = '') {
 8. 用户问“在吗”“忙吗”“有人吗”时，直接自然回应，例如“在的，怎么啦？”“我在呢，您说”，然后顺着用户接下来的内容聊
 9. 紧急情况只提示立即拨打120，或直接电话联系本频道对应的服务人员，不要转给其他岗位
 10. 聚焦用户最新一句和当下需求。历史消息只用于理解代词和紧邻上下文；用户明确说某事已过去、没发生或更正前文时，立即以最新说法为准，不延续旧话题
-11. 每条历史消息前有准确时间。跨天或相隔6小时以上视为新一轮交流，除非用户主动提起，否则不要把旧话题带入当前回复
-12. 如果用户最新一条是“[语音消息]”，由于你无法可靠听取音频，只温和确认收到，并请用户方便时补充一句文字重点；不要猜测语音内容
+11. 每条历史消息前有准确时间，仅用于判断上下文；回复正文绝对不要复制、添加或复述时间戳。跨天或相隔6小时以上视为新一轮交流，除非用户主动提起，否则不要把旧话题带入当前回复
+12. 历史消息中“[语音转写，仅供理解]”后的文字来自自动识别，可用于理解日常聊天并自然接话；不要声称自己听了录音。若只有“[语音消息]”而没有转写，才温和确认收到并请用户方便时补充一句文字重点
+13. 用户说明“只是测试”“没什么事”“不用处理”或纠正你时，立即接受这个最新事实，简短自然回应即可；不要继续追问重点、表示要整理或延续已被否定的需求
 
 可客观引用的已确认资料（没有内容就不要主动提及；不得据此推断）：
 ${healthContext || '暂无可引用资料'}`;
+}
+
+function stripRepeatedOpeningTitle(replyText, isFirstAIReply, title) {
+  const text = String(replyText || '').trim().replace(/^\[[^\]\r\n]{3,40}\]\s*/, '');
+  if (isFirstAIReply || !title || title === '您') return text;
+  const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return text.replace(new RegExp(`^(?:${escapedTitle})(?:[，,：:\s、！!。．~-]+)?`, 'u'), '').trim();
 }
 
 async function buildHealthContext(userId) {
@@ -64,9 +73,9 @@ async function buildHealthContext(userId) {
 async function replyWithAI({ userId, recipient, content, conversationId }) {
   try {
     // 人工接手后 AI 必须静默。生成前后各检查一次，覆盖生成期间人工刚接手的并发场景。
-    if (await ChatConversationState.exists({ conversationId, humanActive: true })) return;
+    if (await ChatConversationState.exists(humanPresentQuery(conversationId))) return;
     const [history, user, healthContext] = await Promise.all([
-      Message.find({ conversationId, recalled: { $ne: true } }).sort({ createdAt: -1 }).limit(20).select('type content createdAt').lean(),
+      Message.find({ conversationId, recalled: { $ne: true } }).sort({ createdAt: -1 }).limit(20).select('type content audioTranscript createdAt').lean(),
       User.findById(userId).select('name gender preferredTitle').lean(),
       buildHealthContext(userId),
     ]);
@@ -88,10 +97,11 @@ async function replyWithAI({ userId, recipient, content, conversationId }) {
 
     const chatMessages = recentHistory.map(m => ({
       role: m.type === 'user' ? 'user' : 'assistant',
-      content: `[${new Date(m.createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}] ${m.content.replace(FULL_DISCLAIMER, '').replace(SHORT_DISCLAIMER, '').trim()}`,
+      content: `[${new Date(m.createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}] ${m.audioTranscript?.trim() ? `[语音转写，仅供理解] ${m.audioTranscript.trim()}` : m.content.replace(FULL_DISCLAIMER, '').replace(SHORT_DISCLAIMER, '').trim()}`,
     }));
-    const replyText = await chat(chatMessages, { systemPrompt, maxTokens: 300 });
-    if (await ChatConversationState.exists({ conversationId, humanActive: true })) return;
+    const generatedReply = await chat(chatMessages, { systemPrompt, maxTokens: 300 });
+    const replyText = stripRepeatedOpeningTitle(generatedReply, isFirstAIReply, title);
+    if (await ChatConversationState.exists(humanPresentQuery(conversationId))) return;
     const aiMsg = await Message.create({
       user: userId,
       type: recipient,
@@ -108,4 +118,4 @@ async function replyWithAI({ userId, recipient, content, conversationId }) {
   }
 }
 
-module.exports = { replyWithAI, buildSystemPrompt };
+module.exports = { replyWithAI, buildSystemPrompt, stripRepeatedOpeningTitle };

@@ -11,6 +11,7 @@ const messageSchema = new mongoose.Schema({
   audioUrl: { type: String, default: '' },
   audioDuration: { type: Number, default: 0, min: 0, max: 60 },
   audioMimeType: { type: String, default: '' },
+  audioTranscript: { type: String, default: '', maxlength: 1000 },
   aiReviewStatus: { type: String, enum: ['', 'draft', 'pending', 'approved', 'rejected'], default: '' },
   aiReviewedAt: { type: Date, default: null },
   aiReviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },

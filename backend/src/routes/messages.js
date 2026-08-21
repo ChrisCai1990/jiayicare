@@ -2,6 +2,7 @@ const express = require('express');
 const auth = require('../middleware/auth');
 const Message = require('../models/Message');
 const ChatConversationState = require('../models/ChatConversationState');
+const { isHumanPresent } = require('../utils/chatPresence');
 const PushRecord = require('../models/PushRecord');
 const { QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
 const { uploadBase64, signStoredUrl } = require('../utils/oss');
@@ -64,7 +65,7 @@ router.get('/thread/:role', auth, async (req, res) => {
     success: true,
     data: messages.map(withSignedMessageMedia),
     conversationId,
-    humanActive: !!state?.humanActive,
+    humanActive: isHumanPresent(state),
     takenOverAt: state?.takenOverAt || null,
   });
 });
@@ -158,6 +159,7 @@ router.post('/', auth, async (req, res) => {
     let audioUrl = '';
     let audioMimeType = '';
     let audioDuration = 0;
+    let audioTranscript = '';
     if (audio?.data) {
       audioMimeType = String(audio.mimeType || 'audio/mpeg').toLowerCase();
       if (!['audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/webm', 'audio/ogg', 'audio/wav', 'audio/x-wav'].includes(audioMimeType)) {
@@ -166,6 +168,11 @@ router.post('/', auth, async (req, res) => {
       if (String(audio.data).length > 12 * 1024 * 1024) return res.status(413).json({ success: false, message: '语音文件过大' });
       audioDuration = Math.max(1, Math.min(60, Number(audio.duration) || 1));
       audioUrl = (await uploadBase64(audio.data, audioMimeType, 'messages/audio')).url;
+      try {
+        audioTranscript = await require('../utils/asr').transcribeBase64(audio.data, audioMimeType);
+      } catch (error) {
+        console.warn(`[message-asr] ${conversationId} 语音转写失败，将使用文字补充兜底: ${error.message}`);
+      }
     }
     const msg = await Message.create({
       user:    req.user._id,
@@ -175,7 +182,7 @@ router.post('/', auth, async (req, res) => {
       content: content.trim() || '[语音消息]',
       imageUrl: storedImageUrl,
       imageUrls: storedImageUrls,
-      audioUrl, audioDuration, audioMimeType,
+      audioUrl, audioDuration, audioMimeType, audioTranscript,
       unread:  false,
       recipient: to,
       conversationId,
