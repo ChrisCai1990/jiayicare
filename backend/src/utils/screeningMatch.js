@@ -116,7 +116,6 @@ function matchAll() { return []; }
 
 // ── 新版：admin「分类管理」(ProjectCategory) 索引 ──────────────────────
 // 叶子节点（没有子分类的节点）才是可匹配的"项目"，非叶子节点是纯分类分组，不参与匹配。
-// 名称含"功能检测"/"功能医学"的 L1 分类，跟旧版 hp 类一样不自动归类，只能人工在OCR审核弹窗手动选。
 let adminIndexCache = null;
 let functionalMedicineL1Ids = new Set(); // 「功能医学检测」类L1的 _id 集合，供 isFunctionalMedicineL1 判断
 let adminIndexCacheAt = 0;
@@ -173,9 +172,9 @@ async function buildAdminIndex() {
     return { l1, parentLabel, brokenChain };
   }
 
-  const excludeL1Names = new Set();
+  const functionalL1Ids = new Set();
   cats.filter(c => !c.parent).forEach(l1 => {
-    if (/功能检测|功能医学/.test(l1.name)) excludeL1Names.add(String(l1._id));
+    if (/功能检测|功能医学/.test(l1.name)) functionalL1Ids.add(String(l1._id));
   });
 
   const nodes = cats
@@ -200,12 +199,12 @@ async function buildAdminIndex() {
         parent: parentLabel,
         itemType: null,
         gender: null,
-        excluded: brokenChain || excludeL1Names.has(String(l1._id)),
+        excluded: brokenChain,
       };
     });
 
   adminIndexCache = buildIndex(nodes.filter(n => !n.excluded));
-  functionalMedicineL1Ids = excludeL1Names;
+  functionalMedicineL1Ids = functionalL1Ids;
   adminIndexCacheAt = now;
   return adminIndexCache;
 }

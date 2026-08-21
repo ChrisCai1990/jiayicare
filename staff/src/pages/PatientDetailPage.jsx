@@ -2819,6 +2819,28 @@ export default function PatientDetailPage() {
   }
 
   const handleApproveOCR = async () => {
+    const validKeys = new Set(screeningCatalog.flatMap(group => (group.opts || []).map(option => option.value)))
+    const classificationIssues = ocrEditItems.flatMap((item, index) => {
+      const keys = [...new Set([...(item.screeningKeys || []), item.screeningKey].filter(Boolean))]
+      const reason = item.matchStatus !== 'matched' || keys.length === 0
+        ? '未归类'
+        : keys.length > 1
+          ? '存在多个候选分类'
+          : validKeys.size > 0 && !validKeys.has(keys[0])
+            ? '分类已失效'
+            : ''
+      return reason ? [{ index, reason, name: item.name || `第${index + 1}项` }] : []
+    })
+    if (classificationIssues.length) {
+      const first = classificationIssues[0]
+      setOcrReviewFilter('all')
+      ocrFocusHandledRef.current = null
+      setOcrFocusItemIndex(first.index)
+      const page = reportItemEvidencePages(ocrEditItems[first.index])[0]
+      if (page) setOcrReviewPage(page)
+      toast(`不能提交：${first.name}${first.reason}；共 ${classificationIssues.length} 项需要处理`)
+      return
+    }
     setOcrSaving(true)
     try {
       await staffAPI.updateReport(ocrReviewReport._id, {
@@ -2830,7 +2852,17 @@ export default function PatientDetailPage() {
       toast('审核通过，数据已写入专项筛查，已进入待健康顾问审核')
       setOcrReviewReport(null)
       loadReports()
-    } catch (err) { toast(err.message || '保存失败') }
+    } catch (err) {
+      if (err.code === 'REPORT_SCREENING_CLASSIFICATION_REQUIRED' && err.issues?.length) {
+        const first = err.issues[0]
+        setOcrReviewFilter('all')
+        ocrFocusHandledRef.current = null
+        setOcrFocusItemIndex(first.index)
+        const page = reportItemEvidencePages(ocrEditItems[first.index])[0]
+        if (page) setOcrReviewPage(page)
+      }
+      toast(err.message || '保存失败')
+    }
     finally { setOcrSaving(false) }
   }
 
@@ -11224,8 +11256,8 @@ export default function PatientDetailPage() {
                                 <input style={{ ...inp, background: '#F3EFFB', borderColor: '#C4B5FD', marginBottom: 6 }} value={it.conclusion || ''} placeholder="主要结论" onChange={e => updItem(i, { conclusion: e.target.value })} />
                               </>}
                               <details style={{ marginTop: 4 }}>
-                                <summary style={{ cursor: 'pointer', color: it.screeningKey ? '#1E6B50' : '#8AA89C', fontSize: 11, userSelect: 'none' }}>
-                                  专项筛查归类（可稍后处理）{it.screeningKey ? ' · 已建议归类' : ' · 暂不归类'}
+                                <summary style={{ cursor: 'pointer', color: it.screeningKey ? '#1E6B50' : '#D97706', fontSize: 11, userSelect: 'none', fontWeight: it.screeningKey ? 400 : 700 }}>
+                                  专项筛查归类（提交前必填）{it.screeningKey ? ' · 已归类' : ' · 待归类'}
                                 </summary>
                                 <div style={{ marginTop: 6 }}>{classifyCell(it, i)}</div>
                               </details>
@@ -11330,7 +11362,7 @@ export default function PatientDetailPage() {
                       )}
                       </div>
                       <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 8 }}>
-                        提示：请重点核对<span style={{ color: '#DC3545' }}>异常项</span>的数值、单位与原文证据。专项筛查建议会在报告审核通过后同步，未归类项仍安全保留在报告中。
+                        提示：请重点核对<span style={{ color: '#DC3545' }}>异常项</span>的数值、单位与原文证据。每个项目必须唯一归入当前 Admin 有效分类，未归类、多个候选或分类失效时禁止提交并自动定位。
                       </div>
                     </>
                   )

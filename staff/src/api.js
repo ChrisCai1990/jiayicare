@@ -32,6 +32,9 @@ async function req(path, options = {}) {
   if (!res.ok) {
     const err = new Error(data.message || '请求失败')
     err.status = res.status
+    err.code = data.code
+    err.issues = data.issues
+    err.pages = data.pages
     if (data.needConfirm) { err.needConfirm = true; err.approvedBy = data.approvedBy }
     throw err
   }

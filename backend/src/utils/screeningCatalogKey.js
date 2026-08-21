@@ -22,7 +22,6 @@ function resolveActiveScreeningKey(categories, screeningKey) {
     const root = chain[0] || leaf;
     const directParent = chain.length ? chain[chain.length - 1] : leaf;
     if (String(root._id) !== l1Id || directParent.name !== parentLabel) continue;
-    if (/功能检测|功能医学/.test(root.name || '')) continue;
     return { value: `${l1Id}|${parentLabel}|${itemLabel}`, l1Id, parentLabel, itemLabel };
   }
   return null;

@@ -78,6 +78,7 @@ const {
   reportItemSourcePages,
 } = require('../utils/reportItemEvidence');
 const { resolveActiveScreeningKey } = require('../utils/screeningCatalogKey');
+const { validateReportScreeningSubmission } = require('../utils/reportScreeningSubmission');
 const { createReportUploadToken, verifyReportUploadTokens } = require('../utils/reportUploadToken');
 const { buildReportSourceFiles, mergeReportSourceFiles, reportHasOriginal, summarizeReportOriginalEvidence, compareReportOriginalEvidence, toSafeVersionOriginalEvidence } = require('../utils/reportOriginalEvidence');
 const { canDirectlyApproveReport, validateOcrReviewTransition, validateManualAuditAction, validateOcrVersionBinding } = require('../utils/reportReviewPolicy');
@@ -2800,6 +2801,18 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
         if (!it || typeof it !== 'object') return false;
         return !(_blank(it.name) && _blank(it.value) && _blank(it.findings) && _blank(it.diagnosis) && _blank(it.conclusion));
       })));
+      if (['submit', 'legacy_submit'].includes(reviewAction)) {
+        const activeCategories = await ProjectCategory.find({ status: 'active' }).select('_id name parent').lean();
+        const classification = validateReportScreeningSubmission(nextItems, activeCategories);
+        if (!classification.complete) {
+          return res.status(409).json({
+            success: false,
+            code: 'REPORT_SCREENING_CLASSIFICATION_REQUIRED',
+            message: `还有 ${classification.issues.length} 个项目未完成唯一有效归类，请逐项处理后再提交`,
+            issues: classification.issues,
+          });
+        }
+      }
       if (editSource || report.audit_status === 'audited' || (report.ocrVersion && ['save_draft', 'submit'].includes(reviewAction))) {
         const oldItems = report.reportItems || [];
         const corrections = diffReportItemCorrections(oldItems, nextItems);
@@ -11618,9 +11631,6 @@ router.get('/screening-catalog', staffAuth, async (req, res) => {
     cats.forEach(c => { if (c.parent) childCount.set(String(c.parent), (childCount.get(String(c.parent)) || 0) + 1); });
     const isLeaf = c => !(childCount.get(String(c._id)) > 0);
 
-    // 排除"功能检测/功能医学"类L1，跟AI归类(buildAdminIndex)规则保持一致，这类只能人工在OCR审核弹窗手动选
-    const excludeL1Ids = new Set(cats.filter(c => !c.parent && /功能检测|功能医学/.test(c.name)).map(c => String(c._id)));
-
     const groupsByL1 = new Map();
     cats.filter(isLeaf).forEach(leaf => {
       // 找L1祖先 + 直接父级名字，跟 screeningMatch.js buildAdminIndex 里 resolveAncestry 逻辑一致
@@ -11642,8 +11652,6 @@ router.get('/screening-catalog', staffAuth, async (req, res) => {
       }
       if (chain.length) { l1 = chain[0]; parentLabel = chain[chain.length - 1].name; }
       const l1Id = String(l1._id);
-      if (excludeL1Ids.has(l1Id)) return;
-
       const value = `${l1Id}|${parentLabel}|${leaf.name}`;
       if (!groupsByL1.has(l1.name)) groupsByL1.set(l1.name, []);
       groupsByL1.get(l1.name).push({

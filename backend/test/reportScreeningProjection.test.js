@@ -17,12 +17,14 @@ test('人工候选归类只接受当前启用目录中的完整层级键', () =>
   assert.equal(resolveActiveScreeningKey(categories, 'missing|糖代谢|空腹血糖'), null);
 });
 
-test('功能医学目录不能通过候选归类进入自动筛查投影', () => {
+test('功能医学目录开放后可作为有效筛查归类', () => {
   const categories = [
     { _id: 'functional', name: '功能医学', parent: null },
     { _id: 'leaf', name: '有机酸', parent: 'functional' },
   ];
-  assert.equal(resolveActiveScreeningKey(categories, 'functional|功能医学|有机酸'), null);
+  assert.deepEqual(resolveActiveScreeningKey(categories, 'functional|功能医学|有机酸'), {
+    value: 'functional|功能医学|有机酸', l1Id: 'functional', parentLabel: '功能医学', itemLabel: '有机酸',
+  });
 });
 
 test('历史项目稳定补齐来源标识且保留已有标识', () => {
