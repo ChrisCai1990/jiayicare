@@ -25,11 +25,8 @@ export default function ChatPage() {
   const [nutritionInput, setNutritionInput] = useState('');
   const [weightInput, setWeightInput] = useState('');
   const [foodImage, setFoodImage] = useState(null);
+  const [plannerScrollTop, setPlannerScrollTop] = useState(999998);
   const historyUserRef = useRef('');
-  // scrollIntoView 只有在目标值发生变化时才会再次滚动。把消息数量、发送状态和
-  // 当前视图写进锚点 ID，确保历史记录异步恢复、AI 回复完成以及重新进入规划师
-  // 视图时，长对话都会重新定位到真正的最后一条。
-  const plannerBottomId = `planner-bottom-${messages.length}-${sending ? 'sending' : 'idle'}-${view === 'ai' ? 'active' : 'hidden'}`;
 
   // 与 App 端保持一致：进入规划师时从后端恢复最近 50 轮对话。
   // 对话记录按登录用户查询，既能跨页面/重启保留，也不会在切换账号时串话。
@@ -54,6 +51,19 @@ export default function ChatPage() {
     if (requestedView === 'team') setView('team');
     Taro.removeStorageSync('healthHubView');
   });
+
+  // 真机上长对话必须让 ScrollView 自身滚动，不能把整个页面撑高。
+  // 历史记录和 AI 回复渲染后分两次定位，保证输入栏始终留在底部。
+  useEffect(() => {
+    if (view !== 'ai') return undefined;
+    const jumpToLatest = () => setPlannerScrollTop((value) => (value === 999999 ? 999998 : 999999));
+    const layoutTimer = setTimeout(jumpToLatest, 80);
+    const settleTimer = setTimeout(jumpToLatest, 420);
+    return () => {
+      clearTimeout(layoutTimer);
+      clearTimeout(settleTimer);
+    };
+  }, [view, messages.length, sending]);
 
   const send = async () => {
     const text = input.trim();
@@ -134,7 +144,12 @@ export default function ChatPage() {
         <Text style={{ display: 'block', color: '#9A5B00', fontSize: '12px', fontWeight: 700 }}>本页面回复由人工智能（AI）生成</Text>
         <Text style={{ display: 'block', color: colors.textMuted, fontSize: '10px', marginTop: '2px' }}>内容仅用于健康管理需求梳理与服务规划，不替代专业人员意见</Text>
       </View>
-      <ScrollView scrollY scrollWithAnimation style={{ flex: 1, padding: `${spacing.md}px` }} scrollIntoView={plannerBottomId}>
+      <ScrollView
+        scrollY
+        enableFlex
+        scrollTop={plannerScrollTop}
+        style={{ flex: 1, height: 0, minHeight: 0, padding: `${spacing.md}px`, boxSizing: 'border-box' }}
+      >
         {messages.length === 1 && (
           <View style={{ marginBottom: `${spacing.md}px` }}>
             <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '8px' }}>您想先做哪一步？</Text>
@@ -163,7 +178,7 @@ export default function ChatPage() {
           </View>
         ))}
         {sending && <Text style={{ fontSize: '12px', color: colors.textMuted }}>正在梳理您的需求...</Text>}
-        <View id={plannerBottomId} style={{ height: '1px' }} />
+        <View style={{ height: '1px' }} />
       </ScrollView>
 
       <View style={{
