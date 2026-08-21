@@ -7,12 +7,13 @@ const { QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
 const { uploadBase64, signStoredUrl } = require('../utils/oss');
 const router = express.Router();
 
-function withSignedMessageImages(message) {
+function withSignedMessageMedia(message) {
   const obj = message.toObject ? message.toObject() : { ...message };
   const urls = obj.imageUrls?.length ? obj.imageUrls : (obj.imageUrl ? [obj.imageUrl] : []);
   const signedUrls = urls.map(url => signStoredUrl(url));
   obj.imageUrls = signedUrls;
   obj.imageUrl = signedUrls[0] || '';
+  obj.audioUrl = obj.audioUrl ? signStoredUrl(obj.audioUrl) : '';
   return obj;
 }
 
@@ -40,7 +41,7 @@ router.get('/', auth, async (req, res) => {
   if (type) query.type = type;
   const messages = await Message.find(query).sort({ createdAt: -1 }).limit(50);
   const unreadCount = await Message.countDocuments({ user: req.user._id, unread: true, recalled: { $ne: true } });
-  res.json({ success: true, data: messages.map(withSignedMessageImages), unreadCount });
+  res.json({ success: true, data: messages.map(withSignedMessageMedia), unreadCount });
 });
 
 // 获取与某个角色的完整对话线程
@@ -61,7 +62,7 @@ router.get('/thread/:role', auth, async (req, res) => {
   await Message.updateMany({ conversationId, user: req.user._id, type: { $ne: 'user' }, unread: true }, { unread: false, readAt: new Date() });
   res.json({
     success: true,
-    data: messages.map(withSignedMessageImages),
+    data: messages.map(withSignedMessageMedia),
     conversationId,
     humanActive: !!state?.humanActive,
     takenOverAt: state?.takenOverAt || null,
@@ -180,9 +181,10 @@ router.post('/', auth, async (req, res) => {
       conversationId,
     });
 
-    ssePublish(conversationId, { type: 'message', data: msg });
+    const responseMessage = withSignedMessageMedia(msg);
+    ssePublish(conversationId, { type: 'message', data: responseMessage });
     console.log(`✉️  用户留言 [${senderName}] → ${to}: ${content.trim()}`);
-    res.json({ success: true, data: msg, message: '消息已发送' });
+    res.json({ success: true, data: responseMessage, message: '消息已发送' });
 
     if (to === 'nutritionist' && aiAnalysis?.trim()) {
       const aiMsg = await Message.create({

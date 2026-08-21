@@ -84,6 +84,15 @@ function withSignedHealthRecord(record) {
   return obj;
 }
 
+function withSignedMessageMedia(message) {
+  const obj = message.toObject ? message.toObject() : { ...message };
+  const urls = obj.imageUrls?.length ? obj.imageUrls : (obj.imageUrl ? [obj.imageUrl] : []);
+  obj.imageUrls = urls.map(url => signStoredUrl(url));
+  obj.imageUrl = obj.imageUrls[0] || '';
+  obj.audioUrl = obj.audioUrl ? signStoredUrl(obj.audioUrl) : '';
+  return obj;
+}
+
 function withSignedReportFiles(report) {
   const obj = report.toObject ? report.toObject() : { ...report };
   const urls = obj.fileUrls?.length ? obj.fileUrls : (obj.fileUrl ? [obj.fileUrl] : []);
@@ -5145,7 +5154,7 @@ router.get('/user-messages', staffAuth, async (req, res) => {
       .lean();
 
     const result = messages.map(m => ({
-      ...m,
+      ...withSignedMessageMedia(m),
       patientName: patientMap[String(m.user)]?.name || '未知',
       patientPhone: patientMap[String(m.user)]?.phone || '',
       staffUnread: !m.staffReadAt,
@@ -5188,7 +5197,7 @@ router.get('/user-messages/:userId/thread', staffAuth, async (req, res) => {
       { conversationId, type: 'user', staffReadAt: null },
       { staffReadAt: new Date() }
     );
-    res.json({ success: true, data: messages, conversationId, humanActive: !!state?.humanActive, takenOverAt: state?.takenOverAt || null });
+    res.json({ success: true, data: messages.map(withSignedMessageMedia), conversationId, humanActive: !!state?.humanActive, takenOverAt: state?.takenOverAt || null });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -5338,8 +5347,9 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
       conversationId,
     });
 
-    ssePublish(conversationId, { type: 'message', data: replyMsg });
-    res.json({ success: true, message: '回复已发送', data: replyMsg });
+    const responseMessage = withSignedMessageMedia(replyMsg);
+    ssePublish(conversationId, { type: 'message', data: responseMessage });
+    res.json({ success: true, message: '回复已发送', data: responseMessage });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
