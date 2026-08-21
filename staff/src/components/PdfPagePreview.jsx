@@ -14,17 +14,6 @@ export default function PdfPagePreview({ src, pageNumber, prefetchPages = [], he
   const [pageCount, setPageCount] = useState(0)
   const [pdfDocument, setPdfDocument] = useState(null)
   const sourceUrl = useMemo(() => String(src || '').split('#')[0], [src])
-  const sourceIdentity = useMemo(() => {
-    try {
-      const parsed = new URL(sourceUrl, globalThis.location?.href)
-      for (const key of [...parsed.searchParams.keys()]) {
-        if (/token|signature|expires|credential|date/i.test(key)) parsed.searchParams.delete(key)
-      }
-      return parsed.toString()
-    } catch {
-      return sourceUrl
-    }
-  }, [sourceUrl])
   const prefetchKey = useMemo(() => [...new Set((prefetchPages || []).map(Number).filter(Number.isInteger))].sort((a, b) => a - b).join(','), [prefetchPages])
 
   useEffect(() => {
@@ -59,7 +48,9 @@ export default function PdfPagePreview({ src, pageNumber, prefetchPages = [], he
       loadingTask.destroy?.()
       if (!loadingTask.destroy && pdf) pdf.destroy?.()
     }
-  }, [sourceIdentity])
+  // 报告预览 URL 带短时令牌。即使文件路径相同，令牌刷新后也必须重建 PDF 文档；
+  // 否则组件会继续持有已过期请求并一直显示 403。
+  }, [sourceUrl])
 
   useEffect(() => {
     if (!pdfDocument || !canvasRef.current) return

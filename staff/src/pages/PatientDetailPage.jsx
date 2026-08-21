@@ -2675,8 +2675,16 @@ export default function PatientDetailPage() {
 
   const handleOpenOCRReview = (r, focusItems = []) => {
     ocrFocusHandledRef.current = null
-    ocrReviewRequestIdRef.current = globalThis.crypto?.randomUUID?.() || `ocr-review-${Date.now()}-${Math.random().toString(36).slice(2)}`
-    setOcrReviewReport(r)
+    const reviewRequestId = globalThis.crypto?.randomUUID?.() || `ocr-review-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    ocrReviewRequestIdRef.current = reviewRequestId
+    // 列表中的原件预览令牌只有短时有效，页面停留较久后不能直接复用。
+    // 每次打开审核都按报告 ID 重新获取完整记录和新令牌；请求失败时才退回列表快照。
+    staffAPI.getReport(r._id).then(res => {
+      if (ocrReviewRequestIdRef.current !== reviewRequestId) return
+      setOcrReviewReport(res.data ? { ...r, ...res.data } : r)
+    }).catch(() => {
+      if (ocrReviewRequestIdRef.current === reviewRequestId) setOcrReviewReport(r)
+    })
     setOcrReviewFilter(r.ocrVersion ? 'exceptions' : 'all')
     setOcrVersionHistory(null)
     setOcrVersionHistoryLoading(true)
@@ -2713,13 +2721,6 @@ export default function PatientDetailPage() {
       // 旧后端或暂时的网络失败不影响审核主链路；弹窗中会明确显示版本记录暂不可用。
       setOcrVersionHistory({ reportId: r._id, unavailable: true, extractions: [], revisions: [], screeningCandidates: [], pendingScreeningCount: 0, reviewEvents: [], projectionEvents: [] })
     }).finally(() => setOcrVersionHistoryLoading(false))
-    // 列表接口 select('-content') 裁掉了原图内容（体积大），这里按需补拉完整报告，
-    // 否则走 content(base64) 存储的报告在审核弹窗左侧会显示"无原始文件可预览"
-    if (!r.content && !r.fileUrl && !(r.fileUrls && r.fileUrls.length)) {
-      staffAPI.getReport(r._id).then(res => {
-        if (res.data) setOcrReviewReport(prev => (prev && prev._id === r._id) ? { ...prev, content: res.data.content } : prev)
-      }).catch(() => {})
-    }
     // 每次打开审核弹窗都重新拉取归类目录，确保管理后端新增/修改的分类实时生效
     staffAPI.getScreeningCatalog().then(res => setScreeningCatalog(res.data || [])).catch(() => {})
     // 旧数据迁移：影像/检查类若把所见写在 value 里且 findings 为空，迁移到 findings
