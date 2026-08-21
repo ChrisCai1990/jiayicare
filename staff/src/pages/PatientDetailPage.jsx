@@ -11256,12 +11256,12 @@ export default function PatientDetailPage() {
                                 <textarea style={{ ...inp, minHeight: 42, lineHeight: 1.6, resize: 'vertical', marginBottom: 6 }} value={it.diagnosis || ''} placeholder="诊断意见" onChange={e => updItem(i, { diagnosis: e.target.value })} />
                                 <input style={{ ...inp, background: '#F3EFFB', borderColor: '#C4B5FD', marginBottom: 6 }} value={it.conclusion || ''} placeholder="主要结论" onChange={e => updItem(i, { conclusion: e.target.value })} />
                               </>}
-                              <details style={{ marginTop: 4 }}>
-                                <summary style={{ cursor: 'pointer', color: it.screeningKey ? '#1E6B50' : '#D97706', fontSize: 11, userSelect: 'none', fontWeight: it.screeningKey ? 400 : 700 }}>
+                              <div style={{ marginTop: 6, padding: '7px 8px', border: `1px solid ${it.screeningKey ? '#B7D9CC' : '#F2C48D'}`, borderRadius: 6, background: it.screeningKey ? '#F4FBF8' : '#FFF8EE' }}>
+                                <div style={{ color: it.screeningKey ? '#1E6B50' : '#D97706', fontSize: 11, fontWeight: 700, marginBottom: 5 }}>
                                   专项筛查归类（提交前必填）{it.screeningKey ? ' · 已归类' : ' · 待归类'}
-                                </summary>
-                                <div style={{ marginTop: 6 }}>{classifyCell(it, i)}</div>
-                              </details>
+                                </div>
+                                {classifyCell(it, i)}
+                              </div>
                             </div>
                           )
                         })}

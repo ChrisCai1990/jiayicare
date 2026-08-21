@@ -10480,7 +10480,9 @@ async function runReportParse(reportId, options = {}) {
   const useShaoyifuTemplate = shaoyifuTemplate.isShaoyifuReport(report);
   const zheyiTemplate = require('../utils/zheyiReportTemplate');
   const useZheyiTemplate = zheyiTemplate.isZheyiReport(report);
-  const ocrTemplateId = useShaoyifuTemplate ? 'shaoyifu' : (useZheyiTemplate ? 'zheyi' : 'generic');
+  const mingzhouTemplate = require('../utils/mingzhouReportTemplate');
+  const useMingzhouTemplate = mingzhouTemplate.isMingzhouReport(report);
+  const ocrTemplateId = useShaoyifuTemplate ? 'shaoyifu' : (useZheyiTemplate ? 'zheyi' : (useMingzhouTemplate ? 'mingzhou' : 'generic'));
 
   const isPdf = isPdfReport(report);
   const t0 = Date.now();
@@ -10657,6 +10659,10 @@ async function runReportParse(reportId, options = {}) {
                 batchResults[i] = { pageType: 'template_skip', skipPage: true, items: [], _templateSkip: true };
                 continue;
               }
+              if (useMingzhouTemplate && mingzhouTemplate.pageMode(pageNum) !== 'extract') {
+                batchResults[i] = { pageType: 'template_skip', skipPage: true, items: [], _templateSkip: true };
+                continue;
+              }
               if (textPrimaryByPage.has(pageNum)) {
                 batchResults[i] = textPrimaryByPage.get(pageNum);
                 continue;
@@ -10671,6 +10677,7 @@ async function runReportParse(reportId, options = {}) {
                       + (useOcrV2 ? `\n\n${OCR_V2_EXTRACTION_CONTRACT}` : '')
                       + (useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : '')
                       + (useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : '')
+                      + (useMingzhouTemplate ? mingzhouTemplate.promptForPage(pageNum) : '')
                       + pageTextEvidence
                       + adjacentPageContext;
                   const firstPassModel = report.type === 'body_comp' ? 'qwen-vl-max' : VL_MODEL;
@@ -10720,6 +10727,8 @@ async function runReportParse(reportId, options = {}) {
           ? [4, 5, 6, 7, 8, 9, 10, 11, 20].filter(pageNum => shaoyifuTemplate.needsCoverageAudit(pageNum, allItems))
           : useZheyiTemplate
             ? [...detailPages].filter(pageNum => zheyiTemplate.needsCoverageAudit(pageNum, allItems))
+          : useMingzhouTemplate
+            ? [7, 8].filter(pageNum => detailPages.has(pageNum) && mingzhouTemplate.needsCoverageAudit(pageNum, allItems))
           : useTextLayerPrimary
             ? []
             : selectGenericCoverageAuditPages([...detailPages], allItems);
@@ -10739,7 +10748,8 @@ async function runReportParse(reportId, options = {}) {
             const auditPrompt = firstNames.length === 0 && baselineCount > 0
               ? `${REPORT_PARSE_PROMPT}\n\n${OCR_V2_EXTRACTION_CONTRACT}\n\n【历史完整性重读】同一原件历史识别在本页最多提取过${baselineCount}项，本轮文字层为0项。请从当前原件完整逐项重读，不得复制或猜测历史内容。${formatTextLayerEvidence(textLayer.pages?.[pageNum - 1])}`
               : `${PAGE_COVERAGE_AUDIT_PROMPT}${useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : ''}${useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : ''}${useOcrV2 ? formatTextLayerEvidence(textLayer.pages?.[pageNum - 1]) : ''}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整页漏识别）'}`;
-            const text = await parseImage(img, auditPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: (useShaoyifuTemplate || useZheyiTemplate) ? 8192 : 4096, timeoutMs: retryTimeoutMs((useShaoyifuTemplate || useZheyiTemplate) ? 120000 : 45000) });
+            const finalAuditPrompt = useMingzhouTemplate ? `${auditPrompt}${mingzhouTemplate.promptForPage(pageNum)}` : auditPrompt;
+            const text = await parseImage(img, finalAuditPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: (useShaoyifuTemplate || useZheyiTemplate || useMingzhouTemplate) ? 8192 : 4096, timeoutMs: retryTimeoutMs((useShaoyifuTemplate || useZheyiTemplate || useMingzhouTemplate) ? 120000 : 45000) });
             const p = safeParseJSON(text);
             if (!p || !Array.isArray(p.items)) return null;
             const oldPage = allItems.filter(it => it._page === pageNum);
@@ -10747,8 +10757,11 @@ async function runReportParse(reportId, options = {}) {
             const useAuditedPage = useShaoyifuTemplate
               && shaoyifuTemplate.needsCoverageAudit(pageNum, oldPage)
               && !shaoyifuTemplate.needsCoverageAudit(pageNum, auditedPage);
-            const mergedPage = useAuditedPage ? auditedPage : mergeCoverageAuditItems(oldPage, auditedPage);
-            return { pageNum, oldPage, mergedPage, useAuditedPage };
+            const useMingzhouAuditedPage = useMingzhouTemplate
+              && !mingzhouTemplate.pageIsComplete(pageNum, oldPage)
+              && mingzhouTemplate.pageIsComplete(pageNum, auditedPage);
+            const mergedPage = (useAuditedPage || useMingzhouAuditedPage) ? auditedPage : mergeCoverageAuditItems(oldPage, auditedPage);
+            return { pageNum, oldPage, mergedPage, useAuditedPage: useAuditedPage || useMingzhouAuditedPage };
           } catch (e) {
             console.log(`[parse-ai] 页${pageNum}覆盖复核异常: ${e.message}`);
             return null;
@@ -11111,6 +11124,7 @@ async function runReportParse(reportId, options = {}) {
         : sanitizeBodyCompositionItems(allItems);
       if (useShaoyifuTemplate) allItems = shaoyifuTemplate.normalizeShaoyifuItems(allItems);
       if (useZheyiTemplate) allItems = zheyiTemplate.normalizeZheyiItems(allItems);
+      if (useMingzhouTemplate) allItems = mingzhouTemplate.normalizeMingzhouItems(allItems);
       // 尿/便常规保留报告中的逐行检查项目，不再聚合成一条摘要。
 
       // 2026-07-02修复：各类单页重试(数量核对/超声拆分/空内容补全)命中后都是把条目从原位置摘掉、
@@ -11407,8 +11421,11 @@ async function runReportPageParse(reportId, pageNum, options = {}) {
   const zheyiTemplate = require('../utils/zheyiReportTemplate');
   const useShaoyifuTemplate = shaoyifuTemplate.isShaoyifuReport(report);
   const useZheyiTemplate = zheyiTemplate.isZheyiReport(report);
+  const mingzhouTemplate = require('../utils/mingzhouReportTemplate');
+  const useMingzhouTemplate = mingzhouTemplate.isMingzhouReport(report);
   const templatePrompt = useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum)
-    : useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : '';
+    : useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum)
+    : useMingzhouTemplate ? mingzhouTemplate.promptForPage(pageNum) : '';
   let images;
   let textLayer = null;
   if (isPdf) {
@@ -11463,11 +11480,14 @@ async function runReportPageParse(reportId, pageNum, options = {}) {
   }
   if (useShaoyifuTemplate) newPage = shaoyifuTemplate.normalizeShaoyifuItems(newPage);
   if (useZheyiTemplate) newPage = zheyiTemplate.normalizeZheyiItems(newPage);
+  if (useMingzhouTemplate) newPage = mingzhouTemplate.normalizeMingzhouItems(newPage);
   newPage = normalizeSingleExamReportItems(normalizeDepartmentExamItems(normalizeBreathTestItems(newPage, report)), report);
   const latest = await MedicalReport.findOne(pageRunFilter);
   if (!latest) return;
   const oldPage = (latest.reportItems || []).filter(item => itemTouchesPage(item, pageNum));
-  const mergedPage = mergeCoverageAuditItems(oldPage, newPage);
+  const mergedPage = useMingzhouTemplate && [7, 8].includes(Number(pageNum)) && mingzhouTemplate.pageIsComplete(pageNum, newPage)
+    ? newPage
+    : mergeCoverageAuditItems(oldPage, newPage);
   const classifiedRawPage = await classifyItemsAsync(mergedPage);
   const classifiedPage = latest.ocrVersion ? assessReportItems(classifiedRawPage, { textLayer }) : classifiedRawPage;
   const preserved = (latest.reportItems || []).filter(item => !itemTouchesPage(item, pageNum));

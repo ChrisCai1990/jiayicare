@@ -1,0 +1,38 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+
+const template = require('../src/utils/mingzhouReportTemplate');
+
+test('杭州明州模板程序级跳过P3-P6', () => {
+  assert.equal(template.isMingzhouReport({ hospital: '浙醫二院國際醫學中心 杭州明州醫院' }), true);
+  assert.deepEqual([3, 4, 5, 6].map(template.pageMode), ['skip', 'skip', 'skip', 'skip']);
+  assert.equal(template.pageMode(7), 'extract');
+});
+
+test('P8裸眼视力串入眼底时拆回独立眼底且裸眼记无', () => {
+  const normalized = template.normalizeMingzhouItems([{
+    _page: 8, _order: 1, name: '左眼裸视力', itemType: 'imaging', findings: '双眼视盘边界清，视网膜平伏，左眼可见激光斑', sourceSection: '眼科精英检查',
+  }, {
+    _page: 8, _order: 2, name: '右眼裸视力', itemType: 'imaging', findings: '4.3', sourceSection: '眼科精英检查',
+  }]);
+
+  assert.equal(normalized.find(item => item.name === '左眼裸视力').findings, '无');
+  assert.equal(normalized.find(item => item.name === '右眼裸视力').findings, '无');
+  assert.match(normalized.find(item => item.name === '眼底').findings, /视网膜/);
+});
+
+test('P7完整性必须有原始体重，P8必须有眼底和咽部', () => {
+  assert.equal(template.pageIsComplete(7, [{ _page: 7, name: '体重指数' }]), false);
+  assert.equal(template.pageIsComplete(7, [{ _page: 7, name: '体重' }]), true);
+  assert.equal(template.pageIsComplete(8, [{ _page: 8, name: '眼底' }]), false);
+  assert.equal(template.pageIsComplete(8, [{ _page: 8, name: '眼底' }, { _page: 8, name: '咽部' }]), true);
+});
+
+test('模板归一化兜底清除P3-P6条目', () => {
+  const normalized = template.normalizeMingzhouItems([
+    { _page: 3, name: '异常结果汇总' },
+    { _page: 6, name: '健康建议' },
+    { _page: 7, name: '体重' },
+  ]);
+  assert.deepEqual(normalized.map(item => item.name), ['体重']);
+});
