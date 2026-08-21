@@ -5917,7 +5917,6 @@ export default function PatientDetailPage() {
             </div>
           </div>
         )}
-        </div>
 
         {/* ── 体检关键指标 ── */}
         {tab === 'ai' && reviewWorkbenchView === 'screening' && (
@@ -6297,6 +6296,7 @@ export default function PatientDetailPage() {
           </div>
         </div>
         )}
+        </div>
 
         {/* ── 4.2 身体成分指标 ── */}
         <div className="card" style={{ marginBottom: 16 }}>
@@ -7115,7 +7115,7 @@ export default function PatientDetailPage() {
               <div style={{ background: '#F8FAF9' }}>
                 <section style={{ padding: 18, minWidth: 0 }}>
                   <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => setTab('screening')}>专项筛查核查</button>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => setReviewWorkbenchView('screening')}>专项筛查核查</button>
                     <button type="button" className={`btn btn-sm ${reviewWorkbenchView === 'analysis' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setReviewWorkbenchView('analysis')}>AI趋势审核</button>
                     <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setAiSourceGroup({ title: `${curYear}年度原始资料`, ids: workbenchYearReports.map(report => String(report._id)), reportLabel })}>🔗 查看本年度原件（{workbenchYearReports.length}份）</button>
                   </div>
