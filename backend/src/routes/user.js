@@ -458,11 +458,12 @@ router.post('/onboarding', auth, async (req, res) => {
         lastLoginAt: current.lastLoginAt || new Date(),
         lastLoginMethod: current.lastLoginMethod || idOwner.lastLoginMethod,
       };
+      if (current.wechatOpenid) setData.wechatOpenid = current.wechatOpenid;
       if (current.wechatMpOpenid) setData.wechatMpOpenid = current.wechatMpOpenid;
       if (!idOwner.name || idOwner.name === '微信用户') setData.name = name.trim();
 
       // 先释放临时账号上的唯一登录字段，再写入既有档案。
-      await User.updateOne({ _id: current._id }, { $unset: { phone: 1, wechatMpOpenid: 1 } });
+      await User.updateOne({ _id: current._id }, { $unset: { phone: 1, wechatOpenid: 1, wechatMpOpenid: 1 } });
       const update = { $set: setData };
       if (oldPhone && oldPhone !== normalizedContactPhone) {
         update.$push = { phoneChangeHistory: { from: oldPhone, to: normalizedContactPhone, changedByName: '客户实名验证', changedAt: new Date() } };

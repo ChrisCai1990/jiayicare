@@ -12,21 +12,43 @@ import { useAuth } from '../../context/AuthContext';
 // 其余健康信息（既往史/生活方式/心理健康等）交给问卷库分批推送采集，此处不重复询问。
 
 export default function OnboardingScreen({ navigation }) {
-  const { user, updateUser, logout } = useAuth();
+  const { user, login, updateUser } = useAuth();
   // 始终优先使用登录后由服务端返回的正式档案信息，避免新设备沿用空白/旧表单状态。
   const [name, setName] = useState(user?.name === '用户' ? '' : (user?.name || ''));
   const [idType, setIdType] = useState(user?.idType === 'passport' ? 'passport' : 'idCard'); // idCard 身份证 | passport 护照
   const [idNumber, setIdNumber] = useState(user?.idNumber || '');
   const [contactPhone, setContactPhone] = useState(user?.phone || user?.contactPhone || '');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [codeSending, setCodeSending] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   const canSubmit = name.trim() && contactPhone.trim() && !submitting;
+  const needsPhoneVerification = contactPhone.trim() !== (user?.phone || '').trim();
+
+  const sendCode = async () => {
+    const phone = contactPhone.trim();
+    if (!/^1[3-9]\d{9}$/.test(phone)) { setErrorMsg('请输入正确的手机号'); return; }
+    setCodeSending(true);
+    setErrorMsg('');
+    try {
+      const res = await userAPI.sendOnboardingCode(phone);
+      if (!res.success) setErrorMsg(res.message || '验证码发送失败');
+    } catch (err) {
+      setErrorMsg(err.message || '验证码发送失败');
+    } finally {
+      setCodeSending(false);
+    }
+  };
 
   const submit = async () => {
     setErrorMsg('');
     if (!name.trim()) { setErrorMsg('请填写姓名'); return; }
     if (!contactPhone.trim()) { setErrorMsg('请填写联系电话'); return; }
+    if (needsPhoneVerification && !/^\d{6}$/.test(verificationCode.trim())) {
+      setErrorMsg('请输入收到的6位短信验证码');
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await userAPI.onboarding({
@@ -34,9 +56,12 @@ export default function OnboardingScreen({ navigation }) {
         idNumber: idNumber.trim() || undefined,
         idType,
         contactPhone: contactPhone.trim(),
+        verificationCode: needsPhoneVerification ? verificationCode.trim() : undefined,
       });
       if (res.success) {
-        updateUser({ ...res.data.user, onboardingCompleted: true });
+        const completedUser = { ...res.data.user, onboardingCompleted: true };
+        if (res.data.token) await login(completedUser, res.data.token);
+        else updateUser(completedUser);
         navigation.replace('Main');
       } else {
         setErrorMsg(res.message || '提交失败，请重试');
@@ -120,23 +145,36 @@ export default function OnboardingScreen({ navigation }) {
               placeholderTextColor={colors.textMuted}
             />
           </View>
+          {needsPhoneVerification && (
+            <>
+              <Text style={styles.verifyHint}>该号码与当前登录账号不一致，请验证后关联已有健康档案。</Text>
+              <View style={styles.verifyRow}>
+                <View style={[styles.inputBox, styles.codeInputBox]}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="请输入6位短信验证码"
+                    keyboardType="number-pad"
+                    maxLength={6}
+                    value={verificationCode}
+                    onChangeText={setVerificationCode}
+                    placeholderTextColor={colors.textMuted}
+                  />
+                </View>
+                <TouchableOpacity style={styles.codeBtn} onPress={sendCode} disabled={codeSending}>
+                  {codeSending
+                    ? <ActivityIndicator color={colors.primary} />
+                    : <Text style={styles.codeBtnText}>获取验证码</Text>
+                  }
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
         </View>
 
         {!!errorMsg && (
           <View style={styles.errorRow}>
             <Ionicons name="alert-circle-outline" size={15} color={colors.danger} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.errorText}>{errorMsg}</Text>
-              {errorMsg.includes('手机号已有健康档案') && (
-                <TouchableOpacity
-                  onPress={logout}
-                  style={styles.reloginBtn}
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.reloginText}>退出并重新登录</Text>
-                </TouchableOpacity>
-              )}
-            </View>
+            <Text style={styles.errorText}>{errorMsg}</Text>
           </View>
         )}
 
@@ -175,13 +213,20 @@ const styles = StyleSheet.create({
   formLabel: { fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: spacing.sm, letterSpacing: 0.3 },
   inputBox: { backgroundColor: colors.surface, borderRadius: radius.sm, padding: spacing.sm, borderWidth: 1.5, borderColor: colors.border },
   input: { fontSize: 15, color: colors.textPrimary },
+  verifyHint: { fontSize: 12, color: colors.textSecondary, lineHeight: 18, marginTop: spacing.sm },
+  verifyRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
+  codeInputBox: { flex: 1 },
+  codeBtn: {
+    minWidth: 104, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: colors.primary, borderRadius: radius.sm,
+    backgroundColor: colors.surface, paddingHorizontal: spacing.sm,
+  },
+  codeBtnText: { fontSize: 13, color: colors.primary, fontWeight: '700' },
   errorRow: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: colors.danger + '10', padding: spacing.sm, borderRadius: radius.sm, marginBottom: spacing.md,
   },
   errorText: { fontSize: 13, color: colors.danger, flex: 1 },
-  reloginBtn: { alignSelf: 'flex-start', marginTop: spacing.sm, paddingVertical: 4 },
-  reloginText: { fontSize: 13, color: colors.primary, fontWeight: '700', textDecorationLine: 'underline' },
   infoBox: {
     flexDirection: 'row', gap: spacing.xs, width: '100%',
     backgroundColor: colors.primary + '10', borderRadius: radius.sm,

@@ -101,6 +101,7 @@ export const userAPI = {
   getDashboard:    ()             => request('/user/dashboard'),
   updateMe:        (data)         => request('/user/me', { method: 'PUT', body: JSON.stringify(data) }),
   onboarding:      (data)         => request('/user/onboarding', { method: 'POST', body: JSON.stringify(data) }),
+  sendOnboardingCode: (phone)     => request('/auth/send-code', { method: 'POST', body: JSON.stringify({ phone }) }),
   getReport:       (period)       => request(`/user/report?period=${period || 'week'}`),
   sendChangeCode:  (newPhone)     => request('/user/change-phone/send-code', { method: 'POST', body: JSON.stringify({ newPhone }) }),
   changePhone:     (newPhone, code) => request('/user/change-phone', { method: 'POST', body: JSON.stringify({ newPhone, code }) }),

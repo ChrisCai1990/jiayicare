@@ -10,17 +10,18 @@ import Icon from '../../components/Icon';
 // 首次登录最小化建档：姓名+身份证号+联系电话，其余健康信息交给问卷库分批采集。
 export default function OnboardingPage() {
   const { statusBarHeight } = useNavBar();
-  const { login, updateUser } = useAuth();
-  const [name, setName] = useState('');
-  const [idType, setIdType] = useState('idCard');
-  const [idNumber, setIdNumber] = useState('');
-  const [contactPhone, setContactPhone] = useState('');
+  const { user, login, updateUser } = useAuth();
+  const [name, setName] = useState(user?.name === '微信用户' ? '' : (user?.name || ''));
+  const [idType, setIdType] = useState(user?.idType === 'passport' ? 'passport' : 'idCard');
+  const [idNumber, setIdNumber] = useState(user?.idNumber || '');
+  const [contactPhone, setContactPhone] = useState(user?.phone || user?.contactPhone || '');
   const [verificationCode, setVerificationCode] = useState('');
   const [codeSending, setCodeSending] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   const canSubmit = name.trim() && idNumber.trim() && contactPhone.trim() && !submitting;
+  const needsPhoneVerification = contactPhone.trim() !== (user?.phone || '').trim();
 
   const sendCode = async () => {
     if (!/^1[3-9]\d{9}$/.test(contactPhone.trim())) { setErrorMsg('请输入正确的手机号'); return; }
@@ -35,6 +36,7 @@ export default function OnboardingPage() {
     if (!name.trim()) { setErrorMsg('请填写姓名'); return; }
     if (!idNumber.trim()) { setErrorMsg(`请填写${idType === 'passport' ? '护照号' : '身份证号'}`); return; }
     if (!contactPhone.trim()) { setErrorMsg('请填写联系电话'); return; }
+    if (needsPhoneVerification && !/^\d{6}$/.test(verificationCode.trim())) { setErrorMsg('请输入收到的6位短信验证码'); return; }
     setSubmitting(true);
     try {
       const res = await userAPI.onboarding({
@@ -42,7 +44,7 @@ export default function OnboardingPage() {
         idNumber: idNumber.trim(),
         idType,
         contactPhone: contactPhone.trim(),
-        verificationCode: verificationCode.trim(),
+        verificationCode: needsPhoneVerification ? verificationCode.trim() : undefined,
       });
       if (res.success) {
         if (res.data.token) await login({ ...res.data.user, onboardingCompleted: true }, res.data.token);
@@ -116,12 +118,17 @@ export default function OnboardingPage() {
           <View style={{ backgroundColor: colors.surface, borderRadius: `${radius.sm}px`, border: `1.5px solid ${colors.border}`, padding: '8px 12px' }}>
             <Input style={{ fontSize: '15px' }} type="number" placeholder="用于健康团队与您联系" value={contactPhone} onInput={(e) => setContactPhone(e.detail.value)} />
           </View>
-          <View style={{ display: 'flex', gap: `${spacing.sm}px`, marginTop: `${spacing.sm}px` }}>
-            <View style={{ flex: 1, backgroundColor: colors.surface, borderRadius: `${radius.sm}px`, border: `1.5px solid ${colors.border}`, padding: '8px 12px' }}>
-              <Input style={{ fontSize: '15px' }} type="number" maxlength={6} placeholder="请输入短信验证码" value={verificationCode} onInput={(e) => setVerificationCode(e.detail.value)} />
-            </View>
-            <Button size="mini" loading={codeSending} disabled={codeSending} onClick={sendCode} style={{ color: colors.primary, borderColor: colors.primary, margin: 0, height: '42px', lineHeight: '42px' }}>获取验证码</Button>
-          </View>
+          {needsPhoneVerification && (
+            <>
+              <Text style={{ display: 'block', fontSize: '12px', color: colors.textSecondary, lineHeight: '18px', marginTop: `${spacing.sm}px` }}>该号码与当前登录账号不一致，请验证后关联已有健康档案。</Text>
+              <View style={{ display: 'flex', gap: `${spacing.sm}px`, marginTop: `${spacing.sm}px` }}>
+                <View style={{ flex: 1, backgroundColor: colors.surface, borderRadius: `${radius.sm}px`, border: `1.5px solid ${colors.border}`, padding: '8px 12px' }}>
+                  <Input style={{ fontSize: '15px' }} type="number" maxlength={6} placeholder="请输入短信验证码" value={verificationCode} onInput={(e) => setVerificationCode(e.detail.value)} />
+                </View>
+                <Button size="mini" loading={codeSending} disabled={codeSending} onClick={sendCode} style={{ color: colors.primary, borderColor: colors.primary, margin: 0, height: '42px', lineHeight: '42px' }}>获取验证码</Button>
+              </View>
+            </>
+          )}
         </View>
 
         {!!errorMsg && (
