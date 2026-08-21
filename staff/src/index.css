@@ -196,6 +196,49 @@ a { text-decoration: none; color: inherit; }
 .patient-secondary-tabs .tab-btn { font-size: 12px; padding: 7px 10px; }
 .health-archive-sections > .screening-section-wrapper { display: none; }
 .screening-only-sections > :not(.screening-section-wrapper) { display: none !important; }
+
+/* 客户详情各一级版面共享同一套内容骨架。业务模块可以保留自己的表格和卡片，
+   但首屏起点、标题操作区、二级导航和空状态不再各自定义一套视觉语言。 */
+.patient-detail-page .patient-primary-tabs {
+  margin-bottom: 0;
+  padding: 0 4px;
+  border-bottom: 1px solid #DDE6E0;
+}
+.patient-detail-page .patient-primary-tabs + .patient-secondary-tabs { margin-top: 8px; }
+.patient-detail-page .patient-tab-section { margin-top: 16px; }
+.patient-detail-page .patient-info-grid { align-items: start; }
+.patient-detail-page .patient-section-card,
+.patient-detail-page .patient-report-section > .patient-section-header,
+.patient-detail-page .patient-section-toolbar {
+  background: var(--card-bg);
+  border: 1px solid #EDF1EE;
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.patient-detail-page .patient-section-card > .card-header,
+.patient-detail-page .patient-section-header,
+.patient-detail-page .patient-section-toolbar {
+  min-height: 64px;
+  padding: 14px 20px;
+}
+.patient-detail-page .patient-section-toolbar { align-items: center; }
+.patient-detail-page .patient-section-toolbar > div:last-child { align-items: center; }
+.patient-detail-page .patient-report-section > .patient-section-header { border-bottom: 1px solid #EDF1EE; }
+.patient-detail-page .patient-record-list > .card:first-child { margin-top: 0; }
+.patient-detail-page .patient-section-card > div[style*="text-align: center"],
+.patient-detail-page .patient-record-list .card > div[style*="color: #aaa"] {
+  min-height: 112px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted) !important;
+}
+@media (max-width: 760px) {
+  .patient-detail-page .patient-tab-section { margin-top: 12px; }
+  .patient-detail-page .patient-info-grid { grid-template-columns: 1fr !important; }
+  .patient-detail-page .patient-section-toolbar { align-items: flex-start; }
+  .patient-detail-page .patient-section-toolbar > div:last-child { width: 100%; margin-left: 0 !important; justify-content: flex-end; }
+}
 @media (max-width: 720px) {
   .report-list-toolbar { align-items: flex-start; flex-direction: column; }
   .report-list-controls { align-self: flex-end; }

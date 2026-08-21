@@ -3308,7 +3308,7 @@ export default function PatientDetailPage() {
     // 逐个格子加 minmax(0,1fr) 风险大且易漏，这里在页面根容器统一加 overflowX:hidden 兜底——
     // 消灭页面级横向滚动条(金娟"键盘左右移动"的直接根源)；内部需要横向滚动的区块(趋势图/tab条/表格)
     // 各自已有 overflowX:auto，不受影响。
-    <div className="page" style={{ overflowX: 'hidden', maxWidth: '100%' }}>
+    <div className="page patient-detail-page" style={{ overflowX: 'hidden', maxWidth: '100%' }}>
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <button className="btn btn-secondary btn-sm" onClick={() => nav('/patients')}>← 返回</button>
@@ -3503,7 +3503,7 @@ export default function PatientDetailPage() {
           </button>
         )
         return <div style={{ marginBottom: 20 }}>
-          <div className="tabs" style={{ marginBottom: showSecondaryTabs ? 8 : 0 }}>
+          <div className="tabs patient-primary-tabs" style={{ marginBottom: showSecondaryTabs ? 8 : 0 }}>
             {primaryTabs.map(t => renderTab(t))}
             <button className={`tab-btn ${isSecondaryTab ? 'active' : ''}`} onClick={() => setShowMoreTabs(v => !v)}>更多 {showSecondaryTabs ? '⌃' : '⌄'}</button>
           </div>
@@ -3515,7 +3515,7 @@ export default function PatientDetailPage() {
 
       {/* ── Info Tab ── */}
       {tab === 'info' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+        <div className="patient-tab-section patient-info-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
           {/* 基本资料 */}
           <div className="card">
             <div className="card-header">
@@ -4045,7 +4045,7 @@ export default function PatientDetailPage() {
 
       {/* ── Records Tab ── */}
       {(tab === 'records' || (tab === 'ai' && reviewWorkbenchView === 'screening')) && (
-        <div ref={tab === 'records' ? archiveSectionsRef : null} className={tab === 'records' ? 'health-archive-sections' : 'screening-only-sections'} onClick={tab === 'records' ? handleArchiveSectionClick : undefined}>
+        <div ref={tab === 'records' ? archiveSectionsRef : null} className={`patient-tab-section ${tab === 'records' ? 'health-archive-sections' : 'screening-only-sections'}`} onClick={tab === 'records' ? handleArchiveSectionClick : undefined}>
         <style>{`.screening-only-sections>:not(.screening-section-wrapper){display:none!important}.health-archive-sections>.screening-section-wrapper{display:none!important}.health-archive-sections>.archive-nav .archive-nav-item{flex:1;justify-content:center;min-height:42px}.archive-profile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.archive-profile-section{min-height:116px}.archive-profile-section:nth-child(4):last-child{grid-column:auto}@media(max-width:760px){.health-archive-sections>.archive-nav .archive-nav-item{flex:0 0 auto}.archive-profile-grid{grid-template-columns:1fr}.archive-profile-section{min-height:auto}}`}</style>
         <style>{`.health-archive-sections{display:grid;grid-template-columns:236px minmax(0,1fr);gap:0 18px;align-items:start}.health-archive-sections>.archive-toolbar,.health-archive-sections>.archive-overview{grid-column:1 / -1}.health-archive-sections>.card{grid-column:2;min-width:0;transition:box-shadow .2s}.health-archive-sections .archive-collapsed>:not(.card-header){display:none!important}.health-archive-sections .card-header[data-archive-toggle="true"]{cursor:pointer;min-height:60px;display:flex;align-items:center;gap:12px}.health-archive-sections .card-header[data-archive-toggle="true"] .card-title{order:0;flex:0 0 220px;display:flex;align-items:center;gap:8px}.health-archive-sections .card-header[data-archive-toggle="true"]:before{content:attr(data-archive-summary);order:1;flex:1;min-width:0;font-size:12px;font-weight:400;color:#77958A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.health-archive-sections .card-header[data-archive-toggle="true"]>button,.health-archive-sections .card-header[data-archive-toggle="true"]>div:not(.card-title){order:2;flex-shrink:0}.health-archive-sections .card-header[data-archive-toggle="true"]:after{content:'⌃';order:3;margin-left:2px;color:#1E6B50;font-size:18px}.health-archive-sections .archive-collapsed>.card-header[data-archive-toggle="true"]:after{content:'⌄'}.archive-overview{background:linear-gradient(135deg,#EAF4EF 0%,#FAFCFA 62%,#FFF 100%);border:1px solid #D9E9E0;border-radius:14px;padding:20px 22px;margin-bottom:18px}.archive-overview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:16px}.archive-overview-metric{background:rgba(255,255,255,.86);border:1px solid #E2EEE7;border-radius:10px;padding:12px 13px}.archive-overview-label{font-size:12px;color:#6E8579;margin-bottom:5px}.archive-overview-value{font-size:18px;font-weight:700;color:#173D2B}.archive-overview-task{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#FFF;border:1px solid #DDEBE3;border-radius:8px;padding:9px 10px;margin-top:8px}.archive-overview-task-text{font-size:12px;color:#4A6558;margin-top:2px}.archive-nav{grid-column:1;grid-row:3 / span 80;position:sticky;top:16px;background:#FFF;border:1px solid #E0EBE4;border-radius:12px;padding:12px;box-shadow:0 4px 16px rgba(26,61,43,.04)}.archive-nav-title{font-size:12px;font-weight:700;color:#416554;padding:3px 8px 9px}.archive-nav-group{border-top:1px solid #EEF3EF;padding:9px 0 4px}.archive-nav-group:first-of-type{border-top:0}.archive-nav-group-label{font-size:11px;font-weight:700;color:#8AA89C;padding:0 8px 5px}.archive-nav-item{display:flex;width:100%;align-items:center;justify-content:space-between;gap:8px;border:0;border-radius:7px;background:transparent;color:#395848;cursor:pointer;font-size:13px;padding:8px;text-align:left}.archive-nav-item:hover{background:#EDF6F0;color:#1E6B50}.archive-nav-item span:last-child{color:#9AB2A5;font-size:14px}@media(max-width:1000px){.health-archive-sections{display:block}.health-archive-sections>.card{margin-left:0}.archive-nav{display:none}.archive-overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.health-archive-sections .card-header[data-archive-toggle="true"] .card-title{flex:1}.health-archive-sections .card-header[data-archive-toggle="true"]:before{display:none}}`}</style>
         <style>{`.health-archive-sections{grid-template-columns:220px minmax(0,1fr);gap:0 16px}.health-archive-sections>.archive-toolbar{grid-column:1/-1;border-bottom:1px solid #E3ECE6;padding:0 4px 14px}.health-archive-sections>.archive-overview{display:none}.health-archive-sections>.archive-nav{grid-row:2 / span 80;margin-top:0;border-radius:10px;box-shadow:none}.health-archive-sections>.card{margin-bottom:14px!important}.health-archive-sections>.archive-section-hidden{display:none}.archive-nav-item.is-active{background:#EAF5EE;color:#176B4D;font-weight:700}.archive-nav-item.is-active span:last-child{color:#176B4D}.health-archive-sections .card-header[data-archive-toggle="true"]{cursor:default}.health-archive-sections .card-header[data-archive-toggle="true"]:after{display:none}.health-archive-sections .card-header[data-archive-toggle="true"]:before{color:#8AA89C}.health-archive-sections .archive-collapsed>:not(.card-header){display:block!important}@media(max-width:1000px){.health-archive-sections>.archive-toolbar{padding-bottom:12px}.health-archive-sections>.archive-section-hidden{display:none!important}}`}</style>
@@ -7969,9 +7969,9 @@ export default function PatientDetailPage() {
 
       {/* ── Medications Tab ── */}
       {tab === 'medications' && (
-        <div>
+        <div className="patient-tab-section patient-medication-section">
           {/* 子 tab 切换 */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+          <div className="patient-section-toolbar" style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
             {[{ key: 'med', label: '💊 用药信息管理' }, { key: 'sup', label: '🥗 营养补充信息管理' }].map(t => (
               <button key={t.key}
                 className={`btn btn-sm ${medSubTab === t.key ? 'btn-primary' : 'btn-secondary'}`}
@@ -8368,7 +8368,7 @@ export default function PatientDetailPage() {
 
       {/* ── Plans Tab ── */}
       {tab === 'plans' && (
-        <div className="card">
+        <div className="card patient-tab-section patient-section-card">
           <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div className="card-title">管理方案</div>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -8461,7 +8461,7 @@ export default function PatientDetailPage() {
       {/* ── Follow-ups Tab ── */}
       {tab === 'followups' && (
         <>
-        <div className="card">
+        <div className="card patient-tab-section patient-section-card">
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div className="card-title">随访记录</div>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -8999,8 +8999,8 @@ export default function PatientDetailPage() {
         const paginatedReportRows = tableRows.slice((currentReportPage - 1) * REPORT_PAGE_SIZE, currentReportPage * REPORT_PAGE_SIZE)
 
         return (
-          <div>
-            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+          <div className="patient-tab-section patient-report-section">
+            <div className="card-header patient-section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
               <div className="card-title">体检报告 <span style={{ fontSize: 12, fontWeight: 400, color: '#8AA89C', marginLeft: 6 }}>{tableRows.length} 份</span></div>
               <div className="report-filter-bar">
                 <select className="form-input report-year-select" style={{ width: 132 }} value={reportYearFilter} onChange={e => { setReportYearFilter(e.target.value); setReportPage(1); setOpenReportActionId(null) }} aria-label="按年份筛选报告">
@@ -9183,7 +9183,7 @@ export default function PatientDetailPage() {
           </table>
         )
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="patient-tab-section patient-record-list" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {CATS.map(cat => {
               const isDiseaseMgmt = cat === '专病管理'
               // 专病管理内部按标题二级分组（同一专病的记录只要标题写法一致就会归到一起，组内保持原有按日期倒序）
