@@ -3031,15 +3031,10 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
       await syncBodyCompositionFromReport(report);
     }
 
-    // 归类改动后自动重新AI解析：改类目常意味着此前AI按错误类目提取的内容不准了（如从居家监测改成
-    // 肿瘤筛查，原本就没解析过；或从肿瘤筛查改成慢性病，原提取项对不上新类目），不能让医护端还得
-    // 另外点一次"重新解析"才生效。居家监测/功能医学检测本身就不支持AI解析（见reports.js /parse-ai
-    // 同样的判断口径），此处跳过；年度体检2026-07-28起已解除限制，不再排除；已审核报告前面已经
-    // 挡掉type变更，不会走到这里。
-    if (typeChanged && (report.fileUrl || report.content) && type !== 'home_monitor') {
-      const { isFunctionalMedicineL1 } = require('../utils/screeningMatch');
-      const skipAi = await isFunctionalMedicineL1(report.screeningL1);
-      if (!skipAi && process.env.QWEN_API_KEY) {
+    // 归类改动后自动重新AI解析。居家监测与功能医学检测现已开放 OCR v2，
+    // 因此采用与其他报告一致的重解析行为。
+    if (typeChanged && (report.fileUrl || report.content)) {
+      if (process.env.QWEN_API_KEY) {
         const runId = crypto.randomUUID();
         const claimed = await MedicalReport.findOneAndUpdate(
           buildFullOcrClaimFilter(report._id),
@@ -11472,18 +11467,8 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, checkPermissionStrict('r
     if (!hasFile) {
       return res.status(400).json({ success: false, message: '报告无文件内容，无法解析' });
     }
-    // 居家监测设备导出报告（动态血压/动态血糖等）格式五花八门、AI识别容易出错（曾出现机构名/数值
-    // 幻觉），2026-07-21需求明确要求这类报告不走AI自动解析，完全人工录入。年度体检报告此前也在
-    // 此列，2026-07-28随提取规则改造（改为按原文逐项提取，不再依赖固定分类模板）一并解除限制。
-    if (report.type === 'home_monitor') {
-      await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
-      return res.json({ success: true, message: '居家监测报告不支持AI自动解析，请人工录入', skipAi: true });
-    }
-    const { isFunctionalMedicineL1 } = require('../utils/screeningMatch');
-    if (await isFunctionalMedicineL1(report.screeningL1)) {
-      await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
-      return res.json({ success: true, message: '功能医学检测报告不支持AI自动解析（项目繁多或页数过大），请人工查阅原始文件' });
-    }
+    // 居家监测与功能医学检测在测试环境开放 OCR v2；结果仍必须经过
+    // “审核AI结果”正式提交，不能直接进入专项筛查或用户可见数据。
     if (!process.env.QWEN_API_KEY) {
       await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
       return res.json({ success: true, message: '未配置AI密钥，已加入人工审核队列' });

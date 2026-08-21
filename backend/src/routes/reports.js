@@ -190,20 +190,8 @@ router.post('/:id/parse-ai', auth, async (req, res) => {
       return res.status(400).json({ success: false, message: '报告无文件内容，无法解析' });
     }
 
-    // 居家监测（血压/血糖/心电等设备读数照片）格式不固定，AI提取意义不大；功能医学检测项目
-    // 非标准化，AI提取不准；两者跳过自动解析，直接进人工审核队列。年度体检报告此前也在此列，
-    // 2026-07-28随提取规则改造（改为按原文逐项提取，不再依赖固定分类模板）一并解除限制。
-    if (report.type === 'home_monitor' || report.type === 'functional') {
-      await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
-      return res.json({ success: true, message: '该类型报告不支持AI自动解析，已加入待人工审核队列' });
-    }
-
-    // screeningL1 是医护端细分类目字段，用户端上传报告不填此字段，此判断只对医护端手动录入生效
-    const { isFunctionalMedicineL1 } = require('../utils/screeningMatch');
-    if (await isFunctionalMedicineL1(report.screeningL1)) {
-      await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
-      return res.json({ success: true, message: '功能医学检测报告不支持AI自动解析，请等待健管专员人工查阅' });
-    }
+    // 居家监测与功能医学检测同样允许进入结构化提取；识别结果仍统一进入
+    // pending 人工审核，不因开放解析而绕过正式发布门槛。
 
     if (!process.env.QWEN_API_KEY) {
       await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
