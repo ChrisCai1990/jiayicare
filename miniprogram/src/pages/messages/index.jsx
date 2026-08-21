@@ -639,6 +639,11 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
     setLoading(false);
   }, [role]);
 
+  const refreshAfterSend = () => {
+    // 用户消息先返回，AI回复通常晚约1～3秒入库；分段刷新避免只在AI生成前刷新一次。
+    [500, 1800, 4000].forEach((delay) => setTimeout(loadThread, delay));
+  };
+
   useEffect(() => {
     loadThread();
     // 小程序无SSE支持，用10秒轮询代替app端的实时推送
@@ -661,7 +666,7 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
       setFoodImages([]);
       // 服务团队频道只负责沟通，不把每轮问答自动写成“日常健康打卡”。
       // 用户需要形成饮食记录时，应从专门的营养记录入口明确提交餐食/照片。
-      setTimeout(loadThread, 500);
+      refreshAfterSend();
     } catch {
       setInput(text);
     } finally {
@@ -693,7 +698,7 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
         audio: { data: `data:audio/mpeg;base64,${base64}`, mimeType: 'audio/mpeg', duration: Math.max(1, Math.ceil(duration / 1000)) },
       });
       if (res?.data) setMsgs((prev) => [...prev, res.data]);
-      setTimeout(loadThread, 500);
+      refreshAfterSend();
     } catch (err) {
       Taro.showToast({ title: err?.message || '语音发送失败', icon: 'none' });
     } finally { setSending(false); }

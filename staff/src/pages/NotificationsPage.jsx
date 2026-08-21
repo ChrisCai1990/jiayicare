@@ -709,6 +709,10 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
   }
 
   useEffect(() => { loadThread() }, [userId, roleKey])
+  useEffect(() => {
+    const timer = setInterval(loadThread, 3000)
+    return () => clearInterval(timer)
+  }, [userId, roleKey])
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
   useEffect(() => () => { recorderRef.current?.state === 'recording' && recorderRef.current.stop(); recordStreamRef.current?.getTracks?.().forEach(track => track.stop()) }, [])
 
