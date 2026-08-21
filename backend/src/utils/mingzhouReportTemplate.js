@@ -11,7 +11,8 @@ function pageMode(pageNum) {
 
 function promptForPage(pageNum) {
   if (pageNum === 7) return `\n\n【杭州明州版式 P7 强制逐行】
-本页一般普通检查必须逐行输出身高、体重、收缩压、舒张压、体重指数/BMI、脉搏等原图实际行。体重位于身高与BMI附近，必须读取原始印刷值和单位，禁止遗漏，禁止用BMI反算。内外科栏每一行单独输出。`;
+本页一般普通检查必须逐行输出身高、体重、收缩压、舒张压、体重指数/BMI、脉搏等原图实际行。体重位于身高与BMI附近，必须读取原始印刷值和单位，禁止遗漏，禁止用BMI反算。内外科栏每一行单独输出。
+本页外科栏的手术史(外科)、既往史(外科)、现病史(外科)即使结果为“无”也必须分别输出，不得省略。`;
   if (pageNum === 8) return `\n\n【杭州明州版式 P8 强制逐行】
 本页含外科续表、眼科和耳鼻喉科。眼科必须分别输出左眼裸视力、右眼裸视力、左眼矫正视力、右眼矫正视力、外眼、眼底等原图实际行；左右裸眼视力原结果栏为空时 findings="无"，绝不能复制矫正视力数值。眼底长段原文只能属于独立“眼底”项目。耳鼻喉科必须输出现病史、既往史、手术史、耳部、鼻部、咽部、喉部，结果为无也不得省略。`;
   return '';
@@ -51,14 +52,27 @@ function normalizeMingzhouItems(items) {
       findings: recoveredFundus, diagnosis: '', conclusion: '', status: 'unknown',
     });
   }
+  const page8Order = [
+    /浅表淋巴结/, /甲状腺/, /乳腺/, /脊柱/, /四肢/,
+    /左眼?(?:裸眼|裸视力|裸眼视力)/, /^眼底|眼底（眼科）/, /右眼?(?:裸眼|裸视力|裸眼视力)/,
+    /现病史.*眼科/, /矫正左眼视力|左眼矫正视力/, /既往史.*眼科/, /矫正右眼视力|右眼矫正视力/, /手术史.*眼科/, /外眼/,
+    /鼻部/, /咽部/, /本科既往史/, /喉部/, /耳部/, /耳鼻喉.*(?:紧急|严重).*通知/, /现病史.*耳鼻喉/, /手术史.*耳鼻喉/,
+  ];
+  const rank = item => {
+    const page = Number(item?._page || item?.sourcePage || 0);
+    if (page !== 8) return Number(item?._order || 0);
+    const name = text(item.name);
+    const index = page8Order.findIndex(pattern => pattern.test(name));
+    return index < 0 ? 1000 + Number(item?._order || 0) : index;
+  };
   return result.sort((a, b) => Number(a?._page || a?.sourcePage || 0) - Number(b?._page || b?.sourcePage || 0)
-    || Number(a?._order || 0) - Number(b?._order || 0));
+    || rank(a) - rank(b) || Number(a?._order || 0) - Number(b?._order || 0));
 }
 
 function pageIsComplete(pageNum, items) {
   const pageItems = (items || []).filter(item => Number(item?._page || item?.sourcePage || 0) === Number(pageNum));
   const names = pageItems.map(item => text(item.name)).join(' ');
-  if (pageNum === 7) return /体重(?!指数)|(?<!体重)weight/i.test(names);
+  if (pageNum === 7) return /体重(?!指数)|(?<!体重)weight/i.test(names) && /手术史.*外科/.test(names);
   if (pageNum === 8) return /眼底/.test(names) && /咽部/.test(names);
   return true;
 }

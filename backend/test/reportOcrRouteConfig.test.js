@@ -30,3 +30,13 @@ test('manual reclassification only processes unclassified report items', () => {
   assert.doesNotMatch(routeSource, /structuralCorrection/);
   assert.match(routeSource, /processedCount: pendingItems\.length/);
 });
+
+test('OCR review classification editor is not hidden in a details disclosure', () => {
+  const patientPage = fs.readFileSync(path.join(__dirname, '../../staff/src/pages/PatientDetailPage.jsx'), 'utf8');
+  const marker = '专项筛查归类（提交前必填）';
+  const markerAt = patientPage.indexOf(marker);
+  const nearby = patientPage.slice(Math.max(0, markerAt - 250), markerAt + 450);
+  assert.ok(markerAt >= 0);
+  assert.doesNotMatch(nearby, /<details|<summary/);
+  assert.match(nearby, /classifyCell\(it, i\)/);
+});

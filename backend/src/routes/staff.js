@@ -10741,7 +10741,7 @@ async function runReportParse(reportId, options = {}) {
           : '首轮识别完成，未发现需要覆盖复核的页面', { totalPages: totalPageCount, coveragePages: coveragePages.length });
         const coverageResults = await mapWithConcurrency(coveragePages, 2, async pageNum => {
           try {
-            const img = await renderSinglePage(pdfBuf, pageNum, useShaoyifuTemplate ? 180 : 144);
+            const img = await renderSinglePage(pdfBuf, pageNum, (useShaoyifuTemplate || useMingzhouTemplate) ? 180 : 144);
             if (!img) return null;
             const firstNames = allItems.filter(it => it._page === pageNum).map(it => str(it.name)).filter(Boolean);
             const baselineCount = historicalPageBaselines.get(pageNum) || 0;
