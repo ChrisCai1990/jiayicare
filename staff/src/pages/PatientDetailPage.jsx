@@ -8,6 +8,7 @@ import AppIcon from '../components/AppIcon'
 import AiCaseReviewPanel from '../components/AiCaseReviewPanel'
 import femalePortraitPhoto from '../assets/health-portrait-female.webp'
 import malePortraitPhoto from '../assets/health-portrait-male.webp'
+import { consolidatedExamDepartment, uniqueClinicalTexts } from '../utils/screeningDisplay'
 
 const PdfPagePreview = React.lazy(() => import('../components/PdfPagePreview'))
 
@@ -5003,7 +5004,7 @@ export default function PatientDetailPage() {
                 </div>
                 {isExpanded && (
                   <div style={{ marginTop: 8 }}>
-                    {r.note && <div style={{ fontSize: 12, color: '#4A6558', marginBottom: 6 }}>结论：{r.note}</div>}
+                    {r.note && !r._departmentGroup && <div style={{ fontSize: 12, color: '#4A6558', marginBottom: 6 }}>结论：{r.note}</div>}
                     {/* 检验医嘱 */}
                     {labItems.length > 0 && (() => {
                       // 按 orderName 分组，无 orderName 的归入 '' 组
@@ -5054,7 +5055,36 @@ export default function PatientDetailPage() {
                       )
                     })()}
                     {/* 检查项目（OCR 影像/内镜/CT/MRI 等，完整检查所见+诊断意见） */}
-                    {imgItems.length > 0 && (
+                    {imgItems.length > 0 && r._departmentGroup && (() => {
+                      const conclusions = uniqueClinicalTexts(imgItems, 'conclusion')
+                      const diagnoses = uniqueClinicalTexts(imgItems, 'diagnosis')
+                      return (
+                        <div style={{ marginBottom: 8 }}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: '#0369A1', marginBottom: 4 }}>检查项目</div>
+                          <div style={{ border: '1px solid #BFDBFE', borderRadius: 6, overflow: 'hidden' }}>
+                            <div style={{ padding: '7px 10px', background: '#EFF6FF', fontWeight: 700, color: '#1E40AF', fontSize: 13 }}>{r._departmentGroup}</div>
+                            <div style={{ padding: '8px 10px', fontSize: 12, background: '#fff', lineHeight: 1.8 }}>
+                              {conclusions.length > 0 && <div style={{ color: '#5B21B6', fontWeight: 600, marginBottom: 5 }}>
+                                <span style={{ color: '#7C3AED' }}>主要结论：</span>{conclusions.join('；')}
+                              </div>}
+                              <div style={{ color: '#374151', marginBottom: diagnoses.length ? 5 : 0 }}>
+                                <span style={{ color: '#6B7280' }}>检查所见：</span>
+                                <div style={{ paddingLeft: 0 }}>
+                                  {imgItems.map((item, index) => {
+                                    const finding = item.findings || item.value || ''
+                                    return <div key={`${item.name}-${index}`} style={{ whiteSpace: 'pre-wrap' }}>{item.name}：{finding || '—'}</div>
+                                  })}
+                                </div>
+                              </div>
+                              {diagnoses.length > 0 && <div style={{ color: '#374151', whiteSpace: 'pre-wrap' }}>
+                                <span style={{ color: '#6B7280' }}>诊断意见：</span>{diagnoses.join('；')}
+                              </div>}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })()}
+                    {imgItems.length > 0 && !r._departmentGroup && (
                       <div style={{ marginBottom: 8 }}>
                         <div style={{ fontSize: 11, fontWeight: 600, color: '#0369A1', marginBottom: 4 }}>检查项目</div>
                         {imgItems.map((item, j) => {
@@ -5373,8 +5403,12 @@ export default function PatientDetailPage() {
                 screeningItems.forEach(it => {
                   const l1Key = knownTreeIds.has(String(it.category)) ? String(it.category) : (catToTreeId[it.category] || `ai_${it.category}`)
                   const l2 = it.parentLabel || '其他'
-                  const l3 = it.itemLabel || '未知'
                   const rid = String(it.reportId || 'unknown')
+                  const subItems = Array.isArray(it.matchedItems) && it.matchedItems.length ? it.matchedItems : [it]
+                  // OCR remains row-by-row. Only the screening presentation groups
+                  // explicit same-department physical-exam rows from the same report.
+                  const departmentGroup = consolidatedExamDepartment(subItems)
+                  const l3 = departmentGroup || it.itemLabel || '未知'
                   const vKey = `${l1Key}||${l2}||${l3}||${rid}`
                   if (!aiVirtualMap[vKey]) {
                     aiVirtualMap[vKey] = {
@@ -5382,13 +5416,13 @@ export default function PatientDetailPage() {
                       checkDate: it.checkDate || reportTitleMap[rid] || '体检报告',
                       hospital: it.institution || '',
                       note: '', reportItems: [],
+                      _departmentGroup: departmentGroup,
                       _l1Key: l1Key, _l2: l2, _l3: l3,
                     }
                   }
                   // 2026-07-02：一个 itemId(如"肝功能")在报告里通常对应多个检验子项(总蛋白/球蛋白/转氨酶...)，
                   // 后端已改为在 matchedItems 里返回全部匹配子项，这里逐条 push 而不是只用第一条，
                   // 避免血脂全套/血常规/抗核抗体谱等只显示一项、其余漏项的问题。
-                  const subItems = Array.isArray(it.matchedItems) && it.matchedItems.length ? it.matchedItems : [it]
                   subItems.forEach(sub => {
                     aiVirtualMap[vKey].reportItems.push({
                       name: sub.name || it.itemLabel,
@@ -5397,6 +5431,10 @@ export default function PatientDetailPage() {
                       referenceRange: sub.referenceRange || '',
                       status: sub.status || 'unknown',
                       itemType: sub.itemType || 'lab',
+                      sourceSection: sub.sourceSection || '',
+                      orderName: sub.orderName || '',
+                      bodyPart: sub.bodyPart || '',
+                      examDate: sub.examDate || '',
                       findings: sub.findings || '',
                       diagnosis: sub.diagnosis || '',
                       conclusion: sub.conclusion || '',
