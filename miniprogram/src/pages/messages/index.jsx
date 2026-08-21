@@ -602,6 +602,8 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
   const [humanActive, setHumanActive] = useState(false);
   const [foodImages, setFoodImages] = useState([]);
   const [recording, setRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [recordingCancelling, setRecordingCancelling] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -609,6 +611,9 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
   const aiAssistantName = assistantName(member, meta.label);
   const pollRef = useRef(null);
   const recorderRef = useRef(null);
+  const recordingTimerRef = useRef(null);
+  const recordingStartYRef = useRef(0);
+  const recordingCancelledRef = useRef(false);
   const audioPlayerRef = useRef(null);
   const [playingMessageId, setPlayingMessageId] = useState('');
   const [voiceLoadingId, setVoiceLoadingId] = useState('');
@@ -622,6 +627,7 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
   useEffect(() => () => {
     audioPlayerRef.current?.destroy?.();
     recorderRef.current?.stop?.();
+    clearInterval(recordingTimerRef.current);
   }, []);
 
   useEffect(() => {
@@ -704,22 +710,55 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
     } finally { setSending(false); }
   };
 
-  const startRecording = () => {
+  const startRecording = (event) => {
     if (sending || recording) return;
+    recordingStartYRef.current = event?.touches?.[0]?.clientY || 0;
+    recordingCancelledRef.current = false;
+    setRecordingCancelling(false);
+    setRecordingSeconds(0);
     const recorder = recorderRef.current || Taro.getRecorderManager();
     recorderRef.current = recorder;
     recorder.offStart?.(); recorder.offError?.();
-    recorder.onStart(() => setRecording(true));
-    recorder.onError(() => { setRecording(false); Taro.showToast({ title: '请允许使用麦克风', icon: 'none' }); });
+    recorder.onStart(() => {
+      setRecording(true);
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = setInterval(() => setRecordingSeconds((value) => Math.min(60, value + 1)), 1000);
+    });
+    recorder.onError(() => {
+      clearInterval(recordingTimerRef.current);
+      setRecording(false);
+      Taro.showToast({ title: '请允许使用麦克风', icon: 'none' });
+    });
     recorder.start({ duration: 60000, format: 'mp3', sampleRate: 16000, numberOfChannels: 1, encodeBitRate: 48000 });
   };
 
-  const stopRecording = () => {
+  const stopRecording = (cancel = false) => {
     const recorder = recorderRef.current;
     if (!recorder || !recording) return;
+    recordingCancelledRef.current = cancel;
+    clearInterval(recordingTimerRef.current);
     recorder.offStop?.();
-    recorder.onStop((result) => { setRecording(false); sendVoiceFile(result); });
+    recorder.onStop((result) => {
+      setRecording(false);
+      setRecordingCancelling(false);
+      if (recordingCancelledRef.current) {
+        Taro.showToast({ title: '已取消发送', icon: 'none' });
+        return;
+      }
+      if ((result?.duration || 0) < 600) {
+        Taro.showToast({ title: '说话时间太短', icon: 'none' });
+        return;
+      }
+      sendVoiceFile(result);
+    });
     recorder.stop();
+  };
+
+  const moveRecording = (event) => {
+    const currentY = event?.touches?.[0]?.clientY || recordingStartYRef.current;
+    const cancelling = recordingStartYRef.current - currentY > 60;
+    recordingCancelledRef.current = cancelling;
+    setRecordingCancelling(cancelling);
   };
 
   const stopPlayback = () => {
@@ -794,6 +833,14 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
 
   return (
     <View style={{ display: 'flex', flexDirection: 'column', height: embedded ? '100%' : '100vh', flex: 1, minHeight: 0, backgroundColor: colors.background }}>
+      {recording && (
+        <View style={{ position: 'fixed', left: '50%', top: '45%', transform: 'translate(-50%, -50%)', zIndex: 1000, width: '180px', padding: '22px 18px 18px', borderRadius: '18px', backgroundColor: recordingCancelling ? 'rgba(190,45,45,.94)' : 'rgba(26,43,36,.92)', textAlign: 'center', boxShadow: '0 10px 30px rgba(0,0,0,.22)' }}>
+          <Text style={{ display: 'block', color: '#fff', fontSize: '34px', marginBottom: '8px' }}>{recordingCancelling ? '↥' : '🎙️'}</Text>
+          <Text style={{ display: 'block', color: '#fff', fontSize: '18px', fontWeight: 700, marginBottom: '7px' }}>00:{String(recordingSeconds).padStart(2, '0')}</Text>
+          <Text style={{ display: 'block', color: '#fff', fontSize: '13px' }}>{recordingCancelling ? '松开取消' : '正在录音 · 松开发送'}</Text>
+          {!recordingCancelling && <Text style={{ display: 'block', color: 'rgba(255,255,255,.72)', fontSize: '11px', marginTop: '6px' }}>上滑取消</Text>}
+        </View>
+      )}
       <View style={{ display: 'flex', alignItems: 'center', flexShrink: 0, position: 'relative', zIndex: 20, padding: `${embedded ? 10 : statusBarHeight + 8}px ${spacing.lg}px ${spacing.sm}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
         <View onClick={onClose} style={{ minWidth: '64px', padding: '8px 0', marginRight: '8px' }}><Text style={{ fontSize: '14px', color: colors.primary, fontWeight: 600 }}>‹ 返回</Text></View>
         <View style={{ flex: 1, textAlign: 'center' }}>
@@ -873,7 +920,7 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
       <View style={{ flexShrink: 0, padding: `7px ${spacing.sm}px`, paddingBottom: `calc(7px + env(safe-area-inset-bottom))`, backgroundColor: '#F7F7F7', borderTop: `1px solid ${colors.border}` }}>
         <View style={{ display:'flex', alignItems:'center', gap:'8px' }}>
           <View onClick={() => { setVoiceMode(v=>!v); setEmojiOpen(false); setMoreOpen(false); }} style={{ width:'40px', height:'40px', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}><Icon name={voiceMode ? 'keyboard' : 'audio-lines'} size={28} color={colors.textPrimary} /></View>
-          {voiceMode ? <View onTouchStart={startRecording} onTouchEnd={stopRecording} onTouchCancel={stopRecording} style={{ flex:1,height:'40px',borderRadius:'6px',backgroundColor:'#fff',display:'flex',alignItems:'center',justifyContent:'center',border:`1px solid ${colors.border}` }}><Text style={{fontWeight:700,color:recording?colors.danger:colors.textPrimary}}>{recording?'松开发送':'按住说话'}</Text></View> : <Input value={input} onInput={(e)=>setInput(e.detail.value)} placeholder={`发消息给${meta.label}`} confirmType="send" onConfirm={send} adjustPosition cursorSpacing={12} maxlength={500} style={{flex:1,height:'40px',minWidth:0,boxSizing:'border-box',backgroundColor:'#fff',borderRadius:'6px',padding:'0 10px',fontSize:'15px'}} />}
+          {voiceMode ? <View onTouchStart={startRecording} onTouchMove={moveRecording} onTouchEnd={() => stopRecording(recordingCancelledRef.current)} onTouchCancel={() => stopRecording(true)} style={{ flex:1,height:'40px',borderRadius:'6px',backgroundColor:recording ? (recordingCancelling ? '#FDECEC' : '#E8F3EE') : '#fff',display:'flex',alignItems:'center',justifyContent:'center',border:`1px solid ${recording ? (recordingCancelling ? colors.danger : colors.primary) : colors.border}` }}><Text style={{fontWeight:700,color:recording?colors.danger:colors.textPrimary}}>{recording?(recordingCancelling?'松开取消':'松开发送'):'按住说话'}</Text></View> : <Input value={input} onInput={(e)=>setInput(e.detail.value)} placeholder={`发消息给${meta.label}`} confirmType="send" onConfirm={send} adjustPosition cursorSpacing={12} maxlength={500} style={{flex:1,height:'40px',minWidth:0,boxSizing:'border-box',backgroundColor:'#fff',borderRadius:'6px',padding:'0 10px',fontSize:'15px'}} />}
           <View onClick={() => { setEmojiOpen(v=>!v); setMoreOpen(false); setVoiceMode(false); }} style={{ width:'40px', height:'40px', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}><Icon name="smile" size={28} color={colors.textPrimary} /></View>
           {(input.trim() || foodImages.length) ? <Text onClick={send} style={{padding:'7px 10px',borderRadius:'5px',backgroundColor:colors.primary,color:'#fff',fontWeight:700}}>发送</Text> : <View onClick={() => { setMoreOpen(v=>!v); setEmojiOpen(false); }} style={{ width:'40px', height:'40px', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}><Icon name="circle-plus" size={28} color={colors.textPrimary} /></View>}
         </View>
