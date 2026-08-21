@@ -709,22 +709,6 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
   }
 
   useEffect(() => { loadThread() }, [userId, roleKey])
-  useEffect(() => {
-    let mounted = true
-    const heartbeat = async () => {
-      try {
-        const res = await staffAPI.setChatHumanActive(userId, true, roleKey)
-        if (mounted) setHumanActive(!!res.humanActive)
-      } catch { /* 下次心跳重试 */ }
-    }
-    heartbeat()
-    const timer = setInterval(heartbeat, 30000)
-    return () => {
-      mounted = false
-      clearInterval(timer)
-      staffAPI.setChatHumanActive(userId, false, roleKey).catch(() => {})
-    }
-  }, [userId, roleKey])
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
   useEffect(() => () => { recorderRef.current?.state === 'recording' && recorderRef.current.stop(); recordStreamRef.current?.getTracks?.().forEach(track => track.stop()) }, [])
 
