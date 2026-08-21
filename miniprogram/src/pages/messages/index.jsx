@@ -613,6 +613,10 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
   const [playingMessageId, setPlayingMessageId] = useState('');
   const [voiceLoadingId, setVoiceLoadingId] = useState('');
   const [waveFrame, setWaveFrame] = useState(0);
+  const [playedVoiceIds, setPlayedVoiceIds] = useState(() => {
+    try { return new Set(Taro.getStorageSync('jy_played_voice_ids') || []); } catch { return new Set(); }
+  });
+  const playedVoiceIdsRef = useRef(playedVoiceIds);
 
   useEffect(() => () => {
     audioPlayerRef.current?.destroy?.();
@@ -720,14 +724,33 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
     setVoiceLoadingId('');
   };
 
-  const playUrl = (messageId, url) => {
+  const rememberVoicePlayed = (messageId) => {
+    const next = new Set(playedVoiceIdsRef.current);
+    next.add(messageId);
+    // 只保留最近 300 条，避免本地缓存无限增长。
+    const compact = Array.from(next).slice(-300);
+    const compactSet = new Set(compact);
+    playedVoiceIdsRef.current = compactSet;
+    setPlayedVoiceIds(compactSet);
+    try { Taro.setStorageSync('jy_played_voice_ids', compact); } catch {}
+    return compactSet;
+  };
+
+  const playUrl = (messageId, url, sourceMessage = null) => {
     if (!url) return;
     if (playingMessageId === messageId) { stopPlayback(); return; }
     stopPlayback();
     const player = Taro.createInnerAudioContext();
     audioPlayerRef.current = player;
     player.onPlay?.(() => { setVoiceLoadingId(''); setPlayingMessageId(messageId); });
-    player.onEnded?.(stopPlayback);
+    player.onEnded?.(() => {
+      const heard = sourceMessage?._id ? rememberVoicePlayed(sourceMessage._id) : playedVoiceIdsRef.current;
+      stopPlayback();
+      if (!sourceMessage?._id) return;
+      const currentIndex = msgs.findIndex((item) => item._id === sourceMessage._id);
+      const nextVoice = msgs.slice(currentIndex + 1).find((item) => item.type !== 'user' && item.audioUrl && !heard.has(item._id));
+      if (nextVoice) setTimeout(() => playUrl(`audio-${nextVoice._id}`, nextVoice.audioUrl, nextVoice), 220);
+    });
     player.onStop?.(() => { setPlayingMessageId(''); setVoiceLoadingId(''); });
     player.onError?.(() => { stopPlayback(); Taro.showToast({ title: '语音播放失败，请稍后重试', icon: 'none' }); });
     player.src = url;
@@ -801,7 +824,7 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
                         {m.isAI ? aiAssistantName : (normalizeRoleSender(m.sender) || meta.label)}
                       </Text>
                     )}
-                    {m.audioUrl && <View onClick={() => playUrl(`audio-${m._id}`, m.audioUrl)} style={{ minWidth: '110px', padding: '5px 0' }}><Text style={{ fontSize: '14px', color: isMine ? '#fff' : colors.primary }}>{waveLabel(playingMessageId === `audio-${m._id}`)} {playingMessageId === `audio-${m._id}` ? '播放中' : '语音'} {Math.max(1, Math.round(m.audioDuration || 1))}″</Text></View>}
+                    {m.audioUrl && <View onClick={() => playUrl(`audio-${m._id}`, m.audioUrl, m)} style={{ minWidth: '110px', padding: '5px 0' }}><Text style={{ fontSize: '14px', color: isMine ? '#fff' : colors.primary }}>{waveLabel(playingMessageId === `audio-${m._id}`)} {playingMessageId === `audio-${m._id}` ? '播放中' : '语音'} {Math.max(1, Math.round(m.audioDuration || 1))}″{!isMine && !playedVoiceIds.has(m._id) ? ' · 未听' : ''}</Text></View>}
                     {(!m.audioUrl || !/^\[语音消息\]$/.test(m.content || '')) && <Text style={{ display: 'block', width: '100%', fontSize: '14px', color: isMine ? '#fff' : colors.textPrimary, lineHeight: '20px', whiteSpace: 'pre-wrap', wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{visibleMessageContent(m)}</Text>}
                     {!isMine && !m.audioUrl && visibleMessageContent(m).trim() && (
                       <View onClick={() => speakText(m)} style={{ marginTop: '7px', display: 'flex', alignItems: 'center' }}>
