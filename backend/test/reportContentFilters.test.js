@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const staffRouter = require('../src/routes/staff');
 
-const { isAdvisoryEcho, isUnclassifiedNameEcho } = staffRouter.reportFilterInternals;
+const { isAdvisoryEcho, isUnclassifiedNameEcho, shouldForceSkipParsedReportPage } = staffRouter.reportFilterInternals;
 
 test('oral examination findings survive treatment suggestion wording', () => {
   assert.equal(isAdvisoryEcho({
@@ -27,5 +27,25 @@ test('unclassified oral findings are not discarded as repeated diagnosis labels'
     findings: '牙结石不同程度附着于牙颈部',
     diagnosis: '建议龈上洁治',
     matchStatus: 'unclassified',
+  }), false);
+});
+
+test('summary and advice pages cannot bypass page skipping by returning structured items', () => {
+  assert.equal(shouldForceSkipParsedReportPage({
+    pageType: 'summary',
+    skipPage: true,
+    items: [{ name: '细胞角蛋白19片段', value: '5.9' }],
+  }), true);
+  assert.equal(shouldForceSkipParsedReportPage({
+    pageType: 'advice',
+    items: [{ name: '肝囊肿', findings: '建议每年复查B超' }],
+  }), true);
+});
+
+test('detail pages with actual results remain extractable', () => {
+  assert.equal(shouldForceSkipParsedReportPage({
+    pageType: 'detail',
+    skipPage: false,
+    items: [{ name: '细胞角蛋白19片段', value: '5.9' }],
   }), false);
 });

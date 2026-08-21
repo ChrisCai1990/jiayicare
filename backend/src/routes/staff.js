@@ -9109,6 +9109,17 @@ function shouldSkipParsedReportPage(parsed) {
   return /(?:异常|体检|检查)结果(?:汇总|及建议|及说明|说明|解读)|体检结论及建议|健康建议|温馨提示|名词解释|目录/.test(title);
 }
 
+function shouldForceSkipParsedReportPage(parsed) {
+  if (!parsed || typeof parsed !== 'object') return false;
+  const pageType = str(parsed.pageType).toLowerCase();
+  // The page-level decision is authoritative. Visual models sometimes obey
+  // skipPage/pageType but still populate items from an abnormal-summary or
+  // health-advice page; accepting those items turns duplicated conclusions and
+  // generic education into formal examination results.
+  return parsed.skipPage === true || SKIPPED_REPORT_PAGE_TYPES.has(pageType)
+    || shouldSkipParsedReportPage(parsed);
+}
+
 const PAGE_COVERAGE_AUDIT_PROMPT = `你是体检报告页面漏项复核助手。请重新检查这张图片，重点检查首轮容易遗漏的右半页、页面下半部、跨栏表格和小字号栏目。
 只输出首轮清单中遗漏的真实检查项目；首轮已经提取的项目不要重复输出。汇总、小结、目录、建议、科普、会员信息和只有标题没有结果的栏目一律不输出。
 血液/尿液/粪便检验每个有结果的子项单独输出；内科、外科、全科、眼科、耳鼻喉、妇科、牙科或口腔科等体格检查也要按报告印刷明细逐项输出，禁止按科室合并；心电图、碳13/碳14呼气试验、头颅MRI不得漏；组合超声按器官拆开。
@@ -10583,9 +10594,7 @@ async function runReportParse(reportId, options = {}) {
         if (!p || p._templateSkip) return;
         const firstPassItems = tagReportPageItems(p.items, pageNum);
         if (isBodyCompositionPage(p, firstPassItems, report.type)) bodyCompCandidatePages.add(pageNum);
-        const hasStructuredResults = firstPassItems.some(item => str(item.name)
-          && [item.value, item.findings, item.diagnosis, item.conclusion].some(value => str(value)));
-        if (shouldSkipParsedReportPage(p) && !hasStructuredResults && report.type !== 'body_comp' && !useShaoyifuTemplate && !useZheyiTemplate) {
+        if (shouldForceSkipParsedReportPage(p) && report.type !== 'body_comp' && !useShaoyifuTemplate && !useZheyiTemplate) {
           pageDispositions.set(pageNum, {
             page: pageNum,
             type: str(p.pageType).toLowerCase() || 'non_detail',
@@ -12433,6 +12442,6 @@ ${addonListText}
 // without exposing a second implementation. The runner itself enforces a
 // localhost-only database and local uploads path before calling this function.
 router.runReportParse = runReportParse;
-router.reportFilterInternals = { isAdvisoryEcho, isUnclassifiedNameEcho };
+router.reportFilterInternals = { isAdvisoryEcho, isUnclassifiedNameEcho, shouldForceSkipParsedReportPage };
 
 module.exports = router;
