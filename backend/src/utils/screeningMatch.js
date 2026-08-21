@@ -277,6 +277,20 @@ function selectMatchesForItem(item, index) {
     const panelMatches = selectAdminMatches([authoritativePanel], item?.itemType, index);
     if (panelMatches.length) return panelMatches;
   }
+  // 科室体检的明细名（如“现病史”“其他”）本身没有唯一医学归属，必须先按
+  // 原报告科室栏目去 Admin 当前目录查找。这里的候选词不是分类结果；Admin
+  // 没有对应的有效叶子节点时仍返回未归类，绝不自由生成新分类。
+  const section = String(item?.sourceSection || '').trim();
+  const departmentCandidates = /耳鼻喉/.test(section) ? ['耳鼻喉科检查', '耳鼻喉检查']
+    : /眼科/.test(section) ? ['眼科检查']
+    : /口腔|牙科/.test(section) ? ['口腔科检查', '口腔检查']
+    : /妇科/.test(section) ? ['妇科检查']
+    : /内科|外科|全科/.test(section) ? ['内外科（全科）', '内外科全科', '全科检查']
+    : [];
+  if (departmentCandidates.length) {
+    const departmentMatches = selectAdminMatches(departmentCandidates, item?.itemType, index);
+    if (departmentMatches.length) return departmentMatches;
+  }
   const primary = reportNameCandidates(item?.name);
   const primaryMatches = selectAdminMatches(primary, item?.itemType, index);
   if (primaryMatches.length) return primaryMatches;

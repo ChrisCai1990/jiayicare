@@ -8966,6 +8966,10 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
    → 按原文出现顺序逐条提取，不要求预先归好类再输出
    → diagnosis=诊断意见/小结原文
    → conclusion=同 diagnosis
+   → 一般检查出现身高、体重、体重指数/BMI、脉搏、血压等连续行时必须逐行读取，尤其不得在已提取身高和BMI时漏掉中间的体重；禁止用BMI反算体重
+   → 眼科每一行必须严格独立对应：左/右裸眼视力、左/右矫正视力、外眼、眼底等不得串行。某行结果栏确实为空时 value/findings 填“无”，不得借用相邻行或眼底长段文字；裸眼视力不得使用矫正视力数值
+   → 原文栏目是眼底检查、眼底照相或双眼眼底照相时，name 必须逐字保留原栏目名，不得互相改名；归类由后端按 Admin 当前目录完成，模型不得生成归类名称
+   → 耳鼻喉科的现病史、既往史、手术史与耳部、鼻部、咽部、喉部均按原文逐行提取，结果为“无”也不得省略
 
 4. 裂隙灯检查 / 双眼眼底照相
    → itemType="imaging"，每项单独一条
@@ -9123,6 +9127,7 @@ function shouldForceSkipParsedReportPage(parsed) {
 const PAGE_COVERAGE_AUDIT_PROMPT = `你是体检报告页面漏项复核助手。请重新检查这张图片，重点检查首轮容易遗漏的右半页、页面下半部、跨栏表格和小字号栏目。
 只输出首轮清单中遗漏的真实检查项目；首轮已经提取的项目不要重复输出。汇总、小结、目录、建议、科普、会员信息和只有标题没有结果的栏目一律不输出。
 血液/尿液/粪便检验每个有结果的子项单独输出；内科、外科、全科、眼科、耳鼻喉、妇科、牙科或口腔科等体格检查也要按报告印刷明细逐项输出，禁止按科室合并；心电图、碳13/碳14呼气试验、头颅MRI不得漏；组合超声按器官拆开。
+一般检查必须复核身高、体重、BMI、脉搏和血压是否逐行齐全，禁止用BMI反算体重。眼科必须逐行复核左右裸眼视力、左右矫正视力、外眼和眼底：空白结果填“无”，禁止把眼底段落塞进裸眼视力，禁止把矫正视力当裸眼视力。耳鼻喉科必须复核现病史、既往史、手术史以及耳、鼻、咽、喉各行，“无”也不得省略。
 严格返回JSON，不要解释：
 {"items":[{"name":"项目名","itemType":"lab | imaging | data","value":"","unit":"","referenceRange":"","status":"normal | abnormal | attention | unknown","orderName":"","sourceSection":"原栏目标题","bodyPart":"","findings":"","diagnosis":"","conclusion":"","pathologyFindings":"","pathologyDiagnosis":""}]}`;
 
@@ -11706,15 +11711,9 @@ router.post('/patients/:id/reports/:rid/reclassify', staffAuth, async (req, res)
       const hasConfirmedClassification = Boolean(
         item.screeningKey || (Array.isArray(item.screeningKeys) && item.screeningKeys.length)
       );
-      const structuralCorrection = /乳酸脱氢酶|(?:碳|C)\s*1[34].{0,8}呼气|尿素.{0,8}呼气/i.test(String(item.name || ''))
-        || /尿常规|尿液分析|尿干化学|尿沉渣/i.test(`${String(item.orderName || '')} ${String(item.sourceSection || '')}`);
-      if (!hasConfirmedClassification || structuralCorrection) {
+      if (!hasConfirmedClassification) {
         pendingIndexes.push(index);
-        pendingItems.push(structuralCorrection ? {
-          ...item,
-          screeningKey: '', screeningKeys: [], screeningCategory: '', screeningParent: '',
-          matchStatus: 'unclassified', matchConfidence: 0,
-        } : item);
+        pendingItems.push(item);
       }
     });
     const newlyClassified = await classifyItemsAsync(pendingItems);
@@ -11723,8 +11722,8 @@ router.post('/patients/:id/reports/:rid/reclassify', staffAuth, async (req, res)
       reclassified[originalIndex] = newlyClassified[pendingIndex];
     });
     await MedicalReport.findByIdAndUpdate(report._id, { reportItems: reclassified });
-    const matchedCount = reclassified.filter(i => i.matchStatus === 'matched').length;
-    res.json({ success: true, data: reclassified, matchedCount });
+    const newlyMatchedCount = newlyClassified.filter(i => i.matchStatus === 'matched').length;
+    res.json({ success: true, data: reclassified, matchedCount: newlyMatchedCount, processedCount: pendingItems.length });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

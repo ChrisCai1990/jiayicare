@@ -19,3 +19,14 @@ test('home monitoring and functional medicine are not blocked from OCR routes', 
   assert.doesNotMatch(userRoute, /report\.type === 'home_monitor' \|\| report\.type === 'functional'/);
   assert.doesNotMatch(userRoute, /isFunctionalMedicineL1\(report\.screeningL1\)/);
 });
+
+test('manual reclassification only processes unclassified report items', () => {
+  const staffRoute = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+  const routeStart = staffRoute.indexOf("router.post('/patients/:id/reports/:rid/reclassify'");
+  const routeEnd = staffRoute.indexOf("// ── 问卷", routeStart);
+  const routeSource = staffRoute.slice(routeStart, routeEnd);
+
+  assert.match(routeSource, /if \(!hasConfirmedClassification\)/);
+  assert.doesNotMatch(routeSource, /structuralCorrection/);
+  assert.match(routeSource, /processedCount: pendingItems\.length/);
+});

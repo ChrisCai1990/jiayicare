@@ -2937,7 +2937,7 @@ export default function PatientDetailPage() {
     try {
       const res = await staffAPI.reclassifyReport(id, ocrReviewReport._id)
       setOcrEditItems(res.data || [])
-      toast(`重新归类完成，已自动匹配 ${res.matchedCount || 0} 项`)
+      toast(`未归类项目处理完成：检查 ${res.processedCount || 0} 项，新匹配 ${res.matchedCount || 0} 项`)
     } catch (err) { toast(err.message || '归类失败') }
     finally { setOcrSaving(false) }
   }
@@ -11378,8 +11378,8 @@ export default function PatientDetailPage() {
                 </button>
                 <button className="btn btn-secondary" style={{ flex: 0.6 }}
                   disabled={ocrSaving} onClick={handleReclassifyOCR}
-                  title="用最新专项筛查目录重新自动归类所有项目">
-                  {ocrSaving ? '处理中…' : '🔄 重新归类'}
+                  title="仅用最新 Admin 专项筛查目录处理当前未归类项目；已归类项目保持不变">
+                  {ocrSaving ? '处理中…' : '🔄 归类未归类项'}
                 </button>
                 <button className="btn btn-secondary" style={{ flex: 0.6 }}
                   disabled={ocrSaving} onClick={handleSaveOCRDraft}>

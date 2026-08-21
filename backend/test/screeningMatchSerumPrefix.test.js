@@ -103,3 +103,28 @@ test('项目名未命中时禁止使用混合套餐名猜分类', () => {
   const matches = selectMatchesForItem({ itemType: 'lab', name: '胰岛素-0小时', orderName: '胰岛素/电解质测定' }, index);
   assert.deepEqual(matches, []);
 });
+
+test('科室体检明细优先归入Admin现有科室分类', () => {
+  const eyeId = 'general|眼科检查|眼科检查';
+  const entId = 'general|耳鼻喉检查|耳鼻喉科检查';
+  const generalId = 'general|一般检查|内外科（全科）';
+  const unrelatedId = 'functional|肠道与健康|慢性食物过敏（功能医学）';
+  const index = [
+    { node: { id: eyeId, label: '眼科检查' }, cands: [{ raw: '眼科检查', n: norm('眼科检查') }] },
+    { node: { id: entId, label: '耳鼻喉科检查' }, cands: [{ raw: '耳鼻喉科检查', n: norm('耳鼻喉科检查') }] },
+    { node: { id: generalId, label: '内外科（全科）' }, cands: [{ raw: '内外科（全科）', n: norm('内外科（全科）') }] },
+    { node: { id: unrelatedId, label: '慢性食物过敏（功能医学）' }, cands: [{ raw: '其他', n: norm('其他') }] },
+  ];
+
+  assert.equal(selectMatchesForItem({ name: '左眼裸视力', itemType: 'imaging', sourceSection: '眼科精英检查' }, index)[0]?.node.id, eyeId);
+  assert.equal(selectMatchesForItem({ name: '现病史(耳鼻喉科)', itemType: 'imaging', sourceSection: '精英耳鼻喉科' }, index)[0]?.node.id, entId);
+  assert.equal(selectMatchesForItem({ name: '其他', itemType: 'imaging', sourceSection: '内科普通检查' }, index)[0]?.node.id, generalId);
+});
+
+test('Admin不存在科室分类时保持未归类，不自由生成', () => {
+  const index = [{
+    node: { id: 'photo|眼底照相|眼底照相', label: '眼底照相' },
+    cands: [{ raw: '眼底照相', n: norm('眼底照相') }],
+  }];
+  assert.deepEqual(selectMatchesForItem({ name: '左眼裸视力', itemType: 'imaging', sourceSection: '眼科精英检查' }, index), []);
+});
