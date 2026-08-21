@@ -109,6 +109,20 @@ export const authAPI = {
           return result;
         });
     }),
+  wechatPhoneLogin: (phoneCode) =>
+    Taro.login().then(({ code: loginCode }) => {
+      if (!loginCode || !phoneCode) throw new Error('微信手机号授权失败，请重试');
+      let inviteCode = '';
+      let deviceInfo = {};
+      try { inviteCode = Taro.getStorageSync('jy_invite_code') || ''; } catch {}
+      try { deviceInfo = Taro.getSystemInfoSync?.() || {}; } catch {}
+      return request('/auth/wechat-mp/phone-login', {
+        method: 'POST', body: JSON.stringify({ loginCode, phoneCode, inviteCode, deviceInfo }),
+      }).then((result) => {
+        if (result?.success && inviteCode) { try { Taro.removeStorageSync('jy_invite_code'); } catch {} }
+        return result;
+      });
+    }),
   bindWechat: () =>
     Taro.login().then(({ code }) => {
       if (!code) throw new Error('微信身份获取失败，请重试');

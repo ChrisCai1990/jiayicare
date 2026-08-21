@@ -74,12 +74,17 @@ export default function LoginPage() {
     } finally { setLoading(false); }
   };
 
-  const wechatLogin = async () => {
+  const wechatLogin = async (event) => {
     if (!agreed) { setError('请先阅读并勾选同意相关协议'); return; }
+    const phoneCode = event?.detail?.code;
+    if (!phoneCode) {
+      setError(event?.detail?.errMsg?.includes('deny') ? '您已取消手机号授权，可使用短信验证码登录' : '未能获取微信手机号，请重试或使用短信验证码登录');
+      return;
+    }
     setError('');
     try {
       setLoading(true);
-      const res = await authAPI.wechatLogin();
+      const res = await authAPI.wechatPhoneLogin(phoneCode);
       if (res.success) {
         await login(res.data.user, res.data.token);
         await waitForAuthCommit();
@@ -214,12 +219,12 @@ export default function LoginPage() {
           <Text style={{ fontSize: '12px', color: colors.textMuted }}>或</Text>
           <View style={{ height: '1px', backgroundColor: colors.border, flex: 1 }} />
         </View>
-        <Button style={{ height: '48px', lineHeight: '48px', backgroundColor: '#fff', border: `1.5px solid ${colors.border}`, borderRadius: `${radius.md}px`, fontSize: '14px', fontWeight: 700, color: '#07C160' }} onClick={wechatLogin} disabled={loading}>
+        <Button style={{ height: '48px', lineHeight: '48px', backgroundColor: '#fff', border: `1.5px solid ${colors.border}`, borderRadius: `${radius.md}px`, fontSize: '14px', fontWeight: 700, color: '#07C160' }} openType="getPhoneNumber" onGetPhoneNumber={wechatLogin} disabled={loading || !agreed}>
           微信一键登录
         </Button>
 
         <Text style={{ display: 'block', textAlign: 'center', marginTop: `${spacing.sm}px`, fontSize: '11px', color: colors.textMuted }}>
-          不提供游客访问；新用户微信登录后需完善真实资料。
+          微信授权手机号后自动匹配账户；新用户需完善真实资料。
         </Text>
 
         <View onClick={() => setAgreed(!agreed)} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: '6px', marginTop: `${spacing.md}px` }}>

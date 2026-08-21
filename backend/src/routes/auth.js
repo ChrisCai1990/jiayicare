@@ -104,6 +104,40 @@ function httpsGet(url) {
   });
 }
 
+function httpsPostJson(url, body) {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(body || {});
+    const request = https.request(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+      },
+    }, (res) => {
+      let data = '';
+      res.on('data', d => { data += d; });
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); } catch { resolve(data); }
+      });
+    });
+    request.on('error', reject);
+    request.write(payload);
+    request.end();
+  });
+}
+
+let wechatMpAccessToken = '';
+let wechatMpAccessTokenExpiresAt = 0;
+
+async function getWechatMpAccessToken(appid, secret) {
+  if (wechatMpAccessToken && Date.now() < wechatMpAccessTokenExpiresAt) return wechatMpAccessToken;
+  const result = await httpsGet(`https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${encodeURIComponent(appid)}&secret=${encodeURIComponent(secret)}`);
+  if (!result?.access_token) throw new Error(`获取小程序接口凭证失败: ${result?.errmsg || result?.errcode || '未知错误'}`);
+  wechatMpAccessToken = result.access_token;
+  wechatMpAccessTokenExpiresAt = Date.now() + Math.max(60, Number(result.expires_in || 7200) - 300) * 1000;
+  return wechatMpAccessToken;
+}
+
 // 阿里云短信发送
 async function sendSmsAliyun(phone, code) {
   const Dysmsapi = require('@alicloud/dysmsapi20170525');
@@ -387,6 +421,81 @@ router.post('/wechat-mp', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, message: '小程序登录失败', error: err.message });
+  }
+});
+
+// 微信手机号快捷登录：wx.login 确认微信身份，getPhoneNumber 的动态 code 确认手机号。
+// 两者在服务端合并到同一个会员账号，避免先建微信临时账号、建档时又重复短信验证。
+router.post('/wechat-mp/phone-login', async (req, res) => {
+  const { loginCode, phoneCode, inviteCode } = req.body;
+  if (!loginCode || !phoneCode) return res.status(400).json({ success: false, message: '缺少微信登录或手机号授权凭证' });
+  const appid = process.env.WECHAT_MP_APPID;
+  const secret = process.env.WECHAT_MP_SECRET;
+  if (!appid || !secret) return res.status(503).json({ success: false, message: '小程序登录暂未配置，请使用手机号登录' });
+
+  try {
+    const [sessionData, accessToken] = await Promise.all([
+      httpsGet(`https://api.weixin.qq.com/sns/jscode2session?appid=${appid}&secret=${secret}&js_code=${encodeURIComponent(loginCode)}&grant_type=authorization_code`),
+      getWechatMpAccessToken(appid, secret),
+    ]);
+    if (sessionData.errcode || !sessionData.openid) {
+      return res.status(400).json({ success: false, message: `微信身份获取失败：${sessionData.errmsg || sessionData.errcode || '未返回 openid'}` });
+    }
+    const phoneData = await httpsPostJson(
+      `https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=${encodeURIComponent(accessToken)}`,
+      { code: phoneCode },
+    );
+    const phone = phoneData?.phone_info?.phoneNumber || phoneData?.phone_info?.purePhoneNumber;
+    if (phoneData?.errcode || !/^1[3-9]\d{9}$/.test(String(phone || ''))) {
+      return res.status(400).json({ success: false, message: `微信手机号获取失败：${phoneData?.errmsg || phoneData?.errcode || '未返回有效手机号'}` });
+    }
+
+    const openid = sessionData.openid;
+    let [openidUser, phoneUser] = await Promise.all([
+      User.findOne({ wechatMpOpenid: openid }),
+      User.findOne({ phone }),
+    ]);
+    if (openidUser?.isDeleted || phoneUser?.isDeleted) {
+      return res.status(403).json({ success: false, message: '该会员信息已停用，如需恢复请联系管理员' });
+    }
+    if (openidUser?.phone && openidUser.phone !== phone) {
+      return res.status(409).json({ success: false, message: '该微信已绑定其他手机号账户，请联系客服核验' });
+    }
+
+    const isNew = !openidUser && !phoneUser;
+    let user;
+    if (phoneUser) {
+      if (openidUser && !openidUser._id.equals(phoneUser._id)) {
+        await User.updateOne({ _id: openidUser._id }, { $unset: { wechatMpOpenid: 1 } });
+      }
+      user = await User.findByIdAndUpdate(phoneUser._id, {
+        $set: { wechatMpOpenid: openid, contactPhone: phone },
+      }, { new: true });
+    } else if (openidUser) {
+      user = await User.findByIdAndUpdate(openidUser._id, {
+        $set: { phone, contactPhone: phone },
+      }, { new: true });
+    } else {
+      user = await User.create({ phone, contactPhone: phone, wechatMpOpenid: openid, name: '微信用户' });
+    }
+
+    if (!user.referralCode) {
+      user.referralCode = crypto.randomBytes(6).toString('hex');
+      await user.save();
+    }
+    if (user.onboardingCompleted) await applyFirstLoginRewards(user, inviteCode);
+    else if (inviteCode) await User.updateOne({ _id: user._id }, { $set: { pendingInviteCode: String(inviteCode) } });
+    user = await User.findById(user._id);
+    const sessionId = await beginLoginSession(req, user, 'phone_wechat');
+    user = await User.findById(user._id);
+    const token = jwt.sign({ id: user._id, sessionId }, process.env.JWT_SECRET, {
+      expiresIn: process.env.JWT_EXPIRES_IN || '30d',
+    });
+    const healthFund = await computeHealthFund(user);
+    res.json({ success: true, message: isNew ? '微信注册成功' : '登录成功', data: { token, user: { ...user.toObject(), healthFund }, isNew } });
+  } catch (err) {
+    console.error('wechat phone login error:', err.message);
+    res.status(500).json({ success: false, message: '微信手机号登录失败，请稍后重试或使用验证码登录' });
   }
 });
 
