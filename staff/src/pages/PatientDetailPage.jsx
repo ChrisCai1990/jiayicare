@@ -2853,7 +2853,7 @@ export default function PatientDetailPage() {
       setOcrReviewReport(null)
       loadReports()
     } catch (err) {
-      if (err.code === 'REPORT_SCREENING_CLASSIFICATION_REQUIRED' && err.issues?.length) {
+      if (['REPORT_SCREENING_CLASSIFICATION_REQUIRED', 'REPORT_ULTRASOUND_COVERAGE_REQUIRED'].includes(err.code) && err.issues?.length) {
         const first = err.issues[0]
         setOcrReviewFilter('all')
         ocrFocusHandledRef.current = null

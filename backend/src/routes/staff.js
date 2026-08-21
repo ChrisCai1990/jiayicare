@@ -79,6 +79,7 @@ const {
 } = require('../utils/reportItemEvidence');
 const { resolveActiveScreeningKey } = require('../utils/screeningCatalogKey');
 const { validateReportScreeningSubmission } = require('../utils/reportScreeningSubmission');
+const { validateUltrasoundSubmission } = require('../utils/reportUltrasoundSubmission');
 const { createReportUploadToken, verifyReportUploadTokens } = require('../utils/reportUploadToken');
 const { buildReportSourceFiles, mergeReportSourceFiles, reportHasOriginal, summarizeReportOriginalEvidence, compareReportOriginalEvidence, toSafeVersionOriginalEvidence } = require('../utils/reportOriginalEvidence');
 const { canDirectlyApproveReport, validateOcrReviewTransition, validateManualAuditAction, validateOcrVersionBinding } = require('../utils/reportReviewPolicy');
@@ -2810,6 +2811,15 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
             code: 'REPORT_SCREENING_CLASSIFICATION_REQUIRED',
             message: `还有 ${classification.issues.length} 个项目未完成唯一有效归类，请逐项处理后再提交`,
             issues: classification.issues,
+          });
+        }
+        const ultrasound = validateUltrasoundSubmission(nextItems);
+        if (!ultrasound.complete) {
+          return res.status(409).json({
+            success: false,
+            code: 'REPORT_ULTRASOUND_COVERAGE_REQUIRED',
+            message: `组合超声拆解不完整，缺少：${[...new Set(ultrasound.issues.flatMap(issue => issue.missingOrgans || []))].join('、')}`,
+            issues: ultrasound.issues,
           });
         }
       }
@@ -9004,6 +9014,10 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
    → 【自查】提取完成后逐句核对：原文"检查描述"里每一段（通常按肝→胆→脾→胰或类似顺序分段）是否都对应生成了一条独立记录？如果原文有4段但只输出了1-2条，说明漏提了，必须补全
    → 【组合标题强制展开】只要栏目标题或项目名写有“肝胆胰脾超声/肝胆脾胰彩超/上腹部超声”等明确包含肝、胆、胰、脾的组合检查，即使某个器官结果只是“未见异常”，也必须输出肝脏超声、胆囊超声、胰腺超声、脾脏超声共四条；不得只输出有异常的器官，也不得只输出其中一条代表整组
    → 跳过"温馨提示""健康建议"类科普说明文字（如"结石多与饮水少有关，建议..."），这类不是检查所见，不得提取为 findings
+
+   → 【甲状腺/乳腺与淋巴结组合检查】标题明确同时包含“甲状腺+颈部淋巴结”时，必须分别输出甲状腺和颈部淋巴结；标题明确同时包含“乳腺+腋窝淋巴结”时，必须分别输出乳腺和腋窝淋巴结。淋巴结条目的 name 必须带原文明确部位，不得把颈部与腋窝混为通用“淋巴结”。
+   → 【泌尿系与妇科检查组】双肾输尿管膀胱可以按报告原有组合检查保留一条，但 findings 必须完整保留双肾、输尿管、膀胱各段原文；子宫附件/阴道超声可以按“妇科超声”检查组保留一条，内部必须完整保留子宫、内膜、左右附件、阴道等原文实际出现的明细。不得凭器官清单补造报告未出现的正常项。
+   → 【证据归属】每条 findings/diagnosis 只能写入原文能够明确归属的器官或检查组；“上述未见异常”“余未见异常”等无法脱离上下文唯一归属的文字，必须连同其对应栏目上下文保留并标记待人工核对，禁止复制到多个器官。
 
 9. 肺部CT
    → itemType="imaging"，name="肺部CT"或报告原名
