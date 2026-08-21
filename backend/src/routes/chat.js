@@ -285,7 +285,8 @@ router.get('/status', auth, async (req, res) => {
 router.post('/', auth, async (req, res) => {
   const { messages = [], userInfo = {}, image = '', mimeType = 'image/jpeg', audio = null } = req.body;
   const userId = req.user._id;
-  const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content || (audio?.data ? '[语音消息]' : image ? '[图片消息]' : '');
+  let lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content || (audio?.data ? '[语音消息]' : image ? '[图片消息]' : '');
+  let effectiveMessages = messages;
   const t0 = Date.now();
 
   if (!process.env.QWEN_API_KEY) {
@@ -305,12 +306,10 @@ router.post('/', auth, async (req, res) => {
     }
   }
 
-  // 意图识别
-  const intent = detectIntent(lastUserMsg);
-
   let imageUrl = '';
   let audioUrl = '';
   let audioDuration = 0;
+  let audioTranscript = '';
   if (image) {
     if (!/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(image) || image.length > 12 * 1024 * 1024) return res.status(400).json({ success:false, message:'图片格式不支持或文件过大' });
     imageUrl = (await uploadBase64(image, mimeType, 'chat')).url;
@@ -319,20 +318,35 @@ router.post('/', auth, async (req, res) => {
     if (String(audio.data).length > 12 * 1024 * 1024) return res.status(413).json({ success:false, message:'语音文件过大' });
     audioDuration = Math.max(1, Math.min(60, Number(audio.duration) || 1));
     audioUrl = (await uploadBase64(audio.data, audio.mimeType || 'audio/mpeg', 'chat/audio')).url;
+    try {
+      audioTranscript = await require('../utils/asr').transcribeBase64(audio.data, audio.mimeType || 'audio/mpeg');
+      if (audioTranscript) {
+        lastUserMsg = audioTranscript;
+        const lastUserIndex = messages.map(message => message.role).lastIndexOf('user');
+        effectiveMessages = messages.map((message, index) => (
+          index === lastUserIndex ? { ...message, content: audioTranscript } : message
+        ));
+      }
+    } catch (error) {
+      console.warn(`[planner-asr] ${userId} 语音转写失败，将按原语音消息处理: ${error.message}`);
+    }
   }
 
+  // 语音先转写再做意图识别，确保规划师真正理解用户说的内容。
+  const intent = detectIntent(lastUserMsg);
+
   // 专家约诊和体检属于高风险幻觉场景：只引用数据库中实际上架的服务，不交给模型自由生成。
-  const verifiedServiceReply = await buildVerifiedServiceReply(lastUserMsg, messages);
+  const verifiedServiceReply = await buildVerifiedServiceReply(lastUserMsg, effectiveMessages);
   if (verifiedServiceReply) {
-    const log = await ChatLog.create({ user: userId, intent: 'service', userMessage: lastUserMsg, aiReply: verifiedServiceReply });
-    return res.json({ success: true, data: { content: verifiedServiceReply, intent: 'service', logId: log._id } });
+    const log = await ChatLog.create({ user: userId, intent: 'service', userMessage: lastUserMsg, aiReply: verifiedServiceReply, imageUrl, audioUrl, audioDuration, audioTranscript });
+    return res.json({ success: true, data: { content: verifiedServiceReply, intent: 'service', logId: log._id, imageUrl, audioUrl, audioDuration, audioTranscript } });
   }
 
   // 超出范围直接返回
   if (intent === 'out_of_scope') {
     const reply = '这个问题属于医疗诊疗范畴，小嘉不能提供判断或建议。请前往正规医疗机构咨询执业医师；如情况紧急，请立即拨打120。小嘉仅协助梳理服务需求并推荐平台已有服务，不提供诊断、治疗、处方或个性化健康方案。';
-    const log = await ChatLog.create({ user: userId, intent, userMessage: lastUserMsg, aiReply: reply });
-    return res.json({ success: true, data: { content: reply, intent, logId: log._id } });
+    const log = await ChatLog.create({ user: userId, intent, userMessage: lastUserMsg, aiReply: reply, imageUrl, audioUrl, audioDuration, audioTranscript });
+    return res.json({ success: true, data: { content: reply, intent, logId: log._id, imageUrl, audioUrl, audioDuration, audioTranscript } });
   }
 
   // 拼接系统提示
@@ -360,7 +374,7 @@ router.post('/', auth, async (req, res) => {
   // 每条历史消息前标注日期，让模型自己判断是否与当前问题相关，而不是靠"条数"这种和时间无关的截断。
   const HISTORY_WINDOW_MS = 24 * 60 * 60 * 1000;
   const now = Date.now();
-  const chatMessages = messages
+  const chatMessages = effectiveMessages
     .filter(m => m.role === 'user' || m.role === 'assistant')
     .filter(m => !m.time || now - new Date(m.time).getTime() <= HISTORY_WINDOW_MS)
     .slice(-10)
@@ -369,7 +383,7 @@ router.post('/', auth, async (req, res) => {
       return { role: m.role, content: dateTag + String(m.content) };
     });
 
-  if (audioUrl && chatMessages.length) chatMessages[chatMessages.length - 1].content = '[用户发送了一条语音。为避免语音识别造成健康信息误差，请温和确认收到，并请用户补充一句文字重点。]';
+  if (audioUrl && !audioTranscript && chatMessages.length) chatMessages[chatMessages.length - 1].content = '[用户发送了一条语音，但自动转写没有结果。请温和确认收到，并请用户补充一句文字重点。]';
   if (imageUrl && chatMessages.length) chatMessages[chatMessages.length - 1].content += '\n[用户同时上传了一张图片，请仅确认收到并围绕健康管理事项交流，不作诊断或医学判断。]';
 
   if (!chatMessages.length || chatMessages[chatMessages.length - 1].role !== 'user') {
@@ -382,14 +396,14 @@ router.post('/', auth, async (req, res) => {
     const durationMs = Date.now() - t0;
 
     // 需要拿到 _id 返回给前端才能支持"当场撤回"（撤回按 logId 定位 ChatLog 记录）
-    const log = await ChatLog.create({ user: userId, intent, userMessage: lastUserMsg, aiReply: replyText, imageUrl, audioUrl, audioDuration, durationMs });
+    const log = await ChatLog.create({ user: userId, intent, userMessage: lastUserMsg, aiReply: replyText, imageUrl, audioUrl, audioDuration, audioTranscript, durationMs });
     let proposal = null;
     if (intent === 'service') {
-      try { proposal = await maybeCreateServiceProposal({ userId, messages, lastUserMsg }); }
+        try { proposal = await maybeCreateServiceProposal({ userId, messages: effectiveMessages, lastUserMsg }); }
       catch (proposalError) { console.error('Service proposal draft error:', proposalError.message); }
     }
 
-    res.json({ success: true, data: { content: proposal ? `${replyText}\n\n我已把您的服务需求和可选服务提交给专属健康规划师确认。` : replyText, intent, logId: log._id, imageUrl, audioUrl, audioDuration, proposalPending: !!proposal } });
+    res.json({ success: true, data: { content: proposal ? `${replyText}\n\n我已把您的服务需求和可选服务提交给专属健康规划师确认。` : replyText, intent, logId: log._id, imageUrl, audioUrl, audioDuration, audioTranscript, proposalPending: !!proposal } });
   } catch (err) {
     console.error('Chat error:', err.message);
     res.status(500).json({ success: false, message: `AI响应失败，请稍后重试。（${err.message}）` });

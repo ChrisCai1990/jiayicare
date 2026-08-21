@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, Textarea, ScrollView, Input, Image } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius } from '../../theme';
-import { chatAPI } from '../../services/api';
+import { chatAPI, mediaUrl } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
@@ -18,6 +18,15 @@ export default function ChatPage() {
   const [messages, setMessages] = useState([PLANNER_GREETING]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [plannerImage, setPlannerImage] = useState(null);
+  const [plannerVoiceMode, setPlannerVoiceMode] = useState(false);
+  const [plannerEmojiOpen, setPlannerEmojiOpen] = useState(false);
+  const [plannerMoreOpen, setPlannerMoreOpen] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const plannerRecorderRef = useRef(null);
+  const plannerRecordingTimerRef = useRef(null);
+  const plannerAudioRef = useRef(null);
   const [view, setView] = useState('team');
   const [nutritionMessages, setNutritionMessages] = useState([
     { role: 'assistant', content: '您好，我是AI营养师。您可以描述今天吃了什么、记录体重，或拍一张饮食照片，我会立即做初步分析。' },
@@ -39,7 +48,7 @@ export default function ChatPage() {
       if (historyUserRef.current !== historyUserId) return;
       if (!res?.success || !Array.isArray(res.data) || res.data.length === 0) return;
       const historyMessages = [...res.data].reverse().flatMap((log) => [
-        log.userMessage ? { role: 'user', content: log.userMessage } : null,
+        log.userMessage ? { role: 'user', content: log.userMessage, image: log.imageUrl, audioUrl: log.audioUrl, audioDuration: log.audioDuration, audioTranscript: log.audioTranscript } : null,
         log.aiReply ? { role: 'assistant', content: log.aiReply } : null,
       ].filter(Boolean));
       setMessages([PLANNER_GREETING, ...historyMessages]);
@@ -65,22 +74,105 @@ export default function ChatPage() {
     };
   }, [view, messages.length, sending]);
 
-  const send = async () => {
+  useEffect(() => () => {
+    clearInterval(plannerRecordingTimerRef.current);
+    plannerRecorderRef.current?.stop?.();
+    plannerAudioRef.current?.destroy?.();
+  }, []);
+
+  const send = async (audio = null) => {
     const text = input.trim();
-    if (!text || sending) return;
-    const next = [...messages, { role: 'user', content: text }];
+    if ((!text && !plannerImage && !audio) || sending) return;
+    const currentImage = plannerImage;
+    const content = text || (audio ? '[语音消息]' : '图片记录');
+    const userMessage = {
+      role: 'user', content, image: currentImage?.path,
+      audioUrl: audio?.tempFilePath, audioDuration: Math.max(1, Math.ceil((audio?.duration || 0) / 1000)),
+    };
+    const next = [...messages, userMessage];
     setMessages(next);
     setInput('');
+    setPlannerImage(null);
     setSending(true);
     try {
-      const res = await chatAPI.send(next, { name: user?.name });
+      let audioPayload = null;
+      if (audio?.tempFilePath) {
+        const base64 = Taro.getFileSystemManager().readFileSync(audio.tempFilePath, 'base64');
+        audioPayload = { data: `data:audio/mpeg;base64,${base64}`, mimeType: 'audio/mpeg', duration: userMessage.audioDuration };
+      }
+      const res = await chatAPI.send(next, { name: user?.name }, {
+        image: currentImage?.data || '', mimeType: currentImage?.mimeType || 'image/jpeg', audio: audioPayload,
+      });
       const reply = res?.data?.content || res?.content || '抱歉，我暂时无法回复，请稍后重试。';
-      setMessages((m) => [...m, { role: 'assistant', content: reply }]);
+      const audioTranscript = res?.data?.audioTranscript || '';
+      setMessages((current) => {
+        const updated = audioTranscript ? current.map((message, index) => (
+          index === current.length - 1 && message.role === 'user' ? { ...message, audioTranscript } : message
+        )) : current;
+        return [...updated, { role: 'assistant', content: reply }];
+      });
     } catch (err) {
       setMessages((m) => [...m, { role: 'assistant', content: `请求失败：${err.message || '网络异常'}` }]);
     } finally {
       setSending(false);
     }
+  };
+
+  const choosePlannerImage = async () => {
+    try {
+      const result = await Taro.chooseImage({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'] });
+      const path = result.tempFilePaths?.[0];
+      if (!path) return;
+      const base64 = Taro.getFileSystemManager().readFileSync(path, 'base64');
+      const ext = (path.split('.').pop() || 'jpg').toLowerCase();
+      const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+      setPlannerImage({ path, mimeType, data: `data:${mimeType};base64,${base64}` });
+    } catch (err) {
+      if (!/cancel/i.test(err?.errMsg || '')) Taro.showToast({ title: '无法读取图片', icon: 'none' });
+    }
+  };
+
+  const startPlannerRecording = () => {
+    if (sending || recording) return;
+    setRecordingSeconds(0);
+    const recorder = plannerRecorderRef.current || Taro.getRecorderManager();
+    plannerRecorderRef.current = recorder;
+    recorder.offStart?.(); recorder.offError?.();
+    recorder.onStart(() => {
+      setRecording(true);
+      clearInterval(plannerRecordingTimerRef.current);
+      plannerRecordingTimerRef.current = setInterval(() => setRecordingSeconds((value) => Math.min(60, value + 1)), 1000);
+    });
+    recorder.onError(() => {
+      clearInterval(plannerRecordingTimerRef.current);
+      setRecording(false);
+      Taro.showToast({ title: '请允许使用麦克风', icon: 'none' });
+    });
+    recorder.start({ duration: 60000, format: 'mp3', sampleRate: 16000, numberOfChannels: 1, encodeBitRate: 48000 });
+  };
+
+  const stopPlannerRecording = () => {
+    const recorder = plannerRecorderRef.current;
+    if (!recorder || !recording) return;
+    clearInterval(plannerRecordingTimerRef.current);
+    recorder.offStop?.();
+    recorder.onStop((result) => {
+      setRecording(false);
+      if ((result?.duration || 0) < 600) {
+        Taro.showToast({ title: '说话时间太短', icon: 'none' });
+        return;
+      }
+      send(result);
+    });
+    recorder.stop();
+  };
+
+  const playPlannerVoice = (url) => {
+    plannerAudioRef.current?.destroy?.();
+    const player = Taro.createInnerAudioContext();
+    plannerAudioRef.current = player;
+    player.src = mediaUrl(url);
+    player.play();
   };
 
   const choosePrompt = (text) => {
@@ -173,7 +265,10 @@ export default function ChatPage() {
               border: m.role === 'user' ? 'none' : `1px solid ${colors.border}`,
             }}>
               {m.role === 'assistant' && <Text style={{ display: 'block', color: '#9A5B00', fontSize: '10px', fontWeight: 700, marginBottom: '4px' }}>AI健康规划师</Text>}
-              <Text style={{ fontSize: '14px', color: m.role === 'user' ? '#fff' : colors.textPrimary, lineHeight: '20px' }}>{m.content}</Text>
+              {!!m.image && <Image src={mediaUrl(m.image)} mode="aspectFill" style={{ width: '190px', height: '140px', borderRadius: '8px', display: 'block', marginBottom: '6px' }} />}
+              {!!m.audioUrl && <View onClick={() => playPlannerVoice(m.audioUrl)}><Text style={{ fontSize: '14px', color: m.role === 'user' ? '#fff' : colors.primary }}>▶ 语音 {Math.max(1, Math.round(m.audioDuration || 1))}″</Text></View>}
+              {(!m.audioUrl || m.content !== '[语音消息]') && <Text style={{ fontSize: '14px', color: m.role === 'user' ? '#fff' : colors.textPrimary, lineHeight: '20px' }}>{m.content}</Text>}
+              {!!m.audioTranscript && <Text style={{ display: 'block', marginTop: '6px', fontSize: '12px', color: m.role === 'user' ? 'rgba(255,255,255,.82)' : colors.textSecondary }}>转写：{m.audioTranscript}</Text>}
             </View>
           </View>
         ))}
@@ -181,30 +276,22 @@ export default function ChatPage() {
         <View style={{ height: '1px' }} />
       </ScrollView>
 
-      <View style={{
-        display: 'flex', alignItems: 'flex-end', gap: '8px', padding: `${spacing.sm}px ${spacing.md}px`,
-        backgroundColor: '#fff', borderTop: `1px solid ${colors.border}`,
-      }}>
-        <Textarea
-          style={{ flex: 1, minHeight: '48px', maxHeight: '112px', boxSizing: 'border-box', backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: '12px 14px', fontSize: '15px', lineHeight: '22px' }}
-          placeholder="描述您想了解的服务..."
-          value={input}
-          onInput={(e) => setInput(e.detail.value)}
-          autoHeight
-          maxlength={500}
-          confirmType="send"
-          onConfirm={send}
-        />
-        <View
-          onClick={send}
-          style={{
-            padding: '10px 18px', borderRadius: `${radius.full}px`,
-            backgroundColor: input.trim() ? colors.primary : colors.border,
-          }}
-        >
-          <Text style={{ color: '#fff', fontSize: '14px', fontWeight: 600 }}>发送</Text>
+      {!!plannerImage && <View style={{ padding: `6px ${spacing.md}px`, backgroundColor: '#fff' }}><Image src={plannerImage.path} mode="aspectFill" style={{ width: '52px', height: '52px', borderRadius: '8px' }} /><Text onClick={() => setPlannerImage(null)} style={{ color: colors.danger, marginLeft: '8px' }}>移除</Text></View>}
+      <View style={{ padding: `7px ${spacing.sm}px`, backgroundColor: '#F7F7F7', borderTop: `1px solid ${colors.border}` }}>
+        <View style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Text onClick={() => { setPlannerVoiceMode((value) => !value); setPlannerEmojiOpen(false); setPlannerMoreOpen(false); }} style={{ fontSize: '23px', lineHeight: '40px' }}>{plannerVoiceMode ? '⌨️' : '◉'}</Text>
+          {plannerVoiceMode ? (
+            <View onTouchStart={startPlannerRecording} onTouchEnd={stopPlannerRecording} onTouchCancel={stopPlannerRecording} style={{ flex: 1, height: '40px', borderRadius: '6px', backgroundColor: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${colors.border}` }}><Text style={{ fontWeight: 700, color: recording ? colors.danger : colors.textPrimary }}>{recording ? '松开发送' : '按住说话'}</Text></View>
+          ) : (
+            <Input value={input} onInput={(e) => setInput(e.detail.value)} placeholder="输入消息" confirmType="send" onConfirm={() => send()} adjustPosition cursorSpacing={12} maxlength={500} style={{ flex: 1, height: '40px', minWidth: 0, boxSizing: 'border-box', backgroundColor: '#fff', borderRadius: '6px', padding: '0 10px', fontSize: '15px' }} />
+          )}
+          <Text onClick={() => { setPlannerEmojiOpen((value) => !value); setPlannerMoreOpen(false); setPlannerVoiceMode(false); }} style={{ fontSize: '23px' }}>☺</Text>
+          {(input.trim() || plannerImage) ? <Text onClick={() => send()} style={{ padding: '7px 10px', borderRadius: '5px', backgroundColor: colors.primary, color: '#fff', fontWeight: 700 }}>发送</Text> : <Text onClick={() => { setPlannerMoreOpen((value) => !value); setPlannerEmojiOpen(false); }} style={{ fontSize: '26px' }}>⊕</Text>}
         </View>
+        {plannerEmojiOpen && <View style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', padding: '12px 4px 4px' }}>{['😊', '👍', '🌙', '❤️', '谢谢', '收到'].map((emoji) => <Text key={emoji} onClick={() => setInput((value) => `${value}${emoji}`)} style={{ fontSize: '21px' }}>{emoji}</Text>)}</View>}
+        {plannerMoreOpen && <View style={{ display: 'flex', padding: '12px 4px 4px' }}><View onClick={choosePlannerImage} style={{ textAlign: 'center' }}><View style={{ width: '48px', height: '48px', borderRadius: '9px', backgroundColor: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: '23px' }}>🖼️</Text></View><Text style={{ fontSize: '11px', color: colors.textMuted }}>图片</Text></View></View>}
       </View>
+      {recording && <View style={{ position: 'fixed', left: '50%', top: '45%', transform: 'translate(-50%, -50%)', zIndex: 120, width: '170px', padding: '24px 16px', borderRadius: '16px', backgroundColor: 'rgba(20,34,29,.86)', textAlign: 'center' }}><Text style={{ display: 'block', color: '#fff', fontSize: '28px', marginBottom: '10px' }}>〽</Text><Text style={{ display: 'block', color: '#fff', fontSize: '16px', fontWeight: 700 }}>正在说话 {recordingSeconds}″</Text><Text style={{ display: 'block', color: 'rgba(255,255,255,.8)', fontSize: '12px', marginTop: '8px' }}>松开发送</Text></View>}
       </View>
 
       <View style={{ display: view === 'nutrition' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>

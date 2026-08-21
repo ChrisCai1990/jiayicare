@@ -5188,10 +5188,11 @@ router.get('/user-messages/:userId/thread', staffAuth, async (req, res) => {
     }
     const conversationId = `${req.params.userId}_${role}`;
     const ChatConversationState = require('../models/ChatConversationState');
-    const [messages, state] = await Promise.all([
-      Message.find({ conversationId, recalled: { $ne: true } }).sort({ createdAt: 1 }).limit(100),
+    const [newestMessages, state] = await Promise.all([
+      Message.find({ conversationId, recalled: { $ne: true } }).sort({ createdAt: -1 }).limit(100),
       ChatConversationState.findOne({ conversationId }).select('humanActive takenOverAt takenOverBy').lean(),
     ]);
+    const messages = newestMessages.reverse();
     // 标记该会话所有用户消息为医护已读
     await Message.updateMany(
       { conversationId, type: 'user', staffReadAt: null },

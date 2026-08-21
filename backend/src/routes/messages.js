@@ -51,14 +51,15 @@ router.get('/thread/:role', auth, async (req, res) => {
   const VALID = ['doctor', 'nutritionist', 'manager'];
   if (!VALID.includes(role)) return res.status(400).json({ success: false, message: '无效角色' });
   const conversationId = `${req.user._id}_${role}`;
-  const [messages, state] = await Promise.all([
+  const [newestMessages, state] = await Promise.all([
     Message.find({
       conversationId,
       recalled: { $ne: true },
       $or: [{ aiGenerated: { $ne: true } }, { aiReviewStatus: { $in: ['', 'approved'] } }],
-    }).sort({ createdAt: 1 }).limit(100),
+    }).sort({ createdAt: -1 }).limit(100),
     ChatConversationState.findOne({ conversationId }).select('humanActive takenOverAt').lean(),
   ]);
+  const messages = newestMessages.reverse();
   // 标记所有未读为已读
   await Message.updateMany({ conversationId, user: req.user._id, type: { $ne: 'user' }, unread: true }, { unread: false, readAt: new Date() });
   res.json({

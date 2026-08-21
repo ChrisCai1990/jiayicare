@@ -9,6 +9,7 @@ const chatLogSchema = new mongoose.Schema({
   imageUrl:   { type: String, default: '' },
   audioUrl:   { type: String, default: '' },
   audioDuration: { type: Number, default: 0 },
+  audioTranscript: { type: String, default: '', maxlength: 1000 },
   structuredData: { type: mongoose.Schema.Types.Mixed, default: null },
   transferred:{ type: Boolean, default: false }, // 是否转人工
   resolved:   { type: Boolean, default: false }, // 转人工待办是否已被医护端处理（联系会员后标记）
