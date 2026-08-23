@@ -5,18 +5,17 @@ const SCOPES = [
   ['basic', '基本资料'], ['healthProfile', '健康档案'], ['reports', '体检报告'], ['healthRecords', '健康监测'],
   ['medications', '用药/营养素'], ['followups', '随访'], ['plans', '管理方案'], ['aiAnalysis', '既有AI分析'],
 ]
-const PROVIDERS = { auto: '自动选择', workbuddy: 'WorkBuddy', qwen: '通义千问', deepseek: 'DeepSeek' }
+const PROVIDER_LABEL = '通义千问'
 
 export default function AiCaseReviewPanel({ patientId, staff, toast }) {
   const [topics, setTopics] = useState([])
   const [activeId, setActiveId] = useState('')
-  const [providers, setProviders] = useState({})
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [draft, setDraft] = useState('')
   const [files, setFiles] = useState([])
   const [showCreate, setShowCreate] = useState(false)
-  const [form, setForm] = useState({ title: '', description: '', preferredProvider: 'auto', contextScopes: SCOPES.map(([key]) => key) })
+  const [form, setForm] = useState({ title: '', description: '', preferredProvider: 'qwen', contextScopes: SCOPES.map(([key]) => key) })
   const [conclusionText, setConclusionText] = useState('')
   const bottomRef = useRef(null)
   const active = useMemo(() => topics.find(item => item._id === activeId) || topics[0], [topics, activeId])
@@ -28,8 +27,8 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
   const load = async () => {
     setLoading(true)
     try {
-      const [topicRes, providerRes] = await Promise.all([staffAPI.getAiCaseReviews(patientId), staffAPI.getAiCaseReviewProviders()])
-      setTopics(topicRes.data || []); setProviders(providerRes.data || {})
+      const topicRes = await staffAPI.getAiCaseReviews(patientId)
+      setTopics(topicRes.data || [])
       if (!activeId && topicRes.data?.length) setActiveId(topicRes.data[0]._id)
     } catch (err) { toast(err.message, 'error') } finally { setLoading(false) }
   }
@@ -41,10 +40,6 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
     setBusy(true)
     try { const res = await staffAPI.createAiCaseReview(patientId, form); replaceTopic(res.data); setShowCreate(false); setForm(f => ({ ...f, title: '', description: '' })) }
     catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
-  }
-  const updateProvider = async preferredProvider => {
-    try { const res = await staffAPI.updateAiCaseReview(patientId, active._id, { preferredProvider }); replaceTopic(res.data) }
-    catch (err) { toast(err.message, 'error') }
   }
   const updateScopes = async contextScopes => {
     try { const res = await staffAPI.updateAiCaseReview(patientId, active._id, { contextScopes }); replaceTopic(res.data) }
@@ -91,7 +86,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
         {!topics.length && <div style={{ padding: 20, color: '#8AA89C', textAlign: 'center' }}>为客户的具体健康问题建立独立研判主题</div>}
         {topics.map(topic => <button key={topic._id} onClick={() => setActiveId(topic._id)} style={{ width: '100%', textAlign: 'left', border: topic._id === active?._id ? '1px solid #1E6B50' : '1px solid #E0D9CE', background: topic._id === active?._id ? '#EEF7F2' : '#fff', borderRadius: 8, padding: 11, marginBottom: 8, cursor: 'pointer' }}>
           <div style={{ fontWeight: 700, color: '#1A2B24' }}>{topic.title}</div>
-          <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 5 }}>{topic.status === 'concluded' ? '已形成确认结论' : `${topic.messages?.length || 0} 条讨论`} · {PROVIDERS[topic.preferredProvider]}</div>
+          <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 5 }}>{topic.status === 'concluded' ? '已形成确认结论' : `${topic.messages?.length || 0} 条讨论`} · {PROVIDER_LABEL}</div>
         </button>)}
       </div>
     </div>
@@ -100,9 +95,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
       <div className="card"><div className="card-body" style={{ padding: 14 }}>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap' }}>
           <div><div style={{ fontSize: 18, fontWeight: 700 }}>{active.title}</div><div style={{ color: '#4A6558', fontSize: 13, marginTop: 4 }}>{active.description || '围绕该问题持续讨论，资料和结论均保存在客户专项资料库。'}</div></div>
-          <select className="form-input" style={{ width: 180 }} value={active.preferredProvider} onChange={e => updateProvider(e.target.value)}>
-            {Object.entries(PROVIDERS).map(([key, label]) => <option key={key} value={key} disabled={key !== 'auto' && !providers[key]}>{label}{key !== 'auto' && !providers[key] ? '（未配置）' : ''}</option>)}
-          </select>
+          <div style={{ color: '#4A6558', fontSize: 13 }}>当前模型：{PROVIDER_LABEL}</div>
         </div>
         <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>{SCOPES.map(([key, label]) => {
           const checked = active.contextScopes?.includes(key)
@@ -135,7 +128,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
     {showCreate && <div className="modal-overlay"><div className="modal" style={{ maxWidth: 620 }}><div className="modal-header"><div className="modal-title">新建AI研判主题</div><button className="modal-close" onClick={() => setShowCreate(false)}>×</button></div><div className="modal-body">
       <div className="form-group"><label className="form-label">主题名称</label><input className="form-input" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="例如：近期血压波动原因分析" /></div>
       <div className="form-group"><label className="form-label">问题说明</label><textarea className="form-input" rows={3} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>
-      <div className="form-group"><label className="form-label">首选AI</label><select className="form-input" value={form.preferredProvider} onChange={e => setForm(f => ({ ...f, preferredProvider: e.target.value }))}>{Object.entries(PROVIDERS).map(([key, label]) => <option key={key} value={key} disabled={key !== 'auto' && !providers[key]}>{label}{key !== 'auto' && !providers[key] ? '（未配置）' : ''}</option>)}</select></div>
+      <div className="form-group"><label className="form-label">测试模型</label><div className="form-input" style={{ background: '#F7F8F6', color: '#4A6558' }}>{PROVIDER_LABEL}</div></div>
     </div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowCreate(false)}>取消</button><button className="btn btn-primary" disabled={busy} onClick={createTopic}>创建主题</button></div></div></div>}
   </div>
 }

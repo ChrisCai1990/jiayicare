@@ -5,21 +5,21 @@ const AiCaseReview = require('../src/models/AiCaseReview');
 
 const id = () => new mongoose.Types.ObjectId();
 
-test('AI研判主题默认保存在本系统并使用可切换供应商', () => {
+test('AI研判主题默认保存在本系统并使用通义千问', () => {
   const topic = new AiCaseReview({ user: id(), title: '近期血压波动', createdBy: id() });
   const error = topic.validateSync();
   assert.equal(error, undefined);
-  assert.equal(topic.preferredProvider, 'auto');
+  assert.equal(topic.preferredProvider, 'qwen');
   assert.equal(topic.status, 'active');
 });
 
 test('AI消息保留供应商、资料快照和图文附件审计信息', () => {
   const topic = new AiCaseReview({
     user: id(), title: '报告图文复核', createdBy: id(),
-    messages: [{ role: 'ai', content: '需要进一步复核原报告。', provider: 'workbuddy', providerModel: 'enterprise-agent', evidenceRefs: ['2026-08-01 · 年度体检'], contextSnapshot: { capturedAt: new Date(), sources: ['2026-08-01 · 年度体检'] }, attachments: [{ name: '结果图.png', url: '/api/uploads/a.png', mimeType: 'image/png' }] }],
+    messages: [{ role: 'ai', content: '需要进一步复核原报告。', provider: 'qwen', providerModel: 'qwen-plus', evidenceRefs: ['2026-08-01 · 年度体检'], contextSnapshot: { capturedAt: new Date(), sources: ['2026-08-01 · 年度体检'] }, attachments: [{ name: '结果图.png', url: '/api/uploads/a.png', mimeType: 'image/png' }] }],
   });
   assert.equal(topic.validateSync(), undefined);
-  assert.equal(topic.messages[0].provider, 'workbuddy');
+  assert.equal(topic.messages[0].provider, 'qwen');
   assert.equal(topic.messages[0].attachments[0].mimeType, 'image/png');
 });
 
