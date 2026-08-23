@@ -55,7 +55,7 @@ router.post('/patients/:patientId/ai-case-reviews', staffAuth, async (req, res) 
       user: user._id, tenantId: user.tenantId || null, title,
       description: String(req.body.description || '').trim(),
       contextScopes: sanitizeScopes(req.body.contextScopes),
-      preferredProvider: req.body.preferredProvider || 'auto',
+      preferredProvider: 'qwen',
       createdBy: req.staff._id, createdByName: req.staff.name || '',
     });
     res.status(201).json({ success: true, data: forClient(topic) });
@@ -70,7 +70,8 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId', staffAuth, async (
     if (req.body.title !== undefined) topic.title = String(req.body.title).trim();
     if (req.body.description !== undefined) topic.description = String(req.body.description).trim();
     if (req.body.contextScopes !== undefined) topic.contextScopes = sanitizeScopes(req.body.contextScopes);
-    if (req.body.preferredProvider !== undefined) topic.preferredProvider = req.body.preferredProvider;
+    // 测试阶段固定走通义千问，防止旧客户端或历史专题切回其他供应商。
+    topic.preferredProvider = 'qwen';
     if (req.body.status !== undefined) topic.status = req.body.status;
     topic.lastActivityAt = new Date();
     await topic.save();

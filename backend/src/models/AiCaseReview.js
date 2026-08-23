@@ -40,7 +40,8 @@ const aiCaseReviewSchema = new mongoose.Schema({
     type: String,
     enum: ['basic', 'healthProfile', 'reports', 'healthRecords', 'medications', 'followups', 'plans', 'aiAnalysis'],
   }],
-  preferredProvider: { type: String, enum: ['auto', 'workbuddy', 'qwen', 'deepseek'], default: 'auto' },
+  // 研判功能当前仅使用通义千问；保留旧值的兼容性由路由在写入时统一归一。
+  preferredProvider: { type: String, enum: ['auto', 'workbuddy', 'qwen', 'deepseek'], default: 'qwen' },
   providerSessionId: { type: String, default: '' },
   messages: [messageSchema],
   conclusion: { type: conclusionSchema, default: () => ({}) },
