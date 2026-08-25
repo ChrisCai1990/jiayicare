@@ -19,11 +19,14 @@ const serviceRecordSchema = new mongoose.Schema({
       'routine',          // 日常随访记录（新）
       'doctor_followup',  // 医生随访记录（新，健康顾问日常沟通，非到院就医）
       'stage_assessment', // 阶段性健康评估
+      'phase_assessment', // 旧阶段性健康评估类型（只读兼容）
     ],
     required: true,
   },
   date:    { type: Date, default: Date.now },
   sourceHealthPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null }, // 就医协助方案推送后自动生成时关联的方案
+  sourceAiCaseReviewId: { type: mongoose.Schema.Types.ObjectId, ref: 'AiCaseReview', default: undefined },
+  structuredContent: { type: mongoose.Schema.Types.Mixed, default: null },
   // 通用字段
   title:   { type: String, default: '' },   // 记录标题/主题
   content: { type: String, default: '' },   // 详细内容记录
@@ -84,5 +87,6 @@ const serviceRecordSchema = new mongoose.Schema({
 
 serviceRecordSchema.index({ patientId: 1, type: 1, date: -1 });
 serviceRecordSchema.index({ staffId: 1, date: -1 });
+serviceRecordSchema.index({ sourceAiCaseReviewId: 1 }, { unique: true, partialFilterExpression: { sourceAiCaseReviewId: { $type: 'objectId' } } });
 
 module.exports = mongoose.model('ServiceRecord', serviceRecordSchema);

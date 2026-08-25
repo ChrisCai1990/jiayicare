@@ -5,6 +5,8 @@ const staffAuth = require('../middleware/staffAuth');
 const User = require('../models/User');
 const AiCaseReview = require('../models/AiCaseReview');
 const PhaseAssessment = require('../models/PhaseAssessment');
+const ServiceRecord = require('../models/ServiceRecord');
+const { toStructuredAssessment, assessmentToPlainText } = require('../utils/phaseAssessment');
 const { buildContext } = require('../utils/aiCaseReviewContext');
 const providerAdapter = require('../utils/aiCaseReviewProvider');
 
@@ -132,9 +134,10 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAut
     if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
     if (!topic.messages.length) return res.status(400).json({ success: false, message: '暂无讨论内容' });
     const transcript = topic.messages.map(item => `${item.role === 'ai' ? 'AI' : `${item.staffName}（${item.staffRole}）`}：${item.content}`).join('\n');
-    const prompt = `请将以下医护团队专题研判整理为阶段性结论。必须分为：一、已确认事实；二、分析判断（注明不确定性）；三、缺失信息；四、建议行动；五、风险提醒。不得把AI推测写成已确认事实。\n\n主题：${topic.title}\n${transcript}`;
+    const prompt = `请将以下医护团队专题研判整理为简明、可执行的阶段性健康评估。固定使用六个栏目：核心结论、已确认事实、阶段变化、重点风险、下一步行动、待补信息。每栏最多5条，每条只表达一个要点；下一步行动必须写清事项、时间或频次、责任角色（资料不足写“待确认”）。不要输出Markdown符号、横线、免责声明、生成时间或审核人；不得把AI推测写成已确认事实，不得提出与本主题无关的疫苗、营养、就医或检查建议。\n\n主题：${topic.title}\n${transcript}`;
     const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt, context: { sources: [] }, attachments: [], history: [] });
-    topic.conclusion = { content: result.content, status: 'draft', generatedAt: new Date(), confirmedAt: null, confirmedBy: null, confirmedByName: '' };
+    const structured = toStructuredAssessment(result.content, topic.title);
+    topic.conclusion = { content: assessmentToPlainText(structured), structured, status: 'draft', generatedAt: new Date(), confirmedAt: null, confirmedBy: null, confirmedByName: '', serviceRecordId: null };
     topic.lastActivityAt = new Date();
     await topic.save();
     res.json({ success: true, data: forClient(topic) });
@@ -149,10 +152,27 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAu
     if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
     const content = String(req.body.content || topic.conclusion?.content || '').trim();
     if (!content) return res.status(400).json({ success: false, message: '结论不能为空' });
-    topic.conclusion = { content, status: 'confirmed', generatedAt: topic.conclusion?.generatedAt || new Date(), confirmedAt: new Date(), confirmedBy: req.staff._id, confirmedByName: req.staff.name || '' };
+    const structured = toStructuredAssessment(content, topic.title);
+    const shouldArchive = req.body.writeToPhaseAssessment === true
+      || /阶段性.*评估/.test(`${topic.title} ${topic.description}`)
+      || topic.messages.some(item => item.role === 'staff' && /写入.{0,8}阶段性健康评估|阶段性健康评估.{0,8}写入/.test(item.content));
+    let serviceRecord = null;
+    if (shouldArchive) {
+      serviceRecord = await ServiceRecord.findOneAndUpdate(
+        { sourceAiCaseReviewId: topic._id },
+        { $set: {
+          staffId: req.staff._id, patientId: user._id, type: 'phase_assessment', date: new Date(),
+          title: structured.title || topic.title, content: assessmentToPlainText(structured),
+          result: (structured.summary || []).join('；'), structuredContent: structured,
+          aiStatus: 'approved', aiGeneratedAt: topic.conclusion?.generatedAt || new Date(),
+        }, $setOnInsert: { sourceAiCaseReviewId: topic._id } },
+        { new: true, upsert: true, setDefaultsOnInsert: true },
+      );
+    }
+    topic.conclusion = { content: assessmentToPlainText(structured), structured, status: 'confirmed', generatedAt: topic.conclusion?.generatedAt || new Date(), confirmedAt: new Date(), confirmedBy: req.staff._id, confirmedByName: req.staff.name || '', serviceRecordId: serviceRecord?._id || topic.conclusion?.serviceRecordId || null };
     topic.status = 'concluded'; topic.lastActivityAt = new Date();
     await topic.save();
-    res.json({ success: true, data: forClient(topic) });
+    res.json({ success: true, data: forClient(topic), archivedToPhaseAssessment: Boolean(serviceRecord), serviceRecordId: serviceRecord?._id || null });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
