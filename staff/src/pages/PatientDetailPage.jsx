@@ -7584,7 +7584,7 @@ export default function PatientDetailPage() {
                     </div>
                   )}
                 </AISectionCard>
-                <AISummaryDiscussionPanel patientId={id} year={curYear} recordIndex={doctorRecord._recordIndex} discussions={doctorRecord.discussions || []} staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} title="肿瘤筛查 · AI讨论" sectionKey="tumor_risk" />
+                {/* 与生产一致：肿瘤筛查仅做资料整理与人工核查，不提供该分类的 AI 讨论入口。既有讨论记录保留审计，不删除。 */}
 
                 {/* 板块二：心脑血管病风险分析 */}
                 <AISectionCard id="ai-review-cardiovascular_risk" title="心脑血管相关信息整理" icon="❤️" color="#EF4444">
@@ -7615,7 +7615,7 @@ export default function PatientDetailPage() {
                     </div>
                   )}
                 </AISectionCard>
-                <AISummaryDiscussionPanel patientId={id} year={curYear} recordIndex={doctorRecord._recordIndex} discussions={doctorRecord.discussions || []} staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} title="心脑血管 · AI讨论" sectionKey="cardiovascular_risk" />
+                {/* 与生产一致：心脑血管仅做资料整理与人工核查，不提供该分类的 AI 讨论入口。 */}
 
                 {/* 板块三：慢性病及其他健康指标 */}
                 <AISectionCard id="ai-review-chronic_disease" title="慢病及其他健康信息整理" icon="📊" color="#0077B6">
@@ -7670,7 +7670,7 @@ export default function PatientDetailPage() {
                     )
                   )}
                 </AISectionCard>
-                <AISummaryDiscussionPanel patientId={id} year={curYear} recordIndex={doctorRecord._recordIndex} discussions={doctorRecord.discussions || []} staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} title="慢病及其他指标 · AI讨论" sectionKey="chronic_disease" />
+                {/* 与生产一致：慢病及其他仅做资料整理与人工核查，不提供该分类的 AI 讨论入口。 */}
 
                 {/* 板块四：体检全面性评估 */}
                 <AISectionCard id="ai-review-checkup_completeness" title="体检资料覆盖情况" icon="📋" color="#1E6B50">
