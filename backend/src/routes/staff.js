@@ -10699,7 +10699,15 @@ async function runReportParse(reportId, options = {}) {
                   const p = safeParseJSON(text);
                   if (p) { batchResults[i] = p; break; }
                   if (attempt === 1) console.log(`[parse-ai] 页${pageNum}解析失败 raw(前200)=${String(text).slice(0, 200)}`);
-                } catch (e) { if (attempt === 1) console.log(`[parse-ai] 页${pageNum}异常: ${e.message}`); }
+                } catch (e) {
+                  // A timed-out model request has already consumed the full page
+                  // budget. Retrying it immediately doubles the slowest path and
+                  // usually hits the same provider timeout again. Keep the page
+                  // visible for review/single-page supplementation instead.
+                  const timedOut = /超时|timeout/i.test(String(e.message || ''));
+                  if (timedOut || attempt === 1) console.log(`[parse-ai] 页${pageNum}异常: ${e.message}`);
+                  if (timedOut) break;
+                }
               }
             }
           };
@@ -10720,7 +10728,11 @@ async function runReportParse(reportId, options = {}) {
       // High-value coverage and historical recovery run first; once the shared
       // budget is exhausted, remaining pages stay visible for manual review or
       // explicit single-page supplementation.
-      const retryDeadline = useTextLayerPrimary ? Date.now() + 90_000 : Number.POSITIVE_INFINITY;
+      // Post-primary recovery is best effort for every PDF, including scanned
+      // documents without a usable text layer. Previously those reports had an
+      // infinite retry budget and could chain several minutes of recovery calls.
+      const retryBudgetMs = (useShaoyifuTemplate || useZheyiTemplate) ? 90_000 : 60_000;
+      const retryDeadline = Date.now() + retryBudgetMs;
       const deferredRetryPages = new Set();
       const retryTimeRemaining = () => Math.max(0, retryDeadline - Date.now());
       const retryTimeoutMs = maximum => Number.isFinite(retryDeadline)
@@ -10730,7 +10742,7 @@ async function runReportParse(reportId, options = {}) {
         const uniquePages = [...new Set((pages || []).map(Number).filter(Boolean))];
         if (!uniquePages.length || retryTimeRemaining() >= 5_000) return uniquePages;
         uniquePages.forEach(page => deferredRetryPages.add(page));
-        console.log(`[parse-ai] ${label}跳过：文字层报告后置补提已达到90秒预算，转人工核对 P${uniquePages.join(',')}`);
+        console.log(`[parse-ai] ${label}跳过：后置补提已达到${Math.round(retryBudgetMs / 1000)}秒预算，转人工核对 P${uniquePages.join(',')}`);
         return [];
       };
 
@@ -10978,7 +10990,7 @@ async function runReportParse(reportId, options = {}) {
             const img = await renderSinglePage(pdfBuf, pageNum, DPI);
             if (!img) continue;
             const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页曾提取到条数明显少于标题声明数量的检验单：${underOrders.filter(o => allItems.some(it => it._page === pageNum && it.orderName === o.orderName)).map(o => `"${o.orderName}"（标题写${o.expected}项，之前只提取到${o.actual}项）`).join('、')}。请重新逐行核对该检验单在图片中的每一行，确保每一个子项都单独输出一条，不得合并、省略或遗漏任何一行，即使多行结果完全相同（如都是阴性）也要逐条列出。${useOcrV2 ? formatTextLayerEvidence(textLayer.pages?.[pageNum - 1]) : ''}`;
-            const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
+            const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: retryTimeoutMs(useShaoyifuTemplate ? 120000 : 45000) });
             const p = safeParseJSON(text);
             if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
             const retryItems = tagReportPageItems(p.items, pageNum);

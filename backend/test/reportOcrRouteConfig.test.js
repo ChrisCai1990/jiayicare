@@ -48,3 +48,12 @@ test('Mingzhou P7 missing weight blocks draft persistence after one local retry'
   assert.match(routeSource, /stage: 'incomplete'/);
   assert.match(routeSource, /本次结果未写入审核草稿/);
 });
+
+test('all PDF OCR paths have a finite post-primary retry budget', () => {
+  const staffRoute = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+
+  assert.match(staffRoute, /const retryBudgetMs = \(useShaoyifuTemplate \|\| useZheyiTemplate\) \? 90_000 : 60_000/);
+  assert.match(staffRoute, /const retryDeadline = Date\.now\(\) \+ retryBudgetMs/);
+  assert.doesNotMatch(staffRoute, /useTextLayerPrimary \? Date\.now\(\) \+ 90_000 : Number\.POSITIVE_INFINITY/);
+  assert.match(staffRoute, /if \(timedOut\) break/);
+});
