@@ -262,7 +262,10 @@ function assessReportItems(items, { textLayer = null } = {}) {
 
   return list.map((item, index) => {
     const flags = new Set(item.qualityFlags || []);
-    const derivedStatus = statusFromRange(item);
+    // Lab status is evidence, not a calculation: keep the report's printed
+    // H/L, arrow, positive/negative or explicit normal/abnormal marker. Range
+    // calculation remains available for non-lab measurements such as BMI.
+    const derivedStatus = item.itemType === 'lab' ? null : statusFromRange(item);
     const isImaging = item.itemType === 'imaging';
     const hasResult = isImaging ? Boolean(text(item.findings) || text(item.diagnosis)) : Boolean(text(item.value));
     if (!text(item.name)) flags.add('name_missing');
@@ -279,9 +282,8 @@ function assessReportItems(items, { textLayer = null } = {}) {
     const duplicateIndexes = key ? groups.get(key) || [] : [];
     if (duplicateIndexes.some(i => i !== index && Number(list[i].sourcePage) !== Number(item.sourcePage))) flags.add('cross_page_duplicate');
 
-    // A deterministic range calculation is safer than a visual model's colour/status inference.
     let status = derivedStatus || normalizeImagingStatus(item) || item.status || 'unknown';
-    if (!isImaging && ['abnormal', 'attention'].includes(status) && !derivedStatus && !text(item.referenceRange)) {
+    if (item.itemType !== 'lab' && !isImaging && ['abnormal', 'attention'].includes(status) && !derivedStatus && !text(item.referenceRange)) {
       flags.add('abnormal_unverified');
       status = 'unknown';
     }

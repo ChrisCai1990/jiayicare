@@ -73,7 +73,7 @@ test('blood pressure is evaluated against systolic and diastolic ranges', () => 
   assert.equal(statusFromRange({ name: '血压', value: '122/66', referenceRange: '90.0-139.0 / 60.0-89.0', itemType: 'data' }), 'normal');
 });
 
-test('one-sided reference ranges override incorrect model abnormal labels', () => {
+test('lab status follows the report marker instead of range calculation', () => {
   const cases = [
     ['6.9', '<15.0'], ['2.8', '<8.0'], ['4.41', '<6.84'], ['0.21', '<1.50'],
     ['>20.22', '>3.0'], ['>180.0', '>70.0'],
@@ -84,8 +84,8 @@ test('one-sided reference ranges override incorrect model abnormal labels', () =
   const [item] = assessReportItems([{
     name: '鳞状上皮细胞癌相关抗原', value: '0.21', referenceRange: '<1.50', status: 'abnormal', itemType: 'lab', screeningKey: 'scc',
   }]);
-  assert.equal(item.status, 'normal');
-  assert.ok(item.qualityFlags.includes('status_conflict'));
+  assert.equal(item.status, 'abnormal');
+  assert.ok(!item.qualityFlags.includes('status_conflict'));
 });
 
 test('numeric result conflicting with model status is marked for review', () => {
