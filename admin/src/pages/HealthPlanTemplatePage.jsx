@@ -57,6 +57,34 @@ const defaultContent = {
   },
 }
 
+// 管理员可一键生成后再人工修改、审核；这些只是模板草稿，不能直接改变客户正式方案。
+const PHASE_ASSESSMENT_PRESETS = {
+  monthly: {
+    name: '月度阶段性健康评估（待审核模板）', frequency: 'monthly',
+    triggerRule: '年度管理方案确认后，按自然月生成；同一客户、同一年度方案、同一模板每月最多一份。',
+    minimumData: '至少核对本月健康记录、随访记录和服务方案；缺失时不得推断，改列为待补数据。',
+    focus: '本月健康监测、目标指标变化、服务方案执行与随访完成情况、异常信号和复查进度。重点识别影响管理落地的执行偏差。',
+    instructions: '分别写明已确认事实、AI分析和待人工确认事项；不得诊断、开药、自动调整或发布方案。输出只供家庭医生/健康顾问审核。',
+    outputSections: ['本期目标与已确认数据', '管理执行与依从性', '成效、异常与数据缺口', '下月待审核行动计划'],
+  },
+  quarterly: {
+    name: '季度阶段性健康评估（待审核模板）', frequency: 'quarterly',
+    triggerRule: '年度管理方案确认后，按自然季度生成；用于评估管理措施是否有效，而非重复月度摘要。',
+    minimumData: '至少核对本季度健康记录、随访/服务执行、检查或复查资料和既定方案目标；不足项须明确。',
+    focus: '本季度目标达成、关键指标趋势、体检/复查结果、日常健康数据、方案依从性、风险变化；分析管理措施与结果之间的可见关联及未达成原因线索。',
+    instructions: '区分已确认数据与分析判断；指出与既定目标或当前方案不一致之处；下一季度只提出待讨论的调整方向，不自动修改方案或生成医疗结论。',
+    outputSections: ['季度目标与证据汇总', '方案执行、依从性与阶段成效', '未达成事项、风险和数据缺口', '下季度待审核计划'],
+  },
+  yearly: {
+    name: '年度健康管理总结与续约建议（待审核模板）', frequency: 'yearly',
+    triggerRule: '以年度管理方案确认日为起算点，满11个月后生成，预留第12个月用于续约沟通与新年度方案确认；此后每满12个月生成一次。',
+    minimumData: '至少核对全年目标、服务方案、随访记录、健康数据和检查/复查资料；数据不足时必须列为续管前待补项。',
+    focus: '回顾全年健康管理目标、服务方案执行与依从性、关键健康指标和体检/复查趋势、阶段性改善与未达成事项、风险变化；梳理下一年度管理优先级与待确认计划。',
+    instructions: '以既有年度管理目标和服务方案为基线，区分已确认数据、阶段结论与待讨论判断；下一年度仅提出供家庭医生/健康顾问确认的目标、随访节奏、复查或服务调整方向。不得自动创建、调整或发布正式方案。',
+    outputSections: ['年度管理目标与证据汇总', '全年执行、依从性与管理成效', '未达成原因、风险和续管前数据缺口', '下一年度待审核续管计划'],
+  },
+}
+
 // 随访方案选择器（从随访方案库选择）
 function FollowUpPlanSelector({ value, onChange, allPlans, loading }) {
   const [open, setOpen] = useState(false)
@@ -223,7 +251,7 @@ function FieldRow({ label, fieldKey, placeholder, rows, half, content, set }) {
 }
 
 // ── 各类型的表单字段定义 ──────────────────────────────────────
-function PlanContentForm({ type, initialContent, contentRef }) {
+function PlanContentForm({ type, initialContent, contentRef, onPhasePresetName }) {
   const [content, setContent] = useState(initialContent || defaultContent[type] || {})
   const [labOrders, setLabOrders] = useState([])
   const [examOrders, setExamOrders] = useState([])
@@ -235,6 +263,13 @@ function PlanContentForm({ type, initialContent, contentRef }) {
     contentRef.current = next
     return next
   }), [contentRef])
+  const applyPhasePreset = useCallback((presetKey) => {
+    const preset = PHASE_ASSESSMENT_PRESETS[presetKey]
+    const next = { ...defaultContent.phase_assessment, ...preset }
+    contentRef.current = next
+    setContent(next)
+    onPhasePresetName?.(preset.name)
+  }, [contentRef, onPhasePresetName])
 
   useEffect(() => {
     if (type === 'annual_checkup') {
@@ -382,11 +417,22 @@ function PlanContentForm({ type, initialContent, contentRef }) {
 
   if (type === 'phase_assessment') return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div className="form-group" style={{ gridColumn: '1/-1', padding: 12, border: '1px solid #dfe8e3', borderRadius: 8, background: '#f7fbf8' }}>
+        <label className="form-label">自动生成模板草稿</label>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {[['monthly', '生成月度模板'], ['quarterly', '生成季度模板'], ['yearly', '生成年度续约模板']].map(([key, label]) => <button key={key} type="button" className="btn btn-ghost" onClick={() => applyPhasePreset(key)}>{label}</button>)}
+        </div>
+        <div style={{ fontSize: 12, color: '#68756f', marginTop: 8 }}>生成后可继续修改；保存并启用后才会进入自动任务流程，AI生成的客户评估仍须人工审核。</div>
+      </div>
       <div className="form-group"><label className="form-label">触发周期 *</label><select className="form-input" value={content.frequency || 'monthly'} onChange={e => set('frequency', e.target.value)}><option value="monthly">每月</option><option value="quarterly">每季度</option><option value="yearly">每年</option></select></div>
       <FieldRow label="生成规则" fieldKey="triggerRule" placeholder="如：年度方案确认日起满12个月后生成" rows={2} content={content} set={set} />
       <FieldRow label="最低数据要求" fieldKey="minimumData" placeholder="如：检查、健康记录或随访缺失时，列为待补数据，不得推断" rows={2} content={content} set={set} />
       <FieldRow label="评估重点" fieldKey="focus" placeholder="如：目标达成、方案执行与依从性、指标趋势、复查和风险变化" rows={3} content={content} set={set} />
       <FieldRow label="评估要求" fieldKey="instructions" placeholder="如：分析管理成效与未达成原因；提出下一阶段待审核计划；不得自动改方案" rows={3} content={content} set={set} />
+      <div className="form-group" style={{ gridColumn: '1/-1' }}>
+        <label className="form-label">固定输出栏目（AI 必须按此生成）</label>
+        <div style={{ padding: 10, border: '1px solid #e2e5e3', borderRadius: 8, color: '#52625a', fontSize: 13, lineHeight: 1.8 }}>{(content.outputSections || []).length ? (content.outputSections || []).map((item, index) => <div key={item}>{index + 1}. {item}</div>) : '请先点击上方“生成月度/季度/年度模板”。'}</div>
+      </div>
     </div>
   )
 
@@ -458,7 +504,7 @@ function TemplateModal({ template, planType, onClose, onSaved }) {
 
           <div style={{ borderTop: '1px solid #e0d9ce', paddingTop: 16 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: '#333', marginBottom: 12 }}>模板内容</div>
-            <PlanContentForm type={planType} initialContent={contentRef.current} contentRef={contentRef} />
+            <PlanContentForm type={planType} initialContent={contentRef.current} contentRef={contentRef} onPhasePresetName={setName} />
           </div>
         </div>
         <div className="modal-footer">
