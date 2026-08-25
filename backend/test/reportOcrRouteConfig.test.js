@@ -41,20 +41,20 @@ test('OCR review classification editor is not hidden in a details disclosure', (
   assert.match(nearby, /classifyCell\(it, i\)/);
 });
 
-test('Mingzhou P7 missing weight blocks draft persistence after one local retry', () => {
+test('automatic local retries stay disabled in direct extraction mode', () => {
   const routeSource = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
-  assert.match(routeSource, /renderSinglePageCrop\(pdfBuf, 7/);
-  assert.match(routeSource, /selectOriginalWeight\(allItems\.filter\(item => item\._page === 7\)\)/);
-  assert.match(routeSource, /stage: 'incomplete'/);
-  assert.match(routeSource, /本次结果未写入审核草稿/);
+  assert.match(routeSource, /const enableAutomaticRecovery = false/);
+  assert.match(routeSource, /if \(!enableAutomaticRecovery\)/);
+  assert.match(routeSource, /if \(enableAutomaticRecovery && useMingzhouTemplate/);
 });
 
-test('all PDF OCR paths have a finite post-primary retry budget', () => {
+test('whole-report OCR has a three-minute direct extraction SLA', () => {
   const staffRoute = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
 
-  assert.match(staffRoute, /const retryBudgetMs = \(useShaoyifuTemplate \|\| useZheyiTemplate \|\| useMingzhouTemplate\) \? 90_000 : 60_000/);
-  assert.match(staffRoute, /const retryDeadline = Date\.now\(\) \+ retryBudgetMs/);
-  assert.doesNotMatch(staffRoute, /useTextLayerPrimary \? Date\.now\(\) \+ 90_000 : Number\.POSITIVE_INFINITY/);
+  assert.match(staffRoute, /const REPORT_PARSE_SLA_MS = 180_000/);
+  assert.match(staffRoute, /const REPORT_MODEL_DEADLINE_MS = 165_000/);
+  assert.match(staffRoute, /timeoutMs: directModelTimeout\(45_000\)/);
+  assert.match(staffRoute, /const retryBudgetMs = 0/);
   assert.match(staffRoute, /if \(timedOut\) break/);
 });
 

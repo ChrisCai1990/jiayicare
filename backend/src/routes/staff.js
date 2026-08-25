@@ -10500,6 +10500,15 @@ async function runReportParse(reportId, options = {}) {
 
   const isPdf = isPdfReport(report);
   const t0 = Date.now();
+  // Whole-report OCR is a direct extraction job, not an open-ended recovery
+  // workflow. Stop starting model calls early enough to persist the draft and
+  // return control within the three-minute product SLA. Missing pages remain
+  // explicit and can be supplemented manually one page at a time.
+  const REPORT_PARSE_SLA_MS = 180_000;
+  const REPORT_MODEL_DEADLINE_MS = 165_000;
+  const modelDeadline = t0 + REPORT_MODEL_DEADLINE_MS;
+  const modelTimeRemaining = () => Math.max(0, modelDeadline - Date.now());
+  const directModelTimeout = maximum => Math.max(5_000, Math.min(maximum, modelTimeRemaining()));
   const { createOcrStageTimer } = require('../utils/ocrPerformance');
   const ocrStageTimer = createOcrStageTimer();
   const setOcrProgress = (stage, message, extra = {}) => {
@@ -10546,6 +10555,7 @@ async function runReportParse(reportId, options = {}) {
           concurrency: 4,
         });
         const textResults = await mapWithConcurrency(pageNumbers, 4, async pageNum => {
+          if (modelTimeRemaining() < 5_000) return null;
           const pageText = String(textLayer.pages?.[pageNum - 1] || '').trim();
           if (pageText.replace(/\s/g, '').length < 40) return null;
           // A native text layer containing only repeated headers/footers cannot
@@ -10565,7 +10575,7 @@ async function runReportParse(reportId, options = {}) {
               maxTokens: 8192,
               temperature: 0,
               jsonMode: true,
-              timeoutMs: 60000,
+              timeoutMs: directModelTimeout(45_000),
             });
             const parsed = safeParseJSON(raw);
             const parsedItemCount = Array.isArray(parsed?.items) ? parsed.items.length : 0;
@@ -10657,6 +10667,10 @@ async function runReportParse(reportId, options = {}) {
             while (cursor < batchImages.length) {
               const i = cursor++;
               const pageNum = batchPageNumbers[i];
+              if (modelTimeRemaining() < 5_000) {
+                console.log(`[parse-ai] P${pageNum}跳过：整份报告直接提取已接近${REPORT_PARSE_SLA_MS / 1000}秒上限`);
+                continue;
+              }
               // Text layer only skips pages that are unequivocally non-clinical.
               // Detail pages retain the existing visual path until a template is
               // measured against an approved reference set.
@@ -10695,7 +10709,7 @@ async function runReportParse(reportId, options = {}) {
                       + pageTextEvidence
                       + adjacentPageContext;
                   const firstPassModel = report.type === 'body_comp' ? 'qwen-vl-max' : VL_MODEL;
-                  const text = await parseImage(batchImages[i], firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: (useShaoyifuTemplate || useZheyiTemplate || isComprehensiveCheckup) ? 8192 : 4096, timeoutMs: (useShaoyifuTemplate || useZheyiTemplate || isComprehensiveCheckup) ? 120000 : 45000 });
+                  const text = await parseImage(batchImages[i], firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: (useShaoyifuTemplate || useZheyiTemplate || isComprehensiveCheckup) ? 8192 : 4096, timeoutMs: directModelTimeout(45_000) });
                   const p = safeParseJSON(text);
                   if (p) { batchResults[i] = p; break; }
                   if (attempt === 1) console.log(`[parse-ai] 页${pageNum}解析失败 raw(前200)=${String(text).slice(0, 200)}`);
@@ -10731,7 +10745,8 @@ async function runReportParse(reportId, options = {}) {
       // Post-primary recovery is best effort for every PDF, including scanned
       // documents without a usable text layer. Previously those reports had an
       // infinite retry budget and could chain several minutes of recovery calls.
-      const retryBudgetMs = (useShaoyifuTemplate || useZheyiTemplate || useMingzhouTemplate) ? 90_000 : 60_000;
+      const enableAutomaticRecovery = false;
+      const retryBudgetMs = 0;
       const retryDeadline = Date.now() + retryBudgetMs;
       const deferredRetryPages = new Set();
       const retryTimeRemaining = () => Math.max(0, retryDeadline - Date.now());
@@ -10740,6 +10755,11 @@ async function runReportParse(reportId, options = {}) {
         : maximum;
       const budgetedRetryPages = (pages, label) => {
         const uniquePages = [...new Set((pages || []).map(Number).filter(Boolean))];
+        if (!enableAutomaticRecovery) {
+          uniquePages.forEach(page => deferredRetryPages.add(page));
+          if (uniquePages.length) console.log(`[parse-ai] ${label}不自动执行：直接提取模式，P${uniquePages.join(',')}转人工核对或单页补提`);
+          return [];
+        }
         if (!uniquePages.length || retryTimeRemaining() >= 5_000) return uniquePages;
         uniquePages.forEach(page => deferredRetryPages.add(page));
         console.log(`[parse-ai] ${label}跳过：后置补提已达到${Math.round(retryBudgetMs / 1000)}秒预算，转人工核对 P${uniquePages.join(',')}`);
@@ -10805,7 +10825,7 @@ async function runReportParse(reportId, options = {}) {
             console.log(`[parse-ai] 页${pageNum}覆盖复核通过模板完整性校验，替换首轮结果`);
           }
         }
-        if (useMingzhouTemplate && !mingzhouTemplate.selectOriginalWeight(allItems.filter(item => item._page === 7))) {
+        if (enableAutomaticRecovery && useMingzhouTemplate && !mingzhouTemplate.selectOriginalWeight(allItems.filter(item => item._page === 7))) {
           setOcrProgress('required_field_retry', '第7页缺少体重，正在局部识别一般检查区域', { page: 7, field: '体重' });
           try {
             const generalExamCrop = await renderSinglePageCrop(pdfBuf, 7, { x: 0.03, y: 0.04, width: 0.94, height: 0.34 }, 260);
@@ -11136,9 +11156,9 @@ async function runReportParse(reportId, options = {}) {
         }
       }
 
-      const bodyCompRetryPages = [...new Set([...bodyCompCandidatePages, ...allItems.map(it => it._page).filter(pageNum => {
+      const bodyCompRetryPages = enableAutomaticRecovery ? [...new Set([...bodyCompCandidatePages, ...allItems.map(it => it._page).filter(pageNum => {
         return pageNum && needsBodyCompositionRetry(allItems.filter(row => row._page === pageNum));
-      })])];
+      })])] : [];
       for (const pageNum of bodyCompRetryPages) {
         try {
           const oldPageItems = allItems.filter(it => it._page === pageNum);
