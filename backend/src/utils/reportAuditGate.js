@@ -20,13 +20,16 @@ const User = require('../models/User');
 async function checkReportAuditGate(userId) {
   const user = await User.findById(userId)
     .select('assignedFamilyDoctor archiveReviewStatus archiveReviewSnapshotAt healthProfileUpdatedAt');
-  if (!user || !user.assignedFamilyDoctor) return null; // 无健康顾问的客户不受此拦截，维持原有逻辑
+  if (!user) return '客户不存在，无法核对体检报告审核状态';
 
   const total = await MedicalReport.countDocuments({ user: userId });
   if (total === 0) return '请先上传体检报告后再生成AI健康信息整理/健康关注提示';
 
   const notStaffAudited = await MedicalReport.countDocuments({ user: userId, audit_status: { $ne: 'audited' } });
   if (notStaffAudited > 0) return `还有 ${notStaffAudited} 份体检报告健管专员未审核，请先完成审核后再生成`;
+
+  // 是否已分配健康顾问只影响后续“健康档案确认人”的判断，不能绕过报告本身的健管审核。
+  if (!user.assignedFamilyDoctor) return null;
 
   if (hasUnreviewedNewContent(user)) {
     return '有新增体检报告或健康档案更新，健康顾问需先查看确认后再生成';

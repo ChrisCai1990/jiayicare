@@ -6802,6 +6802,11 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     const { sections, sectionNotes, action, scope, year, recordIndex, sectionKey } = req.body;
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
+    if (action === 'approve') {
+      const { checkReportAuditGate } = require('../utils/reportAuditGate');
+      const gateMsg = await checkReportAuditGate(req.params.id);
+      if (gateMsg) return res.status(409).json({ success: false, needReportAudit: true, message: gateMsg });
+    }
     const current = user.aiHealthSummary || {};
     const updated = { ...current };
     const byYear = { ...(updated.byYear || {}) };
@@ -7172,6 +7177,11 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
+    const { checkReportAuditGate } = require('../utils/reportAuditGate');
+    const reportGateMessage = await checkReportAuditGate(req.params.id);
+    if (reportGateMessage) {
+      return res.status(409).json({ success: false, needReportAudit: true, message: `当前不能生成年度管理方案：${reportGateMessage}` });
+    }
 
     const ais = user.aiHealthSummary;
     if (!ais || !ais.sections) {

@@ -42,7 +42,7 @@ async function buildContext(user, scopes = []) {
     snapshot.sources.push('最近50条随访记录');
   }
   if (wanted.has('plans')) {
-    snapshot.plans = clean(await AnnualPlan.find({ user: user._id }).sort({ year: -1, createdAt: -1 }).limit(5).lean());
+    snapshot.plans = clean(await AnnualPlan.find({ patientId: user._id }).sort({ year: -1, createdAt: -1 }).limit(5).lean());
     snapshot.sources.push('近年管理方案');
   }
   if (wanted.has('aiAnalysis')) {
