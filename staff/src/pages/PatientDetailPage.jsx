@@ -6319,7 +6319,7 @@ export default function PatientDetailPage() {
           const TYPE_COLORS = {
             bloodPressureSystolic: '#DC3545',
             bloodPressureDiastolic: '#0077B6',
-            bloodSugar: '#D97706', weight: '#0077B6', heartRate: '#7C3AED', sleep: '#059669', mood: '#B45309',
+            bloodSugar: '#D97706', weight: '#0077B6', height: '#0891B2', heartRate: '#7C3AED', sleep: '#059669', mood: '#B45309',
           };
           const TREND_TYPE_LABELS = {
             ...RECORD_TYPE_LABEL,
@@ -11056,7 +11056,7 @@ function InfoRow({ label, value }) {
 
 const RECORD_TYPE_LABEL = {
   bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率',
-  weight: '体重', sleep: '睡眠', mood: '情绪',
+  weight: '体重', height: '身高', sleep: '睡眠', mood: '情绪',
   diet: '饮食', exercise: '运动', water: '饮水',
   alcohol: '饮酒', bowel: '排便', smoking: '吸烟',
   symptom: '症状自评',
@@ -11088,6 +11088,7 @@ const RECORD_VALUE_META = {
   bloodSugar: { unit: 'mmol/L', freeText: false },
   heartRate:  { unit: '次/分', freeText: false },
   weight:     { unit: 'kg', freeText: false },
+  height:     { unit: 'cm', freeText: false },
   sleep:      { unit: '小时', freeText: false },
   mood:       { unit: '分（1-10）', freeText: false },
 }
@@ -11099,6 +11100,7 @@ function formatRecordValue(r) {
   } else if (r.type === 'bloodSugar') base = `${r.value} mmol/L`
   else if (r.type === 'heartRate') base = `${r.value} 次/分`
   else if (r.type === 'weight') base = `${r.value} kg`
+  else if (r.type === 'height') base = `${r.value} cm`
   else if (r.type === 'sleep') base = `${r.value} h`
   else if (r.type === 'mood') base = `${r.value} / 10`
   else base = r.value ?? '-'
@@ -12143,9 +12145,12 @@ function parseHealthImportCsv(text) {
   const headers = rows[0].map(x => x.trim())
   const required = ['身份证号码', '姓名', '测量时间', '数据类型']
   if (required.some(x => !headers.includes(x))) throw new Error(`模板缺少必填列：${required.join('、')}`)
+  let inheritedId = '', inheritedName = ''
   return rows.slice(1).map(cols => {
     const get = name => cols[headers.indexOf(name)] || ''
-    return { idNumber: get('身份证号码'), name: get('姓名'), recordedAt: get('测量时间'), type: get('数据类型'), systolic: get('收缩压'), diastolic: get('舒张压'), value: get('数值'), note: get('备注') }
+    inheritedId = get('身份证号码') || inheritedId
+    inheritedName = get('姓名') || inheritedName
+    return { idNumber: inheritedId, name: inheritedName, recordedAt: get('测量时间'), type: get('数据类型'), systolic: get('收缩压'), diastolic: get('舒张压'), value: get('数值'), note: get('备注') }
   }).filter(x => Object.values(x).some(Boolean))
 }
 
@@ -12159,8 +12164,17 @@ function BatchHealthRecordImport({ patient, onSaved, toast: toastFn }) {
 
   const downloadTemplate = () => {
     if (!canImport) return toastFn('请先在基本信息中登记客户身份证号码')
-    const sample = [patient.idNumber, patient.name || '', '2024-01-15 08:30', '血压', '135', '85', '', '早晨测量']
-    const csv = [HEALTH_IMPORT_HEADERS, sample].map(row => row.map(value => `"${String(value || '').replace(/"/g, '""')}"`).join(',')).join('\r\n')
+    const identity = [patient.idNumber, patient.name || '']
+    const samples = [
+      [...identity, '2024-01-15 08:30', '血压', '135', '85', '', '早晨测量'],
+      [...identity, '2024-01-15 08:30', '体重', '', '', '68.5', '单位：kg'],
+      [...identity, '2024-01-15 08:30', '身高', '', '', '170', '单位：cm'],
+      [...identity, '2024-01-15 08:30', '血糖', '', '', '5.8', '单位：mmol/L；空腹'],
+      [...identity, '2024-01-15 08:30', '心率', '', '', '72', '单位：次/分'],
+      [...identity, '2024-01-15 08:30', '睡眠', '', '', '7.5', '单位：小时'],
+      [...identity, '2024-01-15 08:30', '情绪', '', '', '8', '1-10分'],
+    ]
+    const csv = [HEALTH_IMPORT_HEADERS, ...samples].map(row => row.map(value => `"${String(value || '').replace(/"/g, '""')}"`).join(',')).join('\r\n')
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `历史健康数据导入模板_${patient.name || '客户'}.csv`; a.click(); URL.revokeObjectURL(a.href)
   }
@@ -12201,7 +12215,7 @@ function BatchHealthRecordImport({ patient, onSaved, toast: toastFn }) {
     <div className="card" style={{ marginTop: 16 }}>
       <div className="card-header"><div className="card-title">历史健康数据批量导入</div></div>
       <div className="card-body">
-        <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 12 }}>身份证号码精准匹配当前客户，姓名二次校验；支持血压、血糖、心率、体重、睡眠和情绪，单次最多1000条。CSV可直接用Excel填写和另存。</div>
+        <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 12 }}>身份证号码精准匹配当前客户，姓名二次校验；支持血压、体重、身高、血糖、心率、睡眠和情绪，单次最多1000条。同一客户后续行可留空身份证和姓名，系统会自动沿用上一行；CSV可直接用Excel填写和另存。</div>
         {!canImport && <div style={{ padding: '9px 12px', marginBottom: 12, borderRadius: 8, color: '#B45309', background: '#FFF7E8', fontSize: 13 }}>该客户尚未登记身份证号码，请先完善基本信息后再导入。</div>}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn btn-secondary btn-sm" onClick={downloadTemplate} disabled={!canImport}>下载CSV模板</button>

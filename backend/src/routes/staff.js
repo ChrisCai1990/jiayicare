@@ -4742,6 +4742,7 @@ router.post('/patients/:id/health-records/import', staffAuth, async (req, res) =
       '血糖': 'bloodSugar', bloodSugar: 'bloodSugar',
       '心率': 'heartRate', heartRate: 'heartRate',
       '体重': 'weight', weight: 'weight',
+      '身高': 'height', height: 'height',
       '睡眠': 'sleep', sleep: 'sleep',
       '情绪': 'mood', mood: 'mood',
     };
@@ -4750,6 +4751,7 @@ router.post('/patients/:id/health-records/import', staffAuth, async (req, res) =
       bloodSugar: { category: 'vitals', label: '血糖', unit: 'mmol/L' },
       heartRate: { category: 'vitals', label: '心率', unit: '次/分' },
       weight: { category: 'metabolism', label: '体重', unit: 'kg' },
+      height: { category: 'metabolism', label: '身高', unit: 'cm' },
       sleep: { category: 'lifestyle', label: '睡眠', unit: '小时' },
       mood: { category: 'lifestyle', label: '情绪', unit: '分' },
     };
