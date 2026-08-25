@@ -87,6 +87,15 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
     try { const res = await staffAPI.confirmAiCaseReviewConclusion(patientId, active._id, conclusionText); replaceTopic(res.data); toast('结论已确认，生成管理方案时会自动引用') }
     catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
   }
+  const applyReviewTemplate = async key => {
+    const item = REVIEW_TEMPLATES.find(v => v.key === key); if (!item || !active) return
+    setBusy(true)
+    try {
+      const description = `${item.description}\n\n固定研判输出：${item.key === 'daily' ? '问题要点、已确认事实、待补信息、人工决定的后续事项' : '研判依据、管理执行/问题分析、风险或数据缺口、待审核方案/下一步计划'}`
+      const res = await staffAPI.updateAiCaseReview(patientId, active._id, { title: item.title, description, contextScopes: item.scopes })
+      replaceTopic(res.data); toast(`已套用${item.label}模板`)
+    } catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
+  }
   const reviewAssessment = async (assessment, action) => {
     const reviewNote = window.prompt(action === 'approve' ? '审核备注（可选）：' : '请填写退回原因：', '')
     if (reviewNote === null || (action === 'reject' && !reviewNote.trim())) return
@@ -122,6 +131,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
           const checked = active.contextScopes?.includes(key)
           return <label key={key} style={{ fontSize: 12, border: `1px solid ${checked ? '#1E6B50' : '#D8E1DC'}`, color: checked ? '#1E6B50' : '#65776F', borderRadius: 16, padding: '5px 9px', cursor: 'pointer' }}><input type="checkbox" checked={checked} onChange={() => updateScopes(checked ? active.contextScopes.filter(v => v !== key) : [...active.contextScopes, key])} style={{ marginRight: 5 }} />{label}</label>
         })}</div>
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #E5ECE8' }}><div style={{ fontSize: 12, color: '#65776F', marginBottom: 7 }}>套用研判模板（可用于当前主题）</div><div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>{REVIEW_TEMPLATES.map(item => <button key={item.key} className="btn btn-secondary btn-sm" disabled={busy} onClick={() => applyReviewTemplate(item.key)}>{item.label}</button>)}</div></div>
       </div></div>
 
       <div className="card" style={{ flex: 1 }}><div className="card-body" style={{ height: 480, overflowY: 'auto', background: '#F7F8F6' }}>
