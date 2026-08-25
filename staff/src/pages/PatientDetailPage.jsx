@@ -6510,7 +6510,10 @@ export default function PatientDetailPage() {
                             {closeEnough ? '同上' : (createdTime ? createdTime.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-')}
                           </td>
                           <td>
-                            <button className="btn btn-secondary btn-sm" onClick={() => startEditRecord(r)}>编辑</button>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                              <button className="btn btn-primary btn-sm" onClick={() => setShowMessageModal(true)}>进入对话</button>
+                              <button className="btn btn-secondary btn-sm" onClick={() => startEditRecord(r)}>编辑</button>
+                            </div>
                           </td>
                         </tr>
                       )
