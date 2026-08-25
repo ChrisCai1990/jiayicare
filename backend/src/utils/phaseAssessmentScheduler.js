@@ -9,10 +9,12 @@ function periodFor(frequency, now = new Date(), confirmedAt) {
   if (frequency === 'yearly') {
     if (!confirmedAt) return null;
     const startedAt = new Date(confirmedAt);
-    const completedYears = now.getFullYear() - startedAt.getFullYear()
-      - (now < new Date(now.getFullYear(), startedAt.getMonth(), startedAt.getDate()) ? 1 : 0);
-    if (completedYears < 1) return null;
-    return { key: `Y${completedYears}`, label: `年度管理第${completedYears}年复盘` };
+    const completedMonths = (now.getFullYear() - startedAt.getFullYear()) * 12 + now.getMonth() - startedAt.getMonth()
+      - (now.getDate() < startedAt.getDate() ? 1 : 0);
+    // 满 11 个月即启动首份年度复盘，为第 12 个月的续约准备预留人工处理时间；以后每 12 个月重复一次。
+    if (completedMonths < 11) return null;
+    const reviewCycle = 1 + Math.floor((completedMonths - 11) / 12);
+    return { key: `Y${reviewCycle}`, label: `年度管理第${reviewCycle}年复盘（续约准备）` };
   }
   if (frequency === 'quarterly') return { key: `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`, label: `${now.getFullYear()}年第${Math.floor(now.getMonth() / 3) + 1}季度` };
   return { key: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`, label: `${now.getFullYear()}年${now.getMonth() + 1}月` };
