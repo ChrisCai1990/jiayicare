@@ -6,6 +6,7 @@ import { messagesAPI, pushRecordsAPI, questionnaireAPI, servicesAPI, userAPI, tt
 import { useAuth } from '../../context/AuthContext';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
+import { chooseImageWithPrivacy, showImagePickerError } from '../../utils/imagePicker';
 
 // 完整对齐 app/src/screens/messages/MessagesScreen.js 的固定角色分组方案。
 // 简化点：
@@ -684,7 +685,7 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
 
   const chooseFoodImage = async () => {
     try {
-      const result = await Taro.chooseImage({ count: Math.max(1, 9 - foodImages.length), sizeType: ['compressed'], sourceType: ['album', 'camera'] });
+      const result = await chooseImageWithPrivacy({ count: Math.max(1, 9 - foodImages.length), sizeType: ['compressed'], sourceType: ['album', 'camera'] });
       const next = (result.tempFilePaths || []).map((path) => {
         const base64 = Taro.getFileSystemManager().readFileSync(path, 'base64');
         const ext = (path.split('.').pop() || 'jpg').toLowerCase();
@@ -693,7 +694,7 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
       });
       setFoodImages((prev) => [...prev, ...next].slice(0, 9));
     } catch (err) {
-      if (!/cancel/i.test(err?.errMsg || '')) Taro.showToast({ title: '无法读取图片', icon: 'none' });
+      showImagePickerError(err);
     }
   };
 

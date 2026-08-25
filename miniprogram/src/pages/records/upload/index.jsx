@@ -5,6 +5,7 @@ import { colors, spacing, radius, shadow } from '../../../theme';
 import { reportsAPI, mediaUrl } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
+import { chooseImageWithPrivacy, isImagePickerCancelled, isPrivacyDeclarationMissing, showImagePickerError } from '../../../utils/imagePicker';
 
 // 逐张读取压缩图并通过普通 HTTPS 请求上传，避免 uploadFile 域名配置导致真机端请求未到后端。
 export default function ReportUploadPage() {
@@ -20,7 +21,7 @@ export default function ReportUploadPage() {
 
   const pickAndUpload = async () => {
     try {
-      const res = await Taro.chooseImage({ count: 9, sizeType: ['compressed'], sourceType: ['album', 'camera'] });
+      const res = await chooseImageWithPrivacy({ count: 9, sizeType: ['compressed'], sourceType: ['album', 'camera'] });
       const filePaths = res.tempFilePaths || [];
       if (!filePaths.length) return;
       setUploading(true);
@@ -51,8 +52,12 @@ export default function ReportUploadPage() {
         Taro.showToast({ title: createRes.message || '上传失败', icon: 'none' });
       }
     } catch (err) {
-      if (err.errMsg && /cancel/i.test(err.errMsg)) return;
+      if (isImagePickerCancelled(err)) return;
       console.error('[report-upload]', err);
+      if (isPrivacyDeclarationMissing(err)) {
+        showImagePickerError(err);
+        return;
+      }
       Taro.showModal({ title: '上传失败', content: err.message || err.errMsg || '网络异常，请稍后重试', showCancel: false });
     } finally {
       setUploading(false);

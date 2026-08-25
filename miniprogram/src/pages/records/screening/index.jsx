@@ -6,6 +6,7 @@ import { screeningAPI } from '../../../services/api';
 import { useAuth } from '../../../context/AuthContext';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
+import { chooseImageWithPrivacy, isImagePickerCancelled, isPrivacyDeclarationMissing, showImagePickerError } from '../../../utils/imagePicker';
 
 // 对齐 app/src/screens/records/SpecialScreeningScreen.js
 // 简化点：app端web用<input type=file>选PDF/图片；小程序用 Taro.chooseImage 只支持图片
@@ -192,7 +193,7 @@ export default function SpecialScreeningPage() {
     }
 
     try {
-      const chosen = await Taro.chooseImage({ count: 1, sizeType: ['compressed'] });
+      const chosen = await chooseImageWithPrivacy({ count: 1, sizeType: ['compressed'] });
       const filePath = chosen.tempFilePaths[0];
       const fileInfo = chosen.tempFiles?.[0];
       if (!filePath) return;
@@ -209,7 +210,11 @@ export default function SpecialScreeningPage() {
       await loadItems();
       Taro.showToast({ title: '上传成功', icon: 'success' });
     } catch (e) {
-      if (e.errMsg && e.errMsg.includes('cancel')) return;
+      if (isImagePickerCancelled(e)) return;
+      if (isPrivacyDeclarationMissing(e)) {
+        showImagePickerError(e);
+        return;
+      }
       Taro.showToast({ title: e.message || '上传失败', icon: 'none' });
     } finally {
       setUploading(null);

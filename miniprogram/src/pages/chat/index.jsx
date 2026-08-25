@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
 import MessagesPage from '../messages/index';
+import { chooseImageWithPrivacy, showImagePickerError } from '../../utils/imagePicker';
 
 const QUICK_PROMPTS = ['我想了解体检服务', '帮家人找合适的服务', '我还不确定需要什么服务'];
 const PLANNER_GREETING = { role: 'assistant', content: '您好，我是AI健康规划师。我会先了解服务对象、所在城市、时间和预算偏好，再从平台已上架的产品中帮您筛选；如果暂时无法准确匹配，我会为您转接真人健康规划师。您这次想为谁了解哪类服务？' };
@@ -182,7 +183,7 @@ export default function ChatPage() {
 
   const chooseFoodImage = async () => {
     try {
-      const result = await Taro.chooseImage({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'] });
+      const result = await chooseImageWithPrivacy({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'] });
       const path = result.tempFilePaths?.[0];
       if (!path) return;
       const base64 = Taro.getFileSystemManager().readFileSync(path, 'base64');
@@ -190,7 +191,7 @@ export default function ChatPage() {
       const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
       setFoodImage({ path, mimeType, data: `data:${mimeType};base64,${base64}` });
     } catch (err) {
-      if (!/cancel/i.test(err?.errMsg || '')) Taro.showToast({ title: '无法读取图片，请重试', icon: 'none' });
+      showImagePickerError(err);
     }
   };
 

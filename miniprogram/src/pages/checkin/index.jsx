@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { recordsAPI } from '../../services/api';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
+import { chooseImageWithPrivacy, showImagePickerError } from '../../utils/imagePicker';
 
 // 对齐 app/src/screens/checkin/CheckinScreen.js（2026-07-18 打卡页重构）：
 // 必打卡/可选打卡区分（按慢病标签）、时段选择（运动）、症状自评（含紧急症状提示）、
@@ -261,7 +262,7 @@ export default function CheckinPage() {
 
   const chooseCheckinImage = async () => {
     try {
-      const result = await Taro.chooseImage({ count: Math.max(1, 9 - checkinImages.length), sizeType: ['compressed'], sourceType: ['album', 'camera'] });
+      const result = await chooseImageWithPrivacy({ count: Math.max(1, 9 - checkinImages.length), sizeType: ['compressed'], sourceType: ['album', 'camera'] });
       const next = (result.tempFilePaths || []).map((path) => {
         const base64 = Taro.getFileSystemManager().readFileSync(path, 'base64');
         const ext = (path.split('.').pop() || 'jpg').toLowerCase();
@@ -270,7 +271,7 @@ export default function CheckinPage() {
       });
       setCheckinImages((prev) => [...prev, ...next].slice(0, 9));
     } catch (err) {
-      if (!/cancel/i.test(err?.errMsg || '')) Taro.showToast({ title: '图片读取失败', icon: 'none' });
+      showImagePickerError(err, '图片读取失败，请重试');
     }
   };
 
