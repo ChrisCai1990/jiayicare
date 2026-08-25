@@ -204,6 +204,7 @@ export default function PatientsPage() {
               <tr>
                 <th>姓名</th>
                 <th>手机号</th>
+                <th>建档日期</th>
                 <th>性别/年龄</th>
                 <th>慢病</th>
                 <th>健管专员</th>
@@ -224,6 +225,7 @@ export default function PatientsPage() {
                     {p.patientType === 'vip' && <span className="badge badge-warning" style={{ marginLeft: 6 }}>VIP</span>}
                   </td>
                   <td style={{ color: '#666' }}>{p.phone}</td>
+                  <td style={{ color: '#666', whiteSpace: 'nowrap' }}>{p.createdAt ? new Date(p.createdAt).toLocaleDateString('zh-CN') : '-'}</td>
                   <td style={{ color: '#666' }}>{p.gender} {p.age ? `${p.age}岁` : '-'}</td>
                   <td>
                     {p.chronicDiseases?.length > 0

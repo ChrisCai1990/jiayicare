@@ -3119,7 +3119,9 @@ export default function PatientDetailPage() {
                 {user.clientBrand === 'jiayiguanjia' ? '嘉医管家' : user.clientBrand === 'jinyisen' ? '金伊森' : '归属未设置'}
               </span>
             </h1>
-            <p className="page-subtitle">{user.phone} · {user.gender} · {age}</p>
+            <p className="page-subtitle">
+              {user.phone} · {user.gender} · {age} · 系统建档：{user.createdAt ? new Date(user.createdAt).toLocaleString('zh-CN') : '历史数据未记录'}
+            </p>
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -3500,6 +3502,7 @@ export default function PatientDetailPage() {
                     return `${user.name || '您'}（自动）`
                   })()} />
                   <InfoRow label="手机号码（用户端登录账号）" value={user.phone || user.contactPhone || '-'} />
+                  <InfoRow label="系统建档时间" value={user.createdAt ? new Date(user.createdAt).toLocaleString('zh-CN') : '历史数据未记录'} />
                   <InfoRow label="微信小程序" value={user.wechatMpOpenid ? '已绑定' : '未绑定'} />
                   <InfoRow label="最近登录" value={user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString('zh-CN') : '-'} />
                   <InfoRow label="累计登录时长" value={user.totalLoginSeconds ? `${Math.floor(user.totalLoginSeconds / 3600)}小时${Math.floor((user.totalLoginSeconds % 3600) / 60)}分钟` : '0分钟'} />
