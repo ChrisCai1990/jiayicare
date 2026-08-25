@@ -212,7 +212,9 @@ router.post('/order', auth, async (req, res) => {
     service = {
       id: product._id.toString(),
       name: product.name,
-      price: selectedSku ? selectedSku.price : (selectedPrice ? selectedPrice.price : product.originalPrice),
+      // 商城展示和后台日常改价都以“收费项目”servicePrices 为准；SKU
+      // 只补充次数、有效期等履约信息，不能用残留旧价覆盖页面显示价。
+      price: selectedPrice ? selectedPrice.price : (selectedSku ? selectedSku.price : product.originalPrice),
       specificationLabel: selectedSku?.label || selectedPrice?.label || '',
       skuCode: selectedSku?.code || '',
       skuTotalUnits: selectedSku?.totalUnits || 0,

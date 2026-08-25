@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Textarea, ScrollView, Image, Input } from '@tarojs/components';
+import { View, Text, Textarea, ScrollView, Image } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { servicesAPI, authAPI, userAPI, mediaUrl } from '../../../services/api';
@@ -165,7 +165,6 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
   const productFundEligible = !eligibleProductIds.length || eligibleProductIds.map(String).includes(String(item?.id || item?._id || ''));
   const canUseFund = fundBalance > 0 && productFundEligible;
   const [useFund, setUseFund] = useState(false);
-  const [fundAmountInput, setFundAmountInput] = useState('');
   const [coupons, setCoupons] = useState([]);
   const [couponId, setCouponId] = useState(null);
   const [benefitsLoading, setBenefitsLoading] = useState(false);
@@ -192,7 +191,7 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
     : 0;
   const priceAfterCoupon = Math.max(0, Math.round((currentPrice - couponDiscount) * 100) / 100);
   const fundMaximum = canUseFund ? maxFundDeduction(checkoutUser?.healthFund, priceAfterCoupon) : 0;
-  const fundApplied = canUseFund && useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, fundMaximum) : 0;
+  const fundApplied = canUseFund && useFund ? Math.min(fundBalance, fundMaximum) : 0;
   const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundApplied) * 100) / 100);
 
   const handleSubmit = async () => {
@@ -343,7 +342,6 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
                 <View onClick={() => {
                   const next = !useFund;
                   setUseFund(next);
-                  if (next) setFundAmountInput(String(fundMaximum));
                 }} style={{ padding: '6px 12px', borderRadius: `${radius.full}px`, border: `1.5px solid ${useFund ? colors.primary : colors.border}`, backgroundColor: useFund ? colors.primary : '#fff' }}>
                   <Text style={{ fontSize: '12px', fontWeight: 600, color: useFund ? '#fff' : colors.textSecondary }}>{useFund ? '已启用' : '使用基金'}</Text>
                 </View>
@@ -352,13 +350,7 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
                 <>
                   <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '6px' }}>自有 ¥{personalFund.toFixed(2)} · 企业赠送 ¥{corporateFund.toFixed(2)}</Text>
                   {!!fundRuleDescription && <Text style={{ fontSize: '11px', color: colors.textSecondary, lineHeight: '17px', display: 'block', marginBottom: '8px' }}>使用规则：{fundRuleDescription}</Text>}
-                  <Input
-                    type="digit"
-                    style={{ border: `1px solid ${colors.border}`, borderRadius: `${radius.md}px`, padding: '10px 12px', fontSize: '14px', marginBottom: `${spacing.md}px`, boxSizing: 'border-box' }}
-                    placeholder={`最多可抵扣 ¥${fundMaximum.toFixed(2)}`}
-                    value={fundAmountInput}
-                    onInput={(e) => setFundAmountInput(e.detail.value)}
-                  />
+                  <Text style={{ fontSize: '12px', color: colors.primary, display: 'block', marginBottom: `${spacing.md}px` }}>本单自动抵扣 ¥{fundMaximum.toFixed(2)}</Text>
                 </>
               )}
             </>

@@ -24,6 +24,7 @@ export default function ChatPage() {
   const [plannerMoreOpen, setPlannerMoreOpen] = useState(false);
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [visiblePlannerTranscripts, setVisiblePlannerTranscripts] = useState(new Set());
   const plannerRecorderRef = useRef(null);
   const plannerRecordingTimerRef = useRef(null);
   const plannerAudioRef = useRef(null);
@@ -268,7 +269,18 @@ export default function ChatPage() {
               {!!m.image && <Image src={mediaUrl(m.image)} mode="aspectFill" style={{ width: '190px', height: '140px', borderRadius: '8px', display: 'block', marginBottom: '6px' }} />}
               {!!m.audioUrl && <View onClick={() => playPlannerVoice(m.audioUrl)}><Text style={{ fontSize: '14px', color: m.role === 'user' ? '#fff' : colors.primary }}>▶ 语音 {Math.max(1, Math.round(m.audioDuration || 1))}″</Text></View>}
               {(!m.audioUrl || m.content !== '[语音消息]') && <Text style={{ fontSize: '14px', color: m.role === 'user' ? '#fff' : colors.textPrimary, lineHeight: '20px' }}>{m.content}</Text>}
-              {!!m.audioTranscript && <Text style={{ display: 'block', marginTop: '6px', fontSize: '12px', color: m.role === 'user' ? 'rgba(255,255,255,.82)' : colors.textSecondary }}>转写：{m.audioTranscript}</Text>}
+              {!!m.audioTranscript && (
+                <View>
+                  <Text onClick={() => setVisiblePlannerTranscripts((current) => {
+                    const next = new Set(current);
+                    if (next.has(i)) next.delete(i); else next.add(i);
+                    return next;
+                  })} style={{ display: 'block', marginTop: '5px', fontSize: '11px', color: m.role === 'user' ? 'rgba(255,255,255,.82)' : colors.textMuted }}>
+                    {visiblePlannerTranscripts.has(i) ? '收起文字' : '转文字'}
+                  </Text>
+                  {visiblePlannerTranscripts.has(i) && <Text style={{ display: 'block', marginTop: '6px', fontSize: '12px', color: m.role === 'user' ? '#fff' : colors.textSecondary }}>{m.audioTranscript}</Text>}
+                </View>
+              )}
             </View>
           </View>
         ))}

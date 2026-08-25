@@ -319,7 +319,14 @@ router.post('/', auth, async (req, res) => {
     audioDuration = Math.max(1, Math.min(60, Number(audio.duration) || 1));
     audioUrl = (await uploadBase64(audio.data, audio.mimeType || 'audio/mpeg', 'chat/audio')).url;
     try {
-      audioTranscript = await require('../utils/asr').transcribeBase64(audio.data, audio.mimeType || 'audio/mpeg');
+      const asr = require('../utils/asr');
+      try {
+        audioTranscript = await asr.transcribeBase64(audio.data, audio.mimeType || 'audio/mpeg');
+      } catch (firstError) {
+        // 短语音偶发返回 SUCCESS 但无文字；规划师链路仅重试一次，
+        // 不改变团队消息或 AI 回复的其他处理。
+        audioTranscript = await asr.transcribeBase64(audio.data, audio.mimeType || 'audio/mpeg');
+      }
       if (audioTranscript) {
         lastUserMsg = audioTranscript;
         const lastUserIndex = messages.map(message => message.role).lastIndexOf('user');

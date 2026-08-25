@@ -460,18 +460,16 @@ export default function CheckinPage() {
             <Textarea
               style={{
                 border: `1.5px solid ${colors.primary}55`, borderRadius: `${radius.sm}px`,
-                padding: '0 12px', fontSize: '14px', color: colors.textPrimary,
+                padding: '10px 12px', fontSize: '14px', color: colors.textPrimary,
                 backgroundColor: '#fff', boxSizing: 'border-box', width: '100%',
-                minHeight: '96px', lineHeight: '22px',
+                height: '96px', lineHeight: '22px',
               }}
               placeholder={`记录今天的${checkinModal.label}情况...`}
               value={checkinNote}
               onInput={(e) => setCheckinNote(e.detail.value)}
-              fixed
-              adjustPosition={false}
-              cursorSpacing={12}
+              adjustPosition
+              cursorSpacing={24}
               maxlength={1000}
-              autoHeight
             />
 
             <View style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
