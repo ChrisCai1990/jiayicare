@@ -58,6 +58,13 @@ test('whole-report OCR has a three-minute direct extraction SLA', () => {
   assert.match(staffRoute, /if \(timedOut\) break/);
 });
 
+test('ultrasound extraction prefers omission over invented organ results', () => {
+  const staffRoute = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+  assert.match(staffRoute, /严禁根据组合标题、常见套餐或医学常识补造器官/);
+  assert.match(staffRoute, /无法可靠分段时保留原组合名称和原文，不强制展开/);
+  assert.doesNotMatch(staffRoute, /【组合标题强制展开】/);
+});
+
 test('expired report preview credentials refresh without closing OCR review', () => {
   const preview = fs.readFileSync(path.join(__dirname, '../../staff/src/components/PdfPagePreview.jsx'), 'utf8');
   const patientPage = fs.readFileSync(path.join(__dirname, '../../staff/src/pages/PatientDetailPage.jsx'), 'utf8');
