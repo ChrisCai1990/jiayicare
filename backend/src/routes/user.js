@@ -152,10 +152,16 @@ router.get('/me', auth, async (req, res) => {
         personal,
         rule: (() => {
           const rule = enterprise?.healthFundPaymentRule;
-          if (!rule?.enabled) return {
-            enabled: false,
-            description: '自有健康基金可在余额内抵扣；企业赠送基金暂未启用支付抵扣。',
-          };
+          if (!rule?.enabled) {
+            if (corporateAvailable > 0 && !req.user.enterpriseId) return {
+              enabled: true,
+              description: '企业健康基金按本单实时可用额度抵扣；退款审核通过后按原来源退回。',
+            };
+            return {
+              enabled: false,
+              description: '自有健康基金可在余额内抵扣；企业赠送基金暂未启用支付抵扣。',
+            };
+          }
           const limit = rule.deductionType === 'percentage'
             ? `企业基金每单最高抵扣订单金额的${Number(rule.deductionValue) || 0}%`
             : rule.deductionType === 'fixedAmount'

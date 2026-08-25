@@ -430,7 +430,9 @@ export default function HomePage() {
                 <View key={item.id} onClick={() => Taro.navigateTo({ url: '/pages/services/mall/index' })} style={{ width: '122px', flexShrink: 0, backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: '10px', border: `1px solid ${colors.border}` }}>
                   <Icon name="🩺" size={17} color={colors.primary} />
                   <Text style={{ fontSize: '12px', lineHeight: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginTop: '5px', minHeight: '32px' }} numberOfLines={2}>{item.name}</Text>
-                  <Text style={{ fontSize: '13px', fontWeight: 800, color: '#D97706', display: 'block', marginTop: '4px' }}>¥{item.price ?? '咨询'}</Text>
+                  <Text style={{ fontSize: '13px', fontWeight: 800, color: '#D97706', display: 'block', marginTop: '4px' }}>
+                    {authUser ? `¥${item.price ?? '咨询'}` : '登录后查看'}
+                  </Text>
                 </View>
               ))}
               <View onClick={() => Taro.navigateTo({ url: '/pages/services/mall/index' })} style={{ width: '88px', flexShrink: 0, minHeight: '100px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>

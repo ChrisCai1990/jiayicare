@@ -38,7 +38,15 @@ export function AuthProvider({ children }) {
       const pages = Taro.getCurrentPages?.() || [];
       route = pages[pages.length - 1]?.route || '';
     } catch {}
-    if (route === 'pages/auth/login/index' || route === 'pages/legal/index') return;
+    // 审核和普通访客应当可以先体验公开内容，只有进入个人健康数据等
+    // 受保护页面时才要求登录。首页也是小程序默认启动页，不能在这里
+    // 主动索取手机号授权。
+    const publicRoutes = new Set([
+      'pages/home/index',
+      'pages/auth/login/index',
+      'pages/legal/index',
+    ]);
+    if (publicRoutes.has(route)) return;
     Taro.reLaunch({ url: '/pages/auth/login/index' }).catch(() => {});
   }, [loading, token]);
 

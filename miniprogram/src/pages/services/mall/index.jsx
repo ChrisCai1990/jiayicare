@@ -27,7 +27,9 @@ function maxFundDeduction(healthFund, amount) {
   if (amount < (Number(policy.minOrderAmount) || 0)) return 0;
   const personal = Math.min(Number(healthFund?.personal) || 0, policyLimit(policy.personalDeductionType, policy.personalDeductionValue, amount));
   let corporateLimit = policyLimit(policy.corporateDeductionType, policy.corporateDeductionValue, amount);
-  const corporate = Math.min(Number(healthFund?.corporate) || 0, corporateLimit);
+  const corporate = healthFund?.rule?.enabled === false
+    ? 0
+    : Math.min(Number(healthFund?.corporate) || 0, corporateLimit);
   return Math.max(0, Math.min(amount, personal + corporate));
 }
 

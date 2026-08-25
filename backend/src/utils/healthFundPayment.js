@@ -24,15 +24,19 @@ function deductionLimit(type, value, orderAmount) {
 }
 
 async function getCorporateFundAvailable(user) {
-  const grants = await GiftRecord.aggregate([
+  const [grants, legacyFirstLoginGrants, spent] = await Promise.all([GiftRecord.aggregate([
     { $match: { patientId: user._id, giftType: 'fund', fundType: 'enterprise', status: 'active' } },
     { $group: { _id: null, total: { $sum: '$fundAmount' } } },
-  ]);
-  const spent = await HealthFundTransaction.aggregate([
+  ]), HealthFundTransaction.aggregate([
+    // 1.0.86 之前首登赠金曾误记为 promotion；按明确的业务备注兼容
+    // 已发放余额，避免必须先跑数据迁移才能正确展示和抵扣。
+    { $match: { userId: user._id, type: 'grant', status: 'active', remark: '首次使用小程序健康基金奖励' } },
+    { $group: { _id: null, total: { $sum: '$amount' } } },
+  ]), HealthFundTransaction.aggregate([
     { $match: { userId: user._id, source: 'enterprise', status: 'active', type: { $in: ['deduction', 'adjustment'] } } },
     { $group: { _id: null, total: { $sum: '$amount' } } },
-  ]);
-  const ledgerBalance = (grants[0]?.total || 0) + (spent[0]?.total || 0);
+  ])]);
+  const ledgerBalance = (grants[0]?.total || 0) + (legacyFirstLoginGrants[0]?.total || 0) + (spent[0]?.total || 0);
   return Math.max(0, Math.min(Number(user.healthFundBalance) || 0, ledgerBalance));
 }
 
@@ -46,7 +50,11 @@ async function getPersonalFundAvailable(user) {
     { $group: { _id: null, total: { $sum: '$amount' } } },
   ]);
   const totalBalance = Math.max(0, Number(user.healthFundBalance) || 0);
-  const recordedPersonal = Math.max(0, (grants[0]?.total || 0) + (deductions[0]?.total || 0));
+  const legacyFirstLogin = await HealthFundTransaction.aggregate([
+    { $match: { userId: user._id, type: 'grant', status: 'active', remark: '首次使用小程序健康基金奖励' } },
+    { $group: { _id: null, total: { $sum: '$amount' } } },
+  ]);
+  const recordedPersonal = Math.max(0, (grants[0]?.total || 0) + (deductions[0]?.total || 0) - (legacyFirstLogin[0]?.total || 0));
   const corporateAvailable = await getCorporateFundAvailable(user);
   // 历史余额可能早于分账流水上线。未能在流水中归类的余额按自有基金处理，
   // 避免用户端显示有余额、结算却判定可用额为0。
@@ -62,7 +70,8 @@ async function validateHealthFundDeduction({ user, requested, orderAmount, categ
   if (policy.eligibleProductIds?.length && !policy.eligibleProductIds.map(String).includes(String(productId || ''))) throw new Error('该服务不在健康基金可抵扣范围内');
   const personalAvailable = await getPersonalFundAvailable(user);
   const personalLimit = deductionLimit(policy.personalDeductionType, policy.personalDeductionValue, orderAmount);
-  const corporateAvailable = user.enterpriseId ? await getCorporateFundAvailable(user) : 0;
+  // 平台发放的首登企业健康基金并不要求用户先绑定某个企业档案。
+  const corporateAvailable = await getCorporateFundAvailable(user);
   let enterprise = null;
   let corporateLimit = deductionLimit(policy.corporateDeductionType, policy.corporateDeductionValue, orderAmount);
   if (user.enterpriseId && corporateAvailable > 0) {
@@ -81,8 +90,10 @@ async function validateHealthFundDeduction({ user, requested, orderAmount, categ
   const takePersonal = () => { const used=Math.min(remaining, personalAvailable, personalLimit); personalUsed=used; remaining-=used; };
   const takeCorporate = () => { const used=Math.min(remaining, corporateAvailable, corporateLimit); corporateUsed=used; remaining-=used; };
   if (policy.personalPriority !== false) { takePersonal(); takeCorporate(); } else { takeCorporate(); takePersonal(); }
-  if (remaining > 0) throw new Error(`本单健康基金最多可抵扣¥${(amount - remaining).toFixed(2)}`);
-  return { allowed: amount, enterprise, policy, breakdown: { personal: personalUsed, corporate: corporateUsed } };
+  // 客户端展示值可能因余额或规则刚发生变化而偏高。结算以服务端实时
+  // 可用额为准，能抵多少就抵多少，不在支付最后一步驳回整个订单。
+  const allowed = Math.max(0, Math.round((amount - remaining) * 100) / 100);
+  return { allowed, enterprise, policy, breakdown: { personal: personalUsed, corporate: corporateUsed } };
 }
 
 async function deductHealthFund({ user, enterprise, order, amount, breakdown }) {

@@ -5,7 +5,6 @@ const crypto = require('crypto');
 const User = require('../models/User');
 const LoginSession = require('../models/LoginSession');
 const HealthFundTransaction = require('../models/HealthFundTransaction');
-const GiftRecord = require('../models/GiftRecord');
 const VerificationCode = require('../models/VerificationCode');
 const SystemConfig = require('../models/SystemConfig');
 const { checkSmsRateLimit, recordSmsAttempt } = require('../utils/smsRateLimiter');
@@ -39,12 +38,12 @@ async function beginLoginSession(req, user, method) {
   return sessionId;
 }
 
-async function grantPromotionFund(userId, amount, remark) {
+async function grantPromotionFund(userId, amount, remark, source = 'promotion') {
   const value = Math.max(0, Number(amount) || 0);
   if (!value) return;
   const updated = await User.findByIdAndUpdate(userId, { $inc: { healthFundBalance: value } }, { new: true });
   await HealthFundTransaction.create({
-    userId, type: 'grant', source: 'promotion', amount: value,
+    userId, type: 'grant', source, amount: value,
     balanceAfter: updated?.healthFundBalance || 0, remark,
   });
 }
@@ -58,7 +57,8 @@ async function applyFirstLoginRewards(user, inviteCode) {
       { _id: user._id, firstLoginFundGrantedAt: null },
       { $set: { firstLoginFundGrantedAt: now } }, { new: true },
     );
-    if (claimed) await grantPromotionFund(user._id, cfg.firstLoginAmount, '首次使用小程序健康基金奖励');
+    // 首次登录赠金属于企业健康基金，不是用户自有基金。
+    if (claimed) await grantPromotionFund(user._id, cfg.firstLoginAmount, '首次使用小程序健康基金奖励', 'enterprise');
   }
   if (cfg.inviteEnabled !== true || !inviteCode || user.referralRewardGrantedAt) return;
   const inviter = await User.findOne({ referralCode: String(inviteCode), isDeleted: { $ne: true }, _id: { $ne: user._id } }).select('_id');
@@ -77,16 +77,17 @@ async function applyFirstLoginRewards(user, inviteCode) {
 // 计算用户健康基金汇总（与 /user/me 保持一致）
 async function computeHealthFund(user) {
   try {
-    const giftFundAgg = await GiftRecord.aggregate([
-      { $match: { patientId: user._id, giftType: 'fund', status: 'active' } },
-      { $group: { _id: '$fundType', total: { $sum: '$fundAmount' } } },
+    const { getCorporateFundAvailable, getPersonalFundAvailable } = require('../utils/healthFundPayment');
+    const [enterpriseFund, personalFund] = await Promise.all([
+      getCorporateFundAvailable(user),
+      getPersonalFundAvailable(user),
     ]);
-    const enterpriseFund = giftFundAgg.find(g => g._id === 'enterprise')?.total || 0;
     const totalBalance = user.healthFundBalance || 0;
+    const personal = Math.min(personalFund, totalBalance);
     return {
       total:     totalBalance,
-      corporate: Math.min(enterpriseFund, totalBalance),
-      personal:  Math.max(0, totalBalance - enterpriseFund),
+      corporate: Math.min(enterpriseFund, Math.max(0, totalBalance - personal)),
+      personal,
     };
   } catch { return { total: 0, corporate: 0, personal: 0 }; }
 }
