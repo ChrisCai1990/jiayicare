@@ -11,6 +11,7 @@ const PLAN_TYPES = [
   { key: 'rehab',             label: '运动复健方案',  icon: '🏃' },
   { key: 'tcm',               label: '中医养生方案',  icon: '🍃' },
   { key: 'psychology',        label: '心理咨询方案',  icon: '🧠' },
+  { key: 'phase_assessment',  label: '阶段性评估',    icon: '📊' },
 ]
 
 // ── 各类型的默认 content 结构 ─────────────────────────────────
@@ -50,6 +51,9 @@ const defaultContent = {
   psychology: {
     frequency: '', sessionCount: '', duration: '', mode: '线上',
     homework: '', assessmentTools: '',
+  },
+  phase_assessment: {
+    frequency: 'monthly', focus: '', instructions: '', contextScopes: ['healthProfile', 'reports', 'healthRecords', 'followups', 'plans'],
   },
 }
 
@@ -373,6 +377,14 @@ function PlanContentForm({ type, initialContent, contentRef }) {
       </div>
       <FieldRow label="作业建议（日常练习）" fieldKey="homework" rows={3} placeholder="如：正念冥想、情绪日记" content={content} set={set} />
       <FieldRow label="评估工具/量表" fieldKey="assessmentTools" rows={3} placeholder="如：GAD-7（焦虑）、PHQ-9（抑郁）" content={content} set={set} />
+    </div>
+  )
+
+  if (type === 'phase_assessment') return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div className="form-group"><label className="form-label">触发周期 *</label><select className="form-input" value={content.frequency || 'monthly'} onChange={e => set('frequency', e.target.value)}><option value="monthly">每月</option><option value="quarterly">每季度</option></select></div>
+      <FieldRow label="评估重点" fieldKey="focus" placeholder="如：体重、血压、血脂、依从性和复查完成情况" rows={3} content={content} set={set} />
+      <FieldRow label="评估要求" fieldKey="instructions" placeholder="如：数据不足时标注缺口；不得自动改方案" rows={3} content={content} set={set} />
     </div>
   )
 
