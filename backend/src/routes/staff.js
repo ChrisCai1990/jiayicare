@@ -48,6 +48,7 @@ const ServiceProposal = require('../models/ServiceProposal');
 const ServicePackage = require('../models/ServicePackage');
 const AiCaseReview = require('../models/AiCaseReview');
 const PhaseAssessment = require('../models/PhaseAssessment');
+const { quarterPeriod, toTemplateSections } = require('../utils/phaseAssessment');
 const FollowUpForm      = require('../models/FollowUpForm');
 const FollowUpPlan      = require('../models/FollowUpPlan');
 const SystemConfig      = require('../models/SystemConfig');
@@ -3343,9 +3344,21 @@ router.get('/requisition-items/:type/:id/sub-items', staffAuth, async (req, res)
 // ── User app: 获取待上传开单 ──────────────────────────────
 // GET /api/staff/patients/:id/service-records — 会员的服务记录
 router.get('/patients/:id/service-records', staffAuth, async (req, res) => {
-  const records = await ServiceRecord.find({ patientId: req.params.id })
+  let records = await ServiceRecord.find({ patientId: req.params.id })
     .sort({ date: -1 })
     .populate('staffId', 'name role');
+  const legacyPhaseRecords = records.filter(record => record.type === 'phase_assessment' && !Array.isArray(record.structuredContent?.sections));
+  if (legacyPhaseRecords.length) {
+    const patient = await User.findById(req.params.id).select('clientBrand').lean();
+    const template = await PlanTemplate.findOne({ type: 'phase_assessment', status: 'active', 'content.frequency': 'quarterly', $or: [{ clientBrand: patient?.clientBrand || '' }, { clientBrand: '' }] }).sort({ clientBrand: -1, updatedAt: -1 }).lean();
+    for (const record of legacyPhaseRecords) {
+      const customerVersion = toTemplateSections(record.structuredContent || {}, template, quarterPeriod(record.date));
+      record.structuredContent = { ...(record.structuredContent || {}), ...customerVersion };
+      record.title = `${customerVersion.periodLabel}阶段性健康评估`;
+      record.content = customerVersion.sections.flatMap(section => [section.title, ...section.items.map(item => `• ${item}`)]).join('\n');
+      await record.save();
+    }
+  }
   res.json({ success: true, data: records });
 });
 
