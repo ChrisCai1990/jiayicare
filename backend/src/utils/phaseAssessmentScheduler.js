@@ -56,7 +56,8 @@ async function scanAndCreatePhaseAssessments() {
 
 function startPhaseAssessmentScheduler() {
   scanAndCreatePhaseAssessments().catch(error => console.error('[phase-assessment] initial scan failed', error.message));
-  setInterval(() => scanAndCreatePhaseAssessments().catch(error => console.error('[phase-assessment] scan failed', error.message)), 24 * 60 * 60 * 1000);
+  // 每小时检查一次；periodKey 唯一索引保证同一客户/模板/周期不会重复生成。
+  setInterval(() => scanAndCreatePhaseAssessments().catch(error => console.error('[phase-assessment] scan failed', error.message)), 60 * 60 * 1000);
 }
 
 module.exports = { createAssessment, scanAndCreatePhaseAssessments, startPhaseAssessmentScheduler };
