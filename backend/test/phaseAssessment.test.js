@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { toStructuredAssessment, assessmentToPlainText, quarterPeriod, toTemplateSections } = require('../src/utils/phaseAssessment');
+const { toStructuredAssessment, assessmentToPlainText, quarterPeriod, toTemplateSections, templateAssessmentFromContent } = require('../src/utils/phaseAssessment');
 
 test('阶段性评估会去除 Markdown 并归入固定栏目', () => {
   const value = toStructuredAssessment(`### 核心结论\n**血压总体稳定**\n---\n### 重点风险\n- LDL-C 仍需复核\n### 下一步行动\n1. 每日晨间测量血压`, '阶段性评估');
@@ -32,4 +32,17 @@ test('未匹配启用模板时客户版禁止推送', () => {
   const value = toTemplateSections({ summary: ['内部结论'] }, null, quarterPeriod(new Date('2026-08-25')));
   assert.equal(value.templateMatched, false);
   assert.equal(value.customerPushEligible, false);
+});
+
+test('正式阶段评估保留Admin模板、周期和固定栏目', () => {
+  const assessment = {
+    periodKey: '2026-Q3', periodLabel: '2026年第3季度', templateId: 'tpl-1',
+    templateSnapshot: { name: '季度阶段性健康评估', frequency: 'quarterly', outputSections: ['目标证据', '执行成效', '风险缺口', '下季计划'] },
+  };
+  const value = templateAssessmentFromContent('一、目标证据\n血压趋势稳定\n二、执行成效\n随访完成', assessment);
+  assert.equal(value.templateName, '季度阶段性健康评估');
+  assert.equal(value.frequency, 'quarterly');
+  assert.equal(value.periodKey, '2026-Q3');
+  assert.deepEqual(value.sections[0].items, ['血压趋势稳定']);
+  assert.deepEqual(value.sections[1].items, ['随访完成']);
 });

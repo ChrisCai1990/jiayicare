@@ -26,6 +26,7 @@ const serviceRecordSchema = new mongoose.Schema({
   date:    { type: Date, default: Date.now },
   sourceHealthPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null }, // 就医协助方案推送后自动生成时关联的方案
   sourceAiCaseReviewId: { type: mongoose.Schema.Types.ObjectId, ref: 'AiCaseReview', default: undefined },
+  sourcePhaseAssessmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'PhaseAssessment', default: undefined },
   structuredContent: { type: mongoose.Schema.Types.Mixed, default: null },
   // 通用字段
   title:   { type: String, default: '' },   // 记录标题/主题
@@ -88,5 +89,6 @@ const serviceRecordSchema = new mongoose.Schema({
 serviceRecordSchema.index({ patientId: 1, type: 1, date: -1 });
 serviceRecordSchema.index({ staffId: 1, date: -1 });
 serviceRecordSchema.index({ sourceAiCaseReviewId: 1 }, { unique: true, partialFilterExpression: { sourceAiCaseReviewId: { $type: 'objectId' } } });
+serviceRecordSchema.index({ sourcePhaseAssessmentId: 1 }, { unique: true, partialFilterExpression: { sourcePhaseAssessmentId: { $type: 'objectId' } } });
 
 module.exports = mongoose.model('ServiceRecord', serviceRecordSchema);

@@ -6,8 +6,7 @@ const User = require('../models/User');
 const AiCaseReview = require('../models/AiCaseReview');
 const PhaseAssessment = require('../models/PhaseAssessment');
 const ServiceRecord = require('../models/ServiceRecord');
-const PlanTemplate = require('../models/PlanTemplate');
-const { toStructuredAssessment, assessmentToPlainText, quarterPeriod, toTemplateSections } = require('../utils/phaseAssessment');
+const { toStructuredAssessment, assessmentToPlainText, templateAssessmentFromContent } = require('../utils/phaseAssessment');
 const { buildContext } = require('../utils/aiCaseReviewContext');
 const providerAdapter = require('../utils/aiCaseReviewProvider');
 
@@ -60,6 +59,19 @@ router.patch('/patients/:patientId/phase-assessments/:assessmentId', staffAuth, 
     if (!item) return res.status(404).json({ success: false, message: '待审核阶段性评估不存在' });
     item.status = status; item.reviewedBy = req.staff._id; item.reviewedAt = new Date(); item.reviewNote = String(req.body.reviewNote || '').trim();
     await item.save();
+    if (status === 'approved') {
+      const customerVersion = templateAssessmentFromContent(item.content, item);
+      await ServiceRecord.findOneAndUpdate(
+        { sourcePhaseAssessmentId: item._id },
+        { $set: {
+          staffId: req.staff._id, patientId: user._id, type: 'phase_assessment', date: item.reviewedAt,
+          title: `${item.periodLabel}${item.templateSnapshot?.name || '阶段性健康评估'}`,
+          content: customerVersion.sections.flatMap(section => [section.title, ...section.items.map(value => `• ${value}`)]).join('\n'),
+          result: item.reviewNote || '', structuredContent: customerVersion, aiStatus: 'approved', aiGeneratedAt: item.createdAt,
+        }, $setOnInsert: { sourcePhaseAssessmentId: item._id } },
+        { new: true, upsert: true, setDefaultsOnInsert: true },
+      );
+    }
     res.json({ success: true, data: item });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -154,34 +166,10 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAu
     const content = String(req.body.content || topic.conclusion?.content || '').trim();
     if (!content) return res.status(400).json({ success: false, message: '结论不能为空' });
     const structured = toStructuredAssessment(content, topic.title);
-    const shouldArchive = req.body.writeToPhaseAssessment === true
-      || /阶段性.*评估/.test(`${topic.title} ${topic.description}`)
-      || topic.messages.some(item => item.role === 'staff' && /写入.{0,8}阶段性健康评估|阶段性健康评估.{0,8}写入/.test(item.content));
-    let serviceRecord = null;
-    if (shouldArchive) {
-      const template = await PlanTemplate.findOne({
-        type: 'phase_assessment', status: 'active',
-        'content.frequency': 'quarterly',
-        $or: [{ clientBrand: user.clientBrand || '' }, { clientBrand: '' }],
-      }).sort({ clientBrand: -1, updatedAt: -1 }).lean();
-      const period = quarterPeriod(new Date());
-      const customerVersion = toTemplateSections(structured, template, period);
-      serviceRecord = await ServiceRecord.findOneAndUpdate(
-        { sourceAiCaseReviewId: topic._id },
-        { $set: {
-          staffId: req.staff._id, patientId: user._id, type: 'phase_assessment', date: new Date(),
-          title: `${period.label}阶段性健康评估`, content: customerVersion.sections.flatMap(section => [section.title, ...section.items.map(item => `• ${item}`)]).join('\n'),
-          result: (structured.summary || []).join('；'),
-          structuredContent: { ...structured, ...customerVersion },
-          aiStatus: 'approved', aiGeneratedAt: topic.conclusion?.generatedAt || new Date(),
-        }, $setOnInsert: { sourceAiCaseReviewId: topic._id } },
-        { new: true, upsert: true, setDefaultsOnInsert: true },
-      );
-    }
-    topic.conclusion = { content: assessmentToPlainText(structured), structured, status: 'confirmed', generatedAt: topic.conclusion?.generatedAt || new Date(), confirmedAt: new Date(), confirmedBy: req.staff._id, confirmedByName: req.staff.name || '', serviceRecordId: serviceRecord?._id || topic.conclusion?.serviceRecordId || null };
+    topic.conclusion = { content: assessmentToPlainText(structured), structured, status: 'confirmed', generatedAt: topic.conclusion?.generatedAt || new Date(), confirmedAt: new Date(), confirmedBy: req.staff._id, confirmedByName: req.staff.name || '', serviceRecordId: null };
     topic.status = 'concluded'; topic.lastActivityAt = new Date();
     await topic.save();
-    res.json({ success: true, data: forClient(topic), archivedToPhaseAssessment: Boolean(serviceRecord), customerPushEligible: serviceRecord?.structuredContent?.customerPushEligible === true, serviceRecordId: serviceRecord?._id || null });
+    res.json({ success: true, data: forClient(topic), archivedToPhaseAssessment: false, serviceRecordId: null });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
