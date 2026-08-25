@@ -121,7 +121,6 @@ function HealthPortraitOverview({ user, reports = [] }) {
     { label: `最近一次全面体检异常${latestReportDate ? ` · ${latestReportDate}` : ''}`, color: '#D97706', items: latestReportIssues, emptyText: latestBatch ? '该次全面体检未记录异常' : '缺乏近1年的全面体检数据' },
     { label: '过敏风险', color: '#7C3AED', items: [profile.drugAllergy, profile.foodAllergy].filter(Boolean), emptyText: '暂无明确过敏记录' },
   ].map(group => ({ ...group, items: group.items.filter(isSubstantiveIssue) }))
-  const issueCount = groups.reduce((sum, group) => sum + group.items.length, 0)
   const bodyRegionRules = [
     { key: 'head', label: '头面部', pattern: /眼|视力|屈光|耳|听力|鼻|咽|脑/, top: 17, femaleOffset: 4 },
     { key: 'neck', label: '颈部', pattern: /甲状腺|颈动脉|颈部/, top: 27, femaleOffset: 2 },
@@ -148,9 +147,6 @@ function HealthPortraitOverview({ user, reports = [] }) {
           <div className="card-title">人物健康画像</div>
           <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>把客户已有健康问题集中标注，便于健康管理人员快速了解重点</div>
         </div>
-        <span style={{ padding: '5px 11px', borderRadius: 99, background: issueCount ? '#FFF1F0' : '#E8F5EE', color: issueCount ? '#B42318' : '#1E6B50', fontSize: 12, fontWeight: 700 }}>
-          {issueCount ? `${issueCount} 项需关注` : '暂未记录健康问题'}
-        </span>
       </div>
       <div style={{ padding: 20, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))', gap: 24, alignItems: 'center' }}>
         <div style={{ minWidth: 0, minHeight: 390, borderRadius: 20, backgroundImage: `url(${isFemalePortrait ? femalePortraitPhoto : malePortraitPhoto})`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
