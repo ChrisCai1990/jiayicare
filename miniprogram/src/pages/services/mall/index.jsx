@@ -42,7 +42,7 @@ function Stars({ rating }) {
   );
 }
 
-function ServiceCard({ item, onDetail, onPay }) {
+function ServiceCard({ item, onDetail, onPay, isAuthenticated }) {
   const windowWidth = Taro.getWindowInfo ? Taro.getWindowInfo().windowWidth : Taro.getSystemInfoSync().windowWidth;
   const isWide = windowWidth >= 768;
   const [imageFailed, setImageFailed] = useState(false);
@@ -79,14 +79,18 @@ function ServiceCard({ item, onDetail, onPay }) {
         </View>
       )}
       <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: `1px solid ${colors.border}`, paddingTop: `${spacing.sm}px` }}>
-        <View>
-          <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.danger }}>¥</Text>
-          <Text style={{ fontSize: '24px', fontWeight: 800, color: colors.danger }}>{item.price}</Text>
-          {hasDiscount && <Text style={{ fontSize: '12px', color: colors.textMuted, textDecoration: 'line-through', marginLeft: '6px' }}>¥{item.originalPrice}</Text>}
-          {hasDiscount && <Text style={{ fontSize: '11px', color: colors.danger, marginLeft: '4px' }}>{discount}折</Text>}
-        </View>
+        {isAuthenticated ? (
+          <View>
+            <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.danger }}>¥</Text>
+            <Text style={{ fontSize: '24px', fontWeight: 800, color: colors.danger }}>{item.price}</Text>
+            {hasDiscount && <Text style={{ fontSize: '12px', color: colors.textMuted, textDecoration: 'line-through', marginLeft: '6px' }}>¥{item.originalPrice}</Text>}
+            {hasDiscount && <Text style={{ fontSize: '11px', color: colors.danger, marginLeft: '4px' }}>{discount}折</Text>}
+          </View>
+        ) : (
+          <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.warning }}>登录后查看价格</Text>
+        )}
         <View onClick={(e) => { e.stopPropagation && e.stopPropagation(); onPay(item); }} style={{ backgroundColor: colors.primary, padding: '10px 18px', borderRadius: `${radius.full}px` }}>
-          <Text style={{ fontSize: '14px', color: '#fff', fontWeight: 700 }}>立即购买</Text>
+          <Text style={{ fontSize: '14px', color: '#fff', fontWeight: 700 }}>{isAuthenticated ? '立即购买' : '登录查看'}</Text>
         </View>
           </View>
         </View>
@@ -95,7 +99,7 @@ function ServiceCard({ item, onDetail, onPay }) {
   );
 }
 
-function ServiceDetailModal({ item, onClose, onConsult, onPay }) {
+function ServiceDetailModal({ item, onClose, onConsult, onPay, isAuthenticated }) {
   return (
     <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}>
       <View style={{ backgroundColor: '#fff', borderRadius: '28px 28px 0 0', padding: `${spacing.lg}px`, width: '100%', maxHeight: '85%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
@@ -125,10 +129,14 @@ function ServiceDetailModal({ item, onClose, onConsult, onPay }) {
           )}
           <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: `${spacing.md}px` }}>
             <Text style={{ fontSize: '14px', color: colors.textSecondary }}>服务费用</Text>
-            <View>
-              {item.price < item.originalPrice && <Text style={{ fontSize: '12px', color: colors.textMuted, textDecoration: 'line-through', marginRight: '6px' }}>¥{item.originalPrice}</Text>}
-              <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.danger }}>¥{item.price}</Text>
-            </View>
+            {isAuthenticated ? (
+              <View>
+                {item.price < item.originalPrice && <Text style={{ fontSize: '12px', color: colors.textMuted, textDecoration: 'line-through', marginRight: '6px' }}>¥{item.originalPrice}</Text>}
+                <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.danger }}>¥{item.price}</Text>
+              </View>
+            ) : (
+              <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.warning }}>登录后查看价格</Text>
+            )}
           </View>
         </ScrollView>
         <View style={{ display: 'flex', gap: `${spacing.sm}px` }}>
@@ -136,7 +144,7 @@ function ServiceDetailModal({ item, onClose, onConsult, onPay }) {
             <Text style={{ fontSize: '15px', color: colors.textSecondary, fontWeight: 600 }}>返回</Text>
           </View>
           <View onClick={onPay} style={{ flex: 1.4, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary }}>
-            <Text style={{ fontSize: '15px', color: '#fff', fontWeight: 700 }}>立即购买 ¥{item.price}</Text>
+            <Text style={{ fontSize: '15px', color: '#fff', fontWeight: 700 }}>{isAuthenticated ? `立即购买 ¥${item.price}` : '登录后购买'}</Text>
           </View>
         </View>
       </View>
@@ -588,7 +596,7 @@ export default function ServiceMallPage() {
             <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: `${spacing.xs}px` }}>{listError || `共 ${filtered.length} 个服务`}</Text>
             {!listError && filtered.length === 0 && <Text style={{ fontSize: '13px', color: colors.textMuted }}>暂无可购买服务</Text>}
             {filtered.map((s) => (
-              <ServiceCard key={s.id} item={s} onDetail={setDetailService} onPay={(svc) => openPurchase(svc, 'pay')} />
+              <ServiceCard key={s.id} item={s} isAuthenticated={!!user} onDetail={setDetailService} onPay={(svc) => openPurchase(svc, 'pay')} />
             ))}
           </>
         )}
@@ -597,6 +605,7 @@ export default function ServiceMallPage() {
       {detailService && (
         <ServiceDetailModal
           item={detailService}
+          isAuthenticated={!!user}
           onClose={closeSharedDetail}
           onConsult={() => { openPurchase(detailService, 'consult'); setDetailService(null); }}
           onPay={() => { openPurchase(detailService, 'pay'); setDetailService(null); }}
