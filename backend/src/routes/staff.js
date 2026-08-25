@@ -9229,7 +9229,7 @@ const PATIENT_INFO_NAMES = new Set([
 // 体格检查类项目名单——模型偶尔会把这些误标成 lab/data，提取后强制纠正为 imaging（金娟07-01反馈：眼压检查被提取成检验类型）
 // 用前缀匹配而非精确相等：AI 常在名称后附加方法说明，如"眼压检查(非接触眼压计法或压平眼压计法)"
 const PHYSICAL_EXAM_NAMES = ['内科', '外科', '耳鼻喉', '视力检查', '眼压检查', '眼科', '裂隙灯检查'];
-const { normalizeDepartmentExamItems, normalizeBreathTestItems, normalizeSingleExamReportItems, realignUpperAbdomenConclusions } = require('../utils/reportItemNormalization');
+const { normalizeDepartmentExamItems, normalizeBreathTestItems, normalizeSingleExamReportItems, normalizeUltrasoundExamNames, realignUpperAbdomenConclusions } = require('../utils/reportItemNormalization');
 
 // 每次体检最多只应出现一次的检查类型，AI经常写出好几种变体名字（"胃镜"/"电子胃镜"/"无痛胃镜"），
 // 导致同一检查因为名字对不上没法被后面的同名去重规则识别成重复——统一改写成标准名，再走已有去重逻辑。
@@ -10731,7 +10731,7 @@ async function runReportParse(reportId, options = {}) {
       // Post-primary recovery is best effort for every PDF, including scanned
       // documents without a usable text layer. Previously those reports had an
       // infinite retry budget and could chain several minutes of recovery calls.
-      const retryBudgetMs = (useShaoyifuTemplate || useZheyiTemplate) ? 90_000 : 60_000;
+      const retryBudgetMs = (useShaoyifuTemplate || useZheyiTemplate || useMingzhouTemplate) ? 90_000 : 60_000;
       const retryDeadline = Date.now() + retryBudgetMs;
       const deferredRetryPages = new Set();
       const retryTimeRemaining = () => Math.max(0, retryDeadline - Date.now());
@@ -10754,7 +10754,8 @@ async function runReportParse(reportId, options = {}) {
           : useZheyiTemplate
             ? [...detailPages].filter(pageNum => zheyiTemplate.needsCoverageAudit(pageNum, allItems))
           : useMingzhouTemplate
-            ? [7, 8].filter(pageNum => detailPages.has(pageNum) && mingzhouTemplate.needsCoverageAudit(pageNum, allItems))
+            ? [7, 8, 9, 10, 11, 12, 13].filter(pageNum => pageNum <= 8
+              || !mingzhouTemplate.pageIsComplete(pageNum, allItems))
           : useTextLayerPrimary
             ? []
             : selectGenericCoverageAuditPages([...detailPages], allItems);
@@ -10784,7 +10785,6 @@ async function runReportParse(reportId, options = {}) {
               && shaoyifuTemplate.needsCoverageAudit(pageNum, oldPage)
               && !shaoyifuTemplate.needsCoverageAudit(pageNum, auditedPage);
             const useMingzhouAuditedPage = useMingzhouTemplate
-              && !mingzhouTemplate.pageIsComplete(pageNum, oldPage)
               && mingzhouTemplate.pageIsComplete(pageNum, auditedPage);
             const mergedPage = (useAuditedPage || useMingzhouAuditedPage) ? auditedPage : mergeCoverageAuditItems(oldPage, auditedPage);
             return { pageNum, oldPage, mergedPage, useAuditedPage: useAuditedPage || useMingzhouAuditedPage };
@@ -11204,7 +11204,9 @@ async function runReportParse(reportId, options = {}) {
         splitEndoscopyPathology(dropNonResultAndSummaryItems(dropNumberedSummaryEcho(departmentFiltered))),
       ));
       // 耳鼻喉按报告印刷的耳部/鼻部/咽部等检查项目保留，不再合并成科室摘要。
-      const departmentNormalized = normalizeSingleExamReportItems(normalizeDepartmentExamItems(mergeInternalMedicineSubparts(cleanedItems)), report);
+      const departmentNormalized = normalizeUltrasoundExamNames(
+        normalizeSingleExamReportItems(normalizeDepartmentExamItems(mergeInternalMedicineSubparts(cleanedItems)), report),
+      );
       let filteredItems = fillEmptyDiagnosisFromFindings(realignUpperAbdomenConclusions(cleanupUltrasoundOverlap(departmentNormalized)));
       if (useOcrV2) filteredItems = recoverExplicitUltrasoundRowsFromTextLayer(filteredItems, textLayer);
       const classified = await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems)))))))));
@@ -11402,9 +11404,9 @@ async function runReportParse(reportId, options = {}) {
         collapseBreathTestItems(normalizeBreathTestItems(imageItems, report))
       ))))
     ))));
-    const imageExamNormalized = normalizeSingleExamReportItems(
+    const imageExamNormalized = normalizeUltrasoundExamNames(normalizeSingleExamReportItems(
       normalizeDepartmentExamItems(mergeInternalMedicineSubparts(imageWithoutNoise)), report
-    );
+    ));
     const cleanedImageItems = fillEmptyDiagnosisFromFindings(
       realignUpperAbdomenConclusions(cleanupUltrasoundOverlap(imageExamNormalized))
     );
@@ -11540,7 +11542,9 @@ async function runReportPageParse(reportId, pageNum, options = {}) {
   if (useShaoyifuTemplate) newPage = shaoyifuTemplate.normalizeShaoyifuItems(newPage);
   if (useZheyiTemplate) newPage = zheyiTemplate.normalizeZheyiItems(newPage);
   if (useMingzhouTemplate) newPage = mingzhouTemplate.normalizeMingzhouItems(newPage);
-  newPage = normalizeSingleExamReportItems(normalizeDepartmentExamItems(normalizeBreathTestItems(newPage, report)), report);
+  newPage = normalizeUltrasoundExamNames(
+    normalizeSingleExamReportItems(normalizeDepartmentExamItems(normalizeBreathTestItems(newPage, report)), report),
+  );
   const latest = await MedicalReport.findOne(pageRunFilter);
   if (!latest) return;
   const oldPage = (latest.reportItems || []).filter(item => itemTouchesPage(item, pageNum));
@@ -11795,7 +11799,8 @@ router.post('/patients/:id/reports/:rid/reclassify', staffAuth, async (req, res)
         pendingItems.push(item);
       }
     });
-    const newlyClassified = await classifyItemsAsync(pendingItems);
+    const normalizedPendingItems = normalizeUltrasoundExamNames(pendingItems);
+    const newlyClassified = await classifyItemsAsync(normalizedPendingItems);
     const reclassified = originalItems.slice();
     pendingIndexes.forEach((originalIndex, pendingIndex) => {
       reclassified[originalIndex] = newlyClassified[pendingIndex];

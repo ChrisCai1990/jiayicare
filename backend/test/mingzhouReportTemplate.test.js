@@ -27,6 +27,9 @@ test('P7完整性必须有原始体重，P8必须有眼底和咽部', () => {
   assert.equal(template.pageIsComplete(7, [{ _page: 7, name: '体重' }, { _page: 7, name: '手术史(外科)' }]), true);
   assert.equal(template.pageIsComplete(8, [{ _page: 8, name: '眼底' }]), false);
   assert.equal(template.pageIsComplete(8, [{ _page: 8, name: '眼底' }, { _page: 8, name: '咽部' }]), true);
+  assert.equal(template.pageIsComplete(9, []), false);
+  assert.equal(template.pageIsComplete(13, [{ _page: 13, name: '检验项' }]), true);
+  assert.deepEqual([7, 8, 9, 10, 11, 12, 13].map(template.needsCoverageAudit), Array(7).fill(true));
 });
 
 test('P7局部补提只接受带kg单位的原始体重行', () => {
@@ -45,6 +48,9 @@ test('P8按原页外科眼科耳鼻喉顺序稳定排列', () => {
     { _page: 8, _order: 6, name: '鼻部', findings: '未见异常' },
   ]);
   assert.deepEqual(normalized.map(item => item.name), ['浅表淋巴结', '左眼裸视力', '眼底（眼科）', '右眼裸视力', '鼻部', '咽部']);
+  assert.equal(normalized.find(item => item.name === '浅表淋巴结').sourceSection, '外科');
+  assert.equal(normalized.find(item => item.name === '眼底（眼科）').sourceSection, '眼科');
+  assert.equal(normalized.find(item => item.name === '咽部').sourceSection, '耳鼻喉科');
 });
 
 test('模板归一化兜底清除P3-P6条目', () => {

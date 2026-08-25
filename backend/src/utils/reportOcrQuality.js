@@ -15,6 +15,39 @@ function parseNumber(value) {
   return match ? Number(match[0]) : null;
 }
 
+function parseComparison(value) {
+  const match = text(value).replace(/\s/g, '').match(/^(<=|>=|<|>)\s*(-?\d+(?:\.\d+)?)$/);
+  return match ? { operator: match[1], number: Number(match[2]) } : null;
+}
+
+function statusFromComparison(value, referenceRange) {
+  const reference = parseComparison(referenceRange);
+  if (!reference) return null;
+  const exact = parseNumber(value);
+  if (exact !== null) {
+    const normal = reference.operator === '<' ? exact < reference.number
+      : reference.operator === '<=' ? exact <= reference.number
+        : reference.operator === '>' ? exact > reference.number
+          : exact >= reference.number;
+    return normal ? 'normal' : 'abnormal';
+  }
+  const measured = parseComparison(value);
+  if (!measured) return null;
+  // A censored result is only auto-labelled when its entire possible interval
+  // lies on one side of the reference threshold. Otherwise human review wins.
+  if (['>', '>='].includes(reference.operator) && ['>', '>='].includes(measured.operator)) {
+    return measured.number >= reference.number ? 'normal' : null;
+  }
+  if (['<', '<='].includes(reference.operator) && ['<', '<='].includes(measured.operator)) {
+    return measured.number <= reference.number ? 'normal' : null;
+  }
+  if (['>', '>='].includes(reference.operator) && ['<', '<='].includes(measured.operator)
+    && measured.number <= reference.number) return 'abnormal';
+  if (['<', '<='].includes(reference.operator) && ['>', '>='].includes(measured.operator)
+    && measured.number >= reference.number) return 'abnormal';
+  return null;
+}
+
 function statusFromRange(item) {
   const name = norm(item.name);
   const value = text(item.value);
@@ -29,6 +62,9 @@ function statusFromRange(item) {
     const bounds = ranges.slice(1).map(Number);
     return sys >= bounds[0] && sys <= bounds[1] && dia >= bounds[2] && dia <= bounds[3] ? 'normal' : 'abnormal';
   }
+
+  const comparisonStatus = statusFromComparison(value, item.referenceRange);
+  if (comparisonStatus) return comparisonStatus;
 
   const number = parseNumber(value);
   const range = parseRange(item.referenceRange);

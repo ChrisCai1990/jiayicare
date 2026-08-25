@@ -4,7 +4,7 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
-export default function PdfPagePreview({ src, pageNumber, prefetchPages = [], height = '74vh' }) {
+export default function PdfPagePreview({ src, pageNumber, prefetchPages = [], height = '74vh', onAuthExpired }) {
   const containerRef = useRef(null)
   const canvasRef = useRef(null)
   const documentRef = useRef(null)
@@ -15,6 +15,17 @@ export default function PdfPagePreview({ src, pageNumber, prefetchPages = [], he
   const [pdfDocument, setPdfDocument] = useState(null)
   const sourceUrl = useMemo(() => String(src || '').split('#')[0], [src])
   const prefetchKey = useMemo(() => [...new Set((prefetchPages || []).map(Number).filter(Number.isInteger))].sort((a, b) => a - b).join(','), [prefetchPages])
+  const authRefreshRequestedRef = useRef(false)
+
+  const handleLoadError = err => {
+    const message = err?.message || 'PDF 加载失败'
+    if (/\b(?:401|403)\b|unauthori[sz]ed|forbidden/i.test(message) && !authRefreshRequestedRef.current) {
+      authRefreshRequestedRef.current = true
+      onAuthExpired?.()
+    }
+    setError(message)
+    setStatus('error')
+  }
 
   useEffect(() => {
     let active = true
@@ -22,6 +33,7 @@ export default function PdfPagePreview({ src, pageNumber, prefetchPages = [], he
     setError('')
     setPageCount(0)
     setPdfDocument(null)
+    authRefreshRequestedRef.current = false
     const loadingTask = getDocument({
       url: sourceUrl,
       rangeChunkSize: 256 * 1024,
@@ -34,11 +46,7 @@ export default function PdfPagePreview({ src, pageNumber, prefetchPages = [], he
       setPdfDocument(pdf)
       setPageCount(pdf.numPages)
       setStatus('ready')
-    }).catch(err => {
-      if (!active) return
-      setError(err?.message || 'PDF 加载失败')
-      setStatus('error')
-    })
+    }).catch(err => { if (active) handleLoadError(err) })
     return () => {
       active = false
       renderTaskRef.current?.cancel?.()
@@ -86,8 +94,7 @@ export default function PdfPagePreview({ src, pageNumber, prefetchPages = [], he
         setStatus('ready')
       } catch (err) {
         if (!active || err?.name === 'RenderingCancelledException') return
-        setError(err?.message || 'PDF 页面渲染失败')
-        setStatus('error')
+        handleLoadError(err)
       }
     }
     render()

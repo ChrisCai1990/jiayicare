@@ -1,6 +1,18 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { normalizeDepartmentExamItems, normalizeBreathTestItems, normalizeSingleExamReportItems, realignUpperAbdomenConclusions, upperAbdomenCoverage } = require('../src/utils/reportItemNormalization');
+const { normalizeDepartmentExamItems, normalizeBreathTestItems, normalizeSingleExamReportItems, normalizeUltrasoundExamNames, realignUpperAbdomenConclusions, upperAbdomenCoverage } = require('../src/utils/reportItemNormalization');
+
+test('器官标题在超声证据下补齐检查方式后再归类', () => {
+  const output = normalizeUltrasoundExamNames([
+    { name: '双侧甲状腺', itemType: 'imaging', findings: '实质回声不均，CDFI未见异常血流' },
+    { name: '肝脏', itemType: 'imaging', findings: '实质回声增多' },
+    { name: '胆囊', itemType: 'imaging', findings: '胆囊内透声佳' },
+    { name: '胰腺', itemType: 'imaging', findings: '胰腺实质回声均匀' },
+    { name: '腹部', itemType: 'imaging', findings: '腹壁脂肪增厚' },
+  ]);
+  assert.deepEqual(output.map(item => item.name), ['甲状腺超声', '肝脏超声', '胆囊超声', '胰腺超声', '腹部']);
+  assert.equal(output[0].originalName, '双侧甲状腺');
+});
 
 test('碳13标题纠正OCR丢失13和幽门螺杆菌错字', () => {
   const out = normalizeBreathTestItems([{

@@ -1795,6 +1795,7 @@ export default function PatientDetailPage() {
   const ocrItemRefs = useRef({})
   const ocrFocusHandledRef = useRef(null)
   const ocrReviewRequestIdRef = useRef('')
+  const ocrPreviewRefreshRef = useRef({ reportId: '', requestedAt: 0 })
   const manualAuditRequestIdsRef = useRef(new Map())
   const integrityRepairRequestIdsRef = useRef(new Map())
   const [screeningCatalog, setScreeningCatalog] = useState([])
@@ -2753,6 +2754,18 @@ export default function PatientDetailPage() {
     const pages = items.flatMap(reportItemEvidencePages)
     const focused = focusedIndex >= 0 ? items[focusedIndex] : null
     setOcrReviewPage(reportItemEvidencePages(focused)[0] || (pages.length ? Math.min(...pages) : 1))
+  }
+
+  const refreshOCRPreviewToken = () => {
+    const reportId = ocrReviewReport?._id
+    if (!reportId) return
+    const now = Date.now()
+    if (ocrPreviewRefreshRef.current.reportId === reportId && now - ocrPreviewRefreshRef.current.requestedAt < 5000) return
+    ocrPreviewRefreshRef.current = { reportId, requestedAt: now }
+    staffAPI.getReport(reportId).then(res => {
+      if (!res.data) return
+      setOcrReviewReport(current => current?._id === reportId ? { ...current, ...res.data } : current)
+    }).catch(() => toast('原件预览凭证刷新失败，请重新打开审核页'))
   }
 
   const openArchiveSection = (section) => {
@@ -10853,7 +10866,7 @@ export default function PatientDetailPage() {
                             <div key={idx} style={{ marginBottom: 8 }}>
                               <div style={{ fontSize: 10, color: '#8AA89C', margin: '4px 0' }}>第 {idx + 1} 张</div>
                               <React.Suspense fallback={<div style={{ padding: 16, color: '#6B7A72', fontSize: 12 }}>正在准备 PDF 阅读器…</div>}>
-                                <PdfPagePreview src={s} pageNumber={activePage} prefetchPages={pdfPrefetchPages} />
+                                <PdfPagePreview src={s} pageNumber={activePage} prefetchPages={pdfPrefetchPages} onAuthExpired={refreshOCRPreviewToken} />
                               </React.Suspense>
                             </div>
                           ) : (
@@ -10878,7 +10891,7 @@ export default function PatientDetailPage() {
                         <img src={src} alt="报告" style={{ width: '100%', borderRadius: 6, cursor: 'zoom-in' }} onClick={() => setPreviewImageUrl(src)} />
                       ) : isPdf ? (
                         <React.Suspense fallback={<div style={{ padding: 16, color: '#6B7A72', fontSize: 12 }}>正在准备 PDF 阅读器…</div>}>
-                          <PdfPagePreview src={src} pageNumber={activePage} prefetchPages={pdfPrefetchPages} />
+                          <PdfPagePreview src={src} pageNumber={activePage} prefetchPages={pdfPrefetchPages} onAuthExpired={refreshOCRPreviewToken} />
                         </React.Suspense>
                       ) : (
                         <button className="btn btn-primary btn-sm" onClick={() => window.open(src, '_blank')}>打开文件</button>

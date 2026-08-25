@@ -115,6 +115,34 @@ function normalizeSingleExamReportItems(items, report = {}) {
   return list;
 }
 
+const ULTRASOUND_CANONICAL_NAMES = [
+  [/^(?:双侧)?甲状腺(?:彩超|超声)?$/, '甲状腺超声'],
+  [/^(?:双侧)?颈动脉(?:彩超|超声)?$/, '颈动脉超声'],
+  [/^肝(?:脏)?(?:彩超|超声)?$/, '肝脏超声'],
+  [/^胆(?:囊)?(?:彩超|超声)?$/, '胆囊超声'],
+  [/^胰(?:腺)?(?:彩超|超声)?$/, '胰腺超声'],
+  [/^脾(?:脏)?(?:彩超|超声)?$/, '脾脏超声'],
+  [/^(?:双侧|双)?肾(?:脏)?(?:彩超|超声)?$/, '双肾超声'],
+  [/^(?:双侧)?输尿管(?:彩超|超声)?$/, '双侧输尿管膀胱超声'],
+  [/^(?:双侧)?眼球(?:彩超|超声)?$/, '眼部超声'],
+];
+
+// OCR often copies the organ heading as the item name and drops the exam
+// modality. Admin classification is keyed by the actual examination name, so
+// retain the original heading for audit while adding a deterministic modality.
+function normalizeUltrasoundExamNames(items) {
+  return (items || []).map(item => {
+    if (item?.itemType !== 'imaging') return item;
+    const context = `${text(item.name)} ${text(item.orderName)} ${text(item.sourceSection)} ${text(item.findings)} ${text(item.diagnosis)}`;
+    if (!/彩超|超声|CDFI|多普勒|回声|透声|声像图|血流信号/.test(context)) return item;
+    const rule = ULTRASOUND_CANONICAL_NAMES.find(([pattern]) => pattern.test(text(item.name)));
+    if (!rule) return item;
+    const canonicalName = rule[1];
+    if (canonicalName === text(item.name)) return item;
+    return { ...item, originalName: text(item.originalName) || text(item.name), name: canonicalName };
+  });
+}
+
 const UPPER_ORGANS = [
   { pattern: /肝脏|肝/, name: /肝脏|肝/ },
   { pattern: /胆囊|胆总管|胆/, name: /胆囊|胆/ },
@@ -161,5 +189,5 @@ function upperAbdomenCoverage(items) {
   return new Set((items || []).map(item => upperOrganIndex(item.name)).filter(index => index >= 0)).size;
 }
 
-module.exports = { normalizeDepartmentExamItems, normalizeBreathTestItems, normalizeSingleExamReportItems, realignUpperAbdomenConclusions, upperAbdomenCoverage };
+module.exports = { normalizeDepartmentExamItems, normalizeBreathTestItems, normalizeSingleExamReportItems, normalizeUltrasoundExamNames, realignUpperAbdomenConclusions, upperAbdomenCoverage };
 
