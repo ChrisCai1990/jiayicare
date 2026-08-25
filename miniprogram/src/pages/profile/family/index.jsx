@@ -212,7 +212,7 @@ export default function FamilyMembersPage() {
 
       <View style={{ padding: `${spacing.lg}px` }}>
         <Text style={{ fontSize: '13px', color: colors.textMuted, lineHeight: '20px', display: 'block', marginBottom: `${spacing.lg}px` }}>
-          只能关联系统内已注册的客户，双向建立家庭成员关系，方便后续健康基金和就医协助服务共享。
+          只能关联系统内已注册的客户，双向建立家庭成员关系，方便后续健康基金和家庭健康管理服务共享。
         </Text>
 
         {pendingInvites.length > 0 && (

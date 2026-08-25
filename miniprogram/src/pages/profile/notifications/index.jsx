@@ -16,7 +16,7 @@ const SETTINGS = [
     { key: 'doctor', label: '健康顾问消息', desc: '健康顾问回复及随访通知' },
     { key: 'manager', label: '健管专员消息', desc: '健管专员消息提醒' },
     { key: 'nutritionist', label: '营养师消息', desc: '营养师回复及营养指导通知' },
-    { key: 'report', label: '报告解读', desc: '检查报告完成通知' },
+    { key: 'report', label: '报告整理', desc: '检查报告整理完成通知' },
   ] },
   { group: '系统通知', items: [
     { key: 'system', label: '系统推送通知', desc: '服务更新、重要公告及系统消息推送' },

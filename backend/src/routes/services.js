@@ -22,13 +22,18 @@ const Product = require('../models/Product');
 const ProductCategory = require('../models/ProductCategory');
 const { resolveHealthPlanner } = require('../utils/healthPlannerAssignment');
 
+// 当前用户端商城仅经营健康体检服务。其他历史产品继续保留在管理后台，
+// 但不得通过公开目录、分享链接或旧商品 ID 对外展示和下单。
+const PUBLIC_MALL_CATEGORIES = new Set(['健康体检服务']);
+const isPublicMallProduct = product => PUBLIC_MALL_CATEGORIES.has(String(product?.category || '').trim());
+
 // GET /api/services — 从商城产品获取（管理员在后台维护的 Products）
 // Public catalogue: reviewers and prospective users must be able to browse
 // service content before being asked to log in or authorize personal data.
 router.get('/', async (req, res) => {
   const [products, categoryDocs] = await Promise.all([
-    Product.find({ status: 'on' }).sort({ sortOrder: 1, createdAt: 1 }),
-    ProductCategory.find().sort({ sortOrder: 1, createdAt: 1 }).lean(),
+    Product.find({ status: 'on', category: { $in: [...PUBLIC_MALL_CATEGORIES] } }).sort({ sortOrder: 1, createdAt: 1 }),
+    ProductCategory.find({ name: { $in: [...PUBLIC_MALL_CATEGORIES] } }).sort({ sortOrder: 1, createdAt: 1 }).lean(),
   ]);
 
   const productCountByCategory = products.reduce((counts, product) => {
@@ -110,7 +115,11 @@ router.get('/coupons', auth, async (req, res) => {
 
 // Product-only sharing. A token identifies the sharer without exposing user ids in the URL.
 router.post('/product-shares', auth, async (req, res) => {
-  const product = await Product.findOne({ _id: req.body.productId, status: 'on' }).select('_id name images');
+  const product = await Product.findOne({
+    _id: req.body.productId,
+    status: 'on',
+    category: { $in: [...PUBLIC_MALL_CATEGORIES] },
+  }).select('_id name images');
   if (!product) return res.status(404).json({ success: false, message: '产品不存在或已下架' });
   const share = await ProductShare.create({
     token: crypto.randomBytes(18).toString('base64url'),
@@ -163,7 +172,11 @@ const PACKAGE_CATALOG = [
 ];
 
 router.post('/inquiries', auth, async (req, res) => {
-  const product = await Product.findOne({ _id: req.body.serviceId, status: 'on' });
+  const product = await Product.findOne({
+    _id: req.body.serviceId,
+    status: 'on',
+    category: { $in: [...PUBLIC_MALL_CATEGORIES] },
+  });
   if (!product) return res.status(404).json({ success: false, message: '服务项目不存在或已下架' });
   const inquiry = await ServiceInquiry.create({
     user: req.user._id,
@@ -196,7 +209,10 @@ router.post('/order', auth, async (req, res) => {
   // 先从 Product / Admin 服务包查，再查 Service，最后兼容旧版静态 ID
   let service = null;
   let servicePackage = null;
-  const product = await Product.findById(serviceId).catch(() => null);
+  const productCandidate = await Product.findById(serviceId).catch(() => null);
+  const product = productCandidate?.status === 'on' && isPublicMallProduct(productCandidate)
+    ? productCandidate
+    : null;
   if (product) {
     const prices = product.servicePrices || [];
     const activeSkus = (product.skus || []).filter(item => item.active !== false);
