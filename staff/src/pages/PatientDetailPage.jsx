@@ -11056,7 +11056,8 @@ function InfoRow({ label, value }) {
 
 const RECORD_TYPE_LABEL = {
   bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率',
-  weight: '体重', height: '身高', sleep: '睡眠', mood: '情绪',
+  weight: '体重', height: '身高', bmi: 'BMI', temperature: '体温', respiratoryRate: '呼吸', oxygenSaturation: '血氧饱和度', painScore: '疼痛评分',
+  leftVision: '左眼视力', rightVision: '右眼视力', axialLength: '眼轴', waistCircumference: '腰围', hipCircumference: '臀围', waistHipRatio: '腰臀比', sleep: '睡眠', mood: '情绪',
   diet: '饮食', exercise: '运动', water: '饮水',
   alcohol: '饮酒', bowel: '排便', smoking: '吸烟',
   symptom: '症状自评',
@@ -11089,6 +11090,17 @@ const RECORD_VALUE_META = {
   heartRate:  { unit: '次/分', freeText: false },
   weight:     { unit: 'kg', freeText: false },
   height:     { unit: 'cm', freeText: false },
+  bmi:        { unit: '', freeText: false },
+  temperature: { unit: '℃', freeText: false },
+  respiratoryRate: { unit: '次/分', freeText: false },
+  oxygenSaturation: { unit: '%', freeText: false },
+  painScore: { unit: '分', freeText: false },
+  leftVision: { unit: '', freeText: false },
+  rightVision: { unit: '', freeText: false },
+  axialLength: { unit: 'mm', freeText: false },
+  waistCircumference: { unit: 'cm', freeText: false },
+  hipCircumference: { unit: 'cm', freeText: false },
+  waistHipRatio: { unit: '', freeText: false },
   sleep:      { unit: '小时', freeText: false },
   mood:       { unit: '分（1-10）', freeText: false },
 }
@@ -11103,7 +11115,7 @@ function formatRecordValue(r) {
   else if (r.type === 'height') base = `${r.value} cm`
   else if (r.type === 'sleep') base = `${r.value} h`
   else if (r.type === 'mood') base = `${r.value} / 10`
-  else base = r.value ?? '-'
+  else base = r.value == null ? '-' : `${r.value}${r.unit ? ` ${r.unit}` : ''}`
 
   if (r.type === 'sleep' && r.extra?.sleepTime && r.extra?.wakeTime) {
     base += `（${r.extra.sleepTime}入睡→${r.extra.wakeTime}醒）`
@@ -12122,7 +12134,12 @@ function FamilyTab({ patientId, user, onRefresh }) {
 }
 
 
-const HEALTH_IMPORT_HEADERS = ['身份证号码', '姓名', '测量时间', '数据类型', '收缩压', '舒张压', '数值', '备注']
+const HEALTH_IMPORT_HEADERS = ['身份证号码', '姓名', '添加时间', '身高(CM)', '体重(KG)', 'BMI', '体温(℃)', '呼吸(次/分)', '脉搏(次/分)', '收缩压', '舒张压', '血糖(mmol/L)', '氧饱和度(%)', '疼痛评分(0-10)', '左眼视力', '右眼视力', '眼轴(mm)', '腰围(cm)', '臀围(cm)', '腰臀比', '备注']
+const WIDE_HEALTH_COLUMNS = [
+  ['身高(cm)', '身高'], ['体重(kg)', '体重'], ['BMI', 'BMI'], ['体温(℃)', '体温'], ['呼吸(次/分)', '呼吸'], ['脉搏(次/分)', '脉搏'],
+  ['血糖(mmol/L)', '血糖'], ['血氧饱和度(%)', '血氧饱和度'], ['疼痛评分(0-10)', '疼痛评分'], ['左眼视力', '左眼视力'], ['右眼视力', '右眼视力'],
+  ['眼轴(mm)', '眼轴'], ['腰围(cm)', '腰围'], ['臀围(cm)', '臀围'], ['腰臀比', '腰臀比'],
+]
 
 function parseHealthImportCsv(text) {
   const rows = []
@@ -12142,16 +12159,33 @@ function parseHealthImportCsv(text) {
   }
   row.push(cell.trim()); if (row.some(Boolean)) rows.push(row)
   if (!rows.length) return []
-  const headers = rows[0].map(x => x.trim())
-  const required = ['身份证号码', '姓名', '测量时间', '数据类型']
+  const headers = rows[0].map(x => x.trim()
+    .replace(/^添加时间$/, '测量时间')
+    .replace(/\(CM\)/i, '(cm)')
+    .replace(/\(KG\)/i, '(kg)')
+    .replace(/^氧饱和度\(%\)$/, '血氧饱和度(%)'))
+  const isWide = !headers.includes('数据类型')
+  const required = isWide ? ['身份证号码', '姓名', '测量时间'] : ['身份证号码', '姓名', '测量时间', '数据类型']
   if (required.some(x => !headers.includes(x))) throw new Error(`模板缺少必填列：${required.join('、')}`)
   let inheritedId = '', inheritedName = ''
-  return rows.slice(1).map(cols => {
+  const parsed = []
+  rows.slice(1).forEach((cols, rowIndex) => {
     const get = name => cols[headers.indexOf(name)] || ''
     inheritedId = get('身份证号码') || inheritedId
     inheritedName = get('姓名') || inheritedName
-    return { idNumber: inheritedId, name: inheritedName, recordedAt: get('测量时间'), type: get('数据类型'), systolic: get('收缩压'), diastolic: get('舒张压'), value: get('数值'), note: get('备注') }
-  }).filter(x => Object.values(x).some(Boolean))
+    const common = { idNumber: inheritedId, name: inheritedName, recordedAt: get('测量时间'), note: get('备注'), sourceRowNumber: rowIndex + 2 }
+    if (!isWide) {
+      parsed.push({ ...common, type: get('数据类型'), systolic: get('收缩压'), diastolic: get('舒张压'), value: get('数值') })
+      return
+    }
+    const systolic = get('收缩压'), diastolic = get('舒张压')
+    if (systolic || diastolic) parsed.push({ ...common, type: '血压', systolic, diastolic, value: '' })
+    WIDE_HEALTH_COLUMNS.forEach(([column, type]) => {
+      const value = get(column)
+      if (value !== '') parsed.push({ ...common, type, systolic: '', diastolic: '', value })
+    })
+  })
+  return parsed.filter(x => x.recordedAt || x.type || x.value || x.systolic || x.diastolic)
 }
 
 function BatchHealthRecordImport({ patient, onSaved, toast: toastFn }) {
@@ -12164,17 +12198,8 @@ function BatchHealthRecordImport({ patient, onSaved, toast: toastFn }) {
 
   const downloadTemplate = () => {
     if (!canImport) return toastFn('请先在基本信息中登记客户身份证号码')
-    const identity = [patient.idNumber, patient.name || '']
-    const samples = [
-      [...identity, '2024-01-15 08:30', '血压', '135', '85', '', '早晨测量'],
-      [...identity, '2024-01-15 08:30', '体重', '', '', '68.5', '单位：kg'],
-      [...identity, '2024-01-15 08:30', '身高', '', '', '170', '单位：cm'],
-      [...identity, '2024-01-15 08:30', '血糖', '', '', '5.8', '单位：mmol/L；空腹'],
-      [...identity, '2024-01-15 08:30', '心率', '', '', '72', '单位：次/分'],
-      [...identity, '2024-01-15 08:30', '睡眠', '', '', '7.5', '单位：小时'],
-      [...identity, '2024-01-15 08:30', '情绪', '', '', '8', '1-10分'],
-    ]
-    const csv = [HEALTH_IMPORT_HEADERS, ...samples].map(row => row.map(value => `"${String(value || '').replace(/"/g, '""')}"`).join(',')).join('\r\n')
+    const sample = [patient.idNumber, patient.name || '', '2024-01-15 08:30', '170', '70.2', '24.3', '36.5', '16', '74', '101', '68', '5.8', '98', '0', '1.0', '1.0', '24.1', '82', '96', '0.85', '早晨测量']
+    const csv = [HEALTH_IMPORT_HEADERS, sample].map(row => row.map(value => `"${String(value || '').replace(/"/g, '""')}"`).join(',')).join('\r\n')
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `历史健康数据导入模板_${patient.name || '客户'}.csv`; a.click(); URL.revokeObjectURL(a.href)
   }
@@ -12215,7 +12240,7 @@ function BatchHealthRecordImport({ patient, onSaved, toast: toastFn }) {
     <div className="card" style={{ marginTop: 16 }}>
       <div className="card-header"><div className="card-title">历史健康数据批量导入</div></div>
       <div className="card-body">
-        <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 12 }}>身份证号码精准匹配当前客户，姓名二次校验；支持血压、体重、身高、血糖、心率、睡眠和情绪，单次最多1000条。同一客户后续行可留空身份证和姓名，系统会自动沿用上一行；CSV可直接用Excel填写和另存。</div>
+        <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 12 }}>横向模板每个测量时间一行、各指标分列，空白指标自动跳过；身份证号码精准匹配当前客户，姓名二次校验。同一客户后续行可留空身份证和姓名，系统会自动沿用上一行；旧版纵向模板仍可继续导入，单次最多1000条健康记录。</div>
         {!canImport && <div style={{ padding: '9px 12px', marginBottom: 12, borderRadius: 8, color: '#B45309', background: '#FFF7E8', fontSize: 13 }}>该客户尚未登记身份证号码，请先完善基本信息后再导入。</div>}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn btn-secondary btn-sm" onClick={downloadTemplate} disabled={!canImport}>下载CSV模板</button>

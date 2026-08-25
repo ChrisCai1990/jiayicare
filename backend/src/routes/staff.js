@@ -4741,8 +4741,20 @@ router.post('/patients/:id/health-records/import', staffAuth, async (req, res) =
       '血压': 'bloodPressure', bloodPressure: 'bloodPressure',
       '血糖': 'bloodSugar', bloodSugar: 'bloodSugar',
       '心率': 'heartRate', heartRate: 'heartRate',
+      '脉搏': 'heartRate',
       '体重': 'weight', weight: 'weight',
       '身高': 'height', height: 'height',
+      'BMI': 'bmi', bmi: 'bmi',
+      '体温': 'temperature', temperature: 'temperature',
+      '呼吸': 'respiratoryRate', respiratoryRate: 'respiratoryRate',
+      '血氧饱和度': 'oxygenSaturation', '氧饱和度': 'oxygenSaturation', oxygenSaturation: 'oxygenSaturation',
+      '疼痛评分': 'painScore', painScore: 'painScore',
+      '左眼视力': 'leftVision', leftVision: 'leftVision',
+      '右眼视力': 'rightVision', rightVision: 'rightVision',
+      '眼轴': 'axialLength', axialLength: 'axialLength',
+      '腰围': 'waistCircumference', waistCircumference: 'waistCircumference',
+      '臀围': 'hipCircumference', hipCircumference: 'hipCircumference',
+      '腰臀比': 'waistHipRatio', waistHipRatio: 'waistHipRatio',
       '睡眠': 'sleep', sleep: 'sleep',
       '情绪': 'mood', mood: 'mood',
     };
@@ -4752,6 +4764,17 @@ router.post('/patients/:id/health-records/import', staffAuth, async (req, res) =
       heartRate: { category: 'vitals', label: '心率', unit: '次/分' },
       weight: { category: 'metabolism', label: '体重', unit: 'kg' },
       height: { category: 'metabolism', label: '身高', unit: 'cm' },
+      bmi: { category: 'metabolism', label: 'BMI', unit: '' },
+      temperature: { category: 'vitals', label: '体温', unit: '℃' },
+      respiratoryRate: { category: 'vitals', label: '呼吸', unit: '次/分' },
+      oxygenSaturation: { category: 'vitals', label: '血氧饱和度', unit: '%' },
+      painScore: { category: 'vitals', label: '疼痛评分', unit: '分' },
+      leftVision: { category: 'vitals', label: '左眼视力', unit: '' },
+      rightVision: { category: 'vitals', label: '右眼视力', unit: '' },
+      axialLength: { category: 'vitals', label: '眼轴', unit: 'mm' },
+      waistCircumference: { category: 'metabolism', label: '腰围', unit: 'cm' },
+      hipCircumference: { category: 'metabolism', label: '臀围', unit: 'cm' },
+      waistHipRatio: { category: 'metabolism', label: '腰臀比', unit: '' },
       sleep: { category: 'lifestyle', label: '睡眠', unit: '小时' },
       mood: { category: 'lifestyle', label: '情绪', unit: '分' },
     };
@@ -4782,7 +4805,7 @@ router.post('/patients/:id/health-records/import', staffAuth, async (req, res) =
         const end = new Date(recordedAt.getTime() + 1000);
         duplicate = !!(await HealthRecord.exists({ user: user._id, type, recordedAt: { $gte: start, $lte: end }, value }));
       }
-      checked.push({ rowNumber: index + 2, status: error ? 'error' : duplicate ? 'duplicate' : 'ready', message: error || (duplicate ? '疑似重复，已跳过' : '可导入'), normalized: error || duplicate ? null : { type, value, extra, recordedAt, note: String(source.note || '').trim(), meta: metaMap[type] } });
+      checked.push({ rowNumber: Number(source.sourceRowNumber) || index + 2, status: error ? 'error' : duplicate ? 'duplicate' : 'ready', message: error || (duplicate ? '疑似重复，已跳过' : '可导入'), normalized: error || duplicate ? null : { type, value, extra, recordedAt, note: String(source.note || '').trim(), meta: metaMap[type] } });
     }
     const summary = checked.reduce((acc, row) => { acc[row.status] += 1; return acc; }, { ready: 0, duplicate: 0, error: 0 });
     if (req.body.preview !== false) return res.json({ success: true, data: { summary, rows: checked.map(({ normalized, ...row }) => row) } });
