@@ -53,9 +53,16 @@ test('whole-report OCR has a three-minute direct extraction SLA', () => {
 
   assert.match(staffRoute, /const REPORT_PARSE_SLA_MS = 180_000/);
   assert.match(staffRoute, /const REPORT_MODEL_DEADLINE_MS = 165_000/);
-  assert.match(staffRoute, /timeoutMs: directModelTimeout\(45_000\)/);
+  assert.match(staffRoute, /timeoutMs: directModelTimeout\(30_000\)/);
   assert.match(staffRoute, /const retryBudgetMs = 0/);
   assert.match(staffRoute, /if \(timedOut\) break/);
+});
+
+test('generic scanned PDFs give every page one bounded higher-resolution attempt', () => {
+  const staffRoute = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+  assert.match(staffRoute, /textLayer\.available \? 96 : 120/);
+  assert.match(staffRoute, /useZheyiTemplate \? 3 : 6/);
+  assert.match(staffRoute, /异常汇总跨越多页时/);
 });
 
 test('ultrasound extraction prefers omission over invented organ results', () => {

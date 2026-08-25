@@ -8939,7 +8939,7 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
 【基本规则】
 规则零：只提取本图中实际存在的内容，绝对不推断、联想或补全。
 规则A：跳过会员及报告签署元数据——姓名、性别、年龄、出生日期、身份证号、手机号/电话、单位/工作单位、体检日期、体检编号/报告编号，以及检查者、检查医生、报告医生、审核者、操作医生、录入者等人员署名，一律不作为检查项目提取。
-规则B：跳过汇总页——页面标题含"异常结果""检查结果"等字样再加上"汇总""说明""及建议""及说明""解读"等词的组合（如"异常结果汇总""体检结果汇总""异常结果及建议""体检异常结果及说明"，不要求逐字匹配这几个例子，只要是同类"异常/结果+说明性后缀"的标题都算），或以"尊敬的XX先生/女士"开头的综合小结页，整页跳过不提取。判断汇总页的核心标准：这一页是把多个不同检查项目（胃镜/肠镜/超声/放射等）的结论压缩摘要在同一页里罗列，而不是聚焦单一检查项目的完整详细报告单。这类汇总页有时按科室分组罗列诊断名词（如"放射科：1、右肺结节 2、左肾上腺增粗"／"消化内镜：1、内痔 2、大肠息肉"），即使看起来像分了类别标题，这仍是汇总页，不是具体检查项目，禁止把"放射科""消化内镜""病理科""彩超"等科室/类别标题当成 name 生成条目，也不能把里面的诊断名词列表当作findings/diagnosis提取——这些内容详细报告单里都有，只从详细报告单提取。
+规则B：跳过汇总页——页面标题含"异常结果""检查结果"等字样再加上"汇总""说明""及建议""及说明""解读"等词的组合（如"异常结果汇总""体检结果汇总""异常结果及建议""体检异常结果及说明"，不要求逐字匹配这几个例子，只要是同类"异常/结果+说明性后缀"的标题都算），或以"尊敬的XX先生/女士"开头的综合小结页，整页跳过不提取。判断汇总页的核心标准：这一页是把多个不同检查项目（胃镜/肠镜/超声/放射等）的结论压缩摘要在同一页里罗列，而不是聚焦单一检查项目的完整详细报告单。异常汇总跨越多页时，后续页即使不再重复“汇总”标题，只要仍是在按科室罗列多个项目的异常摘要，也必须继续判为summary并令items=[]。这类汇总页有时按科室分组罗列诊断名词（如"放射科：1、右肺结节 2、左肾上腺增粗"／"消化内镜：1、内痔 2、大肠息肉"），即使看起来像分了类别标题，这仍是汇总页，不是具体检查项目，禁止把"放射科""消化内镜""病理科""彩超"等科室/类别标题当成 name 生成条目，也不能把里面的诊断名词列表当作findings/diagnosis提取——这些内容详细报告单里都有，只从详细报告单提取。
 规则B2：跳过"名词解释""检查异常结果解读""温馨提示""健康建议"类科普说明页——这类页面是对某个诊断名词（如"甲状腺结节3类是什么"）的通用医学科普介绍，不是本次检查的具体所见，禁止把这类科普文字当成检查所见/项目提取（如"肾结石多与饮水少有关，建议..."这种句子禁止提取为任何条目）。
 规则B3：必须先判定整页类型并填写 pageType/pageTitle/skipPage。只有逐项展示原始检查数值、检查所见或诊断意见的详细报告页才是 detail。只有超声、CT、MRI等医学影像，但没有印刷检查所见或诊断意见的页面=image_evidence：必须保留为原件证据，但严禁根据影像自行诊断或生成项目。汇总、小结页=summary，封面/会员信息页=cover，目录/清单页=catalog，建议/科普/解读页=advice。凡不是 detail 的页面必须令 skipPage=true 且 items=[]；禁止一边标记跳过一边仍输出条目。
 规则C：跳过目录页、项目清单页（只有项目名称没有结果的页面）。
@@ -10521,7 +10521,7 @@ async function runReportParse(reportId, options = {}) {
         ? `文字层取证完成（${textLayer.pageCount}页），开始逐页识别`
         : '文字层不可用，开始逐页视觉识别');
       const isComprehensiveCheckup = report.type === 'annual';
-      const baseDpi = useShaoyifuTemplate ? 160 : ((useZheyiTemplate || isComprehensiveCheckup) ? 144 : 96);
+      const baseDpi = useShaoyifuTemplate ? 160 : ((useZheyiTemplate || isComprehensiveCheckup) ? 144 : (textLayer.available ? 96 : 120));
 
       // Native annual reports already contain the source text. Use that text as
       // the primary extraction input and reserve the slower visual model for
@@ -10596,7 +10596,7 @@ async function runReportParse(reportId, options = {}) {
       // 邵逸夫21页模板含大量小字号双栏表格，96dpi/plus会稳定漏掉右栏，改为160dpi/max。
       // 同时模板规则会跳过小结及重复报告页，因此实际模型调用页数反而更少。
       const VL_MODEL = (useShaoyifuTemplate || useZheyiTemplate || isComprehensiveCheckup) ? 'qwen-vl-max' : 'qwen-vl-plus';
-      const CONCURRENCY = useShaoyifuTemplate ? 2 : (useZheyiTemplate ? 3 : 4);
+      const CONCURRENCY = useShaoyifuTemplate ? 2 : (useZheyiTemplate ? 3 : 6);
       const BATCH_SIZE = useShaoyifuTemplate || useZheyiTemplate ? 8 : 12;
       const DPI = baseDpi;
       console.log(`[parse-ai] PDF开始 ${reportId} 大小${(pdfBuf.length/1024/1024).toFixed(1)}MB 分批处理(每批${BATCH_SIZE}页/并发${CONCURRENCY}/${baseDpi}dpi${useZheyiTemplate ? '/浙一P6-P15' : ''}) 文字层=${textLayer.available ? `可用/${textLayer.pageCount}页` : '不可用'}`);
@@ -10701,7 +10701,7 @@ async function runReportParse(reportId, options = {}) {
                       + pageTextEvidence
                       + adjacentPageContext;
                   const firstPassModel = report.type === 'body_comp' ? 'qwen-vl-max' : VL_MODEL;
-                  const text = await parseImage(batchImages[i], firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: (useShaoyifuTemplate || useZheyiTemplate || isComprehensiveCheckup) ? 8192 : 4096, timeoutMs: directModelTimeout(45_000) });
+                  const text = await parseImage(batchImages[i], firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: (useShaoyifuTemplate || useZheyiTemplate || isComprehensiveCheckup) ? 8192 : 4096, timeoutMs: directModelTimeout(30_000) });
                   const p = safeParseJSON(text);
                   if (p) { batchResults[i] = p; break; }
                   if (attempt === 1) console.log(`[parse-ai] 页${pageNum}解析失败 raw(前200)=${String(text).slice(0, 200)}`);
