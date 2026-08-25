@@ -60,4 +60,24 @@ function toTemplateSections(data, template, period = quarterPeriod()) {
   };
 }
 
-module.exports = { toStructuredAssessment, assessmentToPlainText, quarterPeriod, toTemplateSections };
+function templateAssessmentFromContent(content, assessment) {
+  const titles = assessment?.templateSnapshot?.outputSections || [];
+  const sections = titles.map(title => ({ title, items: [] }));
+  let index = 0;
+  String(content || '').split(/\r?\n/).forEach(raw => {
+    const line = cleanLine(raw);
+    if (!line) return;
+    const headingIndex = titles.findIndex(title => line.includes(title));
+    if (headingIndex >= 0) { index = headingIndex; return; }
+    if (sections[index]) sections[index].items.push(line);
+  });
+  return {
+    periodKey: assessment.periodKey, periodLabel: assessment.periodLabel,
+    templateMatched: Boolean(assessment.templateId), templateId: assessment.templateId,
+    templateName: assessment.templateSnapshot?.name || '阶段性评估模板',
+    frequency: assessment.templateSnapshot?.frequency || '', customerPushEligible: Boolean(assessment.templateId),
+    sections,
+  };
+}
+
+module.exports = { toStructuredAssessment, assessmentToPlainText, quarterPeriod, toTemplateSections, templateAssessmentFromContent };
