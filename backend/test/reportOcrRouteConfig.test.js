@@ -65,6 +65,14 @@ test('generic scanned PDFs give every page one bounded higher-resolution attempt
   assert.match(staffRoute, /异常汇总跨越多页时/);
 });
 
+test('whole-report first pass uses the minimal transcription prompt', () => {
+  const staffRoute = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+  assert.match(staffRoute, /const DIRECT_REPORT_EXTRACTION_PROMPT/);
+  assert.match(staffRoute, /不解释、不推断、不补全/);
+  assert.match(staffRoute, /const textPrompt = DIRECT_REPORT_EXTRACTION_PROMPT/);
+  assert.match(staffRoute, /: DIRECT_REPORT_EXTRACTION_PROMPT\s+\+ pageTextEvidence/);
+});
+
 test('ultrasound extraction prefers omission over invented organ results', () => {
   const staffRoute = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
   assert.match(staffRoute, /严禁根据组合标题、常见套餐或医学常识补造器官/);
