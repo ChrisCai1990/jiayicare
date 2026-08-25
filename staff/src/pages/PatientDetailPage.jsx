@@ -562,7 +562,7 @@ const SR_CATEGORY = {
   routine:       '日常随访',
   doctor_followup: '健康顾问跟进',
 }
-const SR_CATEGORY_COLOR = { '营养干预':'#22A06B', '专病管理':'#0077B6', '医院就医':'#D97706', '日常随访':'#8A4AC7', '健康顾问跟进':'#0088CC' }
+const SR_CATEGORY_COLOR = { '营养干预':'#22A06B', '专病管理':'#0077B6', '医院就医':'#D97706', '日常随访':'#8A4AC7', '健康顾问跟进':'#0088CC', '阶段性健康评估':'#155E48' }
 
 // ── 开单弹窗 ─────────────────────────────────────────────
 function RequisitionModal({ patientId, onClose, onSaved, prefillTitle = '', prefillNotes = '', prefillSuggestions = [] }) {
@@ -1451,6 +1451,7 @@ export default function PatientDetailPage() {
   const [plans, setPlans] = useState([])
   const [reports, setReports] = useState([])
   const [serviceRecords, setServiceRecords] = useState([])
+  const [activeServiceCategory, setActiveServiceCategory] = useState('营养干预')
   const [patientReferrals, setPatientReferrals] = useState([])
   const [expandedReferralCats, setExpandedReferralCats] = useState({})
   const [reportSearchKw, setReportSearchKw] = useState('')
@@ -8886,6 +8887,7 @@ export default function PatientDetailPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {healthRecords.map((record, index) => {
                     const workflow = record.symptomWorkflow || {}
+                    const isExpanded = expandedRecords.has(record._id)
                     const workflowLabel = { pending_manager: '待健管专员核实', pending_doctor: '待健康顾问判断', manager_followup: '健管专员跟进', referred: '已转介', resolved: '已处理', dismissed: '已确认为误录' }[workflow.status] || '待处理'
                     const pending = ['pending_manager', 'pending_doctor'].includes(workflow.status)
                     const source = record.recordedBy?.source === 'staff' ? (record.recordedBy.staffName || '医护人员录入') : record.recordedBy?.source === 'system' ? '系统记录' : '客户打卡'
@@ -8896,12 +8898,19 @@ export default function PatientDetailPage() {
                       <div style={{ padding: '13px 15px', borderRadius: 11, background: pending ? '#FFF7F6' : '#F7FAF8', borderLeft: `4px solid ${pending ? '#DC3545' : '#1E6B50'}` }}>
                         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
                           <div style={{ minWidth: 0, flex: 1 }}>
-                            <div style={{ color: '#1A2B24', fontSize: 14, lineHeight: 1.6, fontWeight: 700 }}>{record.value || record.note || '未填写具体内容'}</div>
-                            {record.note && record.note !== record.value && <div style={{ fontSize: 12, color: '#4A6558', marginTop: 4 }}>{record.note}</div>}
-                            <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 6 }}>{new Date(record.recordedAt).toLocaleString('zh-CN')} · {source}{workflow.decidedByName ? ` · 处理人：${workflow.decidedByName}` : ''}</div>
-                            <div style={{ marginTop: 9, padding: '9px 11px', background: '#fff', border: '1px solid #E5ECE8', borderRadius: 8, fontSize: 12, color: '#4A6558' }}>
-                              <b style={{ color: '#1A2B24' }}>对应解决方案：</b>{workflow.decisionNote || (pending ? '等待健康管理人员核实并制定方案' : '暂无补充处置说明')}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                              <div style={{ color: '#1A2B24', fontSize: 14, lineHeight: 1.6, fontWeight: 700 }}>{record.value || record.note || '未填写具体内容'}</div>
+                              <span style={{ fontSize: 11, color: '#8AA89C' }}>{new Date(record.recordedAt).toLocaleDateString('zh-CN')}</span>
+                              <button type="button" onClick={() => setExpandedRecords(prev => { const next = new Set(prev); isExpanded ? next.delete(record._id) : next.add(record._id); return next })}
+                                style={{ border: 'none', background: 'none', padding: 0, color: '#7F9E92', cursor: 'pointer', fontSize: 12 }}>{isExpanded ? '收起详情⌃' : '展开详情⌄'}</button>
                             </div>
+                            {isExpanded && <>
+                              {record.note && record.note !== record.value && <div style={{ fontSize: 12, color: '#4A6558', marginTop: 8 }}>{record.note}</div>}
+                              <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 6 }}>{new Date(record.recordedAt).toLocaleString('zh-CN')} · {source}{workflow.decidedByName ? ` · 处理人：${workflow.decidedByName}` : ''}</div>
+                              <div style={{ marginTop: 9, padding: '9px 11px', background: '#fff', border: '1px solid #E5ECE8', borderRadius: 8, fontSize: 12, color: '#4A6558' }}>
+                                <b style={{ color: '#1A2B24' }}>对应解决方案：</b>{workflow.decisionNote || (pending ? '等待健康管理人员核实并制定方案' : '暂无补充处置说明')}
+                              </div>
+                            </>}
                           </div>
                           <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: 360 }}>
                             <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20, color: pending ? '#B42318' : '#1E6B50', background: pending ? '#FEE4E2' : '#E8F5EE' }}>{workflowLabel}</span>
@@ -9227,7 +9236,8 @@ export default function PatientDetailPage() {
 
       {/* ── Service Records Tab ── */}
       {tab === 'serviceRecords' && (() => {
-        const CATS = ['营养干预', '专病管理', '医院就医', '日常随访', '健康顾问跟进']
+        // 与生产一致：服务记录采用顶部分类切换；阶段性健康评估为测试中的新分类，保留入口供验收。
+        const CATS = ['营养干预', '专病管理', '医院就医', '日常随访', '健康顾问跟进', '阶段性健康评估']
         const grouped = {}
         CATS.forEach(c => { grouped[c] = [] })
         serviceRecords.forEach(r => {
@@ -9253,43 +9263,42 @@ export default function PatientDetailPage() {
             </tbody>
           </table>
         )
+        const currentCategory = CATS.includes(activeServiceCategory) ? activeServiceCategory : CATS[0]
+        const currentRecords = grouped[currentCategory] || []
+        const isDiseaseMgmt = currentCategory === '专病管理'
+        const diseaseGroups = {}
+        if (isDiseaseMgmt) currentRecords.forEach(r => {
+          const dn = r.diseaseName?.trim() || r.title?.trim() || '未标注专病'
+          if (!diseaseGroups[dn]) diseaseGroups[dn] = []
+          diseaseGroups[dn].push(r)
+        })
         return (
           <div className="patient-tab-section patient-record-list" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {CATS.map(cat => {
-              const isDiseaseMgmt = cat === '专病管理'
-              // 专病管理内部按标题二级分组（同一专病的记录只要标题写法一致就会归到一起，组内保持原有按日期倒序）
-              let diseaseGroups = null
-              if (isDiseaseMgmt) {
-                diseaseGroups = {}
-                grouped[cat].forEach(r => {
-                  const dn = r.diseaseName?.trim() || r.title?.trim() || '未标注专病'
-                  if (!diseaseGroups[dn]) diseaseGroups[dn] = []
-                  diseaseGroups[dn].push(r)
-                })
-              }
-              return (
-              <div className="card" key={cat}>
-                <div className="card-header">
-                  <div className="card-title" style={{ color: SR_CATEGORY_COLOR[cat] }}>{cat}</div>
-                  <span style={{ fontSize: 13, color: '#aaa' }}>{grouped[cat].length} 条</span>
-                </div>
-                {grouped[cat].length === 0 ? (
-                  <div style={{ padding: '16px 20px', color: '#aaa', fontSize: 13 }}>暂无{cat}记录</div>
-                ) : isDiseaseMgmt ? (
-                  Object.keys(diseaseGroups).map(dn => (
-                    <div key={dn} style={{ borderTop: '1px solid #f5f2ec' }}>
-                      <div style={{ padding: '8px 20px', fontSize: 13, fontWeight: 600, color: '#4A6558', background: '#F9F6F0' }}>
-                        {dn} <span style={{ fontWeight: 400, color: '#8AA89C' }}>· {diseaseGroups[dn].length} 条</span>
-                      </div>
-                      {renderTable(diseaseGroups[dn])}
-                    </div>
-                  ))
-                ) : (
-                  renderTable(grouped[cat])
-                )}
+            <div className="card" style={{ padding: 8, display: 'flex', gap: 4, overflowX: 'auto' }}>
+              {CATS.map(cat => <button key={cat} type="button" onClick={() => setActiveServiceCategory(cat)}
+                style={{ minWidth: 148, flex: '1 0 auto', padding: '13px 16px', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 15, fontWeight: 800,
+                  color: activeServiceCategory === cat ? SR_CATEGORY_COLOR[cat] || '#155E48' : '#53665C',
+                  background: activeServiceCategory === cat ? `${SR_CATEGORY_COLOR[cat] || '#155E48'}12` : 'transparent',
+                  borderBottom: activeServiceCategory === cat ? `4px solid ${SR_CATEGORY_COLOR[cat] || '#155E48'}` : '4px solid transparent' }}>
+                {cat}（{(grouped[cat] || []).length}）
+              </button>)}
+            </div>
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title" style={{ color: SR_CATEGORY_COLOR[currentCategory] || '#155E48' }}>{currentCategory}</div>
+                <span style={{ fontSize: 13, color: '#aaa' }}>{currentRecords.length} 条</span>
               </div>
-              )
-            })}
+              {currentRecords.length === 0 ? (
+                <div style={{ padding: '16px 20px', color: '#aaa', fontSize: 13 }}>暂无{currentCategory}记录</div>
+              ) : isDiseaseMgmt ? Object.keys(diseaseGroups).map(dn => (
+                <div key={dn} style={{ borderTop: '1px solid #f5f2ec' }}>
+                  <div style={{ padding: '8px 20px', fontSize: 13, fontWeight: 600, color: '#4A6558', background: '#F9F6F0' }}>
+                    {dn} <span style={{ fontWeight: 400, color: '#8AA89C' }}>· {diseaseGroups[dn].length} 条</span>
+                  </div>
+                  {renderTable(diseaseGroups[dn])}
+                </div>
+              )) : renderTable(currentRecords)}
+            </div>
           </div>
         )
       })()}
