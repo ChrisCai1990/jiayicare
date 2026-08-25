@@ -62,7 +62,7 @@ async function buildAnnualPlanFollowUps(plan) {
   // 现在按模块字段拼出有信息量的说明，让客户提前知道这次随访/提醒具体关于什么。
   // assignedTo：随访任务实际归属的执行人（方案里填的"随访人员"），决定随访出现在谁的工作台"名下"；
   // staffId 仅表示创建人，两者语义不同，混用会导致审核通过后随访挂不到指定人名下。
-  const push = (date, theme, content, assignedTo) => {
+  const push = (date, theme, content, assignedTo, sourcePlanKey) => {
     // 只有明确了随访时间和随访人，才构成可执行的随访计划；否则不向客户或工作台投放半成品。
     if (!date || !assignedTo) return;
     const d = new Date(date);
@@ -77,6 +77,7 @@ async function buildAnnualPlanFollowUps(plan) {
       content: content || '',
       status: 'planned',
       sourceAnnualPlanId: plan._id,
+      sourcePlanKey,
       sourceType: 'scheduled',
       aiStatus: 'pending',
       reviewRole: 'familyDoctor',
@@ -105,11 +106,12 @@ async function buildAnnualPlanFollowUps(plan) {
         rec.followUpStaff && `随访人员：${staffName(rec.followUpStaff)}`,
         rec.notes && `注意事项：${rec.notes}`,
       ].filter(Boolean);
-      push(rec[mod.dateField], `${mod.theme} · ${label}`, lines.join('\n'), rec.followUpStaff);
+      push(rec[mod.dateField], `${mod.theme} · ${label}`, lines.join('\n'), rec.followUpStaff, `${mod.key}:${i}`);
     });
   }
 
-  // ② 日常监测：multi:true 多条记录，每条各自按 frequency 排期，只提前生成未来 HORIZON_DAYS 天内的
+  // ② 日常监测和季度评估不再从年度方案自动反复排期：须由家庭医生在研判后按明确日期下达。
+  /*
   const monitoringRecords = moduleData.monitoring?.records;
   if (Array.isArray(monitoringRecords)) {
     monitoringRecords.forEach((rec) => {
@@ -149,7 +151,8 @@ async function buildAnnualPlanFollowUps(plan) {
     }
   }
 
-  // ④ 年度体检：按计划日期生成一条
+  */
+  // ③ 年度体检：按计划日期生成一条
   const annualCheckup = moduleData.annual_checkup;
   if (annualCheckup && annualCheckup.enabled !== false) {
     const checkupLines = [
@@ -157,21 +160,28 @@ async function buildAnnualPlanFollowUps(plan) {
       annualCheckup.focus && `重点关注：${annualCheckup.focus}`,
       annualCheckup.escort && '已安排陪检服务',
     ].filter(Boolean).join('\n');
-    push(annualCheckup.date, `年度体检提醒 · ${annualCheckup.institution || ''}`, checkupLines, annualCheckup.followUpStaff);
+    push(annualCheckup.date, `年度体检提醒 · ${annualCheckup.institution || ''}`, checkupLines, annualCheckup.followUpStaff, 'annual_checkup');
   }
 
   return created;
 }
 
-// 保存/更新年度管理方案时同步生成随访占位。幂等策略：只清理此前系统自动生成、
-// 医护还从未审核/编辑过的记录（aiStatus:'pending'）——一旦医护审核通过（approve，含审核时顺带
-// 修改日期/主题/内容）或驳回，aiStatus 变为 'approved' / null，就永久脱离自动清理范围，
-// 避免"跟客户沟通后已手动调整"的随访被下一次保存方案时静默覆盖丢失。
+// 保存/更新年度管理方案时只补从未生成过的明确日期随访草稿；绝不删除、重建或覆盖既有草稿/已审核计划。
 async function syncAnnualPlanFollowUps(plan) {
-  await FollowUp.deleteMany({ sourceAnnualPlanId: plan._id, sourceType: 'scheduled', aiStatus: 'pending' });
   const toCreate = await buildAnnualPlanFollowUps(plan);
-  if (toCreate.length) await FollowUp.insertMany(toCreate);
-  return toCreate.length;
+  let created = 0;
+  for (const item of toCreate) {
+    const exists = await FollowUp.exists({
+      sourceAnnualPlanId: plan._id,
+      $or: [
+        { sourcePlanKey: item.sourcePlanKey },
+        // 兼容旧自动草稿：首次升级时按原主题和日期识别，避免再补一份相同计划。
+        { sourcePlanKey: null, theme: item.theme, date: item.date },
+      ],
+    });
+    if (!exists) { await FollowUp.create(item); created++; }
+  }
+  return created;
 }
 
 module.exports = { buildAnnualPlanFollowUps, syncAnnualPlanFollowUps };

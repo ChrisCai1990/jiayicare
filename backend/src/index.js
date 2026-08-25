@@ -130,9 +130,7 @@ app.listen(PORT, BIND_HOST, () => {
   // 健管专员/营养师与会员的聊天记录，每半月自动提炼生成随访草稿待审核（健康顾问频道保留人工触发）
   require('./utils/chatFollowupScheduler').startChatFollowupScheduler();
 
-  // 年度管理方案的"日常监测/季度评估"随访占位滚动窗口补生成，每天扫描一次
-  // （此前一次性预生成未来365天导致单个客户堆积几百条占位，2026-07-13 改为滚动窗口）
-  require('./utils/scheduledFollowUpWindowScheduler').startScheduledFollowUpWindowScheduler();
+  // 年度管理方案仅在保存时补生成明确日期且指定随访人的草稿；不再定时反复排期。
 
   // 年度管理方案"药物管理/营养素管理"模块的定期配药/配营养素计划到期扫描，每天一次
   require('./utils/recurringSupplyPlanScheduler').startRecurringSupplyPlanScheduler();

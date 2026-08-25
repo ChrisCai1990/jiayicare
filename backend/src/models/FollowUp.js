@@ -50,6 +50,7 @@ const followUpSchema = new mongoose.Schema({
   completedBy: { type: String, enum: ['user', 'staff', null], default: null },
   // 方案确认后自动生成的随访计划：sourceType区分固定周期占位 / 月度AI回顾建议，aiStatus走审核
   sourceAnnualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', default: null },
+  sourcePlanKey: { type: String, default: null }, // 年度方案内的稳定条目键；用于只补未生成计划
   sourceHealthPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null }, // 来自AI体检/营养方案确认后自动生成
   sourceType: { type: String, enum: ['scheduled', 'ai_review', 'health_plan', 'medication_reminder', 'order', 'symptom', null], default: null },
   sourceId: { type: mongoose.Schema.Types.ObjectId, default: null }, // 通用来源ID；symptom 时关联 HealthRecord
@@ -61,5 +62,6 @@ const followUpSchema = new mongoose.Schema({
 
 followUpSchema.index({ staffId: 1, date: -1 });
 followUpSchema.index({ patientId: 1, date: -1 });
+followUpSchema.index({ sourceAnnualPlanId: 1, sourcePlanKey: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('FollowUp', followUpSchema);
