@@ -6,6 +6,14 @@ const SCOPES = [
   ['medications', '用药/营养素'], ['followups', '随访'], ['plans', '管理方案'], ['aiAnalysis', '既有AI分析'],
 ]
 const PROVIDER_LABEL = '通义千问'
+const REVIEW_TEMPLATES = [
+  { key: 'checkup', label: '体检方案研判', title: '体检方案研判', description: '结合体检报告、健康档案和既往检查，明确体检重点与待审核方案。', scopes: ['basic','healthProfile','reports','plans','aiAnalysis'] },
+  { key: 'nutrition', label: '营养干预研判', title: '营养干预研判', description: '结合指标、生活方式和依从性讨论营养干预方向，形成待审核方案。', scopes: ['basic','healthProfile','healthRecords','medications','followups','plans'] },
+  { key: 'annual', label: '年度管理研判', title: '年度管理研判', description: '结合健康档案、目标和既有服务，讨论下一年度管理重点与待审核方案。', scopes: ['basic','healthProfile','reports','healthRecords','followups','plans','aiAnalysis'] },
+  { key: 'assessment', label: '阶段性评估研判', title: '阶段性评估', description: '结合阶段数据评估管理执行、成效、风险和下一阶段待审核计划。', scopes: SCOPES.map(([key]) => key) },
+  { key: 'medical', label: '就医协助研判', title: '就医协助研判', description: '围绕明确健康问题讨论复查、就医或陪诊安排，形成待审核方案。', scopes: ['basic','healthProfile','reports','plans','aiAnalysis'] },
+  { key: 'daily', label: '日常问题交流', title: '日常问题交流', description: '围绕具体问题进行信息分析和讨论；仅保存讨论结论，不自动生成方案。', scopes: ['basic','healthProfile','reports','healthRecords','medications','followups'] },
+]
 
 export default function AiCaseReviewPanel({ patientId, staff, toast }) {
   const [topics, setTopics] = useState([])
@@ -139,6 +147,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
     </div> : <div className="card"><div className="card-body" style={{ padding: 60, textAlign: 'center', color: '#8AA89C' }}>请先新建一个研判主题</div></div>}
 
     {showCreate && <div className="modal-overlay"><div className="modal" style={{ maxWidth: 620 }}><div className="modal-header"><div className="modal-title">新建AI研判主题</div><button className="modal-close" onClick={() => setShowCreate(false)}>×</button></div><div className="modal-body">
+      <div className="form-group"><label className="form-label">研判模板</label><select className="form-input" defaultValue="" onChange={e => { const item = REVIEW_TEMPLATES.find(v => v.key === e.target.value); if (item) setForm(f => ({ ...f, title: item.title, description: item.description, contextScopes: item.scopes })) }}><option value="">自定义主题</option>{REVIEW_TEMPLATES.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}</select><div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>模板会预填讨论目标和可读取资料；日常问题交流不用于生成方案。</div></div>
       <div className="form-group"><label className="form-label">主题名称</label><input className="form-input" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="例如：近期血压波动原因分析" /></div>
       <div className="form-group"><label className="form-label">问题说明</label><textarea className="form-input" rows={3} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>
       <div className="form-group"><label className="form-label">测试模型</label><div className="form-input" style={{ background: '#F7F8F6', color: '#4A6558' }}>{PROVIDER_LABEL}</div></div>
