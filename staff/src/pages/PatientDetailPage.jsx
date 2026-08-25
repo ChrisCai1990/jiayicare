@@ -9310,19 +9310,21 @@ export default function PatientDetailPage() {
                 {currentRecords.map(record => {
                   const sections = record.structuredContent || {}
                   const labels = { summary: '核心结论', facts: '已确认事实', changes: '阶段变化', risks: '重点风险', actions: '下一步行动', missing: '待补信息' }
-                  return <article key={record._id} style={{ border: '1px solid #DCE8E1', borderRadius: 12, overflow: 'hidden' }}>
-                    <div style={{ padding: '12px 14px', background: '#EEF7F2', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-                      <strong style={{ color: '#155E48' }}>📊 {record.title || '阶段性健康评估'}</strong>
-                      <span style={{ color: '#6B7F75', fontSize: 12 }}>{new Date(record.date).toLocaleDateString('zh-CN')}</span>
-                    </div>
+                  const date = new Date(record.date)
+                  const periodLabel = sections.periodLabel || `${date.getFullYear()}年第${Math.floor(date.getMonth() / 3) + 1}季度`
+                  const templateSections = Array.isArray(sections.sections) ? sections.sections : null
+                  return <details key={record._id} style={{ border: '1px solid #DCE8E1', borderRadius: 12, overflow: 'hidden', background: '#fff' }}>
+                    <summary style={{ padding: '14px 16px', background: '#EEF7F2', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, cursor: 'pointer', listStyle: 'none' }}>
+                      <span><strong style={{ color: '#155E48' }}>📊 {periodLabel}阶段性健康评估</strong><span style={{ marginLeft: 10, fontSize: 12, color: sections.customerPushEligible ? '#16845B' : '#B45309' }}>{sections.customerPushEligible ? `客户版 · ${sections.templateName}` : '内部版 · 不可推送'}</span></span>
+                      <span style={{ color: '#6B7F75', fontSize: 13 }}>点击查看 ▾</span>
+                    </summary>
                     <div style={{ padding: 14, display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(230px,1fr))', gap: 10 }}>
-                      {Object.entries(labels).map(([key, label]) => (sections[key] || []).length > 0 && <section key={key} style={{ background: key === 'risks' ? '#FFF8ED' : key === 'actions' ? '#EEF8F3' : '#FAFCFB', borderRadius: 9, padding: 11 }}>
-                        <div style={{ fontWeight: 700, color: key === 'risks' ? '#B45309' : '#155E48', marginBottom: 6 }}>{label}</div>
-                        {sections[key].map((item, index) => <div key={index} style={{ fontSize: 13, lineHeight: 1.55, marginTop: 4 }}>• {item}</div>)}
-                      </section>)}
-                      {!Object.keys(labels).some(key => (sections[key] || []).length) && <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.65 }}>{record.content}</div>}
+                      {templateSections ? templateSections.map((section, sectionIndex) => <section key={sectionIndex} style={{ background: sectionIndex === 2 ? '#FFF8ED' : sectionIndex === 3 ? '#EEF8F3' : '#FAFCFB', borderRadius: 9, padding: 11 }}>
+                        <div style={{ fontWeight: 700, color: sectionIndex === 2 ? '#B45309' : '#155E48', marginBottom: 6 }}>{sectionIndex + 1}. {section.title}</div>
+                        {(section.items || []).length ? section.items.map((item, index) => <div key={index} style={{ fontSize: 13, lineHeight: 1.55, marginTop: 4 }}>• {item}</div>) : <div style={{ color: '#8AA89C', fontSize: 13 }}>本期暂无已确认内容</div>}
+                      </section>) : Object.entries(labels).map(([key, label]) => (sections[key] || []).length > 0 && <section key={key} style={{ background: '#FAFCFB', borderRadius: 9, padding: 11 }}><div style={{ fontWeight: 700, color: '#155E48', marginBottom: 6 }}>{label}</div>{sections[key].map((item, index) => <div key={index} style={{ fontSize: 13, lineHeight: 1.55, marginTop: 4 }}>• {item}</div>)}</section>)}
                     </div>
-                  </article>
+                  </details>
                 })}
               </div> : isDiseaseMgmt ? Object.keys(diseaseGroups).map(dn => (
                 <div key={dn} style={{ borderTop: '1px solid #f5f2ec' }}>

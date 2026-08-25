@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { toStructuredAssessment, assessmentToPlainText } = require('../src/utils/phaseAssessment');
+const { toStructuredAssessment, assessmentToPlainText, quarterPeriod, toTemplateSections } = require('../src/utils/phaseAssessment');
 
 test('阶段性评估会去除 Markdown 并归入固定栏目', () => {
   const value = toStructuredAssessment(`### 核心结论\n**血压总体稳定**\n---\n### 重点风险\n- LDL-C 仍需复核\n### 下一步行动\n1. 每日晨间测量血压`, '阶段性评估');
@@ -16,4 +16,20 @@ test('阶段性评估限制每栏条数并去重', () => {
   const value = toStructuredAssessment(rows);
   assert.equal(value.actions.length, 8);
   assert.equal(new Set(value.actions).size, value.actions.length);
+});
+
+test('客户版阶段性评估带年份季度并严格使用模板四栏', () => {
+  const period = quarterPeriod(new Date('2026-08-25T00:00:00Z'));
+  const template = { _id: 'template-1', name: '季度评估模板', content: { outputSections: ['目标证据', '执行成效', '风险缺口', '下季计划'] } };
+  const value = toTemplateSections({ summary: ['总体稳定'], facts: ['血压有记录'], changes: ['依从性改善'], risks: ['血脂待复核'], missing: ['缺少病史'], actions: ['下季度复查'] }, template, period);
+  assert.equal(value.periodLabel, '2026年第3季度');
+  assert.deepEqual(value.sections.map(item => item.title), template.content.outputSections);
+  assert.deepEqual(value.sections[2].items, ['血脂待复核', '缺少病史']);
+  assert.equal(value.customerPushEligible, true);
+});
+
+test('未匹配启用模板时客户版禁止推送', () => {
+  const value = toTemplateSections({ summary: ['内部结论'] }, null, quarterPeriod(new Date('2026-08-25')));
+  assert.equal(value.templateMatched, false);
+  assert.equal(value.customerPushEligible, false);
 });

@@ -104,7 +104,8 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
       const writeToPhaseAssessment = /阶段性.*评估/.test(`${active.title} ${active.description || ''}`)
       const res = await staffAPI.confirmAiCaseReviewConclusion(patientId, active._id, conclusionText, writeToPhaseAssessment)
       replaceTopic(res.data)
-      if (res.archivedToPhaseAssessment) toast('结论已确认，并已写入服务记录 · 阶段性健康评估')
+      if (res.archivedToPhaseAssessment && res.customerPushEligible === false) toast('已保存为内部评估，但未匹配启用的季度模板，禁止推送客户', 'error')
+      else if (res.archivedToPhaseAssessment) toast('结论已按季度模板入档，可在服务记录中复核客户版')
       else toast('结论已确认，生成管理方案时会自动引用')
     }
     catch (err) { toast(err.message, 'error') } finally { setBusy(false) }

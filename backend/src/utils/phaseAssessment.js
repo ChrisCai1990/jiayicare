@@ -36,4 +36,28 @@ function assessmentToPlainText(data) {
   }).join('\n');
 }
 
-module.exports = { toStructuredAssessment, assessmentToPlainText };
+function quarterPeriod(now = new Date()) {
+  const year = now.getFullYear();
+  const quarter = Math.floor(now.getMonth() / 3) + 1;
+  return { key: `${year}-Q${quarter}`, label: `${year}年第${quarter}季度`, year, quarter };
+}
+
+function toTemplateSections(data, template, period = quarterPeriod()) {
+  const fallback = ['本期目标与已确认数据', '管理执行与依从性', '成效、异常与数据缺口', '下一阶段待审核计划'];
+  const outputSections = Array.isArray(template?.content?.outputSections) && template.content.outputSections.length === 4
+    ? template.content.outputSections : fallback;
+  const groups = [
+    [...(data?.summary || []), ...(data?.facts || [])],
+    [...(data?.changes || [])],
+    [...(data?.risks || []), ...(data?.missing || [])],
+    [...(data?.actions || [])],
+  ];
+  return {
+    periodKey: period.key, periodLabel: period.label, year: period.year, quarter: period.quarter,
+    templateMatched: Boolean(template), templateId: template?._id || null, templateName: template?.name || '未匹配阶段性评估模板',
+    customerPushEligible: Boolean(template),
+    sections: outputSections.map((title, index) => ({ title, items: [...new Set(groups[index])].slice(0, 10) })),
+  };
+}
+
+module.exports = { toStructuredAssessment, assessmentToPlainText, quarterPeriod, toTemplateSections };
