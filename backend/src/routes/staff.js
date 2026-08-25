@@ -47,6 +47,7 @@ const ProductShare = require('../models/ProductShare');
 const ServiceProposal = require('../models/ServiceProposal');
 const ServicePackage = require('../models/ServicePackage');
 const AiCaseReview = require('../models/AiCaseReview');
+const PhaseAssessment = require('../models/PhaseAssessment');
 const FollowUpForm      = require('../models/FollowUpForm');
 const FollowUpPlan      = require('../models/FollowUpPlan');
 const SystemConfig      = require('../models/SystemConfig');
@@ -7413,7 +7414,7 @@ const TODO_REVIEW_ROLE = {
   report_review:        'healthManager',
   report_familydoctor_review: 'familyDoctor', // 健康顾问双审：健管已审、医生未审的体检报告
   archive_review:       'healthManager',
-  checkup_plan_review:  'healthManager',
+  checkup_plan_review:  'familyDoctor',
   summary_review:       'familyDoctor',
   risk_review:          'familyDoctor',
   medication_review:    'familyDoctor',
@@ -7827,7 +7828,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
-    // ── 健管专员：AI年度体检方案待审核 ──
+    // ── 健康顾问：AI年度体检方案待审核 ──
     if (can('checkup_plan_review')) {
       const checkupPlanFilter = { type: 'annual_checkup', 'content.aiStatus': 'pending', ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
       const checkupPlans = await HealthPlan.find(checkupPlanFilter)
@@ -7837,11 +7838,24 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         todos.push({
           id: 'checkup_plan_' + p._id, type: 'checkup_plan_review', label: 'AI体检方案待审核', priority: 3,
           patientName: p.patientId?.name || '未知', patientId: String(p.patientId?._id || ''),
-          summary: 'AI生成年度体检方案，待健管专员审核',
+          summary: 'AI生成年度体检方案，待健康顾问审核',
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/plans/${p._id}`,
         });
       });
+    }
+
+    // ── 健康顾问：模板驱动的阶段性评估待审核；审批前不会更新正式方案 ──
+    if (can('followup_review')) {
+      const assessmentFilter = { status: 'pending', ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
+      const assessments = await PhaseAssessment.find(assessmentFilter).populate('patientId', 'name').sort({ createdAt: -1 }).limit(50).lean();
+      assessments.forEach(item => todos.push({
+        id: 'phase_assessment_' + item._id, type: 'phase_assessment_review', label: '阶段性评估待审核', priority: 2,
+        patientName: item.patientId?.name || '未知', patientId: String(item.patientId?._id || ''),
+        summary: `${item.periodLabel} · ${item.templateSnapshot?.name || '阶段性评估'}，待健康顾问审核`,
+        createdAt: item.createdAt, overdue: (now - new Date(item.createdAt)) > DAY,
+        link: `/patients/${item.patientId?._id}?tab=aiReview&phaseAssessmentId=${item._id}`,
+      }));
     }
 
     // ── 方案确认后自动生成的随访计划待审核：按 reviewRole 分流（未设置的旧数据默认归健康顾问）──

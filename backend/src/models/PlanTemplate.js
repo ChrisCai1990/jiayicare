@@ -5,7 +5,7 @@ const planTemplateSchema = new mongoose.Schema({
   type: {
     type: String,
     required: true,
-    enum: ['annual_checkup', 'health_management', 'nutrition', 'medical_assist', 'rehab', 'tcm', 'psychology'],
+    enum: ['annual_checkup', 'health_management', 'nutrition', 'medical_assist', 'rehab', 'tcm', 'psychology', 'phase_assessment'],
   },
   name:    { type: String, required: true },
   clientBrand: {

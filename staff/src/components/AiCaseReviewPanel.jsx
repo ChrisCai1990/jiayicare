@@ -9,6 +9,7 @@ const PROVIDER_LABEL = '通义千问'
 
 export default function AiCaseReviewPanel({ patientId, staff, toast }) {
   const [topics, setTopics] = useState([])
+  const [assessments, setAssessments] = useState([])
   const [activeId, setActiveId] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -27,8 +28,9 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
   const load = async () => {
     setLoading(true)
     try {
-      const topicRes = await staffAPI.getAiCaseReviews(patientId)
+      const [topicRes, assessmentRes] = await Promise.all([staffAPI.getAiCaseReviews(patientId), staffAPI.getPhaseAssessments(patientId)])
       setTopics(topicRes.data || [])
+      setAssessments(assessmentRes.data || [])
       if (!activeId && topicRes.data?.length) setActiveId(topicRes.data[0]._id)
     } catch (err) { toast(err.message, 'error') } finally { setLoading(false) }
   }
@@ -77,6 +79,16 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
     try { const res = await staffAPI.confirmAiCaseReviewConclusion(patientId, active._id, conclusionText); replaceTopic(res.data); toast('结论已确认，生成管理方案时会自动引用') }
     catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
   }
+  const reviewAssessment = async (assessment, action) => {
+    const reviewNote = window.prompt(action === 'approve' ? '审核备注（可选）：' : '请填写退回原因：', '')
+    if (reviewNote === null || (action === 'reject' && !reviewNote.trim())) return
+    setBusy(true)
+    try {
+      const res = await staffAPI.reviewPhaseAssessment(patientId, assessment._id, action, reviewNote)
+      setAssessments(list => list.map(item => item._id === assessment._id ? res.data : item))
+      toast(action === 'approve' ? '阶段性评估已审核；不会自动改写方案' : '阶段性评估已退回')
+    } catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
+  }
 
   if (loading) return <div className="card"><div className="card-body">正在加载专题研判资料…</div></div>
   return <div style={{ display: 'grid', gridTemplateColumns: '280px minmax(0, 1fr)', gap: 16, minHeight: 680 }}>
@@ -92,6 +104,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
     </div>
 
     {active ? <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {assessments.filter(item => item.status === 'pending').map(item => <div className="card" key={item._id} style={{ border: '1px solid #7C3AED55' }}><div className="card-header"><div className="card-title">📊 {item.periodLabel}阶段性评估待审核</div><span style={{ fontSize: 12, color: '#7C3AED' }}>{item.templateSnapshot?.name || '模板驱动评估'}</span></div><div className="card-body"><div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.65, fontSize: 14 }}>{item.content}</div><div style={{ marginTop: 10, fontSize: 12, color: '#65776F' }}>依据：{(item.evidenceSources || []).join('；') || '无'}</div>{['familyDoctor', 'superadmin'].includes(staff?.role) && <div style={{ display: 'flex', gap: 8, marginTop: 12 }}><button className="btn btn-primary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'approve')}>审核通过</button><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'reject')}>退回调整</button></div>}</div></div>)}
       <div className="card"><div className="card-body" style={{ padding: 14 }}>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap' }}>
           <div><div style={{ fontSize: 18, fontWeight: 700 }}>{active.title}</div><div style={{ color: '#4A6558', fontSize: 13, marginTop: 4 }}>{active.description || '围绕该问题持续讨论，资料和结论均保存在客户专项资料库。'}</div></div>

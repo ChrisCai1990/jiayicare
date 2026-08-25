@@ -125,6 +125,8 @@ app.listen(PORT, () => {
 
   // 已确认管理方案会员的月度AI随访回顾，每天扫描一次（命中月初才实际执行）
   require('./utils/monthlyFollowUpScheduler').startMonthlyReviewScheduler();
+  require('./utils/phaseAssessmentScheduler').startPhaseAssessmentScheduler();
+  require('./utils/phaseAssessmentTemplates').ensurePhaseAssessmentTemplateDrafts().catch(error => console.error('[phase-assessment] template drafts failed', error.message));
 
   // AI自主随访跟进试点：血压监测该测未测自动提醒会员，每天扫描一次
   require('./utils/bpMonitorScheduler').startBPMonitorScheduler();

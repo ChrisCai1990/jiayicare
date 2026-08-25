@@ -4,6 +4,7 @@ const router = express.Router();
 const staffAuth = require('../middleware/staffAuth');
 const User = require('../models/User');
 const AiCaseReview = require('../models/AiCaseReview');
+const PhaseAssessment = require('../models/PhaseAssessment');
 const { buildContext } = require('../utils/aiCaseReviewContext');
 const providerAdapter = require('../utils/aiCaseReviewProvider');
 
@@ -36,6 +37,28 @@ function forClient(doc) {
 
 router.get('/ai-case-review/providers', staffAuth, (req, res) => {
   res.json({ success: true, data: providerAdapter.availableProviders() });
+});
+
+router.get('/patients/:patientId/phase-assessments', staffAuth, async (req, res) => {
+  try {
+    const user = await patientOr404(req, res); if (!user) return;
+    const data = await PhaseAssessment.find({ patientId: user._id }).sort({ createdAt: -1 }).limit(20).lean();
+    res.json({ success: true, data });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.patch('/patients/:patientId/phase-assessments/:assessmentId', staffAuth, async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可审核阶段性评估' });
+    const user = await patientOr404(req, res); if (!user) return;
+    const status = req.body.action === 'approve' ? 'approved' : req.body.action === 'reject' ? 'rejected' : '';
+    if (!status) return res.status(400).json({ success: false, message: '审核动作无效' });
+    const item = await PhaseAssessment.findOne({ _id: req.params.assessmentId, patientId: user._id, status: 'pending' });
+    if (!item) return res.status(404).json({ success: false, message: '待审核阶段性评估不存在' });
+    item.status = status; item.reviewedBy = req.staff._id; item.reviewedAt = new Date(); item.reviewNote = String(req.body.reviewNote || '').trim();
+    await item.save();
+    res.json({ success: true, data: item });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
 router.get('/patients/:patientId/ai-case-reviews', staffAuth, async (req, res) => {
