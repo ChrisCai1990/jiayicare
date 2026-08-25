@@ -204,8 +204,19 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
       if (isPay && finalPrice > 0) {
         const bound = await authAPI.bindWechat();
         if (!bound.success) throw new Error(bound.message || '微信身份绑定失败');
-        setCheckoutUser(bound.data);
-        updateUser(bound.data);
+        // 微信绑定接口只负责刷新支付 OpenID。保留结算页刚从 /user/me
+        // 加载的基金规则，否则绑定返回的余额汇总会把“每单 10%”误当成
+        // 无限制抵扣，支付取消后页面就会从 ¥28 跳成 ¥280。
+        const boundUser = {
+          ...bound.data,
+          healthFund: {
+            ...(bound.data?.healthFund || {}),
+            policy: checkoutUser?.healthFund?.policy,
+            rule: checkoutUser?.healthFund?.rule,
+          },
+        };
+        setCheckoutUser(boundUser);
+        updateUser(boundUser);
       }
       const noteWithSpec = [currentSpecLabel ? `规格：${currentSpecLabel}（¥${currentPrice}）` : '', note.trim()].filter(Boolean).join('；');
       const res = isPay
