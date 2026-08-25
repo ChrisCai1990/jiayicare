@@ -3304,7 +3304,6 @@ export default function PatientDetailPage() {
         ]
         const secondaryTabs = [
           { key: 'ai',            label: 'AI健康信息整理' },
-          { key: 'ai-risk',       label: '健康关注提示' },
           { key: 'serviceRecords', label: '服务记录' },
           { key: 'referrals',     label: '转介记录' },
           { key: 'consumption',   label: '消费记录' },
