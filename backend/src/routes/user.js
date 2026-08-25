@@ -863,17 +863,38 @@ async function generateHealthPlanFollowUp(plan) {
   return 1;
 }
 
-// PATCH /api/user/annual-mgmt-plans/:id/confirm — 用户确认年度管理方案
+// PATCH /api/user/annual-mgmt-plans/:id/confirm — 用户确认或退回年度管理方案
 router.patch('/annual-mgmt-plans/:id/confirm', auth, async (req, res) => {
   try {
     const plan = await AnnualPlan.findOne({ _id: req.params.id, patientId: req.user._id });
     if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+    const action = req.body?.action || 'confirm';
+    if (action === 'request_changes') {
+      const feedback = String(req.body?.feedback || '').trim();
+      if (!feedback) return res.status(400).json({ success: false, message: '请填写需要调整的内容' });
+      plan.customerStatus = 'changes_requested';
+      plan.customerFeedback = feedback;
+      plan.customerFeedbackAt = new Date();
+      plan.confirmedAt = null;
+      await plan.save();
+      return res.json({ success: true, data: plan, message: '已反馈给健康顾问' });
+    }
+    if (!plan.pushedAt) return res.status(400).json({ success: false, message: '方案尚未由健康顾问审核推送' });
     if (!plan.confirmedAt) {
       plan.confirmedAt = new Date();
+      plan.customerStatus = 'confirmed';
+      plan.customerFeedback = '';
+      plan.customerFeedbackAt = null;
       await plan.save();
-      // 医护端保存方案时已同步生成过随访占位（见 staff.js PUT /annual-plan），这里仅兜底：
-      // 万一某条方案是老数据、保存时还没有这套逻辑，用户确认时补一次
-      await syncAnnualPlanFollowUps(plan).catch(() => {});
+      await syncAnnualPlanFollowUps(plan);
+      const { syncAnnualPlanSupplyPlans } = require('../utils/annualPlanSupplyPlans');
+      const { syncAnnualPlanTreatments } = require('../utils/annualPlanTreatmentSync');
+      await Promise.all([
+        syncAnnualPlanSupplyPlans(plan),
+        syncAnnualPlanTreatments(plan),
+      ]);
+      plan.followUpsGeneratedAt = new Date();
+      await plan.save();
     }
     res.json({ success: true, data: plan });
   } catch (err) {
@@ -919,9 +940,24 @@ router.patch('/plans/:planId/confirm', auth, async (req, res) => {
   try {
     const plan = await HealthPlan.findOne({ _id: req.params.planId, patientId: req.user._id });
     if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+    const action = req.body?.action || 'confirm';
+    if (action === 'request_changes') {
+      const feedback = String(req.body?.feedback || '').trim();
+      if (!feedback) return res.status(400).json({ success: false, message: '请填写需要调整的内容' });
+      plan.customerStatus = 'changes_requested';
+      plan.customerFeedback = feedback;
+      plan.customerFeedbackAt = new Date();
+      plan.confirmedAt = null;
+      await plan.save();
+      return res.json({ success: true, data: plan, message: '已反馈给负责人员' });
+    }
+    if (!plan.pushedAt) return res.status(400).json({ success: false, message: '方案尚未审核推送' });
     if (plan.confirmedAt) return res.json({ success: true, data: plan }); // 已确认则直接返回
     if (plan.status === 'draft') plan.status = 'active';
     plan.confirmedAt = new Date();
+    plan.customerStatus = 'confirmed';
+    plan.customerFeedback = '';
+    plan.customerFeedbackAt = null;
     await plan.save();
     // 首次确认时，AI体检/营养方案自动生成一条待审核随访占位（体检→健康顾问审核，营养→营养师审核）
     await generateHealthPlanFollowUp(plan).catch(() => {});
@@ -1139,6 +1175,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
         orderType: 'product',
         pushRecordId: record._id,
         status: 'pending',
+        serviceWorkflowStatus: p.orderType === 'package' ? '' : 'pending_planner',
         referrerId: record.staffId,
         servicePerformers: (record.servicePerformers || [])
           .filter(sp => sp.role && sp.staffId && (!sp.productId || String(sp.productId) === String(p.productId)))

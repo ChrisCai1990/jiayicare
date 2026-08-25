@@ -169,6 +169,7 @@ export const staffAPI = {
   sendAiCaseReviewMessage: (patientId, topicId, data) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/messages`, { method: 'POST', body: JSON.stringify(data) }),
   generateAiCaseReviewConclusion: (patientId, topicId) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/conclusion`, { method: 'POST' }),
   confirmAiCaseReviewConclusion: (patientId, topicId, content) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/conclusion`, { method: 'PATCH', body: JSON.stringify({ content }) }),
+  reviewMedicalAssistPlan: (planId, action, reviewNote = '') => req(`/staff/plans/${planId}/medical-assist-review`, { method: 'PATCH', body: JSON.stringify({ action, reviewNote }) }),
 
   // Knowledge
   getKnowledge:    (p = {}) => req('/staff/knowledge?' + qs(p)),

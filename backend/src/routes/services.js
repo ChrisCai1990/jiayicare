@@ -361,6 +361,7 @@ router.post('/order', auth, async (req, res) => {
     serviceIcon:  service.icon || 'shield-checkmark',
     note:         orderNote,
     status:       'pending',
+    serviceWorkflowStatus: isPkg ? '' : 'pending_planner',
     orderNo,
     tradeStatus: paidAmount > 0 ? 'awaiting_payment' : 'paid',
     fulfillmentType: service.skuFulfillmentType || service.fulfillmentType || (isPkg ? 'subscription_service' : 'offline_service'),

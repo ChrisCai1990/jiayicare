@@ -13,7 +13,7 @@ const PLAN_AI_SCENE = {
 
 // 部分方案类型只归特定角色编辑（跟后端 PLAN_TYPE_OWNER_ROLE 对齐）：
 // 年度体检/年度管理方案只有健康顾问，营养干预方案只有营养师
-const PLAN_TYPE_OWNER_ROLE = { annual_checkup: 'familyDoctor', annual_mgmt: 'familyDoctor', nutrition: 'nutritionist' }
+const PLAN_TYPE_OWNER_ROLE = { annual_checkup: 'familyDoctor', annual_mgmt: 'familyDoctor', nutrition: 'nutritionist', medical_assist: 'medicalAssistant' }
 function canEditPlanType(planType, staffRole) {
   const requiredRole = PLAN_TYPE_OWNER_ROLE[planType]
   if (!requiredRole) return true
@@ -240,13 +240,24 @@ export default function PlanDetailPage() {
 
   const handleAdoptAI = async () => {
     try {
-      await staffAPI.updatePlan(id, { content: { ...plan.content, aiStatus: 'adopted' } })
+      if (plan.type === 'medical_assist' && staff?.role === 'healthPlanner') {
+        await staffAPI.reviewMedicalAssistPlan(id, 'approve')
+      } else {
+        await staffAPI.updatePlan(id, { content: { ...plan.content, aiStatus: 'adopted' } })
+      }
       toast('已采纳，方案保留为草稿，确认无误后可推送给会员')
       load()
     } catch (err) { toast(err.message) }
   }
 
   const handleRejectAI = async () => {
+    if (plan.type === 'medical_assist' && staff?.role === 'healthPlanner') {
+      const note = window.prompt('请填写需要就医专员调整的内容')
+      if (note === null || !note.trim()) return
+      try { await staffAPI.reviewMedicalAssistPlan(id, 'request_changes', note.trim()); toast('已退回就医专员调整'); load() }
+      catch (err) { toast(err.message) }
+      return
+    }
     const reason = window.prompt('请输入拒绝并删除该AI方案的原因')
     if (reason === null) return
     if (!reason.trim()) { toast('必须填写删除原因'); return }
@@ -367,7 +378,10 @@ export default function PlanDetailPage() {
       const payload = { ...rest }
       if (plan.type !== 'annual_checkup') delete payload.checkupDate
       if (plan.type === 'medical_assist') {
-        payload.content = { ...(plan.content || {}), hospital, department, expert, hotel, transport, tasks }
+        payload.content = {
+          ...(plan.content || {}), hospital, department, expert, hotel, transport, tasks,
+          ...(plan.content?.aiStatus === 'changes_requested' ? { aiStatus: 'pending', resubmittedAt: new Date().toISOString() } : {}),
+        }
       }
       await staffAPI.updatePlan(id, payload)
       toast('已保存')
@@ -381,6 +395,9 @@ export default function PlanDetailPage() {
   if (!plan) return <div className="page">方案不存在</div>
 
   const canEdit = canEditPlanType(plan.type, staff?.role)
+  const canReviewMedicalAssist = plan.type === 'medical_assist' && ['healthPlanner', 'superadmin'].includes(staff?.role)
+  const canReviewAI = plan.type === 'medical_assist' ? canReviewMedicalAssist : canEdit
+  const canPush = plan.type === 'medical_assist' ? canReviewMedicalAssist && plan.content?.aiStatus === 'adopted' : canEdit
   const completedCount = plan.items?.filter(i => i.status === 'completed').length || 0
   const progress = plan.items?.length ? Math.round((completedCount / plan.items.length) * 100) : 0
   const assistMeta = plan.type === 'medical_assist' ? getAssistTemplateMeta(plan.content?.templateName) : null
@@ -416,22 +433,27 @@ export default function PlanDetailPage() {
           )}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          {!canEdit && (
+          {!canEdit && !canReviewMedicalAssist && (
             <span style={{ fontSize: 12, color: '#8AA89C', alignSelf: 'center' }}>
-              {TYPE_LABEL[plan.type]}仅{plan.type === 'nutrition' ? '营养师' : '健康顾问'}可编辑，你当前只能查看
+              {TYPE_LABEL[plan.type]}仅{plan.type === 'nutrition' ? '营养师' : plan.type === 'medical_assist' ? '就医专员编写、健康规划师审核' : '健康顾问'}可编辑，你当前只能查看
             </span>
           )}
-          {canEdit && plan.content?.aiStatus === 'pending' && (
+          {canReviewAI && plan.content?.aiStatus === 'pending' && (
             <>
               <span style={{ fontSize: 12, color: '#D97706', alignSelf: 'center', background: '#FFF8F0', border: '1px solid #D97706', padding: '3px 10px', borderRadius: 6 }}>✨ AI生成草稿，待审核</span>
               <button className="btn btn-primary btn-sm" onClick={handleAdoptAI}>✅ 采纳方案</button>
-              <button className="btn btn-secondary btn-sm" style={{ color: '#DC3545', borderColor: '#DC3545' }} onClick={handleRejectAI}>❌ 拒绝删除</button>
+              <button className="btn btn-secondary btn-sm" style={{ color: '#DC3545', borderColor: '#DC3545' }} onClick={handleRejectAI}>{plan.type === 'medical_assist' ? '↩️ 退回调整' : '❌ 拒绝删除'}</button>
             </>
+          )}
+          {canEdit && plan.type === 'medical_assist' && plan.content?.aiStatus === 'changes_requested' && (
+            <span style={{ fontSize: 12, color: '#DC3545', alignSelf: 'center', background: '#FFF1F2', border: '1px solid #DC3545', padding: '3px 10px', borderRadius: 6 }}>
+              待调整：{plan.content?.plannerReviewNote || '请按健康规划师意见完善后保存，系统会重新提交审核'}
+            </span>
           )}
           {canEdit && plan.status === 'draft' && !editMode && (
             <button className="btn btn-secondary" onClick={startEdit}>✏️ 编辑信息</button>
           )}
-          {canEdit && plan.status === 'draft' && (
+          {canPush && plan.status === 'draft' && (
             <button className="btn btn-primary" onClick={handlePush}>📤 推送给会员</button>
           )}
           {canEdit && plan.status === 'active' && (

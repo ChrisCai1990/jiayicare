@@ -8,6 +8,7 @@ const referralSchema = new Schema({
   reason:      { type: String, required: true },  // 转介原因（简述）
   content:     { type: String, default: '' },     // 详细说明
   urgency:     { type: String, enum: ['normal', 'urgent'], default: 'normal' },
+  workflowType:{ type: String, enum: ['', 'medical_assist_instruction'], default: '' },
   status:      { type: String, enum: ['pending', 'accepted', 'completed', 'rejected'], default: 'pending' },
   response:         { type: String, default: '' },     // 接收方回复（旧字段，保留兼容）
   responseAnalysis: { type: String, default: '' },     // 当前问题分析

@@ -9541,9 +9541,8 @@ export default function PatientDetailPage() {
                   <thead><tr><th>产品名称</th><th>金额</th><th>服务次数</th><th>下单时间</th><th>归属</th><th>状态</th><th>操作</th></tr></thead>
                   <tbody>
                     {patientOrders.map(order => {
-                      // 谁推送谁获推广费(referrerId=推送时自动关联)，谁服务谁获服务费(fulfillerId)——
-                      // 只有该订单的推荐人本人或超管能指定服务人，不是随便谁都能改
-                      const canAssignFulfiller = staff?.role === 'superadmin' || String(order.referrerId?._id) === String(staff?._id)
+                      // 推广/绩效归属与服务派单分离：健康规划师负责分配执行人员。
+                      const canAssignFulfiller = ['healthPlanner', 'superadmin'].includes(staff?.role)
                       return (
                       <tr key={order._id}>
                         <td style={{ fontWeight: 500 }}>
@@ -9627,17 +9626,17 @@ export default function PatientDetailPage() {
               <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setAssigningFulfillerOrder(null) }}>
                 <div className="modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
                   <div className="modal-header">
-                    <h3 className="modal-title">指定服务人</h3>
+                    <h3 className="modal-title">分配服务执行人</h3>
                     <button className="modal-close" onClick={() => setAssigningFulfillerOrder(null)}>✕</button>
                   </div>
                   <div className="modal-body">
                     <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 12 }}>
-                      谁服务谁获得服务费；不指定则该订单只产生推广费，不产生服务费
+                      健康规划师完成服务分配后，任务会转入对应执行人员工作台；绩效归属仍按订单规则单独记录。
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label">服务人</label>
                       <select className="form-input" value={fulfillerChoice} onChange={e => setFulfillerChoice(e.target.value)}>
-                        <option value="">不指定（可以是我自己）</option>
+                        <option value="">暂不分配</option>
                         {staffList.map(s => <option key={s._id} value={s._id}>{s.name}（{s.role}）</option>)}
                       </select>
                     </div>

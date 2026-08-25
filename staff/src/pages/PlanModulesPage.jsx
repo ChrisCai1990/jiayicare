@@ -187,7 +187,7 @@ export default function PlanModulesPage() {
   }, [id])
 
   const creatorId = plan?.staffId?._id || plan?.staffId
-  const selectedAssistantId = plan?.content?.staffId
+  const selectedAssistantId = plan?.content?.staffId || (plan?.type === 'medical_assist' ? creatorId : null)
   const canEdit = !!plan && (
     staff?.role === 'superadmin'
     || String(creatorId || '') === String(staff?._id || '')

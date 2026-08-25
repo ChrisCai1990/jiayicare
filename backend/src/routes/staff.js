@@ -18,6 +18,7 @@ const tenantMatchStage = () => {
   return (tenantId && tenantId !== BYPASS) ? { tenantId } : {};
 };
 const Admin = require('../models/Admin');
+const ScreeningYearSummary = require('../models/ScreeningYearSummary');
 const User = require('../models/User');
 const ChatLog = require('../models/ChatLog');
 const FollowUp = require('../models/FollowUp');
@@ -1601,10 +1602,6 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
 // 2026-07-07 用户明确规则：健康顾问生成的方案营养师不能删改，反之亦然，按会员角色分工而非单纯创建人
 const PLAN_TYPE_OWNER_ROLE = { annual_checkup: 'familyDoctor', nutrition: 'nutritionist', medical_assist: 'medicalAssistant' };
 function checkPlanTypeRole(plan, staffRole) {
-  // 就医协助由健康顾问制定医疗安排、就医专员负责执行；两种角色都需要编辑权限。
-  if (plan.type === 'medical_assist') {
-    return staffRole === 'superadmin' || staffRole === 'familyDoctor' || staffRole === 'medicalAssistant';
-  }
   const requiredRole = PLAN_TYPE_OWNER_ROLE[plan.type];
   if (!requiredRole) return true; // 未限定角色的类型（如医嘱/心理咨询方案）不受此限制
   return staffRole === 'superadmin' || staffRole === requiredRole;
@@ -1650,19 +1647,41 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
   res.json({ success: true, data: plan });
 });
 
+// 就医专员负责写执行方案，健康规划师只负责审核，不通过通用编辑接口改写执行细节。
+router.patch('/plans/:id/medical-assist-review', staffAuth, async (req, res) => {
+  if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) {
+    return res.status(403).json({ success: false, message: '仅健康规划师可审核就医协助方案' });
+  }
+  const { action, reviewNote = '' } = req.body || {};
+  if (!['approve', 'request_changes'].includes(action)) {
+    return res.status(400).json({ success: false, message: '审核动作无效' });
+  }
+  const plan = await HealthPlan.findOne({ _id: req.params.id, type: 'medical_assist' });
+  if (!plan) return res.status(404).json({ success: false, message: '就医协助方案不存在' });
+  plan.content = {
+    ...(plan.content || {}),
+    aiStatus: action === 'approve' ? 'adopted' : 'changes_requested',
+    plannerReviewNote: String(reviewNote || '').trim(),
+    plannerReviewedAt: new Date(),
+    plannerReviewedBy: req.staff._id,
+    plannerReviewedByName: req.staff.name || '',
+  };
+  plan.markModified('content');
+  await plan.save();
+  res.json({ success: true, data: plan });
+});
+
 // PATCH /api/staff/plans/:id/push — 推送方案至客户端
 router.patch('/plans/:id/push', staffAuth, async (req, res) => {
   const plan = await HealthPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
   const visibleIds = await getVisiblePlanPatientIds(req.staff);
   if (visibleIds && !visibleIds.some(id => String(id) === String(plan.patientId?._id || plan.patientId))) return res.status(403).json({ success: false, message: '无权查看该会员的方案' });
-  const isSelectedMedicalAssistant = plan.type === 'medical_assist'
-    && plan.content?.staffId
-    && String(plan.content.staffId) === String(req.staff._id);
-  const canPush = req.staff.role === 'superadmin'
-    || String(plan.staffId) === String(req.staff._id)
-    || isSelectedMedicalAssistant;
-  if (!canPush || !checkPlanTypeRole(plan, req.staff.role) || !(await planTypeAllowed(req, plan.type))) {
+  const canPush = plan.type === 'medical_assist'
+    ? ['healthPlanner', 'superadmin'].includes(req.staff.role) && plan.content?.aiStatus === 'adopted'
+    : req.staff.role === 'superadmin' || String(plan.staffId) === String(req.staff._id);
+  const roleAllowedForPush = plan.type === 'medical_assist' || checkPlanTypeRole(plan, req.staff.role);
+  if (!canPush || !roleAllowedForPush || !(await planTypeAllowed(req, plan.type))) {
     return res.status(403).json({ success: false, message: '无权推送该方案' });
   }
   // 重点检查在推送前自动补齐标准准备事项，保证客户收到的方案不是只有项目名。
@@ -1673,6 +1692,11 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
   }
   plan.status = 'active';
   plan.pushedAt = new Date();
+  if (plan.type !== 'medical_assist') {
+    plan.customerStatus = 'awaiting_confirmation';
+    plan.customerFeedback = '';
+    plan.customerFeedbackAt = null;
+  }
   await plan.save();
   // 创建推送记录
   await PushRecord.create({
@@ -1726,24 +1750,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
         { $set: { status: 'completed', completedAt: new Date() } }
       ).catch(() => {});
     }
-    // 同步在"服务记录·医院就医"留一笔底稿：把方案里已确定的医院/科室/专家/安排先记下来，
-    // result（就医结果）留空，等专员实际陪诊/代诊完成后回来补录——与详情页新增的"补录信息"入口配套
-    // （2026-07-13 需求：方案要能自动在服务记录里记上一笔，等就医完毕可以补录信息）
-    await ServiceRecord.findOneAndUpdate(
-      { sourceHealthPlanId: plan._id, type: 'medical_visit' },
-      {
-        $set: {
-          staffId: selectedAssistantId,
-          patientId: plan.patientId,
-          date: serviceDate,
-          title: plan.title || '就医协助方案',
-          content: requirements,
-          medicalEscort: { hospital: c.hospital || '', department: c.department || '', doctor: c.expert || '' },
-        },
-        $setOnInsert: { result: '' },
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
+    // 医院就医记录只在就医专员实际完成任务并填写执行结果后生成，不能用计划冒充事实记录。
   }
   res.json({ success: true, data: plan });
 });
@@ -4530,13 +4537,14 @@ router.post('/patients/:id/message', staffAuth, async (req, res) => {
 // ── 跨角色转介 ──────────────────────────────────────────────
 // POST /api/staff/referrals — 发起转介
 router.post('/referrals', staffAuth, async (req, res) => {
-  const { patientId, toStaffId, reason, content, urgency, attachedHealthInfo } = req.body;
+  const { patientId, toStaffId, reason, content, urgency, attachedHealthInfo, workflowType } = req.body;
   if (!patientId || !toStaffId || !reason) {
     return res.status(400).json({ success: false, message: '会员、接收人、原因不能为空' });
   }
   const referral = await Referral.create({
     fromStaffId: req.staff._id, toStaffId, patientId,
     reason, content: content || '', urgency: urgency || 'normal',
+    workflowType: workflowType === 'medical_assist_instruction' ? workflowType : '',
     attachedHealthInfo: attachedHealthInfo || null,
   });
   await referral.populate([
@@ -4544,6 +4552,21 @@ router.post('/referrals', staffAuth, async (req, res) => {
     { path: 'toStaffId', select: 'name role' },
     { path: 'patientId', select: 'name phone' },
   ]);
+  if (req.staff.role === 'familyDoctor' && referral.toStaffId?.role === 'healthPlanner') {
+    referral.workflowType = 'medical_assist_instruction';
+    await referral.save();
+    await FollowUp.findOneAndUpdate(
+      { sourceId: referral._id, assignedTo: toStaffId },
+      { $set: {
+        staffId: toStaffId, assignedTo: toStaffId, patientId, type: 'other', status: 'planned',
+        theme: '就医协助指令待受理',
+        content: reason,
+        plannedContent: content || reason,
+        date: new Date(),
+      } },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+  }
   res.json({ success: true, data: referral });
 });
 
@@ -5020,21 +5043,28 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     if (!planType) return res.status(400).json({ success: false, message: '缺少方案类型' });
     const targetYear = year || new Date().getFullYear();
     // 按「会员+年度+方案类型」定位，4个类型各存一份，互不覆盖
+    const existingPlan = await AnnualPlan.findOne({ patientId: req.params.id, year: targetYear, planType }).lean();
     const plan = await AnnualPlan.findOneAndUpdate(
       { patientId: req.params.id, year: targetYear, planType },
-      { planType, moduleData: moduleData || {}, notes: notes || '', templateId: templateId || null, templateName: templateName || '', createdBy: req.staff._id },
+      {
+        planType, moduleData: moduleData || {}, notes: notes || '', templateId: templateId || null,
+        templateName: templateName || '', createdBy: req.staff._id,
+        customerStatus: 'draft', customerFeedback: '', customerFeedbackAt: null,
+        confirmedAt: null, followUpsGeneratedAt: null,
+        version: existingPlan ? Number(existingPlan.version || 1) + 1 : 1,
+      },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
-    // 保存方案的同时按模块内容同步生成随访占位（就医/会诊/复查/接种/检测各条记录直接生成，
-    // 日常监测/季度评估按周期批量排期），不用等客户在app端确认才生成。
-    const { syncAnnualPlanFollowUps } = require('../utils/annualPlanFollowUps');
-    const followUpCount = await syncAnnualPlanFollowUps(plan).catch(() => 0);
-    // 药物管理/营养素管理模块：同步生成定期配药/配营养素计划（RecurringSupplyPlan），
-    // 到期后由定时任务生成健管专员待办+客户端提醒（2026-07-19）
-    const { syncAnnualPlanSupplyPlans } = require('../utils/annualPlanSupplyPlans');
-    const supplyPlanResult = await syncAnnualPlanSupplyPlans(plan).catch(() => ({ created: 0, updated: 0, disabled: 0 }));
-    const { syncAnnualPlanTreatments } = require('../utils/annualPlanTreatmentSync');
-    const treatmentSyncResult = await syncAnnualPlanTreatments(plan);
+    // 正式随访必须基于客户确认版本生成。编辑方案时清理本方案尚未执行的旧草稿，避免版本错配。
+    await FollowUp.deleteMany({
+      sourceAnnualPlanId: plan._id,
+      status: { $in: ['planned', 'cancelled'] },
+      completedAt: null,
+    });
+    const followUpCount = 0;
+    // 配药、营养素和医疗安排也必须基于客户确认版本落地；保存阶段只保留方案草稿。
+    const supplyPlanResult = { created: 0, updated: 0, disabled: 0 };
+    const treatmentSyncResult = { created: 0, updated: 0, skipped: true };
     res.json({ success: true, data: plan, followUpCount, supplyPlanResult, treatmentSyncResult });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -5060,13 +5090,16 @@ router.patch('/supply-plans/:id/confirm', staffAuth, async (req, res) => {
 // ── PATCH /api/staff/patients/:id/annual-plan/push ────────────────
 router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
   try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
+      return res.status(403).json({ success: false, message: '仅健康顾问可审核并推送年度管理方案' });
+    }
     const { year, planType } = req.query;
     const targetYear = year ? parseInt(year) : new Date().getFullYear();
     const query = { patientId: req.params.id, year: targetYear };
     if (planType) query.planType = planType;
     const plan = await AnnualPlan.findOneAndUpdate(
       query,
-      { pushedAt: new Date(), pushedBy: req.staff._id },
+      { pushedAt: new Date(), pushedBy: req.staff._id, customerStatus: 'awaiting_confirmation', customerFeedback: '', customerFeedbackAt: null },
       { new: true }
     );
     if (!plan) return res.status(404).json({ success: false, message: '方案不存在，请先保存' });
@@ -5119,11 +5152,23 @@ router.patch('/orders/:id/fulfiller', staffAuth, async (req, res) => {
     const { fulfillerId } = req.body;
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
-    if (req.staff.role !== 'superadmin' && String(order.referrerId) !== String(req.staff._id)) {
-      return res.status(403).json({ success: false, message: '仅该订单的推荐人可指定服务人' });
+    if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) {
+      return res.status(403).json({ success: false, message: '仅健康规划师可进行服务分配' });
     }
+    const fulfiller = fulfillerId ? await Admin.findById(fulfillerId).select('role').lean() : null;
+    if (fulfillerId && !fulfiller) return res.status(404).json({ success: false, message: '服务人员不存在' });
     order.fulfillerId = fulfillerId || null;
+    order.assignedServiceStaff = fulfillerId || null;
+    order.assignedByPlanner = req.staff._id;
+    order.assignedAt = fulfillerId ? new Date() : null;
+    order.serviceWorkflowStatus = fulfillerId ? 'assigned' : 'pending_assignment';
     await order.save();
+    if (fulfillerId) {
+      await FollowUp.updateMany(
+        { sourceType: 'order', sourceOrderId: order._id, status: { $nin: ['completed', 'cancelled'] } },
+        { $set: { assignedTo: fulfillerId, staffId: req.staff._id, theme: `待制定执行方案：${order.serviceName}` } },
+      );
+    }
     res.json({ success: true, data: order, message: '服务人已设置' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -7119,6 +7164,23 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     if (!ais || !ais.sections) {
       return res.status(400).json({ success: false, message: '请先生成AI健康信息整理报告' });
     }
+    const latestDoctorAnalysis = (() => {
+      const byYear = ais.byYear || {};
+      const yearEntry = byYear[String(new Date().getFullYear())] || {};
+      const records = Array.isArray(yearEntry.records) ? yearEntry.records : [];
+      return records[0] || yearEntry;
+    })();
+    if (!latestDoctorAnalysis.doctorApprovedAt && !latestDoctorAnalysis.approvedAt) {
+      return res.status(400).json({ success: false, message: '请先完成并审核本年度5维健康信息整理' });
+    }
+    const confirmedReview = await AiCaseReview.findOne({
+      user: user._id,
+      'conclusion.status': 'confirmed',
+      'conclusion.confirmedAt': { $ne: null },
+    }).sort({ 'conclusion.confirmedAt': -1 }).lean();
+    if (!confirmedReview) {
+      return res.status(400).json({ success: false, message: '请先完成并确认AI辅助研判阶段结论' });
+    }
 
     // 各方案类型包含的板块（与前端 AnnualMgmtPlanPage 的 PLAN_TYPE_MODULES 保持一致）
     // 只生成所选方案类型对应的板块，不生成其它类型的板块
@@ -8321,13 +8383,19 @@ const TODO_REVIEW_ROLE = {
   archive_review:       'healthManager',
   checkup_plan_review:  'familyDoctor',
   summary_review:       'familyDoctor',
+  screening_summary_review: 'familyDoctor',
+  summary_generate:     'familyDoctor',
+  case_review:          'familyDoctor',
+  annual_plan_review:   'familyDoctor',
+  annual_plan_customer_changes: 'familyDoctor',
   risk_review:          'familyDoctor',
   medication_review:    'familyDoctor',
   lifestyle_review:     'nutritionist',
   dietary_survey_review:'nutritionist',
   supplement_review:    'nutritionist',
   nutrition_plan_review:'nutritionist',
-  medical_assist_plan_review: 'medicalAssistant',
+  medical_assist_plan_review: 'healthPlanner',
+  medical_assist_plan_changes: 'medicalAssistant',
   followup_review:      'familyDoctor',
   bp_alert_review:      'familyDoctor',
   symptom_review:       'familyDoctor',
@@ -8497,14 +8565,14 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
             const info = countMap.get(String(u._id));
             const createdAt = info?.latestAt || u.healthProfileUpdatedAt || new Date();
             const summary = info && info.count > 0
-              ? `健管专员新审核${info.count}份体检报告，健康顾问需查看确认`
-              : '健康档案有更新，健康顾问需查看确认';
+              ? `健管专员新审核${info.count}份体检报告，请复核结构化项目、专项归类与异常结论`
+              : '健康档案有更新，请完成专业复核';
             todos.push({
-              id: 'archivereview_' + u._id, type: 'report_familydoctor_review', label: '健康档案待查看确认', priority: 2,
+              id: 'archivereview_' + u._id, type: 'report_familydoctor_review', label: '专项筛查数据待复核', priority: 2,
               patientName: u.name || '未知', patientId: String(u._id),
               summary,
               createdAt, overdue: (now - new Date(createdAt)) > DAY,
-              link: `/patients/${u._id}?tab=archive`,
+              link: `/patients/${u._id}?tab=ai`,
             });
           });
         }
@@ -8648,6 +8716,102 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
+    // ── 健康顾问年度主链：专项小结 → 5维 → 辅助研判 → 年度方案 → 客户确认 → 随访 ──
+    if (role === 'familyDoctor' || isSuper) {
+      const workflowUsers = await User.find({
+        assignedFamilyDoctor: { $ne: null },
+        ...(myPatientIds ? { _id: { $in: myPatientIds } } : {}),
+      }).select('name aiHealthSummary').limit(100).lean();
+      const workflowUserIds = workflowUsers.map(user => user._id);
+      const currentYear = new Date().getFullYear();
+      const [summaries, caseReviews, annualPlans] = await Promise.all([
+        ScreeningYearSummary.find({ user: { $in: workflowUserIds }, year: currentYear }).lean(),
+        AiCaseReview.find({ user: { $in: workflowUserIds } }).sort({ lastActivityAt: -1 }).lean(),
+        AnnualPlan.find({ patientId: { $in: workflowUserIds }, year: currentYear }).sort({ updatedAt: -1 }).lean(),
+      ]);
+      const summaryByUser = new Map(summaries.map(item => [String(item.user), item]));
+      const reviewsByUser = new Map();
+      caseReviews.forEach(item => {
+        const key = String(item.user);
+        if (!reviewsByUser.has(key)) reviewsByUser.set(key, []);
+        reviewsByUser.get(key).push(item);
+      });
+      const plansByUser = new Map();
+      annualPlans.forEach(item => {
+        const key = String(item.patientId);
+        if (!plansByUser.has(key)) plansByUser.set(key, []);
+        plansByUser.get(key).push(item);
+      });
+      workflowUsers.forEach(user => {
+        const userId = String(user._id);
+        const summary = summaryByUser.get(userId);
+        const latestSummaryRecord = Array.isArray(summary?.records) && summary.records.length ? summary.records[0] : summary;
+        if (summary && latestSummaryRecord?.status !== 'approved') {
+          todos.push({
+            id: `screening_summary_${userId}`, type: 'screening_summary_review', label: '年度专项筛查小结待审核', priority: 2,
+            patientName: user.name || '未知', patientId: userId,
+            summary: `${currentYear}年度AI专项筛查小结已生成，待健康顾问审核`,
+            createdAt: latestSummaryRecord?.createdAt || summary.updatedAt || now,
+            overdue: (now - new Date(latestSummaryRecord?.createdAt || summary.updatedAt || now)) > DAY,
+            link: `/patients/${userId}?tab=ai&screeningYear=${currentYear}`,
+          });
+          return;
+        }
+        if (!summary || latestSummaryRecord?.status !== 'approved') return;
+
+        const yearEntry = user.aiHealthSummary?.byYear?.[String(currentYear)] || {};
+        const analysisRecords = Array.isArray(yearEntry.records) ? yearEntry.records : [];
+        const latestAnalysis = analysisRecords[0] || yearEntry;
+        if (!latestAnalysis?.sections) {
+          todos.push({
+            id: `summary_generate_${userId}`, type: 'summary_generate', label: '5维健康信息整理待生成', priority: 2,
+            patientName: user.name || '未知', patientId: userId,
+            summary: '年度专项筛查小结已审核，可生成本年度5维健康信息整理',
+            createdAt: latestSummaryRecord.approvedAt || summary.updatedAt || now, overdue: false,
+            link: `/patients/${userId}?tab=ai&aiYear=${currentYear}`,
+          });
+          return;
+        }
+        if (!latestAnalysis.doctorApprovedAt && !latestAnalysis.approvedAt) return; // 已由既有 summary_review 待办承接
+
+        const reviews = reviewsByUser.get(userId) || [];
+        const confirmedReview = reviews.find(item => item.conclusion?.status === 'confirmed');
+        if (!confirmedReview) {
+          const activeReview = reviews.find(item => item.status !== 'archived');
+          todos.push({
+            id: `case_review_${userId}`, type: 'case_review', label: 'AI辅助研判待确认', priority: 2,
+            patientName: user.name || '未知', patientId: userId,
+            summary: activeReview ? '研判专题尚未形成已确认结论' : '5维分析已审核，可开始AI辅助研判',
+            createdAt: activeReview?.lastActivityAt || latestAnalysis.doctorApprovedAt || now, overdue: false,
+            link: `/patients/${userId}?tab=aiReview`,
+          });
+          return;
+        }
+
+        const plans = plansByUser.get(userId) || [];
+        const changesPlan = plans.find(item => item.customerStatus === 'changes_requested');
+        if (changesPlan) {
+          todos.push({
+            id: `annual_plan_changes_${changesPlan._id}`, type: 'annual_plan_customer_changes', label: '年度管理方案待调整', priority: 1,
+            patientName: user.name || '未知', patientId: userId,
+            summary: changesPlan.customerFeedback || '客户提出方案调整意见',
+            createdAt: changesPlan.customerFeedbackAt || changesPlan.updatedAt || now, overdue: false,
+            link: `/patients/${userId}?tab=annual-plan`,
+          });
+          return;
+        }
+        if (!plans.length) {
+          todos.push({
+            id: `annual_plan_${userId}`, type: 'annual_plan_review', label: 'AI年度管理方案待审核', priority: 2,
+            patientName: user.name || '未知', patientId: userId,
+            summary: 'AI辅助研判已确认，可生成并审核年度管理方案',
+            createdAt: confirmedReview.conclusion?.confirmedAt || confirmedReview.updatedAt || now, overdue: false,
+            link: `/patients/${userId}?tab=annual-plan`,
+          });
+        }
+      });
+    }
+
     // ── 健康顾问：AI用药建议待审核 ──
     if (can('medication_review')) {
       const medFilter = { aiStatus: 'pending', ...(myPatientIds ? { user: { $in: myPatientIds } } : {}) };
@@ -8718,7 +8882,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
-    // ── 就医专员：AI就医协助方案待审核 ──
+    // ── 健康规划师：就医专员完成的AI就医协助方案待审核 ──
     if (can('medical_assist_plan_review')) {
       const medicalAssistPlanFilter = { type: 'medical_assist', 'content.aiStatus': 'pending', ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
       const medicalAssistPlans = await HealthPlan.find(medicalAssistPlanFilter)
@@ -8728,11 +8892,24 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         todos.push({
           id: 'medical_assist_plan_' + p._id, type: 'medical_assist_plan_review', label: 'AI就医协助方案待审核', priority: 3,
           patientName: p.patientId?.name || '未知', patientId: String(p.patientId?._id || ''),
-          summary: 'AI生成就医协助方案，待就医专员审核',
+          summary: '就医专员已完善执行方案，待健康规划师审核下发',
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/plans/${p._id}`,
         });
       });
+    }
+
+    if (can('medical_assist_plan_changes')) {
+      const changePlans = await HealthPlan.find({
+        type: 'medical_assist', 'content.aiStatus': 'changes_requested', staffId: req.staff._id,
+      }).populate('patientId', 'name').sort({ updatedAt: -1 }).limit(50).lean();
+      changePlans.forEach(plan => todos.push({
+        id: `medical_assist_changes_${plan._id}`, type: 'medical_assist_plan_changes', label: '就医协助方案待调整', priority: 1,
+        patientName: plan.patientId?.name || '未知', patientId: String(plan.patientId?._id || ''),
+        summary: plan.content?.plannerReviewNote || '健康规划师已退回，请完善执行方案',
+        createdAt: plan.content?.plannerReviewedAt || plan.updatedAt || now, overdue: false,
+        link: `/plans/${plan._id}`,
+      }));
     }
 
     // ── 健康顾问：AI年度体检方案待审核 ──

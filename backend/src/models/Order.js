@@ -76,6 +76,17 @@ const orderSchema = new mongoose.Schema({
   // ── 绩效归属（供佣金自动结算使用，谁引流/谁服务）──
   referrerId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 转介绍人（引流下单）
   fulfillerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 服务人（实际提供服务，单服务人场景）
+  // 服务流转与绩效归属分离：健康规划师负责受理/分配，实际执行人写入 assignedServiceStaff。
+  serviceWorkflowStatus: {
+    type: String,
+    enum: ['', 'pending_planner', 'pending_medical_review', 'pending_assignment', 'assigned', 'planning', 'in_service', 'completed'],
+    default: '',
+    index: true,
+  },
+  assignedServiceStaff: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  assignedByPlanner: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  assignedAt: { type: Date, default: null },
+  medicalInstruction: { type: mongoose.Schema.Types.Mixed, default: null },
   // 多服务岗位归属：产品由多岗位协同服务时，每个岗位对应的具体服务人。结算时按产品 servicePerformerRoles
   // 里各岗位的比例，为这里指定的人各生成一条绩效记录。为空则退回 referrer/fulfiller 单服务人逻辑。
   servicePerformers: [{
