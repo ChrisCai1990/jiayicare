@@ -7213,10 +7213,19 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     const suggestedCheckupDate = nextAnnualCheckupDate(reports);
     const allHepatitisBMarkersNegative = hepatitisBAllNegative(reports);
     const confirmedCaseReviews = await AiCaseReview.find({ user: user._id, 'conclusion.status': 'confirmed' })
-      .sort({ 'conclusion.confirmedAt': -1 }).limit(20).select('title conclusion.content conclusion.confirmedAt').lean();
+      .sort({ 'conclusion.confirmedAt': -1 }).limit(20).select('title conclusion.content conclusion.structured conclusion.confirmedAt').lean();
     const confirmedReviewText = confirmedCaseReviews.length
       ? confirmedCaseReviews.map(item => `【${item.title}】${item.conclusion.content}`).join('\n\n').slice(0, 16000)
       : '无已确认的专题研判结论';
+    const latestAssessment = confirmedCaseReviews.find(item => item.conclusion?.structured?.actions?.length)
+      || confirmedCaseReviews[0];
+    const assessmentFocus = latestAssessment ? {
+      title: latestAssessment.title,
+      summary: latestAssessment.conclusion?.structured?.summary || [],
+      risks: latestAssessment.conclusion?.structured?.risks || [],
+      actions: latestAssessment.conclusion?.structured?.actions || [],
+      missing: latestAssessment.conclusion?.structured?.missing || [],
+    } : null;
 
     const medPriorityText = (s.medical_priority?.items || [])
       .map(i => `【${i.urgency === 'high' ? '高' : i.urgency === 'medium' ? '中' : '低'}】${i.name}：${i.current}，建议${i.action}，科室：${i.department}`)
@@ -7249,7 +7258,7 @@ ${missingCheckups}
 
 【会员慢病标签】${user.chronicDiseases?.join('、') || '无'}
 
-【疫苗判断】乙肝三系是否五项全阴：${allHepatitisBMarkersNegative ? '是，必须建议接种乙肝疫苗' : '否或资料不完整，不自动判定'}；流感疫苗、肺炎疫苗符合年龄、慢病等接种条件时应建议接种。
+【疫苗证据】乙肝三系是否五项全阴：${allHepatitisBMarkersNegative ? '是' : '否或资料不完整'}。只有本次服务目标或已确认阶段性评估明确把疫苗列为行动项时，才允许生成疫苗模块。
 
 【年度体检计划日期】${suggestedCheckupDate || '无可靠的上次体检日期，请给出建议并由健康顾问确认'}${suggestedCheckupDate ? '（按上次体检后11个月，即满一年提前1个月自动计算）' : ''}
 
@@ -7259,7 +7268,10 @@ ${notes ? notes : '（未填写目标，按会员情况常规定制）'}
 【医护团队已确认的AI辅助研判结论】
 ${confirmedReviewText}
 
-以上专题结论仅可作为方案制定依据；未确认的讨论不得引用，若与最新体检原始证据冲突，以原始证据为准。
+【本方案必须对齐的主评估】
+${assessmentFocus ? JSON.stringify(assessmentFocus) : '暂无结构化主评估；仅可按本次服务目标生成，不得扩展主题'}
+
+主评估是本次方案的主题边界。方案中的每一条记录必须能对应主评估的核心结论、重点风险或下一步行动之一；不得仅因为原始资料里出现某项指标，就扩展出与主评估主题无关的就医、复查、疫苗、营养、监测或体检安排。待补信息只能生成“先补资料/先确认”的行动，不能直接生成诊断性或治疗性方案。以上专题结论仅可作为方案制定依据；未确认的讨论不得引用，若与最新体检原始证据冲突，以原始证据为准。
 
 【Admin健康管理方案模板】
 ${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.planDesc || ''}；随访节点：${(selectedTemplate.content?.followUpPlans || []).map(p => p.name).join('、') || '无'}` : '未选择模板'}
@@ -7286,7 +7298,7 @@ ${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.pla
   "annual_checkup": { "focus": "重点关注项目", "date": "${suggestedCheckupDate || `${year + 1}-06-01`}", "escort": false }
 }
 
-注意：所有展示为项目名称的字段必须简单明确，只写“要做什么”，不得把原因、剂量、操作细节或注意事项塞进名称；items、name和templateNodes.title不超过20个汉字，详细内容分别写入reason/content/notes。templateNodes必须与Admin模板“具体方案”逐项对应，index从1开始，不得漏项、合并或自行增加；medical_treatment仅填高优先级就医需求；specialist_collab有会诊需求才填；monitoring根据慢病标签确定项目；乙肝三系五项全阴时必须生成乙肝疫苗记录，流感和肺炎疫苗符合条件时生成对应记录；无相关内容用空数组。`;
+注意：所有展示为项目名称的字段必须简单明确，只写“要做什么”，不得把原因、剂量、操作细节或注意事项塞进名称；items、name和templateNodes.title不超过20个汉字，详细内容分别写入reason/content/notes。templateNodes只能个性化主评估已有行动，不得为了填满模板创造新主题；medical_treatment仅填主评估明确的高优先级就医需求；specialist_collab仅在主评估明确会诊时填写；monitoring、vaccine、lifestyle、annual_checkup也必须在主评估或本次服务目标中有明确依据，否则输出空数组或不启用。禁止生成没有依据的医院、专家姓名和精确日期，未确认的时间写“待确认”。无相关内容用空数组。`;
 
     const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 2000 });
 
@@ -7308,8 +7320,8 @@ ${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.pla
         ...(record.name ? { name: conciseTitle(record.name) } : {}),
       })) };
     });
-    if (allowedKeys.includes('lifestyle') && raw.lifestyle) result.lifestyle = { enabled: true, ...raw.lifestyle };
-    if (allowedKeys.includes('annual_checkup') && raw.annual_checkup) result.annual_checkup = { enabled: true, ...raw.annual_checkup };
+    if (allowedKeys.includes('lifestyle') && raw.lifestyle && !Array.isArray(raw.lifestyle) && raw.lifestyle.focus) result.lifestyle = { enabled: true, ...raw.lifestyle };
+    if (allowedKeys.includes('annual_checkup') && raw.annual_checkup && !Array.isArray(raw.annual_checkup) && raw.annual_checkup.focus) result.annual_checkup = { enabled: true, ...raw.annual_checkup };
     result.templateNodes = Array.isArray(raw.templateNodes) ? raw.templateNodes.map(node => ({
       ...node,
       title: conciseTitle(node.title || node.content),
@@ -7319,15 +7331,7 @@ ${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.pla
       result.annual_checkup = { ...(result.annual_checkup || { enabled: true }), date: suggestedCheckupDate };
     }
 
-    if (allowedKeys.includes('vaccine') && allHepatitisBMarkersNegative) {
-      const vaccineRecords = result.vaccine?.records || [];
-      if (!vaccineRecords.some(record => /乙肝/.test(record.name || ''))) {
-        vaccineRecords.unshift({ name: '接种乙肝疫苗', time: '', reason: '乙肝三系五项全阴，建议按免疫程序接种' });
-      }
-      result.vaccine = { records: vaccineRecords };
-    }
-
-    res.json({ success: true, data: result, template: selectedTemplate ? { _id: selectedTemplate._id, name: selectedTemplate.name } : null });
+    res.json({ success: true, data: result, basis: assessmentFocus, template: selectedTemplate ? { _id: selectedTemplate._id, name: selectedTemplate.name } : null });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

@@ -168,7 +168,7 @@ export const staffAPI = {
   updateAiCaseReview: (patientId, topicId, data) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   sendAiCaseReviewMessage: (patientId, topicId, data) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/messages`, { method: 'POST', body: JSON.stringify(data) }),
   generateAiCaseReviewConclusion: (patientId, topicId) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/conclusion`, { method: 'POST' }),
-  confirmAiCaseReviewConclusion: (patientId, topicId, content) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/conclusion`, { method: 'PATCH', body: JSON.stringify({ content }) }),
+  confirmAiCaseReviewConclusion: (patientId, topicId, content, writeToPhaseAssessment = false) => req(`/staff/patients/${patientId}/ai-case-reviews/${topicId}/conclusion`, { method: 'PATCH', body: JSON.stringify({ content, writeToPhaseAssessment }) }),
   reviewMedicalAssistPlan: (planId, action, reviewNote = '') => req(`/staff/plans/${planId}/medical-assist-review`, { method: 'PATCH', body: JSON.stringify({ action, reviewNote }) }),
 
   // Knowledge

@@ -23,11 +23,13 @@ const messageSchema = new mongoose.Schema({
 
 const conclusionSchema = new mongoose.Schema({
   content: { type: String, default: '' },
+  structured: { type: mongoose.Schema.Types.Mixed, default: null },
   status: { type: String, enum: ['draft', 'confirmed'], default: 'draft' },
   generatedAt: { type: Date, default: null },
   confirmedAt: { type: Date, default: null },
   confirmedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   confirmedByName: { type: String, default: '' },
+  serviceRecordId: { type: mongoose.Schema.Types.ObjectId, ref: 'ServiceRecord', default: null },
 }, { _id: false });
 
 const aiCaseReviewSchema = new mongoose.Schema({

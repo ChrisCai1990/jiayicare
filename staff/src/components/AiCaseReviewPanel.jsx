@@ -15,6 +15,22 @@ const REVIEW_TEMPLATES = [
   { key: 'daily', label: '日常问题交流', title: '日常问题交流', description: '围绕具体问题进行信息分析和讨论；仅保存讨论结论，不自动生成方案。', scopes: ['basic','healthProfile','reports','healthRecords','medications','followups'] },
 ]
 
+const ASSESSMENT_LABELS = { summary: '核心结论', facts: '已确认事实', changes: '阶段变化', risks: '重点风险', actions: '下一步行动', missing: '待补信息' }
+function StructuredAssessment({ data }) {
+  if (!data) return null
+  return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))', gap: 10, marginBottom: 12 }}>
+    {Object.entries(ASSESSMENT_LABELS).map(([key, label]) => (data[key] || []).length > 0 && <section key={key} style={{ border: '1px solid #DCE8E1', borderRadius: 10, padding: 12, background: key === 'risks' ? '#FFF8ED' : key === 'actions' ? '#EEF8F3' : '#FAFCFB' }}>
+      <div style={{ fontWeight: 700, color: key === 'risks' ? '#B45309' : '#155E48', marginBottom: 7 }}>{label}</div>
+      {(data[key] || []).map((item, index) => <div key={index} style={{ fontSize: 13, lineHeight: 1.55, marginTop: 5, paddingLeft: 12, position: 'relative' }}><span style={{ position: 'absolute', left: 0 }}>•</span>{item}</div>)}
+    </section>)}
+  </div>
+}
+
+function CleanText({ children }) {
+  const lines = String(children || '').split(/\r?\n/).map(line => line.replace(/^\s*#{1,6}\s*/, '').replace(/\*\*|__|`/g, '').trim()).filter(line => line && !/^[-—_]{3,}$/.test(line))
+  return <div>{lines.map((line, index) => <div key={index} style={{ lineHeight: 1.65, fontSize: 14, marginTop: index ? 5 : 0 }}>{line.replace(/^[-*+]\s+/, '• ')}</div>)}</div>
+}
+
 export default function AiCaseReviewPanel({ patientId, staff, toast }) {
   const [topics, setTopics] = useState([])
   const [assessments, setAssessments] = useState([])
@@ -84,7 +100,13 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
   const confirmConclusion = async () => {
     if (!conclusionText.trim()) return toast('结论不能为空', 'error')
     setBusy(true)
-    try { const res = await staffAPI.confirmAiCaseReviewConclusion(patientId, active._id, conclusionText); replaceTopic(res.data); toast('结论已确认，生成管理方案时会自动引用') }
+    try {
+      const writeToPhaseAssessment = /阶段性.*评估/.test(`${active.title} ${active.description || ''}`)
+      const res = await staffAPI.confirmAiCaseReviewConclusion(patientId, active._id, conclusionText, writeToPhaseAssessment)
+      replaceTopic(res.data)
+      if (res.archivedToPhaseAssessment) toast('结论已确认，并已写入服务记录 · 阶段性健康评估')
+      else toast('结论已确认，生成管理方案时会自动引用')
+    }
     catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
   }
   const applyReviewTemplate = async key => {
@@ -138,7 +160,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
         {!active.messages?.length && <div style={{ color: '#8AA89C', textAlign: 'center', paddingTop: 120 }}>输入问题或上传图片，AI会按上方授权范围调取客户资料。</div>}
         {(active.messages || []).map(message => <div key={message._id} style={{ display: 'flex', justifyContent: message.role === 'staff' ? 'flex-end' : 'flex-start', marginBottom: 14 }}><div style={{ maxWidth: '82%', background: message.role === 'staff' ? '#DDF2E7' : '#fff', border: '1px solid #DCE5E0', borderRadius: 12, padding: '10px 13px' }}>
           <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 5 }}>{message.role === 'ai' ? `AI助手 · ${message.provider || ''}${message.durationMs ? ` · ${(message.durationMs / 1000).toFixed(1)}秒` : ''}` : `${message.staffName} · ${message.staffRole}`}</div>
-          <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.65, fontSize: 14 }}>{message.content}</div>
+          <CleanText>{message.content}</CleanText>
           {!!message.attachments?.length && <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>{message.attachments.map((file, index) => <a key={index} href={file.url?.startsWith('/') ? `${API_ORIGIN}${file.url}` : file.url} target="_blank" rel="noreferrer"><img src={file.url?.startsWith('/') ? `${API_ORIGIN}${file.url}` : file.url} alt={file.name || '附件'} style={{ width: 90, height: 72, objectFit: 'cover', borderRadius: 6 }} /></a>)}</div>}
           {!!message.contextSnapshot?.sources?.length && <details style={{ marginTop: 8, fontSize: 12, color: '#4A6558' }}><summary>本轮依据 {message.contextSnapshot.sources.length} 项资料</summary><div style={{ marginTop: 5 }}>{message.contextSnapshot.sources.map((s, i) => <div key={i}>· {s}</div>)}</div></details>}
         </div></div>)}<div ref={bottomRef} />
@@ -151,8 +173,9 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
       </div></div>
 
       {!!active.messages?.length && <div className="card"><div className="card-header"><div className="card-title">阶段性结论</div><button className="btn btn-secondary btn-sm" disabled={busy} onClick={generateConclusion}>AI整理结论</button></div><div className="card-body">
+        <StructuredAssessment data={active.conclusion?.structured} />
         <textarea className="form-input" rows={10} value={conclusionText} onChange={e => setConclusionText(e.target.value)} placeholder="AI整理后由健康顾问复核确认；只有已确认结论会进入管理方案上下文。" />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}><span style={{ fontSize: 12, color: active.conclusion?.status === 'confirmed' ? '#16845B' : '#8AA89C' }}>{active.conclusion?.status === 'confirmed' ? `已由${active.conclusion.confirmedByName || '健康顾问'}确认` : '草稿不会进入正式管理方案'}</span>{['familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy || !conclusionText.trim()} onClick={confirmConclusion}>确认并纳入管理方案</button>}</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}><span style={{ fontSize: 12, color: active.conclusion?.status === 'confirmed' ? '#16845B' : '#8AA89C' }}>{active.conclusion?.status === 'confirmed' ? `已由${active.conclusion.confirmedByName || '健康顾问'}确认${active.conclusion.serviceRecordId ? ' · 已写入阶段性健康评估' : ''}` : '草稿不会进入正式管理方案'}</span>{['familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy || !conclusionText.trim()} onClick={confirmConclusion}>{/阶段性.*评估/.test(`${active.title} ${active.description || ''}`) ? '确认并写入阶段性健康评估' : '确认并纳入管理方案'}</button>}</div>
       </div></div>}
     </div> : <div className="card"><div className="card-body" style={{ padding: 60, textAlign: 'center', color: '#8AA89C' }}>请先新建一个研判主题</div></div>}
 

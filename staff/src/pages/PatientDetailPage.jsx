@@ -553,6 +553,7 @@ const PLAN_STATUS_COLOR = { draft:'#aaa', active:'#22A06B', completed:'#0077B6' 
 const PLAN_STATUS_LABEL = { draft:'草稿', active:'进行中', completed:'已完成' }
 const SR_TYPE_LABEL = {
   nutrition:'营养干预', disease_mgmt:'专病管理', medical_visit:'医院就医', routine:'日常随访', doctor_followup:'健康顾问跟进',
+  phase_assessment:'阶段性健康评估',
   medical_escort:'就医协助', psychology:'心理咨询', rehab:'运动复健', tcm:'中医评估', specialist:'专科会诊',
 }
 const SR_CATEGORY = {
@@ -561,6 +562,7 @@ const SR_CATEGORY = {
   medical_visit: '医院就医', medical_escort: '医院就医',
   routine:       '日常随访',
   doctor_followup: '健康顾问跟进',
+  phase_assessment: '阶段性健康评估',
 }
 const SR_CATEGORY_COLOR = { '营养干预':'#22A06B', '专病管理':'#0077B6', '医院就医':'#D97706', '日常随访':'#8A4AC7', '健康顾问跟进':'#0088CC', '阶段性健康评估':'#155E48' }
 
@@ -9279,6 +9281,7 @@ export default function PatientDetailPage() {
         const currentCategory = CATS.includes(activeServiceCategory) ? activeServiceCategory : CATS[0]
         const currentRecords = grouped[currentCategory] || []
         const isDiseaseMgmt = currentCategory === '专病管理'
+        const isPhaseAssessment = currentCategory === '阶段性健康评估'
         const diseaseGroups = {}
         if (isDiseaseMgmt) currentRecords.forEach(r => {
           const dn = r.diseaseName?.trim() || r.title?.trim() || '未标注专病'
@@ -9303,7 +9306,25 @@ export default function PatientDetailPage() {
               </div>
               {currentRecords.length === 0 ? (
                 <div style={{ padding: '16px 20px', color: '#aaa', fontSize: 13 }}>暂无{currentCategory}记录</div>
-              ) : isDiseaseMgmt ? Object.keys(diseaseGroups).map(dn => (
+              ) : isPhaseAssessment ? <div style={{ padding: 16, display: 'grid', gap: 14 }}>
+                {currentRecords.map(record => {
+                  const sections = record.structuredContent || {}
+                  const labels = { summary: '核心结论', facts: '已确认事实', changes: '阶段变化', risks: '重点风险', actions: '下一步行动', missing: '待补信息' }
+                  return <article key={record._id} style={{ border: '1px solid #DCE8E1', borderRadius: 12, overflow: 'hidden' }}>
+                    <div style={{ padding: '12px 14px', background: '#EEF7F2', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                      <strong style={{ color: '#155E48' }}>📊 {record.title || '阶段性健康评估'}</strong>
+                      <span style={{ color: '#6B7F75', fontSize: 12 }}>{new Date(record.date).toLocaleDateString('zh-CN')}</span>
+                    </div>
+                    <div style={{ padding: 14, display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(230px,1fr))', gap: 10 }}>
+                      {Object.entries(labels).map(([key, label]) => (sections[key] || []).length > 0 && <section key={key} style={{ background: key === 'risks' ? '#FFF8ED' : key === 'actions' ? '#EEF8F3' : '#FAFCFB', borderRadius: 9, padding: 11 }}>
+                        <div style={{ fontWeight: 700, color: key === 'risks' ? '#B45309' : '#155E48', marginBottom: 6 }}>{label}</div>
+                        {sections[key].map((item, index) => <div key={index} style={{ fontSize: 13, lineHeight: 1.55, marginTop: 4 }}>• {item}</div>)}
+                      </section>)}
+                      {!Object.keys(labels).some(key => (sections[key] || []).length) && <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.65 }}>{record.content}</div>}
+                    </div>
+                  </article>
+                })}
+              </div> : isDiseaseMgmt ? Object.keys(diseaseGroups).map(dn => (
                 <div key={dn} style={{ borderTop: '1px solid #f5f2ec' }}>
                   <div style={{ padding: '8px 20px', fontSize: 13, fontWeight: 600, color: '#4A6558', background: '#F9F6F0' }}>
                     {dn} <span style={{ fontWeight: 400, color: '#8AA89C' }}>· {diseaseGroups[dn].length} 条</span>
