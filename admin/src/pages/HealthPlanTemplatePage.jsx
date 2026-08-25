@@ -53,7 +53,7 @@ const defaultContent = {
     homework: '', assessmentTools: '',
   },
   phase_assessment: {
-    frequency: 'monthly', focus: '', instructions: '', contextScopes: ['healthProfile', 'reports', 'healthRecords', 'followups', 'plans'],
+    frequency: 'monthly', triggerRule: '', minimumData: '', focus: '', instructions: '', outputSections: [], contextScopes: ['healthProfile', 'reports', 'healthRecords', 'followups', 'plans'],
   },
 }
 
@@ -382,9 +382,11 @@ function PlanContentForm({ type, initialContent, contentRef }) {
 
   if (type === 'phase_assessment') return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-      <div className="form-group"><label className="form-label">触发周期 *</label><select className="form-input" value={content.frequency || 'monthly'} onChange={e => set('frequency', e.target.value)}><option value="monthly">每月</option><option value="quarterly">每季度</option></select></div>
-      <FieldRow label="评估重点" fieldKey="focus" placeholder="如：体重、血压、血脂、依从性和复查完成情况" rows={3} content={content} set={set} />
-      <FieldRow label="评估要求" fieldKey="instructions" placeholder="如：数据不足时标注缺口；不得自动改方案" rows={3} content={content} set={set} />
+      <div className="form-group"><label className="form-label">触发周期 *</label><select className="form-input" value={content.frequency || 'monthly'} onChange={e => set('frequency', e.target.value)}><option value="monthly">每月</option><option value="quarterly">每季度</option><option value="yearly">每年</option></select></div>
+      <FieldRow label="生成规则" fieldKey="triggerRule" placeholder="如：年度方案确认日起满12个月后生成" rows={2} content={content} set={set} />
+      <FieldRow label="最低数据要求" fieldKey="minimumData" placeholder="如：检查、健康记录或随访缺失时，列为待补数据，不得推断" rows={2} content={content} set={set} />
+      <FieldRow label="评估重点" fieldKey="focus" placeholder="如：目标达成、方案执行与依从性、指标趋势、复查和风险变化" rows={3} content={content} set={set} />
+      <FieldRow label="评估要求" fieldKey="instructions" placeholder="如：分析管理成效与未达成原因；提出下一阶段待审核计划；不得自动改方案" rows={3} content={content} set={set} />
     </div>
   )
 
