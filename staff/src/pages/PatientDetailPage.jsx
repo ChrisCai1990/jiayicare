@@ -9237,7 +9237,7 @@ export default function PatientDetailPage() {
       {/* ── Service Records Tab ── */}
       {tab === 'serviceRecords' && (() => {
         // 与生产一致：服务记录采用顶部分类切换；阶段性健康评估为测试中的新分类，保留入口供验收。
-        const CATS = ['营养干预', '专病管理', '医院就医', '日常随访', '健康顾问跟进', '阶段性健康评估']
+        const CATS = ['营养干预', '专病管理', '医院就医', '阶段性健康评估']
         const grouped = {}
         CATS.forEach(c => { grouped[c] = [] })
         serviceRecords.forEach(r => {
