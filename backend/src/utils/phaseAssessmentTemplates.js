@@ -26,20 +26,25 @@ const DRAFTS = [
     },
   },
   {
-    name: '年度健康管理总结与下一年度计划（待审核模板）',
+    name: '年度健康管理评估与下一年度重点（待审核模板）',
     content: {
       frequency: 'yearly',
-      triggerRule: '以年度管理方案确认日为起算点，满 11 个月后生成，预留第 12 个月用于续约沟通与新年度方案确认；此后每满 12 个月生成一次，不按元旦机械触发。',
+      triggerRule: '以年度管理方案确认日为起算点，满 11 个月后生成；此后每满 12 个月生成一次，不按元旦机械触发。',
       minimumData: '至少核对全年目标、服务方案、随访记录、健康数据和检查/复查资料；数据不足时必须列为续管前待补项。',
-      focus: '回顾全年健康管理目标、服务方案执行与依从性、关键健康指标和体检/复查趋势、阶段性改善与未达成事项、风险变化；结合全年资料梳理下一年度管理优先级与待确认计划。',
-      instructions: '必须以既有年度管理目标和服务方案为基线，区分已确认数据、阶段结论与待讨论判断；说明管理措施是否执行、效果如何及原因线索；下一年度仅提出供家庭医生/健康顾问确认的目标、随访节奏、复查或服务调整方向。不得诊断、开药、自动创建、调整或发布正式方案。',
-      outputSections: ['年度管理目标与证据汇总', '全年执行、依从性与管理成效', '未达成原因、风险和续管前数据缺口', '下一年度待审核续管计划'],
+      focus: '回顾全年健康管理目标、服务方案执行与依从性、关键健康指标和体检/复查趋势、阶段性改善与未达成事项、风险变化；结合全年资料梳理下一年度健康管理重点。',
+      instructions: '必须以既有年度管理目标和服务方案为基线，区分已确认数据、阶段结论与待讨论判断；说明管理措施是否执行、效果如何及原因线索；下一年度仅提出供家庭医生/健康顾问确认的健康重点、随访节奏、复查或服务调整方向。不得诊断、开药、自动创建、调整或发布正式方案。',
+      outputSections: ['年度健康管理目标与证据汇总', '全年执行、依从性与管理成效', '未达成原因、风险和待补数据', '下一年度健康管理重点'],
       contextScopes: ['healthProfile', 'reports', 'healthRecords', 'followups', 'plans', 'aiAnalysis'],
     },
   },
 ];
 
 async function ensurePhaseAssessmentTemplateDrafts() {
+  // 仅迁移尚未启用的旧草稿，避免“续约”措辞进入客户可见的年度评估内容。
+  await PlanTemplate.updateOne(
+    { type: 'phase_assessment', name: '年度健康管理总结与下一年度计划（待审核模板）', clientBrand: '', status: 'inactive' },
+    { $set: { name: '年度健康管理评估与下一年度重点（待审核模板）' } }
+  );
   for (const draft of DRAFTS) {
     await PlanTemplate.updateOne(
       { type: 'phase_assessment', name: draft.name, clientBrand: '' },

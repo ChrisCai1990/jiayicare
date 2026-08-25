@@ -76,12 +76,12 @@ const PHASE_ASSESSMENT_PRESETS = {
     outputSections: ['季度目标与证据汇总', '方案执行、依从性与阶段成效', '未达成事项、风险和数据缺口', '下季度待审核计划'],
   },
   yearly: {
-    name: '年度健康管理总结与续约建议（待审核模板）', frequency: 'yearly',
-    triggerRule: '以年度管理方案确认日为起算点，满11个月后生成，预留第12个月用于续约沟通与新年度方案确认；此后每满12个月生成一次。',
+    name: '年度健康管理评估与下一年度重点（待审核模板）', frequency: 'yearly',
+    triggerRule: '以年度管理方案确认日为起算点，满11个月后生成；此后每满12个月生成一次。',
     minimumData: '至少核对全年目标、服务方案、随访记录、健康数据和检查/复查资料；数据不足时必须列为续管前待补项。',
-    focus: '回顾全年健康管理目标、服务方案执行与依从性、关键健康指标和体检/复查趋势、阶段性改善与未达成事项、风险变化；梳理下一年度管理优先级与待确认计划。',
-    instructions: '以既有年度管理目标和服务方案为基线，区分已确认数据、阶段结论与待讨论判断；下一年度仅提出供家庭医生/健康顾问确认的目标、随访节奏、复查或服务调整方向。不得自动创建、调整或发布正式方案。',
-    outputSections: ['年度管理目标与证据汇总', '全年执行、依从性与管理成效', '未达成原因、风险和续管前数据缺口', '下一年度待审核续管计划'],
+    focus: '回顾全年健康管理目标、服务方案执行与依从性、关键健康指标和体检/复查趋势、阶段性改善与未达成事项、风险变化；梳理下一年度健康管理重点。',
+    instructions: '以既有年度管理目标和服务方案为基线，区分已确认数据、阶段结论与待讨论判断；下一年度仅提出供家庭医生/健康顾问确认的健康重点、随访节奏、复查或服务调整方向。不得自动创建、调整或发布正式方案。',
+    outputSections: ['年度健康管理目标与证据汇总', '全年执行、依从性与管理成效', '未达成原因、风险和待补数据', '下一年度健康管理重点'],
   },
 }
 
@@ -420,7 +420,7 @@ function PlanContentForm({ type, initialContent, contentRef, onPhasePresetName }
       <div className="form-group" style={{ gridColumn: '1/-1', padding: 12, border: '1px solid #dfe8e3', borderRadius: 8, background: '#f7fbf8' }}>
         <label className="form-label">自动生成模板草稿</label>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {[['monthly', '生成月度模板'], ['quarterly', '生成季度模板'], ['yearly', '生成年度续约模板']].map(([key, label]) => <button key={key} type="button" className="btn btn-ghost" onClick={() => applyPhasePreset(key)}>{label}</button>)}
+          {[['monthly', '生成月度模板'], ['quarterly', '生成季度模板'], ['yearly', '生成年度模板']].map(([key, label]) => <button key={key} type="button" className="btn btn-ghost" onClick={() => applyPhasePreset(key)}>{label}</button>)}
         </div>
         <div style={{ fontSize: 12, color: '#68756f', marginTop: 8 }}>生成后可继续修改；保存并启用后才会进入自动任务流程，AI生成的客户评估仍须人工审核。</div>
       </div>
