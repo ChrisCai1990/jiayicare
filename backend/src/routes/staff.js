@@ -4721,6 +4721,91 @@ router.get('/patients/:id/health-records', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// 医护端批量补录单个老客户的历史健康数据。身份证为唯一自动归属依据，姓名二次校验。
+router.post('/patients/:id/health-records/import', staffAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select('name idNumber idType tenantId').lean();
+    if (!user) return res.status(404).json({ success: false, message: '客户不存在' });
+    if (user.idType === 'passport' || !user.idNumber) {
+      return res.status(400).json({ success: false, message: '该客户未登记身份证号码，不能自动归属批量数据' });
+    }
+    const rows = Array.isArray(req.body.rows) ? req.body.rows.slice(0, 1000) : [];
+    if (!rows.length) return res.status(400).json({ success: false, message: '没有可导入的数据' });
+    if (req.body.rows.length > 1000) return res.status(400).json({ success: false, message: '单次最多导入1000条' });
+
+    const normalizeId = value => String(value || '').replace(/\s+/g, '').toUpperCase();
+    const normalizeName = value => String(value || '').replace(/\s+/g, '');
+    const expectedId = normalizeId(user.idNumber);
+    const expectedName = normalizeName(user.name);
+    const typeAliases = {
+      '血压': 'bloodPressure', bloodPressure: 'bloodPressure',
+      '血糖': 'bloodSugar', bloodSugar: 'bloodSugar',
+      '心率': 'heartRate', heartRate: 'heartRate',
+      '体重': 'weight', weight: 'weight',
+      '睡眠': 'sleep', sleep: 'sleep',
+      '情绪': 'mood', mood: 'mood',
+    };
+    const metaMap = {
+      bloodPressure: { category: 'vitals', label: '血压', unit: 'mmHg' },
+      bloodSugar: { category: 'vitals', label: '血糖', unit: 'mmol/L' },
+      heartRate: { category: 'vitals', label: '心率', unit: '次/分' },
+      weight: { category: 'metabolism', label: '体重', unit: 'kg' },
+      sleep: { category: 'lifestyle', label: '睡眠', unit: '小时' },
+      mood: { category: 'lifestyle', label: '情绪', unit: '分' },
+    };
+    const checked = [];
+    for (let index = 0; index < rows.length; index += 1) {
+      const source = rows[index] || {};
+      const type = typeAliases[String(source.type || '').trim()];
+      const rawRecordedAt = String(source.recordedAt || '').trim();
+      // 模板中的无时区时间按中国标准时间解释，避免服务器使用 UTC 后整体偏移 8 小时。
+      const recordedAt = new Date(/^[0-9]{4}-[0-9]{2}-[0-9]{2}(?:[ T][0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?)?$/.test(rawRecordedAt)
+        ? `${rawRecordedAt.replace(' ', 'T')}${rawRecordedAt.length === 10 ? 'T12:00:00' : ''}+08:00`
+        : rawRecordedAt);
+      const sys = Number(source.systolic);
+      const dia = Number(source.diastolic);
+      const value = type === 'bloodPressure' ? `${sys}/${dia}` : String(source.value ?? '').trim();
+      let error = '';
+      if (normalizeId(source.idNumber) !== expectedId) error = '身份证号码与当前客户不一致';
+      else if (normalizeName(source.name) !== expectedName) error = '姓名与当前客户档案不一致';
+      else if (!type || !metaMap[type]) error = '数据类型不支持';
+      else if (Number.isNaN(recordedAt.getTime())) error = '测量时间格式错误';
+      else if (recordedAt > new Date()) error = '测量时间不能晚于当前时间';
+      else if (type === 'bloodPressure' && (!(sys > 0) || !(dia > 0))) error = '血压必须填写有效的收缩压和舒张压';
+      else if (type !== 'bloodPressure' && (value === '' || !Number.isFinite(Number(value)))) error = '数值必须是有效数字';
+      const extra = type === 'bloodPressure' ? { sys, dia } : {};
+      let duplicate = false;
+      if (!error) {
+        const start = new Date(recordedAt.getTime() - 1000);
+        const end = new Date(recordedAt.getTime() + 1000);
+        duplicate = !!(await HealthRecord.exists({ user: user._id, type, recordedAt: { $gte: start, $lte: end }, value }));
+      }
+      checked.push({ rowNumber: index + 2, status: error ? 'error' : duplicate ? 'duplicate' : 'ready', message: error || (duplicate ? '疑似重复，已跳过' : '可导入'), normalized: error || duplicate ? null : { type, value, extra, recordedAt, note: String(source.note || '').trim(), meta: metaMap[type] } });
+    }
+    const summary = checked.reduce((acc, row) => { acc[row.status] += 1; return acc; }, { ready: 0, duplicate: 0, error: 0 });
+    if (req.body.preview !== false) return res.json({ success: true, data: { summary, rows: checked.map(({ normalized, ...row }) => row) } });
+
+    const ready = checked.filter(row => row.status === 'ready');
+    if (!ready.length) return res.status(400).json({ success: false, message: '没有可导入的数据', data: { summary } });
+    const batchId = `health_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const recentThreshold = Date.now() - 7 * 86400000;
+    const docs = ready.map(({ normalized }) => {
+      const status = calcHealthRecordStatus(normalized.type, normalized.value, normalized.extra);
+      return {
+        user: user._id, tenantId: user.tenantId || req.staff.tenantId || null,
+        category: normalized.meta.category, type: normalized.type, label: normalized.meta.label,
+        unit: normalized.meta.unit, value: normalized.value, extra: normalized.extra, note: normalized.note,
+        recordedAt: normalized.recordedAt, status,
+        aiAlertStatus: normalized.type === 'bloodPressure' && status === 'danger' && normalized.recordedAt.getTime() >= recentThreshold ? 'pending' : null,
+        recordedBy: { source: 'staff', staffId: req.staff._id, staffName: req.staff.name || req.staff.username || '', staffRole: req.staff.role || '' },
+        importBatchId: batchId, importFileName: String(req.body.fileName || '').slice(0, 180),
+      };
+    });
+    await HealthRecord.insertMany(docs);
+    res.json({ success: true, data: { summary, imported: docs.length, batchId } });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // ── 健康顾问处理血压异常升级（AI自动跟进试点）──
 // PATCH /api/staff/health-records/:id/resolve-alert
 router.patch('/health-records/:id/resolve-alert', staffAuth, async (req, res) => {
