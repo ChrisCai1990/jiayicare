@@ -7188,9 +7188,13 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       user: user._id,
       'conclusion.status': 'confirmed',
       'conclusion.confirmedAt': { $ne: null },
+      $or: [
+        { reviewType: 'annual' },
+        { reviewType: { $exists: false }, title: /年度管理研判/ },
+      ],
     }).sort({ 'conclusion.confirmedAt': -1 }).lean();
     if (!confirmedReview) {
-      return res.status(400).json({ success: false, message: '请先完成并确认AI辅助研判阶段结论' });
+      return res.status(400).json({ success: false, message: '请先完成并确认“年度管理研判”；就医协助和营养干预研判不属于年度方案依据' });
     }
 
     // 各方案类型包含的板块（与前端 AnnualMgmtPlanPage 的 PLAN_TYPE_MODULES 保持一致）
@@ -7223,7 +7227,13 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       .sort({ checkDate: -1, createdAt: -1 }).lean();
     const suggestedCheckupDate = nextAnnualCheckupDate(reports);
     const allHepatitisBMarkersNegative = hepatitisBAllNegative(reports);
-    const confirmedCaseReviews = await AiCaseReview.find({ user: user._id, 'conclusion.status': 'confirmed' })
+    const confirmedCaseReviews = await AiCaseReview.find({
+      user: user._id, 'conclusion.status': 'confirmed',
+      $or: [
+        { reviewType: 'annual' },
+        { reviewType: { $exists: false }, title: /年度管理研判/ },
+      ],
+    })
       .sort({ 'conclusion.confirmedAt': -1 }).limit(20).select('title conclusion.content conclusion.structured conclusion.confirmedAt').lean();
     const confirmedReviewText = confirmedCaseReviews.length
       ? confirmedCaseReviews.map(item => `【${item.title}】${item.conclusion.content}`).join('\n\n').slice(0, 16000)
