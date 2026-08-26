@@ -188,6 +188,7 @@ export default function EditProfilePage() {
   const [weight, setWeight] = useState(user?.weight ? String(user.weight) : '');
   const [contactPhone, setContactPhone] = useState(user?.contactPhone || '');
   const [deliveryAddress, setDeliveryAddress] = useState(user?.deliveryAddress || '');
+  const [residence, setResidence] = useState(user?.residence?.province ? [user.residence.province, user.residence.city, user.residence.district].filter(Boolean) : []);
 
   const hp = user?.healthProfile || {};
   const [bloodTypeABO, setBloodTypeABO] = useState(user?.bloodTypeABO || '');
@@ -223,6 +224,7 @@ export default function EditProfilePage() {
         weight: weight ? Number(weight) : undefined,
         contactPhone: contactPhone.trim() || undefined,
         deliveryAddress: deliveryAddress.trim() || undefined,
+        residence: residence.length >= 2 ? { province: residence[0], city: residence[1], district: residence[2] || '' } : undefined,
         bloodTypeABO,
         bloodTypeRH,
         healthProfile: {
@@ -282,6 +284,7 @@ export default function EditProfilePage() {
         </View>
         <Field label="年龄" value={age} onInput={setAge} type="number" unit="岁" />
         <Field label="联系电话" value={contactPhone} onInput={setContactPhone} placeholder="用于快递联系（与登录手机号独立）" type="number" />
+        <View style={{ marginBottom: `${spacing.md}px` }}><Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textSecondary, display: 'block', marginBottom: '8px' }}>常住所在地</Text><Picker mode="region" value={residence} onChange={(e) => setResidence(e.detail.value || [])}><View style={boxStyle}><Text style={{ color: residence.length ? colors.textPrimary : colors.textMuted }}>{residence.length ? residence.join(' ') : '请选择省 / 市 / 区'}</Text></View></Picker></View>
         <View style={{ marginBottom: 0 }}>
           <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textSecondary, display: 'block', marginBottom: '8px' }}>配送地址（快递）</Text>
           <Textarea

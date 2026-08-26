@@ -272,7 +272,7 @@ router.get('/health-fund', auth, async (req, res) => {
 router.put('/me', auth, async (req, res) => {
   try {
     const { name, age, gender, height, weight, servicePackage, serviceExpiry,
-            contactPhone, deliveryAddress, healthProfile,
+            contactPhone, deliveryAddress, residence, healthProfile,
             bloodTypeABO, bloodTypeRH, lifestyle } = req.body;
 
     const updateData = {};
@@ -291,6 +291,9 @@ router.put('/me', auth, async (req, res) => {
     // 联系信息（#34）
     if (contactPhone    !== undefined) updateData.contactPhone    = contactPhone;
     if (deliveryAddress !== undefined) updateData.deliveryAddress = deliveryAddress;
+    if (residence && typeof residence === 'object' && !Array.isArray(residence)) {
+      for (const key of ['province', 'city', 'district']) if (residence[key] !== undefined) updateData[`residence.${key}`] = String(residence[key] || '').trim();
+    }
     // 血型独立字段（用户端直接传入 ABO/RH）
     if (bloodTypeABO !== undefined) { updateData.bloodTypeABO = bloodTypeABO; recordArchiveChange('bloodTypeABO', 'ABO血型', req.user.bloodTypeABO, bloodTypeABO); }
     if (bloodTypeRH  !== undefined) { updateData.bloodTypeRH  = bloodTypeRH; recordArchiveChange('bloodTypeRH', 'RH血型', req.user.bloodTypeRH, bloodTypeRH); }
@@ -401,7 +404,7 @@ router.put('/me', auth, async (req, res) => {
 // 其余健康信息（既往史/生活方式/心理健康等）交给问卷库分批推送采集，不在此处重复询问
 router.post('/onboarding', auth, async (req, res) => {
   try {
-    const { name, idNumber, idType, contactPhone, verificationCode } = req.body;
+    const { name, idNumber, idType, contactPhone, verificationCode, residence } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ success: false, message: '请填写姓名' });
     if (!idNumber || !idNumber.trim()) return res.status(400).json({ success: false, message: `请填写${idType === 'passport' ? '护照号' : '身份证号'}` });
     if (!contactPhone || !contactPhone.trim()) return res.status(400).json({ success: false, message: '请填写联系电话' });
@@ -443,6 +446,7 @@ router.post('/onboarding', auth, async (req, res) => {
       onboardingCompleted: true,
       onboardingCompletedAt: new Date(),
     };
+    if (residence?.province && residence?.city) updateData.residence = { province: String(residence.province).trim(), city: String(residence.city).trim(), district: String(residence.district || '').trim() };
     updateData.idNumber = normalizedIdNumber;
     updateData.idType = isPassport ? 'passport' : 'idCard';
     if (parsed) {
@@ -465,6 +469,7 @@ router.post('/onboarding', auth, async (req, res) => {
         lastLoginAt: current.lastLoginAt || new Date(),
         lastLoginMethod: current.lastLoginMethod || idOwner.lastLoginMethod,
       };
+      if (residence?.province && residence?.city) setData.residence = updateData.residence;
       if (current.wechatOpenid) setData.wechatOpenid = current.wechatOpenid;
       if (current.wechatMpOpenid) setData.wechatMpOpenid = current.wechatMpOpenid;
       if (!idOwner.name || idOwner.name === '微信用户') setData.name = name.trim();

@@ -18,6 +18,7 @@ export default defineAppConfig({
     'pages/reminders/index',
     'pages/services/mall/index',
     'pages/profile/edit/index',
+    'pages/profile/location/index',
     'pages/profile/security/index',
     'pages/profile/feedback/index',
     'pages/profile/notifications/index',

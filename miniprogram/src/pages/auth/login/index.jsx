@@ -26,7 +26,9 @@ export default function LoginPage() {
   });
 
   const afterLoginSuccess = (user) => {
-    if (user?.onboardingCompleted) {
+    if (user?.onboardingCompleted && (!user?.residence?.province || !user?.residence?.city)) {
+      Taro.redirectTo({ url: '/pages/profile/location/index' });
+    } else if (user?.onboardingCompleted) {
       let target = '';
       try { target = Taro.getStorageSync('jy_post_login_url') || ''; Taro.removeStorageSync('jy_post_login_url'); } catch {}
       if (target) Taro.redirectTo({ url: target });

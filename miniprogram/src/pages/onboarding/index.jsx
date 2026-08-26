@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, Input, Button } from '@tarojs/components';
+import { View, Text, Input, Button, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius } from '../../theme';
 import { userAPI } from '../../services/api';
@@ -16,11 +16,12 @@ export default function OnboardingPage() {
   const [idNumber, setIdNumber] = useState(user?.idNumber || '');
   const [contactPhone, setContactPhone] = useState(user?.phone || user?.contactPhone || '');
   const [verificationCode, setVerificationCode] = useState('');
+  const [residence, setResidence] = useState([]);
   const [codeSending, setCodeSending] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const canSubmit = name.trim() && idNumber.trim() && contactPhone.trim() && !submitting;
+  const canSubmit = name.trim() && idNumber.trim() && contactPhone.trim() && residence.length >= 2 && !submitting;
   const needsPhoneVerification = contactPhone.trim() !== (user?.phone || '').trim();
 
   const sendCode = async () => {
@@ -36,6 +37,7 @@ export default function OnboardingPage() {
     if (!name.trim()) { setErrorMsg('请填写姓名'); return; }
     if (!idNumber.trim()) { setErrorMsg(`请填写${idType === 'passport' ? '护照号' : '身份证号'}`); return; }
     if (!contactPhone.trim()) { setErrorMsg('请填写联系电话'); return; }
+    if (residence.length < 2) { setErrorMsg('请选择常住所在地'); return; }
     if (needsPhoneVerification && !/^\d{6}$/.test(verificationCode.trim())) { setErrorMsg('请输入收到的6位短信验证码'); return; }
     setSubmitting(true);
     try {
@@ -45,6 +47,7 @@ export default function OnboardingPage() {
         idType,
         contactPhone: contactPhone.trim(),
         verificationCode: needsPhoneVerification ? verificationCode.trim() : undefined,
+        residence: { province: residence[0], city: residence[1], district: residence[2] || '' },
       });
       if (res.success) {
         if (res.data.token) await login({ ...res.data.user, onboardingCompleted: true }, res.data.token);
@@ -129,6 +132,14 @@ export default function OnboardingPage() {
               </View>
             </>
           )}
+        </View>
+
+        <View style={{ marginBottom: `${spacing.xxl}px` }}>
+          <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textSecondary, marginBottom: `${spacing.sm}px`, display: 'block' }}>常住所在地</Text>
+          <Picker mode="region" value={residence} onChange={(e) => setResidence(e.detail.value || [])}>
+            <View style={{ backgroundColor: colors.surface, borderRadius: `${radius.sm}px`, border: `1.5px solid ${colors.border}`, padding: '12px' }}><Text style={{ fontSize: '15px', color: residence.length ? colors.textPrimary : colors.textMuted }}>{residence.length ? residence.join(' ') : '请选择省 / 市 / 区'}</Text></View>
+          </Picker>
+          <Text style={{ fontSize: '11px', color: colors.textMuted, marginTop: '6px', display: 'block' }}>仅用于匹配本地健康服务，不读取手机定位。</Text>
         </View>
 
         {!!errorMsg && (

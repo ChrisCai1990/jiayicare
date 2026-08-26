@@ -3513,6 +3513,7 @@ export default function PatientDetailPage() {
                   <InfoRow label="体重" value={user.weight ? `${user.weight} kg` : '-'} />
                   {bmi && <InfoRow label="BMI" value={bmi} />}
                   <InfoRow label={user.idType === 'passport' ? '护照' : '身份证'} value={user.idNumber || '-'} />
+                  <InfoRow label="常住所在地" value={[user.residence?.province, user.residence?.city, user.residence?.district].filter(Boolean).join(' ') || '-'} />
                   <InfoRow label="联系地址" value={user.address || '-'} />
                   <InfoRow label="紧急联系人" value={user.contactName || '-'} />
                   <InfoRow label="紧急联系电话" value={user.contactPhone2 || '-'} />

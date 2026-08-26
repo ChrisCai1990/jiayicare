@@ -114,6 +114,7 @@ const userSchema = new mongoose.Schema({
     changedAt: { type: Date, default: Date.now },
   }],
   deliveryAddress: { type: String, default: '' },  // 配送地址（快递用）
+  residence: { province: { type: String, default: '' }, city: { type: String, default: '' }, district: { type: String, default: '' } },
   // 会员类型（成人/儿童）
   patientCategory: { type: String, enum: ['adult', 'child'], default: 'adult' },
   birthDate: { type: String, default: '' }, // YYYY-MM-DD
