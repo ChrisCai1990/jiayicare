@@ -1470,6 +1470,22 @@ router.put('/products/:id', adminAuth, async (req, res) => {
   res.json({ success: true, data: product, message: '产品更新成功' });
 });
 
+router.patch('/products/:id/health-fund-deduction', adminAuth, async (req, res) => {
+  const allowedModes = ['inherit', 'disabled', 'unlimited', 'percentage', 'fixedAmount'];
+  const mode = allowedModes.includes(req.body?.mode) ? req.body.mode : 'inherit';
+  const rawValue = Number(req.body?.value);
+  const value = ['percentage', 'fixedAmount'].includes(mode)
+    ? Math.max(0, Math.min(mode === 'percentage' ? 100 : Number.MAX_SAFE_INTEGER, Number.isFinite(rawValue) ? rawValue : 0))
+    : 0;
+  const product = await Product.findByIdAndUpdate(
+    req.params.id,
+    { $set: { healthFundDeduction: { mode, value } } },
+    { new: true, runValidators: true }
+  );
+  if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
+  res.json({ success: true, data: product.healthFundDeduction, message: '商品健康基金抵扣规则已更新' });
+});
+
 // PATCH /api/admin/products/:id/toggle
 router.patch('/products/:id/toggle', adminAuth, async (req, res) => {
   const product = await Product.findById(req.params.id);

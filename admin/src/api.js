@@ -137,6 +137,7 @@ export const adminAPI = {
   generateProductAiDraft: (data)   => req('/products/ai-draft', { method: 'POST', body: JSON.stringify(data) }),
   createProduct:      (data)     => req('/products', { method: 'POST', body: JSON.stringify(data) }),
   updateProduct:      (id, data) => req(`/products/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  updateProductHealthFundDeduction: (id, data) => req(`/products/${id}/health-fund-deduction`, { method: 'PATCH', body: JSON.stringify(data) }),
   toggleProduct:      (id)       => req(`/products/${id}/toggle`, { method: 'PATCH' }),
   batchToggleProducts:(ids, status) => req('/products/batch-toggle', { method: 'PATCH', body: JSON.stringify({ ids, status }) }),
   deleteProduct:      (id)       => req(`/products/${id}`, { method: 'DELETE' }),
