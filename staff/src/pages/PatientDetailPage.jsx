@@ -10972,10 +10972,23 @@ export default function PatientDetailPage() {
 
 function MembershipPanel({ user, patientId, onRefresh }) {
   const toast = useToast()
+  const [membership, setMembership] = useState(user)
   const [cardNumber, setCardNumber] = useState(user.cardNumber || '')
   const [pointsDelta, setPointsDelta] = useState('')
   const [rechargeDelta, setRechargeDelta] = useState('')
   const [saving, setSaving] = useState(false)
+
+  const loadMembership = useCallback(async () => {
+    try {
+      const res = await staffAPI.getPatientMembership(patientId)
+      if (res.success && res.data) {
+        setMembership(current => ({ ...current, ...res.data }))
+        setCardNumber(res.data.cardNumber || '')
+      }
+    } catch (err) { toast(err.message) }
+  }, [patientId])
+
+  useEffect(() => { loadMembership() }, [loadMembership])
 
   const save = async () => {
     setSaving(true)
@@ -10986,6 +10999,7 @@ function MembershipPanel({ user, patientId, onRefresh }) {
       await staffAPI.updatePatientMembership(patientId, payload)
       toast('已更新')
       setPointsDelta(''); setRechargeDelta('')
+      await loadMembership()
       onRefresh()
     } catch (err) { toast(err.message) }
     finally { setSaving(false) }
@@ -11013,9 +11027,9 @@ function MembershipPanel({ user, patientId, onRefresh }) {
           {/* 当前状态 */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
             {[
-              { label: '健康基金', value: `¥${(user.healthFundBalance || 0).toFixed(2)}`, color: '#1E6B50' },
-              { label: '充值余额', value: `¥${(user.rechargeBalance || 0).toFixed(2)}`, color: '#0077B6' },
-              { label: '积分', value: (user.pointsBalance || 0).toString(), color: '#D97706' },
+              { label: '健康基金', value: `¥${(membership.healthFundBalance || 0).toFixed(2)}`, color: '#1E6B50' },
+              { label: '充值余额', value: `¥${(membership.rechargeBalance || 0).toFixed(2)}`, color: '#0077B6' },
+              { label: '积分', value: (membership.pointsBalance || 0).toString(), color: '#D97706' },
             ].map(s => (
               <div key={s.label} style={{ background: '#f9f7f3', borderRadius: 8, padding: '10px 12px', textAlign: 'center' }}>
                 <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 4 }}>{s.label}</div>
