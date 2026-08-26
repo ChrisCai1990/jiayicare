@@ -6,16 +6,11 @@ const User = require('../models/User');
 const PointsLog = require('../models/PointsLog');
 const { calcStatus } = require('../utils/healthRecordStatus');
 const { uploadBase64, signStoredUrl } = require('../utils/oss');
+const { incomingImagePayloads, withSafeHealthRecordImages, withoutLegacyImageExtra } = require('../utils/healthRecordImages');
 const router = express.Router();
 
 function withSignedHealthImages(record) {
-  const obj = record.toObject ? record.toObject() : { ...record };
-  const urls = obj.imageUrls?.length ? obj.imageUrls : (obj.imageUrl ? [obj.imageUrl] : []);
-  const signedUrls = urls.map(url => signStoredUrl(url));
-  obj.imageUrls = signedUrls;
-  obj.imageUrl = signedUrls[0] || '';
-  if (obj.extra?.imageUrl) obj.extra = { ...obj.extra, imageUrl: signStoredUrl(obj.extra.imageUrl) };
-  return obj;
+  return withSafeHealthRecordImages(record, signStoredUrl);
 }
 
 // 打卡固定积分：每种打卡类型每天（CST）限计一次，防刷分
@@ -188,7 +183,7 @@ router.get('/today-status', auth, async (req, res) => {
     const doneTypes = {};
     for (const r of records) {
       if (!doneTypes[r.type]) {
-        doneTypes[r.type] = { note: r.note || '', hasImage: !!r.extra?.imageUrl };
+        doneTypes[r.type] = { note: r.note || '', hasImage: !!(r.imageUrls?.length || r.imageUrl || r.extra?.imageUrl) };
       }
     }
 
@@ -217,9 +212,10 @@ router.post('/', auth, async (req, res) => {
     const aiAlertStatus = (type === 'bloodPressure' && status === 'danger') ? 'pending' : null;
 
     const imageUrls = [];
-    if (imageUrl) imageUrls.push((await uploadBase64(imageUrl, 'image/jpeg', 'health-records')).url);
-    for (const item of images.slice(0, 9)) {
-      if (item?.data) imageUrls.push((await uploadBase64(item.data, item.mimeType || 'image/jpeg', 'health-records')).url);
+    const payloads = incomingImagePayloads({ imageUrl, images: images.slice(0, 9), extra });
+    for (const payload of payloads.slice(0, 9)) {
+      const declaredMime = payload.match(/^data:([^;]+);base64,/i)?.[1] || 'image/jpeg';
+      imageUrls.push((await uploadBase64(payload, declaredMime, 'health-records')).url);
     }
 
     const record = await HealthRecord.create({
@@ -229,7 +225,7 @@ router.post('/', auth, async (req, res) => {
       label: label || type,
       value: String(value),
       unit: unit || '',
-      extra: extra || {},
+      extra: withoutLegacyImageExtra(extra),
       imageUrl: imageUrls[0] || '',
       imageUrls,
       status,

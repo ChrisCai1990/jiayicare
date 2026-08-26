@@ -73,15 +73,11 @@ const staffAuth = require('../middleware/staffAuth');
 const checkPermission = require('../middleware/checkPermission');
 const { checkPlanType } = require('../middleware/checkPermission');
 const { uploadBuffer, deleteFile, signStoredUrl, getObjectStream, urlToKey } = require('../utils/oss');
+const { withSafeHealthRecordImages } = require('../utils/healthRecordImages');
 const router = express.Router();
 
 function withSignedHealthRecord(record) {
-  const obj = record.toObject ? record.toObject() : { ...record };
-  const urls = obj.imageUrls?.length ? obj.imageUrls : (obj.imageUrl ? [obj.imageUrl] : []);
-  obj.imageUrls = urls.map(url => signStoredUrl(url));
-  obj.imageUrl = obj.imageUrls[0] || '';
-  if (obj.extra?.imageUrl) obj.extra = { ...obj.extra, imageUrl: signStoredUrl(obj.extra.imageUrl) };
-  return obj;
+  return withSafeHealthRecordImages(record, signStoredUrl);
 }
 
 function withSignedMessageMedia(message) {
