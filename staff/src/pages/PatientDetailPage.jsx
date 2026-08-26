@@ -11130,7 +11130,7 @@ function formatRecordValue(r) {
 // ── 聊天对话弹窗 ──────────────────────────────────────────────
 function SendMessageModal({ patientId, patientName, onClose }) {
   const { staff } = useStaff()
-  const chatRole = staff?.role === 'familyDoctor' ? 'doctor' : staff?.role === 'nutritionist' ? 'nutritionist' : 'manager'
+  const chatRole = staff?.role === 'familyDoctor' ? 'doctor' : staff?.role === 'nutritionist' ? 'nutritionist' : staff?.role === 'medicalAssistant' ? 'medicalAssistant' : 'manager'
   const toast = useToast()
   const [msgs, setMsgs] = useState([])
   const [loading, setLoading] = useState(true)

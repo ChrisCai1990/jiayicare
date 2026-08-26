@@ -3432,11 +3432,11 @@ router.post('/patients/:id/message', staffAuth, async (req, res) => {
     const typeMap = {
       doctor: 'doctor', chiefPhysician: 'doctor', physician: 'doctor',
       nutritionist: 'nutritionist',
-      manager: 'manager', healthManager: 'manager', medicalAssistant: 'manager',
+      manager: 'manager', healthManager: 'manager', medicalAssistant: 'medicalAssistant',
     };
     const staff = req.staff;
     const msgType = typeMap[staff.role] || 'manager';
-    const roleKey = msgType === 'doctor' ? 'doctor' : msgType === 'nutritionist' ? 'nutritionist' : 'manager';
+    const roleKey = msgType;
     const conversationId = `${req.params.id}_${roleKey}`;
     const senderLabel = staff.title ? `${staff.name}（${staff.title}）` : (staff.name || '健康管理团队');
 
@@ -3610,12 +3610,14 @@ router.get('/notifications', staffAuth, async (req, res) => {
     staff.role === 'superadmin'      ? {} :
     staff.role === 'familyDoctor'    ? { assignedFamilyDoctor: { $in: visibleStaffIds } } :
     staff.role === 'nutritionist'    ? { assignedNutritionist: { $in: visibleStaffIds } } :
-    staff.role === 'healthManager' || staff.role === 'medicalAssistant'
-                                     ? { assignedHealthManager: { $in: visibleStaffIds } } :
+    staff.role === 'healthManager'   ? { assignedHealthManager: { $in: visibleStaffIds } } :
+    staff.role === 'medicalAssistant'? { assignedMedicalAssistant: { $in: visibleStaffIds } } :
                                        { $or: [ { assignedFamilyDoctor: { $in: visibleStaffIds } }, { assignedHealthManager: { $in: visibleStaffIds } }, { assignedNutritionist: { $in: visibleStaffIds } } ] };
   const msgRecipientFilter =
     staff.role === 'familyDoctor'  ? { recipient: { $in: ['doctor', null, undefined] } } :
     staff.role === 'nutritionist'  ? { recipient: 'nutritionist' } :
+    staff.role === 'medicalAssistant' ? { recipient: 'medicalAssistant' } :
+    staff.role === 'healthManager' ? { recipient: { $in: ['manager', null, undefined] } } :
     {};
 
   const [recentPushes, pendingReferrals, expiringPatients, unreadReferralCount, unreadRepliedCount, myMsgPatients] = await Promise.all([
@@ -5241,8 +5243,8 @@ router.get('/user-messages', staffAuth, async (req, res) => {
     const myFilter =
       staff.role === 'familyDoctor'    ? { assignedFamilyDoctor: { $in: visibleStaffIds } } :
       staff.role === 'nutritionist'    ? { assignedNutritionist: { $in: visibleStaffIds } } :
-      staff.role === 'healthManager' || staff.role === 'medicalAssistant'
-                                       ? { assignedHealthManager: { $in: visibleStaffIds } } :
+      staff.role === 'healthManager'   ? { assignedHealthManager: { $in: visibleStaffIds } } :
+      staff.role === 'medicalAssistant'? { assignedMedicalAssistant: { $in: visibleStaffIds } } :
                                          { $or: [ { assignedFamilyDoctor: { $in: visibleStaffIds } }, { assignedHealthManager: { $in: visibleStaffIds } }, { assignedNutritionist: { $in: visibleStaffIds } } ] };
 
     const myPatients = await User.find(myFilter).select('_id name phone').lean();
@@ -5255,6 +5257,7 @@ router.get('/user-messages', staffAuth, async (req, res) => {
     const recipientFilter =
       staff.role === 'familyDoctor'  ? { recipient: { $in: ['doctor', null, undefined] } } :
       staff.role === 'nutritionist'  ? { recipient: 'nutritionist' } :
+      staff.role === 'medicalAssistant' ? { recipient: 'medicalAssistant' } :
       staff.role === 'superadmin'    ? {} :
       { recipient: { $in: ['manager', null, undefined] } };
 
@@ -5277,13 +5280,14 @@ router.get('/user-messages', staffAuth, async (req, res) => {
   }
 });
 
-// 角色只能查看/操作自己对应频道的对话（健康顾问→doctor，营养师→nutritionist，健管专员/医助→manager），
+// 角色只能查看/操作自己对应频道的对话（健康顾问→doctor，营养师→nutritionist，健管专员→manager，就医专员→medicalAssistant），
 // 防止越权看到并误将其他角色的留言标记已读（曾导致健管专员点开健康顾问的对话后，健康顾问端误判为"已读"而漏看）
 function assertRoleMatchesChannel(staffRole, channelRole) {
   if (staffRole === 'superadmin') return true;
   const allowed =
     staffRole === 'familyDoctor'  ? 'doctor' :
     staffRole === 'nutritionist'  ? 'nutritionist' :
+    staffRole === 'medicalAssistant' ? 'medicalAssistant' :
     'manager';
   return allowed === channelRole;
 }
@@ -5415,11 +5419,11 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
       familyDoctor: 'doctor',
       nutritionist: 'nutritionist',
       healthManager: 'manager',
-      medicalAssistant: 'manager',
+      medicalAssistant: 'medicalAssistant',
     };
     const msgType = typeMap[staff.role] || 'manager';
     // 根据消息类型确定 conversationId 中的 role key（与用户端发送时一致）
-    const roleKey = msgType === 'doctor' ? 'doctor' : msgType === 'nutritionist' ? 'nutritionist' : 'manager';
+    const roleKey = msgType;
     const conversationId = `${req.params.userId}_${roleKey}`;
     const senderLabel = staff.title ? `${staff.name}（${staff.title}）` : staff.name;
 

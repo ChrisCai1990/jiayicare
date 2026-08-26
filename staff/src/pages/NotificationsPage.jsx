@@ -79,7 +79,7 @@ export default function NotificationsPage() {
 
   const unreadPushes = recentPushes.filter(p => !p.readAt)
   const userMessageGroups = Object.values(userMessages.reduce((acc, m) => {
-    const roleKey = m.recipient === 'doctor' ? 'doctor' : m.recipient === 'nutritionist' ? 'nutritionist' : 'manager'
+    const roleKey = ['doctor', 'nutritionist', 'medicalAssistant'].includes(m.recipient) ? m.recipient : 'manager'
     const key = `${m.user}_${roleKey}`
     if (!acc[key]) acc[key] = { ...m, roleKey, messageCount: 0, unreadCount: 0, hasUnread: false }
     acc[key].messageCount += 1

@@ -48,7 +48,7 @@ router.get('/', auth, async (req, res) => {
 // 获取与某个角色的完整对话线程
 router.get('/thread/:role', auth, async (req, res) => {
   const { role } = req.params;
-  const VALID = ['doctor', 'nutritionist', 'manager'];
+  const VALID = ['doctor', 'nutritionist', 'manager', 'medicalAssistant'];
   if (!VALID.includes(role)) return res.status(400).json({ success: false, message: '无效角色' });
   const conversationId = `${req.user._id}_${role}`;
   const [newestMessages, state] = await Promise.all([
@@ -121,28 +121,30 @@ router.patch('/read-all', auth, async (req, res) => {
   res.json({ success: true, message: '全部已读' });
 });
 
-// 用户发送消息（给健康顾问/营养师/健管专员）
+// 用户发送消息（给健康顾问/营养师/健管专员/就医专员）
 router.post('/', auth, async (req, res) => {
   try {
     const { to, content = '', imageUrl = '', image = '', images = [], audio = null, mimeType = 'image/jpeg', aiAnalysis = '', suppressAI = false } = req.body;
     if (!content?.trim() && !imageUrl && !image && !images.length && !audio?.data) {
       return res.status(400).json({ success: false, message: '消息内容不能为空' });
     }
-    const VALID_RECIPIENTS = ['doctor', 'nutritionist', 'manager'];
+    const VALID_RECIPIENTS = ['doctor', 'nutritionist', 'manager', 'medicalAssistant'];
     if (!VALID_RECIPIENTS.includes(to)) {
       return res.status(400).json({ success: false, message: '收件人无效' });
     }
 
-    // 检查营养师是否已分配（re-fetch确保最新状态）
-    if (to === 'nutritionist') {
+    // 检查需专属分配的岗位是否已分配（re-fetch确保最新状态）
+    if (to === 'nutritionist' || to === 'medicalAssistant') {
       const User = require('../models/User');
-      const freshUser = await User.findById(req.user._id).select('assignedNutritionist');
-      if (!freshUser?.assignedNutritionist) {
-        return res.status(400).json({ success: false, message: '暂未分配营养师，请联系健管专员' });
+      const freshUser = await User.findById(req.user._id).select('assignedNutritionist assignedMedicalAssistant');
+      const assigned = to === 'nutritionist' ? freshUser?.assignedNutritionist : freshUser?.assignedMedicalAssistant;
+      if (!assigned) {
+        const label = to === 'nutritionist' ? '营养师' : '就医专员';
+        return res.status(400).json({ success: false, message: `暂未分配${label}，请联系健管专员` });
       }
     }
 
-    const TITLE_MAP = { doctor: '健康顾问', nutritionist: '营养师', manager: '健管专员' };
+    const TITLE_MAP = { doctor: '健康顾问', nutritionist: '营养师', manager: '健管专员', medicalAssistant: '就医专员' };
     const senderName = req.user.name || req.user.phone;
     const conversationId = `${req.user._id}_${to}`;
     let storedImageUrl = String(imageUrl || '');
@@ -221,7 +223,8 @@ router.post('/', auth, async (req, res) => {
       });
       return;
     }
-    if (suppressAI) return;
+    // 就医专员频道只做真人沟通，不生成可能被误认为就医建议的 AI 兜底回复。
+    if (suppressAI || to === 'medicalAssistant') return;
 
     // AI立即先回一句安抚（不阻塞响应），医护看到后仍可正常人工回复追加
     require('../utils/aiMessageFallback').replyWithAI({

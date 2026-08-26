@@ -16,6 +16,7 @@ const ROLE_DEFS = [
   { key: 'doctor', label: '健康顾问', icon: '🩺', color: colors.primary },
   { key: 'manager', label: '健管专员', icon: '🧑‍💼', color: '#D97706' },
   { key: 'nutritionist', label: '营养师', icon: '🥗', color: '#059669' },
+  { key: 'medicalAssistant', label: '就医专员', icon: '🏥', color: '#7C3AED' },
 ];
 
 const EXTRA_TEAM_META = {
@@ -121,13 +122,14 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
   const careTeam = Array.isArray(user?.careTeam) ? user.careTeam : [];
   const careTeamKinds = new Set(careTeam.map((m) => m?.kind).filter(Boolean));
   const careTeamMember = (key) => {
-    const kind = { doctor: 'familyDoctor', nutritionist: 'nutritionist', manager: 'healthManager' }[key];
+    const kind = { doctor: 'familyDoctor', nutritionist: 'nutritionist', manager: 'healthManager', medicalAssistant: 'medicalAssistant' }[key];
     return careTeam.find((m) => m?.kind === kind) || null;
   };
   const hasRole = (key) => {
     if (key === 'doctor') return careTeamKinds.has('familyDoctor');
     if (key === 'nutritionist') return careTeamKinds.has('nutritionist');
     if (key === 'manager') return careTeamKinds.has('healthManager');
+    if (key === 'medicalAssistant') return careTeamKinds.has('medicalAssistant');
     return false;
   };
 
@@ -594,6 +596,7 @@ const ROLE_META = {
   doctor: { label: '健康顾问', icon: '🩺', color: colors.primary },
   manager: { label: '健管专员', icon: '🧑‍💼', color: '#D97706' },
   nutritionist: { label: '营养师', icon: '🥗', color: '#059669' },
+  medicalAssistant: { label: '就医专员', icon: '🏥', color: '#7C3AED' },
 };
 
 function ConversationThread({ role, member, onClose, embedded = false, assistantConfig = {}, onlineStatus = { mode: 'ai', label: 'AI在线' } }) {

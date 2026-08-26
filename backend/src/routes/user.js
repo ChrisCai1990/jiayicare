@@ -191,11 +191,12 @@ router.get('/me', auth, async (req, res) => {
       };
 
     // 查询已分配的责任人员信息（实时 populate）
-    // 健康规划师与就医专员是服务协调岗位，不混入“健康顾问团队”。
+    // 健康规划师是服务协调岗位；已分配的就医专员属于客户可沟通的健康服务团队。
     const careTeamAssignments = [
       { id: req.user.assignedFamilyDoctor,    kind: 'familyDoctor',     label: '健康顾问' },
       { id: req.user.assignedNutritionist,    kind: 'nutritionist',     label: '营养师' },
       { id: req.user.assignedHealthManager,   kind: 'healthManager',    label: '健管专员' },
+      { id: req.user.assignedMedicalAssistant,kind: 'medicalAssistant', label: '就医专员' },
       { id: req.user.assignedSpecialist,      kind: 'specialist',       label: '专科医师' },
       { id: req.user.assignedTcmDoctor,       kind: 'tcmDoctor',        label: '中医师' },
       { id: req.user.assignedPsychologist,    kind: 'psychologist',     label: '心理咨询师' },
