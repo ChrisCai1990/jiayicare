@@ -9347,7 +9347,7 @@ const PAGE_COVERAGE_AUDIT_PROMPT = `你是体检报告页面漏项复核助手�
 血液/尿液/粪便检验每个有结果的子项单独输出；内科、外科、全科、眼科、耳鼻喉、妇科、牙科或口腔科等体格检查也要按报告印刷明细逐项输出，禁止按科室合并；心电图、碳13/碳14呼气试验、头颅MRI不得漏；组合超声按器官拆开。
 一般检查必须复核身高、体重、BMI、脉搏和血压是否逐行齐全，禁止用BMI反算体重。眼科必须逐行复核左右裸眼视力、左右矫正视力、外眼和眼底：空白结果填“无”，禁止把眼底段落塞进裸眼视力，禁止把矫正视力当裸眼视力。耳鼻喉科必须复核现病史、既往史、手术史以及耳、鼻、咽、喉各行，“无”也不得省略。
 严格返回JSON，不要解释：
-{"items":[{"name":"项目名","itemType":"lab | imaging | data","value":"","unit":"","referenceRange":"","status":"normal | abnormal | attention | unknown","orderName":"","sourceSection":"原栏目标题","bodyPart":"","findings":"","diagnosis":"","conclusion":"","pathologyFindings":"","pathologyDiagnosis":""}]}`;
+{"items":[{"name":"项目名","itemType":"lab | imaging | data","value":"","unit":"","referenceRange":"","status":"normal | abnormal | attention | unknown","orderName":"","sourceSection":"原栏目标题","bodyPart":"","findings":"","diagnosis":"","conclusion":"","sourceEvidence":"影像类必须逐字抄录包含项目标题和检查结果的连续原文；其他类型可留空","pathologyFindings":"","pathologyDiagnosis":""}]}`;
 
 function reportItemEvidenceKey(item) {
   const clean = value => str(value).toLowerCase().replace(/[\s，,、:：;；()（）\[\]【】\-_/]/g, '');
@@ -11685,6 +11685,7 @@ async function runReportPageParse(reportId, pageNum, options = {}) {
   const { parseImage } = require('../utils/ai');
   const { fetchReportBuffer, fetchReportBuffers, extractPdfTextLayer, renderSinglePage, renderSinglePageRegions, renderSinglePageColumns, splitImageColumns, isPdfReport } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
+  const { filterSupplementCandidates } = require('../utils/reportPageSupplement');
   const { assessReportItems, formatTextLayerEvidence } = require('../utils/reportOcrQuality');
   const MedicalReport = require('../models/MedicalReport');
   const pageRunId = str(options.runId);
@@ -11704,7 +11705,13 @@ async function runReportPageParse(reportId, pageNum, options = {}) {
   const useMingzhouTemplate = mingzhouTemplate.isMingzhouReport(report);
   const templatePrompt = useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum)
     : useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum)
-    : useMingzhouTemplate ? mingzhouTemplate.promptForPage(pageNum) : '';
+      : useMingzhouTemplate ? mingzhouTemplate.promptForPage(pageNum) : '';
+  const oldPageAtStart = (report.reportItems || []).filter(item => itemTouchesPage(item, pageNum));
+  const existingPageEvidence = oldPageAtStart.map(item => ({
+    name: str(item.name), itemType: item.itemType, bodyPart: str(item.bodyPart), value: str(item.value),
+    findings: str(item.findings), diagnosis: str(item.diagnosis || item.conclusion),
+  }));
+  const deltaPrompt = `\n\n【已有项目，严禁重复】数据库中本页已有：${JSON.stringify(existingPageEvidence)}。只返回图片上真实存在且清单中没有的项目；简称、同义名称、彩超/超声等差异仍视为已有。影像类必须增加sourceEvidence，逐字抄录同时包含检查标题和检查结果的连续原文；无法提供连续原文证据就不要输出。`;
   let images;
   let textLayer = null;
   if (isPdf) {
@@ -11727,12 +11734,12 @@ async function runReportPageParse(reportId, pageNum, options = {}) {
     let parsed = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const regionHint = images.length > 1 ? `这是第${pageNum}页的${regionIndex === 0 ? '上半部分' : '下半部分'}，边界有重叠；` : '';
+      const regionHint = images.length > 1 ? `这是第${pageNum}页的${regionIndex === 0 ? '左半部分' : '右半部分'}，边界有重叠；` : '';
       const pagePrompt = report.type === 'body_comp' && usePediatricBodyComposition
         ? REPORT_PARSE_PROMPT + PEDIATRIC_BODY_COMPOSITION_PROMPT
         : REPORT_PARSE_PROMPT;
       const pageEvidence = formatTextLayerEvidence(textLayer?.pages?.[pageNum - 1]);
-      const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}\n\n【单页补提】${regionHint}从上到下、从左到右逐行提取全部实际结果，不得跳过任何栏目。${pageEvidence}`, { isUrl: false, model: 'qwen-vl-max', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 120000 });
+      const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}${deltaPrompt}\n\n【单页补提】${regionHint}只扫描遗漏项目，不得重新输出已有项目。${pageEvidence}`, { isUrl: false, model: 'qwen-vl-max', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 120000 });
       parsed = safeParseJSON(raw);
       if (parsed?.items?.length) break;
     } catch (error) {
@@ -11740,19 +11747,20 @@ async function runReportPageParse(reportId, pageNum, options = {}) {
       console.log(`[parse-page] ${reportId} P${pageNum} 第${attempt}次失败，自动重试: ${error.message}`);
     }
     }
-    if (!parsed?.items?.length) throw new Error(`第${pageNum}页${images.length > 1 ? (regionIndex === 0 ? '上半部分' : '下半部分') : ''}未识别到有效项目，原数据未改动`);
-    let regionItems = parsed.items;
+    if (!parsed?.items?.length) continue;
+    let regionItems = filterSupplementCandidates(oldPageAtStart, parsed.items);
     // 单页补提必须再做一次覆盖复核，专门扫描双栏表格的右半侧和下半部；只合并新增项，不覆盖已有人工数据。
     try {
       const existingNames = regionItems.map(item => str(item.name)).filter(Boolean).join('、');
-      const auditRaw = await parseImage(images[regionIndex], `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n已提取项目：${existingNames || '无'}。请逐行核对右半侧后再核对左半侧，只输出遗漏项目。${formatTextLayerEvidence(textLayer?.pages?.[pageNum - 1])}`, { isUrl: false, model: 'qwen-vl-max', maxTokens: 5000, timeoutMs: 120000 });
+      const auditRaw = await parseImage(images[regionIndex], `${PAGE_COVERAGE_AUDIT_PROMPT}${deltaPrompt}\n\n本轮新提取项目：${existingNames || '无'}。只输出数据库已有项目和本轮项目以外的遗漏项。${formatTextLayerEvidence(textLayer?.pages?.[pageNum - 1])}`, { isUrl: false, model: 'qwen-vl-max', maxTokens: 5000, timeoutMs: 120000 });
       const audit = safeParseJSON(auditRaw);
-      if (audit?.items?.length) regionItems = mergeCoverageAuditItems(regionItems, audit.items);
+      if (audit?.items?.length) regionItems = mergeCoverageAuditItems(regionItems, filterSupplementCandidates([...oldPageAtStart, ...regionItems], audit.items));
     } catch (auditError) {
       console.log(`[parse-page] ${reportId} P${pageNum} 右栏覆盖复核异常: ${auditError.message}`);
     }
     parsedItems = mergeCoverageAuditItems(parsedItems, regionItems);
   }
+  if (!parsedItems.length) throw new Error(`第${pageNum}页未发现有可靠原文证据的新项目，原数据未改动`);
   let newPage = tagReportPageItems(parsedItems, pageNum);
   if (usePediatricBodyComposition && isBodyCompositionPage({}, newPage, report.type)) {
     newPage = sanitizePediatricBodyCompositionPage(newPage, true);
@@ -11766,9 +11774,8 @@ async function runReportPageParse(reportId, pageNum, options = {}) {
   const latest = await MedicalReport.findOne(pageRunFilter);
   if (!latest) return;
   const oldPage = (latest.reportItems || []).filter(item => itemTouchesPage(item, pageNum));
-  const mergedPage = useMingzhouTemplate && [7, 8].includes(Number(pageNum)) && mingzhouTemplate.pageIsComplete(pageNum, newPage)
-    ? newPage
-    : mergeCoverageAuditItems(oldPage, newPage);
+  const safeNewPage = filterSupplementCandidates(oldPage, newPage);
+  const mergedPage = mergeCoverageAuditItems(oldPage, safeNewPage);
   const classifiedRawPage = await classifyItemsAsync(mergedPage);
   const classifiedPage = latest.ocrVersion ? assessReportItems(classifiedRawPage, { textLayer }) : classifiedRawPage;
   const preserved = (latest.reportItems || []).filter(item => !itemTouchesPage(item, pageNum));
