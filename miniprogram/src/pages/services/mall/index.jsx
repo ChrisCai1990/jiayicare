@@ -22,7 +22,7 @@ function policyLimit(type, value, amount) {
   return amount;
 }
 
-function maxFundDeduction(healthFund, amount) {
+function maxFundDeduction(healthFund, amount, productRule) {
   const policy = healthFund?.policy || {};
   if (amount < (Number(policy.minOrderAmount) || 0)) return 0;
   const personal = Math.min(Number(healthFund?.personal) || 0, policyLimit(policy.personalDeductionType, policy.personalDeductionValue, amount));
@@ -30,7 +30,10 @@ function maxFundDeduction(healthFund, amount) {
   const corporate = healthFund?.rule?.enabled === false
     ? 0
     : Math.min(Number(healthFund?.corporate) || 0, corporateLimit);
-  return Math.max(0, Math.min(amount, personal + corporate));
+  const productLimit = productRule?.mode === 'disabled' ? 0
+    : productRule?.mode && !['inherit','unlimited'].includes(productRule.mode)
+      ? policyLimit(productRule.mode, productRule.value, amount) : amount;
+  return Math.max(0, Math.min(amount, personal + corporate, productLimit));
 }
 
 function Stars({ rating }) {
@@ -171,7 +174,7 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
   const fundRuleDescription = checkoutUser?.healthFund?.rule?.description || '';
   const eligibleProductIds = checkoutUser?.healthFund?.policy?.eligibleProductIds || [];
   const productFundEligible = !eligibleProductIds.length || eligibleProductIds.map(String).includes(String(item?.id || item?._id || ''));
-  const canUseFund = fundBalance > 0 && productFundEligible;
+  const canUseFund = fundBalance > 0 && productFundEligible && item?.healthFundDeduction?.mode !== 'disabled';
   const [useFund, setUseFund] = useState(false);
   const [coupons, setCoupons] = useState([]);
   const [couponId, setCouponId] = useState(null);
@@ -198,7 +201,7 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
     ? Math.min(selectedCoupon.type === 'amount' ? selectedCoupon.value : Math.round(currentPrice * (100 - selectedCoupon.value)) / 100, currentPrice)
     : 0;
   const priceAfterCoupon = Math.max(0, Math.round((currentPrice - couponDiscount) * 100) / 100);
-  const fundMaximum = canUseFund ? maxFundDeduction(checkoutUser?.healthFund, priceAfterCoupon) : 0;
+  const fundMaximum = canUseFund ? maxFundDeduction(checkoutUser?.healthFund, priceAfterCoupon, item?.healthFundDeduction) : 0;
   const fundApplied = canUseFund && useFund ? Math.min(fundBalance, fundMaximum) : 0;
   const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundApplied) * 100) / 100);
 

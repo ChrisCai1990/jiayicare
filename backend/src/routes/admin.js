@@ -1432,7 +1432,7 @@ router.post('/products/ai-draft', adminAuth, async (req, res) => {
 
 // POST /api/admin/products
 router.post('/products', adminAuth, async (req, res) => {
-  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles, serviceItems, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, skus, aiProfile } = req.body;
+  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles, serviceItems, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction, skus, aiProfile } = req.body;
   if (!name || !category || originalPrice === undefined) {
     return res.status(400).json({ success: false, message: '名称、分类、原价为必填项' });
   }
@@ -1450,7 +1450,7 @@ router.post('/products', adminAuth, async (req, res) => {
     fulfillmentType: fulfillmentType || 'offline_service', paymentChannel: paymentChannel || 'wechat_pay',
     bookingRequired: bookingRequired !== false, deliveryRequired: !!deliveryRequired,
     serviceLocation: serviceLocation || '', validityDays: validityDays || 365,
-    refundPolicy: refundPolicy || undefined, skus: skus || [],
+    refundPolicy: refundPolicy || undefined, healthFundDeduction: healthFundDeduction || undefined, skus: skus || [],
     aiProfile: require('../utils/productAiProfile').normalizeAiProfile(aiProfile),
   });
   res.json({ success: true, data: product, message: '产品创建成功' });
@@ -1458,11 +1458,11 @@ router.post('/products', adminAuth, async (req, res) => {
 
 // PUT /api/admin/products/:id
 router.put('/products/:id', adminAuth, async (req, res) => {
-  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles, serviceItems, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, skus, aiProfile } = req.body;
+  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles, serviceItems, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction, skus, aiProfile } = req.body;
   if (paymentChannel && !['wechat_pay', 'offline'].includes(paymentChannel)) {
     return res.status(400).json({ success: false, message: '真实服务商品仅支持普通微信支付或线下收款' });
   }
-  const updateData = { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles: servicePerformerRoles || [], serviceItems: serviceItems || [], fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, skus: skus || [] };
+  const updateData = { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles: servicePerformerRoles || [], serviceItems: serviceItems || [], fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction: healthFundDeduction || { mode:'inherit', value:0 }, skus: skus || [] };
   // 兼容尚未升级的管理端：请求未携带 aiProfile 时保留原配置，避免普通产品编辑意外关闭 AI 推荐。
   if (aiProfile !== undefined) updateData.aiProfile = require('../utils/productAiProfile').normalizeAiProfile(aiProfile);
   const product = await Product.findByIdAndUpdate(req.params.id, updateData, { new: true });
@@ -1941,6 +1941,9 @@ const DEFAULT_HEALTH_FUND_POLICY = {
   inviteeAmount: 0,
   firstLoginEnabled: false,
   firstLoginAmount: 0,
+  pointsExchangeEnabled: true,
+  pointsPerYuan: 100,
+  healthCheckinPoints: 5,
 };
 
 router.get('/system-config/health-fund', adminAuth, async (req, res) => {
@@ -1988,7 +1991,8 @@ router.put('/system-config/health-fund', adminAuth, async (req, res) => {
     const types = ['unlimited', 'percentage', 'fixedAmount'];
     const value = { ...DEFAULT_HEALTH_FUND_POLICY, ...req.body };
     ['personalDeductionType','corporateDeductionType','couponDeductionType'].forEach(k => { if (!types.includes(value[k])) value[k] = 'unlimited'; });
-    ['personalDeductionValue','corporateDeductionValue','couponDeductionValue','minOrderAmount','sharerAmount','recipientAmount','inviterAmount','inviteeAmount','firstLoginAmount'].forEach(k => { value[k] = Math.max(0, Number(value[k]) || 0); });
+    ['personalDeductionValue','corporateDeductionValue','couponDeductionValue','minOrderAmount','sharerAmount','recipientAmount','inviterAmount','inviteeAmount','firstLoginAmount','healthCheckinPoints'].forEach(k => { value[k] = Math.max(0, Number(value[k]) || 0); });
+    value.pointsPerYuan = Math.max(1, Math.floor(Number(value.pointsPerYuan) || 100));
     value.eligibleCategories = Array.isArray(value.eligibleCategories) ? value.eligibleCategories.map(String).map(v=>v.trim()).filter(Boolean) : [];
     value.eligibleProductIds = Array.isArray(value.eligibleProductIds) ? [...new Set(value.eligibleProductIds.map(String).filter(Boolean))] : [];
     await SystemConfig.findOneAndUpdate({ key:'healthFundPolicy' }, { key:'healthFundPolicy', value, label:'健康基金使用与退款规则' }, { upsert:true, new:true });

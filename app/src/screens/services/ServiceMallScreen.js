@@ -15,6 +15,22 @@ function formatCouponLabel(c) {
   return c.title || val;
 }
 
+function fundLimit(type, value, amount) {
+  if (type === 'percentage') return amount * Math.min(100, Math.max(0, Number(value) || 0)) / 100;
+  if (type === 'fixedAmount') return Math.max(0, Number(value) || 0);
+  return amount;
+}
+
+function maxFundDeduction(healthFund, productRule, amount) {
+  const policy = healthFund?.policy || {};
+  if (amount < (Number(policy.minOrderAmount) || 0) || productRule?.mode === 'disabled') return 0;
+  const personal = Math.min(Number(healthFund?.personal) || 0, fundLimit(policy.personalDeductionType, policy.personalDeductionValue, amount));
+  const corporate = healthFund?.rule?.enabled === false ? 0 : Math.min(Number(healthFund?.corporate) || 0, fundLimit(policy.corporateDeductionType, policy.corporateDeductionValue, amount));
+  const productLimit = productRule?.mode && !['inherit','unlimited'].includes(productRule.mode)
+    ? fundLimit(productRule.mode, productRule.value, amount) : amount;
+  return Math.max(0, Math.min(amount, personal + corporate, productLimit));
+}
+
 function StarRow({ rating }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
@@ -165,7 +181,8 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
       )
     : 0;
   const priceAfterCoupon = Math.max(0, Math.round((currentPrice - couponDiscount) * 100) / 100);
-  const fundApplied = useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, priceAfterCoupon) : 0;
+  const fundMaximum = maxFundDeduction(user?.healthFund, item.healthFundDeduction, priceAfterCoupon);
+  const fundApplied = useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, fundMaximum) : 0;
   const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundApplied) * 100) / 100);
 
   const handleSubmit = async () => {
@@ -335,7 +352,7 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
           )}
 
           {/* 健康基金抵扣（仅自主付费且有余额时展示） */}
-          {isPay && fundBalance > 0 && (
+          {isPay && fundBalance > 0 && fundMaximum > 0 && (
             <>
               <View style={styles.fundHeaderRow}>
                 <Text style={styles.noteLabel}>健康基金抵扣（余额 ¥{fundBalance.toFixed(2)}）</Text>
@@ -343,7 +360,7 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
                   onPress={() => {
                     const next = !useFund;
                     setUseFund(next);
-                    if (next) setFundAmountInput(String(Math.min(fundBalance, priceAfterCoupon)));
+                    if (next) setFundAmountInput(String(Math.min(fundBalance, fundMaximum)));
                   }}
                   style={[styles.fundToggle, useFund && styles.fundToggleActive]}
                   activeOpacity={0.85}
@@ -357,7 +374,7 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
                   <TextInput
                     style={[styles.noteInput, { minHeight: 0, marginBottom: spacing.md }]}
                     keyboardType="numeric"
-                    placeholder={`最多可抵扣 ¥${Math.min(fundBalance, priceAfterCoupon)}`}
+                    placeholder={`最多可抵扣 ¥${Math.min(fundBalance, fundMaximum)}`}
                     placeholderTextColor={colors.textMuted}
                     value={fundAmountInput}
                     onChangeText={setFundAmountInput}

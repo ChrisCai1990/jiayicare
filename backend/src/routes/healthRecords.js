@@ -14,8 +14,7 @@ function withSignedHealthImages(record) {
   return withSafeHealthRecordImages(record, signStoredUrl);
 }
 
-// 打卡固定积分：每种打卡类型每天（CST）限计一次，防刷分
-const CHECKIN_POINTS = 5;
+// 每种打卡类型每天（CST）限计一次，奖励值由 Admin 健康基金页配置。
 async function awardCheckinPoints(userId, type, recordedAt) {
   try {
     const CST_OFFSET = 8 * 60 * 60 * 1000;
@@ -35,8 +34,10 @@ async function awardCheckinPoints(userId, type, recordedAt) {
     });
     if (already) return;
 
+    const { healthCheckinPoints } = await require('../utils/pointsHealthFund').getPointsPolicy();
+    if (healthCheckinPoints <= 0) return;
     await awardPointsAndConvert({
-      userId, amount: CHECKIN_POINTS, source: 'checkin', refType: type, remark: `${type} 打卡`,
+      userId, amount: healthCheckinPoints, source: 'checkin', refType: type, remark: `${type} 打卡`,
     });
   } catch { /* 不阻断主流程 */ }
 }

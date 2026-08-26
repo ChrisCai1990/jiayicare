@@ -15,3 +15,7 @@ test('conversion keeps points below the next complete hundred', () => {
 test('legacy staff-managed points are included once during migration', () => {
   assert.deepEqual(conversionFor(45, 5, 50), { pointsBalance: 0, redeemedPoints: 100, fundAmount: 1 });
 });
+
+test('admin-configured exchange rate is used by conversion calculation', () => {
+  assert.deepEqual(conversionFor(45, 5, 0, 50), { pointsBalance: 0, redeemedPoints: 50, fundAmount: 1 });
+});

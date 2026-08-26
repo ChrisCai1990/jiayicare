@@ -22,6 +22,7 @@ const EMPTY_FORM = {
   fulfillmentType: 'offline_service', paymentChannel: 'wechat_pay', bookingRequired: true,
   deliveryRequired: false, serviceLocation: '', validityDays: 365,
   refundPolicy: '服务开始前可申请退款；已发生的第三方费用及已完成服务不予退还。', skus: [],
+  healthFundDeduction: { mode: 'inherit', value: 0 },
   performanceRule: { ruleType: 'none', referrerRate: 0, fulfillerRate: 0, referrerAmount: 0, fulfillerAmount: 0 },
   servicePerformerRoles: [],
   serviceItems: [],
@@ -361,6 +362,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
       serviceLocation: product.serviceLocation || '',
       validityDays: product.validityDays || 365,
       refundPolicy: product.refundPolicy || '',
+      healthFundDeduction: { mode:'inherit', value:0, ...(product.healthFundDeduction || {}) },
       skus: product.skus || [],
       performanceRule: product.performanceRule || { ruleType: 'none', referrerRate: 0, fulfillerRate: 0, referrerAmount: 0, fulfillerAmount: 0 },
       servicePerformerRoles: (product.servicePerformerRoles || []).map(r => ({
@@ -452,6 +454,10 @@ function ProductModal({ product, categories, onClose, onSaved }) {
         serviceLocation: form.serviceLocation,
         validityDays: Math.max(1, parseInt(form.validityDays) || 365),
         refundPolicy: form.refundPolicy,
+        healthFundDeduction: {
+          mode: form.healthFundDeduction?.mode || 'inherit',
+          value: Math.max(0, Number(form.healthFundDeduction?.value) || 0),
+        },
         skus: form.skus || [],
         performanceRule: form.performanceRule,
         servicePerformerRoles: (form.servicePerformerRoles || [])
@@ -487,6 +493,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
   const tabs = [
     { key: 'basic', label: '基本信息' },
     { key: 'price', label: '收费项目' },
+    { key: 'fund', label: '基金抵扣' },
     { key: 'performance', label: '绩效分配' },
     { key: 'images', label: '产品图片' },
     { key: 'desc', label: '详情描述' },
@@ -623,6 +630,30 @@ function ProductModal({ product, categories, onClose, onSaved }) {
               </div>
             </div>
           )}
+
+          {tab === 'fund' && (() => {
+            const rule = form.healthFundDeduction || { mode:'inherit', value:0 }
+            const setRule = (key, value) => set('healthFundDeduction', { ...rule, [key]:value })
+            return <div>
+              <div style={{padding:14,background:'#ecfdf5',border:'1px solid #bbf7d0',borderRadius:10,color:'#166534',fontSize:13,marginBottom:18}}>
+                产品规则是最终抵扣上限；实际抵扣额还会受客户余额、自有/企业基金全局规则和订单应付金额限制。
+              </div>
+              <div className="form-group">
+                <label className="form-label">该产品健康基金抵扣方式</label>
+                <select className="form-input" value={rule.mode} onChange={e=>setRule('mode',e.target.value)}>
+                  <option value="inherit">继承健康基金全局规则</option>
+                  <option value="disabled">不允许使用健康基金</option>
+                  <option value="unlimited">余额内可100%抵扣</option>
+                  <option value="percentage">按产品应付金额比例</option>
+                  <option value="fixedAmount">每单固定金额上限</option>
+                </select>
+              </div>
+              {['percentage','fixedAmount'].includes(rule.mode) && <div className="form-group">
+                <label className="form-label">{rule.mode==='percentage'?'最高抵扣比例（%）':'每单最高抵扣金额（元）'}</label>
+                <input className="form-input" type="number" min="0" max={rule.mode==='percentage'?100:undefined} value={rule.value||0} onChange={e=>setRule('value',e.target.value)}/>
+              </div>}
+            </div>
+          })()}
 
           {tab === 'performance' && (
             <div>

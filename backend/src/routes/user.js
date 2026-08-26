@@ -1213,9 +1213,16 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
     let fundBreakdown = { personal: 0, corporate: 0 };
     if (useHealthFund > 0) {
       try {
-        const productDocs = await Product.find({ _id:{ $in:toPay.map(p=>p.productId).filter(id=>require('mongoose').Types.ObjectId.isValid(id)) } }).select('category');
+        const productDocs = await Product.find({ _id:{ $in:toPay.map(p=>p.productId).filter(id=>require('mongoose').Types.ObjectId.isValid(id)) } }).select('category healthFundDeduction');
         const categories = [...new Set(productDocs.map(p=>p.category).filter(Boolean))];
-        const checked = await require('../utils/healthFundPayment').validateHealthFundDeduction({ user:req.user, requested:useHealthFund, orderAmount:priceAfterCoupon, category:categories.length === 1 ? categories[0] : '' });
+        const { productDeductionLimit } = require('../utils/healthFundPayment');
+        const productById = new Map(productDocs.map(item=>[String(item._id),item]));
+        const productLimit = toPay.reduce((sum,item)=>{
+          const shareAfterCoupon = totalPrice > 0 ? priceAfterCoupon * (Number(item.price)||0) / totalPrice : 0;
+          return sum + productDeductionLimit(productById.get(String(item.productId))?.healthFundDeduction, shareAfterCoupon);
+        },0);
+        const productIds = toPay.map(item=>String(item.productId));
+        const checked = await require('../utils/healthFundPayment').validateHealthFundDeduction({ user:req.user, requested:useHealthFund, orderAmount:priceAfterCoupon, categories, productIds, productLimit });
         if (checked.enterprise?.healthFundPaymentRule?.eligibleCategories?.length && categories.some(c=>!checked.enterprise.healthFundPaymentRule.eligibleCategories.includes(c))) throw new Error('所选服务中含有不支持企业健康基金抵扣的分类');
         fundUsed=checked.allowed; fundEnterprise=checked.enterprise; fundBreakdown=checked.breakdown;
       } catch(err) { return res.status(400).json({success:false,message:err.message}); }

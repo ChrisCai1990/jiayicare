@@ -89,6 +89,7 @@ router.get('/', async (req, res) => {
       serviceLocation: p.serviceLocation || '',
       validityDays: p.validityDays || 365,
       refundPolicy: p.refundPolicy || '',
+      healthFundDeduction: p.healthFundDeduction || { mode:'inherit', value:0 },
       skus: p.skus || [],
     };
   });

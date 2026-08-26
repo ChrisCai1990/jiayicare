@@ -2,6 +2,7 @@ const Enterprise = require('../models/Enterprise');
 const GiftRecord = require('../models/GiftRecord');
 const HealthFundTransaction = require('../models/HealthFundTransaction');
 const SystemConfig = require('../models/SystemConfig');
+const Product = require('../models/Product');
 
 const DEFAULT_HEALTH_FUND_POLICY = {
   title: '健康基金使用规则', description: '', personalPriority: true,
@@ -21,6 +22,13 @@ function deductionLimit(type, value, orderAmount) {
   if (type === 'percentage') return orderAmount * Math.min(100, Math.max(0, Number(value) || 0)) / 100;
   if (type === 'fixedAmount') return Math.max(0, Number(value) || 0);
   return orderAmount;
+}
+
+function productDeductionLimit(rule, orderAmount) {
+  const mode = rule?.mode || 'inherit';
+  if (mode === 'disabled') return 0;
+  if (mode === 'inherit') return orderAmount;
+  return deductionLimit(mode, rule?.value, orderAmount);
 }
 
 async function getCorporateFundAvailable(user) {
@@ -61,13 +69,24 @@ async function getPersonalFundAvailable(user) {
   return Math.max(0, Math.min(totalBalance, Math.max(recordedPersonal, totalBalance - corporateAvailable)));
 }
 
-async function validateHealthFundDeduction({ user, requested, orderAmount, category, productId }) {
+async function validateHealthFundDeduction({ user, requested, orderAmount, category, categories, productId, productIds, productLimit }) {
   const amount = Number(requested) || 0;
   if (amount <= 0) return { allowed: 0, enterprise: null };
   const policy = await getHealthFundPolicy();
   if (orderAmount < (Number(policy.minOrderAmount) || 0)) throw new Error(`订单满¥${policy.minOrderAmount}方可使用健康基金`);
-  if (policy.eligibleCategories?.length && !policy.eligibleCategories.includes(category)) throw new Error('该类服务不在健康基金可抵扣范围内');
-  if (policy.eligibleProductIds?.length && !policy.eligibleProductIds.map(String).includes(String(productId || ''))) throw new Error('该服务不在健康基金可抵扣范围内');
+  const checkedCategories = Array.isArray(categories) && categories.length ? categories : [category].filter(Boolean);
+  const checkedProductIds = Array.isArray(productIds) && productIds.length ? productIds.map(String) : [productId].filter(Boolean).map(String);
+  if (policy.eligibleCategories?.length && checkedCategories.some(item => !policy.eligibleCategories.includes(item))) throw new Error('所选服务中含有不在健康基金可抵扣范围内的分类');
+  if (policy.eligibleProductIds?.length) {
+    const eligibleIds = policy.eligibleProductIds.map(String);
+    if (!checkedProductIds.length || checkedProductIds.some(id => !eligibleIds.includes(id))) throw new Error('所选服务中含有不支持健康基金抵扣的产品');
+  }
+  let finalProductLimit = Number.isFinite(Number(productLimit)) ? Math.max(0, Number(productLimit)) : orderAmount;
+  if (productId && productLimit === undefined && require('mongoose').Types.ObjectId.isValid(productId)) {
+    const product = await Product.findById(productId).select('healthFundDeduction').lean();
+    finalProductLimit = productDeductionLimit(product?.healthFundDeduction, orderAmount);
+  }
+  if (finalProductLimit <= 0) throw new Error('该产品不支持健康基金抵扣');
   const personalAvailable = await getPersonalFundAvailable(user);
   const personalLimit = deductionLimit(policy.personalDeductionType, policy.personalDeductionValue, orderAmount);
   // 平台发放的首登企业健康基金并不要求用户先绑定某个企业档案。
@@ -85,7 +104,7 @@ async function validateHealthFundDeduction({ user, requested, orderAmount, categ
       // 是否启用、最低金额和适用分类，避免旧企业固定额度覆盖平台新比例。
     }
   }
-  let remaining = Math.min(amount, orderAmount);
+  let remaining = Math.min(amount, orderAmount, finalProductLimit);
   let personalUsed = 0; let corporateUsed = 0;
   const takePersonal = () => { const used=Math.min(remaining, personalAvailable, personalLimit); personalUsed=used; remaining-=used; };
   const takeCorporate = () => { const used=Math.min(remaining, corporateAvailable, corporateLimit); corporateUsed=used; remaining-=used; };
@@ -143,4 +162,4 @@ async function reverseHealthFund({ order, remark = '订单退款返还' }) {
   return amount;
 }
 
-module.exports = { DEFAULT_HEALTH_FUND_POLICY, getHealthFundPolicy, deductionLimit, validateHealthFundDeduction, deductHealthFund, reverseHealthFund, getCorporateFundAvailable, getPersonalFundAvailable };
+module.exports = { DEFAULT_HEALTH_FUND_POLICY, getHealthFundPolicy, deductionLimit, productDeductionLimit, validateHealthFundDeduction, deductHealthFund, reverseHealthFund, getCorporateFundAvailable, getPersonalFundAvailable };
