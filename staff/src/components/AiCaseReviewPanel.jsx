@@ -10,6 +10,7 @@ const REVIEW_TEMPLATES = [
   { key: 'checkup', label: '体检方案研判', title: '体检方案研判', description: '结合体检报告、健康档案和既往检查，明确体检重点与待审核方案。', scopes: ['basic','healthProfile','reports','plans','aiAnalysis'] },
   { key: 'nutrition', label: '营养干预研判', title: '营养干预研判', description: '结合指标、生活方式和依从性讨论营养干预方向，形成待审核方案。', scopes: ['basic','healthProfile','healthRecords','medications','followups','plans'] },
   { key: 'annual', label: '年度管理研判', title: '年度管理研判', description: '结合健康档案、目标和既有服务，讨论下一年度管理重点与待审核方案。', scopes: ['basic','healthProfile','reports','healthRecords','followups','plans','aiAnalysis'] },
+  { key: 'assessment', label: '阶段性评估研判', title: '阶段性评估', description: '结合阶段数据评估管理执行、成效、风险和下一阶段待审核计划。', scopes: SCOPES.map(([key]) => key) },
   { key: 'medical', label: '就医协助研判', title: '就医协助研判', description: '围绕明确健康问题讨论复查、就医或陪诊安排，形成待审核方案。', scopes: ['basic','healthProfile','reports','plans','aiAnalysis'] },
   { key: 'daily', label: '日常问题交流', title: '日常问题交流', description: '围绕具体问题进行信息分析和讨论；仅保存讨论结论，不自动生成方案。', scopes: ['basic','healthProfile','reports','healthRecords','medications','followups'] },
 ]
@@ -100,9 +101,11 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
     if (!conclusionText.trim()) return toast('结论不能为空', 'error')
     setBusy(true)
     try {
-      const res = await staffAPI.confirmAiCaseReviewConclusion(patientId, active._id, conclusionText, false)
+      const writeToPhaseAssessment = /阶段性.*评估/.test(`${active.title} ${active.description || ''}`)
+      const res = await staffAPI.confirmAiCaseReviewConclusion(patientId, active._id, conclusionText, writeToPhaseAssessment)
       replaceTopic(res.data)
-      toast('研判结论已确认；正式阶段性评估由Admin模板按周期生成')
+      if (res.archivedToPhaseAssessment) toast('结论已确认，并已按Admin季度模板写入服务记录 · 阶段性健康评估')
+      else toast('结论已确认，生成年度管理方案时会自动引用')
     }
     catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
   }
@@ -172,7 +175,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
       {!!active.messages?.length && <div className="card"><div className="card-header"><div className="card-title">阶段性结论</div><button className="btn btn-secondary btn-sm" disabled={busy} onClick={generateConclusion}>AI整理结论</button></div><div className="card-body">
         <StructuredAssessment data={active.conclusion?.structured} />
         <textarea className="form-input" rows={10} value={conclusionText} onChange={e => setConclusionText(e.target.value)} placeholder="AI整理后由健康顾问复核确认；只有已确认结论会进入管理方案上下文。" />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}><span style={{ fontSize: 12, color: active.conclusion?.status === 'confirmed' ? '#16845B' : '#8AA89C' }}>{active.conclusion?.status === 'confirmed' ? `已由${active.conclusion.confirmedByName || '健康顾问'}确认` : '草稿不会进入正式管理方案'}</span>{['familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy || !conclusionText.trim()} onClick={confirmConclusion}>确认并纳入管理方案</button>}</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}><span style={{ fontSize: 12, color: active.conclusion?.status === 'confirmed' ? '#16845B' : '#8AA89C' }}>{active.conclusion?.status === 'confirmed' ? `已由${active.conclusion.confirmedByName || '健康顾问'}确认${active.conclusion.serviceRecordId ? ' · 已写入阶段性健康评估' : ''}` : '草稿不会进入正式管理方案'}</span>{['familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy || !conclusionText.trim()} onClick={confirmConclusion}>{/阶段性.*评估/.test(`${active.title} ${active.description || ''}`) ? '确认并写入阶段性健康评估' : '确认并纳入管理方案'}</button>}</div>
       </div></div>}
     </div> : <div className="card"><div className="card-body" style={{ padding: 60, textAlign: 'center', color: '#8AA89C' }}>请先新建一个研判主题</div></div>}
 
