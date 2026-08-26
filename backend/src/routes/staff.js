@@ -6266,7 +6266,13 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       .sort({ checkDate: -1, createdAt: -1 }).lean();
     const suggestedCheckupDate = nextAnnualCheckupDate(reports);
     const allHepatitisBMarkersNegative = hepatitisBAllNegative(reports);
-    const confirmedCaseReviews = await AiCaseReview.find({ user: user._id, 'conclusion.status': 'confirmed' })
+    const confirmedCaseReviews = await AiCaseReview.find({
+      user: user._id, 'conclusion.status': 'confirmed',
+      $or: [
+        { reviewType: 'annual' },
+        { reviewType: { $exists: false }, title: /年度管理研判/ },
+      ],
+    })
       .sort({ 'conclusion.confirmedAt': -1 }).limit(20).select('title conclusion.content conclusion.structured conclusion.confirmedAt').lean();
     const confirmedReviewText = confirmedCaseReviews.length
       ? confirmedCaseReviews.map(item => `【${item.title}】${item.conclusion.content}`).join('\n\n').slice(0, 16000)

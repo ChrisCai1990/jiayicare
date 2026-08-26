@@ -13,6 +13,7 @@ const providerAdapter = require('../utils/aiCaseReviewProvider');
 
 const DEFAULT_SCOPES = ['basic', 'healthProfile', 'reports', 'healthRecords', 'medications', 'followups', 'plans', 'aiAnalysis'];
 const VALID_SCOPES = new Set(DEFAULT_SCOPES);
+const VALID_REVIEW_TYPES = new Set(['checkup', 'nutrition', 'annual', 'assessment', 'medical', 'daily', 'custom']);
 const ROLE_LABEL = { superadmin: '超级管理员', familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', healthPlanner: '健康规划师', medicalAssistant: '就医专员', psychologist: '心理咨询师', rehabSpecialist: '运动复健师', tcmDoctor: '中医师', specialist: '专科医师' };
 
 function sanitizeScopes(scopes) {
@@ -93,6 +94,7 @@ router.post('/patients/:patientId/ai-case-reviews', staffAuth, async (req, res) 
     const topic = await AiCaseReview.create({
       user: user._id, tenantId: user.tenantId || null, title,
       description: String(req.body.description || '').trim(),
+      reviewType: VALID_REVIEW_TYPES.has(req.body.reviewType) ? req.body.reviewType : 'custom',
       contextScopes: sanitizeScopes(req.body.contextScopes),
       preferredProvider: 'qwen',
       createdBy: req.staff._id, createdByName: req.staff.name || '',
@@ -108,6 +110,7 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId', staffAuth, async (
     if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
     if (req.body.title !== undefined) topic.title = String(req.body.title).trim();
     if (req.body.description !== undefined) topic.description = String(req.body.description).trim();
+    if (req.body.reviewType !== undefined && VALID_REVIEW_TYPES.has(req.body.reviewType)) topic.reviewType = req.body.reviewType;
     if (req.body.contextScopes !== undefined) topic.contextScopes = sanitizeScopes(req.body.contextScopes);
     // 测试阶段固定走通义千问，防止旧客户端或历史专题切回其他供应商。
     topic.preferredProvider = 'qwen';
