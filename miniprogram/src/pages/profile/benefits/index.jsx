@@ -187,6 +187,7 @@ export default function BenefitsPage() {
               <View>
                 <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '4px' }}>我的积分</Text>
                 <Text style={{ fontSize: '26px', fontWeight: 800, color: colors.textPrimary }}>{pointsBalance}</Text>
+                <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginTop: '3px' }}>每满100积分自动兑换¥1健康基金</Text>
               </View>
               <Text style={{ fontSize: '18px', color: colors.textMuted }}>{pointsExpanded ? '▲' : '▼'}</Text>
             </View>

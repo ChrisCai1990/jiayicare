@@ -340,6 +340,7 @@ export default function BenefitsScreen({ navigation }) {
                 <View>
                   <Text style={styles.pointsLabel}>我的积分</Text>
                   <Text style={styles.pointsTotal}>{pointsBalance}</Text>
+                  <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 3 }}>每满100积分自动兑换¥1健康基金</Text>
                 </View>
                 <Ionicons name={pointsExpanded ? 'chevron-up' : 'chevron-down'} size={20} color={colors.textMuted} />
               </View>

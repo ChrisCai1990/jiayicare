@@ -1059,8 +1059,10 @@ router.get('/gifts', auth, async (req, res) => {
 // GET /api/user/points
 router.get('/points', auth, async (req, res) => {
   try {
+    await require('../utils/pointsHealthFund').convertExistingPoints(req.user._id);
     const logs = await PointsLog.find({ user: req.user._id }).sort({ createdAt: -1 }).limit(100);
-    res.json({ success: true, data: { balance: req.user.pointsBalance || 0, logs } });
+    const user = await User.findById(req.user._id).select('pointsBalance');
+    res.json({ success: true, data: { balance: user?.pointsBalance || 0, exchangeRate: 100, logs } });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取积分记录失败', error: err.message });
   }

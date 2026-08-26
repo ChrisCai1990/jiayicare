@@ -19,6 +19,7 @@ const tenantMatchStage = () => {
 };
 const Admin = require('../models/Admin');
 const User = require('../models/User');
+const PointsLog = require('../models/PointsLog');
 const ChatLog = require('../models/ChatLog');
 const FollowUp = require('../models/FollowUp');
 const HealthRecord = require('../models/HealthRecord');
@@ -3865,7 +3866,8 @@ router.delete('/abnormal-reviews/:id', staffAuth, checkPermission('abnormal_revi
 // GET /api/staff/patients/:id/membership
 router.get('/patients/:id/membership', staffAuth, async (req, res) => {
   try {
-    const u = await User.findById(req.params.id).select('name phone cardNumber points rechargeBalance healthFundBalance memberType servicePackage serviceExpiry');
+    await require('../utils/pointsHealthFund').convertExistingPoints(req.params.id);
+    const u = await User.findById(req.params.id).select('name phone cardNumber pointsBalance rechargeBalance healthFundBalance memberType servicePackage serviceExpiry');
     if (!u) return res.status(404).json({ success: false, message: '用户不存在' });
     res.json({ success: true, data: u });
   } catch (err) {
@@ -3877,15 +3879,32 @@ router.get('/patients/:id/membership', staffAuth, async (req, res) => {
 router.patch('/patients/:id/membership', staffAuth, async (req, res) => {
   try {
     const { cardNumber, pointsDelta, rechargeDelta, note } = req.body;
+    const pointsChange = Number(pointsDelta) || 0;
     const update = {};
     if (cardNumber !== undefined) update.cardNumber = cardNumber;
     const inc = {};
-    if (pointsDelta) inc.points = pointsDelta;
+    if (pointsChange < 0) {
+      const current = await User.findById(req.params.id).select('pointsBalance');
+      if (!current) return res.status(404).json({ success:false, message:'用户不存在' });
+      if ((current.pointsBalance || 0) + pointsChange < 0) {
+        return res.status(400).json({ success:false, message:'积分余额不足，不能扣成负数' });
+      }
+      inc.pointsBalance = pointsChange;
+    }
     if (rechargeDelta) inc.rechargeBalance = rechargeDelta;
     const ops = { $set: update };
     if (Object.keys(inc).length) ops.$inc = inc;
     await User.updateOne({ _id: req.params.id }, ops);
-    const u = await User.findById(req.params.id).select('name cardNumber points rechargeBalance healthFundBalance');
+    if (pointsChange > 0) {
+      await require('../utils/pointsHealthFund').awardPointsAndConvert({
+        userId:req.params.id, amount:pointsChange, source:'adjust', remark:note || '医护手动调整积分',
+      });
+    } else if (pointsChange < 0) {
+      await PointsLog.create({
+        user:req.params.id, amount:pointsChange, source:'adjust', remark:note || '医护手动调整积分',
+      });
+    }
+    const u = await User.findById(req.params.id).select('name cardNumber pointsBalance rechargeBalance healthFundBalance');
     res.json({ success: true, data: u });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

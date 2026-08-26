@@ -11015,7 +11015,7 @@ function MembershipPanel({ user, patientId, onRefresh }) {
             {[
               { label: '健康基金', value: `¥${(user.healthFundBalance || 0).toFixed(2)}`, color: '#1E6B50' },
               { label: '充值余额', value: `¥${(user.rechargeBalance || 0).toFixed(2)}`, color: '#0077B6' },
-              { label: '积分', value: (user.points || 0).toString(), color: '#D97706' },
+              { label: '积分', value: (user.pointsBalance || 0).toString(), color: '#D97706' },
             ].map(s => (
               <div key={s.label} style={{ background: '#f9f7f3', borderRadius: 8, padding: '10px 12px', textAlign: 'center' }}>
                 <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 4 }}>{s.label}</div>
@@ -11023,6 +11023,7 @@ function MembershipPanel({ user, patientId, onRefresh }) {
               </div>
             ))}
           </div>
+          <div style={{ fontSize: 12, color: '#8AA89C', marginTop: -8, marginBottom: 16 }}>每满100积分自动兑换¥1自有健康基金</div>
 
           {/* 编辑区 */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

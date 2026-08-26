@@ -434,10 +434,10 @@ router.patch('/orders/:id/pay', adminAuth, async (req, res) => {
   if (!alreadyAwarded && order.paidAmount > 0) {
     const pointsAmount = Math.floor(order.paidAmount);
     if (pointsAmount > 0) {
-      Promise.all([
-        User.collection.updateOne({ _id: order.user }, { $inc: { pointsBalance: pointsAmount } }),
-        PointsLog.create({ user: order.user, amount: pointsAmount, source: 'consumption', refType: 'Order', refId: order._id, remark: `消费订单 ${order.serviceName}` }),
-      ]).catch(() => {});
+      require('../utils/pointsHealthFund').awardPointsAndConvert({
+        userId:order.user, amount:pointsAmount, source:'consumption', refType:'Order', refId:order._id,
+        remark:`消费订单 ${order.serviceName}`,
+      }).catch(() => {});
     }
   }
 

@@ -4,6 +4,7 @@ const HealthRecord = require('../models/HealthRecord');
 const FollowUp = require('../models/FollowUp');
 const User = require('../models/User');
 const PointsLog = require('../models/PointsLog');
+const { awardPointsAndConvert } = require('../utils/pointsHealthFund');
 const { calcStatus } = require('../utils/healthRecordStatus');
 const { uploadBase64, signStoredUrl } = require('../utils/oss');
 const { incomingImagePayloads, withSafeHealthRecordImages, withoutLegacyImageExtra } = require('../utils/healthRecordImages');
@@ -34,10 +35,9 @@ async function awardCheckinPoints(userId, type, recordedAt) {
     });
     if (already) return;
 
-    await Promise.all([
-      User.collection.updateOne({ _id: userId }, { $inc: { pointsBalance: CHECKIN_POINTS } }),
-      PointsLog.create({ user: userId, amount: CHECKIN_POINTS, source: 'checkin', refType: type, remark: `${type} 打卡` }),
-    ]);
+    await awardPointsAndConvert({
+      userId, amount: CHECKIN_POINTS, source: 'checkin', refType: type, remark: `${type} 打卡`,
+    });
   } catch { /* 不阻断主流程 */ }
 }
 

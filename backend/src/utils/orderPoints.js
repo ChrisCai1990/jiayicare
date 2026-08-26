@@ -5,6 +5,7 @@
 // 不再等待人工确认；订单被取消/退款时，反查这笔预记积分并退回。
 const PointsLog = require('../models/PointsLog');
 const User = require('../models/User');
+const { awardPointsAndConvert } = require('./pointsHealthFund');
 
 // 1元=1积分，仅对现金实付部分（paidAmount，不含健康基金/优惠券抵扣）计分
 function pointsForAmount(paidAmount) {
@@ -17,13 +18,10 @@ async function awardOrderPoints(order) {
   if (amount <= 0) return;
   const alreadyAwarded = await PointsLog.findOne({ refType: 'Order', refId: order._id, source: 'consumption' });
   if (alreadyAwarded) return;
-  await Promise.all([
-    User.collection.updateOne({ _id: order.user }, { $inc: { pointsBalance: amount } }),
-    PointsLog.create({
-      user: order.user, amount, source: 'consumption',
-      refType: 'Order', refId: order._id, remark: `消费订单 ${order.serviceName}`,
-    }),
-  ]);
+  await awardPointsAndConvert({
+    userId: order.user, amount, source: 'consumption',
+    refType: 'Order', refId: order._id, remark: `消费订单 ${order.serviceName}`,
+  });
 }
 
 // 订单取消/退款时调用：反查这笔订单是否预记过消费积分，若有则退回（负数流水 + 扣减余额）
