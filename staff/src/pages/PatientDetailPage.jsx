@@ -553,7 +553,7 @@ const PLAN_STATUS_COLOR = { draft:'#aaa', active:'#22A06B', completed:'#0077B6' 
 const PLAN_STATUS_LABEL = { draft:'草稿', active:'进行中', completed:'已完成' }
 const SR_TYPE_LABEL = {
   nutrition:'营养干预', disease_mgmt:'专病管理', medical_visit:'医院就医', routine:'日常随访', doctor_followup:'健康顾问跟进',
-  phase_assessment:'阶段性健康评估',
+  stage_assessment:'阶段性健康评估', phase_assessment:'阶段性健康评估',
   medical_escort:'就医协助', psychology:'心理咨询', rehab:'运动复健', tcm:'中医评估', specialist:'专科会诊',
 }
 const SR_CATEGORY = {
@@ -562,7 +562,7 @@ const SR_CATEGORY = {
   medical_visit: '医院就医', medical_escort: '医院就医',
   routine:       '日常随访',
   doctor_followup: '健康顾问跟进',
-  phase_assessment: '阶段性健康评估',
+  stage_assessment: '阶段性健康评估', phase_assessment: '阶段性健康评估',
 }
 const SR_CATEGORY_COLOR = { '营养干预':'#22A06B', '专病管理':'#0077B6', '医院就医':'#D97706', '日常随访':'#8A4AC7', '健康顾问跟进':'#0088CC', '阶段性健康评估':'#155E48' }
 

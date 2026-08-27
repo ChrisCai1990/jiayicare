@@ -18,7 +18,8 @@ const serviceRecordSchema = new mongoose.Schema({
       'medical_visit',    // 医院就医记录（新）
       'routine',          // 日常随访记录（新）
       'doctor_followup',  // 医生随访记录（新，健康顾问日常沟通，非到院就医）
-      'phase_assessment', // 阶段性健康评估（AI研判经健康顾问确认后入档）
+      'stage_assessment', // 阶段性健康评估（正式统一枚举）
+      'phase_assessment', // 测试环境历史兼容，只读；新记录不得再写入
     ],
     required: true,
   },

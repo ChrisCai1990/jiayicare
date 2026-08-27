@@ -80,4 +80,31 @@ function templateAssessmentFromContent(content, assessment) {
   };
 }
 
-module.exports = { toStructuredAssessment, assessmentToPlainText, quarterPeriod, toTemplateSections, templateAssessmentFromContent };
+const CLINICAL_RULES = [
+  ['生命体征持续或明显异常', /(?:血压|血糖|血氧|心率).{0,18}(?:持续|明显|反复|升高|降低|异常|恶化)/],
+  ['新发或加重症状', /(?:症状|胸痛|胸闷|呼吸困难|晕厥|头晕|水肿|疼痛).{0,18}(?:新发|加重|反复|持续|异常|明显)/],
+  ['用药或不良反应问题', /(?:用药|药物|服药).{0,12}(?:调整|停用|漏服|依从性差|冲突|异常|副作用|不良反应)|(?:调整|停止|暂停).{0,6}(?:用药|药物|剂量)|(?:副作用|不良反应|停药|漏服|调整剂量)/],
+  ['报告明确建议复查或就医', /(?:建议|需要|应).{0,10}(?:复查|就医|门诊|进一步检查)/],
+  ['多项指标或资料存在临床冲突', /(?:多项指标|数据|结果|资料).{0,15}(?:冲突|无法解释|同期恶化)/],
+];
+
+function detectClinicalReview(content = '') {
+  const text = String(content || '');
+  return CLINICAL_RULES.filter(([, pattern]) => pattern.test(text)).map(([reason]) => reason);
+}
+
+function nextAssessmentStatus({ currentStatus, actorRole, action, clinicalRequired = false }) {
+  const current = currentStatus === 'pending' ? 'nutrition_review' : currentStatus;
+  if (current === 'nutrition_review' && actorRole === 'nutritionist') {
+    if (action === 'return') return 'rejected';
+    if (action === 'escalate' || clinicalRequired) return 'doctor_review';
+    if (action === 'approve') return 'finalized';
+  }
+  if (current === 'doctor_review' && actorRole === 'familyDoctor') {
+    if (action === 'return') return 'nutrition_review';
+    if (action === 'approve') return 'finalized';
+  }
+  return null;
+}
+
+module.exports = { toStructuredAssessment, assessmentToPlainText, quarterPeriod, toTemplateSections, templateAssessmentFromContent, detectClinicalReview, nextAssessmentStatus };
