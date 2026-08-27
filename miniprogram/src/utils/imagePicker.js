@@ -1,12 +1,9 @@
 import Taro from '@tarojs/taro';
 
 export async function chooseImageWithPrivacy(options) {
-  // 同一版本可能因用户是否已同意最新版《小程序隐私保护指引》而表现不同。
-  // 先让微信同步当前用户的隐私授权；已同意时会立即成功，未同意时由微信
-  // 展示官方弹窗。旧基础库没有此 API，继续使用原有 chooseImage 流程。
-  if (typeof Taro.requirePrivacyAuthorize === 'function') {
-    await Taro.requirePrivacyAuthorize();
-  }
+  // 直接调用选图接口，由微信按当前隐私配置处理授权。
+  // 不要在这里强制调用 requirePrivacyAuthorize：该前置调用在部分真机上会
+  // 先于 chooseImage 失败，使原本可以正常选图的用户被阻断。
   return Taro.chooseImage(options);
 }
 
@@ -23,7 +20,7 @@ export function showImagePickerError(error, fallback = '无法读取图片，请
   if (isPrivacyDeclarationMissing(error)) {
     Taro.showModal({
       title: '暂时无法选择图片',
-      content: '微信未能同步本机的图片隐私授权。请关闭小程序后重新进入再试；仍无法使用时，请在微信中删除该小程序的最近使用记录后重新打开。',
+      content: '当前小程序版本的图片隐私配置异常，暂时无法选择图片。请联系客服处理。',
       showCancel: false,
       confirmText: '我知道了',
     });
