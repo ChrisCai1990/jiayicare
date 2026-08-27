@@ -60,14 +60,14 @@ const TYPE_LABEL = {
   disease_mgmt:  '专病管理记录',
   nutrition:     '营养干预记录',
   medical_visit: '医院就医记录',
-  stage_assessment: '阶段性健康评估',
+  stage_assessment: '阶段性健康评估', phase_assessment: '阶段性健康评估',
   routine:       '历史日常随访记录',
   doctor_followup: '历史健康顾问跟进',
   // 旧类型兼容
   medical_escort:'就医协助', psychology:'心理咨询', rehab:'运动复健', tcm:'中医评估', specialist:'专科会诊',
 }
 const TYPE_COLOR = {
-  disease_mgmt:'#e74c3c', nutrition:'#27ae60', medical_visit:'#0077B6', stage_assessment:'#D97706', routine:'#8AA89C', doctor_followup:'#8AA89C',
+  disease_mgmt:'#e74c3c', nutrition:'#27ae60', medical_visit:'#0077B6', routine:'#8AA89C', doctor_followup:'#8AA89C', stage_assessment:'#155E48', phase_assessment:'#155E48',
   medical_escort:'#0077B6', psychology:'#8e44ad', rehab:'#27ae60', tcm:'#e67e22', specialist:'#e74c3c',
 }
 

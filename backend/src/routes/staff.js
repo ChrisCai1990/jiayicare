@@ -7856,14 +7856,15 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
-    // ── 健康顾问：模板驱动的阶段性评估待审核；审批前不会更新正式方案 ──
-    if (can('followup_review')) {
-      const assessmentFilter = { status: 'pending', ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
+    // ── 阶段性评估：营养师必经初审，临床问题再由健康顾问复审 ──
+    if (isSuper || role === 'nutritionist' || role === 'familyDoctor') {
+      const statusFilter = role === 'familyDoctor' ? ['doctor_review'] : role === 'nutritionist' ? ['pending', 'nutrition_review', 'rejected'] : ['pending', 'nutrition_review', 'doctor_review', 'rejected'];
+      const assessmentFilter = { status: { $in: statusFilter }, ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
       const assessments = await PhaseAssessment.find(assessmentFilter).populate('patientId', 'name').sort({ createdAt: -1 }).limit(50).lean();
       assessments.forEach(item => todos.push({
-        id: 'phase_assessment_' + item._id, type: 'phase_assessment_review', label: '阶段性评估待审核', priority: 2,
+        id: 'phase_assessment_' + item._id, type: 'phase_assessment_review', label: item.status === 'doctor_review' ? '阶段性评估待临床复审' : item.status === 'rejected' ? '阶段性评估待AI重生成' : '阶段性评估待营养初审', priority: item.status === 'doctor_review' ? 3 : 2,
         patientName: item.patientId?.name || '未知', patientId: String(item.patientId?._id || ''),
-        summary: `${item.periodLabel} · ${item.templateSnapshot?.name || '阶段性评估'}，待健康顾问审核`,
+        summary: `${item.periodLabel} · ${item.templateSnapshot?.name || '阶段性评估'}，${item.status === 'doctor_review' ? '待健康顾问复审' : item.status === 'rejected' ? '待营养师发起AI重生成' : '待营养师初审'}`,
         createdAt: item.createdAt, overdue: (now - new Date(item.createdAt)) > DAY,
         link: `/patients/${item.patientId?._id}?tab=aiReview&phaseAssessmentId=${item._id}`,
       }));

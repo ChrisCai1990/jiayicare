@@ -34,6 +34,7 @@ function CleanText({ children }) {
 export default function AiCaseReviewPanel({ patientId, staff, toast }) {
   const [topics, setTopics] = useState([])
   const [assessments, setAssessments] = useState([])
+  const [assessmentEdits, setAssessmentEdits] = useState({})
   const [activeId, setActiveId] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -44,6 +45,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
   const [conclusionText, setConclusionText] = useState('')
   const bottomRef = useRef(null)
   const active = useMemo(() => topics.find(item => item._id === activeId) || topics[0], [topics, activeId])
+  const isStageAssessmentTopic = active?.reviewType === 'assessment' || /阶段性.*评估/.test(`${active?.title || ''} ${active?.description || ''}`)
 
   const replaceTopic = topic => {
     setTopics(items => [topic, ...items.filter(item => item._id !== topic._id)])
@@ -55,6 +57,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
       const [topicRes, assessmentRes] = await Promise.all([staffAPI.getAiCaseReviews(patientId), staffAPI.getPhaseAssessments(patientId)])
       setTopics(topicRes.data || [])
       setAssessments(assessmentRes.data || [])
+      setAssessmentEdits(Object.fromEntries((assessmentRes.data || []).map(item => [item._id, item.content || ''])))
       if (!activeId && topicRes.data?.length) setActiveId(topicRes.data[0]._id)
     } catch (err) { toast(err.message, 'error') } finally { setLoading(false) }
   }
@@ -122,19 +125,54 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
       replaceTopic(res.data); toast(`已套用${item.label}模板`)
     } catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
   }
-  const reviewAssessment = async (assessment, action) => {
-    const reviewNote = window.prompt(action === 'approve' ? '审核备注（可选）：' : '请填写退回原因：', '')
-    if (reviewNote === null || (action === 'reject' && !reviewNote.trim())) return
+  const generateAssessment = async () => {
     setBusy(true)
     try {
-      const res = await staffAPI.reviewPhaseAssessment(patientId, assessment._id, action, reviewNote)
+      const res = await staffAPI.generatePhaseAssessment(patientId)
+      setAssessments(list => [res.data, ...list.filter(item => item._id !== res.data._id)])
+      setAssessmentEdits(items => ({ ...items, [res.data._id]: res.data.content || '' }))
+      toast('阶段性评估草稿已生成，等待营养师初审')
+    } catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
+  }
+  const reviewAssessment = async (assessment, action) => {
+    const promptText = action === 'approve' ? '审核备注（可选）：' : action === 'escalate' ? '请说明需要健康顾问复审的临床问题：' : action === 'regenerate' ? '请填写需要AI修正的内容：' : '请填写退回原因：'
+    const reviewNote = window.prompt(promptText, '')
+    if (reviewNote === null || (action !== 'approve' && !reviewNote.trim())) return
+    setBusy(true)
+    try {
+      const res = await staffAPI.reviewPhaseAssessment(patientId, assessment._id, { action, reviewNote, content: assessmentEdits[assessment._id] ?? assessment.content, clinicalRequired: action === 'escalate' })
       setAssessments(list => list.map(item => item._id === assessment._id ? res.data : item))
-      toast(action === 'approve' ? '阶段性评估已审核；不会自动改写方案' : '阶段性评估已退回')
+      const message = action === 'regenerate' ? 'AI已重新生成草稿，等待营养师初审' : res.data.status === 'doctor_review' ? '营养初审已完成，已转健康顾问临床复审' : res.data.status === 'finalized' ? '阶段性评估已完成审核并正式入档' : '阶段性评估已退回，等待重新生成'
+      toast(message)
     } catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
   }
 
   if (loading) return <div className="card"><div className="card-body">正在加载专题研判资料…</div></div>
   return <div style={{ display: 'grid', gridTemplateColumns: '280px minmax(0, 1fr)', gap: 16, minHeight: 680 }}>
+    <div className="card" style={{ gridColumn: '1/-1', border: '1px solid #7C3AED55' }}>
+      <div className="card-header"><div><div className="card-title">阶段性健康评估</div><div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>AI生成草稿 → 营养师初审 → 涉及临床问题时健康顾问复审 → 正式入档</div></div>{['nutritionist', 'familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy} onClick={generateAssessment}>生成阶段评估草稿</button>}</div>
+      <div className="card-body" style={{ display: 'grid', gap: 12 }}>
+        {!assessments.length && <div style={{ color: '#8AA89C' }}>暂无阶段性评估。试点阶段仅支持人工触发，不会自动按周期生成。</div>}
+        {assessments.map(item => {
+          const status = item.status === 'pending' ? 'nutrition_review' : item.status
+          const statusLabel = { nutrition_review: '待营养师初审', doctor_review: '待健康顾问临床复审', finalized: '已正式入档', approved: '历史已审核', rejected: '已退回' }[status] || status
+          const canNutritionReview = ['nutritionist', 'superadmin'].includes(staff?.role) && status === 'nutrition_review'
+          const canRegenerate = ['nutritionist', 'superadmin'].includes(staff?.role) && status === 'rejected'
+          const canDoctorReview = ['familyDoctor', 'superadmin'].includes(staff?.role) && status === 'doctor_review'
+          return <section key={item._id} id={`phase-assessment-${item._id}`} style={{ border: '1px solid #DCE8E1', borderRadius: 10, padding: 13, background: status === 'finalized' ? '#F2FAF6' : '#fff' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><strong style={{ color: '#155E48' }}>📊 {item.periodLabel}阶段性健康评估</strong><span style={{ fontSize: 12, fontWeight: 700, color: status === 'doctor_review' ? '#B45309' : status === 'finalized' ? '#16845B' : '#7C3AED' }}>{statusLabel}</span></div>
+            <div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>{item.templateSnapshot?.name || '模板驱动评估'} · 依据：{(item.evidenceSources || []).join('；') || '待核实'}</div>
+            {item.clinicalReview?.reasons?.length > 0 && <div style={{ marginTop: 8, padding: 8, borderRadius: 7, background: '#FFF8ED', color: '#92400E', fontSize: 12 }}>临床复审原因：{item.clinicalReview.reasons.join('；')}</div>}
+            <textarea className="form-input" rows={12} style={{ marginTop: 10 }} disabled={!canNutritionReview && !canDoctorReview} value={assessmentEdits[item._id] ?? item.content ?? ''} onChange={event => setAssessmentEdits(values => ({ ...values, [item._id]: event.target.value }))} />
+            {item.nutritionReview?.reviewedAt && <div style={{ marginTop: 7, fontSize: 12, color: '#65776F' }}>营养师初审：{item.nutritionReview.reviewedByName || '-'} · {item.nutritionReview.note || '无补充备注'}</div>}
+            {item.doctorReview?.reviewedAt && <div style={{ marginTop: 5, fontSize: 12, color: '#65776F' }}>健康顾问复审：{item.doctorReview.reviewedByName || '-'} · {item.doctorReview.note || '无补充备注'}</div>}
+            {canNutritionReview && <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}><button className="btn btn-primary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'approve')}>营养初审通过</button><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'escalate')}>转健康顾问复审</button><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'reject')}>退回AI调整</button></div>}
+            {canRegenerate && <div style={{ marginTop: 10 }}><button className="btn btn-primary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'regenerate')}>按退回意见由AI重新生成</button></div>}
+            {canDoctorReview && <div style={{ display: 'flex', gap: 8, marginTop: 10 }}><button className="btn btn-primary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'approve')}>临床复审通过并入档</button><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'return')}>退回营养师</button></div>}
+          </section>
+        })}
+      </div>
+    </div>
     <div className="card" style={{ alignSelf: 'start' }}>
       <div className="card-header"><div className="card-title">AI辅助研判</div><button className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)}>新建主题</button></div>
       <div className="card-body" style={{ padding: 10 }}>
@@ -147,7 +185,6 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
     </div>
 
     {active ? <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {assessments.filter(item => item.status === 'pending').map(item => <div className="card" key={item._id} style={{ border: '1px solid #7C3AED55' }}><div className="card-header"><div className="card-title">📊 {item.periodLabel}阶段性评估待审核</div><span style={{ fontSize: 12, color: '#7C3AED' }}>{item.templateSnapshot?.name || '模板驱动评估'}</span></div><div className="card-body"><div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.65, fontSize: 14 }}>{item.content}</div><div style={{ marginTop: 10, fontSize: 12, color: '#65776F' }}>依据：{(item.evidenceSources || []).join('；') || '无'}</div>{['familyDoctor', 'superadmin'].includes(staff?.role) && <div style={{ display: 'flex', gap: 8, marginTop: 12 }}><button className="btn btn-primary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'approve')}>审核通过</button><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'reject')}>退回调整</button></div>}</div></div>)}
       <div className="card"><div className="card-body" style={{ padding: 14 }}>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap' }}>
           <div><div style={{ fontSize: 18, fontWeight: 700 }}>{active.title}</div><div style={{ color: '#4A6558', fontSize: 13, marginTop: 4 }}>{active.description || '围绕该问题持续讨论，资料和结论均保存在客户专项资料库。'}</div></div>
@@ -179,7 +216,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
       {!!active.messages?.length && <div className="card"><div className="card-header"><div className="card-title">阶段性结论</div><button className="btn btn-secondary btn-sm" disabled={busy} onClick={generateConclusion}>AI整理结论</button></div><div className="card-body">
         <StructuredAssessment data={active.conclusion?.structured} />
         <textarea className="form-input" rows={10} value={conclusionText} onChange={e => setConclusionText(e.target.value)} placeholder="AI整理后由健康顾问复核确认；只有已确认结论会进入管理方案上下文。" />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}><span style={{ fontSize: 12, color: active.conclusion?.status === 'confirmed' ? '#16845B' : '#8AA89C' }}>{active.conclusion?.status === 'confirmed' ? `已由${active.conclusion.confirmedByName || '健康顾问'}确认${active.conclusion.serviceRecordId ? ' · 已写入阶段性健康评估' : ''}` : '草稿不会进入任何正式方案'}</span>{['familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy || !conclusionText.trim()} onClick={confirmConclusion}>{/阶段性.*评估/.test(`${active.title} ${active.description || ''}`) ? '确认并写入阶段性健康评估' : `确认并用于${REVIEW_TEMPLATES.find(item => item.key === active.reviewType)?.target || (/年度管理研判/.test(active.title) ? '年度管理方案' : '对应方案')}`}</button>}</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}><span style={{ fontSize: 12, color: active.conclusion?.status === 'confirmed' ? '#16845B' : '#8AA89C' }}>{isStageAssessmentTopic ? '研判结论仅供参考；正式阶段评估必须使用上方营养初审流程' : active.conclusion?.status === 'confirmed' ? `已由${active.conclusion.confirmedByName || '健康顾问'}确认` : '草稿不会进入任何正式方案'}</span>{!isStageAssessmentTopic && ['familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy || !conclusionText.trim()} onClick={confirmConclusion}>{`确认并用于${REVIEW_TEMPLATES.find(item => item.key === active.reviewType)?.target || (/年度管理研判/.test(active.title) ? '年度管理方案' : '对应方案')}`}</button>}</div>
       </div></div>}
     </div> : <div className="card"><div className="card-body" style={{ padding: 60, textAlign: 'center', color: '#8AA89C' }}>请先新建一个研判主题</div></div>}
 

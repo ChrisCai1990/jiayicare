@@ -526,7 +526,7 @@ const SR_CATEGORY = {
   stage_assessment: '阶段性健康评估',
   routine:       '日常随访',
   doctor_followup: '健康顾问跟进',
-  phase_assessment: '阶段性健康评估',
+  stage_assessment: '阶段性健康评估', phase_assessment: '阶段性健康评估',
 }
 const SR_CATEGORY_COLOR = { '营养干预':'#22A06B', '专病管理':'#0077B6', '医院就医':'#D97706', '阶段性健康评估':'#8A4AC7' }
 

@@ -35,7 +35,7 @@ async function createAssessment({ plan, user, template }) {
   const minimumData = template.content?.minimumData || '资料不足时必须明确列为数据缺口。';
   const outputSections = Array.isArray(template.content?.outputSections) && template.content.outputSections.length
     ? template.content.outputSections : ['本期目标与已确认数据', '管理执行与依从性', '成效、风险与数据缺口', '下一阶段待审核计划'];
-  const prompt = `你是医护团队的阶段性健康评估助手。请按模板对会员进行${period.label}评估。不得诊断、开药或自动修改方案；所有建议须由健康顾问审核。
+  const prompt = `你是医护团队的阶段性健康评估助手。请按模板对会员进行${period.label}评估。不得诊断、开药或自动修改方案；所有评估必须先由营养师审核，涉及临床问题时再由健康顾问复审。
 
 【模板关注重点】${focus}
 【模板额外要求】${instructions}
@@ -72,6 +72,10 @@ async function scanAndCreatePhaseAssessments() {
 }
 
 function startPhaseAssessmentScheduler() {
+  if (process.env.ENABLE_PHASE_ASSESSMENT_SCHEDULER !== 'true') {
+    console.log('[phase-assessment] automatic scheduler disabled; manual pilot only');
+    return;
+  }
   scanAndCreatePhaseAssessments().catch(error => console.error('[phase-assessment] initial scan failed', error.message));
   // 每小时检查一次；periodKey 唯一索引保证同一客户/模板/周期不会重复生成。
   setInterval(() => scanAndCreatePhaseAssessments().catch(error => console.error('[phase-assessment] scan failed', error.message)), 60 * 60 * 1000);

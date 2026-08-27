@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { toStructuredAssessment, assessmentToPlainText, quarterPeriod, toTemplateSections, templateAssessmentFromContent } = require('../src/utils/phaseAssessment');
+const { toStructuredAssessment, assessmentToPlainText, quarterPeriod, toTemplateSections, templateAssessmentFromContent, detectClinicalReview, nextAssessmentStatus } = require('../src/utils/phaseAssessment');
 
 test('阶段性评估会去除 Markdown 并归入固定栏目', () => {
   const value = toStructuredAssessment(`### 核心结论\n**血压总体稳定**\n---\n### 重点风险\n- LDL-C 仍需复核\n### 下一步行动\n1. 每日晨间测量血压`, '阶段性评估');
@@ -45,4 +45,21 @@ test('正式阶段评估保留Admin模板、周期和固定栏目', () => {
   assert.equal(value.periodKey, '2026-Q3');
   assert.deepEqual(value.sections[0].items, ['血压趋势稳定']);
   assert.deepEqual(value.sections[1].items, ['随访完成']);
+});
+
+test('阶段评估必须先由营养师初审', () => {
+  assert.equal(nextAssessmentStatus({ currentStatus: 'nutrition_review', actorRole: 'familyDoctor', action: 'approve' }), null);
+  assert.equal(nextAssessmentStatus({ currentStatus: 'nutrition_review', actorRole: 'nutritionist', action: 'approve' }), 'finalized');
+});
+
+test('临床问题由营养师初审后转健康顾问复审', () => {
+  assert.equal(nextAssessmentStatus({ currentStatus: 'nutrition_review', actorRole: 'nutritionist', action: 'approve', clinicalRequired: true }), 'doctor_review');
+  assert.equal(nextAssessmentStatus({ currentStatus: 'doctor_review', actorRole: 'familyDoctor', action: 'approve' }), 'finalized');
+  assert.equal(nextAssessmentStatus({ currentStatus: 'doctor_review', actorRole: 'familyDoctor', action: 'return' }), 'nutrition_review');
+});
+
+test('确定性规则识别用药和异常生命体征临床复审原因', () => {
+  const reasons = detectClinicalReview('本期血压持续升高，同时客户提出调整用药剂量。');
+  assert.equal(reasons.includes('生命体征持续或明显异常'), true);
+  assert.equal(reasons.includes('用药或不良反应问题'), true);
 });
