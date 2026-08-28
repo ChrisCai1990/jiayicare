@@ -14,7 +14,7 @@ export default function InvitePage() {
   Taro.useShareAppMessage(() => ({
     title: '邀请你使用嘉医汇健康管理',
     path: `/pages/home/index?invite=${encodeURIComponent(code)}`,
-    success: () => Taro.showToast({ title: '感谢你把健康管理分享给好友', icon: 'none' }),
+    success: () => Taro.showToast({ title: '感谢你把健康理念分享给好友', icon: 'none' }),
   }));
   return <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
     <View style={{ padding: `${statusBarHeight + 14}px ${spacing.lg}px 28px`, backgroundColor: colors.primary, textAlign: 'center' }}>

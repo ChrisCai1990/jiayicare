@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const https = require('https');
 const crypto = require('crypto');
 const User = require('../models/User');
+const Message = require('../models/Message');
 const LoginSession = require('../models/LoginSession');
 const HealthFundTransaction = require('../models/HealthFundTransaction');
 const VerificationCode = require('../models/VerificationCode');
@@ -78,6 +79,16 @@ async function applyFirstLoginRewards(user, inviteCode) {
     grantPromotionFund(inviter._id, cfg.inviterAmount, '邀请好友首次使用小程序奖励'),
     grantPromotionFund(user._id, cfg.inviteeAmount, '通过好友邀请首次使用小程序奖励'),
   ]);
+  const notices = [];
+  if (Number(cfg.inviterAmount) > 0) notices.push(Message.create({
+    user: inviter._id, type: 'system', sender: '嘉医汇', title: '健康基金已到账', unread: true,
+    content: `好友已完成注册，¥${Number(cfg.inviterAmount)} 健康基金已到账。感谢你把健康理念分享给身边的人。`,
+  }));
+  if (Number(cfg.inviteeAmount) > 0) notices.push(Message.create({
+    user: user._id, type: 'system', sender: '嘉医汇', title: '健康基金已到账', unread: true,
+    content: `欢迎加入嘉医汇，¥${Number(cfg.inviteeAmount)} 健康基金已到账。愿健康理念陪伴你的每一天。`,
+  }));
+  await Promise.all(notices).catch(err => console.error('[invite-reward] 到账消息发送失败', err.message));
 }
 
 // 计算用户健康基金汇总（与 /user/me 保持一致）

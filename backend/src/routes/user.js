@@ -72,6 +72,18 @@ async function applyOnboardingRewards(user, inviteCode) {
     grant(inviter._id, cfg.inviterAmount, '邀请好友首次使用小程序奖励'),
     grant(user._id, cfg.inviteeAmount, '通过好友邀请首次使用小程序奖励'),
   ]);
+  if (rewardClaimed) {
+    const notices = [];
+    if (Number(cfg.inviterAmount) > 0) notices.push(Message.create({
+      user: inviter._id, type: 'system', sender: '嘉医汇', title: '健康基金已到账', unread: true,
+      content: `好友已完成注册，¥${Number(cfg.inviterAmount)} 健康基金已到账。感谢你把健康理念分享给身边的人。`,
+    }));
+    if (Number(cfg.inviteeAmount) > 0) notices.push(Message.create({
+      user: user._id, type: 'system', sender: '嘉医汇', title: '健康基金已到账', unread: true,
+      content: `欢迎加入嘉医汇，¥${Number(cfg.inviteeAmount)} 健康基金已到账。愿健康理念陪伴你的每一天。`,
+    }));
+    await Promise.all(notices).catch(err => console.error('[invite-reward] 到账消息发送失败', err.message));
+  }
 }
 
 router.get('/referrals', auth, async (req, res) => {
