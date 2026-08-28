@@ -8862,10 +8862,11 @@ export default function PatientDetailPage() {
 
       {/* ── Service Records Tab ── */}
       {tab === 'serviceRecords' && (() => {
-        const CATS = ['营养干预', '专病管理', '医院就医', '阶段性健康评估']
+        // 阶段性健康评估在独立评估入口统一查看；服务记录只呈现实履约服务。
+        const CATS = ['营养干预', '专病管理', '医院就医']
         const grouped = {}
         CATS.forEach(c => { grouped[c] = [] })
-        serviceRecords.forEach(r => {
+        serviceRecords.filter(r => !['stage_assessment', 'phase_assessment'].includes(r.type)).forEach(r => {
           const cat = SR_CATEGORY[r.type]
           // routine / doctor_followup 等已取消的旧类型不再出现在服务记录页面。
           if (!cat || !grouped[cat]) return
