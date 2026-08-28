@@ -5,6 +5,15 @@ const mongoose = require('mongoose');
 // cannot reject the entire report.
 const normalizeReportItemType = value => value === 'pathology' ? 'imaging' : value;
 
+// 兼容历史 AI 曾返回的风险等级词。reportItems.status 表示是否异常，低风险等同正常；
+// 其他未知值继续交给 enum 拒绝，避免把无法判断的状态静默改成正常。
+const normalizeReportItemStatus = value => {
+  if (!value) return 'unknown';
+  const normalized = String(value).trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
+  if (normalized === 'low' || normalized === 'low risk') return 'normal';
+  return normalized;
+};
+
 // 报告解析后的单条项目（检验/检查值）
 const reportItemSchema = new mongoose.Schema({
   name:           { type: String, default: '' }, // 项目名称
@@ -12,7 +21,7 @@ const reportItemSchema = new mongoose.Schema({
   value:          { type: String, default: '' }, // 检测值（字符串保留原始格式）
   unit:           { type: String, default: '' }, // 单位
   referenceRange: { type: String, default: '' }, // 参考范围
-  status:         { type: String, enum: ['normal', 'abnormal', 'attention', 'unknown'], default: 'unknown', set: v => (v ? v : 'unknown') }, // AI对影像类项目常返回空字符串，空值兜底避免保存时枚举校验报错
+  status:         { type: String, enum: ['normal', 'abnormal', 'attention', 'unknown'], default: 'unknown', set: normalizeReportItemStatus }, // 兼容空值及历史低风险状态，避免审核整份报告时枚举校验失败
   itemType:       { type: String, enum: ['lab', 'imaging', 'data'], default: 'lab', set: normalizeReportItemType }, // 检验/影像文字/数据曲线类
   orderName:      { type: String, default: '' }, // 所属检验医嘱组名（用于编辑时还原分组）
   sourcePage:     { type: Number, default: null }, // 原报告页码，供医护审核快速定位

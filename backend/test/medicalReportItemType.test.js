@@ -28,3 +28,28 @@ test('unknown itemType remains invalid instead of being silently accepted', () =
 
   assert.match(report.validateSync().message, /itemType/);
 });
+
+test('legacy low-risk statuses are normalized before MedicalReport validation', () => {
+  const report = new MedicalReport({
+    user: new mongoose.Types.ObjectId(),
+    title: '年度体检报告',
+    reportItems: [
+      { name: '项目一', status: 'low risk' },
+      { name: '项目二', status: 'low' },
+      { name: '项目三', status: 'LOW_RISK' },
+    ],
+  });
+
+  assert.equal(report.validateSync(), undefined);
+  assert.deepEqual(report.reportItems.map(item => item.status), ['normal', 'normal', 'normal']);
+});
+
+test('unknown report item status remains invalid instead of being silently accepted', () => {
+  const report = new MedicalReport({
+    user: new mongoose.Types.ObjectId(),
+    title: '年度体检报告',
+    reportItems: [{ name: '未知项目', status: 'maybe' }],
+  });
+
+  assert.match(report.validateSync().message, /status/);
+});
