@@ -35,6 +35,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
   const [topics, setTopics] = useState([])
   const [assessments, setAssessments] = useState([])
   const [assessmentEdits, setAssessmentEdits] = useState({})
+  const [expandedAssessments, setExpandedAssessments] = useState({})
   const [activeId, setActiveId] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -159,16 +160,22 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
           const canNutritionReview = ['nutritionist', 'superadmin'].includes(staff?.role) && status === 'nutrition_review'
           const canRegenerate = ['nutritionist', 'superadmin'].includes(staff?.role) && status === 'rejected'
           const canDoctorReview = ['familyDoctor', 'superadmin'].includes(staff?.role) && status === 'doctor_review'
+          const expanded = expandedAssessments[item._id] === true
+          const evidenceCount = (item.evidenceSources || []).length
           return <section key={item._id} id={`phase-assessment-${item._id}`} style={{ border: '1px solid #DCE8E1', borderRadius: 10, padding: 13, background: status === 'finalized' ? '#F2FAF6' : '#fff' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><strong style={{ color: '#155E48' }}>📊 {item.periodLabel}阶段性健康评估</strong><span style={{ fontSize: 12, fontWeight: 700, color: status === 'doctor_review' ? '#B45309' : status === 'finalized' ? '#16845B' : '#7C3AED' }}>{statusLabel}</span></div>
-            <div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>{item.templateSnapshot?.name || '模板驱动评估'} · 依据：{(item.evidenceSources || []).join('；') || '待核实'}</div>
-            {item.clinicalReview?.reasons?.length > 0 && <div style={{ marginTop: 8, padding: 8, borderRadius: 7, background: '#FFF8ED', color: '#92400E', fontSize: 12 }}>临床复审原因：{item.clinicalReview.reasons.join('；')}</div>}
-            <textarea className="form-input" rows={12} style={{ marginTop: 10 }} disabled={!canNutritionReview && !canDoctorReview} value={assessmentEdits[item._id] ?? item.content ?? ''} onChange={event => setAssessmentEdits(values => ({ ...values, [item._id]: event.target.value }))} />
-            {item.nutritionReview?.reviewedAt && <div style={{ marginTop: 7, fontSize: 12, color: '#65776F' }}>营养师初审：{item.nutritionReview.reviewedByName || '-'} · {item.nutritionReview.note || '无补充备注'}</div>}
-            {item.doctorReview?.reviewedAt && <div style={{ marginTop: 5, fontSize: 12, color: '#65776F' }}>健康顾问复审：{item.doctorReview.reviewedByName || '-'} · {item.doctorReview.note || '无补充备注'}</div>}
-            {canNutritionReview && <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}><button className="btn btn-primary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'approve')}>营养初审通过</button><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'escalate')}>转健康顾问复审</button><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'reject')}>退回AI调整</button></div>}
-            {canRegenerate && <div style={{ marginTop: 10 }}><button className="btn btn-primary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'regenerate')}>按退回意见由AI重新生成</button></div>}
-            {canDoctorReview && <div style={{ display: 'flex', gap: 8, marginTop: 10 }}><button className="btn btn-primary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'approve')}>临床复审通过并入档</button><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'return')}>退回营养师</button></div>}
+            <div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>{item.templateSnapshot?.name || '模板驱动评估'} · {evidenceCount ? `${evidenceCount}项依据` : '依据待核实'}</div>
+            {!expanded && <div style={{ marginTop: 10, color: '#33473E', fontSize: 13, lineHeight: 1.65, display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden', whiteSpace: 'pre-wrap' }}>{item.content}</div>}
+            <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 10 }} onClick={() => setExpandedAssessments(values => ({ ...values, [item._id]: !expanded }))}>{expanded ? '收起' : (canNutritionReview || canDoctorReview ? '展开审核' : '查看全文')}</button>
+            {expanded && <>
+              {item.clinicalReview?.reasons?.length > 0 && <div style={{ marginTop: 8, padding: 8, borderRadius: 7, background: '#FFF8ED', color: '#92400E', fontSize: 12 }}>临床复审原因：{item.clinicalReview.reasons.join('；')}</div>}
+              <textarea className="form-input" rows={12} style={{ marginTop: 10 }} disabled={!canNutritionReview && !canDoctorReview} value={assessmentEdits[item._id] ?? item.content ?? ''} onChange={event => setAssessmentEdits(values => ({ ...values, [item._id]: event.target.value }))} />
+              {item.nutritionReview?.reviewedAt && <div style={{ marginTop: 7, fontSize: 12, color: '#65776F' }}>营养师初审：{item.nutritionReview.reviewedByName || '-'} · {item.nutritionReview.note || '无补充备注'}</div>}
+              {item.doctorReview?.reviewedAt && <div style={{ marginTop: 5, fontSize: 12, color: '#65776F' }}>健康顾问复审：{item.doctorReview.reviewedByName || '-'} · {item.doctorReview.note || '无补充备注'}</div>}
+              {canNutritionReview && <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}><button className="btn btn-primary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'approve')}>营养初审通过</button><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'escalate')}>转健康顾问复审</button><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'reject')}>退回AI调整</button></div>}
+              {canRegenerate && <div style={{ marginTop: 10 }}><button className="btn btn-primary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'regenerate')}>按退回意见由AI重新生成</button></div>}
+              {canDoctorReview && <div style={{ display: 'flex', gap: 8, marginTop: 10 }}><button className="btn btn-primary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'approve')}>临床复审通过并入档</button><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'return')}>退回营养师</button></div>}
+            </>}
           </section>
         })}
       </div>
