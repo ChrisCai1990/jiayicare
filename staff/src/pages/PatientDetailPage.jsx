@@ -4760,9 +4760,9 @@ export default function PatientDetailPage() {
           const renderRecord = (r, color) => {
             const isExpanded = expandedRecords.has(r._id)
             // 多文件优先，向下兼容旧 fileUrl
-            const allUrls = (r.fileUrls && r.fileUrls.length > 0)
-              ? r.fileUrls
-              : (r.fileUrl ? [r.fileUrl] : [])
+            const allUrls = (r.previewUrls && r.previewUrls.some(Boolean))
+              ? r.previewUrls.filter(Boolean)
+              : ((r.fileUrls && r.fileUrls.length > 0) ? r.fileUrls : (r.previewUrl || r.fileUrl ? [r.previewUrl || r.fileUrl] : []))
             const resolvedUrls = allUrls.map(u => u.startsWith('/') ? API_ORIGIN + u : u)
             const fullUrl = resolvedUrls[0] || null
             const labItems = (r.reportItems || []).filter(i => i.itemType !== 'data' && i.itemType !== 'imaging')

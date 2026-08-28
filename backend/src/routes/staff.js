@@ -7411,7 +7411,9 @@ router.get('/patients/:id/screening-reports', staffAuth, async (req, res) => {
     const reports = await MedicalReport.find({
       user: req.params.id,
     }).select('-content').sort({ checkDate: -1, createdAt: -1 }).lean();
-    res.json({ success: true, data: reports });
+    // 专项筛查板块也会直接打开报告原件。这里此前返回数据库中的私有 OSS 裸地址，
+    // 导致“查看报告 PDF”跳转后 AccessDenied；与报告列表/审核弹窗统一返回受控预览地址。
+    res.json({ success: true, data: reports.map(withSignedReportFiles) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
