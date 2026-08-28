@@ -932,7 +932,7 @@ router.get('/annual-mgmt-plans', auth, async (req, res) => {
   }
 });
 
-const { syncAnnualPlanFollowUps } = require('../utils/annualPlanFollowUps');
+const { syncAnnualPlanTaskSplit } = require('../utils/annualPlanTaskSplit');
 
 // 方案类型 → 随访待审核归属角色（体检方案由健康顾问把关，营养方案由营养师把关）
 const HEALTH_PLAN_REVIEW_ROLE = { annual_checkup: 'familyDoctor', checkup: 'familyDoctor', nutrition: 'nutritionist', medical_assist: 'healthPlanner' };
@@ -971,11 +971,10 @@ router.patch('/annual-mgmt-plans/:id/confirm', auth, async (req, res) => {
     if (!plan.confirmedAt) {
       plan.confirmedAt = new Date();
       await plan.save();
-      // 医护端保存方案时已同步生成过随访占位（见 staff.js PUT /annual-plan），这里仅兜底：
-      // 万一某条方案是老数据、保存时还没有这套逻辑，用户确认时补一次
-      await syncAnnualPlanFollowUps(plan).catch(() => {});
     }
-    res.json({ success: true, data: plan });
+    // 客户确认是年度任务拆分的唯一触发点；重复确认只做幂等同步，不会重复生成。
+    const taskSplit = await syncAnnualPlanTaskSplit(plan);
+    res.json({ success: true, data: plan, taskSplit });
   } catch (err) {
     res.status(500).json({ success: false, message: '操作失败' });
   }

@@ -3977,17 +3977,16 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       { planType, moduleData: moduleData || {}, notes: notes || '', templateId: templateId || null, templateName: templateName || '', createdBy: req.staff._id },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
-    // 保存方案的同时按模块内容同步生成随访占位（就医/会诊/复查/接种/检测各条记录直接生成，
-    // 日常监测/季度评估按周期批量排期），不用等客户在app端确认才生成。
-    const { syncAnnualPlanFollowUps } = require('../utils/annualPlanFollowUps');
-    const followUpCount = await syncAnnualPlanFollowUps(plan).catch(() => 0);
+    // 未经客户确认的方案只保存草稿，不生成任何执行任务；已确认方案后续修改则幂等同步任务。
+    const { syncAnnualPlanTaskSplit } = require('../utils/annualPlanTaskSplit');
+    const taskSplit = plan.confirmedAt ? await syncAnnualPlanTaskSplit(plan) : null;
     // 药物管理/营养素管理模块：同步生成定期配药/配营养素计划（RecurringSupplyPlan），
     // 到期后由定时任务生成健管专员待办+客户端提醒（2026-07-19）
     const { syncAnnualPlanSupplyPlans } = require('../utils/annualPlanSupplyPlans');
     const supplyPlanResult = await syncAnnualPlanSupplyPlans(plan).catch(() => ({ created: 0, updated: 0, disabled: 0 }));
     const { syncAnnualPlanTreatments } = require('../utils/annualPlanTreatmentSync');
     const treatmentSyncResult = await syncAnnualPlanTreatments(plan);
-    res.json({ success: true, data: plan, followUpCount, supplyPlanResult, treatmentSyncResult });
+    res.json({ success: true, data: plan, followUpCount: taskSplit?.scheduledFollowUps || 0, taskSplit, supplyPlanResult, treatmentSyncResult });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
