@@ -51,16 +51,22 @@ const router = express.Router();
 async function applyOnboardingRewards(user, inviteCode) {
   const cfgRow = await SystemConfig.findOne({ key: 'healthFundPolicy' }).lean();
   const cfg = cfgRow?.value || {};
-  const grant = async (userId, amount, remark) => {
+  const grant = async (userId, amount, remark, source = 'promotion') => {
     const value = Math.max(0, Number(amount) || 0);
     if (!value) return;
     const updated = await User.findByIdAndUpdate(userId, { $inc: { healthFundBalance: value } }, { new: true });
-    await HealthFundTransaction.create({ userId, type: 'grant', source: 'promotion', amount: value, balanceAfter: updated?.healthFundBalance || 0, remark });
+    await HealthFundTransaction.create({ userId, type: 'grant', source, amount: value, balanceAfter: updated?.healthFundBalance || 0, remark });
   };
   const now = new Date();
   if (cfg.firstLoginEnabled === true && Number(cfg.firstLoginAmount) > 0) {
     const claimed = await User.findOneAndUpdate({ _id: user._id, firstLoginFundGrantedAt: null }, { $set: { firstLoginFundGrantedAt: now } }, { new: true });
-    if (claimed) await grant(user._id, cfg.firstLoginAmount, '首次使用小程序健康基金奖励');
+    if (claimed) {
+      await grant(user._id, cfg.firstLoginAmount, '首次使用小程序健康基金奖励', 'enterprise');
+      await Message.create({
+        user: user._id, type: 'system', sender: '嘉医汇', title: '欢迎加入嘉医汇', unread: true,
+        content: `首次开通赠送的 ¥${Number(cfg.firstLoginAmount)} 健康基金已到账。健康可控，人生方可从容。愿你在认真照顾自己的每一天里，收获安心、活力与从容。`,
+      }).catch(err => console.error('[first-login-reward] 到账消息发送失败', err.message));
+    }
   }
   if (!inviteCode || user.invitedBy) return;
   const inviter = await User.findOne({ referralCode: String(inviteCode), isDeleted: { $ne: true }, _id: { $ne: user._id } }).select('_id');
