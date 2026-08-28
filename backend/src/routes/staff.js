@@ -3193,6 +3193,20 @@ router.get('/patients/:id/plans', staffAuth, async (req, res) => {
       .sort({ year: -1 })
       .populate('pushedBy', 'name role'),
   ]);
+  const annualPlanIds = annualPlans.map(plan => plan._id);
+  const Task = require('../models/Task');
+  const [annualFollowUps, annualClientTasks] = annualPlanIds.length ? await Promise.all([
+    FollowUp.find({ sourceAnnualPlanId: { $in: annualPlanIds } })
+      .select('sourceAnnualPlanId status date theme assignedTo')
+      .lean(),
+    Task.find({ sourceAnnualPlanId: { $in: annualPlanIds } })
+      .select('sourceAnnualPlanId status dueDate title')
+      .lean(),
+  ]) : [[], []];
+  const progressByPlan = new Map();
+  annualPlanIds.forEach(id => progressByPlan.set(String(id), { followUps: [], clientTasks: [] }));
+  annualFollowUps.forEach(item => progressByPlan.get(String(item.sourceAnnualPlanId))?.followUps.push(item));
+  annualClientTasks.forEach(item => progressByPlan.get(String(item.sourceAnnualPlanId))?.clientTasks.push(item));
 
   const PLAN_TYPE_LABEL = {
     health_reshape: '健康重塑方案', young_state: '健康年轻态方案',
@@ -3207,7 +3221,21 @@ router.get('/patients/:id/plans', staffAuth, async (req, res) => {
     quarterly_eval: '季度评估',
   };
 
-  const annualMapped = annualPlans.map(ap => ({
+  const annualMapped = annualPlans.map(ap => {
+    const execution = progressByPlan.get(String(ap._id)) || { followUps: [], clientTasks: [] };
+    const actionableFollowUps = execution.followUps.filter(item => item.status !== 'cancelled');
+    const actionableClientTasks = execution.clientTasks.filter(item => item.status !== 'cancelled');
+    const total = actionableFollowUps.length + actionableClientTasks.length;
+    const completed = actionableFollowUps.filter(item => item.status === 'completed').length
+      + actionableClientTasks.filter(item => item.status === 'completed').length;
+    const nextDates = [
+      ...actionableFollowUps.filter(item => item.status !== 'completed').map(item => item.date),
+      ...actionableClientTasks.filter(item => item.status !== 'completed').map(item => item.dueDate),
+    ].filter(Boolean).map(value => new Date(value)).filter(value => !Number.isNaN(value.getTime())).sort((a, b) => a - b);
+    const currentStage = !ap.pushedAt ? 'draft'
+      : !ap.confirmedAt ? 'awaiting_customer'
+        : total > 0 && completed >= total ? 'completed' : 'in_progress';
+    return ({
     _id: ap._id,
     title: `${ap.year}年 年度管理方案${ap.planType ? ` · ${PLAN_TYPE_LABEL[ap.planType] || ''}` : ''}`,
     type: 'annual_mgmt',
@@ -3218,12 +3246,24 @@ router.get('/patients/:id/plans', staffAuth, async (req, res) => {
     staffId: ap.pushedBy,
     pushedAt: ap.pushedAt,
     confirmedAt: ap.confirmedAt || null,
+    progress: {
+      currentStage,
+      total,
+      completed,
+      percent: total ? Math.round(completed * 100 / total) : 0,
+      followUpTotal: actionableFollowUps.length,
+      followUpCompleted: actionableFollowUps.filter(item => item.status === 'completed').length,
+      clientTaskTotal: actionableClientTasks.length,
+      clientTaskCompleted: actionableClientTasks.filter(item => item.status === 'completed').length,
+      nextDueAt: nextDates[0] || null,
+    },
     isAnnualPlan: true,
     createdAt: ap.createdAt,
     items: Object.entries(ap.moduleData || {})
       .filter(([, v]) => v && v.enabled)
       .map(([key]) => ({ name: MODULE_NAME[key] || key, status: 'pending' })),
-  }));
+  });
+  });
 
   res.json({ success: true, data: [...annualMapped, ...healthPlans] });
 });

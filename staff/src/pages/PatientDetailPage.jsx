@@ -8102,14 +8102,40 @@ export default function PatientDetailPage() {
             </div>
           </div>
           {plans.length === 0 ? (
-            <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无管理方案</div>
+            <div style={{ padding: '34px 40px' }}>
+              <div style={{ fontWeight: 700, color: '#1A2B24', textAlign: 'center' }}>该客户尚未保存管理方案</div>
+              <div style={{ color: '#8AA89C', fontSize: 13, textAlign: 'center', marginTop: 7 }}>AI生成内容仍是编辑草稿；点击“保存年度管理方案”后才会进入方案列表和进程跟踪。</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(130px,1fr))', gap: 10, marginTop: 24 }}>
+                {['1. 生成并保存方案', '2. 健康顾问审核推送', '3. 客户确认方案', '4. 执行任务与随访'].map((label, index) => <div key={label} style={{ padding: '13px 10px', borderRadius: 9, border: `1px solid ${index === 0 ? '#D97706' : '#DCE5E0'}`, background: index === 0 ? '#FFF8ED' : '#FAFCFB', color: index === 0 ? '#B45309' : '#8AA89C', fontSize: 13, textAlign: 'center', fontWeight: index === 0 ? 700 : 500 }}>{label}</div>)}
+              </div>
+            </div>
           ) : (
+            <>
+            {(() => {
+              const annual = plans.find(plan => plan.isAnnualPlan)
+              if (!annual) return null
+              const stage = annual.progress?.currentStage || (!annual.pushedAt ? 'draft' : !annual.confirmedAt ? 'awaiting_customer' : 'in_progress')
+              const stages = [
+                ['draft', '方案已保存'], ['awaiting_customer', '已推送客户'], ['in_progress', '客户已确认'], ['completed', '执行完成'],
+              ]
+              const stageIndex = { draft: 0, awaiting_customer: 1, in_progress: 2, completed: 3 }[stage] ?? 0
+              return <div style={{ padding: '18px 20px', borderBottom: '1px solid #EDF1EF', background: '#FAFCFB' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <div><div style={{ fontWeight: 700, color: '#1A2B24' }}>客户当前进程</div><div style={{ color: '#65776F', fontSize: 12, marginTop: 4 }}>{annual.title}</div></div>
+                  <div style={{ color: '#1E6B50', fontWeight: 700 }}>{annual.progress?.completed || 0}/{annual.progress?.total || 0} 项完成 · {annual.progress?.percent || 0}%</div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(130px,1fr))', gap: 8, marginTop: 14 }}>
+                  {stages.map(([key, label], index) => <div key={key} style={{ padding: '10px 8px', borderRadius: 8, textAlign: 'center', fontSize: 12, fontWeight: index <= stageIndex ? 700 : 500, color: index <= stageIndex ? '#155E48' : '#8AA89C', background: index <= stageIndex ? '#EAF6F0' : '#F2F4F3', border: `1px solid ${index === stageIndex ? '#22A06B' : 'transparent'}` }}>{index < stageIndex ? '✓ ' : index === stageIndex ? '● ' : ''}{label}</div>)}
+                </div>
+                {annual.progress?.nextDueAt && <div style={{ marginTop: 10, color: '#65776F', fontSize: 12 }}>下一节点：{new Date(annual.progress.nextDueAt).toLocaleDateString('zh-CN')}</div>}
+              </div>
+            })()}
             <table className="table">
               <thead><tr><th>方案名称</th><th>类型</th><th>状态</th><th>已阅</th><th>已确认</th><th>项目数</th><th>完成</th><th>负责人</th><th>创建时间</th></tr></thead>
               <tbody>
                 {plans.map(p => {
-                  const done = p.items?.filter(i => i.status === 'completed').length || 0
-                  const total = p.items?.length || 0
+                  const done = p.isAnnualPlan ? (p.progress?.completed || 0) : (p.items?.filter(i => i.status === 'completed').length || 0)
+                  const total = p.isAnnualPlan ? (p.progress?.total || 0) : (p.items?.length || 0)
                   return (
                     <tr key={p._id} style={{ cursor: 'pointer' }}
                       onClick={() => p.isAnnualPlan ? nav(`/patients/${id}/annual-health`)
@@ -8158,6 +8184,7 @@ export default function PatientDetailPage() {
                 })}
               </tbody>
             </table>
+            </>
           )}
         </div>
       )}
