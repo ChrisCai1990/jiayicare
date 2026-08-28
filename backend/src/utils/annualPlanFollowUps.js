@@ -35,6 +35,7 @@ const logicalScheduleKey = (row) => {
 const DATED_RECORD_MODULES = [
   { key: 'medical_treatment', dateField: 'visit_time', theme: '医疗问题解决·就医随访' },
   { key: 'specialist_collab', dateField: 'plan_time',   theme: '全专联合会诊随访' },
+  { key: 'checkup_completion', dateField: 'time',       theme: '体检完善提醒' },
   { key: 'abnormal_followup', dateField: 'time',        theme: '异常复查提醒' },
   { key: 'vaccine',           dateField: 'time',        theme: '疫苗接种提醒' },
   { key: 'functional_medicine', dateField: 'time',      theme: '功能医学检测提醒' },

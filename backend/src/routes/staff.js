@@ -6381,7 +6381,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       health_prevention: ['abnormal_followup', 'vaccine', 'monitoring', 'annual_checkup'],
     };
     // 后端实际能生成的板块全集
-    const GENERATABLE = ['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'monitoring', 'lifestyle', 'annual_checkup'];
+    const GENERATABLE = ['medical_treatment', 'specialist_collab', 'checkup_completion', 'abnormal_followup', 'vaccine', 'monitoring', 'lifestyle', 'annual_checkup'];
     const planType = req.body.planType || '';
     const templateId = req.body.templateId || '';
     let selectedTemplate = null;
@@ -6397,7 +6397,9 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       const rule = configuredRules.find(item => item.key === (ruleKeyMap[key] || key));
       return !rule || (rule.enabled !== false && rule.aiCanGenerate !== false);
     };
-    const allowedKeys = (PLAN_TYPE_MODULES[planType] || GENERATABLE).filter(k => GENERATABLE.includes(k) && allowedByTemplate(k));
+    const requiredScreeningKeys = ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'annual_checkup'];
+    const allowedKeys = [...new Set([...(PLAN_TYPE_MODULES[planType] || GENERATABLE), ...requiredScreeningKeys])]
+      .filter(k => GENERATABLE.includes(k) && (requiredScreeningKeys.includes(k) || allowedByTemplate(k)));
     const standardFollowUpPlans = await FollowUpPlan.find({ status: 'active' })
       .select('name cycles defaultRole defaultEmployeeId default_content').sort({ name: 1 }).lean();
     const standardFollowUpCatalog = standardFollowUpPlans.map((item, index) => ({
@@ -6405,6 +6407,19 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       cycles: item.cycles || [], defaultRole: item.defaultRole || '',
       defaultEmployeeId: item.defaultEmployeeId ? String(item.defaultEmployeeId) : '',
       content: item.default_content || {},
+    }));
+    const inferStandardCategory = name => {
+      const text = String(name || '').replace(/[【】\s]/g, '');
+      if (/年度体检/.test(text)) return 'annual_checkup';
+      if (/完善体检|体检完善/.test(text)) return 'checkup_completion';
+      if (/定期复查|复查/.test(text)) return 'abnormal_followup';
+      if (/疫苗|接种/.test(text)) return 'vaccine';
+      if (/安排就医|就医协助|就医/.test(text)) return 'medical_treatment';
+      return 'personalized';
+    };
+    standardFollowUpCatalog.forEach(item => { item.category = inferStandardCategory(item.name); });
+    const standardFollowUpPromptCatalog = standardFollowUpCatalog.map(item => ({
+      id: item.id, name: item.name, category: item.category, cycles: item.cycles, defaultRole: item.defaultRole,
     }));
 
     const { chat } = require('../utils/ai');
@@ -6489,8 +6504,8 @@ ${assessmentFocus ? JSON.stringify(assessmentFocus) : '暂无结构化主评估�
 ${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.planDesc || ''}` : '未选择规则'}
 
 【Admin统一标准随访方案库】
-${standardFollowUpCatalog.length ? JSON.stringify(standardFollowUpCatalog).slice(0, 18000) : '暂无启用方案；不得生成个性化随访方案'}
-只能从以上方案库筛选，不得虚构方案名称或ID。没有适用方案时不选择。
+${standardFollowUpPromptCatalog.length ? JSON.stringify(standardFollowUpPromptCatalog) : '暂无启用方案；不得生成方案'}
+必须依次筛查medical_treatment（就医安排）、checkup_completion（体检完善）、abnormal_followup（定期复查）、vaccine（疫苗接种）、annual_checkup（年度体检）五类基础动作。每类只能选择同category的真实模板；有依据才输出，没有依据返回空，不在页面展示。完成五类筛查后，才可从category=personalized的模板中选择额外个性化方案。不得虚构方案名称或ID。
 
 【Admin已确认的统一事项字段】
 ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依据','建议时间/时间范围','执行频率','注意事项','客户行动','责任角色','审核状态']).join('、')}
@@ -6503,20 +6518,23 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     { "standardPlanId": "必须来自方案库的id", "standardPlanName": "必须来自方案库的name且不可改名", "matchReason": "与研判的匹配依据", "personalization": "只写相对标准方案需要增加、删减或重点关注的调整，无调整写空字符串", "executionDate": "不早于${todayText}的YYYY-MM-DD日期", "frequency": "执行频次", "precautions": "注意事项", "customerAction": "客户行动" }
   ],
   "medical_treatment": [
-    { "reason": "就医原因", "department": "就诊科室", "visit_time": "建议时间或待确认", "basisSummary": "设置依据", "frequency": "单次", "precautions": "注意事项", "customerAction": "客户需要完成的事项", "ownerRole": "责任角色", "notes": "内部备注" }
+    { "standardPlanId": "category=medical_treatment的真实模板id", "reason": "就医原因", "department": "就诊科室", "visit_time": "不早于${todayText}的日期", "basisSummary": "设置依据", "frequency": "单次", "precautions": "注意事项", "customerAction": "客户需要完成的事项", "ownerRole": "责任角色", "notes": "内部备注" }
   ],
   "specialist_collab": [],
+  "checkup_completion": [
+    { "standardPlanId": "category=checkup_completion的真实模板id", "items": "需要补充的体检项目", "reason": "资料缺口或筛查依据", "time": "不早于${todayText}的日期", "frequency": "单次", "precautions": "检查准备", "customerAction": "完成检查并上传报告", "ownerRole": "健管专员" }
+  ],
   "abnormal_followup": [
-    { "items": "复查项目名称", "reason": "复查原因", "time": "建议时间或时间范围", "basisSummary": "来源报告、日期和异常事实", "frequency": "单次", "precautions": "如需空腹、携带既往资料", "customerAction": "按确认时间完成复查", "ownerRole": "健管专员", "notes": "内部备注" }
+    { "standardPlanId": "category=abnormal_followup的真实模板id", "items": "复查项目名称", "reason": "复查原因", "time": "不早于${todayText}的日期", "basisSummary": "来源报告、日期和异常事实", "frequency": "单次", "precautions": "如需空腹、携带既往资料", "customerAction": "按确认时间完成复查", "ownerRole": "健管专员", "notes": "内部备注" }
   ],
   "vaccine": [
-    { "name": "疫苗名称", "time": "${year}-10-15", "reason": "接种原因" }
+    { "standardPlanId": "category=vaccine的真实模板id", "name": "疫苗名称", "time": "不早于${todayText}的日期", "reason": "接种依据" }
   ],
   "monitoring": [
     { "items": "监测项目", "frequency": "每日1次", "time": "每天早晨", "basisSummary": "设置依据", "precautions": "测量要求", "customerAction": "按频次记录数据", "ownerRole": "客户/健管专员", "notes": "内部备注" }
   ],
   "lifestyle": { "focus": "干预重点（饮食、运动、睡眠等）", "time": "${year}年全年" },
-  "annual_checkup": { "focus": "重点关注项目", "date": "${suggestedCheckupDate || `${year + 1}-06-01`}", "escort": false }
+  "annual_checkup": { "standardPlanId": "category=annual_checkup的真实模板id", "focus": "重点关注项目", "date": "${suggestedCheckupDate || `${year + 1}-06-01`}", "escort": false }
 }
 
 注意：每个事项必须填写项目名称、basisSummary、时间或时间范围、frequency、precautions、customerAction、ownerRole；审核状态由系统统一设为待健康顾问审核。所有展示为项目名称的字段必须简单明确，只写“要做什么”，不得把原因、剂量、操作细节或注意事项塞进名称；items和name不超过20个汉字。templateNodes不是AI新建方案，而是从Admin标准随访方案库调用后做客户级调整；standardPlanId和standardPlanName必须原样引用，禁止另起名称、改写模板或为了填满页面创造新主题。medical_treatment仅填主评估明确的高优先级就医需求；specialist_collab仅在主评估明确会诊时填写。禁止生成没有依据的医院、专家姓名和已预约精确日期；可以根据证据给出建议日期或时间范围，未确认写“待确认”。无相关内容用空数组。`;
@@ -6538,7 +6556,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
 
     const generatedCount = [
       ...(Array.isArray(raw.templateNodes) ? raw.templateNodes : []),
-      ...['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'monitoring']
+      ...['medical_treatment', 'specialist_collab', 'checkup_completion', 'abnormal_followup', 'vaccine', 'monitoring']
         .flatMap(key => Array.isArray(raw[key]) ? raw[key] : []),
       ...(raw.lifestyle ? [raw.lifestyle] : []),
       ...(raw.annual_checkup ? [raw.annual_checkup] : []),
@@ -6550,9 +6568,29 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     // 转为 moduleData 结构（多条板块用 { records: [...] }）
     // 只输出当前所选方案类型包含的板块，其余板块不生成
     const result = {};
-    ['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'monitoring'].forEach(key => {
+    const standardPlanById = new Map(standardFollowUpCatalog.map(item => [item.id, item]));
+    const formatStandardContent = source => Object.entries(source.content || {})
+      .filter(([key, value]) => !/时间|日期/.test(key) && value !== undefined && value !== null && String(value).trim())
+      .map(([key, value]) => `${key}：${value}`).join('\n') || '按标准模板执行';
+    const formatStandardSchedule = source => (source.cycles || []).map((cycle, index) => {
+      if (cycle.cycleType === 'date') return `第${index + 1}次：由健康顾问选择实际日期${cycle.notes ? `（${cycle.notes}）` : ''}`;
+      const unit = cycle.cycleUnit === 'week' ? '周' : cycle.cycleUnit === 'month' ? '个月' : '天';
+      return `第${index + 1}次：确认方案后${cycle.cycleDuration || 0}${unit}${cycle.notes ? `（${cycle.notes}）` : ''}`;
+    }).join('\n') || '由健康顾问选择实际日期';
+    const hydrateStandardRecord = (record, expectedCategory) => {
+      const source = standardPlanById.get(String(record.standardPlanId || ''));
+      if (!source || source.category !== expectedCategory) return null;
+      return {
+        ...record, standardPlanId: source.id, standardPlanName: source.name, sourceCycles: source.cycles,
+        standardContent: formatStandardContent(source), standardSchedule: formatStandardSchedule(source),
+      };
+    };
+    ['medical_treatment', 'specialist_collab', 'checkup_completion', 'abnormal_followup', 'vaccine', 'monitoring'].forEach(key => {
       if (!allowedKeys.includes(key)) return;
-      const records = Array.isArray(raw[key]) ? raw[key] : [];
+      let records = Array.isArray(raw[key]) ? raw[key] : [];
+      if (['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine'].includes(key)) {
+        records = records.map(record => hydrateStandardRecord(record, key)).filter(Boolean);
+      }
       result[key] = { records: records.map(record => ({
         ...record,
         reviewStatus: 'pending_family_doctor_review',
@@ -6562,23 +6600,17 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
       })) };
     });
     if (allowedKeys.includes('lifestyle') && raw.lifestyle && !Array.isArray(raw.lifestyle) && raw.lifestyle.focus) result.lifestyle = { enabled: true, ...raw.lifestyle };
-    if (allowedKeys.includes('annual_checkup') && raw.annual_checkup && !Array.isArray(raw.annual_checkup) && raw.annual_checkup.focus) result.annual_checkup = { enabled: true, ...raw.annual_checkup };
-    const standardPlanById = new Map(standardFollowUpCatalog.map(item => [item.id, item]));
+    if (allowedKeys.includes('annual_checkup') && raw.annual_checkup && !Array.isArray(raw.annual_checkup) && raw.annual_checkup.focus) {
+      const hydrated = hydrateStandardRecord(raw.annual_checkup, 'annual_checkup');
+      if (hydrated) result.annual_checkup = { enabled: true, ...hydrated };
+    }
     const standardPlanByName = new Map(standardFollowUpCatalog.map(item => [item.name, item]));
     result.templateNodes = Array.isArray(raw.templateNodes) ? raw.templateNodes.map(node => {
       const source = standardPlanById.get(String(node.standardPlanId || '')) || standardPlanByName.get(String(node.standardPlanName || '').trim());
-      if (!source) return null;
-      const standardContent = Object.entries(source.content || {})
-        .filter(([, value]) => value !== undefined && value !== null && String(value).trim())
-        .map(([key, value]) => `${key}：${value}`).join('\n');
-      const standardSchedule = (source.cycles || []).map((cycle, index) => {
-        if (cycle.cycleType === 'date' && cycle.cycleDate) return `第${index + 1}次：${String(cycle.cycleDate).slice(0, 10)}${cycle.notes ? `（${cycle.notes}）` : ''}`;
-        const unit = cycle.cycleUnit === 'week' ? '周' : cycle.cycleUnit === 'month' ? '个月' : '天';
-        return `第${index + 1}次：确认方案后${cycle.cycleDuration || 0}${unit}${cycle.notes ? `（${cycle.notes}）` : ''}`;
-      }).join('\n');
+      if (!source || source.category !== 'personalized') return null;
       return {
         ...node, standardPlanId: source.id, standardPlanName: source.name, sourceCycles: source.cycles,
-        standardContent: standardContent || '按标准方案执行', standardSchedule: standardSchedule || '由健康顾问确认执行日期',
+        standardContent: formatStandardContent(source), standardSchedule: formatStandardSchedule(source),
         personalization: String(node.personalization || node.content || '').trim(),
         defaultEmployeeId: source.defaultEmployeeId || '',
         executionDate: (() => {
@@ -6589,8 +6621,8 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
       };
     }).filter(Boolean) : [];
 
-    if (allowedKeys.includes('annual_checkup') && suggestedCheckupDate) {
-      result.annual_checkup = { ...(result.annual_checkup || { enabled: true }), date: suggestedCheckupDate };
+    if (result.annual_checkup && suggestedCheckupDate) {
+      result.annual_checkup = { ...result.annual_checkup, date: suggestedCheckupDate };
     }
 
     res.json({ success: true, data: result, basis: assessmentFocus, template: selectedTemplate ? { _id: selectedTemplate._id, name: selectedTemplate.name } : null });
