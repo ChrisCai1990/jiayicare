@@ -2161,6 +2161,16 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
         if (!it || typeof it !== 'object') return false;
         return !(_blank(it.name) && _blank(it.value) && _blank(it.findings) && _blank(it.diagnosis) && _blank(it.conclusion));
       });
+      nextItems.forEach(item => {
+        if (item.manualReviewStatus === 'reviewed') {
+          item.manualReviewedAt = item.manualReviewedAt || new Date();
+          item.manualReviewedBy = item.manualReviewedBy || req.staff._id;
+        } else {
+          item.manualReviewStatus = 'pending';
+          item.manualReviewedAt = null;
+          item.manualReviewedBy = null;
+        }
+      });
       if (editSource || report.audit_status === 'audited') {
         const trackedFields = ['value', 'unit', 'referenceRange', 'status', 'findings', 'diagnosis', 'conclusion'];
         const oldItems = report.reportItems || [];

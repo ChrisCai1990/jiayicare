@@ -42,6 +42,10 @@ const reportItemSchema = new mongoose.Schema({
   screeningParent:   { type: String, default: '' }, // 二级（如「肺癌」）
   matchStatus:       { type: String, enum: ['matched', 'unclassified'], default: 'unclassified' },
   matchConfidence:   { type: Number, default: 0 },   // 匹配置信度 0-1（最佳命中）
+  // 草稿可分批审核：逐项保存人工核对进度，避免关闭后只能从头重审。
+  manualReviewStatus: { type: String, enum: ['pending', 'reviewed'], default: 'pending' },
+  manualReviewedAt:   { type: Date, default: null },
+  manualReviewedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
 }, { _id: false });
 
 const medicalReportSchema = new mongoose.Schema({

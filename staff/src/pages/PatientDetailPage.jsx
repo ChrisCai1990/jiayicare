@@ -2606,12 +2606,21 @@ export default function PatientDetailPage() {
     return () => { cancelAnimationFrame(frame); clearTimeout(timer) }
   }, [ocrReviewReport, ocrFocusItemIndex])
 
-  const handleOpenOCRReview = (r, focusItems = []) => {
+  const handleOpenOCRReview = async (r, focusItems = []) => {
     ocrFocusHandledRef.current = null
     setOcrReviewReport(r)
+    // 每次打开都以服务器最新版初始化，避免保存草稿后从旧列表副本恢复。
+    let latestReport = r
+    try {
+      const latestRes = await staffAPI.getReport(r._id)
+      if (latestRes.data) {
+        latestReport = latestRes.data
+        setOcrReviewReport(latestReport)
+      }
+    } catch {}
     // 列表接口 select('-content') 裁掉了原图内容（体积大），这里按需补拉完整报告，
     // 否则走 content(base64) 存储的报告在审核弹窗左侧会显示"无原始文件可预览"
-    if (!r.content && !r.fileUrl && !(r.fileUrls && r.fileUrls.length)) {
+    if (!latestReport.content && !latestReport.fileUrl && !(latestReport.fileUrls && latestReport.fileUrls.length)) {
       staffAPI.getReport(r._id).then(res => {
         if (res.data) setOcrReviewReport(prev => (prev && prev._id === r._id) ? { ...prev, content: res.data.content } : prev)
       }).catch(() => {})
@@ -2620,7 +2629,7 @@ export default function PatientDetailPage() {
     staffAPI.getScreeningCatalog().then(res => setScreeningCatalog(res.data || [])).catch(() => {})
     // 旧数据迁移：只有明确标记为 imaging 的旧记录才把 value 搬到 findings。
     // 不能用“内容长度 > 40”猜类型，否则用户只是打开并保存，字段内容也会被改写。
-    const items = JSON.parse(JSON.stringify(r.reportItems || []))
+    const items = JSON.parse(JSON.stringify(latestReport.reportItems || []))
       .filter(it => it.name && String(it.name).trim())
       .map(it => {
         const isImg = it.itemType === 'imaging'
@@ -2665,10 +2674,11 @@ export default function PatientDetailPage() {
   const handleSaveOCRDraft = async () => {
     setOcrSaving(true)
     try {
-      await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItems, aiStatus: 'pending' })
+      const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItems, aiStatus: 'pending' })
+      if (saved.data) setReports(current => current.map(report => report._id === saved.data._id ? { ...report, ...saved.data } : report))
       toast('草稿已保存（仍为待审核）')
       setOcrReviewReport(null)
-      loadReports()
+      await loadReports()
     } catch (err) { toast(err.message || '保存失败') }
     finally { setOcrSaving(false) }
   }
@@ -10339,6 +10349,8 @@ export default function PatientDetailPage() {
                   // 后端已经按报告页码和页内位置保存顺序；审核层只按该顺序展示，不再按类型重排。
                   const indexedAll = ocrEditItems.map((it, i) => ({ it, i }))
                   const indexed = indexedAll.filter(({ it }) => !it.sourcePage || Number(it.sourcePage) === activePage)
+                  const reviewedCount = indexedAll.filter(({ it }) => it.manualReviewStatus === 'reviewed').length
+                  const pageAllReviewed = indexed.length > 0 && indexed.every(({ it }) => it.manualReviewStatus === 'reviewed')
                   // 影像/描述判定：标了 imaging，或数值是长文本（>40字，基本是诊断描述而非检验值）
                   const isImaging = (it) => it.itemType === 'imaging' || (it.value || '').length > 40
                   const labRows = indexed.filter(({ it }) => !isImaging(it))
@@ -10356,6 +10368,7 @@ export default function PatientDetailPage() {
                           {attN > 0 && <span style={{ color: '#D97706', marginLeft: 8 }}>注意 {attN}</span>}
                           {abn.length === 0 && <span style={{ color: '#22A06B', marginLeft: 8, fontWeight: 400 }}>· 检验值未见异常</span>}
                           <span style={{ marginLeft: 8, fontWeight: 400, color: '#1E6B50' }}>· 已自动归类 {matchedN} 项（将写入专项筛查）</span>
+                          <span style={{ marginLeft: 8, fontWeight: 400, color: reviewedCount === indexedAll.length ? '#16A34A' : '#D97706' }}>· 人工已核对 {reviewedCount}/{indexedAll.length}</span>
                         </div>
                         {abn.length > 0 && (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -10382,6 +10395,14 @@ export default function PatientDetailPage() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                         <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>报告原序（{indexed.length} 项）</div>
                         <div style={{ display: 'flex', gap: 6 }}>
+                          <button className="btn btn-secondary btn-sm" onClick={() => {
+                            const pageIndexes = new Set(indexed.map(({ i }) => i))
+                            setOcrEditItems(items => items.map((item, i) => pageIndexes.has(i) ? {
+                              ...item,
+                              manualReviewStatus: pageAllReviewed ? 'pending' : 'reviewed',
+                              manualReviewedAt: pageAllReviewed ? null : (item.manualReviewedAt || new Date().toISOString()),
+                            } : item))
+                          }}>{pageAllReviewed ? '撤销本页已核对' : '✓ 标记本页已核对'}</button>
                           <button className="btn btn-secondary btn-sm" onClick={addItem}>＋ 新增检验项</button>
                           <button className="btn btn-secondary btn-sm" onClick={() => setOcrEditItems(arr => [...arr, { name: '', itemType: 'imaging', bodyPart: '', findings: '', diagnosis: '', conclusion: '', status: 'unknown' }])}>＋ 新增检查项</button>
                         </div>
@@ -10396,6 +10417,12 @@ export default function PatientDetailPage() {
                               {isFocusedItem && <div style={{ fontSize: 11, color: '#7C3AED', fontWeight: 800, marginBottom: 6 }}>已定位到需要核对归属的项目</div>}
                               <div style={{ fontSize: 10, color: isImaging(it) ? '#0369A1' : '#7C3AED', fontWeight: 700, marginBottom: 6 }}>
                                 {it.sourcePage ? `原报告 P${it.sourcePage} · ` : ''}第 {i + 1} 项 · {isImaging(it) ? '检查/影像' : '检验/数值'}{it.sourceSection ? ` · ${it.sourceSection}` : ''}{it.orderName ? ` · ${it.orderName}` : ''}
+                                <button onClick={() => updItem(i, {
+                                  manualReviewStatus: it.manualReviewStatus === 'reviewed' ? 'pending' : 'reviewed',
+                                  manualReviewedAt: it.manualReviewStatus === 'reviewed' ? null : (it.manualReviewedAt || new Date().toISOString()),
+                                })} style={{ marginLeft: 8, padding: '2px 7px', borderRadius: 999, border: `1px solid ${it.manualReviewStatus === 'reviewed' ? '#86EFAC' : '#FCD34D'}`, background: it.manualReviewStatus === 'reviewed' ? '#F0FDF4' : '#FFFBEB', color: it.manualReviewStatus === 'reviewed' ? '#15803D' : '#A16207', cursor: 'pointer', fontSize: 10, fontWeight: 700 }}>
+                                  {it.manualReviewStatus === 'reviewed' ? '✓ 已核对' : '待核对'}
+                                </button>
                               </div>
                               <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
                                 <div style={{ flex: 2 }}>

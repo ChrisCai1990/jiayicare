@@ -319,7 +319,17 @@ function reportNameCandidates(value) {
   const raw = String(value || '').trim();
   if (!raw) return [];
   const withoutSerumPrefix = raw.replace(/^血清\s*/, '').trim();
-  return withoutSerumPrefix && withoutSerumPrefix !== raw ? [raw, withoutSerumPrefix] : [raw];
+  const values = withoutSerumPrefix && withoutSerumPrefix !== raw ? [raw, withoutSerumPrefix] : [raw];
+  // 各医院常在标准项目名后附院内代码、检测方法或仪器说明。保留原文候选，
+  // 同时增加逐层去掉末尾括注的候选；括注本身绝不单独参与归类。
+  values.slice().forEach(value => {
+    let base = value;
+    while (/[（(【\[][^）)】\]]+[）)】\]]\s*$/.test(base)) {
+      base = base.replace(/[（(【\[][^）)】\]]+[）)】\]]\s*$/, '').trim();
+      if (base.length >= 2) values.push(base);
+    }
+  });
+  return [...new Set(values)];
 }
 
 // 兼容旧调用方：不再在代码里把项目名翻译成硬编码分类名，分类只能来自Admin索引。

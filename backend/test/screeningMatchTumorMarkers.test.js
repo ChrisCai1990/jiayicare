@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { norm, selectAdminMatches, selectMatchesForItem, authoritativePanelClassificationName } = require('../src/utils/screeningMatch');
+const { norm, reportNameCandidates, selectAdminMatches, selectMatchesForItem, authoritativePanelClassificationName } = require('../src/utils/screeningMatch');
 
 function adminIndex(entries) {
   return entries.map(([id, label, aliases]) => ({
@@ -21,6 +21,11 @@ test('检测方法尾缀只能匹配Admin中已有的项目归类', () => {
   ]) {
     assert.equal(selectAdminMatches([name], 'lab', index)[0]?.node.label, '泛肿瘤标志物');
   }
+});
+
+test('医院代码和检测方法尾缀生成通用核心项目候选', () => {
+  assert.deepEqual(reportNameCandidates('糖类抗原19-9（T-12）'), ['糖类抗原19-9（T-12）', '糖类抗原19-9']);
+  assert.deepEqual(reportNameCandidates('甲胎蛋白(AFP)(电化学发光法)'), ['甲胎蛋白(AFP)(电化学发光法)', '甲胎蛋白(AFP)', '甲胎蛋白']);
 });
 
 test('代码不能创造Admin中不存在的分类', () => {
