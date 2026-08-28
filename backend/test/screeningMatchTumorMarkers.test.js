@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { norm, reportNameCandidates, selectAdminMatches, selectMatchesForItem, authoritativePanelClassificationName } = require('../src/utils/screeningMatch');
+const { norm, reportNameCandidates, selectAdminMatches, selectMatchesForItem, authoritativePanelClassificationName, findUnclassifiedNamedItems } = require('../src/utils/screeningMatch');
 
 function adminIndex(entries) {
   return entries.map(([id, label, aliases]) => ({
@@ -38,6 +38,16 @@ test('同分命中多个Admin分类时保持待归类', () => {
     ['b|二类|项目B', '项目B', ['共同关键词']],
   ]);
   assert.deepEqual(selectAdminMatches(['共同关键词'], 'lab', index), []);
+});
+
+test('提交审核仅阻止存在名称但未归类的报告项目', () => {
+  assert.deepEqual(findUnclassifiedNamedItems([]), []);
+  assert.deepEqual(findUnclassifiedNamedItems([{ name: '' }]), []);
+  assert.equal(findUnclassifiedNamedItems([
+    { name: '已归类A', screeningKey: 'l1|l2|a' },
+    { name: '已归类B', matchStatus: 'matched' },
+    { name: '待归类C', matchStatus: 'unclassified' },
+  ]).length, 1);
 });
 
 test('乳酸脱氢酶按项目名优先，不能被肝功能栏目覆盖', () => {

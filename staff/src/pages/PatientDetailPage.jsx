@@ -2660,6 +2660,12 @@ export default function PatientDetailPage() {
   }
 
   const handleApproveOCR = async () => {
+    const unclassified = ocrEditItems.filter(item => item?.name && !(item.screeningKey || (Array.isArray(item.screeningKeys) && item.screeningKeys.length) || item.matchStatus === 'matched'))
+    if (ocrEditItems.length > 0 && unclassified.length > 0) {
+      const names = unclassified.slice(0, 5).map(item => item.name).join('、')
+      toast(`还有${unclassified.length}个项目未归类，请全部归类后再提交审核${names ? `：${names}${unclassified.length > 5 ? '等' : ''}` : ''}`)
+      return
+    }
     setOcrSaving(true)
     try {
       await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItems, aiStatus: 'reviewed' })

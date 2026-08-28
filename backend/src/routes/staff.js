@@ -2097,6 +2097,22 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     const { title, type, hospital, date, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, fileUrl, fileUrls, ossKey, ossKeys, mimeType, fileSize, editSource } = req.body;
+    // 提交审核完成时，存在报告项目就必须逐项归类；完全没有项目的报告允许直接完成。
+    // 草稿不受此限制，便于分批核对、逐步补齐归类。校验放在后端，避免旧前端或直接请求绕过。
+    if (aiStatus === 'reviewed' && Array.isArray(reportItems) && reportItems.length > 0) {
+      const { findUnclassifiedNamedItems } = require('../utils/screeningMatch');
+      const unclassified = findUnclassifiedNamedItems(reportItems);
+      if (unclassified.length > 0) {
+        const names = unclassified.slice(0, 8).map(item => String(item.name || '').trim()).filter(Boolean);
+        return res.status(400).json({
+          success: false,
+          code: 'REPORT_ITEMS_UNCLASSIFIED',
+          message: `还有${unclassified.length}个项目未归类，请全部归类后再提交审核${names.length ? `：${names.join('、')}${unclassified.length > names.length ? '等' : ''}` : ''}`,
+          unclassifiedCount: unclassified.length,
+          unclassifiedNames: names,
+        });
+      }
+    }
     // 已审核通过的报告：只允许更新 AI归类（aiStatus/reportItems），其余字段不可改
     if (report.audit_status === 'audited' && (title || type || hospital || date || content)) {
       return res.status(403).json({ success: false, message: '已审核通过的报告不可修改基本信息' });
