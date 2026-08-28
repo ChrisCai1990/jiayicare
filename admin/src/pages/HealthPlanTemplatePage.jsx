@@ -14,6 +14,19 @@ const PLAN_TYPES = [
   { key: 'phase_assessment',  label: '阶段性评估',    icon: '📊' },
 ]
 
+const ANNUAL_MODULE_RULES = [
+  { key: 'goals', label: '年度管理目标', reviewer: '健康顾问', desc: '承接已确认综合研判，明确目标、依据和优先级' },
+  { key: 'monitoring', label: '日常健康监测', reviewer: '健康顾问', desc: '指标、目标范围、频率、时段和异常触发规则' },
+  { key: 'abnormal_followup', label: '检查与异常复查', reviewer: '健康顾问', desc: '项目名称、依据、建议时间和检查注意事项' },
+  { key: 'lifestyle', label: '生活方式管理', reviewer: '营养师', desc: '饮食、运动、睡眠等行动要求及评估周期' },
+  { key: 'medication', label: '用药与营养素管理', reviewer: '健康顾问/营养师', desc: '只承接已确认用药或营养素信息，不自动调整' },
+  { key: 'medical_service', label: '就医及专业服务', reviewer: '健康顾问', desc: '就医目的、科室方向、协调要求和待确认安排' },
+  { key: 'stage_assessment', label: '阶段性健康评估', reviewer: '营养师', desc: '常规管理或12周强化干预的评估节奏' },
+  { key: 'annual_checkup', label: '年度体检', reviewer: '健康顾问', desc: '体检月份、重点项目、套餐及可选加项' },
+]
+
+const DEFAULT_REQUIRED_FIELDS = ['项目名称', '设置依据', '建议时间/时间范围', '执行频率', '注意事项', '客户行动', '责任角色', '审核状态']
+
 // ── 各类型的默认 content 结构 ─────────────────────────────────
 const defaultContent = {
   annual_checkup: {
@@ -22,9 +35,14 @@ const defaultContent = {
     addons: [],     // [{ type:'lab'|'exam', id, name, reason }]
   },
   health_management: {
+    templateVersion: 2,
     planType: 'health_prevention',
     planName: '',
     planDesc: '',
+    managementCycle: '12个月',
+    sourceRule: '仅使用已确认的年度管理研判结论',
+    requiredItemFields: DEFAULT_REQUIRED_FIELDS,
+    moduleRules: ANNUAL_MODULE_RULES.map(item => ({ key: item.key, enabled: true, aiCanGenerate: true, reviewer: item.reviewer, customerConfirmationRequired: true })),
     followUpPlans: [],
   },
   nutrition: {
@@ -286,6 +304,40 @@ function PlanContentForm({ type, initialContent, contentRef }) {
         <input className="form-input" value={content.planName || ''} onChange={e => set('planName', e.target.value)} placeholder="如：慢病管理标准方案" />
       </div>
       <FieldRow label="状态说明" fieldKey="planDesc" placeholder="方案适用场景或说明" half content={content} set={set} />
+      <div className="form-group">
+        <label className="form-label">管理周期</label>
+        <select className="form-input" value={content.managementCycle || '12个月'} onChange={e => set('managementCycle', e.target.value)}>
+          <option value="12个月">12个月</option><option value="6个月">6个月</option><option value="自定义">自定义</option>
+        </select>
+      </div>
+      <div className="form-group">
+        <label className="form-label">方案生成依据</label>
+        <input className="form-input" value={content.sourceRule || '仅使用已确认的年度管理研判结论'} onChange={e => set('sourceRule', e.target.value)} />
+      </div>
+      <div style={{ gridColumn: '1/-1', border: '1px solid #DDE8E2', borderRadius: 12, padding: 16, background: '#FAFCFB' }}>
+        <div style={{ fontWeight: 700, color: '#155E48' }}>统一事项结构</div>
+        <div style={{ color: '#65776F', fontSize: 12, marginTop: 4 }}>AI生成的每个项目都必须具备以下字段，健康顾问审核后才能推送和生成任务。</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 11 }}>
+          {(content.requiredItemFields?.length ? content.requiredItemFields : DEFAULT_REQUIRED_FIELDS).map(field => <span key={field} style={{ padding: '5px 9px', borderRadius: 14, background: '#EEF7F2', color: '#1E6B50', fontSize: 12, fontWeight: 600 }}>{field}</span>)}
+        </div>
+      </div>
+      <div style={{ gridColumn: '1/-1', border: '1px solid #E5E0D8', borderRadius: 12, padding: 16 }}>
+        <div style={{ fontWeight: 700 }}>模块组合与审核规则</div>
+        <div style={{ color: '#777', fontSize: 12, marginTop: 4 }}>四类方案共用同一字段骨架，仅通过启用模块和生成规则体现差异。</div>
+        <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+          {ANNUAL_MODULE_RULES.map(mod => {
+            const rules = content.moduleRules?.length ? content.moduleRules : defaultContent.health_management.moduleRules
+            const rule = rules.find(item => item.key === mod.key) || { key: mod.key, enabled: false, aiCanGenerate: true, reviewer: mod.reviewer, customerConfirmationRequired: true }
+            const updateRule = changes => set('moduleRules', rules.some(item => item.key === mod.key) ? rules.map(item => item.key === mod.key ? { ...item, ...changes } : item) : [...rules, { ...rule, ...changes }])
+            return <div key={mod.key} style={{ display: 'grid', gridTemplateColumns: '28px minmax(180px,1fr) 130px 110px', gap: 10, alignItems: 'center', padding: '10px 11px', border: '1px solid #ECE8E0', borderRadius: 9, background: rule.enabled ? '#fff' : '#F7F7F6' }}>
+              <input type="checkbox" checked={rule.enabled !== false} onChange={e => updateRule({ enabled: e.target.checked })} />
+              <div><div style={{ fontWeight: 650, fontSize: 13 }}>{mod.label}</div><div style={{ color: '#888', fontSize: 11, marginTop: 2 }}>{mod.desc}</div></div>
+              <select className="form-input" style={{ padding: '6px 7px', fontSize: 12 }} value={rule.reviewer || mod.reviewer} onChange={e => updateRule({ reviewer: e.target.value })}><option>健康顾问</option><option>营养师</option><option>健康顾问/营养师</option></select>
+              <label style={{ fontSize: 12, color: '#555' }}><input type="checkbox" checked={rule.aiCanGenerate !== false} onChange={e => updateRule({ aiCanGenerate: e.target.checked })} style={{ marginRight: 5 }} />AI可生成</label>
+            </div>
+          })}
+        </div>
+      </div>
       <FollowUpPlanSelector
         value={content.followUpPlans}
         onChange={v => set('followUpPlans', v)}
