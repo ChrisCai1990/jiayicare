@@ -1446,7 +1446,6 @@ export default function PatientDetailPage() {
   const [reportMissingOnly, setReportMissingOnly] = useState(false)
   const [reportPage, setReportPage] = useState(1)
   const [openReportActionId, setOpenReportActionId] = useState(null)
-  const [showMoreTabs, setShowMoreTabs] = useState(false)
   const [patientOrders, setPatientOrders] = useState([])
   const [redeemingOrderId, setRedeemingOrderId] = useState(null)
   const [requisitions, setRequisitions] = useState([])
@@ -3360,17 +3359,14 @@ export default function PatientDetailPage() {
           ] },
           { key: 'serviceExecution', label: '服务执行', tabs: [{ key: 'followups', label: '执行任务' }] },
           { key: 'serviceArchive', label: '服务档案', tabs: [{ key: 'serviceRecords', label: '服务档案' }] },
-        ]
-        const moreTabs = [
-          { key: 'referrals',     label: '转介记录' },
-          { key: 'consumption',   label: '消费记录' },
-          { key: 'family',        label: '家庭信息' },
-          { key: 'membership',    label: '会员信息' },
+          { key: 'referrals', label: '转介记录', tabs: [{ key: 'referrals', label: '转介记录' }] },
+          { key: 'consumption', label: '消费记录', tabs: [{ key: 'consumption', label: '消费记录' }] },
+          { key: 'family', label: '家庭信息', tabs: [{ key: 'family', label: '家庭信息' }] },
+          { key: 'membership', label: '会员信息', tabs: [{ key: 'membership', label: '会员信息' }] },
         ]
         const activeGroup = groups.find(group => group.tabs.some(item => item.key === tab))
-        const isMoreTab = moreTabs.some(item => item.key === tab)
-        const secondaryTabs = activeGroup?.tabs || (isMoreTab ? moreTabs : [])
-        const showSecondaryTabs = secondaryTabs.length > 1 || showMoreTabs || isMoreTab
+        const secondaryTabs = activeGroup?.tabs || []
+        const showSecondaryTabs = secondaryTabs.length > 1
         const renderTab = t => (
           <button
             key={t.key}
@@ -3382,10 +3378,9 @@ export default function PatientDetailPage() {
         )
         return <div style={{ marginBottom: 20 }}>
           <div className="tabs" style={{ marginBottom: showSecondaryTabs ? 8 : 0 }}>
-            {groups.map(group => <button key={group.key} className={`tab-btn ${activeGroup?.key === group.key ? 'active' : ''}`} onClick={() => { setTab(group.tabs[0].key); setShowMoreTabs(false) }}>{group.label}</button>)}
-            <button className={`tab-btn ${isMoreTab ? 'active' : ''}`} onClick={() => setShowMoreTabs(value => !value)}>更多 {showMoreTabs || isMoreTab ? '⌃' : '⌄'}</button>
+            {groups.map(group => <button key={group.key} className={`tab-btn ${activeGroup?.key === group.key ? 'active' : ''}`} onClick={() => setTab(group.tabs[0].key)}>{group.label}</button>)}
           </div>
-          {showSecondaryTabs && <div className="tabs patient-secondary-tabs">{(showMoreTabs ? moreTabs : secondaryTabs).map(renderTab)}</div>}
+          {showSecondaryTabs && <div className="tabs patient-secondary-tabs">{secondaryTabs.map(renderTab)}</div>}
         </div>
       })()}
 
