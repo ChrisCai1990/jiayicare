@@ -50,6 +50,19 @@ function splitStageAssessment(content) {
   return STAGE_SECTION_META.map((meta, index) => ({ ...meta, title: sections[index]?.title || meta.label, lines: sections[index]?.lines || [] }))
 }
 
+function replaceStageSection(content, sectionIndex, nextText) {
+  const sections = splitStageAssessment(content)
+  sections[sectionIndex].lines = String(nextText || '').split(/\r?\n/).map(line => line.replace(/^[-•▪]\s*/, '').trim()).filter(Boolean)
+  const numerals = ['一', '二', '三', '四']
+  return sections.map((section, index) => `${numerals[index]}、${section.title}\n${section.lines.map(line => `- ${line}`).join('\n')}`).join('\n\n')
+}
+
+function AssessmentLine({ line, color }) {
+  const divider = line.indexOf('：')
+  if (divider > 0 && divider < 28) return <div style={{ padding: '9px 11px', borderRadius: 8, background: '#fff', marginTop: 7, fontSize: 13, lineHeight: 1.65 }}><strong style={{ color }}>{line.slice(0, divider)}</strong><span style={{ color: '#33473E' }}>：{line.slice(divider + 1)}</span></div>
+  return <div style={{ padding: '8px 11px 8px 25px', position: 'relative', borderBottom: '1px dashed #DCE8E1', fontSize: 13, lineHeight: 1.65 }}><span style={{ position: 'absolute', left: 10, color }}>•</span>{line}</div>
+}
+
 export default function AiCaseReviewPanel({ patientId, staff, toast }) {
   const [topics, setTopics] = useState([])
   const [assessments, setAssessments] = useState([])
@@ -182,14 +195,14 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
           const canDoctorReview = ['familyDoctor', 'superadmin'].includes(staff?.role) && status === 'doctor_review'
           const expanded = expandedAssessments[item._id] === true
           const evidenceCount = (item.evidenceSources || []).length
-          const stageSections = splitStageAssessment(item.content)
+          const stageSections = splitStageAssessment(assessmentEdits[item._id] ?? item.content)
           const activeSectionIndex = activeAssessmentSections[item._id]
           const activeSection = Number.isInteger(activeSectionIndex) ? stageSections[activeSectionIndex] : null
           return <section key={item._id} id={`phase-assessment-${item._id}`} style={{ border: '1px solid #DCE8E1', borderRadius: 10, padding: 13, background: status === 'finalized' ? '#F2FAF6' : '#fff' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><strong style={{ color: '#155E48' }}>📊 {item.periodLabel}阶段性健康评估</strong><span style={{ fontSize: 12, fontWeight: 700, color: status === 'doctor_review' ? '#B45309' : status === 'finalized' ? '#16845B' : '#7C3AED' }}>{statusLabel}</span></div>
             <div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>{item.templateSnapshot?.name || '模板驱动评估'} · {evidenceCount ? `${evidenceCount}项依据` : '依据待核实'}</div>
             <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(4,minmax(120px,1fr))', gap: 9 }}>
-              {stageSections.map((section, index) => <button key={section.label} type="button" onClick={() => { setExpandedAssessments(values => ({ ...values, [item._id]: false })); setActiveAssessmentSections(values => ({ ...values, [item._id]: values[item._id] === index ? null : index })) }} style={{ border: `1px solid ${activeSectionIndex === index ? section.color : '#DCE8E1'}`, borderRadius: 10, padding: '12px 8px', background: activeSectionIndex === index ? section.background : '#fff', cursor: 'pointer', textAlign: 'center' }}>
+              {stageSections.map((section, index) => <button key={section.label} type="button" onClick={() => setActiveAssessmentSections(values => ({ ...values, [item._id]: expanded ? index : values[item._id] === index ? null : index }))} style={{ border: `1px solid ${activeSectionIndex === index ? section.color : '#DCE8E1'}`, borderRadius: 10, padding: '12px 8px', background: activeSectionIndex === index ? section.background : '#fff', cursor: 'pointer', textAlign: 'center' }}>
                 <div style={{ fontSize: 25, lineHeight: 1 }}>{section.icon}</div>
                 <div style={{ marginTop: 7, fontSize: 13, fontWeight: 800, color: section.color }}>{section.label}</div>
                 <div style={{ marginTop: 3, fontSize: 11, color: '#7A8C83' }}>{section.lines.length || 0}项</div>
@@ -197,12 +210,22 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
             </div>
             {!expanded && activeSection && <div style={{ marginTop: 10, padding: 12, borderRadius: 9, background: activeSection.background, borderLeft: `4px solid ${activeSection.color}` }}>
               <div style={{ fontWeight: 800, color: activeSection.color, marginBottom: 7 }}>{activeSection.title}</div>
-              {activeSection.lines.length ? activeSection.lines.map((line, index) => <div key={index} style={{ fontSize: 13, lineHeight: 1.6, marginTop: 4 }}>• {line}</div>) : <div style={{ color: '#7A8C83', fontSize: 13 }}>本板块暂无内容</div>}
+              {activeSection.lines.length ? activeSection.lines.map((line, index) => <AssessmentLine key={index} line={line} color={activeSection.color} />) : <div style={{ color: '#7A8C83', fontSize: 13 }}>本板块暂无内容</div>}
             </div>}
-            <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 10 }} onClick={() => { setActiveAssessmentSections(values => ({ ...values, [item._id]: null })); setExpandedAssessments(values => ({ ...values, [item._id]: !expanded })) }}>{expanded ? '退出编辑' : (canNutritionReview || canDoctorReview ? '编辑并审核' : '查看原文')}</button>
+            <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 10 }} onClick={() => { if (!expanded && !Number.isInteger(activeSectionIndex)) setActiveAssessmentSections(values => ({ ...values, [item._id]: 0 })); setExpandedAssessments(values => ({ ...values, [item._id]: !expanded })) }}>{expanded ? '退出编辑' : (canNutritionReview || canDoctorReview ? '编辑当前板块并审核' : '查看原文')}</button>
             {expanded && <>
               {item.clinicalReview?.reasons?.length > 0 && <div style={{ marginTop: 8, padding: 8, borderRadius: 7, background: '#FFF8ED', color: '#92400E', fontSize: 12 }}>临床复审原因：{item.clinicalReview.reasons.join('；')}</div>}
-              <textarea className="form-input" rows={12} style={{ marginTop: 10 }} disabled={!canNutritionReview && !canDoctorReview} value={assessmentEdits[item._id] ?? item.content ?? ''} onChange={event => setAssessmentEdits(values => ({ ...values, [item._id]: event.target.value }))} />
+              {(() => {
+                const draftContent = assessmentEdits[item._id] ?? item.content ?? ''
+                const editSections = splitStageAssessment(draftContent)
+                const editIndex = Number.isInteger(activeSectionIndex) ? activeSectionIndex : 0
+                const editSection = editSections[editIndex]
+                return <div style={{ marginTop: 10, padding: 12, borderRadius: 9, background: editSection.background, border: `1px solid ${editSection.color}55` }}>
+                  <div style={{ fontWeight: 800, color: editSection.color }}>正在编辑：{editSection.label}</div>
+                  <div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>每行一个要点；切换上方图标可编辑其他板块。</div>
+                  <textarea className="form-input" rows={9} style={{ marginTop: 9, background: '#fff' }} disabled={!canNutritionReview && !canDoctorReview} value={editSection.lines.join('\n')} onChange={event => setAssessmentEdits(values => ({ ...values, [item._id]: replaceStageSection(draftContent, editIndex, event.target.value) }))} />
+                </div>
+              })()}
               {item.nutritionReview?.reviewedAt && <div style={{ marginTop: 7, fontSize: 12, color: '#65776F' }}>营养师初审：{item.nutritionReview.reviewedByName || '-'} · {item.nutritionReview.note || '无补充备注'}</div>}
               {item.doctorReview?.reviewedAt && <div style={{ marginTop: 5, fontSize: 12, color: '#65776F' }}>健康顾问复审：{item.doctorReview.reviewedByName || '-'} · {item.doctorReview.note || '无补充备注'}</div>}
               {canNutritionReview && <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}><button className="btn btn-primary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'approve')}>营养初审通过</button><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'escalate')}>转健康顾问复审</button><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'reject')}>退回AI调整</button></div>}
