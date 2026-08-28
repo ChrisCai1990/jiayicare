@@ -84,7 +84,7 @@ function StageWorkflow({ assessment }) {
   </div>
 }
 
-export default function AiCaseReviewPanel({ patientId, staff, toast }) {
+export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all' }) {
   const [topics, setTopics] = useState([])
   const [assessments, setAssessments] = useState([])
   const [assessmentMode, setAssessmentMode] = useState('routine')
@@ -206,8 +206,8 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
   if (loading) return <div className="card"><div className="card-body">正在加载专题研判资料…</div></div>
   const visibleAssessments = assessments.filter(item => (item.assessmentMode || 'routine') === assessmentMode)
   const currentAssessment = visibleAssessments.find(item => !String(item.periodKey || '').includes('-legacy-')) || null
-  return <div style={{ display: 'grid', gridTemplateColumns: '280px minmax(0, 1fr)', gap: 16, minHeight: 680 }}>
-    <div className="card" style={{ gridColumn: '1/-1', border: '1px solid #7C3AED55' }}>
+  return <div style={{ display: 'grid', gridTemplateColumns: mode === 'assessment' ? '1fr' : '280px minmax(0, 1fr)', gap: 16, minHeight: mode === 'assessment' ? 0 : 680 }}>
+    {mode !== 'specialty' && <div className="card" style={{ gridColumn: '1/-1', border: '1px solid #7C3AED55' }}>
       <div className="card-header" style={{ alignItems: 'flex-start' }}><div style={{ flex: 1 }}><div className="card-title">阶段性健康评估</div><div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>统一评估入口，根据管理模式使用不同节奏</div><div style={{ display: 'flex', gap: 8, marginTop: 10 }}><button className={`btn btn-sm ${assessmentMode === 'routine' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setAssessmentMode('routine')}>常规管理</button><button className={`btn btn-sm ${assessmentMode === 'intensive_nutrition' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setAssessmentMode('intensive_nutrition')}>强化营养干预 · 12周</button></div><div style={{ marginTop: 9, padding: '8px 10px', background: assessmentMode === 'routine' ? '#EFF6FF' : '#EEF8F3', borderRadius: 8, fontSize: 12, color: '#4A6558' }}>{assessmentMode === 'routine' ? '普通客户每月评估；重点客户每2周评估。' : '第1—4周每周评估；第5—12周每2周评估；第12周形成强化干预总结。'}</div><StageWorkflow assessment={currentAssessment} /></div>{['nutritionist', 'familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy} onClick={generateAssessment}>生成当前节点草稿</button>}</div>
       <div className="card-body" style={{ display: 'grid', gap: 12 }}>
         {!visibleAssessments.length && <div style={{ color: '#8AA89C' }}>{assessmentMode === 'intensive_nutrition' ? '暂无强化干预评估。只有客户确认营养干预方案后，才能按12周节点生成。' : '暂无常规阶段性评估。试点阶段仅支持人工触发。'}</div>}
@@ -259,7 +259,8 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
           </section>
         })}
       </div>
-    </div>
+    </div>}
+    {mode !== 'assessment' && <>
     <div className="card" style={{ alignSelf: 'start' }}>
       <div className="card-header"><div><div className="card-title">专项辅助研判</div><div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>仅用于临时、专项或跨专业问题讨论，不替代上方正式阶段评估</div></div><button className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)}>新建主题</button></div>
       <div className="card-body" style={{ padding: 10 }}>
@@ -306,6 +307,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}><span style={{ fontSize: 12, color: active.conclusion?.status === 'confirmed' ? '#16845B' : '#8AA89C' }}>{isStageAssessmentTopic ? '研判结论仅供参考；正式阶段评估必须使用上方营养初审流程' : active.conclusion?.status === 'confirmed' ? `已由${active.conclusion.confirmedByName || '健康顾问'}确认` : '草稿不会进入任何正式方案'}</span>{!isStageAssessmentTopic && ['familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy || !conclusionText.trim()} onClick={confirmConclusion}>{`确认并用于${REVIEW_TEMPLATES.find(item => item.key === active.reviewType)?.target || (/年度管理研判/.test(active.title) ? '年度管理方案' : '对应方案')}`}</button>}</div>
       </div></div>}
     </div> : <div className="card"><div className="card-body" style={{ padding: 60, textAlign: 'center', color: '#8AA89C' }}>请先新建一个研判主题</div></div>}
+    </>}
 
     {showCreate && <div className="modal-overlay"><div className="modal" style={{ maxWidth: 620 }}><div className="modal-header"><div className="modal-title">新建专项研判主题</div><button className="modal-close" onClick={() => setShowCreate(false)}>×</button></div><div className="modal-body">
       <div className="form-group"><label className="form-label">研判模板</label><select className="form-input" defaultValue="" onChange={e => { const item = REVIEW_TEMPLATES.find(v => v.key === e.target.value); if (item) setForm(f => ({ ...f, title: item.title, description: item.description, reviewType: item.key, contextScopes: item.scopes })); else setForm(f => ({ ...f, reviewType: 'custom' })) }}><option value="">自定义主题</option>{REVIEW_TEMPLATES.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}</select><div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>就医协助形成单次方案，营养干预形成季度方案；只有年度管理研判进入年度管理方案。</div></div>

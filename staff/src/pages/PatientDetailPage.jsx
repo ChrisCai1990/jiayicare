@@ -3342,45 +3342,55 @@ export default function PatientDetailPage() {
 
       {/* Tabs */}
       {(() => {
-        const primaryTabs = [
-          { key: 'info',          label: '基本信息' },
-          { key: 'records',       label: '健康档案' },
-          { key: 'reports',       label: '体检报告' },
-          { key: 'portrait',      label: '健康画像' },
-          { key: 'medications',   label: '用药与营养' },
-          ...(user.aiPilotFeatures?.stageAssessment ? [{ key: 'aiReview', label: '阶段性健康评估' }] : []),
-          { key: 'plans',         label: '管理方案' },
-          { key: 'followups',     label: '随访记录' },
+        const groups = [
+          { key: 'overview', label: '客户概览', tabs: [{ key: 'info', label: '客户概览' }] },
+          { key: 'healthData', label: '健康资料', tabs: [
+            { key: 'records', label: '已确认档案' },
+            { key: 'reports', label: '原始资料' },
+            { key: 'ai', label: '解析与核查' },
+            { key: 'medications', label: '用药与营养素' },
+          ] },
+          { key: 'healthPortrait', label: '健康画像', tabs: [
+            { key: 'portrait', label: '综合画像' },
+            { key: 'aiCase', label: '专项研判' },
+          ] },
+          { key: 'serviceManagement', label: '服务管理', tabs: [
+            { key: 'plans', label: '服务方案' },
+            ...(user.aiPilotFeatures?.stageAssessment ? [{ key: 'aiReview', label: '阶段性评估' }] : []),
+          ] },
+          { key: 'serviceExecution', label: '服务执行', tabs: [{ key: 'followups', label: '执行任务' }] },
+          { key: 'serviceArchive', label: '服务档案', tabs: [{ key: 'serviceRecords', label: '服务档案' }] },
         ]
-        const secondaryTabs = [
-          { key: 'ai',            label: 'AI健康信息整理' },
-          { key: 'serviceRecords', label: '服务记录' },
+        const moreTabs = [
           { key: 'referrals',     label: '转介记录' },
           { key: 'consumption',   label: '消费记录' },
           { key: 'family',        label: '家庭信息' },
           { key: 'membership',    label: '会员信息' },
         ]
-        const isSecondaryTab = secondaryTabs.some(t => t.key === tab)
-        const showSecondaryTabs = showMoreTabs || isSecondaryTab
-        const renderTab = (t, isSecondary = false) => (
+        const activeGroup = groups.find(group => group.tabs.some(item => item.key === tab))
+        const isMoreTab = moreTabs.some(item => item.key === tab)
+        const secondaryTabs = activeGroup?.tabs || (isMoreTab ? moreTabs : [])
+        const showSecondaryTabs = secondaryTabs.length > 1 || showMoreTabs || isMoreTab
+        const renderTab = t => (
           <button
             key={t.key}
             className={`tab-btn ${tab === t.key ? 'active' : ''}`}
-            onClick={() => { setTab(t.key); if (!isSecondary) setShowMoreTabs(false) }}
+            onClick={() => setTab(t.key)}
           >
             {t.label}
           </button>
         )
         return <div style={{ marginBottom: 20 }}>
           <div className="tabs" style={{ marginBottom: showSecondaryTabs ? 8 : 0 }}>
-            {primaryTabs.map(t => renderTab(t))}
-            <button className={`tab-btn ${isSecondaryTab ? 'active' : ''}`} onClick={() => setShowMoreTabs(v => !v)}>更多 {showSecondaryTabs ? '⌃' : '⌄'}</button>
+            {groups.map(group => <button key={group.key} className={`tab-btn ${activeGroup?.key === group.key ? 'active' : ''}`} onClick={() => { setTab(group.tabs[0].key); setShowMoreTabs(false) }}>{group.label}</button>)}
+            <button className={`tab-btn ${isMoreTab ? 'active' : ''}`} onClick={() => setShowMoreTabs(value => !value)}>更多 {showMoreTabs || isMoreTab ? '⌃' : '⌄'}</button>
           </div>
-          {showSecondaryTabs && <div className="tabs patient-secondary-tabs">{secondaryTabs.map(t => renderTab(t, true))}</div>}
+          {showSecondaryTabs && <div className="tabs patient-secondary-tabs">{(showMoreTabs ? moreTabs : secondaryTabs).map(renderTab)}</div>}
         </div>
       })()}
 
-      {tab === 'aiReview' && user.aiPilotFeatures?.stageAssessment && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} />}
+      {tab === 'aiReview' && user.aiPilotFeatures?.stageAssessment && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} mode="assessment" />}
+      {tab === 'aiCase' && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} mode="specialty" />}
 
       {/* ── Info Tab ── */}
       {tab === 'info' && (
@@ -8074,7 +8084,7 @@ export default function PatientDetailPage() {
       {tab === 'plans' && (
         <div className="card">
           <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div className="card-title">管理方案</div>
+            <div><div className="card-title">服务方案</div><div style={{ marginTop: 4, color: '#65776F', fontSize: 12 }}>年度、营养、就医、体检等正式方案；阶段性效果与调整请切换到“阶段性评估”</div></div>
             <div style={{ display: 'flex', gap: 8 }}>
               {/* 2026-07-07 用户明确规则：AI营养方案只有营养师能生成；AI体检方案/年度管理方案
                   只有健康顾问能生成（营养师能查看这些方案内容，但不该有生成入口） */}
@@ -8194,7 +8204,7 @@ export default function PatientDetailPage() {
         <>
         <div className="card">
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div className="card-title">随访记录</div>
+            <div><div className="card-title">服务执行</div><div style={{ marginTop: 4, color: '#65776F', fontSize: 12 }}>计划中和进行中的服务任务；团队仍从个人工作台进入并处理</div></div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn btn-secondary btn-sm" onClick={() => runAIHelper('followup')}>✨ AI随访建议</button>
               <button className="btn btn-secondary btn-sm" onClick={() => runAIHelper('coach')}>✨ AI教练消息</button>
