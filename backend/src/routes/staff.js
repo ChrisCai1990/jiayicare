@@ -6410,8 +6410,8 @@ ${assessmentFocus ? JSON.stringify(assessmentFocus) : '暂无结构化主评估�
 
 主评估是本次方案的主题边界。方案中的每一条记录必须能对应主评估的核心结论、重点风险或下一步行动之一；不得仅因为原始资料里出现某项指标，就扩展出与主评估主题无关的就医、复查、疫苗、营养、监测或体检安排。待补信息只能生成“先补资料/先确认”的行动，不能直接生成诊断性或治疗性方案。以上专题结论仅可作为方案制定依据；未确认的讨论不得引用，若与最新体检原始证据冲突，以原始证据为准。
 
-【Admin健康管理方案模板】
-${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.planDesc || ''}；随访节点：${(selectedTemplate.content?.followUpPlans || []).map(p => p.name).join('、') || '无'}` : '未选择模板'}
+【Admin年度管理规则】
+${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.planDesc || ''}；允许匹配的标准随访方案：${(selectedTemplate.content?.followUpPlans || []).map(p => p.name).join('、') || '无（不得编造可执行随访计划）'}` : '未选择规则'}
 
 【Admin已确认的统一事项字段】
 ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依据','建议时间/时间范围','执行频率','注意事项','客户行动','责任角色','审核状态']).join('、')}
@@ -6421,7 +6421,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
 请严格按以下JSON格式输出，仅输出JSON：
 {
   "templateNodes": [
-    { "index": 1, "title": "简单明确的行动名称", "content": "对应Admin模板第1个具体方案的个性化安排", "time": "计划时间或周期", "frequency": "执行频次", "notes": "注意事项" }
+    { "index": 1, "title": "简单明确的行动名称", "content": "对应Admin标准随访方案的个性化参数", "time": "计划时间或周期", "frequency": "执行频次", "notes": "注意事项" }
   ],
   "medical_treatment": [
     { "reason": "就医原因", "department": "就诊科室", "visit_time": "建议时间或待确认", "basisSummary": "设置依据", "frequency": "单次", "precautions": "注意事项", "customerAction": "客户需要完成的事项", "ownerRole": "责任角色", "notes": "内部备注" }

@@ -5,7 +5,7 @@ import { useToast } from '../App'
 
 const PLAN_TYPES = [
   { key: 'annual_checkup',    label: '年度体检方案',  icon: '🔬' },
-  { key: 'health_management', label: '健康管理方案',  icon: '📋' },
+  { key: 'health_management', label: '年度管理规则',  icon: '📋' },
   { key: 'nutrition',         label: '营养干预方案',  icon: '🥗' },
   { key: 'medical_assist',    label: '就医协助方案',  icon: '🏥' },
   { key: 'rehab',             label: '运动复健方案',  icon: '🏃' },
@@ -95,9 +95,15 @@ function FollowUpPlanSelector({ value, onChange, allPlans, loading }) {
 
   return (
     <div className="form-group" style={{ gridColumn: '1/-1' }}>
-      <label className="form-label">具体方案</label>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 7 }}>
+        <div>
+          <label className="form-label" style={{ marginBottom: 2 }}>可调用的标准随访方案</label>
+          <div style={{ color: '#738078', fontSize: 12 }}>限定AI可以匹配的标准执行方案；客户确认年度总方案后，系统据此直接生成随访计划。</div>
+        </div>
+        <a className="btn btn-ghost" href="/projects/followup-plans" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>管理随访方案库 →</a>
+      </div>
       <div style={{ border: '1px solid #d0c9be', borderRadius: 8, padding: 12, background: '#faf8f5' }}>
-        {selected.length === 0 && <div style={{ color: '#aaa', fontSize: 12, marginBottom: 8 }}>暂未添加随访方案</div>}
+        {selected.length === 0 && <div style={{ color: '#A15C18', fontSize: 12, marginBottom: 8 }}>未限定随访方案：AI只能形成管理要求，不得编造可执行随访计划。</div>}
         {selected.map((s, idx) => (
           <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, padding: '6px 10px', background: '#fff', borderRadius: 6, border: '1px solid #e0d9ce' }}>
             <span style={{ fontSize: 13, flex: 1, color: '#1A2B24', fontWeight: 500 }}>{s.name}</span>
@@ -106,7 +112,7 @@ function FollowUpPlanSelector({ value, onChange, allPlans, loading }) {
         ))}
         <button type="button" className="btn btn-ghost" style={{ fontSize: 12, padding: '4px 10px', marginTop: 4 }}
           onClick={() => setOpen(o => !o)}>
-          {open ? '▲ 收起' : '＋ 添加方案'}
+          {open ? '▲ 收起' : '＋ 选择标准随访方案'}
         </button>
         {open && (
           <div style={{ marginTop: 10, border: '1px solid #e0d9ce', borderRadius: 6, background: '#fff', maxHeight: 240, display: 'flex', flexDirection: 'column' }}>
@@ -290,8 +296,12 @@ function PlanContentForm({ type, initialContent, contentRef }) {
 
   if (type === 'health_management') return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div style={{ gridColumn: '1/-1', padding: '13px 15px', borderRadius: 10, background: '#EEF7F2', border: '1px solid #CFE4D8', color: '#28483B', fontSize: 13, lineHeight: 1.7 }}>
+        <strong>年度管理规则只规定边界，不保存客户个性化内容。</strong><br />
+        AI依据已确认综合研判，在下方启用模块和标准随访方案范围内组装客户年度总方案；健康顾问审核、客户确认后，系统自动生成随访计划及专业岗位指令。
+      </div>
       <div className="form-group">
-        <label className="form-label">方案归类 *</label>
+        <label className="form-label">适用管理模式 *</label>
         <select className="form-input" value={content.planType || 'health_prevention'} onChange={e => set('planType', e.target.value)}>
           <option value="health_reshape">健康重塑类</option>
           <option value="young_state">健康年轻态类</option>
@@ -300,8 +310,8 @@ function PlanContentForm({ type, initialContent, contentRef }) {
         </select>
       </div>
       <div className="form-group">
-        <label className="form-label">方案名称 *</label>
-        <input className="form-input" value={content.planName || ''} onChange={e => set('planName', e.target.value)} placeholder="如：慢病管理标准方案" />
+        <label className="form-label">规则名称 *</label>
+        <input className="form-input" value={content.planName || ''} onChange={e => set('planName', e.target.value)} placeholder="如：年度健康管理统一规则" />
       </div>
       <FieldRow label="状态说明" fieldKey="planDesc" placeholder="方案适用场景或说明" half content={content} set={set} />
       <div className="form-group">
@@ -322,8 +332,8 @@ function PlanContentForm({ type, initialContent, contentRef }) {
         </div>
       </div>
       <div style={{ gridColumn: '1/-1', border: '1px solid #E5E0D8', borderRadius: 12, padding: 16 }}>
-        <div style={{ fontWeight: 700 }}>模块组合与审核规则</div>
-        <div style={{ color: '#777', fontSize: 12, marginTop: 4 }}>四类方案共用同一字段骨架，仅通过启用模块和生成规则体现差异。</div>
+        <div style={{ fontWeight: 700 }}>年度总方案模块与审核规则</div>
+        <div style={{ color: '#777', fontSize: 12, marginTop: 4 }}>通常只需一套统一规则；确有流程差异时，再按管理模式调整模块、审核角色和AI权限。</div>
         <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
           {ANNUAL_MODULE_RULES.map(mod => {
             const rules = content.moduleRules?.length ? content.moduleRules : defaultContent.health_management.moduleRules
@@ -799,7 +809,7 @@ export default function HealthPlanTemplatePage() {
       <div className="page-header">
         <div>
           <div className="page-title">📚 健康方案模板管理</div>
-          <div className="page-subtitle">配置七类健康方案的标准模板，医护人员可快速选用并为客户生成个性化方案</div>
+          <div className="page-subtitle">年度规则控制AI边界；专业方案模板和标准随访方案分别维护，最终由医护人员审核形成客户个性化方案</div>
         </div>
       </div>
 
@@ -863,7 +873,7 @@ export default function HealthPlanTemplatePage() {
                   <tr>
                     <th>模板名称</th>
                     <th>客户归属</th>
-                    {activeType === 'health_management' && <th>方案归类</th>}
+                    {activeType === 'health_management' && <th>适用管理模式</th>}
                     <th>状态</th>
                     <th>创建时间</th>
                     <th>操作</th>
