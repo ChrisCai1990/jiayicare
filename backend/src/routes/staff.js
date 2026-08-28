@@ -2814,6 +2814,8 @@ router.patch('/service-records/:id/ai-review', staffAuth, checkPermission('servi
       }
       if (!record.staffId) record.staffId = req.staff._id; // 定时任务生成时未指定负责人，审核人即为负责人
       record.aiStatus = 'approved';
+      const { reviewedWriteback } = require('../utils/reviewedWriteback');
+      record.writeback = reviewedWriteback({ staff: req.staff, sourceType: 'ai_draft' });
       await record.save();
       return res.json({ success: true, data: record });
     }

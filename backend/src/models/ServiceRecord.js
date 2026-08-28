@@ -84,6 +84,18 @@ const serviceRecordSchema = new mongoose.Schema({
   aiGeneratedAt:    { type: Date, default: null },
   aiRangeStart:     { type: Date, default: null }, // 本次草稿覆盖的聊天时间窗口起点，用于避免同一时段重复生成
   aiRangeEnd:       { type: Date, default: null },
+  // 统一“AI生成 → 人工审核 → 自动回写”审计信息。原始监测值不使用此字段，
+  // 只用于人工确认后的服务记录/总结，避免把AI整理结果伪装成原始事实。
+  writeback: {
+    sourceType: { type: String, enum: ['ai_draft', 'task_execution', 'manual'], default: 'manual' },
+    sourceTaskId: { type: mongoose.Schema.Types.ObjectId, ref: 'Task', default: null },
+    status: { type: String, enum: ['pending_review', 'written'], default: 'written' },
+    reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+    reviewedByName: { type: String, default: '' },
+    reviewedByRole: { type: String, default: '' },
+    reviewedAt: { type: Date, default: null },
+    writtenAt: { type: Date, default: null },
+  },
 }, { timestamps: true });
 
 serviceRecordSchema.index({ patientId: 1, type: 1, date: -1 });

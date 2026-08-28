@@ -12,6 +12,7 @@ const { toStructuredAssessment, assessmentToPlainText, templateAssessmentFromCon
 const { createAssessment } = require('../utils/phaseAssessmentScheduler');
 const { buildContext, buildStageAssessmentContext } = require('../utils/aiCaseReviewContext');
 const providerAdapter = require('../utils/aiCaseReviewProvider');
+const { reviewedWriteback } = require('../utils/reviewedWriteback');
 
 const DEFAULT_SCOPES = ['basic', 'healthProfile', 'reports', 'healthRecords', 'medications', 'followups', 'plans', 'aiAnalysis'];
 const VALID_SCOPES = new Set(DEFAULT_SCOPES);
@@ -60,14 +61,16 @@ router.get('/patients/:patientId/phase-assessments', staffAuth, async (req, res)
 
 async function archiveFinalAssessment(item, user, staff) {
   const customerVersion = templateAssessmentFromContent(item.content, item);
+  const archivedAt = item.finalizedAt || new Date();
   return ServiceRecord.findOneAndUpdate(
     { sourcePhaseAssessmentId: item._id },
     { $set: {
-      staffId: staff._id, patientId: user._id, type: 'stage_assessment', date: item.finalizedAt || new Date(),
+      staffId: staff._id, patientId: user._id, type: 'stage_assessment', date: archivedAt,
       title: `${item.periodLabel}${item.templateSnapshot?.name || '阶段性健康评估'}`,
       content: customerVersion.sections.flatMap(section => [section.title, ...section.items.map(value => `• ${value}`)]).join('\n'),
       result: item.doctorReview?.note || item.nutritionReview?.note || '', structuredContent: customerVersion,
       aiStatus: 'approved', aiGeneratedAt: item.createdAt,
+      writeback: reviewedWriteback({ staff, sourceType: 'ai_draft', at: archivedAt }),
     }, $setOnInsert: { sourcePhaseAssessmentId: item._id } },
     { new: true, upsert: true, setDefaultsOnInsert: true },
   );
