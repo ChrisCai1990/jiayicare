@@ -5,6 +5,9 @@ const phaseAssessmentSchema = new mongoose.Schema({
   patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   annualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', required: true, index: true },
   templateId: { type: mongoose.Schema.Types.ObjectId, ref: 'PlanTemplate', required: true },
+  assessmentMode: { type: String, enum: ['routine', 'intensive_nutrition'], default: 'routine', index: true },
+  sourceNutritionPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null },
+  interventionWeek: { type: Number, default: null },
   periodKey: { type: String, required: true }, // 例如 2026-08 / 2026-Q3，保证同一周期不重复
   periodLabel: { type: String, default: '' },
   status: {

@@ -88,6 +88,7 @@ function StageWorkflow({ assessment }) {
 export default function AiCaseReviewPanel({ patientId, staff, toast }) {
   const [topics, setTopics] = useState([])
   const [assessments, setAssessments] = useState([])
+  const [assessmentMode, setAssessmentMode] = useState('routine')
   const [assessmentEdits, setAssessmentEdits] = useState({})
   const [expandedAssessments, setExpandedAssessments] = useState({})
   const [activeAssessmentSections, setActiveAssessmentSections] = useState({})
@@ -184,10 +185,10 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
   const generateAssessment = async () => {
     setBusy(true)
     try {
-      const res = await staffAPI.generatePhaseAssessment(patientId)
+      const res = await staffAPI.generatePhaseAssessment(patientId, assessmentMode)
       setAssessments(list => [res.data, ...list.filter(item => item._id !== res.data._id)])
       setAssessmentEdits(items => ({ ...items, [res.data._id]: res.data.content || '' }))
-      toast('阶段性评估草稿已生成，等待营养师初审')
+      toast(`${assessmentMode === 'intensive_nutrition' ? '强化干预' : '常规'}阶段评估草稿已生成，等待营养师初审`)
     } catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
   }
   const reviewAssessment = async (assessment, action) => {
@@ -204,13 +205,14 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
   }
 
   if (loading) return <div className="card"><div className="card-body">正在加载专题研判资料…</div></div>
-  const currentAssessment = assessments.find(item => !String(item.periodKey || '').includes('-legacy-')) || null
+  const visibleAssessments = assessments.filter(item => (item.assessmentMode || 'routine') === assessmentMode)
+  const currentAssessment = visibleAssessments.find(item => !String(item.periodKey || '').includes('-legacy-')) || null
   return <div style={{ display: 'grid', gridTemplateColumns: '280px minmax(0, 1fr)', gap: 16, minHeight: 680 }}>
     <div className="card" style={{ gridColumn: '1/-1', border: '1px solid #7C3AED55' }}>
-      <div className="card-header" style={{ alignItems: 'flex-start' }}><div style={{ flex: 1 }}><div className="card-title">阶段性健康评估</div><div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>以下为当前有效评估的真实流程状态</div><StageWorkflow assessment={currentAssessment} /></div>{['nutritionist', 'familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy} onClick={generateAssessment}>生成阶段评估草稿</button>}</div>
+      <div className="card-header" style={{ alignItems: 'flex-start' }}><div style={{ flex: 1 }}><div className="card-title">阶段性健康评估</div><div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>统一评估入口，根据管理模式使用不同节奏</div><div style={{ display: 'flex', gap: 8, marginTop: 10 }}><button className={`btn btn-sm ${assessmentMode === 'routine' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setAssessmentMode('routine')}>常规管理</button><button className={`btn btn-sm ${assessmentMode === 'intensive_nutrition' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setAssessmentMode('intensive_nutrition')}>强化营养干预 · 12周</button></div><div style={{ marginTop: 9, padding: '8px 10px', background: assessmentMode === 'routine' ? '#EFF6FF' : '#EEF8F3', borderRadius: 8, fontSize: 12, color: '#4A6558' }}>{assessmentMode === 'routine' ? '普通客户每月评估；重点客户每2周评估。' : '第1—4周每周评估；第5—12周每2周评估；第12周形成强化干预总结。'}</div><StageWorkflow assessment={currentAssessment} /></div>{['nutritionist', 'familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy} onClick={generateAssessment}>生成当前节点草稿</button>}</div>
       <div className="card-body" style={{ display: 'grid', gap: 12 }}>
-        {!assessments.length && <div style={{ color: '#8AA89C' }}>暂无阶段性评估。试点阶段仅支持人工触发，不会自动按周期生成。</div>}
-        {assessments.map(item => {
+        {!visibleAssessments.length && <div style={{ color: '#8AA89C' }}>{assessmentMode === 'intensive_nutrition' ? '暂无强化干预评估。只有客户确认营养干预方案后，才能按12周节点生成。' : '暂无常规阶段性评估。试点阶段仅支持人工触发。'}</div>}
+        {visibleAssessments.map(item => {
           const status = item.status === 'pending' ? 'nutrition_review' : item.status
           const statusLabel = { nutrition_review: '待营养师初审', doctor_review: '待健康顾问临床复审', finalized: '已正式入档', approved: '历史已审核', rejected: '已退回' }[status] || status
           const canNutritionReview = ['nutritionist', 'superadmin'].includes(staff?.role) && status === 'nutrition_review'
@@ -222,7 +224,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
           const activeSectionIndex = activeAssessmentSections[item._id]
           const activeSection = Number.isInteger(activeSectionIndex) ? stageSections[activeSectionIndex] : null
           return <section key={item._id} id={`phase-assessment-${item._id}`} style={{ border: '1px solid #DCE8E1', borderRadius: 10, padding: 13, background: status === 'finalized' ? '#F2FAF6' : '#fff' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><strong style={{ color: '#155E48' }}>📊 {item.periodLabel}阶段性健康评估</strong><span style={{ fontSize: 12, fontWeight: 700, color: status === 'doctor_review' ? '#B45309' : status === 'finalized' ? '#16845B' : '#7C3AED' }}>{statusLabel}</span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><strong style={{ color: '#155E48' }}>📊 {item.periodLabel}{item.assessmentMode === 'intensive_nutrition' ? '评估' : '阶段性健康评估'}</strong><span style={{ fontSize: 12, fontWeight: 700, color: status === 'doctor_review' ? '#B45309' : status === 'finalized' ? '#16845B' : '#7C3AED' }}>{statusLabel}</span></div>
             <div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>{item.templateSnapshot?.name || '模板驱动评估'} · {evidenceCount ? `${evidenceCount}项依据` : '依据待核实'}</div>
             <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(4,minmax(120px,1fr))', gap: 9 }}>
               {stageSections.map((section, index) => <button key={section.label} type="button" onClick={() => setActiveAssessmentSections(values => ({ ...values, [item._id]: expanded ? index : values[item._id] === index ? null : index }))} style={{ border: `1px solid ${activeSectionIndex === index ? section.color : '#DCE8E1'}`, borderRadius: 10, padding: '12px 8px', background: activeSectionIndex === index ? section.background : '#fff', cursor: 'pointer', textAlign: 'center' }}>

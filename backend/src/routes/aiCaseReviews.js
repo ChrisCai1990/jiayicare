@@ -8,8 +8,9 @@ const PhaseAssessment = require('../models/PhaseAssessment');
 const ServiceRecord = require('../models/ServiceRecord');
 const PlanTemplate = require('../models/PlanTemplate');
 const AnnualPlan = require('../models/AnnualPlan');
+const HealthPlan = require('../models/HealthPlan');
 const { toStructuredAssessment, assessmentToPlainText, templateAssessmentFromContent, detectClinicalReview, nextAssessmentStatus } = require('../utils/phaseAssessment');
-const { createAssessment } = require('../utils/phaseAssessmentScheduler');
+const { createAssessment, intensiveNutritionCheckpoint } = require('../utils/phaseAssessmentScheduler');
 const { buildContext, buildStageAssessmentContext } = require('../utils/aiCaseReviewContext');
 const providerAdapter = require('../utils/aiCaseReviewProvider');
 const { reviewedWriteback } = require('../utils/reviewedWriteback');
@@ -91,9 +92,23 @@ router.post('/patients/:patientId/phase-assessments/generate', staffAuth, async 
     if (!plan) return res.status(409).json({ success: false, message: '客户尚无已确认年度管理方案，暂不能生成阶段性评估' });
     const template = await PlanTemplate.findOne({ type: 'phase_assessment', status: 'active', 'content.frequency': 'monthly', $or: [{ clientBrand: user.clientBrand || '' }, { clientBrand: '' }] }).sort({ clientBrand: -1, updatedAt: -1 }).lean();
     if (!template) return res.status(409).json({ success: false, message: 'Admin尚未启用适用的月度阶段性评估模板' });
-    const item = await createAssessment({ plan, user, template });
+    const assessmentMode = req.body.mode === 'intensive_nutrition' ? 'intensive_nutrition' : 'routine';
+    let periodOverride = null; let sourceNutritionPlanId = null; let interventionWeek = null;
+    if (assessmentMode === 'intensive_nutrition') {
+      const nutritionPlan = await HealthPlan.findOne({ patientId: user._id, type: 'nutrition', confirmedAt: { $ne: null }, status: { $in: ['active', 'draft'] } }).sort({ confirmedAt: -1 }).lean();
+      if (!nutritionPlan) return res.status(409).json({ success: false, message: '客户尚无已确认的强化营养干预方案' });
+      const startedAt = new Date(nutritionPlan.startDate || nutritionPlan.confirmedAt);
+      const elapsedDays = Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 86400000));
+      const elapsedWeek = Math.floor(elapsedDays / 7) + 1;
+      interventionWeek = intensiveNutritionCheckpoint(elapsedWeek);
+      if (!interventionWeek || elapsedWeek > 12) return res.status(409).json({ success: false, message: elapsedWeek > 12 ? '本轮12周强化干预已结束' : '尚未到第1周评估节点' });
+      periodOverride = { key: `nutrition-${nutritionPlan._id}-W${interventionWeek}`, label: `强化营养干预第${interventionWeek}周` };
+      sourceNutritionPlanId = nutritionPlan._id;
+      template.content = { ...template.content, windowDays: interventionWeek <= 4 ? 7 : 14 };
+    }
+    const item = await createAssessment({ plan, user, template, periodOverride, assessmentMode, sourceNutritionPlanId, interventionWeek });
     if (!item) {
-      const existing = await PhaseAssessment.findOne({ annualPlanId: plan._id, templateId: template._id }).sort({ createdAt: -1 }).lean();
+      const existing = await PhaseAssessment.findOne({ annualPlanId: plan._id, templateId: template._id, assessmentMode }).sort({ createdAt: -1 }).lean();
       return res.status(409).json({ success: false, message: '本周期已经生成阶段性评估', data: existing });
     }
     res.status(201).json({ success: true, data: item });

@@ -5,6 +5,9 @@ const PhaseAssessment = require('../models/PhaseAssessment');
 const { buildStageAssessmentContext } = require('./aiCaseReviewContext');
 const { chat } = require('./ai');
 
+const INTENSIVE_NUTRITION_WEEKS = [1, 2, 3, 4, 6, 8, 10, 12];
+const intensiveNutritionCheckpoint = elapsedWeek => [...INTENSIVE_NUTRITION_WEEKS].reverse().find(week => week <= elapsedWeek) || null;
+
 function periodFor(frequency, now = new Date(), confirmedAt) {
   if (frequency === 'yearly') {
     if (!confirmedAt) return null;
@@ -20,10 +23,10 @@ function periodFor(frequency, now = new Date(), confirmedAt) {
   return { key: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`, label: `${now.getFullYear()}年${now.getMonth() + 1}月` };
 }
 
-async function createAssessment({ plan, user, template }) {
+async function createAssessment({ plan, user, template, periodOverride = null, assessmentMode = 'routine', sourceNutritionPlanId = null, interventionWeek = null }) {
   const frequency = ['monthly', 'quarterly', 'yearly'].includes(template.content?.frequency)
     ? template.content.frequency : 'monthly';
-  const period = periodFor(frequency, new Date(), plan.confirmedAt);
+  const period = periodOverride || periodFor(frequency, new Date(), plan.confirmedAt);
   if (!period) return null;
   const existing = await PhaseAssessment.exists({ annualPlanId: plan._id, templateId: template._id, periodKey: period.key });
   if (existing) return null;
@@ -47,6 +50,7 @@ async function createAssessment({ plan, user, template }) {
   const content = await chat([{ role: 'user', content: prompt }], { provider: 'qwen', systemPrompt: '只基于提供资料评估，不能补造事实。', maxTokens: 1400, temperature: 0.05, timeoutMs: 90000 });
   return PhaseAssessment.create({
     patientId: user._id, annualPlanId: plan._id, templateId: template._id,
+    assessmentMode, sourceNutritionPlanId, interventionWeek,
     periodKey: period.key, periodLabel: period.label, content,
     evidenceSources: context.sources || [], templateSnapshot: { name: template.name, frequency, windowDays, focus, instructions, minimumData, outputSections, triggerRule: template.content?.triggerRule || '' },
   });
@@ -80,4 +84,4 @@ function startPhaseAssessmentScheduler() {
   setInterval(() => scanAndCreatePhaseAssessments().catch(error => console.error('[phase-assessment] scan failed', error.message)), 60 * 60 * 1000);
 }
 
-module.exports = { createAssessment, scanAndCreatePhaseAssessments, startPhaseAssessmentScheduler };
+module.exports = { createAssessment, scanAndCreatePhaseAssessments, startPhaseAssessmentScheduler, INTENSIVE_NUTRITION_WEEKS, intensiveNutritionCheckpoint };
