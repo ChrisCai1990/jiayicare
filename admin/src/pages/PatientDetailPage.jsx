@@ -340,6 +340,7 @@ export default function PatientDetailPage() {
                 { label: '累计登录次数', value: Number(user.loginCount || 0) },
                 { label: '累计登录时长', value: `${Math.floor(Number(user.totalLoginSeconds || 0) / 60)} 分钟` },
                 { label: '邀请人', value: user.invitedBy ? `${user.invitedBy.name || '未命名'}${user.invitedBy.phone ? `（${user.invitedBy.phone}）` : ''}` : '无邀请关系' },
+                { label: '受邀时间', value: user.invitedAt ? new Date(user.invitedAt).toLocaleString('zh-CN') : '--' },
                 { label: '本人邀请码', value: user.referralCode || '--' },
               ].map((r, i) => <div className="info-row" key={i}><div className="info-row-label">{r.label}</div><div className="info-row-value">{r.value}</div></div>)}
             </div>

@@ -1989,7 +1989,7 @@ router.get('/promotion-records', adminAuth, async (req, res) => {
 router.get('/system-config/health-fund/referrals', adminAuth, async (req, res) => {
   try {
     const rows = await User.find({ invitedBy: { $ne: null } })
-      .select('name phone invitedBy referralRewardGrantedAt lastLoginAt')
+      .select('name phone invitedBy invitedAt referralRewardGrantedAt lastLoginAt')
       .populate('invitedBy', 'name phone')
       .sort({ referralRewardGrantedAt: -1 }).limit(500).lean();
     res.json({ success: true, data: rows.map(row => ({
@@ -1997,6 +1997,7 @@ router.get('/system-config/health-fund/referrals', adminAuth, async (req, res) =
       inviter: row.invitedBy ? { _id: row.invitedBy._id, name: row.invitedBy.name, phone: row.invitedBy.phone } : null,
       invitee: { _id: row._id, name: row.name, phone: row.phone },
       firstLoginAt: row.lastLoginAt,
+      invitedAt: row.invitedAt,
       rewardedAt: row.referralRewardGrantedAt,
     })) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }

@@ -179,6 +179,7 @@ function TaskDetailModal({ task, onClose, onDone }) {
 }
 
 export default function HomePage() {
+  const { user: authUser, isDemo } = useAuth();
   Taro.useShareAppMessage(() => ({
     title: '嘉医汇｜全生命周期健康管理',
     path: `/pages/home/index${authUser?.referralCode ? `?invite=${authUser.referralCode}` : ''}`,
@@ -195,7 +196,6 @@ export default function HomePage() {
       return 'unknown no-version';
     }
   })();
-  const { user: authUser, isDemo } = useAuth();
   const [dashData, setDashData] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [followups, setFollowups] = useState([]);

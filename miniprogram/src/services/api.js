@@ -133,6 +133,7 @@ export const authAPI = {
 
 // ── User ─────────────────────────────────────────────────────────
 export const userAPI = {
+  referrals: () => request('/user/referrals'),
   getMe: () => request('/user/me'),
   getHealthFund: () => request('/user/health-fund'),
   getDashboard: () => request('/user/dashboard'),

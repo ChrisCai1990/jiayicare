@@ -60,14 +60,20 @@ async function applyFirstLoginRewards(user, inviteCode) {
     // 首次登录赠金属于企业健康基金，不是用户自有基金。
     if (claimed) await grantPromotionFund(user._id, cfg.firstLoginAmount, '首次使用小程序健康基金奖励', 'enterprise');
   }
-  if (cfg.inviteEnabled !== true || !inviteCode || user.referralRewardGrantedAt) return;
+  if (!inviteCode || user.invitedBy) return;
   const inviter = await User.findOne({ referralCode: String(inviteCode), isDeleted: { $ne: true }, _id: { $ne: user._id } }).select('_id');
   if (!inviter) return;
   const claimed = await User.findOneAndUpdate(
-    { _id: user._id, referralRewardGrantedAt: null, invitedBy: null },
-    { $set: { referralRewardGrantedAt: now, invitedBy: inviter._id } }, { new: true },
+    { _id: user._id, invitedBy: null },
+    { $set: { invitedAt: now, invitedBy: inviter._id } }, { new: true },
   );
   if (!claimed) return;
+  if (cfg.inviteEnabled !== true || claimed.referralRewardGrantedAt) return;
+  const rewardClaimed = await User.findOneAndUpdate(
+    { _id: user._id, referralRewardGrantedAt: null },
+    { $set: { referralRewardGrantedAt: now } }, { new: true },
+  );
+  if (!rewardClaimed) return;
   await Promise.all([
     grantPromotionFund(inviter._id, cfg.inviterAmount, '邀请好友首次使用小程序奖励'),
     grantPromotionFund(user._id, cfg.inviteeAmount, '通过好友邀请首次使用小程序奖励'),

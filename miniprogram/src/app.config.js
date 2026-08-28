@@ -29,6 +29,7 @@ export default defineAppConfig({
     'pages/nutrition/index',
     'pages/profile/benefits/index',
     'pages/profile/family/index',
+    'pages/profile/invite/index',
     'pages/questionnaire/index',
     'pages/records/ai-health/index',
     'pages/records/medical-reports/index',

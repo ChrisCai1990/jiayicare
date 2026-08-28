@@ -62,15 +62,29 @@ async function applyOnboardingRewards(user, inviteCode) {
     const claimed = await User.findOneAndUpdate({ _id: user._id, firstLoginFundGrantedAt: null }, { $set: { firstLoginFundGrantedAt: now } }, { new: true });
     if (claimed) await grant(user._id, cfg.firstLoginAmount, '首次使用小程序健康基金奖励');
   }
-  if (cfg.inviteEnabled !== true || !inviteCode || user.referralRewardGrantedAt) return;
+  if (!inviteCode || user.invitedBy) return;
   const inviter = await User.findOne({ referralCode: String(inviteCode), isDeleted: { $ne: true }, _id: { $ne: user._id } }).select('_id');
   if (!inviter) return;
-  const claimed = await User.findOneAndUpdate({ _id: user._id, referralRewardGrantedAt: null, invitedBy: null }, { $set: { referralRewardGrantedAt: now, invitedBy: inviter._id } }, { new: true });
-  if (claimed) await Promise.all([
+  const claimed = await User.findOneAndUpdate({ _id: user._id, invitedBy: null }, { $set: { invitedAt: now, invitedBy: inviter._id } }, { new: true });
+  if (!claimed || cfg.inviteEnabled !== true || claimed.referralRewardGrantedAt) return;
+  const rewardClaimed = await User.findOneAndUpdate({ _id: user._id, referralRewardGrantedAt: null }, { $set: { referralRewardGrantedAt: now } }, { new: true });
+  if (rewardClaimed) await Promise.all([
     grant(inviter._id, cfg.inviterAmount, '邀请好友首次使用小程序奖励'),
     grant(user._id, cfg.inviteeAmount, '通过好友邀请首次使用小程序奖励'),
   ]);
 }
+
+router.get('/referrals', auth, async (req, res) => {
+  try {
+    const invitees = await User.find({ invitedBy: req.user._id, isDeleted: { $ne: true } })
+      .select('name invitedAt referralRewardGrantedAt')
+      .sort({ invitedAt: -1, createdAt: -1 }).limit(100).lean();
+    res.json({ success: true, data: {
+      referralCode: req.user.referralCode || '', total: invitees.length,
+      invitees: invitees.map(item => ({ _id: item._id, name: item.name || '好友', invitedAt: item.invitedAt, rewarded: !!item.referralRewardGrantedAt })),
+    } });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://dist-maowxvion-jiayihui.vercel.app';
 

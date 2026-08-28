@@ -66,7 +66,7 @@ export default function HealthFundConfigPage(){
   <button className="btn btn-primary" onClick={save} disabled={saving}>{saving?'保存中...':'保存并立即生效'}</button>
  </div></div>
  <div className="card" style={{marginTop:20}}><div className="card-body">
-  <h3>邀请关系记录</h3>
-  {referrals.length===0?<p style={{color:'#718096'}}>暂无邀请成功记录</p>:<div style={{overflowX:'auto'}}><table className="data-table"><thead><tr><th>邀请人</th><th>邀请人手机</th><th>受邀人</th><th>受邀人手机</th><th>首次登录</th><th>奖励时间</th></tr></thead><tbody>{referrals.map(row=><tr key={row._id}><td>{row.inviter?.name||'-'}</td><td>{row.inviter?.phone||'-'}</td><td>{row.invitee?.name||'-'}</td><td>{row.invitee?.phone||'-'}</td><td>{row.firstLoginAt?new Date(row.firstLoginAt).toLocaleString('zh-CN'):'-'}</td><td>{row.rewardedAt?new Date(row.rewardedAt).toLocaleString('zh-CN'):'-'}</td></tr>)}</tbody></table></div>}
+  <h3>邀请关系记录</h3><p style={{color:'#718096'}}>即使未启用自动奖励，也会保留邀请关系，便于运营审核和赠送健康基金。</p>
+  {referrals.length===0?<p style={{color:'#718096'}}>暂无邀请成功记录</p>:<div style={{overflowX:'auto'}}><table className="data-table"><thead><tr><th>邀请人</th><th>邀请人手机</th><th>受邀人</th><th>受邀人手机</th><th>建立关系</th><th>首次登录</th><th>奖励时间</th></tr></thead><tbody>{referrals.map(row=><tr key={row._id}><td>{row.inviter?.name||'-'}</td><td>{row.inviter?.phone||'-'}</td><td>{row.invitee?.name||'-'}</td><td>{row.invitee?.phone||'-'}</td><td>{row.invitedAt?new Date(row.invitedAt).toLocaleString('zh-CN'):'-'}</td><td>{row.firstLoginAt?new Date(row.firstLoginAt).toLocaleString('zh-CN'):'-'}</td><td>{row.rewardedAt?new Date(row.rewardedAt).toLocaleString('zh-CN'):'未自动奖励'}</td></tr>)}</tbody></table></div>}
  </div></div></div>
 }

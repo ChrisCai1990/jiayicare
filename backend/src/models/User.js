@@ -44,6 +44,7 @@ const userSchema = new mongoose.Schema({
   totalLoginSeconds: { type: Number, default: 0 },
   referralCode: { type: String, unique: true, sparse: true, default: () => crypto.randomBytes(6).toString('hex') },
   invitedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  invitedAt: { type: Date, default: null },
   pendingInviteCode: { type: String, default: '' },
   firstLoginFundGrantedAt: { type: Date, default: null },
   referralRewardGrantedAt: { type: Date, default: null },
