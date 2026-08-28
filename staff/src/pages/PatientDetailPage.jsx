@@ -505,8 +505,6 @@ const REPORT_L1_TYPES = [
   { key: 'home_monitor',   label: '居家监测' },
   { key: 'other',          label: '其他常规筛查' },
 ]
-const REPORT_L1_LABEL_TO_TYPE = Object.fromEntries(REPORT_L1_TYPES.map(item => [item.label, item.key]))
-
 const DOCUMENT_CATEGORIES = [
   { key: 'physical_exam', label: '体检报告' },
   { key: 'lab_report', label: '检验报告' },
@@ -11562,10 +11560,14 @@ function SendMessageModal({ patientId, patientName, onClose }) {
 }
 
 // ── 上传原始资料弹窗 ───────────────────────────────────────
-const ANNUAL_L1_ID = '__annual__'
+const DOCUMENT_CATEGORY_REPORT_TYPE = {
+  physical_exam: 'annual', lab_report: 'blood', exam_report: 'other', body_composition: 'body_comp',
+  functional_medicine: 'functional', genetic_test: 'genetic', outpatient_record: 'other', inpatient_record: 'other',
+  prescription_order: 'other', questionnaire: 'other', other_customer_material: 'other',
+}
 
-function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) {
-  const [form, setForm] = useState({ documentCategory: 'physical_exam', title: '', l1Id: '', l2Label: '', hospital: '', date: '', note: '' })
+function UploadReportModal({ patientId, onClose, onSaved }) {
+  const [form, setForm] = useState({ documentCategory: 'physical_exam', title: '', hospital: '', date: '', note: '' })
   const [fileDatas, setFileDatas] = useState([])
   // 一份报告有时被拍成多张照片(如"结论页"+"数据页")，默认合并为一条记录、AI一次性识别全部图片；
   // 取消勾选则保持原有行为——每个文件各自拆成一条独立报告(如确实是几份不同的检查报告一起选的场景)
@@ -11575,27 +11577,7 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
   const [uploadStep, setUploadStep] = useState('')
   const [error, setError] = useState('')
 
-  const supportsScreeningCategory = ['physical_exam', 'lab_report', 'exam_report', 'body_composition', 'functional_medicine', 'genetic_test'].includes(form.documentCategory)
-  const isAnnual = form.l1Id === ANNUAL_L1_ID
-  const currentL1 = isAnnual ? null : screeningTree.find(n => String(n._id) === form.l1Id)
-  const selectedReportType = isAnnual ? 'annual' : (REPORT_L1_LABEL_TO_TYPE[currentL1?.label] || 'other')
-  const l2Options = currentL1?.children || []
-
-  const handleL1Change = (l1Id) => {
-    const isAnn = l1Id === ANNUAL_L1_ID
-    setForm(f => ({
-      ...f, l1Id,
-      l2Label: '',
-      // 之前无条件清空 title，如果专员先选文件(自动填了文件名做标题)、再点分类按钮，
-      // 标题会被静默清空且无提示，点上传时才报错"请填写报告标题"——已有标题（不论是
-      // 手填还是文件名自动填的）就保留，只在真的还没标题时才按类型给默认值。
-      title: isAnn ? (f.title || '年度体检报告') : f.title,
-    }))
-  }
-
-  const handleL2Change = (l2Label) => {
-    setForm(f => ({ ...f, l2Label, title: l2Label ? `${l2Label} 报告` : f.title }))
-  }
+  const selectedReportType = DOCUMENT_CATEGORY_REPORT_TYPE[form.documentCategory] || 'other'
 
   const [metaDetecting, setMetaDetecting] = useState(false)
   // 单文件自动识别时会先上传拿URL，缓存下来给 handleSubmit 复用，避免同一个文件传两次
@@ -11651,10 +11633,8 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
         await staffAPI.uploadReport({
           patientId,
           title: form.title,
-          type: supportsScreeningCategory ? selectedReportType : 'other',
+          type: selectedReportType,
           documentCategory: form.documentCategory,
-          screeningL1: supportsScreeningCategory && !isAnnual ? form.l1Id : '',
-          screeningL2: supportsScreeningCategory && !isAnnual ? form.l2Label : '',
           hospital: form.hospital,
           date: form.date,
           note: form.note,
@@ -11686,10 +11666,8 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
           await staffAPI.uploadReport({
             patientId,
             title: form.title + titleSuffix,
-            type: supportsScreeningCategory ? selectedReportType : 'other',
+            type: selectedReportType,
             documentCategory: form.documentCategory,
-            screeningL1: supportsScreeningCategory && !isAnnual ? form.l1Id : '',
-            screeningL2: supportsScreeningCategory && !isAnnual ? form.l2Label : '',
             hospital: form.hospital,
             date: form.date,
             note: form.note,
@@ -11724,42 +11702,13 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
 
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">资料分类 *</label>
-            <select className="form-input" value={form.documentCategory} onChange={e => setForm(f => ({ ...f, documentCategory: e.target.value, l1Id: '', l2Label: '' }))}>
+            <select className="form-input" value={form.documentCategory} onChange={e => setForm(f => ({ ...f, documentCategory: e.target.value }))}>
               {DOCUMENT_CATEGORIES.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
             </select>
+            <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 6 }}>
+              与原始资料页面使用同一套分类；专项筛查归类由AI解析后在审核环节确认。
+            </div>
           </div>
-
-          {/* L1 大类 */}
-          {supportsScreeningCategory && <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">报告大类（可不选）</label>
-            <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 6 }}>
-              若报告涉及多个类目，可不选或只选最主要的一个——具体归类以AI解析结果为准
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {[{ id: ANNUAL_L1_ID, label: '年度体检报告' }, ...screeningTree.map(n => ({ id: String(n._id), label: n.label }))].map(opt => (
-                <button key={opt.id} type="button"
-                  onClick={() => handleL1Change(opt.id)}
-                  style={{
-                    padding: '5px 14px', borderRadius: 20, fontSize: 13, cursor: 'pointer', border: '1.5px solid',
-                    background: form.l1Id === opt.id ? '#1E6B50' : '#fff',
-                    color: form.l1Id === opt.id ? '#fff' : '#4A6558',
-                    borderColor: form.l1Id === opt.id ? '#1E6B50' : '#C8D5CE',
-                  }}>
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>}
-
-          {/* 二级具体分类已按需求移除：上传时只归一级大类，与用户端一致，避免设了二级标签又不做归类。
-              精细归类统一交给 AI 解析后由健管在报告详情里调整。 */}
-
-          {/* 当前分类提示（仅一级大类） */}
-          {supportsScreeningCategory && form.l1Id && (
-            <div style={{ fontSize: 12, color: '#1E6B50', background: '#E8F5EF', borderRadius: 6, padding: '5px 10px' }}>
-              {isAnnual ? '年度体检报告（整份报告）' : (currentL1?.label || '')}
-            </div>
-          )}
 
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">资料名称 *</label>
