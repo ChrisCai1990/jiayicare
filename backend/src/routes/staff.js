@@ -6332,6 +6332,13 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       return !rule || (rule.enabled !== false && rule.aiCanGenerate !== false);
     };
     const allowedKeys = (PLAN_TYPE_MODULES[planType] || GENERATABLE).filter(k => GENERATABLE.includes(k) && allowedByTemplate(k));
+    const standardFollowUpPlans = await FollowUpPlan.find({ status: 'active' })
+      .select('name cycles defaultRole default_content').sort({ name: 1 }).lean();
+    const standardFollowUpCatalog = standardFollowUpPlans.map((item, index) => ({
+      index: index + 1, id: String(item._id), name: item.name,
+      cycles: item.cycles || [], defaultRole: item.defaultRole || '',
+      content: item.default_content || {},
+    }));
 
     const { chat } = require('../utils/ai');
     const { nextAnnualCheckupDate, hepatitisBAllNegative, conciseTitle } = require('../utils/annualPlanGeneration');
@@ -6411,7 +6418,11 @@ ${assessmentFocus ? JSON.stringify(assessmentFocus) : '暂无结构化主评估�
 主评估是本次方案的主题边界。方案中的每一条记录必须能对应主评估的核心结论、重点风险或下一步行动之一；不得仅因为原始资料里出现某项指标，就扩展出与主评估主题无关的就医、复查、疫苗、营养、监测或体检安排。待补信息只能生成“先补资料/先确认”的行动，不能直接生成诊断性或治疗性方案。以上专题结论仅可作为方案制定依据；未确认的讨论不得引用，若与最新体检原始证据冲突，以原始证据为准。
 
 【Admin年度管理规则】
-${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.planDesc || ''}；允许匹配的标准随访方案：${(selectedTemplate.content?.followUpPlans || []).map(p => p.name).join('、') || '无（不得编造可执行随访计划）'}` : '未选择规则'}
+${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.planDesc || ''}` : '未选择规则'}
+
+【Admin统一标准随访方案库】
+${standardFollowUpCatalog.length ? JSON.stringify(standardFollowUpCatalog).slice(0, 18000) : '暂无启用方案；不得生成个性化随访方案'}
+只能从以上方案库筛选，不得虚构方案名称或ID。没有适用方案时不选择。
 
 【Admin已确认的统一事项字段】
 ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依据','建议时间/时间范围','执行频率','注意事项','客户行动','责任角色','审核状态']).join('、')}
@@ -6421,7 +6432,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
 请严格按以下JSON格式输出，仅输出JSON：
 {
   "templateNodes": [
-    { "index": 1, "title": "简单明确的行动名称", "content": "对应Admin标准随访方案的个性化参数", "time": "计划时间或周期", "frequency": "执行频次", "notes": "注意事项" }
+    { "standardPlanId": "必须来自方案库的id", "standardPlanName": "必须来自方案库的name", "title": "客户个性化随访名称", "matchReason": "与研判的匹配依据", "content": "个性化随访内容", "time": "计划时间或周期", "frequency": "执行频次", "precautions": "注意事项", "customerAction": "客户行动", "ownerRole": "责任角色" }
   ],
   "medical_treatment": [
     { "reason": "就医原因", "department": "就诊科室", "visit_time": "建议时间或待确认", "basisSummary": "设置依据", "frequency": "单次", "precautions": "注意事项", "customerAction": "客户需要完成的事项", "ownerRole": "责任角色", "notes": "内部备注" }
@@ -6440,7 +6451,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
   "annual_checkup": { "focus": "重点关注项目", "date": "${suggestedCheckupDate || `${year + 1}-06-01`}", "escort": false }
 }
 
-注意：每个事项必须填写项目名称、basisSummary、时间或时间范围、frequency、precautions、customerAction、ownerRole；审核状态由系统统一设为待健康顾问审核。所有展示为项目名称的字段必须简单明确，只写“要做什么”，不得把原因、剂量、操作细节或注意事项塞进名称；items、name和templateNodes.title不超过20个汉字。templateNodes只能个性化主评估已有行动，不得为了填满模板创造新主题；medical_treatment仅填主评估明确的高优先级就医需求；specialist_collab仅在主评估明确会诊时填写。禁止生成没有依据的医院、专家姓名和已预约精确日期；可以根据证据给出建议日期或时间范围，未确认写“待确认”。无相关内容用空数组。`;
+注意：每个事项必须填写项目名称、basisSummary、时间或时间范围、frequency、precautions、customerAction、ownerRole；审核状态由系统统一设为待健康顾问审核。所有展示为项目名称的字段必须简单明确，只写“要做什么”，不得把原因、剂量、操作细节或注意事项塞进名称；items、name和templateNodes.title不超过20个汉字。templateNodes是客户个性化随访方案，只能选择方案库中真实存在且与主评估行动匹配的方案；不得为了填满模板创造新主题。medical_treatment仅填主评估明确的高优先级就医需求；specialist_collab仅在主评估明确会诊时填写。禁止生成没有依据的医院、专家姓名和已预约精确日期；可以根据证据给出建议日期或时间范围，未确认写“待确认”。无相关内容用空数组。`;
 
     const text = await chat([{ role: 'user', content: prompt }], {
       maxTokens: 6000,
@@ -6484,10 +6495,16 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     });
     if (allowedKeys.includes('lifestyle') && raw.lifestyle && !Array.isArray(raw.lifestyle) && raw.lifestyle.focus) result.lifestyle = { enabled: true, ...raw.lifestyle };
     if (allowedKeys.includes('annual_checkup') && raw.annual_checkup && !Array.isArray(raw.annual_checkup) && raw.annual_checkup.focus) result.annual_checkup = { enabled: true, ...raw.annual_checkup };
-    result.templateNodes = Array.isArray(raw.templateNodes) ? raw.templateNodes.map(node => ({
-      ...node,
-      title: conciseTitle(node.title || node.content),
-    })) : [];
+    const standardPlanById = new Map(standardFollowUpCatalog.map(item => [item.id, item]));
+    const standardPlanByName = new Map(standardFollowUpCatalog.map(item => [item.name, item]));
+    result.templateNodes = Array.isArray(raw.templateNodes) ? raw.templateNodes.map(node => {
+      const source = standardPlanById.get(String(node.standardPlanId || '')) || standardPlanByName.get(String(node.standardPlanName || '').trim());
+      if (!source) return null;
+      return {
+        ...node, standardPlanId: source.id, standardPlanName: source.name, sourceCycles: source.cycles,
+        title: conciseTitle(node.title || node.content || source.name),
+      };
+    }).filter(Boolean) : [];
 
     if (allowedKeys.includes('annual_checkup') && suggestedCheckupDate) {
       result.annual_checkup = { ...(result.annual_checkup || { enabled: true }), date: suggestedCheckupDate };

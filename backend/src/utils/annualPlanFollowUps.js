@@ -182,6 +182,38 @@ async function buildAnnualPlanFollowUps(plan) {
       `annual_checkup:${String(annualCheckup.date).slice(0, 10)}`);
   }
 
+  // ⑤ 个性化随访方案：AI只能从Admin启用的标准随访方案库筛选，健康顾问
+  // 补齐负责人并审核年度总方案。客户确认后按标准方案周期直接生成执行计划。
+  const personalizedRecords = moduleData.personalized_followups?.records;
+  if (Array.isArray(personalizedRecords)) {
+    const baseDate = new Date(plan.confirmedAt || Date.now());
+    const horizonEnd = new Date(Date.now() + HORIZON_DAYS * 86400000);
+    personalizedRecords.forEach((rec, recordIndex) => {
+      const cycles = Array.isArray(rec.sourceCycles) ? rec.sourceCycles : [];
+      const dates = [];
+      cycles.forEach(cycle => {
+        if (cycle.cycleType === 'date' && cycle.cycleDate) dates.push(new Date(cycle.cycleDate));
+        if (cycle.cycleType !== 'date' && Number(cycle.cycleDuration) > 0) {
+          const unitDays = cycle.cycleUnit === 'week' ? 7 : cycle.cycleUnit === 'month' ? 30 : 1;
+          dates.push(new Date(baseDate.getTime() + Number(cycle.cycleDuration) * unitDays * 86400000));
+        }
+      });
+      if (!dates.length && rec.time && !isNaN(new Date(rec.time).getTime())) dates.push(new Date(rec.time));
+      const content = [
+        rec.standardPlanName && `来源标准方案：${rec.standardPlanName}`,
+        rec.matchReason && `匹配依据：${rec.matchReason}`,
+        rec.content && `随访内容：${rec.content}`,
+        rec.frequency && `执行频次：${rec.frequency}`,
+        rec.precautions && `注意事项：${rec.precautions}`,
+        rec.customerAction && `客户行动：${rec.customerAction}`,
+      ].filter(Boolean).join('\n');
+      dates.filter(date => !isNaN(date.getTime()) && date <= horizonEnd).forEach((date, cycleIndex) => {
+        push(date, `个性化随访 · ${rec.items || rec.standardPlanName || '年度管理'}`, content, rec.followUpStaff,
+          `personalized:${rec.standardPlanId || recordIndex}:${cycleIndex}:${date.toISOString().slice(0, 10)}`);
+      });
+    });
+  }
+
   return created;
 }
 

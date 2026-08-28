@@ -149,6 +149,21 @@ const MODULE_DEFS = {
       { key: 'notes', label: '注意事项', type: 'textarea', internal: true },
     ],
   },
+  personalized_followups: {
+    name: '个性化随访方案', icon: '🗓️', multi: true, summaryKey: 'items', summaryLabel: '随访方案',
+    fields: [
+      { key: 'standardPlanName', label: '来源标准方案', type: 'text' },
+      { key: 'items', label: '个性化随访名称', type: 'text' },
+      { key: 'matchReason', label: '匹配依据', type: 'textarea' },
+      { key: 'content', label: '个性化随访内容', type: 'textarea' },
+      { key: 'time', label: '计划时间/周期', type: 'text' },
+      { key: 'frequency', label: '执行频次', type: 'text' },
+      { key: 'followUpStaff', label: '随访人员', type: 'staff-select' },
+      { key: 'precautions', label: '注意事项', type: 'textarea' },
+      { key: 'customerAction', label: '客户行动', type: 'textarea' },
+      { key: 'ownerRole', label: '责任角色', type: 'text' },
+    ],
+  },
 }
 
 // Admin v2年度模板确认的统一事项字段。原模块专属字段继续保留，公共字段用于依据追溯、
@@ -198,7 +213,9 @@ const ADMIN_RULE_MODULE_MAP = {
 }
 
 const templateEntries = template => {
-  const entries = (template?.content?.followUpPlans || []).map(templateNodeToModule)
+  // v3起年度规则统一调用全局随访方案库；模板内旧 followUpPlans 只兼容存量，
+  // 不再决定客户页面板块。AI筛选结果统一进入“个性化随访方案”。
+  const entries = []
   const usedBaseKeys = new Set(entries.map(entry => entry.key.startsWith('lifestyle_') ? 'lifestyle' : entry.key))
   ;(template?.content?.moduleRules || []).filter(rule => rule.enabled !== false).forEach(rule => {
     const key = ADMIN_RULE_MODULE_MAP[rule.key]
@@ -206,6 +223,7 @@ const templateEntries = template => {
     entries.push({ key, def: MODULE_DEFS[key], source: rule })
     usedBaseKeys.add(key)
   })
+  entries.push({ key: 'personalized_followups', def: MODULE_DEFS.personalized_followups, source: { key: 'global_followup_library' } })
   return entries
 }
 
@@ -395,20 +413,15 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             merged[key] = val
           }
         })
-        const configuredEntries = templateEntries(selectedTemplate)
-        ;(aiData.templateNodes || []).forEach((node, index) => {
-          const entry = configuredEntries[Number(node.index || index + 1) - 1]
-          if (!entry) return
-          const baseKey = entry.key.startsWith('lifestyle_') ? 'lifestyle' : entry.key
-          if (MODULE_DEFS[baseKey]?.multi) {
-            merged[entry.key] = { records: [{
-              items: node.title || node.content || '', content: node.content || '', time: node.time || '',
-              frequency: node.frequency || '', notes: node.notes || '',
-            }] }
-          } else {
-            merged[entry.key] = { enabled: true, focus: node.content || '', content: node.content || '', time: node.time || '', frequency: node.frequency || '', notes: node.notes || '' }
-          }
-        })
+        const personalized = (aiData.templateNodes || []).map(node => ({
+          standardPlanId: node.standardPlanId || '', standardPlanName: node.standardPlanName || '',
+          sourceCycles: node.sourceCycles || [], items: node.title || node.standardPlanName || '',
+          matchReason: node.matchReason || '', content: node.content || '', time: node.time || '',
+          frequency: node.frequency || '', precautions: node.precautions || '',
+          customerAction: node.customerAction || '', ownerRole: node.ownerRole || '',
+          reviewStatus: 'pending_family_doctor_review',
+        }))
+        if (personalized.length) merged.personalized_followups = { records: personalized }
         return merged
       })
       setDirty(true)

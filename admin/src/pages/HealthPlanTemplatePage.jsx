@@ -252,8 +252,6 @@ function PlanContentForm({ type, initialContent, contentRef }) {
   const [labOrders, setLabOrders] = useState([])
   const [examOrders, setExamOrders] = useState([])
   const [functionalTests, setFunctionalTests] = useState([])
-  const [followUpPlans, setFollowUpPlans] = useState([])
-  const [followUpLoading, setFollowUpLoading] = useState(false)
   const set = useCallback((k, v) => setContent(prev => {
     const next = { ...prev, [k]: v }
     contentRef.current = next
@@ -272,13 +270,6 @@ function PlanContentForm({ type, initialContent, contentRef }) {
         setExamOrders(examRes.data || [])
         setFunctionalTests(funcRes.data || [])
       }).catch(() => {})
-    }
-    if (type === 'health_management') {
-      setFollowUpLoading(true)
-      adminAPI.followUpPlans()
-        .then(res => setFollowUpPlans(res.data || []))
-        .catch(() => {})
-        .finally(() => setFollowUpLoading(false))
     }
   }, [type])
 
@@ -348,12 +339,20 @@ function PlanContentForm({ type, initialContent, contentRef }) {
           })}
         </div>
       </div>
-      <FollowUpPlanSelector
-        value={content.followUpPlans}
-        onChange={v => set('followUpPlans', v)}
-        allPlans={followUpPlans}
-        loading={followUpLoading}
-      />
+      <div style={{ gridColumn: '1/-1', border: '1px solid #D9D2C7', borderRadius: 12, padding: 16, background: '#FAF8F5' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <div>
+            <div style={{ fontWeight: 700 }}>标准随访方案来源</div>
+            <div style={{ color: '#65776F', fontSize: 12, marginTop: 4 }}>统一调用随访方案库中全部已启用方案；不再由每个年度规则重复勾选。AI按客户研判筛选后，形成客户个性化随访方案。</div>
+          </div>
+          <a className="btn btn-ghost" href="/projects/followup-plans" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>管理随访方案库 →</a>
+        </div>
+        {Array.isArray(content.followUpPlans) && content.followUpPlans.length > 0 && (
+          <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 7, background: '#FFF5E8', color: '#91551D', fontSize: 12 }}>
+            该存量模板曾限定 {content.followUpPlans.length} 个随访方案；新版生成时将忽略此限定并从全部启用方案中匹配，旧数据仅保留兼容。
+          </div>
+        )}
+      </div>
     </div>
   )
 
