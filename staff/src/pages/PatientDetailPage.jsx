@@ -540,7 +540,14 @@ const inferDocumentCategory = report => {
   return 'other_customer_material'
 }
 
-function ServiceJourneyPanel({ reports, plans, followUps, serviceRecords, onNavigate }) {
+function ServiceJourneyPanel({ reports, plans, followUps, serviceRecords, onNavigate, stageAssessmentEnabled = false }) {
+  const [compact, setCompact] = useState(false)
+  useEffect(() => {
+    const updateCompact = () => setCompact(window.scrollY > 260)
+    updateCompact()
+    window.addEventListener('scroll', updateCompact, { passive: true })
+    return () => window.removeEventListener('scroll', updateCompact)
+  }, [])
   const confirmedPlans = plans.filter(item => item.confirmedAt || item.status === 'active')
   const finishedTasks = followUps.filter(item => ['completed', 'done'].includes(item.status)).length
   const activeTasks = followUps.filter(item => ['planned', 'pending', 'in_progress', 'missed'].includes(item.status)).length
@@ -550,16 +557,16 @@ function ServiceJourneyPanel({ reports, plans, followUps, serviceRecords, onNavi
     { label: '资料归集', detail: reports.length ? `${reports.length}份原始资料` : '尚无原始资料', tab: 'reports', reached: reports.length > 0 },
     { label: '方案建立', detail: confirmedPlans.length ? `${confirmedPlans.length}个已确认方案` : plans.length ? `${plans.length}个方案待确认` : '尚无服务方案', tab: 'plans', reached: plans.length > 0 },
     { label: '服务执行', detail: activeTasks ? `${activeTasks}项待执行` : followUps.length ? `${finishedTasks}/${followUps.length}项已完成` : '尚未生成执行任务', tab: 'followups', reached: followUps.length > 0 },
-    { label: '阶段评估', detail: assessments.length ? `${assessments.length}次已归档评估` : '等待阶段评估', tab: 'aiReview', reached: assessments.length > 0 },
+    { label: '阶段评估', detail: assessments.length ? `${assessments.length}次已归档评估` : '等待阶段评估', tab: 'aiReview', reached: assessments.length > 0, disabled: !stageAssessmentEnabled },
     { label: '持续服务档案', detail: deliveryRecords.length ? `${deliveryRecords.length}条服务记录` : '等待执行结果归档', tab: 'serviceRecords', reached: deliveryRecords.length > 0 },
   ]
   const currentIndex = Math.max(0, steps.reduce((latest, step, index) => step.reached ? index : latest, -1))
-  return <div className="card" style={{ marginBottom: 16, border: '1px solid #CFE2D8' }}>
-    <div className="card-header"><div><div className="card-title">客户全周期服务进程</div><div style={{ marginTop: 4, color: '#65776F', fontSize: 12 }}>方案、任务和归档记录实时互通；点击节点可进入对应工作页面</div></div></div>
-    <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(5,minmax(135px,1fr))', gap: 8, padding: 14 }}>
-      {steps.map((step, index) => <button key={step.label} type="button" onClick={() => onNavigate(step.tab)} style={{ border: `1px solid ${index === currentIndex ? '#1E6B50' : step.reached ? '#9FD0B8' : '#DFE7E3'}`, borderRadius: 9, background: index === currentIndex ? '#EAF6F0' : step.reached ? '#F4FAF7' : '#FAFBFA', padding: '11px 9px', cursor: 'pointer', textAlign: 'left' }}>
+  return <div className="card" style={{ marginBottom: 16, border: '1px solid #CFE2D8', position: 'sticky', top: 8, zIndex: 30, boxShadow: compact ? '0 5px 18px rgba(30,107,80,.14)' : undefined }}>
+    <div className="card-header" style={{ padding: compact ? '9px 14px' : undefined }}><div style={{ display: 'flex', alignItems: compact ? 'center' : 'flex-start', gap: 12, flexWrap: 'wrap' }}><div className="card-title">客户全周期服务进程</div>{compact && <><span style={{ color: '#1E6B50', fontWeight: 700, fontSize: 12 }}>当前：{currentIndex + 1}. {steps[currentIndex].label}</span><span style={{ color: '#65776F', fontSize: 12 }}>{steps[currentIndex].detail}</span></>} {!compact && <div style={{ width: '100%', marginTop: 4, color: '#65776F', fontSize: 12 }}>方案、任务和归档记录实时互通；点击节点可进入对应工作页面</div>}</div></div>
+    <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(5,minmax(120px,1fr))', gap: compact ? 5 : 8, padding: compact ? '7px 14px 10px' : 14 }}>
+      {steps.map((step, index) => <button key={step.label} type="button" disabled={step.disabled} title={step.disabled ? '该客户尚未启用阶段性评估' : `进入${step.label}`} onClick={() => !step.disabled && onNavigate(step.tab)} style={{ border: `1px solid ${index === currentIndex ? '#1E6B50' : step.reached ? '#9FD0B8' : '#DFE7E3'}`, borderRadius: 9, background: index === currentIndex ? '#EAF6F0' : step.reached ? '#F4FAF7' : '#FAFBFA', padding: compact ? '6px 8px' : '11px 9px', cursor: step.disabled ? 'default' : 'pointer', textAlign: 'left', opacity: step.disabled ? .72 : 1 }}>
         <div style={{ fontSize: 12, fontWeight: 800, color: step.reached ? '#166447' : '#7C8D85' }}>{step.reached ? '✓' : index === currentIndex ? '●' : '○'} {index + 1}. {step.label}</div>
-        <div style={{ fontSize: 11, color: '#65776F', marginTop: 5, lineHeight: 1.45 }}>{step.detail}</div>
+        {!compact && <div style={{ fontSize: 11, color: '#65776F', marginTop: 5, lineHeight: 1.45 }}>{step.detail}</div>}
       </button>)}
     </div>
   </div>
@@ -2234,11 +2241,10 @@ export default function PatientDetailPage() {
     }
   }, [tab, autoGenMedicalAssistOrderId])
   useEffect(() => {
-    if (['plans', 'aiReview', 'followups', 'serviceRecords'].includes(tab)) {
-      loadPlans(); loadFollowUps(); loadServiceRecords()
-      if (reports.length === 0) loadReports()
-    }
-    else if (tab === 'reports') {
+    loadPlans(); loadFollowUps(); loadServiceRecords(); loadReports()
+  }, [id])
+  useEffect(() => {
+    if (tab === 'reports') {
       loadReports()
       // 体检报告排序也需要 screeningTree，按需加载
       if (screeningTree.length === 0) {
@@ -3400,7 +3406,7 @@ export default function PatientDetailPage() {
       {/* 健管专员人工审核确认写入档案的记录（有冲突需人工判断的字段） */}
       <ArchiveConfirmLogPanel log={user.archiveConfirmLog} />
 
-      {['plans', 'aiReview', 'followups', 'serviceRecords'].includes(tab) && <ServiceJourneyPanel reports={reports} plans={plans} followUps={followUps} serviceRecords={serviceRecords} onNavigate={setTab} />}
+      <ServiceJourneyPanel reports={reports} plans={plans} followUps={followUps} serviceRecords={serviceRecords} onNavigate={setTab} stageAssessmentEnabled={Boolean(user.aiPilotFeatures?.stageAssessment)} />
 
       {/* Tabs */}
       {(() => {
