@@ -151,6 +151,21 @@ const MODULE_DEFS = {
   },
 }
 
+// Admin v2年度模板确认的统一事项字段。原模块专属字段继续保留，公共字段用于依据追溯、
+// 健康顾问审核和客户确认后的任务拆分。
+const COMMON_ACTION_FIELDS = [
+  { key: 'basisSummary', label: '设置依据', type: 'textarea', placeholder: '来源报告/研判、日期及已确认事实' },
+  { key: 'frequency', label: '执行频率', type: 'text', placeholder: '如：单次、每日1次、每月1次' },
+  { key: 'precautions', label: '注意事项', type: 'textarea', placeholder: '检查准备、执行要求或风险提示' },
+  { key: 'customerAction', label: '客户行动', type: 'textarea', placeholder: '客户需要查看、记录或完成的事项' },
+  { key: 'ownerRole', label: '责任角色', type: 'text', placeholder: '如：健管专员、健康规划师' },
+]
+Object.values(MODULE_DEFS).forEach(def => {
+  if (!def.multi) return
+  const existing = new Set(def.fields.map(field => field.key))
+  def.fields = [...def.fields, ...COMMON_ACTION_FIELDS.filter(field => !existing.has(field.key))]
+})
+
 // Admin“具体方案”名称 → 医护端可编辑板块。顺序完全采用模板 followUpPlans，不再按前端套餐类型猜测。
 const templateNodeToModule = (node, index) => {
   const name = String(node?.name || '').replace(/[【】]/g, '').trim()
@@ -175,6 +190,23 @@ const templateNodeToModule = (node, index) => {
     { key: 'notes', label: '注意事项', type: 'textarea', internal: true },
   ] }
   return { key, def: { ...(MODULE_DEFS[baseKey] || fallback), name: name || MODULE_DEFS[baseKey]?.name || fallback.name }, source: node }
+}
+
+const ADMIN_RULE_MODULE_MAP = {
+  monitoring: 'monitoring', abnormal_followup: 'abnormal_followup', lifestyle: 'lifestyle',
+  medication: 'medication', medical_service: 'medical_treatment', stage_assessment: 'quarterly_eval', annual_checkup: 'annual_checkup',
+}
+
+const templateEntries = template => {
+  const entries = (template?.content?.followUpPlans || []).map(templateNodeToModule)
+  const usedBaseKeys = new Set(entries.map(entry => entry.key.startsWith('lifestyle_') ? 'lifestyle' : entry.key))
+  ;(template?.content?.moduleRules || []).filter(rule => rule.enabled !== false).forEach(rule => {
+    const key = ADMIN_RULE_MODULE_MAP[rule.key]
+    if (!key || usedBaseKeys.has(key) || !MODULE_DEFS[key]) return
+    entries.push({ key, def: MODULE_DEFS[key], source: rule })
+    usedBaseKeys.add(key)
+  })
+  return entries
 }
 
 // ── 各方案类型包含的板块（按顺序）──────────────────────────────────
@@ -351,7 +383,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       const res = await staffAPI.generateAIAnnualPlan(id, type, '', selectedTemplateId)
       const aiData = res.data || {}
       // 只填充当前所选方案类型包含的板块，其余类型的板块忽略（一次只生成一个方案）
-      const allowedKeys = PLAN_TYPE_MODULES[type] || []
+      const configuredRules = selectedTemplate?.content?.moduleRules || []
+      const enabledRuleKeys = new Set(configuredRules.filter(rule => rule.enabled !== false && rule.aiCanGenerate !== false).map(rule => ADMIN_RULE_MODULE_MAP[rule.key]).filter(Boolean))
+      const allowedKeys = configuredRules.length ? (PLAN_TYPE_MODULES[type] || []).filter(key => enabledRuleKeys.has(key) || ![...Object.values(ADMIN_RULE_MODULE_MAP)].includes(key)) : (PLAN_TYPE_MODULES[type] || [])
       setModuleData(prev => {
         const merged = { ...prev }
         Object.entries(aiData).forEach(([key, val]) => {
@@ -361,9 +395,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             merged[key] = val
           }
         })
-        const templateEntries = (selectedTemplate?.content?.followUpPlans || []).map(templateNodeToModule)
+        const configuredEntries = templateEntries(selectedTemplate)
         ;(aiData.templateNodes || []).forEach((node, index) => {
-          const entry = templateEntries[Number(node.index || index + 1) - 1]
+          const entry = configuredEntries[Number(node.index || index + 1) - 1]
           if (!entry) return
           const baseKey = entry.key.startsWith('lifestyle_') ? 'lifestyle' : entry.key
           if (MODULE_DEFS[baseKey]?.multi) {
@@ -428,7 +462,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const planTitle = patientMode ? '年度健康管理方案' : (plan?.title || '年度管理方案')
   const selectedAdminTemplate = adminTemplates.find(t => t._id === selectedTemplateId)
   const templateModuleEntries = selectedAdminTemplate
-    ? (selectedAdminTemplate.content?.followUpPlans || []).map(templateNodeToModule)
+    ? templateEntries(selectedAdminTemplate)
     : (PLAN_TYPE_MODULES[planType] || []).map(key => ({ key, def: MODULE_DEFS[key] }))
   const activePlanType = selectedAdminTemplate
     ? { ...(PLAN_TYPES.find(pt => pt.key === planType) || PLAN_TYPES[3]), name: selectedAdminTemplate.content?.planName || selectedAdminTemplate.name }

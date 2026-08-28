@@ -6281,7 +6281,14 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       if (!selectedTemplate) return res.status(404).json({ success: false, message: 'Admin健康管理方案模板不存在或已停用' });
     }
     const notes = req.body.notes || '';
-    const allowedKeys = (PLAN_TYPE_MODULES[planType] || GENERATABLE).filter(k => GENERATABLE.includes(k));
+    const configuredRules = Array.isArray(selectedTemplate?.content?.moduleRules) ? selectedTemplate.content.moduleRules : [];
+    const ruleKeyMap = { medical_treatment: 'medical_service', specialist_collab: 'medical_service' };
+    const allowedByTemplate = key => {
+      if (!configuredRules.length) return true;
+      const rule = configuredRules.find(item => item.key === (ruleKeyMap[key] || key));
+      return !rule || (rule.enabled !== false && rule.aiCanGenerate !== false);
+    };
+    const allowedKeys = (PLAN_TYPE_MODULES[planType] || GENERATABLE).filter(k => GENERATABLE.includes(k) && allowedByTemplate(k));
 
     const { chat } = require('../utils/ai');
     const { nextAnnualCheckupDate, hepatitisBAllNegative, conciseTitle } = require('../utils/annualPlanGeneration');
@@ -6363,29 +6370,34 @@ ${assessmentFocus ? JSON.stringify(assessmentFocus) : '暂无结构化主评估�
 【Admin健康管理方案模板】
 ${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.planDesc || ''}；随访节点：${(selectedTemplate.content?.followUpPlans || []).map(p => p.name).join('、') || '无'}` : '未选择模板'}
 
+【Admin已确认的统一事项字段】
+${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依据','建议时间/时间范围','执行频率','注意事项','客户行动','责任角色','审核状态']).join('、')}
+
+【本模板允许AI生成的模块】${allowedKeys.join('、') || '无'}。未列出的模块禁止生成。
+
 请严格按以下JSON格式输出，仅输出JSON：
 {
   "templateNodes": [
     { "index": 1, "title": "简单明确的行动名称", "content": "对应Admin模板第1个具体方案的个性化安排", "time": "计划时间或周期", "frequency": "执行频次", "notes": "注意事项" }
   ],
   "medical_treatment": [
-    { "reason": "就医原因", "department": "就诊科室", "visit_time": "${year}-07-15", "notes": "注意事项（如带齐历次体检报告）" }
+    { "reason": "就医原因", "department": "就诊科室", "visit_time": "建议时间或待确认", "basisSummary": "设置依据", "frequency": "单次", "precautions": "注意事项", "customerAction": "客户需要完成的事项", "ownerRole": "责任角色", "notes": "内部备注" }
   ],
   "specialist_collab": [],
   "abnormal_followup": [
-    { "items": "复查项目名称", "reason": "复查原因", "time": "${year}-09-15", "notes": "注意事项（如需空腹）" }
+    { "items": "复查项目名称", "reason": "复查原因", "time": "建议时间或时间范围", "basisSummary": "来源报告、日期和异常事实", "frequency": "单次", "precautions": "如需空腹、携带既往资料", "customerAction": "按确认时间完成复查", "ownerRole": "健管专员", "notes": "内部备注" }
   ],
   "vaccine": [
     { "name": "疫苗名称", "time": "${year}-10-15", "reason": "接种原因" }
   ],
   "monitoring": [
-    { "items": "监测项目", "frequency": "每日1次", "time": "每天早晨", "notes": "注意事项" }
+    { "items": "监测项目", "frequency": "每日1次", "time": "每天早晨", "basisSummary": "设置依据", "precautions": "测量要求", "customerAction": "按频次记录数据", "ownerRole": "客户/健管专员", "notes": "内部备注" }
   ],
   "lifestyle": { "focus": "干预重点（饮食、运动、睡眠等）", "time": "${year}年全年" },
   "annual_checkup": { "focus": "重点关注项目", "date": "${suggestedCheckupDate || `${year + 1}-06-01`}", "escort": false }
 }
 
-注意：所有展示为项目名称的字段必须简单明确，只写“要做什么”，不得把原因、剂量、操作细节或注意事项塞进名称；items、name和templateNodes.title不超过20个汉字，详细内容分别写入reason/content/notes。templateNodes只能个性化主评估已有行动，不得为了填满模板创造新主题；medical_treatment仅填主评估明确的高优先级就医需求；specialist_collab仅在主评估明确会诊时填写；monitoring、vaccine、lifestyle、annual_checkup也必须在主评估或本次服务目标中有明确依据，否则输出空数组或不启用。禁止生成没有依据的医院、专家姓名和精确日期，未确认的时间写“待确认”。无相关内容用空数组。`;
+注意：每个事项必须填写项目名称、basisSummary、时间或时间范围、frequency、precautions、customerAction、ownerRole；审核状态由系统统一设为待健康顾问审核。所有展示为项目名称的字段必须简单明确，只写“要做什么”，不得把原因、剂量、操作细节或注意事项塞进名称；items、name和templateNodes.title不超过20个汉字。templateNodes只能个性化主评估已有行动，不得为了填满模板创造新主题；medical_treatment仅填主评估明确的高优先级就医需求；specialist_collab仅在主评估明确会诊时填写。禁止生成没有依据的医院、专家姓名和已预约精确日期；可以根据证据给出建议日期或时间范围，未确认写“待确认”。无相关内容用空数组。`;
 
     const text = await chat([{ role: 'user', content: prompt }], {
       maxTokens: 6000,
@@ -6421,6 +6433,8 @@ ${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.pla
       const records = Array.isArray(raw[key]) ? raw[key] : [];
       result[key] = { records: records.map(record => ({
         ...record,
+        reviewStatus: 'pending_family_doctor_review',
+        sourceRule: selectedTemplate?.content?.sourceRule || '仅使用已确认的年度管理研判结论',
         ...(record.items ? { items: conciseTitle(record.items) } : {}),
         ...(record.name ? { name: conciseTitle(record.name) } : {}),
       })) };
