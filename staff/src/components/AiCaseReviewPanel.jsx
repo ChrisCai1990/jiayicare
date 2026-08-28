@@ -32,10 +32,10 @@ function CleanText({ children }) {
 }
 
 const STAGE_SECTION_META = [
-  { icon: '🎯', label: '目标数据', color: '#2563EB', background: '#EFF6FF' },
-  { icon: '🥗', label: '生活方式', color: '#16845B', background: '#EEF8F3' },
-  { icon: '⚠️', label: '风险缺口', color: '#B45309', background: '#FFF8ED' },
-  { icon: '✅', label: '行动计划', color: '#7C3AED', background: '#F5F3FF' },
+  { icon: '📈', label: '阶段变化', color: '#2563EB', background: '#EFF6FF' },
+  { icon: '🔗', label: '生活关联', color: '#16845B', background: '#EEF8F3' },
+  { icon: '⚠️', label: '潜在风险', color: '#B45309', background: '#FFF8ED' },
+  { icon: '🧭', label: '下一步规划', color: '#7C3AED', background: '#F5F3FF' },
 ]
 
 function splitStageAssessment(content) {

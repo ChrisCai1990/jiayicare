@@ -10,7 +10,7 @@ const PlanTemplate = require('../models/PlanTemplate');
 const AnnualPlan = require('../models/AnnualPlan');
 const { toStructuredAssessment, assessmentToPlainText, templateAssessmentFromContent, detectClinicalReview, nextAssessmentStatus } = require('../utils/phaseAssessment');
 const { createAssessment } = require('../utils/phaseAssessmentScheduler');
-const { buildContext } = require('../utils/aiCaseReviewContext');
+const { buildContext, buildStageAssessmentContext } = require('../utils/aiCaseReviewContext');
 const providerAdapter = require('../utils/aiCaseReviewProvider');
 
 const DEFAULT_SCOPES = ['basic', 'healthProfile', 'reports', 'healthRecords', 'medications', 'followups', 'plans', 'aiAnalysis'];
@@ -106,10 +106,9 @@ router.patch('/patients/:patientId/phase-assessments/:assessmentId', staffAuth, 
     if (!isAssignedReviewer(user, req.staff, actorRole)) return res.status(403).json({ success: false, message: actorRole === 'nutritionist' ? '仅该客户当前绑定的营养师可初审' : '仅该客户当前绑定的健康顾问可复审' });
     if (req.body.action === 'regenerate') {
       if (actorRole !== 'nutritionist' || !['nutrition_review', 'rejected'].includes(current)) return res.status(403).json({ success: false, message: '仅营养师可对退回的阶段评估重新生成' });
-      const scopes = item.templateSnapshot?.contextScopes || ['healthProfile', 'reports', 'healthRecords', 'followups', 'plans'];
-      const snapshot = await buildContext(user, scopes);
+      const snapshot = await buildStageAssessmentContext(user, item.templateSnapshot?.windowDays === 14 ? 14 : 30);
       const note = String(req.body.reviewNote || item.nutritionReview?.note || '').trim();
-      const prompt = `请重新生成${item.periodLabel}阶段性健康评估。必须吸收营养师退回意见，不得诊断、开药或补造事实。所有评估先由营养师审核，涉及临床问题再由健康顾问复审。\n\n【退回意见】${note || '请重新核对资料与结论'}\n【原草稿】${item.content}\n【最新资料快照】${JSON.stringify(snapshot).slice(0, 45000)}\n\n沿用原模板四个栏目：${(item.templateSnapshot?.outputSections || []).join('；') || '本期目标与数据；执行与依从性；风险与缺口；下一阶段行动'}。`;
+      const prompt = `请重新生成${item.periodLabel}阶段性健康评估。核心主线是“阶段数据变化→生活方式关联→潜在风险→下一步规划”。必须吸收营养师退回意见，不得诊断、开药、补造事实或把相关性写成因果。所有评估先由营养师审核，涉及临床问题再由健康顾问复审。\n\n【退回意见】${note || '请重新核对资料与结论'}\n【原草稿】${item.content}\n【最新阶段资料】${JSON.stringify(snapshot).slice(0, 45000)}\n\n严格使用四个栏目：${(item.templateSnapshot?.outputSections || []).join('；') || '阶段数据变化；生活方式关联分析；潜在风险与数据缺口；下一阶段行动规划'}。每栏最多6条，每条使用“简短判断标签：依据说明”。`;
       const result = await providerAdapter.reply({ preferred: 'qwen', sessionId: String(item._id), prompt, context: snapshot, attachments: [], history: [] });
       if (!result.content) throw new Error('AI未返回阶段评估草稿');
       item.content = result.content; item.evidenceSources = snapshot.sources || []; item.status = 'nutrition_review';

@@ -52,4 +52,46 @@ async function buildContext(user, scopes = []) {
   return snapshot;
 }
 
-module.exports = { buildContext };
+async function buildStageAssessmentContext(user, days = 30) {
+  const end = new Date();
+  const start = new Date(end.getTime() - days * 86400000);
+  const [records, followups, plan, reports] = await Promise.all([
+    HealthRecord.find({ user: user._id, recordedAt: { $gte: start, $lte: end } }).sort({ recordedAt: 1 })
+      .select('category type label value unit extra status note recordedAt recordedBy.source').limit(240).lean(),
+    FollowUp.find({ patientId: user._id, date: { $gte: start, $lte: end } }).sort({ date: 1 })
+      .select('date type status theme content plannedContent executedContent vitals checkInItems completedAt').limit(60).lean(),
+    AnnualPlan.findOne({ patientId: user._id, confirmedAt: { $ne: null } }).sort({ confirmedAt: -1 })
+      .select('year planType templateName moduleData notes confirmedAt').lean(),
+    MedicalReport.find({ user: user._id, audit_status: 'audited' }).sort({ checkDate: -1, createdAt: -1 }).limit(5)
+      .select('title reportYear checkDate institution examConclusion keyFindings reportItems.name reportItems.value reportItems.unit reportItems.status reportItems.conclusion').lean(),
+  ]);
+  const reportBaselines = reports.map(report => ({
+    title: report.title, date: report.checkDate || report.reportYear, institution: report.institution,
+    conclusion: report.examConclusion,
+    findings: (report.reportItems || []).filter(item => ['abnormal', 'attention'].includes(item.status) || item.conclusion)
+      .slice(0, 20).map(item => ({ name: item.name, value: item.value, unit: item.unit, status: item.status, conclusion: item.conclusion })),
+  }));
+  const daysCovered = new Set(records.map(item => new Date(item.recordedAt).toISOString().slice(0, 10)));
+  const types = [...new Set(records.map(item => item.type))];
+  return clean({
+    capturedAt: end,
+    period: { days, start, end },
+    monitoringCoverage: { recordCount: records.length, distinctDays: daysCovered.size, types },
+    recentHealthRecords: records,
+    periodFollowups: followups,
+    currentLifestyle: { lifestyle: user.lifestyle, lifestyle_data: user.lifestyle_data, preferences: user.preferences },
+    confirmedAnnualPlan: plan,
+    examBaseline: reportBaselines,
+    historicalTrendSummary: { aiHealthSummary: user.aiHealthSummary, aiRiskAssessment: user.aiRiskAssessment },
+    basic: { age: user.age, gender: user.gender, height: user.height, weight: user.weight, chronicDiseases: user.chronicDiseases },
+    sources: [
+      `近${days}天健康监测：${records.length}条，覆盖${daysCovered.size}天`,
+      `本周期随访与执行记录：${followups.length}条`,
+      '当前生活方式档案',
+      plan ? '已确认年度管理方案' : '年度管理方案缺失',
+      `已审核体检基线：${reportBaselines.length}份（仅作背景）`,
+    ],
+  });
+}
+
+module.exports = { buildContext, buildStageAssessmentContext };
