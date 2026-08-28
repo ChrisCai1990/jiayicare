@@ -506,6 +506,34 @@ const REPORT_L1_TYPES = [
   { key: 'other',          label: '其他常规筛查' },
 ]
 const REPORT_L1_LABEL_TO_TYPE = Object.fromEntries(REPORT_L1_TYPES.map(item => [item.label, item.key]))
+
+const DOCUMENT_CATEGORIES = [
+  { key: 'physical_exam', label: '体检报告' },
+  { key: 'lab_report', label: '检验报告' },
+  { key: 'exam_report', label: '检查报告' },
+  { key: 'functional_medicine', label: '功能医学' },
+  { key: 'genetic_test', label: '基因检测' },
+  { key: 'outpatient_record', label: '门诊病历' },
+  { key: 'inpatient_record', label: '住院病历' },
+  { key: 'prescription_order', label: '处方与医嘱' },
+  { key: 'questionnaire', label: '问卷资料' },
+  { key: 'other_customer_material', label: '其他资料' },
+]
+const DOCUMENT_CATEGORY_LABEL = Object.fromEntries(DOCUMENT_CATEGORIES.map(item => [item.key, item.label]))
+const inferDocumentCategory = report => {
+  if (report.documentCategory) return report.documentCategory
+  const title = report.title || ''
+  if (/门诊|门诊病历|门诊记录/.test(title)) return 'outpatient_record'
+  if (/住院|出院|入院|手术记录|住院小结/.test(title)) return 'inpatient_record'
+  if (/处方|医嘱|用药单/.test(title)) return 'prescription_order'
+  if (/问卷|量表|调查表/.test(title)) return 'questionnaire'
+  if (report.type === 'annual' || /体检/.test(title)) return 'physical_exam'
+  if (['blood', 'bloodTest', 'pathology'].includes(report.type)) return 'lab_report'
+  if (report.type === 'functional' || /功能医学|功能检测/.test(title)) return 'functional_medicine'
+  if (report.type === 'genetic' || /基因/.test(title)) return 'genetic_test'
+  if (report.type && report.type !== 'other') return 'exam_report'
+  return 'other_customer_material'
+}
 const PLAN_TYPE_LABEL = {
   annual_checkup:'年度体检方案', annual_mgmt:'年度管理方案',
   nutrition:'营养干预方案', medical_assist:'就医协助方案',
@@ -1442,6 +1470,7 @@ export default function PatientDetailPage() {
   const [expandedReferralCats, setExpandedReferralCats] = useState({})
   const [reportSearchKw, setReportSearchKw] = useState('')
   const [reportYearFilter, setReportYearFilter] = useState('')
+  const [reportDocumentCategory, setReportDocumentCategory] = useState('all')
   const [reportTaskFilter, setReportTaskFilter] = useState('all')
   const [reportMissingOnly, setReportMissingOnly] = useState(false)
   const [reportPage, setReportPage] = useState(1)
@@ -3344,9 +3373,9 @@ export default function PatientDetailPage() {
         const groups = [
           { key: 'overview', label: '客户概览', tabs: [{ key: 'info', label: '客户概览' }] },
           { key: 'healthData', label: '健康资料', tabs: [
-            { key: 'records', label: '已确认档案' },
             { key: 'reports', label: '原始资料' },
-            { key: 'ai', label: '解析与核查' },
+            { key: 'records', label: '健康基础与生活方式' },
+            { key: 'ai', label: '专项筛查与核查' },
             { key: 'medications', label: '用药与营养素' },
           ] },
           { key: 'healthPortrait', label: '健康画像', tabs: [
@@ -8676,10 +8705,12 @@ export default function PatientDetailPage() {
         ]
         // 支持标题/机构关键词及年份筛选，结果统一进入一张总表。
         const kw = reportSearchKw.trim().toLowerCase()
-        const reportsInScope = reports.filter(r => {
+        const reportsInBaseScope = reports.filter(r => {
           const matchesKeyword = !kw || [r.title, r.hospital, r.institution].some(v => (v || '').toLowerCase().includes(kw))
           return matchesKeyword && (!reportYearFilter || getReportYear(r) === reportYearFilter)
         })
+        const categoryCount = key => reportsInBaseScope.filter(r => inferDocumentCategory(r) === key).length
+        const reportsInScope = reportsInBaseScope.filter(r => reportDocumentCategory === 'all' || inferDocumentCategory(r) === reportDocumentCategory)
         const isReportInfoMissing = report => !(report.hospital || report.institution) || !(report.checkDate || report.date)
         const missingReportCount = reportsInScope.filter(isReportInfoMissing).length
         const taskFilterCount = key => key === 'all' ? reportsInScope.length : reportsInScope.filter(r => getReportTaskKey(r) === key).length
@@ -8761,16 +8792,20 @@ export default function PatientDetailPage() {
         return (
           <div>
             <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-              <div className="card-title">体检报告 <span style={{ fontSize: 12, fontWeight: 400, color: '#8AA89C', marginLeft: 6 }}>{tableRows.length} 份</span></div>
+              <div className="card-title">原始资料 <span style={{ fontSize: 12, fontWeight: 400, color: '#8AA89C', marginLeft: 6 }}>{tableRows.length} 份</span></div>
               <div className="report-filter-bar">
                 <select className="form-input report-year-select" style={{ width: 132 }} value={reportYearFilter} onChange={e => { setReportYearFilter(e.target.value); setReportPage(1); setOpenReportActionId(null) }} aria-label="按年份筛选报告">
                   <option value="">全部年份</option>
                   {reportYears.map(year => <option key={year} value={year}>{year === '未知' ? '年份未知' : `${year} 年`}</option>)}
                 </select>
-                <input className="form-input report-search-input" style={{ width: 240 }} placeholder="搜索报告标题/医院"
+                <input className="form-input report-search-input" style={{ width: 240 }} placeholder="搜索资料名称/来源机构"
                   value={reportSearchKw} onChange={e => { setReportSearchKw(e.target.value); setReportPage(1); setOpenReportActionId(null) }} />
-                <button className="btn btn-primary btn-sm report-upload-btn" onClick={() => setShowUploadReport(true)}>＋ 上传报告</button>
+                <button className="btn btn-primary btn-sm report-upload-btn" onClick={() => setShowUploadReport(true)}>＋ 上传原始资料</button>
               </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(128px, 1fr))', gap: 8, marginBottom: 12 }}>
+              <button type="button" onClick={() => { setReportDocumentCategory('all'); setReportPage(1) }} style={{ padding: '10px 12px', borderRadius: 10, border: `1px solid ${reportDocumentCategory === 'all' ? '#1E6B50' : '#DCE5E0'}`, background: reportDocumentCategory === 'all' ? '#EAF5F0' : '#fff', color: '#24463A', cursor: 'pointer', textAlign: 'left' }}><strong>全部资料</strong><span style={{ float: 'right', color: '#789287' }}>{reportsInBaseScope.length}</span></button>
+              {DOCUMENT_CATEGORIES.map(item => <button key={item.key} type="button" onClick={() => { setReportDocumentCategory(item.key); setReportPage(1) }} style={{ padding: '10px 12px', borderRadius: 10, border: `1px solid ${reportDocumentCategory === item.key ? '#1E6B50' : '#DCE5E0'}`, background: reportDocumentCategory === item.key ? '#EAF5F0' : '#fff', color: '#24463A', cursor: 'pointer', textAlign: 'left' }}><strong>{item.label}</strong><span style={{ float: 'right', color: '#789287' }}>{categoryCount(item.key)}</span></button>)}
             </div>
             {reports.length > 0 && <div className="report-list-toolbar">
               <div className="report-task-filters" aria-label="报告任务筛选">
@@ -8790,14 +8825,14 @@ export default function PatientDetailPage() {
               </div>
             </div>}
             {reports.length === 0 ? (
-              <div className="card" style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无体检报告</div>
+              <div className="card" style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无原始资料</div>
             ) : filteredReports.length === 0 ? (
               <div className="card" style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无符合当前筛选条件的报告</div>
             ) : (
               <>
                   <div style={{ borderRadius: 8, border: '1px solid #e8e4dc', overflowX: 'auto', background: '#fff' }}>
                     <table className="table report-table" style={{ marginBottom: 0, minWidth: 920 }}>
-                      <thead><tr><th>报告名称</th><th>类型</th><th>机构</th><th>检查日期</th><th>状态</th><th>操作</th></tr></thead>
+                      <thead><tr><th>资料名称</th><th>资料分类</th><th>来源机构</th><th>资料日期</th><th>处理状态</th><th>操作</th></tr></thead>
                       <tbody>
                       {paginatedReportRows.map(({ report: r, typeLabel }) => {
                         const auditLabel = r.audit_status === 'audited' ? '已审核'
@@ -8817,7 +8852,7 @@ export default function PatientDetailPage() {
                               <button type="button" onClick={() => openReportDetail(r)} className="report-table-list-title-btn">{r.title || '未命名报告'}</button>
                               {r.screeningL2 && <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 3 }}>{r.screeningL2}</div>}
                             </td>
-                            <td><span style={{ fontSize: 12, color: '#668277', whiteSpace: 'nowrap' }}>{typeLabel}</span></td>
+                            <td><strong style={{ fontSize: 12, color: '#315F4E', whiteSpace: 'nowrap' }}>{DOCUMENT_CATEGORY_LABEL[inferDocumentCategory(r)] || '其他资料'}</strong><div style={{ fontSize: 11, color: '#8AA89C', marginTop: 2 }}>{typeLabel}</div></td>
                             <td style={{ color: '#60756B' }}>{r.hospital || r.institution || <span className="report-missing-field">待补</span>}</td>
                             <td style={{ color: '#8AA89C', whiteSpace: 'nowrap' }}>{r.checkDate || r.date || <span className="report-missing-field">待补</span>}</td>
                             <td><span style={{ fontSize: 11, fontWeight: 600, color: auditColor, background: `${auditColor}12`, borderRadius: 999, padding: '3px 7px', whiteSpace: 'nowrap' }}>{auditLabel}</span></td>
@@ -11067,7 +11102,7 @@ export default function PatientDetailPage() {
           patientId={id}
           screeningTree={screeningTree}
           onClose={() => setShowUploadReport(false)}
-          onSaved={() => { setShowUploadReport(false); toast('报告已上传'); loadReports() }}
+          onSaved={() => { setShowUploadReport(false); toast('原始资料已上传'); loadReports() }}
         />
       )}
 
@@ -11510,11 +11545,11 @@ function SendMessageModal({ patientId, patientName, onClose }) {
   )
 }
 
-// ── 上传体检报告弹窗 ───────────────────────────────────────
+// ── 上传原始资料弹窗 ───────────────────────────────────────
 const ANNUAL_L1_ID = '__annual__'
 
 function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) {
-  const [form, setForm] = useState({ title: '', l1Id: '', l2Label: '', hospital: '', date: '', note: '' })
+  const [form, setForm] = useState({ documentCategory: 'physical_exam', title: '', l1Id: '', l2Label: '', hospital: '', date: '', note: '' })
   const [fileDatas, setFileDatas] = useState([])
   // 一份报告有时被拍成多张照片(如"结论页"+"数据页")，默认合并为一条记录、AI一次性识别全部图片；
   // 取消勾选则保持原有行为——每个文件各自拆成一条独立报告(如确实是几份不同的检查报告一起选的场景)
@@ -11524,6 +11559,7 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
   const [uploadStep, setUploadStep] = useState('')
   const [error, setError] = useState('')
 
+  const supportsScreeningCategory = ['physical_exam', 'lab_report', 'exam_report', 'functional_medicine', 'genetic_test'].includes(form.documentCategory)
   const isAnnual = form.l1Id === ANNUAL_L1_ID
   const currentL1 = isAnnual ? null : screeningTree.find(n => String(n._id) === form.l1Id)
   const selectedReportType = isAnnual ? 'annual' : (REPORT_L1_LABEL_TO_TYPE[currentL1?.label] || 'other')
@@ -11576,8 +11612,8 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
   }
 
   const handleSubmit = async () => {
-    if (!form.title) { setError('请填写报告标题'); return }
-    if (!fileDatas.length) { setError('请选择报告文件（图片或PDF）'); return }
+    if (!form.title) { setError('请填写资料名称'); return }
+    if (!fileDatas.length) { setError('请选择资料文件（图片或PDF）'); return }
     try {
       setSaving(true); setError(''); setUploadProgress(0)
       const total = fileDatas.length
@@ -11599,9 +11635,10 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
         await staffAPI.uploadReport({
           patientId,
           title: form.title,
-          type: selectedReportType,
-          screeningL1: isAnnual ? '' : form.l1Id,
-          screeningL2: isAnnual ? '' : form.l2Label,
+          type: supportsScreeningCategory ? selectedReportType : 'other',
+          documentCategory: form.documentCategory,
+          screeningL1: supportsScreeningCategory && !isAnnual ? form.l1Id : '',
+          screeningL2: supportsScreeningCategory && !isAnnual ? form.l2Label : '',
           hospital: form.hospital,
           date: form.date,
           note: form.note,
@@ -11633,9 +11670,10 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
           await staffAPI.uploadReport({
             patientId,
             title: form.title + titleSuffix,
-            type: selectedReportType,
-            screeningL1: isAnnual ? '' : form.l1Id,
-            screeningL2: isAnnual ? '' : form.l2Label,
+            type: supportsScreeningCategory ? selectedReportType : 'other',
+            documentCategory: form.documentCategory,
+            screeningL1: supportsScreeningCategory && !isAnnual ? form.l1Id : '',
+            screeningL2: supportsScreeningCategory && !isAnnual ? form.l2Label : '',
             hospital: form.hospital,
             date: form.date,
             note: form.note,
@@ -11663,13 +11701,20 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
     <div className="modal-overlay">
       <div className="modal" style={{ maxWidth: 500 }}>
         <div className="modal-header">
-          <h3 className="modal-title">上传体检报告</h3>
+          <h3 className="modal-title">上传原始资料</h3>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-          {/* L1 大类 */}
           <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">资料分类 *</label>
+            <select className="form-input" value={form.documentCategory} onChange={e => setForm(f => ({ ...f, documentCategory: e.target.value, l1Id: '', l2Label: '' }))}>
+              {DOCUMENT_CATEGORIES.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
+            </select>
+          </div>
+
+          {/* L1 大类 */}
+          {supportsScreeningCategory && <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">报告大类（可不选）</label>
             <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 6 }}>
               若报告涉及多个类目，可不选或只选最主要的一个——具体归类以AI解析结果为准
@@ -11688,21 +11733,21 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
                 </button>
               ))}
             </div>
-          </div>
+          </div>}
 
           {/* 二级具体分类已按需求移除：上传时只归一级大类，与用户端一致，避免设了二级标签又不做归类。
               精细归类统一交给 AI 解析后由健管在报告详情里调整。 */}
 
           {/* 当前分类提示（仅一级大类） */}
-          {form.l1Id && (
+          {supportsScreeningCategory && form.l1Id && (
             <div style={{ fontSize: 12, color: '#1E6B50', background: '#E8F5EF', borderRadius: 6, padding: '5px 10px' }}>
               {isAnnual ? '年度体检报告（整份报告）' : (currentL1?.label || '')}
             </div>
           )}
 
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">报告标题 *</label>
-            <input className="form-input" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="如：2024年年度体检报告" />
+            <label className="form-label">资料名称 *</label>
+            <input className="form-input" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="如：2026年年度体检报告 / 门诊病历" />
           </div>
 
           <div style={{ display: 'flex', gap: 10 }}>

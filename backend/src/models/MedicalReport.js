@@ -105,6 +105,13 @@ const medicalReportSchema = new mongoose.Schema({
     ],
     default: 'annual',
   },
+  // 原始健康资料的业务分类。与 type（报告技术分类/专项筛查归类）分离，
+  // 避免门诊病历、处方、问卷等资料被强行归入体检报告类型。
+  documentCategory: {
+    type: String,
+    enum: ['physical_exam', 'lab_report', 'exam_report', 'functional_medicine', 'genetic_test', 'outpatient_record', 'inpatient_record', 'prescription_order', 'questionnaire', 'other_customer_material'],
+    default: undefined,
+  },
   hospital:    { type: String, default: '' },
   date:        { type: String, default: '' },
   pages:       { type: Number, default: 1 },

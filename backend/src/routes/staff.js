@@ -2002,7 +2002,7 @@ router.patch('/medical-reports/:id/items/:itemId', staffAuth, async (req, res) =
 // POST /api/staff/medical-reports — 上传报告（Base64）
 router.post('/medical-reports', staffAuth, async (req, res) => {
   try {
-    const { patientId, title, type, hospital, date, fileUrl, fileUrls, ossKey, ossKeys, content, mimeType, fileSize, planId, planItemId, screeningL1, screeningL2 } = req.body;
+    const { patientId, title, type, documentCategory, hospital, date, fileUrl, fileUrls, ossKey, ossKeys, content, mimeType, fileSize, planId, planItemId, screeningL1, screeningL2 } = req.body;
     if (!patientId || !title) return res.status(400).json({ success: false, message: '会员和标题不能为空' });
     // fileUrls（一份报告多张照片场景）优先，fileUrl 仍取第一个做兼容，不破坏现有单文件读取逻辑
     const resolvedFileUrls = Array.isArray(fileUrls) && fileUrls.length ? fileUrls : (fileUrl ? [fileUrl] : []);
@@ -2055,6 +2055,7 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
       if (existing) {
         if (title) existing.title = title;
         if (hospital) existing.hospital = hospital;
+        if (documentCategory) existing.documentCategory = documentCategory;
         if (resolvedFileUrl) {
           existing.fileUrl = resolvedFileUrl;
           existing.fileUrls = resolvedFileUrls;
@@ -2081,7 +2082,7 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
     }
 
     report = await MedicalReport.create({
-      user: patientId, title, type: type || 'other', hospital: hospital || '',
+      user: patientId, title, type: type || 'other', documentCategory: documentCategory || 'physical_exam', hospital: hospital || '',
       date: checkDate, checkDate, reportYear,
       fileUrl: resolvedFileUrl, fileUrls: resolvedFileUrls, ossKey: resolvedOssKey, ossKeys: resolvedOssKeys, content: effectiveContent,
       mimeType: effectiveMimeType, fileSize: fileSize || '',
@@ -2139,7 +2140,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
   try {
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-    const { title, type, hospital, date, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, fileUrl, fileUrls, ossKey, ossKeys, mimeType, fileSize, editSource, expectedRevision } = req.body;
+    const { title, type, documentCategory, hospital, date, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, fileUrl, fileUrls, ossKey, ossKeys, mimeType, fileSize, editSource, expectedRevision } = req.body;
     if (reportItems !== undefined && editSource === 'ocr_review') {
       const requestedRevision = Number(expectedRevision);
       if (!Number.isInteger(requestedRevision) || requestedRevision !== Number(report.reviewRevision || 0)) {
@@ -2147,10 +2148,11 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
       }
     }
     // 已审核通过的报告：只允许更新 AI归类（aiStatus/reportItems），其余字段不可改
-    if (report.audit_status === 'audited' && (title || type || hospital || date || content)) {
+    if (report.audit_status === 'audited' && (title || type || documentCategory || hospital || date || content)) {
       return res.status(403).json({ success: false, message: '已审核通过的报告不可修改基本信息' });
     }
     if (title !== undefined) report.title = title;
+    if (documentCategory !== undefined) report.documentCategory = documentCategory;
     let typeChanged = false;
     if (type !== undefined && type !== report.type) {
       typeChanged = true;
