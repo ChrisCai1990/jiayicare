@@ -9037,6 +9037,8 @@ export default function PatientDetailPage() {
           const cat = REFERRAL_CAT_MAP[role] || '就医专员转介'
           grouped[cat].push(r)
         })
+        Object.values(grouped).forEach(records => records.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)))
+        const formatReferralTime = value => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '-'
         const activeCats = CATS.filter(c => grouped[c].length > 0)
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -9067,7 +9069,10 @@ export default function PatientDetailPage() {
                           <span style={{ fontWeight: 600, fontSize: 14 }}>{r.reason}</span>
                           <span style={{ fontSize: 12, color: STATUS_COLOR[r.status], fontWeight: 600 }}>· {STATUS_LABEL[r.status]}</span>
                         </div>
-                        <span style={{ fontSize: 12, color: '#aaa' }}>{new Date(r.createdAt).toLocaleDateString('zh-CN')}</span>
+                        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', justifyContent: 'flex-end', fontSize: 12 }}>
+                          <span style={{ color: '#65776F' }}>转介时间：<strong style={{ color: '#33473E' }}>{formatReferralTime(r.createdAt)}</strong></span>
+                          {r.respondedAt && <span style={{ color: '#65776F' }}>回应时间：<strong style={{ color: '#33473E' }}>{formatReferralTime(r.respondedAt)}</strong></span>}
+                        </div>
                       </div>
                       {/* 转介信息 */}
                       <div style={{ fontSize: 13, color: '#4A6558', marginBottom: 4 }}>
@@ -9075,11 +9080,16 @@ export default function PatientDetailPage() {
                       </div>
                       {r.content && <div style={{ fontSize: 13, color: '#666', marginBottom: 6 }}>{r.content}</div>}
                       {r.attachedHealthInfo && <AttachedHealthInfoView info={r.attachedHealthInfo} />}
+                      {r.respondedAt && !(r.responseAnalysis || r.responseOpinion || r.response) && (
+                        <div style={{ marginTop: 8, padding: '8px 11px', background: '#F6F9F7', borderRadius: 6, color: '#65776F', fontSize: 12 }}>
+                          {r.toStaffId?.name || '接收人'}已于 {formatReferralTime(r.respondedAt)} 作出“{STATUS_LABEL[r.status] || r.status}”回应，暂无文字意见。
+                        </div>
+                      )}
                       {/* 回复 */}
                       {(r.responseAnalysis || r.responseOpinion || r.response) && (
                         <div style={{ marginTop: 10, padding: '10px 12px', background: '#f0faf5', borderRadius: 6, borderLeft: `3px solid ${REFERRAL_CAT_COLOR[cat]}`, display: 'flex', flexDirection: 'column', gap: 6 }}>
                           <div style={{ fontSize: 11, color: '#8AA89C' }}>
-                            {r.toStaffId?.name} 回复 · {r.respondedAt ? new Date(r.respondedAt).toLocaleDateString('zh-CN') : ''}
+                            {r.toStaffId?.name} 回复 · 回应时间：{formatReferralTime(r.respondedAt)}
                           </div>
                           {r.responseAnalysis && (
                             <div>
