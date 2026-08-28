@@ -60,10 +60,10 @@ test('关键词包含匹配也只能返回Admin索引里的真实分类', () => 
   assert.equal(selectAdminMatches(['丙型肝炎抗体'], 'lab', index)[0]?.node.id, id);
 });
 
-test('已有归类标识的项目视为已确认，待归类项目才继续匹配', () => {
+test('只有真实分类键视为已确认，空键的脏matched状态仍需重新匹配', () => {
   assert.equal(hasConfirmedClassification({ screeningKey: 'a|b|c' }), true);
   assert.equal(hasConfirmedClassification({ screeningKeys: ['a|b|c'] }), true);
-  assert.equal(hasConfirmedClassification({ matchStatus: 'matched' }), true);
+  assert.equal(hasConfirmedClassification({ matchStatus: 'matched' }), false);
   assert.equal(hasConfirmedClassification({ matchStatus: 'unclassified', screeningKeys: [] }), false);
 });
 

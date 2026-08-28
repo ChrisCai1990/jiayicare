@@ -45,7 +45,7 @@ test('提交审核仅阻止存在名称但未归类的报告项目', () => {
   assert.deepEqual(findUnclassifiedNamedItems([{ name: '' }]), []);
   assert.equal(findUnclassifiedNamedItems([
     { name: '已归类A', screeningKey: 'l1|l2|a' },
-    { name: '已归类B', matchStatus: 'matched' },
+    { name: '已归类B', matchStatus: 'matched', screeningKeys: ['l1|l2|b'] },
     { name: '待归类C', matchStatus: 'unclassified' },
   ]).length, 1);
 });

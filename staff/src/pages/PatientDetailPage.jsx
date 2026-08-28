@@ -1711,6 +1711,19 @@ export default function PatientDetailPage() {
   const ocrModalBodyRef = useRef(null)                          // 归类下拉框的真实裁切边界是这个 overflow:auto 的表格滚动容器，不是浏览器视口
   const ocrItemRefs = useRef({})
   const ocrFocusHandledRef = useRef(null)
+  const ocrEditItemsRef = useRef([])
+  const ocrSaveQueueRef = useRef(Promise.resolve())
+
+  useEffect(() => { ocrEditItemsRef.current = ocrEditItems }, [ocrEditItems])
+
+  const persistOCRItems = (reportId, items) => {
+    if (!reportId) return Promise.resolve()
+    const snapshot = JSON.parse(JSON.stringify(items || []))
+    ocrSaveQueueRef.current = ocrSaveQueueRef.current
+      .catch(() => {})
+      .then(() => staffAPI.updateReport(reportId, { reportItems: snapshot, aiStatus: 'pending' }))
+    return ocrSaveQueueRef.current
+  }
   const [screeningCatalog, setScreeningCatalog] = useState([])
   useEffect(() => { staffAPI.getScreeningCatalog().then(r => setScreeningCatalog(r.data || [])).catch(() => {}) }, [])
   // 客户归属决定会员类型和服务包选项，两者均读取 admin 会员设置。
@@ -2608,16 +2621,16 @@ export default function PatientDetailPage() {
 
   const handleOpenOCRReview = async (r, focusItems = []) => {
     ocrFocusHandledRef.current = null
-    setOcrReviewReport(r)
-    // 每次打开都以服务器最新版初始化，避免保存草稿后从旧列表副本恢复。
+    setOcrSaving(true)
+    // 每次打开先读取服务器最新版，再开放审核窗口；不能先展示旧副本，否则请求返回时
+    // 会覆盖用户已经开始输入的内容。
     let latestReport = r
     try {
       const latestRes = await staffAPI.getReport(r._id)
-      if (latestRes.data) {
-        latestReport = latestRes.data
-        setOcrReviewReport(latestReport)
-      }
+      if (latestRes.data) latestReport = latestRes.data
     } catch {}
+    setOcrReviewReport(latestReport)
+    setOcrSaving(false)
     // 列表接口 select('-content') 裁掉了原图内容（体积大），这里按需补拉完整报告，
     // 否则走 content(base64) 存储的报告在审核弹窗左侧会显示"无原始文件可预览"
     if (!latestReport.content && !latestReport.fileUrl && !(latestReport.fileUrls && latestReport.fileUrls.length)) {
@@ -2660,6 +2673,7 @@ export default function PatientDetailPage() {
   }
 
   const handleApproveOCR = async () => {
+    await ocrSaveQueueRef.current.catch(() => {})
     const unclassified = ocrEditItems.filter(item => item?.name && !(item.screeningKey || (Array.isArray(item.screeningKeys) && item.screeningKeys.length) || item.matchStatus === 'matched'))
     if (ocrEditItems.length > 0 && unclassified.length > 0) {
       const names = unclassified.slice(0, 5).map(item => item.name).join('、')
@@ -2680,6 +2694,7 @@ export default function PatientDetailPage() {
   const handleSaveOCRDraft = async () => {
     setOcrSaving(true)
     try {
+      await ocrSaveQueueRef.current.catch(() => {})
       const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItems, aiStatus: 'pending' })
       if (saved.data) setReports(current => current.map(report => report._id === saved.data._id ? { ...report, ...saved.data } : report))
       toast('草稿已保存（仍为待审核）')
@@ -2723,6 +2738,10 @@ export default function PatientDetailPage() {
   const handleReclassifyOCR = async () => {
     setOcrSaving(true)
     try {
+      // 先持久化当前人工编辑，再让后端只对待归类项重跑；否则后端读取旧版本后返回整表，
+      // 会把本窗口内尚未保存的数值、结论和手工归类全部覆盖。
+      await ocrSaveQueueRef.current.catch(() => {})
+      await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, aiStatus: 'pending' })
       const res = await staffAPI.reclassifyReport(id, ocrReviewReport._id)
       setOcrEditItems(res.data || [])
       toast(`重新归类完成，已自动匹配 ${res.matchedCount || 0} 项`)
@@ -10208,9 +10227,16 @@ export default function PatientDetailPage() {
           // 后端展示层(GET screening)和写入层(syncScreeningItems)都优先读 screeningKeys 数组，
           // 只改单值 screeningKey 而不动数组，会导致「人工改了归类但仍按 AI 二次模糊匹配的旧错值展示/写入」
           // ——正是金娟反馈的"尿转铁蛋白改了没用还归到肿瘤铁蛋白"的根因。清空归类时数组也一并清空。
-          if (!key) return updItem(i, { screeningKey: '', screeningKeys: [], screeningCategory: '', screeningParent: '', matchStatus: 'unclassified', matchConfidence: 0 })
-          const parts = key.split('|')
-          updItem(i, { screeningKey: key, screeningKeys: [key], screeningCategory: parts[0], screeningParent: parts[1], matchStatus: 'matched', matchConfidence: 1 })
+          const parts = key ? key.split('|') : []
+          const classificationPatch = key
+            ? { screeningKey: key, screeningKeys: [key], screeningCategory: parts[0], screeningParent: parts[1], matchStatus: 'matched', matchConfidence: 1 }
+            : { screeningKey: '', screeningKeys: [], screeningCategory: '', screeningParent: '', matchStatus: 'unclassified', matchConfidence: 0 }
+          setOcrEditItems(items => {
+            const next = items.map((item, index) => index === i ? { ...item, ...classificationPatch } : item)
+            ocrEditItemsRef.current = next
+            persistOCRItems(ocrReviewReport._id, next).catch(error => toast(error.message || '归类自动保存失败，请点击保存草稿后重试'))
+            return next
+          })
         }
         const matchedN = ocrEditItems.filter(it => it.matchStatus === 'matched' && it.screeningKey).length
         const unclassifiedN = ocrEditItems.length - matchedN

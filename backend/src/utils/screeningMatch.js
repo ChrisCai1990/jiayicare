@@ -309,7 +309,6 @@ function hasConfirmedClassification(item) {
   return Boolean(
     item?.screeningKey
     || (Array.isArray(item?.screeningKeys) && item.screeningKeys.length)
-    || item?.matchStatus === 'matched'
   );
 }
 
