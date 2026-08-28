@@ -36,6 +36,24 @@ async function checkReportAuditGate(userId) {
   return null;
 }
 
+// 年度专项筛查小结只能基于该年度完整的已审核报告生成或编辑。不能仅过滤出已审核报告后继续，
+// 否则同年度尚有待审报告时会用残缺数据提前形成小结。
+async function checkScreeningYearSummaryGate(userId, year) {
+  const yearNumber = Number(year);
+  const yearMatch = { $or: [
+    { reportYear: yearNumber },
+    { checkDate: new RegExp(`^${yearNumber}[-/]`) },
+    { date: new RegExp(`^${yearNumber}[-/]`) },
+  ] };
+  const [total, pending] = await Promise.all([
+    MedicalReport.countDocuments({ user: userId, ...yearMatch }),
+    MedicalReport.countDocuments({ user: userId, audit_status: { $ne: 'audited' }, ...yearMatch }),
+  ]);
+  if (!total) return `${yearNumber}年度没有体检报告，无法生成专项筛查小结`;
+  if (pending) return `${yearNumber}年度还有 ${pending} 份体检报告未完成健管审核，请全部审核后再进行专项筛查小结`;
+  return null;
+}
+
 // 判断是否存在"自上次确认以来新增、健康顾问尚未确认过"的内容（增量判断，不是整体失效）
 function hasUnreviewedNewContent(user) {
   return !!getLatestArchiveUpdate(user, user.archiveReviewSnapshotAt);
@@ -60,4 +78,4 @@ function pendingDoctorAuditFilter(userId, snapshotAt) {
   return filter;
 }
 
-module.exports = { checkReportAuditGate, pendingDoctorAuditFilter, hasUnreviewedNewContent, getLatestArchiveUpdate };
+module.exports = { checkReportAuditGate, checkScreeningYearSummaryGate, pendingDoctorAuditFilter, hasUnreviewedNewContent, getLatestArchiveUpdate };

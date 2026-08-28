@@ -2146,22 +2146,6 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
         return res.status(409).json({ success: false, code: 'REPORT_REVISION_CONFLICT', message: '报告已在其他窗口发生修改，为防止覆盖，请刷新后继续审核', currentRevision: report.reviewRevision || 0 });
       }
     }
-    // 提交审核完成时，存在报告项目就必须逐项归类；完全没有项目的报告允许直接完成。
-    // 草稿不受此限制，便于分批核对、逐步补齐归类。校验放在后端，避免旧前端或直接请求绕过。
-    if (aiStatus === 'reviewed' && Array.isArray(reportItems) && reportItems.length > 0) {
-      const { findUnclassifiedNamedItems } = require('../utils/screeningMatch');
-      const unclassified = findUnclassifiedNamedItems(reportItems);
-      if (unclassified.length > 0) {
-        const names = unclassified.slice(0, 8).map(item => String(item.name || '').trim()).filter(Boolean);
-        return res.status(400).json({
-          success: false,
-          code: 'REPORT_ITEMS_UNCLASSIFIED',
-          message: `还有${unclassified.length}个项目未归类，请全部归类后再提交审核${names.length ? `：${names.join('、')}${unclassified.length > names.length ? '等' : ''}` : ''}`,
-          unclassifiedCount: unclassified.length,
-          unclassifiedNames: names,
-        });
-      }
-    }
     // 已审核通过的报告：只允许更新 AI归类（aiStatus/reportItems），其余字段不可改
     if (report.audit_status === 'audited' && (title || type || hospital || date || content)) {
       return res.status(403).json({ success: false, message: '已审核通过的报告不可修改基本信息' });
@@ -3279,7 +3263,7 @@ router.get('/patients/:id/reports', staffAuth, async (req, res) => {
   const dateFileMap = {};
   for (const r of result) {
     if (r.fileUrl && r.checkDate && !dateFileMap[r.checkDate]) {
-      dateFileMap[r.checkDate] = { _id: r._id, fileUrl: r.fileUrl, mimeType: r.mimeType, title: r.title };
+      dateFileMap[r.checkDate] = { _id: r._id, fileUrl: r.fileUrl, previewUrl: r.previewUrl, mimeType: r.mimeType, title: r.title };
     }
   }
   for (const r of result) {
@@ -4226,6 +4210,9 @@ router.put('/patients/:id/screening-year-summaries/:year', staffAuth, async (req
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
       return res.status(403).json({ success: false, message: '仅健康顾问可新增或编辑年度专项筛查小结' });
     }
+    const { checkScreeningYearSummaryGate } = require('../utils/reportAuditGate');
+    const gateMessage = await checkScreeningYearSummaryGate(req.params.id, req.params.year);
+    if (gateMessage) return res.status(400).json({ success: false, message: gateMessage });
     const ScreeningYearSummary = require('../models/ScreeningYearSummary');
     let summary = await ScreeningYearSummary.findOne({ user: req.params.id, year: Number(req.params.year) });
     if (!summary) summary = new ScreeningYearSummary({ user: req.params.id, year: Number(req.params.year) });
@@ -4257,6 +4244,9 @@ router.post('/patients/:id/screening-year-summaries/:year/generate', staffAuth, 
       return res.status(403).json({ success: false, message: '仅健康顾问可生成年度专项筛查小结' });
     }
     const year = Number(req.params.year);
+    const { checkScreeningYearSummaryGate } = require('../utils/reportAuditGate');
+    const gateMessage = await checkScreeningYearSummaryGate(req.params.id, year);
+    if (gateMessage) return res.status(400).json({ success: false, message: gateMessage });
     const reports = await MedicalReport.find({
       user: req.params.id,
       audit_status: 'audited',
@@ -4349,6 +4339,9 @@ router.patch('/patients/:id/screening-year-summaries/:year/approve', staffAuth, 
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
       return res.status(403).json({ success: false, message: '仅健康顾问可审核年度专项筛查小结' });
     }
+    const { checkScreeningYearSummaryGate } = require('../utils/reportAuditGate');
+    const gateMessage = await checkScreeningYearSummaryGate(req.params.id, req.params.year);
+    if (gateMessage) return res.status(400).json({ success: false, message: gateMessage });
     const ScreeningYearSummary = require('../models/ScreeningYearSummary');
     const summary = await ScreeningYearSummary.findOne({ user: req.params.id, year: Number(req.params.year) });
     if (!summary) return res.status(404).json({ success: false, message: '年度小结不存在' });

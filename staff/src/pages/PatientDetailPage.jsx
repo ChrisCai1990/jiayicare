@@ -1704,6 +1704,7 @@ export default function PatientDetailPage() {
   const [ocrReviewPage, setOcrReviewPage] = useState(null)
   const [ocrFocusItemIndex, setOcrFocusItemIndex] = useState(null)
   const [ocrSaving, setOcrSaving] = useState(false)
+  const [ocrDraftSavedAt, setOcrDraftSavedAt] = useState(null)
   const [ocrClassifySearch, setOcrClassifySearch] = useState({}) // {[rowIndex]: searchText}
   const [ocrClassifyOpen, setOcrClassifyOpen] = useState({})    // {[rowIndex]: bool}
   const [ocrClassifyDropUp, setOcrClassifyDropUp] = useState({}) // {[rowIndex]: bool} 归类下拉框展开方向，按实测可用空间动态判断
@@ -2635,6 +2636,7 @@ export default function PatientDetailPage() {
     } catch {}
     ocrRevisionRef.current = Number(latestReport.reviewRevision || 0)
     setOcrReviewReport(latestReport)
+    setOcrDraftSavedAt(null)
     setOcrSaving(false)
     // 列表接口 select('-content') 裁掉了原图内容（体积大），这里按需补拉完整报告，
     // 否则走 content(base64) 存储的报告在审核弹窗左侧会显示"无原始文件可预览"
@@ -2679,12 +2681,6 @@ export default function PatientDetailPage() {
 
   const handleApproveOCR = async () => {
     await ocrSaveQueueRef.current.catch(() => {})
-    const unclassified = ocrEditItems.filter(item => item?.name && !(item.screeningKey || (Array.isArray(item.screeningKeys) && item.screeningKeys.length) || item.matchStatus === 'matched'))
-    if (ocrEditItems.length > 0 && unclassified.length > 0) {
-      const names = unclassified.slice(0, 5).map(item => item.name).join('、')
-      toast(`还有${unclassified.length}个项目未归类，请全部归类后再提交审核${names ? `：${names}${unclassified.length > 5 ? '等' : ''}` : ''}`)
-      return
-    }
     setOcrSaving(true)
     try {
       const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, aiStatus: 'reviewed', editSource: 'ocr_review', expectedRevision: ocrRevisionRef.current })
@@ -2704,9 +2700,13 @@ export default function PatientDetailPage() {
       const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, aiStatus: 'pending', editSource: 'ocr_review', expectedRevision: ocrRevisionRef.current })
       ocrRevisionRef.current = Number(saved.data?.reviewRevision ?? ocrRevisionRef.current)
       if (saved.data) setReports(current => current.map(report => report._id === saved.data._id ? { ...report, ...saved.data } : report))
-      toast('草稿已保存（仍为待审核）')
-      setOcrReviewReport(null)
+      const savedItems = JSON.parse(JSON.stringify(saved.data?.reportItems || ocrEditItemsRef.current))
+      ocrEditItemsRef.current = savedItems
+      setOcrEditItems(savedItems)
+      setOcrReviewReport(prev => prev ? { ...prev, ...(saved.data || {}), reportItems: savedItems } : prev)
+      setOcrDraftSavedAt(new Date())
       await loadReports()
+      toast('草稿已保存并已从服务器确认，审核窗口继续保留')
     } catch (err) { toast(err.message || '保存失败') }
     finally { setOcrSaving(false) }
   }
@@ -5012,6 +5012,13 @@ export default function PatientDetailPage() {
                 const currentRecord = summaryRecords[screeningSummaryRecordIndex] || summaryRecords[0]
                 const sections = editingScreeningSummary || currentRecord?.sections || {}
                 const canManage = ['familyDoctor', 'superadmin'].includes(staff?.role)
+                const pendingSummaryReports = reports.filter(report => {
+                  const reportYear = Number(report.reportYear || String(report.checkDate || report.date || '').slice(0, 4))
+                  return reportYear === Number(screeningSummaryYear) && report.audit_status !== 'audited'
+                })
+                const summaryGateMessage = pendingSummaryReports.length
+                  ? `${screeningSummaryYear}年度还有 ${pendingSummaryReports.length} 份体检报告未完成健管审核，请全部审核后再进行专项筛查小结`
+                  : ''
                 const categories = [
                   ['tumor_risk', '肿瘤筛查小结'],
                   ['cardiovascular_risk', '心脑血管病筛查小结'],
@@ -5045,7 +5052,7 @@ export default function PatientDetailPage() {
                         {screeningSummaryExpanded ? '收起小结 ▲' : '展开小结 ▼'}
                       </button>
                       {canManage && <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-                        <button className="btn btn-secondary btn-sm" disabled={screeningSummaryBusy} onClick={async () => {
+                        <button className="btn btn-secondary btn-sm" disabled={screeningSummaryBusy || !!summaryGateMessage} title={summaryGateMessage} onClick={async () => {
                           setScreeningSummaryBusy(true)
                           try {
                             await staffAPI.generateScreeningYearSummary(id, screeningSummaryYear)
@@ -5054,7 +5061,7 @@ export default function PatientDetailPage() {
                           } catch (error) { toast(error.message || '生成失败') }
                           finally { setScreeningSummaryBusy(false) }
                         }}>{screeningSummaryBusy ? '生成中…' : '✨ AI自动小结'}</button>
-                        <button className="btn btn-primary btn-sm" onClick={() => {
+                        <button className="btn btn-primary btn-sm" disabled={!!summaryGateMessage} title={summaryGateMessage} onClick={() => {
                           setScreeningSummaryEditMode('new')
                           setEditingScreeningSummary({
                           tumor_risk: { summary: '', sourceReportIds: [] },
@@ -5062,7 +5069,7 @@ export default function PatientDetailPage() {
                           chronic_disease: { summary: '', sourceReportIds: [] },
                         })
                         }}>＋ 新增小结</button>
-                        {currentRecord && <button className="btn btn-secondary btn-sm" onClick={() => {
+                        {currentRecord && <button className="btn btn-secondary btn-sm" disabled={!!summaryGateMessage} title={summaryGateMessage} onClick={() => {
                           setScreeningSummaryEditMode('edit')
                           setEditingScreeningSummary(JSON.parse(JSON.stringify(currentRecord.sections || {})))
                         }}>编辑当前小结</button>}
@@ -5077,12 +5084,13 @@ export default function PatientDetailPage() {
                             toast('当前专项筛查小结已删除')
                           } catch (error) { toast(error.message || '删除失败') }
                         }}>删除当前小结</button>}
-                        {currentRecord && currentRecord.status !== 'approved' && <button className="btn btn-primary btn-sm" onClick={async () => {
+                        {currentRecord && currentRecord.status !== 'approved' && <button className="btn btn-primary btn-sm" disabled={!!summaryGateMessage} title={summaryGateMessage} onClick={async () => {
                           try { await staffAPI.approveScreeningYearSummary(id, screeningSummaryYear, screeningSummaryRecordIndex); await loadScreening(); toast('年度小结已审核') }
                           catch (error) { toast(error.message || '审核失败') }
                         }}>审核通过</button>}
                       </div>}
                     </div>
+                    {canManage && summaryGateMessage && <div style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 6, background: '#FFF7ED', color: '#C2410C', fontSize: 12 }}>{summaryGateMessage}</div>}
                     {screeningSummaryExpanded && (!currentRecord && !editingScreeningSummary ? (
                       <div style={{ color: '#8AA89C', fontSize: 13 }}>该年度尚无小结，可由健康顾问新增或使用 AI 自动生成。</div>
                     ) : (
@@ -10110,8 +10118,9 @@ export default function PatientDetailPage() {
                     <div style={{ color: '#B0C4BB', fontSize: 13, marginBottom: 8 }}>暂无文件</div>
                     {showReportDetail.sharedFile && (() => {
                       const sf = showReportDetail.sharedFile
-                      const sfSrc = sf.fileUrl?.startsWith('/') ? API_ORIGIN + sf.fileUrl : sf.fileUrl
-                      const sfPdf = sf.mimeType === 'application/pdf' || sf.fileUrl?.includes('.pdf')
+                      const sfRawSrc = sf.previewUrl || sf.fileUrl
+                      const sfSrc = sfRawSrc?.startsWith('/') ? API_ORIGIN + sfRawSrc : sfRawSrc
+                      const sfPdf = sf.mimeType === 'application/pdf' || sfRawSrc?.includes('.pdf')
                       return (
                         <div style={{ marginBottom: 10, padding: '10px 14px', background: '#FFF8EC', borderRadius: 8, border: '1px solid #FDEEC8', display: 'flex', alignItems: 'center', gap: 10 }}>
                           <span style={{ fontSize: 22 }}>{sfPdf ? '📄' : '🖼️'}</span>
@@ -10250,7 +10259,8 @@ export default function PatientDetailPage() {
             return next
           })
         }
-        const matchedN = ocrEditItems.filter(it => it.matchStatus === 'matched' && it.screeningKey).length
+        const isClassified = it => Boolean(it?.screeningKey || (Array.isArray(it?.screeningKeys) && it.screeningKeys.length) || it?.matchStatus === 'matched')
+        const matchedN = ocrEditItems.filter(isClassified).length
         const unclassifiedN = ocrEditItems.length - matchedN
         // 所有可选归类项打平，供搜索用
         const allClassifyOpts = classifyGroups.flatMap(g => g.opts.map(o => ({ ...o, groupLabel: g.label })))
@@ -10628,6 +10638,7 @@ export default function PatientDetailPage() {
                   disabled={ocrSaving} onClick={handleSaveOCRDraft}>
                   {ocrSaving ? '保存中…' : '💾 保存草稿'}
                 </button>
+                {ocrDraftSavedAt && <span style={{ alignSelf: 'center', color: '#16845B', fontSize: 11, whiteSpace: 'nowrap' }}>已保存 {ocrDraftSavedAt.toLocaleTimeString('zh-CN')}</span>}
                 <button className="btn btn-primary" style={{ flex: 1, background: '#22A06B', border: 'none' }}
                   disabled={ocrSaving} onClick={handleApproveOCR}>
                   {ocrSaving ? '保存中…' : '✓ 提交审核（写入专项筛查）'}
