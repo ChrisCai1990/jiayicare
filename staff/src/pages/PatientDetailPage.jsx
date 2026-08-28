@@ -1495,6 +1495,8 @@ export default function PatientDetailPage() {
   const requestedTab = new URLSearchParams(location.search).get('tab') || 'info'
   const initialTab = requestedTab
   const [tab, setTab] = useState(initialTab === 'requisitions' ? 'info' : initialTab)
+  const [healthBaseView, setHealthBaseView] = useState('profile')
+  const [screeningWorkspaceView, setScreeningWorkspaceView] = useState('screening')
   const archiveSectionsRef = useRef(null)
   const [followUps, setFollowUps] = useState([])
   const [plans, setPlans] = useState([])
@@ -1933,7 +1935,7 @@ export default function PatientDetailPage() {
 
   const loadFollowUps = async () => {
     try {
-      const res = await staffAPI.getPatientFollowUps(id)
+      const res = await staffAPI.getPatientFollowUps(id, { limit: 200 })
       setFollowUps(res.data.followUps)
     } catch {}
   }
@@ -3991,16 +3993,31 @@ export default function PatientDetailPage() {
       )}
 
       {/* ── Records Tab ── */}
-      {tab === 'records' && (
+      {['records', 'ai'].includes(tab) && (
         <div ref={archiveSectionsRef} className="health-archive-sections" onClick={handleArchiveSectionClick}>
         <style>{`.health-archive-sections>.archive-toolbar+.card,.health-archive-sections>.card{transition:box-shadow .2s}.health-archive-sections .archive-collapsed>:not(.card-header){display:none!important}.health-archive-sections .card-header[data-archive-toggle="true"]{cursor:pointer}.health-archive-sections .card-header[data-archive-toggle="true"]:after{content:'⌃';margin-left:10px;color:#1E6B50;font-size:18px}.health-archive-sections .archive-collapsed>.card-header[data-archive-toggle="true"]:after{content:'⌄'}`}</style>
-        <div className="archive-toolbar" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
+        {tab === 'records' && <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+          {[
+            { key: 'profile', label: '基础档案与健康评估' },
+            { key: 'lifestyle', label: '生活方式' },
+            { key: 'monitoring', label: '健康监测' },
+          ].map(item => <button key={item.key} type="button" className={`btn btn-sm ${healthBaseView === item.key ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setHealthBaseView(item.key)}>{item.label}</button>)}
+        </div>}
+        {tab === 'ai' && <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+          {[
+            { key: 'screening', label: '专项筛查结果' },
+            { key: 'metrics', label: '体检关键指标' },
+            { key: 'analysis', label: 'AI健康信息整理' },
+          ].map(item => <button key={item.key} type="button" className={`btn btn-sm ${screeningWorkspaceView === item.key ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setScreeningWorkspaceView(item.key)}>{item.label}</button>)}
+        </div>}
+        {tab === 'records' && <div className="archive-toolbar" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
           <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); setAllArchiveSections(true) }}>全部收起</button>
           <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); setAllArchiveSections(false) }}>全部展开</button>
-        </div>
+        </div>}
         {/* 档案是问卷答案自动导入的，冲突提醒已在页面顶部单独展示（见"问卷自动填档"横幅）；
             一致的情况无需人工再次确认，故此处不再重复放置整体人工审核开关 */}
 
+        {tab === 'records' && healthBaseView === 'profile' && <>
         {/* ── 初始健康数据录入 ── */}
         <InitialHealthRecordForm patientId={user._id} onSaved={() => load()} toast={toast} />
         <BatchHealthRecordImport patient={user} onSaved={() => load()} toast={toast} />
@@ -4328,8 +4345,10 @@ export default function PatientDetailPage() {
 
         {/* ── 10年ASCVD风险评估（医护录入体检参数→中国指南自动分层）── */}
         <AscvdRiskPanel user={user} patientId={id} onSaved={load} toast={toast} />
+        </>}
 
         {/* ── 生活方式（膳食调查基础资料）── 位于健康档案顶部，打卡数据在下方 */}
+        {tab === 'records' && healthBaseView === 'lifestyle' && <>
         {(() => {
           const ld = editingLifestyle ? (lifestyleForm.lifestyle_data || {}) : (user.lifestyle_data || {})
           const setLd = (patch) => setLifestyleForm(p => ({ ...p, lifestyle_data: { ...(p.lifestyle_data || {}), ...patch } }))
@@ -4716,10 +4735,11 @@ export default function PatientDetailPage() {
             </div>
           )
         })()}
+        </>}
 
 
         {/* ── 4.3 专项筛查结果（三层目录树） ── */}
-        {(() => {
+        {tab === 'ai' && screeningWorkspaceView === 'screening' && (() => {
           const STATUS_TEXT = { normal: '正常', abnormal: '异常', attention: '注意', unknown: '' }
           const STATUS_COLOR_MAP = { normal: '#22A06B', abnormal: '#DC3545', attention: '#D97706', unknown: '#8AA89C' }
 
@@ -5800,6 +5820,7 @@ export default function PatientDetailPage() {
         )}
 
         {/* ── 体检关键指标 ── */}
+        {tab === 'ai' && screeningWorkspaceView === 'metrics' && <>
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-header">
             <div className="card-title">体检关键指标</div>
@@ -6175,8 +6196,10 @@ export default function PatientDetailPage() {
             })()}
           </div>
         </div>
+        </>}
 
         {/* ── 4.2 身体成分指标 ── */}
+        {tab === 'records' && healthBaseView === 'monitoring' && <>
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-header">
             <div className="card-title">身体成分指标</div>
@@ -6660,11 +6683,12 @@ export default function PatientDetailPage() {
             <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无健康打卡记录</div>
           )}
         </div>
+        </>}
         </div>
       )}
 
       {/* ── AI Tab ── */}
-      {tab === 'ai' && (() => {
+      {tab === 'ai' && screeningWorkspaceView === 'analysis' && (() => {
         const aisRoot = user.aiHealthSummary || {}
         // 按年度组织（兼容旧数据：无 byYear 但有 sections → 归到其年份或2026）
         let byYear = aisRoot.byYear || {}

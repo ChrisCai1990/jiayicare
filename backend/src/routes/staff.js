@@ -1089,24 +1089,20 @@ router.post('/patients/:id/recalculate-score', staffAuth, async (req, res) => {
 });
 
 // ── GET /api/staff/patients/:id/followups ─────────────────────────
-// 数据权限与 /staff/followups（随访管理列表）、工作台随访任务面板保持同一套 assignedTo 口径，
-// 保证从工作台/随访管理点进某个会员详情页，看到的随访记录范围是一致的。
+// 客户详情是全团队服务档案：先校验查看人属于该客户服务团队，再展示该客户的全部执行任务。
+// 个人工作台 /staff/followups 仍按 assignedTo 筛选，二者用途不同，不能把个人任务口径套到客户全貌。
 router.get('/patients/:id/followups', staffAuth, async (req, res) => {
   const { page = 1, limit = 20 } = req.query;
   const skip = (Number(page) - 1) * Number(limit);
 
-  let ownerFilter;
-  const visibleStaffIds = await getVisibleStaffIds(req.staff);
-  if (req.staff.role === 'familyDoctor') {
-    const isMyPatient = await User.exists({ _id: req.params.id, assignedFamilyDoctor: { $in: visibleStaffIds } });
-    ownerFilter = isMyPatient
-      ? {}
-      : { $or: [{ assignedTo: { $in: visibleStaffIds } }, { assignedTo: null, staffId: { $in: visibleStaffIds } }] };
-  } else {
-    ownerFilter = { $or: [{ assignedTo: { $in: visibleStaffIds } }, { assignedTo: null, staffId: { $in: visibleStaffIds } }] };
+  if (req.staff.role !== 'superadmin') {
+    const visibleStaffIds = await getVisibleStaffIds(req.staff);
+    const patientAccess = PLAN_ASSIGN_FIELDS.map(field => ({ [field]: { $in: visibleStaffIds } }));
+    const hasAccess = await User.exists({ _id: req.params.id, $or: patientAccess });
+    if (!hasAccess) return res.status(403).json({ success: false, message: '无权限查看该会员' });
   }
 
-  const filter = { patientId: req.params.id, ...ownerFilter };
+  const filter = { patientId: req.params.id };
   const [followUps, total] = await Promise.all([
     FollowUp.find(filter)
       .sort({ date: -1 })
