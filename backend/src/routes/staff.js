@@ -6500,7 +6500,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
 请严格按以下JSON格式输出，仅输出JSON：
 {
   "templateNodes": [
-    { "standardPlanId": "必须来自方案库的id", "standardPlanName": "必须来自方案库的name", "title": "客户个性化随访名称", "matchReason": "与研判的匹配依据", "content": "个性化随访内容", "executionDate": "不早于${todayText}的YYYY-MM-DD日期", "frequency": "执行频次", "precautions": "注意事项", "customerAction": "客户行动" }
+    { "standardPlanId": "必须来自方案库的id", "standardPlanName": "必须来自方案库的name且不可改名", "matchReason": "与研判的匹配依据", "personalization": "只写相对标准方案需要增加、删减或重点关注的调整，无调整写空字符串", "executionDate": "不早于${todayText}的YYYY-MM-DD日期", "frequency": "执行频次", "precautions": "注意事项", "customerAction": "客户行动" }
   ],
   "medical_treatment": [
     { "reason": "就医原因", "department": "就诊科室", "visit_time": "建议时间或待确认", "basisSummary": "设置依据", "frequency": "单次", "precautions": "注意事项", "customerAction": "客户需要完成的事项", "ownerRole": "责任角色", "notes": "内部备注" }
@@ -6519,7 +6519,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
   "annual_checkup": { "focus": "重点关注项目", "date": "${suggestedCheckupDate || `${year + 1}-06-01`}", "escort": false }
 }
 
-注意：每个事项必须填写项目名称、basisSummary、时间或时间范围、frequency、precautions、customerAction、ownerRole；审核状态由系统统一设为待健康顾问审核。所有展示为项目名称的字段必须简单明确，只写“要做什么”，不得把原因、剂量、操作细节或注意事项塞进名称；items、name和templateNodes.title不超过20个汉字。templateNodes是客户个性化随访方案，只能选择方案库中真实存在且与主评估行动匹配的方案；不得为了填满模板创造新主题。medical_treatment仅填主评估明确的高优先级就医需求；specialist_collab仅在主评估明确会诊时填写。禁止生成没有依据的医院、专家姓名和已预约精确日期；可以根据证据给出建议日期或时间范围，未确认写“待确认”。无相关内容用空数组。`;
+注意：每个事项必须填写项目名称、basisSummary、时间或时间范围、frequency、precautions、customerAction、ownerRole；审核状态由系统统一设为待健康顾问审核。所有展示为项目名称的字段必须简单明确，只写“要做什么”，不得把原因、剂量、操作细节或注意事项塞进名称；items和name不超过20个汉字。templateNodes不是AI新建方案，而是从Admin标准随访方案库调用后做客户级调整；standardPlanId和standardPlanName必须原样引用，禁止另起名称、改写模板或为了填满页面创造新主题。medical_treatment仅填主评估明确的高优先级就医需求；specialist_collab仅在主评估明确会诊时填写。禁止生成没有依据的医院、专家姓名和已预约精确日期；可以根据证据给出建议日期或时间范围，未确认写“待确认”。无相关内容用空数组。`;
 
     const text = await chat([{ role: 'user', content: prompt }], {
       maxTokens: 6000,
@@ -6568,14 +6568,24 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     result.templateNodes = Array.isArray(raw.templateNodes) ? raw.templateNodes.map(node => {
       const source = standardPlanById.get(String(node.standardPlanId || '')) || standardPlanByName.get(String(node.standardPlanName || '').trim());
       if (!source) return null;
+      const standardContent = Object.entries(source.content || {})
+        .filter(([, value]) => value !== undefined && value !== null && String(value).trim())
+        .map(([key, value]) => `${key}：${value}`).join('\n');
+      const standardSchedule = (source.cycles || []).map((cycle, index) => {
+        if (cycle.cycleType === 'date' && cycle.cycleDate) return `第${index + 1}次：${String(cycle.cycleDate).slice(0, 10)}${cycle.notes ? `（${cycle.notes}）` : ''}`;
+        const unit = cycle.cycleUnit === 'week' ? '周' : cycle.cycleUnit === 'month' ? '个月' : '天';
+        return `第${index + 1}次：确认方案后${cycle.cycleDuration || 0}${unit}${cycle.notes ? `（${cycle.notes}）` : ''}`;
+      }).join('\n');
       return {
         ...node, standardPlanId: source.id, standardPlanName: source.name, sourceCycles: source.cycles,
+        standardContent: standardContent || '按标准方案执行', standardSchedule: standardSchedule || '由健康顾问确认执行日期',
+        personalization: String(node.personalization || node.content || '').trim(),
         defaultEmployeeId: source.defaultEmployeeId || '',
         executionDate: (() => {
           const candidate = String(node.executionDate || node.time || '').slice(0, 10);
           return /^\d{4}-\d{2}-\d{2}$/.test(candidate) && candidate >= todayText ? candidate : todayText;
         })(),
-        title: conciseTitle(node.title || node.content || source.name),
+        title: source.name,
       };
     }).filter(Boolean) : [];
 

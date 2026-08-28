@@ -150,12 +150,13 @@ const MODULE_DEFS = {
     ],
   },
   personalized_followups: {
-    name: '个性化随访方案', icon: '🗓️', multi: true, summaryKey: 'items', summaryLabel: '随访方案',
+    name: '标准随访方案', icon: '🗓️', multi: true, summaryKey: 'standardPlanName', summaryLabel: '标准方案',
     fields: [
-      { key: 'standardPlanName', label: '来源标准方案', type: 'text' },
-      { key: 'items', label: '个性化随访名称', type: 'text' },
-      { key: 'matchReason', label: '匹配依据', type: 'textarea' },
-      { key: 'content', label: '个性化随访内容', type: 'textarea' },
+      { key: 'standardPlanName', label: '标准方案名称', type: 'text' },
+      { key: 'standardContent', label: '标准执行内容', type: 'textarea' },
+      { key: 'standardSchedule', label: '标准执行周期', type: 'textarea' },
+      { key: 'matchReason', label: '选用依据', type: 'textarea' },
+      { key: 'personalization', label: '个性化调整', type: 'textarea', placeholder: '只填写相对标准方案需要增加、删减或重点关注的内容；无调整可留空' },
       { key: 'executionDate', label: '主执行日期', type: 'date' },
       { key: 'frequency', label: '执行频次', type: 'text' },
       { key: 'followUpStaff', label: '主执行人', type: 'staff-select' },
@@ -427,8 +428,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         })
         const personalized = (aiData.templateNodes || []).map(node => ({
           standardPlanId: node.standardPlanId || '', standardPlanName: node.standardPlanName || '',
-          sourceCycles: node.sourceCycles || [], items: node.title || node.standardPlanName || '',
-          matchReason: node.matchReason || '', content: node.content || '', executionDate: node.executionDate || node.time || '',
+          sourceCycles: node.sourceCycles || [], items: node.standardPlanName || '',
+          standardContent: node.standardContent || '', standardSchedule: node.standardSchedule || '',
+          matchReason: node.matchReason || '', personalization: node.personalization || node.content || '', executionDate: node.executionDate || node.time || '',
           frequency: node.frequency || '', precautions: node.precautions || '',
           customerAction: node.customerAction || '', followUpStaff: node.defaultEmployeeId || '',
           reviewStatus: 'pending_family_doctor_review',
@@ -618,7 +620,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         <div style={{ marginBottom: 20 }}>
           <div style={{ marginBottom: 12, padding: '12px 14px', borderRadius: 10, background: '#F0F7F4', color: '#4A6558', fontSize: 13, lineHeight: 1.7 }}>
             <strong style={{ color: '#1E6B50' }}>生成依据：</strong>
-            已确认健康资料与阶段性评估确定个性化重点；Admin启用的标准随访方案提供体检、疫苗、复查等基础动作和周期；AI只能从标准库中筛选并补充个性化内容，最终由健康顾问确认执行人和日期。
+            已确认健康资料与阶段性评估决定调用哪些Admin标准随访方案；页面完整保留标准内容和周期，AI只能填写“个性化调整”，不能改名或另创方案，最终由健康顾问确认执行人和日期。
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24' }}>方案板块</div>

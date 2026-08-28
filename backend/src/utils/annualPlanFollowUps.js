@@ -209,15 +209,17 @@ async function buildAnnualPlanFollowUps(plan) {
       });
       if (!dates.length && rec.time && !isNaN(new Date(rec.time).getTime())) dates.push(new Date(rec.time));
       const content = [
-        rec.standardPlanName && `来源标准方案：${rec.standardPlanName}`,
-        rec.matchReason && `匹配依据：${rec.matchReason}`,
-        rec.content && `随访内容：${rec.content}`,
+        rec.standardPlanName && `标准方案：${rec.standardPlanName}`,
+        rec.standardContent && `标准执行内容：${rec.standardContent}`,
+        rec.standardSchedule && `标准执行周期：${rec.standardSchedule}`,
+        rec.matchReason && `选用依据：${rec.matchReason}`,
+        (rec.personalization || rec.content) && `个性化调整：${rec.personalization || rec.content}`,
         rec.frequency && `执行频次：${rec.frequency}`,
         rec.precautions && `注意事项：${rec.precautions}`,
         rec.customerAction && `客户行动：${rec.customerAction}`,
       ].filter(Boolean).join('\n');
       dates.filter(date => !isNaN(date.getTime()) && date >= todayStart && date <= horizonEnd).forEach((date, cycleIndex) => {
-        push(date, `个性化随访 · ${rec.items || rec.standardPlanName || '年度管理'}`, content, rec.followUpStaff,
+        push(date, `标准随访 · ${rec.standardPlanName || rec.items || '年度管理'}`, content, rec.followUpStaff,
           `personalized:${rec.standardPlanId || recordIndex}:${cycleIndex}:${date.toISOString().slice(0, 10)}`);
       });
       if (rec.collaborator && rec.collaborationDate) {
