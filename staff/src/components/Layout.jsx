@@ -4,20 +4,13 @@ import { useStaff } from '../App'
 import { staffAPI } from '../api'
 import AppIcon from './AppIcon'
 
-const PLAN_CHILDREN = [
-  { label: '年度体检方案', type: 'annual_checkup' },
-  { label: '年度管理方案', type: 'annual_mgmt' },
-  { label: '营养干预方案', type: 'nutrition' },
-  { label: '就医协助方案', type: 'medical_assist' },
-]
-
 // moduleKey: 对应 StaffRole 里的权限模块 key，无 key 表示所有人可见
 // roles: 无 customRoleId 时按内置角色过滤（空数组=全部可见）
 const ALL_NAV = [
   { label: '工作台',       icon: 'home', path: '/home',             roles: [] },
   { label: '我的会员',     icon: 'patients', path: '/patients',     roles: [],                                                                                  moduleKey: 'patients' },
   { label: '随访管理',     icon: 'followups', path: '/followups',   roles: [],                                                                                  moduleKey: 'followups' },
-  { label: '健康方案',     icon: 'plans', path: '/plans',           roles: ['familyDoctor','nutritionist','rehabSpecialist','tcmDoctor','superadmin'],           moduleKey: 'plans', children: PLAN_CHILDREN },
+  { label: '服务方案',     icon: 'plans', path: '/plans',           roles: ['familyDoctor','nutritionist','rehabSpecialist','tcmDoctor','superadmin'],           moduleKey: 'plans' },
   { label: '报告管理',     icon: 'reports', path: '/reports',       roles: ['healthManager','familyDoctor','superadmin'],                                        moduleKey: 'reports' },
   { label: '服务记录',     icon: 'services', path: '/service-records', roles: [],                                                                                moduleKey: 'service_records' },
   { label: '科普推送',     icon: 'knowledge', path: '/knowledge',   roles: ['healthManager','nutritionist','familyDoctor','superadmin'],                         moduleKey: 'knowledge' },
@@ -37,7 +30,6 @@ export default function Layout() {
   const nav = useNavigate()
   const loc = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [planExpanded, setPlanExpanded] = useState(true)
   const [notifBadge, setNotifBadge] = useState(0)
 
   useEffect(() => {
@@ -77,9 +69,6 @@ export default function Layout() {
 
   const initials = staff?.name?.slice(0, 1) || 'S'
 
-  // 获取当前 URL 的 type 参数
-  const currentType = new URLSearchParams(loc.search).get('type') || ''
-
   return (
     <div className="app-layout">
       {/* 移动端顶部栏 */}
@@ -117,43 +106,6 @@ export default function Layout() {
           }).map(item => {
             const isOnPlansPage = loc.pathname === item.path || loc.pathname.startsWith(item.path + '/')
             const isActive = isOnPlansPage && !item.children
-
-            if (item.children) {
-              // 有子菜单的项（健康方案）
-              const isGroupActive = isOnPlansPage
-              return (
-                <div key={item.path}>
-                  <div
-                    className={`sidebar-item ${isGroupActive ? 'active' : ''}`}
-                    onClick={() => setPlanExpanded(v => !v)}
-                    style={{ justifyContent: 'space-between' }}
-                  >
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span className="sidebar-item-icon"><AppIcon name={item.icon} /></span>
-                      <span>{item.label}</span>
-                    </span>
-                    <span style={{ fontSize: 10, opacity: 0.6, transition: 'transform 0.2s', display: 'inline-block', transform: planExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>▼</span>
-                  </div>
-                  {planExpanded && (
-                    <div style={{ paddingLeft: 16 }}>
-                      {item.children.map(child => {
-                        const childActive = isOnPlansPage && currentType === child.type
-                        return (
-                          <div
-                            key={child.type}
-                            className={`sidebar-item ${childActive ? 'active' : ''}`}
-                            style={{ fontSize: 13, padding: '7px 12px' }}
-                            onClick={() => handleNavClick(`${item.path}?type=${child.type}`)}
-                          >
-                            <span style={{ marginLeft: 4 }}>{child.label}</span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )
-            }
 
             return (
               <div

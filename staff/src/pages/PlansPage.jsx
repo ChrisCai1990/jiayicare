@@ -89,8 +89,8 @@ export default function PlansPage() {
     <div className="page">
       <div className="page-header">
         <div>
-          <h1 className="page-title">健康方案</h1>
-          <p className="page-subtitle">{isAnnualMgmt ? `${ahPlans.length} 份年度管理方案` : `共 ${total} 个方案`}</p>
+          <h1 className="page-title">服务方案</h1>
+          <p className="page-subtitle">跨客户方案总览 · {isAnnualMgmt ? `${ahPlans.length} 份年度管理方案` : `共 ${total} 个方案`}；新方案请进入对应客户页面生成</p>
         </div>
       </div>
 
@@ -117,17 +117,6 @@ export default function PlansPage() {
           onChange={e => setPatientName(e.target.value)}
           style={{ width: 180, marginLeft: 'auto' }}
         />
-        <div>
-          {can('plans', 'create') && <button className="btn btn-primary btn-sm" onClick={() => {
-            if      (typeFilter === 'annual_checkup') setShowCheckupModal(true)
-            else if (typeFilter === 'medical_assist') setShowMedicalModal(true)
-            else if (typeFilter === 'nutrition')      setShowNutritionModal(true)
-            else if (typeFilter === 'annual_mgmt')    setShowAhModal(true)
-            else setShowModal(true)
-          }}>
-            ＋ {TYPE_LABEL[typeFilter] ? `新建${TYPE_LABEL[typeFilter]}` : '新建方案'}
-          </button>}
-        </div>
       </div>
 
       {/* ── 年度管理方案（AnnualPlan） ── */}
