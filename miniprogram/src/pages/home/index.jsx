@@ -179,14 +179,7 @@ function TaskDetailModal({ task, onClose, onDone }) {
 }
 
 export default function HomePage() {
-  const { user: authUser, isDemo } = useAuth();
-  Taro.useShareAppMessage(() => ({
-    title: '嘉医汇｜全生命周期健康管理',
-    path: `/pages/home/index${authUser?.referralCode ? `?invite=${authUser.referralCode}` : ''}`,
-  }));
-  Taro.useShareTimeline(() => ({
-    title: '嘉医汇｜全生命周期健康管理',
-  }));
+  const { isDemo } = useAuth();
   const { statusBarHeight } = useNavBar();
   const runtimeInfo = (() => {
     try {
