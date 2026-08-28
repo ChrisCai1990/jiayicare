@@ -127,6 +127,7 @@ export const staffAPI = {
   }),
   auditReport:   (id, d)  => req(`/staff/medical-reports/${id}/audit`, { method: 'PATCH', body: JSON.stringify(d) }),
   updateReport:  (id, d)  => req(`/staff/medical-reports/${id}`,       { method: 'PATCH', body: JSON.stringify(d) }),
+  updateReportItem: (id, itemId, d) => req(`/staff/medical-reports/${id}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(d) }),
   deleteReport:  (id, reason) => req(`/staff/medical-reports/${id}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
   parseReportAI: (id)     => req(`/staff/medical-reports/${id}/parse-ai`, { method: 'POST' }),
   parseReportPageAI: (id, pageNum) => req(`/staff/medical-reports/${id}/parse-page`, { method: 'POST', body: JSON.stringify({ pageNum }) }),

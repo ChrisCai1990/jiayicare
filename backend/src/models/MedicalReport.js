@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { randomUUID } = require('crypto');
 
 // itemType describes one extracted result, while "pathology" is a report-level
 // type. Normalize this legacy client/AI value so review and page re-extraction
@@ -16,6 +17,7 @@ const normalizeReportItemStatus = value => {
 
 // 报告解析后的单条项目（检验/检查值）
 const reportItemSchema = new mongoose.Schema({
+  itemId:         { type: String, default: () => randomUUID(), index: false }, // 稳定项目ID，项目级更新不再依赖数组下标
   name:           { type: String, default: '' }, // 项目名称
   sourceSection:  { type: String, default: '' }, // 报告原始栏目标题，用于保序和组合检查完整性校验
   value:          { type: String, default: '' }, // 检测值（字符串保留原始格式）
@@ -70,6 +72,7 @@ const medicalReportSchema = new mongoose.Schema({
   examConclusion:       { type: String, default: '' }, // 检查医嘱：诊断结论模板
   examMainConclusions:  { type: mongoose.Schema.Types.Mixed, default: {} }, // 检查项主要结论 { [项目名]: '结论文字' }
   reportItems:     [reportItemSchema],                // 解析后的各项结果
+  reviewRevision:  { type: Number, default: 0 },      // 审核编辑乐观锁；任何项目/整表写入后递增
   aiSummary:       { type: String, default: '' },     // AI 趋势分析文字
   aiStatus:        { type: String, enum: ['none', 'processing', 'pending', 'reviewed', 'rejected'], default: 'none' },
   pageParseStatus: { type: mongoose.Schema.Types.Mixed, default: null }, // 单页补提进度：{pageNum,status,startedAt,completedAt,message,itemCount}

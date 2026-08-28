@@ -1713,15 +1713,19 @@ export default function PatientDetailPage() {
   const ocrFocusHandledRef = useRef(null)
   const ocrEditItemsRef = useRef([])
   const ocrSaveQueueRef = useRef(Promise.resolve())
+  const ocrRevisionRef = useRef(0)
 
   useEffect(() => { ocrEditItemsRef.current = ocrEditItems }, [ocrEditItems])
 
-  const persistOCRItems = (reportId, items) => {
-    if (!reportId) return Promise.resolve()
-    const snapshot = JSON.parse(JSON.stringify(items || []))
+  const persistOCRItem = (reportId, itemId, itemPatch) => {
+    if (!reportId || !itemId) return Promise.reject(new Error('报告项目缺少稳定标识，请关闭后重新打开再归类'))
     ocrSaveQueueRef.current = ocrSaveQueueRef.current
       .catch(() => {})
-      .then(() => staffAPI.updateReport(reportId, { reportItems: snapshot, aiStatus: 'pending' }))
+      .then(() => staffAPI.updateReportItem(reportId, itemId, { ...itemPatch, expectedRevision: ocrRevisionRef.current }))
+      .then(response => {
+        ocrRevisionRef.current = Number(response.data?.reviewRevision ?? ocrRevisionRef.current)
+        return response
+      })
     return ocrSaveQueueRef.current
   }
   const [screeningCatalog, setScreeningCatalog] = useState([])
@@ -2629,6 +2633,7 @@ export default function PatientDetailPage() {
       const latestRes = await staffAPI.getReport(r._id)
       if (latestRes.data) latestReport = latestRes.data
     } catch {}
+    ocrRevisionRef.current = Number(latestReport.reviewRevision || 0)
     setOcrReviewReport(latestReport)
     setOcrSaving(false)
     // 列表接口 select('-content') 裁掉了原图内容（体积大），这里按需补拉完整报告，
@@ -2682,7 +2687,8 @@ export default function PatientDetailPage() {
     }
     setOcrSaving(true)
     try {
-      await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItems, aiStatus: 'reviewed' })
+      const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, aiStatus: 'reviewed', editSource: 'ocr_review', expectedRevision: ocrRevisionRef.current })
+      ocrRevisionRef.current = Number(saved.data?.reviewRevision ?? ocrRevisionRef.current)
       toast('审核通过，数据已写入专项筛查，已进入待健康顾问审核')
       setOcrReviewReport(null)
       loadReports()
@@ -2695,7 +2701,8 @@ export default function PatientDetailPage() {
     setOcrSaving(true)
     try {
       await ocrSaveQueueRef.current.catch(() => {})
-      const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItems, aiStatus: 'pending' })
+      const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, aiStatus: 'pending', editSource: 'ocr_review', expectedRevision: ocrRevisionRef.current })
+      ocrRevisionRef.current = Number(saved.data?.reviewRevision ?? ocrRevisionRef.current)
       if (saved.data) setReports(current => current.map(report => report._id === saved.data._id ? { ...report, ...saved.data } : report))
       toast('草稿已保存（仍为待审核）')
       setOcrReviewReport(null)
@@ -2709,7 +2716,9 @@ export default function PatientDetailPage() {
     setOcrSaving(true)
     try {
       // 先保存当前人工修改，再启动单页补提，避免覆盖尚未保存的审核内容。
-      await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItems, aiStatus: 'pending' })
+      await ocrSaveQueueRef.current.catch(() => {})
+      const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, aiStatus: 'pending', editSource: 'ocr_review', expectedRevision: ocrRevisionRef.current })
+      ocrRevisionRef.current = Number(saved.data?.reviewRevision ?? ocrRevisionRef.current)
       const res = await staffAPI.parseReportPageAI(ocrReviewReport._id, ocrReviewPage)
       toast(res.message || `第${ocrReviewPage}页补提已开始`)
       setOcrReviewReport(prev => prev ? { ...prev, pageParseStatus: { pageNum: ocrReviewPage, status: 'processing', message: `正在补提第${ocrReviewPage}页` } } : prev)
@@ -2719,6 +2728,7 @@ export default function PatientDetailPage() {
         const latestRes = await staffAPI.getReport(ocrReviewReport._id)
         const latest = latestRes.data
         if (!latest) continue
+        ocrRevisionRef.current = Number(latest.reviewRevision || 0)
         setOcrReviewReport(prev => (prev && prev._id === latest._id) ? { ...prev, ...latest } : prev)
         if (latest.pageParseStatus?.status !== 'processing') {
           if (latest.pageParseStatus?.status === 'success') {
@@ -2741,8 +2751,10 @@ export default function PatientDetailPage() {
       // 先持久化当前人工编辑，再让后端只对待归类项重跑；否则后端读取旧版本后返回整表，
       // 会把本窗口内尚未保存的数值、结论和手工归类全部覆盖。
       await ocrSaveQueueRef.current.catch(() => {})
-      await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, aiStatus: 'pending' })
+      const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, aiStatus: 'pending', editSource: 'ocr_review', expectedRevision: ocrRevisionRef.current })
+      ocrRevisionRef.current = Number(saved.data?.reviewRevision ?? ocrRevisionRef.current)
       const res = await staffAPI.reclassifyReport(id, ocrReviewReport._id)
+      ocrRevisionRef.current = Number(res.reviewRevision ?? ocrRevisionRef.current)
       setOcrEditItems(res.data || [])
       toast(`重新归类完成，已自动匹配 ${res.matchedCount || 0} 项`)
     } catch (err) { toast(err.message || '归类失败') }
@@ -10234,7 +10246,7 @@ export default function PatientDetailPage() {
           setOcrEditItems(items => {
             const next = items.map((item, index) => index === i ? { ...item, ...classificationPatch } : item)
             ocrEditItemsRef.current = next
-            persistOCRItems(ocrReviewReport._id, next).catch(error => toast(error.message || '归类自动保存失败，请点击保存草稿后重试'))
+            persistOCRItem(ocrReviewReport._id, next[i]?.itemId, classificationPatch).catch(error => toast(error.message || '归类自动保存失败，请刷新后重试'))
             return next
           })
         }

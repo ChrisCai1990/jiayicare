@@ -1953,7 +1953,50 @@ router.get('/medical-reports/:id', staffAuth, async (req, res) => {
   const report = await MedicalReport.findById(req.params.id)
     .populate('user', 'name phone').populate('uploadedBy', 'name');
   if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+  // 旧报告项目没有稳定ID；首次进入审核时补齐并持久化，之后所有单项更新均按itemId定位。
+  let assignedItemIds = false;
+  for (const item of report.reportItems || []) {
+    if (!item.itemId) { item.itemId = require('crypto').randomUUID(); assignedItemIds = true; }
+  }
+  if (assignedItemIds) await report.save();
   res.json({ success: true, data: withSignedReportFiles(report) });
+});
+
+// PATCH /api/staff/medical-reports/:id/items/:itemId — 单项目原子更新。
+// expectedRevision 防止两个窗口静默互相覆盖；冲突时返回服务器最新版，由用户刷新确认。
+router.patch('/medical-reports/:id/items/:itemId', staffAuth, async (req, res) => {
+  try {
+    const expectedRevision = Number(req.body.expectedRevision);
+    if (!Number.isInteger(expectedRevision) || expectedRevision < 0) {
+      return res.status(400).json({ success: false, code: 'REPORT_REVISION_REQUIRED', message: '缺少有效的报告版本号，请刷新后重试' });
+    }
+    const allowed = ['name', 'value', 'unit', 'referenceRange', 'status', 'itemType', 'bodyPart', 'findings', 'diagnosis', 'conclusion', 'screeningKey', 'screeningKeys', 'screeningCategory', 'screeningParent', 'matchStatus', 'matchConfidence', 'manualReviewStatus', 'manualReviewedAt'];
+    const set = {};
+    for (const field of allowed) {
+      if (req.body[field] !== undefined) set[`reportItems.$[item].${field}`] = req.body[field];
+    }
+    if (!Object.keys(set).length) return res.status(400).json({ success: false, message: '没有可更新的项目字段' });
+    const updated = await MedicalReport.findOneAndUpdate(
+      { _id: req.params.id, reviewRevision: expectedRevision, 'reportItems.itemId': req.params.itemId },
+      { $set: set, $inc: { reviewRevision: 1 } },
+      { new: true, arrayFilters: [{ 'item.itemId': req.params.itemId }] },
+    ).select('reportItems reviewRevision');
+    if (!updated) {
+      const current = await MedicalReport.findById(req.params.id).select('reviewRevision reportItems').lean();
+      if (!current) return res.status(404).json({ success: false, message: '报告不存在' });
+      const exists = (current.reportItems || []).some(item => item.itemId === req.params.itemId);
+      return res.status(exists ? 409 : 404).json({
+        success: false,
+        code: exists ? 'REPORT_REVISION_CONFLICT' : 'REPORT_ITEM_NOT_FOUND',
+        message: exists ? '报告已在其他窗口发生修改，为防止覆盖，请刷新后继续审核' : '报告项目不存在，请刷新后重试',
+        currentRevision: current.reviewRevision,
+      });
+    }
+    const item = updated.reportItems.find(entry => entry.itemId === req.params.itemId);
+    res.json({ success: true, data: { item, reviewRevision: updated.reviewRevision } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
 });
 
 // POST /api/staff/medical-reports — 上传报告（Base64）
@@ -2096,7 +2139,13 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
   try {
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-    const { title, type, hospital, date, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, fileUrl, fileUrls, ossKey, ossKeys, mimeType, fileSize, editSource } = req.body;
+    const { title, type, hospital, date, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, fileUrl, fileUrls, ossKey, ossKeys, mimeType, fileSize, editSource, expectedRevision } = req.body;
+    if (reportItems !== undefined && editSource === 'ocr_review') {
+      const requestedRevision = Number(expectedRevision);
+      if (!Number.isInteger(requestedRevision) || requestedRevision !== Number(report.reviewRevision || 0)) {
+        return res.status(409).json({ success: false, code: 'REPORT_REVISION_CONFLICT', message: '报告已在其他窗口发生修改，为防止覆盖，请刷新后继续审核', currentRevision: report.reviewRevision || 0 });
+      }
+    }
     // 提交审核完成时，存在报告项目就必须逐项归类；完全没有项目的报告允许直接完成。
     // 草稿不受此限制，便于分批核对、逐步补齐归类。校验放在后端，避免旧前端或直接请求绕过。
     if (aiStatus === 'reviewed' && Array.isArray(reportItems) && reportItems.length > 0) {
@@ -2201,6 +2250,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
         }));
       }
       report.reportItems = nextItems;
+      report.reviewRevision = Number(report.reviewRevision || 0) + 1;
     }
     if (autoAuditPending) {
       applyAuditedInstitution(report);
@@ -10131,9 +10181,9 @@ router.post('/patients/:id/reports/:rid/reclassify', staffAuth, async (req, res)
     pendingIndexes.forEach((originalIndex, pendingIndex) => {
       reclassified[originalIndex] = newlyClassified[pendingIndex];
     });
-    await MedicalReport.findByIdAndUpdate(report._id, { reportItems: reclassified });
+    const updated = await MedicalReport.findByIdAndUpdate(report._id, { $set: { reportItems: reclassified }, $inc: { reviewRevision: 1 } }, { new: true }).select('reviewRevision');
     const matchedCount = newlyClassified.filter(i => i.matchStatus === 'matched').length;
-    res.json({ success: true, data: reclassified, matchedCount });
+    res.json({ success: true, data: reclassified, matchedCount, reviewRevision: updated?.reviewRevision || 0 });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
