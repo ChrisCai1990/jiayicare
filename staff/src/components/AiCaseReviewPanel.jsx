@@ -10,7 +10,6 @@ const REVIEW_TEMPLATES = [
   { key: 'checkup', label: '体检方案研判', title: '体检方案研判', description: '结合体检报告、健康档案和既往检查，明确本次体检重点与待审核方案。', scopes: ['basic','healthProfile','reports','plans','aiAnalysis'], target: '本次体检方案' },
   { key: 'nutrition', label: '营养干预研判', title: '营养干预研判', description: '结合指标、生活方式和依从性讨论本季度营养干预方向，形成季度待审核方案。', scopes: ['basic','healthProfile','healthRecords','medications','followups','plans'], target: '季度营养干预方案' },
   { key: 'annual', label: '年度管理研判', title: '年度管理研判', description: '结合健康档案、目标和既有服务，讨论下一年度管理重点与待审核方案。', scopes: ['basic','healthProfile','reports','healthRecords','followups','plans','aiAnalysis'], target: '年度管理方案' },
-  { key: 'assessment', label: '阶段性评估研判', title: '阶段性评估', description: '结合阶段数据评估管理执行、成效、风险和下一阶段待审核计划。', scopes: SCOPES.map(([key]) => key), target: '阶段性健康评估' },
   { key: 'medical', label: '就医协助研判', title: '就医协助研判', description: '围绕明确健康问题讨论本次复查、就医或陪诊安排，形成单次待审核方案。', scopes: ['basic','healthProfile','reports','plans','aiAnalysis'], target: '单次就医协助方案' },
   { key: 'daily', label: '日常问题交流', title: '日常问题交流', description: '围绕具体问题进行信息分析和讨论；仅保存讨论结论，不自动生成方案。', scopes: ['basic','healthProfile','reports','healthRecords','medications','followups'], target: '讨论结论' },
 ]
@@ -107,7 +106,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
       const writeToPhaseAssessment = /阶段性.*评估/.test(`${active.title} ${active.description || ''}`)
       const res = await staffAPI.confirmAiCaseReviewConclusion(patientId, active._id, conclusionText, writeToPhaseAssessment)
       replaceTopic(res.data)
-      if (res.archivedToPhaseAssessment) toast('结论已确认，并已按Admin季度模板写入服务记录 · 阶段性健康评估')
+      if (res.archivedToPhaseAssessment) toast('结论已确认，并已写入阶段性健康评估')
       else {
         const target = REVIEW_TEMPLATES.find(item => item.key === active.reviewType)?.target
           || (/年度管理研判/.test(active.title) ? '年度管理方案' : '对应业务方案')
@@ -150,7 +149,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
   if (loading) return <div className="card"><div className="card-body">正在加载专题研判资料…</div></div>
   return <div style={{ display: 'grid', gridTemplateColumns: '280px minmax(0, 1fr)', gap: 16, minHeight: 680 }}>
     <div className="card" style={{ gridColumn: '1/-1', border: '1px solid #7C3AED55' }}>
-      <div className="card-header"><div><div className="card-title">阶段性健康评估</div><div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>AI生成草稿 → 营养师初审 → 涉及临床问题时健康顾问复审 → 正式入档</div></div>{['nutritionist', 'familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy} onClick={generateAssessment}>生成阶段评估草稿</button>}</div>
+      <div className="card-header"><div><div className="card-title">阶段性健康评估</div><div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>统一评估入口 · AI生成草稿 → 营养师初审 → 涉及临床问题时健康顾问复审 → 正式入档</div></div>{['nutritionist', 'familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy} onClick={generateAssessment}>生成阶段评估草稿</button>}</div>
       <div className="card-body" style={{ display: 'grid', gap: 12 }}>
         {!assessments.length && <div style={{ color: '#8AA89C' }}>暂无阶段性评估。试点阶段仅支持人工触发，不会自动按周期生成。</div>}
         {assessments.map(item => {
@@ -174,7 +173,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
       </div>
     </div>
     <div className="card" style={{ alignSelf: 'start' }}>
-      <div className="card-header"><div className="card-title">AI辅助研判</div><button className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)}>新建主题</button></div>
+      <div className="card-header"><div><div className="card-title">专项辅助研判</div><div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>仅用于临时、专项或跨专业问题讨论，不替代上方正式阶段评估</div></div><button className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)}>新建主题</button></div>
       <div className="card-body" style={{ padding: 10 }}>
         {!topics.length && <div style={{ padding: 20, color: '#8AA89C', textAlign: 'center' }}>为客户的具体健康问题建立独立研判主题</div>}
         {topics.map(topic => <button key={topic._id} onClick={() => setActiveId(topic._id)} style={{ width: '100%', textAlign: 'left', border: topic._id === active?._id ? '1px solid #1E6B50' : '1px solid #E0D9CE', background: topic._id === active?._id ? '#EEF7F2' : '#fff', borderRadius: 8, padding: 11, marginBottom: 8, cursor: 'pointer' }}>
@@ -220,7 +219,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
       </div></div>}
     </div> : <div className="card"><div className="card-body" style={{ padding: 60, textAlign: 'center', color: '#8AA89C' }}>请先新建一个研判主题</div></div>}
 
-    {showCreate && <div className="modal-overlay"><div className="modal" style={{ maxWidth: 620 }}><div className="modal-header"><div className="modal-title">新建AI研判主题</div><button className="modal-close" onClick={() => setShowCreate(false)}>×</button></div><div className="modal-body">
+    {showCreate && <div className="modal-overlay"><div className="modal" style={{ maxWidth: 620 }}><div className="modal-header"><div className="modal-title">新建专项研判主题</div><button className="modal-close" onClick={() => setShowCreate(false)}>×</button></div><div className="modal-body">
       <div className="form-group"><label className="form-label">研判模板</label><select className="form-input" defaultValue="" onChange={e => { const item = REVIEW_TEMPLATES.find(v => v.key === e.target.value); if (item) setForm(f => ({ ...f, title: item.title, description: item.description, reviewType: item.key, contextScopes: item.scopes })); else setForm(f => ({ ...f, reviewType: 'custom' })) }}><option value="">自定义主题</option>{REVIEW_TEMPLATES.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}</select><div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>就医协助形成单次方案，营养干预形成季度方案；只有年度管理研判进入年度管理方案。</div></div>
       <div className="form-group"><label className="form-label">主题名称</label><input className="form-input" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="例如：近期血压波动原因分析" /></div>
       <div className="form-group"><label className="form-label">问题说明</label><textarea className="form-input" rows={3} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>

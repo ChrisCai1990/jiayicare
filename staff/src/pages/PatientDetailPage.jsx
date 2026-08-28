@@ -3528,7 +3528,7 @@ export default function PatientDetailPage() {
           { key: 'records',       label: '健康档案' },
           { key: 'reports',       label: '体检报告' },
           { key: 'ai',            label: '健康信息核查工作台' },
-          { key: 'aiReview',      label: 'AI辅助研判' },
+          { key: 'aiReview',      label: '阶段性健康评估' },
           { key: 'portrait',      label: '健康画像' },
           { key: 'medications',   label: '用药与营养' },
           { key: 'plans',         label: '管理方案' },
@@ -9251,11 +9251,11 @@ export default function PatientDetailPage() {
 
       {/* ── Service Records Tab ── */}
       {tab === 'serviceRecords' && (() => {
-        // 与生产一致：服务记录采用顶部分类切换；阶段性健康评估为测试中的新分类，保留入口供验收。
-        const CATS = ['营养干预', '专病管理', '医院就医', '阶段性健康评估']
+        // 阶段性健康评估在独立评估入口统一查看；服务记录只呈现实履约服务。
+        const CATS = ['营养干预', '专病管理', '医院就医']
         const grouped = {}
         CATS.forEach(c => { grouped[c] = [] })
-        serviceRecords.forEach(r => {
+        serviceRecords.filter(r => !['stage_assessment', 'phase_assessment'].includes(r.type)).forEach(r => {
           const cat = SR_CATEGORY[r.type] || '日常随访'
           grouped[cat].push(r)
         })
@@ -9281,7 +9281,6 @@ export default function PatientDetailPage() {
         const currentCategory = CATS.includes(activeServiceCategory) ? activeServiceCategory : CATS[0]
         const currentRecords = grouped[currentCategory] || []
         const isDiseaseMgmt = currentCategory === '专病管理'
-        const isPhaseAssessment = currentCategory === '阶段性健康评估'
         const diseaseGroups = {}
         if (isDiseaseMgmt) currentRecords.forEach(r => {
           const dn = r.diseaseName?.trim() || r.title?.trim() || '未标注专病'
@@ -9306,27 +9305,7 @@ export default function PatientDetailPage() {
               </div>
               {currentRecords.length === 0 ? (
                 <div style={{ padding: '16px 20px', color: '#aaa', fontSize: 13 }}>暂无{currentCategory}记录</div>
-              ) : isPhaseAssessment ? <div style={{ padding: 16, display: 'grid', gap: 14 }}>
-                {currentRecords.map(record => {
-                  const sections = record.structuredContent || {}
-                  const labels = { summary: '核心结论', facts: '已确认事实', changes: '阶段变化', risks: '重点风险', actions: '下一步行动', missing: '待补信息' }
-                  const date = new Date(record.date)
-                  const periodLabel = sections.periodLabel || `${date.getFullYear()}年第${Math.floor(date.getMonth() / 3) + 1}季度`
-                  const templateSections = Array.isArray(sections.sections) ? sections.sections : null
-                  return <details key={record._id} style={{ border: '1px solid #DCE8E1', borderRadius: 12, overflow: 'hidden', background: '#fff' }}>
-                    <summary style={{ padding: '14px 16px', background: '#EEF7F2', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, cursor: 'pointer', listStyle: 'none' }}>
-                      <span><strong style={{ color: '#155E48' }}>📊 {periodLabel}阶段性健康评估</strong><span style={{ marginLeft: 10, fontSize: 12, color: sections.customerPushEligible ? '#16845B' : '#B45309' }}>{sections.customerPushEligible ? `客户版 · ${sections.templateName}` : '内部版 · 不可推送'}</span></span>
-                      <span style={{ color: '#6B7F75', fontSize: 13 }}>点击查看 ▾</span>
-                    </summary>
-                    <div style={{ padding: 14, display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(230px,1fr))', gap: 10 }}>
-                      {templateSections ? templateSections.map((section, sectionIndex) => <section key={sectionIndex} style={{ background: sectionIndex === 2 ? '#FFF8ED' : sectionIndex === 3 ? '#EEF8F3' : '#FAFCFB', borderRadius: 9, padding: 11 }}>
-                        <div style={{ fontWeight: 700, color: sectionIndex === 2 ? '#B45309' : '#155E48', marginBottom: 6 }}>{sectionIndex + 1}. {section.title}</div>
-                        {(section.items || []).length ? section.items.map((item, index) => <div key={index} style={{ fontSize: 13, lineHeight: 1.55, marginTop: 4 }}>• {item}</div>) : <div style={{ color: '#8AA89C', fontSize: 13 }}>本期暂无已确认内容</div>}
-                      </section>) : Object.entries(labels).map(([key, label]) => (sections[key] || []).length > 0 && <section key={key} style={{ background: '#FAFCFB', borderRadius: 9, padding: 11 }}><div style={{ fontWeight: 700, color: '#155E48', marginBottom: 6 }}>{label}</div>{sections[key].map((item, index) => <div key={index} style={{ fontSize: 13, lineHeight: 1.55, marginTop: 4 }}>• {item}</div>)}</section>)}
-                    </div>
-                  </details>
-                })}
-              </div> : isDiseaseMgmt ? Object.keys(diseaseGroups).map(dn => (
+              ) : isDiseaseMgmt ? Object.keys(diseaseGroups).map(dn => (
                 <div key={dn} style={{ borderTop: '1px solid #f5f2ec' }}>
                   <div style={{ padding: '8px 20px', fontSize: 13, fontWeight: 600, color: '#4A6558', background: '#F9F6F0' }}>
                     {dn} <span style={{ fontWeight: 400, color: '#8AA89C' }}>· {diseaseGroups[dn].length} 条</span>
