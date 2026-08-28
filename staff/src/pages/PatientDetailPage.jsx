@@ -7113,41 +7113,6 @@ export default function PatientDetailPage() {
                   <button className="btn btn-primary btn-sm" onClick={() => handleSaveAISummary(false)}>保存</button>
                 </>
               )}
-              {/* 生成按钮按角色拆分：家医只生成5维度，营养师只生成生活方式评估，超管两者都能触发（走 all，一次生成全部）
-                  已审核的部分，生成按钮变灰并提示，点击需二次确认，防止误点覆盖已审核内容（2026-07-10 金娟：家医端要提示已审核防误点） */}
-              {!editingAISummary && aiAnalysisView === 'doctor' && (roleScope === 'doctor') && (
-                <button className="btn btn-sm" disabled={aiSummaryLoading}
-                  style={docApproved ? { background: '#E5E7EB', color: '#6B7280', borderColor: '#E5E7EB' } : { background: '#1E6B50', color: '#fff', borderColor: '#1E6B50' }}
-                  onClick={() => {
-                    if (docApproved && !window.confirm('最新一条5维度分析已审核。重新生成会新增一条待审核记录，原审核记录仍会保留，确定继续？')) return
-                    handleGenerateAISummary(curYear, 'doctor', docApproved)
-                  }}>
-                  {aiSummaryLoading ? '生成中…' : (docApproved ? '新增5维分析' : (hasDoctorData ? '重新生成5维度分析' : '生成5维度分析'))}
-                </button>
-              )}
-              {!editingAISummary && aiAnalysisView === 'nutrition' && (roleScope === 'nutrition') && (
-                <button className="btn btn-sm" disabled={aiSummaryLoading || !latestDoctorApproved}
-                  title={!latestDoctorApproved ? '请先由健康顾问完成并审核本年度5维分析' : ''}
-                  style={nutApproved ? { background: '#E5E7EB', color: '#6B7280', borderColor: '#E5E7EB' } : { background: '#1E6B50', color: '#fff', borderColor: '#1E6B50' }}
-                  onClick={() => {
-                    if (nutApproved && !window.confirm('最新一条生活方式评估已审核。重新生成会新增一条待审核记录，原审核记录仍会保留，确定继续？')) return
-                    handleGenerateAISummary(curYear, 'nutrition', nutApproved)
-                  }}>
-                  {aiSummaryLoading ? '生成中…' : (!latestDoctorApproved ? '等待5维分析审核' : (nutApproved ? '新增生活方式评估' : (hasLifestyle ? '重新生成生活方式评估' : '生成生活方式评估')))}
-                </button>
-              )}
-              {!editingAISummary && (roleScope === 'all') && (
-                <button className="btn btn-sm" disabled={aiSummaryLoading || (aiAnalysisView === 'nutrition' && !latestDoctorApproved)}
-                  style={(aiAnalysisView === 'doctor' ? docApproved : nutApproved) ? { background: '#E5E7EB', color: '#6B7280', borderColor: '#E5E7EB' } : { background: '#1E6B50', color: '#fff', borderColor: '#1E6B50' }}
-                  onClick={() => {
-                    const approved = aiAnalysisView === 'doctor' ? docApproved : nutApproved
-                    const label = aiAnalysisView === 'doctor' ? '5维分析' : '生活方式分析'
-                    if (approved && !window.confirm(`本年度最新${label}已有审核结果。重新生成会新增一条待审核记录，原审核记录仍会保留，确定继续？`)) return
-                    handleGenerateAISummary(curYear, aiAnalysisView, approved)
-                  }}>
-                  {aiSummaryLoading ? '生成中…' : `新增${aiAnalysisView === 'doctor' ? '5维分析' : '生活方式分析'}`}
-                </button>
-              )}
             </div>
               )
             })()}
