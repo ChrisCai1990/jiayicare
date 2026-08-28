@@ -3302,7 +3302,7 @@ export default function PatientDetailPage() {
           { key: 'reports',       label: '体检报告' },
           { key: 'portrait',      label: '健康画像' },
           { key: 'medications',   label: '用药与营养' },
-          { key: 'aiReview',      label: 'AI辅助研判' },
+          ...(user.aiPilotFeatures?.stageAssessment ? [{ key: 'aiReview', label: '阶段性健康评估' }] : []),
           { key: 'plans',         label: '管理方案' },
           { key: 'followups',     label: '随访记录' },
         ]
@@ -3334,7 +3334,7 @@ export default function PatientDetailPage() {
         </div>
       })()}
 
-      {tab === 'aiReview' && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} />}
+      {tab === 'aiReview' && user.aiPilotFeatures?.stageAssessment && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} />}
 
       {/* ── Info Tab ── */}
       {tab === 'info' && (

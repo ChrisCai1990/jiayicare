@@ -26,6 +26,10 @@ async function patientOr404(req, res) {
   if (!mongoose.isValidObjectId(req.params.patientId)) { res.status(400).json({ success: false, message: '客户ID无效' }); return null; }
   const user = await User.findById(req.params.patientId);
   if (!user) { res.status(404).json({ success: false, message: '客户不存在' }); return null; }
+  if (user.aiPilotFeatures?.stageAssessment !== true) {
+    res.status(403).json({ success: false, message: '该客户尚未进入阶段性健康评估试点' });
+    return null;
+  }
   return user;
 }
 
