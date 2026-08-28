@@ -541,7 +541,9 @@ const inferDocumentCategory = report => {
 function ServiceJourneyPanel({ reports, plans, followUps, serviceRecords, onNavigate, stageAssessmentEnabled = false }) {
   const [compact, setCompact] = useState(false)
   useEffect(() => {
-    const updateCompact = () => setCompact(window.scrollY > 260)
+    // 完整版与简版高度不同，若共用一个阈值会因页面回流在临界点来回切换、产生闪动。
+    // 进入简版和退出简版使用两个相距较远的阈值，形成稳定的滞回区间。
+    const updateCompact = () => setCompact(current => current ? window.scrollY >= 80 : window.scrollY > 300)
     updateCompact()
     window.addEventListener('scroll', updateCompact, { passive: true })
     return () => window.removeEventListener('scroll', updateCompact)
@@ -1497,6 +1499,7 @@ export default function PatientDetailPage() {
   const [tab, setTab] = useState(initialTab === 'requisitions' ? 'info' : initialTab)
   const [healthBaseView, setHealthBaseView] = useState('profile')
   const [screeningWorkspaceView, setScreeningWorkspaceView] = useState('screening')
+  const [lifestyleDetailsOpen, setLifestyleDetailsOpen] = useState(false)
   const archiveSectionsRef = useRef(null)
   const [followUps, setFollowUps] = useState([])
   const [plans, setPlans] = useState([])
@@ -1672,7 +1675,7 @@ export default function PatientDetailPage() {
   const [healthRecords, setHealthRecords] = useState([])
 
   useEffect(() => {
-    if (tab !== 'records' || !archiveSectionsRef.current) return
+    if (!['records', 'ai'].includes(tab) || !archiveSectionsRef.current) return
     archiveSectionsRef.current.querySelectorAll('.card').forEach(card => {
       const header = Array.from(card.children).find(child => child.classList?.contains('card-header'))
       if (header) {
@@ -1684,7 +1687,7 @@ export default function PatientDetailPage() {
         }
       }
     })
-  }, [tab, data, healthRecords])
+  }, [tab, healthBaseView, screeningWorkspaceView, data, healthRecords])
 
   const handleArchiveSectionClick = (event) => {
     if (event.target.closest('button, a, input, select, textarea, label')) return
@@ -4369,11 +4372,13 @@ export default function PatientDetailPage() {
           return (
             <div className="card" style={{ marginBottom: 20 }}>
               <div className="card-header">
-                <div className="card-title">生活方式（膳食调查）</div>
+                <div><div className="card-title">生活方式摘要</div><div style={{ marginTop: 4, fontSize: 12, color: '#8AA89C' }}>正式档案默认收起；AI可结合近30天打卡形成变化分析，经营养师审核后再更新</div></div>
                 {!editingLifestyle
                   ? <div style={{ display: 'flex', gap: 8 }}>
                       <button className="btn btn-primary btn-sm" onClick={() => setShowLifestyleChangeModal(true)}>＋ 新增变化</button>
-                      <button className="btn btn-secondary btn-sm" onClick={() => { setLifestyleTab('diet'); setEditingLifestyle(true) }}>编辑当前档案</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => { setTab('ai'); setScreeningWorkspaceView('analysis'); setAiAnalysisView('nutrition') }}>AI整理打卡变化</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => setLifestyleDetailsOpen(v => !v)}>{lifestyleDetailsOpen ? '收起详细档案' : '展开详细档案'}</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => { setLifestyleDetailsOpen(true); setLifestyleTab('diet'); setEditingLifestyle(true) }}>编辑当前档案</button>
                     </div>
                   : <div style={{ display: 'flex', gap: 8 }}>
                       <button className="btn btn-primary btn-sm" onClick={handleSaveLifestyle}>保存</button>
@@ -4381,7 +4386,11 @@ export default function PatientDetailPage() {
                     </div>
                 }
               </div>
-              <div className="card-body">
+              {!lifestyleDetailsOpen && !editingLifestyle && <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 10 }}>
+                {Object.entries(deriveBasicLifestyle(user.lifestyle_data || {})).filter(([, value]) => value).slice(0, 8).map(([key, value]) => <div key={key} style={{ padding: '9px 11px', background: '#F7FAF8', borderRadius: 8 }}><div style={{ fontSize: 11, color: '#8AA89C' }}>{({ diet:'饮食', exercise:'运动', sleep:'睡眠', water:'饮水', smoking:'吸烟', alcohol:'饮酒', bowel:'排便', mood:'情绪' })[key] || key}</div><div style={{ marginTop: 3, fontSize: 13, color: '#1A2B24' }}>{value}</div></div>)}
+                {!Object.values(deriveBasicLifestyle(user.lifestyle_data || {})).some(Boolean) && <div style={{ color: '#8AA89C', fontSize: 13 }}>暂无生活方式摘要，可由膳食问卷、打卡变化或营养师沟通逐步补充。</div>}
+              </div>}
+              {(lifestyleDetailsOpen || editingLifestyle) && <div className="card-body">
                 {/* 子板块 Tab 导航 */}
                 <div style={{ display: 'flex', borderBottom: '1px solid #e0d9ce', marginBottom: 16, overflowX: 'auto' }}>
                   {[
@@ -4650,7 +4659,7 @@ export default function PatientDetailPage() {
 
                   </div>
                 )}
-              </div>
+              </div>}
             </div>
           )
         })()}
@@ -6963,7 +6972,8 @@ export default function PatientDetailPage() {
         // SectionCard / ArrEdit 已提到模块级（AISectionCard / AIArrEdit），避免重渲染失焦
 
         return (
-          <div>
+          <div ref={archiveSectionsRef} className="health-archive-sections" onClick={handleArchiveSectionClick}>
+            <style>{`.health-archive-sections>.card{transition:box-shadow .2s}.health-archive-sections .archive-collapsed>:not(.card-header){display:none!important}.health-archive-sections .card-header[data-archive-toggle="true"]{cursor:pointer}.health-archive-sections .card-header[data-archive-toggle="true"]:after{content:'⌃';margin-left:10px;color:#1E6B50;font-size:18px}.health-archive-sections .archive-collapsed>.card-header[data-archive-toggle="true"]:after{content:'⌄'}`}</style>
             <AiRuleHint scene="health_analysis" />
             {/* 前置要求：健康顾问生成AI健康分析/风险评估前必须先查看确认健康档案（2026-07-28改造，
                 不再逐份审核报告数据本身，那是健管专员audit_status的职责） */}
@@ -6986,6 +6996,17 @@ export default function PatientDetailPage() {
                 </div>
               )
             })()}
+            <div className="card" style={{ marginBottom: 12 }}>
+              <div className="card-header"><div><div className="card-title">{curYear}年度重点</div><div style={{ marginTop: 4, fontSize: 12, color: '#8AA89C' }}>先看结论与待办；生成、版本和详细依据按需展开</div></div></div>
+              <div className="card-body" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <span style={{ padding: '6px 10px', borderRadius: 8, background: hasDoctorData ? '#E8F5EF' : '#F3F4F6', color: hasDoctorData ? '#1E6B50' : '#64748B', fontSize: 12 }}>{hasDoctorData ? '已形成5维健康结论' : '5维健康结论待生成'}</span>
+                <span style={{ padding: '6px 10px', borderRadius: 8, background: hasLifestyle ? '#ECFDF5' : '#F3F4F6', color: hasLifestyle ? '#15803D' : '#64748B', fontSize: 12 }}>{hasLifestyle ? '已形成生活方式结论' : '生活方式结论待生成'}</span>
+                <span style={{ padding: '6px 10px', borderRadius: 8, background: '#FFF7ED', color: '#9A3412', fontSize: 12 }}>待查看报告 {pendingDoctorAuditReports.filter(r => !r.familyDoctorViewedAt).length} 份</span>
+              </div>
+            </div>
+            <details style={{ marginBottom: 12, padding: '10px 12px', border: '1px solid #DCE5E0', borderRadius: 9, background: '#FAFBFA' }}>
+              <summary style={{ cursor: 'pointer', fontWeight: 700, color: '#1E6B50' }}>生成、年度与历史版本管理</summary>
+              <div style={{ marginTop: 12 }}>
             {/* 年度选择：下拉 select，✓=已审核 ●=已生成待审核 */}
             <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
               <span style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>📅 年度</span>
@@ -7081,6 +7102,8 @@ export default function PatientDetailPage() {
                 </div>
               ))}
             </div>
+              </div>
+            </details>
             {/* 操作栏 */}
             {(() => {
               // 按角色拆分审核（健康顾问审5维 / 营养师审生活方式评估；超管两者皆可）
