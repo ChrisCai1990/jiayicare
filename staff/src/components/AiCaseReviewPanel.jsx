@@ -63,6 +63,28 @@ function AssessmentLine({ line, color }) {
   return <div style={{ padding: '8px 11px 8px 25px', position: 'relative', borderBottom: '1px dashed #DCE8E1', fontSize: 13, lineHeight: 1.65 }}><span style={{ position: 'absolute', left: 10, color }}>•</span>{line}</div>
 }
 
+function StageWorkflow({ assessment }) {
+  if (!assessment) return <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 6 }}>尚未生成评估</div>
+  const status = assessment.status === 'pending' ? 'nutrition_review' : assessment.status
+  const clinicalRequired = assessment.clinicalReview?.required === true
+  const steps = [
+    { label: 'AI草稿', state: 'done', note: '已生成' },
+    { label: '营养师初审', state: status === 'nutrition_review' || status === 'rejected' ? 'current' : 'done', note: status === 'rejected' ? '已退回待调整' : status === 'nutrition_review' ? '当前环节' : '已完成' },
+    { label: '健康顾问复审', state: status === 'doctor_review' ? 'current' : ['finalized', 'approved'].includes(status) ? (clinicalRequired ? 'done' : 'skipped') : 'waiting', note: status === 'doctor_review' ? '当前环节' : clinicalRequired ? (['finalized', 'approved'].includes(status) ? '已完成' : '待进入') : '按临床问题触发' },
+    { label: '正式入档', state: ['finalized', 'approved'].includes(status) ? 'done' : 'waiting', note: ['finalized', 'approved'].includes(status) ? '已完成' : '待审核完成' },
+  ]
+  return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(120px,1fr))', gap: 8, marginTop: 10 }}>
+    {steps.map((step, index) => {
+      const palette = step.state === 'done' ? ['#16845B', '#EEF8F3'] : step.state === 'current' ? ['#7C3AED', '#F5F3FF'] : step.state === 'skipped' ? ['#65776F', '#F3F5F4'] : ['#9AA8A1', '#FAFBFA']
+      return <div key={step.label} style={{ position: 'relative', border: `1px solid ${palette[0]}55`, background: palette[1], borderRadius: 9, padding: '9px 10px', textAlign: 'center' }}>
+        <div style={{ fontSize: 16 }}>{step.state === 'done' ? '✓' : step.state === 'current' ? '●' : step.state === 'skipped' ? '—' : '○'}</div>
+        <div style={{ color: palette[0], fontSize: 12, fontWeight: 800, marginTop: 2 }}>{index + 1}. {step.label}</div>
+        <div style={{ color: '#65776F', fontSize: 11, marginTop: 2 }}>{step.note}</div>
+      </div>
+    })}
+  </div>
+}
+
 export default function AiCaseReviewPanel({ patientId, staff, toast }) {
   const [topics, setTopics] = useState([])
   const [assessments, setAssessments] = useState([])
@@ -182,9 +204,10 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
   }
 
   if (loading) return <div className="card"><div className="card-body">正在加载专题研判资料…</div></div>
+  const currentAssessment = assessments.find(item => !String(item.periodKey || '').includes('-legacy-')) || null
   return <div style={{ display: 'grid', gridTemplateColumns: '280px minmax(0, 1fr)', gap: 16, minHeight: 680 }}>
     <div className="card" style={{ gridColumn: '1/-1', border: '1px solid #7C3AED55' }}>
-      <div className="card-header"><div><div className="card-title">阶段性健康评估</div><div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>AI生成草稿 → 营养师初审 → 涉及临床问题时健康顾问复审 → 正式入档</div></div>{['nutritionist', 'familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy} onClick={generateAssessment}>生成阶段评估草稿</button>}</div>
+      <div className="card-header" style={{ alignItems: 'flex-start' }}><div style={{ flex: 1 }}><div className="card-title">阶段性健康评估</div><div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>以下为当前有效评估的真实流程状态</div><StageWorkflow assessment={currentAssessment} /></div>{['nutritionist', 'familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy} onClick={generateAssessment}>生成阶段评估草稿</button>}</div>
       <div className="card-body" style={{ display: 'grid', gap: 12 }}>
         {!assessments.length && <div style={{ color: '#8AA89C' }}>暂无阶段性评估。试点阶段仅支持人工触发，不会自动按周期生成。</div>}
         {assessments.map(item => {

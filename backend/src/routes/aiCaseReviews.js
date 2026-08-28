@@ -52,7 +52,8 @@ router.get('/ai-case-review/providers', staffAuth, (req, res) => {
 router.get('/patients/:patientId/phase-assessments', staffAuth, async (req, res) => {
   try {
     const user = await patientOr404(req, res); if (!user) return;
-    const data = await PhaseAssessment.find({ patientId: user._id }).sort({ createdAt: -1 }).limit(20).lean();
+    // 被新结构替代的试跑草稿保留审计，但不再混入当前工作界面。
+    const data = await PhaseAssessment.find({ patientId: user._id, periodKey: { $not: /-legacy-/ } }).sort({ createdAt: -1 }).limit(20).lean();
     res.json({ success: true, data });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
