@@ -511,6 +511,7 @@ const DOCUMENT_CATEGORIES = [
   { key: 'physical_exam', label: '体检报告' },
   { key: 'lab_report', label: '检验报告' },
   { key: 'exam_report', label: '检查报告' },
+  { key: 'body_composition', label: '人体成分' },
   { key: 'functional_medicine', label: '功能医学' },
   { key: 'genetic_test', label: '基因检测' },
   { key: 'outpatient_record', label: '门诊病历' },
@@ -529,10 +530,36 @@ const inferDocumentCategory = report => {
   if (/问卷|量表|调查表/.test(title)) return 'questionnaire'
   if (report.type === 'annual' || /体检/.test(title)) return 'physical_exam'
   if (['blood', 'bloodTest', 'pathology'].includes(report.type)) return 'lab_report'
+  if (report.type === 'body_comp' || /人体成分|身体成分|体成分/.test(title)) return 'body_composition'
   if (report.type === 'functional' || /功能医学|功能检测/.test(title)) return 'functional_medicine'
   if (report.type === 'genetic' || /基因/.test(title)) return 'genetic_test'
   if (report.type && report.type !== 'other') return 'exam_report'
   return 'other_customer_material'
+}
+
+function ServiceJourneyPanel({ reports, plans, followUps, serviceRecords, onNavigate }) {
+  const confirmedPlans = plans.filter(item => item.confirmedAt || item.status === 'active')
+  const finishedTasks = followUps.filter(item => ['completed', 'done'].includes(item.status)).length
+  const activeTasks = followUps.filter(item => ['planned', 'pending', 'in_progress', 'missed'].includes(item.status)).length
+  const assessments = serviceRecords.filter(item => ['stage_assessment', 'phase_assessment'].includes(item.type))
+  const deliveryRecords = serviceRecords.filter(item => !['stage_assessment', 'phase_assessment'].includes(item.type))
+  const steps = [
+    { label: '资料归集', detail: reports.length ? `${reports.length}份原始资料` : '尚无原始资料', tab: 'reports', reached: reports.length > 0 },
+    { label: '方案建立', detail: confirmedPlans.length ? `${confirmedPlans.length}个已确认方案` : plans.length ? `${plans.length}个方案待确认` : '尚无服务方案', tab: 'plans', reached: plans.length > 0 },
+    { label: '服务执行', detail: activeTasks ? `${activeTasks}项待执行` : followUps.length ? `${finishedTasks}/${followUps.length}项已完成` : '尚未生成执行任务', tab: 'followups', reached: followUps.length > 0 },
+    { label: '阶段评估', detail: assessments.length ? `${assessments.length}次已归档评估` : '等待阶段评估', tab: 'aiReview', reached: assessments.length > 0 },
+    { label: '持续服务档案', detail: deliveryRecords.length ? `${deliveryRecords.length}条服务记录` : '等待执行结果归档', tab: 'serviceRecords', reached: deliveryRecords.length > 0 },
+  ]
+  const currentIndex = Math.max(0, steps.reduce((latest, step, index) => step.reached ? index : latest, -1))
+  return <div className="card" style={{ marginBottom: 16, border: '1px solid #CFE2D8' }}>
+    <div className="card-header"><div><div className="card-title">客户全周期服务进程</div><div style={{ marginTop: 4, color: '#65776F', fontSize: 12 }}>方案、任务和归档记录实时互通；点击节点可进入对应工作页面</div></div></div>
+    <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(5,minmax(135px,1fr))', gap: 8, padding: 14 }}>
+      {steps.map((step, index) => <button key={step.label} type="button" onClick={() => onNavigate(step.tab)} style={{ border: `1px solid ${index === currentIndex ? '#1E6B50' : step.reached ? '#9FD0B8' : '#DFE7E3'}`, borderRadius: 9, background: index === currentIndex ? '#EAF6F0' : step.reached ? '#F4FAF7' : '#FAFBFA', padding: '11px 9px', cursor: 'pointer', textAlign: 'left' }}>
+        <div style={{ fontSize: 12, fontWeight: 800, color: step.reached ? '#166447' : '#7C8D85' }}>{step.reached ? '✓' : index === currentIndex ? '●' : '○'} {index + 1}. {step.label}</div>
+        <div style={{ fontSize: 11, color: '#65776F', marginTop: 5, lineHeight: 1.45 }}>{step.detail}</div>
+      </button>)}
+    </div>
+  </div>
 }
 const PLAN_TYPE_LABEL = {
   annual_checkup:'年度体检方案', annual_mgmt:'年度管理方案',
@@ -2203,8 +2230,10 @@ export default function PatientDetailPage() {
     }
   }, [tab, autoGenMedicalAssistOrderId])
   useEffect(() => {
-    if (tab === 'followups') loadFollowUps()
-    else if (tab === 'plans') loadPlans()
+    if (['plans', 'aiReview', 'followups', 'serviceRecords'].includes(tab)) {
+      loadPlans(); loadFollowUps(); loadServiceRecords()
+      if (reports.length === 0) loadReports()
+    }
     else if (tab === 'reports') {
       loadReports()
       // 体检报告排序也需要 screeningTree，按需加载
@@ -2212,7 +2241,6 @@ export default function PatientDetailPage() {
         staffAPI.getScreeningTree().then(r => setScreeningTree(r.data || [])).catch(() => {})
       }
     }
-    else if (tab === 'serviceRecords') loadServiceRecords()
     else if (tab === 'referrals') loadPatientReferrals()
     else if (tab === 'medications') { loadMedications(); loadSupplements() }
     else if (tab === 'portrait') {
@@ -3413,7 +3441,8 @@ export default function PatientDetailPage() {
         </div>
       })()}
 
-      {tab === 'aiReview' && user.aiPilotFeatures?.stageAssessment && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} mode="assessment" />}
+      {['plans', 'aiReview', 'followups', 'serviceRecords'].includes(tab) && <ServiceJourneyPanel reports={reports} plans={plans} followUps={followUps} serviceRecords={serviceRecords} onNavigate={setTab} />}
+      {tab === 'aiReview' && user.aiPilotFeatures?.stageAssessment && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} mode="assessment" onNavigate={setTab} />}
       {tab === 'aiCase' && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} mode="specialty" />}
 
       {/* ── Info Tab ── */}
@@ -8929,13 +8958,13 @@ export default function PatientDetailPage() {
 
       {/* ── Service Records Tab ── */}
       {tab === 'serviceRecords' && (() => {
-        // 阶段性健康评估在独立评估入口统一查看；服务记录只呈现实履约服务。
-        const CATS = ['营养干预', '专病管理', '医院就医']
+        // 评估入口负责生成和审核；服务档案保留审核后的正式结果，两者通过来源 ID 互通。
+        const CATS = ['营养干预', '专病管理', '医院就医', '阶段性健康评估']
         const grouped = {}
         CATS.forEach(c => { grouped[c] = [] })
-        serviceRecords.filter(r => !['stage_assessment', 'phase_assessment'].includes(r.type)).forEach(r => {
+        serviceRecords.forEach(r => {
           const cat = SR_CATEGORY[r.type]
-          // routine / doctor_followup 等已取消的旧类型不再出现在服务记录页面。
+          // routine / doctor_followup 等已取消的旧类型不再出现在服务档案页面。
           if (!cat || !grouped[cat]) return
           grouped[cat].push(r)
         })
@@ -11559,7 +11588,7 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
   const [uploadStep, setUploadStep] = useState('')
   const [error, setError] = useState('')
 
-  const supportsScreeningCategory = ['physical_exam', 'lab_report', 'exam_report', 'functional_medicine', 'genetic_test'].includes(form.documentCategory)
+  const supportsScreeningCategory = ['physical_exam', 'lab_report', 'exam_report', 'body_composition', 'functional_medicine', 'genetic_test'].includes(form.documentCategory)
   const isAnnual = form.l1Id === ANNUAL_L1_ID
   const currentL1 = isAnnual ? null : screeningTree.find(n => String(n._id) === form.l1Id)
   const selectedReportType = isAnnual ? 'annual' : (REPORT_L1_LABEL_TO_TYPE[currentL1?.label] || 'other')
