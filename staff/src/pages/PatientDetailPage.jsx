@@ -523,7 +523,6 @@ const SR_CATEGORY = {
   nutrition:     '营养干预',
   disease_mgmt:  '专病管理', specialist: '专病管理', psychology: '专病管理', rehab: '专病管理', tcm: '专病管理',
   medical_visit: '医院就医', medical_escort: '医院就医',
-  stage_assessment: '阶段性健康评估',
   routine:       '日常随访',
   doctor_followup: '健康顾问跟进',
   stage_assessment: '阶段性健康评估', phase_assessment: '阶段性健康评估',
