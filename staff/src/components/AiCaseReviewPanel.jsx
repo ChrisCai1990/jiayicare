@@ -31,11 +31,31 @@ function CleanText({ children }) {
   return <div>{lines.map((line, index) => <div key={index} style={{ lineHeight: 1.65, fontSize: 14, marginTop: index ? 5 : 0 }}>{line.replace(/^[-*+]\s+/, '• ')}</div>)}</div>
 }
 
+const STAGE_SECTION_META = [
+  { icon: '🎯', label: '目标数据', color: '#2563EB', background: '#EFF6FF' },
+  { icon: '🥗', label: '生活方式', color: '#16845B', background: '#EEF8F3' },
+  { icon: '⚠️', label: '风险缺口', color: '#B45309', background: '#FFF8ED' },
+  { icon: '✅', label: '行动计划', color: '#7C3AED', background: '#F5F3FF' },
+]
+
+function splitStageAssessment(content) {
+  const sections = []
+  String(content || '').split(/\r?\n/).forEach(raw => {
+    const line = raw.trim()
+    if (!line) return
+    const heading = line.match(/^[一二三四][、.．]\s*(.+)$/)
+    if (heading) sections.push({ title: heading[1], lines: [] })
+    else if (sections.length) sections[sections.length - 1].lines.push(line.replace(/^[-•▪]\s*/, ''))
+  })
+  return STAGE_SECTION_META.map((meta, index) => ({ ...meta, title: sections[index]?.title || meta.label, lines: sections[index]?.lines || [] }))
+}
+
 export default function AiCaseReviewPanel({ patientId, staff, toast }) {
   const [topics, setTopics] = useState([])
   const [assessments, setAssessments] = useState([])
   const [assessmentEdits, setAssessmentEdits] = useState({})
   const [expandedAssessments, setExpandedAssessments] = useState({})
+  const [activeAssessmentSections, setActiveAssessmentSections] = useState({})
   const [activeId, setActiveId] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -162,11 +182,24 @@ export default function AiCaseReviewPanel({ patientId, staff, toast }) {
           const canDoctorReview = ['familyDoctor', 'superadmin'].includes(staff?.role) && status === 'doctor_review'
           const expanded = expandedAssessments[item._id] === true
           const evidenceCount = (item.evidenceSources || []).length
+          const stageSections = splitStageAssessment(item.content)
+          const activeSectionIndex = activeAssessmentSections[item._id]
+          const activeSection = Number.isInteger(activeSectionIndex) ? stageSections[activeSectionIndex] : null
           return <section key={item._id} id={`phase-assessment-${item._id}`} style={{ border: '1px solid #DCE8E1', borderRadius: 10, padding: 13, background: status === 'finalized' ? '#F2FAF6' : '#fff' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><strong style={{ color: '#155E48' }}>📊 {item.periodLabel}阶段性健康评估</strong><span style={{ fontSize: 12, fontWeight: 700, color: status === 'doctor_review' ? '#B45309' : status === 'finalized' ? '#16845B' : '#7C3AED' }}>{statusLabel}</span></div>
             <div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>{item.templateSnapshot?.name || '模板驱动评估'} · {evidenceCount ? `${evidenceCount}项依据` : '依据待核实'}</div>
-            {!expanded && <div style={{ marginTop: 10, color: '#33473E', fontSize: 13, lineHeight: 1.65, display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden', whiteSpace: 'pre-wrap' }}>{item.content}</div>}
-            <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 10 }} onClick={() => setExpandedAssessments(values => ({ ...values, [item._id]: !expanded }))}>{expanded ? '收起' : (canNutritionReview || canDoctorReview ? '展开审核' : '查看全文')}</button>
+            <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(4,minmax(120px,1fr))', gap: 9 }}>
+              {stageSections.map((section, index) => <button key={section.label} type="button" onClick={() => setActiveAssessmentSections(values => ({ ...values, [item._id]: values[item._id] === index ? null : index }))} style={{ border: `1px solid ${activeSectionIndex === index ? section.color : '#DCE8E1'}`, borderRadius: 10, padding: '12px 8px', background: activeSectionIndex === index ? section.background : '#fff', cursor: 'pointer', textAlign: 'center' }}>
+                <div style={{ fontSize: 25, lineHeight: 1 }}>{section.icon}</div>
+                <div style={{ marginTop: 7, fontSize: 13, fontWeight: 800, color: section.color }}>{section.label}</div>
+                <div style={{ marginTop: 3, fontSize: 11, color: '#7A8C83' }}>{section.lines.length || 0}项</div>
+              </button>)}
+            </div>
+            {activeSection && <div style={{ marginTop: 10, padding: 12, borderRadius: 9, background: activeSection.background, borderLeft: `4px solid ${activeSection.color}` }}>
+              <div style={{ fontWeight: 800, color: activeSection.color, marginBottom: 7 }}>{activeSection.title}</div>
+              {activeSection.lines.length ? activeSection.lines.map((line, index) => <div key={index} style={{ fontSize: 13, lineHeight: 1.6, marginTop: 4 }}>• {line}</div>) : <div style={{ color: '#7A8C83', fontSize: 13 }}>本板块暂无内容</div>}
+            </div>}
+            <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 10 }} onClick={() => setExpandedAssessments(values => ({ ...values, [item._id]: !expanded }))}>{expanded ? '收起编辑' : (canNutritionReview || canDoctorReview ? '编辑并审核' : '查看原文')}</button>
             {expanded && <>
               {item.clinicalReview?.reasons?.length > 0 && <div style={{ marginTop: 8, padding: 8, borderRadius: 7, background: '#FFF8ED', color: '#92400E', fontSize: 12 }}>临床复审原因：{item.clinicalReview.reasons.join('；')}</div>}
               <textarea className="form-input" rows={12} style={{ marginTop: 10 }} disabled={!canNutritionReview && !canDoctorReview} value={assessmentEdits[item._id] ?? item.content ?? ''} onChange={event => setAssessmentEdits(values => ({ ...values, [item._id]: event.target.value }))} />
