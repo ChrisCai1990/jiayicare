@@ -522,8 +522,11 @@ const DOCUMENT_CATEGORIES = [
 ]
 const DOCUMENT_CATEGORY_LABEL = Object.fromEntries(DOCUMENT_CATEGORIES.map(item => [item.key, item.label]))
 const inferDocumentCategory = report => {
-  if (report.documentCategory) return report.documentCategory
   const title = report.title || ''
+  // 这些历史资料过去通常被保存为“其他”，明确业务名称应优先于旧的兜底分类。
+  if (/慢性食物过敏|肠道菌群基因测序|肠道功能分析|荷尔蒙检查|尿液有机酸|端粒长度/.test(title)) return 'functional_medicine'
+  if (/阖家欢精准基因检测/.test(title)) return 'genetic_test'
+  if (report.documentCategory) return report.documentCategory
   if (/门诊|门诊病历|门诊记录/.test(title)) return 'outpatient_record'
   if (/住院|出院|入院|手术记录|住院小结/.test(title)) return 'inpatient_record'
   if (/处方|医嘱|用药单/.test(title)) return 'prescription_order'
@@ -3401,10 +3404,10 @@ export default function PatientDetailPage() {
         const groups = [
           { key: 'overview', label: '客户概览', tabs: [{ key: 'info', label: '客户概览' }] },
           { key: 'healthData', label: '健康资料', tabs: [
-            { key: 'reports', label: '原始资料' },
             { key: 'records', label: '健康基础与生活方式' },
             { key: 'ai', label: '专项筛查与核查' },
             { key: 'medications', label: '用药与营养素' },
+            { key: 'reports', label: '原始资料' },
           ] },
           { key: 'healthPortrait', label: '健康画像', tabs: [
             { key: 'portrait', label: '综合画像' },
@@ -8139,25 +8142,6 @@ export default function PatientDetailPage() {
             </div>
           ) : (
             <>
-            {(() => {
-              const annual = plans.find(plan => plan.isAnnualPlan)
-              if (!annual) return null
-              const stage = annual.progress?.currentStage || (!annual.pushedAt ? 'draft' : !annual.confirmedAt ? 'awaiting_customer' : 'in_progress')
-              const stages = [
-                ['draft', '方案已保存'], ['awaiting_customer', '已推送客户'], ['in_progress', '客户已确认'], ['completed', '执行完成'],
-              ]
-              const stageIndex = { draft: 0, awaiting_customer: 1, in_progress: 2, completed: 3 }[stage] ?? 0
-              return <div style={{ padding: '18px 20px', borderBottom: '1px solid #EDF1EF', background: '#FAFCFB' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <div><div style={{ fontWeight: 700, color: '#1A2B24' }}>客户当前进程</div><div style={{ color: '#65776F', fontSize: 12, marginTop: 4 }}>{annual.title}</div></div>
-                  <div style={{ color: '#1E6B50', fontWeight: 700 }}>{annual.progress?.completed || 0}/{annual.progress?.total || 0} 项完成 · {annual.progress?.percent || 0}%</div>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(130px,1fr))', gap: 8, marginTop: 14 }}>
-                  {stages.map(([key, label], index) => <div key={key} style={{ padding: '10px 8px', borderRadius: 8, textAlign: 'center', fontSize: 12, fontWeight: index <= stageIndex ? 700 : 500, color: index <= stageIndex ? '#155E48' : '#8AA89C', background: index <= stageIndex ? '#EAF6F0' : '#F2F4F3', border: `1px solid ${index === stageIndex ? '#22A06B' : 'transparent'}` }}>{index < stageIndex ? '✓ ' : index === stageIndex ? '● ' : ''}{label}</div>)}
-                </div>
-                {annual.progress?.nextDueAt && <div style={{ marginTop: 10, color: '#65776F', fontSize: 12 }}>下一节点：{new Date(annual.progress.nextDueAt).toLocaleDateString('zh-CN')}</div>}
-              </div>
-            })()}
             <table className="table">
               <thead><tr><th>方案名称</th><th>类型</th><th>状态</th><th>已阅</th><th>已确认</th><th>项目数</th><th>完成</th><th>负责人</th><th>创建时间</th></tr></thead>
               <tbody>
@@ -8222,7 +8206,7 @@ export default function PatientDetailPage() {
         <>
         <div className="card">
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div><div className="card-title">服务执行</div><div style={{ marginTop: 4, color: '#65776F', fontSize: 12 }}>计划中和进行中的服务任务；团队仍从个人工作台进入并处理</div></div>
+            <div><div className="card-title">服务执行任务</div><div style={{ marginTop: 4, color: '#65776F', fontSize: 12 }}>承接方案生成的营养、监测、体检复查、就医协助、专病管理及沟通任务；随访只是执行方式之一</div></div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn btn-secondary btn-sm" onClick={() => runAIHelper('followup')}>✨ AI随访建议</button>
               <button className="btn btn-secondary btn-sm" onClick={() => runAIHelper('coach')}>✨ AI教练消息</button>
@@ -8234,7 +8218,7 @@ export default function PatientDetailPage() {
             // 全部/待随访(planned)/随访中(in_progress+missed)/已随访(completed)/已取消(cancelled)，
             // 此前这里把"待随访"和"随访中"合并成一个"未随访"、状态文案也用的是"计划中/进行中"等另一套措辞，
             // 与随访管理页tab结构和文案不一致（2026-07-13 反馈）。
-            const FOLLOWUP_LIST_STATUS_MAP = { planned: '待随访', in_progress: '随访中', missed: '随访中', completed: '已随访', cancelled: '已取消' }
+            const FOLLOWUP_LIST_STATUS_MAP = { planned: '待执行', in_progress: '执行中', missed: '执行中', completed: '已完成', cancelled: '已取消' }
             const FOLLOWUP_LIST_STATUS_COLOR = { planned: '#D97706', in_progress: '#0077B6', missed: '#0077B6', completed: '#22A06B', cancelled: '#8AA89C' }
             const PLANNED_STATUSES = ['planned']
             const IN_PROGRESS_STATUSES = ['in_progress', 'missed']
@@ -8291,9 +8275,9 @@ export default function PatientDetailPage() {
             <div style={{ display: 'flex', gap: 6, padding: '10px 16px 0' }}>
               {[
                 { k: 'all', label: `全部 ${followUps.length}` },
-                { k: 'planned', label: `待随访 ${plannedCount}` },
-                { k: 'in_progress', label: `随访中 ${inProgressCount}` },
-                { k: 'done', label: `已随访 ${doneCount}` },
+                { k: 'planned', label: `待执行 ${plannedCount}` },
+                { k: 'in_progress', label: `执行中 ${inProgressCount}` },
+                { k: 'done', label: `已完成 ${doneCount}` },
                 { k: 'cancelled', label: `已取消 ${cancelledCount}` },
               ].map(t => (
                 <button key={t.k} className={followUpFilter === t.k ? 'btn btn-sm' : 'btn btn-secondary btn-sm'}
@@ -8302,11 +8286,11 @@ export default function PatientDetailPage() {
               ))}
             </div>
             {filtered.length === 0 ? (
-              <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>{followUpFilter === 'all' ? '暂无随访记录' : followUpFilter === 'planned' ? '暂无待随访计划' : followUpFilter === 'in_progress' ? '暂无随访中记录' : followUpFilter === 'cancelled' ? '暂无已取消记录' : '暂无已随访记录'}</div>
+              <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>{followUpFilter === 'all' ? '暂无执行任务' : followUpFilter === 'planned' ? '暂无待执行任务' : followUpFilter === 'in_progress' ? '暂无执行中任务' : followUpFilter === 'cancelled' ? '暂无已取消任务' : '暂无已完成任务'}</div>
             ) : (
             <table className="table">
               <thead>
-                <tr><th>日期</th><th>方式</th><th>状态</th><th>随访人</th><th>随访内容</th><th>下次随访</th><th>操作</th></tr>
+                <tr><th>计划日期</th><th>任务类型</th><th>状态</th><th>负责人</th><th>执行内容</th><th>下一节点</th><th>操作</th></tr>
               </thead>
               <tbody>
                 {(() => {
@@ -8355,7 +8339,7 @@ export default function PatientDetailPage() {
                           <button className="btn btn-sm" onClick={() => setFollowUpDetail(f)}>查看/转派</button>
                         ) : ['planned', 'in_progress', 'missed'].includes(f.status) ? (
                           <div style={{ display: 'flex', gap: 6 }}>
-                            <button className="btn btn-sm" onClick={() => openExec(f)}>执行随访</button>
+                            <button className="btn btn-sm" onClick={() => openExec(f)}>执行任务</button>
                             <button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(f)}>详情</button>
                           </div>
                         ) : (
@@ -8403,7 +8387,7 @@ export default function PatientDetailPage() {
                             <td onClick={e => e.stopPropagation()}>
                               {['planned', 'in_progress', 'missed'].includes(f.status) ? (
                                 <div style={{ display: 'flex', gap: 6 }}>
-                                  <button className="btn btn-sm" onClick={() => openExec(f)}>执行随访</button>
+                                  <button className="btn btn-sm" onClick={() => openExec(f)}>执行任务</button>
                                   <button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(f)}>详情</button>
                                 </div>
                               ) : (
@@ -9529,12 +9513,12 @@ export default function PatientDetailPage() {
         </div>
       )}
 
-      {/* 执行随访弹窗：填写随访结果、标记完成/随访中，与 FollowUpsPage.jsx 的执行随访弹窗逻辑/UI一致 */}
+      {/* 执行任务弹窗：随访、监测、复查与就医等任务共用执行结果表单。 */}
       {execItem && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setExecItem(null) }}>
           <div className="modal" style={{ maxWidth: 520 }}>
             <div className="modal-header">
-              <h3 className="modal-title">执行随访</h3>
+              <h3 className="modal-title">执行服务任务</h3>
               <button className="modal-close" onClick={() => setExecItem(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -9786,12 +9770,12 @@ export default function PatientDetailPage() {
                   onChange={e => setEditingFollowUp(f => ({ ...f, theme: e.target.value }))} />
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">随访内容</label>
+                <label className="form-label">执行结果</label>
                 <textarea className="form-input" rows={4} style={{ resize: 'vertical' }} value={editingFollowUp.content}
                   onChange={e => setEditingFollowUp(f => ({ ...f, content: e.target.value }))} />
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">下次随访日期</label>
+                <label className="form-label">下一节点日期</label>
                 <input type="date" className="form-input" value={editingFollowUp.nextFollowUpDate}
                   onChange={e => setEditingFollowUp(f => ({ ...f, nextFollowUpDate: e.target.value }))} />
               </div>
