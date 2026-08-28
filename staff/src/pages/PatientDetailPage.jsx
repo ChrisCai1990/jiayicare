@@ -1542,6 +1542,10 @@ export default function PatientDetailPage() {
   const [basicInfoForm, setBasicInfoForm] = useState({})
   const [editingHealthNeeds, setEditingHealthNeeds] = useState(false)
   const [healthNeedsForm, setHealthNeedsForm] = useState({})
+  const [editingEquipment, setEditingEquipment] = useState(false)
+  const [equipmentForm, setEquipmentForm] = useState([])
+  const [lifestyleAiGenerating, setLifestyleAiGenerating] = useState(false)
+  const [lifestyleAiDraft, setLifestyleAiDraft] = useState(null)
   const [editingReport, setEditingReport] = useState(null)
   const [editingReportForm, setEditingReportForm] = useState({})
   const [editingReportSaving, setEditingReportSaving] = useState(false)
@@ -2398,6 +2402,13 @@ export default function PatientDetailPage() {
     hasMedicineCabinet: u.hasMedicineCabinet || '',
   })
 
+  const blankEquipment = () => ({
+    id: `device-${Date.now()}`, type: '呼吸机', brand: '', model: '', startedAt: '', reason: '',
+    usageFrequency: '每晚', cleanFrequency: '每周清洗面罩及管路', disinfectionFrequency: '每周消毒',
+    consumableCycle: '按说明书或医嘱更换', lastMaintenanceDate: '', nextMaintenanceDate: '',
+    parameters: '', adherence: '', exceptions: '', status: '使用中',
+  })
+
   const buildLifestyleForm = (u) => ({
     lifestyle: {
       diet: u.lifestyle?.diet || '',
@@ -2550,6 +2561,40 @@ export default function PatientDetailPage() {
       setEditingLifestyle(false)
       load()
     } catch (err) { toast(err.message || '保存失败') }
+  }
+
+  const handleGenerateLifestyleDraft = async () => {
+    try {
+      setLifestyleAiGenerating(true)
+      const year = String(new Date().getFullYear())
+      const res = await staffAPI.generateAIHealthSummary(id, year, 'nutrition', false)
+      applyAIHealthSummary(res.data)
+      const entry = res.data?.byYear?.[year] || {}
+      const records = Array.isArray(entry.records) ? entry.records : (entry.sections ? [entry] : [])
+      const record = records.find(item => item.scope === 'nutrition' || item.scope === 'all' || item.sections?.lifestyle_assessment)
+      setLifestyleAiDraft({ year, recordIndex: Math.max(0, records.indexOf(record)), section: record?.sections?.lifestyle_assessment || null })
+      toast('AI已结合近30天打卡形成生活方式草稿，请营养师核对')
+    } catch (err) { toast(err.message || 'AI生活方式分析生成失败') }
+    finally { setLifestyleAiGenerating(false) }
+  }
+
+  const handleApproveLifestyleDraft = async () => {
+    if (!lifestyleAiDraft) return
+    try {
+      await staffAPI.updateAIHealthSummary(id, { action: 'approve', scope: 'nutrition', year: lifestyleAiDraft.year, recordIndex: lifestyleAiDraft.recordIndex })
+      toast('生活方式分析已由营养师审核，正式分析结果已更新')
+      setLifestyleAiDraft(null)
+      load()
+    } catch (err) { toast(err.message || '审核失败') }
+  }
+
+  const handleSaveEquipment = async () => {
+    try {
+      await staffAPI.updatePatient(id, { healthEquipment: equipmentForm })
+      toast('设备档案已保存；填写下次维护日期的设备已同步生成工作台任务')
+      setEditingEquipment(false)
+      load()
+    } catch (err) { toast(err.message || '设备档案保存失败') }
   }
 
   const handleSaveLabValues = async () => {
@@ -3962,6 +4007,26 @@ export default function PatientDetailPage() {
             </div>
           </div>
 
+          {/* 健康设备与辅助器械：设备档案驱动维护随访任务 */}
+          <div className="card" style={{ gridColumn: 'span 2' }}>
+            <div className="card-header">
+              <div><div className="card-title">健康设备与辅助器械</div><div style={{ marginTop: 4, fontSize: 12, color: '#8AA89C' }}>记录呼吸机等设备；下次维护日期会同步为负责人工作台任务</div></div>
+              {!editingEquipment ? <button className="btn btn-secondary btn-sm" onClick={() => { setEquipmentForm((user.healthEquipment || []).length ? JSON.parse(JSON.stringify(user.healthEquipment)) : [blankEquipment()]); setEditingEquipment(true) }}>编辑设备</button> : <div style={{ display: 'flex', gap: 8 }}><button className="btn btn-secondary btn-sm" onClick={() => setEquipmentForm(v => [...v, blankEquipment()])}>＋ 添加设备</button><button className="btn btn-primary btn-sm" onClick={handleSaveEquipment}>保存并同步任务</button><button className="btn btn-secondary btn-sm" onClick={() => setEditingEquipment(false)}>取消</button></div>}
+            </div>
+            <div className="card-body">
+              {editingEquipment ? <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {equipmentForm.map((device, index) => <div key={device.id || index} style={{ border: '1px solid #DCE5E0', borderRadius: 10, padding: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(150px,1fr))', gap: 10 }}>
+                    {[['type','设备类型'],['brand','品牌'],['model','型号'],['startedAt','开始使用时间'],['reason','使用原因/医嘱'],['usageFrequency','使用频率'],['parameters','参数或医嘱'],['adherence','使用依从性'],['cleanFrequency','清洗频率'],['disinfectionFrequency','消毒频率'],['consumableCycle','耗材更换周期'],['lastMaintenanceDate','最近维护时间'],['nextMaintenanceDate','下次维护时间'],['exceptions','异常情况'],['status','状态']].map(([key,label]) => <label key={key} style={{ fontSize: 12, color: '#65776F' }}>{label}<input className="form-input" type={key.endsWith('Date') || key === 'startedAt' ? 'date' : 'text'} value={device[key] || ''} onChange={e => setEquipmentForm(list => list.map((item,i) => i === index ? { ...item, [key]: e.target.value } : item))} style={{ marginTop: 4 }} /></label>)}
+                  </div>
+                  <button className="btn btn-danger btn-sm" style={{ marginTop: 10 }} onClick={() => setEquipmentForm(list => list.filter((_,i) => i !== index))}>移除设备</button>
+                </div>)}
+              </div> : (user.healthEquipment || []).length ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 10 }}>
+                {(user.healthEquipment || []).map((device,index) => <div key={device.id || index} style={{ padding: 13, border: '1px solid #DCE5E0', borderRadius: 10, background: '#FAFCFB' }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><b style={{ color: '#1E6B50' }}>{device.type || '健康设备'} {device.brand || ''} {device.model || ''}</b><span className="badge badge-success">{device.status || '使用中'}</span></div><div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.8, color: '#4A6558' }}>使用：{device.usageFrequency || '-'}；清洗：{device.cleanFrequency || '-'}；消毒：{device.disinfectionFrequency || '-'}<br/>耗材：{device.consumableCycle || '-'}；下次维护：{device.nextMaintenanceDate || '-'}</div></div>)}
+              </div> : <div style={{ color: '#8AA89C', fontSize: 13 }}>暂无设备记录。呼吸机、制氧机、血压计等可在此结构化登记。</div>}
+            </div>
+          </div>
+
           {/* 最近随访 */}
           <div className="card" style={{ gridColumn: 'span 2' }}>
             <div className="card-header">
@@ -4376,7 +4441,7 @@ export default function PatientDetailPage() {
                 {!editingLifestyle
                   ? <div style={{ display: 'flex', gap: 8 }}>
                       <button className="btn btn-primary btn-sm" onClick={() => setShowLifestyleChangeModal(true)}>＋ 新增变化</button>
-                      <button className="btn btn-secondary btn-sm" onClick={() => { setTab('ai'); setScreeningWorkspaceView('analysis'); setAiAnalysisView('nutrition') }}>AI整理打卡变化</button>
+                      <button className="btn btn-secondary btn-sm" disabled={lifestyleAiGenerating} onClick={handleGenerateLifestyleDraft}>{lifestyleAiGenerating ? 'AI整理中…' : 'AI整理打卡变化'}</button>
                       <button className="btn btn-secondary btn-sm" onClick={() => setLifestyleDetailsOpen(v => !v)}>{lifestyleDetailsOpen ? '收起详细档案' : '展开详细档案'}</button>
                       <button className="btn btn-secondary btn-sm" onClick={() => { setLifestyleDetailsOpen(true); setLifestyleTab('diet'); setEditingLifestyle(true) }}>编辑当前档案</button>
                     </div>
@@ -4389,6 +4454,11 @@ export default function PatientDetailPage() {
               {!lifestyleDetailsOpen && !editingLifestyle && <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 10 }}>
                 {Object.entries(deriveBasicLifestyle(user.lifestyle_data || {})).filter(([, value]) => value).slice(0, 8).map(([key, value]) => <div key={key} style={{ padding: '9px 11px', background: '#F7FAF8', borderRadius: 8 }}><div style={{ fontSize: 11, color: '#8AA89C' }}>{({ diet:'饮食', exercise:'运动', sleep:'睡眠', water:'饮水', smoking:'吸烟', alcohol:'饮酒', bowel:'排便', mood:'情绪' })[key] || key}</div><div style={{ marginTop: 3, fontSize: 13, color: '#1A2B24' }}>{value}</div></div>)}
                 {!Object.values(deriveBasicLifestyle(user.lifestyle_data || {})).some(Boolean) && <div style={{ color: '#8AA89C', fontSize: 13 }}>暂无生活方式摘要，可由膳食问卷、打卡变化或营养师沟通逐步补充。</div>}
+              </div>}
+              {lifestyleAiDraft?.section && <div style={{ margin: '0 20px 18px', padding: 14, border: '1px solid #86D5B2', background: '#F0FDF7', borderRadius: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}><div><b style={{ color: '#166534' }}>AI打卡变化草稿</b><div style={{ marginTop: 4, fontSize: 12, color: '#4A6558' }}>已自动检索近30天打卡并与当前生活方式档案比较；审核前不会替代正式结论。</div></div>{staff?.role === 'nutritionist' || staff?.role === 'superadmin' ? <button className="btn btn-primary btn-sm" onClick={handleApproveLifestyleDraft}>营养师审核通过</button> : null}</div>
+                <div style={{ marginTop: 10, fontSize: 13, lineHeight: 1.8, color: '#1A2B24' }}>{lifestyleAiDraft.section.summary || '已形成生活方式分析，请展开查看具体变化。'}</div>
+                {(lifestyleAiDraft.section.items || []).slice(0, 8).map((item, index) => <div key={index} style={{ marginTop: 6, fontSize: 12, color: '#4A6558' }}>• {item.name || item.category || '变化'}：{item.finding || item.current || item.value || item.summary || item.suggestion || ''}</div>)}
               </div>}
               {(lifestyleDetailsOpen || editingLifestyle) && <div className="card-body">
                 {/* 子板块 Tab 导航 */}
@@ -6974,7 +7044,7 @@ export default function PatientDetailPage() {
         return (
           <div ref={archiveSectionsRef} className="health-archive-sections" onClick={handleArchiveSectionClick}>
             <style>{`.health-archive-sections>.card{transition:box-shadow .2s}.health-archive-sections .archive-collapsed>:not(.card-header){display:none!important}.health-archive-sections .card-header[data-archive-toggle="true"]{cursor:pointer}.health-archive-sections .card-header[data-archive-toggle="true"]:after{content:'⌃';margin-left:10px;color:#1E6B50;font-size:18px}.health-archive-sections .archive-collapsed>.card-header[data-archive-toggle="true"]:after{content:'⌄'}`}</style>
-            <AiRuleHint scene="health_analysis" />
+            <details style={{ marginBottom: 12, padding: '8px 12px', border: '1px solid #DCE5E0', borderRadius: 9, background: '#FAFBFA' }}><summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>生成依据</summary><div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.8, color: '#65776F' }}>AI读取已确认档案、历年体检与检验检查、专项筛查、健康监测、问卷和近期打卡，按年度与历史数据比较。5维分析须由家庭医生审核，生活方式分析须由营养师审核；未审核内容仅为草稿。</div></details>
             {/* 前置要求：健康顾问生成AI健康分析/风险评估前必须先查看确认健康档案（2026-07-28改造，
                 不再逐份审核报告数据本身，那是健管专员audit_status的职责） */}
             {['familyDoctor', 'superadmin'].includes(staff?.role) && pendingDoctorAuditReports.length > 0 && (() => {
@@ -7004,6 +7074,11 @@ export default function PatientDetailPage() {
                 <span style={{ padding: '6px 10px', borderRadius: 8, background: '#FFF7ED', color: '#9A3412', fontSize: 12 }}>待查看报告 {pendingDoctorAuditReports.filter(r => !r.familyDoctorViewedAt).length} 份</span>
               </div>
             </div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              <button className={`btn btn-sm ${aiAnalysisView === 'doctor' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setAiAnalysisView('doctor'); setEditingAISummary(false) }}>家庭医生5维分析</button>
+              <button className={`btn btn-sm ${aiAnalysisView === 'nutrition' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setAiAnalysisView('nutrition'); setEditingAISummary(false) }}>营养师生活方式分析</button>
+              <span style={{ alignSelf: 'center', fontSize: 12, color: '#8AA89C' }}>团队成员均可查看已审核结果；生成、编辑和审核按专业角色控制</span>
+            </div>
             <details style={{ marginBottom: 12, padding: '10px 12px', border: '1px solid #DCE5E0', borderRadius: 9, background: '#FAFBFA' }}>
               <summary style={{ cursor: 'pointer', fontWeight: 700, color: '#1E6B50' }}>生成、年度与历史版本管理</summary>
               <div style={{ marginTop: 12 }}>
@@ -7025,16 +7100,6 @@ export default function PatientDetailPage() {
                   )
                 })}
               </select>
-            </div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-              <button className={`btn btn-sm ${aiAnalysisView === 'doctor' ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => { setAiAnalysisView('doctor'); setEditingAISummary(false) }}>
-                健康顾问 · 5维分析
-              </button>
-              <button className={`btn btn-sm ${aiAnalysisView === 'nutrition' ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => { setAiAnalysisView('nutrition'); setEditingAISummary(false) }}>
-                营养师 · 生活方式分析
-              </button>
             </div>
             {/* 同一年度分成两条独立评估链，各自显示生成时间与历史版本。 */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 10, marginBottom: 14 }}>

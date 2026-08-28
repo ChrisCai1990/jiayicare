@@ -811,7 +811,7 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
     'basic_insurance', 'commercial_medical', 'critical_illness',
     'chronicDiseaseSeverity', 'labValues', 'healthScoreBonus',
     'education', 'hasAnnualCheckup',
-    'healthConcern', 'healthConcernFor', 'expectedService', 'hasHomeMonitor', 'hasMedicineCabinet',
+    'healthConcern', 'healthConcernFor', 'expectedService', 'hasHomeMonitor', 'healthEquipment', 'hasMedicineCabinet',
     'bodyComposition',
   ];
   const updateData = {};
@@ -993,6 +993,22 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
   if (Object.keys(pushOps).length > 0) ops.$push = pushOps;
 
   await User.collection.updateOne({ _id: new mongoose.Types.ObjectId(req.params.id) }, ops);
+  // 保存设备档案时，把最近一次维护日期同步为负责人工作台任务；稳定键避免重复保存产生重复任务。
+  if (Array.isArray(req.body.healthEquipment)) {
+    const patient = await User.findById(req.params.id).select('assignedHealthManager assignedFamilyDoctor').lean();
+    const assignee = patient?.assignedHealthManager || patient?.assignedFamilyDoctor || req.staff._id;
+    for (const device of req.body.healthEquipment) {
+      if (!device?.nextMaintenanceDate || device.status === '停用') continue;
+      const deviceKey = String(device.id || `${device.type || 'device'}-${device.startedAt || ''}`).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
+      const scheduleKey = `equipment-maintenance-${req.params.id}-${deviceKey}`;
+      const requirements = [`${device.type || '健康设备'}维护`, device.cleanFrequency ? `清洗：${device.cleanFrequency}` : '', device.disinfectionFrequency ? `消毒：${device.disinfectionFrequency}` : '', device.consumableCycle ? `耗材更换：${device.consumableCycle}` : '', '核查使用依从性、舒适度及异常情况，必要时安排复诊或参数复核'].filter(Boolean).join('；');
+      await FollowUp.findOneAndUpdate(
+        { patientId: req.params.id, sourceScheduleKey: scheduleKey, status: { $in: ['planned', 'in_progress'] } },
+        { $set: { staffId: req.staff._id, assignedTo: assignee, date: new Date(device.nextMaintenanceDate), type: 'phone', status: 'planned', theme: `${device.type || '健康设备'}维护`, content: requirements, plannedContent: requirements, tags: ['设备维护', device.type || '健康设备'], sourceType: 'scheduled', sourceScheduleKey: scheduleKey } },
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+      );
+    }
+  }
   const user = await User.findById(req.params.id)
     .populate('assignedHealthManager', 'name title')
     .populate('assignedFamilyDoctor', 'name title')
