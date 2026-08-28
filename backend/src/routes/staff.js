@@ -4084,6 +4084,18 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
   try {
     const { planType, moduleData, notes, year, templateId, templateName } = req.body;
     if (!planType) return res.status(400).json({ success: false, message: '缺少方案类型' });
+    const todayText = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+    const personalized = moduleData?.personalized_followups?.records || [];
+    const invalidPersonalized = personalized.find(item =>
+      !item.followUpStaff || !item.executionDate ||
+      String(item.executionDate).slice(0, 10) < todayText ||
+      (item.collaborator && !item.collaborationDate) ||
+      (item.collaborationDate && !item.collaborator) ||
+      (item.collaborationDate && String(item.collaborationDate).slice(0, 10) < todayText)
+    );
+    if (invalidPersonalized) {
+      return res.status(400).json({ success: false, message: '每项随访都要选择主执行人和有效的未来日期；协同执行人和日期需要同时填写' });
+    }
     const targetYear = year || new Date().getFullYear();
     // 按「会员+年度+方案类型」定位，4个类型各存一份，互不覆盖
     const plan = await AnnualPlan.findOneAndUpdate(
@@ -6387,10 +6399,11 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     };
     const allowedKeys = (PLAN_TYPE_MODULES[planType] || GENERATABLE).filter(k => GENERATABLE.includes(k) && allowedByTemplate(k));
     const standardFollowUpPlans = await FollowUpPlan.find({ status: 'active' })
-      .select('name cycles defaultRole default_content').sort({ name: 1 }).lean();
+      .select('name cycles defaultRole defaultEmployeeId default_content').sort({ name: 1 }).lean();
     const standardFollowUpCatalog = standardFollowUpPlans.map((item, index) => ({
       index: index + 1, id: String(item._id), name: item.name,
       cycles: item.cycles || [], defaultRole: item.defaultRole || '',
+      defaultEmployeeId: item.defaultEmployeeId ? String(item.defaultEmployeeId) : '',
       content: item.default_content || {},
     }));
 
@@ -6440,7 +6453,8 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
 
     const missingCheckups = (s.checkup_completeness?.missing || []).join('、') || '无';
 
-    const prompt = `你是一位健康顾问，请根据以下AI健康分析，生成${year}年度健康管理方案，按指定JSON格式输出各板块字段。
+    const todayText = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+    const prompt = `你是一位健康顾问，请根据以下AI健康分析，生成${year}年度健康管理方案，按指定JSON格式输出各板块字段。今天是${todayText}，所有待执行日期必须晚于或等于今天，禁止生成过期日期。
 
 【需优先解决的医疗问题】
 ${medPriorityText}
@@ -6486,7 +6500,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
 请严格按以下JSON格式输出，仅输出JSON：
 {
   "templateNodes": [
-    { "standardPlanId": "必须来自方案库的id", "standardPlanName": "必须来自方案库的name", "title": "客户个性化随访名称", "matchReason": "与研判的匹配依据", "content": "个性化随访内容", "time": "计划时间或周期", "frequency": "执行频次", "precautions": "注意事项", "customerAction": "客户行动", "ownerRole": "责任角色" }
+    { "standardPlanId": "必须来自方案库的id", "standardPlanName": "必须来自方案库的name", "title": "客户个性化随访名称", "matchReason": "与研判的匹配依据", "content": "个性化随访内容", "executionDate": "不早于${todayText}的YYYY-MM-DD日期", "frequency": "执行频次", "precautions": "注意事项", "customerAction": "客户行动" }
   ],
   "medical_treatment": [
     { "reason": "就医原因", "department": "就诊科室", "visit_time": "建议时间或待确认", "basisSummary": "设置依据", "frequency": "单次", "precautions": "注意事项", "customerAction": "客户需要完成的事项", "ownerRole": "责任角色", "notes": "内部备注" }
@@ -6556,6 +6570,11 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
       if (!source) return null;
       return {
         ...node, standardPlanId: source.id, standardPlanName: source.name, sourceCycles: source.cycles,
+        defaultEmployeeId: source.defaultEmployeeId || '',
+        executionDate: (() => {
+          const candidate = String(node.executionDate || node.time || '').slice(0, 10);
+          return /^\d{4}-\d{2}-\d{2}$/.test(candidate) && candidate >= todayText ? candidate : todayText;
+        })(),
         title: conciseTitle(node.title || node.content || source.name),
       };
     }).filter(Boolean) : [];
