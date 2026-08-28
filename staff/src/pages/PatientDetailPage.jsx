@@ -522,7 +522,7 @@ const DOCUMENT_CATEGORY_LABEL = Object.fromEntries(DOCUMENT_CATEGORIES.map(item 
 const inferDocumentCategory = report => {
   const title = report.title || ''
   // 这些历史资料过去通常被保存为“其他”，明确业务名称应优先于旧的兜底分类。
-  if (/慢性食物过敏|肠道菌群基因测序|肠道功能分析|荷尔蒙检查|尿液有机酸|端粒长度/.test(title)) return 'functional_medicine'
+  if (/慢性食物过敏|肠道菌群基因测序|肠道功能分析|荷尔蒙检查|压力荷尔蒙|尿液有机酸|有机酸\s*75|新陈代谢分析|端粒长度/.test(title)) return 'functional_medicine'
   if (/阖家欢精准基因检测/.test(title)) return 'genetic_test'
   if (report.documentCategory) return report.documentCategory
   if (/门诊|门诊病历|门诊记录/.test(title)) return 'outpatient_record'
@@ -3454,7 +3454,7 @@ export default function PatientDetailPage() {
       {/* 健管专员人工审核确认写入档案的记录（有冲突需人工判断的字段） */}
       <ArchiveConfirmLogPanel log={user.archiveConfirmLog} />
 
-      <ServiceJourneyPanel reports={reports} plans={plans} followUps={followUps} serviceRecords={serviceRecords} onNavigate={setTab} stageAssessmentEnabled={Boolean(user.aiPilotFeatures?.stageAssessment)} />
+      <ServiceJourneyPanel reports={reports} plans={plans} followUps={followUps} serviceRecords={serviceRecords} onNavigate={setTab} stageAssessmentEnabled />
 
       {/* Tabs */}
       {(() => {
@@ -3472,7 +3472,7 @@ export default function PatientDetailPage() {
           ] },
           { key: 'serviceManagement', label: '服务管理', tabs: [
             { key: 'plans', label: '服务方案' },
-            ...(user.aiPilotFeatures?.stageAssessment ? [{ key: 'aiReview', label: '阶段性评估' }] : []),
+            { key: 'aiReview', label: '阶段性评估' },
           ] },
           { key: 'serviceExecution', label: '服务执行', tabs: [{ key: 'followups', label: '执行任务' }] },
           { key: 'serviceArchive', label: '服务档案', tabs: [{ key: 'serviceRecords', label: '服务档案' }] },
@@ -3501,7 +3501,7 @@ export default function PatientDetailPage() {
         </div>
       })()}
 
-      {tab === 'aiReview' && user.aiPilotFeatures?.stageAssessment && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} mode="assessment" onNavigate={setTab} />}
+      {tab === 'aiReview' && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} mode="assessment" onNavigate={setTab} />}
       {tab === 'aiCase' && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} mode="specialty" />}
 
       {/* ── Info Tab ── */}
@@ -6279,6 +6279,24 @@ export default function PatientDetailPage() {
 
         {/* ── 4.2 身体成分指标 ── */}
         {tab === 'records' && healthBaseView === 'monitoring' && <>
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-header">
+            <div><div className="card-title">健康设备与辅助器械</div><div style={{ marginTop: 4, fontSize: 12, color: '#8AA89C' }}>呼吸机等设备在此登记；下次维护时间会同步为负责人工作台随访任务</div></div>
+            {!editingEquipment ? <button className="btn btn-secondary btn-sm" onClick={() => { setEquipmentForm((user.healthEquipment || []).length ? JSON.parse(JSON.stringify(user.healthEquipment)) : [blankEquipment()]); setEditingEquipment(true) }}>编辑设备</button> : <div style={{ display: 'flex', gap: 8 }}><button className="btn btn-secondary btn-sm" onClick={() => setEquipmentForm(v => [...v, blankEquipment()])}>＋ 添加设备</button><button className="btn btn-primary btn-sm" onClick={handleSaveEquipment}>保存并同步任务</button><button className="btn btn-secondary btn-sm" onClick={() => setEditingEquipment(false)}>取消</button></div>}
+          </div>
+          <div className="card-body">
+            {editingEquipment ? <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {equipmentForm.map((device, index) => <div key={device.id || index} style={{ border: '1px solid #DCE5E0', borderRadius: 10, padding: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(150px,1fr))', gap: 10 }}>
+                  {[['type','设备类型'],['brand','品牌'],['model','型号'],['startedAt','开始使用时间'],['reason','使用原因/医嘱'],['usageFrequency','使用频率'],['parameters','参数或医嘱'],['adherence','使用依从性'],['cleanFrequency','清洗频率'],['disinfectionFrequency','消毒频率'],['consumableCycle','耗材更换周期'],['lastMaintenanceDate','最近维护时间'],['nextMaintenanceDate','下次维护时间'],['exceptions','异常情况'],['status','状态']].map(([key,label]) => <label key={key} style={{ fontSize: 12, color: '#65776F' }}>{label}<input className="form-input" type={key.endsWith('Date') || key === 'startedAt' ? 'date' : 'text'} value={device[key] || ''} onChange={e => setEquipmentForm(list => list.map((item,i) => i === index ? { ...item, [key]: e.target.value } : item))} style={{ marginTop: 4 }} /></label>)}
+                </div>
+                <button className="btn btn-danger btn-sm" style={{ marginTop: 10 }} onClick={() => setEquipmentForm(list => list.filter((_,i) => i !== index))}>移除设备</button>
+              </div>)}
+            </div> : (user.healthEquipment || []).length ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 10 }}>
+              {(user.healthEquipment || []).map((device,index) => <div key={device.id || index} style={{ padding: 13, border: '1px solid #DCE5E0', borderRadius: 10, background: '#FAFCFB' }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><b style={{ color: '#1E6B50' }}>{device.type || '健康设备'} {device.brand || ''} {device.model || ''}</b><span className="badge badge-success">{device.status || '使用中'}</span></div><div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.8, color: '#4A6558' }}>使用：{device.usageFrequency || '-'}；清洗：{device.cleanFrequency || '-'}；消毒：{device.disinfectionFrequency || '-'}<br/>耗材：{device.consumableCycle || '-'}；下次维护：{device.nextMaintenanceDate || '-'}</div></div>)}
+            </div> : <div style={{ color: '#8AA89C', fontSize: 13 }}>暂无设备记录。点击“编辑设备”可登记呼吸机、制氧机、血压计等。</div>}
+          </div>
+        </div>
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-header">
             <div className="card-title">身体成分指标</div>
