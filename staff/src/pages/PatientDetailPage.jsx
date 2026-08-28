@@ -1569,6 +1569,7 @@ export default function PatientDetailPage() {
   const [stoppingSup, setStoppingSup] = useState(null) // 待确认停用的营养素记录
   const [editingSupAiApprove, setEditingSupAiApprove] = useState(false)
   const [followUpFilter, setFollowUpFilter] = useState('all') // all | pending | done
+  const [executionCategory, setExecutionCategory] = useState('all')
   const [expandedMonitorGroups, setExpandedMonitorGroups] = useState({}) // 随访记录表格里日常监测折叠组的展开状态，key: theme+status
   // 执行随访（填写随访结果、标记完成/随访中），逻辑与 FollowUpsPage.jsx 的 execItem/execForm 一致
   const [execItem, setExecItem] = useState(null)
@@ -3399,6 +3400,8 @@ export default function PatientDetailPage() {
       {/* 健管专员人工审核确认写入档案的记录（有冲突需人工判断的字段） */}
       <ArchiveConfirmLogPanel log={user.archiveConfirmLog} />
 
+      {['plans', 'aiReview', 'followups', 'serviceRecords'].includes(tab) && <ServiceJourneyPanel reports={reports} plans={plans} followUps={followUps} serviceRecords={serviceRecords} onNavigate={setTab} />}
+
       {/* Tabs */}
       {(() => {
         const groups = [
@@ -3444,7 +3447,6 @@ export default function PatientDetailPage() {
         </div>
       })()}
 
-      {['plans', 'aiReview', 'followups', 'serviceRecords'].includes(tab) && <ServiceJourneyPanel reports={reports} plans={plans} followUps={followUps} serviceRecords={serviceRecords} onNavigate={setTab} />}
       {tab === 'aiReview' && user.aiPilotFeatures?.stageAssessment && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} mode="assessment" onNavigate={setTab} />}
       {tab === 'aiCase' && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} mode="specialty" />}
 
@@ -8224,11 +8226,25 @@ export default function PatientDetailPage() {
             const IN_PROGRESS_STATUSES = ['in_progress', 'missed']
             const DONE_STATUSES = ['completed']
             const CANCELLED_STATUSES = ['cancelled']
-            const filtered = followUpFilter === 'planned' ? followUps.filter(f => PLANNED_STATUSES.includes(f.status))
+            const executionCategoryOf = task => {
+              const text = `${task.theme || ''} ${task.content || ''} ${task.type || ''} ${task.sourceType || ''}`
+              if (/营养|饮食|膳食|体重管理/.test(text)) return 'nutrition'
+              if (/血压|血糖|体重|睡眠|运动|饮水|监测|打卡/.test(text)) return 'monitoring'
+              if (/体检|复查|检验|检查|筛查|疫苗/.test(text)) return 'checkup'
+              if (/就医|会诊|医院|挂号|陪诊|代诊|科室|医生/.test(text)) return 'medical'
+              if (/专病|慢病|疾病管理/.test(text)) return 'disease'
+              return 'communication'
+            }
+            const EXECUTION_CATEGORIES = [
+              ['all', '全部任务'], ['nutrition', '营养干预'], ['monitoring', '健康监测'],
+              ['checkup', '体检与复查'], ['medical', '就医协助'], ['disease', '专病管理'], ['communication', '客户沟通'],
+            ]
+            const statusFiltered = followUpFilter === 'planned' ? followUps.filter(f => PLANNED_STATUSES.includes(f.status))
               : followUpFilter === 'in_progress' ? followUps.filter(f => IN_PROGRESS_STATUSES.includes(f.status))
               : followUpFilter === 'done' ? followUps.filter(f => DONE_STATUSES.includes(f.status))
               : followUpFilter === 'cancelled' ? followUps.filter(f => CANCELLED_STATUSES.includes(f.status))
               : followUps
+            const filtered = statusFiltered.filter(task => executionCategory === 'all' || executionCategoryOf(task) === executionCategory)
             const plannedCount = followUps.filter(f => PLANNED_STATUSES.includes(f.status)).length
             const inProgressCount = followUps.filter(f => IN_PROGRESS_STATUSES.includes(f.status)).length
             const doneCount = followUps.filter(f => DONE_STATUSES.includes(f.status)).length
@@ -8272,6 +8288,12 @@ export default function PatientDetailPage() {
 
             return (
             <>
+            <div style={{ display: 'flex', gap: 7, padding: '12px 16px 2px', flexWrap: 'wrap', borderBottom: '1px solid #EDF1EF' }}>
+              {EXECUTION_CATEGORIES.map(([key, label]) => {
+                const count = key === 'all' ? followUps.length : followUps.filter(task => executionCategoryOf(task) === key).length
+                return <button key={key} type="button" className={executionCategory === key ? 'btn btn-sm' : 'btn btn-secondary btn-sm'} style={executionCategory === key ? { background: '#1E6B50', color: '#fff' } : {}} onClick={() => setExecutionCategory(key)}>{label} {count}</button>
+              })}
+            </div>
             <div style={{ display: 'flex', gap: 6, padding: '10px 16px 0' }}>
               {[
                 { k: 'all', label: `全部 ${followUps.length}` },
@@ -8286,7 +8308,7 @@ export default function PatientDetailPage() {
               ))}
             </div>
             {filtered.length === 0 ? (
-              <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>{followUpFilter === 'all' ? '暂无执行任务' : followUpFilter === 'planned' ? '暂无待执行任务' : followUpFilter === 'in_progress' ? '暂无执行中任务' : followUpFilter === 'cancelled' ? '暂无已取消任务' : '暂无已完成任务'}</div>
+              <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>当前分类和状态下暂无执行任务</div>
             ) : (
             <table className="table">
               <thead>
