@@ -10077,23 +10077,14 @@ router.post('/patients/:id/reports/:rid/reclassify', staffAuth, async (req, res)
   try {
     const report = await MedicalReport.findOne({ _id: req.params.rid, user: req.params.id }).lean();
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-    const { classifyItemsAsync } = require('../utils/screeningMatch');
+    const { classifyItemsAsync, hasConfirmedClassification } = require('../utils/screeningMatch');
     const originalItems = report.reportItems || [];
     const pendingIndexes = [];
     const pendingItems = [];
     originalItems.forEach((item, index) => {
-      const hasConfirmedClassification = Boolean(
-        item.screeningKey || (Array.isArray(item.screeningKeys) && item.screeningKeys.length)
-      );
-      const structuralCorrection = /乳酸脱氢酶|(?:碳|C)\s*1[34].{0,8}呼气|尿素.{0,8}呼气/i.test(String(item.name || ''))
-        || /尿常规|尿液分析|尿干化学|尿沉渣/i.test(`${String(item.orderName || '')} ${String(item.sourceSection || '')}`);
-      if (!hasConfirmedClassification || structuralCorrection) {
+      if (!hasConfirmedClassification(item)) {
         pendingIndexes.push(index);
-        pendingItems.push(structuralCorrection ? {
-          ...item,
-          screeningKey: '', screeningKeys: [], screeningCategory: '', screeningParent: '',
-          matchStatus: 'unclassified', matchConfidence: 0,
-        } : item);
+        pendingItems.push(item);
       }
     });
     const newlyClassified = await classifyItemsAsync(pendingItems);
@@ -10102,7 +10093,7 @@ router.post('/patients/:id/reports/:rid/reclassify', staffAuth, async (req, res)
       reclassified[originalIndex] = newlyClassified[pendingIndex];
     });
     await MedicalReport.findByIdAndUpdate(report._id, { reportItems: reclassified });
-    const matchedCount = reclassified.filter(i => i.matchStatus === 'matched').length;
+    const matchedCount = newlyClassified.filter(i => i.matchStatus === 'matched').length;
     res.json({ success: true, data: reclassified, matchedCount });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

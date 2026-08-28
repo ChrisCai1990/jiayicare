@@ -10550,7 +10550,7 @@ export default function PatientDetailPage() {
                 </button>
                 <button className="btn btn-secondary" style={{ flex: 0.6 }}
                   disabled={ocrSaving} onClick={handleReclassifyOCR}
-                  title="用最新专项筛查目录重新自动归类所有项目">
+                  title="用最新专项筛查目录仅对待归类项目重新自动归类，已有及人工归类不受影响">
                   {ocrSaving ? '处理中…' : '🔄 重新归类'}
                 </button>
                 <button className="btn btn-secondary" style={{ flex: 0.6 }}
