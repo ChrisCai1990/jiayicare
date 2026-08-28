@@ -8,11 +8,6 @@ const addDays = (date, days) => new Date(new Date(date).getTime() + days * 86400
 function buildAnnualPlanKickoffTasks(plan, patient, confirmedAt = plan.confirmedAt || new Date()) {
   const label = `${plan.year || new Date(confirmedAt).getFullYear()}年度健康管理方案`;
   const staffRows = [
-    patient?.assignedHealthManager && {
-      key: 'health_manager_kickoff', assignedTo: patient.assignedHealthManager, date: addDays(confirmedAt, 1),
-      theme: `启动${label}日常跟进`,
-      content: '核对客户任务与随访安排，按本人工作台待办逐项跟进；执行结果记录在对应随访任务中。',
-    },
     patient?.assignedHealthPlanner && {
       key: 'health_planner_coordination', assignedTo: patient.assignedHealthPlanner, date: addDays(confirmedAt, 3),
       theme: `统筹${label}协同任务`,
@@ -34,6 +29,14 @@ async function syncAnnualPlanTaskSplit(plan) {
   const patient = await User.findById(plan.patientId)
     .select('assignedHealthManager assignedHealthPlanner').lean();
   const rows = buildAnnualPlanKickoffTasks(plan, patient);
+  // 健管专员不再接收“制定/启动随访计划”的二次任务；客户确认后，方案内
+  // 已明确的常规管理事项由 syncAnnualPlanFollowUps 直接生成到负责人工作台。
+  await FollowUp.deleteMany({
+    sourceAnnualPlanId: plan._id,
+    sourceType: 'annual_coordination',
+    sourceScheduleKey: 'health_manager_kickoff',
+    status: { $ne: 'completed' },
+  });
   const clientResult = await Task.updateOne(
     { sourceAnnualPlanId: plan._id, sourceTaskKey: rows.client.key },
     { $set: {
@@ -58,7 +61,6 @@ async function syncAnnualPlanTaskSplit(plan) {
   }
   const scheduledFollowUps = await syncAnnualPlanFollowUps(plan);
   const warnings = [];
-  if (!patient?.assignedHealthManager) warnings.push('客户尚未绑定健管专员，未生成健管启动待办');
   if (!patient?.assignedHealthPlanner) warnings.push('客户尚未绑定健康规划师，未生成规划师协同待办');
   return { clientTasks: clientResult.upsertedCount || 0, staffTasks, scheduledFollowUps, warnings };
 }

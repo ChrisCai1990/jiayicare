@@ -40,7 +40,7 @@ const DATED_RECORD_MODULES = [
   { key: 'functional_medicine', dateField: 'time',      theme: '功能医学检测提醒' },
 ];
 
-// 年度管理方案保存/更新时，按 moduleData 内容生成一批待审核的随访占位。这是"生成同时联动随访"的核心函数：
+// 客户确认年度管理方案后，按 moduleData 内容直接生成可执行随访计划。这是"确认即联动随访"的核心函数：
 // ①有具体日期的模块（DATED_RECORD_MODULES）每条记录直接生成一条随访，日期取该记录自己的日期字段
 // ②日常监测(monitoring)按 frequency 文案批量排期到未来一年内
 // ③季度评估(quarterly_eval)固定每3个月生成一条，排到未来一年内
@@ -94,8 +94,10 @@ async function buildAnnualPlanFollowUps(plan) {
       sourceAnnualPlanId: plan._id,
       sourceScheduleKey,
       sourceType: 'scheduled',
-      aiStatus: 'pending',
-      reviewRole: 'familyDoctor',
+      // 年度方案已经过健康顾问审核及客户确认，不再让健管专员重新制定、
+      // 也不重复进入家庭医生审核；负责人可直接在工作台按计划执行。
+      aiStatus: 'approved',
+      reviewRole: null,
     });
   };
 
@@ -199,7 +201,7 @@ async function syncAnnualPlanFollowUps(plan) {
       const keep = matches.find(item => item.status === 'completed') || matches.find(item => item.aiStatus === 'approved') || matches[0];
       if (keep.sourceScheduleKey !== row.sourceScheduleKey) keep.sourceScheduleKey = row.sourceScheduleKey;
       if (keep.aiStatus === 'pending') {
-        ['patientId', 'staffId', 'assignedTo', 'date', 'theme', 'content', 'reviewRole'].forEach(k => { keep[k] = row[k]; });
+        ['patientId', 'staffId', 'assignedTo', 'date', 'theme', 'content', 'aiStatus', 'reviewRole'].forEach(k => { keep[k] = row[k]; });
       }
       await keep.save();
       // 已存在的历史副本不在定时同步中批量删除；这里只阻止继续生成，具体旧数据按核实后定点清理。
