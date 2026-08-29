@@ -555,7 +555,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
   // 模板内容字段（与管理端完全一致）
   const [form, setForm] = useState({
     name: '', hospital: '', department: '', expert: '',
-    staffId: '', staffName: '', supervisorId: '', followUpPlanId: '', followUpPlanName: '', serviceDate: '', serviceTime: '', transport: '', tasks: '', hotel: '', notes: '',
+    staffId: '', staffName: '', supervisorId: '', followUpPlanId: '', followUpPlanName: '', followUpPlans: [], serviceDate: '', serviceTime: '', transport: '', tasks: '', hotel: '', notes: '',
   })
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
 
@@ -592,6 +592,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
       supervisorId: c.supervisorId || '',
       followUpPlanId: c.followUpPlanId || '',
       followUpPlanName: c.followUpPlanName || '',
+      followUpPlans: c.followUpPlans?.length ? c.followUpPlans : (c.followUpPlanId ? [{ id: c.followUpPlanId, name: c.followUpPlanName || '已关联方案' }] : []),
       serviceDate: c.serviceDate || (c.datetime && /^\d{4}-\d{2}-\d{2}/.test(c.datetime) ? c.datetime.slice(0, 10) : ''),
       serviceTime: c.serviceTime || (c.datetime && !/^\d{4}-\d{2}-\d{2}$/.test(c.datetime) ? c.datetime.replace(/^\d{4}-\d{2}-\d{2}\s*/, '') : ''),
       transport: c.transport || '',
@@ -609,7 +610,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
     if (!form.serviceDate) { setError('请选择服务日期'); return }
     if (!form.staffId) { setError('请选择就医专员'); return }
     if (!form.supervisorId) { setError('请选择督办人'); return }
-    if (!form.followUpPlanId) { setError('所选模板尚未关联 Admin 随访方案，请先在 Admin 完成配置'); return }
+    if (!(form.followUpPlans?.length || form.followUpPlanId)) { setError('所选模板尚未关联 Admin 岗位任务方案，请先在 Admin 完成配置'); return }
     setError(''); setSaving(true)
     try {
       // items 从内容字段派生

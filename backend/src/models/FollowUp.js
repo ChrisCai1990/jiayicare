@@ -25,6 +25,7 @@ const followUpSchema = new mongoose.Schema({
   assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 负责人
   coordinationGroupId: { type: String, default: '' }, // 同一服务事项拆分出的执行/督办任务组
   taskRole: { type: String, enum: ['executor', 'supervisor', ''], default: '' },
+  workflowKey: { type: String, default: '' }, // 同一子方案内对应的岗位任务方案ID；支持一站式服务拆成多组任务
   dependsOnTaskId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUp', default: null },
   remindAt: { type: Date, default: null },
   nextFollowUpDate: { type: Date, default: null },
@@ -68,6 +69,6 @@ const followUpSchema = new mongoose.Schema({
 
 followUpSchema.index({ staffId: 1, date: -1 });
 followUpSchema.index({ patientId: 1, date: -1 });
-followUpSchema.index({ coordinationGroupId: 1, taskRole: 1 });
+followUpSchema.index({ coordinationGroupId: 1, workflowKey: 1, taskRole: 1 });
 
 module.exports = mongoose.model('FollowUp', followUpSchema);

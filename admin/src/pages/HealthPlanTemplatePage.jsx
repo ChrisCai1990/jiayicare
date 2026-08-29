@@ -70,7 +70,7 @@ const defaultContent = {
   medical_assist: {
     serviceDomain: 'medical_assist', assistanceType: '', applicableScenario: '', standardSteps: '',
     requiredMaterials: '', completionStandard: '', requiresDoctorConfirm: true,
-    requiresExecutor: true, requiresSupervisor: true, followUpPlanId: '', followUpPlanName: '',
+    requiresExecutor: true, requiresSupervisor: true, followUpPlanId: '', followUpPlanName: '', followUpPlans: [],
     optionalLogistics: '', riskNotes: '', tasks: '', notes: '',
   },
   rehab: {
@@ -491,16 +491,19 @@ function PlanContentForm({ type, initialContent, contentRef }) {
         </select>
       </div>
       <div className="form-group">
-        <label className="form-label">关联岗位任务方案 *</label>
-        <SearchablePlanSelect
-          value={content.followUpPlanId || ''}
-          plans={followUpPlans.filter(plan => !plan.category || ['general', 'medical_assist'].includes(plan.category))}
-          onChange={plan => {
-          set('followUpPlanId', plan?._id || '')
-          set('followUpPlanName', plan?.name || '')
+        <FollowUpPlanSelector
+          value={(content.followUpPlans?.length ? content.followUpPlans : (content.followUpPlanId ? [{ id: content.followUpPlanId, name: content.followUpPlanName || followUpPlans.find(p => p._id === content.followUpPlanId)?.name || '已关联方案' }] : []))}
+          allPlans={followUpPlans.filter(plan => !plan.category || ['general', 'medical_assist'].includes(plan.category))}
+          loading={false}
+          label="关联岗位任务方案 *"
+          description="可搜索并多选；子方案推送后，每个选中方案分别生成执行任务和督办任务。"
+          emptyText="至少关联一个岗位任务方案。"
+          onChange={plans => {
+            set('followUpPlans', plans)
+            set('followUpPlanId', plans[0]?.id || '')
+            set('followUpPlanName', plans[0]?.name || '')
           }}
         />
-        <div style={{ color: '#7C8B84', fontSize: 11, marginTop: 4 }}>子方案推送后按该规则生成执行任务和督办任务。</div>
       </div>
       <div className="form-group">
         <label className="form-label">就医协助类型</label>
@@ -593,7 +596,7 @@ function TemplateModal({ template, planType, onClose, onSaved }) {
       toast('❌ 请填写策略侧重点，避免不同年度策略只有名称不同')
       return
     }
-    if (planType === 'medical_assist' && !content.followUpPlanId) {
+    if (planType === 'medical_assist' && !(content.followUpPlans?.length || content.followUpPlanId)) {
       toast('❌ 请选择关联岗位任务方案')
       return
     }

@@ -113,6 +113,7 @@ function medicalAssistModuleData(content = {}) {
       staffId: existing.visit?.staffId || content.staffId || '',
       supervisorId: existing.visit?.supervisorId || content.supervisorId || '',
       followUpPlanId: existing.visit?.followUpPlanId || content.followUpPlanId || '',
+      followUpPlans: existing.visit?.followUpPlans?.length ? existing.visit.followUpPlans : (content.followUpPlans || []),
     },
     logistics: {
       ...(existing.logistics || {}),
@@ -149,6 +150,7 @@ function contentFromModules(plan, moduleData, goal) {
     staffId: selectedAssistantId,
     supervisorId: visit.supervisorId || content.supervisorId || '',
     followUpPlanId: visit.followUpPlanId || content.followUpPlanId || '',
+    followUpPlans: visit.followUpPlans?.length ? visit.followUpPlans : (content.followUpPlans || []),
     hotel: logistics.hotel || '',
     transport: logistics.transport || '',
     tasks: records.map(r => r.task).filter(Boolean).join('\n'),
@@ -209,7 +211,7 @@ export default function PlanModulesPage() {
       if (!visit.visitDate) { toast('请选择服务日期'); return }
       if (!visit.staffId) { toast('请选择就医专员'); return }
       if (!visit.supervisorId) { toast('请选择督办人'); return }
-      if (!visit.followUpPlanId) { toast('请选择关联 Admin 随访方案'); return }
+      if (!(visit.followUpPlans?.length || visit.followUpPlanId)) { toast('请选择关联 Admin 岗位任务方案'); return }
     }
     setSaving(true)
     try {
@@ -314,7 +316,18 @@ export default function PlanModulesPage() {
           <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24', marginBottom: 4 }}>岗位任务流转</div>
           <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 14 }}>执行人完成就医安排；督办人核对结果并推动客户整体方案闭环。</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div><label className="form-label">关联 Admin 随访方案 *</label><select className="form-input" value={moduleData.visit?.followUpPlanId || plan.content?.followUpPlanId || ''} onChange={e => handleModuleChange('visit', 'followUpPlanId', e.target.value)}><option value="">请选择任务方案</option>{followUpPlans.filter(p => !p.category || ['general','medical_assist'].includes(p.category)).map(p => <option key={p._id} value={p._id}>{p.name}</option>)}</select></div>
+            <div>
+              <label className="form-label">关联 Admin 岗位任务方案 *</label>
+              {(moduleData.visit?.followUpPlans?.length || plan.content?.followUpPlans?.length) ? (
+                <div className="form-input" style={{ minHeight: 38, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                  {(moduleData.visit?.followUpPlans?.length ? moduleData.visit.followUpPlans : plan.content.followUpPlans).map(item => (
+                    <span key={item.id || item._id} style={{ padding: '3px 8px', borderRadius: 12, background: '#E8F5EF', color: '#1E6B50', fontSize: 12 }}>{item.name}</span>
+                  ))}
+                </div>
+              ) : (
+                <select className="form-input" value={moduleData.visit?.followUpPlanId || plan.content?.followUpPlanId || ''} onChange={e => handleModuleChange('visit', 'followUpPlanId', e.target.value)}><option value="">请选择任务方案</option>{followUpPlans.filter(p => !p.category || ['general','medical_assist'].includes(p.category)).map(p => <option key={p._id} value={p._id}>{p.name}</option>)}</select>
+              )}
+            </div>
             <div><label className="form-label">督办人 *</label><select className="form-input" value={moduleData.visit?.supervisorId || ''} onChange={e => handleModuleChange('visit', 'supervisorId', e.target.value)}><option value="">请选择健管专员/家庭医生</option>{staffList.filter(s => ['healthManager','familyDoctor','superadmin'].includes(s.role)).map(s => <option key={s._id} value={s._id}>{s.name} · {s.roleLabel}</option>)}</select></div>
           </div>
         </div>

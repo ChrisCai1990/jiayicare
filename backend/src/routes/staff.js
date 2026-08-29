@@ -1336,15 +1336,22 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   // 专业执行完成后，督办任务进入待复核；督办完成后关闭就医协助子方案。
   if (followUp.sourceHealthPlanId && followUp.taskRole === 'executor' && followUp.status === 'completed') {
     await FollowUp.updateOne(
-      { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'supervisor', status: 'planned' },
+      { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'supervisor', workflowKey: followUp.workflowKey || '', status: 'planned' },
       { $set: { status: 'in_progress', nextFollowUpDate: new Date() } }
     );
   }
   if (followUp.sourceHealthPlanId && followUp.taskRole === 'supervisor' && followUp.status === 'completed') {
-    await HealthPlan.updateOne(
-      { _id: followUp.sourceHealthPlanId, type: 'medical_assist' },
-      { $set: { status: 'completed', 'content.workflowCompletedAt': new Date(), 'content.workflowCompletedBy': req.staff._id } }
-    );
+    const remaining = await FollowUp.countDocuments({
+      sourceHealthPlanId: followUp.sourceHealthPlanId,
+      taskRole: { $in: ['executor', 'supervisor'] },
+      status: { $nin: ['completed', 'cancelled'] },
+    });
+    if (remaining === 0) {
+      await HealthPlan.updateOne(
+        { _id: followUp.sourceHealthPlanId, type: 'medical_assist' },
+        { $set: { status: 'completed', 'content.workflowCompletedAt': new Date(), 'content.workflowCompletedBy': req.staff._id } }
+      );
+    }
   }
 
   // 不适主诉也可能从“随访任务”入口完成；同步关闭审核，避免医生工作台残留同一待办。
@@ -1697,7 +1704,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
     if (!c.serviceDate) return res.status(400).json({ success: false, message: '请先设置服务日期' });
     if (!c.staffId) return res.status(400).json({ success: false, message: '请先从员工库选择就医专员' });
     if (!c.supervisorId) return res.status(400).json({ success: false, message: '请先从员工库选择督办人' });
-    if (!c.followUpPlanId) return res.status(400).json({ success: false, message: '请先关联 Admin 随访方案' });
+    if (!(c.followUpPlans?.length || c.followUpPlanId)) return res.status(400).json({ success: false, message: '请先关联 Admin 岗位任务方案' });
   }
   plan.status = 'active';
   plan.pushedAt = new Date();
@@ -1715,16 +1722,15 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
     const c = plan.content || {};
     const selectedAssistantId = plan.content?.staffId || plan.staffId;
     const selectedSupervisorId = plan.content?.supervisorId || plan.staffId;
-    const workflowPlan = plan.content?.followUpPlanId
-      ? await FollowUpPlan.findOne({ _id: plan.content.followUpPlanId, status: 'active' }).lean()
-      : null;
+    const workflowIds = (plan.content?.followUpPlans?.length
+      ? plan.content.followUpPlans.map(item => item.id || item._id).filter(Boolean)
+      : [plan.content?.followUpPlanId].filter(Boolean));
+    const workflowPlans = await FollowUpPlan.find({ _id: { $in: workflowIds }, status: 'active' }).lean();
+    if (!workflowPlans.length) return res.status(400).json({ success: false, message: '关联的岗位任务方案已停用或不存在' });
     const serviceDate = plan.content?.serviceDate
       ? new Date(`${plan.content.serviceDate}T${/^\d{2}:\d{2}/.test(plan.content?.serviceTime || '') ? plan.content.serviceTime.slice(0, 5) : '09:00'}:00+08:00`)
       : new Date();
     const addDays = (date, days) => new Date(date.getTime() + Number(days || 0) * 86400000);
-    const remindAt = addDays(serviceDate, -(workflowPlan?.remindDaysBefore ?? 3));
-    const executorDate = addDays(serviceDate, workflowPlan?.executorDueOffsetDays ?? -1);
-    const supervisorDate = addDays(serviceDate, workflowPlan?.supervisorDueOffsetDays ?? 1);
     const coordinationGroupId = `medical-assist:${plan._id}`;
     const requirements = [
       c.hospital && `医院：${c.hospital}`,
@@ -1740,43 +1746,54 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
     // 兼容旧版单任务：首次按新流程重推时原位升级为执行任务，避免重复待办。
     await FollowUp.updateMany(
       { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: '', status: { $in: ['planned', 'in_progress'] } },
-      { $set: { taskRole: 'executor', coordinationGroupId } }
+      { $set: { taskRole: 'executor', coordinationGroupId, workflowKey: String(workflowPlans[0]._id) } }
     );
-    // 同一子方案拆为“专业执行”和“整体督办”两条岗位任务；重复推送只更新原任务。
-    const executorTask = await FollowUp.findOneAndUpdate(
-      { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'executor' },
-      {
-        $set: {
-          patientId: plan.patientId,
-          staffId: plan.staffId,
-          date: executorDate,
-          remindAt,
-          coordinationGroupId,
-          taskRole: 'executor',
-          followUpSchemeId: workflowPlan?._id || null,
-          theme: `执行就医协助 · ${plan.title || ''}`,
-          content: plan.description || '',
-          plannedContent: [requirements, workflowPlan?.completionStandard && `完成标准：${workflowPlan.completionStandard}`].filter(Boolean).join('\n'),
-          status: 'planned',
-          assignedTo: selectedAssistantId,
-        },
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+    await FollowUp.updateMany(
+      { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: { $in: ['executor', 'supervisor'] }, workflowKey: { $in: ['', null] } },
+      { $set: { workflowKey: String(workflowPlans[0]._id) } }
     );
-    if (workflowPlan?.requiresCoordination !== false && selectedSupervisorId) {
-      await FollowUp.findOneAndUpdate(
-        { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'supervisor' },
+    const patient = await User.findById(plan.patientId).select('assignedHealthManager assignedFamilyDoctor assignedNutritionist assignedHealthPlanner assignedMedicalAssistant').lean();
+    const resolveAssignee = (role, fallback) => ({
+      familyDoctor: patient?.assignedFamilyDoctor,
+      healthManager: patient?.assignedHealthManager,
+      nutritionist: patient?.assignedNutritionist,
+      healthPlanner: patient?.assignedHealthPlanner || patient?.assignedMedicalAssistant,
+      medicalAssistant: patient?.assignedMedicalAssistant || patient?.assignedHealthPlanner,
+    }[role] || fallback);
+    // 每个被筛选的岗位任务方案各生成一组“执行+督办”；workflowKey 保证重复推送只更新对应组。
+    for (const workflowPlan of workflowPlans) {
+      const workflowKey = String(workflowPlan._id);
+      const remindAt = addDays(serviceDate, -(workflowPlan.remindDaysBefore ?? 3));
+      const executorDate = addDays(serviceDate, workflowPlan.executorDueOffsetDays ?? -1);
+      const supervisorDate = addDays(serviceDate, workflowPlan.supervisorDueOffsetDays ?? 1);
+      const executorAssignee = resolveAssignee(workflowPlan.executorRole, selectedAssistantId);
+      const supervisorAssignee = resolveAssignee(workflowPlan.supervisorRole, selectedSupervisorId);
+      const executorTask = await FollowUp.findOneAndUpdate(
+        { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'executor', workflowKey },
         { $set: {
-          patientId: plan.patientId, staffId: plan.staffId, assignedTo: selectedSupervisorId,
-          date: supervisorDate, remindAt, coordinationGroupId, taskRole: 'supervisor',
-          dependsOnTaskId: executorTask._id, followUpSchemeId: workflowPlan?._id || null,
-          theme: `督办就医协助 · ${plan.title || ''}`,
-          content: '关注执行进度；就医专员完成后核对服务结果、资料归档及后续安排。',
-          plannedContent: `关联执行任务：${executorTask.theme}\n计划服务时间：${serviceDate.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`,
-          status: 'planned',
+          patientId: plan.patientId, staffId: plan.staffId, date: executorDate, remindAt,
+          coordinationGroupId, workflowKey, taskRole: 'executor', followUpSchemeId: workflowPlan._id,
+          theme: `执行${workflowPlan.name} · ${plan.title || ''}`, content: plan.description || '',
+          plannedContent: [requirements, workflowPlan.completionStandard && `完成标准：${workflowPlan.completionStandard}`].filter(Boolean).join('\n'),
+          status: 'planned', assignedTo: executorAssignee,
         } },
         { upsert: true, new: true, setDefaultsOnInsert: true }
       );
+      if (workflowPlan.requiresCoordination !== false && supervisorAssignee) {
+        await FollowUp.findOneAndUpdate(
+          { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'supervisor', workflowKey },
+          { $set: {
+            patientId: plan.patientId, staffId: plan.staffId, assignedTo: supervisorAssignee,
+            date: supervisorDate, remindAt, coordinationGroupId, workflowKey, taskRole: 'supervisor',
+            dependsOnTaskId: executorTask._id, followUpSchemeId: workflowPlan._id,
+            theme: `督办${workflowPlan.name} · ${plan.title || ''}`,
+            content: '关注执行进度；执行人员完成后核对服务结果、资料归档及后续安排。',
+            plannedContent: `关联执行任务：${executorTask.theme}\n计划服务时间：${serviceDate.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`,
+            status: 'planned',
+          } },
+          { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
+      }
     }
     // 方案推送=本次服务预约已正式处理完毕，把下单时生成、指派给健康规划师/就医专员的原始订单待办标记完成，
     // 否则该待办会一直挂在"待处理服务预约"/"待随访任务"里，即使专员已经走完生成方案→推送的完整流程
@@ -10842,6 +10859,9 @@ ${templateBlock}
         } : null,
         followUpPlanId: usedTemplate?.content?.followUpPlanId || '',
         followUpPlanName: usedTemplate?.content?.followUpPlanName || '',
+        followUpPlans: usedTemplate?.content?.followUpPlans?.length
+          ? usedTemplate.content.followUpPlans
+          : (usedTemplate?.content?.followUpPlanId ? [{ id: usedTemplate.content.followUpPlanId, name: usedTemplate.content.followUpPlanName || '' }] : []),
         assistanceType: usedTemplate?.content?.assistanceType || '',
         hospital: raw.hospital || '', department: raw.department || '', expert: raw.expert || '',
         hotel: raw.hotel || '', transport: raw.transport || '',
