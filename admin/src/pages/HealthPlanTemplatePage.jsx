@@ -89,6 +89,44 @@ const defaultContent = {
   },
 }
 
+// 单选岗位任务方案也可能有几十条；使用原生 datalist 保留键盘输入、模糊检索和下拉选择，
+// 同时仍按方案 id 保存，避免重名或改名后关联丢失。
+function SearchablePlanSelect({ value, plans, onChange }) {
+  const selected = plans.find(plan => plan._id === value)
+  const [query, setQuery] = useState(selected?.name || '')
+  const listId = useRef(`followup-plan-options-${Math.random().toString(36).slice(2)}`)
+
+  useEffect(() => {
+    setQuery(selected?.name || '')
+  }, [value, selected?.name])
+
+  const handleChange = (text) => {
+    setQuery(text)
+    if (!text) return onChange(null)
+    const exact = plans.find(plan => plan.name === text)
+    if (exact) onChange(exact)
+  }
+
+  return (
+    <>
+      <input
+        className="form-input"
+        list={listId.current}
+        value={query}
+        placeholder="输入方案名称搜索或点击选择"
+        onChange={e => handleChange(e.target.value)}
+        onBlur={() => {
+          if (query && !plans.some(plan => plan.name === query)) setQuery(selected?.name || '')
+        }}
+        autoComplete="off"
+      />
+      <datalist id={listId.current}>
+        {plans.map(plan => <option key={plan._id} value={plan.name}>{plan.category || '通用'}</option>)}
+      </datalist>
+    </>
+  )
+}
+
 // 随访方案选择器（从随访方案库选择）
 function FollowUpPlanSelector({ value, onChange, allPlans, loading, label = '可调用的标准随访方案', description = '限定AI可以匹配的标准执行方案；客户确认年度总方案后，系统据此直接生成随访计划。', emptyText = '未限定随访方案：AI只能形成管理要求，不得编造可执行随访计划。' }) {
   const [open, setOpen] = useState(false)
@@ -454,14 +492,14 @@ function PlanContentForm({ type, initialContent, contentRef }) {
       </div>
       <div className="form-group">
         <label className="form-label">关联岗位任务方案 *</label>
-        <select className="form-input" value={content.followUpPlanId || ''} onChange={e => {
-          const plan = followUpPlans.find(item => item._id === e.target.value)
+        <SearchablePlanSelect
+          value={content.followUpPlanId || ''}
+          plans={followUpPlans.filter(plan => !plan.category || ['general', 'medical_assist'].includes(plan.category))}
+          onChange={plan => {
           set('followUpPlanId', plan?._id || '')
           set('followUpPlanName', plan?.name || '')
-        }}>
-          <option value="">请选择 Admin 随访方案</option>
-          {followUpPlans.filter(plan => !plan.category || ['general', 'medical_assist'].includes(plan.category)).map(plan => <option key={plan._id} value={plan._id}>{plan.name}</option>)}
-        </select>
+          }}
+        />
         <div style={{ color: '#7C8B84', fontSize: 11, marginTop: 4 }}>子方案推送后按该规则生成执行任务和督办任务。</div>
       </div>
       <div className="form-group">
