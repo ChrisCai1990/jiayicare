@@ -10768,10 +10768,11 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
     // 只有模板明确允许的可选后勤项目才交给 AI 个性化，避免把住宿、交通变成所有服务的固定字段。
     // 旧模板仍按 hotel/transport 非空兼容；新模板统一读取 optionalLogistics。
     const templateForFields = matchedTemplate || candidateTemplates[0] || null;
+    const isCheckupService = templateForFields?.content?.serviceDomain === 'annual_checkup';
     const optionalLogistics = templateForFields?.content?.optionalLogistics || '';
     const askFields = {
-      hospital: true, department: true,
-      expert: !templateForFields || !!templateForFields.content?.expert,
+      hospital: true, department: !isCheckupService,
+      expert: !isCheckupService && (!templateForFields || !!templateForFields.content?.expert),
       hotel: !templateForFields || /住宿/.test(optionalLogistics) || !!templateForFields.content?.hotel,
       transport: !templateForFields || /交通|接送/.test(optionalLogistics) || !!templateForFields.content?.transport,
     };
@@ -10789,12 +10790,12 @@ ${candidateTemplates.map(t => `《${t.name}》：${JSON.stringify(t.content)}`).
     const fieldSpecs = [
       `"title": "方案名称，必须包含具体服务类型${templateForFields ? `（本次是${templateForFields.name}）` : ''}和月日，如：${user.name}${templateForFields?.name || '就医协助'}方案（${new Date().getMonth() + 1}月${new Date().getDate()}日），不要只写笼统的'就医协助方案'——同一会员可能多次生成，必须能一眼区分是哪次"`,
       `"description": "方案简介，说明本次就医协助的目的（100字以内）"`,
-      askFields.hospital && `"hospital": "建议就诊医院（结合会员慢病情况推断合适的医院，无法判断则留空）"`,
+      askFields.hospital && `"hospital": "${isCheckupService ? '体检机构或体检中心（只能填写服务目标或已确认资料中明确的机构，未明确则留空）' : '建议就诊医院（结合会员慢病情况推断合适的医院，无法判断则留空）'}"`,
       askFields.department && `"department": "建议就诊科室"`,
       askFields.expert && `"expert": "建议专家，无法判断则留空"`,
       askFields.hotel && `"hotel": "本次住宿安排（结合会员情况具体化，如模板固定为'无需安排'则原样返回）"`,
       askFields.transport && `"transport": "本次交通安排（结合会员情况具体化，如模板固定为'无需安排'则原样返回）"`,
-      `"tasks": "针对该会员的具体执行安排，每行一项，需结合模板步骤但要写出本次的具体内容（如具体日期、具体证件），不要原样照抄模板"`,
+      `"tasks": "针对该会员的具体执行安排，每行一项，需结合模板步骤但要写出本次的具体内容（如具体日期、具体证件），不要原样照抄模板${isCheckupService ? '；本次是体检服务，只写体检方案确认、预约协调、体检准备、现场陪检、报告回收与解读，不得写门诊挂号、就诊科室、建议专家或虚构具体检查项目' : ''}"`,
       `"notes": "本次注意事项，若模板notes是待填空的清单（如'挂号科室：\\n时间安排：'），请把冒号后面的内容具体填好"`,
     ].filter(Boolean).join(',\n  ');
 
@@ -10820,7 +10821,11 @@ ${templateBlock}
 
 注意：tasks至少2项，且必须是针对该会员的具体安排，不是模板步骤的复述。`;
 
-    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1200 });
+    const scopedPrompt = isCheckupService
+      ? `${prompt}\n\n【体检场景硬性边界】这是体检服务方案，不是门诊就医方案。禁止使用“就诊医院、就诊科室、门诊挂号、建议专家”等门诊表述；没有已确认医学依据时，不得自行新增具体检查项目。`
+      : prompt;
+
+    const text = await chat([{ role: 'user', content: scopedPrompt }], { maxTokens: 1200 });
     let raw = {};
     try {
       const m = text.trim().match(/\{[\s\S]*\}/);
@@ -10830,7 +10835,7 @@ ${templateBlock}
     const items = [];
     if (raw.hospital) {
       const dept = raw.department ? ` · ${raw.department}` : '';
-      items.push({ name: `就诊：${raw.hospital}${dept}`, category: '就医协助' });
+      items.push({ name: `${isCheckupService ? '体检机构' : '就诊'}：${raw.hospital}${dept}`, category: '就医协助' });
     }
     if (raw.expert) items.push({ name: `专家：${raw.expert}`, category: '就医协助' });
     if (order) items.push({ name: `关联订单：${order.serviceName}`, category: '就医协助' });
@@ -10891,6 +10896,8 @@ ${templateBlock}
           ? usedTemplate.content.followUpPlans
           : (usedTemplate?.content?.followUpPlanId ? [{ id: usedTemplate.content.followUpPlanId, name: usedTemplate.content.followUpPlanName || '' }] : []),
         assistanceType: usedTemplate?.content?.assistanceType || '',
+        serviceDomain: usedTemplate?.content?.serviceDomain || 'medical_assist',
+        serviceMode: usedTemplate?.content?.serviceMode || '',
         hospital: raw.hospital || '', department: raw.department || '', expert: raw.expert || '',
         hotel: raw.hotel || '', transport: raw.transport || '',
         tasks: tasksText, notes: raw.notes || '',

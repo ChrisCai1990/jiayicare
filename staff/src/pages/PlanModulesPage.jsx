@@ -91,6 +91,34 @@ const MODULE_DEFS_BY_TYPE = {
 const TITLE_BY_TYPE = { nutrition: '营养干预方案', medical_assist: '就医协助方案' }
 const AI_GENERATE_LABEL_BY_TYPE = { nutrition: 'AI膳食信息草稿', medical_assist: 'AI就医协助方案' }
 
+function medicalAssistModuleDefs(content = {}) {
+  const serviceDomain = content.serviceDomain || content.templateSnapshot?.serviceDomain || ''
+  if (serviceDomain !== 'annual_checkup') return MODULE_DEFS_BY_TYPE.medical_assist
+  return {
+    ...MODULE_DEFS_BY_TYPE.medical_assist,
+    visit: {
+      name: '体检安排', icon: '🩺',
+      fields: [
+        { key: 'hospital', label: '体检机构/体检中心', type: 'text' },
+        { key: 'department', label: '承接部门/专项检查科室', type: 'text' },
+        { key: 'expert', label: '方案审核医生', type: 'text' },
+        { key: 'visitDate', label: '体检日期', type: 'date' },
+        { key: 'serviceTime', label: '集合/签到时间', type: 'text', placeholder: '如：08:00前或上午' },
+        { key: 'staffId', label: '体检协调专员', type: 'staff-select' },
+      ],
+    },
+    tasks: {
+      ...MODULE_DEFS_BY_TYPE.medical_assist.tasks,
+      name: '体检执行任务',
+      fields: [
+        { key: 'task', label: '体检任务内容', type: 'text' },
+        { key: 'staff', label: '负责人', type: 'staff-select' },
+        { key: 'notes', label: '备注', type: 'textarea', internal: true },
+      ],
+    },
+  }
+}
+
 function medicalAssistModuleData(content = {}) {
   const existing = content.moduleData || {}
   const taskRecords = existing.tasks?.records?.length
@@ -257,9 +285,13 @@ export default function PlanModulesPage() {
   if (loading) return <div style={{ textAlign: 'center', padding: 80, color: '#aaa' }}>加载中...</div>
   if (!plan) return <div style={{ textAlign: 'center', padding: 80, color: '#aaa' }}>方案不存在</div>
 
-  const moduleDefs = MODULE_DEFS_BY_TYPE[plan.type] || {}
+  const moduleDefs = plan.type === 'medical_assist'
+    ? medicalAssistModuleDefs(plan.content || {})
+    : (MODULE_DEFS_BY_TYPE[plan.type] || {})
   const moduleKeys = Object.keys(moduleDefs)
-  const title = TITLE_BY_TYPE[plan.type] || plan.title
+  const isCheckupService = plan.type === 'medical_assist'
+    && ['annual_checkup'].includes(plan.content?.serviceDomain || plan.content?.templateSnapshot?.serviceDomain)
+  const title = isCheckupService ? '体检服务方案' : (TITLE_BY_TYPE[plan.type] || plan.title)
   const aiLabel = AI_GENERATE_LABEL_BY_TYPE[plan.type] || 'AI生成'
 
   return (
