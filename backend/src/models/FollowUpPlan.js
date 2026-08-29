@@ -21,6 +21,7 @@ const followUpPlanSchema = new mongoose.Schema({
   remindDaysBefore:  { type: Number, min: 0, max: 90, default: 3 },
   executorDueOffsetDays: { type: Number, min: -90, max: 90, default: -1 },
   supervisorDueOffsetDays: { type: Number, min: -90, max: 90, default: 1 },
+  fixedToServiceDate: { type: Boolean, default: false }, // 陪诊/当日服务：执行任务始终与主服务日期同日
   requiresCoordination: { type: Boolean, default: false },
   completionStandard: { type: String, default: '' },
   default_content:   { type: mongoose.Schema.Types.Mixed, default: {} },

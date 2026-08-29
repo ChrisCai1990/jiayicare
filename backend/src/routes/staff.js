@@ -1680,6 +1680,32 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
   }
   plan.markModified('content');
   await plan.save();
+  // 已推送方案改期时，所有未完成岗位任务和服务档案立即跟随主服务日期更新。
+  if (plan.type === 'medical_assist' && plan.status === 'active' && plan.content?.serviceDate) {
+    const serviceDate = new Date(`${plan.content.serviceDate}T${/^\d{2}:\d{2}/.test(plan.content?.serviceTime || '') ? plan.content.serviceTime.slice(0, 5) : '09:00'}:00+08:00`);
+    const linkedIds = (plan.content.followUpPlans?.length
+      ? plan.content.followUpPlans.map(item => item.id || item._id).filter(Boolean)
+      : [plan.content.followUpPlanId].filter(Boolean));
+    const linkedPlans = await FollowUpPlan.find({ _id: { $in: linkedIds } }).lean();
+    const addDays = (date, days) => new Date(date.getTime() + Number(days || 0) * 86400000);
+    for (const linkedPlan of linkedPlans) {
+      const workflowKey = String(linkedPlan._id);
+      const executorDate = addDays(serviceDate, linkedPlan.fixedToServiceDate ? 0 : (linkedPlan.executorDueOffsetDays ?? -1));
+      const supervisorDate = addDays(serviceDate, linkedPlan.supervisorDueOffsetDays ?? 1);
+      await FollowUp.updateMany(
+        { sourceHealthPlanId: plan._id, workflowKey, taskRole: 'executor', status: { $in: ['planned', 'in_progress'] } },
+        { $set: { date: executorDate, remindAt: addDays(executorDate, -(linkedPlan.remindDaysBefore ?? 3)) } }
+      );
+      await FollowUp.updateMany(
+        { sourceHealthPlanId: plan._id, workflowKey, taskRole: 'supervisor', status: { $in: ['planned', 'in_progress'] } },
+        { $set: { date: supervisorDate, remindAt: addDays(supervisorDate, -(linkedPlan.remindDaysBefore ?? 3)) } }
+      );
+    }
+    await ServiceRecord.updateMany(
+      { sourceHealthPlanId: plan._id, type: 'medical_visit' },
+      { $set: { date: serviceDate } }
+    );
+  }
   res.json({ success: true, data: plan });
 });
 
@@ -1763,7 +1789,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
     // 每个被筛选的岗位任务方案各生成一组“执行+督办”；workflowKey 保证重复推送只更新对应组。
     for (const workflowPlan of workflowPlans) {
       const workflowKey = String(workflowPlan._id);
-      const executorDate = addDays(serviceDate, workflowPlan.executorDueOffsetDays ?? -1);
+      const executorDate = addDays(serviceDate, workflowPlan.fixedToServiceDate ? 0 : (workflowPlan.executorDueOffsetDays ?? -1));
       const supervisorDate = addDays(serviceDate, workflowPlan.supervisorDueOffsetDays ?? 1);
       const executorRemindAt = addDays(executorDate, -(workflowPlan.remindDaysBefore ?? 3));
       const supervisorRemindAt = addDays(supervisorDate, -(workflowPlan.remindDaysBefore ?? 3));

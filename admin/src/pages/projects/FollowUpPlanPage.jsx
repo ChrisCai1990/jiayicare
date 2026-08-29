@@ -18,7 +18,7 @@ const CATEGORY_OPTIONS = [
 ]
 
 const emptyCycle = () => ({ cycleType: 'duration', cycleDuration: 30, cycleUnit: 'day', cycleDate: '', notes: '' })
-const EMPTY = { name: '', formId: '', cycles: [emptyCycle()], defaultEmployeeId: '', default_content: {}, category: 'general', executorRole: '', supervisorRole: '', remindDaysBefore: 3, executorDueOffsetDays: -1, supervisorDueOffsetDays: 1, requiresCoordination: false, completionStandard: '' }
+const EMPTY = { name: '', formId: '', cycles: [emptyCycle()], defaultEmployeeId: '', default_content: {}, category: 'general', executorRole: '', supervisorRole: '', remindDaysBefore: 3, executorDueOffsetDays: -1, supervisorDueOffsetDays: 1, fixedToServiceDate: false, requiresCoordination: false, completionStandard: '' }
 
 // 按钮样式
 const btnStyle = (color, disabled) => ({
@@ -78,6 +78,7 @@ export default function FollowUpPlanPage() {
       category: p.category || 'general', executorRole: p.executorRole || '', supervisorRole: p.supervisorRole || '',
       remindDaysBefore: p.remindDaysBefore ?? 3, executorDueOffsetDays: p.executorDueOffsetDays ?? -1,
       supervisorDueOffsetDays: p.supervisorDueOffsetDays ?? 1, requiresCoordination: !!p.requiresCoordination,
+      fixedToServiceDate: !!p.fixedToServiceDate,
       completionStandard: p.completionStandard || '',
     })
     setError(''); setShowModal(true)
@@ -103,6 +104,7 @@ export default function FollowUpPlanPage() {
         category: form.category, executorRole: form.executorRole, supervisorRole: form.supervisorRole,
         remindDaysBefore: Number(form.remindDaysBefore), executorDueOffsetDays: Number(form.executorDueOffsetDays),
         supervisorDueOffsetDays: Number(form.supervisorDueOffsetDays), requiresCoordination: form.requiresCoordination,
+        fixedToServiceDate: form.fixedToServiceDate,
         completionStandard: form.completionStandard,
         cycles: form.cycles.map(c => ({
           cycleType: c.cycleType,
@@ -228,9 +230,10 @@ export default function FollowUpPlanPage() {
                 <div className="form-group"><label className="form-label">提前推送（天）</label><input className="form-input" type="number" min="0" max="90" value={form.remindDaysBefore} onChange={e => setForm(f => ({ ...f, remindDaysBefore: e.target.value }))} /></div>
                 <div className="form-group"><label className="form-label">执行角色</label><select className="form-input" value={form.executorRole} onChange={e => setForm(f => ({ ...f, executorRole: e.target.value }))}>{ROLE_OPTIONS.map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></div>
                 <div className="form-group"><label className="form-label">督办角色</label><select className="form-input" value={form.supervisorRole} onChange={e => setForm(f => ({ ...f, supervisorRole: e.target.value }))}>{ROLE_OPTIONS.map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></div>
-                <div className="form-group"><label className="form-label">执行截止（相对服务日）</label><input className="form-input" type="number" min="-90" max="90" value={form.executorDueOffsetDays} onChange={e => setForm(f => ({ ...f, executorDueOffsetDays: e.target.value }))} /><div style={{ fontSize: 11, color: '#6B7280', marginTop: 4 }}>例如 -1 表示服务日前1天</div></div>
+                <div className="form-group"><label className="form-label">执行截止（相对服务日）</label><input className="form-input" type="number" min="-90" max="90" disabled={form.fixedToServiceDate} value={form.fixedToServiceDate ? 0 : form.executorDueOffsetDays} onChange={e => setForm(f => ({ ...f, executorDueOffsetDays: e.target.value }))} /><div style={{ fontSize: 11, color: '#6B7280', marginTop: 4 }}>{form.fixedToServiceDate ? '已锁定为服务当天' : '例如 -1 表示服务日前1天'}</div></div>
                 <div className="form-group"><label className="form-label">督办截止（相对服务日）</label><input className="form-input" type="number" min="-90" max="90" value={form.supervisorDueOffsetDays} onChange={e => setForm(f => ({ ...f, supervisorDueOffsetDays: e.target.value }))} /><div style={{ fontSize: 11, color: '#6B7280', marginTop: 4 }}>例如 1 表示服务后1天</div></div>
               </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, fontSize: 13 }}><input type="checkbox" checked={form.fixedToServiceDate} onChange={e => setForm(f => ({ ...f, fixedToServiceDate: e.target.checked, executorDueOffsetDays: e.target.checked ? 0 : f.executorDueOffsetDays }))} />执行任务固定在主服务日期当天（陪诊、当日体检等）</label>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, fontSize: 13 }}><input type="checkbox" checked={form.requiresCoordination} onChange={e => setForm(f => ({ ...f, requiresCoordination: e.target.checked }))} />需要执行人和督办人双人协作</label>
               <div className="form-group"><label className="form-label">完成标准</label><textarea className="form-input" rows={2} value={form.completionStandard} onChange={e => setForm(f => ({ ...f, completionStandard: e.target.value }))} placeholder="如：预约信息确认、服务完成、结果资料归档" /></div>
 

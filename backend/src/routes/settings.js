@@ -781,7 +781,7 @@ router.get('/followup-plans', adminAuth, async (req, res) => {
 
 router.post('/followup-plans', adminAuth, async (req, res) => {
   const { name, formId, cycles, defaultEmployeeId, default_content, category, executorRole, supervisorRole,
-    remindDaysBefore, executorDueOffsetDays, supervisorDueOffsetDays, requiresCoordination, completionStandard } = req.body;
+    remindDaysBefore, executorDueOffsetDays, supervisorDueOffsetDays, fixedToServiceDate, requiresCoordination, completionStandard } = req.body;
   if (!name) return res.status(400).json({ success: false, message: '方案名称不能为空' });
   const plan = await FollowUpPlan.create({
     name, formId: formId || null,
@@ -791,6 +791,7 @@ router.post('/followup-plans', adminAuth, async (req, res) => {
     remindDaysBefore: Number.isFinite(Number(remindDaysBefore)) ? Number(remindDaysBefore) : 3,
     executorDueOffsetDays: Number.isFinite(Number(executorDueOffsetDays)) ? Number(executorDueOffsetDays) : -1,
     supervisorDueOffsetDays: Number.isFinite(Number(supervisorDueOffsetDays)) ? Number(supervisorDueOffsetDays) : 1,
+    fixedToServiceDate: !!fixedToServiceDate,
     requiresCoordination: !!requiresCoordination, completionStandard: completionStandard || '',
     default_content: default_content || {},
   });
@@ -799,7 +800,7 @@ router.post('/followup-plans', adminAuth, async (req, res) => {
 
 router.put('/followup-plans/:id', adminAuth, async (req, res) => {
   const { name, formId, cycles, defaultEmployeeId, status, default_content, category, executorRole, supervisorRole,
-    remindDaysBefore, executorDueOffsetDays, supervisorDueOffsetDays, requiresCoordination, completionStandard } = req.body;
+    remindDaysBefore, executorDueOffsetDays, supervisorDueOffsetDays, fixedToServiceDate, requiresCoordination, completionStandard } = req.body;
   const plan = await FollowUpPlan.findByIdAndUpdate(
     req.params.id,
     {
@@ -810,6 +811,7 @@ router.put('/followup-plans/:id', adminAuth, async (req, res) => {
       remindDaysBefore: Number.isFinite(Number(remindDaysBefore)) ? Number(remindDaysBefore) : 3,
       executorDueOffsetDays: Number.isFinite(Number(executorDueOffsetDays)) ? Number(executorDueOffsetDays) : -1,
       supervisorDueOffsetDays: Number.isFinite(Number(supervisorDueOffsetDays)) ? Number(supervisorDueOffsetDays) : 1,
+      fixedToServiceDate: !!fixedToServiceDate,
       requiresCoordination: !!requiresCoordination, completionStandard: completionStandard || '',
       status,
       default_content: default_content || {},

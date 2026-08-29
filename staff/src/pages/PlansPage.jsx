@@ -555,7 +555,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
   // 模板内容字段（与管理端完全一致）
   const [form, setForm] = useState({
     name: '', hospital: '', department: '', expert: '',
-    staffId: '', staffName: '', supervisorId: '', followUpPlanId: '', followUpPlanName: '', followUpPlans: [], serviceDate: '', serviceTime: '', transport: '', tasks: '', hotel: '', notes: '',
+    staffId: '', staffName: '', supervisorId: '', followUpPlanId: '', followUpPlanName: '', followUpPlans: [], serviceDomain: '', serviceMode: '', serviceDate: '', serviceTime: '', transport: '', tasks: '', hotel: '', notes: '',
   })
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
 
@@ -593,6 +593,8 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
       followUpPlanId: c.followUpPlanId || '',
       followUpPlanName: c.followUpPlanName || '',
       followUpPlans: c.followUpPlans?.length ? c.followUpPlans : (c.followUpPlanId ? [{ id: c.followUpPlanId, name: c.followUpPlanName || '已关联方案' }] : []),
+      serviceDomain: c.serviceDomain || '',
+      serviceMode: c.serviceMode || '',
       serviceDate: c.serviceDate || (c.datetime && /^\d{4}-\d{2}-\d{2}/.test(c.datetime) ? c.datetime.slice(0, 10) : ''),
       serviceTime: c.serviceTime || (c.datetime && !/^\d{4}-\d{2}-\d{2}$/.test(c.datetime) ? c.datetime.replace(/^\d{4}-\d{2}-\d{2}\s*/, '') : ''),
       transport: c.transport || '',
@@ -751,7 +753,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
               </select>
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">服务日期 *</label>
+              <label className="form-label">{form.serviceDomain === 'checkup' ? '体检日期' : '主服务日期'} *</label>
               <input className="form-input" type="date" value={form.serviceDate}
                 onChange={e => set('serviceDate', e.target.value)} />
             </div>
