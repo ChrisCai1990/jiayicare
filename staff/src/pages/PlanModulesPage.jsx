@@ -77,7 +77,6 @@ const MODULE_DEFS_BY_TYPE = {
       name: '执行任务', icon: '✅', multi: true, summaryKey: 'task', summaryLabel: '任务',
       fields: [
         { key: 'task', label: '任务内容', type: 'text' },
-        { key: 'staff', label: '负责人', type: 'staff-select' },
         { key: 'notes', label: '备注', type: 'textarea', internal: true },
       ],
     },
@@ -99,28 +98,20 @@ function isCheckupMedicalAssist(content = {}, planTitle = '') {
   return /体检/.test(`${content.templateName || ''} ${planTitle || ''}`)
 }
 
-function medicalAssistModuleDefs(content = {}, planTitle = '') {
+function medicalAssistModuleDefs(content = {}, planTitle = '', assignedReviewerId = '') {
   if (!isCheckupMedicalAssist(content, planTitle)) return MODULE_DEFS_BY_TYPE.medical_assist
+  const { tasks: _legacyTasks, ...checkupBaseModules } = MODULE_DEFS_BY_TYPE.medical_assist
   return {
-    ...MODULE_DEFS_BY_TYPE.medical_assist,
+    ...checkupBaseModules,
     visit: {
       name: '体检安排', icon: '🩺',
       fields: [
         { key: 'hospital', label: '体检机构/体检中心', type: 'text' },
         { key: 'department', label: '承接部门/专项检查科室', type: 'text' },
-        { key: 'expert', label: '方案审核医生', type: 'text' },
+        { key: 'reviewerId', label: '方案审核医生（健康顾问）', type: 'staff-select', roles: ['familyDoctor'], disabled: !!assignedReviewerId },
         { key: 'visitDate', label: '体检日期', type: 'date' },
         { key: 'serviceTime', label: '集合/签到时间', type: 'text', placeholder: '如：08:00前或上午' },
-        { key: 'staffId', label: '体检协调专员', type: 'staff-select' },
-      ],
-    },
-    tasks: {
-      ...MODULE_DEFS_BY_TYPE.medical_assist.tasks,
-      name: '体检执行任务',
-      fields: [
-        { key: 'task', label: '体检任务内容', type: 'text' },
-        { key: 'staff', label: '负责人', type: 'staff-select' },
-        { key: 'notes', label: '备注', type: 'textarea', internal: true },
+        { key: 'staffId', label: '体检协调专员', type: 'staff-select', roles: ['healthPlanner', 'medicalAssistant'] },
       ],
     },
   }
@@ -143,6 +134,7 @@ function medicalAssistModuleData(content = {}) {
       hospital: existing.visit?.hospital || content.hospital || '',
       department: existing.visit?.department || content.department || '',
       expert: existing.visit?.expert || content.expert || '',
+      reviewerId: existing.visit?.reviewerId || content.reviewerId || '',
       visitDate: existing.visit?.visitDate || content.serviceDate || '',
       serviceTime: existing.visit?.serviceTime || content.serviceTime || '',
       staffId: existing.visit?.staffId || content.staffId || '',
@@ -166,7 +158,7 @@ function medicalAssistModuleData(content = {}) {
   }
 }
 
-function contentFromModules(plan, moduleData, goal) {
+function contentFromModules(plan, moduleData, goal, staffList = []) {
   const content = { ...(plan.content || {}), moduleData, goal }
   if (plan.type !== 'medical_assist') return content
 
@@ -185,6 +177,8 @@ function contentFromModules(plan, moduleData, goal) {
     hospital: visit.hospital || '',
     department: visit.department || '',
     expert: visit.expert || '',
+    reviewerId: visit.reviewerId || '',
+    reviewerName: staffList.find(s => String(s._id) === String(visit.reviewerId || ''))?.name || content.reviewerName || '',
     serviceDate: visit.visitDate || '',
     serviceTime: visit.serviceTime || content.serviceTime || '',
     staffId: selectedAssistantId,
@@ -227,7 +221,12 @@ export default function PlanModulesPage() {
         const p = res.data
         setPlan(p)
         const c = p.content || {}
-        setModuleData(p.type === 'medical_assist' ? medicalAssistModuleData(c) : (c.moduleData || {}))
+        const nextModuleData = p.type === 'medical_assist' ? medicalAssistModuleData(c) : (c.moduleData || {})
+        const assignedReviewerId = p.patientId?.assignedFamilyDoctor?._id || p.patientId?.assignedFamilyDoctor || ''
+        if (p.type === 'medical_assist' && isCheckupMedicalAssist(c, p.title) && assignedReviewerId && !nextModuleData.visit?.reviewerId) {
+          nextModuleData.visit = { ...(nextModuleData.visit || {}), reviewerId: assignedReviewerId }
+        }
+        setModuleData(nextModuleData)
         setGoal(c.goal || p.description || '')
         setDirty(false)
       })
@@ -251,12 +250,13 @@ export default function PlanModulesPage() {
       const visit = moduleData.visit || {}
       if (!visit.visitDate) { toast('请选择服务日期'); return }
       if (!visit.staffId) { toast('请选择就医专员'); return }
+      if (isCheckupMedicalAssist(plan.content || {}, plan.title) && !visit.reviewerId) { toast('客户尚未归属健康顾问，请先选择方案审核医生'); return }
       if (!visit.supervisorId) { toast('请选择督办人'); return }
       if (!(visit.followUpPlans?.length || visit.followUpPlanId)) { toast('请选择关联 Admin 岗位任务方案'); return }
     }
     setSaving(true)
     try {
-      const content = contentFromModules(plan, moduleData, goal)
+      const content = contentFromModules(plan, moduleData, goal, staffList)
       await staffAPI.updatePlan(id, { content, description: goal })
       setPlan(p => ({ ...p, content, description: goal }))
       toast('方案已保存')
@@ -299,7 +299,7 @@ export default function PlanModulesPage() {
   if (!plan) return <div style={{ textAlign: 'center', padding: 80, color: '#aaa' }}>方案不存在</div>
 
   const moduleDefs = plan.type === 'medical_assist'
-    ? medicalAssistModuleDefs(plan.content || {}, plan.title)
+    ? medicalAssistModuleDefs(plan.content || {}, plan.title, plan.patientId?.assignedFamilyDoctor?._id || plan.patientId?.assignedFamilyDoctor || '')
     : (MODULE_DEFS_BY_TYPE[plan.type] || {})
   const moduleKeys = Object.keys(moduleDefs)
   const isCheckupService = plan.type === 'medical_assist'
@@ -365,9 +365,11 @@ export default function PlanModulesPage() {
               <label className="form-label">关联 Admin 岗位任务方案 *</label>
               {(moduleData.visit?.followUpPlans?.length || plan.content?.followUpPlans?.length) ? (
                 <div className="form-input" style={{ minHeight: 38, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-                  {(moduleData.visit?.followUpPlans?.length ? moduleData.visit.followUpPlans : plan.content.followUpPlans).map(item => (
-                    <span key={item.id || item._id} style={{ padding: '3px 8px', borderRadius: 12, background: '#E8F5EF', color: '#1E6B50', fontSize: 12 }}>{item.name}</span>
-                  ))}
+                  {(moduleData.visit?.followUpPlans?.length ? moduleData.visit.followUpPlans : plan.content.followUpPlans).map(item => {
+                    const linked = followUpPlans.find(p => String(p._id) === String(item.id || item._id || ''))
+                    const roleLabels = { familyDoctor: '健康顾问', healthPlanner: '健康规划师', medicalAssistant: '就医专员', healthManager: '健管专员', nutritionist: '营养师' }
+                    return <span key={item.id || item._id} style={{ padding: '3px 8px', borderRadius: 12, background: '#E8F5EF', color: '#1E6B50', fontSize: 12 }}>{item.name}{linked?.executorRole ? ` · ${roleLabels[linked.executorRole] || linked.executorRole}执行` : ''}</span>
+                  })}
                 </div>
               ) : (
                 <select className="form-input" value={moduleData.visit?.followUpPlanId || plan.content?.followUpPlanId || ''} onChange={e => handleModuleChange('visit', 'followUpPlanId', e.target.value)}><option value="">请选择任务方案</option>{followUpPlans.map(p => <option key={p._id} value={p._id}>{p.name}</option>)}</select>

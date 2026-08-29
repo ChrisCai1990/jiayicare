@@ -1594,7 +1594,16 @@ router.get('/plans', staffAuth, checkPermission('plans', 'view'), async (req, re
 // GET /api/staff/plans/:id
 router.get('/plans/:id', staffAuth, async (req, res) => {
   const plan = await HealthPlan.findById(req.params.id)
-    .populate('patientId', 'name phone gender age').populate('staffId', 'name role title');
+    .populate({
+      path: 'patientId',
+      select: 'name phone gender age assignedFamilyDoctor assignedHealthManager assignedHealthPlanner assignedMedicalAssistant',
+      populate: [
+        { path: 'assignedFamilyDoctor', select: 'name role title' },
+        { path: 'assignedHealthManager', select: 'name role title' },
+        { path: 'assignedHealthPlanner', select: 'name role title' },
+        { path: 'assignedMedicalAssistant', select: 'name role title' },
+      ],
+    }).populate('staffId', 'name role title');
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
   const canManage = await canManagePlan(req, plan);
   const isCreator = String(plan.staffId?._id || plan.staffId) === String(req.staff._id);
@@ -1735,8 +1744,20 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
   }
   if (plan.type === 'medical_assist') {
     const c = plan.content || {};
+    const isCheckupService = c.serviceDomain === 'annual_checkup' || c.templateSnapshot?.serviceDomain === 'annual_checkup' || /体检/.test(`${c.templateName || ''} ${plan.title || ''}`);
+    if (isCheckupService && !c.reviewerId) {
+      const patientOwner = await User.findById(plan.patientId).select('assignedFamilyDoctor').lean();
+      if (patientOwner?.assignedFamilyDoctor) {
+        const reviewer = await Admin.findById(patientOwner.assignedFamilyDoctor).select('name').lean();
+        c.reviewerId = patientOwner.assignedFamilyDoctor;
+        c.reviewerName = reviewer?.name || '';
+        plan.content = c;
+        plan.markModified('content');
+      }
+    }
     if (!c.serviceDate) return res.status(400).json({ success: false, message: '请先设置服务日期' });
     if (!c.staffId) return res.status(400).json({ success: false, message: '请先从员工库选择就医专员' });
+    if (isCheckupService && !c.reviewerId) return res.status(400).json({ success: false, message: '请先确认方案审核医生（健康顾问）' });
     if (!c.supervisorId) return res.status(400).json({ success: false, message: '请先从员工库选择督办人' });
     if (!(c.followUpPlans?.length || c.followUpPlanId)) return res.status(400).json({ success: false, message: '请先关联 Admin 岗位任务方案' });
   }
@@ -1770,6 +1791,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
       c.hospital && `医院：${c.hospital}`,
       c.department && `科室：${c.department}`,
       c.expert && `医生：${c.expert}`,
+      c.reviewerName && `方案审核医生：${c.reviewerName}`,
       (c.serviceDate || c.serviceTime) && `服务时间：${[c.serviceDate, c.serviceTime].filter(Boolean).join(' ')}`,
       plan.description && `代诊目的：${plan.description}`,
       c.tasks && `代诊要求：${c.tasks}`,
@@ -1788,7 +1810,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
     );
     const patient = await User.findById(plan.patientId).select('assignedHealthManager assignedFamilyDoctor assignedNutritionist assignedHealthPlanner assignedMedicalAssistant').lean();
     const resolveAssignee = (role, fallback) => ({
-      familyDoctor: patient?.assignedFamilyDoctor,
+      familyDoctor: patient?.assignedFamilyDoctor || c.reviewerId,
       healthManager: patient?.assignedHealthManager,
       nutritionist: patient?.assignedNutritionist,
       healthPlanner: patient?.assignedHealthPlanner || patient?.assignedMedicalAssistant,
@@ -1851,7 +1873,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
           date: serviceDate,
           title: plan.title || '就医协助方案',
           content: requirements,
-          medicalEscort: { hospital: c.hospital || '', department: c.department || '', doctor: c.expert || '' },
+          medicalEscort: { hospital: c.hospital || '', department: c.department || '', doctor: c.reviewerName || c.expert || '' },
         },
         $setOnInsert: { result: '' },
       },
@@ -10771,6 +10793,13 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
     }
 
     const { chat } = require('../utils/ai');
+    const chinaDateParts = new Intl.DateTimeFormat('zh-CN', {
+      timeZone: 'Asia/Shanghai', year: 'numeric', month: 'numeric', day: 'numeric',
+    }).formatToParts(new Date()).reduce((acc, part) => ({ ...acc, [part.type]: Number(part.value) || part.value }), {});
+    const currentYear = Number(chinaDateParts.year);
+    const currentMonth = Number(chinaDateParts.month);
+    const currentDay = Number(chinaDateParts.day);
+    const currentDateLabel = `${currentYear}年${currentMonth}月${currentDay}日`;
     const allergyInfo = [user.healthProfile?.foodAllergy, user.healthProfile?.drugAllergy].filter(Boolean).join('；') || '无';
     const orderInfo = order
       ? `客户已下单服务：${order.serviceName}${order.note ? `，备注：${order.note}` : ''}`
@@ -10812,6 +10841,9 @@ ${candidateTemplates.map(t => `《${t.name}》：${JSON.stringify(t.content)}`).
 
     const prompt = `你是一位就医协助服务专员，请根据会员信息、已下单的服务和标准方案模板生成个性化就医协助方案。
 
+【当前日期】
+${currentDateLabel}（北京时间）。所有待执行任务不得早于当前日期；如果尚未确认服务日期，只能使用“服务日期确认后”“体检前”等相对时间，不得自行编造具体月日。
+
 【会员信息】
 姓名：${user.name}，年龄：${user.age || '未知'}岁，慢病标签：${user.chronicDiseases?.join('、') || '无'}
 过敏史：${allergyInfo}
@@ -10842,6 +10874,21 @@ ${templateBlock}
       const m = text.trim().match(/\{[\s\S]*\}/);
       if (m) raw = JSON.parse(m[0]);
     } catch {}
+
+    // AI提示之外再做确定性兜底，禁止“8月28日前”等已经过期的日期进入待执行方案。
+    const normalizePastTaskDates = (value) => String(value || '').replace(
+      /(\d{1,2})月(\d{1,2})日(?:\s*\d{1,2}:\d{2})?(?:前|之前|前完成)?/g,
+      (matched, monthText, dayText) => {
+        const month = Number(monthText);
+        const day = Number(dayText);
+        return month < currentMonth || (month === currentMonth && day < currentDay)
+          ? '生成方案后尽快'
+          : matched;
+      }
+    );
+    raw.tasks = Array.isArray(raw.tasks)
+      ? raw.tasks.map(normalizePastTaskDates)
+      : normalizePastTaskDates(raw.tasks);
 
     const items = [];
     if (raw.hospital) {
