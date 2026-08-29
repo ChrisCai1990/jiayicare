@@ -1763,15 +1763,16 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
     // 每个被筛选的岗位任务方案各生成一组“执行+督办”；workflowKey 保证重复推送只更新对应组。
     for (const workflowPlan of workflowPlans) {
       const workflowKey = String(workflowPlan._id);
-      const remindAt = addDays(serviceDate, -(workflowPlan.remindDaysBefore ?? 3));
       const executorDate = addDays(serviceDate, workflowPlan.executorDueOffsetDays ?? -1);
       const supervisorDate = addDays(serviceDate, workflowPlan.supervisorDueOffsetDays ?? 1);
+      const executorRemindAt = addDays(executorDate, -(workflowPlan.remindDaysBefore ?? 3));
+      const supervisorRemindAt = addDays(supervisorDate, -(workflowPlan.remindDaysBefore ?? 3));
       const executorAssignee = resolveAssignee(workflowPlan.executorRole, selectedAssistantId);
       const supervisorAssignee = resolveAssignee(workflowPlan.supervisorRole, selectedSupervisorId);
       const executorTask = await FollowUp.findOneAndUpdate(
         { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'executor', workflowKey },
         { $set: {
-          patientId: plan.patientId, staffId: plan.staffId, date: executorDate, remindAt,
+          patientId: plan.patientId, staffId: plan.staffId, date: executorDate, remindAt: executorRemindAt,
           coordinationGroupId, workflowKey, taskRole: 'executor', followUpSchemeId: workflowPlan._id,
           theme: `执行${workflowPlan.name} · ${plan.title || ''}`, content: plan.description || '',
           plannedContent: [requirements, workflowPlan.completionStandard && `完成标准：${workflowPlan.completionStandard}`].filter(Boolean).join('\n'),
@@ -1784,7 +1785,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
           { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'supervisor', workflowKey },
           { $set: {
             patientId: plan.patientId, staffId: plan.staffId, assignedTo: supervisorAssignee,
-            date: supervisorDate, remindAt, coordinationGroupId, workflowKey, taskRole: 'supervisor',
+            date: supervisorDate, remindAt: supervisorRemindAt, coordinationGroupId, workflowKey, taskRole: 'supervisor',
             dependsOnTaskId: executorTask._id, followUpSchemeId: workflowPlan._id,
             theme: `督办${workflowPlan.name} · ${plan.title || ''}`,
             content: '关注执行进度；执行人员完成后核对服务结果、资料归档及后续安排。',
