@@ -7,7 +7,7 @@ import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
 
 // 对齐 app/src/screens/records/MedicalReportsScreen.js
-// 小程序场景适配：原件预览用 Taro.previewImage（图片）/ Taro.downloadFile+openDocument（其他文件），
+// 小程序场景适配：原件通过普通鉴权请求读取二进制，写入带正确后缀的本地文件后预览，
 // 不是 app 端的 Linking.openURL 系统浏览器打开方式
 const CATEGORY_META = {
   tumor: { label: '常见肿瘤筛查', icon: '🔬', color: '#DC3545' },
@@ -37,7 +37,12 @@ async function openOriginalFile(report) {
       }
     } catch (err) {
       Taro.hideLoading();
-      Taro.showToast({ title: err?.message || '无法打开原始文件', icon: 'none' });
+      Taro.showModal({
+        title: '原始报告打开失败',
+        content: err?.message || err?.errMsg || '无法打开原始文件，请稍后重试',
+        showCancel: false,
+        confirmText: '知道了',
+      });
     }
     return;
   }

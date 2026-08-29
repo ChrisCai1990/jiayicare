@@ -233,14 +233,24 @@ export const reportsAPI = {
       : mimeType.includes('png') ? 'png'
       : mimeType.includes('webp') ? 'webp' : 'jpg';
     const filePath = `${Taro.env.USER_DATA_PATH}/report-${id}-${index}.${ext}`;
-    return Taro.downloadFile({
+    return Taro.request({
       url: `${BASE_URL}/reports/${id}/file/${index}`,
       header: _token ? { Authorization: `Bearer ${_token}` } : {},
-      filePath,
+      responseType: 'arraybuffer',
       timeout: 60000,
-    }).then((res) => {
-      if (res.statusCode !== 200 || !res.filePath) throw new Error(`原始文件下载失败（${res.statusCode || '网络异常'}）`);
-      return res.filePath;
+    }).then(async (res) => {
+      if (res.statusCode !== 200 || !(res.data instanceof ArrayBuffer) || res.data.byteLength === 0) {
+        throw new Error(`原始文件读取失败（${res.statusCode || '网络异常'}）`);
+      }
+      await new Promise((resolve, reject) => {
+        Taro.getFileSystemManager().writeFile({
+          filePath,
+          data: res.data,
+          success: resolve,
+          fail: (err) => reject(new Error(err?.errMsg || '本地文件写入失败')),
+        });
+      });
+      return filePath;
     });
   },
   // 使用普通 request 逐图上传，避免微信 uploadFile 域名白名单未同步时请求在客户端被拦截。
