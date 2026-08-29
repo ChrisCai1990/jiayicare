@@ -685,6 +685,36 @@ router.get('/:id/preview/:index', async (req, res) => {
   }
 });
 
+// 小程序报告原件下载：使用当前登录态校验报告归属，避免短时预览 token、
+// 私有 OSS 签名地址及微信临时文件无后缀造成的兼容问题。
+router.get('/:id/file/:index', auth, async (req, res) => {
+  try {
+    const index = Number(req.params.index);
+    if (!Number.isInteger(index) || index < 0) return res.status(400).json({ success: false, message: '文件序号无效' });
+    const report = await MedicalReport.findOne({ _id: req.params.id, user: req.user._id })
+      .select('fileUrl fileUrls ossKey ossKeys mimeType title');
+    if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    const urls = report.fileUrls?.length ? report.fileUrls : (report.fileUrl ? [report.fileUrl] : []);
+    const keys = report.ossKeys?.length ? report.ossKeys : (report.ossKey ? [report.ossKey] : []);
+    const key = keys[index] || urlToKey(urls[index] || '');
+    if (!key) return res.status(404).json({ success: false, message: '报告原件不存在' });
+    const object = await getObjectStream(key);
+    const headers = object.res?.headers || {};
+    const contentType = headers['content-type'] || report.mimeType || 'application/octet-stream';
+    const extension = contentType === 'application/pdf' ? 'pdf'
+      : contentType.includes('png') ? 'png'
+      : contentType.includes('webp') ? 'webp' : 'jpg';
+    res.set('Content-Type', contentType);
+    res.set('Content-Disposition', `attachment; filename="report-${report._id}-${index}.${extension}"`);
+    if (headers['content-length']) res.set('Content-Length', headers['content-length']);
+    object.stream.on('error', () => { if (!res.headersSent) res.status(502).end(); else res.destroy(); });
+    object.stream.pipe(res);
+  } catch (err) {
+    console.error('[report-file-download]', err.message);
+    if (!res.headersSent) res.status(502).json({ success: false, message: '报告原件读取失败' });
+  }
+});
+
 // 获取单个报告（含 content，用于预览）
 router.get('/:id', auth, async (req, res) => {
   try {

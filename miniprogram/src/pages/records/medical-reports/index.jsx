@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, Input, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
-import { reportsAPI, mediaUrl } from '../../../services/api';
+import { reportsAPI } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
 
@@ -21,19 +21,14 @@ const ITEM_STATUS_COLOR = { normal: colors.success, abnormal: colors.danger, att
 const ITEM_STATUS_LABEL = { normal: '正常', abnormal: '异常', attention: '关注', unknown: '未知' };
 
 async function openOriginalFile(report) {
-  const urls = (report.previewUrls?.length ? report.previewUrls
-    : report.previewUrl ? [report.previewUrl]
-    : report.fileUrls?.length ? report.fileUrls : [report.fileUrl]).filter(Boolean).map(mediaUrl);
-  if (urls.length) {
-    const isImage = report.mimeType?.startsWith('image/') || urls.every((url) => /\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(url));
+  const fileCount = report.fileUrls?.length || (report.fileUrl ? 1 : 0);
+  if (fileCount) {
+    const isImage = report.mimeType?.startsWith('image/');
     Taro.showLoading({ title: '正在打开...' });
     try {
-      const downloaded = await Promise.all(urls.map(async (url) => {
-        const res = await Taro.downloadFile({ url });
-        if (res.statusCode && res.statusCode !== 200 && res.statusCode !== 206) throw new Error(`下载失败(${res.statusCode})`);
-        if (!res.tempFilePath) throw new Error('未获得临时文件');
-        return res.tempFilePath;
-      }));
+      const downloaded = await Promise.all(Array.from({ length: fileCount }, (_, index) => (
+        reportsAPI.downloadOriginal(report._id, index, report.mimeType || '')
+      )));
       Taro.hideLoading();
       if (isImage) {
         await Taro.previewImage({ urls: downloaded, current: downloaded[0] });

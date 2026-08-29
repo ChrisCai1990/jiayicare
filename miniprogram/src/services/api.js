@@ -228,6 +228,21 @@ export const reportsAPI = {
   create: (data) => request('/reports', { method: 'POST', body: JSON.stringify(data), timeout: 60000 }),
   delete: (id) => request(`/reports/${id}`, { method: 'DELETE' }),
   parseAI: (id) => request(`/reports/${id}/parse-ai`, { method: 'POST' }),
+  downloadOriginal: (id, index, mimeType = '') => {
+    const ext = mimeType === 'application/pdf' ? 'pdf'
+      : mimeType.includes('png') ? 'png'
+      : mimeType.includes('webp') ? 'webp' : 'jpg';
+    const filePath = `${Taro.env.USER_DATA_PATH}/report-${id}-${index}.${ext}`;
+    return Taro.downloadFile({
+      url: `${BASE_URL}/reports/${id}/file/${index}`,
+      header: _token ? { Authorization: `Bearer ${_token}` } : {},
+      filePath,
+      timeout: 60000,
+    }).then((res) => {
+      if (res.statusCode !== 200 || !res.filePath) throw new Error(`原始文件下载失败（${res.statusCode || '网络异常'}）`);
+      return res.filePath;
+    });
+  },
   // 使用普通 request 逐图上传，避免微信 uploadFile 域名白名单未同步时请求在客户端被拦截。
   uploadBase64: (content, mimeType) => request('/reports/upload-base64', {
     method: 'POST',
