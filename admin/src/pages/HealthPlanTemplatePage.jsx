@@ -68,7 +68,7 @@ const defaultContent = {
     description: '',
   },
   medical_assist: {
-    serviceDomain: 'medical_assist', assistanceType: '', applicableScenario: '', standardSteps: '',
+    serviceDomain: 'medical_assist', assistanceType: '', serviceMode: 'remote', applicableScenario: '', standardSteps: '',
     requiredMaterials: '', completionStandard: '', requiresDoctorConfirm: true,
     requiresExecutor: true, requiresSupervisor: true, followUpPlanId: '', followUpPlanName: '', followUpPlans: [],
     optionalLogistics: '', riskNotes: '', tasks: '', notes: '',
@@ -510,6 +510,13 @@ function PlanContentForm({ type, initialContent, contentRef }) {
         <select className="form-input" value={content.assistanceType || ''} onChange={e => set('assistanceType', e.target.value)}>
           <option value="">请选择</option><option value="consultation">健康咨询</option><option value="agency">代办服务</option><option value="proxy_visit">代诊服务</option><option value="medication">代配药</option><option value="escort">陪诊/陪检</option><option value="treatment">陪同治疗</option><option value="checkup">体检协调</option><option value="one_stop">一站式服务</option>
         </select>
+      </div>
+      <div className="form-group">
+        <label className="form-label">服务方式</label>
+        <select className="form-input" value={content.serviceMode || 'remote'} onChange={e => set('serviceMode', e.target.value)}>
+          <option value="remote">远程协调</option><option value="onsite">现场陪同</option><option value="hybrid">远程＋现场</option>
+        </select>
+        <div style={{ color: '#7C8B84', fontSize: 11, marginTop: 4 }}>远程服务不生成陪同任务；现场或混合服务可另行关联陪诊、陪检岗位任务。</div>
       </div>
       <FieldRow label="适用场景" fieldKey="applicableScenario" rows={3} placeholder="说明什么情况下采用本模板" content={content} set={set} />
       <FieldRow label="标准服务步骤" fieldKey="standardSteps" rows={6} placeholder="每行一个标准动作；不填写具体客户、医院、专家和日期" content={content} set={set} />
