@@ -473,10 +473,12 @@ export default function PlanDetailPage() {
           </div>
           <div className="card-body" style={{ display: 'grid', gap: 10 }}>
             {[
-              ['服务步骤', plan.content.templateSnapshot.tasks],
-              ['住宿安排', plan.content.templateSnapshot.hotel],
-              ['交通安排', plan.content.templateSnapshot.transport],
-              ['注意事项模板', plan.content.templateSnapshot.notes],
+              ['适用场景', plan.content.templateSnapshot.applicableScenario],
+              ['标准服务步骤', plan.content.templateSnapshot.standardSteps || plan.content.templateSnapshot.tasks],
+              ['准备资料', plan.content.templateSnapshot.requiredMaterials],
+              ['完成标准', plan.content.templateSnapshot.completionStandard],
+              ['可选后勤协助', plan.content.templateSnapshot.optionalLogistics || [plan.content.templateSnapshot.hotel, plan.content.templateSnapshot.transport].filter(Boolean).join('\n')],
+              ['风险与注意事项', plan.content.templateSnapshot.riskNotes || plan.content.templateSnapshot.notes],
             ].filter(([, v]) => !!v).map(([k, v]) => (
               <div key={k}>
                 <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 3 }}>{k}</div>

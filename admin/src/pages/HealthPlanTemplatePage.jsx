@@ -68,8 +68,10 @@ const defaultContent = {
     description: '',
   },
   medical_assist: {
-    name: '', datetime: '', tasks: '', followUpPlanId: '', followUpPlanName: '', assistanceType: '',
-    hospital: '', department: '', expert: '', hotel: '', transport: '', notes: '',
+    serviceDomain: 'medical_assist', assistanceType: '', applicableScenario: '', standardSteps: '',
+    requiredMaterials: '', completionStandard: '', requiresDoctorConfirm: true,
+    requiresExecutor: true, requiresSupervisor: true, followUpPlanId: '', followUpPlanName: '',
+    optionalLogistics: '', riskNotes: '', tasks: '', notes: '',
   },
   rehab: {
     goal: '', exercises: '', weeklyFreq: '', duration: '',
@@ -445,6 +447,12 @@ function PlanContentForm({ type, initialContent, contentRef }) {
   if (type === 'medical_assist') return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
       <div className="form-group">
+        <label className="form-label">所属专业子方案</label>
+        <select className="form-input" value={content.serviceDomain || 'medical_assist'} onChange={e => set('serviceDomain', e.target.value)}>
+          <option value="medical_assist">就医协助子方案</option><option value="annual_checkup">体检子方案</option><option value="professional_consultation">专业咨询子方案</option>
+        </select>
+      </div>
+      <div className="form-group">
         <label className="form-label">关联岗位任务方案 *</label>
         <select className="form-input" value={content.followUpPlanId || ''} onChange={e => {
           const plan = followUpPlans.find(item => item._id === e.target.value)
@@ -459,17 +467,19 @@ function PlanContentForm({ type, initialContent, contentRef }) {
       <div className="form-group">
         <label className="form-label">就医协助类型</label>
         <select className="form-input" value={content.assistanceType || ''} onChange={e => set('assistanceType', e.target.value)}>
-          <option value="">请选择</option><option value="agency">代办服务</option><option value="proxy_visit">代诊服务</option><option value="escort">陪诊服务</option><option value="one_stop">门诊一站式服务</option>
+          <option value="">请选择</option><option value="consultation">健康咨询</option><option value="agency">代办服务</option><option value="proxy_visit">代诊服务</option><option value="medication">代配药</option><option value="escort">陪诊/陪检</option><option value="treatment">陪同治疗</option><option value="checkup">体检协调</option><option value="one_stop">一站式服务</option>
         </select>
       </div>
-      <FieldRow label="医院" fieldKey="hospital" placeholder="医院名称" half content={content} set={set} />
-      <FieldRow label="科室" fieldKey="department" placeholder="科室名称" half content={content} set={set} />
-      <FieldRow label="专家" fieldKey="expert" placeholder="专家姓名（可选）" half content={content} set={set} />
-      <FieldRow label="服务时间" fieldKey="datetime" placeholder="日期和时间段" half content={content} set={set} />
-      <FieldRow label="交通接送安排" fieldKey="transport" placeholder="是否专车、集合地点" half content={content} set={set} />
-      <FieldRow label="具体服务事项" fieldKey="tasks" rows={3} placeholder="如：代取报告、陪同检查" content={content} set={set} />
-      <FieldRow label="酒店安排" fieldKey="hotel" rows={2} placeholder="是否需要住宿及酒店信息" content={content} set={set} />
-      <FieldRow label="备注" fieldKey="notes" rows={2} placeholder="其他注意事项" content={content} set={set} />
+      <FieldRow label="适用场景" fieldKey="applicableScenario" rows={3} placeholder="说明什么情况下采用本模板" content={content} set={set} />
+      <FieldRow label="标准服务步骤" fieldKey="standardSteps" rows={6} placeholder="每行一个标准动作；不填写具体客户、医院、专家和日期" content={content} set={set} />
+      <FieldRow label="客户需准备资料" fieldKey="requiredMaterials" rows={3} placeholder="如：身份证、医保卡、既往报告、处方或医生医嘱" content={content} set={set} />
+      <FieldRow label="完成标准" fieldKey="completionStandard" rows={3} placeholder="说明执行人完成到什么程度才可提交" content={content} set={set} />
+      <FieldRow label="可选住宿/交通服务" fieldKey="optionalLogistics" rows={2} placeholder="仅说明可提供的协助，不固定具体酒店和车辆" content={content} set={set} />
+      <FieldRow label="风险与注意事项" fieldKey="riskNotes" rows={3} placeholder="涉及停药、检查准备或治疗事项时，统一要求向开单医生确认" content={content} set={set} />
+      <div style={{ gridColumn: '1/-1', display: 'flex', flexWrap: 'wrap', gap: 18, padding: '11px 13px', border: '1px solid #E6E1D8', borderRadius: 9, background: '#FAF8F5' }}>
+        {[['requiresDoctorConfirm','需要家庭医生确认'],['requiresExecutor','需要专业人员执行'],['requiresSupervisor','需要健管/家庭医生督办']].map(([key,label]) => <label key={key} style={{ fontSize: 13 }}><input type="checkbox" checked={content[key] !== false} onChange={e => set(key, e.target.checked)} style={{ marginRight: 6 }} />{label}</label>)}
+      </div>
+      <div style={{ gridColumn: '1/-1', padding: '9px 11px', borderRadius: 8, background: '#EEF7F2', color: '#426457', fontSize: 12 }}>医院、科室、专家、具体日期、就医专员和督办人均在客户子方案中填写，不在 Admin 标准模板中写死。</div>
     </div>
   )
 

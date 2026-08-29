@@ -10720,15 +10720,15 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
       ? `客户已下单服务：${order.serviceName}${order.note ? `，备注：${order.note}` : ''}`
       : '（无关联订单，请按会员情况酌情安排）';
 
-    // 模板字段是否存在标准值（非空）决定是否让AI生成对应个性化内容：
-    // 模板本身没有hotel/transport（如"医疗咨询服务"这类无需住宿交通的服务）就不该在方案里凭空编造，
-    // 避免不同服务类型看起来字段都一样、看不出差异（2026-07-13 反馈"模板就是为了标准化"）
+    // 只有模板明确允许的可选后勤项目才交给 AI 个性化，避免把住宿、交通变成所有服务的固定字段。
+    // 旧模板仍按 hotel/transport 非空兼容；新模板统一读取 optionalLogistics。
     const templateForFields = matchedTemplate || candidateTemplates[0] || null;
+    const optionalLogistics = templateForFields?.content?.optionalLogistics || '';
     const askFields = {
       hospital: true, department: true,
       expert: !templateForFields || !!templateForFields.content?.expert,
-      hotel: !templateForFields || !!templateForFields.content?.hotel,
-      transport: !templateForFields || !!templateForFields.content?.transport,
+      hotel: !templateForFields || /住宿/.test(optionalLogistics) || !!templateForFields.content?.hotel,
+      transport: !templateForFields || /交通|接送/.test(optionalLogistics) || !!templateForFields.content?.transport,
     };
 
     let templateBlock = '（无匹配模板，请根据会员与订单信息自行拟定方案）';
@@ -10826,10 +10826,19 @@ ${templateBlock}
         // 模板原始骨架快照——不经AI改写，前端"标准动作"区块直接展示这份，
         // 跟下面AI生成的个性化内容分开陈列，避免两者混在一起分不清
         templateSnapshot: usedTemplate ? {
-          tasks: usedTemplate.content?.tasks || '',
+          serviceDomain: usedTemplate.content?.serviceDomain || 'medical_assist',
+          assistanceType: usedTemplate.content?.assistanceType || '',
+          applicableScenario: usedTemplate.content?.applicableScenario || '',
+          standardSteps: usedTemplate.content?.standardSteps || usedTemplate.content?.tasks || '',
+          requiredMaterials: usedTemplate.content?.requiredMaterials || '',
+          completionStandard: usedTemplate.content?.completionStandard || '',
+          optionalLogistics: usedTemplate.content?.optionalLogistics || '',
+          riskNotes: usedTemplate.content?.riskNotes || usedTemplate.content?.notes || '',
+          // 兼容迁移前已生成方案的旧字段。
+          tasks: usedTemplate.content?.tasks || usedTemplate.content?.standardSteps || '',
           hotel: usedTemplate.content?.hotel || '',
           transport: usedTemplate.content?.transport || '',
-          notes: usedTemplate.content?.notes || '',
+          notes: usedTemplate.content?.notes || usedTemplate.content?.riskNotes || '',
         } : null,
         followUpPlanId: usedTemplate?.content?.followUpPlanId || '',
         followUpPlanName: usedTemplate?.content?.followUpPlanName || '',
