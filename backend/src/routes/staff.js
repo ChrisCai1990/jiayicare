@@ -1646,6 +1646,15 @@ function checkPlanTypeRole(plan, staffRole) {
   return staffRole === 'superadmin' || staffRole === requiredRole;
 }
 
+// 就医协助方案允许创建人继续编辑和推送。方案中的具体岗位任务仍按关联的
+// Admin 岗位任务方案分发给健康顾问、健康规划师或就医专员，不能反过来用
+// “方案默认负责角色”阻断实际创建该方案的人保存主方案。
+function canUsePlanOwnerRole(plan, staff) {
+  const isCreator = String(plan.staffId?._id || plan.staffId) === String(staff._id);
+  if (plan.type === 'medical_assist' && isCreator) return true;
+  return checkPlanTypeRole(plan, staff.role);
+}
+
 // 历史就医协助方案曾由健康顾问/就医专员创建。角色调整为健康规划师后，旧 staffId
 // 不能代表现行所有权；仅允许该会员当前绑定的健康规划师继任管理，其他规划师仍然只读。
 // 新方案由健康规划师创建，继续严格按 staffId 判断，不走历史兼容。
@@ -1681,7 +1690,7 @@ async function planTypeAllowed(req, planType) {
 router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req, res) => {
   const plan = await HealthPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
-  if (!checkPlanTypeRole(plan, req.staff.role)) {
+  if (!canUsePlanOwnerRole(plan, req.staff)) {
     return res.status(403).json({ success: false, message: '该类型方案仅限对应负责角色修改' });
   }
   if (!(await planTypeAllowed(req, plan.type))) {
@@ -1733,7 +1742,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
   const visibleIds = await getVisiblePlanPatientIds(req.staff);
   if (visibleIds && !visibleIds.some(id => String(id) === String(plan.patientId?._id || plan.patientId))) return res.status(403).json({ success: false, message: '无权查看该会员的方案' });
   const canPush = await canManagePlan(req, plan);
-  if (!canPush || !checkPlanTypeRole(plan, req.staff.role) || !(await planTypeAllowed(req, plan.type))) {
+  if (!canPush || !canUsePlanOwnerRole(plan, req.staff) || !(await planTypeAllowed(req, plan.type))) {
     return res.status(403).json({ success: false, message: '无权推送该方案' });
   }
   // 重点检查在推送前自动补齐标准准备事项，保证客户收到的方案不是只有项目名。
