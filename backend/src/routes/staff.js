@@ -1597,7 +1597,15 @@ router.get('/plans/:id', staffAuth, async (req, res) => {
     .populate('patientId', 'name phone gender age').populate('staffId', 'name role title');
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
   const canManage = await canManagePlan(req, plan);
-  res.json({ success: true, data: { ...plan.toObject(), canManage } });
+  const isCreator = String(plan.staffId?._id || plan.staffId) === String(req.staff._id);
+  // 删除权限与编辑/推送权限分开：创建人始终可以撤销自己建立的方案；
+  // 对应负责角色和超管仍可按既有规则管理。删除动作会写入 PlanDeletionLog 留痕。
+  const canDelete = isCreator || (
+    canManage
+    && checkPlanTypeRole(plan, req.staff.role)
+    && await planTypeAllowed(req, plan.type)
+  );
+  res.json({ success: true, data: { ...plan.toObject(), canManage, canDelete } });
 });
 
 // POST /api/staff/plans
@@ -1954,21 +1962,24 @@ ${discussionText}
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// DELETE /api/staff/plans/:id — 只有制定人（staffId）或超管可删除；部分方案类型额外要求角色匹配
+// DELETE /api/staff/plans/:id — 创建人可删除本人建立的方案；负责角色/超管保留既有管理权。
+// 删除前必须填写原因，并把完整快照写入 PlanDeletionLog，确保可追溯。
 router.delete('/plans/:id', staffAuth, checkPermission('plans', 'delete'), async (req, res) => {
   const plan = await HealthPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
   const reason = String(req.body?.reason || '').trim();
   if (!reason) return res.status(400).json({ success: false, message: '请填写删除原因' });
-  if (!checkPlanTypeRole(plan, req.staff.role)) {
+  const isCreator = String(plan.staffId?._id || plan.staffId) === String(req.staff._id);
+  // 类型负责角色限制不能覆盖创建人的撤销权，否则健康顾问等跨角色发起人会无法删除自己的草稿。
+  if (!isCreator && !checkPlanTypeRole(plan, req.staff.role)) {
     const roleLabel = plan.type === 'medical_assist' ? '健康规划师' : (plan.type === 'nutrition' ? '营养师' : '健康顾问');
-    return res.status(403).json({ success: false, message: `该类型方案仅限${roleLabel}删除` });
+    return res.status(403).json({ success: false, message: `仅方案创建人、${roleLabel}或管理员可删除` });
   }
-  if (!(await planTypeAllowed(req, plan.type))) {
+  if (!isCreator && !(await planTypeAllowed(req, plan.type))) {
     return res.status(403).json({ success: false, message: '当前角色无权管理该类型的健康方案' });
   }
-  if (!(await canManagePlan(req, plan))) {
-    return res.status(403).json({ success: false, message: '仅方案制定人可删除' });
+  if (!isCreator && !(await canManagePlan(req, plan))) {
+    return res.status(403).json({ success: false, message: '仅方案创建人、对应负责人或管理员可删除' });
   }
   const relatedFollowUps = await FollowUp.find({
     sourceHealthPlanId: plan._id,

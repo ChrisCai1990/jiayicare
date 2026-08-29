@@ -224,6 +224,7 @@ export default function PlanModulesPage() {
   }, [id])
 
   const canEdit = !!plan?.canManage
+  const canDelete = !!plan?.canDelete
 
   const handleModuleChange = useCallback((moduleKey, fieldKey, value) => {
     setModuleData(prev => ({
@@ -315,7 +316,7 @@ export default function PlanModulesPage() {
             </span>
           )}
           {dirty && <span style={{ fontSize: 12, color: '#D97706', background: '#FEF9EC', padding: '4px 8px', borderRadius: 20 }}>有未保存更改</span>}
-          {canEdit && <button onClick={handleDelete} style={{ background: '#fff', color: '#DC2626', border: '1px solid #FCA5A5', padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>删除方案</button>}
+          {canDelete && <button onClick={handleDelete} style={{ background: '#fff', color: '#DC2626', border: '1px solid #FCA5A5', padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>删除方案</button>}
           {canEdit && (
             <button
               onClick={handlePush}
