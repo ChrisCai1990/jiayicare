@@ -251,20 +251,6 @@ const inferStandardCategory = name => {
   return 'personalized'
 }
 
-const ANNUAL_BASE_TEMPLATE_NAMES = {
-  medical_treatment: '需要安排就医',
-  checkup_completion: '需要完善体检',
-  abnormal_followup: '需要定期复查',
-  vaccine: '疫苗接种',
-  annual_checkup: '年度体检',
-}
-
-const isAnnualBaseTemplate = plan => {
-  const category = inferStandardCategory(plan?.name)
-  const normalizedName = String(plan?.name || '').replace(/[【】\s]/g, '')
-  return ANNUAL_BASE_TEMPLATE_NAMES[category] === normalizedName
-}
-
 const standardPlanContent = plan => Object.entries(plan?.default_content || {})
   .filter(([, value]) => value !== undefined && value !== null && String(value).trim())
   .map(([key, value]) => `${key}：${value}`)
@@ -578,7 +564,12 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     key,
     name: MODULE_DEFS[key].name,
     icon: MODULE_DEFS[key].icon,
-    plans: standardPlans.filter(plan => isAnnualBaseTemplate(plan) && inferStandardCategory(plan.name) === key),
+    plans: (() => {
+      const configured = selectedAdminTemplate?.content?.standardActionPlans?.[key]
+      if (!configured?.id) return []
+      const plan = standardPlans.find(item => String(item._id) === String(configured.id))
+      return plan ? [plan] : []
+    })(),
   }))
   const activePlanType = selectedAdminTemplate
     ? { ...(PLAN_TYPES.find(pt => pt.key === planType) || PLAN_TYPES[3]), name: selectedAdminTemplate.content?.planName || selectedAdminTemplate.name }

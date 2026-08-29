@@ -27,6 +27,14 @@ const ANNUAL_MODULE_RULES = [
 
 const DEFAULT_REQUIRED_FIELDS = ['项目名称', '设置依据', '建议时间/时间范围', '执行频率', '注意事项', '客户行动', '责任角色', '审核状态']
 
+const STANDARD_ACTION_DEFS = [
+  { key: 'medical_treatment', label: '需要安排就医', hint: '客户存在明确就医需求时采用' },
+  { key: 'checkup_completion', label: '需要完善体检', hint: '现有健康资料存在必要检查缺口时采用' },
+  { key: 'abnormal_followup', label: '需要定期复查', hint: '已确认异常或慢病需要复查时采用' },
+  { key: 'vaccine', label: '疫苗接种', hint: '符合接种依据且需要纳入年度管理时采用' },
+  { key: 'annual_checkup', label: '年度体检', hint: '需要安排下一年度体检时采用' },
+]
+
 // ── 各类型的默认 content 结构 ─────────────────────────────────
 const defaultContent = {
   annual_checkup: {
@@ -43,6 +51,7 @@ const defaultContent = {
     sourceRule: '仅使用已确认的年度管理研判结论',
     requiredItemFields: DEFAULT_REQUIRED_FIELDS,
     moduleRules: ANNUAL_MODULE_RULES.map(item => ({ key: item.key, enabled: true, aiCanGenerate: true, reviewer: item.reviewer, customerConfirmationRequired: true })),
+    standardActionPlans: {},
     followUpPlans: [],
   },
   nutrition: {
@@ -252,6 +261,7 @@ function PlanContentForm({ type, initialContent, contentRef }) {
   const [labOrders, setLabOrders] = useState([])
   const [examOrders, setExamOrders] = useState([])
   const [functionalTests, setFunctionalTests] = useState([])
+  const [followUpPlans, setFollowUpPlans] = useState([])
   const set = useCallback((k, v) => setContent(prev => {
     const next = { ...prev, [k]: v }
     contentRef.current = next
@@ -270,6 +280,11 @@ function PlanContentForm({ type, initialContent, contentRef }) {
         setExamOrders(examRes.data || [])
         setFunctionalTests(funcRes.data || [])
       }).catch(() => {})
+    }
+    if (type === 'health_management') {
+      adminAPI.followUpPlans()
+        .then(res => setFollowUpPlans((res.data || []).filter(plan => plan.status === 'active')))
+        .catch(() => setFollowUpPlans([]))
     }
   }, [type])
 
@@ -342,16 +357,35 @@ function PlanContentForm({ type, initialContent, contentRef }) {
       <div style={{ gridColumn: '1/-1', border: '1px solid #D9D2C7', borderRadius: 12, padding: 16, background: '#FAF8F5' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <div>
-            <div style={{ fontWeight: 700 }}>标准随访方案来源</div>
-            <div style={{ color: '#65776F', fontSize: 12, marginTop: 4 }}>统一调用随访方案库中全部已启用方案；不再由每个年度规则重复勾选。AI按客户研判筛选后，形成客户个性化随访方案。</div>
+            <div style={{ fontWeight: 700 }}>年度基础动作模板</div>
+            <div style={{ color: '#65776F', fontSize: 12, marginTop: 4 }}>为当前管理策略指定五类标准入口。医护端展示和AI生成都只读取这里保存的模板，不在前端自行设定。</div>
           </div>
           <a className="btn btn-ghost" href="/projects/followup-plans" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>管理随访方案库 →</a>
         </div>
-        {Array.isArray(content.followUpPlans) && content.followUpPlans.length > 0 && (
-          <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 7, background: '#FFF5E8', color: '#91551D', fontSize: 12 }}>
-            该存量模板曾限定 {content.followUpPlans.length} 个随访方案；新版生成时将忽略此限定并从全部启用方案中匹配，旧数据仅保留兼容。
-          </div>
-        )}
+        <div style={{ display: 'grid', gap: 9, marginTop: 13 }}>
+          {STANDARD_ACTION_DEFS.map(action => {
+            const selected = content.standardActionPlans?.[action.key] || {}
+            return <div key={action.key} style={{ display: 'grid', gridTemplateColumns: '150px minmax(220px,1fr)', gap: 12, alignItems: 'center', padding: '10px 11px', border: '1px solid #E6E1D8', borderRadius: 9, background: '#fff' }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 650, color: '#28483B' }}>{action.label}</div>
+                <div style={{ marginTop: 2, fontSize: 11, color: '#88958F' }}>{action.hint}</div>
+              </div>
+              <select className="form-input" value={selected.id || ''} onChange={e => {
+                const plan = followUpPlans.find(item => item._id === e.target.value)
+                set('standardActionPlans', {
+                  ...(content.standardActionPlans || {}),
+                  [action.key]: plan ? { id: plan._id, name: plan.name } : null,
+                })
+              }}>
+                <option value="">不配置（该动作不参与本策略筛选）</option>
+                {followUpPlans.map(plan => <option key={plan._id} value={plan._id}>{plan.name}</option>)}
+              </select>
+            </div>
+          })}
+        </div>
+        <div style={{ marginTop: 11, padding: '8px 10px', borderRadius: 7, background: '#EEF7F2', color: '#426457', fontSize: 12 }}>
+          疾病、具体复查项目和疫苗品种等细分模板仍在随访方案库维护，只用于后续单次随访计划，不在年度总方案中整库筛选。
+        </div>
       </div>
     </div>
   )
@@ -469,6 +503,10 @@ function TemplateModal({ template, planType, onClose, onSaved }) {
   const save = async () => {
     if (!name.trim()) { toast('❌ 模板名称不能为空'); return }
     const content = { ...contentRef.current, clientBrand }
+    if (planType === 'health_management' && !Object.values(content.standardActionPlans || {}).some(item => item?.id)) {
+      toast('❌ 请至少配置一项年度基础动作模板')
+      return
+    }
     setLoading(true)
     try {
       if (isEdit) {

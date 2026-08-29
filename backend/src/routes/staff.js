@@ -6418,19 +6418,18 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       return 'personalized';
     };
     standardFollowUpCatalog.forEach(item => { item.category = inferStandardCategory(item.name); });
-    // 年度总方案只调用五个通用入口模板。疾病、检查项目和疫苗品种等细分模板
-    // 属于单次随访制定，不能整库塞给年度方案 AI，否则既冗长又容易自由发挥。
-    const annualBaseTemplateNames = {
-      medical_treatment: '需要安排就医',
-      checkup_completion: '需要完善体检',
-      abnormal_followup: '需要定期复查',
-      vaccine: '疫苗接种',
-      annual_checkup: '年度体检',
-    };
-    const annualStandardFollowUpCatalog = standardFollowUpCatalog.filter(item => {
-      const normalizedName = String(item.name || '').replace(/[【】\s]/g, '');
-      return annualBaseTemplateNames[item.category] === normalizedName;
-    });
+    // 年度总方案的五类入口完全由当前 Admin 健康管理规则指定。
+    // 医护端和后端都只消费保存的模板 ID，不再依赖前端常量或方案名称猜测。
+    const standardActionPlans = selectedTemplate?.content?.standardActionPlans || {};
+    const categoryByConfiguredId = new Map(Object.entries(standardActionPlans)
+      .filter(([key, value]) => requiredScreeningKeys.includes(key) && value?.id)
+      .map(([key, value]) => [String(value.id), key]));
+    const annualStandardFollowUpCatalog = standardFollowUpCatalog
+      .filter(item => categoryByConfiguredId.has(item.id))
+      .map(item => ({ ...item, category: categoryByConfiguredId.get(item.id) }));
+    if (annualStandardFollowUpCatalog.length === 0) {
+      return res.status(400).json({ success: false, message: '当前Admin健康管理方案模板尚未配置年度基础动作，请先在Admin中选择标准随访模板' });
+    }
     const standardFollowUpPromptCatalog = annualStandardFollowUpCatalog.map(item => ({
       id: item.id, name: item.name, category: item.category, cycles: item.cycles, defaultRole: item.defaultRole,
     }));
