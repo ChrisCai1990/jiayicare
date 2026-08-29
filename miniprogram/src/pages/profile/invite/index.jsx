@@ -28,7 +28,7 @@ export default function InvitePage() {
     </View>
     <View style={{ margin: `${spacing.lg}px`, padding: '28px 22px', backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, textAlign: 'center' }}>
       <Text style={{ display: 'block', fontSize: '16px', fontWeight: 700, color: colors.textPrimary }}>把健康理念分享给身边的人</Text>
-      <Text style={{ display: 'block', marginTop: '8px', fontSize: '14px', lineHeight: '22px', color: colors.textSecondary }}>一份关注，也许就是朋友开始重视健康的契机</Text>
+      <Text style={{ display: 'block', marginTop: '8px', fontSize: '14px', lineHeight: '22px', color: colors.textSecondary }}>健康可控，人生方可从容。</Text>
       <Button openType="share" disabled={!code} style={{ marginTop: '24px', backgroundColor: colors.primary, color: '#fff', border: 'none', borderRadius: `${radius.full}px`, fontSize: '16px', fontWeight: 700 }}>邀请好友</Button>
       <Text style={{ display: 'block', marginTop: '13px', color: colors.textMuted, fontSize: '12px' }}>点击按钮，选择微信好友发送</Text>
     </View>

@@ -18,18 +18,18 @@ function toLocalDateStr(d) {
 }
 
 const CHECKIN_DEFS = {
-  diet:          { key: 'diet',          label: '饮食', icon: '🍽️', color: '#059669', measureType: null,            category: 'lifestyle', recordLabel: '饮食打卡', allowMultiple: true },
-  exercise:      { key: 'exercise',      label: '运动', icon: '🏃', color: '#0369A1', measureType: null,            category: 'lifestyle', recordLabel: '运动打卡', allowMultiple: true },
-  sleep:         { key: 'sleep',         label: '睡眠', icon: '🌙', color: '#4F46E5', measureType: 'sleep',         category: 'lifestyle', recordLabel: '睡眠打卡' },
-  weight:        { key: 'weight',        label: '体重', icon: '⚖️', color: '#059669', measureType: 'weight',        category: 'vitals',    recordLabel: '体重打卡' },
-  bowel:         { key: 'bowel',         label: '排便', icon: '🍃', color: '#92400E', measureType: null,            category: 'lifestyle', recordLabel: '排便打卡' },
-  water:         { key: 'water',         label: '饮水', icon: '💧', color: '#0EA5E9', measureType: null,            category: 'lifestyle', recordLabel: '饮水打卡' },
+  diet:          { key: 'diet',          label: '饮食', icon: '🍽️', color: '#059669', measureType: null,            category: 'lifestyle', recordLabel: '饮食记录', allowMultiple: true },
+  exercise:      { key: 'exercise',      label: '运动', icon: '🏃', color: '#0369A1', measureType: null,            category: 'lifestyle', recordLabel: '运动记录', allowMultiple: true },
+  sleep:         { key: 'sleep',         label: '睡眠', icon: '🌙', color: '#4F46E5', measureType: 'sleep',         category: 'lifestyle', recordLabel: '睡眠记录' },
+  weight:        { key: 'weight',        label: '体重', icon: '⚖️', color: '#059669', measureType: 'weight',        category: 'vitals',    recordLabel: '体重记录' },
+  bowel:         { key: 'bowel',         label: '排便', icon: '🍃', color: '#92400E', measureType: null,            category: 'lifestyle', recordLabel: '排便记录' },
+  water:         { key: 'water',         label: '饮水', icon: '💧', color: '#0EA5E9', measureType: null,            category: 'lifestyle', recordLabel: '饮水记录' },
   smoking:       { key: 'smoking',       label: '吸烟', icon: '🚬', color: '#6B7280', measureType: null,            category: 'lifestyle', recordLabel: '吸烟记录' },
   alcohol:       { key: 'alcohol',       label: '饮酒', icon: '🍷', color: '#9D174D', measureType: null,            category: 'lifestyle', recordLabel: '饮酒记录' },
-  bloodPressure: { key: 'bloodPressure', label: '血压', icon: '💗', color: '#DC3545', measureType: 'bloodPressure', category: 'vitals',    recordLabel: '血压打卡', allowMultiple: true, chronicKeys: ['高血压'] },
-  heartRate:     { key: 'heartRate',     label: '心率', icon: '❤️', color: '#DC3545', measureType: 'heartRate',     category: 'vitals',    recordLabel: '心率打卡' },
-  bloodSugar:    { key: 'bloodSugar',    label: '血糖', icon: '🩸', color: '#F39C12', measureType: 'bloodSugar',    category: 'vitals',    recordLabel: '血糖打卡', allowMultiple: true, chronicKeys: ['糖尿病'] },
-  mood:          { key: 'mood',          label: '情绪', icon: '😊', color: '#7C3AED', measureType: 'mood',          category: 'lifestyle', recordLabel: '情绪打卡' },
+  bloodPressure: { key: 'bloodPressure', label: '血压', icon: '💗', color: '#DC3545', measureType: 'bloodPressure', category: 'vitals',    recordLabel: '血压记录', allowMultiple: true, chronicKeys: ['高血压'] },
+  heartRate:     { key: 'heartRate',     label: '心率', icon: '❤️', color: '#DC3545', measureType: 'heartRate',     category: 'vitals',    recordLabel: '心率记录' },
+  bloodSugar:    { key: 'bloodSugar',    label: '血糖', icon: '🩸', color: '#F39C12', measureType: 'bloodSugar',    category: 'vitals',    recordLabel: '血糖记录', allowMultiple: true, chronicKeys: ['糖尿病'] },
+  mood:          { key: 'mood',          label: '情绪', icon: '😊', color: '#7C3AED', measureType: 'mood',          category: 'lifestyle', recordLabel: '情绪记录' },
   symptom:       { key: 'symptom',       label: '不适', icon: '🩹', color: '#DC2626', measureType: 'symptom',       category: 'vitals',    recordLabel: '症状自评', optional: true },
 };
 
@@ -141,7 +141,7 @@ export default function CheckinPage() {
 
   const openCheckinModal = (item) => {
     if (isItemDone(item) && !item.allowMultiple) {
-      Taro.showToast({ title: '今天已经打过卡了，明天再来吧～', icon: 'none' });
+      Taro.showToast({ title: '今天已经记录过了，明天再来吧～', icon: 'none' });
       return;
     }
     if (item.measureType) {
@@ -240,7 +240,7 @@ export default function CheckinPage() {
         label: mealPrefix ? `${item.recordLabel || item.label}·${checkinMealType}`
           : slotPrefix ? `${item.recordLabel || item.label}·${resolvedTimeSlot}`
           : (item.recordLabel || item.label),
-        value: (mealPrefix + slotPrefix + checkinNote) || checkinMealType || resolvedTimeSlot || '已打卡',
+        value: (mealPrefix + slotPrefix + checkinNote) || checkinMealType || resolvedTimeSlot || '已记录',
         note: '',
         status: 'normal',
         images: checkinImages.map(({ data, mimeType }) => ({ data, mimeType })),
@@ -347,7 +347,7 @@ export default function CheckinPage() {
         <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
           <Icon name="chevron-left" size={20} color={colors.textPrimary} />
         </View>
-        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>今日健康打卡</Text>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>今日健康数据</Text>
         <View style={{ width: '28px' }} />
       </View>
 
@@ -359,7 +359,7 @@ export default function CheckinPage() {
           {/* 必打卡项 */}
           <View style={{ marginBottom: `${spacing.lg}px` }}>
             <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
-              <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>必打卡项</Text>
+              <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>每日记录</Text>
               {mandatoryItems.length > 0 && (
                 <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.primary }}>{doneMandatoryCount}/{mandatoryItems.length}</Text>
               )}
@@ -377,7 +377,7 @@ export default function CheckinPage() {
           {/* 可选打卡项 */}
           {optionalItems.length > 0 && (
             <View style={{ marginBottom: `${spacing.lg}px` }}>
-              <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>可选打卡项</Text>
+              <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>按需记录</Text>
               <View style={{ display: 'flex', flexWrap: 'wrap', gap: `${spacing.sm}px` }}>
                 {optionalItems.map(renderCheckinItem)}
               </View>
@@ -412,7 +412,7 @@ export default function CheckinPage() {
         <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}>
           <View style={{ backgroundColor: '#fff', borderRadius: '20px 20px 0 0', padding: `${spacing.lg}px`, width: '100%', boxSizing: 'border-box', maxHeight: '85vh', overflowY: 'auto' }}>
             <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-              <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary }}>{checkinModal.icon} {checkinModal.label} 打卡</Text>
+              <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary }}>{checkinModal.icon} {checkinModal.label}记录</Text>
               <View onClick={() => setCheckinModal(null)}><Text style={{ fontSize: '20px', color: colors.textMuted }}>×</Text></View>
             </View>
 
@@ -478,7 +478,7 @@ export default function CheckinPage() {
                 <Text style={{ fontSize: '15px', fontWeight: 600, color: colors.textSecondary }}>取消</Text>
               </View>
               <View onClick={checkinSaving ? undefined : saveCheckin} style={{ flex: 2, textAlign: 'center', padding: '13px 0', borderRadius: `${radius.md}px`, backgroundColor: checkinModal.color, opacity: checkinSaving ? 0.6 : 1 }}>
-                <Text style={{ fontSize: '15px', fontWeight: 700, color: '#fff' }}>{checkinSaving ? '保存中...' : '完成打卡'}</Text>
+                <Text style={{ fontSize: '15px', fontWeight: 700, color: '#fff' }}>{checkinSaving ? '保存中...' : '保存记录'}</Text>
               </View>
             </View>
           </View>
@@ -490,7 +490,7 @@ export default function CheckinPage() {
         <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}>
           <View style={{ backgroundColor: '#fff', borderRadius: '20px 20px 0 0', padding: `${spacing.lg}px`, width: '100%', boxSizing: 'border-box', maxHeight: '85vh', overflowY: 'auto' }}>
             <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-              <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary }}>{measureModal.icon} {measureModal.label} 打卡</Text>
+              <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary }}>{measureModal.icon} {measureModal.label}记录</Text>
               <View onClick={() => setMeasureModal(null)}><Text style={{ fontSize: '20px', color: colors.textMuted }}>×</Text></View>
             </View>
 
@@ -538,8 +538,8 @@ export default function CheckinPage() {
                       placeholder={field.placeholder}
                       value={measureValues[field.key] || ''}
                       onInput={(e) => setMeasureValues((prev) => ({ ...prev, [field.key]: e.detail.value }))}
-                      adjustPosition={false}
-                      cursorSpacing={12}
+                      adjustPosition
+                      cursorSpacing={120}
                     />
                     <Text style={{ fontSize: '12px', color: colors.textMuted }}>{field.unit}</Text>
                   </View>
@@ -554,9 +554,8 @@ export default function CheckinPage() {
                 placeholder="如：血压偏高，昨晚熬夜了"
                 value={measureNote}
                 onInput={(e) => setMeasureNote(e.detail.value)}
-                fixed
-                adjustPosition={false}
-                cursorSpacing={12}
+                adjustPosition
+                cursorSpacing={120}
                 maxlength={1000}
                 autoHeight
               />
@@ -567,7 +566,7 @@ export default function CheckinPage() {
                 <Text style={{ fontSize: '15px', fontWeight: 600, color: colors.textSecondary }}>取消</Text>
               </View>
               <View onClick={measureSaving ? undefined : saveMeasureCheckin} style={{ flex: 2, textAlign: 'center', padding: '13px 0', borderRadius: `${radius.md}px`, backgroundColor: measureModal.color, opacity: measureSaving ? 0.6 : 1 }}>
-                <Text style={{ fontSize: '15px', fontWeight: 700, color: '#fff' }}>{measureSaving ? '保存中...' : '完成打卡'}</Text>
+                <Text style={{ fontSize: '15px', fontWeight: 700, color: '#fff' }}>{measureSaving ? '保存中...' : '保存记录'}</Text>
               </View>
             </View>
           </View>
