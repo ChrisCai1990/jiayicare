@@ -493,7 +493,7 @@ function PlanContentForm({ type, initialContent, contentRef }) {
       <div className="form-group">
         <FollowUpPlanSelector
           value={(content.followUpPlans?.length ? content.followUpPlans : (content.followUpPlanId ? [{ id: content.followUpPlanId, name: content.followUpPlanName || followUpPlans.find(p => p._id === content.followUpPlanId)?.name || '已关联方案' }] : []))}
-          allPlans={followUpPlans.filter(plan => !plan.category || ['general', 'medical_assist'].includes(plan.category))}
+          allPlans={followUpPlans}
           loading={false}
           label="关联岗位任务方案 *"
           description="可搜索并多选；子方案推送后，每个选中方案分别生成执行任务和督办任务。"

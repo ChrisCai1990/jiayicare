@@ -325,7 +325,7 @@ export default function PlanModulesPage() {
                   ))}
                 </div>
               ) : (
-                <select className="form-input" value={moduleData.visit?.followUpPlanId || plan.content?.followUpPlanId || ''} onChange={e => handleModuleChange('visit', 'followUpPlanId', e.target.value)}><option value="">请选择任务方案</option>{followUpPlans.filter(p => !p.category || ['general','medical_assist'].includes(p.category)).map(p => <option key={p._id} value={p._id}>{p.name}</option>)}</select>
+                <select className="form-input" value={moduleData.visit?.followUpPlanId || plan.content?.followUpPlanId || ''} onChange={e => handleModuleChange('visit', 'followUpPlanId', e.target.value)}><option value="">请选择任务方案</option>{followUpPlans.map(p => <option key={p._id} value={p._id}>{p.name}</option>)}</select>
               )}
             </div>
             <div><label className="form-label">督办人 *</label><select className="form-input" value={moduleData.visit?.supervisorId || ''} onChange={e => handleModuleChange('visit', 'supervisorId', e.target.value)}><option value="">请选择健管专员/家庭医生</option>{staffList.filter(s => ['healthManager','familyDoctor','superadmin'].includes(s.role)).map(s => <option key={s._id} value={s._id}>{s.name} · {s.roleLabel}</option>)}</select></div>
