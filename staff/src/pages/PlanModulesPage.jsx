@@ -91,9 +91,16 @@ const MODULE_DEFS_BY_TYPE = {
 const TITLE_BY_TYPE = { nutrition: '营养干预方案', medical_assist: '就医协助方案' }
 const AI_GENERATE_LABEL_BY_TYPE = { nutrition: 'AI膳食信息草稿', medical_assist: 'AI就医协助方案' }
 
-function medicalAssistModuleDefs(content = {}) {
+function isCheckupMedicalAssist(content = {}, planTitle = '') {
   const serviceDomain = content.serviceDomain || content.templateSnapshot?.serviceDomain || ''
-  if (serviceDomain !== 'annual_checkup') return MODULE_DEFS_BY_TYPE.medical_assist
+  if (serviceDomain === 'annual_checkup') return true
+  // 兼容模板分类字段上线前已经生成的存量体检方案。这些方案没有 serviceDomain，
+  // 但模板名和方案标题仍能明确识别，不应继续展示“就诊医院/科室”等门诊字段。
+  return /体检/.test(`${content.templateName || ''} ${planTitle || ''}`)
+}
+
+function medicalAssistModuleDefs(content = {}, planTitle = '') {
+  if (!isCheckupMedicalAssist(content, planTitle)) return MODULE_DEFS_BY_TYPE.medical_assist
   return {
     ...MODULE_DEFS_BY_TYPE.medical_assist,
     visit: {
@@ -162,6 +169,11 @@ function medicalAssistModuleData(content = {}) {
 function contentFromModules(plan, moduleData, goal) {
   const content = { ...(plan.content || {}), moduleData, goal }
   if (plan.type !== 'medical_assist') return content
+
+  if (isCheckupMedicalAssist(content, plan.title)) {
+    // 存量方案保存一次后补齐正式分类，后续不再依赖标题兼容判断。
+    content.serviceDomain = 'annual_checkup'
+  }
 
   const visit = moduleData.visit || {}
   const logistics = moduleData.logistics || {}
@@ -287,11 +299,11 @@ export default function PlanModulesPage() {
   if (!plan) return <div style={{ textAlign: 'center', padding: 80, color: '#aaa' }}>方案不存在</div>
 
   const moduleDefs = plan.type === 'medical_assist'
-    ? medicalAssistModuleDefs(plan.content || {})
+    ? medicalAssistModuleDefs(plan.content || {}, plan.title)
     : (MODULE_DEFS_BY_TYPE[plan.type] || {})
   const moduleKeys = Object.keys(moduleDefs)
   const isCheckupService = plan.type === 'medical_assist'
-    && ['annual_checkup'].includes(plan.content?.serviceDomain || plan.content?.templateSnapshot?.serviceDomain)
+    && isCheckupMedicalAssist(plan.content || {}, plan.title)
   const title = isCheckupService ? '体检服务方案' : (TITLE_BY_TYPE[plan.type] || plan.title)
   const aiLabel = AI_GENERATE_LABEL_BY_TYPE[plan.type] || 'AI生成'
 
