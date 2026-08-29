@@ -47,11 +47,14 @@ const defaultContent = {
     planType: 'health_prevention',
     planName: '',
     planDesc: '',
+    strategyFocus: '',
+    strategyEvidence: '',
     managementCycle: '12个月',
     sourceRule: '仅使用已确认的年度管理研判结论',
     requiredItemFields: DEFAULT_REQUIRED_FIELDS,
     moduleRules: ANNUAL_MODULE_RULES.map(item => ({ key: item.key, enabled: true, aiCanGenerate: true, reviewer: item.reviewer, customerConfirmationRequired: true })),
     standardActionPlans: {},
+    personalizedFollowUpPlans: [],
     followUpPlans: [],
   },
   nutrition: {
@@ -85,7 +88,7 @@ const defaultContent = {
 }
 
 // 随访方案选择器（从随访方案库选择）
-function FollowUpPlanSelector({ value, onChange, allPlans, loading }) {
+function FollowUpPlanSelector({ value, onChange, allPlans, loading, label = '可调用的标准随访方案', description = '限定AI可以匹配的标准执行方案；客户确认年度总方案后，系统据此直接生成随访计划。', emptyText = '未限定随访方案：AI只能形成管理要求，不得编造可执行随访计划。' }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const selected = Array.isArray(value) ? value : []
@@ -106,13 +109,13 @@ function FollowUpPlanSelector({ value, onChange, allPlans, loading }) {
     <div className="form-group" style={{ gridColumn: '1/-1' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 7 }}>
         <div>
-          <label className="form-label" style={{ marginBottom: 2 }}>可调用的标准随访方案</label>
-          <div style={{ color: '#738078', fontSize: 12 }}>限定AI可以匹配的标准执行方案；客户确认年度总方案后，系统据此直接生成随访计划。</div>
+          <label className="form-label" style={{ marginBottom: 2 }}>{label}</label>
+          <div style={{ color: '#738078', fontSize: 12 }}>{description}</div>
         </div>
         <a className="btn btn-ghost" href="/projects/followup-plans" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>管理随访方案库 →</a>
       </div>
       <div style={{ border: '1px solid #d0c9be', borderRadius: 8, padding: 12, background: '#faf8f5' }}>
-        {selected.length === 0 && <div style={{ color: '#A15C18', fontSize: 12, marginBottom: 8 }}>未限定随访方案：AI只能形成管理要求，不得编造可执行随访计划。</div>}
+        {selected.length === 0 && <div style={{ color: '#A15C18', fontSize: 12, marginBottom: 8 }}>{emptyText}</div>}
         {selected.map((s, idx) => (
           <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, padding: '6px 10px', background: '#fff', borderRadius: 6, border: '1px solid #e0d9ce' }}>
             <span style={{ fontSize: 13, flex: 1, color: '#1A2B24', fontWeight: 500 }}>{s.name}</span>
@@ -320,6 +323,8 @@ function PlanContentForm({ type, initialContent, contentRef }) {
         <input className="form-input" value={content.planName || ''} onChange={e => set('planName', e.target.value)} placeholder="如：年度健康管理统一规则" />
       </div>
       <FieldRow label="状态说明" fieldKey="planDesc" placeholder="方案适用场景或说明" half content={content} set={set} />
+      <FieldRow label="策略侧重点 *" fieldKey="strategyFocus" rows={3} placeholder="说明本策略优先解决的方向，例如：体重与代谢重塑、睡眠和运动能力、慢病稳定与风险预警" content={content} set={set} />
+      <FieldRow label="AI优先研判依据" fieldKey="strategyEvidence" rows={3} placeholder="说明AI优先关注的已确认资料，例如：阶段性评估、体成分趋势、血压血糖、睡眠打卡、慢病复查结果" content={content} set={set} />
       <div className="form-group">
         <label className="form-label">管理周期</label>
         <select className="form-input" value={content.managementCycle || '12个月'} onChange={e => set('managementCycle', e.target.value)}>
@@ -386,6 +391,18 @@ function PlanContentForm({ type, initialContent, contentRef }) {
         <div style={{ marginTop: 11, padding: '8px 10px', borderRadius: 7, background: '#EEF7F2', color: '#426457', fontSize: 12 }}>
           疾病、具体复查项目和疫苗品种等细分模板仍在随访方案库维护，只用于后续单次随访计划，不在年度总方案中整库筛选。
         </div>
+      </div>
+      <FollowUpPlanSelector
+        value={content.personalizedFollowUpPlans || []}
+        onChange={value => set('personalizedFollowUpPlans', value)}
+        allPlans={followUpPlans.filter(plan => !Object.values(content.standardActionPlans || {}).some(selected => selected?.id === plan._id))}
+        loading={false}
+        label="可调用的个性化方案"
+        description="限定当前年度策略可以调用的差异化模板；可按策略选择睡眠、体重、代谢、慢病监测、设备维护等方案。"
+        emptyText="尚未配置个性化方案：AI完成五类基础动作后不会继续生成策略专属内容。"
+      />
+      <div style={{ gridColumn: '1/-1', marginTop: -5, padding: '9px 11px', borderRadius: 8, background: '#F3EEFF', color: '#65489A', fontSize: 12 }}>
+        上述方案是当前年度策略专属的AI候选范围。AI完成五类基础动作过筛后，只能从这里勾选的模板中继续选择；未勾选模板不得调用。
       </div>
     </div>
   )
@@ -505,6 +522,10 @@ function TemplateModal({ template, planType, onClose, onSaved }) {
     const content = { ...contentRef.current, clientBrand }
     if (planType === 'health_management' && !Object.values(content.standardActionPlans || {}).some(item => item?.id)) {
       toast('❌ 请至少配置一项年度基础动作模板')
+      return
+    }
+    if (planType === 'health_management' && !String(content.strategyFocus || '').trim()) {
+      toast('❌ 请填写策略侧重点，避免不同年度策略只有名称不同')
       return
     }
     setLoading(true)

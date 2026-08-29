@@ -6430,7 +6430,13 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     if (annualStandardFollowUpCatalog.length === 0) {
       return res.status(400).json({ success: false, message: '当前Admin健康管理方案模板尚未配置年度基础动作，请先在Admin中选择标准随访模板' });
     }
-    const standardFollowUpPromptCatalog = annualStandardFollowUpCatalog.map(item => ({
+    const personalizedIds = new Set((selectedTemplate?.content?.personalizedFollowUpPlans || [])
+      .map(item => String(item?.id || '')).filter(Boolean));
+    const personalizedStandardFollowUpCatalog = standardFollowUpCatalog
+      .filter(item => personalizedIds.has(item.id) && !categoryByConfiguredId.has(item.id))
+      .map(item => ({ ...item, category: 'personalized' }));
+    const availableAnnualFollowUpCatalog = [...annualStandardFollowUpCatalog, ...personalizedStandardFollowUpCatalog];
+    const standardFollowUpPromptCatalog = availableAnnualFollowUpCatalog.map(item => ({
       id: item.id, name: item.name, category: item.category, cycles: item.cycles, defaultRole: item.defaultRole,
     }));
 
@@ -6513,11 +6519,13 @@ ${assessmentFocus ? JSON.stringify(assessmentFocus) : '暂无结构化主评估�
 主评估是本次方案的主题边界。方案中的每一条记录必须能对应主评估的核心结论、重点风险或下一步行动之一；不得仅因为原始资料里出现某项指标，就扩展出与主评估主题无关的就医、复查、疫苗、营养、监测或体检安排。待补信息只能生成“先补资料/先确认”的行动，不能直接生成诊断性或治疗性方案。以上专题结论仅可作为方案制定依据；未确认的讨论不得引用，若与最新体检原始证据冲突，以原始证据为准。
 
 【Admin年度管理规则】
-${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.planDesc || ''}` : '未选择规则'}
+${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.planDesc || ''}
+策略侧重点：${selectedTemplate.content?.strategyFocus || '未配置'}
+优先研判依据：${selectedTemplate.content?.strategyEvidence || '未配置'}` : '未选择规则'}
 
 【Admin统一标准随访方案库】
 ${standardFollowUpPromptCatalog.length ? JSON.stringify(standardFollowUpPromptCatalog) : '暂无启用方案；不得生成方案'}
-必须依次筛查medical_treatment（就医安排）、checkup_completion（体检完善）、abnormal_followup（定期复查）、vaccine（疫苗接种）、annual_checkup（年度体检）五类基础动作。每类只能选择同category的真实模板；有依据才输出，没有依据返回空，不在页面展示。当前年度规则尚未配置带策略标签的个性化模板，因此templateNodes必须返回空数组；不得从疾病、检查项目或疫苗品种等单次随访模板中自由选择，不得虚构方案名称或ID。
+必须依次筛查medical_treatment（就医安排）、checkup_completion（体检完善）、abnormal_followup（定期复查）、vaccine（疫苗接种）、annual_checkup（年度体检）五类基础动作。每类只能选择同category的真实模板；有依据才输出，没有依据返回空，不在页面展示。完成基础筛查后，templateNodes只能从category=personalized的Admin已选模板中选择，并且必须符合当前策略侧重点和客户证据；没有合适模板返回空数组。不得调用未列出的随访模板，不得虚构方案名称或ID。
 
 【Admin已确认的统一事项字段】
 ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依据','建议时间/时间范围','执行频率','注意事项','客户行动','责任角色','审核状态']).join('、')}
@@ -6569,7 +6577,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     // 转为 moduleData 结构（多条板块用 { records: [...] }）
     // 只输出当前所选方案类型包含的板块，其余板块不生成
     const result = {};
-    const standardPlanById = new Map(annualStandardFollowUpCatalog.map(item => [item.id, item]));
+    const standardPlanById = new Map(availableAnnualFollowUpCatalog.map(item => [item.id, item]));
     const formatStandardContent = source => Object.entries(source.content || {})
       .filter(([key, value]) => !/时间|日期/.test(key) && value !== undefined && value !== null && String(value).trim())
       .map(([key, value]) => `${key}：${value}`).join('\n') || '按标准模板执行';
@@ -6605,7 +6613,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
       const hydrated = hydrateStandardRecord(raw.annual_checkup, 'annual_checkup');
       if (hydrated) result.annual_checkup = { enabled: true, ...hydrated };
     }
-    const standardPlanByName = new Map(annualStandardFollowUpCatalog.map(item => [item.name, item]));
+    const standardPlanByName = new Map(availableAnnualFollowUpCatalog.map(item => [item.name, item]));
     result.templateNodes = Array.isArray(raw.templateNodes) ? raw.templateNodes.map(node => {
       const source = standardPlanById.get(String(node.standardPlanId || '')) || standardPlanByName.get(String(node.standardPlanName || '').trim());
       if (!source || source.category !== 'personalized') return null;
