@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { staffAPI } from '../api'
-import { useToast, usePermission } from '../App'
+import { useToast, usePermission, useStaff } from '../App'
 
 const TYPE_LABEL = {
   annual_checkup:  '年度体检方案',
@@ -35,6 +35,7 @@ export default function PlansPage() {
   const nav = useNavigate()
   const toast = useToast()
   const can = usePermission()
+  const { staff } = useStaff()
   const [searchParams, setSearchParams] = useSearchParams()
   const typeFilter = searchParams.get('type') || ''
 
@@ -110,6 +111,11 @@ export default function PlansPage() {
             className={`btn btn-sm ${typeFilter === opt.v ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setSearchParams(opt.v ? { type: opt.v } : {})}>{opt.l}</button>
         ))}
+        {typeFilter === 'medical_assist' && can('plans', 'create') && ['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && (
+          <button className="btn btn-primary btn-sm" onClick={() => setShowMedicalModal(true)}>
+            ＋ 新增就医协助方案
+          </button>
+        )}
         <input
           className="form-control"
           placeholder="按会员姓名搜索..."

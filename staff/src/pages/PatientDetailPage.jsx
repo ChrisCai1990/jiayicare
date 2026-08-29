@@ -8255,10 +8255,10 @@ export default function PatientDetailPage() {
                   ✨ AI体检方案
                 </button>
               )}
-              {['healthPlanner', 'superadmin'].includes(staff?.role) && (
+              {['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && (
                 <button className="btn btn-secondary btn-sm" disabled={aiMedicalAssistGenerating}
                   onClick={() => { setPendingMedicalAssistOrderId(''); setShowSelectTplModal('medical_assist') }}>
-                  {aiMedicalAssistGenerating ? '生成中…' : '✨ AI就医协助方案'}
+                  {aiMedicalAssistGenerating ? '生成中…' : staff?.role === 'familyDoctor' ? '✨ 发起就医协助方案' : '✨ AI就医协助方案'}
                 </button>
               )}
               {['familyDoctor', 'superadmin'].includes(staff?.role) && (

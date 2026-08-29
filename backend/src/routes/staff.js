@@ -10720,12 +10720,13 @@ ${goal ? goal : '（未填写目标，按会员信息与模板骨架常规定制
 // ── 场景9：AI就医协助方案（健康规划师审核） ────────────────────────────────────
 // POST /api/staff/patients/:id/ai-medical-assist-plan?orderId=xxx
 // 创建 HealthPlan type='medical_assist' status='draft' content.aiStatus='pending'
-// 只有健康规划师/超管可生成（与就医协助方案审核角色一致）；orderId 可选——商城订单流转过来的场景会带上，
+// 健康顾问可从客户整体管理中发起，健康规划师也可从服务订单发起；生成后仍统一由健康规划师审核和承接。
+// orderId 可选——商城订单流转过来的场景会带上，
 // 用订单里的服务名称/备注作为生成依据，关联 sourceOrderId 便于订单-方案-随访状态联动追溯
 // （2026-07-13 需求：客户商城下单就医类服务 → 转派就医专员 → AI生成方案 → 审核 → 推送 → 自动建随访）
 router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) => {
-  if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) {
-    return res.status(403).json({ success: false, message: '仅健康规划师可生成就医协助方案' });
+  if (!['familyDoctor', 'healthPlanner', 'superadmin'].includes(req.staff.role)) {
+    return res.status(403).json({ success: false, message: '仅健康顾问或健康规划师可发起就医协助方案' });
   }
   try {
     const user = await User.findById(req.params.id)
