@@ -241,6 +241,27 @@ const ADMIN_RULE_MODULE_MAP = {
 
 const BASIC_STANDARD_MODULE_KEYS = ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'annual_checkup']
 
+const inferStandardCategory = name => {
+  const text = String(name || '').replace(/[【】\s]/g, '')
+  if (/年度体检/.test(text)) return 'annual_checkup'
+  if (/完善体检|体检完善/.test(text)) return 'checkup_completion'
+  if (/定期复查|复查/.test(text)) return 'abnormal_followup'
+  if (/疫苗|接种/.test(text)) return 'vaccine'
+  if (/安排就医|就医协助|就医/.test(text)) return 'medical_treatment'
+  return 'personalized'
+}
+
+const standardPlanContent = plan => Object.entries(plan?.default_content || {})
+  .filter(([, value]) => value !== undefined && value !== null && String(value).trim())
+  .map(([key, value]) => `${key}：${value}`)
+  .join('；') || '按标准模板执行'
+
+const standardPlanSchedule = plan => (plan?.cycles || []).map((cycle, index) => {
+  if (cycle.cycleType === 'date') return `第${index + 1}次由健康顾问确定日期`
+  const unit = cycle.cycleUnit === 'week' ? '周' : cycle.cycleUnit === 'month' ? '个月' : '天'
+  return `确认后${cycle.cycleDuration || 0}${unit}`
+}).join('、') || '由健康顾问确定日期'
+
 const templateEntries = template => {
   // v3起年度规则统一调用全局随访方案库；模板内旧 followUpPlans 只兼容存量，
   // 不再决定客户页面板块。AI筛选结果统一进入“个性化随访方案”。
@@ -292,11 +313,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [aiPlanLoading, setAiPlanLoading] = useState(false)
   const [staffList, setStaffList]   = useState([])
   const [adminTemplates, setAdminTemplates] = useState([])
+  const [standardPlans, setStandardPlans] = useState([])
   const [templatesLoading, setTemplatesLoading] = useState(false)
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
 
   useEffect(() => {
     staffAPI.getStaffList().then(r => setStaffList(r.data || [])).catch(() => {})
+    staffAPI.getFollowupPlans().then(r => setStandardPlans(r.data || [])).catch(() => setStandardPlans([]))
   }, [])
 
   useEffect(() => {
@@ -524,6 +547,17 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     if (!data) return false
     return entry.def.multi ? (data.records || []).length > 0 : data.enabled !== false && entry.def.fields.some(field => data[field.key] !== undefined && data[field.key] !== '' && data[field.key] !== false)
   })
+  const adoptedStandardPlanIds = new Set(BASIC_STANDARD_MODULE_KEYS.flatMap(key => {
+    const data = moduleData[key]
+    const records = MODULE_DEFS[key]?.multi ? (data?.records || []) : (data?.enabled === false || !data ? [] : [data])
+    return records.map(record => String(record.standardPlanId || '')).filter(Boolean)
+  }))
+  const standardScreeningGroups = BASIC_STANDARD_MODULE_KEYS.map(key => ({
+    key,
+    name: MODULE_DEFS[key].name,
+    icon: MODULE_DEFS[key].icon,
+    plans: standardPlans.filter(plan => inferStandardCategory(plan.name) === key),
+  }))
   const activePlanType = selectedAdminTemplate
     ? { ...(PLAN_TYPES.find(pt => pt.key === planType) || PLAN_TYPES[3]), name: selectedAdminTemplate.content?.planName || selectedAdminTemplate.name }
     : PLAN_TYPES.find(pt => pt.key === planType)
@@ -665,6 +699,38 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               <span style={{ marginLeft: 12, background: '#FEF9EC', color: '#D97706', border: '1px solid #F6D860', borderRadius: 4, padding: '1px 6px' }}>仅内部</span>
               &nbsp;= 不推送给客户
             </div>
+          </div>
+          <div style={{ background: '#fff', border: '1px solid #CFE3D9', borderRadius: 12, marginBottom: 16, overflow: 'hidden' }}>
+            <div style={{ padding: '14px 16px', background: '#F0F7F4', borderBottom: '1px solid #DDEBE4' }}>
+              <div style={{ fontWeight: 700, color: '#1A2B24' }}>标准方案过筛库</div>
+              <div style={{ marginTop: 4, color: '#6B8177', fontSize: 12 }}>以下是本次生成实际使用的 Admin 标准方案。系统逐类判断；采用的方案会进入下方客户方案，未采用的不会推送给客户。</div>
+            </div>
+            {standardScreeningGroups.map(group => (
+              <div key={group.key} style={{ padding: '12px 16px', borderBottom: group.key === BASIC_STANDARD_MODULE_KEYS.at(-1) ? 'none' : '1px solid #EEF2EF' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: group.plans.length ? 9 : 0 }}>
+                  <span>{group.icon}</span>
+                  <strong style={{ fontSize: 14 }}>{group.name}</strong>
+                  <span style={{ color: '#8AA89C', fontSize: 12 }}>{group.plans.length ? `${group.plans.length}个标准模板` : '模板库尚未配置'}</span>
+                </div>
+                {group.plans.map(plan => {
+                  const adopted = adoptedStandardPlanIds.has(String(plan._id))
+                  return (
+                    <details key={plan._id} style={{ margin: '7px 0 0 26px', padding: '9px 11px', border: `1px solid ${adopted ? '#8FD0B2' : '#E0E6E2'}`, borderRadius: 8, background: adopted ? '#F0FAF5' : '#FAFBFA' }}>
+                      <summary style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, listStyle: 'none' }}>
+                        <span style={{ flex: 1, fontWeight: 600, color: '#28483A' }}>{plan.name}</span>
+                        <span style={{ fontSize: 11, color: adopted ? '#167A55' : '#8A958F', background: adopted ? '#DDF4E8' : '#EEF1EF', borderRadius: 10, padding: '2px 8px' }}>{adopted ? '已采用' : '待筛选'}</span>
+                        <span style={{ color: '#8AA89C' }}>⌄</span>
+                      </summary>
+                      <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px solid #E5ECE8', color: '#536B60', fontSize: 12, lineHeight: 1.7 }}>
+                        <div><strong>固定内容：</strong>{standardPlanContent(plan)}</div>
+                        <div><strong>固定周期：</strong>{standardPlanSchedule(plan)}</div>
+                        {plan.defaultRole && <div><strong>默认角色：</strong>{plan.defaultRole}</div>}
+                      </div>
+                    </details>
+                  )
+                })}
+              </div>
+            ))}
           </div>
           {visibleModuleEntries.map(entry => (
             <ModulePanel
