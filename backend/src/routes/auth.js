@@ -63,7 +63,7 @@ async function applyFirstLoginRewards(user, inviteCode) {
       await grantPromotionFund(user._id, cfg.firstLoginAmount, '首次使用小程序健康基金奖励', 'enterprise');
       await Message.create({
         user: user._id, type: 'system', sender: '嘉医汇', title: '欢迎加入嘉医汇', unread: true,
-        content: `欢迎加入嘉医汇。首次开通赠送的 ¥${Number(cfg.firstLoginAmount)} 健康基金已到账。健康可控，人生方可从容。\n\n愿你在认真照顾自己的每一天里，收获安心、活力与从容。`,
+        content: '欢迎加入嘉医汇。健康可控，人生方可从容。\n\n愿你在认真照顾自己的每一天里，收获安心、活力与从容。',
       }).catch(err => console.error('[first-login-reward] 到账消息发送失败', err.message));
     }
   }
