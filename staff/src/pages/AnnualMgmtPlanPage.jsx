@@ -251,6 +251,20 @@ const inferStandardCategory = name => {
   return 'personalized'
 }
 
+const ANNUAL_BASE_TEMPLATE_NAMES = {
+  medical_treatment: '需要安排就医',
+  checkup_completion: '需要完善体检',
+  abnormal_followup: '需要定期复查',
+  vaccine: '疫苗接种',
+  annual_checkup: '年度体检',
+}
+
+const isAnnualBaseTemplate = plan => {
+  const category = inferStandardCategory(plan?.name)
+  const normalizedName = String(plan?.name || '').replace(/[【】\s]/g, '')
+  return ANNUAL_BASE_TEMPLATE_NAMES[category] === normalizedName
+}
+
 const standardPlanContent = plan => Object.entries(plan?.default_content || {})
   .filter(([, value]) => value !== undefined && value !== null && String(value).trim())
   .map(([key, value]) => `${key}：${value}`)
@@ -470,6 +484,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       const allowedKeys = [...new Set([...configuredKeys, ...BASIC_STANDARD_MODULE_KEYS])]
       setModuleData(prev => {
         const merged = { ...prev }
+        // 本次为覆盖式重新筛选。先清掉旧的筛选结果，避免“不适用”的旧方案继续残留。
+        ;[...allowedKeys, 'personalized_followups'].forEach(key => { delete merged[key] })
         Object.entries(aiData).forEach(([key, val]) => {
           if (key === 'templateNodes') return
           if (!allowedKeys.includes(key)) return
@@ -490,7 +506,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         return merged
       })
       setDirty(true)
-      toast(`AI已按「${ptName}」填充方案内容，请检查并保存`)
+      const appliedCount = BASIC_STANDARD_MODULE_KEYS.reduce((total, key) => {
+        const value = aiData[key]
+        return total + (MODULE_DEFS[key]?.multi ? (value?.records?.length || 0) : (value?.enabled ? 1 : 0))
+      }, 0) + (aiData.templateNodes?.length || 0)
+      toast(appliedCount
+        ? `AI已按「${ptName}」采用 ${appliedCount} 项方案，请检查并保存`
+        : `「${ptName}」标准动作筛查完成，当前资料下暂无适用项目`)
     } catch (err) {
       toast(err.message || 'AI生成方案失败')
     } finally {
@@ -556,7 +578,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     key,
     name: MODULE_DEFS[key].name,
     icon: MODULE_DEFS[key].icon,
-    plans: standardPlans.filter(plan => inferStandardCategory(plan.name) === key),
+    plans: standardPlans.filter(plan => isAnnualBaseTemplate(plan) && inferStandardCategory(plan.name) === key),
   }))
   const activePlanType = selectedAdminTemplate
     ? { ...(PLAN_TYPES.find(pt => pt.key === planType) || PLAN_TYPES[3]), name: selectedAdminTemplate.content?.planName || selectedAdminTemplate.name }

@@ -6418,7 +6418,20 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       return 'personalized';
     };
     standardFollowUpCatalog.forEach(item => { item.category = inferStandardCategory(item.name); });
-    const standardFollowUpPromptCatalog = standardFollowUpCatalog.map(item => ({
+    // 年度总方案只调用五个通用入口模板。疾病、检查项目和疫苗品种等细分模板
+    // 属于单次随访制定，不能整库塞给年度方案 AI，否则既冗长又容易自由发挥。
+    const annualBaseTemplateNames = {
+      medical_treatment: '需要安排就医',
+      checkup_completion: '需要完善体检',
+      abnormal_followup: '需要定期复查',
+      vaccine: '疫苗接种',
+      annual_checkup: '年度体检',
+    };
+    const annualStandardFollowUpCatalog = standardFollowUpCatalog.filter(item => {
+      const normalizedName = String(item.name || '').replace(/[【】\s]/g, '');
+      return annualBaseTemplateNames[item.category] === normalizedName;
+    });
+    const standardFollowUpPromptCatalog = annualStandardFollowUpCatalog.map(item => ({
       id: item.id, name: item.name, category: item.category, cycles: item.cycles, defaultRole: item.defaultRole,
     }));
 
@@ -6505,7 +6518,7 @@ ${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.pla
 
 【Admin统一标准随访方案库】
 ${standardFollowUpPromptCatalog.length ? JSON.stringify(standardFollowUpPromptCatalog) : '暂无启用方案；不得生成方案'}
-必须依次筛查medical_treatment（就医安排）、checkup_completion（体检完善）、abnormal_followup（定期复查）、vaccine（疫苗接种）、annual_checkup（年度体检）五类基础动作。每类只能选择同category的真实模板；有依据才输出，没有依据返回空，不在页面展示。完成五类筛查后，才可从category=personalized的模板中选择额外个性化方案。不得虚构方案名称或ID。
+必须依次筛查medical_treatment（就医安排）、checkup_completion（体检完善）、abnormal_followup（定期复查）、vaccine（疫苗接种）、annual_checkup（年度体检）五类基础动作。每类只能选择同category的真实模板；有依据才输出，没有依据返回空，不在页面展示。当前年度规则尚未配置带策略标签的个性化模板，因此templateNodes必须返回空数组；不得从疾病、检查项目或疫苗品种等单次随访模板中自由选择，不得虚构方案名称或ID。
 
 【Admin已确认的统一事项字段】
 ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依据','建议时间/时间范围','执行频率','注意事项','客户行动','责任角色','审核状态']).join('、')}
@@ -6554,21 +6567,10 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
       return res.status(502).json({ success: false, message: 'AI返回的方案内容不完整，请重试' });
     }
 
-    const generatedCount = [
-      ...(Array.isArray(raw.templateNodes) ? raw.templateNodes : []),
-      ...['medical_treatment', 'specialist_collab', 'checkup_completion', 'abnormal_followup', 'vaccine', 'monitoring']
-        .flatMap(key => Array.isArray(raw[key]) ? raw[key] : []),
-      ...(raw.lifestyle ? [raw.lifestyle] : []),
-      ...(raw.annual_checkup ? [raw.annual_checkup] : []),
-    ].length;
-    if (generatedCount === 0) {
-      return res.status(502).json({ success: false, message: 'AI未生成有效方案内容，请重试或检查AI服务配置' });
-    }
-
     // 转为 moduleData 结构（多条板块用 { records: [...] }）
     // 只输出当前所选方案类型包含的板块，其余板块不生成
     const result = {};
-    const standardPlanById = new Map(standardFollowUpCatalog.map(item => [item.id, item]));
+    const standardPlanById = new Map(annualStandardFollowUpCatalog.map(item => [item.id, item]));
     const formatStandardContent = source => Object.entries(source.content || {})
       .filter(([key, value]) => !/时间|日期/.test(key) && value !== undefined && value !== null && String(value).trim())
       .map(([key, value]) => `${key}：${value}`).join('\n') || '按标准模板执行';
@@ -6604,7 +6606,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
       const hydrated = hydrateStandardRecord(raw.annual_checkup, 'annual_checkup');
       if (hydrated) result.annual_checkup = { enabled: true, ...hydrated };
     }
-    const standardPlanByName = new Map(standardFollowUpCatalog.map(item => [item.name, item]));
+    const standardPlanByName = new Map(annualStandardFollowUpCatalog.map(item => [item.name, item]));
     result.templateNodes = Array.isArray(raw.templateNodes) ? raw.templateNodes.map(node => {
       const source = standardPlanById.get(String(node.standardPlanId || '')) || standardPlanByName.get(String(node.standardPlanName || '').trim());
       if (!source || source.category !== 'personalized') return null;
