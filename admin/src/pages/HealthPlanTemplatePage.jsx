@@ -68,7 +68,7 @@ const defaultContent = {
     description: '',
   },
   medical_assist: {
-    name: '', datetime: '', staffName: '', tasks: '',
+    name: '', datetime: '', tasks: '', followUpPlanId: '', followUpPlanName: '', assistanceType: '',
     hospital: '', department: '', expert: '', hotel: '', transport: '', notes: '',
   },
   rehab: {
@@ -284,7 +284,7 @@ function PlanContentForm({ type, initialContent, contentRef }) {
         setFunctionalTests(funcRes.data || [])
       }).catch(() => {})
     }
-    if (type === 'health_management') {
+    if (['health_management', 'medical_assist'].includes(type)) {
       adminAPI.followUpPlans()
         .then(res => setFollowUpPlans((res.data || []).filter(plan => plan.status === 'active')))
         .catch(() => setFollowUpPlans([]))
@@ -444,10 +444,27 @@ function PlanContentForm({ type, initialContent, contentRef }) {
 
   if (type === 'medical_assist') return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div className="form-group">
+        <label className="form-label">关联岗位任务方案 *</label>
+        <select className="form-input" value={content.followUpPlanId || ''} onChange={e => {
+          const plan = followUpPlans.find(item => item._id === e.target.value)
+          set('followUpPlanId', plan?._id || '')
+          set('followUpPlanName', plan?.name || '')
+        }}>
+          <option value="">请选择 Admin 随访方案</option>
+          {followUpPlans.filter(plan => !plan.category || ['general', 'medical_assist'].includes(plan.category)).map(plan => <option key={plan._id} value={plan._id}>{plan.name}</option>)}
+        </select>
+        <div style={{ color: '#7C8B84', fontSize: 11, marginTop: 4 }}>子方案推送后按该规则生成执行任务和督办任务。</div>
+      </div>
+      <div className="form-group">
+        <label className="form-label">就医协助类型</label>
+        <select className="form-input" value={content.assistanceType || ''} onChange={e => set('assistanceType', e.target.value)}>
+          <option value="">请选择</option><option value="agency">代办服务</option><option value="proxy_visit">代诊服务</option><option value="escort">陪诊服务</option><option value="one_stop">门诊一站式服务</option>
+        </select>
+      </div>
       <FieldRow label="医院" fieldKey="hospital" placeholder="医院名称" half content={content} set={set} />
       <FieldRow label="科室" fieldKey="department" placeholder="科室名称" half content={content} set={set} />
       <FieldRow label="专家" fieldKey="expert" placeholder="专家姓名（可选）" half content={content} set={set} />
-      <FieldRow label="就医专员" fieldKey="staffName" placeholder="专员姓名（可选）" half content={content} set={set} />
       <FieldRow label="服务时间" fieldKey="datetime" placeholder="日期和时间段" half content={content} set={set} />
       <FieldRow label="交通接送安排" fieldKey="transport" placeholder="是否专车、集合地点" half content={content} set={set} />
       <FieldRow label="具体服务事项" fieldKey="tasks" rows={3} placeholder="如：代取报告、陪同检查" content={content} set={set} />
@@ -526,6 +543,10 @@ function TemplateModal({ template, planType, onClose, onSaved }) {
     }
     if (planType === 'health_management' && !String(content.strategyFocus || '').trim()) {
       toast('❌ 请填写策略侧重点，避免不同年度策略只有名称不同')
+      return
+    }
+    if (planType === 'medical_assist' && !content.followUpPlanId) {
+      toast('❌ 请选择关联岗位任务方案')
       return
     }
     setLoading(true)

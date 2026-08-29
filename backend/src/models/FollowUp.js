@@ -23,6 +23,10 @@ const followUpSchema = new mongoose.Schema({
   formData:     { type: mongoose.Schema.Types.Mixed, default: null },
   cancelReason: { type: String, default: '' },  // 取消原因（cancelled 时必填）
   assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 负责人
+  coordinationGroupId: { type: String, default: '' }, // 同一服务事项拆分出的执行/督办任务组
+  taskRole: { type: String, enum: ['executor', 'supervisor', ''], default: '' },
+  dependsOnTaskId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUp', default: null },
+  remindAt: { type: Date, default: null },
   nextFollowUpDate: { type: Date, default: null },
   tags:     { type: [String], default: [] }, // 标签，如 ['用药提醒','复查提示']
   // 随访时记录的简要体征
@@ -64,5 +68,6 @@ const followUpSchema = new mongoose.Schema({
 
 followUpSchema.index({ staffId: 1, date: -1 });
 followUpSchema.index({ patientId: 1, date: -1 });
+followUpSchema.index({ coordinationGroupId: 1, taskRole: 1 });
 
 module.exports = mongoose.model('FollowUp', followUpSchema);

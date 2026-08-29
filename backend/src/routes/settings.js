@@ -780,25 +780,37 @@ router.get('/followup-plans', adminAuth, async (req, res) => {
 });
 
 router.post('/followup-plans', adminAuth, async (req, res) => {
-  const { name, formId, cycles, defaultEmployeeId, default_content } = req.body;
+  const { name, formId, cycles, defaultEmployeeId, default_content, category, executorRole, supervisorRole,
+    remindDaysBefore, executorDueOffsetDays, supervisorDueOffsetDays, requiresCoordination, completionStandard } = req.body;
   if (!name) return res.status(400).json({ success: false, message: '方案名称不能为空' });
   const plan = await FollowUpPlan.create({
     name, formId: formId || null,
     cycles: cycles?.length ? cycles : [{ cycleType: 'duration', cycleDuration: 30, cycleUnit: 'day', notes: '' }],
     defaultEmployeeId: defaultEmployeeId || null,
+    category: category || 'general', executorRole: executorRole || '', supervisorRole: supervisorRole || '',
+    remindDaysBefore: Number.isFinite(Number(remindDaysBefore)) ? Number(remindDaysBefore) : 3,
+    executorDueOffsetDays: Number.isFinite(Number(executorDueOffsetDays)) ? Number(executorDueOffsetDays) : -1,
+    supervisorDueOffsetDays: Number.isFinite(Number(supervisorDueOffsetDays)) ? Number(supervisorDueOffsetDays) : 1,
+    requiresCoordination: !!requiresCoordination, completionStandard: completionStandard || '',
     default_content: default_content || {},
   });
   res.json({ success: true, data: plan, message: '随访方案已创建' });
 });
 
 router.put('/followup-plans/:id', adminAuth, async (req, res) => {
-  const { name, formId, cycles, defaultEmployeeId, status, default_content } = req.body;
+  const { name, formId, cycles, defaultEmployeeId, status, default_content, category, executorRole, supervisorRole,
+    remindDaysBefore, executorDueOffsetDays, supervisorDueOffsetDays, requiresCoordination, completionStandard } = req.body;
   const plan = await FollowUpPlan.findByIdAndUpdate(
     req.params.id,
     {
       name, formId: formId || null,
       cycles: cycles?.length ? cycles : [{ cycleType: 'duration', cycleDuration: 30, cycleUnit: 'day', notes: '' }],
       defaultEmployeeId: defaultEmployeeId || null,
+      category: category || 'general', executorRole: executorRole || '', supervisorRole: supervisorRole || '',
+      remindDaysBefore: Number.isFinite(Number(remindDaysBefore)) ? Number(remindDaysBefore) : 3,
+      executorDueOffsetDays: Number.isFinite(Number(executorDueOffsetDays)) ? Number(executorDueOffsetDays) : -1,
+      supervisorDueOffsetDays: Number.isFinite(Number(supervisorDueOffsetDays)) ? Number(supervisorDueOffsetDays) : 1,
+      requiresCoordination: !!requiresCoordination, completionStandard: completionStandard || '',
       status,
       default_content: default_content || {},
     },

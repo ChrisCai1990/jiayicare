@@ -2,16 +2,23 @@ import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
 
-const CYCLE_UNIT_LABEL = { day: '天', week: '周', month: '月' }
-
 const ROLE_LABEL = {
   healthManager: '健管师', familyDoctor: '健康顾问', nurse: '护士',
   nutritionist: '营养师', psychologist: '心理师', tcmDoctor: '中医师',
   specialist: '专科医生', healthPlanner: '健康规划师',
 }
 
+const ROLE_OPTIONS = [
+  ['', '不限定'], ['healthManager', '健管专员'], ['healthPlanner', '就医专员/健康规划师'],
+  ['familyDoctor', '健康顾问'], ['nutritionist', '营养师'], ['nurse', '护士'],
+]
+const CATEGORY_OPTIONS = [
+  ['general', '通用随访'], ['medical_assist', '就医协助'], ['recheck', '定期复查'],
+  ['checkup', '体检安排'], ['vaccine', '疫苗接种'], ['monitoring', '健康监测'],
+]
+
 const emptyCycle = () => ({ cycleType: 'duration', cycleDuration: 30, cycleUnit: 'day', cycleDate: '', notes: '' })
-const EMPTY = { name: '', formId: '', cycles: [emptyCycle()], defaultEmployeeId: '', default_content: {} }
+const EMPTY = { name: '', formId: '', cycles: [emptyCycle()], defaultEmployeeId: '', default_content: {}, category: 'general', executorRole: '', supervisorRole: '', remindDaysBefore: 3, executorDueOffsetDays: -1, supervisorDueOffsetDays: 1, requiresCoordination: false, completionStandard: '' }
 
 // 按钮样式
 const btnStyle = (color, disabled) => ({
@@ -26,7 +33,6 @@ export default function FollowUpPlanPage() {
   const toast = useToast()
   const [list, setList] = useState([])
   const [forms, setForms] = useState([])
-  const [employees, setEmployees] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editId, setEditId] = useState(null)
@@ -42,11 +48,9 @@ export default function FollowUpPlanPage() {
     Promise.all([
       adminAPI.followupPlans(),
       adminAPI.followupForms(),
-      adminAPI.employees({ limit: 200, staffStatus: 'active' }),
-    ]).then(([planRes, formRes, empRes]) => {
+    ]).then(([planRes, formRes]) => {
       setList(planRes.data)
       setForms(formRes.data.filter(f => f.status === 'active'))
-      setEmployees(empRes.data || [])
     }).catch(e => toast(e.message)).finally(() => setLoading(false))
   }
 
@@ -71,6 +75,10 @@ export default function FollowUpPlanPage() {
       cycles,
       defaultEmployeeId: p.defaultEmployeeId?._id || p.defaultEmployeeId || '',
       default_content: p.default_content || {},
+      category: p.category || 'general', executorRole: p.executorRole || '', supervisorRole: p.supervisorRole || '',
+      remindDaysBefore: p.remindDaysBefore ?? 3, executorDueOffsetDays: p.executorDueOffsetDays ?? -1,
+      supervisorDueOffsetDays: p.supervisorDueOffsetDays ?? 1, requiresCoordination: !!p.requiresCoordination,
+      completionStandard: p.completionStandard || '',
     })
     setError(''); setShowModal(true)
   }
@@ -92,6 +100,10 @@ export default function FollowUpPlanPage() {
         formId: form.formId || null,
         defaultEmployeeId: form.defaultEmployeeId || null,
         default_content: form.default_content || {},
+        category: form.category, executorRole: form.executorRole, supervisorRole: form.supervisorRole,
+        remindDaysBefore: Number(form.remindDaysBefore), executorDueOffsetDays: Number(form.executorDueOffsetDays),
+        supervisorDueOffsetDays: Number(form.supervisorDueOffsetDays), requiresCoordination: form.requiresCoordination,
+        completionStandard: form.completionStandard,
         cycles: form.cycles.map(c => ({
           cycleType: c.cycleType,
           cycleDuration: c.cycleType === 'duration' ? Number(c.cycleDuration) : null,
@@ -120,25 +132,6 @@ export default function FollowUpPlanPage() {
   const handleDelete = async item => {
     if (!window.confirm(`确定删除「${item.name}」？`)) return
     try { await adminAPI.deleteFollowupPlan(item._id); toast('已删除'); loadAll() } catch (e) { toast(e.message) }
-  }
-
-  const cycleDisplay = item => {
-    const cycles = item.cycles
-    if (!cycles?.length) return '-'
-    if (cycles.length === 1) {
-      const c = cycles[0]
-      if (c.cycleType === 'date' && c.cycleDate) return new Date(c.cycleDate).toLocaleDateString('zh-CN')
-      return `${c.cycleDuration} ${CYCLE_UNIT_LABEL[c.cycleUnit] || c.cycleUnit}`
-    }
-    return `共 ${cycles.length} 个周期`
-  }
-
-  const employeeDisplay = item => {
-    if (item.defaultEmployeeId?.name) {
-      const roleLabel = ROLE_LABEL[item.defaultEmployeeId.role] || ''
-      return `${item.defaultEmployeeId.name}${roleLabel ? `（${roleLabel}）` : ''}`
-    }
-    return '-'
   }
 
   const filteredPlans = list.filter(item => !search || item.name?.includes(search))
@@ -175,7 +168,7 @@ export default function FollowUpPlanPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#f8fafc' }}>
-                {['方案名称', '关联表单', '随访周期', '默认人员', '状态', '操作'].map(h => (
+                {['方案名称', '分类', '协作角色', '提前提醒', '状态', '操作'].map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 12, fontWeight: 600, color: '#6B7280', borderBottom: '1px solid #E5E7EB' }}>{h}</th>
                 ))}
               </tr>
@@ -184,9 +177,9 @@ export default function FollowUpPlanPage() {
               {pagedPlans.map(item => (
                 <tr key={item._id} style={{ borderBottom: '1px solid #F3F4F6' }}>
                   <td style={{ padding: '10px 14px', fontWeight: 500 }}>{item.name}</td>
-                  <td style={{ padding: '10px 14px', color: '#6B7280' }}>{item.formId?.name || '-'}</td>
-                  <td style={{ padding: '10px 14px', color: '#6B7280' }}>{cycleDisplay(item)}</td>
-                  <td style={{ padding: '10px 14px', color: '#6B7280' }}>{employeeDisplay(item)}</td>
+                  <td style={{ padding: '10px 14px', color: '#6B7280' }}>{CATEGORY_OPTIONS.find(x => x[0] === item.category)?.[1] || '通用随访'}</td>
+                  <td style={{ padding: '10px 14px', color: '#6B7280', fontSize: 12 }}>{ROLE_LABEL[item.executorRole] || item.executorRole || '-'}{item.supervisorRole ? ` → ${ROLE_LABEL[item.supervisorRole] || item.supervisorRole}督办` : ''}</td>
+                  <td style={{ padding: '10px 14px', color: '#6B7280' }}>提前 {item.remindDaysBefore ?? 3} 天</td>
                   <td style={{ padding: '10px 14px' }}>
                     <span style={{ padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600, background: item.status === 'active' ? '#E8F5EF' : '#FEF2F2', color: item.status === 'active' ? '#1E6B50' : '#DC2626' }}>
                       {item.status === 'active' ? '启用' : '停用'}
@@ -229,6 +222,17 @@ export default function FollowUpPlanPage() {
                   onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                   placeholder='如：高血压月度随访' autoFocus />
               </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div className="form-group"><label className="form-label">方案分类</label><select className="form-input" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>{CATEGORY_OPTIONS.map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+                <div className="form-group"><label className="form-label">提前推送（天）</label><input className="form-input" type="number" min="0" max="90" value={form.remindDaysBefore} onChange={e => setForm(f => ({ ...f, remindDaysBefore: e.target.value }))} /></div>
+                <div className="form-group"><label className="form-label">执行角色</label><select className="form-input" value={form.executorRole} onChange={e => setForm(f => ({ ...f, executorRole: e.target.value }))}>{ROLE_OPTIONS.map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+                <div className="form-group"><label className="form-label">督办角色</label><select className="form-input" value={form.supervisorRole} onChange={e => setForm(f => ({ ...f, supervisorRole: e.target.value }))}>{ROLE_OPTIONS.map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+                <div className="form-group"><label className="form-label">执行截止（相对服务日）</label><input className="form-input" type="number" min="-90" max="90" value={form.executorDueOffsetDays} onChange={e => setForm(f => ({ ...f, executorDueOffsetDays: e.target.value }))} /><div style={{ fontSize: 11, color: '#6B7280', marginTop: 4 }}>例如 -1 表示服务日前1天</div></div>
+                <div className="form-group"><label className="form-label">督办截止（相对服务日）</label><input className="form-input" type="number" min="-90" max="90" value={form.supervisorDueOffsetDays} onChange={e => setForm(f => ({ ...f, supervisorDueOffsetDays: e.target.value }))} /><div style={{ fontSize: 11, color: '#6B7280', marginTop: 4 }}>例如 1 表示服务后1天</div></div>
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, fontSize: 13 }}><input type="checkbox" checked={form.requiresCoordination} onChange={e => setForm(f => ({ ...f, requiresCoordination: e.target.checked }))} />需要执行人和督办人双人协作</label>
+              <div className="form-group"><label className="form-label">完成标准</label><textarea className="form-input" rows={2} value={form.completionStandard} onChange={e => setForm(f => ({ ...f, completionStandard: e.target.value }))} placeholder="如：预约信息确认、服务完成、结果资料归档" /></div>
 
               {/* 关联随访表单 */}
               <div className="form-group">
@@ -382,18 +386,8 @@ export default function FollowUpPlanPage() {
                 </button>
               </div>
 
-              {/* 默认随访人员 */}
-              <div className="form-group" style={{ marginTop: 16 }}>
-                <label className="form-label">默认随访人员</label>
-                <select className="form-input" value={form.defaultEmployeeId}
-                  onChange={e => setForm(f => ({ ...f, defaultEmployeeId: e.target.value }))}>
-                  <option value="">不指定</option>
-                  {employees.map(e => (
-                    <option key={e._id} value={e._id}>
-                      {e.name}{e.role && ROLE_LABEL[e.role] ? `（${ROLE_LABEL[e.role]}）` : ''}
-                    </option>
-                  ))}
-                </select>
+              <div style={{ marginTop: 16, padding: '9px 11px', borderRadius: 8, background: '#EEF7F2', color: '#426457', fontSize: 12 }}>
+                此处只配置岗位角色；具体执行人和督办人在客户专业子方案中从员工库选择。
               </div>
 
             </div>

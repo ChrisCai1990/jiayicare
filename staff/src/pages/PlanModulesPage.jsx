@@ -111,6 +111,8 @@ function medicalAssistModuleData(content = {}) {
       visitDate: existing.visit?.visitDate || content.serviceDate || '',
       serviceTime: existing.visit?.serviceTime || content.serviceTime || '',
       staffId: existing.visit?.staffId || content.staffId || '',
+      supervisorId: existing.visit?.supervisorId || content.supervisorId || '',
+      followUpPlanId: existing.visit?.followUpPlanId || content.followUpPlanId || '',
     },
     logistics: {
       ...(existing.logistics || {}),
@@ -145,6 +147,8 @@ function contentFromModules(plan, moduleData, goal) {
     serviceDate: visit.visitDate || '',
     serviceTime: visit.serviceTime || content.serviceTime || '',
     staffId: selectedAssistantId,
+    supervisorId: visit.supervisorId || content.supervisorId || '',
+    followUpPlanId: visit.followUpPlanId || content.followUpPlanId || '',
     hotel: logistics.hotel || '',
     transport: logistics.transport || '',
     tasks: records.map(r => r.task).filter(Boolean).join('\n'),
@@ -166,9 +170,12 @@ export default function PlanModulesPage() {
   const [pushing, setPushing] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [staffList, setStaffList] = useState([])
+  const [followUpPlans, setFollowUpPlans] = useState([])
 
   useEffect(() => {
-    staffAPI.getStaffList().then(r => setStaffList(r.data || [])).catch(() => {})
+    Promise.all([staffAPI.getStaffList(), staffAPI.getFollowUpPlans()])
+      .then(([staffRes, planRes]) => { setStaffList(staffRes.data || []); setFollowUpPlans(planRes.data || []) })
+      .catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -197,6 +204,13 @@ export default function PlanModulesPage() {
   }, [])
 
   const handleSave = async () => {
+    if (plan.type === 'medical_assist') {
+      const visit = moduleData.visit || {}
+      if (!visit.visitDate) { toast('请选择服务日期'); return }
+      if (!visit.staffId) { toast('请选择就医专员'); return }
+      if (!visit.supervisorId) { toast('请选择督办人'); return }
+      if (!visit.followUpPlanId) { toast('请选择关联 Admin 随访方案'); return }
+    }
     setSaving(true)
     try {
       const content = contentFromModules(plan, moduleData, goal)
@@ -295,6 +309,16 @@ export default function PlanModulesPage() {
       </div>
 
       {/* 板块列表 */}
+      {plan.type === 'medical_assist' && (
+        <div style={{ background: '#fff', borderRadius: 12, padding: 20, marginBottom: 20, border: '1px solid #E0D9CE' }}>
+          <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24', marginBottom: 4 }}>岗位任务流转</div>
+          <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 14 }}>执行人完成就医安排；督办人核对结果并推动客户整体方案闭环。</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div><label className="form-label">关联 Admin 随访方案 *</label><select className="form-input" value={moduleData.visit?.followUpPlanId || plan.content?.followUpPlanId || ''} onChange={e => handleModuleChange('visit', 'followUpPlanId', e.target.value)}><option value="">请选择任务方案</option>{followUpPlans.filter(p => !p.category || ['general','medical_assist'].includes(p.category)).map(p => <option key={p._id} value={p._id}>{p.name}</option>)}</select></div>
+            <div><label className="form-label">督办人 *</label><select className="form-input" value={moduleData.visit?.supervisorId || ''} onChange={e => handleModuleChange('visit', 'supervisorId', e.target.value)}><option value="">请选择健管专员/家庭医生</option>{staffList.filter(s => ['healthManager','familyDoctor','superadmin'].includes(s.role)).map(s => <option key={s._id} value={s._id}>{s.name} · {s.roleLabel}</option>)}</select></div>
+          </div>
+        </div>
+      )}
       <div style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24' }}>方案板块</div>

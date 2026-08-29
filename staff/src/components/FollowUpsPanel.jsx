@@ -113,6 +113,7 @@ export default function FollowUpsPanel() {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
                   <span style={{ fontSize: 13, fontWeight: 600, color: '#0077B6' }}>{f.theme || '随访'}</span>
+                  {f.taskRole && <span style={{ fontSize: 10, color: f.taskRole === 'executor' ? '#1E6B50' : '#7C3AED', background: f.taskRole === 'executor' ? '#E8F5EF' : '#F3EEFF', padding: '1px 6px', borderRadius: 4 }}>{f.taskRole === 'executor' ? '执行任务' : '督办任务'}</span>}
                   {overdue && (
                     <span style={{ fontSize: 11, color: '#DC3545', background: '#DC354515', padding: '1px 6px', borderRadius: 4 }}>
                       已过期
