@@ -7,6 +7,11 @@ import { useAuth } from '../../../context/AuthContext';
 import Icon from '../../../components/Icon';
 
 export default function LoginPage() {
+  Taro.useLoad((options = {}) => {
+    if (options.invite) {
+      try { Taro.setStorageSync('jy_invite_code', String(options.invite)); } catch {}
+    }
+  });
   Taro.useShareAppMessage(() => ({
     title: '嘉医汇｜全生命周期健康管理',
     path: '/pages/home/index',

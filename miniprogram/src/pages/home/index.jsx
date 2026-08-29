@@ -179,7 +179,7 @@ function TaskDetailModal({ task, onClose, onDone }) {
 }
 
 export default function HomePage() {
-  const { isDemo } = useAuth();
+  const { user: authUser, isDemo } = useAuth();
   const { statusBarHeight } = useNavBar();
   const runtimeInfo = (() => {
     try {
