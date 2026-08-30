@@ -8,7 +8,7 @@ export default function ServiceTasksPanel() {
   const [items, setItems] = useState([])
 
   useEffect(() => {
-    staffAPI.getFollowUps({ status: 'active', sourceType: 'health_plan', scope: 'assigned', limit: 100 })
+    staffAPI.getFollowUps({ status: 'active', sourceType: 'health_plan', scope: 'assigned', includeFuture: '1', limit: 100 })
       .then(r => setItems(r.data?.followUps || []))
       .catch(() => {})
   }, [])
@@ -24,20 +24,26 @@ export default function ServiceTasksPanel() {
         </div>
       </div>
       <div className="card-body" style={{ padding: '8px 20px' }}>
-        {items.slice(0, 10).map((task, index) => (
+        {items.slice(0, 10).map((task, index) => {
+          const isFuture = task.date && new Date(task.date).getTime() > Date.now()
+          return (
           <div key={task._id}
             onClick={() => nav(`/patients/${task.patientId?._id}?tab=followups`, { state: { openFollowUp: task } })}
             style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 0', cursor: 'pointer', borderBottom: index < Math.min(items.length, 10) - 1 ? '1px solid #f0ede8' : 'none' }}>
             <span style={{ fontSize: 18 }}>{task.taskRole === 'supervisor' ? '🔎' : '✅'}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 600, fontSize: 13, color: '#1A2B24' }}>{task.theme}</div>
+              <div style={{ fontWeight: 600, fontSize: 13, color: '#1A2B24' }}>
+                {task.theme}
+                {isFuture && <span style={{ marginLeft: 8, fontSize: 11, color: '#8A6A20', background: '#FFF4D6', padding: '2px 6px', borderRadius: 8 }}>待开始</span>}
+              </div>
               <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>
                 {task.patientId?.name || '未知'}{task.assignedTo?.name ? ` · 负责人：${task.assignedTo.name}` : ''}
               </div>
             </div>
             <span style={{ fontSize: 11, color: '#8AA89C' }}>{formatChineseDate(task.date, false)}</span>
           </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
