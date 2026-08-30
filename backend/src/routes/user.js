@@ -1162,6 +1162,14 @@ router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
       if (needFollowUp) {
         // 用户表示还需要人工跟进：保持/回退为 planned，留在医护端"待随访"队列，不算完成
         if (followup.status !== 'completed' && followup.status !== 'cancelled') changes.status = 'planned';
+        // 用药/营养素提醒及日常打卡默认由客户自助完成；客户主动求助时，
+        // 追加人工升级标签，使其进入健管专员工作台。
+        const isSelfServiceReminder = followup.sourceType === 'medication_reminder'
+          || ((followup.tags || []).includes('AI自动计划'))
+          || (followup.sourceType === 'scheduled' && ((followup.checkInItems || []).length > 0 || /^【?日常监测/.test(followup.theme || '')));
+        if (isSelfServiceReminder) {
+          changes.tags = Array.from(new Set([...(followup.tags || []), '人工跟进']));
+        }
       } else {
         // 用户确认不需要跟进：直接闭环为已完成
         changes.status = 'completed';

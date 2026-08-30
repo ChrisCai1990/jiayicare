@@ -6,6 +6,17 @@ import { formatChineseDate } from '../utils/date'
 
 const PAGE_SIZE = 5
 
+// 客户自行完成的自动提醒不占用人工待随访队列。客户明确要求人工介入后，
+// 后端会追加“人工跟进”标签，此时才重新出现在健管专员工作台。
+const isCustomerSelfServiceReminder = (followUp) => {
+  const tags = followUp.tags || []
+  if (tags.includes('人工跟进')) return false
+  if (followUp.sourceType === 'medication_reminder') return true
+  if (followUp.sourceType === 'scheduled' && ((followUp.checkInItems || []).length > 0 || /^【?日常监测/.test(followUp.theme || ''))) return true
+  const text = `${followUp.theme || ''} ${tags.join(' ')}`
+  return tags.includes('AI自动计划') && /(用药|营养素).*提醒|提醒.*(用药|营养素)/.test(text)
+}
+
 function formatDate(date) {
   if (!date) return ''
   return formatChineseDate(date, false)
@@ -26,7 +37,11 @@ export default function FollowUpsPanel() {
         // 订单来源的待办（sourceType='order'，商城下单后生成）已经在首页"待处理服务预约"面板单独展示，
         // 这里要排除掉，否则同一条记录会在"待随访任务"里重复出现——它本质是服务预约，不是随访动作
         // （2026-07-13 反馈：如"预约：医疗代诊服务"这类不该混进待随访列表）
-        const followUpsOnly = (r.data?.followUps || []).filter(f => f.sourceType !== 'order' && f.sourceType !== 'health_plan')
+        const followUpsOnly = (r.data?.followUps || []).filter(f => (
+          f.sourceType !== 'order'
+          && f.sourceType !== 'health_plan'
+          && !isCustomerSelfServiceReminder(f)
+        ))
         setItems(followUpsOnly)
         setTotal(followUpsOnly.length)
       })
