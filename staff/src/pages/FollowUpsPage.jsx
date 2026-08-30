@@ -36,14 +36,15 @@ function getMedicalAssistRequirements(item) {
   const logistics = c.moduleData?.logistics || {}
   const taskRecords = c.moduleData?.tasks?.records || []
   const tasks = c.tasks || taskRecords.map(r => r.task).filter(Boolean).join('\n')
+  const isCheckup = c.serviceDomain === 'annual_checkup' || c.templateSnapshot?.serviceDomain === 'annual_checkup' || /体检/.test(`${c.templateName || ''} ${plan.title || ''}`)
   return [
     (c.hospital || visit.hospital) && `医院：${c.hospital || visit.hospital}`,
     (c.department || visit.department) && `科室：${c.department || visit.department}`,
     (c.expert || visit.expert) && `医生：${c.expert || visit.expert}`,
     (c.serviceDate || visit.visitDate || c.serviceTime || visit.serviceTime)
       && `服务时间：${[c.serviceDate || visit.visitDate, c.serviceTime || visit.serviceTime].filter(Boolean).join(' ')}`,
-    plan.description && `代诊目的：${plan.description}`,
-    tasks && `代诊要求：${tasks}`,
+    plan.description && `${isCheckup ? '体检目标' : '服务目标'}：${plan.description}`,
+    tasks && `${isCheckup ? '体检执行要求' : '服务要求'}：${tasks}`,
     (c.transport || logistics.transport) && `交通安排：${c.transport || logistics.transport}`,
     (c.hotel || logistics.hotel) && `住宿安排：${c.hotel || logistics.hotel}`,
     (c.notes || c.moduleData?.notes?.content) && `注意事项：${c.notes || c.moduleData?.notes?.content}`,
@@ -79,7 +80,7 @@ function DetailModal({ item, onClose }) {
           <Row label="状态" value={STATUS_MAP[item.status] || item.status} />
           {item.checkInItems?.length > 0 && <Row label="打卡项目" value={item.checkInItems.map(k => CHECKIN_LABEL[k] || k).join('、')} />}
           <Row label="计划内容" value={item.content} />
-          <Row label="本次代诊要求" value={getMedicalAssistRequirements(item)} />
+          <Row label="本次服务要求" value={getMedicalAssistRequirements(item)} />
           {item.status === 'completed' && (
             <>
               <div style={{ margin: '12px 0 6px', fontSize: 12, color: '#1E6B50', fontWeight: 700, borderTop: '2px solid #E8F5EF', paddingTop: 12 }}>随访结果</div>

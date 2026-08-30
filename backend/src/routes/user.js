@@ -1112,6 +1112,9 @@ router.get('/followup-tasks', auth, async (req, res) => {
       patientId: req.user._id,
       aiStatus: { $ne: 'pending' },
       status: { $in: ['planned', 'in_progress', 'missed'] },
+      // 岗位执行与督办属于医护内部工作流。客户只查看已推送的服务方案，
+      // 不应看到、也不能代替医护人员完成这些内部任务。
+      $nor: [{ sourceType: 'health_plan', taskRole: { $in: ['executor', 'supervisor'] } }],
     })
       .sort({ date: 1 })
       .populate('staffId', 'name role title')
@@ -1142,6 +1145,9 @@ router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
   try {
     const followup = await FollowUp.findOne({ _id: req.params.id, patientId: req.user._id });
     if (!followup) return res.status(404).json({ success: false, message: '随访任务不存在' });
+    if (followup.sourceType === 'health_plan' && ['executor', 'supervisor'].includes(followup.taskRole)) {
+      return res.status(403).json({ success: false, message: '该任务由医护人员在工作台完成' });
+    }
     const done = req.body.done !== false; // 默认 true，传 false 则取消
     const needFollowUp = req.body.needFollowUp === true;
 

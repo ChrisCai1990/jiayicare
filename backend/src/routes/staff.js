@@ -1772,6 +1772,12 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
   }
   plan.status = 'active';
   plan.pushedAt = new Date();
+  if (plan.content?.aiStatus === 'pending') {
+    plan.content.aiStatus = 'approved';
+    plan.content.aiApprovedAt = new Date();
+    plan.content.aiApprovedBy = req.staff._id;
+    plan.markModified('content');
+  }
   await plan.save();
   // 创建推送记录
   await PushRecord.create({
@@ -1784,6 +1790,9 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
   // 审核通过后客户端能收到待随访任务）；如果方案有关联订单，随访完成后据此可联动订单/消费记录状态
   if (plan.type === 'medical_assist') {
     const c = plan.content || {};
+    const isCheckupService = c.serviceDomain === 'annual_checkup'
+      || c.templateSnapshot?.serviceDomain === 'annual_checkup'
+      || /体检/.test(`${c.templateName || ''} ${plan.title || ''}`);
     const selectedAssistantId = plan.content?.staffId || plan.staffId;
     const selectedSupervisorId = plan.content?.supervisorId || plan.staffId;
     const workflowIds = (plan.content?.followUpPlans?.length
@@ -1802,8 +1811,8 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
       c.expert && `医生：${c.expert}`,
       c.reviewerName && `方案审核医生：${c.reviewerName}`,
       (c.serviceDate || c.serviceTime) && `服务时间：${[c.serviceDate, c.serviceTime].filter(Boolean).join(' ')}`,
-      plan.description && `代诊目的：${plan.description}`,
-      c.tasks && `代诊要求：${c.tasks}`,
+      plan.description && `${isCheckupService ? '体检目标' : '服务目标'}：${plan.description}`,
+      c.tasks && `${isCheckupService ? '体检执行要求' : '服务要求'}：${c.tasks}`,
       c.transport && `交通安排：${c.transport}`,
       c.hotel && `住宿安排：${c.hotel}`,
       c.notes && `注意事项：${c.notes}`,
@@ -1833,7 +1842,8 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
       const executorRemindAt = addDays(executorDate, -(workflowPlan.remindDaysBefore ?? 3));
       const supervisorRemindAt = addDays(supervisorDate, -(workflowPlan.remindDaysBefore ?? 3));
       const executorAssignee = resolveAssignee(workflowPlan.executorRole, selectedAssistantId);
-      const supervisorAssignee = resolveAssignee(workflowPlan.supervisorRole, selectedSupervisorId);
+      // 督办人是方案制定时明确选定的人，必须优先于客户档案里的默认归属。
+      const supervisorAssignee = selectedSupervisorId || resolveAssignee(workflowPlan.supervisorRole, selectedSupervisorId);
       const executorTask = await FollowUp.findOneAndUpdate(
         { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'executor', workflowKey },
         { $set: {
@@ -8195,7 +8205,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
 
     // ── 健康规划师：AI就医协助方案待审核 ──
     if (can('medical_assist_plan_review')) {
-      const medicalAssistPlanFilter = { type: 'medical_assist', 'content.aiStatus': 'pending', ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
+      // 已推送方案已进入岗位执行流，不再重复作为“AI待审核”出现。
+      const medicalAssistPlanFilter = { type: 'medical_assist', status: 'draft', 'content.aiStatus': 'pending', ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
       const medicalAssistPlans = await HealthPlan.find(medicalAssistPlanFilter)
         .populate('patientId', 'name').sort({ createdAt: -1 }).limit(50).lean();
       medicalAssistPlans.forEach(p => {

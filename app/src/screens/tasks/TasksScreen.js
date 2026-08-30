@@ -781,7 +781,7 @@ export default function TasksScreen({ navigation }) {
                       </View>
 
                       {/* 随访内容 */}
-                      <Text style={styles.modalSectionLabel}>{detailTask.taskRequirements ? '具体代办事项' : '随访内容'}</Text>
+                      <Text style={styles.modalSectionLabel}>{detailTask.taskRequirements ? '具体服务事项' : '随访内容'}</Text>
                       {detailTask.description
                         ? <Text style={styles.modalContent}>{detailTask.description}</Text>
                         : <Text style={styles.modalNoContent}>健管师会在随访时与您详细沟通，如有疑问可提前联系。</Text>
