@@ -44,6 +44,13 @@ function formatTime(date) {
 }
 
 const PAGE_SIZE = 5
+const TODO_GROUPS = [
+  { key: 'all', label: '全部' },
+  { key: 'report', label: '报告与资料', types: ['report_parse','report_review','report_familydoctor_review','archive_review','summary_review','lifestyle_review','dietary_survey_review','medication_review','supplement_review'] },
+  { key: 'plan', label: '方案与评估', types: ['trend_review','plan_review','nutrition_plan_review','checkup_plan_review','phase_assessment_review','followup_review','service_draft_review','medical_assist_plan_review','service_proposal_review'] },
+  { key: 'risk', label: '风险与异常', types: ['risk_review','bp_alert_review','risk_alert','transfer_human'] },
+  { key: 'content', label: '内容与安排', types: ['push_review','draft_review','supply_plan_review'] },
+]
 
 export default function AiTodosPanel() {
   const nav = useNavigate()
@@ -51,6 +58,7 @@ export default function AiTodosPanel() {
   const [todos, setTodos] = useState([])
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(0)
+  const [group, setGroup] = useState('all')
 
   useEffect(() => {
     staffAPI.getAiTodos()
@@ -111,10 +119,12 @@ export default function AiTodosPanel() {
 
   if (loading) return null
 
-  const overdueCount = todos.filter(t => t.overdue).length
-  const pageCount = Math.max(1, Math.ceil(todos.length / PAGE_SIZE))
+  const activeGroup = TODO_GROUPS.find(item => item.key === group)
+  const filteredTodos = group === 'all' ? todos : todos.filter(todo => activeGroup?.types?.includes(todo.type))
+  const overdueCount = filteredTodos.filter(t => t.overdue).length
+  const pageCount = Math.max(1, Math.ceil(filteredTodos.length / PAGE_SIZE))
   const curPage = Math.min(page, pageCount - 1)
-  const pageTodos = todos.slice(curPage * PAGE_SIZE, curPage * PAGE_SIZE + PAGE_SIZE)
+  const pageTodos = filteredTodos.slice(curPage * PAGE_SIZE, curPage * PAGE_SIZE + PAGE_SIZE)
 
   return (
     <div className="card" style={{ marginBottom: 20, border: overdueCount > 0 ? '1.5px solid #DC354540' : undefined }}>
@@ -138,6 +148,16 @@ export default function AiTodosPanel() {
           )}
         </div>
       </div>
+      {todos.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, padding: '10px 20px 6px', borderTop: '1px solid #F3EFE8', flexWrap: 'wrap' }}>
+          {TODO_GROUPS.map(item => {
+            const count = item.key === 'all' ? todos.length : todos.filter(todo => item.types?.includes(todo.type)).length
+            if (item.key !== 'all' && count === 0) return null
+            const active = group === item.key
+            return <button key={item.key} onClick={() => { setGroup(item.key); setPage(0) }} style={{ border: active ? '1px solid #1E6B50' : '1px solid #DDD7CD', background: active ? '#EAF5F0' : '#fff', color: active ? '#1E6B50' : '#5F6B65', borderRadius: 16, padding: '5px 12px', cursor: 'pointer', fontSize: 12 }}>{item.label} {count}</button>
+          })}
+        </div>
+      )}
       <div className="card-body" style={{ padding: '4px 20px 12px' }}>
         {todos.length === 0 && (
           <div style={{ color: '#8AA89C', fontSize: 13, textAlign: 'center', padding: '16px 0' }}>
@@ -230,7 +250,7 @@ export default function AiTodosPanel() {
             </div>
           )
         })}
-        {todos.length > PAGE_SIZE && (
+        {filteredTodos.length > PAGE_SIZE && (
           <Pagination compact page={curPage + 1} totalPages={pageCount} onChange={next => setPage(next - 1)} />
         )}
       </div>
