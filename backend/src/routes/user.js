@@ -1114,7 +1114,7 @@ router.get('/followup-tasks', auth, async (req, res) => {
       status: { $in: ['planned', 'in_progress', 'missed'] },
       // 岗位执行与督办属于医护内部工作流。客户只查看已推送的服务方案，
       // 不应看到、也不能代替医护人员完成这些内部任务。
-      $nor: [{ sourceType: 'health_plan', taskRole: { $in: ['executor', 'supervisor'] } }],
+      $nor: [{ sourceType: 'health_plan', taskRole: 'supervisor' }],
     })
       .sort({ date: 1 })
       .populate('staffId', 'name role title')
@@ -1124,6 +1124,7 @@ router.get('/followup-tasks', auth, async (req, res) => {
     const data = followups.map(followUp => ({
       ...followUp.toObject(),
       taskRequirements: followUpTaskRequirements(followUp),
+      customerReadOnly: followUp.sourceType === 'health_plan' && followUp.taskRole === 'executor',
     })).sort((a, b) => {
       const aActiveSymptom = a.sourceType === 'symptom' && !['completed', 'cancelled'].includes(a.status);
       const bActiveSymptom = b.sourceType === 'symptom' && !['completed', 'cancelled'].includes(b.status);

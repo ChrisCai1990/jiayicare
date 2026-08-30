@@ -234,7 +234,7 @@ function TaskCard({ task, onToggle, onPress }) {
     : null;
   const stageConf = followupStage ? FOLLOWUP_STAGE[followupStage] : null;
   // 健管专员执行完成的记录，用户端不可撤销勾选（只读展示，避免误触改动医护的处理结果）
-  const checkboxLocked = task.isFollowup && isCompleted && task.completedBy === 'staff';
+  const checkboxLocked = task.customerReadOnly || (task.isFollowup && isCompleted && task.completedBy === 'staff');
 
   return (
     <TouchableOpacity
@@ -509,6 +509,8 @@ export default function TasksScreen({ navigation }) {
     sourceType: f.sourceType || '',
     status: f.status === 'completed' ? 'completed' : (f.status === 'in_progress' ? 'in_progress' : 'pending'),
     completedBy: f.completedBy || null,
+    customerReadOnly: !!f.customerReadOnly,
+    taskRole: f.taskRole || '',
     assignee: f.assignedTo?.name || f.staffId?.name || '',
     isFollowup: true,
   });
@@ -866,7 +868,12 @@ export default function TasksScreen({ navigation }) {
                 <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setDetailTask(null)}>
                   <Text style={styles.modalCloseBtnText}>关闭</Text>
                 </TouchableOpacity>
-                {detailTask.status !== 'completed' ? (
+                {detailTask.customerReadOnly ? (
+                  <View style={styles.modalDoneBtn}>
+                    <Ionicons name="people-outline" size={16} color={colors.primary} />
+                    <Text style={styles.modalDoneBtnText}>由服务人员处理</Text>
+                  </View>
+                ) : detailTask.status !== 'completed' ? (
                   <TouchableOpacity
                     style={[styles.modalCompleteBtn, completing && { opacity: 0.6 }]}
                     onPress={handleCompleteFromModal}
