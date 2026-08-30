@@ -11,6 +11,7 @@ const { calculateHealthScore } = require('../utils/healthScore');
 const { parseIdCard, calcAgeFromBirthDate } = require('../utils/idCard');
 const { getCurrentTenantId, BYPASS } = require('../utils/tenantScope');
 const { followUpTaskRequirements } = require('../utils/medicalAssistRequirements');
+const { isReportInterpretation, activateReportInterpretationTasks } = require('../utils/checkupWorkflow');
 const { reverseFamilyRelation, synchronizeFamilyGroup } = require('../utils/familyLinks');
 // 聚合管道($aggregate)不会被 tenantScopePlugin 的 query 中间件自动拦截，需要在 $match 里手动拼入 tenantId
 const tenantMatchStage = () => {
@@ -1176,6 +1177,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
   };
   const filter = { $and: [ownerFilter, patientFilter, assignedTo ? { assignedTo } : {}, includeFuture === '1' ? {} : availabilityFilter] };
   if (sourceType) filter.sourceType = sourceType;
+  if (sourceType === 'health_plan') filter.isBlocked = { $ne: true };
   // 订单来源的待办(sourceType='order')有独立的"待处理服务预约"展示位，随访列表页需要排除，
   // 避免"预约：医疗代诊服务"这类服务预约混进随访任务列表（2026-07-13反馈）
   if (excludeSourceType) {
@@ -1341,7 +1343,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   if (followUp.sourceHealthPlanId && followUp.taskRole === 'executor' && followUp.status === 'completed') {
     await FollowUp.updateOne(
       { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'supervisor', workflowKey: followUp.workflowKey || '', status: 'planned' },
-      { $set: { status: 'in_progress', nextFollowUpDate: new Date() } }
+      { $set: { status: 'in_progress', isBlocked: false, date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date() } }
     );
   }
   if (followUp.sourceHealthPlanId && followUp.taskRole === 'supervisor' && followUp.status === 'completed') {
@@ -1720,15 +1722,23 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
     const addDays = (date, days) => new Date(date.getTime() + Number(days || 0) * 86400000);
     for (const linkedPlan of linkedPlans) {
       const workflowKey = String(linkedPlan._id);
-      const executorDate = addDays(serviceDate, linkedPlan.fixedToServiceDate ? 0 : (linkedPlan.executorDueOffsetDays ?? -1));
+      const workflowStart = plan.pushedAt || plan.createdAt || new Date();
+      const calculatedExecutorDate = addDays(serviceDate, linkedPlan.fixedToServiceDate ? 0 : (linkedPlan.executorDueOffsetDays ?? -1));
+      const executorDate = calculatedExecutorDate < workflowStart ? new Date(workflowStart) : calculatedExecutorDate;
       const supervisorDate = addDays(serviceDate, linkedPlan.supervisorDueOffsetDays ?? 1);
+      const reportBlocked = isReportInterpretation(linkedPlan.name);
       await FollowUp.updateMany(
         { sourceHealthPlanId: plan._id, workflowKey, taskRole: 'executor', status: { $in: ['planned', 'in_progress'] } },
-        { $set: { date: executorDate, remindAt: addDays(executorDate, -(linkedPlan.remindDaysBefore ?? 3)) } }
+        { $set: {
+          date: executorDate,
+          remindAt: addDays(executorDate, -(linkedPlan.remindDaysBefore ?? 3)),
+          isBlocked: reportBlocked,
+          activationEvent: reportBlocked ? 'checkup_report_uploaded' : '',
+        } }
       );
       await FollowUp.updateMany(
         { sourceHealthPlanId: plan._id, workflowKey, taskRole: 'supervisor', status: { $in: ['planned', 'in_progress'] } },
-        { $set: { date: supervisorDate, remindAt: addDays(supervisorDate, -(linkedPlan.remindDaysBefore ?? 3)) } }
+        { $set: { date: supervisorDate, remindAt: addDays(supervisorDate, -(linkedPlan.remindDaysBefore ?? 3)), isBlocked: true, activationEvent: 'executor_completed' } }
       );
     }
     await ServiceRecord.updateMany(
@@ -1841,13 +1851,16 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
     // 每个被筛选的岗位任务方案各生成一组“执行+督办”；workflowKey 保证重复推送只更新对应组。
     for (const workflowPlan of workflowPlans) {
       const workflowKey = String(workflowPlan._id);
-      const executorDate = addDays(serviceDate, workflowPlan.fixedToServiceDate ? 0 : (workflowPlan.executorDueOffsetDays ?? -1));
+      const workflowStart = plan.pushedAt || plan.createdAt || new Date();
+      const calculatedExecutorDate = addDays(serviceDate, workflowPlan.fixedToServiceDate ? 0 : (workflowPlan.executorDueOffsetDays ?? -1));
+      const executorDate = calculatedExecutorDate < workflowStart ? new Date(workflowStart) : calculatedExecutorDate;
       const supervisorDate = addDays(serviceDate, workflowPlan.supervisorDueOffsetDays ?? 1);
       const executorRemindAt = addDays(executorDate, -(workflowPlan.remindDaysBefore ?? 3));
       const supervisorRemindAt = addDays(supervisorDate, -(workflowPlan.remindDaysBefore ?? 3));
       const executorAssignee = resolveAssignee(workflowPlan.executorRole, selectedAssistantId);
       // 督办人是方案制定时明确选定的人，必须优先于客户档案里的默认归属。
       const supervisorAssignee = selectedSupervisorId || resolveAssignee(workflowPlan.supervisorRole, selectedSupervisorId);
+      const reportBlocked = isReportInterpretation(workflowPlan.name);
       const executorTask = await FollowUp.findOneAndUpdate(
         { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'executor', workflowKey },
         { $set: {
@@ -1856,6 +1869,8 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
           theme: `执行${workflowPlan.name} · ${plan.title || ''}`, content: plan.description || '',
           plannedContent: [requirements, workflowPlan.completionStandard && `完成标准：${workflowPlan.completionStandard}`].filter(Boolean).join('\n'),
           status: 'planned', assignedTo: executorAssignee,
+          isBlocked: reportBlocked,
+          activationEvent: reportBlocked ? 'checkup_report_uploaded' : '',
         } },
         { upsert: true, new: true, setDefaultsOnInsert: true }
       );
@@ -1869,7 +1884,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
             theme: `督办${workflowPlan.name} · ${plan.title || ''}`,
             content: '关注执行进度；执行人员完成后核对服务结果、资料归档及后续安排。',
             plannedContent: `关联执行任务：${executorTask.theme}\n计划服务时间：${serviceDate.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`,
-            status: 'planned',
+            status: 'planned', isBlocked: true, activationEvent: 'executor_completed',
           } },
           { upsert: true, new: true, setDefaultsOnInsert: true }
         );
@@ -2260,6 +2275,7 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
       planId: planId || null, planItemId: planItemId || null,
       screeningL1: resolvedScreeningL1, screeningL2: screeningL2 || '',
     });
+    await activateReportInterpretationTasks(patientId, new Date());
     // report 已成功入库，回填体检方案条目失败不应让前端误判整次上传失败（此前 plan.save() 抛错会被下面
     // 的 catch 捕到、返回500"上传失败"，但 report 记录其实已经存在——健管专员据此又重传一次，导致同一
     // (checkDate, screeningL1) 下出现两条真实报告）。回填单独 try/catch，失败只记日志不影响上传结果。

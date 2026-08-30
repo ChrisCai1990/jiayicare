@@ -27,6 +27,8 @@ const followUpSchema = new mongoose.Schema({
   taskRole: { type: String, enum: ['executor', 'supervisor', ''], default: '' },
   workflowKey: { type: String, default: '' }, // 同一子方案内对应的岗位任务方案ID；支持一站式服务拆成多组任务
   dependsOnTaskId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUp', default: null },
+  isBlocked: { type: Boolean, default: false }, // 前置节点未完成时不进入任何工作台/客户任务
+  activationEvent: { type: String, enum: ['', 'executor_completed', 'checkup_report_uploaded'], default: '' },
   remindAt: { type: Date, default: null },
   nextFollowUpDate: { type: Date, default: null },
   tags:     { type: [String], default: [] }, // 标签，如 ['用药提醒','复查提示']

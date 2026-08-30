@@ -3,6 +3,7 @@ const multer = require('multer');
 const jwt = require('jsonwebtoken');
 const auth = require('../middleware/auth');
 const MedicalReport = require('../models/MedicalReport');
+const { activateReportInterpretationTasks } = require('../utils/checkupWorkflow');
 const HealthRecord = require('../models/HealthRecord');
 const { uploadBase64, deleteFile, urlToKey, signStoredUrl, getObjectStream } = require('../utils/oss');
 const { parseImage } = require('../utils/ai');
@@ -803,6 +804,7 @@ router.post('/', auth, async (req, res) => {
       institution:        institution        || hospital || '',
       reportItems:        reportItems        || [],
     });
+    await activateReportInterpretationTasks(req.user._id, new Date());
 
     const { content: _, ...reportObj } = report.toObject();
     res.status(201).json({ success: true, data: reportObj });
