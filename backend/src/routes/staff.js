@@ -11,7 +11,7 @@ const { calculateHealthScore } = require('../utils/healthScore');
 const { parseIdCard, calcAgeFromBirthDate } = require('../utils/idCard');
 const { getCurrentTenantId, BYPASS } = require('../utils/tenantScope');
 const { followUpTaskRequirements } = require('../utils/medicalAssistRequirements');
-const { isReportInterpretation, activateReportInterpretationTasks } = require('../utils/checkupWorkflow');
+const { isReportInterpretation } = require('../utils/checkupWorkflow');
 const { reverseFamilyRelation, synchronizeFamilyGroup } = require('../utils/familyLinks');
 // 聚合管道($aggregate)不会被 tenantScopePlugin 的 query 中间件自动拦截，需要在 $match 里手动拼入 tenantId
 const tenantMatchStage = () => {
@@ -1718,7 +1718,8 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
     const linkedIds = (plan.content.followUpPlans?.length
       ? plan.content.followUpPlans.map(item => item.id || item._id).filter(Boolean)
       : [plan.content.followUpPlanId].filter(Boolean));
-    const linkedPlans = await FollowUpPlan.find({ _id: { $in: linkedIds } }).lean();
+    const linkedPlans = (await FollowUpPlan.find({ _id: { $in: linkedIds } }).lean())
+      .filter(item => !isReportInterpretation(item.name));
     const addDays = (date, days) => new Date(date.getTime() + Number(days || 0) * 86400000);
     for (const linkedPlan of linkedPlans) {
       const workflowKey = String(linkedPlan._id);
@@ -1726,21 +1727,25 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
       const calculatedExecutorDate = addDays(serviceDate, linkedPlan.fixedToServiceDate ? 0 : (linkedPlan.executorDueOffsetDays ?? -1));
       const executorDate = calculatedExecutorDate < workflowStart ? new Date(workflowStart) : calculatedExecutorDate;
       const supervisorDate = addDays(serviceDate, linkedPlan.supervisorDueOffsetDays ?? 1);
-      const reportBlocked = isReportInterpretation(linkedPlan.name);
       await FollowUp.updateMany(
         { sourceHealthPlanId: plan._id, workflowKey, taskRole: 'executor', status: { $in: ['planned', 'in_progress'] } },
         { $set: {
           date: executorDate,
           remindAt: addDays(executorDate, -(linkedPlan.remindDaysBefore ?? 3)),
-          isBlocked: reportBlocked,
-          activationEvent: reportBlocked ? 'checkup_report_uploaded' : '',
+          isBlocked: false,
+          activationEvent: '',
         } }
       );
       await FollowUp.updateMany(
         { sourceHealthPlanId: plan._id, workflowKey, taskRole: 'supervisor', status: { $in: ['planned', 'in_progress'] } },
-        { $set: { date: supervisorDate, remindAt: addDays(supervisorDate, -(linkedPlan.remindDaysBefore ?? 3)), isBlocked: true, activationEvent: 'executor_completed' } }
+        { $set: { date: supervisorDate, remindAt: addDays(supervisorDate, -(linkedPlan.remindDaysBefore ?? 3)), isBlocked: false, activationEvent: '' } }
       );
     }
+    const reportCollectionDate = addDays(serviceDate, 1);
+    await FollowUp.updateMany(
+      { sourceHealthPlanId: plan._id, workflowKey: 'system:checkup_report_collection', status: { $in: ['planned', 'in_progress'] } },
+      { $set: { date: reportCollectionDate, remindAt: reportCollectionDate } }
+    );
     await ServiceRecord.updateMany(
       { sourceHealthPlanId: plan._id, type: 'medical_visit' },
       { $set: { date: serviceDate } }
@@ -1812,7 +1817,8 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
     const workflowIds = (plan.content?.followUpPlans?.length
       ? plan.content.followUpPlans.map(item => item.id || item._id).filter(Boolean)
       : [plan.content?.followUpPlanId].filter(Boolean));
-    const workflowPlans = await FollowUpPlan.find({ _id: { $in: workflowIds }, status: 'active' }).lean();
+    const workflowPlans = (await FollowUpPlan.find({ _id: { $in: workflowIds }, status: 'active' }).lean())
+      .filter(item => !isReportInterpretation(item.name));
     if (!workflowPlans.length) return res.status(400).json({ success: false, message: '关联的岗位任务方案已停用或不存在' });
     const serviceDate = plan.content?.serviceDate
       ? new Date(`${plan.content.serviceDate}T${/^\d{2}:\d{2}/.test(plan.content?.serviceTime || '') ? plan.content.serviceTime.slice(0, 5) : '09:00'}:00+08:00`)
@@ -1860,7 +1866,6 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
       const executorAssignee = resolveAssignee(workflowPlan.executorRole, selectedAssistantId);
       // 督办人是方案制定时明确选定的人，必须优先于客户档案里的默认归属。
       const supervisorAssignee = selectedSupervisorId || resolveAssignee(workflowPlan.supervisorRole, selectedSupervisorId);
-      const reportBlocked = isReportInterpretation(workflowPlan.name);
       const executorTask = await FollowUp.findOneAndUpdate(
         { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'executor', workflowKey },
         { $set: {
@@ -1869,8 +1874,8 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
           theme: `执行${workflowPlan.name} · ${plan.title || ''}`, content: plan.description || '',
           plannedContent: [requirements, workflowPlan.completionStandard && `完成标准：${workflowPlan.completionStandard}`].filter(Boolean).join('\n'),
           status: 'planned', assignedTo: executorAssignee,
-          isBlocked: reportBlocked,
-          activationEvent: reportBlocked ? 'checkup_report_uploaded' : '',
+          isBlocked: false,
+          activationEvent: '',
         } },
         { upsert: true, new: true, setDefaultsOnInsert: true }
       );
@@ -1884,12 +1889,38 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
             theme: `督办${workflowPlan.name} · ${plan.title || ''}`,
             content: '关注执行进度；执行人员完成后核对服务结果、资料归档及后续安排。',
             plannedContent: `关联执行任务：${executorTask.theme}\n计划服务时间：${serviceDate.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`,
-            status: 'planned', isBlocked: true, activationEvent: 'executor_completed',
+            status: 'planned', isBlocked: false, activationEvent: '',
           } },
           { upsert: true, new: true, setDefaultsOnInsert: true }
         );
       }
     }
+    // 报告回收属于健管过程督办，不是预先安排的“报告解读”。体检次日进入健管专员工作台，
+    // 报告上传后继续走独立的待解析→AI解析→专业审核链路。
+    const reportCollectionAssignee = selectedSupervisorId || patient?.assignedHealthManager;
+    if (reportCollectionAssignee) {
+      const reportCollectionDate = addDays(serviceDate, 1);
+      await FollowUp.findOneAndUpdate(
+        { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'supervisor', workflowKey: 'system:checkup_report_collection' },
+        { $set: {
+          patientId: plan.patientId, staffId: plan.staffId, assignedTo: reportCollectionAssignee,
+          date: reportCollectionDate, remindAt: reportCollectionDate,
+          coordinationGroupId, workflowKey: 'system:checkup_report_collection', taskRole: 'supervisor',
+          dependsOnTaskId: null, followUpSchemeId: null,
+          theme: `督办【体检报告回收】 · ${plan.title || ''}`,
+          content: '体检完成后跟进报告出具进度，回收并核对报告资料；上传后进入独立的报告解析与专业审核流程。',
+          plannedContent: `体检日期：${serviceDate.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n完成标准：报告资料回收齐全并已上传系统。`,
+          status: 'planned', isBlocked: false, activationEvent: '',
+        } },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+    }
+    // Admin已取消“体检报告解读”岗位任务；清理旧方案残留，但不影响报告上传后的解析审核待办。
+    const obsoleteReportPlanIds = await FollowUpPlan.find({ name: /报告.*(?:解读|解析)|(?:解读|解析).*报告/ }).distinct('_id');
+    await FollowUp.updateMany(
+      { sourceHealthPlanId: plan._id, followUpSchemeId: { $in: obsoleteReportPlanIds }, status: { $in: ['planned', 'in_progress'] } },
+      { $set: { status: 'cancelled', cancelReason: '流程调整：报告上传后进入独立解析审核链路' } }
+    );
     // 方案推送=本次服务预约已正式处理完毕，把下单时生成、指派给健康规划师/就医专员的原始订单待办标记完成，
     // 否则该待办会一直挂在"待处理服务预约"/"待随访任务"里，即使专员已经走完生成方案→推送的完整流程
     // （2026-07-13 反馈：进详情页/工作台待随访任务处理后应该自动转已完成，不该继续停在待处理）
@@ -2275,7 +2306,6 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
       planId: planId || null, planItemId: planItemId || null,
       screeningL1: resolvedScreeningL1, screeningL2: screeningL2 || '',
     });
-    await activateReportInterpretationTasks(patientId, new Date());
     // report 已成功入库，回填体检方案条目失败不应让前端误判整次上传失败（此前 plan.save() 抛错会被下面
     // 的 catch 捕到、返回500"上传失败"，但 report 记录其实已经存在——健管专员据此又重传一次，导致同一
     // (checkDate, screeningL1) 下出现两条真实报告）。回填单独 try/catch，失败只记日志不影响上传结果。
