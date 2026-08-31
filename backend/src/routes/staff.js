@@ -10270,6 +10270,10 @@ async function runReportPageParse(reportId, pageNum) {
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) throw new Error('报告不存在');
+  const { describeExistingReportItems, filterMissingReportItems } = require('../utils/reportPageSupplement');
+  const oldPageAtStart = (report.reportItems || []).filter(item => Number(item.sourcePage) === pageNum);
+  const existingItemText = describeExistingReportItems(oldPageAtStart);
+  const missingOnlyPrompt = `\n\n【差量补提——最高优先级】本页已有项目：${existingItemText || '无'}。\n只输出上述清单之外的真实遗漏项目；已有项目即使数值、单位、参考范围或状态识别不同，也禁止再次输出。如无遗漏，返回 items=[]。`;
   const reportUser = await User.findById(report.user).select('age').lean();
   const usePediatricBodyComposition = isPediatricAge(reportUser?.age);
   const isPdf = isPdfReport(report);
@@ -10305,20 +10309,20 @@ async function runReportPageParse(reportId, pageNum) {
       const pagePrompt = report.type === 'body_comp' && usePediatricBodyComposition
         ? REPORT_PARSE_PROMPT + PEDIATRIC_BODY_COMPOSITION_PROMPT
         : REPORT_PARSE_PROMPT;
-      const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}\n\n【单页补提】${regionHint}从上到下、从左到右逐行提取全部实际结果，不得跳过任何栏目。`, { isUrl: false, model: 'qwen-vl-max', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 120000 });
+      const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}${missingOnlyPrompt}\n\n【单页补提】${regionHint}从上到下、从左到右逐行核对全页，仅提取已有清单中没有的项目。`, { isUrl: false, model: 'qwen-vl-max', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 120000 });
       parsed = safeParseJSON(raw);
-      if (parsed?.items?.length) break;
+      if (Array.isArray(parsed?.items)) break;
     } catch (error) {
       if (attempt === 3) throw error;
       console.log(`[parse-page] ${reportId} P${pageNum} 第${attempt}次失败，自动重试: ${error.message}`);
     }
     }
-    if (!parsed?.items?.length) throw new Error(`第${pageNum}页${images.length > 1 ? (regionIndex === 0 ? '上半部分' : '下半部分') : ''}未识别到有效项目，原数据未改动`);
+    if (!Array.isArray(parsed?.items)) throw new Error(`第${pageNum}页${images.length > 1 ? (regionIndex === 0 ? '上半部分' : '下半部分') : ''}未返回有效结果，原数据未改动`);
     let regionItems = parsed.items;
     // 单页补提必须再做一次覆盖复核，专门扫描双栏表格的右半侧和下半部；只合并新增项，不覆盖已有人工数据。
     try {
-      const existingNames = regionItems.map(item => str(item.name)).filter(Boolean).join('、');
-      const auditRaw = await parseImage(images[regionIndex], `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n已提取项目：${existingNames || '无'}。请逐行核对右半侧后再核对左半侧，只输出遗漏项目。`, { isUrl: false, model: 'qwen-vl-max', maxTokens: 5000, timeoutMs: 120000 });
+      const existingNames = [existingItemText, ...regionItems.map(item => str(item.name)).filter(Boolean)].filter(Boolean).join('、');
+      const auditRaw = await parseImage(images[regionIndex], `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n本页已有或本轮已找到的项目：${existingNames || '无'}。请逐行核对右半侧后再核对左半侧，只输出清单之外的遗漏项目。`, { isUrl: false, model: 'qwen-vl-max', maxTokens: 5000, timeoutMs: 120000 });
       const audit = safeParseJSON(auditRaw);
       if (audit?.items?.length) regionItems = mergeCoverageAuditItems(regionItems, audit.items);
     } catch (auditError) {
@@ -10326,7 +10330,8 @@ async function runReportPageParse(reportId, pageNum) {
     }
     parsedItems = mergeCoverageAuditItems(parsedItems, regionItems);
   }
-  let newPage = tagReportPageItems(parsedItems, pageNum);
+  // 模型即使违反差量指令返回整页，也只允许真正缺项进入后续合并。
+  let newPage = tagReportPageItems(filterMissingReportItems(oldPageAtStart, parsedItems), pageNum);
   if (usePediatricBodyComposition && isBodyCompositionPage({}, newPage, report.type)) {
     newPage = sanitizePediatricBodyCompositionPage(newPage, true);
   }
@@ -10335,6 +10340,7 @@ async function runReportPageParse(reportId, pageNum) {
   newPage = normalizeSingleExamReportItems(normalizeDepartmentExamItems(normalizeBreathTestItems(newPage, report)), report);
   const latest = await MedicalReport.findById(reportId);
   const oldPage = (latest.reportItems || []).filter(item => Number(item.sourcePage) === pageNum);
+  newPage = filterMissingReportItems(oldPage, newPage);
   const mergedPage = mergeCoverageAuditItems(oldPage, newPage);
   const classifiedPage = await classifyItemsAsync(mergedPage);
   const preserved = (latest.reportItems || []).filter(item => Number(item.sourcePage) !== pageNum);
