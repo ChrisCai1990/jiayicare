@@ -520,11 +520,12 @@ const DOCUMENT_CATEGORIES = [
 ]
 const DOCUMENT_CATEGORY_LABEL = Object.fromEntries(DOCUMENT_CATEGORIES.map(item => [item.key, item.label]))
 const inferDocumentCategory = report => {
+  // 已保存的资料分类是人工选择；标题推断仅用于没有分类的历史资料。
+  if (DOCUMENT_CATEGORY_LABEL[report.documentCategory]) return report.documentCategory
   const title = report.title || ''
   // 这些历史资料过去通常被保存为“其他”，明确业务名称应优先于旧的兜底分类。
   if (/慢性食物过敏|肠道菌群基因测序|肠道功能分析|荷尔蒙检查|压力荷尔蒙|尿液有机酸|有机酸\s*75|新陈代谢分析|端粒长度/.test(title)) return 'functional_medicine'
   if (/阖家欢精准基因检测/.test(title)) return 'genetic_test'
-  if (report.documentCategory) return report.documentCategory
   if (/门诊|门诊病历|门诊记录/.test(title)) return 'outpatient_record'
   if (/住院|出院|入院|手术记录|住院小结/.test(title)) return 'inpatient_record'
   if (/处方|医嘱|用药单/.test(title)) return 'prescription_order'
@@ -9031,7 +9032,7 @@ export default function PatientDetailPage() {
                                   setEditingReport(r)
                                   setEditingReportForm({
                                     title: r.title || '', hospital: r.hospital || r.institution || '', date: r.date || r.checkDate || '',
-                                    note: r.note || '', type: r.type || 'general_exam',
+                                    note: r.note || '', documentCategory: inferDocumentCategory(r),
                                   })
                                   setOpenReportActionId(null)
                                 }}>编辑报告</button>
@@ -10000,12 +10001,12 @@ export default function PatientDetailPage() {
                 <input className="form-input" type="date" value={editingReportForm.date || ''}
                   onChange={e => setEditingReportForm(f => ({ ...f, date: e.target.value }))} />
               </div>
-              {/* 报告归类（一级大类，与用户端上传保持同一套）：客户上传时可能归错，健管可在此改正 */}
+              {/* 原始资料分类与上传、列表共用；不能修改专项筛查 type/screeningL1。 */}
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">报告归类</label>
-                <select className="form-input" value={editingReportForm.type || ''}
-                  onChange={e => setEditingReportForm(f => ({ ...f, type: e.target.value }))}>
-                  {REPORT_L1_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+                <select className="form-input" value={editingReportForm.documentCategory || ''}
+                  onChange={e => setEditingReportForm(f => ({ ...f, documentCategory: e.target.value }))}>
+                  {DOCUMENT_CATEGORIES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
                 </select>
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
