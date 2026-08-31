@@ -2,9 +2,10 @@ const mongoose = require('mongoose');
 const { randomUUID } = require('crypto');
 
 // itemType describes one extracted result, while "pathology" is a report-level
-// type. Normalize this legacy client/AI value so review and page re-extraction
-// cannot reject the entire report.
-const normalizeReportItemType = value => value === 'pathology' ? 'imaging' : value;
+// type and "diagnosis" is the name of a text field. Older AI/client output has
+// used both values as itemType; they represent narrative examination results,
+// so normalize them before enum validation instead of rejecting the report.
+const normalizeReportItemType = value => ['pathology', 'diagnosis'].includes(value) ? 'imaging' : value;
 
 // 兼容历史 AI 曾返回的风险等级词。reportItems.status 表示是否异常，低风险等同正常；
 // 其他未知值继续交给 enum 拒绝，避免把无法判断的状态静默改成正常。

@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 
 const MedicalReport = require('../src/models/MedicalReport');
 
-test('legacy pathology itemType is normalized before MedicalReport validation', () => {
+test('legacy narrative itemType values are normalized before MedicalReport validation', () => {
   const report = new MedicalReport({
     user: new mongoose.Types.ObjectId(),
     title: '年度体检报告',
@@ -12,11 +12,12 @@ test('legacy pathology itemType is normalized before MedicalReport validation', 
     reportItems: [
       { name: '眼科检查', itemType: 'pathology', findings: '眼睑：健康' },
       { name: '耳鼻喉科检查', itemType: 'pathology', findings: '耳部：未见明显异常' },
+      { name: '超声诊断', itemType: 'diagnosis', diagnosis: '未见明显异常' },
     ],
   });
 
   assert.equal(report.validateSync(), undefined);
-  assert.deepEqual(report.reportItems.map(item => item.itemType), ['imaging', 'imaging']);
+  assert.deepEqual(report.reportItems.map(item => item.itemType), ['imaging', 'imaging', 'imaging']);
 });
 
 test('unknown itemType remains invalid instead of being silently accepted', () => {
