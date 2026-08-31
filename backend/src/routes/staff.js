@@ -10270,10 +10270,13 @@ async function runReportPageParse(reportId, pageNum) {
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) throw new Error('报告不存在');
-  const { describeExistingReportItems, filterMissingReportItems } = require('../utils/reportPageSupplement');
-  const oldPageAtStart = (report.reportItems || []).filter(item => Number(item.sourcePage) === pageNum);
+  const { describeExistingReportItems, filterMissingReportItems, inferMissingUltrasoundOrgans } = require('../utils/reportPageSupplement');
+  const belongsToRequestedPage = item => Number(item.sourcePage) === pageNum || (!item.sourcePage && pageNum === 1);
+  const oldPageAtStart = (report.reportItems || []).filter(belongsToRequestedPage);
   const existingItemText = describeExistingReportItems(oldPageAtStart);
-  const missingOnlyPrompt = `\n\n【差量补提——最高优先级】本页已有项目：${existingItemText || '无'}。\n只输出上述清单之外的真实遗漏项目；已有项目即使数值、单位、参考范围或状态识别不同，也禁止再次输出。如无遗漏，返回 items=[]。`;
+  const targetOrgans = inferMissingUltrasoundOrgans(oldPageAtStart);
+  const targetText = targetOrgans.map(item => item.label).join('、');
+  const missingOnlyPrompt = `\n\n【差量补提——最高优先级】本页已有项目：${existingItemText || '无'}。${targetText ? `\n程序已确认只缺：${targetText}。仅允许输出这些器官，不得输出任何其他项目。` : ''}\n只输出已有清单之外的真实遗漏项目；每个影像项的 findings 必须逐字抄录并包含对应器官原词，不得输出“未见明显异常回声”等无器官出处的通用句。已有项目即使字段识别不同也禁止再次输出。如看不清或无遗漏，返回 items=[]，禁止猜测。`;
   const reportUser = await User.findById(report.user).select('age').lean();
   const usePediatricBodyComposition = isPediatricAge(reportUser?.age);
   const isPdf = isPdfReport(report);
@@ -10305,7 +10308,7 @@ async function runReportPageParse(reportId, pageNum) {
     let parsed = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const regionHint = images.length > 1 ? `这是第${pageNum}页的${regionIndex === 0 ? '上半部分' : '下半部分'}，边界有重叠；` : '';
+      const regionHint = images.length > 1 ? `这是第${pageNum}页的${regionIndex === 0 ? '左半部分' : '右半部分'}，边界有重叠；` : '';
       const pagePrompt = report.type === 'body_comp' && usePediatricBodyComposition
         ? REPORT_PARSE_PROMPT + PEDIATRIC_BODY_COMPOSITION_PROMPT
         : REPORT_PARSE_PROMPT;
@@ -10331,7 +10334,7 @@ async function runReportPageParse(reportId, pageNum) {
     parsedItems = mergeCoverageAuditItems(parsedItems, regionItems);
   }
   // 模型即使违反差量指令返回整页，也只允许真正缺项进入后续合并。
-  let newPage = tagReportPageItems(filterMissingReportItems(oldPageAtStart, parsedItems), pageNum);
+  let newPage = tagReportPageItems(filterMissingReportItems(oldPageAtStart, parsedItems, { targetOrgans }), pageNum);
   if (usePediatricBodyComposition && isBodyCompositionPage({}, newPage, report.type)) {
     newPage = sanitizePediatricBodyCompositionPage(newPage, true);
   }
@@ -10339,19 +10342,35 @@ async function runReportPageParse(reportId, pageNum) {
   if (useZheyiTemplate) newPage = zheyiTemplate.normalizeZheyiItems(newPage);
   newPage = normalizeSingleExamReportItems(normalizeDepartmentExamItems(normalizeBreathTestItems(newPage, report)), report);
   const latest = await MedicalReport.findById(reportId);
-  const oldPage = (latest.reportItems || []).filter(item => Number(item.sourcePage) === pageNum);
-  newPage = filterMissingReportItems(oldPage, newPage);
+  const oldPage = (latest.reportItems || []).filter(belongsToRequestedPage);
+  newPage = filterMissingReportItems(oldPage, newPage, { targetOrgans });
+  const acceptedSupplementItems = [...newPage];
   const mergedPage = mergeCoverageAuditItems(oldPage, newPage);
   const classifiedPage = await classifyItemsAsync(mergedPage);
-  const preserved = (latest.reportItems || []).filter(item => Number(item.sourcePage) !== pageNum);
+  const preserved = (latest.reportItems || []).filter(item => !belongsToRequestedPage(item));
   const combined = [...preserved, ...classifiedPage]
     .sort((a, b) => Number(a.sourcePage || 0) - Number(b.sourcePage || 0));
+  const completedAt = new Date();
+  const pageParseHistory = [...(Array.isArray(latest.pageParseHistory) ? latest.pageParseHistory : []), {
+    pageNum,
+    startedAt: report.pageParseStatus?.startedAt || new Date(),
+    completedAt,
+    targetOrgans,
+    beforeItems: oldPageAtStart,
+    aiCandidates: parsedItems,
+    acceptedItems: acceptedSupplementItems,
+    afterItems: classifiedPage,
+  }].slice(-3);
+  const resultMessage = acceptedSupplementItems.length
+    ? `第${pageNum}页补提完成，新增${acceptedSupplementItems.length}项，本页共${classifiedPage.length}项`
+    : `第${pageNum}页未找到有原文证据的遗漏项，已保留原${oldPage.length}项`;
   await MedicalReport.findByIdAndUpdate(reportId, {
     reportItems: combined,
     aiStatus: 'pending',
-    pageParseStatus: { pageNum, status: 'success', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt: new Date(), message: `第${pageNum}页补提完成，共${classifiedPage.length}项`, itemCount: classifiedPage.length },
+    pageParseStatus: { pageNum, status: 'success', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt, message: resultMessage, itemCount: acceptedSupplementItems.length },
+    pageParseHistory,
   });
-  console.log(`[parse-page] ${reportId} P${pageNum} 完成：${oldPage.length}→${classifiedPage.length}，其他页保留${preserved.length}项`);
+  console.log(`[parse-page] ${reportId} P${pageNum} 完成：原${oldPage.length}项，AI候选${parsedItems.length}项，接受${acceptedSupplementItems.length}项，其他页保留${preserved.length}项`);
 }
 
 // POST /api/staff/medical-reports/:id/parse-ai — 医护端触发AI解析（异步）
