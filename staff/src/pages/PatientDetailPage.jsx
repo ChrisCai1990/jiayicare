@@ -11454,6 +11454,7 @@ function SendMessageModal({ patientId, patientName, onClose }) {
   const [msgs, setMsgs] = useState([])
   const [loading, setLoading] = useState(true)
   const [input, setInput] = useState('')
+  const [images, setImages] = useState([])
   const [sending, setSending] = useState(false)
   const [humanActive, setHumanActive] = useState(false)
   const [switchingMode, setSwitchingMode] = useState(false)
@@ -11507,12 +11508,15 @@ function SendMessageModal({ patientId, patientName, onClose }) {
   }, [msgs])
 
   const send = async () => {
-    if (!input.trim() || sending) return
+    if ((!input.trim() && !images.length) || sending) return
     setSending(true)
     try {
-      const res = await staffAPI.replyChatMessage(patientId, input.trim())
+      const res = await staffAPI.replyChatMessage(patientId, input.trim(), {
+        images: images.map(({ data, mimeType }) => ({ data, mimeType })),
+      })
       setHumanActive(true)
       setInput('')
+      setImages([])
       isNearBottomRef.current = true // 自己发消息后，无论之前翻到哪，都应该跟到底部
       if (res.data) setMsgs(prev => [...prev, res.data])
       setTimeout(() => scrollRef.current?.scrollTo({ top: 99999, behavior: 'smooth' }), 80)
@@ -11521,6 +11525,30 @@ function SendMessageModal({ patientId, patientName, onClose }) {
   }
 
   const handleKey = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }
+
+  const addImageFiles = async (files) => {
+    const available = 9 - images.length
+    const picked = Array.from(files || []).filter(file => file.type?.startsWith('image/')).slice(0, available)
+    if (!picked.length) return
+    const oversized = picked.find(file => file.size > 8 * 1024 * 1024)
+    if (oversized) { toast('单张图片不能超过 8MB'); return }
+    const next = await Promise.all(picked.map(file => new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve({ data: reader.result, mimeType: file.type || 'image/jpeg', name: file.name })
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })))
+    setImages(prev => [...prev, ...next].slice(0, 9))
+  }
+
+  const handlePaste = async (event) => {
+    const files = Array.from(event.clipboardData?.items || [])
+      .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+      .map(item => item.getAsFile()).filter(Boolean)
+    if (!files.length) return
+    event.preventDefault()
+    try { await addImageFiles(files) } catch { toast('读取粘贴图片失败') }
+  }
 
   const startVoice = async () => {
     if (recording || sending) return
@@ -11537,7 +11565,7 @@ function SendMessageModal({ patientId, patientName, onClose }) {
         reader.onload = async () => {
           setSending(true)
           try {
-            const res = await staffAPI.replyChatMessage(patientId, '', { data: reader.result, mimeType: blob.type || 'audio/webm', duration })
+            const res = await staffAPI.replyChatMessage(patientId, '', { audio: { data: reader.result, mimeType: blob.type || 'audio/webm', duration } })
             setHumanActive(true)
             if (res.data) setMsgs(prev => [...prev, res.data])
           } catch (err) { toast(err.message || '语音发送失败') }
@@ -11647,6 +11675,9 @@ function SendMessageModal({ patientId, patientName, onClose }) {
                       position: 'relative',
                     }}>
                       {m.audioUrl && <audio controls preload="none" src={m.audioUrl} style={{ display: 'block', width: 230, maxWidth: '100%', marginBottom: 4 }} />}
+                      {(m.imageUrls?.length ? m.imageUrls : (m.imageUrl ? [m.imageUrl] : [])).map((url, imageIndex) => (
+                        <img key={`${url}-${imageIndex}`} src={url} alt="对话图片" onClick={() => window.open(url, '_blank')} style={{ display: 'block', width: 220, maxWidth: '100%', maxHeight: 260, objectFit: 'cover', borderRadius: 8, marginBottom: 6, cursor: 'zoom-in' }} />
+                      ))}
                       {m.audioUrl && m.audioTranscript && <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #E0D9CE', fontSize: 12 }}>转写：{m.audioTranscript}</div>}
                       {(!m.audioUrl || m.content !== '[语音消息]') && m.content}
                       {canRecall && (
@@ -11666,25 +11697,42 @@ function SendMessageModal({ patientId, patientName, onClose }) {
         </div>
 
         {/* 输入栏 */}
-        <div style={{ borderTop: '1px solid #E0D9CE', padding: '10px 14px', display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0, backgroundColor: '#fff' }}>
+        <div style={{ borderTop: '1px solid #E0D9CE', padding: '10px 14px', flexShrink: 0, backgroundColor: '#fff' }}>
+          {images.length > 0 && (
+            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 8 }}>
+              {images.map((image, index) => (
+                <div key={index} style={{ position: 'relative', flexShrink: 0 }}>
+                  <img src={image.data} alt="待发送图片" style={{ width: 58, height: 58, objectFit: 'cover', borderRadius: 8, border: '1px solid #E0D9CE' }} />
+                  <button type="button" aria-label="移除图片" onClick={() => setImages(prev => prev.filter((_, i) => i !== index))} style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, padding: 0, borderRadius: '50%', border: 0, background: '#1A2B24', color: '#fff', cursor: 'pointer' }}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
           <textarea
             style={{ flex: 1, border: '1px solid #E0D9CE', borderRadius: 10, padding: '8px 12px', fontSize: 14, resize: 'none', outline: 'none', maxHeight: 100, lineHeight: 1.5, fontFamily: 'inherit' }}
             rows={1}
-            placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+            placeholder="输入消息或粘贴图片，Enter 发送"
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKey}
+            onPaste={handlePaste}
           />
+          <label title="选择图片" style={{ padding: '8px 10px', borderRadius: 10, background: '#F2EDE3', color: '#1E6B50', cursor: images.length >= 9 ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: 13, opacity: images.length >= 9 ? 0.5 : 1 }}>
+            图片
+            <input type="file" accept="image/*" multiple disabled={images.length >= 9} onChange={async e => { try { await addImageFiles(e.target.files) } catch { toast('读取图片失败') } finally { e.target.value = '' } }} style={{ display: 'none' }} />
+          </label>
           <button
             onClick={send}
-            disabled={sending || !input.trim()}
-            style={{ padding: '8px 16px', borderRadius: 10, background: '#1E6B50', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14, opacity: (sending || !input.trim()) ? 0.5 : 1 }}
+            disabled={sending || (!input.trim() && !images.length)}
+            style={{ padding: '8px 16px', borderRadius: 10, background: '#1E6B50', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14, opacity: (sending || (!input.trim() && !images.length)) ? 0.5 : 1 }}
           >
             {sending ? '…' : '发送'}
           </button>
           <button type="button" onMouseDown={startVoice} onMouseUp={stopVoice} onMouseLeave={stopVoice} onTouchStart={startVoice} onTouchEnd={stopVoice} disabled={sending} style={{ padding: '8px 12px', borderRadius: 10, background: recording ? '#DC3545' : '#E8F5EF', color: recording ? '#fff' : '#1E6B50', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>
             {recording ? '松开发送' : '按住说话'}
           </button>
+          </div>
         </div>
       </div>
     </div>

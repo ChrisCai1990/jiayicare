@@ -231,7 +231,7 @@ export const staffAPI = {
   // P4 — Direct message to patient
   sendMessageToPatient: (id, data) => req(`/staff/patients/${id}/message`, { method: 'POST', body: JSON.stringify(data) }),
   getChatThread:   (userId, role = 'manager') => req(`/staff/user-messages/${userId}/thread?role=${role}`),
-  replyChatMessage: (userId, content, audio = null) => req(`/staff/user-messages/${userId}/reply`, { method: 'POST', body: JSON.stringify({ content, audio }) }),
+  replyChatMessage: (userId, content, media = {}) => req(`/staff/user-messages/${userId}/reply`, { method: 'POST', body: JSON.stringify({ content, ...media }) }),
   recallChatMessage: (messageId) => req(`/staff/user-messages/${messageId}/recall`, { method: 'PATCH' }),
   setChatHumanActive: (userId, humanActive, role = 'manager') => req(`/staff/user-messages/${userId}/ai-mode`, { method: 'PATCH', body: JSON.stringify({ humanActive, role }) }),
 
