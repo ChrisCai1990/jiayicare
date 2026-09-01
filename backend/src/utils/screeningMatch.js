@@ -116,11 +116,19 @@ function matchAll() { return []; }
 
 // ── 新版：admin「分类管理」(ProjectCategory) 索引 ──────────────────────
 // 叶子节点（没有子分类的节点）才是可匹配的"项目"，非叶子节点是纯分类分组，不参与匹配。
-// 名称含"功能检测"/"功能医学"的 L1 分类，跟旧版 hp 类一样不自动归类，只能人工在OCR审核弹窗手动选。
+// 功能医学报告是否整份进入AI解析由 isFunctionalMedicineL1 单独控制；已经从其他报告中提取出的
+// 项目仍应按Admin目录自动归类。不能把“跳过超长报告解析”扩大成“分类节点不可匹配”，否则
+// Admin已绑定的食物IgG4等项目既不能自动归类，也无法在人工下拉中选择。
 let adminIndexCache = null;
 let functionalMedicineL1Ids = new Set(); // 「功能医学检测」类L1的 _id 集合，供 isFunctionalMedicineL1 判断
 let adminIndexCacheAt = 0;
 const ADMIN_INDEX_TTL_MS = 30 * 1000; // 30秒缓存，避免每条item都查一次库，同时保证admin改分类后很快生效
+
+// 只有父级链路断裂的节点不可参与归类。所属一级分类是否跳过整份AI解析是另一项策略，
+// 不能在这里排除，否则已提取项目和人工归类目录都会失去Admin真实节点。
+function shouldExcludeClassificationNode({ brokenChain = false } = {}) {
+  return Boolean(brokenChain);
+}
 
 async function buildAdminIndex() {
   const now = Date.now();
@@ -200,7 +208,7 @@ async function buildAdminIndex() {
         parent: parentLabel,
         itemType: null,
         gender: null,
-        excluded: brokenChain || excludeL1Names.has(String(l1._id)),
+        excluded: shouldExcludeClassificationNode({ brokenChain }),
       };
     });
 
@@ -394,5 +402,5 @@ module.exports = {
   classifyItemAsync, classifyItemsAsync, matchAllAdmin, buildAdminIndex, invalidateAdminIndexCache,
   matchAllWithIndex, isFunctionalMedicineL1, classificationName, classificationCandidates, reportNameCandidates,
   hasConfirmedClassification, selectAdminMatches, selectMatchesForItem, authoritativePanelClassificationName,
-  findUnclassifiedNamedItems,
+  findUnclassifiedNamedItems, shouldExcludeClassificationNode,
 };

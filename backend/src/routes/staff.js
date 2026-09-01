@@ -10476,15 +10476,27 @@ router.get('/diag/pdf', staffAuth, async (req, res) => {
 // 改动 AI 归类核心逻辑依赖的共享代码——本路由改动完全独立、出问题只影响这一个下拉框，不影响 AI 自动归类主流程。
 router.get('/screening-catalog', staffAuth, async (req, res) => {
   try {
-    const cats = await ProjectCategory.find({ status: 'active' }).select('name parent').lean();
+    const [cats, catalogItems] = await Promise.all([
+      ProjectCategory.find({ status: 'active' }).select('name parent aliases').lean(),
+      Promise.all([
+        LabTestOrder.find({ status: 'active', categoryId: { $ne: null } }).select('name categoryId').lean(),
+        LabTestItem.find({ status: 'active', categoryId: { $ne: null } }).select('name categoryId').lean(),
+        SpecialExam.find({ status: 'active', deleted: { $ne: true }, categoryId: { $ne: null } }).select('name categoryId').lean(),
+      ]).then(groups => groups.flat()),
+    ]);
 
     const byId = new Map(cats.map(c => [String(c._id), c]));
+    const catalogNamesByCategory = new Map();
+    catalogItems.forEach(item => {
+      const categoryId = String(item.categoryId || '');
+      const name = String(item.name || '').trim();
+      if (!categoryId || !name) return;
+      if (!catalogNamesByCategory.has(categoryId)) catalogNamesByCategory.set(categoryId, []);
+      catalogNamesByCategory.get(categoryId).push(name);
+    });
     const childCount = new Map();
     cats.forEach(c => { if (c.parent) childCount.set(String(c.parent), (childCount.get(String(c.parent)) || 0) + 1); });
     const isLeaf = c => !(childCount.get(String(c._id)) > 0);
-
-    // 排除"功能检测/功能医学"类L1，跟AI归类(buildAdminIndex)规则保持一致，这类只能人工在OCR审核弹窗手动选
-    const excludeL1Ids = new Set(cats.filter(c => !c.parent && /功能检测|功能医学/.test(c.name)).map(c => String(c._id)));
 
     const groupsByL1 = new Map();
     cats.filter(isLeaf).forEach(leaf => {
@@ -10507,7 +10519,6 @@ router.get('/screening-catalog', staffAuth, async (req, res) => {
       }
       if (chain.length) { l1 = chain[0]; parentLabel = chain[chain.length - 1].name; }
       const l1Id = String(l1._id);
-      if (excludeL1Ids.has(l1Id)) return;
 
       const value = `${l1Id}|${parentLabel}|${leaf.name}`;
       if (!groupsByL1.has(l1.name)) groupsByL1.set(l1.name, []);
@@ -10516,6 +10527,13 @@ router.get('/screening-catalog', staffAuth, async (req, res) => {
         // 只展示Admin真实分类层级；已归类项目名仅用于后台搜索/自动匹配，不伪装成分类名称。
         label: `${parentLabel !== leaf.name ? parentLabel + ' / ' : ''}${leaf.name}`,
         groupLabel: l1.name,
+        // 下拉显示真实分类层级，但搜索同时覆盖Admin别名和已绑定项目名。
+        // 例如输入“牛肉IgG4”即可找到“功能医学检测 / 慢性食物过敏”。
+        searchTerms: [...new Set([
+          leaf.name,
+          ...(leaf.aliases || []),
+          ...(catalogNamesByCategory.get(String(leaf._id)) || []),
+        ].map(value => String(value || '').trim()).filter(Boolean))],
       });
     });
 

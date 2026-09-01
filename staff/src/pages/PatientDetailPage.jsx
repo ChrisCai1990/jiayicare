@@ -10480,7 +10480,9 @@ export default function PatientDetailPage() {
           const isOpen = !!ocrClassifyOpen[i]
           const q = (ocrClassifySearch[i] ?? (it.screeningKey ? allClassifyOpts.find(o => o.value === it.screeningKey)?.label || '' : '')).toLowerCase()
           const filtered = q.length >= 1
-            ? allClassifyOpts.filter(o => o.label.toLowerCase().includes(q) || o.groupLabel.toLowerCase().includes(q))
+            ? allClassifyOpts.filter(o => o.label.toLowerCase().includes(q)
+              || o.groupLabel.toLowerCase().includes(q)
+              || (o.searchTerms || []).some(term => String(term).toLowerCase().includes(q)))
             : allClassifyOpts
           const displayText = it.screeningKey ? (allClassifyOpts.find(o => o.value === it.screeningKey)?.label || it.screeningKey) : ''
           // 2026-07-21修复(第二版)：第一版用 window.innerHeight 判断可用空间，但下拉框真正的裁切边界
