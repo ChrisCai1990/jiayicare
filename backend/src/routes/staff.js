@@ -83,6 +83,10 @@ const { rotateImageBuffer } = require('../utils/imageOrientation');
 const { withSafeHealthRecordImages } = require('../utils/healthRecordImages');
 const router = express.Router();
 const activeReportParseJobs = new Set();
+// 仅服务端内存的短时页图缓存：同一审核窗口的前后台预加载不会反复转图；进程重启、超时或超量后自动释放。
+const reportPagePreviewCache = new Map();
+const REPORT_PAGE_PREVIEW_CACHE_TTL_MS = 5 * 60 * 1000;
+const REPORT_PAGE_PREVIEW_CACHE_MAX = 24;
 
 function withSignedHealthRecord(record) {
   return withSafeHealthRecordImages(record, signStoredUrl);
@@ -2196,17 +2200,26 @@ router.get('/medical-reports/:id/preview-page/:index', async (req, res) => {
     const sourceUrl = String(urls[fileIndex] || '');
     const isPdf = report.mimeType === 'application/pdf' || /\.pdf(?:$|[?#])/i.test(sourceUrl);
     if (!sourceUrl || !isPdf) return res.status(404).json({ success: false, message: 'PDF原始文件不存在' });
-    const { fetchReportBuffer, renderSinglePage } = require('../utils/pdf');
-    const pdfBuffer = await fetchReportBuffer(report, UPLOADS_DIR);
-    const imageBase64 = await renderSinglePage(pdfBuffer, pageNum, 110);
-    if (!imageBase64) return res.status(404).json({ success: false, message: 'PDF页面不存在' });
+    const cacheKey = `${report._id}:${fileIndex}:${pageNum}`;
+    const cached = reportPagePreviewCache.get(cacheKey);
+    let imageBuffer = cached?.expiresAt > Date.now() ? cached.buffer : null;
+    if (!imageBuffer) {
+      reportPagePreviewCache.delete(cacheKey);
+      const { fetchReportBuffer, renderSinglePage } = require('../utils/pdf');
+      const pdfBuffer = await fetchReportBuffer(report, UPLOADS_DIR);
+      const imageBase64 = await renderSinglePage(pdfBuffer, pageNum, 110);
+      if (!imageBase64) return res.status(404).json({ success: false, message: 'PDF页面不存在' });
+      imageBuffer = Buffer.from(imageBase64, 'base64');
+      reportPagePreviewCache.set(cacheKey, { buffer: imageBuffer, expiresAt: Date.now() + REPORT_PAGE_PREVIEW_CACHE_TTL_MS });
+      while (reportPagePreviewCache.size > REPORT_PAGE_PREVIEW_CACHE_MAX) reportPagePreviewCache.delete(reportPagePreviewCache.keys().next().value);
+    }
     res.set({
       'Content-Type': 'image/jpeg',
       'Content-Disposition': 'inline',
       'Cache-Control': 'private, no-store',
       'Referrer-Policy': 'no-referrer',
       'X-Content-Type-Options': 'nosniff',
-    }).end(Buffer.from(imageBase64, 'base64'));
+    }).end(imageBuffer);
   } catch (error) {
     const message = String(error?.message || '');
     if (/PDF转图片失败|页面不存在|页码/.test(message)) return res.status(422).json({ success: false, message: 'PDF页面渲染失败' });
