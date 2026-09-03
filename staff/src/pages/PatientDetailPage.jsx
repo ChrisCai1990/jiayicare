@@ -1599,6 +1599,27 @@ export default function PatientDetailPage() {
   const [previewImageUrl, setPreviewImageUrl] = useState(null) // 灯箱预览：字符串=仅查看，{url,reportId}=可旋转保存
   const [previewRotation, setPreviewRotation] = useState(0) // 灯箱当前旋转角度（0/90/180/270）
   const [previewSaving, setPreviewSaving] = useState(false)
+  const [deletingRecord, setDeletingRecord] = useState(null)
+  const [deleteRecordReason, setDeleteRecordReason] = useState('')
+  const [deleteRecordError, setDeleteRecordError] = useState('')
+  const [deleteRecordSaving, setDeleteRecordSaving] = useState(false)
+  const canDeleteHealthRecord = ['healthManager', 'familyDoctor', 'superadmin'].includes(staff?.role)
+  const confirmDeleteRecord = async () => {
+    if (!deletingRecord || deleteRecordSaving) return
+    if (!deleteRecordReason.trim()) { setDeleteRecordError('请填写删除原因'); return }
+    setDeleteRecordSaving(true)
+    setDeleteRecordError('')
+    try {
+      await staffAPI.deletePatientHealthRecord(id, deletingRecord._id, deleteRecordReason.trim())
+      setHealthRecords(records => records.filter(record => record._id !== deletingRecord._id))
+      setTrendRecords(records => records === null ? null : records.filter(record => record._id !== deletingRecord._id))
+      setData(current => current ? { ...current, recentRecords: (current.recentRecords || []).filter(record => record._id !== deletingRecord._id) } : current)
+      setDeletingRecord(null)
+      toast('记录已删除')
+      await load()
+    } catch (err) { setDeleteRecordError(err.message || '删除失败，请重试') }
+    finally { setDeleteRecordSaving(false) }
+  }
   const [editingRecord, setEditingRecord] = useState(null) // 正在修正的打卡记录（数据有疑问时医护端修改，留痕修改人）
   const [editRecordForm, setEditRecordForm] = useState({ value: '', sys: '', dia: '', note: '' })
   const [editRecordSaving, setEditRecordSaving] = useState(false)
@@ -6575,6 +6596,7 @@ export default function PatientDetailPage() {
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                               <button className="btn btn-primary btn-sm" onClick={() => setShowMessageModal(true)}>进入对话</button>
                               <button className="btn btn-secondary btn-sm" onClick={() => startEditRecord(r)}>编辑</button>
+                              {canDeleteHealthRecord && <button className="btn btn-secondary btn-sm" style={{ color: '#B42318' }} onClick={() => { setDeletingRecord(r); setDeleteRecordReason(''); setDeleteRecordError('') }}>删除</button>}
                             </div>
                           </td>
                         </tr>
@@ -8483,6 +8505,27 @@ export default function PatientDetailPage() {
       })()}
 
       {/* 打卡数据编辑弹窗：数据有疑问时医护端修正，修改人+时间+原值自动留痕 */}
+      {deletingRecord && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: 440 }} role="dialog" aria-modal="true" aria-label="删除健康记录">
+            <div className="modal-header">
+              <div className="modal-title">删除健康记录</div>
+              <button className="modal-close" disabled={deleteRecordSaving} onClick={() => setDeletingRecord(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <p>确认删除这条{RECORD_TYPE_LABEL[deletingRecord.type] || deletingRecord.type}记录：{formatRecordValue(deletingRecord)}？</p>
+              <p style={{ color: '#667085', fontSize: 13 }}>删除后不再显示在健康记录和趋势统计中，系统保留操作记录。</p>
+              <label className="form-label" htmlFor="delete-record-reason">删除原因</label>
+              <textarea id="delete-record-reason" className="form-input" rows={3} maxLength={500} placeholder="例如：测试数据、误提交、重复录入" value={deleteRecordReason} disabled={deleteRecordSaving} onChange={e => setDeleteRecordReason(e.target.value)} />
+              {deleteRecordError && <p role="alert" style={{ color: '#B42318' }}>{deleteRecordError}</p>}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" disabled={deleteRecordSaving} onClick={() => setDeletingRecord(null)}>取消</button>
+              <button className="btn btn-primary" style={{ background: '#B42318' }} disabled={deleteRecordSaving} onClick={confirmDeleteRecord}>{deleteRecordSaving ? '删除中…' : '确认删除'}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {editingRecord && (() => {
         const meta = RECORD_VALUE_META[editingRecord.type]
         const isFreeText = editingRecord.type !== 'bloodPressure' && !meta

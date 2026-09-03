@@ -5179,6 +5179,39 @@ router.patch('/health-records/:id/resolve-symptom', staffAuth, async (req, res) 
 
 // ── 医护端修正会员打卡数据（数据有疑问，确认后修正；留痕修改人+修改时间+原值）────
 // PUT /api/staff/patients/:patientId/health-records/:recordId
+// 删除测试或误提交数据：保留审计信息，沿用会员详情的可见范围。
+router.delete('/patients/:patientId/health-records/:recordId', staffAuth, async (req, res) => {
+  try {
+    if (!['healthManager', 'familyDoctor', 'superadmin'].includes(req.staff.role)) {
+      return res.status(403).json({ success: false, message: '仅健管专员、健康顾问或超管可删除健康记录' });
+    }
+    const reason = String(req.body?.reason || '').trim();
+    if (!reason || reason.length > 500) return res.status(400).json({ success: false, message: '请填写删除原因（不超过500字）' });
+    const patient = await User.findById(req.params.patientId);
+    if (!patient || patient.isDeleted) return res.status(404).json({ success: false, message: '会员不存在' });
+    if (req.staff.role !== 'superadmin') {
+      const staffIds = (await getVisibleStaffIds(req.staff)).map(String);
+      if (!PLAN_ASSIGN_FIELDS.some(field => patient[field] && staffIds.includes(String(patient[field]._id || patient[field])))) {
+        return res.status(403).json({ success: false, message: '无权限操作该会员' });
+      }
+    }
+    const record = await HealthRecord.findOneAndUpdate(
+      { _id: req.params.recordId, user: req.params.patientId, deletedAt: null },
+      { $set: { deletedAt: new Date(), deletedBy: req.staff._id,
+        deletedByName: req.staff.name || req.staff.username || '', deleteReason: reason, aiAlertStatus: null } },
+      { new: true },
+    );
+    if (!record) return res.status(404).json({ success: false, message: '记录不存在或已删除' });
+    if (record.type === 'symptom') {
+      await FollowUp.updateMany(
+        { sourceType: 'symptom', sourceId: record._id, status: { $in: ['planned', 'in_progress', 'missed'] } },
+        { $set: { status: 'cancelled', cancelReason: `不适记录已删除：${reason}` } },
+      );
+    }
+    res.json({ success: true, message: '记录已删除' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 router.put('/patients/:patientId/health-records/:recordId', staffAuth, async (req, res) => {
   try {
     const { value, extra, note, recordedAt } = req.body;
