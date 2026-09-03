@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { staffAPI, API_ORIGIN } from '../api'
+import { staffAPI, API_ORIGIN, getToken } from '../api'
+import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist'
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { useToast, useStaff } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
 import AiRuleHint from '../components/AiRuleHint'
@@ -8,6 +10,65 @@ import AppIcon from '../components/AppIcon'
 import AiCaseReviewPanel from '../components/AiCaseReviewPanel'
 import femalePortraitPhoto from '../assets/health-portrait-female.webp'
 import malePortraitPhoto from '../assets/health-portrait-male.webp'
+
+GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+
+// 审核 PDF 不能依赖浏览器内置阅读器：它不会可靠响应同一 iframe 的 #page 变化，
+// 且切换时可能重新读取大文件。pdf.js 会保留同一份 Range 文档会话，只渲染目标页。
+function PdfPagePreview({ src, pageNum, title }) {
+  const canvasRef = useRef(null)
+  const resourceRef = useRef(null)
+  const renderTaskRef = useRef(null)
+  const [state, setState] = useState({ loading: true, error: '' })
+
+  useEffect(() => {
+    let cancelled = false
+    const render = async () => {
+      try {
+        let resource = resourceRef.current
+        if (!resource || resource.src !== src) {
+          resource?.task?.destroy()
+          const task = getDocument({ url: src, httpHeaders: getToken() ? { Authorization: `Bearer ${getToken()}` } : {}, rangeChunkSize: 64 * 1024, disableAutoFetch: false })
+          resource = { src, task, doc: task.promise }
+          resourceRef.current = resource
+        }
+        setState({ loading: true, error: '' })
+        const doc = await resource.doc
+        if (cancelled) return
+        if (pageNum < 1 || pageNum > doc.numPages) throw new Error(`原报告没有第${pageNum}页`)
+        const page = await doc.getPage(pageNum)
+        const base = page.getViewport({ scale: 1 })
+        const scale = Math.min(1.45, 520 / base.width)
+        const viewport = page.getViewport({ scale })
+        const canvas = canvasRef.current
+        if (!canvas || cancelled) return
+        const ratio = Math.min(window.devicePixelRatio || 1, 2)
+        canvas.width = Math.ceil(viewport.width * ratio)
+        canvas.height = Math.ceil(viewport.height * ratio)
+        canvas.style.width = `${Math.ceil(viewport.width)}px`
+        canvas.style.height = `${Math.ceil(viewport.height)}px`
+        const context = canvas.getContext('2d')
+        context.setTransform(ratio, 0, 0, ratio, 0, 0)
+        renderTaskRef.current?.cancel()
+        const task = page.render({ canvasContext: context, viewport })
+        renderTaskRef.current = task
+        await task.promise
+        if (!cancelled) setState({ loading: false, error: '' })
+      } catch (error) {
+        if (error?.name !== 'RenderingCancelledException' && !cancelled) setState({ loading: false, error: error.message || 'PDF页面加载失败' })
+      }
+    }
+    render()
+    return () => { cancelled = true; renderTaskRef.current?.cancel() }
+  }, [src, pageNum])
+
+  useEffect(() => () => resourceRef.current?.task?.destroy(), [])
+
+  return <div style={{ minHeight: 260, position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', background: '#fff', borderRadius: 6, overflow: 'auto' }}>
+    {state.loading && <div style={{ position: 'absolute', top: 12, color: '#4A6558', fontSize: 12 }}>正在加载原报告第 {pageNum} 页…</div>}
+    {state.error ? <div style={{ padding: 16, color: '#B42318', fontSize: 12 }}>{state.error}</div> : <canvas ref={canvasRef} aria-label={title} style={{ display: state.loading ? 'none' : 'block' }} />}
+  </div>
+}
 
 const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
 const normalizeRiskTagValues = values => [...new Set((Array.isArray(values) ? values : [values])
@@ -10655,7 +10716,7 @@ export default function PatientDetailPage() {
                           return isPdf ? (
                             <div key={idx} style={{ marginBottom: 8 }}>
                               <div style={{ fontSize: 10, color: '#8AA89C', margin: '4px 0' }}>第 {idx + 1} 张</div>
-                              <iframe src={`${s}#page=${activePage}`} title={`报告${idx + 1}`} style={{ width: '100%', height: '74vh', border: 'none', borderRadius: 6, background: '#fff' }} />
+                              <PdfPagePreview src={s} pageNum={activePage} title={`报告${idx + 1}第${activePage}页`} />
                             </div>
                           ) : (
                             <div key={idx} style={{ marginBottom: 8 }}>
@@ -10678,7 +10739,7 @@ export default function PatientDetailPage() {
                       {isImg ? (
                         <img src={src} alt="报告" style={{ width: '100%', borderRadius: 6, cursor: 'zoom-in' }} onClick={() => setPreviewImageUrl(src)} />
                       ) : isPdf ? (
-                        <iframe src={`${src}#page=${activePage}`} title={`报告PDF第${activePage}页`} style={{ width: '100%', height: '74vh', border: 'none', borderRadius: 6, background: '#fff' }} />
+                        <PdfPagePreview src={src} pageNum={activePage} title={`报告PDF第${activePage}页`} />
                       ) : (
                         <button className="btn btn-primary btn-sm" onClick={() => window.open(src, '_blank')}>打开文件</button>
                       )}
