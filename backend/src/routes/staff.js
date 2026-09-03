@@ -2160,6 +2160,9 @@ router.get('/medical-reports/:id/preview/:index', async (req, res) => {
       'Content-Type': sourceHeaders['content-type'] || report.mimeType || 'application/octet-stream',
       'Content-Disposition': 'inline',
       'Accept-Ranges': 'bytes',
+      // PDF.js 运行在 staff.jiaycare.com，预览接口在 jiaycare.com。若不显式暴露
+      // Range 相关响应头，浏览器脚本无法确认服务器支持分段读取，会退回整份大 PDF 下载。
+      'Access-Control-Expose-Headers': 'Accept-Ranges, Content-Length, Content-Range, ETag',
       'Cache-Control': 'private, no-store',
       'Referrer-Policy': 'no-referrer',
       'X-Content-Type-Options': 'nosniff',
