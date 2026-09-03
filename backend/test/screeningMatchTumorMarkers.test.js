@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { norm, reportNameCandidates, selectAdminMatches, selectMatchesForItem, authoritativePanelClassificationName, findUnclassifiedNamedItems } = require('../src/utils/screeningMatch');
+const { norm, reportNameCandidates, selectAdminMatches, selectMatchesForItem, authoritativePanelClassificationName, findUnclassifiedNamedItems, shouldExcludeClassificationNode } = require('../src/utils/screeningMatch');
 
 function adminIndex(entries) {
   return entries.map(([id, label, aliases]) => ({
@@ -26,6 +26,11 @@ test('检测方法尾缀只能匹配Admin中已有的项目归类', () => {
 test('医院代码和检测方法尾缀生成通用核心项目候选', () => {
   assert.deepEqual(reportNameCandidates('糖类抗原19-9（T-12）'), ['糖类抗原19-9（T-12）', '糖类抗原19-9']);
   assert.deepEqual(reportNameCandidates('甲胎蛋白(AFP)(电化学发光法)'), ['甲胎蛋白(AFP)(电化学发光法)', '甲胎蛋白(AFP)', '甲胎蛋白']);
+});
+
+test('功能医学分类节点仍可归类，只有断链节点被排除', () => {
+  assert.equal(shouldExcludeClassificationNode({ brokenChain: false }), false);
+  assert.equal(shouldExcludeClassificationNode({ brokenChain: true }), true);
 });
 
 test('代码不能创造Admin中不存在的分类', () => {

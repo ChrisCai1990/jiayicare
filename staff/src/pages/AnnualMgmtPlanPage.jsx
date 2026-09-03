@@ -17,6 +17,9 @@ const MODULE_DEFS = {
   medical_treatment: {
     name: '医疗问题解决', icon: '🏥', multi: true, summaryKey: 'hospital', summaryLabel: '就医医院',
     fields: [
+      { key: 'standardPlanName', label: '来源标准模板', type: 'text' },
+      { key: 'standardContent', label: '标准执行内容', type: 'textarea' },
+      { key: 'standardSchedule', label: '标准执行周期', type: 'textarea' },
       { key: 'visit_time',   label: '就医时间',   type: 'date' },
       { key: 'hospital',     label: '就医医院',   type: 'text', placeholder: '如：省人民医院' },
       { key: 'department',   label: '就诊科室',   type: 'text', placeholder: '如：心内科' },
@@ -44,6 +47,9 @@ const MODULE_DEFS = {
   abnormal_followup: {
     name: '异常复查提醒', icon: '🔔', multi: true, summaryKey: 'items', summaryLabel: '复查项目',
     fields: [
+      { key: 'standardPlanName', label: '来源标准模板', type: 'text' },
+      { key: 'standardContent', label: '标准执行内容', type: 'textarea' },
+      { key: 'standardSchedule', label: '标准执行周期', type: 'textarea' },
       { key: 'items',           label: '复查项目',       type: 'text' },
       { key: 'reason',          label: '复查原因',       type: 'textarea' },
       { key: 'hospital',        label: '复查医院',       type: 'text' },
@@ -61,6 +67,9 @@ const MODULE_DEFS = {
   vaccine: {
     name: '疫苗接种', icon: '💉', multi: true, summaryKey: 'name', summaryLabel: '疫苗名称',
     fields: [
+      { key: 'standardPlanName', label: '来源标准模板', type: 'text' },
+      { key: 'standardContent', label: '标准执行内容', type: 'textarea' },
+      { key: 'standardSchedule', label: '标准执行周期', type: 'textarea' },
       { key: 'name',        label: '疫苗名称', type: 'text' },
       { key: 'brand',       label: '品牌',     type: 'text' },
       { key: 'time',        label: '接种时间', type: 'date' },
@@ -93,6 +102,9 @@ const MODULE_DEFS = {
   annual_checkup: {
     name: '年度体检', icon: '🔬',
     fields: [
+      { key: 'standardPlanName', label: '来源标准模板', type: 'text' },
+      { key: 'standardContent', label: '标准执行内容', type: 'textarea' },
+      { key: 'standardSchedule', label: '标准执行周期', type: 'textarea' },
       { key: 'date',        label: '计划体检日期', type: 'date' },
       { key: 'institution', label: '计划体检机构', type: 'text' },
       { key: 'focus',       label: '重点关注',     type: 'textarea' },
@@ -149,19 +161,34 @@ const MODULE_DEFS = {
       { key: 'notes', label: '注意事项', type: 'textarea', internal: true },
     ],
   },
-  personalized_followups: {
-    name: '个性化随访方案', icon: '🗓️', multi: true, summaryKey: 'items', summaryLabel: '随访方案',
+  checkup_completion: {
+    name: '体检完善', icon: '🧾', multi: true, summaryKey: 'items', summaryLabel: '待完善项目',
     fields: [
-      { key: 'standardPlanName', label: '来源标准方案', type: 'text' },
-      { key: 'items', label: '个性化随访名称', type: 'text' },
-      { key: 'matchReason', label: '匹配依据', type: 'textarea' },
-      { key: 'content', label: '个性化随访内容', type: 'textarea' },
-      { key: 'time', label: '计划时间/周期', type: 'text' },
+      { key: 'standardPlanName', label: '来源标准模板', type: 'text' },
+      { key: 'standardContent', label: '标准执行内容', type: 'textarea' },
+      { key: 'standardSchedule', label: '标准执行周期', type: 'textarea' },
+      { key: 'items', label: '待完善项目', type: 'text' },
+      { key: 'reason', label: '完善依据', type: 'textarea' },
+      { key: 'time', label: '计划日期', type: 'date' },
+      { key: 'followUpStaff', label: '执行人', type: 'staff-select' },
+      { key: 'notes', label: '注意事项', type: 'textarea', internal: true },
+    ],
+  },
+  personalized_followups: {
+    name: '个性化方案', icon: '🗓️', multi: true, summaryKey: 'standardPlanName', summaryLabel: '个性化方案',
+    fields: [
+      { key: 'standardPlanName', label: '标准方案名称', type: 'text' },
+      { key: 'standardContent', label: '标准执行内容', type: 'textarea' },
+      { key: 'standardSchedule', label: '标准执行周期', type: 'textarea' },
+      { key: 'matchReason', label: '选用依据', type: 'textarea' },
+      { key: 'personalization', label: '个性化调整', type: 'textarea', placeholder: '只填写相对标准方案需要增加、删减或重点关注的内容；无调整可留空' },
+      { key: 'executionDate', label: '主执行日期', type: 'date' },
       { key: 'frequency', label: '执行频次', type: 'text' },
-      { key: 'followUpStaff', label: '随访人员', type: 'staff-select' },
+      { key: 'followUpStaff', label: '主执行人', type: 'staff-select' },
+      { key: 'collaborator', label: '协同执行人（可选）', type: 'staff-select' },
+      { key: 'collaborationDate', label: '协同执行日期（可选）', type: 'date' },
       { key: 'precautions', label: '注意事项', type: 'textarea' },
       { key: 'customerAction', label: '客户行动', type: 'textarea' },
-      { key: 'ownerRole', label: '责任角色', type: 'text' },
     ],
   },
 }
@@ -212,10 +239,33 @@ const ADMIN_RULE_MODULE_MAP = {
   medication: 'medication', medical_service: 'medical_treatment', stage_assessment: 'quarterly_eval', annual_checkup: 'annual_checkup',
 }
 
+const BASIC_STANDARD_MODULE_KEYS = ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'annual_checkup']
+
+const inferStandardCategory = name => {
+  const text = String(name || '').replace(/[【】\s]/g, '')
+  if (/年度体检/.test(text)) return 'annual_checkup'
+  if (/完善体检|体检完善/.test(text)) return 'checkup_completion'
+  if (/定期复查|复查/.test(text)) return 'abnormal_followup'
+  if (/疫苗|接种/.test(text)) return 'vaccine'
+  if (/安排就医|就医协助|就医/.test(text)) return 'medical_treatment'
+  return 'personalized'
+}
+
+const standardPlanContent = plan => Object.entries(plan?.default_content || {})
+  .filter(([, value]) => value !== undefined && value !== null && String(value).trim())
+  .map(([key, value]) => `${key}：${value}`)
+  .join('；') || '按标准模板执行'
+
+const standardPlanSchedule = plan => (plan?.cycles || []).map((cycle, index) => {
+  if (cycle.cycleType === 'date') return `第${index + 1}次由健康顾问确定日期`
+  const unit = cycle.cycleUnit === 'week' ? '周' : cycle.cycleUnit === 'month' ? '个月' : '天'
+  return `确认后${cycle.cycleDuration || 0}${unit}`
+}).join('、') || '由健康顾问确定日期'
+
 const templateEntries = template => {
   // v3起年度规则统一调用全局随访方案库；模板内旧 followUpPlans 只兼容存量，
   // 不再决定客户页面板块。AI筛选结果统一进入“个性化随访方案”。
-  const entries = []
+  const entries = BASIC_STANDARD_MODULE_KEYS.map(key => ({ key, def: MODULE_DEFS[key], source: { key, standardScreening: true } }))
   const usedBaseKeys = new Set(entries.map(entry => entry.key.startsWith('lifestyle_') ? 'lifestyle' : entry.key))
   ;(template?.content?.moduleRules || []).filter(rule => rule.enabled !== false).forEach(rule => {
     const key = ADMIN_RULE_MODULE_MAP[rule.key]
@@ -263,11 +313,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [aiPlanLoading, setAiPlanLoading] = useState(false)
   const [staffList, setStaffList]   = useState([])
   const [adminTemplates, setAdminTemplates] = useState([])
+  const [standardPlans, setStandardPlans] = useState([])
   const [templatesLoading, setTemplatesLoading] = useState(false)
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
 
   useEffect(() => {
     staffAPI.getStaffList().then(r => setStaffList(r.data || [])).catch(() => {})
+    staffAPI.getFollowupPlans().then(r => setStandardPlans(r.data || [])).catch(() => setStandardPlans([]))
   }, [])
 
   useEffect(() => {
@@ -361,6 +413,17 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
 
   const handleSave = async () => {
     if (!planType) { toast('请先选择方案类型'); return }
+    const now = new Date()
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const personalized = moduleData.personalized_followups?.records || []
+    const invalid = personalized.find(item =>
+      !item.followUpStaff || !item.executionDate ||
+      (item.executionDate && item.executionDate < today) ||
+      (item.collaborationDate && item.collaborationDate < today) ||
+      (item.collaborator && !item.collaborationDate) ||
+      (item.collaborationDate && !item.collaborator)
+    )
+    if (invalid) { toast('每项随访都要选择主执行人和不早于今天的执行日期；协同执行人和日期需要同时填写'); return }
     setSaving(true)
     try {
       if (patientMode) {
@@ -403,9 +466,12 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       // 只填充当前所选方案类型包含的板块，其余类型的板块忽略（一次只生成一个方案）
       const configuredRules = selectedTemplate?.content?.moduleRules || []
       const enabledRuleKeys = new Set(configuredRules.filter(rule => rule.enabled !== false && rule.aiCanGenerate !== false).map(rule => ADMIN_RULE_MODULE_MAP[rule.key]).filter(Boolean))
-      const allowedKeys = configuredRules.length ? (PLAN_TYPE_MODULES[type] || []).filter(key => enabledRuleKeys.has(key) || ![...Object.values(ADMIN_RULE_MODULE_MAP)].includes(key)) : (PLAN_TYPE_MODULES[type] || [])
+      const configuredKeys = configuredRules.length ? (PLAN_TYPE_MODULES[type] || []).filter(key => enabledRuleKeys.has(key) || ![...Object.values(ADMIN_RULE_MODULE_MAP)].includes(key)) : (PLAN_TYPE_MODULES[type] || [])
+      const allowedKeys = [...new Set([...configuredKeys, ...BASIC_STANDARD_MODULE_KEYS])]
       setModuleData(prev => {
         const merged = { ...prev }
+        // 本次为覆盖式重新筛选。先清掉旧的筛选结果，避免“不适用”的旧方案继续残留。
+        ;[...allowedKeys, 'personalized_followups'].forEach(key => { delete merged[key] })
         Object.entries(aiData).forEach(([key, val]) => {
           if (key === 'templateNodes') return
           if (!allowedKeys.includes(key)) return
@@ -415,17 +481,24 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         })
         const personalized = (aiData.templateNodes || []).map(node => ({
           standardPlanId: node.standardPlanId || '', standardPlanName: node.standardPlanName || '',
-          sourceCycles: node.sourceCycles || [], items: node.title || node.standardPlanName || '',
-          matchReason: node.matchReason || '', content: node.content || '', time: node.time || '',
+          sourceCycles: node.sourceCycles || [], items: node.standardPlanName || '',
+          standardContent: node.standardContent || '', standardSchedule: node.standardSchedule || '',
+          matchReason: node.matchReason || '', personalization: node.personalization || node.content || '', executionDate: node.executionDate || node.time || '',
           frequency: node.frequency || '', precautions: node.precautions || '',
-          customerAction: node.customerAction || '', ownerRole: node.ownerRole || '',
+          customerAction: node.customerAction || '', followUpStaff: node.defaultEmployeeId || '',
           reviewStatus: 'pending_family_doctor_review',
         }))
         if (personalized.length) merged.personalized_followups = { records: personalized }
         return merged
       })
       setDirty(true)
-      toast(`AI已按「${ptName}」填充方案内容，请检查并保存`)
+      const appliedCount = BASIC_STANDARD_MODULE_KEYS.reduce((total, key) => {
+        const value = aiData[key]
+        return total + (MODULE_DEFS[key]?.multi ? (value?.records?.length || 0) : (value?.enabled ? 1 : 0))
+      }, 0) + (aiData.templateNodes?.length || 0)
+      toast(appliedCount
+        ? `AI已按「${ptName}」采用 ${appliedCount} 项方案，请检查并保存`
+        : `「${ptName}」标准动作筛查完成，当前资料下暂无适用项目`)
     } catch (err) {
       toast(err.message || 'AI生成方案失败')
     } finally {
@@ -477,6 +550,27 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const templateModuleEntries = selectedAdminTemplate
     ? templateEntries(selectedAdminTemplate)
     : (PLAN_TYPE_MODULES[planType] || []).map(key => ({ key, def: MODULE_DEFS[key] }))
+  const visibleModuleEntries = templateModuleEntries.filter(entry => {
+    const data = moduleData[entry.key]
+    if (!data) return false
+    return entry.def.multi ? (data.records || []).length > 0 : data.enabled !== false && entry.def.fields.some(field => data[field.key] !== undefined && data[field.key] !== '' && data[field.key] !== false)
+  })
+  const adoptedStandardPlanIds = new Set(BASIC_STANDARD_MODULE_KEYS.flatMap(key => {
+    const data = moduleData[key]
+    const records = MODULE_DEFS[key]?.multi ? (data?.records || []) : (data?.enabled === false || !data ? [] : [data])
+    return records.map(record => String(record.standardPlanId || '')).filter(Boolean)
+  }))
+  const standardScreeningGroups = BASIC_STANDARD_MODULE_KEYS.map(key => ({
+    key,
+    name: MODULE_DEFS[key].name,
+    icon: MODULE_DEFS[key].icon,
+    plans: (() => {
+      const configured = selectedAdminTemplate?.content?.standardActionPlans?.[key]
+      if (!configured?.id) return []
+      const plan = standardPlans.find(item => String(item._id) === String(configured.id))
+      return plan ? [plan] : []
+    })(),
+  }))
   const activePlanType = selectedAdminTemplate
     ? { ...(PLAN_TYPES.find(pt => pt.key === planType) || PLAN_TYPES[3]), name: selectedAdminTemplate.content?.planName || selectedAdminTemplate.name }
     : PLAN_TYPES.find(pt => pt.key === planType)
@@ -604,6 +698,10 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       {/* 板块列表 */}
       {planType ? (
         <div style={{ marginBottom: 20 }}>
+          <div style={{ marginBottom: 12, padding: '12px 14px', borderRadius: 10, background: '#F0F7F4', color: '#4A6558', fontSize: 13, lineHeight: 1.7 }}>
+            <strong style={{ color: '#1E6B50' }}>生成依据：</strong>
+            已确认健康资料与阶段性评估决定调用哪些Admin标准随访方案；页面完整保留标准内容和周期，AI只能填写“个性化调整”，不能改名或另创方案，最终由健康顾问确认执行人和日期。
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24' }}>方案板块</div>
             <div style={{ fontSize: 12, color: '#8AA89C' }}>
@@ -615,7 +713,39 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               &nbsp;= 不推送给客户
             </div>
           </div>
-          {templateModuleEntries.map(entry => (
+          <div style={{ background: '#fff', border: '1px solid #CFE3D9', borderRadius: 12, marginBottom: 16, overflow: 'hidden' }}>
+            <div style={{ padding: '14px 16px', background: '#F0F7F4', borderBottom: '1px solid #DDEBE4' }}>
+              <div style={{ fontWeight: 700, color: '#1A2B24' }}>标准方案过筛库</div>
+              <div style={{ marginTop: 4, color: '#6B8177', fontSize: 12 }}>以下是本次生成实际使用的 Admin 标准方案。系统逐类判断；采用的方案会进入下方客户方案，未采用的不会推送给客户。</div>
+            </div>
+            {standardScreeningGroups.map(group => (
+              <div key={group.key} style={{ padding: '12px 16px', borderBottom: group.key === BASIC_STANDARD_MODULE_KEYS.at(-1) ? 'none' : '1px solid #EEF2EF' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: group.plans.length ? 9 : 0 }}>
+                  <span>{group.icon}</span>
+                  <strong style={{ fontSize: 14 }}>{group.name}</strong>
+                  <span style={{ color: '#8AA89C', fontSize: 12 }}>{group.plans.length ? `${group.plans.length}个标准模板` : '模板库尚未配置'}</span>
+                </div>
+                {group.plans.map(plan => {
+                  const adopted = adoptedStandardPlanIds.has(String(plan._id))
+                  return (
+                    <details key={plan._id} style={{ margin: '7px 0 0 26px', padding: '9px 11px', border: `1px solid ${adopted ? '#8FD0B2' : '#E0E6E2'}`, borderRadius: 8, background: adopted ? '#F0FAF5' : '#FAFBFA' }}>
+                      <summary style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, listStyle: 'none' }}>
+                        <span style={{ flex: 1, fontWeight: 600, color: '#28483A' }}>{plan.name}</span>
+                        <span style={{ fontSize: 11, color: adopted ? '#167A55' : '#8A958F', background: adopted ? '#DDF4E8' : '#EEF1EF', borderRadius: 10, padding: '2px 8px' }}>{adopted ? '已采用' : '待筛选'}</span>
+                        <span style={{ color: '#8AA89C' }}>⌄</span>
+                      </summary>
+                      <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px solid #E5ECE8', color: '#536B60', fontSize: 12, lineHeight: 1.7 }}>
+                        <div><strong>固定内容：</strong>{standardPlanContent(plan)}</div>
+                        <div><strong>固定周期：</strong>{standardPlanSchedule(plan)}</div>
+                        {plan.defaultRole && <div><strong>默认角色：</strong>{plan.defaultRole}</div>}
+                      </div>
+                    </details>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
+          {visibleModuleEntries.map(entry => (
             <ModulePanel
               key={entry.key}
               moduleKey={entry.key}
@@ -624,6 +754,11 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               onChange={handleModuleChange}
             />
           ))}
+          {visibleModuleEntries.length === 0 && (
+            <div style={{ background: '#fff', border: '1px solid #E0D9CE', borderRadius: 12, padding: '30px 20px', textAlign: 'center', color: '#8AA89C' }}>
+              尚未生成适用方案。点击“AI生成方案”后，系统会依次筛查就医安排、体检完善、定期复查、疫苗接种和年度体检；无适用内容的板块不会展示。
+            </div>
+          )}
         </div>
       ) : (
         <div style={{ background: '#fff', borderRadius: 12, padding: '32px 20px', border: '1px solid #E0D9CE', textAlign: 'center', color: '#aaa', marginBottom: 20 }}>

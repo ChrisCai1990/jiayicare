@@ -133,6 +133,7 @@ export const authAPI = {
 
 // ── User ─────────────────────────────────────────────────────────
 export const userAPI = {
+  referrals: () => request('/user/referrals'),
   getMe: () => request('/user/me'),
   getHealthFund: () => request('/user/health-fund'),
   getDashboard: () => request('/user/dashboard'),
@@ -152,6 +153,7 @@ export const userAPI = {
 
 // ── Health Records ────────────────────────────────────────────────
 export const recordsAPI = {
+  recognizeBloodPressure: (image) => request('/records/recognize-blood-pressure', { method: 'POST', body: JSON.stringify({ image, consent: true }), timeout: 60000 }),
   list: (params = {}) => {
     const q = Object.keys(params).filter(k => params[k] != null && params[k] !== '')
       .map(k => `${k}=${encodeURIComponent(params[k])}`).join('&');
@@ -227,6 +229,31 @@ export const reportsAPI = {
   create: (data) => request('/reports', { method: 'POST', body: JSON.stringify(data), timeout: 60000 }),
   delete: (id) => request(`/reports/${id}`, { method: 'DELETE' }),
   parseAI: (id) => request(`/reports/${id}/parse-ai`, { method: 'POST' }),
+  downloadOriginal: (id, index, mimeType = '') => {
+    const ext = mimeType === 'application/pdf' ? 'pdf'
+      : mimeType.includes('png') ? 'png'
+      : mimeType.includes('webp') ? 'webp' : 'jpg';
+    const filePath = `${Taro.env.USER_DATA_PATH}/report-${id}-${index}.${ext}`;
+    return Taro.request({
+      url: `${BASE_URL}/reports/${id}/file/${index}`,
+      header: _token ? { Authorization: `Bearer ${_token}` } : {},
+      responseType: 'arraybuffer',
+      timeout: 60000,
+    }).then(async (res) => {
+      if (res.statusCode !== 200 || !(res.data instanceof ArrayBuffer) || res.data.byteLength === 0) {
+        throw new Error(`原始文件读取失败（${res.statusCode || '网络异常'}）`);
+      }
+      await new Promise((resolve, reject) => {
+        Taro.getFileSystemManager().writeFile({
+          filePath,
+          data: res.data,
+          success: resolve,
+          fail: (err) => reject(new Error(err?.errMsg || '本地文件写入失败')),
+        });
+      });
+      return filePath;
+    });
+  },
   // 使用普通 request 逐图上传，避免微信 uploadFile 域名白名单未同步时请求在客户端被拦截。
   uploadBase64: (content, mimeType) => request('/reports/upload-base64', {
     method: 'POST',

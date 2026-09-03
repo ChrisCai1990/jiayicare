@@ -15,6 +15,15 @@ const followUpPlanSchema = new mongoose.Schema({
   cycles:            { type: [cycleItemSchema], default: [{ cycleType: 'duration', cycleDuration: 30, cycleUnit: 'day', notes: '' }] },
   defaultRole:       { type: String, default: '' },
   defaultEmployeeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  category:          { type: String, enum: ['general', 'medical_assist', 'recheck', 'checkup', 'vaccine', 'monitoring'], default: 'general' },
+  executorRole:      { type: String, default: '' },
+  supervisorRole:    { type: String, default: '' },
+  remindDaysBefore:  { type: Number, min: 0, max: 90, default: 3 },
+  executorDueOffsetDays: { type: Number, min: -90, max: 90, default: -1 },
+  supervisorDueOffsetDays: { type: Number, min: -90, max: 90, default: 1 },
+  fixedToServiceDate: { type: Boolean, default: false }, // 陪诊/当日服务：执行任务始终与主服务日期同日
+  requiresCoordination: { type: Boolean, default: false },
+  completionStandard: { type: String, default: '' },
   default_content:   { type: mongoose.Schema.Types.Mixed, default: {} },
   status:            { type: String, enum: ['active', 'inactive'], default: 'active' },
 }, { timestamps: true });

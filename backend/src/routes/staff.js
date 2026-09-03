@@ -11,6 +11,7 @@ const { calculateHealthScore } = require('../utils/healthScore');
 const { parseIdCard, calcAgeFromBirthDate } = require('../utils/idCard');
 const { getCurrentTenantId, BYPASS } = require('../utils/tenantScope');
 const { followUpTaskRequirements } = require('../utils/medicalAssistRequirements');
+const { isReportInterpretation } = require('../utils/checkupWorkflow');
 const { reverseFamilyRelation, synchronizeFamilyGroup } = require('../utils/familyLinks');
 // 聚合管道($aggregate)不会被 tenantScopePlugin 的 query 中间件自动拦截，需要在 $match 里手动拼入 tenantId
 const tenantMatchStage = () => {
@@ -25,6 +26,7 @@ const FollowUp = require('../models/FollowUp');
 const HealthRecord = require('../models/HealthRecord');
 const { calcStatus: calcHealthRecordStatus } = require('../utils/healthRecordStatus');
 const MedicalReport = require('../models/MedicalReport');
+const { REPORT_LIST_PROJECTION, toReportListItem } = require('../utils/reportListPayload');
 const HealthPlan = require('../models/HealthPlan');
 const KnowledgeItem = require('../models/KnowledgeItem');
 const PushRecord = require('../models/PushRecord');
@@ -812,7 +814,7 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
     'basic_insurance', 'commercial_medical', 'critical_illness',
     'chronicDiseaseSeverity', 'labValues', 'healthScoreBonus',
     'education', 'hasAnnualCheckup',
-    'healthConcern', 'healthConcernFor', 'expectedService', 'hasHomeMonitor', 'hasMedicineCabinet',
+    'healthConcern', 'healthConcernFor', 'expectedService', 'hasHomeMonitor', 'healthEquipment', 'hasMedicineCabinet',
     'bodyComposition',
   ];
   const updateData = {};
@@ -994,6 +996,22 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
   if (Object.keys(pushOps).length > 0) ops.$push = pushOps;
 
   await User.collection.updateOne({ _id: new mongoose.Types.ObjectId(req.params.id) }, ops);
+  // 保存设备档案时，把最近一次维护日期同步为负责人工作台任务；稳定键避免重复保存产生重复任务。
+  if (Array.isArray(req.body.healthEquipment)) {
+    const patient = await User.findById(req.params.id).select('assignedHealthManager assignedFamilyDoctor').lean();
+    const assignee = patient?.assignedHealthManager || patient?.assignedFamilyDoctor || req.staff._id;
+    for (const device of req.body.healthEquipment) {
+      if (!device?.nextMaintenanceDate || device.status === '停用') continue;
+      const deviceKey = String(device.id || `${device.type || 'device'}-${device.startedAt || ''}`).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
+      const scheduleKey = `equipment-maintenance-${req.params.id}-${deviceKey}`;
+      const requirements = [`${device.type || '健康设备'}维护`, device.cleanFrequency ? `清洗：${device.cleanFrequency}` : '', device.disinfectionFrequency ? `消毒：${device.disinfectionFrequency}` : '', device.consumableCycle ? `耗材更换：${device.consumableCycle}` : '', '核查使用依从性、舒适度及异常情况，必要时安排复诊或参数复核'].filter(Boolean).join('；');
+      await FollowUp.findOneAndUpdate(
+        { patientId: req.params.id, sourceScheduleKey: scheduleKey, status: { $in: ['planned', 'in_progress'] } },
+        { $set: { staffId: req.staff._id, assignedTo: assignee, date: new Date(device.nextMaintenanceDate), type: 'phone', status: 'planned', theme: `${device.type || '健康设备'}维护`, content: requirements, plannedContent: requirements, tags: ['设备维护', device.type || '健康设备'], sourceType: 'scheduled', sourceScheduleKey: scheduleKey } },
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+      );
+    }
+  }
   const user = await User.findById(req.params.id)
     .populate('assignedHealthManager', 'name title')
     .populate('assignedFamilyDoctor', 'name title')
@@ -1090,24 +1108,20 @@ router.post('/patients/:id/recalculate-score', staffAuth, async (req, res) => {
 });
 
 // ── GET /api/staff/patients/:id/followups ─────────────────────────
-// 数据权限与 /staff/followups（随访管理列表）、工作台随访任务面板保持同一套 assignedTo 口径，
-// 保证从工作台/随访管理点进某个会员详情页，看到的随访记录范围是一致的。
+// 客户详情是全团队服务档案：先校验查看人属于该客户服务团队，再展示该客户的全部执行任务。
+// 个人工作台 /staff/followups 仍按 assignedTo 筛选，二者用途不同，不能把个人任务口径套到客户全貌。
 router.get('/patients/:id/followups', staffAuth, async (req, res) => {
   const { page = 1, limit = 20 } = req.query;
   const skip = (Number(page) - 1) * Number(limit);
 
-  let ownerFilter;
-  const visibleStaffIds = await getVisibleStaffIds(req.staff);
-  if (req.staff.role === 'familyDoctor') {
-    const isMyPatient = await User.exists({ _id: req.params.id, assignedFamilyDoctor: { $in: visibleStaffIds } });
-    ownerFilter = isMyPatient
-      ? {}
-      : { $or: [{ assignedTo: { $in: visibleStaffIds } }, { assignedTo: null, staffId: { $in: visibleStaffIds } }] };
-  } else {
-    ownerFilter = { $or: [{ assignedTo: { $in: visibleStaffIds } }, { assignedTo: null, staffId: { $in: visibleStaffIds } }] };
+  if (req.staff.role !== 'superadmin') {
+    const visibleStaffIds = await getVisibleStaffIds(req.staff);
+    const patientAccess = PLAN_ASSIGN_FIELDS.map(field => ({ [field]: { $in: visibleStaffIds } }));
+    const hasAccess = await User.exists({ _id: req.params.id, $or: patientAccess });
+    if (!hasAccess) return res.status(403).json({ success: false, message: '无权限查看该会员' });
   }
 
-  const filter = { patientId: req.params.id, ...ownerFilter };
+  const filter = { patientId: req.params.id };
   const [followUps, total] = await Promise.all([
     FollowUp.find(filter)
       .sort({ date: -1 })
@@ -1134,7 +1148,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
 // ── GET /api/staff/followups ──────────────────────────────────────
 // 我的随访列表（含计划中、已完成；数据权限：创建人或被分配人）
 router.get('/followups', staffAuth, checkPermission('followups', 'view'), async (req, res) => {
-  const { page = 1, limit = 20, status = '', dateFrom = '', dateTo = '', patientName = '', assignedTo = '', sourceType = '', excludeSourceType = '', scope = '' } = req.query;
+  const { page = 1, limit = 20, status = '', dateFrom = '', dateTo = '', patientName = '', assignedTo = '', sourceType = '', excludeSourceType = '', scope = '', includeFuture = '' } = req.query;
 
   // 如果按会员姓名搜索，先查出匹配的用户ID
   let patientFilter = {};
@@ -1156,14 +1170,26 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
     ownerFilter = { $or: [{ assignedTo: { $in: visibleStaffIds } }, { assignedTo: null, staffId: { $in: visibleStaffIds } }] };
   }
 
-  const filter = { $and: [ownerFilter, patientFilter, assignedTo ? { assignedTo } : {}] };
+  const availabilityFilter = {
+    $or: [
+      { status: { $nin: ['planned', 'in_progress'] } },
+      { remindAt: null },
+      { remindAt: { $lte: new Date() } },
+    ],
+  };
+  const filter = { $and: [ownerFilter, patientFilter, assignedTo ? { assignedTo } : {}, includeFuture === '1' ? {} : availabilityFilter] };
   if (sourceType) filter.sourceType = sourceType;
+  if (sourceType === 'health_plan') filter.isBlocked = { $ne: true };
   // 订单来源的待办(sourceType='order')有独立的"待处理服务预约"展示位，随访列表页需要排除，
   // 避免"预约：医疗代诊服务"这类服务预约混进随访任务列表（2026-07-13反馈）
-  if (excludeSourceType) filter.sourceType = { $ne: excludeSourceType };
+  if (excludeSourceType) {
+    const excludedTypes = String(excludeSourceType).split(',').map(item => item.trim()).filter(Boolean);
+    filter.sourceType = excludedTypes.length > 1 ? { $nin: excludedTypes } : { $ne: excludedTypes[0] };
+  }
   if (status) {
     // in_progress 同时包含旧的 missed 状态
-    if (status === 'in_progress') filter.status = { $in: ['in_progress', 'missed'] };
+    if (status === 'active') filter.status = { $in: ['planned', 'in_progress', 'missed'] };
+    else if (status === 'in_progress') filter.status = { $in: ['in_progress', 'missed'] };
     else filter.status = status;
   }
   if (dateFrom || dateTo) {
@@ -1315,6 +1341,27 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   }
   await followUp.save();
 
+  // 专业执行完成后，督办任务进入待复核；督办完成后关闭就医协助子方案。
+  if (followUp.sourceHealthPlanId && followUp.taskRole === 'executor' && followUp.status === 'completed') {
+    await FollowUp.updateOne(
+      { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'supervisor', workflowKey: followUp.workflowKey || '', status: 'planned' },
+      { $set: { status: 'in_progress', isBlocked: false, date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date() } }
+    );
+  }
+  if (followUp.sourceHealthPlanId && followUp.taskRole === 'supervisor' && followUp.status === 'completed') {
+    const remaining = await FollowUp.countDocuments({
+      sourceHealthPlanId: followUp.sourceHealthPlanId,
+      taskRole: { $in: ['executor', 'supervisor'] },
+      status: { $nin: ['completed', 'cancelled'] },
+    });
+    if (remaining === 0) {
+      await HealthPlan.updateOne(
+        { _id: followUp.sourceHealthPlanId, type: 'medical_assist' },
+        { $set: { status: 'completed', 'content.workflowCompletedAt': new Date(), 'content.workflowCompletedBy': req.staff._id } }
+      );
+    }
+  }
+
   // 不适主诉也可能从“随访任务”入口完成；同步关闭审核，避免医生工作台残留同一待办。
   if (followUp.sourceType === 'symptom' && followUp.sourceId && followUp.status === 'completed') {
     await HealthRecord.updateOne(
@@ -1330,7 +1377,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   }
 
   // 就医协助任务完成后，将实际执行结果写回会员的“服务记录－医院就医”。
-  if (followUp.status === 'completed' && followUp.sourceHealthPlanId) {
+  if (followUp.status === 'completed' && followUp.sourceHealthPlanId && followUp.taskRole !== 'supervisor') {
     const sourcePlan = await HealthPlan.findOne({
       _id: followUp.sourceHealthPlanId,
       type: 'medical_assist',
@@ -1348,10 +1395,6 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
         c.hotel && `住宿安排：${c.hotel}`,
         c.notes && `注意事项：${c.notes}`,
       ].filter(Boolean).join('\n');
-      if (requirements && followUp.plannedContent !== requirements) {
-        followUp.plannedContent = requirements;
-        await followUp.save();
-      }
       await ServiceRecord.findOneAndUpdate(
         { sourceHealthPlanId: sourcePlan._id, type: 'medical_visit' },
         {
@@ -1472,12 +1515,13 @@ router.get('/reports', staffAuth, async (req, res) => {
 
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+  const availableNowFilter = { $or: [{ remindAt: null }, { remindAt: { $lte: new Date() } }] };
 
   const [totalPatients, todayFollowUps, monthFollowUps, plannedFollowUps] = await Promise.all([
     User.countDocuments(myFilter),
     FollowUp.countDocuments({ ...followUpOwnerFilter, date: { $gte: today, $lt: tomorrow } }),
     FollowUp.countDocuments({ ...followUpOwnerFilter, date: { $gte: monthStart, $lt: monthEnd } }),
-    FollowUp.countDocuments({ ...followUpOwnerFilter, status: 'planned' }),
+    FollowUp.countDocuments({ $and: [followUpOwnerFilter, availableNowFilter, { status: 'planned' }] }),
   ]);
 
   // 慢病分布
@@ -1558,10 +1602,27 @@ router.get('/plans', staffAuth, checkPermission('plans', 'view'), async (req, re
 // GET /api/staff/plans/:id
 router.get('/plans/:id', staffAuth, async (req, res) => {
   const plan = await HealthPlan.findById(req.params.id)
-    .populate('patientId', 'name phone gender age').populate('staffId', 'name role title');
+    .populate({
+      path: 'patientId',
+      select: 'name phone gender age assignedFamilyDoctor assignedHealthManager assignedHealthPlanner assignedMedicalAssistant',
+      populate: [
+        { path: 'assignedFamilyDoctor', select: 'name role title' },
+        { path: 'assignedHealthManager', select: 'name role title' },
+        { path: 'assignedHealthPlanner', select: 'name role title' },
+        { path: 'assignedMedicalAssistant', select: 'name role title' },
+      ],
+    }).populate('staffId', 'name role title');
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
   const canManage = await canManagePlan(req, plan);
-  res.json({ success: true, data: { ...plan.toObject(), canManage } });
+  const isCreator = String(plan.staffId?._id || plan.staffId) === String(req.staff._id);
+  // 删除权限与编辑/推送权限分开：创建人始终可以撤销自己建立的方案；
+  // 对应负责角色和超管仍可按既有规则管理。删除动作会写入 PlanDeletionLog 留痕。
+  const canDelete = isCreator || (
+    canManage
+    && checkPlanTypeRole(plan, req.staff.role)
+    && await planTypeAllowed(req, plan.type)
+  );
+  res.json({ success: true, data: { ...plan.toObject(), canManage, canDelete } });
 });
 
 // POST /api/staff/plans
@@ -1591,6 +1652,15 @@ function checkPlanTypeRole(plan, staffRole) {
   const requiredRole = PLAN_TYPE_OWNER_ROLE[plan.type];
   if (!requiredRole) return true; // 未限定角色的类型（如医嘱/心理咨询方案）不受此限制
   return staffRole === 'superadmin' || staffRole === requiredRole;
+}
+
+// 就医协助方案允许创建人继续编辑和推送。方案中的具体岗位任务仍按关联的
+// Admin 岗位任务方案分发给健康顾问、健康规划师或就医专员，不能反过来用
+// “方案默认负责角色”阻断实际创建该方案的人保存主方案。
+function canUsePlanOwnerRole(plan, staff) {
+  const isCreator = String(plan.staffId?._id || plan.staffId) === String(staff._id);
+  if (plan.type === 'medical_assist' && isCreator) return true;
+  return checkPlanTypeRole(plan, staff.role);
 }
 
 // 历史就医协助方案曾由健康顾问/就医专员创建。角色调整为健康规划师后，旧 staffId
@@ -1628,7 +1698,7 @@ async function planTypeAllowed(req, planType) {
 router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req, res) => {
   const plan = await HealthPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
-  if (!checkPlanTypeRole(plan, req.staff.role)) {
+  if (!canUsePlanOwnerRole(plan, req.staff)) {
     return res.status(403).json({ success: false, message: '该类型方案仅限对应负责角色修改' });
   }
   if (!(await planTypeAllowed(req, plan.type))) {
@@ -1644,6 +1714,45 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
   }
   plan.markModified('content');
   await plan.save();
+  // 已推送方案改期时，所有未完成岗位任务和服务档案立即跟随主服务日期更新。
+  if (plan.type === 'medical_assist' && plan.status === 'active' && plan.content?.serviceDate) {
+    const serviceDate = new Date(`${plan.content.serviceDate}T${/^\d{2}:\d{2}/.test(plan.content?.serviceTime || '') ? plan.content.serviceTime.slice(0, 5) : '09:00'}:00+08:00`);
+    const linkedIds = (plan.content.followUpPlans?.length
+      ? plan.content.followUpPlans.map(item => item.id || item._id).filter(Boolean)
+      : [plan.content.followUpPlanId].filter(Boolean));
+    const linkedPlans = (await FollowUpPlan.find({ _id: { $in: linkedIds } }).lean())
+      .filter(item => !isReportInterpretation(item.name));
+    const addDays = (date, days) => new Date(date.getTime() + Number(days || 0) * 86400000);
+    for (const linkedPlan of linkedPlans) {
+      const workflowKey = String(linkedPlan._id);
+      const workflowStart = plan.pushedAt || plan.createdAt || new Date();
+      const calculatedExecutorDate = addDays(serviceDate, linkedPlan.fixedToServiceDate ? 0 : (linkedPlan.executorDueOffsetDays ?? -1));
+      const executorDate = calculatedExecutorDate < workflowStart ? new Date(workflowStart) : calculatedExecutorDate;
+      const supervisorDate = addDays(serviceDate, linkedPlan.supervisorDueOffsetDays ?? 1);
+      await FollowUp.updateMany(
+        { sourceHealthPlanId: plan._id, workflowKey, taskRole: 'executor', status: { $in: ['planned', 'in_progress'] } },
+        { $set: {
+          date: executorDate,
+          remindAt: addDays(executorDate, -(linkedPlan.remindDaysBefore ?? 3)),
+          isBlocked: false,
+          activationEvent: '',
+        } }
+      );
+      await FollowUp.updateMany(
+        { sourceHealthPlanId: plan._id, workflowKey, taskRole: 'supervisor', status: { $in: ['planned', 'in_progress'] } },
+        { $set: { date: supervisorDate, remindAt: addDays(supervisorDate, -(linkedPlan.remindDaysBefore ?? 3)), isBlocked: false, activationEvent: '' } }
+      );
+    }
+    const reportCollectionDate = addDays(serviceDate, 1);
+    await FollowUp.updateMany(
+      { sourceHealthPlanId: plan._id, workflowKey: 'system:checkup_report_collection', status: { $in: ['planned', 'in_progress'] } },
+      { $set: { date: reportCollectionDate, remindAt: reportCollectionDate } }
+    );
+    await ServiceRecord.updateMany(
+      { sourceHealthPlanId: plan._id, type: 'medical_visit' },
+      { $set: { date: serviceDate } }
+    );
+  }
   res.json({ success: true, data: plan });
 });
 
@@ -1654,7 +1763,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
   const visibleIds = await getVisiblePlanPatientIds(req.staff);
   if (visibleIds && !visibleIds.some(id => String(id) === String(plan.patientId?._id || plan.patientId))) return res.status(403).json({ success: false, message: '无权查看该会员的方案' });
   const canPush = await canManagePlan(req, plan);
-  if (!canPush || !checkPlanTypeRole(plan, req.staff.role) || !(await planTypeAllowed(req, plan.type))) {
+  if (!canPush || !canUsePlanOwnerRole(plan, req.staff) || !(await planTypeAllowed(req, plan.type))) {
     return res.status(403).json({ success: false, message: '无权推送该方案' });
   }
   // 重点检查在推送前自动补齐标准准备事项，保证客户收到的方案不是只有项目名。
@@ -1663,8 +1772,33 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
     const result = applyCheckupPrecautions(plan.items.map(item => item.toObject()));
     plan.items = result.items;
   }
+  if (plan.type === 'medical_assist') {
+    const c = plan.content || {};
+    const isCheckupService = c.serviceDomain === 'annual_checkup' || c.templateSnapshot?.serviceDomain === 'annual_checkup' || /体检/.test(`${c.templateName || ''} ${plan.title || ''}`);
+    if (isCheckupService && !c.reviewerId) {
+      const patientOwner = await User.findById(plan.patientId).select('assignedFamilyDoctor').lean();
+      if (patientOwner?.assignedFamilyDoctor) {
+        const reviewer = await Admin.findById(patientOwner.assignedFamilyDoctor).select('name').lean();
+        c.reviewerId = patientOwner.assignedFamilyDoctor;
+        c.reviewerName = reviewer?.name || '';
+        plan.content = c;
+        plan.markModified('content');
+      }
+    }
+    if (!c.serviceDate) return res.status(400).json({ success: false, message: '请先设置服务日期' });
+    if (!c.staffId) return res.status(400).json({ success: false, message: '请先从员工库选择就医专员' });
+    if (isCheckupService && !c.reviewerId) return res.status(400).json({ success: false, message: '请先确认方案审核医生（健康顾问）' });
+    if (!c.supervisorId) return res.status(400).json({ success: false, message: '请先从员工库选择督办人' });
+    if (!(c.followUpPlans?.length || c.followUpPlanId)) return res.status(400).json({ success: false, message: '请先关联 Admin 岗位任务方案' });
+  }
   plan.status = 'active';
   plan.pushedAt = new Date();
+  if (plan.content?.aiStatus === 'pending') {
+    plan.content.aiStatus = 'approved';
+    plan.content.aiApprovedAt = new Date();
+    plan.content.aiApprovedBy = req.staff._id;
+    plan.markModified('content');
+  }
   await plan.save();
   // 创建推送记录
   await PushRecord.create({
@@ -1677,37 +1811,117 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
   // 审核通过后客户端能收到待随访任务）；如果方案有关联订单，随访完成后据此可联动订单/消费记录状态
   if (plan.type === 'medical_assist') {
     const c = plan.content || {};
+    const isCheckupService = c.serviceDomain === 'annual_checkup'
+      || c.templateSnapshot?.serviceDomain === 'annual_checkup'
+      || /体检/.test(`${c.templateName || ''} ${plan.title || ''}`);
     const selectedAssistantId = plan.content?.staffId || plan.staffId;
+    const selectedSupervisorId = plan.content?.supervisorId || plan.staffId;
+    const workflowIds = (plan.content?.followUpPlans?.length
+      ? plan.content.followUpPlans.map(item => item.id || item._id).filter(Boolean)
+      : [plan.content?.followUpPlanId].filter(Boolean));
+    const workflowPlans = (await FollowUpPlan.find({ _id: { $in: workflowIds }, status: 'active' }).lean())
+      .filter(item => !isReportInterpretation(item.name));
+    if (!workflowPlans.length) return res.status(400).json({ success: false, message: '关联的岗位任务方案已停用或不存在' });
     const serviceDate = plan.content?.serviceDate
       ? new Date(`${plan.content.serviceDate}T${/^\d{2}:\d{2}/.test(plan.content?.serviceTime || '') ? plan.content.serviceTime.slice(0, 5) : '09:00'}:00+08:00`)
       : new Date();
+    const addDays = (date, days) => new Date(date.getTime() + Number(days || 0) * 86400000);
+    const coordinationGroupId = `medical-assist:${plan._id}`;
     const requirements = [
       c.hospital && `医院：${c.hospital}`,
       c.department && `科室：${c.department}`,
       c.expert && `医生：${c.expert}`,
+      c.reviewerName && `方案审核医生：${c.reviewerName}`,
       (c.serviceDate || c.serviceTime) && `服务时间：${[c.serviceDate, c.serviceTime].filter(Boolean).join(' ')}`,
-      plan.description && `代诊目的：${plan.description}`,
-      c.tasks && `代诊要求：${c.tasks}`,
+      plan.description && `${isCheckupService ? '体检目标' : '服务目标'}：${plan.description}`,
+      c.tasks && `${isCheckupService ? '体检执行要求' : '服务要求'}：${c.tasks}`,
       c.transport && `交通安排：${c.transport}`,
       c.hotel && `住宿安排：${c.hotel}`,
       c.notes && `注意事项：${c.notes}`,
     ].filter(Boolean).join('\n');
-    // 同一方案重复推送时更新原随访，不重复生成多条任务。
-    await FollowUp.findOneAndUpdate(
-      { sourceHealthPlanId: plan._id, sourceType: 'health_plan' },
-      {
-        $set: {
-          patientId: plan.patientId,
-          staffId: plan.staffId,
-          date: serviceDate,
-          theme: `就医协助方案随访 · ${plan.title || ''}`,
-          content: plan.description || '',
-          plannedContent: requirements,
-          status: 'planned',
-          assignedTo: selectedAssistantId,
-        },
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+    // 兼容旧版单任务：首次按新流程重推时原位升级为执行任务，避免重复待办。
+    await FollowUp.updateMany(
+      { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: '', status: { $in: ['planned', 'in_progress'] } },
+      { $set: { taskRole: 'executor', coordinationGroupId, workflowKey: String(workflowPlans[0]._id) } }
+    );
+    await FollowUp.updateMany(
+      { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: { $in: ['executor', 'supervisor'] }, workflowKey: { $in: ['', null] } },
+      { $set: { workflowKey: String(workflowPlans[0]._id) } }
+    );
+    const patient = await User.findById(plan.patientId).select('assignedHealthManager assignedFamilyDoctor assignedNutritionist assignedHealthPlanner assignedMedicalAssistant').lean();
+    const resolveAssignee = (role, fallback) => ({
+      familyDoctor: patient?.assignedFamilyDoctor || c.reviewerId,
+      healthManager: patient?.assignedHealthManager,
+      nutritionist: patient?.assignedNutritionist,
+      healthPlanner: patient?.assignedHealthPlanner || patient?.assignedMedicalAssistant,
+      medicalAssistant: patient?.assignedMedicalAssistant || patient?.assignedHealthPlanner,
+    }[role] || fallback);
+    // 每个被筛选的岗位任务方案各生成一组“执行+督办”；workflowKey 保证重复推送只更新对应组。
+    for (const workflowPlan of workflowPlans) {
+      const workflowKey = String(workflowPlan._id);
+      const workflowStart = plan.pushedAt || plan.createdAt || new Date();
+      const calculatedExecutorDate = addDays(serviceDate, workflowPlan.fixedToServiceDate ? 0 : (workflowPlan.executorDueOffsetDays ?? -1));
+      const executorDate = calculatedExecutorDate < workflowStart ? new Date(workflowStart) : calculatedExecutorDate;
+      const supervisorDate = addDays(serviceDate, workflowPlan.supervisorDueOffsetDays ?? 1);
+      const executorRemindAt = addDays(executorDate, -(workflowPlan.remindDaysBefore ?? 3));
+      const supervisorRemindAt = addDays(supervisorDate, -(workflowPlan.remindDaysBefore ?? 3));
+      const executorAssignee = resolveAssignee(workflowPlan.executorRole, selectedAssistantId);
+      // 督办人是方案制定时明确选定的人，必须优先于客户档案里的默认归属。
+      const supervisorAssignee = selectedSupervisorId || resolveAssignee(workflowPlan.supervisorRole, selectedSupervisorId);
+      const executorTask = await FollowUp.findOneAndUpdate(
+        { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'executor', workflowKey },
+        { $set: {
+          patientId: plan.patientId, staffId: plan.staffId, date: executorDate, remindAt: executorRemindAt,
+          coordinationGroupId, workflowKey, taskRole: 'executor', followUpSchemeId: workflowPlan._id,
+          theme: `执行${workflowPlan.name} · ${plan.title || ''}`, content: plan.description || '',
+          plannedContent: [requirements, workflowPlan.completionStandard && `完成标准：${workflowPlan.completionStandard}`].filter(Boolean).join('\n'),
+          status: 'planned', assignedTo: executorAssignee,
+          isBlocked: false,
+          activationEvent: '',
+        } },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+      if (workflowPlan.requiresCoordination !== false && supervisorAssignee) {
+        await FollowUp.findOneAndUpdate(
+          { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'supervisor', workflowKey },
+          { $set: {
+            patientId: plan.patientId, staffId: plan.staffId, assignedTo: supervisorAssignee,
+            date: supervisorDate, remindAt: supervisorRemindAt, coordinationGroupId, workflowKey, taskRole: 'supervisor',
+            dependsOnTaskId: executorTask._id, followUpSchemeId: workflowPlan._id,
+            theme: `督办${workflowPlan.name} · ${plan.title || ''}`,
+            content: '关注执行进度；执行人员完成后核对服务结果、资料归档及后续安排。',
+            plannedContent: `关联执行任务：${executorTask.theme}\n计划服务时间：${serviceDate.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`,
+            status: 'planned', isBlocked: false, activationEvent: '',
+          } },
+          { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
+      }
+    }
+    // 报告回收属于健管过程督办，不是预先安排的“报告解读”。体检次日进入健管专员工作台，
+    // 报告上传后继续走独立的待解析→AI解析→专业审核链路。
+    const reportCollectionAssignee = selectedSupervisorId || patient?.assignedHealthManager;
+    if (reportCollectionAssignee) {
+      const reportCollectionDate = addDays(serviceDate, 1);
+      await FollowUp.findOneAndUpdate(
+        { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'supervisor', workflowKey: 'system:checkup_report_collection' },
+        { $set: {
+          patientId: plan.patientId, staffId: plan.staffId, assignedTo: reportCollectionAssignee,
+          date: reportCollectionDate, remindAt: reportCollectionDate,
+          coordinationGroupId, workflowKey: 'system:checkup_report_collection', taskRole: 'supervisor',
+          dependsOnTaskId: null, followUpSchemeId: null,
+          theme: `督办【体检报告回收】 · ${plan.title || ''}`,
+          content: '体检完成后跟进报告出具进度，回收并核对报告资料；上传后进入独立的报告解析与专业审核流程。',
+          plannedContent: `体检日期：${serviceDate.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n完成标准：报告资料回收齐全并已上传系统。`,
+          status: 'planned', isBlocked: false, activationEvent: '',
+        } },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+    }
+    // Admin已取消“体检报告解读”岗位任务；清理旧方案残留，但不影响报告上传后的解析审核待办。
+    const obsoleteReportPlanIds = await FollowUpPlan.find({ name: /报告.*(?:解读|解析)|(?:解读|解析).*报告/ }).distinct('_id');
+    await FollowUp.updateMany(
+      { sourceHealthPlanId: plan._id, followUpSchemeId: { $in: obsoleteReportPlanIds }, status: { $in: ['planned', 'in_progress'] } },
+      { $set: { status: 'cancelled', cancelReason: '流程调整：报告上传后进入独立解析审核链路' } }
     );
     // 方案推送=本次服务预约已正式处理完毕，把下单时生成、指派给健康规划师/就医专员的原始订单待办标记完成，
     // 否则该待办会一直挂在"待处理服务预约"/"待随访任务"里，即使专员已经走完生成方案→推送的完整流程
@@ -1730,7 +1944,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
           date: serviceDate,
           title: plan.title || '就医协助方案',
           content: requirements,
-          medicalEscort: { hospital: c.hospital || '', department: c.department || '', doctor: c.expert || '' },
+          medicalEscort: { hospital: c.hospital || '', department: c.department || '', doctor: c.reviewerName || c.expert || '' },
         },
         $setOnInsert: { result: '' },
       },
@@ -1841,21 +2055,24 @@ ${discussionText}
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// DELETE /api/staff/plans/:id — 只有制定人（staffId）或超管可删除；部分方案类型额外要求角色匹配
+// DELETE /api/staff/plans/:id — 创建人可删除本人建立的方案；负责角色/超管保留既有管理权。
+// 删除前必须填写原因，并把完整快照写入 PlanDeletionLog，确保可追溯。
 router.delete('/plans/:id', staffAuth, checkPermission('plans', 'delete'), async (req, res) => {
   const plan = await HealthPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
   const reason = String(req.body?.reason || '').trim();
   if (!reason) return res.status(400).json({ success: false, message: '请填写删除原因' });
-  if (!checkPlanTypeRole(plan, req.staff.role)) {
+  const isCreator = String(plan.staffId?._id || plan.staffId) === String(req.staff._id);
+  // 类型负责角色限制不能覆盖创建人的撤销权，否则健康顾问等跨角色发起人会无法删除自己的草稿。
+  if (!isCreator && !checkPlanTypeRole(plan, req.staff.role)) {
     const roleLabel = plan.type === 'medical_assist' ? '健康规划师' : (plan.type === 'nutrition' ? '营养师' : '健康顾问');
-    return res.status(403).json({ success: false, message: `该类型方案仅限${roleLabel}删除` });
+    return res.status(403).json({ success: false, message: `仅方案创建人、${roleLabel}或管理员可删除` });
   }
-  if (!(await planTypeAllowed(req, plan.type))) {
+  if (!isCreator && !(await planTypeAllowed(req, plan.type))) {
     return res.status(403).json({ success: false, message: '当前角色无权管理该类型的健康方案' });
   }
-  if (!(await canManagePlan(req, plan))) {
-    return res.status(403).json({ success: false, message: '仅方案制定人可删除' });
+  if (!isCreator && !(await canManagePlan(req, plan))) {
+    return res.status(403).json({ success: false, message: '仅方案创建人、对应负责人或管理员可删除' });
   }
   const relatedFollowUps = await FollowUp.find({
     sourceHealthPlanId: plan._id,
@@ -2003,7 +2220,7 @@ router.patch('/medical-reports/:id/items/:itemId', staffAuth, async (req, res) =
 // POST /api/staff/medical-reports — 上传报告（Base64）
 router.post('/medical-reports', staffAuth, async (req, res) => {
   try {
-    const { patientId, title, type, hospital, date, fileUrl, fileUrls, ossKey, ossKeys, content, mimeType, fileSize, planId, planItemId, screeningL1, screeningL2 } = req.body;
+    const { patientId, title, type, documentCategory, hospital, date, fileUrl, fileUrls, ossKey, ossKeys, content, mimeType, fileSize, planId, planItemId, screeningL1, screeningL2 } = req.body;
     if (!patientId || !title) return res.status(400).json({ success: false, message: '会员和标题不能为空' });
     // fileUrls（一份报告多张照片场景）优先，fileUrl 仍取第一个做兼容，不破坏现有单文件读取逻辑
     const resolvedFileUrls = Array.isArray(fileUrls) && fileUrls.length ? fileUrls : (fileUrl ? [fileUrl] : []);
@@ -2056,6 +2273,7 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
       if (existing) {
         if (title) existing.title = title;
         if (hospital) existing.hospital = hospital;
+        if (documentCategory) existing.documentCategory = documentCategory;
         if (resolvedFileUrl) {
           existing.fileUrl = resolvedFileUrl;
           existing.fileUrls = resolvedFileUrls;
@@ -2082,7 +2300,7 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
     }
 
     report = await MedicalReport.create({
-      user: patientId, title, type: type || 'other', hospital: hospital || '',
+      user: patientId, title, type: type || 'other', documentCategory: documentCategory || 'physical_exam', hospital: hospital || '',
       date: checkDate, checkDate, reportYear,
       fileUrl: resolvedFileUrl, fileUrls: resolvedFileUrls, ossKey: resolvedOssKey, ossKeys: resolvedOssKeys, content: effectiveContent,
       mimeType: effectiveMimeType, fileSize: fileSize || '',
@@ -2140,7 +2358,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
   try {
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-    const { title, type, hospital, date, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, fileUrl, fileUrls, ossKey, ossKeys, mimeType, fileSize, editSource, expectedRevision } = req.body;
+    const { title, type, documentCategory, hospital, date, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, fileUrl, fileUrls, ossKey, ossKeys, mimeType, fileSize, editSource, expectedRevision } = req.body;
     if (reportItems !== undefined && editSource === 'ocr_review') {
       const requestedRevision = Number(expectedRevision);
       if (!Number.isInteger(requestedRevision) || requestedRevision !== Number(report.reviewRevision || 0)) {
@@ -2148,10 +2366,11 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
       }
     }
     // 已审核通过的报告：只允许更新 AI归类（aiStatus/reportItems），其余字段不可改
-    if (report.audit_status === 'audited' && (title || type || hospital || date || content)) {
+    if (report.audit_status === 'audited' && (title || type || documentCategory || hospital || date || content)) {
       return res.status(403).json({ success: false, message: '已审核通过的报告不可修改基本信息' });
     }
     if (title !== undefined) report.title = title;
+    if (documentCategory !== undefined) report.documentCategory = documentCategory;
     let typeChanged = false;
     if (type !== undefined && type !== report.type) {
       typeChanged = true;
@@ -3272,7 +3491,7 @@ router.get('/patients/:id/plans', staffAuth, async (req, res) => {
 // GET /api/staff/patients/:id/reports — 会员的体检报告列表
 router.get('/patients/:id/reports', staffAuth, async (req, res) => {
   const reports = await MedicalReport.find({ user: req.params.id })
-    .select('-content')
+    .select(REPORT_LIST_PROJECTION)
     .sort({ createdAt: 1 })
     .populate('uploadedBy', 'name role');
 
@@ -3294,7 +3513,7 @@ router.get('/patients/:id/reports', staffAuth, async (req, res) => {
     // OSS bucket 是私有的。会员详情页的报告列表此前直接返回存储 URL，
     // 导致 AI 审核弹窗预览迁移后的历史文件时触发 AccessDenied。
     // 与单份报告、报告管理列表保持一致：仅向已鉴权的医护端签发短时 URL。
-    const obj = withSignedReportFiles(r);
+    const obj = withSignedReportFiles(toReportListItem(r));
     obj.hasContent = !!hasContentMap[String(r._id)];
     return obj;
   });
@@ -4071,6 +4290,18 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
   try {
     const { planType, moduleData, notes, year, templateId, templateName } = req.body;
     if (!planType) return res.status(400).json({ success: false, message: '缺少方案类型' });
+    const todayText = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+    const personalized = moduleData?.personalized_followups?.records || [];
+    const invalidPersonalized = personalized.find(item =>
+      !item.followUpStaff || !item.executionDate ||
+      String(item.executionDate).slice(0, 10) < todayText ||
+      (item.collaborator && !item.collaborationDate) ||
+      (item.collaborationDate && !item.collaborator) ||
+      (item.collaborationDate && String(item.collaborationDate).slice(0, 10) < todayText)
+    );
+    if (invalidPersonalized) {
+      return res.status(400).json({ success: false, message: '每项随访都要选择主执行人和有效的未来日期；协同执行人和日期需要同时填写' });
+    }
     const targetYear = year || new Date().getFullYear();
     // 按「会员+年度+方案类型」定位，4个类型各存一份，互不覆盖
     const plan = await AnnualPlan.findOneAndUpdate(
@@ -4617,13 +4848,15 @@ router.put('/patients/:id/medications/:medId/reminder', staffAuth, async (req, r
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// 仅记录创建人（staffId）或超管可修改/停用，避免他人越权改动其他医护录入的用药记录
+// 健康顾问可编辑用药信息；停用仍仅限创建人或超管，编辑不等于审核通过。
 router.patch('/patients/:id/medications/:medId', staffAuth, async (req, res) => {
   try {
     const med = await Medication.findOne({ _id: req.params.medId, user: req.params.id });
     if (!med) return res.status(404).json({ success: false, message: '记录不存在' });
-    if (req.staff.role !== 'superadmin' && String(med.staffId) !== String(req.staff._id)) {
-      return res.status(403).json({ success: false, message: '仅记录创建人可修改' });
+    const isOwner = String(med.staffId) === String(req.staff._id);
+    const canEdit = req.staff.role === 'familyDoctor' && req.body.stopped === undefined;
+    if (req.staff.role !== 'superadmin' && !isOwner && !canEdit) {
+      return res.status(403).json({ success: false, message: '仅记录创建人、健康顾问或超管可编辑；停用仅限创建人或超管' });
     }
     if (med.stopped) return res.status(400).json({ success: false, message: '已停用记录为历史记录，不支持修改或恢复；如需重新使用请新增记录' });
     if (req.body.stopped === false) return res.status(400).json({ success: false, message: '已停用记录不支持恢复' });
@@ -4641,7 +4874,7 @@ router.patch('/patients/:id/medications/:medId', staffAuth, async (req, res) => 
       med.reminder = { ...(med.reminder?.toObject?.() || med.reminder || {}), enabled: false, updatedAt: new Date(), updatedBy: req.staff._id };
       await FollowUp.deleteMany({ sourceType: 'medication_reminder', sourceId: med._id, status: { $in: ['planned', 'in_progress'] }, date: { $gte: new Date() } });
     } else {
-      const allowed = ['name', 'brandName', 'specification', 'dosage', 'method', 'frequency', 'timing', 'startDate', 'endDate', 'purpose', 'note', 'aiStatus'];
+      const allowed = ['name', 'brandName', 'specification', 'dosage', 'method', 'frequency', 'timing', 'startDate', 'endDate', 'purpose', 'note'];
       allowed.forEach(key => { if (req.body[key] !== undefined) med[key] = req.body[key]; });
     }
     await med.save();
@@ -6389,7 +6622,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       health_prevention: ['abnormal_followup', 'vaccine', 'monitoring', 'annual_checkup'],
     };
     // 后端实际能生成的板块全集
-    const GENERATABLE = ['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'monitoring', 'lifestyle', 'annual_checkup'];
+    const GENERATABLE = ['medical_treatment', 'specialist_collab', 'checkup_completion', 'abnormal_followup', 'vaccine', 'monitoring', 'lifestyle', 'annual_checkup'];
     const planType = req.body.planType || '';
     const templateId = req.body.templateId || '';
     let selectedTemplate = null;
@@ -6405,13 +6638,47 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       const rule = configuredRules.find(item => item.key === (ruleKeyMap[key] || key));
       return !rule || (rule.enabled !== false && rule.aiCanGenerate !== false);
     };
-    const allowedKeys = (PLAN_TYPE_MODULES[planType] || GENERATABLE).filter(k => GENERATABLE.includes(k) && allowedByTemplate(k));
+    const requiredScreeningKeys = ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'annual_checkup'];
+    const allowedKeys = [...new Set([...(PLAN_TYPE_MODULES[planType] || GENERATABLE), ...requiredScreeningKeys])]
+      .filter(k => GENERATABLE.includes(k) && (requiredScreeningKeys.includes(k) || allowedByTemplate(k)));
     const standardFollowUpPlans = await FollowUpPlan.find({ status: 'active' })
-      .select('name cycles defaultRole default_content').sort({ name: 1 }).lean();
+      .select('name cycles defaultRole defaultEmployeeId default_content').sort({ name: 1 }).lean();
     const standardFollowUpCatalog = standardFollowUpPlans.map((item, index) => ({
       index: index + 1, id: String(item._id), name: item.name,
       cycles: item.cycles || [], defaultRole: item.defaultRole || '',
+      defaultEmployeeId: item.defaultEmployeeId ? String(item.defaultEmployeeId) : '',
       content: item.default_content || {},
+    }));
+    const inferStandardCategory = name => {
+      const text = String(name || '').replace(/[【】\s]/g, '');
+      if (/年度体检/.test(text)) return 'annual_checkup';
+      if (/完善体检|体检完善/.test(text)) return 'checkup_completion';
+      if (/定期复查|复查/.test(text)) return 'abnormal_followup';
+      if (/疫苗|接种/.test(text)) return 'vaccine';
+      if (/安排就医|就医协助|就医/.test(text)) return 'medical_treatment';
+      return 'personalized';
+    };
+    standardFollowUpCatalog.forEach(item => { item.category = inferStandardCategory(item.name); });
+    // 年度总方案的五类入口完全由当前 Admin 健康管理规则指定。
+    // 医护端和后端都只消费保存的模板 ID，不再依赖前端常量或方案名称猜测。
+    const standardActionPlans = selectedTemplate?.content?.standardActionPlans || {};
+    const categoryByConfiguredId = new Map(Object.entries(standardActionPlans)
+      .filter(([key, value]) => requiredScreeningKeys.includes(key) && value?.id)
+      .map(([key, value]) => [String(value.id), key]));
+    const annualStandardFollowUpCatalog = standardFollowUpCatalog
+      .filter(item => categoryByConfiguredId.has(item.id))
+      .map(item => ({ ...item, category: categoryByConfiguredId.get(item.id) }));
+    if (annualStandardFollowUpCatalog.length === 0) {
+      return res.status(400).json({ success: false, message: '当前Admin健康管理方案模板尚未配置年度基础动作，请先在Admin中选择标准随访模板' });
+    }
+    const personalizedIds = new Set((selectedTemplate?.content?.personalizedFollowUpPlans || [])
+      .map(item => String(item?.id || '')).filter(Boolean));
+    const personalizedStandardFollowUpCatalog = standardFollowUpCatalog
+      .filter(item => personalizedIds.has(item.id) && !categoryByConfiguredId.has(item.id))
+      .map(item => ({ ...item, category: 'personalized' }));
+    const availableAnnualFollowUpCatalog = [...annualStandardFollowUpCatalog, ...personalizedStandardFollowUpCatalog];
+    const standardFollowUpPromptCatalog = availableAnnualFollowUpCatalog.map(item => ({
+      id: item.id, name: item.name, category: item.category, cycles: item.cycles, defaultRole: item.defaultRole,
     }));
 
     const { chat } = require('../utils/ai');
@@ -6460,7 +6727,8 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
 
     const missingCheckups = (s.checkup_completeness?.missing || []).join('、') || '无';
 
-    const prompt = `你是一位健康顾问，请根据以下AI健康分析，生成${year}年度健康管理方案，按指定JSON格式输出各板块字段。
+    const todayText = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+    const prompt = `你是一位健康顾问，请根据以下AI健康分析，生成${year}年度健康管理方案，按指定JSON格式输出各板块字段。今天是${todayText}，所有待执行日期必须晚于或等于今天，禁止生成过期日期。
 
 【需优先解决的医疗问题】
 ${medPriorityText}
@@ -6492,11 +6760,13 @@ ${assessmentFocus ? JSON.stringify(assessmentFocus) : '暂无结构化主评估�
 主评估是本次方案的主题边界。方案中的每一条记录必须能对应主评估的核心结论、重点风险或下一步行动之一；不得仅因为原始资料里出现某项指标，就扩展出与主评估主题无关的就医、复查、疫苗、营养、监测或体检安排。待补信息只能生成“先补资料/先确认”的行动，不能直接生成诊断性或治疗性方案。以上专题结论仅可作为方案制定依据；未确认的讨论不得引用，若与最新体检原始证据冲突，以原始证据为准。
 
 【Admin年度管理规则】
-${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.planDesc || ''}` : '未选择规则'}
+${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.planDesc || ''}
+策略侧重点：${selectedTemplate.content?.strategyFocus || '未配置'}
+优先研判依据：${selectedTemplate.content?.strategyEvidence || '未配置'}` : '未选择规则'}
 
 【Admin统一标准随访方案库】
-${standardFollowUpCatalog.length ? JSON.stringify(standardFollowUpCatalog).slice(0, 18000) : '暂无启用方案；不得生成个性化随访方案'}
-只能从以上方案库筛选，不得虚构方案名称或ID。没有适用方案时不选择。
+${standardFollowUpPromptCatalog.length ? JSON.stringify(standardFollowUpPromptCatalog) : '暂无启用方案；不得生成方案'}
+必须依次筛查medical_treatment（就医安排）、checkup_completion（体检完善）、abnormal_followup（定期复查）、vaccine（疫苗接种）、annual_checkup（年度体检）五类基础动作。每类只能选择同category的真实模板；有依据才输出，没有依据返回空，不在页面展示。完成基础筛查后，templateNodes只能从category=personalized的Admin已选模板中选择，并且必须符合当前策略侧重点和客户证据；没有合适模板返回空数组。不得调用未列出的随访模板，不得虚构方案名称或ID。
 
 【Admin已确认的统一事项字段】
 ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依据','建议时间/时间范围','执行频率','注意事项','客户行动','责任角色','审核状态']).join('、')}
@@ -6506,26 +6776,29 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
 请严格按以下JSON格式输出，仅输出JSON：
 {
   "templateNodes": [
-    { "standardPlanId": "必须来自方案库的id", "standardPlanName": "必须来自方案库的name", "title": "客户个性化随访名称", "matchReason": "与研判的匹配依据", "content": "个性化随访内容", "time": "计划时间或周期", "frequency": "执行频次", "precautions": "注意事项", "customerAction": "客户行动", "ownerRole": "责任角色" }
+    { "standardPlanId": "必须来自方案库的id", "standardPlanName": "必须来自方案库的name且不可改名", "matchReason": "与研判的匹配依据", "personalization": "只写相对标准方案需要增加、删减或重点关注的调整，无调整写空字符串", "executionDate": "不早于${todayText}的YYYY-MM-DD日期", "frequency": "执行频次", "precautions": "注意事项", "customerAction": "客户行动" }
   ],
   "medical_treatment": [
-    { "reason": "就医原因", "department": "就诊科室", "visit_time": "建议时间或待确认", "basisSummary": "设置依据", "frequency": "单次", "precautions": "注意事项", "customerAction": "客户需要完成的事项", "ownerRole": "责任角色", "notes": "内部备注" }
+    { "standardPlanId": "category=medical_treatment的真实模板id", "reason": "就医原因", "department": "就诊科室", "visit_time": "不早于${todayText}的日期", "basisSummary": "设置依据", "frequency": "单次", "precautions": "注意事项", "customerAction": "客户需要完成的事项", "ownerRole": "责任角色", "notes": "内部备注" }
   ],
   "specialist_collab": [],
+  "checkup_completion": [
+    { "standardPlanId": "category=checkup_completion的真实模板id", "items": "需要补充的体检项目", "reason": "资料缺口或筛查依据", "time": "不早于${todayText}的日期", "frequency": "单次", "precautions": "检查准备", "customerAction": "完成检查并上传报告", "ownerRole": "健管专员" }
+  ],
   "abnormal_followup": [
-    { "items": "复查项目名称", "reason": "复查原因", "time": "建议时间或时间范围", "basisSummary": "来源报告、日期和异常事实", "frequency": "单次", "precautions": "如需空腹、携带既往资料", "customerAction": "按确认时间完成复查", "ownerRole": "健管专员", "notes": "内部备注" }
+    { "standardPlanId": "category=abnormal_followup的真实模板id", "items": "复查项目名称", "reason": "复查原因", "time": "不早于${todayText}的日期", "basisSummary": "来源报告、日期和异常事实", "frequency": "单次", "precautions": "如需空腹、携带既往资料", "customerAction": "按确认时间完成复查", "ownerRole": "健管专员", "notes": "内部备注" }
   ],
   "vaccine": [
-    { "name": "疫苗名称", "time": "${year}-10-15", "reason": "接种原因" }
+    { "standardPlanId": "category=vaccine的真实模板id", "name": "疫苗名称", "time": "不早于${todayText}的日期", "reason": "接种依据" }
   ],
   "monitoring": [
     { "items": "监测项目", "frequency": "每日1次", "time": "每天早晨", "basisSummary": "设置依据", "precautions": "测量要求", "customerAction": "按频次记录数据", "ownerRole": "客户/健管专员", "notes": "内部备注" }
   ],
   "lifestyle": { "focus": "干预重点（饮食、运动、睡眠等）", "time": "${year}年全年" },
-  "annual_checkup": { "focus": "重点关注项目", "date": "${suggestedCheckupDate || `${year + 1}-06-01`}", "escort": false }
+  "annual_checkup": { "standardPlanId": "category=annual_checkup的真实模板id", "focus": "重点关注项目", "date": "${suggestedCheckupDate || `${year + 1}-06-01`}", "escort": false }
 }
 
-注意：每个事项必须填写项目名称、basisSummary、时间或时间范围、frequency、precautions、customerAction、ownerRole；审核状态由系统统一设为待健康顾问审核。所有展示为项目名称的字段必须简单明确，只写“要做什么”，不得把原因、剂量、操作细节或注意事项塞进名称；items、name和templateNodes.title不超过20个汉字。templateNodes是客户个性化随访方案，只能选择方案库中真实存在且与主评估行动匹配的方案；不得为了填满模板创造新主题。medical_treatment仅填主评估明确的高优先级就医需求；specialist_collab仅在主评估明确会诊时填写。禁止生成没有依据的医院、专家姓名和已预约精确日期；可以根据证据给出建议日期或时间范围，未确认写“待确认”。无相关内容用空数组。`;
+注意：每个事项必须填写项目名称、basisSummary、时间或时间范围、frequency、precautions、customerAction、ownerRole；审核状态由系统统一设为待健康顾问审核。所有展示为项目名称的字段必须简单明确，只写“要做什么”，不得把原因、剂量、操作细节或注意事项塞进名称；items和name不超过20个汉字。templateNodes不是AI新建方案，而是从Admin标准随访方案库调用后做客户级调整；standardPlanId和standardPlanName必须原样引用，禁止另起名称、改写模板或为了填满页面创造新主题。medical_treatment仅填主评估明确的高优先级就医需求；specialist_collab仅在主评估明确会诊时填写。禁止生成没有依据的医院、专家姓名和已预约精确日期；可以根据证据给出建议日期或时间范围，未确认写“待确认”。无相关内容用空数组。`;
 
     const text = await chat([{ role: 'user', content: prompt }], {
       maxTokens: 6000,
@@ -6542,23 +6815,32 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
       return res.status(502).json({ success: false, message: 'AI返回的方案内容不完整，请重试' });
     }
 
-    const generatedCount = [
-      ...(Array.isArray(raw.templateNodes) ? raw.templateNodes : []),
-      ...['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'monitoring']
-        .flatMap(key => Array.isArray(raw[key]) ? raw[key] : []),
-      ...(raw.lifestyle ? [raw.lifestyle] : []),
-      ...(raw.annual_checkup ? [raw.annual_checkup] : []),
-    ].length;
-    if (generatedCount === 0) {
-      return res.status(502).json({ success: false, message: 'AI未生成有效方案内容，请重试或检查AI服务配置' });
-    }
-
     // 转为 moduleData 结构（多条板块用 { records: [...] }）
     // 只输出当前所选方案类型包含的板块，其余板块不生成
     const result = {};
-    ['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'monitoring'].forEach(key => {
+    const standardPlanById = new Map(availableAnnualFollowUpCatalog.map(item => [item.id, item]));
+    const formatStandardContent = source => Object.entries(source.content || {})
+      .filter(([key, value]) => !/时间|日期/.test(key) && value !== undefined && value !== null && String(value).trim())
+      .map(([key, value]) => `${key}：${value}`).join('\n') || '按标准模板执行';
+    const formatStandardSchedule = source => (source.cycles || []).map((cycle, index) => {
+      if (cycle.cycleType === 'date') return `第${index + 1}次：由健康顾问选择实际日期${cycle.notes ? `（${cycle.notes}）` : ''}`;
+      const unit = cycle.cycleUnit === 'week' ? '周' : cycle.cycleUnit === 'month' ? '个月' : '天';
+      return `第${index + 1}次：确认方案后${cycle.cycleDuration || 0}${unit}${cycle.notes ? `（${cycle.notes}）` : ''}`;
+    }).join('\n') || '由健康顾问选择实际日期';
+    const hydrateStandardRecord = (record, expectedCategory) => {
+      const source = standardPlanById.get(String(record.standardPlanId || ''));
+      if (!source || source.category !== expectedCategory) return null;
+      return {
+        ...record, standardPlanId: source.id, standardPlanName: source.name, sourceCycles: source.cycles,
+        standardContent: formatStandardContent(source), standardSchedule: formatStandardSchedule(source),
+      };
+    };
+    ['medical_treatment', 'specialist_collab', 'checkup_completion', 'abnormal_followup', 'vaccine', 'monitoring'].forEach(key => {
       if (!allowedKeys.includes(key)) return;
-      const records = Array.isArray(raw[key]) ? raw[key] : [];
+      let records = Array.isArray(raw[key]) ? raw[key] : [];
+      if (['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine'].includes(key)) {
+        records = records.map(record => hydrateStandardRecord(record, key)).filter(Boolean);
+      }
       result[key] = { records: records.map(record => ({
         ...record,
         reviewStatus: 'pending_family_doctor_review',
@@ -6568,20 +6850,29 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
       })) };
     });
     if (allowedKeys.includes('lifestyle') && raw.lifestyle && !Array.isArray(raw.lifestyle) && raw.lifestyle.focus) result.lifestyle = { enabled: true, ...raw.lifestyle };
-    if (allowedKeys.includes('annual_checkup') && raw.annual_checkup && !Array.isArray(raw.annual_checkup) && raw.annual_checkup.focus) result.annual_checkup = { enabled: true, ...raw.annual_checkup };
-    const standardPlanById = new Map(standardFollowUpCatalog.map(item => [item.id, item]));
-    const standardPlanByName = new Map(standardFollowUpCatalog.map(item => [item.name, item]));
+    if (allowedKeys.includes('annual_checkup') && raw.annual_checkup && !Array.isArray(raw.annual_checkup) && raw.annual_checkup.focus) {
+      const hydrated = hydrateStandardRecord(raw.annual_checkup, 'annual_checkup');
+      if (hydrated) result.annual_checkup = { enabled: true, ...hydrated };
+    }
+    const standardPlanByName = new Map(availableAnnualFollowUpCatalog.map(item => [item.name, item]));
     result.templateNodes = Array.isArray(raw.templateNodes) ? raw.templateNodes.map(node => {
       const source = standardPlanById.get(String(node.standardPlanId || '')) || standardPlanByName.get(String(node.standardPlanName || '').trim());
-      if (!source) return null;
+      if (!source || source.category !== 'personalized') return null;
       return {
         ...node, standardPlanId: source.id, standardPlanName: source.name, sourceCycles: source.cycles,
-        title: conciseTitle(node.title || node.content || source.name),
+        standardContent: formatStandardContent(source), standardSchedule: formatStandardSchedule(source),
+        personalization: String(node.personalization || node.content || '').trim(),
+        defaultEmployeeId: source.defaultEmployeeId || '',
+        executionDate: (() => {
+          const candidate = String(node.executionDate || node.time || '').slice(0, 10);
+          return /^\d{4}-\d{2}-\d{2}$/.test(candidate) && candidate >= todayText ? candidate : todayText;
+        })(),
+        title: source.name,
       };
     }).filter(Boolean) : [];
 
-    if (allowedKeys.includes('annual_checkup') && suggestedCheckupDate) {
-      result.annual_checkup = { ...(result.annual_checkup || { enabled: true }), date: suggestedCheckupDate };
+    if (result.annual_checkup && suggestedCheckupDate) {
+      result.annual_checkup = { ...result.annual_checkup, date: suggestedCheckupDate };
     }
 
     res.json({ success: true, data: result, basis: assessmentFocus, template: selectedTemplate ? { _id: selectedTemplate._id, name: selectedTemplate.name } : null });
@@ -7501,10 +7792,10 @@ router.get('/patients/:id/screening-reports', staffAuth, async (req, res) => {
     // 时会调 staffAPI.getReport(id) 单独补拉，所以这里裁掉即可，不影响任何现有功能。
     const reports = await MedicalReport.find({
       user: req.params.id,
-    }).select('-content').sort({ checkDate: -1, createdAt: -1 }).lean();
+    }).select(REPORT_LIST_PROJECTION).sort({ checkDate: -1, createdAt: -1 }).lean();
     // 专项筛查板块也会直接打开报告原件。这里此前返回数据库中的私有 OSS 裸地址，
     // 导致“查看报告 PDF”跳转后 AccessDenied；与报告列表/审核弹窗统一返回受控预览地址。
-    res.json({ success: true, data: reports.map(withSignedReportFiles) });
+    res.json({ success: true, data: reports.map(report => withSignedReportFiles(toReportListItem(report))) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -8001,7 +8292,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
 
     // ── 健康规划师：AI就医协助方案待审核 ──
     if (can('medical_assist_plan_review')) {
-      const medicalAssistPlanFilter = { type: 'medical_assist', 'content.aiStatus': 'pending', ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
+      // 已推送方案已进入岗位执行流，不再重复作为“AI待审核”出现。
+      const medicalAssistPlanFilter = { type: 'medical_assist', status: 'draft', 'content.aiStatus': 'pending', ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
       const medicalAssistPlans = await HealthPlan.find(medicalAssistPlanFilter)
         .populate('patientId', 'name').sort({ createdAt: -1 }).limit(50).lean();
       medicalAssistPlans.forEach(p => {
@@ -10043,6 +10335,13 @@ async function runReportPageParse(reportId, pageNum) {
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) throw new Error('报告不存在');
+  const { describeExistingReportItems, filterMissingReportItems, inferMissingUltrasoundOrgans } = require('../utils/reportPageSupplement');
+  const belongsToRequestedPage = item => Number(item.sourcePage) === pageNum || (!item.sourcePage && pageNum === 1);
+  const oldPageAtStart = (report.reportItems || []).filter(belongsToRequestedPage);
+  const existingItemText = describeExistingReportItems(oldPageAtStart);
+  const targetOrgans = inferMissingUltrasoundOrgans(oldPageAtStart);
+  const targetText = targetOrgans.map(item => item.label).join('、');
+  const missingOnlyPrompt = `\n\n【差量补提——最高优先级】本页已有项目：${existingItemText || '无'}。${targetText ? `\n程序已确认只缺：${targetText}。仅允许输出这些器官，不得输出任何其他项目。` : ''}\n只输出已有清单之外的真实遗漏项目；每个影像项的 findings 必须逐字抄录并包含对应器官原词，不得输出“未见明显异常回声”等无器官出处的通用句。已有项目即使字段识别不同也禁止再次输出。如看不清或无遗漏，返回 items=[]，禁止猜测。`;
   const reportUser = await User.findById(report.user).select('age').lean();
   const usePediatricBodyComposition = isPediatricAge(reportUser?.age);
   const isPdf = isPdfReport(report);
@@ -10074,24 +10373,24 @@ async function runReportPageParse(reportId, pageNum) {
     let parsed = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const regionHint = images.length > 1 ? `这是第${pageNum}页的${regionIndex === 0 ? '上半部分' : '下半部分'}，边界有重叠；` : '';
+      const regionHint = images.length > 1 ? `这是第${pageNum}页的${regionIndex === 0 ? '左半部分' : '右半部分'}，边界有重叠；` : '';
       const pagePrompt = report.type === 'body_comp' && usePediatricBodyComposition
         ? REPORT_PARSE_PROMPT + PEDIATRIC_BODY_COMPOSITION_PROMPT
         : REPORT_PARSE_PROMPT;
-      const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}\n\n【单页补提】${regionHint}从上到下、从左到右逐行提取全部实际结果，不得跳过任何栏目。`, { isUrl: false, model: 'qwen-vl-max', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 120000 });
+      const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}${missingOnlyPrompt}\n\n【单页补提】${regionHint}从上到下、从左到右逐行核对全页，仅提取已有清单中没有的项目。`, { isUrl: false, model: 'qwen-vl-max', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 120000 });
       parsed = safeParseJSON(raw);
-      if (parsed?.items?.length) break;
+      if (Array.isArray(parsed?.items)) break;
     } catch (error) {
       if (attempt === 3) throw error;
       console.log(`[parse-page] ${reportId} P${pageNum} 第${attempt}次失败，自动重试: ${error.message}`);
     }
     }
-    if (!parsed?.items?.length) throw new Error(`第${pageNum}页${images.length > 1 ? (regionIndex === 0 ? '上半部分' : '下半部分') : ''}未识别到有效项目，原数据未改动`);
+    if (!Array.isArray(parsed?.items)) throw new Error(`第${pageNum}页${images.length > 1 ? (regionIndex === 0 ? '上半部分' : '下半部分') : ''}未返回有效结果，原数据未改动`);
     let regionItems = parsed.items;
     // 单页补提必须再做一次覆盖复核，专门扫描双栏表格的右半侧和下半部；只合并新增项，不覆盖已有人工数据。
     try {
-      const existingNames = regionItems.map(item => str(item.name)).filter(Boolean).join('、');
-      const auditRaw = await parseImage(images[regionIndex], `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n已提取项目：${existingNames || '无'}。请逐行核对右半侧后再核对左半侧，只输出遗漏项目。`, { isUrl: false, model: 'qwen-vl-max', maxTokens: 5000, timeoutMs: 120000 });
+      const existingNames = [existingItemText, ...regionItems.map(item => str(item.name)).filter(Boolean)].filter(Boolean).join('、');
+      const auditRaw = await parseImage(images[regionIndex], `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n本页已有或本轮已找到的项目：${existingNames || '无'}。请逐行核对右半侧后再核对左半侧，只输出清单之外的遗漏项目。`, { isUrl: false, model: 'qwen-vl-max', maxTokens: 5000, timeoutMs: 120000 });
       const audit = safeParseJSON(auditRaw);
       if (audit?.items?.length) regionItems = mergeCoverageAuditItems(regionItems, audit.items);
     } catch (auditError) {
@@ -10099,7 +10398,8 @@ async function runReportPageParse(reportId, pageNum) {
     }
     parsedItems = mergeCoverageAuditItems(parsedItems, regionItems);
   }
-  let newPage = tagReportPageItems(parsedItems, pageNum);
+  // 模型即使违反差量指令返回整页，也只允许真正缺项进入后续合并。
+  let newPage = tagReportPageItems(filterMissingReportItems(oldPageAtStart, parsedItems, { targetOrgans }), pageNum);
   if (usePediatricBodyComposition && isBodyCompositionPage({}, newPage, report.type)) {
     newPage = sanitizePediatricBodyCompositionPage(newPage, true);
   }
@@ -10107,18 +10407,35 @@ async function runReportPageParse(reportId, pageNum) {
   if (useZheyiTemplate) newPage = zheyiTemplate.normalizeZheyiItems(newPage);
   newPage = normalizeSingleExamReportItems(normalizeDepartmentExamItems(normalizeBreathTestItems(newPage, report)), report);
   const latest = await MedicalReport.findById(reportId);
-  const oldPage = (latest.reportItems || []).filter(item => Number(item.sourcePage) === pageNum);
+  const oldPage = (latest.reportItems || []).filter(belongsToRequestedPage);
+  newPage = filterMissingReportItems(oldPage, newPage, { targetOrgans });
+  const acceptedSupplementItems = [...newPage];
   const mergedPage = mergeCoverageAuditItems(oldPage, newPage);
   const classifiedPage = await classifyItemsAsync(mergedPage);
-  const preserved = (latest.reportItems || []).filter(item => Number(item.sourcePage) !== pageNum);
+  const preserved = (latest.reportItems || []).filter(item => !belongsToRequestedPage(item));
   const combined = [...preserved, ...classifiedPage]
     .sort((a, b) => Number(a.sourcePage || 0) - Number(b.sourcePage || 0));
+  const completedAt = new Date();
+  const pageParseHistory = [...(Array.isArray(latest.pageParseHistory) ? latest.pageParseHistory : []), {
+    pageNum,
+    startedAt: report.pageParseStatus?.startedAt || new Date(),
+    completedAt,
+    targetOrgans,
+    beforeItems: oldPageAtStart,
+    aiCandidates: parsedItems,
+    acceptedItems: acceptedSupplementItems,
+    afterItems: classifiedPage,
+  }].slice(-3);
+  const resultMessage = acceptedSupplementItems.length
+    ? `第${pageNum}页补提完成，新增${acceptedSupplementItems.length}项，本页共${classifiedPage.length}项`
+    : `第${pageNum}页未找到有原文证据的遗漏项，已保留原${oldPage.length}项`;
   await MedicalReport.findByIdAndUpdate(reportId, {
     reportItems: combined,
     aiStatus: 'pending',
-    pageParseStatus: { pageNum, status: 'success', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt: new Date(), message: `第${pageNum}页补提完成，共${classifiedPage.length}项`, itemCount: classifiedPage.length },
+    pageParseStatus: { pageNum, status: 'success', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt, message: resultMessage, itemCount: acceptedSupplementItems.length },
+    pageParseHistory,
   });
-  console.log(`[parse-page] ${reportId} P${pageNum} 完成：${oldPage.length}→${classifiedPage.length}，其他页保留${preserved.length}项`);
+  console.log(`[parse-page] ${reportId} P${pageNum} 完成：原${oldPage.length}项，AI候选${parsedItems.length}项，接受${acceptedSupplementItems.length}项，其他页保留${preserved.length}项`);
 }
 
 // POST /api/staff/medical-reports/:id/parse-ai — 医护端触发AI解析（异步）
@@ -10227,15 +10544,27 @@ router.get('/diag/pdf', staffAuth, async (req, res) => {
 // 改动 AI 归类核心逻辑依赖的共享代码——本路由改动完全独立、出问题只影响这一个下拉框，不影响 AI 自动归类主流程。
 router.get('/screening-catalog', staffAuth, async (req, res) => {
   try {
-    const cats = await ProjectCategory.find({ status: 'active' }).select('name parent').lean();
+    const [cats, catalogItems] = await Promise.all([
+      ProjectCategory.find({ status: 'active' }).select('name parent aliases').lean(),
+      Promise.all([
+        LabTestOrder.find({ status: 'active', categoryId: { $ne: null } }).select('name categoryId').lean(),
+        LabTestItem.find({ status: 'active', categoryId: { $ne: null } }).select('name categoryId').lean(),
+        SpecialExam.find({ status: 'active', deleted: { $ne: true }, categoryId: { $ne: null } }).select('name categoryId').lean(),
+      ]).then(groups => groups.flat()),
+    ]);
 
     const byId = new Map(cats.map(c => [String(c._id), c]));
+    const catalogNamesByCategory = new Map();
+    catalogItems.forEach(item => {
+      const categoryId = String(item.categoryId || '');
+      const name = String(item.name || '').trim();
+      if (!categoryId || !name) return;
+      if (!catalogNamesByCategory.has(categoryId)) catalogNamesByCategory.set(categoryId, []);
+      catalogNamesByCategory.get(categoryId).push(name);
+    });
     const childCount = new Map();
     cats.forEach(c => { if (c.parent) childCount.set(String(c.parent), (childCount.get(String(c.parent)) || 0) + 1); });
     const isLeaf = c => !(childCount.get(String(c._id)) > 0);
-
-    // 排除"功能检测/功能医学"类L1，跟AI归类(buildAdminIndex)规则保持一致，这类只能人工在OCR审核弹窗手动选
-    const excludeL1Ids = new Set(cats.filter(c => !c.parent && /功能检测|功能医学/.test(c.name)).map(c => String(c._id)));
 
     const groupsByL1 = new Map();
     cats.filter(isLeaf).forEach(leaf => {
@@ -10258,7 +10587,6 @@ router.get('/screening-catalog', staffAuth, async (req, res) => {
       }
       if (chain.length) { l1 = chain[0]; parentLabel = chain[chain.length - 1].name; }
       const l1Id = String(l1._id);
-      if (excludeL1Ids.has(l1Id)) return;
 
       const value = `${l1Id}|${parentLabel}|${leaf.name}`;
       if (!groupsByL1.has(l1.name)) groupsByL1.set(l1.name, []);
@@ -10267,6 +10595,13 @@ router.get('/screening-catalog', staffAuth, async (req, res) => {
         // 只展示Admin真实分类层级；已归类项目名仅用于后台搜索/自动匹配，不伪装成分类名称。
         label: `${parentLabel !== leaf.name ? parentLabel + ' / ' : ''}${leaf.name}`,
         groupLabel: l1.name,
+        // 下拉显示真实分类层级，但搜索同时覆盖Admin别名和已绑定项目名。
+        // 例如输入“牛肉IgG4”即可找到“功能医学检测 / 慢性食物过敏”。
+        searchTerms: [...new Set([
+          leaf.name,
+          ...(leaf.aliases || []),
+          ...(catalogNamesByCategory.get(String(leaf._id)) || []),
+        ].map(value => String(value || '').trim()).filter(Boolean))],
       });
     });
 
@@ -10599,12 +10934,13 @@ ${goal ? goal : '（未填写目标，按会员信息与模板骨架常规定制
 // ── 场景9：AI就医协助方案（健康规划师审核） ────────────────────────────────────
 // POST /api/staff/patients/:id/ai-medical-assist-plan?orderId=xxx
 // 创建 HealthPlan type='medical_assist' status='draft' content.aiStatus='pending'
-// 只有健康规划师/超管可生成（与就医协助方案审核角色一致）；orderId 可选——商城订单流转过来的场景会带上，
+// 健康顾问可从客户整体管理中发起，健康规划师也可从服务订单发起；生成后仍统一由健康规划师审核和承接。
+// orderId 可选——商城订单流转过来的场景会带上，
 // 用订单里的服务名称/备注作为生成依据，关联 sourceOrderId 便于订单-方案-随访状态联动追溯
 // （2026-07-13 需求：客户商城下单就医类服务 → 转派就医专员 → AI生成方案 → 审核 → 推送 → 自动建随访）
 router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) => {
-  if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) {
-    return res.status(403).json({ success: false, message: '仅健康规划师可生成就医协助方案' });
+  if (!['familyDoctor', 'healthPlanner', 'superadmin'].includes(req.staff.role)) {
+    return res.status(403).json({ success: false, message: '仅健康顾问或健康规划师可发起就医协助方案' });
   }
   try {
     const user = await User.findById(req.params.id)
@@ -10638,20 +10974,28 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
     }
 
     const { chat } = require('../utils/ai');
+    const chinaDateParts = new Intl.DateTimeFormat('zh-CN', {
+      timeZone: 'Asia/Shanghai', year: 'numeric', month: 'numeric', day: 'numeric',
+    }).formatToParts(new Date()).reduce((acc, part) => ({ ...acc, [part.type]: Number(part.value) || part.value }), {});
+    const currentYear = Number(chinaDateParts.year);
+    const currentMonth = Number(chinaDateParts.month);
+    const currentDay = Number(chinaDateParts.day);
+    const currentDateLabel = `${currentYear}年${currentMonth}月${currentDay}日`;
     const allergyInfo = [user.healthProfile?.foodAllergy, user.healthProfile?.drugAllergy].filter(Boolean).join('；') || '无';
     const orderInfo = order
       ? `客户已下单服务：${order.serviceName}${order.note ? `，备注：${order.note}` : ''}`
       : '（无关联订单，请按会员情况酌情安排）';
 
-    // 模板字段是否存在标准值（非空）决定是否让AI生成对应个性化内容：
-    // 模板本身没有hotel/transport（如"医疗咨询服务"这类无需住宿交通的服务）就不该在方案里凭空编造，
-    // 避免不同服务类型看起来字段都一样、看不出差异（2026-07-13 反馈"模板就是为了标准化"）
+    // 只有模板明确允许的可选后勤项目才交给 AI 个性化，避免把住宿、交通变成所有服务的固定字段。
+    // 旧模板仍按 hotel/transport 非空兼容；新模板统一读取 optionalLogistics。
     const templateForFields = matchedTemplate || candidateTemplates[0] || null;
+    const isCheckupService = templateForFields?.content?.serviceDomain === 'annual_checkup';
+    const optionalLogistics = templateForFields?.content?.optionalLogistics || '';
     const askFields = {
-      hospital: true, department: true,
-      expert: !templateForFields || !!templateForFields.content?.expert,
-      hotel: !templateForFields || !!templateForFields.content?.hotel,
-      transport: !templateForFields || !!templateForFields.content?.transport,
+      hospital: true, department: !isCheckupService,
+      expert: !isCheckupService && (!templateForFields || !!templateForFields.content?.expert),
+      hotel: !templateForFields || /住宿/.test(optionalLogistics) || !!templateForFields.content?.hotel,
+      transport: !templateForFields || /交通|接送/.test(optionalLogistics) || !!templateForFields.content?.transport,
     };
 
     let templateBlock = '（无匹配模板，请根据会员与订单信息自行拟定方案）';
@@ -10667,16 +11011,19 @@ ${candidateTemplates.map(t => `《${t.name}》：${JSON.stringify(t.content)}`).
     const fieldSpecs = [
       `"title": "方案名称，必须包含具体服务类型${templateForFields ? `（本次是${templateForFields.name}）` : ''}和月日，如：${user.name}${templateForFields?.name || '就医协助'}方案（${new Date().getMonth() + 1}月${new Date().getDate()}日），不要只写笼统的'就医协助方案'——同一会员可能多次生成，必须能一眼区分是哪次"`,
       `"description": "方案简介，说明本次就医协助的目的（100字以内）"`,
-      askFields.hospital && `"hospital": "建议就诊医院（结合会员慢病情况推断合适的医院，无法判断则留空）"`,
+      askFields.hospital && `"hospital": "${isCheckupService ? '体检机构或体检中心（只能填写服务目标或已确认资料中明确的机构，未明确则留空）' : '建议就诊医院（结合会员慢病情况推断合适的医院，无法判断则留空）'}"`,
       askFields.department && `"department": "建议就诊科室"`,
       askFields.expert && `"expert": "建议专家，无法判断则留空"`,
       askFields.hotel && `"hotel": "本次住宿安排（结合会员情况具体化，如模板固定为'无需安排'则原样返回）"`,
       askFields.transport && `"transport": "本次交通安排（结合会员情况具体化，如模板固定为'无需安排'则原样返回）"`,
-      `"tasks": "针对该会员的具体执行安排，每行一项，需结合模板步骤但要写出本次的具体内容（如具体日期、具体证件），不要原样照抄模板"`,
+      `"tasks": "针对该会员的具体执行安排，每行一项，需结合模板步骤但要写出本次的具体内容（如具体日期、具体证件），不要原样照抄模板${isCheckupService ? '；本次是体检服务，只写体检方案确认、预约协调、体检准备、现场陪检、报告回收与解读，不得写门诊挂号、就诊科室、建议专家或虚构具体检查项目' : ''}"`,
       `"notes": "本次注意事项，若模板notes是待填空的清单（如'挂号科室：\\n时间安排：'），请把冒号后面的内容具体填好"`,
     ].filter(Boolean).join(',\n  ');
 
     const prompt = `你是一位就医协助服务专员，请根据会员信息、已下单的服务和标准方案模板生成个性化就医协助方案。
+
+【当前日期】
+${currentDateLabel}（北京时间）。所有待执行任务不得早于当前日期；如果尚未确认服务日期，只能使用“服务日期确认后”“体检前”等相对时间，不得自行编造具体月日。
 
 【会员信息】
 姓名：${user.name}，年龄：${user.age || '未知'}岁，慢病标签：${user.chronicDiseases?.join('、') || '无'}
@@ -10698,17 +11045,36 @@ ${templateBlock}
 
 注意：tasks至少2项，且必须是针对该会员的具体安排，不是模板步骤的复述。`;
 
-    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1200 });
+    const scopedPrompt = isCheckupService
+      ? `${prompt}\n\n【体检场景硬性边界】这是体检服务方案，不是门诊就医方案。禁止使用“就诊医院、就诊科室、门诊挂号、建议专家”等门诊表述；没有已确认医学依据时，不得自行新增具体检查项目。`
+      : prompt;
+
+    const text = await chat([{ role: 'user', content: scopedPrompt }], { maxTokens: 1200 });
     let raw = {};
     try {
       const m = text.trim().match(/\{[\s\S]*\}/);
       if (m) raw = JSON.parse(m[0]);
     } catch {}
 
+    // AI提示之外再做确定性兜底，禁止“8月28日前”等已经过期的日期进入待执行方案。
+    const normalizePastTaskDates = (value) => String(value || '').replace(
+      /(\d{1,2})月(\d{1,2})日(?:\s*\d{1,2}:\d{2})?(?:前|之前|前完成)?/g,
+      (matched, monthText, dayText) => {
+        const month = Number(monthText);
+        const day = Number(dayText);
+        return month < currentMonth || (month === currentMonth && day < currentDay)
+          ? '生成方案后尽快'
+          : matched;
+      }
+    );
+    raw.tasks = Array.isArray(raw.tasks)
+      ? raw.tasks.map(normalizePastTaskDates)
+      : normalizePastTaskDates(raw.tasks);
+
     const items = [];
     if (raw.hospital) {
       const dept = raw.department ? ` · ${raw.department}` : '';
-      items.push({ name: `就诊：${raw.hospital}${dept}`, category: '就医协助' });
+      items.push({ name: `${isCheckupService ? '体检机构' : '就诊'}：${raw.hospital}${dept}`, category: '就医协助' });
     }
     if (raw.expert) items.push({ name: `专家：${raw.expert}`, category: '就医协助' });
     if (order) items.push({ name: `关联订单：${order.serviceName}`, category: '就医协助' });
@@ -10749,11 +11115,28 @@ ${templateBlock}
         // 模板原始骨架快照——不经AI改写，前端"标准动作"区块直接展示这份，
         // 跟下面AI生成的个性化内容分开陈列，避免两者混在一起分不清
         templateSnapshot: usedTemplate ? {
-          tasks: usedTemplate.content?.tasks || '',
+          serviceDomain: usedTemplate.content?.serviceDomain || 'medical_assist',
+          assistanceType: usedTemplate.content?.assistanceType || '',
+          applicableScenario: usedTemplate.content?.applicableScenario || '',
+          standardSteps: usedTemplate.content?.standardSteps || usedTemplate.content?.tasks || '',
+          requiredMaterials: usedTemplate.content?.requiredMaterials || '',
+          completionStandard: usedTemplate.content?.completionStandard || '',
+          optionalLogistics: usedTemplate.content?.optionalLogistics || '',
+          riskNotes: usedTemplate.content?.riskNotes || usedTemplate.content?.notes || '',
+          // 兼容迁移前已生成方案的旧字段。
+          tasks: usedTemplate.content?.tasks || usedTemplate.content?.standardSteps || '',
           hotel: usedTemplate.content?.hotel || '',
           transport: usedTemplate.content?.transport || '',
-          notes: usedTemplate.content?.notes || '',
+          notes: usedTemplate.content?.notes || usedTemplate.content?.riskNotes || '',
         } : null,
+        followUpPlanId: usedTemplate?.content?.followUpPlanId || '',
+        followUpPlanName: usedTemplate?.content?.followUpPlanName || '',
+        followUpPlans: usedTemplate?.content?.followUpPlans?.length
+          ? usedTemplate.content.followUpPlans
+          : (usedTemplate?.content?.followUpPlanId ? [{ id: usedTemplate.content.followUpPlanId, name: usedTemplate.content.followUpPlanName || '' }] : []),
+        assistanceType: usedTemplate?.content?.assistanceType || '',
+        serviceDomain: usedTemplate?.content?.serviceDomain || 'medical_assist',
+        serviceMode: usedTemplate?.content?.serviceMode || '',
         hospital: raw.hospital || '', department: raw.department || '', expert: raw.expert || '',
         hotel: raw.hotel || '', transport: raw.transport || '',
         tasks: tasksText, notes: raw.notes || '',

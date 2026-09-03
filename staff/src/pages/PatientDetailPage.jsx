@@ -505,7 +505,73 @@ const REPORT_L1_TYPES = [
   { key: 'home_monitor',   label: '居家监测' },
   { key: 'other',          label: '其他常规筛查' },
 ]
-const REPORT_L1_LABEL_TO_TYPE = Object.fromEntries(REPORT_L1_TYPES.map(item => [item.label, item.key]))
+const DOCUMENT_CATEGORIES = [
+  { key: 'physical_exam', label: '体检报告' },
+  { key: 'lab_report', label: '检验报告' },
+  { key: 'exam_report', label: '检查报告' },
+  { key: 'body_composition', label: '人体成分' },
+  { key: 'functional_medicine', label: '功能医学' },
+  { key: 'genetic_test', label: '基因检测' },
+  { key: 'outpatient_record', label: '门诊病历' },
+  { key: 'inpatient_record', label: '住院病历' },
+  { key: 'prescription_order', label: '处方与医嘱' },
+  { key: 'questionnaire', label: '问卷资料' },
+  { key: 'other_customer_material', label: '其他资料' },
+]
+const DOCUMENT_CATEGORY_LABEL = Object.fromEntries(DOCUMENT_CATEGORIES.map(item => [item.key, item.label]))
+const inferDocumentCategory = report => {
+  // 已保存的资料分类是人工选择；标题推断仅用于没有分类的历史资料。
+  if (DOCUMENT_CATEGORY_LABEL[report.documentCategory]) return report.documentCategory
+  const title = report.title || ''
+  // 这些历史资料过去通常被保存为“其他”，明确业务名称应优先于旧的兜底分类。
+  if (/慢性食物过敏|肠道菌群基因测序|肠道功能分析|荷尔蒙检查|压力荷尔蒙|尿液有机酸|有机酸\s*75|新陈代谢分析|端粒长度/.test(title)) return 'functional_medicine'
+  if (/阖家欢精准基因检测/.test(title)) return 'genetic_test'
+  if (/门诊|门诊病历|门诊记录/.test(title)) return 'outpatient_record'
+  if (/住院|出院|入院|手术记录|住院小结/.test(title)) return 'inpatient_record'
+  if (/处方|医嘱|用药单/.test(title)) return 'prescription_order'
+  if (/问卷|量表|调查表/.test(title)) return 'questionnaire'
+  if (report.type === 'annual' || /体检/.test(title)) return 'physical_exam'
+  if (['blood', 'bloodTest', 'pathology'].includes(report.type)) return 'lab_report'
+  if (report.type === 'body_comp' || /人体成分|身体成分|体成分/.test(title)) return 'body_composition'
+  if (report.type === 'functional' || /功能医学|功能检测/.test(title)) return 'functional_medicine'
+  if (report.type === 'genetic' || /基因/.test(title)) return 'genetic_test'
+  if (report.type && report.type !== 'other') return 'exam_report'
+  return 'other_customer_material'
+}
+
+function ServiceJourneyPanel({ reports, plans, followUps, serviceRecords, onNavigate, stageAssessmentEnabled = false }) {
+  const [compact, setCompact] = useState(false)
+  useEffect(() => {
+    // 完整版与简版高度不同，若共用一个阈值会因页面回流在临界点来回切换、产生闪动。
+    // 进入简版和退出简版使用两个相距较远的阈值，形成稳定的滞回区间。
+    const updateCompact = () => setCompact(current => current ? window.scrollY >= 80 : window.scrollY > 300)
+    updateCompact()
+    window.addEventListener('scroll', updateCompact, { passive: true })
+    return () => window.removeEventListener('scroll', updateCompact)
+  }, [])
+  const confirmedPlans = plans.filter(item => item.confirmedAt || item.status === 'active')
+  const finishedTasks = followUps.filter(item => ['completed', 'done'].includes(item.status)).length
+  const activeTasks = followUps.filter(item => ['planned', 'pending', 'in_progress', 'missed'].includes(item.status)).length
+  const assessments = serviceRecords.filter(item => ['stage_assessment', 'phase_assessment'].includes(item.type))
+  const deliveryRecords = serviceRecords.filter(item => !['stage_assessment', 'phase_assessment'].includes(item.type))
+  const steps = [
+    { label: '资料归集', detail: reports.length ? `${reports.length}份原始资料` : '尚无原始资料', tab: 'reports', reached: reports.length > 0 },
+    { label: '方案建立', detail: confirmedPlans.length ? `${confirmedPlans.length}个已确认方案` : plans.length ? `${plans.length}个方案待确认` : '尚无服务方案', tab: 'plans', reached: plans.length > 0 },
+    { label: '服务执行', detail: activeTasks ? `${activeTasks}项待执行` : followUps.length ? `${finishedTasks}/${followUps.length}项已完成` : '尚未生成执行任务', tab: 'followups', reached: followUps.length > 0 },
+    { label: '阶段评估', detail: assessments.length ? `${assessments.length}次已归档评估` : '等待阶段评估', tab: 'aiReview', reached: assessments.length > 0, disabled: !stageAssessmentEnabled },
+    { label: '持续服务档案', detail: deliveryRecords.length ? `${deliveryRecords.length}条服务记录` : '等待执行结果归档', tab: 'serviceRecords', reached: deliveryRecords.length > 0 },
+  ]
+  const currentIndex = Math.max(0, steps.reduce((latest, step, index) => step.reached ? index : latest, -1))
+  return <div className="card" style={{ marginBottom: 16, border: '1px solid #CFE2D8', position: 'sticky', top: 8, zIndex: 30, boxShadow: compact ? '0 5px 18px rgba(30,107,80,.14)' : undefined }}>
+    <div className="card-header" style={{ padding: compact ? '9px 14px' : undefined }}><div style={{ display: 'flex', alignItems: compact ? 'center' : 'flex-start', gap: 12, flexWrap: 'wrap' }}><div className="card-title">客户全周期服务进程</div>{compact && <><span style={{ color: '#1E6B50', fontWeight: 700, fontSize: 12 }}>当前：{currentIndex + 1}. {steps[currentIndex].label}</span><span style={{ color: '#65776F', fontSize: 12 }}>{steps[currentIndex].detail}</span></>} {!compact && <div style={{ width: '100%', marginTop: 4, color: '#65776F', fontSize: 12 }}>方案、任务和归档记录实时互通；点击节点可进入对应工作页面</div>}</div></div>
+    <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(5,minmax(120px,1fr))', gap: compact ? 5 : 8, padding: compact ? '7px 14px 10px' : 14 }}>
+      {steps.map((step, index) => <button key={step.label} type="button" disabled={step.disabled} title={step.disabled ? '该客户尚未启用阶段性评估' : `进入${step.label}`} onClick={() => !step.disabled && onNavigate(step.tab)} style={{ border: `1px solid ${index === currentIndex ? '#1E6B50' : step.reached ? '#9FD0B8' : '#DFE7E3'}`, borderRadius: 9, background: index === currentIndex ? '#EAF6F0' : step.reached ? '#F4FAF7' : '#FAFBFA', padding: compact ? '6px 8px' : '11px 9px', cursor: step.disabled ? 'default' : 'pointer', textAlign: 'left', opacity: step.disabled ? .72 : 1 }}>
+        <div style={{ fontSize: 12, fontWeight: 800, color: step.reached ? '#166447' : '#7C8D85' }}>{step.reached ? '✓' : index === currentIndex ? '●' : '○'} {index + 1}. {step.label}</div>
+        {!compact && <div style={{ fontSize: 11, color: '#65776F', marginTop: 5, lineHeight: 1.45 }}>{step.detail}</div>}
+      </button>)}
+    </div>
+  </div>
+}
 const PLAN_TYPE_LABEL = {
   annual_checkup:'年度体检方案', annual_mgmt:'年度管理方案',
   nutrition:'营养干预方案', medical_assist:'就医协助方案',
@@ -1432,6 +1498,9 @@ export default function PatientDetailPage() {
   const requestedTab = new URLSearchParams(location.search).get('tab') || 'info'
   const initialTab = requestedTab
   const [tab, setTab] = useState(initialTab === 'requisitions' ? 'info' : initialTab)
+  const [healthBaseView, setHealthBaseView] = useState('profile')
+  const [screeningWorkspaceView, setScreeningWorkspaceView] = useState('screening')
+  const [lifestyleDetailsOpen, setLifestyleDetailsOpen] = useState(false)
   const archiveSectionsRef = useRef(null)
   const [followUps, setFollowUps] = useState([])
   const [plans, setPlans] = useState([])
@@ -1442,11 +1511,11 @@ export default function PatientDetailPage() {
   const [expandedReferralCats, setExpandedReferralCats] = useState({})
   const [reportSearchKw, setReportSearchKw] = useState('')
   const [reportYearFilter, setReportYearFilter] = useState('')
+  const [reportDocumentCategory, setReportDocumentCategory] = useState('all')
   const [reportTaskFilter, setReportTaskFilter] = useState('all')
   const [reportMissingOnly, setReportMissingOnly] = useState(false)
   const [reportPage, setReportPage] = useState(1)
   const [openReportActionId, setOpenReportActionId] = useState(null)
-  const [showMoreTabs, setShowMoreTabs] = useState(false)
   const [patientOrders, setPatientOrders] = useState([])
   const [redeemingOrderId, setRedeemingOrderId] = useState(null)
   const [requisitions, setRequisitions] = useState([])
@@ -1474,6 +1543,10 @@ export default function PatientDetailPage() {
   const [basicInfoForm, setBasicInfoForm] = useState({})
   const [editingHealthNeeds, setEditingHealthNeeds] = useState(false)
   const [healthNeedsForm, setHealthNeedsForm] = useState({})
+  const [editingEquipment, setEditingEquipment] = useState(false)
+  const [equipmentForm, setEquipmentForm] = useState([])
+  const [lifestyleAiGenerating, setLifestyleAiGenerating] = useState(false)
+  const [lifestyleAiDraft, setLifestyleAiDraft] = useState(null)
   const [editingReport, setEditingReport] = useState(null)
   const [editingReportForm, setEditingReportForm] = useState({})
   const [editingReportSaving, setEditingReportSaving] = useState(false)
@@ -1511,6 +1584,7 @@ export default function PatientDetailPage() {
   const [stoppingSup, setStoppingSup] = useState(null) // 待确认停用的营养素记录
   const [editingSupAiApprove, setEditingSupAiApprove] = useState(false)
   const [followUpFilter, setFollowUpFilter] = useState('all') // all | pending | done
+  const [executionCategory, setExecutionCategory] = useState('all')
   const [expandedMonitorGroups, setExpandedMonitorGroups] = useState({}) // 随访记录表格里日常监测折叠组的展开状态，key: theme+status
   // 执行随访（填写随访结果、标记完成/随访中），逻辑与 FollowUpsPage.jsx 的 execItem/execForm 一致
   const [execItem, setExecItem] = useState(null)
@@ -1518,6 +1592,7 @@ export default function PatientDetailPage() {
   const [execSaving, setExecSaving] = useState(false)
   const [execDraftLoading, setExecDraftLoading] = useState(false)
   const [medForm, setMedForm] = useState({})
+  const [medError, setMedError] = useState('')
   const [supForm, setSupForm] = useState({})
   const [medSaving, setMedSaving] = useState(false)
   // 健康顾问健康档案查看确认（2026-07-28改造）：不再逐份审核报告数据，改为客户维度的
@@ -1627,7 +1702,7 @@ export default function PatientDetailPage() {
   const [healthRecords, setHealthRecords] = useState([])
 
   useEffect(() => {
-    if (tab !== 'records' || !archiveSectionsRef.current) return
+    if (!['records', 'ai'].includes(tab) || !archiveSectionsRef.current) return
     archiveSectionsRef.current.querySelectorAll('.card').forEach(card => {
       const header = Array.from(card.children).find(child => child.classList?.contains('card-header'))
       if (header) {
@@ -1639,7 +1714,7 @@ export default function PatientDetailPage() {
         }
       }
     })
-  }, [tab, data, healthRecords])
+  }, [tab, healthBaseView, screeningWorkspaceView, data, healthRecords])
 
   const handleArchiveSectionClick = (event) => {
     if (event.target.closest('button, a, input, select, textarea, label')) return
@@ -1820,34 +1895,36 @@ export default function PatientDetailPage() {
     } catch (err) { toast(err.message || '复核失败') } finally { setDietaryReviewBusy(false) }
   }
 
-  const load = async () => {
+  const activePatientId = useRef(id)
+  activePatientId.current = id
+  const profileLoadVersion = useRef(0)
+  const load = async (refreshScreening = true) => {
+    const version = ++profileLoadVersion.current
+    const isCurrent = () => activePatientId.current === id && profileLoadVersion.current === version
     try {
-      const [res, scrRes] = await Promise.allSettled([
-        staffAPI.getPatient(id),
-        staffAPI.getScreeningReports(id),
-      ])
-      if (res.status === 'fulfilled') {
-        setLoadError(null)
-        setData(res.value.data)
-        setEditForm(buildEditForm(res.value.data.user))
-        setBasicInfoForm(buildBasicInfoForm(res.value.data.user))
-        setHealthNeedsForm(buildHealthNeedsForm(res.value.data.user))
-        setHealthForm(buildHealthForm(res.value.data.user))
-        setLifestyleForm(buildLifestyleForm(res.value.data.user))
-        setInsuranceForm(buildInsuranceForm(res.value.data.user))
-        setLabForm(res.value.data.user.labValues || {})
-        setSeverityForm(res.value.data.user.chronicDiseaseSeverity || {})
-        setBodyCompForm(res.value.data.user.bodyComposition || {})
-        setAiSummaryForm(res.value.data.user.aiHealthSummary || {})
-      } else {
-        throw res.reason
-      }
-      if (scrRes.status === 'fulfilled') setScreeningReports(scrRes.value.data || [])
+      // Basic information must not wait for the report archive or its audit history.
+      const res = await staffAPI.getPatient(id)
+      if (!isCurrent()) return
+      setLoadError(null)
+      setData(res.data)
+      setEditForm(buildEditForm(res.data.user))
+      setBasicInfoForm(buildBasicInfoForm(res.data.user))
+      setHealthNeedsForm(buildHealthNeedsForm(res.data.user))
+      setHealthForm(buildHealthForm(res.data.user))
+      setLifestyleForm(buildLifestyleForm(res.data.user))
+      setInsuranceForm(buildInsuranceForm(res.data.user))
+      setLabForm(res.data.user.labValues || {})
+      setSeverityForm(res.data.user.chronicDiseaseSeverity || {})
+      setBodyCompForm(res.data.user.bodyComposition || {})
+      setAiSummaryForm(res.data.user.aiHealthSummary || {})
+      // Saves refresh visible screening data without holding the whole page open.
+      if (refreshScreening && ['records', 'portrait', 'ai'].includes(tab)) loadScreening()
     } catch (err) {
+      if (!isCurrent()) return
       setLoadError(err.status === 403 ? '无权限查看该会员' : (err.message || '会员不存在'))
       toast(err.message || '加载失败')
     } finally {
-      setLoading(false)
+      if (isCurrent()) setLoading(false)
     }
   }
 
@@ -1890,7 +1967,7 @@ export default function PatientDetailPage() {
 
   const loadFollowUps = async () => {
     try {
-      const res = await staffAPI.getPatientFollowUps(id)
+      const res = await staffAPI.getPatientFollowUps(id, { limit: 200 })
       setFollowUps(res.data.followUps)
     } catch {}
   }
@@ -2014,6 +2091,7 @@ export default function PatientDetailPage() {
         staffAPI.getScreeningTree(),
         staffAPI.getScreeningYearSummaries(id),
       ])
+      if (activePatientId.current !== id) return
       if (sr.status === 'fulfilled') setScreeningItems(sr.value.data || [])
       if (hr.status === 'fulfilled') setHealthRecords(hr.value.data || [])
       if (scr.status === 'fulfilled') setScreeningReports(scr.value.data || [])
@@ -2151,7 +2229,13 @@ export default function PatientDetailPage() {
     setReportSourceFocus(focus)
     openReportDetail({ _id: sourceReportId, title: '原始体检报告' })
   }
-  useEffect(() => { load() }, [id])
+  useEffect(() => {
+    setLoading(true)
+    setData(null)
+    setScreeningReports([])
+    load(false)
+    return () => { profileLoadVersion.current += 1 }
+  }, [id])
   // 切换到不同会员时，上一个会员的"健康档案已查看"进度不能带过来，否则会误判成这个新会员
   // 也已经查看过某些报告（组件是同一实例复用，id变了但state不会自动清零）
   useEffect(() => { setPendingDoctorAuditReports([]) }, [id])
@@ -2196,16 +2280,16 @@ export default function PatientDetailPage() {
     }
   }, [tab, autoGenMedicalAssistOrderId])
   useEffect(() => {
-    if (tab === 'followups') loadFollowUps()
-    else if (tab === 'plans') loadPlans()
-    else if (tab === 'reports') {
+    loadPlans(); loadFollowUps(); loadServiceRecords(); loadReports()
+  }, [id])
+  useEffect(() => {
+    if (tab === 'reports') {
       loadReports()
       // 体检报告排序也需要 screeningTree，按需加载
       if (screeningTree.length === 0) {
         staffAPI.getScreeningTree().then(r => setScreeningTree(r.data || [])).catch(() => {})
       }
     }
-    else if (tab === 'serviceRecords') loadServiceRecords()
     else if (tab === 'referrals') loadPatientReferrals()
     else if (tab === 'medications') { loadMedications(); loadSupplements() }
     else if (tab === 'portrait') {
@@ -2223,11 +2307,12 @@ export default function PatientDetailPage() {
     }
     else if (tab === 'consumption') staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {})
     else if (tab === 'ai') {
+      loadScreening()
       // 健康顾问审核依赖 reports（要展示报告原文对照），同上按需补加载
       if (reports.length === 0) loadReports()
       loadPendingDoctorAudit()
     }
-  }, [tab])
+  }, [tab, id])
 
   const buildEditForm = (u) => ({
     chronicDiseases: u.chronicDiseases || [],
@@ -2348,6 +2433,13 @@ export default function PatientDetailPage() {
     expectedService: u.expectedService || '',
     hasHomeMonitor: u.hasHomeMonitor || '',
     hasMedicineCabinet: u.hasMedicineCabinet || '',
+  })
+
+  const blankEquipment = () => ({
+    id: `device-${Date.now()}`, type: '呼吸机', brand: '', model: '', purchaseDate: '', purchasePlace: '', startedAt: '', reason: '',
+    usageFrequency: '每晚', cleanFrequency: '每周清洗面罩及管路', disinfectionFrequency: '每周消毒',
+    consumableCycle: '按说明书或医嘱更换', lastMaintenanceDate: '', nextMaintenanceDate: '',
+    parameters: '', adherence: '', exceptions: '', status: '使用中',
   })
 
   const buildLifestyleForm = (u) => ({
@@ -2502,6 +2594,40 @@ export default function PatientDetailPage() {
       setEditingLifestyle(false)
       load()
     } catch (err) { toast(err.message || '保存失败') }
+  }
+
+  const handleGenerateLifestyleDraft = async () => {
+    try {
+      setLifestyleAiGenerating(true)
+      const year = String(new Date().getFullYear())
+      const res = await staffAPI.generateAIHealthSummary(id, year, 'nutrition', false)
+      applyAIHealthSummary(res.data)
+      const entry = res.data?.byYear?.[year] || {}
+      const records = Array.isArray(entry.records) ? entry.records : (entry.sections ? [entry] : [])
+      const record = records.find(item => item.scope === 'nutrition' || item.scope === 'all' || item.sections?.lifestyle_assessment)
+      setLifestyleAiDraft({ year, recordIndex: Math.max(0, records.indexOf(record)), section: record?.sections?.lifestyle_assessment || null })
+      toast('AI已结合近30天打卡形成生活方式草稿，请营养师核对')
+    } catch (err) { toast(err.message || 'AI生活方式分析生成失败') }
+    finally { setLifestyleAiGenerating(false) }
+  }
+
+  const handleApproveLifestyleDraft = async () => {
+    if (!lifestyleAiDraft) return
+    try {
+      await staffAPI.updateAIHealthSummary(id, { action: 'approve', scope: 'nutrition', year: lifestyleAiDraft.year, recordIndex: lifestyleAiDraft.recordIndex })
+      toast('生活方式分析已由营养师审核，正式分析结果已更新')
+      setLifestyleAiDraft(null)
+      load()
+    } catch (err) { toast(err.message || '审核失败') }
+  }
+
+  const handleSaveEquipment = async () => {
+    try {
+      await staffAPI.updatePatient(id, { healthEquipment: equipmentForm })
+      toast('设备档案已保存；填写下次维护日期的设备已同步生成工作台任务')
+      setEditingEquipment(false)
+      load()
+    } catch (err) { toast(err.message || '设备档案保存失败') }
   }
 
   const handleSaveLabValues = async () => {
@@ -3361,47 +3487,55 @@ export default function PatientDetailPage() {
       {/* 健管专员人工审核确认写入档案的记录（有冲突需人工判断的字段） */}
       <ArchiveConfirmLogPanel log={user.archiveConfirmLog} />
 
+      <ServiceJourneyPanel reports={reports} plans={plans} followUps={followUps} serviceRecords={serviceRecords} onNavigate={setTab} stageAssessmentEnabled />
+
       {/* Tabs */}
       {(() => {
-        const primaryTabs = [
-          { key: 'info',          label: '基本信息' },
-          { key: 'records',       label: '健康档案' },
-          { key: 'reports',       label: '体检报告' },
-          { key: 'portrait',      label: '健康画像' },
-          { key: 'medications',   label: '用药与营养' },
-          ...(user.aiPilotFeatures?.stageAssessment ? [{ key: 'aiReview', label: '阶段性健康评估' }] : []),
-          { key: 'plans',         label: '管理方案' },
-          { key: 'followups',     label: '随访记录' },
+        const groups = [
+          { key: 'overview', label: '客户概览', tabs: [{ key: 'info', label: '客户概览' }] },
+          { key: 'healthData', label: '健康资料', tabs: [
+            { key: 'records', label: '健康基础与生活方式' },
+            { key: 'ai', label: '专项筛查与核查' },
+            { key: 'medications', label: '用药与营养素' },
+            { key: 'reports', label: '原始资料' },
+          ] },
+          { key: 'healthPortrait', label: '健康画像', tabs: [
+            { key: 'portrait', label: '综合画像' },
+            { key: 'aiCase', label: '专项研判' },
+          ] },
+          { key: 'serviceManagement', label: '服务管理', tabs: [
+            { key: 'plans', label: '服务方案' },
+            { key: 'aiReview', label: '阶段性评估' },
+          ] },
+          { key: 'serviceExecution', label: '服务执行', tabs: [{ key: 'followups', label: '执行任务' }] },
+          { key: 'serviceArchive', label: '服务档案', tabs: [{ key: 'serviceRecords', label: '服务档案' }] },
+          { key: 'referrals', label: '转介记录', tabs: [{ key: 'referrals', label: '转介记录' }] },
+          { key: 'consumption', label: '消费记录', tabs: [{ key: 'consumption', label: '消费记录' }] },
+          { key: 'family', label: '家庭信息', tabs: [{ key: 'family', label: '家庭信息' }] },
+          { key: 'membership', label: '会员信息', tabs: [{ key: 'membership', label: '会员信息' }] },
         ]
-        const secondaryTabs = [
-          { key: 'ai',            label: 'AI健康信息整理' },
-          { key: 'serviceRecords', label: '服务记录' },
-          { key: 'referrals',     label: '转介记录' },
-          { key: 'consumption',   label: '消费记录' },
-          { key: 'family',        label: '家庭信息' },
-          { key: 'membership',    label: '会员信息' },
-        ]
-        const isSecondaryTab = secondaryTabs.some(t => t.key === tab)
-        const showSecondaryTabs = showMoreTabs || isSecondaryTab
-        const renderTab = (t, isSecondary = false) => (
+        const activeGroup = groups.find(group => group.tabs.some(item => item.key === tab))
+        const secondaryTabs = activeGroup?.tabs || []
+        const showSecondaryTabs = secondaryTabs.length > 1
+        const renderTab = t => (
           <button
             key={t.key}
             className={`tab-btn ${tab === t.key ? 'active' : ''}`}
-            onClick={() => { setTab(t.key); if (!isSecondary) setShowMoreTabs(false) }}
+            onClick={() => setTab(t.key)}
           >
             {t.label}
           </button>
         )
         return <div style={{ marginBottom: 20 }}>
           <div className="tabs" style={{ marginBottom: showSecondaryTabs ? 8 : 0 }}>
-            {primaryTabs.map(t => renderTab(t))}
-            <button className={`tab-btn ${isSecondaryTab ? 'active' : ''}`} onClick={() => setShowMoreTabs(v => !v)}>更多 {showSecondaryTabs ? '⌃' : '⌄'}</button>
+            {groups.map(group => <button key={group.key} className={`tab-btn ${activeGroup?.key === group.key ? 'active' : ''}`} onClick={() => setTab(group.tabs[0].key)}>{group.label}</button>)}
           </div>
-          {showSecondaryTabs && <div className="tabs patient-secondary-tabs">{secondaryTabs.map(t => renderTab(t, true))}</div>}
+          {showSecondaryTabs && <div className="tabs patient-secondary-tabs">{secondaryTabs.map(renderTab)}</div>}
         </div>
       })()}
 
-      {tab === 'aiReview' && user.aiPilotFeatures?.stageAssessment && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} />}
+      {tab === 'aiReview' && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} mode="assessment" onNavigate={setTab} />}
+      {tab === 'aiCase' && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} mode="specialty" />}
 
       {/* ── Info Tab ── */}
       {tab === 'info' && (
@@ -3906,6 +4040,26 @@ export default function PatientDetailPage() {
             </div>
           </div>
 
+          {/* 健康设备与辅助器械：设备档案驱动维护随访任务 */}
+          <div className="card" style={{ gridColumn: 'span 2' }}>
+            <div className="card-header">
+              <div><div className="card-title">健康设备与辅助器械</div><div style={{ marginTop: 4, fontSize: 12, color: '#8AA89C' }}>记录呼吸机等设备；下次维护日期会同步为负责人工作台任务</div></div>
+              {!editingEquipment ? <button className="btn btn-secondary btn-sm" onClick={event => { event.currentTarget.closest('.card')?.classList.remove('archive-collapsed'); setEquipmentForm((user.healthEquipment || []).length ? JSON.parse(JSON.stringify(user.healthEquipment)) : [blankEquipment()]); setEditingEquipment(true) }}>编辑设备</button> : <div style={{ display: 'flex', gap: 8 }}><button className="btn btn-secondary btn-sm" onClick={() => setEquipmentForm(v => [...v, blankEquipment()])}>＋ 添加设备</button><button className="btn btn-primary btn-sm" onClick={handleSaveEquipment}>保存并同步任务</button><button className="btn btn-secondary btn-sm" onClick={() => setEditingEquipment(false)}>取消</button></div>}
+            </div>
+            <div className="card-body">
+              {editingEquipment ? <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {equipmentForm.map((device, index) => <div key={device.id || index} style={{ border: '1px solid #DCE5E0', borderRadius: 10, padding: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(150px,1fr))', gap: 10 }}>
+                    {[['type','设备类型'],['brand','品牌'],['model','型号'],['purchaseDate','购买时间'],['purchasePlace','购买渠道/地点'],['startedAt','开始使用时间'],['reason','使用原因/医嘱'],['usageFrequency','使用频率'],['parameters','参数或医嘱'],['adherence','使用依从性'],['cleanFrequency','清洗频率'],['disinfectionFrequency','消毒频率'],['consumableCycle','耗材更换周期'],['lastMaintenanceDate','最近维护时间'],['nextMaintenanceDate','下次维护时间'],['exceptions','异常情况'],['status','状态']].map(([key,label]) => <label key={key} style={{ fontSize: 12, color: '#65776F' }}>{label}<input className="form-input" type={key.endsWith('Date') || key === 'startedAt' ? 'date' : 'text'} value={device[key] || ''} onChange={e => setEquipmentForm(list => list.map((item,i) => i === index ? { ...item, [key]: e.target.value } : item))} style={{ marginTop: 4 }} /></label>)}
+                  </div>
+                  <button className="btn btn-danger btn-sm" style={{ marginTop: 10 }} onClick={() => setEquipmentForm(list => list.filter((_,i) => i !== index))}>移除设备</button>
+                </div>)}
+              </div> : (user.healthEquipment || []).length ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 10 }}>
+                {(user.healthEquipment || []).map((device,index) => <div key={device.id || index} style={{ padding: 13, border: '1px solid #DCE5E0', borderRadius: 10, background: '#FAFCFB' }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><b style={{ color: '#1E6B50' }}>{device.type || '健康设备'} {device.brand || ''} {device.model || ''}</b><span className="badge badge-success">{device.status || '使用中'}</span></div><div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.8, color: '#4A6558' }}>购买：{device.purchaseDate || '-'} · {device.purchasePlace || '-'}<br/>使用：{device.usageFrequency || '-'}；清洗：{device.cleanFrequency || '-'}；消毒：{device.disinfectionFrequency || '-'}<br/>耗材：{device.consumableCycle || '-'}；下次维护：{device.nextMaintenanceDate || '-'}</div></div>)}
+              </div> : <div style={{ color: '#8AA89C', fontSize: 13 }}>暂无设备记录。呼吸机、制氧机、血压计等可在此结构化登记。</div>}
+            </div>
+          </div>
+
           {/* 最近随访 */}
           <div className="card" style={{ gridColumn: 'span 2' }}>
             <div className="card-header">
@@ -3940,16 +4094,31 @@ export default function PatientDetailPage() {
       )}
 
       {/* ── Records Tab ── */}
-      {tab === 'records' && (
+      {['records', 'ai'].includes(tab) && (
         <div ref={archiveSectionsRef} className="health-archive-sections" onClick={handleArchiveSectionClick}>
         <style>{`.health-archive-sections>.archive-toolbar+.card,.health-archive-sections>.card{transition:box-shadow .2s}.health-archive-sections .archive-collapsed>:not(.card-header){display:none!important}.health-archive-sections .card-header[data-archive-toggle="true"]{cursor:pointer}.health-archive-sections .card-header[data-archive-toggle="true"]:after{content:'⌃';margin-left:10px;color:#1E6B50;font-size:18px}.health-archive-sections .archive-collapsed>.card-header[data-archive-toggle="true"]:after{content:'⌄'}`}</style>
-        <div className="archive-toolbar" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
+        {tab === 'records' && <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+          {[
+            { key: 'profile', label: '基础档案与健康评估' },
+            { key: 'lifestyle', label: '生活方式' },
+            { key: 'monitoring', label: '健康监测' },
+          ].map(item => <button key={item.key} type="button" className={`btn btn-sm ${healthBaseView === item.key ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setHealthBaseView(item.key)}>{item.label}</button>)}
+        </div>}
+        {tab === 'ai' && <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+          {[
+            { key: 'screening', label: '专项筛查结果' },
+            { key: 'metrics', label: '体检关键指标' },
+            { key: 'analysis', label: 'AI健康信息整理' },
+          ].map(item => <button key={item.key} type="button" className={`btn btn-sm ${screeningWorkspaceView === item.key ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setScreeningWorkspaceView(item.key)}>{item.label}</button>)}
+        </div>}
+        {tab === 'records' && <div className="archive-toolbar" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
           <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); setAllArchiveSections(true) }}>全部收起</button>
           <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); setAllArchiveSections(false) }}>全部展开</button>
-        </div>
+        </div>}
         {/* 档案是问卷答案自动导入的，冲突提醒已在页面顶部单独展示（见"问卷自动填档"横幅）；
             一致的情况无需人工再次确认，故此处不再重复放置整体人工审核开关 */}
 
+        {tab === 'records' && healthBaseView === 'profile' && <>
         {/* ── 初始健康数据录入 ── */}
         <InitialHealthRecordForm patientId={user._id} onSaved={() => load()} toast={toast} />
         <BatchHealthRecordImport patient={user} onSaved={() => load()} toast={toast} />
@@ -4277,8 +4446,10 @@ export default function PatientDetailPage() {
 
         {/* ── 10年ASCVD风险评估（医护录入体检参数→中国指南自动分层）── */}
         <AscvdRiskPanel user={user} patientId={id} onSaved={load} toast={toast} />
+        </>}
 
         {/* ── 生活方式（膳食调查基础资料）── 位于健康档案顶部，打卡数据在下方 */}
+        {tab === 'records' && healthBaseView === 'lifestyle' && <>
         {(() => {
           const ld = editingLifestyle ? (lifestyleForm.lifestyle_data || {}) : (user.lifestyle_data || {})
           const setLd = (patch) => setLifestyleForm(p => ({ ...p, lifestyle_data: { ...(p.lifestyle_data || {}), ...patch } }))
@@ -4299,11 +4470,13 @@ export default function PatientDetailPage() {
           return (
             <div className="card" style={{ marginBottom: 20 }}>
               <div className="card-header">
-                <div className="card-title">生活方式（膳食调查）</div>
+                <div><div className="card-title">生活方式摘要</div><div style={{ marginTop: 4, fontSize: 12, color: '#8AA89C' }}>正式档案默认收起；AI可结合近30天打卡形成变化分析，经营养师审核后再更新</div></div>
                 {!editingLifestyle
                   ? <div style={{ display: 'flex', gap: 8 }}>
                       <button className="btn btn-primary btn-sm" onClick={() => setShowLifestyleChangeModal(true)}>＋ 新增变化</button>
-                      <button className="btn btn-secondary btn-sm" onClick={() => { setLifestyleTab('diet'); setEditingLifestyle(true) }}>编辑当前档案</button>
+                      <button className="btn btn-secondary btn-sm" disabled={lifestyleAiGenerating} onClick={handleGenerateLifestyleDraft}>{lifestyleAiGenerating ? 'AI整理中…' : 'AI整理打卡变化'}</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => setLifestyleDetailsOpen(v => !v)}>{lifestyleDetailsOpen ? '收起详细档案' : '展开详细档案'}</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => { setLifestyleDetailsOpen(true); setLifestyleTab('diet'); setEditingLifestyle(true) }}>编辑当前档案</button>
                     </div>
                   : <div style={{ display: 'flex', gap: 8 }}>
                       <button className="btn btn-primary btn-sm" onClick={handleSaveLifestyle}>保存</button>
@@ -4311,7 +4484,16 @@ export default function PatientDetailPage() {
                     </div>
                 }
               </div>
-              <div className="card-body">
+              {!lifestyleDetailsOpen && !editingLifestyle && <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 10 }}>
+                {Object.entries(deriveBasicLifestyle(user.lifestyle_data || {})).filter(([, value]) => value).slice(0, 8).map(([key, value]) => <div key={key} style={{ padding: '9px 11px', background: '#F7FAF8', borderRadius: 8 }}><div style={{ fontSize: 11, color: '#8AA89C' }}>{({ diet:'饮食', exercise:'运动', sleep:'睡眠', water:'饮水', smoking:'吸烟', alcohol:'饮酒', bowel:'排便', mood:'情绪' })[key] || key}</div><div style={{ marginTop: 3, fontSize: 13, color: '#1A2B24' }}>{value}</div></div>)}
+                {!Object.values(deriveBasicLifestyle(user.lifestyle_data || {})).some(Boolean) && <div style={{ color: '#8AA89C', fontSize: 13 }}>暂无生活方式摘要，可由膳食问卷、打卡变化或营养师沟通逐步补充。</div>}
+              </div>}
+              {lifestyleAiDraft?.section && <div style={{ margin: '0 20px 18px', padding: 14, border: '1px solid #86D5B2', background: '#F0FDF7', borderRadius: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}><div><b style={{ color: '#166534' }}>AI打卡变化草稿</b><div style={{ marginTop: 4, fontSize: 12, color: '#4A6558' }}>已自动检索近30天打卡并与当前生活方式档案比较；审核前不会替代正式结论。</div></div>{staff?.role === 'nutritionist' || staff?.role === 'superadmin' ? <button className="btn btn-primary btn-sm" onClick={handleApproveLifestyleDraft}>营养师审核通过</button> : null}</div>
+                <div style={{ marginTop: 10, fontSize: 13, lineHeight: 1.8, color: '#1A2B24' }}>{lifestyleAiDraft.section.summary || '已形成生活方式分析，请展开查看具体变化。'}</div>
+                {(lifestyleAiDraft.section.items || []).slice(0, 8).map((item, index) => <div key={index} style={{ marginTop: 6, fontSize: 12, color: '#4A6558' }}>• {item.name || item.category || '变化'}：{item.finding || item.current || item.value || item.summary || item.suggestion || ''}</div>)}
+              </div>}
+              {(lifestyleDetailsOpen || editingLifestyle) && <div className="card-body">
                 {/* 子板块 Tab 导航 */}
                 <div style={{ display: 'flex', borderBottom: '1px solid #e0d9ce', marginBottom: 16, overflowX: 'auto' }}>
                   {[
@@ -4580,7 +4762,7 @@ export default function PatientDetailPage() {
 
                   </div>
                 )}
-              </div>
+              </div>}
             </div>
           )
         })()}
@@ -4665,10 +4847,11 @@ export default function PatientDetailPage() {
             </div>
           )
         })()}
+        </>}
 
 
         {/* ── 4.3 专项筛查结果（三层目录树） ── */}
-        {(() => {
+        {tab === 'ai' && screeningWorkspaceView === 'screening' && (() => {
           const STATUS_TEXT = { normal: '正常', abnormal: '异常', attention: '注意', unknown: '' }
           const STATUS_COLOR_MAP = { normal: '#22A06B', abnormal: '#DC3545', attention: '#D97706', unknown: '#8AA89C' }
 
@@ -5749,6 +5932,7 @@ export default function PatientDetailPage() {
         )}
 
         {/* ── 体检关键指标 ── */}
+        {tab === 'ai' && screeningWorkspaceView === 'metrics' && <>
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-header">
             <div className="card-title">体检关键指标</div>
@@ -6124,8 +6308,28 @@ export default function PatientDetailPage() {
             })()}
           </div>
         </div>
+        </>}
 
         {/* ── 4.2 身体成分指标 ── */}
+        {tab === 'records' && healthBaseView === 'monitoring' && <>
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-header">
+            <div><div className="card-title">健康设备与辅助器械</div><div style={{ marginTop: 4, fontSize: 12, color: '#8AA89C' }}>呼吸机等设备在此登记；下次维护时间会同步为负责人工作台随访任务</div></div>
+            {!editingEquipment ? <button className="btn btn-secondary btn-sm" onClick={event => { event.currentTarget.closest('.card')?.classList.remove('archive-collapsed'); setEquipmentForm((user.healthEquipment || []).length ? JSON.parse(JSON.stringify(user.healthEquipment)) : [blankEquipment()]); setEditingEquipment(true) }}>编辑设备</button> : <div style={{ display: 'flex', gap: 8 }}><button className="btn btn-secondary btn-sm" onClick={() => setEquipmentForm(v => [...v, blankEquipment()])}>＋ 添加设备</button><button className="btn btn-primary btn-sm" onClick={handleSaveEquipment}>保存并同步任务</button><button className="btn btn-secondary btn-sm" onClick={() => setEditingEquipment(false)}>取消</button></div>}
+          </div>
+          <div className="card-body">
+            {editingEquipment ? <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {equipmentForm.map((device, index) => <div key={device.id || index} style={{ border: '1px solid #DCE5E0', borderRadius: 10, padding: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(150px,1fr))', gap: 10 }}>
+                  {[['type','设备类型'],['brand','品牌'],['model','型号'],['purchaseDate','购买时间'],['purchasePlace','购买渠道/地点'],['startedAt','开始使用时间'],['reason','使用原因/医嘱'],['usageFrequency','使用频率'],['parameters','参数或医嘱'],['adherence','使用依从性'],['cleanFrequency','清洗频率'],['disinfectionFrequency','消毒频率'],['consumableCycle','耗材更换周期'],['lastMaintenanceDate','最近维护时间'],['nextMaintenanceDate','下次维护时间'],['exceptions','异常情况'],['status','状态']].map(([key,label]) => <label key={key} style={{ fontSize: 12, color: '#65776F' }}>{label}<input className="form-input" type={key.endsWith('Date') || key === 'startedAt' ? 'date' : 'text'} value={device[key] || ''} onChange={e => setEquipmentForm(list => list.map((item,i) => i === index ? { ...item, [key]: e.target.value } : item))} style={{ marginTop: 4 }} /></label>)}
+                </div>
+                <button className="btn btn-danger btn-sm" style={{ marginTop: 10 }} onClick={() => setEquipmentForm(list => list.filter((_,i) => i !== index))}>移除设备</button>
+              </div>)}
+            </div> : (user.healthEquipment || []).length ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 10 }}>
+              {(user.healthEquipment || []).map((device,index) => <div key={device.id || index} style={{ padding: 13, border: '1px solid #DCE5E0', borderRadius: 10, background: '#FAFCFB' }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><b style={{ color: '#1E6B50' }}>{device.type || '健康设备'} {device.brand || ''} {device.model || ''}</b><span className="badge badge-success">{device.status || '使用中'}</span></div><div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.8, color: '#4A6558' }}>购买：{device.purchaseDate || '-'} · {device.purchasePlace || '-'}<br/>使用：{device.usageFrequency || '-'}；清洗：{device.cleanFrequency || '-'}；消毒：{device.disinfectionFrequency || '-'}<br/>耗材：{device.consumableCycle || '-'}；下次维护：{device.nextMaintenanceDate || '-'}</div></div>)}
+            </div> : <div style={{ color: '#8AA89C', fontSize: 13 }}>暂无设备记录。点击“编辑设备”可登记呼吸机、制氧机、血压计等。</div>}
+          </div>
+        </div>
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-header">
             <div className="card-title">身体成分指标</div>
@@ -6610,11 +6814,12 @@ export default function PatientDetailPage() {
             <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无健康打卡记录</div>
           )}
         </div>
+        </>}
         </div>
       )}
 
       {/* ── AI Tab ── */}
-      {tab === 'ai' && (() => {
+      {tab === 'ai' && screeningWorkspaceView === 'analysis' && (() => {
         const aisRoot = user.aiHealthSummary || {}
         // 按年度组织（兼容旧数据：无 byYear 但有 sections → 归到其年份或2026）
         let byYear = aisRoot.byYear || {}
@@ -6889,8 +7094,9 @@ export default function PatientDetailPage() {
         // SectionCard / ArrEdit 已提到模块级（AISectionCard / AIArrEdit），避免重渲染失焦
 
         return (
-          <div>
-            <AiRuleHint scene="health_analysis" />
+          <div ref={archiveSectionsRef} className="health-archive-sections" onClick={handleArchiveSectionClick}>
+            <style>{`.health-archive-sections>.card{transition:box-shadow .2s}.health-archive-sections .archive-collapsed>:not(.card-header){display:none!important}.health-archive-sections .card-header[data-archive-toggle="true"]{cursor:pointer}.health-archive-sections .card-header[data-archive-toggle="true"]:after{content:'⌃';margin-left:10px;color:#1E6B50;font-size:18px}.health-archive-sections .archive-collapsed>.card-header[data-archive-toggle="true"]:after{content:'⌄'}`}</style>
+            <details style={{ marginBottom: 12, padding: '8px 12px', border: '1px solid #DCE5E0', borderRadius: 9, background: '#FAFBFA' }}><summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>生成依据</summary><div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.8, color: '#65776F' }}>AI读取已确认档案、历年体检与检验检查、专项筛查、健康监测、问卷和近期打卡，按年度与历史数据比较。5维分析须由家庭医生审核，生活方式分析须由营养师审核；未审核内容仅为草稿。</div></details>
             {/* 前置要求：健康顾问生成AI健康分析/风险评估前必须先查看确认健康档案（2026-07-28改造，
                 不再逐份审核报告数据本身，那是健管专员audit_status的职责） */}
             {['familyDoctor', 'superadmin'].includes(staff?.role) && pendingDoctorAuditReports.length > 0 && (() => {
@@ -6912,6 +7118,22 @@ export default function PatientDetailPage() {
                 </div>
               )
             })()}
+            <div className="card" style={{ marginBottom: 12 }}>
+              <div className="card-header"><div><div className="card-title">{curYear}年度重点</div><div style={{ marginTop: 4, fontSize: 12, color: '#8AA89C' }}>先看结论与待办；生成、版本和详细依据按需展开</div></div></div>
+              <div className="card-body" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <span style={{ padding: '6px 10px', borderRadius: 8, background: hasDoctorData ? '#E8F5EF' : '#F3F4F6', color: hasDoctorData ? '#1E6B50' : '#64748B', fontSize: 12 }}>{hasDoctorData ? '已形成5维健康结论' : '5维健康结论待生成'}</span>
+                <span style={{ padding: '6px 10px', borderRadius: 8, background: hasLifestyle ? '#ECFDF5' : '#F3F4F6', color: hasLifestyle ? '#15803D' : '#64748B', fontSize: 12 }}>{hasLifestyle ? '已形成生活方式结论' : '生活方式结论待生成'}</span>
+                <span style={{ padding: '6px 10px', borderRadius: 8, background: '#FFF7ED', color: '#9A3412', fontSize: 12 }}>待查看报告 {pendingDoctorAuditReports.filter(r => !r.familyDoctorViewedAt).length} 份</span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              <button className={`btn btn-sm ${aiAnalysisView === 'doctor' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setAiAnalysisView('doctor'); setEditingAISummary(false) }}>家庭医生5维分析</button>
+              <button className={`btn btn-sm ${aiAnalysisView === 'nutrition' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setAiAnalysisView('nutrition'); setEditingAISummary(false) }}>营养师生活方式分析</button>
+              <span style={{ alignSelf: 'center', fontSize: 12, color: '#8AA89C' }}>团队成员均可查看已审核结果；生成、编辑和审核按专业角色控制</span>
+            </div>
+            <details style={{ marginBottom: 12, padding: '10px 12px', border: '1px solid #DCE5E0', borderRadius: 9, background: '#FAFBFA' }}>
+              <summary style={{ cursor: 'pointer', fontWeight: 700, color: '#1E6B50' }}>生成、年度与历史版本管理</summary>
+              <div style={{ marginTop: 12 }}>
             {/* 年度选择：下拉 select，✓=已审核 ●=已生成待审核 */}
             <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
               <span style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>📅 年度</span>
@@ -6930,16 +7152,6 @@ export default function PatientDetailPage() {
                   )
                 })}
               </select>
-            </div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-              <button className={`btn btn-sm ${aiAnalysisView === 'doctor' ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => { setAiAnalysisView('doctor'); setEditingAISummary(false) }}>
-                健康顾问 · 5维分析
-              </button>
-              <button className={`btn btn-sm ${aiAnalysisView === 'nutrition' ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => { setAiAnalysisView('nutrition'); setEditingAISummary(false) }}>
-                营养师 · 生活方式分析
-              </button>
             </div>
             {/* 同一年度分成两条独立评估链，各自显示生成时间与历史版本。 */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 10, marginBottom: 14 }}>
@@ -7007,6 +7219,8 @@ export default function PatientDetailPage() {
                 </div>
               ))}
             </div>
+              </div>
+            </details>
             {/* 操作栏 */}
             {(() => {
               // 按角色拆分审核（健康顾问审5维 / 营养师审生活方式评估；超管两者皆可）
@@ -7071,41 +7285,6 @@ export default function PatientDetailPage() {
                   <button className="btn btn-secondary btn-sm" onClick={() => setEditingAISummary(false)}>取消</button>
                   <button className="btn btn-primary btn-sm" onClick={() => handleSaveAISummary(false)}>保存</button>
                 </>
-              )}
-              {/* 生成按钮按角色拆分：家医只生成5维度，营养师只生成生活方式评估，超管两者都能触发（走 all，一次生成全部）
-                  已审核的部分，生成按钮变灰并提示，点击需二次确认，防止误点覆盖已审核内容（2026-07-10 金娟：家医端要提示已审核防误点） */}
-              {!editingAISummary && aiAnalysisView === 'doctor' && (roleScope === 'doctor') && (
-                <button className="btn btn-sm" disabled={aiSummaryLoading}
-                  style={docApproved ? { background: '#E5E7EB', color: '#6B7280', borderColor: '#E5E7EB' } : { background: '#1E6B50', color: '#fff', borderColor: '#1E6B50' }}
-                  onClick={() => {
-                    if (docApproved && !window.confirm('最新一条5维度分析已审核。重新生成会新增一条待审核记录，原审核记录仍会保留，确定继续？')) return
-                    handleGenerateAISummary(curYear, 'doctor', docApproved)
-                  }}>
-                  {aiSummaryLoading ? '生成中…' : (docApproved ? '新增5维分析' : (hasDoctorData ? '重新生成5维度分析' : '生成5维度分析'))}
-                </button>
-              )}
-              {!editingAISummary && aiAnalysisView === 'nutrition' && (roleScope === 'nutrition') && (
-                <button className="btn btn-sm" disabled={aiSummaryLoading || !latestDoctorApproved}
-                  title={!latestDoctorApproved ? '请先由健康顾问完成并审核本年度5维分析' : ''}
-                  style={nutApproved ? { background: '#E5E7EB', color: '#6B7280', borderColor: '#E5E7EB' } : { background: '#1E6B50', color: '#fff', borderColor: '#1E6B50' }}
-                  onClick={() => {
-                    if (nutApproved && !window.confirm('最新一条生活方式评估已审核。重新生成会新增一条待审核记录，原审核记录仍会保留，确定继续？')) return
-                    handleGenerateAISummary(curYear, 'nutrition', nutApproved)
-                  }}>
-                  {aiSummaryLoading ? '生成中…' : (!latestDoctorApproved ? '等待5维分析审核' : (nutApproved ? '新增生活方式评估' : (hasLifestyle ? '重新生成生活方式评估' : '生成生活方式评估')))}
-                </button>
-              )}
-              {!editingAISummary && (roleScope === 'all') && (
-                <button className="btn btn-sm" disabled={aiSummaryLoading || (aiAnalysisView === 'nutrition' && !latestDoctorApproved)}
-                  style={(aiAnalysisView === 'doctor' ? docApproved : nutApproved) ? { background: '#E5E7EB', color: '#6B7280', borderColor: '#E5E7EB' } : { background: '#1E6B50', color: '#fff', borderColor: '#1E6B50' }}
-                  onClick={() => {
-                    const approved = aiAnalysisView === 'doctor' ? docApproved : nutApproved
-                    const label = aiAnalysisView === 'doctor' ? '5维分析' : '生活方式分析'
-                    if (approved && !window.confirm(`本年度最新${label}已有审核结果。重新生成会新增一条待审核记录，原审核记录仍会保留，确定继续？`)) return
-                    handleGenerateAISummary(curYear, aiAnalysisView, approved)
-                  }}>
-                  {aiSummaryLoading ? '生成中…' : `新增${aiAnalysisView === 'doctor' ? '5维分析' : '生活方式分析'}`}
-                </button>
               )}
             </div>
               )
@@ -7795,7 +7974,7 @@ export default function PatientDetailPage() {
                         </td>
                         <td>
                           <div style={{ display: 'flex', gap: 6 }}>
-                            {!m.stopped && <button className="btn btn-secondary btn-sm" onClick={() => {
+                            {!m.stopped && (canApproveMed || (staff?._id && String(m.staffId) === String(staff._id))) && <button className="btn btn-secondary btn-sm" onClick={() => {
                               setMedForm({ name: m.name, brandName: m.brandName || '', specification: m.specification || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: m.startDate || '', endDate: m.endDate || '', purpose: m.purpose || '', note: m.note || '' })
                               setEditingMed(m._id); setShowMedModal(true)
                             }}>编辑</button>}
@@ -7947,7 +8126,7 @@ export default function PatientDetailPage() {
               <div className="modal" style={{ maxWidth: 560 }}>
                 <div className="modal-header">
                   <h3 className="modal-title">{editingMed ? '编辑药物' : '新增药物'}</h3>
-                  <button className="modal-close" onClick={() => setShowMedModal(false)}>✕</button>
+                  <button className="modal-close" onClick={() => { setShowMedModal(false); setMedError('') }}>✕</button>
                 </div>
                 <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   {[
@@ -7970,10 +8149,12 @@ export default function PatientDetailPage() {
                     </div>
                   ))}
                 </div>
-                <div className="modal-footer">
-                  <button className="btn btn-ghost" onClick={() => setShowMedModal(false)}>取消</button>
+                <div className="modal-footer" style={{ flexWrap: 'wrap' }}>
+                  {medError && <div role="alert" style={{ color: '#C0392B', flex: '1 1 100%' }}>{medError}</div>}
+                  <button className="btn btn-ghost" onClick={() => { setShowMedModal(false); setMedError('') }}>取消</button>
                   <button className="btn btn-primary" disabled={medSaving} onClick={async () => {
-                    if (!medForm.name || !medForm.dosage || !medForm.frequency) { toast('请填写必填项'); return }
+                    setMedError('')
+                    if (!medForm.name?.trim() || !medForm.dosage?.trim() || !medForm.frequency?.trim()) { setMedError('请填写药品化学名、剂量和频次'); return }
                     setMedSaving(true)
                     try {
                       const needReview = !editingMed && (staff?.role === 'healthManager' || staff?.role === 'medicalAssistant')
@@ -7981,7 +8162,7 @@ export default function PatientDetailPage() {
                       else await staffAPI.createPatientMedication(id, medForm)
                       setShowMedModal(false); loadMedications()
                       toast(editingMed ? '已保存' : needReview ? '已提交，待健康顾问审核' : '添加成功')
-                    } catch (err) { toast(err.message) }
+                    } catch (err) { setMedError(err.message || '保存失败，请稍后重试') }
                     finally { setMedSaving(false) }
                   }}>{medSaving ? '保存中...' : '保存'}</button>
                 </div>
@@ -8096,7 +8277,7 @@ export default function PatientDetailPage() {
       {tab === 'plans' && (
         <div className="card">
           <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div className="card-title">管理方案</div>
+            <div><div className="card-title">服务方案</div><div style={{ marginTop: 4, color: '#65776F', fontSize: 12 }}>年度、营养、就医、体检等正式方案；阶段性效果与调整请切换到“阶段性评估”</div></div>
             <div style={{ display: 'flex', gap: 8 }}>
               {/* 2026-07-07 用户明确规则：AI营养方案只有营养师能生成；AI体检方案/年度管理方案
                   只有健康顾问能生成（营养师能查看这些方案内容，但不该有生成入口） */}
@@ -8110,10 +8291,10 @@ export default function PatientDetailPage() {
                   ✨ AI体检方案
                 </button>
               )}
-              {['healthPlanner', 'superadmin'].includes(staff?.role) && (
+              {['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && (
                 <button className="btn btn-secondary btn-sm" disabled={aiMedicalAssistGenerating}
                   onClick={() => { setPendingMedicalAssistOrderId(''); setShowSelectTplModal('medical_assist') }}>
-                  {aiMedicalAssistGenerating ? '生成中…' : '✨ AI就医协助方案'}
+                  {aiMedicalAssistGenerating ? '生成中…' : staff?.role === 'familyDoctor' ? '✨ 发起就医协助方案' : '✨ AI就医协助方案'}
                 </button>
               )}
               {['familyDoctor', 'superadmin'].includes(staff?.role) && (
@@ -8133,25 +8314,6 @@ export default function PatientDetailPage() {
             </div>
           ) : (
             <>
-            {(() => {
-              const annual = plans.find(plan => plan.isAnnualPlan)
-              if (!annual) return null
-              const stage = annual.progress?.currentStage || (!annual.pushedAt ? 'draft' : !annual.confirmedAt ? 'awaiting_customer' : 'in_progress')
-              const stages = [
-                ['draft', '方案已保存'], ['awaiting_customer', '已推送客户'], ['in_progress', '客户已确认'], ['completed', '执行完成'],
-              ]
-              const stageIndex = { draft: 0, awaiting_customer: 1, in_progress: 2, completed: 3 }[stage] ?? 0
-              return <div style={{ padding: '18px 20px', borderBottom: '1px solid #EDF1EF', background: '#FAFCFB' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <div><div style={{ fontWeight: 700, color: '#1A2B24' }}>客户当前进程</div><div style={{ color: '#65776F', fontSize: 12, marginTop: 4 }}>{annual.title}</div></div>
-                  <div style={{ color: '#1E6B50', fontWeight: 700 }}>{annual.progress?.completed || 0}/{annual.progress?.total || 0} 项完成 · {annual.progress?.percent || 0}%</div>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(130px,1fr))', gap: 8, marginTop: 14 }}>
-                  {stages.map(([key, label], index) => <div key={key} style={{ padding: '10px 8px', borderRadius: 8, textAlign: 'center', fontSize: 12, fontWeight: index <= stageIndex ? 700 : 500, color: index <= stageIndex ? '#155E48' : '#8AA89C', background: index <= stageIndex ? '#EAF6F0' : '#F2F4F3', border: `1px solid ${index === stageIndex ? '#22A06B' : 'transparent'}` }}>{index < stageIndex ? '✓ ' : index === stageIndex ? '● ' : ''}{label}</div>)}
-                </div>
-                {annual.progress?.nextDueAt && <div style={{ marginTop: 10, color: '#65776F', fontSize: 12 }}>下一节点：{new Date(annual.progress.nextDueAt).toLocaleDateString('zh-CN')}</div>}
-              </div>
-            })()}
             <table className="table">
               <thead><tr><th>方案名称</th><th>类型</th><th>状态</th><th>已阅</th><th>已确认</th><th>项目数</th><th>完成</th><th>负责人</th><th>创建时间</th></tr></thead>
               <tbody>
@@ -8216,7 +8378,7 @@ export default function PatientDetailPage() {
         <>
         <div className="card">
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div className="card-title">随访记录</div>
+            <div><div className="card-title">服务执行任务</div><div style={{ marginTop: 4, color: '#65776F', fontSize: 12 }}>承接方案生成的营养、监测、体检复查、就医协助、专病管理及沟通任务；随访只是执行方式之一</div></div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn btn-secondary btn-sm" onClick={() => runAIHelper('followup')}>✨ AI随访建议</button>
               <button className="btn btn-secondary btn-sm" onClick={() => runAIHelper('coach')}>✨ AI教练消息</button>
@@ -8228,17 +8390,31 @@ export default function PatientDetailPage() {
             // 全部/待随访(planned)/随访中(in_progress+missed)/已随访(completed)/已取消(cancelled)，
             // 此前这里把"待随访"和"随访中"合并成一个"未随访"、状态文案也用的是"计划中/进行中"等另一套措辞，
             // 与随访管理页tab结构和文案不一致（2026-07-13 反馈）。
-            const FOLLOWUP_LIST_STATUS_MAP = { planned: '待随访', in_progress: '随访中', missed: '随访中', completed: '已随访', cancelled: '已取消' }
+            const FOLLOWUP_LIST_STATUS_MAP = { planned: '待执行', in_progress: '执行中', missed: '执行中', completed: '已完成', cancelled: '已取消' }
             const FOLLOWUP_LIST_STATUS_COLOR = { planned: '#D97706', in_progress: '#0077B6', missed: '#0077B6', completed: '#22A06B', cancelled: '#8AA89C' }
             const PLANNED_STATUSES = ['planned']
             const IN_PROGRESS_STATUSES = ['in_progress', 'missed']
             const DONE_STATUSES = ['completed']
             const CANCELLED_STATUSES = ['cancelled']
-            const filtered = followUpFilter === 'planned' ? followUps.filter(f => PLANNED_STATUSES.includes(f.status))
+            const executionCategoryOf = task => {
+              const text = `${task.theme || ''} ${task.content || ''} ${task.type || ''} ${task.sourceType || ''}`
+              if (/营养|饮食|膳食|体重管理/.test(text)) return 'nutrition'
+              if (/血压|血糖|体重|睡眠|运动|饮水|监测|打卡/.test(text)) return 'monitoring'
+              if (/体检|复查|检验|检查|筛查|疫苗/.test(text)) return 'checkup'
+              if (/就医|会诊|医院|挂号|陪诊|代诊|科室|医生/.test(text)) return 'medical'
+              if (/专病|慢病|疾病管理/.test(text)) return 'disease'
+              return 'communication'
+            }
+            const EXECUTION_CATEGORIES = [
+              ['all', '全部任务'], ['nutrition', '营养干预'], ['monitoring', '健康监测'],
+              ['checkup', '体检与复查'], ['medical', '就医协助'], ['disease', '专病管理'], ['communication', '客户沟通'],
+            ]
+            const statusFiltered = followUpFilter === 'planned' ? followUps.filter(f => PLANNED_STATUSES.includes(f.status))
               : followUpFilter === 'in_progress' ? followUps.filter(f => IN_PROGRESS_STATUSES.includes(f.status))
               : followUpFilter === 'done' ? followUps.filter(f => DONE_STATUSES.includes(f.status))
               : followUpFilter === 'cancelled' ? followUps.filter(f => CANCELLED_STATUSES.includes(f.status))
               : followUps
+            const filtered = statusFiltered.filter(task => executionCategory === 'all' || executionCategoryOf(task) === executionCategory)
             const plannedCount = followUps.filter(f => PLANNED_STATUSES.includes(f.status)).length
             const inProgressCount = followUps.filter(f => IN_PROGRESS_STATUSES.includes(f.status)).length
             const doneCount = followUps.filter(f => DONE_STATUSES.includes(f.status)).length
@@ -8282,12 +8458,18 @@ export default function PatientDetailPage() {
 
             return (
             <>
+            <div style={{ display: 'flex', gap: 7, padding: '12px 16px 2px', flexWrap: 'wrap', borderBottom: '1px solid #EDF1EF' }}>
+              {EXECUTION_CATEGORIES.map(([key, label]) => {
+                const count = key === 'all' ? followUps.length : followUps.filter(task => executionCategoryOf(task) === key).length
+                return <button key={key} type="button" className={executionCategory === key ? 'btn btn-sm' : 'btn btn-secondary btn-sm'} style={executionCategory === key ? { background: '#1E6B50', color: '#fff' } : {}} onClick={() => setExecutionCategory(key)}>{label} {count}</button>
+              })}
+            </div>
             <div style={{ display: 'flex', gap: 6, padding: '10px 16px 0' }}>
               {[
                 { k: 'all', label: `全部 ${followUps.length}` },
-                { k: 'planned', label: `待随访 ${plannedCount}` },
-                { k: 'in_progress', label: `随访中 ${inProgressCount}` },
-                { k: 'done', label: `已随访 ${doneCount}` },
+                { k: 'planned', label: `待执行 ${plannedCount}` },
+                { k: 'in_progress', label: `执行中 ${inProgressCount}` },
+                { k: 'done', label: `已完成 ${doneCount}` },
                 { k: 'cancelled', label: `已取消 ${cancelledCount}` },
               ].map(t => (
                 <button key={t.k} className={followUpFilter === t.k ? 'btn btn-sm' : 'btn btn-secondary btn-sm'}
@@ -8296,11 +8478,11 @@ export default function PatientDetailPage() {
               ))}
             </div>
             {filtered.length === 0 ? (
-              <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>{followUpFilter === 'all' ? '暂无随访记录' : followUpFilter === 'planned' ? '暂无待随访计划' : followUpFilter === 'in_progress' ? '暂无随访中记录' : followUpFilter === 'cancelled' ? '暂无已取消记录' : '暂无已随访记录'}</div>
+              <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>当前分类和状态下暂无执行任务</div>
             ) : (
             <table className="table">
               <thead>
-                <tr><th>日期</th><th>方式</th><th>状态</th><th>随访人</th><th>随访内容</th><th>下次随访</th><th>操作</th></tr>
+                <tr><th>计划日期</th><th>任务类型</th><th>状态</th><th>负责人</th><th>执行内容</th><th>下一节点</th><th>操作</th></tr>
               </thead>
               <tbody>
                 {(() => {
@@ -8349,7 +8531,7 @@ export default function PatientDetailPage() {
                           <button className="btn btn-sm" onClick={() => setFollowUpDetail(f)}>查看/转派</button>
                         ) : ['planned', 'in_progress', 'missed'].includes(f.status) ? (
                           <div style={{ display: 'flex', gap: 6 }}>
-                            <button className="btn btn-sm" onClick={() => openExec(f)}>执行随访</button>
+                            <button className="btn btn-sm" onClick={() => openExec(f)}>执行任务</button>
                             <button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(f)}>详情</button>
                           </div>
                         ) : (
@@ -8397,7 +8579,7 @@ export default function PatientDetailPage() {
                             <td onClick={e => e.stopPropagation()}>
                               {['planned', 'in_progress', 'missed'].includes(f.status) ? (
                                 <div style={{ display: 'flex', gap: 6 }}>
-                                  <button className="btn btn-sm" onClick={() => openExec(f)}>执行随访</button>
+                                  <button className="btn btn-sm" onClick={() => openExec(f)}>执行任务</button>
                                   <button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(f)}>详情</button>
                                 </div>
                               ) : (
@@ -8716,10 +8898,12 @@ export default function PatientDetailPage() {
         ]
         // 支持标题/机构关键词及年份筛选，结果统一进入一张总表。
         const kw = reportSearchKw.trim().toLowerCase()
-        const reportsInScope = reports.filter(r => {
+        const reportsInBaseScope = reports.filter(r => {
           const matchesKeyword = !kw || [r.title, r.hospital, r.institution].some(v => (v || '').toLowerCase().includes(kw))
           return matchesKeyword && (!reportYearFilter || getReportYear(r) === reportYearFilter)
         })
+        const categoryCount = key => reportsInBaseScope.filter(r => inferDocumentCategory(r) === key).length
+        const reportsInScope = reportsInBaseScope.filter(r => reportDocumentCategory === 'all' || inferDocumentCategory(r) === reportDocumentCategory)
         const isReportInfoMissing = report => !(report.hospital || report.institution) || !(report.checkDate || report.date)
         const missingReportCount = reportsInScope.filter(isReportInfoMissing).length
         const taskFilterCount = key => key === 'all' ? reportsInScope.length : reportsInScope.filter(r => getReportTaskKey(r) === key).length
@@ -8801,16 +8985,20 @@ export default function PatientDetailPage() {
         return (
           <div>
             <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-              <div className="card-title">体检报告 <span style={{ fontSize: 12, fontWeight: 400, color: '#8AA89C', marginLeft: 6 }}>{tableRows.length} 份</span></div>
+              <div className="card-title">原始资料 <span style={{ fontSize: 12, fontWeight: 400, color: '#8AA89C', marginLeft: 6 }}>{tableRows.length} 份</span></div>
               <div className="report-filter-bar">
                 <select className="form-input report-year-select" style={{ width: 132 }} value={reportYearFilter} onChange={e => { setReportYearFilter(e.target.value); setReportPage(1); setOpenReportActionId(null) }} aria-label="按年份筛选报告">
                   <option value="">全部年份</option>
                   {reportYears.map(year => <option key={year} value={year}>{year === '未知' ? '年份未知' : `${year} 年`}</option>)}
                 </select>
-                <input className="form-input report-search-input" style={{ width: 240 }} placeholder="搜索报告标题/医院"
+                <input className="form-input report-search-input" style={{ width: 240 }} placeholder="搜索资料名称/来源机构"
                   value={reportSearchKw} onChange={e => { setReportSearchKw(e.target.value); setReportPage(1); setOpenReportActionId(null) }} />
-                <button className="btn btn-primary btn-sm report-upload-btn" onClick={() => setShowUploadReport(true)}>＋ 上传报告</button>
+                <button className="btn btn-primary btn-sm report-upload-btn" onClick={() => setShowUploadReport(true)}>＋ 上传原始资料</button>
               </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(128px, 1fr))', gap: 8, marginBottom: 12 }}>
+              <button type="button" onClick={() => { setReportDocumentCategory('all'); setReportPage(1) }} style={{ padding: '10px 12px', borderRadius: 10, border: `1px solid ${reportDocumentCategory === 'all' ? '#1E6B50' : '#DCE5E0'}`, background: reportDocumentCategory === 'all' ? '#EAF5F0' : '#fff', color: '#24463A', cursor: 'pointer', textAlign: 'left' }}><strong>全部资料</strong><span style={{ float: 'right', color: '#789287' }}>{reportsInBaseScope.length}</span></button>
+              {DOCUMENT_CATEGORIES.map(item => <button key={item.key} type="button" onClick={() => { setReportDocumentCategory(item.key); setReportPage(1) }} style={{ padding: '10px 12px', borderRadius: 10, border: `1px solid ${reportDocumentCategory === item.key ? '#1E6B50' : '#DCE5E0'}`, background: reportDocumentCategory === item.key ? '#EAF5F0' : '#fff', color: '#24463A', cursor: 'pointer', textAlign: 'left' }}><strong>{item.label}</strong><span style={{ float: 'right', color: '#789287' }}>{categoryCount(item.key)}</span></button>)}
             </div>
             {reports.length > 0 && <div className="report-list-toolbar">
               <div className="report-task-filters" aria-label="报告任务筛选">
@@ -8830,14 +9018,14 @@ export default function PatientDetailPage() {
               </div>
             </div>}
             {reports.length === 0 ? (
-              <div className="card" style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无体检报告</div>
+              <div className="card" style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无原始资料</div>
             ) : filteredReports.length === 0 ? (
               <div className="card" style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无符合当前筛选条件的报告</div>
             ) : (
               <>
                   <div style={{ borderRadius: 8, border: '1px solid #e8e4dc', overflowX: 'auto', background: '#fff' }}>
                     <table className="table report-table" style={{ marginBottom: 0, minWidth: 920 }}>
-                      <thead><tr><th>报告名称</th><th>类型</th><th>机构</th><th>检查日期</th><th>状态</th><th>操作</th></tr></thead>
+                      <thead><tr><th>资料名称</th><th>资料分类</th><th>来源机构</th><th>资料日期</th><th>处理状态</th><th>操作</th></tr></thead>
                       <tbody>
                       {paginatedReportRows.map(({ report: r, typeLabel }) => {
                         const auditLabel = r.audit_status === 'audited' ? '已审核'
@@ -8858,7 +9046,7 @@ export default function PatientDetailPage() {
                               <button type="button" onClick={() => openReportDetail(r)} className="report-table-list-title-btn">{r.title || '未命名报告'}</button>
                               {r.screeningL2 && <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 3 }}>{r.screeningL2}</div>}
                             </td>
-                            <td><span style={{ fontSize: 12, color: '#668277', whiteSpace: 'nowrap' }}>{typeLabel}</span></td>
+                            <td><strong style={{ fontSize: 12, color: '#315F4E', whiteSpace: 'nowrap' }}>{DOCUMENT_CATEGORY_LABEL[inferDocumentCategory(r)] || '其他资料'}</strong><div style={{ fontSize: 11, color: '#8AA89C', marginTop: 2 }}>{typeLabel}</div></td>
                             <td style={{ color: '#60756B' }}>{r.hospital || r.institution || <span className="report-missing-field">待补</span>}</td>
                             <td style={{ color: '#8AA89C', whiteSpace: 'nowrap' }}>{r.checkDate || r.date || <span className="report-missing-field">待补</span>}</td>
                             <td><span style={{ fontSize: 11, fontWeight: 600, color: auditColor, background: `${auditColor}12`, borderRadius: 999, padding: '3px 7px', whiteSpace: 'nowrap' }}>{auditLabel}</span></td>
@@ -8903,7 +9091,7 @@ export default function PatientDetailPage() {
                                   setEditingReport(r)
                                   setEditingReportForm({
                                     title: r.title || '', hospital: r.hospital || r.institution || '', date: r.date || r.checkDate || '',
-                                    note: r.note || '', type: r.type || 'general_exam',
+                                    note: r.note || '', documentCategory: inferDocumentCategory(r),
                                   })
                                   setOpenReportActionId(null)
                                 }}>编辑报告</button>
@@ -8935,13 +9123,13 @@ export default function PatientDetailPage() {
 
       {/* ── Service Records Tab ── */}
       {tab === 'serviceRecords' && (() => {
-        // 阶段性健康评估在独立评估入口统一查看；服务记录只呈现实履约服务。
-        const CATS = ['营养干预', '专病管理', '医院就医']
+        // 评估入口负责生成和审核；服务档案保留审核后的正式结果，两者通过来源 ID 互通。
+        const CATS = ['营养干预', '专病管理', '医院就医', '阶段性健康评估']
         const grouped = {}
         CATS.forEach(c => { grouped[c] = [] })
-        serviceRecords.filter(r => !['stage_assessment', 'phase_assessment'].includes(r.type)).forEach(r => {
+        serviceRecords.forEach(r => {
           const cat = SR_CATEGORY[r.type]
-          // routine / doctor_followup 等已取消的旧类型不再出现在服务记录页面。
+          // routine / doctor_followup 等已取消的旧类型不再出现在服务档案页面。
           if (!cat || !grouped[cat]) return
           grouped[cat].push(r)
         })
@@ -9043,6 +9231,8 @@ export default function PatientDetailPage() {
           const cat = REFERRAL_CAT_MAP[role] || '就医专员转介'
           grouped[cat].push(r)
         })
+        Object.values(grouped).forEach(records => records.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)))
+        const formatReferralTime = value => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '-'
         const activeCats = CATS.filter(c => grouped[c].length > 0)
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -9073,7 +9263,10 @@ export default function PatientDetailPage() {
                           <span style={{ fontWeight: 600, fontSize: 14 }}>{r.reason}</span>
                           <span style={{ fontSize: 12, color: STATUS_COLOR[r.status], fontWeight: 600 }}>· {STATUS_LABEL[r.status]}</span>
                         </div>
-                        <span style={{ fontSize: 12, color: '#aaa' }}>{new Date(r.createdAt).toLocaleDateString('zh-CN')}</span>
+                        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', justifyContent: 'flex-end', fontSize: 12 }}>
+                          <span style={{ color: '#65776F' }}>转介时间：<strong style={{ color: '#33473E' }}>{formatReferralTime(r.createdAt)}</strong></span>
+                          {r.respondedAt && <span style={{ color: '#65776F' }}>回应时间：<strong style={{ color: '#33473E' }}>{formatReferralTime(r.respondedAt)}</strong></span>}
+                        </div>
                       </div>
                       {/* 转介信息 */}
                       <div style={{ fontSize: 13, color: '#4A6558', marginBottom: 4 }}>
@@ -9081,11 +9274,16 @@ export default function PatientDetailPage() {
                       </div>
                       {r.content && <div style={{ fontSize: 13, color: '#666', marginBottom: 6 }}>{r.content}</div>}
                       {r.attachedHealthInfo && <AttachedHealthInfoView info={r.attachedHealthInfo} />}
+                      {r.respondedAt && !(r.responseAnalysis || r.responseOpinion || r.response) && (
+                        <div style={{ marginTop: 8, padding: '8px 11px', background: '#F6F9F7', borderRadius: 6, color: '#65776F', fontSize: 12 }}>
+                          {r.toStaffId?.name || '接收人'}已于 {formatReferralTime(r.respondedAt)} 作出“{STATUS_LABEL[r.status] || r.status}”回应，暂无文字意见。
+                        </div>
+                      )}
                       {/* 回复 */}
                       {(r.responseAnalysis || r.responseOpinion || r.response) && (
                         <div style={{ marginTop: 10, padding: '10px 12px', background: '#f0faf5', borderRadius: 6, borderLeft: `3px solid ${REFERRAL_CAT_COLOR[cat]}`, display: 'flex', flexDirection: 'column', gap: 6 }}>
                           <div style={{ fontSize: 11, color: '#8AA89C' }}>
-                            {r.toStaffId?.name} 回复 · {r.respondedAt ? new Date(r.respondedAt).toLocaleDateString('zh-CN') : ''}
+                            {r.toStaffId?.name} 回复 · 回应时间：{formatReferralTime(r.respondedAt)}
                           </div>
                           {r.responseAnalysis && (
                             <div>
@@ -9541,12 +9739,12 @@ export default function PatientDetailPage() {
         </div>
       )}
 
-      {/* 执行随访弹窗：填写随访结果、标记完成/随访中，与 FollowUpsPage.jsx 的执行随访弹窗逻辑/UI一致 */}
+      {/* 执行任务弹窗：随访、监测、复查与就医等任务共用执行结果表单。 */}
       {execItem && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setExecItem(null) }}>
           <div className="modal" style={{ maxWidth: 520 }}>
             <div className="modal-header">
-              <h3 className="modal-title">执行随访</h3>
+              <h3 className="modal-title">执行服务任务</h3>
               <button className="modal-close" onClick={() => setExecItem(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -9798,12 +9996,12 @@ export default function PatientDetailPage() {
                   onChange={e => setEditingFollowUp(f => ({ ...f, theme: e.target.value }))} />
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">随访内容</label>
+                <label className="form-label">执行结果</label>
                 <textarea className="form-input" rows={4} style={{ resize: 'vertical' }} value={editingFollowUp.content}
                   onChange={e => setEditingFollowUp(f => ({ ...f, content: e.target.value }))} />
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">下次随访日期</label>
+                <label className="form-label">下一节点日期</label>
                 <input type="date" className="form-input" value={editingFollowUp.nextFollowUpDate}
                   onChange={e => setEditingFollowUp(f => ({ ...f, nextFollowUpDate: e.target.value }))} />
               </div>
@@ -9862,12 +10060,12 @@ export default function PatientDetailPage() {
                 <input className="form-input" type="date" value={editingReportForm.date || ''}
                   onChange={e => setEditingReportForm(f => ({ ...f, date: e.target.value }))} />
               </div>
-              {/* 报告归类（一级大类，与用户端上传保持同一套）：客户上传时可能归错，健管可在此改正 */}
+              {/* 原始资料分类与上传、列表共用；不能修改专项筛查 type/screeningL1。 */}
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">报告归类</label>
-                <select className="form-input" value={editingReportForm.type || ''}
-                  onChange={e => setEditingReportForm(f => ({ ...f, type: e.target.value }))}>
-                  {REPORT_L1_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+                <select className="form-input" value={editingReportForm.documentCategory || ''}
+                  onChange={e => setEditingReportForm(f => ({ ...f, documentCategory: e.target.value }))}>
+                  {DOCUMENT_CATEGORIES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
                 </select>
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
@@ -10342,7 +10540,9 @@ export default function PatientDetailPage() {
           const isOpen = !!ocrClassifyOpen[i]
           const q = (ocrClassifySearch[i] ?? (it.screeningKey ? allClassifyOpts.find(o => o.value === it.screeningKey)?.label || '' : '')).toLowerCase()
           const filtered = q.length >= 1
-            ? allClassifyOpts.filter(o => o.label.toLowerCase().includes(q) || o.groupLabel.toLowerCase().includes(q))
+            ? allClassifyOpts.filter(o => o.label.toLowerCase().includes(q)
+              || o.groupLabel.toLowerCase().includes(q)
+              || (o.searchTerms || []).some(term => String(term).toLowerCase().includes(q)))
             : allClassifyOpts
           const displayText = it.screeningKey ? (allClassifyOpts.find(o => o.value === it.screeningKey)?.label || it.screeningKey) : ''
           // 2026-07-21修复(第二版)：第一版用 window.innerHeight 判断可用空间，但下拉框真正的裁切边界
@@ -11108,7 +11308,7 @@ export default function PatientDetailPage() {
           patientId={id}
           screeningTree={screeningTree}
           onClose={() => setShowUploadReport(false)}
-          onSaved={() => { setShowUploadReport(false); toast('报告已上传'); loadReports() }}
+          onSaved={() => { setShowUploadReport(false); toast('原始资料已上传'); loadReports() }}
         />
       )}
 
@@ -11314,6 +11514,7 @@ function SendMessageModal({ patientId, patientName, onClose }) {
   const [msgs, setMsgs] = useState([])
   const [loading, setLoading] = useState(true)
   const [input, setInput] = useState('')
+  const [images, setImages] = useState([])
   const [sending, setSending] = useState(false)
   const [humanActive, setHumanActive] = useState(false)
   const [switchingMode, setSwitchingMode] = useState(false)
@@ -11367,12 +11568,15 @@ function SendMessageModal({ patientId, patientName, onClose }) {
   }, [msgs])
 
   const send = async () => {
-    if (!input.trim() || sending) return
+    if ((!input.trim() && !images.length) || sending) return
     setSending(true)
     try {
-      const res = await staffAPI.replyChatMessage(patientId, input.trim())
+      const res = await staffAPI.replyChatMessage(patientId, input.trim(), {
+        images: images.map(({ data, mimeType }) => ({ data, mimeType })),
+      })
       setHumanActive(true)
       setInput('')
+      setImages([])
       isNearBottomRef.current = true // 自己发消息后，无论之前翻到哪，都应该跟到底部
       if (res.data) setMsgs(prev => [...prev, res.data])
       setTimeout(() => scrollRef.current?.scrollTo({ top: 99999, behavior: 'smooth' }), 80)
@@ -11381,6 +11585,30 @@ function SendMessageModal({ patientId, patientName, onClose }) {
   }
 
   const handleKey = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }
+
+  const addImageFiles = async (files) => {
+    const available = 9 - images.length
+    const picked = Array.from(files || []).filter(file => file.type?.startsWith('image/')).slice(0, available)
+    if (!picked.length) return
+    const oversized = picked.find(file => file.size > 8 * 1024 * 1024)
+    if (oversized) { toast('单张图片不能超过 8MB'); return }
+    const next = await Promise.all(picked.map(file => new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve({ data: reader.result, mimeType: file.type || 'image/jpeg', name: file.name })
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })))
+    setImages(prev => [...prev, ...next].slice(0, 9))
+  }
+
+  const handlePaste = async (event) => {
+    const files = Array.from(event.clipboardData?.items || [])
+      .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+      .map(item => item.getAsFile()).filter(Boolean)
+    if (!files.length) return
+    event.preventDefault()
+    try { await addImageFiles(files) } catch { toast('读取粘贴图片失败') }
+  }
 
   const startVoice = async () => {
     if (recording || sending) return
@@ -11397,7 +11625,7 @@ function SendMessageModal({ patientId, patientName, onClose }) {
         reader.onload = async () => {
           setSending(true)
           try {
-            const res = await staffAPI.replyChatMessage(patientId, '', { data: reader.result, mimeType: blob.type || 'audio/webm', duration })
+            const res = await staffAPI.replyChatMessage(patientId, '', { audio: { data: reader.result, mimeType: blob.type || 'audio/webm', duration } })
             setHumanActive(true)
             if (res.data) setMsgs(prev => [...prev, res.data])
           } catch (err) { toast(err.message || '语音发送失败') }
@@ -11507,6 +11735,9 @@ function SendMessageModal({ patientId, patientName, onClose }) {
                       position: 'relative',
                     }}>
                       {m.audioUrl && <audio controls preload="none" src={m.audioUrl} style={{ display: 'block', width: 230, maxWidth: '100%', marginBottom: 4 }} />}
+                      {(m.imageUrls?.length ? m.imageUrls : (m.imageUrl ? [m.imageUrl] : [])).map((url, imageIndex) => (
+                        <img key={`${url}-${imageIndex}`} src={url} alt="对话图片" onClick={() => window.open(url, '_blank')} style={{ display: 'block', width: 220, maxWidth: '100%', maxHeight: 260, objectFit: 'cover', borderRadius: 8, marginBottom: 6, cursor: 'zoom-in' }} />
+                      ))}
                       {m.audioUrl && m.audioTranscript && <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #E0D9CE', fontSize: 12 }}>转写：{m.audioTranscript}</div>}
                       {(!m.audioUrl || m.content !== '[语音消息]') && m.content}
                       {canRecall && (
@@ -11526,36 +11757,57 @@ function SendMessageModal({ patientId, patientName, onClose }) {
         </div>
 
         {/* 输入栏 */}
-        <div style={{ borderTop: '1px solid #E0D9CE', padding: '10px 14px', display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0, backgroundColor: '#fff' }}>
+        <div style={{ borderTop: '1px solid #E0D9CE', padding: '10px 14px', flexShrink: 0, backgroundColor: '#fff' }}>
+          {images.length > 0 && (
+            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 8 }}>
+              {images.map((image, index) => (
+                <div key={index} style={{ position: 'relative', flexShrink: 0 }}>
+                  <img src={image.data} alt="待发送图片" style={{ width: 58, height: 58, objectFit: 'cover', borderRadius: 8, border: '1px solid #E0D9CE' }} />
+                  <button type="button" aria-label="移除图片" onClick={() => setImages(prev => prev.filter((_, i) => i !== index))} style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, padding: 0, borderRadius: '50%', border: 0, background: '#1A2B24', color: '#fff', cursor: 'pointer' }}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
           <textarea
             style={{ flex: 1, border: '1px solid #E0D9CE', borderRadius: 10, padding: '8px 12px', fontSize: 14, resize: 'none', outline: 'none', maxHeight: 100, lineHeight: 1.5, fontFamily: 'inherit' }}
             rows={1}
-            placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+            placeholder="输入消息或粘贴图片，Enter 发送"
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKey}
+            onPaste={handlePaste}
           />
+          <label title="选择图片" style={{ padding: '8px 10px', borderRadius: 10, background: '#F2EDE3', color: '#1E6B50', cursor: images.length >= 9 ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: 13, opacity: images.length >= 9 ? 0.5 : 1 }}>
+            图片
+            <input type="file" accept="image/*" multiple disabled={images.length >= 9} onChange={async e => { try { await addImageFiles(e.target.files) } catch { toast('读取图片失败') } finally { e.target.value = '' } }} style={{ display: 'none' }} />
+          </label>
           <button
             onClick={send}
-            disabled={sending || !input.trim()}
-            style={{ padding: '8px 16px', borderRadius: 10, background: '#1E6B50', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14, opacity: (sending || !input.trim()) ? 0.5 : 1 }}
+            disabled={sending || (!input.trim() && !images.length)}
+            style={{ padding: '8px 16px', borderRadius: 10, background: '#1E6B50', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14, opacity: (sending || (!input.trim() && !images.length)) ? 0.5 : 1 }}
           >
             {sending ? '…' : '发送'}
           </button>
           <button type="button" onMouseDown={startVoice} onMouseUp={stopVoice} onMouseLeave={stopVoice} onTouchStart={startVoice} onTouchEnd={stopVoice} disabled={sending} style={{ padding: '8px 12px', borderRadius: 10, background: recording ? '#DC3545' : '#E8F5EF', color: recording ? '#fff' : '#1E6B50', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>
             {recording ? '松开发送' : '按住说话'}
           </button>
+          </div>
         </div>
       </div>
     </div>
   )
 }
 
-// ── 上传体检报告弹窗 ───────────────────────────────────────
-const ANNUAL_L1_ID = '__annual__'
+// ── 上传原始资料弹窗 ───────────────────────────────────────
+const DOCUMENT_CATEGORY_REPORT_TYPE = {
+  physical_exam: 'annual', lab_report: 'blood', exam_report: 'other', body_composition: 'body_comp',
+  functional_medicine: 'functional', genetic_test: 'genetic', outpatient_record: 'other', inpatient_record: 'other',
+  prescription_order: 'other', questionnaire: 'other', other_customer_material: 'other',
+}
 
-function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) {
-  const [form, setForm] = useState({ title: '', l1Id: '', l2Label: '', hospital: '', date: '', note: '' })
+function UploadReportModal({ patientId, onClose, onSaved }) {
+  const [form, setForm] = useState({ documentCategory: 'physical_exam', title: '', hospital: '', date: '', note: '' })
   const [fileDatas, setFileDatas] = useState([])
   // 一份报告有时被拍成多张照片(如"结论页"+"数据页")，默认合并为一条记录、AI一次性识别全部图片；
   // 取消勾选则保持原有行为——每个文件各自拆成一条独立报告(如确实是几份不同的检查报告一起选的场景)
@@ -11565,26 +11817,7 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
   const [uploadStep, setUploadStep] = useState('')
   const [error, setError] = useState('')
 
-  const isAnnual = form.l1Id === ANNUAL_L1_ID
-  const currentL1 = isAnnual ? null : screeningTree.find(n => String(n._id) === form.l1Id)
-  const selectedReportType = isAnnual ? 'annual' : (REPORT_L1_LABEL_TO_TYPE[currentL1?.label] || 'other')
-  const l2Options = currentL1?.children || []
-
-  const handleL1Change = (l1Id) => {
-    const isAnn = l1Id === ANNUAL_L1_ID
-    setForm(f => ({
-      ...f, l1Id,
-      l2Label: '',
-      // 之前无条件清空 title，如果专员先选文件(自动填了文件名做标题)、再点分类按钮，
-      // 标题会被静默清空且无提示，点上传时才报错"请填写报告标题"——已有标题（不论是
-      // 手填还是文件名自动填的）就保留，只在真的还没标题时才按类型给默认值。
-      title: isAnn ? (f.title || '年度体检报告') : f.title,
-    }))
-  }
-
-  const handleL2Change = (l2Label) => {
-    setForm(f => ({ ...f, l2Label, title: l2Label ? `${l2Label} 报告` : f.title }))
-  }
+  const selectedReportType = DOCUMENT_CATEGORY_REPORT_TYPE[form.documentCategory] || 'other'
 
   const [metaDetecting, setMetaDetecting] = useState(false)
   // 单文件自动识别时会先上传拿URL，缓存下来给 handleSubmit 复用，避免同一个文件传两次
@@ -11617,8 +11850,8 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
   }
 
   const handleSubmit = async () => {
-    if (!form.title) { setError('请填写报告标题'); return }
-    if (!fileDatas.length) { setError('请选择报告文件（图片或PDF）'); return }
+    if (!form.title) { setError('请填写资料名称'); return }
+    if (!fileDatas.length) { setError('请选择资料文件（图片或PDF）'); return }
     try {
       setSaving(true); setError(''); setUploadProgress(0)
       const total = fileDatas.length
@@ -11641,8 +11874,7 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
           patientId,
           title: form.title,
           type: selectedReportType,
-          screeningL1: isAnnual ? '' : form.l1Id,
-          screeningL2: isAnnual ? '' : form.l2Label,
+          documentCategory: form.documentCategory,
           hospital: form.hospital,
           date: form.date,
           note: form.note,
@@ -11675,8 +11907,7 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
             patientId,
             title: form.title + titleSuffix,
             type: selectedReportType,
-            screeningL1: isAnnual ? '' : form.l1Id,
-            screeningL2: isAnnual ? '' : form.l2Label,
+            documentCategory: form.documentCategory,
             hospital: form.hospital,
             date: form.date,
             note: form.note,
@@ -11704,46 +11935,24 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
     <div className="modal-overlay">
       <div className="modal" style={{ maxWidth: 500 }}>
         <div className="modal-header">
-          <h3 className="modal-title">上传体检报告</h3>
+          <h3 className="modal-title">上传原始资料</h3>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-          {/* L1 大类 */}
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">报告大类（可不选）</label>
-            <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 6 }}>
-              若报告涉及多个类目，可不选或只选最主要的一个——具体归类以AI解析结果为准
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {[{ id: ANNUAL_L1_ID, label: '年度体检报告' }, ...screeningTree.map(n => ({ id: String(n._id), label: n.label }))].map(opt => (
-                <button key={opt.id} type="button"
-                  onClick={() => handleL1Change(opt.id)}
-                  style={{
-                    padding: '5px 14px', borderRadius: 20, fontSize: 13, cursor: 'pointer', border: '1.5px solid',
-                    background: form.l1Id === opt.id ? '#1E6B50' : '#fff',
-                    color: form.l1Id === opt.id ? '#fff' : '#4A6558',
-                    borderColor: form.l1Id === opt.id ? '#1E6B50' : '#C8D5CE',
-                  }}>
-                  {opt.label}
-                </button>
-              ))}
+            <label className="form-label">资料分类 *</label>
+            <select className="form-input" value={form.documentCategory} onChange={e => setForm(f => ({ ...f, documentCategory: e.target.value }))}>
+              {DOCUMENT_CATEGORIES.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
+            </select>
+            <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 6 }}>
+              与原始资料页面使用同一套分类；专项筛查归类由AI解析后在审核环节确认。
             </div>
           </div>
 
-          {/* 二级具体分类已按需求移除：上传时只归一级大类，与用户端一致，避免设了二级标签又不做归类。
-              精细归类统一交给 AI 解析后由健管在报告详情里调整。 */}
-
-          {/* 当前分类提示（仅一级大类） */}
-          {form.l1Id && (
-            <div style={{ fontSize: 12, color: '#1E6B50', background: '#E8F5EF', borderRadius: 6, padding: '5px 10px' }}>
-              {isAnnual ? '年度体检报告（整份报告）' : (currentL1?.label || '')}
-            </div>
-          )}
-
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">报告标题 *</label>
-            <input className="form-input" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="如：2024年年度体检报告" />
+            <label className="form-label">资料名称 *</label>
+            <input className="form-input" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="如：2026年年度体检报告 / 门诊病历" />
           </div>
 
           <div style={{ display: 'flex', gap: 10 }}>

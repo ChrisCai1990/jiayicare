@@ -381,6 +381,7 @@ export default function PlanDetailPage() {
   if (!plan) return <div className="page">方案不存在</div>
 
   const canEdit = canEditPlanType(plan.type, staff?.role) && !!plan.canManage
+  const canDelete = !!plan.canDelete
   const completedCount = plan.items?.filter(i => i.status === 'completed').length || 0
   const progress = plan.items?.length ? Math.round((completedCount / plan.items.length) * 100) : 0
   const assistMeta = plan.type === 'medical_assist' ? getAssistTemplateMeta(plan.content?.templateName) : null
@@ -418,7 +419,7 @@ export default function PlanDetailPage() {
         <div style={{ display: 'flex', gap: 8 }}>
           {!canEdit && (
             <span style={{ fontSize: 12, color: '#8AA89C', alignSelf: 'center' }}>
-              {TYPE_LABEL[plan.type]}仅{plan.type === 'nutrition' ? '营养师' : plan.type === 'medical_assist' ? '健康规划师' : '健康顾问'}中的方案创建人可编辑、推送和删除
+              {TYPE_LABEL[plan.type]}由{plan.type === 'nutrition' ? '营养师' : plan.type === 'medical_assist' ? '健康规划师' : '健康顾问'}负责编辑和推送；方案创建人仍可删除本人建立的方案
             </span>
           )}
           {canEdit && plan.content?.aiStatus === 'pending' && (
@@ -446,7 +447,7 @@ export default function PlanDetailPage() {
           {plan.status === 'completed' && (
             <span style={{ fontSize: 12, color: '#22A06B', alignSelf: 'center', background: '#E8F5EF', border: '1px solid #22A06B', padding: '3px 10px', borderRadius: 6 }}>✔️ 服务已完成</span>
           )}
-          {canEdit && <button className="btn btn-secondary" onClick={handleDelete}>删除</button>}
+          {canDelete && <button className="btn btn-secondary" onClick={handleDelete}>删除</button>}
         </div>
       </div>
 
@@ -473,10 +474,12 @@ export default function PlanDetailPage() {
           </div>
           <div className="card-body" style={{ display: 'grid', gap: 10 }}>
             {[
-              ['服务步骤', plan.content.templateSnapshot.tasks],
-              ['住宿安排', plan.content.templateSnapshot.hotel],
-              ['交通安排', plan.content.templateSnapshot.transport],
-              ['注意事项模板', plan.content.templateSnapshot.notes],
+              ['适用场景', plan.content.templateSnapshot.applicableScenario],
+              ['标准服务步骤', plan.content.templateSnapshot.standardSteps || plan.content.templateSnapshot.tasks],
+              ['准备资料', plan.content.templateSnapshot.requiredMaterials],
+              ['完成标准', plan.content.templateSnapshot.completionStandard],
+              ['可选后勤协助', plan.content.templateSnapshot.optionalLogistics || [plan.content.templateSnapshot.hotel, plan.content.templateSnapshot.transport].filter(Boolean).join('\n')],
+              ['风险与注意事项', plan.content.templateSnapshot.riskNotes || plan.content.templateSnapshot.notes],
             ].filter(([, v]) => !!v).map(([k, v]) => (
               <div key={k}>
                 <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 3 }}>{k}</div>

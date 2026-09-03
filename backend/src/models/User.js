@@ -44,6 +44,7 @@ const userSchema = new mongoose.Schema({
   totalLoginSeconds: { type: Number, default: 0 },
   referralCode: { type: String, unique: true, sparse: true, default: () => crypto.randomBytes(6).toString('hex') },
   invitedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  invitedAt: { type: Date, default: null },
   pendingInviteCode: { type: String, default: '' },
   firstLoginFundGrantedAt: { type: Date, default: null },
   referralRewardGrantedAt: { type: Date, default: null },
@@ -103,6 +104,8 @@ const userSchema = new mongoose.Schema({
   healthConcernFor:    { type: String, default: '' }, // 更关注谁的健康问题
   expectedService:     { type: String, default: '' }, // 期望得到怎样的健康顾问服务
   hasHomeMonitor:      { type: String, default: '' }, // 是否配备居家检测设备
+  // 居家健康设备与辅助器械。结构化保存后可驱动清洗、消毒、耗材更换等服务任务。
+  healthEquipment:     { type: [mongoose.Schema.Types.Mixed], default: [] },
   hasMedicineCabinet:  { type: String, default: '' }, // 是否配备居家小药箱
   // 联系信息（#34）
   contactPhone:    { type: String, default: '' },  // 历史兼容镜像；医护端联系电话统一读写 phone

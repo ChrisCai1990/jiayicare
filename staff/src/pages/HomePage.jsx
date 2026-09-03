@@ -5,6 +5,7 @@ import { useStaff } from '../App'
 import AiTodosPanel from '../components/AiTodosPanel'
 import SymptomTodosPanel from '../components/SymptomTodosPanel'
 import FollowUpsPanel from '../components/FollowUpsPanel'
+import ServiceTasksPanel from '../components/ServiceTasksPanel'
 
 const DISEASE_COLOR = {
   '高血压': '#e74c3c', '糖尿病': '#e67e22', '高血脂': '#f39c12',
@@ -127,6 +128,9 @@ export default function HomePage() {
       {/* AI 待审核任务面板 */}
       <SymptomTodosPanel />
       <AiTodosPanel />
+
+      {/* 临时服务方案产生的岗位任务，与年度既定随访计划分开呈现。 */}
+      <ServiceTasksPanel />
 
       {/* 待随访任务面板 */}
       <FollowUpsPanel />

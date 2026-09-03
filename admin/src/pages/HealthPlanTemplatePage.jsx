@@ -27,6 +27,14 @@ const ANNUAL_MODULE_RULES = [
 
 const DEFAULT_REQUIRED_FIELDS = ['项目名称', '设置依据', '建议时间/时间范围', '执行频率', '注意事项', '客户行动', '责任角色', '审核状态']
 
+const STANDARD_ACTION_DEFS = [
+  { key: 'medical_treatment', label: '需要安排就医', hint: '客户存在明确就医需求时采用' },
+  { key: 'checkup_completion', label: '需要完善体检', hint: '现有健康资料存在必要检查缺口时采用' },
+  { key: 'abnormal_followup', label: '需要定期复查', hint: '已确认异常或慢病需要复查时采用' },
+  { key: 'vaccine', label: '疫苗接种', hint: '符合接种依据且需要纳入年度管理时采用' },
+  { key: 'annual_checkup', label: '年度体检', hint: '需要安排下一年度体检时采用' },
+]
+
 // ── 各类型的默认 content 结构 ─────────────────────────────────
 const defaultContent = {
   annual_checkup: {
@@ -39,10 +47,14 @@ const defaultContent = {
     planType: 'health_prevention',
     planName: '',
     planDesc: '',
+    strategyFocus: '',
+    strategyEvidence: '',
     managementCycle: '12个月',
     sourceRule: '仅使用已确认的年度管理研判结论',
     requiredItemFields: DEFAULT_REQUIRED_FIELDS,
     moduleRules: ANNUAL_MODULE_RULES.map(item => ({ key: item.key, enabled: true, aiCanGenerate: true, reviewer: item.reviewer, customerConfirmationRequired: true })),
+    standardActionPlans: {},
+    personalizedFollowUpPlans: [],
     followUpPlans: [],
   },
   nutrition: {
@@ -56,8 +68,10 @@ const defaultContent = {
     description: '',
   },
   medical_assist: {
-    name: '', datetime: '', staffName: '', tasks: '',
-    hospital: '', department: '', expert: '', hotel: '', transport: '', notes: '',
+    serviceDomain: 'medical_assist', assistanceType: '', serviceMode: 'remote', applicableScenario: '', standardSteps: '',
+    requiredMaterials: '', completionStandard: '', requiresDoctorConfirm: true,
+    requiresExecutor: true, requiresSupervisor: true, followUpPlanId: '', followUpPlanName: '', followUpPlans: [],
+    optionalLogistics: '', riskNotes: '', tasks: '', notes: '',
   },
   rehab: {
     goal: '', exercises: '', weeklyFreq: '', duration: '',
@@ -75,8 +89,46 @@ const defaultContent = {
   },
 }
 
+// 单选岗位任务方案也可能有几十条；使用原生 datalist 保留键盘输入、模糊检索和下拉选择，
+// 同时仍按方案 id 保存，避免重名或改名后关联丢失。
+function SearchablePlanSelect({ value, plans, onChange }) {
+  const selected = plans.find(plan => plan._id === value)
+  const [query, setQuery] = useState(selected?.name || '')
+  const listId = useRef(`followup-plan-options-${Math.random().toString(36).slice(2)}`)
+
+  useEffect(() => {
+    setQuery(selected?.name || '')
+  }, [value, selected?.name])
+
+  const handleChange = (text) => {
+    setQuery(text)
+    if (!text) return onChange(null)
+    const exact = plans.find(plan => plan.name === text)
+    if (exact) onChange(exact)
+  }
+
+  return (
+    <>
+      <input
+        className="form-input"
+        list={listId.current}
+        value={query}
+        placeholder="输入方案名称搜索或点击选择"
+        onChange={e => handleChange(e.target.value)}
+        onBlur={() => {
+          if (query && !plans.some(plan => plan.name === query)) setQuery(selected?.name || '')
+        }}
+        autoComplete="off"
+      />
+      <datalist id={listId.current}>
+        {plans.map(plan => <option key={plan._id} value={plan.name}>{plan.category || '通用'}</option>)}
+      </datalist>
+    </>
+  )
+}
+
 // 随访方案选择器（从随访方案库选择）
-function FollowUpPlanSelector({ value, onChange, allPlans, loading }) {
+function FollowUpPlanSelector({ value, onChange, allPlans, loading, label = '可调用的标准随访方案', description = '限定AI可以匹配的标准执行方案；客户确认年度总方案后，系统据此直接生成随访计划。', emptyText = '未限定随访方案：AI只能形成管理要求，不得编造可执行随访计划。' }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const selected = Array.isArray(value) ? value : []
@@ -97,13 +149,13 @@ function FollowUpPlanSelector({ value, onChange, allPlans, loading }) {
     <div className="form-group" style={{ gridColumn: '1/-1' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 7 }}>
         <div>
-          <label className="form-label" style={{ marginBottom: 2 }}>可调用的标准随访方案</label>
-          <div style={{ color: '#738078', fontSize: 12 }}>限定AI可以匹配的标准执行方案；客户确认年度总方案后，系统据此直接生成随访计划。</div>
+          <label className="form-label" style={{ marginBottom: 2 }}>{label}</label>
+          <div style={{ color: '#738078', fontSize: 12 }}>{description}</div>
         </div>
         <a className="btn btn-ghost" href="/projects/followup-plans" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>管理随访方案库 →</a>
       </div>
       <div style={{ border: '1px solid #d0c9be', borderRadius: 8, padding: 12, background: '#faf8f5' }}>
-        {selected.length === 0 && <div style={{ color: '#A15C18', fontSize: 12, marginBottom: 8 }}>未限定随访方案：AI只能形成管理要求，不得编造可执行随访计划。</div>}
+        {selected.length === 0 && <div style={{ color: '#A15C18', fontSize: 12, marginBottom: 8 }}>{emptyText}</div>}
         {selected.map((s, idx) => (
           <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, padding: '6px 10px', background: '#fff', borderRadius: 6, border: '1px solid #e0d9ce' }}>
             <span style={{ fontSize: 13, flex: 1, color: '#1A2B24', fontWeight: 500 }}>{s.name}</span>
@@ -252,6 +304,7 @@ function PlanContentForm({ type, initialContent, contentRef }) {
   const [labOrders, setLabOrders] = useState([])
   const [examOrders, setExamOrders] = useState([])
   const [functionalTests, setFunctionalTests] = useState([])
+  const [followUpPlans, setFollowUpPlans] = useState([])
   const set = useCallback((k, v) => setContent(prev => {
     const next = { ...prev, [k]: v }
     contentRef.current = next
@@ -270,6 +323,11 @@ function PlanContentForm({ type, initialContent, contentRef }) {
         setExamOrders(examRes.data || [])
         setFunctionalTests(funcRes.data || [])
       }).catch(() => {})
+    }
+    if (['health_management', 'medical_assist'].includes(type)) {
+      adminAPI.followUpPlans()
+        .then(res => setFollowUpPlans((res.data || []).filter(plan => plan.status === 'active')))
+        .catch(() => setFollowUpPlans([]))
     }
   }, [type])
 
@@ -305,6 +363,8 @@ function PlanContentForm({ type, initialContent, contentRef }) {
         <input className="form-input" value={content.planName || ''} onChange={e => set('planName', e.target.value)} placeholder="如：年度健康管理统一规则" />
       </div>
       <FieldRow label="状态说明" fieldKey="planDesc" placeholder="方案适用场景或说明" half content={content} set={set} />
+      <FieldRow label="策略侧重点 *" fieldKey="strategyFocus" rows={3} placeholder="说明本策略优先解决的方向，例如：体重与代谢重塑、睡眠和运动能力、慢病稳定与风险预警" content={content} set={set} />
+      <FieldRow label="AI优先研判依据" fieldKey="strategyEvidence" rows={3} placeholder="说明AI优先关注的已确认资料，例如：阶段性评估、体成分趋势、血压血糖、睡眠打卡、慢病复查结果" content={content} set={set} />
       <div className="form-group">
         <label className="form-label">管理周期</label>
         <select className="form-input" value={content.managementCycle || '12个月'} onChange={e => set('managementCycle', e.target.value)}>
@@ -342,16 +402,47 @@ function PlanContentForm({ type, initialContent, contentRef }) {
       <div style={{ gridColumn: '1/-1', border: '1px solid #D9D2C7', borderRadius: 12, padding: 16, background: '#FAF8F5' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <div>
-            <div style={{ fontWeight: 700 }}>标准随访方案来源</div>
-            <div style={{ color: '#65776F', fontSize: 12, marginTop: 4 }}>统一调用随访方案库中全部已启用方案；不再由每个年度规则重复勾选。AI按客户研判筛选后，形成客户个性化随访方案。</div>
+            <div style={{ fontWeight: 700 }}>年度基础动作模板</div>
+            <div style={{ color: '#65776F', fontSize: 12, marginTop: 4 }}>为当前管理策略指定五类标准入口。医护端展示和AI生成都只读取这里保存的模板，不在前端自行设定。</div>
           </div>
           <a className="btn btn-ghost" href="/projects/followup-plans" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>管理随访方案库 →</a>
         </div>
-        {Array.isArray(content.followUpPlans) && content.followUpPlans.length > 0 && (
-          <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 7, background: '#FFF5E8', color: '#91551D', fontSize: 12 }}>
-            该存量模板曾限定 {content.followUpPlans.length} 个随访方案；新版生成时将忽略此限定并从全部启用方案中匹配，旧数据仅保留兼容。
-          </div>
-        )}
+        <div style={{ display: 'grid', gap: 9, marginTop: 13 }}>
+          {STANDARD_ACTION_DEFS.map(action => {
+            const selected = content.standardActionPlans?.[action.key] || {}
+            return <div key={action.key} style={{ display: 'grid', gridTemplateColumns: '150px minmax(220px,1fr)', gap: 12, alignItems: 'center', padding: '10px 11px', border: '1px solid #E6E1D8', borderRadius: 9, background: '#fff' }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 650, color: '#28483B' }}>{action.label}</div>
+                <div style={{ marginTop: 2, fontSize: 11, color: '#88958F' }}>{action.hint}</div>
+              </div>
+              <select className="form-input" value={selected.id || ''} onChange={e => {
+                const plan = followUpPlans.find(item => item._id === e.target.value)
+                set('standardActionPlans', {
+                  ...(content.standardActionPlans || {}),
+                  [action.key]: plan ? { id: plan._id, name: plan.name } : null,
+                })
+              }}>
+                <option value="">不配置（该动作不参与本策略筛选）</option>
+                {followUpPlans.map(plan => <option key={plan._id} value={plan._id}>{plan.name}</option>)}
+              </select>
+            </div>
+          })}
+        </div>
+        <div style={{ marginTop: 11, padding: '8px 10px', borderRadius: 7, background: '#EEF7F2', color: '#426457', fontSize: 12 }}>
+          疾病、具体复查项目和疫苗品种等细分模板仍在随访方案库维护，只用于后续单次随访计划，不在年度总方案中整库筛选。
+        </div>
+      </div>
+      <FollowUpPlanSelector
+        value={content.personalizedFollowUpPlans || []}
+        onChange={value => set('personalizedFollowUpPlans', value)}
+        allPlans={followUpPlans.filter(plan => !Object.values(content.standardActionPlans || {}).some(selected => selected?.id === plan._id))}
+        loading={false}
+        label="可调用的个性化方案"
+        description="限定当前年度策略可以调用的差异化模板；可按策略选择睡眠、体重、代谢、慢病监测、设备维护等方案。"
+        emptyText="尚未配置个性化方案：AI完成五类基础动作后不会继续生成策略专属内容。"
+      />
+      <div style={{ gridColumn: '1/-1', marginTop: -5, padding: '9px 11px', borderRadius: 8, background: '#F3EEFF', color: '#65489A', fontSize: 12 }}>
+        上述方案是当前年度策略专属的AI候选范围。AI完成五类基础动作过筛后，只能从这里勾选的模板中继续选择；未勾选模板不得调用。
       </div>
     </div>
   )
@@ -393,15 +484,50 @@ function PlanContentForm({ type, initialContent, contentRef }) {
 
   if (type === 'medical_assist') return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-      <FieldRow label="医院" fieldKey="hospital" placeholder="医院名称" half content={content} set={set} />
-      <FieldRow label="科室" fieldKey="department" placeholder="科室名称" half content={content} set={set} />
-      <FieldRow label="专家" fieldKey="expert" placeholder="专家姓名（可选）" half content={content} set={set} />
-      <FieldRow label="就医专员" fieldKey="staffName" placeholder="专员姓名（可选）" half content={content} set={set} />
-      <FieldRow label="服务时间" fieldKey="datetime" placeholder="日期和时间段" half content={content} set={set} />
-      <FieldRow label="交通接送安排" fieldKey="transport" placeholder="是否专车、集合地点" half content={content} set={set} />
-      <FieldRow label="具体服务事项" fieldKey="tasks" rows={3} placeholder="如：代取报告、陪同检查" content={content} set={set} />
-      <FieldRow label="酒店安排" fieldKey="hotel" rows={2} placeholder="是否需要住宿及酒店信息" content={content} set={set} />
-      <FieldRow label="备注" fieldKey="notes" rows={2} placeholder="其他注意事项" content={content} set={set} />
+      <div className="form-group">
+        <label className="form-label">所属专业子方案</label>
+        <select className="form-input" value={content.serviceDomain || 'medical_assist'} onChange={e => set('serviceDomain', e.target.value)}>
+          <option value="medical_assist">就医协助子方案</option><option value="annual_checkup">体检子方案</option><option value="professional_consultation">专业咨询子方案</option>
+        </select>
+      </div>
+      <div className="form-group">
+        <FollowUpPlanSelector
+          value={(content.followUpPlans?.length ? content.followUpPlans : (content.followUpPlanId ? [{ id: content.followUpPlanId, name: content.followUpPlanName || followUpPlans.find(p => p._id === content.followUpPlanId)?.name || '已关联方案' }] : []))}
+          allPlans={followUpPlans}
+          loading={false}
+          label="关联岗位任务方案 *"
+          description="可搜索并多选；子方案推送后，每个选中方案分别生成执行任务和督办任务。"
+          emptyText="至少关联一个岗位任务方案。"
+          onChange={plans => {
+            set('followUpPlans', plans)
+            set('followUpPlanId', plans[0]?.id || '')
+            set('followUpPlanName', plans[0]?.name || '')
+          }}
+        />
+      </div>
+      <div className="form-group">
+        <label className="form-label">就医协助类型</label>
+        <select className="form-input" value={content.assistanceType || ''} onChange={e => set('assistanceType', e.target.value)}>
+          <option value="">请选择</option><option value="consultation">健康咨询</option><option value="agency">代办服务</option><option value="proxy_visit">代诊服务</option><option value="medication">代配药</option><option value="escort">陪诊/陪检</option><option value="treatment">陪同治疗</option><option value="checkup">体检协调</option><option value="one_stop">一站式服务</option>
+        </select>
+      </div>
+      <div className="form-group">
+        <label className="form-label">服务方式</label>
+        <select className="form-input" value={content.serviceMode || 'remote'} onChange={e => set('serviceMode', e.target.value)}>
+          <option value="remote">远程协调</option><option value="onsite">现场陪同</option><option value="hybrid">远程＋现场</option>
+        </select>
+        <div style={{ color: '#7C8B84', fontSize: 11, marginTop: 4 }}>远程服务不生成陪同任务；现场或混合服务可另行关联陪诊、陪检岗位任务。</div>
+      </div>
+      <FieldRow label="适用场景" fieldKey="applicableScenario" rows={3} placeholder="说明什么情况下采用本模板" content={content} set={set} />
+      <FieldRow label="标准服务步骤" fieldKey="standardSteps" rows={6} placeholder="每行一个标准动作；不填写具体客户、医院、专家和日期" content={content} set={set} />
+      <FieldRow label="客户需准备资料" fieldKey="requiredMaterials" rows={3} placeholder="如：身份证、医保卡、既往报告、处方或医生医嘱" content={content} set={set} />
+      <FieldRow label="完成标准" fieldKey="completionStandard" rows={3} placeholder="说明执行人完成到什么程度才可提交" content={content} set={set} />
+      <FieldRow label="可选住宿/交通服务" fieldKey="optionalLogistics" rows={2} placeholder="仅说明可提供的协助，不固定具体酒店和车辆" content={content} set={set} />
+      <FieldRow label="风险与注意事项" fieldKey="riskNotes" rows={3} placeholder="涉及停药、检查准备或治疗事项时，统一要求向开单医生确认" content={content} set={set} />
+      <div style={{ gridColumn: '1/-1', display: 'flex', flexWrap: 'wrap', gap: 18, padding: '11px 13px', border: '1px solid #E6E1D8', borderRadius: 9, background: '#FAF8F5' }}>
+        {[['requiresDoctorConfirm','需要家庭医生确认'],['requiresExecutor','需要专业人员执行'],['requiresSupervisor','需要健管/家庭医生督办']].map(([key,label]) => <label key={key} style={{ fontSize: 13 }}><input type="checkbox" checked={content[key] !== false} onChange={e => set(key, e.target.checked)} style={{ marginRight: 6 }} />{label}</label>)}
+      </div>
+      <div style={{ gridColumn: '1/-1', padding: '9px 11px', borderRadius: 8, background: '#EEF7F2', color: '#426457', fontSize: 12 }}>医院、科室、专家、具体日期、就医专员和督办人均在客户子方案中填写，不在 Admin 标准模板中写死。</div>
     </div>
   )
 
@@ -469,6 +595,18 @@ function TemplateModal({ template, planType, onClose, onSaved }) {
   const save = async () => {
     if (!name.trim()) { toast('❌ 模板名称不能为空'); return }
     const content = { ...contentRef.current, clientBrand }
+    if (planType === 'health_management' && !Object.values(content.standardActionPlans || {}).some(item => item?.id)) {
+      toast('❌ 请至少配置一项年度基础动作模板')
+      return
+    }
+    if (planType === 'health_management' && !String(content.strategyFocus || '').trim()) {
+      toast('❌ 请填写策略侧重点，避免不同年度策略只有名称不同')
+      return
+    }
+    if (planType === 'medical_assist' && !(content.followUpPlans?.length || content.followUpPlanId)) {
+      toast('❌ 请选择关联岗位任务方案')
+      return
+    }
     setLoading(true)
     try {
       if (isEdit) {

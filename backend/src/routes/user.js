@@ -51,26 +51,58 @@ const router = express.Router();
 async function applyOnboardingRewards(user, inviteCode) {
   const cfgRow = await SystemConfig.findOne({ key: 'healthFundPolicy' }).lean();
   const cfg = cfgRow?.value || {};
-  const grant = async (userId, amount, remark) => {
+  const grant = async (userId, amount, remark, source = 'promotion') => {
     const value = Math.max(0, Number(amount) || 0);
     if (!value) return;
     const updated = await User.findByIdAndUpdate(userId, { $inc: { healthFundBalance: value } }, { new: true });
-    await HealthFundTransaction.create({ userId, type: 'grant', source: 'promotion', amount: value, balanceAfter: updated?.healthFundBalance || 0, remark });
+    await HealthFundTransaction.create({ userId, type: 'grant', source, amount: value, balanceAfter: updated?.healthFundBalance || 0, remark });
   };
   const now = new Date();
   if (cfg.firstLoginEnabled === true && Number(cfg.firstLoginAmount) > 0) {
     const claimed = await User.findOneAndUpdate({ _id: user._id, firstLoginFundGrantedAt: null }, { $set: { firstLoginFundGrantedAt: now } }, { new: true });
-    if (claimed) await grant(user._id, cfg.firstLoginAmount, '首次使用小程序健康基金奖励');
+    if (claimed) {
+      await grant(user._id, cfg.firstLoginAmount, '首次使用小程序健康基金奖励', 'enterprise');
+      await Message.create({
+        user: user._id, type: 'system', sender: '嘉医汇', title: '欢迎加入嘉医汇', unread: true,
+        content: '欢迎加入嘉医汇。健康可控，人生方可从容。\n\n愿你在认真照顾自己的每一天里，收获安心、活力与从容。',
+      }).catch(err => console.error('[first-login-reward] 到账消息发送失败', err.message));
+    }
   }
-  if (cfg.inviteEnabled !== true || !inviteCode || user.referralRewardGrantedAt) return;
+  if (!inviteCode || user.invitedBy) return;
   const inviter = await User.findOne({ referralCode: String(inviteCode), isDeleted: { $ne: true }, _id: { $ne: user._id } }).select('_id');
   if (!inviter) return;
-  const claimed = await User.findOneAndUpdate({ _id: user._id, referralRewardGrantedAt: null, invitedBy: null }, { $set: { referralRewardGrantedAt: now, invitedBy: inviter._id } }, { new: true });
-  if (claimed) await Promise.all([
+  const claimed = await User.findOneAndUpdate({ _id: user._id, invitedBy: null }, { $set: { invitedAt: now, invitedBy: inviter._id } }, { new: true });
+  if (!claimed || cfg.inviteEnabled !== true || claimed.referralRewardGrantedAt) return;
+  const rewardClaimed = await User.findOneAndUpdate({ _id: user._id, referralRewardGrantedAt: null }, { $set: { referralRewardGrantedAt: now } }, { new: true });
+  if (rewardClaimed) await Promise.all([
     grant(inviter._id, cfg.inviterAmount, '邀请好友首次使用小程序奖励'),
     grant(user._id, cfg.inviteeAmount, '通过好友邀请首次使用小程序奖励'),
   ]);
+  if (rewardClaimed) {
+    const notices = [];
+    if (Number(cfg.inviterAmount) > 0) notices.push(Message.create({
+      user: inviter._id, type: 'system', sender: '嘉医汇', title: '健康基金已到账', unread: true,
+      content: `好友已完成注册，¥${Number(cfg.inviterAmount)} 健康基金已到账。感谢你把健康理念分享给身边的人。`,
+    }));
+    if (Number(cfg.inviteeAmount) > 0) notices.push(Message.create({
+      user: user._id, type: 'system', sender: '嘉医汇', title: '健康基金已到账', unread: true,
+      content: `欢迎加入嘉医汇，¥${Number(cfg.inviteeAmount)} 健康基金已到账。愿健康理念陪伴你的每一天。`,
+    }));
+    await Promise.all(notices).catch(err => console.error('[invite-reward] 到账消息发送失败', err.message));
+  }
 }
+
+router.get('/referrals', auth, async (req, res) => {
+  try {
+    const invitees = await User.find({ invitedBy: req.user._id, isDeleted: { $ne: true } })
+      .select('name invitedAt referralRewardGrantedAt')
+      .sort({ invitedAt: -1, createdAt: -1 }).limit(100).lean();
+    res.json({ success: true, data: {
+      referralCode: req.user.referralCode || '', total: invitees.length,
+      invitees: invitees.map(item => ({ _id: item._id, name: item.name || '好友', invitedAt: item.invitedAt, rewarded: !!item.referralRewardGrantedAt })),
+    } });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://dist-maowxvion-jiayihui.vercel.app';
 
@@ -1080,6 +1112,10 @@ router.get('/followup-tasks', auth, async (req, res) => {
       patientId: req.user._id,
       aiStatus: { $ne: 'pending' },
       status: { $in: ['planned', 'in_progress', 'missed'] },
+      isBlocked: { $ne: true },
+      // 岗位执行与督办属于医护内部工作流。客户只查看已推送的服务方案，
+      // 不应看到、也不能代替医护人员完成这些内部任务。
+      $nor: [{ sourceType: 'health_plan', taskRole: 'supervisor' }],
     })
       .sort({ date: 1 })
       .populate('staffId', 'name role title')
@@ -1089,6 +1125,7 @@ router.get('/followup-tasks', auth, async (req, res) => {
     const data = followups.map(followUp => ({
       ...followUp.toObject(),
       taskRequirements: followUpTaskRequirements(followUp),
+      customerReadOnly: followUp.sourceType === 'health_plan' && followUp.taskRole === 'executor',
     })).sort((a, b) => {
       const aActiveSymptom = a.sourceType === 'symptom' && !['completed', 'cancelled'].includes(a.status);
       const bActiveSymptom = b.sourceType === 'symptom' && !['completed', 'cancelled'].includes(b.status);
@@ -1110,6 +1147,9 @@ router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
   try {
     const followup = await FollowUp.findOne({ _id: req.params.id, patientId: req.user._id });
     if (!followup) return res.status(404).json({ success: false, message: '随访任务不存在' });
+    if (followup.sourceType === 'health_plan' && ['executor', 'supervisor'].includes(followup.taskRole)) {
+      return res.status(403).json({ success: false, message: '该任务由医护人员在工作台完成' });
+    }
     const done = req.body.done !== false; // 默认 true，传 false 则取消
     const needFollowUp = req.body.needFollowUp === true;
 
@@ -1122,6 +1162,14 @@ router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
       if (needFollowUp) {
         // 用户表示还需要人工跟进：保持/回退为 planned，留在医护端"待随访"队列，不算完成
         if (followup.status !== 'completed' && followup.status !== 'cancelled') changes.status = 'planned';
+        // 用药/营养素提醒及日常打卡默认由客户自助完成；客户主动求助时，
+        // 追加人工升级标签，使其进入健管专员工作台。
+        const isSelfServiceReminder = followup.sourceType === 'medication_reminder'
+          || ((followup.tags || []).includes('AI自动计划'))
+          || (followup.sourceType === 'scheduled' && ((followup.checkInItems || []).length > 0 || /^【?日常监测/.test(followup.theme || '')));
+        if (isSelfServiceReminder) {
+          changes.tags = Array.from(new Set([...(followup.tags || []), '人工跟进']));
+        }
       } else {
         // 用户确认不需要跟进：直接闭环为已完成
         changes.status = 'completed';

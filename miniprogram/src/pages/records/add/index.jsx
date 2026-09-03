@@ -5,6 +5,7 @@ import { colors, spacing, radius } from '../../../theme';
 import { recordsAPI } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
+import BloodPressurePhoto from '../../../components/BloodPressurePhoto';
 
 const RECORD_TYPES = [
   { id: 'bloodPressure', label: '血压', icon: '💗', category: 'vitals', unit: 'mmHg', fields: [
@@ -146,6 +147,7 @@ export default function AddRecordPage() {
       </View>
 
       <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.lg}px`, marginBottom: `${spacing.md}px` }}>
+        {activeType.id === 'bloodPressure' && <BloodPressurePhoto onSaved={() => Taro.navigateBack()} />}
         {activeType.id === 'sleep' ? (
           <>
             <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textSecondary, display: 'block', marginBottom: '8px' }}>入睡时间</Text>

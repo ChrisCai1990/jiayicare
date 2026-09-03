@@ -2,9 +2,10 @@ const mongoose = require('mongoose');
 const { randomUUID } = require('crypto');
 
 // itemType describes one extracted result, while "pathology" is a report-level
-// type. Normalize this legacy client/AI value so review and page re-extraction
-// cannot reject the entire report.
-const normalizeReportItemType = value => value === 'pathology' ? 'imaging' : value;
+// type and "diagnosis" is the name of a text field. Older AI/client output has
+// used both values as itemType; they represent narrative examination results,
+// so normalize them before enum validation instead of rejecting the report.
+const normalizeReportItemType = value => ['pathology', 'diagnosis'].includes(value) ? 'imaging' : value;
 
 // 兼容历史 AI 曾返回的风险等级词。reportItems.status 表示是否异常，低风险等同正常；
 // 其他未知值继续交给 enum 拒绝，避免把无法判断的状态静默改成正常。
@@ -76,6 +77,8 @@ const medicalReportSchema = new mongoose.Schema({
   aiSummary:       { type: String, default: '' },     // AI 趋势分析文字
   aiStatus:        { type: String, enum: ['none', 'processing', 'pending', 'failed', 'reviewed', 'rejected'], default: 'none' },
   pageParseStatus: { type: mongoose.Schema.Types.Mixed, default: null }, // 单页补提进度：{pageNum,status,startedAt,completedAt,message,itemCount}
+  // 保留最近3次单页补提现场，人工修改 reportItems 后仍可追溯 AI 原始候选与最终接受项。
+  pageParseHistory: { type: mongoose.Schema.Types.Mixed, default: [] },
   reviewedByStaff: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   reviewedAt:      { type: Date, default: null },
   reviewNote:      { type: String, default: '' },
@@ -104,6 +107,13 @@ const medicalReportSchema = new mongoose.Schema({
       'gender_health',  // 男性/女性健康筛查
     ],
     default: 'annual',
+  },
+  // 原始健康资料的业务分类。与 type（报告技术分类/专项筛查归类）分离，
+  // 避免门诊病历、处方、问卷等资料被强行归入体检报告类型。
+  documentCategory: {
+    type: String,
+    enum: ['physical_exam', 'lab_report', 'exam_report', 'body_composition', 'functional_medicine', 'genetic_test', 'outpatient_record', 'inpatient_record', 'prescription_order', 'questionnaire', 'other_customer_material'],
+    default: undefined,
   },
   hospital:    { type: String, default: '' },
   date:        { type: String, default: '' },

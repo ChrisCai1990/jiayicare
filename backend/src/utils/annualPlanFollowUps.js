@@ -35,6 +35,7 @@ const logicalScheduleKey = (row) => {
 const DATED_RECORD_MODULES = [
   { key: 'medical_treatment', dateField: 'visit_time', theme: '医疗问题解决·就医随访' },
   { key: 'specialist_collab', dateField: 'plan_time',   theme: '全专联合会诊随访' },
+  { key: 'checkup_completion', dateField: 'time',       theme: '体检完善提醒' },
   { key: 'abnormal_followup', dateField: 'time',        theme: '异常复查提醒' },
   { key: 'vaccine',           dateField: 'time',        theme: '疫苗接种提醒' },
   { key: 'functional_medicine', dateField: 'time',      theme: '功能医学检测提醒' },
@@ -64,6 +65,10 @@ async function buildAnnualPlanFollowUps(plan) {
   if (moduleData.lifestyle?.staff) staffIds.add(String(moduleData.lifestyle.staff));
   if (moduleData.quarterly_eval?.followUpStaff) staffIds.add(String(moduleData.quarterly_eval.followUpStaff));
   if (moduleData.annual_checkup?.followUpStaff) staffIds.add(String(moduleData.annual_checkup.followUpStaff));
+  (moduleData.personalized_followups?.records || []).forEach(rec => {
+    if (rec.followUpStaff) staffIds.add(String(rec.followUpStaff));
+    if (rec.collaborator) staffIds.add(String(rec.collaborator));
+  });
   const staffNameMap = {};
   if (staffIds.size) {
     const mongoose = require('mongoose');
@@ -187,12 +192,17 @@ async function buildAnnualPlanFollowUps(plan) {
   const personalizedRecords = moduleData.personalized_followups?.records;
   if (Array.isArray(personalizedRecords)) {
     const baseDate = new Date(plan.confirmedAt || Date.now());
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     const horizonEnd = new Date(Date.now() + HORIZON_DAYS * 86400000);
     personalizedRecords.forEach((rec, recordIndex) => {
       const cycles = Array.isArray(rec.sourceCycles) ? rec.sourceCycles : [];
       const dates = [];
+      if (rec.executionDate && !isNaN(new Date(rec.executionDate).getTime())) dates.push(new Date(rec.executionDate));
       cycles.forEach(cycle => {
-        if (cycle.cycleType === 'date' && cycle.cycleDate) dates.push(new Date(cycle.cycleDate));
+        if (!dates.length && cycle.cycleType === 'date' && cycle.cycleDate) {
+          const fixed = new Date(cycle.cycleDate);
+          if (fixed >= todayStart) dates.push(fixed);
+        }
         if (cycle.cycleType !== 'date' && Number(cycle.cycleDuration) > 0) {
           const unitDays = cycle.cycleUnit === 'week' ? 7 : cycle.cycleUnit === 'month' ? 30 : 1;
           dates.push(new Date(baseDate.getTime() + Number(cycle.cycleDuration) * unitDays * 86400000));
@@ -200,17 +210,26 @@ async function buildAnnualPlanFollowUps(plan) {
       });
       if (!dates.length && rec.time && !isNaN(new Date(rec.time).getTime())) dates.push(new Date(rec.time));
       const content = [
-        rec.standardPlanName && `来源标准方案：${rec.standardPlanName}`,
-        rec.matchReason && `匹配依据：${rec.matchReason}`,
-        rec.content && `随访内容：${rec.content}`,
+        rec.standardPlanName && `标准方案：${rec.standardPlanName}`,
+        rec.standardContent && `标准执行内容：${rec.standardContent}`,
+        rec.standardSchedule && `标准执行周期：${rec.standardSchedule}`,
+        rec.matchReason && `选用依据：${rec.matchReason}`,
+        (rec.personalization || rec.content) && `个性化调整：${rec.personalization || rec.content}`,
         rec.frequency && `执行频次：${rec.frequency}`,
         rec.precautions && `注意事项：${rec.precautions}`,
         rec.customerAction && `客户行动：${rec.customerAction}`,
       ].filter(Boolean).join('\n');
-      dates.filter(date => !isNaN(date.getTime()) && date <= horizonEnd).forEach((date, cycleIndex) => {
-        push(date, `个性化随访 · ${rec.items || rec.standardPlanName || '年度管理'}`, content, rec.followUpStaff,
+      dates.filter(date => !isNaN(date.getTime()) && date >= todayStart && date <= horizonEnd).forEach((date, cycleIndex) => {
+        push(date, `标准随访 · ${rec.standardPlanName || rec.items || '年度管理'}`, content, rec.followUpStaff,
           `personalized:${rec.standardPlanId || recordIndex}:${cycleIndex}:${date.toISOString().slice(0, 10)}`);
       });
+      if (rec.collaborator && rec.collaborationDate) {
+        const collaborationDate = new Date(rec.collaborationDate);
+        if (!isNaN(collaborationDate.getTime()) && collaborationDate >= todayStart && collaborationDate <= horizonEnd) {
+          push(collaborationDate, `协同执行 · ${rec.items || rec.standardPlanName || '年度管理'}`, content, rec.collaborator,
+            `personalized-collab:${rec.standardPlanId || recordIndex}:${collaborationDate.toISOString().slice(0, 10)}`);
+        }
+      }
     });
   }
 

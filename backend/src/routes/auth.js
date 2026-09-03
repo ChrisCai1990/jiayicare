@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const https = require('https');
 const crypto = require('crypto');
 const User = require('../models/User');
+const Message = require('../models/Message');
 const LoginSession = require('../models/LoginSession');
 const HealthFundTransaction = require('../models/HealthFundTransaction');
 const VerificationCode = require('../models/VerificationCode');
@@ -58,20 +59,42 @@ async function applyFirstLoginRewards(user, inviteCode) {
       { $set: { firstLoginFundGrantedAt: now } }, { new: true },
     );
     // 首次登录赠金属于企业健康基金，不是用户自有基金。
-    if (claimed) await grantPromotionFund(user._id, cfg.firstLoginAmount, '首次使用小程序健康基金奖励', 'enterprise');
+    if (claimed) {
+      await grantPromotionFund(user._id, cfg.firstLoginAmount, '首次使用小程序健康基金奖励', 'enterprise');
+      await Message.create({
+        user: user._id, type: 'system', sender: '嘉医汇', title: '欢迎加入嘉医汇', unread: true,
+        content: '欢迎加入嘉医汇。健康可控，人生方可从容。\n\n愿你在认真照顾自己的每一天里，收获安心、活力与从容。',
+      }).catch(err => console.error('[first-login-reward] 到账消息发送失败', err.message));
+    }
   }
-  if (cfg.inviteEnabled !== true || !inviteCode || user.referralRewardGrantedAt) return;
+  if (!inviteCode || user.invitedBy) return;
   const inviter = await User.findOne({ referralCode: String(inviteCode), isDeleted: { $ne: true }, _id: { $ne: user._id } }).select('_id');
   if (!inviter) return;
   const claimed = await User.findOneAndUpdate(
-    { _id: user._id, referralRewardGrantedAt: null, invitedBy: null },
-    { $set: { referralRewardGrantedAt: now, invitedBy: inviter._id } }, { new: true },
+    { _id: user._id, invitedBy: null },
+    { $set: { invitedAt: now, invitedBy: inviter._id } }, { new: true },
   );
   if (!claimed) return;
+  if (cfg.inviteEnabled !== true || claimed.referralRewardGrantedAt) return;
+  const rewardClaimed = await User.findOneAndUpdate(
+    { _id: user._id, referralRewardGrantedAt: null },
+    { $set: { referralRewardGrantedAt: now } }, { new: true },
+  );
+  if (!rewardClaimed) return;
   await Promise.all([
     grantPromotionFund(inviter._id, cfg.inviterAmount, '邀请好友首次使用小程序奖励'),
     grantPromotionFund(user._id, cfg.inviteeAmount, '通过好友邀请首次使用小程序奖励'),
   ]);
+  const notices = [];
+  if (Number(cfg.inviterAmount) > 0) notices.push(Message.create({
+    user: inviter._id, type: 'system', sender: '嘉医汇', title: '健康基金已到账', unread: true,
+    content: `好友已完成注册，¥${Number(cfg.inviterAmount)} 健康基金已到账。感谢你把健康理念分享给身边的人。`,
+  }));
+  if (Number(cfg.inviteeAmount) > 0) notices.push(Message.create({
+    user: user._id, type: 'system', sender: '嘉医汇', title: '健康基金已到账', unread: true,
+    content: `欢迎加入嘉医汇，¥${Number(cfg.inviteeAmount)} 健康基金已到账。愿健康理念陪伴你的每一天。`,
+  }));
+  await Promise.all(notices).catch(err => console.error('[invite-reward] 到账消息发送失败', err.message));
 }
 
 // 计算用户健康基金汇总（与 /user/me 保持一致）

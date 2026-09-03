@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { staffAPI } from '../api'
-import { useToast, usePermission } from '../App'
+import { useToast, usePermission, useStaff } from '../App'
 
 const TYPE_LABEL = {
   annual_checkup:  '年度体检方案',
@@ -35,6 +35,7 @@ export default function PlansPage() {
   const nav = useNavigate()
   const toast = useToast()
   const can = usePermission()
+  const { staff } = useStaff()
   const [searchParams, setSearchParams] = useSearchParams()
   const typeFilter = searchParams.get('type') || ''
 
@@ -89,8 +90,8 @@ export default function PlansPage() {
     <div className="page">
       <div className="page-header">
         <div>
-          <h1 className="page-title">健康方案</h1>
-          <p className="page-subtitle">{isAnnualMgmt ? `${ahPlans.length} 份年度管理方案` : `共 ${total} 个方案`}</p>
+          <h1 className="page-title">服务方案</h1>
+          <p className="page-subtitle">跨客户方案总览 · {isAnnualMgmt ? `${ahPlans.length} 份年度管理方案` : `共 ${total} 个方案`}；新方案请进入对应客户页面生成</p>
         </div>
       </div>
 
@@ -110,6 +111,11 @@ export default function PlansPage() {
             className={`btn btn-sm ${typeFilter === opt.v ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setSearchParams(opt.v ? { type: opt.v } : {})}>{opt.l}</button>
         ))}
+        {typeFilter === 'medical_assist' && can('plans', 'create') && ['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && (
+          <button className="btn btn-primary btn-sm" onClick={() => setShowMedicalModal(true)}>
+            ＋ 新增就医协助方案
+          </button>
+        )}
         <input
           className="form-control"
           placeholder="按会员姓名搜索..."
@@ -117,17 +123,6 @@ export default function PlansPage() {
           onChange={e => setPatientName(e.target.value)}
           style={{ width: 180, marginLeft: 'auto' }}
         />
-        <div>
-          {can('plans', 'create') && <button className="btn btn-primary btn-sm" onClick={() => {
-            if      (typeFilter === 'annual_checkup') setShowCheckupModal(true)
-            else if (typeFilter === 'medical_assist') setShowMedicalModal(true)
-            else if (typeFilter === 'nutrition')      setShowNutritionModal(true)
-            else if (typeFilter === 'annual_mgmt')    setShowAhModal(true)
-            else setShowModal(true)
-          }}>
-            ＋ {TYPE_LABEL[typeFilter] ? `新建${TYPE_LABEL[typeFilter]}` : '新建方案'}
-          </button>}
-        </div>
       </div>
 
       {/* ── 年度管理方案（AnnualPlan） ── */}
@@ -561,11 +556,12 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
   const [tplError, setTplError] = useState('')
   const [selectedTpl, setSelectedTpl] = useState(null)
   const [medicalAssistants, setMedicalAssistants] = useState([])
+  const [supervisors, setSupervisors] = useState([])
 
   // 模板内容字段（与管理端完全一致）
   const [form, setForm] = useState({
     name: '', hospital: '', department: '', expert: '',
-    staffId: '', staffName: '', serviceDate: '', serviceTime: '', transport: '', tasks: '', hotel: '', notes: '',
+    staffId: '', staffName: '', supervisorId: '', followUpPlanId: '', followUpPlanName: '', followUpPlans: [], serviceDomain: '', serviceMode: '', serviceDate: '', serviceTime: '', transport: '', tasks: '', hotel: '', notes: '',
   })
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
 
@@ -577,11 +573,13 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
   useEffect(() => {
     Promise.all([
       staffAPI.getPlanTemplates('medical_assist'),
-      staffAPI.getStaffList({ role: 'medicalAssistant' }),
+      staffAPI.getStaffList({ roles: 'medicalAssistant,healthPlanner' }),
+      staffAPI.getStaffList({ roles: 'healthManager,familyDoctor,superadmin' }),
     ])
-      .then(([tplRes, staffRes]) => {
+      .then(([tplRes, staffRes, supervisorRes]) => {
         setTemplates(tplRes.data || [])
         setMedicalAssistants(staffRes.data || [])
+        setSupervisors(supervisorRes.data || [])
       })
       .catch(err => setTplError(err.message || '加载失败'))
       .finally(() => setLoadingTpls(false))
@@ -597,6 +595,12 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
       expert:    c.expert    || '',
       staffId:   c.staffId || '',
       staffName: c.staffName || '',
+      supervisorId: c.supervisorId || '',
+      followUpPlanId: c.followUpPlanId || '',
+      followUpPlanName: c.followUpPlanName || '',
+      followUpPlans: c.followUpPlans?.length ? c.followUpPlans : (c.followUpPlanId ? [{ id: c.followUpPlanId, name: c.followUpPlanName || '已关联方案' }] : []),
+      serviceDomain: c.serviceDomain || '',
+      serviceMode: c.serviceMode || '',
       serviceDate: c.serviceDate || (c.datetime && /^\d{4}-\d{2}-\d{2}/.test(c.datetime) ? c.datetime.slice(0, 10) : ''),
       serviceTime: c.serviceTime || (c.datetime && !/^\d{4}-\d{2}-\d{2}$/.test(c.datetime) ? c.datetime.replace(/^\d{4}-\d{2}-\d{2}\s*/, '') : ''),
       transport: c.transport || '',
@@ -612,6 +616,9 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
     if (!patientId) { setError('请搜索并选择会员'); return }
     if (!form.name.trim()) { setError('请填写方案名称'); return }
     if (!form.serviceDate) { setError('请选择服务日期'); return }
+    if (!form.staffId) { setError('请选择就医专员'); return }
+    if (!form.supervisorId) { setError('请选择督办人'); return }
+    if (!(form.followUpPlans?.length || form.followUpPlanId)) { setError('所选模板尚未关联 Admin 岗位任务方案，请先在 Admin 完成配置'); return }
     setError(''); setSaving(true)
     try {
       // items 从内容字段派生
@@ -745,7 +752,14 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
               </select>
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">服务日期 *</label>
+              <label className="form-label">督办人 *</label>
+              <select className="form-input" value={form.supervisorId || ''} onChange={e => set('supervisorId', e.target.value)}>
+                <option value="">请选择健管专员/家庭医生</option>
+                {supervisors.map(s => <option key={s._id} value={s._id}>{s.name} · {s.roleLabel}</option>)}
+              </select>
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">{form.serviceDomain === 'checkup' ? '体检日期' : '主服务日期'} *</label>
               <input className="form-input" type="date" value={form.serviceDate}
                 onChange={e => set('serviceDate', e.target.value)} />
             </div>

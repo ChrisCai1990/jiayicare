@@ -73,10 +73,13 @@ export function FieldInput({ field, value, onChange }) {
   }
   if (field.type === 'staff-select') {
     const staffList = useContext(StaffListContext)
+    const availableStaff = Array.isArray(field.roles) && field.roles.length
+      ? staffList.filter(s => field.roles.includes(s.role))
+      : staffList
     return (
-      <select value={value || ''} onChange={e => onChange(e.target.value)} style={inputStyle}>
+      <select value={value || ''} onChange={e => onChange(e.target.value)} disabled={!!field.disabled} style={{ ...inputStyle, background: field.disabled ? '#F5F7F6' : '#fff' }}>
         <option value="">请选择{field.label}</option>
-        {staffList.map(s => (
+        {availableStaff.map(s => (
           <option key={s._id} value={s._id}>{s.name} · {s.roleLabel || s.role}</option>
         ))}
       </select>
