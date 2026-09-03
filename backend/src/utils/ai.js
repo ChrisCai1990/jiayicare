@@ -26,21 +26,40 @@ function httpPost(url, headers, body, timeoutMs = 45000) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
     const data = JSON.stringify(body);
+    let settled = false;
+    let response;
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      if (error) reject(error);
+      else resolve(value);
+    };
     const req = https.request({
       hostname: u.hostname,
       path: u.pathname + u.search,
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data), ...headers },
     }, (res) => {
+      response = res;
       let raw = '';
       res.on('data', d => raw += d);
       res.on('end', () => {
-        try { resolve(JSON.parse(raw)); }
-        catch { reject(new Error('JSON parse error: ' + raw.slice(0, 200))); }
+        try { finish(null, JSON.parse(raw)); }
+        catch { finish(new Error('JSON parse error: ' + raw.slice(0, 200))); }
       });
+      res.on('error', error => finish(error));
     });
-    req.setTimeout(timeoutMs, () => req.destroy(new Error(`AI接口请求超时（${timeoutMs / 1000}秒）`)));
-    req.on('error', reject);
+    // req.setTimeout 只计算 socket 空闲时间。响应持续缓慢传输时它不会触发，
+    // 会让 OCR worker 永久占住并发槽位；这里额外设置整次请求的硬截止时间。
+    const deadline = setTimeout(() => {
+      const error = new Error(`AI接口请求超时（${timeoutMs / 1000}秒）`);
+      response?.destroy(error);
+      req.destroy(error);
+      finish(error);
+    }, timeoutMs);
+    deadline.unref?.();
+    req.on('error', error => finish(error));
     req.write(data);
     req.end();
   });
