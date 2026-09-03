@@ -75,6 +75,8 @@ const medicalReportSchema = new mongoose.Schema({
   reviewRevision:  { type: Number, default: 0 },      // 审核编辑乐观锁；任何项目/整表写入后递增
   aiSummary:       { type: String, default: '' },     // AI 趋势分析文字
   aiStatus:        { type: String, enum: ['none', 'processing', 'pending', 'failed', 'reviewed', 'rejected'], default: 'none' },
+  // 独立于 UI 的持久化任务状态；服务重启后按此恢复，不把原件或中间图片写入数据库。
+  parseJob:        { type: mongoose.Schema.Types.Mixed, default: null },
   pageParseStatus: { type: mongoose.Schema.Types.Mixed, default: null }, // 单页补提进度：{pageNum,status,startedAt,completedAt,message,itemCount}
   reviewedByStaff: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   reviewedAt:      { type: Date, default: null },
