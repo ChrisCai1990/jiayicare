@@ -77,6 +77,7 @@ const staffAuth = require('../middleware/staffAuth');
 const checkPermission = require('../middleware/checkPermission');
 const { checkPlanType } = require('../middleware/checkPermission');
 const { uploadBuffer, deleteFile, signStoredUrl, getObjectStream, urlToKey } = require('../utils/oss');
+const { rotateImageBuffer } = require('../utils/imageOrientation');
 const { withSafeHealthRecordImages } = require('../utils/healthRecordImages');
 const router = express.Router();
 
@@ -2507,7 +2508,7 @@ router.post('/upload/report-file', staffAuth, uploadReportFile.single('file'), a
   if (!req.file) return res.status(400).json({ success: false, message: '未收到文件' });
   try {
     const result = await uploadBuffer(req.file.buffer, req.file.mimetype, 'reports');
-    res.json({ success: true, data: { url: result.url, ossKey: result.key, mimeType: result.mimeType, fileSize: req.file.size } });
+    res.json({ success: true, data: { url: result.url, ossKey: result.key, mimeType: result.mimeType, fileSize: result.size, orientationCorrected: result.orientationCorrected } });
   } catch (err) {
     console.error('[staff-report-upload] failed', { staffId: String(req.staff?._id || ''), message: err.message });
     res.status(503).json({ success: false, message: '报告存储失败，请稍后重试' });
@@ -9835,8 +9836,30 @@ async function runReportParse(reportId) {
       try {
         const firstPassPrompt = report.type === 'body_comp' ? bodyCompositionPrompt : REPORT_PARSE_PROMPT;
         const firstPassModel = report.type === 'body_comp' ? 'qwen-vl-max' : 'qwen-vl-plus';
-        lastRawText = await parseImage(bufs[imageIndex].toString('base64'), firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: 4096 });
-        const parsedPage = safeParseJSON(lastRawText);
+        const originalBuffer = bufs[imageIndex];
+        let activeBuffer = originalBuffer;
+        lastRawText = await parseImage(activeBuffer.toString('base64'), firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: 4096 });
+        let parsedPage = safeParseJSON(lastRawText);
+        // 手机横拍且未写入 EXIF 方向时，首轮会出现“有原件但 0 项”。仅在这种空结果下
+        // 依次尝试 90/270/180 度，正常横版报告不会增加额外识别调用。
+        if (report.type !== 'body_comp' && (!parsedPage || !Array.isArray(parsedPage.items) || parsedPage.items.length === 0)) {
+          for (const degrees of [90, 270, 180]) {
+            try {
+              const rotated = await rotateImageBuffer(originalBuffer, degrees);
+              const rotatedRaw = await parseImage(rotated.toString('base64'), firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: 4096 });
+              const rotatedPage = safeParseJSON(rotatedRaw);
+              if (rotatedPage && Array.isArray(rotatedPage.items) && rotatedPage.items.length > 0) {
+                activeBuffer = rotated;
+                lastRawText = rotatedRaw;
+                parsedPage = rotatedPage;
+                console.log(`[parse-ai] 图片${imageIndex + 1}首轮空结果，旋转${degrees}度后提取${rotatedPage.items.length}项`);
+                break;
+              }
+            } catch (orientationError) {
+              console.log(`[parse-ai] 图片${imageIndex + 1}旋转补识别${degrees}度异常: ${orientationError.message}`);
+            }
+          }
+        }
         if (!parsedPage) continue;
         imageOkCount++;
         if (shouldSkipParsedReportPage(parsedPage) && report.type !== 'body_comp') {
@@ -9849,7 +9872,7 @@ async function runReportParse(reportId) {
           try {
             const firstNames = pageItems.map(it => str(it.name)).filter(Boolean);
             const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整张漏识别）'}`;
-            const auditText = await parseImage(bufs[imageIndex].toString('base64'), auditPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: 4096 });
+            const auditText = await parseImage(activeBuffer.toString('base64'), auditPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: 4096 });
             const auditPage = safeParseJSON(auditText);
             if (auditPage && Array.isArray(auditPage.items)) {
               const merged = mergeCoverageAuditItems(pageItems, tagReportPageItems(auditPage.items, imageIndex + 1));
@@ -9872,7 +9895,7 @@ async function runReportParse(reportId) {
           if (isUpperCombo && beforeUpperCount < 4) {
             try {
               const retryPrompt = `${REPORT_PARSE_PROMPT}\n\n【肝胆胰脾超声强制复核】原图是组合上腹部超声。必须逐段读取并只输出四条独立imaging记录：肝脏超声、胆囊超声、胰腺超声、脾脏超声。每条findings只能放对应器官原文；诊断结论按器官拆回，不得把诊断句另建成检查项目，不得缺少正常器官。`;
-              const retryText = await parseImage(bufs[imageIndex].toString('base64'), retryPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: 4096, timeoutMs: 120000 });
+              const retryText = await parseImage(activeBuffer.toString('base64'), retryPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: 4096, timeoutMs: 120000 });
               const retryPage = safeParseJSON(retryText);
               if (retryPage && Array.isArray(retryPage.items)) {
                 const retryItems = tagReportPageItems(retryPage.items, imageIndex + 1);
@@ -9953,17 +9976,22 @@ async function runReportParse(reportId) {
       realignUpperAbdomenConclusions(cleanupUltrasoundOverlap(imageExamNormalized))
     );
     const classifiedImg = await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanedImageItems)))))))));
+    // 重新识别只能产生更完整的待审草稿，不能因模型/过滤链路异常把已补提的结果清空。
+    const existingItems = Array.isArray(report.reportItems) ? report.reportItems : [];
+    const keepExistingItems = classifiedImg.length === 0 && existingItems.length > 0;
+    const resolvedImageItems = keepExistingItems ? existingItems : classifiedImg;
+    if (keepExistingItems) console.log(`[parse-ai] 图片识别后无有效项，保留既有${existingItems.length}项，未覆盖`);
     const imgSummary = imageOkCount
       ? [...new Set(imageSummaries.map(s => str(s)).filter(Boolean))].join('\n')
       : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${lastRawText ? '\n原始返回(前200字): ' + String(lastRawText).slice(0, 200) : ''}`;
     await MedicalReport.findByIdAndUpdate(reportId, {
-      reportItems: classifiedImg,
-      aiSummary:   imgSummary,
+      reportItems: resolvedImageItems,
+      aiSummary:   keepExistingItems ? `${imgSummary}${imgSummary ? '\n' : ''}⚠️ 本次自动识别未提取到有效项目，已保留此前待审核结果。` : imgSummary,
       aiStatus:    'pending',
       institution: sanitizeInstitution(imageInstitution) || report.institution,
       checkDate:   imageCheckDate || report.checkDate,
     });
-    console.log(`[parse-ai] 图片完成 ${reportId} 共${bufs.length}张 成功${imageOkCount}张 提取${imageItems.length}项 自动归类${classifiedImg.filter(i=>i.matchStatus==='matched').length}项 | 总耗时${((Date.now()-t0)/1000).toFixed(1)}s`);
+    console.log(`[parse-ai] 图片完成 ${reportId} 共${bufs.length}张 成功${imageOkCount}张 提取${imageItems.length}项 保存${resolvedImageItems.length}项 自动归类${classifiedImg.filter(i=>i.matchStatus==='matched').length}项 | 总耗时${((Date.now()-t0)/1000).toFixed(1)}s`);
   } catch (e) {
     console.error('[parse-ai] 解析失败', String(reportId), e.message);
     await MedicalReport.findByIdAndUpdate(reportId, {

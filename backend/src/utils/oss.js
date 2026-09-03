@@ -2,6 +2,7 @@ const OSS = require('ali-oss');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const heicConvert = require('heic-convert');
+const { normalizeImageOrientation } = require('./imageOrientation');
 
 // 苹果设备拍照默认输出 HEIC/HEIF，除 Safari 外绝大多数浏览器（Chrome/Edge/Firefox及部分安卓设备）
 // 无法直接用 <img> 渲染该格式，会显示破图——2026-07-07 反馈"审核弹窗看不到原图"根因即此。
@@ -50,7 +51,16 @@ function assertConfigured() {
 // 上传 Buffer 到 OSS，所有新的医疗原件上传入口共用此方法。
 async function uploadBuffer(rawBuffer, mimeType, folder = 'reports') {
   const client = getClient();
-  const { buffer, mimeType: effectiveMime } = await convertHeicBufferIfNeeded(rawBuffer, mimeType);
+  const converted = await convertHeicBufferIfNeeded(rawBuffer, mimeType);
+  let normalized;
+  try {
+    normalized = await normalizeImageOrientation(converted.buffer, converted.mimeType);
+  } catch (error) {
+    // 图像方向校正是上传增强能力，解码异常不能阻断原始健康资料入库。
+    console.warn('[oss] image orientation normalization skipped:', error.message);
+    normalized = { buffer: converted.buffer, mimeType: converted.mimeType, corrected: false };
+  }
+  const { buffer, mimeType: effectiveMime } = normalized;
   const ext = effectiveMime === 'application/pdf' ? 'pdf'
     : extensionForMime(effectiveMime);
 
@@ -60,7 +70,7 @@ async function uploadBuffer(rawBuffer, mimeType, folder = 'reports') {
   const endpoint = process.env.OSS_ENDPOINT || 'https://oss-cn-beijing.aliyuncs.com';
   const bucket = process.env.OSS_BUCKET;
   const url = `https://${bucket}.${endpoint.replace('https://', '')}/${key}`;
-  return { url, key, mimeType: effectiveMime };
+  return { url, key, mimeType: effectiveMime, size: buffer.length, orientationCorrected: normalized.corrected };
 }
 
 // 上传 base64 内容到 OSS，保留为旧上传接口的兼容层。
