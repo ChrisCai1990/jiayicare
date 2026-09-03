@@ -9995,7 +9995,8 @@ async function runReportParse(reportId) {
   } catch (e) {
     console.error('[parse-ai] 解析失败', String(reportId), e.message);
     await MedicalReport.findByIdAndUpdate(reportId, {
-      aiStatus: 'pending',
+      // 转图或模型调用完全失败时不得伪装成“待审核”；前端会明确显示失败并允许重新识别。
+      aiStatus: 'failed',
       aiSummary: '自动识别失败：' + e.message + '（请人工录入或重新识别）',
     }).catch(() => {});
   }
@@ -10130,7 +10131,10 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
     await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'processing' });
     runReportParse(report._id).catch(err => {
       console.error('[parse-ai] 后台任务异常', String(report._id), err.message);
-      MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' }).catch(() => {});
+      MedicalReport.findByIdAndUpdate(report._id, {
+        aiStatus: 'failed',
+        aiSummary: '自动识别失败：' + err.message + '（请人工录入或重新识别）',
+      }).catch(() => {});
     });
 
     res.json({

@@ -8660,12 +8660,14 @@ export default function PatientDetailPage() {
           if (report.audit_status === 'rejected' || report.aiStatus === 'rejected') return 'rejected'
           if (report.aiStatus === 'none') return 'parse'
           if (report.aiStatus === 'processing') return 'processing'
+          if (report.aiStatus === 'failed') return 'failed'
           return 'review'
         }
         const reportTaskOptions = [
           { key: 'all', label: '全部' },
           { key: 'parse', label: '待解析' },
           { key: 'processing', label: '解析中' },
+          { key: 'failed', label: '识别失败' },
           { key: 'review', label: '待审核' },
           { key: 'audited', label: '已审核' },
         ]
@@ -8799,9 +8801,10 @@ export default function PatientDetailPage() {
                           : r.audit_status === 'rejected' ? '已驳回'
                           : r.aiStatus === 'none' ? '待解析'
                           : r.aiStatus === 'processing' ? '解析中'
+                          : r.aiStatus === 'failed' ? '识别失败'
                           : '待审核'
                         const auditColor = r.audit_status === 'audited' ? '#22A06B'
-                          : r.audit_status === 'rejected' ? '#DC3545' : '#D97706'
+                          : (r.audit_status === 'rejected' || r.aiStatus === 'failed') ? '#DC3545' : '#D97706'
                         const isFunctionalMedicineReport = /功能检测|功能医学/.test(typeLabel)
                         // 居家监测设备导出报告格式差异大，不走 AI 自动解析。
                         const isHomeMonitorReport = /居家监测/.test(typeLabel)
@@ -8821,13 +8824,13 @@ export default function PatientDetailPage() {
                                 <span style={{ fontSize: 11, color: '#aaa' }}>功能医学类不支持AI解析，请人工查阅</span>
                               ) : isHomeMonitorReport ? (
                                 <span style={{ fontSize: 11, color: '#aaa' }}>居家监测类不支持AI解析，请人工录入</span>
-                              ) : r.aiStatus === 'none' && (r.fileUrl || r.content || r.hasContent || (r.fileUrls && r.fileUrls.length)) ? (
+                              ) : (r.aiStatus === 'none' || r.aiStatus === 'failed') && (r.fileUrl || r.content || r.hasContent || (r.fileUrls && r.fileUrls.length)) ? (
                                 <button className="btn btn-primary btn-sm report-action-primary"
                                   disabled={parsingReportId === r._id}
                                   onClick={() => handleParseReportAI(r._id)}>
-                                  {parsingReportId === r._id ? '提交中…' : 'AI解析'}
+                                  {parsingReportId === r._id ? '提交中…' : r.aiStatus === 'failed' ? '重新识别' : 'AI解析'}
                                 </button>
-                              ) : r.aiStatus === 'none' ? (
+                              ) : (r.aiStatus === 'none' || r.aiStatus === 'failed') ? (
                                 <span style={{ fontSize: 11, color: '#D97706' }}>无报告文件，请让客户重新上传图片/PDF后再解析</span>
                               ) : null}
                               {r.aiStatus === 'processing' && (

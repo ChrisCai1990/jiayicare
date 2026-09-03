@@ -97,8 +97,14 @@ function convertPdfRange(pdfPath, firstPage, lastPage, dpi, crop = null) {
       ...cropArgs,
       '-f', String(firstPage), '-l', String(lastPage),
       pdfPath, outPrefix,
-    ], { timeout: 60000 }, (err) => {
-      if (err) { cleanup(); return reject(new Error('PDF转图片失败：' + err.message)); }
+    ], { timeout: 60000 }, (err, _stdout, stderr) => {
+      if (err) {
+        cleanup();
+        // pdftoppm 的 stderr 通常包含超时、损坏页或资源不足等实际原因；保留有限长度，
+        // 方便排查，同时避免把大量原件相关内容写进日志或状态摘要。
+        const detail = String(stderr || '').trim().replace(/\s+/g, ' ').slice(0, 300);
+        return reject(new Error(`PDF转图片失败：${err.message}${detail ? `（${detail}）` : ''}`));
+      }
       try {
         const files = fs.readdirSync(tmpDir)
           .filter(f => f.startsWith('page') && f.endsWith('.png'))
@@ -113,6 +119,40 @@ function convertPdfRange(pdfPath, firstPage, lastPage, dpi, crop = null) {
       } catch (e) { cleanup(); reject(e); }
     });
   });
+}
+
+// 高分辨率批量渲染会同时占用多页位图内存。失败后不要直接放弃整份报告：
+// 改为逐页、较低分辨率重试，优先保证能进入 OCR 和人工审核链路。
+async function convertPdfRangeWithFallback(pdfPath, firstPage, lastPage, dpi) {
+  try {
+    return await convertPdfRange(pdfPath, firstPage, lastPage, dpi);
+  } catch (batchError) {
+    if (firstPage === lastPage) throw batchError;
+
+    const retryDpis = [...new Set([Math.min(dpi, 120), 96])];
+    const images = [];
+    console.warn(`[pdf] 批量渲染第${firstPage}-${lastPage}页失败，改为逐页降分辨率重试：${batchError.message}`);
+    for (let page = firstPage; page <= lastPage; page++) {
+      let pageError = null;
+      for (const retryDpi of retryDpis) {
+        try {
+          const rendered = await convertPdfRange(pdfPath, page, page, retryDpi);
+          if (rendered[0]) {
+            images.push(rendered[0]);
+            pageError = null;
+            break;
+          }
+          pageError = new Error(`第${page}页未生成图片`);
+        } catch (error) {
+          pageError = error;
+        }
+      }
+      if (pageError) {
+        throw new Error(`PDF批量转图失败后，第${page}页逐页重试仍失败：${pageError.message}`);
+      }
+    }
+    return images;
+  }
 }
 
 /**
@@ -144,7 +184,7 @@ async function pdfBufferToImages(pdfBuffer, { dpi = 96, batchSize = 8, onBatch }
 
     for (let first = 1; first <= knownTotal; first += batchSize) {
       const last = Math.min(first + batchSize - 1, knownTotal);
-      const images = await convertPdfRange(tmpPdf, first, last, dpi);
+      const images = await convertPdfRangeWithFallback(tmpPdf, first, last, dpi);
       if (images.length === 0) break; // pdftoppm 返回空说明已超出实际页数
 
       if (onBatch) {
