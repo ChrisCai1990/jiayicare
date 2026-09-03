@@ -8819,6 +8819,22 @@ function tagReportPageItems(items, pageNum) {
     .map((it, index) => ({ ...it, sourcePage: pageNum, _page: pageNum, _order: index }));
 }
 
+function reportPageEvidenceScore(items) {
+  // 名称为空的模型占位项不计分；数值/所见/结论必须能回到原件核对。
+  return (items || []).reduce((score, item) => {
+    if (!str(item?.name)) return score;
+    const evidence = item?.itemType === 'lab' || item?.itemType === 'data'
+      ? str(item?.value) || str(item?.findings) || str(item?.diagnosis) || str(item?.conclusion)
+      : str(item?.findings) || str(item?.diagnosis) || str(item?.conclusion) || str(item?.value);
+    return score + (evidence ? 1 : 0);
+  }, 0);
+}
+
+function hasIncompleteReportEvidence(items) {
+  const named = (items || []).filter(item => str(item?.name));
+  return named.length === 0 || reportPageEvidenceScore(named) < named.length;
+}
+
 function sortReportItemsBySource(items) {
   return (items || []).sort((a, b) => ((a._page || 0) - (b._page || 0)) || ((a._order || 0) - (b._order || 0)));
 }
@@ -9842,6 +9858,7 @@ async function runReportParse(reportId) {
   const { parseImage } = require('../utils/ai');
   const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, renderSinglePage } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
+  const { hasReportItemEvidence } = require('../utils/reportPageSupplement');
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) return;
@@ -9893,6 +9910,9 @@ async function runReportParse(reportId) {
       let okPages = 0;
       const bodyCompCandidatePages = new Set();
       const detailPages = new Set();
+      // 大 PDF 不再把“合法 JSON + 空值”误记为成功。只有异常页才进行一次高分辨率回退，
+      // 正常页仍保持快速首轮，避免整份报告翻倍消耗视觉 token。
+      const qualityRetryPages = new Set();
 
       // onBatch：每批图片转出后立即识别，识别完就释放这批图片内存
       await pdfBufferToImages(pdfBuf, {
@@ -9937,18 +9957,24 @@ async function runReportParse(reportId) {
           for (let i = 0; i < batchResults.length; i++) {
             const p = batchResults[i];
             if (!p) continue;
-            okPages++;
             const pageNum = batchIndex * BATCH_SIZE + i + 1;
-            if (p._templateSkip) continue;
+            if (p._templateSkip) { okPages++; continue; }
             const firstPassItems = tagReportPageItems(p.items, pageNum);
             if (isBodyCompositionPage(p, firstPassItems, report.type)) bodyCompCandidatePages.add(pageNum);
             const hasStructuredResults = firstPassItems.some(item => str(item.name)
               && [item.value, item.findings, item.diagnosis, item.conclusion].some(value => str(value)));
             if (shouldSkipParsedReportPage(p) && !hasStructuredResults && report.type !== 'body_comp' && !useShaoyifuTemplate && !useZheyiTemplate) {
+              okPages++;
               console.log(`[parse-ai] 页${pageNum}判定为${str(p.pageType) || '非明细页'}，程序层跳过全部条目`);
               continue;
             }
             detailPages.add(pageNum);
+            if (isLargeScannedPdf && report.type !== 'body_comp' && hasIncompleteReportEvidence(firstPassItems)) {
+              qualityRetryPages.add(pageNum);
+              console.log(`[parse-ai] 页${pageNum}首轮存在空值或无有效结果，加入高分辨率质量回退`);
+            } else {
+              okPages++;
+            }
             if (Array.isArray(p.items)) {
               allItems = allItems.concat(firstPassItems);
             }
@@ -9958,6 +9984,30 @@ async function runReportParse(reportId) {
           }
         },
       });
+
+      // 大扫描 PDF 的首轮使用低成本模型；仅对被质量门槛拦下的页回退到完整高分辨率视觉识别。
+      // 这样既不会漏把空壳项标为成功，也不会把每一页都昂贵地重跑。
+      if (report.type !== 'body_comp' && isLargeScannedPdf && qualityRetryPages.size) {
+        for (const pageNum of [...qualityRetryPages]) {
+          try {
+            const img = await renderSinglePage(pdfBuf, pageNum, 180);
+            if (!img) continue;
+            const retryText = await parseImage(img, `${REPORT_PARSE_PROMPT}\n\n【高分辨率质量回退】首轮中本页存在空项目或未提取数值。请按原版面逐行完整重读；lab/data 项没有对应原文数值时不得输出该项，imaging 项没有所见或结论原文时不得输出该项。`, { isUrl: false, model: 'qwen-vl-max', maxTokens: 8192, timeoutMs: 120000 });
+            const retryPage = safeParseJSON(retryText);
+            if (!retryPage || shouldSkipParsedReportPage(retryPage) || !Array.isArray(retryPage.items)) continue;
+            const oldPage = allItems.filter(item => item._page === pageNum);
+            const retryItems = tagReportPageItems(retryPage.items, pageNum).filter(hasReportItemEvidence);
+            if (retryItems.length && reportPageEvidenceScore(retryItems) >= reportPageEvidenceScore(oldPage)) {
+              allItems = allItems.filter(item => item._page !== pageNum).concat(retryItems);
+              qualityRetryPages.delete(pageNum);
+              okPages++;
+              console.log(`[parse-ai] 页${pageNum}高分辨率质量回退生效：${oldPage.length}项→${retryItems.length}项`);
+            }
+          } catch (error) {
+            console.log(`[parse-ai] 页${pageNum}高分辨率质量回退异常: ${error.message}`);
+          }
+        }
+      }
 
       // 每个明细页做第二遍覆盖复核。首轮返回合法JSON但漏掉整页内容或右栏时，过去会被误记为成功；
       // 复核改用144dpi和max模型，只允许补充首轮遗漏项，再由程序证据键去重。
@@ -10272,11 +10322,14 @@ async function runReportParse(reportId) {
       const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');
       const failedPages = totalPageCount - okPages;
       const allFailed = totalPageCount > 0 && okPages === 0;
+      const qualityWarning = qualityRetryPages.size
+        ? `⚠️ 有${qualityRetryPages.size}页未取得可核对的完整原文，未将空白项目视为成功；请使用“补提本页”或人工录入。`
+        : '';
       const aiSummaryOut = allFailed
         ? `⚠️ 自动识别失败：全部${totalPageCount}页均未能识别成功（可能是AI服务额度不足或网络异常），未提取到任何数据，请重新识别或人工录入`
         : failedPages > 0
-          ? `${summaryText}${summaryText ? '\n' : ''}⚠️ 有${failedPages}/${totalPageCount}页识别失败，请核对是否有遗漏项目`
-          : summaryText;
+          ? `${summaryText}${summaryText ? '\n' : ''}⚠️ 有${failedPages}/${totalPageCount}页识别失败，请核对是否有遗漏项目${qualityWarning ? `\n${qualityWarning}` : ''}`
+          : [summaryText, qualityWarning].filter(Boolean).join('\n');
       await MedicalReport.findByIdAndUpdate(reportId, {
         reportItems: classified,
         aiSummary:   aiSummaryOut,
@@ -10479,13 +10532,13 @@ async function runReportPageParse(reportId, pageNum) {
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) throw new Error('报告不存在');
-  const { describeExistingReportItems, filterMissingReportItems, inferMissingUltrasoundOrgans } = require('../utils/reportPageSupplement');
+  const { describeExistingReportItems, filterMissingReportItems, hasReportItemEvidence, inferMissingUltrasoundOrgans, mergeSupplementItems, reportItemIdentityKey } = require('../utils/reportPageSupplement');
   const belongsToRequestedPage = item => Number(item.sourcePage) === pageNum || (!item.sourcePage && pageNum === 1);
   const oldPageAtStart = (report.reportItems || []).filter(belongsToRequestedPage);
   const existingItemText = describeExistingReportItems(oldPageAtStart);
   const targetOrgans = inferMissingUltrasoundOrgans(oldPageAtStart);
   const targetText = targetOrgans.map(item => item.label).join('、');
-  const missingOnlyPrompt = `\n\n【差量补提——最高优先级】本页已有项目：${existingItemText || '无'}。${targetText ? `\n程序已确认只缺：${targetText}。仅允许输出这些器官，不得输出任何其他项目。` : ''}\n只输出已有清单之外的真实遗漏项目；每个影像项的 findings 必须逐字抄录并包含对应器官原词，不得输出“未见明显异常回声”等无器官出处的通用句。已有项目即使字段识别不同也禁止再次输出。如看不清或无遗漏，返回 items=[]，禁止猜测。`;
+  const missingOnlyPrompt = `\n\n【差量补提——最高优先级】本页已有项目：${existingItemText || '无'}。${targetText ? `\n程序已确认只缺：${targetText}。仅允许输出这些器官，不得输出任何其他项目。` : ''}\n只输出真实遗漏项目；若已有同名同栏目项目的数值、所见或结论为空，可仅重新输出该项目以补全空字段。人工已核对项目不会被程序覆盖。每个影像项的 findings 必须逐字抄录并包含对应器官原词，不得输出“未见明显异常回声”等无器官出处的通用句。lab/data 项没有原文数值时不得输出；如看不清或无遗漏，返回 items=[]，禁止猜测。`;
   const reportUser = await User.findById(report.user).select('age').lean();
   const usePediatricBodyComposition = isPediatricAge(reportUser?.age);
   const isPdf = isPdfReport(report);
@@ -10500,16 +10553,15 @@ async function runReportPageParse(reportId, pageNum) {
   let images;
   if (isPdf) {
     const pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
-    // 补提统一按左右半幅识别；浙一特殊密集页再沿用上下分区。
-    images = (useZheyiTemplate && pageNum === 14)
-      ? await renderSinglePageRegions(pdfBuf, pageNum, 160)
-      : await renderSinglePageColumns(pdfBuf, pageNum, useShaoyifuTemplate ? 180 : 180);
+    // 单页补提必须保留整张表格的同一行关系。过去无差别左右切图，会把左侧项目名和右侧数值拆开，
+    // 导致模型返回“有名称、无数值”的空壳项；密集页统一完整渲染后只在这一页提高模型预算。
+    images = [await renderSinglePage(pdfBuf, pageNum, 200)];
   } else {
     const buffers = report.fileUrls?.length
       ? await fetchReportBuffers(report, UPLOADS_DIR)
       : [await fetchReportBuffer(report, UPLOADS_DIR)];
     if (pageNum > buffers.length) throw new Error(`图片报告只有${buffers.length}页，无法补提第${pageNum}页`);
-    images = await splitImageColumns(buffers[pageNum - 1]);
+    images = [buffers[pageNum - 1].toString('base64')];
   }
   if (!images.length || !images[0]) throw new Error(`无法渲染第${pageNum}页`);
   let parsedItems = [];
@@ -10542,8 +10594,12 @@ async function runReportPageParse(reportId, pageNum) {
     }
     parsedItems = mergeCoverageAuditItems(parsedItems, regionItems);
   }
-  // 模型即使违反差量指令返回整页，也只允许真正缺项进入后续合并。
-  let newPage = tagReportPageItems(filterMissingReportItems(oldPageAtStart, parsedItems, { targetOrgans }), pageNum);
+  // 模型即使违反差量指令返回整页，也只允许真正缺项进入；同身份且原来为空的未审核项
+  // 可由有原文证据的候选补全，避免“第一次空、补提仍被去重挡住”。
+  const originalKeys = new Set(oldPageAtStart.map(reportItemIdentityKey));
+  const missingCandidates = filterMissingReportItems(oldPageAtStart, parsedItems, { targetOrgans });
+  const enrichmentCandidates = parsedItems.filter(item => originalKeys.has(reportItemIdentityKey(item)) && hasReportItemEvidence(item));
+  let newPage = tagReportPageItems([...missingCandidates, ...enrichmentCandidates], pageNum);
   if (usePediatricBodyComposition && isBodyCompositionPage({}, newPage, report.type)) {
     newPage = sanitizePediatricBodyCompositionPage(newPage, true);
   }
@@ -10552,9 +10608,12 @@ async function runReportPageParse(reportId, pageNum) {
   newPage = normalizeSingleExamReportItems(normalizeDepartmentExamItems(normalizeBreathTestItems(newPage, report)), report);
   const latest = await MedicalReport.findById(reportId);
   const oldPage = (latest.reportItems || []).filter(belongsToRequestedPage);
-  newPage = filterMissingReportItems(oldPage, newPage, { targetOrgans });
-  const acceptedSupplementItems = [...newPage];
-  const mergedPage = mergeCoverageAuditItems(oldPage, newPage);
+  const latestOriginalKeys = new Set(oldPage.map(reportItemIdentityKey));
+  const latestMissing = filterMissingReportItems(oldPage, newPage, { targetOrgans });
+  const latestEnrichment = newPage.filter(item => latestOriginalKeys.has(reportItemIdentityKey(item)) && hasReportItemEvidence(item));
+  const supplementMerge = mergeSupplementItems(oldPage, [...latestMissing, ...latestEnrichment]);
+  const acceptedSupplementItems = [...supplementMerge.added, ...supplementMerge.enriched];
+  const mergedPage = supplementMerge.items;
   const classifiedPage = await classifyItemsAsync(mergedPage);
   const preserved = (latest.reportItems || []).filter(item => !belongsToRequestedPage(item));
   const combined = [...preserved, ...classifiedPage]
@@ -10571,12 +10630,12 @@ async function runReportPageParse(reportId, pageNum) {
     afterItems: classifiedPage,
   }].slice(-3);
   const resultMessage = acceptedSupplementItems.length
-    ? `第${pageNum}页补提完成，新增${acceptedSupplementItems.length}项，本页共${classifiedPage.length}项`
+    ? `第${pageNum}页补提完成，新增${supplementMerge.added.length}项，补全${supplementMerge.enriched.length}项，本页共${classifiedPage.length}项`
     : `第${pageNum}页未找到有原文证据的遗漏项，已保留原${oldPage.length}项`;
   await MedicalReport.findByIdAndUpdate(reportId, {
     reportItems: combined,
     aiStatus: 'pending',
-    pageParseStatus: { pageNum, status: 'success', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt, message: resultMessage, itemCount: acceptedSupplementItems.length },
+    pageParseStatus: { pageNum, status: acceptedSupplementItems.length ? 'success' : 'needs_review', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt, message: resultMessage, itemCount: acceptedSupplementItems.length },
     pageParseHistory,
   });
   console.log(`[parse-page] ${reportId} P${pageNum} 完成：原${oldPage.length}项，AI候选${parsedItems.length}项，接受${acceptedSupplementItems.length}项，其他页保留${preserved.length}项`);

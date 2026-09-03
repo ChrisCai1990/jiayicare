@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { describeExistingReportItems, filterMissingReportItems, inferMissingUltrasoundOrgans } = require('../src/utils/reportPageSupplement');
+const { describeExistingReportItems, filterMissingReportItems, hasReportItemEvidence, inferMissingUltrasoundOrgans, mergeSupplementItems } = require('../src/utils/reportPageSupplement');
 
 test('单页补提会向模型列出已有项目及所属栏目', () => {
   assert.equal(describeExistingReportItems([
@@ -42,4 +42,24 @@ test('有明确超声缺项时只接受带器官原词证据的目标项', () =>
     { name: '腹主动脉彩超', itemType: 'imaging', findings: '未见明显异常回声。' },
   ];
   assert.deepEqual(filterMissingReportItems(existing, candidates, { targetOrgans: targets }).map(item => item.name), ['胰腺彩超']);
+});
+
+test('数值项目没有数值不能作为有效OCR结果', () => {
+  assert.equal(hasReportItemEvidence({ name: '身高', itemType: 'data' }), false);
+  assert.equal(hasReportItemEvidence({ name: '身高', itemType: 'data', value: '158.50' }), true);
+  assert.equal(hasReportItemEvidence({ name: '内科', itemType: 'imaging', findings: '未见异常' }), true);
+});
+
+test('补提可补全未审核空壳项，但绝不覆盖人工已核对项目', () => {
+  const blank = { itemId: 'blank', name: '身高', itemType: 'data', value: '', manualReviewStatus: 'pending' };
+  const improved = { name: '身高', itemType: 'data', value: '158.50', unit: 'cm' };
+  const first = mergeSupplementItems([blank], [improved]);
+  assert.equal(first.items[0].value, '158.50');
+  assert.equal(first.items[0].itemId, 'blank');
+  assert.equal(first.enriched.length, 1);
+
+  const reviewed = { ...blank, value: '160', manualReviewStatus: 'reviewed' };
+  const second = mergeSupplementItems([reviewed], [improved]);
+  assert.equal(second.items[0].value, '160');
+  assert.equal(second.enriched.length, 0);
 });

@@ -6,6 +6,45 @@ function reportItemIdentityKey(item) {
   return [item?.itemType || '', cleanPart(item?.name), cleanPart(item?.orderName), cleanPart(item?.sourceSection), cleanPart(item?.bodyPart)].join('|');
 }
 
+// “有项目名”并不等于识别成功：数值类必须有数值，检查类必须有可核对的原文。
+// 这条规则只用于 OCR 质量控制和补提，不会删除人工已经录入的项目。
+function hasReportItemEvidence(item) {
+  const value = String(item?.value || '').trim();
+  const narrative = [item?.findings, item?.diagnosis, item?.conclusion]
+    .some(field => String(field || '').trim());
+  if (item?.itemType === 'lab' || item?.itemType === 'data') return Boolean(value || narrative);
+  return Boolean(narrative || value);
+}
+
+function isHumanReviewed(item) {
+  return item?.manualReviewStatus === 'reviewed' || item?.manualReviewedAt || item?.manualReviewedBy;
+}
+
+// 仅允许以“有证据的新候选”补全同一身份的未人工核对空壳项；人工已核对数据永不被 OCR 改写。
+function mergeSupplementItems(existingItems, candidates) {
+  const result = [...(existingItems || [])];
+  const indexByKey = new Map(result.map((item, index) => [reportItemIdentityKey(item), index]));
+  const added = [];
+  const enriched = [];
+  for (const candidate of (candidates || [])) {
+    if (!cleanPart(candidate?.name) || !hasReportItemEvidence(candidate)) continue;
+    const key = reportItemIdentityKey(candidate);
+    const index = indexByKey.get(key);
+    if (index == null) {
+      result.push(candidate);
+      indexByKey.set(key, result.length - 1);
+      added.push(candidate);
+      continue;
+    }
+    const current = result[index];
+    if (!isHumanReviewed(current) && !hasReportItemEvidence(current)) {
+      result[index] = { ...current, ...candidate, itemId: current.itemId || candidate.itemId };
+      enriched.push(result[index]);
+    }
+  }
+  return { items: result, added, enriched };
+}
+
 const ULTRASOUND_ORGANS = [
   { key: 'liver', label: '肝脏', descriptor: /肝(?:脏)?/, evidence: /肝(?:脏|实质|内|包膜|回声|结节)/ },
   { key: 'gallbladder', label: '胆囊', descriptor: /胆(?:囊)?/, evidence: /胆(?:囊|总管|汁)/ },
@@ -82,6 +121,8 @@ function filterMissingReportItems(existingItems, candidates, options = {}) {
 module.exports = {
   describeExistingReportItems,
   filterMissingReportItems,
+  hasReportItemEvidence,
   inferMissingUltrasoundOrgans,
+  mergeSupplementItems,
   reportItemIdentityKey,
 };
