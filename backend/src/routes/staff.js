@@ -82,6 +82,7 @@ const { uploadBuffer, deleteFile, signStoredUrl, getObjectStream, urlToKey } = r
 const { rotateImageBuffer } = require('../utils/imageOrientation');
 const { withSafeHealthRecordImages } = require('../utils/healthRecordImages');
 const router = express.Router();
+const activeReportParseJobs = new Set();
 
 function withSignedHealthRecord(record) {
   return withSafeHealthRecordImages(record, signStoredUrl);
@@ -9720,6 +9721,42 @@ function findUnderExtractedPages(items) {
   return { pagesToRetry: [...pagesToRetry], underOrders };
 }
 
+function scheduleReportParse(reportId, { resumed = false } = {}) {
+  const id = String(reportId);
+  // 大 PDF 的图像与视觉模型请求都很重；同一后端进程只跑一个，其他任务保持 processing 等待续跑。
+  if (activeReportParseJobs.has(id) || activeReportParseJobs.size > 0) return false;
+  activeReportParseJobs.add(id);
+  if (resumed) {
+    MedicalReport.findByIdAndUpdate(reportId, {
+      $set: {
+        'parseJob.status': 'processing',
+        'parseJob.resumedAt': new Date(),
+        'parseJob.message': '服务重启后已自动恢复识别',
+      },
+    }).catch(error => console.error('[parse-ai] 恢复任务状态写入失败', id, error.message));
+  }
+  // 脱离 HTTP 响应但保留 Mongo 任务状态；finally 确保同一报告不会在本进程内重复运行。
+  Promise.resolve()
+    .then(() => runReportParse(reportId))
+    .catch(error => console.error('[parse-ai] 后台任务异常', id, error.message))
+    .finally(() => {
+      activeReportParseJobs.delete(id);
+      // 当前任务落库后再取下一条 processing 任务，形成可恢复的串行队列。
+      setImmediate(() => resumeReportParseJobs().catch(error => console.error('[parse-ai] 调度下一条任务失败', error.message)));
+    });
+  return true;
+}
+
+async function resumeReportParseJobs() {
+  const interrupted = await MedicalReport.find({ aiStatus: 'processing' }).select('_id parseJob').lean();
+  if (!interrupted.length) return;
+  console.log(`[startup] 恢复 ${interrupted.length} 条报告解析任务`);
+  // 单进程串行恢复，避免发布后把多份大扫描 PDF 同时送入视觉模型。
+  for (const report of interrupted) {
+    if (scheduleReportParse(report._id, { resumed: true })) break;
+  }
+}
+
 // 后台执行报告 AI 解析（不阻塞 HTTP 响应；完成后状态置 pending 待人工审核）
 async function runReportParse(reportId) {
   const { parseImage } = require('../utils/ai');
@@ -10148,6 +10185,7 @@ async function runReportParse(reportId) {
         reportItems: classified,
         aiSummary:   aiSummaryOut,
         aiStatus:    'pending',
+        parseJob:    { status: 'completed', completedAt: new Date(), message: `识别完成：${totalPageCount}页，提取${classified.length}项` },
         institution, checkDate,
       });
       const totalMs = Date.now() - t0;
@@ -10320,6 +10358,7 @@ async function runReportParse(reportId) {
       reportItems: resolvedImageItems,
       aiSummary:   keepExistingItems ? `${imgSummary}${imgSummary ? '\n' : ''}⚠️ 本次自动识别未提取到有效项目，已保留此前待审核结果。` : imgSummary,
       aiStatus:    'pending',
+      parseJob:    { status: 'completed', completedAt: new Date(), message: `识别完成：${bufs.length}张，提取${resolvedImageItems.length}项` },
       institution: sanitizeInstitution(imageInstitution) || report.institution,
       checkDate:   imageCheckDate || report.checkDate,
     });
@@ -10329,6 +10368,7 @@ async function runReportParse(reportId) {
     await MedicalReport.findByIdAndUpdate(reportId, {
       // 转图或模型调用完全失败时不得伪装成“待审核”；前端会明确显示失败并允许重新识别。
       aiStatus: 'failed',
+      parseJob: { status: 'failed', completedAt: new Date(), message: e.message },
       aiSummary: '自动识别失败：' + e.message + '（请人工录入或重新识别）',
     }).catch(() => {});
   }
@@ -10485,14 +10525,11 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
     }
 
     // 标记处理中，立即返回；识别在后台进行，避免多页 PDF 阻塞请求超时
-    await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'processing' });
-    runReportParse(report._id).catch(err => {
-      console.error('[parse-ai] 后台任务异常', String(report._id), err.message);
-      MedicalReport.findByIdAndUpdate(report._id, {
-        aiStatus: 'failed',
-        aiSummary: '自动识别失败：' + err.message + '（请人工录入或重新识别）',
-      }).catch(() => {});
+    await MedicalReport.findByIdAndUpdate(report._id, {
+      aiStatus: 'processing',
+      parseJob: { status: 'processing', queuedAt: new Date(), startedAt: new Date(), message: '正在识别' },
     });
+    scheduleReportParse(report._id);
 
     res.json({
       success: true,
@@ -11415,4 +11452,5 @@ ${addonListText}
   }
 });
 
+router.resumeReportParseJobs = resumeReportParseJobs;
 module.exports = router;

@@ -91,7 +91,8 @@ app.use('/api/system',        require('./routes/system'));
 app.use('/api/share',         require('./routes/share'));
 app.use('/api/admin',         require('./routes/admin'));
 app.use('/api/admin',         require('./routes/settings'));
-app.use('/api/staff',         require('./routes/staff'));
+const staffRouter = require('./routes/staff');
+app.use('/api/staff',         staffRouter);
 app.use('/api/staff',         require('./routes/aiCaseReviews'));
 app.use('/api/screening',     require('./routes/screening'));
 app.use('/api/tts',           require('./routes/tts'));
@@ -110,12 +111,10 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 服务启动成功，端口：${PORT}`);
-  // 重置上次进程崩溃遗留的 processing 状态（OOM/kill 导致 catch 未运行）
-  const MedicalReport = require('./models/MedicalReport');
-  MedicalReport.updateMany(
-    { aiStatus: 'processing' },
-    { aiStatus: 'pending', aiSummary: '上次识别被中断（服务重启），请重新触发AI识别' }
-  ).then(r => { if (r.modifiedCount > 0) console.log(`[startup] 重置 ${r.modifiedCount} 条卡住的 processing 报告`); }).catch(() => {});
+  // 报告 OCR 是可恢复后台任务：进程重启后继续跑，不能把 processing 误改为待审核。
+  setTimeout(() => staffRouter.resumeReportParseJobs?.().catch(error => {
+    console.error('[startup] 恢复报告解析任务失败:', error.message);
+  }), 1500);
 
   // 首次登录用户第二批问卷（生活方式+心理健康）延迟自动推送，每天扫描一次
   require('./utils/onboardingPush').startBatch2Scheduler();
