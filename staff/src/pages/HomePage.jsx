@@ -199,7 +199,7 @@ export default function HomePage() {
                     borderBottom: i < Math.min(checkinRecords.length, 5) - 1 ? '1px solid #f0ede8' : 'none',
                     cursor: 'pointer',
                   }}
-                  onClick={() => nav(`/patients/${r.patientId}?tab=records`)}>
+                  onClick={() => nav(`/patients/${r.patientId}?tab=monitoring`)}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24', minWidth: 60 }}>{r.patientName}</span>
                     <span style={{ fontSize: 12, color: '#8AA89C' }}>{r.patientPhone}</span>

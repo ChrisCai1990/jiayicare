@@ -159,7 +159,7 @@ export default function DailyCheckinPage() {
               style={{ cursor: 'pointer', transition: 'box-shadow .15s' }}
               onMouseEnter={e => e.currentTarget.style.boxShadow = '0 2px 12px rgba(30,107,80,.12)'}
               onMouseLeave={e => e.currentTarget.style.boxShadow = ''}
-              onClick={() => nav(`/patients/${r.patientId}?tab=records`)}>
+              onClick={() => nav(`/patients/${r.patientId}?tab=monitoring`)}>
               <div className="card-body" style={{ padding: '14px 20px' }}>
                 {/* 顶部：姓名 + 电话 + 时间 */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -169,8 +169,8 @@ export default function DailyCheckinPage() {
                     <span style={{ fontSize: 12, color: '#aaa' }}>最近打卡 {fmtTime(r.latestRecordAt)}</span>
                   </div>
                   <button className="btn btn-secondary btn-sm"
-                    onClick={e => { e.stopPropagation(); nav(`/patients/${r.patientId}?tab=records`) }}>
-                    查看档案
+                    onClick={e => { e.stopPropagation(); nav(`/patients/${r.patientId}?tab=monitoring`) }}>
+                    健康监测
                   </button>
                   <button className="btn btn-primary btn-sm"
                     onClick={e => { e.stopPropagation(); setStatusModal(r); setStatusText('') }}>

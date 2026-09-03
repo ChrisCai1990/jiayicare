@@ -3345,6 +3345,7 @@ export default function PatientDetailPage() {
         const primaryTabs = [
           { key: 'info',          label: '基本信息' },
           { key: 'records',       label: '健康档案' },
+          { key: 'monitoring',    label: '健康监测' },
           { key: 'reports',       label: '体检报告' },
           { key: 'portrait',      label: '健康画像' },
           { key: 'medications',   label: '用药与营养' },
@@ -3919,7 +3920,7 @@ export default function PatientDetailPage() {
       )}
 
       {/* ── Records Tab ── */}
-      {tab === 'records' && (
+      {(tab === 'records' || tab === 'monitoring') && (
         <div ref={archiveSectionsRef} className="health-archive-sections" onClick={handleArchiveSectionClick}>
         <style>{`.health-archive-sections>.archive-toolbar+.card,.health-archive-sections>.card{transition:box-shadow .2s}.health-archive-sections .archive-collapsed>:not(.card-header){display:none!important}.health-archive-sections .card-header[data-archive-toggle="true"]{cursor:pointer}.health-archive-sections .card-header[data-archive-toggle="true"]:after{content:'⌃';margin-left:10px;color:#1E6B50;font-size:18px}.health-archive-sections .archive-collapsed>.card-header[data-archive-toggle="true"]:after{content:'⌄'}`}</style>
         <div className="archive-toolbar" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
@@ -3930,6 +3931,7 @@ export default function PatientDetailPage() {
             一致的情况无需人工再次确认，故此处不再重复放置整体人工审核开关 */}
 
         {/* ── 初始健康数据录入 ── */}
+        {tab === 'records' && <>
         <InitialHealthRecordForm patientId={user._id} onSaved={() => load()} toast={toast} />
         <BatchHealthRecordImport patient={user} onSaved={() => load()} toast={toast} />
 
@@ -6379,6 +6381,7 @@ export default function PatientDetailPage() {
           </div>
         )}
 
+        </>}
         {/* 健康趋势图 */}
         {(() => {
           const srcRecords = trendRecords ?? recentRecords ?? [];
