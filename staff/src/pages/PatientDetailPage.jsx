@@ -32,7 +32,8 @@ function PdfDocumentPreview({ src, activePage, onPageChange, title }) {
         let resource = resourceRef.current
         if (!resource || resource.src !== src) {
           resource?.task?.destroy()
-          const task = getDocument({ url: src, httpHeaders: getToken() ? { Authorization: `Bearer ${getToken()}` } : {}, rangeChunkSize: 64 * 1024, disableAutoFetch: false })
+          // 大 PDF 只按当前页需要读取 Range 分段；禁止 pdf.js 在首屏后继续预取整份原件。
+          const task = getDocument({ url: src, httpHeaders: getToken() ? { Authorization: `Bearer ${getToken()}` } : {}, rangeChunkSize: 256 * 1024, disableAutoFetch: true, disableStream: true })
           resource = { src, task, doc: task.promise }
           resourceRef.current = resource
         }
