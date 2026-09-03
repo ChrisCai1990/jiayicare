@@ -20,7 +20,7 @@ const ALL_NAV = [
   { label: '会员营销',     icon: 'marketing', path: '/marketing',   roles: ['superadmin','manager','healthManager','familyDoctor'],                              moduleKey: 'marketing' },
   { label: '团队管理',     icon: 'team', path: '/team',             roles: ['superadmin','familyDoctor','nutritionist','medicalAssistant','healthManager'],      moduleKey: 'team' },
   { label: '运营看板',     icon: 'operations', path: '/operations', roles: ['superadmin','manager'],                                                            moduleKey: 'operations' },
-  { label: '日常健康打卡', icon: 'checkin', path: '/daily-checkin', roles: [],                                                                                  moduleKey: 'daily_checkin' },
+  { label: '日常健康监测', icon: 'checkin', path: '/daily-checkin', roles: [],                                                                                  moduleKey: 'daily_checkin' },
   { label: '消息通知',     icon: 'notifications', path: '/notifications', roles: [] },
   { label: '个人中心',     icon: 'profile', path: '/profile',       roles: [] },
 ]

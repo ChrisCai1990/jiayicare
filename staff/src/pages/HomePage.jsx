@@ -121,7 +121,7 @@ export default function HomePage() {
         <StatCard icon="👥" label="我的会员" value={reports?.totalPatients ?? '-'} color="#1E6B50" onClick={() => nav('/patients')} />
         <StatCard icon="📞" label="今日随访" value={reports?.todayFollowUps ?? '-'} color="#0077B6" onClick={() => nav('/followups')} />
         <StatCard icon="📅" label="本月随访" value={reports?.monthFollowUps ?? '-'} color="#22A06B" onClick={() => nav('/followups')} />
-        <StatCard icon="✅" label="今日打卡" value={checkinRecords.length} color="#D97706" onClick={() => nav('/daily-checkin')} />
+        <StatCard icon="📈" label="今日健康监测" value={checkinRecords.length} color="#D97706" onClick={() => nav('/daily-checkin')} />
         <StatCard icon="🔔" label="消息通知" value={new Set(recentMessages.map(m => String(m.user))).size} color="#DC3545" onClick={() => nav('/notifications', { state: { tab: 'userMsgs' } })} />
       </div>
 
@@ -184,15 +184,15 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* 今日健康打卡 */}
+      {/* 今日健康监测 */}
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div className="card-title">今日健康打卡</div>
+          <div className="card-title">今日健康监测</div>
           <button className="btn btn-secondary btn-sm" onClick={() => nav('/daily-checkin')}>查看全部</button>
         </div>
         <div className="card-body" style={{ padding: checkinRecords.length === 0 ? '20px 20px' : '8px 20px' }}>
           {checkinRecords.length === 0 ? (
-            <div style={{ color: '#aaa', textAlign: 'center', fontSize: 14 }}>今日暂无客户打卡</div>
+            <div style={{ color: '#aaa', textAlign: 'center', fontSize: 14 }}>今日暂无客户记录健康数据</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
               {checkinRecords.slice(0, 5).map((r, i) => (

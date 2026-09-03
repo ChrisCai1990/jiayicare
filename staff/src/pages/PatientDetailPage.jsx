@@ -1502,6 +1502,7 @@ export default function PatientDetailPage() {
   const [screeningWorkspaceView, setScreeningWorkspaceView] = useState('screening')
   const [lifestyleDetailsOpen, setLifestyleDetailsOpen] = useState(false)
   const archiveSectionsRef = useRef(null)
+  const focusedMonitoringEntry = useRef(null)
   const [followUps, setFollowUps] = useState([])
   const [plans, setPlans] = useState([])
   const [reports, setReports] = useState([])
@@ -1715,6 +1716,22 @@ export default function PatientDetailPage() {
       }
     })
   }, [tab, healthBaseView, screeningWorkspaceView, data, healthRecords])
+
+  // 从健康监测入口进入时，直接展开客户提交的数据，保留其他档案板块状态。
+  useEffect(() => {
+    if (requestedTab !== 'monitoring' || tab !== 'records' || healthBaseView !== 'monitoring') return
+    if (String(data?.user?._id || '') !== String(id)) return
+    const entryKey = `${id}:${location.key}`
+    if (focusedMonitoringEntry.current === entryKey) return
+    const card = archiveSectionsRef.current?.querySelector('#submitted-health-records')
+    if (!card) return
+    card.classList.remove('archive-collapsed')
+    const frame = requestAnimationFrame(() => {
+      card.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      focusedMonitoringEntry.current = entryKey
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [requestedTab, tab, healthBaseView, data, id, location.key])
 
   const handleArchiveSectionClick = (event) => {
     if (event.target.closest('button, a, input, select, textarea, label')) return
@@ -6477,7 +6494,7 @@ export default function PatientDetailPage() {
                   const pending = ['pending_manager', 'pending_doctor'].includes(workflow.status)
                   const source = record.recordedBy?.source === 'staff'
                     ? (record.recordedBy.staffName || '医护人员录入')
-                    : record.recordedBy?.source === 'system' ? '系统记录' : '客户打卡'
+                    : record.recordedBy?.source === 'system' ? '系统记录' : '客户记录'
                   return (
                     <div key={record._id} style={{
                       padding: '11px 13px', borderRadius: 10,
@@ -6730,8 +6747,8 @@ export default function PatientDetailPage() {
         })()}
 
         {/* 日常健康打卡数据 */}
-        <div className="card" style={{ marginTop: 16 }}>
-          <div className="card-header"><div className="card-title">日常健康打卡数据（每类型最近10条）</div></div>
+        <div id="submitted-health-records" className="card" style={{ marginTop: 16, scrollMarginTop: 20 }}>
+          <div className="card-header"><div className="card-title">健康数据记录（每类型最近10条）</div></div>
           {recentRecords?.length > 0 ? (
             <table className="table">
               <thead>
@@ -6782,7 +6799,7 @@ export default function PatientDetailPage() {
                                   <img
                                     key={`${imgUrl}-${imageIndex}`}
                                     src={imgUrl}
-                                    alt={`打卡图片${imageIndex + 1}`}
+                                    alt={`健康记录图片${imageIndex + 1}`}
                                     style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6, cursor: 'pointer', border: '1px solid #E0D9CE' }}
                                     onClick={() => setPreviewImageUrl(imgUrl)}
                                   />
@@ -6811,7 +6828,7 @@ export default function PatientDetailPage() {
               </tbody>
             </table>
           ) : (
-            <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无健康打卡记录</div>
+            <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无健康数据记录</div>
           )}
         </div>
         </>}
@@ -7096,7 +7113,7 @@ export default function PatientDetailPage() {
         return (
           <div ref={archiveSectionsRef} className="health-archive-sections" onClick={handleArchiveSectionClick}>
             <style>{`.health-archive-sections>.card{transition:box-shadow .2s}.health-archive-sections .archive-collapsed>:not(.card-header){display:none!important}.health-archive-sections .card-header[data-archive-toggle="true"]{cursor:pointer}.health-archive-sections .card-header[data-archive-toggle="true"]:after{content:'⌃';margin-left:10px;color:#1E6B50;font-size:18px}.health-archive-sections .archive-collapsed>.card-header[data-archive-toggle="true"]:after{content:'⌄'}`}</style>
-            <details style={{ marginBottom: 12, padding: '8px 12px', border: '1px solid #DCE5E0', borderRadius: 9, background: '#FAFBFA' }}><summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>生成依据</summary><div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.8, color: '#65776F' }}>AI读取已确认档案、历年体检与检验检查、专项筛查、健康监测、问卷和近期打卡，按年度与历史数据比较。5维分析须由家庭医生审核，生活方式分析须由营养师审核；未审核内容仅为草稿。</div></details>
+            <details style={{ marginBottom: 12, padding: '8px 12px', border: '1px solid #DCE5E0', borderRadius: 9, background: '#FAFBFA' }}><summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>生成依据</summary><div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.8, color: '#65776F' }}>AI读取已确认档案、历年体检与检验检查、专项筛查、健康监测、问卷和近期健康记录，按年度与历史数据比较。5维分析须由家庭医生审核，生活方式分析须由营养师审核；未审核内容仅为草稿。</div></details>
             {/* 前置要求：健康顾问生成AI健康分析/风险评估前必须先查看确认健康档案（2026-07-28改造，
                 不再逐份审核报告数据本身，那是健管专员audit_status的职责） */}
             {['familyDoctor', 'superadmin'].includes(staff?.role) && pendingDoctorAuditReports.length > 0 && (() => {
@@ -8786,7 +8803,7 @@ export default function PatientDetailPage() {
                     const workflow = record.symptomWorkflow || {}
                     const workflowLabel = { pending_manager: '待健管专员核实', pending_doctor: '待健康顾问判断', manager_followup: '健管专员跟进', referred: '已转介', resolved: '已处理', dismissed: '已确认为误录' }[workflow.status] || '待处理'
                     const pending = ['pending_manager', 'pending_doctor'].includes(workflow.status)
-                    const source = record.recordedBy?.source === 'staff' ? (record.recordedBy.staffName || '医护人员录入') : record.recordedBy?.source === 'system' ? '系统记录' : '客户打卡'
+                    const source = record.recordedBy?.source === 'staff' ? (record.recordedBy.staffName || '医护人员录入') : record.recordedBy?.source === 'system' ? '系统记录' : '客户记录'
                     const year = new Date(record.recordedAt).getFullYear()
                     const previousYear = index > 0 ? new Date(healthRecords[index - 1].recordedAt).getFullYear() : null
                     const isExpanded = expandedSymptoms.has(String(record._id))
@@ -9695,7 +9712,7 @@ export default function PatientDetailPage() {
               {!aiHelper.loading && !aiHelper.error && aiHelper.type === 'coach' && aiHelper.data && (
                 <>
                   <div style={{ fontSize: 12, color: '#8AA89C' }}>
-                    依从性：{{ high: '良好', medium: '一般', low: '偏低' }[aiHelper.data.adherence] || '-'} · 连续打卡 {aiHelper.data.streak} 天{aiHelper.data.daysSinceLast != null ? ` · 距上次打卡 ${aiHelper.data.daysSinceLast} 天` : ''}
+                    依从性：{{ high: '良好', medium: '一般', low: '偏低' }[aiHelper.data.adherence] || '-'} · 连续记录 {aiHelper.data.streak} 天{aiHelper.data.daysSinceLast != null ? ` · 距上次记录 ${aiHelper.data.daysSinceLast} 天` : ''}
                   </div>
                   <textarea className="form-control" rows={4} value={aiHelper.data.message}
                     onChange={e => setAiHelper(h => ({ ...h, data: { ...h.data, message: e.target.value } }))} />
@@ -9894,7 +9911,7 @@ export default function PatientDetailPage() {
               {/* 打卡项目 */}
               {followUpDetail.checkInItems?.length > 0 && (
                 <div>
-                  <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 6 }}>打卡项目</div>
+                  <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 6 }}>健康记录项目</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                     {followUpDetail.checkInItems.map((item, i) => (
                       <span key={i} style={{ padding: '2px 10px', borderRadius: 99, background: '#E8F5EF', color: '#1E6B50', fontSize: 12, fontWeight: 500 }}>{CHECKIN_LABEL[item] || item}</span>
@@ -12181,7 +12198,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
   const [error, setError] = useState('')
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
-  // 打开时拉取用药、营养补剂、近期打卡记录
+  // 打开时拉取用药、营养补剂、近期健康记录记录
   useEffect(() => {
     Promise.allSettled([
       staffAPI.getPatientMedications(patientId),
@@ -12248,7 +12265,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
       { key: 'longTermMeds',     label: '长期用药',     val: ed.medications.length ? ed.medications.map(m => `${m.name}${m.dosage ? ` ${m.dosage}` : ''}`).join('；') : null },
       { key: 'longTermSups',     label: '长期营养补剂', val: ed.supplements.length ? ed.supplements.map(s => s.name).join('；') : null },
       { key: 'dietSummary',      label: '膳食调查概述', val: dietSummary },
-      { key: 'latestVitals',     label: '近期打卡数据', val: latestVitals },
+      { key: 'latestVitals',     label: '近期健康数据', val: latestVitals },
     ].filter(s => s.val !== null && s.val !== '' && !(Array.isArray(s.val) && s.val.length === 0))
   }
 
@@ -12755,7 +12772,7 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
         <div className="card-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontWeight: 600, fontSize: 14 }}>初始健康数据录入</div>
-            <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>录入后直接同步到用户端，格式与用户打卡完全一致</div>
+            <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>录入后直接同步到用户端，格式与用户记录健康数据时一致</div>
           </div>
           <button className="btn btn-primary btn-sm" onClick={() => setOpen(true)}>+ 录入数据</button>
         </div>
@@ -12771,7 +12788,7 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
       </div>
       <div className="card-body">
         <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 12 }}>
-          罗列全部打卡项，填写哪些就录入哪些（留空的不提交），一次性作为首次建档基础数据同步到用户端。
+          列出全部健康数据项目，填写哪些就录入哪些（留空的不提交），一次性作为首次建档基础数据同步到用户端。
         </div>
 
         {/* 归属日期：老客户历史数据补录用，默认今天，可选任意过去日期（2026-07-10 金娟） */}
@@ -12853,7 +12870,7 @@ const REFERRAL_HEALTH_LABELS = {
   longTermMeds:    '长期用药',
   longTermSups:    '长期营养补剂',
   dietSummary:     '膳食调查概述',
-  latestVitals:    '近期打卡数据',
+  latestVitals:    '近期健康数据',
   allergies:       '过敏史',
   medications:     '当前用药',
   surgeries:       '手术史',
