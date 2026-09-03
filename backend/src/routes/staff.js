@@ -26,6 +26,7 @@ const FollowUp = require('../models/FollowUp');
 const HealthRecord = require('../models/HealthRecord');
 const { calcStatus: calcHealthRecordStatus } = require('../utils/healthRecordStatus');
 const MedicalReport = require('../models/MedicalReport');
+const { REPORT_LIST_PROJECTION, toReportListItem } = require('../utils/reportListPayload');
 const HealthPlan = require('../models/HealthPlan');
 const KnowledgeItem = require('../models/KnowledgeItem');
 const PushRecord = require('../models/PushRecord');
@@ -3489,7 +3490,7 @@ router.get('/patients/:id/plans', staffAuth, async (req, res) => {
 // GET /api/staff/patients/:id/reports — 会员的体检报告列表
 router.get('/patients/:id/reports', staffAuth, async (req, res) => {
   const reports = await MedicalReport.find({ user: req.params.id })
-    .select('-content')
+    .select(REPORT_LIST_PROJECTION)
     .sort({ createdAt: 1 })
     .populate('uploadedBy', 'name role');
 
@@ -3511,7 +3512,7 @@ router.get('/patients/:id/reports', staffAuth, async (req, res) => {
     // OSS bucket 是私有的。会员详情页的报告列表此前直接返回存储 URL，
     // 导致 AI 审核弹窗预览迁移后的历史文件时触发 AccessDenied。
     // 与单份报告、报告管理列表保持一致：仅向已鉴权的医护端签发短时 URL。
-    const obj = withSignedReportFiles(r);
+    const obj = withSignedReportFiles(toReportListItem(r));
     obj.hasContent = !!hasContentMap[String(r._id)];
     return obj;
   });
@@ -7755,10 +7756,10 @@ router.get('/patients/:id/screening-reports', staffAuth, async (req, res) => {
     // 时会调 staffAPI.getReport(id) 单独补拉，所以这里裁掉即可，不影响任何现有功能。
     const reports = await MedicalReport.find({
       user: req.params.id,
-    }).select('-content').sort({ checkDate: -1, createdAt: -1 }).lean();
+    }).select(REPORT_LIST_PROJECTION).sort({ checkDate: -1, createdAt: -1 }).lean();
     // 专项筛查板块也会直接打开报告原件。这里此前返回数据库中的私有 OSS 裸地址，
     // 导致“查看报告 PDF”跳转后 AccessDenied；与报告列表/审核弹窗统一返回受控预览地址。
-    res.json({ success: true, data: reports.map(withSignedReportFiles) });
+    res.json({ success: true, data: reports.map(report => withSignedReportFiles(toReportListItem(report))) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

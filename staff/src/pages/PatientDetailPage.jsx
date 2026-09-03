@@ -1873,34 +1873,36 @@ export default function PatientDetailPage() {
     } catch (err) { toast(err.message || '复核失败') } finally { setDietaryReviewBusy(false) }
   }
 
-  const load = async () => {
+  const activePatientId = useRef(id)
+  activePatientId.current = id
+  const profileLoadVersion = useRef(0)
+  const load = async (refreshScreening = true) => {
+    const version = ++profileLoadVersion.current
+    const isCurrent = () => activePatientId.current === id && profileLoadVersion.current === version
     try {
-      const [res, scrRes] = await Promise.allSettled([
-        staffAPI.getPatient(id),
-        staffAPI.getScreeningReports(id),
-      ])
-      if (res.status === 'fulfilled') {
-        setLoadError(null)
-        setData(res.value.data)
-        setEditForm(buildEditForm(res.value.data.user))
-        setBasicInfoForm(buildBasicInfoForm(res.value.data.user))
-        setHealthNeedsForm(buildHealthNeedsForm(res.value.data.user))
-        setHealthForm(buildHealthForm(res.value.data.user))
-        setLifestyleForm(buildLifestyleForm(res.value.data.user))
-        setInsuranceForm(buildInsuranceForm(res.value.data.user))
-        setLabForm(res.value.data.user.labValues || {})
-        setSeverityForm(res.value.data.user.chronicDiseaseSeverity || {})
-        setBodyCompForm(res.value.data.user.bodyComposition || {})
-        setAiSummaryForm(res.value.data.user.aiHealthSummary || {})
-      } else {
-        throw res.reason
-      }
-      if (scrRes.status === 'fulfilled') setScreeningReports(scrRes.value.data || [])
+      // Basic information must not wait for the report archive or its audit history.
+      const res = await staffAPI.getPatient(id)
+      if (!isCurrent()) return
+      setLoadError(null)
+      setData(res.data)
+      setEditForm(buildEditForm(res.data.user))
+      setBasicInfoForm(buildBasicInfoForm(res.data.user))
+      setHealthNeedsForm(buildHealthNeedsForm(res.data.user))
+      setHealthForm(buildHealthForm(res.data.user))
+      setLifestyleForm(buildLifestyleForm(res.data.user))
+      setInsuranceForm(buildInsuranceForm(res.data.user))
+      setLabForm(res.data.user.labValues || {})
+      setSeverityForm(res.data.user.chronicDiseaseSeverity || {})
+      setBodyCompForm(res.data.user.bodyComposition || {})
+      setAiSummaryForm(res.data.user.aiHealthSummary || {})
+      // Saves refresh visible screening data without holding the whole page open.
+      if (refreshScreening && ['records', 'portrait', 'ai'].includes(tab)) loadScreening()
     } catch (err) {
+      if (!isCurrent()) return
       setLoadError(err.status === 403 ? '无权限查看该会员' : (err.message || '会员不存在'))
       toast(err.message || '加载失败')
     } finally {
-      setLoading(false)
+      if (isCurrent()) setLoading(false)
     }
   }
 
@@ -2067,6 +2069,7 @@ export default function PatientDetailPage() {
         staffAPI.getScreeningTree(),
         staffAPI.getScreeningYearSummaries(id),
       ])
+      if (activePatientId.current !== id) return
       if (sr.status === 'fulfilled') setScreeningItems(sr.value.data || [])
       if (hr.status === 'fulfilled') setHealthRecords(hr.value.data || [])
       if (scr.status === 'fulfilled') setScreeningReports(scr.value.data || [])
@@ -2204,7 +2207,13 @@ export default function PatientDetailPage() {
     setReportSourceFocus(focus)
     openReportDetail({ _id: sourceReportId, title: '原始体检报告' })
   }
-  useEffect(() => { load() }, [id])
+  useEffect(() => {
+    setLoading(true)
+    setData(null)
+    setScreeningReports([])
+    load(false)
+    return () => { profileLoadVersion.current += 1 }
+  }, [id])
   // 切换到不同会员时，上一个会员的"健康档案已查看"进度不能带过来，否则会误判成这个新会员
   // 也已经查看过某些报告（组件是同一实例复用，id变了但state不会自动清零）
   useEffect(() => { setPendingDoctorAuditReports([]) }, [id])
@@ -2276,11 +2285,12 @@ export default function PatientDetailPage() {
     }
     else if (tab === 'consumption') staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {})
     else if (tab === 'ai') {
+      loadScreening()
       // 健康顾问审核依赖 reports（要展示报告原文对照），同上按需补加载
       if (reports.length === 0) loadReports()
       loadPendingDoctorAudit()
     }
-  }, [tab])
+  }, [tab, id])
 
   const buildEditForm = (u) => ({
     chronicDiseases: u.chronicDiseases || [],
