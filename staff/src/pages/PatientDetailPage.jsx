@@ -1916,7 +1916,7 @@ export default function PatientDetailPage() {
     setAiMedicalAssistGenerating(true)
     try {
       await staffAPI.generateAIMedicalAssistPlan(id, orderId, templateId)
-      toast('AI就医协助方案已生成，待健康规划师审核')
+      toast(staff?.role === 'familyDoctor' ? '住院一站式方案已生成，请审核后推送' : 'AI就医协助方案已生成，待健康规划师审核')
       loadPlans()
     } catch (err) { toast('AI生成失败：' + (err.message || '未知错误')) }
     finally { setAiMedicalAssistGenerating(false) }
@@ -8088,7 +8088,7 @@ export default function PatientDetailPage() {
                   ✨ AI体检方案
                 </button>
               )}
-              {['healthPlanner', 'superadmin'].includes(staff?.role) && (
+              {['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && (
                 <button className="btn btn-secondary btn-sm" disabled={aiMedicalAssistGenerating}
                   onClick={() => { setPendingMedicalAssistOrderId(''); setShowSelectTplModal('medical_assist') }}>
                   {aiMedicalAssistGenerating ? '生成中…' : '✨ AI就医协助方案'}
@@ -11052,7 +11052,7 @@ export default function PatientDetailPage() {
               toast('AI营养方案已生成，待营养师审核')
             } else {
               await staffAPI.generateAIMedicalAssistPlan(id, pendingMedicalAssistOrderId, templateId, briefNote)
-              toast('AI就医协助方案已生成，待健康规划师审核')
+              toast(staff?.role === 'familyDoctor' ? '住院一站式方案已生成，请审核后推送' : 'AI就医协助方案已生成，待健康规划师审核')
             }
             loadPlans()
           }}
@@ -12643,6 +12643,7 @@ function AttachedHealthInfoView({ info }) {
 // 2026-07-13：三类方案都是"AI只在模板骨架基础上定制"，不该让AI自由发明。此前AI一点即生成，
 // 完全跳过模板；改为先弹出模板选择，选定后才真正调用AI生成，模板骨架部分由后端原样锁定。
 function SelectTemplateAndGenerateModal({ planType, title, patientId, onClose, onGenerate }) {
+  const { staff } = useStaff()
   const toast = useToast()
   const [templates, setTemplates] = useState([])
   const [loading, setLoading] = useState(true)
@@ -12656,7 +12657,7 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, onClose, o
 
   useEffect(() => {
     staffAPI.getPlanTemplates(planType, patientId)
-      .then(res => setTemplates(res.data || []))
+      .then(res => setTemplates((res.data || []).filter(tpl => planType !== 'medical_assist' || staff?.role !== 'familyDoctor' || /住院一站式/.test(tpl.name || ''))))
       .catch(err => setError(err.message || '加载失败'))
       .finally(() => setLoading(false))
   }, [planType, patientId])

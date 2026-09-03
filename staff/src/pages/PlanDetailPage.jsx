@@ -14,7 +14,9 @@ const PLAN_AI_SCENE = {
 // 部分方案类型只归特定角色编辑（跟后端 PLAN_TYPE_OWNER_ROLE 对齐）：
 // 年度体检/年度管理方案只有健康顾问，营养干预方案只有营养师
 const PLAN_TYPE_OWNER_ROLE = { annual_checkup: 'familyDoctor', annual_mgmt: 'familyDoctor', nutrition: 'nutritionist', medical_assist: 'healthPlanner' }
-function canEditPlanType(planType, staffRole) {
+function canEditPlanType(plan, staffRole) {
+  const planType = plan.type
+  if (staffRole === 'familyDoctor' && planType === 'medical_assist' && (plan.content?.serviceScene === 'inpatient_one_stop' || /住院一站式/.test(plan.content?.templateName || ''))) return true
   const requiredRole = PLAN_TYPE_OWNER_ROLE[planType]
   if (!requiredRole) return true
   return staffRole === 'superadmin' || staffRole === requiredRole
@@ -380,7 +382,7 @@ export default function PlanDetailPage() {
   if (loading) return <div className="page-loading">加载中...</div>
   if (!plan) return <div className="page">方案不存在</div>
 
-  const canEdit = canEditPlanType(plan.type, staff?.role) && !!plan.canManage
+  const canEdit = canEditPlanType(plan, staff?.role) && !!plan.canManage
   const completedCount = plan.items?.filter(i => i.status === 'completed').length || 0
   const progress = plan.items?.length ? Math.round((completedCount / plan.items.length) * 100) : 0
   const assistMeta = plan.type === 'medical_assist' ? getAssistTemplateMeta(plan.content?.templateName) : null
@@ -418,7 +420,7 @@ export default function PlanDetailPage() {
         <div style={{ display: 'flex', gap: 8 }}>
           {!canEdit && (
             <span style={{ fontSize: 12, color: '#8AA89C', alignSelf: 'center' }}>
-              {TYPE_LABEL[plan.type]}仅{plan.type === 'nutrition' ? '营养师' : plan.type === 'medical_assist' ? '健康规划师' : '健康顾问'}中的方案创建人可编辑、推送和删除
+              {TYPE_LABEL[plan.type]}仅{plan.type === 'nutrition' ? '营养师' : plan.type === 'medical_assist' ? ((plan.content?.serviceScene === 'inpatient_one_stop' || /住院一站式/.test(plan.content?.templateName || '')) ? '健康顾问或健康规划师' : '健康规划师') : '健康顾问'}中的方案创建人可编辑、推送和删除
             </span>
           )}
           {canEdit && plan.content?.aiStatus === 'pending' && (
