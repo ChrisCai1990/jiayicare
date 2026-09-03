@@ -13,29 +13,15 @@ import malePortraitPhoto from '../assets/health-portrait-male.webp'
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
-// 审核 PDF 不能依赖浏览器内置阅读器：它不会可靠响应同一 iframe 的 #page 变化，
-// 且切换时可能重新读取大文件。pdf.js 会保留同一份 Range 文档会话，只渲染目标页。
+// PDF 页图由服务端 pdftoppm 按完整 MediaBox 生成，与上传原图一致；浏览器侧只读取
+// 页数并显示整页图片，避免 Canvas 对扫描照片的边缘出现不一致的裁切。
 function PdfDocumentPreview({ src, activePage, onPageChange, title }) {
   const containerRef = useRef(null)
-  const canvasRefs = useRef(new Map())
   const pageRefs = useRef(new Map())
   const resourceRef = useRef(null)
-  const renderTasksRef = useRef(new Map())
   const observedPageRef = useRef(null)
-  const renderSizeRef = useRef('')
   const [pageCount, setPageCount] = useState(0)
   const [state, setState] = useState({ loading: true, error: '' })
-  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
-
-  useEffect(() => {
-    const root = containerRef.current
-    if (!root) return undefined
-    const syncSize = () => setViewportSize({ width: root.clientWidth, height: root.clientHeight })
-    syncSize()
-    const observer = new ResizeObserver(syncSize)
-    observer.observe(root)
-    return () => observer.disconnect()
-  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -44,15 +30,13 @@ function PdfDocumentPreview({ src, activePage, onPageChange, title }) {
         let resource = resourceRef.current
         if (!resource || resource.src !== src) {
           resource?.task?.destroy()
-          // 大 PDF 只按当前页需要读取 Range 分段；禁止 pdf.js 在首屏后继续预取整份原件。
           const task = getDocument({ url: src, httpHeaders: getToken() ? { Authorization: `Bearer ${getToken()}` } : {}, rangeChunkSize: 256 * 1024, disableAutoFetch: true, disableStream: true })
           resource = { src, task, doc: task.promise }
           resourceRef.current = resource
         }
         setState({ loading: true, error: '' })
         const doc = await resource.doc
-        if (cancelled) return
-        setPageCount(doc.numPages)
+        if (!cancelled) setPageCount(doc.numPages)
       } catch (error) {
         if (!cancelled) setState({ loading: false, error: error.message || 'PDF页面加载失败' })
       }
@@ -60,73 +44,6 @@ function PdfDocumentPreview({ src, activePage, onPageChange, title }) {
     load()
     return () => { cancelled = true }
   }, [src])
-
-  useEffect(() => {
-    if (!pageCount) return
-    let cancelled = false
-    const keepPages = new Set(Array.from({ length: 5 }, (_, i) => activePage - 2 + i).filter(pageNum => pageNum >= 1 && pageNum <= pageCount))
-    const renderVisiblePages = async () => {
-      try {
-        const doc = await resourceRef.current?.doc
-        // 每页都须在左侧实际可见区域内完整展示；窗口尺寸变化后按新尺寸重绘，
-        // 不能沿用旧画布而让页底被固定操作栏遮住。
-        const renderSize = `${Math.round(viewportSize.width)}x${Math.round(viewportSize.height)}`
-        if (renderSizeRef.current !== renderSize) {
-          renderTasksRef.current.forEach(task => task.cancel())
-          canvasRefs.current.forEach(canvas => {
-            canvas.width = 0
-            canvas.height = 0
-            canvas.dataset.rendered = ''
-          })
-          renderSizeRef.current = renderSize
-        }
-        // 只保留当前页及相邻两页的高分辨率画布；整份 PDF 文档连接仍保存在内存，
-        // 因而远页再次进入窗口时只重新绘制，不会重新下载原件。
-        canvasRefs.current.forEach((canvas, pageNum) => {
-          if (!keepPages.has(pageNum) && canvas.dataset.rendered === 'true') {
-            canvas.width = 0
-            canvas.height = 0
-            canvas.dataset.rendered = ''
-          }
-        })
-        const pagesToRender = [activePage, ...[activePage - 1, activePage + 1, activePage - 2, activePage + 2].filter(pageNum => keepPages.has(pageNum) && pageNum !== activePage)]
-        let renderedAny = false
-        for (const pageNum of pagesToRender) {
-          if (cancelled) return
-          const canvas = canvasRefs.current.get(pageNum)
-          if (!canvas || canvas.dataset.rendered === 'true') continue
-          const page = await doc.getPage(pageNum)
-          const base = page.getViewport({ scale: 1 })
-          const availableWidth = Math.max(240, Math.min(520, (viewportSize.width || 520) - 12))
-          // 页面容器还包含上下内边距和分隔线，预留空间后才能确保整张画布落在可视区内。
-          const availableHeight = Math.max(240, (viewportSize.height || 720) - 24)
-          const scale = Math.min(1.45, availableWidth / base.width, availableHeight / base.height)
-          const viewport = page.getViewport({ scale })
-          const ratio = Math.min(window.devicePixelRatio || 1, 2)
-          canvas.width = Math.ceil(viewport.width * ratio)
-          canvas.height = Math.ceil(viewport.height * ratio)
-          canvas.style.width = `${Math.ceil(viewport.width)}px`
-          canvas.style.height = `${Math.ceil(viewport.height)}px`
-          const context = canvas.getContext('2d')
-          context.setTransform(ratio, 0, 0, ratio, 0, 0)
-          const task = page.render({ canvasContext: context, viewport })
-          renderTasksRef.current.set(pageNum, task)
-          await task.promise
-          canvas.dataset.rendered = 'true'
-          // 先显示当前页，剩余页继续在后台缓存；无需等整份大 PDF 绘制完成。
-          if (!renderedAny && !cancelled) {
-            renderedAny = true
-            setState({ loading: false, error: '' })
-          }
-        }
-        if (!cancelled) setState({ loading: false, error: '' })
-      } catch (error) {
-        if (error?.name !== 'RenderingCancelledException' && !cancelled) setState({ loading: false, error: error.message || 'PDF页面加载失败' })
-      }
-    }
-    renderVisiblePages()
-    return () => { cancelled = true; renderTasksRef.current.forEach(task => task.cancel()) }
-  }, [pageCount, src, activePage, viewportSize])
 
   useEffect(() => {
     const root = containerRef.current
@@ -154,18 +71,17 @@ function PdfDocumentPreview({ src, activePage, onPageChange, title }) {
     if (target && root) root.scrollTo({ top: target.offsetTop, behavior: 'auto' })
   }, [activePage, pageCount])
 
-  useEffect(() => () => { renderTasksRef.current.forEach(task => task.cancel()); resourceRef.current?.task?.destroy() }, [])
+  useEffect(() => () => { resourceRef.current?.task?.destroy() }, [])
 
-  // 高度由审核弹窗内容区决定。此前固定为 74vh，会在小屏或带固定底部操作栏时
-  // 超出可用区域，造成 PDF 页尾像是被截断；滚动仍只在此预览区内进行。
-  const pageSlotHeight = Math.max(240, viewportSize.height || 720)
+  const pageImageUrl = pageNum => `${src.replace('/preview/', '/preview-page/')}${src.includes('?') ? '&' : '?'}page=${pageNum}`
   return <div ref={containerRef} style={{ height: '100%', minHeight: 0, position: 'relative', background: '#fff', borderRadius: 6, overflow: 'auto', scrollSnapType: 'y mandatory' }}>
     {state.loading && <div style={{ position: 'sticky', top: 10, zIndex: 1, margin: '10px auto', width: 'fit-content', color: '#4A6558', fontSize: 12, background: '#F6F9F7', padding: '5px 8px', borderRadius: 5 }}>正在加载当前 PDF 页面…</div>}
     {state.error ? <div style={{ padding: 16, color: '#B42318', fontSize: 12 }}>{state.error}</div> : Array.from({ length: pageCount }, (_, i) => {
       const pageNum = i + 1
-      return <div key={pageNum} data-page={pageNum} ref={element => { if (element) pageRefs.current.set(pageNum, element); else pageRefs.current.delete(pageNum) }} style={{ height: pageSlotHeight, minHeight: pageSlotHeight, boxSizing: 'border-box', padding: '6px 0 10px', position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', borderBottom: '1px solid #E0D9CE', background: pageNum === activePage ? '#F6F9F7' : '#fff', scrollSnapAlign: 'start', scrollSnapStop: 'always' }}>
-        <canvas ref={element => { if (element) canvasRefs.current.set(pageNum, element); else canvasRefs.current.delete(pageNum) }} aria-label={`${title}第${pageNum}页`} />
-        {pageNum !== activePage && <span style={{ position: 'absolute', color: '#8AA89C', fontSize: 11, marginTop: 12 }}>第 {pageNum} 页</span>}
+      return <div key={pageNum} data-page={pageNum} ref={element => { if (element) pageRefs.current.set(pageNum, element); else pageRefs.current.delete(pageNum) }} style={{ height: '100%', minHeight: '100%', boxSizing: 'border-box', padding: '6px 0 10px', position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', borderBottom: '1px solid #E0D9CE', background: pageNum === activePage ? '#F6F9F7' : '#fff', scrollSnapAlign: 'start', scrollSnapStop: 'always' }}>
+        {pageNum === activePage
+          ? <img src={pageImageUrl(pageNum)} alt={`${title}第${pageNum}页`} onLoad={() => setState({ loading: false, error: '' })} onError={() => setState({ loading: false, error: 'PDF页面加载失败，请重试' })} style={{ display: 'block', maxWidth: 'calc(100% - 12px)', maxHeight: 'calc(100% - 18px)', objectFit: 'contain', borderRadius: 3 }} />
+          : <span style={{ color: '#8AA89C', fontSize: 11 }}>第 {pageNum} 页</span>}
       </div>
     })}
   </div>

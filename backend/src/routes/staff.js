@@ -2177,6 +2177,43 @@ router.get('/medical-reports/:id/preview/:index', async (req, res) => {
   }
 });
 
+// GET /api/staff/medical-reports/:id/preview-page/:index?page=1
+// 扫描 PDF 的浏览器 Canvas 与原始照片在边缘处理上可能不一致。审核对照统一由服务端
+// 以完整 MediaBox 转为 JPEG，再以 contain 模式展示，确保与上传原页的可见内容一致。
+router.get('/medical-reports/:id/preview-page/:index', async (req, res) => {
+  try {
+    const payload = jwt.verify(String(req.query.token || ''), process.env.JWT_SECRET);
+    const fileIndex = Number(req.params.index);
+    const pageNum = Number(req.query.page);
+    if (payload.scope !== 'report-preview' || payload.reportId !== String(req.params.id)
+      || payload.fileIndex !== fileIndex || !Number.isInteger(fileIndex) || fileIndex < 0
+      || !Number.isInteger(pageNum) || pageNum < 1 || pageNum > 500) {
+      return res.status(403).json({ success: false, message: '预览链接无效或已失效' });
+    }
+    const report = await MedicalReport.findById(req.params.id).select('fileUrl fileUrls ossKey ossKeys mimeType');
+    if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    const urls = report.fileUrls?.length ? report.fileUrls : (report.fileUrl ? [report.fileUrl] : []);
+    const sourceUrl = String(urls[fileIndex] || '');
+    const isPdf = report.mimeType === 'application/pdf' || /\.pdf(?:$|[?#])/i.test(sourceUrl);
+    if (!sourceUrl || !isPdf) return res.status(404).json({ success: false, message: 'PDF原始文件不存在' });
+    const { fetchReportBuffer, renderSinglePage } = require('../utils/pdf');
+    const pdfBuffer = await fetchReportBuffer(report, UPLOADS_DIR);
+    const imageBase64 = await renderSinglePage(pdfBuffer, pageNum, 110);
+    if (!imageBase64) return res.status(404).json({ success: false, message: 'PDF页面不存在' });
+    res.set({
+      'Content-Type': 'image/jpeg',
+      'Content-Disposition': 'inline',
+      'Cache-Control': 'private, no-store',
+      'Referrer-Policy': 'no-referrer',
+      'X-Content-Type-Options': 'nosniff',
+    }).end(Buffer.from(imageBase64, 'base64'));
+  } catch (error) {
+    const message = String(error?.message || '');
+    if (/PDF转图片失败|页面不存在|页码/.test(message)) return res.status(422).json({ success: false, message: 'PDF页面渲染失败' });
+    return res.status(403).json({ success: false, message: '预览链接无效或已失效' });
+  }
+});
+
 // GET /api/staff/medical-reports/:id
 router.get('/medical-reports/:id', staffAuth, async (req, res) => {
   const report = await MedicalReport.findById(req.params.id)
