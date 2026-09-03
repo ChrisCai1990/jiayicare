@@ -1592,6 +1592,7 @@ export default function PatientDetailPage() {
   const [execSaving, setExecSaving] = useState(false)
   const [execDraftLoading, setExecDraftLoading] = useState(false)
   const [medForm, setMedForm] = useState({})
+  const [medError, setMedError] = useState('')
   const [supForm, setSupForm] = useState({})
   const [medSaving, setMedSaving] = useState(false)
   // 健康顾问健康档案查看确认（2026-07-28改造）：不再逐份审核报告数据，改为客户维度的
@@ -7951,7 +7952,7 @@ export default function PatientDetailPage() {
                         </td>
                         <td>
                           <div style={{ display: 'flex', gap: 6 }}>
-                            {!m.stopped && <button className="btn btn-secondary btn-sm" onClick={() => {
+                            {!m.stopped && (canApproveMed || (staff?._id && String(m.staffId) === String(staff._id))) && <button className="btn btn-secondary btn-sm" onClick={() => {
                               setMedForm({ name: m.name, brandName: m.brandName || '', specification: m.specification || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: m.startDate || '', endDate: m.endDate || '', purpose: m.purpose || '', note: m.note || '' })
                               setEditingMed(m._id); setShowMedModal(true)
                             }}>编辑</button>}
@@ -8103,7 +8104,7 @@ export default function PatientDetailPage() {
               <div className="modal" style={{ maxWidth: 560 }}>
                 <div className="modal-header">
                   <h3 className="modal-title">{editingMed ? '编辑药物' : '新增药物'}</h3>
-                  <button className="modal-close" onClick={() => setShowMedModal(false)}>✕</button>
+                  <button className="modal-close" onClick={() => { setShowMedModal(false); setMedError('') }}>✕</button>
                 </div>
                 <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   {[
@@ -8126,10 +8127,12 @@ export default function PatientDetailPage() {
                     </div>
                   ))}
                 </div>
-                <div className="modal-footer">
-                  <button className="btn btn-ghost" onClick={() => setShowMedModal(false)}>取消</button>
+                <div className="modal-footer" style={{ flexWrap: 'wrap' }}>
+                  {medError && <div role="alert" style={{ color: '#C0392B', flex: '1 1 100%' }}>{medError}</div>}
+                  <button className="btn btn-ghost" onClick={() => { setShowMedModal(false); setMedError('') }}>取消</button>
                   <button className="btn btn-primary" disabled={medSaving} onClick={async () => {
-                    if (!medForm.name || !medForm.dosage || !medForm.frequency) { toast('请填写必填项'); return }
+                    setMedError('')
+                    if (!medForm.name?.trim() || !medForm.dosage?.trim() || !medForm.frequency?.trim()) { setMedError('请填写药品化学名、剂量和频次'); return }
                     setMedSaving(true)
                     try {
                       const needReview = !editingMed && (staff?.role === 'healthManager' || staff?.role === 'medicalAssistant')
@@ -8137,7 +8140,7 @@ export default function PatientDetailPage() {
                       else await staffAPI.createPatientMedication(id, medForm)
                       setShowMedModal(false); loadMedications()
                       toast(editingMed ? '已保存' : needReview ? '已提交，待健康顾问审核' : '添加成功')
-                    } catch (err) { toast(err.message) }
+                    } catch (err) { setMedError(err.message || '保存失败，请稍后重试') }
                     finally { setMedSaving(false) }
                   }}>{medSaving ? '保存中...' : '保存'}</button>
                 </div>

@@ -4847,13 +4847,15 @@ router.put('/patients/:id/medications/:medId/reminder', staffAuth, async (req, r
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// 仅记录创建人（staffId）或超管可修改/停用，避免他人越权改动其他医护录入的用药记录
+// 健康顾问可编辑用药信息；停用仍仅限创建人或超管，编辑不等于审核通过。
 router.patch('/patients/:id/medications/:medId', staffAuth, async (req, res) => {
   try {
     const med = await Medication.findOne({ _id: req.params.medId, user: req.params.id });
     if (!med) return res.status(404).json({ success: false, message: '记录不存在' });
-    if (req.staff.role !== 'superadmin' && String(med.staffId) !== String(req.staff._id)) {
-      return res.status(403).json({ success: false, message: '仅记录创建人可修改' });
+    const isOwner = String(med.staffId) === String(req.staff._id);
+    const canEdit = req.staff.role === 'familyDoctor' && req.body.stopped === undefined;
+    if (req.staff.role !== 'superadmin' && !isOwner && !canEdit) {
+      return res.status(403).json({ success: false, message: '仅记录创建人、健康顾问或超管可编辑；停用仅限创建人或超管' });
     }
     if (med.stopped) return res.status(400).json({ success: false, message: '已停用记录为历史记录，不支持修改或恢复；如需重新使用请新增记录' });
     if (req.body.stopped === false) return res.status(400).json({ success: false, message: '已停用记录不支持恢复' });
@@ -4871,7 +4873,7 @@ router.patch('/patients/:id/medications/:medId', staffAuth, async (req, res) => 
       med.reminder = { ...(med.reminder?.toObject?.() || med.reminder || {}), enabled: false, updatedAt: new Date(), updatedBy: req.staff._id };
       await FollowUp.deleteMany({ sourceType: 'medication_reminder', sourceId: med._id, status: { $in: ['planned', 'in_progress'] }, date: { $gte: new Date() } });
     } else {
-      const allowed = ['name', 'brandName', 'specification', 'dosage', 'method', 'frequency', 'timing', 'startDate', 'endDate', 'purpose', 'note', 'aiStatus'];
+      const allowed = ['name', 'brandName', 'specification', 'dosage', 'method', 'frequency', 'timing', 'startDate', 'endDate', 'purpose', 'note'];
       allowed.forEach(key => { if (req.body[key] !== undefined) med[key] = req.body[key]; });
     }
     await med.save();
