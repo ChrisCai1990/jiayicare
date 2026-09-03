@@ -1648,7 +1648,14 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
 // 年度体检方案/年度管理方案只有健康顾问能编辑/审核，营养干预方案只有营养师——
 // 2026-07-07 用户明确规则：健康顾问生成的方案营养师不能删改，反之亦然，按会员角色分工而非单纯创建人
 const PLAN_TYPE_OWNER_ROLE = { annual_checkup: 'familyDoctor', nutrition: 'nutritionist', medical_assist: 'healthPlanner' };
+function isInpatientAssistPlan(plan) {
+  return plan.type === 'medical_assist' && (
+    plan.content?.serviceScene === 'inpatient_one_stop'
+    || /住院一站式/.test(plan.content?.templateName || '')
+  );
+}
 function checkPlanTypeRole(plan, staffRole) {
+  if (staffRole === 'familyDoctor' && isInpatientAssistPlan(plan)) return true;
   const requiredRole = PLAN_TYPE_OWNER_ROLE[plan.type];
   if (!requiredRole) return true; // 未限定角色的类型（如医嘱/心理咨询方案）不受此限制
   return staffRole === 'superadmin' || staffRole === requiredRole;
@@ -10943,6 +10950,10 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
     return res.status(403).json({ success: false, message: '仅健康顾问或健康规划师可发起就医协助方案' });
   }
   try {
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) {
+      return res.status(403).json({ success: false, message: '无权为该会员生成方案' });
+    }
     const user = await User.findById(req.params.id)
       .select('name gender age chronicDiseases healthProfile');
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
@@ -10971,6 +10982,12 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
           name: { $regex: order.serviceName.replace(/服务$/, '') },
         }).lean();
       }
+    }
+
+    // 显式选择的模板优先于订单名称，不能借住院订单创建其他类型的方案。
+    const isInpatientOneStop = /住院一站式/.test(matchedTemplate?.name || order?.serviceName || '');
+    if (req.staff.role === 'familyDoctor' && !isInpatientOneStop) {
+      return res.status(403).json({ success: false, message: '健康顾问可创建住院一站式服务方案，其他就医协助方案由健康规划师创建' });
     }
 
     const { chat } = require('../utils/ai');
@@ -11108,6 +11125,7 @@ ${templateBlock}
       year: new Date().getFullYear(),
       items: items.map(i => ({ ...i, status: 'pending' })),
       content: {
+        serviceScene: isInpatientOneStop ? 'inpatient_one_stop' : 'offline_medical',
         aiStatus: 'pending', aiGeneratedBy: req.staff.name || '',
         templateId: usedTemplate?._id || null,
         templateName: usedTemplate?.name || '',
