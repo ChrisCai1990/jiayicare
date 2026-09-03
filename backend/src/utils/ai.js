@@ -76,6 +76,19 @@ async function chat(messages, { systemPrompt, maxTokens = 2000, provider, temper
 // 2026-07-03：imageSource 支持传数组——一份报告被拍成多张照片(如"结论页"+"数据页")时，
 // 把全部图片一次性传给模型，让AI自己理解这是同一份报告的不同部分、输出一份合并结果，
 // 比"分别识别再代码拼接"更可靠。单张图片(原有调用方式，字符串)行为完全不变。
+function toImageDataUrl(source) {
+  const value = String(source || '');
+  if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(value)) return value;
+  const raw = value.replace(/^data:[^;]+;base64,/i, '');
+  // PDF 渲染现在优先输出 JPEG；不能继续把 JPEG 原始字节伪装成 PNG，
+  // 否则视觉模型可能拒绝图片或错误解码。
+  const mime = raw.startsWith('/9j/') ? 'image/jpeg'
+    : raw.startsWith('UklGR') ? 'image/webp'
+      : raw.startsWith('R0lGOD') ? 'image/gif'
+        : 'image/png';
+  return `data:${mime};base64,${raw}`;
+}
+
 async function parseImage(imageSource, prompt, { isUrl = false, model = 'qwen-vl-plus', maxTokens = 3000, timeoutMs = 45000 } = {}) {
   const key = process.env.QWEN_API_KEY;
   if (!key) throw new Error('图像解析需要 QWEN_API_KEY');
@@ -83,7 +96,7 @@ async function parseImage(imageSource, prompt, { isUrl = false, model = 'qwen-vl
   const sources = Array.isArray(imageSource) ? imageSource : [imageSource];
   const imageContents = sources.map(src => isUrl
     ? { type: 'image_url', image_url: { url: src } }
-    : { type: 'image_url', image_url: { url: `data:image/png;base64,${src.replace(/^data:[^;]+;base64,/, '')}` } });
+    : { type: 'image_url', image_url: { url: toImageDataUrl(src) } });
 
   const result = await httpPost(
     `${QWEN_BASE}/chat/completions`,
@@ -105,4 +118,4 @@ function logCall(provider, model, tokensUsed, durationMs, success) {
   console.log(JSON.stringify({ t: new Date().toISOString(), provider, model, tokens: tokensUsed, ms: durationMs, ok: success }));
 }
 
-module.exports = { chat, parseImage, selectProvider };
+module.exports = { chat, parseImage, selectProvider, toImageDataUrl };

@@ -81,7 +81,9 @@ function getPdfPageCount(pdfPath) {
   });
 }
 
-// 转换 PDF 指定页范围为 PNG base64 数组（单批，转完即清理临时文件）
+// 转换 PDF 指定页范围为 JPEG base64 数组（单批，转完即清理临时文件）。
+// 扫描版 PDF 渲染为 PNG 的 CPU/磁盘开销很高：生产实测同一页 JPEG 约 0.9 秒、
+// PNG 约 17 秒。质量 90 的 JPEG 对印刷文字足够，能避免大报告首批转图超时。
 function convertPdfRange(pdfPath, firstPage, lastPage, dpi, crop = null) {
   return new Promise((resolve, reject) => {
     let tmpDir;
@@ -93,7 +95,7 @@ function convertPdfRange(pdfPath, firstPage, lastPage, dpi, crop = null) {
 
     const cropArgs = crop ? ['-x', String(crop.x), '-y', String(crop.y), '-W', String(crop.width), '-H', String(crop.height)] : [];
     execFile('pdftoppm', [
-      '-png', '-r', String(dpi),
+      '-jpeg', '-jpegopt', 'quality=90', '-r', String(dpi),
       ...cropArgs,
       '-f', String(firstPage), '-l', String(lastPage),
       pdfPath, outPrefix,
@@ -107,10 +109,10 @@ function convertPdfRange(pdfPath, firstPage, lastPage, dpi, crop = null) {
       }
       try {
         const files = fs.readdirSync(tmpDir)
-          .filter(f => f.startsWith('page') && f.endsWith('.png'))
+          .filter(f => f.startsWith('page') && /\.(?:jpe?g)$/i.test(f))
           .sort((a, b) => {
-            const na = parseInt((a.match(/(\d+)\.png$/) || [])[1] || '0', 10);
-            const nb = parseInt((b.match(/(\d+)\.png$/) || [])[1] || '0', 10);
+            const na = parseInt((a.match(/(\d+)\.(?:jpe?g)$/i) || [])[1] || '0', 10);
+            const nb = parseInt((b.match(/(\d+)\.(?:jpe?g)$/i) || [])[1] || '0', 10);
             return na - nb;
           });
         const images = files.map(f => fs.readFileSync(path.join(tmpDir, f)).toString('base64'));
@@ -156,7 +158,7 @@ async function convertPdfRangeWithFallback(pdfPath, firstPage, lastPage, dpi) {
 }
 
 /**
- * 把 PDF Buffer 按批次转成 PNG base64 数组，每批处理完后立即释放内存。
+ * 把 PDF Buffer 按批次转成 JPEG base64 数组，每批处理完后立即释放内存。
  * callback(batchImages, batchIndex) 在每批转换完成后被调用；
  * 若不传 callback，则收集所有图片一次返回（仅适合小文件）。
  *
