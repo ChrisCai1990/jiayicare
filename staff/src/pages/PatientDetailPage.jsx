@@ -21,6 +21,7 @@ function PdfDocumentPreview({ src, activePage, onPageChange, title }) {
   const pageRefs = useRef(new Map())
   const resourceRef = useRef(null)
   const renderTasksRef = useRef(new Map())
+  const observedPageRef = useRef(null)
   const [pageCount, setPageCount] = useState(0)
   const [state, setState] = useState({ loading: true, error: '' })
 
@@ -50,10 +51,20 @@ function PdfDocumentPreview({ src, activePage, onPageChange, title }) {
   useEffect(() => {
     if (!pageCount) return
     let cancelled = false
-    const renderAllPages = async () => {
+    const keepPages = new Set(Array.from({ length: 5 }, (_, i) => activePage - 2 + i).filter(pageNum => pageNum >= 1 && pageNum <= pageCount))
+    const renderVisiblePages = async () => {
       try {
         const doc = await resourceRef.current?.doc
-        const pagesToRender = [activePage, ...Array.from({ length: pageCount }, (_, i) => i + 1).filter(pageNum => pageNum !== activePage)]
+        // 只保留当前页及相邻两页的高分辨率画布；整份 PDF 文档连接仍保存在内存，
+        // 因而远页再次进入窗口时只重新绘制，不会重新下载原件。
+        canvasRefs.current.forEach((canvas, pageNum) => {
+          if (!keepPages.has(pageNum) && canvas.dataset.rendered === 'true') {
+            canvas.width = 0
+            canvas.height = 0
+            canvas.dataset.rendered = ''
+          }
+        })
+        const pagesToRender = [activePage, ...[activePage - 1, activePage + 1, activePage - 2, activePage + 2].filter(pageNum => keepPages.has(pageNum) && pageNum !== activePage)]
         let renderedAny = false
         for (const pageNum of pagesToRender) {
           if (cancelled) return
@@ -85,7 +96,7 @@ function PdfDocumentPreview({ src, activePage, onPageChange, title }) {
         if (error?.name !== 'RenderingCancelledException' && !cancelled) setState({ loading: false, error: error.message || 'PDF页面加载失败' })
       }
     }
-    renderAllPages()
+    renderVisiblePages()
     return () => { cancelled = true; renderTasksRef.current.forEach(task => task.cancel()) }
   }, [pageCount, src, activePage])
 
@@ -95,26 +106,35 @@ function PdfDocumentPreview({ src, activePage, onPageChange, title }) {
     const observer = new IntersectionObserver(entries => {
       const visible = entries.filter(entry => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0]
       const page = Number(visible?.target?.dataset?.page)
-      if (page) onPageChange(page)
+      if (page && page !== activePage) {
+        observedPageRef.current = page
+        onPageChange(page)
+      }
     }, { root, threshold: [0.55, 0.75] })
     pageRefs.current.forEach(element => observer.observe(element))
     return () => observer.disconnect()
-  }, [pageCount, onPageChange])
+  }, [pageCount, onPageChange, activePage])
 
   useEffect(() => {
     const target = pageRefs.current.get(activePage)
     const root = containerRef.current
+    // 左侧滚动产生的页码变化不反向跳回页顶；仅右侧选择页码时定位左侧。
+    if (observedPageRef.current === activePage) {
+      observedPageRef.current = null
+      return
+    }
     if (target && root) root.scrollTo({ top: Math.max(0, target.offsetTop - 6), behavior: 'auto' })
   }, [activePage, pageCount])
 
   useEffect(() => () => { renderTasksRef.current.forEach(task => task.cancel()); resourceRef.current?.task?.destroy() }, [])
 
   return <div ref={containerRef} style={{ height: '74vh', position: 'relative', background: '#fff', borderRadius: 6, overflow: 'auto' }}>
-    {state.loading && <div style={{ position: 'sticky', top: 10, zIndex: 1, margin: '10px auto', width: 'fit-content', color: '#4A6558', fontSize: 12, background: '#F6F9F7', padding: '5px 8px', borderRadius: 5 }}>正在一次性加载 PDF 页面…</div>}
+    {state.loading && <div style={{ position: 'sticky', top: 10, zIndex: 1, margin: '10px auto', width: 'fit-content', color: '#4A6558', fontSize: 12, background: '#F6F9F7', padding: '5px 8px', borderRadius: 5 }}>正在加载当前 PDF 页面…</div>}
     {state.error ? <div style={{ padding: 16, color: '#B42318', fontSize: 12 }}>{state.error}</div> : Array.from({ length: pageCount }, (_, i) => {
       const pageNum = i + 1
-      return <div key={pageNum} data-page={pageNum} ref={element => { if (element) pageRefs.current.set(pageNum, element); else pageRefs.current.delete(pageNum) }} style={{ minHeight: 80, padding: '6px 0 10px', display: 'flex', justifyContent: 'center', borderBottom: '1px solid #E0D9CE' }}>
+      return <div key={pageNum} data-page={pageNum} ref={element => { if (element) pageRefs.current.set(pageNum, element); else pageRefs.current.delete(pageNum) }} style={{ minHeight: 720, padding: '6px 0 10px', position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', borderBottom: '1px solid #E0D9CE', background: pageNum === activePage ? '#F6F9F7' : '#fff' }}>
         <canvas ref={element => { if (element) canvasRefs.current.set(pageNum, element); else canvasRefs.current.delete(pageNum) }} aria-label={`${title}第${pageNum}页`} />
+        {pageNum !== activePage && <span style={{ position: 'absolute', color: '#8AA89C', fontSize: 11, marginTop: 12 }}>第 {pageNum} 页</span>}
       </div>
     })}
   </div>
