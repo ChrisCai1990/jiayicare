@@ -9781,13 +9781,22 @@ async function runReportParse(reportId) {
     if (isPdf) {
       const pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
       const isComprehensiveCheckup = report.type === 'annual';
+      // 大型扫描件没有文字层；若首轮采用 max、双次重试及逐页覆盖复核，
+      // 一个 8 页批次最坏会等待数十分钟，队列会长期停在“识别中”。
+      // 首轮优先让医生拿到可审核草稿；遗漏项仍可由既有的逐页补提功能处理。
+      const isLargeScannedPdf = pdfBuf.length >= 10 * 1024 * 1024;
       const baseDpi = useShaoyifuTemplate ? 160 : ((useZheyiTemplate || isComprehensiveCheckup) ? 144 : 96);
-      console.log(`[parse-ai] PDF开始 ${reportId} 大小${(pdfBuf.length/1024/1024).toFixed(1)}MB 分批处理(每批8页/${baseDpi}dpi${useZheyiTemplate ? '/浙一P6-P15' : ''})`);
+      console.log(`[parse-ai] PDF开始 ${reportId} 大小${(pdfBuf.length/1024/1024).toFixed(1)}MB 分批处理(每批8页/${baseDpi}dpi${useZheyiTemplate ? '/浙一P6-P15' : ''}${isLargeScannedPdf ? '/快速扫描模式' : ''})`);
 
       // 邵逸夫21页模板含大量小字号双栏表格，96dpi/plus会稳定漏掉右栏，改为160dpi/max。
       // 同时模板规则会跳过小结及重复报告页，因此实际模型调用页数反而更少。
-      const VL_MODEL = (useShaoyifuTemplate || useZheyiTemplate || isComprehensiveCheckup) ? 'qwen-vl-max' : 'qwen-vl-plus';
-      const CONCURRENCY = useShaoyifuTemplate ? 2 : 3;
+      const VL_MODEL = isLargeScannedPdf
+        ? 'qwen-vl-plus'
+        : (useShaoyifuTemplate || useZheyiTemplate || isComprehensiveCheckup) ? 'qwen-vl-max' : 'qwen-vl-plus';
+      const CONCURRENCY = isLargeScannedPdf ? 3 : (useShaoyifuTemplate ? 2 : 3);
+      const FIRST_PASS_ATTEMPTS = isLargeScannedPdf ? 1 : 2;
+      const FIRST_PASS_MAX_TOKENS = isLargeScannedPdf ? 4096 : (useShaoyifuTemplate || useZheyiTemplate || isComprehensiveCheckup) ? 8192 : 4096;
+      const FIRST_PASS_TIMEOUT_MS = isLargeScannedPdf ? 45000 : (useShaoyifuTemplate || useZheyiTemplate || isComprehensiveCheckup) ? 120000 : 45000;
       const BATCH_SIZE = 8;
       const DPI = baseDpi;
 
@@ -9822,7 +9831,7 @@ async function runReportParse(reportId) {
                 batchResults[i] = { pageType: 'template_skip', skipPage: true, items: [], _templateSkip: true };
                 continue;
               }
-              for (let attempt = 0; attempt < 2; attempt++) {
+              for (let attempt = 0; attempt < FIRST_PASS_ATTEMPTS; attempt++) {
                 try {
                   const firstPassPrompt = report.type === 'body_comp'
                     ? bodyCompositionPrompt
@@ -9830,11 +9839,11 @@ async function runReportParse(reportId) {
                       + (useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : '')
                       + (useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : '');
                   const firstPassModel = report.type === 'body_comp' ? 'qwen-vl-max' : VL_MODEL;
-                  const text = await parseImage(batchImages[i], firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: (useShaoyifuTemplate || useZheyiTemplate || isComprehensiveCheckup) ? 8192 : 4096, timeoutMs: (useShaoyifuTemplate || useZheyiTemplate || isComprehensiveCheckup) ? 120000 : 45000 });
+                  const text = await parseImage(batchImages[i], firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: FIRST_PASS_MAX_TOKENS, timeoutMs: FIRST_PASS_TIMEOUT_MS });
                   const p = safeParseJSON(text);
                   if (p) { batchResults[i] = p; break; }
-                  if (attempt === 1) console.log(`[parse-ai] 页${i + 1}解析失败 raw(前200)=${String(text).slice(0, 200)}`);
-                } catch (e) { if (attempt === 1) console.log(`[parse-ai] 页${i + 1}异常: ${e.message}`); }
+                  if (attempt === FIRST_PASS_ATTEMPTS - 1) console.log(`[parse-ai] 页${i + 1}解析失败 raw(前200)=${String(text).slice(0, 200)}`);
+                } catch (e) { if (attempt === FIRST_PASS_ATTEMPTS - 1) console.log(`[parse-ai] 页${i + 1}异常: ${e.message}`); }
               }
             }
           };
@@ -9867,7 +9876,7 @@ async function runReportParse(reportId) {
 
       // 每个明细页做第二遍覆盖复核。首轮返回合法JSON但漏掉整页内容或右栏时，过去会被误记为成功；
       // 复核改用144dpi和max模型，只允许补充首轮遗漏项，再由程序证据键去重。
-      if (report.type !== 'body_comp') {
+      if (report.type !== 'body_comp' && !isLargeScannedPdf) {
         const coveragePages = useShaoyifuTemplate
           ? [4, 5, 6, 7, 8, 9, 10, 11, 20].filter(pageNum => shaoyifuTemplate.needsCoverageAudit(pageNum, allItems))
           : useZheyiTemplate
@@ -9967,6 +9976,8 @@ async function runReportParse(reportId) {
             }
           }
         }
+      } else if (isLargeScannedPdf) {
+        console.log(`[parse-ai] 大扫描PDF ${reportId} 首轮完成后跳过自动覆盖复核，保留给人工按页补提`);
       }
 
       // 数量核对+单页重试：检验单标题写了"N项"但实际条数不够，说明这一页大概率漏提了，只重新识别这一页
