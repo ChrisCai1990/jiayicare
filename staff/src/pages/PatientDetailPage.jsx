@@ -22,8 +22,20 @@ function PdfDocumentPreview({ src, activePage, onPageChange, title }) {
   const resourceRef = useRef(null)
   const renderTasksRef = useRef(new Map())
   const observedPageRef = useRef(null)
+  const renderSizeRef = useRef('')
   const [pageCount, setPageCount] = useState(0)
   const [state, setState] = useState({ loading: true, error: '' })
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
+
+  useEffect(() => {
+    const root = containerRef.current
+    if (!root) return undefined
+    const syncSize = () => setViewportSize({ width: root.clientWidth, height: root.clientHeight })
+    syncSize()
+    const observer = new ResizeObserver(syncSize)
+    observer.observe(root)
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -56,6 +68,18 @@ function PdfDocumentPreview({ src, activePage, onPageChange, title }) {
     const renderVisiblePages = async () => {
       try {
         const doc = await resourceRef.current?.doc
+        // 每页都须在左侧实际可见区域内完整展示；窗口尺寸变化后按新尺寸重绘，
+        // 不能沿用旧画布而让页底被固定操作栏遮住。
+        const renderSize = `${Math.round(viewportSize.width)}x${Math.round(viewportSize.height)}`
+        if (renderSizeRef.current !== renderSize) {
+          renderTasksRef.current.forEach(task => task.cancel())
+          canvasRefs.current.forEach(canvas => {
+            canvas.width = 0
+            canvas.height = 0
+            canvas.dataset.rendered = ''
+          })
+          renderSizeRef.current = renderSize
+        }
         // 只保留当前页及相邻两页的高分辨率画布；整份 PDF 文档连接仍保存在内存，
         // 因而远页再次进入窗口时只重新绘制，不会重新下载原件。
         canvasRefs.current.forEach((canvas, pageNum) => {
@@ -73,7 +97,9 @@ function PdfDocumentPreview({ src, activePage, onPageChange, title }) {
           if (!canvas || canvas.dataset.rendered === 'true') continue
           const page = await doc.getPage(pageNum)
           const base = page.getViewport({ scale: 1 })
-          const scale = Math.min(1.45, 520 / base.width)
+          const availableWidth = Math.max(240, Math.min(520, (viewportSize.width || 520) - 12))
+          const availableHeight = Math.max(240, (viewportSize.height || 720) - 12)
+          const scale = Math.min(1.45, availableWidth / base.width, availableHeight / base.height)
           const viewport = page.getViewport({ scale })
           const ratio = Math.min(window.devicePixelRatio || 1, 2)
           canvas.width = Math.ceil(viewport.width * ratio)
@@ -99,7 +125,7 @@ function PdfDocumentPreview({ src, activePage, onPageChange, title }) {
     }
     renderVisiblePages()
     return () => { cancelled = true; renderTasksRef.current.forEach(task => task.cancel()) }
-  }, [pageCount, src, activePage])
+  }, [pageCount, src, activePage, viewportSize])
 
   useEffect(() => {
     const root = containerRef.current
@@ -131,11 +157,12 @@ function PdfDocumentPreview({ src, activePage, onPageChange, title }) {
 
   // 高度由审核弹窗内容区决定。此前固定为 74vh，会在小屏或带固定底部操作栏时
   // 超出可用区域，造成 PDF 页尾像是被截断；滚动仍只在此预览区内进行。
+  const pageSlotHeight = Math.max(240, viewportSize.height || 720)
   return <div ref={containerRef} style={{ height: '100%', minHeight: 0, position: 'relative', background: '#fff', borderRadius: 6, overflow: 'auto' }}>
     {state.loading && <div style={{ position: 'sticky', top: 10, zIndex: 1, margin: '10px auto', width: 'fit-content', color: '#4A6558', fontSize: 12, background: '#F6F9F7', padding: '5px 8px', borderRadius: 5 }}>正在加载当前 PDF 页面…</div>}
     {state.error ? <div style={{ padding: 16, color: '#B42318', fontSize: 12 }}>{state.error}</div> : Array.from({ length: pageCount }, (_, i) => {
       const pageNum = i + 1
-      return <div key={pageNum} data-page={pageNum} ref={element => { if (element) pageRefs.current.set(pageNum, element); else pageRefs.current.delete(pageNum) }} style={{ minHeight: 720, padding: '6px 0 10px', position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', borderBottom: '1px solid #E0D9CE', background: pageNum === activePage ? '#F6F9F7' : '#fff' }}>
+      return <div key={pageNum} data-page={pageNum} ref={element => { if (element) pageRefs.current.set(pageNum, element); else pageRefs.current.delete(pageNum) }} style={{ minHeight: pageSlotHeight, padding: '6px 0 10px', position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', borderBottom: '1px solid #E0D9CE', background: pageNum === activePage ? '#F6F9F7' : '#fff' }}>
         <canvas ref={element => { if (element) canvasRefs.current.set(pageNum, element); else canvasRefs.current.delete(pageNum) }} aria-label={`${title}第${pageNum}页`} />
         {pageNum !== activePage && <span style={{ position: 'absolute', color: '#8AA89C', fontSize: 11, marginTop: 12 }}>第 {pageNum} 页</span>}
       </div>
