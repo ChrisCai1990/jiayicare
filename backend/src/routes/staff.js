@@ -9858,7 +9858,9 @@ async function runReportParse(reportId) {
 
       let allItems = [];
       const summaries = [];
-      let institution = report.institution;
+      // 机构名称必须优先来自当前原件。旧档案中的 hospital/institution 可能是
+      // 上传时的简称或历史误填，不能因为非空就覆盖首页可见的真实机构。
+      let institution = '';
       let checkDate = report.checkDate;
       let totalPageCount = 0;
       let okPages = 0;
@@ -10265,7 +10267,8 @@ async function runReportParse(reportId) {
     const bufs = report.fileUrls && report.fileUrls.length ? await fetchReportBuffers(report, UPLOADS_DIR) : [await fetchReportBuffer(report, UPLOADS_DIR)];
     let imageItems = [];
     const imageSummaries = [];
-    let imageInstitution = report.institution;
+    // 与 PDF 一致：图片原件中识别出的机构优先，旧元数据仅作为最终兜底。
+    let imageInstitution = '';
     let imageCheckDate = report.checkDate;
     let imageOkCount = 0;
     let lastRawText = '';

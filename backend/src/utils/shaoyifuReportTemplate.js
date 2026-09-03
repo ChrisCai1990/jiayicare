@@ -2,7 +2,10 @@ const text = value => String(value || '').trim();
 
 function isShaoyifuReport(report) {
   const haystack = [report?.title, report?.institution, report?.hospital].map(text).join(' ');
-  return /邵逸夫|Sir\s*Run\s*Run\s*Shaw/i.test(haystack);
+  // 模板会改变分页提示、复核页和模型参数，不能把上传时的简称或历史误填当成
+  // 版式证据。只接受原件通常会完整印出的官方中英文机构名；其余走通用解析，
+  // 宁可少用模板，也不能把别院报告套进固定页规则。
+  return /浙江大学医学院附属邵逸夫医院|Sir\s*Run\s*Run\s*Shaw\s*Hospital/i.test(haystack);
 }
 
 function pageMode(pageNum) {
