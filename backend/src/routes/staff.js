@@ -87,6 +87,33 @@ const activeReportParseJobs = new Set();
 const reportPagePreviewCache = new Map();
 const REPORT_PAGE_PREVIEW_CACHE_TTL_MS = 5 * 60 * 1000;
 const REPORT_PAGE_PREVIEW_CACHE_MAX = 24;
+// 页图缓存只能避免重复转同一页；大扫描 PDF 若每一页都重新下载原件，会把一份
+// 50MB 报告放大成数百 MB 的 OSS 读取。原件 Buffer 也仅在当前进程短时保留，
+// 以报告/文件绑定，并与页图同样在 5 分钟后释放。
+const reportPdfPreviewCache = new Map();
+const reportPdfPreviewInflight = new Map();
+const REPORT_PDF_PREVIEW_CACHE_MAX = 2;
+
+async function getCachedReportPdfBuffer(report, fileIndex) {
+  const cacheKey = `${report._id}:${fileIndex}`;
+  const cached = reportPdfPreviewCache.get(cacheKey);
+  if (cached?.expiresAt > Date.now()) return cached.buffer;
+  reportPdfPreviewCache.delete(cacheKey);
+  if (reportPdfPreviewInflight.has(cacheKey)) return reportPdfPreviewInflight.get(cacheKey);
+  const pending = (async () => {
+    const { fetchReportBuffer } = require('../utils/pdf');
+    const buffer = await fetchReportBuffer(report, UPLOADS_DIR);
+    reportPdfPreviewCache.set(cacheKey, { buffer, expiresAt: Date.now() + REPORT_PAGE_PREVIEW_CACHE_TTL_MS });
+    while (reportPdfPreviewCache.size > REPORT_PDF_PREVIEW_CACHE_MAX) reportPdfPreviewCache.delete(reportPdfPreviewCache.keys().next().value);
+    return buffer;
+  })();
+  reportPdfPreviewInflight.set(cacheKey, pending);
+  try {
+    return await pending;
+  } finally {
+    reportPdfPreviewInflight.delete(cacheKey);
+  }
+}
 
 function withSignedHealthRecord(record) {
   return withSafeHealthRecordImages(record, signStoredUrl);
@@ -2205,8 +2232,8 @@ router.get('/medical-reports/:id/preview-page/:index', async (req, res) => {
     let imageBuffer = cached?.expiresAt > Date.now() ? cached.buffer : null;
     if (!imageBuffer) {
       reportPagePreviewCache.delete(cacheKey);
-      const { fetchReportBuffer, renderSinglePage } = require('../utils/pdf');
-      const pdfBuffer = await fetchReportBuffer(report, UPLOADS_DIR);
+      const { renderSinglePage } = require('../utils/pdf');
+      const pdfBuffer = await getCachedReportPdfBuffer(report, fileIndex);
       const imageBase64 = await renderSinglePage(pdfBuffer, pageNum, 110);
       if (!imageBase64) return res.status(404).json({ success: false, message: 'PDF页面不存在' });
       imageBuffer = Buffer.from(imageBase64, 'base64');

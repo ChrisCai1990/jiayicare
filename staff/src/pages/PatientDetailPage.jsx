@@ -20,19 +20,27 @@ function PdfDocumentPreview({ src, activePage, onPageChange, title }) {
   const pageRefs = useRef(new Map())
   const resourceRef = useRef(null)
   const observedPageRef = useRef(null)
+  const previewSrcRef = useRef({ key: '', src: '' })
+  const pageQueueRef = useRef([])
+  const queuedPagesRef = useRef(new Set())
   const [pageCount, setPageCount] = useState(0)
   const [state, setState] = useState({ loading: true, error: '' })
   const [loadedPages, setLoadedPages] = useState(() => new Set())
+  // 刷新报告数据会重新签发预览 token；同一份原件在 token 有效期内继续使用
+  // 初始 URL，避免每次轮询都销毁 PDF 会话并从第 1 页重新预加载。
+  const sourceKey = src.replace(/([?&])token=[^&]+/g, '')
+  if (previewSrcRef.current.key !== sourceKey) previewSrcRef.current = { key: sourceKey, src }
+  const previewSrc = previewSrcRef.current.src
 
   useEffect(() => {
     let cancelled = false
     const load = async () => {
       try {
         let resource = resourceRef.current
-        if (!resource || resource.src !== src) {
+        if (!resource || resource.src !== previewSrc) {
           resource?.task?.destroy()
-          const task = getDocument({ url: src, httpHeaders: getToken() ? { Authorization: `Bearer ${getToken()}` } : {}, rangeChunkSize: 256 * 1024, disableAutoFetch: true, disableStream: true })
-          resource = { src, task, doc: task.promise }
+          const task = getDocument({ url: previewSrc, httpHeaders: getToken() ? { Authorization: `Bearer ${getToken()}` } : {}, rangeChunkSize: 256 * 1024, disableAutoFetch: true, disableStream: true })
+          resource = { src: previewSrc, task, doc: task.promise }
           resourceRef.current = resource
         }
         setState({ loading: true, error: '' })
@@ -44,29 +52,23 @@ function PdfDocumentPreview({ src, activePage, onPageChange, title }) {
     }
     load()
     return () => { cancelled = true }
-  }, [src])
+  }, [previewSrc])
 
-  // 原页只保存在当前审核弹窗的内存里：先显示当前页，再逐页预加载。
-  // 关闭弹窗组件卸载即释放，不使用浏览器持久缓存，也不会在切回已看过的页时重复下载。
+  // 每次只在上一张页图真正完成后再开始下一张，防止大扫描 PDF 一打开就并发
+  // 转完所有页面。已请求页保留在当前弹窗 DOM 中，切页不会重新取图。
   useEffect(() => {
-    setLoadedPages(new Set())
-  }, [src])
+    if (!pageCount) return
+    const initialPage = Math.min(Math.max(activePage || 1, 1), pageCount)
+    pageQueueRef.current = [initialPage, ...Array.from({ length: pageCount }, (_, i) => i + 1).filter(page => page !== initialPage)]
+    queuedPagesRef.current = new Set([initialPage])
+    setLoadedPages(new Set([initialPage]))
+  }, [pageCount, previewSrc])
 
   useEffect(() => {
-    if (!pageCount) return undefined
-    let cancelled = false
-    const pages = [activePage, ...Array.from({ length: pageCount }, (_, i) => i + 1).filter(page => page !== activePage)]
-    let cursor = 0
-    const preload = () => {
-      if (cancelled || cursor >= pages.length) return
-      const page = pages[cursor++]
-      setLoadedPages(previous => previous.has(page) ? previous : new Set([...previous, page]))
-      // 扫描 PDF 单页转图有 CPU 开销，限速渐进预加载，避免一次并发 30 页拖慢 OCR worker。
-      window.setTimeout(preload, page === activePage ? 0 : 750)
-    }
-    preload()
-    return () => { cancelled = true }
-  }, [pageCount, src, activePage])
+    if (!pageCount || !activePage || queuedPagesRef.current.has(activePage)) return
+    queuedPagesRef.current.add(activePage)
+    setLoadedPages(previous => new Set([...previous, activePage]))
+  }, [pageCount, previewSrc, activePage])
 
   useEffect(() => {
     const root = containerRef.current
@@ -96,14 +98,20 @@ function PdfDocumentPreview({ src, activePage, onPageChange, title }) {
 
   useEffect(() => () => { resourceRef.current?.task?.destroy() }, [])
 
-  const pageImageUrl = pageNum => `${src.replace('/preview/', '/preview-page/')}${src.includes('?') ? '&' : '?'}page=${pageNum}`
+  const queueNextPage = () => {
+    const next = pageQueueRef.current.find(page => !queuedPagesRef.current.has(page))
+    if (!next) return
+    queuedPagesRef.current.add(next)
+    setLoadedPages(previous => new Set([...previous, next]))
+  }
+  const pageImageUrl = pageNum => `${previewSrc.replace('/preview/', '/preview-page/')}${previewSrc.includes('?') ? '&' : '?'}page=${pageNum}`
   return <div ref={containerRef} style={{ height: '100%', minHeight: 0, position: 'relative', background: '#fff', borderRadius: 6, overflow: 'auto', scrollSnapType: 'y mandatory' }}>
     {state.loading && <div style={{ position: 'sticky', top: 10, zIndex: 1, margin: '10px auto', width: 'fit-content', color: '#4A6558', fontSize: 12, background: '#F6F9F7', padding: '5px 8px', borderRadius: 5 }}>正在加载当前 PDF 页面…</div>}
     {state.error ? <div style={{ padding: 16, color: '#B42318', fontSize: 12 }}>{state.error}</div> : Array.from({ length: pageCount }, (_, i) => {
       const pageNum = i + 1
       return <div key={pageNum} data-page={pageNum} ref={element => { if (element) pageRefs.current.set(pageNum, element); else pageRefs.current.delete(pageNum) }} style={{ height: '100%', minHeight: '100%', boxSizing: 'border-box', padding: '6px 0 10px', position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', borderBottom: '1px solid #E0D9CE', background: pageNum === activePage ? '#F6F9F7' : '#fff', scrollSnapAlign: 'start', scrollSnapStop: 'always' }}>
         {loadedPages.has(pageNum)
-          ? <img src={pageImageUrl(pageNum)} alt={`${title}第${pageNum}页`} onLoad={() => { if (pageNum === activePage) setState({ loading: false, error: '' }) }} onError={() => { if (pageNum === activePage) setState({ loading: false, error: 'PDF页面加载失败，请重试' }) }} style={{ display: pageNum === activePage ? 'block' : 'none', maxWidth: 'calc(100% - 12px)', maxHeight: 'calc(100% - 18px)', objectFit: 'contain', borderRadius: 3 }} />
+          ? <img src={pageImageUrl(pageNum)} alt={`${title}第${pageNum}页`} onLoad={() => { queueNextPage(); if (pageNum === activePage) setState({ loading: false, error: '' }) }} onError={() => { queueNextPage(); if (pageNum === activePage) setState({ loading: false, error: 'PDF页面加载失败，请重试' }) }} style={{ display: pageNum === activePage ? 'block' : 'none', maxWidth: 'calc(100% - 12px)', maxHeight: 'calc(100% - 18px)', objectFit: 'contain', borderRadius: 3 }} />
           : <span style={{ color: '#8AA89C', fontSize: 11 }}>第 {pageNum} 页</span>}
       </div>
     })}
