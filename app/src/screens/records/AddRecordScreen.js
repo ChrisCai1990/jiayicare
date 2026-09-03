@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { recordsAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import BloodPressurePhoto from '../../components/BloodPressurePhoto';
 
 const RECORD_TYPES = [
   { id: 'bloodPressure', label: '血压', icon: 'heart', color: colors.danger, fields: [
@@ -327,6 +328,7 @@ export default function AddRecordScreen({ navigation, route }) {
             </View>
           </View>
 
+          {activeType.id === 'bloodPressure' && <BloodPressurePhoto onSaved={() => navigation.goBack()} />}
           {/* Measure options */}
           {MEASURE_OPTIONS[activeType.id] && (
             <View style={styles.measureRow}>

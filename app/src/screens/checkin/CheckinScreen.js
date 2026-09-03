@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { recordsAPI } from '../../services/api';
+import BloodPressurePhoto from '../../components/BloodPressurePhoto';
 
 // 本地日期字符串（YYYY-MM-DD）——不能用 toISOString()，那是 UTC 日期
 function toLocalDateStr(d) {
@@ -537,7 +538,8 @@ export default function CheckinScreen({ navigation }) {
       {/* 生理指标打卡弹窗（血压/体重/睡眠/心率/血糖），原地填写，独立提交 */}
       <Modal visible={!!measureModal} transparent animationType="slide" onRequestClose={() => setMeasureModal(null)}>
         <View style={styles.checkinModalOverlay}>
-          <View style={styles.checkinModalBox}>
+          <View style={[styles.checkinModalBox, { maxHeight: '90%' }]}>
+            <ScrollView style={{ maxHeight: '100%' }} keyboardShouldPersistTaps="handled">
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 {measureModal && <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: measureModal.color + '20', alignItems: 'center', justifyContent: 'center' }}>
@@ -550,6 +552,7 @@ export default function CheckinScreen({ navigation }) {
               </TouchableOpacity>
             </View>
 
+            {measureModal?.measureType === 'bloodPressure' && <BloodPressurePhoto onSaved={() => { setMeasureModal(null); loadTodayStatus(); }} />}
             {measureModal && MEASURE_OPTIONS[measureModal.measureType] && (
               <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
                 {MEASURE_OPTIONS[measureModal.measureType].map(opt => {
@@ -629,6 +632,7 @@ export default function CheckinScreen({ navigation }) {
                 <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff', marginLeft: 4 }}>{measureSaving ? '保存中...' : '完成打卡'}</Text>
               </TouchableOpacity>
             </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>

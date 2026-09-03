@@ -1,6 +1,12 @@
 const mongoose = require('mongoose');
 
 const healthRecordSchema = new mongoose.Schema({
+  photoRecognition: {
+    imageHash: String,
+    originalValues: mongoose.Schema.Types.Mixed,
+    confirmedAt: Date,
+    provider: String,
+  },
   user:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   tenantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', default: null, index: true }, // 所属机构（多租户隔离键）
   category: { type: String, required: true }, // vitals | metabolism | lifestyle | 生命体征 | 体重代谢 | 生活方式
@@ -59,6 +65,10 @@ const healthRecordSchema = new mongoose.Schema({
 // 索引：按用户+时间查询
 healthRecordSchema.index({ user: 1, recordedAt: -1 });
 healthRecordSchema.index({ user: 1, type: 1, recordedAt: -1 });
+healthRecordSchema.index({ user: 1, 'photoRecognition.imageHash': 1 }, {
+  unique: true,
+  partialFilterExpression: { 'photoRecognition.imageHash': { $type: 'string' } },
+});
 
 healthRecordSchema.pre(/^find/, function excludeSoftDeleted(next) {
   if (!Object.prototype.hasOwnProperty.call(this.getQuery(), 'deletedAt')) this.where({ deletedAt: null });

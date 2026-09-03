@@ -153,6 +153,7 @@ export const userAPI = {
 
 // ── Health Records ────────────────────────────────────────────────
 export const recordsAPI = {
+  recognizeBloodPressure: (image) => request('/records/recognize-blood-pressure', { method: 'POST', body: JSON.stringify({ image, consent: true }), timeout: 60000 }),
   list: (params = {}) => {
     const q = Object.keys(params).filter(k => params[k] != null && params[k] !== '')
       .map(k => `${k}=${encodeURIComponent(params[k])}`).join('&');

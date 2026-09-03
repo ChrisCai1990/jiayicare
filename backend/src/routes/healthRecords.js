@@ -9,6 +9,8 @@ const { calcStatus } = require('../utils/healthRecordStatus');
 const { uploadBase64, signStoredUrl } = require('../utils/oss');
 const { incomingImagePayloads, withSafeHealthRecordImages, withoutLegacyImageExtra } = require('../utils/healthRecordImages');
 const router = express.Router();
+const { validateConfirmation } = require('../utils/bloodPressurePhoto');
+router.use(require('./bloodPressurePhoto'));
 
 function withSignedHealthImages(record) {
   return withSafeHealthRecordImages(record, signStoredUrl);
@@ -198,6 +200,15 @@ router.get('/today-status', auth, async (req, res) => {
 router.post('/', auth, async (req, res) => {
   try {
     const { category, type, label, value, unit, extra, note, recordedAt, imageUrl = '', images = [] } = req.body;
+    let photoRecognition;
+    try { photoRecognition = validateConfirmation(req.body, req.user._id); }
+    catch (error) { return res.status(400).json({ success: false, message: error.message }); }
+    if (photoRecognition) {
+      const duplicate = await HealthRecord.findOne({
+        user: req.user._id, 'photoRecognition.imageHash': photoRecognition.imageHash, deletedAt: { $exists: true },
+      });
+      if (duplicate) return res.status(409).json({ success: false, message: '这张图片已经提交过，请在健康记录中查看，勿重复录入' });
+    }
 
     if (!type || value === undefined || value === null || value === '') {
       return res.status(400).json({ success: false, message: '类型和数值不能为空' });
@@ -234,6 +245,7 @@ router.post('/', auth, async (req, res) => {
       recordedAt: recordedAt ? new Date(recordedAt) : new Date(),
       aiAlertStatus,
       recordedBy: { source: 'customer' },
+      photoRecognition: photoRecognition || undefined,
       // 客户自报不适先进入健管专员核实队列，不能未经确认直接交给健康顾问。
       symptomWorkflow: type === 'symptom' ? { status: 'pending_manager' } : undefined,
     });
@@ -294,6 +306,7 @@ router.post('/', auth, async (req, res) => {
 
     res.status(201).json({ success: true, data: record, message: '记录成功' });
   } catch (err) {
+    if (err.code === 11000) return res.status(409).json({ success: false, message: '这张图片已经提交过，请在健康记录中查看' });
     res.status(500).json({ success: false, message: '保存记录失败', error: err.message });
   }
 });

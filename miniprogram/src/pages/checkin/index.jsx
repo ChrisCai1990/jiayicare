@@ -4,6 +4,7 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { recordsAPI } from '../../services/api';
+import BloodPressurePhoto from '../../components/BloodPressurePhoto';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
 import { chooseImageWithPrivacy, showImagePickerError } from '../../utils/imagePicker';
@@ -494,6 +495,7 @@ export default function CheckinPage() {
               <View onClick={() => setMeasureModal(null)}><Text style={{ fontSize: '20px', color: colors.textMuted }}>×</Text></View>
             </View>
 
+            {measureModal.measureType === 'bloodPressure' && <BloodPressurePhoto onSaved={() => { setMeasureModal(null); loadTodayStatus(); }} />}
             {MEASURE_OPTIONS[measureModal.measureType] && (
               <View style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
                 {MEASURE_OPTIONS[measureModal.measureType].map((opt) => (

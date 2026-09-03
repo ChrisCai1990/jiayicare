@@ -114,6 +114,7 @@ export const userAPI = {
 
 // ── Health Records ────────────────────────────────────────────────
 export const recordsAPI = {
+  recognizeBloodPressure: (image) => request('/records/recognize-blood-pressure', { method: 'POST', body: JSON.stringify({ image, consent: true }), timeout: 60000 }),
   list: (params = {}) => {
     const q = new URLSearchParams(params).toString();
     return request(`/records${q ? '?' + q : ''}`);
