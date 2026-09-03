@@ -129,7 +129,9 @@ function PdfDocumentPreview({ src, activePage, onPageChange, title }) {
 
   useEffect(() => () => { renderTasksRef.current.forEach(task => task.cancel()); resourceRef.current?.task?.destroy() }, [])
 
-  return <div ref={containerRef} style={{ height: '74vh', position: 'relative', background: '#fff', borderRadius: 6, overflow: 'auto' }}>
+  // 高度由审核弹窗内容区决定。此前固定为 74vh，会在小屏或带固定底部操作栏时
+  // 超出可用区域，造成 PDF 页尾像是被截断；滚动仍只在此预览区内进行。
+  return <div ref={containerRef} style={{ height: '100%', minHeight: 0, position: 'relative', background: '#fff', borderRadius: 6, overflow: 'auto' }}>
     {state.loading && <div style={{ position: 'sticky', top: 10, zIndex: 1, margin: '10px auto', width: 'fit-content', color: '#4A6558', fontSize: 12, background: '#F6F9F7', padding: '5px 8px', borderRadius: 5 }}>正在加载当前 PDF 页面…</div>}
     {state.error ? <div style={{ padding: 16, color: '#B42318', fontSize: 12 }}>{state.error}</div> : Array.from({ length: pageCount }, (_, i) => {
       const pageNum = i + 1
