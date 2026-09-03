@@ -15,15 +15,18 @@ GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
 // 审核 PDF 不能依赖浏览器内置阅读器：它不会可靠响应同一 iframe 的 #page 变化，
 // 且切换时可能重新读取大文件。pdf.js 会保留同一份 Range 文档会话，只渲染目标页。
-function PdfPagePreview({ src, pageNum, title }) {
-  const canvasRef = useRef(null)
+function PdfDocumentPreview({ src, activePage, onPageChange, title }) {
+  const containerRef = useRef(null)
+  const canvasRefs = useRef(new Map())
+  const pageRefs = useRef(new Map())
   const resourceRef = useRef(null)
-  const renderTaskRef = useRef(null)
+  const renderTasksRef = useRef(new Map())
+  const [pageCount, setPageCount] = useState(0)
   const [state, setState] = useState({ loading: true, error: '' })
 
   useEffect(() => {
     let cancelled = false
-    const render = async () => {
+    const load = async () => {
       try {
         let resource = resourceRef.current
         if (!resource || resource.src !== src) {
@@ -35,38 +38,85 @@ function PdfPagePreview({ src, pageNum, title }) {
         setState({ loading: true, error: '' })
         const doc = await resource.doc
         if (cancelled) return
-        if (pageNum < 1 || pageNum > doc.numPages) throw new Error(`原报告没有第${pageNum}页`)
-        const page = await doc.getPage(pageNum)
-        const base = page.getViewport({ scale: 1 })
-        const scale = Math.min(1.45, 520 / base.width)
-        const viewport = page.getViewport({ scale })
-        const canvas = canvasRef.current
-        if (!canvas || cancelled) return
-        const ratio = Math.min(window.devicePixelRatio || 1, 2)
-        canvas.width = Math.ceil(viewport.width * ratio)
-        canvas.height = Math.ceil(viewport.height * ratio)
-        canvas.style.width = `${Math.ceil(viewport.width)}px`
-        canvas.style.height = `${Math.ceil(viewport.height)}px`
-        const context = canvas.getContext('2d')
-        context.setTransform(ratio, 0, 0, ratio, 0, 0)
-        renderTaskRef.current?.cancel()
-        const task = page.render({ canvasContext: context, viewport })
-        renderTaskRef.current = task
-        await task.promise
+        setPageCount(doc.numPages)
+      } catch (error) {
+        if (!cancelled) setState({ loading: false, error: error.message || 'PDF页面加载失败' })
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [src])
+
+  useEffect(() => {
+    if (!pageCount) return
+    let cancelled = false
+    const renderAllPages = async () => {
+      try {
+        const doc = await resourceRef.current?.doc
+        const pagesToRender = [activePage, ...Array.from({ length: pageCount }, (_, i) => i + 1).filter(pageNum => pageNum !== activePage)]
+        let renderedAny = false
+        for (const pageNum of pagesToRender) {
+          if (cancelled) return
+          const canvas = canvasRefs.current.get(pageNum)
+          if (!canvas || canvas.dataset.rendered === 'true') continue
+          const page = await doc.getPage(pageNum)
+          const base = page.getViewport({ scale: 1 })
+          const scale = Math.min(1.45, 520 / base.width)
+          const viewport = page.getViewport({ scale })
+          const ratio = Math.min(window.devicePixelRatio || 1, 2)
+          canvas.width = Math.ceil(viewport.width * ratio)
+          canvas.height = Math.ceil(viewport.height * ratio)
+          canvas.style.width = `${Math.ceil(viewport.width)}px`
+          canvas.style.height = `${Math.ceil(viewport.height)}px`
+          const context = canvas.getContext('2d')
+          context.setTransform(ratio, 0, 0, ratio, 0, 0)
+          const task = page.render({ canvasContext: context, viewport })
+          renderTasksRef.current.set(pageNum, task)
+          await task.promise
+          canvas.dataset.rendered = 'true'
+          // 先显示当前页，剩余页继续在后台缓存；无需等整份大 PDF 绘制完成。
+          if (!renderedAny && !cancelled) {
+            renderedAny = true
+            setState({ loading: false, error: '' })
+          }
+        }
         if (!cancelled) setState({ loading: false, error: '' })
       } catch (error) {
         if (error?.name !== 'RenderingCancelledException' && !cancelled) setState({ loading: false, error: error.message || 'PDF页面加载失败' })
       }
     }
-    render()
-    return () => { cancelled = true; renderTaskRef.current?.cancel() }
-  }, [src, pageNum])
+    renderAllPages()
+    return () => { cancelled = true; renderTasksRef.current.forEach(task => task.cancel()) }
+  }, [pageCount, src, activePage])
 
-  useEffect(() => () => resourceRef.current?.task?.destroy(), [])
+  useEffect(() => {
+    const root = containerRef.current
+    if (!root || !pageCount) return
+    const observer = new IntersectionObserver(entries => {
+      const visible = entries.filter(entry => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0]
+      const page = Number(visible?.target?.dataset?.page)
+      if (page) onPageChange(page)
+    }, { root, threshold: [0.55, 0.75] })
+    pageRefs.current.forEach(element => observer.observe(element))
+    return () => observer.disconnect()
+  }, [pageCount, onPageChange])
 
-  return <div style={{ minHeight: 260, position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', background: '#fff', borderRadius: 6, overflow: 'auto' }}>
-    {state.loading && <div style={{ position: 'absolute', top: 12, color: '#4A6558', fontSize: 12 }}>正在加载原报告第 {pageNum} 页…</div>}
-    {state.error ? <div style={{ padding: 16, color: '#B42318', fontSize: 12 }}>{state.error}</div> : <canvas ref={canvasRef} aria-label={title} style={{ display: state.loading ? 'none' : 'block' }} />}
+  useEffect(() => {
+    const target = pageRefs.current.get(activePage)
+    const root = containerRef.current
+    if (target && root) root.scrollTo({ top: Math.max(0, target.offsetTop - 6), behavior: 'auto' })
+  }, [activePage, pageCount])
+
+  useEffect(() => () => { renderTasksRef.current.forEach(task => task.cancel()); resourceRef.current?.task?.destroy() }, [])
+
+  return <div ref={containerRef} style={{ height: '74vh', position: 'relative', background: '#fff', borderRadius: 6, overflow: 'auto' }}>
+    {state.loading && <div style={{ position: 'sticky', top: 10, zIndex: 1, margin: '10px auto', width: 'fit-content', color: '#4A6558', fontSize: 12, background: '#F6F9F7', padding: '5px 8px', borderRadius: 5 }}>正在一次性加载 PDF 页面…</div>}
+    {state.error ? <div style={{ padding: 16, color: '#B42318', fontSize: 12 }}>{state.error}</div> : Array.from({ length: pageCount }, (_, i) => {
+      const pageNum = i + 1
+      return <div key={pageNum} data-page={pageNum} ref={element => { if (element) pageRefs.current.set(pageNum, element); else pageRefs.current.delete(pageNum) }} style={{ minHeight: 80, padding: '6px 0 10px', display: 'flex', justifyContent: 'center', borderBottom: '1px solid #E0D9CE' }}>
+        <canvas ref={element => { if (element) canvasRefs.current.set(pageNum, element); else canvasRefs.current.delete(pageNum) }} aria-label={`${title}第${pageNum}页`} />
+      </div>
+    })}
   </div>
 }
 
@@ -10716,7 +10766,7 @@ export default function PatientDetailPage() {
                           return isPdf ? (
                             <div key={idx} style={{ marginBottom: 8 }}>
                               <div style={{ fontSize: 10, color: '#8AA89C', margin: '4px 0' }}>第 {idx + 1} 张</div>
-                              <PdfPagePreview src={s} pageNum={activePage} title={`报告${idx + 1}第${activePage}页`} />
+                              <PdfDocumentPreview src={s} activePage={activePage} onPageChange={setOcrReviewPage} title={`报告${idx + 1}`} />
                             </div>
                           ) : (
                             <div key={idx} style={{ marginBottom: 8 }}>
@@ -10739,7 +10789,7 @@ export default function PatientDetailPage() {
                       {isImg ? (
                         <img src={src} alt="报告" style={{ width: '100%', borderRadius: 6, cursor: 'zoom-in' }} onClick={() => setPreviewImageUrl(src)} />
                       ) : isPdf ? (
-                        <PdfPagePreview src={src} pageNum={activePage} title={`报告PDF第${activePage}页`} />
+                        <PdfDocumentPreview src={src} activePage={activePage} onPageChange={setOcrReviewPage} title="报告PDF" />
                       ) : (
                         <button className="btn btn-primary btn-sm" onClick={() => window.open(src, '_blank')}>打开文件</button>
                       )}
