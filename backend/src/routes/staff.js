@@ -9786,7 +9786,10 @@ async function runReportParse(reportId) {
       // 首轮优先让医生拿到可审核草稿；遗漏项仍可由既有的逐页补提功能处理。
       const isLargeScannedPdf = pdfBuf.length >= 10 * 1024 * 1024;
       const baseDpi = useShaoyifuTemplate ? 160 : ((useZheyiTemplate || isComprehensiveCheckup) ? 144 : 96);
-      console.log(`[parse-ai] PDF开始 ${reportId} 大小${(pdfBuf.length/1024/1024).toFixed(1)}MB 分批处理(每批8页/${baseDpi}dpi${useZheyiTemplate ? '/浙一P6-P15' : ''}${isLargeScannedPdf ? '/快速扫描模式' : ''})`);
+      // 高 DPI 使扫描件单页图片与 base64 请求显著膨胀，视觉接口会在返回前持续传输，
+      // 即使有硬超时也只会反复失败。大件首轮固定 96dpi，细字页再按需人工补提。
+      const firstPassDpi = isLargeScannedPdf ? 96 : baseDpi;
+      console.log(`[parse-ai] PDF开始 ${reportId} 大小${(pdfBuf.length/1024/1024).toFixed(1)}MB 分批处理(每批8页/${firstPassDpi}dpi${useZheyiTemplate ? '/浙一P6-P15' : ''}${isLargeScannedPdf ? '/快速扫描模式' : ''})`);
 
       // 邵逸夫21页模板含大量小字号双栏表格，96dpi/plus会稳定漏掉右栏，改为160dpi/max。
       // 同时模板规则会跳过小结及重复报告页，因此实际模型调用页数反而更少。
@@ -9798,7 +9801,7 @@ async function runReportParse(reportId) {
       const FIRST_PASS_MAX_TOKENS = isLargeScannedPdf ? 4096 : (useShaoyifuTemplate || useZheyiTemplate || isComprehensiveCheckup) ? 8192 : 4096;
       const FIRST_PASS_TIMEOUT_MS = isLargeScannedPdf ? 45000 : (useShaoyifuTemplate || useZheyiTemplate || isComprehensiveCheckup) ? 120000 : 45000;
       const BATCH_SIZE = 8;
-      const DPI = baseDpi;
+      const DPI = firstPassDpi;
 
       let allItems = [];
       const summaries = [];
