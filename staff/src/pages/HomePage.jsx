@@ -24,9 +24,6 @@ export default function HomePage() {
   const [expiringPatients, setExpiringPatients] = useState([])
   const [recentMessages, setRecentMessages] = useState([])
   const [pendingOrders, setPendingOrders] = useState([])
-  const [confirmingOrder, setConfirmingOrder] = useState(null)
-  const [bookingHospital, setBookingHospital] = useState('')
-  const [bookingTime, setBookingTime] = useState('')
 
   useEffect(() => {
     staffAPI.getReports2()
@@ -115,7 +112,7 @@ export default function HomePage() {
                   borderBottom: i < pendingOrders.length - 1 ? '1px solid #f0ede8' : 'none',
                   cursor: 'pointer',
                 }}
-                onClick={() => { setConfirmingOrder(f); setBookingHospital(''); setBookingTime('') }}>
+                onClick={() => nav(`/patients/${f.patientId?._id}?openChat=1`, { state: { serviceBooking: f } })}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                   <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24', minWidth: 60, flexShrink: 0 }}>{f.patientId?.name || '未知'}</span>
                   <div style={{ minWidth: 0 }}>
@@ -140,29 +137,6 @@ export default function HomePage() {
         </div>
       )}
 
-      {confirmingOrder && (
-        <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setConfirmingOrder(null) }}>
-          <div className="modal" style={{ maxWidth: 520 }}>
-            <div className="modal-header">
-              <h3 className="modal-title">确认就医安排 · {confirmingOrder.patientId?.name}</h3>
-              <button className="modal-close" onClick={() => setConfirmingOrder(null)}>✕</button>
-            </div>
-            <div className="modal-body" style={{ display: 'grid', gap: 14 }}>
-              <div style={{ color: '#4A6558' }}>服务：{confirmingOrder.sourceOrderId?.serviceName || confirmingOrder.theme}</div>
-              <label className="form-group" style={{ margin: 0 }}><span className="form-label">确认医院 *</span><input className="form-input" value={bookingHospital} onChange={e => setBookingHospital(e.target.value)} placeholder="填写已与客户确认的医院" /></label>
-              <label className="form-group" style={{ margin: 0 }}><span className="form-label">确认时间 *</span><input className="form-input" type="datetime-local" value={bookingTime} onChange={e => setBookingTime(e.target.value)} /></label>
-              <div style={{ fontSize: 12, color: '#8AA89C' }}>确认后进入该客户的就医协助方案，并自动生成待审核方案。</div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => nav(`/patients/${confirmingOrder.patientId?._id}?openChat=1`)}>先与客户沟通</button>
-              <button className="btn btn-primary" disabled={!bookingHospital.trim() || !bookingTime} onClick={() => {
-                const orderId = confirmingOrder.sourceOrderId?._id || confirmingOrder.sourceOrderId
-                nav(`/patients/${confirmingOrder.patientId?._id}?tab=plans`, { state: { autoMedicalAssist: { orderId, briefNote: `已确认医院：${bookingHospital.trim()}\n已确认就医时间：${new Date(bookingTime).toLocaleString('zh-CN')}` } } })
-              }}>确认并生成方案</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 数据卡片 */}
       <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: 24 }}>

@@ -11336,6 +11336,15 @@ export default function PatientDetailPage() {
         <SendMessageModal
           patientId={id}
           patientName={user.name}
+          serviceBooking={location.state?.serviceBooking}
+          onConfirmBooking={async ({ orderId, serviceTime, task }) => {
+            const originalNote = location.state?.serviceBooking?.sourceOrderId?.note || ''
+            const confirmedNote = [originalNote, `已确认服务任务：${task}`].filter(Boolean).join('\n')
+            await staffAPI.startOrder(orderId, { action: 'schedule', scheduledAt: serviceTime, note: confirmedNote })
+            setShowMessageModal(false)
+            setTab('plans')
+            nav(`${location.pathname}?tab=plans`, { state: { autoMedicalAssist: { orderId, briefNote: `已与客户确认服务时间：${new Date(serviceTime).toLocaleString('zh-CN')}\n已确认服务任务：${task}` } } })
+          }}
           onClose={() => setShowMessageModal(false)}
         />
       )}
@@ -11568,7 +11577,7 @@ function formatRecordValue(r) {
 }
 
 // ── 聊天对话弹窗 ──────────────────────────────────────────────
-function SendMessageModal({ patientId, patientName, onClose }) {
+function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBooking, onClose }) {
   const { staff } = useStaff()
   const chatRole = staff?.role === 'familyDoctor' ? 'doctor' : staff?.role === 'nutritionist' ? 'nutritionist' : staff?.role === 'medicalAssistant' ? 'medicalAssistant' : 'manager'
   const toast = useToast()
@@ -11579,6 +11588,12 @@ function SendMessageModal({ patientId, patientName, onClose }) {
   const [sending, setSending] = useState(false)
   const [humanActive, setHumanActive] = useState(false)
   const [switchingMode, setSwitchingMode] = useState(false)
+  const order = serviceBooking?.sourceOrderId
+  const customerTask = String(order?.note || '').split(/[；\n]/).map(item => item.trim()).filter(item => item && !/^(规格：|健康基金抵扣|优惠券抵扣|支付方式：)/.test(item)).join('；')
+  const [showBookingConfirm, setShowBookingConfirm] = useState(false)
+  const [serviceTime, setServiceTime] = useState(order?.scheduledAt ? new Date(order.scheduledAt).toISOString().slice(0, 16) : '')
+  const [serviceTask, setServiceTask] = useState(customerTask)
+  const [confirmingBooking, setConfirmingBooking] = useState(false)
   const [recording, setRecording] = useState(false)
   const scrollRef = useRef(null)
   const recorderRef = useRef(null)
@@ -11744,8 +11759,31 @@ function SendMessageModal({ patientId, patientName, onClose }) {
             <div style={{ fontSize: 11, color: humanActive ? '#D97706' : '#22A06B', marginTop: 3 }}>{humanActive ? '● 人工已接手，AI静默' : '● AI助理承接中'}</div>
           </div>
           <div style={{ marginLeft: 'auto', marginRight: 8, fontSize: 11, color: '#8AA89C' }}>发送回复后自动转人工</div>
+          {serviceBooking && <button className="btn btn-primary btn-sm" disabled={confirmingBooking} style={{ marginRight: 8 }} onClick={async () => {
+            if (serviceTime && serviceTask.trim()) {
+              setConfirmingBooking(true)
+              try { await onConfirmBooking?.({ orderId: order?._id || order, serviceTime, task: serviceTask.trim() }) }
+              catch (err) { toast(err.message || '确认预约失败') }
+              finally { setConfirmingBooking(false) }
+            }
+            else setShowBookingConfirm(true)
+          }}>{confirmingBooking ? '确认中…' : serviceTime && serviceTask.trim() ? '确认预约信息' : '补齐预约信息'}</button>}
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
+
+        {showBookingConfirm && (
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid #E0D9CE', background: '#FFF8ED', display: 'grid', gap: 8 }}>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>补齐与客户确认的预约信息</div>
+            <input className="form-input" type="datetime-local" value={serviceTime} onChange={e => setServiceTime(e.target.value)} />
+            <textarea className="form-input" rows={2} value={serviceTask} onChange={e => setServiceTask(e.target.value)} placeholder="填写本次确认的服务任务" />
+            <div style={{ textAlign: 'right' }}><button className="btn btn-primary btn-sm" disabled={confirmingBooking || !serviceTime || !serviceTask.trim()} onClick={async () => {
+              setConfirmingBooking(true)
+              try { await onConfirmBooking?.({ orderId: order?._id || order, serviceTime, task: serviceTask.trim() }) }
+              catch (err) { toast(err.message || '确认预约失败') }
+              finally { setConfirmingBooking(false) }
+            }}>{confirmingBooking ? '处理中…' : '确认并生成方案'}</button></div>
+          </div>
+        )}
 
         {/* 消息列表 */}
         <div ref={scrollRef} onScroll={handleScroll} style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 12, backgroundColor: '#F2EDE3' }}>
