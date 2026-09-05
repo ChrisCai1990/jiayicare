@@ -107,7 +107,7 @@ export default function PatientsPage() {
   const [sortByScore, setSortByScore] = useState(false) // 按评分从低到高排序（高危优先）
   const [isMentor, setIsMentor] = useState(false) // 是否团队导师，决定要不要显示"我的客户/团队客户"Tab
   const [scope, setScope] = useState('team') // mine=只看自己名下 team=看全团队（默认，与此前行为一致）
-  const limit = 20
+  const [limit, setLimit] = useState(20)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -121,7 +121,7 @@ export default function PatientsPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, search, disease, scope])
+  }, [page, limit, search, disease, scope])
 
   useEffect(() => { load() }, [load])
 
@@ -263,9 +263,8 @@ export default function PatientsPage() {
       </div>
 
       {/* 分页 */}
-      {total > limit && (
-        <Pagination page={page} totalPages={Math.ceil(total / limit)} onChange={setPage} />
-      )}
+      <Pagination page={page} totalPages={Math.ceil(total / limit)} onChange={setPage}
+        pageSize={limit} onPageSizeChange={size => { setLimit(size); setPage(1) }} />
 
       {/* 分配已有会员弹窗 */}
       {showAssign && (

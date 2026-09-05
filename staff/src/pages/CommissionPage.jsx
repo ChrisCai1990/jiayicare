@@ -18,7 +18,7 @@ export default function CommissionPage() {
   const [products, setProducts] = useState([])
   const [shareProductId, setShareProductId] = useState('')
   const [productSharePath, setProductSharePath] = useState('')
-  const limit = 20
+  const [limit, setLimit] = useState(20)
 
   useEffect(() => {
     Promise.all([
@@ -32,7 +32,7 @@ export default function CommissionPage() {
       setReferralCode(r.data.referralCode)
       setProducts(p.data || [])
     }).catch(console.error).finally(() => setLoading(false))
-  }, [page])
+  }, [page, limit])
 
   const copyCode = () => {
     navigator.clipboard.writeText(referralCode).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
@@ -146,9 +146,8 @@ export default function CommissionPage() {
         )}
       </div>
 
-      {total > limit && (
-        <Pagination page={page} totalPages={Math.ceil(total / limit)} onChange={setPage} />
-      )}
+      <Pagination page={page} totalPages={Math.ceil(total / limit)} onChange={setPage}
+        pageSize={limit} onPageSizeChange={size => { setLimit(size); setPage(1) }} />
     </div>
   )
 }

@@ -88,7 +88,7 @@ export default function ServiceRecordsPage() {
   const [followUpTarget, setFollowUpTarget] = useState(null) // { patientId, patientName, theme }
   const [detailRecord, setDetailRecord] = useState(null)
   const [patients, setPatients] = useState([])
-  const limit = 20
+  const [limit, setLimit] = useState(20)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -98,7 +98,7 @@ export default function ServiceRecordsPage() {
       const res = await staffAPI.getServiceRecords(params)
       setRecords(res.data.records); setTotal(res.data.total)
     } finally { setLoading(false) }
-  }, [typeFilter, patientFilter, page])
+  }, [typeFilter, patientFilter, page, limit])
 
   useEffect(() => { load() }, [load])
   useEffect(() => { staffAPI.getPatients({ limit: 200 }).then(r => setPatients(r.data.patients)).catch(() => {}) }, [])
@@ -180,9 +180,8 @@ export default function ServiceRecordsPage() {
           </table>}
       </div>
 
-      {total > limit && (
-        <Pagination page={page} totalPages={Math.ceil(total / limit)} onChange={setPage} />
-      )}
+      <Pagination page={page} totalPages={Math.ceil(total / limit)} onChange={setPage}
+        pageSize={limit} onPageSizeChange={size => { setLimit(size); setPage(1) }} />
 
       {showModal && (
         <ServiceRecordModal patients={patients} defaultType={defaultType || 'disease_mgmt'}

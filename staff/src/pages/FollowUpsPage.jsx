@@ -195,7 +195,7 @@ export default function FollowUpsPage() {
   // 健康规划师只负责订单接单/转派，不作为执行人被选（避免转派给自己形成空转），前端过滤掉
   useEffect(() => { staffAPI.getStaffList().then(r => setStaffList((r.data || []).filter(s => s.role !== 'healthPlanner'))).catch(() => {}) }, [])
 
-  const limit = 20
+  const [limit, setLimit] = useState(20)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -414,9 +414,8 @@ export default function FollowUpsPage() {
       )}
 
       {/* 分页 */}
-      {total > limit && (
-        <Pagination page={page} totalPages={Math.ceil(total / limit)} onChange={setPage} />
-      )}
+      <Pagination page={page} totalPages={Math.ceil(total / limit)} onChange={setPage}
+        pageSize={limit} onPageSizeChange={size => { setLimit(size); setPage(1) }} />
 
       {/* 随访详情弹窗 */}
       <DetailModal item={detailItem} onClose={() => setDetailItem(null)} />

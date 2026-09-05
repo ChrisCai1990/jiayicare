@@ -26,7 +26,7 @@ export default function ReportsPage() {
   const [editForm, setEditForm] = useState({ title: '', type: 'annual', hospital: '', date: '', note: '' })
   const [editSaving, setEditSaving] = useState(false)
   const [patients, setPatients] = useState([])
-  const limit = 20
+  const [limit, setLimit] = useState(20)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -34,7 +34,7 @@ export default function ReportsPage() {
       const res = await staffAPI.getReports({ status: statusFilter, search, page, limit })
       setReports(res.data.reports); setTotal(res.data.total)
     } finally { setLoading(false) }
-  }, [statusFilter, search, page])
+  }, [statusFilter, search, page, limit])
 
   useEffect(() => { load() }, [load])
   useEffect(() => { staffAPI.getPatients({ limit: 200 }).then(r => setPatients(r.data.patients)).catch(() => {}) }, [])
@@ -140,9 +140,8 @@ export default function ReportsPage() {
       </div>
 
       {/* 分页 */}
-      {total > limit && (
-        <Pagination page={page} totalPages={Math.ceil(total / limit)} onChange={setPage} />
-      )}
+      <Pagination page={page} totalPages={Math.ceil(total / limit)} onChange={setPage}
+        pageSize={limit} onPageSizeChange={size => { setLimit(size); setPage(1) }} />
 
       {/* 上传弹窗 */}
       {showUpload && <UploadModal patients={patients} onClose={() => setShowUpload(false)} onSaved={() => { setShowUpload(false); toast('上传成功'); load() }} />}

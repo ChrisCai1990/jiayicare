@@ -12,13 +12,13 @@ function visiblePages(current, total) {
   return result
 }
 
-export default function Pagination({ page, totalPages, onChange, compact = false }) {
+export default function Pagination({ page, totalPages, onChange, compact = false, pageSize, pageSizeOptions = [5, 10, 20, 50], onPageSizeChange }) {
   const total = Math.max(1, Number(totalPages) || 1)
   const current = Math.min(total, Math.max(1, Number(page) || 1))
   const [target, setTarget] = useState(String(current))
   const pages = useMemo(() => visiblePages(current, total), [current, total])
   useEffect(() => setTarget(String(current)), [current])
-  if (total <= 1) return null
+  if (total <= 1 && !onPageSizeChange) return null
 
   const go = value => {
     const next = Math.min(total, Math.max(1, Number(value) || current))
@@ -35,6 +35,16 @@ export default function Pagination({ page, totalPages, onChange, compact = false
 
   return (
     <div style={{ display:'flex', justifyContent:'center', alignItems:'center', flexWrap:'wrap', gap:6, marginTop:16 }}>
+      {onPageSizeChange && (
+        <label style={{ display:'inline-flex', alignItems:'center', gap:5, marginRight:6, color:'#667A70', fontSize:compact ? 12 : 14 }}>
+          每页
+          <select value={pageSize} onChange={e => onPageSizeChange(Number(e.target.value))}
+            style={{ height:compact ? 30 : 34, border:'1px solid #D8DED9', borderRadius:8, background:'#fff', color:'#35594A', padding:'0 7px' }}>
+            {pageSizeOptions.map(size => <option key={size} value={size}>{size}</option>)}
+          </select>
+          条
+        </label>
+      )}
       <button type="button" style={buttonStyle(false)} disabled={current <= 1} onClick={() => go(current - 1)}>上一页</button>
       {pages.map(item => typeof item === 'number'
         ? <button type="button" key={item} style={buttonStyle(item === current)} onClick={() => go(item)} aria-current={item === current ? 'page' : undefined}>{item}</button>

@@ -390,12 +390,18 @@ async function getVisiblePlanPatientIds(staff) {
 // 再由调用方按日期和状态统计对应随访。
 async function getWorkbenchFollowUpOwnerFilter(staff) {
   const workItemFilter = [{ sourceType: { $ne: 'order' } }, { isBlocked: { $ne: true } }];
-  if (['superadmin', 'platformSuper'].includes(staff.role)) return { $and: workItemFilter };
   const staffIds = [staff._id];
+  const executionOwnerFilter = { $or: [
+    { assignedTo: { $in: staffIds } },
+    { assignedTo: null, staffId: { $in: staffIds } },
+  ] };
+  if (['superadmin', 'platformSuper'].includes(staff.role)) return { $and: [executionOwnerFilter, { taskRole: { $ne: 'supervisor' } }, ...workItemFilter] };
   const assignmentField = PLAN_ROLE_ASSIGN_FIELD[staff.role] || 'assignedHealthManager';
   const patientIds = await User.find({ [assignmentField]: { $in: staffIds }, isDeleted: { $ne: true } }).distinct('_id');
   return { $and: [
     { patientId: { $in: patientIds } },
+    executionOwnerFilter,
+    { taskRole: { $ne: 'supervisor' } },
     ...workItemFilter,
   ] };
 }
@@ -1205,7 +1211,9 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
     patientFilter = { patientId: { $in: matchedUsers.map(u => u._id) } };
   }
 
-  const ownerFilter = await getWorkbenchFollowUpOwnerFilter(req.staff);
+  const ownerFilter = scope === 'assigned'
+    ? { $or: [{ assignedTo: req.staff._id }, { assignedTo: null, staffId: req.staff._id }] }
+    : await getWorkbenchFollowUpOwnerFilter(req.staff);
 
   const availabilityFilter = {
     $or: [
