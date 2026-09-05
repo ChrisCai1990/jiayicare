@@ -119,8 +119,8 @@ export default function HomePage() {
       {/* 数据卡片 */}
       <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)', marginBottom: 24 }}>
         <StatCard icon="👥" label="我的有效会员" value={reports?.patients?.active ?? '-'} color="#1E6B50" onClick={() => nav('/patients')} />
-        <StatCard icon="📞" label="今日随访" value={reports?.today ? `待${reports.today.pending}｜已${reports.today.completed}` : '-'} color="#0077B6" onClick={() => nav('/followups')} />
-        <StatCard icon="📅" label="本月随访" value={reports?.month ? `待${reports.month.pending}｜已${reports.month.completed}` : '-'} color="#22A06B" onClick={() => nav('/followups')} />
+        <StatCard icon="📞" label="今日随访" value={reports?.today ? <FollowUpStatValue {...reports.today} /> : '-'} color="#0077B6" compact onClick={() => nav('/followups')} />
+        <StatCard icon="📅" label="本月随访" value={reports?.month ? <FollowUpStatValue {...reports.month} /> : '-'} color="#22A06B" compact onClick={() => nav('/followups')} />
         <StatCard icon="⏰" label="逾期任务" value={reports?.overdue ?? '-'} color="#DC3545" onClick={() => nav('/followups')} />
         <StatCard icon="✅" label="今日健康监测" value={checkinRecords.length} color="#D97706" onClick={() => nav('/daily-checkin')} />
       </div>
@@ -301,7 +301,19 @@ export default function HomePage() {
   )
 }
 
-function StatCard({ icon, label, value, color, onClick }) {
+function FollowUpStatValue({ pending, completed }) {
+  return (
+    <span className="followup-stat-value">
+      <span className="followup-stat-label">待</span>
+      <strong>{pending}</strong>
+      <span className="followup-stat-separator">·</span>
+      <span className="followup-stat-label">已</span>
+      <strong>{completed}</strong>
+    </span>
+  )
+}
+
+function StatCard({ icon, label, value, color, compact = false, onClick }) {
   return (
     <div
       className="stat-card"
@@ -312,7 +324,7 @@ function StatCard({ icon, label, value, color, onClick }) {
         {icon}
       </div>
       <div>
-        <div className="stat-card-value" style={{ color }}>{value}</div>
+        <div className={`stat-card-value${compact ? ' stat-card-value-compact' : ''}`} style={{ color }}>{value}</div>
         <div className="stat-card-label">{label}</div>
       </div>
     </div>
