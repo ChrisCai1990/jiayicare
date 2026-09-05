@@ -141,9 +141,10 @@ export default function FollowUpsPage() {
   const now = new Date()
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   const [statusTab,    setStatusTab]    = useState(searchParams.get('status') || 'active')
+  const sourceType = searchParams.get('sourceType') || ''
   const [patientName,  setPatientName]  = useState('')
   const [assignedTo,   setAssignedTo]   = useState('')
-  const [dateFrom,     setDateFrom]     = useState(searchParams.has('dateFrom') ? searchParams.get('dateFrom') : todayStr)
+  const [dateFrom,     setDateFrom]     = useState(searchParams.has('dateFrom') ? searchParams.get('dateFrom') : (sourceType === 'order' ? '' : todayStr))
   const [dateTo,       setDateTo]       = useState(searchParams.get('dateTo') || '')
   const [dateField,    setDateField]    = useState(searchParams.get('dateField') === 'completedAt' ? 'completedAt' : 'date')
   const [loading,      setLoading]      = useState(true)
@@ -200,7 +201,7 @@ export default function FollowUpsPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await staffAPI.getFollowUps({ page, limit, status: statusTab, patientName, assignedTo, dateFrom, dateTo, dateField, excludeSourceType: 'order' })
+      const res = await staffAPI.getFollowUps({ page, limit, status: statusTab, patientName, assignedTo, dateFrom, dateTo, dateField, sourceType, ...(sourceType ? { scope: 'assigned' } : { excludeSourceType: 'order' }) })
       setFollowUps(res.data.followUps)
       setTotal(res.data.total)
     } catch (err) {
@@ -208,7 +209,7 @@ export default function FollowUpsPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, statusTab, patientName, assignedTo, dateFrom, dateTo, dateField])
+  }, [page, limit, statusTab, patientName, assignedTo, dateFrom, dateTo, dateField, sourceType])
 
   useEffect(() => { load() }, [load])
 

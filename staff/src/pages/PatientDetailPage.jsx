@@ -1578,7 +1578,7 @@ export default function PatientDetailPage() {
   // 三类方案生成前先选模板：值为要打开的弹窗类型('annual_checkup'|'nutrition'|'medical_assist')或null
   const [showSelectTplModal, setShowSelectTplModal] = useState(null)
   const [pendingMedicalAssistOrderId, setPendingMedicalAssistOrderId] = useState('') // 手动点按钮生成时若有关联订单，带给选模板弹窗
-  const [autoGenMedicalAssistOrderId, setAutoGenMedicalAssistOrderId] = useState(null) // 非null时代表从工作台商城订单待办跳转过来，服务名已能唯一定模板，自动触发AI生成一次
+  const [autoGenMedicalAssistOrder, setAutoGenMedicalAssistOrder] = useState(null)
   const [reqPrefill, setReqPrefill] = useState(null)
   const [showMedModal, setShowMedModal] = useState(false)
   const [showSupModal, setShowSupModal] = useState(false)
@@ -2035,10 +2035,10 @@ export default function PatientDetailPage() {
   const loadPlans = async () => {
     try { const res = await staffAPI.getPatientPlans(id); setPlans(res.data) } catch {}
   }
-  const genAIMedicalAssistPlan = async (orderId, templateId) => {
+  const genAIMedicalAssistPlan = async (orderId, templateId, briefNote) => {
     setAiMedicalAssistGenerating(true)
     try {
-      await staffAPI.generateAIMedicalAssistPlan(id, orderId, templateId)
+      await staffAPI.generateAIMedicalAssistPlan(id, orderId, templateId, briefNote)
       toast(staff?.role === 'familyDoctor' ? '住院一站式方案已生成，请审核后推送' : 'AI就医协助方案已生成，待健康规划师审核')
       loadPlans()
     } catch (err) { toast('AI生成失败：' + (err.message || '未知错误')) }
@@ -2286,7 +2286,7 @@ export default function PatientDetailPage() {
         setTab('plans')
         // 订单服务名已能唯一对应到具体模板，无需人工确认，跳转到方案tab后直接自动生成
         // （后端按服务名匹配到templateId后同样走模板固定内容锁定的生成逻辑，不是自由发挥）
-        setAutoGenMedicalAssistOrderId((f.sourceOrderId?._id || f.sourceOrderId) || '')
+        setAutoGenMedicalAssistOrder({ orderId: (f.sourceOrderId?._id || f.sourceOrderId) || '', briefNote: '' })
         nav(location.pathname + '?tab=plans', { replace: true })
         return
       }
@@ -2299,11 +2299,13 @@ export default function PatientDetailPage() {
   // 从商城订单待办跳转到"管理方案"tab后，自动触发一次AI生成，不用健康规划师再点一次按钮；
   // 后端按订单服务名匹配到templateId后走的是模板固定内容锁定的生成逻辑，不是AI自由发挥
   useEffect(() => {
-    if (tab === 'plans' && autoGenMedicalAssistOrderId !== null) {
-      genAIMedicalAssistPlan(autoGenMedicalAssistOrderId)
-      setAutoGenMedicalAssistOrderId(null)
+    const requested = location.state?.autoMedicalAssist || autoGenMedicalAssistOrder
+    if (tab === 'plans' && requested) {
+      genAIMedicalAssistPlan(requested.orderId, undefined, requested.briefNote)
+      setAutoGenMedicalAssistOrder(null)
+      nav(location.pathname + location.search, { replace: true, state: {} })
     }
-  }, [tab, autoGenMedicalAssistOrderId])
+  }, [tab, autoGenMedicalAssistOrder, location.state])
   useEffect(() => {
     loadPlans(); loadFollowUps(); loadServiceRecords(); loadReports()
   }, [id])
