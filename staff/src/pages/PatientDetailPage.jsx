@@ -10527,11 +10527,11 @@ export default function PatientDetailPage() {
         const addItem = () => setOcrEditItems(arr => [...arr, { name: '', value: '', unit: '', referenceRange: '', status: 'normal', itemType: 'lab' }])
         const abnormalCount = ocrEditItems.filter(it => it.status === 'abnormal' || it.status === 'attention').length
         const sourcePages = [...new Set(ocrEditItems.map(it => Number(it.sourcePage)).filter(Number.isFinite).filter(n => n > 0))].sort((a, b) => a - b)
-        const firstSourcePage = sourcePages[0] || 1
-        const lastSourcePage = sourcePages[sourcePages.length - 1] || firstSourcePage
+        const firstSourcePage = 1
+        const lastSourcePage = Math.max(Number(ocrReviewReport.pdfPageCount) || 0, sourcePages[sourcePages.length - 1] || 0, 1)
         // OCR 可能因封面、病史页或快速扫描策略没有返回条目；审核必须仍可定位到原报告前面的页，
         // 以便明确提示“无提取数据”并按页补提，不能从首个有条目的页开始把它们隐藏掉。
-        const expectedPages = Array.from({ length: Math.max(1, lastSourcePage) }, (_, i) => i + 1)
+        const expectedPages = Array.from({ length: lastSourcePage }, (_, i) => i + 1)
         const activePage = ocrReviewPage || firstSourcePage
         const activePageParse = Number(ocrReviewReport.pageParseStatus?.pageNum) === activePage ? ocrReviewReport.pageParseStatus : null
         const pageParsing = activePageParse?.status === 'processing'

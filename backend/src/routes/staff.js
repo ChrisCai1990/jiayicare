@@ -2266,7 +2266,16 @@ router.get('/medical-reports/:id', staffAuth, async (req, res) => {
     if (!item.itemId) { item.itemId = require('crypto').randomUUID(); assignedItemIds = true; }
   }
   if (assignedItemIds) await report.save();
-  res.json({ success: true, data: withSignedReportFiles(report) });
+  const data = withSignedReportFiles(report);
+  if (require('../utils/pdf').isPdfReport(report)) {
+    try {
+      const { fetchReportBuffer, getPdfPageCountFromBuffer } = require('../utils/pdf');
+      data.pdfPageCount = await getPdfPageCountFromBuffer(await fetchReportBuffer(report, UPLOADS_DIR));
+    } catch (error) {
+      data.pdfPageCount = Number(report.pages) || 1;
+    }
+  }
+  res.json({ success: true, data });
 });
 
 // PATCH /api/staff/medical-reports/:id/items/:itemId — 单项目原子更新。

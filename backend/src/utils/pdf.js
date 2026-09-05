@@ -81,6 +81,14 @@ function getPdfPageCount(pdfPath) {
   });
 }
 
+// 预览/审核需以原件真实页数为准；历史记录的 pages 字段可能仍是上传时默认的 1。
+async function getPdfPageCountFromBuffer(pdfBuffer) {
+  const tmpPdf = path.join(os.tmpdir(), `pdf-page-count-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
+  fs.writeFileSync(tmpPdf, pdfBuffer);
+  try { return await getPdfPageCount(tmpPdf); }
+  finally { try { fs.unlinkSync(tmpPdf); } catch {} }
+}
+
 // 转换 PDF 指定页范围为 JPEG base64 数组（单批，转完即清理临时文件）。
 // 扫描版 PDF 渲染为 PNG 的 CPU/磁盘开销很高：生产实测同一页 JPEG 约 0.9 秒、
 // PNG 约 17 秒。质量 90 的 JPEG 对印刷文字足够，能避免大报告首批转图超时。
@@ -289,4 +297,4 @@ function isPdfReport(report) {
     || (report.content || '').startsWith('data:application/pdf');
 }
 
-module.exports = { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, renderSinglePage, renderSinglePageRegions, renderSinglePageColumns, splitImageColumns };
+module.exports = { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, getPdfPageCountFromBuffer, renderSinglePage, renderSinglePageRegions, renderSinglePageColumns, splitImageColumns };
