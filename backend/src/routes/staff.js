@@ -385,20 +385,17 @@ async function getVisiblePlanPatientIds(staff) {
   return (await User.find(query).select('_id')).map(user => user._id);
 }
 
-// 统一个人工作台归属：本人/可见团队明确承接的任务，加上本人角色名下会员的任务。
-// 这样各角色与健管专员采用同一规则，同时不会把其他会员的全量任务混入工作台。
+// 统一个人工作台归属：只看当前角色自己名下会员的任务。
+// 账号数量、任务创建人和 assignedTo 都不能扩大会员范围；先按角色归属锁定会员，
+// 再由调用方按日期和状态统计对应随访。
 async function getWorkbenchFollowUpOwnerFilter(staff) {
   const workItemFilter = [{ sourceType: { $ne: 'order' } }, { isBlocked: { $ne: true } }];
   if (['superadmin', 'platformSuper'].includes(staff.role)) return { $and: workItemFilter };
-  const staffIds = await getVisibleStaffIds(staff);
+  const staffIds = [staff._id];
   const assignmentField = PLAN_ROLE_ASSIGN_FIELD[staff.role] || 'assignedHealthManager';
   const patientIds = await User.find({ [assignmentField]: { $in: staffIds }, isDeleted: { $ne: true } }).distinct('_id');
   return { $and: [
-    { $or: [
-      { assignedTo: { $in: staffIds } },
-      { assignedTo: null, staffId: { $in: staffIds } },
-      { patientId: { $in: patientIds } },
-    ] },
+    { patientId: { $in: patientIds } },
     ...workItemFilter,
   ] };
 }
@@ -5669,10 +5666,10 @@ router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'vie
     const ALL_CHECKIN_TYPES = ['diet','exercise','sleep','weight','bowel','water','smoking','alcohol','bloodPressure','heartRate','bloodSugar'];
     const TYPE_LABEL = { bloodPressure:'血压', bloodSugar:'血糖', weight:'体重', heartRate:'心率', sleep:'睡眠', mood:'情绪', diet:'饮食', exercise:'运动', water:'饮水', bowel:'排便', smoking:'吸烟', alcohol:'饮酒', symptom:'今日健康状态' };
 
-    // 管辖会员（团队负责人/组长可见范围扩展到下属及团队成员名下会员）
+    // 个人工作台健康监测只看当前角色自己名下会员，不扩展到下属或团队成员。
     const patientFilter = {};
     if (staff.role !== 'superadmin') {
-      const visibleStaffIds = await getVisibleStaffIds(staff);
+      const visibleStaffIds = [staff._id];
       if (staff.role === 'healthManager') patientFilter.assignedHealthManager = { $in: visibleStaffIds };
       else if (staff.role === 'familyDoctor') patientFilter.assignedFamilyDoctor = { $in: visibleStaffIds };
       else if (staff.role === 'nutritionist') patientFilter.assignedNutritionist = { $in: visibleStaffIds };
