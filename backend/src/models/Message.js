@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const messageSchema = new mongoose.Schema({
   user:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  type:    { type: String, enum: ['doctor', 'manager', 'medicalAssistant', 'system', 'user', 'nutritionist'], required: true },
+  type:    { type: String, enum: ['doctor', 'manager', 'planner', 'medicalAssistant', 'system', 'user', 'nutritionist'], required: true },
   sender:  { type: String, required: true },
   title:   { type: String },
   content: { type: String, required: true },

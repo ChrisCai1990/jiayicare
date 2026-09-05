@@ -15,6 +15,7 @@ import { chooseImageWithPrivacy, showImagePickerError } from '../../utils/imageP
 const ROLE_DEFS = [
   { key: 'doctor', label: '健康顾问', icon: '🩺', color: colors.primary },
   { key: 'manager', label: '健管专员', icon: '🧑‍💼', color: '#D97706' },
+  { key: 'planner', label: '健康规划师', icon: '🗺️', color: '#2563EB' },
   { key: 'nutritionist', label: '营养师', icon: '🥗', color: '#059669' },
   { key: 'medicalAssistant', label: '就医专员', icon: '🏥', color: '#7C3AED' },
 ];
@@ -122,13 +123,14 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
   const careTeam = Array.isArray(user?.careTeam) ? user.careTeam : [];
   const careTeamKinds = new Set(careTeam.map((m) => m?.kind).filter(Boolean));
   const careTeamMember = (key) => {
-    const kind = { doctor: 'familyDoctor', nutritionist: 'nutritionist', manager: 'healthManager', medicalAssistant: 'medicalAssistant' }[key];
+    const kind = { doctor: 'familyDoctor', nutritionist: 'nutritionist', manager: 'healthManager', planner: 'healthPlanner', medicalAssistant: 'medicalAssistant' }[key];
     return careTeam.find((m) => m?.kind === kind) || null;
   };
   const hasRole = (key) => {
     if (key === 'doctor') return careTeamKinds.has('familyDoctor');
     if (key === 'nutritionist') return careTeamKinds.has('nutritionist');
     if (key === 'manager') return careTeamKinds.has('healthManager');
+    if (key === 'planner') return careTeamKinds.has('healthPlanner');
     if (key === 'medicalAssistant') return careTeamKinds.has('medicalAssistant');
     return false;
   };
@@ -595,6 +597,7 @@ function ProductPushDetail({ msg, onClose }) {
 const ROLE_META = {
   doctor: { label: '健康顾问', icon: '🩺', color: colors.primary },
   manager: { label: '健管专员', icon: '🧑‍💼', color: '#D97706' },
+  planner: { label: '健康规划师', icon: '🗺️', color: '#2563EB' },
   nutritionist: { label: '营养师', icon: '🥗', color: '#059669' },
   medicalAssistant: { label: '就医专员', icon: '🏥', color: '#7C3AED' },
 };

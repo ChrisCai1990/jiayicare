@@ -5813,6 +5813,7 @@ function assertRoleMatchesChannel(staffRole, channelRole) {
   const allowed =
     staffRole === 'familyDoctor'  ? 'doctor' :
     staffRole === 'nutritionist'  ? 'nutritionist' :
+    staffRole === 'healthPlanner' ? 'planner' :
     staffRole === 'medicalAssistant' ? 'medicalAssistant' :
     'manager';
   return allowed === channelRole;
@@ -5945,6 +5946,7 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
       familyDoctor: 'doctor',
       nutritionist: 'nutritionist',
       healthManager: 'manager',
+      healthPlanner: 'planner',
       medicalAssistant: 'medicalAssistant',
     };
     const msgType = typeMap[staff.role] || 'manager';

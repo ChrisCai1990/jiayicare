@@ -48,7 +48,7 @@ router.get('/', auth, async (req, res) => {
 // 获取与某个角色的完整对话线程
 router.get('/thread/:role', auth, async (req, res) => {
   const { role } = req.params;
-  const VALID = ['doctor', 'nutritionist', 'manager', 'medicalAssistant'];
+  const VALID = ['doctor', 'nutritionist', 'manager', 'planner', 'medicalAssistant'];
   if (!VALID.includes(role)) return res.status(400).json({ success: false, message: '无效角色' });
   const conversationId = `${req.user._id}_${role}`;
   const [newestMessages, state] = await Promise.all([
@@ -128,23 +128,23 @@ router.post('/', auth, async (req, res) => {
     if (!content?.trim() && !imageUrl && !image && !images.length && !audio?.data) {
       return res.status(400).json({ success: false, message: '消息内容不能为空' });
     }
-    const VALID_RECIPIENTS = ['doctor', 'nutritionist', 'manager', 'medicalAssistant'];
+    const VALID_RECIPIENTS = ['doctor', 'nutritionist', 'manager', 'planner', 'medicalAssistant'];
     if (!VALID_RECIPIENTS.includes(to)) {
       return res.status(400).json({ success: false, message: '收件人无效' });
     }
 
     // 检查需专属分配的岗位是否已分配（re-fetch确保最新状态）
-    if (to === 'nutritionist' || to === 'medicalAssistant') {
+    if (to === 'nutritionist' || to === 'planner' || to === 'medicalAssistant') {
       const User = require('../models/User');
-      const freshUser = await User.findById(req.user._id).select('assignedNutritionist assignedMedicalAssistant');
-      const assigned = to === 'nutritionist' ? freshUser?.assignedNutritionist : freshUser?.assignedMedicalAssistant;
+      const freshUser = await User.findById(req.user._id).select('assignedNutritionist assignedHealthPlanner assignedMedicalAssistant');
+      const assigned = to === 'nutritionist' ? freshUser?.assignedNutritionist : to === 'planner' ? freshUser?.assignedHealthPlanner : freshUser?.assignedMedicalAssistant;
       if (!assigned) {
-        const label = to === 'nutritionist' ? '营养师' : '就医专员';
+        const label = to === 'nutritionist' ? '营养师' : to === 'planner' ? '健康规划师' : '就医专员';
         return res.status(400).json({ success: false, message: `暂未分配${label}，请联系健管专员` });
       }
     }
 
-    const TITLE_MAP = { doctor: '健康顾问', nutritionist: '营养师', manager: '健管专员', medicalAssistant: '就医专员' };
+    const TITLE_MAP = { doctor: '健康顾问', nutritionist: '营养师', manager: '健管专员', planner: '健康规划师', medicalAssistant: '就医专员' };
     const senderName = req.user.name || req.user.phone;
     const conversationId = `${req.user._id}_${to}`;
     let storedImageUrl = String(imageUrl || '');

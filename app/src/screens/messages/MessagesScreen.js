@@ -500,7 +500,7 @@ function MessageDetailModal({ msg, onClose, navigation, onReply }) {
               <TouchableOpacity
                 style={[styles.detailCloseBtn, { flex: 1.5, backgroundColor: colors.primary, borderWidth: 0 }]}
                 onPress={() => {
-                  const to = msg.type === 'doctor' ? 'doctor' : 'manager';
+                  const to = ['doctor', 'nutritionist', 'manager', 'planner', 'medicalAssistant'].includes(msg.type) ? msg.type : 'manager';
                   onReply(to);
                   onClose();
                 }}
@@ -522,6 +522,7 @@ const RECIPIENTS = [
   { key: 'doctor',       label: '健康顾问', icon: 'medical',           color: colors.primary },
   { key: 'nutritionist', label: '营养师',   icon: 'nutrition-outline', color: '#059669'      },
   { key: 'manager',      label: '健管专员', icon: 'person',            color: colors.accent  },
+  { key: 'planner',      label: '健康规划师', icon: 'map-outline',      color: '#2563EB'      },
 ];
 
 function ComposeModal({ visible, onClose, onSent, initialContent = '', initialTo = 'manager' }) {
@@ -638,6 +639,7 @@ export default function MessagesScreen({ navigation }) {
     if (key === 'doctor') return careTeamKinds.has('familyDoctor');
     if (key === 'nutritionist') return careTeamKinds.has('nutritionist');
     if (key === 'manager') return careTeamKinds.has('healthManager');
+    if (key === 'planner') return careTeamKinds.has('healthPlanner');
     return false;
   };
   const [activeTab, setActiveTab] = useState('全部');
@@ -731,6 +733,7 @@ export default function MessagesScreen({ navigation }) {
   const ROLE_DEFS = [
     { key: 'doctor',       label: '健康顾问', icon: 'medical',           color: colors.primary },
     { key: 'manager',      label: '健管专员', icon: 'person',            color: '#D97706'      },
+    { key: 'planner',      label: '健康规划师', icon: 'map-outline',      color: '#2563EB'      },
     { key: 'nutritionist', label: '营养师',   icon: 'nutrition-outline', color: '#059669'      },
   ];
 
@@ -946,6 +949,7 @@ function NotificationListModal({ visible, messages, onClose, onPress, onMarkRead
 const ROLE_META = {
   doctor:       { label: '健康顾问', icon: 'medical',           color: colors.primary },
   manager:      { label: '健管专员', icon: 'person',            color: '#D97706'      },
+  planner:      { label: '健康规划师', icon: 'map-outline',      color: '#2563EB'      },
   nutritionist: { label: '营养师',   icon: 'nutrition-outline', color: '#059669'      },
 };
 
