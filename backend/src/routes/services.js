@@ -352,8 +352,11 @@ router.post('/order', auth, async (req, res) => {
     }
   }
 
-  // 已配置规划师时自动派单；尚未配置也允许先完成购买，由客服后续配置和跟进。
-  const followUpStaffId = await resolveHealthPlanner(req.user._id);
+  // 住院一站式先由健康顾问做医院/科室/专家评估和专家号预约方案，其他订单仍由健康规划师承接。
+  const followUpStaffId = await resolveOrderWorkflowAssignee(req.user._id, service.name);
+  if (!followUpStaffId) {
+    return res.status(409).json({ success: false, message: '当前没有可用的服务负责人，请联系平台处理后再下单' });
+  }
 
   const outTradeNo = `JY${Date.now()}${new mongoose.Types.ObjectId().toString().slice(-8)}`.slice(0, 32);
   const orderNo = outTradeNo;

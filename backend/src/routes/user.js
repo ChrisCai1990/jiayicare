@@ -1018,7 +1018,8 @@ router.get('/plans', auth, async (req, res) => {
   try {
     const plans = await HealthPlan.find({
       patientId: req.user._id,
-      status: { $in: ['active', 'draft'] },
+      status: 'active',
+      pushedAt: { $ne: null },
       'content.aiStatus': { $ne: 'pending' },
     })
       .select('title type description content items status startDate endDate checkupDate followupFrequency confirmedAt pushedAt notes year')
@@ -1307,14 +1308,19 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
       };
     });
 
+    // 先完成负责人预检，避免订单创建成功后才发现无人承接而静默掉单。
+    const orderAssignees = [];
+    for (const orderDoc of orderDocs) {
+      const assignee = await resolveOrderWorkflowAssignee(req.user._id, orderDoc.serviceName);
+      if (!assignee) return res.status(409).json({ success: false, message: '当前没有可用的服务负责人，请联系平台处理后再购买' });
+      orderAssignees.push(assignee);
+    }
     const orders = await Order.insertMany(orderDocs);
 
     // 下单后需要人工跟进的待办：与 services.js 的 /order 普通下单同一套逻辑——
     // 此前这里完全没生成 FollowUp，导致推送购买的订单不会出现在健康规划师/健管专员工作台
     // （2026-07-13 反馈：员工推送给客户、客户付费后，订单没有在工作台展示）。
     // staffId 优先归到会员名下的健康规划师，退回健管专员，再退回健康顾问，都没有则兜底给 superadmin
-    const followUpStaffId = await resolveHealthPlanner(req.user._id);
-
     const followUps = [];
     if (!record.readAt) followUps.push(PushRecord.updateOne({ _id: record._id }, { readAt: new Date() }));
     if (fundUsed > 0) followUps.push(require('../utils/healthFundPayment').deductHealthFund({ user:req.user, enterprise:fundEnterprise, order:orders[0], amount:fundUsed, breakdown:fundBreakdown }));
@@ -1324,8 +1330,9 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
       coupon.usedOrderId = orders[0]._id;
       followUps.push(coupon.save());
     }
-    if (followUpStaffId) {
-      orders.forEach(order => {
+    for (const [index, order] of orders.entries()) {
+      const followUpStaffId = orderAssignees[index];
+      if (followUpStaffId) {
         followUps.push(FollowUp.create({
           staffId:   followUpStaffId,
           assignedTo: followUpStaffId,
@@ -1337,7 +1344,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
           sourceType: 'order',
           sourceOrderId: order._id,
         }));
-      });
+      }
     }
     await Promise.all(followUps);
 

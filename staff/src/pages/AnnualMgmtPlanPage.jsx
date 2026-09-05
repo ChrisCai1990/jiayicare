@@ -435,9 +435,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           setPushedAt(saved.pushedAt || null)
           setConfirmedAt(saved.confirmedAt || null)
         }
-        // 保存方案已同步按内容生成/更新随访占位（就医/会诊/复查等各条记录、日常监测/季度评估周期排期），
-        // 已被医护审核过的随访不受影响，只有还没处理的自动占位会按最新方案内容重新排期
-        toast(res.followUpCount ? `方案已保存，同步生成 ${res.followUpCount} 条随访计划` : '方案已保存')
+        toast('方案草稿已保存；审核并推送后才会生成正式执行任务')
       } else {
         await staffAPI.updatePlan(id, { content: { planType, moduleData } })
         toast('方案已保存')
@@ -510,7 +508,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const handlePush = async () => {
     if (dirty) { toast('有未保存的更改，请先保存再推送'); return }
     if (!planType) { toast('请先选择方案类型并保存'); return }
-    if (!window.confirm('确定将此年度管理方案推送给客户？客户端将立即可见。')) return
+    if (!window.confirm('确认已完成专业审核并推送给客户？推送后将生成正式执行任务。')) return
     setPushing(true)
     try {
       const res = await staffAPI.pushAnnualPlan(id, year, planType)

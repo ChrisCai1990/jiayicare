@@ -11,6 +11,7 @@ const SystemConfig = require('../models/SystemConfig');
 const { checkSmsRateLimit, recordSmsAttempt } = require('../utils/smsRateLimiter');
 const requireUser = require('../middleware/auth');
 const { seedUserData } = require('../config/seedData');
+const { ensureAssignedHealthPlanner } = require('../utils/healthPlannerAssignment');
 const DEMO_PHONE = '13800138000';
 const router = express.Router();
 
@@ -289,6 +290,10 @@ router.post('/login', async (req, res) => {
   }
   if (user.onboardingCompleted) await applyFirstLoginRewards(user, inviteCode);
   else if (inviteCode) await User.updateOne({ _id: user._id }, { $set: { pendingInviteCode: String(inviteCode) } });
+  user = await User.findById(user._id);
+  await ensureAssignedHealthPlanner(user).catch(error => {
+    console.error('[health-planner-assignment] 登录时自动分配失败', error.message);
+  });
   user = await User.findById(user._id);
   const loginMethod = user.wechatMpOpenid ? 'phone_wechat' : 'phone';
   const sessionId = await beginLoginSession(req, user, loginMethod);

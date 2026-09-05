@@ -26,7 +26,7 @@ export default function HomePage() {
   const [pendingOrders, setPendingOrders] = useState([])
 
   useEffect(() => {
-    staffAPI.getReports()
+    staffAPI.getReports2()
       .then(r => setReports(r.data))
       .catch(console.error)
       .finally(() => setLoading(false))
@@ -118,11 +118,11 @@ export default function HomePage() {
 
       {/* 数据卡片 */}
       <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)', marginBottom: 24 }}>
-        <StatCard icon="👥" label="我的会员" value={reports?.totalPatients ?? '-'} color="#1E6B50" onClick={() => nav('/patients')} />
-        <StatCard icon="📞" label="今日随访" value={reports?.todayFollowUps ?? '-'} color="#0077B6" onClick={() => nav('/followups')} />
-        <StatCard icon="📅" label="本月随访" value={reports?.monthFollowUps ?? '-'} color="#22A06B" onClick={() => nav('/followups')} />
+        <StatCard icon="👥" label="我的有效会员" value={reports?.patients?.active ?? '-'} color="#1E6B50" onClick={() => nav('/patients')} />
+        <StatCard icon="📞" label="今日随访" value={reports?.today ? `待${reports.today.pending}｜已${reports.today.completed}` : '-'} color="#0077B6" onClick={() => nav('/followups')} />
+        <StatCard icon="📅" label="本月随访" value={reports?.month ? `待${reports.month.pending}｜已${reports.month.completed}` : '-'} color="#22A06B" onClick={() => nav('/followups')} />
+        <StatCard icon="⏰" label="逾期任务" value={reports?.overdue ?? '-'} color="#DC3545" onClick={() => nav('/followups')} />
         <StatCard icon="✅" label="今日健康监测" value={checkinRecords.length} color="#D97706" onClick={() => nav('/daily-checkin')} />
-        <StatCard icon="🔔" label="消息通知" value={new Set(recentMessages.map(m => String(m.user))).size} color="#DC3545" onClick={() => nav('/notifications', { state: { tab: 'userMsgs' } })} />
       </div>
 
       {/* AI 待审核任务面板 */}

@@ -1525,10 +1525,6 @@ router.get('/reports', staffAuth, async (req, res) => {
     healthManager: 'assignedHealthManager',
   };
   const assignmentField = roleAssignmentField[staff.role] || 'assignedHealthManager';
-  const myFilter = staff.role === 'superadmin'
-    ? {}
-    : { [assignmentField]: { $in: visibleStaffIds } };
-
   // 随访列表以 assignedTo（实际执行人）为归属；首页统计必须使用同一口径。
   // 仅旧数据没有 assignedTo 时，才退回 staffId（创建人），避免就医协助由健康顾问创建、
   // 就医专员执行时，专员列表能看到但首页统计仍为 0。
@@ -1543,6 +1539,14 @@ router.get('/reports', staffAuth, async (req, res) => {
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const activeMemberFilter = {
+    isDeleted: { $ne: true },
+    serviceExpiry: { $gte: todayKey },
+  };
+  const myFilter = staff.role === 'superadmin'
+    ? activeMemberFilter
+    : { ...activeMemberFilter, [assignmentField]: staff._id };
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
 
@@ -1550,11 +1554,14 @@ router.get('/reports', staffAuth, async (req, res) => {
   const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 1);
   const availableNowFilter = { $or: [{ remindAt: null }, { remindAt: { $lte: new Date() } }] };
 
-  const [totalPatients, todayFollowUps, monthFollowUps, plannedFollowUps] = await Promise.all([
+  const openStatuses = ['planned', 'in_progress', 'missed'];
+  const [totalPatients, todayPending, todayCompleted, monthPending, monthCompleted, overdue] = await Promise.all([
     User.countDocuments(myFilter),
-    FollowUp.countDocuments({ ...followUpOwnerFilter, date: { $gte: today, $lt: tomorrow } }),
-    FollowUp.countDocuments({ ...followUpOwnerFilter, date: { $gte: monthStart, $lt: monthEnd } }),
-    FollowUp.countDocuments({ $and: [followUpOwnerFilter, availableNowFilter, { status: 'planned' }] }),
+    FollowUp.countDocuments({ $and: [followUpOwnerFilter, availableNowFilter, { status: { $in: openStatuses }, date: { $gte: today, $lt: tomorrow } }] }),
+    FollowUp.countDocuments({ ...followUpOwnerFilter, status: 'completed', completedAt: { $gte: today, $lt: tomorrow } }),
+    FollowUp.countDocuments({ $and: [followUpOwnerFilter, availableNowFilter, { status: { $in: openStatuses }, date: { $gte: monthStart, $lt: monthEnd } }] }),
+    FollowUp.countDocuments({ ...followUpOwnerFilter, status: 'completed', completedAt: { $gte: monthStart, $lt: monthEnd } }),
+    FollowUp.countDocuments({ $and: [followUpOwnerFilter, availableNowFilter, { status: { $in: openStatuses }, date: { $lt: today } }] }),
   ]);
 
   // 慢病分布
@@ -1569,10 +1576,10 @@ router.get('/reports', staffAuth, async (req, res) => {
   res.json({
     success: true,
     data: {
-      totalPatients,
-      todayFollowUps,
-      monthFollowUps,
-      plannedFollowUps,
+      patients: { active: totalPatients },
+      today: { pending: todayPending, completed: todayCompleted },
+      month: { pending: monthPending, completed: monthCompleted },
+      overdue,
       diseaseDistribution: diseaseAgg.map(d => ({ disease: d._id, count: d.count })),
     },
   });
@@ -1749,6 +1756,9 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
   }
   const allowed = ['title', 'description', 'year', 'startDate', 'endDate', 'checkupDate', 'items', 'followupFrequency', 'summary', 'status', 'content'];
   allowed.forEach(k => { if (req.body[k] !== undefined) plan[k] = req.body[k]; });
+  if (req.body.content?.aiStatus === 'adopted') {
+    plan.content = { ...plan.content, aiStatus: 'approved', reviewedBy: req.staff._id, reviewedAt: new Date() };
+  }
   if (plan.type === 'annual_checkup' && req.body.items !== undefined) {
     plan.items.forEach(item => { item.scheduledDate = null; });
   }
@@ -1805,6 +1815,9 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
   const canPush = await canManagePlan(req, plan);
   if (!canPush || !canUsePlanOwnerRole(plan, req.staff) || !(await planTypeAllowed(req, plan.type))) {
     return res.status(403).json({ success: false, message: '无权推送该方案' });
+  }
+  if (plan.content?.aiStatus === 'pending') {
+    return res.status(409).json({ success: false, message: 'AI方案尚未审核，不能推送给会员' });
   }
   // 重点检查在推送前自动补齐标准准备事项，保证客户收到的方案不是只有项目名。
   // 医学上可能涉及停药的内容统一要求向开单医生确认，避免系统替代医嘱。
@@ -4402,21 +4415,16 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     }
     const targetYear = year || new Date().getFullYear();
     // 按「会员+年度+方案类型」定位，4个类型各存一份，互不覆盖
+    const template = templateId ? await PlanTemplate.findOne({ _id: templateId, type: 'health_management' }).lean() : null;
     const plan = await AnnualPlan.findOneAndUpdate(
       { patientId: req.params.id, year: targetYear, planType },
-      { planType, moduleData: moduleData || {}, notes: notes || '', templateId: templateId || null, templateName: templateName || '', createdBy: req.staff._id },
+      { planType, moduleData: moduleData || {}, notes: notes || '', templateId: templateId || null, templateName: templateName || '',
+        templateSnapshot: template ? { name: template.name, type: template.type, content: template.content, capturedAt: new Date() } : null,
+        createdBy: req.staff._id, reviewStatus: 'pending', reviewedBy: null, reviewedAt: null, reviewNote: '',
+        pushedAt: null, pushedBy: null, confirmedAt: null },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
-    // 未经客户确认的方案只保存草稿，不生成任何执行任务；已确认方案后续修改则幂等同步任务。
-    const { syncAnnualPlanTaskSplit } = require('../utils/annualPlanTaskSplit');
-    const taskSplit = plan.confirmedAt ? await syncAnnualPlanTaskSplit(plan) : null;
-    // 药物管理/营养素管理模块：同步生成定期配药/配营养素计划（RecurringSupplyPlan），
-    // 到期后由定时任务生成健管专员待办+客户端提醒（2026-07-19）
-    const { syncAnnualPlanSupplyPlans } = require('../utils/annualPlanSupplyPlans');
-    const supplyPlanResult = await syncAnnualPlanSupplyPlans(plan).catch(() => ({ created: 0, updated: 0, disabled: 0 }));
-    const { syncAnnualPlanTreatments } = require('../utils/annualPlanTreatmentSync');
-    const treatmentSyncResult = await syncAnnualPlanTreatments(plan);
-    res.json({ success: true, data: plan, followUpCount: taskSplit?.scheduledFollowUps || 0, taskSplit, supplyPlanResult, treatmentSyncResult });
+    res.json({ success: true, data: plan });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -4440,17 +4448,26 @@ router.patch('/supply-plans/:id/confirm', staffAuth, async (req, res) => {
 
 // ── PATCH /api/staff/patients/:id/annual-plan/push ────────────────
 router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
+  if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
+    return res.status(403).json({ success: false, message: '仅健康顾问可审核并推送年度管理方案' });
+  }
   try {
     const { year, planType } = req.query;
     const targetYear = year ? parseInt(year) : new Date().getFullYear();
     const query = { patientId: req.params.id, year: targetYear };
     if (planType) query.planType = planType;
-    const plan = await AnnualPlan.findOneAndUpdate(
-      query,
-      { pushedAt: new Date(), pushedBy: req.staff._id },
-      { new: true }
-    );
+    const plan = await AnnualPlan.findOne(query);
     if (!plan) return res.status(404).json({ success: false, message: '方案不存在，请先保存' });
+    plan.reviewStatus = 'approved';
+    plan.reviewedBy = req.staff._id;
+    plan.reviewedAt = new Date();
+    plan.pushedAt = new Date();
+    plan.pushedBy = req.staff._id;
+    await plan.save();
+    const { syncAnnualPlanTaskSplit } = require('../utils/annualPlanTaskSplit');
+    const { syncAnnualPlanSupplyPlans } = require('../utils/annualPlanSupplyPlans');
+    const { syncAnnualPlanTreatments } = require('../utils/annualPlanTreatmentSync');
+    await Promise.all([syncAnnualPlanTaskSplit(plan), syncAnnualPlanSupplyPlans(plan), syncAnnualPlanTreatments(plan)]);
     const PLAN_TYPE_NAMES = {
       health_reshape: '健康重塑方案', young_state: '健康年轻态方案',
       chronic_stable: '慢病维稳方案', health_prevention: '健康预防方案',
