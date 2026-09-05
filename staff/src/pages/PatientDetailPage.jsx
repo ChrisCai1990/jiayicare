@@ -1,8 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { staffAPI, API_ORIGIN, getToken } from '../api'
-import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist'
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import { staffAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
 import AiRuleHint from '../components/AiRuleHint'
@@ -11,111 +9,10 @@ import AiCaseReviewPanel from '../components/AiCaseReviewPanel'
 import femalePortraitPhoto from '../assets/health-portrait-female.webp'
 import malePortraitPhoto from '../assets/health-portrait-male.webp'
 
-GlobalWorkerOptions.workerSrc = pdfWorkerUrl
-
-// PDF 页图由服务端 pdftoppm 按完整 MediaBox 生成，与上传原图一致；浏览器侧只读取
-// 页数并显示整页图片，避免 Canvas 对扫描照片的边缘出现不一致的裁切。
-function PdfDocumentPreview({ src, activePage, onPageChange, title, zoom = 100 }) {
-  const containerRef = useRef(null)
-  const pageRefs = useRef(new Map())
-  const resourceRef = useRef(null)
-  const observedPageRef = useRef(null)
-  const previewSrcRef = useRef({ key: '', src: '' })
-  const pageQueueRef = useRef([])
-  const queuedPagesRef = useRef(new Set())
-  const [pageCount, setPageCount] = useState(0)
-  const [state, setState] = useState({ loading: true, error: '' })
-  const [loadedPages, setLoadedPages] = useState(() => new Set())
-  // 刷新报告数据会重新签发预览 token；同一份原件在 token 有效期内继续使用
-  // 初始 URL，避免每次轮询都销毁 PDF 会话并从第 1 页重新预加载。
-  const sourceKey = src.replace(/([?&])token=[^&]+/g, '')
-  if (previewSrcRef.current.key !== sourceKey) previewSrcRef.current = { key: sourceKey, src }
-  const previewSrc = previewSrcRef.current.src
-
-  useEffect(() => {
-    let cancelled = false
-    const load = async () => {
-      try {
-        let resource = resourceRef.current
-        if (!resource || resource.src !== previewSrc) {
-          resource?.task?.destroy()
-          const task = getDocument({ url: previewSrc, httpHeaders: getToken() ? { Authorization: `Bearer ${getToken()}` } : {}, rangeChunkSize: 256 * 1024, disableAutoFetch: true, disableStream: true })
-          resource = { src: previewSrc, task, doc: task.promise }
-          resourceRef.current = resource
-        }
-        setState({ loading: true, error: '' })
-        const doc = await resource.doc
-        if (!cancelled) setPageCount(doc.numPages)
-      } catch (error) {
-        if (!cancelled) setState({ loading: false, error: error.message || 'PDF页面加载失败' })
-      }
-    }
-    load()
-    return () => { cancelled = true }
-  }, [previewSrc])
-
-  // 每次只在上一张页图真正完成后再开始下一张，防止大扫描 PDF 一打开就并发
-  // 转完所有页面。已请求页保留在当前弹窗 DOM 中，切页不会重新取图。
-  useEffect(() => {
-    if (!pageCount) return
-    const initialPage = Math.min(Math.max(activePage || 1, 1), pageCount)
-    pageQueueRef.current = [initialPage, ...Array.from({ length: pageCount }, (_, i) => i + 1).filter(page => page !== initialPage)]
-    queuedPagesRef.current = new Set([initialPage])
-    setLoadedPages(new Set([initialPage]))
-  }, [pageCount, previewSrc])
-
-  useEffect(() => {
-    if (!pageCount || !activePage || queuedPagesRef.current.has(activePage)) return
-    queuedPagesRef.current.add(activePage)
-    setLoadedPages(previous => new Set([...previous, activePage]))
-  }, [pageCount, previewSrc, activePage])
-
-  useEffect(() => {
-    const root = containerRef.current
-    if (!root || !pageCount) return
-    const observer = new IntersectionObserver(entries => {
-      const visible = entries.filter(entry => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0]
-      const page = Number(visible?.target?.dataset?.page)
-      if (page && page !== activePage) {
-        observedPageRef.current = page
-        onPageChange(page)
-      }
-    }, { root, threshold: [0.55, 0.75] })
-    pageRefs.current.forEach(element => observer.observe(element))
-    return () => observer.disconnect()
-  }, [pageCount, onPageChange, activePage])
-
-  useEffect(() => {
-    const target = pageRefs.current.get(activePage)
-    const root = containerRef.current
-    // 左侧滚动产生的页码变化不反向跳回页顶；仅右侧选择页码时定位左侧。
-    if (observedPageRef.current === activePage) {
-      observedPageRef.current = null
-      return
-    }
-    if (target && root) root.scrollTo({ top: target.offsetTop, behavior: 'auto' })
-  }, [activePage, pageCount])
-
-  useEffect(() => () => { resourceRef.current?.task?.destroy() }, [])
-
-  const queueNextPage = () => {
-    const next = pageQueueRef.current.find(page => !queuedPagesRef.current.has(page))
-    if (!next) return
-    queuedPagesRef.current.add(next)
-    setLoadedPages(previous => new Set([...previous, next]))
-  }
-  const pageImageUrl = pageNum => `${previewSrc.replace('/preview/', '/preview-page/')}${previewSrc.includes('?') ? '&' : '?'}page=${pageNum}`
-  return <div ref={containerRef} style={{ height: '100%', minHeight: 0, position: 'relative', background: '#fff', borderRadius: 6, overflow: 'auto', scrollSnapType: 'y mandatory' }}>
-    {state.loading && <div style={{ position: 'sticky', top: 10, zIndex: 1, margin: '10px auto', width: 'fit-content', color: '#4A6558', fontSize: 12, background: '#F6F9F7', padding: '5px 8px', borderRadius: 5 }}>正在加载当前 PDF 页面…</div>}
-    {state.error ? <div style={{ padding: 16, color: '#B42318', fontSize: 12 }}>{state.error}</div> : Array.from({ length: pageCount }, (_, i) => {
-      const pageNum = i + 1
-      return <div key={pageNum} data-page={pageNum} ref={element => { if (element) pageRefs.current.set(pageNum, element); else pageRefs.current.delete(pageNum) }} style={{ height: '100%', minHeight: '100%', boxSizing: 'border-box', padding: '6px 0 10px', position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', borderBottom: '1px solid #E0D9CE', background: pageNum === activePage ? '#F6F9F7' : '#fff', scrollSnapAlign: 'start', scrollSnapStop: 'always' }}>
-        {loadedPages.has(pageNum)
-          ? <img src={pageImageUrl(pageNum)} alt={`${title}第${pageNum}页`} onLoad={() => { queueNextPage(); if (pageNum === activePage) setState({ loading: false, error: '' }) }} onError={() => { queueNextPage(); if (pageNum === activePage) setState({ loading: false, error: 'PDF页面加载失败，请重试' }) }} style={{ display: pageNum === activePage ? 'block' : 'none', width: `${zoom}%`, maxWidth: 'none', maxHeight: 'none', height: 'auto', borderRadius: 3 }} />
-          : <span style={{ color: '#8AA89C', fontSize: 11 }}>第 {pageNum} 页</span>}
-      </div>
-    })}
-  </div>
+// 使用浏览器原生 PDF 阅读器，保留缩放、页码跳转、旋转、查找、打印及下载等常规功能。
+// 预览链接仍是绑定报告与短时令牌的私有 API，不改为公开直链。
+function PdfDocumentPreview({ src, activePage, title, zoom = 100 }) {
+  return <iframe src={`${src}#page=${activePage}&zoom=${zoom}`} title={title} style={{ width: '100%', height: '74vh', border: 'none', borderRadius: 6, background: '#fff' }} />
 }
 
 const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
