@@ -73,10 +73,12 @@ function DetailModal({ item, onClose }) {
         <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
           <Row label="会员" value={`${item.patientId?.name}  ${item.patientId?.phone || ''}`} />
           <Row label="计划日期" value={formatChineseDate(item.date)} />
+          <Row label="制定人" value={item.staffId?.name} />
+          <Row label="制定时间" value={item.createdAt ? formatChineseDateTime(item.createdAt) : ''} />
           <Row label="随访主题" value={item.theme} />
           <Row label="随访方式" value={FOLLOWUP_TYPE[item.type] || item.type} />
           {item.routinePeriod && <Row label="周期类型" value={ROUTINE_PERIOD[item.routinePeriod] || item.routinePeriod} />}
-          <Row label="负责人员" value={item.assignedTo?.name} />
+          <Row label="执行人" value={item.assignedTo?.name || '未指定'} />
           <Row label="状态" value={STATUS_MAP[item.status] || item.status} />
           {item.checkInItems?.length > 0 && <Row label="打卡项目" value={item.checkInItems.map(k => CHECKIN_LABEL[k] || k).join('、')} />}
           <Row label="计划内容" value={item.content} />
@@ -459,12 +461,14 @@ export default function FollowUpsPage() {
                     <span style={{ fontSize: 13 }}>{execItem.theme}</span>
                   </div>
                 )}
-                {execItem.content && (
+                {(execItem.content || execItem.plannedContent) && (
                   <div style={{ display: 'flex', gap: 8 }}>
                     <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>计划内容：</span>
-                    <span style={{ fontSize: 13, whiteSpace: 'pre-line', flex: 1 }}>{execItem.content}</span>
+                    <span style={{ fontSize: 13, whiteSpace: 'pre-line', flex: 1 }}>{execItem.content || execItem.plannedContent}</span>
                   </div>
                 )}
+                {execItem.staffId?.name && <div style={{ display: 'flex', gap: 8 }}><span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>制定信息：</span><span style={{ fontSize: 13 }}>{execItem.staffId.name} · {formatChineseDateTime(execItem.createdAt)}</span></div>}
+                {execItem.formData && Object.keys(execItem.formData).length > 0 && <div style={{ fontSize: 13, whiteSpace: 'pre-line' }}>{Object.entries(execItem.formData).filter(([, value]) => value !== '' && value != null).map(([key, value]) => `${key}：${Array.isArray(value) ? value.join('、') : value}`).join('\n')}</div>}
               </div>
               {/* 填写结果 */}
               <div>

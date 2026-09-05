@@ -190,7 +190,7 @@ async function buildAnnualPlanFollowUps(plan) {
       annualCheckup.focus && `重点关注：${annualCheckup.focus}`,
       annualCheckup.escort && '已安排陪检服务',
     ].filter(Boolean).join('\n');
-    push(annualCheckup.date, `年度体检提醒 · ${annualCheckup.institution || ''}`, checkupLines, annualCheckup.followUpStaff,
+    push(annualCheckup.date, `年度体检提醒 · ${annualCheckup.institution || ''}`, checkupLines, patient?.assignedHealthManager,
       `annual_checkup:${String(annualCheckup.date).slice(0, 10)}`);
   }
 
@@ -262,7 +262,7 @@ async function syncAnnualPlanFollowUps(plan) {
         ['patientId', 'staffId', 'assignedTo', 'date', 'theme', 'content', 'aiStatus', 'reviewRole'].forEach(k => { keep[k] = row[k]; });
       }
       // 已确认方案生成的未完成就医提醒也要跟随当前健管专员归属修正；已完成历史不改。
-      if (row.sourceScheduleKey?.startsWith('medical_treatment:') && keep.status !== 'completed') {
+      if (/^(medical_treatment|annual_checkup):/.test(row.sourceScheduleKey || '') && keep.status !== 'completed') {
         keep.assignedTo = row.assignedTo;
       }
       await keep.save();

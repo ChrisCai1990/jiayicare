@@ -1251,6 +1251,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
       .skip(skip)
       .limit(Number(limit))
       .populate('patientId', 'name phone gender age chronicDiseases')
+      .populate('staffId', 'name role title')
       .populate('assignedTo', 'name role')
       .populate('sourceHealthPlanId', 'title description content type')
       .populate('sourceOrderId', 'serviceName servicePrice paidAmount healthFundAmount note scheduledAt status paymentStatus paymentMethod createdAt'),
@@ -5830,7 +5831,10 @@ router.get('/user-messages/:userId/thread', staffAuth, async (req, res) => {
     const conversationId = `${req.params.userId}_${role}`;
     const ChatConversationState = require('../models/ChatConversationState');
     const [newestMessages, state] = await Promise.all([
-      Message.find({ conversationId, recalled: { $ne: true } }).sort({ createdAt: -1 }).limit(100),
+      Message.find(role === 'planner' ? {
+        recalled: { $ne: true },
+        $or: [{ conversationId }, { conversationId: `${req.params.userId}_manager`, isAI: true }],
+      } : { recalled: { $ne: true }, $or: [{ conversationId }, { user: req.params.userId, type: role, conversationId: null }] }).sort({ createdAt: -1 }).limit(100),
       ChatConversationState.findOne({ conversationId }).select('humanActive takenOverAt takenOverBy').lean(),
     ]);
     const messages = newestMessages.reverse();
