@@ -385,6 +385,24 @@ async function getVisiblePlanPatientIds(staff) {
   return (await User.find(query).select('_id')).map(user => user._id);
 }
 
+// 统一个人工作台归属：本人/可见团队明确承接的任务，加上本人角色名下会员的任务。
+// 这样各角色与健管专员采用同一规则，同时不会把其他会员的全量任务混入工作台。
+async function getWorkbenchFollowUpOwnerFilter(staff) {
+  const workItemFilter = [{ sourceType: { $ne: 'order' } }, { isBlocked: { $ne: true } }];
+  if (['superadmin', 'platformSuper'].includes(staff.role)) return { $and: workItemFilter };
+  const staffIds = await getVisibleStaffIds(staff);
+  const assignmentField = PLAN_ROLE_ASSIGN_FIELD[staff.role] || 'assignedHealthManager';
+  const patientIds = await User.find({ [assignmentField]: { $in: staffIds }, isDeleted: { $ne: true } }).distinct('_id');
+  return { $and: [
+    { $or: [
+      { assignedTo: { $in: staffIds } },
+      { assignedTo: null, staffId: { $in: staffIds } },
+      { patientId: { $in: patientIds } },
+    ] },
+    ...workItemFilter,
+  ] };
+}
+
 // ── GET /api/staff/patients ───────────────────────────────────────
 // 查询分配给当前医护人员（及其下属）的会员列表
 router.get('/patients', staffAuth, checkPermission('patients', 'view'), async (req, res) => {
@@ -1190,22 +1208,11 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
     patientFilter = { patientId: { $in: matchedUsers.map(u => u._id) } };
   }
 
-  // 数据权限：随访任务归属实际执行人（assignedTo）；未指定执行人时退回创建人自己。
-  // 例外：健康顾问作为会员的第一责任人，需要看到名下会员的全部随访（含健管专员等他人执行的），
-  // 用于把控质量，但不代表随访归属改到健康顾问名下——执行人仍是 assignedTo 那个人。
-  let ownerFilter;
-  const visibleStaffIds = await getVisibleStaffIds(req.staff);
-  if (req.staff.role === 'familyDoctor' && scope !== 'assigned') {
-    const myPatients = await User.find({ assignedFamilyDoctor: { $in: visibleStaffIds } }).select('_id');
-    const myPatientIds = myPatients.map(p => p._id);
-    ownerFilter = { $or: [{ assignedTo: { $in: visibleStaffIds } }, { assignedTo: null, staffId: { $in: visibleStaffIds } }, { patientId: { $in: myPatientIds } }] };
-  } else {
-    ownerFilter = { $or: [{ assignedTo: { $in: visibleStaffIds } }, { assignedTo: null, staffId: { $in: visibleStaffIds } }] };
-  }
+  const ownerFilter = await getWorkbenchFollowUpOwnerFilter(req.staff);
 
   const availabilityFilter = {
     $or: [
-      { status: { $nin: ['planned', 'in_progress'] } },
+      { status: { $nin: ['planned', 'in_progress', 'missed'] } },
       { remindAt: null },
       { remindAt: { $lte: new Date() } },
     ],
@@ -1526,17 +1533,8 @@ router.get('/reports', staffAuth, async (req, res) => {
     healthManager: 'assignedHealthManager',
   };
   const assignmentField = roleAssignmentField[staff.role] || 'assignedHealthManager';
-  // 随访列表以 assignedTo（实际执行人）为归属；首页统计必须使用同一口径。
-  // 仅旧数据没有 assignedTo 时，才退回 staffId（创建人），避免就医协助由健康顾问创建、
-  // 就医专员执行时，专员列表能看到但首页统计仍为 0。
-  const followUpOwnerFilter = staff.role === 'superadmin'
-    ? {}
-    : {
-        $or: [
-          { assignedTo: { $in: visibleStaffIds } },
-          { assignedTo: null, staffId: { $in: visibleStaffIds } },
-        ],
-      };
+  // 与随访列表共用完全相同的角色/会员归属口径，保证首页数字和点击结果一致。
+  const followUpOwnerFilter = await getWorkbenchFollowUpOwnerFilter(staff);
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -5678,6 +5676,13 @@ router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'vie
       if (staff.role === 'healthManager') patientFilter.assignedHealthManager = { $in: visibleStaffIds };
       else if (staff.role === 'familyDoctor') patientFilter.assignedFamilyDoctor = { $in: visibleStaffIds };
       else if (staff.role === 'nutritionist') patientFilter.assignedNutritionist = { $in: visibleStaffIds };
+      else if (staff.role === 'healthPlanner') patientFilter.assignedHealthPlanner = { $in: visibleStaffIds };
+      else if (staff.role === 'medicalAssistant') patientFilter.assignedMedicalAssistant = { $in: visibleStaffIds };
+      else if (staff.role === 'specialist') patientFilter.assignedSpecialist = { $in: visibleStaffIds };
+      else if (staff.role === 'tcmDoctor') patientFilter.assignedTcmDoctor = { $in: visibleStaffIds };
+      else if (staff.role === 'psychologist') patientFilter.assignedPsychologist = { $in: visibleStaffIds };
+      else if (staff.role === 'rehabSpecialist') patientFilter.assignedRehabSpecialist = { $in: visibleStaffIds };
+      else patientFilter.assignedHealthManager = { $in: visibleStaffIds };
     }
     if (patientName) patientFilter.name = new RegExp(patientName, 'i');
 
