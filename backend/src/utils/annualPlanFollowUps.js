@@ -51,10 +51,16 @@ async function buildAnnualPlanFollowUps(plan) {
   const moduleData = plan.moduleData || {};
   const created = [];
 
+  // 就医提醒属于健管专员的落地执行事项。健康顾问/规划师负责制定与审核方案，
+  // 不能因为方案记录里误填了 followUpStaff，就把就医提醒挂到他们的个人随访。
+  const User = require('../models/User');
+  const patient = await User.findById(plan.patientId).select('assignedHealthManager').lean();
+
   // "协调专员/评估人员"字段存的是 Admin _id（staff-select 选择器），拼进 content 前要解析成姓名，
   // 否则客户端会看到一串无意义的 ObjectId 字符串。一次性查出本方案里出现过的所有员工id。
   const Admin = require('../models/Admin');
   const staffIds = new Set();
+  if (patient?.assignedHealthManager) staffIds.add(String(patient.assignedHealthManager));
   DATED_RECORD_MODULES.forEach(mod => {
     (moduleData[mod.key]?.records || []).forEach(rec => {
       if (rec.coordinator) staffIds.add(String(rec.coordinator));
@@ -112,6 +118,7 @@ async function buildAnnualPlanFollowUps(plan) {
     if (!Array.isArray(records)) continue;
     records.forEach((rec, i) => {
       const label = rec.hospital || rec.name || rec.items || `第${i + 1}条`;
+      const executor = mod.key === 'medical_treatment' ? patient?.assignedHealthManager : rec.followUpStaff;
       const lines = [
         rec.hospital && `就医/会诊医院：${rec.hospital}`,
         rec.department && `科室：${rec.department}`,
@@ -125,10 +132,10 @@ async function buildAnnualPlanFollowUps(plan) {
         rec.order_expert && rec.order_expert !== '无' && `开单专家：${rec.order_expert}`,
         rec.assist && '已安排就医协助',
         rec.coordinator && `协调专员：${staffName(rec.coordinator)}`,
-        rec.followUpStaff && `随访人员：${staffName(rec.followUpStaff)}`,
+        executor && `执行人员：${staffName(executor)}`,
         rec.notes && `注意事项：${rec.notes}`,
       ].filter(Boolean);
-      push(rec[mod.dateField], `${mod.theme} · ${label}`, lines.join('\n'), rec.followUpStaff,
+      push(rec[mod.dateField], `${mod.theme} · ${label}`, lines.join('\n'), executor,
         `${mod.key}:${String(rec[mod.dateField]).slice(0, 10)}:${String(label).trim()}`);
     });
   }
@@ -253,6 +260,10 @@ async function syncAnnualPlanFollowUps(plan) {
       if (keep.sourceScheduleKey !== row.sourceScheduleKey) keep.sourceScheduleKey = row.sourceScheduleKey;
       if (keep.aiStatus === 'pending') {
         ['patientId', 'staffId', 'assignedTo', 'date', 'theme', 'content', 'aiStatus', 'reviewRole'].forEach(k => { keep[k] = row[k]; });
+      }
+      // 已确认方案生成的未完成就医提醒也要跟随当前健管专员归属修正；已完成历史不改。
+      if (row.sourceScheduleKey?.startsWith('medical_treatment:') && keep.status !== 'completed') {
+        keep.assignedTo = row.assignedTo;
       }
       await keep.save();
       // 已存在的历史副本不在定时同步中批量删除；这里只阻止继续生成，具体旧数据按核实后定点清理。

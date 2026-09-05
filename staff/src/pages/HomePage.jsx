@@ -112,13 +112,24 @@ export default function HomePage() {
                   borderBottom: i < pendingOrders.length - 1 ? '1px solid #f0ede8' : 'none',
                   cursor: 'pointer',
                 }}
-                onClick={() => nav(`/patients/${f.patientId?._id}?tab=followups`, { state: { openFollowUp: f } })}>
+                onClick={() => nav(`/patients/${f.patientId?._id}?openChat=1`)}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                   <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24', minWidth: 60, flexShrink: 0 }}>{f.patientId?.name || '未知'}</span>
-                  <span style={{ fontSize: 13, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.theme}</span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, color: '#1A2B24', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {f.sourceOrderId?.serviceName || f.theme}
+                      {f.sourceOrderId && <span style={{ color: '#D97706', marginLeft: 8 }}>
+                        支付 ¥{(Number(f.sourceOrderId.paidAmount) + Number(f.sourceOrderId.healthFundAmount)).toFixed(2)}
+                      </span>}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {f.sourceOrderId?.scheduledAt && `预约时间：${new Date(f.sourceOrderId.scheduledAt).toLocaleString('zh-CN')} · `}
+                      备注：{f.sourceOrderId?.note || f.content || '未填写，请联系客户确认时间'}
+                    </div>
+                  </div>
                 </div>
                 <span style={{ fontSize: 12, color: '#aaa', flexShrink: 0, marginLeft: 12 }}>
-                  {new Date(f.createdAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}
+                  下单 {new Date(f.sourceOrderId?.createdAt || f.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </span>
               </div>
             ))}
@@ -134,7 +145,7 @@ export default function HomePage() {
         <StatCard icon="📅" label="本月随访" value={reports?.month ? <FollowUpStatValue {...reports.month}
           onPending={() => nav(followUpUrl({ status: 'active', dateFrom: monthStartKey, dateTo: monthEndKey }))}
           onCompleted={() => nav(followUpUrl({ status: 'completed', dateFrom: monthStartKey, dateTo: monthEndKey, dateField: 'completedAt' }))} /> : '-'} color="#22A06B" compact />
-        <StatCard icon="⏰" label="逾期任务" value={reports?.overdue ?? '-'} color="#DC3545" onClick={() => nav(followUpUrl({ status: 'active', dateTo: yesterdayKey }))} />
+        <StatCard icon="⏰" label="逾期随访" value={reports?.overdue ?? '-'} color="#DC3545" onClick={() => nav(followUpUrl({ status: 'active', dateTo: yesterdayKey }))} />
         <StatCard icon="✅" label="今日健康监测" value={checkinRecords.length} color="#D97706" onClick={() => nav('/daily-checkin')} />
       </div>
 

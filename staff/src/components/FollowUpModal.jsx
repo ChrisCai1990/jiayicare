@@ -397,6 +397,8 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
     if (!visitTypeForm && !visitTypeRevisit) { setError('请至少选择一种随访类型'); return }
     const validRows = planRows.filter(r => r.daysAfter || r.date)
     if (validRows.length === 0) { setError('请至少填写一行随访时间'); return }
+    const rowWithoutAssignee = validRows.find(r => !r.assignedTo)
+    if (rowWithoutAssignee) { setError('每一条随访计划都必须选择随访人员'); return }
     setSaving(true); setError('')
     try {
       // 如果是复诊随访，把结构化的复查详情格式化为用户可见的 content
@@ -894,7 +896,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
                     onChange={e => updateRow(row.id, 'assignedTo', e.target.value)}
                     style={{ fontSize: 13, width: 110, flexShrink: 0 }}
                   >
-                    <option value="">随访人员</option>
+                    <option value="">* 随访人员</option>
                     {staffOptions}
                   </select>
 

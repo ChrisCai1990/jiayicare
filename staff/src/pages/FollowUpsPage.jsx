@@ -355,7 +355,8 @@ export default function FollowUpsPage() {
                   <div style={{ flex: 1, minWidth: 220 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
                       <span style={{ color: '#1E6B50', cursor: 'pointer', fontWeight: 700, fontSize: 15 }}
-                        onClick={() => nav(`/patients/${f.patientId?._id}`)}>
+                        title="打开本条随访"
+                        onClick={() => isPendingExec(f) ? openExec(f) : setDetailItem(f)}>
                         {f.patientId?.name || '-'}
                       </span>
                       <span style={{ fontSize: 12, color: '#8AA89C' }}>{f.patientId?.phone}</span>

@@ -1184,7 +1184,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
       .populate('staffId', 'name role title')
       .populate('assignedTo', 'name role title')
       .populate('sourceHealthPlanId', 'title description content type')
-      .populate('sourceOrderId', 'serviceName servicePrice paidAmount status paymentStatus paymentMethod createdAt'),
+      .populate('sourceOrderId', 'serviceName servicePrice paidAmount healthFundAmount note scheduledAt status paymentStatus paymentMethod createdAt'),
     FollowUp.countDocuments(filter),
   ]);
   res.json({
@@ -1253,7 +1253,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
       .populate('patientId', 'name phone gender age chronicDiseases')
       .populate('assignedTo', 'name role')
       .populate('sourceHealthPlanId', 'title description content type')
-      .populate('sourceOrderId', 'serviceName servicePrice paidAmount status paymentStatus paymentMethod createdAt'),
+      .populate('sourceOrderId', 'serviceName servicePrice paidAmount healthFundAmount note scheduledAt status paymentStatus paymentMethod createdAt'),
     FollowUp.countDocuments(filter),
   ]);
 
@@ -1286,6 +1286,9 @@ router.post('/followups', staffAuth, checkPermission('followups', 'create'), asy
   if (status === 'cancelled' && !cancelReason) {
     return res.status(400).json({ success: false, message: '取消随访必须填写取消原因' });
   }
+  if (['planned', 'in_progress', 'missed'].includes(status) && !assignedTo) {
+    return res.status(400).json({ success: false, message: '随访计划必须选择执行人' });
+  }
 
   // 派单/扭转判定：指派给了别人（assignedTo 有值且不是当前登录人）→ 这是"把活交给执行人去做"，
   // 逻辑上不可能一创建就已完成，强制置 planned，否则执行人（如就医专员嘉小夏）在所有按
@@ -1305,7 +1308,8 @@ router.post('/followups', staffAuth, checkPermission('followups', 'create'), asy
     content: content || '',
     theme: theme || '',
     cancelReason: cancelReason || '',
-    assignedTo: assignedTo || null,
+    // 已执行后补录的单条记录默认由当前操作人执行；未来计划则已在上方强制指定执行人。
+    assignedTo: assignedTo || req.staff._id,
     nextFollowUpDate: nextFollowUpDate ? new Date(nextFollowUpDate) : null,
     tags: tags || [],
     vitals: vitals || {},
