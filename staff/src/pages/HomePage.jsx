@@ -67,6 +67,16 @@ export default function HomePage() {
   if (loading) return <div className="page-loading">加载中...</div>
 
   const today = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
+  const dateKey = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  const now = new Date()
+  const todayKey = dateKey(now)
+  const monthStartKey = dateKey(new Date(now.getFullYear(), now.getMonth(), 1))
+  const monthEndKey = dateKey(new Date(now.getFullYear(), now.getMonth() + 1, 0))
+  const yesterdayKey = dateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1))
+  const followUpUrl = ({ status, dateFrom = '', dateTo = '', dateField = 'date' }) => {
+    const query = new URLSearchParams({ status, dateFrom, dateTo, dateField })
+    return `/followups?${query}`
+  }
 
   return (
     <div className="page">
@@ -119,9 +129,13 @@ export default function HomePage() {
       {/* 数据卡片 */}
       <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)', marginBottom: 24 }}>
         <StatCard icon="👥" label="我的有效会员" value={reports?.patients?.active ?? '-'} color="#1E6B50" onClick={() => nav('/patients')} />
-        <StatCard icon="📞" label="今日随访" value={reports?.today ? <FollowUpStatValue {...reports.today} /> : '-'} color="#0077B6" compact onClick={() => nav('/followups')} />
-        <StatCard icon="📅" label="本月随访" value={reports?.month ? <FollowUpStatValue {...reports.month} /> : '-'} color="#22A06B" compact onClick={() => nav('/followups')} />
-        <StatCard icon="⏰" label="逾期任务" value={reports?.overdue ?? '-'} color="#DC3545" onClick={() => nav('/followups')} />
+        <StatCard icon="📞" label="今日随访" value={reports?.today ? <FollowUpStatValue {...reports.today}
+          onPending={() => nav(followUpUrl({ status: 'active', dateFrom: todayKey, dateTo: todayKey }))}
+          onCompleted={() => nav(followUpUrl({ status: 'completed', dateFrom: todayKey, dateTo: todayKey, dateField: 'completedAt' }))} /> : '-'} color="#0077B6" compact />
+        <StatCard icon="📅" label="本月随访" value={reports?.month ? <FollowUpStatValue {...reports.month}
+          onPending={() => nav(followUpUrl({ status: 'active', dateFrom: monthStartKey, dateTo: monthEndKey }))}
+          onCompleted={() => nav(followUpUrl({ status: 'completed', dateFrom: monthStartKey, dateTo: monthEndKey, dateField: 'completedAt' }))} /> : '-'} color="#22A06B" compact />
+        <StatCard icon="⏰" label="逾期任务" value={reports?.overdue ?? '-'} color="#DC3545" onClick={() => nav(followUpUrl({ status: 'active', dateTo: yesterdayKey }))} />
         <StatCard icon="✅" label="今日健康监测" value={checkinRecords.length} color="#D97706" onClick={() => nav('/daily-checkin')} />
       </div>
 
@@ -301,14 +315,18 @@ export default function HomePage() {
   )
 }
 
-function FollowUpStatValue({ pending, completed }) {
+function FollowUpStatValue({ pending, completed, onPending, onCompleted }) {
   return (
     <span className="followup-stat-value">
-      <span className="followup-stat-label">待</span>
-      <strong>{pending}</strong>
+      <button type="button" className="followup-stat-link" onClick={onPending} title="查看待随访计划">
+        <span className="followup-stat-label">待</span>
+        <strong>{pending}</strong>
+      </button>
       <span className="followup-stat-separator">·</span>
-      <span className="followup-stat-label">已</span>
-      <strong>{completed}</strong>
+      <button type="button" className="followup-stat-link" onClick={onCompleted} title="查看已完成随访">
+        <span className="followup-stat-label">已</span>
+        <strong>{completed}</strong>
+      </button>
     </span>
   )
 }

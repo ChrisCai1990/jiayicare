@@ -134,6 +134,8 @@ a { text-decoration: none; color: inherit; }
 .stat-card-value-compact { font-size: 24px; white-space: nowrap; }
 .followup-stat-value { display: inline-flex; align-items: baseline; gap: 4px; }
 .followup-stat-value strong { font-size: 28px; line-height: 1; }
+.followup-stat-link { display: inline-flex; align-items: baseline; gap: 4px; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.followup-stat-link:hover strong { text-decoration: underline; text-underline-offset: 3px; }
 .followup-stat-label { font-size: 15px; font-weight: 600; opacity: 0.78; }
 .followup-stat-separator { margin: 0 2px; font-size: 18px; font-weight: 500; opacity: 0.42; }
 .stat-card-label { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }

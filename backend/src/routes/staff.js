@@ -1181,7 +1181,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
 // ── GET /api/staff/followups ──────────────────────────────────────
 // 我的随访列表（含计划中、已完成；数据权限：创建人或被分配人）
 router.get('/followups', staffAuth, checkPermission('followups', 'view'), async (req, res) => {
-  const { page = 1, limit = 20, status = '', dateFrom = '', dateTo = '', patientName = '', assignedTo = '', sourceType = '', excludeSourceType = '', scope = '', includeFuture = '' } = req.query;
+  const { page = 1, limit = 20, status = '', dateFrom = '', dateTo = '', dateField = 'date', patientName = '', assignedTo = '', sourceType = '', excludeSourceType = '', scope = '', includeFuture = '' } = req.query;
 
   // 如果按会员姓名搜索，先查出匹配的用户ID
   let patientFilter = {};
@@ -1226,9 +1226,10 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
     else filter.status = status;
   }
   if (dateFrom || dateTo) {
-    filter.date = {};
-    if (dateFrom) filter.date.$gte = new Date(dateFrom);
-    if (dateTo) { const end = new Date(dateTo); end.setDate(end.getDate() + 1); filter.date.$lt = end; }
+    const rangeField = status === 'completed' && dateField === 'completedAt' ? 'completedAt' : 'date';
+    filter[rangeField] = {};
+    if (dateFrom) filter[rangeField].$gte = new Date(dateFrom);
+    if (dateTo) { const end = new Date(dateTo); end.setDate(end.getDate() + 1); filter[rangeField].$lt = end; }
   }
 
   const skip = (Number(page) - 1) * Number(limit);

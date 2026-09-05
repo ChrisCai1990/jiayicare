@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast, useStaff, can } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
@@ -13,7 +13,7 @@ const STATUS_COLOR = { planned: '#D97706', in_progress: '#0077B6', missed: '#007
 
 const STATUS_TABS = [
   { v: '',            l: '全部' },
-  { v: 'planned',     l: '待随访' },
+  { v: 'active',      l: '待随访' },
   { v: 'in_progress', l: '随访中' },
   { v: 'completed',   l: '已随访' },
   { v: 'cancelled',   l: '已取消' },
@@ -130,6 +130,7 @@ function DetailModal({ item, onClose }) {
 
 export default function FollowUpsPage() {
   const nav   = useNavigate()
+  const [searchParams] = useSearchParams()
   const toast = useToast()
   const { staff } = useStaff()
 
@@ -139,11 +140,12 @@ export default function FollowUpsPage() {
   // 用本地时间取"今天"日期，不能用 toISOString（会转成UTC，凌晨0-8点北京时间会倒退一天，导致当天记录被默认筛选范围漏掉）
   const now = new Date()
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-  const [statusTab,    setStatusTab]    = useState('planned')
+  const [statusTab,    setStatusTab]    = useState(searchParams.get('status') || 'active')
   const [patientName,  setPatientName]  = useState('')
   const [assignedTo,   setAssignedTo]   = useState('')
-  const [dateFrom,     setDateFrom]     = useState(todayStr)
-  const [dateTo,       setDateTo]       = useState('')
+  const [dateFrom,     setDateFrom]     = useState(searchParams.has('dateFrom') ? searchParams.get('dateFrom') : todayStr)
+  const [dateTo,       setDateTo]       = useState(searchParams.get('dateTo') || '')
+  const [dateField,    setDateField]    = useState(searchParams.get('dateField') === 'completedAt' ? 'completedAt' : 'date')
   const [loading,      setLoading]      = useState(true)
   const [showModal,    setShowModal]    = useState(false)  // 保留状态但不再使用新建入口
   // 注：dateFrom 默认今天开始，dateTo 默认空（不限结束），显示所有待随访记录
@@ -198,7 +200,7 @@ export default function FollowUpsPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await staffAPI.getFollowUps({ page, limit, status: statusTab, patientName, assignedTo, dateFrom, dateTo, excludeSourceType: 'order,health_plan' })
+      const res = await staffAPI.getFollowUps({ page, limit, status: statusTab, patientName, assignedTo, dateFrom, dateTo, dateField, excludeSourceType: 'order' })
       setFollowUps(res.data.followUps)
       setTotal(res.data.total)
     } catch (err) {
@@ -206,7 +208,7 @@ export default function FollowUpsPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, statusTab, patientName, assignedTo, dateFrom, dateTo])
+  }, [page, statusTab, patientName, assignedTo, dateFrom, dateTo, dateField])
 
   useEffect(() => { load() }, [load])
 
@@ -294,7 +296,7 @@ export default function FollowUpsPage() {
           <button
             key={t.v}
             className={`btn btn-sm ${statusTab === t.v ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => { setStatusTab(t.v); setPage(1) }}
+            onClick={() => { setStatusTab(t.v); setDateField(t.v === 'completed' ? dateField : 'date'); setPage(1) }}
           >{t.l}</button>
         ))}
       </div>
@@ -325,7 +327,7 @@ export default function FollowUpsPage() {
             </div>
             <button className="btn btn-primary btn-sm" type="submit">搜索</button>
             <button className="btn btn-secondary btn-sm" type="button" onClick={() => {
-              setPatientName(''); setAssignedTo(''); setDateFrom(todayStr); setDateTo(''); setPage(1)
+              setPatientName(''); setAssignedTo(''); setDateFrom(todayStr); setDateTo(''); setDateField('date'); setPage(1)
             }}>重置</button>
           </form>
         </div>
