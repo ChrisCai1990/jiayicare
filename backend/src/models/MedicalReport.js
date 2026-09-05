@@ -21,6 +21,8 @@ const reportItemSchema = new mongoose.Schema({
   itemId:         { type: String, default: () => randomUUID(), index: false }, // 稳定项目ID，项目级更新不再依赖数组下标
   name:           { type: String, default: '' }, // 项目名称
   sourceSection:  { type: String, default: '' }, // 报告原始栏目标题，用于保序和组合检查完整性校验
+  sourceSectionOrder: { type: Number, default: null }, // 原件页内栏目出现顺序（从 1 开始）
+  sourceRowOrder: { type: Number, default: null }, // 原件栏目内项目行顺序（从 1 开始）
   value:          { type: String, default: '' }, // 检测值（字符串保留原始格式）
   unit:           { type: String, default: '' }, // 单位
   referenceRange: { type: String, default: '' }, // 参考范围

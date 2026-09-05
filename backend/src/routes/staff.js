@@ -81,6 +81,7 @@ const { checkPlanType } = require('../middleware/checkPermission');
 const { uploadBuffer, deleteFile, signStoredUrl, getObjectStream, urlToKey } = require('../utils/oss');
 const { rotateImageBuffer } = require('../utils/imageOrientation');
 const { withSafeHealthRecordImages } = require('../utils/healthRecordImages');
+const { tagReportPageItems, sortReportItemsBySource, stripReportSourceOrder } = require('../utils/reportSourceOrder');
 const router = express.Router();
 const activeReportParseJobs = new Set();
 // 仅服务端内存的短时页图缓存：同一审核窗口的前后台预加载不会反复转图；进程重启、超时或超量后自动释放。
@@ -8620,6 +8621,7 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
 规则J（客户展示字段，最高优先级）：institution（检查机构名称）会直接展示给客户，必须从当前图片可见的报告抬头、页眉、页脚、公章或二维码旁署名中逐字抄录完整印刷全称，并在输出前逐字复核。禁止简称、截断、同义改写、翻译、音译、纠错、补全、联想或添加后缀；例如原文为“浙江大学医学院附属邵逸夫医院”，不得输出“邵逸夫医院”。不得从文件名、历史报告、上一页机构、客户所属社区、体检套餐名称或常识推断机构。同一页出现多个机构时，只取签发本页检查结果的报告机构，不取送检单位、合作单位、社区卫生服务中心或医生所属单位。若当前页看不到可确认的完整机构全称，institution 必须输出空字符串，禁止沿用前一页或其他报告的机构。中文报告绝不允许生成“XX Hospital”“XX LLC”等英文或中英混杂名称；只有原文确实印刷为英文时才原样保留英文。
 规则K（最高优先级）：把整份报告当作一份需要顺序抄录的文档，不要重新组织内容。先从本页顶部开始，沿原版面从上到下、从左到右逐块读取；遇到一个有结果的项目就立即输出对应 item，再继续读取下一个。items 数组必须等于报告原文的阅读顺序。禁止先思考“这些数据该怎么分类”，禁止先收集全部检验再收集全部检查，禁止按 itemType(lab/imaging/data)、器官系统、科室或医学逻辑重新分组，禁止把前后不同位置的同类项目挪到一起。例：原文依次是“内科→血常规→心电图→肝功能→胸部CT”，输出也必须严格保持这个顺序。下面按类型给出的规则只用于决定当前读到的项目应填写哪些字段、是否拆成子项，不是让你按规则编号或类型重新扫描和排序报告。
 规则L（栏目驱动）：先识别页面中的栏目标题和横线分隔区，例如“一般项目/一般检查”“C13检测室”“心脏彩超”“肝胆胰脾彩超”。必须完整读完当前栏目内从第一行到“小结/结论”的所有实际结果，再进入页面下方的下一个栏目。栏目类型只决定字段：一般项目=data，化验/呼气试验=lab，超声/CT/MRI/心电图/内镜/科室体检=imaging。不得因同一页同时出现多种栏目而只提取其中一种，也不得把后一栏提前。
+规则M（可核对顺序字段）：每一条必须填写 sourceSectionOrder 和 sourceRowOrder。sourceSectionOrder 是该原件页中栏目标题从上到下、从左到右的第几个（从 1 开始）；同一栏目中的所有项目必须相同。sourceRowOrder 是该栏目中该项目的实际印刷行序（从 1 开始）。这两个字段只反映视觉版面顺序，不能按检查类型、医学分类或模型输出顺序填写。
 
 【字段填写规则（仅在顺序读到对应项目时使用；不得按下列编号重排报告）】
 
@@ -8757,6 +8759,8 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
     {
       "name": "项目名称",
       "sourceSection": "该项目在报告中所属的原始栏目标题，如一般项目、C13检测室、肝胆胰脾彩超",
+      "sourceSectionOrder": 1,
+      "sourceRowOrder": 1,
       "itemType": "lab | imaging | data",
       "value": "数值（lab/data类填写）",
       "unit": "单位",
@@ -8790,7 +8794,7 @@ const PAGE_COVERAGE_AUDIT_PROMPT = `你是体检报告页面漏项复核助手�
 只输出首轮清单中遗漏的真实检查项目；首轮已经提取的项目不要重复输出。汇总、小结、目录、建议、科普、会员信息和只有标题没有结果的栏目一律不输出。
 血液/尿液/粪便检验每个有结果的子项单独输出；内科、外科、全科、眼科、耳鼻喉、妇科、牙科或口腔科等体格检查也要按报告印刷明细逐项输出，禁止按科室合并；心电图、碳13/碳14呼气试验、头颅MRI不得漏；组合超声按器官拆开。
 严格返回JSON，不要解释：
-{"items":[{"name":"项目名","itemType":"lab | imaging | data","value":"","unit":"","referenceRange":"","status":"normal | abnormal | attention | unknown","orderName":"","sourceSection":"原栏目标题","bodyPart":"","findings":"","diagnosis":"","conclusion":"","pathologyFindings":"","pathologyDiagnosis":""}]}`;
+{"items":[{"name":"项目名","itemType":"lab | imaging | data","value":"","unit":"","referenceRange":"","status":"normal | abnormal | attention | unknown","orderName":"","sourceSection":"原栏目标题","sourceSectionOrder":1,"sourceRowOrder":1,"bodyPart":"","findings":"","diagnosis":"","conclusion":"","pathologyFindings":"","pathologyDiagnosis":""}]}`;
 
 function reportItemEvidenceKey(item) {
   const clean = value => str(value).toLowerCase().replace(/[\s，,、:：;；()（）\[\]【】\-_/]/g, '');
@@ -8813,12 +8817,6 @@ function mergeCoverageAuditItems(originalItems, auditItems) {
   return result;
 }
 
-function tagReportPageItems(items, pageNum) {
-  return (items || [])
-    .filter(it => it?.name && str(it.name).trim())
-    .map((it, index) => ({ ...it, sourcePage: pageNum, _page: pageNum, _order: index }));
-}
-
 function reportPageEvidenceScore(items) {
   // 名称为空的模型占位项不计分；数值/所见/结论必须能回到原件核对。
   return (items || []).reduce((score, item) => {
@@ -8833,14 +8831,6 @@ function reportPageEvidenceScore(items) {
 function hasIncompleteReportEvidence(items) {
   const named = (items || []).filter(item => str(item?.name));
   return named.length === 0 || reportPageEvidenceScore(named) < named.length;
-}
-
-function sortReportItemsBySource(items) {
-  return (items || []).sort((a, b) => ((a._page || 0) - (b._page || 0)) || ((a._order || 0) - (b._order || 0)));
-}
-
-function stripReportSourceOrder(items) {
-  return (items || []).map(({ _page, _order, ...rest }) => rest);
 }
 
 // C13/C14 是带数值和阳性/阴性判断的检验项目。旧 prompt 曾要求模型同时输出 lab+imaging，
@@ -10616,8 +10606,7 @@ async function runReportPageParse(reportId, pageNum) {
   const mergedPage = supplementMerge.items;
   const classifiedPage = await classifyItemsAsync(mergedPage);
   const preserved = (latest.reportItems || []).filter(item => !belongsToRequestedPage(item));
-  const combined = [...preserved, ...classifiedPage]
-    .sort((a, b) => Number(a.sourcePage || 0) - Number(b.sourcePage || 0));
+  const combined = stripReportSourceOrder(sortReportItemsBySource([...preserved, ...classifiedPage]));
   const completedAt = new Date();
   const pageParseHistory = [...(Array.isArray(latest.pageParseHistory) ? latest.pageParseHistory : []), {
     pageNum,

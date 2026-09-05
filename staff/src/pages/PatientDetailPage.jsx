@@ -15,7 +15,7 @@ GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
 // PDF 页图由服务端 pdftoppm 按完整 MediaBox 生成，与上传原图一致；浏览器侧只读取
 // 页数并显示整页图片，避免 Canvas 对扫描照片的边缘出现不一致的裁切。
-function PdfDocumentPreview({ src, activePage, onPageChange, title }) {
+function PdfDocumentPreview({ src, activePage, onPageChange, title, zoom = 100 }) {
   const containerRef = useRef(null)
   const pageRefs = useRef(new Map())
   const resourceRef = useRef(null)
@@ -111,7 +111,7 @@ function PdfDocumentPreview({ src, activePage, onPageChange, title }) {
       const pageNum = i + 1
       return <div key={pageNum} data-page={pageNum} ref={element => { if (element) pageRefs.current.set(pageNum, element); else pageRefs.current.delete(pageNum) }} style={{ height: '100%', minHeight: '100%', boxSizing: 'border-box', padding: '6px 0 10px', position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', borderBottom: '1px solid #E0D9CE', background: pageNum === activePage ? '#F6F9F7' : '#fff', scrollSnapAlign: 'start', scrollSnapStop: 'always' }}>
         {loadedPages.has(pageNum)
-          ? <img src={pageImageUrl(pageNum)} alt={`${title}第${pageNum}页`} onLoad={() => { queueNextPage(); if (pageNum === activePage) setState({ loading: false, error: '' }) }} onError={() => { queueNextPage(); if (pageNum === activePage) setState({ loading: false, error: 'PDF页面加载失败，请重试' }) }} style={{ display: pageNum === activePage ? 'block' : 'none', maxWidth: 'calc(100% - 12px)', maxHeight: 'calc(100% - 18px)', objectFit: 'contain', borderRadius: 3 }} />
+          ? <img src={pageImageUrl(pageNum)} alt={`${title}第${pageNum}页`} onLoad={() => { queueNextPage(); if (pageNum === activePage) setState({ loading: false, error: '' }) }} onError={() => { queueNextPage(); if (pageNum === activePage) setState({ loading: false, error: 'PDF页面加载失败，请重试' }) }} style={{ display: pageNum === activePage ? 'block' : 'none', width: `${zoom}%`, maxWidth: 'none', maxHeight: 'none', height: 'auto', borderRadius: 3 }} />
           : <span style={{ color: '#8AA89C', fontSize: 11 }}>第 {pageNum} 页</span>}
       </div>
     })}
@@ -1924,6 +1924,8 @@ export default function PatientDetailPage() {
   const [ocrReviewReport, setOcrReviewReport] = useState(null)
   const [ocrEditItems, setOcrEditItems] = useState([])
   const [ocrReviewPage, setOcrReviewPage] = useState(null)
+  // 审核时原件常是手机拍照页，或被嵌在窄栏中的 PDF；不能只依赖浏览器 PDF 工具栏。
+  const [ocrPreviewZoom, setOcrPreviewZoom] = useState(100)
   const [ocrFocusItemIndex, setOcrFocusItemIndex] = useState(null)
   const [ocrSaving, setOcrSaving] = useState(false)
   const [ocrDraftSavedAt, setOcrDraftSavedAt] = useState(null)
@@ -2911,6 +2913,7 @@ export default function PatientDetailPage() {
     setOcrReviewReport(latestReport)
     setOcrDraftSavedAt(null)
     setOcrSaving(false)
+    setOcrPreviewZoom(100)
     // 列表接口 select('-content') 裁掉了原图内容（体积大），这里按需补拉完整报告，
     // 否则走 content(base64) 存储的报告在审核弹窗左侧会显示"无原始文件可预览"
     if (!latestReport.content && !latestReport.fileUrl && !(latestReport.fileUrls && latestReport.fileUrls.length)) {
@@ -10748,6 +10751,15 @@ export default function PatientDetailPage() {
                 {/* 左：原始报告预览 */}
                 {(() => {
                   const paneStyle = { width: '40%', borderRight: '1px solid #E0D9CE', overflow: 'auto', flexShrink: 0, background: '#F6F9F7', padding: 8 }
+                  const previewToolbar = (url, isPdf) => (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 4px 7px', flexWrap: 'wrap' }}>
+                      <button className="btn btn-secondary btn-sm" type="button" aria-label="缩小原始报告" disabled={ocrPreviewZoom <= 50} onClick={() => setOcrPreviewZoom(z => Math.max(50, z - 25))}>−</button>
+                      <span style={{ minWidth: 38, textAlign: 'center', color: '#4A6558', fontSize: 11 }}>{ocrPreviewZoom}%</span>
+                      <button className="btn btn-secondary btn-sm" type="button" aria-label="放大原始报告" disabled={ocrPreviewZoom >= 200} onClick={() => setOcrPreviewZoom(z => Math.min(200, z + 25))}>＋</button>
+                      <button className="btn btn-secondary btn-sm" type="button" onClick={() => setOcrPreviewZoom(100)}>适合宽度</button>
+                      {isPdf && <button className="btn btn-secondary btn-sm" type="button" onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}>新窗口查看</button>}
+                    </div>
+                  )
                   // 一份报告可能关联多张照片(fileUrls，如"结论页"+"数据页")。content 场景没有多图概念，
                   // 仍走单文件预览；fileUrls 有多张时全部展示，不再只取第一张，避免审核时看不到其余照片。
                   const reportPreviewUrls = ocrReviewReport.previewUrls?.length ? ocrReviewReport.previewUrls : ocrReviewReport.fileUrls
@@ -10764,12 +10776,14 @@ export default function PatientDetailPage() {
                           return isPdf ? (
                             <div key={idx} style={{ marginBottom: 8 }}>
                               <div style={{ fontSize: 10, color: '#8AA89C', margin: '4px 0' }}>第 {idx + 1} 张</div>
-                              <PdfDocumentPreview src={s} activePage={activePage} onPageChange={setOcrReviewPage} title={`报告${idx + 1}`} />
+                              {previewToolbar(s, true)}
+                              <PdfDocumentPreview src={s} activePage={activePage} onPageChange={setOcrReviewPage} title={`报告${idx + 1}`} zoom={ocrPreviewZoom} />
                             </div>
                           ) : (
                             <div key={idx} style={{ marginBottom: 8 }}>
                               <div style={{ fontSize: 10, color: '#8AA89C', margin: '4px 0' }}>第 {idx + 1} 张</div>
-                              <img src={s} alt={`报告${idx + 1}`} style={{ width: '100%', borderRadius: 6, cursor: 'zoom-in' }} onClick={() => setPreviewImageUrl(s)} />
+                              {previewToolbar(s, false)}
+                              <img src={s} alt={`报告${idx + 1}`} style={{ width: `${ocrPreviewZoom}%`, maxWidth: 'none', borderRadius: 6, cursor: 'zoom-in' }} onClick={() => setPreviewImageUrl(s)} />
                             </div>
                           )
                         })}
@@ -10785,9 +10799,15 @@ export default function PatientDetailPage() {
                     <div style={paneStyle}>
                       <div style={{ fontSize: 11, color: '#8AA89C', padding: '2px 4px 6px' }}>原始报告（对照核对）</div>
                       {isImg ? (
-                        <img src={src} alt="报告" style={{ width: '100%', borderRadius: 6, cursor: 'zoom-in' }} onClick={() => setPreviewImageUrl(src)} />
+                        <>
+                          {previewToolbar(src, false)}
+                          <img src={src} alt="报告" style={{ width: `${ocrPreviewZoom}%`, maxWidth: 'none', borderRadius: 6, cursor: 'zoom-in' }} onClick={() => setPreviewImageUrl(src)} />
+                        </>
                       ) : isPdf ? (
-                        <PdfDocumentPreview src={src} activePage={activePage} onPageChange={setOcrReviewPage} title="报告PDF" />
+                        <>
+                          {previewToolbar(src, true)}
+                          <PdfDocumentPreview src={src} activePage={activePage} onPageChange={setOcrReviewPage} title="报告PDF" zoom={ocrPreviewZoom} />
+                        </>
                       ) : (
                         <button className="btn btn-primary btn-sm" onClick={() => window.open(src, '_blank')}>打开文件</button>
                       )}
@@ -10802,9 +10822,16 @@ export default function PatientDetailPage() {
                 )}
                 {(() => {
                   const inp = { width: '100%', padding: '4px 6px', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 12, boxSizing: 'border-box' }
-                  // 后端已经按报告页码和页内位置保存顺序；审核层只按该顺序展示，不再按类型重排。
+                  // 顺序是原件页码 → 栏目 → 栏目内行序；绝不按检查类型重新排序。
                   const indexedAll = ocrEditItems.map((it, i) => ({ it, i }))
-                  const indexed = indexedAll.filter(({ it }) => !it.sourcePage || Number(it.sourcePage) === activePage)
+                  const indexed = indexedAll
+                    .filter(({ it }) => !it.sourcePage || Number(it.sourcePage) === activePage)
+                    .sort((a, b) => {
+                      const section = (Number(a.it.sourceSectionOrder) || Number.MAX_SAFE_INTEGER) - (Number(b.it.sourceSectionOrder) || Number.MAX_SAFE_INTEGER)
+                      if (section) return section
+                      const row = (Number(a.it.sourceRowOrder) || Number.MAX_SAFE_INTEGER) - (Number(b.it.sourceRowOrder) || Number.MAX_SAFE_INTEGER)
+                      return row || a.i - b.i
+                    })
                   const reviewedCount = indexedAll.filter(({ it }) => it.manualReviewStatus === 'reviewed').length
                   const pageAllReviewed = indexed.length > 0 && indexed.every(({ it }) => it.manualReviewStatus === 'reviewed')
                   // 影像/描述判定：标了 imaging，或数值是长文本（>40字，基本是诊断描述而非检验值）
@@ -10864,15 +10891,21 @@ export default function PatientDetailPage() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
-                        {indexed.map(({ it, i }) => {
+                        {indexed.map(({ it, i }, visibleIndex) => {
                           const sc = STATUS_OPTS.find(s => s.v === it.status)?.color || '#8AA89C'
                           const isFocusedItem = ocrFocusItemIndex === i
+                          const previous = indexed[visibleIndex - 1]?.it
+                          const isNewSourceSection = !previous || String(previous.sourceSection || previous.orderName || '') !== String(it.sourceSection || it.orderName || '')
                           return (
-                            <div key={i} ref={node => { if (node) ocrItemRefs.current[i] = node; else delete ocrItemRefs.current[i] }}
+                            <React.Fragment key={i}>
+                            {isNewSourceSection && <div style={{ padding: '7px 10px', borderRadius: 6, background: '#EEF9F3', color: '#1E6B50', fontSize: 12, fontWeight: 700 }}>
+                              原件栏目：{it.sourceSection || it.orderName || '未识别栏目'}
+                            </div>}
+                            <div ref={node => { if (node) ocrItemRefs.current[i] = node; else delete ocrItemRefs.current[i] }}
                               style={{ border: isFocusedItem ? '2px solid #7C3AED' : '1px solid #E0D9CE', borderRadius: 8, padding: '10px 12px', background: isFocusedItem ? '#F5F3FF' : (isImaging(it) ? '#fafaf8' : '#fff'), boxShadow: isFocusedItem ? '0 0 0 3px rgba(124,58,237,.12)' : 'none' }}>
                               {isFocusedItem && <div style={{ fontSize: 11, color: '#7C3AED', fontWeight: 800, marginBottom: 6 }}>已定位到需要核对归属的项目</div>}
                               <div style={{ fontSize: 10, color: isImaging(it) ? '#0369A1' : '#7C3AED', fontWeight: 700, marginBottom: 6 }}>
-                                {it.sourcePage ? `原报告 P${it.sourcePage} · ` : ''}第 {i + 1} 项 · {isImaging(it) ? '检查/影像' : '检验/数值'}{it.sourceSection ? ` · ${it.sourceSection}` : ''}{it.orderName ? ` · ${it.orderName}` : ''}
+                                {it.sourcePage ? `原报告 P${it.sourcePage} · ` : ''}栏目内第 {it.sourceRowOrder || visibleIndex + 1} 项 · {isImaging(it) ? '检查/影像' : '检验/数值'}{it.orderName ? ` · ${it.orderName}` : ''}
                                 <button onClick={() => updItem(i, {
                                   manualReviewStatus: it.manualReviewStatus === 'reviewed' ? 'pending' : 'reviewed',
                                   manualReviewedAt: it.manualReviewStatus === 'reviewed' ? null : (it.manualReviewedAt || new Date().toISOString()),
@@ -10918,6 +10951,7 @@ export default function PatientDetailPage() {
                               </>}
                               {classifyCell(it, i)}
                             </div>
+                            </React.Fragment>
                           )
                         })}
                       </div>
