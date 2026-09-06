@@ -22,6 +22,21 @@ const Product = require('../models/Product');
 const ProductCategory = require('../models/ProductCategory');
 const { resolveHealthPlanner } = require('../utils/healthPlannerAssignment');
 
+async function resolveOrderWorkflowAssignee(userId, serviceName = '') {
+  if (/住院一站式/.test(serviceName)) {
+    const patient = await User.findById(userId).select('assignedFamilyDoctor').lean();
+    if (patient?.assignedFamilyDoctor) {
+      const activeAdvisor = await Admin.exists({
+        _id: patient.assignedFamilyDoctor,
+        role: 'familyDoctor',
+        staffStatus: 'active',
+      });
+      if (activeAdvisor) return patient.assignedFamilyDoctor;
+    }
+  }
+  return resolveHealthPlanner(userId);
+}
+
 // GET /api/services — 从商城产品获取（管理员在后台维护的 Products）
 // Public catalogue: reviewers and prospective users must be able to browse
 // service content before being asked to log in or authorize personal data.
