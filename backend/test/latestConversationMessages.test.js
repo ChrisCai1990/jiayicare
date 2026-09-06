@@ -7,8 +7,8 @@ const readRoute = (name) => fs.readFileSync(path.join(__dirname, '..', 'src', 'r
 
 test('用户端和医护端会话均先取最新100条再恢复为时间正序', () => {
   const userSource = readRoute('messages.js');
-  assert.match(userSource, /const \[newestMessages, state\] = await Promise\.all/);
-  assert.match(userSource, /const messages = newestMessages\.reverse\(\)/);
+  assert.match(userSource, /const \[newestMessages, plannerLogs, state\] = await Promise\.all/);
+  assert.match(userSource, /messages\.sort\(\(a, b\) => new Date\(a\.createdAt\) - new Date\(b\.createdAt\)\)/);
   assert.match(userSource, /user: req\.user\._id,[\s\S]*\$and: \[[\s\S]*\{ \$or: \[\{ conversationId \}, \{ type: role, conversationId: null \}\] \}/);
   const staffSource = readRoute('staff.js');
   assert.match(staffSource, /const \[newestMessages, plannerLogs, state\] = await Promise\.all/);

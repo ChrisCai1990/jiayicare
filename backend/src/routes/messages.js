@@ -1,11 +1,13 @@
 const express = require('express');
 const auth = require('../middleware/auth');
 const Message = require('../models/Message');
+const ChatLog = require('../models/ChatLog');
 const ChatConversationState = require('../models/ChatConversationState');
 const { isHumanPresent } = require('../utils/chatPresence');
 const PushRecord = require('../models/PushRecord');
 const { QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
 const { uploadBase64, signStoredUrl } = require('../utils/oss');
+const { conversationRoleKeys, getConversationRole } = require('../utils/conversationRoles');
 const router = express.Router();
 
 function withSignedMessageMedia(message) {
@@ -48,10 +50,9 @@ router.get('/', auth, async (req, res) => {
 // 获取与某个角色的完整对话线程
 router.get('/thread/:role', auth, async (req, res) => {
   const { role } = req.params;
-  const VALID = ['doctor', 'nutritionist', 'manager', 'planner', 'medicalAssistant'];
-  if (!VALID.includes(role)) return res.status(400).json({ success: false, message: '无效角色' });
+  if (!conversationRoleKeys.includes(role)) return res.status(400).json({ success: false, message: '无效角色' });
   const conversationId = `${req.user._id}_${role}`;
-  const [newestMessages, state] = await Promise.all([
+  const [newestMessages, plannerLogs, state] = await Promise.all([
     Message.find({
       user: req.user._id,
       recalled: { $ne: true },
@@ -60,14 +61,32 @@ router.get('/thread/:role', auth, async (req, res) => {
         { $or: [{ aiGenerated: { $ne: true } }, { aiReviewStatus: { $in: ['', 'approved'] } }] },
       ],
     }).sort({ createdAt: -1 }).limit(100),
+    role === 'planner'
+      ? ChatLog.find({ user: req.user._id, recalled: { $ne: true } }).sort({ createdAt: -1 }).limit(50).lean()
+      : [],
     ChatConversationState.findOne({ conversationId }).select('humanActive takenOverAt').lean(),
   ]);
-  const messages = newestMessages.reverse();
+  const messages = newestMessages.map(withSignedMessageMedia);
+  // 旧版健康规划师曾使用 ChatLog。只在读取时并入统一线程；今后的消息均写入 Message。
+  if (role === 'planner') {
+    plannerLogs.forEach((log) => {
+      if (log.userMessage) messages.push({
+        _id: `chat-user:${log._id}`, user: log.user, type: 'user', sender: '客户',
+        content: log.userMessage, imageUrl: signStoredUrl(log.imageUrl || ''), audioUrl: signStoredUrl(log.audioUrl || ''),
+        audioDuration: log.audioDuration || 0, audioTranscript: log.audioTranscript || '', createdAt: log.createdAt,
+      });
+      if (log.aiReply) messages.push({
+        _id: `chat-ai:${log._id}`, user: log.user, type: 'planner', sender: 'AI健康规划师',
+        content: log.aiReply, isAI: true, createdAt: log.createdAt,
+      });
+    });
+  }
+  messages.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
   // 标记所有未读为已读
   await Message.updateMany({ conversationId, user: req.user._id, type: { $ne: 'user' }, unread: true }, { unread: false, readAt: new Date() });
   res.json({
     success: true,
-    data: messages.map(withSignedMessageMedia),
+    data: messages.slice(-100),
     conversationId,
     humanActive: isHumanPresent(state),
     takenOverAt: state?.takenOverAt || null,
@@ -131,23 +150,21 @@ router.post('/', auth, async (req, res) => {
     if (!content?.trim() && !imageUrl && !image && !images.length && !audio?.data) {
       return res.status(400).json({ success: false, message: '消息内容不能为空' });
     }
-    const VALID_RECIPIENTS = ['doctor', 'nutritionist', 'manager', 'planner', 'medicalAssistant'];
-    if (!VALID_RECIPIENTS.includes(to)) {
+    const roleConfig = getConversationRole(to);
+    if (!roleConfig) {
       return res.status(400).json({ success: false, message: '收件人无效' });
     }
 
     // 检查需专属分配的岗位是否已分配（re-fetch确保最新状态）
-    if (to === 'nutritionist' || to === 'planner' || to === 'medicalAssistant') {
+    if (roleConfig.assignedField) {
       const User = require('../models/User');
-      const freshUser = await User.findById(req.user._id).select('assignedNutritionist assignedHealthPlanner assignedMedicalAssistant');
-      const assigned = to === 'nutritionist' ? freshUser?.assignedNutritionist : to === 'planner' ? freshUser?.assignedHealthPlanner : freshUser?.assignedMedicalAssistant;
+      const freshUser = await User.findById(req.user._id).select(roleConfig.assignedField);
+      const assigned = freshUser?.[roleConfig.assignedField];
       if (!assigned) {
-        const label = to === 'nutritionist' ? '营养师' : to === 'planner' ? '健康规划师' : '就医专员';
-        return res.status(400).json({ success: false, message: `暂未分配${label}，请联系健管专员` });
+        return res.status(400).json({ success: false, message: `暂未分配${roleConfig.label}，请联系健管专员` });
       }
     }
 
-    const TITLE_MAP = { doctor: '健康顾问', nutritionist: '营养师', manager: '健管专员', planner: '健康规划师', medicalAssistant: '就医专员' };
     const senderName = req.user.name || req.user.phone;
     const conversationId = `${req.user._id}_${to}`;
     let storedImageUrl = String(imageUrl || '');
@@ -178,7 +195,7 @@ router.post('/', auth, async (req, res) => {
       user:    req.user._id,
       type:    'user',
       sender:  senderName,
-      title:   `用户留言 → ${TITLE_MAP[to]}`,
+      title:   `用户留言 → ${roleConfig.label}`,
       content: content.trim() || '[语音消息]',
       imageUrl: storedImageUrl,
       imageUrls: storedImageUrls,
@@ -227,7 +244,7 @@ router.post('/', auth, async (req, res) => {
       return;
     }
     // 就医专员频道只做真人沟通，不生成可能被误认为就医建议的 AI 兜底回复。
-    if (suppressAI || to === 'medicalAssistant') return;
+    if (suppressAI || !roleConfig.aiEnabled) return;
 
     // AI立即先回一句安抚（不阻塞响应），医护看到后仍可正常人工回复追加
     require('../utils/aiMessageFallback').replyWithAI({

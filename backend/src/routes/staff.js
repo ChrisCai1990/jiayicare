@@ -5822,14 +5822,7 @@ router.get('/user-messages', staffAuth, async (req, res) => {
 // 角色只能查看/操作自己对应频道的对话（健康顾问→doctor，营养师→nutritionist，健管专员→manager，就医专员→medicalAssistant），
 // 防止越权看到并误将其他角色的留言标记已读（曾导致健管专员点开健康顾问的对话后，健康顾问端误判为"已读"而漏看）
 function assertRoleMatchesChannel(staffRole, channelRole) {
-  if (staffRole === 'superadmin') return true;
-  const allowed =
-    staffRole === 'familyDoctor'  ? 'doctor' :
-    staffRole === 'nutritionist'  ? 'nutritionist' :
-    staffRole === 'healthPlanner' ? 'planner' :
-    staffRole === 'medicalAssistant' ? 'medicalAssistant' :
-    'manager';
-  return allowed === channelRole;
+  return require('../utils/conversationRoles').staffCanAccessConversation(staffRole, channelRole);
 }
 
 // ── 获取某用户的对话线程（按 roleKey 区分）────────────────────────
@@ -5843,10 +5836,7 @@ router.get('/user-messages/:userId/thread', staffAuth, async (req, res) => {
     const conversationId = `${req.params.userId}_${role}`;
     const ChatConversationState = require('../models/ChatConversationState');
     const [newestMessages, plannerLogs, state] = await Promise.all([
-      Message.find(role === 'planner' ? {
-        recalled: { $ne: true },
-        $or: [{ conversationId }, { conversationId: `${req.params.userId}_manager`, isAI: true }],
-      } : { recalled: { $ne: true }, $or: [{ conversationId }, { user: req.params.userId, type: role, conversationId: null }] }).sort({ createdAt: -1 }).limit(100),
+      Message.find({ recalled: { $ne: true }, $or: [{ conversationId }, { user: req.params.userId, type: role, conversationId: null }] }).sort({ createdAt: -1 }).limit(100),
       role === 'planner' ? ChatLog.find({ user: req.params.userId, recalled: { $ne: true } }).sort({ createdAt: -1 }).limit(50).lean() : [],
       ChatConversationState.findOne({ conversationId }).select('humanActive takenOverAt takenOverBy').lean(),
     ]);

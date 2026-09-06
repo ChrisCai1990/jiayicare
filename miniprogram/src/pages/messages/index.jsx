@@ -13,11 +13,11 @@ import { chooseImageWithPrivacy, showImagePickerError } from '../../utils/imageP
 // - 小程序无 EventSource(SSE) 支持，会话内用 10 秒轮询代替实时推送（app端是SSE）
 // - 小程序无 EventSource，但会话文字和语音均支持单播放器播放
 const ROLE_DEFS = [
-  { key: 'doctor', label: '健康顾问', icon: '🩺', color: colors.primary },
-  { key: 'manager', label: '健管专员', icon: '🧑‍💼', color: '#D97706' },
-  { key: 'planner', label: '健康规划师', icon: '🗺️', color: '#2563EB' },
-  { key: 'nutritionist', label: '营养师', icon: '🥗', color: '#059669' },
-  { key: 'medicalAssistant', label: '就医专员', icon: '🏥', color: '#7C3AED' },
+  { key: 'doctor', label: '健康顾问', icon: '🩺', color: colors.primary, aiEnabled: true },
+  { key: 'manager', label: '健管专员', icon: '🧑‍💼', color: '#D97706', aiEnabled: true },
+  { key: 'planner', label: '健康规划师', icon: '🗺️', color: '#2563EB', aiEnabled: true },
+  { key: 'nutritionist', label: '营养师', icon: '🥗', color: '#059669', aiEnabled: true },
+  { key: 'medicalAssistant', label: '就医专员', icon: '🏥', color: '#7C3AED', aiEnabled: false },
 ];
 
 const EXTRA_TEAM_META = {
@@ -115,7 +115,7 @@ function fmtMsgTime(t) {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenPlanner, assistantConfig = {}, onlineStatus = { mode: 'ai', label: 'AI在线' } }) {
+export default function MessagesPage({ embedded = false, refreshKey = 0, assistantConfig = {} }) {
   const { statusBarHeight } = useNavBar();
   const { user } = useAuth();
   // Older production users can have careTeam saved as null/object. Keep render
@@ -130,7 +130,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
     if (key === 'doctor') return careTeamKinds.has('familyDoctor');
     if (key === 'nutritionist') return careTeamKinds.has('nutritionist');
     if (key === 'manager') return careTeamKinds.has('healthManager');
-    if (key === 'planner') return careTeamKinds.has('healthPlanner');
+    if (key === 'planner') return true;
     if (key === 'medicalAssistant') return careTeamKinds.has('medicalAssistant');
     return false;
   };
@@ -213,7 +213,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
   };
 
   if (threadRole) {
-    return <ConversationThread role={threadRole} member={careTeamMember(threadRole)} embedded={embedded} assistantConfig={assistantConfig} onlineStatus={onlineStatus} onClose={() => { setThreadRole(null); loadMessages(); }} />;
+    return <ConversationThread role={threadRole} member={careTeamMember(threadRole)} embedded={embedded} assistantConfig={assistantConfig} onClose={() => { setThreadRole(null); loadMessages(); }} />;
   }
 
   return (
@@ -231,16 +231,6 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
         <Text style={{ fontSize: '13px', color: colors.textMuted, padding: `0 ${spacing.lg}px` }}>加载中...</Text>
       ) : (
         <View style={{ width: '100%', boxSizing: 'border-box', padding: `0 ${spacing.sm}px` }}>
-          <View onClick={onOpenPlanner} style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', height: '82px', padding: '12px 14px', boxSizing: 'border-box', marginBottom: `${spacing.md}px`, backgroundColor: colors.primary, borderRadius: `${radius.lg}px`, boxShadow: shadow.card }}>
-            <View style={{ position: 'absolute', width: '100px', height: '100px', borderRadius: '50px', right: '-25px', top: '-35px', backgroundColor: 'rgba(255,255,255,0.08)' }} />
-            <View style={{ width: '46px', height: '46px', borderRadius: '15px', backgroundColor: 'rgba(255,255,255,0.16)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '12px', flexShrink: 0 }}><Icon name="✨" size={20} color="#fff" /></View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={{ display: 'block', fontSize: '16px', fontWeight: 800, color: '#fff' }}>{assistantConfig.plannerName || '小嘉 | 健康规划师'}</Text>
-              <Text style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden', fontSize: '11px', lineHeight: '17px', maxHeight: '34px', color: 'rgba(255,255,255,0.84)', marginTop: '3px' }}>{assistantConfig.plannerCardSubtitle || '承接复查提醒并协助办理'}</Text>
-            </View>
-            <Text style={{ position: 'relative', color: '#fff', fontSize: '20px', marginLeft: '8px' }}>›</Text>
-          </View>
-
           <View style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', margin: `0 ${spacing.xs}px ${spacing.sm}px` }}>
             <View>
               <Text style={{ display: 'block', fontSize: '17px', fontWeight: 800, color: colors.textPrimary }}>{assistantConfig.teamName || '健康服务团队'}</Text>
@@ -594,21 +584,17 @@ function ProductPushDetail({ msg, onClose }) {
   );
 }
 
-const ROLE_META = {
-  doctor: { label: '健康顾问', icon: '🩺', color: colors.primary },
-  manager: { label: '健管专员', icon: '🧑‍💼', color: '#D97706' },
-  planner: { label: '健康规划师', icon: '🗺️', color: '#2563EB' },
-  nutritionist: { label: '营养师', icon: '🥗', color: '#059669' },
-  medicalAssistant: { label: '就医专员', icon: '🏥', color: '#7C3AED' },
-};
+const ROLE_META = Object.fromEntries(ROLE_DEFS.map((role) => [role.key, role]));
 
-function ConversationThread({ role, member, onClose, embedded = false, assistantConfig = {}, onlineStatus = { mode: 'ai', label: 'AI在线' } }) {
+function ConversationThread({ role, member, onClose, embedded = false }) {
   const { statusBarHeight } = useNavBar();
   const [msgs, setMsgs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [humanActive, setHumanActive] = useState(false);
+  const [unreadAnchorId, setUnreadAnchorId] = useState('');
+  const [scrollTarget, setScrollTarget] = useState('');
   const [foodImages, setFoodImages] = useState([]);
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -632,6 +618,7 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
     try { return new Set(Taro.getStorageSync('jy_played_voice_ids') || []); } catch { return new Set(); }
   });
   const playedVoiceIdsRef = useRef(playedVoiceIds);
+  const initialPositionedRef = useRef(false);
 
   useEffect(() => () => {
     audioPlayerRef.current?.destroy?.();
@@ -648,11 +635,21 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
   const loadThread = useCallback(async () => {
     try {
       const res = await messagesAPI.getThread(role);
-      setMsgs(res.data || []);
+      const nextMessages = res.data || [];
+      setMsgs(nextMessages);
       setHumanActive(!!res.humanActive);
+      if (!initialPositionedRef.current) {
+        const firstUnread = nextMessages.find((message) => message.type !== 'user' && message.unread);
+        const anchorId = firstUnread?._id ? String(firstUnread._id) : '';
+        setUnreadAnchorId(anchorId);
+        setScrollTarget(anchorId ? `thread-msg-${anchorId}` : `thread-bottom-${nextMessages.length}`);
+        initialPositionedRef.current = true;
+      } else if (!unreadAnchorId) {
+        setScrollTarget(`thread-bottom-${nextMessages.length}`);
+      }
     } catch {}
     setLoading(false);
-  }, [role]);
+  }, [role, unreadAnchorId]);
 
   const refreshAfterSend = () => {
     // 用户消息先返回，AI回复通常晚约1～3秒入库；分段刷新避免只在AI生成前刷新一次。
@@ -678,6 +675,8 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
       }
       const res = await messagesAPI.send(role, text || '图片记录', extra);
       if (res?.data) setMsgs((prev) => (prev.some((m) => m._id === res.data._id) ? prev : [...prev, res.data]));
+      setUnreadAnchorId('');
+      setScrollTarget(`thread-bottom-${msgs.length + 1}`);
       setFoodImages([]);
       // 服务团队频道只负责沟通，不把每轮问答自动写成“日常健康打卡”。
       // 用户需要形成饮食记录时，应从专门的营养记录入口明确提交餐食/照片。
@@ -713,6 +712,8 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
         audio: { data: `data:audio/mpeg;base64,${base64}`, mimeType: 'audio/mpeg', duration: Math.max(1, Math.ceil(duration / 1000)) },
       });
       if (res?.data) setMsgs((prev) => [...prev, res.data]);
+      setUnreadAnchorId('');
+      setScrollTarget(`thread-bottom-${msgs.length + 1}`);
       refreshAfterSend();
     } catch (err) {
       Taro.showToast({ title: err?.message || '语音发送失败', icon: 'none' });
@@ -854,12 +855,12 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
         <View onClick={onClose} style={{ minWidth: '64px', padding: '8px 0', marginRight: '8px' }}><Text style={{ fontSize: '14px', color: colors.primary, fontWeight: 600 }}>‹ 返回</Text></View>
         <View style={{ flex: 1, textAlign: 'center' }}>
           <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{meta.label}</Text>
-          <Text style={{ fontSize: '11px', color: humanActive ? '#D97706' : colors.success }}>● {humanActive ? '人工服务中' : 'AI在线'}</Text>
+          <Text style={{ fontSize: '11px', color: !meta.aiEnabled || humanActive ? '#D97706' : colors.success }}>● {!meta.aiEnabled ? '人工服务' : humanActive ? '人工服务中' : 'AI在线'}</Text>
         </View>
         <View style={{ width: '20px' }} />
       </View>
 
-      <ScrollView scrollY scrollIntoView={`thread-bottom-${msgs.length}`} scrollAnchoring scrollWithAnimation style={{ flex: 1, height: 0, minHeight: 0, padding: `${spacing.lg}px`, boxSizing: 'border-box' }}>
+      <ScrollView scrollY scrollIntoView={scrollTarget || `thread-bottom-${msgs.length}`} scrollAnchoring scrollWithAnimation style={{ flex: 1, height: 0, minHeight: 0, padding: `${spacing.lg}px`, boxSizing: 'border-box' }}>
         {loading ? (
           <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
         ) : msgs.length === 0 ? (
@@ -883,6 +884,7 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
             const dateLabel = `${dayLabel}${String(currentDate.getHours()).padStart(2, '0')}:${String(currentDate.getMinutes()).padStart(2, '0')}`;
             return (
               <View key={m._id} id={`thread-msg-${m._id}`}>
+                {unreadAnchorId === String(m._id) && <View style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '12px 0' }}><View style={{ flex: 1, height: '1px', backgroundColor: '#D8B46A' }} /><Text style={{ fontSize: '11px', color: '#A26A00' }}>以下为未读消息</Text><View style={{ flex: 1, height: '1px', backgroundColor: '#D8B46A' }} /></View>}
                 {showDate && <Text style={{ display: 'block', textAlign: 'center', fontSize: '11px', color: colors.textMuted, margin: '14px 0 6px' }}>{dateLabel}</Text>}
                 <View style={{ display: 'flex', width: '100%', minWidth: 0, justifyContent: isMine ? 'flex-end' : 'flex-start', marginBottom: '10px', boxSizing: 'border-box' }}>
                   <View style={{
@@ -920,6 +922,8 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
         )}
         <View id={`thread-bottom-${msgs.length}`} style={{ height: '24px' }} />
       </ScrollView>
+
+      {!!unreadAnchorId && <View onClick={() => { setUnreadAnchorId(''); setScrollTarget(`thread-bottom-${msgs.length}`); }} style={{ position: 'absolute', right: '14px', bottom: '78px', zIndex: 30, padding: '7px 12px', borderRadius: '16px', backgroundColor: '#fff', border: `1px solid ${colors.border}`, boxShadow: shadow.sm }}><Text style={{ fontSize: '11px', color: colors.primary }}>回到最新消息 ↓</Text></View>}
 
       {foodImages.length > 0 && (
         <View style={{ padding: `8px ${spacing.lg}px`, backgroundColor: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>

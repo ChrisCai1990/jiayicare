@@ -11,8 +11,8 @@ function ssePublish(...args) { if (!_ssePublish) { try { _ssePublish = require('
 
 // AI消息即时兜底回复：用户给健康顾问/营养师/健管专员留言后，AI立即先回一句安抚，
 // 明确不涉及诊断/治疗建议；医护看到后仍可正常人工回复追加，不覆盖AI这条。
-const TITLE_MAP = { doctor: '健康顾问', nutritionist: '营养师', manager: '健管专员' };
-const SENDER_MAP = { doctor: 'AI健康助手（代健康顾问）', nutritionist: 'AI健康助手（代营养师）', manager: 'AI健康助手（代健管专员）' };
+const TITLE_MAP = { doctor: '健康顾问', nutritionist: '营养师', manager: '健管专员', planner: '健康规划师' };
+const SENDER_MAP = { doctor: 'AI健康助手（代健康顾问）', nutritionist: 'AI健康助手（代营养师）', manager: 'AI健康助手（代健管专员）', planner: 'AI健康规划师' };
 
 const FULL_DISCLAIMER = '';
 const SHORT_DISCLAIMER = '';
