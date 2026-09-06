@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const confirmedScheduleUtils = require('../src/utils/confirmedServiceSchedule');
 const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
 function route(method, url) {
   const start = source.indexOf(`router.${method}('${url}'`);
@@ -23,7 +24,11 @@ async function generate({ role = 'familyDoctor', templateName = '住院一站式
     Order: { findOne: () => query(orderName ? { _id: 'order', serviceName: orderName } : null) },
     PlanTemplate: { findOne: () => query(template), find: () => query([]) },
     HealthPlan: { create: async data => { created = data; return data; } },
-    require: name => { assert.equal(name, '../utils/ai'); return { chat: async () => { aiCalls++; return '{"tasks":"确认就医需求\\n确认预约安排"}'; } }; },
+    require: name => {
+      if (name === '../utils/confirmedServiceSchedule') return confirmedScheduleUtils;
+      assert.equal(name, '../utils/ai');
+      return { chat: async () => { aiCalls++; return '{"tasks":"确认就医需求\\n确认预约安排"}'; } };
+    },
   });
   const res = response();
   await handler({ staff: { role, _id: 'creator' }, params: { id: 'patient' }, query: {

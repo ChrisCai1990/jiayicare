@@ -1676,7 +1676,8 @@ router.get('/plans/:id', staffAuth, async (req, res) => {
         { path: 'assignedHealthPlanner', select: 'name role title' },
         { path: 'assignedMedicalAssistant', select: 'name role title' },
       ],
-    }).populate('staffId', 'name role title');
+    }).populate('staffId', 'name role title')
+    .populate('sourceOrderId', 'desiredServiceDate scheduledAt serviceRequirements note');
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
   const canManage = await canManagePlan(req, plan);
   const isCreator = String(plan.staffId?._id || plan.staffId) === String(req.staff._id);
@@ -1687,7 +1688,12 @@ router.get('/plans/:id', staffAuth, async (req, res) => {
     && checkPlanTypeRole(plan, req.staff.role)
     && await planTypeAllowed(req, plan.type)
   );
-  res.json({ success: true, data: { ...plan.toObject(), canManage, canDelete } });
+  const responsePlan = plan.toObject();
+  if (plan.type === 'medical_assist' && plan.sourceOrderId) {
+    const { applyConfirmedServiceSchedule } = require('../utils/confirmedServiceSchedule');
+    responsePlan.content = applyConfirmedServiceSchedule(responsePlan.content, plan.sourceOrderId);
+  }
+  res.json({ success: true, data: { ...responsePlan, canManage, canDelete } });
 });
 
 // POST /api/staff/plans
@@ -11258,6 +11264,8 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
     if (orderId) {
       order = await Order.findOne({ _id: orderId, user: user._id }).select('serviceName note desiredServiceDate serviceRequirements paidAmount').lean();
     }
+    const { confirmedServiceSchedule } = require('../utils/confirmedServiceSchedule');
+    const confirmedSchedule = confirmedServiceSchedule(order, briefNote);
 
     // 2026-07-13：就医专员现在可以在生成前先手动选定模板（templateId），选了就必须严格用这份，
     // 不再靠订单服务名去猜——猜测匹配只作为"未指定模板"时的历史兜底路径保留，避免误配到别的服务模板。
@@ -11405,7 +11413,11 @@ ${templateBlock}
     // 把AI生成的逐行任务文本拆成独立记录，负责人默认留空由就医专员自行分配
     const taskRecords = tasksText.split('\n').map(t => t.trim()).filter(Boolean).map(t => ({ task: t }));
     const moduleData = {
-      visit: { hospital: raw.hospital || '', department: raw.department || '', expert: raw.expert || '' },
+      visit: {
+        hospital: raw.hospital || '', department: raw.department || '', expert: raw.expert || '',
+        visitDate: confirmedSchedule.serviceDate,
+        serviceTime: confirmedSchedule.serviceTime,
+      },
       logistics: { hotel: raw.hotel || '', transport: raw.transport || '' },
       tasks: { records: taskRecords },
       notes: { content: raw.notes || '' },
@@ -11451,6 +11463,7 @@ ${templateBlock}
         serviceDomain: usedTemplate?.content?.serviceDomain || 'medical_assist',
         serviceMode: usedTemplate?.content?.serviceMode || '',
         hospital: raw.hospital || '', department: raw.department || '', expert: raw.expert || '',
+        serviceDate: confirmedSchedule.serviceDate, serviceTime: confirmedSchedule.serviceTime,
         hotel: raw.hotel || '', transport: raw.transport || '',
         tasks: tasksText, notes: raw.notes || '',
         moduleData,
