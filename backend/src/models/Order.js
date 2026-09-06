@@ -47,8 +47,6 @@ const orderSchema = new mongoose.Schema({
     enum: ['pending', 'scheduled', 'completed', 'cancelled'],
     default: 'pending',
   },
-  // 仅控制客户侧订单列表可见性；后台、退款、健康基金和审计链路继续保留完整订单。
-  hiddenFromUser: { type: Boolean, default: false },
   scheduledAt: { type: Date },
   completedAt: { type: Date },
   aiIntake: {
