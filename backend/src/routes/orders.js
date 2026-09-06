@@ -62,6 +62,31 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
+// 客户确认服务日期和具体事项。仅允许修改尚未开始执行的本人订单。
+router.patch('/:id/service-details', auth, async (req, res) => {
+  try {
+    const order = await Order.findOne({ _id: req.params.id, user: req.user._id });
+    if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
+    if (order.status !== 'pending' || Number(order.usedUnits || 0) > 0 || !['', 'none'].includes(order.refundStatus || 'none')) {
+      return res.status(409).json({ success: false, message: '订单已开始服务或正在退款，不能再修改服务需求' });
+    }
+    const desiredServiceDate = String(req.body.desiredServiceDate || '').trim();
+    const serviceRequirements = String(req.body.serviceRequirements || '').trim();
+    if (!desiredServiceDate || !serviceRequirements) {
+      return res.status(400).json({ success: false, message: '请确认服务日期和具体服务需求' });
+    }
+    const parsedDate = new Date(`${desiredServiceDate}T00:00:00+08:00`);
+    if (Number.isNaN(parsedDate.getTime())) return res.status(400).json({ success: false, message: '服务日期格式不正确' });
+    if (serviceRequirements.length > 1000) return res.status(400).json({ success: false, message: '服务需求不能超过1000字' });
+    order.desiredServiceDate = parsedDate;
+    order.serviceRequirements = serviceRequirements;
+    await order.save();
+    res.json({ success: true, message: '服务信息已确认', data: order });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '保存服务信息失败', error: err.message });
+  }
+});
+
 // 取消订单（仅限 pending 状态）
 router.patch('/:id/cancel', auth, async (req, res) => {
   try {

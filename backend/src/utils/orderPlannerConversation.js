@@ -7,13 +7,18 @@ function customerOrderNote(note = '') {
 async function ensureOrderPlannerPrompt(order) {
   if (!order?._id || !order.user || order.orderType === 'package') return null;
   const conversationId = `${order.user}_planner`;
-  const existing = await Message.findOne({ conversationId, 'action.type': 'order_planner_confirmation', 'action.orderId': String(order._id) });
-  if (existing) return existing;
-
   const note = customerOrderNote(order.note);
   const scheduled = order.scheduledAt ? new Date(order.scheduledAt).toLocaleDateString('zh-CN') : '';
   const known = [scheduled && `订单时间为${scheduled}`, note && `备注为“${note}”`].filter(Boolean).join('，');
   const content = `已收到您的“${order.serviceName}”订单。${known ? `${known}。` : ''}请在上方一次填写服务日期和具体事项，提交后将直接同步给嘉医管家。`;
+  const existing = await Message.findOne({
+    conversationId,
+    $or: [
+      { 'action.type': 'order_planner_confirmation', 'action.orderId': String(order._id) },
+      { type: 'planner', isAI: true, title: '订单服务确认', content },
+    ],
+  });
+  if (existing) return existing;
   return Message.create({
     user: order.user, type: 'planner', sender: 'AI健康规划师', title: '订单服务确认',
     content, conversationId, isAI: true, aiGenerated: false, unread: true,

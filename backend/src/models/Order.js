@@ -30,6 +30,8 @@ const orderSchema = new mongoose.Schema({
   servicePerformerRolesSnapshot: { type: [require('../utils/tenantScope').servicePerformerRoleSchema], default: [] },
   serviceIcon: { type: String },
   note:        { type: String, default: '' },
+  desiredServiceDate: { type: Date, default: null },
+  serviceRequirements: { type: String, default: '' },
   orderType:   { type: String, enum: ['service', 'package', 'product'], default: 'service' },
   orderNo:     { type: String, default: '', index: true },
   skuCode:     { type: String, default: '' },
