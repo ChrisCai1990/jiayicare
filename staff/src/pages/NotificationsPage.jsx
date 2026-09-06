@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { staffAPI } from '../api'
+import { staffAPI, API_ORIGIN } from '../api'
 import { useToast } from '../App'
 
 const PUSH_TYPE_LABEL = { knowledge:'科普', questionnaire:'问卷', plan:'方案', product:'产品', supplement:'营养素', notice:'通知' }
@@ -845,7 +845,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
                   }}>
                     {(m.imageUrls?.length ? m.imageUrls : (m.imageUrl ? [m.imageUrl] : [])).map(url => <img key={url} src={url} alt="沟通图片" style={{ display: 'block', maxWidth: '100%', maxHeight: 220, borderRadius: 8, marginBottom: 6 }} />)}
                     {m.audioUrl && <div style={{ fontSize: 12, marginBottom: 4 }}>语音{m.audioDuration ? ` ${Math.round(m.audioDuration)}″` : ''}</div>}
-                    {m.audioUrl && <audio controls preload="metadata" src={m.audioUrl} style={{ display: 'block', width: 230, maxWidth: '100%', marginBottom: 4 }} />}
+                    {m.audioUrl && <audio controls preload="metadata" src={m.audioUrl.startsWith('/') ? `${API_ORIGIN}${m.audioUrl}` : m.audioUrl} style={{ display: 'block', width: 230, maxWidth: '100%', marginBottom: 4 }} />}
                     {m.audioUrl && m.audioTranscript && <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #E0D9CE', fontSize: 12 }}>转写：{m.audioTranscript}</div>}
                     {(!m.audioUrl || m.content !== '[语音消息]') && m.content}
                   </div>

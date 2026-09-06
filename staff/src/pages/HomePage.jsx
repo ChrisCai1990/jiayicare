@@ -17,12 +17,10 @@ export default function HomePage() {
   const nav = useNavigate()
   const [reports, setReports] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [pendingReferralCount, setPendingReferralCount] = useState(0)
   const [unreadMsgCount, setUnreadMsgCount] = useState(0)
   const [checkinRecords, setCheckinRecords] = useState([])
   const [checkupProgress, setCheckupProgress] = useState([])
   const [expiringPatients, setExpiringPatients] = useState([])
-  const [recentMessages, setRecentMessages] = useState([])
   const [pendingOrders, setPendingOrders] = useState([])
 
   useEffect(() => {
@@ -52,16 +50,21 @@ export default function HomePage() {
     ]).then(([notifRes, msgRes]) => {
       if (notifRes.status === 'fulfilled') {
         const s = notifRes.value.data?.summary || {}
-        setPendingReferralCount((s.pendingReferralCount || 0) + (s.unreadRepliedCount || 0))
         setExpiringPatients(notifRes.value.data?.expiringPatients || [])
       }
       if (msgRes.status === 'fulfilled') {
         const messages = msgRes.value.data || []
-        const todayKey = new Date().toDateString()
         setUnreadMsgCount(msgRes.value.unreadCount ?? messages.filter(m => m.staffUnread).length ?? 0)
-        setRecentMessages(messages.filter(m => m.staffUnread && new Date(m.createdAt).toDateString() === todayKey))
       }
     })
+  }, [])
+
+  useEffect(() => {
+    const refreshMessageCount = () => staffAPI.getUserMessages()
+      .then(res => setUnreadMsgCount(res.unreadCount ?? (res.data || []).filter(m => m.staffUnread).length))
+      .catch(() => {})
+    const timer = setInterval(refreshMessageCount, 5000)
+    return () => clearInterval(timer)
   }, [])
 
   if (loading) return <div className="page-loading">加载中...</div>
@@ -91,55 +94,8 @@ export default function HomePage() {
         </button>
       </div>
 
-      {/* 待处理服务预约：用户下单商城服务后生成，单独摘出来避免被淹没在普通随访任务列表里 */}
-      {pendingOrders.length > 0 && (
-        <div className="card" style={{ marginBottom: 20, border: '1.5px solid #22A06B40' }}>
-          <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span>🛍 待处理服务预约</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#22A06B', background: '#22A06B18', padding: '2px 8px', borderRadius: 99 }}>
-                {pendingOrders.length}
-              </span>
-            </div>
-            <button className="btn btn-secondary btn-sm" onClick={() => nav('/followups?sourceType=order&status=active')}>查看全部</button>
-          </div>
-          <div className="card-body" style={{ padding: '8px 20px' }}>
-            {pendingOrders.map((f, i) => (
-              <div key={f._id}
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '10px 0',
-                  borderBottom: i < pendingOrders.length - 1 ? '1px solid #f0ede8' : 'none',
-                  cursor: 'pointer',
-                }}
-                onClick={() => nav(`/patients/${f.patientId?._id}?openChat=1`, { state: { serviceBooking: f } })}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-                  <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24', minWidth: 60, flexShrink: 0 }}>{f.patientId?.name || '未知'}</span>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13, color: '#1A2B24', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {f.sourceOrderId?.serviceName || f.theme}
-                      {f.sourceOrderId && <span style={{ color: '#D97706', marginLeft: 8 }}>
-                        支付 ¥{(Number(f.sourceOrderId.paidAmount) + Number(f.sourceOrderId.healthFundAmount)).toFixed(2)}
-                      </span>}
-                    </div>
-                    <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {f.sourceOrderId?.scheduledAt && `预约时间：${new Date(f.sourceOrderId.scheduledAt).toLocaleString('zh-CN')} · `}
-                      备注：{f.sourceOrderId?.note || f.content || '未填写，请联系客户确认时间'}
-                    </div>
-                  </div>
-                </div>
-                <span style={{ fontSize: 12, color: '#aaa', flexShrink: 0, marginLeft: 12 }}>
-                  下单 {new Date(f.sourceOrderId?.createdAt || f.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-
       {/* 数据卡片 */}
-      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: 24 }}>
+      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)', marginBottom: 24 }}>
         <StatCard icon="📞" label="今日随访" value={reports?.today ? <FollowUpStatValue {...reports.today}
           onPending={() => nav(followUpUrl({ status: 'active', dateFrom: todayKey, dateTo: todayKey }))}
           onCompleted={() => nav(followUpUrl({ status: 'completed', dateFrom: todayKey, dateTo: todayKey, dateField: 'completedAt' }))} /> : '-'} color="#0077B6" compact />
@@ -148,10 +104,35 @@ export default function HomePage() {
           onCompleted={() => nav(followUpUrl({ status: 'completed', dateFrom: monthStartKey, dateTo: monthEndKey, dateField: 'completedAt' }))} /> : '-'} color="#22A06B" compact />
         <StatCard icon="⏰" label="逾期随访" value={reports?.overdue ?? '-'} color="#DC3545" onClick={() => nav(followUpUrl({ status: 'active', dateTo: yesterdayKey }))} />
         <StatCard icon="✅" label="今日健康监测" value={checkinRecords.length} color="#D97706" onClick={() => nav('/daily-checkin')} />
+        <StatCard icon="🔔" label="消息通知" value={unreadMsgCount} color="#DC3545" onClick={() => nav('/notifications', { state: { tab: 'userMsgs' } })} />
       </div>
 
-      <MessageNotificationCard messages={recentMessages} unreadCount={unreadMsgCount}
-        pendingReferralCount={pendingReferralCount} onOpen={() => nav('/notifications', { state: { tab: 'userMsgs' } })} />
+      {/* 待处理服务预约统一放在顶部统计区之后 */}
+      {pendingOrders.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, border: '1.5px solid #22A06B40' }}>
+          <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>🛍 待处理服务预约</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#22A06B', background: '#22A06B18', padding: '2px 8px', borderRadius: 99 }}>{pendingOrders.length}</span>
+            </div>
+            <button className="btn btn-secondary btn-sm" onClick={() => nav('/followups?sourceType=order&status=active')}>查看全部</button>
+          </div>
+          <div className="card-body" style={{ padding: '8px 20px' }}>
+            {pendingOrders.map((f, i) => (
+              <div key={f._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: i < pendingOrders.length - 1 ? '1px solid #f0ede8' : 'none', cursor: 'pointer' }} onClick={() => nav(`/patients/${f.patientId?._id}?openChat=1`, { state: { serviceBooking: f } })}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                  <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24', minWidth: 60, flexShrink: 0 }}>{f.patientId?.name || '未知'}</span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, color: '#1A2B24', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.sourceOrderId?.serviceName || f.theme}{f.sourceOrderId && <span style={{ color: '#D97706', marginLeft: 8 }}>支付 ¥{(Number(f.sourceOrderId.paidAmount) + Number(f.sourceOrderId.healthFundAmount)).toFixed(2)}</span>}</div>
+                    <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.sourceOrderId?.scheduledAt && `预约时间：${new Date(f.sourceOrderId.scheduledAt).toLocaleString('zh-CN')} · `}备注：{f.sourceOrderId?.note || f.content || '未填写，请联系客户确认时间'}</div>
+                  </div>
+                </div>
+                <span style={{ fontSize: 12, color: '#aaa', flexShrink: 0, marginLeft: 12 }}>下单 {new Date(f.sourceOrderId?.createdAt || f.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* AI 待审核任务面板 */}
       <SymptomTodosPanel />
@@ -324,24 +305,6 @@ export default function HomePage() {
             <div style={{ color: '#aaa', textAlign: 'center', padding: '20px 0', fontSize: 14 }}>暂无慢病数据</div>
           )}
         </div>
-      </div>
-    </div>
-  )
-}
-
-function MessageNotificationCard({ messages, unreadCount, pendingReferralCount, onOpen }) {
-  const total = unreadCount + pendingReferralCount
-  return (
-    <div className="card" style={{ marginBottom: 20, border: total ? '1.5px solid #DC354540' : undefined }}>
-      <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div className="card-title">🔔 消息通知 {total > 0 && <span style={{ color: '#DC3545' }}>（{total}）</span>}</div>
-        <button className="btn btn-secondary btn-sm" onClick={onOpen}>查看全部</button>
-      </div>
-
-      <div className="card-body" style={{ padding: messages.length || pendingReferralCount ? '8px 20px' : '20px' }}>
-        {pendingReferralCount > 0 && <div onClick={onOpen} style={{ padding: '10px 0', cursor: 'pointer' }}>🔀 待处理转介与未读回复（{pendingReferralCount}）</div>}
-        {messages.slice(0, 5).map(m => <div key={m._id} onClick={onOpen} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, padding: '10px 0', borderTop: '1px solid #f0ede8', cursor: 'pointer' }}><span><strong>{m.patientName}</strong>　{m.content}</span><span style={{ color: '#aaa', flexShrink: 0 }}>{new Date(m.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span></div>)}
-        {!messages.length && !pendingReferralCount && <div style={{ color: '#aaa', textAlign: 'center' }}>暂无未读消息</div>}
       </div>
     </div>
   )

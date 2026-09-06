@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { View, Text, Input, ScrollView, Image } from '@tarojs/components';
-import Taro, { useDidShow } from '@tarojs/taro';
+import Taro, { useDidShow, useDidHide } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { messagesAPI, pushRecordsAPI, questionnaireAPI, servicesAPI, userAPI, ttsAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -142,6 +142,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
   const [notifTab, setNotifTab] = useState('全部');
   const [detailMsg, setDetailMsg] = useState(null);
   const [pendingQuestionnaireIds, setPendingQuestionnaireIds] = useState(new Set());
+  const listPollRef = useRef(null);
 
   const loadMessages = useCallback(async () => {
     try {
@@ -167,7 +168,13 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
     }
   }, []);
 
-  useDidShow(() => { loadMessages(); });
+  useDidShow(() => {
+    loadMessages();
+    clearInterval(listPollRef.current);
+    listPollRef.current = setInterval(loadMessages, 5000);
+  });
+  useDidHide(() => { clearInterval(listPollRef.current); listPollRef.current = null; });
+  useEffect(() => () => clearInterval(listPollRef.current), []);
   useEffect(() => { if (refreshKey) loadMessages(); }, [refreshKey, loadMessages]);
 
   // 系统消息有时也会携带 conversationId。它仍然属于用户通知，不能因为
@@ -642,7 +649,7 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
         const firstUnread = nextMessages.find((message) => message.type !== 'user' && message.unread);
         const anchorId = firstUnread?._id ? String(firstUnread._id) : '';
         setUnreadAnchorId(anchorId);
-        setScrollTarget(anchorId ? `thread-msg-${anchorId}` : `thread-bottom-${nextMessages.length}`);
+        setScrollTarget(`thread-bottom-${nextMessages.length}`);
         initialPositionedRef.current = true;
       } else if (!unreadAnchorId) {
         setScrollTarget(`thread-bottom-${nextMessages.length}`);
@@ -920,10 +927,10 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
             );
           })
         )}
-        <View id={`thread-bottom-${msgs.length}`} style={{ height: '24px' }} />
+        <View id={`thread-bottom-${msgs.length}`} style={{ height: '72px' }} />
       </ScrollView>
 
-      {!!unreadAnchorId && <View onClick={() => { setUnreadAnchorId(''); setScrollTarget(`thread-bottom-${msgs.length}`); }} style={{ position: 'absolute', right: '14px', bottom: '78px', zIndex: 30, padding: '7px 12px', borderRadius: '16px', backgroundColor: '#fff', border: `1px solid ${colors.border}`, boxShadow: shadow.sm }}><Text style={{ fontSize: '11px', color: colors.primary }}>回到最新消息 ↓</Text></View>}
+      {!!unreadAnchorId && <View onClick={() => setScrollTarget(`thread-msg-${unreadAnchorId}`)} style={{ position: 'absolute', right: '14px', bottom: '78px', zIndex: 30, padding: '7px 12px', borderRadius: '16px', backgroundColor: '#fff', border: `1px solid ${colors.border}`, boxShadow: shadow.sm }}><Text style={{ fontSize: '11px', color: colors.primary }}>查看未读消息 ↑</Text></View>}
 
       {foodImages.length > 0 && (
         <View style={{ padding: `8px ${spacing.lg}px`, backgroundColor: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>

@@ -46,7 +46,8 @@ class App extends Component {
     messagesAPI.unreadCount().then((res) => {
       const count = Number(res?.count || 0);
       if (this.lastUnreadCount !== null && count > this.lastUnreadCount) {
-        Taro.showToast({ title: '您有新的服务消息', icon: 'none', duration: 2000 });
+        const sender = res?.latestMessage?.sender || res?.latestMessage?.title || '服务团队';
+        Taro.showToast({ title: `${sender}发来新消息`, icon: 'none', duration: 2500 });
       }
       this.lastUnreadCount = count;
       if (count > 0) return Taro.setTabBarBadge({ index: 2, text: String(Math.min(count, 99)) });

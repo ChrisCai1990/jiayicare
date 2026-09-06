@@ -23,7 +23,7 @@ function withSignedMessageMedia(message) {
 // 获取未读消息数（含推送记录，用于导航角标）
 router.get('/unread-count', auth, async (req, res) => {
   const completedQuestionnaireIds = await QuestionnaireResponse.distinct('questionnaire', { user: req.user._id });
-  const [msgCount, pushCount] = await Promise.all([
+  const [msgCount, pushCount, latestMessage] = await Promise.all([
     Message.countDocuments({ user: req.user._id, unread: true, recalled: { $ne: true } }),
     PushRecord.countDocuments({
       patientId: req.user._id,
@@ -33,8 +33,10 @@ router.get('/unread-count', auth, async (req, res) => {
         { questionnaireId: { $nin: completedQuestionnaireIds } },
       ],
     }),
+    Message.findOne({ user: req.user._id, unread: true, recalled: { $ne: true } })
+      .sort({ createdAt: -1 }).select('sender type title content createdAt').lean(),
   ]);
-  res.json({ success: true, count: msgCount + pushCount });
+  res.json({ success: true, count: msgCount + pushCount, latestMessage });
 });
 
 // 获取消息列表

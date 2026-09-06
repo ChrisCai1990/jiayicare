@@ -11847,7 +11847,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
                       position: 'relative',
                     }}>
                       {m.audioUrl && <div style={{ fontSize: 12, marginBottom: 4 }}>语音{m.audioDuration ? ` ${Math.round(m.audioDuration)}″` : ''}</div>}
-                      {m.audioUrl && <audio controls preload="metadata" src={m.audioUrl} style={{ display: 'block', width: 230, maxWidth: '100%', marginBottom: 4 }} />}
+                      {m.audioUrl && <audio controls preload="metadata" src={m.audioUrl.startsWith('/') ? `${API_ORIGIN}${m.audioUrl}` : m.audioUrl} style={{ display: 'block', width: 230, maxWidth: '100%', marginBottom: 4 }} />}
                       {(m.imageUrls?.length ? m.imageUrls : (m.imageUrl ? [m.imageUrl] : [])).map((url, imageIndex) => (
                         <img key={`${url}-${imageIndex}`} src={url} alt="对话图片" onClick={() => window.open(url, '_blank')} style={{ display: 'block', width: 220, maxWidth: '100%', maxHeight: 260, objectFit: 'cover', borderRadius: 8, marginBottom: 6, cursor: 'zoom-in' }} />
                       ))}

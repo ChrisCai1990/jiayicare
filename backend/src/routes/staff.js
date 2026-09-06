@@ -125,7 +125,12 @@ function withSignedMessageMedia(message) {
   const urls = obj.imageUrls?.length ? obj.imageUrls : (obj.imageUrl ? [obj.imageUrl] : []);
   obj.imageUrls = urls.map(url => signStoredUrl(url));
   obj.imageUrl = obj.imageUrls[0] || '';
-  obj.audioUrl = obj.audioUrl ? signStoredUrl(obj.audioUrl) : '';
+  if (obj.audioUrl && obj._id && mongoose.isValidObjectId(obj._id) && process.env.JWT_SECRET) {
+    const token = jwt.sign({ scope: 'message-audio', messageId: String(obj._id) }, process.env.JWT_SECRET, { expiresIn: '30m' });
+    obj.audioUrl = `/api/staff/user-messages/${obj._id}/audio?token=${encodeURIComponent(token)}`;
+  } else {
+    obj.audioUrl = obj.audioUrl ? signStoredUrl(obj.audioUrl) : '';
+  }
   return obj;
 }
 
@@ -5767,6 +5772,38 @@ router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'vie
 
     res.json({ success: true, data: result, total: result.length, focusedRecordId: focusedRecord ? String(healthRecordId) : null });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// 浏览器原生音频播放器必须支持 Range 请求；通过短时签名代理读取私有 OSS，
+// 避免直接签名 URL 在部分浏览器显示 0:00 且无法播放。
+router.get('/user-messages/:messageId/audio', async (req, res) => {
+  try {
+    const payload = jwt.verify(String(req.query.token || ''), process.env.JWT_SECRET);
+    if (payload.scope !== 'message-audio' || payload.messageId !== String(req.params.messageId)) {
+      return res.status(403).json({ success: false, message: '语音链接无效或已失效' });
+    }
+    const message = await Message.findById(req.params.messageId).select('audioUrl audioMimeType');
+    const key = urlToKey(message?.audioUrl || '');
+    if (!message || !key) return res.status(404).json({ success: false, message: '语音不存在' });
+    const range = String(req.headers.range || '').trim();
+    if (range && !/^bytes=\d*-\d*$/.test(range)) return res.status(416).set('Content-Range', 'bytes */*').end();
+    const object = await getObjectStream(key, range ? { Range: range } : {});
+    const headers = object.res.headers || {};
+    res.status(object.res.status === 206 ? 206 : 200);
+    res.set({
+      'Content-Type': headers['content-type'] || message.audioMimeType || 'audio/mpeg',
+      'Content-Disposition': 'inline',
+      'Accept-Ranges': 'bytes',
+      'Access-Control-Expose-Headers': 'Accept-Ranges, Content-Length, Content-Range',
+      'Cache-Control': 'private, max-age=300',
+    });
+    if (headers['content-length']) res.set('Content-Length', headers['content-length']);
+    if (headers['content-range']) res.set('Content-Range', headers['content-range']);
+    object.stream.on('error', () => { if (!res.headersSent) res.status(502).end(); else res.destroy(); });
+    object.stream.pipe(res);
+  } catch {
+    return res.status(403).json({ success: false, message: '语音链接无效或已失效' });
+  }
 });
 
 // ── 用户留言收件箱：查看分配给自己的会员发来的消息 ──────────────────
