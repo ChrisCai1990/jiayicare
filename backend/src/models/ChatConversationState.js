@@ -6,6 +6,7 @@ const chatConversationStateSchema = new mongoose.Schema({
   role: { type: String, enum: ['doctor', 'nutritionist', 'manager', 'planner', 'medicalAssistant'], required: true },
   humanActive: { type: Boolean, default: false },
   takenOverBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  takeoverSessionId: { type: String, default: null },
   takenOverAt: { type: Date, default: null },
   releasedAt: { type: Date, default: null },
 }, { timestamps: true });

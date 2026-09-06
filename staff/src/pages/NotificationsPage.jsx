@@ -79,7 +79,7 @@ export default function NotificationsPage() {
 
   const unreadPushes = recentPushes.filter(p => !p.readAt)
   const userMessageGroups = Object.values(userMessages.reduce((acc, m) => {
-    const roleKey = ['doctor', 'nutritionist', 'planner', 'medicalAssistant'].includes(m.recipient) ? m.recipient : 'manager'
+    const roleKey = m.channelRole || (['doctor', 'nutritionist', 'planner', 'medicalAssistant'].includes(m.recipient) ? m.recipient : 'manager')
     const key = `${m.user}_${roleKey}`
     if (!acc[key]) acc[key] = { ...m, roleKey, messageCount: 0, unreadCount: 0, hasUnread: false }
     acc[key].messageCount += 1
@@ -686,18 +686,20 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
   const recorderRef = useRef(null)
   const recordStreamRef = useRef(null)
   const recordStartedRef = useRef(0)
+  const presenceSessionRef = useRef(`staff-${Date.now()}-${Math.random().toString(36).slice(2)}`)
 
   const ROLE_LABEL = { doctor: '健康顾问', nutritionist: '营养师', manager: '健管师', planner: '健康规划师', medicalAssistant: '就医专员' }
 
   useEffect(() => {
     let active = true
-    const heartbeat = () => staffAPI.setChatHumanActive(userId, true, roleKey).then(res => { if (active) setHumanActive(!!res.humanActive) }).catch(() => {})
-    heartbeat()
+    const sessionId = presenceSessionRef.current
+    const heartbeat = () => staffAPI.setChatHumanActive(userId, true, roleKey, { sessionId, heartbeat: true }).then(res => { if (active) setHumanActive(!!res.humanActive) }).catch(() => {})
+    staffAPI.setChatHumanActive(userId, true, roleKey, { sessionId }).then(res => { if (active) setHumanActive(!!res.humanActive) }).catch(() => {})
     const timer = setInterval(heartbeat, 30000)
     return () => {
       active = false
       clearInterval(timer)
-      staffAPI.setChatHumanActive(userId, false, roleKey).catch(() => {})
+      staffAPI.setChatHumanActive(userId, false, roleKey, { sessionId }).catch(() => {})
     }
   }, [userId, roleKey])
 
@@ -842,7 +844,8 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
                     boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
                   }}>
                     {(m.imageUrls?.length ? m.imageUrls : (m.imageUrl ? [m.imageUrl] : [])).map(url => <img key={url} src={url} alt="沟通图片" style={{ display: 'block', maxWidth: '100%', maxHeight: 220, borderRadius: 8, marginBottom: 6 }} />)}
-                    {m.audioUrl && <audio controls preload="none" src={m.audioUrl} style={{ display: 'block', width: 230, maxWidth: '100%', marginBottom: 4 }} />}
+                    {m.audioUrl && <div style={{ fontSize: 12, marginBottom: 4 }}>语音{m.audioDuration ? ` ${Math.round(m.audioDuration)}″` : ''}</div>}
+                    {m.audioUrl && <audio controls preload="metadata" src={m.audioUrl} style={{ display: 'block', width: 230, maxWidth: '100%', marginBottom: 4 }} />}
                     {m.audioUrl && m.audioTranscript && <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #E0D9CE', fontSize: 12 }}>转写：{m.audioTranscript}</div>}
                     {(!m.audioUrl || m.content !== '[语音消息]') && m.content}
                   </div>

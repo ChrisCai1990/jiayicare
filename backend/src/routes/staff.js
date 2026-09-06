@@ -3881,7 +3881,7 @@ router.post('/patients/:id/message', staffAuth, async (req, res) => {
     const typeMap = {
       doctor: 'doctor', chiefPhysician: 'doctor', physician: 'doctor',
       nutritionist: 'nutritionist',
-      manager: 'manager', healthManager: 'manager', medicalAssistant: 'medicalAssistant',
+      manager: 'manager', healthManager: 'manager', healthPlanner: 'planner', medicalAssistant: 'medicalAssistant',
     };
     const staff = req.staff;
     const msgType = typeMap[staff.role] || 'manager';
@@ -5805,8 +5805,10 @@ router.get('/user-messages', staffAuth, async (req, res) => {
       .limit(100)
       .lean();
 
+    const canonicalChannelRole = require('../utils/conversationRoles').getConversationRoleForStaff(staff.role);
     const result = messages.map(m => ({
       ...withSignedMessageMedia(m),
+      channelRole: canonicalChannelRole || m.recipient || 'manager',
       patientName: patientMap[String(m.user)]?.name || '未知',
       patientPhone: patientMap[String(m.user)]?.phone || '',
       staffUnread: !m.staffReadAt,
@@ -5861,7 +5863,7 @@ router.get('/user-messages/:userId/thread', staffAuth, async (req, res) => {
 // 医护接手/退出只影响自己的角色频道；人工接手期间 AI 助理保持静默。
 router.patch('/user-messages/:userId/ai-mode', staffAuth, async (req, res) => {
   try {
-    const { role = 'manager', humanActive } = req.body || {};
+    const { role = 'manager', humanActive, sessionId = '', heartbeat = false } = req.body || {};
     if (!assertRoleMatchesChannel(req.staff.role, role)) {
       return res.status(403).json({ success: false, message: '无权操作该频道的对话' });
     }
@@ -5869,19 +5871,28 @@ router.patch('/user-messages/:userId/ai-mode', staffAuth, async (req, res) => {
     const ChatConversationState = require('../models/ChatConversationState');
     const conversationId = `${req.params.userId}_${role}`;
     const now = new Date();
-    const state = await ChatConversationState.findOneAndUpdate(
-      { conversationId },
-      {
-        $set: {
-          user: req.params.userId, role, humanActive,
-          takenOverBy: humanActive ? req.staff._id : null,
-          takenOverAt: humanActive ? now : null,
-          releasedAt: humanActive ? null : now,
-        },
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
-    res.json({ success: true, humanActive: state.humanActive, takenOverAt: state.takenOverAt });
+    const normalizedSessionId = String(sessionId || '').slice(0, 120);
+    let state;
+    if (heartbeat && humanActive) {
+      state = await ChatConversationState.findOneAndUpdate(
+        { conversationId, humanActive: true, takeoverSessionId: normalizedSessionId },
+        { $set: { takenOverAt: now } },
+        { new: true }
+      );
+    } else if (!humanActive && normalizedSessionId) {
+      state = await ChatConversationState.findOneAndUpdate(
+        { conversationId, takeoverSessionId: normalizedSessionId },
+        { $set: { humanActive: false, takenOverBy: null, takeoverSessionId: null, takenOverAt: null, releasedAt: now } },
+        { new: true }
+      );
+    } else {
+      state = await ChatConversationState.findOneAndUpdate(
+        { conversationId },
+        { $set: { user: req.params.userId, role, humanActive, takenOverBy: humanActive ? req.staff._id : null, takeoverSessionId: humanActive ? normalizedSessionId : null, takenOverAt: humanActive ? now : null, releasedAt: humanActive ? null : now } },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+    }
+    res.json({ success: true, humanActive: !!state?.humanActive, takenOverAt: state?.takenOverAt || null });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

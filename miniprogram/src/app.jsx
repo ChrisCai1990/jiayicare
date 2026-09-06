@@ -39,6 +39,21 @@ class PageErrorBoundary extends Component {
 }
 
 class App extends Component {
+  unreadPollTimer = null;
+  lastUnreadCount = null;
+
+  refreshUnread = () => {
+    messagesAPI.unreadCount().then((res) => {
+      const count = Number(res?.count || 0);
+      if (this.lastUnreadCount !== null && count > this.lastUnreadCount) {
+        Taro.showToast({ title: '您有新的服务消息', icon: 'none', duration: 2000 });
+      }
+      this.lastUnreadCount = count;
+      if (count > 0) return Taro.setTabBarBadge({ index: 2, text: String(Math.min(count, 99)) });
+      return Taro.removeTabBarBadge({ index: 2 });
+    }).catch(() => {});
+  };
+
   componentDidMount() {
     try {
       const inviteCode = Taro.getLaunchOptionsSync?.()?.query?.invite;
@@ -50,13 +65,11 @@ class App extends Component {
       const inviteCode = Taro.getEnterOptionsSync?.()?.query?.invite;
       if (inviteCode) Taro.setStorageSync('jy_invite_code', String(inviteCode));
     } catch {}
-    messagesAPI.unreadCount().then((res) => {
-      const count = Number(res?.count || 0);
-      if (count > 0) return Taro.setTabBarBadge({ index: 2, text: String(Math.min(count, 99)) });
-      return Taro.removeTabBarBadge({ index: 2 });
-    }).catch(() => {});
+    this.refreshUnread();
+    clearInterval(this.unreadPollTimer);
+    this.unreadPollTimer = setInterval(this.refreshUnread, 5000);
   }
-  componentDidHide() {}
+  componentDidHide() { clearInterval(this.unreadPollTimer); this.unreadPollTimer = null; }
 
   // this.props.children 是将要会渲染的页面
   render() {

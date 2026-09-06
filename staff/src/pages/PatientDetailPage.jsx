@@ -11607,6 +11607,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
   const recorderRef = useRef(null)
   const recordStreamRef = useRef(null)
   const recordStartedRef = useRef(0)
+  const presenceSessionRef = useRef(`staff-${Date.now()}-${Math.random().toString(36).slice(2)}`)
   const msgCountRef = useRef(0) // 上次渲染的消息条数，用于判断是否真的有新消息（而不是轮询刷新了同样内容）
   const isNearBottomRef = useRef(true) // 用户是否停留在底部附近；往上翻看历史时轮询不应打断
 
@@ -11620,16 +11621,17 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
     finally { setLoading(false) }
   }
 
-  useEffect(() => { loadThread() }, [patientId])
+  useEffect(() => { loadThread() }, [patientId, chatRole])
   useEffect(() => {
     let active = true
-    const heartbeat = () => staffAPI.setChatHumanActive(patientId, true, chatRole).then(res => { if (active) setHumanActive(!!res.humanActive) }).catch(() => {})
-    heartbeat()
+    const sessionId = presenceSessionRef.current
+    const heartbeat = () => staffAPI.setChatHumanActive(patientId, true, chatRole, { sessionId, heartbeat: true }).then(res => { if (active) setHumanActive(!!res.humanActive) }).catch(() => {})
+    staffAPI.setChatHumanActive(patientId, true, chatRole, { sessionId }).then(res => { if (active) setHumanActive(!!res.humanActive) }).catch(() => {})
     const timer = setInterval(heartbeat, 30000)
     return () => {
       active = false
       clearInterval(timer)
-      staffAPI.setChatHumanActive(patientId, false, chatRole).catch(() => {})
+      staffAPI.setChatHumanActive(patientId, false, chatRole, { sessionId }).catch(() => {})
     }
   }, [patientId, chatRole])
   useEffect(() => () => { recorderRef.current?.state === 'recording' && recorderRef.current.stop(); recordStreamRef.current?.getTracks?.().forEach(track => track.stop()) }, [])
@@ -11644,7 +11646,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
       } catch {}
     }, 3000)
     return () => clearInterval(interval)
-  }, [patientId])
+  }, [patientId, chatRole])
 
   const handleScroll = () => {
     const el = scrollRef.current
@@ -11844,7 +11846,8 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
                       boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
                       position: 'relative',
                     }}>
-                      {m.audioUrl && <audio controls preload="none" src={m.audioUrl} style={{ display: 'block', width: 230, maxWidth: '100%', marginBottom: 4 }} />}
+                      {m.audioUrl && <div style={{ fontSize: 12, marginBottom: 4 }}>语音{m.audioDuration ? ` ${Math.round(m.audioDuration)}″` : ''}</div>}
+                      {m.audioUrl && <audio controls preload="metadata" src={m.audioUrl} style={{ display: 'block', width: 230, maxWidth: '100%', marginBottom: 4 }} />}
                       {(m.imageUrls?.length ? m.imageUrls : (m.imageUrl ? [m.imageUrl] : [])).map((url, imageIndex) => (
                         <img key={`${url}-${imageIndex}`} src={url} alt="对话图片" onClick={() => window.open(url, '_blank')} style={{ display: 'block', width: 220, maxWidth: '100%', maxHeight: 260, objectFit: 'cover', borderRadius: 8, marginBottom: 6, cursor: 'zoom-in' }} />
                       ))}

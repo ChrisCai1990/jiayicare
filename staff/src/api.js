@@ -233,7 +233,7 @@ export const staffAPI = {
   getChatThread:   (userId, role = 'manager') => req(`/staff/user-messages/${userId}/thread?role=${role}`),
   replyChatMessage: (userId, content, media = {}) => req(`/staff/user-messages/${userId}/reply`, { method: 'POST', body: JSON.stringify({ content, ...media }) }),
   recallChatMessage: (messageId) => req(`/staff/user-messages/${messageId}/recall`, { method: 'PATCH' }),
-  setChatHumanActive: (userId, humanActive, role = 'manager') => req(`/staff/user-messages/${userId}/ai-mode`, { method: 'PATCH', body: JSON.stringify({ humanActive, role }) }),
+  setChatHumanActive: (userId, humanActive, role = 'manager', presence = {}) => req(`/staff/user-messages/${userId}/ai-mode`, { method: 'PATCH', body: JSON.stringify({ humanActive, role, ...presence }) }),
 
   // P4 — Referrals
   createReferral:        (data)      => req('/staff/referrals', { method: 'POST', body: JSON.stringify(data) }),

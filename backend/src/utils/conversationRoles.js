@@ -8,9 +8,11 @@ const CONVERSATION_ROLES = Object.freeze({
 
 const conversationRoleKeys = Object.freeze(Object.keys(CONVERSATION_ROLES));
 const getConversationRole = (key) => CONVERSATION_ROLES[key] || null;
+const getConversationRoleForStaff = (staffRole) =>
+  conversationRoleKeys.find(key => CONVERSATION_ROLES[key].staffRole === staffRole) || null;
 
 function staffCanAccessConversation(staffRole, channelRole) {
   return staffRole === 'superadmin' || getConversationRole(channelRole)?.staffRole === staffRole;
 }
 
-module.exports = { CONVERSATION_ROLES, conversationRoleKeys, getConversationRole, staffCanAccessConversation };
+module.exports = { CONVERSATION_ROLES, conversationRoleKeys, getConversationRole, getConversationRoleForStaff, staffCanAccessConversation };
