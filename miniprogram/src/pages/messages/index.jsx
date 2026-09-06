@@ -627,25 +627,25 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
   });
   const playedVoiceIdsRef = useRef(playedVoiceIds);
   const initialPositionedRef = useRef(false);
-  const loadedMessageCountRef = useRef(0);
+  const loadedLatestMessageIdRef = useRef('');
   const bottomScrollRef = useRef(100000);
-  const pendingBottomScrollRef = useRef(false);
+  const [bottomScrollRequest, setBottomScrollRequest] = useState(0);
 
   const scrollToThreadBottom = useCallback(() => {
-    pendingBottomScrollRef.current = true;
     setScrollTarget('');
+    setBottomScrollRequest((value) => value + 1);
   }, []);
 
   // 必须等新消息气泡完成渲染、ScrollView 的 scrollHeight 更新后再滚动。
-  // 在接口回调里直接设置 scrollTop 会按旧高度定位，长消息或语音气泡便会被输入栏截住。
+  // 独立使用请求序号，不能依赖 msgs.length：线程达到接口100条上限后，
+  // 新旧消息替换时条数不变，依赖条数会漏掉最新语音/文字的定位。
   useEffect(() => {
-    if (!pendingBottomScrollRef.current) return;
-    pendingBottomScrollRef.current = false;
+    if (!bottomScrollRequest) return;
     Taro.nextTick(() => {
       bottomScrollRef.current += 100000;
       setScrollTop(bottomScrollRef.current);
     });
-  }, [msgs.length]);
+  }, [bottomScrollRequest]);
 
   useEffect(() => () => {
     audioPlayerRef.current?.destroy?.();
@@ -665,8 +665,9 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
       const nextMessages = res.data || [];
       setMsgs(nextMessages);
       setHumanActive(!!res.humanActive);
-      const hasNewMessage = nextMessages.length > loadedMessageCountRef.current;
-      loadedMessageCountRef.current = nextMessages.length;
+      const latestMessageId = String(nextMessages[nextMessages.length - 1]?._id || '');
+      const hasNewMessage = !!latestMessageId && latestMessageId !== loadedLatestMessageIdRef.current;
+      loadedLatestMessageIdRef.current = latestMessageId;
       if (!initialPositionedRef.current) {
         const firstUnread = nextMessages.find((message) => message.type !== 'user' && message.unread);
         const anchorId = firstUnread?._id ? String(firstUnread._id) : '';
