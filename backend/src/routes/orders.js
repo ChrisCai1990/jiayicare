@@ -33,14 +33,14 @@ async function reconcileRefund(order) {
 // 获取当前用户的订单列表
 router.get('/', auth, async (req, res) => {
   try {
-    let orders = await Order.find({ user: req.user._id })
+    let orders = await Order.find({ user: req.user._id, hiddenFromUser: { $ne: true } })
       .populate('paymentId')
       .populate('fulfillmentId')
       .sort({ createdAt: -1 })
       .limit(50);
     await Promise.all(orders.filter(order => order.refundStatus === 'processing').map(reconcileRefund));
     if (orders.some(order => order.refundStatus === 'processing')) {
-      orders = await Order.find({ user: req.user._id })
+      orders = await Order.find({ user: req.user._id, hiddenFromUser: { $ne: true } })
         .populate('paymentId')
         .populate('fulfillmentId')
         .sort({ createdAt: -1 })
