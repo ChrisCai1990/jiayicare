@@ -91,6 +91,9 @@ export default function HomePage() {
         </button>
       </div>
 
+      <MessageNotificationCard messages={recentMessages} unreadCount={unreadMsgCount}
+        pendingReferralCount={pendingReferralCount} onOpen={() => nav('/notifications', { state: { tab: 'userMsgs' } })} />
+
       {/* 待处理服务预约：用户下单商城服务后生成，单独摘出来避免被淹没在普通随访任务列表里 */}
       {pendingOrders.length > 0 && (
         <div className="card" style={{ marginBottom: 20, border: '1.5px solid #22A06B40' }}>
@@ -321,6 +324,23 @@ export default function HomePage() {
             <div style={{ color: '#aaa', textAlign: 'center', padding: '20px 0', fontSize: 14 }}>暂无慢病数据</div>
           )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+function MessageNotificationCard({ messages, unreadCount, pendingReferralCount, onOpen }) {
+  const total = unreadCount + pendingReferralCount
+  return (
+    <div className="card" style={{ marginBottom: 20, border: total ? '1.5px solid #DC354540' : undefined }}>
+      <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div className="card-title">🔔 消息通知 {total > 0 && <span style={{ color: '#DC3545' }}>（{total}）</span>}</div>
+        <button className="btn btn-secondary btn-sm" onClick={onOpen}>查看全部</button>
+      </div>
+      <div className="card-body" style={{ padding: messages.length || pendingReferralCount ? '8px 20px' : '20px' }}>
+        {pendingReferralCount > 0 && <div onClick={onOpen} style={{ padding: '10px 0', cursor: 'pointer' }}>🔀 待处理转介与未读回复（{pendingReferralCount}）</div>}
+        {messages.slice(0, 5).map(m => <div key={m._id} onClick={onOpen} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, padding: '10px 0', borderTop: '1px solid #f0ede8', cursor: 'pointer' }}><span><strong>{m.patientName}</strong>　{m.content}</span><span style={{ color: '#aaa', flexShrink: 0 }}>{new Date(m.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span></div>)}
+        {!messages.length && !pendingReferralCount && <div style={{ color: '#aaa', textAlign: 'center' }}>暂无未读消息</div>}
       </div>
     </div>
   )

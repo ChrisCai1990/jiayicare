@@ -79,7 +79,7 @@ export default function NotificationsPage() {
 
   const unreadPushes = recentPushes.filter(p => !p.readAt)
   const userMessageGroups = Object.values(userMessages.reduce((acc, m) => {
-    const roleKey = ['doctor', 'nutritionist', 'medicalAssistant'].includes(m.recipient) ? m.recipient : 'manager'
+    const roleKey = ['doctor', 'nutritionist', 'planner', 'medicalAssistant'].includes(m.recipient) ? m.recipient : 'manager'
     const key = `${m.user}_${roleKey}`
     if (!acc[key]) acc[key] = { ...m, roleKey, messageCount: 0, unreadCount: 0, hasUnread: false }
     acc[key].messageCount += 1
@@ -390,7 +390,7 @@ export default function NotificationsPage() {
                           <span style={{ fontSize: 11, color: '#aaa' }}>{m.patientPhone}</span>
                           <span style={{ fontSize: 11, color: '#0077B6', background: '#E8F4FB', padding: '1px 7px', borderRadius: 99 }}>共 {m.messageCount} 条{m.unreadCount > 0 ? ` · ${m.unreadCount} 条未读` : ''}</span>
                           <span style={{ fontSize: 11, background: '#f0f0f0', color: '#666', padding: '1px 7px', borderRadius: 99 }}>
-                            {roleKey === 'doctor' ? '健康顾问' : roleKey === 'nutritionist' ? '营养师' : '健管师'}
+                            {roleKey === 'doctor' ? '健康顾问' : roleKey === 'nutritionist' ? '营养师' : roleKey === 'planner' ? '健康规划师' : roleKey === 'medicalAssistant' ? '就医专员' : '健管师'}
                           </span>
                         </div>
                         <div style={{ fontSize: 13, color: '#4A6558', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.content}</div>
@@ -687,7 +687,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
   const recordStreamRef = useRef(null)
   const recordStartedRef = useRef(0)
 
-  const ROLE_LABEL = { doctor: '健康顾问', nutritionist: '营养师', manager: '健管师' }
+  const ROLE_LABEL = { doctor: '健康顾问', nutritionist: '营养师', manager: '健管师', planner: '健康规划师', medicalAssistant: '就医专员' }
 
   const handleGenerateDraft = async () => {
     setDraftGenerating(true)

@@ -4059,12 +4059,14 @@ router.get('/notifications', staffAuth, async (req, res) => {
     staff.role === 'superadmin'      ? {} :
     staff.role === 'familyDoctor'    ? { assignedFamilyDoctor: { $in: visibleStaffIds } } :
     staff.role === 'nutritionist'    ? { assignedNutritionist: { $in: visibleStaffIds } } :
+    staff.role === 'healthPlanner'   ? { assignedHealthPlanner: { $in: visibleStaffIds } } :
     staff.role === 'healthManager'   ? { assignedHealthManager: { $in: visibleStaffIds } } :
     staff.role === 'medicalAssistant'? { assignedMedicalAssistant: { $in: visibleStaffIds } } :
                                        { $or: [ { assignedFamilyDoctor: { $in: visibleStaffIds } }, { assignedHealthManager: { $in: visibleStaffIds } }, { assignedNutritionist: { $in: visibleStaffIds } } ] };
   const msgRecipientFilter =
     staff.role === 'familyDoctor'  ? { recipient: { $in: ['doctor', null, undefined] } } :
     staff.role === 'nutritionist'  ? { recipient: 'nutritionist' } :
+    staff.role === 'healthPlanner' ? { recipient: 'planner' } :
     staff.role === 'medicalAssistant' ? { recipient: 'medicalAssistant' } :
     staff.role === 'healthManager' ? { recipient: { $in: ['manager', null, undefined] } } :
     {};
@@ -5778,6 +5780,7 @@ router.get('/user-messages', staffAuth, async (req, res) => {
     const myFilter =
       staff.role === 'familyDoctor'    ? { assignedFamilyDoctor: { $in: visibleStaffIds } } :
       staff.role === 'nutritionist'    ? { assignedNutritionist: { $in: visibleStaffIds } } :
+      staff.role === 'healthPlanner'   ? { assignedHealthPlanner: { $in: visibleStaffIds } } :
       staff.role === 'healthManager'   ? { assignedHealthManager: { $in: visibleStaffIds } } :
       staff.role === 'medicalAssistant'? { assignedMedicalAssistant: { $in: visibleStaffIds } } :
                                          { $or: [ { assignedFamilyDoctor: { $in: visibleStaffIds } }, { assignedHealthManager: { $in: visibleStaffIds } }, { assignedNutritionist: { $in: visibleStaffIds } } ] };
@@ -5792,6 +5795,7 @@ router.get('/user-messages', staffAuth, async (req, res) => {
     const recipientFilter =
       staff.role === 'familyDoctor'  ? { recipient: { $in: ['doctor', null, undefined] } } :
       staff.role === 'nutritionist'  ? { recipient: 'nutritionist' } :
+      staff.role === 'healthPlanner' ? { recipient: 'planner' } :
       staff.role === 'medicalAssistant' ? { recipient: 'medicalAssistant' } :
       staff.role === 'superadmin'    ? {} :
       { recipient: { $in: ['manager', null, undefined] } };
