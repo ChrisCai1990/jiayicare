@@ -207,6 +207,8 @@ export default function PlanModulesPage() {
   const [dirty, setDirty] = useState(false)
   const [staffList, setStaffList] = useState([])
   const [followUpPlans, setFollowUpPlans] = useState([])
+  const [followUpPlanSearch, setFollowUpPlanSearch] = useState('')
+  const [supervisorSearch, setSupervisorSearch] = useState('')
 
   useEffect(() => {
     Promise.all([staffAPI.getStaffList(), staffAPI.getFollowUpPlans()])
@@ -306,6 +308,15 @@ export default function PlanModulesPage() {
     && isCheckupMedicalAssist(plan.content || {}, plan.title)
   const title = isCheckupService ? '体检服务方案' : (TITLE_BY_TYPE[plan.type] || plan.title)
   const aiLabel = AI_GENERATE_LABEL_BY_TYPE[plan.type] || 'AI生成'
+  const normalizedPlanSearch = followUpPlanSearch.trim().toLowerCase()
+  const searchableFollowUpPlans = normalizedPlanSearch
+    ? followUpPlans.filter(item => `${item.name || ''} ${item.executorRole || ''} ${item.supervisorRole || ''}`.toLowerCase().includes(normalizedPlanSearch))
+    : followUpPlans
+  const supervisors = staffList.filter(item => ['healthManager', 'familyDoctor', 'superadmin'].includes(item.role))
+  const normalizedSupervisorSearch = supervisorSearch.trim().toLowerCase()
+  const searchableSupervisors = normalizedSupervisorSearch
+    ? supervisors.filter(item => `${item.name || ''} ${item.roleLabel || ''} ${item.title || ''} ${item.department || ''}`.toLowerCase().includes(normalizedSupervisorSearch))
+    : supervisors
 
   return (
     <StaffListContext.Provider value={staffList}>
@@ -372,10 +383,17 @@ export default function PlanModulesPage() {
                   })}
                 </div>
               ) : (
-                <select className="form-input" value={moduleData.visit?.followUpPlanId || plan.content?.followUpPlanId || ''} onChange={e => handleModuleChange('visit', 'followUpPlanId', e.target.value)}><option value="">请选择任务方案</option>{followUpPlans.map(p => <option key={p._id} value={p._id}>{p.name}</option>)}</select>
+                <>
+                  <input className="form-input" value={followUpPlanSearch} onChange={e => setFollowUpPlanSearch(e.target.value)} placeholder="搜索任务类型/方案名称" style={{ marginBottom: 6 }} />
+                  <select className="form-input" value={moduleData.visit?.followUpPlanId || plan.content?.followUpPlanId || ''} onChange={e => handleModuleChange('visit', 'followUpPlanId', e.target.value)}><option value="">请选择任务方案</option>{searchableFollowUpPlans.map(p => <option key={p._id} value={p._id}>{p.name}</option>)}</select>
+                </>
               )}
             </div>
-            <div><label className="form-label">督办人 *</label><select className="form-input" value={moduleData.visit?.supervisorId || ''} onChange={e => handleModuleChange('visit', 'supervisorId', e.target.value)}><option value="">请选择健管专员/家庭医生</option>{staffList.filter(s => ['healthManager','familyDoctor','superadmin'].includes(s.role)).map(s => <option key={s._id} value={s._id}>{s.name} · {s.roleLabel}</option>)}</select></div>
+            <div>
+              <label className="form-label">督办人 *</label>
+              <input className="form-input" value={supervisorSearch} onChange={e => setSupervisorSearch(e.target.value)} placeholder="搜索姓名/岗位/部门" style={{ marginBottom: 6 }} />
+              <select className="form-input" value={moduleData.visit?.supervisorId || ''} onChange={e => handleModuleChange('visit', 'supervisorId', e.target.value)}><option value="">请选择健管专员/家庭医生</option>{searchableSupervisors.map(s => <option key={s._id} value={s._id}>{s.name} · {s.roleLabel}</option>)}</select>
+            </div>
           </div>
         </div>
       )}

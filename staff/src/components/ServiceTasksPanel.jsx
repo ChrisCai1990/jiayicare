@@ -9,8 +9,8 @@ export default function ServiceTasksPanel() {
   const [group, setGroup] = useState('all')
 
   useEffect(() => {
-    staffAPI.getFollowUps({ status: 'active', sourceType: 'health_plan', scope: 'assigned', includeFuture: '1', limit: 100 })
-      .then(r => setItems(r.data?.followUps || []))
+    staffAPI.getServiceTasks({ status: 'active', includeFuture: '1', limit: 100 })
+      .then(r => setItems(r.data || []))
       .catch(() => {})
   }, [])
 

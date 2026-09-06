@@ -409,12 +409,24 @@ async function getWorkbenchFollowUpOwnerFilter(staff) {
   const assignmentField = PLAN_ROLE_ASSIGN_FIELD[staff.role] || 'assignedHealthManager';
   const patientIds = await User.find({ [assignmentField]: { $in: staffIds }, isDeleted: { $ne: true } }).distinct('_id');
   return { $and: [
-    { patientId: { $in: patientIds } },
-    executionOwnerFilter,
-    { taskRole: { $ne: 'supervisor' } },
-    ...workItemFilter,
+    { patientId: { $in: patientIds } }, executionOwnerFilter,
+    { taskRole: { $ne: 'supervisor' } }, ...workItemFilter,
   ] };
 }
+
+router.get('/service-tasks', staffAuth, async (req, res) => {
+  const { status = 'active', includeFuture = '', limit = 100 } = req.query;
+  const filter = { assignedTo: req.staff._id, sourceType: 'health_plan', taskRole: { $in: ['executor', 'supervisor'] }, isBlocked: { $ne: true } };
+  if (status === 'active') filter.status = { $in: ['planned', 'in_progress', 'missed'] };
+  else if (status) filter.status = status;
+  if (includeFuture !== '1') filter.$or = [{ remindAt: null }, { remindAt: { $lte: new Date() } }];
+  const tasks = await FollowUp.find(filter).sort({ date: 1 }).limit(Math.min(Number(limit) || 100, 200))
+    .populate('patientId', 'name phone gender age chronicDiseases')
+    .populate('staffId', 'name role title').populate('assignedTo', 'name role')
+    .populate('sourceHealthPlanId', 'title description content type')
+    .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard');
+  res.json({ success: true, data: tasks.map(task => ({ ...task.toObject(), taskRequirements: followUpTaskRequirements(task) })) });
+});
 
 // ── GET /api/staff/patients ───────────────────────────────────────
 // 查询分配给当前医护人员（及其下属）的会员列表
