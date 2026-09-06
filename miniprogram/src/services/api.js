@@ -38,9 +38,11 @@ export function clearToken() {
 }
 
 async function request(path, options = {}) {
-  const { method = 'GET', body, timeout: customTimeout, header } = options;
+  const { method = 'GET', body, timeout: customTimeout, header, _authRetried = false } = options;
   const headers = { 'Content-Type': 'application/json', ...(header || {}) };
-  if (_token) headers['Authorization'] = `Bearer ${_token}`;
+  // 登录前发出的旧请求可能在新登录完成后才返回 401，不能清掉刚保存的新令牌。
+  const requestToken = _token;
+  if (requestToken) headers['Authorization'] = `Bearer ${requestToken}`;
 
   let data;
   if (body) {
@@ -59,8 +61,18 @@ async function request(path, options = {}) {
     const resData = res.data || {};
 
     if (res.statusCode === 401) {
-      clearToken();
-      if (_onUnauthorized) _onUnauthorized();
+      let renewedToken = _token;
+      if (_token === requestToken) {
+        clearToken();
+        renewedToken = _onUnauthorized ? await _onUnauthorized() : null;
+      } else if (!renewedToken && _onUnauthorized) {
+        // 多个请求同时过期时复用同一次续签，避免其余请求抢先报错。
+        renewedToken = await _onUnauthorized();
+      }
+      // 原请求收到 401 时尚未执行业务，续签成功后安全地重试一次。
+      if (!_authRetried && renewedToken) {
+        return request(path, { ...options, _authRetried: true });
+      }
       throw new Error('登录已过期，请重新登录');
     }
     if (res.statusCode < 200 || res.statusCode >= 300) {

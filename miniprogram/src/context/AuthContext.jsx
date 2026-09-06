@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import Taro from '@tarojs/taro';
 import { loadToken, saveToken, clearToken, setUnauthorizedHandler, userAPI, authAPI } from '../services/api';
 
@@ -8,27 +8,81 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
+  const renewalRef = useRef(null);
 
   useEffect(() => {
+    let active = true;
+
+    const syncAutoLogin = (userData) => {
+      try {
+        if (userData?.wechatMpOpenid) Taro.setStorageSync('jy_auto_login', true);
+        else Taro.removeStorageSync('jy_auto_login');
+      } catch {}
+    };
+
+    const persistSession = (userData, tok) => {
+      saveToken(tok);
+      if (active) {
+        setToken(tok);
+        setUser(userData);
+      }
+      try { Taro.setStorageSync('jy_user', JSON.stringify(userData)); } catch {}
+      syncAutoLogin(userData);
+      return tok;
+    };
+
+    const renewWithWechat = () => {
+      let shouldRenew = false;
+      try { shouldRenew = Taro.getStorageSync('jy_auto_login') === true; } catch {}
+      if (!shouldRenew) return Promise.resolve(null);
+      if (!renewalRef.current) {
+        renewalRef.current = authAPI.wechatLogin()
+          .then((res) => (res?.success && res.data?.token
+            ? persistSession(res.data.user, res.data.token)
+            : null))
+          .catch(() => null)
+          .finally(() => { renewalRef.current = null; });
+      }
+      return renewalRef.current;
+    };
+
+    // 已登录用户遇到 401 时用绑定的微信身份静默续签；主动退出才关闭该能力。
+    setUnauthorizedHandler(renewWithWechat);
+
     (async () => {
       try {
         const t = loadToken();
         if (t) {
-          setToken(t);
+          if (active) setToken(t);
           let cached = null;
           try { cached = Taro.getStorageSync('jy_user'); } catch {}
-          if (cached) { try { setUser(JSON.parse(cached)); } catch {} }
+          if (cached) {
+            try {
+              const cachedUser = JSON.parse(cached);
+              if (active) setUser(cachedUser);
+              // 兼容升级前已登录且已经绑定微信的用户。
+              syncAutoLogin(cachedUser);
+            } catch {}
+          }
           try {
             const res = await userAPI.getMe();
             if (res?.success && res.data) {
-              setUser(res.data);
+              if (active) setUser(res.data);
               try { Taro.setStorageSync('jy_user', JSON.stringify(res.data)); } catch {}
+              syncAutoLogin(res.data);
             }
           } catch {}
+        } else {
+          await renewWithWechat();
         }
       } catch {}
-      setLoading(false);
+      if (active) setLoading(false);
     })();
+
+    return () => {
+      active = false;
+      setUnauthorizedHandler(null);
+    };
   }, []);
 
   useEffect(() => {
@@ -54,12 +108,17 @@ export function AuthProvider({ children }) {
     saveToken(tok);
     setToken(tok);
     setUser(userData);
-    try { Taro.setStorageSync('jy_user', JSON.stringify(userData)); } catch {}
+    try {
+      Taro.setStorageSync('jy_user', JSON.stringify(userData));
+      if (userData?.wechatMpOpenid) Taro.setStorageSync('jy_auto_login', true);
+      else Taro.removeStorageSync('jy_auto_login');
+    } catch {}
   };
 
   const logout = async (notifyServer = true) => {
     if (notifyServer) { try { await authAPI.sessionActivity('logout'); } catch {} }
     clearToken();
+    try { Taro.removeStorageSync('jy_auto_login'); } catch {}
     setToken(null);
     setUser(null);
   };
@@ -70,12 +129,6 @@ export function AuthProvider({ children }) {
     const timer = setInterval(() => authAPI.sessionActivity('heartbeat').catch(() => {}), 60000);
     return () => clearInterval(timer);
   }, [token]);
-
-  useEffect(() => {
-    setUnauthorizedHandler(() => logout(false));
-    return () => setUnauthorizedHandler(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const updateUser = (updates) => {
     const updated = { ...user, ...updates };
