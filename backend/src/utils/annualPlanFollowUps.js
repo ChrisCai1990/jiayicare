@@ -253,7 +253,10 @@ async function syncAnnualPlanFollowUps(plan) {
 
   for (const row of toCreate) {
     // sourceScheduleKey 旧版含数组下标，方案编辑后会变化；始终以业务内容匹配，兼容并清理旧键。
-    const matches = existing.filter(item => logicalScheduleKey(item) === logicalScheduleKey(row));
+    const matches = existing.filter(item => (
+      (item.sourceScheduleKey && item.sourceScheduleKey === row.sourceScheduleKey)
+      || logicalScheduleKey(item) === logicalScheduleKey(row)
+    ));
     if (matches.length) {
       // 优先保留已执行，其次保留已审核记录；相同排期的待审副本直接清理。
       const keep = matches.find(item => item.status === 'completed') || matches.find(item => item.aiStatus === 'approved') || matches[0];
@@ -288,7 +291,11 @@ async function dedupeAnnualPlanFollowUps() {
     .sort({ createdAt: 1 }).lean();
   const groups = new Map();
   rows.forEach(row => {
-    const key = logicalScheduleKey(row);
+    // 同一方案的稳定排期键优先级最高：人工修改执行内容后仍是同一项，不能因内容变化逃过去重。
+    // 没有稳定键的旧记录继续用客户+日期+原始内容兼容识别。
+    const key = row.sourceScheduleKey
+      ? `${row.patientId}|${row.sourceAnnualPlanId}|${row.sourceScheduleKey}`
+      : logicalScheduleKey(row);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(row);
   });

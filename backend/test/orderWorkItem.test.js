@@ -46,4 +46,11 @@ test('启动扫描会清理年度方案重复排期并校正失效订单待办',
   const source = fs.readFileSync(path.join(__dirname, '../src/utils/scheduledFollowUpWindowScheduler.js'), 'utf8');
   assert.match(source, /dedupeAnnualPlanFollowUps\(\)/);
   assert.match(source, /reconcileInactiveOrderWorkItems\(\)/);
+  assert.match(source, /reconcileMedicalAssistDocumentCollectionTasks\(\)/);
+});
+
+test('年度方案重复项优先按同方案稳定排期键识别', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/utils/annualPlanFollowUps.js'), 'utf8');
+  assert.match(source, /item\.sourceScheduleKey === row\.sourceScheduleKey/);
+  assert.match(source, /`\$\{row\.patientId\}\|\$\{row\.sourceAnnualPlanId\}\|\$\{row\.sourceScheduleKey\}`/);
 });
