@@ -11598,7 +11598,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
     const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
     return `${values.year}-${values.month}-${values.day}`
   }
-  const [showBookingConfirm, setShowBookingConfirm] = useState(false)
+  const [showBookingConfirm] = useState(!!serviceBooking)
   const [serviceTime, setServiceTime] = useState(formatServiceDate(orderServiceDate))
   const [serviceTask, setServiceTask] = useState(customerTask)
   const [confirmingBooking, setConfirmingBooking] = useState(false)
@@ -11767,23 +11767,15 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
             <div style={{ fontSize: 11, color: humanActive ? '#D97706' : '#22A06B', marginTop: 3 }}>{humanActive ? '● 人工已接手，AI静默' : '● AI助理承接中'}</div>
           </div>
           <div style={{ marginLeft: 'auto', marginRight: 8, fontSize: 11, color: '#8AA89C' }}>发送回复后自动转人工</div>
-          {serviceBooking && <button className="btn btn-primary btn-sm" disabled={confirmingBooking} style={{ marginRight: 8 }} onClick={async () => {
-            if (serviceTime && serviceTask.trim()) {
-              setConfirmingBooking(true)
-              try { await onConfirmBooking?.({ orderId: order?._id || order, serviceTime, task: serviceTask.trim() }) }
-              catch (err) { toast(err.message || '确认预约失败') }
-              finally { setConfirmingBooking(false) }
-            }
-            else setShowBookingConfirm(true)
-          }}>{confirmingBooking ? '生成中…' : serviceTime && serviceTask.trim() ? '确认并生成方案' : '补充预约信息'}</button>}
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
         {showBookingConfirm && (
           <div style={{ padding: '12px 16px', borderBottom: '1px solid #E0D9CE', background: '#FFF8ED', display: 'grid', gap: 8 }}>
-            <div style={{ fontSize: 13, fontWeight: 700 }}>补齐与客户确认的预约信息</div>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>确认本次服务信息</div>
+            <div style={{ fontSize: 11, color: '#8AA89C' }}>已自动带入客户确认的信息；如有变化可直接修订，再生成方案。</div>
             <input className="form-input" type="date" value={serviceTime} onChange={e => setServiceTime(e.target.value)} />
-            <textarea className="form-input" rows={2} value={serviceTask} onChange={e => setServiceTask(e.target.value)} placeholder="填写本次确认的服务任务" />
+            <textarea className="form-input" rows={2} value={serviceTask} onChange={e => setServiceTask(e.target.value)} placeholder="服务内容与客户需求" />
             <div style={{ textAlign: 'right' }}><button className="btn btn-primary btn-sm" disabled={confirmingBooking || !serviceTime || !serviceTask.trim()} onClick={async () => {
               setConfirmingBooking(true)
               try { await onConfirmBooking?.({ orderId: order?._id || order, serviceTime, task: serviceTask.trim() }) }
