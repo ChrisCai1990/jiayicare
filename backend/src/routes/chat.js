@@ -334,41 +334,6 @@ router.post('/', auth, async (req, res) => {
     }
   }
 
-  // 商城订单接待是独立旁路：只收集时间、服务内容和客户需求，不触发既有履约动作。
-  const intakeOrder = await Order.findOne({
-    user: userId, paymentStatus: 'paid', status: { $nin: ['cancelled', 'completed'] },
-    'aiIntake.status': { $in: ['in_progress', 'needs_attention'] },
-  }).sort({ paidAt: -1, createdAt: -1 });
-  if (intakeOrder) {
-    const conversationId = `${userId}_planner`;
-    const humanPresent = await require('../models/ChatConversationState').exists(require('../utils/chatPresence').humanPresentQuery(conversationId));
-    if (humanPresent) {
-      return res.json({ success: true, data: { content: '人工健康规划师已接入，请继续在当前会话中沟通。', intent: 'service', humanActive: true } });
-    }
-    try {
-      const previous = intakeOrder.aiIntake?.toObject?.() || intakeOrder.aiIntake || {};
-      const prompt = `你是AI健康规划师，正在接待已支付订单“${intakeOrder.serviceName}”。订单备注：${intakeOrder.note || '无'}。已有确认：${JSON.stringify(previous)}。只确认serviceTime服务时间、serviceContent具体服务内容、customerNeed客户需求；承接最新回答，不重复提问，每次最多追问一个缺项。涉及诊断、治疗、用药或紧急风险时不判断，写入riskFlags并提示人工。输出严格JSON：reply、serviceTime、serviceContent、customerNeed、riskFlags数组。三项齐全时说明将由人工健康规划师确认推进。`;
-      const raw = await chat(effectiveMessages.filter(item => ['user', 'assistant'].includes(item.role)).slice(-12), { systemPrompt: prompt, jsonMode: true, maxTokens: 700 });
-      const parsed = parseAiJson(raw);
-      const result = require('../utils/orderPlannerConversation').normalizeIntakeResult(parsed, previous);
-      const now = new Date();
-      intakeOrder.aiIntake = { ...previous, ...result, updatedAt: now, completedAt: result.status === 'ready_for_review' ? now : null };
-      await intakeOrder.save();
-      const replyText = String(parsed.reply || (result.status === 'ready_for_review' ? '信息已整理好，将由人工健康规划师确认并推进服务。' : '我再帮您确认一项关键信息。')).slice(0, 1200);
-      const action = { type: 'order_ai_intake', orderId: String(intakeOrder._id), intakeStatus: result.status };
-      const [userMessage, aiMessage] = await Promise.all([
-        Message.create({ user: userId, type: 'user', sender: req.user.name || req.user.phone, title: '订单服务确认', content: lastUserMsg, recipient: 'planner', conversationId, unread: false, staffReadAt: null, action }),
-        Message.create({ user: userId, type: 'planner', sender: 'AI健康规划师', title: result.status === 'ready_for_review' ? '待人工确认' : result.status === 'needs_attention' ? '异常待补充' : '订单服务确认', content: replyText, conversationId, isAI: true, unread: true, action }),
-      ]);
-      return res.json({ success: true, data: { content: replyText, intent: 'service', messageId: aiMessage._id, userMessageId: userMessage._id, intakeStatus: result.status, intake: result } });
-    } catch (error) {
-      intakeOrder.aiIntake.status = 'needs_attention'; intakeOrder.aiIntake.updatedAt = new Date();
-      intakeOrder.aiIntake.riskFlags = [...new Set([...(intakeOrder.aiIntake.riskFlags || []), 'AI接待失败，需人工补充'])];
-      await intakeOrder.save();
-      return res.status(500).json({ success: false, message: '服务信息确认暂时中断，已转为人工健康规划师补充处理。' });
-    }
-  }
-
   // 语音先转写再做意图识别，确保规划师真正理解用户说的内容。
   const intent = detectIntent(lastUserMsg);
 
