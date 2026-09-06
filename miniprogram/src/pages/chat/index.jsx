@@ -19,6 +19,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState([PLANNER_GREETING]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [plannerHumanActive, setPlannerHumanActive] = useState(false);
   const [plannerImage, setPlannerImage] = useState(null);
   const [plannerVoiceMode, setPlannerVoiceMode] = useState(false);
   const [plannerEmojiOpen, setPlannerEmojiOpen] = useState(false);
@@ -39,6 +40,16 @@ export default function ChatPage() {
   const [plannerScrollTop, setPlannerScrollTop] = useState(999998);
   const historyUserRef = useRef('');
 
+  const applyPlannerHistory = useCallback((res) => {
+    if (!res?.success || !Array.isArray(res.data)) return;
+    const historyMessages = [...res.data].reverse().flatMap((log) => [
+      log.userMessage ? { role: 'user', content: log.userMessage, image: log.imageUrl, audioUrl: log.audioUrl, audioDuration: log.audioDuration, audioTranscript: log.audioTranscript } : null,
+      log.aiReply ? { role: 'assistant', content: log.aiReply, isHuman: !!log.isHuman } : null,
+    ].filter(Boolean));
+    setMessages([PLANNER_GREETING, ...historyMessages]);
+    setPlannerHumanActive(!!res.humanActive);
+  }, []);
+
   // 与 App 端保持一致：进入规划师时从后端恢复最近 50 轮对话。
   // 对话记录按登录用户查询，既能跨页面/重启保留，也不会在切换账号时串话。
   useEffect(() => {
@@ -48,14 +59,18 @@ export default function ChatPage() {
     setMessages([PLANNER_GREETING]);
     chatAPI.getLogs(historyUserId).then((res) => {
       if (historyUserRef.current !== historyUserId) return;
-      if (!res?.success || !Array.isArray(res.data) || res.data.length === 0) return;
-      const historyMessages = [...res.data].reverse().flatMap((log) => [
-        log.userMessage ? { role: 'user', content: log.userMessage, image: log.imageUrl, audioUrl: log.audioUrl, audioDuration: log.audioDuration, audioTranscript: log.audioTranscript } : null,
-        log.aiReply ? { role: 'assistant', content: log.aiReply } : null,
-      ].filter(Boolean));
-      setMessages([PLANNER_GREETING, ...historyMessages]);
+      applyPlannerHistory(res);
     }).catch(() => {});
-  }, [user?._id]);
+  }, [user?._id, applyPlannerHistory]);
+
+  // 真人接手后持续同步同一 planner 会话，使客户和规划师双方都能看到新消息。
+  useEffect(() => {
+    if (view !== 'ai' || !user?._id) return undefined;
+    const sync = () => chatAPI.getLogs(user._id).then(applyPlannerHistory).catch(() => {});
+    sync();
+    const timer = setInterval(sync, 2000);
+    return () => clearInterval(timer);
+  }, [view, user?._id, applyPlannerHistory]);
 
   useDidShow(() => {
     const requestedView = Taro.getStorageSync('healthHubView');
@@ -105,6 +120,11 @@ export default function ChatPage() {
       const res = await chatAPI.send(next, { name: user?.name }, {
         image: currentImage?.data || '', mimeType: currentImage?.mimeType || 'image/jpeg', audio: audioPayload,
       });
+      if (res?.data?.humanActive) {
+        setPlannerHumanActive(true);
+        setTimeout(() => chatAPI.getLogs(user._id).then(applyPlannerHistory).catch(() => {}), 300);
+        return;
+      }
       const reply = res?.data?.content || res?.content || '抱歉，我暂时无法回复，请稍后重试。';
       const audioTranscript = res?.data?.audioTranscript || '';
       setMessages((current) => {
@@ -266,7 +286,7 @@ export default function ChatPage() {
               backgroundColor: m.role === 'user' ? colors.primary : '#fff',
               border: m.role === 'user' ? 'none' : `1px solid ${colors.border}`,
             }}>
-              {m.role === 'assistant' && <Text style={{ display: 'block', color: '#9A5B00', fontSize: '10px', fontWeight: 700, marginBottom: '4px' }}>AI健康规划师</Text>}
+              {m.role === 'assistant' && <Text style={{ display: 'block', color: '#9A5B00', fontSize: '10px', fontWeight: 700, marginBottom: '4px' }}>{m.isHuman ? '真人健康规划师' : 'AI健康规划师'}</Text>}
               {!!m.image && <Image src={mediaUrl(m.image)} mode="aspectFill" style={{ width: '190px', height: '140px', borderRadius: '8px', display: 'block', marginBottom: '6px' }} />}
               {!!m.audioUrl && <View onClick={() => playPlannerVoice(m.audioUrl)}><Text style={{ fontSize: '14px', color: m.role === 'user' ? '#fff' : colors.primary }}>▶ 语音 {Math.max(1, Math.round(m.audioDuration || 1))}″</Text></View>}
               {(!m.audioUrl || m.content !== '[语音消息]') && <Text style={{ fontSize: '14px', color: m.role === 'user' ? '#fff' : colors.textPrimary, lineHeight: '20px' }}>{m.content}</Text>}
@@ -285,7 +305,7 @@ export default function ChatPage() {
             </View>
           </View>
         ))}
-        {sending && <Text style={{ fontSize: '12px', color: colors.textMuted }}>正在梳理您的需求...</Text>}
+        {sending && <Text style={{ fontSize: '12px', color: colors.textMuted }}>{plannerHumanActive ? '正在发送给健康规划师...' : '正在梳理您的需求...'}</Text>}
         <View style={{ height: '1px' }} />
       </ScrollView>
 

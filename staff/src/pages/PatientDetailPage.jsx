@@ -11621,6 +11621,17 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
   }
 
   useEffect(() => { loadThread() }, [patientId])
+  useEffect(() => {
+    let active = true
+    const heartbeat = () => staffAPI.setChatHumanActive(patientId, true, chatRole).then(res => { if (active) setHumanActive(!!res.humanActive) }).catch(() => {})
+    heartbeat()
+    const timer = setInterval(heartbeat, 30000)
+    return () => {
+      active = false
+      clearInterval(timer)
+      staffAPI.setChatHumanActive(patientId, false, chatRole).catch(() => {})
+    }
+  }, [patientId, chatRole])
   useEffect(() => () => { recorderRef.current?.state === 'recording' && recorderRef.current.stop(); recordStreamRef.current?.getTracks?.().forEach(track => track.stop()) }, [])
 
   // 轮询获取新消息（3秒一次）
@@ -11759,12 +11770,12 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
 
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 520, height: '70vh', display: 'flex', flexDirection: 'column', padding: 0 }}>
+      <div className="modal" style={{ width: 'min(860px, 94vw)', maxWidth: 860, height: '78vh', display: 'flex', flexDirection: 'column', padding: 0 }}>
         {/* 顶栏 */}
         <div className="modal-header" style={{ borderBottom: '1px solid #E0D9CE', flexShrink: 0 }}>
           <div>
             <h3 className="modal-title">与 {patientName} 对话</h3>
-            <div style={{ fontSize: 11, color: humanActive ? '#D97706' : '#22A06B', marginTop: 3 }}>{humanActive ? '● 人工已接手，AI静默' : '● AI助理承接中'}</div>
+            <div style={{ fontSize: 11, color: humanActive ? '#D97706' : '#22A06B', marginTop: 3 }}>{chatRole === 'medicalAssistant' ? '● 就医专员人工沟通频道' : humanActive ? '● 人工已接手，AI静默' : '● AI助理承接中'}</div>
           </div>
           <div style={{ marginLeft: 'auto', marginRight: 8, fontSize: 11, color: '#8AA89C' }}>发送回复后自动转人工</div>
           <button className="modal-close" onClick={onClose}>✕</button>

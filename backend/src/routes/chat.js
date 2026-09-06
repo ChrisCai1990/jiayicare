@@ -10,6 +10,8 @@ const Product = require('../models/Product');
 const ServiceProposal = require('../models/ServiceProposal');
 const Reminder = require('../models/Reminder');
 const FollowUp = require('../models/FollowUp');
+const ChatConversationState = require('../models/ChatConversationState');
+const { humanPresentQuery, isHumanPresent } = require('../utils/chatPresence');
 const { resolveHealthPlanner } = require('../utils/healthPlannerAssignment');
 const { isAiRecommendable, buildAiCatalogEntry, resolveProductPrices } = require('../utils/productAiProfile');
 const { getHealthAssistantConfig } = require('../utils/healthAssistantConfig');
@@ -288,6 +290,27 @@ router.post('/', auth, async (req, res) => {
   let lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content || (audio?.data ? '[语音消息]' : image ? '[图片消息]' : '');
   let effectiveMessages = messages;
   const t0 = Date.now();
+
+  // AI与真人健康规划师共用 planner 会话；人工接手后直接交给真人，不再调用AI。
+  const plannerConversationId = `${userId}_planner`;
+  if (await ChatConversationState.exists(humanPresentQuery(plannerConversationId))) {
+    let imageUrl = '', audioUrl = '', audioTranscript = '';
+    let audioDuration = 0;
+    if (image) imageUrl = (await uploadBase64(image, mimeType, 'messages')).url;
+    if (audio?.data) {
+      audioDuration = Math.max(1, Math.min(60, Number(audio.duration) || 1));
+      audioUrl = (await uploadBase64(audio.data, audio.mimeType || 'audio/mpeg', 'messages/audio')).url;
+      try { audioTranscript = await require('../utils/asr').transcribeBase64(audio.data, audio.mimeType || 'audio/mpeg'); } catch {}
+    }
+    const message = await Message.create({
+      user: userId, type: 'user', sender: req.user.name || req.user.phone,
+      title: '用户留言 → 健康规划师', content: lastUserMsg || '[语音消息]',
+      imageUrl, audioUrl, audioDuration, audioTranscript, unread: false,
+      recipient: 'planner', conversationId: plannerConversationId,
+    });
+    try { require('./messages').ssePublish(plannerConversationId, { type: 'message', data: message }); } catch {}
+    return res.json({ success: true, data: { humanActive: true, messageId: message._id, imageUrl, audioUrl, audioDuration, audioTranscript } });
+  }
 
   if (!process.env.QWEN_API_KEY) {
     return res.status(503).json({ success: false, message: 'AI服务暂未开通，请联系管理员配置。' });
@@ -583,13 +606,15 @@ router.get('/logs/:userId', auth, async (req, res) => {
     return res.status(403).json({ success: false, message: '无权访问' });
   }
   try {
-    const [logs, plannerMessages] = await Promise.all([
+    const conversationId = `${req.params.userId}_planner`;
+    const [logs, plannerMessages, state] = await Promise.all([
       ChatLog.find({ user: req.params.userId, recalled: { $ne: true } }).sort({ createdAt: -1 }).limit(50).lean(),
       Message.find({
         user: req.params.userId,
-        conversationId: `${req.params.userId}_planner`,
+        conversationId,
         recalled: { $ne: true },
       }).sort({ createdAt: -1 }).limit(100).lean(),
+      ChatConversationState.findOne({ conversationId }).select('humanActive').lean(),
     ]);
     const unified = [
       ...logs,
@@ -610,7 +635,7 @@ router.get('/logs/:userId', auth, async (req, res) => {
         createdAt: message.createdAt,
       })),
     ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 100);
-    res.json({ success: true, data: unified });
+    res.json({ success: true, data: unified, humanActive: isHumanPresent(state) });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

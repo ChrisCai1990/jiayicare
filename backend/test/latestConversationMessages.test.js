@@ -6,10 +6,13 @@ const path = require('node:path');
 const readRoute = (name) => fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', name), 'utf8');
 
 test('用户端和医护端会话均先取最新100条再恢复为时间正序', () => {
-  for (const routeName of ['messages.js', 'staff.js']) {
-    const source = readRoute(routeName);
-    assert.match(source, /const \[newestMessages, state\] = await Promise\.all/);
-    assert.match(source, /sort\(\{ createdAt: -1 \}\)\.limit\(100\)/);
-    assert.match(source, /const messages = newestMessages\.reverse\(\)/);
-  }
+  const userSource = readRoute('messages.js');
+  assert.match(userSource, /const \[newestMessages, state\] = await Promise\.all/);
+  assert.match(userSource, /const messages = newestMessages\.reverse\(\)/);
+  assert.match(userSource, /user: req\.user\._id,[\s\S]*\$and: \[[\s\S]*\{ \$or: \[\{ conversationId \}, \{ type: role, conversationId: null \}\] \}/);
+  const staffSource = readRoute('staff.js');
+  assert.match(staffSource, /const \[newestMessages, plannerLogs, state\] = await Promise\.all/);
+  assert.match(staffSource, /messages\.sort\(\(a, b\) => new Date\(a\.createdAt\) - new Date\(b\.createdAt\)\)/);
+  assert.match(userSource, /sort\(\{ createdAt: -1 \}\)\.limit\(100\)/);
+  assert.match(staffSource, /sort\(\{ createdAt: -1 \}\)\.limit\(100\)/);
 });

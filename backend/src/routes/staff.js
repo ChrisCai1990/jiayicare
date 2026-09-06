@@ -5842,21 +5842,29 @@ router.get('/user-messages/:userId/thread', staffAuth, async (req, res) => {
     }
     const conversationId = `${req.params.userId}_${role}`;
     const ChatConversationState = require('../models/ChatConversationState');
-    const [newestMessages, state] = await Promise.all([
+    const [newestMessages, plannerLogs, state] = await Promise.all([
       Message.find(role === 'planner' ? {
         recalled: { $ne: true },
         $or: [{ conversationId }, { conversationId: `${req.params.userId}_manager`, isAI: true }],
       } : { recalled: { $ne: true }, $or: [{ conversationId }, { user: req.params.userId, type: role, conversationId: null }] }).sort({ createdAt: -1 }).limit(100),
+      role === 'planner' ? ChatLog.find({ user: req.params.userId, recalled: { $ne: true } }).sort({ createdAt: -1 }).limit(50).lean() : [],
       ChatConversationState.findOne({ conversationId }).select('humanActive takenOverAt takenOverBy').lean(),
     ]);
-    const messages = newestMessages.reverse();
+    const messages = newestMessages.map(withSignedMessageMedia);
+    if (role === 'planner') {
+      plannerLogs.forEach(log => {
+        if (log.userMessage) messages.push({ _id: `chat-user:${log._id}`, user: log.user, type: 'user', sender: '客户', content: log.userMessage, imageUrl: log.imageUrl || '', audioUrl: log.audioUrl || '', audioDuration: log.audioDuration || 0, audioTranscript: log.audioTranscript || '', createdAt: log.createdAt });
+        if (log.aiReply) messages.push({ _id: `chat-ai:${log._id}`, user: log.user, type: 'planner', sender: 'AI健康规划师', content: log.aiReply, isAI: true, createdAt: log.createdAt });
+      });
+    }
+    messages.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
     // 标记该会话所有用户消息为医护已读
     await Message.updateMany(
       { conversationId, type: 'user', staffReadAt: null },
       { staffReadAt: new Date() }
     );
     const { isHumanPresent } = require('../utils/chatPresence');
-    res.json({ success: true, data: messages.map(withSignedMessageMedia), conversationId, humanActive: isHumanPresent(state), takenOverAt: state?.takenOverAt || null });
+    res.json({ success: true, data: messages.slice(-100).map(withSignedMessageMedia), conversationId, humanActive: isHumanPresent(state), takenOverAt: state?.takenOverAt || null });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

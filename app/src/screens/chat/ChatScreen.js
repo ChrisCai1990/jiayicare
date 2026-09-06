@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   SafeAreaView, TextInput, KeyboardAvoidingView, Platform,
@@ -108,6 +108,7 @@ export default function ChatScreen({ navigation, route }) {
   const [transferred, setTransferred] = useState(false);
   const [speakingId, setSpeakingId] = useState(null);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [plannerHumanActive, setPlannerHumanActive] = useState(false);
   const scrollRef = useRef(null);
 
   const now = () => new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
@@ -116,18 +117,30 @@ export default function ChatScreen({ navigation, route }) {
   // 加载历史对话记录：此前每次进入/离开页面都会清空对话（messages只存在组件本地state），
   // 后端 ChatLog 其实一直有完整记录，只是从未被读取过。现在挂载时拉取最近的对话拼在欢迎语之后，
   // 让用户切换页面再回来还能看到之前聊过的内容。每条 ChatLog 是一轮问答合并存的，拆成 user+assistant 两条。
-  useEffect(() => {
-    if (!user?._id || historyLoaded) return;
-    chatAPI.getLogs(user._id).then(res => {
-      if (!res.success || !Array.isArray(res.data) || res.data.length === 0) return;
+  const refreshHistory = useCallback(() => {
+    if (!user?._id) return Promise.resolve();
+    return chatAPI.getLogs(user._id).then(res => {
+      if (!res.success || !Array.isArray(res.data)) return;
       const historyMsgs = [...res.data].reverse().flatMap(log => ([
         { id: `h-${log._id}-u`, logId: log._id, role: 'user', content: log.userMessage, time: fmtTime(log.createdAt), rawTime: log.createdAt },
         // aiReply 为空的历史记录（如转人工场景）不渲染成空气泡
         log.aiReply ? { id: `h-${log._id}-a`, logId: log._id, role: 'assistant', content: log.aiReply, roleIcon: ASSISTANT.icon, roleColor: ASSISTANT.color, roleName: ASSISTANT.label, time: fmtTime(log.createdAt), rawTime: log.createdAt } : null,
       ].filter(Boolean)));
       setMessages(prev => [prev[0], ...historyMsgs]);
-    }).catch(() => {}).finally(() => setHistoryLoaded(true));
+      setPlannerHumanActive(!!res.humanActive);
+    }).catch(() => {});
   }, [user?._id]);
+
+  useEffect(() => {
+    if (!user?._id || historyLoaded) return;
+    refreshHistory().finally(() => setHistoryLoaded(true));
+  }, [user?._id, historyLoaded, refreshHistory]);
+
+  useEffect(() => {
+    if (!user?._id) return undefined;
+    const timer = setInterval(refreshHistory, 2000);
+    return () => clearInterval(timer);
+  }, [user?._id, refreshHistory]);
 
   // Build user context for AI
   const buildUserInfo = () => ({
@@ -189,6 +202,11 @@ export default function ChatScreen({ navigation, route }) {
 
     try {
       const res = await chatAPI.send(history, buildUserInfo());
+      if (res?.data?.humanActive) {
+        setPlannerHumanActive(true);
+        await refreshHistory();
+        return;
+      }
       const replyContent = res.success
         ? res.data.content
         : (res.message || 'AI暂时无法回复，请稍后再试。');

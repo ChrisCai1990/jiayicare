@@ -53,9 +53,12 @@ router.get('/thread/:role', auth, async (req, res) => {
   const conversationId = `${req.user._id}_${role}`;
   const [newestMessages, state] = await Promise.all([
     Message.find({
-      $or: [{ conversationId }, { user: req.user._id, type: role, conversationId: null }],
+      user: req.user._id,
       recalled: { $ne: true },
-      $or: [{ aiGenerated: { $ne: true } }, { aiReviewStatus: { $in: ['', 'approved'] } }],
+      $and: [
+        { $or: [{ conversationId }, { type: role, conversationId: null }] },
+        { $or: [{ aiGenerated: { $ne: true } }, { aiReviewStatus: { $in: ['', 'approved'] } }] },
+      ],
     }).sort({ createdAt: -1 }).limit(100),
     ChatConversationState.findOne({ conversationId }).select('humanActive takenOverAt').lean(),
   ]);

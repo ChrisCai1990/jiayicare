@@ -689,6 +689,18 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
 
   const ROLE_LABEL = { doctor: '健康顾问', nutritionist: '营养师', manager: '健管师', planner: '健康规划师', medicalAssistant: '就医专员' }
 
+  useEffect(() => {
+    let active = true
+    const heartbeat = () => staffAPI.setChatHumanActive(userId, true, roleKey).then(res => { if (active) setHumanActive(!!res.humanActive) }).catch(() => {})
+    heartbeat()
+    const timer = setInterval(heartbeat, 30000)
+    return () => {
+      active = false
+      clearInterval(timer)
+      staffAPI.setChatHumanActive(userId, false, roleKey).catch(() => {})
+    }
+  }, [userId, roleKey])
+
   const handleGenerateDraft = async () => {
     setDraftGenerating(true)
     try {
@@ -783,11 +795,11 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
 
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 520, display: 'flex', flexDirection: 'column', maxHeight: '80vh' }}>
+      <div className="modal" style={{ width: 'min(860px, 94vw)', maxWidth: 860, height: '78vh', display: 'flex', flexDirection: 'column' }}>
         <div className="modal-header" style={{ flexShrink: 0 }}>
           <div>
             <h3 className="modal-title">与 {userName} 的对话</h3>
-            <div style={{ fontSize: 12, color: humanActive ? '#D97706' : '#22A06B', marginTop: 2 }}>频道：{ROLE_LABEL[roleKey] || roleKey} · {humanActive ? '人工已接手，AI静默' : 'AI助理承接中'}</div>
+            <div style={{ fontSize: 12, color: humanActive ? '#D97706' : '#22A06B', marginTop: 2 }}>频道：{ROLE_LABEL[roleKey] || roleKey} · {roleKey === 'medicalAssistant' ? '人工沟通' : humanActive ? '人工已接手，AI静默' : 'AI助理承接中'}</div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <select className="form-input" value={draftRange} onChange={e => setDraftRange(e.target.value)}
