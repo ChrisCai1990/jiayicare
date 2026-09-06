@@ -11799,7 +11799,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
         )}
 
         {/* 消息列表 */}
-        <div ref={scrollRef} onScroll={handleScroll} style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 12, backgroundColor: '#F2EDE3' }}>
+        <div ref={scrollRef} onScroll={handleScroll} style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', padding: '16px 16px 36px', display: 'flex', flexDirection: 'column', gap: 12, backgroundColor: '#F2EDE3', scrollPaddingBottom: 36 }}>
           {loading ? (
             <div style={{ textAlign: 'center', color: '#8AA89C', padding: 40 }}>加载中…</div>
           ) : msgs.length === 0 ? (
@@ -11867,6 +11867,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
               </div>
             )
           })}
+          <div aria-hidden="true" style={{ height: 8, flexShrink: 0 }} />
         </div>
 
         {/* 输入栏 */}

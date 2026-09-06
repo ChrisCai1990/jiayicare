@@ -682,7 +682,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
   const [replyImages, setReplyImages] = useState([])
   const [recording, setRecording] = useState(false)
   const [humanActive, setHumanActive] = useState(false)
-  const bottomRef = useRef(null)
+  const scrollRef = useRef(null)
   const recorderRef = useRef(null)
   const recordStreamRef = useRef(null)
   const recordStartedRef = useRef(0)
@@ -727,7 +727,10 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
     const timer = setInterval(loadThread, 3000)
     return () => clearInterval(timer)
   }, [userId, roleKey])
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
+  useEffect(() => {
+    const el = scrollRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [messages])
   useEffect(() => () => { recorderRef.current?.state === 'recording' && recorderRef.current.stop(); recordStreamRef.current?.getTracks?.().forEach(track => track.stop()) }, [])
 
   const startVoice = async () => {
@@ -816,7 +819,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
           </div>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12, background: '#faf9f6' }}>
+        <div ref={scrollRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', padding: '16px 20px 36px', display: 'flex', flexDirection: 'column', gap: 12, background: '#faf9f6', scrollPaddingBottom: 36 }}>
           {loading ? (
             <div style={{ textAlign: 'center', color: '#aaa', padding: 40 }}>加载中...</div>
           ) : messages.length === 0 ? (
@@ -859,7 +862,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
               </div>
             )
           })}
-          <div ref={bottomRef} />
+          <div aria-hidden="true" style={{ height: 8, flexShrink: 0 }} />
         </div>
 
         <div style={{ flexShrink: 0, padding: '12px 20px', borderTop: '1px solid #f0ede8', background: '#fff' }}>

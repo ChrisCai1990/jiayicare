@@ -125,9 +125,14 @@ function withSignedMessageMedia(message) {
   const urls = obj.imageUrls?.length ? obj.imageUrls : (obj.imageUrl ? [obj.imageUrl] : []);
   obj.imageUrls = urls.map(url => signStoredUrl(url));
   obj.imageUrl = obj.imageUrls[0] || '';
-  if (obj.audioUrl && obj._id && mongoose.isValidObjectId(obj._id) && process.env.JWT_SECRET) {
-    const token = jwt.sign({ scope: 'message-audio', messageId: String(obj._id) }, process.env.JWT_SECRET, { expiresIn: '30m' });
-    obj.audioUrl = `/api/staff/user-messages/${obj._id}/audio?token=${encodeURIComponent(token)}`;
+  const rawId = String(obj._id || '');
+  const legacyMatch = rawId.match(/^chat-user:([a-f\d]{24})$/i);
+  const audioRef = mongoose.isValidObjectId(rawId)
+    ? { source: 'message', recordId: rawId }
+    : legacyMatch ? { source: 'chatLog', recordId: legacyMatch[1] } : null;
+  if (obj.audioUrl && audioRef && process.env.JWT_SECRET) {
+    const token = jwt.sign({ scope: 'message-audio', routeId: rawId, ...audioRef }, process.env.JWT_SECRET, { expiresIn: '30m' });
+    obj.audioUrl = `/api/staff/user-messages/${encodeURIComponent(rawId)}/audio?token=${encodeURIComponent(token)}`;
   } else {
     obj.audioUrl = obj.audioUrl ? signStoredUrl(obj.audioUrl) : '';
   }
@@ -5779,10 +5784,12 @@ router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'vie
 router.get('/user-messages/:messageId/audio', async (req, res) => {
   try {
     const payload = jwt.verify(String(req.query.token || ''), process.env.JWT_SECRET);
-    if (payload.scope !== 'message-audio' || payload.messageId !== String(req.params.messageId)) {
+    if (payload.scope !== 'message-audio' || payload.routeId !== String(req.params.messageId)) {
       return res.status(403).json({ success: false, message: '语音链接无效或已失效' });
     }
-    const message = await Message.findById(req.params.messageId).select('audioUrl audioMimeType');
+    const message = payload.source === 'chatLog'
+      ? await ChatLog.findById(payload.recordId).select('audioUrl')
+      : await Message.findById(payload.recordId).select('audioUrl audioMimeType');
     const key = urlToKey(message?.audioUrl || '');
     if (!message || !key) return res.status(404).json({ success: false, message: '语音不存在' });
     const range = String(req.headers.range || '').trim();
