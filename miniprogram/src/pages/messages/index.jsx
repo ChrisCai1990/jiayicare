@@ -629,13 +629,23 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
   const initialPositionedRef = useRef(false);
   const loadedMessageCountRef = useRef(0);
   const bottomScrollRef = useRef(100000);
+  const pendingBottomScrollRef = useRef(false);
 
   const scrollToThreadBottom = useCallback(() => {
+    pendingBottomScrollRef.current = true;
     setScrollTarget('');
-    bottomScrollRef.current += 100000;
-    const nextTop = bottomScrollRef.current;
-    Taro.nextTick(() => setScrollTop(nextTop));
   }, []);
+
+  // 必须等新消息气泡完成渲染、ScrollView 的 scrollHeight 更新后再滚动。
+  // 在接口回调里直接设置 scrollTop 会按旧高度定位，长消息或语音气泡便会被输入栏截住。
+  useEffect(() => {
+    if (!pendingBottomScrollRef.current) return;
+    pendingBottomScrollRef.current = false;
+    Taro.nextTick(() => {
+      bottomScrollRef.current += 100000;
+      setScrollTop(bottomScrollRef.current);
+    });
+  }, [msgs.length]);
 
   useEffect(() => () => {
     audioPlayerRef.current?.destroy?.();
