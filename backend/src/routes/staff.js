@@ -1184,7 +1184,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
       .populate('staffId', 'name role title')
       .populate('assignedTo', 'name role title')
       .populate('sourceHealthPlanId', 'title description content type')
-      .populate('sourceOrderId', 'serviceName servicePrice paidAmount healthFundAmount note scheduledAt status paymentStatus paymentMethod createdAt'),
+      .populate('sourceOrderId', 'serviceName servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt'),
     FollowUp.countDocuments(filter),
   ]);
   res.json({
@@ -1260,7 +1260,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
       .populate('staffId', 'name role title')
       .populate('assignedTo', 'name role')
       .populate('sourceHealthPlanId', 'title description content type')
-      .populate('sourceOrderId', 'serviceName servicePrice paidAmount healthFundAmount note scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt'),
+      .populate('sourceOrderId', 'serviceName servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt'),
     FollowUp.countDocuments(filter),
   ]);
 
@@ -4551,6 +4551,8 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
     if (action === 'complete') {
       return res.status(400).json({ success: false, message: '请通过“核销一次”记录服务，全部次数核销后订单会自动完成' });
     }
+    const actionableOrder = await Order.exists({ _id: req.params.id, ...require('../utils/orderWorkItem').activeOrderWorkItemQuery() });
+    if (!actionableOrder) return res.status(409).json({ success: false, message: '订单已退款、取消、完成或尚未支付，不能继续生成服务方案' });
     const newStatus = 'scheduled';
     const update = { status: newStatus, handledBy: req.staff._id };
     if (scheduledAt) update.scheduledAt = new Date(scheduledAt);
@@ -11196,7 +11198,7 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
     const { orderId, templateId, briefNote } = req.query;
     let order = null;
     if (orderId) {
-      order = await Order.findOne({ _id: orderId, user: user._id }).select('serviceName note paidAmount').lean();
+      order = await Order.findOne({ _id: orderId, user: user._id }).select('serviceName note desiredServiceDate serviceRequirements paidAmount').lean();
     }
 
     // 2026-07-13：就医专员现在可以在生成前先手动选定模板（templateId），选了就必须严格用这份，
@@ -11235,7 +11237,7 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
     const currentDateLabel = `${currentYear}年${currentMonth}月${currentDay}日`;
     const allergyInfo = [user.healthProfile?.foodAllergy, user.healthProfile?.drugAllergy].filter(Boolean).join('；') || '无';
     const orderInfo = order
-      ? `客户已下单服务：${order.serviceName}${order.note ? `，备注：${order.note}` : ''}`
+      ? `客户已下单服务：${order.serviceName}${order.desiredServiceDate ? `，已确认服务时间：${new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai' }).format(new Date(order.desiredServiceDate))}` : ''}${order.serviceRequirements ? `，已确认服务内容：${order.serviceRequirements}` : ''}${order.note ? `，其他备注：${order.note}` : ''}`
       : '（无关联订单，请按会员情况酌情安排）';
 
     // 只有模板明确允许的可选后勤项目才交给 AI 个性化，避免把住宿、交通变成所有服务的固定字段。

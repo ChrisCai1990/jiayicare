@@ -21,4 +21,6 @@ test('退款成功会关闭订单产生的所有未完成待办', () => {
 test('医护工作台按有效订单ID约束订单待办', () => {
   const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
   assert.match(source, /sourceType === 'order'[\s\S]*activeOrderWorkItemQuery\(\)[\s\S]*filter\.sourceOrderId = \{ \$in: activeOrderIds \}/);
+  assert.match(source, /router\.patch\('\/orders\/:id\/start'[\s\S]*activeOrderWorkItemQuery\(\)/);
+  assert.match(source, /desiredServiceDate serviceRequirements/);
 });

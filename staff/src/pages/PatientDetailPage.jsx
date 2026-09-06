@@ -11340,10 +11340,11 @@ export default function PatientDetailPage() {
           onConfirmBooking={async ({ orderId, serviceTime, task }) => {
             const originalNote = location.state?.serviceBooking?.sourceOrderId?.note || ''
             const confirmedNote = [originalNote, `已确认服务任务：${task}`].filter(Boolean).join('\n')
-            await staffAPI.startOrder(orderId, { action: 'schedule', scheduledAt: serviceTime, note: confirmedNote })
+            const scheduledAt = /^\d{4}-\d{2}-\d{2}$/.test(serviceTime) ? `${serviceTime}T00:00:00+08:00` : serviceTime
+            await staffAPI.startOrder(orderId, { action: 'schedule', scheduledAt, note: confirmedNote })
             setShowMessageModal(false)
             setTab('plans')
-            nav(`${location.pathname}?tab=plans`, { state: { autoMedicalAssist: { orderId, briefNote: `已与客户确认服务时间：${new Date(serviceTime).toLocaleString('zh-CN')}\n已确认服务任务：${task}` } } })
+            nav(`${location.pathname}?tab=plans`, { state: { autoMedicalAssist: { orderId, briefNote: `客户下单时已确认服务时间：${serviceTime}\n客户下单时已确认服务内容：${task}` } } })
           }}
           onClose={() => setShowMessageModal(false)}
         />
@@ -11589,9 +11590,16 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
   const [humanActive, setHumanActive] = useState(false)
   const [switchingMode, setSwitchingMode] = useState(false)
   const order = serviceBooking?.sourceOrderId
-  const customerTask = String(order?.note || '').split(/[；\n]/).map(item => item.trim()).filter(item => item && !/^(规格：|健康基金抵扣|优惠券抵扣|支付方式：)/.test(item)).join('；')
+  const customerTask = String(order?.serviceRequirements || order?.note || '').split(/[；\n]/).map(item => item.trim()).filter(item => item && !/^(规格：|健康基金抵扣|优惠券抵扣|支付方式：)/.test(item)).join('；')
+  const orderServiceDate = order?.desiredServiceDate || order?.scheduledAt
+  const formatServiceDate = (value) => {
+    if (!value) return ''
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(value))
+    const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
+    return `${values.year}-${values.month}-${values.day}`
+  }
   const [showBookingConfirm, setShowBookingConfirm] = useState(false)
-  const [serviceTime, setServiceTime] = useState(order?.scheduledAt ? new Date(order.scheduledAt).toISOString().slice(0, 16) : '')
+  const [serviceTime, setServiceTime] = useState(formatServiceDate(orderServiceDate))
   const [serviceTask, setServiceTask] = useState(customerTask)
   const [confirmingBooking, setConfirmingBooking] = useState(false)
   const [recording, setRecording] = useState(false)
@@ -11767,14 +11775,14 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
               finally { setConfirmingBooking(false) }
             }
             else setShowBookingConfirm(true)
-          }}>{confirmingBooking ? '确认中…' : serviceTime && serviceTask.trim() ? '确认预约信息' : '补齐预约信息'}</button>}
+          }}>{confirmingBooking ? '生成中…' : serviceTime && serviceTask.trim() ? '确认并生成方案' : '补充预约信息'}</button>}
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
         {showBookingConfirm && (
           <div style={{ padding: '12px 16px', borderBottom: '1px solid #E0D9CE', background: '#FFF8ED', display: 'grid', gap: 8 }}>
             <div style={{ fontSize: 13, fontWeight: 700 }}>补齐与客户确认的预约信息</div>
-            <input className="form-input" type="datetime-local" value={serviceTime} onChange={e => setServiceTime(e.target.value)} />
+            <input className="form-input" type="date" value={serviceTime} onChange={e => setServiceTime(e.target.value)} />
             <textarea className="form-input" rows={2} value={serviceTask} onChange={e => setServiceTask(e.target.value)} placeholder="填写本次确认的服务任务" />
             <div style={{ textAlign: 'right' }}><button className="btn btn-primary btn-sm" disabled={confirmingBooking || !serviceTime || !serviceTask.trim()} onClick={async () => {
               setConfirmingBooking(true)
