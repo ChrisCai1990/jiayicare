@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { POINTS_PER_YUAN, conversionFor } = require('../src/utils/pointsHealthFund');
+const { POINTS_PER_YUAN, conversionFor, pointsBalanceFields } = require('../src/utils/pointsHealthFund');
 
 test('100 points exchange for one yuan health fund', () => {
   assert.equal(POINTS_PER_YUAN, 100);
@@ -18,4 +18,12 @@ test('legacy staff-managed points are included once during migration', () => {
 
 test('admin-configured exchange rate is used by conversion calculation', () => {
   assert.deepEqual(conversionFor(45, 5, 0, 50), { pointsBalance: 0, redeemedPoints: 50, fundAmount: 1 });
+});
+
+test('database conversion clamps legacy negative points before changing fund balance', () => {
+  const fields = pointsBalanceFields(0, { enabled: true, pointsPerYuan: 100 });
+  const moduloTotal = fields.pointsBalance.$mod[0];
+  const fundTotal = fields.healthFundBalance.$add[1].$floor.$divide[0];
+  assert.deepEqual(moduloTotal, { $max: [0, { $add: [{ $ifNull: ['$pointsBalance', 0] }, { $ifNull: ['$points', 0] }, 0] }] });
+  assert.deepEqual(fundTotal, moduloTotal);
 });

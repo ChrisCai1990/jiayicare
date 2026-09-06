@@ -25,6 +25,23 @@ function conversionFor(balance, awarded = 0, legacyBalance = 0, pointsPerYuan = 
   };
 }
 
+function pointsBalanceFields(points, pointsPolicy) {
+  const rawTotal = { $add: [{ $ifNull: ['$pointsBalance', 0] }, { $ifNull: ['$points', 0] }, points] };
+  // 历史数据可能存在负积分。若直接对负数执行 $floor/$mod，每次打开权益页
+  // 都会兑换出负健康基金并持续扣减余额；先归零再做兑换。
+  const total = { $max: [0, rawTotal] };
+  if (!pointsPolicy.enabled) return { pointsBalance: total };
+  return {
+    pointsBalance: { $mod: [total, pointsPolicy.pointsPerYuan] },
+    healthFundBalance: {
+      $add: [
+        { $ifNull: ['$healthFundBalance', 0] },
+        { $floor: { $divide: [total, pointsPolicy.pointsPerYuan] } },
+      ],
+    },
+  };
+}
+
 /**
  * Add points and immediately convert every complete 100 points to one yuan of
  * personal health fund. The aggregation-pipeline update makes the two balances
@@ -33,16 +50,7 @@ function conversionFor(balance, awarded = 0, legacyBalance = 0, pointsPerYuan = 
 async function awardPointsAndConvert({ userId, amount = 0, source, refType = '', refId = null, remark = '' }) {
   const points = Math.max(0, Math.floor(Number(amount) || 0));
   const pointsPolicy = await getPointsPolicy();
-  const totalExpression = { $add: [{ $ifNull: ['$pointsBalance', 0] }, { $ifNull: ['$points', 0] }, points] };
-  const balanceFields = pointsPolicy.enabled ? {
-    pointsBalance: { $mod: [totalExpression, pointsPolicy.pointsPerYuan] },
-    healthFundBalance: {
-      $add: [
-        { $ifNull: ['$healthFundBalance', 0] },
-        { $floor: { $divide: [totalExpression, pointsPolicy.pointsPerYuan] } },
-      ],
-    },
-  } : { pointsBalance: totalExpression };
+  const balanceFields = pointsBalanceFields(points, pointsPolicy);
   const before = await User.findOneAndUpdate(
     { _id: userId },
     [{
@@ -82,4 +90,4 @@ async function convertExistingPoints(userId) {
   return awardPointsAndConvert({ userId, amount: 0, source: 'adjust' });
 }
 
-module.exports = { POINTS_PER_YUAN, getPointsPolicy, conversionFor, awardPointsAndConvert, convertExistingPoints };
+module.exports = { POINTS_PER_YUAN, getPointsPolicy, conversionFor, pointsBalanceFields, awardPointsAndConvert, convertExistingPoints };
