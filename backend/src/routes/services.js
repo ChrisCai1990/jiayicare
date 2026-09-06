@@ -208,7 +208,9 @@ router.post('/order', auth, async (req, res) => {
   if (!serviceId) {
     return res.status(400).json({ success: false, message: '请指定服务项目' });
   }
-  if (!String(req.user.name || '').trim() || !String(req.user.idNumber || '').trim()) {
+  // onboardingCompleted 是现有统一实名建档流程的权威完成标志；历史档案合并后，
+  // 当前登录记录未必重复保存证件号，不能用 idNumber 是否存在误拦已实名客户。
+  if (!req.user.onboardingCompleted) {
     return res.status(403).json({ success: false, code: 'REAL_NAME_REQUIRED', message: '购买服务前请先完成实名注册信息' });
   }
 
