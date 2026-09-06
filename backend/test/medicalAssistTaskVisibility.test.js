@@ -11,6 +11,7 @@ test('customer follow-up feed excludes both internal executor and supervisor tas
   const end = userSource.indexOf("router.patch('/followup-tasks/:id/done'", start);
   const route = userSource.slice(start, end);
   assert.match(route, /sourceType:\s*'health_plan',\s*taskRole:\s*\{\s*\$in:\s*\['executor',\s*'supervisor'\]/);
+  assert.match(route, /\{ sourceType:\s*'order' \}/);
   assert.doesNotMatch(route, /customerReadOnly/);
 });
 

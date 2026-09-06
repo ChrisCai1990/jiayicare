@@ -1116,7 +1116,10 @@ router.get('/followup-tasks', auth, async (req, res) => {
       isBlocked: { $ne: true },
       // 岗位执行与督办属于医护内部工作流。客户只查看已推送的服务方案，
       // 不应看到、也不能代替医护人员完成这些内部任务。
-      $nor: [{ sourceType: 'health_plan', taskRole: { $in: ['executor', 'supervisor'] } }],
+      $nor: [
+        { sourceType: 'order' },
+        { sourceType: 'health_plan', taskRole: { $in: ['executor', 'supervisor'] } },
+      ],
     })
       .sort({ date: 1 })
       .populate('staffId', 'name role title')

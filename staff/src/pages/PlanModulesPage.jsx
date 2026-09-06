@@ -272,12 +272,20 @@ export default function PlanModulesPage() {
 
   const handlePush = async () => {
     if (dirty) { toast('有未保存的更改，请先保存再推送'); return }
-    if (!window.confirm('确定将此方案推送给客户？客户端将立即可见。')) return
+    const pendingReview = plan.content?.aiStatus === 'pending'
+    if (!window.confirm(pendingReview
+      ? '确认已完整核对本方案？审核通过后将立即推送给客户，并生成执行与督办任务。'
+      : '确定将此方案推送给客户？客户端将立即可见。')) return
     setPushing(true)
     try {
+      if (pendingReview) {
+        const approvedContent = { ...(plan.content || {}), aiStatus: 'adopted' }
+        const reviewed = await staffAPI.updatePlan(id, { content: approvedContent })
+        setPlan(p => ({ ...p, content: reviewed.data?.content || { ...approvedContent, aiStatus: 'approved' } }))
+      }
       const res = await staffAPI.pushPlan(id)
-      setPlan(p => ({ ...p, pushedAt: res.data?.pushedAt || new Date().toISOString(), status: 'active' }))
-      toast('方案已推送给客户')
+      setPlan(p => ({ ...p, content: res.data?.content || p.content, pushedAt: res.data?.pushedAt || new Date().toISOString(), status: 'active' }))
+      toast(pendingReview ? '方案已审核推送，岗位任务已生成' : '方案已推送给客户')
     } catch (err) {
       toast(err.message || '推送失败')
     } finally {
@@ -347,7 +355,7 @@ export default function PlanModulesPage() {
               title={dirty ? '请先保存更改，再推送给客户' : ''}
               style={{ background: '#0077B6', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, opacity: (pushing || dirty) ? 0.5 : 1 }}
             >
-              {pushing ? '推送中...' : plan.pushedAt ? '重新推送' : '推送给客户'}
+              {pushing ? '推送中...' : plan.content?.aiStatus === 'pending' ? '审核通过并推送' : plan.pushedAt ? '重新推送' : '推送给客户'}
             </button>
           )}
         </div>
@@ -437,7 +445,7 @@ export default function PlanModulesPage() {
             disabled={pushing || dirty}
             style={{ background: '#0077B6', color: '#fff', border: 'none', padding: '10px 24px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (pushing || dirty) ? 0.5 : 1 }}
           >
-            {pushing ? '推送中...' : '推送给客户'}
+            {pushing ? '推送中...' : plan.content?.aiStatus === 'pending' ? '审核通过并推送' : '推送给客户'}
           </button>
         )}
         {canEdit && (
