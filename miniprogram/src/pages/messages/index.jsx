@@ -602,6 +602,7 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
   const [humanActive, setHumanActive] = useState(false);
   const [unreadAnchorId, setUnreadAnchorId] = useState('');
   const [scrollTarget, setScrollTarget] = useState('');
+  const [scrollTop, setScrollTop] = useState(0);
   const [foodImages, setFoodImages] = useState([]);
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -626,6 +627,15 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
   });
   const playedVoiceIdsRef = useRef(playedVoiceIds);
   const initialPositionedRef = useRef(false);
+  const loadedMessageCountRef = useRef(0);
+  const bottomScrollRef = useRef(100000);
+
+  const scrollToThreadBottom = useCallback(() => {
+    setScrollTarget('');
+    bottomScrollRef.current += 100000;
+    const nextTop = bottomScrollRef.current;
+    Taro.nextTick(() => setScrollTop(nextTop));
+  }, []);
 
   useEffect(() => () => {
     audioPlayerRef.current?.destroy?.();
@@ -645,18 +655,20 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
       const nextMessages = res.data || [];
       setMsgs(nextMessages);
       setHumanActive(!!res.humanActive);
+      const hasNewMessage = nextMessages.length > loadedMessageCountRef.current;
+      loadedMessageCountRef.current = nextMessages.length;
       if (!initialPositionedRef.current) {
         const firstUnread = nextMessages.find((message) => message.type !== 'user' && message.unread);
         const anchorId = firstUnread?._id ? String(firstUnread._id) : '';
         setUnreadAnchorId(anchorId);
-        setScrollTarget(`thread-bottom-${nextMessages.length}`);
+        scrollToThreadBottom();
         initialPositionedRef.current = true;
-      } else if (!unreadAnchorId) {
-        setScrollTarget(`thread-bottom-${nextMessages.length}`);
+      } else if (!unreadAnchorId && hasNewMessage) {
+        scrollToThreadBottom();
       }
     } catch {}
     setLoading(false);
-  }, [role, unreadAnchorId]);
+  }, [role, unreadAnchorId, scrollToThreadBottom]);
 
   const refreshAfterSend = () => {
     // 用户消息先返回，AI回复通常晚约1～3秒入库；分段刷新避免只在AI生成前刷新一次。
@@ -683,7 +695,7 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
       const res = await messagesAPI.send(role, text || '图片记录', extra);
       if (res?.data) setMsgs((prev) => (prev.some((m) => m._id === res.data._id) ? prev : [...prev, res.data]));
       setUnreadAnchorId('');
-      setScrollTarget(`thread-bottom-${msgs.length + 1}`);
+      scrollToThreadBottom();
       setFoodImages([]);
       // 服务团队频道只负责沟通，不把每轮问答自动写成“日常健康打卡”。
       // 用户需要形成饮食记录时，应从专门的营养记录入口明确提交餐食/照片。
@@ -720,7 +732,7 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
       });
       if (res?.data) setMsgs((prev) => [...prev, res.data]);
       setUnreadAnchorId('');
-      setScrollTarget(`thread-bottom-${msgs.length + 1}`);
+      scrollToThreadBottom();
       refreshAfterSend();
     } catch (err) {
       Taro.showToast({ title: err?.message || '语音发送失败', icon: 'none' });
@@ -867,7 +879,7 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
         <View style={{ width: '20px' }} />
       </View>
 
-      <ScrollView scrollY scrollIntoView={scrollTarget || `thread-bottom-${msgs.length}`} scrollAnchoring scrollWithAnimation style={{ flex: 1, height: 0, minHeight: 0, padding: `${spacing.lg}px`, boxSizing: 'border-box' }}>
+      <ScrollView scrollY scrollTop={scrollTop} scrollIntoView={scrollTarget} scrollAnchoring scrollWithAnimation style={{ flex: 1, height: 0, minHeight: 0, padding: `${spacing.lg}px`, boxSizing: 'border-box' }}>
         {loading ? (
           <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
         ) : msgs.length === 0 ? (
@@ -927,7 +939,7 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
             );
           })
         )}
-        <View id={`thread-bottom-${msgs.length}`} style={{ height: '72px' }} />
+        <View id={`thread-bottom-${msgs.length}`} style={{ height: '24px', flexShrink: 0 }} />
       </ScrollView>
 
       {!!unreadAnchorId && <View onClick={() => setScrollTarget(`thread-msg-${unreadAnchorId}`)} style={{ position: 'absolute', right: '14px', bottom: '78px', zIndex: 30, padding: '7px 12px', borderRadius: '16px', backgroundColor: '#fff', border: `1px solid ${colors.border}`, boxShadow: shadow.sm }}><Text style={{ fontSize: '11px', color: colors.primary }}>查看未读消息 ↑</Text></View>}
