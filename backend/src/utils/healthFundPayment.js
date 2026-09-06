@@ -31,6 +31,15 @@ function productDeductionLimit(rule, orderAmount) {
   return deductionLimit(mode, rule?.value, orderAmount);
 }
 
+function corporateProductEligible(policy, productId, category, productRule) {
+  const mode = productRule?.mode || 'inherit';
+  if (mode === 'disabled') return false;
+  if (mode !== 'inherit') return true;
+  if (policy?.eligibleCategories?.length && !policy.eligibleCategories.includes(category)) return false;
+  if (policy?.eligibleProductIds?.length && !policy.eligibleProductIds.map(String).includes(String(productId || ''))) return false;
+  return true;
+}
+
 async function getCorporateFundAvailable(user) {
   const [grants, legacyFirstLoginGrants, spent] = await Promise.all([GiftRecord.aggregate([
     { $match: { patientId: user._id, giftType: 'fund', fundType: 'enterprise', status: 'active' } },
@@ -74,25 +83,23 @@ async function validateHealthFundDeduction({ user, requested, orderAmount, categ
   if (amount <= 0) return { allowed: 0, enterprise: null };
   const policy = await getHealthFundPolicy();
   if (orderAmount < (Number(policy.minOrderAmount) || 0)) throw new Error(`订单满¥${policy.minOrderAmount}方可使用健康基金`);
-  const checkedCategories = Array.isArray(categories) && categories.length ? categories : [category].filter(Boolean);
-  const checkedProductIds = Array.isArray(productIds) && productIds.length ? productIds.map(String) : [productId].filter(Boolean).map(String);
-  if (policy.eligibleCategories?.length && checkedCategories.some(item => !policy.eligibleCategories.includes(item))) throw new Error('所选服务中含有不在健康基金可抵扣范围内的分类');
-  if (policy.eligibleProductIds?.length) {
-    const eligibleIds = policy.eligibleProductIds.map(String);
-    if (!checkedProductIds.length || checkedProductIds.some(id => !eligibleIds.includes(id))) throw new Error('所选服务中含有不支持健康基金抵扣的产品');
-  }
+  let productRule = null;
   let finalProductLimit = Number.isFinite(Number(productLimit)) ? Math.max(0, Number(productLimit)) : orderAmount;
   if (productId && productLimit === undefined && require('mongoose').Types.ObjectId.isValid(productId)) {
     const product = await Product.findById(productId).select('healthFundDeduction').lean();
-    finalProductLimit = productDeductionLimit(product?.healthFundDeduction, orderAmount);
+    productRule = product?.healthFundDeduction;
+    finalProductLimit = productDeductionLimit(productRule, orderAmount);
   }
-  if (finalProductLimit <= 0) throw new Error('该产品不支持健康基金抵扣');
+  const corporateEligible = corporateProductEligible(policy, productId, category, productRule);
   const personalAvailable = await getPersonalFundAvailable(user);
-  const personalLimit = deductionLimit(policy.personalDeductionType, policy.personalDeductionValue, orderAmount);
+  // 自有基金是客户自有余额，不受企业基金的商品分类范围限制。
+  const personalLimit = orderAmount;
   // 平台发放的首登企业健康基金并不要求用户先绑定某个企业档案。
   const corporateAvailable = await getCorporateFundAvailable(user);
   let enterprise = null;
-  let corporateLimit = deductionLimit(policy.corporateDeductionType, policy.corporateDeductionValue, orderAmount);
+  let corporateLimit = corporateEligible
+    ? Math.min(deductionLimit(policy.corporateDeductionType, policy.corporateDeductionValue, orderAmount), finalProductLimit)
+    : 0;
   if (user.enterpriseId && corporateAvailable > 0) {
     enterprise = await Enterprise.findById(user.enterpriseId);
     const rule = enterprise?.healthFundPaymentRule;
@@ -104,7 +111,7 @@ async function validateHealthFundDeduction({ user, requested, orderAmount, categ
       // 是否启用、最低金额和适用分类，避免旧企业固定额度覆盖平台新比例。
     }
   }
-  let remaining = Math.min(amount, orderAmount, finalProductLimit);
+  let remaining = Math.min(amount, orderAmount);
   let personalUsed = 0; let corporateUsed = 0;
   const takePersonal = () => { const used=Math.min(remaining, personalAvailable, personalLimit); personalUsed=used; remaining-=used; };
   const takeCorporate = () => { const used=Math.min(remaining, corporateAvailable, corporateLimit); corporateUsed=used; remaining-=used; };
@@ -162,4 +169,4 @@ async function reverseHealthFund({ order, remark = '订单退款返还' }) {
   return amount;
 }
 
-module.exports = { DEFAULT_HEALTH_FUND_POLICY, getHealthFundPolicy, deductionLimit, productDeductionLimit, validateHealthFundDeduction, deductHealthFund, reverseHealthFund, getCorporateFundAvailable, getPersonalFundAvailable };
+module.exports = { DEFAULT_HEALTH_FUND_POLICY, getHealthFundPolicy, deductionLimit, productDeductionLimit, corporateProductEligible, validateHealthFundDeduction, deductHealthFund, reverseHealthFund, getCorporateFundAvailable, getPersonalFundAvailable };
