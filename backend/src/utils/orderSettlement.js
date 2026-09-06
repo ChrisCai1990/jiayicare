@@ -118,6 +118,10 @@ async function confirmRefund(refund, snapshot) {
     if (['pending', 'scheduled'].includes(order.status)) order.status = 'cancelled';
     order.fulfillmentStatus = 'cancelled';
     await Fulfillment.updateOne({ order: order._id }, { status: 'cancelled' });
+    await FollowUp.updateMany(
+      { sourceType: 'order', sourceOrderId: order._id, status: { $nin: ['completed', 'cancelled'] } },
+      { $set: { status: 'cancelled', cancelReason: '订单已退款' } },
+    );
     await refundOrderPoints(order);
     if (order.healthFundAmount > 0) {
       await require('./healthFundPayment').reverseHealthFund({ order, remark: `订单${order.serviceName}退款返还` });

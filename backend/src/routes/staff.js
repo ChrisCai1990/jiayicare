@@ -1224,6 +1224,12 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
   };
   const filter = { $and: [ownerFilter, patientFilter, assignedTo ? { assignedTo } : {}, includeFuture === '1' ? {} : availabilityFilter] };
   if (sourceType) filter.sourceType = sourceType;
+  if (sourceType === 'order') {
+    // 订单待办的事实来源必须是订单本身。退款中、已退款、已取消或已完成的订单，
+    // 即使历史 FollowUp 仍是 planned，也不能继续进入任何人的工作台。
+    const activeOrderIds = await Order.find(require('../utils/orderWorkItem').activeOrderWorkItemQuery()).distinct('_id');
+    filter.sourceOrderId = { $in: activeOrderIds };
+  }
   if (sourceType === 'health_plan') filter.isBlocked = { $ne: true };
   // 订单来源的待办(sourceType='order')有独立的"待处理服务预约"展示位，随访列表页需要排除，
   // 避免"预约：医疗代诊服务"这类服务预约混进随访任务列表（2026-07-13反馈）
@@ -1254,7 +1260,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
       .populate('staffId', 'name role title')
       .populate('assignedTo', 'name role')
       .populate('sourceHealthPlanId', 'title description content type')
-      .populate('sourceOrderId', 'serviceName servicePrice paidAmount healthFundAmount note scheduledAt status paymentStatus paymentMethod createdAt'),
+      .populate('sourceOrderId', 'serviceName servicePrice paidAmount healthFundAmount note scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt'),
     FollowUp.countDocuments(filter),
   ]);
 
