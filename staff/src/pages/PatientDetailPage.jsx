@@ -8,6 +8,7 @@ import AppIcon from '../components/AppIcon'
 import AiCaseReviewPanel from '../components/AiCaseReviewPanel'
 import femalePortraitPhoto from '../assets/health-portrait-female.webp'
 import malePortraitPhoto from '../assets/health-portrait-male.webp'
+import { reconcileConversationMessages } from '../utils/conversationMessages'
 
 // 使用浏览器原生 PDF 阅读器，保留缩放、页码跳转、旋转、查找、打印及下载等常规功能。
 // 预览链接仍是绑定报告与短时令牌的私有 API，不改为公开直链。
@@ -11614,7 +11615,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
   const loadThread = async () => {
     try {
       const res = await staffAPI.getChatThread(patientId, chatRole)
-      setMsgs(res.data || [])
+      setMsgs(previous => reconcileConversationMessages(previous, res.data || []))
       setHumanActive(!!res.humanActive)
       setTimeout(() => scrollRef.current?.scrollTo({ top: 99999, behavior: 'auto' }), 80)
     } catch {}
@@ -11641,7 +11642,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
     const interval = setInterval(async () => {
       try {
         const res = await staffAPI.getChatThread(patientId, chatRole)
-        setMsgs(res.data || [])
+        setMsgs(previous => reconcileConversationMessages(previous, res.data || []))
         setHumanActive(!!res.humanActive)
       } catch {}
     }, 3000)

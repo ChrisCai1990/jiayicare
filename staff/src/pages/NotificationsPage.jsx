@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { staffAPI, API_ORIGIN } from '../api'
 import { useToast } from '../App'
+import { reconcileConversationMessages } from '../utils/conversationMessages'
 
 const PUSH_TYPE_LABEL = { knowledge:'科普', questionnaire:'问卷', plan:'方案', product:'产品', supplement:'营养素', notice:'通知' }
 const PUSH_TYPE_COLOR = { knowledge:'#22A06B', questionnaire:'#0077B6', plan:'#D97706', product:'#1E6B50', supplement:'#8e44ad', notice:'#666' }
@@ -716,7 +717,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
   const loadThread = async () => {
     try {
       const res = await staffAPI.getUserMessageThread(userId, roleKey)
-      setMessages(res.data || [])
+      setMessages(previous => reconcileConversationMessages(previous, res.data || []))
       setHumanActive(!!res.humanActive)
     } catch { /* ignore */ }
     finally { setLoading(false) }
