@@ -462,6 +462,7 @@ router.post('/order', auth, async (req, res) => {
   order.fulfillmentId = fulfillment._id;
   order.fulfillmentStatus = fulfillment.status;
   await order.save();
+  await require('../utils/orderPlannerConversation').ensureOrderPlannerPrompt(order);
   await require('../utils/commissionSettlement').settleReferralCommission(order);
   await require('../utils/productShareRewards').grantProductShareRewards(order);
   }

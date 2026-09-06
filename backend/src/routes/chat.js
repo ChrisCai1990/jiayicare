@@ -10,6 +10,7 @@ const Product = require('../models/Product');
 const ServiceProposal = require('../models/ServiceProposal');
 const Reminder = require('../models/Reminder');
 const FollowUp = require('../models/FollowUp');
+const Order = require('../models/Order');
 const { resolveHealthPlanner } = require('../utils/healthPlannerAssignment');
 const { isAiRecommendable, buildAiCatalogEntry, resolveProductPrices } = require('../utils/productAiProfile');
 const { getHealthAssistantConfig } = require('../utils/healthAssistantConfig');
@@ -583,11 +584,40 @@ router.get('/logs/:userId', auth, async (req, res) => {
     return res.status(403).json({ success: false, message: '无权访问' });
   }
   try {
-    const logs = await ChatLog.find({ user: req.params.userId, recalled: { $ne: true } })
-      .sort({ createdAt: -1 })
-      .limit(50)
-      .lean();
-    res.json({ success: true, data: logs });
+    const latestPaidOrder = await Order.findOne({
+      user: req.params.userId,
+      paymentStatus: 'paid',
+      status: { $nin: ['cancelled', 'completed'] },
+    }).sort({ paidAt: -1, createdAt: -1 });
+    if (latestPaidOrder) await require('../utils/orderPlannerConversation').ensureOrderPlannerPrompt(latestPaidOrder);
+    const [logs, plannerMessages] = await Promise.all([
+      ChatLog.find({ user: req.params.userId, recalled: { $ne: true } }).sort({ createdAt: -1 }).limit(50).lean(),
+      Message.find({
+        user: req.params.userId,
+        conversationId: `${req.params.userId}_planner`,
+        recalled: { $ne: true },
+      }).sort({ createdAt: -1 }).limit(100).lean(),
+    ]);
+    const unified = [
+      ...logs,
+      ...plannerMessages.map(message => ({
+        _id: `planner-message:${message._id}`,
+        user: message.user,
+        role: 'planner',
+        userMessage: message.type === 'user' ? message.content : '',
+        aiReply: message.type === 'planner'
+          ? (message.isAI === true ? message.content : `【真人健康规划师 ${message.sender || ''}】${message.content}`)
+          : '',
+        imageUrl: message.imageUrl || message.imageUrls?.[0] || '',
+        audioUrl: message.audioUrl || '',
+        audioDuration: message.audioDuration || 0,
+        audioTranscript: message.audioTranscript || '',
+        sender: message.sender,
+        isHuman: message.type === 'planner' && message.isAI !== true,
+        createdAt: message.createdAt,
+      })),
+    ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 100);
+    res.json({ success: true, data: unified });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
