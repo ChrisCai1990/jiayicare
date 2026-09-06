@@ -25,11 +25,13 @@ const messageSchema = new mongoose.Schema({
   // 可操作消息：消息中心据此渲染操作按钮/跳转，让用户不必自己找入口。
   // 目前用于家庭成员邀请：{ type:'family_invite', inviteId, route:'FamilyMembers' }
   action: { type: mongoose.Schema.Types.Mixed, default: null },
+  dedupeKey: { type: String, default: null },
   recalled:   { type: Boolean, default: false },
   recalledAt: { type: Date, default: null },
 }, { timestamps: true });
 
 messageSchema.index({ user: 1, unread: 1 });
 messageSchema.index({ conversationId: 1, createdAt: 1 });
+messageSchema.index({ dedupeKey: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('Message', messageSchema);

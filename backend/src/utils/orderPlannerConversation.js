@@ -1,11 +1,12 @@
 const Message = require('../models/Message');
+const { needsCustomerServiceConfirmation } = require('./orderServiceConfirmation');
 
 function customerOrderNote(note = '') {
   return String(note).split('；').filter(part => !/^(健康基金抵扣|优惠券抵扣|支付方式：)/.test(part)).join('；').trim();
 }
 
 async function ensureOrderPlannerPrompt(order) {
-  if (!order?._id || !order.user || order.orderType === 'package') return null;
+  if (!order?._id || !order.user || !needsCustomerServiceConfirmation(order)) return null;
   const conversationId = `${order.user}_planner`;
   const note = customerOrderNote(order.note);
   const scheduled = order.scheduledAt ? new Date(order.scheduledAt).toLocaleDateString('zh-CN') : '';
@@ -19,11 +20,17 @@ async function ensureOrderPlannerPrompt(order) {
     ],
   });
   if (existing) return existing;
-  return Message.create({
-    user: order.user, type: 'planner', sender: 'AI健康规划师', title: '订单服务确认',
-    content, conversationId, isAI: true, aiGenerated: false, unread: true,
-    action: { type: 'order_planner_confirmation', orderId: String(order._id) },
-  });
+  try {
+    return await Message.create({
+      user: order.user, type: 'planner', sender: 'AI健康规划师', title: '订单服务确认',
+      content, conversationId, isAI: true, aiGenerated: false, unread: true,
+      dedupeKey: `order-planner-confirmation:${order._id}`,
+      action: { type: 'order_planner_confirmation', orderId: String(order._id) },
+    });
+  } catch (error) {
+    if (error?.code !== 11000) throw error;
+    return Message.findOne({ dedupeKey: `order-planner-confirmation:${order._id}` });
+  }
 }
 
 function normalizeIntakeResult(input = {}, previous = {}) {

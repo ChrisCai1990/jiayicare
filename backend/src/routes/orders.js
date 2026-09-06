@@ -8,6 +8,7 @@ const Refund = require('../models/Refund');
 const wechatPay = require('../utils/wechatPay');
 const { confirmRefund } = require('../utils/orderSettlement');
 const router = express.Router();
+const { pendingServiceConfirmationQuery, needsCustomerServiceConfirmation } = require('../utils/orderServiceConfirmation');
 
 async function reconcileRefund(order) {
   if (!['requested', 'processing'].includes(order.refundStatus)) return;
@@ -51,6 +52,17 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
+// 单一事实来源：返回当前需要客户补充服务信息的最新订单。
+router.get('/pending-service-confirmation', auth, async (req, res) => {
+  try {
+    const order = await Order.findOne(pendingServiceConfirmationQuery(req.user._id))
+      .sort({ paidAt: -1, createdAt: -1 });
+    res.json({ success: true, data: order || null });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '获取待确认服务失败', error: err.message });
+  }
+});
+
 // 获取单个订单详情
 router.get('/:id', auth, async (req, res) => {
   try {
@@ -67,7 +79,7 @@ router.patch('/:id/service-details', auth, async (req, res) => {
   try {
     const order = await Order.findOne({ _id: req.params.id, user: req.user._id });
     if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
-    if (order.status !== 'pending' || Number(order.usedUnits || 0) > 0 || !['', 'none'].includes(order.refundStatus || 'none')) {
+    if (!needsCustomerServiceConfirmation(order) || Number(order.usedUnits || 0) > 0) {
       return res.status(409).json({ success: false, message: '订单已开始服务或正在退款，不能再修改服务需求' });
     }
     const desiredServiceDate = String(req.body.desiredServiceDate || '').trim();

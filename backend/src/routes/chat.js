@@ -584,11 +584,9 @@ router.get('/logs/:userId', auth, async (req, res) => {
     return res.status(403).json({ success: false, message: '无权访问' });
   }
   try {
-    const latestPaidOrder = await Order.findOne({
-      user: req.params.userId,
-      paymentStatus: 'paid',
-      status: { $nin: ['cancelled', 'completed'] },
-    }).sort({ paidAt: -1, createdAt: -1 });
+    const latestPaidOrder = await Order.findOne(
+      require('../utils/orderServiceConfirmation').pendingServiceConfirmationQuery(req.params.userId)
+    ).sort({ paidAt: -1, createdAt: -1 });
     if (latestPaidOrder) await require('../utils/orderPlannerConversation').ensureOrderPlannerPrompt(latestPaidOrder);
     const [logs, plannerMessages] = await Promise.all([
       ChatLog.find({ user: req.params.userId, recalled: { $ne: true } }).sort({ createdAt: -1 }).limit(50).lean(),
