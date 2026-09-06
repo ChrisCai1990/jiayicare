@@ -31,16 +31,33 @@ export function AuthProvider({ children }) {
       return tok;
     };
 
+    const clearReactSession = () => {
+      if (active) {
+        setToken(null);
+        setUser(null);
+      }
+    };
+
     const renewWithWechat = () => {
       let shouldRenew = false;
       try { shouldRenew = Taro.getStorageSync('jy_auto_login') === true; } catch {}
-      if (!shouldRenew) return Promise.resolve(null);
+      if (!shouldRenew) {
+        clearReactSession();
+        return Promise.resolve(null);
+      }
       if (!renewalRef.current) {
         renewalRef.current = authAPI.wechatLogin()
           .then((res) => (res?.success && res.data?.token
             ? persistSession(res.data.user, res.data.token)
             : null))
-          .catch(() => null)
+          .then((tok) => {
+            if (!tok) clearReactSession();
+            return tok;
+          })
+          .catch(() => {
+            clearReactSession();
+            return null;
+          })
           .finally(() => { renewalRef.current = null; });
       }
       return renewalRef.current;
