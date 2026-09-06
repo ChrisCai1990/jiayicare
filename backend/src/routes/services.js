@@ -204,7 +204,7 @@ router.post('/inquiries', auth, async (req, res) => {
 // useHealthFund: 本次要抵扣的健康基金金额（元，<= 余额 且 <= 订单原价）
 // couponId: 本次要使用的优惠券 _id（amount 满减 或 percent 折扣，两者可叠加使用）
 router.post('/order', auth, async (req, res) => {
-  const { serviceId, specificationLabel, note, paymentMethod = 'wechat_pay', useHealthFund, couponId, shareToken = '' } = req.body;
+  const { serviceId, specificationLabel, note, paymentMethod = 'wechat_pay', useHealthFund, couponId, shareToken = '', desiredServiceDate, serviceRequirements } = req.body;
   if (!serviceId) {
     return res.status(400).json({ success: false, message: '请指定服务项目' });
   }
@@ -269,12 +269,25 @@ router.post('/order', auth, async (req, res) => {
     const dbSvc = await Service.findOne({ serviceId });
     if (dbSvc) service = { id: dbSvc.serviceId, name: dbSvc.name, price: dbSvc.price, icon: dbSvc.icon || 'star-outline' };
   }
+
   if (!service) service = PACKAGE_CATALOG.find(p => p.id === serviceId);
   if (!service) {
     return res.status(404).json({ success: false, message: '服务项目不存在' });
   }
 
   const isPkg = !!servicePackage || !!PACKAGE_CATALOG.find(p => p.id === serviceId);
+  const orderFulfillmentType = service.skuFulfillmentType || service.fulfillmentType || (isPkg ? 'subscription_service' : 'offline_service');
+  const requiresServiceConfirmation = ['offline_service', 'remote_service'].includes(orderFulfillmentType);
+  let confirmedServiceDate = null;
+  const confirmedServiceRequirements = String(serviceRequirements || '').trim();
+  if (requiresServiceConfirmation) {
+    if (!desiredServiceDate || !confirmedServiceRequirements) {
+      return res.status(400).json({ success: false, message: '请填写服务时间和服务内容' });
+    }
+    confirmedServiceDate = new Date(`${String(desiredServiceDate).trim()}T00:00:00+08:00`);
+    if (Number.isNaN(confirmedServiceDate.getTime())) return res.status(400).json({ success: false, message: '服务时间格式不正确' });
+    if (confirmedServiceRequirements.length > 1000) return res.status(400).json({ success: false, message: '服务内容不能超过1000字' });
+  }
   const unitsMatch = String(service.specificationLabel || '').match(/(\d+)\s*次/);
   const productServiceItems = service.skuCode ? [] : (product?.serviceItems || []).filter(item => item.name && Number(item.units) > 0);
   const totalUnits = service.skuTotalUnits
@@ -396,10 +409,12 @@ router.post('/order', auth, async (req, res) => {
     usedUnits: 0,
     serviceIcon:  service.icon || 'shield-checkmark',
     note:         orderNote,
+    desiredServiceDate: confirmedServiceDate,
+    serviceRequirements: confirmedServiceRequirements,
     status:       'pending',
     orderNo,
     tradeStatus: paidAmount > 0 ? 'awaiting_payment' : 'paid',
-    fulfillmentType: service.skuFulfillmentType || service.fulfillmentType || (isPkg ? 'subscription_service' : 'offline_service'),
+    fulfillmentType: orderFulfillmentType,
     orderType:    isPkg ? 'package' : (product ? 'product' : 'service'),
     referrerId,
     servicePerformers,

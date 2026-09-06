@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { needsCustomerServiceConfirmation, pendingServiceConfirmationQuery } = require('../src/utils/orderServiceConfirmation');
+const { needsCustomerServiceConfirmation, isCustomerConfirmedServiceOrder, pendingServiceConfirmationQuery } = require('../src/utils/orderServiceConfirmation');
 
 const base = {
   orderType: 'product', fulfillmentType: 'offline_service', paymentStatus: 'paid',
@@ -13,6 +13,13 @@ const base = {
 test('商城product只要是服务型履约就进入客户确认', () => {
   assert.equal(needsCustomerServiceConfirmation(base), true);
   assert.equal(needsCustomerServiceConfirmation({ ...base, fulfillmentType: 'remote_service' }), true);
+});
+
+test('下单时信息齐全的服务订单可生成唯一AI确认摘要', () => {
+  assert.equal(isCustomerConfirmedServiceOrder({
+    ...base, desiredServiceDate: new Date(), serviceRequirements: '陪同检查',
+  }), true);
+  assert.equal(isCustomerConfirmedServiceOrder(base), false);
 });
 
 test('实物、退款、完成和信息齐全订单不进入客户确认', () => {

@@ -9,6 +9,15 @@ function needsCustomerServiceConfirmation(order = {}) {
     && (!order.desiredServiceDate || !String(order.serviceRequirements || '').trim());
 }
 
+function isCustomerConfirmedServiceOrder(order = {}) {
+  return order.paymentStatus === 'paid'
+    && ['paid', 'fulfilling'].includes(order.tradeStatus)
+    && ['', 'none'].includes(order.refundStatus || 'none')
+    && SERVICE_CONFIRMATION_FULFILLMENT_TYPES.includes(order.fulfillmentType)
+    && !!order.desiredServiceDate
+    && !!String(order.serviceRequirements || '').trim();
+}
+
 function pendingServiceConfirmationQuery(userId) {
   return {
     user: userId,
@@ -29,5 +38,6 @@ function pendingServiceConfirmationQuery(userId) {
 module.exports = {
   SERVICE_CONFIRMATION_FULFILLMENT_TYPES,
   needsCustomerServiceConfirmation,
+  isCustomerConfirmedServiceOrder,
   pendingServiceConfirmationQuery,
 };
