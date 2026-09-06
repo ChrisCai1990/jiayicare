@@ -602,7 +602,6 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
   const [humanActive, setHumanActive] = useState(false);
   const [unreadAnchorId, setUnreadAnchorId] = useState('');
   const [scrollTarget, setScrollTarget] = useState('');
-  const [scrollTop, setScrollTop] = useState(0);
   const [foodImages, setFoodImages] = useState([]);
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -628,7 +627,6 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
   const playedVoiceIdsRef = useRef(playedVoiceIds);
   const initialPositionedRef = useRef(false);
   const loadedLatestMessageIdRef = useRef('');
-  const bottomScrollRef = useRef(100000);
   const [bottomScrollRequest, setBottomScrollRequest] = useState(0);
 
   const scrollToThreadBottom = useCallback(() => {
@@ -642,8 +640,7 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
   useEffect(() => {
     if (!bottomScrollRequest) return;
     Taro.nextTick(() => {
-      bottomScrollRef.current += 100000;
-      setScrollTop(bottomScrollRef.current);
+      setScrollTarget(`thread-bottom-${bottomScrollRequest}`);
     });
   }, [bottomScrollRequest]);
 
@@ -674,7 +671,7 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
         setUnreadAnchorId(anchorId);
         scrollToThreadBottom();
         initialPositionedRef.current = true;
-      } else if (!unreadAnchorId && hasNewMessage) {
+      } else if (hasNewMessage) {
         scrollToThreadBottom();
       }
     } catch {}
@@ -890,7 +887,7 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
         <View style={{ width: '20px' }} />
       </View>
 
-      <ScrollView scrollY scrollTop={scrollTop} scrollIntoView={scrollTarget} scrollAnchoring scrollWithAnimation style={{ flex: 1, height: 0, minHeight: 0, padding: `${spacing.lg}px`, boxSizing: 'border-box' }}>
+      <ScrollView scrollY scrollIntoView={scrollTarget} scrollAnchoring scrollWithAnimation style={{ flex: 1, height: 0, minHeight: 0, padding: `${spacing.lg}px`, boxSizing: 'border-box' }}>
         {loading ? (
           <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
         ) : msgs.length === 0 ? (
@@ -950,7 +947,7 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
             );
           })
         )}
-        <View id={`thread-bottom-${msgs.length}`} style={{ height: '24px', flexShrink: 0 }} />
+        <View id={`thread-bottom-${bottomScrollRequest}`} style={{ height: '24px', flexShrink: 0 }} />
       </ScrollView>
 
       {!!unreadAnchorId && <View onClick={() => setScrollTarget(`thread-msg-${unreadAnchorId}`)} style={{ position: 'absolute', right: '14px', bottom: '78px', zIndex: 30, padding: '7px 12px', borderRadius: '16px', backgroundColor: '#fff', border: `1px solid ${colors.border}`, boxShadow: shadow.sm }}><Text style={{ fontSize: '11px', color: colors.primary }}>查看未读消息 ↑</Text></View>}
