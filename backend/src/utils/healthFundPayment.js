@@ -41,15 +41,19 @@ function corporateProductEligible(policy, productId, category, productRule) {
 }
 
 async function getCorporateFundAvailable(user) {
-  const [grants, spent] = await Promise.all([GiftRecord.aggregate([
+  const [grants, legacyFirstLoginGrants, spent] = await Promise.all([GiftRecord.aggregate([
     { $match: { patientId: user._id, giftType: 'fund', fundType: 'enterprise', status: 'active' } },
     { $group: { _id: null, total: { $sum: '$fundAmount' } } },
+  ]), HealthFundTransaction.aggregate([
+    // 1.0.86 之前首登赠金曾误记为 promotion；按明确的业务备注兼容
+    // 已发放余额，避免必须先跑数据迁移才能正确展示和抵扣。
+    { $match: { userId: user._id, type: 'grant', status: 'active', remark: '首次使用小程序健康基金奖励' } },
+    { $group: { _id: null, total: { $sum: '$amount' } } },
   ]), HealthFundTransaction.aggregate([
     { $match: { userId: user._id, source: 'enterprise', status: 'active', type: { $in: ['deduction', 'adjustment'] } } },
     { $group: { _id: null, total: { $sum: '$amount' } } },
   ])]);
-  // 基金来源以结构化 source/fundType 为准，不能根据展示备注重新分类。
-  const ledgerBalance = (grants[0]?.total || 0) + (spent[0]?.total || 0);
+  const ledgerBalance = (grants[0]?.total || 0) + (legacyFirstLoginGrants[0]?.total || 0) + (spent[0]?.total || 0);
   return Math.max(0, Math.min(Number(user.healthFundBalance) || 0, ledgerBalance));
 }
 
@@ -63,7 +67,11 @@ async function getPersonalFundAvailable(user) {
     { $group: { _id: null, total: { $sum: '$amount' } } },
   ]);
   const totalBalance = Math.max(0, Number(user.healthFundBalance) || 0);
-  const recordedPersonal = Math.max(0, (grants[0]?.total || 0) + (deductions[0]?.total || 0));
+  const legacyFirstLogin = await HealthFundTransaction.aggregate([
+    { $match: { userId: user._id, type: 'grant', status: 'active', remark: '首次使用小程序健康基金奖励' } },
+    { $group: { _id: null, total: { $sum: '$amount' } } },
+  ]);
+  const recordedPersonal = Math.max(0, (grants[0]?.total || 0) + (deductions[0]?.total || 0) - (legacyFirstLogin[0]?.total || 0));
   const corporateAvailable = await getCorporateFundAvailable(user);
   // 历史余额可能早于分账流水上线。未能在流水中归类的余额按自有基金处理，
   // 避免用户端显示有余额、结算却判定可用额为0。
