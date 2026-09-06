@@ -1197,6 +1197,10 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
     if (!hasAccess) return res.status(403).json({ success: false, message: '无权限查看该会员' });
   }
 
+  // 历史退款/取消链路可能只更新了订单而漏改待办；详情读取前以订单为事实来源校正，
+  // 避免已取消服务仍显示“待执行”。全局启动扫描也会修复未被打开的会员。
+  await require('../utils/orderWorkItem').reconcileInactiveOrderWorkItems(req.params.id);
+
   const filter = { patientId: req.params.id };
   const [followUps, total] = await Promise.all([
     FollowUp.find(filter)
@@ -1993,21 +1997,28 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
         );
       }
     }
-    // 报告回收属于健管过程督办，不是预先安排的“报告解读”。体检次日进入健管专员工作台，
-    // 报告上传后继续走独立的待解析→AI解析→专业审核链路。
-    const reportCollectionAssignee = selectedSupervisorId || patient?.assignedHealthManager;
-    if (reportCollectionAssignee) {
-      const reportCollectionDate = addDays(serviceDate, 1);
+    // 服务次日由健管专员回收资料：体检服务收体检报告，普通陪诊/就医服务收就医资料。
+    // 二者共用一个系统节点并兼容迁移旧 key，重复推送不会再叠加任务。
+    const documentCollectionAssignee = selectedSupervisorId || patient?.assignedHealthManager;
+    if (documentCollectionAssignee) {
+      const documentCollectionDate = addDays(serviceDate, 1);
+      const documentCollectionName = isCheckupService ? '体检报告回收' : '就医资料回收';
+      const documentCollectionContent = isCheckupService
+        ? '体检完成后跟进报告出具进度，回收并核对报告资料；上传后进入独立的报告解析与专业审核流程。'
+        : '就医完成后回收并核对就诊记录、检查检验结果、处方医嘱及费用凭证，归档后安排后续跟进。';
       await FollowUp.findOneAndUpdate(
-        { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'supervisor', workflowKey: 'system:checkup_report_collection' },
+        {
+          sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'supervisor',
+          workflowKey: { $in: ['system:document_collection', 'system:checkup_report_collection', 'system:medical_document_collection'] },
+        },
         { $set: {
-          patientId: plan.patientId, staffId: plan.staffId, assignedTo: reportCollectionAssignee,
-          date: reportCollectionDate, remindAt: reportCollectionDate,
-          coordinationGroupId, workflowKey: 'system:checkup_report_collection', taskRole: 'supervisor',
+          patientId: plan.patientId, staffId: plan.staffId, assignedTo: documentCollectionAssignee,
+          date: documentCollectionDate, remindAt: documentCollectionDate,
+          coordinationGroupId, workflowKey: 'system:document_collection', taskRole: 'supervisor',
           dependsOnTaskId: null, followUpSchemeId: null,
-          theme: `督办【体检报告回收】 · ${plan.title || ''}`,
-          content: '体检完成后跟进报告出具进度，回收并核对报告资料；上传后进入独立的报告解析与专业审核流程。',
-          plannedContent: `体检日期：${serviceDate.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n完成标准：报告资料回收齐全并已上传系统。`,
+          theme: `督办【${documentCollectionName}】 · ${plan.title || ''}`,
+          content: documentCollectionContent,
+          plannedContent: `服务日期：${serviceDate.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n完成标准：${documentCollectionName}齐全并已归档系统。`,
           status: 'planned', isBlocked: false, activationEvent: '',
         } },
         { upsert: true, new: true, setDefaultsOnInsert: true }

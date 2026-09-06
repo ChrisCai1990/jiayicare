@@ -24,3 +24,26 @@ test('医护工作台按有效订单ID约束订单待办', () => {
   assert.match(source, /router\.patch\('\/orders\/:id\/start'[\s\S]*activeOrderWorkItemQuery\(\)/);
   assert.match(source, /desiredServiceDate serviceRequirements/);
 });
+
+test('会员详情读取前会按订单事实状态校正历史待办', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+  const start = source.indexOf("router.get('/patients/:id/followups'");
+  const end = source.indexOf("router.get('/followups'", start);
+  assert.match(source.slice(start, end), /reconcileInactiveOrderWorkItems\(req\.params\.id\)/);
+});
+
+test('后台取消订单同步取消关联待办', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/routes/admin.js'), 'utf8');
+  const start = source.indexOf("router.patch('/orders/:id/status'");
+  const end = source.indexOf("router.patch('/orders/:id/pay'", start);
+  const route = source.slice(start, end);
+  assert.match(route, /FollowUp\.updateMany/);
+  assert.match(route, /sourceType: 'order'/);
+  assert.match(route, /cancelReason: '订单已取消'/);
+});
+
+test('启动扫描会清理年度方案重复排期并校正失效订单待办', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/utils/scheduledFollowUpWindowScheduler.js'), 'utf8');
+  assert.match(source, /dedupeAnnualPlanFollowUps\(\)/);
+  assert.match(source, /reconcileInactiveOrderWorkItems\(\)/);
+});

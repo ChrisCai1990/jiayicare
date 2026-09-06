@@ -1,10 +1,14 @@
 const AnnualPlan = require('../models/AnnualPlan');
-const { syncAnnualPlanFollowUps } = require('./annualPlanFollowUps');
+const { syncAnnualPlanFollowUps, dedupeAnnualPlanFollowUps } = require('./annualPlanFollowUps');
 
 // 年度管理方案的"日常监测/季度评估"随访占位只提前生成未来 HORIZON_DAYS 天（见 annualPlanFollowUps.js）。
 // syncAnnualPlanFollowUps 按稳定排期键原位更新，每天仅补充新进入窗口的日期，
 // 已审核记录不会被重新生成，也不会再次进入审核队列。
 async function scanAndSyncScheduledWindow() {
+  const [deduped, cancelledOrderTasks] = await Promise.all([
+    dedupeAnnualPlanFollowUps(),
+    require('./orderWorkItem').reconcileInactiveOrderWorkItems(),
+  ]);
   const plans = await AnnualPlan.find({}).lean();
   let total = 0;
   for (const plan of plans) {
@@ -35,7 +39,7 @@ async function scanAndSyncScheduledWindow() {
       await Message.updateOne({ _id: message._id }, { $set: { type: 'planner', conversationId: `${message.user}_planner` } });
     }
   }
-  if (plans.length > 0) console.log(`[scheduled-followup-window] 已为 ${plans.length} 份方案刷新占位窗口，共 ${total} 条`);
+  if (plans.length > 0 || deduped || cancelledOrderTasks) console.log(`[scheduled-followup-window] 已为 ${plans.length} 份方案刷新占位窗口，共 ${total} 条；清理重复 ${deduped} 条，校正失效订单任务 ${cancelledOrderTasks} 条`);
 }
 
 // 启动定时扫描（每天一次），供 index.js 在服务启动时调用

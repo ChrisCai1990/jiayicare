@@ -25,3 +25,12 @@ test('service task endpoint returns explicitly assigned executor and supervisor 
   assert.doesNotMatch(route, /checkPermission\('followups'/);
   assert.doesNotMatch(route, /assignedHealthManager|assignedMedicalAssistant/);
 });
+
+test('ordinary medical escort creates medical document collection instead of checkup report collection', () => {
+  const pushStart = staffSource.indexOf("router.patch('/plans/:id/push'");
+  const pushEnd = staffSource.indexOf("router.patch('/plans/:id/items/:itemId'", pushStart);
+  const route = staffSource.slice(pushStart, pushEnd);
+  assert.match(route, /documentCollectionName = isCheckupService \? '体检报告回收' : '就医资料回收'/);
+  assert.match(route, /就诊记录、检查检验结果、处方医嘱及费用凭证/);
+  assert.match(route, /workflowKey: 'system:document_collection'/);
+});

@@ -35,6 +35,7 @@ const { DEFAULT_CONFIG: DEFAULT_HEALTH_ASSISTANT, normalizeConfig: normalizeHeal
 const FollowUpPlan  = require('../models/FollowUpPlan');
 const Commission    = require('../models/Commission');
 const PushRecord    = require('../models/PushRecord');
+const FollowUp      = require('../models/FollowUp');
 const adminAuth = require('../middleware/adminAuth');
 const router = express.Router();
 
@@ -380,7 +381,13 @@ router.patch('/orders/:id/status', adminAuth, async (req, res) => {
   if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
 
   // 订单被取消：若之前预记过消费积分，退回
-  if (status === 'cancelled') await refundOrderPoints(order);
+  if (status === 'cancelled') {
+    await refundOrderPoints(order);
+    await FollowUp.updateMany(
+      { sourceType: 'order', sourceOrderId: order._id, status: { $nin: ['completed', 'cancelled'] } },
+      { $set: { status: 'cancelled', cancelReason: '订单已取消' } },
+    );
+  }
   const fulfillmentStatus = status === 'scheduled' ? 'booked' : status === 'completed' ? 'completed' : status === 'cancelled' ? 'cancelled' : null;
   if (fulfillmentStatus) {
     const fulfillment = await Fulfillment.findOneAndUpdate(
