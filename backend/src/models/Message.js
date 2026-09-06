@@ -25,7 +25,9 @@ const messageSchema = new mongoose.Schema({
   // 可操作消息：消息中心据此渲染操作按钮/跳转，让用户不必自己找入口。
   // 目前用于家庭成员邀请：{ type:'family_invite', inviteId, route:'FamilyMembers' }
   action: { type: mongoose.Schema.Types.Mixed, default: null },
-  dedupeKey: { type: String, default: null },
+  // 仅真正需要幂等的系统消息写入。普通聊天必须省略该字段；MongoDB sparse unique
+  // 索引仍会索引显式 null，导致第一条人工消息后所有连续消息都触发重复键。
+  dedupeKey: { type: String, default: undefined },
   recalled:   { type: Boolean, default: false },
   recalledAt: { type: Date, default: null },
 }, { timestamps: true });

@@ -11664,7 +11664,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
       isNearBottomRef.current = true // 自己发消息后，无论之前翻到哪，都应该跟到底部
       if (res.data) setMsgs(prev => [...prev, res.data])
       setTimeout(() => scrollRef.current?.scrollTo({ top: 99999, behavior: 'smooth' }), 80)
-    } catch {}
+    } catch (err) { toast(err.message || '消息发送失败，请重试') }
     finally { setSending(false) }
   }
 

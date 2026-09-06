@@ -6013,6 +6013,7 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
     ssePublish(conversationId, { type: 'message', data: responseMessage });
     res.json({ success: true, message: '回复已发送', data: responseMessage });
   } catch (err) {
+    console.error('[staff-message-reply] failed', { userId: req.params.userId, staffId: String(req.staff?._id || ''), message: err.message });
     res.status(500).json({ success: false, message: err.message });
   }
 });
