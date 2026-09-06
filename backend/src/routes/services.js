@@ -208,6 +208,9 @@ router.post('/order', auth, async (req, res) => {
   if (!serviceId) {
     return res.status(400).json({ success: false, message: '请指定服务项目' });
   }
+  if (!String(req.user.name || '').trim() || !String(req.user.idNumber || '').trim()) {
+    return res.status(403).json({ success: false, code: 'REAL_NAME_REQUIRED', message: '购买服务前请先完成实名注册信息' });
+  }
 
   // 先从 Product / Admin 服务包查，再查 Service，最后兼容旧版静态 ID
   let service = null;
