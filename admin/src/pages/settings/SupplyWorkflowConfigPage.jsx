@@ -17,6 +17,11 @@ const FLOW_CARDS = [
 const MODE_OPTIONS = { medication: [['customer_self', '客户自行购买'], ['online_assisted', '线上协助购买与配送'], ['hospital_assisted', '医院预约配药']], supplement: [['customer_self', '客户自行购买'], ['online_assisted', '线上协助购买与配送'], ['internal_product', '自研营养代餐内部履约']] }
 const card = { background: '#fff', border: '1px solid #E3EAE6', borderRadius: 16, padding: 20, boxShadow: '0 5px 18px rgba(26,43,36,.05)' }
 const DRAFT_KEY = 'jiayicare_service_workflow_drafts'
+const normalizedWorkflow = w => ({
+  key: w?.key || '',
+  followUpPlanIds: (w?.followUpPlanIds?.length ? w.followUpPlanIds : (w?.followUpPlanId ? [w.followUpPlanId] : [])).map(v => String(typeof v === 'object' ? v._id : v)).sort(),
+  notes: w?.notes || '',
+})
 
 function SearchableSelect({ value, options, onChange, emptyLabel }) {
   const selected = options.find(([v]) => v === value)
@@ -54,13 +59,14 @@ export default function SupplyWorkflowConfigPage() {
   const toast = useToast(), navigate = useNavigate()
   const [config, setConfig] = useState(null), [products, setProducts] = useState([]), [plans, setPlans] = useState([])
   const [search, setSearch] = useState(''), [savingConfig, setSavingConfig] = useState(false), [savingProduct, setSavingProduct] = useState(''), [savingAll, setSavingAll] = useState(false), [dirtyIds, setDirtyIds] = useState([])
-  useEffect(() => { Promise.all([adminAPI.getSupplyWorkflowConfig(), adminAPI.products(), adminAPI.followUpPlans()]).then(([c, p, f]) => { let drafts = {}; try { drafts = JSON.parse(localStorage.getItem(DRAFT_KEY) || '{}') } catch {} const rows = (p.data || []).map(product => drafts[product._id] ? { ...product, serviceWorkflow: drafts[product._id] } : product); setConfig(c.data); setProducts(rows); setPlans(f.data || []); setDirtyIds(Object.keys(drafts).filter(id => rows.some(p => p._id === id))) }).catch(e => toast(e.message)) }, [])
+  useEffect(() => { Promise.all([adminAPI.getSupplyWorkflowConfig(), adminAPI.products(), adminAPI.followUpPlans()]).then(([c, p, f]) => { let drafts = {}; try { drafts = JSON.parse(localStorage.getItem(DRAFT_KEY) || '{}') } catch {} const serverRows = p.data || [], changedDrafts = {}; serverRows.forEach(product => { if (drafts[product._id] && JSON.stringify(normalizedWorkflow(drafts[product._id])) !== JSON.stringify(normalizedWorkflow(product.serviceWorkflow))) changedDrafts[product._id] = drafts[product._id] }); localStorage.setItem(DRAFT_KEY, JSON.stringify(changedDrafts)); const rows = serverRows.map(product => changedDrafts[product._id] ? { ...product, serviceWorkflow: changedDrafts[product._id] } : product); setConfig(c.data); setProducts(rows); setPlans(f.data || []); setDirtyIds(Object.keys(changedDrafts)) }).catch(e => toast(e.message)) }, [])
   useEffect(() => { if (!products.length) return; const drafts = {}; products.forEach(p => { if (dirtyIds.includes(p._id)) drafts[p._id] = p.serviceWorkflow }); localStorage.setItem(DRAFT_KEY, JSON.stringify(drafts)) }, [products, dirtyIds])
   const assigned = useMemo(() => products.filter(p => p.serviceWorkflow?.key).length, [products])
   const visibleProducts = useMemo(() => products.filter(p => !search || `${p.name} ${p.category}`.toLowerCase().includes(search.toLowerCase())), [products, search])
   const patchProduct = (id, patch, markDirty = true) => { setProducts(prev => prev.map(p => p._id === id ? { ...p, serviceWorkflow: { key: '', followUpPlanId: null, followUpPlanIds: [], notes: '', ...(p.serviceWorkflow || {}), ...patch } } : p)); if (markDirty) setDirtyIds(prev => prev.includes(id) ? prev : [...prev, id]) }
-  const workflowPayload = product => { const w = product.serviceWorkflow || {}; const ids = w.followUpPlanIds?.length ? w.followUpPlanIds : (w.followUpPlanId ? [typeof w.followUpPlanId === 'object' ? w.followUpPlanId._id : w.followUpPlanId] : []); return { key: w.key || '', followUpPlanIds: ids, notes: w.notes || '' } }
-  const saveProduct = async product => { setSavingProduct(product._id); try { const r = await adminAPI.updateProductServiceWorkflow(product._id, workflowPayload(product)); patchProduct(product._id, r.data, false); setDirtyIds(prev => prev.filter(id => id !== product._id)); toast(`${product.name}：${r.message}`); return true } catch (e) { toast(e.message); return false } finally { setSavingProduct('') } }
+  const workflowPayload = product => normalizedWorkflow(product.serviceWorkflow)
+  const clearDraft = id => { let drafts = {}; try { drafts = JSON.parse(localStorage.getItem(DRAFT_KEY) || '{}') } catch {} delete drafts[id]; localStorage.setItem(DRAFT_KEY, JSON.stringify(drafts)) }
+  const saveProduct = async product => { setSavingProduct(product._id); try { const r = await adminAPI.updateProductServiceWorkflow(product._id, workflowPayload(product)); patchProduct(product._id, r.data, false); clearDraft(product._id); setDirtyIds(prev => prev.filter(id => id !== product._id)); toast(`${product.name}：${r.message}`); return true } catch (e) { toast(e.message); return false } finally { setSavingProduct('') } }
   const saveAll = async () => { const rows = products.filter(p => dirtyIds.includes(p._id)); if (!rows.length) return toast('没有待保存的修改'); setSavingAll(true); let saved = 0; for (const product of rows) if (await saveProduct(product)) saved += 1; setSavingAll(false); toast(`已保存 ${saved} 个产品的流程关联`) }
   const setType = (type, key, value) => setConfig(prev => ({ ...prev, [type]: { ...prev[type], [key]: value } }))
   const toggleMode = (type, mode) => { const a = config[type].allowedModes || []; setType(type, 'allowedModes', a.includes(mode) ? a.filter(v => v !== mode) : [...a, mode]) }
