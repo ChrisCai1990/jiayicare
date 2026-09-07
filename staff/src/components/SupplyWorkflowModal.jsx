@@ -26,7 +26,8 @@ export default function SupplyWorkflowModal({ todo, onClose, onDone }) {
 
   const load = () => staffAPI.getSupplyPlan(planId).then(r => {
     setPlan(r.data)
-    setForm(f => ({ ...f, fulfillmentMode: r.data.fulfillmentMode === 'undecided' ? 'customer_self' : r.data.fulfillmentMode, ...(r.data.intake || {}) }))
+    const configuredDefault = r.data.workflowConfig?.allowedModes?.[0] || 'customer_self'
+    setForm(f => ({ ...f, fulfillmentMode: r.data.fulfillmentMode === 'undecided' ? configuredDefault : r.data.fulfillmentMode, ...(r.data.intake || {}) }))
   })
   useEffect(() => { if (planId) load().catch(e => setError(e.message || '加载失败')) }, [planId])
 
@@ -51,7 +52,7 @@ export default function SupplyWorkflowModal({ todo, onClose, onDone }) {
         {['supply_intake'].includes(todo.type) && <>
           <label style={labelStyle}>本轮履约方式</label>
           <select value={form.fulfillmentMode} onChange={e => set('fulfillmentMode', e.target.value)} style={inputStyle}>
-            {MODES.filter(([v]) => !(v === 'hospital_assisted' && plan.planType !== 'medication') && !(v === 'internal_product' && plan.planType !== 'supplement')).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            {MODES.filter(([v]) => (plan.workflowConfig?.allowedModes || []).includes(v)).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
           <label style={labelStyle}>预计剩余天数</label><input value={form.remainingDays} onChange={e => set('remainingDays', e.target.value)} style={inputStyle} />
           <label style={labelStyle}>目前实际使用方法与依从性</label><textarea value={form.currentUse} onChange={e => set('currentUse', e.target.value)} style={inputStyle} rows={2} />

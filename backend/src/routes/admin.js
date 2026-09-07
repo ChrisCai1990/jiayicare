@@ -1930,6 +1930,27 @@ router.put('/system-config/health-assistant', adminAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// 药品/营养素定期补充服务流程。医疗安全门禁与专业审核岗位固定，运营参数保存后实时生效。
+router.get('/system-config/supply-workflow', adminAuth, async (_req, res) => {
+  try {
+    const { getSupplyWorkflowConfig } = require('../utils/supplyWorkflowConfig');
+    res.json({ success: true, data: await getSupplyWorkflowConfig() });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.put('/system-config/supply-workflow', adminAuth, async (req, res) => {
+  try {
+    const { normalizeSupplyWorkflowConfig } = require('../utils/supplyWorkflowConfig');
+    const value = normalizeSupplyWorkflowConfig(req.body);
+    await SystemConfig.findOneAndUpdate(
+      { key: 'supplyWorkflow' },
+      { key: 'supplyWorkflow', value, label: '药品与营养素定期补充流程' },
+      { upsert: true, new: true }
+    );
+    res.json({ success: true, data: value, message: '定期补充流程已保存并实时生效' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 router.get('/system-config/review-experience', adminAuth, async (_req, res) => {
   const cfg = await SystemConfig.findOne({ key: 'reviewExperience' });
   res.json({ success: true, data: cfg ? cfg.value : { enabled: false } });

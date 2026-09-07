@@ -2,6 +2,7 @@ const RecurringSupplyPlan = require('../models/RecurringSupplyPlan');
 const Message = require('../models/Message');
 const { FREQUENCY_DAYS } = require('./annualPlanSupplyPlans');
 const { isWithinLeadWindow, appendAudit } = require('./supplyWorkflow');
+const { getSupplyWorkflowConfig } = require('./supplyWorkflowConfig');
 
 const PLAN_TYPE_LABEL = { medication: '配药', supplement: '配营养素' };
 
@@ -12,10 +13,15 @@ const PLAN_TYPE_LABEL = { medication: '配药', supplement: '配营养素' };
 // 幂等：同一到期周期只通知一次（lastNotifiedAt 记录本次到期日，避免同一天定时任务多次运行重复推送）
 async function scanAndNotifyDueSupplyPlans() {
   const now = new Date();
+  const workflowConfig = await getSupplyWorkflowConfig();
+  const maxLeadDays = Math.max(workflowConfig.medication.leadDays, workflowConfig.supplement.leadDays);
   const candidates = await RecurringSupplyPlan.find({
-    enabled: true, nextDueDate: { $lte: new Date(now.getTime() + 30 * 86400000) },
+    enabled: true, nextDueDate: { $lte: new Date(now.getTime() + maxLeadDays * 86400000) },
   }).populate('patientId', 'name');
-  const due = candidates.filter(plan => isWithinLeadWindow(plan, now));
+  const due = candidates.filter(plan => {
+    const typeConfig = workflowConfig[plan.planType];
+    return typeConfig?.enabled && isWithinLeadWindow(plan, now, typeConfig.leadDays);
+  });
 
   let notified = 0;
   for (const plan of due) {
@@ -33,6 +39,7 @@ async function scanAndNotifyDueSupplyPlans() {
     try {
       plan.aiStatus = 'pending';
       plan.workflowStatus = 'intake_pending';
+      plan.leadDays = workflowConfig[plan.planType].leadDays;
       plan.cycleStartedAt = now;
       plan.lastNotifiedAt = now;
       appendAudit(plan, null, 'cycle_started', '进入提前3天补充服务流程');
@@ -40,13 +47,13 @@ async function scanAndNotifyDueSupplyPlans() {
 
       const label = PLAN_TYPE_LABEL[plan.planType] || plan.planType;
       const patientName = plan.patientId?.name || '会员';
-      await Message.create({
-        user: plan.patientId._id || plan.patientId,
-        type: 'system',
-        sender: '嘉医管家',
-        title: `${plan.itemName}已进入${label}准备期`,
-        content: `您的「${plan.itemName}」已进入补充准备期。您可以选择自行购买，也可由健康管理团队协助安排；我们会先核对当前健康与使用情况。`,
-      });
+      if (workflowConfig.customerNotificationEnabled) {
+        await Message.create({
+          user: plan.patientId._id || plan.patientId,
+          type: 'system', sender: '嘉医管家', title: `${plan.itemName}已进入${label}准备期`,
+          content: `您的「${plan.itemName}」已进入补充准备期。您可以选择自行购买，也可由健康管理团队协助安排；我们会先核对当前健康与使用情况。`,
+        });
+      }
       notified++;
       console.log(`[recurring-supply-plan] ${patientName} 「${plan.itemName}」到期，已生成待办+通知`);
     } catch (e) {

@@ -4502,7 +4502,9 @@ router.get('/supply-plans/:id', staffAuth, async (req, res) => {
     const RecurringSupplyPlan = require('../models/RecurringSupplyPlan');
     const plan = await RecurringSupplyPlan.findById(req.params.id).populate('patientId', 'name gender age chronicDiseases healthProfile');
     if (!plan) return res.status(404).json({ success: false, message: '计划不存在' });
-    res.json({ success: true, data: plan });
+    const { getSupplyWorkflowConfig } = require('../utils/supplyWorkflowConfig');
+    const workflowConfig = await getSupplyWorkflowConfig();
+    res.json({ success: true, data: { ...plan.toObject(), workflowConfig: workflowConfig[plan.planType] } });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -4531,12 +4533,18 @@ router.patch('/supply-plans/:id/intake', staffAuth, async (req, res) => {
   try {
     const RecurringSupplyPlan = require('../models/RecurringSupplyPlan');
     const { appendAudit } = require('../utils/supplyWorkflow');
+    const { getSupplyWorkflowConfig, isInternalProduct } = require('../utils/supplyWorkflowConfig');
     const plan = await RecurringSupplyPlan.findById(req.params.id);
     if (!plan) return res.status(404).json({ success: false, message: '计划不存在' });
     if (!['intake_pending', 'info_required'].includes(plan.workflowStatus)) return res.status(409).json({ success: false, message: '当前任务不在信息采集阶段' });
     const mode = req.body.fulfillmentMode || 'undecided';
+    const workflowConfig = await getSupplyWorkflowConfig();
+    const typeConfig = workflowConfig[plan.planType];
+    if (!typeConfig?.enabled) return res.status(409).json({ success: false, message: 'Admin已停用该品类的定期补充流程' });
+    if (!typeConfig.allowedModes.includes(mode)) return res.status(400).json({ success: false, message: '该履约方式未在Admin中启用' });
     if (mode === 'hospital_assisted' && plan.planType !== 'medication') return res.status(400).json({ success: false, message: '医院配药仅适用于药品' });
     if (mode === 'internal_product' && plan.planType !== 'supplement') return res.status(400).json({ success: false, message: '自研产品履约仅适用于营养素/营养代餐' });
+    if (mode === 'internal_product' && !isInternalProduct(plan.itemName, workflowConfig)) return res.status(400).json({ success: false, message: '该项目未匹配Admin配置的自研产品关键词' });
     plan.fulfillmentMode = mode;
     plan.intake = { ...(req.body.intake || {}), submittedAt: new Date(), submittedBy: req.staff._id };
     plan.workflowStatus = 'risk_review_pending';

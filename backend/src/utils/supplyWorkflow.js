@@ -13,9 +13,9 @@ const MODE_LABEL = {
   hospital_assisted: '医院配药', internal_product: '自研产品履约',
 };
 
-function isWithinLeadWindow(plan, now = new Date()) {
+function isWithinLeadWindow(plan, now = new Date(), configuredLeadDays = null) {
   if (!plan?.nextDueDate) return false;
-  const leadDays = Math.max(3, Number(plan.leadDays) || 3);
+  const leadDays = Math.max(3, Number(configuredLeadDays ?? plan.leadDays) || 3);
   return new Date(plan.nextDueDate).getTime() <= now.getTime() + leadDays * 86400000;
 }
 

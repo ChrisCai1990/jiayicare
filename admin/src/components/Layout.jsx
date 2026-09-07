@@ -39,6 +39,7 @@ const NAV_SECTIONS = [
       { label: '健康评分配置', icon: 'score', path: '/settings/scoring' },
       { label: 'AI 每日关怀', icon: 'care', path: '/settings/daily-care' },
       { label: '健康助手配置', icon: 'settings', path: '/settings/health-assistant' },
+      { label: '定期补充流程', icon: 'settings', path: '/settings/supply-workflow' },
       { label: '小程序审核体验', icon: 'settings', path: '/settings/review-experience' },
     ],
   },
