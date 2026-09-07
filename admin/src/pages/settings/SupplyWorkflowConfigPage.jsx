@@ -16,7 +16,8 @@ const FLOW_CARDS = [
 ]
 const MODE_OPTIONS = { medication: [['customer_self', '客户自行购买'], ['online_assisted', '线上协助购买与配送'], ['hospital_assisted', '医院预约配药']], supplement: [['customer_self', '客户自行购买'], ['online_assisted', '线上协助购买与配送'], ['internal_product', '自研营养代餐内部履约']] }
 const card = { background: '#fff', border: '1px solid #E3EAE6', borderRadius: 16, padding: 20, boxShadow: '0 5px 18px rgba(26,43,36,.05)' }
-const DRAFT_KEY = 'jiayicare_service_workflow_drafts'
+// v2 intentionally ignores stale drafts created before saved/server comparison was fixed.
+const DRAFT_KEY = 'jiayicare_service_workflow_drafts_v2'
 const normalizedWorkflow = w => ({
   key: w?.key || '',
   followUpPlanIds: (w?.followUpPlanIds?.length ? w.followUpPlanIds : (w?.followUpPlanId ? [w.followUpPlanId] : [])).map(v => String(typeof v === 'object' ? v._id : v)).sort(),
