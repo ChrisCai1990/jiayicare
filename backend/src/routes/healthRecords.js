@@ -10,7 +10,11 @@ const { uploadBase64, signStoredUrl } = require('../utils/oss');
 const { incomingImagePayloads, withSafeHealthRecordImages, withoutLegacyImageExtra } = require('../utils/healthRecordImages');
 const router = express.Router();
 const { validateConfirmation } = require('../utils/bloodPressurePhoto');
+const { validateConfirmation: validateBloodSugarConfirmation } = require('../utils/bloodSugarPhoto');
+const { validateConfirmation: validateWeightConfirmation } = require('../utils/weightPhoto');
 router.use(require('./bloodPressurePhoto'));
+router.use(require('./bloodSugarPhoto'));
+router.use(require('./weightPhoto'));
 
 function withSignedHealthImages(record) {
   return withSafeHealthRecordImages(record, signStoredUrl);
@@ -201,7 +205,13 @@ router.post('/', auth, async (req, res) => {
   try {
     const { category, type, label, value, unit, extra, note, recordedAt, imageUrl = '', images = [] } = req.body;
     let photoRecognition;
-    try { photoRecognition = validateConfirmation(req.body, req.user._id); }
+    try {
+      photoRecognition = req.body.type === 'bloodSugar'
+        ? validateBloodSugarConfirmation(req.body, req.user._id)
+        : req.body.type === 'weight'
+          ? validateWeightConfirmation(req.body, req.user._id)
+          : validateConfirmation(req.body, req.user._id);
+    }
     catch (error) { return res.status(400).json({ success: false, message: error.message }); }
     if (photoRecognition) {
       const duplicate = await HealthRecord.findOne({

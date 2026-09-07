@@ -5,6 +5,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { userAPI } from '../../../services/api';
 import { colors, radius, spacing } from '../../../theme';
 import useNavBar from '../../../hooks/useNavBar';
+import inviteShareCover from '../../../assets/invite-share-cover.png';
 
 export default function InvitePage() {
   const { user } = useAuth();
@@ -28,6 +29,7 @@ export default function InvitePage() {
   Taro.useShareAppMessage(() => ({
     title: '邀请你一起关注健康',
     path: `/pages/auth/login/index?invite=${encodeURIComponent(code)}`,
+    imageUrl: inviteShareCover,
     success: () => Taro.showModal({
       title: '感谢分享',
       content: '感谢你把健康理念分享给好友。健康可控，人生方可从容。',

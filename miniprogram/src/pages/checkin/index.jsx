@@ -5,6 +5,8 @@ import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { recordsAPI } from '../../services/api';
 import BloodPressurePhoto from '../../components/BloodPressurePhoto';
+import BloodSugarPhoto from '../../components/BloodSugarPhoto';
+import WeightPhoto from '../../components/WeightPhoto';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
 import { chooseImageWithPrivacy, showImagePickerError } from '../../utils/imagePicker';
@@ -496,6 +498,8 @@ export default function CheckinPage() {
             </View>
 
             {measureModal.measureType === 'bloodPressure' && <BloodPressurePhoto onSaved={() => { setMeasureModal(null); loadTodayStatus(); }} />}
+            {measureModal.measureType === 'bloodSugar' && <BloodSugarPhoto onSaved={() => { setMeasureModal(null); loadTodayStatus(); }} />}
+            {measureModal.measureType === 'weight' && <WeightPhoto onSaved={() => { setMeasureModal(null); loadTodayStatus(); }} />}
             {MEASURE_OPTIONS[measureModal.measureType] && (
               <View style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
                 {MEASURE_OPTIONS[measureModal.measureType].map((opt) => (

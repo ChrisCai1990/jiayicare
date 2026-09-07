@@ -40,7 +40,11 @@ export function clearToken() {
 async function request(path, options = {}) {
   const { method = 'GET', body, timeout: customTimeout, header } = options;
   const headers = { 'Content-Type': 'application/json', ...(header || {}) };
-  if (_token) headers['Authorization'] = `Bearer ${_token}`;
+  // App.componentDidShow may request unread counts before AuthProvider effects run.
+  // Restore the persisted token here as well so that startup requests cannot race
+  // with session hydration and accidentally behave as logged-out requests.
+  const requestToken = _token || loadToken();
+  if (requestToken) headers['Authorization'] = `Bearer ${requestToken}`;
 
   let data;
   if (body) {
@@ -59,8 +63,11 @@ async function request(path, options = {}) {
     const resData = res.data || {};
 
     if (res.statusCode === 401) {
-      clearToken();
-      if (_onUnauthorized) _onUnauthorized();
+      // An unauthenticated public request must never erase a valid persisted session.
+      if (requestToken) {
+        clearToken();
+        if (_onUnauthorized) _onUnauthorized();
+      }
       throw new Error('登录已过期，请重新登录');
     }
     if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -154,6 +161,8 @@ export const userAPI = {
 // ── Health Records ────────────────────────────────────────────────
 export const recordsAPI = {
   recognizeBloodPressure: (image) => request('/records/recognize-blood-pressure', { method: 'POST', body: JSON.stringify({ image, consent: true }), timeout: 60000 }),
+  recognizeBloodSugar: (image) => request('/records/recognize-blood-sugar', { method: 'POST', body: JSON.stringify({ image, consent: true }), timeout: 60000 }),
+  recognizeWeight: (image) => request('/records/recognize-weight', { method: 'POST', body: JSON.stringify({ image, consent: true }), timeout: 60000 }),
   list: (params = {}) => {
     const q = Object.keys(params).filter(k => params[k] != null && params[k] !== '')
       .map(k => `${k}=${encodeURIComponent(params[k])}`).join('&');
