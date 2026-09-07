@@ -206,6 +206,16 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("统一服务流程数据修正失败")
+        code, _ = remote(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/migrateUnifiedServiceWorkflowV3Samples.js ] && "
+            f"[ ! -f {REPO_DIR}/.unified-service-workflow-v3-samples-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/migrateUnifiedServiceWorkflowV3Samples.js && "
+            f"touch {REPO_DIR}/.unified-service-workflow-v3-samples-applied; fi",
+            timeout=120,
+            label="补齐体检与门诊一站式验收节点",
+        )
+        if code:
+            raise RuntimeError("验收样例条件节点补齐失败")
         time.sleep(3)
 
         code, output = remote(
