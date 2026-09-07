@@ -5,12 +5,11 @@ import { colors, spacing, radius } from '../../../theme';
 import { authAPI } from '../../../services/api';
 import { useAuth } from '../../../context/AuthContext';
 import Icon from '../../../components/Icon';
+import { captureInviteCode } from '../../../utils/invitation';
 
 export default function LoginPage() {
   Taro.useLoad((options = {}) => {
-    if (options.invite) {
-      try { Taro.setStorageSync('jy_invite_code', String(options.invite)); } catch {}
-    }
+    captureInviteCode(options);
   });
   Taro.useShareAppMessage(() => ({
     title: '嘉医汇｜全生命周期健康管理',

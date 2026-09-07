@@ -8,6 +8,7 @@ import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
 import { requestWechatPayment, waitForPayment } from '../../../utils/wechatPay';
 import { maxFundDeduction } from '../../../utils/healthFundCheckout';
+import { captureInviteCode } from '../../../utils/invitation';
 
 const PAY_METHODS = [
   { key: 'wechat_pay', label: '微信支付' },
@@ -424,6 +425,7 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
 }
 
 export default function ServiceMallPage() {
+  Taro.useLoad((options = {}) => { captureInviteCode(options); });
   const { statusBarHeight } = useNavBar();
   const { user } = useAuth();
   const [activeCategory, setActiveCategory] = useState('全部');

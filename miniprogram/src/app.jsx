@@ -4,6 +4,7 @@ import Taro from '@tarojs/taro';
 import { View, Text } from '@tarojs/components';
 import { AuthProvider } from './context/AuthContext';
 import { messagesAPI } from './services/api';
+import { captureInviteCode } from './utils/invitation';
 
 import './app.less';
 
@@ -57,14 +58,14 @@ class App extends Component {
 
   componentDidMount() {
     try {
-      const inviteCode = Taro.getLaunchOptionsSync?.()?.query?.invite;
-      if (inviteCode) Taro.setStorageSync('jy_invite_code', String(inviteCode));
+      const launch = Taro.getLaunchOptionsSync?.() || {};
+      captureInviteCode(launch.query || {});
     } catch {}
   }
   componentDidShow() {
     try {
-      const inviteCode = Taro.getEnterOptionsSync?.()?.query?.invite;
-      if (inviteCode) Taro.setStorageSync('jy_invite_code', String(inviteCode));
+      const entry = Taro.getEnterOptionsSync?.() || {};
+      captureInviteCode(entry.query || {});
     } catch {}
     this.refreshUnread();
     clearInterval(this.unreadPollTimer);
