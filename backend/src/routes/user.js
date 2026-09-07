@@ -48,7 +48,7 @@ const { reverseFamilyRelation, synchronizeFamilyGroup } = require('../utils/fami
 const { isActiveToday } = require('./reminders');
 const router = express.Router();
 
-async function applyOnboardingRewards(user, inviteCode) {
+async function applyOnboardingRewards(user, inviteCode, pendingInviterId) {
   const cfgRow = await SystemConfig.findOne({ key: 'healthFundPolicy' }).lean();
   const cfg = cfgRow?.value || {};
   const grant = async (userId, amount, remark, source = 'promotion') => {
@@ -68,8 +68,12 @@ async function applyOnboardingRewards(user, inviteCode) {
       }).catch(err => console.error('[first-login-reward] 到账消息发送失败', err.message));
     }
   }
-  if (!inviteCode || user.invitedBy) return;
-  const inviter = await User.findOne({ referralCode: String(inviteCode), isDeleted: { $ne: true }, _id: { $ne: user._id } }).select('_id');
+  if ((!inviteCode && !pendingInviterId) || user.invitedBy) return;
+  let inviter = pendingInviterId
+    ? await User.findOne({ _id: pendingInviterId, isDeleted: { $ne: true } }).select('_id')
+    : null;
+  if (inviter?._id.equals(user._id)) inviter = null;
+  if (!inviter && inviteCode) inviter = await User.findOne({ referralCode: String(inviteCode).trim().toLowerCase(), isDeleted: { $ne: true }, _id: { $ne: user._id } }).select('_id');
   if (!inviter) return;
   const claimed = await User.findOneAndUpdate({ _id: user._id, invitedBy: null }, { $set: { invitedAt: now, invitedBy: inviter._id } }, { new: true });
   if (!claimed || cfg.inviteEnabled !== true || claimed.referralRewardGrantedAt) return;
@@ -533,8 +537,9 @@ router.post('/onboarding', auth, async (req, res) => {
 
     if (!phoneAlreadyVerified) await VerificationCode.deleteOne({ phone: normalizedContactPhone });
     const pendingInviteCode = req.user.pendingInviteCode || '';
-    await applyOnboardingRewards(user, pendingInviteCode);
-    if (pendingInviteCode) await User.updateOne({ _id: user._id }, { $unset: { pendingInviteCode: 1 } });
+    const pendingInviterId = req.user.pendingInviter || null;
+    await applyOnboardingRewards(user, pendingInviteCode, pendingInviterId);
+    if (pendingInviteCode || pendingInviterId) await User.updateOne({ _id: user._id }, { $unset: { pendingInviteCode: 1, pendingInviter: 1 } });
     user = await User.findById(user._id);
 
     // 立即推送第一批问卷（健康问卷表），失败不影响 onboarding 本身完成

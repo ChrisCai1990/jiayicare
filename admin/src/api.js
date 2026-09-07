@@ -52,7 +52,6 @@ export const adminAPI = {
   dashboard:        ()                   => req('/dashboard'),
   patients:         (params = {})        => req('/patients?' + new URLSearchParams(params).toString()),
   patientDetail:    (id)                 => req(`/patients/${id}`),
-  setPatientInviter:(id, identifier, reason, replace = false) => req(`/patients/${id}/inviter`, { method: 'PATCH', body: JSON.stringify({ identifier, reason, replace }) }),
   patientDeleteImpact: (id)              => req(`/patients/${id}/delete-impact`),
   deletePatient:    (id, data)           => req(`/patients/${id}`, { method: 'DELETE', body: JSON.stringify(data) }),
   restorePatient:   (id)                 => req(`/patients/${id}/restore`, { method: 'PATCH' }),

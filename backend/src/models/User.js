@@ -46,15 +46,7 @@ const userSchema = new mongoose.Schema({
   invitedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   invitedAt: { type: Date, default: null },
   pendingInviteCode: { type: String, default: '' },
-  invitationAudit: [{
-    action: { type: String, enum: ['bind', 'replace'] },
-    oldInviter: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
-    newInviter: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    admin: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
-    adminName: { type: String, default: '' },
-    reason: { type: String, default: '' },
-    at: { type: Date, default: Date.now },
-  }],
+  pendingInviter: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   firstLoginFundGrantedAt: { type: Date, default: null },
   referralRewardGrantedAt: { type: Date, default: null },
   // 会员删除采用可恢复软删除：业务数据不物理清除，避免误删后无法追溯。

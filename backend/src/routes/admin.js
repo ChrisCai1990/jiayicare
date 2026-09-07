@@ -194,8 +194,9 @@ router.get('/patients', adminAuth, async (req, res) => {
 // ── GET /api/admin/patients/:id ───────────────────────────────────
 router.get('/patients/:id', adminAuth, async (req, res) => {
   const userId = req.params.id;
-  const [user, records, tasks, messages, orders] = await Promise.all([
+  const [user, invitedUsers, records, tasks, messages, orders] = await Promise.all([
     User.findById(userId).select('-password').populate('invitedBy', 'name phone'),
+    User.find({ invitedBy: userId, isDeleted: { $ne: true } }).select('name phone invitedAt').sort({ invitedAt: -1 }).lean(),
     HealthRecord.find({ user: userId }).sort({ recordedAt: -1 }).limit(20),
     Task.find({ user: userId }).sort({ createdAt: -1 }).limit(20),
     Message.find({ user: userId }).sort({ createdAt: -1 }).limit(30),
@@ -209,45 +210,7 @@ router.get('/patients/:id', adminAuth, async (req, res) => {
     latestVitals[type] = records.find(r => r.type === type) || null;
   }
 
-  res.json({ success: true, data: { user, latestVitals, records, tasks, messages, orders } });
-});
-
-// Admin fallback for exceptional invitation records. The normal path is automatic;
-// manual binding is superadmin-only, exact-match only, and permanently audited.
-router.patch('/patients/:id/inviter', adminAuth, async (req, res) => {
-  if (req.admin.role !== 'superadmin') {
-    return res.status(403).json({ success: false, message: '仅超级管理员可维护邀请关系' });
-  }
-  const identifier = String(req.body?.identifier || '').trim();
-  const reason = String(req.body?.reason || '').trim();
-  if (!identifier) return res.status(400).json({ success: false, message: '请输入邀请人手机号或12位邀请码' });
-  if (reason.length < 4) return res.status(400).json({ success: false, message: '请填写至少4个字的调整原因' });
-
-  const invitee = await User.findById(req.params.id);
-  if (!invitee || invitee.isDeleted) return res.status(404).json({ success: false, message: '受邀会员不存在' });
-  const inviter = await User.findOne({
-    isDeleted: { $ne: true },
-    $or: [{ phone: identifier }, { referralCode: identifier.toLowerCase() }],
-  }).select('_id name phone referralCode');
-  if (!inviter) return res.status(404).json({ success: false, message: '未找到匹配的邀请人' });
-  if (inviter._id.equals(invitee._id)) return res.status(400).json({ success: false, message: '不能将会员本人设为邀请人' });
-  if (invitee.invitedBy?.equals(inviter._id)) {
-    return res.json({ success: true, message: '邀请关系已存在', data: { inviter } });
-  }
-  const oldInviter = invitee.invitedBy || null;
-  if (oldInviter && req.body?.replace !== true) {
-    return res.status(409).json({ success: false, code: 'INVITER_REPLACE_CONFIRM_REQUIRED', message: '该会员已有邀请人，确认后才能更换' });
-  }
-
-  invitee.invitedBy = inviter._id;
-  invitee.invitedAt = invitee.invitedAt || new Date();
-  invitee.pendingInviteCode = '';
-  invitee.invitationAudit.push({
-    action: oldInviter ? 'replace' : 'bind', oldInviter, newInviter: inviter._id,
-    admin: req.admin._id, adminName: req.admin.name || req.admin.username || '', reason,
-  });
-  await invitee.save();
-  res.json({ success: true, message: oldInviter ? '邀请人已更换' : '邀请关系已建立', data: { inviter } });
+  res.json({ success: true, data: { user, invitedUsers, latestVitals, records, tasks, messages, orders } });
 });
 
 async function getPatientDeleteImpact(userId) {

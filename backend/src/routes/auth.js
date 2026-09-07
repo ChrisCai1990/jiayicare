@@ -98,6 +98,17 @@ async function applyFirstLoginRewards(user, inviteCode) {
   await Promise.all(notices).catch(err => console.error('[invite-reward] 到账消息发送失败', err.message));
 }
 
+async function rememberPendingInvitation(user, inviteCode) {
+  const code = String(inviteCode || '').trim().toLowerCase();
+  if (!code || user.invitedBy) return;
+  const inviter = await User.findOne({ referralCode: code, isDeleted: { $ne: true }, _id: { $ne: user._id } }).select('_id');
+  if (!inviter) return;
+  await User.updateOne(
+    { _id: user._id, invitedBy: null },
+    { $set: { pendingInviteCode: code, pendingInviter: inviter._id } },
+  );
+}
+
 // 计算用户健康基金汇总（与 /user/me 保持一致）
 async function computeHealthFund(user) {
   try {
@@ -289,7 +300,7 @@ router.post('/login', async (req, res) => {
     await user.save();
   }
   if (user.onboardingCompleted) await applyFirstLoginRewards(user, inviteCode);
-  else if (inviteCode) await User.updateOne({ _id: user._id }, { $set: { pendingInviteCode: String(inviteCode) } });
+  else await rememberPendingInvitation(user, inviteCode);
   user = await User.findById(user._id);
   await ensureAssignedHealthPlanner(user).catch(error => {
     console.error('[health-planner-assignment] 登录时自动分配失败', error.message);
@@ -434,7 +445,7 @@ router.post('/wechat-mp', async (req, res) => {
       await user.save();
     }
     if (user.onboardingCompleted) await applyFirstLoginRewards(user, inviteCode);
-    else if (inviteCode) await User.updateOne({ _id: user._id }, { $set: { pendingInviteCode: String(inviteCode) } });
+    else await rememberPendingInvitation(user, inviteCode);
     user = await User.findById(user._id);
     const sessionId = await beginLoginSession(req, user, 'wechat');
     user = await User.findById(user._id);
@@ -513,7 +524,7 @@ router.post('/wechat-mp/phone-login', async (req, res) => {
       await user.save();
     }
     if (user.onboardingCompleted) await applyFirstLoginRewards(user, inviteCode);
-    else if (inviteCode) await User.updateOne({ _id: user._id }, { $set: { pendingInviteCode: String(inviteCode) } });
+    else await rememberPendingInvitation(user, inviteCode);
     user = await User.findById(user._id);
     const sessionId = await beginLoginSession(req, user, 'phone_wechat');
     user = await User.findById(user._id);

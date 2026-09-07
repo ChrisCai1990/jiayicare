@@ -175,39 +175,6 @@ function DeletePatientModal({ user, onClose, onDeleted }) {
   </div>
 }
 
-function InviterModal({ user, onClose, onSaved }) {
-  const toast = useToast()
-  const [identifier, setIdentifier] = useState('')
-  const [reason, setReason] = useState('')
-  const [loading, setLoading] = useState(false)
-  const submit = async () => {
-    if (!identifier.trim() || reason.trim().length < 4) return
-    setLoading(true)
-    try {
-      await adminAPI.setPatientInviter(user._id, identifier.trim(), reason.trim(), !!user.invitedBy)
-      toast(user.invitedBy ? '邀请人已更换' : '邀请关系已建立')
-      onSaved()
-      onClose()
-    } catch (e) { toast('设置失败：' + e.message) }
-    finally { setLoading(false) }
-  }
-  return <div className="modal-overlay" onClick={onClose}>
-    <div className="modal" onClick={e => e.stopPropagation()}>
-      <div className="modal-header"><div className="modal-title">维护邀请关系</div><button className="modal-close" onClick={onClose}>×</button></div>
-      <div className="modal-body">
-        <div style={{ padding: 12, borderRadius: 8, background: '#f7f8fa', marginBottom: 16, fontSize: 13 }}>
-          受邀人：{user.name || '未命名'}（{user.phone || '无手机号'}）<br />
-          当前邀请人：{user.invitedBy ? `${user.invitedBy.name || '未命名'}（${user.invitedBy.phone || '无手机号'}）` : '无'}
-        </div>
-        <div className="form-group"><label className="form-label">邀请人手机号或12位邀请码 *</label><input className="form-input" value={identifier} onChange={e => setIdentifier(e.target.value)} placeholder="精确查询，不支持模糊匹配" /></div>
-        <div className="form-group"><label className="form-label">调整原因（至少4个字）*</label><textarea className="form-input" rows={3} value={reason} onChange={e => setReason(e.target.value)} placeholder="例如：客户提供邀请截图，人工核验补录" /></div>
-        {user.invitedBy && <div style={{ color: '#b54708', fontSize: 13 }}>保存后将更换现有邀请人，操作会永久记录审计。</div>}
-      </div>
-      <div className="modal-footer"><button className="btn btn-ghost" onClick={onClose}>取消</button><button className="btn btn-primary" disabled={loading || !identifier.trim() || reason.trim().length < 4} onClick={submit}>{loading ? '保存中...' : '确认保存'}</button></div>
-    </div>
-  </div>
-}
-
 export default function PatientDetailPage() {
   const { id } = useParams()
   const nav = useNavigate()
@@ -219,7 +186,6 @@ export default function PatientDetailPage() {
   const [showMsg, setShowMsg] = useState(false)
   const [showTask, setShowTask] = useState(false)
   const [showDelete, setShowDelete] = useState(false)
-  const [showInviter, setShowInviter] = useState(false)
 
   // 复查计划状态
   const [checkupPlan, setCheckupPlan] = useState(null)
@@ -254,7 +220,7 @@ export default function PatientDetailPage() {
   if (loading) return <div className="loading-wrap"><div className="spinner" /> 加载会员数据...</div>
   if (!data) return <div className="empty-state"><div className="empty-state-icon">😕</div><div>会员数据加载失败</div></div>
 
-  const { user, latestVitals, records, tasks, messages, orders } = data
+  const { user, invitedUsers = [], latestVitals, records, tasks, messages, orders } = data
   const score = user.healthScore
   const scoreClass = score >= 80 ? 'score-good' : score >= 60 ? 'score-ok' : 'score-bad'
 
@@ -364,10 +330,7 @@ export default function PatientDetailPage() {
           </div>
 
           <div className="card" style={{ marginBottom: 16 }}>
-            <div className="card-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span>🔐 登录与邀请记录</span>
-              {admin?.role === 'superadmin' && <button className="btn btn-outline btn-sm" onClick={() => setShowInviter(true)}>{user.invitedBy ? '更换邀请人' : '设置邀请人'}</button>}
-            </div>
+            <div className="card-title"><span>🔐</span> 登录与邀请记录</div>
             <div className="info-grid">
               {[
                 { label: '登录手机号', value: user.phone || '--' },
@@ -380,6 +343,17 @@ export default function PatientDetailPage() {
                 { label: '受邀时间', value: user.invitedAt ? new Date(user.invitedAt).toLocaleString('zh-CN') : '--' },
                 { label: '本人邀请码', value: user.referralCode || '--' },
               ].map((r, i) => <div className="info-row" key={i}><div className="info-row-label">{r.label}</div><div className="info-row-value">{r.value}</div></div>)}
+            </div>
+            <div style={{ marginTop: 18, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+              <div style={{ fontWeight: 700, marginBottom: 10 }}>该会员邀请的客户（{invitedUsers.length}）</div>
+              {invitedUsers.length === 0
+                ? <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>暂无成功邀请记录</div>
+                : <div style={{ display: 'grid', gap: 8 }}>
+                    {invitedUsers.map(item => <button key={item._id} className="btn btn-outline" style={{ justifyContent: 'space-between', textAlign: 'left' }} onClick={() => nav(`/patients/${item._id}`)}>
+                      <span>{item.name || '未命名'}{item.phone ? `（${item.phone}）` : ''}</span>
+                      <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>{fmtExactTime(item.invitedAt)} →</span>
+                    </button>)}
+                  </div>}
             </div>
           </div>
 
@@ -623,7 +597,6 @@ export default function PatientDetailPage() {
       {showMsg  && <SendMessageModal userId={id} onClose={() => setShowMsg(false)} onSent={load} />}
       {showTask && <CreateTaskModal  userId={id} onClose={() => setShowTask(false)} onCreated={load} />}
       {showDelete && <DeletePatientModal user={user} onClose={() => setShowDelete(false)} onDeleted={() => nav('/patients')} />}
-      {showInviter && <InviterModal user={user} onClose={() => setShowInviter(false)} onSaved={load} />}
     </>
   )
 }
