@@ -2098,15 +2098,22 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
     for (const workflowPlan of fixedWorkflowPlans) {
       await upsertMedicalAssistModuleTasks(plan, workflowPlan, { patient });
     }
-    // 服务次日由健管专员回收资料：体检服务收体检报告，普通陪诊/就医服务收就医资料。
-    // 二者共用一个系统节点并兼容迁移旧 key，重复推送不会再叠加任务。
+    // 体检报告回收已由 Admin 标准岗位任务承接，不再额外生成“督办”任务。
+    // 重推时顺带取消旧版系统任务，避免同一事项同时出现执行人与督办人两套入口。
     const documentCollectionAssignee = selectedSupervisorId || patient?.assignedHealthManager;
-    if (documentCollectionAssignee) {
+    if (isCheckupService) {
+      await FollowUp.updateMany(
+        {
+          sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'supervisor',
+          workflowKey: { $in: ['system:document_collection', 'system:checkup_report_collection'] },
+          status: { $in: ['planned', 'in_progress'] },
+        },
+        { $set: { status: 'cancelled', cancelReason: '流程标准化：体检报告回收由 Admin 岗位任务承接' } }
+      );
+    } else if (documentCollectionAssignee) {
       const documentCollectionDate = addDays(serviceDate, 1);
-      const documentCollectionName = isCheckupService ? '体检报告回收' : '就医资料回收';
-      const documentCollectionContent = isCheckupService
-        ? '体检完成后跟进报告出具进度，回收并核对报告资料；上传后进入独立的报告解析与专业审核流程。'
-        : '就医完成后回收并核对就诊记录、检查检验结果、处方医嘱及费用凭证，归档后安排后续跟进。';
+      const documentCollectionName = '就医资料回收';
+      const documentCollectionContent = '就医完成后回收并核对就诊记录、检查检验结果、处方医嘱及费用凭证，归档后安排后续跟进。';
       await FollowUp.findOneAndUpdate(
         {
           sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'supervisor',

@@ -17,6 +17,7 @@ test('checkup one-stop no longer requires or shows a supervisor', () => {
   assert.match(staffPage, /!checkupService && !visit\.supervisorId/);
   assert.match(staffPage, /\{!isCheckupService && <div>/);
   assert.match(staffRoute, /!isCheckupService && !c\.supervisorId/);
+  assert.match(staffRoute, /if \(isCheckupService\)[\s\S]+taskRole: 'supervisor'[\s\S]+status: 'cancelled'[\s\S]+流程标准化：体检报告回收由 Admin 岗位任务承接/);
 });
 
 test('workflow tasks honor explicit checkup assignees', () => {
