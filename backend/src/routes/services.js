@@ -280,14 +280,11 @@ router.post('/order', auth, async (req, res) => {
   const requiresServiceConfirmation = ['offline_service', 'remote_service'].includes(orderFulfillmentType);
   let confirmedServiceDate = null;
   const confirmedServiceRequirements = String(serviceRequirements || '').trim();
-  if (requiresServiceConfirmation) {
-    if (!desiredServiceDate || !confirmedServiceRequirements) {
-      return res.status(400).json({ success: false, message: '请填写服务时间和服务内容' });
-    }
+  if (requiresServiceConfirmation && desiredServiceDate) {
     confirmedServiceDate = new Date(`${String(desiredServiceDate).trim()}T00:00:00+08:00`);
     if (Number.isNaN(confirmedServiceDate.getTime())) return res.status(400).json({ success: false, message: '服务时间格式不正确' });
-    if (confirmedServiceRequirements.length > 1000) return res.status(400).json({ success: false, message: '服务内容不能超过1000字' });
   }
+  if (confirmedServiceRequirements.length > 1000) return res.status(400).json({ success: false, message: '服务内容不能超过1000字' });
   const unitsMatch = String(service.specificationLabel || '').match(/(\d+)\s*次/);
   const productServiceItems = service.skuCode ? [] : (product?.serviceItems || []).filter(item => item.name && Number(item.units) > 0);
   const totalUnits = service.skuTotalUnits
@@ -332,7 +329,7 @@ router.post('/order', auth, async (req, res) => {
   let fundBreakdown = { personal: 0, corporate: 0 };
   if (useHealthFund > 0) {
     try {
-      const checked = await require('../utils/healthFundPayment').validateHealthFundDeduction({ user:req.user, requested:useHealthFund, orderAmount:priceAfterCoupon, category:service.category || '', productId: product?._id || serviceId });
+      const checked = await require('../utils/healthFundPayment').validateHealthFundDeduction({ user:req.user, requested:useHealthFund, orderAmount:priceAfterCoupon, category:service.category || '', productId: product?._id || serviceId, maximize:true });
       fundUsed = checked.allowed; fundEnterprise = checked.enterprise; fundBreakdown = checked.breakdown;
     } catch (err) { return res.status(400).json({ success:false, message:err.message }); }
   }

@@ -7,7 +7,7 @@ const Product = require('../models/Product');
 const DEFAULT_HEALTH_FUND_POLICY = {
   title: '健康基金使用规则', description: '', personalPriority: true,
   personalDeductionType: 'unlimited', personalDeductionValue: 0,
-  corporateDeductionType: 'fixedAmount', corporateDeductionValue: 200,
+  corporateDeductionType: 'unlimited', corporateDeductionValue: 0,
   minOrderAmount: 0, eligibleCategories: [], eligibleProductIds: [], allowCouponStacking: true,
   couponDeductionType: 'unlimited', couponDeductionValue: 0,
   refundToOriginalSource: true,
@@ -38,6 +38,19 @@ function corporateProductEligible(policy, productId, category, productRule) {
   if (policy?.eligibleCategories?.length && !policy.eligibleCategories.includes(category)) return false;
   if (policy?.eligibleProductIds?.length && !policy.eligibleProductIds.map(String).includes(String(productId || ''))) return false;
   return true;
+}
+
+function allocateHealthFund({ orderAmount, personalAvailable, corporateAvailable, corporateEligible = true, productRule }) {
+  const amount = Math.max(0, Number(orderAmount) || 0);
+  const personalUsed = Math.min(amount, Math.max(0, Number(personalAvailable) || 0));
+  const remainingAfterPersonal = Math.max(0, amount - personalUsed);
+  const corporateLimit = corporateEligible ? productDeductionLimit(productRule, remainingAfterPersonal) : 0;
+  const corporateUsed = Math.min(
+    remainingAfterPersonal,
+    Math.max(0, Number(corporateAvailable) || 0),
+    corporateLimit,
+  );
+  return { personalUsed, corporateUsed, allowed: Math.round((personalUsed + corporateUsed) * 100) / 100 };
 }
 
 async function getCorporateFundAvailable(user) {
@@ -78,7 +91,7 @@ async function getPersonalFundAvailable(user) {
   return Math.max(0, Math.min(totalBalance, Math.max(recordedPersonal, totalBalance - corporateAvailable)));
 }
 
-async function validateHealthFundDeduction({ user, requested, orderAmount, category, categories, productId, productIds, productLimit }) {
+async function validateHealthFundDeduction({ user, requested, orderAmount, category, categories, productId, productIds, productLimit, maximize = false }) {
   const amount = Number(requested) || 0;
   if (amount <= 0) return { allowed: 0, enterprise: null };
   const policy = await getHealthFundPolicy();
@@ -97,28 +110,31 @@ async function validateHealthFundDeduction({ user, requested, orderAmount, categ
   // 平台发放的首登企业健康基金并不要求用户先绑定某个企业档案。
   const corporateAvailable = await getCorporateFundAvailable(user);
   let enterprise = null;
-  let corporateLimit = corporateEligible
-    ? Math.min(deductionLimit(policy.corporateDeductionType, policy.corporateDeductionValue, orderAmount), finalProductLimit)
-    : 0;
+  let enterpriseEnabled = true;
   if (user.enterpriseId && corporateAvailable > 0) {
     enterprise = await Enterprise.findById(user.enterpriseId);
     const rule = enterprise?.healthFundPaymentRule;
-    if (!enterprise || enterprise.status !== 'active') corporateLimit = 0;
+    if (!enterprise || enterprise.status !== 'active') enterpriseEnabled = false;
     else if (rule?.enabled) {
-      if (orderAmount < (Number(rule.minOrderAmount) || 0)) corporateLimit = 0;
-      if (rule.eligibleCategories?.length && !rule.eligibleCategories.includes(category)) corporateLimit = 0;
-      // 单笔抵扣额度以平台“健康基金管理”的统一规则为准；企业规则只控制
-      // 是否启用、最低金额和适用分类，避免旧企业固定额度覆盖平台新比例。
+      if (orderAmount < (Number(rule.minOrderAmount) || 0)) enterpriseEnabled = false;
+      if (rule.eligibleCategories?.length && !rule.eligibleCategories.includes(category)) enterpriseEnabled = false;
     }
   }
-  let remaining = Math.min(amount, orderAmount);
-  let personalUsed = 0; let corporateUsed = 0;
-  const takePersonal = () => { const used=Math.min(remaining, personalAvailable, personalLimit); personalUsed=used; remaining-=used; };
-  const takeCorporate = () => { const used=Math.min(remaining, corporateAvailable, corporateLimit); corporateUsed=used; remaining-=used; };
-  if (policy.personalPriority !== false) { takePersonal(); takeCorporate(); } else { takeCorporate(); takePersonal(); }
-  // 客户端展示值可能因余额或规则刚发生变化而偏高。结算以服务端实时
-  // 可用额为准，能抵多少就抵多少，不在支付最后一步驳回整个订单。
-  const allowed = Math.max(0, Math.round((amount - remaining) * 100) / 100);
+  // 正式小程序的基金开关会提交一个客户端报价。服务端只把正数视为
+  // “启用基金”，始终按实时余额重算：先自有，再以剩余金额为基数应用
+  // 商品上的企业基金比例。这样旧版客户端报价不会覆盖服务端规则。
+  const allocation = allocateHealthFund({
+    orderAmount: maximize ? orderAmount : Math.min(amount, orderAmount),
+    personalAvailable: Math.min(personalAvailable, personalLimit),
+    corporateAvailable,
+    corporateEligible: corporateEligible && enterpriseEnabled,
+    productRule: productRule || (Number.isFinite(finalProductLimit) && finalProductLimit < orderAmount
+      ? { mode: 'fixedAmount', value: finalProductLimit }
+      : { mode: 'inherit', value: 0 }),
+  });
+  const allowed = allocation.allowed;
+  const personalUsed = allocation.personalUsed;
+  const corporateUsed = allocation.corporateUsed;
   return { allowed, enterprise, policy, breakdown: { personal: personalUsed, corporate: corporateUsed } };
 }
 
@@ -169,4 +185,4 @@ async function reverseHealthFund({ order, remark = '订单退款返还' }) {
   return amount;
 }
 
-module.exports = { DEFAULT_HEALTH_FUND_POLICY, getHealthFundPolicy, deductionLimit, productDeductionLimit, corporateProductEligible, validateHealthFundDeduction, deductHealthFund, reverseHealthFund, getCorporateFundAvailable, getPersonalFundAvailable };
+module.exports = { DEFAULT_HEALTH_FUND_POLICY, getHealthFundPolicy, deductionLimit, productDeductionLimit, corporateProductEligible, allocateHealthFund, validateHealthFundDeduction, deductHealthFund, reverseHealthFund, getCorporateFundAvailable, getPersonalFundAvailable };
