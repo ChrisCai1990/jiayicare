@@ -8342,13 +8342,15 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       specialist: 'assignedSpecialist',
       healthPlanner: 'assignedHealthPlanner',
     };
-    let myPatientIds = null; // null = 不限制（超管）；否则是当前角色（含团队/下属扩展）名下会员ID数组
+    let myPatientIds = null; // null = 不限制（超管）；否则只包含当前登录账号本人名下会员
     if (!isSuper) {
       const assignField = ROLE_ASSIGN_FIELD[role];
       if (assignField) {
-        // 团队负责人/组长（Team.mentorId）或有下属（Admin.managerId）时，扩大到团队/下属名下会员
-        const visibleStaffIds = await getVisibleStaffIds(req.staff);
-        const myPatients = await User.find({ [assignField]: { $in: visibleStaffIds } }).select('_id').lean();
+        // 工作台文案和任务责任均是“本人当前待处理项”；团队/下属的数据权限不能扩大个人任务队列。
+        const myPatients = await User.find({
+          [assignField]: req.staff._id,
+          isDeleted: { $ne: true },
+        }).select('_id').lean();
         myPatientIds = myPatients.map(p => p._id);
       } else {
         myPatientIds = []; // 角色没有对应归属字段（如healthPlanner），保守起见不展示任何会员相关待办
