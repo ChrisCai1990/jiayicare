@@ -6,6 +6,8 @@ import { useToast } from '../App'
 const PLAN_TYPES = [
   { key: 'annual_checkup',    label: '年度体检方案',  icon: '🔬' },
   { key: 'health_management', label: '年度管理规则',  icon: '📋' },
+  { key: 'health_record',     label: '健康档案方案',  icon: '🗂️' },
+  { key: 'health_assessment', label: '健康评估方案',  icon: '🩺' },
   { key: 'nutrition',         label: '营养干预方案',  icon: '🥗' },
   { key: 'medical_assist',    label: '就医协助方案',  icon: '🏥' },
   { key: 'rehab',             label: '运动复健方案',  icon: '🏃' },
@@ -56,6 +58,14 @@ const defaultContent = {
     standardActionPlans: {},
     personalizedFollowUpPlans: [],
     followUpPlans: [],
+  },
+  health_record: {
+    applicableScenario: '', standardSteps: '', requiredMaterials: '', completionStandard: '',
+    updateFrequency: '资料新增时及时更新，每月检查完整性', riskNotes: '', followUpPlans: [],
+  },
+  health_assessment: {
+    applicableScenario: '', standardSteps: '', requiredMaterials: '', completionStandard: '',
+    reassessmentRule: '以专业审核结论和客户实际情况确定', riskNotes: '', followUpPlans: [],
   },
   nutrition: {
     dailyWater: '',
@@ -324,7 +334,7 @@ function PlanContentForm({ type, initialContent, contentRef }) {
         setFunctionalTests(funcRes.data || [])
       }).catch(() => {})
     }
-    if (['health_management', 'medical_assist'].includes(type)) {
+    if (['health_management', 'health_record', 'health_assessment', 'medical_assist'].includes(type)) {
       adminAPI.followUpPlans()
         .then(res => setFollowUpPlans((res.data || []).filter(plan => plan.status === 'active')))
         .catch(() => setFollowUpPlans([]))
@@ -482,6 +492,30 @@ function PlanContentForm({ type, initialContent, contentRef }) {
     </div>
   )
 
+  if (['health_record', 'health_assessment'].includes(type)) return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div className="form-group" style={{ gridColumn: '1/-1' }}>
+        <FollowUpPlanSelector
+          value={content.followUpPlans || []}
+          allPlans={followUpPlans}
+          loading={false}
+          label="关联岗位任务方案"
+          description="可搜索并多选；启用服务后，按实际客户情况生成对应任务。"
+          emptyText="可暂不关联，审核后再补充。"
+          onChange={plans => set('followUpPlans', plans)}
+        />
+      </div>
+      <FieldRow label="适用场景" fieldKey="applicableScenario" rows={3} placeholder="说明什么情况下采用本模板" content={content} set={set} />
+      <FieldRow label="标准服务步骤" fieldKey="standardSteps" rows={6} placeholder="每行一个标准动作；AI生成初稿后由人工审核" content={content} set={set} />
+      <FieldRow label="客户需提供的资料" fieldKey="requiredMaterials" rows={3} placeholder="列明资料、数据和授权要求" content={content} set={set} />
+      <FieldRow label="完成标准" fieldKey="completionStandard" rows={3} placeholder="说明完成到什么程度才可闭环" content={content} set={set} />
+      {type === 'health_record'
+        ? <FieldRow label="档案更新规则" fieldKey="updateFrequency" rows={2} content={content} set={set} />
+        : <FieldRow label="复评规则" fieldKey="reassessmentRule" rows={2} content={content} set={set} />}
+      <FieldRow label="风险与升级规则" fieldKey="riskNotes" rows={3} placeholder="发现异常时交由健康顾问或相应专业人员判断" content={content} set={set} />
+    </div>
+  )
+
   if (type === 'medical_assist') return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
       <div className="form-group">
@@ -525,7 +559,7 @@ function PlanContentForm({ type, initialContent, contentRef }) {
       <FieldRow label="可选住宿/交通服务" fieldKey="optionalLogistics" rows={2} placeholder="仅说明可提供的协助，不固定具体酒店和车辆" content={content} set={set} />
       <FieldRow label="风险与注意事项" fieldKey="riskNotes" rows={3} placeholder="涉及停药、检查准备或治疗事项时，统一要求向开单医生确认" content={content} set={set} />
       <div style={{ gridColumn: '1/-1', display: 'flex', flexWrap: 'wrap', gap: 18, padding: '11px 13px', border: '1px solid #E6E1D8', borderRadius: 9, background: '#FAF8F5' }}>
-        {[['requiresDoctorConfirm','需要家庭医生确认'],['requiresExecutor','需要专业人员执行'],['requiresSupervisor','需要健管/家庭医生督办']].map(([key,label]) => <label key={key} style={{ fontSize: 13 }}><input type="checkbox" checked={content[key] !== false} onChange={e => set(key, e.target.checked)} style={{ marginRight: 6 }} />{label}</label>)}
+        {[['requiresDoctorConfirm','需要健康顾问确认'],['requiresExecutor','需要专业人员执行'],['requiresSupervisor','需要健康顾问督办']].map(([key,label]) => <label key={key} style={{ fontSize: 13 }}><input type="checkbox" checked={content[key] !== false} onChange={e => set(key, e.target.checked)} style={{ marginRight: 6 }} />{label}</label>)}
       </div>
       <div style={{ gridColumn: '1/-1', padding: '9px 11px', borderRadius: 8, background: '#EEF7F2', color: '#426457', fontSize: 12 }}>医院、科室、专家、具体日期、就医专员和督办人均在客户子方案中填写，不在 Admin 标准模板中写死。</div>
     </div>

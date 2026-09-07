@@ -3,9 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
 
-const FLOW_OPTIONS = [['', '尚未关联'], ['annual_management', '年度健康管理'], ['nutrition_intervention', '营养干预'], ['checkup', '体检／检查管理'], ['medical_assist', '就医协助'], ['rehab', '运动复健'], ['tcm', '中医调理'], ['psychology', '心理支持'], ['medication_supply', '药品定期配取'], ['supplement_supply', '营养素定期补充'], ['generic_followup', '通用随访'], ['fulfillment_only', '单次履约／核销']]
+const FLOW_OPTIONS = [['', '尚未关联'], ['annual_management', '年度健康管理'], ['health_record_management', '健康档案管理'], ['health_assessment', '健康评估与复查'], ['nutrition_intervention', '营养干预'], ['checkup', '体检／检查管理'], ['medical_assist', '就医协助'], ['rehab', '运动复健'], ['tcm', '中医调理'], ['psychology', '心理支持'], ['medication_supply', '药品定期配取'], ['supplement_supply', '营养素定期补充'], ['generic_followup', '通用随访'], ['fulfillment_only', '单次履约／核销']]
 const FLOW_CARDS = [
   ['年度健康管理', '评估建档 → 方案制定 → 周期服务 → 阶段复盘 → 年度总结', '/health-plan-templates', '管理方案模板'],
+  ['健康档案管理', '资料收集 → 归档核验 → 持续更新 → 异常提示 → 授权输出', '/health-plan-templates', '管理方案模板'],
+  ['健康评估与复查', '信息采集 → 风险评估 → 建议审核 → 复查提醒 → 结果复盘', '/health-plan-templates', '管理方案模板'],
   ['营养干预', '营养评估 → 目标与方案 → 执行跟踪 → 指标复评 → 调整方案', '/health-plan-templates', '管理方案模板'],
   ['体检／检查管理', '需求确认 → 预约 → 检查提醒 → 报告解读 → 异常跟进', '/health-plan-templates', '管理方案模板'],
   ['就医协助', '需求与风险评估 → 预约协调 → 就医执行 → 医嘱整理 → 后续随访', '/projects/followup-plans', '管理随访方案'],

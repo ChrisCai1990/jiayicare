@@ -1931,7 +1931,7 @@ router.put('/system-config/health-assistant', adminAuth, async (req, res) => {
 });
 
 router.patch('/products/:id/service-workflow', adminAuth, async (req, res) => {
-  const allowedKeys = ['', 'annual_management', 'nutrition_intervention', 'checkup', 'medical_assist', 'rehab', 'tcm', 'psychology', 'medication_supply', 'supplement_supply', 'generic_followup', 'fulfillment_only'];
+  const allowedKeys = ['', 'annual_management', 'health_record_management', 'health_assessment', 'nutrition_intervention', 'checkup', 'medical_assist', 'rehab', 'tcm', 'psychology', 'medication_supply', 'supplement_supply', 'generic_followup', 'fulfillment_only'];
   if (!allowedKeys.includes(req.body?.key)) return res.status(400).json({ success: false, message: '请选择有效的服务流程' });
   const key = req.body.key;
   const requestedPlanIds = Array.isArray(req.body?.followUpPlanIds)
