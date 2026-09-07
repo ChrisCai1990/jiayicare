@@ -6,6 +6,7 @@ import { chooseImageWithPrivacy, isImagePickerCancelled } from '../utils/imagePi
 
 const box = { padding: '12px', margin: '12px 0', background: '#edf6f1', borderRadius: '12px' };
 const field = { background: '#fff', padding: '10px', margin: '8px 0', border: '1px solid #cedbd3', borderRadius: '6px' };
+const inputField = { ...field, boxSizing: 'border-box', width: '100%', height: '48px', minHeight: '48px', fontSize: '18px', lineHeight: '28px', color: '#1A2B24' };
 function localTime() {
   const d = new Date();
   const pad = v => String(v).padStart(2, '0');
@@ -68,7 +69,7 @@ export default function WeightPhoto({ onSaved }) {
     {draft && <View>
       <Text>{draft.message}</Text>
       <Text style={{ display: 'block', marginTop: '8px' }}>体重（kg）</Text>
-      <Input disabled={busy} style={field} type="digit" value={value} placeholder="未识别，请核对补填" onInput={e => { setValue(e.detail.value); setConfirmed(false); }} />
+      <Input disabled={busy} style={inputField} type="digit" value={value} placeholder="未识别，请核对补填" onInput={e => { setValue(e.detail.value); setConfirmed(false); }} />
       <Text>测量时间（北京时间，默认现在，请核对）</Text>
       <Picker disabled={busy} mode="date" value={when.date} end={localTime().date} onChange={e => { setWhen(w => ({ ...w, date: e.detail.value })); setConfirmed(false); }}><View style={field}>{when.date}</View></Picker>
       <Picker disabled={busy} mode="time" value={when.time} onChange={e => { setWhen(w => ({ ...w, time: e.detail.value })); setConfirmed(false); }}><View style={field}>{when.time}</View></Picker>

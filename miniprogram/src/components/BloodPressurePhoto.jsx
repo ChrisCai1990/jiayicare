@@ -6,6 +6,7 @@ import { chooseImageWithPrivacy, isImagePickerCancelled } from '../utils/imagePi
 
 const box = { padding: '12px', margin: '12px 0', background: '#edf6f1', borderRadius: '12px' };
 const field = { background: '#fff', padding: '10px', margin: '8px 0', border: '1px solid #cedbd3', borderRadius: '6px' };
+const inputField = { ...field, boxSizing: 'border-box', width: '100%', height: '48px', minHeight: '48px', fontSize: '18px', lineHeight: '28px', color: '#1A2B24' };
 function localTime() {
   const d = new Date();
   const pad = v => String(v).padStart(2, '0');
@@ -68,7 +69,7 @@ export default function BloodPressurePhoto({ onSaved }) {
     {draft && <View>
       <Text>{draft.message}</Text>
       {[['sys', '收缩压 / 高压（mmHg）'], ['dia', '舒张压 / 低压（mmHg）'], ['pulse', '脉搏（次/分，可留空）']].map(([key, label]) => <View key={key}>
-        <Text>{label}</Text><Input disabled={busy} style={field} type="number" value={values[key] || ''} placeholder="未识别，请核对补填" onInput={e => update(key, e.detail.value)} />
+        <Text>{label}</Text><Input disabled={busy} style={inputField} type="number" value={values[key] || ''} placeholder="未识别，请核对补填" onInput={e => update(key, e.detail.value)} />
       </View>)}
       <Text>测量时间（北京时间，默认现在，请核对）</Text>
       <Picker disabled={busy} mode="date" value={when.date} end={localTime().date} onChange={e => { setWhen(w => ({ ...w, date: e.detail.value })); setConfirmed(false); }}><View style={field}>{when.date}</View></Picker>

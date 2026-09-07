@@ -6,6 +6,7 @@ import { chooseImageWithPrivacy, isImagePickerCancelled } from '../utils/imagePi
 
 const box = { padding: '12px', margin: '12px 0', background: '#edf6f1', borderRadius: '12px' };
 const field = { background: '#fff', padding: '10px', margin: '8px 0', border: '1px solid #cedbd3', borderRadius: '6px' };
+const inputField = { ...field, boxSizing: 'border-box', width: '100%', height: '48px', minHeight: '48px', fontSize: '18px', lineHeight: '28px', color: '#1A2B24' };
 const mealTypes = ['空腹', '餐后2小时', '睡前', '随机'];
 function localTime() {
   const d = new Date();
@@ -73,7 +74,7 @@ export default function BloodSugarPhoto({ onSaved }) {
     {draft && <View>
       <Text>{draft.message}</Text>
       <Text style={{ display: 'block', marginTop: '8px' }}>血糖值（mmol/L）</Text>
-      <Input disabled={busy} style={field} type="digit" value={value} placeholder="未识别，请核对补填" onInput={e => changed(setValue, e.detail.value)} />
+      <Input disabled={busy} style={inputField} type="digit" value={value} placeholder="未识别，请核对补填" onInput={e => changed(setValue, e.detail.value)} />
       <Text>测量状态</Text>
       <Picker disabled={busy} mode="selector" range={mealTypes} value={Math.max(mealTypes.indexOf(mealType), 0)} onChange={e => changed(setMealType, mealTypes[Number(e.detail.value)])}>
         <View style={field}>{mealType || '请选择空腹、餐后2小时、睡前或随机'}</View>

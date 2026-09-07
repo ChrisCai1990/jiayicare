@@ -35,3 +35,19 @@ test('startup requests hydrate persisted token before sending', () => {
   assert.match(source, /if \(requestToken\) headers\['Authorization'\]/);
   assert.match(source, /if \(requestToken\) \{\s*clearToken\(\)/);
 });
+
+test('photo confirmation values remain large enough to edit on a real device', () => {
+  ['BloodPressurePhoto.jsx', 'BloodSugarPhoto.jsx', 'WeightPhoto.jsx'].forEach((name) => {
+    const source = read(`src/components/${name}`);
+    assert.match(source, /height: '48px'/);
+    assert.match(source, /fontSize: '18px'/);
+    assert.match(source, /style=\{inputField\}/);
+  });
+});
+
+test('full 100-message windows detect new messages by newest id, not length', () => {
+  const source = read('src/pages/messages/index.jsx');
+  assert.match(source, /latestMessageIdRef/);
+  assert.match(source, /nextMessages\[nextMessages\.length - 1\]\?\._id/);
+  assert.doesNotMatch(source, /nextMessages\.length > loadedMessageCountRef\.current/);
+});

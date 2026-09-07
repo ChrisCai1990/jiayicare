@@ -627,7 +627,7 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
   });
   const playedVoiceIdsRef = useRef(playedVoiceIds);
   const initialPositionedRef = useRef(false);
-  const loadedMessageCountRef = useRef(0);
+  const latestMessageIdRef = useRef('');
   const bottomScrollRef = useRef(100000);
 
   const scrollToThreadBottom = useCallback(() => {
@@ -655,8 +655,12 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
       const nextMessages = res.data || [];
       setMsgs(nextMessages);
       setHumanActive(!!res.humanActive);
-      const hasNewMessage = nextMessages.length > loadedMessageCountRef.current;
-      loadedMessageCountRef.current = nextMessages.length;
+      // Threads are a rolling window of the latest 100 messages. Once full, the
+      // count stays at 100 even when a new message replaces the oldest one, so
+      // compare the newest message identity instead of the array length.
+      const latestMessageId = String(nextMessages[nextMessages.length - 1]?._id || '');
+      const hasNewMessage = !!latestMessageId && latestMessageId !== latestMessageIdRef.current;
+      latestMessageIdRef.current = latestMessageId;
       if (!initialPositionedRef.current) {
         const firstUnread = nextMessages.find((message) => message.type !== 'user' && message.unread);
         const anchorId = firstUnread?._id ? String(firstUnread._id) : '';
