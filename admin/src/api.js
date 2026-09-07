@@ -349,6 +349,7 @@ export const adminAPI = {
   createFollowupPlan: (data)     => req('/followup-plans', { method: 'POST', body: JSON.stringify(data) }),
   updateFollowupPlan: (id, data) => req(`/followup-plans/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   toggleFollowupPlan: (id)       => req(`/followup-plans/${id}/toggle`, { method: 'PATCH' }),
+  reviewFollowupPlan: (id, reviewStatus) => req(`/followup-plans/${id}/review`, { method: 'PATCH', body: JSON.stringify({ reviewStatus }) }),
   deleteFollowupPlan: (id)       => req(`/followup-plans/${id}`, { method: 'DELETE' }),
 
   // 健康评分配置

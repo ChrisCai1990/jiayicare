@@ -802,6 +802,8 @@ router.post('/', auth, async (req, res) => {
       checkDate:          checkDate          || date || '',
       institution:        institution        || hospital || '',
       reportItems:        reportItems        || [],
+      sourceType:         'customer_upload',
+      uploadedByRole:     'customer',
     });
 
     const { content: _, ...reportObj } = report.toObject();

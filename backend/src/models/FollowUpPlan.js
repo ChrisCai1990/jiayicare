@@ -26,6 +26,9 @@ const followUpPlanSchema = new mongoose.Schema({
   completionStandard: { type: String, default: '' },
   default_content:   { type: mongoose.Schema.Types.Mixed, default: {} },
   status:            { type: String, enum: ['active', 'inactive'], default: 'active' },
+  reviewStatus:      { type: String, enum: ['pending_review', 'approved'], default: 'approved' },
+  reviewedAt:        { type: Date, default: null },
+  reviewedBy:        { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
 }, { timestamps: true });
 
 module.exports = mongoose.model('FollowUpPlan', followUpPlanSchema);

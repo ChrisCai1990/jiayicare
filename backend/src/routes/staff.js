@@ -1853,6 +1853,113 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
   res.json({ success: true, data: plan });
 });
 
+async function upsertMedicalAssistModuleTasks(plan, workflowPlan, options = {}) {
+  const c = plan.content || {};
+  const serviceDate = c.serviceDate
+    ? new Date(`${c.serviceDate}T${/^\d{2}:\d{2}/.test(c.serviceTime || '') ? c.serviceTime.slice(0, 5) : '09:00'}:00+08:00`)
+    : new Date();
+  const addDays = (date, days) => new Date(date.getTime() + Number(days || 0) * 86400000);
+  const patient = options.patient || await User.findById(plan.patientId)
+    .select('assignedHealthManager assignedFamilyDoctor assignedNutritionist assignedHealthPlanner assignedMedicalAssistant').lean();
+  const resolveAssignee = (role, fallback) => ({
+    familyDoctor: patient?.assignedFamilyDoctor || c.reviewerId,
+    healthManager: patient?.assignedHealthManager,
+    nutritionist: patient?.assignedNutritionist,
+    healthPlanner: patient?.assignedHealthPlanner || patient?.assignedMedicalAssistant,
+    medicalAssistant: patient?.assignedMedicalAssistant || patient?.assignedHealthPlanner,
+  }[role] || fallback);
+  const workflowKey = String(workflowPlan._id);
+  const workflowStart = plan.pushedAt || plan.createdAt || new Date();
+  const calculatedExecutorDate = addDays(serviceDate, workflowPlan.fixedToServiceDate ? 0 : (workflowPlan.executorDueOffsetDays ?? -1));
+  const executorDate = calculatedExecutorDate < workflowStart ? new Date(workflowStart) : calculatedExecutorDate;
+  const supervisorDate = addDays(serviceDate, workflowPlan.supervisorDueOffsetDays ?? 1);
+  const selectedAssistantId = c.staffId || plan.staffId;
+  const selectedSupervisorId = c.supervisorId || plan.staffId;
+  const executorAssignee = resolveAssignee(workflowPlan.executorRole, selectedAssistantId);
+  const supervisorAssignee = selectedSupervisorId || resolveAssignee(workflowPlan.supervisorRole, selectedSupervisorId);
+  const requirements = [
+    c.hospital && `医院：${c.hospital}`, c.department && `科室：${c.department}`, c.expert && `医生：${c.expert}`,
+    (c.serviceDate || c.serviceTime) && `服务时间：${[c.serviceDate, c.serviceTime].filter(Boolean).join(' ')}`,
+    plan.description && `服务目标：${plan.description}`, c.tasks && `服务要求：${c.tasks}`,
+    options.evidence && `触发依据：${options.evidence}`,
+  ].filter(Boolean).join('\n');
+  const executorTask = await FollowUp.findOneAndUpdate(
+    { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'executor', workflowKey },
+    { $set: {
+      patientId: plan.patientId, staffId: plan.staffId, assignedTo: executorAssignee,
+      date: executorDate, remindAt: addDays(executorDate, -(workflowPlan.remindDaysBefore ?? 3)),
+      coordinationGroupId: `medical-assist:${plan._id}`, workflowKey, taskRole: 'executor', followUpSchemeId: workflowPlan._id,
+      theme: `执行${workflowPlan.name} · ${plan.title || ''}`, content: plan.description || '',
+      plannedContent: [requirements, workflowPlan.completionStandard && `完成标准：${workflowPlan.completionStandard}`].filter(Boolean).join('\n'),
+      status: 'planned', isBlocked: false, activationEvent: '',
+    } },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+  if (workflowPlan.requiresCoordination !== false && supervisorAssignee) {
+    await FollowUp.findOneAndUpdate(
+      { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'supervisor', workflowKey },
+      { $set: {
+        patientId: plan.patientId, staffId: plan.staffId, assignedTo: supervisorAssignee,
+        date: supervisorDate, remindAt: addDays(supervisorDate, -(workflowPlan.remindDaysBefore ?? 3)),
+        coordinationGroupId: `medical-assist:${plan._id}`, workflowKey, taskRole: 'supervisor',
+        dependsOnTaskId: executorTask._id, followUpSchemeId: workflowPlan._id,
+        theme: `督办${workflowPlan.name} · ${plan.title || ''}`,
+        content: '关注执行进度；执行人员完成后核对服务结果、资料归档及后续安排。',
+        plannedContent: `关联执行任务：${executorTask.theme}\n计划服务时间：${serviceDate.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`,
+        status: 'planned', isBlocked: false, activationEvent: '',
+      } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+  }
+  return executorTask;
+}
+
+async function draftConditionalModulesFromAuditedReport(report, explicitAbnormalItems = []) {
+  const reportText = [report.title, report.examConclusion, report.note, ...(report.reportItems || []).flatMap(item => [item.name, item.conclusion, item.diagnosis, item.findings])]
+    .filter(Boolean).join('\n');
+  const abnormalNames = [
+    ...(explicitAbnormalItems || []).map(item => typeof item === 'string' ? item : (item.name || item.itemName || '')),
+    ...(report.reportItems || []).filter(item => ['abnormal', 'attention'].includes(item.status)).map(item => item.name),
+  ].filter(Boolean);
+  const linkedFilter = report.sourceHealthPlanId || report.planId
+    ? { _id: report.sourceHealthPlanId || report.planId }
+    : { patientId: report.user, status: 'active', type: 'medical_assist' };
+  const plans = await HealthPlan.find(linkedFilter);
+  let drafted = 0;
+  for (const plan of plans) {
+    const c = plan.content || {};
+    const modules = (c.workflowModules || c.followUpPlans || []).filter(item => item.mode === 'conditional');
+    if (!modules.length) continue;
+    const previous = Array.isArray(c.workflowModuleDecisions) ? c.workflowModuleDecisions : [];
+    let changed = false;
+    for (const module of modules) {
+      const id = String(module.id || module._id || '');
+      const old = previous.find(item => String(item.id || item._id) === id);
+      if (old && ['needed', 'not_needed'].includes(old.decision)) continue;
+      let aiSuggestion = 'uncertain';
+      let evidence = '当前已审核资料未提供足够依据，需人工确认。';
+      if (module.trigger === 'abnormal_found' && abnormalNames.length) {
+        aiSuggestion = 'needed'; evidence = `报告异常/需关注项目：${[...new Set(abnormalNames)].slice(0, 12).join('、')}`;
+      } else if (module.trigger === 'followup_instruction_found' && /复诊|随诊|复查|再次就诊/.test(reportText)) {
+        aiSuggestion = 'needed'; evidence = `已审核资料出现复诊/复查医嘱：${reportText.match(/[^。；\n]{0,40}(?:复诊|随诊|复查|再次就诊)[^。；\n]{0,60}/)?.[0] || '请查看报告结论'}`;
+      } else if (module.trigger === 'exam_order_found' && /检查单|检验单|完善.{0,20}(?:检查|检验)|建议.{0,20}(?:检查|检验)/.test(reportText)) {
+        aiSuggestion = 'needed'; evidence = `已审核资料出现检查安排：${reportText.match(/[^。；\n]{0,40}(?:检查单|检验单|完善|建议)[^。；\n]{0,60}/)?.[0] || '请查看报告结论'}`;
+      }
+      const record = { ...module, id, decision: 'pending', aiSuggestion, evidence, aiDraftedAt: new Date(), decidedAt: null, decidedBy: null, reviewerRole: module.trigger === 'exam_order_found' ? 'healthPlanner' : 'familyDoctor' };
+      const index = previous.findIndex(item => String(item.id || item._id) === id);
+      if (index >= 0) previous[index] = record; else previous.push(record);
+      changed = true; drafted += 1;
+    }
+    if (changed) {
+      c.workflowModuleDecisions = previous;
+      plan.content = c;
+      plan.markModified('content');
+      await plan.save();
+    }
+  }
+  return drafted;
+}
+
 // PATCH /api/staff/plans/:id/push — 推送方案至客户端
 router.patch('/plans/:id/push', staffAuth, async (req, res) => {
   const plan = await HealthPlan.findById(req.params.id);
@@ -1919,7 +2026,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
     const workflowIds = (plan.content?.followUpPlans?.length
       ? plan.content.followUpPlans.map(item => item.id || item._id).filter(Boolean)
       : [plan.content?.followUpPlanId].filter(Boolean));
-    const workflowPlans = (await FollowUpPlan.find({ _id: { $in: workflowIds }, status: 'active' }).lean())
+    const workflowPlans = (await FollowUpPlan.find({ _id: { $in: workflowIds }, status: 'active', reviewStatus: { $ne: 'pending_review' } }).lean())
       .filter(item => !isReportInterpretation(item.name));
     if (!workflowPlans.length) return res.status(400).json({ success: false, message: '关联的岗位任务方案已停用或不存在' });
     const configuredModules = c.workflowModules?.length ? c.workflowModules : (c.followUpPlans || []);
@@ -1972,53 +2079,9 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
       );
     }
     const patient = await User.findById(plan.patientId).select('assignedHealthManager assignedFamilyDoctor assignedNutritionist assignedHealthPlanner assignedMedicalAssistant').lean();
-    const resolveAssignee = (role, fallback) => ({
-      familyDoctor: patient?.assignedFamilyDoctor || c.reviewerId,
-      healthManager: patient?.assignedHealthManager,
-      nutritionist: patient?.assignedNutritionist,
-      healthPlanner: patient?.assignedHealthPlanner || patient?.assignedMedicalAssistant,
-      medicalAssistant: patient?.assignedMedicalAssistant || patient?.assignedHealthPlanner,
-    }[role] || fallback);
     // 每个被筛选的岗位任务方案各生成一组“执行+督办”；workflowKey 保证重复推送只更新对应组。
     for (const workflowPlan of fixedWorkflowPlans) {
-      const workflowKey = String(workflowPlan._id);
-      const workflowStart = plan.pushedAt || plan.createdAt || new Date();
-      const calculatedExecutorDate = addDays(serviceDate, workflowPlan.fixedToServiceDate ? 0 : (workflowPlan.executorDueOffsetDays ?? -1));
-      const executorDate = calculatedExecutorDate < workflowStart ? new Date(workflowStart) : calculatedExecutorDate;
-      const supervisorDate = addDays(serviceDate, workflowPlan.supervisorDueOffsetDays ?? 1);
-      const executorRemindAt = addDays(executorDate, -(workflowPlan.remindDaysBefore ?? 3));
-      const supervisorRemindAt = addDays(supervisorDate, -(workflowPlan.remindDaysBefore ?? 3));
-      const executorAssignee = resolveAssignee(workflowPlan.executorRole, selectedAssistantId);
-      // 督办人是方案制定时明确选定的人，必须优先于客户档案里的默认归属。
-      const supervisorAssignee = selectedSupervisorId || resolveAssignee(workflowPlan.supervisorRole, selectedSupervisorId);
-      const executorTask = await FollowUp.findOneAndUpdate(
-        { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'executor', workflowKey },
-        { $set: {
-          patientId: plan.patientId, staffId: plan.staffId, date: executorDate, remindAt: executorRemindAt,
-          coordinationGroupId, workflowKey, taskRole: 'executor', followUpSchemeId: workflowPlan._id,
-          theme: `执行${workflowPlan.name} · ${plan.title || ''}`, content: plan.description || '',
-          plannedContent: [requirements, workflowPlan.completionStandard && `完成标准：${workflowPlan.completionStandard}`].filter(Boolean).join('\n'),
-          status: 'planned', assignedTo: executorAssignee,
-          isBlocked: false,
-          activationEvent: '',
-        } },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
-      );
-      if (workflowPlan.requiresCoordination !== false && supervisorAssignee) {
-        await FollowUp.findOneAndUpdate(
-          { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'supervisor', workflowKey },
-          { $set: {
-            patientId: plan.patientId, staffId: plan.staffId, assignedTo: supervisorAssignee,
-            date: supervisorDate, remindAt: supervisorRemindAt, coordinationGroupId, workflowKey, taskRole: 'supervisor',
-            dependsOnTaskId: executorTask._id, followUpSchemeId: workflowPlan._id,
-            theme: `督办${workflowPlan.name} · ${plan.title || ''}`,
-            content: '关注执行进度；执行人员完成后核对服务结果、资料归档及后续安排。',
-            plannedContent: `关联执行任务：${executorTask.theme}\n计划服务时间：${serviceDate.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`,
-            status: 'planned', isBlocked: false, activationEvent: '',
-          } },
-          { upsert: true, new: true, setDefaultsOnInsert: true }
-        );
-      }
+      await upsertMedicalAssistModuleTasks(plan, workflowPlan, { patient });
     }
     // 服务次日由健管专员回收资料：体检服务收体检报告，普通陪诊/就医服务收就医资料。
     // 二者共用一个系统节点并兼容迁移旧 key，重复推送不会再叠加任务。
@@ -2082,6 +2145,54 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
     );
   }
   res.json({ success: true, data: plan });
+});
+
+// Review one conditional module. AI may supply a suggestion/evidence, but only
+// the responsible professional can turn it into an executable task.
+router.patch('/plans/:id/workflow-modules/:moduleId/decision', staffAuth, async (req, res) => {
+  const plan = await HealthPlan.findById(req.params.id);
+  if (!plan || plan.type !== 'medical_assist') return res.status(404).json({ success: false, message: '服务方案不存在' });
+  const visibleIds = await getVisiblePlanPatientIds(req.staff);
+  if (visibleIds && !visibleIds.some(id => String(id) === String(plan.patientId))) {
+    return res.status(403).json({ success: false, message: '无权查看该会员的方案' });
+  }
+  const decision = String(req.body?.decision || '');
+  if (!['needed', 'not_needed', 'uncertain'].includes(decision)) {
+    return res.status(400).json({ success: false, message: '请选择需要、不需要或待确认' });
+  }
+  const c = plan.content || {};
+  const modules = c.workflowModules?.length ? c.workflowModules : (c.followUpPlans || []);
+  const module = modules.find(item => String(item.id || item._id) === String(req.params.moduleId));
+  if (!module || module.mode === 'fixed') return res.status(400).json({ success: false, message: '该节点不是可判断的按需节点' });
+  const requiredRole = module.trigger === 'exam_order_found' ? 'healthPlanner' : 'familyDoctor';
+  if (!['superadmin', requiredRole].includes(req.staff.role)) {
+    return res.status(403).json({ success: false, message: requiredRole === 'familyDoctor' ? '需由健康顾问审核' : '需由健康规划师审核' });
+  }
+  const evidence = String(req.body?.evidence || '').trim().slice(0, 2000);
+  const existing = Array.isArray(c.workflowModuleDecisions) ? c.workflowModuleDecisions : [];
+  const record = {
+    ...module, id: String(module.id || module._id), decision, evidence,
+    aiSuggestion: ['needed', 'not_needed', 'uncertain'].includes(req.body?.aiSuggestion) ? req.body.aiSuggestion : '',
+    decidedAt: decision === 'uncertain' ? null : new Date(),
+    decidedBy: decision === 'uncertain' ? null : req.staff._id,
+    reviewerRole: requiredRole,
+  };
+  c.workflowModuleDecisions = [...existing.filter(item => String(item.id || item._id) !== String(req.params.moduleId)), record];
+  plan.content = c;
+  plan.markModified('content');
+  await plan.save();
+
+  const workflowPlan = await FollowUpPlan.findOne({ _id: req.params.moduleId, status: 'active', reviewStatus: { $ne: 'pending_review' } }).lean();
+  if (!workflowPlan) return res.status(400).json({ success: false, message: '岗位任务方案已停用或不存在' });
+  if (decision === 'needed') {
+    await upsertMedicalAssistModuleTasks(plan, workflowPlan, { evidence });
+  } else if (decision === 'not_needed') {
+    await FollowUp.updateMany(
+      { sourceHealthPlanId: plan._id, sourceType: 'health_plan', workflowKey: String(workflowPlan._id), status: { $in: ['planned', 'in_progress'] } },
+      { $set: { status: 'cancelled', cancelReason: `按需节点审核结果：不需要${evidence ? `；${evidence}` : ''}` } }
+    );
+  }
+  res.json({ success: true, data: record, message: decision === 'needed' ? '已审核并生成对应任务' : decision === 'not_needed' ? '已审核并跳过该节点' : '已保留为待确认' });
 });
 
 // PATCH /api/staff/plans/:id/items/:itemId — 更新方案项目状态
@@ -2408,7 +2519,7 @@ router.patch('/medical-reports/:id/items/:itemId', staffAuth, async (req, res) =
 // POST /api/staff/medical-reports — 上传报告（Base64）
 router.post('/medical-reports', staffAuth, async (req, res) => {
   try {
-    const { patientId, title, type, documentCategory, hospital, date, fileUrl, fileUrls, ossKey, ossKeys, content, mimeType, fileSize, planId, planItemId, screeningL1, screeningL2 } = req.body;
+    const { patientId, title, type, documentCategory, hospital, date, fileUrl, fileUrls, ossKey, ossKeys, content, mimeType, fileSize, planId, planItemId, screeningL1, screeningL2, sourceOrderId, sourceProductId, sourceServiceRecordId } = req.body;
     if (!patientId || !title) return res.status(400).json({ success: false, message: '会员和标题不能为空' });
     // fileUrls（一份报告多张照片场景）优先，fileUrl 仍取第一个做兼容，不破坏现有单文件读取逻辑
     const resolvedFileUrls = Array.isArray(fileUrls) && fileUrls.length ? fileUrls : (fileUrl ? [fileUrl] : []);
@@ -2462,6 +2573,12 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
         if (title) existing.title = title;
         if (hospital) existing.hospital = hospital;
         if (documentCategory) existing.documentCategory = documentCategory;
+        existing.sourceType = planId ? 'health_plan' : (sourceServiceRecordId ? 'service_record' : (sourceOrderId ? 'order' : 'staff_upload'));
+        existing.sourceHealthPlanId = planId || existing.sourceHealthPlanId || null;
+        existing.sourceOrderId = sourceOrderId || existing.sourceOrderId || null;
+        existing.sourceProductId = sourceProductId || existing.sourceProductId || null;
+        existing.sourceServiceRecordId = sourceServiceRecordId || existing.sourceServiceRecordId || null;
+        existing.uploadedByRole = req.staff.role || existing.uploadedByRole || '';
         if (resolvedFileUrl) {
           existing.fileUrl = resolvedFileUrl;
           existing.fileUrls = resolvedFileUrls;
@@ -2493,6 +2610,9 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
       fileUrl: resolvedFileUrl, fileUrls: resolvedFileUrls, ossKey: resolvedOssKey, ossKeys: resolvedOssKeys, content: effectiveContent,
       mimeType: effectiveMimeType, fileSize: fileSize || '',
       uploadedBy: req.staff._id, audit_status: 'unaudited',
+      sourceType: planId ? 'health_plan' : (sourceServiceRecordId ? 'service_record' : (sourceOrderId ? 'order' : 'staff_upload')),
+      sourceHealthPlanId: planId || null, sourceOrderId: sourceOrderId || null, sourceProductId: sourceProductId || null,
+      sourceServiceRecordId: sourceServiceRecordId || null, uploadedByRole: req.staff.role || '',
       planId: planId || null, planItemId: planItemId || null,
       screeningL1: resolvedScreeningL1, screeningL2: screeningL2 || '',
     });
@@ -2759,8 +2879,10 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
         if (item) { item.status = 'completed'; item.completedAt = new Date(); await plan.save(); }
       }
     }
-    // 如果有异常项目，自动创建复查任务 + 用户待办任务
-    if (abnormalItems && abnormalItems.length > 0) {
+    // 已接入统一服务流程时，先生成按需节点草稿，由健康顾问/健康规划师审核后再建任务；
+    // 未接入的历史客户继续沿用原异常复查逻辑，避免已有服务断档。
+    const conditionalDrafts = await draftConditionalModulesFromAuditedReport(report, abnormalItems || []);
+    if (abnormalItems && abnormalItems.length > 0 && conditionalDrafts === 0) {
       const staffName = req.staff.name || req.staff.username || '健管师';
       const reviewTitle = `${report.title || '报告'}异常复查`;
       const task = await Task.create({
@@ -3022,7 +3144,7 @@ router.get('/plan-templates', staffAuth, async (req, res) => {
 // GET /api/staff/followup-plans — 获取启用的随访方案列表（含表单结构和预设内容）
 router.get('/followup-plans', staffAuth, async (req, res) => {
   try {
-    const plans = await FollowUpPlan.find({ status: 'active' })
+    const plans = await FollowUpPlan.find({ status: 'active', reviewStatus: { $ne: 'pending_review' } })
       .populate('formId', 'name fields')
       .sort({ name: 1 })
       .lean();
@@ -7057,7 +7179,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     const requiredScreeningKeys = ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'annual_checkup'];
     const allowedKeys = [...new Set([...(PLAN_TYPE_MODULES[planType] || GENERATABLE), ...requiredScreeningKeys])]
       .filter(k => GENERATABLE.includes(k) && (requiredScreeningKeys.includes(k) || allowedByTemplate(k)));
-    const standardFollowUpPlans = await FollowUpPlan.find({ status: 'active' })
+    const standardFollowUpPlans = await FollowUpPlan.find({ status: 'active', reviewStatus: { $ne: 'pending_review' } })
       .select('name cycles defaultRole defaultEmployeeId default_content').sort({ name: 1 }).lean();
     const standardFollowUpCatalog = standardFollowUpPlans.map((item, index) => ({
       index: index + 1, id: String(item._id), name: item.name,

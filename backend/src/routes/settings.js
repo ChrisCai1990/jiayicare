@@ -830,6 +830,18 @@ router.patch('/followup-plans/:id/toggle', adminAuth, async (req, res) => {
   res.json({ success: true, data: plan });
 });
 
+router.patch('/followup-plans/:id/review', adminAuth, async (req, res) => {
+  const reviewStatus = req.body?.reviewStatus;
+  if (!['pending_review', 'approved'].includes(reviewStatus)) return res.status(400).json({ success: false, message: '审核状态无效' });
+  const plan = await FollowUpPlan.findByIdAndUpdate(req.params.id, {
+    reviewStatus,
+    reviewedAt: reviewStatus === 'approved' ? new Date() : null,
+    reviewedBy: reviewStatus === 'approved' ? req.admin._id : null,
+  }, { new: true });
+  if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+  res.json({ success: true, data: plan, message: reviewStatus === 'approved' ? '方案已审核通过' : '方案已退回待审核' });
+});
+
 router.delete('/followup-plans/:id', adminAuth, async (req, res) => {
   await FollowUpPlan.findByIdAndDelete(req.params.id);
   res.json({ success: true, message: '随访方案已删除' });

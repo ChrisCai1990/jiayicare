@@ -131,6 +131,11 @@ export default function FollowUpPlanPage() {
     try { await adminAPI.toggleFollowupPlan(item._id); loadAll() } catch (e) { toast(e.message) }
   }
 
+  const handleReview = async item => {
+    const next = item.reviewStatus === 'pending_review' ? 'approved' : 'pending_review'
+    try { const r = await adminAPI.reviewFollowupPlan(item._id, next); toast(r.message); loadAll() } catch (e) { toast(e.message) }
+  }
+
   const handleDelete = async item => {
     if (!window.confirm(`确定删除「${item.name}」？`)) return
     try { await adminAPI.deleteFollowupPlan(item._id); toast('已删除'); loadAll() } catch (e) { toast(e.message) }
@@ -186,10 +191,12 @@ export default function FollowUpPlanPage() {
                     <span style={{ padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600, background: item.status === 'active' ? '#E8F5EF' : '#FEF2F2', color: item.status === 'active' ? '#1E6B50' : '#DC2626' }}>
                       {item.status === 'active' ? '启用' : '停用'}
                     </span>
+                    <span style={{ marginLeft: 5, padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600, background: item.reviewStatus === 'pending_review' ? '#FFF4D6' : '#E8F5EF', color: item.reviewStatus === 'pending_review' ? '#9A6700' : '#1E6B50' }}>{item.reviewStatus === 'pending_review' ? '待审核' : '已审核'}</span>
                   </td>
                   <td style={{ padding: '10px 14px' }}>
                     <button className="btn btn-secondary btn-sm" onClick={() => openEdit(item)} style={{ marginRight: 4 }}>编辑</button>
                     <button className="btn btn-secondary btn-sm" onClick={() => handleToggle(item)} style={{ marginRight: 4 }}>{item.status === 'active' ? '停用' : '启用'}</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => handleReview(item)} style={{ marginRight: 4 }}>{item.reviewStatus === 'pending_review' ? '审核通过' : '退回审核'}</button>
                     <button className="btn btn-danger btn-sm" onClick={() => handleDelete(item)}>删除</button>
                   </td>
                 </tr>

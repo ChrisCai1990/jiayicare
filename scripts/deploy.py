@@ -196,6 +196,16 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("服务流程审核稿初始化失败")
+        code, _ = remote(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/migrateUnifiedServiceWorkflowV2.js ] && "
+            f"[ ! -f {REPO_DIR}/.unified-service-workflow-v2-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/migrateUnifiedServiceWorkflowV2.js --apply && "
+            f"touch {REPO_DIR}/.unified-service-workflow-v2-applied; fi",
+            timeout=120,
+            label="修正服务流程关联并启用统一条件节点",
+        )
+        if code:
+            raise RuntimeError("统一服务流程数据修正失败")
         time.sleep(3)
 
         code, output = remote(

@@ -305,6 +305,16 @@ export default function PlanModulesPage() {
     } catch (err) { toast(err.message || '删除失败') }
   }
 
+  const handleModuleDecision = async (item, decision) => {
+    const evidence = window.prompt(decision === 'needed' ? '请填写启动该节点的依据' : decision === 'not_needed' ? '请填写跳过该节点的依据' : '请记录仍需确认的信息', item.evidence || '')
+    if (evidence === null) return
+    try {
+      const res = await staffAPI.decideWorkflowModule(id, item.id || item._id, { decision, evidence })
+      setPlan(prev => ({ ...prev, content: { ...(prev.content || {}), workflowModuleDecisions: (prev.content?.workflowModuleDecisions || []).map(old => String(old.id || old._id) === String(item.id || item._id) ? res.data : old) } }))
+      toast(res.message)
+    } catch (err) { toast(err.message || '审核失败') }
+  }
+
   if (loading) return <div style={{ textAlign: 'center', padding: 80, color: '#aaa' }}>加载中...</div>
   if (!plan) return <div style={{ textAlign: 'center', padding: 80, color: '#aaa' }}>方案不存在</div>
 
@@ -403,6 +413,22 @@ export default function PlanModulesPage() {
               <select className="form-input" value={moduleData.visit?.supervisorId || ''} onChange={e => handleModuleChange('visit', 'supervisorId', e.target.value)}><option value="">请选择健管专员/家庭医生</option>{searchableSupervisors.map(s => <option key={s._id} value={s._id}>{s.name} · {s.roleLabel}</option>)}</select>
             </div>
           </div>
+        </div>
+      )}
+      {plan.type === 'medical_assist' && !!plan.content?.workflowModuleDecisions?.length && (
+        <div style={{ background: '#fff', borderRadius: 12, padding: 20, marginBottom: 20, border: '1px solid #E0D9CE' }}>
+          <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24', marginBottom: 4 }}>按需节点审核</div>
+          <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 14 }}>AI只整理依据；对应岗位审核“需要／不需要”，系统再生成或跳过任务。</div>
+          <div style={{ display: 'grid', gap: 10 }}>{plan.content.workflowModuleDecisions.map(item => {
+            const roleName = item.reviewerRole === 'familyDoctor' ? '健康顾问' : '健康规划师'
+            const canReview = ['superadmin', item.reviewerRole].includes(staff?.role)
+            return <div key={item.id || item._id} style={{ padding: 12, borderRadius: 10, background: '#F7FAF8', border: '1px solid #E3EAE6' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}><strong>{item.name || '按需服务节点'}</strong><span style={{ fontSize: 12, color: '#6B7D74' }}>{roleName}审核</span></div>
+              <div style={{ marginTop: 6, fontSize: 12, color: '#6B7D74' }}>当前：{item.decision === 'needed' ? '需要' : item.decision === 'not_needed' ? '不需要' : '待确认'}{item.aiSuggestion ? ` · AI建议：${item.aiSuggestion === 'needed' ? '需要' : item.aiSuggestion === 'not_needed' ? '不需要' : '信息不足'}` : ''}</div>
+              {item.evidence && <div style={{ marginTop: 5, fontSize: 12, color: '#4A6558' }}>依据：{item.evidence}</div>}
+              {canReview && <div style={{ display: 'flex', gap: 7, marginTop: 9 }}><button className="btn btn-primary btn-sm" onClick={() => handleModuleDecision(item, 'needed')}>需要，生成任务</button><button className="btn btn-secondary btn-sm" onClick={() => handleModuleDecision(item, 'not_needed')}>不需要，跳过</button><button className="btn btn-secondary btn-sm" onClick={() => handleModuleDecision(item, 'uncertain')}>信息不足</button></div>}
+            </div>
+          })}</div>
         </div>
       )}
       <div style={{ marginBottom: 20 }}>

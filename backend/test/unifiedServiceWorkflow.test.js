@@ -26,3 +26,17 @@ test('健康顾问不再收到逐报告或档案更新审核待办', () => {
   assert.doesNotMatch(route, /if \(can\('report_familydoctor_review'\)\)/);
   assert.doesNotMatch(panel, /report_familydoctor_review/);
 });
+
+test('未审核随访方案不能进入任务生成或医护选择列表', () => {
+  const model = read('src/models/FollowUpPlan.js');
+  const route = read('src/routes/staff.js');
+  assert.match(model, /reviewStatus:\s+\{ type: String, enum: \['pending_review', 'approved'\]/);
+  assert.ok((route.match(/reviewStatus: \{ \$ne: 'pending_review' \}/g) || []).length >= 3);
+});
+
+test('报告来源独立于现有临床分类保存', () => {
+  const model = read('src/models/MedicalReport.js');
+  assert.match(model, /sourceType: \{ type: String/);
+  assert.match(model, /sourceHealthPlanId:/);
+  assert.match(model, /sourceServiceRecordId:/);
+});
