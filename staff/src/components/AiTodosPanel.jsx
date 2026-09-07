@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useStaff } from '../App'
@@ -69,12 +69,33 @@ export default function AiTodosPanel() {
   const [group, setGroup] = useState('all')
   const [supplyTodo, setSupplyTodo] = useState(null)
 
-  useEffect(() => {
-    staffAPI.getAiTodos()
-      .then(r => setTodos((r.data || []).filter(t => !['symptom_verify', 'symptom_review'].includes(t.type))))
+  const refreshTodos = useCallback(({ silent = false } = {}) => {
+    if (!silent) setLoading(true)
+    return staffAPI.getAiTodos()
+      .then(r => {
+        setTodos((r.data || []).filter(t => !['symptom_verify', 'symptom_review'].includes(t.type)))
+      })
       .catch(() => {})
-      .finally(() => setLoading(false))
+      .finally(() => { if (!silent) setLoading(false) })
   }, [])
+
+  useEffect(() => {
+    refreshTodos()
+
+    // 待办可能在详情页、另一个浏览器窗口或其他岗位协作中完成。窗口重新获得焦点、
+    // 页面从后台恢复以及短周期轮询时都向服务端复核，避免所有岗位看到已经处理完的旧项。
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible') refreshTodos({ silent: true })
+    }
+    window.addEventListener('focus', refreshIfVisible)
+    document.addEventListener('visibilitychange', refreshIfVisible)
+    const timer = window.setInterval(refreshIfVisible, 30000)
+    return () => {
+      window.removeEventListener('focus', refreshIfVisible)
+      document.removeEventListener('visibilitychange', refreshIfVisible)
+      window.clearInterval(timer)
+    }
+  }, [refreshTodos])
 
   const resolveAlert = (e, todo) => {
     e.stopPropagation()
@@ -131,9 +152,9 @@ export default function AiTodosPanel() {
     <div className="card" style={{ marginBottom: 20, border: overdueCount > 0 ? '1.5px solid #DC354540' : undefined }}>
       <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div className="card-title">AI 待审核任务</div>
+          <div className="card-title">待处理任务</div>
           {staff?.roleLabel && staff?.role !== 'superadmin' && (
-            <span style={{ fontSize: 12, color: '#8AA89C' }}>· {staff.roleLabel}（仅显示本人可审核项）</span>
+            <span style={{ fontSize: 12, color: '#8AA89C' }}>· {staff.roleLabel}（仅显示本人当前待处理项）</span>
           )}
           {todos.length > 0 && (
             <span style={{
@@ -162,7 +183,7 @@ export default function AiTodosPanel() {
       <div className="card-body" style={{ padding: '4px 20px 12px' }}>
         {todos.length === 0 && (
           <div style={{ color: '#8AA89C', fontSize: 13, textAlign: 'center', padding: '16px 0' }}>
-            暂无待审核任务
+            暂无待处理任务
           </div>
         )}
         {pageTodos.map((todo, i) => {

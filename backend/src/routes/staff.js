@@ -2715,6 +2715,12 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
   if (action === 'approve') {
     applyAuditedInstitution(report);
     report.audit_status = 'audited';
+    // audit_status 与 aiStatus 是历史上先后引入的两套审核状态。无论从“审核AI结果”
+    // 还是旧的“审核报告”入口通过，都必须同时闭环，否则首页只按 aiStatus 聚合时会把
+    // 已完成报告永久当成待办。这里也统一补齐审核人和审核时间，保证所有岗位看到同一事实。
+    report.aiStatus = 'reviewed';
+    report.reviewedAt = new Date();
+    report.reviewedByStaff = req.staff._id;
     report.audited_by = req.staff.name;
     report.audited_at = new Date();
     // 健管专员审核通过这一刻的 reportItems 存一份只读快照，供健康顾问后续编辑后仍可溯源
@@ -8406,7 +8412,13 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     }
 
     if (can('report_review')) {
-      const reportFilter = { aiStatus: 'pending', ...(reportPatientIds ? { user: { $in: reportPatientIds } } : {}) };
+      // 同时校验业务审核状态，兼容历史上 audit_status 已完成但 aiStatus 仍残留 pending 的数据。
+      // 待办的统一口径是“现在仍需处理”，任一完成入口闭环后都不能再次出现。
+      const reportFilter = {
+        aiStatus: 'pending',
+        audit_status: { $ne: 'audited' },
+        ...(reportPatientIds ? { user: { $in: reportPatientIds } } : {}),
+      };
       const pendingReports = await MedicalReport.find(reportFilter)
         .populate('user', 'name phone').sort({ updatedAt: -1 }).limit(50).lean();
       pendingReports.forEach(r => {
