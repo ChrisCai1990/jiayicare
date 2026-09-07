@@ -1936,7 +1936,6 @@ router.patch('/products/:id/service-workflow', adminAuth, async (req, res) => {
   const key = req.body.key;
   const followUpPlanId = req.body?.followUpPlanId || null;
   if (followUpPlanId && !mongoose.Types.ObjectId.isValid(followUpPlanId)) return res.status(400).json({ success: false, message: '随访方案参数无效' });
-  if (!key && followUpPlanId) return res.status(400).json({ success: false, message: '请先选择主流程，再关联随访方案' });
   if (followUpPlanId && !await FollowUpPlan.exists({ _id: followUpPlanId, status: 'active' })) {
     return res.status(400).json({ success: false, message: '关联的随访方案不存在或已停用' });
   }
