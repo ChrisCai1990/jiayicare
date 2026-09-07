@@ -4540,7 +4540,7 @@ router.patch('/supply-plans/:id/intake', staffAuth, async (req, res) => {
     const mode = req.body.fulfillmentMode || 'undecided';
     const workflowConfig = await getSupplyWorkflowConfig();
     const typeConfig = workflowConfig[plan.planType];
-    if (!typeConfig?.enabled) return res.status(409).json({ success: false, message: 'Admin已停用该品类的定期补充流程' });
+    if (!typeConfig?.enabled) return res.status(409).json({ success: false, message: 'Admin已停用该品类的药品与营养素补充流程' });
     if (!typeConfig.allowedModes.includes(mode)) return res.status(400).json({ success: false, message: '该履约方式未在Admin中启用' });
     if (mode === 'hospital_assisted' && plan.planType !== 'medication') return res.status(400).json({ success: false, message: '医院配药仅适用于药品' });
     if (mode === 'internal_product' && plan.planType !== 'supplement') return res.status(400).json({ success: false, message: '自研产品履约仅适用于营养素/营养代餐' });

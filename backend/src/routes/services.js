@@ -424,6 +424,7 @@ router.post('/order', auth, async (req, res) => {
     })),
     performanceRuleSnapshot: product?.performanceRule ? (product.performanceRule.toObject ? product.performanceRule.toObject() : product.performanceRule) : null,
     servicePerformerRolesSnapshot: (product?.servicePerformerRoles || []).map(p => p.toObject ? p.toObject() : p),
+    serviceWorkflowSnapshot: product?.serviceWorkflow ? (product.serviceWorkflow.toObject ? product.serviceWorkflow.toObject() : product.serviceWorkflow) : null,
     paymentMethod: fundUsed > 0 && paidAmount === 0 ? 'healthFund' : (paidAmount > 0 ? 'wechat' : ''),
     paymentStatus: paidAmount > 0 ? 'pending' : 'paid',
     paidAmount: 0,

@@ -1930,6 +1930,23 @@ router.put('/system-config/health-assistant', adminAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+router.patch('/products/:id/service-workflow', adminAuth, async (req, res) => {
+  const allowedKeys = ['', 'annual_management', 'nutrition_intervention', 'checkup', 'medical_assist', 'rehab', 'tcm', 'psychology', 'medication_supply', 'supplement_supply', 'generic_followup', 'fulfillment_only'];
+  if (!allowedKeys.includes(req.body?.key)) return res.status(400).json({ success: false, message: '请选择有效的服务流程' });
+  const key = req.body.key;
+  const followUpPlanId = req.body?.followUpPlanId || null;
+  if (followUpPlanId && !mongoose.Types.ObjectId.isValid(followUpPlanId)) return res.status(400).json({ success: false, message: '随访方案参数无效' });
+  if (!key && followUpPlanId) return res.status(400).json({ success: false, message: '请先选择主流程，再关联随访方案' });
+  if (followUpPlanId && !await FollowUpPlan.exists({ _id: followUpPlanId, status: 'active' })) {
+    return res.status(400).json({ success: false, message: '关联的随访方案不存在或已停用' });
+  }
+  const product = await Product.findByIdAndUpdate(req.params.id, { $set: { serviceWorkflow: {
+    key, followUpPlanId, notes: String(req.body?.notes || '').trim().slice(0, 500),
+  } } }, { new: true, runValidators: true });
+  if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
+  res.json({ success: true, data: product.serviceWorkflow, message: '产品服务流程已关联' });
+});
+
 // 药品/营养素定期补充服务流程。医疗安全门禁与专业审核岗位固定，运营参数保存后实时生效。
 router.get('/system-config/supply-workflow', adminAuth, async (_req, res) => {
   try {
@@ -1944,10 +1961,10 @@ router.put('/system-config/supply-workflow', adminAuth, async (req, res) => {
     const value = normalizeSupplyWorkflowConfig(req.body);
     await SystemConfig.findOneAndUpdate(
       { key: 'supplyWorkflow' },
-      { key: 'supplyWorkflow', value, label: '药品与营养素定期补充流程' },
+      { key: 'supplyWorkflow', value, label: '药品与营养素补充流程' },
       { upsert: true, new: true }
     );
-    res.json({ success: true, data: value, message: '定期补充流程已保存并实时生效' });
+    res.json({ success: true, data: value, message: '药品与营养素补充流程已保存并实时生效' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
