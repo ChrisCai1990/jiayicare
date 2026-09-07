@@ -216,6 +216,16 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("验收样例条件节点补齐失败")
+        code, _ = remote(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/migrateUnifiedServiceWorkflowV4Deduplicate.js ] && "
+            f"[ ! -f {REPO_DIR}/.unified-service-workflow-v4-deduplicate-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/migrateUnifiedServiceWorkflowV4Deduplicate.js && "
+            f"touch {REPO_DIR}/.unified-service-workflow-v4-deduplicate-applied; fi",
+            timeout=120,
+            label="合并门诊一站式重复复诊节点",
+        )
+        if code:
+            raise RuntimeError("门诊一站式重复节点修正失败")
         time.sleep(3)
 
         code, output = remote(
