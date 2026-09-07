@@ -183,6 +183,19 @@ def deploy(backend_only=False, clean=False, github_source=False):
         code, _ = remote("pm2 restart jiayicare-backend", timeout=30, label="重启后端")
         if code:
             raise RuntimeError("后端重启失败")
+
+        # One-time, idempotent data migration. The server marker prevents later
+        # deployments from overwriting Admin adjustments made after review.
+        code, _ = remote(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/seedServiceWorkflowDrafts.js ] && "
+            f"[ ! -f {REPO_DIR}/.service-workflow-drafts-v1-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/seedServiceWorkflowDrafts.js --apply && "
+            f"touch {REPO_DIR}/.service-workflow-drafts-v1-applied; fi",
+            timeout=120,
+            label="初始化服务流程、随访计划和方案审核稿",
+        )
+        if code:
+            raise RuntimeError("服务流程审核稿初始化失败")
         time.sleep(3)
 
         code, output = remote(
