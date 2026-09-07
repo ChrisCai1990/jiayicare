@@ -19,20 +19,17 @@ function maxFundDeduction(healthFund, amount, product) {
   const policy = healthFund?.policy || {};
   if (orderAmount < (Number(policy.minOrderAmount) || 0)) return 0;
 
-  // 自有基金只受余额和订单金额限制；企业商品范围、商品开关和商品上限
-  // 都只约束企业赠送基金，与后端 validateHealthFundDeduction 保持一致。
+  // 与服务端保持同一顺序：先使用自有基金，再以剩余应付金额为基数
+  // 应用商品配置的企业基金比例。平台不再叠加固定金额上限。
   const personal = Math.min(Number(healthFund?.personal) || 0, orderAmount);
+  const remainingAfterPersonal = Math.max(0, orderAmount - personal);
   const productRule = product?.healthFundDeduction;
   let corporate = 0;
   if (healthFund?.rule?.enabled !== false && corporateProductEligible(policy, product, productRule)) {
     const productLimit = productRule?.mode && !['inherit', 'unlimited'].includes(productRule.mode)
-      ? policyLimit(productRule.mode, productRule.value, orderAmount)
-      : orderAmount;
-    const corporateLimit = Math.min(
-      policyLimit(policy.corporateDeductionType, policy.corporateDeductionValue, orderAmount),
-      productLimit,
-    );
-    corporate = Math.min(Number(healthFund?.corporate) || 0, corporateLimit);
+      ? policyLimit(productRule.mode, productRule.value, remainingAfterPersonal)
+      : remainingAfterPersonal;
+    corporate = Math.min(Number(healthFund?.corporate) || 0, productLimit);
   }
   return Math.max(0, Math.min(orderAmount, personal + corporate));
 }

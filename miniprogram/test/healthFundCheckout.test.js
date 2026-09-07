@@ -23,5 +23,14 @@ test('corporate limits never cap the personal portion', () => {
     corporate: 580,
     policy: { corporateDeductionType: 'fixedAmount', corporateDeductionValue: 1 },
     rule: { enabled: true },
-  }, 20, { id: 'medical-assist', healthFundDeduction: { mode: 'fixedAmount', value: 2 } }), 5);
+  }, 20, { id: 'medical-assist', healthFundDeduction: { mode: 'fixedAmount', value: 2 } }), 6);
+});
+
+test('uses personal fund first and applies product percentage to the remaining amount', () => {
+  assert.equal(maxFundDeduction({
+    personal: 4,
+    corporate: 580,
+    policy: { corporateDeductionType: 'fixedAmount', corporateDeductionValue: 200 },
+    rule: { enabled: true },
+  }, 2000, { id: 'checkup', healthFundDeduction: { mode: 'percentage', value: 10 } }), 203.6);
 });
