@@ -1934,13 +1934,16 @@ router.patch('/products/:id/service-workflow', adminAuth, async (req, res) => {
   const allowedKeys = ['', 'annual_management', 'nutrition_intervention', 'checkup', 'medical_assist', 'rehab', 'tcm', 'psychology', 'medication_supply', 'supplement_supply', 'generic_followup', 'fulfillment_only'];
   if (!allowedKeys.includes(req.body?.key)) return res.status(400).json({ success: false, message: '请选择有效的服务流程' });
   const key = req.body.key;
-  const followUpPlanId = req.body?.followUpPlanId || null;
-  if (followUpPlanId && !mongoose.Types.ObjectId.isValid(followUpPlanId)) return res.status(400).json({ success: false, message: '随访方案参数无效' });
-  if (followUpPlanId && !await FollowUpPlan.exists({ _id: followUpPlanId, status: 'active' })) {
+  const requestedPlanIds = Array.isArray(req.body?.followUpPlanIds)
+    ? req.body.followUpPlanIds
+    : (req.body?.followUpPlanId ? [req.body.followUpPlanId] : []);
+  const followUpPlanIds = [...new Set(requestedPlanIds.filter(Boolean).map(String))];
+  if (followUpPlanIds.some(id => !mongoose.Types.ObjectId.isValid(id))) return res.status(400).json({ success: false, message: '随访方案参数无效' });
+  if (followUpPlanIds.length && await FollowUpPlan.countDocuments({ _id: { $in: followUpPlanIds }, status: 'active' }) !== followUpPlanIds.length) {
     return res.status(400).json({ success: false, message: '关联的随访方案不存在或已停用' });
   }
   const product = await Product.findByIdAndUpdate(req.params.id, { $set: { serviceWorkflow: {
-    key, followUpPlanId, notes: String(req.body?.notes || '').trim().slice(0, 500),
+    key, followUpPlanId: followUpPlanIds[0] || null, followUpPlanIds, notes: String(req.body?.notes || '').trim().slice(0, 500),
   } } }, { new: true, runValidators: true });
   if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
   res.json({ success: true, data: product.serviceWorkflow, message: '产品服务流程已关联' });
