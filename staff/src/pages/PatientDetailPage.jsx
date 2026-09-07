@@ -9065,7 +9065,6 @@ export default function PatientDetailPage() {
                           : '待审核'
                         const auditColor = r.audit_status === 'audited' ? '#22A06B'
                           : (r.audit_status === 'rejected' || r.aiStatus === 'failed') ? '#DC3545' : '#D97706'
-                        const isFunctionalMedicineReport = /功能检测|功能医学/.test(typeLabel)
                         // 居家监测设备导出报告格式差异大，不走 AI 自动解析。
                         const isHomeMonitorReport = /居家监测/.test(typeLabel)
                         return (
@@ -9080,9 +9079,7 @@ export default function PatientDetailPage() {
                             <td style={{ color: '#8AA89C', whiteSpace: 'nowrap' }}>{r.checkDate || r.date || <span className="report-missing-field">待补</span>}</td>
                             <td><span style={{ fontSize: 11, fontWeight: 600, color: auditColor, background: `${auditColor}12`, borderRadius: 999, padding: '3px 7px', whiteSpace: 'nowrap' }}>{auditLabel}</span></td>
                             <td style={{ whiteSpace: 'nowrap' }}>
-                              {isFunctionalMedicineReport ? (
-                                <span style={{ fontSize: 11, color: '#aaa' }}>功能医学类不支持AI解析，请人工查阅</span>
-                              ) : isHomeMonitorReport ? (
+                              {isHomeMonitorReport ? (
                                 <span style={{ fontSize: 11, color: '#aaa' }}>居家监测类不支持AI解析，请人工录入</span>
                               ) : (r.aiStatus === 'none' || r.aiStatus === 'failed') && (r.fileUrl || r.content || r.hasContent || (r.fileUrls && r.fileUrls.length)) ? (
                                 <button className="btn btn-primary btn-sm report-action-primary"

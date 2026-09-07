@@ -2802,13 +2802,10 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
 
     // 归类改动后自动重新AI解析：改类目常意味着此前AI按错误类目提取的内容不准了（如从居家监测改成
     // 肿瘤筛查，原本就没解析过；或从肿瘤筛查改成慢性病，原提取项对不上新类目），不能让医护端还得
-    // 另外点一次"重新解析"才生效。居家监测/功能医学检测本身就不支持AI解析（见reports.js /parse-ai
-    // 同样的判断口径），此处跳过；年度体检2026-07-28起已解除限制，不再排除；已审核报告前面已经
-    // 挡掉type变更，不会走到这里。
+    // 另外点一次"重新解析"才生效。居家监测仍不支持自动解析；功能医学报告按原文提取后进入人工审核。
+    // 已审核报告前面已经挡掉type变更，不会走到这里。
     if (typeChanged && (report.fileUrl || report.content) && type !== 'home_monitor') {
-      const { isFunctionalMedicineL1 } = require('../utils/screeningMatch');
-      const skipAi = await isFunctionalMedicineL1(report.screeningL1);
-      if (!skipAi && process.env.QWEN_API_KEY) {
+      if (process.env.QWEN_API_KEY) {
         await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'processing' });
         runReportParse(report._id).catch(err => {
           console.error('[parse-ai] 归类变更后台重新解析异常', String(report._id), err.message);
@@ -11069,11 +11066,6 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
     if (report.type === 'home_monitor') {
       await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
       return res.json({ success: true, message: '居家监测报告不支持AI自动解析，请人工录入', skipAi: true });
-    }
-    const { isFunctionalMedicineL1 } = require('../utils/screeningMatch');
-    if (await isFunctionalMedicineL1(report.screeningL1)) {
-      await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
-      return res.json({ success: true, message: '功能医学检测报告不支持AI自动解析（项目繁多或页数过大），请人工查阅原始文件' });
     }
     if (!process.env.QWEN_API_KEY) {
       await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
