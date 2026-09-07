@@ -45,3 +45,13 @@ test('AI todo aggregation applies one final ownership gate to every non-superadm
   assert.match(todoRoute, /const scopedTodos = isSuper \? todos : todos\.filter\(todo => inMyScope\(todo\.patientId\)\)/);
   assert.match(todoRoute, /data: scopedTodos, total: scopedTodos\.length/);
 });
+
+test('AI todo ownership is strict to the signed-in staff member and does not expand to teams or subordinates', () => {
+  const todoRoute = staffRouteSource.slice(
+    staffRouteSource.indexOf("router.get('/ai-todos'"),
+    staffRouteSource.indexOf("router.patch('/service-proposals/:id/review'"),
+  );
+
+  assert.match(todoRoute, /User\.find\(\{ \[assignField\]: req\.staff\._id \}\)/);
+  assert.doesNotMatch(todoRoute, /getVisibleStaffIds\(req\.staff\)/);
+});
