@@ -24,3 +24,24 @@ test('AI todo aggregation excludes reports already audited through a legacy path
 
   assert.match(todoRoute, /aiStatus: 'pending',[\s\S]*audit_status: \{ \$ne: 'audited' \}/);
 });
+
+test('AI todo aggregation keeps medical reports inside the current staff ownership scope', () => {
+  const todoRoute = staffRouteSource.slice(
+    staffRouteSource.indexOf("router.get('/ai-todos'"),
+    staffRouteSource.indexOf("router.patch('/service-proposals/:id/review'"),
+  );
+
+  assert.doesNotMatch(todoRoute, /reportPatientIds/);
+  assert.match(todoRoute, /const parseFilter = \{[\s\S]*user: \{ \$in: myPatientIds \}/);
+  assert.match(todoRoute, /const reportFilter = \{[\s\S]*user: \{ \$in: myPatientIds \}/);
+});
+
+test('AI todo aggregation applies one final ownership gate to every non-superadmin task', () => {
+  const todoRoute = staffRouteSource.slice(
+    staffRouteSource.indexOf("router.get('/ai-todos'"),
+    staffRouteSource.indexOf("router.patch('/service-proposals/:id/review'"),
+  );
+
+  assert.match(todoRoute, /const scopedTodos = isSuper \? todos : todos\.filter\(todo => inMyScope\(todo\.patientId\)\)/);
+  assert.match(todoRoute, /data: scopedTodos, total: scopedTodos\.length/);
+});

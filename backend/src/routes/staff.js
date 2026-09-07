@@ -8356,20 +8356,6 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     }
     const myPatientIdSet = myPatientIds ? new Set(myPatientIds.map(String)) : null;
     const inMyScope = (userId) => !myPatientIdSet || myPatientIdSet.has(String(userId));
-    // 体检报告只展示本人可见客户，以及尚未分配健管的公共待处理客户。
-    // 已明确归属其他健管的客户绝不能进入当前账号，否则全局最新 50 条还会把本人较早任务挤掉。
-    let reportPatientIds = myPatientIds;
-    if (!isSuper && role === 'healthManager') {
-      const unassignedPatients = await User.find({
-        assignedHealthManager: null,
-        isDeleted: { $ne: true },
-      }).select('_id').lean();
-      reportPatientIds = [
-        ...(myPatientIds || []),
-        ...unassignedPatients.map(patient => patient._id),
-      ];
-    }
-
     if (can('service_proposal_review')) {
       const proposalFilter = { status: 'pending', planner: req.staff._id };
       const proposals = await ServiceProposal.find(proposalFilter).populate('user', 'name phone').sort({ createdAt: -1 }).limit(50).lean();
@@ -8395,7 +8381,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           { 'fileUrls.0': { $exists: true } },
           { content: /.+/ },
         ],
-        ...(reportPatientIds ? { user: { $in: reportPatientIds } } : {}),
+        ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
       };
       const toParseReports = await MedicalReport.find(parseFilter)
         .populate('user', 'name phone').sort({ createdAt: -1 }).limit(50).lean();
@@ -8417,7 +8403,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       const reportFilter = {
         aiStatus: 'pending',
         audit_status: { $ne: 'audited' },
-        ...(reportPatientIds ? { user: { $in: reportPatientIds } } : {}),
+        ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
       };
       const pendingReports = await MedicalReport.find(reportFilter)
         .populate('user', 'name phone').sort({ updatedAt: -1 }).limit(50).lean();
@@ -8868,14 +8854,18 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
+    // 统一归属闸门：非超管的所有工作台任务最终都必须属于本人可见客户范围。
+    // 各任务查询仍尽量提前按归属过滤以控制数据量；这里负责兜底，防止新增任务类型漏加条件。
+    const scopedTodos = isSuper ? todos : todos.filter(todo => inMyScope(todo.patientId));
+
     // 按优先级排序：priority越小越紧急，同级按时间倒序；超时优先
-    todos.sort((a, b) => {
+    scopedTodos.sort((a, b) => {
       if (b.overdue !== a.overdue) return b.overdue ? 1 : -1;
       if (a.priority !== b.priority) return a.priority - b.priority;
       return new Date(b.createdAt) - new Date(a.createdAt);
     });
 
-    res.json({ success: true, data: todos, total: todos.length, role });
+    res.json({ success: true, data: scopedTodos, total: scopedTodos.length, role });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
