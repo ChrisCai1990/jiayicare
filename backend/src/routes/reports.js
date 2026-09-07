@@ -217,6 +217,26 @@ router.post('/:id/parse-ai', auth, async (req, res) => {
       return res.json({ success: true, message: '已进入 AI 解析队列，请等待健管专员审核录入' });
     }
 
+    // PDF 必须复用医护端的逐页渲染队列。轻量接口直接把 PDF URL 交给视觉模型会被当作图片而失败，
+    // 且会阻塞请求；功能医学等多页 PDF 也应走同一条可恢复、待人工审核的正式链路。
+    const { isPdfReport } = require('../utils/pdf');
+    if (isPdfReport(report)) {
+      const staffRouter = require('./staff');
+      if (typeof staffRouter.scheduleReportParse !== 'function') {
+        throw new Error('报告解析队列不可用');
+      }
+      await MedicalReport.findByIdAndUpdate(report._id, {
+        aiStatus: 'processing',
+        parseJob: { status: 'processing', queuedAt: new Date(), startedAt: new Date(), message: '正在识别' },
+      });
+      staffRouter.scheduleReportParse(report._id);
+      return res.json({
+        success: true,
+        processing: true,
+        message: 'PDF识别已开始，完成后将进入人工审核',
+      });
+    }
+
     // PDF 必须有 OSS URL 才能发给通义千问；无 OSS URL 则走人工审核
     if (!isImage && !hasOssUrl) {
       await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });

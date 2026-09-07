@@ -12042,4 +12042,6 @@ ${addonListText}
 });
 
 router.resumeReportParseJobs = resumeReportParseJobs;
+// 用户端 PDF 入口也复用同一队列，避免绕过逐页渲染而把 PDF 当图片传给视觉模型。
+router.scheduleReportParse = scheduleReportParse;
 module.exports = router;
