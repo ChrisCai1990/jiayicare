@@ -52,6 +52,6 @@ test('AI todo ownership is strict to the signed-in staff member and does not exp
     staffRouteSource.indexOf("router.patch('/service-proposals/:id/review'"),
   );
 
-  assert.match(todoRoute, /User\.find\(\{ \[assignField\]: req\.staff\._id \}\)/);
+  assert.match(todoRoute, /User\.find\(\{[\s\S]*\[assignField\]: req\.staff\._id,[\s\S]*isDeleted: \{ \$ne: true \}/);
   assert.doesNotMatch(todoRoute, /getVisibleStaffIds\(req\.staff\)/);
 });
