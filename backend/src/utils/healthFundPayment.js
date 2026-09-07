@@ -54,13 +54,16 @@ function allocateHealthFund({ orderAmount, personalAvailable, corporateAvailable
 }
 
 async function getCorporateFundAvailable(user) {
+  const platformRewardRemarks = [
+    '首次使用小程序健康基金奖励', '邀请好友首次使用小程序奖励', '通过好友邀请首次使用小程序奖励',
+  ];
   const [grants, legacyFirstLoginGrants, spent] = await Promise.all([GiftRecord.aggregate([
     { $match: { patientId: user._id, giftType: 'fund', fundType: 'enterprise', status: 'active' } },
     { $group: { _id: null, total: { $sum: '$fundAmount' } } },
   ]), HealthFundTransaction.aggregate([
     // 1.0.86 之前首登赠金曾误记为 promotion；按明确的业务备注兼容
     // 已发放余额，避免必须先跑数据迁移才能正确展示和抵扣。
-    { $match: { userId: user._id, type: 'grant', status: 'active', remark: '首次使用小程序健康基金奖励' } },
+    { $match: { userId: user._id, type: 'grant', status: 'active', remark: { $in: platformRewardRemarks } } },
     { $group: { _id: null, total: { $sum: '$amount' } } },
   ]), HealthFundTransaction.aggregate([
     { $match: { userId: user._id, source: 'enterprise', status: 'active', type: { $in: ['deduction', 'adjustment'] } } },
@@ -71,6 +74,9 @@ async function getCorporateFundAvailable(user) {
 }
 
 async function getPersonalFundAvailable(user) {
+  const platformRewardRemarks = [
+    '首次使用小程序健康基金奖励', '邀请好友首次使用小程序奖励', '通过好友邀请首次使用小程序奖励',
+  ];
   const grants = await GiftRecord.aggregate([
     { $match: { patientId: user._id, giftType: 'fund', fundType: { $in: ['promotion', 'other'] }, status: 'active' } },
     { $group: { _id: null, total: { $sum: '$fundAmount' } } },
@@ -81,7 +87,7 @@ async function getPersonalFundAvailable(user) {
   ]);
   const totalBalance = Math.max(0, Number(user.healthFundBalance) || 0);
   const legacyFirstLogin = await HealthFundTransaction.aggregate([
-    { $match: { userId: user._id, type: 'grant', status: 'active', remark: '首次使用小程序健康基金奖励' } },
+    { $match: { userId: user._id, type: 'grant', status: 'active', remark: { $in: platformRewardRemarks } } },
     { $group: { _id: null, total: { $sum: '$amount' } } },
   ]);
   const recordedPersonal = Math.max(0, (grants[0]?.total || 0) + (deductions[0]?.total || 0) - (legacyFirstLogin[0]?.total || 0));

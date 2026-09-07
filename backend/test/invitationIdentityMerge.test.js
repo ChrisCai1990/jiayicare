@@ -13,6 +13,13 @@ test('identity merge transfers a temporary referral code to a legacy profile', (
   assert.match(userRoute, /releasedUniqueFields\.referralCode = 1/);
 });
 
+test('identity merge preserves one invitation reward and invitation rewards use corporate rules', () => {
+  assert.match(userRoute, /current\.referralRewardGrantedAt && !idOwner\.referralRewardGrantedAt/);
+  assert.match(userRoute, /transferredInviteRewardIds/);
+  assert.match(userRoute, /邀请好友首次使用小程序奖励', 'enterprise'/);
+  assert.match(authRoute, /邀请好友首次使用小程序奖励', 'enterprise'/);
+});
+
 test('login locks both inviter id and code before onboarding', () => {
   assert.match(authRoute, /pendingInviteCode: code, pendingInviter: inviter\._id/);
   assert.match(userRoute, /applyOnboardingRewards\(user, pendingInviteCode, pendingInviterId\)/);

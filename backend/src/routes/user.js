@@ -79,8 +79,8 @@ async function applyOnboardingRewards(user, inviteCode, pendingInviterId) {
   if (!claimed || cfg.inviteEnabled !== true || claimed.referralRewardGrantedAt) return;
   const rewardClaimed = await User.findOneAndUpdate({ _id: user._id, referralRewardGrantedAt: null }, { $set: { referralRewardGrantedAt: now } }, { new: true });
   if (rewardClaimed) await Promise.all([
-    grant(inviter._id, cfg.inviterAmount, '邀请好友首次使用小程序奖励'),
-    grant(user._id, cfg.inviteeAmount, '通过好友邀请首次使用小程序奖励'),
+    grant(inviter._id, cfg.inviterAmount, '邀请好友首次使用小程序奖励', 'enterprise'),
+    grant(user._id, cfg.inviteeAmount, '通过好友邀请首次使用小程序奖励', 'enterprise'),
   ]);
   if (rewardClaimed) {
     const notices = [];
@@ -493,6 +493,7 @@ router.post('/onboarding', auth, async (req, res) => {
     let user;
     let token;
     let merged = false;
+    let transferredInviteRewardIds = [];
     if (idOwner) {
       // 证件号是主身份：把本次已验证的手机号/微信身份绑定到既有档案，不再新建第二份档案。
       const current = await User.findById(req.user._id);
@@ -508,6 +509,20 @@ router.post('/onboarding', auth, async (req, res) => {
       if (residence?.province && residence?.city) setData.residence = updateData.residence;
       if (current.wechatOpenid) setData.wechatOpenid = current.wechatOpenid;
       if (current.wechatMpOpenid) setData.wechatMpOpenid = current.wechatMpOpenid;
+      // 登录阶段可能先落在临时微信身份上。合并时转移邀请领取状态，
+      // 避免同一位好友在临时身份和实名档案上各触发一次奖励与通知。
+      if (current.invitedBy && !idOwner.invitedBy) {
+        setData.invitedBy = current.invitedBy;
+        setData.invitedAt = current.invitedAt || new Date();
+      }
+      if (current.referralRewardGrantedAt && !idOwner.referralRewardGrantedAt) {
+        setData.referralRewardGrantedAt = current.referralRewardGrantedAt;
+        const rewardRows = await HealthFundTransaction.find({
+          userId: current._id, type: 'grant', status: 'active',
+          remark: '通过好友邀请首次使用小程序奖励',
+        }).select('_id amount').lean();
+        transferredInviteRewardIds = rewardRows.map((row) => row._id);
+      }
       // The temporary WeChat account may already have shared this code. Preserve it when
       // merging into a legacy identity record; otherwise every outstanding invite link
       // becomes orphaned as soon as the temporary account is deleted.
@@ -522,10 +537,21 @@ router.post('/onboarding', auth, async (req, res) => {
       if (transferredReferralCode) releasedUniqueFields.referralCode = 1;
       await User.updateOne({ _id: current._id }, { $unset: releasedUniqueFields });
       const update = { $set: setData };
+      if (transferredInviteRewardIds.length) {
+        const rewardRows = await HealthFundTransaction.find({ _id: { $in: transferredInviteRewardIds } }).select('amount').lean();
+        update.$inc = { healthFundBalance: rewardRows.reduce((sum, row) => sum + Number(row.amount || 0), 0) };
+      }
       if (oldPhone && oldPhone !== normalizedContactPhone) {
         update.$push = { phoneChangeHistory: { from: oldPhone, to: normalizedContactPhone, changedByName: '客户实名验证', changedAt: new Date() } };
       }
       user = await User.findByIdAndUpdate(idOwner._id, update, { new: true });
+      if (transferredInviteRewardIds.length) {
+        await HealthFundTransaction.updateMany({ _id: { $in: transferredInviteRewardIds } }, { $set: { userId: user._id, source: 'enterprise' } });
+        await Message.updateMany({
+          user: current._id, type: 'system', title: '健康基金已到账',
+          content: /欢迎加入嘉医汇/,
+        }, { $set: { user: user._id } });
+      }
       await LoginSession.updateMany({ user: current._id, logoutAt: null }, { $set: { user: user._id } });
       await User.deleteOne({ _id: current._id });
       token = jwt.sign({ id: user._id, sessionId: req.authSessionId }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '30d' });

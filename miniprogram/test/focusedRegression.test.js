@@ -51,3 +51,12 @@ test('full 100-message windows detect new messages by newest id, not length', ()
   assert.match(source, /nextMessages\[nextMessages\.length - 1\]\?\._id/);
   assert.doesNotMatch(source, /nextMessages\.length > loadedMessageCountRef\.current/);
 });
+
+test('mall supports keyword search and explicit product sharing', () => {
+  const source = read('src/pages/services/mall/index.jsx');
+  assert.match(source, /placeholder="搜索服务名称或内容"/);
+  assert.match(source, /openType="share"/);
+  assert.match(source, /分享当前服务给好友/);
+  assert.match(source, /`productId=\$\{detailService\.id\}`/);
+  assert.match(source, /shareReady=\{!user \|\| !!shareToken\}/);
+});

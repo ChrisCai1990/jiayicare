@@ -83,8 +83,8 @@ async function applyFirstLoginRewards(user, inviteCode) {
   );
   if (!rewardClaimed) return;
   await Promise.all([
-    grantPromotionFund(inviter._id, cfg.inviterAmount, '邀请好友首次使用小程序奖励'),
-    grantPromotionFund(user._id, cfg.inviteeAmount, '通过好友邀请首次使用小程序奖励'),
+    grantPromotionFund(inviter._id, cfg.inviterAmount, '邀请好友首次使用小程序奖励', 'enterprise'),
+    grantPromotionFund(user._id, cfg.inviteeAmount, '通过好友邀请首次使用小程序奖励', 'enterprise'),
   ]);
   const notices = [];
   if (Number(cfg.inviterAmount) > 0) notices.push(Message.create({

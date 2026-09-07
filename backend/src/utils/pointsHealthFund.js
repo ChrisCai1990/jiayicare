@@ -74,10 +74,12 @@ async function awardPointsAndConvert({ userId, amount = 0, source, refType = '',
     const conversionRemark = `${conversion.redeemedPoints}积分自动兑换${conversion.fundAmount}元健康基金`;
     writes.push(PointsLog.create({
       user: userId, amount: -conversion.redeemedPoints, source: 'redeem',
-      refType: 'HealthFund', remark: conversionRemark,
+      refType: refType === 'Order' ? 'Order' : 'HealthFund',
+      refId: refType === 'Order' ? refId : null, remark: conversionRemark,
     }));
     writes.push(HealthFundTransaction.create({
-      userId, type: 'grant', source: 'promotion', amount: conversion.fundAmount,
+      userId, orderId: refType === 'Order' ? refId : null,
+      type: 'grant', source: 'promotion', amount: conversion.fundAmount,
       balanceAfter: Number(before.healthFundBalance || 0) + conversion.fundAmount,
       remark: conversionRemark,
     }));

@@ -5,6 +5,7 @@
 // 不再等待人工确认；订单被取消/退款时，反查这笔预记积分并退回。
 const PointsLog = require('../models/PointsLog');
 const User = require('../models/User');
+const HealthFundTransaction = require('../models/HealthFundTransaction');
 const { awardPointsAndConvert } = require('./pointsHealthFund');
 
 // 1元=1积分，仅对现金实付部分（paidAmount，不含健康基金/优惠券抵扣）计分
@@ -29,15 +30,35 @@ async function awardOrderPoints(order) {
 async function refundOrderPoints(order) {
   const awarded = await PointsLog.findOne({ refType: 'Order', refId: order._id, source: 'consumption' });
   if (!awarded) return;
-  const alreadyRefunded = await PointsLog.findOne({ refType: 'Order', refId: order._id, source: 'redeem' });
-  if (alreadyRefunded) return;
-  await Promise.all([
-    User.collection.updateOne({ _id: order.user }, { $inc: { pointsBalance: -awarded.amount } }),
-    PointsLog.create({
+  const alreadyRefunded = await PointsLog.findOne({
+    refType: 'Order', refId: order._id, source: 'redeem', remark: /^订单取消\/退款退回/,
+  });
+  const conversionGrants = await HealthFundTransaction.find({
+    userId: order.user, orderId: order._id, type: 'grant', status: 'active',
+    remark: /积分自动兑换.*元健康基金/,
+  });
+  if (alreadyRefunded && conversionGrants.length === 0) return;
+  const convertedFund = conversionGrants.reduce((sum, row) => sum + Math.max(0, Number(row.amount) || 0), 0);
+  const policy = await require('./pointsHealthFund').getPointsPolicy();
+  const pointsDelta = (convertedFund * policy.pointsPerYuan) - (alreadyRefunded ? 0 : awarded.amount);
+  const writes = [User.collection.updateOne(
+    { _id: order.user },
+    { $inc: { pointsBalance: pointsDelta, healthFundBalance: -convertedFund } },
+  )];
+  if (!alreadyRefunded) writes.push(PointsLog.create({
       user: order.user, amount: -awarded.amount, source: 'redeem',
       refType: 'Order', refId: order._id, remark: `订单取消/退款退回：${order.serviceName}`,
-    }),
-  ]);
+  }));
+  for (const grant of conversionGrants) {
+    grant.status = 'reversed';
+    writes.push(grant.save());
+    writes.push(HealthFundTransaction.create({
+      userId: order.user, orderId: order._id, type: 'reversal', source: grant.source,
+      amount: -grant.amount, reversedTransactionId: grant._id,
+      remark: `订单退款撤销积分兑换健康基金：${order.serviceName}`,
+    }));
+  }
+  await Promise.all(writes);
 }
 
 module.exports = { pointsForAmount, awardOrderPoints, refundOrderPoints };

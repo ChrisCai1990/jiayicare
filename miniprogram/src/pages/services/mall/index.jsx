@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Textarea, ScrollView, Image } from '@tarojs/components';
+import { View, Text, Textarea, ScrollView, Image, Input, Button } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { servicesAPI, authAPI, userAPI, mediaUrl } from '../../../services/api';
@@ -84,7 +84,7 @@ function ServiceCard({ item, onDetail, onPay, isAuthenticated }) {
   );
 }
 
-function ServiceDetailModal({ item, onClose, onConsult, onPay, isAuthenticated }) {
+function ServiceDetailModal({ item, onClose, onConsult, onPay, isAuthenticated, shareReady }) {
   return (
     <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}>
       <View style={{ backgroundColor: '#fff', borderRadius: '28px 28px 0 0', padding: `${spacing.lg}px`, width: '100%', maxHeight: '85%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
@@ -124,6 +124,13 @@ function ServiceDetailModal({ item, onClose, onConsult, onPay, isAuthenticated }
             )}
           </View>
         </ScrollView>
+        <Button
+          openType="share"
+          disabled={!shareReady}
+          style={{ margin: `0 0 ${spacing.sm}px`, padding: '11px', lineHeight: '22px', borderRadius: `${radius.md}px`, border: `1px solid ${colors.primary}`, backgroundColor: '#fff', color: colors.primary, fontSize: '14px', fontWeight: 700 }}
+        >
+          {shareReady ? '分享当前服务给好友' : '正在准备分享…'}
+        </Button>
         <View style={{ display: 'flex', gap: `${spacing.sm}px` }}>
           <View onClick={onClose} style={{ flex: 1, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, border: `1.5px solid ${colors.border}` }}>
             <Text style={{ fontSize: '15px', color: colors.textSecondary, fontWeight: 600 }}>返回</Text>
@@ -429,6 +436,7 @@ export default function ServiceMallPage() {
   const { statusBarHeight } = useNavBar();
   const { user } = useAuth();
   const [activeCategory, setActiveCategory] = useState('全部');
+  const [searchKeyword, setSearchKeyword] = useState('');
   const [detailService, setDetailService] = useState(null);
   const [selectedService, setSelectedService] = useState(null);
   const [purchaseMode, setPurchaseMode] = useState('consult');
@@ -533,7 +541,13 @@ export default function ServiceMallPage() {
     : activeParent?.name === activeCategory
       ? [activeParent.name, ...(activeParent.children || []).map((child) => child.name)]
       : [activeCategory];
-  const filtered = selectedNames ? services.filter((service) => selectedNames.includes(service.category)) : services;
+  const categoryFiltered = selectedNames ? services.filter((service) => selectedNames.includes(service.category)) : services;
+  const normalizedKeyword = searchKeyword.trim().toLowerCase();
+  const filtered = normalizedKeyword
+    ? categoryFiltered.filter((service) => [
+      service.name, service.subtitle, service.category, service.description, ...(service.features || []),
+    ].some((value) => String(value || '').toLowerCase().includes(normalizedKeyword)))
+    : categoryFiltered;
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
@@ -552,6 +566,18 @@ export default function ServiceMallPage() {
       <View onClick={() => { setDrawerParentId(activeParent?.id || categoryTree[0]?.id || ''); setCategoryDrawerOpen(true); }} style={{ margin: `${spacing.md}px ${spacing.lg}px ${spacing.sm}px`, padding: '13px 16px', borderRadius: `${radius.md}px`, backgroundColor: '#fff', boxShadow: shadow.sm, display: 'flex', alignItems: 'center' }}>
         <Text style={{ flex: 1, fontSize: '14px', color: colors.textPrimary, fontWeight: 700 }}>{activeCategory === '全部' ? '全部服务' : activeCategory}</Text>
         <Text style={{ fontSize: '12px', color: colors.primary, fontWeight: 700 }}>全部分类 ›</Text>
+      </View>
+
+      <View style={{ margin: `0 ${spacing.lg}px ${spacing.md}px`, padding: '11px 14px', borderRadius: `${radius.md}px`, backgroundColor: '#fff', border: `1px solid ${colors.border}`, display: 'flex', alignItems: 'center' }}>
+        <Icon name="search" size={17} color={colors.textMuted} />
+        <Input
+          value={searchKeyword}
+          onInput={(event) => setSearchKeyword(event.detail.value)}
+          placeholder="搜索服务名称或内容"
+          confirmType="search"
+          style={{ flex: 1, marginLeft: '8px', fontSize: '14px', color: colors.textPrimary }}
+        />
+        {!!searchKeyword && <Text onClick={() => setSearchKeyword('')} style={{ padding: '2px 4px', color: colors.textMuted }}>×</Text>}
       </View>
 
       {categoryDrawerOpen && <View onClick={() => setCategoryDrawerOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 50, backgroundColor: 'rgba(0,0,0,0.35)' }}>
@@ -590,6 +616,7 @@ export default function ServiceMallPage() {
         <ServiceDetailModal
           item={detailService}
           isAuthenticated={!!user}
+          shareReady={!user || !!shareToken}
           onClose={closeSharedDetail}
           onConsult={() => { openPurchase(detailService, 'consult'); setDetailService(null); }}
           onPay={() => { openPurchase(detailService, 'pay'); setDetailService(null); }}

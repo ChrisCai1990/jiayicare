@@ -1,6 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { POINTS_PER_YUAN, conversionFor, pointsBalanceFields } = require('../src/utils/pointsHealthFund');
+const fs = require('node:fs');
+const path = require('node:path');
 
 test('100 points exchange for one yuan health fund', () => {
   assert.equal(POINTS_PER_YUAN, 100);
@@ -26,4 +28,13 @@ test('database conversion clamps legacy negative points before changing fund bal
   const fundTotal = fields.healthFundBalance.$add[1].$floor.$divide[0];
   assert.deepEqual(moduloTotal, { $max: [0, { $add: [{ $ifNull: ['$pointsBalance', 0] }, { $ifNull: ['$points', 0] }, 0] }] });
   assert.deepEqual(fundTotal, moduloTotal);
+});
+
+test('order-triggered conversions stay linked to the order and refund reverses the converted fund', () => {
+  const conversionSource = fs.readFileSync(path.join(__dirname, '../src/utils/pointsHealthFund.js'), 'utf8');
+  const refundSource = fs.readFileSync(path.join(__dirname, '../src/utils/orderPoints.js'), 'utf8');
+  assert.match(conversionSource, /orderId: refType === 'Order' \? refId : null/);
+  assert.match(conversionSource, /refType: refType === 'Order' \? 'Order' : 'HealthFund'/);
+  assert.match(refundSource, /healthFundBalance: -convertedFund/);
+  assert.match(refundSource, /pointsDelta = \(convertedFund \* policy\.pointsPerYuan\)/);
 });
