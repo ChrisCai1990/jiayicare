@@ -504,10 +504,19 @@ router.post('/onboarding', auth, async (req, res) => {
       if (residence?.province && residence?.city) setData.residence = updateData.residence;
       if (current.wechatOpenid) setData.wechatOpenid = current.wechatOpenid;
       if (current.wechatMpOpenid) setData.wechatMpOpenid = current.wechatMpOpenid;
+      // The temporary WeChat account may already have shared this code. Preserve it when
+      // merging into a legacy identity record; otherwise every outstanding invite link
+      // becomes orphaned as soon as the temporary account is deleted.
+      const transferredReferralCode = !idOwner.referralCode && current.referralCode
+        ? current.referralCode
+        : '';
+      if (transferredReferralCode) setData.referralCode = transferredReferralCode;
       if (!idOwner.name || idOwner.name === '微信用户') setData.name = name.trim();
 
       // 先释放临时账号上的唯一登录字段，再写入既有档案。
-      await User.updateOne({ _id: current._id }, { $unset: { phone: 1, wechatOpenid: 1, wechatMpOpenid: 1 } });
+      const releasedUniqueFields = { phone: 1, wechatOpenid: 1, wechatMpOpenid: 1 };
+      if (transferredReferralCode) releasedUniqueFields.referralCode = 1;
+      await User.updateOne({ _id: current._id }, { $unset: releasedUniqueFields });
       const update = { $set: setData };
       if (oldPhone && oldPhone !== normalizedContactPhone) {
         update.$push = { phoneChangeHistory: { from: oldPhone, to: normalizedContactPhone, changedByName: '客户实名验证', changedAt: new Date() } };
