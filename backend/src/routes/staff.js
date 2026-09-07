@@ -4486,20 +4486,168 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
   }
 });
 
-// ── PATCH /api/staff/supply-plans/:id/confirm ─────────────────────
-// 健管专员确认某条定期配药/配营养素计划本轮已安排，nextDueDate滚到下一周期，等待下次到期再提醒
-router.patch('/supply-plans/:id/confirm', staffAuth, async (req, res) => {
+// ── 定期药品/营养素补充闭环 ──────────────────────────────────────
+// AI只生成草稿；信息采集、专业风险审核、履约安排、执行与签收均由对应岗位确认。
+const SUPPLY_ROLES = ['healthManager', 'familyDoctor', 'nutritionist', 'healthPlanner', 'medicalAssistant', 'superadmin'];
+function supplyRoleAllowed(staff, roles) {
+  return staff?.role === 'superadmin' || roles.includes(staff?.role);
+}
+function supplyForbidden(res, roles) {
+  return res.status(403).json({ success: false, message: `当前步骤仅限${roles.join('/')}处理` });
+}
+
+router.get('/supply-plans/:id', staffAuth, async (req, res) => {
+  if (!SUPPLY_ROLES.includes(req.staff.role)) return supplyForbidden(res, SUPPLY_ROLES);
+  try {
+    const RecurringSupplyPlan = require('../models/RecurringSupplyPlan');
+    const plan = await RecurringSupplyPlan.findById(req.params.id).populate('patientId', 'name gender age chronicDiseases healthProfile');
+    if (!plan) return res.status(404).json({ success: false, message: '计划不存在' });
+    res.json({ success: true, data: plan });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.post('/supply-plans/:id/ai-risk-draft', staffAuth, async (req, res) => {
+  if (!supplyRoleAllowed(req.staff, ['healthManager', 'familyDoctor', 'nutritionist'])) {
+    return supplyForbidden(res, ['健管专员', '健康顾问', '营养师']);
+  }
+  try {
+    const RecurringSupplyPlan = require('../models/RecurringSupplyPlan');
+    const { chat } = require('../utils/ai');
+    const { parseAiJson, appendAudit } = require('../utils/supplyWorkflow');
+    const plan = await RecurringSupplyPlan.findById(req.params.id).populate('patientId', 'name gender age chronicDiseases healthProfile');
+    if (!plan) return res.status(404).json({ success: false, message: '计划不存在' });
+    const prompt = `你是药品与营养素补充服务的信息整理助手。只能依据输入生成风险审核草稿，不得作出最终医疗决定，不得虚构资料。\n品类：${plan.planType}\n项目：${plan.itemName}\n剂量：${plan.dosage}\n客户资料：${JSON.stringify(plan.patientId || {})}\n本轮采集：${JSON.stringify(plan.intake || {})}\n请仅输出JSON：{"summary":"事实摘要","missingItems":["待补信息"],"riskFlags":["潜在风险"],"questions":["人工需追问"],"suggestedDecision":"review|more_info|pause","arrangementNotes":["履约注意事项"]}。药品需关注处方有效性、用药变化、不良反应、依从性、慢病指标和合并用药；营养素需关注剂量、重复成分、药物相互作用、慢病、肝肾功能及特殊人群。`;
+    const raw = await chat([{ role: 'user', content: prompt }], { maxTokens: 1200, temperature: 0, jsonMode: true, timeoutMs: 60000 });
+    plan.aiRiskDraft = { ...parseAiJson(raw), generatedAt: new Date(), generatedBy: req.staff._id };
+    appendAudit(plan, req.staff, 'ai_risk_draft_generated');
+    plan.markModified('aiRiskDraft'); plan.markModified('auditLog');
+    await plan.save();
+    res.json({ success: true, data: plan });
+  } catch (err) { res.status(500).json({ success: false, message: `AI风险草稿生成失败：${err.message}` }); }
+});
+
+router.patch('/supply-plans/:id/intake', staffAuth, async (req, res) => {
+  if (!supplyRoleAllowed(req.staff, ['healthManager'])) return supplyForbidden(res, ['健管专员']);
+  try {
+    const RecurringSupplyPlan = require('../models/RecurringSupplyPlan');
+    const { appendAudit } = require('../utils/supplyWorkflow');
+    const plan = await RecurringSupplyPlan.findById(req.params.id);
+    if (!plan) return res.status(404).json({ success: false, message: '计划不存在' });
+    if (!['intake_pending', 'info_required'].includes(plan.workflowStatus)) return res.status(409).json({ success: false, message: '当前任务不在信息采集阶段' });
+    const mode = req.body.fulfillmentMode || 'undecided';
+    if (mode === 'hospital_assisted' && plan.planType !== 'medication') return res.status(400).json({ success: false, message: '医院配药仅适用于药品' });
+    if (mode === 'internal_product' && plan.planType !== 'supplement') return res.status(400).json({ success: false, message: '自研产品履约仅适用于营养素/营养代餐' });
+    plan.fulfillmentMode = mode;
+    plan.intake = { ...(req.body.intake || {}), submittedAt: new Date(), submittedBy: req.staff._id };
+    plan.workflowStatus = 'risk_review_pending';
+    plan.aiStatus = 'pending';
+    appendAudit(plan, req.staff, 'intake_submitted', mode);
+    plan.markModified('intake'); plan.markModified('auditLog');
+    await plan.save();
+    res.json({ success: true, data: plan });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.patch('/supply-plans/:id/risk-review', staffAuth, async (req, res) => {
+  try {
+    const RecurringSupplyPlan = require('../models/RecurringSupplyPlan');
+    const { REVIEW_ROLE, appendAudit } = require('../utils/supplyWorkflow');
+    const plan = await RecurringSupplyPlan.findById(req.params.id);
+    if (!plan) return res.status(404).json({ success: false, message: '计划不存在' });
+    if (plan.workflowStatus !== 'risk_review_pending') return res.status(409).json({ success: false, message: '当前任务不在风险审核阶段' });
+    const requiredRole = REVIEW_ROLE[plan.planType];
+    if (!supplyRoleAllowed(req.staff, [requiredRole])) return supplyForbidden(res, [requiredRole === 'familyDoctor' ? '健康顾问' : '营养师']);
+    const decision = req.body.decision;
+    if (!['approved', 'more_info', 'paused'].includes(decision)) return res.status(400).json({ success: false, message: '请选择审核结论' });
+    plan.riskReview = { ...req.body, reviewedAt: new Date(), reviewedBy: req.staff._id, reviewerRole: req.staff.role };
+    if (decision === 'approved') {
+      plan.workflowStatus = plan.fulfillmentMode === 'customer_self' ? 'receipt_pending' : 'arrangement_pending';
+    } else if (decision === 'more_info') plan.workflowStatus = 'info_required';
+    else plan.workflowStatus = 'paused';
+    appendAudit(plan, req.staff, 'risk_reviewed', decision);
+    plan.markModified('riskReview'); plan.markModified('auditLog');
+    await plan.save();
+    res.json({ success: true, data: plan });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.post('/supply-plans/:id/ai-arrangement-draft', staffAuth, async (req, res) => {
+  if (!supplyRoleAllowed(req.staff, ['healthPlanner'])) return supplyForbidden(res, ['健康规划师']);
+  try {
+    const RecurringSupplyPlan = require('../models/RecurringSupplyPlan');
+    const { chat } = require('../utils/ai');
+    const { parseAiJson, appendAudit } = require('../utils/supplyWorkflow');
+    const plan = await RecurringSupplyPlan.findById(req.params.id).populate('patientId', 'name');
+    if (!plan) return res.status(404).json({ success: false, message: '计划不存在' });
+    if (plan.riskReview?.decision !== 'approved') return res.status(409).json({ success: false, message: '专业风险审核通过后才能生成履约方案' });
+    const raw = await chat([{ role: 'user', content: `你是健康服务履约助理。根据以下已审核资料生成可编辑的执行草稿，不得替代人工确认。${JSON.stringify({ item: plan.itemName, type: plan.planType, mode: plan.fulfillmentMode, intake: plan.intake, riskReview: plan.riskReview })}\n仅输出JSON：{"summary":"安排摘要","checklist":["核对项"],"appointmentRequired":true或false,"appointmentSuggestion":"预约建议","purchaseSuggestion":"采购建议","deliverySuggestion":"配送建议","customerMessage":"给客户的确认话术"}。医院配药必须包含预约、就诊/处方、取药；系统不应将第三方采购误写为自有库存。` }], { maxTokens: 1000, temperature: 0, jsonMode: true, timeoutMs: 60000 });
+    plan.arrangement = { ...(plan.arrangement || {}), aiDraft: parseAiJson(raw), aiGeneratedAt: new Date() };
+    appendAudit(plan, req.staff, 'ai_arrangement_draft_generated');
+    plan.markModified('arrangement'); plan.markModified('auditLog');
+    await plan.save();
+    res.json({ success: true, data: plan });
+  } catch (err) { res.status(500).json({ success: false, message: `AI履约草稿生成失败：${err.message}` }); }
+});
+
+router.patch('/supply-plans/:id/arrangement', staffAuth, async (req, res) => {
+  if (!supplyRoleAllowed(req.staff, ['healthPlanner'])) return supplyForbidden(res, ['健康规划师']);
+  try {
+    const RecurringSupplyPlan = require('../models/RecurringSupplyPlan');
+    const { appendAudit } = require('../utils/supplyWorkflow');
+    const plan = await RecurringSupplyPlan.findById(req.params.id);
+    if (!plan) return res.status(404).json({ success: false, message: '计划不存在' });
+    if (plan.workflowStatus !== 'arrangement_pending') return res.status(409).json({ success: false, message: '当前任务不在履约安排阶段' });
+    if (plan.riskReview?.decision !== 'approved') return res.status(409).json({ success: false, message: '风险审核未通过，不能安排购买或配药' });
+    if (plan.fulfillmentMode === 'hospital_assisted' && !req.body.appointmentAt) return res.status(400).json({ success: false, message: '医院配药必须填写预约时间' });
+    plan.arrangement = { ...(plan.arrangement || {}), ...req.body, reviewedAt: new Date(), reviewedBy: req.staff._id };
+    plan.workflowStatus = 'fulfillment_pending';
+    appendAudit(plan, req.staff, 'arrangement_confirmed', plan.fulfillmentMode);
+    plan.markModified('arrangement'); plan.markModified('auditLog');
+    await plan.save();
+    res.json({ success: true, data: plan });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.patch('/supply-plans/:id/fulfillment', staffAuth, async (req, res) => {
+  if (!supplyRoleAllowed(req.staff, ['medicalAssistant'])) return supplyForbidden(res, ['就医专员']);
+  try {
+    const RecurringSupplyPlan = require('../models/RecurringSupplyPlan');
+    const { appendAudit } = require('../utils/supplyWorkflow');
+    const plan = await RecurringSupplyPlan.findById(req.params.id);
+    if (!plan) return res.status(404).json({ success: false, message: '计划不存在' });
+    if (plan.workflowStatus !== 'fulfillment_pending') return res.status(409).json({ success: false, message: '当前任务不在采购/配送执行阶段' });
+    const outcome = req.body.outcome || 'completed';
+    plan.fulfillment = { ...req.body, completedAt: outcome === 'completed' ? new Date() : null, completedBy: req.staff._id };
+    plan.workflowStatus = outcome === 'completed' ? 'receipt_pending' : 'arrangement_pending';
+    appendAudit(plan, req.staff, 'fulfillment_updated', outcome);
+    plan.markModified('fulfillment'); plan.markModified('auditLog');
+    await plan.save();
+    res.json({ success: true, data: plan });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.patch('/supply-plans/:id/receipt', staffAuth, async (req, res) => {
+  if (!supplyRoleAllowed(req.staff, ['healthManager'])) return supplyForbidden(res, ['健管专员']);
   try {
     const RecurringSupplyPlan = require('../models/RecurringSupplyPlan');
     const { advanceToNextCycle } = require('../utils/recurringSupplyPlanScheduler');
+    const { appendAudit } = require('../utils/supplyWorkflow');
     const plan = await RecurringSupplyPlan.findById(req.params.id);
     if (!plan) return res.status(404).json({ success: false, message: '计划不存在' });
+    if (plan.workflowStatus !== 'receipt_pending') return res.status(409).json({ success: false, message: '当前任务不在购买/签收确认阶段' });
+    if (!req.body.confirmed) return res.status(400).json({ success: false, message: '请确认客户已购买或已签收' });
+    plan.receipt = { ...req.body, confirmedAt: new Date(), confirmedBy: req.staff._id };
+    appendAudit(plan, req.staff, 'receipt_confirmed', req.body.note || '');
+    plan.markModified('receipt'); plan.markModified('auditLog');
     advanceToNextCycle(plan);
     await plan.save();
     res.json({ success: true, data: plan });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// 兼容旧客户端：仅允许已进入签收阶段的计划完成，不再允许“一键已安排”跨过审核。
+router.patch('/supply-plans/:id/confirm', staffAuth, async (req, res) => {
+  return res.status(410).json({ success: false, message: '流程已升级，请依次完成风险审核、履约和签收确认' });
 });
 
 // ── PATCH /api/staff/patients/:id/annual-plan/push ────────────────
@@ -8138,7 +8286,12 @@ const TODO_REVIEW_ROLE = {
   symptom_review:       'familyDoctor',
   symptom_verify:       'healthManager',
   transfer_human:       'healthPlanner',
-  supply_plan_review:   'healthManager', // 定期配药/配营养素计划到期，健管专员确认安排
+  supply_intake:        'healthManager',
+  supply_medication_risk_review: 'familyDoctor',
+  supply_supplement_risk_review: 'nutritionist',
+  supply_arrangement:   'healthPlanner',
+  supply_fulfillment:   'medicalAssistant',
+  supply_receipt:       'healthManager',
   service_proposal_review: 'healthPlanner',
 };
 
@@ -8485,20 +8638,38 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
-    // ── 健管专员：定期配药/配营养素计划到期，确认安排 ──
-    if (can('supply_plan_review')) {
+    // ── 药品/营养素定期补充：按当前状态只派给当前责任岗位 ──
+    const supplyTodoTypes = [
+      ['supply_intake', ['intake_pending', 'info_required']],
+      ['supply_medication_risk_review', ['risk_review_pending']],
+      ['supply_supplement_risk_review', ['risk_review_pending']],
+      ['supply_arrangement', ['arrangement_pending']],
+      ['supply_fulfillment', ['fulfillment_pending']],
+      ['supply_receipt', ['receipt_pending']],
+    ];
+    for (const [todoType, statuses] of supplyTodoTypes) {
+      if (!can(todoType)) continue;
       const RecurringSupplyPlan = require('../models/RecurringSupplyPlan');
-      const supplyFilter = { aiStatus: 'pending', ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
+      const supplyFilter = { workflowStatus: { $in: statuses }, ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
+      if (todoType === 'supply_medication_risk_review') supplyFilter.planType = 'medication';
+      if (todoType === 'supply_supplement_risk_review') supplyFilter.planType = 'supplement';
       const duePlans = await RecurringSupplyPlan.find(supplyFilter)
         .populate('patientId', 'name').sort({ nextDueDate: 1 }).limit(50).lean();
       duePlans.forEach(p => {
-        const label = p.planType === 'medication' ? '配药' : '配营养素';
+        const itemLabel = p.planType === 'medication' ? '药品' : '营养素';
+        const actionLabel = {
+          supply_intake: p.workflowStatus === 'info_required' ? '补充信息' : '采集补充信息',
+          supply_medication_risk_review: '健康顾问风险审核', supply_supplement_risk_review: '营养师风险审核',
+          supply_arrangement: '安排购买/预约', supply_fulfillment: '执行采购/配送', supply_receipt: '确认购买/签收',
+        }[todoType];
         const createdAt = p.lastNotifiedAt || p.updatedAt || now;
+        const daysUntilDue = Math.ceil((new Date(p.nextDueDate) - now) / DAY);
+        const timeBucket = daysUntilDue < 0 ? '逾期' : daysUntilDue === 0 ? '今日' : daysUntilDue <= 3 ? '3日内' : '1周内';
         todos.push({
-          id: 'supply_plan_' + p._id, type: 'supply_plan_review', label: `定期${label}待安排`, priority: 3,
+          id: 'supply_plan_' + p._id, type: todoType, label: `${itemLabel}${actionLabel}`, priority: daysUntilDue <= 0 ? 1 : 2,
           patientName: p.patientId?.name || '未知', patientId: String(p.patientId?._id || ''),
-          summary: `${p.itemName}${p.dosage ? ' ' + p.dosage : ''} · ${p.frequency}${p.institution ? ' · ' + p.institution : ''}`,
-          createdAt, overdue: (now - new Date(createdAt)) > DAY,
+          summary: `[${timeBucket}] ${p.itemName}${p.dosage ? ' ' + p.dosage : ''} · ${p.frequency}`,
+          createdAt, dueDate: p.nextDueDate, timeBucket, overdue: daysUntilDue < 0,
           link: `/patients/${p.patientId?._id}?tab=annual-plan`,
         });
       });

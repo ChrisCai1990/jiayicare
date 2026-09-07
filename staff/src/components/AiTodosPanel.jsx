@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useStaff } from '../App'
 import Pagination from './Pagination'
+import SupplyWorkflowModal from './SupplyWorkflowModal'
 
 const TYPE_CONFIG = {
   report_parse:    { icon: '📄', label: '体检报告待解析', color: '#D97706', priority: 2 },
@@ -30,7 +31,12 @@ const TYPE_CONFIG = {
   followup_review:      { icon: '📅', label: '随访计划待审核', color: '#0077B6', priority: 3 },
   service_draft_review: { icon: '🤖', label: 'AI随访草稿待审核', color: '#7C3AED', priority: 3 },
   medical_assist_plan_review: { icon: '🚑', label: 'AI就医协助方案待审核', color: '#0077B6', priority: 2 },
-  supply_plan_review:  { icon: '📦', label: '定期配药/配营养素待安排', color: '#D97706', priority: 3 },
+  supply_intake:       { icon: '📦', label: '补充信息待采集', color: '#D97706', priority: 2 },
+  supply_medication_risk_review: { icon: '💊', label: '配药风险待审核', color: '#DC3545', priority: 1 },
+  supply_supplement_risk_review: { icon: '🧪', label: '营养素风险待审核', color: '#DC3545', priority: 1 },
+  supply_arrangement:  { icon: '🗓️', label: '购买/预约待安排', color: '#0077B6', priority: 2 },
+  supply_fulfillment:  { icon: '🚚', label: '采购/配送待执行', color: '#7C3AED', priority: 2 },
+  supply_receipt:      { icon: '✅', label: '购买/签收待确认', color: '#1E6B50', priority: 2 },
   service_proposal_review: { icon: '💼', label: '服务方案草稿待审核', color: '#1E6B50', priority: 2 },
 }
 
@@ -49,8 +55,10 @@ const TODO_GROUPS = [
   { key: 'report', label: '报告与资料', types: ['report_parse','report_review','report_familydoctor_review','archive_review','summary_review','lifestyle_review','dietary_survey_review','medication_review','supplement_review'] },
   { key: 'plan', label: '方案与评估', types: ['trend_review','plan_review','nutrition_plan_review','checkup_plan_review','phase_assessment_review','followup_review','service_draft_review','medical_assist_plan_review','service_proposal_review'] },
   { key: 'risk', label: '风险与异常', types: ['risk_review','bp_alert_review','risk_alert','transfer_human'] },
-  { key: 'content', label: '内容与安排', types: ['push_review','draft_review','supply_plan_review'] },
+  { key: 'content', label: '内容与安排', types: ['push_review','draft_review','supply_intake','supply_medication_risk_review','supply_supplement_risk_review','supply_arrangement','supply_fulfillment','supply_receipt'] },
 ]
+
+const SUPPLY_TYPES = new Set(['supply_intake','supply_medication_risk_review','supply_supplement_risk_review','supply_arrangement','supply_fulfillment','supply_receipt'])
 
 export default function AiTodosPanel() {
   const nav = useNavigate()
@@ -59,6 +67,7 @@ export default function AiTodosPanel() {
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(0)
   const [group, setGroup] = useState('all')
+  const [supplyTodo, setSupplyTodo] = useState(null)
 
   useEffect(() => {
     staffAPI.getAiTodos()
@@ -79,14 +88,6 @@ export default function AiTodosPanel() {
     e.stopPropagation()
     const logId = todo.id.replace(/^transferhuman_/, '')
     staffAPI.resolveChatTransfer(logId)
-      .then(() => setTodos(ts => ts.filter(t => t.id !== todo.id)))
-      .catch(() => {})
-  }
-
-  const resolveSupplyPlan = (e, todo) => {
-    e.stopPropagation()
-    const planId = todo.id.replace(/^supply_plan_/, '')
-    staffAPI.confirmSupplyPlan(planId)
       .then(() => setTodos(ts => ts.filter(t => t.id !== todo.id)))
       .catch(() => {})
   }
@@ -169,7 +170,7 @@ export default function AiTodosPanel() {
           return (
             <div
               key={todo.id}
-              onClick={() => nav(todo.link, { state: { sourceTodo: todo } })}
+              onClick={() => SUPPLY_TYPES.has(todo.type) ? setSupplyTodo(todo) : nav(todo.link, { state: { sourceTodo: todo } })}
               style={{
                 display: 'flex', alignItems: 'flex-start', gap: 12,
                 borderBottom: i < pageTodos.length - 1 ? '1px solid #f0ede8' : 'none',
@@ -238,11 +239,11 @@ export default function AiTodosPanel() {
                     <button onClick={(e) => reviewServiceProposal(e, todo, 'reject')}
                       style={{ fontSize: 11, color: '#D97706', background: 'none', border: '1px solid #D97706', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}>需人工沟通</button>
                   </div>
-                ) : todo.type === 'supply_plan_review' ? (
+                ) : SUPPLY_TYPES.has(todo.type) ? (
                   <button
-                    onClick={(e) => resolveSupplyPlan(e, todo)}
+                    onClick={(e) => { e.stopPropagation(); setSupplyTodo(todo) }}
                     style={{ fontSize: 11, color: '#1E6B50', background: 'none', border: '1px solid #1E6B50', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}
-                  >标记已安排</button>
+                  >进入流程</button>
                 ) : (
                   <span style={{ fontSize: 14, color: '#C0B8AE' }}>›</span>
                 )}
@@ -254,6 +255,7 @@ export default function AiTodosPanel() {
           <Pagination compact page={curPage + 1} totalPages={pageCount} onChange={next => setPage(next - 1)} />
         )}
       </div>
+      {supplyTodo && <SupplyWorkflowModal todo={supplyTodo} onClose={() => setSupplyTodo(null)} onDone={(todoId) => { setTodos(ts => ts.filter(t => t.id !== todoId)); setSupplyTodo(null) }} />}
     </div>
   )
 }
