@@ -111,7 +111,8 @@ function medicalAssistModuleDefs(content = {}, planTitle = '', assignedReviewerI
         { key: 'reviewerId', label: '方案审核医生（健康顾问）', type: 'staff-select', roles: ['familyDoctor'], disabled: !!assignedReviewerId },
         { key: 'visitDate', label: '体检日期', type: 'date' },
         { key: 'serviceTime', label: '集合/签到时间', type: 'text', placeholder: '如：08:00前或上午' },
-        { key: 'staffId', label: '体检协调专员', type: 'staff-select', roles: ['healthPlanner', 'medicalAssistant'] },
+        { key: 'bookingPlannerId', label: '体检预约负责人（健康规划师）', type: 'staff-select', roles: ['healthPlanner'] },
+        { key: 'escortStaffId', label: '陪同人员', type: 'staff-select', roles: ['medicalAssistant'] },
       ],
     },
   }
@@ -138,6 +139,8 @@ function medicalAssistModuleData(content = {}) {
       visitDate: existing.visit?.visitDate || content.serviceDate || '',
       serviceTime: existing.visit?.serviceTime || content.serviceTime || '',
       staffId: existing.visit?.staffId || content.staffId || '',
+      bookingPlannerId: existing.visit?.bookingPlannerId || content.bookingPlannerId || existing.visit?.staffId || content.staffId || '',
+      escortStaffId: existing.visit?.escortStaffId || content.escortStaffId || '',
       supervisorId: existing.visit?.supervisorId || content.supervisorId || '',
       followUpPlanId: existing.visit?.followUpPlanId || content.followUpPlanId || '',
       followUpPlans: existing.visit?.followUpPlans?.length ? existing.visit.followUpPlans : (content.followUpPlans || []),
@@ -171,6 +174,7 @@ function contentFromModules(plan, moduleData, goal, staffList = []) {
   const logistics = moduleData.logistics || {}
   const records = moduleData.tasks?.records || []
   const selectedAssistantId = visit.staffId || content.staffId || records.find(r => r.staff)?.staff || ''
+  const checkupService = isCheckupMedicalAssist(content, plan.title)
 
   return {
     ...content,
@@ -181,8 +185,10 @@ function contentFromModules(plan, moduleData, goal, staffList = []) {
     reviewerName: staffList.find(s => String(s._id) === String(visit.reviewerId || ''))?.name || content.reviewerName || '',
     serviceDate: visit.visitDate || '',
     serviceTime: visit.serviceTime || content.serviceTime || '',
-    staffId: selectedAssistantId,
-    supervisorId: visit.supervisorId || content.supervisorId || '',
+    staffId: checkupService ? (visit.bookingPlannerId || '') : selectedAssistantId,
+    bookingPlannerId: checkupService ? (visit.bookingPlannerId || '') : (content.bookingPlannerId || ''),
+    escortStaffId: checkupService ? (visit.escortStaffId || '') : (content.escortStaffId || ''),
+    supervisorId: checkupService ? '' : (visit.supervisorId || content.supervisorId || ''),
     followUpPlanId: visit.followUpPlanId || content.followUpPlanId || '',
     followUpPlans: visit.followUpPlans?.length ? visit.followUpPlans : (content.followUpPlans || []),
     hotel: logistics.hotel || '',
@@ -250,11 +256,14 @@ export default function PlanModulesPage() {
   const handleSave = async () => {
     if (plan.type === 'medical_assist') {
       const visit = moduleData.visit || {}
+      const checkupService = isCheckupMedicalAssist(plan.content || {}, plan.title)
       if (!visit.visitDate) { toast('请选择服务日期'); return }
-      if (!visit.staffId) { toast('请选择就医专员'); return }
-      if (isCheckupMedicalAssist(plan.content || {}, plan.title) && !visit.reviewerId) { toast('客户尚未归属健康顾问，请先选择方案审核医生'); return }
-      if (!visit.supervisorId) { toast('请选择督办人'); return }
-      if (!(visit.followUpPlans?.length || visit.followUpPlanId)) { toast('请选择关联 Admin 岗位任务方案'); return }
+      if (checkupService && !visit.bookingPlannerId) { toast('请选择体检预约负责人（健康规划师）'); return }
+      if (checkupService && !visit.escortStaffId) { toast('请选择陪同人员'); return }
+      if (!checkupService && !visit.staffId) { toast('请选择就医专员'); return }
+      if (checkupService && !visit.reviewerId) { toast('客户尚未归属健康顾问，请先选择方案审核医生'); return }
+      if (!checkupService && !visit.supervisorId) { toast('请选择督办人'); return }
+      if (!(visit.followUpPlans?.length || visit.followUpPlanId)) { toast('该服务尚未配置标准岗位任务，请先在 Admin 服务流程中配置'); return }
     }
     setSaving(true)
     try {
@@ -274,7 +283,7 @@ export default function PlanModulesPage() {
     if (dirty) { toast('有未保存的更改，请先保存再推送'); return }
     const pendingReview = plan.content?.aiStatus === 'pending'
     if (!window.confirm(pendingReview
-      ? '确认已完整核对本方案？审核通过后将立即推送给客户，并生成执行与督办任务。'
+      ? '确认已完整核对本方案？审核通过后将立即推送给客户，并按 Admin 标准生成岗位任务。'
       : '确定将此方案推送给客户？客户端将立即可见。')) return
     setPushing(true)
     try {
@@ -388,10 +397,10 @@ export default function PlanModulesPage() {
       {plan.type === 'medical_assist' && (
         <div style={{ background: '#fff', borderRadius: 12, padding: 20, marginBottom: 20, border: '1px solid #E0D9CE' }}>
           <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24', marginBottom: 4 }}>岗位任务流转</div>
-          <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 14 }}>执行人完成就医安排；督办人核对结果并推动客户整体方案闭环。</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 14 }}>{isCheckupService ? '岗位、时间和完成标准由 Admin 统一配置；预约负责人和陪同人员在下方体检安排中指定。' : '执行人完成就医安排；督办人核对结果并推动客户整体方案闭环。'}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: isCheckupService ? '1fr' : '1fr 1fr', gap: 12 }}>
             <div>
-              <label className="form-label">关联 Admin 岗位任务方案 *</label>
+              <label className="form-label">标准岗位任务</label>
               {(moduleData.visit?.followUpPlans?.length || plan.content?.followUpPlans?.length) ? (
                 <div className="form-input" style={{ minHeight: 38, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
                   {(moduleData.visit?.followUpPlans?.length ? moduleData.visit.followUpPlans : plan.content.followUpPlans).map(item => {
@@ -407,11 +416,11 @@ export default function PlanModulesPage() {
                 </>
               )}
             </div>
-            <div>
+            {!isCheckupService && <div>
               <label className="form-label">督办人 *</label>
               <input className="form-input" value={supervisorSearch} onChange={e => setSupervisorSearch(e.target.value)} placeholder="搜索姓名/岗位/部门" style={{ marginBottom: 6 }} />
               <select className="form-input" value={moduleData.visit?.supervisorId || ''} onChange={e => handleModuleChange('visit', 'supervisorId', e.target.value)}><option value="">请选择健管专员/家庭医生</option>{searchableSupervisors.map(s => <option key={s._id} value={s._id}>{s.name} · {s.roleLabel}</option>)}</select>
-            </div>
+            </div>}
           </div>
         </div>
       )}

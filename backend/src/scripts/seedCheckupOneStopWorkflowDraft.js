@@ -112,7 +112,7 @@ function validateDrafts(drafts = TASK_PLAN_DRAFTS) {
   return errors;
 }
 
-async function run({ apply = false } = {}) {
+async function run({ apply = false, approve = false } = {}) {
   const errors = validateDrafts();
   if (errors.length) throw new Error(errors.join('；'));
   const uri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/jiayicare';
@@ -144,7 +144,13 @@ async function run({ apply = false } = {}) {
       const { key, mode, trigger, sequence, ...planFields } = draft;
       const result = await plans.findOneAndUpdate(
         { name: draft.name },
-        { $set: { ...planFields, reviewedAt: null, reviewedBy: null, updatedAt: new Date() }, $setOnInsert: { createdAt: new Date() } },
+        { $set: {
+          ...planFields,
+          reviewStatus: approve ? 'approved' : 'pending_review',
+          reviewedAt: approve ? new Date() : null,
+          reviewedBy: null,
+          updatedAt: new Date(),
+        }, $setOnInsert: { createdAt: new Date() } },
         { upsert: true, returnDocument: 'after' }
       );
       linked.push({ planId: result._id, mode, trigger, sequence });
@@ -159,14 +165,14 @@ async function run({ apply = false } = {}) {
       updatedAt: new Date(),
     } });
 
-    console.log(JSON.stringify({ mode: 'applied', backupKey, product: PRODUCT_NAME, plansUpserted: linked.length }, null, 2));
+    console.log(JSON.stringify({ mode: 'applied', reviewStatus: approve ? 'approved' : 'pending_review', backupKey, product: PRODUCT_NAME, plansUpserted: linked.length }, null, 2));
   } finally {
     await mongoose.disconnect();
   }
 }
 
 if (require.main === module) {
-  run({ apply: process.argv.includes('--apply') }).catch(err => {
+  run({ apply: process.argv.includes('--apply') || process.argv.includes('--approve'), approve: process.argv.includes('--approve') }).catch(err => {
     console.error(err);
     process.exitCode = 1;
   });

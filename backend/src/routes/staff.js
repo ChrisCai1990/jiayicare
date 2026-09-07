@@ -1875,7 +1875,12 @@ async function upsertMedicalAssistModuleTasks(plan, workflowPlan, options = {}) 
   const supervisorDate = addDays(serviceDate, workflowPlan.supervisorDueOffsetDays ?? 1);
   const selectedAssistantId = c.staffId || plan.staffId;
   const selectedSupervisorId = c.supervisorId || plan.staffId;
-  const executorAssignee = resolveAssignee(workflowPlan.executorRole, selectedAssistantId);
+  const explicitCheckupAssignee = workflowPlan.executorRole === 'healthPlanner'
+    ? c.bookingPlannerId
+    : workflowPlan.executorRole === 'medicalAssistant'
+      ? c.escortStaffId
+      : null;
+  const executorAssignee = explicitCheckupAssignee || resolveAssignee(workflowPlan.executorRole, selectedAssistantId);
   const supervisorAssignee = selectedSupervisorId || resolveAssignee(workflowPlan.supervisorRole, selectedSupervisorId);
   const requirements = [
     c.hospital && `医院：${c.hospital}`, c.department && `科室：${c.department}`, c.expert && `医生：${c.expert}`,
@@ -1993,9 +1998,19 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
       }
     }
     if (!c.serviceDate) return res.status(400).json({ success: false, message: '请先设置服务日期' });
-    if (!c.staffId) return res.status(400).json({ success: false, message: '请先从员工库选择就医专员' });
+    if (isCheckupService && !c.bookingPlannerId) return res.status(400).json({ success: false, message: '请先选择体检预约负责人（健康规划师）' });
+    if (isCheckupService && !c.escortStaffId) return res.status(400).json({ success: false, message: '请先选择陪同人员' });
+    if (isCheckupService) {
+      const [bookingPlanner, escortStaff] = await Promise.all([
+        Admin.findOne({ _id: c.bookingPlannerId, role: 'healthPlanner', staffStatus: 'active' }).select('_id').lean(),
+        Admin.findOne({ _id: c.escortStaffId, role: 'medicalAssistant', staffStatus: 'active' }).select('_id').lean(),
+      ]);
+      if (!bookingPlanner) return res.status(400).json({ success: false, message: '体检预约负责人必须是有效的健康规划师' });
+      if (!escortStaff) return res.status(400).json({ success: false, message: '陪同人员必须是有效的就医专员' });
+    }
+    if (!isCheckupService && !c.staffId) return res.status(400).json({ success: false, message: '请先从员工库选择就医专员' });
     if (isCheckupService && !c.reviewerId) return res.status(400).json({ success: false, message: '请先确认方案审核医生（健康顾问）' });
-    if (!c.supervisorId) return res.status(400).json({ success: false, message: '请先从员工库选择督办人' });
+    if (!isCheckupService && !c.supervisorId) return res.status(400).json({ success: false, message: '请先从员工库选择督办人' });
     if (!(c.followUpPlans?.length || c.followUpPlanId)) return res.status(400).json({ success: false, message: '请先关联 Admin 岗位任务方案' });
   }
   plan.status = 'active';
