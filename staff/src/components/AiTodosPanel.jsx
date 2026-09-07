@@ -8,7 +8,6 @@ import SupplyWorkflowModal from './SupplyWorkflowModal'
 const TYPE_CONFIG = {
   report_parse:    { icon: '📄', label: '体检报告待解析', color: '#D97706', priority: 2 },
   report_review:   { icon: '📋', label: '体检报告待审核', color: '#0077B6', priority: 2 },
-  report_familydoctor_review: { icon: '📋', label: '体检信息待专业人员复核', color: '#7C3AED', priority: 2 },
   archive_review:  { icon: '🗂️', label: '健康档案问卷待审核', color: '#0077B6', priority: 3 },
   summary_review:  { icon: '🩺', label: '健康信息整理待核对', color: '#22A06B', priority: 2 },
   lifestyle_review:{ icon: '🌿', label: '生活方式评估待审核', color: '#16A34A', priority: 3 },
@@ -52,7 +51,7 @@ function formatTime(date) {
 const PAGE_SIZE = 5
 const TODO_GROUPS = [
   { key: 'all', label: '全部' },
-  { key: 'report', label: '报告与资料', types: ['report_parse','report_review','report_familydoctor_review','archive_review','summary_review','lifestyle_review','dietary_survey_review','medication_review','supplement_review'] },
+  { key: 'report', label: '报告与资料', types: ['report_parse','report_review','archive_review','summary_review','lifestyle_review','dietary_survey_review','medication_review','supplement_review'] },
   { key: 'plan', label: '方案与评估', types: ['trend_review','plan_review','nutrition_plan_review','checkup_plan_review','phase_assessment_review','followup_review','service_draft_review','medical_assist_plan_review','service_proposal_review'] },
   { key: 'risk', label: '风险与异常', types: ['risk_review','bp_alert_review','risk_alert','transfer_human'] },
   { key: 'content', label: '内容与安排', types: ['push_review','draft_review','supply_intake','supply_medication_risk_review','supply_supplement_risk_review','supply_arrangement','supply_fulfillment','supply_receipt'] },

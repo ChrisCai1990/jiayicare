@@ -1922,6 +1922,27 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
     const workflowPlans = (await FollowUpPlan.find({ _id: { $in: workflowIds }, status: 'active' }).lean())
       .filter(item => !isReportInterpretation(item.name));
     if (!workflowPlans.length) return res.status(400).json({ success: false, message: '关联的岗位任务方案已停用或不存在' });
+    const configuredModules = c.workflowModules?.length ? c.workflowModules : (c.followUpPlans || []);
+    const moduleConfigMap = new Map(configuredModules.map((item, sequence) => [
+      String(item.id || item._id || ''),
+      { mode: item.mode || 'fixed', trigger: item.trigger || '', sequence: item.sequence ?? sequence },
+    ]));
+    const fixedWorkflowPlans = workflowPlans
+      .filter(item => (moduleConfigMap.get(String(item._id))?.mode || 'fixed') === 'fixed')
+      .sort((a, b) => (moduleConfigMap.get(String(a._id))?.sequence ?? 0) - (moduleConfigMap.get(String(b._id))?.sequence ?? 0));
+    const deferredWorkflowModules = workflowPlans
+      .map(item => ({
+        id: String(item._id), name: item.name,
+        ...(moduleConfigMap.get(String(item._id)) || { mode: 'fixed', trigger: '', sequence: 0 }),
+      }))
+      .filter(item => item.mode !== 'fixed')
+      .map(item => ({ ...item, decision: item.mode === 'manual' ? 'manual' : 'pending', decidedAt: null, decidedBy: null }));
+    if (deferredWorkflowModules.length) {
+      c.workflowModuleDecisions = deferredWorkflowModules;
+      plan.content = c;
+      plan.markModified('content');
+      await plan.save();
+    }
     const serviceDate = plan.content?.serviceDate
       ? new Date(`${plan.content.serviceDate}T${/^\d{2}:\d{2}/.test(plan.content?.serviceTime || '') ? plan.content.serviceTime.slice(0, 5) : '09:00'}:00+08:00`)
       : new Date();
@@ -1940,14 +1961,16 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
       c.notes && `注意事项：${c.notes}`,
     ].filter(Boolean).join('\n');
     // 兼容旧版单任务：首次按新流程重推时原位升级为执行任务，避免重复待办。
-    await FollowUp.updateMany(
-      { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: '', status: { $in: ['planned', 'in_progress'] } },
-      { $set: { taskRole: 'executor', coordinationGroupId, workflowKey: String(workflowPlans[0]._id) } }
-    );
-    await FollowUp.updateMany(
-      { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: { $in: ['executor', 'supervisor'] }, workflowKey: { $in: ['', null] } },
-      { $set: { workflowKey: String(workflowPlans[0]._id) } }
-    );
+    if (fixedWorkflowPlans.length) {
+      await FollowUp.updateMany(
+        { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: '', status: { $in: ['planned', 'in_progress'] } },
+        { $set: { taskRole: 'executor', coordinationGroupId, workflowKey: String(fixedWorkflowPlans[0]._id) } }
+      );
+      await FollowUp.updateMany(
+        { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: { $in: ['executor', 'supervisor'] }, workflowKey: { $in: ['', null] } },
+        { $set: { workflowKey: String(fixedWorkflowPlans[0]._id) } }
+      );
+    }
     const patient = await User.findById(plan.patientId).select('assignedHealthManager assignedFamilyDoctor assignedNutritionist assignedHealthPlanner assignedMedicalAssistant').lean();
     const resolveAssignee = (role, fallback) => ({
       familyDoctor: patient?.assignedFamilyDoctor || c.reviewerId,
@@ -1957,7 +1980,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
       medicalAssistant: patient?.assignedMedicalAssistant || patient?.assignedHealthPlanner,
     }[role] || fallback);
     // 每个被筛选的岗位任务方案各生成一组“执行+督办”；workflowKey 保证重复推送只更新对应组。
-    for (const workflowPlan of workflowPlans) {
+    for (const workflowPlan of fixedWorkflowPlans) {
       const workflowKey = String(workflowPlan._id);
       const workflowStart = plan.pushedAt || plan.createdAt || new Date();
       const calculatedExecutorDate = addDays(serviceDate, workflowPlan.fixedToServiceDate ? 0 : (workflowPlan.executorDueOffsetDays ?? -1));
@@ -8284,7 +8307,6 @@ const DIETARY_SURVEY_QUESTIONNAIRE_ID = '6a49eab9fc1595013da70645';
 const TODO_REVIEW_ROLE = {
   report_parse:         'healthManager',
   report_review:        'healthManager',
-  report_familydoctor_review: 'familyDoctor', // 健康顾问双审：健管已审、医生未审的体检报告
   archive_review:       'healthManager',
   checkup_plan_review:  'familyDoctor',
   summary_review:       'familyDoctor',
@@ -8421,59 +8443,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
-    // ── 健康顾问：健康档案待查看确认（2026-07-28改造）──
-    // 不再逐份审核报告数据，而是"该客户有健管已审的新报告/健康档案更新，健康顾问需要看一眼
-    // 新增部分并确认"，按客户聚合成一条待办（而不是每份报告各一条）。这是增量确认机制：已经
-    // 确认过的历史报告不会被重复统计，只统计上次确认之后新增的部分，点开后走
-    // archive-review 确认接口（确认后快照往前推进，不需要把历史资料重新翻一遍）。
-    if (can('report_familydoctor_review')) {
-      const fdUserFilter = { assignedFamilyDoctor: { $ne: null }, ...(myPatientIds ? { _id: { $in: myPatientIds } } : {}) };
-      const candidates = await User.find(fdUserFilter)
-        .select('name archiveReviewStatus archiveReviewSnapshotAt archiveChangeLog archiveAutoLog archiveConfirmLog lifestyleHistory').lean();
-      if (candidates.length) {
-        const { getLatestArchiveUpdate } = require('../utils/reportAuditGate');
-        const pendingIds = candidates.map(u => u._id);
-        if (pendingIds.length) {
-          // 只统计"上次确认之后新增"的报告数，历史已确认过的报告不重复计入（增量原则）
-          const newReportCounts = await MedicalReport.aggregate([
-            { $match: { user: { $in: pendingIds }, audit_status: 'audited' } },
-            { $group: { _id: '$user', reports: { $push: { createdAt: '$createdAt', audited_at: '$audited_at', title: '$title', checkDate: '$checkDate' } } } },
-          ]);
-          const userMap = new Map(candidates.map(u => [String(u._id), u]));
-          const countMap = new Map(newReportCounts.map(c => {
-            const u = userMap.get(String(c._id));
-            const snapshotAt = u?.archiveReviewSnapshotAt ? new Date(u.archiveReviewSnapshotAt).getTime() : 0;
-            const newReports = c.reports.filter(r => new Date(r.createdAt).getTime() > snapshotAt);
-            const latestAt = newReports.length
-              ? new Date(Math.max(...newReports.map(r => new Date(r.audited_at || r.createdAt).getTime())))
-              : null;
-            return [String(c._id), { count: newReports.length, latestAt, reports: newReports }];
-          }));
-          candidates.forEach(u => {
-            const info = countMap.get(String(u._id));
-            const hasNewReports = !!(info && info.count > 0);
-            const archiveUpdate = getLatestArchiveUpdate(u, u.archiveReviewSnapshotAt);
-            if (!hasNewReports && !archiveUpdate) return;
-            const createdAt = info?.latestAt || archiveUpdate.at;
-            const reportNames = hasNewReports
-              ? info.reports.map(report => `${report.title || '未命名报告'}${report.checkDate ? `（${String(report.checkDate).slice(0, 10)}）` : ''}`).slice(0, 5)
-              : [];
-            const updatedAtText = archiveUpdate?.at ? new Date(archiveUpdate.at).toLocaleString('zh-CN', { hour12: false }) : '';
-            const changedItems = (archiveUpdate?.items || []).map(item => item.label || item.path).filter(Boolean).slice(0, 6);
-            const summary = hasNewReports
-              ? `新增体检报告 ${info.count} 份：${reportNames.join('、')}${info.count > reportNames.length ? '等' : ''}。请逐份查看确认。`
-              : `${archiveUpdate.source}${updatedAtText ? `（${updatedAtText}）` : ''}：${changedItems.length ? changedItems.join('、') : '生活方式资料'}。请进入“健康档案”核对具体变更。`;
-            todos.push({
-              id: 'archivereview_' + u._id, type: 'report_familydoctor_review', label: '健康档案待查看确认', priority: 2,
-              patientName: u.name || '未知', patientId: String(u._id),
-              summary, updateLocation: hasNewReports ? 'AI健康信息整理 → 新增体检报告待查看' : '健康档案 → 页面顶部档案变更记录',
-              createdAt, overdue: (now - new Date(createdAt)) > DAY,
-              link: `/patients/${u._id}?tab=${hasNewReports ? 'ai' : 'records'}`,
-            });
-          });
-        }
-      }
-    }
+    // 报告解析结果由健管专员审核。健康顾问在专项筛查小结、健康小结、
+    // 就医规划或管理方案入口按需查看已审核资料，不再为每次档案更新生成独立审核任务。
 
     // ── 健管专员：客户不适主诉待核实（可编辑后转健康顾问）──
     if (can('symptom_verify')) {
@@ -11468,7 +11439,7 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
     const { orderId, templateId, briefNote } = req.query;
     let order = null;
     if (orderId) {
-      order = await Order.findOne({ _id: orderId, user: user._id }).select('serviceName note desiredServiceDate serviceRequirements paidAmount').lean();
+      order = await Order.findOne({ _id: orderId, user: user._id }).select('serviceName note desiredServiceDate serviceRequirements paidAmount serviceWorkflowSnapshot').lean();
     }
     const { confirmedServiceSchedule } = require('../utils/confirmedServiceSchedule');
     const confirmedSchedule = confirmedServiceSchedule(order, briefNote);
@@ -11613,6 +11584,31 @@ ${templateBlock}
     if (raw.notes) items.push({ name: `注意事项：${raw.notes}`, category: '就医协助' });
 
     const usedTemplate = matchedTemplate || (candidateTemplates.length ? candidateTemplates.find(t => t.name === raw.title) : null) || templateForFields;
+    const templateFollowUpPlans = usedTemplate?.content?.followUpPlans?.length
+      ? usedTemplate.content.followUpPlans
+      : (usedTemplate?.content?.followUpPlanId
+        ? [{ id: usedTemplate.content.followUpPlanId, name: usedTemplate.content.followUpPlanName || '' }]
+        : []);
+    // Prefer the immutable workflow snapshot captured when the customer ordered.
+    // Older orders/templates remain compatible and default to fixed execution.
+    const productModuleMap = new Map((order?.serviceWorkflowSnapshot?.modules || []).map(item => [
+      String(item.planId?._id || item.planId || ''), item,
+    ]));
+    const templatePlanNameMap = new Map(templateFollowUpPlans.map(item => [String(item.id || item._id || ''), item.name || '']));
+    const configuredSource = productModuleMap.size
+      ? [...productModuleMap.values()].map(item => ({ ...item, id: item.planId?._id || item.planId, name: templatePlanNameMap.get(String(item.planId?._id || item.planId || '')) || '' }))
+      : templateFollowUpPlans;
+    const workflowModules = configuredSource.map((item, sequence) => {
+      const id = String(item.id || item._id || '');
+      const configured = productModuleMap.get(id) || item;
+      return {
+        id,
+        name: item.name || '',
+        mode: configured.mode || 'fixed',
+        trigger: configured.trigger || '',
+        sequence: configured.sequence ?? sequence,
+      };
+    }).sort((a, b) => a.sequence - b.sequence);
 
     // moduleData：跟年度管理方案同一套板块化呈现结构（staff/src/pages/PlanModulesPage.jsx 消费），
     // 2026-07-13 需求"营养/就医协助方案呈现要跟年度管理方案一致"；tasks 板块是多条记录模式，
@@ -11662,9 +11658,11 @@ ${templateBlock}
         } : null,
         followUpPlanId: usedTemplate?.content?.followUpPlanId || '',
         followUpPlanName: usedTemplate?.content?.followUpPlanName || '',
-        followUpPlans: usedTemplate?.content?.followUpPlans?.length
-          ? usedTemplate.content.followUpPlans
-          : (usedTemplate?.content?.followUpPlanId ? [{ id: usedTemplate.content.followUpPlanId, name: usedTemplate.content.followUpPlanName || '' }] : []),
+        followUpPlans: workflowModules,
+        workflowModules,
+        workflowModuleDecisions: workflowModules
+          .filter(item => item.mode === 'conditional')
+          .map(item => ({ ...item, decision: 'pending', decidedAt: null, decidedBy: null })),
         assistanceType: usedTemplate?.content?.assistanceType || '',
         serviceDomain: usedTemplate?.content?.serviceDomain || 'medical_assist',
         serviceMode: usedTemplate?.content?.serviceMode || '',

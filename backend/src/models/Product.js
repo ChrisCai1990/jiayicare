@@ -75,6 +75,15 @@ const productSchema = new mongoose.Schema({
     key: { type: String, enum: ['', 'annual_management', 'health_record_management', 'health_assessment', 'nutrition_intervention', 'checkup', 'medical_assist', 'rehab', 'tcm', 'psychology', 'medication_supply', 'supplement_supply', 'generic_followup', 'fulfillment_only'], default: '' },
     followUpPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUpPlan', default: null },
     followUpPlanIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'FollowUpPlan' }],
+    // One shared workflow, composed per product. Keep legacy id fields above for
+    // backward compatibility; modules carry the actual trigger semantics.
+    modules: [{
+      planId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUpPlan', required: true },
+      mode: { type: String, enum: ['fixed', 'conditional', 'manual'], default: 'fixed' },
+      trigger: { type: String, enum: ['', 'report_uploaded', 'abnormal_found', 'exam_order_found', 'followup_instruction_found', 'documents_incomplete', 'customer_request'], default: '' },
+      sequence: { type: Number, min: 0, default: 0 },
+      _id: false,
+    }],
     notes: { type: String, default: '', trim: true },
   },
 }, { timestamps: true });

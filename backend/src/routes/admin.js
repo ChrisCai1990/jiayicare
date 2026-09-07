@@ -1943,8 +1943,25 @@ router.patch('/products/:id/service-workflow', adminAuth, async (req, res) => {
   if (followUpPlanIds.length && await FollowUpPlan.countDocuments({ _id: { $in: followUpPlanIds }, status: 'active' }) !== followUpPlanIds.length) {
     return res.status(400).json({ success: false, message: '关联的随访方案不存在或已停用' });
   }
+  const allowedModes = new Set(['fixed', 'conditional', 'manual']);
+  const allowedTriggers = new Set(['', 'report_uploaded', 'abnormal_found', 'exam_order_found', 'followup_instruction_found', 'documents_incomplete', 'customer_request']);
+  const rawModules = Array.isArray(req.body?.modules) ? req.body.modules : followUpPlanIds.map((planId, sequence) => ({ planId, mode: 'fixed', trigger: '', sequence }));
+  const modules = rawModules.map((item, sequence) => ({
+    planId: String(item?.planId || ''), mode: String(item?.mode || 'fixed'), trigger: String(item?.trigger || ''),
+    sequence: Number.isFinite(Number(item?.sequence)) ? Number(item.sequence) : sequence,
+  }));
+  if (modules.some(item => !mongoose.Types.ObjectId.isValid(item.planId) || !allowedModes.has(item.mode) || !allowedTriggers.has(item.trigger))) {
+    return res.status(400).json({ success: false, message: '流程模块配置无效' });
+  }
+  if (modules.some(item => item.mode === 'conditional' && !item.trigger)) {
+    return res.status(400).json({ success: false, message: '条件模块必须选择识别条件' });
+  }
+  const modulePlanIds = [...new Set(modules.map(item => item.planId))];
+  if (modulePlanIds.length && await FollowUpPlan.countDocuments({ _id: { $in: modulePlanIds }, status: 'active' }) !== modulePlanIds.length) {
+    return res.status(400).json({ success: false, message: '流程模块关联的随访方案不存在或已停用' });
+  }
   const product = await Product.findByIdAndUpdate(req.params.id, { $set: { serviceWorkflow: {
-    key, followUpPlanId: followUpPlanIds[0] || null, followUpPlanIds, notes: String(req.body?.notes || '').trim().slice(0, 500),
+    key, followUpPlanId: modulePlanIds[0] || null, followUpPlanIds: modulePlanIds, modules, notes: String(req.body?.notes || '').trim().slice(0, 500),
   } } }, { new: true, runValidators: true });
   if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
   res.json({ success: true, data: product.serviceWorkflow, message: '产品服务流程已关联' });
