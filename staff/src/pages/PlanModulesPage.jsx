@@ -429,8 +429,9 @@ export default function PlanModulesPage() {
           <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24', marginBottom: 4 }}>按需节点审核</div>
           <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 14 }}>AI只整理依据；对应岗位审核“需要／不需要”，系统再生成或跳过任务。</div>
           <div style={{ display: 'grid', gap: 10 }}>{plan.content.workflowModuleDecisions.map(item => {
-            const roleName = item.reviewerRole === 'familyDoctor' ? '健康顾问' : '健康规划师'
-            const canReview = ['superadmin', item.reviewerRole].includes(staff?.role)
+            const reviewerRole = item.reviewerRole || (item.trigger === 'exam_order_found' ? 'healthPlanner' : 'familyDoctor')
+            const roleName = reviewerRole === 'familyDoctor' ? '健康顾问' : '健康规划师'
+            const canReview = ['superadmin', reviewerRole].includes(staff?.role)
             return <div key={item.id || item._id} style={{ padding: 12, borderRadius: 10, background: '#F7FAF8', border: '1px solid #E3EAE6' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}><strong>{item.name || '按需服务节点'}</strong><span style={{ fontSize: 12, color: '#6B7D74' }}>{roleName}审核</span></div>
               <div style={{ marginTop: 6, fontSize: 12, color: '#6B7D74' }}>当前：{item.decision === 'needed' ? '需要' : item.decision === 'not_needed' ? '不需要' : '待确认'}{item.aiSuggestion ? ` · AI建议：${item.aiSuggestion === 'needed' ? '需要' : item.aiSuggestion === 'not_needed' ? '不需要' : '信息不足'}` : ''}</div>

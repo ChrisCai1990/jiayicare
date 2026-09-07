@@ -24,3 +24,8 @@ test('workflow tasks honor explicit checkup assignees', () => {
   assert.match(staffRoute, /workflowPlan\.executorRole === 'medicalAssistant'[\s\S]+c\.escortStaffId/);
   assert.match(staffRoute, /explicitCheckupAssignee \|\| resolveAssignee/);
 });
+
+test('abnormal conditional nodes show health-consultant review before report evidence arrives', () => {
+  assert.match(staffPage, /item\.trigger === 'exam_order_found' \? 'healthPlanner' : 'familyDoctor'/);
+  assert.match(staffRoute, /configured\.mode === 'conditional' \? 'familyDoctor'/);
+});

@@ -11736,6 +11736,7 @@ ${templateBlock}
         mode: configured.mode || 'fixed',
         trigger: configured.trigger || '',
         sequence: configured.sequence ?? sequence,
+        reviewerRole: configured.trigger === 'exam_order_found' ? 'healthPlanner' : configured.mode === 'conditional' ? 'familyDoctor' : '',
       };
     }).sort((a, b) => a.sequence - b.sequence);
 

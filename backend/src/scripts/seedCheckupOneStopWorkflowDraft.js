@@ -129,7 +129,8 @@ async function run({ apply = false, approve = false } = {}) {
       return;
     }
 
-    const existingPlans = await plans.find({ name: { $in: TASK_PLAN_DRAFTS.map(item => item.name) } }).toArray();
+    const allDraftNames = TASK_PLAN_DRAFTS.flatMap(item => [item.name, item.name.replace(DRAFT, '')]);
+    const existingPlans = await plans.find({ name: { $in: allDraftNames } }).toArray();
     const backupKey = `checkup-one-stop-workflow-draft-${new Date().toISOString()}`;
     await db.collection('maintenance_backups').insertOne({
       backupKey,
@@ -142,10 +143,12 @@ async function run({ apply = false, approve = false } = {}) {
     const linked = [];
     for (const draft of TASK_PLAN_DRAFTS) {
       const { key, mode, trigger, sequence, ...planFields } = draft;
+      const approvedName = draft.name.replace(DRAFT, '');
       const result = await plans.findOneAndUpdate(
-        { name: draft.name },
+        { name: { $in: [draft.name, approvedName] } },
         { $set: {
           ...planFields,
+          name: approve ? approvedName : draft.name,
           reviewStatus: approve ? 'approved' : 'pending_review',
           reviewedAt: approve ? new Date() : null,
           reviewedBy: null,
