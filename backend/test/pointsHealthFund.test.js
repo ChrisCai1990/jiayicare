@@ -52,3 +52,9 @@ test('admin cancellation checks the confirmed payment record before changing ord
   assert.match(source, /Payment\.findOne\(\{ order: currentOrder\._id, status: 'succeeded' \}\)/);
   assert.match(source, /source: 'admin_cancel_guard'/);
 });
+
+test('checkout fund refund ignores the separate points-conversion reversal', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/utils/healthFundPayment.js'), 'utf8');
+  assert.match(source, /reversedTransactionId: \{ \$in: deductions\.map\(item => item\._id\) \}/);
+  assert.doesNotMatch(source, /findOne\(\{ orderId: order\._id, type: 'reversal', status: 'active' \}\)/);
+});

@@ -170,7 +170,16 @@ async function reverseHealthFund({ order, remark = '订单退款返还' }) {
   if (!order?.healthFundAmount) return 0;
   const deductions = await HealthFundTransaction.find({ orderId: order._id, type: 'deduction', status: 'active' });
   if (!deductions.length) return 0;
-  const alreadyReversed = await HealthFundTransaction.findOne({ orderId: order._id, type: 'reversal', status: 'active' });
+  // An order can also have a negative reversal that withdraws health fund
+  // converted from awarded points. That is not a refund of the fund used at
+  // checkout. Only a reversal linked to one of these deduction rows proves
+  // that the checkout deduction has already been returned.
+  const alreadyReversed = await HealthFundTransaction.findOne({
+    orderId: order._id,
+    type: 'reversal',
+    status: 'active',
+    reversedTransactionId: { $in: deductions.map(item => item._id) },
+  });
   if (alreadyReversed) return 0;
 
   const amount = deductions.reduce((sum, item) => sum + Math.abs(Number(item.amount) || 0), 0);
