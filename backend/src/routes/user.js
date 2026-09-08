@@ -1338,6 +1338,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
         servicePrice: p.price,
         orderType: 'product',
         pushRecordId: record._id,
+        referralSource: 'push',
         status: 'pending',
         referrerId: record.staffId,
         servicePerformers: (record.servicePerformers || [])

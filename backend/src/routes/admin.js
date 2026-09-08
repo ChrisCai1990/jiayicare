@@ -606,7 +606,7 @@ router.patch('/orders/:id/attribution', adminAuth, async (req, res) => {
   const { referrerId, fulfillerId } = req.body;
   const order = await Order.findByIdAndUpdate(
     req.params.id,
-    { referrerId: referrerId || null, fulfillerId: fulfillerId || null },
+    { referrerId: referrerId || null, fulfillerId: fulfillerId || null, referralSource: referrerId ? 'manual' : 'direct' },
     { new: true }
   );
   if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
@@ -645,10 +645,7 @@ router.get('/commissions', adminAuth, async (req, res) => {
   if (!COMMISSION_ADMIN_ROLES.includes(req.admin.role)) {
     return res.status(403).json({ success: false, message: '无权限查看佣金数据' });
   }
-  // 兼容修复前已支付但未触发推广结算的订单；幂等函数只补缺失记录。
-  const historicalPaid = await Order.find({ paymentStatus: 'paid', referrerId: { $ne: null } }).sort({ paidAt: -1 }).limit(200);
-  const { settleReferralCommission } = require('../utils/commissionSettlement');
-  for (const order of historicalPaid) await settleReferralCommission(order).catch(err => console.error('[commission-backfill]', order._id, err.message));
+  await require('../utils/commissionLifecycle').reconcileCancelledCommissions();
   const { status, role, staffId, page = 1, limit = 20 } = req.query;
   const filter = {};
   if (status) filter.status = status;
@@ -657,7 +654,7 @@ router.get('/commissions', adminAuth, async (req, res) => {
   const skip = (parseInt(page) - 1) * parseInt(limit);
   const [records, total] = await Promise.all([
     Commission.find(filter).sort({ createdAt: -1 }).skip(skip).limit(parseInt(limit))
-      .populate('staffId', 'name role').populate('patientId', 'name phone').populate('orderId', 'serviceName servicePrice'),
+      .populate('staffId', 'name role').populate('patientId', 'name phone').populate('orderId', 'serviceName servicePrice status paymentStatus refundStatus tradeStatus pushRecordId referralSource'),
     Commission.countDocuments(filter),
   ]);
   res.json({ success: true, data: records, total, page: parseInt(page) });
@@ -671,9 +668,16 @@ router.patch('/commissions/:id/confirm', adminAuth, async (req, res) => {
   const commission = await Commission.findById(req.params.id);
   if (!commission) return res.status(404).json({ success: false, message: '记录不存在' });
   if (commission.status !== 'pending') return res.status(400).json({ success: false, message: '仅待审核状态可审核通过' });
-  commission.status = 'confirmed';
-  await commission.save();
-  res.json({ success: true, data: commission, message: '已审核通过，待打款' });
+  const order = await Order.findById(commission.orderId);
+  const { commissionBlockReason, cancelOrderCommissions } = require('../utils/commissionLifecycle');
+  const blocked = commissionBlockReason(order);
+  if (blocked) {
+    await cancelOrderCommissions(order);
+    return res.status(409).json({ success: false, message: blocked });
+  }
+  const updated = await Commission.findOneAndUpdate({ _id: commission._id, status: 'pending' }, { $set: { status: 'confirmed' } }, { new: true });
+  if (!updated) return res.status(409).json({ success: false, message: '佣金状态已变化，请刷新' });
+  res.json({ success: true, data: updated, message: '已审核通过，待打款' });
 });
 
 // PATCH /api/admin/commissions/:id/reject — 审核驳回（pending → cancelled）
@@ -699,10 +703,16 @@ router.patch('/commissions/:id/pay', adminAuth, async (req, res) => {
   const commission = await Commission.findById(req.params.id);
   if (!commission) return res.status(404).json({ success: false, message: '记录不存在' });
   if (commission.status !== 'confirmed') return res.status(400).json({ success: false, message: '仅已审核通过状态可打款' });
-  commission.status = 'paid';
-  commission.paidAt = new Date();
-  await commission.save();
-  res.json({ success: true, data: commission, message: '已确认打款' });
+  const order = await Order.findById(commission.orderId);
+  const { commissionBlockReason, cancelOrderCommissions } = require('../utils/commissionLifecycle');
+  const blocked = commissionBlockReason(order);
+  if (blocked) {
+    await cancelOrderCommissions(order);
+    return res.status(409).json({ success: false, message: blocked });
+  }
+  const updated = await Commission.findOneAndUpdate({ _id: commission._id, status: 'confirmed' }, { $set: { status: 'paid', paidAt: new Date() } }, { new: true });
+  if (!updated) return res.status(409).json({ success: false, message: '佣金状态已变化，请刷新' });
+  res.json({ success: true, data: updated, message: '已确认打款' });
 });
 
 // PATCH /api/admin/commissions/batch-pay — 批量打款（对多条confirmed记录一次性打款）
@@ -712,8 +722,18 @@ router.patch('/commissions/batch-pay', adminAuth, async (req, res) => {
   }
   const { ids } = req.body;
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ success: false, message: '请选择要打款的记录' });
+  const candidates = await Commission.find({ _id: { $in: ids }, status: 'confirmed' });
+  const { commissionBlockReason, cancelOrderCommissions } = require('../utils/commissionLifecycle');
+  for (const commission of candidates) {
+    const order = await Order.findById(commission.orderId);
+    const blocked = commissionBlockReason(order);
+    if (blocked) {
+      await cancelOrderCommissions(order);
+      return res.status(409).json({ success: false, message: blocked });
+    }
+  }
   const result = await Commission.updateMany(
-    { _id: { $in: ids }, status: 'confirmed' },
+    { _id: { $in: candidates.map(c => c._id) }, status: 'confirmed' },
     { $set: { status: 'paid', paidAt: new Date() } }
   );
   res.json({ success: true, message: `已批量打款 ${result.modifiedCount} 条` });
