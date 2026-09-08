@@ -16,6 +16,27 @@ test('unread count excludes completed questionnaire assignments and legacy answe
   assert.match(source, /answeredPushIds/);
   assert.match(source, /legacyAnsweredQuestionnaireIds/);
   assert.match(source, /pendingQuestionnaireIds/);
+  assert.match(source, /validOrderIds/);
+  assert.match(source, /status: \{ \$ne: 'cancelled' \}/);
+});
+
+test('payment confirmation is recoverable and records the paid fact before side effects', () => {
+  const settlement = read('src/utils/orderSettlement.js');
+  const payments = read('src/routes/payments.js');
+  const orders = read('src/routes/orders.js');
+  assert.ok(settlement.indexOf("order.paymentStatus = 'paid'") < settlement.indexOf('deductHealthFund'));
+  assert.match(payments, /payment\?\.status === 'succeeded'/);
+  assert.match(payments, /source: 'local_recovery'/);
+  assert.match(orders, /source: 'cancel_guard'/);
+  assert.match(orders, /source: 'cancel_recheck'/);
+});
+
+test('health fund deduction tolerates legacy floating point residue and rounds ledger amounts', () => {
+  const source = read('src/utils/healthFundPayment.js');
+  assert.match(source, /healthFundBalance: \{ \$gte: amount - 0\.005 \}/);
+  assert.match(source, /\$round/);
+  assert.match(source, /personalAmount/);
+  assert.match(source, /corporateAmount/);
 });
 
 test('batch read updates both messages and push records within the authenticated user scope', () => {

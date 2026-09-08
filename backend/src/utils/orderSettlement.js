@@ -20,14 +20,21 @@ async function confirmPayment({ outTradeNo, transactionId, paidAt, snapshot }) {
 
   const order = await Order.findById(payment.order);
   if (!order) throw new Error('订单不存在');
-  if (order.paymentStatus === 'paid' && order.fulfillmentId) return order;
 
+  const wasConfirmedPaid = order.paymentStatus === 'paid';
   order.paymentMethod = 'wechat';
   order.paidAmount = payment.amount;
   order.transactionId = payment.transactionId;
   order.paidAt = payment.paidAt;
   order.paymentId = payment._id;
   if (!order.verifyCode) order.verifyCode = require('crypto').randomBytes(4).toString('hex').toUpperCase();
+  // 微信确认成功是资金事实，必须先落库，再执行基金、履约、消息等可重试副作用。
+  // 这样即使后续任一步骤暂时失败，用户端也不会把已扣款订单显示成待支付。
+  order.paymentStatus = 'paid';
+  if (!wasConfirmedPaid) {
+    order.tradeStatus = 'paid';
+    if (order.status === 'cancelled') order.status = 'pending';
+  }
   await order.save();
 
   if (order.healthFundAmount > 0 && !order.healthFundSettledAt) {
@@ -81,9 +88,6 @@ async function confirmPayment({ outTradeNo, transactionId, paidAt, snapshot }) {
       { upsert: true, new: true },
     );
   }
-  order.paymentStatus = 'paid';
-  order.tradeStatus = 'paid';
-  await order.save();
   await require('./orderPlannerConversation').ensureOrderPlannerPrompt(order);
   await require('./commissionSettlement').settleReferralCommission(order);
   await require('./productShareRewards').grantProductShareRewards(order);

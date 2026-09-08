@@ -145,19 +145,24 @@ async function validateHealthFundDeduction({ user, requested, orderAmount, categ
 }
 
 async function deductHealthFund({ user, enterprise, order, amount, breakdown }) {
+  amount = Math.round((Number(amount) || 0) * 100) / 100;
   if (!amount) return null;
   const existing = await HealthFundTransaction.find({ orderId: order._id, type: 'deduction', status: 'active' });
   if (existing.length) return existing;
   const updated = await user.constructor.findOneAndUpdate(
-    { _id: user._id, healthFundBalance: { $gte: amount } },
-    { $inc: { healthFundBalance: -amount } },
+    // 历史余额可能是 16.59999999999996 这类浮点值；按“分”比较并在扣减后
+    // 归一到两位，避免明明显示 ¥16.60 却被判余额不足，阻断支付确认。
+    { _id: user._id, healthFundBalance: { $gte: amount - 0.005 } },
+    [{ $set: { healthFundBalance: { $round: [{ $subtract: [{ $ifNull: ['$healthFundBalance', 0] }, amount] }, 2] } } }],
     { new: true },
   );
   if (!updated) throw new Error('健康基金余额发生变化，请刷新后重试');
   const split = breakdown || { personal: 0, corporate: amount };
+  const personalAmount = Math.round((Number(split.personal) || 0) * 100) / 100;
+  const corporateAmount = Math.round((Number(split.corporate) || 0) * 100) / 100;
   const rows = [];
-  if (split.personal > 0) rows.push({ userId:user._id, orderId:order._id, type:'deduction', source:'promotion', amount:-split.personal, balanceAfter:updated.healthFundBalance, remark:`订单${order.serviceName}自有基金抵扣` });
-  if (split.corporate > 0) rows.push({ userId:user._id, enterpriseId:enterprise?._id || null, orderId:order._id, type:'deduction', source:'enterprise', amount:-split.corporate, balanceAfter:updated.healthFundBalance, remark:`订单${order.serviceName}企业基金抵扣` });
+  if (personalAmount > 0) rows.push({ userId:user._id, orderId:order._id, type:'deduction', source:'promotion', amount:-personalAmount, balanceAfter:updated.healthFundBalance, remark:`订单${order.serviceName}自有基金抵扣` });
+  if (corporateAmount > 0) rows.push({ userId:user._id, enterpriseId:enterprise?._id || null, orderId:order._id, type:'deduction', source:'enterprise', amount:-corporateAmount, balanceAfter:updated.healthFundBalance, remark:`订单${order.serviceName}企业基金抵扣` });
   return HealthFundTransaction.insertMany(rows);
 }
 

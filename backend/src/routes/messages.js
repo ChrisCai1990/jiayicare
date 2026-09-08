@@ -5,6 +5,7 @@ const ChatLog = require('../models/ChatLog');
 const ChatConversationState = require('../models/ChatConversationState');
 const { isHumanPresent } = require('../utils/chatPresence');
 const PushRecord = require('../models/PushRecord');
+const Order = require('../models/Order');
 const { QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
 const { uploadBase64, signStoredUrl } = require('../utils/oss');
 const { conversationRoleKeys, getConversationRole } = require('../utils/conversationRoles');
@@ -30,6 +31,11 @@ router.get('/unread-count', auth, async (req, res) => {
       .sort({ createdAt: -1 }).select('sender type title content createdAt').lean(),
   ]);
   const questionnairePushes = unreadPushes.filter(item => item.type === 'questionnaire' && item.questionnaireId);
+  const orderScopedPushes = questionnairePushes.filter(item => item.sourceOrderId);
+  const validOrderIds = new Set(orderScopedPushes.length ? (await Order.find({
+    _id: { $in: orderScopedPushes.map(item => item.sourceOrderId) },
+    status: { $ne: 'cancelled' }, tradeStatus: { $nin: ['closed', 'refunded'] },
+  }).distinct('_id')).map(String) : []);
   const responses = questionnairePushes.length ? await QuestionnaireResponse.find({
     user: req.user._id,
     $or: [
@@ -41,9 +47,9 @@ router.get('/unread-count', auth, async (req, res) => {
   const legacyAnsweredQuestionnaireIds = new Set(responses.filter(item => !item.pushRecordId).map(item => String(item.questionnaire)));
   const pushCount = unreadPushes.filter(item => item.type !== 'questionnaire'
     || (!answeredPushIds.has(String(item._id))
-      && (item.sourceOrderId || !legacyAnsweredQuestionnaireIds.has(String(item.questionnaireId))))).length;
+      && (item.sourceOrderId ? validOrderIds.has(String(item.sourceOrderId)) : !legacyAnsweredQuestionnaireIds.has(String(item.questionnaireId))))).length;
   const pendingQuestionnaireIds = new Set(questionnairePushes.filter(item => !answeredPushIds.has(String(item._id))
-    && (item.sourceOrderId || !legacyAnsweredQuestionnaireIds.has(String(item.questionnaireId))))
+    && (item.sourceOrderId ? validOrderIds.has(String(item.sourceOrderId)) : !legacyAnsweredQuestionnaireIds.has(String(item.questionnaireId))))
     .map(item => String(item.questionnaireId)));
   const msgCount = unreadMessages.filter(item => item.type !== 'questionnaire'
     || pendingQuestionnaireIds.has(String(item.questionnaireId))).length;

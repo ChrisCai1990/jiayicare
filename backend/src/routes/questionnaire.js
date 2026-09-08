@@ -179,10 +179,15 @@ router.get('/pending', auth, async (req, res) => {
     }).select('pushRecordId questionnaire').lean();
     const answeredPushIds = new Set(responses.filter(r => r.pushRecordId).map(r => String(r.pushRecordId)));
     const legacyAnsweredQuestionnaireIds = new Set(responses.filter(r => !r.pushRecordId).map(r => String(r.questionnaire)));
+    const orderScopedPushes = pushRecords.filter(r => r.sourceOrderId);
+    const validOrderIds = new Set(orderScopedPushes.length ? (await Order.find({
+      _id: { $in: orderScopedPushes.map(r => r.sourceOrderId) },
+      status: { $ne: 'cancelled' }, tradeStatus: { $nin: ['closed', 'refunded'] },
+    }).distinct('_id')).map(String) : []);
     // 旧版答卷没有保存 pushRecordId。对普通人工推送，已有同模板答卷即视为
     // 完成；订单问卷仍按每个订单的 assignment 独立判断，保留重复填写能力。
     const pendingPushes = pushRecords.filter(r => !answeredPushIds.has(String(r._id))
-      && (r.sourceOrderId || !legacyAnsweredQuestionnaireIds.has(String(r.questionnaireId))));
+      && (r.sourceOrderId ? validOrderIds.has(String(r.sourceOrderId)) : !legacyAnsweredQuestionnaireIds.has(String(r.questionnaireId))));
     const questionnaires = await DynamicQuestionnaire.find({ _id: { $in: pendingPushes.map(r => r.questionnaireId) }, status: 'active', deletedAt: null })
       .select('title description questions deadline scoringEnabled createdBy sortOrder').lean();
     const questionnaireMap = new Map(questionnaires.map(q => [String(q._id), q]));

@@ -56,7 +56,11 @@ router.get('/:orderId/status', auth, async (req, res) => {
   const order = await Order.findOne({ _id: req.params.orderId, user: req.user._id });
   if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
   const payment = await Payment.findOne({ order: order._id }).sort({ createdAt: -1 });
-  if (payment?.status === 'processing') {
+  if (payment?.status === 'succeeded' && order.paymentStatus !== 'refunded') {
+    try {
+      await confirmPayment({ outTradeNo: payment.outTradeNo, transactionId: payment.transactionId, paidAt: payment.paidAt, snapshot: { source: 'local_recovery', tradeState: 'SUCCESS' } });
+    } catch (err) { console.error('[wechat-pay-recovery]', err.message); }
+  } else if (payment?.status === 'processing') {
     try {
       const remote = await wechatPay.queryOrder(payment.outTradeNo);
       payment.lastQueriedAt = new Date();
@@ -97,7 +101,11 @@ router.post('/:orderId/retry', auth, async (req, res) => {
   if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
   if (order.paymentStatus === 'paid') return res.json({ success: true, data: { order, alreadyPaid: true } });
   if (['closed', 'refunded'].includes(order.tradeStatus)) return res.status(409).json({ success: false, message: '订单已关闭，不能继续支付' });
-  const payment = await Payment.findOne({ order: order._id, status: 'processing', channel: 'wechat_pay' }).sort({ createdAt: -1 });
+  const payment = await Payment.findOne({ order: order._id, status: { $in: ['processing', 'succeeded'] }, channel: 'wechat_pay' }).sort({ createdAt: -1 });
+  if (payment?.status === 'succeeded') {
+    const paidOrder = await confirmPayment({ outTradeNo: payment.outTradeNo, transactionId: payment.transactionId, paidAt: payment.paidAt, snapshot: { source: 'retry_recovery', tradeState: 'SUCCESS' } });
+    return res.json({ success: true, data: { order: paidOrder, alreadyPaid: true } });
+  }
   if (!payment?.prepayId) return res.status(409).json({ success: false, message: '原支付单已失效，请取消订单后重新下单' });
   try {
     const remote = await wechatPay.queryOrder(payment.outTradeNo);

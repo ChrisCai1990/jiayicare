@@ -110,9 +110,35 @@ router.patch('/:id/cancel', auth, async (req, res) => {
     if (order.paymentStatus === 'paid' || ['paid', 'fulfilling'].includes(order.tradeStatus)) {
       return res.status(409).json({ success: false, message: '已支付订单不能直接取消，请提交退款申请' });
     }
-    const payment = await Payment.findOne({ order: order._id, status: 'processing' }).sort({ createdAt: -1 });
+    const payment = await Payment.findOne({ order: order._id, status: { $in: ['processing', 'succeeded'] } }).sort({ createdAt: -1 });
+    if (payment?.status === 'succeeded') {
+      await require('../utils/orderSettlement').confirmPayment({
+        outTradeNo: payment.outTradeNo, transactionId: payment.transactionId, paidAt: payment.paidAt,
+        snapshot: { source: 'cancel_guard', tradeState: 'SUCCESS' },
+      });
+      return res.status(409).json({ success: false, message: '微信已确认支付成功，不能取消；如不需要服务请申请退款' });
+    }
     if (payment) {
-      try { await wechatPay.closeOrder(payment.outTradeNo); } catch (err) { console.error('[close-payment]', err.message); }
+      try {
+        const remote = await wechatPay.queryOrder(payment.outTradeNo);
+        if (remote.trade_state === 'SUCCESS') {
+          await require('../utils/orderSettlement').confirmPayment({ outTradeNo: payment.outTradeNo, transactionId: remote.transaction_id, paidAt: remote.success_time ? new Date(remote.success_time) : new Date(), snapshot: { source: 'cancel_query', tradeState: remote.trade_state } });
+          return res.status(409).json({ success: false, message: '微信已确认支付成功，不能取消；如不需要服务请申请退款' });
+        }
+      } catch (err) { console.error('[cancel-payment-query]', err.message); }
+      try {
+        await wechatPay.closeOrder(payment.outTradeNo);
+      } catch (err) {
+        console.error('[close-payment]', err.message);
+        try {
+          const remote = await wechatPay.queryOrder(payment.outTradeNo);
+          if (remote.trade_state === 'SUCCESS') {
+            await require('../utils/orderSettlement').confirmPayment({ outTradeNo: payment.outTradeNo, transactionId: remote.transaction_id, paidAt: remote.success_time ? new Date(remote.success_time) : new Date(), snapshot: { source: 'cancel_recheck', tradeState: remote.trade_state } });
+            return res.status(409).json({ success: false, message: '微信已确认支付成功，不能取消；如不需要服务请申请退款' });
+          }
+        } catch (queryErr) { console.error('[cancel-payment-recheck]', queryErr.message); }
+        return res.status(409).json({ success: false, message: '支付状态正在确认，暂不能取消，请稍后刷新订单' });
+      }
       payment.status = 'closed'; payment.closedAt = new Date(); await payment.save();
     }
     order.status = 'cancelled';
