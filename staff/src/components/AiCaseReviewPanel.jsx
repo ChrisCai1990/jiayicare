@@ -6,7 +6,7 @@ const SCOPES = [
   ['medications', '用药/营养素'], ['followups', '随访'], ['plans', '管理方案'], ['aiAnalysis', '既有AI分析'],
 ]
 const PROVIDER_LABEL = '通义千问'
-const REVIEW_TEMPLATES = [
+const SYSTEM_REVIEW_TEMPLATES = [
   { key: 'checkup', label: '体检方案研判', title: '体检方案研判', description: '结合体检报告、健康档案和既往检查，明确本次体检重点与待审核方案。', scopes: ['basic','healthProfile','reports','plans','aiAnalysis'], target: '本次体检方案' },
   { key: 'nutrition', label: '营养干预研判', title: '营养干预研判', description: '结合指标、生活方式和依从性讨论本季度营养干预方向，形成季度待审核方案。', scopes: ['basic','healthProfile','healthRecords','medications','followups','plans'], target: '季度营养干预方案' },
   { key: 'annual', label: '年度管理研判', title: '年度管理研判', description: '结合健康档案、目标和既有服务，讨论下一年度管理重点与待审核方案。', scopes: ['basic','healthProfile','reports','healthRecords','followups','plans','aiAnalysis'], target: '年度管理方案' },
@@ -86,6 +86,7 @@ function StageWorkflow({ assessment }) {
 
 export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all', onNavigate }) {
   const [topics, setTopics] = useState([])
+  const [managedTemplates, setManagedTemplates] = useState([])
   const [assessments, setAssessments] = useState([])
   const [assessmentMode, setAssessmentMode] = useState('routine')
   const [assessmentEdits, setAssessmentEdits] = useState({})
@@ -101,6 +102,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   const [conclusionText, setConclusionText] = useState('')
   const bottomRef = useRef(null)
   const active = useMemo(() => topics.find(item => item._id === activeId) || topics[0], [topics, activeId])
+  const reviewTemplates = useMemo(() => [...SYSTEM_REVIEW_TEMPLATES, ...managedTemplates], [managedTemplates])
   const isStageAssessmentTopic = active?.reviewType === 'assessment' || /阶段性.*评估/.test(`${active?.title || ''} ${active?.description || ''}`)
 
   const replaceTopic = topic => {
@@ -110,8 +112,10 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   const load = async () => {
     setLoading(true)
     try {
-      const [topicRes, assessmentRes] = await Promise.all([staffAPI.getAiCaseReviews(patientId), staffAPI.getPhaseAssessments(patientId)])
-      setTopics(topicRes.data || [])
+      const [topicRes, assessmentRes, templateRes] = mode === 'specialty'
+        ? await Promise.all([staffAPI.getAiCaseReviews(patientId), Promise.resolve({ data: [] }), staffAPI.getAiCaseReviewTemplates()])
+        : await Promise.all([staffAPI.getAiCaseReviews(patientId), staffAPI.getPhaseAssessments(patientId), Promise.resolve({ data: [] })])
+      setTopics(topicRes.data || []); setManagedTemplates(templateRes.data || [])
       setAssessments(assessmentRes.data || [])
       setAssessmentEdits(Object.fromEntries((assessmentRes.data || []).map(item => [item._id, item.content || ''])))
       if (!activeId && topicRes.data?.length) setActiveId(topicRes.data[0]._id)
@@ -165,7 +169,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
       replaceTopic(res.data)
       if (res.archivedToPhaseAssessment) toast('结论已确认，并已写入阶段性健康评估')
       else {
-        const target = REVIEW_TEMPLATES.find(item => item.key === active.reviewType)?.target
+        const target = reviewTemplates.find(item => item.key === active.reviewType || item.reviewType === active.reviewType)?.target
           || (/年度管理研判/.test(active.title) ? '年度管理方案' : '对应业务方案')
         toast(`结论已确认，将仅用于${target}`)
       }
@@ -173,11 +177,11 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
     catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
   }
   const applyReviewTemplate = async key => {
-    const item = REVIEW_TEMPLATES.find(v => v.key === key); if (!item || !active) return
+    const item = reviewTemplates.find(v => v.key === key); if (!item || !active) return
     setBusy(true)
     try {
-      const description = `${item.description}\n\n固定研判输出：${item.key === 'daily' ? '问题要点、已确认事实、待补信息、人工决定的后续事项' : '研判依据、管理执行/问题分析、风险或数据缺口、待审核方案/下一步计划'}`
-      const res = await staffAPI.updateAiCaseReview(patientId, active._id, { title: item.title, description, reviewType: item.key, contextScopes: item.scopes })
+      const description = `${item.description}\n\n固定研判输出：${item.outputGuide || (item.key === 'daily' ? '问题要点、已确认事实、待补信息、人工决定的后续事项' : '研判依据、管理执行/问题分析、风险或数据缺口、待审核方案/下一步计划')}`
+      const res = await staffAPI.updateAiCaseReview(patientId, active._id, { title: item.title, description, reviewType: item.reviewType || item.key, contextScopes: item.scopes })
       replaceTopic(res.data); toast(`已套用${item.label}模板`)
     } catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
   }
@@ -283,7 +287,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
           const checked = active.contextScopes?.includes(key)
           return <label key={key} style={{ fontSize: 12, border: `1px solid ${checked ? '#1E6B50' : '#D8E1DC'}`, color: checked ? '#1E6B50' : '#65776F', borderRadius: 16, padding: '5px 9px', cursor: 'pointer' }}><input type="checkbox" checked={checked} onChange={() => updateScopes(checked ? active.contextScopes.filter(v => v !== key) : [...active.contextScopes, key])} style={{ marginRight: 5 }} />{label}</label>
         })}</div>
-        <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #E5ECE8' }}><div style={{ fontSize: 12, color: '#65776F', marginBottom: 7 }}>套用研判模板（可用于当前主题）</div><div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>{REVIEW_TEMPLATES.map(item => <button key={item.key} className="btn btn-secondary btn-sm" disabled={busy} onClick={() => applyReviewTemplate(item.key)}>{item.label}</button>)}</div></div>
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #E5ECE8' }}><div style={{ fontSize: 12, color: '#65776F', marginBottom: 7 }}>套用研判模板（可用于当前主题）</div><div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>{reviewTemplates.map(item => <button key={item.key} className="btn btn-secondary btn-sm" disabled={busy} onClick={() => applyReviewTemplate(item.key)}>{item.label}</button>)}</div></div>
       </div></div>
 
       <div className="card" style={{ flex: 1 }}><div className="card-body" style={{ height: 480, overflowY: 'auto', background: '#F7F8F6' }}>
@@ -305,13 +309,13 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
       {!!active.messages?.length && <div className="card"><div className="card-header"><div className="card-title">阶段性结论</div><button className="btn btn-secondary btn-sm" disabled={busy} onClick={generateConclusion}>AI整理结论</button></div><div className="card-body">
         <StructuredAssessment data={active.conclusion?.structured} />
         <textarea className="form-input" rows={10} value={conclusionText} onChange={e => setConclusionText(e.target.value)} placeholder="AI整理后由健康顾问复核确认；只有已确认结论会进入管理方案上下文。" />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}><span style={{ fontSize: 12, color: active.conclusion?.status === 'confirmed' ? '#16845B' : '#8AA89C' }}>{isStageAssessmentTopic ? '研判结论仅供参考；正式阶段评估必须使用上方营养初审流程' : active.conclusion?.status === 'confirmed' ? `已由${active.conclusion.confirmedByName || '健康顾问'}确认` : '草稿不会进入任何正式方案'}</span>{!isStageAssessmentTopic && ['familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy || !conclusionText.trim()} onClick={confirmConclusion}>{`确认并用于${REVIEW_TEMPLATES.find(item => item.key === active.reviewType)?.target || (/年度管理研判/.test(active.title) ? '年度管理方案' : '对应方案')}`}</button>}</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}><span style={{ fontSize: 12, color: active.conclusion?.status === 'confirmed' ? '#16845B' : '#8AA89C' }}>{isStageAssessmentTopic ? '研判结论仅供参考；正式阶段评估必须使用上方营养初审流程' : active.conclusion?.status === 'confirmed' ? `已由${active.conclusion.confirmedByName || '健康顾问'}确认` : '草稿不会进入任何正式方案'}</span>{!isStageAssessmentTopic && ['familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy || !conclusionText.trim()} onClick={confirmConclusion}>{`确认并用于${reviewTemplates.find(item => item.key === active.reviewType || item.reviewType === active.reviewType)?.target || (/年度管理研判/.test(active.title) ? '年度管理方案' : '对应方案')}`}</button>}</div>
       </div></div>}
     </div> : <div className="card"><div className="card-body" style={{ padding: 60, textAlign: 'center', color: '#8AA89C' }}>请先新建一个研判主题</div></div>}
     </>}
 
     {showCreate && <div className="modal-overlay"><div className="modal" style={{ maxWidth: 620 }}><div className="modal-header"><div className="modal-title">新建专项研判主题</div><button className="modal-close" onClick={() => setShowCreate(false)}>×</button></div><div className="modal-body">
-      <div className="form-group"><label className="form-label">研判模板</label><select className="form-input" defaultValue="" onChange={e => { const item = REVIEW_TEMPLATES.find(v => v.key === e.target.value); if (item) setForm(f => ({ ...f, title: item.title, description: item.description, reviewType: item.key, contextScopes: item.scopes })); else setForm(f => ({ ...f, reviewType: 'custom' })) }}><option value="">自定义主题</option>{REVIEW_TEMPLATES.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}</select><div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>就医协助形成单次方案，营养干预形成季度方案；只有年度管理研判进入年度管理方案。</div></div>
+      <div className="form-group"><label className="form-label">研判模板</label><select className="form-input" defaultValue="" onChange={e => { const item = reviewTemplates.find(v => v.key === e.target.value); if (item) setForm(f => ({ ...f, title: item.title, description: item.outputGuide ? `${item.description}\n\n固定研判输出：${item.outputGuide}` : item.description, reviewType: item.reviewType || item.key, contextScopes: item.scopes })); else setForm(f => ({ ...f, reviewType: 'custom' })) }}><option value="">自定义主题</option>{reviewTemplates.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}</select><div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>专病分析模板可在 Admin 后台持续维护；就医协助形成单次方案，营养干预形成季度方案。</div></div>
       <div className="form-group"><label className="form-label">主题名称</label><input className="form-input" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="例如：近期血压波动原因分析" /></div>
       <div className="form-group"><label className="form-label">问题说明</label><textarea className="form-input" rows={3} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>
       <div className="form-group"><label className="form-label">测试模型</label><div className="form-input" style={{ background: '#F7F8F6', color: '#4A6558' }}>{PROVIDER_LABEL}</div></div>

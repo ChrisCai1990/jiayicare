@@ -17,17 +17,23 @@ const { reviewedWriteback } = require('../utils/reviewedWriteback');
 
 const DEFAULT_SCOPES = ['basic', 'healthProfile', 'reports', 'healthRecords', 'medications', 'followups', 'plans', 'aiAnalysis'];
 const VALID_SCOPES = new Set(DEFAULT_SCOPES);
-const VALID_REVIEW_TYPES = new Set(['checkup', 'nutrition', 'annual', 'assessment', 'medical', 'daily', 'custom']);
+const VALID_REVIEW_TYPES = new Set(['checkup', 'nutrition', 'annual', 'assessment', 'medical', 'daily', 'specialty', 'custom']);
 const ROLE_LABEL = { superadmin: '超级管理员', familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', healthPlanner: '健康规划师', medicalAssistant: '就医专员', psychologist: '心理咨询师', rehabSpecialist: '运动复健师', tcmDoctor: '中医师', specialist: '专科医师' };
 
 function sanitizeScopes(scopes) {
   return [...new Set((Array.isArray(scopes) ? scopes : DEFAULT_SCOPES).filter(item => VALID_SCOPES.has(item)))];
 }
 
-async function patientOr404(req, res) {
+async function caseReviewPatientOr404(req, res) {
   if (!mongoose.isValidObjectId(req.params.patientId)) { res.status(400).json({ success: false, message: '客户ID无效' }); return null; }
   const user = await User.findById(req.params.patientId);
   if (!user) { res.status(404).json({ success: false, message: '客户不存在' }); return null; }
+  return user;
+}
+
+async function patientOr404(req, res) {
+  const user = await caseReviewPatientOr404(req, res);
+  if (!user) return null;
   if (user.aiPilotFeatures?.stageAssessment !== true) {
     res.status(403).json({ success: false, message: '该客户尚未进入阶段性健康评估试点' });
     return null;
@@ -49,6 +55,27 @@ function forClient(doc) {
 
 router.get('/ai-case-review/providers', staffAuth, (req, res) => {
   res.json({ success: true, data: providerAdapter.availableProviders() });
+});
+
+router.get('/ai-case-review/templates', staffAuth, async (req, res) => {
+  try {
+    await PlanTemplate.findOneAndUpdate(
+      { type: 'ai_case_review', name: '专病分析' },
+      { $setOnInsert: { type: 'ai_case_review', name: '专病分析', status: 'active', content: {
+        description: '围绕某一明确疾病，纵向汇总病史、检查、治疗、用药和随访变化，识别证据缺口并形成待专业人员复核的分析结论。',
+        contextScopes: DEFAULT_SCOPES,
+        target: '专病分析结论',
+        outputGuide: '疾病概况、时间轴、关键指标与影像变化、治疗及用药、风险与矛盾点、待补资料、下一步建议',
+      } } },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+    const templates = await PlanTemplate.find({ type: 'ai_case_review', status: 'active' }).sort({ createdAt: 1 }).lean();
+    res.json({ success: true, data: templates.map(item => ({
+      key: String(item._id), label: item.name, title: item.content?.title || item.name,
+      description: item.content?.description || '', scopes: sanitizeScopes(item.content?.contextScopes),
+      target: item.content?.target || '专病分析结论', reviewType: 'specialty', outputGuide: item.content?.outputGuide || '',
+    })) });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
 router.get('/patients/:patientId/phase-assessments', staffAuth, async (req, res) => {
@@ -165,7 +192,7 @@ router.patch('/patients/:patientId/phase-assessments/:assessmentId', staffAuth, 
 
 router.get('/patients/:patientId/ai-case-reviews', staffAuth, async (req, res) => {
   try {
-    const user = await patientOr404(req, res); if (!user) return;
+    const user = await caseReviewPatientOr404(req, res); if (!user) return;
     const topics = await AiCaseReview.find({ user: user._id, status: { $ne: 'archived' } }).sort({ lastActivityAt: -1 });
     res.json({ success: true, data: topics.map(forClient) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -173,7 +200,7 @@ router.get('/patients/:patientId/ai-case-reviews', staffAuth, async (req, res) =
 
 router.post('/patients/:patientId/ai-case-reviews', staffAuth, async (req, res) => {
   try {
-    const user = await patientOr404(req, res); if (!user) return;
+    const user = await caseReviewPatientOr404(req, res); if (!user) return;
     const title = String(req.body.title || '').trim();
     if (!title) return res.status(400).json({ success: false, message: '请输入研判主题' });
     const topic = await AiCaseReview.create({
@@ -190,7 +217,7 @@ router.post('/patients/:patientId/ai-case-reviews', staffAuth, async (req, res) 
 
 router.patch('/patients/:patientId/ai-case-reviews/:topicId', staffAuth, async (req, res) => {
   try {
-    const user = await patientOr404(req, res); if (!user) return;
+    const user = await caseReviewPatientOr404(req, res); if (!user) return;
     const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id });
     if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
     if (req.body.title !== undefined) topic.title = String(req.body.title).trim();
@@ -208,7 +235,7 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId', staffAuth, async (
 
 router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth, async (req, res) => {
   try {
-    const user = await patientOr404(req, res); if (!user) return;
+    const user = await caseReviewPatientOr404(req, res); if (!user) return;
     const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id });
     if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
     const content = String(req.body.content || '').trim();
@@ -231,7 +258,7 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
 
 router.post('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAuth, async (req, res) => {
   try {
-    const user = await patientOr404(req, res); if (!user) return;
+    const user = await caseReviewPatientOr404(req, res); if (!user) return;
     const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id });
     if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
     if (!topic.messages.length) return res.status(400).json({ success: false, message: '暂无讨论内容' });
@@ -249,7 +276,7 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAut
 router.patch('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAuth, async (req, res) => {
   try {
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可确认研判结论' });
-    const user = await patientOr404(req, res); if (!user) return;
+    const user = await caseReviewPatientOr404(req, res); if (!user) return;
     const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id });
     if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
     const content = String(req.body.content || topic.conclusion?.content || '').trim();
