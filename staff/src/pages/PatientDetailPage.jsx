@@ -1493,6 +1493,54 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
   )
 }
 
+const SERVICE_MANAGEMENT_CATEGORIES = [
+  { key: 'annual', label: '年度管理', icon: '🗓️', color: '#1E6B50', description: '年度目标、阶段评估与持续管理' },
+  { key: 'checkup', label: '体检管理', icon: '🩺', color: '#0077B6', description: '历年体检、当次方案与执行进度' },
+  { key: 'medical', label: '就医管理', icon: '🏥', color: '#7C3AED', description: '就医方案、预约协调与陪诊服务' },
+  { key: 'nutrition', label: '营养管理', icon: '🥗', color: '#D97706', description: '营养评估、干预方案与阶段复盘' },
+]
+
+const getServiceManagementCategory = (plan) => {
+  const text = `${plan?.title || ''} ${plan?.content?.templateName || ''}`
+  if (plan?.type === 'annual_checkup' || /体检/.test(text)) return 'checkup'
+  if (plan?.isAnnualPlan || plan?.type === 'health_management') return 'annual'
+  if (plan?.type === 'nutrition') return 'nutrition'
+  if (plan?.type === 'medical_assist') return 'medical'
+  return 'other'
+}
+
+function ServiceManagementCategories({ plans, active, onChange }) {
+  return (
+    <div style={{ padding: '18px 20px 4px' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 750, color: '#173B2E' }}>专业服务管理</div>
+          <div style={{ marginTop: 3, fontSize: 12, color: '#65776F' }}>专业类目长期保留；具体方案仍按每次购买或每个年度独立执行</div>
+        </div>
+        <button type="button" className={`btn btn-sm ${active === 'all' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => onChange('all')}>全部方案 {plans.length}</button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(205px, 1fr))', gap: 10 }}>
+        {SERVICE_MANAGEMENT_CATEGORIES.map(category => {
+          const categoryPlans = plans.filter(plan => getServiceManagementCategory(plan) === category.key)
+          const opened = categoryPlans.length > 0
+          const selected = active === category.key
+          return (
+            <button key={category.key} type="button" onClick={() => onChange(category.key)} style={{ textAlign: 'left', padding: '14px 15px', borderRadius: 12, border: `1px solid ${selected ? category.color : '#DCE5E0'}`, background: selected ? `${category.color}0D` : '#FAFCFB', cursor: 'pointer', boxShadow: selected ? `0 0 0 1px ${category.color}22` : 'none' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 21 }}>{category.icon}</span>
+                <span style={{ fontSize: 15, fontWeight: 750, color: '#173B2E', flex: 1 }}>{category.label}</span>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 999, color: opened ? category.color : '#8AA89C', background: opened ? `${category.color}16` : '#EEF1EF' }}>{opened ? `已开通 ${categoryPlans.length}` : '未开通'}</span>
+              </div>
+              <div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.5, color: '#65776F' }}>{category.description}</div>
+            </button>
+          )
+        })}
+      </div>
+      {active === 'overview' && <div style={{ marginTop: 12, padding: '9px 12px', borderRadius: 8, background: '#F6F9F7', color: '#65776F', fontSize: 12 }}>选择上方专业类目查看对应方案；“未开通”仅表示当前没有该类方案，不影响历史服务档案。</div>}
+    </div>
+  )
+}
+
 export default function PatientDetailPage() {
   const { id } = useParams()
   const nav = useNavigate()
@@ -1512,6 +1560,7 @@ export default function PatientDetailPage() {
   const focusedMonitoringEntry = useRef(null)
   const [followUps, setFollowUps] = useState([])
   const [plans, setPlans] = useState([])
+  const [serviceManagementView, setServiceManagementView] = useState('overview')
   const [reports, setReports] = useState([])
   const [serviceRecords, setServiceRecords] = useState([])
   const [serviceRecordCategory, setServiceRecordCategory] = useState('营养干预')
@@ -3327,6 +3376,10 @@ export default function PatientDetailPage() {
   const displayBodyComposition = { ...(user.bodyComposition || {}), ...latestBodyCompHistory }
   const riskCategories = [['tumor_risk', '肿瘤风险'], ['cardiovascular_risk', '心脑血管病风险'], ['chronic_disease', '慢性病及其他风险']]
   const hasConfirmedRisk = riskCategories.some(([key]) => normalizeRiskTagValues(user.healthRiskTags?.[key] || (key === 'chronic_disease' ? user.chronicDiseases || [] : [])).length > 0)
+  const visibleServicePlans = ['overview', 'all'].includes(serviceManagementView)
+    ? plans
+    : plans.filter(plan => getServiceManagementCategory(plan) === serviceManagementView)
+  const selectedServiceCategory = SERVICE_MANAGEMENT_CATEGORIES.find(category => category.key === serviceManagementView)
 
   return (
     // 2026-07-09 金娟反复反馈"界面看不到全局，要键盘左右移动才能找到按键"：会员详情页内某些
@@ -8333,10 +8386,16 @@ export default function PatientDetailPage() {
               )}
             </div>
           </div>
-          {plans.length === 0 ? (
+          <ServiceManagementCategories plans={plans} active={serviceManagementView} onChange={setServiceManagementView} />
+          <div style={{ padding: '14px 20px 8px', borderTop: '1px solid #EDF2EE', marginTop: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ fontWeight: 750, color: '#173B2E' }}>{selectedServiceCategory?.label || '全部服务方案'}</div>
+            <span style={{ fontSize: 12, color: '#8AA89C' }}>{visibleServicePlans.length} 个方案</span>
+            {selectedServiceCategory && <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setServiceManagementView('all')}>返回全部方案</button>}
+          </div>
+          {visibleServicePlans.length === 0 ? (
             <div style={{ padding: '34px 40px' }}>
-              <div style={{ fontWeight: 700, color: '#1A2B24', textAlign: 'center' }}>该客户尚未保存管理方案</div>
-              <div style={{ color: '#8AA89C', fontSize: 13, textAlign: 'center', marginTop: 7 }}>AI生成内容仍是编辑草稿；点击“保存年度管理方案”后才会进入方案列表和进程跟踪。</div>
+              <div style={{ fontWeight: 700, color: '#1A2B24', textAlign: 'center' }}>{selectedServiceCategory ? `该客户尚未开通${selectedServiceCategory.label}` : '该客户尚未保存管理方案'}</div>
+              <div style={{ color: '#8AA89C', fontSize: 13, textAlign: 'center', marginTop: 7 }}>{selectedServiceCategory ? '该类目会长期保留，开通服务并生成方案后将在这里显示；既有服务档案不受影响。' : 'AI生成内容仍是编辑草稿；保存正式方案后才会进入方案列表和进程跟踪。'}</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(130px,1fr))', gap: 10, marginTop: 24 }}>
                 {['1. 生成并保存方案', '2. 健康顾问审核推送', '3. 客户确认方案', '4. 执行任务与随访'].map((label, index) => <div key={label} style={{ padding: '13px 10px', borderRadius: 9, border: `1px solid ${index === 0 ? '#D97706' : '#DCE5E0'}`, background: index === 0 ? '#FFF8ED' : '#FAFCFB', color: index === 0 ? '#B45309' : '#8AA89C', fontSize: 13, textAlign: 'center', fontWeight: index === 0 ? 700 : 500 }}>{label}</div>)}
               </div>
@@ -8346,7 +8405,7 @@ export default function PatientDetailPage() {
             <table className="table">
               <thead><tr><th>方案名称</th><th>类型</th><th>状态</th><th>已阅</th><th>已确认</th><th>项目数</th><th>完成</th><th>负责人</th><th>创建时间</th></tr></thead>
               <tbody>
-                {plans.map(p => {
+                {visibleServicePlans.map(p => {
                   const done = p.isAnnualPlan ? (p.progress?.completed || 0) : (p.items?.filter(i => i.status === 'completed').length || 0)
                   const total = p.isAnnualPlan ? (p.progress?.total || 0) : (p.items?.length || 0)
                   return (
