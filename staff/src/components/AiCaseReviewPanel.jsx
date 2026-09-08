@@ -6,6 +6,7 @@ const SCOPES = [
   ['medications', '用药/营养素'], ['followups', '随访'], ['plans', '管理方案'], ['aiAnalysis', '既有AI分析'],
 ]
 const PROVIDER_LABEL = '通义千问'
+const formatDateTime = value => value ? new Date(value).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '-'
 const ASSESSMENT_LABELS = { summary: '核心结论', facts: '已确认事实', changes: '阶段变化', risks: '重点风险', actions: '下一步行动', missing: '待补信息' }
 function StructuredAssessment({ data }) {
   if (!data) return null
@@ -91,10 +92,14 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   const [draft, setDraft] = useState('')
   const [files, setFiles] = useState([])
   const [showCreate, setShowCreate] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
+  const [headerExpanded, setHeaderExpanded] = useState(false)
   const [form, setForm] = useState({ title: '', description: '', reviewType: 'custom', templateId: '', preferredProvider: 'qwen', contextScopes: SCOPES.map(([key]) => key) })
+  const [editForm, setEditForm] = useState({ title: '', description: '' })
   const [conclusionText, setConclusionText] = useState('')
-  const bottomRef = useRef(null)
-  const active = useMemo(() => topics.find(item => item._id === activeId) || topics[0], [topics, activeId])
+  const chatRef = useRef(null)
+  const active = useMemo(() => topics.find(item => item._id === activeId) || null, [topics, activeId])
+  const participantNames = useMemo(() => active ? [...new Set([active.createdByName, ...(active.messages || []).filter(item => item.role === 'staff').map(item => item.staffName)].filter(Boolean))] : [], [active])
   const reviewTemplates = managedTemplates
   const isStageAssessmentTopic = active?.reviewType === 'assessment' || /阶段性.*评估/.test(`${active?.title || ''} ${active?.description || ''}`)
 
@@ -111,11 +116,13 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
       setTopics(topicRes.data || []); setManagedTemplates(templateRes.data || []); setReviewSettings(templateRes.settings || { allowCustomTopic: true })
       setAssessments(assessmentRes.data || [])
       setAssessmentEdits(Object.fromEntries((assessmentRes.data || []).map(item => [item._id, item.content || ''])))
-      if (!activeId && topicRes.data?.length) setActiveId(topicRes.data[0]._id)
     } catch (err) { toast(err.message, 'error') } finally { setLoading(false) }
   }
   useEffect(() => { load() }, [patientId])
-  useEffect(() => { setConclusionText(active?.conclusion?.content || ''); setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 30) }, [active?._id, active?.messages?.length])
+  useEffect(() => {
+    setConclusionText(active?.conclusion?.content || '')
+    setTimeout(() => { if (chatRef.current) chatRef.current.scrollTo({ top: chatRef.current.scrollHeight, behavior: 'smooth' }) }, 30)
+  }, [active?._id, active?.messages?.length])
 
   const createTopic = async () => {
     if (!form.title.trim()) return toast('请输入研判主题', 'error')
@@ -126,6 +133,35 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   const updateScopes = async contextScopes => {
     try { const res = await staffAPI.updateAiCaseReview(patientId, active._id, { contextScopes }); replaceTopic(res.data) }
     catch (err) { toast(err.message, 'error') }
+  }
+  const openTopicEdit = topic => {
+    setActiveId(topic._id); setEditForm({ title: topic.title || '', description: topic.description || '' }); setShowEdit(true)
+  }
+  const saveTopicEdit = async () => {
+    if (!editForm.title.trim()) return toast('主题名称不能为空', 'error')
+    setBusy(true)
+    try { const res = await staffAPI.updateAiCaseReview(patientId, active._id, editForm); replaceTopic(res.data); setShowEdit(false); toast('主题已修改') }
+    catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
+  }
+  const deleteTopic = async topic => {
+    if (!window.confirm(`确定删除主题“${topic.title}”及其全部讨论吗？`)) return
+    setBusy(true)
+    try { await staffAPI.deleteAiCaseReview(patientId, topic._id); setTopics(items => items.filter(item => item._id !== topic._id)); if (activeId === topic._id) setActiveId(''); toast('主题已删除') }
+    catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
+  }
+  const editMessage = async message => {
+    const content = window.prompt('修改讨论内容：', message.content)
+    if (content === null || !content.trim() || content.trim() === message.content) return
+    setBusy(true)
+    try { const res = await staffAPI.updateAiCaseReviewMessage(patientId, active._id, message._id, { content }); replaceTopic(res.data); setConclusionText(''); toast('讨论内容已修改，请根据需要补充分析或重新整理结论') }
+    catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
+  }
+  const deleteMessage = async message => {
+    const note = message.role === 'staff' ? '同时删除紧随其后的AI分析' : '删除这条AI分析'
+    if (!window.confirm(`确定${note}吗？`)) return
+    setBusy(true)
+    try { const res = await staffAPI.deleteAiCaseReviewMessage(patientId, active._id, message._id); replaceTopic(res.data); setConclusionText(''); toast('讨论记录已删除，阶段性结论已失效，请重新整理') }
+    catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
   }
   const uploadSelected = async event => {
     const selected = Array.from(event.target.files || []).slice(0, 6 - files.length)
@@ -203,7 +239,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   if (loading) return <div className="card"><div className="card-body">正在加载专题研判资料…</div></div>
   const visibleAssessments = assessments.filter(item => (item.assessmentMode || 'routine') === assessmentMode)
   const currentAssessment = visibleAssessments.find(item => !String(item.periodKey || '').includes('-legacy-')) || null
-  return <div style={{ display: 'grid', gridTemplateColumns: mode === 'assessment' ? '1fr' : '280px minmax(0, 1fr)', gap: 16, minHeight: mode === 'assessment' ? 0 : 680 }}>
+  return <div style={{ display: 'grid', gridTemplateColumns: mode === 'assessment' ? '1fr' : '230px minmax(0, 1fr)', gap: 14, minHeight: mode === 'assessment' ? 0 : 760 }}>
     {mode !== 'specialty' && <div className="card" style={{ gridColumn: '1/-1', border: '1px solid #7C3AED55' }}>
       <div className="card-header" style={{ alignItems: 'flex-start' }}><div style={{ flex: 1 }}><div className="card-title">阶段性健康评估</div><div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>模式来自客户已确认的服务方案，不由随访记录反推；系统按方案日期计算当前评估节点</div><div style={{ display: 'flex', gap: 8, marginTop: 10 }}><button className={`btn btn-sm ${assessmentMode === 'routine' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setAssessmentMode('routine')}>常规管理</button><button className={`btn btn-sm ${assessmentMode === 'intensive_nutrition' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setAssessmentMode('intensive_nutrition')}>强化营养干预 · 12周</button></div><div style={{ marginTop: 9, padding: '8px 10px', background: assessmentMode === 'routine' ? '#EFF6FF' : '#EEF8F3', borderRadius: 8, fontSize: 12, color: '#4A6558' }}>{assessmentMode === 'routine' ? '来源：已确认年度管理方案；普通客户每月评估，重点客户每2周评估。' : '来源：已确认强化营养干预方案及开始日期；第1—4周每周评估，第5—12周每2周评估，第12周形成总结。'}</div><StageWorkflow assessment={currentAssessment} /></div>{['nutritionist', 'familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy} onClick={generateAssessment}>生成当前节点草稿</button>}</div>
       <div className="card-body" style={{ display: 'grid', gap: 12 }}>
@@ -263,43 +299,50 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
       <div className="card-header"><div><div className="card-title">专项辅助研判</div><div style={{ fontSize: 12, color: '#65776F', marginTop: 4 }}>仅用于临时、专项或跨专业问题讨论，不替代上方正式阶段评估</div></div><button className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)}>新建主题</button></div>
       <div className="card-body" style={{ padding: 10 }}>
         {!topics.length && <div style={{ padding: 20, color: '#8AA89C', textAlign: 'center' }}>为客户的具体健康问题建立独立研判主题</div>}
-        {topics.map(topic => <button key={topic._id} onClick={() => setActiveId(topic._id)} style={{ width: '100%', textAlign: 'left', border: topic._id === active?._id ? '1px solid #1E6B50' : '1px solid #E0D9CE', background: topic._id === active?._id ? '#EEF7F2' : '#fff', borderRadius: 8, padding: 11, marginBottom: 8, cursor: 'pointer' }}>
-          <div style={{ fontWeight: 700, color: '#1A2B24' }}>{topic.title}</div>
-          <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 5 }}>{topic.status === 'concluded' ? '已形成确认结论' : `${topic.messages?.length || 0} 条讨论`} · {PROVIDER_LABEL}</div>
-        </button>)}
+        {topics.map(topic => <div key={topic._id} style={{ border: topic._id === active?._id ? '1px solid #1E6B50' : '1px solid #E0D9CE', background: topic._id === active?._id ? '#EEF7F2' : '#fff', borderRadius: 8, marginBottom: 8, overflow: 'hidden' }}>
+          <button type="button" onClick={() => setActiveId(value => value === topic._id ? '' : topic._id)} style={{ width: '100%', textAlign: 'left', border: 0, background: 'transparent', padding: 11, cursor: 'pointer' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}><span style={{ fontWeight: 700, color: '#1A2B24' }}>{topic.title}</span><span>{topic._id === active?._id ? '收起⌃' : '查看⌄'}</span></div>
+            <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 5 }}>{topic.status === 'concluded' ? '已形成确认结论' : `${topic.messages?.length || 0} 条讨论`} · {formatDateTime(topic.updatedAt)}</div>
+          </button>
+          <div style={{ display: 'flex', gap: 6, padding: '0 10px 9px' }}><button type="button" className="btn btn-secondary btn-sm" onClick={() => openTopicEdit(topic)}>编辑</button><button type="button" className="btn btn-secondary btn-sm" style={{ color: '#B42318' }} onClick={() => deleteTopic(topic)}>删除</button></div>
+        </div>)}
       </div>
     </div>
 
     {active ? <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div className="card"><div className="card-body" style={{ padding: 14 }}>
+      <div className="card"><div className="card-body" style={{ padding: headerExpanded ? 14 : '10px 14px' }}>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap' }}>
-          <div><div style={{ fontSize: 18, fontWeight: 700 }}>{active.title}</div><div style={{ color: '#4A6558', fontSize: 13, marginTop: 4 }}>{active.description || '围绕该问题持续讨论，资料和结论均保存在客户专项资料库。'}</div></div>
-          <div style={{ color: '#4A6558', fontSize: 13 }}>当前模型：{PROVIDER_LABEL}</div>
+          <div><div style={{ fontSize: 18, fontWeight: 700 }}>{active.title}</div><div style={{ color: '#65776F', fontSize: 12, marginTop: 4 }}>创建：{formatDateTime(active.createdAt)} · 更新：{formatDateTime(active.updatedAt)} · 参与：{participantNames.join('、') || '待记录'}</div></div>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setHeaderExpanded(value => !value)}>{headerExpanded ? '收起主题资料' : '展开主题资料'}</button>
         </div>
+        {headerExpanded && <>
+        <div style={{ color: '#4A6558', fontSize: 13, marginTop: 9 }}>{active.description || '围绕该问题持续讨论，资料和结论均保存在客户专项资料库。'}</div>
+        <div style={{ color: '#4A6558', fontSize: 12, marginTop: 7 }}>参与人员：{participantNames.join('、') || '待记录'} · 当前模型：{PROVIDER_LABEL}</div>
         <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>{SCOPES.map(([key, label]) => {
           const checked = active.contextScopes?.includes(key)
           return <label key={key} style={{ fontSize: 12, border: `1px solid ${checked ? '#1E6B50' : '#D8E1DC'}`, color: checked ? '#1E6B50' : '#65776F', borderRadius: 16, padding: '5px 9px', cursor: 'pointer' }}><input type="checkbox" checked={checked} onChange={() => updateScopes(checked ? active.contextScopes.filter(v => v !== key) : [...active.contextScopes, key])} style={{ marginRight: 5 }} />{label}</label>
         })}</div>
         <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #E5ECE8' }}><div style={{ fontSize: 12, color: '#65776F', marginBottom: 7 }}>套用研判模板（可用于当前主题）</div><div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>{reviewTemplates.map(item => <button key={item.key} className="btn btn-secondary btn-sm" disabled={busy} onClick={() => applyReviewTemplate(item.key)}>{item.label}</button>)}</div></div>
+        </>}
       </div></div>
 
-      <div className="card" style={{ flex: 1 }}><div className="card-body" style={{ height: 480, overflowY: 'auto', background: '#F7F8F6' }}>
+      <div className="card" style={{ flex: 1 }}><div ref={chatRef} className="card-body" style={{ height: 'clamp(560px, 66vh, 780px)', overflowY: 'auto', background: '#F7F8F6', padding: 16 }}>
         {!active.messages?.length && <div style={{ color: '#8AA89C', textAlign: 'center', paddingTop: 120 }}>输入问题或上传图片，AI会按上方授权范围调取客户资料。</div>}
         {(active.messages || []).map(message => <div key={message._id} style={{ display: 'flex', justifyContent: message.role === 'staff' ? 'flex-end' : 'flex-start', marginBottom: 14 }}><div style={{ maxWidth: '82%', background: message.role === 'staff' ? '#DDF2E7' : '#fff', border: '1px solid #DCE5E0', borderRadius: 12, padding: '10px 13px' }}>
-          <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 5 }}>{message.role === 'ai' ? `AI助手 · ${message.provider || ''}${message.durationMs ? ` · ${(message.durationMs / 1000).toFixed(1)}秒` : ''}` : `${message.staffName} · ${message.staffRole}`}</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 11, color: '#8AA89C', marginBottom: 5 }}><span>{message.role === 'ai' ? `AI助手 · ${message.provider || ''}${message.durationMs ? ` · ${(message.durationMs / 1000).toFixed(1)}秒` : ''}` : `${message.staffName} · ${message.staffRole}`} · {formatDateTime(message.createdAt)}</span><span>{message.role === 'staff' && <button type="button" onClick={() => editMessage(message)} style={{ border: 0, background: 'none', color: '#1E6B50', cursor: 'pointer' }}>编辑</button>}<button type="button" onClick={() => deleteMessage(message)} style={{ border: 0, background: 'none', color: '#B42318', cursor: 'pointer' }}>删除</button></span></div>
           <CleanText>{message.content}</CleanText>
           {!!message.attachments?.length && <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>{message.attachments.map((file, index) => <a key={index} href={file.url?.startsWith('/') ? `${API_ORIGIN}${file.url}` : file.url} target="_blank" rel="noreferrer"><img src={file.url?.startsWith('/') ? `${API_ORIGIN}${file.url}` : file.url} alt={file.name || '附件'} style={{ width: 90, height: 72, objectFit: 'cover', borderRadius: 6 }} /></a>)}</div>}
           {!!message.contextSnapshot?.sources?.length && <details style={{ marginTop: 8, fontSize: 12, color: '#4A6558' }}><summary>本轮依据 {message.contextSnapshot.sources.length} 项资料</summary><div style={{ marginTop: 5 }}>{message.contextSnapshot.sources.map((s, i) => <div key={i}>· {s}</div>)}</div></details>}
-        </div></div>)}<div ref={bottomRef} />
+        </div></div>)}
       </div></div>
 
       <div className="card"><div className="card-body" style={{ padding: 12 }}>
         {!!files.length && <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>{files.map((file, index) => <span key={index} style={{ fontSize: 12, background: '#EEF7F2', padding: '5px 8px', borderRadius: 6 }}>{file.name}<button onClick={() => setFiles(list => list.filter((_, i) => i !== index))} style={{ border: 0, background: 'none', cursor: 'pointer' }}>×</button></span>)}</div>}
-        <textarea className="form-input" rows={3} value={draft} onChange={e => setDraft(e.target.value)} placeholder="提出问题、补充判断，或说明希望AI调取和比较哪些资料…" onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }} />
+        <textarea className="form-input" rows={3} value={draft} onChange={e => setDraft(e.target.value)} placeholder="补充本轮新信息或修订意见，AI将只分析新增变化，不再从头重复…" onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }} />
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}><label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>添加图片<input type="file" accept="image/*" multiple hidden onChange={uploadSelected} /></label><button className="btn btn-primary btn-sm" disabled={busy || (!draft.trim() && !files.length)} onClick={send}>{busy ? '处理中…' : '发送给AI'}</button></div>
       </div></div>
 
-      {!!active.messages?.length && <div className="card"><div className="card-header"><div className="card-title">阶段性结论</div><button className="btn btn-secondary btn-sm" disabled={busy} onClick={generateConclusion}>AI整理结论</button></div><div className="card-body">
+      {!!active.messages?.length && <div className="card"><div className="card-header"><div className="card-title">阶段性结论（当前有效信息）</div><button className="btn btn-secondary btn-sm" disabled={busy} onClick={generateConclusion}>AI整理结论</button></div><div className="card-body">
         <StructuredAssessment data={active.conclusion?.structured} />
         <textarea className="form-input" rows={10} value={conclusionText} onChange={e => setConclusionText(e.target.value)} placeholder="AI整理后由健康顾问复核确认；只有已确认结论会进入管理方案上下文。" />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}><span style={{ fontSize: 12, color: active.conclusion?.status === 'confirmed' ? '#16845B' : '#8AA89C' }}>{isStageAssessmentTopic ? '研判结论仅供参考；正式阶段评估必须使用上方营养初审流程' : active.conclusion?.status === 'confirmed' ? `已由${active.conclusion.confirmedByName || '健康顾问'}确认` : '草稿不会进入任何正式方案'}</span>{!isStageAssessmentTopic && ['familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy || !conclusionText.trim()} onClick={confirmConclusion}>{`确认并用于${active.templateSnapshot?.target || '对应方案'}`}</button>}</div>
@@ -313,5 +356,9 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
       <div className="form-group"><label className="form-label">问题说明</label><textarea className="form-input" rows={3} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>
       <div className="form-group"><label className="form-label">测试模型</label><div className="form-input" style={{ background: '#F7F8F6', color: '#4A6558' }}>{PROVIDER_LABEL}</div></div>
     </div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowCreate(false)}>取消</button><button className="btn btn-primary" disabled={busy} onClick={createTopic}>创建主题</button></div></div></div>}
+    {showEdit && active && <div className="modal-overlay"><div className="modal" style={{ maxWidth: 620 }}><div className="modal-header"><div className="modal-title">编辑专项研判主题</div><button className="modal-close" onClick={() => setShowEdit(false)}>×</button></div><div className="modal-body">
+      <div className="form-group"><label className="form-label">主题名称</label><input className="form-input" value={editForm.title} onChange={e => setEditForm(value => ({ ...value, title: e.target.value }))} /></div>
+      <div className="form-group"><label className="form-label">问题说明</label><textarea className="form-input" rows={5} value={editForm.description} onChange={e => setEditForm(value => ({ ...value, description: e.target.value }))} /></div>
+    </div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowEdit(false)}>取消</button><button className="btn btn-primary" disabled={busy || !editForm.title.trim()} onClick={saveTopicEdit}>保存修改</button></div></div></div>}
   </div>
 }
