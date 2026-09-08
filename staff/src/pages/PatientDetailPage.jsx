@@ -1509,6 +1509,21 @@ const getServiceManagementCategory = (plan) => {
   return 'other'
 }
 
+function ArchiveVersionHistoryPanel({ history }) {
+  const [open, setOpen] = useState(false)
+  const entries = (history || []).slice().reverse()
+  if (!entries.length) return null
+  return <div style={{ marginBottom: 12, border: '1px solid #CFE2EA', borderRadius: 8, background: '#F7FBFD' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 14px', cursor: 'pointer' }} onClick={() => setOpen(v => !v)}>
+      <span style={{ fontSize: 13, color: '#174B61', fontWeight: 700 }}>🕘 健康档案历史版本（{entries.length}项）</span><span>{open ? '▲' : '▼'}</span>
+    </div>
+    {open && <div style={{ padding: '0 14px 12px', display: 'grid', gap: 8 }}>{entries.map((item, index) => <div key={index} style={{ borderTop: '1px solid #DCE9ED', paddingTop: 8, fontSize: 12, color: '#4A6558' }}>
+      <strong>{item.label || item.path}</strong>：{String(item.from || '未填写')} → {String(item.to || '未填写')}
+      <div style={{ color: '#8AA89C', marginTop: 3 }}>{item.effectiveAt ? new Date(item.effectiveAt).toLocaleString('zh-CN') : ''} · 来源：体检/健康问卷 · {item.confirmedByName || '健管专员'}确认</div>
+    </div>)}</div>}
+  </div>
+}
+
 function ServiceManagementCategories({ plans, active, onChange }) {
   return (
     <div style={{ padding: '18px 20px 4px' }}>
@@ -3649,6 +3664,7 @@ export default function PatientDetailPage() {
 
       {/* 问卷自动写入档案的历史记录（无冲突项，系统已直接写入，供健康顾问核查） */}
       <ArchiveChangeLogPanel log={user.archiveChangeLog} />
+      <ArchiveVersionHistoryPanel history={user.archiveVersionHistory} />
       <ArchiveAutoLogPanel log={user.archiveAutoLog} />
       {/* 健管专员人工审核确认写入档案的记录（有冲突需人工判断的字段） */}
       <ArchiveConfirmLogPanel log={user.archiveConfirmLog} />

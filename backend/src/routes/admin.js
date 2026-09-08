@@ -1935,6 +1935,11 @@ router.patch('/products/:id/service-workflow', adminAuth, async (req, res) => {
   const allowedKeys = ['', 'annual_management', 'health_record_management', 'health_assessment', 'nutrition_intervention', 'checkup', 'medical_assist', 'rehab', 'tcm', 'psychology', 'medication_supply', 'supplement_supply', 'generic_followup', 'fulfillment_only'];
   if (!allowedKeys.includes(req.body?.key)) return res.status(400).json({ success: false, message: '请选择有效的服务流程' });
   const key = req.body.key;
+  const questionnaireId = key === 'checkup' ? (req.body?.questionnaireId || null) : null;
+  if (questionnaireId && !mongoose.Types.ObjectId.isValid(questionnaireId)) return res.status(400).json({ success: false, message: '问卷参数无效' });
+  if (questionnaireId && !await DynamicQuestionnaire.exists({ _id: questionnaireId, status: 'active', deletedAt: null })) {
+    return res.status(400).json({ success: false, message: '关联问卷不存在或未启用' });
+  }
   const requestedPlanIds = Array.isArray(req.body?.followUpPlanIds)
     ? req.body.followUpPlanIds
     : (req.body?.followUpPlanId ? [req.body.followUpPlanId] : []);
@@ -1961,7 +1966,7 @@ router.patch('/products/:id/service-workflow', adminAuth, async (req, res) => {
     return res.status(400).json({ success: false, message: '流程模块关联的随访方案不存在或已停用' });
   }
   const product = await Product.findByIdAndUpdate(req.params.id, { $set: { serviceWorkflow: {
-    key, followUpPlanId: modulePlanIds[0] || null, followUpPlanIds: modulePlanIds, modules, notes: String(req.body?.notes || '').trim().slice(0, 500),
+    key, questionnaireId, followUpPlanId: modulePlanIds[0] || null, followUpPlanIds: modulePlanIds, modules, notes: String(req.body?.notes || '').trim().slice(0, 500),
   } } }, { new: true, runValidators: true });
   if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
   res.json({ success: true, data: product.serviceWorkflow, message: '产品服务流程已关联' });

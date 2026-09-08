@@ -29,6 +29,7 @@ const orderSchema = new mongoose.Schema({
   performanceRuleSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
   servicePerformerRolesSnapshot: { type: [require('../utils/tenantScope').servicePerformerRoleSchema], default: [] },
   serviceWorkflowSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
+  checkupIntake: { type: mongoose.Schema.Types.Mixed, default: null },
   serviceIcon: { type: String },
   note:        { type: String, default: '' },
   desiredServiceDate: { type: Date, default: null },

@@ -3,6 +3,8 @@ const auth = require('../middleware/auth');
 const User = require('../models/User');
 const { DynamicQuestionnaire, QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
 const PushRecord = require('../models/PushRecord');
+const Order = require('../models/Order');
+const HealthPlan = require('../models/HealthPlan');
 const { getPsychScaleKey, calcFactorScores, buildPsychResult } = require('../utils/psychScaleImport');
 const router = express.Router();
 
@@ -145,32 +147,27 @@ router.post('/', auth, async (req, res) => {
 // 以 PushRecord 为准：只显示通过推送操作显式发给该用户的问卷，避免历史遗留数据污染
 router.get('/pending', auth, async (req, res) => {
   try {
-    // 1. 找到所有推送给该用户的问卷 ID（去重）
+    // 每条推送都是独立填写实例，体检客户因此可在不同订单/年度重复填写同一模板。
     const pushRecords = await PushRecord.find({
       patientId: req.user._id,
       type: 'questionnaire',
       questionnaireId: { $ne: null },
-    }).select('questionnaireId').lean();
-
-    const pushedIds = [...new Set(pushRecords.map(r => String(r.questionnaireId)))];
-
-    if (!pushedIds.length) {
+    }).select('questionnaireId sourceOrderId createdAt').sort({ createdAt: -1 }).lean();
+    if (!pushRecords.length) {
       return res.json({ success: true, data: [] });
     }
-
-    // 2. 只查这些问卷里还未回答的
-    const questionnaires = await DynamicQuestionnaire.find({
-      _id: { $in: pushedIds },
-      status: 'active',
-      deletedAt: null,
-      respondedUsers: { $ne: req.user._id },
-    }).select('title description questions deadline scoringEnabled createdBy').sort({ sortOrder: 1, createdAt: -1 }).lean();
+    const answeredPushIds = new Set((await QuestionnaireResponse.find({ user: req.user._id, pushRecordId: { $in: pushRecords.map(r => r._id) } }).select('pushRecordId').lean()).map(r => String(r.pushRecordId)));
+    const pendingPushes = pushRecords.filter(r => !answeredPushIds.has(String(r._id)));
+    const questionnaires = await DynamicQuestionnaire.find({ _id: { $in: pendingPushes.map(r => r.questionnaireId) }, status: 'active', deletedAt: null })
+      .select('title description questions deadline scoringEnabled createdBy sortOrder').lean();
+    const questionnaireMap = new Map(questionnaires.map(q => [String(q._id), q]));
 
     // 按用户性别过滤 genderOnly 题目（如月经史/生育史仅女性可见，男性用户完全看不到这些题）
-    const filtered = questionnaires.map(q => ({
-      ...q,
-      questions: (q.questions || []).filter(item => !item.genderOnly || item.genderOnly === req.user.gender),
-    }));
+    const filtered = pendingPushes.map(push => {
+      const q = questionnaireMap.get(String(push.questionnaireId));
+      return q ? { ...q, assignmentId: push._id, sourceOrderId: push.sourceOrderId || null,
+        questions: (q.questions || []).filter(item => !item.genderOnly || item.genderOnly === req.user.gender) } : null;
+    }).filter(Boolean);
 
     res.json({ success: true, data: filtered });
   } catch (err) {
@@ -181,7 +178,7 @@ router.get('/pending', auth, async (req, res) => {
 // POST /api/questionnaire/:id/submit — 提交动态问卷答卷
 router.post('/:id/submit', auth, async (req, res) => {
   try {
-    const { answers = {} } = req.body;
+    const { answers = {}, assignmentId = null } = req.body;
 
     const questionnaire = await DynamicQuestionnaire.findById(req.params.id);
     if (!questionnaire) return res.status(404).json({ success: false, message: '问卷不存在' });
@@ -189,10 +186,15 @@ router.post('/:id/submit', auth, async (req, res) => {
       return res.status(400).json({ success: false, message: '该问卷暂未开放' });
     }
 
-    // 检查是否已提交
-    const existing = await QuestionnaireResponse.findOne({
-      questionnaire: req.params.id, user: req.user._id,
-    });
+    let assignment = null;
+    if (assignmentId) {
+      assignment = await PushRecord.findOne({ _id: assignmentId, patientId: req.user._id, type: 'questionnaire', questionnaireId: req.params.id });
+      if (!assignment) return res.status(400).json({ success: false, message: '本次问卷任务不存在或不属于当前客户' });
+    }
+    // 新链路按推送实例防重复；无 assignmentId 的历史入口仍沿用客户+模板防重复。
+    const existing = assignment
+      ? await QuestionnaireResponse.findOne({ pushRecordId: assignment._id })
+      : await QuestionnaireResponse.findOne({ questionnaire: req.params.id, user: req.user._id, pushRecordId: null });
     if (existing) return res.status(400).json({ success: false, message: '您已提交过此问卷' });
 
     // genderOnly 题目校验：与用户性别不符的题目不应作答（男性提交了女性专属题的答案会被忽略）；
@@ -244,6 +246,8 @@ router.post('/:id/submit', auth, async (req, res) => {
       answers,
       totalScore,
       factorScores,
+      pushRecordId: assignment?._id || null,
+      sourceOrderId: assignment?.sourceOrderId || null,
     });
 
     // 标记已答题用户
@@ -279,31 +283,24 @@ router.post('/:id/submit', auth, async (req, res) => {
           const fullUser = await User.findById(req.user._id).lean();
           const draft = buildArchiveDraft(fullUser, questionnaire, response);
 
-          // 无冲突字段：直接写入档案，无需人工审核；同时留痕供健康顾问查看
-          if (draft.autoItems.length > 0) {
-            const $set = {};
-            for (const it of draft.autoItems) $set[it.path] = it.value;
-            const logEntry = {
-              questionnaireTitle: questionnaire.title || '',
-              appliedAt: new Date(),
-              items: draft.autoItems.map(it => ({ path: it.path, label: it.label, valueStr: it.valueStr })),
-            };
+          // 普通问卷不再直接改健康档案；新增和冲突信息统一由健管核对后生成新版本。
+          const changedItems = draft.items.filter(item => item.existing !== item.valueStr);
+          if (changedItems.length > 0) {
             await User.collection.updateOne(
               { _id: req.user._id },
-              { $set, $push: { archiveAutoLog: { $each: [logEntry], $slice: -20 } } }
-            );
-          }
-          // 有冲突字段：生成待审核草稿（仅保留冲突条目，避免专员重复处理已自动写入的部分）
-          if (draft.conflictItems.length > 0) {
-            await User.collection.updateOne(
-              { _id: req.user._id },
-              { $set: { archiveDraft: { ...draft, items: draft.conflictItems } } }
+              { $set: { archiveDraft: { ...draft, items: changedItems, autoItems: [], conflictItems: changedItems } } }
             );
           }
         }
       } catch (e) {
         console.error('[archive-import] 自动导入健康档案失败', e.message);
       }
+    }
+
+    if (assignment?.sourceOrderId) {
+      const intake = { questionnaireId: questionnaire._id, responseId: response._id, assignmentId: assignment._id, status: 'submitted', submittedAt: response.submittedAt };
+      await Order.findByIdAndUpdate(assignment.sourceOrderId, { $set: { checkupIntake: intake } });
+      await HealthPlan.updateMany({ sourceOrderId: assignment.sourceOrderId }, { $set: { 'content.checkupIntake': intake } });
     }
 
     let scoreRange = null;

@@ -75,6 +75,7 @@ const productSchema = new mongoose.Schema({
     key: { type: String, enum: ['', 'annual_management', 'health_record_management', 'health_assessment', 'nutrition_intervention', 'checkup', 'medical_assist', 'rehab', 'tcm', 'psychology', 'medication_supply', 'supplement_supply', 'generic_followup', 'fulfillment_only'], default: '' },
     followUpPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUpPlan', default: null },
     followUpPlanIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'FollowUpPlan' }],
+    questionnaireId: { type: mongoose.Schema.Types.ObjectId, ref: 'DynamicQuestionnaire', default: null },
     // One shared workflow, composed per product. Keep legacy id fields above for
     // backward compatibility; modules carry the actual trigger semantics.
     modules: [{

@@ -304,10 +304,10 @@ export default function QuestionnairePage() {
     const finalAnswers = buildFinalAnswers();
     try {
       if (mode === 'dynamic' && selectedDynamic) {
-        const res = await questionnaireAPI.submitDynamic(selectedDynamic._id, finalAnswers);
+        const res = await questionnaireAPI.submitDynamic(selectedDynamic._id, finalAnswers, selectedDynamic.assignmentId);
         if (res.success) {
           setSubmitResult({ dynamic: true, message: res.message, totalScore: res.totalScore, scoreRange: res.scoreRange || null });
-          setPendingQs((prev) => prev.filter((dq) => dq._id !== selectedDynamic._id));
+          setPendingQs((prev) => prev.filter((dq) => dq.assignmentId !== selectedDynamic.assignmentId));
         } else setErrorMsg(res.message || '提交失败，请重试');
       } else {
         const res = await questionnaireAPI.submit(finalAnswers);

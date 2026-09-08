@@ -238,6 +238,8 @@ const userSchema = new mongoose.Schema({
   archiveConfirmLog: { type: [mongoose.Schema.Types.Mixed], default: [] },
   // 客户本人直接修改健康档案的字段级留痕，供健康顾问待办明确展示“改了什么”。
   archiveChangeLog: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  // 健管确认后的字段版本历史；当前字段只表示当前有效值，旧值、来源和生效时间永久保留在此。
+  archiveVersionHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
   // 心理健康量表最新结果（问卷推送→会员填写→自动写入，无需审核）
   // { epworth: {totalScore,severity,filledAt,questionnaireId}, scl90: {totalScore,factorScores:{躯体化:2.1,...},filledAt,questionnaireId}, sds:{...}, sas:{...} }
   psychAssessments: { type: mongoose.Schema.Types.Mixed, default: {} },

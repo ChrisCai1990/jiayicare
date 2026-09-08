@@ -11334,11 +11334,26 @@ router.post('/patients/:id/archive-draft/apply', staffAuth, async (req, res) => 
       sourceQuestionnaireId: userBefore?.archiveDraft?.questionnaireId || null,
       sourceResponseId: userBefore?.archiveDraft?.responseId || null,
     };
+    const draftByPath = new Map((userBefore?.archiveDraft?.items || []).map(item => [item.path, item]));
+    const versionEntries = items.filter(it => FIELD_MAP[it.path]).map(it => {
+      const draftItem = draftByPath.get(it.path) || {};
+      return {
+        path: it.path, label: draftItem.label || FIELD_MAP[it.path].label,
+        from: draftItem.existing || '', to: it.value,
+        effectiveAt: new Date(), sourceType: 'questionnaire',
+        sourceQuestionnaireId: userBefore?.archiveDraft?.questionnaireId || null,
+        sourceResponseId: userBefore?.archiveDraft?.responseId || null,
+        confirmedBy: req.staff._id, confirmedByName: req.staff.name || req.staff.username || '',
+      };
+    });
 
     $set.archiveDraft = null; // 写入后清空草稿
     await User.collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
-      { $set, $push: { archiveConfirmLog: { $each: [confirmEntry], $slice: -50 } } }
+      { $set, $push: {
+        archiveConfirmLog: { $each: [confirmEntry], $slice: -50 },
+        archiveVersionHistory: { $each: versionEntries, $slice: -200 },
+      } }
     );
     res.json({ success: true, message: `已写入 ${Object.keys($set).length - 1} 个档案字段` });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -11575,7 +11590,7 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
     const { orderId, templateId, briefNote } = req.query;
     let order = null;
     if (orderId) {
-      order = await Order.findOne({ _id: orderId, user: user._id }).select('serviceName note desiredServiceDate serviceRequirements paidAmount serviceWorkflowSnapshot').lean();
+      order = await Order.findOne({ _id: orderId, user: user._id }).select('serviceName note desiredServiceDate serviceRequirements paidAmount serviceWorkflowSnapshot checkupIntake').lean();
     }
     const { confirmedServiceSchedule } = require('../utils/confirmedServiceSchedule');
     const confirmedSchedule = confirmedServiceSchedule(order, briefNote);
@@ -11803,6 +11818,7 @@ ${templateBlock}
         assistanceType: usedTemplate?.content?.assistanceType || '',
         serviceDomain: usedTemplate?.content?.serviceDomain || 'medical_assist',
         serviceMode: usedTemplate?.content?.serviceMode || '',
+        checkupIntake: order?.checkupIntake || null,
         hospital: raw.hospital || '', department: raw.department || '', expert: raw.expert || '',
         serviceDate: confirmedSchedule.serviceDate, serviceTime: confirmedSchedule.serviceTime,
         hotel: raw.hotel || '', transport: raw.transport || '',
