@@ -143,6 +143,20 @@ router.post('/', auth, async (req, res) => {
 
 // ── 动态问卷（管理员创建的结构化问卷）────────────────────────────
 
+// 仅把题目明确绑定的档案字段带回客户端；不向问卷接口暴露整份健康档案。
+const readArchiveField = (user, path) => {
+  if (!path || typeof path !== 'string' || path.split('.').some(key => !key || key.startsWith('__'))) return undefined;
+  return path.split('.').reduce((value, key) => value == null ? undefined : value[key], user);
+};
+
+const buildInitialAnswers = (user, questions) => Object.fromEntries((questions || []).flatMap((question) => {
+  const value = readArchiveField(user, question.archiveField);
+  if (value === undefined || value === null || value === '') return [];
+  if (question.type === 'multi') return [question.id, Array.isArray(value) ? value : [value]];
+  if (question.type === 'number') return [question.id, Number.isFinite(Number(value)) ? Number(value) : value];
+  return [question.id, value];
+}));
+
 // GET /api/questionnaire/pending — 获取当前用户待填动态问卷
 // 以 PushRecord 为准：只显示通过推送操作显式发给该用户的问卷，避免历史遗留数据污染
 router.get('/pending', auth, async (req, res) => {
@@ -161,12 +175,14 @@ router.get('/pending', auth, async (req, res) => {
     const questionnaires = await DynamicQuestionnaire.find({ _id: { $in: pendingPushes.map(r => r.questionnaireId) }, status: 'active', deletedAt: null })
       .select('title description questions deadline scoringEnabled createdBy sortOrder').lean();
     const questionnaireMap = new Map(questionnaires.map(q => [String(q._id), q]));
+    const profileUser = await User.findById(req.user._id).lean();
 
     // 按用户性别过滤 genderOnly 题目（如月经史/生育史仅女性可见，男性用户完全看不到这些题）
     const filtered = pendingPushes.map(push => {
       const q = questionnaireMap.get(String(push.questionnaireId));
+      const questions = (q?.questions || []).filter(item => !item.genderOnly || item.genderOnly === req.user.gender);
       return q ? { ...q, assignmentId: push._id, sourceOrderId: push.sourceOrderId || null,
-        questions: (q.questions || []).filter(item => !item.genderOnly || item.genderOnly === req.user.gender) } : null;
+        questions, initialAnswers: buildInitialAnswers(profileUser, questions) } : null;
     }).filter(Boolean);
 
     res.json({ success: true, data: filtered });
