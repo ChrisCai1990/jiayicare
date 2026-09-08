@@ -14,8 +14,8 @@ const { createAssessment, intensiveNutritionCheckpoint } = require('../utils/pha
 const { buildContext, buildStageAssessmentContext } = require('../utils/aiCaseReviewContext');
 const providerAdapter = require('../utils/aiCaseReviewProvider');
 const { reviewedWriteback } = require('../utils/reviewedWriteback');
+const { DEFAULT_SCOPES, ensureAiCaseReviewTemplates } = require('../utils/aiCaseReviewTemplates');
 
-const DEFAULT_SCOPES = ['basic', 'healthProfile', 'reports', 'healthRecords', 'medications', 'followups', 'plans', 'aiAnalysis'];
 const VALID_SCOPES = new Set(DEFAULT_SCOPES);
 const VALID_REVIEW_TYPES = new Set(['checkup', 'nutrition', 'annual', 'assessment', 'medical', 'daily', 'specialty', 'custom']);
 const ROLE_LABEL = { superadmin: '超级管理员', familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', healthPlanner: '健康规划师', medicalAssistant: '就医专员', psychologist: '心理咨询师', rehabSpecialist: '运动复健师', tcmDoctor: '中医师', specialist: '专科医师' };
@@ -59,22 +59,17 @@ router.get('/ai-case-review/providers', staffAuth, (req, res) => {
 
 router.get('/ai-case-review/templates', staffAuth, async (req, res) => {
   try {
-    await PlanTemplate.findOneAndUpdate(
-      { type: 'ai_case_review', name: '专病分析' },
-      { $setOnInsert: { type: 'ai_case_review', name: '专病分析', status: 'active', content: {
-        description: '围绕某一明确疾病，纵向汇总病史、检查、治疗、用药和随访变化，识别证据缺口并形成待专业人员复核的分析结论。',
-        contextScopes: DEFAULT_SCOPES,
-        target: '专病分析结论',
-        outputGuide: '疾病概况、时间轴、关键指标与影像变化、治疗及用药、风险与矛盾点、待补资料、下一步建议',
-      } } },
-      { upsert: true, new: true, setDefaultsOnInsert: true },
-    );
-    const templates = await PlanTemplate.find({ type: 'ai_case_review', status: 'active' }).sort({ createdAt: 1 }).lean();
+    await ensureAiCaseReviewTemplates();
+    const [templates, settings] = await Promise.all([
+      PlanTemplate.find({ type: 'ai_case_review', status: 'active', 'content.kind': { $ne: 'settings' } }).lean(),
+      PlanTemplate.findOne({ type: 'ai_case_review', 'content.kind': 'settings' }).lean(),
+    ]);
+    templates.sort((a, b) => (a.content?.sortOrder ?? 999) - (b.content?.sortOrder ?? 999));
     res.json({ success: true, data: templates.map(item => ({
       key: String(item._id), label: item.name, title: item.content?.title || item.name,
       description: item.content?.description || '', scopes: sanitizeScopes(item.content?.contextScopes),
-      target: item.content?.target || '专病分析结论', reviewType: 'specialty', outputGuide: item.content?.outputGuide || '',
-    })) });
+      target: item.content?.target || '研判结论', reviewType: VALID_REVIEW_TYPES.has(item.content?.templateKey) ? item.content.templateKey : 'specialty', outputGuide: item.content?.outputGuide || '',
+    })), settings: { allowCustomTopic: settings?.content?.allowCustomTopic !== false } });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -201,12 +196,20 @@ router.get('/patients/:patientId/ai-case-reviews', staffAuth, async (req, res) =
 router.post('/patients/:patientId/ai-case-reviews', staffAuth, async (req, res) => {
   try {
     const user = await caseReviewPatientOr404(req, res); if (!user) return;
+    await ensureAiCaseReviewTemplates();
+    const settings = await PlanTemplate.findOne({ type: 'ai_case_review', 'content.kind': 'settings' }).lean();
+    const selectedTemplate = mongoose.isValidObjectId(req.body.templateId)
+      ? await PlanTemplate.findOne({ _id: req.body.templateId, type: 'ai_case_review', status: 'active', 'content.kind': { $ne: 'settings' } }).lean()
+      : null;
+    if (!selectedTemplate && settings?.content?.allowCustomTopic === false) return res.status(400).json({ success: false, message: '请选择专项研判主题' });
     const title = String(req.body.title || '').trim();
     if (!title) return res.status(400).json({ success: false, message: '请输入研判主题' });
     const topic = await AiCaseReview.create({
       user: user._id, tenantId: user.tenantId || null, title,
       description: String(req.body.description || '').trim(),
       reviewType: VALID_REVIEW_TYPES.has(req.body.reviewType) ? req.body.reviewType : 'custom',
+      templateId: selectedTemplate?._id || null,
+      templateSnapshot: selectedTemplate ? { name: selectedTemplate.name, target: selectedTemplate.content?.target || '研判结论', outputGuide: selectedTemplate.content?.outputGuide || '' } : null,
       contextScopes: sanitizeScopes(req.body.contextScopes),
       preferredProvider: 'qwen',
       createdBy: req.staff._id, createdByName: req.staff.name || '',
@@ -246,7 +249,8 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
 
     const snapshot = await buildContext(user, topic.contextScopes);
     const history = topic.messages.slice(-13, -1).map(item => ({ role: item.role === 'ai' ? 'assistant' : 'user', content: item.content }));
-    const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: content || '请分析本轮上传的图文资料', context: snapshot, attachments, history });
+    const topicGuide = [topic.title, topic.description, topic.templateSnapshot?.outputGuide ? `固定研判输出：${topic.templateSnapshot.outputGuide}` : ''].filter(Boolean).join('\n');
+    const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: `【专项研判主题与要求】\n${topicGuide}\n\n【本轮问题】\n${content || '请分析本轮上传的图文资料'}`, context: snapshot, attachments, history });
     if (!result.content) throw new Error(`${result.provider} 未返回可展示的分析内容`);
     topic.providerSessionId = result.sessionId || topic.providerSessionId;
     topic.messages.push({ role: 'ai', content: result.content, provider: result.provider, providerModel: result.model, durationMs: result.durationMs, attachments: result.files, evidenceRefs: snapshot.sources, contextSnapshot: snapshot });
@@ -263,7 +267,7 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAut
     if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
     if (!topic.messages.length) return res.status(400).json({ success: false, message: '暂无讨论内容' });
     const transcript = topic.messages.map(item => `${item.role === 'ai' ? 'AI' : `${item.staffName}（${item.staffRole}）`}：${item.content}`).join('\n');
-    const prompt = `请将以下医护团队专题研判整理为简明、可执行的阶段性健康评估。固定使用六个栏目：核心结论、已确认事实、阶段变化、重点风险、下一步行动、待补信息。每栏最多5条，每条只表达一个要点；下一步行动必须写清事项、时间或频次、责任角色（资料不足写“待确认”）。不要输出Markdown符号、横线、免责声明、生成时间或审核人；不得把AI推测写成已确认事实，不得提出与本主题无关的疫苗、营养、就医或检查建议。\n\n主题：${topic.title}\n${transcript}`;
+    const prompt = `请将以下医护团队专题研判整理为简明、可执行的研判结论。固定使用六个栏目：核心结论、已确认事实、阶段变化、重点风险、下一步行动、待补信息。每栏最多5条，每条只表达一个要点；下一步行动必须写清事项、时间或频次、责任角色（资料不足写“待确认”）。不要输出Markdown符号、横线、免责声明、生成时间或审核人；不得把AI推测写成已确认事实，不得提出与本主题无关的疫苗、营养、就医或检查建议。${topic.templateSnapshot?.outputGuide ? `本主题重点输出范围：${topic.templateSnapshot.outputGuide}。` : ''}\n\n主题：${topic.title}\n${transcript}`;
     const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt, context: { sources: [] }, attachments: [], history: [] });
     const structured = toStructuredAssessment(result.content, topic.title);
     topic.conclusion = { content: assessmentToPlainText(structured), structured, status: 'draft', generatedAt: new Date(), confirmedAt: null, confirmedBy: null, confirmedByName: '', serviceRecordId: null };

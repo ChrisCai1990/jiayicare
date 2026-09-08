@@ -38,6 +38,8 @@ const aiCaseReviewSchema = new mongoose.Schema({
   title: { type: String, required: true, trim: true, maxlength: 100 },
   description: { type: String, default: '', maxlength: 1000 },
   reviewType: { type: String, enum: ['checkup', 'nutrition', 'annual', 'assessment', 'medical', 'daily', 'specialty', 'custom'], default: 'custom', index: true },
+  templateId: { type: mongoose.Schema.Types.ObjectId, ref: 'PlanTemplate', default: null },
+  templateSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
   status: { type: String, enum: ['active', 'concluded', 'archived'], default: 'active', index: true },
   contextScopes: [{
     type: String,
