@@ -3,6 +3,7 @@ require('dotenv').config({ path: require('node:path').join(__dirname, '../../.en
 const mongoose = require('mongoose');
 const { INVALID_ORDER_FILTER } = require('../utils/commissionLifecycle');
 const screenshotOrders = [
+  '6a9ae0bc6aeafd1ac967e849', // Follow-up: direct medical-agency order incorrectly matched to an old push.
   '6a9ea31717a2f40264dab3c9', '6a9ea17a17a2f40264da5031',
   '6a9e9f9917a2f40264d9a679', '6a9e9d9317a2f40264d8b7fd',
   '6a9e985f17a2f40264d6f555', '6a9e7d62d4161656914fa52b',

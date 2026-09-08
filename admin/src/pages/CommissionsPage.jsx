@@ -22,6 +22,25 @@ export default function CommissionsPage() {
   const [selected, setSelected] = useState([])
   const [view, setView] = useState('commissions')
   const [promotions, setPromotions] = useState([])
+  const [editing, setEditing] = useState(null)
+  const [staffOptions, setStaffOptions] = useState([])
+  const [staffId, setStaffId] = useState('')
+  const [reason, setReason] = useState('')
+  const [editError, setEditError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const editAttribution = async (record) => {
+    setEditing(record); setStaffId(record.staffId?._id || ''); setReason(''); setEditError('')
+    try { const result = await adminAPI.staffList({ limit: 500 }); setStaffOptions(result.data || []) }
+    catch (e) { setEditError(e.message || '人员加载失败') }
+  }
+  const saveAttribution = async () => {
+    if (!reason.trim()) { setEditError('请填写修改原因'); return }
+    setSaving(true); setEditError('')
+    try { const result = await adminAPI.changeCommissionAttribution(editing._id, { staffId: staffId || null, reason }); toast(result.message); setEditing(null); await load(page) }
+    catch (e) { setEditError(e.message || '修改失败') }
+    finally { setSaving(false) }
+  }
+
 
   const load = useCallback(async (p = page) => {
     setLoading(true)
@@ -77,6 +96,25 @@ export default function CommissionsPage() {
 
   return (
     <>
+      {editing && <div style={{ position: 'fixed', inset: 0, background: '#0006', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="card" style={{ width: 460, maxWidth: '95vw', padding: 24 }}>
+          <h3>修改佣金归属人员</h3>
+          <p>{editing.productName} · {ROLE_LABELS[editing.role]}</p>
+          <label>归属人员</label>
+          <select value={staffId} onChange={e => setStaffId(e.target.value)} style={{ width: '100%', padding: 10, margin: '8px 0 16px' }}>
+            {editing.role === 'referrer' && <option value="">无转介绍人（取消本条佣金）</option>}
+            {staffOptions.map(person => <option key={person._id} value={person._id}>{person.name}（{person.role}）</option>)}
+          </select>
+          <label>修改原因</label>
+          <textarea value={reason} onChange={e => setReason(e.target.value)} maxLength={500} style={{ width: '100%', minHeight: 80, marginTop: 8 }} />
+          <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>{editing.role === 'referrer' ? '保存后按新人员的个人佣金规则优先计算，无个人规则则使用订单产品规则，并重新审核。' : '保存后保留本次服务核销的计算规则，并重新审核。'}修改记录会保留。</p>
+          {editError && <p style={{ color: '#EF4444' }}>{editError}</p>}
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+            <button className="btn btn-ghost" disabled={saving} onClick={() => setEditing(null)}>返回</button>
+            <button className="btn btn-primary" disabled={saving} onClick={saveAttribution}>{saving ? '保存中…' : '保存归属'}</button>
+          </div>
+        </div>
+      </div>}
       <div className="page-header">
         <div>
           <div className="page-title">💰 佣金审核打款</div>
@@ -139,7 +177,7 @@ export default function CommissionsPage() {
                         <input type="checkbox" disabled={orderBlocked(r)} checked={selected.includes(r._id)} onChange={() => toggleSelect(r._id)} />
                       </td>
                     )}
-                    <td>{r.staffId?.name || '未知'}</td>
+                    <td>{r.staffId?.name || '未知'}{r.attributionHistory?.length > 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>已调整归属 · {r.attributionHistory[r.attributionHistory.length - 1].reason}</div>}</td>
                     <td>{ROLE_LABELS[r.role] || r.role}</td>
                     <td>
                       {r.patientId?.name || '--'}
@@ -152,6 +190,7 @@ export default function CommissionsPage() {
                     <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{fmtTime(r.createdAt)}</td>
                     <td>
                       <div className="status-actions">
+                        {r.status !== 'paid' && <button className="btn btn-sm btn-ghost" onClick={() => editAttribution(r)}>修改人员</button>}
                         {r.status === 'pending' && (
                           <>
                             <button className="btn btn-sm status-btn" style={{ borderColor: '#10B981', color: '#10B981', background: '#10B98112' }}

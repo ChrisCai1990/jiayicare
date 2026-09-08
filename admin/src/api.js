@@ -68,6 +68,7 @@ export const adminAPI = {
 
   // 佣金审核打款
   commissions:        (params = {})      => req('/commissions?' + new URLSearchParams(params).toString()),
+  changeCommissionAttribution: (id, data) => req(`/commissions/${id}/attribution`, { method: 'PATCH', body: JSON.stringify(data) }),
   promotionRecords:   ()                 => req('/promotion-records'),
   confirmCommission:  (id)               => req(`/commissions/${id}/confirm`, { method: 'PATCH' }),
   rejectCommission:   (id, reason)       => req(`/commissions/${id}/reject`, { method: 'PATCH', body: JSON.stringify({ reason }) }),

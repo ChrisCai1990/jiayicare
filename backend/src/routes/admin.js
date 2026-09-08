@@ -660,6 +660,45 @@ router.get('/commissions', adminAuth, async (req, res) => {
   res.json({ success: true, data: records, total, page: parseInt(page) });
 });
 
+// 修改未打款佣金归属，记录审计并重新进入审核。
+router.patch('/commissions/:id/attribution', adminAuth, async (req, res) => {
+  if (!COMMISSION_ADMIN_ROLES.includes(req.admin.role)) return res.status(403).json({ success: false, message: '无权限修改佣金' });
+  const { staffId, reason = '' } = req.body;
+  if (!reason.trim()) return res.status(400).json({ success: false, message: '请填写修改原因' });
+  const commission = await Commission.findById(req.params.id);
+  if (!commission) return res.status(404).json({ success: false, message: '记录不存在' });
+  if (!['pending', 'confirmed', 'cancelled'].includes(commission.status)) return res.status(409).json({ success: false, message: '已打款佣金不能直接修改人员' });
+  const order = await Order.findById(commission.orderId);
+  const blocked = require('../utils/commissionLifecycle').commissionBlockReason(order);
+  if (blocked && staffId) return res.status(409).json({ success: false, message: blocked });
+  if (!order) return res.status(409).json({ success: false, message: '关联订单不存在' });
+  if (!staffId && commission.role !== 'referrer') return res.status(400).json({ success: false, message: '服务绩效请指定实际服务人员' });
+  const staff = staffId ? await Admin.findById(staffId) : null;
+  if (staffId && !staff) return res.status(400).json({ success: false, message: '人员不存在' });
+  if (staff && order.tenantId && String(staff.tenantId) !== String(order.tenantId)) return res.status(400).json({ success: false, message: '请选择本机构人员' });
+  if (staffId && await Commission.exists({ _id: { $ne: commission._id }, orderId: order._id, role: commission.role, staffId, redemptionSequence: commission.redemptionSequence ?? null, serviceItemKey: commission.serviceItemKey || '', status: { $ne: 'cancelled' } })) return res.status(409).json({ success: false, message: '该人员已有关联佣金，请勿重复归属' });
+  let rule = order.performanceRuleSnapshot;
+  if (!rule) {
+    const product = /^[a-f0-9]{24}$/i.test(order.serviceId) ? await Product.findById(order.serviceId) : null;
+    rule = product?.performanceRule || (await Service.findOne({ serviceId: order.serviceId }))?.performanceRule;
+  }
+  const amounts = staffId ? require('../utils/commissionAttribution').calculateAttribution(commission, staff, rule) : { commissionAmount: commission.commissionAmount, commissionRate: commission.commissionRate };
+  const cancelled = !staffId || amounts.commissionAmount <= 0;
+  const updated = await Commission.findOneAndUpdate({ _id: commission._id, status: commission.status, updatedAt: commission.updatedAt }, {
+    $set: { ...(staffId ? { staffId } : {}), ...amounts, status: cancelled ? 'cancelled' : 'pending',
+      cancellationReason: cancelled ? (!staffId ? '人工确认无转介绍人：' : '新归属人员无佣金：') + reason.trim() : '', cancelledAt: cancelled ? new Date() : null },
+    $push: { attributionHistory: { previousStaffId: commission.staffId, staffId: staffId || null, previousAmount: commission.commissionAmount, amount: cancelled ? 0 : amounts.commissionAmount, changedBy: req.admin._id, changedAt: new Date(), reason: reason.trim() } },
+  }, { new: true });
+  if (!updated) return res.status(409).json({ success: false, message: '记录已变化，请刷新后重试' });
+  if (commission.role === 'referrer') {
+    order.referrerId = staffId || null; order.referralSource = staffId ? 'manual' : 'direct';
+    await order.save();
+  } else if (!commission.redemptionSequence && String(order.fulfillerId) === String(commission.staffId)) {
+    order.fulfillerId = staffId; await order.save();
+  }
+  res.json({ success: true, data: updated, message: cancelled ? '归属已清除或无有效佣金，记录已取消' : '归属已修改，佣金已重新计算并转为待审核' });
+});
+
 // PATCH /api/admin/commissions/:id/confirm — 审核通过（pending → confirmed）
 router.patch('/commissions/:id/confirm', adminAuth, async (req, res) => {
   if (!COMMISSION_ADMIN_ROLES.includes(req.admin.role)) {
