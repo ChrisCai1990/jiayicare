@@ -15,7 +15,7 @@ test('AI研判主题默认保存在本系统并使用通义千问', () => {
 });
 
 test('研判类型区分年度、季度营养和单次就医方案', () => {
-  for (const reviewType of ['annual', 'nutrition', 'medical']) {
+  for (const reviewType of ['annual', 'nutrition', 'medical', 'specialty']) {
     const topic = new AiCaseReview({ user: id(), title: `${reviewType}研判`, reviewType, createdBy: id() });
     assert.equal(topic.validateSync(), undefined);
     assert.equal(topic.reviewType, reviewType);

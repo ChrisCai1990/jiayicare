@@ -19,6 +19,16 @@ const commissionSchema = new mongoose.Schema({
     default: 'pending',
   },
   paidAt:  { type: Date, default: null },
+  cancelledAt: { type: Date, default: null },
+  cancellationReason: { type: String, default: '' },
+  reversalRequired: { type: Boolean, default: false },
+  attributionHistory: [{
+    previousStaffId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
+    staffId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+    previousAmount: Number, amount: Number,
+    changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
+    changedAt: Date, reason: String,
+  }],
   remark:  { type: String, default: '' },
   // 产品信息摘要
   productName: { type: String, default: '' },

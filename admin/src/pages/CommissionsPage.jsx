@@ -6,8 +6,9 @@ const STATUS_META = {
   pending:   { label: '待审核', badge: 'badge-yellow' },
   confirmed: { label: '待打款', badge: 'badge-blue' },
   paid:      { label: '已打款', badge: 'badge-green' },
-  cancelled: { label: '已驳回', badge: 'badge-gray' },
+  cancelled: { label: '已取消/驳回', badge: 'badge-gray' },
 }
+const orderBlocked = (r) => !r.orderId || r.orderId.status === 'cancelled' || r.orderId.paymentStatus !== 'paid' || ['requested', 'processing', 'refunded', 'partially_refunded'].includes(r.orderId.refundStatus) || ['closed', 'refunded', 'refund_pending'].includes(r.orderId.tradeStatus)
 const ROLE_LABELS = { referrer: '转介绍人', fulfiller: '服务人' }
 
 export default function CommissionsPage() {
@@ -21,6 +22,25 @@ export default function CommissionsPage() {
   const [selected, setSelected] = useState([])
   const [view, setView] = useState('commissions')
   const [promotions, setPromotions] = useState([])
+  const [editing, setEditing] = useState(null)
+  const [staffOptions, setStaffOptions] = useState([])
+  const [staffId, setStaffId] = useState('')
+  const [reason, setReason] = useState('')
+  const [editError, setEditError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const editAttribution = async (record) => {
+    setEditing(record); setStaffId(record.staffId?._id || ''); setReason(''); setEditError('')
+    try { const result = await adminAPI.staffList({ limit: 500 }); setStaffOptions(result.data || []) }
+    catch (e) { setEditError(e.message || '人员加载失败') }
+  }
+  const saveAttribution = async () => {
+    if (!reason.trim()) { setEditError('请填写修改原因'); return }
+    setSaving(true); setEditError('')
+    try { const result = await adminAPI.changeCommissionAttribution(editing._id, { staffId: staffId || null, reason }); toast(result.message); setEditing(null); await load(page) }
+    catch (e) { setEditError(e.message || '修改失败') }
+    finally { setSaving(false) }
+  }
+
 
   const load = useCallback(async (p = page) => {
     setLoading(true)
@@ -67,7 +87,7 @@ export default function CommissionsPage() {
 
   const toggleSelect = (id) => setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
   const toggleSelectAll = () => {
-    const confirmedIds = records.filter(r => r.status === 'confirmed').map(r => r._id)
+    const confirmedIds = records.filter(r => r.status === 'confirmed' && !orderBlocked(r)).map(r => r._id)
     setSelected(s => s.length === confirmedIds.length ? [] : confirmedIds)
   }
 
@@ -76,6 +96,25 @@ export default function CommissionsPage() {
 
   return (
     <>
+      {editing && <div style={{ position: 'fixed', inset: 0, background: '#0006', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="card" style={{ width: 460, maxWidth: '95vw', padding: 24 }}>
+          <h3>修改佣金归属人员</h3>
+          <p>{editing.productName} · {ROLE_LABELS[editing.role]}</p>
+          <label>归属人员</label>
+          <select value={staffId} onChange={e => setStaffId(e.target.value)} style={{ width: '100%', padding: 10, margin: '8px 0 16px' }}>
+            {editing.role === 'referrer' && <option value="">无转介绍人（取消本条佣金）</option>}
+            {staffOptions.map(person => <option key={person._id} value={person._id}>{person.name}（{person.role}）</option>)}
+          </select>
+          <label>修改原因</label>
+          <textarea value={reason} onChange={e => setReason(e.target.value)} maxLength={500} style={{ width: '100%', minHeight: 80, marginTop: 8 }} />
+          <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>{editing.role === 'referrer' ? '保存后按新人员的个人佣金规则优先计算，无个人规则则使用订单产品规则，并重新审核。' : '保存后保留本次服务核销的计算规则，并重新审核。'}修改记录会保留。</p>
+          {editError && <p style={{ color: '#EF4444' }}>{editError}</p>}
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+            <button className="btn btn-ghost" disabled={saving} onClick={() => setEditing(null)}>返回</button>
+            <button className="btn btn-primary" disabled={saving} onClick={saveAttribution}>{saving ? '保存中…' : '保存归属'}</button>
+          </div>
+        </div>
+      </div>}
       <div className="page-header">
         <div>
           <div className="page-title">💰 佣金审核打款</div>
@@ -93,7 +132,7 @@ export default function CommissionsPage() {
         </div>
         {view==='promotions' ? (loading?<div className="loading-wrap"><div className="spinner"/> 加载中...</div>:<div className="table-wrap"><table><thead><tr><th>推送人</th><th>客户</th><th>产品</th><th>推送时间</th><th>阅读</th><th>成交状态</th><th>推广佣金</th></tr></thead><tbody>{promotions.map(r=><tr key={r._id}><td>{r.staffId?.name||'-'}</td><td>{r.patientId?.name||'-'}<div style={{fontSize:11,color:'var(--text-muted)'}}>{r.patientId?.phone||''}</div></td><td>{r.title||(r.products||[]).map(p=>p.name).join('、')||'-'}</td><td>{fmtTime(r.createdAt)}</td><td>{r.readAt?'已读':'未读'}</td><td>{({pushed:'已推送',read:'已阅读',ordered:'已下单待支付',paid:'已支付待生成',commissioned:'已生成佣金'})[r.stage]||r.stage}</td><td>{r.commission?`¥${r.commission.commissionAmount}（${STATUS_META[r.commission.status]?.label||r.commission.status}）`:'-'}</td></tr>)}{promotions.length===0&&<tr><td colSpan="7"><div className="empty-state"><div className="empty-state-text">暂无产品推广记录</div></div></td></tr>}</tbody></table></div>) : <>
         <div className="search-bar" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {[['pending', '待审核'], ['confirmed', '待打款'], ['paid', '已打款'], ['cancelled', '已驳回'], ['', '全部']].map(([val, label]) => (
+          {[['pending', '待审核'], ['confirmed', '待打款'], ['paid', '已打款'], ['cancelled', '已取消/驳回'], ['', '全部']].map(([val, label]) => (
             <button
               key={val}
               className={`btn ${statusFilter === val ? 'btn-primary' : 'btn-ghost'}`}
@@ -115,7 +154,7 @@ export default function CommissionsPage() {
                   {statusFilter === 'confirmed' && (
                     <th style={{ width: 32 }}>
                       <input type="checkbox"
-                        checked={selected.length > 0 && selected.length === records.filter(r => r.status === 'confirmed').length}
+                        checked={selected.length > 0 && selected.length === records.filter(r => r.status === 'confirmed' && !orderBlocked(r)).length}
                         onChange={toggleSelectAll} />
                     </th>
                   )}
@@ -135,33 +174,34 @@ export default function CommissionsPage() {
                   <tr key={r._id}>
                     {statusFilter === 'confirmed' && (
                       <td>
-                        <input type="checkbox" checked={selected.includes(r._id)} onChange={() => toggleSelect(r._id)} />
+                        <input type="checkbox" disabled={orderBlocked(r)} checked={selected.includes(r._id)} onChange={() => toggleSelect(r._id)} />
                       </td>
                     )}
-                    <td>{r.staffId?.name || '未知'}</td>
+                    <td>{r.staffId?.name || '未知'}{r.attributionHistory?.length > 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>已调整归属 · {r.attributionHistory[r.attributionHistory.length - 1].reason}</div>}</td>
                     <td>{ROLE_LABELS[r.role] || r.role}</td>
                     <td>
                       {r.patientId?.name || '--'}
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{r.patientId?.phone}</div>
                     </td>
-                    <td>{r.productName || r.orderId?.serviceName || '--'}</td>
+                    <td>{r.productName || r.orderId?.serviceName || '--'}<div style={{ fontSize: 11, color: 'var(--text-muted)' }}>订单：{({ pending: '待服务', scheduled: '已安排', completed: '已完成', cancelled: '已取消' })[r.orderId?.status] || '不存在'}{r.orderId?.refundStatus === 'refunded' ? ' · 已退款' : ['requested', 'processing'].includes(r.orderId?.refundStatus) ? ' · 退款处理中' : ''}</div><div style={{ fontSize: 11, color: 'var(--text-muted)' }}>来源：{({ direct: '客户直接下单', share: '分享入口', push: '推送购买', manual: '后台指定' })[r.orderId?.referralSource] || (r.orderId?.pushRecordId ? '推送购买' : '历史归属待核对')}</div></td>
                     <td>¥{r.orderAmount}</td>
                     <td style={{ color: 'var(--primary)', fontWeight: 700 }}>¥{r.commissionAmount}</td>
-                    <td><span className={`badge ${(STATUS_META[r.status] || STATUS_META.pending).badge}`}>{(STATUS_META[r.status] || STATUS_META.pending).label}</span></td>
+                    <td><span className={`badge ${(STATUS_META[r.status] || STATUS_META.pending).badge}`}>{(STATUS_META[r.status] || STATUS_META.pending).label}</span>{r.reversalRequired && <div style={{ color: '#EF4444' }}>订单已撤销，已打款需追回核对</div>}{(r.cancellationReason || r.remark) && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{r.cancellationReason || r.remark}</div>}</td>
                     <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{fmtTime(r.createdAt)}</td>
                     <td>
                       <div className="status-actions">
+                        {r.status !== 'paid' && <button className="btn btn-sm btn-ghost" onClick={() => editAttribution(r)}>修改人员</button>}
                         {r.status === 'pending' && (
                           <>
                             <button className="btn btn-sm status-btn" style={{ borderColor: '#10B981', color: '#10B981', background: '#10B98112' }}
-                              disabled={updating === r._id} onClick={() => confirm(r._id)}>审核通过</button>
+                              disabled={updating === r._id || orderBlocked(r)} onClick={() => confirm(r._id)}>审核通过</button>
                             <button className="btn btn-sm status-btn" style={{ borderColor: '#EF4444', color: '#EF4444', background: '#EF444412' }}
                               disabled={updating === r._id} onClick={() => reject(r._id)}>驳回</button>
                           </>
                         )}
                         {r.status === 'confirmed' && (
                           <button className="btn btn-sm status-btn" style={{ borderColor: '#3B82F6', color: '#3B82F6', background: '#3B82F612' }}
-                            disabled={updating === r._id} onClick={() => pay(r._id)}>确认打款</button>
+                            disabled={updating === r._id || orderBlocked(r)} onClick={() => pay(r._id)}>确认打款</button>
                         )}
                         {(r.status === 'paid' || r.status === 'cancelled') && <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>无可操作</span>}
                       </div>

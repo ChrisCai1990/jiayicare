@@ -4,7 +4,6 @@ const router  = express.Router();
 const auth    = require('../middleware/auth');
 const Order   = require('../models/Order');
 const Service = require('../models/Service');
-const PushRecord = require('../models/PushRecord');
 const User    = require('../models/User');
 const Coupon  = require('../models/Coupon');
 const FollowUp = require('../models/FollowUp');
@@ -356,10 +355,7 @@ router.post('/order', auth, async (req, res) => {
   if (paymentMethod) paymentParts.push(`支付方式：${paymentMethod}`);
   const orderNote = [note, paymentParts.join('；')].filter(Boolean).join('；');
 
-  // 谁推送谁获推广费：查该会员对这个产品最近一次的推送记录，推送人自动定为转介绍人(referrerId)，
-  // 不需要超管事后手动指定。服务人(fulfillerId)不默认等于推送人——用户明确"推送人和服务人不一定是
-  // 同一个"，仍需推荐人本人或超管另行指定（PATCH /staff/orders/:id/fulfiller），不产生服务人时
-  // 该订单只生成推广费，不生成服务费。
+  // 普通下单只认本次有效分享来源；从推送购买由 user 路由明确绑定 pushRecordId。
   let referrerId = null;
   let servicePerformers = [];
   let productShare = null;
@@ -372,19 +368,6 @@ router.post('/order', auth, async (req, res) => {
       expiresAt: { $gt: new Date() },
     });
     if (productShare?.sharerStaffId) referrerId = productShare.sharerStaffId;
-  }
-  if (product) {
-    const lastPush = await PushRecord.findOne({ patientId: req.user._id, type: 'product', $or: [
-      { productId: service.id }, { 'products.productId': service.id },
-    ] })
-      .sort({ createdAt: -1 }).select('staffId servicePerformers');
-    if (lastPush && !referrerId) {
-      referrerId = lastPush.staffId;
-      // 推送时为该产品指定的各岗位服务人（productId 匹配或未标 productId 的通用项）带入订单，供核销结算按岗位发绩效
-      servicePerformers = (lastPush.servicePerformers || [])
-        .filter(sp => sp.role && sp.staffId && (!sp.productId || String(sp.productId) === String(service.id)))
-        .map(sp => ({ role: sp.role, staffId: sp.staffId }));
-    }
   }
 
   // 住院一站式先由健康顾问做医院/科室/专家评估和专家号预约方案，其他订单仍由健康规划师承接。
@@ -415,6 +398,7 @@ router.post('/order', auth, async (req, res) => {
     fulfillmentType: orderFulfillmentType,
     orderType:    isPkg ? 'package' : (product ? 'product' : 'service'),
     referrerId,
+    referralSource: productShare ? 'share' : 'direct',
     servicePerformers,
     serviceItemsSnapshot: productServiceItems.map(item => ({
       key: item.key, name: item.name, units: item.units, usedUnits: 0,

@@ -3,6 +3,7 @@ const Product = require('../models/Product');
 const Service = require('../models/Service');
 const Commission = require('../models/Commission');
 const Admin = require('../models/Admin');
+const { commissionBlockReason } = require('./commissionLifecycle');
 
 // 支付确认后，按该产品/服务预设的 performanceRule，为转介绍人(referrer)和服务人(fulfiller)
 // 各自生成一条独立的待结算 Commission 记录（互不影响，各自角色对应各自的比例或固定金额）。
@@ -13,7 +14,7 @@ const Admin = require('../models/Admin');
 // 该员工没有个人设置时才退回产品的 performanceRule。referrer 和 fulfiller 各自独立判断，
 // 因为两人可能一个有个人设置一个没有。
 async function settleOrderCommission(order) {
-  if (!order || order.commissionStatus === 'settled') return { created: [] };
+  if (commissionBlockReason(order) || order.commissionStatus === 'settled') return { created: [] };
 
   let productRule = null;
   let performerRoles = [];   // 多服务岗位绩效配置（产品维度）
@@ -106,7 +107,7 @@ async function settleOrderCommission(order) {
 
 // 推广佣金以“有效支付”为结算时点，与服务是否已核销无关。服务人员绩效仍在核销时结算。
 async function settleReferralCommission(order) {
-  if (!order?.referrerId || order.paymentStatus !== 'paid') return { created: [] };
+  if (!order?.referrerId || commissionBlockReason(order)) return { created: [] };
   let productRule = order.performanceRuleSnapshot || null;
   if (!productRule && (order.orderType === 'product' || mongoose.Types.ObjectId.isValid(order.serviceId))) {
     const product = await Product.findById(order.serviceId).catch(() => null);
@@ -114,7 +115,7 @@ async function settleReferralCommission(order) {
   }
   if (!productRule) productRule = (await Service.findOne({ serviceId: order.serviceId }).catch(() => null))?.performanceRule;
   const staff = await Admin.findById(order.referrerId).select('personalPerformanceRule').catch(() => null);
-  const rule = staff?.personalPerformanceRule?.ruleType !== 'none' ? staff.personalPerformanceRule : productRule;
+  const rule = staff?.personalPerformanceRule && staff.personalPerformanceRule.ruleType !== 'none' ? staff.personalPerformanceRule : productRule;
   if (!rule || rule.ruleType === 'none') return { created: [] };
   const base = Number(order.paidAmount || order.paymentExpectedAmount || order.servicePrice || 0);
   const rate = rule.ruleType === 'percentage' ? (Number(rule.referrerRate) || 0) / 100 : 0;
@@ -135,7 +136,7 @@ async function settleReferralCommission(order) {
 
 // 组合服务按每次子项目核销即时结算。百分比以订单单次均摊实付额为基数；固定金额按每次核销计。
 async function settleRedemptionCommission(order, redemption) {
-  if (!order || !redemption?.serviceItemKey || !order.serviceItemsSnapshot?.length) return { created: [] };
+  if (commissionBlockReason(order) || !redemption?.serviceItemKey || !order.serviceItemsSnapshot?.length) return { created: [] };
   const item = order.serviceItemsSnapshot.find(i => i.key === redemption.serviceItemKey);
   if (!item) return { created: [] };
   const base = Math.round(((order.paidAmount || order.servicePrice || 0) / Math.max(1, order.totalUnits || 1)) * 100) / 100;
