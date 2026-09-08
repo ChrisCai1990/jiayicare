@@ -13,9 +13,17 @@ test('Admin can bind one active questionnaire to a checkup product workflow', ()
 
 test('each checkup order creates an order-scoped questionnaire assignment', () => {
   const source = read('src/routes/services.js')
+  assert.match(source, /const PushRecord = require\('\.\.\/models\/PushRecord'\)/)
   assert.match(source, /serviceWorkflow\?\.key === 'checkup'/)
   assert.match(source, /sourceOrderId: order\._id/)
   assert.match(source, /每笔订单独立推送一次/)
+})
+
+test('questionnaire push failures never block the payment flow', () => {
+  const source = read('src/routes/services.js')
+  assert.match(source, /\[checkup-questionnaire\] push failed; payment flow continues/)
+  assert.match(source, /status: 'push_failed'/)
+  assert.ok(source.indexOf("status: 'push_failed'") < source.indexOf('wechatPay.createJsapiPayment'))
 })
 
 test('questionnaire submission is scoped to its push assignment and linked back to the order and plan', () => {
