@@ -27,9 +27,9 @@ test('checkup-shaped medical assistance plans are grouped into checkup managemen
 
 test('checkup management is a full service workspace rather than only a plan filter', () => {
   assert.match(source, /function CheckupManagementWorkspace/);
-  for (const label of ['体检需求与健康档案联动', '引用长期健康档案', '保存本次体检需求', '核对档案变化', '预约与行前准备', '报告与后续管理']) {
+  for (const label of ['年度体检', '需求问卷', '体检方案', '预约准备', '现场陪同', '报告管理', '当前待处理', '本次资料', '历年体检']) {
     assert.match(source, new RegExp(label));
   }
-  assert.match(source, /确认后新增带日期和来源的版本，旧资料继续保留/);
-  assert.match(source, /仅保留在本次问卷／标记待核实／客户填写有误/);
+  assert.match(source, /旧资料始终保留/);
+  assert.match(source, /serviceManagementView !== 'checkup'/);
 });
