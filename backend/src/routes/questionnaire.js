@@ -170,8 +170,19 @@ router.get('/pending', auth, async (req, res) => {
     if (!pushRecords.length) {
       return res.json({ success: true, data: [] });
     }
-    const answeredPushIds = new Set((await QuestionnaireResponse.find({ user: req.user._id, pushRecordId: { $in: pushRecords.map(r => r._id) } }).select('pushRecordId').lean()).map(r => String(r.pushRecordId)));
-    const pendingPushes = pushRecords.filter(r => !answeredPushIds.has(String(r._id)));
+    const responses = await QuestionnaireResponse.find({
+      user: req.user._id,
+      $or: [
+        { pushRecordId: { $in: pushRecords.map(r => r._id) } },
+        { pushRecordId: null, questionnaire: { $in: pushRecords.map(r => r.questionnaireId) } },
+      ],
+    }).select('pushRecordId questionnaire').lean();
+    const answeredPushIds = new Set(responses.filter(r => r.pushRecordId).map(r => String(r.pushRecordId)));
+    const legacyAnsweredQuestionnaireIds = new Set(responses.filter(r => !r.pushRecordId).map(r => String(r.questionnaire)));
+    // 旧版答卷没有保存 pushRecordId。对普通人工推送，已有同模板答卷即视为
+    // 完成；订单问卷仍按每个订单的 assignment 独立判断，保留重复填写能力。
+    const pendingPushes = pushRecords.filter(r => !answeredPushIds.has(String(r._id))
+      && (r.sourceOrderId || !legacyAnsweredQuestionnaireIds.has(String(r.questionnaireId))));
     const questionnaires = await DynamicQuestionnaire.find({ _id: { $in: pendingPushes.map(r => r.questionnaireId) }, status: 'active', deletedAt: null })
       .select('title description questions deadline scoringEnabled createdBy sortOrder').lean();
     const questionnaireMap = new Map(questionnaires.map(q => [String(q._id), q]));

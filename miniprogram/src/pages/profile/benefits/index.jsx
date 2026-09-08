@@ -156,15 +156,15 @@ export default function BenefitsPage() {
         <View style={{ padding: `0 ${spacing.lg}px` }}>
           <View style={{ borderRadius: `${radius.md}px`, backgroundColor: '#1A2B24', padding: `${spacing.lg}px`, marginBottom: `${spacing.md}px`, boxShadow: shadow.md }}>
             <Text style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '6px' }}>健康基金余额</Text>
-            <Text style={{ fontSize: '34px', fontWeight: 800, color: '#fff', display: 'block', marginBottom: `${spacing.md}px` }}>¥{fundTotal.toLocaleString()}</Text>
+            <Text style={{ fontSize: '34px', fontWeight: 800, color: '#fff', display: 'block', marginBottom: `${spacing.md}px` }}>¥{Number(fundTotal).toFixed(2)}</Text>
             <View style={{ display: 'flex', gap: `${spacing.xl}px` }}>
               <View>
                 <Text style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '2px' }}>自有基金</Text>
-                <Text style={{ fontSize: '17px', fontWeight: 700, color: '#fff' }}>¥{fundPersonal.toLocaleString()}</Text>
+                <Text style={{ fontSize: '17px', fontWeight: 700, color: '#fff' }}>¥{Number(fundPersonal).toFixed(2)}</Text>
               </View>
               <View>
                 <Text style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '2px' }}>企业赠送</Text>
-                <Text style={{ fontSize: '17px', fontWeight: 700, color: '#fff' }}>¥{fundCorp.toLocaleString()}</Text>
+                <Text style={{ fontSize: '17px', fontWeight: 700, color: '#fff' }}>¥{Number(fundCorp).toFixed(2)}</Text>
               </View>
             </View>
           </View>

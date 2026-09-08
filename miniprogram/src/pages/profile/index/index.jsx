@@ -157,8 +157,8 @@ export default function ProfilePage() {
             <Text style={{ fontSize: '12px', fontWeight: 600, color: '#D97706' }}>健康基金</Text>
           </View>
           <View style={{ textAlign: 'right' }}>
-            <Text style={{ fontSize: '15px', fontWeight: 800, color: colors.textPrimary, display: 'block' }}>¥{fundTotal.toLocaleString()}</Text>
-            <Text style={{ fontSize: '10px', color: colors.textMuted }}>自有 ¥{fundPersonal.toLocaleString()} · 企业 ¥{fundCorp.toLocaleString()}</Text>
+            <Text style={{ fontSize: '15px', fontWeight: 800, color: colors.textPrimary, display: 'block' }}>¥{Number(fundTotal).toFixed(2)}</Text>
+            <Text style={{ fontSize: '10px', color: colors.textMuted }}>自有 ¥{Number(fundPersonal).toFixed(2)} · 企业 ¥{Number(fundCorp).toFixed(2)}</Text>
           </View>
         </View>
       </View>

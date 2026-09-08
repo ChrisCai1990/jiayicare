@@ -180,11 +180,12 @@ router.get('/me', auth, async (req, res) => {
         req.user.enterpriseId ? Enterprise.findById(req.user.enterpriseId).select('healthFundPaymentRule').lean() : null,
         require('../utils/healthFundPayment').getHealthFundPolicy(),
       ]);
-      const totalBalance = req.user.healthFundBalance || 0;
-      const personal = Math.min(personalAvailable, totalBalance);
+      const cents = value => Math.round((Number(value) || 0) * 100) / 100;
+      const totalBalance = cents(req.user.healthFundBalance);
+      const personal = cents(Math.min(personalAvailable, totalBalance));
       const healthFund = {
         total:     totalBalance,
-        corporate: Math.min(corporateAvailable, Math.max(0, totalBalance - personal)),
+        corporate: cents(Math.min(corporateAvailable, Math.max(0, totalBalance - personal))),
         personal,
         rule: (() => {
           const rule = enterprise?.healthFundPaymentRule;
@@ -297,10 +298,11 @@ router.get('/health-fund', auth, async (req, res) => {
       GiftRecord.find({ patientId: req.user._id, giftType: 'fund' }).sort({ createdAt: -1 }).limit(100).lean(),
       SystemConfig.findOne({ key: 'healthFundPolicy' }).lean(),
     ]);
-    const total = Number(currentUser.healthFundBalance) || 0;
-    const personal = Math.min(personalAvailable, total);
+    const cents = value => Math.round((Number(value) || 0) * 100) / 100;
+    const total = cents(currentUser.healthFundBalance);
+    const personal = cents(Math.min(personalAvailable, total));
     const ledger = require('../utils/healthFundLedger').mergeHealthFundLedger(transactions, grants);
-    res.json({ success:true, data:{ total, personal, corporate:Math.min(corporateAvailable,Math.max(0,total-personal)), policy:config?.value||{}, transactions:ledger } });
+    res.json({ success:true, data:{ total, personal, corporate:cents(Math.min(corporateAvailable,Math.max(0,total-personal))), policy:config?.value||{}, transactions:ledger.map(item => ({ ...item, amount:cents(item.amount), balanceAfter:cents(item.balanceAfter) })) } });
   } catch (err) { res.status(500).json({ success:false, message:'获取健康基金明细失败', error:err.message }); }
 });
 

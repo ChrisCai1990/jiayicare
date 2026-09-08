@@ -142,6 +142,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
   const [notifTab, setNotifTab] = useState('全部');
   const [detailMsg, setDetailMsg] = useState(null);
   const [pendingQuestionnaireIds, setPendingQuestionnaireIds] = useState(new Set());
+  const [pendingQuestionnaireAssignmentIds, setPendingQuestionnaireAssignmentIds] = useState(new Set());
   const listPollRef = useRef(null);
 
   const loadMessages = useCallback(async () => {
@@ -158,6 +159,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
       const rawPending = pendingRes.status === 'fulfilled' && pendingRes.value?.success ? pendingRes.value.data : [];
       const pending = Array.isArray(rawPending) ? rawPending : [];
       setPendingQuestionnaireIds(new Set(pending.map((item) => String(item._id))));
+      setPendingQuestionnaireAssignmentIds(new Set(pending.map((item) => String(item.assignmentId)).filter(Boolean)));
       const unread = all.filter((item) => item.unread).length;
       if (unread > 0) Taro.setTabBarBadge({ index: 2, text: String(Math.min(unread, 99)) }).catch(() => {});
       else Taro.removeTabBarBadge({ index: 2 }).catch(() => {});
@@ -181,7 +183,10 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
   // 关联了会话就从“健康管家”入口消失。
   const notifMessages = messages.filter((m) => NOTIF_TYPES.has(m.type));
   const questionnaireMessages = notifMessages.filter((m) => (
-    m.type === 'questionnaire' && m.questionnaireId && pendingQuestionnaireIds.has(String(m.questionnaireId))
+    m.type === 'questionnaire' && (
+      pendingQuestionnaireAssignmentIds.has(String(m._id))
+      || (!m.isPushRecord && m.questionnaireId && pendingQuestionnaireIds.has(String(m.questionnaireId)))
+    )
   ));
   const careMessages = notifMessages.filter((m) => m.type === 'system' && /关怀|打卡|提醒/.test(`${m.title || ''}${m.content || ''}`));
   const systemMessages = notifMessages.filter((m) => !questionnaireMessages.includes(m) && !careMessages.includes(m));
