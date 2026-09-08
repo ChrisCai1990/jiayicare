@@ -24,6 +24,7 @@ const Partner = require('../models/Partner');
 const PartnerBenefit = require('../models/PartnerBenefit');
 const Enterprise = require('../models/Enterprise');
 const PlanTemplate = require('../models/PlanTemplate');
+const { ensureAiCaseReviewTemplates } = require('../utils/aiCaseReviewTemplates');
 const CheckupPlan = require('../models/CheckupPlan');
 const AnnualPlan = require('../models/AnnualPlan');
 const AnnualPlanTemplate = require('../models/AnnualPlanTemplate');
@@ -1884,6 +1885,7 @@ router.delete('/hr-accounts/:id', adminAuth, async (req, res) => {
 
 // GET /api/admin/plan-templates?type=
 router.get('/plan-templates', adminAuth, async (req, res) => {
+  if (req.query.type === 'ai_case_review') await ensureAiCaseReviewTemplates();
   const { type, name } = req.query;
   const filter = {};
   if (type) filter.type = type;

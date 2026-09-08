@@ -17,3 +17,9 @@ test('专病分析模板具有医护读取接口且使用后台模板类型', ()
   assert.match(source, /router\.get\('\/ai-case-review\/templates'/);
   assert.match(source, /type: 'ai_case_review'/);
 });
+
+test('专项研判全部主题由Admin模板提供且保留自定义主题开关', () => {
+  const templates = fs.readFileSync(path.join(__dirname, '../src/utils/aiCaseReviewTemplates.js'), 'utf8');
+  for (const key of ['checkup', 'nutrition', 'annual', 'medical', 'daily', 'specialty']) assert.match(templates, new RegExp(`'${key}'`));
+  assert.match(templates, /allowCustomTopic: true/);
+});
