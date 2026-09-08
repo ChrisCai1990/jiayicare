@@ -24,6 +24,21 @@ const TASK_PLAN_DRAFTS = [
     },
   },
   {
+    key: 'plan_design',
+    name: `${DRAFT}体检方案定制与审核`,
+    mode: 'fixed',
+    trigger: '',
+    category: 'checkup',
+    executorRole: 'familyDoctor',
+    remindDaysBefore: 1,
+    executorDueOffsetDays: -5,
+    completionStandard: '健康顾问已结合客户需求、既往资料、慢病与用药情况完成个性化体检项目设计，明确重点项目、必要的专项检查及注意事项，并形成可供预约执行的确认方案。',
+    default_content: {
+      fields: ['客户体检目标', '基础体检项目', '重点关注项目', '专项检查建议', '既往异常复查项目', '慢病与用药注意事项', '方案确认结论'],
+      boundary: '健康顾问负责确定体检方案；健康规划师依据已确认方案预约，不替代专业判断。',
+    },
+  },
+  {
     key: 'booking',
     name: `${DRAFT}体检预约与行前确认`,
     mode: 'fixed',
@@ -164,7 +179,7 @@ async function run({ apply = false, approve = false } = {}) {
       'serviceWorkflow.modules': linked,
       'serviceWorkflow.followUpPlanIds': linked.map(item => item.planId),
       'serviceWorkflow.followUpPlanId': linked[0]?.planId || null,
-      'serviceWorkflow.notes': '初稿待审核：健管专员负责资料与报告闭环，健康规划师负责体检预约，具体陪同人员负责现场执行；不创建同岗位督办任务；AI解析和健管报告审核沿用报告专用链路。',
+      'serviceWorkflow.notes': '标准流程：健管专员先核对资料，健康顾问定制并审核体检方案，健康规划师再预约，具体陪同人员负责现场执行；不创建同岗位督办任务；AI解析和健管报告审核沿用报告专用链路。',
       updatedAt: new Date(),
     } });
 

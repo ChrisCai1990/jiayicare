@@ -5,7 +5,7 @@ const { PRODUCT_NAME, TASK_PLAN_DRAFTS, validateDrafts } = require('../src/scrip
 test('checkup one-stop Admin draft is internally consistent', () => {
   assert.equal(PRODUCT_NAME, '体检一站式服务');
   assert.deepEqual(validateDrafts(), []);
-  assert.equal(TASK_PLAN_DRAFTS.length, 5);
+  assert.equal(TASK_PLAN_DRAFTS.length, 6);
   assert.ok(TASK_PLAN_DRAFTS.every(item => item.reviewStatus === 'pending_review'));
   assert.ok(TASK_PLAN_DRAFTS.every(item => item.executorRole !== item.supervisorRole));
   assert.ok(TASK_PLAN_DRAFTS.every(item => item.requiresCoordination === false));
@@ -18,8 +18,9 @@ test('checkup one-stop draft separates fixed service work from abnormal follow-u
   assert.equal(conditional[0].executorRole, 'familyDoctor');
 
   const fixed = TASK_PLAN_DRAFTS.filter(item => item.mode === 'fixed');
-  assert.deepEqual(fixed.map(item => item.key), ['intake', 'booking', 'onsite', 'report_collection']);
-  assert.deepEqual(fixed.map(item => item.executorRole), ['healthManager', 'healthPlanner', 'medicalAssistant', 'healthManager']);
+  assert.deepEqual(fixed.map(item => item.key), ['intake', 'plan_design', 'booking', 'onsite', 'report_collection']);
+  assert.deepEqual(fixed.map(item => item.executorRole), ['healthManager', 'familyDoctor', 'healthPlanner', 'medicalAssistant', 'healthManager']);
+  assert.equal(fixed.find(item => item.key === 'plan_design').name, '【审核稿】体检方案定制与审核');
   assert.equal(fixed.find(item => item.key === 'onsite').name, '【审核稿】陪同体检与现场记录');
 });
 
