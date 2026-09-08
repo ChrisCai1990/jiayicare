@@ -865,7 +865,7 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
   };
 
   return (
-    <View style={{ display: 'flex', flexDirection: 'column', height: embedded ? '100%' : '100vh', flex: 1, minHeight: 0, backgroundColor: colors.background }}>
+    <View style={{ display: 'flex', flexDirection: 'column', height: embedded ? 'auto' : '100vh', flex: 1, minHeight: 0, backgroundColor: colors.background }}>
       {recording && (
         <View style={{ position: 'fixed', left: '50%', top: '45%', transform: 'translate(-50%, -50%)', zIndex: 1000, width: '180px', padding: '22px 18px 18px', borderRadius: '18px', backgroundColor: recordingCancelling ? 'rgba(190,45,45,.94)' : 'rgba(26,43,36,.92)', textAlign: 'center', boxShadow: '0 10px 30px rgba(0,0,0,.22)' }}>
           <Text style={{ display: 'block', color: '#fff', fontSize: '34px', marginBottom: '8px' }}>{recordingCancelling ? '↥' : '🎙️'}</Text>

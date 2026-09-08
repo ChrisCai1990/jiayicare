@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Input, Textarea, ScrollView } from '@tarojs/components';
+import { View, Text, Input, Textarea, ScrollView, Picker } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { questionnaireAPI } from '../../services/api';
@@ -187,7 +187,22 @@ function NumberQuestion({ q, answer, onAnswer }) {
       placeholder={q.placeholder || '请输入数字'}
       value={answer !== undefined && answer !== null ? String(answer) : ''}
       onInput={(e) => { const num = parseFloat(e.detail.value); onAnswer(isNaN(num) ? e.detail.value : num); }}
+      confirmType="done"
     />
+  );
+}
+
+function DropdownQuestion({ q, answer, onAnswer }) {
+  const options = (q.options || []).map(getOptLabel).filter(Boolean);
+  const selected = typeof answer === 'object' ? answer?.value : answer;
+  const index = Math.max(0, options.indexOf(selected));
+  return (
+    <Picker mode="selector" range={options} value={index} onChange={(e) => onAnswer(options[Number(e.detail.value)])}>
+      <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: '52px', boxSizing: 'border-box', border: `1.5px solid ${colors.border}`, borderRadius: `${radius.sm}px`, padding: `0 ${spacing.md}px`, backgroundColor: '#fff' }}>
+        <Text style={{ fontSize: '14px', color: selected ? colors.textPrimary : colors.textMuted }}>{selected || q.placeholder || '请选择'}</Text>
+        <Text style={{ fontSize: '18px', color: colors.textMuted }}>⌄</Text>
+      </View>
+    </Picker>
   );
 }
 
@@ -208,6 +223,27 @@ export default function QuestionnairePage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    if (!Taro.onKeyboardHeightChange) return undefined;
+    const onKeyboardHeightChange = (event) => setKeyboardHeight(event.height || 0);
+    Taro.onKeyboardHeightChange(onKeyboardHeightChange);
+    return () => Taro.offKeyboardHeightChange?.(onKeyboardHeightChange);
+  }, []);
+
+  const resetQuiz = () => {
+    setCurrentQ(0); setHistory([]); setAnswers({}); setInputTexts({}); setShowSummary(false); setSubmitResult(null); setErrorMsg('');
+  };
+
+  const beginDynamic = (questionnaire, useArchiveValues = false) => {
+    resetQuiz();
+    setSelectedDynamic(questionnaire);
+    setAnswers(useArchiveValues ? (questionnaire.initialAnswers || {}) : {});
+    setMode('dynamic');
+  };
+
+  const closeQuestionnaire = () => Taro.navigateBack({ delta: 1, fail: () => setMode('select') });
 
   useEffect(() => {
     questionnaireAPI.pending()
@@ -218,7 +254,7 @@ export default function QuestionnairePage() {
           const target = pending.find((item) => String(item._id) === String(targetQuestionnaireId));
           if (target) {
             setSelectedDynamic(target);
-            setMode('dynamic');
+            setMode(Object.keys(target.initialAnswers || {}).length ? 'prefill' : 'dynamic');
           }
         }
       })
@@ -283,10 +319,6 @@ export default function QuestionnairePage() {
     if (!q && !showSummary && !submitResult && mode !== 'select') setShowSummary(true);
   }, [q, showSummary, submitResult, mode]);
 
-  const resetQuiz = () => {
-    setCurrentQ(0); setHistory([]); setAnswers({}); setInputTexts({}); setShowSummary(false); setSubmitResult(null); setErrorMsg('');
-  };
-
   const buildFinalAnswers = () => {
     const final = {};
     for (const qId of Object.keys(answers)) {
@@ -298,6 +330,27 @@ export default function QuestionnairePage() {
     }
     return final;
   };
+
+  if (mode === 'prefill' && selectedDynamic) {
+    const count = Object.keys(selectedDynamic.initialAnswers || {}).length;
+    return (
+      <View style={{ height: '100vh', backgroundColor: colors.background, display: 'flex', flexDirection: 'column' }}>
+        <View style={{ display: 'flex', alignItems: 'center', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
+          <Text onClick={closeQuestionnaire} style={{ fontSize: '20px', color: colors.textPrimary, marginRight: '12px', padding: '4px' }}>‹</Text>
+          <Text style={{ flex: 1, fontSize: '16px', fontWeight: 700, color: colors.textPrimary, textAlign: 'center' }}>{selectedDynamic.title || '健康问卷'}</Text>
+          <View style={{ width: '20px' }} />
+        </View>
+        <View style={{ padding: `${spacing.xl}px ${spacing.lg}px` }}>
+          <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.lg}px`, boxShadow: shadow.sm }}>
+            <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>已为您带入健康档案</Text>
+            <Text style={{ fontSize: '14px', lineHeight: '22px', color: colors.textSecondary, display: 'block', marginBottom: `${spacing.lg}px` }}>已找到 {count} 项已有信息。请确认后继续；如信息有变化，可清空后重新填写。</Text>
+            <View onClick={() => beginDynamic(selectedDynamic, true)} style={{ textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary, marginBottom: `${spacing.sm}px` }}><Text style={{ color: '#fff', fontSize: '16px', fontWeight: 700 }}>确认并继续</Text></View>
+            <View onClick={() => beginDynamic(selectedDynamic, false)} style={{ textAlign: 'center', padding: '13px', borderRadius: `${radius.md}px`, border: `1px solid ${colors.primary}` }}><Text style={{ color: colors.primary, fontSize: '16px', fontWeight: 700 }}>修改，重新填写</Text></View>
+          </View>
+        </View>
+      </View>
+    );
+  }
 
   const submit = async () => {
     setSubmitting(true); setErrorMsg('');
@@ -352,7 +405,7 @@ export default function QuestionnairePage() {
             <>
               <Text style={{ fontSize: '12px', color: colors.primary, fontWeight: 700, display: 'block', marginBottom: `${spacing.sm}px` }}>🔔 待填问卷 ({pendingQs.length})</Text>
               {pendingQs.map((dq) => (
-                <View key={dq._id} onClick={() => { resetQuiz(); setSelectedDynamic(dq); setMode('dynamic'); }} style={{
+                <View key={dq._id} onClick={() => Object.keys(dq.initialAnswers || {}).length ? (setSelectedDynamic(dq), setMode('prefill')) : beginDynamic(dq)} style={{
                   display: 'flex', alignItems: 'center', gap: `${spacing.md}px`, backgroundColor: '#fff', borderRadius: `${radius.md}px`,
                   border: `1.5px solid ${colors.warning}60`, padding: `${spacing.md}px`, marginBottom: `${spacing.sm}px`, boxShadow: shadow.sm,
                 }}>
@@ -490,9 +543,9 @@ export default function QuestionnairePage() {
 
   // ── 答题页 ──
   return (
-    <View style={{ minHeight: '100vh', backgroundColor: colors.background, display: 'flex', flexDirection: 'column' }}>
+    <View style={{ height: '100vh', minHeight: 0, backgroundColor: colors.background, display: 'flex', flexDirection: 'column', paddingBottom: '72px', boxSizing: 'border-box' }}>
       <View style={{ display: 'flex', alignItems: 'center', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
-        <Text onClick={() => (hasPrev ? prev() : setMode('select'))} style={{ fontSize: '20px', color: colors.textPrimary, marginRight: '12px', padding: '4px' }}>‹</Text>
+        <Text onClick={() => (hasPrev ? prev() : closeQuestionnaire())} style={{ fontSize: '20px', color: colors.textPrimary, marginRight: '12px', padding: '4px' }}>‹</Text>
         <Text style={{ flex: 1, fontSize: '16px', fontWeight: 700, color: colors.textPrimary, textAlign: 'center' }}>{pageTitle}</Text>
         <Text onClick={() => setMode('select')} style={{ fontSize: '13px', color: colors.textMuted }}>退出</Text>
       </View>
@@ -507,12 +560,14 @@ export default function QuestionnairePage() {
         {q.type === 'matrix' && <MatrixQuestion q={q} answer={answer} onAnswer={setAnswer} />}
         {q.type === 'text' && <TextQuestion q={q} answer={answer} onAnswer={setAnswer} />}
         {q.type === 'number' && <NumberQuestion q={q} answer={answer} onAnswer={setAnswer} />}
+        {q.type === 'dropdown' && <DropdownQuestion q={q} answer={answer} onAnswer={setAnswer} />}
         {q.type === 'date' && <TextQuestion q={{ ...q, placeholder: q.placeholder || '请输入日期（如：2024-01-01）' }} answer={answer} onAnswer={setAnswer} />}
         {!!errorMsg && <Text style={{ fontSize: '13px', color: colors.danger, display: 'block', marginTop: `${spacing.sm}px` }}>{errorMsg}</Text>}
         <View style={{ height: '80px' }} />
       </ScrollView>
-      <View style={{ padding: `${spacing.md}px ${spacing.lg}px`, backgroundColor: '#fff', borderTop: `1px solid ${colors.border}` }}>
-        <View onClick={next} style={{ textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary }}>
+      <View style={{ position: 'fixed', left: 0, right: 0, bottom: `${keyboardHeight}px`, zIndex: 20, display: 'flex', gap: `${spacing.sm}px`, padding: `${spacing.md}px ${spacing.lg}px`, backgroundColor: '#fff', borderTop: `1px solid ${colors.border}` }}>
+        {hasPrev && <View onClick={prev} style={{ padding: '14px 18px', borderRadius: `${radius.md}px`, border: `1px solid ${colors.primary}` }}><Text style={{ fontSize: '16px', color: colors.primary, fontWeight: 700 }}>上一题</Text></View>}
+        <View onClick={next} style={{ flex: 1, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary }}>
           <Text style={{ fontSize: '16px', color: '#fff', fontWeight: 700 }}>{currentQ === activeQuestions.length - 1 ? '完成' : '下一题'}</Text>
         </View>
       </View>

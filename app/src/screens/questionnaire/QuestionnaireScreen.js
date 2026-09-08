@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  SafeAreaView, TextInput, ActivityIndicator,
+  SafeAreaView, TextInput, ActivityIndicator, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
@@ -516,6 +516,22 @@ export default function QuestionnaireScreen({ navigation }) {
     setErrorMsg('');
   };
 
+  const beginDynamic = (questionnaire, useArchiveValues = false) => {
+    resetQuiz();
+    setSelectedDynamic(questionnaire);
+    setAnswers(useArchiveValues ? (questionnaire.initialAnswers || {}) : {});
+    setMode('dynamic');
+  };
+
+  const selectDynamic = (questionnaire) => {
+    if (Object.keys(questionnaire.initialAnswers || {}).length) {
+      Alert.alert('已带入健康档案', '请确认已有信息；如需修改，可清空后重新填写。', [
+        { text: '修改，重新填写', onPress: () => beginDynamic(questionnaire) },
+        { text: '确认并继续', onPress: () => beginDynamic(questionnaire, true) },
+      ]);
+    } else beginDynamic(questionnaire);
+  };
+
   // 构建最终提交答案（合并 inputTexts）
   const buildFinalAnswers = () => {
     const final = {};
@@ -576,7 +592,7 @@ export default function QuestionnaireScreen({ navigation }) {
         pendingQs={pendingQs}
         loading={loadingPending}
         onSelectStatic={() => { resetQuiz(); setMode('static'); }}
-        onSelectDynamic={(dq) => { resetQuiz(); setSelectedDynamic(dq); setMode('dynamic'); }}
+        onSelectDynamic={selectDynamic}
       />
     );
   }
