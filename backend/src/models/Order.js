@@ -84,6 +84,7 @@ const orderSchema = new mongoose.Schema({
 
   // ── 绩效归属（供佣金自动结算使用，谁引流/谁服务）──
   referrerId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 转介绍人（引流下单）
+  referralSource: { type: String, enum: ['', 'direct', 'share', 'push', 'manual'], default: '' },
   fulfillerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 服务人（实际提供服务，单服务人场景）
   // 多服务岗位归属：产品由多岗位协同服务时，每个岗位对应的具体服务人。结算时按产品 servicePerformerRoles
   // 里各岗位的比例，为这里指定的人各生成一条绩效记录。为空则退回 referrer/fulfiller 单服务人逻辑。
@@ -95,6 +96,16 @@ const orderSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 orderSchema.index({ user: 1, createdAt: -1 });
+
+// 用户取消、Admin取消和支付退款共用订单状态联动；重复通知可安全重试。
+orderSchema.post('save', async function (doc) {
+  await require('../utils/commissionLifecycle').cancelOrderCommissions(doc);
+});
+orderSchema.post('findOneAndUpdate', async function (doc) {
+  if (!doc) return;
+  const current = await this.model.findById(doc._id);
+  await require('../utils/commissionLifecycle').cancelOrderCommissions(current);
+});
 
 orderSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);
 

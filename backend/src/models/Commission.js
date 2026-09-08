@@ -19,6 +19,9 @@ const commissionSchema = new mongoose.Schema({
     default: 'pending',
   },
   paidAt:  { type: Date, default: null },
+  cancelledAt: { type: Date, default: null },
+  cancellationReason: { type: String, default: '' },
+  reversalRequired: { type: Boolean, default: false },
   remark:  { type: String, default: '' },
   // 产品信息摘要
   productName: { type: String, default: '' },

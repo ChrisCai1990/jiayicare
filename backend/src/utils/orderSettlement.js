@@ -100,7 +100,10 @@ async function confirmRefund(refund, snapshot) {
     refund = await require('../models/Refund').findById(refund._id);
     if (!refund) throw new Error('退款单不存在');
     const existingOrder = await Order.findById(refund.order);
-    if (existingOrder?.refundStatus === 'refunded') return existingOrder;
+    if (existingOrder?.refundStatus === 'refunded') {
+      await require('./commissionLifecycle').cancelOrderCommissions(existingOrder);
+      return existingOrder;
+    }
   } else {
     refund = claimed;
   }
