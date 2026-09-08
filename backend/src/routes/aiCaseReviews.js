@@ -260,12 +260,13 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
     await topic.save();
 
     const snapshot = await buildContext(user, topic.contextScopes);
-    const history = topic.messages.slice(-13, -1).map(item => ({ role: item.role === 'ai' ? 'assistant' : 'user', content: item.content }));
+    const isSupplement = topic.messages.length > 1;
+    const history = topic.messages.slice(isSupplement ? -7 : -13, -1).map(item => ({ role: item.role === 'ai' ? 'assistant' : 'user', content: item.content }));
     const topicGuide = [topic.title, topic.description, topic.templateSnapshot?.outputGuide ? `固定研判输出：${topic.templateSnapshot.outputGuide}` : ''].filter(Boolean).join('\n');
-    const incrementalGuide = topic.messages.length > 1
-      ? '这是一次补充讨论。只分析本轮新增信息，不要从头重复完整分析；结合既往讨论判断新增信息是否修订原判断。按“本轮补充分析、修订说明、对阶段性结论的影响”组织回答；没有修订时明确写“无修订”。最新更正信息优先于旧信息。'
+    const incrementalGuide = isSupplement
+      ? '这是一次补充讨论。只回答本轮新增信息，严禁重述既往完整病史、检查清单、管理方案或原分析。输出最多3个短段：1.新增信息解读；2.修订说明（没有则写“无修订”）；3.对阶段性结论的影响。全文控制在300个中文字以内，每段最多3点。最新更正信息优先于旧信息。'
       : '这是本主题首次讨论，请围绕本轮问题形成初步分析，并标明待确认信息。';
-    const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: `【专项研判主题与要求】\n${topicGuide}\n\n【分析方式】\n${incrementalGuide}\n\n【本轮新增信息】\n${content || '请分析本轮上传的图文资料'}`, context: snapshot, attachments, history });
+    const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: `【专项研判主题与要求】\n${topicGuide}\n\n【分析方式】\n${incrementalGuide}\n\n【本轮新增信息】\n${content || '请分析本轮上传的图文资料'}`, context: snapshot, attachments, history, maxTokens: isSupplement ? 500 : 1800 });
     if (!result.content) throw new Error(`${result.provider} 未返回可展示的分析内容`);
     topic.providerSessionId = result.sessionId || topic.providerSessionId;
     topic.messages.push({ role: 'ai', content: result.content, provider: result.provider, providerModel: result.model, durationMs: result.durationMs, attachments: result.files, evidenceRefs: snapshot.sources, contextSnapshot: snapshot });

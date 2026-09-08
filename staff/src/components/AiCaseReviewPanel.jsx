@@ -6,7 +6,9 @@ const SCOPES = [
   ['medications', '用药/营养素'], ['followups', '随访'], ['plans', '管理方案'], ['aiAnalysis', '既有AI分析'],
 ]
 const PROVIDER_LABEL = '通义千问'
+const REVIEW_TYPE_LABELS = { checkup: '体检方案研判', nutrition: '营养干预研判', annual: '年度管理研判', assessment: '阶段性评估', medical: '就医协助研判', daily: '日常问题交流', specialty: '专病分析研判', custom: '自定义研判' }
 const formatDateTime = value => value ? new Date(value).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '-'
+const topicTypeLabel = topic => topic?.templateSnapshot?.name || REVIEW_TYPE_LABELS[topic?.reviewType] || '专项研判'
 const ASSESSMENT_LABELS = { summary: '核心结论', facts: '已确认事实', changes: '阶段变化', risks: '重点风险', actions: '下一步行动', missing: '待补信息' }
 function StructuredAssessment({ data }) {
   if (!data) return null
@@ -19,7 +21,7 @@ function StructuredAssessment({ data }) {
 }
 
 function CleanText({ children }) {
-  const lines = String(children || '').split(/\r?\n/).map(line => line.replace(/^\s*#{1,6}\s*/, '').replace(/\*\*|__|`/g, '').trim()).filter(line => line && !/^[-—_]{3,}$/.test(line))
+  const lines = String(children || '').replace(/<br\s*\/?>/gi, '\n').split(/\r?\n/).map(line => line.replace(/^\s*#{1,6}\s*/, '').replace(/\*\*|__|`/g, '').trim()).filter(line => line && !/^[-—_]{3,}$/.test(line))
   return <div>{lines.map((line, index) => <div key={index} style={{ lineHeight: 1.65, fontSize: 14, marginTop: index ? 5 : 0 }}>{line.replace(/^[-*+]\s+/, '• ')}</div>)}</div>
 }
 
@@ -303,6 +305,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
           <button type="button" onClick={() => setActiveId(value => value === topic._id ? '' : topic._id)} style={{ width: '100%', textAlign: 'left', border: 0, background: 'transparent', padding: 11, cursor: 'pointer' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}><span style={{ fontWeight: 700, color: '#1A2B24' }}>{topic.title}</span><span>{topic._id === active?._id ? '收起⌃' : '查看⌄'}</span></div>
             <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 5 }}>{topic.status === 'concluded' ? '已形成确认结论' : `${topic.messages?.length || 0} 条讨论`} · {formatDateTime(topic.updatedAt)}</div>
+            <div style={{ fontSize: 12, color: '#4A6558', marginTop: 5 }}>类型：{topicTypeLabel(topic)}</div>
           </button>
           <div style={{ display: 'flex', gap: 6, padding: '0 10px 9px' }}><button type="button" className="btn btn-secondary btn-sm" onClick={() => openTopicEdit(topic)}>编辑</button><button type="button" className="btn btn-secondary btn-sm" style={{ color: '#B42318' }} onClick={() => deleteTopic(topic)}>删除</button></div>
         </div>)}
@@ -312,7 +315,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
     {active ? <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div className="card"><div className="card-body" style={{ padding: headerExpanded ? 14 : '10px 14px' }}>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap' }}>
-          <div><div style={{ fontSize: 18, fontWeight: 700 }}>{active.title}</div><div style={{ color: '#65776F', fontSize: 12, marginTop: 4 }}>创建：{formatDateTime(active.createdAt)} · 更新：{formatDateTime(active.updatedAt)} · 参与：{participantNames.join('、') || '待记录'}</div></div>
+          <div><div style={{ fontSize: 18, fontWeight: 700 }}>{active.title}</div><div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center', color: '#65776F', fontSize: 12, marginTop: 5 }}><span style={{ background: '#E8F4EE', color: '#176347', borderRadius: 12, padding: '2px 8px' }}>{topicTypeLabel(active)}</span><span>创建：{formatDateTime(active.createdAt)}</span><span>更新：{formatDateTime(active.updatedAt)}</span><span>参与人员：{participantNames.join('、') || '待记录'}</span></div></div>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => setHeaderExpanded(value => !value)}>{headerExpanded ? '收起主题资料' : '展开主题资料'}</button>
         </div>
         {headerExpanded && <>
