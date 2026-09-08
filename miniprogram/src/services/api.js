@@ -213,6 +213,9 @@ export const messagesAPI = {
   unreadCount: () => request('/messages/unread-count'),
   markRead: (id) => request(`/messages/${id}/read`, { method: 'PATCH' }),
   markAllRead: () => request('/messages/read-all', { method: 'PATCH' }),
+  markBatchRead: (messageIds, pushRecordIds) => request('/messages/read-batch', {
+    method: 'PATCH', body: { messageIds, pushRecordIds },
+  }),
   send: (to, content, extra = {}) => request('/messages', { method: 'POST', body: JSON.stringify({ to, content, ...extra }) }),
   submitNutritionAnalysis: (content) => request('/messages/nutrition-analysis', { method: 'POST', body: JSON.stringify({ content }) }),
   getThread: (role) => request(`/messages/thread/${role}`),

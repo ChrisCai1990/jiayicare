@@ -76,3 +76,18 @@ test('completed questionnaire pushes are never reclassified as system notices', 
   assert.match(source, /m\.type !== 'questionnaire' && !careMessages\.includes\(m\)/);
   assert.match(source, /item\.type !== 'questionnaire'/);
 });
+
+test('notification categories clear their visible unread records without clearing pending questionnaires', () => {
+  const source = read('src/pages/messages/index.jsx');
+  const api = read('src/services/api.js');
+  assert.match(source, /if \(tab === '待填问卷'\) return;/);
+  assert.match(source, /messagesAPI\.markBatchRead\(messageIds, pushRecordIds\)/);
+  assert.match(api, /markBatchRead/);
+});
+
+test('conversation bottom uses a rendered scroll-into-view anchor', () => {
+  const source = read('src/pages/messages/index.jsx');
+  assert.match(source, /setBottomAnchorId\(anchorId\)/);
+  assert.match(source, /setScrollTarget\(anchorId\)/);
+  assert.match(source, /id=\{bottomAnchorId\}/);
+});

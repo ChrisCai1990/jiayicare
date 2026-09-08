@@ -17,3 +17,10 @@ test('unread count excludes completed questionnaire assignments and legacy answe
   assert.match(source, /legacyAnsweredQuestionnaireIds/);
   assert.match(source, /pendingQuestionnaireIds/);
 });
+
+test('batch read updates both messages and push records within the authenticated user scope', () => {
+  const source = read('src/routes/messages.js');
+  assert.match(source, /router\.patch\('\/read-batch'/);
+  assert.match(source, /user: req\.user\._id, unread: true/);
+  assert.match(source, /patientId: req\.user\._id, readAt: null/);
+});

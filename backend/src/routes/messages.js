@@ -156,6 +156,23 @@ router.patch('/read-all', auth, async (req, res) => {
   res.json({ success: true, message: '全部已读' });
 });
 
+// 批量标记消息中心当前实际展示的通知为已读。客户端传入明确 ID，避免打开
+// “系统通知”时误清仍待填写的问卷或其他会话消息。
+router.patch('/read-batch', auth, async (req, res) => {
+  const messageIds = Array.isArray(req.body?.messageIds) ? req.body.messageIds.slice(0, 100) : [];
+  const pushRecordIds = Array.isArray(req.body?.pushRecordIds) ? req.body.pushRecordIds.slice(0, 100) : [];
+  const readAt = new Date();
+  await Promise.all([
+    messageIds.length
+      ? Message.updateMany({ _id: { $in: messageIds }, user: req.user._id, unread: true }, { unread: false, readAt })
+      : Promise.resolve(),
+    pushRecordIds.length
+      ? PushRecord.updateMany({ _id: { $in: pushRecordIds }, patientId: req.user._id, readAt: null }, { readAt })
+      : Promise.resolve(),
+  ]);
+  res.json({ success: true });
+});
+
 // 用户发送消息（给健康顾问/营养师/健管专员/就医专员）
 router.post('/', auth, async (req, res) => {
   try {

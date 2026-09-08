@@ -208,6 +208,32 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
 
   const totalUnread = messages.filter((m) => m.unread && (m.type !== 'questionnaire' || questionnaireMessages.includes(m))).length;
 
+  const notificationsForTab = (tab) => notifMessages.filter((m) => {
+    if (tab === '待填问卷') return m.type === 'questionnaire' && questionnaireMessages.includes(m);
+    if (tab === '每日关怀') return careMessages.includes(m);
+    if (tab === '系统通知') return systemMessages.includes(m);
+    return m.type !== 'questionnaire' || questionnaireMessages.includes(m);
+  });
+
+  const openNotifications = async (tab) => {
+    setNotifTab(tab);
+    setShowNotif(true);
+    // 进入通知分类即视为已经查看该分类；待填问卷必须提交后才消除，因此不在这里清除。
+    if (tab === '待填问卷') return;
+    const viewed = notificationsForTab(tab).filter((m) => m.unread && m._id);
+    if (!viewed.length) return;
+    const viewedIds = new Set(viewed.map((m) => String(m._id)));
+    setMessages((prev) => prev.map((m) => viewedIds.has(String(m._id)) ? { ...m, unread: false, readAt: new Date().toISOString() } : m));
+    const messageIds = viewed.filter((m) => !m.isPushRecord).map((m) => m._id);
+    const pushRecordIds = viewed.filter((m) => m.isPushRecord).map((m) => m._id);
+    try {
+      await messagesAPI.markBatchRead(messageIds, pushRecordIds);
+      await loadMessages();
+    } catch {
+      await loadMessages();
+    }
+  };
+
   const openConv = async (conv) => {
     if (conv.kind === 'role' && conv.assigned === false) return;
     if (conv.kind === 'notif') { setShowNotif(true); return; }
@@ -293,7 +319,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
               { label: '每日关怀', icon: '💜', color: '#8A4AC7', count: careMessages.filter((m) => m.unread).length, tab: '每日关怀' },
               { label: '系统通知', icon: '🔔', color: colors.primary, count: systemMessages.filter((m) => m.unread).length, tab: '系统通知' },
             ].map((item) => (
-              <View key={item.label} onClick={() => { setNotifTab(item.tab); setShowNotif(true); }} style={{ position: 'relative', flex: 1, width: 0, minWidth: 0, height: '92px', overflow: 'hidden', padding: '11px 5px 9px', boxSizing: 'border-box', textAlign: 'center', backgroundColor: '#fff', borderRadius: `${radius.md}px`, boxShadow: shadow.xs }}>
+              <View key={item.label} onClick={() => openNotifications(item.tab)} style={{ position: 'relative', flex: 1, width: 0, minWidth: 0, height: '92px', overflow: 'hidden', padding: '11px 5px 9px', boxSizing: 'border-box', textAlign: 'center', backgroundColor: '#fff', borderRadius: `${radius.md}px`, boxShadow: shadow.xs }}>
                 <View style={{ width: '34px', height: '34px', borderRadius: '11px', margin: '0 auto 7px', backgroundColor: `${item.color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={item.icon} size={16} color={item.color} /></View>
                 <Text style={{ fontSize: '12px', fontWeight: 650, color: colors.textPrimary }}>{item.label}</Text>
                 {item.count > 0 && <View style={{ position: 'absolute', top: '7px', right: '12px', minWidth: '17px', height: '17px', borderRadius: '9px', padding: '0 3px', backgroundColor: colors.danger, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#fff', fontSize: '9px', fontWeight: 700 }}>{item.count > 99 ? '99+' : item.count}</Text></View>}
@@ -637,13 +663,19 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
   const playedVoiceIdsRef = useRef(playedVoiceIds);
   const initialPositionedRef = useRef(false);
   const latestMessageIdRef = useRef('');
-  const bottomScrollRef = useRef(100000);
+  const bottomScrollRef = useRef(0);
+  const [bottomAnchorId, setBottomAnchorId] = useState('thread-bottom-0');
 
   const scrollToThreadBottom = useCallback(() => {
     setScrollTarget('');
-    bottomScrollRef.current += 100000;
-    const nextTop = bottomScrollRef.current;
-    Taro.nextTick(() => setScrollTop(nextTop));
+    bottomScrollRef.current += 1;
+    const anchorId = `thread-bottom-${bottomScrollRef.current}`;
+    setBottomAnchorId(anchorId);
+    // scrollIntoView 在真机上比超大 scrollTop 稳定；下一帧等新消息和锚点先完成渲染。
+    Taro.nextTick(() => {
+      setScrollTarget(anchorId);
+      setScrollTop((value) => value + 1);
+    });
   }, []);
 
   useEffect(() => () => {
@@ -952,7 +984,7 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
             );
           })
         )}
-        <View id={`thread-bottom-${msgs.length}`} style={{ height: '24px', flexShrink: 0 }} />
+        <View id={bottomAnchorId} style={{ height: '24px', flexShrink: 0 }} />
       </ScrollView>
 
       {!!unreadAnchorId && <View onClick={() => setScrollTarget(`thread-msg-${unreadAnchorId}`)} style={{ position: 'absolute', right: '14px', bottom: '78px', zIndex: 30, padding: '7px 12px', borderRadius: '16px', backgroundColor: '#fff', border: `1px solid ${colors.border}`, boxShadow: shadow.sm }}><Text style={{ fontSize: '11px', color: colors.primary }}>查看未读消息 ↑</Text></View>}
