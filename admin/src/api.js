@@ -63,6 +63,7 @@ export const adminAPI = {
   refundOrder:      (id, reason, amount) => req(`/orders/${id}/refund`, { method: 'PATCH', body: JSON.stringify({ reason, amount }) }),
   updateFulfillment:(id, data)           => req(`/orders/${id}/fulfillment`, { method: 'PATCH', body: JSON.stringify(data) }),
   verifyOrder:      (id, verifyCode)     => req(`/orders/${id}/verify`, { method: 'PATCH', body: JSON.stringify({ verifyCode }) }),
+  startOrderService: (id, evidence) => req(`/orders/${id}/service-start`, { method: 'PATCH', body: JSON.stringify({ evidence }) }),
   setOrderAttribution: (id, referrerId, fulfillerId) => req(`/orders/${id}/attribution`, { method: 'PATCH', body: JSON.stringify({ referrerId, fulfillerId }) }),
   messages:         (params = {})        => req('/messages?' + new URLSearchParams(params).toString()),
 

@@ -3,12 +3,13 @@ import { adminAPI } from '../api'
 import { useToast } from '../App'
 
 const STATUS_META = {
+  estimated: { label: '预估/待满足条件', badge: 'badge-gray' },
   pending:   { label: '待审核', badge: 'badge-yellow' },
   confirmed: { label: '待打款', badge: 'badge-blue' },
   paid:      { label: '已打款', badge: 'badge-green' },
   cancelled: { label: '已取消/驳回', badge: 'badge-gray' },
 }
-const orderBlocked = (r) => !r.orderId || r.orderId.status === 'cancelled' || r.orderId.paymentStatus !== 'paid' || ['requested', 'processing', 'refunded', 'partially_refunded'].includes(r.orderId.refundStatus) || ['closed', 'refunded', 'refund_pending'].includes(r.orderId.tradeStatus)
+const orderBlocked = (r) => !r.orderId || r.orderId.status === 'cancelled' || r.orderId.paymentStatus !== 'paid' || ['requested', 'processing', 'refunded'].includes(r.orderId.refundStatus) || ['closed', 'refunded', 'refund_pending'].includes(r.orderId.tradeStatus)
 const ROLE_LABELS = { referrer: '转介绍人', fulfiller: '服务人' }
 
 export default function CommissionsPage() {
@@ -107,7 +108,7 @@ export default function CommissionsPage() {
           </select>
           <label>修改原因</label>
           <textarea value={reason} onChange={e => setReason(e.target.value)} maxLength={500} style={{ width: '100%', minHeight: 80, marginTop: 8 }} />
-          <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>{editing.role === 'referrer' ? '保存后按新人员的个人佣金规则优先计算，无个人规则则使用订单产品规则，并重新审核。' : '保存后保留本次服务核销的计算规则，并重新审核。'}修改记录会保留。</p>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>{editing.role === 'referrer' ? '保存后按新人员的个人佣金规则优先计算，无个人规则则使用订单产品规则，，满足结算条件后重新审核。' : '保存后保留本次服务核销的计算规则，，满足结算条件后重新审核。'}修改记录会保留。</p>
           {editError && <p style={{ color: '#EF4444' }}>{editError}</p>}
           <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
             <button className="btn btn-ghost" disabled={saving} onClick={() => setEditing(null)}>返回</button>
@@ -118,7 +119,7 @@ export default function CommissionsPage() {
       <div className="page-header">
         <div>
           <div className="page-title">💰 佣金审核打款</div>
-          <div className="page-sub">共 {total} 条记录</div>
+          <div className="page-sub">共 {total} 条记录</div><p style={{ fontSize: 13 }}>转介绍：支付后预估，实际服务启动且支付满7天后待审核；服务绩效：完成或按次核销后计提。退款中暂停，全额退款取消，部分退款按保留金额重算。</p>
         </div>
         {statusFilter === 'confirmed' && selected.length > 0 && (
           <button className="btn btn-primary" onClick={batchPay}>批量打款（已选{selected.length}条）</button>
@@ -132,7 +133,7 @@ export default function CommissionsPage() {
         </div>
         {view==='promotions' ? (loading?<div className="loading-wrap"><div className="spinner"/> 加载中...</div>:<div className="table-wrap"><table><thead><tr><th>推送人</th><th>客户</th><th>产品</th><th>推送时间</th><th>阅读</th><th>成交状态</th><th>推广佣金</th></tr></thead><tbody>{promotions.map(r=><tr key={r._id}><td>{r.staffId?.name||'-'}</td><td>{r.patientId?.name||'-'}<div style={{fontSize:11,color:'var(--text-muted)'}}>{r.patientId?.phone||''}</div></td><td>{r.title||(r.products||[]).map(p=>p.name).join('、')||'-'}</td><td>{fmtTime(r.createdAt)}</td><td>{r.readAt?'已读':'未读'}</td><td>{({pushed:'已推送',read:'已阅读',ordered:'已下单待支付',paid:'已支付待生成',commissioned:'已生成佣金'})[r.stage]||r.stage}</td><td>{r.commission?`¥${r.commission.commissionAmount}（${STATUS_META[r.commission.status]?.label||r.commission.status}）`:'-'}</td></tr>)}{promotions.length===0&&<tr><td colSpan="7"><div className="empty-state"><div className="empty-state-text">暂无产品推广记录</div></div></td></tr>}</tbody></table></div>) : <>
         <div className="search-bar" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {[['pending', '待审核'], ['confirmed', '待打款'], ['paid', '已打款'], ['cancelled', '已取消/驳回'], ['', '全部']].map(([val, label]) => (
+          {[['estimated', '预估佣金'], ['pending', '待审核'], ['confirmed', '待打款'], ['paid', '已打款'], ['cancelled', '已取消/驳回'], ['', '全部']].map(([val, label]) => (
             <button
               key={val}
               className={`btn ${statusFilter === val ? 'btn-primary' : 'btn-ghost'}`}
@@ -186,7 +187,7 @@ export default function CommissionsPage() {
                     <td>{r.productName || r.orderId?.serviceName || '--'}<div style={{ fontSize: 11, color: 'var(--text-muted)' }}>订单：{({ pending: '待服务', scheduled: '已安排', completed: '已完成', cancelled: '已取消' })[r.orderId?.status] || '不存在'}{r.orderId?.refundStatus === 'refunded' ? ' · 已退款' : ['requested', 'processing'].includes(r.orderId?.refundStatus) ? ' · 退款处理中' : ''}</div><div style={{ fontSize: 11, color: 'var(--text-muted)' }}>来源：{({ direct: '客户直接下单', share: '分享入口', push: '推送购买', manual: '后台指定' })[r.orderId?.referralSource] || (r.orderId?.pushRecordId ? '推送购买' : '历史归属待核对')}</div></td>
                     <td>¥{r.orderAmount}</td>
                     <td style={{ color: 'var(--primary)', fontWeight: 700 }}>¥{r.commissionAmount}</td>
-                    <td><span className={`badge ${(STATUS_META[r.status] || STATUS_META.pending).badge}`}>{(STATUS_META[r.status] || STATUS_META.pending).label}</span>{r.reversalRequired && <div style={{ color: '#EF4444' }}>订单已撤销，已打款需追回核对</div>}{(r.cancellationReason || r.remark) && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{r.cancellationReason || r.remark}</div>}</td>
+                    <td><span className={`badge ${(STATUS_META[r.status] || STATUS_META.pending).badge}`}>{(STATUS_META[r.status] || STATUS_META.pending).label}</span>{r.reversalRequired && <div style={{ color: '#EF4444' }}>订单已撤销，已打款需追回核对</div>}{r.eligibilityReason && <div style={{ fontSize: 11 }}>{r.eligibilityReason}</div>}{r.eligibleAt && <div style={{ fontSize: 11 }}>支付满7天：{new Date(r.eligibleAt).toLocaleString('zh-CN')}</div>}{(r.cancellationReason || r.remark) && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{r.cancellationReason || r.remark}</div>}</td>
                     <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{fmtTime(r.createdAt)}</td>
                     <td>
                       <div className="status-actions">

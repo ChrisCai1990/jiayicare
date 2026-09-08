@@ -101,6 +101,15 @@ export default function OrdersPage() {
 
   const oPaidAmount = (order) => Number(order.paidAmount || order.paymentExpectedAmount || order.servicePrice || 0)
 
+  const handleServiceStart = async (order) => {
+    const evidence = window.prompt('填写实际启动事项（首次咨询、已开始代办等）。仅预约或分配人员不能确认启动。')
+    if (!evidence?.trim()) return
+    setUpdating(order._id)
+    try { await adminAPI.startOrderService(order._id, evidence.trim()); window.location.reload() }
+    catch (e) { toast(e.message || '记录失败') }
+    finally { setUpdating(null) }
+  }
+
   const handleShipment = async (order) => {
     const deliveryCompany = window.prompt('请输入微信物流公司编码（例如 SF、ZTO、YTO；请以微信物流公司编码表为准）', order.fulfillmentId?.deliveryCompany || '')
     if (deliveryCompany == null) return
@@ -251,6 +260,8 @@ export default function OrdersPage() {
                       <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{fmtTime(o.createdAt)}</td>
                       <td>
                         <div className="status-actions">
+                          {o.serviceStartedAt && <span style={{ fontSize: 11 }}>实际启动：{fmtTime(o.serviceStartedAt)}</span>}
+                          {o.paymentStatus === 'paid' && o.status !== 'cancelled' && o.status !== 'completed' && !o.serviceStartedAt && <button className="btn btn-sm btn-ghost" disabled={updating === o._id} onClick={() => handleServiceStart(o)}>确认实际服务启动</button>}
                           {o.paymentStatus === 'unpaid' && !o.paymentId && o.paymentMethod !== 'wechat' && (
                             <button className="btn btn-sm status-btn" style={{ borderColor: '#10B981', color: '#10B981', background: '#10B98112' }}
                               disabled={updating === o._id} onClick={() => { setPayModalOrder(o); setPayMethod('onsite') }}>

@@ -49,6 +49,9 @@ const orderSchema = new mongoose.Schema({
     enum: ['pending', 'scheduled', 'completed', 'cancelled'],
     default: 'pending',
   },
+  serviceStartedAt: { type: Date, default: null },
+  serviceStartedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  serviceStartEvidence: { type: String, default: '' },
   scheduledAt: { type: Date },
   completedAt: { type: Date },
   aiIntake: {
@@ -100,12 +103,12 @@ orderSchema.index({ user: 1, createdAt: -1 });
 
 // 用户取消、Admin取消和支付退款共用订单状态联动；重复通知可安全重试。
 orderSchema.post('save', async function (doc) {
-  await require('../utils/commissionLifecycle').cancelOrderCommissions(doc);
+  await require('../utils/commissionMaturity').refreshOrderCommissions(doc);
 });
 orderSchema.post('findOneAndUpdate', async function (doc) {
   if (!doc) return;
   const current = await this.model.findById(doc._id);
-  await require('../utils/commissionLifecycle').cancelOrderCommissions(current);
+  await require('../utils/commissionMaturity').refreshOrderCommissions(current);
 });
 
 orderSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);

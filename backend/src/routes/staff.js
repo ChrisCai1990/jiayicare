@@ -3441,6 +3441,7 @@ router.patch('/service-records/:id/ai-review', staffAuth, checkPermission('servi
 // ── 分佣中心 ───────────────────────────────────────────────
 // GET /api/staff/commission/me — 我的分佣记录
 router.get('/commission/me', staffAuth, async (req, res) => {
+  await require('../utils/commissionMaturity').refreshCommissions({ staffId: req.staff._id });
   const { page = 1, limit = 20, status } = req.query;
   const filter = { staffId: req.staff._id };
   if (status) filter.status = status;

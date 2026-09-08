@@ -119,6 +119,8 @@ app.listen(PORT, () => {
   // 首次登录用户第二批问卷（生活方式+心理健康）延迟自动推送，每天扫描一次
   require('./utils/onboardingPush').startBatch2Scheduler();
 
+  require('./utils/commissionMaturity').startCommissionScheduler();
+
   // AI每日健康关怀
   require('./utils/dailyCareScheduler').startDailyCareScheduler();
 

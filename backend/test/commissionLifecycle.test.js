@@ -10,7 +10,7 @@ const paid = { _id: 'order', paymentStatus: 'paid', status: 'pending', refundSta
 test('only valid paid orders can approve or pay commissions', () => {
   assert.equal(commissionBlockReason(paid), '');
   for (const change of [{ status: 'cancelled' }, { paymentStatus: 'refunded' }, { paymentStatus: 'unpaid' },
-    { refundStatus: 'requested' }, { refundStatus: 'processing' }, { refundStatus: 'partially_refunded' },
+    { refundStatus: 'requested' }, { refundStatus: 'processing' },
     { refundStatus: 'refunded' }, { tradeStatus: 'closed' }, { tradeStatus: 'refund_pending' }]) {
     assert.ok(commissionBlockReason({ ...paid, ...change }));
   }

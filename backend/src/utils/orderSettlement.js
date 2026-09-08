@@ -115,6 +115,7 @@ async function confirmRefund(refund, snapshot) {
   ]);
   const amount = totalRefunded[0]?.amount || 0;
   order.refundStatus = amount >= order.paidAmount ? 'refunded' : 'partially_refunded';
+  if (order.refundStatus === 'partially_refunded') order.tradeStatus = 'partially_refunded';
   if (order.refundStatus === 'refunded') {
     order.paymentStatus = 'refunded';
     order.tradeStatus = 'refunded';

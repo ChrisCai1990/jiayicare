@@ -15,9 +15,14 @@ const commissionSchema = new mongoose.Schema({
   commissionAmount:{ type: Number, default: 0 },  // 分佣金额（元）
   status: {
     type: String,
-    enum: ['pending', 'confirmed', 'paid', 'cancelled'],
+    enum: ['estimated', 'pending', 'confirmed', 'paid', 'cancelled'],
     default: 'pending',
   },
+  eligibleAt: { type: Date, default: null },
+  eligibilityReason: { type: String, default: '' },
+  originalOrderAmount: { type: Number, default: null },
+  originalCommissionAmount: { type: Number, default: null },
+  refundedAmount: { type: Number, default: 0 },
   paidAt:  { type: Date, default: null },
   cancelledAt: { type: Date, default: null },
   cancellationReason: { type: String, default: '' },

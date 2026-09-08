@@ -510,12 +510,30 @@ router.patch('/orders/:id/refund', adminAuth, async (req, res) => {
   }
 });
 
+router.patch('/orders/:id/service-start', adminAuth, async (req, res) => {
+  if (!['superadmin', 'manager'].includes(req.admin.role)) return res.status(403).json({ success: false, message: '无权限确认服务启动' });
+  const order = await Order.findById(req.params.id);
+  const blocked = require('../utils/commissionLifecycle').commissionBlockReason(order);
+  if (blocked) return res.status(409).json({ success: false, message: blocked });
+  const evidence = String(req.body.evidence || '').trim();
+  if (!evidence) return res.status(400).json({ success: false, message: '请填写实际启动说明，例如首次咨询或已开始代办的具体事项' });
+  if (!order.serviceStartedAt) {
+    order.serviceStartedAt = new Date(); order.serviceStartedBy = req.admin._id;
+    order.serviceStartEvidence = evidence.slice(0, 1000); await order.save();
+  }
+  res.json({ success: true, data: order, message: '已记录实际服务启动，佣金仍需支付满7天后审核' });
+});
+
 router.patch('/orders/:id/fulfillment', adminAuth, async (req, res) => {
   const order = await Order.findById(req.params.id);
   if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
   if (order.paymentStatus !== 'paid') return res.status(409).json({ success: false, message: '订单尚未支付，不能开始履约' });
   const allowed = ['pending_assignment', 'awaiting_booking', 'booked', 'awaiting_shipment', 'shipped', 'in_service', 'completed', 'cancelled'];
   if (!allowed.includes(req.body.status)) return res.status(400).json({ success: false, message: '履约状态无效' });
+  if (req.body.status === 'in_service' && !order.serviceStartedAt) {
+    if (!String(req.body.note || '').trim()) return res.status(400).json({ success: false, message: '请填写实际服务启动说明' });
+    order.serviceStartedAt = new Date(); order.serviceStartedBy = req.admin._id; order.serviceStartEvidence = String(req.body.note).slice(0, 1000);
+  }
   let fulfillment = await Fulfillment.findOneAndUpdate(
     { order: order._id },
     { $set: {
@@ -646,7 +664,7 @@ router.get('/commissions', adminAuth, async (req, res) => {
   if (!COMMISSION_ADMIN_ROLES.includes(req.admin.role)) {
     return res.status(403).json({ success: false, message: '无权限查看佣金数据' });
   }
-  await require('../utils/commissionLifecycle').reconcileCancelledCommissions();
+  await require('../utils/commissionMaturity').refreshCommissions();
   const { status, role, staffId, page = 1, limit = 20 } = req.query;
   const filter = {};
   if (status) filter.status = status;
@@ -655,7 +673,7 @@ router.get('/commissions', adminAuth, async (req, res) => {
   const skip = (parseInt(page) - 1) * parseInt(limit);
   const [records, total] = await Promise.all([
     Commission.find(filter).sort({ createdAt: -1 }).skip(skip).limit(parseInt(limit))
-      .populate('staffId', 'name role').populate('patientId', 'name phone').populate('orderId', 'serviceName servicePrice status paymentStatus refundStatus tradeStatus pushRecordId referralSource'),
+      .populate('staffId', 'name role').populate('patientId', 'name phone').populate('orderId', 'serviceName servicePrice status paymentStatus refundStatus tradeStatus pushRecordId referralSource paidAt serviceStartedAt serviceStartEvidence fulfillmentStatus redemptions'),
     Commission.countDocuments(filter),
   ]);
   res.json({ success: true, data: records, total, page: parseInt(page) });
@@ -666,9 +684,11 @@ router.patch('/commissions/:id/attribution', adminAuth, async (req, res) => {
   if (!COMMISSION_ADMIN_ROLES.includes(req.admin.role)) return res.status(403).json({ success: false, message: '无权限修改佣金' });
   const { staffId, reason = '' } = req.body;
   if (!reason.trim()) return res.status(400).json({ success: false, message: '请填写修改原因' });
+  const before = await Commission.findById(req.params.id);
+  if (before?.orderId) await require('../utils/commissionMaturity').refreshOrderCommissions(await Order.findById(before.orderId));
   const commission = await Commission.findById(req.params.id);
   if (!commission) return res.status(404).json({ success: false, message: '记录不存在' });
-  if (!['pending', 'confirmed', 'cancelled'].includes(commission.status)) return res.status(409).json({ success: false, message: '已打款佣金不能直接修改人员' });
+  if (!['estimated', 'pending', 'confirmed', 'cancelled'].includes(commission.status)) return res.status(409).json({ success: false, message: '已打款佣金不能直接修改人员' });
   const order = await Order.findById(commission.orderId);
   const blocked = require('../utils/commissionLifecycle').commissionBlockReason(order);
   if (blocked && staffId) return res.status(409).json({ success: false, message: blocked });
@@ -683,10 +703,10 @@ router.patch('/commissions/:id/attribution', adminAuth, async (req, res) => {
     const product = /^[a-f0-9]{24}$/i.test(order.serviceId) ? await Product.findById(order.serviceId) : null;
     rule = product?.performanceRule || (await Service.findOne({ serviceId: order.serviceId }))?.performanceRule;
   }
-  const amounts = staffId ? require('../utils/commissionAttribution').calculateAttribution(commission, staff, rule) : { commissionAmount: commission.commissionAmount, commissionRate: commission.commissionRate };
+  const amounts = staffId ? require('../utils/commissionAttribution').calculateAttribution({ ...commission.toObject(), orderAmount: commission.originalOrderAmount ?? commission.orderAmount }, staff, rule) : { commissionAmount: commission.commissionAmount, commissionRate: commission.commissionRate };
   const cancelled = !staffId || amounts.commissionAmount <= 0;
   const updated = await Commission.findOneAndUpdate({ _id: commission._id, status: commission.status, updatedAt: commission.updatedAt }, {
-    $set: { ...(staffId ? { staffId } : {}), ...amounts, status: cancelled ? 'cancelled' : 'pending',
+    $set: { ...(staffId ? { staffId } : {}), ...amounts, originalOrderAmount: commission.originalOrderAmount ?? commission.orderAmount, originalCommissionAmount: amounts.commissionAmount, status: cancelled ? 'cancelled' : 'pending',
       cancellationReason: cancelled ? (!staffId ? '人工确认无转介绍人：' : '新归属人员无佣金：') + reason.trim() : '', cancelledAt: cancelled ? new Date() : null },
     $push: { attributionHistory: { previousStaffId: commission.staffId, staffId: staffId || null, previousAmount: commission.commissionAmount, amount: cancelled ? 0 : amounts.commissionAmount, changedBy: req.admin._id, changedAt: new Date(), reason: reason.trim() } },
   }, { new: true });
@@ -697,7 +717,8 @@ router.patch('/commissions/:id/attribution', adminAuth, async (req, res) => {
   } else if (!commission.redemptionSequence && String(order.fulfillerId) === String(commission.staffId)) {
     order.fulfillerId = staffId; await order.save();
   }
-  res.json({ success: true, data: updated, message: cancelled ? '归属已清除或无有效佣金，记录已取消' : '归属已修改，佣金已重新计算并转为待审核' });
+  if (!cancelled) await require('../utils/commissionMaturity').refreshOrderCommissions(order);
+  res.json({ success: true, data: await Commission.findById(commission._id), message: cancelled ? '归属已清除或无有效佣金，记录已取消' : '归属已修改并重算；满足服务启动及支付满7天条件后进入审核' });
 });
 
 // PATCH /api/admin/commissions/:id/confirm — 审核通过（pending → confirmed）
@@ -705,12 +726,14 @@ router.patch('/commissions/:id/confirm', adminAuth, async (req, res) => {
   if (!COMMISSION_ADMIN_ROLES.includes(req.admin.role)) {
     return res.status(403).json({ success: false, message: '无权限审核佣金' });
   }
+  const before = await Commission.findById(req.params.id);
+  if (before?.orderId) await require('../utils/commissionMaturity').refreshOrderCommissions(await Order.findById(before.orderId));
   const commission = await Commission.findById(req.params.id);
   if (!commission) return res.status(404).json({ success: false, message: '记录不存在' });
   if (commission.status !== 'pending') return res.status(400).json({ success: false, message: '仅待审核状态可审核通过' });
   const order = await Order.findById(commission.orderId);
   const { commissionBlockReason, cancelOrderCommissions } = require('../utils/commissionLifecycle');
-  const blocked = commissionBlockReason(order);
+  const blocked = commissionBlockReason(order, commission);
   if (blocked) {
     await cancelOrderCommissions(order);
     return res.status(409).json({ success: false, message: blocked });
@@ -726,9 +749,11 @@ router.patch('/commissions/:id/reject', adminAuth, async (req, res) => {
     return res.status(403).json({ success: false, message: '无权限审核佣金' });
   }
   const { reason } = req.body;
+  const before = await Commission.findById(req.params.id);
+  if (before?.orderId) await require('../utils/commissionMaturity').refreshOrderCommissions(await Order.findById(before.orderId));
   const commission = await Commission.findById(req.params.id);
   if (!commission) return res.status(404).json({ success: false, message: '记录不存在' });
-  if (commission.status !== 'pending') return res.status(400).json({ success: false, message: '仅待审核状态可驳回' });
+  if (!['estimated', 'pending'].includes(commission.status)) return res.status(400).json({ success: false, message: '仅预估或待审核状态可驳回' });
   commission.status = 'cancelled';
   if (reason) commission.remark = reason;
   await commission.save();
@@ -740,12 +765,14 @@ router.patch('/commissions/:id/pay', adminAuth, async (req, res) => {
   if (!COMMISSION_ADMIN_ROLES.includes(req.admin.role)) {
     return res.status(403).json({ success: false, message: '无权限操作打款' });
   }
+  const before = await Commission.findById(req.params.id);
+  if (before?.orderId) await require('../utils/commissionMaturity').refreshOrderCommissions(await Order.findById(before.orderId));
   const commission = await Commission.findById(req.params.id);
   if (!commission) return res.status(404).json({ success: false, message: '记录不存在' });
   if (commission.status !== 'confirmed') return res.status(400).json({ success: false, message: '仅已审核通过状态可打款' });
   const order = await Order.findById(commission.orderId);
   const { commissionBlockReason, cancelOrderCommissions } = require('../utils/commissionLifecycle');
-  const blocked = commissionBlockReason(order);
+  const blocked = commissionBlockReason(order, commission);
   if (blocked) {
     await cancelOrderCommissions(order);
     return res.status(409).json({ success: false, message: blocked });
@@ -762,11 +789,12 @@ router.patch('/commissions/batch-pay', adminAuth, async (req, res) => {
   }
   const { ids } = req.body;
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ success: false, message: '请选择要打款的记录' });
+  await require('../utils/commissionMaturity').refreshCommissions({ _id: { $in: ids } });
   const candidates = await Commission.find({ _id: { $in: ids }, status: 'confirmed' });
   const { commissionBlockReason, cancelOrderCommissions } = require('../utils/commissionLifecycle');
   for (const commission of candidates) {
     const order = await Order.findById(commission.orderId);
-    const blocked = commissionBlockReason(order);
+    const blocked = commissionBlockReason(order, commission);
     if (blocked) {
       await cancelOrderCommissions(order);
       return res.status(409).json({ success: false, message: blocked });

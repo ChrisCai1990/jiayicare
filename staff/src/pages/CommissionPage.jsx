@@ -3,8 +3,8 @@ import { staffAPI } from '../api'
 import { useStaff } from '../App'
 import Pagination from '../components/Pagination'
 
-const STATUS_LABEL = { pending:'待确认', confirmed:'已确认', paid:'已结算', cancelled:'已取消' }
-const STATUS_COLOR = { pending:'#D97706', confirmed:'#0077B6', paid:'#22A06B', cancelled:'#aaa' }
+const STATUS_LABEL = { estimated:'预估/待满足条件', pending:'待审核', confirmed:'已确认', paid:'已结算', cancelled:'已取消' }
+const STATUS_COLOR = { estimated:'#888', pending:'#D97706', confirmed:'#0077B6', paid:'#22A06B', cancelled:'#aaa' }
 
 export default function CommissionPage() {
   const { staff } = useStaff()
@@ -100,7 +100,7 @@ export default function CommissionPage() {
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, color: '#4A6558', marginBottom: 12 }}>
-                分享您的推荐码，客户通过您的链接购买服务后，您将获得相应佣金奖励。
+                客户通过本次推广入口支付后生成预估佣金；实际服务启动且支付满7天后进入审核。退款处理中暂停，取消或全额退款撤销。
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button className="btn btn-primary btn-sm" onClick={copyCode}>
@@ -137,7 +137,7 @@ export default function CommissionPage() {
                   <td style={{ fontWeight: 600 }}>¥{r.orderAmount?.toFixed(2)}</td>
                   <td style={{ color: '#4A6558' }}>{(r.commissionRate * 100).toFixed(0)}%</td>
                   <td style={{ fontWeight: 700, color: '#1E6B50' }}>¥{r.commissionAmount?.toFixed(2)}</td>
-                  <td><span style={{ color: STATUS_COLOR[r.status], fontWeight: 500, fontSize: 13 }}>{STATUS_LABEL[r.status]}</span></td>
+                  <td><span style={{ color: STATUS_COLOR[r.status], fontWeight: 500, fontSize: 13 }}>{STATUS_LABEL[r.status]}</span>{r.eligibilityReason && <div style={{ fontSize: 11 }}>{r.eligibilityReason}</div>}{r.eligibleAt && <div style={{ fontSize: 11 }}>支付满7天：{new Date(r.eligibleAt).toLocaleString('zh-CN')}</div>}</td>
                   <td style={{ fontSize: 12, color: '#aaa' }}>{new Date(r.createdAt).toLocaleDateString('zh-CN')}</td>
                 </tr>
               ))}

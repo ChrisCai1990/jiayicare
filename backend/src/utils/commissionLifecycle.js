@@ -10,12 +10,13 @@ function cancellationReason(order) {
   return '';
 }
 
-function commissionBlockReason(order) {
+function commissionBlockReason(order, commission) {
   if (!order) return '关联订单不存在，不能结算佣金';
-  return cancellationReason(order)
-    || (order.paymentStatus !== 'paid' ? '订单尚未有效支付，不能结算佣金' : '')
-    || (['requested', 'processing', 'partially_refunded'].includes(order.refundStatus) || order.tradeStatus === 'refund_pending'
-      ? '订单退款处理中或已部分退款，请完成退款核对后再结算佣金' : '');
+  if (cancellationReason(order)) return cancellationReason(order);
+  if (order.paymentStatus !== 'paid') return '订单尚未有效支付，不能结算佣金';
+  if (['requested', 'processing'].includes(order.refundStatus) || order.tradeStatus === 'refund_pending') return '订单退款处理中，不能审核或打款';
+  if (order.refundStatus === 'partially_refunded' && commission && !(commission.refundedAmount > 0)) return '部分退款金额尚未核对，不能结算佣金';
+  return commission ? require('./commissionEligibility').eligibility(order, commission).reason : '';
 }
 
 async function cancelOrderCommissions(order) {
@@ -23,7 +24,7 @@ async function cancelOrderCommissions(order) {
   if (!reason || !order?._id) return;
   const Commission = require('../models/Commission');
   await Commission.updateMany(
-    { orderId: order._id, status: { $in: ['pending', 'confirmed'] } },
+    { orderId: order._id, status: { $in: ['estimated', 'pending', 'confirmed'] } },
     { $set: { status: 'cancelled', cancellationReason: reason, cancelledAt: new Date() } },
   );
   // 保留实际打款事实，不把已支付款项伪装成已追回。
@@ -36,7 +37,7 @@ async function cancelOrderCommissions(order) {
 async function reconcileCancelledCommissions() {
   const Order = require('../models/Order');
   const Commission = require('../models/Commission');
-  const orderIds = await Commission.distinct('orderId', { $or: [{ status: { $in: ['pending', 'confirmed'] } }, { status: 'paid', reversalRequired: { $ne: true } }] });
+  const orderIds = await Commission.distinct('orderId', { $or: [{ status: { $in: ['estimated', 'pending', 'confirmed'] } }, { status: 'paid', reversalRequired: { $ne: true } }] });
   const orders = await Order.find({ $and: [INVALID_ORDER_FILTER, { _id: { $in: orderIds } }] }).select('_id status paymentStatus refundStatus tradeStatus');
   for (const order of orders) await cancelOrderCommissions(order);
 }

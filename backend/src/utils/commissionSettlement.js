@@ -3,6 +3,7 @@ const Product = require('../models/Product');
 const Service = require('../models/Service');
 const Commission = require('../models/Commission');
 const Admin = require('../models/Admin');
+const { eligibility } = require('./commissionEligibility');
 const { commissionBlockReason } = require('./commissionLifecycle');
 
 // 支付确认后，按该产品/服务预设的 performanceRule，为转介绍人(referrer)和服务人(fulfiller)
@@ -48,6 +49,7 @@ async function settleOrderCommission(order) {
 
   const createCommission = async (staffId, role, rate, amount) => {
     if (!staffId || !amount || amount <= 0) return;
+    if (role === 'fulfiller' && !eligibility(order, { role }).ready) return;
     // 补设归属或重复保存时只补缺失项，避免同一订单、员工和绩效角色重复入账。
     const existing = await Commission.findOne({
       orderId: order._id,
@@ -59,7 +61,7 @@ async function settleOrderCommission(order) {
     const commission = await Commission.create({
       staffId, role, tenantId: order.tenantId, patientId: order.user, orderId: order._id,
       orderAmount: base, commissionRate: rate, commissionAmount: amount,
-      status: 'pending', productName: order.serviceName, productType: order.orderType,
+      status: eligibility(order, { role }).ready ? 'pending' : 'estimated', productName: order.serviceName, productType: order.orderType,
     });
     created.push(commission);
   };
@@ -105,7 +107,7 @@ async function settleOrderCommission(order) {
   return { created };
 }
 
-// 推广佣金以“有效支付”为结算时点，与服务是否已核销无关。服务人员绩效仍在核销时结算。
+// 支付时只预估推广佣金；实际服务启动且支付满7天后才可审核。
 async function settleReferralCommission(order) {
   if (!order?.referrerId || commissionBlockReason(order)) return { created: [] };
   let productRule = order.performanceRuleSnapshot || null;
@@ -125,9 +127,9 @@ async function settleReferralCommission(order) {
   if (existing) return { created: [] };
   const commission = await Commission.create({
     staffId: order.referrerId, role: 'referrer', tenantId: order.tenantId, patientId: order.user, orderId: order._id,
-    orderAmount: base, commissionRate: rate, commissionAmount: amount, status: 'pending',
+    orderAmount: base, commissionRate: rate, commissionAmount: amount, status: eligibility(order, { role: 'referrer' }).ready ? 'pending' : 'estimated',
     productName: order.serviceName, productType: order.orderType,
-    remark: '客户完成有效支付后自动生成',
+    remark: '支付后预估；实际服务启动且支付满7天后进入审核',
   });
   order.commissionStatus = 'pending';
   await order.save();
