@@ -85,9 +85,10 @@ test('notification categories clear their visible unread records without clearin
   assert.match(api, /markBatchRead/);
 });
 
-test('conversation bottom uses a rendered scroll-into-view anchor', () => {
+test('conversation bottom waits for layout and polling does not replace unchanged messages', () => {
   const source = read('src/pages/messages/index.jsx');
-  assert.match(source, /setBottomAnchorId\(anchorId\)/);
-  assert.match(source, /setScrollTarget\(anchorId\)/);
-  assert.match(source, /id=\{bottomAnchorId\}/);
+  assert.match(source, /messageSignatureRef/);
+  assert.match(source, /signature !== messageSignatureRef\.current/);
+  assert.match(source, /setTimeout\(\(\) => setScrollTop\(nextTop \+ 1\), 80\)/);
+  assert.match(source, /id="thread-bottom" style=\{\{ height: '72px'/);
 });

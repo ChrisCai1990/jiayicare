@@ -65,15 +65,16 @@ router.get('/thread/:role', auth, async (req, res) => {
   const { role } = req.params;
   if (!conversationRoleKeys.includes(role)) return res.status(400).json({ success: false, message: '无效角色' });
   const conversationId = `${req.user._id}_${role}`;
+  const threadMessageQuery = {
+    user: req.user._id,
+    recalled: { $ne: true },
+    $and: [
+      { $or: [{ conversationId }, { type: role, conversationId: null }] },
+      { $or: [{ aiGenerated: { $ne: true } }, { aiReviewStatus: { $in: ['', 'approved'] } }] },
+    ],
+  };
   const [newestMessages, plannerLogs, state] = await Promise.all([
-    Message.find({
-      user: req.user._id,
-      recalled: { $ne: true },
-      $and: [
-        { $or: [{ conversationId }, { type: role, conversationId: null }] },
-        { $or: [{ aiGenerated: { $ne: true } }, { aiReviewStatus: { $in: ['', 'approved'] } }] },
-      ],
-    }).sort({ createdAt: -1 }).limit(100),
+    Message.find(threadMessageQuery).sort({ createdAt: -1 }).limit(100),
     role === 'planner'
       ? ChatLog.find({ user: req.user._id, recalled: { $ne: true } }).sort({ createdAt: -1 }).limit(50).lean()
       : [],
@@ -96,7 +97,16 @@ router.get('/thread/:role', auth, async (req, res) => {
   }
   messages.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
   // 标记所有未读为已读
-  await Message.updateMany({ conversationId, user: req.user._id, type: { $ne: 'user' }, unread: true }, { unread: false, readAt: new Date() });
+  await Message.updateMany(
+    { ...threadMessageQuery, type: { $ne: 'user' }, unread: true },
+    { unread: false, readAt: new Date() }
+  );
+  messages.forEach((message) => {
+    if (message.type !== 'user') {
+      message.unread = false;
+      if (!message.readAt) message.readAt = new Date();
+    }
+  });
   res.json({
     success: true,
     data: messages.slice(-100),

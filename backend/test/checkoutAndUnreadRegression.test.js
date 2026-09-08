@@ -24,3 +24,11 @@ test('batch read updates both messages and push records within the authenticated
   assert.match(source, /user: req\.user\._id, unread: true/);
   assert.match(source, /patientId: req\.user\._id, readAt: null/);
 });
+
+test('opening a role thread clears unread legacy and current conversation messages', () => {
+  const source = read('src/routes/messages.js');
+  assert.match(source, /const threadMessageQuery =/);
+  assert.match(source, /\{ type: role, conversationId: null \}/);
+  assert.match(source, /Message\.updateMany\(\s*\{ \.\.\.threadMessageQuery, type: \{ \$ne: 'user' \}, unread: true \}/);
+  assert.match(source, /message\.unread = false/);
+});

@@ -663,18 +663,17 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
   const playedVoiceIdsRef = useRef(playedVoiceIds);
   const initialPositionedRef = useRef(false);
   const latestMessageIdRef = useRef('');
-  const bottomScrollRef = useRef(0);
-  const [bottomAnchorId, setBottomAnchorId] = useState('thread-bottom-0');
+  const messageSignatureRef = useRef('');
+  const bottomScrollRef = useRef(100000);
 
   const scrollToThreadBottom = useCallback(() => {
     setScrollTarget('');
-    bottomScrollRef.current += 1;
-    const anchorId = `thread-bottom-${bottomScrollRef.current}`;
-    setBottomAnchorId(anchorId);
-    // scrollIntoView 在真机上比超大 scrollTop 稳定；下一帧等新消息和锚点先完成渲染。
+    bottomScrollRef.current += 100000;
+    const nextTop = bottomScrollRef.current;
+    // 真机需等待消息气泡完成布局；再补一次定位可覆盖长文本高度变化。
     Taro.nextTick(() => {
-      setScrollTarget(anchorId);
-      setScrollTop((value) => value + 1);
+      setScrollTop(nextTop);
+      setTimeout(() => setScrollTop(nextTop + 1), 80);
     });
   }, []);
 
@@ -694,7 +693,11 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
     try {
       const res = await messagesAPI.getThread(role);
       const nextMessages = res.data || [];
-      setMsgs(nextMessages);
+      const signature = nextMessages.map((message) => `${message._id}:${message.updatedAt || message.createdAt}:${message.recalled ? 1 : 0}`).join('|');
+      if (signature !== messageSignatureRef.current) {
+        messageSignatureRef.current = signature;
+        setMsgs(nextMessages);
+      }
       setHumanActive(!!res.humanActive);
       // Threads are a rolling window of the latest 100 messages. Once full, the
       // count stays at 100 even when a new message replaces the oldest one, so
@@ -703,9 +706,7 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
       const hasNewMessage = !!latestMessageId && latestMessageId !== latestMessageIdRef.current;
       latestMessageIdRef.current = latestMessageId;
       if (!initialPositionedRef.current) {
-        const firstUnread = nextMessages.find((message) => message.type !== 'user' && message.unread);
-        const anchorId = firstUnread?._id ? String(firstUnread._id) : '';
-        setUnreadAnchorId(anchorId);
+        setUnreadAnchorId('');
         scrollToThreadBottom();
         initialPositionedRef.current = true;
       } else if (!unreadAnchorId && hasNewMessage) {
@@ -984,7 +985,7 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
             );
           })
         )}
-        <View id={bottomAnchorId} style={{ height: '24px', flexShrink: 0 }} />
+        <View id="thread-bottom" style={{ height: '72px', flexShrink: 0 }} />
       </ScrollView>
 
       {!!unreadAnchorId && <View onClick={() => setScrollTarget(`thread-msg-${unreadAnchorId}`)} style={{ position: 'absolute', right: '14px', bottom: '78px', zIndex: 30, padding: '7px 12px', borderRadius: '16px', backgroundColor: '#fff', border: `1px solid ${colors.border}`, boxShadow: shadow.sm }}><Text style={{ fontSize: '11px', color: colors.primary }}>查看未读消息 ↑</Text></View>}
