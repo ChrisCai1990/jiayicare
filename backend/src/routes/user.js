@@ -554,7 +554,7 @@ router.post('/onboarding', auth, async (req, res) => {
       }
       await LoginSession.updateMany({ user: current._id, logoutAt: null }, { $set: { user: user._id } });
       await User.deleteOne({ _id: current._id });
-      token = jwt.sign({ id: user._id, sessionId: req.authSessionId }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '30d' });
+      token = jwt.sign({ id: user._id, sessionId: req.authSessionId, persistent: true }, process.env.JWT_SECRET, { expiresIn: '10y' });
       merged = true;
     } else {
       updateData.phone = normalizedContactPhone;

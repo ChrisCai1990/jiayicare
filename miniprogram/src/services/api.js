@@ -62,9 +62,13 @@ async function request(path, options = {}) {
 
     const resData = res.data || {};
 
+    // 服务端会把旧的短期登录凭证平滑升级为可撤销的持久会话。
+    const refreshedToken = res.header?.['X-Auth-Token'] || res.header?.['x-auth-token'];
+    if (refreshedToken && requestToken && _token === requestToken) saveToken(refreshedToken);
+
     if (res.statusCode === 401) {
-      // An unauthenticated public request must never erase a valid persisted session.
-      if (requestToken) {
+      // 登录前或旧凭证发出的并发请求不能清掉刚保存的新凭证。
+      if (requestToken && _token === requestToken) {
         clearToken();
         if (_onUnauthorized) _onUnauthorized();
       }

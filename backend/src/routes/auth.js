@@ -309,8 +309,8 @@ router.post('/login', async (req, res) => {
   const loginMethod = user.wechatMpOpenid ? 'phone_wechat' : 'phone';
   const sessionId = await beginLoginSession(req, user, loginMethod);
   user = await User.findById(user._id);
-  const token = jwt.sign({ id: user._id, sessionId }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN || '30d',
+  const token = jwt.sign({ id: user._id, sessionId, persistent: true }, process.env.JWT_SECRET, {
+    expiresIn: '10y',
   });
 
   const healthFund = await computeHealthFund(user);
@@ -382,7 +382,7 @@ router.post('/wechat', async (req, res) => {
     }
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: process.env.JWT_EXPIRES_IN || '30d',
+      expiresIn: '10y',
     });
 
     const healthFund = await computeHealthFund(user);
@@ -449,8 +449,8 @@ router.post('/wechat-mp', async (req, res) => {
     user = await User.findById(user._id);
     const sessionId = await beginLoginSession(req, user, 'wechat');
     user = await User.findById(user._id);
-    const token = jwt.sign({ id: user._id, sessionId }, process.env.JWT_SECRET, {
-      expiresIn: process.env.JWT_EXPIRES_IN || '30d',
+    const token = jwt.sign({ id: user._id, sessionId, persistent: true }, process.env.JWT_SECRET, {
+      expiresIn: '10y',
     });
 
     const healthFund = await computeHealthFund(user);
@@ -528,7 +528,7 @@ router.post('/wechat-mp/phone-login', async (req, res) => {
     user = await User.findById(user._id);
     const sessionId = await beginLoginSession(req, user, 'phone_wechat');
     user = await User.findById(user._id);
-    const token = jwt.sign({ id: user._id, sessionId }, process.env.JWT_SECRET, {
+    const token = jwt.sign({ id: user._id, sessionId, persistent: true }, process.env.JWT_SECRET, {
       expiresIn: process.env.JWT_EXPIRES_IN || '30d',
     });
     const healthFund = await computeHealthFund(user);

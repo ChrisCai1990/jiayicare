@@ -33,7 +33,8 @@ test('startup requests hydrate persisted token before sending', () => {
   const source = read('src/services/api.js');
   assert.match(source, /const requestToken = _token \|\| loadToken\(\)/);
   assert.match(source, /if \(requestToken\) headers\['Authorization'\]/);
-  assert.match(source, /if \(requestToken\) \{\s*clearToken\(\)/);
+  assert.match(source, /if \(requestToken && _token === requestToken\) \{\s*clearToken\(\)/);
+  assert.match(source, /\['x-auth-token'\]/);
 });
 
 test('photo confirmation values remain large enough to edit on a real device', () => {
