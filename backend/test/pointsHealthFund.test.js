@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { POINTS_PER_YUAN, conversionFor, pointsBalanceFields } = require('../src/utils/pointsHealthFund');
+const { refundBalanceFields } = require('../src/utils/orderPoints');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -35,6 +36,19 @@ test('order-triggered conversions stay linked to the order and refund reverses t
   const refundSource = fs.readFileSync(path.join(__dirname, '../src/utils/orderPoints.js'), 'utf8');
   assert.match(conversionSource, /orderId: refType === 'Order' \? refId : null/);
   assert.match(conversionSource, /refType: refType === 'Order' \? 'Order' : 'HealthFund'/);
-  assert.match(refundSource, /healthFundBalance: -convertedFund/);
-  assert.match(refundSource, /pointsDelta = \(convertedFund \* policy\.pointsPerYuan\)/);
+  assert.match(refundSource, /refundBalanceFields/);
+  assert.match(refundSource, /reversedFund = Math\.min/);
+});
+
+test('order refund balance update clamps both fund and points at zero', () => {
+  const fields = refundBalanceFields({ awardedPoints: 600, convertedFund: 6, pointsPerYuan: 100 });
+  assert.deepEqual(fields.healthFundBalance.$round[0].$max[0], 0);
+  assert.deepEqual(fields.pointsBalance.$max[0], 0);
+  assert.deepEqual(fields.healthFundBalance.$round[0].$max[1].$subtract[1], 6);
+});
+
+test('admin cancellation checks the confirmed payment record before changing order state', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/routes/admin.js'), 'utf8');
+  assert.match(source, /Payment\.findOne\(\{ order: currentOrder\._id, status: 'succeeded' \}\)/);
+  assert.match(source, /source: 'admin_cancel_guard'/);
 });

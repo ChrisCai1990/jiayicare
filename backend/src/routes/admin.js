@@ -367,8 +367,20 @@ router.patch('/orders/:id/status', adminAuth, async (req, res) => {
 
   const currentOrder = await Order.findById(req.params.id);
   if (!currentOrder) return res.status(404).json({ success: false, message: '订单不存在' });
-  if (status === 'cancelled' && currentOrder.paymentStatus === 'paid') {
-    return res.status(409).json({ success: false, message: '已支付订单不能直接取消，请先通过微信退款流程原路退款' });
+  if (status === 'cancelled') {
+    if (currentOrder.paymentStatus === 'paid' || ['paid', 'fulfilling'].includes(currentOrder.tradeStatus)) {
+      return res.status(409).json({ success: false, message: '已支付订单不能直接取消，请先通过微信退款流程原路退款' });
+    }
+    const confirmedPayment = await Payment.findOne({ order: currentOrder._id, status: 'succeeded' }).sort({ createdAt: -1 });
+    if (confirmedPayment) {
+      await require('../utils/orderSettlement').confirmPayment({
+        outTradeNo: confirmedPayment.outTradeNo,
+        transactionId: confirmedPayment.transactionId,
+        paidAt: confirmedPayment.paidAt,
+        snapshot: { source: 'admin_cancel_guard', tradeState: 'SUCCESS' },
+      });
+      return res.status(409).json({ success: false, message: '微信已确认支付成功，不能取消；如不需要服务请发起退款' });
+    }
   }
   if (status === 'completed' && (currentOrder.totalUnits || 1) > (currentOrder.usedUnits || 0)) {
     return res.status(400).json({ success: false, message: '多次服务不能直接完成，请逐次核销' });

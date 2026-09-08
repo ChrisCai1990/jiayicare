@@ -13,6 +13,29 @@ function pointsForAmount(paidAmount) {
   return Math.floor(Number(paidAmount) || 0);
 }
 
+function refundBalanceFields({ awardedPoints, convertedFund, pointsPerYuan }) {
+  const awarded = Math.max(0, Math.floor(Number(awardedPoints) || 0));
+  const fund = Math.max(0, Number(convertedFund) || 0);
+  const rate = Math.max(1, Math.floor(Number(pointsPerYuan) || 100));
+  const currentFund = { $max: [0, { $ifNull: ['$healthFundBalance', 0] }] };
+  const reversibleFund = { $min: [fund, currentFund] };
+  return {
+    // The converted bonus may already have been spent on another order. A
+    // cancellation must never turn either customer balance negative.
+    healthFundBalance: {
+      $round: [{ $max: [0, { $subtract: [currentFund, fund] }] }, 2],
+    },
+    pointsBalance: {
+      $max: [0, {
+        $subtract: [
+          { $add: [{ $max: [0, { $ifNull: ['$pointsBalance', 0] }] }, { $multiply: [reversibleFund, rate] }] },
+          awarded,
+        ],
+      }],
+    },
+  };
+}
+
 // 下单成功后调用：预记本单消费积分（若 paidAmount<=0 则不产生记录）
 async function awardOrderPoints(order) {
   const amount = pointsForAmount(order.paidAmount);
@@ -40,11 +63,19 @@ async function refundOrderPoints(order) {
   if (alreadyRefunded && conversionGrants.length === 0) return;
   const convertedFund = conversionGrants.reduce((sum, row) => sum + Math.max(0, Number(row.amount) || 0), 0);
   const policy = await require('./pointsHealthFund').getPointsPolicy();
-  const pointsDelta = (convertedFund * policy.pointsPerYuan) - (alreadyRefunded ? 0 : awarded.amount);
-  const writes = [User.collection.updateOne(
+  const updatedBefore = await User.findOneAndUpdate(
     { _id: order.user },
-    { $inc: { pointsBalance: pointsDelta, healthFundBalance: -convertedFund } },
-  )];
+    [{ $set: refundBalanceFields({
+      awardedPoints: alreadyRefunded ? 0 : awarded.amount,
+      convertedFund,
+      pointsPerYuan: policy.pointsPerYuan,
+    }) }],
+    { new: false },
+  );
+  if (!updatedBefore) throw new Error('订单积分退回失败：用户不存在');
+  const reversedFund = Math.min(convertedFund, Math.max(0, Number(updatedBefore.healthFundBalance) || 0));
+  const balanceAfter = Math.round(Math.max(0, (Number(updatedBefore.healthFundBalance) || 0) - convertedFund) * 100) / 100;
+  const writes = [];
   if (!alreadyRefunded) writes.push(PointsLog.create({
       user: order.user, amount: -awarded.amount, source: 'redeem',
       refType: 'Order', refId: order._id, remark: `订单取消/退款退回：${order.serviceName}`,
@@ -54,11 +85,12 @@ async function refundOrderPoints(order) {
     writes.push(grant.save());
     writes.push(HealthFundTransaction.create({
       userId: order.user, orderId: order._id, type: 'reversal', source: grant.source,
-      amount: -grant.amount, reversedTransactionId: grant._id,
+      amount: convertedFund > 0 ? -(grant.amount * reversedFund / convertedFund) : 0,
+      balanceAfter, reversedTransactionId: grant._id,
       remark: `订单退款撤销积分兑换健康基金：${order.serviceName}`,
     }));
   }
   await Promise.all(writes);
 }
 
-module.exports = { pointsForAmount, awardOrderPoints, refundOrderPoints };
+module.exports = { pointsForAmount, refundBalanceFields, awardOrderPoints, refundOrderPoints };
