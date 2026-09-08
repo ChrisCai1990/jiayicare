@@ -1546,6 +1546,7 @@ function CheckupManagementWorkspace({ plans, reports, followUps, onOpenPlan }) {
     .filter(plan => getServiceManagementCategory(plan) === 'checkup')
     .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
   const currentPlan = checkupPlans[0]
+  const historicalPlans = checkupPlans.slice(1)
   const planDate = currentPlan?.createdAt ? new Date(currentPlan.createdAt) : new Date()
   const year = currentPlan?.year || planDate.getFullYear()
   const intake = currentPlan?.content?.checkupIntake || currentPlan?.content?.checkupQuestionnaire
@@ -1572,7 +1573,7 @@ function CheckupManagementWorkspace({ plans, reports, followUps, onOpenPlan }) {
             </div>
           </div>
           <span style={{ padding: '4px 10px', borderRadius: 999, background: '#FFFFFF', color: '#0077B6', fontSize: 12, fontWeight: 700 }}>{statusText}</span>
-          {currentPlan && <button type="button" className="btn btn-primary btn-sm" onClick={() => onOpenPlan(currentPlan)}>进入本次体检服务</button>}
+          {currentPlan && <button type="button" className="btn btn-primary btn-sm" onClick={() => onOpenPlan(currentPlan)}>查看本次方案与执行</button>}
         </div>
 
         <div style={{ padding: '18px 20px' }}>
@@ -1605,9 +1606,9 @@ function CheckupManagementWorkspace({ plans, reports, followUps, onOpenPlan }) {
       </div>
 
       <div style={{ marginTop: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: '#173B2E', marginBottom: 8 }}>历年体检</div>
-        {checkupPlans.length ? <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-          {checkupPlans.map(plan => {
+        <div style={{ fontSize: 14, fontWeight: 800, color: '#173B2E', marginBottom: 8 }}>历次体检</div>
+        {historicalPlans.length ? <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+          {historicalPlans.map(plan => {
             const rowYear = plan.year || new Date(plan.createdAt || Date.now()).getFullYear()
             const rowMode = /一站式/.test(`${plan.title || ''} ${plan.content?.templateName || ''}`) ? '一站式服务' : '单独体检服务'
             return <button type="button" key={plan._id} onClick={() => onOpenPlan(plan)} style={{ border: '1px solid #E1EAE5', borderRadius: 9, background: '#fff', padding: '10px 13px', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', cursor: 'pointer' }}>
@@ -1617,7 +1618,7 @@ function CheckupManagementWorkspace({ plans, reports, followUps, onOpenPlan }) {
               <span style={{ color: '#8AA89C' }}>›</span>
             </button>
           })}
-        </div> : <div style={{ padding: 18, borderRadius: 9, background: '#F7F9F8', color: '#8AA89C', fontSize: 13, textAlign: 'center' }}>暂无体检服务记录</div>}
+        </div> : <div style={{ padding: 18, borderRadius: 9, background: '#F7F9F8', color: '#8AA89C', fontSize: 13, textAlign: 'center' }}>暂无其他体检服务记录</div>}
       </div>
     </div>
   )
@@ -1633,6 +1634,7 @@ export default function PatientDetailPage() {
   const [loadError, setLoadError] = useState(null) // 加载会员详情失败时的具体原因（区分"无权限查看"和"会员不存在"，2026-07-13 修复：此前统一误显示成"会员不存在"）
   const [loading, setLoading] = useState(true)
   const requestedTab = new URLSearchParams(location.search).get('tab') || 'info'
+  const requestedServiceView = new URLSearchParams(location.search).get('serviceView') || 'overview'
   const initialTab = requestedTab === 'monitoring' ? 'records' : requestedTab
   const [tab, setTab] = useState(initialTab === 'requisitions' ? 'info' : initialTab)
   const [healthBaseView, setHealthBaseView] = useState(requestedTab === 'monitoring' ? 'monitoring' : 'profile')
@@ -1642,7 +1644,7 @@ export default function PatientDetailPage() {
   const focusedMonitoringEntry = useRef(null)
   const [followUps, setFollowUps] = useState([])
   const [plans, setPlans] = useState([])
-  const [serviceManagementView, setServiceManagementView] = useState('overview')
+  const [serviceManagementView, setServiceManagementView] = useState(requestedServiceView)
   const [reports, setReports] = useState([])
   const [serviceRecords, setServiceRecords] = useState([])
   const [serviceRecordCategory, setServiceRecordCategory] = useState('营养干预')
@@ -8473,7 +8475,9 @@ export default function PatientDetailPage() {
             plans={plans}
             reports={reports}
             followUps={followUps}
-            onOpenPlan={plan => ['nutrition', 'medical_assist'].includes(plan.type) ? nav(`/plans/${plan._id}/modules`) : nav(`/plans/${plan._id}`)}
+            onOpenPlan={plan => ['nutrition', 'medical_assist'].includes(plan.type)
+              ? nav(`/plans/${plan._id}/modules`, { state: { returnTo: `/patients/${id}?tab=plans&serviceView=checkup` } })
+              : nav(`/plans/${plan._id}`, { state: { returnTo: `/patients/${id}?tab=plans&serviceView=checkup` } })}
           />}
           {serviceManagementView !== 'checkup' && <>
           <div style={{ padding: '14px 20px 8px', borderTop: '1px solid #EDF2EE', marginTop: 14, display: 'flex', alignItems: 'center', gap: 8 }}>

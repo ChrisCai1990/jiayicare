@@ -25,3 +25,10 @@ test('workspace presents the staged checkup handoff', () => {
   }
   assert.match(source, /客户提交后进入健康顾问24小时定制环节/);
 });
+
+test('plan detail returns to the actual entry page with a safe direct-link fallback', () => {
+  assert.match(source, /location\.state\?\.returnTo/);
+  assert.match(source, /location\.key && location\.key !== 'default'/);
+  assert.match(source, /nav\(-1\)/);
+  assert.match(source, /返回上一页/);
+});

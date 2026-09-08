@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast, useStaff } from '../App'
 import { StaffListContext, ModulePanel } from '../components/ModulePanel'
@@ -279,6 +279,7 @@ function CheckupServiceWorkspace({ plan, moduleData, onOpenPatient }) {
 export default function PlanModulesPage() {
   const { id } = useParams()
   const nav = useNavigate()
+  const location = useLocation()
   const toast = useToast()
   const { staff } = useStaff()
 
@@ -422,6 +423,17 @@ export default function PlanModulesPage() {
   const searchableSupervisors = normalizedSupervisorSearch
     ? supervisors.filter(item => `${item.name || ''} ${item.roleLabel || ''} ${item.title || ''} ${item.department || ''}`.toLowerCase().includes(normalizedSupervisorSearch))
     : supervisors
+  const handleBack = () => {
+    if (location.state?.returnTo) {
+      nav(location.state.returnTo)
+      return
+    }
+    if (location.key && location.key !== 'default') {
+      nav(-1)
+      return
+    }
+    nav('/plans?type=' + plan.type)
+  }
 
   return (
     <StaffListContext.Provider value={staffList}>
@@ -430,7 +442,7 @@ export default function PlanModulesPage() {
       {/* 顶部导航 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <button
-          onClick={() => nav('/plans?type=' + plan.type)}
+          onClick={handleBack}
           style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#4A6558', padding: 4 }}
         >←</button>
         <div>
@@ -550,10 +562,10 @@ export default function PlanModulesPage() {
           </button>
         )}
         <button
-          onClick={() => nav('/plans?type=' + plan.type)}
+          onClick={handleBack}
           style={{ background: '#fff', color: '#666', border: '1px solid #ddd', padding: '10px 24px', borderRadius: 8, cursor: 'pointer', fontSize: 14 }}
         >
-          返回方案列表
+          返回上一页
         </button>
         {canEdit && (
           <button
