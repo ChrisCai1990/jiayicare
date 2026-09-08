@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Textarea, ScrollView, Image, Input, Button } from '@tarojs/components';
+import { View, Text, Textarea, ScrollView, Image, Input, Button, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { servicesAPI, authAPI, userAPI, mediaUrl } from '../../../services/api';
@@ -148,6 +148,8 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
   const { user, updateUser } = useAuth();
   const isPay = mode === 'pay';
   const [note, setNote] = useState('');
+  const [desiredServiceDate, setDesiredServiceDate] = useState('');
+  const [serviceRequirements, setServiceRequirements] = useState('');
   const [payMethod, setPayMethod] = useState('wechat_pay');
   const [serviceAgreed, setServiceAgreed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -181,6 +183,9 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
 
   const currentPrice = hasSpecs ? (item.servicePrices[specIdx]?.price ?? item.price) : item.price;
   const currentSpecLabel = hasSpecs ? item.servicePrices[specIdx]?.label : '';
+  const selectedSku = (item.skus || []).find((sku) => sku.label === currentSpecLabel && sku.active !== false);
+  const fulfillmentType = selectedSku?.fulfillmentType || item.fulfillmentType || 'offline_service';
+  const requiresServiceDetails = isPay && ['offline_service', 'remote_service'].includes(fulfillmentType);
 
   const selectedCoupon = coupons.find((c) => c._id === couponId) || null;
   const couponDiscount = selectedCoupon
@@ -189,10 +194,12 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
   const priceAfterCoupon = Math.max(0, Math.round((currentPrice - couponDiscount) * 100) / 100);
   const fundMaximum = maxFundDeduction(checkoutUser?.healthFund, priceAfterCoupon, item);
   const canUseFund = fundBalance > 0 && fundMaximum > 0;
-  const fundApplied = canUseFund && useFund ? Math.min(fundBalance, fundMaximum) : 0;
+  const fundApplied = canUseFund && useFund ? Math.round(Math.min(fundBalance, fundMaximum) * 100) / 100 : 0;
   const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundApplied) * 100) / 100);
 
   const handleSubmit = async () => {
+    if (requiresServiceDetails && !desiredServiceDate) { setErrMsg('请选择期望服务时间'); return; }
+    if (requiresServiceDetails && !serviceRequirements.trim()) { setErrMsg('请填写具体服务需求'); return; }
     if (!serviceAgreed) { setErrMsg('请先阅读并同意《健康管理服务说明》'); return; }
     setSubmitting(true); setErrMsg('');
     try {
@@ -218,7 +225,7 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
       }
       const noteWithSpec = [currentSpecLabel ? `规格：${currentSpecLabel}（¥${currentPrice}）` : '', note.trim()].filter(Boolean).join('；');
       const res = isPay
-        ? await servicesAPI.order(item.id, noteWithSpec, payMethod, fundApplied, couponId, currentSpecLabel || undefined, shareToken)
+        ? await servicesAPI.order(item.id, noteWithSpec, payMethod, fundApplied, couponId, currentSpecLabel || undefined, shareToken, desiredServiceDate, serviceRequirements.trim())
         : await servicesAPI.inquire(item.id, note.trim(), currentSpecLabel || undefined);
       if (res.success) {
         if (res.data?.paymentParams) {
@@ -387,15 +394,24 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
               {fundApplied > 0 && (
                 <View style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                   <Text style={{ fontSize: '13px', color: colors.textSecondary }}>健康基金抵扣</Text>
-                  <Text style={{ fontSize: '13px', color: colors.danger, fontWeight: 600 }}>-¥{fundApplied}</Text>
+                  <Text style={{ fontSize: '13px', color: colors.danger, fontWeight: 600 }}>-¥{fundApplied.toFixed(2)}</Text>
                 </View>
               )}
               <View style={{ display: 'flex', justifyContent: 'space-between', borderTop: `1px solid ${colors.border}`, paddingTop: '6px', marginTop: '2px' }}>
                 <Text style={{ fontSize: '13px', color: colors.textPrimary, fontWeight: 700 }}>应付金额</Text>
-                <Text style={{ fontSize: '18px', color: colors.danger, fontWeight: 800 }}>¥{finalPrice}</Text>
+                <Text style={{ fontSize: '18px', color: colors.danger, fontWeight: 800 }}>¥{finalPrice.toFixed(2)}</Text>
               </View>
             </View>
           )}
+
+          {requiresServiceDetails && <>
+            <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textPrimary, display: 'block', marginBottom: '8px' }}>期望服务时间 *</Text>
+            <Picker mode="date" value={desiredServiceDate} start={new Date().toISOString().slice(0, 10)} onChange={(e) => { setDesiredServiceDate(e.detail.value); setErrMsg(''); }}>
+              <View style={{ padding: '13px 14px', backgroundColor: colors.background, borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, marginBottom: `${spacing.md}px` }}><Text style={{ color: desiredServiceDate ? colors.textPrimary : colors.textMuted }}>{desiredServiceDate || '请选择日期'} ›</Text></View>
+            </Picker>
+            <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textPrimary, display: 'block', marginBottom: '8px' }}>具体服务需求 *</Text>
+            <Textarea style={{ width: '100%', boxSizing: 'border-box', backgroundColor: colors.background, borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, padding: `${spacing.md}px`, fontSize: '14px', minHeight: '90px', marginBottom: `${spacing.md}px` }} placeholder="请填写服务地点、时间段及具体需求" value={serviceRequirements} onInput={(e) => { setServiceRequirements(e.detail.value); setErrMsg(''); }} maxlength={1000} />
+          </>}
 
           <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textPrimary, display: 'block', marginBottom: '8px' }}>备注（可选）</Text>
           <Textarea
@@ -423,7 +439,7 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
             <Text style={{ fontSize: '15px', color: colors.textSecondary, fontWeight: 600 }}>取消</Text>
           </View>
           <View onClick={submitting ? undefined : handleSubmit} style={{ flex: 2, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary, opacity: submitting || !serviceAgreed ? 0.6 : 1 }}>
-            <Text style={{ fontSize: '15px', color: '#fff', fontWeight: 700 }}>{submitting ? '提交中...' : (isPay ? `确认支付 ¥${finalPrice}` : '提交预约')}</Text>
+            <Text style={{ fontSize: '15px', color: '#fff', fontWeight: 700 }}>{submitting ? '提交中...' : (isPay ? `确认支付 ¥${finalPrice.toFixed(2)}` : '提交预约')}</Text>
           </View>
         </View>
       </View>

@@ -160,7 +160,11 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
       const pending = Array.isArray(rawPending) ? rawPending : [];
       setPendingQuestionnaireIds(new Set(pending.map((item) => String(item._id))));
       setPendingQuestionnaireAssignmentIds(new Set(pending.map((item) => String(item.assignmentId)).filter(Boolean)));
-      const unread = all.filter((item) => item.unread).length;
+      const pendingQuestionnaireIdSet = new Set(pending.map((item) => String(item._id)));
+      const pendingAssignmentIdSet = new Set(pending.map((item) => String(item.assignmentId)).filter(Boolean));
+      const unread = all.filter((item) => item.unread && (item.type !== 'questionnaire'
+        || pendingAssignmentIdSet.has(String(item._id))
+        || (!item.isPushRecord && pendingQuestionnaireIdSet.has(String(item.questionnaireId))))).length;
       if (unread > 0) Taro.setTabBarBadge({ index: 2, text: String(Math.min(unread, 99)) }).catch(() => {});
       else Taro.removeTabBarBadge({ index: 2 }).catch(() => {});
     } catch {
@@ -189,7 +193,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
     )
   ));
   const careMessages = notifMessages.filter((m) => m.type === 'system' && /关怀|打卡|提醒/.test(`${m.title || ''}${m.content || ''}`));
-  const systemMessages = notifMessages.filter((m) => !questionnaireMessages.includes(m) && !careMessages.includes(m));
+  const systemMessages = notifMessages.filter((m) => m.type !== 'questionnaire' && !careMessages.includes(m));
 
   const roleConvs = ROLE_DEFS.map((r) => {
     const msgs = messages.filter((m) => m.type === r.key || (m.conversationId && String(m.conversationId).endsWith(`_${r.key}`)));
@@ -202,7 +206,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
     .map((member) => ({ ...EXTRA_TEAM_META[member.kind], key: member.kind, member, assigned: true, kind: 'profile' }));
   const assignedTeamCount = roleConvs.filter((conv) => conv.assigned).length + extraTeamMembers.length;
 
-  const totalUnread = messages.filter((m) => m.unread).length;
+  const totalUnread = messages.filter((m) => m.unread && (m.type !== 'questionnaire' || questionnaireMessages.includes(m))).length;
 
   const openConv = async (conv) => {
     if (conv.kind === 'role' && conv.assigned === false) return;

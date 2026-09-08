@@ -61,3 +61,18 @@ test('mall supports keyword search and explicit product sharing', () => {
   assert.match(source, /`productId=\$\{detailService\.id\}`/);
   assert.match(source, /shareReady=\{!user \|\| !!shareToken\}/);
 });
+
+test('paid service checkout keeps money in cents and requires scheduling details', () => {
+  const source = read('src/pages/services/mall/index.jsx');
+  assert.match(source, /Math\.round\(Math\.min\(fundBalance, fundMaximum\) \* 100\) \/ 100/);
+  assert.match(source, /fundApplied\.toFixed\(2\)/);
+  assert.match(source, /请选择期望服务时间/);
+  assert.match(source, /请填写具体服务需求/);
+  assert.match(source, /desiredServiceDate, serviceRequirements\.trim\(\)/);
+});
+
+test('completed questionnaire pushes are never reclassified as system notices', () => {
+  const source = read('src/pages/messages/index.jsx');
+  assert.match(source, /m\.type !== 'questionnaire' && !careMessages\.includes\(m\)/);
+  assert.match(source, /item\.type !== 'questionnaire'/);
+});

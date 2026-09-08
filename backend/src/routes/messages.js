@@ -22,20 +22,31 @@ function withSignedMessageMedia(message) {
 
 // 获取未读消息数（含推送记录，用于导航角标）
 router.get('/unread-count', auth, async (req, res) => {
-  const completedQuestionnaireIds = await QuestionnaireResponse.distinct('questionnaire', { user: req.user._id });
-  const [msgCount, pushCount, latestMessage] = await Promise.all([
-    Message.countDocuments({ user: req.user._id, unread: true, recalled: { $ne: true } }),
-    PushRecord.countDocuments({
-      patientId: req.user._id,
-      readAt: null,
-      $or: [
-        { type: { $ne: 'questionnaire' } },
-        { questionnaireId: { $nin: completedQuestionnaireIds } },
-      ],
-    }),
+  const [unreadMessages, unreadPushes, latestMessage] = await Promise.all([
+    Message.find({ user: req.user._id, unread: true, recalled: { $ne: true } }).select('type questionnaireId').lean(),
+    PushRecord.find({ patientId: req.user._id, readAt: null })
+      .select('type questionnaireId sourceOrderId').lean(),
     Message.findOne({ user: req.user._id, unread: true, recalled: { $ne: true } })
       .sort({ createdAt: -1 }).select('sender type title content createdAt').lean(),
   ]);
+  const questionnairePushes = unreadPushes.filter(item => item.type === 'questionnaire' && item.questionnaireId);
+  const responses = questionnairePushes.length ? await QuestionnaireResponse.find({
+    user: req.user._id,
+    $or: [
+      { pushRecordId: { $in: questionnairePushes.map(item => item._id) } },
+      { pushRecordId: null, questionnaire: { $in: questionnairePushes.map(item => item.questionnaireId) } },
+    ],
+  }).select('pushRecordId questionnaire').lean() : [];
+  const answeredPushIds = new Set(responses.filter(item => item.pushRecordId).map(item => String(item.pushRecordId)));
+  const legacyAnsweredQuestionnaireIds = new Set(responses.filter(item => !item.pushRecordId).map(item => String(item.questionnaire)));
+  const pushCount = unreadPushes.filter(item => item.type !== 'questionnaire'
+    || (!answeredPushIds.has(String(item._id))
+      && (item.sourceOrderId || !legacyAnsweredQuestionnaireIds.has(String(item.questionnaireId))))).length;
+  const pendingQuestionnaireIds = new Set(questionnairePushes.filter(item => !answeredPushIds.has(String(item._id))
+    && (item.sourceOrderId || !legacyAnsweredQuestionnaireIds.has(String(item.questionnaireId))))
+    .map(item => String(item.questionnaireId)));
+  const msgCount = unreadMessages.filter(item => item.type !== 'questionnaire'
+    || pendingQuestionnaireIds.has(String(item.questionnaireId))).length;
   res.json({ success: true, count: msgCount + pushCount, latestMessage });
 });
 

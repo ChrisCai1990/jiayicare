@@ -281,6 +281,8 @@ router.post('/order', auth, async (req, res) => {
   const requiresServiceConfirmation = ['offline_service', 'remote_service'].includes(orderFulfillmentType);
   let confirmedServiceDate = null;
   const confirmedServiceRequirements = String(serviceRequirements || '').trim();
+  if (requiresServiceConfirmation && !desiredServiceDate) return res.status(400).json({ success: false, message: '请选择期望服务时间' });
+  if (requiresServiceConfirmation && !confirmedServiceRequirements) return res.status(400).json({ success: false, message: '请填写具体服务需求' });
   if (requiresServiceConfirmation && desiredServiceDate) {
     confirmedServiceDate = new Date(`${String(desiredServiceDate).trim()}T00:00:00+08:00`);
     if (Number.isNaN(confirmedServiceDate.getTime())) return res.status(400).json({ success: false, message: '服务时间格式不正确' });
