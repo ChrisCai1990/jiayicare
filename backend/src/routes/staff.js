@@ -165,6 +165,23 @@ function withSignedReportFiles(report) {
   return obj;
 }
 
+function withSignedServiceChecklist(task) {
+  const obj = task?.toObject ? task.toObject() : { ...(task || {}) };
+  const signChecklist = checklist => Array.isArray(checklist) ? checklist.map(item => ({
+    ...item,
+    attachments: Array.isArray(item?.attachments) ? item.attachments.map(file => ({
+      ...file,
+      // 检查单保存在私有 OSS；每次读取任务时签发短时访问地址，数据库仍保留原始 URL/ossKey。
+      url: signStoredUrl(file?.url || '', file?.ossKey || ''),
+    })) : [],
+  })) : [];
+  obj.serviceChecklist = signChecklist(obj.serviceChecklist);
+  if (obj.dependsOnTaskId && typeof obj.dependsOnTaskId === 'object') {
+    obj.dependsOnTaskId = { ...obj.dependsOnTaskId, serviceChecklist: signChecklist(obj.dependsOnTaskId.serviceChecklist) };
+  }
+  return obj;
+}
+
 // ── 图片上传（multer） ─────────────────────────────────────────
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '../../../uploads');
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -438,7 +455,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard')
     .populate('dependsOnTaskId', 'serviceChecklist executedContent status completedAt');
   res.json({ success: true, data: tasks.map(task => {
-    const item = task.toObject();
+    const item = withSignedServiceChecklist(task);
     const isLegacyInsurance = item.sourceType === 'scheduled' && (item.tags || []).includes('保险服务');
     if (isLegacyInsurance) {
       item.taskRole = 'executor';
@@ -1305,7 +1322,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
     success: true,
     data: {
       followUps: followUps.map(followUp => ({
-        ...followUp.toObject(),
+        ...withSignedServiceChecklist(followUp),
         taskRequirements: followUpTaskRequirements(followUp),
         taskPurposes: followUpTaskPurposes(followUp),
       })),
@@ -1398,7 +1415,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
   const lastRecordMap = {};
   lastRecords.forEach(r => { lastRecordMap[String(r._id)] = r.lastAt; });
   const followUpsWithRecord = followUps.map(f => ({
-    ...f.toObject(),
+    ...withSignedServiceChecklist(f),
     taskRequirements: followUpTaskRequirements(f),
     taskPurposes: followUpTaskPurposes(f),
     patientLastRecord: f.patientId ? (lastRecordMap[String(f.patientId._id)] || null) : null,

@@ -41,3 +41,11 @@ test('executor checklist uploads check orders per purpose for supervisor review'
   assert.match(checklist, /item\.attachments/)
   assert.match(checklist, /mode === 'supervisor'/)
 })
+
+test('private check-order attachments are signed whenever service tasks are read', () => {
+  const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8')
+  assert.match(route, /function withSignedServiceChecklist/)
+  assert.match(route, /signStoredUrl\(file\?\.url \|\| '', file\?\.ossKey \|\| ''\)/)
+  assert.match(route, /const item = withSignedServiceChecklist\(task\)/)
+  assert.match(route, /withSignedServiceChecklist\(followUp\)/)
+})
