@@ -1321,7 +1321,13 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
       { remindAt: { $lte: new Date() } },
     ],
   };
-  const filter = { $and: [ownerFilter, patientFilter, assignedTo ? { assignedTo } : {}, includeFuture === '1' ? {} : availabilityFilter] };
+  const filter = { $and: [
+    ownerFilter,
+    patientFilter,
+    assignedTo ? { assignedTo } : {},
+    includeFuture === '1' ? {} : availabilityFilter,
+    { $or: [{ taskRole: '' }, { taskRole: null }, { taskRole: { $exists: false } }] },
+  ] };
   if (sourceType) filter.sourceType = sourceType;
   if (sourceType === 'order') {
     // 订单待办的事实来源必须是订单本身。退款中、已退款、已取消或已完成的订单，
@@ -1689,15 +1695,16 @@ router.get('/reports', staffAuth, async (req, res) => {
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 1);
   const availableNowFilter = { $or: [{ remindAt: null }, { remindAt: { $lte: new Date() } }] };
+  const fixedFollowUpOnlyFilter = { $or: [{ taskRole: '' }, { taskRole: null }, { taskRole: { $exists: false } }] };
 
   const openStatuses = ['planned', 'in_progress', 'missed'];
   const [totalPatients, todayPending, todayCompleted, monthPending, monthCompleted, overdue] = await Promise.all([
     User.countDocuments(myFilter),
-    FollowUp.countDocuments({ $and: [followUpOwnerFilter, availableNowFilter, { status: { $in: openStatuses }, date: { $gte: today, $lt: tomorrow } }] }),
-    FollowUp.countDocuments({ ...followUpOwnerFilter, status: 'completed', completedAt: { $gte: today, $lt: tomorrow } }),
-    FollowUp.countDocuments({ $and: [followUpOwnerFilter, availableNowFilter, { status: { $in: openStatuses }, date: { $gte: monthStart, $lt: monthEnd } }] }),
-    FollowUp.countDocuments({ ...followUpOwnerFilter, status: 'completed', completedAt: { $gte: monthStart, $lt: monthEnd } }),
-    FollowUp.countDocuments({ $and: [followUpOwnerFilter, availableNowFilter, { status: { $in: openStatuses }, date: { $lt: today } }] }),
+    FollowUp.countDocuments({ $and: [followUpOwnerFilter, fixedFollowUpOnlyFilter, availableNowFilter, { status: { $in: openStatuses }, date: { $gte: today, $lt: tomorrow } }] }),
+    FollowUp.countDocuments({ $and: [followUpOwnerFilter, fixedFollowUpOnlyFilter, { status: 'completed', completedAt: { $gte: today, $lt: tomorrow } }] }),
+    FollowUp.countDocuments({ $and: [followUpOwnerFilter, fixedFollowUpOnlyFilter, availableNowFilter, { status: { $in: openStatuses }, date: { $gte: monthStart, $lt: monthEnd } }] }),
+    FollowUp.countDocuments({ $and: [followUpOwnerFilter, fixedFollowUpOnlyFilter, { status: 'completed', completedAt: { $gte: monthStart, $lt: monthEnd } }] }),
+    FollowUp.countDocuments({ $and: [followUpOwnerFilter, fixedFollowUpOnlyFilter, availableNowFilter, { status: { $in: openStatuses }, date: { $lt: today } }] }),
   ]);
 
   // 慢病分布

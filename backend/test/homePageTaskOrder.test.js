@@ -15,3 +15,12 @@ test('AI task panel keeps review-specific wording', () => {
   assert.match(aiTodos, /仅显示本人可审核项/)
   assert.match(aiTodos, /暂无待审核任务/)
 })
+
+test('follow-up counters and list exclude service executor and supervisor tasks', () => {
+  const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8')
+  const reports = route.slice(route.indexOf("router.get('/reports'"), route.indexOf("router.get('/staff-list'"))
+  const followUps = route.slice(route.indexOf("router.get('/followups'"), route.indexOf("router.post('/followups'"))
+  assert.match(reports, /fixedFollowUpOnlyFilter/)
+  assert.match(reports, /taskRole: \{ \$exists: false \}/)
+  assert.match(followUps, /taskRole: \{ \$exists: false \}/)
+})

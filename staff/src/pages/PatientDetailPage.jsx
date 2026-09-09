@@ -10051,7 +10051,7 @@ export default function PatientDetailPage() {
               <h3 className="modal-title">{execItem.taskRole === 'supervisor' ? '核对并完成督办' : execItem.taskRole ? '记录事务完成情况' : '执行随访'}</h3>
               <button className="modal-close" onClick={() => setExecItem(null)}>✕</button>
             </div>
-            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14, overscrollBehavior: 'contain' }}>
               {execItem.taskRole && <ServiceTaskChecklist mode={execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor'} purposes={execItem.taskPurposes || []} source={execItem.dependsOnTaskId?.serviceChecklist || []} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} />}
               {execItem.taskRole && <details style={{ border: '1px solid #E0E8E3', borderRadius: 9, background: '#FAFBFA' }}>
                 <summary style={{ padding: '10px 12px', cursor: 'pointer', color: '#65776F', fontSize: 13, fontWeight: 650 }}>查看事务背景与注意事项</summary>
