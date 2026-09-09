@@ -271,9 +271,20 @@ export default function ServiceAssistantPage() {
   const recognise = () =>
     run(async () => {
       const id = await currentWecomGroup();
+      const sameChat = id === currentChat;
+      // A confirmed chat change invalidates the old household before any lookup.
+      // Do not persist the last household across webview reloads: it may be another chat.
+      if (!sameChat) {
+        ++version.current;
+        setGroupId(""); setBundle(null); setCreating(false); setSettings(false);
+        setLoading(false);
+      }
+      setCurrentChat(id);
       const list = await listGroups();
       const found = list.find((x) => x.chatId === id);
-      setCurrentChat(id);
+      // Visibility checks must not discard an in-progress form in the same chat.
+      if (sameChat && found && found._id === groupId && g?.chatId === id) return;
+      if (sameChat && !found && creating) return;
       if (found) { setCreating(false); setSettings(false); setGroupId(found._id); }
       else {
         setGroupId(""); setBundle(null); setSettings(false);
@@ -467,7 +478,7 @@ export default function ServiceAssistantPage() {
         </div>
       )}
       {(!inGroupSidebar || !g) && <div className="sa-toolbar">
-        {inGroupSidebar ? <div><small>当前群绑定家庭</small><p>{g?.name || (currentChat ? "当前群尚未绑定，请在下方完成首次绑定" : "正在识别当前群；若失败请点击重新识别")}</p></div> : <>
+        {inGroupSidebar ? <div><small>当前群绑定家庭</small><p>{g?.name || (creating ? "当前群尚未绑定，请在下方完成首次绑定" : error ? "暂时无法读取，请在连接状态中重试" : "正在读取当前群的绑定关系…")}</p></div> : <>
         <label>
           当前服务群
           <select
@@ -607,7 +618,7 @@ export default function ServiceAssistantPage() {
         </section>
       )}
       {loading && <p role="status">正在读取家庭服务数据…</p>}
-      {!groupId && !creating && (
+      {!inGroupSidebar && !groupId && !creating && (
         <div className="sa-empty">
           <h2>从一个服务群开始</h2>
           <p>

@@ -142,24 +142,44 @@ const fs = require("node:fs"),
     await page.getByRole('heading',{name:'第二个演示家庭',exact:true}).waitFor();
     if(fixture.models.ServiceGroup.rows.length!==2)throw new Error('Group binding not persisted');
     fixture.models.ServiceGroup.rows[0].chatId = 'wr_synthetic_current';
-    await page.route('**/api/staff/service-groups/wecom-signature', route => route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({data:{}})}));
+    let releaseSignature;
+    const signatureGate = new Promise(resolve=>{releaseSignature=resolve;});
+    await page.route('**/api/staff/service-groups/wecom-signature', async route => {
+      await signatureGate;
+      await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({data:{}})});
+    });
     await page.addInitScript(() => {
       Object.defineProperty(navigator,'userAgent',{get:()=> 'wxwork synthetic'});
       window.syntheticChat='wr_synthetic_current';
       window.wx={error:()=>{},ready:fn=>{window.sdkReady=fn;},config:()=>window.sdkReady(),agentConfig:p=>p.success(),invoke:(method,p,cb)=>cb(method==='getContext'?{err_msg:'getContext:ok',entry:'group_chat_tools'}:{chatId:window.syntheticChat})};
     });
     await page.reload();
+    await page.getByText('正在读取当前群的绑定关系…',{exact:true}).waitFor();
+    if(await page.getByText('从一个服务群开始',{exact:true}).count()) throw new Error('Loading must not suggest a new binding');
+    releaseSignature();
     await page.getByRole('heading',{name:'演示家庭服务群',exact:true}).waitFor();
     if(await page.getByLabel('当前服务群',{exact:true}).count()) throw new Error('Sidebar must not offer group switching');
     if(await page.getByRole('button',{name:'新建服务群',exact:true}).count()) throw new Error('Bound sidebar must not create another group');
     await page.screenshot({path:path.join(output,'locked-sidebar.png'),fullPage:true});
     const tabsTop = await page.getByRole('navigation',{name:'服务功能'}).evaluate(el=>el.getBoundingClientRect().top);
     if(tabsTop > 340) throw new Error('Sidebar top area is too tall');
+    await page.getByRole('button',{name:'群设置',exact:true}).click();
+    await page.getByLabel('服务群名称',{exact:true}).fill('未保存的家庭名称');
+    const revisitResponse = page.waitForResponse(r=>r.url().endsWith('/api/staff/service-groups') && r.request().method()==='GET');
+    await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+    await revisitResponse;
+    await page.waitForFunction(()=>!Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='重新识别当前群')?.disabled);
+    if(await page.getByLabel('服务群名称',{exact:true}).inputValue() !== '未保存的家庭名称') throw new Error('Same-chat revisit discarded settings');
+    await page.getByRole('button',{name:'取消',exact:true}).click();
     await page.getByText('连接状态与重试',{exact:true}).click();
     await page.evaluate(()=>{window.syntheticChat='wr_synthetic_unbound';});
     await page.getByRole('button',{name:'重新识别当前群',exact:true}).click();
     await page.getByRole('heading',{name:'绑定个人 / 家庭服务群',exact:true}).waitFor();
     if(await page.getByRole('heading',{name:'演示家庭服务群',exact:true}).count()) throw new Error('Unbound chat must not display prior household');
+    await page.getByLabel('服务群名称',{exact:true}).fill('尚未保存的绑定');
+    await page.getByRole('button',{name:'重新识别当前群',exact:true}).click();
+    await page.waitForFunction(()=>!Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='重新识别当前群')?.disabled);
+    if(await page.getByLabel('服务群名称',{exact:true}).inputValue() !== '尚未保存的绑定') throw new Error('Same unbound chat discarded binding draft');
     if (errors.length) throw new Error(errors.join("\n"));
     console.log(
       JSON.stringify({
@@ -172,6 +192,7 @@ const fs = require("node:fs"),
           "explicit command preview",
           "notification does not complete task",
           "new household binding",
+          "same-chat revisit preserves settings and binding drafts",
           "current WeCom group auto-selected and locked; unbound chat clears previous household",
         ],
         artifacts: output,

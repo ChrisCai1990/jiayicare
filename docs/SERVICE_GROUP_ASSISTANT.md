@@ -91,6 +91,8 @@
 
 ## 验证与运行
 
+2026-09-09 侧边栏再次进入：同群可见性校验保留已加载家庭、设置和未保存绑定表单；只有确认切群才清空旧家庭。WebView 完整重建时仍先验证当前群，再读取服务端绑定，不持久缓存上次家庭冒充当前群；此阶段显示“正在读取当前群的绑定关系”，不显示未绑定空态。自动识别只读取绑定，不创建或重新保存绑定。虚构浏览器回归覆盖延迟初始化、同群编辑保留和切到未绑定群的隔离。
+
 ```powershell
 node --test backend/test/serviceGroupRules.test.js backend/test/serviceGroupRoutes.test.js
 npm --prefix staff run build
