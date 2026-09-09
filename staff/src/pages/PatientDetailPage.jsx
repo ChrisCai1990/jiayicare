@@ -11789,8 +11789,8 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
   const msgCountRef = useRef(0) // 上次渲染的消息条数，用于判断是否真的有新消息（而不是轮询刷新了同样内容）
   const isNearBottomRef = useRef(true) // 用户是否停留在底部附近；往上翻看历史时轮询不应打断
   const visibleMsgs = msgs.filter(message => {
-    if (message.action?.type !== 'order_planner_confirmation') return true
-    return String(message.action.orderId || '') === String(orderId || '')
+    if (!orderId) return true
+    return String(message.action?.orderId || '') === String(orderId)
   })
 
   // 路由传来的预约是点击当时的快照。直接按会员订单读取最新详情，不能再从
@@ -11873,6 +11873,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
     try {
       const res = await staffAPI.replyChatMessage(patientId, input.trim(), {
         images: images.map(({ data, mimeType }) => ({ data, mimeType })),
+        orderId,
       })
       setHumanActive(true)
       setInput('')
@@ -11925,7 +11926,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
         reader.onload = async () => {
           setSending(true)
           try {
-            const res = await staffAPI.replyChatMessage(patientId, '', { audio: { data: reader.result, mimeType: blob.type || 'audio/webm', duration } })
+            const res = await staffAPI.replyChatMessage(patientId, '', { orderId, audio: { data: reader.result, mimeType: blob.type || 'audio/webm', duration } })
             setHumanActive(true)
             if (res.data) setMsgs(prev => [...prev, res.data])
           } catch (err) { toast(err.message || '语音发送失败') }

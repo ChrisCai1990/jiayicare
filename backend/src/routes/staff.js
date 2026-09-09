@@ -6364,12 +6364,15 @@ router.patch('/user-messages/:userId/read', staffAuth, async (req, res) => {
 // POST /api/staff/user-messages/:userId/reply
 router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
   try {
-    const { content = '', images = [], audio = null } = req.body;
+    const { content = '', images = [], audio = null, orderId = '' } = req.body;
     if (!content?.trim() && !images.length && !audio?.data) {
       return res.status(400).json({ success: false, message: '回复内容不能为空' });
     }
     const patient = await User.findById(req.params.userId).select('name');
     if (!patient) return res.status(404).json({ success: false, message: '用户不存在' });
+    if (orderId && !await Order.exists({ _id: orderId, user: req.params.userId })) {
+      return res.status(404).json({ success: false, message: '关联订单不存在' });
+    }
 
     const staff = req.staff;
     const typeMap = {
@@ -6425,6 +6428,7 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
       audioUrl, audioDuration, audioMimeType, audioTranscript,
       unread:  true,
       conversationId,
+      action: orderId ? { type: 'order_conversation', orderId: String(orderId) } : undefined,
     });
 
     const responseMessage = withSignedMessageMedia(replyMsg);
