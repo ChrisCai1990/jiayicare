@@ -34,7 +34,7 @@ router.post("/messages", async (req, res) => {
       typeof b.sender !== "string" ||
       typeof b.text !== "string" ||
       b.text.length > 20000 ||
-      !b.text.trim() ||
+      (!b.text.trim() && !b.file) ||
       b.messageId.length > 200 ||
       b.sender.length > 200 ||
       b.consent !== true ||
@@ -67,7 +67,7 @@ router.post("/messages", async (req, res) => {
         success: true,
         data: { duplicate: true, execution: "awaiting_staff_confirmation" },
       });
-    const sealedText = seal(b.text);
+    const sealedText = seal(b.text || '图片或文件（无文字）');
     let attachment;
     if (b.file) {
       if (

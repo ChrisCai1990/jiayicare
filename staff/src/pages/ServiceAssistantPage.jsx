@@ -7,6 +7,7 @@ import {
   shareToWecomGroup,
 } from "../utils/serviceGroupWecom";
 import "./ServiceAssistantPage.css";
+import GroupMaterialInbox from '../components/GroupMaterialInbox';
 
 const labels = {
   task: "待办",
@@ -774,7 +775,7 @@ export default function ServiceAssistantPage() {
             )}
           </section>
           <nav className="sa-tabs" aria-label="服务功能">
-            {Object.entries({ ...labels, report: "报告归档" })
+            {Object.entries({ ...labels, report: "报告归档", inbox: "待归档" })
               .filter(([k]) => k !== "command")
               .map(([k, v]) => (
                 <button
@@ -789,7 +790,8 @@ export default function ServiceAssistantPage() {
                 </button>
               ))}
           </nav>
-          {g.archiveConsent && (
+          {tab === 'inbox' && <GroupMaterialInbox key={groupId+'-'+g.archiveConsent} group={g} caps={caps} busy={busy} run={run} can={can}/>}
+          {tab !== 'inbox' && g.archiveConsent && (
             <section className="sa-card">
               <div className="sa-row">
                 <h3>群消息收件箱</h3>
@@ -859,7 +861,7 @@ export default function ServiceAssistantPage() {
                 ))}
             </section>
           )}
-          {tab !== "report" && (
+          {tab !== "report" && tab !== 'inbox' && (
             <div className="sa-row">
               <h2>{labels[tab]}</h2>
               {can(
@@ -1030,7 +1032,7 @@ export default function ServiceAssistantPage() {
               )}
             </form>
           )}
-          {tab !== 'report' && !form && !entries.some(e => e.kind === tab && (!personId || idOf(e.patientId) === personId)) && (
+          {tab !== 'report' && tab !== 'inbox' && !form && !entries.some(e => e.kind === tab && (!personId || idOf(e.patientId) === personId)) && (
             <div className="sa-empty" role="status">
               <p>暂无{labels[tab]}</p>
               <small>当前服务对象还没有保存的{labels[tab]}，可点击上方按钮新建。</small>

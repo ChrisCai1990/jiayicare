@@ -731,6 +731,8 @@ router.post(
     await permit(req, "reports", "create");
     await member(req, g, req.body.patientId);
     if (!g.archiveConsent) fail("本群存档授权已停用", 403);
+    if (await require('../models/ServiceGroupReceipt').findOne({groupId:g._id,messageId:oid(req.body.messageId)}))
+      fail('该原件已进入待归档确认流程，请在待归档中核对状态',409);
     const m = await require("../models/ServiceGroupMessage")
       .findOne({
         _id: oid(req.body.messageId),
@@ -762,6 +764,7 @@ router.post(
   }),
   archiveReport
 );
+require('./serviceGroupInbox')(router,{wrap,group,member,permit,fail,oid,text});
 router.use((err, req, res, next) => {
   const status =
     err.code === 11000 || err.name === "VersionError"

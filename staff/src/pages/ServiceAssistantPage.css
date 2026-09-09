@@ -308,6 +308,12 @@
 .sa-wecom .sa-notice { display: flex; align-items: flex-start; gap: 8px; }
 .sa-wecom .sa-notice > span { flex: 1; }
 .sa-wecom .sa-dismiss { flex-shrink: 0; border: 0; padding: 0 4px; background: transparent; color: #61748d; font-size: 18px; line-height: 20px; }
+.sa-wecom .sa-tabs { overflow-x: auto; }
+.sa-wecom .sa-tabs button { min-width: 55px; font-size: 12px; }
+.sa-material-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.sa-material-grid .sa-card { padding: 10px; margin: 8px 0; overflow-wrap: anywhere; }
+.sa-material-grid img { width: 100%; height: 130px; object-fit: contain; background: #f5f6f8; }
+.sa-material-grid p { font-size: 12px; margin: 5px 0; }
 @media (max-width: 600px) {
   .service-assistant {
     padding: 16px 10px;

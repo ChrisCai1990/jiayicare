@@ -58,6 +58,7 @@ const medicalReportSchema = new mongoose.Schema({
   tenantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', default: null, index: true }, // 所属机构（多租户隔离键，创建时从 user.tenantId 冗余存一份，避免每次查询都要 populate）
   title: { type: String, required: true },
   sourceSha256: { type: String, default: undefined },
+  sourceGroupMessageId: {type:String, default:undefined},
   sourceServiceGroup: { type: mongoose.Schema.Types.ObjectId, ref: 'ServiceGroup', default: null },
 
   // ── 年度/类目结构（需求23）───────────────────────────────────────

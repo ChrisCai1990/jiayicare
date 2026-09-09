@@ -108,6 +108,8 @@ function installModel(name) {
       )
     )
       throw Object.assign(new Error("duplicate"), { code: 11000 });
+    if (name === 'ServiceGroupReceipt' && rows.some(r=>eq(r.groupId,doc.groupId)&&eq(r.messageId,doc.messageId)))
+      throw Object.assign(new Error('duplicate'),{code:11000});
     rows.push(doc);
     return doc;
   };
@@ -126,6 +128,11 @@ function installModel(name) {
     }
     return { upsertedCount: created ? 1 : 0, modifiedCount: doc ? 1 : 0 };
   };
+  Model.findOneAndUpdate = async (filter, update) => {
+    const doc=rows.find(r=>matches(r,filter));
+    if(!doc)return null;
+    Object.assign(doc,update.$set);return doc;
+  };
   return {
     Model,
     rows,
@@ -142,6 +149,7 @@ for (const name of [
   "ServiceGroup",
   "ServiceGroupEntry",
   "ServiceGroupMessage",
+  "ServiceGroupReceipt",
   "User",
   "Admin",
   "FollowUp",
@@ -216,6 +224,7 @@ function buildFixture() {
     stream: require("node:stream").Readable.from([stored.get(key)]),
   });
   oss.deleteFile = async () => {};
+  oss.getSignedUrl = () => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+afoUAAAAASUVORK5CYII=';
   const express = require("express"),
     app = express();
   app.use(

@@ -1,5 +1,15 @@
 # 家庭服务助手
 
+## 2026-09-09 群图片待归档流程（真实采集待审核）
+
+- 新增「待归档」页签：进入后每15秒检查当前群最近100条消息内的附件；隐藏页面停止轮询，切群卸载旧列表。未接入时明确显示等待审核及采集接入，不制造示例消息。
+- 签名桥接可接收无文字的图片消息，仍要求群级授权、消息签名、最近30天和原件格式验证。没有新增官方Finance SDK采集器，也没有开启生产采集或代替客户/员工授权。
+- 私有原件签发120秒预览链接；每批选择1–9份，必须明确成员、用途、名称、日期。多图逐份保存，不合成PDF；发送人不推定为资料本人，分类由医护明确选择，不声称已经AI识别图片。
+- 就诊资料复用MedicalReport的同客户SHA-256去重，保持未解析、未审核；打卡原图存入原系统group_service服务记录及永久附件，不写HealthRecord数值、不自动判断异常。原系统个人报告/服务记录可继续查看，不依赖30天暂存消息保留。
+- ServiceGroupReceipt唯一(groupId,messageId)记录确认对象、状态和结果，阻止并发/跨对象重复确认。明确失败可按原参数重试，已经入库的原件复用结果；进程异常中断而停留processing的记录需管理员先核对结果，不自动抢占重跑。暂存清理不删除reports/及service-group-checkins/永久副本。
+- 新接口：GET /:groupId/inbox、POST /:groupId/inbox/confirm。后者messageIds/patientId/purpose(checkin或report)/title/date/documentCategory，逐份返回成功或失败，不把部分成功当全部成功。旧单文件接口不能绕过已存在的确认记录。
+- 验证：`node --test backend/test/serviceGroupInbox.test.js backend/test/serviceGroupRoutes.test.js backend/test/serviceGroupRules.test.js`；合成浏览器覆盖等待接入、图片选择、确认打卡及已归档状态，所有素材/身份虚构，无真实资料上传或AI调用。
+
 首次绑定群名优化：识别未绑定群后，通过当前员工已绑定的企微身份读取官方客户群名称，核验群主/内部成员身份，只返回名称，不向客户端暴露成员列表。自动预填原群名，已有绑定名称及同群未保存编辑保持不变；读取失败仍可手填且不修改企微群名。取名结束后再校验当前群，防止异步切群填错。
 
 ## 2026-09-09 第二批协作功能

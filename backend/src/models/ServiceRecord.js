@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 
 // 统一服务记录：就医协助、心理咨询、运动复健、中医评估、专科会诊
 const serviceRecordSchema = new mongoose.Schema({
+  sourceGroupImageSha256: {type:String, default:undefined},
+  sourceGroupMessageId: {type:String, default:undefined},
   // AI定时自动生成的草稿在专员审核前尚无明确负责人，故非必填；审核确认时补上审核人
   staffId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User',  required: true },
@@ -100,6 +102,7 @@ const serviceRecordSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 serviceRecordSchema.index({ patientId: 1, type: 1, date: -1 });
+serviceRecordSchema.index({patientId:1,sourceGroupImageSha256:1}, {unique:true,partialFilterExpression:{sourceGroupImageSha256:{$type:'string'}}});
 serviceRecordSchema.index({ staffId: 1, date: -1 });
 serviceRecordSchema.index({ sourceAiCaseReviewId: 1 }, { unique: true, partialFilterExpression: { sourceAiCaseReviewId: { $type: 'objectId' } } });
 serviceRecordSchema.index({ sourcePhaseAssessmentId: 1 }, { unique: true, partialFilterExpression: { sourcePhaseAssessmentId: { $type: 'objectId' } } });
