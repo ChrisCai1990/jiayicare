@@ -11596,7 +11596,13 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
     const { orderId, templateId, briefNote } = req.query;
     let order = null;
     if (orderId) {
-      order = await Order.findOne({ _id: orderId, user: user._id }).select('serviceName note desiredServiceDate serviceRequirements paidAmount serviceWorkflowSnapshot checkupIntake').lean();
+      order = await Order.findOne({ _id: orderId, user: user._id }).select('serviceName note desiredServiceDate serviceRequirements paidAmount serviceWorkflowSnapshot checkupIntake status tradeStatus refundStatus paymentStatus').lean();
+      if (!order) return res.status(404).json({ success: false, message: '关联订单不存在' });
+      const existingPlan = await HealthPlan.findOne({ patientId: user._id, sourceOrderId: order._id, type: 'medical_assist' })
+        .sort({ createdAt: 1 });
+      if (existingPlan) {
+        return res.json({ success: true, data: existingPlan, reused: true, message: '该订单已有服务方案，已打开原方案' });
+      }
     }
     const { confirmedServiceSchedule } = require('../utils/confirmedServiceSchedule');
     const confirmedSchedule = confirmedServiceSchedule(order, briefNote);

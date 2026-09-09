@@ -2187,8 +2187,8 @@ export default function PatientDetailPage() {
   const genAIMedicalAssistPlan = async (orderId, templateId, briefNote) => {
     setAiMedicalAssistGenerating(true)
     try {
-      await staffAPI.generateAIMedicalAssistPlan(id, orderId, templateId, briefNote)
-      toast(staff?.role === 'familyDoctor' ? '住院一站式方案已生成，请审核后推送' : 'AI就医协助方案已生成，待健康规划师审核')
+      const res = await staffAPI.generateAIMedicalAssistPlan(id, orderId, templateId, briefNote)
+      toast(res.reused ? '该订单已有方案，已保留原方案，不会重复生成' : (staff?.role === 'familyDoctor' ? '住院一站式方案已生成，请审核后推送' : 'AI就医协助方案已生成，待健康规划师审核'))
       loadPlans()
     } catch (err) { toast('AI生成失败：' + (err.message || '未知错误')) }
     finally { setAiMedicalAssistGenerating(false) }
@@ -11506,7 +11506,8 @@ export default function PatientDetailPage() {
           serviceBooking={location.state?.serviceBooking}
           onConfirmBooking={async ({ orderId, serviceTime, task }) => {
             const originalNote = location.state?.serviceBooking?.sourceOrderId?.note || ''
-            const confirmedNote = [originalNote, `已确认服务任务：${task}`].filter(Boolean).join('\n')
+            const cleanOriginalNote = String(originalNote).split('\n').filter(line => !/^已确认服务任务[:：]/.test(line.trim())).join('\n').trim()
+            const confirmedNote = [cleanOriginalNote, `已确认服务任务：${task}`].filter(Boolean).join('\n')
             const scheduledAt = /^\d{4}-\d{2}-\d{2}$/.test(serviceTime) ? `${serviceTime}T00:00:00+08:00` : serviceTime
             await staffAPI.startOrder(orderId, { action: 'schedule', scheduledAt, note: confirmedNote })
             setShowMessageModal(false)
@@ -11759,7 +11760,11 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
   const [currentBooking, setCurrentBooking] = useState(serviceBooking)
   const order = currentBooking?.sourceOrderId
   const orderId = order?._id || order
-  const customerTask = String(order?.serviceRequirements || order?.note || '').split(/[；\n]/).map(item => item.trim()).filter(item => item && !/^(规格：|健康基金抵扣|优惠券抵扣|支付方式：)/.test(item)).join('；')
+  const customerTaskParts = String(order?.serviceRequirements || order?.note || '')
+    .split(/[；\n]/)
+    .map(item => item.trim().replace(/^已确认服务任务[:：]\s*/, ''))
+    .filter(item => item && !/^(规格：|健康基金抵扣|优惠券抵扣|支付方式：)/.test(item))
+  const customerTask = [...new Set(customerTaskParts)].join('；')
   const orderServiceDate = order?.desiredServiceDate || order?.scheduledAt || order?.confirmedServiceSchedule?.serviceDate
   const orderActionable = order && order.paymentStatus === 'paid'
     && ['paid', 'fulfilling', 'partially_refunded'].includes(order.tradeStatus)
@@ -11783,6 +11788,10 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
   const presenceSessionRef = useRef(`staff-${Date.now()}-${Math.random().toString(36).slice(2)}`)
   const msgCountRef = useRef(0) // 上次渲染的消息条数，用于判断是否真的有新消息（而不是轮询刷新了同样内容）
   const isNearBottomRef = useRef(true) // 用户是否停留在底部附近；往上翻看历史时轮询不应打断
+  const visibleMsgs = msgs.filter(message => {
+    if (message.action?.type !== 'order_planner_confirmation') return true
+    return String(message.action.orderId || '') === String(orderId || '')
+  })
 
   // 路由传来的预约是点击当时的快照。直接按会员订单读取最新详情，不能再从
   // “活动待办”反查：订单一旦退款/取消，待办会被过滤，旧快照反而永远无法刷新。
@@ -11979,7 +11988,10 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
 
         {showBookingConfirm && (
           <div style={{ padding: '12px 16px', borderBottom: '1px solid #E0D9CE', background: '#FFF8ED', display: 'grid', gap: 8 }}>
-            <div style={{ fontSize: 13, fontWeight: 700 }}>确认本次服务信息</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>确认本次服务信息 · {order?.serviceName || '服务订单'}</div>
+              {order?.orderNo && <div style={{ fontSize: 11, color: '#8AA89C' }}>订单号：{order.orderNo}</div>}
+            </div>
             <div style={{ fontSize: 11, color: '#8AA89C' }}>已自动带入客户确认的信息；如有变化可直接修订，再生成方案。</div>
             <input className="form-input" type="date" value={serviceTime} onChange={e => setServiceTime(e.target.value)} />
             <textarea className="form-input" rows={2} value={serviceTask} onChange={e => setServiceTask(e.target.value)} placeholder="服务内容与客户需求" />
@@ -11997,9 +12009,9 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
         <div ref={scrollRef} onScroll={handleScroll} style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', padding: '16px 16px 36px', display: 'flex', flexDirection: 'column', gap: 12, backgroundColor: '#F2EDE3', scrollPaddingBottom: 36 }}>
           {loading ? (
             <div style={{ textAlign: 'center', color: '#8AA89C', padding: 40 }}>加载中…</div>
-          ) : msgs.length === 0 ? (
+          ) : visibleMsgs.length === 0 ? (
             <div style={{ textAlign: 'center', color: '#8AA89C', padding: 40 }}>暂无消息，发送第一条吧</div>
-          ) : msgs.filter(m => !m.recalled).map((m, i, arr) => {
+          ) : visibleMsgs.filter(m => !m.recalled).map((m, i, arr) => {
             const isStaff = m.type !== 'user' && m.type !== 'system'
             const prevMsg = arr[i - 1]
             const showTime = i === 0 || (new Date(m.createdAt) - new Date(prevMsg.createdAt)) > 300000
