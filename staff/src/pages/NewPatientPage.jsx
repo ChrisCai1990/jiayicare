@@ -96,7 +96,7 @@ export default function NewPatientPage() {
     lifestyle: { diet: '', exercise: '', sleep: '', water: '', alcohol: '', smoking: '', bowel: '', mood: '' },
     // 管理
     source: '', remark: '',
-    assignedHealthManager: '', assignedFamilyDoctor: '', assignedNutritionist: '',
+    assignedHealthManager: '', assignedHealthPlanner: '', assignedFamilyDoctor: '', assignedNutritionist: '',
     assignedSpecialist: '', assignedTcmDoctor: '', assignedPsychologist: '',
     assignedRehabSpecialist: '', assignedMedicalAssistant: '',
     servicePackage: '', serviceStartDate: '', serviceExpiry: '',
@@ -200,6 +200,7 @@ export default function NewPatientPage() {
         chronicDiseases: selectedDiseases,
         commercial_medical: form.commercial_medical,
         assignedHealthManager:    form.assignedHealthManager    || undefined,
+        assignedHealthPlanner:    form.assignedHealthPlanner    || undefined,
         assignedFamilyDoctor:     form.assignedFamilyDoctor     || undefined,
         assignedNutritionist:     form.assignedNutritionist     || undefined,
         assignedSpecialist:       form.assignedSpecialist       || undefined,
@@ -256,6 +257,7 @@ export default function NewPatientPage() {
   }
 
   const healthManagers    = staffList.filter(s => s.role === 'healthManager')
+  const healthPlanners    = staffList.filter(s => s.role === 'healthPlanner')
   const familyDoctors     = staffList.filter(s => s.role === 'familyDoctor')
   const nutritionists     = staffList.filter(s => s.role === 'nutritionist')
   const specialists       = staffList.filter(s => s.role === 'specialist')
@@ -640,6 +642,7 @@ export default function NewPatientPage() {
               <F label="健康顾问" span={2}><select className="form-input" value={form.assignedFamilyDoctor} onChange={set('assignedFamilyDoctor')}><option value="">-- 未分配 --</option>{familyDoctors.map(s => <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>)}</select></F>
               <F label="营养师" span={2}><select className="form-input" value={form.assignedNutritionist} onChange={set('assignedNutritionist')}><option value="">-- 未分配 --</option>{nutritionists.map(s => <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>)}</select></F>
               <F label="健管专员" span={2}><select className="form-input" value={form.assignedHealthManager} onChange={set('assignedHealthManager')}><option value="">-- 未分配 --</option>{healthManagers.map(s => <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>)}</select></F>
+              <F label="健康规划师" span={2}><select className="form-input" value={form.assignedHealthPlanner} onChange={set('assignedHealthPlanner')}><option value="">-- 未分配 --</option>{healthPlanners.map(s => <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>)}</select></F>
               <F label="专科医师" span={2}><select className="form-input" value={form.assignedSpecialist} onChange={set('assignedSpecialist')}><option value="">-- 未分配 --</option>{specialists.map(s => <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>)}</select></F>
               <F label="中医师" span={2}><select className="form-input" value={form.assignedTcmDoctor} onChange={set('assignedTcmDoctor')}><option value="">-- 未分配 --</option>{tcmDoctors.map(s => <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>)}</select></F>
               <F label="心理咨询师" span={2}><select className="form-input" value={form.assignedPsychologist} onChange={set('assignedPsychologist')}><option value="">-- 未分配 --</option>{psychologists.map(s => <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>)}</select></F>
