@@ -19,6 +19,26 @@ export default function ServiceTasksPanel() {
   const executorCount = items.filter(item => item.taskRole !== 'supervisor').length
   const supervisorCount = items.filter(item => item.taskRole === 'supervisor').length
 
+  const openTask = (task) => {
+    const sourcePlan = task.sourceHealthPlanId
+    const sourcePlanId = sourcePlan?._id || sourcePlan
+    const checkupText = `${sourcePlan?.title || ''} ${sourcePlan?.content?.templateName || ''}`
+    const isCheckupPlanningTask = task.taskRole !== 'supervisor'
+      && task.assignedTo?.role === 'familyDoctor'
+      && sourcePlanId
+      && (sourcePlan?.content?.serviceDomain === 'annual_checkup'
+        || sourcePlan?.content?.templateSnapshot?.serviceDomain === 'annual_checkup'
+        || /体检/.test(checkupText))
+
+    if (isCheckupPlanningTask) {
+      nav(`/plans/${sourcePlanId}/modules`, {
+        state: { returnTo: `/patients/${task.patientId?._id}?tab=plans&serviceView=checkup` },
+      })
+      return
+    }
+    nav(`/patients/${task.patientId?._id}?tab=followups`, { state: { openFollowUp: task } })
+  }
+
   return (
     <div className="card" style={{ marginBottom: 20, border: '1.5px solid #1E6B5035' }}>
       <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -37,7 +57,7 @@ export default function ServiceTasksPanel() {
           const isFuture = task.date && new Date(task.date).getTime() > Date.now()
           return (
           <div key={task._id}
-            onClick={() => nav(`/patients/${task.patientId?._id}?tab=followups`, { state: { openFollowUp: task } })}
+            onClick={() => openTask(task)}
             style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 0', cursor: 'pointer', borderBottom: index < Math.min(visibleItems.length, 10) - 1 ? '1px solid #f0ede8' : 'none' }}>
             <span style={{ fontSize: 18 }}>{task.taskRole === 'supervisor' ? '🔎' : '✅'}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
