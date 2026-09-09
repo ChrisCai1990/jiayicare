@@ -18,3 +18,13 @@ test('invoke success remains strict and failed responses identify the method', a
   assert.equal(result.entry,'group_chat_tools');
   await assert.rejects(scope.invoke({invoke:(m,p,cb)=>cb({err_msg:'getContext:fail'})},'getContext'), /getContext.*fail/);
 });
+test('current chat accepts a valid payload without legacy status text', async () => {
+  const result = await scope.invoke({invoke:(m,p,cb)=>cb({chatId:'wr_test_group'})},'getCurExternalChat');
+  assert.equal(result.chatId,'wr_test_group');
+});
+test('explicit errors and missing chat IDs always fail closed', () => {
+  for (const result of [null, {}, {chatId:''}, {chatId:'bad id'}, {chatId:'wr_test',errcode:60011}, {chatId:'wr_test',errMsg:'fail'}, {chatId:'wr_test',err_msg:'getCurExternalChat:ok',errMsg:'fail'}]) {
+    assert.equal(scope.sdkSucceeded('getCurExternalChat',result),false);
+  }
+  assert.equal(scope.sdkSucceeded('sendChatMessage',{chatId:'wr_test'}),false);
+});

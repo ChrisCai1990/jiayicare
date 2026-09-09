@@ -7,7 +7,21 @@ function sdkError(stage, response = {}) {
     .replace(/[A-Za-z0-9_-]{24,}/g, "[标识已隐藏]")
     .slice(0, 180);
   const code = response?.errCode ?? response?.errcode;
-  return new Error(`企微 ${stage} 失败：${status}${Number.isInteger(Number(code)) && code !== undefined ? `（代码 ${Number(code)}）` : ""} [诊断v2]`);
+  const shape = stage === "getCurExternalChat" ? `；群标识${validChatId(response?.chatId) ? "有效" : "缺失或无效"}` : "";
+  return new Error(`企微 ${stage} 失败：${status}${Number.isInteger(Number(code)) && code !== undefined ? `（代码 ${Number(code)}）` : ""}${shape} [诊断v3]`);
+}
+function validChatId(value) {
+  return typeof value === "string" && /^[A-Za-z0-9_-]{1,256}$/.test(value);
+}
+function sdkSucceeded(method, result) {
+  if (!result || typeof result !== "object") return false;
+  const messages = [result.err_msg, result.errMsg].filter(v => v != null && String(v).trim() !== "");
+  const codes = [result.errcode, result.errCode].filter(v => v != null);
+  if (codes.some(v => String(v) !== "0")) return false;
+  if (messages.some(v => !String(v).endsWith(":ok"))) return false;
+  if (method === "getCurExternalChat") return validChatId(result.chatId);
+  // Sending still requires explicit success; never infer delivery from payload.
+  return messages.length > 0;
 }
 export async function connectWecom() {
   if (!/wxwork/i.test(navigator.userAgent))
@@ -75,7 +89,7 @@ function invoke(wx, method, payload = {}) {
     const timer = setTimeout(() => reject(new Error(`企微 ${method} 响应超时 [诊断v2]`)), 15000);
     wx.invoke(method, payload, (r) => {
       clearTimeout(timer);
-      String(r.err_msg || r.errMsg || "").endsWith(":ok")
+      sdkSucceeded(method, r)
         ? resolve(r)
         : reject(sdkError(method, r));
     });
