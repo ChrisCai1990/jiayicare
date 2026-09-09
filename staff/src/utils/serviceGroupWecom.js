@@ -1,5 +1,14 @@
 import { serviceGroupAPI } from "../api";
 let loading;
+// Only expose SDK status fields, never full responses (which may contain IDs).
+function sdkError(stage, response = {}) {
+  const status = String(response?.err_msg || response?.errMsg || "无状态信息")
+    .replace(/https?:\/\/\S+/gi, "[链接已隐藏]")
+    .replace(/[A-Za-z0-9_-]{24,}/g, "[标识已隐藏]")
+    .slice(0, 180);
+  const code = response?.errCode ?? response?.errcode;
+  return new Error(`企微 ${stage} 失败：${status}${Number.isInteger(Number(code)) && code !== undefined ? `（代码 ${Number(code)}）` : ""} [诊断v2]`);
+}
 export async function connectWecom() {
   if (!/wxwork/i.test(navigator.userAgent))
     throw new Error("请在企业微信聊天工具栏中打开此页面");
@@ -22,9 +31,9 @@ export async function connectWecom() {
           () => reject(new Error("企微初始化超时")),
           15000
         );
-        wx.error(() => {
+        wx.error((r) => {
           clearTimeout(timer);
-          reject(new Error("企微域名或应用授权未通过"));
+          reject(sdkError("config", r));
         });
         wx.ready(() =>
           wx.agentConfig({
@@ -38,9 +47,9 @@ export async function connectWecom() {
               clearTimeout(timer);
               resolve();
             },
-            fail: () => {
+            fail: (r) => {
               clearTimeout(timer);
-              reject(new Error("企微客户联系权限未通过"));
+              reject(sdkError("agentConfig", r));
             },
           })
         );
@@ -63,12 +72,12 @@ export async function connectWecom() {
 }
 function invoke(wx, method, payload = {}) {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("企微响应超时")), 15000);
+    const timer = setTimeout(() => reject(new Error(`企微 ${method} 响应超时 [诊断v2]`)), 15000);
     wx.invoke(method, payload, (r) => {
       clearTimeout(timer);
       String(r.err_msg || r.errMsg || "").endsWith(":ok")
         ? resolve(r)
-        : reject(new Error("企微操作未完成，请核对当前群和应用权限"));
+        : reject(sdkError(method, r));
     });
   });
 }
