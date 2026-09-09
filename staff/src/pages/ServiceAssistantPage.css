@@ -1,0 +1,262 @@
+.service-assistant {
+  max-width: 1050px;
+  margin: 0 auto;
+  padding: 28px;
+  color: #203c32;
+}
+.service-assistant * {
+  box-sizing: border-box;
+}
+.service-assistant h1 {
+  font-size: 28px;
+  margin: 6px 0;
+}
+.service-assistant h2 {
+  font-size: 18px;
+  margin: 0 0 14px;
+}
+.service-assistant h3 {
+  font-size: 15px;
+  margin: 0 0 10px;
+}
+.service-assistant p {
+  line-height: 1.7;
+}
+.service-assistant small {
+  display: block;
+  color: #677c72;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.service-assistant button {
+  background: #fff;
+  border: 1px solid #d8e2dc;
+  border-radius: 8px;
+  padding: 9px 13px;
+  color: #245540;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+}
+.service-assistant button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.service-assistant input,
+.service-assistant select,
+.service-assistant textarea {
+  display: block;
+  width: 100%;
+  margin: 7px 0 12px;
+  padding: 10px;
+  border: 1px solid #d4ded7;
+  border-radius: 8px;
+  background: white;
+  color: #203c32;
+  font: inherit;
+  font-size: 14px;
+}
+.service-assistant textarea {
+  resize: vertical;
+}
+.service-assistant label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+}
+.service-assistant .sa-primary {
+  background: #1e6b50;
+  color: white;
+  border-color: #1e6b50;
+}
+.sa-heading,
+.sa-row,
+.sa-toolbar,
+.sa-actions,
+.sa-member-edit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.sa-heading p {
+  margin: 7px 0 18px;
+  color: #677c72;
+}
+.sa-connection {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.sa-connection span {
+  font-size: 11px;
+  border-radius: 20px;
+  padding: 5px 10px;
+  background: #eaf0ec;
+  color: #546a5e;
+}
+.sa-toolbar {
+  align-items: flex-end;
+  margin: 18px 0;
+}
+.sa-toolbar label {
+  flex: 1;
+  min-width: 170px;
+}
+.sa-toolbar select {
+  margin-bottom: 0;
+}
+.sa-card {
+  padding: 22px;
+  background: white;
+  border: 1px solid #e0e7e1;
+  border-radius: 14px;
+  margin: 14px 0;
+  box-shadow: 0 3px 12px #223d3004;
+}
+.sa-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin: 18px 0;
+}
+.sa-stats div {
+  background: #f5f8f5;
+  padding: 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #607469;
+}
+.sa-stats strong {
+  display: block;
+  font-size: 24px;
+  color: #20503d;
+  margin-bottom: 4px;
+}
+.sa-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 20px 0;
+}
+.sa-tabs button[aria-pressed="true"] {
+  background: #1e6b50;
+  color: white;
+  border-color: #1e6b50;
+}
+.sa-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.sa-actions {
+  justify-content: flex-start;
+  margin-top: 14px;
+}
+.sa-alert,
+.sa-notice {
+  padding: 13px 16px;
+  border-radius: 9px;
+  margin: 12px 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.sa-alert {
+  background: #fff1ed;
+  color: #9e4030;
+}
+.sa-notice {
+  background: #e8f3eb;
+  color: #225c40;
+}
+.sa-status {
+  font-size: 11px;
+  padding: 4px 9px;
+  background: #edf2ee;
+  border-radius: 14px;
+}
+.sa-status.draft {
+  background: #fff3df;
+  color: #8f600b;
+}
+.sa-status.completed,
+.sa-status.confirmed {
+  background: #e5f3e9;
+  color: #22613e;
+}
+.sa-pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+.sa-empty {
+  padding: 55px 24px;
+  border: 1px dashed #bccdc0;
+  border-radius: 15px;
+  text-align: center;
+  margin: 24px 0;
+}
+.sa-member-edit input {
+  width: 180px;
+  margin: 8px 0;
+}
+.sa-search {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.sa-native {
+  border-top: 1px solid #edf1ed;
+  padding: 14px 0;
+}
+.service-assistant .sa-check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 16px 0;
+}
+.service-assistant .sa-check input {
+  width: auto;
+  margin: 0;
+}
+.sa-form {
+  border-color: #8db7a0;
+}
+.sa-command {
+  background: #f7faf7;
+}
+.service-assistant a {
+  color: #1e6b50;
+  font-size: 13px;
+}
+@media (max-width: 600px) {
+  .service-assistant {
+    padding: 16px 10px;
+  }
+  .sa-card {
+    padding: 16px;
+  }
+  .sa-heading h1 {
+    font-size: 23px;
+  }
+  .sa-fields {
+    grid-template-columns: 1fr;
+  }
+  .sa-tabs {
+    gap: 4px;
+  }
+  .sa-tabs button {
+    padding: 8px 10px;
+  }
+  .sa-stats {
+    gap: 6px;
+  }
+  .sa-stats div {
+    padding: 10px;
+  }
+  .sa-member-edit input {
+    width: 130px;
+  }
+}

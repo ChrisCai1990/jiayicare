@@ -1,0 +1,92 @@
+# 家庭服务助手
+
+入口：医护端「家庭服务助手」`/service-assistant`。企微侧边栏配置入口使用 `/service-assistant?embedded=1`，隐藏医护端导航，继续使用现有员工登录。尚未接入企微免登。
+
+## 已实现的业务流程
+
+| 场景 | 当前实现 |
+| --- | --- |
+| 个人 / 家庭服务群 | 创建群档案、绑定一个或多个已有客户、标注关系、配置负责人和服务团队、绑定企微 chatId |
+| 现有数据 | 按所选家庭成员读取 JiayiCare 随访、服务记录、报告；遵守当前机构、个人分配和模块权限 |
+| 待办 | 保存草稿、编辑、确认、开始处理、填写完成结果；个人事项确认后写入 FollowUp，回读原系统状态；家庭共同事项保存在服务群事项中 |
+| 沟通记录 | 草稿确认后，个人记录写入 ServiceRecord 的 group_service 类型；家庭记录留在群档案，不自动归给某个成员 |
+| 服务总结 / 交接 | 手动记录；配置AI并确认本群授权后，可整理所选沟通文本，生成总结和附原文证据的候选待办。候选待办需明确成员、人员、日期后确认 |
+| 报告 | 选择文件与具体成员、分类、日期后归档；仅上传、不自动解析或审核。PDF/JPEG/PNG/WEBP，单个文件20MB以内 |
+| 群通知 | 拟稿、确认、复制、人工标记已通知；企微环境下可校验当前 chatId 后调用分享。分享成功与客户已读、待办完成分开 |
+| 快捷指令 | 嘉医汇待办 / 记录 / 总结 / 归档 + 冒号；只预填草稿，不猜“妈妈”的档案，不把普通聊天当作归档授权 |
+| 群消息接入 | 签名桥接接收器、按群授权、消息ID幂等、AES-GCM加密、30天到期清理；可接收文本及9MB以内base64报告。收件箱可转为待办、总结或选定成员后归档 |
+
+### 仍需配置、开发适配或实机验证的部分
+
+- **未部署生产**；本轮没有写入真实客户数据、调用真实AI、发送群消息或修改企业微信后台。
+- 管理员需创建自建应用、配置可信域名与客户联系接口授权。签名和客户端接口已实现，但尚未在真实企微群验证。
+- **桥接接收器不是企业微信官方回调地址**。还需要在管理员控制的环境接入企业微信会话内容存档官方SDK/授权服务商采集器，将解密、确认可处理的消息按下面协议转入本系统。本仓库没有安装或运行官方Finance SDK采集器，不能声称已监听真实群。
+- **群里一句话自动执行归档尚未启用**。当前接入消息和口令进入可确认收件箱；工作人员在助手中明确文件和人员后归档。没有机器人成员，也没有自动群回复。
+- AI仅按按钮生成，不做后台无人值守决策。支持从多条收件箱消息组合输入，或手动粘贴。
+- 原件SHA-256去重覆盖带 `sourceSha256` 的报告（本入口新上传数据）；旧报告未做摘要回填，不能把文件名去重当成原件去重。
+- 本轮单文件归档；多张照片组成同一报告仍使用既有报告上传页面。PDF真实总页数由既有详情/预览接口读取原件取得，不能把历史 `pages` 默认值作为真值。
+- 个人待办复用原FollowUp，家庭共同事项独立存在此工作台；尚未扩展全局首页的家庭事项提醒，也未实现定时自动群推送。
+- 新模块采用更严格的本人分配访问控制：服务团队授权不替代个人档案分配；暂不继承下属/导师的扩展客户范围。
+- 当前上限：最近100个群、每群200条事项、收件箱最近100条；不应作为全量历史导出。
+
+## 接入配置
+
+仅在安全运行配置中设置下列变量，不将真实值写入Git或聊天：
+
+| 变量 | 用途 |
+| --- | --- |
+| WECOM_CORP_ID / WECOM_AGENT_ID / WECOM_APP_SECRET | 自建应用身份 |
+| WECOM_SIDEBAR_ORIGIN | HTTPS可信来源，如 `https://staff.jiaycare.com`，不带路径或末尾斜杠 |
+| SERVICE_GROUP_AI_ENABLED | `true` 才开放AI总结，另需既有 QWEN_API_KEY 或 DEEPSEEK_API_KEY |
+| SERVICE_GROUP_ARCHIVE_ENABLED | `true` 才接受签名消息并启动到期清理 |
+| SERVICE_GROUP_BRIDGE_SECRET | 仅机构控制的采集器与后端共享的高熵签名密钥 |
+| SERVICE_GROUP_BRIDGE_TENANT_ID | 采集器所属机构ID；未设置仅匹配历史 tenantId:null 群，不跨机构 |
+| SERVICE_GROUP_MESSAGE_KEY | 32字节AES密钥的64位十六进制表示；轮换时需处理旧消息解密 |
+
+文件继续使用现有私有OSS配置。企微可见范围、服务群团队、每个客户的员工分配和自定义角色权限均须一致。模块入口要求 `patients.view`、`service_records.view`，其他操作按对应模块 create/edit/view 验证。
+
+### 消息桥接协议
+
+`POST /api/integrations/service-groups/messages`
+
+请求头：`x-jy-timestamp` 为当前毫秒时间戳；`x-jy-signature` 为 `HMAC-SHA256(secret, timestamp + '.' + 原始JSON请求体)` 十六进制。接受正负5分钟窗口。同群同 messageId 幂等。
+
+正文示例为虚构内容：
+
+```json
+{
+  "chatId": "官方当前群标识",
+  "messageId": "官方稳定消息标识",
+  "sender": "发送者标识或已授权显示名",
+  "sentAt": "ISO时间",
+  "consent": true,
+  "text": "嘉医汇待办：核对预约时间",
+  "file": { "name": "report.pdf", "base64": "仅文件消息提供此字段" }
+}
+```
+
+采集器必须核验官方会话存档授权范围及成员同意状态，不能仅因为有人@机器人或加入服务群就设置 consent:true。只有管理员明确启用且群负责人已确认 archiveConsent 的绑定群可接收。消息只接受最近30天，原文加密；文件拷贝保存到私有 `service-group-staging/`，到期先删除该暂存对象再删除消息元数据；正式报告位于 `reports/`，不受暂存清理影响。
+
+无需把存档密钥或企业微信Secret发给客户端。读取群消息、生成AI草稿、保存个人档案分别受控。
+
+## 验证与运行
+
+```powershell
+node --test backend/test/serviceGroupRules.test.js backend/test/serviceGroupRoutes.test.js
+npm --prefix staff run build
+```
+
+页面回归（使用虚构内存数据，不连接MongoDB、OSS或AI；所有浏览器API请求拦截至本地fixture）：
+
+```powershell
+# 终端一
+npm --prefix staff run dev -- --host localhost
+# 终端二
+node scripts/test-service-assistant.cjs
+```
+
+默认查找 Windows Chrome，可用 `TEST_CHROME_PATH` 指定浏览器；`TEST_STAFF_URL` 可指定本地Vite地址；`TEST_ARTIFACT_DIR` 可指定截图目录。截图默认在 `artifacts/service-assistant/`，全部为虚构人物。
+
+手动连接真实本地开发库时，应明确设置 `VITE_API_URL=http://localhost:3000/api`，不要误用医护端既有的生产API默认值。此页面首次上线前应在测试环境完成MongoDB唯一索引、OSS真实上传、企微群识别与发送验证。
+
+2026-09-09：新增流程测试、真实路由+内存持久层集成测试、桌面与390px侧边栏交互回归通过。全量后端回归发现既有 `inpatientPlanPermission.test.js` 缺少 `upsertMedicalAssistModuleTasks` VM替身导致失败；该测试及被测 `staff.js` 本轮未修改。此限制不可用服务助手定向测试通过来掩盖。

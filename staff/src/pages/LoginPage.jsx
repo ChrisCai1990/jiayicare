@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { staffAPI, setToken } from '../api'
 import { useStaff } from '../App'
 
@@ -10,6 +10,7 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const { login } = useStaff()
   const nav = useNavigate()
+  const location = useLocation()
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -23,7 +24,9 @@ export default function LoginPage() {
       const res = await staffAPI.login(username.trim(), password)
       setToken(res.data.token)
       login(res.data.staff)
-      nav(res.data.staff.mustChangePassword ? '/change-password' : '/home', { replace: true })
+      const from = location.state?.from
+      const target = typeof from === 'string' && from.startsWith('/') && !from.startsWith('//') ? from : '/home'
+      nav(res.data.staff.mustChangePassword ? '/change-password' : target, { replace: true })
     } catch (err) {
       setError(err.message || '登录失败，请检查手机号码和密码')
     } finally {

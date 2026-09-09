@@ -130,4 +130,4 @@ function urlToKey(url) {
   return match ? match[1] : null;
 }
 
-module.exports = { uploadBase64, uploadBuffer, deleteFile, getSignedUrl, signStoredUrl, getObjectStream, urlToKey, convertHeicBase64IfNeeded };
+module.exports = { uploadBase64, uploadBuffer, deleteFile, getSignedUrl, signStoredUrl, getObjectStream, getClient, urlToKey, convertHeicBase64IfNeeded };

@@ -57,6 +57,7 @@ function PatientSearchInput({ value, onChange }) {
 }
 
 const TYPE_LABEL = {
+  group_service: '服务群沟通记录',
   disease_mgmt:  '专病管理记录',
   nutrition:     '营养干预记录',
   medical_visit: '医院就医记录',

@@ -94,6 +94,8 @@ app.use('/api/admin',         require('./routes/settings'));
 const staffRouter = require('./routes/staff');
 app.use('/api/staff',         staffRouter);
 app.use('/api/staff',         require('./routes/aiCaseReviews'));
+app.use('/api/staff/service-groups', require('./routes/serviceGroups'));
+app.use('/api/integrations/service-groups', require('./routes/serviceGroupBridge'));
 app.use('/api/screening',     require('./routes/screening'));
 app.use('/api/tts',           require('./routes/tts'));
 
@@ -110,6 +112,7 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
+  require('./utils/serviceGroupCleanup').startServiceGroupCleanup();
   console.log(`🚀 服务启动成功，端口：${PORT}`);
   // 报告 OCR 是可恢复后台任务：进程重启后继续跑，不能把 processing 误改为待审核。
   setTimeout(() => staffRouter.resumeReportParseJobs?.().catch(error => {

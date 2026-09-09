@@ -40,6 +40,13 @@ async function req(path, options = {}) {
 
 const qs = (params) => new URLSearchParams(params).toString()
 
+export const serviceGroupAPI = {
+  get: path => req('/staff/service-groups' + path),
+  post: (path, data) => req('/staff/service-groups' + path, { method: 'POST', body: JSON.stringify(data) }),
+  patch: (path, data) => req('/staff/service-groups' + path, { method: 'PATCH', body: JSON.stringify(data) }),
+  upload: (id, data) => req(`/staff/service-groups/${id}/reports`, { method: 'POST', body: data }),
+}
+
 export const staffAPI = {
   // Auth
   login: (username, password) => req('/staff/login', { method: 'POST', body: JSON.stringify({ username, password }) }),

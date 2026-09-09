@@ -41,6 +41,7 @@ import AnnualMgmtPlanPage from './pages/AnnualMgmtPlanPage'
 import PlanModulesPage from './pages/PlanModulesPage'
 import DailyCheckinPage from './pages/DailyCheckinPage'
 import ForcePasswordChangePage from './pages/ForcePasswordChangePage'
+import ServiceAssistantPage from './pages/ServiceAssistantPage'
 
 // ── Auth Context ──────────────────────────────────────────────────
 const AuthCtx = createContext(null)
@@ -49,6 +50,7 @@ export function useStaff() { return useContext(AuthCtx) }
 // 路由 path → 权限模块 key。与 Layout.jsx 的 ALL_NAV.moduleKey 保持一致。
 // 未列出的路由（工作台/消息/个人中心/会员详情等）不做模块级权限拦截。
 export const ROUTE_MODULE = {
+  '/service-assistant': 'patients',
   '/patients': 'patients',
   '/followups': 'followups',
   '/plans': 'plans',
@@ -130,8 +132,9 @@ function ToastProvider({ children }) {
 // ── Guard ─────────────────────────────────────────────────────────
 function RequireAuth({ children }) {
   const { staff } = useStaff()
+  const location = useLocation()
   const token = getToken()
-  if (!staff || !token) return <Navigate to="/login" replace />
+  if (!staff || !token) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />
   return children
 }
 
@@ -166,6 +169,7 @@ export default function App() {
             <Route path="/" element={<RequireAuth><RequirePasswordChanged><RequireModule><Layout /></RequireModule></RequirePasswordChanged></RequireAuth>}>
               <Route index element={<Navigate to="/home" replace />} />
               <Route path="home" element={<HomePage />} />
+              <Route path="service-assistant" element={<ErrorBoundary><ServiceAssistantPage /></ErrorBoundary>} />
               <Route path="patients" element={<PatientsPage />} />
               <Route path="patients/new" element={<NewPatientPage />} />
               <Route path="patients/:id" element={<ErrorBoundary><PatientDetailPage /></ErrorBoundary>} />

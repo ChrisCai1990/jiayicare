@@ -14,6 +14,7 @@ const serviceRecordSchema = new mongoose.Schema({
       'tcm',              // 中医评估（旧）
       'specialist',       // 专科会诊（旧）
       'disease_mgmt',     // 专病管理记录（新）
+      'group_service',    // 服务群人工确认的个人服务记录
       'nutrition',        // 营养干预记录（新）
       'medical_visit',    // 医院就医记录（新）
       'routine',          // 日常随访记录（新）

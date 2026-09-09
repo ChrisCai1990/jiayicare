@@ -8,6 +8,7 @@ import AppIcon from './AppIcon'
 // roles: 无 customRoleId 时按内置角色过滤（空数组=全部可见）
 const ALL_NAV = [
   { label: '工作台',       icon: 'home', path: '/home',             roles: [] },
+  { label: '家庭服务助手', icon: 'services', path: '/service-assistant', roles: [], moduleKey: 'patients' },
   { label: '我的会员',     icon: 'patients', path: '/patients',     roles: [],                                                                                  moduleKey: 'patients' },
   { label: '随访管理',     icon: 'followups', path: '/followups',   roles: [],                                                                                  moduleKey: 'followups' },
   { label: '服务方案',     icon: 'plans', path: '/plans',           roles: ['familyDoctor','nutritionist','rehabSpecialist','tcmDoctor','superadmin'],           moduleKey: 'plans' },
@@ -68,6 +69,11 @@ export default function Layout() {
   }
 
   const initials = staff?.name?.slice(0, 1) || 'S'
+
+  // Chat sidebar pages use their full width instead of nesting the staff navigation.
+  if (loc.pathname === '/service-assistant' && new URLSearchParams(loc.search).get('embedded') === '1') {
+    return <main><Outlet /></main>
+  }
 
   return (
     <div className="app-layout">

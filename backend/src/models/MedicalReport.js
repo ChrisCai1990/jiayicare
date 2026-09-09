@@ -57,6 +57,8 @@ const medicalReportSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   tenantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', default: null, index: true }, // 所属机构（多租户隔离键，创建时从 user.tenantId 冗余存一份，避免每次查询都要 populate）
   title: { type: String, required: true },
+  sourceSha256: { type: String, default: undefined },
+  sourceServiceGroup: { type: mongoose.Schema.Types.ObjectId, ref: 'ServiceGroup', default: null },
 
   // ── 年度/类目结构（需求23）───────────────────────────────────────
   reportYear:      { type: Number, default: null },   // 报告年份（如 2025）
@@ -212,5 +214,6 @@ const medicalReportSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 medicalReportSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);
+medicalReportSchema.index({ user: 1, sourceSha256: 1 }, { unique: true, partialFilterExpression: { sourceSha256: { $type: 'string' } } });
 
 module.exports = mongoose.model('MedicalReport', medicalReportSchema);

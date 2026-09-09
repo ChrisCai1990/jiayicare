@@ -21,6 +21,7 @@ __pycache__/
 *.bundle
 
 # Local scratch and generated output
+artifacts/service-assistant/
 output/
 tmp/
 scripts/.codex_*.py
