@@ -151,9 +151,9 @@ export default function AiTodosPanel() {
     <div className="card" style={{ marginBottom: 20, border: overdueCount > 0 ? '1.5px solid #DC354540' : undefined }}>
       <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div className="card-title">待处理任务</div>
+          <div className="card-title">AI 待审核任务</div>
           {staff?.roleLabel && staff?.role !== 'superadmin' && (
-            <span style={{ fontSize: 12, color: '#8AA89C' }}>· {staff.roleLabel}（仅显示本人当前待处理项）</span>
+            <span style={{ fontSize: 12, color: '#8AA89C' }}>· {staff.roleLabel}（仅显示本人可审核项）</span>
           )}
           {todos.length > 0 && (
             <span style={{
@@ -182,7 +182,7 @@ export default function AiTodosPanel() {
       <div className="card-body" style={{ padding: '4px 20px 12px' }}>
         {todos.length === 0 && (
           <div style={{ color: '#8AA89C', fontSize: 13, textAlign: 'center', padding: '16px 0' }}>
-            暂无待处理任务
+            暂无待审核任务
           </div>
         )}
         {pageTodos.map((todo, i) => {

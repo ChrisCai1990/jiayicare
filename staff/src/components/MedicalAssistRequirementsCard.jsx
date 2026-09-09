@@ -8,7 +8,7 @@ function parseRequirements(text = '') {
   String(text).split(/\r?\n/).forEach(rawLine => {
     const line = rawLine.trim()
     if (!line) return
-    const match = line.match(/^([^：]{1,10})：\s*(.*)$/)
+    const match = line.match(/^([^：]+)：\s*(.*)$/)
     if (match) sections.push({ label: match[1], lines: match[2] ? [match[2]] : [] })
     else if (sections.length) sections[sections.length - 1].lines.push(line)
     else sections.push({ label: '事项', lines: [line] })
@@ -32,10 +32,12 @@ export default function MedicalAssistRequirementsCard({ text }) {
         </div>)}
       </div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-        {details.map(item => <div key={`${item.label}-${item.lines[0] || ''}`} style={{ background: IMPORTANT_LABELS.has(item.label) ? '#E8F5EF' : '#fff', borderRadius: 8, padding: '9px 11px', border: '1px solid #DDEBE4' }}>
+        {details.map(item => {
+          const displayLines = item.lines.flatMap(line => line.split(/(?=[①②③④⑤⑥⑦⑧⑨⑩])/).map(part => part.trim()).filter(Boolean))
+          return <div key={`${item.label}-${item.lines[0] || ''}`} style={{ background: IMPORTANT_LABELS.has(item.label) ? '#E8F5EF' : '#fff', borderRadius: 8, padding: '9px 11px', border: '1px solid #DDEBE4' }}>
           <div style={{ fontSize: 12, color: IMPORTANT_LABELS.has(item.label) ? '#1E6B50' : '#65776F', fontWeight: 700, marginBottom: 5 }}>{item.label}</div>
-          {item.lines.length > 1 ? <div style={{ display: 'grid', gap: 5 }}>{item.lines.map((line, index) => <div key={index} style={{ display: 'flex', gap: 7, fontSize: 13, color: '#1A2B24', lineHeight: 1.65 }}><span style={{ color: '#1E6B50' }}>•</span><span>{line}</span></div>)}</div> : <div style={{ fontSize: 13, color: '#1A2B24', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{item.lines[0] || '—'}</div>}
-        </div>)}
+          {displayLines.length > 1 ? <div style={{ display: 'grid', gap: 5 }}>{displayLines.map((line, index) => <div key={index} style={{ display: 'flex', gap: 7, fontSize: 13, color: '#1A2B24', lineHeight: 1.65 }}><span style={{ color: '#1E6B50' }}>•</span><span>{line}</span></div>)}</div> : <div style={{ fontSize: 13, color: '#1A2B24', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{displayLines[0] || '—'}</div>}
+        </div>})}
       </div>
     </div>
   )

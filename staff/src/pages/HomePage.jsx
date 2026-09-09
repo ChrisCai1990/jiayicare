@@ -134,12 +134,12 @@ export default function HomePage() {
         </div>
       )}
 
+      {/* 临时服务方案产生的岗位任务优先处理，固定显示在 AI 审核任务上方。 */}
+      <ServiceTasksPanel />
+
       {/* AI 待审核任务面板 */}
       <SymptomTodosPanel />
       <AiTodosPanel />
-
-      {/* 临时服务方案产生的岗位任务，与年度既定随访计划分开呈现。 */}
-      <ServiceTasksPanel />
 
       {/* 待随访任务面板 */}
       <FollowUpsPanel />
