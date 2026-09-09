@@ -25,6 +25,8 @@ function InsurancePolicyModal({ enterprise, employees, onClose, toast }) {
   const [selectedId, setSelectedId] = useState('')
   const [selectedUsers, setSelectedUsers] = useState(new Set())
   const [enrollmentDetails, setEnrollmentDetails] = useState({})
+  const [memberSearch, setMemberSearch] = useState('')
+  const [selectedOnly, setSelectedOnly] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ year: new Date().getFullYear(), name: `${new Date().getFullYear()}年度高端医疗险`, insurerName: '', policyNumber: '', startAt: '', endAt: '', servicePhone: '', claimContact: '', status: 'draft', note: '', rules: [] })
   const selectedPolicy = policies.find(p => p._id === selectedId)
@@ -62,6 +64,11 @@ function InsurancePolicyModal({ enterprise, employees, onClose, toast }) {
     } catch (err) { toast('❌ ' + err.message) } finally { setSaving(false) }
   }
   const rule = scene => (form.rules || []).find(r => r.scene === scene) || {}
+  const visibleEmployees = employees.filter(u => {
+    if (selectedOnly && !selectedUsers.has(String(u._id))) return false
+    const keyword = memberSearch.trim().toLowerCase()
+    return !keyword || `${u.name || ''} ${u.phone || ''}`.toLowerCase().includes(keyword)
+  })
   return <div className="modal-overlay"><div className="modal" style={{ width: 'min(1100px, 96vw)', maxHeight: '92vh', overflow: 'auto' }}>
     <div className="modal-header"><div className="modal-title">🛡️ {enterprise.name} · 高端医疗险</div><button className="modal-close" onClick={onClose}>×</button></div>
     <div className="modal-body">
@@ -77,8 +84,15 @@ function InsurancePolicyModal({ enterprise, employees, onClose, toast }) {
       <div style={{ overflowX: 'auto', marginTop: 8 }}><table className="data-table"><thead><tr><th>场景</th><th>是否保障</th><th>预授权</th><th>直付</th><th>免赔/比例/限额</th><th>医院限制、材料与注意事项</th><th>条款依据</th></tr></thead><tbody>
         {INSURANCE_SCENES.map(scene => <tr key={scene}><td>{scene}</td><td><select value={rule(scene).covered || 'confirm'} onChange={e => setRule(scene,'covered',e.target.value)}><option value="confirm">需确认</option><option value="yes">保障</option><option value="no">不保障</option></select></td><td><select value={rule(scene).preAuthorization || 'confirm'} onChange={e => setRule(scene,'preAuthorization',e.target.value)}><option value="confirm">需确认</option><option value="required">必须</option><option value="not_required">不需要</option></select></td><td><select value={rule(scene).directBilling || 'confirm'} onChange={e => setRule(scene,'directBilling',e.target.value)}><option value="confirm">需确认</option><option value="yes">支持</option><option value="no">不支持</option></select></td><td><textarea rows={3} value={rule(scene).limit || ''} onChange={e => setRule(scene,'limit',e.target.value)} placeholder="免赔额、比例、限额" /></td><td><textarea rows={3} value={rule(scene).notes || ''} onChange={e => setRule(scene,'notes',e.target.value)} /></td><td><input value={rule(scene).sourceReference || ''} onChange={e => setRule(scene,'sourceReference',e.target.value)} placeholder="附件名/P12" /></td></tr>)}
       </tbody></table></div>
-      <div style={{ marginTop: 18, fontWeight: 700 }}>参保人员（{selectedUsers.size}人）</div>
-      <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>{employees.map(u => <label key={u._id} style={{ border: '1px solid #E6E1D8', borderRadius: 8, padding: 9 }}><input type="checkbox" checked={selectedUsers.has(String(u._id))} onChange={e => setSelectedUsers(current => { const next = new Set(current); e.target.checked ? next.add(String(u._id)) : next.delete(String(u._id)); return next })} /> <b>{u.name}</b> <span style={{ color: '#888', fontSize: 12 }}>{u.phone}</span></label>)}</div>
+      <div style={{ marginTop: 18, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ fontWeight: 700, marginRight: 'auto' }}>参保人员（已选 {selectedUsers.size} 人，共 {employees.length} 人）</div>
+        <input className="form-input" style={{ width: 260 }} value={memberSearch} onChange={e => setMemberSearch(e.target.value)} placeholder="搜索姓名或手机号" />
+        <label style={{ fontSize: 13, whiteSpace: 'nowrap' }}><input type="checkbox" checked={selectedOnly} onChange={e => setSelectedOnly(e.target.checked)} /> 仅看已选</label>
+        {(memberSearch || selectedOnly) && <button type="button" className="btn btn-sm btn-secondary" onClick={() => { setMemberSearch(''); setSelectedOnly(false) }}>清除筛选</button>}
+      </div>
+      <div style={{ marginTop: 6, fontSize: 12, color: '#8AA89C' }}>当前显示 {visibleEmployees.length} 人；搜索不会改变已勾选人员。</div>
+      <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>{visibleEmployees.map(u => <label key={u._id} style={{ border: '1px solid #E6E1D8', borderRadius: 8, padding: 9 }}><input type="checkbox" checked={selectedUsers.has(String(u._id))} onChange={e => setSelectedUsers(current => { const next = new Set(current); e.target.checked ? next.add(String(u._id)) : next.delete(String(u._id)); return next })} /> <b>{u.name}</b> <span style={{ color: '#888', fontSize: 12 }}>{u.phone}</span></label>)}</div>
+      {visibleEmployees.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#8AA89C' }}>没有匹配的企业会员</div>}
       {employees.filter(u => selectedUsers.has(String(u._id))).map(u => { const key = String(u._id); const detail = enrollmentDetails[key] || {}; const setDetail = (field, value) => setEnrollmentDetails(all => ({ ...all, [key]: { ...(all[key] || {}), [field]: value } })); return <details key={key} style={{ marginTop: 8, border: '1px solid #E6E1D8', borderRadius: 8, padding: 10 }}><summary style={{ cursor: 'pointer', fontWeight: 650 }}>{u.name} · 个人参保信息/特别约定</summary><div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 10 }}><input className="form-input" placeholder="方案等级" value={detail.planLevel || ''} onChange={e => setDetail('planLevel', e.target.value)} /><input className="form-input" placeholder="保险会员号" value={detail.memberNumber || ''} onChange={e => setDetail('memberNumber', e.target.value)} /><select className="form-input" value={detail.relation || 'employee'} onChange={e => setDetail('relation', e.target.value)}><option value="employee">员工本人</option><option value="spouse">配偶</option><option value="child">子女</option><option value="other">其他</option></select><textarea className="form-input" rows={2} placeholder="个人除外责任" value={detail.exclusions || ''} onChange={e => setDetail('exclusions', e.target.value)} /><textarea className="form-input" rows={2} placeholder="特别约定" value={detail.specialTerms || ''} onChange={e => setDetail('specialTerms', e.target.value)} /></div></details> })}
       {selectedPolicy?.attachments?.length > 0 && <div style={{ marginTop: 14, fontSize: 12, color: '#65776F' }}>已继承现有保险附件：{selectedPolicy.attachments.map(a => a.name).join('、')}</div>}
       <div style={{ marginTop: 12, color: '#8A5A00', background: '#FFF8E7', padding: 10, borderRadius: 8 }}>“需确认”是安全默认值；生效前请按上传合同核对并填写条款依据。</div>
