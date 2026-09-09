@@ -2301,6 +2301,11 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
     const fixedWorkflowPlans = workflowPlans
       .filter(item => (moduleConfigMap.get(String(item._id))?.mode || 'fixed') === 'fixed')
       .sort((a, b) => (moduleConfigMap.get(String(a._id))?.sequence ?? 0) - (moduleConfigMap.get(String(b._id))?.sequence ?? 0));
+    // 一份就医协助方案只建立一组方案级“执行 + 督办”。岗位模板可能同时配置
+    // “代办服务”“资料回收”等多个固定模块，但这些都是同一次服务的验收内容，
+    // 不应让健管专员收到多份内容相近的督办任务。
+    const primaryWorkflowPlan = fixedWorkflowPlans.find(item => /代办服务|代诊|陪诊|陪同|一站式|体检安排/.test(item.name || ''))
+      || fixedWorkflowPlans[0];
     const deferredWorkflowModules = workflowPlans
       .map(item => ({
         id: String(item._id), name: item.name,
@@ -2343,9 +2348,23 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
       );
     }
     const patient = await User.findById(plan.patientId).select('assignedHealthManager assignedFamilyDoctor assignedNutritionist assignedHealthPlanner assignedMedicalAssistant').lean();
-    // 每个被筛选的岗位任务方案各生成一组“执行+督办”；workflowKey 保证重复推送只更新对应组。
-    for (const workflowPlan of fixedWorkflowPlans) {
-      await upsertMedicalAssistModuleTasks(plan, workflowPlan, { patient });
+    // 固定模块合并为方案级唯一任务；具体目的都在同一份 checklist 中逐项验收。
+    if (primaryWorkflowPlan) {
+      await upsertMedicalAssistModuleTasks(plan, primaryWorkflowPlan, { patient });
+      const primaryWorkflowKey = String(primaryWorkflowPlan._id);
+      const redundantFixedWorkflowKeys = fixedWorkflowPlans
+        .map(item => String(item._id))
+        .filter(key => key !== primaryWorkflowKey);
+      await FollowUp.updateMany(
+        {
+          sourceHealthPlanId: plan._id,
+          sourceType: 'health_plan',
+          taskRole: { $in: ['executor', 'supervisor'] },
+          workflowKey: { $in: redundantFixedWorkflowKeys },
+          status: { $in: ['planned', 'in_progress'] },
+        },
+        { $set: { status: 'cancelled', cancelReason: '流程标准化：同一服务方案仅保留一组执行与督办任务' } }
+      );
     }
     // 开单/预约阶段已经由“执行【代办服务】→督办【代办服务】”闭环，并可逐项上传检查单。
     // 资料回收属于实际就诊后的另一阶段，不能提前生成第二条内容相近的督办任务。

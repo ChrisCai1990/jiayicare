@@ -12,12 +12,14 @@ test('产品流程模块支持固定、条件触发和人工可选三种模式',
   assert.match(model, /'followup_instruction_found'/);
 });
 
-test('就医方案只立即生成固定模块并保留待判断模块', () => {
+test('就医方案合并固定模块为唯一执行督办组并保留待判断模块', () => {
   const route = read('src/routes/staff.js');
   assert.match(route, /const fixedWorkflowPlans = workflowPlans/);
   assert.match(route, /\.filter\(item => item\.mode !== 'fixed'\)/);
   assert.match(route, /decision: item\.mode === 'manual' \? 'manual' : 'pending'/);
-  assert.match(route, /for \(const workflowPlan of fixedWorkflowPlans\)/);
+  assert.match(route, /const primaryWorkflowPlan = fixedWorkflowPlans\.find/);
+  assert.match(route, /同一服务方案仅保留一组执行与督办任务/);
+  assert.doesNotMatch(route, /for \(const workflowPlan of fixedWorkflowPlans\)/);
 });
 
 test('健康顾问不再收到逐报告或档案更新审核待办', () => {
