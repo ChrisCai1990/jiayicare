@@ -261,4 +261,16 @@ test("服务群路由：权限、草稿确认、原系统回读、重复上传",
     1,
     "AI仅生成候选，不自动建正式待办"
   );
+  const count=f.models.ServiceGroupEntry.rows.length;
+  const handoff=await request(`/${gid}/workbench-draft`,'POST',{kind:'handoff'});
+  assert.equal(handoff.status,200);assert.equal(handoff.data.kind,'summary');
+  assert.equal(f.models.ServiceGroupEntry.rows.length,count,'预览不自动保存');
+  assert.equal((await request(`/${gid}/workbench-draft`,'POST',{kind:'reply'})).status,400);
+  assert.equal((await request(`/${gid}/workbench-draft`,'POST',{kind:'reply',patientId:f.ids.outsider})).status,400);
+  assert.equal((await request(`/${gid}/workbench-draft`,'POST',{kind:'reply',patientId:f.ids.patient})).status,200);
+  f.models.User.rows[0].familyLinks=[{linkedUser:f.ids.outsider,relation:'家属'}];
+  assert.deepEqual((await request('/family-candidates/'+f.ids.patient)).data,[],'无权关联成员不泄露');
+  f.models.User.rows[1].assignedHealthManager=f.ids.staff;
+  const family=await request('/family-candidates/'+f.ids.patient);
+  assert.equal(family.data.length,1);assert.equal(family.data[0].relation,'家属');
 });

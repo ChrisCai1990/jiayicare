@@ -163,6 +163,17 @@ const fs = require("node:fs"),
     await page.screenshot({path:path.join(output,'locked-sidebar.png'),fullPage:true});
     const tabsTop = await page.getByRole('navigation',{name:'服务功能'}).evaluate(el=>el.getBoundingClientRect().top);
     if(tabsTop > 340) throw new Error('Sidebar top area is too tall');
+    await page.getByText('服务概览 · 交接与回复',{exact:true}).click();
+    await page.getByRole('button',{name:'一键交接草稿',exact:true}).click();
+    await page.getByLabel('沟通内容与下一步').waitFor();
+    if(!(await page.getByLabel('沟通内容与下一步').inputValue()).includes('未包含未接入的群聊')) throw new Error('Handoff lacks provenance boundary');
+    await page.getByRole('button',{name:'取消',exact:true}).click();
+    await page.getByLabel('当前服务对象',{exact:true}).selectOption(fixture.ids.patient);
+    await page.getByRole('button',{name:'拟客户回复',exact:true}).click();
+    await page.getByLabel('准备发给客户的文案').waitFor();
+    if(!(await page.getByLabel('准备发给客户的文案').inputValue()).includes('您好')) throw new Error('Reply preview missing');
+    await page.getByRole('button',{name:'取消',exact:true}).click();
+    await page.screenshot({path:path.join(output,'workbench-expanded.png'),fullPage:true});
     await page.getByRole('button',{name:'群设置',exact:true}).click();
     await page.getByLabel('服务群名称',{exact:true}).fill('未保存的家庭名称');
     const revisitResponse = page.waitForResponse(r=>r.url().endsWith('/api/staff/service-groups') && r.request().method()==='GET');
@@ -193,6 +204,7 @@ const fs = require("node:fs"),
           "notification does not complete task",
           "new household binding",
           "same-chat revisit preserves settings and binding drafts",
+          "handoff and member-specific reply preview without auto-save or sending",
           "current WeCom group auto-selected and locked; unbound chat clears previous household",
         ],
         artifacts: output,

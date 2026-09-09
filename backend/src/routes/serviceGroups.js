@@ -126,6 +126,43 @@ router.get("/capabilities", (req, res) =>
     },
   })
 );
+router.get('/family-candidates/:patientId', wrap(async (req, res) => {
+  const p = await patient(req, req.params.patientId);
+  const candidates = [];
+  // Only persisted links; never infer identity from a name, phone, or old free-text family list.
+  for (const link of (p.familyLinks || []).slice(0, 50)) {
+    const linked = await User.findById(link.linkedUser);
+    if (canAccessPatient(req.staff, linked)) candidates.push({
+      patientId: {_id: linked._id, name: linked.name}, relation: text(link.relation, 40),
+      relativeTo: p.name,
+    });
+  }
+  res.json({success:true, data:candidates});
+}));
+router.post('/app-pair-code',wrap(async(req,res)=>{
+  if(req.staff.staffStatus==='inactive')fail('员工账号已停用',403);
+  if(process.env.WECOM_APP_CALLBACK_ENABLED !== 'true') fail('应用消息回调尚未配置，暂不能绑定',409);
+  const Link=require('../models/WecomAppLink');
+  const existing=await Link.findOne({staffId:req.staff._id});
+  if(existing?.userId) return res.json({success:true,data:{linked:true}});
+  const code=require('crypto').randomBytes(16).toString('hex');
+  await Link.updateOne({staffId:req.staff._id,userId:{$exists:false}},{$set:{tenantId:req.staff.tenantId || null,corpId:process.env.WECOM_CORP_ID,pairHash:createHash('sha256').update(code).digest('hex'),pairExpires:new Date(Date.now()+600000)}},{upsert:true});
+  res.json({success:true,data:{code:'绑定嘉医汇 '+code,expiresInMinutes:10}});
+}));
+router.get('/app-inbox',wrap(async(req,res)=>{
+  if(req.staff.staffStatus==='inactive')fail('员工账号已停用',403);
+  const rows=await require('../models/WecomAppInbox').find({staffId:req.staff._id,tenantId:req.staff.tenantId || null,expiresAt:{$gt:new Date()}}).select('+payload').sort({createdAt:-1}).limit(30).lean();
+  const {open}=require('../utils/wecomAppInboxCrypto');
+  const link=await require('../models/WecomAppLink').findOne({staffId:req.staff._id,tenantId:req.staff.tenantId || null});
+  res.json({success:true,data:{configured:process.env.WECOM_APP_CALLBACK_ENABLED==='true',linked:!!link?.userId,remindersEnabled:!!link?.remindersEnabled,reminderServiceConfigured:process.env.WECOM_EMPLOYEE_REMINDERS_ENABLED==='true',messages:rows.map(r=>({_id:r._id,createdAt:r.createdAt,text:open(r.payload)}))}});
+}));
+router.patch('/app-reminders',wrap(async(req,res)=>{
+  if(typeof req.body.enabled!=='boolean')fail('设置无效');
+  const link=await require('../models/WecomAppLink').findOne({staffId:req.staff._id,tenantId:req.staff.tenantId || null});
+  if(!link?.userId)fail('请先绑定本人企微账号');
+  link.remindersEnabled=req.body.enabled;await link.save();
+  res.json({success:true,data:{enabled:link.remindersEnabled}});
+}));
 router.post(
   "/wecom-signature",
   wrap(async (req, res) =>
@@ -234,6 +271,25 @@ router.get(
     res.json({ success: true, data: { group: g, entries, staff } });
   })
 );
+router.post('/:groupId/workbench-draft', wrap(async (req, res) => {
+  const g = await group(req);
+  await permit(req, 'service_records', 'create');
+  const p = await member(req, g, req.body.patientId);
+  if (req.body.kind === 'reply' && !p) fail('回复草稿请先选择具体服务对象，避免混入家人资料');
+  let entries = await Entry.find({groupId:g._id}).sort({createdAt:-1}).limit(200).lean();
+  if (p) entries = entries.filter(e=>same(e.patientId,p._id));
+  try { await permit(req, 'followups', 'view'); }
+  catch(e) { if(e.status !== 403) throw e; entries = entries.filter(e=>e.kind !== 'task'); }
+  const native = await FollowUp.find({_id:{$in:entries.filter(e=>e.kind === 'task' && e.nativeId).map(e=>e.nativeId)}}).lean();
+  for(const e of entries) {
+    const f = native.find(f=>same(f._id,e.nativeId));
+    if(f) { e.status=f.status; e.dueAt=f.date; e.assignedTo=f.assignedTo; }
+  }
+  const staff = await Admin.find({_id:{$in:g.staffIds},tenantId:req.staff.tenantId || null}).select('name').lean();
+  const data = require('../utils/serviceGroupWorkbench').draft(req.body.kind, {groupName:g.name, entries, staff, staffId:req.staff._id});
+  // Preview only. The ordinary entry save/confirmation path remains authoritative.
+  res.json({success:true, data});
+}));
 router.patch(
   "/:groupId",
   wrap(async (req, res) => {

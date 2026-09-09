@@ -113,6 +113,10 @@ function PersonSearch({ onSelect }) {
 export default function ServiceAssistantPage() {
   const inGroupSidebar = /wxwork/i.test(navigator.userAgent) && new URLSearchParams(window.location.search).get("embedded") === "1";
   const [currentChat, setCurrentChat] = useState("");
+  const [familyCandidates, setFamilyCandidates] = useState([]);
+  const [remindersOnly, setRemindersOnly] = useState(false);
+  const [appInbox, setAppInbox] = useState(null);
+  const [pairCode, setPairCode] = useState('');
   const recogniseRef = useRef(null);
   const { staff } = useStaff(),
     can = usePermission();
@@ -186,6 +190,8 @@ export default function ServiceAssistantPage() {
   };
   useEffect(() => {
     groupRef.current = groupId;
+    setFamilyCandidates([]);
+    setRemindersOnly(false);
     setBundle(null);
     setPersonId("");
     setNative(null);
@@ -250,6 +256,17 @@ export default function ServiceAssistantPage() {
         ? old
         : [...old, { patientId: p, relation: "" }]
     );
+  const loadFamily = (p) => run(async () => {
+    const r = await api.get('/family-candidates/' + idOf(p));
+    setFamilyCandidates(r.data);
+    if (!r.data.length) setNotice('没有可导入的已关联家庭成员；未关联或无权限的档案不会显示');
+  });
+  const prepareDraft = (kind) => run(async () => {
+    const r = await api.post(`/${groupId}/workbench-draft`, {kind, patientId:personId || null});
+    setTab(r.data.kind);
+    setForm({...r.data, patientId:personId, assignedTo:staff._id, dueAt:'', requestKey:key()});
+    setNotice(kind === 'reply' ? '回复仅为草稿，请核对服务对象、内容及群内可披露范围后再发送' : '交接草稿已整理，请补充交接人员及未录入事项');
+  });
   const openForm = (kind, content = "") =>
     setForm({
       kind,
@@ -342,6 +359,22 @@ export default function ServiceAssistantPage() {
       setMembers(g.members);
       setSettings(true);
     });
+  const appInboxPanel = <details className="sa-card">
+    <summary>应用聊天收件箱</summary>
+    <small>文字仅进入本人收件箱，保留7天；不会自动关联客户或执行。文件请使用报告归档。</small>
+    <button disabled={busy} onClick={()=>run(async()=>{const r=await api.post('/app-pair-code',{});setPairCode(r.data.linked ? '当前系统员工已绑定企微账号' : r.data.code);},true)}>绑定我的企微账号</button>
+    <button disabled={busy} onClick={()=>run(async()=>{const r=await api.get('/app-inbox');setAppInbox(r.data);},true)}>读取我的应用消息</button>
+    {pairCode && <label>复制绑定口令发给应用（10分钟有效，勿转给他人）<textarea readOnly value={pairCode}/></label>}
+    {appInbox && !appInbox.configured && <p>应用回调尚未配置，请先完成管理员接入。</p>}
+    {appInbox?.linked && <label><input type="checkbox" checked={appInbox.remindersEnabled} disabled={busy} onChange={e=>{const enabled=e.target.checked;run(async()=>{await api.patch('/app-reminders',{enabled});setAppInbox(old=>({...old,remindersEnabled:enabled}));},true);}}/>每天接收一次工作时段待办提醒（不含客户资料）</label>}
+    {appInbox?.linked && !appInbox.reminderServiceConfigured && <small>提醒服务尚未启用；勾选仅保存个人偏好。</small>}
+    {appInbox?.configured && !appInbox.messages.length && <p>暂无消息</p>}
+    {appInbox?.messages.map(m=><div className="sa-card" key={m._id}>
+      <small>{date(m.createdAt)}</small><p style={{whiteSpace:'pre-wrap'}}>{m.text}</p>
+      <button disabled={busy || !g} onClick={()=>{setTab('summary');setSource(m.text);setNotice('已填入总结输入，请核对当前家庭和服务对象');}}>填入当前家庭总结</button>
+      <button disabled={busy || !g} onClick={()=>{setCommand(m.text);setNotice('已填入快捷指令，请核对家庭后手动整理');}}>填入当前家庭指令</button>
+    </div>)}
+  </details>;
   const entryForm = form && (
     <form
       className="sa-card sa-form"
@@ -531,6 +564,14 @@ export default function ServiceAssistantPage() {
             />
           </label>
           <PersonSearch onSelect={addMember} />
+          {members.map(m=><button type="button" disabled={busy} key={'family-'+idOf(m.patientId)} onClick={()=>loadFamily(m.patientId)}>读取{m.patientId.name}的原系统家庭关系</button>)}
+          {familyCandidates.length > 0 && <div className="sa-card">
+            <small>以下关系相对于原系统关联人，核对后逐个加入；不会改动原系统关系。</small>
+            {familyCandidates.map(m=><div key={idOf(m.patientId)}>
+              <span>{m.patientId.name} · {m.relativeTo}的{m.relation || '家属'}</span>
+              <button type="button" disabled={busy || members.some(x=>idOf(x.patientId)===idOf(m.patientId))} onClick={()=>setMembers(old=>[...old,{patientId:m.patientId,relation:m.relation ? `${m.relativeTo}的${m.relation}` : '家属'}])}>加入家庭</button>
+            </div>)}
+          </div>}
           {members.map((m, i) => (
             <div className="sa-member-edit" key={idOf(m.patientId)}>
               <span>{m.patientId.name}</span>
@@ -618,6 +659,7 @@ export default function ServiceAssistantPage() {
         </section>
       )}
       {loading && <p role="status">正在读取家庭服务数据…</p>}
+      {!g && appInboxPanel}
       {!inGroupSidebar && !groupId && !creating && (
         <div className="sa-empty">
           <h2>从一个服务群开始</h2>
@@ -712,6 +754,21 @@ export default function ServiceAssistantPage() {
                 </button>
               ))}
           </nav>
+          {appInboxPanel}
+          <details className="sa-card">
+            <summary>服务概览 · 交接与回复</summary>
+            <small>依据助手最近200条已保存事项；不代表完整群聊历史。</small>
+            <div className="sa-actions">
+              <button disabled={busy || !can('service_records','create')} onClick={()=>prepareDraft('handoff')}>一键交接草稿</button>
+              <button disabled={busy || !personId || !can('service_records','create')} onClick={()=>prepareDraft('reply')}>拟客户回复</button>
+              <button onClick={()=>setRemindersOnly(v=>!v)}>{remindersOnly ? '查看团队待跟进' : '只看我的临期提醒'}</button>
+            </div>
+            {!personId && <small>客户回复需先选择具体家庭成员，避免混入家人资料。</small>}
+            {entries.filter(e=>e.kind==='task' && ['planned','in_progress'].includes(e.status) && (!remindersOnly || (idOf(e.assignedTo)===staff._id && e.dueAt && new Date(e.dueAt).getTime()<=Date.now()+86400000))).sort((a,b)=>(a.dueAt?new Date(a.dueAt).getTime():Infinity)-(b.dueAt?new Date(b.dueAt).getTime():Infinity)).slice(0,20).map(e=><p key={'overview-'+e._id}>
+              {e.title} · {bundle.staff?.find(s=>s._id===idOf(e.assignedTo))?.name || '负责人待核对'} · {date(e.dueAt)}{e.dueAt && new Date(e.dueAt)<new Date() ? ' · 已到期' : ''}
+            </p>)}
+            {remindersOnly && <small>仅显示分配给我、未来24小时内到期或已逾期的已确认待办；这是站内查看，不是企微推送。</small>}
+          </details>
           <section className="sa-card sa-command">
             <label>
               快捷指令
