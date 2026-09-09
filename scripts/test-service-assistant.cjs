@@ -124,6 +124,7 @@ const fs = require("node:fs"),
       () => document.documentElement.scrollWidth > window.innerWidth
     );
     if (overflow) throw new Error("Mobile horizontal overflow");
+    await page.locator('.sa-command > summary').click();
     await page.getByLabel("快捷指令").fill("嘉医汇记录：明天联系客户");
     await page.getByRole("button", { name: "整理为草稿" }).click();
     await page.getByLabel("沟通内容与下一步").waitFor();
@@ -167,8 +168,14 @@ const fs = require("node:fs"),
     if(await page.getByLabel('当前服务群',{exact:true}).count()) throw new Error('Sidebar must not offer group switching');
     if(await page.getByRole('button',{name:'新建服务群',exact:true}).count()) throw new Error('Bound sidebar must not create another group');
     await page.screenshot({path:path.join(output,'locked-sidebar.png'),fullPage:true});
+    await page.setViewportSize({width:560,height:844});
+    await page.screenshot({path:path.join(output,'wecom-sidebar-560.png'),fullPage:true});
+    await page.setViewportSize({width:390,height:844});
     const tabsTop = await page.getByRole('navigation',{name:'服务功能'}).evaluate(el=>el.getBoundingClientRect().top);
     if(tabsTop > 340) throw new Error('Sidebar top area is too tall');
+    const taskTop = await page.getByRole('button',{name:'新建待办',exact:true}).evaluate(el=>el.getBoundingClientRect().top);
+    if(taskTop > 400) throw new Error('Primary task action must be above auxiliary tools');
+    if(await page.getByLabel('快捷指令',{exact:true}).isVisible()) throw new Error('Command input should be collapsed by default');
     await page.getByText('服务概览 · 交接与回复',{exact:true}).click();
     await page.getByRole('button',{name:'一键交接草稿',exact:true}).click();
     await page.getByLabel('沟通内容与下一步').waitFor();

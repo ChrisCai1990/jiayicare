@@ -118,6 +118,7 @@ export default function ServiceAssistantPage() {
   const [appInbox, setAppInbox] = useState(null);
   const [pairCode, setPairCode] = useState('');
   const recogniseRef = useRef(null);
+  const commandPanelRef = useRef(null);
   const { staff } = useStaff(),
     can = usePermission();
   const [caps, setCaps] = useState(null),
@@ -150,6 +151,7 @@ export default function ServiceAssistantPage() {
     [category, setCategory] = useState("physical_exam"),
     [receipt, setReceipt] = useState(null);
   const [sourceMessage, setSourceMessage] = useState(null);
+  useEffect(() => { if (command && commandPanelRef.current) commandPanelRef.current.open = true; }, [command]);
   const version = useRef(0),
     fileRef = useRef(null),
     groupRef = useRef("");
@@ -502,7 +504,7 @@ export default function ServiceAssistantPage() {
     </form>
   );
   return (
-    <div className="service-assistant sa-compact">
+    <div className="service-assistant sa-compact sa-wecom">
       <header className="sa-heading">
         <h1>家庭服务助手</h1>
       </header>
@@ -785,55 +787,6 @@ export default function ServiceAssistantPage() {
                 </button>
               ))}
           </nav>
-          {appInboxPanel}
-          <details className="sa-card">
-            <summary>服务概览 · 交接与回复</summary>
-            <small>依据助手最近200条已保存事项；不代表完整群聊历史。</small>
-            <div className="sa-actions">
-              <button disabled={busy || !can('service_records','create')} onClick={()=>prepareDraft('handoff')}>一键交接草稿</button>
-              <button disabled={busy || !personId || !can('service_records','create')} onClick={()=>prepareDraft('reply')}>拟客户回复</button>
-              <button onClick={()=>setRemindersOnly(v=>!v)}>{remindersOnly ? '查看团队待跟进' : '只看我的临期提醒'}</button>
-            </div>
-            {!personId && <small>客户回复需先选择具体家庭成员，避免混入家人资料。</small>}
-            {entries.filter(e=>e.kind==='task' && ['planned','in_progress'].includes(e.status) && (!remindersOnly || (idOf(e.assignedTo)===staff._id && e.dueAt && new Date(e.dueAt).getTime()<=Date.now()+86400000))).sort((a,b)=>(a.dueAt?new Date(a.dueAt).getTime():Infinity)-(b.dueAt?new Date(b.dueAt).getTime():Infinity)).slice(0,20).map(e=><p key={'overview-'+e._id}>
-              {e.title} · {bundle.staff?.find(s=>s._id===idOf(e.assignedTo))?.name || '负责人待核对'} · {date(e.dueAt)}{e.dueAt && new Date(e.dueAt)<new Date() ? ' · 已到期' : ''}
-            </p>)}
-            {remindersOnly && <small>仅显示分配给我、未来24小时内到期或已逾期的已确认待办；这是站内查看，不是企微推送。</small>}
-          </details>
-          <section className="sa-card sa-command">
-            <label>
-              快捷指令
-              <input
-                value={command}
-                onChange={(e) => setCommand(e.target.value)}
-                placeholder="嘉医汇待办：帮母亲确认复诊时间"
-              />
-            </label>
-            <button
-              disabled={busy || !command.trim()}
-              onClick={() =>
-                run(async () => {
-                  const r = await api.post(`/${groupId}/command`, {
-                    text: command,
-                  });
-                  const c = r.data;
-                  setTab(c.kind === "archive" ? "report" : c.kind);
-                  if (c.kind === "archive") {
-                    setReportTitle(c.text);
-                    setNotice("请选择文件及明确服务对象后归档");
-                  } else if (c.kind === "summary") {
-                    setSource(c.text);
-                  } else {
-                    openForm(c.kind, c.text);
-                    setNotice("请核对服务对象、负责人和日期，再保存");
-                  }
-                })
-              }
-            >
-              整理为草稿
-            </button>
-            <small>当前指令在助手内处理；企微群口令监听尚未接入。</small>
-          </section>
           {g.archiveConsent && (
             <section className="sa-card">
               <div className="sa-row">
@@ -911,7 +864,7 @@ export default function ServiceAssistantPage() {
                 tab === "task" ? "followups" : "service_records",
                 "create"
               ) && (
-                <button disabled={busy} onClick={() => openForm(tab)}>
+                <button className="sa-primary" disabled={busy} onClick={() => openForm(tab)}>
                   新建{labels[tab]}
                 </button>
               )}
@@ -1074,6 +1027,12 @@ export default function ServiceAssistantPage() {
                 </p>
               )}
             </form>
+          )}
+          {tab !== 'report' && !form && !entries.some(e => e.kind === tab && (!personId || idOf(e.patientId) === personId)) && (
+            <div className="sa-empty" role="status">
+              <p>暂无{labels[tab]}</p>
+              <small>当前服务对象还没有保存的{labels[tab]}，可点击上方按钮新建。</small>
+            </div>
           )}
           {entries
             .filter(
@@ -1328,6 +1287,59 @@ export default function ServiceAssistantPage() {
               ] && <p>无此模块查看权限</p>}
             </section>
           )}
+          <section className="sa-tools" aria-label="辅助工具">
+            <h2>更多工具</h2>
+          {appInboxPanel}
+          <details className="sa-card">
+            <summary>服务概览 · 交接与回复</summary>
+            <small>依据助手最近200条已保存事项；不代表完整群聊历史。</small>
+            <div className="sa-actions">
+              <button disabled={busy || !can('service_records','create')} onClick={()=>prepareDraft('handoff')}>一键交接草稿</button>
+              <button disabled={busy || !personId || !can('service_records','create')} onClick={()=>prepareDraft('reply')}>拟客户回复</button>
+              <button onClick={()=>setRemindersOnly(v=>!v)}>{remindersOnly ? '查看团队待跟进' : '只看我的临期提醒'}</button>
+            </div>
+            {!personId && <small>客户回复需先选择具体家庭成员，避免混入家人资料。</small>}
+            {entries.filter(e=>e.kind==='task' && ['planned','in_progress'].includes(e.status) && (!remindersOnly || (idOf(e.assignedTo)===staff._id && e.dueAt && new Date(e.dueAt).getTime()<=Date.now()+86400000))).sort((a,b)=>(a.dueAt?new Date(a.dueAt).getTime():Infinity)-(b.dueAt?new Date(b.dueAt).getTime():Infinity)).slice(0,20).map(e=><p key={'overview-'+e._id}>
+              {e.title} · {bundle.staff?.find(s=>s._id===idOf(e.assignedTo))?.name || '负责人待核对'} · {date(e.dueAt)}{e.dueAt && new Date(e.dueAt)<new Date() ? ' · 已到期' : ''}
+            </p>)}
+            {remindersOnly && <small>仅显示分配给我、未来24小时内到期或已逾期的已确认待办；这是站内查看，不是企微推送。</small>}
+          </details>
+          <details className="sa-card sa-command" ref={commandPanelRef}>
+            <summary>快捷指令</summary>
+            <label>
+              快捷指令
+              <input
+                value={command}
+                onChange={(e) => setCommand(e.target.value)}
+                placeholder="嘉医汇待办：帮母亲确认复诊时间"
+              />
+            </label>
+            <button
+              disabled={busy || !command.trim()}
+              onClick={() =>
+                run(async () => {
+                  const r = await api.post(`/${groupId}/command`, {
+                    text: command,
+                  });
+                  const c = r.data;
+                  setTab(c.kind === "archive" ? "report" : c.kind);
+                  if (c.kind === "archive") {
+                    setReportTitle(c.text);
+                    setNotice("请选择文件及明确服务对象后归档");
+                  } else if (c.kind === "summary") {
+                    setSource(c.text);
+                  } else {
+                    openForm(c.kind, c.text);
+                    setNotice("请核对服务对象、负责人和日期，再保存");
+                  }
+                })
+              }
+            >
+              整理为草稿
+            </button>
+            <small>当前指令在助手内处理；企微群口令监听尚未接入。</small>
+          </details>
+          </section>
         </>
       )}
     </div>
