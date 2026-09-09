@@ -23,7 +23,12 @@ async function reconcileRefund(order) {
       refund.status = remote.status === 'CLOSED' ? 'closed' : 'failed';
       refund.failureMessage = remote.user_received_account || remote.status;
       await refund.save();
-      await Order.updateOne({ _id: refund.order }, { refundStatus: 'failed' });
+      const failedOrder = await Order.findById(refund.order);
+      if (failedOrder) {
+        require('../utils/orderWorkItem').restoreOrderAfterRefundFailure(failedOrder);
+        await failedOrder.save();
+        await require('../utils/orderWorkItem').reconcileInactiveOrderWorkItems(failedOrder.user);
+      }
     }
   } catch (err) {
     console.error('[orders-refund-query]', err.message);

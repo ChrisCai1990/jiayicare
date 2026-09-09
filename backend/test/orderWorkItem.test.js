@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { activeOrderWorkItemQuery } = require('../src/utils/orderWorkItem');
+const { activeOrderWorkItemQuery, restoreOrderAfterRefundFailure } = require('../src/utils/orderWorkItem');
 
 test('工作台订单查询从底层排除退款和终态订单', () => {
   const query = activeOrderWorkItemQuery();
@@ -11,6 +11,22 @@ test('工作台订单查询从底层排除退款和终态订单', () => {
   assert.equal(query.tradeStatus.$in.includes('refund_pending'), false);
   assert.equal(query.tradeStatus.$in.includes('refunded'), false);
   assert.deepEqual(query.status.$in, ['pending', 'scheduled']);
+});
+
+test('退款提交失败后恢复订单到可继续服务状态', () => {
+  const awaiting = restoreOrderAfterRefundFailure({ refundStatus: 'processing', tradeStatus: 'refund_pending', serviceStartedAt: null });
+  assert.equal(awaiting.refundStatus, 'failed');
+  assert.equal(awaiting.tradeStatus, 'paid');
+  const started = restoreOrderAfterRefundFailure({ refundStatus: 'processing', tradeStatus: 'refund_pending', serviceStartedAt: new Date() });
+  assert.equal(started.tradeStatus, 'fulfilling');
+});
+
+test('有效已支付订单缺少工作项时会补建且不重开历史完成项', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/utils/orderWorkItem.js'), 'utf8');
+  assert.match(source, /existingIds = await FollowUp\.find/);
+  assert.match(source, /if \(existingSet\.has\(String\(order\._id\)\)\) continue/);
+  assert.match(source, /sourceType: 'order'/);
+  assert.match(source, /sourceOrderId: order\._id/);
 });
 
 test('退款成功会关闭订单产生的所有未完成待办', () => {

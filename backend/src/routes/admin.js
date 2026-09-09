@@ -519,7 +519,9 @@ router.patch('/orders/:id/refund', adminAuth, async (req, res) => {
     }
   } catch (err) {
     refund.status = 'failed'; refund.failureCode = err.code || ''; refund.failureMessage = err.message; await refund.save();
-    order.refundStatus = 'failed'; await order.save();
+    require('../utils/orderWorkItem').restoreOrderAfterRefundFailure(order);
+    await order.save();
+    await require('../utils/orderWorkItem').reconcileInactiveOrderWorkItems(order.user);
     res.status(502).json({ success: false, message: `微信退款提交失败：${err.message}` });
   }
 });
