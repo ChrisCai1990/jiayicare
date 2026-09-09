@@ -86,6 +86,7 @@ const { rotateImageBuffer } = require('../utils/imageOrientation');
 const { withSafeHealthRecordImages } = require('../utils/healthRecordImages');
 const { tagReportPageItems, sortReportItemsBySource, stripReportSourceOrder } = require('../utils/reportSourceOrder');
 const { stepsForInsuranceScenario } = require('../utils/insuranceServiceWorkflow');
+const { canUseInsuranceCoverage, isInsuranceScenario } = require('../utils/insuranceCoverage');
 const router = express.Router();
 const activeReportParseJobs = new Set();
 // 仅服务端内存的短时页图缓存：同一审核窗口的前后台预加载不会反复转图；进程重启、超时或超量后自动释放。
@@ -875,11 +876,11 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
   let insuranceCoverage = null;
   let insuranceCases = [];
   if (user.enterpriseId) {
-    const enrollment = await InsuranceEnrollment.findOne({ userId: user._id, enterpriseId: user.enterpriseId, status: { $ne: 'terminated' } })
+    const enrollment = await InsuranceEnrollment.findOne({ userId: user._id, enterpriseId: user.enterpriseId, status: 'active' })
       .sort({ endAt: -1, createdAt: -1 }).lean();
     if (enrollment) {
-      const policy = await EnterpriseInsurancePolicy.findOne({ _id: enrollment.policyId, status: { $in: ['active', 'review', 'draft'] } }).lean();
-      if (policy) insuranceCoverage = { policy, enrollment };
+      const policy = await EnterpriseInsurancePolicy.findOne({ _id: enrollment.policyId, status: 'active' }).lean();
+      if (canUseInsuranceCoverage(policy, enrollment)) insuranceCoverage = { policy, enrollment };
       insuranceCases = await InsuranceServiceCase.find({ patientId: user._id, enrollmentId: enrollment._id })
         .sort({ createdAt: -1 }).limit(20).populate('assignedTo', 'name role').lean();
     }
@@ -893,9 +894,10 @@ router.post('/patients/:id/insurance-cases', staffAuth, async (req, res) => {
   if (!patient || !patient.enterpriseId) return res.status(400).json({ success: false, message: '该会员未关联企业' });
   const enrollment = await InsuranceEnrollment.findOne({ userId: patient._id, enterpriseId: patient.enterpriseId, status: 'active' }).sort({ endAt: -1 });
   if (!enrollment) return res.status(400).json({ success: false, message: '该会员尚未配置有效的高端医疗险' });
-  const policy = await EnterpriseInsurancePolicy.findOne({ _id: enrollment.policyId, status: { $in: ['active', 'review'] } });
-  if (!policy) return res.status(400).json({ success: false, message: '企业保险方案尚未生效或待复核' });
+  const policy = await EnterpriseInsurancePolicy.findOne({ _id: enrollment.policyId, status: 'active' });
+  if (!canUseInsuranceCoverage(policy, enrollment)) return res.status(400).json({ success: false, message: '企业保险方案未生效、尚未开始或已经到期' });
   const scenario = req.body.scenario || 'reimbursement';
+  if (!isInsuranceScenario(scenario)) return res.status(400).json({ success: false, message: '请选择有效的保险服务场景' });
   const stepTitles = stepsForInsuranceScenario(scenario);
   const assignee = patient.assignedHealthManager || req.staff._id;
   const serviceCase = await InsuranceServiceCase.create({

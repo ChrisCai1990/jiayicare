@@ -16,6 +16,7 @@ __pycache__/
 *.key
 
 # Local Codex/deployment worktrees and transfer artifacts
+.agent-memory/
 .codex-upload/
 .deploy-*/
 *.bundle

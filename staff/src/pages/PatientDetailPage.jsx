@@ -4167,9 +4167,16 @@ export default function PatientDetailPage() {
                 return <div style={{ marginBottom: 14, padding: 12, background: '#EEF7F2', border: '1px solid #CDE5D9', borderRadius: 9 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}><b style={{ color: '#173B2E' }}>{policy.name}</b><span style={{ color: '#1E6B50', fontSize: 12, fontWeight: 700 }}>{statusLabel}</span></div>
                   <div style={{ marginTop: 5, fontSize: 12, color: '#4A6558' }}>{policy.insurerName || '保险公司待补充'} · {policy.startAt ? new Date(policy.startAt).toLocaleDateString('zh-CN') : '-'} 至 {policy.endAt ? new Date(policy.endAt).toLocaleDateString('zh-CN') : '-'}</div>
+                  {(policy.servicePhone || policy.claimContact) && <div style={{ marginTop: 4, fontSize: 12, color: '#4A6558' }}>服务电话：{policy.servicePhone || '未提供'} · 理赔联系人：{policy.claimContact || '未提供'}</div>}
+                  {(policy.directBillingMethod || policy.preAuthorizationMethod || policy.claimSubmissionMethod) && <div style={{ marginTop: 7, padding: 8, background: '#F5F8F6', borderRadius: 6, fontSize: 12, color: '#4A6558', whiteSpace: 'pre-wrap' }}>{[
+                    policy.directBillingMethod && `直付：${policy.directBillingMethod}`,
+                    policy.preAuthorizationMethod && `预授权：${policy.preAuthorizationMethod}`,
+                    policy.claimSubmissionMethod && `理赔提交：${policy.claimSubmissionMethod}`,
+                  ].filter(Boolean).join('\n')}</div>}
                   {(enrollment.planLevel || enrollment.memberNumber) && <div style={{ marginTop: 4, fontSize: 12, color: '#4A6558' }}>方案等级：{enrollment.planLevel || '-'} · 保险会员号：{enrollment.memberNumber || '-'}</div>}
                   {(enrollment.exclusions || enrollment.specialTerms) && <div style={{ marginTop: 7, padding: 8, background: '#FFF8E7', borderRadius: 6, fontSize: 12, color: '#8A5A00' }}>个人特别约定：{enrollment.exclusions || enrollment.specialTerms}</div>}
                   <div style={{ marginTop: 9, display: 'grid', gap: 6 }}>{(policy.rules || []).map(rule => <details key={rule._id || rule.scene}><summary style={{ cursor: 'pointer', fontSize: 12, fontWeight: 650 }}>{rule.scene} · {rule.covered === 'yes' ? '保障' : rule.covered === 'no' ? '不保障' : '需确认'} · {rule.preAuthorization === 'required' ? '须预授权' : '预授权需核实'}</summary><div style={{ whiteSpace: 'pre-wrap', padding: '6px 0 0 12px', color: '#65776F', fontSize: 12 }}>{[rule.limit, rule.hospitalRestrictions, rule.requiredMaterials, rule.notes, rule.sourceReference && `依据：${rule.sourceReference}`].filter(Boolean).join('\n') || '详细规则待补充'}</div></details>)}</div>
+                  {(policy.rules || []).some(rule => rule.covered === 'confirm' || rule.preAuthorization === 'confirm' || rule.directBilling === 'confirm') && <div style={{ marginTop: 9, padding: 8, background: '#FFF8E7', borderRadius: 6, color: '#8A5A00', fontSize: 11 }}>本方案仍有“需确认”项目。发起相关服务前，必须向保险公司书面核实保障、预授权与直付条件。</div>}
                   <div style={{ marginTop: 9, color: '#8A5A00', fontSize: 11 }}>页面信息用于服务指导，最终保障和理赔结果以保险公司书面确认为准。</div>
                 </div>
               })()}
