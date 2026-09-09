@@ -11758,8 +11758,13 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
   const [switchingMode, setSwitchingMode] = useState(false)
   const [currentBooking, setCurrentBooking] = useState(serviceBooking)
   const order = currentBooking?.sourceOrderId
+  const orderId = order?._id || order
   const customerTask = String(order?.serviceRequirements || order?.note || '').split(/[；\n]/).map(item => item.trim()).filter(item => item && !/^(规格：|健康基金抵扣|优惠券抵扣|支付方式：)/.test(item)).join('；')
   const orderServiceDate = order?.desiredServiceDate || order?.scheduledAt
+  const orderActionable = order && order.paymentStatus === 'paid'
+    && ['paid', 'fulfilling', 'partially_refunded'].includes(order.tradeStatus)
+    && ['', 'none', 'failed', 'partially_refunded'].includes(order.refundStatus || '')
+    && ['pending', 'scheduled'].includes(order.status)
   const formatServiceDate = (value) => {
     if (!value) return ''
     const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(value))
@@ -11779,19 +11784,20 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
   const msgCountRef = useRef(0) // 上次渲染的消息条数，用于判断是否真的有新消息（而不是轮询刷新了同样内容）
   const isNearBottomRef = useRef(true) // 用户是否停留在底部附近；往上翻看历史时轮询不应打断
 
-  // 首页通过路由传来的预约是点击当时的快照。客户可能在医护打开页面前刚刚
-  // 确认日期，因此弹窗打开后重新读取一次待办，避免旧快照导致日期仍需人工填写。
+  // 路由传来的预约是点击当时的快照。直接按会员订单读取最新详情，不能再从
+  // “活动待办”反查：订单一旦退款/取消，待办会被过滤，旧快照反而永远无法刷新。
   useEffect(() => {
-    if (!serviceBooking?._id) return
+    const sourceOrderId = serviceBooking?.sourceOrderId?._id || serviceBooking?.sourceOrderId
+    if (!sourceOrderId) return
     let active = true
-    staffAPI.getFollowUps({ status: 'active', sourceType: 'order', scope: 'assigned', includeFuture: 1, limit: 100 })
+    staffAPI.getPatientOrders(patientId)
       .then(res => {
-        const fresh = (res.data?.followUps || []).find(item => String(item._id) === String(serviceBooking._id))
-        if (active && fresh) setCurrentBooking(fresh)
+        const freshOrder = (res.data || []).find(item => String(item._id) === String(sourceOrderId))
+        if (active && freshOrder) setCurrentBooking(current => ({ ...current, sourceOrderId: freshOrder }))
       })
       .catch(() => {})
     return () => { active = false }
-  }, [serviceBooking?._id])
+  }, [patientId, serviceBooking?.sourceOrderId])
 
   useEffect(() => {
     const confirmedDate = formatServiceDate(orderServiceDate)
@@ -11977,9 +11983,10 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
             <div style={{ fontSize: 11, color: '#8AA89C' }}>已自动带入客户确认的信息；如有变化可直接修订，再生成方案。</div>
             <input className="form-input" type="date" value={serviceTime} onChange={e => setServiceTime(e.target.value)} />
             <textarea className="form-input" rows={2} value={serviceTask} onChange={e => setServiceTask(e.target.value)} placeholder="服务内容与客户需求" />
-            <div style={{ textAlign: 'right' }}><button className="btn btn-primary btn-sm" disabled={confirmingBooking || !serviceTime || !serviceTask.trim()} onClick={async () => {
+            {!orderActionable && <div style={{ fontSize: 12, color: '#DC3545' }}>该订单已取消、退款、完成或尚未支付，不能继续生成服务方案。</div>}
+            <div style={{ textAlign: 'right' }}><button className="btn btn-primary btn-sm" disabled={confirmingBooking || !orderActionable || !serviceTime || !serviceTask.trim()} onClick={async () => {
               setConfirmingBooking(true)
-              try { await onConfirmBooking?.({ orderId: order?._id || order, serviceTime, task: serviceTask.trim() }) }
+              try { await onConfirmBooking?.({ orderId, serviceTime, task: serviceTask.trim() }) }
               catch (err) { toast(err.message || '确认预约失败') }
               finally { setConfirmingBooking(false) }
             }}>{confirmingBooking ? '处理中…' : '确认并生成方案'}</button></div>
