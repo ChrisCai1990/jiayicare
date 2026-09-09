@@ -11756,7 +11756,8 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
   const [sending, setSending] = useState(false)
   const [humanActive, setHumanActive] = useState(false)
   const [switchingMode, setSwitchingMode] = useState(false)
-  const order = serviceBooking?.sourceOrderId
+  const [currentBooking, setCurrentBooking] = useState(serviceBooking)
+  const order = currentBooking?.sourceOrderId
   const customerTask = String(order?.serviceRequirements || order?.note || '').split(/[；\n]/).map(item => item.trim()).filter(item => item && !/^(规格：|健康基金抵扣|优惠券抵扣|支付方式：)/.test(item)).join('；')
   const orderServiceDate = order?.desiredServiceDate || order?.scheduledAt
   const formatServiceDate = (value) => {
@@ -11777,6 +11778,26 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
   const presenceSessionRef = useRef(`staff-${Date.now()}-${Math.random().toString(36).slice(2)}`)
   const msgCountRef = useRef(0) // 上次渲染的消息条数，用于判断是否真的有新消息（而不是轮询刷新了同样内容）
   const isNearBottomRef = useRef(true) // 用户是否停留在底部附近；往上翻看历史时轮询不应打断
+
+  // 首页通过路由传来的预约是点击当时的快照。客户可能在医护打开页面前刚刚
+  // 确认日期，因此弹窗打开后重新读取一次待办，避免旧快照导致日期仍需人工填写。
+  useEffect(() => {
+    if (!serviceBooking?._id) return
+    let active = true
+    staffAPI.getFollowUps({ status: 'active', sourceType: 'order', scope: 'assigned', includeFuture: 1, limit: 100 })
+      .then(res => {
+        const fresh = (res.data?.followUps || []).find(item => String(item._id) === String(serviceBooking._id))
+        if (active && fresh) setCurrentBooking(fresh)
+      })
+      .catch(() => {})
+    return () => { active = false }
+  }, [serviceBooking?._id])
+
+  useEffect(() => {
+    const confirmedDate = formatServiceDate(orderServiceDate)
+    if (confirmedDate) setServiceTime(confirmedDate)
+    if (customerTask) setServiceTask(customerTask)
+  }, [orderServiceDate, customerTask])
 
   const loadThread = async () => {
     try {
