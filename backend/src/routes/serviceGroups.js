@@ -163,6 +163,13 @@ router.patch('/app-reminders',wrap(async(req,res)=>{
   link.remindersEnabled=req.body.enabled;await link.save();
   res.json({success:true,data:{enabled:link.remindersEnabled}});
 }));
+router.post('/wecom-chat-name',wrap(async(req,res)=>{
+  if(req.staff.staffStatus==='inactive')fail('员工账号已停用',403);
+  const link=await require('../models/WecomAppLink').findOne({staffId:req.staff._id,tenantId:req.staff.tenantId || null,corpId:process.env.WECOM_CORP_ID});
+  if(!link?.userId)fail('请先绑定本人企微账号；也可手动填写群名',403);
+  const data=await require('../utils/serviceGroupWecom').chatName(req.body.chatId,link.userId);
+  res.json({success:true,data});
+}));
 router.post(
   "/wecom-signature",
   wrap(async (req, res) =>

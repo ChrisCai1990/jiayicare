@@ -304,11 +304,22 @@ export default function ServiceAssistantPage() {
       if (sameChat && !found && creating) return;
       if (found) { setCreating(false); setSettings(false); setGroupId(found._id); }
       else {
+        let name = '', nameNotice = '';
+        try {
+          const r = await api.post('/wecom-chat-name', {chatId:id});
+          name = r.data.name;
+        } catch {
+          nameNotice = '群名称未能自动读取，请手动填写原群名（不会修改企微群名）';
+        }
+        if (inGroupSidebar && await currentWecomGroup() !== id) {
+          setCurrentChat('');
+          throw new Error('当前群已变化，请重新识别');
+        }
         setGroupId(""); setBundle(null); setSettings(false);
         setCreating(true);
-        setGroupName(""); setMembers([]);
+        setGroupName(name); setMembers([]); setFamilyCandidates([]);
         setChatId(id);
-        setNotice("已识别当前群，请绑定家庭成员");
+        setNotice(nameNotice || "已带入企微群名，请核对家庭成员后保存绑定");
       }
     }, true);
   recogniseRef.current = recognise;

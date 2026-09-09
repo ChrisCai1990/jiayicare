@@ -183,9 +183,12 @@ const fs = require("node:fs"),
     if(await page.getByLabel('服务群名称',{exact:true}).inputValue() !== '未保存的家庭名称') throw new Error('Same-chat revisit discarded settings');
     await page.getByRole('button',{name:'取消',exact:true}).click();
     await page.getByText('连接状态与重试',{exact:true}).click();
+    await page.route('**/api/staff/service-groups/wecom-chat-name', route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({data:{name:'原有企微测试群名'}})}));
     await page.evaluate(()=>{window.syntheticChat='wr_synthetic_unbound';});
     await page.getByRole('button',{name:'重新识别当前群',exact:true}).click();
     await page.getByRole('heading',{name:'绑定个人 / 家庭服务群',exact:true}).waitFor();
+    if(await page.getByLabel('服务群名称',{exact:true}).inputValue() !== '原有企微测试群名') throw new Error('WeCom group name was not prefilled');
+    await page.screenshot({path:path.join(output,'prefilled-group-name.png'),fullPage:true});
     if(await page.getByRole('heading',{name:'演示家庭服务群',exact:true}).count()) throw new Error('Unbound chat must not display prior household');
     await page.getByLabel('服务群名称',{exact:true}).fill('尚未保存的绑定');
     await page.getByRole('button',{name:'重新识别当前群',exact:true}).click();
