@@ -1076,6 +1076,12 @@ function ArchiveChangeLogPanel({ log }) {
 }
 
 // 健管专员确认档案变化的留痕（基础档案不覆盖，只读展示追加记录）
+const ARCHIVE_PATH_LABEL = {
+  'lifestyle.exercise': '运动习惯', 'lifestyle.water': '饮水情况', 'lifestyle.alcohol': '饮酒情况',
+  'lifestyle.bowel': '排便情况', healthConcern: '本人关注的健康问题', healthConcernFor: '更关注谁的健康',
+  expectedService: '期望的健康服务',
+}
+
 function ArchiveConfirmLogPanel({ log }) {
   const [open, setOpen] = useState(false)
   const entries = (log || []).slice().reverse() // 最新的在前
@@ -1097,7 +1103,7 @@ function ArchiveConfirmLogPanel({ log }) {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {(e.items || []).map((it, j) => (
                   <span key={j} style={{ fontSize: 12, padding: '2px 8px', borderRadius: 99, background: '#fff', border: '1px solid #E0D9CE', color: '#4A6558' }}>
-                    {it.path}：{it.value}
+                    {it.label || ARCHIVE_PATH_LABEL[it.path] || '档案变化'}：{Array.isArray(it.value) ? it.value.join('、') : String(it.value ?? '')}
                   </span>
                 ))}
               </div>
@@ -1557,7 +1563,7 @@ function ServiceManagementCategories({ plans, active, onChange }) {
   )
 }
 
-function CheckupManagementWorkspace({ plans, reports, followUps, onOpenPlan }) {
+function CheckupManagementWorkspace({ plans, reports, followUps, questionnaireResponses, onOpenPlan }) {
   const checkupPlans = plans
     .filter(plan => getServiceManagementCategory(plan) === 'checkup')
     .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
@@ -1566,6 +1572,21 @@ function CheckupManagementWorkspace({ plans, reports, followUps, onOpenPlan }) {
   const planDate = currentPlan?.createdAt ? new Date(currentPlan.createdAt) : new Date()
   const year = currentPlan?.year || planDate.getFullYear()
   const intake = currentPlan?.content?.checkupIntake || currentPlan?.content?.checkupQuestionnaire
+  const currentQuestionnaire = (questionnaireResponses || []).find(response =>
+    String(response.responseId || '') === String(intake?.responseId || '')
+    || (intake?.questionnaireId && String(response.questionnaireId || '') === String(intake.questionnaireId)))
+  const questionnaireAnswers = currentQuestionnaire?.answers || []
+  const coreNeeds = questionnaireAnswers.filter(item => item.coreNeed)
+  const archiveChanges = questionnaireAnswers.filter(item => item.archiveField && item.changed)
+  const formatQuestionnaireAnswer = value => {
+    if (Array.isArray(value)) return value.join('、')
+    if (value && typeof value === 'object') {
+      const selected = Array.isArray(value.values) ? value.values.join('、') : (value.value || '')
+      const inputs = Object.entries(value.inputs || {}).map(([key, text]) => `${key}：${text}`).join('；')
+      return selected && inputs ? `${selected}（${inputs}）` : selected || inputs
+    }
+    return String(value ?? '')
+  }
   const checkupReports = reports.filter(report => /体检|检查|检验|影像|病理/.test(`${report.title || ''} ${report.category || ''} ${report.reportType || ''}`))
   const checkupTasks = followUps.filter(task => /体检|检查|检验|预约|陪诊/.test(`${task.theme || ''} ${task.content || ''} ${task.type || ''}`))
   const serviceMode = /一站式/.test(`${currentPlan?.title || ''} ${currentPlan?.content?.templateName || ''}`) ? '体检一站式服务' : '单独体检服务'
@@ -1616,6 +1637,27 @@ function CheckupManagementWorkspace({ plans, reports, followUps, onOpenPlan }) {
               <div style={{ marginTop: 4, fontSize: 12, color: '#56727D' }}>任务 {checkupTasks.length}项 · 报告 {checkupReports.length}份</div>
             </div>
           </div>
+
+          {coreNeeds.length > 0 && <div style={{ marginTop: 12, padding: '13px 15px', border: '1px solid #CFE2D9', borderRadius: 10, background: '#F3FAF7' }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: '#173B2E' }}>本次体检服务需求</div>
+            <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 8 }}>
+              {coreNeeds.map(item => <div key={item.questionId} style={{ padding: 10, borderRadius: 8, background: '#fff', border: '1px solid #DCE9E2' }}>
+                <div style={{ fontSize: 12, color: '#6A8177' }}>{item.questionText}</div>
+                <div style={{ marginTop: 4, fontSize: 13, lineHeight: 1.65, color: '#173B2E', fontWeight: 700 }}>{formatQuestionnaireAnswer(item.answer)}</div>
+              </div>)}
+            </div>
+          </div>}
+
+          {archiveChanges.length > 0 && <div style={{ marginTop: 10, padding: '13px 15px', border: '1px solid #F2D9A6', borderRadius: 10, background: '#FFF9EF' }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: '#7C4A03' }}>本次问卷发现的档案变化（{archiveChanges.length}项）</div>
+            <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 8 }}>
+              {archiveChanges.map(item => <div key={item.questionId} style={{ padding: 10, borderRadius: 8, background: '#fff', border: '1px solid #F0DFC0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><strong style={{ fontSize: 12, color: '#5F4A25' }}>{item.questionText}</strong><span style={{ fontSize: 11, color: item.confirmed ? '#16835D' : '#A36800' }}>{item.confirmed ? '已确认记录' : '待人工确认'}</span></div>
+                <div style={{ marginTop: 5, fontSize: 12, color: '#806F52' }}>基础档案：{item.baselineValue || '未填写'}</div>
+                <div style={{ marginTop: 3, fontSize: 13, color: '#4B3512', fontWeight: 700 }}>本次问卷：{item.normalizedValue || formatQuestionnaireAnswer(item.answer)}</div>
+              </div>)}
+            </div>
+          </div>}
 
           {intake?.archiveChanges?.length > 0 && <div style={{ marginTop: 10, padding: '9px 12px', borderRadius: 8, background: '#FFF8ED', color: '#92400E', fontSize: 12 }}>本次问卷发现 {intake.archiveChanges.length} 项健康信息变化，待核对；处理变化时保留全部历史版本。</div>}
         </div>
@@ -8492,6 +8534,7 @@ export default function PatientDetailPage() {
             plans={plans}
             reports={reports}
             followUps={followUps}
+            questionnaireResponses={qResponses}
             onOpenPlan={plan => ['nutrition', 'medical_assist'].includes(plan.type)
               ? nav(`/plans/${plan._id}/modules`, { state: { returnTo: `/patients/${id}?tab=plans&serviceView=checkup` } })
               : nav(`/plans/${plan._id}`, { state: { returnTo: `/patients/${id}?tab=plans&serviceView=checkup` } })}

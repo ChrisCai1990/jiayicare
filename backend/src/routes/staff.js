@@ -11323,16 +11323,39 @@ const { buildArchiveDraft } = require('../utils/archiveImport');
 // GET /api/staff/patients/:id/questionnaire-responses — 该会员有档案映射的已答问卷列表（手动导入用）
 router.get('/patients/:id/questionnaire-responses', staffAuth, async (req, res) => {
   try {
-    const responses = await QuestionnaireResponse.find({ user: req.params.id })
-      .populate('questionnaire', 'title questions').sort({ submittedAt: -1 }).lean();
+    const [responses, archiveUser] = await Promise.all([
+      QuestionnaireResponse.find({ user: req.params.id })
+        .populate('questionnaire', 'title questions').sort({ submittedAt: -1 }).lean(),
+      User.findById(req.params.id).lean(),
+    ]);
+    const confirmedChanges = new Set((archiveUser?.archiveVersionHistory || []).map(item =>
+      `${String(item.sourceResponseId || '')}:${item.path}:${String(item.to ?? '')}`));
     const data = responses
       .filter(r => r.questionnaire && (r.questionnaire.questions || []).some(q => q.archiveField))
-      .map(r => ({
+      .map(r => {
+        const draft = buildArchiveDraft(archiveUser || {}, r.questionnaire, r);
+        const draftByQuestionId = new Map((draft.items || []).map(item => [String(item.questionId), item]));
+        const answers = (r.questionnaire.questions || []).flatMap(question => {
+          const answer = r.answers?.[question.id];
+          const hasAnswer = answer !== undefined && answer !== null && answer !== '' && (!Array.isArray(answer) || answer.length > 0);
+          if (!hasAnswer) return [];
+          const archiveItem = draftByQuestionId.get(String(question.id));
+          return [{
+            questionId: question.id, questionText: question.text, answer,
+            archiveField: question.archiveField || '', baselineValue: archiveItem?.existing || '',
+            normalizedValue: archiveItem?.valueStr || '',
+            changed: !!archiveItem && archiveItem.existing !== archiveItem.valueStr,
+            confirmed: !!archiveItem && confirmedChanges.has(`${String(r._id)}:${archiveItem.path}:${String(archiveItem.valueStr ?? '')}`),
+            coreNeed: /体检|需求|期望|关注|预算|机构|医院|日期|时间/.test(question.text || ''),
+          }];
+        });
+        return {
         responseId: r._id, questionnaireId: r.questionnaire._id, title: r.questionnaire.title, submittedAt: r.submittedAt,
+        sourceOrderId: r.sourceOrderId || null, answers,
         // 前端据此判断是否为膳食调查问卷、要不要展示营养师复核按钮
         isDietarySurvey: String(r.questionnaire._id) === DIETARY_SURVEY_QUESTIONNAIRE_ID,
         nutritionistReview: r.nutritionistReview || null,
-      }));
+      }});
     res.json({ success: true, data });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -11382,7 +11405,7 @@ router.post('/patients/:id/archive-draft/apply', staffAuth, async (req, res) => 
       confirmedBy: req.staff._id, confirmedByName: req.staff.name || req.staff.username || '',
       confirmedAt: new Date(),
       mode: 'append_only',
-      items: validItems.map(it => ({ path: it.path, value: it.value })),
+      items: validItems.map(it => ({ path: it.path, label: FIELD_MAP[it.path].label, value: it.value })),
       sourceQuestionnaireId: userBefore?.archiveDraft?.questionnaireId || null,
       sourceResponseId: userBefore?.archiveDraft?.responseId || null,
     };
