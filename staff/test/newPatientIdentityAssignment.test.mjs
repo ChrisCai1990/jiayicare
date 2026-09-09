@@ -6,9 +6,9 @@ const source = readFileSync(new URL('../src/pages/NewPatientPage.jsx', import.me
 
 test('new patient form supports passport identity entry', () => {
   assert.match(source, /idType:\s*'idCard'/)
-  assert.match(source, /<option value="passport">护照<\/option>/)
+  assert.match(source, /value: 'passport', label: '护照'/)
   assert.match(source, /form\.idType !== 'passport'/)
-  assert.match(source, /idType:\s*e\.target\.value/)
+  assert.match(source, /idType:\s*option\.value/)
 })
 
 test('new patient form can assign and submit a health planner', () => {

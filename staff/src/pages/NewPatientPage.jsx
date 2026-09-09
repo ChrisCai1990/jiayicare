@@ -313,10 +313,14 @@ export default function NewPatientPage() {
               </F>
               <F label="年龄（岁）"><input className="form-input" type="number" placeholder="自动计算" value={form.age} onChange={set('age')} min={0} max={150} readOnly={!!form.birthDate} style={{ background: form.birthDate ? '#f5f5f5' : undefined }} /></F>
               <F label="证件类型">
-                <select className="form-input" value={form.idType} onChange={e => { setForm(f => ({ ...f, idType: e.target.value })); setIdError('') }}>
-                  <option value="idCard">身份证</option>
-                  <option value="passport">护照</option>
-                </select>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {[{ value: 'idCard', label: '身份证' }, { value: 'passport', label: '护照' }].map(option => (
+                    <button key={option.value} type="button" onClick={() => { setForm(f => ({ ...f, idType: option.value, idNumber: '' })); setIdError('') }}
+                      style={{ flex: 1, padding: '10px 12px', borderRadius: 8, cursor: 'pointer', fontWeight: 600, border: `1px solid ${form.idType === option.value ? '#1E6B50' : '#E0D9CE'}`, background: form.idType === option.value ? '#E8F5EF' : '#fff', color: form.idType === option.value ? '#1E6B50' : '#4A6558' }}>
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
               </F>
               <F label={form.idType === 'passport' ? '护照号' : '身份证号'}>
                 <input className="form-input" placeholder={form.idType === 'passport' ? '请输入护照号' : '输入后自动识别性别和出生日期'} value={form.idNumber} onChange={handleIdNumberChange} maxLength={form.idType === 'passport' ? 20 : 18} />
