@@ -49,3 +49,12 @@ test('private check-order attachments are signed whenever service tasks are read
   assert.match(route, /const item = withSignedServiceChecklist\(task\)/)
   assert.match(route, /withSignedServiceChecklist\(followUp\)/)
 })
+
+test('check-order attachments open in an in-page preview with download as a secondary action', () => {
+  const checklist = fs.readFileSync(path.join(__dirname, '../../staff/src/components/ServiceTaskChecklist.jsx'), 'utf8')
+  assert.match(checklist, /查看：\{file\.name/)
+  assert.match(checklist, /role="dialog"/)
+  assert.match(checklist, /<img src=\{fileUrl\(preview\.url\)\}/)
+  assert.match(checklist, /<iframe title=\{preview\.name/)
+  assert.match(checklist, /下载原文件/)
+})

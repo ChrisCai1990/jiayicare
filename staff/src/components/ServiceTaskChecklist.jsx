@@ -23,6 +23,7 @@ const fileUrl = url => url?.startsWith('/') ? `${API_ORIGIN}${url}` : url
 function ChecklistAttachments({ item, index, mode, update }) {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
+  const [preview, setPreview] = useState(null)
   const attachments = Array.isArray(item.attachments) ? item.attachments : []
   const upload = async event => {
     const files = Array.from(event.target.files || [])
@@ -46,7 +47,7 @@ function ChecklistAttachments({ item, index, mode, update }) {
   return <div style={{ marginTop: 8 }}>
     {attachments.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
       {attachments.map((file, fileIndex) => <span key={`${file.url}-${fileIndex}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 8px', borderRadius: 7, background: '#F2F8F5', fontSize: 11 }}>
-        <a href={fileUrl(file.url)} target="_blank" rel="noreferrer" style={{ color: '#1E6B50' }}>{file.mimeType === 'application/pdf' ? '📄' : '🖼'} {file.name || `检查单${fileIndex + 1}`}</a>
+        <button type="button" onClick={() => setPreview(file)} style={{ padding: 0, border: 0, background: 'transparent', color: '#1E6B50', cursor: 'pointer', fontSize: 11 }}>{file.mimeType === 'application/pdf' ? '📄' : '🖼'} 查看：{file.name || `检查单${fileIndex + 1}`}</button>
         {mode === 'executor' && <button type="button" onClick={() => update(index, { attachments: attachments.filter((_, i) => i !== fileIndex) })} style={{ padding: 0, border: 0, background: 'transparent', color: '#DC3545', cursor: 'pointer' }}>×</button>}
       </span>)}
     </div>}
@@ -56,6 +57,20 @@ function ChecklistAttachments({ item, index, mode, update }) {
     </label>}
     {mode === 'supervisor' && attachments.length === 0 && <div style={{ color: '#8AA89C', fontSize: 11 }}>未上传检查单</div>}
     {error && <div style={{ marginTop: 5, color: '#DC3545', fontSize: 11 }}>{error}</div>}
+    {preview && <div role="dialog" aria-modal="true" onClick={() => setPreview(null)} style={{ position: 'fixed', inset: 0, zIndex: 4000, background: 'rgba(20,32,27,.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div onClick={event => event.stopPropagation()} style={{ width: 'min(1000px, 94vw)', height: 'min(820px, 90vh)', background: '#fff', borderRadius: 12, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 18px 60px rgba(0,0,0,.28)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: '1px solid #E7ECE9' }}>
+          <strong style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13 }}>{preview.name || '检查单预览'}</strong>
+          <a href={fileUrl(preview.url)} download target="_blank" rel="noreferrer" style={{ color: '#1E6B50', fontSize: 12 }}>下载原文件</a>
+          <button type="button" onClick={() => setPreview(null)} aria-label="关闭预览" style={{ border: 0, background: 'transparent', cursor: 'pointer', fontSize: 24, color: '#65776F', lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#F3F5F4', padding: preview.mimeType === 'application/pdf' ? 0 : 12 }}>
+          {preview.mimeType === 'application/pdf'
+            ? <iframe title={preview.name || '检查单PDF'} src={fileUrl(preview.url)} style={{ width: '100%', height: '100%', border: 0, background: '#fff' }} />
+            : <img src={fileUrl(preview.url)} alt={preview.name || '检查单'} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />}
+        </div>
+      </div>
+    </div>}
   </div>
 }
 
