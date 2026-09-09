@@ -18,14 +18,13 @@ async function reconcileMedicalAssistDocumentCollectionTasks() {
     const isCheckupService = content.serviceDomain === 'annual_checkup'
       || content.templateSnapshot?.serviceDomain === 'annual_checkup'
       || CHECKUP_SERVICE_RE.test(`${content.templateName || ''} ${plan.title || ''}`);
-    const collectionName = isCheckupService ? '体检报告回收' : '就医资料回收';
-    const collectionContent = isCheckupService
-      ? '体检完成后跟进报告出具进度，回收并核对报告资料；上传后进入独立的报告解析与专业审核流程。'
-      : '就医完成后回收并核对就诊记录、检查检验结果、处方医嘱及费用凭证，归档后安排后续跟进。';
+    const cancelReason = isCheckupService
+      ? '流程标准化：体检报告回收由 Admin 岗位任务承接'
+      : '流程标准化：开单阶段仅保留代办执行与督办，资料回收在实际就诊后另行触发';
     const result = await FollowUp.updateOne({ _id: row._id }, { $set: {
       workflowKey: 'system:document_collection',
-      theme: `督办【${collectionName}】 · ${plan.title || ''}`,
-      content: collectionContent,
+      status: 'cancelled',
+      cancelReason,
     } });
     updated += result.modifiedCount || 0;
   }

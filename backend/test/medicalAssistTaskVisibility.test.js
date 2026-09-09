@@ -26,12 +26,12 @@ test('service task endpoint returns explicitly assigned executor and supervisor 
   assert.doesNotMatch(route, /assignedHealthManager|assignedMedicalAssistant/);
 });
 
-test('ordinary medical escort retains one medical document collection task', () => {
+test('opening-order stage does not create a duplicate medical document collection supervisor task', () => {
   const pushStart = staffSource.indexOf("router.patch('/plans/:id/push'");
   const pushEnd = staffSource.indexOf("router.patch('/plans/:id/items/:itemId'", pushStart);
   const route = staffSource.slice(pushStart, pushEnd);
-  assert.match(route, /else if \(documentCollectionAssignee\)/);
-  assert.match(route, /documentCollectionName = '就医资料回收'/);
-  assert.match(route, /就诊记录、检查检验结果、处方医嘱及费用凭证/);
-  assert.match(route, /workflowKey: 'system:document_collection'/);
+  assert.match(route, /开单\/预约阶段已经由“执行【代办服务】→督办【代办服务】”闭环/);
+  assert.match(route, /资料回收属于实际就诊后的另一阶段/);
+  assert.match(route, /开单阶段仅保留代办执行与督办/);
+  assert.doesNotMatch(route, /documentCollectionName = '就医资料回收'/);
 });

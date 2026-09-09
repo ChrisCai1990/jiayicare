@@ -2330,40 +2330,18 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
     for (const workflowPlan of fixedWorkflowPlans) {
       await upsertMedicalAssistModuleTasks(plan, workflowPlan, { patient });
     }
-    // 体检报告回收已由 Admin 标准岗位任务承接，不再额外生成“督办”任务。
-    // 重推时顺带取消旧版系统任务，避免同一事项同时出现执行人与督办人两套入口。
-    const documentCollectionAssignee = selectedSupervisorId || patient?.assignedHealthManager;
-    if (isCheckupService) {
-      await FollowUp.updateMany(
-        {
-          sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'supervisor',
-          workflowKey: { $in: ['system:document_collection', 'system:checkup_report_collection'] },
-          status: { $in: ['planned', 'in_progress'] },
-        },
-        { $set: { status: 'cancelled', cancelReason: '流程标准化：体检报告回收由 Admin 岗位任务承接' } }
-      );
-    } else if (documentCollectionAssignee) {
-      const documentCollectionDate = addDays(serviceDate, 1);
-      const documentCollectionName = '就医资料回收';
-      const documentCollectionContent = '就医完成后回收并核对就诊记录、检查检验结果、处方医嘱及费用凭证，归档后安排后续跟进。';
-      await FollowUp.findOneAndUpdate(
-        {
-          sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'supervisor',
-          workflowKey: { $in: ['system:document_collection', 'system:checkup_report_collection', 'system:medical_document_collection'] },
-        },
-        { $set: {
-          patientId: plan.patientId, staffId: plan.staffId, assignedTo: documentCollectionAssignee,
-          date: documentCollectionDate, remindAt: documentCollectionDate,
-          coordinationGroupId, workflowKey: 'system:document_collection', taskRole: 'supervisor',
-          dependsOnTaskId: null, followUpSchemeId: null,
-          theme: `督办【${documentCollectionName}】 · ${plan.title || ''}`,
-          content: documentCollectionContent,
-          plannedContent: `服务日期：${serviceDate.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n完成标准：${documentCollectionName}齐全并已归档系统。`,
-          status: 'planned', isBlocked: false, activationEvent: '',
-        } },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
-      );
-    }
+    // 开单/预约阶段已经由“执行【代办服务】→督办【代办服务】”闭环，并可逐项上传检查单。
+    // 资料回收属于实际就诊后的另一阶段，不能提前生成第二条内容相近的督办任务。
+    await FollowUp.updateMany(
+      {
+        sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'supervisor',
+        workflowKey: { $in: ['system:document_collection', 'system:checkup_report_collection', 'system:medical_document_collection'] },
+        status: { $in: ['planned', 'in_progress'] },
+      },
+      { $set: { status: 'cancelled', cancelReason: isCheckupService
+        ? '流程标准化：体检报告回收由 Admin 岗位任务承接'
+        : '流程标准化：开单阶段仅保留代办执行与督办，资料回收在实际就诊后另行触发' } }
+    );
     // Admin已取消“体检报告解读”岗位任务；清理旧方案残留，但不影响报告上传后的解析审核待办。
     const obsoleteReportPlanIds = await FollowUpPlan.find({ name: /报告.*(?:解读|解析)|(?:解读|解析).*报告/ }).distinct('_id');
     await FollowUp.updateMany(
