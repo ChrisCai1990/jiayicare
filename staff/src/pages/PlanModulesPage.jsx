@@ -200,6 +200,20 @@ function contentFromModules(plan, moduleData, goal, staffList = []) {
 
 function CheckupServiceWorkspace({ plan, moduleData, onOpenPatient }) {
   const content = plan.content || {}
+  const questionnaire = plan.checkupQuestionnaire || {}
+  const questionnaireAnswers = questionnaire.answers || []
+  const coreNeeds = questionnaireAnswers.filter(item => item.coreNeed)
+  const archiveChanges = questionnaireAnswers.filter(item => item.archiveField && item.changed)
+  const otherAnswers = questionnaireAnswers.filter(item => !item.coreNeed && !item.archiveField)
+  const formatAnswer = value => {
+    if (Array.isArray(value)) return value.join('、')
+    if (value && typeof value === 'object') {
+      const selected = Array.isArray(value.values) ? value.values.join('、') : (value.value || '')
+      const inputs = Object.entries(value.inputs || {}).map(([key, text]) => `${key}：${text}`).join('；')
+      return [selected, inputs].filter(Boolean).join('（') + (selected && inputs ? '）' : '')
+    }
+    return String(value ?? '')
+  }
   const year = plan.year || new Date(plan.createdAt || Date.now()).getFullYear()
   const serviceMode = /一站式/.test(`${content.templateName || ''} ${plan.title || ''}`) ? '体检一站式服务' : '单独体检服务'
   const intake = content.checkupIntake || {}
@@ -243,7 +257,12 @@ function CheckupServiceWorkspace({ plan, moduleData, onOpenPatient }) {
             <div><div style={{ fontWeight: 700, color: '#1A2B24' }}>本次体检需求</div><div style={muted}>只属于本年度、本次订单，不直接覆盖长期健康档案</div></div>
             <span style={{ fontSize: 12, color: '#1E6B50', background: '#EAF5F0', borderRadius: 20, padding: '4px 9px' }}>{serviceMode}</span>
           </div>
-          <div style={{ marginTop: 12, padding: 13, borderRadius: 10, background: '#F8FAF9', color: '#334A40', fontSize: 13, lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>{plan.description || content.goal || '尚未填写本次体检需求'}</div>
+          {coreNeeds.length > 0 ? <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 9 }}>
+            {coreNeeds.map(item => <div key={item.questionId} style={{ padding: 12, borderRadius: 10, background: '#F0F8F4', border: '1px solid #D6EADF' }}>
+              <div style={{ fontSize: 12, color: '#638174' }}>{item.questionText}</div>
+              <div style={{ marginTop: 5, color: '#173B2E', fontSize: 13, fontWeight: 700, lineHeight: 1.7 }}>{formatAnswer(item.answer)}</div>
+            </div>)}
+          </div> : <div style={{ marginTop: 12, padding: 13, borderRadius: 10, background: '#F8FAF9', color: '#334A40', fontSize: 13, lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>{plan.description || content.goal || '尚未填写本次体检需求'}</div>}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
             {[content.hospital && `机构：${content.hospital}`, content.serviceDate && `体检日期：${content.serviceDate}`, content.serviceTime && `时间：${content.serviceTime}`].filter(Boolean).map(text => <span key={text} style={{ fontSize: 12, padding: '4px 8px', borderRadius: 8, background: '#F6F1E8', color: '#6F5B35' }}>{text}</span>)}
           </div>
@@ -259,6 +278,28 @@ function CheckupServiceWorkspace({ plan, moduleData, onOpenPatient }) {
           <div style={{ marginTop: 10, fontSize: 12, color: '#8A5A00' }}>问卷答卷、档案差异和确认记录将在此处集中展示。</div>
         </div>
       </div>
+
+      {questionnaireAnswers.length > 0 && <div style={{ ...card, marginTop: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+          <div style={{ fontWeight: 700, color: '#1A2B24' }}>本次问卷明细与档案变化</div>
+          <span style={{ fontSize: 11, color: '#16835D', background: '#EAF7F1', borderRadius: 20, padding: '3px 8px' }}>{questionnaire.title || '体检方案定制问卷'}</span>
+          {questionnaire.submittedAt && <span style={{ ...muted, marginLeft: 'auto' }}>提交于 {new Date(questionnaire.submittedAt).toLocaleString('zh-CN')}</span>}
+        </div>
+        <div style={{ marginTop: 6, ...muted }}>基础档案保持不变；以下只展示本次问卷发现的变化及确认状态。</div>
+        {archiveChanges.length > 0 ? <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 9 }}>
+          {archiveChanges.map(item => <div key={item.questionId} style={{ padding: 11, borderRadius: 9, background: item.confirmed ? '#F0F8F4' : '#FFF9EF', border: `1px solid ${item.confirmed ? '#CDE5D8' : '#F2D9A6'}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><strong style={{ fontSize: 13, color: '#29483C' }}>{item.questionText}</strong><span style={{ fontSize: 11, color: item.confirmed ? '#16835D' : '#A36800' }}>{item.confirmed ? '已确认记录' : '待人工确认'}</span></div>
+            <div style={{ marginTop: 7, fontSize: 12, color: '#6E8178' }}>基础档案：{item.baselineValue || '未填写'}</div>
+            <div style={{ marginTop: 3, fontSize: 13, color: '#173B2E', fontWeight: 650 }}>本次问卷：{item.normalizedValue || formatAnswer(item.answer)}</div>
+          </div>)}
+        </div> : <div style={{ marginTop: 12, padding: 11, borderRadius: 9, background: '#F7FAF8', color: '#638174', fontSize: 12 }}>本次问卷未发现需要人工确认的档案变化。</div>}
+        {otherAnswers.length > 0 && <details style={{ marginTop: 12, borderTop: '1px solid #E5EAE7', paddingTop: 10 }}>
+          <summary style={{ cursor: 'pointer', color: '#4A6558', fontSize: 13, fontWeight: 650 }}>查看其余本次问答（{otherAnswers.length}项）</summary>
+          <div style={{ marginTop: 9, display: 'flex', flexDirection: 'column', gap: 7 }}>
+            {otherAnswers.map(item => <div key={item.questionId} style={{ padding: '8px 10px', borderRadius: 8, background: '#F8FAF9', fontSize: 12 }}><span style={{ color: '#789087' }}>{item.questionText}：</span><strong style={{ color: '#31493E' }}>{formatAnswer(item.answer)}</strong></div>)}
+          </div>
+        </details>}
+      </div>}
 
       <div style={{ ...card, marginTop: 14 }}>
         <div style={{ fontWeight: 700, color: '#1A2B24' }}>健康顾问方案工作区</div>

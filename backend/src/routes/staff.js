@@ -1709,6 +1709,51 @@ router.get('/plans/:id', staffAuth, async (req, res) => {
     const { applyConfirmedServiceSchedule } = require('../utils/confirmedServiceSchedule');
     responsePlan.content = applyConfirmedServiceSchedule(responsePlan.content, plan.sourceOrderId);
   }
+  // 体检服务方案必须直接带回本订单的原始问卷内容，而不是只返回“已填写”状态。
+  // 档案映射题显示基线与本次变化；非档案题作为本次订单专属体检需求展示。
+  const intakeResponseId = responsePlan.content?.checkupIntake?.responseId;
+  const isCheckupService = responsePlan.type === 'medical_assist'
+    && (responsePlan.content?.serviceDomain === 'annual_checkup' || /体检/.test(responsePlan.title || ''));
+  if (isCheckupService && intakeResponseId) {
+    const response = await QuestionnaireResponse.findOne({
+      _id: intakeResponseId,
+      user: plan.patientId?._id || plan.patientId,
+    }).populate('questionnaire', 'title questions').lean();
+    if (response?.questionnaire) {
+      // 在服务端读取完整档案仅用于逐字段对比；响应只返回题目对应的基线值，不暴露整份用户文档。
+      const archiveUser = await User.findById(plan.patientId?._id || plan.patientId).lean();
+      const draft = buildArchiveDraft(archiveUser || {}, response.questionnaire, response);
+      const draftByQuestionId = new Map((draft.items || []).map(item => [String(item.questionId), item]));
+      const confirmedChanges = new Set((archiveUser?.archiveVersionHistory || [])
+        .filter(item => String(item.sourceResponseId || '') === String(response._id))
+        .map(item => `${item.path}:${String(item.to ?? '')}`));
+      const hasAnswer = value => value !== undefined && value !== null && value !== ''
+        && (!Array.isArray(value) || value.length > 0);
+      const answers = (response.questionnaire.questions || []).flatMap(question => {
+        const answer = response.answers?.[question.id];
+        if (!hasAnswer(answer)) return [];
+        const archiveItem = draftByQuestionId.get(String(question.id));
+        return [{
+          questionId: question.id,
+          questionText: question.text,
+          answer,
+          archiveField: question.archiveField || '',
+          baselineValue: archiveItem?.existing || '',
+          normalizedValue: archiveItem?.valueStr || '',
+          changed: !!archiveItem && archiveItem.existing !== archiveItem.valueStr,
+          confirmed: !!archiveItem && confirmedChanges.has(`${archiveItem.path}:${String(archiveItem.valueStr ?? '')}`),
+          coreNeed: /体检|需求|期望|关注|预算|机构|医院|日期|时间/.test(question.text || ''),
+        }];
+      });
+      responsePlan.checkupQuestionnaire = {
+        responseId: response._id,
+        questionnaireId: response.questionnaire._id,
+        title: response.questionnaire.title,
+        submittedAt: response.submittedAt,
+        answers,
+      };
+    }
+  }
   res.json({ success: true, data: { ...responsePlan, canManage, canDelete } });
 });
 

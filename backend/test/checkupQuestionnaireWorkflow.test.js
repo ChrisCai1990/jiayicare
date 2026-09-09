@@ -47,3 +47,14 @@ test('mapped questionnaire answers wait for review and confirmed changes retain 
   assert.match(staffSource, /mode: 'append_only'/)
   assert.match(read('src/models/User.js'), /archiveVersionHistory/)
 })
+
+test('checkup plan detail exposes order questionnaire needs and archive differences', () => {
+  const backend = read('src/routes/staff.js')
+  const frontend = read('../staff/src/pages/PlanModulesPage.jsx')
+  assert.match(backend, /responsePlan\.checkupQuestionnaire/)
+  assert.match(backend, /coreNeed:/)
+  assert.match(backend, /baselineValue:/)
+  assert.match(frontend, /本次问卷明细与档案变化/)
+  assert.match(frontend, /基础档案：/)
+  assert.match(frontend, /本次问卷：/)
+})
