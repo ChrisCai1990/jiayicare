@@ -11,6 +11,7 @@ const { calculateHealthScore } = require('../utils/healthScore');
 const { parseIdCard, calcAgeFromBirthDate } = require('../utils/idCard');
 const { getCurrentTenantId, BYPASS } = require('../utils/tenantScope');
 const { followUpTaskRequirements, followUpTaskPurposes } = require('../utils/medicalAssistRequirements');
+const { generateCompactMedicalAssistPurposes } = require('../utils/medicalAssistPurposeDraft');
 const { isReportInterpretation } = require('../utils/checkupWorkflow');
 const { reverseFamilyRelation, synchronizeFamilyGroup } = require('../utils/familyLinks');
 // 聚合管道($aggregate)不会被 tenantScopePlugin 的 query 中间件自动拦截，需要在 $match 里手动拼入 tenantId
@@ -1990,6 +1991,51 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
     );
   }
   res.json({ success: true, data: plan });
+});
+
+// Draft-only rewrite: keep the plan, assignments and service date intact, and replace
+// only verbose AI task paragraphs with short, verifiable medical-assist purposes.
+router.post('/plans/:id/regenerate-medical-assist-purposes', staffAuth, checkPermission('plans', 'edit'), async (req, res) => {
+  try {
+    const plan = await HealthPlan.findById(req.params.id);
+    if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+    if (plan.type !== 'medical_assist') return res.status(400).json({ success: false, message: '仅就医协助方案支持重新生成代办目的' });
+    if (plan.status !== 'draft' || plan.pushedAt) return res.status(409).json({ success: false, message: '方案已推送，不能覆盖代办目的' });
+    if (!canUsePlanOwnerRole(plan, req.staff) || !(await planTypeAllowed(req, plan.type)) || !(await canManagePlan(req, plan))) {
+      return res.status(403).json({ success: false, message: '无权修改该方案' });
+    }
+    const c = plan.content || {};
+    if (c.serviceDomain === 'annual_checkup' || c.templateSnapshot?.serviceDomain === 'annual_checkup') {
+      return res.status(400).json({ success: false, message: '体检服务不使用代办目的重写' });
+    }
+    const oldPurposes = (c.moduleData?.tasks?.records || [])
+      .map(item => String(item?.task || '').trim()).filter(Boolean);
+    const source = oldPurposes.join('\n') || c.tasks || plan.description || c.goal;
+    if (!String(source || '').trim()) return res.status(400).json({ success: false, message: '没有可重新整理的原始内容' });
+
+    const { chat } = require('../utils/ai');
+    const purposes = await generateCompactMedicalAssistPurposes(chat, source, {
+      hospital: c.moduleData?.visit?.hospital || c.hospital,
+      department: c.moduleData?.visit?.department || c.department,
+      expert: c.moduleData?.visit?.expert || c.expert,
+    });
+    c.tasks = purposes.join('\n');
+    c.moduleData = {
+      ...(c.moduleData || {}),
+      tasks: { ...(c.moduleData?.tasks || {}), records: purposes.map(task => ({ task, notes: '' })) },
+    };
+    const oldPurposeSet = new Set(oldPurposes);
+    plan.items = [
+      ...(plan.items || []).filter(item => !oldPurposeSet.has(String(item.name || '').trim())),
+      ...purposes.map(name => ({ name, category: '就医协助', status: 'pending' })),
+    ];
+    plan.content = c;
+    plan.markModified('content');
+    await plan.save();
+    res.json({ success: true, data: plan, purposes });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ success: false, message: err.message });
+  }
 });
 
 async function upsertMedicalAssistModuleTasks(plan, workflowPlan, options = {}) {
@@ -11893,6 +11939,14 @@ ${templateBlock}
     raw.tasks = Array.isArray(raw.tasks)
       ? raw.tasks.map(normalizePastTaskDates)
       : normalizePastTaskDates(raw.tasks);
+    if (!isCheckupService) {
+      const purposeSource = Array.isArray(raw.tasks) ? raw.tasks.join('\n') : raw.tasks;
+      raw.tasks = await generateCompactMedicalAssistPurposes(chat, purposeSource, {
+        hospital: raw.hospital,
+        department: raw.department,
+        expert: raw.expert,
+      });
+    }
 
     const items = [];
     if (raw.hospital) {

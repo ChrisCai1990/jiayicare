@@ -340,6 +340,7 @@ export default function PlanModulesPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [pushing, setPushing] = useState(false)
+  const [regeneratingPurposes, setRegeneratingPurposes] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [staffList, setStaffList] = useState([])
   const [followUpPlans, setFollowUpPlans] = useState([])
@@ -414,6 +415,24 @@ export default function PlanModulesPage() {
       toast(err.message || '保存失败')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleRegeneratePurposes = async () => {
+    if (dirty) { toast('请先保存当前修改，再重新生成代办目的'); return }
+    if (!window.confirm('仅重新整理“本次代办目的”，医院、人员和服务时间不会改变。是否继续？')) return
+    setRegeneratingPurposes(true)
+    try {
+      const res = await staffAPI.regenerateMedicalAssistPurposes(id)
+      const nextPlan = res.data
+      setPlan(prev => ({ ...prev, ...nextPlan }))
+      setModuleData(medicalAssistModuleData(nextPlan.content || {}))
+      setDirty(false)
+      toast(`已重新生成 ${res.purposes?.length || 0} 条简洁目的，请核对`)
+    } catch (err) {
+      toast(err.message || '重新生成失败')
+    } finally {
+      setRegeneratingPurposes(false)
     }
   }
 
@@ -511,6 +530,14 @@ export default function PlanModulesPage() {
             </span>
           )}
           {dirty && <span style={{ fontSize: 12, color: '#D97706', background: '#FEF9EC', padding: '4px 8px', borderRadius: 20 }}>有未保存更改</span>}
+          {canEdit && plan.type === 'medical_assist' && !isCheckupService && plan.status === 'draft' && !plan.pushedAt && (
+            <button
+              onClick={handleRegeneratePurposes}
+              disabled={regeneratingPurposes || dirty}
+              title={dirty ? '请先保存当前修改' : '仅重写本次代办目的'}
+              style={{ background: '#fff', color: '#1E6B50', border: '1px solid #9FD8C1', padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13, opacity: (regeneratingPurposes || dirty) ? 0.5 : 1 }}
+            >{regeneratingPurposes ? '重新生成中…' : 'AI重新生成代办目的'}</button>
+          )}
           {canDelete && <button onClick={handleDelete} style={{ background: '#fff', color: '#DC2626', border: '1px solid #FCA5A5', padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>删除方案</button>}
           {canEdit && (
             <button

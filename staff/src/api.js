@@ -82,6 +82,7 @@ export const staffAPI = {
   getPlan:        (id)     => req(`/staff/plans/${id}`),
   createPlan:     (data)   => req('/staff/plans', { method: 'POST', body: JSON.stringify(data) }),
   updatePlan:     (id, d)  => req(`/staff/plans/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
+  regenerateMedicalAssistPurposes: (id) => req(`/staff/plans/${id}/regenerate-medical-assist-purposes`, { method: 'POST' }),
   deletePlan:     (id, reason) => req(`/staff/plans/${id}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
   pushPlan:       (id)     => req(`/staff/plans/${id}/push`, { method: 'PATCH' }),
   decideWorkflowModule: (planId, moduleId, data) => req(`/staff/plans/${planId}/workflow-modules/${moduleId}/decision`, { method: 'PATCH', body: JSON.stringify(data) }),
