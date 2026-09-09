@@ -47,14 +47,38 @@ export function FieldRow({ label, internal, children }) {
 const inputStyle = { width: '100%', padding: '7px 10px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit' }
 
 export function FieldInput({ field, value, onChange }) {
+  if (field.type === 'department-experts') {
+    const rows = Array.isArray(value) ? value : []
+    const updateRow = (index, key, nextValue) => {
+      const next = rows.map((row, rowIndex) => rowIndex === index ? { ...row, [key]: nextValue } : row)
+      onChange(next)
+    }
+    const removeRow = index => onChange(rows.filter((_, rowIndex) => rowIndex !== index))
+    const addRow = () => onChange([...rows, { department: '', expert: '' }])
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {rows.map((row, index) => (
+          <div key={index} style={{ display: 'grid', gridTemplateColumns: 'minmax(180px,1fr) minmax(180px,1fr) auto', gap: 8, alignItems: 'center' }}>
+            <input type="text" value={row?.department || ''} onChange={e => updateRow(index, 'department', e.target.value)} placeholder={`科室 ${index + 1}`} style={inputStyle} />
+            <input type="text" value={row?.expert || ''} onChange={e => updateRow(index, 'expert', e.target.value)} placeholder="建议专家（可留空）" style={inputStyle} />
+            <button type="button" onClick={() => removeRow(index)} aria-label={`删除第${index + 1}组科室和专家`} style={{ border: 'none', background: 'transparent', color: '#DC3545', cursor: 'pointer', padding: '7px 4px', fontSize: 12 }}>删除</button>
+          </div>
+        ))}
+        <button type="button" onClick={addRow} style={{ alignSelf: 'flex-start', color: '#1E6B50', background: '#E8F5EF', border: '1px solid #B2D8C7', borderRadius: 16, padding: '5px 12px', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
+          ＋ 新增科室和专家
+        </button>
+        <div style={{ color: '#8AA89C', fontSize: 11 }}>同一服务日期和时间只需填写一次；每个科室可分别填写对应专家。</div>
+      </div>
+    )
+  }
   if (field.type === 'textarea') {
     return (
       <textarea
         value={value || ''}
         onChange={e => onChange(e.target.value)}
         placeholder={field.placeholder || `请填写${field.label}`}
-        rows={3}
-        style={{ ...inputStyle, resize: 'vertical' }}
+        rows={field.rows || 3}
+        style={{ ...inputStyle, minHeight: field.rows ? 132 : undefined, lineHeight: 1.7, resize: 'vertical' }}
       />
     )
   }
@@ -135,7 +159,10 @@ export function ModulePanel({ moduleKey, def, data, onChange }) {
   // 判断是否有已填写的字段（用于显示小圆点提示）
   const hasContent = def.multi
     ? (data.records || []).length > 0
-    : def.fields.some(f => f.key !== 'notes' && data[f.key] !== undefined && data[f.key] !== '' && data[f.key] !== false)
+    : def.fields.some(f => {
+        const value = data[f.key]
+        return f.key !== 'notes' && value !== undefined && value !== '' && value !== false && (!Array.isArray(value) || value.length > 0)
+      })
 
   // 多条模块：records 数组操作
   const records = data.records || []

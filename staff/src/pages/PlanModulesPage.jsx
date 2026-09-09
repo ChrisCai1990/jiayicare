@@ -59,8 +59,7 @@ const MODULE_DEFS_BY_TYPE = {
       name: '就诊安排', icon: '🏥',
       fields: [
         { key: 'hospital', label: '就诊医院', type: 'text' },
-        { key: 'department', label: '就诊科室', type: 'text' },
-        { key: 'expert', label: '建议专家', type: 'text' },
+        { key: 'consultations', label: '就诊科室 / 专家', type: 'department-experts' },
         { key: 'visitDate', label: '服务日期', type: 'date' },
         { key: 'serviceTime', label: '具体时间', type: 'text', placeholder: '如：09:30 或 上午' },
         { key: 'staffId', label: '就医专员', type: 'staff-select' },
@@ -76,7 +75,7 @@ const MODULE_DEFS_BY_TYPE = {
     tasks: {
       name: '执行任务', icon: '✅', multi: true, summaryKey: 'task', summaryLabel: '任务',
       fields: [
-        { key: 'task', label: '任务内容', type: 'text' },
+        { key: 'task', label: '任务内容', type: 'textarea', rows: 6, placeholder: '请填写具体执行内容、携带材料和完成要求' },
         { key: 'notes', label: '备注', type: 'textarea', internal: true },
       ],
     },
@@ -120,6 +119,15 @@ function medicalAssistModuleDefs(content = {}, planTitle = '', assignedReviewerI
 
 function medicalAssistModuleData(content = {}) {
   const existing = content.moduleData || {}
+  const existingConsultations = existing.visit?.consultations || content.consultations
+  const consultations = Array.isArray(existingConsultations) && existingConsultations.length
+    ? existingConsultations
+    : (existing.visit?.department || content.department || existing.visit?.expert || content.expert)
+      ? [{
+          department: existing.visit?.department || content.department || '',
+          expert: existing.visit?.expert || content.expert || '',
+        }]
+      : []
   const taskRecords = existing.tasks?.records?.length
     ? existing.tasks.records
     : String(content.tasks || '')
@@ -133,6 +141,7 @@ function medicalAssistModuleData(content = {}) {
     visit: {
       ...(existing.visit || {}),
       hospital: existing.visit?.hospital || content.hospital || '',
+      consultations,
       department: existing.visit?.department || content.department || '',
       expert: existing.visit?.expert || content.expert || '',
       reviewerId: existing.visit?.reviewerId || content.reviewerId || '',
@@ -173,14 +182,19 @@ function contentFromModules(plan, moduleData, goal, staffList = []) {
   const visit = moduleData.visit || {}
   const logistics = moduleData.logistics || {}
   const records = moduleData.tasks?.records || []
+  const consultations = (Array.isArray(visit.consultations) ? visit.consultations : [])
+    .map(item => ({ department: String(item?.department || '').trim(), expert: String(item?.expert || '').trim() }))
+    .filter(item => item.department || item.expert)
   const selectedAssistantId = visit.staffId || content.staffId || records.find(r => r.staff)?.staff || ''
   const checkupService = isCheckupMedicalAssist(content, plan.title)
 
   return {
     ...content,
     hospital: visit.hospital || '',
-    department: visit.department || '',
-    expert: visit.expert || '',
+    consultations,
+    // 旧版展示及任务生成仍读取 department/expert；结构化配对关系保存在 consultations。
+    department: consultations.map(item => item.department).filter(Boolean).join('、'),
+    expert: consultations.map(item => item.expert).filter(Boolean).join('、'),
     reviewerId: visit.reviewerId || '',
     reviewerName: staffList.find(s => String(s._id) === String(visit.reviewerId || ''))?.name || content.reviewerName || '',
     serviceDate: visit.visitDate || '',
