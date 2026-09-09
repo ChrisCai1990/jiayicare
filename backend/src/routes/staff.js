@@ -2000,9 +2000,6 @@ router.post('/plans/:id/regenerate-medical-assist-purposes', staffAuth, checkPer
     const plan = await HealthPlan.findById(req.params.id);
     if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
     if (plan.type !== 'medical_assist') return res.status(400).json({ success: false, message: '仅就医协助方案支持重新生成代办目的' });
-    // Older pending plans may use a historical status value. pushedAt is the authoritative
-    // boundary: once customer-visible, AI must not overwrite the reviewed purposes.
-    if (plan.pushedAt) return res.status(409).json({ success: false, message: '方案已推送，不能覆盖代办目的' });
     if (!canUsePlanOwnerRole(plan, req.staff) || !(await planTypeAllowed(req, plan.type)) || !(await canManagePlan(req, plan))) {
       return res.status(403).json({ success: false, message: '无权修改该方案' });
     }
@@ -2012,8 +2009,18 @@ router.post('/plans/:id/regenerate-medical-assist-purposes', staffAuth, checkPer
     }
     const oldPurposes = (c.moduleData?.tasks?.records || [])
       .map(item => String(item?.task || '').trim()).filter(Boolean);
-    const source = oldPurposes.join('\n') || c.tasks || plan.description || c.goal;
+    const oldTasksText = oldPurposes.join('\n') || c.tasks || '';
+    const source = oldTasksText || plan.description || c.goal;
     if (!String(source || '').trim()) return res.status(400).json({ success: false, message: '没有可重新整理的原始内容' });
+
+    const linkedTasks = plan.pushedAt
+      ? await FollowUp.find({ sourceHealthPlanId: plan._id, taskRole: { $in: ['executor', 'supervisor'] } })
+      : [];
+    const startedTask = linkedTasks.find(task => ['in_progress', 'completed'].includes(task.status)
+      || (task.serviceChecklist || []).some(item => item.executionStatus || item.supervisionStatus));
+    if (startedTask) {
+      return res.status(409).json({ success: false, message: '执行或督办任务已经开始，不能覆盖原目的；请新增调整事项' });
+    }
 
     const { chat } = require('../utils/ai');
     const purposes = await generateCompactMedicalAssistPurposes(chat, source, {
@@ -2034,6 +2041,15 @@ router.post('/plans/:id/regenerate-medical-assist-purposes', staffAuth, checkPer
     plan.content = c;
     plan.markModified('content');
     await plan.save();
+    if (plan.pushedAt && linkedTasks.length) {
+      for (const task of linkedTasks) {
+        if (oldTasksText && String(task.plannedContent || '').includes(oldTasksText)) {
+          task.plannedContent = String(task.plannedContent).replace(oldTasksText, c.tasks);
+        }
+        task.serviceChecklist = [];
+        await task.save();
+      }
+    }
     res.json({ success: true, data: plan, purposes });
   } catch (err) {
     res.status(err.statusCode || 500).json({ success: false, message: err.message });

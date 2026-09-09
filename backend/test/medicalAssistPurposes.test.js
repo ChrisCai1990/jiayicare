@@ -55,9 +55,11 @@ test('overlong AI purpose is rejected instead of being saved', async () => {
   await assert.rejects(() => generateCompactMedicalAssistPurposes(fakeChat, '原始要求'), /仍不够简洁/)
 })
 
-test('draft plan exposes purpose-only regeneration without creating another plan', () => {
+test('plan exposes safe purpose-only regeneration without creating another plan', () => {
   const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8')
   assert.match(route, /regenerate-medical-assist-purposes/)
-  assert.match(route, /方案已推送，不能覆盖代办目的/)
+  assert.match(route, /执行或督办任务已经开始，不能覆盖原目的/)
+  assert.match(route, /sourceHealthPlanId: plan\._id, taskRole: \{ \$in: \['executor', 'supervisor'\] \}/)
+  assert.match(route, /task\.plannedContent.*replace\(oldTasksText, c\.tasks\)/)
   assert.doesNotMatch(route, /plan\.status !== 'draft' \|\| plan\.pushedAt/)
 })

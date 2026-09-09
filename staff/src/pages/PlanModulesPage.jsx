@@ -420,7 +420,9 @@ export default function PlanModulesPage() {
 
   const handleRegeneratePurposes = async () => {
     if (dirty) { toast('请先保存当前修改，再重新生成代办目的'); return }
-    if (!window.confirm('仅重新整理“本次代办目的”，医院、人员和服务时间不会改变。是否继续？')) return
+    if (!window.confirm(plan.pushedAt
+      ? '将重新整理“本次代办目的”并同步到尚未开始的执行、督办任务；医院、人员和服务时间不会改变。是否继续？'
+      : '仅重新整理“本次代办目的”，医院、人员和服务时间不会改变。是否继续？')) return
     setRegeneratingPurposes(true)
     try {
       const res = await staffAPI.regenerateMedicalAssistPurposes(id)
@@ -530,7 +532,7 @@ export default function PlanModulesPage() {
             </span>
           )}
           {dirty && <span style={{ fontSize: 12, color: '#D97706', background: '#FEF9EC', padding: '4px 8px', borderRadius: 20 }}>有未保存更改</span>}
-          {canEdit && plan.type === 'medical_assist' && !isCheckupService && !plan.pushedAt && (
+          {canEdit && plan.type === 'medical_assist' && !isCheckupService && (
             <button
               onClick={handleRegeneratePurposes}
               disabled={regeneratingPurposes || dirty}
