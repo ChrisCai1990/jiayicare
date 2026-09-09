@@ -23,6 +23,8 @@ const MemberType = require('../models/MemberType');
 const Partner = require('../models/Partner');
 const PartnerBenefit = require('../models/PartnerBenefit');
 const Enterprise = require('../models/Enterprise');
+const EnterpriseInsurancePolicy = require('../models/EnterpriseInsurancePolicy');
+const InsuranceEnrollment = require('../models/InsuranceEnrollment');
 const PlanTemplate = require('../models/PlanTemplate');
 const { ensureAiCaseReviewTemplates } = require('../utils/aiCaseReviewTemplates');
 const CheckupPlan = require('../models/CheckupPlan');
@@ -1862,6 +1864,77 @@ router.get('/enterprises/:id/employees', adminAuth, async (req, res) => {
     .select('name phone age gender healthScore onboardingCompleted createdAt')
     .sort({ createdAt: -1 });
   res.json({ success: true, data: employees });
+});
+
+// ── 企业高端医疗险：企业共用规则与个人参保关系分开保存，避免复制整份条款 ──
+router.get('/enterprises/:id/insurance-policies', adminAuth, async (req, res) => {
+  const policies = await EnterpriseInsurancePolicy.find({ enterpriseId: req.params.id }).sort({ year: -1, createdAt: -1 }).lean();
+  const policyIds = policies.map(p => p._id);
+  const counts = policyIds.length ? await InsuranceEnrollment.aggregate([
+    { $match: { policyId: { $in: policyIds }, status: { $ne: 'terminated' } } },
+    { $group: { _id: '$policyId', count: { $sum: 1 } } },
+  ]) : [];
+  const countMap = new Map(counts.map(item => [String(item._id), item.count]));
+  res.json({ success: true, data: policies.map(p => ({ ...p, enrolledCount: countMap.get(String(p._id)) || 0 })) });
+});
+
+router.post('/enterprises/:id/insurance-policies', adminAuth, async (req, res) => {
+  const enterprise = await Enterprise.findById(req.params.id);
+  if (!enterprise) return res.status(404).json({ success: false, message: '企业不存在' });
+  const body = req.body || {};
+  if (!body.name || !body.year) return res.status(400).json({ success: false, message: '方案名称和保险年度为必填项' });
+  const legacy = enterprise.hrDataByYear?.[String(body.year)] || {};
+  const policy = await EnterpriseInsurancePolicy.create({
+    ...body,
+    enterpriseId: enterprise._id,
+    insurerName: body.insurerName || legacy.insurerName || '',
+    startAt: body.startAt || legacy.insuredStartAt || null,
+    endAt: body.endAt || legacy.insuredEndAt || null,
+    attachments: Array.isArray(body.attachments) && body.attachments.length
+      ? body.attachments
+      : (legacy.insuredAttachments || []).map(a => ({ ...a, category: '既有保险资料' })),
+    createdBy: req.admin._id,
+    updatedBy: req.admin._id,
+  });
+  res.json({ success: true, data: policy, message: '企业保险方案已建立，既有保险附件已自动带入' });
+});
+
+router.put('/enterprises/:enterpriseId/insurance-policies/:policyId', adminAuth, async (req, res) => {
+  const current = await EnterpriseInsurancePolicy.findOne({ _id: req.params.policyId, enterpriseId: req.params.enterpriseId });
+  if (!current) return res.status(404).json({ success: false, message: '保险方案不存在' });
+  const allowed = ['year','name','insurerName','administratorName','policyNumber','startAt','endAt','servicePhone','claimContact','directBillingMethod','preAuthorizationMethod','claimSubmissionMethod','status','rules','attachments','lastVerifiedAt','lastVerifiedByName','note'];
+  allowed.forEach(key => { if (req.body[key] !== undefined) current[key] = req.body[key]; });
+  current.version = Number(current.version || 1) + 1;
+  current.updatedBy = req.admin._id;
+  await current.save();
+  res.json({ success: true, data: current, message: '保险方案已更新并保留新版本号' });
+});
+
+router.get('/enterprises/:enterpriseId/insurance-policies/:policyId/enrollments', adminAuth, async (req, res) => {
+  const enrollments = await InsuranceEnrollment.find({ enterpriseId: req.params.enterpriseId, policyId: req.params.policyId })
+    .populate('userId', 'name phone assignedHealthManager').sort({ createdAt: 1 });
+  res.json({ success: true, data: enrollments });
+});
+
+router.put('/enterprises/:enterpriseId/insurance-policies/:policyId/enrollments', adminAuth, async (req, res) => {
+  const policy = await EnterpriseInsurancePolicy.findOne({ _id: req.params.policyId, enterpriseId: req.params.enterpriseId });
+  if (!policy) return res.status(404).json({ success: false, message: '保险方案不存在' });
+  const entries = Array.isArray(req.body.enrollments) ? req.body.enrollments : [];
+  const userIds = entries.map(item => item.userId).filter(Boolean);
+  const validCount = await User.countDocuments({ _id: { $in: userIds }, enterpriseId: policy.enterpriseId });
+  if (validCount !== new Set(userIds.map(String)).size) return res.status(400).json({ success: false, message: '参保人必须是该企业已关联会员' });
+  await Promise.all(entries.map(item => InsuranceEnrollment.findOneAndUpdate(
+    { policyId: policy._id, userId: item.userId },
+    { $set: { ...item, enterpriseId: policy.enterpriseId, policyId: policy._id, startAt: item.startAt || policy.startAt, endAt: item.endAt || policy.endAt, updatedBy: req.admin._id } },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  )));
+  if (req.body.replace === true) {
+    await InsuranceEnrollment.updateMany(
+      { policyId: policy._id, ...(userIds.length ? { userId: { $nin: userIds } } : {}) },
+      { $set: { status: 'terminated', updatedBy: req.admin._id } }
+    );
+  }
+  res.json({ success: true, message: `已保存 ${entries.length} 名参保人员` });
 });
 
 // PATCH /api/admin/enterprises/:id/employees —— 批量将员工关联到该企业（body: { userIds: [] }）

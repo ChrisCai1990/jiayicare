@@ -63,6 +63,9 @@ const SpecialExam       = require('../models/SpecialExam');
 const AbnormalReview    = require('../models/AbnormalReview');
 const Task              = require('../models/Task');
 const PlanTemplate      = require('../models/PlanTemplate');
+const EnterpriseInsurancePolicy = require('../models/EnterpriseInsurancePolicy');
+const InsuranceEnrollment = require('../models/InsuranceEnrollment');
+const InsuranceServiceCase = require('../models/InsuranceServiceCase');
 const Medication        = require('../models/Medication');
 const Supplement        = require('../models/Supplement');
 const UserScreeningItem = require('../models/UserScreeningItem');
@@ -82,6 +85,7 @@ const { uploadBuffer, deleteFile, signStoredUrl, getObjectStream, urlToKey } = r
 const { rotateImageBuffer } = require('../utils/imageOrientation');
 const { withSafeHealthRecordImages } = require('../utils/healthRecordImages');
 const { tagReportPageItems, sortReportItemsBySource, stripReportSourceOrder } = require('../utils/reportSourceOrder');
+const { stepsForInsuranceScenario } = require('../utils/insuranceServiceWorkflow');
 const router = express.Router();
 const activeReportParseJobs = new Set();
 // 仅服务端内存的短时页图缓存：同一审核窗口的前后台预加载不会反复转图；进程重启、超时或超量后自动释放。
@@ -868,7 +872,70 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
     .sort((a, b) => new Date(b.recordedAt) - new Date(a.recordedAt))
     .map(withSignedHealthRecord);
 
-  res.json({ success: true, data: { user, recentFollowUps, recentRecords } });
+  let insuranceCoverage = null;
+  let insuranceCases = [];
+  if (user.enterpriseId) {
+    const enrollment = await InsuranceEnrollment.findOne({ userId: user._id, enterpriseId: user.enterpriseId, status: { $ne: 'terminated' } })
+      .sort({ endAt: -1, createdAt: -1 }).lean();
+    if (enrollment) {
+      const policy = await EnterpriseInsurancePolicy.findOne({ _id: enrollment.policyId, status: { $in: ['active', 'review', 'draft'] } }).lean();
+      if (policy) insuranceCoverage = { policy, enrollment };
+      insuranceCases = await InsuranceServiceCase.find({ patientId: user._id, enrollmentId: enrollment._id })
+        .sort({ createdAt: -1 }).limit(20).populate('assignedTo', 'name role').lean();
+    }
+  }
+
+  res.json({ success: true, data: { user, recentFollowUps, recentRecords, insuranceCoverage, insuranceCases } });
+});
+
+router.post('/patients/:id/insurance-cases', staffAuth, async (req, res) => {
+  const patient = await User.findById(req.params.id).select('name enterpriseId assignedHealthManager');
+  if (!patient || !patient.enterpriseId) return res.status(400).json({ success: false, message: '该会员未关联企业' });
+  const enrollment = await InsuranceEnrollment.findOne({ userId: patient._id, enterpriseId: patient.enterpriseId, status: 'active' }).sort({ endAt: -1 });
+  if (!enrollment) return res.status(400).json({ success: false, message: '该会员尚未配置有效的高端医疗险' });
+  const policy = await EnterpriseInsurancePolicy.findOne({ _id: enrollment.policyId, status: { $in: ['active', 'review'] } });
+  if (!policy) return res.status(400).json({ success: false, message: '企业保险方案尚未生效或待复核' });
+  const scenario = req.body.scenario || 'reimbursement';
+  const stepTitles = stepsForInsuranceScenario(scenario);
+  const assignee = patient.assignedHealthManager || req.staff._id;
+  const serviceCase = await InsuranceServiceCase.create({
+    enterpriseId: patient.enterpriseId, policyId: policy._id, enrollmentId: enrollment._id,
+    patientId: patient._id, scenario, title: req.body.title || `${patient.name}高端医疗险服务`,
+    occurredAt: req.body.occurredAt || new Date(), dueAt: req.body.dueAt || null,
+    estimatedAmount: Number(req.body.estimatedAmount) || 0, note: req.body.note || '',
+    steps: stepTitles.map(title => ({ title })), assignedTo: assignee,
+    createdBy: req.staff._id, updatedBy: req.staff._id,
+  });
+  await FollowUp.create({
+    staffId: assignee, assignedTo: assignee, patientId: patient._id, type: 'other', status: 'planned',
+    date: serviceCase.dueAt || new Date(), theme: `高端医疗险：${serviceCase.title}`,
+    content: stepTitles[0], plannedContent: stepTitles.join('\n'), tags: ['高端医疗险', '保险服务'],
+    sourceType: 'scheduled', sourceId: serviceCase._id,
+  });
+  res.json({ success: true, data: serviceCase, message: '保险服务案件已建立，并进入健管专员工作台' });
+});
+
+router.patch('/insurance-cases/:caseId/steps/:stepId', staffAuth, async (req, res) => {
+  const serviceCase = await InsuranceServiceCase.findById(req.params.caseId);
+  if (!serviceCase) return res.status(404).json({ success: false, message: '保险服务案件不存在' });
+  if (req.staff.role !== 'superadmin') {
+    const patient = await User.findById(serviceCase.patientId).select('assignedHealthManager assignedFamilyDoctor assignedHealthPlanner assignedMedicalAssistant');
+    const visibleIds = (await getVisibleStaffIds(req.staff)).map(String);
+    const allowed = [serviceCase.assignedTo, patient?.assignedHealthManager, patient?.assignedFamilyDoctor, patient?.assignedHealthPlanner, patient?.assignedMedicalAssistant].some(value => value && visibleIds.includes(String(value)));
+    if (!allowed) return res.status(403).json({ success: false, message: '无权限处理该会员的保险案件' });
+  }
+  const step = serviceCase.steps.id(req.params.stepId);
+  if (!step) return res.status(404).json({ success: false, message: '服务步骤不存在' });
+  step.status = req.body.status || step.status;
+  step.note = req.body.note ?? step.note;
+  if (step.status === 'completed') { step.completedAt = new Date(); step.completedByName = req.staff.name || ''; }
+  serviceCase.status = serviceCase.steps.every(item => ['completed', 'skipped'].includes(item.status)) ? 'closed' : 'verifying';
+  serviceCase.updatedBy = req.staff._id;
+  await serviceCase.save();
+  if (serviceCase.status === 'closed') {
+    await FollowUp.updateMany({ sourceType: 'scheduled', sourceId: serviceCase._id, status: { $in: ['planned', 'in_progress'] } }, { status: 'completed', completedAt: new Date(), completedBy: 'staff' });
+  }
+  res.json({ success: true, data: serviceCase });
 });
 
 // ── PUT /api/staff/patients/:id ───────────────────────────────────

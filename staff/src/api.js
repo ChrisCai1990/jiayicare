@@ -58,6 +58,8 @@ export const staffAPI = {
   memberSourceOptions:()       => req('/staff/member-source-options'),  // 会员来源下拉选项（admin配置）
   searchRegistered:   (q)      => req('/staff/patients/search-registered?q=' + encodeURIComponent(q || '')),
   assignPatient:      (data)   => req('/staff/patients/assign', { method: 'POST', body: JSON.stringify(data) }),
+  createInsuranceCase:(id, d)  => req(`/staff/patients/${id}/insurance-cases`, { method: 'POST', body: JSON.stringify(d) }),
+  updateInsuranceCaseStep: (caseId, stepId, d) => req(`/staff/insurance-cases/${caseId}/steps/${stepId}`, { method: 'PATCH', body: JSON.stringify(d) }),
 
   // Follow-ups
   getFollowUps:        (p = {}) => req('/staff/followups?' + qs(p)),

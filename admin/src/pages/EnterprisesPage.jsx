@@ -18,6 +18,75 @@ const EMPTY_ENTERPRISE = {
   healthFundPaymentRule: { enabled:false, deductionType:'unlimited', deductionValue:0, minOrderAmount:0, eligibleCategories:[], note:'' },
 }
 
+const INSURANCE_SCENES = ['普通门诊', '住院', '急诊', '特殊检查/治疗', '特药/院外药', '事后报销']
+
+function InsurancePolicyModal({ enterprise, employees, onClose, toast }) {
+  const [policies, setPolicies] = useState([])
+  const [selectedId, setSelectedId] = useState('')
+  const [selectedUsers, setSelectedUsers] = useState(new Set())
+  const [enrollmentDetails, setEnrollmentDetails] = useState({})
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState({ year: new Date().getFullYear(), name: `${new Date().getFullYear()}年度高端医疗险`, insurerName: '', policyNumber: '', startAt: '', endAt: '', servicePhone: '', claimContact: '', status: 'draft', note: '', rules: [] })
+  const selectedPolicy = policies.find(p => p._id === selectedId)
+  const load = async () => {
+    const res = await adminAPI.enterpriseInsurancePolicies(enterprise._id)
+    setPolicies(res.data || [])
+    if (!selectedId && res.data?.[0]) selectPolicy(res.data[0])
+  }
+  const selectPolicy = async policy => {
+    setSelectedId(policy._id)
+    setForm({ ...policy, startAt: policy.startAt?.slice(0, 10) || '', endAt: policy.endAt?.slice(0, 10) || '' })
+    const res = await adminAPI.insuranceEnrollments(enterprise._id, policy._id)
+    setSelectedUsers(new Set((res.data || []).filter(x => x.status !== 'terminated').map(x => String(x.userId?._id || x.userId))))
+    setEnrollmentDetails(Object.fromEntries((res.data || []).map(x => [String(x.userId?._id || x.userId), { relation: x.relation || 'employee', planLevel: x.planLevel || '', memberNumber: x.memberNumber || '', exclusions: x.exclusions || '', specialTerms: x.specialTerms || '' }])))
+  }
+  useEffect(() => { load().catch(err => toast('❌ ' + err.message)) }, [])
+  const setRule = (scene, key, value) => setForm(current => {
+    const rules = [...(current.rules || [])]
+    const index = rules.findIndex(r => r.scene === scene)
+    if (index >= 0) rules[index] = { ...rules[index], [key]: value }
+    else rules.push({ scene, covered: 'confirm', preAuthorization: 'confirm', directBilling: 'confirm', [key]: value })
+    return { ...current, rules }
+  })
+  const save = async () => {
+    setSaving(true)
+    try {
+      const policy = selectedId
+        ? (await adminAPI.updateEnterpriseInsurancePolicy(enterprise._id, selectedId, form)).data
+        : (await adminAPI.createEnterpriseInsurancePolicy(enterprise._id, form)).data
+      const enrollments = [...selectedUsers].map(userId => ({ userId, relation: 'employee', status: 'active', ...(enrollmentDetails[userId] || {}) }))
+      await adminAPI.saveInsuranceEnrollments(enterprise._id, policy._id, enrollments, true)
+      toast('✅ 保险方案和参保人员已保存')
+      await load()
+      await selectPolicy(policy)
+    } catch (err) { toast('❌ ' + err.message) } finally { setSaving(false) }
+  }
+  const rule = scene => (form.rules || []).find(r => r.scene === scene) || {}
+  return <div className="modal-overlay"><div className="modal" style={{ width: 'min(1100px, 96vw)', maxHeight: '92vh', overflow: 'auto' }}>
+    <div className="modal-header"><div className="modal-title">🛡️ {enterprise.name} · 高端医疗险</div><button className="modal-close" onClick={onClose}>×</button></div>
+    <div className="modal-body">
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+        {policies.map(p => <button key={p._id} className={`btn btn-sm ${selectedId === p._id ? 'btn-primary' : 'btn-secondary'}`} onClick={() => selectPolicy(p)}>{p.name}（{p.enrolledCount || 0}人）</button>)}
+        <button className="btn btn-sm btn-secondary" onClick={() => { setSelectedId(''); setSelectedUsers(new Set()); setEnrollmentDetails({}); setForm({ year: new Date().getFullYear(), name: `${new Date().getFullYear()}年度高端医疗险`, insurerName: '', policyNumber: '', startAt: '', endAt: '', servicePhone: '', claimContact: '', status: 'draft', note: '', rules: [] }) }}>＋新方案</button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+        {[['方案名称','name'],['保险年度','year'],['保险公司','insurerName'],['保单/团险编号','policyNumber'],['保障开始','startAt'],['保障结束','endAt'],['服务电话','servicePhone'],['理赔联系人','claimContact']].map(([label,key]) => <label key={key} className="form-group"><span className="form-label">{label}</span><input className="form-input" type={key === 'year' ? 'number' : key.endsWith('At') ? 'date' : 'text'} value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))} /></label>)}
+        <label className="form-group"><span className="form-label">状态</span><select className="form-input" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}><option value="draft">整理中</option><option value="review">待复核</option><option value="active">生效中</option><option value="expired">已到期</option></select></label>
+      </div>
+      <div style={{ marginTop: 18, fontWeight: 700 }}>场景化保障规则</div>
+      <div style={{ overflowX: 'auto', marginTop: 8 }}><table className="data-table"><thead><tr><th>场景</th><th>是否保障</th><th>预授权</th><th>直付</th><th>免赔/比例/限额</th><th>医院限制、材料与注意事项</th><th>条款依据</th></tr></thead><tbody>
+        {INSURANCE_SCENES.map(scene => <tr key={scene}><td>{scene}</td><td><select value={rule(scene).covered || 'confirm'} onChange={e => setRule(scene,'covered',e.target.value)}><option value="confirm">需确认</option><option value="yes">保障</option><option value="no">不保障</option></select></td><td><select value={rule(scene).preAuthorization || 'confirm'} onChange={e => setRule(scene,'preAuthorization',e.target.value)}><option value="confirm">需确认</option><option value="required">必须</option><option value="not_required">不需要</option></select></td><td><select value={rule(scene).directBilling || 'confirm'} onChange={e => setRule(scene,'directBilling',e.target.value)}><option value="confirm">需确认</option><option value="yes">支持</option><option value="no">不支持</option></select></td><td><textarea rows={3} value={rule(scene).limit || ''} onChange={e => setRule(scene,'limit',e.target.value)} placeholder="免赔额、比例、限额" /></td><td><textarea rows={3} value={rule(scene).notes || ''} onChange={e => setRule(scene,'notes',e.target.value)} /></td><td><input value={rule(scene).sourceReference || ''} onChange={e => setRule(scene,'sourceReference',e.target.value)} placeholder="附件名/P12" /></td></tr>)}
+      </tbody></table></div>
+      <div style={{ marginTop: 18, fontWeight: 700 }}>参保人员（{selectedUsers.size}人）</div>
+      <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>{employees.map(u => <label key={u._id} style={{ border: '1px solid #E6E1D8', borderRadius: 8, padding: 9 }}><input type="checkbox" checked={selectedUsers.has(String(u._id))} onChange={e => setSelectedUsers(current => { const next = new Set(current); e.target.checked ? next.add(String(u._id)) : next.delete(String(u._id)); return next })} /> <b>{u.name}</b> <span style={{ color: '#888', fontSize: 12 }}>{u.phone}</span></label>)}</div>
+      {employees.filter(u => selectedUsers.has(String(u._id))).map(u => { const key = String(u._id); const detail = enrollmentDetails[key] || {}; const setDetail = (field, value) => setEnrollmentDetails(all => ({ ...all, [key]: { ...(all[key] || {}), [field]: value } })); return <details key={key} style={{ marginTop: 8, border: '1px solid #E6E1D8', borderRadius: 8, padding: 10 }}><summary style={{ cursor: 'pointer', fontWeight: 650 }}>{u.name} · 个人参保信息/特别约定</summary><div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 10 }}><input className="form-input" placeholder="方案等级" value={detail.planLevel || ''} onChange={e => setDetail('planLevel', e.target.value)} /><input className="form-input" placeholder="保险会员号" value={detail.memberNumber || ''} onChange={e => setDetail('memberNumber', e.target.value)} /><select className="form-input" value={detail.relation || 'employee'} onChange={e => setDetail('relation', e.target.value)}><option value="employee">员工本人</option><option value="spouse">配偶</option><option value="child">子女</option><option value="other">其他</option></select><textarea className="form-input" rows={2} placeholder="个人除外责任" value={detail.exclusions || ''} onChange={e => setDetail('exclusions', e.target.value)} /><textarea className="form-input" rows={2} placeholder="特别约定" value={detail.specialTerms || ''} onChange={e => setDetail('specialTerms', e.target.value)} /></div></details> })}
+      {selectedPolicy?.attachments?.length > 0 && <div style={{ marginTop: 14, fontSize: 12, color: '#65776F' }}>已继承现有保险附件：{selectedPolicy.attachments.map(a => a.name).join('、')}</div>}
+      <div style={{ marginTop: 12, color: '#8A5A00', background: '#FFF8E7', padding: 10, borderRadius: 8 }}>“需确认”是安全默认值；生效前请按上传合同核对并填写条款依据。</div>
+    </div>
+    <div className="modal-footer"><button className="btn btn-secondary" onClick={onClose}>关闭</button><button className="btn btn-primary" disabled={saving} onClick={save}>{saving ? '保存中…' : '保存方案与参保人员'}</button></div>
+  </div></div>
+}
+
 // ── 企业信息表单 Modal ─────────────────────────────────────────────
 function EnterpriseModal({ enterprise, onClose, onSaved }) {
   const toast = useToast()
@@ -251,6 +320,7 @@ export default function EnterprisesPage() {
   const [showLinkModal, setShowLinkModal] = useState(false)
   const [showHrModal, setShowHrModal] = useState(false)
   const [hrDataEnt, setHrDataEnt] = useState(null)   // 正在录入HR看板数据的企业
+  const [insuranceEnt, setInsuranceEnt] = useState(null)
 
   const load = async (name) => {
     setLoading(true)
@@ -343,6 +413,7 @@ export default function EnterprisesPage() {
                   </button>
                   <button className="btn btn-sm btn-ghost" onClick={() => { setEditing(e); setShowEditModal(true) }}>编辑</button>
                   <button className="btn btn-sm btn-ghost" onClick={() => setHrDataEnt(e)}>📊 HR数据</button>
+                  <button className="btn btn-sm btn-ghost" onClick={() => { if (!employeesByEnt[e._id]) loadDetail(e._id); setInsuranceEnt(e) }}>🛡️ 高端医疗险</button>
                   <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }} onClick={() => del(e)}>删除</button>
                 </div>
               </div>
@@ -398,6 +469,7 @@ export default function EnterprisesPage() {
       {hrDataEnt && (
         <HrDataModal enterprise={hrDataEnt} onClose={() => setHrDataEnt(null)} onSaved={() => load(q)} toast={toast} />
       )}
+      {insuranceEnt && <InsurancePolicyModal enterprise={insuranceEnt} employees={employeesByEnt[insuranceEnt._id] || []} onClose={() => setInsuranceEnt(null)} toast={toast} />}
     </div>
   )
 }

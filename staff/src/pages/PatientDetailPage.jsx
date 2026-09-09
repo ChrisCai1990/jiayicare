@@ -1759,6 +1759,9 @@ export default function PatientDetailPage() {
   const [healthForm, setHealthForm] = useState({})
   const [lifestyleForm, setLifestyleForm] = useState({})
   const [insuranceForm, setInsuranceForm] = useState({})
+  const [showInsuranceCase, setShowInsuranceCase] = useState(false)
+  const [insuranceCaseSaving, setInsuranceCaseSaving] = useState(false)
+  const [insuranceCaseForm, setInsuranceCaseForm] = useState({ scenario: 'reimbursement', title: '', occurredAt: new Date().toISOString().slice(0, 10), estimatedAmount: '', note: '' })
   // 药物 & 营养素
   const [medications, setMedications] = useState([])
   const [supplements, setSupplements] = useState([])
@@ -2144,6 +2147,18 @@ export default function PatientDetailPage() {
     } finally {
       if (isCurrent()) setLoading(false)
     }
+  }
+
+  const createInsuranceCase = async () => {
+    setInsuranceCaseSaving(true)
+    try {
+      await staffAPI.createInsuranceCase(id, insuranceCaseForm)
+      toast('保险服务案件已建立，并进入健管专员工作台')
+      setShowInsuranceCase(false)
+      setInsuranceCaseForm({ scenario: 'reimbursement', title: '', occurredAt: new Date().toISOString().slice(0, 10), estimatedAmount: '', note: '' })
+      await load(false)
+    } catch (err) { toast(err.message || '建立保险案件失败') }
+    finally { setInsuranceCaseSaving(false) }
   }
 
   // 打卡数据有疑问时医护端修正：血压拆sys/dia两个数值输入，其余类型统一走单值输入
@@ -4133,7 +4148,8 @@ export default function PatientDetailPage() {
           {/* 医疗保障信息 */}
           <div className="card">
             <div className="card-header">
-              <div className="card-title">医疗保障信息</div>
+              <div><div className="card-title">医疗保障信息</div>{data.insuranceCoverage && <div style={{ marginTop: 3, fontSize: 11, color: '#1E6B50' }}>企业高端医疗险已同步</div>}</div>
+              {data.insuranceCoverage && <button className="btn btn-primary btn-sm" onClick={() => setShowInsuranceCase(true)}>＋ 发起保险服务</button>}
               {!editingInsurance
                 ? <button className="btn btn-secondary btn-sm" onClick={() => { setEditingInsurance(true); setInsuranceForm(buildInsuranceForm(user)) }}>编辑</button>
                 : <div style={{ display: 'flex', gap: 8 }}>
@@ -4143,6 +4159,18 @@ export default function PatientDetailPage() {
               }
             </div>
             <div className="card-body">
+              {data.insuranceCoverage && (() => {
+                const { policy, enrollment } = data.insuranceCoverage
+                const statusLabel = { active: '保障中', review: '待复核', draft: '整理中', expired: '已到期' }[policy.status] || policy.status
+                return <div style={{ marginBottom: 14, padding: 12, background: '#EEF7F2', border: '1px solid #CDE5D9', borderRadius: 9 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}><b style={{ color: '#173B2E' }}>{policy.name}</b><span style={{ color: '#1E6B50', fontSize: 12, fontWeight: 700 }}>{statusLabel}</span></div>
+                  <div style={{ marginTop: 5, fontSize: 12, color: '#4A6558' }}>{policy.insurerName || '保险公司待补充'} · {policy.startAt ? new Date(policy.startAt).toLocaleDateString('zh-CN') : '-'} 至 {policy.endAt ? new Date(policy.endAt).toLocaleDateString('zh-CN') : '-'}</div>
+                  {(enrollment.planLevel || enrollment.memberNumber) && <div style={{ marginTop: 4, fontSize: 12, color: '#4A6558' }}>方案等级：{enrollment.planLevel || '-'} · 保险会员号：{enrollment.memberNumber || '-'}</div>}
+                  {(enrollment.exclusions || enrollment.specialTerms) && <div style={{ marginTop: 7, padding: 8, background: '#FFF8E7', borderRadius: 6, fontSize: 12, color: '#8A5A00' }}>个人特别约定：{enrollment.exclusions || enrollment.specialTerms}</div>}
+                  <div style={{ marginTop: 9, display: 'grid', gap: 6 }}>{(policy.rules || []).map(rule => <details key={rule._id || rule.scene}><summary style={{ cursor: 'pointer', fontSize: 12, fontWeight: 650 }}>{rule.scene} · {rule.covered === 'yes' ? '保障' : rule.covered === 'no' ? '不保障' : '需确认'} · {rule.preAuthorization === 'required' ? '须预授权' : '预授权需核实'}</summary><div style={{ whiteSpace: 'pre-wrap', padding: '6px 0 0 12px', color: '#65776F', fontSize: 12 }}>{[rule.limit, rule.hospitalRestrictions, rule.requiredMaterials, rule.notes, rule.sourceReference && `依据：${rule.sourceReference}`].filter(Boolean).join('\n') || '详细规则待补充'}</div></details>)}</div>
+                  <div style={{ marginTop: 9, color: '#8A5A00', fontSize: 11 }}>页面信息用于服务指导，最终保障和理赔结果以保险公司书面确认为准。</div>
+                </div>
+              })()}
               {editingInsurance ? (
                 <div style={{ display: 'grid', gap: 14 }}>
                   <div>
@@ -4199,10 +4227,21 @@ export default function PatientDetailPage() {
                     <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 80 }}>重疾险：</span>
                     <span style={{ fontSize: 13, color: '#1A2B24' }}>{user.critical_illness || '-'}</span>
                   </div>
+                  {(data.insuranceCases || []).length > 0 && <div style={{ marginTop: 12, borderTop: '1px solid #E6E1D8', paddingTop: 10 }}><div style={{ fontWeight: 700, fontSize: 13, marginBottom: 7 }}>保险服务案件</div>{data.insuranceCases.map(item => <details key={item._id} style={{ marginBottom: 6 }}><summary style={{ cursor: 'pointer', fontSize: 12 }}>{item.title} · {item.status === 'closed' ? '已结案' : '处理中'}</summary><div style={{ padding: '7px 0 0 12px' }}>{(item.steps || []).map(step => <label key={step._id} style={{ display: 'block', fontSize: 12, marginBottom: 5 }}><input type="checkbox" checked={step.status === 'completed'} disabled={step.status === 'completed'} onChange={async () => { await staffAPI.updateInsuranceCaseStep(item._id, step._id, { status: 'completed' }); load(false) }} /> {step.title}</label>)}</div></details>)}</div>}
                 </div>
               )}
             </div>
           </div>
+
+          {showInsuranceCase && <div className="modal-overlay"><div className="modal" style={{ width: 560 }}>
+            <div className="modal-header"><div className="modal-title">发起高端医疗险服务</div><button className="modal-close" onClick={() => setShowInsuranceCase(false)}>×</button></div>
+            <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
+              <label className="form-group"><span className="form-label">服务场景 *</span><select className="form-input" value={insuranceCaseForm.scenario} onChange={e => setInsuranceCaseForm(f => ({ ...f, scenario: e.target.value }))}><option value="outpatient">门诊就医</option><option value="inpatient">计划住院</option><option value="emergency">急诊</option><option value="special_drug">特药/院外药</option><option value="reimbursement">事后报销</option><option value="dispute">理赔争议</option></select></label>
+              <label className="form-group"><span className="form-label">案件名称 *</span><input className="form-input" value={insuranceCaseForm.title} onChange={e => setInsuranceCaseForm(f => ({ ...f, title: e.target.value }))} placeholder="如：9月门诊报销" /></label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}><label className="form-group"><span className="form-label">发生日期</span><input className="form-input" type="date" value={insuranceCaseForm.occurredAt} onChange={e => setInsuranceCaseForm(f => ({ ...f, occurredAt: e.target.value }))} /></label><label className="form-group"><span className="form-label">预计费用</span><input className="form-input" type="number" value={insuranceCaseForm.estimatedAmount} onChange={e => setInsuranceCaseForm(f => ({ ...f, estimatedAmount: e.target.value }))} /></label></div>
+              <label className="form-group"><span className="form-label">客户诉求与补充说明</span><textarea className="form-input" rows={4} value={insuranceCaseForm.note} onChange={e => setInsuranceCaseForm(f => ({ ...f, note: e.target.value }))} /></label>
+            </div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowInsuranceCase(false)}>取消</button><button className="btn btn-primary" disabled={insuranceCaseSaving || !insuranceCaseForm.title.trim()} onClick={createInsuranceCase}>{insuranceCaseSaving ? '创建中…' : '创建案件与待办'}</button></div>
+          </div></div>}
 
           {/* 健康需求 */}
           <div className="card">
