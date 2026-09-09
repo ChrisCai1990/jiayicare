@@ -27,6 +27,7 @@ export default function ServiceTaskChecklist({ mode, purposes = [], value, sourc
       {rows.map((item, index) => <div key={item.key} style={{ padding: 12, borderTop: index ? '1px solid #E8EFEB' : 'none', background: '#fff' }}>
         <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.65, color: '#1A2B24' }}>{index + 1}. {item.purpose}</div>
         {mode === 'executor' ? <>
+          {item.supervisionStatus === 'issue' && <div style={{ marginTop: 7, padding: '7px 9px', borderRadius: 7, background: '#FFF4E5', color: '#B45309', fontSize: 12 }}>督办退回：{item.supervisionNote || '请补充完成此项目'}</div>}
           <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>{[['completed', '已完成'], ['partial', '部分完成'], ['incomplete', '未完成']].map(([key, label]) => <button key={key} type="button" style={btn(item.executionStatus === key)} onClick={() => update(index, { executionStatus: key })}>{label}</button>)}</div>
           <textarea className="form-control" rows={2} value={item.executionResult || ''} onChange={e => update(index, { executionResult: e.target.value })} placeholder="填写实际结果：开具了哪些检查单、预约了哪位专家、领取了哪些资料" style={{ marginTop: 8 }} />
           {item.executionStatus !== 'completed' && <input className="form-control" value={item.nextAction || ''} onChange={e => update(index, { nextAction: e.target.value })} placeholder="未完成原因、下一步及预计时间" style={{ marginTop: 7 }} />}

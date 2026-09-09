@@ -73,10 +73,10 @@ const MODULE_DEFS_BY_TYPE = {
       ],
     },
     tasks: {
-      name: '个性化补充任务', icon: '✅', multi: true, summaryKey: 'task', summaryLabel: '任务',
-      description: '标准岗位任务由服务流程固定生成；这里只添加本次客户特有的额外事项。',
+      name: '本次代办目的', icon: '✅', multi: true, summaryKey: 'task', summaryLabel: '目的',
+      description: '一条只写一个可验收结果，明确科室/专家及要开具、预约或领取的具体项目；背景和注意事项不要写在这里。',
       fields: [
-        { key: 'task', label: '任务内容', type: 'textarea', rows: 6, placeholder: '请填写具体执行内容、携带材料和完成要求' },
+        { key: 'task', label: '具体目的', type: 'textarea', rows: 2, placeholder: '如：请妇科王医生开具盆腔MRI检查单' },
         { key: 'notes', label: '备注', type: 'textarea', internal: true },
       ],
     },
@@ -400,6 +400,7 @@ export default function PlanModulesPage() {
       if (!checkupService && !visit.staffId) { toast('请选择就医专员'); return }
       if (checkupService && !visit.reviewerId) { toast('客户尚未归属健康顾问，请先选择方案审核医生'); return }
       if (!checkupService && !visit.supervisorId) { toast('请选择督办人'); return }
+      if (!checkupService && !(moduleData.tasks?.records || []).some(item => item.task?.trim())) { toast('请至少填写一条明确、可验收的本次代办目的'); return }
       if (!(visit.followUpPlans?.length || visit.followUpPlanId)) { toast('该服务尚未配置标准岗位任务，请先在 Admin 服务流程中配置'); return }
     }
     setSaving(true)
@@ -528,11 +529,11 @@ export default function PlanModulesPage() {
 
       {/* 体检订单的核心需求已在上方展示，避免健康规划师重复维护“服务目标”。 */}
       {!isCheckupService && <div style={{ background: '#fff', borderRadius: 12, padding: 20, marginBottom: 20, border: '1px solid #E0D9CE' }}>
-        <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24', marginBottom: 10 }}>服务目标</div>
+        <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24', marginBottom: 10 }}>{plan.type === 'medical_assist' ? '本次代办总目标（简述）' : '服务目标'}</div>
         <textarea
           className="form-input"
           rows={2}
-          placeholder="如：控制血糖、三个月内减重5公斤——AI生成方案时会参考这里的目标"
+          placeholder={plan.type === 'medical_assist' ? '用一句话说明本次代办要解决什么问题' : '如：控制血糖、三个月内减重5公斤——AI生成方案时会参考这里的目标'}
           value={goal}
           onChange={e => { setGoal(e.target.value); setDirty(true) }}
           style={{ width: '100%', padding: '8px 10px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' }}

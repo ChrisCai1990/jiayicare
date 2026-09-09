@@ -1498,11 +1498,31 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   }
   await followUp.save();
 
+  // 督办发现某项目未达成时，退回同一组执行任务补充；执行人再次完成后，
+  // 既有 executor_completed 流程会重新激活本督办任务，实现逐项目的闭环复核。
+  if (followUp.sourceHealthPlanId && followUp.taskRole === 'supervisor' && followUp.status === 'in_progress' && followUp.dependsOnTaskId) {
+    const hasIssue = Array.isArray(followUp.serviceChecklist) && followUp.serviceChecklist.some(item => item?.supervisionStatus === 'issue');
+    if (hasIssue) {
+      await FollowUp.updateOne(
+        { _id: followUp.dependsOnTaskId },
+        { $set: { status: 'in_progress', serviceChecklist: followUp.serviceChecklist, completedAt: null, completedBy: null, remindAt: new Date(), nextFollowUpDate: new Date() } }
+      );
+      followUp.status = 'planned';
+      followUp.isBlocked = true;
+      followUp.completedAt = null;
+      followUp.completedBy = null;
+      await followUp.save();
+    }
+  }
+
   // 专业执行完成后，督办任务进入待复核；督办完成后关闭就医协助子方案。
   if (followUp.sourceHealthPlanId && followUp.taskRole === 'executor' && followUp.status === 'completed') {
+    const checklistForReview = Array.isArray(followUp.serviceChecklist)
+      ? followUp.serviceChecklist.map(({ supervisionStatus, supervisionNote, ...item }) => item)
+      : [];
     await FollowUp.updateOne(
       { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'supervisor', workflowKey: followUp.workflowKey || '', status: 'planned' },
-      { $set: { status: 'in_progress', isBlocked: false, date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date() } }
+      { $set: { status: 'in_progress', isBlocked: false, serviceChecklist: checklistForReview, date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date() } }
     );
   }
   if (followUp.sourceHealthPlanId && followUp.taskRole === 'supervisor' && followUp.status === 'completed') {
@@ -11819,7 +11839,7 @@ ${candidateTemplates.map(t => `《${t.name}》：${JSON.stringify(t.content)}`).
       askFields.expert && `"expert": "建议专家，无法判断则留空"`,
       askFields.hotel && `"hotel": "本次住宿安排（结合会员情况具体化，如模板固定为'无需安排'则原样返回）"`,
       askFields.transport && `"transport": "本次交通安排（结合会员情况具体化，如模板固定为'无需安排'则原样返回）"`,
-      `"tasks": "针对该会员的具体执行安排，每行一项，需结合模板步骤但要写出本次的具体内容（如具体日期、具体证件），不要原样照抄模板${isCheckupService ? '；本次是体检服务，只写体检方案确认、预约协调、体检准备、现场陪检、报告回收与解读，不得写门诊挂号、就诊科室、建议专家或虚构具体检查项目' : ''}"`,
+      `"tasks": "${isCheckupService ? '本次体检服务的必要执行节点，每行一项；只写方案确认、预约协调、体检准备、现场陪检、报告回收与解读，不得写门诊挂号、就诊科室、建议专家或虚构具体检查项目' : '本次代办目的，每行一项、一项只写一个可验收结果，尽量不超过50字；必须明确科室或专家，以及要开具的具体检查单/处方、要预约的检查或要打印领取的报告；不要写背景、携带材料、流程说明或笼统的陪同就医' }"`,
       `"notes": "本次注意事项，若模板notes是待填空的清单（如'挂号科室：\\n时间安排：'），请把冒号后面的内容具体填好"`,
     ].filter(Boolean).join(',\n  ');
 
@@ -11846,7 +11866,7 @@ ${templateBlock}
   ${fieldSpecs}
 }
 
-注意：tasks至少2项，且必须是针对该会员的具体安排，不是模板步骤的复述。`;
+注意：tasks只保留实际需要的项目，不强行凑数量；每项必须具体、简短、可验收，不得复述模板步骤。`;
 
     const scopedPrompt = isCheckupService
       ? `${prompt}\n\n【体检场景硬性边界】这是体检服务方案，不是门诊就医方案。禁止使用“就诊医院、就诊科室、门诊挂号、建议专家”等门诊表述；没有已确认医学依据时，不得自行新增具体检查项目。`
