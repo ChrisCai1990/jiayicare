@@ -9,6 +9,31 @@ function formatChinaServiceDate(value) {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
+function extractRelativeServiceDate(text, anchor = new Date()) {
+  const source = String(text || '');
+  if (!source.trim()) return '';
+  const anchorDate = formatChinaServiceDate(anchor);
+  if (!anchorDate) return '';
+  const [year, month, day] = anchorDate.split('-').map(Number);
+  const base = new Date(Date.UTC(year, month - 1, day));
+  const formatOffset = offset => {
+    const result = new Date(base);
+    result.setUTCDate(result.getUTCDate() + offset);
+    return `${result.getUTCFullYear()}-${String(result.getUTCMonth() + 1).padStart(2, '0')}-${String(result.getUTCDate()).padStart(2, '0')}`;
+  };
+
+  if (/后天/.test(source)) return formatOffset(2);
+  if (/明天/.test(source)) return formatOffset(1);
+  if (/今天/.test(source)) return formatOffset(0);
+
+  const weekdayMatch = source.match(/(本周|这周|下周)([一二三四五六日天])/u);
+  if (!weekdayMatch) return '';
+  const weekday = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 日: 7, 天: 7 }[weekdayMatch[2]];
+  const currentWeekday = base.getUTCDay() || 7;
+  const weekOffset = weekdayMatch[1] === '下周' ? 7 : 0;
+  return formatOffset(weekOffset + weekday - currentWeekday);
+}
+
 function extractConfirmedServiceTime(...values) {
   const text = values.filter(Boolean).map(String).join('\n');
   if (!text) return '';
@@ -29,7 +54,8 @@ function extractConfirmedServiceTime(...values) {
 function confirmedServiceSchedule(order, briefNote = '') {
   if (!order) return { serviceDate: '', serviceTime: '' };
   return {
-    serviceDate: formatChinaServiceDate(order.desiredServiceDate || order.scheduledAt),
+    serviceDate: formatChinaServiceDate(order.desiredServiceDate || order.scheduledAt)
+      || extractRelativeServiceDate([order.note, order.serviceRequirements, briefNote].filter(Boolean).join('\n'), order.createdAt),
     serviceTime: extractConfirmedServiceTime(order.note, order.serviceRequirements, briefNote),
   };
 }
@@ -46,6 +72,7 @@ function applyConfirmedServiceSchedule(content, order, briefNote = '') {
 
 module.exports = {
   formatChinaServiceDate,
+  extractRelativeServiceDate,
   extractConfirmedServiceTime,
   confirmedServiceSchedule,
   applyConfirmedServiceSchedule,

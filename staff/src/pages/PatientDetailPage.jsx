@@ -11760,7 +11760,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
   const order = currentBooking?.sourceOrderId
   const orderId = order?._id || order
   const customerTask = String(order?.serviceRequirements || order?.note || '').split(/[；\n]/).map(item => item.trim()).filter(item => item && !/^(规格：|健康基金抵扣|优惠券抵扣|支付方式：)/.test(item)).join('；')
-  const orderServiceDate = order?.desiredServiceDate || order?.scheduledAt
+  const orderServiceDate = order?.desiredServiceDate || order?.scheduledAt || order?.confirmedServiceSchedule?.serviceDate
   const orderActionable = order && order.paymentStatus === 'paid'
     && ['paid', 'fulfilling', 'partially_refunded'].includes(order.tradeStatus)
     && ['', 'none', 'failed', 'partially_refunded'].includes(order.refundStatus || '')

@@ -4883,8 +4883,13 @@ router.get('/patients/:id/orders', staffAuth, async (req, res) => {
       .limit(30)
       .populate('referrerId', 'name role')
       .populate('fulfillerId', 'name role')
-      .populate('redemptions.redeemedBy', 'name role');
-    res.json({ success: true, data: orders });
+      .populate('redemptions.redeemedBy', 'name role')
+      .lean();
+    const { confirmedServiceSchedule } = require('../utils/confirmedServiceSchedule');
+    res.json({ success: true, data: orders.map(order => ({
+      ...order,
+      confirmedServiceSchedule: confirmedServiceSchedule(order),
+    })) });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

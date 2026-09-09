@@ -2,10 +2,16 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   formatChinaServiceDate,
+  extractRelativeServiceDate,
   extractConfirmedServiceTime,
   confirmedServiceSchedule,
   applyConfirmedServiceSchedule,
 } = require('../src/utils/confirmedServiceSchedule');
+
+test('resolves a relative weekday from the order creation date', () => {
+  assert.equal(extractRelativeServiceDate('下周五，浙二医院', '2026-09-08T08:28:15.794Z'), '2026-09-18');
+  assert.equal(extractRelativeServiceDate('本周五，浙二医院', '2026-09-08T08:28:15.794Z'), '2026-09-11');
+});
 
 test('formats an order date in the China timezone for a date input', () => {
   assert.equal(formatChinaServiceDate('2026-09-07T16:00:00.000Z'), '2026-09-08');
@@ -27,6 +33,13 @@ test('builds the schedule from confirmed order data without AI inference', () =>
     desiredServiceDate: '2026-09-07T16:00:00.000Z',
     serviceRequirements: '心内科9点',
   }), { serviceDate: '2026-09-08', serviceTime: '9点' });
+});
+
+test('falls back to a deterministic relative date in a legacy order note', () => {
+  assert.deepEqual(confirmedServiceSchedule({
+    createdAt: '2026-09-08T08:28:15.794Z',
+    note: '下周五，浙二医院',
+  }), { serviceDate: '2026-09-18', serviceTime: '' });
 });
 
 test('fills a legacy linked plan while preserving values already reviewed by staff', () => {
