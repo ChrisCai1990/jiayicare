@@ -231,6 +231,23 @@
   color: #1e6b50;
   font-size: 13px;
 }
+.service-assistant.sa-compact { padding: 14px 16px; }
+.sa-compact .sa-heading h1 { font-size: 18px; margin: 0; line-height: 1.5; }
+.sa-diagnostics { margin: 4px 0 10px; color: #677c72; font-size: 12px; }
+.sa-diagnostics summary { cursor: pointer; padding: 4px 0; }
+.sa-diagnostics[open] { padding-bottom: 8px; border-bottom: 1px solid #e0e7e1; }
+.sa-diagnostics button { margin: 6px 0; }
+.sa-diagnostics .sa-connection { margin: 4px 0 0; }
+.sa-compact .sa-household { padding: 14px; margin: 10px 0; }
+.sa-household .sa-row { margin-bottom: 8px; flex-wrap: nowrap; }
+.sa-household .sa-row h2 { margin: 0; font-size: 17px; overflow-wrap: anywhere; }
+.sa-household .sa-row button { flex-shrink: 0; padding: 5px 9px; }
+.sa-household select { margin: 5px 0 8px; padding: 8px; }
+.sa-compact .sa-stats { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 8px 0 0; }
+.sa-compact .sa-stats div { display: flex; align-items: baseline; gap: 5px; padding: 0; background: transparent; }
+.sa-compact .sa-stats strong { display: inline; margin: 0; font-size: 16px; }
+.sa-compact .sa-tabs { margin: 12px 0; }
+.sa-compact .sa-notice { padding: 8px 12px; margin: 8px 0; }
 @media (max-width: 600px) {
   .service-assistant {
     padding: 16px 10px;

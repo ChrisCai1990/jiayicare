@@ -427,17 +427,15 @@ export default function ServiceAssistantPage() {
     </form>
   );
   return (
-    <div className="service-assistant">
+    <div className="service-assistant sa-compact">
       <header className="sa-heading">
-        <div>
-          <small>JIAYICARE · SERVICE</small>
-          <h1>家庭服务助手</h1>
-          <p>把沟通接成服务，把跟进留在档案。</p>
-        </div>
+        <h1>家庭服务助手</h1>
+      </header>
+      <details className="sa-diagnostics">
+        <summary>连接状态与重试</summary>
         <button disabled={busy} onClick={recognise}>
           {inGroupSidebar ? "重新识别当前群" : "识别当前企微群"}
         </button>
-      </header>
       <div className="sa-connection">
         {caps ? (
           <>
@@ -457,6 +455,7 @@ export default function ServiceAssistantPage() {
           "正在检查接入状态…"
         )}
       </div>
+      </details>
       {error && (
         <div className="sa-alert" role="alert">
           {error}
@@ -467,7 +466,7 @@ export default function ServiceAssistantPage() {
           {notice}
         </div>
       )}
-      <div className="sa-toolbar">
+      {(!inGroupSidebar || !g) && <div className="sa-toolbar">
         {inGroupSidebar ? <div><small>当前群绑定家庭</small><p>{g?.name || (currentChat ? "当前群尚未绑定，请在下方完成首次绑定" : "正在识别当前群；若失败请点击重新识别")}</p></div> : <>
         <label>
           当前服务群
@@ -499,7 +498,7 @@ export default function ServiceAssistantPage() {
           </button>
         )}
         </>}
-      </div>
+      </div>}
       {(creating || settings) && (
         <section className="sa-card">
           <h2>{settings ? "服务群设置" : "绑定个人 / 家庭服务群"}</h2>
@@ -618,7 +617,7 @@ export default function ServiceAssistantPage() {
       )}
       {g && (
         <>
-          <section className="sa-card">
+          <section className="sa-card sa-household">
             <div className="sa-row">
               <h2>{g.name}</h2>
               {can("patients", "edit") && (

@@ -153,6 +153,9 @@ const fs = require("node:fs"),
     if(await page.getByLabel('当前服务群',{exact:true}).count()) throw new Error('Sidebar must not offer group switching');
     if(await page.getByRole('button',{name:'新建服务群',exact:true}).count()) throw new Error('Bound sidebar must not create another group');
     await page.screenshot({path:path.join(output,'locked-sidebar.png'),fullPage:true});
+    const tabsTop = await page.getByRole('navigation',{name:'服务功能'}).evaluate(el=>el.getBoundingClientRect().top);
+    if(tabsTop > 340) throw new Error('Sidebar top area is too tall');
+    await page.getByText('连接状态与重试',{exact:true}).click();
     await page.evaluate(()=>{window.syntheticChat='wr_synthetic_unbound';});
     await page.getByRole('button',{name:'重新识别当前群',exact:true}).click();
     await page.getByRole('heading',{name:'绑定个人 / 家庭服务群',exact:true}).waitFor();
