@@ -422,17 +422,32 @@ async function getWorkbenchFollowUpOwnerFilter(staff) {
 
 router.get('/service-tasks', staffAuth, async (req, res) => {
   const { status = 'active', includeFuture = '', limit = 100 } = req.query;
-  const filter = { assignedTo: req.staff._id, sourceType: 'health_plan', taskRole: { $in: ['executor', 'supervisor'] }, isBlocked: { $ne: true } };
+  const filter = { assignedTo: req.staff._id, isBlocked: { $ne: true }, $and: [{ $or: [
+    { sourceType: 'health_plan', taskRole: { $in: ['executor', 'supervisor'] } },
+    { sourceType: 'insurance_service', taskRole: 'executor' },
+    // 已生成的保险临时任务沿用 scheduled；按明确标签兼容，不把设备维护等固定事务带入。
+    { sourceType: 'scheduled', tags: '保险服务' },
+  ] }] };
   if (status === 'active') filter.status = { $in: ['planned', 'in_progress', 'missed'] };
   else if (status) filter.status = status;
-  if (includeFuture !== '1') filter.$or = [{ remindAt: null }, { remindAt: { $lte: new Date() } }];
+  if (includeFuture !== '1') filter.$and.push({ $or: [{ remindAt: null }, { remindAt: { $lte: new Date() } }] });
   const tasks = await FollowUp.find(filter).sort({ date: 1 }).limit(Math.min(Number(limit) || 100, 200))
     .populate('patientId', 'name phone gender age chronicDiseases')
     .populate('staffId', 'name role title').populate('assignedTo', 'name role')
     .populate('sourceHealthPlanId', 'title description content type')
     .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard')
     .populate('dependsOnTaskId', 'serviceChecklist executedContent status completedAt');
-  res.json({ success: true, data: tasks.map(task => ({ ...task.toObject(), taskRequirements: followUpTaskRequirements(task), taskPurposes: followUpTaskPurposes(task) })) });
+  res.json({ success: true, data: tasks.map(task => {
+    const item = task.toObject();
+    const isLegacyInsurance = item.sourceType === 'scheduled' && (item.tags || []).includes('保险服务');
+    if (isLegacyInsurance) {
+      item.taskRole = 'executor';
+      if (!Array.isArray(item.serviceChecklist) || !item.serviceChecklist.length) {
+        item.serviceChecklist = String(item.plannedContent || item.content || '').split('\n').map((purpose, index) => ({ key: `insurance_${index}`, purpose: purpose.trim() })).filter(row => row.purpose);
+      }
+    }
+    return { ...item, taskRequirements: followUpTaskRequirements(task), taskPurposes: followUpTaskPurposes(task) };
+  }) });
 });
 
 // ── GET /api/staff/patients ───────────────────────────────────────
@@ -914,7 +929,8 @@ router.post('/patients/:id/insurance-cases', staffAuth, async (req, res) => {
     staffId: assignee, assignedTo: assignee, patientId: patient._id, type: 'other', status: 'planned',
     date: serviceCase.dueAt || new Date(), theme: `高端医疗险：${serviceCase.title}`,
     content: stepTitles[0], plannedContent: stepTitles.join('\n'), tags: ['高端医疗险', '保险服务'],
-    sourceType: 'scheduled', sourceId: serviceCase._id,
+    sourceType: 'insurance_service', sourceId: serviceCase._id, taskRole: 'executor',
+    serviceChecklist: stepTitles.map((purpose, index) => ({ key: `insurance_${index}`, purpose })),
   });
   res.json({ success: true, data: serviceCase, message: '保险服务案件已建立，并进入健管专员工作台' });
 });
@@ -937,7 +953,7 @@ router.patch('/insurance-cases/:caseId/steps/:stepId', staffAuth, async (req, re
   serviceCase.updatedBy = req.staff._id;
   await serviceCase.save();
   if (serviceCase.status === 'closed') {
-    await FollowUp.updateMany({ sourceType: 'scheduled', sourceId: serviceCase._id, status: { $in: ['planned', 'in_progress'] } }, { status: 'completed', completedAt: new Date(), completedBy: 'staff' });
+    await FollowUp.updateMany({ sourceType: { $in: ['scheduled', 'insurance_service'] }, sourceId: serviceCase._id, status: { $in: ['planned', 'in_progress'] } }, { status: 'completed', completedAt: new Date(), completedBy: 'staff' });
   }
   res.json({ success: true, data: serviceCase });
 });
@@ -1327,6 +1343,8 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
     assignedTo ? { assignedTo } : {},
     includeFuture === '1' ? {} : availabilityFilter,
     { $or: [{ taskRole: '' }, { taskRole: null }, { taskRole: { $exists: false } }] },
+    { sourceType: { $ne: 'insurance_service' } },
+    { tags: { $nin: ['保险服务'] } },
   ] };
   if (sourceType) filter.sourceType = sourceType;
   if (sourceType === 'order') {
@@ -1695,7 +1713,11 @@ router.get('/reports', staffAuth, async (req, res) => {
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 1);
   const availableNowFilter = { $or: [{ remindAt: null }, { remindAt: { $lte: new Date() } }] };
-  const fixedFollowUpOnlyFilter = { $or: [{ taskRole: '' }, { taskRole: null }, { taskRole: { $exists: false } }] };
+  const fixedFollowUpOnlyFilter = { $and: [
+    { $or: [{ taskRole: '' }, { taskRole: null }, { taskRole: { $exists: false } }] },
+    { sourceType: { $ne: 'insurance_service' } },
+    { tags: { $nin: ['保险服务'] } },
+  ] };
 
   const openStatuses = ['planned', 'in_progress', 'missed'];
   const [totalPatients, todayPending, todayCompleted, monthPending, monthCompleted, overdue] = await Promise.all([
