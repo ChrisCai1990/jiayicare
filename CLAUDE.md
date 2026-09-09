@@ -1,6 +1,6 @@
 # 双端共享记忆入口
 
-家庭服务助手（2026-09-09，本地未部署）的功能、接口和企微接入边界见 `docs/SERVICE_GROUP_ASSISTANT.md`。
+家庭服务助手（2026-09-09，首版已部署，企微待配置）的功能、接口和企微接入边界见 `docs/SERVICE_GROUP_ASSISTANT.md`。
 
 Claude Code 开始处理本项目时，必须先读取根目录 `AGENTS.md` 顶部的
 “Codex / Claude Code 双端统一项目记忆”。该节是两端共享的稳定事实来源，包含系统边界、
