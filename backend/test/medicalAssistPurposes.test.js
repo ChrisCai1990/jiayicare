@@ -59,4 +59,5 @@ test('draft plan exposes purpose-only regeneration without creating another plan
   const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8')
   assert.match(route, /regenerate-medical-assist-purposes/)
   assert.match(route, /方案已推送，不能覆盖代办目的/)
+  assert.doesNotMatch(route, /plan\.status !== 'draft' \|\| plan\.pushedAt/)
 })

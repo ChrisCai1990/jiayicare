@@ -530,7 +530,7 @@ export default function PlanModulesPage() {
             </span>
           )}
           {dirty && <span style={{ fontSize: 12, color: '#D97706', background: '#FEF9EC', padding: '4px 8px', borderRadius: 20 }}>有未保存更改</span>}
-          {canEdit && plan.type === 'medical_assist' && !isCheckupService && plan.status === 'draft' && !plan.pushedAt && (
+          {canEdit && plan.type === 'medical_assist' && !isCheckupService && !plan.pushedAt && (
             <button
               onClick={handleRegeneratePurposes}
               disabled={regeneratingPurposes || dirty}

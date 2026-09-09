@@ -2000,7 +2000,9 @@ router.post('/plans/:id/regenerate-medical-assist-purposes', staffAuth, checkPer
     const plan = await HealthPlan.findById(req.params.id);
     if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
     if (plan.type !== 'medical_assist') return res.status(400).json({ success: false, message: '仅就医协助方案支持重新生成代办目的' });
-    if (plan.status !== 'draft' || plan.pushedAt) return res.status(409).json({ success: false, message: '方案已推送，不能覆盖代办目的' });
+    // Older pending plans may use a historical status value. pushedAt is the authoritative
+    // boundary: once customer-visible, AI must not overwrite the reviewed purposes.
+    if (plan.pushedAt) return res.status(409).json({ success: false, message: '方案已推送，不能覆盖代办目的' });
     if (!canUsePlanOwnerRole(plan, req.staff) || !(await planTypeAllowed(req, plan.type)) || !(await canManagePlan(req, plan))) {
       return res.status(403).json({ success: false, message: '无权修改该方案' });
     }
