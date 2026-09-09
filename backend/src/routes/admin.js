@@ -1739,8 +1739,9 @@ router.get('/enterprises', adminAuth, async (req, res) => {
   const enterprises = await Enterprise.find(filter).sort({ createdAt: -1 });
   // 附带每个企业当前已分配的员工数
   const withSeatsUsed = await Promise.all(enterprises.map(async (e) => {
-    const seatsUsed = await User.countDocuments({ enterpriseId: e._id });
-    return { ...e.toObject(), seatsUsed };
+    const seatsUsed = await User.countDocuments({ enterpriseId: e._id, enterpriseAssociationType: { $ne: 'dependent' } });
+    const dependentsCount = await User.countDocuments({ enterpriseId: e._id, enterpriseAssociationType: 'dependent' });
+    return { ...e.toObject(), seatsUsed, dependentsCount };
   }));
   res.json({ success: true, data: withSeatsUsed });
 });
@@ -1861,7 +1862,7 @@ router.put('/enterprises/:id/hr-data', adminAuth, async (req, res) => {
 // GET /api/admin/enterprises/:id/employees —— 该企业下已关联的员工列表
 router.get('/enterprises/:id/employees', adminAuth, async (req, res) => {
   const employees = await User.find({ enterpriseId: req.params.id })
-    .select('name phone age gender healthScore onboardingCompleted createdAt')
+    .select('name phone age gender healthScore onboardingCompleted createdAt enterpriseAssociationType')
     .sort({ createdAt: -1 });
   res.json({ success: true, data: employees });
 });
@@ -1939,23 +1940,28 @@ router.put('/enterprises/:enterpriseId/insurance-policies/:policyId/enrollments'
 
 // PATCH /api/admin/enterprises/:id/employees —— 批量将员工关联到该企业（body: { userIds: [] }）
 router.patch('/enterprises/:id/employees', adminAuth, async (req, res) => {
-  const { userIds } = req.body;
+  const { userIds, associationType = 'employee' } = req.body;
   if (!Array.isArray(userIds) || userIds.length === 0) {
     return res.status(400).json({ success: false, message: '请选择要关联的员工' });
   }
   const enterprise = await Enterprise.findById(req.params.id);
   if (!enterprise) return res.status(404).json({ success: false, message: '企业不存在' });
-  const seatsUsed = await User.countDocuments({ enterpriseId: req.params.id });
-  if (enterprise.seatsTotal > 0 && seatsUsed + userIds.length > enterprise.seatsTotal) {
+  if (!['employee', 'dependent'].includes(associationType)) return res.status(400).json({ success: false, message: '企业关联类型无效' });
+  const seatsUsed = await User.countDocuments({ enterpriseId: req.params.id, enterpriseAssociationType: { $ne: 'dependent' } });
+  const alreadyLinkedEmployees = associationType === 'employee'
+    ? await User.countDocuments({ _id: { $in: userIds }, enterpriseId: req.params.id, enterpriseAssociationType: { $ne: 'dependent' } })
+    : 0;
+  const newSeatCount = associationType === 'employee' ? userIds.length - alreadyLinkedEmployees : 0;
+  if (enterprise.seatsTotal > 0 && seatsUsed + newSeatCount > enterprise.seatsTotal) {
     return res.status(400).json({ success: false, message: `超出采购名额（剩余 ${Math.max(enterprise.seatsTotal - seatsUsed, 0)} 个）` });
   }
-  await User.updateMany({ _id: { $in: userIds } }, { enterpriseId: req.params.id });
-  res.json({ success: true, message: `已关联 ${userIds.length} 名员工` });
+  await User.updateMany({ _id: { $in: userIds } }, { enterpriseId: req.params.id, enterpriseAssociationType: associationType });
+  res.json({ success: true, message: associationType === 'dependent' ? `已关联 ${userIds.length} 名高管家属（不占员工名额）` : `已关联 ${userIds.length} 名员工` });
 });
 
 // DELETE /api/admin/enterprises/:id/employees/:userId —— 解除某员工与企业的关联
 router.delete('/enterprises/:id/employees/:userId', adminAuth, async (req, res) => {
-  await User.updateOne({ _id: req.params.userId, enterpriseId: req.params.id }, { enterpriseId: null });
+  await User.updateOne({ _id: req.params.userId, enterpriseId: req.params.id }, { enterpriseId: null, enterpriseAssociationType: 'employee' });
   res.json({ success: true, message: '已解除关联' });
 });
 

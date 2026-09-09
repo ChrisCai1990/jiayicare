@@ -162,7 +162,7 @@ export const adminAPI = {
   deleteEnterprise:       (id)       => req(`/enterprises/${id}`, { method: 'DELETE' }),
   saveEnterpriseHrData:   (id, year, data) => req(`/enterprises/${id}/hr-data`, { method: 'PUT', body: JSON.stringify({ year, data }) }),
   enterpriseEmployees:    (id)       => req(`/enterprises/${id}/employees`),
-  linkEnterpriseEmployees:(id, userIds) => req(`/enterprises/${id}/employees`, { method: 'PATCH', body: JSON.stringify({ userIds }) }),
+  linkEnterpriseEmployees:(id, userIds, associationType = 'employee') => req(`/enterprises/${id}/employees`, { method: 'PATCH', body: JSON.stringify({ userIds, associationType }) }),
   unlinkEnterpriseEmployee:(id, userId) => req(`/enterprises/${id}/employees/${userId}`, { method: 'DELETE' }),
   enterpriseInsurancePolicies: (id) => req(`/enterprises/${id}/insurance-policies`),
   createEnterpriseInsurancePolicy: (id, data) => req(`/enterprises/${id}/insurance-policies`, { method: 'POST', body: JSON.stringify(data) }),

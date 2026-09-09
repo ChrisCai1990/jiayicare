@@ -142,6 +142,7 @@ const userSchema = new mongoose.Schema({
   belief:          { type: String, default: '' },   // 宗教信仰
   memberType:      { type: String, default: '' },   // 会员类型
   enterpriseId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Enterprise', default: null }, // 所属企业客户（B2B2C）
+  enterpriseAssociationType: { type: String, enum: ['employee', 'dependent'], default: 'employee' }, // 家属可归属企业并参加团险，但不占员工采购名额
   isRegisteredClient: { type: Boolean, default: false }, // 系统正式录入客户，由医护/超管设置
   tenantId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', default: null, index: true }, // 所属机构（多租户隔离键）
 

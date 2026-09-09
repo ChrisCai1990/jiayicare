@@ -204,6 +204,7 @@ function LinkEmployeesModal({ enterprise, onClose, onSaved }) {
   const [selected, setSelected] = useState([])
   const [searching, setSearching] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [associationType, setAssociationType] = useState('employee')
 
   const search = async () => {
     if (!q.trim()) { toast('请输入姓名或手机号搜索'); return }
@@ -222,8 +223,8 @@ function LinkEmployeesModal({ enterprise, onClose, onSaved }) {
     if (selected.length === 0) { toast('请至少选择一名员工'); return }
     setSaving(true)
     try {
-      await adminAPI.linkEnterpriseEmployees(enterprise._id, selected)
-      toast(`✅ 已关联 ${selected.length} 名员工`)
+      await adminAPI.linkEnterpriseEmployees(enterprise._id, selected, associationType)
+      toast(associationType === 'dependent' ? `✅ 已关联 ${selected.length} 名高管家属，不占员工名额` : `✅ 已关联 ${selected.length} 名员工`)
       onSaved(); onClose()
     } catch (err) {
       toast('❌ ' + (err.message || '操作失败'))
@@ -234,10 +235,14 @@ function LinkEmployeesModal({ enterprise, onClose, onSaved }) {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" style={{ maxWidth: 560, width: '96%' }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <div className="modal-title">🔗 关联员工到「{enterprise.name}」</div>
+          <div className="modal-title">🔗 关联成员到「{enterprise.name}」</div>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
+          <div style={{ display: 'flex', gap: 16, marginBottom: 12, padding: 10, background: '#F7F8F6', borderRadius: 8 }}>
+            <label><input type="radio" name="associationType" checked={associationType === 'employee'} onChange={() => setAssociationType('employee')} /> 企业员工（占采购名额）</label>
+            <label><input type="radio" name="associationType" checked={associationType === 'dependent'} onChange={() => setAssociationType('dependent')} /> 高管家属（不占员工名额）</label>
+          </div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
             <input className="form-input" style={{ flex: 1 }} value={q} onChange={e => setQ(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), search())} placeholder="按姓名或手机号搜索会员" />
@@ -419,7 +424,7 @@ export default function EnterprisesPage() {
                     对接人：{e.contactName || '-'} {e.contactPhone} · 合同：{fmtDate(e.contractStartAt)} ~ {fmtDate(e.contractEndAt)}
                   </div>
                 </div>
-                <div style={{ fontSize: 12, color: '#4A6558' }}>名额 {e.seatsUsed}/{e.seatsTotal || '不限'}</div>
+                <div style={{ fontSize: 12, color: '#4A6558' }}>员工名额 {e.seatsUsed}/{e.seatsTotal || '不限'}{e.dependentsCount > 0 ? ` · 家属 ${e.dependentsCount}` : ''}</div>
                 <span className={`badge ${STATUS_BADGE[e.status]}`}>{STATUS_LABEL[e.status]}</span>
                 <div style={{ display: 'flex', gap: 6 }} onClick={ev => ev.stopPropagation()}>
                   <button className="btn btn-sm btn-primary" onClick={() => toggleExpand(e._id)}>
@@ -437,13 +442,13 @@ export default function EnterprisesPage() {
                   {/* 员工列表 */}
                   <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: '#4A6558' }}>已关联员工</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#4A6558' }}>已关联企业成员</div>
                       <button className="btn btn-sm btn-primary" onClick={() => setShowLinkModal(true)}>＋ 关联员工</button>
                     </div>
                     {(employeesByEnt[e._id] || []).length === 0 && <div style={{ fontSize: 12, color: '#aaa' }}>暂无关联员工</div>}
                     {(employeesByEnt[e._id] || []).map(u => (
                       <div key={u._id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: '1px dashed #f0ede7' }}>
-                        <div style={{ flex: 1 }}>{u.name} <span style={{ fontSize: 12, color: '#888' }}>{u.phone}</span></div>
+                        <div style={{ flex: 1 }}>{u.name} <span style={{ fontSize: 12, color: '#888' }}>{u.phone}</span> {u.enterpriseAssociationType === 'dependent' && <span className="badge badge-blue">高管家属</span>}</div>
                         <span className={`badge ${u.onboardingCompleted ? 'badge-green' : 'badge-gray'}`}>{u.onboardingCompleted ? '已激活' : '未激活'}</span>
                         <button className="btn btn-sm btn-ghost" onClick={() => unlinkEmployee(e._id, u._id)}>解除</button>
                       </div>
