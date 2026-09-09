@@ -31,8 +31,8 @@ export default function ServiceTasksPanel() {
         || /体检/.test(checkupText))
 
     if (isCheckupPlanningTask) {
-      nav(`/plans/${sourcePlanId}/modules`, {
-        state: { returnTo: `/patients/${task.patientId?._id}?tab=plans&serviceView=checkup` },
+      nav(`/patients/${task.patientId?._id}?tab=plans&serviceView=checkup`, {
+        state: { openAiCheckupDesign: true },
       })
       return
     }

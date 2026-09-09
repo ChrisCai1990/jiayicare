@@ -5,10 +5,10 @@ const path = require('node:path')
 
 const source = fs.readFileSync(path.join(__dirname, '../src/components/ServiceTasksPanel.jsx'), 'utf8')
 
-test('health advisor checkup task opens the checkup plan workspace instead of the transaction dialog', () => {
+test('health advisor checkup task opens AI checkup design instead of the transaction dialog or service overview', () => {
   assert.match(source, /task\.assignedTo\?\.role === 'familyDoctor'/)
   assert.match(source, /serviceDomain === 'annual_checkup'/)
-  assert.match(source, /nav\(`\/plans\/\$\{sourcePlanId\}\/modules`/)
+  assert.match(source, /openAiCheckupDesign: true/)
   assert.match(source, /serviceView=checkup/)
 })
 

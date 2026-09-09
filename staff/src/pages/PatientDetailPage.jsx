@@ -2527,6 +2527,15 @@ export default function PatientDetailPage() {
       nav(location.pathname + location.search, { replace: true, state: {} })
     }
   }, [tab, autoGenMedicalAssistOrder, location.state])
+  // 体检一站式的健康顾问岗位不是执行/督办事务。工作台点击后直接打开
+  // AI体检方案模板选择，进入方案设计状态，不在体检服务档案总览页停留。
+  useEffect(() => {
+    if (tab === 'plans' && location.state?.openAiCheckupDesign) {
+      setServiceManagementView('checkup')
+      setShowSelectTplModal('annual_checkup')
+      nav(location.pathname + location.search, { replace: true, state: {} })
+    }
+  }, [tab, location.state])
   useEffect(() => {
     loadPlans(); loadFollowUps(); loadServiceRecords(); loadReports()
   }, [id])
