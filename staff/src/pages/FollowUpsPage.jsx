@@ -448,7 +448,7 @@ export default function FollowUpsPage() {
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setExecItem(null) }}>
           <div className="modal" style={{ maxWidth: 520 }}>
             <div className="modal-header">
-              <h3 className="modal-title">{execItem.taskRole === 'supervisor' ? '核对并完成督办' : execItem.taskRole ? '记录事务完成情况' : '执行随访'} · {execItem.patientId?.name}</h3>
+              <h3 className="modal-title">{execItem.taskRole === 'supervisor' ? '核对代办结果与检查单' : execItem.taskRole ? '记录事务完成情况' : '执行随访'} · {execItem.patientId?.name}</h3>
               <button className="modal-close" onClick={() => setExecItem(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14, overscrollBehavior: 'contain' }}>

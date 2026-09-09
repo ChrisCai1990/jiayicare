@@ -79,7 +79,10 @@ export default function ServiceTaskChecklist({ mode, purposes = [], value, sourc
   const update = (index, patch) => onChange(rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row))
   return (
     <div style={{ border: '1px solid #D8E7DF', borderRadius: 10, overflow: 'hidden', flexShrink: 0 }}>
-      <div style={{ padding: '10px 12px', background: '#F2F8F5', color: '#29483C', fontSize: 13, fontWeight: 750 }}>{mode === 'supervisor' ? '逐项目的督导' : '逐项目的完成记录'}</div>
+      <div style={{ padding: '10px 12px', background: '#F2F8F5', color: '#29483C' }}>
+        <div style={{ fontSize: 13, fontWeight: 750 }}>{mode === 'supervisor' ? '本次任务：核对代办结果与检查单' : '逐项目的完成记录'}</div>
+        {mode === 'supervisor' && <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.6, color: '#65776F', fontWeight: 400 }}>逐项确认是否完成开单或预约、结果是否写清、检查单是否对应。本任务不收集检查结果或体检报告。</div>}
+      </div>
       {rows.length === 0 && <div style={{ padding: 12, color: '#B45309', fontSize: 12 }}>方案尚未形成明确的代办目的，请先补充具体科室、专家及需要开具或领取的项目。</div>}
       {rows.map((item, index) => <div key={item.key} style={{ padding: 12, borderTop: index ? '1px solid #E8EFEB' : 'none', background: '#fff' }}>
         <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.65, color: '#1A2B24' }}>{index + 1}. {item.purpose}</div>
@@ -92,7 +95,7 @@ export default function ServiceTaskChecklist({ mode, purposes = [], value, sourc
         </> : <>
           <div style={{ marginTop: 7, padding: '8px 10px', borderRadius: 8, background: '#F7F5F0', fontSize: 12, lineHeight: 1.6 }}><strong>代办结果：{completionLabel[item.executionStatus] || '未提交'}</strong>{item.executionResult && <div>{item.executionResult}</div>}{item.nextAction && <div style={{ color: '#B45309' }}>下一步：{item.nextAction}</div>}</div>
           <ChecklistAttachments item={item} index={index} mode={mode} update={update} />
-          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>{[['verified', '核验通过'], ['issue', '退回补充']].map(([key, label]) => <button key={key} type="button" style={btn(item.supervisionStatus === key)} onClick={() => update(index, { supervisionStatus: key })}>{label}</button>)}</div>
+          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>{[['verified', '核验通过'], ['issue', '退回就医专员补充']].map(([key, label]) => <button key={key} type="button" style={btn(item.supervisionStatus === key)} onClick={() => update(index, { supervisionStatus: key })}>{item.supervisionStatus === key ? `✓ ${label}` : label}</button>)}</div>
           {item.supervisionStatus === 'issue' && <input className="form-control" value={item.supervisionNote || ''} onChange={e => update(index, { supervisionNote: e.target.value })} placeholder="需补充内容、责任人和期限" style={{ marginTop: 7 }} />}
         </>}
       </div>)}

@@ -58,3 +58,10 @@ test('check-order attachments open in an in-page preview with download as a seco
   assert.match(checklist, /<iframe title=\{preview\.name/)
   assert.match(checklist, /下载原文件/)
 })
+
+test('supervisor copy clearly separates order acceptance from later report collection', () => {
+  const checklist = fs.readFileSync(path.join(__dirname, '../../staff/src/components/ServiceTaskChecklist.jsx'), 'utf8')
+  assert.match(checklist, /本次任务：核对代办结果与检查单/)
+  assert.match(checklist, /本任务不收集检查结果或体检报告/)
+  assert.match(checklist, /退回就医专员补充/)
+})
