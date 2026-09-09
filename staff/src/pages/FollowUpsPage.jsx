@@ -4,6 +4,7 @@ import { staffAPI } from '../api'
 import { useToast, useStaff, can } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
 import Pagination from '../components/Pagination'
+import MedicalAssistRequirementsCard from '../components/MedicalAssistRequirementsCard'
 import { formatChineseDate, formatChineseDateTime } from '../utils/date'
 
 const TYPE_MAP   = { phone: '电话', wechat: '微信', visit: '上门', video: '视频', other: '其他' }
@@ -223,7 +224,7 @@ export default function FollowUpsPage() {
   }
 
   const handleExec = async () => {
-    if (!execForm.content.trim()) { toast('请填写随访结果'); return }
+    if (!execForm.content.trim()) { toast(execItem?.taskRole === 'supervisor' ? '请填写督办结论' : execItem?.taskRole ? '请填写事务完成记录' : '请填写随访结果'); return }
     setExecSaving(true)
     try {
       await staffAPI.updateFollowUp(execItem._id, {
@@ -231,7 +232,7 @@ export default function FollowUpsPage() {
         content: execForm.content,
         status: execForm.status,
       })
-      toast('随访记录已更新')
+      toast(execItem?.taskRole === 'supervisor' ? '督办记录已完成' : execItem?.taskRole ? '事务记录已更新' : '随访记录已更新')
       setExecItem(null)
       load()
     } catch (err) { toast(err.message || '保存失败') }
@@ -399,7 +400,7 @@ export default function FollowUpsPage() {
                   {/* 右侧：操作按钮 */}
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flexShrink: 0 }}>
                     {isPendingExec(f) && (
-                      <button className="btn btn-primary btn-sm" onClick={() => openExec(f)}>执行随访</button>
+                      <button className="btn btn-primary btn-sm" onClick={() => openExec(f)}>{f.taskRole === 'supervisor' ? '处理督办' : f.taskRole ? '处理事务' : '执行随访'}</button>
                     )}
                     {f.status !== 'cancelled' && staff && f.staffId && String(f.staffId._id || f.staffId) === String(staff._id) && (
                       <button className="btn btn-secondary btn-sm" onClick={() => openEdit(f)}>编辑</button>
@@ -432,23 +433,16 @@ export default function FollowUpsPage() {
         />
       )}
 
-      {/* 执行随访弹窗 */}
+      {/* 服务事务与健康随访共用数据模型，但界面按业务语义区分。 */}
       {execItem && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setExecItem(null) }}>
           <div className="modal" style={{ maxWidth: 520 }}>
             <div className="modal-header">
-              <h3 className="modal-title">执行随访 · {execItem.patientId?.name}</h3>
+              <h3 className="modal-title">{execItem.taskRole === 'supervisor' ? '核对并完成督办' : execItem.taskRole ? '记录事务完成情况' : '执行随访'} · {execItem.patientId?.name}</h3>
               <button className="modal-close" onClick={() => setExecItem(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {getMedicalAssistRequirements(execItem) && (
-                <div style={{ background: '#EFF8F4', border: '1px solid #B2D8C7', borderRadius: 8, padding: 12 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', marginBottom: 8 }}>本次代诊要求</div>
-                  <div style={{ fontSize: 13, color: '#1A2B24', whiteSpace: 'pre-line', lineHeight: 1.7 }}>
-                    {getMedicalAssistRequirements(execItem)}
-                  </div>
-                </div>
-              )}
+              <MedicalAssistRequirementsCard text={getMedicalAssistRequirements(execItem)} />
               {/* 只读信息 */}
               <div style={{ background: '#f9f7f3', borderRadius: 8, padding: 12, display: 'grid', gap: 6 }}>
                 <div style={{ display: 'flex', gap: 8 }}>
@@ -457,7 +451,7 @@ export default function FollowUpsPage() {
                 </div>
                 {execItem.theme && (
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>随访主题：</span>
+                    <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>{execItem.taskRole ? '事务名称：' : '随访主题：'}</span>
                     <span style={{ fontSize: 13 }}>{execItem.theme}</span>
                   </div>
                 )}
@@ -472,7 +466,7 @@ export default function FollowUpsPage() {
               </div>
               {/* 填写结果 */}
               <div>
-                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>随访方式</label>
+                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>{execItem.taskRole ? '处理方式' : '随访方式'}</label>
                 <select className="form-control" value={execForm.type}
                   onChange={e => setExecForm(f => ({ ...f, type: e.target.value }))}>
                   {TYPE_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
@@ -480,7 +474,7 @@ export default function FollowUpsPage() {
               </div>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <label style={{ fontSize: 12, color: '#8AA89C' }}>随访结果 *</label>
+                  <label style={{ fontSize: 12, color: '#8AA89C' }}>{execItem.taskRole === 'supervisor' ? '督办结论 *' : execItem.taskRole ? '事务完成记录 *' : '随访结果 *'}</label>
                   <button type="button" className="btn btn-secondary"
                     style={{ fontSize: 12, padding: '2px 10px' }}
                     onClick={handleAIDraft} disabled={draftLoading}>
@@ -488,16 +482,16 @@ export default function FollowUpsPage() {
                   </button>
                 </div>
                 <textarea className="form-control" rows={5}
-                  placeholder="记录本次随访的实际情况、会员反馈、建议等..."
+                  placeholder={execItem.taskRole === 'supervisor' ? '核对执行结果、资料回收和遗留事项；无遗留可直接确认闭环' : execItem.taskRole ? '记录实际完成内容、交付结果和需要后续处理的事项' : '记录本次随访的实际情况、会员反馈、建议等...'}
                   value={execForm.content}
                   onChange={e => setExecForm(f => ({ ...f, content: e.target.value }))} />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 8 }}>随访结果状态</label>
+                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 8 }}>{execItem.taskRole ? '事务状态' : '随访结果状态'}</label>
                 <div style={{ display: 'flex', gap: 16 }}>
                   {[
-                    { v: 'completed',   l: '✅ 已随访（圆满完成）' },
-                    { v: 'in_progress', l: '🔄 随访中（未完成/未接通）' },
+                    { v: 'completed',   l: execItem.taskRole === 'supervisor' ? '✅ 已核对并闭环' : execItem.taskRole ? '✅ 事务已完成' : '✅ 已随访（圆满完成）' },
+                    { v: 'in_progress', l: execItem.taskRole === 'supervisor' ? '🔄 有遗留，继续督办' : execItem.taskRole ? '🔄 事务处理中' : '🔄 随访中（未完成/未接通）' },
                   ].map(o => (
                     <label key={o.v} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14 }}>
                       <input type="radio" name="execStatus" value={o.v}
@@ -512,7 +506,7 @@ export default function FollowUpsPage() {
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setExecItem(null)}>取消</button>
               <button className="btn btn-primary" onClick={handleExec} disabled={execSaving}>
-                {execSaving ? '保存中...' : '保存随访结果'}
+                {execSaving ? '保存中...' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : '保存随访结果'}
               </button>
             </div>
           </div>

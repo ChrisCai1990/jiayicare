@@ -6,6 +6,7 @@ import FollowUpModal from '../components/FollowUpModal'
 import AiRuleHint from '../components/AiRuleHint'
 import AppIcon from '../components/AppIcon'
 import AiCaseReviewPanel from '../components/AiCaseReviewPanel'
+import MedicalAssistRequirementsCard from '../components/MedicalAssistRequirementsCard'
 import femalePortraitPhoto from '../assets/health-portrait-female.webp'
 import malePortraitPhoto from '../assets/health-portrait-male.webp'
 import { reconcileConversationMessages } from '../utils/conversationMessages'
@@ -2213,7 +2214,7 @@ export default function PatientDetailPage() {
     setExecForm({ type: f.type || 'phone', content: '', status: 'completed' })
   }
   const handleExec = async () => {
-    if (!execForm.content.trim()) { toast('请填写随访结果'); return }
+    if (!execForm.content.trim()) { toast(execItem?.taskRole === 'supervisor' ? '请填写督办结论' : execItem?.taskRole ? '请填写事务完成记录' : '请填写随访结果'); return }
     setExecSaving(true)
     try {
       await staffAPI.updateFollowUp(execItem._id, {
@@ -2221,7 +2222,7 @@ export default function PatientDetailPage() {
         content: execForm.content,
         status: execForm.status,
       })
-      toast('随访记录已更新')
+      toast(execItem?.taskRole === 'supervisor' ? '督办记录已完成' : execItem?.taskRole ? '事务记录已更新' : '随访记录已更新')
       setExecItem(null)
       loadFollowUps()
     } catch (err) { toast(err.message || '保存失败') }
@@ -10037,18 +10038,11 @@ export default function PatientDetailPage() {
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setExecItem(null) }}>
           <div className="modal" style={{ maxWidth: 520 }}>
             <div className="modal-header">
-              <h3 className="modal-title">执行服务任务</h3>
+              <h3 className="modal-title">{execItem.taskRole === 'supervisor' ? '核对并完成督办' : execItem.taskRole ? '记录事务完成情况' : '执行随访'}</h3>
               <button className="modal-close" onClick={() => setExecItem(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {execItem.taskRequirements && (
-                <div style={{ background: '#EFF8F4', border: '1px solid #B2D8C7', borderRadius: 8, padding: 12 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', marginBottom: 8 }}>具体代办事项</div>
-                  <div style={{ fontSize: 13, color: '#1A2B24', whiteSpace: 'pre-line', lineHeight: 1.7 }}>
-                    {execItem.taskRequirements}
-                  </div>
-                </div>
-              )}
+              <MedicalAssistRequirementsCard text={execItem.taskRequirements} />
               <div style={{ background: '#f9f7f3', borderRadius: 8, padding: 12, display: 'grid', gap: 6 }}>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>计划日期：</span>
@@ -10056,7 +10050,7 @@ export default function PatientDetailPage() {
                 </div>
                 {execItem.theme && (
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>随访主题：</span>
+                    <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>{execItem.taskRole ? '事务名称：' : '随访主题：'}</span>
                     <span style={{ fontSize: 13 }}>{execItem.theme}</span>
                   </div>
                 )}
@@ -10068,7 +10062,7 @@ export default function PatientDetailPage() {
                 )}
               </div>
               <div>
-                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>随访方式</label>
+                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>{execItem.taskRole ? '处理方式' : '随访方式'}</label>
                 <select className="form-control" value={execForm.type}
                   onChange={e => setExecForm(f => ({ ...f, type: e.target.value }))}>
                   {TYPE_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
@@ -10076,7 +10070,7 @@ export default function PatientDetailPage() {
               </div>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <label style={{ fontSize: 12, color: '#8AA89C' }}>随访结果 *</label>
+                  <label style={{ fontSize: 12, color: '#8AA89C' }}>{execItem.taskRole === 'supervisor' ? '督办结论 *' : execItem.taskRole ? '事务完成记录 *' : '随访结果 *'}</label>
                   <button type="button" className="btn btn-secondary"
                     style={{ fontSize: 12, padding: '2px 10px' }}
                     onClick={handleExecAIDraft} disabled={execDraftLoading}>
@@ -10084,16 +10078,16 @@ export default function PatientDetailPage() {
                   </button>
                 </div>
                 <textarea className="form-control" rows={5}
-                  placeholder="记录本次随访的实际情况、会员反馈、建议等..."
+                  placeholder={execItem.taskRole === 'supervisor' ? '核对执行结果、资料回收和遗留事项；无遗留可直接确认闭环' : execItem.taskRole ? '记录实际完成内容、交付结果和需要后续处理的事项' : '记录本次随访的实际情况、会员反馈、建议等...'}
                   value={execForm.content}
                   onChange={e => setExecForm(f => ({ ...f, content: e.target.value }))} />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 8 }}>随访结果状态</label>
+                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 8 }}>{execItem.taskRole ? '事务状态' : '随访结果状态'}</label>
                 <div style={{ display: 'flex', gap: 16 }}>
                   {[
-                    { v: 'completed',   l: '✅ 已随访（圆满完成）' },
-                    { v: 'in_progress', l: '🔄 随访中（未完成/未接通）' },
+                    { v: 'completed',   l: execItem.taskRole === 'supervisor' ? '✅ 已核对并闭环' : execItem.taskRole ? '✅ 事务已完成' : '✅ 已随访（圆满完成）' },
+                    { v: 'in_progress', l: execItem.taskRole === 'supervisor' ? '🔄 有遗留，继续督办' : execItem.taskRole ? '🔄 事务处理中' : '🔄 随访中（未完成/未接通）' },
                   ].map(o => (
                     <label key={o.v} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14 }}>
                       <input type="radio" name="execStatus" value={o.v}
@@ -10108,7 +10102,7 @@ export default function PatientDetailPage() {
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setExecItem(null)}>取消</button>
               <button className="btn btn-primary" onClick={handleExec} disabled={execSaving}>
-                {execSaving ? '保存中...' : '保存随访结果'}
+                {execSaving ? '保存中...' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : '保存随访结果'}
               </button>
             </div>
           </div>
