@@ -153,11 +153,17 @@ const fs = require("node:fs"),
       window.syntheticChat='wr_synthetic_current';
       window.wx={error:()=>{},ready:fn=>{window.sdkReady=fn;},config:()=>window.sdkReady(),agentConfig:p=>p.success(),invoke:(method,p,cb)=>cb(method==='getContext'?{err_msg:'getContext:ok',entry:'group_chat_tools'}:{chatId:window.syntheticChat})};
     });
+    const sidebarRequests = [];
+    page.on('request', request => {
+      if (request.method() === 'GET') sidebarRequests.push(new URL(request.url()).pathname);
+    });
     await page.reload();
     await page.getByText('正在读取当前群的绑定关系…',{exact:true}).waitFor();
     if(await page.getByText('从一个服务群开始',{exact:true}).count()) throw new Error('Loading must not suggest a new binding');
     releaseSignature();
     await page.getByRole('heading',{name:'演示家庭服务群',exact:true}).waitFor();
+    if (sidebarRequests.some(p => p === '/api/staff/service-groups' || p === '/api/staff/service-groups/' + fixture.ids.group)) throw new Error('Sidebar fetched redundant group list or detail');
+    if (sidebarRequests.filter(p => p.includes('/by-chat/')).length !== 1) throw new Error('Sidebar should resolve its household in one request');
     if(await page.getByLabel('当前服务群',{exact:true}).count()) throw new Error('Sidebar must not offer group switching');
     if(await page.getByRole('button',{name:'新建服务群',exact:true}).count()) throw new Error('Bound sidebar must not create another group');
     await page.screenshot({path:path.join(output,'locked-sidebar.png'),fullPage:true});
@@ -176,7 +182,7 @@ const fs = require("node:fs"),
     await page.screenshot({path:path.join(output,'workbench-expanded.png'),fullPage:true});
     await page.getByRole('button',{name:'群设置',exact:true}).click();
     await page.getByLabel('服务群名称',{exact:true}).fill('未保存的家庭名称');
-    const revisitResponse = page.waitForResponse(r=>r.url().endsWith('/api/staff/service-groups') && r.request().method()==='GET');
+    const revisitResponse = page.waitForResponse(r=>r.url().includes('/api/staff/service-groups/by-chat/') && r.request().method()==='GET');
     await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
     await revisitResponse;
     await page.waitForFunction(()=>!Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='重新识别当前群')?.disabled);

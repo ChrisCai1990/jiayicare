@@ -154,6 +154,7 @@ export default function ServiceAssistantPage() {
     fileRef = useRef(null),
     groupRef = useRef("");
   const busyLock = useRef(false);
+  const prefetchedBundle = useRef(null);
   const g = bundle?.group,
     entries = bundle?.entries || [];
   const listGroups = async () => {
@@ -163,11 +164,11 @@ export default function ServiceAssistantPage() {
   };
   useEffect(() => {
     let active = true;
-    Promise.all([api.get("/capabilities"), api.get("")])
+    Promise.all([api.get("/capabilities"), inGroupSidebar ? Promise.resolve(null) : api.get("")])
       .then(([c, r]) => {
         if (active) {
           setCaps(c.data);
-          setGroups(r.data);
+          if (r) setGroups(r.data);
         }
       })
       .catch((e) => {
@@ -192,7 +193,9 @@ export default function ServiceAssistantPage() {
     groupRef.current = groupId;
     setFamilyCandidates([]);
     setRemindersOnly(false);
-    setBundle(null);
+    const prefetched = prefetchedBundle.current;
+    prefetchedBundle.current = null;
+    setBundle(prefetched?.group._id === groupId ? prefetched : null);
     setPersonId("");
     setNative(null);
     setForm(null);
@@ -206,7 +209,7 @@ export default function ServiceAssistantPage() {
     setSettings(false);
     setMessages([]);
     if (fileRef.current) fileRef.current.value = "";
-    refresh(groupId).catch((e) => setError(e.message));
+    if (prefetched?.group._id !== groupId) refresh(groupId).catch((e) => setError(e.message));
     return () => {
       version.current++;
     };
@@ -297,12 +300,29 @@ export default function ServiceAssistantPage() {
         setLoading(false);
       }
       setCurrentChat(id);
-      const list = await listGroups();
-      const found = list.find((x) => x.chatId === id);
+      let resolved;
+      try {
+        resolved = (await api.get('/by-chat/' + encodeURIComponent(id))).data;
+      } catch (e) {
+        // Failed authorization must never leave previously visible patient data.
+        setBundle(null); setGroupId(''); setCreating(false);
+        throw e;
+      }
+      if (inGroupSidebar && await currentWecomGroup() !== id) {
+        setBundle(null); setGroupId(''); setCurrentChat('');
+        throw new Error('当前群已变化，请重新识别');
+      }
+      const found = resolved?.group;
       // Visibility checks must not discard an in-progress form in the same chat.
-      if (sameChat && found && found._id === groupId && g?.chatId === id) return;
+      if (sameChat && found && found._id === groupId && g?.chatId === id) {
+        setBundle(resolved);
+        return;
+      }
       if (sameChat && !found && creating) return;
-      if (found) { setCreating(false); setSettings(false); setGroupId(found._id); }
+      if (found) {
+        prefetchedBundle.current = resolved;
+        setCreating(false); setSettings(false); setGroupId(found._id);
+      }
       else {
         let name = '', nameNotice = '';
         try {
@@ -356,7 +376,7 @@ export default function ServiceAssistantPage() {
         setCreating(false);
         setGroupId(r.data._id);
       }
-      await listGroups();
+      if (!inGroupSidebar) await listGroups();
     });
   const editSettings = () =>
     run(async () => {

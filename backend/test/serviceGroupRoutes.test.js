@@ -34,6 +34,10 @@ test("服务群路由：权限、草稿确认、原系统回读、重复上传",
       .status,
     403
   );
+  f.models.ServiceGroup.rows[0].chatId = 'wr_lookup_test';
+  assert.equal((await request('/by-chat/wr_lookup_test')).data.group._id, gid);
+  assert.equal((await request('/by-chat/wr_lookup_test', 'GET', undefined, {'x-test-other':'true'})).status, 403);
+  assert.equal((await request('/by-chat/wr_missing')).data, null);
   assert.equal(
     (await request("/" + gid, "GET", undefined, { authorization: "" })).status,
     401

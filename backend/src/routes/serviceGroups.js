@@ -236,9 +236,7 @@ router.post(
     res.status(201).json({ success: true, data: g });
   })
 );
-router.get(
-  "/:groupId",
-  wrap(async (req, res) => {
+async function sendGroupBundle(req, res) {
     const g = await group(req);
     await g.populate("members.patientId", "name phone");
     let entries = await Entry.find({ groupId: g._id })
@@ -276,8 +274,17 @@ router.get(
       .select("name role")
       .lean();
     res.json({ success: true, data: { group: g, entries, staff } });
-  })
-);
+}
+router.get('/by-chat/:chatId', wrap(async (req, res) => {
+  const chatId = req.params.chatId;
+  if (!/^[\w-]{1,128}$/.test(chatId)) fail('企微群标识无效');
+  const found = await Group.findOne({chatId, tenantId: req.staff.tenantId || null});
+  if (!found) return res.json({success: true, data: null});
+  req.params.groupId = String(found._id);
+  // Share all group, patient and native follow-up permission checks.
+  return sendGroupBundle(req, res);
+}));
+router.get('/:groupId', wrap(sendGroupBundle));
 router.post('/:groupId/workbench-draft', wrap(async (req, res) => {
   const g = await group(req);
   await permit(req, 'service_records', 'create');
