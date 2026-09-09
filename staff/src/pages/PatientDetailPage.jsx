@@ -1687,6 +1687,29 @@ function CheckupManagementWorkspace({ plans, reports, followUps, questionnaireRe
   )
 }
 
+function buildCheckupQuestionnaireGoal(questionnaireResponses = [], plans = []) {
+  const currentServicePlan = plans
+    .filter(plan => getServiceManagementCategory(plan) === 'checkup')
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))[0]
+  const intake = currentServicePlan?.content?.checkupIntake || currentServicePlan?.content?.checkupQuestionnaire
+  const response = questionnaireResponses.find(item => String(item.responseId || '') === String(intake?.responseId || ''))
+    || questionnaireResponses.find(item => (item.answers || []).some(answer => answer.coreNeed))
+  const formatAnswer = value => {
+    if (Array.isArray(value)) return value.join('、')
+    if (value && typeof value === 'object') {
+      const selected = Array.isArray(value.values) ? value.values.join('、') : (value.value || '')
+      const inputs = Object.entries(value.inputs || {}).map(([key, text]) => `${key}：${text}`).join('；')
+      return [selected, inputs].filter(Boolean).join('；')
+    }
+    return String(value ?? '').trim()
+  }
+  return (response?.answers || [])
+    .filter(item => item.coreNeed)
+    .map(item => `${item.questionText || '体检需求'}：${formatAnswer(item.answer)}`)
+    .filter(line => !/[：:]$/.test(line))
+    .join('\n')
+}
+
 export default function PatientDetailPage() {
   const { id } = useParams()
   const nav = useNavigate()
@@ -11639,6 +11662,7 @@ export default function PatientDetailPage() {
         <SelectTemplateAndGenerateModal
           planType={showSelectTplModal}
           patientId={id}
+          initialBriefNote={showSelectTplModal === 'annual_checkup' ? buildCheckupQuestionnaireGoal(qResponses, plans) : ''}
           title={showSelectTplModal === 'annual_checkup' ? 'AI体检方案' : showSelectTplModal === 'nutrition' ? 'AI营养方案' : 'AI就医协助方案'}
           onClose={() => { setShowSelectTplModal(null); setPendingMedicalAssistOrderId('') }}
           onGenerate={async (templateId, briefNote) => {
@@ -13332,7 +13356,7 @@ function AttachedHealthInfoView({ info }) {
 // ── AI方案生成前先选模板弹窗（体检方案/营养方案/就医协助方案通用）───────────────────
 // 2026-07-13：三类方案都是"AI只在模板骨架基础上定制"，不该让AI自由发明。此前AI一点即生成，
 // 完全跳过模板；改为先弹出模板选择，选定后才真正调用AI生成，模板骨架部分由后端原样锁定。
-function SelectTemplateAndGenerateModal({ planType, title, patientId, onClose, onGenerate }) {
+function SelectTemplateAndGenerateModal({ planType, title, patientId, initialBriefNote = '', onClose, onGenerate }) {
   const { staff } = useStaff()
   const toast = useToast()
   const [templates, setTemplates] = useState([])
@@ -13343,7 +13367,11 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, onClose, o
   // 就医协助方案：模板本身是固定骨架(SOP)，不像体检/营养方案有结构化的"标准项目"可锁定，
   // 就医场景每次的具体情况差异很大（去哪家医院/是否加急/会员状况等），需要专员当场填一句
   // 简要说明，AI结合这句话+模板类型生成初稿，而不是完全靠AI自己猜（2026-07-13需求）
-  const [briefNote, setBriefNote] = useState('')
+  const [briefNote, setBriefNote] = useState(initialBriefNote)
+
+  useEffect(() => {
+    setBriefNote(current => current.trim() ? current : initialBriefNote)
+  }, [initialBriefNote])
 
   useEffect(() => {
     staffAPI.getPlanTemplates(planType, patientId)
@@ -13372,7 +13400,7 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, onClose, o
         {/* 服务目标固定在模板列表之前，不随列表滚动，选模板前就能先看到并填写 */}
         <div style={{ flexShrink: 0, padding: '14px 20px 0' }}>
           <div className="form-group" style={{ marginBottom: 12 }}>
-            <label className="form-label">服务目标（可选，AI会结合目标更有方向地生成初稿）</label>
+            <label className="form-label">服务目标（已自动带入客户本次问卷需求，可核对、补充或修改）</label>
             <textarea className="form-input" rows={2} placeholder={
               planType === 'medical_assist' ? '如：这次去北京协和看内分泌科，会员行动不便需要轮椅，希望尽快安排'
                 : planType === 'nutrition' ? '如：控制血糖、三个月内减重5公斤'
