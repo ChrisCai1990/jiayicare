@@ -9,6 +9,7 @@ import AiCaseReviewPanel from '../components/AiCaseReviewPanel'
 import femalePortraitPhoto from '../assets/health-portrait-female.webp'
 import malePortraitPhoto from '../assets/health-portrait-male.webp'
 import { reconcileConversationMessages } from '../utils/conversationMessages'
+import { insertReportItemBelow } from '../utils/reportItemOrder'
 
 // 使用浏览器原生 PDF 阅读器，保留缩放、页码跳转、旋转、查找、打印及下载等常规功能。
 // 预览链接仍是绑定报告与短时令牌的私有 API，不改为公开直链。
@@ -10997,13 +10998,13 @@ export default function PatientDetailPage() {
                                 <select style={{ ...inp, width: 80, color: sc, fontWeight: 600 }} value={it.status || 'unknown'} onChange={e => updItem(i, { status: e.target.value })}>{STATUS_OPTS.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}</select>
                                 <button
                                   title={`在“${it.name || '当前项目'}”下方新增${isImaging(it) ? '检查' : '检验'}项`}
-                                  onClick={() => setOcrEditItems(arr => [
-                                    ...arr.slice(0, i + 1),
+                                  onClick={() => setOcrEditItems(arr => insertReportItemBelow(
+                                    arr,
+                                    i,
                                     isImaging(it)
                                       ? { name: '', itemType: 'imaging', bodyPart: '', findings: '', diagnosis: '', conclusion: '', status: 'unknown' }
                                       : { name: '', value: '', unit: '', referenceRange: '', status: 'normal', itemType: it.itemType === 'data' ? 'data' : 'lab', orderName: it.orderName || '' },
-                                    ...arr.slice(i + 1),
-                                  ])}
+                                  ))}
                                   style={{ whiteSpace: 'nowrap', padding: '4px 7px', border: `1px solid ${isImaging(it) ? '#BAE6FD' : '#C4B5FD'}`, borderRadius: 4, background: isImaging(it) ? '#F0F9FF' : '#F3EFFB', color: isImaging(it) ? '#0369A1' : '#7C3AED', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>
                                   下方新增
                                 </button>
