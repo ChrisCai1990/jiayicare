@@ -61,4 +61,6 @@ test('checkup plan detail exposes order questionnaire needs and archive differen
   assert.match(patientFrontend, /本次体检服务需求/)
   assert.match(patientFrontend, /questionnaireResponses=\{qResponses\}/)
   assert.match(patientFrontend, /ARCHIVE_PATH_LABEL/)
+  assert.match(patientFrontend, /item\.changed && !item\.coreNeed/)
+  assert.match(patientFrontend, /<details[\s\S]*本次问卷发现的档案变化/)
 })

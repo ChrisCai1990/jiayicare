@@ -1577,7 +1577,8 @@ function CheckupManagementWorkspace({ plans, reports, followUps, questionnaireRe
     || (intake?.questionnaireId && String(response.questionnaireId || '') === String(intake.questionnaireId)))
   const questionnaireAnswers = currentQuestionnaire?.answers || []
   const coreNeeds = questionnaireAnswers.filter(item => item.coreNeed)
-  const archiveChanges = questionnaireAnswers.filter(item => item.archiveField && item.changed)
+  // 核心体检诉求已在“本次体检服务需求”中展示，不再重复列入档案变化。
+  const archiveChanges = questionnaireAnswers.filter(item => item.archiveField && item.changed && !item.coreNeed)
   const formatQuestionnaireAnswer = value => {
     if (Array.isArray(value)) return value.join('、')
     if (value && typeof value === 'object') {
@@ -1648,8 +1649,8 @@ function CheckupManagementWorkspace({ plans, reports, followUps, questionnaireRe
             </div>
           </div>}
 
-          {archiveChanges.length > 0 && <div style={{ marginTop: 10, padding: '13px 15px', border: '1px solid #F2D9A6', borderRadius: 10, background: '#FFF9EF' }}>
-            <div style={{ fontSize: 14, fontWeight: 800, color: '#7C4A03' }}>本次问卷发现的档案变化（{archiveChanges.length}项）</div>
+          {archiveChanges.length > 0 && <details style={{ marginTop: 10, padding: '13px 15px', border: '1px solid #F2D9A6', borderRadius: 10, background: '#FFF9EF' }}>
+            <summary style={{ cursor: 'pointer', fontSize: 14, fontWeight: 800, color: '#7C4A03' }}>本次问卷发现的档案变化（{archiveChanges.length}项，{archiveChanges.filter(item => !item.confirmed).length}项待确认）</summary>
             <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 8 }}>
               {archiveChanges.map(item => <div key={item.questionId} style={{ padding: 10, borderRadius: 8, background: '#fff', border: '1px solid #F0DFC0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><strong style={{ fontSize: 12, color: '#5F4A25' }}>{item.questionText}</strong><span style={{ fontSize: 11, color: item.confirmed ? '#16835D' : '#A36800' }}>{item.confirmed ? '已确认记录' : '待人工确认'}</span></div>
@@ -1657,7 +1658,7 @@ function CheckupManagementWorkspace({ plans, reports, followUps, questionnaireRe
                 <div style={{ marginTop: 3, fontSize: 13, color: '#4B3512', fontWeight: 700 }}>本次问卷：{item.normalizedValue || formatQuestionnaireAnswer(item.answer)}</div>
               </div>)}
             </div>
-          </div>}
+          </details>}
 
           {intake?.archiveChanges?.length > 0 && <div style={{ marginTop: 10, padding: '9px 12px', borderRadius: 8, background: '#FFF8ED', color: '#92400E', fontSize: 12 }}>本次问卷发现 {intake.archiveChanges.length} 项健康信息变化，待核对；处理变化时保留全部历史版本。</div>}
         </div>
