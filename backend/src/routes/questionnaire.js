@@ -222,6 +222,31 @@ router.post('/:id/submit', auth, async (req, res) => {
     if (assignmentId) {
       assignment = await PushRecord.findOne({ _id: assignmentId, patientId: req.user._id, type: 'questionnaire', questionnaireId: req.params.id });
       if (!assignment) return res.status(400).json({ success: false, message: '本次问卷任务不存在或不属于当前客户' });
+    } else {
+      // 兼容尚未升级、不会回传 assignmentId 的旧客户端。仅当当前模板恰好存在一条
+      // 未作答且订单仍有效的推送实例时自动补齐，避免答卷落库后成为无法追溯订单的孤立记录。
+      const orderAssignments = await PushRecord.find({
+        patientId: req.user._id,
+        type: 'questionnaire',
+        questionnaireId: req.params.id,
+        sourceOrderId: { $ne: null },
+      }).sort({ createdAt: -1 });
+      if (orderAssignments.length) {
+        const answeredAssignmentIds = new Set((await QuestionnaireResponse.find({
+          pushRecordId: { $in: orderAssignments.map(item => item._id) },
+        }).distinct('pushRecordId')).map(String));
+        const validOrderIds = new Set((await Order.find({
+          _id: { $in: orderAssignments.map(item => item.sourceOrderId) },
+          status: { $ne: 'cancelled' },
+          tradeStatus: { $nin: ['closed', 'refunded'] },
+        }).distinct('_id')).map(String));
+        const availableAssignments = orderAssignments.filter(item =>
+          !answeredAssignmentIds.has(String(item._id)) && validOrderIds.has(String(item.sourceOrderId)));
+        if (availableAssignments.length === 1) assignment = availableAssignments[0];
+        if (availableAssignments.length > 1) {
+          return res.status(400).json({ success: false, message: '存在多笔待填写体检订单，请更新客户端后从对应订单重新进入问卷' });
+        }
+      }
     }
     // 新链路按推送实例防重复；无 assignmentId 的历史入口仍沿用客户+模板防重复。
     const existing = assignment

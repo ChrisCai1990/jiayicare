@@ -29,6 +29,9 @@ test('questionnaire push failures never block the payment flow', () => {
 test('questionnaire submission is scoped to its push assignment and linked back to the order and plan', () => {
   const source = read('src/routes/questionnaire.js')
   assert.match(source, /assignmentId/)
+  assert.match(source, /兼容尚未升级、不会回传 assignmentId 的旧客户端/)
+  assert.match(source, /availableAssignments\.length === 1/)
+  assert.match(source, /存在多笔待填写体检订单/)
   assert.match(source, /pushRecordId: assignment\?\._id/)
   assert.match(source, /Order\.findByIdAndUpdate/)
   assert.match(source, /HealthPlan\.updateMany/)
