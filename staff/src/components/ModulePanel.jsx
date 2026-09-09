@@ -214,6 +214,7 @@ export function ModulePanel({ moduleKey, def, data, onChange }) {
       {/* 板块内容 */}
       {open && (
         <div style={{ padding: '4px 18px 18px', borderTop: '1px solid #F0EDE7' }}>
+          {def.description && <div style={{ padding: '10px 0 2px', color: '#789087', fontSize: 12 }}>{def.description}</div>}
           {def.multi ? (
             records.length === 0 ? (
               <div style={{ padding: '16px 0', color: '#aaa', fontSize: 13, textAlign: 'center' }}>

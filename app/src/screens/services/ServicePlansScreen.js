@@ -351,19 +351,12 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
               ['住宿', c.hotel],
               ['交通', c.transport],
             ].filter(([, v]) => !!v);
-            const standardSteps = c.templateSnapshot?.tasks;
             return (
               <>
                 {c.templateName && (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: spacing.sm }}>
                     <Ionicons name="ribbon-outline" size={13} color={colors.primary} />
                     <Text style={{ fontSize: 11, color: colors.primary, fontWeight: '700' }}>标准化服务 · {c.templateName}</Text>
-                  </View>
-                )}
-                {standardSteps && (
-                  <View style={[s.assistInfoCard, { backgroundColor: colors.primary + '0C' }]}>
-                    <Text style={[s.assistInfoLabel, { width: 'auto', marginBottom: 2 }]}>标准服务步骤</Text>
-                    <Text style={s.assistInfoValue}>{standardSteps}</Text>
                   </View>
                 )}
                 {rows.length > 0 && (

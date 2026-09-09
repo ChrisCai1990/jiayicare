@@ -73,7 +73,8 @@ const MODULE_DEFS_BY_TYPE = {
       ],
     },
     tasks: {
-      name: '执行任务', icon: '✅', multi: true, summaryKey: 'task', summaryLabel: '任务',
+      name: '个性化补充任务', icon: '✅', multi: true, summaryKey: 'task', summaryLabel: '任务',
+      description: '标准岗位任务由服务流程固定生成；这里只添加本次客户特有的额外事项。',
       fields: [
         { key: 'task', label: '任务内容', type: 'textarea', rows: 6, placeholder: '请填写具体执行内容、携带材料和完成要求' },
         { key: 'notes', label: '备注', type: 'textarea', internal: true },
@@ -117,16 +118,36 @@ function medicalAssistModuleDefs(content = {}, planTitle = '', assignedReviewerI
   }
 }
 
+function splitVisitEntries(value = '') {
+  const result = []
+  let current = ''
+  let depth = 0
+  for (const char of String(value)) {
+    if ('（(['.includes(char)) depth += 1
+    if ('）)]'.includes(char)) depth = Math.max(0, depth - 1)
+    if (depth === 0 && '、,，;；'.includes(char)) {
+      if (current.trim()) result.push(current.trim())
+      current = ''
+    } else {
+      current += char
+    }
+  }
+  if (current.trim()) result.push(current.trim())
+  return result
+}
+
 function medicalAssistModuleData(content = {}) {
   const existing = content.moduleData || {}
   const existingConsultations = existing.visit?.consultations || content.consultations
+  const legacyDepartments = splitVisitEntries(existing.visit?.department || content.department || '')
+  const legacyExperts = splitVisitEntries(existing.visit?.expert || content.expert || '')
   const consultations = Array.isArray(existingConsultations) && existingConsultations.length
     ? existingConsultations
-    : (existing.visit?.department || content.department || existing.visit?.expert || content.expert)
-      ? [{
-          department: existing.visit?.department || content.department || '',
-          expert: existing.visit?.expert || content.expert || '',
-        }]
+    : (legacyDepartments.length || legacyExperts.length)
+      ? Array.from({ length: Math.max(legacyDepartments.length, legacyExperts.length) }, (_, index) => ({
+          department: legacyDepartments[index] || '',
+          expert: legacyExperts[index] || '',
+        }))
       : []
   const taskRecords = existing.tasks?.records?.length
     ? existing.tasks.records
@@ -256,16 +277,15 @@ function CheckupServiceWorkspace({ plan, moduleData, onOpenPatient }) {
           </div>
           <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenPatient}>查看健康档案与历年体检</button>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,minmax(150px,1fr))', overflowX: 'auto', padding: '16px 18px', gap: 10 }}>
-          {steps.map((step, index) => <div key={step.name} style={{ minWidth: 145, padding: '11px 12px', borderRadius: 10, background: index === 0 ? '#F0F8F4' : '#F8FAF9', border: '1px solid #E1EAE5' }}>
-            <div style={{ fontSize: 11, color: '#8AA89C' }}>阶段 {index + 1} · {step.owner}</div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#1A2B24', marginTop: 4 }}>{step.name}</div>
-            <div style={{ fontSize: 11, color: step.state === '已填写' ? '#16835D' : '#9A7A2D', marginTop: 6 }}>{step.state}</div>
+        <div style={{ display: 'flex', overflowX: 'auto', padding: '12px 18px', gap: 8 }}>
+          {steps.map((step, index) => <div key={step.name} style={{ minWidth: 155, flex: 1, padding: '8px 10px', borderRadius: 9, background: index === 1 ? '#FFF8E8' : '#F8FAF9', border: `1px solid ${index === 1 ? '#EACB88' : '#E1EAE5'}` }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#1A2B24' }}>{index + 1}. {step.name}</div>
+            <div style={{ fontSize: 11, color: step.state === '已填写' ? '#16835D' : '#7B725F', marginTop: 3 }}>{step.state} · {step.owner}</div>
           </div>)}
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.2fr) minmax(300px,.8fr)', gap: 14, marginTop: 14 }}>
+      <div style={{ marginTop: 14 }}>
         <div style={card}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
             <div><div style={{ fontWeight: 700, color: '#1A2B24' }}>本次体检需求</div><div style={muted}>只属于本年度、本次订单，不直接覆盖长期健康档案</div></div>
@@ -282,24 +302,13 @@ function CheckupServiceWorkspace({ plan, moduleData, onOpenPatient }) {
           </div>
         </div>
 
-        <div style={card}>
-          <div style={{ fontWeight: 700, color: '#1A2B24' }}>体检方案定制问卷</div>
-          <div style={{ ...muted, marginTop: 4 }}>健康档案用于预填；本次需求单独保存；差异只提示，不自动覆盖原记录。</div>
-          <div style={{ marginTop: 14, padding: 12, borderRadius: 10, background: questionnaireState === '已填写' ? '#EAF7F1' : '#FFF8E8', border: `1px solid ${questionnaireState === '已填写' ? '#BFE3D2' : '#F1DDA8'}` }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#29483C' }}>{questionnaireState}</div>
-            <div style={{ fontSize: 12, color: '#6E8178', marginTop: 5 }}>{intake.submittedAt ? `客户提交：${new Date(intake.submittedAt).toLocaleString('zh-CN')}` : '下单后自动推送；客户提交后进入健康顾问24小时定制环节。'}</div>
-          </div>
-          <div style={{ marginTop: 10, fontSize: 12, color: '#8A5A00' }}>问卷答卷、档案差异和确认记录将在此处集中展示。</div>
-        </div>
       </div>
 
-      {questionnaireAnswers.length > 0 && <div style={{ ...card, marginTop: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-          <div style={{ fontWeight: 700, color: '#1A2B24' }}>本次问卷明细与档案变化</div>
-          <span style={{ fontSize: 11, color: '#16835D', background: '#EAF7F1', borderRadius: 20, padding: '3px 8px' }}>{questionnaire.title || '体检方案定制问卷'}</span>
-          {questionnaire.submittedAt && <span style={{ ...muted, marginLeft: 'auto' }}>提交于 {new Date(questionnaire.submittedAt).toLocaleString('zh-CN')}</span>}
-        </div>
-        <div style={{ marginTop: 6, ...muted }}>基础档案保持不变；以下只展示本次问卷发现的变化及确认状态。</div>
+      {questionnaireAnswers.length > 0 && <details style={{ ...card, marginTop: 14 }}>
+        <summary style={{ cursor: 'pointer', color: '#29483C', fontSize: 13, fontWeight: 700 }}>
+          查看问卷与档案差异（{questionnaireAnswers.length}项{archiveChanges.length ? `，${archiveChanges.length}项变化待核对` : ''}）
+        </summary>
+        <div style={{ marginTop: 8, ...muted }}>仅供核对，默认不展开；基础档案不会被本次问卷自动覆盖。</div>
         {archiveChanges.length > 0 ? <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 9 }}>
           {archiveChanges.map(item => <div key={item.questionId} style={{ padding: 11, borderRadius: 9, background: item.confirmed ? '#F0F8F4' : '#FFF9EF', border: `1px solid ${item.confirmed ? '#CDE5D8' : '#F2D9A6'}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><strong style={{ fontSize: 13, color: '#29483C' }}>{item.questionText}</strong><span style={{ fontSize: 11, color: item.confirmed ? '#16835D' : '#A36800' }}>{item.confirmed ? '已确认记录' : '待人工确认'}</span></div>
@@ -313,20 +322,7 @@ function CheckupServiceWorkspace({ plan, moduleData, onOpenPatient }) {
             {otherAnswers.map(item => <div key={item.questionId} style={{ padding: '8px 10px', borderRadius: 8, background: '#F8FAF9', fontSize: 12 }}><span style={{ color: '#789087' }}>{item.questionText}：</span><strong style={{ color: '#31493E' }}>{formatAnswer(item.answer)}</strong></div>)}
           </div>
         </details>}
-      </div>}
-
-      <div style={{ ...card, marginTop: 14 }}>
-        <div style={{ fontWeight: 700, color: '#1A2B24' }}>健康顾问方案工作区</div>
-        <div style={muted}>同屏参考：当前有效健康档案、本次问卷、历年异常与AI方案草稿；审核后再进入预约与陪检。</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(150px,1fr))', gap: 10, marginTop: 12 }}>
-          {[
-            ['健康档案', '当前有效资料＋历史变更'],
-            ['本次问卷', questionnaireState],
-            ['AI体检方案草稿', content.aiStatus === 'approved' ? '已审核' : '待健康顾问审核'],
-            ['执行交接', `${bookingName} · ${escortName}`],
-          ].map(([label, value]) => <div key={label} style={{ padding: 12, borderRadius: 10, border: '1px solid #E5EAE7', background: '#FBFCFB' }}><div style={{ fontSize: 11, color: '#8AA89C' }}>{label}</div><div style={{ marginTop: 5, fontSize: 13, fontWeight: 650, color: '#31493E' }}>{value}</div></div>)}
-        </div>
-      </div>
+      </details>}
     </div>
   )
 }
@@ -375,6 +371,13 @@ export default function PlanModulesPage() {
       .catch(err => toast(err.message || '加载失败'))
       .finally(() => setLoading(false))
   }, [id])
+
+  useEffect(() => {
+    const selectedId = moduleData.visit?.supervisorId
+    if (!selectedId) return
+    const selected = staffList.find(item => String(item._id) === String(selectedId))
+    if (selected) setSupervisorSearch(`${selected.name} · ${selected.roleLabel || selected.role}`)
+  }, [moduleData.visit?.supervisorId, staffList])
 
   const canEdit = !!plan?.canManage
   const canDelete = !!plan?.canDelete
@@ -474,10 +477,6 @@ export default function PlanModulesPage() {
     ? followUpPlans.filter(item => `${item.name || ''} ${item.executorRole || ''} ${item.supervisorRole || ''}`.toLowerCase().includes(normalizedPlanSearch))
     : followUpPlans
   const supervisors = staffList.filter(item => ['healthManager', 'familyDoctor', 'superadmin'].includes(item.role))
-  const normalizedSupervisorSearch = supervisorSearch.trim().toLowerCase()
-  const searchableSupervisors = normalizedSupervisorSearch
-    ? supervisors.filter(item => `${item.name || ''} ${item.roleLabel || ''} ${item.title || ''} ${item.department || ''}`.toLowerCase().includes(normalizedSupervisorSearch))
-    : supervisors
   const handleBack = () => {
     if (location.state?.returnTo) {
       nav(location.state.returnTo)
@@ -527,8 +526,8 @@ export default function PlanModulesPage() {
 
       {isCheckupService && <CheckupServiceWorkspace plan={plan} moduleData={moduleData} onOpenPatient={() => nav(`/patients/${plan.patientId?._id}`)} />}
 
-      {/* 服务目标 */}
-      <div style={{ background: '#fff', borderRadius: 12, padding: 20, marginBottom: 20, border: '1px solid #E0D9CE' }}>
+      {/* 体检订单的核心需求已在上方展示，避免健康规划师重复维护“服务目标”。 */}
+      {!isCheckupService && <div style={{ background: '#fff', borderRadius: 12, padding: 20, marginBottom: 20, border: '1px solid #E0D9CE' }}>
         <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24', marginBottom: 10 }}>服务目标</div>
         <textarea
           className="form-input"
@@ -538,10 +537,10 @@ export default function PlanModulesPage() {
           onChange={e => { setGoal(e.target.value); setDirty(true) }}
           style={{ width: '100%', padding: '8px 10px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' }}
         />
-      </div>
+      </div>}
 
       {/* 板块列表 */}
-      {plan.type === 'medical_assist' && (
+      {plan.type === 'medical_assist' && !isCheckupService && (
         <div style={{ background: '#fff', borderRadius: 12, padding: 20, marginBottom: 20, border: '1px solid #E0D9CE' }}>
           <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24', marginBottom: 4 }}>岗位任务流转</div>
           <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 14 }}>{isCheckupService ? '岗位、时间和完成标准由 Admin 统一配置；预约负责人和陪同人员在下方体检安排中指定。' : '执行人完成就医安排；督办人核对结果并推动客户整体方案闭环。'}</div>
@@ -565,8 +564,19 @@ export default function PlanModulesPage() {
             </div>
             {!isCheckupService && <div>
               <label className="form-label">督办人 *</label>
-              <input className="form-input" value={supervisorSearch} onChange={e => setSupervisorSearch(e.target.value)} placeholder="搜索姓名/岗位/部门" style={{ marginBottom: 6 }} />
-              <select className="form-input" value={moduleData.visit?.supervisorId || ''} onChange={e => handleModuleChange('visit', 'supervisorId', e.target.value)}><option value="">请选择健管专员/家庭医生</option>{searchableSupervisors.map(s => <option key={s._id} value={s._id}>{s.name} · {s.roleLabel}</option>)}</select>
+              <input
+                className="form-input"
+                list="medical-assist-supervisors"
+                value={supervisorSearch}
+                onChange={e => {
+                  const value = e.target.value
+                  setSupervisorSearch(value)
+                  const selected = supervisors.find(item => value === `${item.name} · ${item.roleLabel || item.role}`)
+                  handleModuleChange('visit', 'supervisorId', selected?._id || '')
+                }}
+                placeholder="输入姓名、岗位后选择"
+              />
+              <datalist id="medical-assist-supervisors">{supervisors.map(s => <option key={s._id} value={`${s.name} · ${s.roleLabel || s.role}`}>{s.department || s.title || ''}</option>)}</datalist>
             </div>}
           </div>
         </div>
@@ -590,7 +600,7 @@ export default function PlanModulesPage() {
       )}
       <div style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24' }}>方案板块</div>
+          <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24' }}>{isCheckupService ? '填写体检安排' : '方案板块'}</div>
           <div style={{ fontSize: 12, color: '#8AA89C' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#1E6B50', display: 'inline-block' }} />
