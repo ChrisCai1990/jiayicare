@@ -38,7 +38,12 @@ test('questionnaire submission is scoped to its push assignment and linked back 
 })
 
 test('mapped questionnaire answers wait for review and confirmed changes retain archive versions', () => {
-  assert.doesNotMatch(read('src/routes/questionnaire.js'), /draft\.autoItems\.length > 0/)
-  assert.match(read('src/routes/staff.js'), /archiveVersionHistory/)
+  const questionnaireSource = read('src/routes/questionnaire.js')
+  const staffSource = read('src/routes/staff.js')
+  assert.doesNotMatch(questionnaireSource, /draft\.autoItems\.length > 0/)
+  assert.match(staffSource, /archiveVersionHistory/)
+  assert.match(staffSource, /基础档案不可变，仅追加变化记录/)
+  assert.doesNotMatch(staffSource, /\$set\[it\.path\]\s*=/)
+  assert.match(staffSource, /mode: 'append_only'/)
   assert.match(read('src/models/User.js'), /archiveVersionHistory/)
 })

@@ -11321,51 +11321,48 @@ router.post('/patients/:id/archive-draft', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// POST /api/staff/patients/:id/archive-draft/apply — 审核写入：把选定字段写入档案，清空草稿
+// POST /api/staff/patients/:id/archive-draft/apply — 确认变化：基础档案不可变，仅追加变化记录并清空草稿
 router.post('/patients/:id/archive-draft/apply', staffAuth, async (req, res) => {
   try {
     const { items } = req.body; // [{ path, value }]
-    if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ success: false, message: '没有要写入的字段' });
+    if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ success: false, message: '没有要确认的变化' });
     const { FIELD_MAP } = require('../config/archiveFields');
-    const $set = {};
-    for (const it of items) {
-      if (!FIELD_MAP[it.path]) continue; // 只允许白名单字段
-      $set[it.path] = it.value;
-    }
-    if (Object.keys($set).length === 0) return res.status(400).json({ success: false, message: '没有有效字段' });
+    const validItems = items.filter(it => FIELD_MAP[it.path]); // 只允许白名单字段
+    if (validItems.length === 0) return res.status(400).json({ success: false, message: '没有有效变化' });
 
-    // 2026-07-21新增：确认写入这个动作本身要留痕（谁、什么时候、写了什么），此前只落字段没记确认人。
-    // 来源问卷/答卷信息从当前草稿里读（写入后草稿会被清空，必须在清空前取）。
+    // 基础档案是不可变基线。问卷中的新信息只能作为带来源、确认人和时间的变化记录追加，
+    // 不再用 $set[it.path] 改写原字段。下游需要“当前有效信息”时应组合基线与已确认变化读取。
     const userBefore = await User.findById(req.params.id).select('archiveDraft').lean();
     const confirmEntry = {
       confirmedBy: req.staff._id, confirmedByName: req.staff.name || req.staff.username || '',
       confirmedAt: new Date(),
-      items: items.map(it => ({ path: it.path, value: it.value })),
+      mode: 'append_only',
+      items: validItems.map(it => ({ path: it.path, value: it.value })),
       sourceQuestionnaireId: userBefore?.archiveDraft?.questionnaireId || null,
       sourceResponseId: userBefore?.archiveDraft?.responseId || null,
     };
     const draftByPath = new Map((userBefore?.archiveDraft?.items || []).map(item => [item.path, item]));
-    const versionEntries = items.filter(it => FIELD_MAP[it.path]).map(it => {
+    const versionEntries = validItems.map(it => {
       const draftItem = draftByPath.get(it.path) || {};
       return {
         path: it.path, label: draftItem.label || FIELD_MAP[it.path].label,
         from: draftItem.existing || '', to: it.value,
         effectiveAt: new Date(), sourceType: 'questionnaire',
+        mode: 'append_only',
         sourceQuestionnaireId: userBefore?.archiveDraft?.questionnaireId || null,
         sourceResponseId: userBefore?.archiveDraft?.responseId || null,
         confirmedBy: req.staff._id, confirmedByName: req.staff.name || req.staff.username || '',
       };
     });
 
-    $set.archiveDraft = null; // 写入后清空草稿
     await User.collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
-      { $set, $push: {
+      { $set: { archiveDraft: null }, $push: {
         archiveConfirmLog: { $each: [confirmEntry], $slice: -50 },
         archiveVersionHistory: { $each: versionEntries, $slice: -200 },
       } }
     );
-    res.json({ success: true, message: `已写入 ${Object.keys($set).length - 1} 个档案字段` });
+    res.json({ success: true, message: `已记录 ${validItems.length} 项档案变化，基础档案保持不变` });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

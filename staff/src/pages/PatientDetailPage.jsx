@@ -1075,7 +1075,7 @@ function ArchiveChangeLogPanel({ log }) {
   )
 }
 
-// 健管专员确认写入档案的留痕（archive-draft/apply 每次写入的操作人+时间+字段，只读展示）
+// 健管专员确认档案变化的留痕（基础档案不覆盖，只读展示追加记录）
 function ArchiveConfirmLogPanel({ log }) {
   const [open, setOpen] = useState(false)
   const entries = (log || []).slice().reverse() // 最新的在前
@@ -1084,7 +1084,7 @@ function ArchiveConfirmLogPanel({ log }) {
     <div style={{ marginBottom: 12, border: '1px solid #E0D9CE', borderRadius: 8, background: '#FAFAF8' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', cursor: 'pointer' }}
         onClick={() => setOpen(v => !v)}>
-        <span style={{ fontSize: 13, color: '#4A6558' }}>📋 档案确认写入记录（{entries.length}次，健管专员人工审核确认）</span>
+        <span style={{ fontSize: 13, color: '#4A6558' }}>📋 档案变化确认记录（{entries.length}次，基础档案保持不变）</span>
         <span style={{ fontSize: 12, color: '#aaa' }}>{open ? '▲' : '▼'}</span>
       </div>
       {open && (
@@ -2049,7 +2049,7 @@ export default function PatientDetailPage() {
     setArchiveBusy(true)
     try {
       await staffAPI.applyArchiveDraft(id, items)
-      toast('已写入健康档案')
+      toast('已记录档案变化，基础档案保持不变')
       setArchiveDraftOpen(false)
       load()
     } catch (err) { toast(err.message || '写入失败') } finally { setArchiveBusy(false) }
@@ -3613,7 +3613,7 @@ export default function PatientDetailPage() {
         )
       })()}
 
-      {/* 问卷自动填档：冲突待审核提醒 / 自动写入记录 / 手动导入入口 */}
+      {/* 问卷档案变化：差异待确认 / 历史记录 / 手动生成入口 */}
       {(() => {
         const draft = user.archiveDraft
         const pending = draft && draft.status === 'pending' && (draft.items || []).length > 0
@@ -3622,10 +3622,10 @@ export default function PatientDetailPage() {
             <div style={{ marginBottom: 12, padding: '10px 16px', background: '#FEF3C7', borderRadius: 8, border: '1px solid #FDE68A', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 18 }}>⚠️</span>
               <div style={{ flex: 1, minWidth: 180 }}>
-                <span style={{ color: '#92400E', fontWeight: 600, fontSize: 14 }}>问卷答案与档案现有记录冲突（{draft.items.length} 项）</span>
-                <span style={{ color: '#666', fontSize: 13, marginLeft: 10 }}>来自「{draft.questionnaireTitle || '健康问卷'}」，无冲突的字段已自动写入，以下需人工确认</span>
+                <span style={{ color: '#92400E', fontWeight: 600, fontSize: 14 }}>问卷发现档案信息变化（{draft.items.length} 项）</span>
+                <span style={{ color: '#666', fontSize: 13, marginLeft: 10 }}>来自「{draft.questionnaireTitle || '健康问卷'}」；确认后仅新增变化记录，不覆盖基础档案</span>
               </div>
-              <button className="btn btn-primary btn-sm" onClick={() => openArchiveDraft(draft)}>审核并写入</button>
+              <button className="btn btn-primary btn-sm" onClick={() => openArchiveDraft(draft)}>确认并记录变化</button>
               <button className="btn btn-secondary btn-sm" onClick={handleDismissArchiveDraft} disabled={archiveBusy}>忽略</button>
             </div>
           )
@@ -3633,13 +3633,13 @@ export default function PatientDetailPage() {
         if (qResponses.length > 0) {
           return (
             <div style={{ marginBottom: 12, padding: '8px 14px', background: '#F6F9F7', borderRadius: 8, border: '1px solid #D8EDE3', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 13, color: '#4A6558' }}>📝 从已答问卷自动填充健康档案：</span>
+              <span style={{ fontSize: 13, color: '#4A6558' }}>📝 从已答问卷识别档案变化：</span>
               <select id="qresp-select" className="form-control" style={{ width: 'auto', maxWidth: 320, fontSize: 13, padding: '4px 8px' }} defaultValue={qResponses[0].responseId}>
                 {qResponses.map(r => <option key={r.responseId} value={r.responseId}>{r.title}（{new Date(r.submittedAt).toLocaleDateString('zh-CN')}）</option>)}
               </select>
               <button className="btn btn-secondary btn-sm" disabled={archiveBusy}
                 onClick={() => handleGenerateArchiveDraft(document.getElementById('qresp-select')?.value)}>
-                {archiveBusy ? '生成中…' : '生成档案草稿'}
+                {archiveBusy ? '生成中…' : '生成变化草稿'}
               </button>
             </div>
           )
@@ -3667,7 +3667,7 @@ export default function PatientDetailPage() {
       <ArchiveChangeLogPanel log={user.archiveChangeLog} />
       <ArchiveVersionHistoryPanel history={user.archiveVersionHistory} />
       <ArchiveAutoLogPanel log={user.archiveAutoLog} />
-      {/* 健管专员人工审核确认写入档案的记录（有冲突需人工判断的字段） */}
+      {/* 健管专员人工确认的追加式档案变化记录 */}
       <ArchiveConfirmLogPanel log={user.archiveConfirmLog} />
 
       <ServiceJourneyPanel reports={reports} plans={plans} followUps={followUps} serviceRecords={serviceRecords} onNavigate={setTab} stageAssessmentEnabled />
@@ -11162,11 +11162,11 @@ export default function PatientDetailPage() {
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setArchiveDraftOpen(false) }}>
           <div className="modal" style={{ maxWidth: 860, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
             <div className="modal-header" style={{ flexShrink: 0 }}>
-              <h3 className="modal-title">问卷自动填档 · 审核写入</h3>
+              <h3 className="modal-title">问卷档案变化 · 人工确认</h3>
               <button className="modal-close" onClick={() => setArchiveDraftOpen(false)}>✕</button>
             </div>
             <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
-              <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 10 }}>勾选要写入档案的字段；与已有档案冲突的已标黄并默认不勾，请人工确认。写入值可直接编辑（数组字段多个值用「、」分隔）。</div>
+              <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 10 }}>勾选需要确认的变化；确认后只新增带来源和时间的变化记录，不覆盖基础档案。记录值可直接编辑（数组字段多个值用「、」分隔）。</div>
               {archiveDraftItems.length === 0 ? (
                 <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>无可导入字段</div>
               ) : archiveDraftItems.map((it, i) => (
@@ -11181,7 +11181,7 @@ export default function PatientDetailPage() {
                     问卷题：{it.questionText} → 答：{Array.isArray(it.answer) ? it.answer.join('、') : (typeof it.answer === 'object' ? JSON.stringify(it.answer) : String(it.answer))}
                   </div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>写入值</span>
+                    <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>变化值</span>
                     <input className="form-control" style={{ fontSize: 13 }} value={it.valueStr}
                       onChange={e => setArchiveDraftItems(arr => arr.map((x, idx) => idx === i ? { ...x, valueStr: e.target.value } : x))} />
                   </div>
@@ -11192,7 +11192,7 @@ export default function PatientDetailPage() {
             <div className="modal-footer" style={{ flexShrink: 0 }}>
               <button className="btn btn-secondary" onClick={() => setArchiveDraftOpen(false)}>取消</button>
               <button className="btn btn-primary" disabled={archiveBusy} onClick={handleApplyArchiveDraft}>
-                {archiveBusy ? '写入中…' : `写入档案（${archiveDraftItems.filter(x => x.apply).length}）`}
+                {archiveBusy ? '记录中…' : `确认并记录（${archiveDraftItems.filter(x => x.apply).length}）`}
               </button>
             </div>
           </div>
