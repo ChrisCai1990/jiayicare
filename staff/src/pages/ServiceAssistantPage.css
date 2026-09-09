@@ -287,6 +287,27 @@
 .sa-wecom .sa-empty { border: 0; background: #fff; border-radius: 8px; color: #737b87; }
 .sa-wecom .sa-notice { background: #edf5ff; color: #2766ac; }
 .sa-wecom .sa-connection span { background: #edf0f4; color: #737b87; }
+.sa-wecom .sa-heading { align-items: flex-start; gap: 4px 12px; margin-bottom: 10px; }
+.sa-wecom .sa-heading h1 { font-size: 14px; line-height: 26px; }
+.sa-wecom .sa-diagnostics { margin: 0; }
+.sa-wecom .sa-diagnostics summary { padding: 3px 0; }
+.sa-wecom .sa-diagnostics[open] { flex-basis: 100%; }
+.sa-wecom .sa-household { padding: 12px; margin: 8px 0; }
+.sa-wecom .sa-household .sa-row { margin-bottom: 10px; gap: 8px; }
+.sa-wecom .sa-household .sa-row h2 { font-size: 14px; }
+.sa-wecom .sa-household .sa-row button { font-size: 12px; padding: 4px 7px; }
+.sa-wecom .sa-person-picker { display: flex; align-items: center; gap: 10px; }
+.sa-wecom .sa-person-picker > span { flex-shrink: 0; font-size: 12px; color: #737b87; }
+.sa-wecom .sa-person-picker select { flex: 1; min-width: 0; margin: 0; padding: 7px; font-size: 13px; }
+.sa-wecom .sa-stats { margin-top: 10px; padding-top: 8px; gap: 16px; }
+.sa-wecom .sa-stats strong { font-size: 15px; }
+.sa-wecom .sa-tabs { margin: 10px 0 12px; }
+.sa-wecom > .sa-row h2 { font-size: 15px; margin: 0; }
+.sa-wecom .sa-empty { margin: 12px 0; padding: 26px 16px; }
+.sa-wecom .sa-empty p { font-size: 14px; margin: 0 0 4px; }
+.sa-wecom .sa-notice { display: flex; align-items: flex-start; gap: 8px; }
+.sa-wecom .sa-notice > span { flex: 1; }
+.sa-wecom .sa-dismiss { flex-shrink: 0; border: 0; padding: 0 4px; background: transparent; color: #61748d; font-size: 18px; line-height: 20px; }
 @media (max-width: 600px) {
   .service-assistant {
     padding: 16px 10px;

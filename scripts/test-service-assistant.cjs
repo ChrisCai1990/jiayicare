@@ -174,7 +174,7 @@ const fs = require("node:fs"),
     const tabsTop = await page.getByRole('navigation',{name:'服务功能'}).evaluate(el=>el.getBoundingClientRect().top);
     if(tabsTop > 340) throw new Error('Sidebar top area is too tall');
     const taskTop = await page.getByRole('button',{name:'新建待办',exact:true}).evaluate(el=>el.getBoundingClientRect().top);
-    if(taskTop > 400) throw new Error('Primary task action must be above auxiliary tools');
+    if(taskTop > 300) throw new Error('Compact sidebar task action must stay within first 300px');
     if(await page.getByLabel('快捷指令',{exact:true}).isVisible()) throw new Error('Command input should be collapsed by default');
     await page.getByText('服务概览 · 交接与回复',{exact:true}).click();
     await page.getByRole('button',{name:'一键交接草稿',exact:true}).click();

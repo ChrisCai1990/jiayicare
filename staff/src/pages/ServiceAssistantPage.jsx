@@ -507,7 +507,6 @@ export default function ServiceAssistantPage() {
     <div className="service-assistant sa-compact sa-wecom">
       <header className="sa-heading">
         <h1>家庭服务助手</h1>
-      </header>
       <details className="sa-diagnostics">
         <summary>连接状态与重试</summary>
         <button disabled={busy} onClick={recognise}>
@@ -533,6 +532,7 @@ export default function ServiceAssistantPage() {
         )}
       </div>
       </details>
+      </header>
       {error && (
         <div className="sa-alert" role="alert">
           {error}
@@ -540,7 +540,8 @@ export default function ServiceAssistantPage() {
       )}
       {notice && (
         <div className="sa-notice" role="status">
-          {notice}
+          <span>{notice}</span>
+          <button className="sa-dismiss" aria-label="关闭提示" onClick={() => setNotice('')}>×</button>
         </div>
       )}
       {(!inGroupSidebar || !g) && <div className="sa-toolbar">
@@ -674,6 +675,7 @@ export default function ServiceAssistantPage() {
               onClick={() => {
                 setCreating(false);
                 setSettings(false);
+                setNotice('');
               }}
             >
               取消
@@ -712,8 +714,8 @@ export default function ServiceAssistantPage() {
                 </button>
               )}
             </div>
-            <label>
-              当前服务对象
+            <label className="sa-person-picker">
+              <span>服务对象</span>
               <select
                 aria-label="当前服务对象"
                 disabled={busy}
