@@ -25,6 +25,7 @@ const PartnerBenefit = require('../models/PartnerBenefit');
 const Enterprise = require('../models/Enterprise');
 const EnterpriseInsurancePolicy = require('../models/EnterpriseInsurancePolicy');
 const InsuranceEnrollment = require('../models/InsuranceEnrollment');
+const InsuranceServiceCase = require('../models/InsuranceServiceCase');
 const PlanTemplate = require('../models/PlanTemplate');
 const { ensureAiCaseReviewTemplates } = require('../utils/aiCaseReviewTemplates');
 const CheckupPlan = require('../models/CheckupPlan');
@@ -1879,6 +1880,43 @@ router.get('/enterprises/:id/insurance-policies', adminAuth, async (req, res) =>
   ]) : [];
   const countMap = new Map(counts.map(item => [String(item._id), item.count]));
   res.json({ success: true, data: policies.map(p => ({ ...p, enrolledCount: countMap.get(String(p._id)) || 0 })) });
+});
+
+router.get('/enterprises/:id/insurance-operations-summary', adminAuth, async (req, res) => {
+  const enterpriseId = req.params.id;
+  const [enrolledMembers, cases] = await Promise.all([
+    InsuranceEnrollment.countDocuments({ enterpriseId, status: 'active' }),
+    InsuranceServiceCase.find({ enterpriseId }).select('status scenario createdAt claim authorization financials').lean(),
+  ]);
+  const byStatus = {};
+  const byScenario = {};
+  let submittedClaims = 0;
+  let paidClaims = 0;
+  let totalMemberPaid = 0;
+  let totalDirectBilling = 0;
+  let totalInsurancePaid = 0;
+  let totalResolutionHours = 0;
+  let resolvedCases = 0;
+  for (const item of cases) {
+    byStatus[item.status] = (byStatus[item.status] || 0) + 1;
+    byScenario[item.scenario] = (byScenario[item.scenario] || 0) + 1;
+    if (item.claim?.submittedAt) submittedClaims += 1;
+    if (item.claim?.status === 'paid') paidClaims += 1;
+    totalMemberPaid += Number(item.financials?.memberPaidAmount || 0);
+    totalDirectBilling += Number(item.financials?.directBillingAmount || 0);
+    totalInsurancePaid += Number(item.financials?.finalPaidAmount || 0);
+    const resolvedAt = item.claim?.paidAt || item.claim?.decidedAt;
+    if (resolvedAt && item.claim?.submittedAt) {
+      totalResolutionHours += Math.max(0, new Date(resolvedAt) - new Date(item.claim.submittedAt)) / 36e5;
+      resolvedCases += 1;
+    }
+  }
+  res.json({ success: true, data: {
+    enrolledMembers, totalCases: cases.length, byStatus, byScenario, submittedClaims, paidClaims,
+    claimPaidRate: submittedClaims ? paidClaims / submittedClaims : 0,
+    averageResolutionHours: resolvedCases ? totalResolutionHours / resolvedCases : 0,
+    financials: { totalMemberPaid, totalDirectBilling, totalInsurancePaid },
+  } });
 });
 
 router.post('/enterprises/:id/insurance-policies', adminAuth, async (req, res) => {
