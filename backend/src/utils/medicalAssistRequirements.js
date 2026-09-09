@@ -28,4 +28,14 @@ function followUpTaskRequirements(followUp) {
   return formatMedicalAssistRequirements(plan) || followUp?.plannedContent || '';
 }
 
-module.exports = { formatMedicalAssistRequirements, followUpTaskRequirements };
+function followUpTaskPurposes(followUp) {
+  const plan = followUp?.sourceHealthPlanId;
+  if (!plan || plan.type !== 'medical_assist') return [];
+  const c = plan.content || {};
+  const records = c.moduleData?.tasks?.records || [];
+  const purposes = records.map(record => String(record.task || '').trim()).filter(Boolean);
+  if (purposes.length) return purposes;
+  return String(c.tasks || '').split(/\r?\n/).map(item => item.replace(/^\s*\d+[.、]\s*/, '').trim()).filter(Boolean);
+}
+
+module.exports = { formatMedicalAssistRequirements, followUpTaskRequirements, followUpTaskPurposes };

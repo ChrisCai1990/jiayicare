@@ -10,7 +10,7 @@ const multer = require('multer');
 const { calculateHealthScore } = require('../utils/healthScore');
 const { parseIdCard, calcAgeFromBirthDate } = require('../utils/idCard');
 const { getCurrentTenantId, BYPASS } = require('../utils/tenantScope');
-const { followUpTaskRequirements } = require('../utils/medicalAssistRequirements');
+const { followUpTaskRequirements, followUpTaskPurposes } = require('../utils/medicalAssistRequirements');
 const { isReportInterpretation } = require('../utils/checkupWorkflow');
 const { reverseFamilyRelation, synchronizeFamilyGroup } = require('../utils/familyLinks');
 // 聚合管道($aggregate)不会被 tenantScopePlugin 的 query 中间件自动拦截，需要在 $match 里手动拼入 tenantId
@@ -429,8 +429,9 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     .populate('patientId', 'name phone gender age chronicDiseases')
     .populate('staffId', 'name role title').populate('assignedTo', 'name role')
     .populate('sourceHealthPlanId', 'title description content type')
-    .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard');
-  res.json({ success: true, data: tasks.map(task => ({ ...task.toObject(), taskRequirements: followUpTaskRequirements(task) })) });
+    .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard')
+    .populate('dependsOnTaskId', 'serviceChecklist executedContent status completedAt');
+  res.json({ success: true, data: tasks.map(task => ({ ...task.toObject(), taskRequirements: followUpTaskRequirements(task), taskPurposes: followUpTaskPurposes(task) })) });
 });
 
 // ── GET /api/staff/patients ───────────────────────────────────────
@@ -1279,6 +1280,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
       .populate('staffId', 'name role title')
       .populate('assignedTo', 'name role title')
       .populate('sourceHealthPlanId', 'title description content type')
+      .populate('dependsOnTaskId', 'serviceChecklist executedContent status completedAt')
       .populate('sourceOrderId', 'serviceName servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt'),
     FollowUp.countDocuments(filter),
   ]);
@@ -1288,6 +1290,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
       followUps: followUps.map(followUp => ({
         ...followUp.toObject(),
         taskRequirements: followUpTaskRequirements(followUp),
+        taskPurposes: followUpTaskPurposes(followUp),
       })),
       total,
     },
@@ -1355,6 +1358,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
       .populate('staffId', 'name role title')
       .populate('assignedTo', 'name role')
       .populate('sourceHealthPlanId', 'title description content type')
+      .populate('dependsOnTaskId', 'serviceChecklist executedContent status completedAt')
       .populate('sourceOrderId', 'serviceName servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt'),
     FollowUp.countDocuments(filter),
   ]);
@@ -1371,6 +1375,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
   const followUpsWithRecord = followUps.map(f => ({
     ...f.toObject(),
     taskRequirements: followUpTaskRequirements(f),
+    taskPurposes: followUpTaskPurposes(f),
     patientLastRecord: f.patientId ? (lastRecordMap[String(f.patientId._id)] || null) : null,
   }));
 
@@ -1459,7 +1464,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   // 不能擅自改动创建人定下的随访安排——避免执行人绕过创建人调整计划本身
   const OWNER_ONLY = ['date', 'theme', 'type', 'assignedTo', 'nextFollowUpDate', 'tags'];
   // 执行层字段：谁去做都能填，被指派人是实际执行随访的人
-  const EXEC_FIELDS = ['status', 'content', 'cancelReason', 'vitals', 'checkInItems', 'participants', 'interviewMinutes'];
+  const EXEC_FIELDS = ['status', 'content', 'cancelReason', 'vitals', 'checkInItems', 'participants', 'interviewMinutes', 'serviceChecklist'];
   const allowed = isOwner ? [...OWNER_ONLY, ...EXEC_FIELDS] : EXEC_FIELDS;
   const OBJECTID_FIELDS = ['assignedTo'];
   allowed.forEach(k => {

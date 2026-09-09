@@ -5,6 +5,7 @@ import { useToast, useStaff, can } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
 import Pagination from '../components/Pagination'
 import MedicalAssistRequirementsCard from '../components/MedicalAssistRequirementsCard'
+import ServiceTaskChecklist, { normalizeServiceChecklist, summarizeServiceChecklist } from '../components/ServiceTaskChecklist'
 import { formatChineseDate, formatChineseDateTime } from '../utils/date'
 
 const TYPE_MAP   = { phone: '电话', wechat: '微信', visit: '上门', video: '视频', other: '其他' }
@@ -156,7 +157,7 @@ export default function FollowUpsPage() {
 
   // 执行随访 modal
   const [execItem,     setExecItem]     = useState(null)
-  const [execForm,     setExecForm]     = useState({ type: 'phone', content: '', status: 'completed' })
+  const [execForm,     setExecForm]     = useState({ type: 'phone', content: '', status: 'completed', serviceChecklist: [] })
   const [execSaving,   setExecSaving]   = useState(false)
   const [draftLoading, setDraftLoading] = useState(false)  // 场景七：AI生成草稿
 
@@ -220,17 +221,26 @@ export default function FollowUpsPage() {
 
   const openExec = (f) => {
     setExecItem(f)
-    setExecForm({ type: f.type || 'phone', content: '', status: 'completed' })
+    setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeServiceChecklist(f.serviceChecklist, f.taskPurposes, f.dependsOnTaskId?.serviceChecklist) })
   }
 
   const handleExec = async () => {
-    if (!execForm.content.trim()) { toast(execItem?.taskRole === 'supervisor' ? '请填写督办结论' : execItem?.taskRole ? '请填写事务完成记录' : '请填写随访结果'); return }
+    if (execItem?.taskRole) {
+      if (!execForm.serviceChecklist.length) { toast('请先在方案中补充明确的代办目的'); return }
+      if (execItem.taskRole === 'supervisor' && execForm.serviceChecklist.some(item => !item.supervisionStatus)) { toast('请逐项完成督导核验'); return }
+      if (execItem.taskRole !== 'supervisor' && execForm.serviceChecklist.some(item => !item.executionStatus || !item.executionResult?.trim() || (item.executionStatus !== 'completed' && !item.nextAction?.trim()))) { toast('请逐项填写完成状态、实际结果和未完成事项'); return }
+    } else if (!execForm.content.trim()) { toast('请填写随访结果'); return }
     setExecSaving(true)
     try {
       await staffAPI.updateFollowUp(execItem._id, {
         type: execForm.type,
-        content: execForm.content,
-        status: execForm.status,
+        content: execForm.content.trim() || summarizeServiceChecklist(execForm.serviceChecklist, execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor'),
+        status: execItem.taskRole === 'supervisor'
+          ? (execForm.serviceChecklist.some(item => item.supervisionStatus === 'issue') ? 'in_progress' : 'completed')
+          : execItem.taskRole
+            ? (execForm.serviceChecklist.every(item => item.executionStatus === 'completed') ? 'completed' : 'in_progress')
+            : execForm.status,
+        serviceChecklist: execForm.serviceChecklist,
       })
       toast(execItem?.taskRole === 'supervisor' ? '督办记录已完成' : execItem?.taskRole ? '事务记录已更新' : '随访记录已更新')
       setExecItem(null)
@@ -443,6 +453,7 @@ export default function FollowUpsPage() {
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <MedicalAssistRequirementsCard text={getMedicalAssistRequirements(execItem)} />
+              {execItem.taskRole && <ServiceTaskChecklist mode={execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor'} purposes={execItem.taskPurposes || []} source={execItem.dependsOnTaskId?.serviceChecklist || []} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} />}
               {/* 只读信息 */}
               <div style={{ background: '#f9f7f3', borderRadius: 8, padding: 12, display: 'grid', gap: 6 }}>
                 <div style={{ display: 'flex', gap: 8 }}>
@@ -465,28 +476,28 @@ export default function FollowUpsPage() {
                 {execItem.formData && Object.keys(execItem.formData).length > 0 && <div style={{ fontSize: 13, whiteSpace: 'pre-line' }}>{Object.entries(execItem.formData).filter(([, value]) => value !== '' && value != null).map(([key, value]) => `${key}：${Array.isArray(value) ? value.join('、') : value}`).join('\n')}</div>}
               </div>
               {/* 填写结果 */}
-              <div>
+              {!execItem.taskRole && <div>
                 <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>{execItem.taskRole ? '处理方式' : '随访方式'}</label>
                 <select className="form-control" value={execForm.type}
                   onChange={e => setExecForm(f => ({ ...f, type: e.target.value }))}>
                   {TYPE_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
                 </select>
-              </div>
+              </div>}
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <label style={{ fontSize: 12, color: '#8AA89C' }}>{execItem.taskRole === 'supervisor' ? '督办结论 *' : execItem.taskRole ? '事务完成记录 *' : '随访结果 *'}</label>
-                  <button type="button" className="btn btn-secondary"
+                  <label style={{ fontSize: 12, color: '#8AA89C' }}>{execItem.taskRole ? '补充说明（选填）' : '随访结果 *'}</label>
+                  {!execItem.taskRole && <button type="button" className="btn btn-secondary"
                     style={{ fontSize: 12, padding: '2px 10px' }}
                     onClick={handleAIDraft} disabled={draftLoading}>
                     {draftLoading ? '生成中...' : '✨ AI生成草稿'}
-                  </button>
+                  </button>}
                 </div>
                 <textarea className="form-control" rows={5}
-                  placeholder={execItem.taskRole === 'supervisor' ? '核对执行结果、资料回收和遗留事项；无遗留可直接确认闭环' : execItem.taskRole ? '记录实际完成内容、交付结果和需要后续处理的事项' : '记录本次随访的实际情况、会员反馈、建议等...'}
+                  placeholder={execItem.taskRole ? '仅填写清单之外需要说明的特殊情况' : '记录本次随访的实际情况、会员反馈、建议等...'}
                   value={execForm.content}
                   onChange={e => setExecForm(f => ({ ...f, content: e.target.value }))} />
               </div>
-              <div>
+              {!execItem.taskRole && <div>
                 <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 8 }}>{execItem.taskRole ? '事务状态' : '随访结果状态'}</label>
                 <div style={{ display: 'flex', gap: 16 }}>
                   {[
@@ -501,7 +512,7 @@ export default function FollowUpsPage() {
                     </label>
                   ))}
                 </div>
-              </div>
+              </div>}
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setExecItem(null)}>取消</button>

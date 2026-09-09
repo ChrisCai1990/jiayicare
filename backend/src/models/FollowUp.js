@@ -18,6 +18,8 @@ const followUpSchema = new mongoose.Schema({
   plannedContent:  { type: String, default: '' }, // 下发时的任务要求，执行后仍保留
   executedContent: { type: String, default: '' }, // 实际随访/服务执行结果
   executedType:    { type: String, enum: ['phone', 'wechat', 'visit', 'video', 'other', ''], default: '' },
+  // 服务事务标准交付/督导清单。执行人与督办人使用同一组 key，督办逐项核验执行结果。
+  serviceChecklist: { type: mongoose.Schema.Types.Mixed, default: [] },
   theme:        { type: String, default: '' },  // 随访主题
   followUpSchemeId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUpPlan', default: null },
   formData:     { type: mongoose.Schema.Types.Mixed, default: null },
