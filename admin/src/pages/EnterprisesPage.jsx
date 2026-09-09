@@ -19,6 +19,22 @@ const EMPTY_ENTERPRISE = {
 }
 
 const INSURANCE_SCENES = ['普通门诊', '住院', '急诊', '特殊检查/治疗', '特药/院外药', '事后报销']
+const SERVICE_MANUAL_FIELDS = [
+  ['国际/高端门诊预约', 'internationalOutpatientBooking', '预约入口、服务时间、预约提前量、医院与医生选择步骤'],
+  ['预约所需信息', 'appointmentRequiredInfo', '会员号、证件、症状、科室、期望时间等'],
+  ['医院网络核验', 'providerNetworkCheck', '如何确认网络内医院、高昂医疗机构限制及书面确认方式'],
+  ['直付适用条件', 'directBillingEligibility', '何时可直付、担保函/预授权条件、不适用情形'],
+  ['自费后可报销条件', 'selfPayReimbursementEligibility', '允许先自费的场景、网络外/紧急情形、免赔与比例、不可报销情形'],
+  ['报销资料清单', 'claimMaterials', '申请表、发票、费用清单、病历、处方、检查报告、支付凭证等'],
+  ['报销办理流程', 'claimProcess', '就诊前确认、留存资料、提交、补件、审核、赔付的顺序与责任人'],
+  ['报案/提交时限', 'claimDeadline', '报案、申请和补件截止时间及逾期处理'],
+  ['提交渠道', 'claimSubmissionChannels', 'App、邮件、线上门户、邮寄地址及所需表单'],
+  ['进度查询与补件', 'claimFollowUp', '查询入口、预计审核时长、补件通知与回传方式'],
+  ['紧急就医流程', 'emergencyProcedure', '无法事先授权时的联系电话、补报时限及材料'],
+  ['改期/取消规则', 'cancellationPolicy', '预约变更、爽约费用及通知方式'],
+  ['异常升级联系人', 'escalationContact', '拒赔、直付失败、紧急协调时的升级路径'],
+  ['手册依据', 'sourceReference', '服务手册/理赔指南名称、版本、页码或附件'],
+]
 
 function InsurancePolicyModal({ enterprise, employees, onClose, toast }) {
   const [policies, setPolicies] = useState([])
@@ -50,6 +66,7 @@ function InsurancePolicyModal({ enterprise, employees, onClose, toast }) {
     else rules.push({ scene, covered: 'confirm', preAuthorization: 'confirm', directBilling: 'confirm', [key]: value })
     return { ...current, rules }
   })
+  const setManual = (key, value) => setForm(current => ({ ...current, serviceManual: { ...(current.serviceManual || {}), [key]: value } }))
   const save = async () => {
     setSaving(true)
     try {
@@ -84,6 +101,17 @@ function InsurancePolicyModal({ enterprise, employees, onClose, toast }) {
       <div style={{ overflowX: 'auto', marginTop: 8 }}><table className="data-table"><thead><tr><th>场景</th><th>是否保障</th><th>预授权</th><th>直付</th><th>免赔/比例/限额</th><th>医院限制、材料与注意事项</th><th>条款依据</th></tr></thead><tbody>
         {INSURANCE_SCENES.map(scene => <tr key={scene}><td>{scene}</td><td><select value={rule(scene).covered || 'confirm'} onChange={e => setRule(scene,'covered',e.target.value)}><option value="confirm">需确认</option><option value="yes">保障</option><option value="no">不保障</option></select></td><td><select value={rule(scene).preAuthorization || 'confirm'} onChange={e => setRule(scene,'preAuthorization',e.target.value)}><option value="confirm">需确认</option><option value="required">必须</option><option value="not_required">不需要</option></select></td><td><select value={rule(scene).directBilling || 'confirm'} onChange={e => setRule(scene,'directBilling',e.target.value)}><option value="confirm">需确认</option><option value="yes">支持</option><option value="no">不支持</option></select></td><td><textarea rows={3} value={rule(scene).limit || ''} onChange={e => setRule(scene,'limit',e.target.value)} placeholder="免赔额、比例、限额" /></td><td><textarea rows={3} value={rule(scene).notes || ''} onChange={e => setRule(scene,'notes',e.target.value)} /></td><td><input value={rule(scene).sourceReference || ''} onChange={e => setRule(scene,'sourceReference',e.target.value)} placeholder="附件名/P12" /></td></tr>)}
       </tbody></table></div>
+      <div style={{ marginTop: 22, fontWeight: 700 }}>保险服务手册</div>
+      <div style={{ marginTop: 5, fontSize: 12, color: '#65776F' }}>用于医护人员实际协助预约、直付和理赔。没有正式资料的项目请留空或写“待保险方书面确认”，不要凭经验推断。</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, marginTop: 10 }}>
+        {[['直付操作方式','directBillingMethod'],['预授权操作方式','preAuthorizationMethod'],['理赔提交总说明','claimSubmissionMethod']].map(([label,key]) => <label key={key} className="form-group"><span className="form-label">{label}</span><textarea className="form-input" rows={3} value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))} /></label>)}
+        {SERVICE_MANUAL_FIELDS.map(([label,key,placeholder]) => <label key={key} className="form-group"><span className="form-label">{label}</span><textarea className="form-input" rows={4} value={form.serviceManual?.[key] || ''} onChange={e => setManual(key, e.target.value)} placeholder={placeholder} /></label>)}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 10 }}>
+        <label className="form-group"><span className="form-label">手册核实状态</span><select className="form-input" value={form.serviceManual?.verificationStatus || 'missing'} onChange={e => setManual('verificationStatus', e.target.value)}><option value="missing">资料待补</option><option value="review">待复核</option><option value="verified">已按正式资料核实</option></select></label>
+        <label className="form-group"><span className="form-label">最后核实日期</span><input className="form-input" type="date" value={form.serviceManual?.verifiedAt?.slice?.(0, 10) || form.serviceManual?.verifiedAt || ''} onChange={e => setManual('verifiedAt', e.target.value || null)} /></label>
+        <label className="form-group"><span className="form-label">核实人</span><input className="form-input" value={form.serviceManual?.verifiedByName || ''} onChange={e => setManual('verifiedByName', e.target.value)} /></label>
+      </div>
       <div style={{ marginTop: 18, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <div style={{ fontWeight: 700, marginRight: 'auto' }}>参保人员（已选 {selectedUsers.size} 人，共 {employees.length} 人）</div>
         <input className="form-input" style={{ width: 260 }} value={memberSearch} onChange={e => setMemberSearch(e.target.value)} placeholder="搜索姓名或手机号" />

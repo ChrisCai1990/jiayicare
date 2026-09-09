@@ -15,6 +15,26 @@ const insuranceRuleSchema = new mongoose.Schema({
   sourceReference: { type: String, default: '' },
 }, { _id: true });
 
+const insuranceServiceManualSchema = new mongoose.Schema({
+  internationalOutpatientBooking: { type: String, default: '' },
+  appointmentRequiredInfo: { type: String, default: '' },
+  providerNetworkCheck: { type: String, default: '' },
+  directBillingEligibility: { type: String, default: '' },
+  selfPayReimbursementEligibility: { type: String, default: '' },
+  claimMaterials: { type: String, default: '' },
+  claimProcess: { type: String, default: '' },
+  claimDeadline: { type: String, default: '' },
+  claimSubmissionChannels: { type: String, default: '' },
+  claimFollowUp: { type: String, default: '' },
+  emergencyProcedure: { type: String, default: '' },
+  cancellationPolicy: { type: String, default: '' },
+  escalationContact: { type: String, default: '' },
+  sourceReference: { type: String, default: '' },
+  verificationStatus: { type: String, enum: ['missing', 'review', 'verified'], default: 'missing' },
+  verifiedAt: { type: Date, default: null },
+  verifiedByName: { type: String, default: '' },
+}, { _id: false });
+
 const enterpriseInsurancePolicySchema = new mongoose.Schema({
   enterpriseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Enterprise', required: true, index: true },
   year: { type: Number, required: true, index: true },
@@ -29,6 +49,7 @@ const enterpriseInsurancePolicySchema = new mongoose.Schema({
   directBillingMethod: { type: String, default: '' },
   preAuthorizationMethod: { type: String, default: '' },
   claimSubmissionMethod: { type: String, default: '' },
+  serviceManual: { type: insuranceServiceManualSchema, default: () => ({}) },
   status: { type: String, enum: ['draft', 'review', 'active', 'expired'], default: 'draft', index: true },
   rules: { type: [insuranceRuleSchema], default: [] },
   attachments: { type: [new mongoose.Schema({ name: String, url: String, category: String }, { _id: false })], default: [] },

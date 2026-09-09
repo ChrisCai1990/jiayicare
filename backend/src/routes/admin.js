@@ -1905,7 +1905,7 @@ router.post('/enterprises/:id/insurance-policies', adminAuth, async (req, res) =
 router.put('/enterprises/:enterpriseId/insurance-policies/:policyId', adminAuth, async (req, res) => {
   const current = await EnterpriseInsurancePolicy.findOne({ _id: req.params.policyId, enterpriseId: req.params.enterpriseId });
   if (!current) return res.status(404).json({ success: false, message: '保险方案不存在' });
-  const allowed = ['year','name','insurerName','administratorName','policyNumber','startAt','endAt','servicePhone','claimContact','directBillingMethod','preAuthorizationMethod','claimSubmissionMethod','status','rules','attachments','lastVerifiedAt','lastVerifiedByName','note'];
+  const allowed = ['year','name','insurerName','administratorName','policyNumber','startAt','endAt','servicePhone','claimContact','directBillingMethod','preAuthorizationMethod','claimSubmissionMethod','serviceManual','status','rules','attachments','lastVerifiedAt','lastVerifiedByName','note'];
   allowed.forEach(key => { if (req.body[key] !== undefined) current[key] = req.body[key]; });
   current.version = Number(current.version || 1) + 1;
   current.updatedBy = req.admin._id;
