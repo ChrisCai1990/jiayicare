@@ -111,6 +111,9 @@ function PersonSearch({ onSelect }) {
 }
 
 export default function ServiceAssistantPage() {
+  const inGroupSidebar = /wxwork/i.test(navigator.userAgent) && new URLSearchParams(window.location.search).get("embedded") === "1";
+  const [currentChat, setCurrentChat] = useState("");
+  const recogniseRef = useRef(null);
   const { staff } = useStaff(),
     can = usePermission();
   const [caps, setCaps] = useState(null),
@@ -218,13 +221,21 @@ export default function ServiceAssistantPage() {
       active = false;
     };
   }, [groupId, personId, bundle]);
-  const run = async (fn) => {
+  const run = async (fn, identifying = false) => {
     if (busyLock.current) return;
     busyLock.current = true;
     setBusy(true);
     setError("");
     setNotice("");
     try {
+      if (inGroupSidebar && !identifying) {
+        const actualChat = await currentWecomGroup();
+        if (!currentChat || actualChat !== currentChat || (g && g.chatId !== actualChat)) {
+          setGroupId(""); setBundle(null); setCreating(false); setSettings(false);
+          setCurrentChat("");
+          throw new Error("当前群已变化，已停止操作，请点击重新识别当前群");
+        }
+      }
       await fn();
     } catch (e) {
       setError(e.message);
@@ -262,18 +273,31 @@ export default function ServiceAssistantPage() {
       const id = await currentWecomGroup();
       const list = await listGroups();
       const found = list.find((x) => x.chatId === id);
-      if (found) setGroupId(found._id);
+      setCurrentChat(id);
+      if (found) { setCreating(false); setSettings(false); setGroupId(found._id); }
       else {
+        setGroupId(""); setBundle(null); setSettings(false);
         setCreating(true);
+        setGroupName(""); setMembers([]);
         setChatId(id);
         setNotice("已识别当前群，请绑定家庭成员");
       }
-    });
+    }, true);
+  recogniseRef.current = recognise;
+  useEffect(() => {
+    if (!inGroupSidebar) return;
+    recogniseRef.current();
+    const revisit = () => {
+      if (document.visibilityState === "visible") recogniseRef.current();
+    };
+    document.addEventListener("visibilitychange", revisit);
+    return () => document.removeEventListener("visibilitychange", revisit);
+  }, [inGroupSidebar]);
   const saveGroup = () =>
     run(async () => {
       const payload = {
         name: groupName,
-        chatId,
+        chatId: inGroupSidebar ? currentChat : chatId,
         members: members.map((m) => ({
           patientId: idOf(m.patientId),
           relation: m.relation,
@@ -411,14 +435,14 @@ export default function ServiceAssistantPage() {
           <p>把沟通接成服务，把跟进留在档案。</p>
         </div>
         <button disabled={busy} onClick={recognise}>
-          识别当前企微群
+          {inGroupSidebar ? "重新识别当前群" : "识别当前企微群"}
         </button>
       </header>
       <div className="sa-connection">
         {caps ? (
           <>
             <span>
-              {caps.sidebarConfigured
+              {currentChat ? "已识别当前企微群" : caps.sidebarConfigured
                 ? "企微参数已配置 · 待客户端验证"
                 : "企微侧边栏待配置"}
             </span>
@@ -444,13 +468,14 @@ export default function ServiceAssistantPage() {
         </div>
       )}
       <div className="sa-toolbar">
+        {inGroupSidebar ? <div><small>当前群绑定家庭</small><p>{g?.name || (currentChat ? "当前群尚未绑定，请在下方完成首次绑定" : "正在识别当前群；若失败请点击重新识别")}</p></div> : <>
         <label>
           当前服务群
           <select
             aria-label="当前服务群"
             disabled={busy}
             value={groupId}
-            onChange={(e) => setGroupId(e.target.value)}
+            onChange={(e) => { setCreating(false); setSettings(false); setGroupId(e.target.value); }}
           >
             <option value="">请选择服务群</option>
             {groups.map((x) => (
@@ -473,6 +498,7 @@ export default function ServiceAssistantPage() {
             新建服务群
           </button>
         )}
+        </>}
       </div>
       {(creating || settings) && (
         <section className="sa-card">
@@ -489,6 +515,7 @@ export default function ServiceAssistantPage() {
             企微群标识（可稍后绑定）
             <input
               value={chatId}
+              readOnly={inGroupSidebar}
               onChange={(e) => setChatId(e.target.value)}
               maxLength={128}
             />

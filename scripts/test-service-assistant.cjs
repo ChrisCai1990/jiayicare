@@ -141,6 +141,22 @@ const fs = require("node:fs"),
     await page.getByRole('button',{name:'保存绑定',exact:true}).click();
     await page.getByRole('heading',{name:'第二个演示家庭',exact:true}).waitFor();
     if(fixture.models.ServiceGroup.rows.length!==2)throw new Error('Group binding not persisted');
+    fixture.models.ServiceGroup.rows[0].chatId = 'wr_synthetic_current';
+    await page.route('**/api/staff/service-groups/wecom-signature', route => route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({data:{}})}));
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator,'userAgent',{get:()=> 'wxwork synthetic'});
+      window.syntheticChat='wr_synthetic_current';
+      window.wx={error:()=>{},ready:fn=>{window.sdkReady=fn;},config:()=>window.sdkReady(),agentConfig:p=>p.success(),invoke:(method,p,cb)=>cb(method==='getContext'?{err_msg:'getContext:ok',entry:'group_chat_tools'}:{chatId:window.syntheticChat})};
+    });
+    await page.reload();
+    await page.getByRole('heading',{name:'演示家庭服务群',exact:true}).waitFor();
+    if(await page.getByLabel('当前服务群',{exact:true}).count()) throw new Error('Sidebar must not offer group switching');
+    if(await page.getByRole('button',{name:'新建服务群',exact:true}).count()) throw new Error('Bound sidebar must not create another group');
+    await page.screenshot({path:path.join(output,'locked-sidebar.png'),fullPage:true});
+    await page.evaluate(()=>{window.syntheticChat='wr_synthetic_unbound';});
+    await page.getByRole('button',{name:'重新识别当前群',exact:true}).click();
+    await page.getByRole('heading',{name:'绑定个人 / 家庭服务群',exact:true}).waitFor();
+    if(await page.getByRole('heading',{name:'演示家庭服务群',exact:true}).count()) throw new Error('Unbound chat must not display prior household');
     if (errors.length) throw new Error(errors.join("\n"));
     console.log(
       JSON.stringify({
@@ -153,6 +169,7 @@ const fs = require("node:fs"),
           "explicit command preview",
           "notification does not complete task",
           "new household binding",
+          "current WeCom group auto-selected and locked; unbound chat clears previous household",
         ],
         artifacts: output,
       })
