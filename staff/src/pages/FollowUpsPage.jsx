@@ -452,10 +452,14 @@ export default function FollowUpsPage() {
               <button className="modal-close" onClick={() => setExecItem(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <MedicalAssistRequirementsCard text={getMedicalAssistRequirements(execItem)} />
               {execItem.taskRole && <ServiceTaskChecklist mode={execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor'} purposes={execItem.taskPurposes || []} source={execItem.dependsOnTaskId?.serviceChecklist || []} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} />}
               {/* 只读信息 */}
-              <div style={{ background: '#f9f7f3', borderRadius: 8, padding: 12, display: 'grid', gap: 6 }}>
+              {execItem.taskRole && <details style={{ border: '1px solid #E0E8E3', borderRadius: 9, background: '#FAFBFA' }}>
+                <summary style={{ padding: '10px 12px', cursor: 'pointer', color: '#65776F', fontSize: 13, fontWeight: 650 }}>查看事务背景与注意事项</summary>
+                <div style={{ padding: '0 10px 10px' }}><MedicalAssistRequirementsCard text={getMedicalAssistRequirements(execItem)} /></div>
+              </details>}
+              {!execItem.taskRole && <MedicalAssistRequirementsCard text={getMedicalAssistRequirements(execItem)} />}
+              <div style={{ background: '#f9f7f3', borderRadius: 8, padding: 12, display: execItem.taskRole ? 'none' : 'grid', gap: 6 }}>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>计划日期：</span>
                   <span style={{ fontSize: 13 }}>{formatChineseDate(execItem.date)}</span>
@@ -492,7 +496,7 @@ export default function FollowUpsPage() {
                     {draftLoading ? '生成中...' : '✨ AI生成草稿'}
                   </button>}
                 </div>
-                <textarea className="form-control" rows={5}
+                <textarea className="form-control" rows={execItem.taskRole ? 3 : 5}
                   placeholder={execItem.taskRole ? '仅填写清单之外需要说明的特殊情况' : '记录本次随访的实际情况、会员反馈、建议等...'}
                   value={execForm.content}
                   onChange={e => setExecForm(f => ({ ...f, content: e.target.value }))} />

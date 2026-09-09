@@ -63,3 +63,13 @@ test('plan exposes safe purpose-only regeneration without creating another plan'
   assert.match(route, /task\.plannedContent.*replace\(oldTasksText, c\.tasks\)/)
   assert.doesNotMatch(route, /plan\.status !== 'draft' \|\| plan\.pushedAt/)
 })
+
+test('executor forms put per-purpose controls before collapsed reference details', () => {
+  for (const relativePath of ['../../staff/src/pages/FollowUpsPage.jsx', '../../staff/src/pages/PatientDetailPage.jsx']) {
+    const page = fs.readFileSync(path.join(__dirname, relativePath), 'utf8')
+    const checklistIndex = page.lastIndexOf('<ServiceTaskChecklist')
+    const referenceIndex = page.lastIndexOf('查看事务背景与注意事项')
+    assert.ok(checklistIndex >= 0 && referenceIndex > checklistIndex)
+    assert.match(page.slice(checklistIndex, referenceIndex + 30), /<details/)
+  }
+})
