@@ -19,6 +19,7 @@ const EMPTY_ENTERPRISE = {
 }
 
 const INSURANCE_SCENES = ['普通门诊', '住院', '急诊', '特殊检查/治疗', '特药/院外药', '事后报销']
+const INSURANCE_SCENARIO_LABELS = { outpatient:'普通门诊', inpatient:'住院', emergency:'急诊', special_drug:'特药/院外药', reimbursement:'事后报销', dispute:'争议处理' }
 const SERVICE_MANUAL_FIELDS = [
   ['国际/高端门诊预约', 'internationalOutpatientBooking', '预约入口、服务时间、预约提前量、医院与医生选择步骤'],
   ['预约所需信息', 'appointmentRequiredInfo', '会员号、证件、症状、科室、期望时间等'],
@@ -44,11 +45,16 @@ function InsurancePolicyModal({ enterprise, employees, onClose, toast }) {
   const [memberSearch, setMemberSearch] = useState('')
   const [selectedOnly, setSelectedOnly] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [operations, setOperations] = useState(null)
   const [form, setForm] = useState({ year: new Date().getFullYear(), name: `${new Date().getFullYear()}年度高端医疗险`, insurerName: '', policyNumber: '', startAt: '', endAt: '', servicePhone: '', claimContact: '', status: 'draft', note: '', rules: [] })
   const selectedPolicy = policies.find(p => p._id === selectedId)
   const load = async () => {
-    const res = await adminAPI.enterpriseInsurancePolicies(enterprise._id)
+    const [res, summary] = await Promise.all([
+      adminAPI.enterpriseInsurancePolicies(enterprise._id),
+      adminAPI.enterpriseInsuranceOperationsSummary(enterprise._id),
+    ])
     setPolicies(res.data || [])
+    setOperations(summary.data || null)
     if (!selectedId && res.data?.[0]) selectPolicy(res.data[0])
   }
   const selectPolicy = async policy => {
@@ -89,6 +95,24 @@ function InsurancePolicyModal({ enterprise, employees, onClose, toast }) {
   return <div className="modal-overlay"><div className="modal" style={{ width: 'min(1100px, 96vw)', maxHeight: '92vh', overflow: 'auto' }}>
     <div className="modal-header"><div className="modal-title">🛡️ {enterprise.name} · 高端医疗险</div><button className="modal-close" onClick={onClose}>×</button></div>
     <div className="modal-body">
+      {operations && <div style={{ marginBottom: 16, padding: 12, border: '1px solid #D8E7DF', borderRadius: 10, background: '#F7FBF9' }}>
+        <div style={{ fontWeight: 700, color: '#173B2E' }}>保险运营效果</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8, marginTop: 9 }}>
+          {[
+            ['有效参保', `${operations.enrolledMembers || 0}人`],
+            ['服务案件', `${operations.totalCases || 0}件`],
+            ['已提交理赔', `${operations.submittedClaims || 0}件`],
+            ['理赔赔付率', operations.submittedClaims ? `${((operations.claimPaidRate || 0) * 100).toFixed(1)}%` : '-'],
+            ['平均处理时长', operations.averageResolutionHours ? `${(operations.averageResolutionHours / 24).toFixed(1)}天` : '-'],
+            ['保险直付', `¥${Number(operations.financials?.totalDirectBilling || 0).toLocaleString()}`],
+            ['个人垫付', `¥${Number(operations.financials?.totalMemberPaid || 0).toLocaleString()}`],
+            ['保险赔付', `¥${Number(operations.financials?.totalInsurancePaid || 0).toLocaleString()}`],
+          ].map(([label, value]) => <div key={label} style={{ padding: 9, background: '#fff', borderRadius: 7 }}><div style={{ color: '#65776F', fontSize: 11 }}>{label}</div><div style={{ marginTop: 2, fontWeight: 750, color: '#173B2E' }}>{value}</div></div>)}
+        </div>
+        <div style={{ marginTop: 8, fontSize: 12, color: '#65776F' }}>{operations.totalCases
+          ? `场景分布：${Object.entries(operations.byScenario || {}).map(([key, count]) => `${INSURANCE_SCENARIO_LABELS[key] || key} ${count}件`).join(' · ')}`
+          : '暂无保险服务案件；指标将在医护端产生真实服务记录后自动累计。'}</div>
+      </div>}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
         {policies.map(p => <button key={p._id} className={`btn btn-sm ${selectedId === p._id ? 'btn-primary' : 'btn-secondary'}`} onClick={() => selectPolicy(p)}>{p.name}（{p.enrolledCount || 0}人）</button>)}
         <button className="btn btn-sm btn-secondary" onClick={() => { setSelectedId(''); setSelectedUsers(new Set()); setEnrollmentDetails({}); setForm({ year: new Date().getFullYear(), name: `${new Date().getFullYear()}年度高端医疗险`, insurerName: '', policyNumber: '', startAt: '', endAt: '', servicePhone: '', claimContact: '', status: 'draft', note: '', rules: [] }) }}>＋新方案</button>

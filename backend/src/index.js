@@ -97,6 +97,7 @@ app.use('/api/staff',         require('./routes/aiCaseReviews'));
 app.use('/api/staff/service-groups', require('./routes/serviceGroups'));
 app.use('/api/integrations/service-groups', require('./routes/serviceGroupBridge'));
 app.use('/api/integrations/wecom-app', require('./routes/wecomAppCallback'));
+app.use('/api/integrations/insurance', require('./routes/insuranceIntegrations'));
 app.use('/api/screening',     require('./routes/screening'));
 app.use('/api/tts',           require('./routes/tts'));
 

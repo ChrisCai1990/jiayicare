@@ -25,6 +25,8 @@ const PartnerBenefit = require('../models/PartnerBenefit');
 const Enterprise = require('../models/Enterprise');
 const EnterpriseInsurancePolicy = require('../models/EnterpriseInsurancePolicy');
 const InsuranceEnrollment = require('../models/InsuranceEnrollment');
+const InsuranceServiceCase = require('../models/InsuranceServiceCase');
+const { summarizeInsuranceOperations } = require('../utils/insuranceOperations');
 const PlanTemplate = require('../models/PlanTemplate');
 const { ensureAiCaseReviewTemplates } = require('../utils/aiCaseReviewTemplates');
 const CheckupPlan = require('../models/CheckupPlan');
@@ -1879,6 +1881,15 @@ router.get('/enterprises/:id/insurance-policies', adminAuth, async (req, res) =>
   ]) : [];
   const countMap = new Map(counts.map(item => [String(item._id), item.count]));
   res.json({ success: true, data: policies.map(p => ({ ...p, enrolledCount: countMap.get(String(p._id)) || 0 })) });
+});
+
+router.get('/enterprises/:id/insurance-operations-summary', adminAuth, async (req, res) => {
+  const enterpriseId = req.params.id;
+  const [enrolledMembers, cases] = await Promise.all([
+    InsuranceEnrollment.countDocuments({ enterpriseId, status: 'active' }),
+    InsuranceServiceCase.find({ enterpriseId }).select('status scenario createdAt claim authorization financials').lean(),
+  ]);
+  res.json({ success: true, data: summarizeInsuranceOperations(cases, enrolledMembers) });
 });
 
 router.post('/enterprises/:id/insurance-policies', adminAuth, async (req, res) => {

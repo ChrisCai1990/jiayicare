@@ -7,6 +7,13 @@ const insuranceEnrollmentSchema = new mongoose.Schema({
   relation: { type: String, enum: ['employee', 'spouse', 'child', 'other'], default: 'employee' },
   planLevel: { type: String, default: '' },
   memberNumber: { type: String, default: '' },
+  externalIdentity: {
+    provider: { type: String, default: 'manual' },
+    externalMemberId: { type: String, default: '', index: true },
+    externalPolicyId: { type: String, default: '' },
+    primaryMemberId: { type: String, default: '' },
+    lastSyncedAt: { type: Date, default: null },
+  },
   startAt: { type: Date, default: null },
   endAt: { type: Date, default: null },
   exclusions: { type: String, default: '' },

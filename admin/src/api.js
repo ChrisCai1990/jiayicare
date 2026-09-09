@@ -165,6 +165,7 @@ export const adminAPI = {
   linkEnterpriseEmployees:(id, userIds, associationType = 'employee') => req(`/enterprises/${id}/employees`, { method: 'PATCH', body: JSON.stringify({ userIds, associationType }) }),
   unlinkEnterpriseEmployee:(id, userId) => req(`/enterprises/${id}/employees/${userId}`, { method: 'DELETE' }),
   enterpriseInsurancePolicies: (id) => req(`/enterprises/${id}/insurance-policies`),
+  enterpriseInsuranceOperationsSummary: (id) => req(`/enterprises/${id}/insurance-operations-summary`),
   createEnterpriseInsurancePolicy: (id, data) => req(`/enterprises/${id}/insurance-policies`, { method: 'POST', body: JSON.stringify(data) }),
   updateEnterpriseInsurancePolicy: (enterpriseId, policyId, data) => req(`/enterprises/${enterpriseId}/insurance-policies/${policyId}`, { method: 'PUT', body: JSON.stringify(data) }),
   insuranceEnrollments: (enterpriseId, policyId) => req(`/enterprises/${enterpriseId}/insurance-policies/${policyId}/enrollments`),
