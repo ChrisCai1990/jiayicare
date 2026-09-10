@@ -6,7 +6,7 @@ import FollowUpModal from '../components/FollowUpModal'
 import Pagination from '../components/Pagination'
 import MedicalAssistRequirementsCard from '../components/MedicalAssistRequirementsCard'
 import ServiceTaskChecklist, { normalizeServiceChecklist, summarizeServiceChecklist } from '../components/ServiceTaskChecklist'
-import CheckupBookingForm, { bookingChecklist, bookingDetailsFromTask, isCheckupBookingTask, isCheckupOnsiteTask } from '../components/CheckupBookingForm'
+import CheckupBookingForm, { bookingChecklist, bookingDetailsFromTask, isCheckupBookingTask, isCheckupOnsiteTask, normalizeCheckupOnsiteChecklist } from '../components/CheckupBookingForm'
 import { formatChineseDate, formatChineseDateTime } from '../utils/date'
 
 const TYPE_MAP   = { phone: '电话', wechat: '微信', visit: '上门', video: '视频', other: '其他' }
@@ -222,7 +222,8 @@ export default function FollowUpsPage() {
 
   const openExec = (f) => {
     setExecItem(f)
-    setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeServiceChecklist(f.serviceChecklist, f.taskPurposes, f.dependsOnTaskId?.serviceChecklist), appointmentDetails: bookingDetailsFromTask(f) })
+    const checklist = normalizeServiceChecklist(f.serviceChecklist, f.taskPurposes, f.dependsOnTaskId?.serviceChecklist)
+    setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f) })
   }
 
   const handleExec = async () => {

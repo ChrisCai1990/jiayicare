@@ -8,6 +8,13 @@ export const isCheckupOnsiteTask = task => task?.sourceType === 'health_plan'
   && task?.taskRole === 'executor'
   && task?.followUpSchemeId?.executorRole === 'medicalAssistant'
 
+export function normalizeCheckupOnsiteChecklist(task, checklist = []) {
+  if (!isCheckupOnsiteTask(task)) return checklist
+  return checklist.map(item => item?.appointmentDetails && !item.handoffSummary
+    ? { ...item, handoffSummary: item.executionResult || '', executionStatus: '', executionResult: '', nextAction: '' }
+    : item)
+}
+
 export function bookingDetailsFromChecklist(checklist = []) {
   return checklist?.[0]?.appointmentDetails || {}
 }

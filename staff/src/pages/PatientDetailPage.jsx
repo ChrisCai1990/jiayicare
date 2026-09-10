@@ -8,7 +8,7 @@ import AppIcon from '../components/AppIcon'
 import AiCaseReviewPanel from '../components/AiCaseReviewPanel'
 import MedicalAssistRequirementsCard from '../components/MedicalAssistRequirementsCard'
 import ServiceTaskChecklist, { normalizeServiceChecklist, summarizeServiceChecklist } from '../components/ServiceTaskChecklist'
-import CheckupBookingForm, { bookingChecklist, bookingDetailsFromTask, isCheckupBookingTask, isCheckupOnsiteTask } from '../components/CheckupBookingForm'
+import CheckupBookingForm, { bookingChecklist, bookingDetailsFromTask, isCheckupBookingTask, isCheckupOnsiteTask, normalizeCheckupOnsiteChecklist } from '../components/CheckupBookingForm'
 import femalePortraitPhoto from '../assets/health-portrait-female.webp'
 import malePortraitPhoto from '../assets/health-portrait-male.webp'
 import { reconcileConversationMessages } from '../utils/conversationMessages'
@@ -2262,7 +2262,8 @@ export default function PatientDetailPage() {
   // 执行随访：填写随访结果、标记完成/随访中，逻辑与 FollowUpsPage.jsx 一致
   const openExec = (f) => {
     setExecItem(f)
-    setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeServiceChecklist(f.serviceChecklist, f.taskPurposes, f.dependsOnTaskId?.serviceChecklist), appointmentDetails: bookingDetailsFromTask(f) })
+    const checklist = normalizeServiceChecklist(f.serviceChecklist, f.taskPurposes, f.dependsOnTaskId?.serviceChecklist)
+    setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f) })
   }
   const handleExec = async () => {
     const isBooking = isCheckupBookingTask(execItem)
