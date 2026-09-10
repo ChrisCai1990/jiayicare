@@ -74,6 +74,6 @@ router.post('/',express.text({type:['text/xml','application/xml'],limit:'100kb'}
     const plain=`<xml><ToUserName><![CDATA[${cdata(from)}]]></ToUserName><FromUserName><![CDATA[${process.env.WECOM_CORP_ID}]]></FromUserName><CreateTime>${Math.floor(Date.now()/1000)}</CreateTime><MsgType><![CDATA[text]]></MsgType><Content><![CDATA[${reply}]]></Content></xml>`;
     const encrypted=crypto.encrypt(plain,process.env.WECOM_APP_CALLBACK_AES_KEY,process.env.WECOM_CORP_ID), timestamp=String(Math.floor(Date.now()/1000)),nonce=randomBytes(12).toString('hex');
     res.type('application/xml').send(`<xml><Encrypt><![CDATA[${encrypted}]]></Encrypt><MsgSignature><![CDATA[${crypto.signature(process.env.WECOM_APP_CALLBACK_TOKEN,timestamp,nonce,encrypted)}]]></MsgSignature><TimeStamp>${timestamp}</TimeStamp><Nonce><![CDATA[${nonce}]]></Nonce></xml>`);
-  } catch {res.sendStatus(503);}
+  } catch (error) {console.error('[wecom-app] callback failed', {message:error.message});res.sendStatus(503);}
 });
 module.exports=router;
