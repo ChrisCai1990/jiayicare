@@ -11667,8 +11667,13 @@ export default function PatientDetailPage() {
           onClose={() => { setShowSelectTplModal(null); setPendingMedicalAssistOrderId('') }}
           onGenerate={async (templateId, briefNote) => {
             if (showSelectTplModal === 'annual_checkup') {
-              await staffAPI.generateAIAnnualCheckupPlan(id, templateId, briefNote)
-              toast('AI体检方案已生成，待健管专员审核')
+              const generated = await staffAPI.generateAIAnnualCheckupPlan(id, templateId, briefNote)
+              toast('AI体检方案已生成，正在打开方案')
+              await loadPlans()
+              nav(`/plans/${generated.data._id}`, {
+                state: { returnTo: `/patients/${id}?tab=plans&serviceView=checkup` },
+              })
+              return
             } else if (showSelectTplModal === 'nutrition') {
               await staffAPI.generateAINutritionPlan(id, templateId, briefNote)
               toast('AI营养方案已生成，待营养师审核')
