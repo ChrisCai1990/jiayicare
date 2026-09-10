@@ -440,16 +440,21 @@ async function getWorkbenchFollowUpOwnerFilter(staff) {
 
 router.get('/service-tasks', staffAuth, async (req, res) => {
   const { status = 'active', includeFuture = '', limit = 100 } = req.query;
-  const filter = { assignedTo: req.staff._id, isBlocked: { $ne: true } };
-  // 生产数据验证发现 Mongoose 在 assignedTo 上叠加 sourceType/taskRole/status 的组合条件时
-  // 会漏掉真实存在的预约任务；负责人条件本身稳定命中。其余限定在服务端逐条严格筛选。
+  const staffId = String(req.staff._id);
+  const filter = { assignedTo: { $in: [req.staff._id, staffId] }, isBlocked: { $ne: true } };
+  // 历史任务的 assignedTo 同时存在 ObjectId 与字符串两种存储形态；原生集合按两种类型
+  // 一并取回，再 hydrate/populate，避免负责人正确的预约任务被类型转换静默漏掉。
   const requestedLimit = Math.min(Number(limit) || 100, 200);
-  const queriedTasks = await FollowUp.find(filter).sort({ date: 1 }).limit(1000)
-    .populate('patientId', 'name phone gender age chronicDiseases')
-    .populate('staffId', 'name role title').populate('assignedTo', 'name role')
-    .populate('sourceHealthPlanId', 'title description content type')
-    .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard')
-    .populate('dependsOnTaskId', 'serviceChecklist executedContent status completedAt');
+  const rawTasks = await FollowUp.collection.find(filter).sort({ date: 1 }).limit(1000).toArray();
+  const queriedTasks = rawTasks.map(task => FollowUp.hydrate(task));
+  await FollowUp.populate(queriedTasks, [
+    { path: 'patientId', select: 'name phone gender age chronicDiseases' },
+    { path: 'staffId', select: 'name role title' },
+    { path: 'assignedTo', select: 'name role' },
+    { path: 'sourceHealthPlanId', select: 'title description content type' },
+    { path: 'followUpSchemeId', select: 'name executorRole supervisorRole completionStandard' },
+    { path: 'dependsOnTaskId', select: 'serviceChecklist executedContent status completedAt' },
+  ]);
   const now = new Date();
   const tasks = queriedTasks.filter(task => {
     const isServiceTask = (task.sourceType === 'health_plan' && ['executor', 'supervisor'].includes(task.taskRole))
