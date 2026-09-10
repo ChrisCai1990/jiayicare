@@ -266,6 +266,16 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("体检报告闭环关联迁移失败")
+        code, _ = remote(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/migrateLegacyHealthManagerClosureV10.js ] && "
+            f"[ ! -f {REPO_DIR}/.legacy-health-manager-closure-v10-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/migrateLegacyHealthManagerClosureV10.js && "
+            f"touch {REPO_DIR}/.legacy-health-manager-closure-v10-applied; fi",
+            timeout=120,
+            label="归并健管专员历史体检收尾任务",
+        )
+        if code:
+            raise RuntimeError("健管专员历史体检收尾任务归并失败")
         time.sleep(3)
 
         code, output = remote(
