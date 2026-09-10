@@ -11,6 +11,7 @@ const { calculateHealthScore } = require('../utils/healthScore');
 const { parseIdCard, calcAgeFromBirthDate } = require('../utils/idCard');
 const { getCurrentTenantId, BYPASS } = require('../utils/tenantScope');
 const { followUpTaskRequirements, followUpTaskPurposes } = require('../utils/medicalAssistRequirements');
+const { advanceCheckupTask } = require('../utils/checkupOneStopFlow');
 const { generateCompactMedicalAssistPurposes } = require('../utils/medicalAssistPurposeDraft');
 const { isReportInterpretation } = require('../utils/checkupWorkflow');
 const { reverseFamilyRelation, synchronizeFamilyGroup } = require('../utils/familyLinks');
@@ -1539,6 +1540,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     followUp.completedBy = null;
   }
   await followUp.save();
+  await advanceCheckupTask(followUp);
 
   // 督办发现某项目未达成时，退回同一组执行任务补充；执行人再次完成后，
   // 既有 executor_completed 流程会重新激活本督办任务，实现逐项目的闭环复核。

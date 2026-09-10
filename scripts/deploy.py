@@ -236,6 +236,16 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("健康顾问体检方案定制节点补齐失败")
+        code, _ = remote(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/migrateCheckupSerialWorkflowV6.js ] && "
+            f"[ ! -f {REPO_DIR}/.checkup-serial-workflow-v6-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/migrateCheckupSerialWorkflowV6.js && "
+            f"touch {REPO_DIR}/.checkup-serial-workflow-v6-applied; fi",
+            timeout=120,
+            label="按客户确认状态切换体检岗位任务",
+        )
+        if code:
+            raise RuntimeError("体检岗位串行任务迁移失败")
         time.sleep(3)
 
         code, output = remote(

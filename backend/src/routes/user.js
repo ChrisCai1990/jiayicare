@@ -44,6 +44,7 @@ const FollowUp         = require('../models/FollowUp');
 const ExamRequisition  = require('../models/ExamRequisition');
 const AnnualPlan       = require('../models/AnnualPlan');
 const { followUpTaskRequirements } = require('../utils/medicalAssistRequirements');
+const { onCustomerConfirmedCheckupPlan } = require('../utils/checkupOneStopFlow');
 const { reverseFamilyRelation, synchronizeFamilyGroup } = require('../utils/familyLinks');
 const { isActiveToday } = require('./reminders');
 const router = express.Router();
@@ -1093,12 +1094,18 @@ router.patch('/plans/:planId/confirm', auth, async (req, res) => {
   try {
     const plan = await HealthPlan.findOne({ _id: req.params.planId, patientId: req.user._id });
     if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
-    if (plan.confirmedAt) return res.json({ success: true, data: plan }); // 已确认则直接返回
+    if (plan.confirmedAt) {
+      if (plan.type === 'annual_checkup') await onCustomerConfirmedCheckupPlan(plan.patientId);
+      return res.json({ success: true, data: plan });
+    }
     if (plan.status === 'draft') plan.status = 'active';
     plan.confirmedAt = new Date();
     await plan.save();
-    // 首次确认时，AI体检/营养方案自动生成一条待审核随访占位（体检→健康顾问审核，营养→营养师审核）
-    await generateHealthPlanFollowUp(plan).catch(() => {});
+    if (plan.type === 'annual_checkup') {
+      await onCustomerConfirmedCheckupPlan(plan.patientId);
+    }
+    // 一站式体检在客户确认后直接交棒给健康规划师，不再另建模糊的“确认后随访”占位。
+    if (plan.type !== 'annual_checkup') await generateHealthPlanFollowUp(plan).catch(() => {});
     res.json({ success: true, data: plan });
   } catch (err) {
     res.status(500).json({ success: false, message: '操作失败', error: err.message });
