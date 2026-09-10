@@ -440,27 +440,27 @@ async function getWorkbenchFollowUpOwnerFilter(staff) {
 
 router.get('/service-tasks', staffAuth, async (req, res) => {
   const { status = 'active', includeFuture = '', limit = 100 } = req.query;
-  const filter = { assignedTo: req.staff._id, isBlocked: { $ne: true }, $and: [{ $or: [
-    { sourceType: 'health_plan', taskRole: { $in: ['executor', 'supervisor'] } },
-    { sourceType: 'insurance_service', taskRole: 'executor' },
-    // 已生成的保险临时任务沿用 scheduled；按明确标签兼容，不把设备维护等固定事务带入。
-    { sourceType: 'scheduled', tags: '保险服务' },
-  ] }] };
-  // 生产数据验证发现：该查询同时含 assignedTo/sourceType/taskRole 时，再叠加 status.$in
-  // 会被 Mongoose 错误查空；去掉 status 后可稳定命中。活动状态在查询返回后过滤，避免
-  // 健康规划师的 in_progress 预约任务被接口吞掉。
-  if (status && status !== 'active') filter.status = status;
-  if (includeFuture !== '1') filter.$and.push({ $or: [{ remindAt: null }, { remindAt: { $lte: new Date() } }] });
+  const filter = { assignedTo: req.staff._id, isBlocked: { $ne: true } };
+  // 生产数据验证发现 Mongoose 在 assignedTo 上叠加 sourceType/taskRole/status 的组合条件时
+  // 会漏掉真实存在的预约任务；负责人条件本身稳定命中。其余限定在服务端逐条严格筛选。
   const requestedLimit = Math.min(Number(limit) || 100, 200);
-  const queriedTasks = await FollowUp.find(filter).sort({ date: 1 }).limit(status === 'active' ? 600 : requestedLimit)
+  const queriedTasks = await FollowUp.find(filter).sort({ date: 1 }).limit(1000)
     .populate('patientId', 'name phone gender age chronicDiseases')
     .populate('staffId', 'name role title').populate('assignedTo', 'name role')
     .populate('sourceHealthPlanId', 'title description content type')
     .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard')
     .populate('dependsOnTaskId', 'serviceChecklist executedContent status completedAt');
-  const tasks = (status === 'active'
-    ? queriedTasks.filter(task => ['planned', 'in_progress', 'missed'].includes(task.status))
-    : queriedTasks).slice(0, requestedLimit);
+  const now = new Date();
+  const tasks = queriedTasks.filter(task => {
+    const isServiceTask = (task.sourceType === 'health_plan' && ['executor', 'supervisor'].includes(task.taskRole))
+      || (task.sourceType === 'insurance_service' && task.taskRole === 'executor')
+      || (task.sourceType === 'scheduled' && (task.tags || []).includes('保险服务'));
+    if (!isServiceTask) return false;
+    if (status === 'active' && !['planned', 'in_progress', 'missed'].includes(task.status)) return false;
+    if (status && status !== 'active' && task.status !== status) return false;
+    if (includeFuture !== '1' && task.remindAt && task.remindAt > now) return false;
+    return true;
+  }).slice(0, requestedLimit);
   res.json({ success: true, data: tasks.map(task => {
     const item = withSignedServiceChecklist(task);
     const isLegacyInsurance = item.sourceType === 'scheduled' && (item.tags || []).includes('保险服务');
