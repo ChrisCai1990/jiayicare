@@ -106,7 +106,13 @@ async function advanceCheckupTask(followUp) {
       date: appointmentAt,
       remindAt: appointmentAt,
       nextFollowUpDate: appointmentAt,
-      serviceChecklist: followUp.serviceChecklist || [],
+      serviceChecklist: (followUp.serviceChecklist || []).map(item => ({
+        ...item,
+        handoffSummary: item.executionResult || '',
+        executionStatus: '',
+        executionResult: '',
+        nextAction: '',
+      })),
       plannedContent: followUp.executedContent || followUp.content || '',
     } })
     return true

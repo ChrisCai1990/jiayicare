@@ -4,6 +4,10 @@ export const isCheckupBookingTask = task => task?.sourceType === 'health_plan'
   && task?.taskRole === 'executor'
   && task?.followUpSchemeId?.executorRole === 'healthPlanner'
 
+export const isCheckupOnsiteTask = task => task?.sourceType === 'health_plan'
+  && task?.taskRole === 'executor'
+  && task?.followUpSchemeId?.executorRole === 'medicalAssistant'
+
 export function bookingDetailsFromChecklist(checklist = []) {
   return checklist?.[0]?.appointmentDetails || {}
 }
@@ -28,6 +32,8 @@ export function bookingDetailsFromTask(task) {
     appointmentDate: saved.appointmentDate || String(rawDate).slice(0, 10),
     appointmentTime: saved.appointmentTime || String(rawTime).slice(0, 5),
     preparation: saved.preparation || content.checkupPreparation || visit.preparation || confirmedPreparation || '',
+    specialExams: saved.specialExams || '',
+    expertArrangements: saved.expertArrangements || '',
     notes: saved.notes || '',
   }
 }
@@ -41,6 +47,8 @@ export function bookingChecklist(details) {
     details.contactName && `院方联系人：${details.contactName}${details.contactPhone ? ` ${details.contactPhone}` : ''}`,
     details.meetingPoint && `陪诊会合点：${details.meetingPoint}`,
     details.preparation && `行前准备：${details.preparation}`,
+    details.specialExams && `特殊检查安排：${details.specialExams}`,
+    details.expertArrangements && `门诊/专家及时间安排：${details.expertArrangements}`,
     details.notes && `其他说明：${details.notes}`,
   ].filter(Boolean).join('\n')
   return [{
@@ -77,6 +85,8 @@ export default function CheckupBookingForm({ value, onChange }) {
       <label style={{ fontSize: 12, color: '#65776F' }}>体检日期 *<input type="date" className="form-control" value={value.appointmentDate || ''} onChange={e => update('appointmentDate', e.target.value)} style={{ marginTop: 5 }} /></label>
       <label style={{ fontSize: 12, color: '#65776F' }}>到院时间 *<input type="time" className="form-control" value={value.appointmentTime || ''} onChange={e => update('appointmentTime', e.target.value)} style={{ marginTop: 5 }} /></label>
       <label style={{ gridColumn: '1 / -1', fontSize: 12, color: '#65776F' }}>体检前准备事项 *<textarea className="form-control" rows={3} value={value.preparation || ''} onChange={e => update('preparation', e.target.value)} placeholder="饮食、停药、证件、缴费、取号等注意事项" style={{ marginTop: 5 }} /></label>
+      <label style={{ gridColumn: '1 / -1', fontSize: 12, color: '#65776F' }}>特殊检查安排<textarea className="form-control" rows={2} value={value.specialExams || ''} onChange={e => update('specialExams', e.target.value)} placeholder="如：胃肠镜、增强CT等检查的地点、顺序与时间" style={{ marginTop: 5 }} /></label>
+      <label style={{ gridColumn: '1 / -1', fontSize: 12, color: '#65776F' }}>门诊/专家及时间安排<textarea className="form-control" rows={2} value={value.expertArrangements || ''} onChange={e => update('expertArrangements', e.target.value)} placeholder="如：检查后前往某科室，由某位专家于几点接诊" style={{ marginTop: 5 }} /></label>
       <label style={{ gridColumn: '1 / -1', fontSize: 12, color: '#65776F' }}>其他交接说明<textarea className="form-control" rows={2} value={value.notes || ''} onChange={e => update('notes', e.target.value)} placeholder="停车、路线、特殊照护需求等" style={{ marginTop: 5 }} /></label>
     </div>
   </div>

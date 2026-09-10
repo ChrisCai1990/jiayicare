@@ -8,7 +8,7 @@ import AppIcon from '../components/AppIcon'
 import AiCaseReviewPanel from '../components/AiCaseReviewPanel'
 import MedicalAssistRequirementsCard from '../components/MedicalAssistRequirementsCard'
 import ServiceTaskChecklist, { normalizeServiceChecklist, summarizeServiceChecklist } from '../components/ServiceTaskChecklist'
-import CheckupBookingForm, { bookingChecklist, bookingDetailsFromTask, isCheckupBookingTask } from '../components/CheckupBookingForm'
+import CheckupBookingForm, { bookingChecklist, bookingDetailsFromTask, isCheckupBookingTask, isCheckupOnsiteTask } from '../components/CheckupBookingForm'
 import femalePortraitPhoto from '../assets/health-portrait-female.webp'
 import malePortraitPhoto from '../assets/health-portrait-male.webp'
 import { reconcileConversationMessages } from '../utils/conversationMessages'
@@ -10111,7 +10111,7 @@ export default function PatientDetailPage() {
       {/* 执行任务弹窗：随访、监测、复查与就医等任务共用执行结果表单。 */}
       {execItem && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setExecItem(null) }}>
-          <div className="modal" style={{ maxWidth: isCheckupBookingTask(execItem) ? 780 : 520 }}>
+          <div className="modal" style={{ maxWidth: (isCheckupBookingTask(execItem) || isCheckupOnsiteTask(execItem)) ? 780 : 520 }}>
             <div className="modal-header">
               <h3 className="modal-title">{isCheckupBookingTask(execItem) ? '确认体检预约并交接陪诊' : execItem.taskRole === 'supervisor' ? '核对代办结果与检查单' : execItem.taskRole ? '记录事务完成情况' : '执行随访'}</h3>
               <button className="modal-close" onClick={() => setExecItem(null)}>✕</button>
@@ -10150,7 +10150,7 @@ export default function PatientDetailPage() {
               </div>}
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <label style={{ fontSize: 12, color: '#8AA89C' }}>{execItem.taskRole ? '补充说明（选填）' : '随访结果 *'}</label>
+                  <label style={{ fontSize: 12, color: '#8AA89C' }}>{isCheckupOnsiteTask(execItem) ? '体检当日临时情况与追加任务（选填）' : execItem.taskRole ? '补充说明（选填）' : '随访结果 *'}</label>
                   {!execItem.taskRole && <button type="button" className="btn btn-secondary"
                     style={{ fontSize: 12, padding: '2px 10px' }}
                     onClick={handleExecAIDraft} disabled={execDraftLoading}>
@@ -10158,7 +10158,7 @@ export default function PatientDetailPage() {
                   </button>}
                 </div>
                 <textarea className="form-control" rows={execItem.taskRole ? 3 : 5}
-                  placeholder={execItem.taskRole ? '仅填写清单之外需要说明的特殊情况' : '记录本次随访的实际情况、会员反馈、建议等...'}
+                  placeholder={isCheckupOnsiteTask(execItem) ? '记录现场发现的异常、临时增加检查、临时门诊或专家安排，以及需交接的后续事项' : execItem.taskRole ? '仅填写清单之外需要说明的特殊情况' : '记录本次随访的实际情况、会员反馈、建议等...'}
                   value={execForm.content}
                   onChange={e => setExecForm(f => ({ ...f, content: e.target.value }))} />
               </div>
