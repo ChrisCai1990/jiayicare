@@ -13,15 +13,13 @@ export function bookingDetailsFromTask(task) {
   const content = task?.sourceHealthPlanId?.content || {}
   const visit = content.moduleData?.visit || {}
   const confirmed = content.confirmedServiceSchedule || {}
-  const taskText = (content.moduleData?.tasks?.records || []).map(item => item?.task || '').join('\n')
-  const confirmedCenter = /内镜中心/.test(taskText) ? '内镜中心' : ''
   const confirmedPreparation = typeof content.notes === 'string' ? content.notes : content.notes?.content
   const rawDate = content.serviceDate || visit.visitDate || confirmed.serviceDate || ''
   const rawTime = content.serviceTime || visit.serviceTime || confirmed.serviceTime || ''
   return {
     hospital: saved.hospital || content.hospital || visit.hospital || '',
     campus: saved.campus || content.campus || visit.campus || '',
-    department: saved.department || content.department || visit.department || content.checkupCenter || confirmedCenter,
+    department: saved.department || content.department || visit.department || content.checkupCenter || '体检中心',
     floor: saved.floor || content.floor || visit.floor || '',
     registrationWindow: saved.registrationWindow || content.registrationWindow || visit.registrationWindow || '',
     contactName: saved.contactName || content.hospitalContact || visit.contactName || '',
