@@ -446,15 +446,21 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     // 已生成的保险临时任务沿用 scheduled；按明确标签兼容，不把设备维护等固定事务带入。
     { sourceType: 'scheduled', tags: '保险服务' },
   ] }] };
-  if (status === 'active') filter.status = { $in: ['planned', 'in_progress', 'missed'] };
-  else if (status) filter.status = status;
+  // 生产数据验证发现：该查询同时含 assignedTo/sourceType/taskRole 时，再叠加 status.$in
+  // 会被 Mongoose 错误查空；去掉 status 后可稳定命中。活动状态在查询返回后过滤，避免
+  // 健康规划师的 in_progress 预约任务被接口吞掉。
+  if (status && status !== 'active') filter.status = status;
   if (includeFuture !== '1') filter.$and.push({ $or: [{ remindAt: null }, { remindAt: { $lte: new Date() } }] });
-  const tasks = await FollowUp.find(filter).sort({ date: 1 }).limit(Math.min(Number(limit) || 100, 200))
+  const requestedLimit = Math.min(Number(limit) || 100, 200);
+  const queriedTasks = await FollowUp.find(filter).sort({ date: 1 }).limit(status === 'active' ? 600 : requestedLimit)
     .populate('patientId', 'name phone gender age chronicDiseases')
     .populate('staffId', 'name role title').populate('assignedTo', 'name role')
     .populate('sourceHealthPlanId', 'title description content type')
     .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard')
     .populate('dependsOnTaskId', 'serviceChecklist executedContent status completedAt');
+  const tasks = (status === 'active'
+    ? queriedTasks.filter(task => ['planned', 'in_progress', 'missed'].includes(task.status))
+    : queriedTasks).slice(0, requestedLimit);
   res.json({ success: true, data: tasks.map(task => {
     const item = withSignedServiceChecklist(task);
     const isLegacyInsurance = item.sourceType === 'scheduled' && (item.tags || []).includes('保险服务');
