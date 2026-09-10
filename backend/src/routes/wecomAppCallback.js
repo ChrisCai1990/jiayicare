@@ -3,8 +3,6 @@ const express=require('express');
 const {createHash,randomBytes}=require('crypto');
 const crypto=require('../utils/wecomAppCrypto');
 const Link=require('../models/WecomAppLink');
-const Inbox=require('../models/WecomAppInbox');
-const {seal}=require('../utils/wecomAppInboxCrypto');
 const Material=require('../models/WecomAppMaterial');
 const User=require('../models/User');
 const MedicalReport=require('../models/MedicalReport');
@@ -64,11 +62,7 @@ router.post('/',express.text({type:['text/xml','application/xml'],limit:'100kb'}
         else {
           const pending=await Material.findOne({staffId:staff._id,status:'received',createdAt:{$gt:new Date(Date.now()-10*60*1000)}}).sort({createdAt:-1});
           if(pending&&/(收录|入库|归档)/.test(content)){try{reply=await archive(pending,staff,content);}catch(e){pending.status='needs_match';pending.instruction=content.slice(0,200);pending.error=e.message;await pending.save();reply='未自动入库：'+e.message+'。已交给小瑞处理。';}}
-          else {
-          const messageId=crypto.field(xml,'MsgId');
-          await Inbox.updateOne({messageId:process.env.WECOM_CORP_ID+':'+messageId},{$setOnInsert:{staffId:link.staffId,tenantId:link.tenantId,payload:seal(content),expiresAt:new Date(Date.now()+7*86400000)}},{upsert:true});
-          reply='已进入您的应用收件箱（保留7天）。请打开家庭助手选择对应家庭和成员，核对后生成草稿；尚未写入档案或发给客户。';
-          }
+          else reply='请先发送报告图片或PDF，再发送“客户名的体测，收录一下”。';
         }
       }
     }

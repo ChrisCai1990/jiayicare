@@ -149,13 +149,6 @@ router.post('/app-pair-code',wrap(async(req,res)=>{
   await Link.updateOne({staffId:req.staff._id,userId:{$exists:false}},{$set:{tenantId:req.staff.tenantId || null,corpId:process.env.WECOM_CORP_ID,pairHash:createHash('sha256').update(code).digest('hex'),pairExpires:new Date(Date.now()+600000)}},{upsert:true});
   res.json({success:true,data:{code:'绑定嘉医汇 '+code,expiresInMinutes:10}});
 }));
-router.get('/app-inbox',wrap(async(req,res)=>{
-  if(req.staff.staffStatus==='inactive')fail('员工账号已停用',403);
-  const rows=await require('../models/WecomAppInbox').find({staffId:req.staff._id,tenantId:req.staff.tenantId || null,expiresAt:{$gt:new Date()}}).select('+payload').sort({createdAt:-1}).limit(30).lean();
-  const {open}=require('../utils/wecomAppInboxCrypto');
-  const link=await require('../models/WecomAppLink').findOne({staffId:req.staff._id,tenantId:req.staff.tenantId || null});
-  res.json({success:true,data:{configured:process.env.WECOM_APP_CALLBACK_ENABLED==='true',linked:!!link?.userId,remindersEnabled:!!link?.remindersEnabled,reminderServiceConfigured:process.env.WECOM_EMPLOYEE_REMINDERS_ENABLED==='true',messages:rows.map(r=>({_id:r._id,createdAt:r.createdAt,text:open(r.payload)}))}});
-}));
 router.patch('/app-reminders',wrap(async(req,res)=>{
   if(typeof req.body.enabled!=='boolean')fail('设置无效');
   const link=await require('../models/WecomAppLink').findOne({staffId:req.staff._id,tenantId:req.staff.tenantId || null});

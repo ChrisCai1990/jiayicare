@@ -393,7 +393,8 @@ export default function ServiceAssistantPage() {
       setMembers(g.members);
       setSettings(true);
     });
-  const appInboxPanel = <details className="sa-card">
+  const appInboxPanel = null; /* 应用收件箱已停用；企微报告改走自动入库。 */
+  /*
     <summary>应用聊天收件箱</summary>
     <small>文字仅进入本人收件箱，保留7天；不会自动关联客户或执行。文件请使用报告归档。</small>
     <button disabled={busy} onClick={()=>run(async()=>{const r=await api.post('/app-pair-code',{});setPairCode(r.data.linked ? '当前系统员工已绑定企微账号' : r.data.code);},true)}>绑定我的企微账号</button>
@@ -408,7 +409,7 @@ export default function ServiceAssistantPage() {
       <button disabled={busy || !g} onClick={()=>{setTab('summary');setSource(m.text);setNotice('已填入总结输入，请核对当前家庭和服务对象');}}>填入当前家庭总结</button>
       <button disabled={busy || !g} onClick={()=>{setCommand(m.text);setNotice('已填入快捷指令，请核对家庭后手动整理');}}>填入当前家庭指令</button>
     </div>)}
-  </details>;
+  </details>; */
   const entryForm = form && (
     <form
       className="sa-card sa-form"
@@ -695,7 +696,6 @@ export default function ServiceAssistantPage() {
         </section>
       )}
       {loading && <p role="status">正在读取家庭服务数据…</p>}
-      {!g && appInboxPanel}
       {!inGroupSidebar && !groupId && !creating && (
         <div className="sa-empty">
           <h2>从一个服务群开始</h2>
@@ -1293,7 +1293,6 @@ export default function ServiceAssistantPage() {
           )}
           <section className="sa-tools" aria-label="辅助工具">
             <h2>更多工具</h2>
-          {appInboxPanel}
           <details className="sa-card">
             <summary>服务概览 · 交接与回复</summary>
             <small>依据助手最近200条已保存事项；不代表完整群聊历史。</small>
