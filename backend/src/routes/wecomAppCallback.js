@@ -5,6 +5,24 @@ const crypto=require('../utils/wecomAppCrypto');
 const Link=require('../models/WecomAppLink');
 const Inbox=require('../models/WecomAppInbox');
 const {seal}=require('../utils/wecomAppInboxCrypto');
+const Material=require('../models/WecomAppMaterial');
+const User=require('../models/User');
+const MedicalReport=require('../models/MedicalReport');
+const {uploadBuffer}=require('../utils/oss');
+const {fileMime,canAccessPatient}=require('../utils/serviceGroupRules');
+async function token(){const r=await fetch('https://qyapi.weixin.qq.com/cgi-bin/gettoken?'+new URLSearchParams({corpid:process.env.WECOM_CORP_ID,corpsecret:process.env.WECOM_APP_SECRET}),{signal:AbortSignal.timeout(10000)});const d=await r.json();if(!d.access_token)throw new Error('应用授权失败');return d.access_token;}
+async function archive(material,staff,instruction){
+  const name=(String(instruction).match(/^\s*([^，,的\s]{1,40})(?:的)?(?:体测|人体成分)/)||[])[1];
+  if(!name)throw new Error('请使用“客户名的体测，收录一下”');
+  const people=(await User.find({name,isDeleted:{$ne:true},tenantId:staff.tenantId||null}).limit(3)).filter(p=>canAccessPatient(staff,p));
+  if(people.length!==1)throw new Error(people.length?'客户同名，需补充手机号':'未找到可访问客户');
+  const t=await token(),r=await fetch('https://qyapi.weixin.qq.com/cgi-bin/media/get?access_token='+encodeURIComponent(t)+'&media_id='+encodeURIComponent(material.mediaId),{signal:AbortSignal.timeout(20000)}),buf=Buffer.from(await r.arrayBuffer()),mime=fileMime(buf);
+  if(!mime||buf.length>20*1024*1024)throw new Error('附件格式或大小不支持');
+  const sha=require('crypto').createHash('sha256').update(buf).digest('hex');
+  const old=await MedicalReport.findOne({user:people[0]._id,sourceSha256:sha});if(old){material.status='duplicate';material.reportId=old._id;await material.save();return `已存在，未重复收录：${people[0].name}｜身体成分报告`;}
+  const stored=await uploadBuffer(buf,mime,'reports');const report=await MedicalReport.create({user:people[0]._id,tenantId:people[0].tenantId||null,title:'身体成分报告',type:'body_comp',documentCategory:'body_composition',fileUrl:stored.url,fileUrls:[stored.url],ossKey:stored.key,ossKeys:[stored.key],mimeType:mime,fileSize:String(stored.size),sourceSha256:sha,uploadedBy:staff._id,uploadedByRole:staff.role,audit_status:'unaudited',aiStatus:'none'});
+  material.status='archived';material.reportId=report._id;await material.save();return `已收录：${people[0].name}｜身体成分报告｜待人工审核`;
+}
 router.use((req,res,next)=>process.env.WECOM_APP_CALLBACK_ENABLED==='true'?next():res.sendStatus(503));
 router.get('/',(req,res)=>{
   try {
@@ -24,7 +42,11 @@ router.post('/',express.text({type:['text/xml','application/xml'],limit:'100kb'}
     const from=crypto.field(xml,'FromUserName'), type=crypto.field(xml,'MsgType');
     if(type==='event')return res.type('text').send('success');
     let reply='当前仅支持文字指令。报告请在家庭助手中选择具体成员后上传。';
-    if(type==='text') {
+    if(type==='image'||type==='file') {
+      const link=await Link.findOne({corpId:process.env.WECOM_CORP_ID,userId:from});const staff=link&&await require('../models/Admin').findById(link.staffId);
+      if(!staff||staff.staffStatus!=='active')reply='请先绑定有效的嘉医汇员工账号。';
+      else {const id=crypto.field(xml,'MsgId'),mediaId=crypto.field(xml,'MediaId');if(!mediaId)reply='未取得附件标识，请重新发送原文件。';else {await Material.updateOne({messageId:process.env.WECOM_CORP_ID+':'+id},{$setOnInsert:{staffId:staff._id,tenantId:staff.tenantId||null,messageId:process.env.WECOM_CORP_ID+':'+id,mediaId,fileName:crypto.field(xml,'FileName')||'',expiresAt:new Date(Date.now()+10*60*1000)}},{upsert:true});reply='附件已收到。请在10分钟内发送“客户名的体测，收录一下”。';}}
+    } else if(type==='text') {
       const content=crypto.field(xml,'Content');
       const pair=/^绑定嘉医汇 ([a-f0-9]{32})$/.exec(content.trim());
       if(pair) {
@@ -38,9 +60,13 @@ router.post('/',express.text({type:['text/xml','application/xml'],limit:'100kb'}
         if(!allowed)reply='请先登录嘉医汇，在家庭助手的应用收件箱核对员工账号绑定和权限。';
         else if(content.length>6000)reply='内容过长，请缩短到6000字以内。';
         else {
+          const pending=await Material.findOne({staffId:staff._id,status:'received',createdAt:{$gt:new Date(Date.now()-10*60*1000)}}).sort({createdAt:-1});
+          if(pending&&/(收录|入库|归档)/.test(content)){try{reply=await archive(pending,staff,content);}catch(e){pending.status='needs_match';pending.instruction=content.slice(0,200);pending.error=e.message;await pending.save();reply='未自动入库：'+e.message+'。已交给小瑞处理。';}}
+          else {
           const messageId=crypto.field(xml,'MsgId');
           await Inbox.updateOne({messageId:process.env.WECOM_CORP_ID+':'+messageId},{$setOnInsert:{staffId:link.staffId,tenantId:link.tenantId,payload:seal(content),expiresAt:new Date(Date.now()+7*86400000)}},{upsert:true});
           reply='已进入您的应用收件箱（保留7天）。请打开家庭助手选择对应家庭和成员，核对后生成草稿；尚未写入档案或发给客户。';
+          }
         }
       }
     }
