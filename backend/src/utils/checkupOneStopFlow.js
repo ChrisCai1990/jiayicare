@@ -1,6 +1,7 @@
 const FollowUp = require('../models/FollowUp')
 const FollowUpPlan = require('../models/FollowUpPlan')
 const HealthPlan = require('../models/HealthPlan')
+const Order = require('../models/Order')
 const User = require('../models/User')
 
 function isCheckupService(plan) {
@@ -112,6 +113,30 @@ async function advanceCheckupTask(followUp) {
   }
   if (scheme.executorRole === 'medicalAssistant' && tasks.report_collection) {
     await FollowUp.updateOne({ _id: tasks.report_collection._id }, { $set: { isBlocked: false, status: 'planned', activationEvent: '' } })
+    return true
+  }
+  if (scheme.executorRole === 'healthManager' && /报告.*(?:回收|获取|归档)/.test(scheme.name || '')) {
+    const remaining = await FollowUp.countDocuments({
+      sourceHealthPlanId: servicePlan._id,
+      sourceType: 'health_plan',
+      taskRole: 'executor',
+      status: { $nin: ['completed', 'cancelled'] },
+    })
+    if (remaining === 0) {
+      const completedAt = new Date()
+      await HealthPlan.updateOne({ _id: servicePlan._id }, { $set: {
+        status: 'completed',
+        'content.workflowCompletedAt': completedAt,
+        'content.workflowCompletedBy': followUp.assignedTo || followUp.staffId,
+      } })
+      if (servicePlan.sourceOrderId) {
+        // 一站式单次服务以整条岗位链闭环为订单完成点；多次权益仍由逐次核销规则管理。
+        await Order.updateOne(
+          { _id: servicePlan.sourceOrderId, totalUnits: { $lte: 1 }, status: { $nin: ['completed', 'cancelled'] } },
+          { $set: { status: 'completed', tradeStatus: 'completed', fulfillmentStatus: 'completed', completedAt, usedUnits: 1 } },
+        )
+      }
+    }
     return true
   }
   return false

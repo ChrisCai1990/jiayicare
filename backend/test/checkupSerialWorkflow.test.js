@@ -31,3 +31,11 @@ test('report collection is scheduled seven business days after checkup', () => {
   assert.match(flow, /addBusinessDays\(serviceDate, 7\)/)
   assert.match(flow, /!\[0, 6\]\.includes\(date\.getDay\(\)\)/)
 })
+
+test('single-service order closes only after every checkup executor task is finished', () => {
+  assert.match(flow, /executorRole === 'healthManager'.*报告/s)
+  assert.match(flow, /status: \{ \$nin: \['completed', 'cancelled'\] \}/)
+  assert.match(flow, /remaining === 0/)
+  assert.match(flow, /totalUnits: \{ \$lte: 1 \}/)
+  assert.match(flow, /tradeStatus: 'completed'/)
+})

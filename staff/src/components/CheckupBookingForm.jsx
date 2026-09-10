@@ -8,6 +8,32 @@ export function bookingDetailsFromChecklist(checklist = []) {
   return checklist?.[0]?.appointmentDetails || {}
 }
 
+export function bookingDetailsFromTask(task) {
+  const saved = bookingDetailsFromChecklist(task?.serviceChecklist)
+  const content = task?.sourceHealthPlanId?.content || {}
+  const visit = content.moduleData?.visit || {}
+  const confirmed = content.confirmedServiceSchedule || {}
+  const taskText = (content.moduleData?.tasks?.records || []).map(item => item?.task || '').join('\n')
+  const confirmedCenter = /内镜中心/.test(taskText) ? '内镜中心' : ''
+  const confirmedPreparation = typeof content.notes === 'string' ? content.notes : content.notes?.content
+  const rawDate = content.serviceDate || visit.visitDate || confirmed.serviceDate || ''
+  const rawTime = content.serviceTime || visit.serviceTime || confirmed.serviceTime || ''
+  return {
+    hospital: saved.hospital || content.hospital || visit.hospital || '',
+    campus: saved.campus || content.campus || visit.campus || '',
+    department: saved.department || content.department || visit.department || content.checkupCenter || confirmedCenter,
+    floor: saved.floor || content.floor || visit.floor || '',
+    registrationWindow: saved.registrationWindow || content.registrationWindow || visit.registrationWindow || '',
+    contactName: saved.contactName || content.hospitalContact || visit.contactName || '',
+    contactPhone: saved.contactPhone || content.hospitalContactPhone || visit.contactPhone || '',
+    meetingPoint: saved.meetingPoint || content.meetingPoint || visit.meetingPoint || '',
+    appointmentDate: saved.appointmentDate || String(rawDate).slice(0, 10),
+    appointmentTime: saved.appointmentTime || String(rawTime).slice(0, 5),
+    preparation: saved.preparation || content.checkupPreparation || visit.preparation || confirmedPreparation || '',
+    notes: saved.notes || '',
+  }
+}
+
 export function bookingChecklist(details) {
   const summary = [
     `医院：${details.hospital}`,
@@ -41,7 +67,7 @@ const fields = [
 
 export default function CheckupBookingForm({ value, onChange }) {
   const update = (key, next) => onChange({ ...value, [key]: next })
-  return <div style={{ border: '1px solid #D8E7DF', borderRadius: 10, overflow: 'hidden' }}>
+  return <div style={{ border: '1px solid #D8E7DF', borderRadius: 10, overflow: 'hidden', flexShrink: 0 }}>
     <div style={{ padding: '12px 14px', background: '#F2F8F5' }}>
       <div style={{ fontSize: 14, fontWeight: 750, color: '#29483C' }}>体检预约确认与陪诊交接</div>
       <div style={{ marginTop: 4, fontSize: 12, color: '#65776F' }}>确认完成后，以下信息将直接生成陪诊专员的体检日任务清单。</div>

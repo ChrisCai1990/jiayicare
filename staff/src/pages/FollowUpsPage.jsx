@@ -6,7 +6,7 @@ import FollowUpModal from '../components/FollowUpModal'
 import Pagination from '../components/Pagination'
 import MedicalAssistRequirementsCard from '../components/MedicalAssistRequirementsCard'
 import ServiceTaskChecklist, { normalizeServiceChecklist, summarizeServiceChecklist } from '../components/ServiceTaskChecklist'
-import CheckupBookingForm, { bookingChecklist, bookingDetailsFromChecklist, isCheckupBookingTask } from '../components/CheckupBookingForm'
+import CheckupBookingForm, { bookingChecklist, bookingDetailsFromTask, isCheckupBookingTask } from '../components/CheckupBookingForm'
 import { formatChineseDate, formatChineseDateTime } from '../utils/date'
 
 const TYPE_MAP   = { phone: '电话', wechat: '微信', visit: '上门', video: '视频', other: '其他' }
@@ -222,7 +222,7 @@ export default function FollowUpsPage() {
 
   const openExec = (f) => {
     setExecItem(f)
-    setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeServiceChecklist(f.serviceChecklist, f.taskPurposes, f.dependsOnTaskId?.serviceChecklist), appointmentDetails: bookingDetailsFromChecklist(f.serviceChecklist) })
+    setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeServiceChecklist(f.serviceChecklist, f.taskPurposes, f.dependsOnTaskId?.serviceChecklist), appointmentDetails: bookingDetailsFromTask(f) })
   }
 
   const handleExec = async () => {
@@ -458,7 +458,7 @@ export default function FollowUpsPage() {
               <h3 className="modal-title">{isCheckupBookingTask(execItem) ? '确认体检预约并交接陪诊' : execItem.taskRole === 'supervisor' ? '核对代办结果与检查单' : execItem.taskRole ? '记录事务完成情况' : '执行随访'} · {execItem.patientId?.name}</h3>
               <button className="modal-close" onClick={() => setExecItem(null)}>✕</button>
             </div>
-            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14, overscrollBehavior: 'contain' }}>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', overscrollBehavior: 'contain' }}>
               {isCheckupBookingTask(execItem) ? <CheckupBookingForm value={execForm.appointmentDetails} onChange={appointmentDetails => setExecForm(form => ({ ...form, appointmentDetails }))} /> : execItem.taskRole && <ServiceTaskChecklist mode={execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor'} purposes={execItem.taskPurposes || []} source={execItem.dependsOnTaskId?.serviceChecklist || []} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} />}
               {/* 只读信息 */}
               {execItem.taskRole && <details style={{ border: '1px solid #E0E8E3', borderRadius: 9, background: '#FAFBFA' }}>
