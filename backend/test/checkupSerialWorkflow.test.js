@@ -40,3 +40,9 @@ test('single-service order closes only after every checkup executor task is fini
   assert.match(flow, /totalUnits: \{ \$lte: 1 \}/)
   assert.match(flow, /tradeStatus: 'completed'/)
 })
+
+test('report collection cannot complete without a real patient report', () => {
+  assert.match(staffRoute, /isCheckupReportCollection/)
+  assert.match(staffRoute, /MedicalReport\.exists\(\{ _id: reportId, user: followUp\.patientId \}\)/)
+  assert.match(staffRoute, /请先确认客户已上传的本次体检报告/)
+})

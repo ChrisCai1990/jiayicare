@@ -1512,6 +1512,14 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
 
   const previousStatus = followUp.status;
   const previousContent = followUp.content;
+  const isCheckupReportCollection = followUp.sourceType === 'health_plan'
+    && followUp.taskRole === 'executor'
+    && /报告.*(?:回收|获取|归档)/.test(followUp.theme || '');
+  if (isCheckupReportCollection && req.body.status === 'completed') {
+    const reportId = Array.isArray(req.body.serviceChecklist) ? req.body.serviceChecklist[0]?.reportId : '';
+    const reportExists = reportId && await MedicalReport.exists({ _id: reportId, user: followUp.patientId });
+    if (!reportExists) return res.status(400).json({ success: false, message: '请先确认客户已上传的本次体检报告，或由健管专员直接上传报告' });
+  }
   const isSuper = req.staff.role === 'superadmin';
   const isOwner = isSuper || String(followUp.staffId) === String(req.staff._id);
   // 计划层字段（何时、谁负责、要不要做）只有创建人（或超管）能改；执行人只能填写执行结果，
