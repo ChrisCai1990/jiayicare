@@ -256,6 +256,16 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("体检后续岗位任务阻塞状态迁移失败")
+        code, _ = remote(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/migrateCheckupClosureV9.js ] && "
+            f"[ ! -f {REPO_DIR}/.checkup-closure-v9-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/migrateCheckupClosureV9.js && "
+            f"touch {REPO_DIR}/.checkup-closure-v9-applied; fi",
+            timeout=120,
+            label="关联体检陪诊记录与报告闭环",
+        )
+        if code:
+            raise RuntimeError("体检报告闭环关联迁移失败")
         time.sleep(3)
 
         code, output = remote(

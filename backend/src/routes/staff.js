@@ -1326,6 +1326,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
       .populate('staffId', 'name role title')
       .populate('assignedTo', 'name role title')
       .populate('sourceHealthPlanId', 'title description content type')
+      .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard')
       .populate('dependsOnTaskId', 'serviceChecklist executedContent status completedAt')
       .populate('sourceOrderId', 'serviceName servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt'),
     FollowUp.countDocuments(filter),
@@ -1412,6 +1413,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
       .populate('staffId', 'name role title')
       .populate('assignedTo', 'name role')
       .populate('sourceHealthPlanId', 'title description content type')
+      .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard')
       .populate('dependsOnTaskId', 'serviceChecklist executedContent status completedAt')
       .populate('sourceOrderId', 'serviceName servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt'),
     FollowUp.countDocuments(filter),
@@ -1516,9 +1518,12 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     && followUp.taskRole === 'executor'
     && /报告.*(?:回收|获取|归档)/.test(followUp.theme || '');
   if (isCheckupReportCollection && req.body.status === 'completed') {
-    const reportId = Array.isArray(req.body.serviceChecklist) ? req.body.serviceChecklist[0]?.reportId : '';
-    const reportExists = reportId && await MedicalReport.exists({ _id: reportId, user: followUp.patientId });
-    if (!reportExists) return res.status(400).json({ success: false, message: '请先确认客户已上传的本次体检报告，或由健管专员直接上传报告' });
+    const closure = Array.isArray(req.body.serviceChecklist) ? req.body.serviceChecklist[0] : null;
+    const reportIds = [...new Set([...(closure?.reportIds || []), closure?.reportId].filter(Boolean).map(String))];
+    const reportCount = reportIds.length ? await MedicalReport.countDocuments({ _id: { $in: reportIds }, user: followUp.patientId }) : 0;
+    if (!closure?.serviceReviewed || closure?.collectionStatus !== 'complete' || !reportIds.length || reportCount !== reportIds.length) {
+      return res.status(400).json({ success: false, message: '请先核对体检执行情况，并确认属于该客户的本次体检报告已回收齐全' });
+    }
   }
   const isSuper = req.staff.role === 'superadmin';
   const isOwner = isSuper || String(followUp.staffId) === String(req.staff._id);

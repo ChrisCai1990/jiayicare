@@ -236,25 +236,28 @@ export default function FollowUpsPage() {
       toast('请完整填写预约医院、体检中心、楼层、会合地点、日期时间和行前准备事项'); return
     }
     const submittedChecklist = isBooking ? bookingChecklist(execForm.appointmentDetails) : execForm.serviceChecklist
-    if (isReportCollection && !execForm.serviceChecklist?.[0]?.reportId) { toast('请先选择客户已上传的本次体检报告，或直接上传报告'); return }
+    const reportClosure = isReportCollection ? execForm.serviceChecklist?.[0] : null
+    if (isReportCollection && reportClosure?.collectionStatus === 'complete' && (!reportClosure.serviceReviewed || !reportClosure.reportIds?.length)) { toast('完成闭环前，请先核对陪诊执行情况并关联至少一份本次体检报告'); return }
     if (execItem?.taskRole && !isBooking && !isReportCollection) {
       if (!execForm.serviceChecklist.length) { toast('请先在方案中补充明确的代办目的'); return }
       if (execItem.taskRole === 'supervisor' && execForm.serviceChecklist.some(item => !item.supervisionStatus)) { toast('请逐项完成督导核验'); return }
       if (execItem.taskRole !== 'supervisor' && execForm.serviceChecklist.some(item => !item.executionStatus || !item.executionResult?.trim() || (item.executionStatus !== 'completed' && !item.nextAction?.trim()))) { toast('请逐项填写完成状态、实际结果和未完成事项'); return }
-    } else if (!execForm.content.trim()) { toast('请填写随访结果'); return }
+    } else if (!execItem?.taskRole && !execForm.content.trim()) { toast('请填写随访结果'); return }
     setExecSaving(true)
     try {
       await staffAPI.updateFollowUp(execItem._id, {
         type: execForm.type,
         content: execForm.content.trim() || summarizeServiceChecklist(submittedChecklist, execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor'),
-        status: execItem.taskRole === 'supervisor'
+        status: isReportCollection
+          ? (reportClosure?.collectionStatus === 'complete' ? 'completed' : 'in_progress')
+          : execItem.taskRole === 'supervisor'
           ? (execForm.serviceChecklist.some(item => item.supervisionStatus === 'issue') ? 'in_progress' : 'completed')
           : execItem.taskRole
             ? (submittedChecklist.every(item => item.executionStatus === 'completed') ? 'completed' : 'in_progress')
             : execForm.status,
         serviceChecklist: submittedChecklist,
       })
-      toast(execItem?.taskRole === 'supervisor' ? '督办记录已完成' : execItem?.taskRole ? '事务记录已更新' : '随访记录已更新')
+      toast(isReportCollection ? (reportClosure?.collectionStatus === 'complete' ? '体检报告已回收齐全，进入解析审核' : '报告回收进度已保存') : execItem?.taskRole === 'supervisor' ? '督办记录已完成' : execItem?.taskRole ? '事务记录已更新' : '随访记录已更新')
       setExecItem(null)
       load()
     } catch (err) { toast(err.message || '保存失败') }
@@ -534,7 +537,7 @@ export default function FollowUpsPage() {
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setExecItem(null)}>取消</button>
               <button className="btn btn-primary" onClick={handleExec} disabled={execSaving}>
-                {execSaving ? '保存中...' : isCheckupReportCollectionTask(execItem) ? '确认报告已回收并进入解析' : isCheckupBookingTask(execItem) ? '确认预约并转交陪诊' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : '保存随访结果'}
+                {execSaving ? '保存中...' : isCheckupReportCollectionTask(execItem) ? (execForm.serviceChecklist?.[0]?.collectionStatus === 'complete' ? '完成闭环并进入解析' : '保存报告回收进度') : isCheckupBookingTask(execItem) ? '确认预约并转交陪诊' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : '保存随访结果'}
               </button>
             </div>
           </div>

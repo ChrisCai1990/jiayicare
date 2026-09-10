@@ -21,6 +21,7 @@ test('booking and onsite completion advance one role at a time', () => {
   assert.match(flow, /handoffSummary: item\.executionResult/)
   assert.match(flow, /plannedContent: followUp\.executedContent/)
   assert.match(flow, /executorRole === 'medicalAssistant'.*tasks\.report_collection/s)
+  assert.match(flow, /result\.report_collection.*dependsOnTaskId: result\.onsite\._id/s)
 })
 
 test('legacy downstream tasks remain blocked until their predecessor completes', () => {
@@ -43,6 +44,7 @@ test('single-service order closes only after every checkup executor task is fini
 
 test('report collection cannot complete without a real patient report', () => {
   assert.match(staffRoute, /isCheckupReportCollection/)
-  assert.match(staffRoute, /MedicalReport\.exists\(\{ _id: reportId, user: followUp\.patientId \}\)/)
-  assert.match(staffRoute, /请先确认客户已上传的本次体检报告/)
+  assert.match(staffRoute, /MedicalReport\.countDocuments\(\{ _id: \{ \$in: reportIds \}, user: followUp\.patientId \}\)/)
+  assert.match(staffRoute, /closure\?\.serviceReviewed/)
+  assert.match(staffRoute, /closure\?\.collectionStatus !== 'complete'/)
 })
