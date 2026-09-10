@@ -11685,7 +11685,7 @@ export default function PatientDetailPage() {
           onGenerate={async (templateId, briefNote) => {
             if (showSelectTplModal === 'annual_checkup') {
               const generated = await staffAPI.generateAIAnnualCheckupPlan(id, templateId, briefNote)
-              toast('AI体检方案已生成，正在打开方案')
+              toast(generated.reused ? (generated.message || '本次体检已有方案，正在打开原方案') : 'AI体检方案已生成，正在打开方案')
               await loadPlans()
               nav(`/plans/${generated.data._id}`, {
                 state: { returnTo: `/patients/${id}?tab=plans&serviceView=checkup` },

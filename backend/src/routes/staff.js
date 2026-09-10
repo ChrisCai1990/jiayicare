@@ -11,7 +11,7 @@ const { calculateHealthScore } = require('../utils/healthScore');
 const { parseIdCard, calcAgeFromBirthDate } = require('../utils/idCard');
 const { getCurrentTenantId, BYPASS } = require('../utils/tenantScope');
 const { followUpTaskRequirements, followUpTaskPurposes } = require('../utils/medicalAssistRequirements');
-const { advanceCheckupTask } = require('../utils/checkupOneStopFlow');
+const { advanceCheckupTask, isCheckupService } = require('../utils/checkupOneStopFlow');
 const { generateCompactMedicalAssistPurposes } = require('../utils/medicalAssistPurposeDraft');
 const { isReportInterpretation } = require('../utils/checkupWorkflow');
 const { reverseFamilyRelation, synchronizeFamilyGroup } = require('../utils/familyLinks');
@@ -12229,6 +12229,38 @@ router.post('/patients/:id/ai-annual-checkup-plan', staffAuth, async (req, res) 
       .select('name gender age chronicDiseases healthProfile clientBrand');
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
     if (!user.clientBrand) return res.status(400).json({ success: false, message: '请先设置客户所属平台（嘉医管家或金伊森）' });
+
+    // 同一次体检一站式服务只能对应一份年度体检方案。工作台旧任务或重复点击不能再次
+    // 创建同名草稿：已有草稿继续编辑，已有推送/确认版本直接打开原方案。
+    const serviceCandidates = await HealthPlan.find({
+      patientId: user._id,
+      type: 'medical_assist',
+      status: { $in: ['draft', 'active'] },
+    }).sort({ createdAt: -1 });
+    const currentCheckupService = serviceCandidates.find(isCheckupService);
+    if (currentCheckupService) {
+      const existingPlans = await HealthPlan.find({
+        patientId: user._id,
+        type: 'annual_checkup',
+        status: { $in: ['draft', 'active'] },
+        createdAt: { $gte: currentCheckupService.createdAt },
+      }).sort({ createdAt: -1 });
+      const existingPlan = existingPlans.find(plan => plan.confirmedAt)
+        || existingPlans.find(plan => plan.pushedAt)
+        || existingPlans[0];
+      if (existingPlan) {
+        return res.json({
+          success: true,
+          data: existingPlan,
+          reused: true,
+          message: existingPlan.confirmedAt
+            ? '本次体检方案已由客户确认，已打开正式方案'
+            : existingPlan.pushedAt
+              ? '本次体检方案已发送客户，已打开原方案'
+              : '本次体检已有草稿，已继续打开原草稿',
+        });
+      }
+    }
 
     // 每次生成都从后端实时读取当前平台的启用模板，不缓存模板快照作为下次生成来源。
     // Admin 更新模板后，新方案立即使用更新后的版本；同时禁止跨平台套用模板。
