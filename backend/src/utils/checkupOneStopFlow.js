@@ -94,7 +94,20 @@ async function advanceCheckupTask(followUp) {
   if (!isCheckupService(servicePlan) || !scheme) return false
   const tasks = await ensureCheckupTasks(servicePlan)
   if (scheme.executorRole === 'healthPlanner' && tasks.onsite) {
-    await FollowUp.updateOne({ _id: tasks.onsite._id }, { $set: { isBlocked: false, status: 'planned', activationEvent: '' } })
+    const appointment = Array.isArray(followUp.serviceChecklist) ? followUp.serviceChecklist[0]?.appointmentDetails : null
+    const appointmentAt = appointment?.appointmentDate
+      ? new Date(`${appointment.appointmentDate}T${appointment.appointmentTime || '09:00'}:00+08:00`)
+      : tasks.onsite.date
+    await FollowUp.updateOne({ _id: tasks.onsite._id }, { $set: {
+      isBlocked: false,
+      status: 'planned',
+      activationEvent: '',
+      date: appointmentAt,
+      remindAt: appointmentAt,
+      nextFollowUpDate: appointmentAt,
+      serviceChecklist: followUp.serviceChecklist || [],
+      plannedContent: followUp.executedContent || followUp.content || '',
+    } })
     return true
   }
   if (scheme.executorRole === 'medicalAssistant' && tasks.report_collection) {

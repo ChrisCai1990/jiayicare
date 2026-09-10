@@ -16,6 +16,9 @@ test('customer confirmation completes doctor work and activates booking', () => 
 test('booking and onsite completion advance one role at a time', () => {
   assert.match(staffRoute, /advanceCheckupTask\(followUp\)/)
   assert.match(flow, /executorRole === 'healthPlanner'.*tasks\.onsite/s)
+  assert.match(flow, /appointmentDetails/)
+  assert.match(flow, /serviceChecklist: followUp\.serviceChecklist/)
+  assert.match(flow, /plannedContent: followUp\.executedContent/)
   assert.match(flow, /executorRole === 'medicalAssistant'.*tasks\.report_collection/s)
 })
 

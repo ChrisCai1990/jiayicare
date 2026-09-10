@@ -6,6 +6,7 @@ import FollowUpModal from '../components/FollowUpModal'
 import Pagination from '../components/Pagination'
 import MedicalAssistRequirementsCard from '../components/MedicalAssistRequirementsCard'
 import ServiceTaskChecklist, { normalizeServiceChecklist, summarizeServiceChecklist } from '../components/ServiceTaskChecklist'
+import CheckupBookingForm, { bookingChecklist, bookingDetailsFromChecklist, isCheckupBookingTask } from '../components/CheckupBookingForm'
 import { formatChineseDate, formatChineseDateTime } from '../utils/date'
 
 const TYPE_MAP   = { phone: '电话', wechat: '微信', visit: '上门', video: '视频', other: '其他' }
@@ -157,7 +158,7 @@ export default function FollowUpsPage() {
 
   // 执行随访 modal
   const [execItem,     setExecItem]     = useState(null)
-  const [execForm,     setExecForm]     = useState({ type: 'phone', content: '', status: 'completed', serviceChecklist: [] })
+  const [execForm,     setExecForm]     = useState({ type: 'phone', content: '', status: 'completed', serviceChecklist: [], appointmentDetails: {} })
   const [execSaving,   setExecSaving]   = useState(false)
   const [draftLoading, setDraftLoading] = useState(false)  // 场景七：AI生成草稿
 
@@ -221,11 +222,17 @@ export default function FollowUpsPage() {
 
   const openExec = (f) => {
     setExecItem(f)
-    setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeServiceChecklist(f.serviceChecklist, f.taskPurposes, f.dependsOnTaskId?.serviceChecklist) })
+    setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeServiceChecklist(f.serviceChecklist, f.taskPurposes, f.dependsOnTaskId?.serviceChecklist), appointmentDetails: bookingDetailsFromChecklist(f.serviceChecklist) })
   }
 
   const handleExec = async () => {
-    if (execItem?.taskRole) {
+    const isBooking = isCheckupBookingTask(execItem)
+    const requiredBooking = ['hospital', 'department', 'floor', 'meetingPoint', 'appointmentDate', 'appointmentTime', 'preparation']
+    if (isBooking && requiredBooking.some(key => !execForm.appointmentDetails?.[key]?.trim())) {
+      toast('请完整填写预约医院、体检中心、楼层、会合地点、日期时间和行前准备事项'); return
+    }
+    const submittedChecklist = isBooking ? bookingChecklist(execForm.appointmentDetails) : execForm.serviceChecklist
+    if (execItem?.taskRole && !isBooking) {
       if (!execForm.serviceChecklist.length) { toast('请先在方案中补充明确的代办目的'); return }
       if (execItem.taskRole === 'supervisor' && execForm.serviceChecklist.some(item => !item.supervisionStatus)) { toast('请逐项完成督导核验'); return }
       if (execItem.taskRole !== 'supervisor' && execForm.serviceChecklist.some(item => !item.executionStatus || !item.executionResult?.trim() || (item.executionStatus !== 'completed' && !item.nextAction?.trim()))) { toast('请逐项填写完成状态、实际结果和未完成事项'); return }
@@ -234,13 +241,13 @@ export default function FollowUpsPage() {
     try {
       await staffAPI.updateFollowUp(execItem._id, {
         type: execForm.type,
-        content: execForm.content.trim() || summarizeServiceChecklist(execForm.serviceChecklist, execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor'),
+        content: execForm.content.trim() || summarizeServiceChecklist(submittedChecklist, execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor'),
         status: execItem.taskRole === 'supervisor'
           ? (execForm.serviceChecklist.some(item => item.supervisionStatus === 'issue') ? 'in_progress' : 'completed')
           : execItem.taskRole
-            ? (execForm.serviceChecklist.every(item => item.executionStatus === 'completed') ? 'completed' : 'in_progress')
+            ? (submittedChecklist.every(item => item.executionStatus === 'completed') ? 'completed' : 'in_progress')
             : execForm.status,
-        serviceChecklist: execForm.serviceChecklist,
+        serviceChecklist: submittedChecklist,
       })
       toast(execItem?.taskRole === 'supervisor' ? '督办记录已完成' : execItem?.taskRole ? '事务记录已更新' : '随访记录已更新')
       setExecItem(null)
@@ -446,13 +453,13 @@ export default function FollowUpsPage() {
       {/* 服务事务与健康随访共用数据模型，但界面按业务语义区分。 */}
       {execItem && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setExecItem(null) }}>
-          <div className="modal" style={{ maxWidth: 520 }}>
+          <div className="modal" style={{ maxWidth: isCheckupBookingTask(execItem) ? 780 : 520 }}>
             <div className="modal-header">
-              <h3 className="modal-title">{execItem.taskRole === 'supervisor' ? '核对代办结果与检查单' : execItem.taskRole ? '记录事务完成情况' : '执行随访'} · {execItem.patientId?.name}</h3>
+              <h3 className="modal-title">{isCheckupBookingTask(execItem) ? '确认体检预约并交接陪诊' : execItem.taskRole === 'supervisor' ? '核对代办结果与检查单' : execItem.taskRole ? '记录事务完成情况' : '执行随访'} · {execItem.patientId?.name}</h3>
               <button className="modal-close" onClick={() => setExecItem(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14, overscrollBehavior: 'contain' }}>
-              {execItem.taskRole && <ServiceTaskChecklist mode={execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor'} purposes={execItem.taskPurposes || []} source={execItem.dependsOnTaskId?.serviceChecklist || []} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} />}
+              {isCheckupBookingTask(execItem) ? <CheckupBookingForm value={execForm.appointmentDetails} onChange={appointmentDetails => setExecForm(form => ({ ...form, appointmentDetails }))} /> : execItem.taskRole && <ServiceTaskChecklist mode={execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor'} purposes={execItem.taskPurposes || []} source={execItem.dependsOnTaskId?.serviceChecklist || []} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} />}
               {/* 只读信息 */}
               {execItem.taskRole && <details style={{ border: '1px solid #E0E8E3', borderRadius: 9, background: '#FAFBFA' }}>
                 <summary style={{ padding: '10px 12px', cursor: 'pointer', color: '#65776F', fontSize: 13, fontWeight: 650 }}>查看事务背景与注意事项</summary>
@@ -521,7 +528,7 @@ export default function FollowUpsPage() {
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setExecItem(null)}>取消</button>
               <button className="btn btn-primary" onClick={handleExec} disabled={execSaving}>
-                {execSaving ? '保存中...' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : '保存随访结果'}
+                {execSaving ? '保存中...' : isCheckupBookingTask(execItem) ? '确认预约并转交陪诊' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : '保存随访结果'}
               </button>
             </div>
           </div>
