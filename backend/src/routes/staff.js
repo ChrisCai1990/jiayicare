@@ -441,7 +441,9 @@ async function getWorkbenchFollowUpOwnerFilter(staff) {
 router.get('/service-tasks', staffAuth, async (req, res) => {
   const { status = 'active', includeFuture = '', limit = 100 } = req.query;
   const staffId = String(req.staff._id);
-  const filter = { assignedTo: { $in: [req.staff._id, staffId] }, isBlocked: { $ne: true } };
+  // 首页工作台需要同时展示“等待上一环节”的串行任务，让接手人提前知道后续工作。
+  // isBlocked 只限制办理，不应让任务从负责人视野里完全消失。
+  const filter = { assignedTo: { $in: [req.staff._id, staffId] } };
   // 历史任务的 assignedTo 同时存在 ObjectId 与字符串两种存储形态；原生集合按两种类型
   // 一并取回，再 hydrate/populate，避免负责人正确的预约任务被类型转换静默漏掉。
   const requestedLimit = Math.min(Number(limit) || 100, 200);
@@ -1543,6 +1545,10 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     $or: [{ staffId: req.staff._id }, { assignedTo: req.staff._id }],
   });
   if (!followUp) return res.status(404).json({ success: false, message: '随访记录不存在' });
+
+  if (followUp.isBlocked) {
+    return res.status(409).json({ success: false, message: '上一环节尚未完成，当前任务只能查看，暂不能办理' });
+  }
 
   if (req.body.status === 'cancelled' && !req.body.cancelReason && !followUp.cancelReason) {
     return res.status(400).json({ success: false, message: '取消随访必须填写取消原因' });

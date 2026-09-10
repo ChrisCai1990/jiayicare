@@ -30,6 +30,7 @@ export default function ServiceTasksPanel() {
   const supervisorCount = items.filter(item => item.taskRole === 'supervisor').length
 
   const openTask = async (task) => {
+    if (task.isBlocked) return
     const sourcePlan = task.sourceHealthPlanId
     const sourcePlanId = sourcePlan?._id || sourcePlan
     const checkupText = `${sourcePlan?.title || ''} ${sourcePlan?.content?.templateName || ''}`
@@ -76,22 +77,26 @@ export default function ServiceTasksPanel() {
       <div className="card-body" style={{ padding: '8px 20px' }}>
         {visibleItems.slice(0, 10).map((task, index) => {
           const isFuture = task.date && new Date(task.date).getTime() > Date.now()
+          const isWaitingPrevious = !!task.isBlocked
           return (
           <div key={task._id}
             onClick={() => openTask(task)}
-            style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 0', cursor: 'pointer', borderBottom: index < Math.min(visibleItems.length, 10) - 1 ? '1px solid #f0ede8' : 'none' }}>
-            <span style={{ fontSize: 18 }}>{task.taskRole === 'supervisor' ? '🔎' : '✅'}</span>
+            title={isWaitingPrevious ? '上一环节完成后即可办理' : ''}
+            style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 0', cursor: isWaitingPrevious ? 'default' : 'pointer', opacity: isWaitingPrevious ? 0.78 : 1, borderBottom: index < Math.min(visibleItems.length, 10) - 1 ? '1px solid #f0ede8' : 'none' }}>
+            <span style={{ fontSize: 18 }}>{isWaitingPrevious ? '⏳' : task.taskRole === 'supervisor' ? '🔎' : '✅'}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600, fontSize: 13, color: '#1A2B24' }}>
                 {task.theme}
-                {isFuture && <span style={{ marginLeft: 8, fontSize: 11, color: '#8A6A20', background: '#FFF4D6', padding: '2px 6px', borderRadius: 8 }}>待开始</span>}
+                {isWaitingPrevious
+                  ? <span style={{ marginLeft: 8, fontSize: 11, color: '#667085', background: '#F2F4F7', padding: '2px 6px', borderRadius: 8 }}>等待上一环节</span>
+                  : isFuture && <span style={{ marginLeft: 8, fontSize: 11, color: '#8A6A20', background: '#FFF4D6', padding: '2px 6px', borderRadius: 8 }}>待开始</span>}
               </div>
               <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>
                 {task.patientId?.name || '未知'}{task.assignedTo?.name ? ` · 负责人：${task.assignedTo.name}` : ''}
               </div>
               <div style={{ fontSize: 11, color: '#9AA9A2', marginTop: 2 }}>创建：{new Date(task.createdAt).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}</div>
             </div>
-            <span style={{ fontSize: 11, color: '#8AA89C' }}>计划：{formatChineseDate(task.date, false)}</span>
+            <span style={{ fontSize: 11, color: '#8AA89C' }}>{isWaitingPrevious ? `前序：${task.dependsOnTaskId?.theme || '待完成'}` : `计划：${formatChineseDate(task.date, false)}`}</span>
           </div>
           )
         })}
