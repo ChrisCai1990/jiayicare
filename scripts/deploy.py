@@ -256,16 +256,6 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("体检后续岗位任务阻塞状态迁移失败")
-        code, _ = remote(
-            f"if [ -f {REPO_DIR}/backend/src/scripts/migrateCheckupSerialWorkflowV8.js ] && "
-            f"[ ! -f {REPO_DIR}/.checkup-serial-workflow-v8-applied ]; then "
-            f"cd {REPO_DIR}/backend && node src/scripts/migrateCheckupSerialWorkflowV8.js && "
-            f"touch {REPO_DIR}/.checkup-serial-workflow-v8-applied; fi",
-            timeout=120,
-            label="清理体检一站式旧版重复任务",
-        )
-        if code:
-            raise RuntimeError("体检一站式旧版重复任务清理失败")
         time.sleep(3)
 
         code, output = remote(

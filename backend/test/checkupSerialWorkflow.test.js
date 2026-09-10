@@ -28,12 +28,6 @@ test('legacy downstream tasks remain blocked until their predecessor completes',
   assert.match(flow, /tasks\.report_collection && !onsiteCompleted[\s\S]*isBlocked: true[\s\S]*activationEvent: 'onsite_completed'/)
 })
 
-test('legacy duplicate executor tasks are removed from the active one-stop flow', () => {
-  assert.match(flow, /canonicalTaskIds/)
-  assert.match(flow, /_id: \{ \$nin: canonicalTaskIds \}/)
-  assert.match(flow, /旧版重复任务停止执行/)
-})
-
 test('report collection is scheduled seven business days after checkup', () => {
   assert.match(flow, /addBusinessDays\(serviceDate, 7\)/)
   assert.match(flow, /!\[0, 6\]\.includes\(date\.getDay\(\)\)/)

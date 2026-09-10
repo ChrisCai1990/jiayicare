@@ -52,19 +52,6 @@ async function ensureCheckupTasks(servicePlan) {
     )
     result[stage] = task
   }
-  const canonicalTaskIds = Object.values(result).map(task => task?._id).filter(Boolean)
-  if (canonicalTaskIds.length) {
-    await FollowUp.updateMany(
-      {
-        sourceHealthPlanId: servicePlan._id,
-        sourceType: 'health_plan',
-        taskRole: 'executor',
-        _id: { $nin: canonicalTaskIds },
-        status: { $in: ['planned', 'in_progress', 'missed'] },
-      },
-      { $set: { status: 'cancelled', isBlocked: false, cancelReason: '体检一站式流程已升级，旧版重复任务停止执行' } }
-    )
-  }
   return result
 }
 
