@@ -453,7 +453,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     { path: 'assignedTo', select: 'name role' },
     { path: 'sourceHealthPlanId', select: 'title description content type' },
     { path: 'followUpSchemeId', select: 'name executorRole supervisorRole completionStandard' },
-    { path: 'dependsOnTaskId', select: 'serviceChecklist executedContent status completedAt' },
+    { path: 'dependsOnTaskId', select: 'theme serviceChecklist executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } },
   ]);
   const now = new Date();
   const tasks = queriedTasks.filter(task => {
@@ -1327,7 +1327,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
       .populate('assignedTo', 'name role title')
       .populate('sourceHealthPlanId', 'title description content type')
       .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard')
-      .populate('dependsOnTaskId', 'serviceChecklist executedContent status completedAt')
+      .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
       .populate('sourceOrderId', 'serviceName servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt'),
     FollowUp.countDocuments(filter),
   ]);
@@ -1414,7 +1414,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
       .populate('assignedTo', 'name role')
       .populate('sourceHealthPlanId', 'title description content type')
       .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard')
-      .populate('dependsOnTaskId', 'serviceChecklist executedContent status completedAt')
+      .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
       .populate('sourceOrderId', 'serviceName servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt'),
     FollowUp.countDocuments(filter),
   ]);
@@ -1486,6 +1486,53 @@ router.post('/followups', staffAuth, checkPermission('followups', 'create'), asy
 
   await followUp.populate('patientId', 'name phone');
   res.json({ success: true, data: followUp });
+});
+
+// 串行服务任务只能退回直接上一环节；保留双方已有记录，并留下完整退回历史。
+router.post('/followups/:id/return-previous', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
+  const reason = String(req.body.reason || '').trim();
+  if (!reason) return res.status(400).json({ success: false, message: '退回上一环节必须填写原因' });
+  const current = await FollowUp.findOne({
+    _id: req.params.id,
+    assignedTo: req.staff._id,
+    sourceType: 'health_plan',
+    taskRole: 'executor',
+    status: { $in: ['planned', 'in_progress', 'missed'] },
+  });
+  if (!current) return res.status(404).json({ success: false, message: '当前任务不存在、已结束或不属于您' });
+  if (!current.dependsOnTaskId) return res.status(400).json({ success: false, message: '这是首个环节，没有可退回的上一层' });
+  const previous = await FollowUp.findOne({
+    _id: current.dependsOnTaskId,
+    sourceHealthPlanId: current.sourceHealthPlanId,
+    sourceType: 'health_plan',
+    taskRole: 'executor',
+    status: { $ne: 'cancelled' },
+  });
+  if (!previous) return res.status(400).json({ success: false, message: '未找到可恢复的直接上一环节' });
+  const returnedAt = new Date();
+  const event = { reason, returnedAt, returnedBy: req.staff._id, fromTaskId: current._id, toTaskId: previous._id };
+  const currentFormData = current.formData && typeof current.formData === 'object' ? { ...current.formData } : {};
+  currentFormData.returnHistory = [...(currentFormData.returnHistory || []), event];
+  current.formData = currentFormData;
+  current.markModified('formData');
+  current.status = 'planned';
+  current.isBlocked = true;
+  current.completedAt = null;
+  current.completedBy = null;
+  const previousFormData = previous.formData && typeof previous.formData === 'object' ? { ...previous.formData } : {};
+  previousFormData.returnRequests = [...(previousFormData.returnRequests || []), event];
+  previous.formData = previousFormData;
+  previous.markModified('formData');
+  previous.status = 'in_progress';
+  previous.isBlocked = false;
+  previous.completedAt = null;
+  previous.completedBy = null;
+  previous.remindAt = returnedAt;
+  previous.nextFollowUpDate = returnedAt;
+  await previous.save();
+  await current.save();
+  await previous.populate('assignedTo', 'name role');
+  res.json({ success: true, data: { current, previous }, message: `已退回上一环节${previous.assignedTo?.name ? `，由${previous.assignedTo.name}补充处理` : ''}` });
 });
 
 // ── PUT /api/staff/followups/:id ──────────────────────────────────

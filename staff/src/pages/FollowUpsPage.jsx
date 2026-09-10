@@ -264,6 +264,21 @@ export default function FollowUpsPage() {
     finally { setExecSaving(false) }
   }
 
+  const handleReturnPrevious = async () => {
+    const previous = execItem?.dependsOnTaskId
+    if (!previous?._id) return
+    const reason = window.prompt(`退回到上一环节“${previous.theme || '上一环节'}”\n请填写退回原因（当前未保存的修改不会一并提交）：`)
+    if (reason === null) return
+    if (!reason.trim()) { toast('请填写退回原因'); return }
+    setExecSaving(true)
+    try {
+      const result = await staffAPI.returnFollowUpToPrevious(execItem._id, reason.trim())
+      toast(result.message || '已退回上一环节')
+      setExecItem(null); load()
+    } catch (err) { toast(err.message || '退回失败') }
+    finally { setExecSaving(false) }
+  }
+
   // 场景七：AI 生成随访记录草稿
   const handleAIDraft = async () => {
     const pid = execItem?.patientId?._id || execItem?.patientId
@@ -536,6 +551,7 @@ export default function FollowUpsPage() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setExecItem(null)}>取消</button>
+              {execItem.taskRole === 'executor' && execItem.dependsOnTaskId?._id && <button className="btn btn-secondary" style={{ color: '#B45309', borderColor: '#D9A441' }} onClick={handleReturnPrevious} disabled={execSaving}>退回上一环节</button>}
               <button className="btn btn-primary" onClick={handleExec} disabled={execSaving}>
                 {execSaving ? '保存中...' : isCheckupReportCollectionTask(execItem) ? (execForm.serviceChecklist?.[0]?.collectionStatus === 'complete' ? '完成闭环并进入解析' : '保存报告回收进度') : isCheckupBookingTask(execItem) ? '确认预约并转交陪诊' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : '保存随访结果'}
               </button>

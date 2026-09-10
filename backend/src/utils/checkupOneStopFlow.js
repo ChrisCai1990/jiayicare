@@ -52,6 +52,10 @@ async function ensureCheckupTasks(servicePlan) {
     )
     result[stage] = task
   }
+  if (result.booking && result.plan_design && String(result.booking.dependsOnTaskId || '') !== String(result.plan_design._id)) {
+    await FollowUp.updateOne({ _id: result.booking._id }, { $set: { dependsOnTaskId: result.plan_design._id } })
+    result.booking.dependsOnTaskId = result.plan_design._id
+  }
   if (result.onsite && result.booking && String(result.onsite.dependsOnTaskId || '') !== String(result.booking._id)) {
     await FollowUp.updateOne({ _id: result.onsite._id }, { $set: { dependsOnTaskId: result.booking._id } })
     result.onsite.dependsOnTaskId = result.booking._id

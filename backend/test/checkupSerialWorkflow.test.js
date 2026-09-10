@@ -29,6 +29,15 @@ test('legacy downstream tasks remain blocked until their predecessor completes',
   assert.match(flow, /tasks\.report_collection && !onsiteCompleted[\s\S]*isBlocked: true[\s\S]*activationEvent: 'onsite_completed'/)
 })
 
+test('serial task can only return to its direct predecessor with a reason', () => {
+  assert.match(staffRoute, /followups\/:id\/return-previous/)
+  assert.match(staffRoute, /退回上一环节必须填写原因/)
+  assert.match(staffRoute, /_id: current\.dependsOnTaskId/)
+  assert.match(staffRoute, /current\.isBlocked = true/)
+  assert.match(staffRoute, /previous\.status = 'in_progress'/)
+  assert.match(staffRoute, /returnHistory/)
+})
+
 test('report collection is scheduled seven business days after checkup', () => {
   assert.match(flow, /addBusinessDays\(serviceDate, 7\)/)
   assert.match(flow, /!\[0, 6\]\.includes\(date\.getDay\(\)\)/)
