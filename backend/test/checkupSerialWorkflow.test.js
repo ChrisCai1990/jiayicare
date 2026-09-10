@@ -19,6 +19,11 @@ test('booking and onsite completion advance one role at a time', () => {
   assert.match(flow, /executorRole === 'medicalAssistant'.*tasks\.report_collection/s)
 })
 
+test('legacy downstream tasks remain blocked until their predecessor completes', () => {
+  assert.match(flow, /tasks\.onsite && !bookingCompleted[\s\S]*isBlocked: true[\s\S]*activationEvent: 'booking_completed'/)
+  assert.match(flow, /tasks\.report_collection && !onsiteCompleted[\s\S]*isBlocked: true[\s\S]*activationEvent: 'onsite_completed'/)
+})
+
 test('report collection is scheduled seven business days after checkup', () => {
   assert.match(flow, /addBusinessDays\(serviceDate, 7\)/)
   assert.match(flow, /!\[0, 6\]\.includes\(date\.getDay\(\)\)/)

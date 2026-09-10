@@ -67,7 +67,24 @@ async function onCustomerConfirmedCheckupPlan(patientId) {
     { sourceHealthPlanId: servicePlan._id, assignedTo: servicePlan.content?.reviewerId, taskRole: 'executor', status: { $in: ['planned', 'in_progress', 'missed'] } },
     { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', isBlocked: false, executedContent: '体检方案已由客户确认' } }
   )
-  if (tasks.booking) await FollowUp.updateOne({ _id: tasks.booking._id }, { $set: { isBlocked: false, status: 'in_progress', date: new Date(), remindAt: new Date() } })
+  if (tasks.booking) await FollowUp.updateOne(
+    { _id: tasks.booking._id, status: { $in: ['planned', 'in_progress', 'missed'] } },
+    { $set: { isBlocked: false, status: 'in_progress', date: new Date(), remindAt: new Date(), activationEvent: '' } }
+  )
+  const bookingCompleted = tasks.booking?.status === 'completed'
+  const onsiteCompleted = tasks.onsite?.status === 'completed'
+  if (tasks.onsite && !bookingCompleted) {
+    await FollowUp.updateOne(
+      { _id: tasks.onsite._id, status: { $in: ['planned', 'in_progress', 'missed'] } },
+      { $set: { isBlocked: true, status: 'planned', activationEvent: 'booking_completed' } }
+    )
+  }
+  if (tasks.report_collection && !onsiteCompleted) {
+    await FollowUp.updateOne(
+      { _id: tasks.report_collection._id, status: { $in: ['planned', 'in_progress', 'missed'] } },
+      { $set: { isBlocked: true, status: 'planned', activationEvent: 'onsite_completed' } }
+    )
+  }
   return servicePlan
 }
 
@@ -77,11 +94,11 @@ async function advanceCheckupTask(followUp) {
   if (!isCheckupService(servicePlan) || !scheme) return false
   const tasks = await ensureCheckupTasks(servicePlan)
   if (scheme.executorRole === 'healthPlanner' && tasks.onsite) {
-    await FollowUp.updateOne({ _id: tasks.onsite._id }, { $set: { isBlocked: false, status: 'planned' } })
+    await FollowUp.updateOne({ _id: tasks.onsite._id }, { $set: { isBlocked: false, status: 'planned', activationEvent: '' } })
     return true
   }
   if (scheme.executorRole === 'medicalAssistant' && tasks.report_collection) {
-    await FollowUp.updateOne({ _id: tasks.report_collection._id }, { $set: { isBlocked: false, status: 'planned' } })
+    await FollowUp.updateOne({ _id: tasks.report_collection._id }, { $set: { isBlocked: false, status: 'planned', activationEvent: '' } })
     return true
   }
   return false

@@ -9,9 +9,19 @@ export default function ServiceTasksPanel() {
   const [group, setGroup] = useState('all')
 
   useEffect(() => {
-    staffAPI.getServiceTasks({ status: 'active', includeFuture: '1', limit: 100 })
+    const refresh = () => staffAPI.getServiceTasks({ status: 'active', includeFuture: '1', limit: 100 })
       .then(r => setItems(r.data || []))
       .catch(() => {})
+    refresh()
+    const refreshIfVisible = () => { if (document.visibilityState === 'visible') refresh() }
+    window.addEventListener('focus', refreshIfVisible)
+    document.addEventListener('visibilitychange', refreshIfVisible)
+    const timer = window.setInterval(refreshIfVisible, 15000)
+    return () => {
+      window.removeEventListener('focus', refreshIfVisible)
+      document.removeEventListener('visibilitychange', refreshIfVisible)
+      window.clearInterval(timer)
+    }
   }, [])
 
   if (!items.length) return null
@@ -68,8 +78,9 @@ export default function ServiceTasksPanel() {
               <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>
                 {task.patientId?.name || '未知'}{task.assignedTo?.name ? ` · 负责人：${task.assignedTo.name}` : ''}
               </div>
+              <div style={{ fontSize: 11, color: '#9AA9A2', marginTop: 2 }}>创建：{new Date(task.createdAt).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}</div>
             </div>
-            <span style={{ fontSize: 11, color: '#8AA89C' }}>{formatChineseDate(task.date, false)}</span>
+            <span style={{ fontSize: 11, color: '#8AA89C' }}>计划：{formatChineseDate(task.date, false)}</span>
           </div>
           )
         })}

@@ -1674,9 +1674,10 @@ function CheckupManagementWorkspace({ plans, reports, followUps, questionnaireRe
           {historicalPlans.map(plan => {
             const rowYear = plan.year || new Date(plan.createdAt || Date.now()).getFullYear()
             const rowMode = /一站式/.test(`${plan.title || ''} ${plan.content?.templateName || ''}`) ? '一站式服务' : '单独体检服务'
+            const createdText = plan.createdAt ? new Date(plan.createdAt).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '时间未记录'
             return <button type="button" key={plan._id} onClick={() => onOpenPlan(plan)} style={{ border: '1px solid #E1EAE5', borderRadius: 9, background: '#fff', padding: '10px 13px', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', cursor: 'pointer' }}>
               <span style={{ fontWeight: 800, color: '#173B2E' }}>{rowYear}年</span>
-              <span style={{ color: '#4A6558', fontSize: 13, flex: 1 }}>{rowMode}</span>
+              <span style={{ color: '#4A6558', fontSize: 13, flex: 1 }}>{rowMode}<span style={{ marginLeft: 14, color: '#8AA89C', fontSize: 12 }}>创建：{createdText}</span></span>
               <span style={{ color: PLAN_STATUS_COLOR[plan.status] || '#65776F', fontSize: 12 }}>{PLAN_STATUS_LABEL[plan.status] || plan.status}</span>
               <span style={{ color: '#8AA89C' }}>›</span>
             </button>
