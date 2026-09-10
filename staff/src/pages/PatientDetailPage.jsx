@@ -1599,7 +1599,23 @@ function CheckupManagementWorkspace({ plans, reports, followUps, questionnaireRe
   const serviceDate = currentPlan?.content?.serviceDate || currentPlan?.content?.moduleData?.visit?.visitDate || ''
   const ownerName = currentPlan?.staffId?.name || currentPlan?.content?.reviewerName || '-'
   const stages = ['需求问卷', '体检方案', '预约准备', '现场陪同', '报告管理']
-  const activeStage = !intake ? 0 : checkupReports.length ? 4 : checkupTasks.length ? 2 : 1
+  const customerConfirmed = !!currentPlan?.confirmedAt
+  const pushedToCustomer = !!currentPlan?.pushedAt
+  const activeStage = !intake ? 0 : checkupReports.length ? 4 : customerConfirmed || checkupTasks.length ? 2 : 1
+  const nextActionTitle = customerConfirmed
+    ? '客户已确认体检方案，已转健康规划师预约'
+    : pushedToCustomer
+      ? '方案已发送，等待客户确认'
+      : intake
+        ? '健康顾问核对需求并完善体检方案'
+        : '等待客户填写体检需求问卷'
+  const nextActionHint = customerConfirmed
+    ? '健康顾问无需重复生成方案；后续由健康规划师确认医院与预约信息。'
+    : pushedToCustomer
+      ? '客户确认后，健康顾问任务自动完成，并进入预约准备环节。'
+      : intake
+        ? '如问卷发现档案变化，再单独生成变化核对；旧资料始终保留。'
+        : '客户提交后，健康顾问应在24小时内完成方案定制。'
 
   return (
     <div style={{ margin: '16px 20px 20px' }}>
@@ -1633,8 +1649,8 @@ function CheckupManagementWorkspace({ plans, reports, followUps, questionnaireRe
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.4fr) minmax(240px,.6fr)', gap: 12 }}>
             <div style={{ padding: '13px 15px', border: '1px solid #F4D7A4', borderRadius: 10, background: '#FFF9EF' }}>
               <div style={{ fontSize: 12, color: '#9A6B1D' }}>当前待处理</div>
-              <div style={{ marginTop: 5, fontWeight: 800, color: '#7C4A03' }}>{intake ? '健康顾问核对需求并完善体检方案' : '等待客户填写体检需求问卷'}</div>
-              <div style={{ marginTop: 5, fontSize: 12, color: '#80663A' }}>{intake ? '如问卷发现档案变化，再单独生成变化核对；旧资料始终保留。' : '客户提交后，健康顾问应在24小时内完成方案定制。'}</div>
+              <div style={{ marginTop: 5, fontWeight: 800, color: '#7C4A03' }}>{nextActionTitle}</div>
+              <div style={{ marginTop: 5, fontSize: 12, color: '#80663A' }}>{nextActionHint}</div>
             </div>
             <div style={{ padding: '13px 15px', border: '1px solid #DCE9ED', borderRadius: 10, background: '#F8FCFE' }}>
               <div style={{ fontSize: 12, color: '#56727D' }}>本次资料</div>

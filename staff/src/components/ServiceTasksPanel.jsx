@@ -29,7 +29,7 @@ export default function ServiceTasksPanel() {
   const executorCount = items.filter(item => item.taskRole !== 'supervisor').length
   const supervisorCount = items.filter(item => item.taskRole === 'supervisor').length
 
-  const openTask = (task) => {
+  const openTask = async (task) => {
     const sourcePlan = task.sourceHealthPlanId
     const sourcePlanId = sourcePlan?._id || sourcePlan
     const checkupText = `${sourcePlan?.title || ''} ${sourcePlan?.content?.templateName || ''}`
@@ -41,6 +41,17 @@ export default function ServiceTasksPanel() {
         || /体检/.test(checkupText))
 
     if (isCheckupPlanningTask) {
+      // 客户确认后，后端会立即完成健康顾问任务。页面若尚未来得及刷新，旧卡片仍可能
+      // 被点击；先重新读取有效任务，避免再次打开生成弹窗并制造一份重复草稿。
+      try {
+        const response = await staffAPI.getServiceTasks({ status: 'active', includeFuture: '1', limit: 100 })
+        const activeItems = response.data || []
+        setItems(activeItems)
+        if (!activeItems.some(item => String(item._id) === String(task._id))) {
+          nav(`/patients/${task.patientId?._id}?tab=plans&serviceView=checkup`)
+          return
+        }
+      } catch {}
       nav(`/patients/${task.patientId?._id}?tab=plans&serviceView=checkup`, {
         state: { openAiCheckupDesign: true },
       })
