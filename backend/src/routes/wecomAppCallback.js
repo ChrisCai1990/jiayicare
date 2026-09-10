@@ -10,13 +10,15 @@ const User=require('../models/User');
 const MedicalReport=require('../models/MedicalReport');
 const {uploadBuffer}=require('../utils/oss');
 const {fileMime,canAccessPatient}=require('../utils/serviceGroupRules');
+const optional=(xml,name)=>{try{return crypto.field(xml,name)}catch{return ''}};
 async function token(){const r=await fetch('https://qyapi.weixin.qq.com/cgi-bin/gettoken?'+new URLSearchParams({corpid:process.env.WECOM_CORP_ID,corpsecret:process.env.WECOM_APP_SECRET}),{signal:AbortSignal.timeout(10000)});const d=await r.json();if(!d.access_token)throw new Error('应用授权失败');return d.access_token;}
 async function archive(material,staff,instruction){
   const name=(String(instruction).match(/^\s*([^，,的\s]{1,40})(?:的)?(?:体测|人体成分)/)||[])[1];
   if(!name)throw new Error('请使用“客户名的体测，收录一下”');
   const people=(await User.find({name,isDeleted:{$ne:true},tenantId:staff.tenantId||null}).limit(3)).filter(p=>canAccessPatient(staff,p));
   if(people.length!==1)throw new Error(people.length?'客户同名，需补充手机号':'未找到可访问客户');
-  const t=await token(),r=await fetch('https://qyapi.weixin.qq.com/cgi-bin/media/get?access_token='+encodeURIComponent(t)+'&media_id='+encodeURIComponent(material.mediaId),{signal:AbortSignal.timeout(20000)}),buf=Buffer.from(await r.arrayBuffer()),mime=fileMime(buf);
+  const source=material.sourceUrl||('https://qyapi.weixin.qq.com/cgi-bin/media/get?access_token='+encodeURIComponent(await token())+'&media_id='+encodeURIComponent(material.mediaId));
+  const r=await fetch(source,{signal:AbortSignal.timeout(20000)}),buf=Buffer.from(await r.arrayBuffer()),mime=fileMime(buf);
   if(!mime||buf.length>20*1024*1024)throw new Error('附件格式或大小不支持');
   const sha=require('crypto').createHash('sha256').update(buf).digest('hex');
   const old=await MedicalReport.findOne({user:people[0]._id,sourceSha256:sha});if(old){material.status='duplicate';material.reportId=old._id;await material.save();return `已存在，未重复收录：${people[0].name}｜身体成分报告`;}
@@ -45,7 +47,7 @@ router.post('/',express.text({type:['text/xml','application/xml'],limit:'100kb'}
     if(type==='image'||type==='file') {
       const link=await Link.findOne({corpId:process.env.WECOM_CORP_ID,userId:from});const staff=link&&await require('../models/Admin').findById(link.staffId);
       if(!staff||staff.staffStatus!=='active')reply='请先绑定有效的嘉医汇员工账号。';
-      else {const id=crypto.field(xml,'MsgId'),mediaId=crypto.field(xml,'MediaId');if(!mediaId)reply='未取得附件标识，请重新发送原文件。';else {await Material.updateOne({messageId:process.env.WECOM_CORP_ID+':'+id},{$setOnInsert:{staffId:staff._id,tenantId:staff.tenantId||null,messageId:process.env.WECOM_CORP_ID+':'+id,mediaId,fileName:crypto.field(xml,'FileName')||'',expiresAt:new Date(Date.now()+10*60*1000)}},{upsert:true});reply='附件已收到。请在10分钟内发送“客户名的体测，收录一下”。';}}
+      else {const id=crypto.field(xml,'MsgId'),mediaId=optional(xml,'MediaId'),sourceUrl=type==='image'?optional(xml,'PicUrl'):'';if(!mediaId&&!sourceUrl)reply='未取得附件地址，请重新发送原文件。';else {await Material.updateOne({messageId:process.env.WECOM_CORP_ID+':'+id},{$setOnInsert:{staffId:staff._id,tenantId:staff.tenantId||null,messageId:process.env.WECOM_CORP_ID+':'+id,mediaId,sourceUrl,fileName:optional(xml,'FileName'),expiresAt:new Date(Date.now()+10*60*1000)}},{upsert:true});reply='附件已收到。请在10分钟内发送“客户名的体测，收录一下”。';}}
     } else if(type==='text') {
       const content=crypto.field(xml,'Content');
       const pair=/^绑定嘉医汇 ([a-f0-9]{32})$/.exec(content.trim());
