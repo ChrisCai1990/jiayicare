@@ -1550,12 +1550,15 @@ function ServiceManagementCategories({ plans, active, onChange }) {
           const categoryPlans = plans.filter(plan => getServiceManagementCategory(plan) === category.key)
           const opened = categoryPlans.length > 0
           const selected = active === category.key
+          const countLabel = category.key === 'checkup' && opened
+            ? `本次 1 · 既往 ${Math.max(0, categoryPlans.length - 1)}`
+            : opened ? `已开通 ${categoryPlans.length}` : '未开通'
           return (
             <button key={category.key} type="button" onClick={() => onChange(category.key)} style={{ textAlign: 'left', padding: '14px 15px', borderRadius: 12, border: `1px solid ${selected ? category.color : '#DCE5E0'}`, background: selected ? `${category.color}0D` : '#FAFCFB', cursor: 'pointer', boxShadow: selected ? `0 0 0 1px ${category.color}22` : 'none' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 21 }}>{category.icon}</span>
                 <span style={{ fontSize: 15, fontWeight: 750, color: '#173B2E', flex: 1 }}>{category.label}</span>
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 999, color: opened ? category.color : '#8AA89C', background: opened ? `${category.color}16` : '#EEF1EF' }}>{opened ? `已开通 ${categoryPlans.length}` : '未开通'}</span>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 999, color: opened ? category.color : '#8AA89C', background: opened ? `${category.color}16` : '#EEF1EF' }}>{countLabel}</span>
               </div>
               <div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.5, color: '#65776F' }}>{category.description}</div>
             </button>
@@ -1598,6 +1601,7 @@ function CheckupManagementWorkspace({ plans, reports, followUps, questionnaireRe
   const statusText = currentPlan ? (PLAN_STATUS_LABEL[currentPlan.status] || currentPlan.status || '进行中') : '尚未开通'
   const serviceDate = currentPlan?.content?.serviceDate || currentPlan?.content?.moduleData?.visit?.visitDate || ''
   const ownerName = currentPlan?.staffId?.name || currentPlan?.content?.reviewerName || '-'
+  const formatPlanMoment = value => value ? new Date(value).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : ''
   const stages = ['需求问卷', '体检方案', '预约准备', '现场陪同', '报告管理']
   const customerConfirmed = !!currentPlan?.confirmedAt
   const pushedToCustomer = !!currentPlan?.pushedAt
@@ -1624,14 +1628,18 @@ function CheckupManagementWorkspace({ plans, reports, followUps, questionnaireRe
           <div style={{ fontSize: 24 }}>🩺</div>
           <div style={{ flex: 1, minWidth: 240 }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: '#174B61' }}>{year}年度体检</div>
+            {currentPlan && <div style={{ marginTop: 4, fontSize: 13, color: '#174B61', fontWeight: 700 }}>{currentPlan.title}</div>}
             <div style={{ marginTop: 5, display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: '#56727D' }}>
               <span>{currentPlan ? serviceMode : '尚未开通服务'}</span>
+              {currentPlan?.createdAt && <span>创建：{formatPlanMoment(currentPlan.createdAt)}</span>}
+              {currentPlan?.pushedAt && <span>推送：{formatPlanMoment(currentPlan.pushedAt)}</span>}
+              {currentPlan?.confirmedAt && <span>客户确认：{formatPlanMoment(currentPlan.confirmedAt)}</span>}
               {serviceDate && <span>体检日期：{String(serviceDate).slice(0, 10)}</span>}
               <span>负责人：{ownerName}</span>
             </div>
           </div>
           <span style={{ padding: '4px 10px', borderRadius: 999, background: '#FFFFFF', color: '#0077B6', fontSize: 12, fontWeight: 700 }}>{statusText}</span>
-          {currentPlan && <button type="button" className="btn btn-primary btn-sm" onClick={() => onOpenPlan(currentPlan)}>查看本次方案与执行</button>}
+          {currentPlan && <button type="button" className="btn btn-primary btn-sm" onClick={() => onOpenPlan(currentPlan)}>查看最新方案与执行</button>}
         </div>
 
         <div style={{ padding: '18px 20px' }}>
@@ -1685,7 +1693,8 @@ function CheckupManagementWorkspace({ plans, reports, followUps, questionnaireRe
       </div>
 
       <div style={{ marginTop: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: '#173B2E', marginBottom: 8 }}>历次体检</div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: '#173B2E', marginBottom: 4 }}>既往体检（不含上方本次方案）</div>
+        <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8 }}>共 {historicalPlans.length} 份；本次方案完成后仍保留在上方，直至建立下一次体检服务。</div>
         {historicalPlans.length ? <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
           {historicalPlans.map(plan => {
             const rowYear = plan.year || new Date(plan.createdAt || Date.now()).getFullYear()
