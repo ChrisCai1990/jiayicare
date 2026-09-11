@@ -1603,13 +1603,15 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   if (isOutpatientAdvisorAssessment && req.body.status === 'completed') {
     const assessment = req.body.formData || {};
     const checks = Array.isArray(assessment.expectedChecks) ? assessment.expectedChecks.filter(item => String(item?.item || '').trim()) : [];
+    const visits = Array.isArray(assessment.prescribingVisitRequirements) ? assessment.prescribingVisitRequirements : [];
     if (!String(assessment.recommendedHospital || '').trim()
       || !String(assessment.recommendedDepartment || '').trim()
       || !String(assessment.recommendedExpert || '').trim()
       || !checks.length
-      || checks.some(item => !String(item.prescribingDepartment || '').trim())
-      || checks.some(item => item.prescribingExpertRequired && !String(item.prescribingExpertName || '').trim())) {
-      return res.status(400).json({ success: false, message: '请完整填写推荐医院、检查后就诊专家，以及每项预计检查的开单科室和所需开单专家' });
+      || !visits.length
+      || visits.some(item => !String(item.coveredChecks || '').trim() || !String(item.department || '').trim())
+      || visits.some(item => item.expertRequired && !String(item.expertName || '').trim())) {
+      return res.status(400).json({ success: false, message: '请完整填写推荐医院、检查后就诊专家，并至少建立一条首次代诊开检查单预约要求' });
     }
   }
   const isOutpatientAppointment = followUp.sourceType === 'health_plan'

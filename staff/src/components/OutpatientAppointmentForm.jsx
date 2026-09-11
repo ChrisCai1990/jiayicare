@@ -5,15 +5,17 @@ const advisorData = task => task?.dependsOnTaskId?.formData || {}
 
 export const emptyOutpatientAppointment = (task, value) => {
   const advice = advisorData(task)
-  const checks = Array.isArray(advice.expectedChecks) ? advice.expectedChecks : []
+  const requirements = Array.isArray(advice.prescribingVisitRequirements) && advice.prescribingVisitRequirements.length
+    ? advice.prescribingVisitRequirements
+    : (Array.isArray(advice.expectedChecks) ? advice.expectedChecks.map(item => ({ coveredChecks: item.item, department: item.prescribingDepartment || advice.recommendedDepartment, expertRequired: item.prescribingExpertRequired ?? item.expertRequired, expertName: item.prescribingExpertName || item.expertName })) : [])
   const existing = Array.isArray(value?.prescribingAppointments) ? value.prescribingAppointments : []
   return {
     hospital: value?.hospital || advice.recommendedHospital || '',
-    prescribingAppointments: checks.length ? checks.map((check, index) => ({
-      checkItem: check.item || '',
-      department: existing[index]?.department || check.prescribingDepartment || advice.recommendedDepartment || '',
-      expertRequired: existing[index]?.expertRequired ?? check.prescribingExpertRequired ?? check.expertRequired ?? false,
-      expertName: existing[index]?.expertName || check.prescribingExpertName || check.expertName || '',
+    prescribingAppointments: requirements.length ? requirements.map((requirement, index) => ({
+      coveredChecks: requirement.coveredChecks || '',
+      department: existing[index]?.department || requirement.department || '',
+      expertRequired: existing[index]?.expertRequired ?? requirement.expertRequired ?? false,
+      expertName: existing[index]?.expertName || requirement.expertName || '',
       appointmentDate: existing[index]?.appointmentDate || value?.appointmentDate || '',
       appointmentTime: existing[index]?.appointmentTime || value?.appointmentTime || '',
       appointmentNumber: existing[index]?.appointmentNumber || value?.appointmentNumber || '',
@@ -43,8 +45,8 @@ export default function OutpatientAppointmentForm({ task, value, onChange }) {
     </div>
     <label style={{ display: 'grid', gap: 5, fontSize: 12, color: '#65776F' }}><span>首次代诊开单医院 *</span><input className="form-control" value={data.hospital} onChange={e => update({ hospital: e.target.value })} /></label>
     <div style={{ fontSize: 13, fontWeight: 750 }}>开检查单门诊预约</div>
-    {data.prescribingAppointments.map((row, index) => <div key={`${row.checkItem}-${index}`} style={{ border: '1px solid #E0E8E3', borderRadius: 10, padding: 12, display: 'grid', gap: 9 }}>
-      <div style={{ fontSize: 13, fontWeight: 700 }}>{index + 1}. 拟开检查：{row.checkItem || '未填写项目'}</div>
+    {data.prescribingAppointments.map((row, index) => <div key={`${row.coveredChecks}-${index}`} style={{ border: '1px solid #E0E8E3', borderRadius: 10, padding: 12, display: 'grid', gap: 9 }}>
+      <div style={{ fontSize: 13, fontWeight: 700 }}>{index + 1}. 本次门诊拟开检查：{row.coveredChecks || '未填写项目'}</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 9 }}>
         <label style={{ fontSize: 12, color: '#65776F' }}>开单科室 *<input className="form-control" value={row.department} onChange={e => updateRow(index, { department: e.target.value })} /></label>
         <label style={{ fontSize: 12, color: '#65776F' }}>开单门诊类型<input className="form-control" disabled value={row.expertRequired ? '专家门诊' : '普通门诊'} /></label>
