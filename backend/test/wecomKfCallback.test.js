@@ -17,7 +17,7 @@ test('测试模式仅回复指定客服启用后的新消息，不调用客户�
   Message.updateOne=async()=>{writes++;return {upsertedCount:1};};
   Message.findOne=async()=>null;
   Contact.findOne=()=>{throw Error('Test mode must not read patient records');};
-  global.fetch=async(url,options)=>{sends++;assert.equal(JSON.parse(options.body).text.content,kf.TEST_REPLY);return {ok:true,json:async()=>({errcode:0})};};
+  global.fetch=async(url,options)=>{if(String(url).includes('/service_state/get'))return {ok:true,json:async()=>({errcode:0,service_state:1})};sends++;assert.equal(JSON.parse(options.body).text.content,kf.TEST_REPLY);return {ok:true,json:async()=>({errcode:0})};};
   const args={corpId:'ww_test',openKfId:'wk_test',token:'synthetic',item:{msgid:'test',origin:3,external_userid:'synthetic',send_time:1001,msgtype:'text',text:{content:'测试连接'}}};
   await kf.answer({...args,openKfId:'wk_other'});
   await kf.answer({...args,item:{...args.item,send_time:999}});
@@ -90,7 +90,7 @@ test('高风险微信客服消息只转人工并创建不含原文的待办',asy
   Message.findOne=async()=>null;
   Contact.findOne=()=>({populate:async()=>({user:{_id:'patient-1',isDeleted:false,assignedNutritionist:'staff-1'}})});
   FollowUp.create=async(data)=>{created=data;return {_id:'followup-1'};};
-  global.fetch=async()=>({ok:true,json:async()=>({errcode:0})});
+  global.fetch=async()=>({ok:true,json:async()=>({errcode:0,service_state:1})});
   await kf.answer({corpId:'ww_test',openKfId:'wk_test',token:'token',item:{msgid:'m-risk',origin:3,external_userid:'external-1',msgtype:'text',text:{content:'我胸痛，需要吃什么药？'}}});
   assert.equal(created.assignedTo,'staff-1');
   assert.equal(created.patientId,'patient-1');
@@ -98,4 +98,23 @@ test('高风险微信客服消息只转人工并创建不含原文的待办',asy
   assert.equal(created.content.includes('胸痛'),false);
   assert.deepEqual(created.tags,['微信客服','需人工接管']);
   assert.ok(updates.some(([,update])=>update.$set?.status==='handoff'));
+});
+
+test('新会话转智能助手，人工或已结束会话不接管',async(t)=>{
+  const kf=require('../src/utils/wecomKf');const oldFetch=global.fetch;
+  t.after(()=>{global.fetch=oldFetch;});let state=0;const changes=[];
+  global.fetch=async(url,options)=>{if(String(url).includes('/trans?'))changes.push(JSON.parse(options.body).service_state);return {ok:true,json:async()=>({errcode:0,service_state:state})};};
+  assert.equal(await kf.ensureAssistantSession('synthetic','wk_test','external'),true);
+  assert.deepEqual(changes,[1]);
+  for(state of [1,2,3,4])assert.equal(await kf.ensureAssistantSession('synthetic','wk_test','external'),state===1);
+  assert.deepEqual(changes,[1]);
+});
+
+test('旧人工会话的失败消息被跳过，不阻塞后续同步',async(t)=>{
+  const kf=require('../src/utils/wecomKf');const old={fetch:global.fetch,update:Message.updateOne,find:Message.findOne};
+  t.after(()=>{global.fetch=old.fetch;Message.updateOne=old.update;Message.findOne=old.find;});
+  const updates=[];Message.updateOne=async(f,u)=>{updates.push(u);return {upsertedCount:0};};Message.findOne=async()=>({status:'failed'});
+  global.fetch=async(url)=>{assert.match(String(url),/service_state\/get/);return {ok:true,json:async()=>({errcode:0,service_state:3})};};
+  await kf.answer({corpId:'ww_test',openKfId:'wk_test',token:'synthetic',item:{msgid:'failed',origin:3,external_userid:'external',msgtype:'text',text:{content:'测试'}}});
+  assert.ok(updates.some(u=>u.$set?.status==='ignored'));
 });

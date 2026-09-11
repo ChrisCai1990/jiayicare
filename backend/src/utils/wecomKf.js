@@ -41,6 +41,19 @@ async function sendText(token,openKfId,externalUserId,content){
   const r=await fetch('https://qyapi.weixin.qq.com/cgi-bin/kf/send_msg?access_token='+encodeURIComponent(token),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({touser:externalUserId,open_kfid:openKfId,msgtype:'text',text:{content}}),signal:AbortSignal.timeout(12000)});
   const d=await r.json();if(!r.ok||d.errcode)throw new Error('微信客服发送失败'+(d.errcode?`(${d.errcode})`:''));
 }
+async function ensureAssistantSession(token,openKfId,externalUserId){
+  const request=async(action,extra={})=>{
+    const r=await fetch('https://qyapi.weixin.qq.com/cgi-bin/kf/service_state/'+action+'?access_token='+encodeURIComponent(token),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({open_kfid:openKfId,external_userid:externalUserId,...extra}),signal:AbortSignal.timeout(10000)});
+    const d=await r.json();if(!r.ok||d.errcode)throw new Error('微信客服会话状态失败'+(d.errcode?`(${d.errcode})`:''));
+    return d;
+  };
+  const state=await request('get');
+  if(state.service_state===1)return true;
+  // 已分配给人工、排队和已结束的会话不抢回；跳过消息以免阻塞整个客服游标。
+  if(state.service_state!==0)return false;
+  await request('trans',{service_state:1});
+  return true;
+}
 async function answer({corpId,openKfId,item,token}){
   if(!allowedAccount(openKfId))return;
   const since=Number(process.env.WECOM_KF_REPLY_AFTER||0);
@@ -52,6 +65,10 @@ async function answer({corpId,openKfId,item,token}){
   if(!insert.upsertedCount&&existing?.status!=='failed')return;
   let content=UNBOUND,replyKind='unbound_notice',status='replied';
   try{
+    if(!await ensureAssistantSession(token,openKfId,item.external_userid)){
+      await Message.updateOne({corpId,msgId:item.msgid},{$set:{status:'ignored',errorCode:'session_not_assistant'}});
+      return;
+    }
     if(testMode()){content=TEST_REPLY;replyKind='safe_notice';}
     else if(item.msgtype!=='text') {content=IMAGE_REPLY;replyKind='image_notice';}
     else if(HANDOFF.test(String(item.text?.content||''))){
@@ -82,7 +99,7 @@ async function answer({corpId,openKfId,item,token}){
       }
     }
     await sendText(token,openKfId,item.external_userid,content);
-    await Message.updateOne({corpId,msgId:item.msgid},{$set:{status,replyKind}});
+    await Message.updateOne({corpId,msgId:item.msgid},{$set:{status,replyKind,errorCode:''}});
   }catch(error){
     await Message.updateOne({corpId,msgId:item.msgid},{$set:{status:'failed',errorCode:String(error.message||'failed').slice(0,120)}});
     throw error;
@@ -106,4 +123,4 @@ async function sync({openKfId,callbackToken}){
   // 只有整批处理成功才提交游标；中途失败则由平台重投，本地 msgId 幂等保护重复发送。
   if(nextCursor)await Cursor.findOneAndUpdate({corpId:process.env.WECOM_KF_CORP_ID,openKfId},{$set:{cursor:nextCursor}},{upsert:true,new:true});
 }
-module.exports={enabled,configured,sharedAppCallback,sync,answer,UNBOUND,HANDOFF_REPLY,IMAGE_REPLY,TEST_REPLY};
+module.exports={enabled,configured,sharedAppCallback,sync,answer,ensureAssistantSession,UNBOUND,HANDOFF_REPLY,IMAGE_REPLY,TEST_REPLY};
