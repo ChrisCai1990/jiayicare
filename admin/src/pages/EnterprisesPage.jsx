@@ -36,6 +36,12 @@ const SERVICE_MANUAL_FIELDS = [
   ['异常升级联系人', 'escalationContact', '拒赔、直付失败、紧急协调时的升级路径'],
   ['手册依据', 'sourceReference', '服务手册/理赔指南名称、版本、页码或附件'],
 ]
+const BOOKING_ROUTE_OPTIONS = [
+  ['confirm', '预约前需核实'],
+  ['insurer_vendor', '保司指定服务商预约'],
+  ['platform_assisted', '嘉医健管直接预约医院'],
+  ['customer_self', '客户自行预约'],
+]
 
 function InsurancePolicyModal({ enterprise, employees, onClose, toast }) {
   const [policies, setPolicies] = useState([])
@@ -73,7 +79,14 @@ function InsurancePolicyModal({ enterprise, employees, onClose, toast }) {
     return { ...current, rules }
   })
   const setManual = (key, value) => setForm(current => ({ ...current, serviceManual: { ...(current.serviceManual || {}), [key]: value } }))
+  const addHospitalBookingRule = () => setForm(current => ({ ...current, hospitalBookingRules: [...(current.hospitalBookingRules || []), { hospitalName: '', campus: '', bookingRoute: 'confirm', vendorName: '', contact: '', bookingEntry: '', serviceHours: '', leadTime: '', requiredInfo: '', notes: '', verificationStatus: 'missing', verifiedAt: null, sourceReference: '' }] }))
+  const setHospitalBookingRule = (index, key, value) => setForm(current => ({ ...current, hospitalBookingRules: (current.hospitalBookingRules || []).map((item, i) => i === index ? { ...item, [key]: value } : item) }))
+  const removeHospitalBookingRule = index => setForm(current => ({ ...current, hospitalBookingRules: (current.hospitalBookingRules || []).filter((_, i) => i !== index) }))
   const save = async () => {
+    if ((form.hospitalBookingRules || []).some(item => !item.hospitalName?.trim())) {
+      toast('❌ 医院预约路径规则必须填写医院名称')
+      return
+    }
     setSaving(true)
     try {
       const policy = selectedId
@@ -135,6 +148,31 @@ function InsurancePolicyModal({ enterprise, employees, onClose, toast }) {
         <label className="form-group"><span className="form-label">手册核实状态</span><select className="form-input" value={form.serviceManual?.verificationStatus || 'missing'} onChange={e => setManual('verificationStatus', e.target.value)}><option value="missing">资料待补</option><option value="review">待复核</option><option value="verified">已按正式资料核实</option></select></label>
         <label className="form-group"><span className="form-label">最后核实日期</span><input className="form-input" type="date" value={form.serviceManual?.verifiedAt?.slice?.(0, 10) || form.serviceManual?.verifiedAt || ''} onChange={e => setManual('verifiedAt', e.target.value || null)} /></label>
         <label className="form-group"><span className="form-label">核实人</span><input className="form-input" value={form.serviceManual?.verifiedByName || ''} onChange={e => setManual('verifiedByName', e.target.value)} /></label>
+      </div>
+      <div style={{ marginTop: 22, display: 'flex', alignItems: 'center', gap: 10 }}><div style={{ fontWeight: 700 }}>医院预约路径规则</div><button type="button" className="btn btn-sm btn-secondary" onClick={addHospitalBookingRule}>＋ 添加医院规则</button></div>
+      <div style={{ marginTop: 5, fontSize: 12, color: '#65776F' }}>按医院和院区记录正确预约入口。若必须通过保司指定服务商，请填写服务商及联系方式；尚未正式核实的规则保持“预约前需核实”。</div>
+      <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
+        {(form.hospitalBookingRules || []).map((item, index) => <div key={item._id || index} style={{ border: '1px solid #D8E7DF', borderRadius: 9, padding: 11, background: '#F8FBF9' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1.3fr auto', gap: 8, alignItems: 'center' }}>
+            <input className="form-input" value={item.hospitalName || ''} onChange={e => setHospitalBookingRule(index, 'hospitalName', e.target.value)} placeholder="医院名称 *" />
+            <input className="form-input" value={item.campus || ''} onChange={e => setHospitalBookingRule(index, 'campus', e.target.value)} placeholder="院区（可选）" />
+            <select className="form-input" value={item.bookingRoute || 'confirm'} onChange={e => setHospitalBookingRule(index, 'bookingRoute', e.target.value)}>{BOOKING_ROUTE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+            <button type="button" className="btn btn-sm btn-secondary" onClick={() => removeHospitalBookingRule(index)}>删除</button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 8 }}>
+            <input className="form-input" value={item.vendorName || ''} onChange={e => setHospitalBookingRule(index, 'vendorName', e.target.value)} placeholder="指定服务商/受理方" />
+            <input className="form-input" value={item.contact || ''} onChange={e => setHospitalBookingRule(index, 'contact', e.target.value)} placeholder="预约联系电话" />
+            <input className="form-input" value={item.bookingEntry || ''} onChange={e => setHospitalBookingRule(index, 'bookingEntry', e.target.value)} placeholder="公众号、App或预约入口" />
+            <input className="form-input" value={item.serviceHours || ''} onChange={e => setHospitalBookingRule(index, 'serviceHours', e.target.value)} placeholder="服务时间" />
+            <input className="form-input" value={item.leadTime || ''} onChange={e => setHospitalBookingRule(index, 'leadTime', e.target.value)} placeholder="提前预约要求，如提前2个工作日" />
+            <input className="form-input" value={item.requiredInfo || ''} onChange={e => setHospitalBookingRule(index, 'requiredInfo', e.target.value)} placeholder="预约所需信息" />
+            <select className="form-input" value={item.verificationStatus || 'missing'} onChange={e => setHospitalBookingRule(index, 'verificationStatus', e.target.value)}><option value="missing">资料待补</option><option value="review">待复核</option><option value="verified">已核实</option></select>
+            <input className="form-input" type="date" value={item.verifiedAt?.slice?.(0, 10) || item.verifiedAt || ''} onChange={e => setHospitalBookingRule(index, 'verifiedAt', e.target.value || null)} />
+            <input className="form-input" value={item.sourceReference || ''} onChange={e => setHospitalBookingRule(index, 'sourceReference', e.target.value)} placeholder="依据：手册/邮件/联系人" />
+          </div>
+          <textarea className="form-input" rows={2} style={{ marginTop: 8 }} value={item.notes || ''} onChange={e => setHospitalBookingRule(index, 'notes', e.target.value)} placeholder="特殊限制或操作说明" />
+        </div>)}
+        {(form.hospitalBookingRules || []).length === 0 && <div style={{ padding: 14, color: '#8AA89C', background: '#FAFAF8', borderRadius: 8 }}>尚未配置具体医院的预约路径。</div>}
       </div>
       <div style={{ marginTop: 18, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <div style={{ fontWeight: 700, marginRight: 'auto' }}>参保人员（已选 {selectedUsers.size} 人，共 {employees.length} 人）</div>

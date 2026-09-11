@@ -35,6 +35,26 @@ const insuranceServiceManualSchema = new mongoose.Schema({
   verifiedByName: { type: String, default: '' },
 }, { _id: false });
 
+const hospitalBookingRuleSchema = new mongoose.Schema({
+  hospitalName: { type: String, required: true },
+  campus: { type: String, default: '' },
+  bookingRoute: {
+    type: String,
+    enum: ['insurer_vendor', 'platform_assisted', 'customer_self', 'confirm'],
+    default: 'confirm',
+  },
+  vendorName: { type: String, default: '' },
+  contact: { type: String, default: '' },
+  bookingEntry: { type: String, default: '' },
+  serviceHours: { type: String, default: '' },
+  leadTime: { type: String, default: '' },
+  requiredInfo: { type: String, default: '' },
+  notes: { type: String, default: '' },
+  verificationStatus: { type: String, enum: ['missing', 'review', 'verified'], default: 'missing' },
+  verifiedAt: { type: Date, default: null },
+  sourceReference: { type: String, default: '' },
+}, { timestamps: false });
+
 const enterpriseInsurancePolicySchema = new mongoose.Schema({
   enterpriseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Enterprise', required: true, index: true },
   year: { type: Number, required: true, index: true },
@@ -50,6 +70,7 @@ const enterpriseInsurancePolicySchema = new mongoose.Schema({
   preAuthorizationMethod: { type: String, default: '' },
   claimSubmissionMethod: { type: String, default: '' },
   serviceManual: { type: insuranceServiceManualSchema, default: () => ({}) },
+  hospitalBookingRules: { type: [hospitalBookingRuleSchema], default: [] },
   status: { type: String, enum: ['draft', 'review', 'active', 'expired'], default: 'draft', index: true },
   rules: { type: [insuranceRuleSchema], default: [] },
   attachments: { type: [new mongoose.Schema({ name: String, url: String, category: String }, { _id: false })], default: [] },
