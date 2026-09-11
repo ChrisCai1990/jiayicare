@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { describeExistingReportItems, filterMissingReportItems, hasReportItemEvidence, inferMissingUltrasoundOrgans, isActivePageParse, mergeSupplementItems } = require('../src/utils/reportPageSupplement');
+const { describeExistingReportItems, filterMissingReportItems, hasReportItemEvidence, inferMissingUltrasoundOrgans, isActivePageParse, mergeSupplementItems, resolveImageParseCompletion } = require('../src/utils/reportPageSupplement');
 
 test('只拦截近期同页补提，进程中断留下的陈旧状态允许重试', () => {
   const now = new Date('2026-09-11T05:30:00.000Z');
@@ -8,6 +8,14 @@ test('只拦截近期同页补提，进程中断留下的陈旧状态允许重�
   assert.equal(isActivePageParse({ status: 'processing', pageNum: 1, startedAt: '2026-09-11T05:00:00.000Z' }, 1, now), false);
   assert.equal(isActivePageParse({ status: 'processing', pageNum: 2, startedAt: '2026-09-11T05:20:00.000Z' }, 1, now), false);
   assert.equal(isActivePageParse({ status: 'processing', pageNum: 1 }, 1, now), false);
+});
+
+test('图片识别只在版本未变化且结果非空时替换草稿', () => {
+  const existing = [{ name: '人工项目', value: '1' }];
+  const parsed = [{ name: 'AI项目', value: '2' }];
+  assert.deepEqual(resolveImageParseCompletion(5, 5, existing, parsed), { items: parsed, shouldWriteItems: true, reason: 'parsed' });
+  assert.deepEqual(resolveImageParseCompletion(5, 6, existing, parsed), { items: existing, shouldWriteItems: false, reason: 'revision_changed' });
+  assert.deepEqual(resolveImageParseCompletion(5, 5, existing, []), { items: existing, shouldWriteItems: false, reason: 'empty_result' });
 });
 
 test('单页补提会向模型列出已有项目及所属栏目', () => {

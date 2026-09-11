@@ -10647,10 +10647,11 @@ async function runReportParse(reportId) {
   const { parseImage } = require('../utils/ai');
   const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, renderSinglePage } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
-  const { hasReportItemEvidence } = require('../utils/reportPageSupplement');
+  const { hasReportItemEvidence, resolveImageParseCompletion } = require('../utils/reportPageSupplement');
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) return;
+  const parseStartRevision = Number(report.reviewRevision || 0);
   const reportUser = await User.findById(report.user).select('age').lean();
   const usePediatricBodyComposition = isPediatricAge(reportUser?.age);
   const bodyCompositionPrompt = usePediatricBodyComposition
@@ -11147,7 +11148,12 @@ async function runReportParse(reportId) {
         const firstPassModel = report.type === 'body_comp' ? 'qwen-vl-max' : 'qwen-vl-plus';
         const originalBuffer = bufs[imageIndex];
         let activeBuffer = originalBuffer;
-        lastRawText = await parseImage(activeBuffer.toString('base64'), firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: 4096 });
+        lastRawText = await parseImage(activeBuffer.toString('base64'), firstPassPrompt, {
+          isUrl: false,
+          model: firstPassModel,
+          maxTokens: report.type === 'body_comp' ? 4096 : 8192,
+          timeoutMs: 180000,
+        });
         let parsedPage = safeParseJSON(lastRawText);
         // 手机横拍且未写入 EXIF 方向时，首轮会出现“有原件但 0 项”。仅在这种空结果下
         // 依次尝试 90/270/180 度，正常横版报告不会增加额外识别调用。
@@ -11285,22 +11291,38 @@ async function runReportParse(reportId) {
       realignUpperAbdomenConclusions(cleanupUltrasoundOverlap(imageExamNormalized))
     );
     const classifiedImg = await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanedImageItems)))))))));
-    // 重新识别只能产生更完整的待审草稿，不能因模型/过滤链路异常把已补提的结果清空。
-    const existingItems = Array.isArray(report.reportItems) ? report.reportItems : [];
-    const keepExistingItems = classifiedImg.length === 0 && existingItems.length > 0;
-    const resolvedImageItems = keepExistingItems ? existingItems : classifiedImg;
-    if (keepExistingItems) console.log(`[parse-ai] 图片识别后无有效项，保留既有${existingItems.length}项，未覆盖`);
+    // 使用完成时的最新版本判断，不能用任务启动时的旧快照。AI迟到或空结果都不得覆盖人工审核内容。
+    const latestReport = await MedicalReport.findById(reportId).select('reportItems reviewRevision').lean();
+    const completion = resolveImageParseCompletion(parseStartRevision, latestReport?.reviewRevision, latestReport?.reportItems, classifiedImg);
+    const resolvedImageItems = completion.items;
+    const keepExistingItems = !completion.shouldWriteItems && resolvedImageItems.length > 0;
+    if (completion.reason === 'revision_changed') console.log(`[parse-ai] 图片识别期间报告版本已变化，保留人工最新${resolvedImageItems.length}项，未覆盖`);
+    else if (completion.reason === 'empty_result' && resolvedImageItems.length) console.log(`[parse-ai] 图片识别后无有效项，保留既有${resolvedImageItems.length}项，未覆盖`);
     const imgSummary = imageOkCount
       ? [...new Set(imageSummaries.map(s => str(s)).filter(Boolean))].join('\n')
       : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${lastRawText ? '\n原始返回(前200字): ' + String(lastRawText).slice(0, 200) : ''}`;
-    await MedicalReport.findByIdAndUpdate(reportId, {
-      reportItems: resolvedImageItems,
-      aiSummary:   keepExistingItems ? `${imgSummary}${imgSummary ? '\n' : ''}⚠️ 本次自动识别未提取到有效项目，已保留此前待审核结果。` : imgSummary,
+    const preservedSummary = completion.reason === 'revision_changed'
+      ? `${imgSummary}${imgSummary ? '\n' : ''}⚠️ 识别期间报告被编辑，本次结果未覆盖人工最新内容。`
+      : keepExistingItems ? `${imgSummary}${imgSummary ? '\n' : ''}⚠️ 本次自动识别未提取到有效项目，已保留此前待审核结果。` : imgSummary;
+    const imageUpdate = {
+      aiSummary:   preservedSummary,
       aiStatus:    'pending',
       parseJob:    { status: 'completed', completedAt: new Date(), message: `识别完成：${bufs.length}张，提取${resolvedImageItems.length}项` },
       institution: sanitizeInstitution(imageInstitution) || report.institution,
       checkDate:   imageCheckDate || report.checkDate,
-    });
+    };
+    if (completion.shouldWriteItems) {
+      const saved = await MedicalReport.findOneAndUpdate(
+        { _id: reportId, reviewRevision: Number(latestReport?.reviewRevision || 0) },
+        { $set: { ...imageUpdate, reportItems: resolvedImageItems }, $inc: { reviewRevision: 1 } },
+      );
+      if (!saved) {
+        imageUpdate.aiSummary = `${imgSummary}${imgSummary ? '\n' : ''}⚠️ 识别期间报告被编辑，本次结果未覆盖人工最新内容。`;
+        await MedicalReport.findByIdAndUpdate(reportId, { $set: imageUpdate });
+      }
+    } else {
+      await MedicalReport.findByIdAndUpdate(reportId, { $set: imageUpdate });
+    }
     console.log(`[parse-ai] 图片完成 ${reportId} 共${bufs.length}张 成功${imageOkCount}张 提取${imageItems.length}项 保存${resolvedImageItems.length}项 自动归类${classifiedImg.filter(i=>i.matchStatus==='matched').length}项 | 总耗时${((Date.now()-t0)/1000).toFixed(1)}s`);
   } catch (e) {
     console.error('[parse-ai] 解析失败', String(reportId), e.message);
@@ -11362,7 +11384,7 @@ async function runReportPageParse(reportId, pageNum) {
       const pagePrompt = report.type === 'body_comp' && usePediatricBodyComposition
         ? REPORT_PARSE_PROMPT + PEDIATRIC_BODY_COMPOSITION_PROMPT
         : REPORT_PARSE_PROMPT;
-      const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}${missingOnlyPrompt}\n\n【单页补提】${regionHint}从上到下、从左到右逐行核对全页，仅提取已有清单中没有的项目。`, { isUrl: false, model: 'qwen-vl-max', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 120000 });
+      const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}${missingOnlyPrompt}\n\n【单页补提】${regionHint}从上到下、从左到右逐行核对全页，仅提取已有清单中没有的项目。`, { isUrl: false, model: attempt === 3 ? 'qwen-vl-max' : 'qwen-vl-plus', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 180000 });
       parsed = safeParseJSON(raw);
       if (Array.isArray(parsed?.items)) break;
     } catch (error) {
@@ -11375,7 +11397,7 @@ async function runReportPageParse(reportId, pageNum) {
     // 单页补提必须再做一次覆盖复核，专门扫描双栏表格的右半侧和下半部；只合并新增项，不覆盖已有人工数据。
     try {
       const existingNames = [existingItemText, ...regionItems.map(item => str(item.name)).filter(Boolean)].filter(Boolean).join('、');
-      const auditRaw = await parseImage(images[regionIndex], `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n本页已有或本轮已找到的项目：${existingNames || '无'}。请逐行核对右半侧后再核对左半侧，只输出清单之外的遗漏项目。`, { isUrl: false, model: 'qwen-vl-max', maxTokens: 5000, timeoutMs: 120000 });
+      const auditRaw = await parseImage(images[regionIndex], `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n本页已有或本轮已找到的项目：${existingNames || '无'}。请逐行核对右半侧后再核对左半侧，只输出清单之外的遗漏项目。`, { isUrl: false, model: 'qwen-vl-plus', maxTokens: 5000, timeoutMs: 180000 });
       const audit = safeParseJSON(auditRaw);
       if (audit?.items?.length) regionItems = mergeCoverageAuditItems(regionItems, audit.items);
     } catch (auditError) {
@@ -11421,10 +11443,13 @@ async function runReportPageParse(reportId, pageNum) {
     ? `第${pageNum}页补提完成，新增${supplementMerge.added.length}项，补全${supplementMerge.enriched.length}项，本页共${classifiedPage.length}项`
     : `第${pageNum}页未找到有原文证据的遗漏项，已保留原${oldPage.length}项`;
   await MedicalReport.findByIdAndUpdate(reportId, {
-    reportItems: combined,
-    aiStatus: 'pending',
-    pageParseStatus: { pageNum, status: acceptedSupplementItems.length ? 'success' : 'needs_review', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt, message: resultMessage, itemCount: acceptedSupplementItems.length },
-    pageParseHistory,
+    $set: {
+      reportItems: combined,
+      aiStatus: 'pending',
+      pageParseStatus: { pageNum, status: acceptedSupplementItems.length ? 'success' : 'needs_review', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt, message: resultMessage, itemCount: acceptedSupplementItems.length },
+      pageParseHistory,
+    },
+    $inc: { reviewRevision: 1 },
   });
   console.log(`[parse-page] ${reportId} P${pageNum} 完成：原${oldPage.length}项，AI候选${parsedItems.length}项，接受${acceptedSupplementItems.length}项，其他页保留${preserved.length}项`);
 }

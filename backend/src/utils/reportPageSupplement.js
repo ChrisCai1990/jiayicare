@@ -29,6 +29,18 @@ function isActivePageParse(status, pageNum, now = new Date(), staleMs = PAGE_PAR
   return ageMs >= 0 && ageMs < staleMs;
 }
 
+// AI识别与人工审核可能同时进行。只有报告版本仍等于任务启动版本时，AI才可替换整份草稿；
+// 否则保留审核人员刚保存的内容，避免后台迟到结果覆盖人工修改。
+function resolveImageParseCompletion(startRevision, latestRevision, latestItems, parsedItems) {
+  const existing = Array.isArray(latestItems) ? latestItems : [];
+  const parsed = Array.isArray(parsedItems) ? parsedItems : [];
+  if (Number(latestRevision || 0) !== Number(startRevision || 0)) {
+    return { items: existing, shouldWriteItems: false, reason: 'revision_changed' };
+  }
+  if (!parsed.length) return { items: existing, shouldWriteItems: false, reason: 'empty_result' };
+  return { items: parsed, shouldWriteItems: true, reason: 'parsed' };
+}
+
 function isHumanReviewed(item) {
   return item?.manualReviewStatus === 'reviewed' || item?.manualReviewedAt || item?.manualReviewedBy;
 }
@@ -140,4 +152,5 @@ module.exports = {
   mergeSupplementItems,
   PAGE_PARSE_STALE_MS,
   reportItemIdentityKey,
+  resolveImageParseCompletion,
 };
