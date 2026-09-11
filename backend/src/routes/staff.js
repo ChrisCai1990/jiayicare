@@ -1652,6 +1652,10 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     );
   }
   if (followUp.sourceHealthPlanId && followUp.taskRole === 'supervisor' && followUp.status === 'completed') {
+    await FollowUp.updateMany(
+      { sourceHealthPlanId: followUp.sourceHealthPlanId, dependsOnTaskId: followUp._id, status: 'planned' },
+      { $set: { isBlocked: false, activationEvent: '', date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date() } }
+    );
     const remaining = await FollowUp.countDocuments({
       sourceHealthPlanId: followUp.sourceHealthPlanId,
       taskRole: { $in: ['executor', 'supervisor'] },
@@ -2207,14 +2211,18 @@ async function upsertMedicalAssistModuleTasks(plan, workflowPlan, options = {}) 
   const executorDate = calculatedExecutorDate < workflowStart ? new Date(workflowStart) : calculatedExecutorDate;
   const supervisorDate = addDays(serviceDate, workflowPlan.supervisorDueOffsetDays ?? 1);
   const selectedAssistantId = c.staffId || plan.staffId;
-  const selectedSupervisorId = c.supervisorId || plan.staffId;
+  const selectedSupervisorId = c.supervisorId || c.bookingPlannerId || null;
   const explicitCheckupAssignee = workflowPlan.executorRole === 'healthPlanner'
     ? c.bookingPlannerId
     : workflowPlan.executorRole === 'medicalAssistant'
       ? c.escortStaffId
       : null;
   const executorAssignee = explicitCheckupAssignee || resolveAssignee(workflowPlan.executorRole, selectedAssistantId);
-  const supervisorAssignee = selectedSupervisorId || resolveAssignee(workflowPlan.supervisorRole, selectedSupervisorId);
+  const supervisorAssignee = selectedSupervisorId || resolveAssignee(workflowPlan.supervisorRole || 'healthPlanner', plan.staffId);
+  const previousGate = options.dependsOnTaskId
+    ? await FollowUp.findById(options.dependsOnTaskId).select('status').lean()
+    : null;
+  const executorBlocked = !!options.dependsOnTaskId && previousGate?.status !== 'completed';
   const requirements = [
     c.hospital && `医院：${c.hospital}`, c.department && `科室：${c.department}`, c.expert && `医生：${c.expert}`,
     (c.serviceDate || c.serviceTime) && `服务时间：${[c.serviceDate, c.serviceTime].filter(Boolean).join(' ')}`,
@@ -2229,12 +2237,13 @@ async function upsertMedicalAssistModuleTasks(plan, workflowPlan, options = {}) 
       coordinationGroupId: `medical-assist:${plan._id}`, workflowKey, taskRole: 'executor', followUpSchemeId: workflowPlan._id,
       theme: `执行${workflowPlan.name} · ${plan.title || ''}`, content: plan.description || '',
       plannedContent: [requirements, workflowPlan.completionStandard && `完成标准：${workflowPlan.completionStandard}`].filter(Boolean).join('\n'),
-      status: 'planned', isBlocked: false, activationEvent: '',
+      status: 'planned', isBlocked: executorBlocked, activationEvent: executorBlocked ? 'previous_stage_approved' : '',
+      dependsOnTaskId: options.dependsOnTaskId || null,
     } },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
   if (workflowPlan.requiresCoordination !== false && supervisorAssignee) {
-    await FollowUp.findOneAndUpdate(
+    const supervisorTask = await FollowUp.findOneAndUpdate(
       { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'supervisor', workflowKey },
       { $set: {
         patientId: plan.patientId, staffId: plan.staffId, assignedTo: supervisorAssignee,
@@ -2244,10 +2253,11 @@ async function upsertMedicalAssistModuleTasks(plan, workflowPlan, options = {}) 
         theme: `督办${workflowPlan.name} · ${plan.title || ''}`,
         content: '关注执行进度；执行人员完成后核对服务结果、资料归档及后续安排。',
         plannedContent: `关联执行任务：${executorTask.theme}\n计划服务时间：${serviceDate.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`,
-        status: 'planned', isBlocked: false, activationEvent: '',
+        status: 'planned', isBlocked: true, activationEvent: 'executor_completed',
       } },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
+    return options.returnGate ? supervisorTask : executorTask;
   }
   return executorTask;
 }
@@ -2370,6 +2380,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
       || c.templateSnapshot?.serviceDomain === 'annual_checkup'
       || /体检/.test(`${c.templateName || ''} ${plan.title || ''}`);
     const isOutpatientOneStop = /门诊一站式/.test(`${c.templateName || ''} ${plan.title || ''}`);
+    const isMultiStageService = isOutpatientOneStop || isCheckupService;
     const selectedAssistantId = plan.content?.staffId || plan.staffId;
     const selectedSupervisorId = plan.content?.supervisorId || plan.staffId;
     const workflowIds = (plan.content?.followUpPlans?.length
@@ -2384,7 +2395,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
       { mode: item.mode || 'fixed', trigger: item.trigger || '', sequence: item.sequence ?? sequence },
     ]));
     const fixedWorkflowPlans = workflowPlans
-      .filter(item => isOutpatientOneStop || (moduleConfigMap.get(String(item._id))?.mode || 'fixed') === 'fixed')
+      .filter(item => isMultiStageService || (moduleConfigMap.get(String(item._id))?.mode || 'fixed') === 'fixed')
       .sort((a, b) => (moduleConfigMap.get(String(a._id))?.sequence ?? 0) - (moduleConfigMap.get(String(b._id))?.sequence ?? 0));
     // 普通就医协助只建立一组方案级“执行 + 督办”。岗位模板可能同时配置
     // “代办服务”“资料回收”等多个固定模块，但这些都是同一次服务的验收内容，
@@ -2396,7 +2407,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
         id: String(item._id), name: item.name,
         ...(moduleConfigMap.get(String(item._id)) || { mode: 'fixed', trigger: '', sequence: 0 }),
       }))
-      .filter(item => !isOutpatientOneStop && item.mode !== 'fixed')
+      .filter(item => !isMultiStageService && item.mode !== 'fixed')
       .map(item => ({ ...item, decision: item.mode === 'manual' ? 'manual' : 'pending', decidedAt: null, decidedBy: null }));
     if (deferredWorkflowModules.length) {
       c.workflowModuleDecisions = deferredWorkflowModules;
@@ -2435,12 +2446,14 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
     const patient = await User.findById(plan.patientId).select('assignedHealthManager assignedFamilyDoctor assignedNutritionist assignedHealthPlanner assignedMedicalAssistant').lean();
     // 普通单次服务合并为一组任务；门诊一站式按完整阶段分别建任务。
     if (primaryWorkflowPlan) {
-      const workflowPlansToCreate = isOutpatientOneStop ? fixedWorkflowPlans : [primaryWorkflowPlan];
+      const workflowPlansToCreate = isMultiStageService ? fixedWorkflowPlans : [primaryWorkflowPlan];
+      let previousGateId = null;
       for (const workflowPlan of workflowPlansToCreate) {
-        await upsertMedicalAssistModuleTasks(plan, workflowPlan, { patient });
+        const gate = await upsertMedicalAssistModuleTasks(plan, workflowPlan, { patient, dependsOnTaskId: previousGateId, returnGate: isMultiStageService });
+        previousGateId = isMultiStageService ? gate?._id : null;
       }
       const primaryWorkflowKey = String(primaryWorkflowPlan._id);
-      const redundantFixedWorkflowKeys = (isOutpatientOneStop ? [] : fixedWorkflowPlans)
+      const redundantFixedWorkflowKeys = (isMultiStageService ? [] : fixedWorkflowPlans)
         .map(item => String(item._id))
         .filter(key => key !== primaryWorkflowKey);
       await FollowUp.updateMany(
@@ -12203,7 +12216,7 @@ ${templateBlock}
         hospital: raw.hospital || '', department: raw.department || '', expert: raw.expert || '',
         visitDate: confirmedSchedule.serviceDate,
         serviceTime: confirmedSchedule.serviceTime,
-        supervisorId: isOutpatientOneStop ? (user.assignedHealthManager || '') : '',
+        supervisorId: user.assignedHealthPlanner || (req.staff.role === 'healthPlanner' ? req.staff._id : ''),
       },
       logistics: { hotel: raw.hotel || '', transport: raw.transport || '' },
       tasks: { records: taskRecords },
@@ -12254,7 +12267,7 @@ ${templateBlock}
         checkupIntake: order?.checkupIntake || null,
         hospital: raw.hospital || '', department: raw.department || '', expert: raw.expert || '',
         serviceDate: confirmedSchedule.serviceDate, serviceTime: confirmedSchedule.serviceTime,
-        supervisorId: isOutpatientOneStop ? (user.assignedHealthManager || '') : '',
+        supervisorId: user.assignedHealthPlanner || (req.staff.role === 'healthPlanner' ? req.staff._id : ''),
         hotel: raw.hotel || '', transport: raw.transport || '',
         tasks: tasksText, notes: raw.notes || '',
         moduleData,

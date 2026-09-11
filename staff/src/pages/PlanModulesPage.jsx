@@ -227,7 +227,7 @@ function contentFromModules(plan, moduleData, goal, staffList = []) {
     staffId: checkupService ? (visit.bookingPlannerId || '') : selectedAssistantId,
     bookingPlannerId: checkupService ? (visit.bookingPlannerId || '') : (content.bookingPlannerId || ''),
     escortStaffId: checkupService ? (visit.escortStaffId || '') : (content.escortStaffId || ''),
-    supervisorId: checkupService ? '' : (visit.supervisorId || content.supervisorId || ''),
+    supervisorId: checkupService ? (visit.bookingPlannerId || content.bookingPlannerId || visit.supervisorId || content.supervisorId || '') : (visit.supervisorId || content.supervisorId || ''),
     followUpPlanId: visit.followUpPlanId || content.followUpPlanId || '',
     followUpPlans: visit.followUpPlans?.length ? visit.followUpPlans : (content.followUpPlans || []),
     hotel: logistics.hotel || '',
@@ -369,9 +369,9 @@ export default function PlanModulesPage() {
         if (p.type === 'medical_assist' && isCheckupMedicalAssist(c, p.title) && assignedReviewerId && !nextModuleData.visit?.reviewerId) {
           nextModuleData.visit = { ...(nextModuleData.visit || {}), reviewerId: assignedReviewerId }
         }
-        const assignedHealthManagerId = p.patientId?.assignedHealthManager?._id || p.patientId?.assignedHealthManager || ''
-        if (p.type === 'medical_assist' && isOutpatientOneStop(c, p.title) && assignedHealthManagerId && !nextModuleData.visit?.supervisorId) {
-          nextModuleData.visit = { ...(nextModuleData.visit || {}), supervisorId: assignedHealthManagerId }
+        const assignedHealthPlannerId = p.patientId?.assignedHealthPlanner?._id || p.patientId?.assignedHealthPlanner || ''
+        if (p.type === 'medical_assist' && assignedHealthPlannerId && !nextModuleData.visit?.supervisorId) {
+          nextModuleData.visit = { ...(nextModuleData.visit || {}), supervisorId: assignedHealthPlannerId }
         }
         setModuleData(nextModuleData)
         setGoal(c.goal || p.description || '')
@@ -508,7 +508,7 @@ export default function PlanModulesPage() {
   const searchableFollowUpPlans = normalizedPlanSearch
     ? followUpPlans.filter(item => `${item.name || ''} ${item.executorRole || ''} ${item.supervisorRole || ''}`.toLowerCase().includes(normalizedPlanSearch))
     : followUpPlans
-  const supervisors = staffList.filter(item => ['healthManager', 'familyDoctor', 'superadmin'].includes(item.role))
+  const supervisors = staffList.filter(item => ['healthPlanner', 'superadmin'].includes(item.role))
   const handleBack = () => {
     if (location.state?.returnTo) {
       nav(location.state.returnTo)
@@ -603,7 +603,7 @@ export default function PlanModulesPage() {
               )}
             </div>
             {!isCheckupService && <div>
-              <label className="form-label">督办人 *</label>
+              <label className="form-label">总督办（健康规划师）*</label>
               <input
                 className="form-input"
                 list="medical-assist-supervisors"

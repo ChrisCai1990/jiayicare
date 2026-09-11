@@ -19,14 +19,18 @@ async function main() {
   for (let sequence = 0; sequence < WORKFLOW_PLANS.length; sequence += 1) {
     const row = WORKFLOW_PLANS[sequence];
     const plan = await plans.findOneAndUpdate({ name: row.name }, { $set: {
-      ...row, category: 'medical_assist', supervisorRole: 'healthManager', requiresCoordination: true,
+      ...row, category: 'medical_assist', supervisorRole: 'healthPlanner', requiresCoordination: true,
       supervisorDueOffsetDays: (row.executorDueOffsetDays || 0) + 1, remindDaysBefore: 1,
       status: 'active', reviewStatus: 'approved', updatedAt: new Date(),
     }, $setOnInsert: { createdAt: new Date() } }, { upsert: true, returnDocument: 'after' });
     modules.push({ planId: plan._id, mode: 'fixed', trigger: '', sequence });
   }
-  await plans.updateMany({ name: { $in: ['门诊一站式：健康顾问评估', '门诊一站式：医院及专家筛选'] } }, { $set: { status: 'inactive', updatedAt: new Date() } });
-  const notes = '主要面向单次服务客户；健管先收集资料，健康顾问再评估并确定医院专家，归档后结束。';
+  await plans.updateMany({ name: { $in: ['门诊一站式：健康顾问评估', '门诊一站式：医院及专家筛选', '门诊一站式：首次代诊开单与约检查', '门诊一站式：检查日专家门诊安排', '门诊一站式：检查及专家门诊陪诊', '门诊一站式：病历检查单上传归档'] } }, { $set: { status: 'inactive', updatedAt: new Date() } });
+  await plans.updateMany({ category: 'medical_assist', status: 'active' }, { $set: { supervisorRole: 'healthPlanner', requiresCoordination: true, updatedAt: new Date() } });
+  const checkupOneStop = await products.findOne({ name: '体检一站式服务' });
+  const checkupPlanIds = (checkupOneStop?.serviceWorkflow?.modules || []).map(item => item.planId).filter(Boolean);
+  if (checkupPlanIds.length) await plans.updateMany({ _id: { $in: checkupPlanIds } }, { $set: { supervisorRole: 'healthPlanner', requiresCoordination: true, updatedAt: new Date() } });
+  const notes = '主要面向单次服务客户；健康规划师总督办，按健管收集资料、健康顾问评估、首次预约、代诊开单、专家号预约、陪诊归档顺序流转。';
   const workflowSnapshot = { key: 'medical_assist', modules, followUpPlanIds: modules.map(item => item.planId), followUpPlanId: modules[0].planId, notes };
   const aiProfile = {
     ...(product.aiProfile || {}),
@@ -50,6 +54,11 @@ async function main() {
       updatedAt: new Date(),
     } }
   );
+  const openMedicalPlans = await db.collection('healthplans').find({ type: 'medical_assist', status: { $in: ['draft', 'active'] } }, { projection: { patientId: 1 } }).toArray();
+  for (const healthPlan of openMedicalPlans) {
+    const patient = await db.collection('users').findOne({ _id: healthPlan.patientId }, { projection: { assignedHealthPlanner: 1 } });
+    if (patient?.assignedHealthPlanner) await db.collection('healthplans').updateOne({ _id: healthPlan._id }, { $set: { 'content.supervisorId': patient.assignedHealthPlanner, 'content.moduleData.visit.supervisorId': patient.assignedHealthPlanner, updatedAt: new Date() } });
+  }
   const templateRule = TEMPLATE_NORMALIZATION[PRODUCT_NAME];
   const template = await db.collection('plantemplates').findOne({ name: PRODUCT_NAME, type: 'medical_assist' });
   if (template) await db.collection('plantemplates').updateOne({ _id: template._id }, { $set: { content: normalizedContent(template.content, templateRule), updatedAt: new Date() } });

@@ -5,11 +5,11 @@ const mongoose = require('mongoose');
 const PRODUCT_NAME = '门诊一站式服务';
 const WORKFLOW_PLANS = [
   { name: '门诊一站式：资料收集与核对', executorRole: 'healthManager', executorDueOffsetDays: -10, completionStandard: '已收齐并核对本次就医诉求、病历、既往报告、当前用药及身份医保资料，缺失项已明确。' },
-  { name: '门诊一站式：健康顾问评估及医院专家确定', executorRole: 'familyDoctor', executorDueOffsetDays: -9, completionStandard: '健康顾问已完成医学评估分析，确定医院、科室、首次代诊医生及检查后门诊专家。' },
-  { name: '门诊一站式：首次代诊开单与约检查', executorRole: 'medicalAssistant', executorDueOffsetDays: -7, completionStandard: '已完成首次代诊，取回门诊病历和检查单，并根据检查单完成检查预约。' },
-  { name: '门诊一站式：检查日专家门诊安排', executorRole: 'healthPlanner', executorDueOffsetDays: -3, completionStandard: '已完成检查日专家门诊预约，检查、取结果与门诊时间可衔接。' },
-  { name: '门诊一站式：检查及专家门诊陪诊', executorRole: 'medicalAssistant', executorDueOffsetDays: 0, fixedToServiceDate: true, completionStandard: '已陪同客户完成检查和专家门诊，现场医嘱与后续事项已记录。' },
-  { name: '门诊一站式：病历检查单上传归档', executorRole: 'medicalAssistant', executorDueOffsetDays: 1, completionStandard: '两次门诊病历、检查单及已取得的检查结果均已上传，本次服务可验收结束。' },
+  { name: '门诊一站式：健康顾问评估及医院专家确定', executorRole: 'familyDoctor', executorDueOffsetDays: -9, completionStandard: '健康顾问已完成医学评估分析，确定医院、科室和专家，列明预计涉及的检查单，并明确哪些检查需要专家及对应专家名称。' },
+  { name: '门诊一站式：首次代诊门诊预约', executorRole: 'healthManager', executorDueOffsetDays: -8, completionStandard: '已按健康顾问确定的医院、科室和医生完成首次代诊门诊预约。' },
+  { name: '门诊一站式：首次代诊开检查单', executorRole: 'medicalAssistant', executorDueOffsetDays: -7, completionStandard: '已完成首次代诊，按医嘱取得检查单和首次门诊病历，并完整反馈开单结果。' },
+  { name: '门诊一站式：检查日专家号预约', executorRole: 'healthManager', executorDueOffsetDays: -3, completionStandard: '已根据检查安排预约检查日专家号，检查、取结果与专家门诊时间可以衔接。' },
+  { name: '门诊一站式：检查及专家门诊陪诊与归档', executorRole: 'medicalAssistant', executorDueOffsetDays: 0, fixedToServiceDate: true, completionStandard: '已陪同客户完成检查和专家门诊，两次门诊病历、检查单及已取得结果均已上传归档，本次服务可验收结束。' },
 ];
 
 async function main() {
@@ -26,7 +26,7 @@ async function main() {
   for (let sequence = 0; sequence < WORKFLOW_PLANS.length; sequence += 1) {
     const row = WORKFLOW_PLANS[sequence];
     const plan = await plans.findOneAndUpdate({ name: row.name }, { $set: {
-      ...row, category: 'medical_assist', supervisorRole: 'healthManager', requiresCoordination: true,
+      ...row, category: 'medical_assist', supervisorRole: 'healthPlanner', requiresCoordination: true,
       supervisorDueOffsetDays: (row.executorDueOffsetDays || 0) + 1, remindDaysBefore: 1,
       status: 'active', reviewStatus: 'approved', updatedAt: new Date(),
     }, $setOnInsert: { createdAt: new Date() } }, { upsert: true, returnDocument: 'after' });
