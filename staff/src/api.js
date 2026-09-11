@@ -54,6 +54,8 @@ export const staffAPI = {
 
   // Patients
   getPatients:        (p = {}) => req('/staff/patients?' + qs(p)),
+  getWecomKfUnboundContacts: () => req('/staff/wecom-kf/unbound-contacts'),
+  bindWecomKfContact: (data) => req('/staff/wecom-kf/contacts', { method: 'POST', body: JSON.stringify(data) }),
   getPatient:         (id)     => req(`/staff/patients/${id}`),
   createPatient:      (data)   => req('/staff/patients', { method: 'POST', body: JSON.stringify(data) }),
   updatePatient:      (id, d)  => req(`/staff/patients/${id}`, { method: 'PUT', body: JSON.stringify(d) }),

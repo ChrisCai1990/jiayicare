@@ -8,6 +8,7 @@ const User=require('../models/User');
 const MedicalReport=require('../models/MedicalReport');
 const {uploadBuffer}=require('../utils/oss');
 const {fileMime,canAccessPatient}=require('../utils/serviceGroupRules');
+const wecomKf=require('../utils/wecomKf');
 const optional=(xml,name)=>{try{return crypto.field(xml,name)}catch{return ''}};
 async function token(){const r=await fetch('https://qyapi.weixin.qq.com/cgi-bin/gettoken?'+new URLSearchParams({corpid:process.env.WECOM_CORP_ID,corpsecret:process.env.WECOM_APP_SECRET}),{signal:AbortSignal.timeout(10000)});const d=await r.json();if(!d.access_token)throw new Error('应用授权失败');return d.access_token;}
 async function archive(material,staff,instruction){
@@ -36,9 +37,19 @@ router.post('/',express.text({type:['text/xml','application/xml'],limit:'100kb'}
     const encrypted=crypto.field(req.body,'Encrypt');
     crypto.verify(req.query,encrypted,process.env.WECOM_APP_CALLBACK_TOKEN);
     xml=crypto.decrypt(encrypted,process.env.WECOM_APP_CALLBACK_AES_KEY,process.env.WECOM_CORP_ID);
-    if(crypto.field(xml,'ToUserName')!==process.env.WECOM_CORP_ID || crypto.field(xml,'AgentID')!==process.env.WECOM_AGENT_ID) throw new Error('Wrong app');
+    if(crypto.field(xml,'ToUserName')!==process.env.WECOM_CORP_ID) throw new Error('Wrong corporation');
   } catch {return res.sendStatus(403);}
   try {
+    // 同一自建应用复用时，微信客服事件没有员工应用 AgentID。先严格识别事件，
+    // 再交给独立客服同步逻辑；其他事件仍必须通过下方 AgentID 校验。
+    if(optional(xml,'MsgType')==='event'&&optional(xml,'Event')==='kf_msg_or_event') {
+      if(!wecomKf.enabled()||!wecomKf.configured()||!wecomKf.sharedAppCallback()) return res.sendStatus(403);
+      const openKfId=optional(xml,'OpenKfId'),callbackToken=optional(xml,'Token');
+      if(!openKfId||!callbackToken)return res.sendStatus(403);
+      res.type('text').send('success');
+      return setImmediate(()=>wecomKf.sync({openKfId,callbackToken}).catch(error=>console.error('[wecom-kf] shared callback sync failed',error.message)));
+    }
+    if(crypto.field(xml,'AgentID')!==process.env.WECOM_AGENT_ID) return res.sendStatus(403);
     const from=crypto.field(xml,'FromUserName'), type=crypto.field(xml,'MsgType');
     if(type==='event')return res.type('text').send('success');
     let reply='当前仅支持文字指令。报告请在家庭助手中选择具体成员后上传。';

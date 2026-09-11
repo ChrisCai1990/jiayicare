@@ -24,6 +24,7 @@ const TYPE_CONFIG = {
   symptom_verify:     { icon: '☎️', label: '不适主诉待核实', color: '#D97706', priority: 1 },
   risk_alert:      { icon: '⚠️', label: '风险预警待处理', color: '#DC3545', priority: 1 },
   transfer_human:       { icon: '🔔', label: 'AI对话转人工', color: '#DC3545', priority: 1 },
+  wecom_kf_handoff:     { icon: '💬', label: '微信客服待人工接管', color: '#DC3545', priority: 1 },
   draft_review:         { icon: '✏️', label: 'AI文案待审核', color: '#4A6558', priority: 4 },
   nutrition_plan_review:{ icon: '🥗', label: 'AI膳食信息草稿待核对', color: '#16A34A', priority: 3 },
   checkup_plan_review:  { icon: '🏥', label: 'AI体检方案待健康顾问审核', color: '#0077B6', priority: 3 },
@@ -54,7 +55,7 @@ const TODO_GROUPS = [
   { key: 'all', label: '全部' },
   { key: 'report', label: '报告与资料', types: ['report_parse','report_review','report_interpretation','archive_review','summary_review','lifestyle_review','dietary_survey_review','medication_review','supplement_review'] },
   { key: 'plan', label: '方案与评估', types: ['trend_review','plan_review','nutrition_plan_review','checkup_plan_review','phase_assessment_review','followup_review','service_draft_review','medical_assist_plan_review','service_proposal_review'] },
-  { key: 'risk', label: '风险与异常', types: ['risk_review','bp_alert_review','risk_alert','transfer_human'] },
+  { key: 'risk', label: '风险与异常', types: ['risk_review','bp_alert_review','risk_alert','transfer_human','wecom_kf_handoff'] },
   { key: 'content', label: '内容与安排', types: ['push_review','draft_review','supply_intake','supply_medication_risk_review','supply_supplement_risk_review','supply_arrangement','supply_fulfillment','supply_receipt'] },
 ]
 
@@ -109,6 +110,18 @@ export default function AiTodosPanel() {
     e.stopPropagation()
     const logId = todo.id.replace(/^transferhuman_/, '')
     staffAPI.resolveChatTransfer(logId)
+      .then(() => setTodos(ts => ts.filter(t => t.id !== todo.id)))
+      .catch(() => {})
+  }
+
+  const resolveWecomKfHandoff = (e, todo) => {
+    e.stopPropagation()
+    if (!window.confirm('请确认已在企业微信客服后台人工接管并处理该客户消息。确认后将关闭此待办。')) return
+    const followUpId = todo.id.replace(/^wecomkf_/, '')
+    staffAPI.updateFollowUp(followUpId, {
+      status: 'completed',
+      content: '已在企业微信客服后台人工接管处理。',
+    })
       .then(() => setTodos(ts => ts.filter(t => t.id !== todo.id)))
       .catch(() => {})
   }
@@ -253,6 +266,11 @@ export default function AiTodosPanel() {
                     onClick={(e) => resolveTransfer(e, todo)}
                     style={{ fontSize: 11, color: '#1E6B50', background: 'none', border: '1px solid #1E6B50', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}
                   >标记已联系</button>
+                ) : todo.type === 'wecom_kf_handoff' ? (
+                  <button
+                    onClick={(e) => resolveWecomKfHandoff(e, todo)}
+                    style={{ fontSize: 11, color: '#1E6B50', background: 'none', border: '1px solid #1E6B50', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}
+                  >已在企微接管</button>
                 ) : todo.type === 'service_proposal_review' ? (
                   <div style={{ display: 'flex', gap: 4 }}>
                     <button onClick={(e) => reviewServiceProposal(e, todo, 'approve')}

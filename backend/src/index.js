@@ -97,6 +97,8 @@ app.use('/api/staff',         require('./routes/aiCaseReviews'));
 app.use('/api/staff/service-groups', require('./routes/serviceGroups'));
 app.use('/api/integrations/service-groups', require('./routes/serviceGroupBridge'));
 app.use('/api/integrations/wecom-app', require('./routes/wecomAppCallback'));
+// 微信客服为外部客户独立通道；不与员工应用回调或客户群会话存档混用。
+app.use('/api/integrations/wecom-kf', require('./routes/wecomKfCallback'));
 app.use('/api/integrations/insurance', require('./routes/insuranceIntegrations'));
 app.use('/api/screening',     require('./routes/screening'));
 app.use('/api/tts',           require('./routes/tts'));

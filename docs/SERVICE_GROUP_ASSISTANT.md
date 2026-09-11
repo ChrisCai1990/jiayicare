@@ -73,11 +73,25 @@
 
 ## 接入配置
 
+## 2026-09-11：微信客服 AI 通道（外部客户）
+
+- 新入口：`/api/integrations/wecom-kf`。这是企业微信“微信客服”API 回调，不是员工自建应用回调，也不是客户群会话内容存档。
+- 若明确复用群侧边栏的自建应用，设置 `WECOM_KF_USE_APP_CALLBACK=true`：客服事件改由既有 `/api/integrations/wecom-app` 使用该应用原有 Token/AESKey 验签后分流；独立 `/wecom-kf` 回调会拒绝请求。仍必须单独配置 `WECOM_KF_CORP_ID`、`WECOM_KF_SECRET`、AI 开关、客服消息表和游标，绝不把 `WECOM_APP_SECRET` 当作客服 Secret。
+- 启用开关为 `WECOM_KF_ENABLED=true`；必须提供 `WECOM_KF_CORP_ID`、`WECOM_KF_SECRET`。独立客服回调模式还须提供 `WECOM_KF_TOKEN`、`WECOM_KF_AES_KEY`；复用自建应用回调时则使用既有 `WECOM_APP_CALLBACK_TOKEN`、`WECOM_APP_CALLBACK_AES_KEY`。`WECOM_KF_AI_ENABLED=true` 才会对**已明确绑定且已确认授权**的客户调用 AI；默认未绑定客户只得到通用服务提示。
+- 企业微信回调 `kf_msg_or_event` 通过 URL 验证、签名和 AES 解密后才被接受；后台以回调 Token 调用官方 `sync_msg`，以 `(corpId,msgId)` 去重，并仅对客户方向的文本消息处理。实际发送使用官方 `kf/send_msg`，不是员工账号自动化。
+- 高风险表达（症状、报告、用药、孕产儿童、过敏、紧急情况）不调用普通 AI，固定提示人工/紧急就医；已绑定且已分配营养师/健管人员的客户同时生成“微信客服待人工接管”待办，待办不复制客户原文。图片暂只确认收到并要求补充文字，不能把图片默认做医学或营养判断；图片 AI 分析须另行完成媒体下载授权、脱敏、人工边界及真实回归。
+- 外部微信身份必须由营养师、健管专员或超管调用 `POST /api/staff/wecom-kf/contacts` 显式绑定到一个客户，并提交 `consentConfirmed: true`；不可用昵称、手机号、客服群名或聊天内容推断身份，也不可覆盖已绑定到其他客户的身份。
+- 医护端“家庭服务助手”提供“微信客服客户绑定”入口：仅展示脱敏外部客服标识和最近联系时间。工作人员须先在企业微信客服后台核对会话中的实际客户，再搜索并选择嘉医汇客户、勾选已获授权后确认绑定；不会自动关联。
+- 医护首页“AI 待审核任务 → 风险与异常”会汇总本人“微信客服待人工接管”任务；确认已在企业微信客服后台处理后，才可关闭任务。`GET /api/staff/wecom-kf/handoffs` 也可供其他医护端入口读取本人清单（超管可见全部）。`sync_msg` 游标按客服账号持久化，并在整批成功处理后才推进，失败则留在原游标重试。
+- 上线前必须先在测试客服账号确认：企业微信后台“可调用接口的应用”授权、回调 URL/可信 IP、`sync_msg` 游标与重试、48 小时发送窗口、客户绑定/解除绑定、人工接管以及真实手机端消息。不要把本地回调测试当作企微已连通或已允许自动回复。
+
 仅在安全运行配置中设置下列变量，不将真实值写入Git或聊天：
 
 | 变量 | 用途 |
 | --- | --- |
 | WECOM_CORP_ID / WECOM_AGENT_ID / WECOM_APP_SECRET | 自建应用身份 |
+| WECOM_KF_USE_APP_CALLBACK | 复用该自建应用时设为 `true`；客服回调 URL、Token、AESKey 与员工应用共用，且 `WECOM_KF_CORP_ID` 必须等于 `WECOM_CORP_ID` |
+| WECOM_KF_CORP_ID / WECOM_KF_SECRET | 微信客服 API 身份；Secret 来自微信客服开启 API 后，不可填 `WECOM_APP_SECRET` |
 | WECOM_SIDEBAR_ORIGIN | HTTPS可信来源，如 `https://staff.jiaycare.com`，不带路径或末尾斜杠 |
 | SERVICE_GROUP_AI_ENABLED | `true` 才开放AI总结，另需既有 QWEN_API_KEY 或 DEEPSEEK_API_KEY |
 | SERVICE_GROUP_ARCHIVE_ENABLED | `true` 才接受签名消息并启动到期清理 |

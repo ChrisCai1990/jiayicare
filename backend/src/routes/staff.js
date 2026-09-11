@@ -8945,6 +8945,24 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     }
     const myPatientIdSet = myPatientIds ? new Set(myPatientIds.map(String)) : null;
     const inMyScope = (userId) => !myPatientIdSet || myPatientIdSet.has(String(userId));
+
+    // 微信客服高风险消息不复用普通聊天转人工：它已被明确分派给实际服务人员，
+    // 因此按 assignedTo（而不是客户的当前角色归属）展示，避免任务在转派后消失。
+    const kfHandoffFilter={tags:{$all:['微信客服','需人工接管']},status:{$in:['planned','in_progress']}};
+    if(!isSuper) kfHandoffFilter.assignedTo=req.staff._id;
+    const kfHandoffs=await FollowUp.find(kfHandoffFilter).sort({createdAt:-1}).limit(100)
+      .populate('patientId','name preferredTitle').lean();
+    kfHandoffs.forEach(task=>{
+      const patient=task.patientId;
+      todos.push({
+        id:'wecomkf_'+task._id,type:'wecom_kf_handoff',label:'微信客服待人工接管',priority:1,
+        patientName:patient?.preferredTitle||patient?.name||'已解绑客户',patientId:String(patient?._id||''),
+        summary:'请在企业微信客服后台接管；客户原文不在此展示。',
+        createdAt:task.createdAt,overdue:(now-new Date(task.createdAt))>DAY,
+        link:patient?`/patients/${patient._id}`:'/service-assistant',
+      });
+    });
+
     if (can('service_proposal_review')) {
       const proposalFilter = { status: 'pending', planner: req.staff._id };
       const proposals = await ServiceProposal.find(proposalFilter).populate('user', 'name phone').sort({ createdAt: -1 }).limit(50).lean();
@@ -12628,4 +12646,63 @@ ${addonListText}
 router.resumeReportParseJobs = resumeReportParseJobs;
 // 用户端 PDF 入口也复用同一队列，避免绕过逐页渲染而把 PDF 当图片传给视觉模型。
 router.scheduleReportParse = scheduleReportParse;
+// 微信客服外部身份绑定：只允许有客户编辑权限的实际服务人员或超管操作。
+// 不接受昵称/手机号猜测，且必须由工作人员确认已取得客户授权。
+router.post('/wecom-kf/contacts', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
+  const { patientId, externalUserId, consentConfirmed } = req.body || {};
+  if (!consentConfirmed) return res.status(400).json({ success: false, message: '请先确认客户已同意将微信客服会话与其嘉医汇档案关联' });
+  if (!/^[A-Za-z0-9_-]{6,128}$/.test(String(externalUserId || ''))) return res.status(400).json({ success: false, message: '微信客服客户标识格式无效' });
+  const corpId = process.env.WECOM_KF_CORP_ID;
+  if (!corpId) return res.status(409).json({ success: false, message: '微信客服尚未配置，暂不能绑定' });
+  const patient = await User.findById(patientId).select('assignedNutritionist assignedHealthManager tenantId isDeleted');
+  if (!patient || patient.isDeleted) return res.status(404).json({ success: false, message: '客户不存在' });
+  const isOwner = [patient.assignedNutritionist, patient.assignedHealthManager].filter(Boolean).some(id => String(id) === String(req.staff._id));
+  if (req.staff.role !== 'superadmin' && !isOwner) return res.status(403).json({ success: false, message: '仅该客户的营养师、健管专员或超管可以绑定微信客服身份' });
+  const Contact = require('../models/WecomKfContact');
+  const existing = await Contact.findOne({ corpId, externalUserId: String(externalUserId) });
+  if (existing && String(existing.user) !== String(patient._id)) return res.status(409).json({ success: false, message: '该微信客服身份已绑定其他客户，不能自动覆盖' });
+  const contact = await Contact.findOneAndUpdate(
+    { corpId, externalUserId: String(externalUserId) },
+    { $set: { user: patient._id, boundBy: req.staff._id, boundAt: new Date(), consentAt: new Date(), active: true } },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+  res.json({ success: true, data: { id: contact._id, patientId: String(patient._id), externalUserId: contact.externalUserId, boundAt: contact.boundAt } });
+});
+
+// 仅列出尚未关联档案的客服外部身份及最后联系时间，不返回客户消息正文。
+// 绑定操作必须由工作人员在企业微信客服会话中核对实际客户身份后完成。
+router.get('/wecom-kf/unbound-contacts', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
+  const corpId=process.env.WECOM_KF_CORP_ID;
+  if(!corpId)return res.status(409).json({success:false,message:'微信客服尚未配置，暂无待绑定客户'});
+  const KfMessage=require('../models/WecomKfMessage');
+  const Contact=require('../models/WecomKfContact');
+  const [recent,bound]=await Promise.all([
+    KfMessage.aggregate([
+      {$match:{corpId,direction:'customer',externalUserId:{$type:'string',$ne:''}}},
+      {$sort:{createdAt:-1}},
+      {$group:{_id:'$externalUserId',openKfId:{$first:'$openKfId'},lastMessageAt:{$first:'$createdAt'}}},
+      {$sort:{lastMessageAt:-1}},{$limit:200},
+    ]),
+    Contact.find({corpId,active:true}).select('externalUserId').lean(),
+  ]);
+  const boundIds=new Set(bound.map(item=>item.externalUserId));
+  const data=recent.filter(item=>!boundIds.has(item._id)).slice(0,100).map(item=>({
+    externalUserId:item._id,openKfId:item.openKfId,lastMessageAt:item.lastMessageAt,
+  }));
+  res.json({success:true,data});
+});
+
+// 医护端待接管清单：只展示受指派人的任务；客户原文仍留在受控客服会话，不复制至列表。
+router.get('/wecom-kf/handoffs', staffAuth, checkPermission('followups', 'view'), async (req, res) => {
+  const filter={tags:{$all:['微信客服','需人工接管']},status:{$in:['planned','in_progress']}};
+  if(req.staff.role!=='superadmin')filter.assignedTo=req.staff._id;
+  const rows=await FollowUp.find(filter).sort({createdAt:-1}).limit(100)
+    .populate('patientId','name preferredTitle phone').populate('assignedTo','name role').lean();
+  res.json({success:true,data:rows.map(row=>({
+    id:row._id,createdAt:row.createdAt,status:row.status,theme:row.theme,
+    patient:row.patientId?{id:row.patientId._id,name:row.patientId.preferredTitle||row.patientId.name}:null,
+    assignedTo:row.assignedTo?{id:row.assignedTo._id,name:row.assignedTo.name,role:row.assignedTo.role}:null,
+  }))});
+});
+
 module.exports = router;
