@@ -12078,7 +12078,7 @@ ${candidateTemplates.map(t => `《${t.name}》：${JSON.stringify(t.content)}`).
     const fieldSpecs = [
       `"title": "方案名称，必须包含具体服务类型${templateForFields ? `（本次是${templateForFields.name}）` : ''}和月日，如：${user.name}${templateForFields?.name || '就医协助'}方案（${new Date().getMonth() + 1}月${new Date().getDate()}日），不要只写笼统的'就医协助方案'——同一会员可能多次生成，必须能一眼区分是哪次"`,
       `"description": "方案简介，说明本次就医协助的目的（100字以内）"`,
-      askFields.hospital && `"hospital": "${isCheckupService ? '体检机构或体检中心（只能填写服务目标或已确认资料中明确的机构，未明确则留空）' : '建议就诊医院（结合会员慢病情况推断合适的医院，无法判断则留空）'}"`,
+      askFields.hospital && `"hospital": "${isCheckupService ? '体检机构或体检中心（只能填写服务目标或已确认资料中明确的机构，未明确则留空）' : isOutpatientOneStop ? '供健康顾问审核的医院建议草稿；最终医院和专家由健康顾问评估后确定，信息不足则留空' : '建议就诊医院（结合会员慢病情况推断合适的医院，无法判断则留空）'}"`,
       askFields.department && `"department": "建议就诊科室"`,
       askFields.expert && `"expert": "建议专家，无法判断则留空"`,
       askFields.hotel && `"hotel": "本次住宿安排（结合会员情况具体化，如模板固定为'无需安排'则原样返回）"`,

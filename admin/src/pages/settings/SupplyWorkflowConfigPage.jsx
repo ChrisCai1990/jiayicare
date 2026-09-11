@@ -26,7 +26,7 @@ const FLOW_STAGE_TEXT = Object.fromEntries(FLOW_CARDS.map(([title, desc]) => [ti
 const FLOW_LABEL_BY_KEY = Object.fromEntries(FLOW_OPTIONS.map(([key, label]) => [key, label]))
 const PRODUCT_STAGE_TEXT = {
   '体检一站式服务': '问卷采集 → 体检方案 → 机构预约 → 陪检 → 报告上传 → AI解析 → 健管审核 → 异常按需复查',
-  '门诊一站式服务': '资料收集 → 就医规划 → 首次门诊开检查单 → 预约检查 → 检查准备 → 检查日专家门诊 → 陪诊 → 资料归档 → 按医嘱复诊',
+  '门诊一站式服务': '健管收集资料 → 健康顾问评估并确定医院专家 → 首次代诊开检查单 → 预约检查 → 检查日专家门诊 → 陪诊 → 病历检查单归档',
 }
 const normalizeModules = w => {
   if (w?.modules?.length) return w.modules.map((item, sequence) => ({ planId: String(typeof item.planId === 'object' ? item.planId?._id : item.planId), mode: item.mode || 'fixed', trigger: item.trigger || '', sequence: item.sequence ?? sequence }))

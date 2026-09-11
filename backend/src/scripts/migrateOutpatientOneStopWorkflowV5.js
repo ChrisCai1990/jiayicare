@@ -4,8 +4,8 @@ const mongoose = require('mongoose');
 
 const PRODUCT_NAME = '门诊一站式服务';
 const WORKFLOW_PLANS = [
-  { name: '门诊一站式：健康顾问评估', executorRole: 'familyDoctor', executorDueOffsetDays: -10, completionStandard: '已核对就医诉求、既往资料、用药及风险，形成明确就医目标。' },
-  { name: '门诊一站式：医院及专家筛选', executorRole: 'healthPlanner', executorDueOffsetDays: -9, completionStandard: '已确定医院、科室、首次代诊医生和检查后门诊专家备选。' },
+  { name: '门诊一站式：资料收集与核对', executorRole: 'healthManager', executorDueOffsetDays: -10, completionStandard: '已收齐并核对本次就医诉求、病历、既往报告、当前用药及身份医保资料，缺失项已明确。' },
+  { name: '门诊一站式：健康顾问评估及医院专家确定', executorRole: 'familyDoctor', executorDueOffsetDays: -9, completionStandard: '健康顾问已完成医学评估分析，确定医院、科室、首次代诊医生及检查后门诊专家。' },
   { name: '门诊一站式：首次代诊开单与约检查', executorRole: 'medicalAssistant', executorDueOffsetDays: -7, completionStandard: '已完成首次代诊，取回门诊病历和检查单，并根据检查单完成检查预约。' },
   { name: '门诊一站式：检查日专家门诊安排', executorRole: 'healthPlanner', executorDueOffsetDays: -3, completionStandard: '已完成检查日专家门诊预约，检查、取结果与门诊时间可衔接。' },
   { name: '门诊一站式：检查及专家门诊陪诊', executorRole: 'medicalAssistant', executorDueOffsetDays: 0, fixedToServiceDate: true, completionStandard: '已陪同客户完成检查和专家门诊，现场医嘱与后续事项已记录。' },
