@@ -118,4 +118,4 @@ async function replyWithAI({ userId, recipient, content, conversationId }) {
   }
 }
 
-module.exports = { replyWithAI, buildSystemPrompt, stripRepeatedOpeningTitle };
+module.exports = { replyWithAI, buildSystemPrompt, stripRepeatedOpeningTitle, buildHealthContext };

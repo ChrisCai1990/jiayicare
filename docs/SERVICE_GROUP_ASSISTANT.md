@@ -75,6 +75,10 @@
 
 ## 2026-09-11：微信客服 AI 通道（外部客户）
 
+- 已绑定并确认授权的客服身份复用小程序 `aiMessageFallback.buildHealthContext`，包括个人档案、身体成分、已审核报告名称和复查提醒；补充最近20条日常记录。小程序处理逻辑不变。
+- 客服合并同一客户的 `Message` 角色会话与旧版 `ChatLog`（含客服AI历史）。近期对话与按问题检索的全时间范围历史片段分别标注时间、来源；每次输入有长度预算，不能声称已读取全部历史原文或完整报告附件。撤回消息、未审核草稿、其他客户及订单专属会话不进入本通道。
+- 生成后重新验证绑定与接待状态；解绑或人工接管后不发送个人上下文回答。成功发送的客服AI问答进入既有 `ChatLog`，由小程序现有历史接口读取；不新增小程序接口或修改小程序逻辑。
+
 - 新入口：`/api/integrations/wecom-kf`。这是企业微信“微信客服”API 回调，不是员工自建应用回调，也不是客户群会话内容存档。
 - 若明确复用群侧边栏的自建应用，设置 `WECOM_KF_USE_APP_CALLBACK=true`：客服事件改由既有 `/api/integrations/wecom-app` 使用该应用原有 Token/AESKey 验签后分流；独立 `/wecom-kf` 回调会拒绝请求。仍须配置 `WECOM_KF_CORP_ID`、`WECOM_KF_SECRET`：该应用已获微信客服授权时，分别填写现有企业 ID 和该应用 Secret，原应用配置保持不变。
 - 收发联调：`WECOM_KF_TEST_MODE=true` 仅发送固定测试回执，不读取客户档案或调用 AI；必须同时设置 `WECOM_KF_ALLOWED_ACCOUNT_IDS`（客服 ID，逗号分隔），未指定账号时不处理消息。`WECOM_KF_REPLY_AFTER` 为秒级 Unix 时间戳，只回复该时刻及之后的新消息。测试完成后再配置客户绑定及 AI 开关。
