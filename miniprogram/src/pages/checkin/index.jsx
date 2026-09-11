@@ -85,6 +85,20 @@ function shiftDate(baseDate, days) {
   return toLocalDateStr(date);
 }
 
+function normalizeClock(hour, minute = '0') {
+  const h = Number(hour), m = Number(minute || 0);
+  if (!Number.isInteger(h) || !Number.isInteger(m) || h < 0 || h > 23 || m < 0 || m > 59) return '';
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function extractClock(text, labels) {
+  const label = `(?:${labels.join('|')})`;
+  const after = text.match(new RegExp(`${label}[^\\d]{0,6}(\\d{1,2})(?:[:：点时](\\d{1,2})?)?`));
+  const before = text.match(new RegExp(`(\\d{1,2})(?:[:：点时](\\d{1,2})?)?[^\\d]{0,4}${label}`));
+  const match = before || after;
+  return match ? normalizeClock(match[1], match[2]) : '';
+}
+
 export function parseQuickHealthText(text, fallbackDate, todayDate) {
   const rows = [];
   const unmatchedLines = [];
@@ -93,12 +107,21 @@ export function parseQuickHealthText(text, fallbackDate, todayDate) {
     const explicit = line.match(/(20\d{2})[年\/-](\d{1,2})[月\/-](\d{1,2})日?/);
     const date = explicit ? `${explicit[1]}-${String(explicit[2]).padStart(2, '0')}-${String(explicit[3]).padStart(2, '0')}`
       : /前天|前日/.test(line) ? shiftDate(todayDate, -2)
-        : /昨天|昨日/.test(line) ? shiftDate(todayDate, -1)
-          : /今天|今日/.test(line) ? todayDate : fallbackDate;
+        : /前晚/.test(line) ? shiftDate(todayDate, -1)
+          : /昨天|昨日/.test(line) && !/昨晚.*(?:今早|今晨|今天)/.test(line) ? shiftDate(todayDate, -1)
+            : /今天|今日|昨晚.*(?:今早|今晨)/.test(line) ? todayDate : fallbackDate;
     const recordedAt = date === todayDate ? new Date().toISOString() : `${date}T12:00:00`;
-    const clean = line.replace(/20\d{2}[年\/-]\d{1,2}[月\/-]\d{1,2}日?|今天|今日|昨天|昨日|前天|前日/g, '').replace(/^[：:\s]+/, '').trim();
+    const clean = line.replace(/20\d{2}[年\/-]\d{1,2}[月\/-]\d{1,2}日?|今天|今日|昨天|昨日|前天|前日|昨晚|前晚|今早|今晨/g, '').replace(/^[：:\s]+/, '').trim();
     let match;
-    if ((match = clean.match(/(?:空腹)?体重[^\d]*(\d+(?:\.\d+)?)\s*(斤|kg|公斤)/i))) {
+    if (/睡眠|入睡|睡觉|起床|醒来/.test(clean)) {
+      const sleepTime = extractClock(clean, ['入睡', '睡觉', '睡下']);
+      const wakeTime = extractClock(clean, ['起床', '醒来', '睡醒']);
+      if (!sleepTime || !wakeTime) unmatchedLines.push(`${line}（睡眠需同时写明入睡和起床时间）`);
+      else {
+        const duration = calcSleepDuration(sleepTime, wakeTime);
+        rows.push({ category: 'lifestyle', type: 'sleep', label: '睡眠记录', unit: '小时', value: duration, extra: { sleepTime, wakeTime }, recordedAt, preview: `${date} 睡眠 ${sleepTime}入睡、${wakeTime}起床，共${duration}小时`, _sourceLine: line });
+      }
+    } else if ((match = clean.match(/(?:空腹)?体重[^\d]*(\d+(?:\.\d+)?)\s*(斤|kg|公斤)/i))) {
       const enteredValue = Number(match[1]), enteredUnit = /斤/.test(match[2]) ? '斤' : 'kg';
       const kg = enteredUnit === '斤' ? enteredValue / 2 : enteredValue;
       rows.push({ category: 'vitals', type: 'weight', label: '体重记录', unit: 'kg', value: String(Math.round(kg * 100) / 100), extra: { enteredValue, enteredUnit }, recordedAt, preview: `${date} 体重 ${enteredValue}${enteredUnit}（${Math.round(kg * 100) / 100}kg）`, _sourceLine: line });
@@ -118,8 +141,7 @@ export function parseQuickHealthText(text, fallbackDate, todayDate) {
     } else if (/早餐|午餐|晚餐|加餐|饮食/.test(clean)) {
       const mealType = ['早餐', '午餐', '晚餐', '加餐'].find((meal) => clean.includes(meal)) || '';
       rows.push({ category: 'lifestyle', type: 'diet', label: mealType ? `饮食记录·${mealType}` : '饮食记录', value: clean, extra: mealType ? { mealType } : {}, recordedAt, preview: `${date} ${clean}`, _sourceLine: line });
-    } else if (/睡眠|入睡|睡了/.test(clean)) rows.push({ category: 'lifestyle', type: 'sleep', label: '睡眠记录', value: clean, recordedAt, preview: `${date} ${clean}`, _sourceLine: line });
-    else if (/吸烟/.test(clean)) rows.push({ category: 'lifestyle', type: 'smoking', label: '吸烟记录', value: clean, recordedAt, preview: `${date} ${clean}`, _sourceLine: line });
+    } else if (/吸烟/.test(clean)) rows.push({ category: 'lifestyle', type: 'smoking', label: '吸烟记录', value: clean, recordedAt, preview: `${date} ${clean}`, _sourceLine: line });
     else if (/饮酒|喝酒/.test(clean)) rows.push({ category: 'lifestyle', type: 'alcohol', label: '饮酒记录', value: clean, recordedAt, preview: `${date} ${clean}`, _sourceLine: line });
     else unmatchedLines.push(line);
   });
@@ -175,12 +197,17 @@ export default function CheckinPage() {
   const [quickText, setQuickText] = useState('');
 
   const loadTodayStatus = useCallback(async () => {
-    try {
-      const [res, calendar] = await Promise.all([recordsAPI.todayStatus(), recordsAPI.checkinCalendar(365)]);
-      if (res.success) setDoneTypes(res.doneTypes || {});
-      if (calendar.success) setRecordedDates(calendar.data || {});
-    } catch {}
-    finally { setLoading(false); }
+    const [statusResult, calendarResult] = await Promise.allSettled([
+      recordsAPI.todayStatus(),
+      recordsAPI.checkinCalendar(365),
+    ]);
+    if (statusResult.status === 'fulfilled' && statusResult.value.success) {
+      setDoneTypes(statusResult.value.doneTypes || {});
+    }
+    if (calendarResult.status === 'fulfilled' && calendarResult.value.success) {
+      setRecordedDates(calendarResult.value.data || {});
+    }
+    setLoading(false);
   }, []);
 
   useDidShow(() => { loadTodayStatus(); });

@@ -107,6 +107,13 @@ test('one daily batch form can save multiple categories and all three meals', ()
   assert.match(source, /昨日饮水量：约1200ml/);
 });
 
+test('calendar history failure does not suppress the existing today status', () => {
+  const source = read('src/pages/checkin/index.jsx');
+  assert.match(source, /Promise\.allSettled\(\[\s*recordsAPI\.todayStatus\(\),\s*recordsAPI\.checkinCalendar\(365\)/);
+  assert.match(source, /statusResult\.status === 'fulfilled'/);
+  assert.match(source, /calendarResult\.status === 'fulfilled'/);
+});
+
 test('customer message is split into dated records and jin is converted to kg', () => {
   const parse = loadQuickHealthParser();
   const rows = parse([
@@ -130,6 +137,26 @@ test('quick parser ignores the message heading and reports unrecognized lines', 
   const rows = parse('每日健康数据记录☀️\n昨日饮水：1200ml\n昨天感觉还可以', '2026-09-11', '2026-09-11');
   assert.deepEqual(Array.from(rows, row => row.type), ['water']);
   assert.deepEqual(Array.from(rows.unmatchedLines), ['昨天感觉还可以']);
+});
+
+test('sleep requires bedtime and wake time, calculates duration, and belongs to wake date', () => {
+  const parse = loadQuickHealthParser();
+  const rows = parse('昨晚22:30入睡，今早6:30起床', '2026-09-11', '2026-09-11');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].type, 'sleep');
+  assert.equal(rows[0].value, '8.0');
+  assert.equal(rows[0].unit, '小时');
+  assert.equal(rows[0].extra.sleepTime, '22:30');
+  assert.equal(rows[0].extra.wakeTime, '06:30');
+  assert.equal(rows[0].recordedAt.slice(0, 10), '2026-09-11');
+  assert.deepEqual(Array.from(rows.unmatchedLines), []);
+});
+
+test('incomplete sleep text is not silently saved', () => {
+  const parse = loadQuickHealthParser();
+  const rows = parse('昨日睡眠7小时', '2026-09-11', '2026-09-11');
+  assert.equal(rows.length, 0);
+  assert.match(rows.unmatchedLines[0], /睡眠需同时写明入睡和起床时间/);
 });
 
 test('partial batch failures retain only failed entries for retry', () => {
