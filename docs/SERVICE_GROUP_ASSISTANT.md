@@ -76,7 +76,8 @@
 ## 2026-09-11：微信客服 AI 通道（外部客户）
 
 - 新入口：`/api/integrations/wecom-kf`。这是企业微信“微信客服”API 回调，不是员工自建应用回调，也不是客户群会话内容存档。
-- 若明确复用群侧边栏的自建应用，设置 `WECOM_KF_USE_APP_CALLBACK=true`：客服事件改由既有 `/api/integrations/wecom-app` 使用该应用原有 Token/AESKey 验签后分流；独立 `/wecom-kf` 回调会拒绝请求。仍必须单独配置 `WECOM_KF_CORP_ID`、`WECOM_KF_SECRET`、AI 开关、客服消息表和游标，绝不把 `WECOM_APP_SECRET` 当作客服 Secret。
+- 若明确复用群侧边栏的自建应用，设置 `WECOM_KF_USE_APP_CALLBACK=true`：客服事件改由既有 `/api/integrations/wecom-app` 使用该应用原有 Token/AESKey 验签后分流；独立 `/wecom-kf` 回调会拒绝请求。仍须配置 `WECOM_KF_CORP_ID`、`WECOM_KF_SECRET`：该应用已获微信客服授权时，分别填写现有企业 ID 和该应用 Secret，原应用配置保持不变。
+- 收发联调：`WECOM_KF_TEST_MODE=true` 仅发送固定测试回执，不读取客户档案或调用 AI；必须同时设置 `WECOM_KF_ALLOWED_ACCOUNT_IDS`（客服 ID，逗号分隔），未指定账号时不处理消息。`WECOM_KF_REPLY_AFTER` 为秒级 Unix 时间戳，只回复该时刻及之后的新消息。测试完成后再配置客户绑定及 AI 开关。
 - 启用开关为 `WECOM_KF_ENABLED=true`；必须提供 `WECOM_KF_CORP_ID`、`WECOM_KF_SECRET`。独立客服回调模式还须提供 `WECOM_KF_TOKEN`、`WECOM_KF_AES_KEY`；复用自建应用回调时则使用既有 `WECOM_APP_CALLBACK_TOKEN`、`WECOM_APP_CALLBACK_AES_KEY`。`WECOM_KF_AI_ENABLED=true` 才会对**已明确绑定且已确认授权**的客户调用 AI；默认未绑定客户只得到通用服务提示。
 - 企业微信回调 `kf_msg_or_event` 通过 URL 验证、签名和 AES 解密后才被接受；后台以回调 Token 调用官方 `sync_msg`，以 `(corpId,msgId)` 去重，并仅对客户方向的文本消息处理。实际发送使用官方 `kf/send_msg`，不是员工账号自动化。
 - 高风险表达（症状、报告、用药、孕产儿童、过敏、紧急情况）不调用普通 AI，固定提示人工/紧急就医；已绑定且已分配营养师/健管人员的客户同时生成“微信客服待人工接管”待办，待办不复制客户原文。图片暂只确认收到并要求补充文字，不能把图片默认做医学或营养判断；图片 AI 分析须另行完成媒体下载授权、脱敏、人工边界及真实回归。
@@ -91,7 +92,7 @@
 | --- | --- |
 | WECOM_CORP_ID / WECOM_AGENT_ID / WECOM_APP_SECRET | 自建应用身份 |
 | WECOM_KF_USE_APP_CALLBACK | 复用该自建应用时设为 `true`；客服回调 URL、Token、AESKey 与员工应用共用，且 `WECOM_KF_CORP_ID` 必须等于 `WECOM_CORP_ID` |
-| WECOM_KF_CORP_ID / WECOM_KF_SECRET | 微信客服 API 身份；Secret 来自微信客服开启 API 后，不可填 `WECOM_APP_SECRET` |
+| WECOM_KF_CORP_ID / WECOM_KF_SECRET | 微信客服 API 身份；复用已获微信客服授权的自建应用时，使用该应用的企业 ID 和 Secret |
 | WECOM_SIDEBAR_ORIGIN | HTTPS可信来源，如 `https://staff.jiaycare.com`，不带路径或末尾斜杠 |
 | SERVICE_GROUP_AI_ENABLED | `true` 才开放AI总结，另需既有 QWEN_API_KEY 或 DEEPSEEK_API_KEY |
 | SERVICE_GROUP_ARCHIVE_ENABLED | `true` 才接受签名消息并启动到期清理 |

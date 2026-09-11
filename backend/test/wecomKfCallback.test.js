@@ -7,6 +7,26 @@ const Message=require('../src/models/WecomKfMessage');
 const Contact=require('../src/models/WecomKfContact');
 const FollowUp=require('../src/models/FollowUp');
 
+test('测试模式仅回复指定客服启用后的新消息，不调用客户档案或AI',async(t)=>{
+  const names=['WECOM_KF_TEST_MODE','WECOM_KF_ALLOWED_ACCOUNT_IDS','WECOM_KF_REPLY_AFTER'];
+  const before=Object.fromEntries(names.map(k=>[k,process.env[k]]));
+  const originals={fetch:global.fetch,updateOne:Message.updateOne,findOne:Message.findOne,contactFindOne:Contact.findOne};
+  t.after(()=>{for(const k of names){if(before[k]===undefined)delete process.env[k];else process.env[k]=before[k];}global.fetch=originals.fetch;Message.updateOne=originals.updateOne;Message.findOne=originals.findOne;Contact.findOne=originals.contactFindOne;});
+  Object.assign(process.env,{WECOM_KF_TEST_MODE:'true',WECOM_KF_ALLOWED_ACCOUNT_IDS:'wk_test',WECOM_KF_REPLY_AFTER:'1000'});
+  const kf=require('../src/utils/wecomKf');let sends=0,writes=0;
+  Message.updateOne=async()=>{writes++;return {upsertedCount:1};};
+  Message.findOne=async()=>null;
+  Contact.findOne=()=>{throw Error('Test mode must not read patient records');};
+  global.fetch=async(url,options)=>{sends++;assert.equal(JSON.parse(options.body).text.content,kf.TEST_REPLY);return {ok:true,json:async()=>({errcode:0})};};
+  const args={corpId:'ww_test',openKfId:'wk_test',token:'synthetic',item:{msgid:'test',origin:3,external_userid:'synthetic',send_time:1001,msgtype:'text',text:{content:'测试连接'}}};
+  await kf.answer({...args,openKfId:'wk_other'});
+  await kf.answer({...args,item:{...args.item,send_time:999}});
+  assert.equal(writes,0);assert.equal(sends,0);
+  await kf.answer(args);assert.equal(sends,1);
+  process.env.WECOM_KF_ALLOWED_ACCOUNT_IDS='';
+  await kf.answer(args);assert.equal(sends,1);
+});
+
 test('微信客服回调仅在显式启用且签名、收件方、事件都正确时接受',async(t)=>{
   const names=['WECOM_KF_ENABLED','WECOM_KF_CORP_ID','WECOM_KF_SECRET','WECOM_KF_TOKEN','WECOM_KF_AES_KEY','WECOM_KF_AI_ENABLED'];
   const before=Object.fromEntries(names.map(k=>[k,process.env[k]]));

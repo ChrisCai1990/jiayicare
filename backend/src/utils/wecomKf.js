@@ -13,8 +13,14 @@ const SYSTEM='你是嘉医汇“小嘉”健康服务助手。仅回答服务流
 
 function enabled(){return process.env.WECOM_KF_ENABLED==='true';}
 // 复用员工自建应用时，企微只允许该应用配置一个接收消息服务器；客服事件由同一
-// URL 解密后分流。客服 API Secret、消息游标和业务开关仍保持独立，绝不复用员工应用 Secret。
+// URL 解密后分流。授权该应用调用微信客服后，客服 Secret 可配置为该应用 Secret。
 function sharedAppCallback(){return process.env.WECOM_KF_USE_APP_CALLBACK==='true';}
+function testMode(){return process.env.WECOM_KF_TEST_MODE==='true';}
+function allowedAccount(openKfId){
+  const ids=String(process.env.WECOM_KF_ALLOWED_ACCOUNT_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
+  return ids.length?ids.includes(openKfId):!testMode();
+}
+const TEST_REPLY='测试消息已收到，嘉医汇微信客服自动回复通道已连通。本条为固定测试回复，尚未开启AI问答。';
 function configured(){
   const base=Boolean(process.env.WECOM_KF_CORP_ID&&process.env.WECOM_KF_SECRET);
   if(!base)return false;
@@ -36,6 +42,9 @@ async function sendText(token,openKfId,externalUserId,content){
   const d=await r.json();if(!r.ok||d.errcode)throw new Error('微信客服发送失败'+(d.errcode?`(${d.errcode})`:''));
 }
 async function answer({corpId,openKfId,item,token}){
+  if(!allowedAccount(openKfId))return;
+  const since=Number(process.env.WECOM_KF_REPLY_AFTER||0);
+  if(since&&(!Number.isFinite(Number(item?.send_time))||Number(item.send_time)<since))return;
   if(!item?.msgid||item.origin!==3||!item.external_userid)return;
   const insert=await Message.updateOne({corpId,msgId:item.msgid},{$setOnInsert:{corpId,msgId:item.msgid,openKfId,externalUserId:item.external_userid,messageType:item.msgtype||'',direction:'customer',expiresAt:new Date(Date.now()+30*24*3600*1000)}},{upsert:true});
   const existing=await Message.findOne({corpId,msgId:item.msgid});
@@ -43,7 +52,8 @@ async function answer({corpId,openKfId,item,token}){
   if(!insert.upsertedCount&&existing?.status!=='failed')return;
   let content=UNBOUND,replyKind='unbound_notice',status='replied';
   try{
-    if(item.msgtype!=='text') {content=IMAGE_REPLY;replyKind='image_notice';}
+    if(testMode()){content=TEST_REPLY;replyKind='safe_notice';}
+    else if(item.msgtype!=='text') {content=IMAGE_REPLY;replyKind='image_notice';}
     else if(HANDOFF.test(String(item.text?.content||''))){
       content=HANDOFF_REPLY;replyKind='safe_notice';status='handoff';
       const contact=await Contact.findOne({corpId,externalUserId:item.external_userid,active:true,consentAt:{$ne:null}})
@@ -79,7 +89,7 @@ async function answer({corpId,openKfId,item,token}){
   }
 }
 async function sync({openKfId,callbackToken}){
-  if(!enabled()||!configured()||!openKfId||!callbackToken)return;
+  if(!enabled()||!configured()||!openKfId||!callbackToken||!allowedAccount(openKfId))return;
   const token=await accessToken();
   const cursorRecord=await Cursor.findOne({corpId:process.env.WECOM_KF_CORP_ID,openKfId});
   let cursor=cursorRecord?.cursor||'',nextCursor='';
@@ -96,4 +106,4 @@ async function sync({openKfId,callbackToken}){
   // 只有整批处理成功才提交游标；中途失败则由平台重投，本地 msgId 幂等保护重复发送。
   if(nextCursor)await Cursor.findOneAndUpdate({corpId:process.env.WECOM_KF_CORP_ID,openKfId},{$set:{cursor:nextCursor}},{upsert:true,new:true});
 }
-module.exports={enabled,configured,sharedAppCallback,sync,answer,UNBOUND,HANDOFF_REPLY,IMAGE_REPLY};
+module.exports={enabled,configured,sharedAppCallback,sync,answer,UNBOUND,HANDOFF_REPLY,IMAGE_REPLY,TEST_REPLY};
