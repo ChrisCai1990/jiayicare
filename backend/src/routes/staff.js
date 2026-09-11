@@ -1583,13 +1583,27 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
       return res.status(400).json({ success: false, message: '请先核对体检执行情况，并确认属于该客户的本次体检报告已回收齐全' });
     }
   }
+  const isOutpatientAdvisorAssessment = followUp.sourceType === 'health_plan'
+    && followUp.taskRole === 'executor'
+    && /健康顾问评估及医院专家确定/.test(followUp.theme || '');
+  if (isOutpatientAdvisorAssessment && req.body.status === 'completed') {
+    const assessment = req.body.formData || {};
+    const checks = Array.isArray(assessment.expectedChecks) ? assessment.expectedChecks.filter(item => String(item?.item || '').trim()) : [];
+    if (!String(assessment.recommendedHospital || '').trim()
+      || !String(assessment.recommendedDepartment || '').trim()
+      || !String(assessment.recommendedExpert || '').trim()
+      || !checks.length
+      || checks.some(item => item.expertRequired && !String(item.expertName || '').trim())) {
+      return res.status(400).json({ success: false, message: '请完整填写推荐医院、科室、专家，以及预计检查项目和所需检查专家' });
+    }
+  }
   const isSuper = req.staff.role === 'superadmin';
   const isOwner = isSuper || String(followUp.staffId) === String(req.staff._id);
   // 计划层字段（何时、谁负责、要不要做）只有创建人（或超管）能改；执行人只能填写执行结果，
   // 不能擅自改动创建人定下的随访安排——避免执行人绕过创建人调整计划本身
   const OWNER_ONLY = ['date', 'theme', 'type', 'assignedTo', 'nextFollowUpDate', 'tags'];
   // 执行层字段：谁去做都能填，被指派人是实际执行随访的人
-  const EXEC_FIELDS = ['status', 'content', 'cancelReason', 'vitals', 'checkInItems', 'participants', 'interviewMinutes', 'serviceChecklist'];
+  const EXEC_FIELDS = ['status', 'content', 'cancelReason', 'vitals', 'checkInItems', 'participants', 'interviewMinutes', 'serviceChecklist', 'formData'];
   const allowed = isOwner ? [...OWNER_ONLY, ...EXEC_FIELDS] : EXEC_FIELDS;
   const OBJECTID_FIELDS = ['assignedTo'];
   allowed.forEach(k => {
@@ -1646,10 +1660,27 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     const checklistForReview = Array.isArray(followUp.serviceChecklist)
       ? followUp.serviceChecklist.map(({ supervisionStatus, supervisionNote, ...item }) => item)
       : [];
-    await FollowUp.updateOne(
-      { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'supervisor', workflowKey: followUp.workflowKey || '', status: 'planned' },
-      { $set: { status: 'in_progress', isBlocked: false, serviceChecklist: checklistForReview, date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date() } }
-    );
+    const isOutpatientOneStop = /门诊一站式/.test(followUp.theme || '');
+    if (isOutpatientOneStop) {
+      // 门诊一站式由健康规划师总览督办，不把督办卡当作逐节点人工审批闸门。
+      // 岗位执行人完成本环节后，归档对应督办节点并直接解锁下一岗位。
+      const supervisor = await FollowUp.findOneAndUpdate(
+        { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'supervisor', workflowKey: followUp.workflowKey || '', status: 'planned' },
+        { $set: { status: 'completed', isBlocked: false, serviceChecklist: checklistForReview, completedAt: new Date(), completedBy: 'staff' } },
+        { new: true }
+      );
+      if (supervisor) {
+        await FollowUp.updateMany(
+          { sourceHealthPlanId: followUp.sourceHealthPlanId, dependsOnTaskId: supervisor._id, status: 'planned' },
+          { $set: { isBlocked: false, activationEvent: '', date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date() } }
+        );
+      }
+    } else {
+      await FollowUp.updateOne(
+        { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'supervisor', workflowKey: followUp.workflowKey || '', status: 'planned' },
+        { $set: { status: 'in_progress', isBlocked: false, serviceChecklist: checklistForReview, date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date() } }
+      );
+    }
   }
   if (followUp.sourceHealthPlanId && followUp.taskRole === 'supervisor' && followUp.status === 'completed') {
     await FollowUp.updateMany(
