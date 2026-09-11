@@ -59,6 +59,10 @@ test('约诊完成后由健康规划师分别安排两类就医专员', () => {
   assert.match(route, /检查及专家门诊陪诊与归档/);
   assert.match(patientPage, /OutpatientStaffAssignmentForm/);
   assert.match(followUpsPage, /OutpatientStaffAssignmentForm/);
+  assert.match(form, /健管专员已确认的门诊预约/);
+  assert.match(form, /dependsOnTaskId\?\.formData/);
+  assert.match(patientPage, /OutpatientStaffAssignmentForm task=\{execItem\}/);
+  assert.match(followUpsPage, /OutpatientStaffAssignmentForm task=\{execItem\}/);
 });
 
 test('门诊一站式任务不会因执行角色相同而误用体检表单', () => {
