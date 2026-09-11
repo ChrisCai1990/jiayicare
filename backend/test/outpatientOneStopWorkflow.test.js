@@ -7,9 +7,10 @@ const { PRODUCT_NAME, WORKFLOW_PLANS } = require('../src/scripts/migrateOutpatie
 
 test('门诊一站式是完整多阶段服务，不是单次代办', () => {
   assert.equal(PRODUCT_NAME, '门诊一站式服务');
-  assert.equal(WORKFLOW_PLANS.length, 6);
+  assert.equal(WORKFLOW_PLANS.length, 5);
   const names = WORKFLOW_PLANS.map(item => item.name).join('\n');
-  for (const expected of ['资料收集与核对', '健康顾问评估及医院专家确定', '代诊约诊服务', '首次代诊开检查单', '检查日专家号预约', '检查及专家门诊陪诊与归档']) assert.match(names, new RegExp(expected));
+  for (const expected of ['资料收集与核对', '健康顾问评估及医院专家确定', '代诊约诊服务', '首次代诊开检查单', '检查及专家门诊陪诊与归档']) assert.match(names, new RegExp(expected));
+  assert.doesNotMatch(names, /检查日专家号预约/);
   assert.ok(WORKFLOW_PLANS.every(item => item.executorRole));
   assert.deepEqual(WORKFLOW_PLANS.slice(0, 2).map(item => item.executorRole), ['healthManager', 'familyDoctor']);
   assert.match(WORKFLOW_PLANS[0].name, /资料收集/);

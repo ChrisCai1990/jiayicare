@@ -30,7 +30,7 @@ async function main() {
   const checkupOneStop = await products.findOne({ name: '体检一站式服务' });
   const checkupPlanIds = (checkupOneStop?.serviceWorkflow?.modules || []).map(item => item.planId).filter(Boolean);
   if (checkupPlanIds.length) await plans.updateMany({ _id: { $in: checkupPlanIds } }, { $set: { supervisorRole: 'healthPlanner', requiresCoordination: true, updatedAt: new Date() } });
-  const notes = '主要面向单次服务客户；健康规划师总督办，按健管收集资料、健康顾问评估、首次预约、代诊开单、专家号预约、陪诊归档顺序流转。';
+  const notes = '主要面向单次服务客户；健康规划师总督办，按健管收集资料、健康顾问评估、一次性完成预约、代诊开单、陪诊归档顺序流转。';
   const workflowSnapshot = { key: 'medical_assist', modules, followUpPlanIds: modules.map(item => item.planId), followUpPlanId: modules[0].planId, notes };
   const aiProfile = {
     ...(product.aiProfile || {}),
