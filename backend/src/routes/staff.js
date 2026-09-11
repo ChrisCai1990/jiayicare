@@ -1610,9 +1610,9 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
       || !checks.length
       || checks.some(item => item.expertRequired && !String(item.expertName || '').trim())
       || !visits.length
-      || visits.some(item => !String(item.coveredChecks || '').trim() || !item.plannedAppointmentDate || !item.plannedAppointmentTime || !String(item.department || '').trim())
-      || visits.some(item => item.expertRequired && !String(item.expertName || '').trim())) {
-      return res.status(400).json({ success: false, message: '请按顺序完整填写预计检查、检查专家要求、首次开单预约要求及检查后专家门诊信息' });
+      || visits.some(item => !String(item.coveredChecks || '').trim() || !String(item.department || '').trim())
+      || visits.some(item => item.communicationRequired && !String(item.communicationContent || '').trim())) {
+      return res.status(400).json({ success: false, message: '请完整填写特殊检查与专家建议、同日看诊专家、开单科室及特别沟通要求' });
     }
   }
   const isOutpatientAppointment = followUp.sourceType === 'health_plan'
@@ -1621,10 +1621,13 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   if (isOutpatientAppointment && req.body.status === 'completed') {
     const booking = req.body.formData || {};
     const appointments = Array.isArray(booking.prescribingAppointments) ? booking.prescribingAppointments : [];
+    const specialChecks = Array.isArray(booking.specialCheckAppointments) ? booking.specialCheckAppointments : [];
+    const postCheck = booking.postCheckAppointment || {};
     if (!String(booking.hospital || '').trim() || !appointments.length
-      || appointments.some(item => !String(item.department || '').trim() || !item.appointmentDate || !item.appointmentTime)
-      || appointments.some(item => item.expertRequired && !String(item.expertName || '').trim())) {
-      return res.status(400).json({ success: false, message: '请按健康顾问要求，完整安排每项检查的开单科室、门诊类型及预约日期时间' });
+      || appointments.some(item => !String(item.department || '').trim() || !String(item.doctorName || '').trim() || !item.appointmentDate || !item.appointmentTime)
+      || specialChecks.some(item => !item.appointmentDate || !item.appointmentTime || (item.expertRequired && !String(item.expertName || '').trim()))
+      || !String(postCheck.department || '').trim() || !String(postCheck.expertName || '').trim() || !postCheck.appointmentDate || !postCheck.appointmentTime) {
+      return res.status(400).json({ success: false, message: '请依次完成开单门诊、特殊检查专家及检查后专家门诊的实际预约安排' });
     }
   }
   const isSuper = req.staff.role === 'superadmin';

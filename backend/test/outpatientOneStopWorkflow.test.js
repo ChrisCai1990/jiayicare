@@ -35,15 +35,13 @@ test('健康规划师总览督办，岗位完成后直接串行解锁下一环�
 test('健康顾问环节使用结构化就医评估并由后端校验', () => {
   const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
   const form = fs.readFileSync(path.join(__dirname, '../../staff/src/components/OutpatientAdvisorAssessmentForm.jsx'), 'utf8');
-  for (const field of ['recommendedHospital', 'recommendedDepartment', 'recommendedExpert', 'expectedChecks', 'prescribingVisitRequirements', 'coveredChecks', 'plannedAppointmentDate', 'plannedAppointmentTime', 'department', 'expertRequired', 'expertName']) {
+  for (const field of ['recommendedHospital', 'recommendedDepartment', 'recommendedExpert', 'expectedChecks', 'prescribingVisitRequirements', 'coveredChecks', 'department', 'expertRequired', 'expertName', 'communicationRequired', 'communicationContent']) {
     assert.match(form, new RegExp(field));
     assert.match(route, new RegExp(field));
   }
   assert.match(form, /健管专员已收集资料/);
-  assert.match(form, /首次代诊开检查单预约条目/);
-  assert.match(form, /第一步：评估可能涉及的检查及检查专家要求/);
-  assert.match(form, /第二步：确定首次代诊开检查单的预约要求/);
-  assert.match(form, /第三步：确定检查完成后的专家门诊看诊信息/);
+  assert.match(form, /第一步：评估特殊检查、检查专家及同日看诊专家/);
+  assert.match(form, /第二步：提出首次代诊开检查单建议/);
   assert.match(form, /完成评估并流转下一步|validateOutpatientAssessment/);
 });
 
@@ -52,7 +50,7 @@ test('首次门诊预约展示顾问建议并保存实际预约安排', () => {
   const form = fs.readFileSync(path.join(__dirname, '../../staff/src/components/OutpatientAppointmentForm.jsx'), 'utf8');
   assert.match(route, /serviceChecklist formData executedContent/);
   assert.match(route, /formData: followUp\.formData \|\| null/);
-  for (const text of ['首次代诊开单要求', '开检查单门诊预约', 'prescribingAppointments', 'appointmentDate', 'appointmentTime', '确认预约并流转代诊']) {
+  for (const text of ['确认开检查单门诊预约', '沟通并确认特殊检查专家的具体时间', '根据检查时间安排检查后的专家门诊', 'prescribingAppointments', 'specialCheckAppointments', 'postCheckAppointment', 'appointmentDate', 'appointmentTime', '确认预约并流转代诊']) {
     assert.match(`${form}\n${fs.readFileSync(path.join(__dirname, '../../staff/src/pages/FollowUpsPage.jsx'), 'utf8')}`, new RegExp(text));
   }
 });

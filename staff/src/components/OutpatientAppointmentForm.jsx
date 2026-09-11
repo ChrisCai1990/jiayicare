@@ -2,65 +2,60 @@ import React from 'react'
 
 export const isOutpatientAppointmentTask = task => task?.taskRole === 'executor' && /首次代诊门诊预约/.test(task?.theme || '')
 const advisorData = task => task?.dependsOnTaskId?.formData || {}
+const labelStyle = { display: 'grid', gap: 5, fontSize: 12, color: '#65776F' }
 
 export const emptyOutpatientAppointment = (task, value) => {
   const advice = advisorData(task)
-  const requirements = Array.isArray(advice.prescribingVisitRequirements) && advice.prescribingVisitRequirements.length
-    ? advice.prescribingVisitRequirements
-    : (Array.isArray(advice.expectedChecks) ? advice.expectedChecks.map(item => ({ coveredChecks: item.item, department: item.prescribingDepartment || advice.recommendedDepartment, expertRequired: item.prescribingExpertRequired ?? item.expertRequired, expertName: item.prescribingExpertName || item.expertName })) : [])
+  const requirements = Array.isArray(advice.prescribingVisitRequirements) ? advice.prescribingVisitRequirements : []
+  const checks = Array.isArray(advice.expectedChecks) ? advice.expectedChecks : []
   const existing = Array.isArray(value?.prescribingAppointments) ? value.prescribingAppointments : []
+  const specialExisting = Array.isArray(value?.specialCheckAppointments) ? value.specialCheckAppointments : []
   return {
     hospital: value?.hospital || advice.recommendedHospital || '',
-    prescribingAppointments: requirements.length ? requirements.map((requirement, index) => ({
-      coveredChecks: requirement.coveredChecks || '',
-      department: existing[index]?.department || requirement.department || '',
-      expertRequired: existing[index]?.expertRequired ?? requirement.expertRequired ?? false,
-      expertName: existing[index]?.expertName || requirement.expertName || '',
-      appointmentDate: existing[index]?.appointmentDate || value?.appointmentDate || '',
-      appointmentTime: existing[index]?.appointmentTime || value?.appointmentTime || '',
-      plannedAppointmentDate: requirement.plannedAppointmentDate || '',
-      plannedAppointmentTime: requirement.plannedAppointmentTime || '',
-      appointmentNumber: existing[index]?.appointmentNumber || value?.appointmentNumber || '',
-    })) : existing,
+    prescribingAppointments: requirements.map((row, index) => ({ coveredChecks: row.coveredChecks || '', department: existing[index]?.department || row.department || '', doctorName: existing[index]?.doctorName || row.expertName || '', appointmentDate: existing[index]?.appointmentDate || '', appointmentTime: existing[index]?.appointmentTime || '', communicationContent: existing[index]?.communicationContent || row.communicationContent || '' })),
+    specialCheckAppointments: checks.map((row, index) => ({ item: row.item || '', expertRequired: !!row.expertRequired, expertName: specialExisting[index]?.expertName || row.expertName || '', appointmentDate: specialExisting[index]?.appointmentDate || '', appointmentTime: specialExisting[index]?.appointmentTime || '' })),
+    postCheckAppointment: { department: value?.postCheckAppointment?.department || advice.recommendedDepartment || '', expertName: value?.postCheckAppointment?.expertName || advice.recommendedExpert || '', appointmentDate: value?.postCheckAppointment?.appointmentDate || '', appointmentTime: value?.postCheckAppointment?.appointmentTime || '' },
     bookingNote: value?.bookingNote || '',
   }
 }
 
 export const validateOutpatientAppointment = value => {
-  if (!value?.hospital?.trim()) return '请填写首次代诊开单的医院'
-  if (!value?.prescribingAppointments?.length) return '健康顾问尚未填写预计检查及开单要求'
-  if (value.prescribingAppointments.some(row => !row.department?.trim() || !row.appointmentDate || !row.appointmentTime)) return '请为每项检查完整安排开单科室及预约日期时间'
-  if (value.prescribingAppointments.some(row => row.expertRequired && !row.expertName?.trim())) return '需要专家开单的预约，请填写开单专家姓名'
+  if (!value?.hospital?.trim()) return '请填写预约医院'
+  if (!value?.prescribingAppointments?.length) return '健康顾问尚未填写开检查单建议'
+  if (value.prescribingAppointments.some(row => !row.department?.trim() || !row.doctorName?.trim() || !row.appointmentDate || !row.appointmentTime)) return '请完整确认开单科室、医生及预约时间'
+  if (value.specialCheckAppointments?.some(row => !row.appointmentDate || !row.appointmentTime || (row.expertRequired && !row.expertName?.trim()))) return '请完整填写特殊检查预约时间及所需专家'
+  const post = value.postCheckAppointment || {}
+  if (!post.department?.trim() || !post.expertName?.trim() || !post.appointmentDate || !post.appointmentTime) return '请根据检查时间安排检查后的专家门诊'
   return ''
 }
 
 export default function OutpatientAppointmentForm({ task, value, onChange }) {
-  const advice = advisorData(task)
   const data = emptyOutpatientAppointment(task, value)
   const update = patch => onChange({ ...data, ...patch })
-  const updateRow = (index, patch) => update({ prescribingAppointments: data.prescribingAppointments.map((row, i) => i === index ? { ...row, ...patch } : row) })
+  const updateRow = (key, index, patch) => update({ [key]: data[key].map((row, i) => i === index ? { ...row, ...patch } : row) })
   return <div style={{ display: 'grid', gap: 14 }}>
-    <div style={{ border: '1px solid #B9DDD0', borderRadius: 10, background: '#F2F8F5', padding: 13 }}>
-      <div style={{ color: '#1E6B50', fontSize: 13, fontWeight: 750 }}>健康顾问确定的首次代诊开单要求</div>
-      <div style={{ marginTop: 6, fontSize: 13 }}>医院：<b>{advice.recommendedHospital || '—'}</b></div>
-      <div style={{ marginTop: 5, fontSize: 12, color: '#65776F' }}>检查完成后拟就诊：{advice.recommendedDepartment || '—'} · {advice.recommendedExpert || '—'}（此处暂不预约，留待检查日专家号环节）</div>
-    </div>
-    <label style={{ display: 'grid', gap: 5, fontSize: 12, color: '#65776F' }}><span>首次代诊开单医院 *</span><input className="form-control" value={data.hospital} onChange={e => update({ hospital: e.target.value })} /></label>
-    <div style={{ fontSize: 13, fontWeight: 750 }}>开检查单门诊预约</div>
-    {data.prescribingAppointments.map((row, index) => <div key={`${row.coveredChecks}-${index}`} style={{ border: '1px solid #E0E8E3', borderRadius: 10, padding: 12, display: 'grid', gap: 9 }}>
-      <div style={{ fontSize: 13, fontWeight: 700 }}>{index + 1}. 本次门诊拟开检查：{row.coveredChecks || '未填写项目'}</div>
-      <div style={{ fontSize: 12, color: '#65776F' }}>健康顾问建议预约：{row.plannedAppointmentDate || '未填写日期'} {row.plannedAppointmentTime || ''}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 9 }}>
-        <label style={{ fontSize: 12, color: '#65776F' }}>开单科室 *<input className="form-control" value={row.department} onChange={e => updateRow(index, { department: e.target.value })} /></label>
-        <label style={{ fontSize: 12, color: '#65776F' }}>开单门诊类型<input className="form-control" disabled value={row.expertRequired ? '专家门诊' : '普通门诊'} /></label>
-        <label style={{ fontSize: 12, color: '#65776F' }}>开单专家{row.expertRequired ? ' *' : ''}<input className="form-control" disabled={!row.expertRequired} value={row.expertName} onChange={e => updateRow(index, { expertName: e.target.value })} placeholder={row.expertRequired ? '专家姓名' : '无需指定'} /></label>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 9 }}>
-        <label style={{ fontSize: 12, color: '#65776F' }}>预约日期 *<input type="date" className="form-control" value={row.appointmentDate} onChange={e => updateRow(index, { appointmentDate: e.target.value })} /></label>
-        <label style={{ fontSize: 12, color: '#65776F' }}>预约时间 *<input type="time" className="form-control" value={row.appointmentTime} onChange={e => updateRow(index, { appointmentTime: e.target.value })} /></label>
-        <label style={{ fontSize: 12, color: '#65776F' }}>预约号/凭证（选填）<input className="form-control" value={row.appointmentNumber} onChange={e => updateRow(index, { appointmentNumber: e.target.value })} /></label>
-      </div>
-    </div>)}
-    <label style={{ display: 'grid', gap: 5, fontSize: 12, color: '#65776F' }}><span>代诊预约说明（选填）</span><textarea className="form-control" rows={3} value={data.bookingNote} onChange={e => update({ bookingNote: e.target.value })} placeholder="记录取号方式、代诊注意事项等" /></label>
+    <div style={{ border: '1px solid #B9DDD0', borderRadius: 10, background: '#F2F8F5', padding: 13 }}><b style={{ color: '#1E6B50' }}>健康顾问建议已带入，请由健管专员确认实际预约</b></div>
+    <label style={labelStyle}>预约医院 *<input className="form-control" value={data.hospital} onChange={e => update({ hospital: e.target.value })} /></label>
+    <section style={{ border: '1px solid #E0E8E3', borderRadius: 10, padding: 12, display: 'grid', gap: 10 }}><b>第一步：确认开检查单门诊预约</b>
+      {data.prescribingAppointments.map((row, index) => <div key={index} style={{ display: 'grid', gap: 8, borderTop: index ? '1px solid #E0E8E3' : 0, paddingTop: index ? 10 : 0 }}>
+        <div>拟开项目：<b>{row.coveredChecks}</b></div><div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
+          <label style={labelStyle}>确认科室 *<input className="form-control" value={row.department} onChange={e => updateRow('prescribingAppointments', index, { department: e.target.value })} /></label>
+          <label style={labelStyle}>确认医生 *<input className="form-control" value={row.doctorName} onChange={e => updateRow('prescribingAppointments', index, { doctorName: e.target.value })} /></label>
+          <label style={labelStyle}>预约日期 *<input type="date" className="form-control" value={row.appointmentDate} onChange={e => updateRow('prescribingAppointments', index, { appointmentDate: e.target.value })} /></label>
+          <label style={labelStyle}>预约时间 *<input type="time" className="form-control" value={row.appointmentTime} onChange={e => updateRow('prescribingAppointments', index, { appointmentTime: e.target.value })} /></label>
+        </div><label style={labelStyle}>实际沟通内容（自行记录）<textarea className="form-control" rows={2} value={row.communicationContent} onChange={e => updateRow('prescribingAppointments', index, { communicationContent: e.target.value })} /></label>
+      </div>)}
+    </section>
+    <section style={{ border: '1px solid #E0E8E3', borderRadius: 10, padding: 12, display: 'grid', gap: 10 }}><b>第二步：沟通并确认特殊检查专家的具体时间</b>
+      {data.specialCheckAppointments.map((row, index) => <div key={index} style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1fr', gap: 8 }}>
+        <label style={labelStyle}>特殊检查<input className="form-control" disabled value={row.item} /></label><label style={labelStyle}>检查专家{row.expertRequired ? ' *' : ''}<input className="form-control" disabled={!row.expertRequired} value={row.expertName} onChange={e => updateRow('specialCheckAppointments', index, { expertName: e.target.value })} placeholder={row.expertRequired ? '确认专家' : '无需指定'} /></label>
+        <label style={labelStyle}>检查日期 *<input type="date" className="form-control" value={row.appointmentDate} onChange={e => updateRow('specialCheckAppointments', index, { appointmentDate: e.target.value })} /></label><label style={labelStyle}>检查时间 *<input type="time" className="form-control" value={row.appointmentTime} onChange={e => updateRow('specialCheckAppointments', index, { appointmentTime: e.target.value })} /></label>
+      </div>)}
+    </section>
+    <section style={{ border: '1px solid #E0E8E3', borderRadius: 10, padding: 12, display: 'grid', gap: 10 }}><b>第三步：根据检查时间安排检查后的专家门诊</b><div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
+      {[['department', '看诊科室'], ['expertName', '看诊专家']].map(([key, label]) => <label key={key} style={labelStyle}>{label} *<input className="form-control" value={data.postCheckAppointment[key]} onChange={e => update({ postCheckAppointment: { ...data.postCheckAppointment, [key]: e.target.value } })} /></label>)}
+      <label style={labelStyle}>看诊日期 *<input type="date" className="form-control" value={data.postCheckAppointment.appointmentDate} onChange={e => update({ postCheckAppointment: { ...data.postCheckAppointment, appointmentDate: e.target.value } })} /></label><label style={labelStyle}>看诊时间 *<input type="time" className="form-control" value={data.postCheckAppointment.appointmentTime} onChange={e => update({ postCheckAppointment: { ...data.postCheckAppointment, appointmentTime: e.target.value } })} /></label>
+    </div></section>
+    <label style={labelStyle}>预约补充说明（选填）<textarea className="form-control" rows={3} value={data.bookingNote} onChange={e => update({ bookingNote: e.target.value })} /></label>
   </div>
 }
