@@ -10,5 +10,6 @@ test('service workbench groups workflow tasks into one current-stage card', () =
   assert.match(source, /return \{ \.\.\.service, task: service\.tasks\[0\], totalSteps:/);
   assert.match(source, /当前环节 · 共\{service\.totalSteps\}环节/);
   assert.match(source, /\{serviceGroups\.length\}/);
+  assert.doesNotMatch(source, /前序：/);
   assert.doesNotMatch(source, /visibleItems\.slice/);
 });

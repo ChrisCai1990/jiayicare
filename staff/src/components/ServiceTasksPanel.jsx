@@ -108,7 +108,7 @@ export default function ServiceTasksPanel() {
               </div>
               <div style={{ fontSize: 11, color: '#9AA9A2', marginTop: 2 }}>创建：{new Date(task.createdAt).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}</div>
             </div>
-            <span style={{ fontSize: 11, color: '#8AA89C' }}>{isWaitingPrevious ? `前序：${task.dependsOnTaskId?.theme || '待完成'}` : `计划：${formatChineseDate(task.date, false)}`}</span>
+            {!isWaitingPrevious && <span style={{ fontSize: 11, color: '#8AA89C' }}>计划：{formatChineseDate(task.date, false)}</span>}
           </div>
           )
         })}
