@@ -8788,6 +8788,7 @@ const DIETARY_SURVEY_QUESTIONNAIRE_ID = '6a49eab9fc1595013da70645';
 const TODO_REVIEW_ROLE = {
   report_parse:         'healthManager',
   report_review:        'healthManager',
+  report_interpretation:'familyDoctor',
   archive_review:       'healthManager',
   checkup_plan_review:  'familyDoctor',
   summary_review:       'familyDoctor',
@@ -8924,8 +8925,29 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
-    // 报告解析结果由健管专员审核。健康顾问在专项筛查小结、健康小结、
-    // 就医规划或管理方案入口按需查看已审核资料，不再为每次档案更新生成独立审核任务。
+    // 健管专员确认解析结果后，责任才转交健康顾问做报告解读。此前这里只在客户详情页
+    // 被动提示，健康顾问工作台没有任务，容易造成审核后的报告无人接手。按单份报告生成
+    // 待解读项；健康顾问点开报告后 familyDoctorViewedAt 会落库，该项随即从工作台消失。
+    if (can('report_interpretation')) {
+      const interpretationFilter = {
+        audit_status: 'audited',
+        status: 'pending',
+        familyDoctorViewedAt: null,
+        ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
+      };
+      const reportsToInterpret = await MedicalReport.find(interpretationFilter)
+        .populate('user', 'name phone').sort({ audited_at: -1, updatedAt: -1 }).limit(50).lean();
+      reportsToInterpret.forEach(r => {
+        const createdAt = r.audited_at || r.updatedAt || r.createdAt;
+        todos.push({
+          id: 'reportinterpret_' + r._id, type: 'report_interpretation', label: '体检报告待解读', priority: 2,
+          patientName: r.user?.name || '未知', patientId: String(r.user?._id || ''),
+          summary: `${r.title} · 健管专员已审核，请查看并向客户解读`,
+          createdAt, overdue: (now - new Date(createdAt)) > DAY,
+          link: `/patients/${r.user?._id}?tab=reports&reportId=${r._id}`,
+        });
+      });
+    }
 
     // ── 健管专员：客户不适主诉待核实（可编辑后转健康顾问）──
     if (can('symptom_verify')) {
