@@ -1617,7 +1617,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   }
   const isOutpatientAppointment = followUp.sourceType === 'health_plan'
     && followUp.taskRole === 'executor'
-    && /首次代诊门诊预约/.test(followUp.theme || '');
+    && /(?:代诊约诊服务|首次代诊门诊预约)/.test(followUp.theme || '');
   if (isOutpatientAppointment && req.body.status === 'completed') {
     const booking = req.body.formData || {};
     const appointments = Array.isArray(booking.prescribingAppointments) ? booking.prescribingAppointments : [];

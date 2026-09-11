@@ -9,7 +9,7 @@ test('门诊一站式是完整多阶段服务，不是单次代办', () => {
   assert.equal(PRODUCT_NAME, '门诊一站式服务');
   assert.equal(WORKFLOW_PLANS.length, 6);
   const names = WORKFLOW_PLANS.map(item => item.name).join('\n');
-  for (const expected of ['资料收集与核对', '健康顾问评估及医院专家确定', '首次代诊门诊预约', '首次代诊开检查单', '检查日专家号预约', '检查及专家门诊陪诊与归档']) assert.match(names, new RegExp(expected));
+  for (const expected of ['资料收集与核对', '健康顾问评估及医院专家确定', '代诊约诊服务', '首次代诊开检查单', '检查日专家号预约', '检查及专家门诊陪诊与归档']) assert.match(names, new RegExp(expected));
   assert.ok(WORKFLOW_PLANS.every(item => item.executorRole));
   assert.deepEqual(WORKFLOW_PLANS.slice(0, 2).map(item => item.executorRole), ['healthManager', 'familyDoctor']);
   assert.match(WORKFLOW_PLANS[0].name, /资料收集/);
@@ -53,6 +53,7 @@ test('首次门诊预约展示顾问建议并保存实际预约安排', () => {
   for (const text of ['确认开检查单门诊预约', '沟通并确认特殊检查专家的具体时间', '根据检查时间安排检查后的专家门诊', 'prescribingAppointments', 'specialCheckAppointments', 'postCheckAppointment', 'appointmentDate', 'appointmentTime', '确认预约并流转代诊']) {
     assert.match(`${form}\n${fs.readFileSync(path.join(__dirname, '../../staff/src/pages/FollowUpsPage.jsx'), 'utf8')}`, new RegExp(text));
   }
+  assert.match(fs.readFileSync(path.join(__dirname, '../../staff/src/pages/FollowUpsPage.jsx'), 'utf8'), /安排代诊约诊服务/);
 });
 
 test('预约退回时跳过自动督办节点并恢复健康顾问执行任务', () => {

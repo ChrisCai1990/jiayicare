@@ -1,6 +1,6 @@
 import React from 'react'
 
-export const isOutpatientAppointmentTask = task => task?.taskRole === 'executor' && /首次代诊门诊预约/.test(task?.theme || '')
+export const isOutpatientAppointmentTask = task => task?.taskRole === 'executor' && /(?:代诊约诊服务|首次代诊门诊预约)/.test(task?.theme || '')
 const advisorData = task => task?.dependsOnTaskId?.formData || {}
 const labelStyle = { display: 'grid', gap: 5, fontSize: 12, color: '#65776F' }
 

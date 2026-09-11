@@ -6,7 +6,7 @@ const PRODUCT_NAME = '门诊一站式服务';
 const WORKFLOW_PLANS = [
   { name: '门诊一站式：资料收集与核对', executorRole: 'healthManager', executorDueOffsetDays: -10, completionStandard: '已收齐本次就医诉求、病历、既往报告、当前用药及身份医保资料；客户提供的报告已上传归档；资料完整性已审核，缺失项和待补内容已明确。' },
   { name: '门诊一站式：健康顾问评估及医院专家确定', executorRole: 'familyDoctor', executorDueOffsetDays: -9, completionStandard: '健康顾问已完成医学评估分析，确定医院、科室和专家，列明预计涉及的检查单，并明确哪些检查需要专家及对应专家名称。' },
-  { name: '门诊一站式：首次代诊门诊预约', executorRole: 'healthManager', executorDueOffsetDays: -8, completionStandard: '已按健康顾问确定的医院、科室和医生完成首次代诊门诊预约。' },
+  { name: '门诊一站式：代诊约诊服务', executorRole: 'healthManager', executorDueOffsetDays: -8, completionStandard: '已按健康顾问建议安排代诊所需的约诊服务，并确认开单、特殊检查及检查后专家门诊安排。' },
   { name: '门诊一站式：首次代诊开检查单', executorRole: 'medicalAssistant', executorDueOffsetDays: -7, completionStandard: '已完成首次代诊，按医嘱取得检查单和首次门诊病历，并完整反馈开单结果。' },
   { name: '门诊一站式：检查日专家号预约', executorRole: 'healthManager', executorDueOffsetDays: -3, completionStandard: '已根据检查安排预约检查日专家号，检查、取结果与专家门诊时间可以衔接。' },
   { name: '门诊一站式：检查及专家门诊陪诊与归档', executorRole: 'medicalAssistant', executorDueOffsetDays: 0, fixedToServiceDate: true, completionStandard: '已陪同客户完成检查和专家门诊，两次门诊病历、检查单及已取得结果均已上传归档，本次服务可验收结束。' },
@@ -18,6 +18,11 @@ async function main() {
   const db = mongoose.connection.db;
   const products = db.collection('products');
   const plans = db.collection('followupplans');
+  await plans.updateMany({ name: '门诊一站式：首次代诊门诊预约' }, { $set: { name: '门诊一站式：代诊约诊服务', updatedAt: new Date() } });
+  await db.collection('followups').updateMany(
+    { theme: { $regex: '首次代诊门诊预约' } },
+    [{ $set: { theme: { $replaceOne: { input: '$theme', find: '首次代诊门诊预约', replacement: '代诊约诊服务' } } } }]
+  );
   const product = await products.findOne({ name: PRODUCT_NAME });
   if (!product) throw new Error(`${PRODUCT_NAME}不存在`);
   const backupKey = `outpatient-one-stop-workflow-v5-${new Date().toISOString()}`;
