@@ -2029,17 +2029,19 @@ router.get('/plan-templates', adminAuth, async (req, res) => {
 // POST /api/admin/plan-templates
 router.post('/plan-templates', adminAuth, async (req, res) => {
   const { type, name, status, content, clientBrand } = req.body;
+  const clientBrands = [...new Set((Array.isArray(req.body.clientBrands) ? req.body.clientBrands : [clientBrand || content?.clientBrand]).filter(value => ['jiayiguanjia', 'jinyisen'].includes(value)))];
   if (!type || !name) return res.status(400).json({ success: false, message: '类型和名称不能为空' });
-  const tpl = await PlanTemplate.create({ type, name, status: status || 'active', clientBrand: clientBrand || content?.clientBrand || '', content: content || {} });
+  const tpl = await PlanTemplate.create({ type, name, status: status || 'active', clientBrand: clientBrands.length === 1 ? clientBrands[0] : '', clientBrands, content: { ...(content || {}), clientBrands } });
   res.json({ success: true, data: tpl, message: '模板创建成功' });
 });
 
 // PUT /api/admin/plan-templates/:id
 router.put('/plan-templates/:id', adminAuth, async (req, res) => {
   const { name, status, content, clientBrand } = req.body;
+  const clientBrands = [...new Set((Array.isArray(req.body.clientBrands) ? req.body.clientBrands : [clientBrand || content?.clientBrand]).filter(value => ['jiayiguanjia', 'jinyisen'].includes(value)))];
   const tpl = await PlanTemplate.findByIdAndUpdate(
     req.params.id,
-    { name, status, clientBrand: clientBrand || content?.clientBrand || '', content },
+    { name, status, clientBrand: clientBrands.length === 1 ? clientBrands[0] : '', clientBrands, content: { ...(content || {}), clientBrands } },
     { new: true }
   );
   if (!tpl) return res.status(404).json({ success: false, message: '模板不存在' });
@@ -2050,7 +2052,7 @@ router.put('/plan-templates/:id', adminAuth, async (req, res) => {
 router.post('/plan-templates/:id/copy', adminAuth, async (req, res) => {
   const src = await PlanTemplate.findById(req.params.id);
   if (!src) return res.status(404).json({ success: false, message: '模板不存在' });
-  const copy = await PlanTemplate.create({ type: src.type, name: src.name + '（副本）', status: 'inactive', clientBrand: src.clientBrand || '', content: src.content });
+  const copy = await PlanTemplate.create({ type: src.type, name: src.name + '（副本）', status: 'inactive', clientBrand: src.clientBrand || '', clientBrands: src.clientBrands || [], content: src.content });
   res.json({ success: true, data: copy, message: '模板已复制' });
 });
 

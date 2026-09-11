@@ -620,15 +620,38 @@ function TemplateModal({ template, planType, onClose, onSaved }) {
   const isEdit = !!template?._id
   const [name, setName] = useState(template?.name || '')
   const [status, setStatus] = useState(template?.status || 'active')
-  const [clientBrand, setClientBrand] = useState(template?.clientBrand || template?.content?.clientBrand || 'jiayiguanjia')
+  const initialBrands = template?.clientBrands?.length
+    ? template.clientBrands
+    : (template?.clientBrand || template?.content?.clientBrand ? [template?.clientBrand || template?.content?.clientBrand] : [])
+  const [clientBrands, setClientBrands] = useState(initialBrands)
+  const [workflowProducts, setWorkflowProducts] = useState([])
+  const [questionnaires, setQuestionnaires] = useState([])
+  const [workflowProductId, setWorkflowProductId] = useState(template?.content?.workflowProductId || '')
+  const [questionnaireId, setQuestionnaireId] = useState('')
   const [loading, setLoading] = useState(false)
   const contentRef = useRef(template?.content || defaultContent[planType] || {})
+  const isCheckupServiceTemplate = planType === 'medical_assist' && ['annual_checkup', 'checkup'].includes(contentRef.current?.serviceDomain)
+
+  useEffect(() => {
+    if (!isCheckupServiceTemplate) return
+    Promise.all([adminAPI.products(), adminAPI.questionnaires()]).then(([productRes, questionnaireRes]) => {
+      const products = (productRes.data || []).filter(product => product.serviceWorkflow?.key === 'checkup')
+      setWorkflowProducts(products)
+      setQuestionnaires((questionnaireRes.data || []).filter(item => item.status === 'active'))
+      const matched = products.find(product => String(product._id) === String(workflowProductId))
+        || products.find(product => product.name === template?.content?.workflowProductName || product.name === name)
+      if (matched) {
+        setWorkflowProductId(matched._id)
+        setQuestionnaireId(typeof matched.serviceWorkflow?.questionnaireId === 'object' ? matched.serviceWorkflow.questionnaireId?._id || '' : matched.serviceWorkflow?.questionnaireId || '')
+      }
+    }).catch(() => {})
+  }, [isCheckupServiceTemplate])
 
   const typeLabel = PLAN_TYPES.find(t => t.key === planType)?.label || planType
 
   const save = async () => {
     if (!name.trim()) { toast('❌ 模板名称不能为空'); return }
-    const content = { ...contentRef.current, clientBrand }
+    const content = { ...contentRef.current, clientBrands, workflowProductId }
     if (planType === 'health_management' && !Object.values(content.standardActionPlans || {}).some(item => item?.id)) {
       toast('❌ 请至少配置一项年度基础动作模板')
       return
@@ -641,12 +664,29 @@ function TemplateModal({ template, planType, onClose, onSaved }) {
       toast('❌ 请选择关联岗位任务方案')
       return
     }
+    if (isCheckupServiceTemplate && !workflowProductId) {
+      toast('❌ 请选择关联体检服务产品')
+      return
+    }
     setLoading(true)
     try {
       if (isEdit) {
-        await adminAPI.updatePlanTemplate(template._id, { name, status, clientBrand, content })
+        await adminAPI.updatePlanTemplate(template._id, { name, status, clientBrands, content })
       } else {
-        await adminAPI.createPlanTemplate({ type: planType, name, status, clientBrand, content })
+        await adminAPI.createPlanTemplate({ type: planType, name, status, clientBrands, content })
+      }
+      if (isCheckupServiceTemplate && workflowProductId) {
+        const product = workflowProducts.find(item => String(item._id) === String(workflowProductId))
+        const workflow = product?.serviceWorkflow || {}
+        const modules = (workflow.modules || []).map((item, sequence) => ({
+          planId: item.planId?._id || item.planId,
+          mode: item.mode || 'fixed', trigger: item.trigger || '', sequence: item.sequence ?? sequence,
+        }))
+        await adminAPI.updateProductServiceWorkflow(workflowProductId, {
+          key: 'checkup', questionnaireId: questionnaireId || null, modules,
+          followUpPlanIds: modules.map(item => item.planId), followUpPlanId: modules[0]?.planId || null,
+          notes: workflow.notes || '',
+        })
       }
       toast(`✅ 模板${isEdit ? '更新' : '创建'}成功`)
       onSaved()
@@ -681,12 +721,27 @@ function TemplateModal({ template, planType, onClose, onSaved }) {
               </select>
             </div>
             <div className="form-group">
-              <label className="form-label">客户归属 *</label>
-              <select className="form-input" value={clientBrand} onChange={e => setClientBrand(e.target.value)}>
-                <option value="jiayiguanjia">嘉医管家</option>
-                <option value="jinyisen">金伊森</option>
-              </select>
+              <label className="form-label">适用客户归属</label>
+              <div style={{ display: 'flex', gap: 16, minHeight: 42, alignItems: 'center', padding: '0 12px', border: '1px solid #E0D9CE', borderRadius: 8 }}>
+                {[['jiayiguanjia', '嘉医管家'], ['jinyisen', '金伊森']].map(([value, label]) => <label key={value} style={{ display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" checked={clientBrands.includes(value)} onChange={e => setClientBrands(prev => e.target.checked ? [...new Set([...prev, value])] : prev.filter(item => item !== value))} />{label}</label>)}
+                {!clientBrands.length && <span style={{ color: '#8AA89C', fontSize: 12 }}>未选择＝不限制归属</span>}
+              </div>
             </div>
+            {isCheckupServiceTemplate && <>
+              <div className="form-group">
+                <label className="form-label">关联体检服务产品 *</label>
+                <select className="form-input" value={workflowProductId} onChange={e => { const id = e.target.value; setWorkflowProductId(id); const product = workflowProducts.find(item => item._id === id); setQuestionnaireId(typeof product?.serviceWorkflow?.questionnaireId === 'object' ? product.serviceWorkflow.questionnaireId?._id || '' : product?.serviceWorkflow?.questionnaireId || '') }}>
+                  <option value="">请选择 Admin 体检产品</option>{workflowProducts.map(product => <option key={product._id} value={product._id}>{product.name}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">下单自动体检问卷</label>
+                <select className="form-input" value={questionnaireId} onChange={e => setQuestionnaireId(e.target.value)} disabled={!workflowProductId}>
+                  <option value="">不自动推送</option>{questionnaires.map(item => <option key={item._id} value={item._id}>{item.title}</option>)}
+                </select>
+                <div style={{ color: '#8AA89C', fontSize: 11, marginTop: 4 }}>保存后同步到关联产品；商城下单时每笔订单独立推送一次。</div>
+              </div>
+            </>}
           </div>
 
           <div style={{ borderTop: '1px solid #e0d9ce', paddingTop: 16 }}>
@@ -1059,7 +1114,7 @@ export default function HealthPlanTemplatePage() {
                   {templates.map(tpl => (
                     <tr key={tpl._id}>
                       <td style={{ fontWeight: 600 }}>{tpl.name}</td>
-                      <td>{tpl.clientBrand === 'jinyisen' ? '金伊森' : tpl.clientBrand === 'jiayiguanjia' ? '嘉医管家' : '两平台共用（历史）'}</td>
+                      <td>{tpl.clientBrands?.length ? tpl.clientBrands.map(value => value === 'jinyisen' ? '金伊森' : '嘉医管家').join('、') : tpl.clientBrand === 'jinyisen' ? '金伊森' : tpl.clientBrand === 'jiayiguanjia' ? '嘉医管家' : '不限制归属'}</td>
                       {activeType === 'health_management' && <td>{{ health_reshape: '健康重塑类', young_state: '健康年轻态类', chronic_stable: '慢病维稳类', health_prevention: '健康预防类' }[tpl.content?.planType] || '待归类'}</td>}
                       <td>
                         <span className={`badge ${tpl.status === 'active' ? 'badge-green' : 'badge-gray'}`}>

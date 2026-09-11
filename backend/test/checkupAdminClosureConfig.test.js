@@ -25,3 +25,14 @@ test('V12 migration upgrades active checkup services and their order snapshots',
   assert.match(migration, /ensureCheckupTasks/)
   assert.match(migration, /onCheckupReportAudited/)
 })
+
+test('Admin templates support multiple client brands and expose the checkup questionnaire', () => {
+  const model = read('src/models/PlanTemplate.js')
+  const route = read('src/routes/admin.js')
+  const page = read('../admin/src/pages/HealthPlanTemplatePage.jsx')
+  assert.match(model, /clientBrands/)
+  assert.match(route, /Array\.isArray\(req\.body\.clientBrands\)/)
+  assert.match(page, /适用客户归属/)
+  assert.match(page, /下单自动体检问卷/)
+  assert.match(page, /updateProductServiceWorkflow/)
+})

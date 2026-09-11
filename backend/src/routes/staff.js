@@ -3661,7 +3661,10 @@ router.get('/plan-templates', staffAuth, async (req, res) => {
         return 'health_prevention';
       };
       templates = templates
-        .filter(tpl => ['', patientBrand].includes(inferLegacyBrand(tpl)))
+        .filter(tpl => {
+          const brands = Array.isArray(tpl.clientBrands) ? tpl.clientBrands.filter(Boolean) : [];
+          return brands.length ? brands.includes(patientBrand) : ['', patientBrand].includes(inferLegacyBrand(tpl));
+        })
         .map(tpl => ({
           ...tpl,
           effectiveClientBrand: inferLegacyBrand(tpl) || patientBrand,

@@ -14,6 +14,10 @@ const planTemplateSchema = new mongoose.Schema({
     default: '',
     index: true,
   },
+  clientBrands: [{
+    type: String,
+    enum: ['jiayiguanjia', 'jinyisen'],
+  }],
   status:  { type: String, enum: ['active', 'inactive'], default: 'active' },
   content: { type: mongoose.Schema.Types.Mixed, default: {} },
 }, { timestamps: true });
