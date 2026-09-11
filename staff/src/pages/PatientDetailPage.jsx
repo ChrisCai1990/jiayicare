@@ -15,6 +15,7 @@ import femalePortraitPhoto from '../assets/health-portrait-female.webp'
 import malePortraitPhoto from '../assets/health-portrait-male.webp'
 import { reconcileConversationMessages } from '../utils/conversationMessages'
 import { insertReportItemBelow } from '../utils/reportItemOrder'
+import { isImageReportFile, isPdfReportFile } from '../utils/reportFileType'
 
 // 使用浏览器原生 PDF 阅读器，保留缩放、页码跳转、旋转、查找、打印及下载等常规功能。
 // 预览链接仍是绑定报告与短时令牌的私有 API，不改为公开直链。
@@ -10736,7 +10737,7 @@ export default function PatientDetailPage() {
                 <div style={{ fontSize: 13, color: '#8AA89C', marginBottom: 8 }}>报告文件</div>
                 {reportDetailLoading ? (
                   <div style={{ padding: '16px 0', textAlign: 'center', color: '#8AA89C', fontSize: 13 }}>加载中…</div>
-                ) : (showReportDetail.content || showReportDetail.fileUrl) ? (() => {
+                ) : (showReportDetail.content || showReportDetail.previewUrl || showReportDetail.fileUrl || showReportDetail.fileUrls?.length || showReportDetail.previewUrls?.length) ? (() => {
                   // 一份报告可能关联多张照片(如"结论页"+"数据页"，见 fileUrls)。content 场景只有单个
                   // data URI，没有多图概念，仍走单文件展示；fileUrls 存在且 >1 张时逐张列出，
                   // 否则退化为单文件展示，兼容旧数据(只有fileUrl没有fileUrls的历史报告)。
@@ -10744,7 +10745,7 @@ export default function PatientDetailPage() {
                   const multiUrls = (!showReportDetail.content && reportPreviewUrls && reportPreviewUrls.length > 1)
                     ? reportPreviewUrls : null
                   if (multiUrls) {
-                    const isPdf = showReportDetail.mimeType === 'application/pdf'
+                    const isPdf = isPdfReportFile(showReportDetail, multiUrls[0])
                     const sizeKB = showReportDetail.fileSize ? Math.round(Number(showReportDetail.fileSize) / 1024) : null
                     return (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -10767,8 +10768,8 @@ export default function PatientDetailPage() {
                   }
                   const rawSrc = showReportDetail.content || showReportDetail.previewUrl || showReportDetail.fileUrl
                   const src = rawSrc.startsWith('/') ? API_ORIGIN + rawSrc : rawSrc
-                  const isPdf = showReportDetail.mimeType === 'application/pdf' || rawSrc.includes('.pdf') || rawSrc.startsWith('data:application/pdf')
-                  const isImg = showReportDetail.mimeType?.startsWith('image/') || rawSrc.startsWith('data:image')
+                  const isPdf = isPdfReportFile(showReportDetail, rawSrc)
+                  const isImg = isImageReportFile(showReportDetail, rawSrc)
                   const sizeKB = showReportDetail.fileSize ? Math.round(Number(showReportDetail.fileSize) / 1024) : null
                   const ext = isPdf ? '.pdf' : isImg ? (showReportDetail.mimeType === 'image/png' ? '.png' : '.jpg') : ''
                   const displayName = showReportDetail.title ? `${showReportDetail.title}${ext}` : (isPdf ? 'PDF 文件' : isImg ? '图片文件' : '附件')

@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { staffAPI, API_ORIGIN } from '../api'
+import { isImageReportFile, isPdfReportFile } from '../utils/reportFileType'
 import { useToast, usePermission } from '../App'
 import Pagination from '../components/Pagination'
 
@@ -189,9 +190,8 @@ export default function ReportsPage() {
                       </div>
                     );
                   }
-                  const url = showDetail.fileUrl || '';
-                  const isImage = showDetail.mimeType?.startsWith('image/') || src.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(url);
-                  const isPdf = showDetail.mimeType === 'application/pdf' || url.endsWith('.pdf') || src.startsWith('data:application/pdf');
+                  const isImage = isImageReportFile(showDetail, rawSrc);
+                  const isPdf = isPdfReportFile(showDetail, rawSrc);
                   if (isImage) return (
                     <>
                       <img src={src} alt="报告" style={{ maxWidth: '100%', maxHeight: '55vh', objectFit: 'contain', borderRadius: 8, border: '1px solid #f0ece4', display: 'block' }}
