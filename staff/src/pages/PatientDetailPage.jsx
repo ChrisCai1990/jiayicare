@@ -10914,7 +10914,14 @@ export default function PatientDetailPage() {
         const expectedPages = Array.from({ length: lastSourcePage }, (_, i) => i + 1)
         const activePage = ocrReviewPage || firstSourcePage
         const activePageParse = Number(ocrReviewReport.pageParseStatus?.pageNum) === activePage ? ocrReviewReport.pageParseStatus : null
+        // 后端补提是进程内异步任务；发布重启等中断可能遗留 processing。
+        // 超过15分钟后不再锁死按钮，让后端按同一规则接受重新补提。
+        const pageParseStartedAt = new Date(activePageParse?.startedAt || '').getTime()
         const pageParsing = activePageParse?.status === 'processing'
+          && Number.isFinite(pageParseStartedAt)
+          && Date.now() - pageParseStartedAt >= 0
+          && Date.now() - pageParseStartedAt < 15 * 60 * 1000
+        const pageParseStale = activePageParse?.status === 'processing' && !pageParsing
         const missingPages = expectedPages.filter(page => !sourcePages.includes(page))
         // 专项筛查归类：选项分组 + 手动归类
         // screeningCatalog 来自后端 /screening-catalog，数据源为 admin 配置的「专项筛查项目」（LabTestPackage）
@@ -11094,7 +11101,7 @@ export default function PatientDetailPage() {
               <div className="modal-body" ref={ocrModalBodyRef} style={{ overflowY: 'auto', flex: 1, minWidth: 0 }}>
                 {activePageParse && (
                   <div style={{ margin: '10px 12px 0', padding: '9px 12px', borderRadius: 7, fontSize: 12, background: pageParsing ? '#FFF8E6' : activePageParse.status === 'success' ? '#F0FDF4' : '#FFF0F0', color: pageParsing ? '#9A6700' : activePageParse.status === 'success' ? '#1E6B50' : '#B42318' }}>
-                    {pageParsing ? `第${activePage}页正在补提，请稍候，完成后本页会自动刷新。` : activePageParse.message}
+                    {pageParsing ? `第${activePage}页正在补提，请稍候，完成后本页会自动刷新。` : pageParseStale ? `第${activePage}页上次补提已中断，可以重新补提。` : activePageParse.message}
                   </div>
                 )}
                 {(() => {

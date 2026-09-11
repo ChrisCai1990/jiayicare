@@ -16,6 +16,19 @@ function hasReportItemEvidence(item) {
   return Boolean(narrative || value);
 }
 
+const PAGE_PARSE_STALE_MS = 15 * 60 * 1000;
+
+// 单页补提在应用重启或进程被中断时不会有后台任务继续更新状态。
+// 只把近期启动的同页任务视为仍在运行，避免一个陈旧 processing 永久锁死重试入口。
+function isActivePageParse(status, pageNum, now = new Date(), staleMs = PAGE_PARSE_STALE_MS) {
+  if (status?.status !== 'processing' || Number(status.pageNum) !== Number(pageNum)) return false;
+  const startedAt = new Date(status.startedAt).getTime();
+  const nowMs = new Date(now).getTime();
+  if (!Number.isFinite(startedAt) || !Number.isFinite(nowMs)) return false;
+  const ageMs = nowMs - startedAt;
+  return ageMs >= 0 && ageMs < staleMs;
+}
+
 function isHumanReviewed(item) {
   return item?.manualReviewStatus === 'reviewed' || item?.manualReviewedAt || item?.manualReviewedBy;
 }
@@ -123,6 +136,8 @@ module.exports = {
   filterMissingReportItems,
   hasReportItemEvidence,
   inferMissingUltrasoundOrgans,
+  isActivePageParse,
   mergeSupplementItems,
+  PAGE_PARSE_STALE_MS,
   reportItemIdentityKey,
 };

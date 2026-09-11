@@ -11487,9 +11487,10 @@ router.post('/medical-reports/:id/parse-page', staffAuth, async (req, res) => {
     const pageNum = Number(req.body?.pageNum);
     if (!Number.isInteger(pageNum) || pageNum < 1 || pageNum > 500) return res.status(400).json({ success: false, message: '页码无效' });
     const MedicalReport = require('../models/MedicalReport');
+    const { isActivePageParse } = require('../utils/reportPageSupplement');
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-    if (report.pageParseStatus?.status === 'processing' && Number(report.pageParseStatus.pageNum) === pageNum) {
+    if (isActivePageParse(report.pageParseStatus, pageNum)) {
       return res.json({ success: true, processing: true, duplicate: true, message: `第${pageNum}页正在补提，请勿重复点击` });
     }
     await MedicalReport.findByIdAndUpdate(report._id, { pageParseStatus: { pageNum, status: 'processing', startedAt: new Date(), message: `正在补提第${pageNum}页` } });

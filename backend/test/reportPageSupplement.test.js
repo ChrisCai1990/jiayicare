@@ -1,6 +1,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { describeExistingReportItems, filterMissingReportItems, hasReportItemEvidence, inferMissingUltrasoundOrgans, mergeSupplementItems } = require('../src/utils/reportPageSupplement');
+const { describeExistingReportItems, filterMissingReportItems, hasReportItemEvidence, inferMissingUltrasoundOrgans, isActivePageParse, mergeSupplementItems } = require('../src/utils/reportPageSupplement');
+
+test('只拦截近期同页补提，进程中断留下的陈旧状态允许重试', () => {
+  const now = new Date('2026-09-11T05:30:00.000Z');
+  assert.equal(isActivePageParse({ status: 'processing', pageNum: 1, startedAt: '2026-09-11T05:20:00.000Z' }, 1, now), true);
+  assert.equal(isActivePageParse({ status: 'processing', pageNum: 1, startedAt: '2026-09-11T05:00:00.000Z' }, 1, now), false);
+  assert.equal(isActivePageParse({ status: 'processing', pageNum: 2, startedAt: '2026-09-11T05:20:00.000Z' }, 1, now), false);
+  assert.equal(isActivePageParse({ status: 'processing', pageNum: 1 }, 1, now), false);
+});
 
 test('单页补提会向模型列出已有项目及所属栏目', () => {
   assert.equal(describeExistingReportItems([
