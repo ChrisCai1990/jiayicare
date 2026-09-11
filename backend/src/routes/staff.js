@@ -1574,7 +1574,9 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     const closure = Array.isArray(req.body.serviceChecklist) ? req.body.serviceChecklist[0] : null;
     const reportIds = [...new Set([...(closure?.reportIds || []), closure?.reportId].filter(Boolean).map(String))];
     const reportCount = reportIds.length ? await MedicalReport.countDocuments({ _id: { $in: reportIds }, user: followUp.patientId }) : 0;
-    if (!closure?.serviceReviewed || closure?.collectionStatus !== 'complete' || !reportIds.length || reportCount !== reportIds.length) {
+    const itemChecks = Array.isArray(closure?.itemChecks) ? closure.itemChecks : [];
+    const unresolvedItems = itemChecks.filter(item => !['completed', 'not_completed'].includes(item?.status));
+    if (!closure?.serviceReviewed || closure?.collectionStatus !== 'complete' || !reportIds.length || reportCount !== reportIds.length || !itemChecks.length || unresolvedItems.length) {
       return res.status(400).json({ success: false, message: '请先核对体检执行情况，并确认属于该客户的本次体检报告已回收齐全' });
     }
   }

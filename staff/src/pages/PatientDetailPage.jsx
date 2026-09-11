@@ -2276,7 +2276,11 @@ export default function PatientDetailPage() {
     }
     const submittedChecklist = isBooking ? bookingChecklist(execForm.appointmentDetails) : execForm.serviceChecklist
     const reportClosure = isReportCollection ? execForm.serviceChecklist?.[0] : null
-    if (isReportCollection && reportClosure?.collectionStatus === 'complete' && (!reportClosure.serviceReviewed || !reportClosure.reportIds?.length)) { toast('完成闭环前，请先核对陪诊执行情况并关联至少一份本次体检报告'); return }
+    if (isReportCollection && reportClosure?.collectionStatus === 'complete') {
+      if (!reportClosure.serviceReviewed || !reportClosure.reportIds?.length) { toast('完成闭环前，请先核对陪诊执行情况并关联至少一份本次体检报告'); return }
+      if (!reportClosure.itemChecks?.length) { toast('未读取到体检方案项目，暂不能完成闭环'); return }
+      if (reportClosure.itemChecks.some(item => !['completed', 'not_completed'].includes(item.status))) { toast('仍有项目处于“报告待回收”，请逐项核对后再完成闭环'); return }
+    }
     if (execItem?.taskRole && !isBooking && !isReportCollection) {
       if (!execForm.serviceChecklist.length) { toast('请先在方案中补充明确的代办目的'); return }
       if (execItem.taskRole === 'supervisor' && execForm.serviceChecklist.some(item => !item.supervisionStatus)) { toast('请逐项完成督导核验'); return }
@@ -10140,7 +10144,7 @@ export default function PatientDetailPage() {
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', overscrollBehavior: 'contain' }}>
               <ServiceTaskContextBanner task={execItem} />
-              {isCheckupReportCollectionTask(execItem) ? <CheckupReportCollectionForm task={execItem} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} /> : isCheckupBookingTask(execItem) ? <CheckupBookingForm value={execForm.appointmentDetails} onChange={appointmentDetails => setExecForm(form => ({ ...form, appointmentDetails }))} /> : execItem.taskRole && <ServiceTaskChecklist mode={execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor'} purposes={execItem.taskPurposes || []} source={execItem.dependsOnTaskId?.serviceChecklist || []} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} />}
+              {isCheckupReportCollectionTask(execItem) ? <CheckupReportCollectionForm task={execItem} plans={plans} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} /> : isCheckupBookingTask(execItem) ? <CheckupBookingForm value={execForm.appointmentDetails} onChange={appointmentDetails => setExecForm(form => ({ ...form, appointmentDetails }))} /> : execItem.taskRole && <ServiceTaskChecklist mode={execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor'} purposes={execItem.taskPurposes || []} source={execItem.dependsOnTaskId?.serviceChecklist || []} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} />}
               {execItem.taskRole && <details style={{ border: '1px solid #E0E8E3', borderRadius: 9, background: '#FAFBFA' }}>
                 <summary style={{ padding: '10px 12px', cursor: 'pointer', color: '#65776F', fontSize: 13, fontWeight: 650 }}>查看事务背景与注意事项</summary>
                 <div style={{ padding: '0 10px 10px' }}><MedicalAssistRequirementsCard text={execItem.taskRequirements} /></div>
