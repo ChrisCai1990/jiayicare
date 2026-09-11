@@ -3,7 +3,10 @@ import React from 'react'
 export const isOutpatientProxyVisitTask = task => task?.taskRole === 'executor' && /门诊一站式.*首次代诊开检查单/.test(task?.theme || '')
 const bookingFromTask = task => task?.dependsOnTaskId?.formData?.bookingSnapshot || {}
 const labelStyle = { display: 'grid', gap: 5, fontSize: 12, color: '#65776F' }
-export const emptyOutpatientProxyVisit = (task, value = {}) => ({ proxyVisitCompleted: !!value.proxyVisitCompleted, proxyVisitResult: value.proxyVisitResult || '', examOrderSummary: value.examOrderSummary || '', checkAppointments: value.checkAppointments || [], bookingSnapshot: bookingFromTask(task) })
+export const emptyOutpatientProxyVisit = (task, value) => {
+  const saved = value || {}
+  return { proxyVisitCompleted: !!saved.proxyVisitCompleted, proxyVisitResult: saved.proxyVisitResult || '', examOrderSummary: saved.examOrderSummary || '', checkAppointments: saved.checkAppointments || [], bookingSnapshot: saved.bookingSnapshot || bookingFromTask(task) }
+}
 export const validateOutpatientProxyVisit = value => !value?.proxyVisitCompleted ? '请确认已完成首次代诊' : !value?.proxyVisitResult?.trim() ? '请填写代诊实际结果' : !value?.examOrderSummary?.trim() ? '请填写取得的检查单/检查项目' : !value?.checkAppointments?.length ? '请填写检查预约安排' : value.checkAppointments.some(row => !row.item?.trim() || !row.appointmentDate || !row.appointmentTime) ? '请完整填写检查项目、预约日期和时间' : ''
 
 export default function OutpatientProxyVisitForm({ task, value, onChange }) {

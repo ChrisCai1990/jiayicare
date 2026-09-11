@@ -79,6 +79,7 @@ test('首次代诊读取代诊日信息并完成检查预约', () => {
   const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
   assert.match(booking, /campus/);
   for (const text of ['健管专员确认的代诊日信息', 'proxyVisitCompleted', 'examOrderSummary', 'checkAppointments', 'bookingSnapshot']) assert.match(`${proxy}\n${route}`, new RegExp(text));
+  assert.match(proxy, /const saved = value \|\| \{\}/);
 });
 
 test('健康顾问环节使用结构化就医评估并由后端校验', () => {
