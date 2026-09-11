@@ -83,6 +83,14 @@ test('首次代诊读取代诊日信息并完成检查预约', () => {
   for (const text of ['需要开具', '需向专家沟通', '专家诊疗意见及医嘱', '本次代诊实际开具的检验检查单/项目', '包括原计划项目和临时新增项目', '检验检查项目', '执行科室', '楼栋、楼层或具体地点', 'department', 'location', '检查日总体安排', '检查后专家门诊', '所有检查应安排在检查日', '检查应安排在检查后专家门诊之前']) assert.match(`${proxy}\n${route}`, new RegExp(text));
 });
 
+test('首次代诊完成后直接解锁已指定陪诊专员的任务', () => {
+  const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+  const migration = fs.readFileSync(path.join(__dirname, '../src/scripts/migrateOutpatientProxyEscortHandoffV13.js'), 'utf8');
+  const deploy = fs.readFileSync(path.join(__dirname, '../../scripts/deploy.py'), 'utf8');
+  for (const text of ['dependsOnTaskId: followUp._id', "status: { $in: ['planned', 'in_progress'] }", 'formData.escortStaffId', '检查及专家门诊陪诊与归档', 'assignedTo: escortStaffId', 'isBlocked: false']) assert.match(`${route}\n${migration}`, new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(deploy, /migrateOutpatientProxyEscortHandoffV13/);
+});
+
 test('健康顾问环节使用结构化就医评估并由后端校验', () => {
   const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
   const form = fs.readFileSync(path.join(__dirname, '../../staff/src/components/OutpatientAdvisorAssessmentForm.jsx'), 'utf8');

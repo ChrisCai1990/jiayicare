@@ -1755,16 +1755,35 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     if (isOutpatientOneStop) {
       // 门诊一站式由健康规划师总览督办，不把督办卡当作逐节点人工审批闸门。
       // 岗位执行人完成本环节后，归档对应督办节点并直接解锁下一岗位。
+      const supervisorMatch = [
+        followUp.workflowKey ? { workflowKey: followUp.workflowKey } : null,
+        { dependsOnTaskId: followUp._id },
+      ].filter(Boolean);
       const supervisor = await FollowUp.findOneAndUpdate(
-        { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'supervisor', workflowKey: followUp.workflowKey || '', status: 'planned' },
+        { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'supervisor', status: { $in: ['planned', 'in_progress'] }, $or: supervisorMatch },
         { $set: { status: 'completed', isBlocked: false, serviceChecklist: checklistForReview, formData: followUp.formData || null, completedAt: new Date(), completedBy: 'staff' } },
         { new: true }
       );
-      const completedGateId = supervisor?._id || followUp._id;
+      const completedGateIds = [followUp._id, supervisor?._id].filter(Boolean);
       await FollowUp.updateMany(
-        { sourceHealthPlanId: followUp.sourceHealthPlanId, dependsOnTaskId: completedGateId, status: 'planned' },
+        { sourceHealthPlanId: followUp.sourceHealthPlanId, dependsOnTaskId: { $in: completedGateIds }, status: 'planned' },
         { $set: { isBlocked: false, activationEvent: '', date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date() } }
       );
+      if (/首次代诊开检查单/.test(followUp.theme || '')) {
+        const assignment = await FollowUp.findOne({
+          sourceHealthPlanId: followUp.sourceHealthPlanId,
+          taskRole: 'executor',
+          theme: { $regex: '门诊一站式.*执行人员安排' },
+          status: 'completed',
+        }).select('formData.escortStaffId').lean();
+        const escortStaffId = assignment?.formData?.escortStaffId;
+        if (escortStaffId) {
+          await FollowUp.updateMany(
+            { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'executor', theme: { $regex: '门诊一站式.*检查及专家门诊陪诊与归档' }, status: { $in: ['planned', 'in_progress'] } },
+            { $set: { assignedTo: escortStaffId, isBlocked: false, activationEvent: '', date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date() } }
+          );
+        }
+      }
     } else {
       await FollowUp.updateOne(
         { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'supervisor', workflowKey: followUp.workflowKey || '', status: 'planned' },
