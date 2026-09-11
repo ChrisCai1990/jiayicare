@@ -10645,7 +10645,7 @@ async function resumeReportParseJobs() {
 // 后台执行报告 AI 解析（不阻塞 HTTP 响应；完成后状态置 pending 待人工审核）
 async function runReportParse(reportId) {
   const { parseImage } = require('../utils/ai');
-  const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, renderSinglePage, splitImageHorizontalBands } = require('../utils/pdf');
+  const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, renderSinglePage } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
   const { hasReportItemEvidence, resolveImageParseCompletion } = require('../utils/reportPageSupplement');
   const MedicalReport = require('../models/MedicalReport');
@@ -11148,46 +11148,13 @@ async function runReportParse(reportId) {
         const firstPassModel = report.type === 'body_comp' ? 'qwen-vl-max' : 'qwen-vl-plus';
         const originalBuffer = bufs[imageIndex];
         let activeBuffer = originalBuffer;
-        const isDenseMultiPanelLab = report.type !== 'body_comp' && /[+＋/／]/.test(str(report.title));
-        let parsedPage;
-        if (isDenseMultiPanelLab) {
-          const bands = await splitImageHorizontalBands(activeBuffer, 3, 0.08);
-          const bandResults = await Promise.allSettled(bands.map((band, bandIndex) => parseImage(
-            band,
-            `${firstPassPrompt}\n\n【纵向分区识别】这是原页从上到下第${bandIndex + 1}/${bands.length}个横向区域，保留了完整左右双栏。逐张检验单、逐行提取本区域可见的全部项目；边缘可能与相邻区域重叠，不得因栏目从上一块延续就跳过。`,
-            { isUrl: false, model: 'qwen-vl-plus', maxTokens: 5000, timeoutMs: 120000 },
-          )));
-          const parsedBands = bandResults.map((result, bandIndex) => {
-            if (result.status !== 'fulfilled') {
-              console.log(`[parse-ai] 图片${imageIndex + 1}纵向区域${bandIndex + 1}异常: ${result.reason?.message || result.reason}`);
-              return null;
-            }
-            const page = safeParseJSON(result.value);
-            return page ? { page, bandIndex } : null;
-          }).filter(Boolean);
-          lastRawText = bandResults.filter(result => result.status === 'fulfilled').map(result => result.value).join('\n');
-          const bandItems = parsedBands.flatMap(({ page, bandIndex }) => (page.items || []).map(item => ({
-            ...item,
-            sourceSectionOrder: bandIndex * 100 + (Number(item.sourceSectionOrder) || 1),
-          })));
-          parsedPage = parsedBands.length ? {
-            ...parsedBands[0].page,
-            pageType: 'detail',
-            skipPage: false,
-            items: mergeCoverageAuditItems([], bandItems),
-            institution: parsedBands.find(({ page }) => page.institution)?.page.institution || '',
-            checkDate: parsedBands.find(({ page }) => page.checkDate)?.page.checkDate || '',
-          } : null;
-          console.log(`[parse-ai] 图片${imageIndex + 1}纵向分区完成：${parsedBands.length}/${bands.length}区，候选${bandItems.length}项`);
-        } else {
-          lastRawText = await parseImage(activeBuffer.toString('base64'), firstPassPrompt, {
-            isUrl: false,
-            model: firstPassModel,
-            maxTokens: report.type === 'body_comp' ? 4096 : 8192,
-            timeoutMs: 180000,
-          });
-          parsedPage = safeParseJSON(lastRawText);
-        }
+        lastRawText = await parseImage(activeBuffer.toString('base64'), firstPassPrompt, {
+          isUrl: false,
+          model: firstPassModel,
+          maxTokens: report.type === 'body_comp' ? 4096 : 8192,
+          timeoutMs: 180000,
+        });
+        let parsedPage = safeParseJSON(lastRawText);
         // 手机横拍且未写入 EXIF 方向时，首轮会出现“有原件但 0 项”。仅在这种空结果下
         // 依次尝试 90/270/180 度，正常横版报告不会增加额外识别调用。
         if (report.type !== 'body_comp' && (!parsedPage || !Array.isArray(parsedPage.items) || parsedPage.items.length === 0)) {
