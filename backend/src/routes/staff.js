@@ -2369,6 +2369,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
     const isCheckupService = c.serviceDomain === 'annual_checkup'
       || c.templateSnapshot?.serviceDomain === 'annual_checkup'
       || /体检/.test(`${c.templateName || ''} ${plan.title || ''}`);
+    const isOutpatientOneStop = /门诊一站式/.test(`${c.templateName || ''} ${plan.title || ''}`);
     const selectedAssistantId = plan.content?.staffId || plan.staffId;
     const selectedSupervisorId = plan.content?.supervisorId || plan.staffId;
     const workflowIds = (plan.content?.followUpPlans?.length
@@ -2383,9 +2384,9 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
       { mode: item.mode || 'fixed', trigger: item.trigger || '', sequence: item.sequence ?? sequence },
     ]));
     const fixedWorkflowPlans = workflowPlans
-      .filter(item => (moduleConfigMap.get(String(item._id))?.mode || 'fixed') === 'fixed')
+      .filter(item => isOutpatientOneStop || (moduleConfigMap.get(String(item._id))?.mode || 'fixed') === 'fixed')
       .sort((a, b) => (moduleConfigMap.get(String(a._id))?.sequence ?? 0) - (moduleConfigMap.get(String(b._id))?.sequence ?? 0));
-    // 一份就医协助方案只建立一组方案级“执行 + 督办”。岗位模板可能同时配置
+    // 普通就医协助只建立一组方案级“执行 + 督办”。岗位模板可能同时配置
     // “代办服务”“资料回收”等多个固定模块，但这些都是同一次服务的验收内容，
     // 不应让健管专员收到多份内容相近的督办任务。
     const primaryWorkflowPlan = fixedWorkflowPlans.find(item => /代办服务|代诊|陪诊|陪同|一站式|体检安排/.test(item.name || ''))
@@ -2395,7 +2396,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
         id: String(item._id), name: item.name,
         ...(moduleConfigMap.get(String(item._id)) || { mode: 'fixed', trigger: '', sequence: 0 }),
       }))
-      .filter(item => item.mode !== 'fixed')
+      .filter(item => !isOutpatientOneStop && item.mode !== 'fixed')
       .map(item => ({ ...item, decision: item.mode === 'manual' ? 'manual' : 'pending', decidedAt: null, decidedBy: null }));
     if (deferredWorkflowModules.length) {
       c.workflowModuleDecisions = deferredWorkflowModules;
@@ -2432,11 +2433,14 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
       );
     }
     const patient = await User.findById(plan.patientId).select('assignedHealthManager assignedFamilyDoctor assignedNutritionist assignedHealthPlanner assignedMedicalAssistant').lean();
-    // 固定模块合并为方案级唯一任务；具体目的都在同一份 checklist 中逐项验收。
+    // 普通单次服务合并为一组任务；门诊一站式按完整阶段分别建任务。
     if (primaryWorkflowPlan) {
-      await upsertMedicalAssistModuleTasks(plan, primaryWorkflowPlan, { patient });
+      const workflowPlansToCreate = isOutpatientOneStop ? fixedWorkflowPlans : [primaryWorkflowPlan];
+      for (const workflowPlan of workflowPlansToCreate) {
+        await upsertMedicalAssistModuleTasks(plan, workflowPlan, { patient });
+      }
       const primaryWorkflowKey = String(primaryWorkflowPlan._id);
-      const redundantFixedWorkflowKeys = fixedWorkflowPlans
+      const redundantFixedWorkflowKeys = (isOutpatientOneStop ? [] : fixedWorkflowPlans)
         .map(item => String(item._id))
         .filter(key => key !== primaryWorkflowKey);
       await FollowUp.updateMany(
@@ -11992,7 +11996,7 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
       return res.status(403).json({ success: false, message: '无权为该会员生成方案' });
     }
     const user = await User.findById(req.params.id)
-      .select('name gender age chronicDiseases healthProfile');
+      .select('name gender age chronicDiseases healthProfile assignedHealthManager assignedFamilyDoctor assignedHealthPlanner assignedMedicalAssistant');
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
     const { orderId, templateId, briefNote } = req.query;
@@ -12031,6 +12035,7 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
 
     // 显式选择的模板优先于订单名称，不能借住院订单创建其他类型的方案。
     const isInpatientOneStop = /住院一站式/.test(matchedTemplate?.name || order?.serviceName || '');
+    const isOutpatientOneStop = /门诊一站式/.test(matchedTemplate?.name || order?.serviceName || '');
     if (req.staff.role === 'familyDoctor' && !isInpatientOneStop) {
       return res.status(403).json({ success: false, message: '健康顾问可创建住院一站式服务方案，其他就医协助方案由健康规划师创建' });
     }
@@ -12078,7 +12083,7 @@ ${candidateTemplates.map(t => `《${t.name}》：${JSON.stringify(t.content)}`).
       askFields.expert && `"expert": "建议专家，无法判断则留空"`,
       askFields.hotel && `"hotel": "本次住宿安排（结合会员情况具体化，如模板固定为'无需安排'则原样返回）"`,
       askFields.transport && `"transport": "本次交通安排（结合会员情况具体化，如模板固定为'无需安排'则原样返回）"`,
-      `"tasks": "${isCheckupService ? '本次体检服务的必要执行节点，每行一项；只写方案确认、预约协调、体检准备、现场陪检、报告回收与解读，不得写门诊挂号、就诊科室、建议专家或虚构具体检查项目' : '本次代办目的，每行一项、一项只写一个可验收结果，尽量不超过50字；必须明确科室或专家，以及要开具的具体检查单/处方、要预约的检查或要打印领取的报告；不要写背景、携带材料、流程说明或笼统的陪同就医' }"`,
+      `"tasks": "${isCheckupService ? '本次体检服务的必要执行节点，每行一项；只写方案确认、预约协调、体检准备、现场陪检、报告回收与解读，不得写门诊挂号、就诊科室、建议专家或虚构具体检查项目' : isOutpatientOneStop ? '本次门诊一站式服务的个性化目标，不复述标准流程；包括就医目标、首次代诊需解决的开单事项、待预约检查及检查后专家门诊目标；未确认内容标注待确认，不得虚构' : '本次代办目的，每行一项、一项只写一个可验收结果，尽量不超过50字；必须明确科室或专家，以及要开具的具体检查单/处方、要预约的检查或要打印领取的报告；不要写背景、携带材料、流程说明或笼统的陪同就医' }"`,
       `"notes": "本次注意事项，若模板notes是待填空的清单（如'挂号科室：\\n时间安排：'），请把冒号后面的内容具体填好"`,
     ].filter(Boolean).join(',\n  ');
 
@@ -12132,7 +12137,7 @@ ${templateBlock}
     raw.tasks = Array.isArray(raw.tasks)
       ? raw.tasks.map(normalizePastTaskDates)
       : normalizePastTaskDates(raw.tasks);
-    if (!isCheckupService) {
+    if (!isCheckupService && !isOutpatientOneStop) {
       const purposeSource = Array.isArray(raw.tasks) ? raw.tasks.join('\n') : raw.tasks;
       raw.tasks = await generateCompactMedicalAssistPurposes(chat, purposeSource, {
         hospital: raw.hospital,
@@ -12171,13 +12176,18 @@ ${templateBlock}
     const configuredSource = productModuleMap.size
       ? [...productModuleMap.values()].map(item => ({ ...item, id: item.planId?._id || item.planId, name: templatePlanNameMap.get(String(item.planId?._id || item.planId || '')) || '' }))
       : templateFollowUpPlans;
+    const configuredPlanIds = configuredSource.map(item => item.id || item._id || item.planId?._id || item.planId).filter(Boolean);
+    const configuredPlanDocs = configuredPlanIds.length
+      ? await FollowUpPlan.find({ _id: { $in: configuredPlanIds } }).select('name').lean()
+      : [];
+    const configuredPlanNames = new Map(configuredPlanDocs.map(item => [String(item._id), item.name || '']));
     const workflowModules = configuredSource.map((item, sequence) => {
       const id = String(item.id || item._id || '');
       const configured = productModuleMap.get(id) || item;
       return {
         id,
-        name: item.name || '',
-        mode: configured.mode || 'fixed',
+        name: item.name || configuredPlanNames.get(id) || '',
+        mode: isOutpatientOneStop ? 'fixed' : (configured.mode || 'fixed'),
         trigger: configured.trigger || '',
         sequence: configured.sequence ?? sequence,
         reviewerRole: configured.trigger === 'exam_order_found' ? 'healthPlanner' : configured.mode === 'conditional' ? 'familyDoctor' : '',
@@ -12193,6 +12203,7 @@ ${templateBlock}
         hospital: raw.hospital || '', department: raw.department || '', expert: raw.expert || '',
         visitDate: confirmedSchedule.serviceDate,
         serviceTime: confirmedSchedule.serviceTime,
+        supervisorId: isOutpatientOneStop ? (user.assignedHealthManager || '') : '',
       },
       logistics: { hotel: raw.hotel || '', transport: raw.transport || '' },
       tasks: { records: taskRecords },
@@ -12243,6 +12254,7 @@ ${templateBlock}
         checkupIntake: order?.checkupIntake || null,
         hospital: raw.hospital || '', department: raw.department || '', expert: raw.expert || '',
         serviceDate: confirmedSchedule.serviceDate, serviceTime: confirmedSchedule.serviceTime,
+        supervisorId: isOutpatientOneStop ? (user.assignedHealthManager || '') : '',
         hotel: raw.hotel || '', transport: raw.transport || '',
         tasks: tasksText, notes: raw.notes || '',
         moduleData,

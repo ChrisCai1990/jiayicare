@@ -102,10 +102,10 @@ const TEMPLATE_NORMALIZATION = {
   },
   '门诊一站式服务': {
     serviceDomain: 'medical_assist', assistanceType: 'one_stop', requiresDoctorConfirm: true,
-    applicableScenario: '需要家庭医生评估、预约检查、门诊就医及结果归档的连续服务。',
-    standardSteps: '家庭医生评估诉求并确定就医方向\n安排医院、科室、专家及必要检查\n完成预约和就诊前准备\n陪同或协助完成门诊就医\n归档医嘱并生成后续复查或随访任务',
+    applicableScenario: '客户需先代诊开具检查单并完成检查预约，再由专家结合检查结果门诊评估的连续服务。已有检查单的单次代约检不属于本服务。',
+    standardSteps: '健康顾问评估客户诉求、既往资料与就医目标\n健康规划师筛选医院、科室及首诊与检查后门诊专家\n第一次代诊，按医嘱开具检查单并取回门诊病历\n核对检查单后完成检查预约，同步时间、地点和准备要求\n安排检查日专家门诊，并确认检查与门诊衔接\n就医专员陪同客户完成检查及专家门诊\n上传并归档两次门诊病历、检查单及已取得的检查结果',
     requiredMaterials: '身份及医保信息、病历、既往报告、用药清单和问题清单。',
-    completionStandard: '门诊服务完成，医嘱、结果及后续任务已反馈并归档。',
+    completionStandard: '首次代诊开单、检查预约、检查日专家门诊和陪诊均已完成，门诊病历与检查单已上传归档。',
     optionalLogistics: '陪同、交通或住宿（确有需要时单独确认）。', riskNotes: '涉及临床决策和用药调整由医生确认。',
   },
   '住院一站式服务': {

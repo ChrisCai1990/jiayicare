@@ -118,6 +118,10 @@ function medicalAssistModuleDefs(content = {}, planTitle = '', assignedReviewerI
   }
 }
 
+function isOutpatientOneStop(content = {}, planTitle = '') {
+  return /门诊一站式/.test(`${content.templateName || ''} ${planTitle || ''}`)
+}
+
 function splitVisitEntries(value = '') {
   const result = []
   let current = ''
@@ -365,6 +369,10 @@ export default function PlanModulesPage() {
         if (p.type === 'medical_assist' && isCheckupMedicalAssist(c, p.title) && assignedReviewerId && !nextModuleData.visit?.reviewerId) {
           nextModuleData.visit = { ...(nextModuleData.visit || {}), reviewerId: assignedReviewerId }
         }
+        const assignedHealthManagerId = p.patientId?.assignedHealthManager?._id || p.patientId?.assignedHealthManager || ''
+        if (p.type === 'medical_assist' && isOutpatientOneStop(c, p.title) && assignedHealthManagerId && !nextModuleData.visit?.supervisorId) {
+          nextModuleData.visit = { ...(nextModuleData.visit || {}), supervisorId: assignedHealthManagerId }
+        }
         setModuleData(nextModuleData)
         setGoal(c.goal || p.description || '')
         setDirty(false)
@@ -492,6 +500,8 @@ export default function PlanModulesPage() {
   const moduleKeys = Object.keys(moduleDefs)
   const isCheckupService = plan.type === 'medical_assist'
     && isCheckupMedicalAssist(plan.content || {}, plan.title)
+  const isOutpatientService = plan.type === 'medical_assist'
+    && isOutpatientOneStop(plan.content || {}, plan.title)
   const title = isCheckupService ? '体检服务方案' : (TITLE_BY_TYPE[plan.type] || plan.title)
   const aiLabel = AI_GENERATE_LABEL_BY_TYPE[plan.type] || 'AI生成'
   const normalizedPlanSearch = followUpPlanSearch.trim().toLowerCase()
@@ -532,7 +542,7 @@ export default function PlanModulesPage() {
             </span>
           )}
           {dirty && <span style={{ fontSize: 12, color: '#D97706', background: '#FEF9EC', padding: '4px 8px', borderRadius: 20 }}>有未保存更改</span>}
-          {canEdit && plan.type === 'medical_assist' && !isCheckupService && (
+          {canEdit && plan.type === 'medical_assist' && !isCheckupService && !isOutpatientService && (
             <button
               onClick={handleRegeneratePurposes}
               disabled={regeneratingPurposes || dirty}
@@ -558,11 +568,11 @@ export default function PlanModulesPage() {
 
       {/* 体检订单的核心需求已在上方展示，避免健康规划师重复维护“服务目标”。 */}
       {!isCheckupService && <div style={{ background: '#fff', borderRadius: 12, padding: 20, marginBottom: 20, border: '1px solid #E0D9CE' }}>
-        <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24', marginBottom: 10 }}>{plan.type === 'medical_assist' ? '本次代办总目标（简述）' : '服务目标'}</div>
+        <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24', marginBottom: 10 }}>{plan.type === 'medical_assist' ? (isOutpatientService ? '本次门诊一站式服务目标（简述）' : '本次代办总目标（简述）') : '服务目标'}</div>
         <textarea
           className="form-input"
           rows={2}
-          placeholder={plan.type === 'medical_assist' ? '用一句话说明本次代办要解决什么问题' : '如：控制血糖、三个月内减重5公斤——AI生成方案时会参考这里的目标'}
+          placeholder={plan.type === 'medical_assist' ? (isOutpatientService ? '说明本次评估、开单检查及检查后专家门诊要解决的问题' : '用一句话说明本次代办要解决什么问题') : '如：控制血糖、三个月内减重5公斤——AI生成方案时会参考这里的目标'}
           value={goal}
           onChange={e => { setGoal(e.target.value); setDirty(true) }}
           style={{ width: '100%', padding: '8px 10px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' }}
@@ -582,7 +592,7 @@ export default function PlanModulesPage() {
                   {(moduleData.visit?.followUpPlans?.length ? moduleData.visit.followUpPlans : plan.content.followUpPlans).map(item => {
                     const linked = followUpPlans.find(p => String(p._id) === String(item.id || item._id || ''))
                     const roleLabels = { familyDoctor: '健康顾问', healthPlanner: '健康规划师', medicalAssistant: '就医专员', healthManager: '健管专员', nutritionist: '营养师' }
-                    return <span key={item.id || item._id} style={{ padding: '3px 8px', borderRadius: 12, background: '#E8F5EF', color: '#1E6B50', fontSize: 12 }}>{item.name}{linked?.executorRole ? ` · ${roleLabels[linked.executorRole] || linked.executorRole}执行` : ''}</span>
+                    return <span key={item.id || item._id} style={{ padding: '3px 8px', borderRadius: 12, background: '#E8F5EF', color: '#1E6B50', fontSize: 12 }}>{item.name || linked?.name || '未命名岗位任务'}{linked?.executorRole ? ` · ${roleLabels[linked.executorRole] || linked.executorRole}执行` : ''}</span>
                   })}
                 </div>
               ) : (
@@ -611,7 +621,7 @@ export default function PlanModulesPage() {
           </div>
         </div>
       )}
-      {plan.type === 'medical_assist' && !!plan.content?.workflowModuleDecisions?.length && (
+      {plan.type === 'medical_assist' && !isOutpatientService && !!plan.content?.workflowModuleDecisions?.length && (
         <div style={{ background: '#fff', borderRadius: 12, padding: 20, marginBottom: 20, border: '1px solid #E0D9CE' }}>
           <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24', marginBottom: 4 }}>按需节点审核</div>
           <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 14 }}>AI只整理依据；对应岗位审核“需要／不需要”，系统再生成或跳过任务。</div>
