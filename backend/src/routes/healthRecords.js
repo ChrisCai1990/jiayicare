@@ -200,6 +200,28 @@ router.get('/today-status', auth, async (req, res) => {
   }
 });
 
+// 最近各日期的打卡次数，供用户补录时确认“哪天已经填过”；只返回日期和类型，不暴露记录内容。
+router.get('/checkin-calendar', auth, async (req, res) => {
+  try {
+    const days = Math.min(Math.max(parseInt(req.query.days) || 90, 1), 365);
+    const since = new Date(Date.now() - days * 86400000);
+    const rows = await HealthRecord.aggregate([
+      { $match: { user: req.user._id, recordedAt: { $gte: since } } },
+      { $project: { type: 1, date: { $dateToString: { date: '$recordedAt', format: '%Y-%m-%d', timezone: '+08:00' } } } },
+      { $group: { _id: { type: '$type', date: '$date' }, count: { $sum: 1 } } },
+      { $sort: { '_id.date': -1 } },
+    ]);
+    const data = {};
+    for (const row of rows) {
+      if (!data[row._id.type]) data[row._id.type] = {};
+      data[row._id.type][row._id.date] = row.count;
+    }
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '获取打卡日期失败', error: err.message });
+  }
+});
+
 // 新增记录
 router.post('/', auth, async (req, res) => {
   try {

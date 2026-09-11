@@ -177,6 +177,7 @@ export const recordsAPI = {
   update: (id, data) => request(`/records/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id) => request(`/records/${id}`, { method: 'DELETE' }),
   todayStatus: () => request('/records/today-status'),
+  checkinCalendar: (days = 90) => request(`/records/checkin-calendar?days=${days}`),
 };
 
 // ── Medications ───────────────────────────────────────────────────

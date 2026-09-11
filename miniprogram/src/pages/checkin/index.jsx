@@ -50,6 +50,7 @@ const MEASURE_FIELDS = {
   sleep: [],
 };
 const MEASURE_OPTIONS = { bloodSugar: ['空腹', '餐后2小时', '睡前', '随机'], bloodPressure: ['左臂', '右臂'] };
+const BATCH_INPUT_STYLE = { minHeight: '44px', boxSizing: 'border-box', width: '100%', padding: '8px 12px', fontSize: '14px', color: '#1A2B24', backgroundColor: '#F2EDE3', border: '1px solid #E0D9CE', borderRadius: '10px' };
 
 const SYMPTOM_OPTIONS = ['头晕', '乏力', '心悸', '腹泻', '恶心', '失眠', '关节疼痛', '皮疹'];
 const URGENT_SYMPTOMS = ['胸痛', '呼吸困难'];
@@ -78,6 +79,54 @@ function calcSleepDuration(sleepTime, wakeTime) {
   return ((w - s) / 60).toFixed(1);
 }
 
+function shiftDate(baseDate, days) {
+  const date = new Date(`${baseDate}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  return toLocalDateStr(date);
+}
+
+export function parseQuickHealthText(text, fallbackDate, todayDate) {
+  const rows = [];
+  const unmatchedLines = [];
+  String(text || '').split(/\r?\n/).map((line) => line.replace(/^[\s👉☀️🌞*-]+/, '').trim()).filter(Boolean).forEach((line) => {
+    if (/^(?:每日|今日)?健康数据(?:记录|打卡)?[☀️🌞]*$/.test(line)) return;
+    const explicit = line.match(/(20\d{2})[年\/-](\d{1,2})[月\/-](\d{1,2})日?/);
+    const date = explicit ? `${explicit[1]}-${String(explicit[2]).padStart(2, '0')}-${String(explicit[3]).padStart(2, '0')}`
+      : /前天|前日/.test(line) ? shiftDate(todayDate, -2)
+        : /昨天|昨日/.test(line) ? shiftDate(todayDate, -1)
+          : /今天|今日/.test(line) ? todayDate : fallbackDate;
+    const recordedAt = date === todayDate ? new Date().toISOString() : `${date}T12:00:00`;
+    const clean = line.replace(/20\d{2}[年\/-]\d{1,2}[月\/-]\d{1,2}日?|今天|今日|昨天|昨日|前天|前日/g, '').replace(/^[：:\s]+/, '').trim();
+    let match;
+    if ((match = clean.match(/(?:空腹)?体重[^\d]*(\d+(?:\.\d+)?)\s*(斤|kg|公斤)/i))) {
+      const enteredValue = Number(match[1]), enteredUnit = /斤/.test(match[2]) ? '斤' : 'kg';
+      const kg = enteredUnit === '斤' ? enteredValue / 2 : enteredValue;
+      rows.push({ category: 'vitals', type: 'weight', label: '体重记录', unit: 'kg', value: String(Math.round(kg * 100) / 100), extra: { enteredValue, enteredUnit }, recordedAt, preview: `${date} 体重 ${enteredValue}${enteredUnit}（${Math.round(kg * 100) / 100}kg）`, _sourceLine: line });
+    } else if ((match = clean.match(/血压[^\d]*(\d{2,3})\s*[\/／]\s*(\d{2,3})/))) {
+      const sys = Number(match[1]), dia = Number(match[2]);
+      rows.push({ category: 'vitals', type: 'bloodPressure', label: '血压记录', unit: 'mmHg', value: `${sys}/${dia}`, extra: { sys, dia }, recordedAt, preview: `${date} 血压 ${sys}/${dia}mmHg`, _sourceLine: line });
+    } else if ((match = clean.match(/血糖[^\d]*(\d+(?:\.\d+)?)/))) {
+      rows.push({ category: 'vitals', type: 'bloodSugar', label: '血糖记录', unit: 'mmol/L', value: match[1], recordedAt, preview: `${date} 血糖 ${match[1]}mmol/L`, _sourceLine: line });
+    } else if (/饮水/.test(clean)) {
+      rows.push({ category: 'lifestyle', type: 'water', label: '饮水记录', value: clean, recordedAt, preview: `${date} ${clean}`, _sourceLine: line });
+    } else if (/排便/.test(clean)) {
+      rows.push({ category: 'lifestyle', type: 'bowel', label: '排便记录', value: clean, recordedAt, preview: `${date} ${clean}`, _sourceLine: line });
+    } else if (/运动|步数|步行|快走|跑步|抗阻|健身/.test(clean)) {
+      rows.push({ category: 'lifestyle', type: 'exercise', label: '运动记录', value: clean, recordedAt, preview: `${date} ${clean}`, _sourceLine: line });
+    } else if ((match = clean.match(/心率[^\d]*(\d+)/))) {
+      rows.push({ category: 'vitals', type: 'heartRate', label: '心率记录', unit: '次/分', value: match[1], recordedAt, preview: `${date} 心率 ${match[1]}次/分`, _sourceLine: line });
+    } else if (/早餐|午餐|晚餐|加餐|饮食/.test(clean)) {
+      const mealType = ['早餐', '午餐', '晚餐', '加餐'].find((meal) => clean.includes(meal)) || '';
+      rows.push({ category: 'lifestyle', type: 'diet', label: mealType ? `饮食记录·${mealType}` : '饮食记录', value: clean, extra: mealType ? { mealType } : {}, recordedAt, preview: `${date} ${clean}`, _sourceLine: line });
+    } else if (/睡眠|入睡|睡了/.test(clean)) rows.push({ category: 'lifestyle', type: 'sleep', label: '睡眠记录', value: clean, recordedAt, preview: `${date} ${clean}`, _sourceLine: line });
+    else if (/吸烟/.test(clean)) rows.push({ category: 'lifestyle', type: 'smoking', label: '吸烟记录', value: clean, recordedAt, preview: `${date} ${clean}`, _sourceLine: line });
+    else if (/饮酒|喝酒/.test(clean)) rows.push({ category: 'lifestyle', type: 'alcohol', label: '饮酒记录', value: clean, recordedAt, preview: `${date} ${clean}`, _sourceLine: line });
+    else unmatchedLines.push(line);
+  });
+  rows.unmatchedLines = unmatchedLines;
+  return rows;
+}
+
 function Chip({ label, active, color, onClick }) {
   return (
     <View onClick={onClick} style={{
@@ -95,6 +144,7 @@ export default function CheckinPage() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [doneTypes, setDoneTypes] = useState({});
+  const [recordedDates, setRecordedDates] = useState({});
 
   const todayStr = toLocalDateStr(new Date());
   const [checkinDate, setCheckinDate] = useState(todayStr);
@@ -111,16 +161,24 @@ export default function CheckinPage() {
   const [measureOption, setMeasureOption] = useState('');
   const [measureNote, setMeasureNote] = useState('');
   const [measureSaving, setMeasureSaving] = useState(false);
+  const [measureImages, setMeasureImages] = useState([]);
+  const [weightUnit, setWeightUnit] = useState('kg');
 
   const [symptomModal, setSymptomModal] = useState(false);
   const [selectedSymptoms, setSelectedSymptoms] = useState([]);
   const [symptomNote, setSymptomNote] = useState('');
   const [symptomSaving, setSymptomSaving] = useState(false);
+  const [symptomImages, setSymptomImages] = useState([]);
+  const [batchModal, setBatchModal] = useState(false);
+  const [batchValues, setBatchValues] = useState({ weightUnit: 'kg' });
+  const [batchSaving, setBatchSaving] = useState(false);
+  const [quickText, setQuickText] = useState('');
 
   const loadTodayStatus = useCallback(async () => {
     try {
-      const res = await recordsAPI.todayStatus();
+      const [res, calendar] = await Promise.all([recordsAPI.todayStatus(), recordsAPI.checkinCalendar(365)]);
       if (res.success) setDoneTypes(res.doneTypes || {});
+      if (calendar.success) setRecordedDates(calendar.data || {});
     } catch {}
     finally { setLoading(false); }
   }, []);
@@ -143,14 +201,13 @@ export default function CheckinPage() {
   const allMandatoryDone = mandatoryItems.length > 0 && doneMandatoryCount === mandatoryItems.length;
 
   const openCheckinModal = (item) => {
-    if (isItemDone(item) && !item.allowMultiple) {
-      Taro.showToast({ title: '今天已经记录过了，明天再来吧～', icon: 'none' });
-      return;
-    }
     if (item.measureType) {
       setMeasureValues({});
       setMeasureOption('');
       setMeasureNote('');
+      setMeasureImages([]);
+      setWeightUnit('kg');
+      setCheckinDate(todayStr);
       setMeasureModal(item);
     } else {
       setCheckinNote('');
@@ -183,6 +240,7 @@ export default function CheckinPage() {
       label: item.recordLabel || item.label,
       unit: fields[0]?.unit || '',
       note: [measureOption, measureNote].filter(Boolean).join(' · '),
+      images: measureImages.map(({ data, mimeType }) => ({ data, mimeType })),
       recordedAt: isToday ? new Date().toISOString() : `${checkinDate}T12:00:00`,
     };
 
@@ -200,8 +258,11 @@ export default function CheckinPage() {
       const durF = parseFloat(dur);
       payload.status = durF >= 7 && durF <= 9 ? 'normal' : durF < 7 ? 'low' : 'warning';
     } else {
-      payload.value = String(measureValues.value);
-      const v = parseFloat(measureValues.value);
+      const enteredValue = parseFloat(measureValues.value);
+      const normalizedValue = measureType === 'weight' && weightUnit === '斤' ? enteredValue / 2 : enteredValue;
+      payload.value = String(Math.round(normalizedValue * 100) / 100);
+      if (measureType === 'weight') payload.extra = { enteredValue, enteredUnit: weightUnit };
+      const v = normalizedValue;
       payload.status = measureType === 'bloodSugar' ? (v > 7 ? 'warning' : v < 3.9 ? 'low' : 'normal')
         : measureType === 'heartRate' ? (v > 100 ? 'warning' : v < 60 ? 'low' : 'normal')
         : measureType === 'mood' ? (v >= 6 ? 'normal' : 'warning')
@@ -219,7 +280,7 @@ export default function CheckinPage() {
     }
     setMeasureSaving(false);
     setMeasureModal(null);
-    if (isToday) loadTodayStatus();
+    loadTodayStatus();
   };
 
   const saveCheckin = async () => {
@@ -260,7 +321,7 @@ export default function CheckinPage() {
     }
     setCheckinSaving(false);
     setCheckinModal(null);
-    if (isToday) loadTodayStatus();
+    loadTodayStatus();
   };
 
   const chooseCheckinImage = async () => {
@@ -299,7 +360,8 @@ export default function CheckinPage() {
         note: symptomNote,
         status: hasUrgent ? 'danger' : 'normal',
         extra: { symptoms: selectedSymptoms },
-        recordedAt: new Date().toISOString(),
+        images: symptomImages.map(({ data, mimeType }) => ({ data, mimeType })),
+        recordedAt: checkinDate === todayStr ? new Date().toISOString() : `${checkinDate}T12:00:00`,
       });
     } catch (err) {
       setSymptomSaving(false);
@@ -310,6 +372,7 @@ export default function CheckinPage() {
     setSymptomModal(false);
     setSelectedSymptoms([]);
     setSymptomNote('');
+    setSymptomImages([]);
     loadTodayStatus();
     if (hasUrgent) {
       Taro.showModal({ title: '建议尽快联系医师', content: '您选择的症状可能需要及时处理，建议立即联系您的健康顾问或健康管理师。', showCancel: false });
@@ -338,6 +401,125 @@ export default function CheckinPage() {
     );
   };
 
+  const openSymptomModal = () => {
+    setSelectedSymptoms([]);
+    setSymptomNote('');
+    setSymptomImages([]);
+    setCheckinDate(todayStr);
+    setSymptomModal(true);
+  };
+
+  const chooseImages = async (current, setter) => {
+    try {
+      const result = await chooseImageWithPrivacy({ count: Math.max(1, 9 - current.length), sizeType: ['compressed'], sourceType: ['album', 'camera'] });
+      const next = (result.tempFilePaths || []).map((path) => {
+        const base64 = Taro.getFileSystemManager().readFileSync(path, 'base64');
+        const ext = (path.split('.').pop() || 'jpg').toLowerCase();
+        const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+        return { path, mimeType, data: `data:${mimeType};base64,${base64}` };
+      });
+      setter([...current, ...next].slice(0, 9));
+    } catch (err) { showImagePickerError(err, '图片读取失败，请重试'); }
+  };
+
+  const renderDatePicker = (color = colors.primary) => (
+    <View style={{ marginBottom: '14px' }}>
+      <Text style={{ fontSize: '13px', color: colors.textSecondary, display: 'block', marginBottom: '6px' }}>记录日期</Text>
+      <Picker mode="date" value={checkinDate} end={todayStr} onChange={(e) => setCheckinDate(e.detail.value)}>
+        <View style={{ border: `1px solid ${color}`, borderRadius: `${radius.sm}px`, padding: '10px 12px' }}><Text style={{ fontSize: '14px', color: colors.textPrimary }}>{checkinDate}　›</Text></View>
+      </Picker>
+      {(() => {
+        const type = measureModal?.measureType || checkinModal?.key || (symptomModal ? 'symptom' : '');
+        const dateMap = batchModal
+          ? Object.values(recordedDates).reduce((all, dates) => { Object.entries(dates).forEach(([date, amount]) => { all[date] = (all[date] || 0) + amount; }); return all; }, {})
+          : (recordedDates[type] || {});
+        const count = dateMap[checkinDate] || 0;
+        const recent = Object.entries(dateMap).sort(([a], [b]) => b.localeCompare(a)).slice(0, 5);
+        return <>
+          <Text style={{ display: 'block', marginTop: '6px', fontSize: '12px', color: count ? '#B7791F' : colors.textMuted }}>{count ? `这一天已有 ${count} 条记录，仍可继续补录或修正` : '这一天还没有该项记录'}</Text>
+          {!!recent.length && <Text style={{ display: 'block', marginTop: '4px', fontSize: '12px', color: colors.textMuted }}>最近已记录：{recent.map(([date, amount]) => `${date.slice(5)}（${amount}条）`).join('、')}</Text>}
+        </>;
+      })()}
+    </View>
+  );
+
+  const renderImagePicker = (images, setter, color = colors.primary) => (
+    <View style={{ marginBottom: '14px' }}>
+      <Text style={{ fontSize: '13px', color: colors.textSecondary, display: 'block', marginBottom: '6px' }}>现场照片（可选）</Text>
+      <View onClick={() => chooseImages(images, setter)} style={{ border: `1px dashed ${color}`, borderRadius: `${radius.sm}px`, padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {images.length ? <View style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>{images.map((img, index) => <View key={img.path} style={{ position: 'relative' }}><Image src={img.path} mode="aspectFill" style={{ width: '88px', height: '72px', borderRadius: '8px' }} /><Text onClick={(e) => { e.stopPropagation?.(); setter(images.filter((_, i) => i !== index)); }} style={{ position: 'absolute', right: 0, top: 0, color: '#fff', backgroundColor: colors.danger }}>×</Text></View>)}</View> : <Text style={{ color, fontSize: '13px', fontWeight: 600 }}>📷 拍照或从相册选择（最多9张）</Text>}
+      </View>
+    </View>
+  );
+
+  const openBatchModal = () => {
+    setCheckinDate(todayStr);
+    setBatchValues({ weightUnit: 'kg' });
+    setQuickText('');
+    setBatchModal(true);
+  };
+
+  const updateBatch = (key, value) => setBatchValues((prev) => ({ ...prev, [key]: value }));
+
+  const saveBatch = async () => {
+    if (batchSaving) return;
+    const at = checkinDate === todayStr ? new Date().toISOString() : `${checkinDate}T12:00:00`;
+    const rows = parseQuickHealthText(quickText, checkinDate, todayStr);
+    if (rows.unmatchedLines.length) {
+      Taro.showToast({ title: `还有${rows.unmatchedLines.length}行未识别，请修改或删除`, icon: 'none', duration: 3000 });
+      return;
+    }
+    [['breakfast', '早餐'], ['lunch', '午餐'], ['dinner', '晚餐']].forEach(([key, mealType]) => {
+      const value = String(batchValues[key] || '').trim();
+      if (value) rows.push({ category: 'lifestyle', type: 'diet', label: `饮食记录·${mealType}`, value: `【${mealType}】${value}`, extra: { mealType }, recordedAt: at, _inputKeys: [key] });
+    });
+    [['exercise', '运动'], ['bowel', '排便'], ['water', '饮水'], ['smoking', '吸烟'], ['alcohol', '饮酒']].forEach(([key, label]) => {
+      const value = String(batchValues[key] || '').trim();
+      if (value) rows.push({ category: 'lifestyle', type: key, label: `${label}记录`, value, recordedAt: at, _inputKeys: [key] });
+    });
+    const weight = Number(batchValues.weight);
+    if (batchValues.weight && (!Number.isFinite(weight) || weight <= 0)) return Taro.showToast({ title: '请核对体重数值', icon: 'none' });
+    if (weight > 0) {
+      const kg = batchValues.weightUnit === '斤' ? weight / 2 : weight;
+      rows.push({ category: 'vitals', type: 'weight', label: '体重记录', unit: 'kg', value: String(Math.round(kg * 100) / 100), extra: { enteredValue: weight, enteredUnit: batchValues.weightUnit }, recordedAt: at, _inputKeys: ['weight'] });
+    }
+    const sys = Number(batchValues.sys), dia = Number(batchValues.dia);
+    if ((batchValues.sys || batchValues.dia) && (!(sys > 0) || !(dia > 0))) return Taro.showToast({ title: '血压需同时填写高压和低压', icon: 'none' });
+    if (sys > 0 && dia > 0) rows.push({ category: 'vitals', type: 'bloodPressure', label: '血压记录', unit: 'mmHg', value: `${sys}/${dia}`, extra: { sys, dia }, recordedAt: at, _inputKeys: ['sys', 'dia'] });
+    [['heartRate', '心率', '次/分'], ['bloodSugar', '血糖', 'mmol/L'], ['mood', '情绪', '分']].forEach(([key, label, unit]) => {
+      const value = String(batchValues[key] || '').trim();
+      if (value) rows.push({ category: key === 'mood' ? 'lifestyle' : 'vitals', type: key, label: `${label}记录`, unit, value, recordedAt: at, _inputKeys: [key] });
+    });
+    if (batchValues.sleepTime && batchValues.wakeTime) rows.push({ category: 'lifestyle', type: 'sleep', label: '睡眠记录', unit: '小时', value: calcSleepDuration(batchValues.sleepTime, batchValues.wakeTime), extra: { sleepTime: batchValues.sleepTime, wakeTime: batchValues.wakeTime }, recordedAt: at, _inputKeys: ['sleepTime', 'wakeTime'] });
+    if (!rows.length) return Taro.showToast({ title: '请至少填写一项数据', icon: 'none' });
+    setBatchSaving(true);
+    const results = await Promise.allSettled(rows.map(({ preview, _sourceLine, _inputKeys, ...row }) => recordsAPI.create(row)));
+    setBatchSaving(false);
+    const successIndexes = results.map((result, index) => result.status === 'fulfilled' ? index : -1).filter((index) => index >= 0);
+    const failedIndexes = results.map((result, index) => result.status === 'rejected' ? index : -1).filter((index) => index >= 0);
+    const success = successIndexes.length;
+    if (!success) return Taro.showToast({ title: '保存失败，请重试', icon: 'none' });
+    await loadTodayStatus();
+    if (!failedIndexes.length) {
+      setBatchValues({ weightUnit: 'kg' });
+      setQuickText('');
+      Taro.showToast({ title: `已保存${success}项`, icon: 'success' });
+      return;
+    }
+    const failedQuickLines = failedIndexes.map((index) => rows[index]._sourceLine).filter(Boolean);
+    setQuickText([...new Set(failedQuickLines)].join('\n'));
+    const successfulInputKeys = successIndexes.flatMap((index) => rows[index]._inputKeys || []);
+    setBatchValues((prev) => {
+      const next = { ...prev };
+      successfulInputKeys.forEach((key) => { delete next[key]; });
+      return next;
+    });
+    const failedLabels = failedIndexes.map((index) => rows[index].label).join('、');
+    Taro.showModal({ title: '部分项目未保存', content: `已保存${success}项。未保存：${failedLabels}。页面只保留失败项，可直接重试。`, showCancel: false, confirmText: '知道了' });
+  };
+
+  const quickPreview = parseQuickHealthText(quickText, checkinDate, todayStr);
+
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
       {/* 自绘标题栏：对齐app端CheckinScreen.js的topBar（返回按钮+居中标题），
@@ -363,9 +545,10 @@ export default function CheckinPage() {
           <View style={{ marginBottom: `${spacing.lg}px` }}>
             <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
               <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>每日记录</Text>
-              {mandatoryItems.length > 0 && (
-                <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.primary }}>{doneMandatoryCount}/{mandatoryItems.length}</Text>
-              )}
+              <View style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Text onClick={openBatchModal} style={{ fontSize: '13px', fontWeight: 700, color: colors.primary }}>多日快速补录</Text>
+                {mandatoryItems.length > 0 && <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.primary }}>{doneMandatoryCount}/{mandatoryItems.length}</Text>}
+              </View>
             </View>
             <View style={{ display: 'flex', flexWrap: 'wrap', gap: `${spacing.sm}px` }}>
               {mandatoryItems.map(renderCheckinItem)}
@@ -390,7 +573,7 @@ export default function CheckinPage() {
           {/* 症状自评 */}
           <View style={{ marginBottom: `${spacing.lg}px` }}>
             <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>今天有不适吗？</Text>
-            <View onClick={() => setSymptomModal(true)} style={{
+            <View onClick={openSymptomModal} style={{
               display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: doneTypes.symptom ? '#FDECEA1A' : '#fff',
               borderRadius: `${radius.md}px`, border: `1px solid ${doneTypes.symptom ? colors.danger + '4D' : colors.border}`, padding: `${spacing.md}px`,
             }}>
@@ -500,6 +683,7 @@ export default function CheckinPage() {
             {measureModal.measureType === 'bloodPressure' && <BloodPressurePhoto onSaved={() => { setMeasureModal(null); loadTodayStatus(); }} />}
             {measureModal.measureType === 'bloodSugar' && <BloodSugarPhoto onSaved={() => { setMeasureModal(null); loadTodayStatus(); }} />}
             {measureModal.measureType === 'weight' && <WeightPhoto onSaved={() => { setMeasureModal(null); loadTodayStatus(); }} />}
+            {renderDatePicker(measureModal.color)}
             {MEASURE_OPTIONS[measureModal.measureType] && (
               <View style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
                 {MEASURE_OPTIONS[measureModal.measureType].map((opt) => (
@@ -547,11 +731,15 @@ export default function CheckinPage() {
                       adjustPosition
                       cursorSpacing={120}
                     />
-                    <Text style={{ fontSize: '12px', color: colors.textMuted }}>{field.unit}</Text>
+                    <Text style={{ fontSize: '12px', color: colors.textMuted }}>{measureModal.measureType === 'weight' ? weightUnit : field.unit}</Text>
                   </View>
+                  {measureModal.measureType === 'weight' && <View style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>{['kg', '斤'].map((unit) => <Chip key={unit} label={unit === 'kg' ? 'kg（公斤）' : '斤'} active={weightUnit === unit} color={measureModal.color} onClick={() => setWeightUnit(unit)} />)}{measureValues.value && weightUnit === '斤' ? <Text style={{ fontSize: '13px', color: colors.primary, alignSelf: 'center' }}>＝ {Math.round((Number(measureValues.value) / 2) * 100) / 100} kg</Text> : null}</View>}
                 </View>
               ))
             )}
+
+            {!['bloodPressure', 'bloodSugar', 'weight'].includes(measureModal.measureType)
+              && renderImagePicker(measureImages, setMeasureImages, measureModal.color)}
 
             <View style={{ marginBottom: '12px' }}>
               <Text style={{ fontSize: '13px', color: colors.textSecondary, display: 'block', marginBottom: '6px' }}>备注（可选，如异常原因）</Text>
@@ -588,6 +776,8 @@ export default function CheckinPage() {
               <View onClick={() => setSymptomModal(false)}><Text style={{ fontSize: '20px', color: colors.textMuted }}>×</Text></View>
             </View>
 
+            {renderDatePicker(colors.danger)}
+
             <View style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '14px' }}>
               {ALL_SYMPTOM_OPTIONS.map((s) => {
                 const active = selectedSymptoms.includes(s);
@@ -617,6 +807,8 @@ export default function CheckinPage() {
               autoHeight
             />
 
+            {renderImagePicker(symptomImages, setSymptomImages, colors.danger)}
+
             <View style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
               <View onClick={() => setSymptomModal(false)} style={{ flex: 1, textAlign: 'center', padding: '13px 0', borderRadius: `${radius.md}px`, backgroundColor: colors.border }}>
                 <Text style={{ fontSize: '15px', fontWeight: 600, color: colors.textSecondary }}>取消</Text>
@@ -625,6 +817,43 @@ export default function CheckinPage() {
                 <Text style={{ fontSize: '15px', fontWeight: 700, color: '#fff' }}>{symptomSaving ? '保存中...' : '提交'}</Text>
               </View>
             </View>
+          </View>
+        </View>
+      )}
+
+      {batchModal && (
+        <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 110, display: 'flex', alignItems: 'flex-end' }}>
+          <View style={{ backgroundColor: '#fff', borderRadius: '20px 20px 0 0', padding: `${spacing.lg}px`, width: '100%', boxSizing: 'border-box', maxHeight: '92vh', overflowY: 'auto' }}>
+            <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+              <View><Text style={{ fontSize: '17px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>多日快速补录</Text><Text style={{ fontSize: '12px', color: colors.textMuted }}>选择一天，填了哪些就保存哪些</Text></View>
+              <Text onClick={() => setBatchModal(false)} style={{ fontSize: '22px', color: colors.textMuted }}>×</Text>
+            </View>
+            {renderDatePicker(colors.primary)}
+            <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.textSecondary, display: 'block', marginBottom: '6px' }}>像发消息一样粘贴多日数据</Text>
+            <Textarea
+              style={{ border: `1.5px solid ${colors.primary}`, borderRadius: `${radius.sm}px`, padding: '10px 12px', fontSize: '14px', color: colors.textPrimary, backgroundColor: '#fff', boxSizing: 'border-box', width: '100%', height: '150px', lineHeight: '23px' }}
+              value={quickText}
+              placeholder={'例如：\n今日空腹体重：137.8斤\n昨日饮水量：约1200ml\n昨日排便次数：1次\n昨天运动步数：9736步，并做10分钟抗阻训练'}
+              onInput={(e) => setQuickText(e.detail.value)}
+              maxlength={2000}
+            />
+            {!!quickText.trim() && <View style={{ marginTop: '8px', marginBottom: '14px', padding: '10px', borderRadius: `${radius.sm}px`, backgroundColor: colors.primary + '10' }}>
+              <Text style={{ fontSize: '12px', fontWeight: 700, color: colors.primary, display: 'block', marginBottom: '5px' }}>识别预览（{quickPreview.length}项）</Text>
+              {quickPreview.length ? quickPreview.map((row, index) => <Text key={`${row.type}-${index}`} style={{ fontSize: '12px', color: colors.textSecondary, display: 'block', marginBottom: '3px' }}>• {row.preview}</Text>) : <Text style={{ fontSize: '12px', color: colors.danger }}>暂未识别，请按示例分行输入，或使用下方按项填写。</Text>}
+              {!!quickPreview.unmatchedLines.length && <View style={{ marginTop: '6px' }}><Text style={{ fontSize: '12px', color: colors.danger, fontWeight: 700, display: 'block' }}>以下内容未识别，保存前请修改或删除：</Text>{quickPreview.unmatchedLines.map((line, index) => <Text key={`unmatched-${index}`} style={{ fontSize: '12px', color: colors.danger, display: 'block' }}>• {line}</Text>)}</View>}
+            </View>}
+            <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', margin: '14px 0 8px' }}>也可以按项填写（备用）</Text>
+            <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.textSecondary, display: 'block', marginBottom: '8px' }}>饮食（三餐集中填写）</Text>
+            {[['breakfast', '早餐吃了什么'], ['lunch', '午餐吃了什么'], ['dinner', '晚餐吃了什么']].map(([key, placeholder]) => <Input key={key} style={{ ...BATCH_INPUT_STYLE, marginBottom: '8px' }} value={batchValues[key] || ''} placeholder={placeholder} onInput={(e) => updateBatch(key, e.detail.value)} />)}
+            <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.textSecondary, display: 'block', margin: '14px 0 8px' }}>生活记录</Text>
+            {[['exercise', '运动，如：快走30分钟'], ['bowel', '排便，如：正常1次'], ['water', '饮水，如：1500ml'], ['smoking', '吸烟，如：0支'], ['alcohol', '饮酒，如：未饮酒']].map(([key, placeholder]) => <Input key={key} style={{ ...BATCH_INPUT_STYLE, marginBottom: '8px' }} value={batchValues[key] || ''} placeholder={placeholder} onInput={(e) => updateBatch(key, e.detail.value)} />)}
+            <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.textSecondary, display: 'block', margin: '14px 0 8px' }}>测量数据</Text>
+            <View style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><Input type="digit" style={{ ...BATCH_INPUT_STYLE, flex: 1 }} value={batchValues.weight || ''} placeholder="体重" onInput={(e) => updateBatch('weight', e.detail.value)} /><View style={{ display: 'flex', gap: '6px' }}>{['kg', '斤'].map((unit) => <Chip key={unit} label={unit} active={batchValues.weightUnit === unit} color={colors.primary} onClick={() => updateBatch('weightUnit', unit)} />)}</View></View>
+            {batchValues.weight && batchValues.weightUnit === '斤' && <Text style={{ color: colors.primary, fontSize: '12px', display: 'block', marginBottom: '8px' }}>自动换算：{Math.round((Number(batchValues.weight) / 2) * 100) / 100} kg</Text>}
+            <View style={{ display: 'flex', gap: '8px' }}><Input type="number" style={{ ...BATCH_INPUT_STYLE, flex: 1 }} value={batchValues.sys || ''} placeholder="高压" onInput={(e) => updateBatch('sys', e.detail.value)} /><Input type="number" style={{ ...BATCH_INPUT_STYLE, flex: 1 }} value={batchValues.dia || ''} placeholder="低压" onInput={(e) => updateBatch('dia', e.detail.value)} /></View>
+            {[['heartRate', '心率（次/分）'], ['bloodSugar', '血糖（mmol/L）'], ['mood', '情绪评分（1-10）']].map(([key, placeholder]) => <Input key={key} type="digit" style={{ ...BATCH_INPUT_STYLE, marginBottom: '8px' }} value={batchValues[key] || ''} placeholder={placeholder} onInput={(e) => updateBatch(key, e.detail.value)} />)}
+            <View style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>{[['sleepTime', '入睡时间'], ['wakeTime', '醒来时间']].map(([key, label]) => <Picker key={key} mode="time" value={batchValues[key] || ''} onChange={(e) => updateBatch(key, e.detail.value)}><View style={{ ...BATCH_INPUT_STYLE, flex: 1, display: 'flex', alignItems: 'center' }}><Text style={{ color: batchValues[key] ? colors.textPrimary : colors.textMuted }}>{batchValues[key] || label}</Text></View></Picker>)}</View>
+            <View style={{ display: 'flex', gap: '10px', marginTop: '18px' }}><View onClick={() => setBatchModal(false)} style={{ flex: 1, textAlign: 'center', padding: '13px 0', borderRadius: `${radius.md}px`, backgroundColor: colors.border }}><Text style={{ color: colors.textSecondary, fontWeight: 600 }}>关闭</Text></View><View onClick={batchSaving ? undefined : saveBatch} style={{ flex: 2, textAlign: 'center', padding: '13px 0', borderRadius: `${radius.md}px`, backgroundColor: colors.primary, opacity: batchSaving ? 0.6 : 1 }}><Text style={{ color: '#fff', fontWeight: 700 }}>{batchSaving ? '保存中...' : '保存当天已填项目'}</Text></View></View>
           </View>
         </View>
       )}

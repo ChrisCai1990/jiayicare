@@ -28,7 +28,7 @@ router.post('/recognize-weight', auth, async (req, res) => {
   try {
     const values = parseResult(await parseImage(req.body.image, PROMPT, { maxTokens: 120, timeoutMs: 45000 }));
     res.json({ success: true, data: { ...values, token: issueDraft(key, hash, values),
-      message: '请核对原图和体重值；空白表示无法确定，请手工补填。测量时间需自行确认。' } });
+      message: '请核对原图、体重值和单位；系统会将斤自动换算为公斤入档。空白表示无法确定，请手工补填。' } });
   } catch {
     res.status(502).json({ success: false, message: '图片识别失败，请重试或手工录入' });
   } finally { active.delete(key); }

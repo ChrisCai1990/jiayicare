@@ -22,8 +22,10 @@ test('blood sugar photo draft requires confirmed mmol/L value, meal state and ti
 
 test('weight photo draft requires confirmed kg value and time', () => {
   process.env.JWT_SECRET = 'local-test-secret';
-  assert.deepEqual(weight.parseResult('{"value":65.26}'), { value: 65.3 });
-  assert.deepEqual(weight.parseResult('{"value":600}'), { value: null });
+  assert.deepEqual(weight.parseResult('{"value":65.26,"unit":"kg"}'), { value: 65.3, unit: 'kg' });
+  assert.deepEqual(weight.parseResult('{"value":130.5,"unit":"斤"}'), { value: 130.5, unit: '斤' });
+  assert.deepEqual(weight.parseResult('{"value":65.26}'), { value: null, unit: null });
+  assert.deepEqual(weight.parseResult('{"value":1000,"unit":"斤"}'), { value: null, unit: '斤' });
   const token = weight.issueDraft('user-1', imageHash(image), { value: 65.3 });
   const body = {
     type: 'weight', value: '65.3', unit: 'kg', imageUrl: image,
