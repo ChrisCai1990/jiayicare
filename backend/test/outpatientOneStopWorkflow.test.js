@@ -15,6 +15,9 @@ test('门诊一站式是完整多阶段服务，不是单次代办', () => {
   const migration = fs.readFileSync(path.join(__dirname, '../src/scripts/migrateOutpatientOneStopWorkflowV5.js'), 'utf8');
   assert.match(migration, /theme: \{ \$regex: '门诊一站式\.\*检查日专家号预约' \}/);
   assert.match(migration, /status: \{ \$in: \['draft', 'active'\] \}/);
+  const deploy = fs.readFileSync(path.join(__dirname, '../../scripts/deploy.py'), 'utf8');
+  assert.match(deploy, /migrateOutpatientRemoveDuplicateBookingV10\.js/);
+  assert.match(deploy, /\.outpatient-remove-duplicate-booking-v10-applied/);
   assert.ok(WORKFLOW_PLANS.every(item => item.executorRole));
   assert.deepEqual(WORKFLOW_PLANS.slice(0, 2).map(item => item.executorRole), ['healthManager', 'familyDoctor']);
   assert.match(WORKFLOW_PLANS[0].name, /资料收集/);

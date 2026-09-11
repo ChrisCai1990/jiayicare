@@ -116,4 +116,4 @@ async function main() {
 
 if (require.main === module) main().catch(err => { console.error(err); process.exitCode = 1; }).finally(() => mongoose.disconnect());
 
-module.exports = { PRODUCT_NAME, WORKFLOW_PLANS, removeRedundantExpertBookingStage };
+module.exports = { PRODUCT_NAME, WORKFLOW_PLANS, removeRedundantExpertBookingStage, main };
