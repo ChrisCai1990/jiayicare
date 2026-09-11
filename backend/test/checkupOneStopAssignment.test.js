@@ -13,11 +13,12 @@ test('checkup one-stop requires distinct booking planner and escort selections',
   assert.match(staffRoute, /escortStaffId[^\n]+role: 'medicalAssistant'/);
 });
 
-test('checkup one-stop no longer requires or shows a supervisor', () => {
+test('checkup one-stop keeps booking assignment separate from the Admin-driven final supervisor', () => {
   assert.match(staffPage, /!checkupService && !visit\.supervisorId/);
   assert.match(staffPage, /\{!isCheckupService && <div>/);
   assert.match(staffRoute, /!isCheckupService && !c\.supervisorId/);
-  assert.match(staffRoute, /if \(isCheckupService\)[\s\S]+taskRole: 'supervisor'[\s\S]+status: 'cancelled'[\s\S]+流程标准化：体检报告回收由 Admin 岗位任务承接/);
+  assert.match(staffRoute, /workflowPlan\.workflowTaskRole === 'supervisor'/);
+  assert.match(staffRoute, /总督办\$\{workflowPlan\.name\}/);
 });
 
 test('workflow tasks honor explicit checkup assignees', () => {

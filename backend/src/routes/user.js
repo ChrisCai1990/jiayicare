@@ -1095,14 +1095,14 @@ router.patch('/plans/:planId/confirm', auth, async (req, res) => {
     const plan = await HealthPlan.findOne({ _id: req.params.planId, patientId: req.user._id });
     if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
     if (plan.confirmedAt) {
-      if (plan.type === 'annual_checkup') await onCustomerConfirmedCheckupPlan(plan.patientId);
+      if (plan.type === 'annual_checkup') await onCustomerConfirmedCheckupPlan(plan);
       return res.json({ success: true, data: plan });
     }
     if (plan.status === 'draft') plan.status = 'active';
     plan.confirmedAt = new Date();
     await plan.save();
     if (plan.type === 'annual_checkup') {
-      await onCustomerConfirmedCheckupPlan(plan.patientId);
+      await onCustomerConfirmedCheckupPlan(plan);
     }
     // 一站式体检在客户确认后直接交棒给健康规划师，不再另建模糊的“确认后随访”占位。
     if (plan.type !== 'annual_checkup') await generateHealthPlanFollowUp(plan).catch(() => {});

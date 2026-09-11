@@ -11,7 +11,8 @@ const { calculateHealthScore } = require('../utils/healthScore');
 const { parseIdCard, calcAgeFromBirthDate } = require('../utils/idCard');
 const { getCurrentTenantId, BYPASS } = require('../utils/tenantScope');
 const { followUpTaskRequirements, followUpTaskPurposes } = require('../utils/medicalAssistRequirements');
-const { advanceCheckupTask, isCheckupService } = require('../utils/checkupOneStopFlow');
+const { advanceCheckupTask, isCheckupService, onCheckupReportAudited, stageForScheme } = require('../utils/checkupOneStopFlow');
+const { ensureStaffInitiatedCheckupService } = require('../utils/checkupServiceInstance');
 const { generateCompactMedicalAssistPurposes } = require('../utils/medicalAssistPurposeDraft');
 const { isReportInterpretation } = require('../utils/checkupWorkflow');
 const { reverseFamilyRelation, synchronizeFamilyGroup } = require('../utils/familyLinks');
@@ -1630,6 +1631,16 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
       return res.status(400).json({ success: false, message: '请依次完成开单门诊、特殊检查专家及检查后专家门诊的实际预约安排' });
     }
   }
+  if (followUp.sourceType === 'health_plan' && followUp.followUpSchemeId && req.body.status === 'completed') {
+    const workflowScheme = await FollowUpPlan.findById(followUp.followUpSchemeId).lean();
+    const workflowStage = workflowScheme ? stageForScheme(workflowScheme) : '';
+    if (workflowStage === 'result_review' && !String(req.body.executedContent || '').trim()) {
+      return res.status(400).json({ success: false, message: '请填写体检结果评估，并明确后续随访计划；无需随访时请记录结论和依据' });
+    }
+    if (workflowStage === 'final_acceptance' && !String(req.body.executedContent || '').trim()) {
+      return res.status(400).json({ success: false, message: '请填写最终验收结论和遗留事项交接情况' });
+    }
+  }
   const isOutpatientStaffAssignment = followUp.sourceType === 'health_plan'
     && followUp.taskRole === 'executor'
     && /门诊一站式.*执行人员安排/.test(followUp.theme || '');
@@ -2324,13 +2335,28 @@ async function upsertMedicalAssistModuleTasks(plan, workflowPlan, options = {}) 
   const previousGate = options.dependsOnTaskId
     ? await FollowUp.findById(options.dependsOnTaskId).select('status').lean()
     : null;
-  const executorBlocked = !!options.dependsOnTaskId && previousGate?.status !== 'completed';
+  const executorBlocked = (!!options.dependsOnTaskId && previousGate?.status !== 'completed') || workflowPlan.activationEvent === 'report_audited';
   const requirements = [
     c.hospital && `医院：${c.hospital}`, c.department && `科室：${c.department}`, c.expert && `医生：${c.expert}`,
     (c.serviceDate || c.serviceTime) && `服务时间：${[c.serviceDate, c.serviceTime].filter(Boolean).join(' ')}`,
     plan.description && `服务目标：${plan.description}`, c.tasks && `服务要求：${c.tasks}`,
     options.evidence && `触发依据：${options.evidence}`,
   ].filter(Boolean).join('\n');
+  if (workflowPlan.workflowTaskRole === 'supervisor') {
+    return FollowUp.findOneAndUpdate(
+      { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'supervisor', workflowKey },
+      { $set: {
+        patientId: plan.patientId, staffId: plan.staffId, assignedTo: executorAssignee || supervisorAssignee,
+        date: executorDate, remindAt: addDays(executorDate, -(workflowPlan.remindDaysBefore ?? 3)),
+        coordinationGroupId: `medical-assist:${plan._id}`, workflowKey, taskRole: 'supervisor', followUpSchemeId: workflowPlan._id,
+        theme: `总督办${workflowPlan.name} · ${plan.title || ''}`, content: '持续关注全部岗位节点；健康顾问完成结果评估和随访计划后进行最终验收。',
+        plannedContent: [requirements, workflowPlan.completionStandard && `完成标准：${workflowPlan.completionStandard}`].filter(Boolean).join('\n'),
+        status: 'planned', isBlocked: true, activationEvent: workflowPlan.activationEvent || 'previous_stage_completed',
+        dependsOnTaskId: options.dependsOnTaskId || null,
+      } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+  }
   const executorTask = await FollowUp.findOneAndUpdate(
     { sourceHealthPlanId: plan._id, sourceType: 'health_plan', taskRole: 'executor', workflowKey },
     { $set: {
@@ -2340,7 +2366,7 @@ async function upsertMedicalAssistModuleTasks(plan, workflowPlan, options = {}) 
       theme: `执行${workflowPlan.name} · ${plan.title || ''}`, content: plan.description || '',
       plannedContent: [requirements, workflowPlan.completionStandard && `完成标准：${workflowPlan.completionStandard}`].filter(Boolean).join('\n'),
       serviceChecklist: workflowPlan.completionStandard ? [{ key: `workflow_${workflowKey}`, purpose: workflowPlan.completionStandard }] : [],
-      status: 'planned', isBlocked: executorBlocked, activationEvent: executorBlocked ? 'previous_stage_approved' : '',
+      status: 'planned', isBlocked: executorBlocked, activationEvent: workflowPlan.activationEvent || (executorBlocked ? 'previous_stage_approved' : ''),
       dependsOnTaskId: options.dependsOnTaskId || null,
     } },
     { upsert: true, new: true, setDefaultsOnInsert: true }
@@ -2499,7 +2525,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
       { mode: item.mode || 'fixed', trigger: item.trigger || '', sequence: item.sequence ?? sequence },
     ]));
     const fixedWorkflowPlans = workflowPlans
-      .filter(item => isMultiStageService || (moduleConfigMap.get(String(item._id))?.mode || 'fixed') === 'fixed')
+      .filter(item => isOutpatientOneStop || (moduleConfigMap.get(String(item._id))?.mode || 'fixed') === 'fixed')
       .sort((a, b) => (moduleConfigMap.get(String(a._id))?.sequence ?? 0) - (moduleConfigMap.get(String(b._id))?.sequence ?? 0));
     // 普通就医协助只建立一组方案级“执行 + 督办”。岗位模板可能同时配置
     // “代办服务”“资料回收”等多个固定模块，但这些都是同一次服务的验收内容，
@@ -2511,7 +2537,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
         id: String(item._id), name: item.name,
         ...(moduleConfigMap.get(String(item._id)) || { mode: 'fixed', trigger: '', sequence: 0 }),
       }))
-      .filter(item => !isMultiStageService && item.mode !== 'fixed')
+      .filter(item => !isOutpatientOneStop && item.mode !== 'fixed')
       .map(item => ({ ...item, decision: item.mode === 'manual' ? 'manual' : 'pending', decidedAt: null, decidedBy: null }));
     if (deferredWorkflowModules.length) {
       c.workflowModuleDecisions = deferredWorkflowModules;
@@ -3259,6 +3285,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     if (mimeType !== undefined) report.mimeType = mimeType;
     if (fileSize !== undefined) report.fileSize = fileSize;
     await report.save();
+    if (autoAuditPending) await onCheckupReportAudited(report).catch(err => console.error('[checkup-workflow] failed to activate result review', err.message));
 
     // 2026-07-02修复：此前条件是 || 关系，"保存草稿"(aiStatus:'pending')只要带了reportItems字段
     // 也会触发同步，导致专项筛查在审核通过前就被写入。改成严格要求 aiStatus 变为 reviewed 才同步，
@@ -3386,7 +3413,10 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
     report.reject_reason = rejectReason || '';
   }
   await report.save();
-  if (action === 'approve') await syncBodyCompositionFromReport(report);
+  if (action === 'approve') {
+    await syncBodyCompositionFromReport(report);
+    await onCheckupReportAudited(report).catch(err => console.error('[checkup-workflow] failed to activate result review', err.message));
+  }
   res.json({ success: true, data: report });
 });
 
@@ -12500,10 +12530,10 @@ router.post('/patients/:id/ai-annual-checkup-plan', staffAuth, async (req, res) 
     return res.status(403).json({ success: false, message: '仅健康顾问可生成年度体检方案' });
   }
   try {
-    const { templateId, goal } = req.body;
+    const { templateId, goal, productId } = req.body;
     if (!templateId) return res.status(400).json({ success: false, message: '请先选择体检套餐模板' });
     const user = await User.findById(req.params.id)
-      .select('name gender age chronicDiseases healthProfile clientBrand');
+      .select('name gender age chronicDiseases healthProfile clientBrand assignedFamilyDoctor assignedHealthPlanner assignedMedicalAssistant');
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
     if (!user.clientBrand) return res.status(400).json({ success: false, message: '请先设置客户所属平台（嘉医管家或金伊森）' });
 
@@ -12514,7 +12544,7 @@ router.post('/patients/:id/ai-annual-checkup-plan', staffAuth, async (req, res) 
       type: 'medical_assist',
       status: { $in: ['draft', 'active'] },
     }).sort({ createdAt: -1 });
-    const currentCheckupService = serviceCandidates.find(isCheckupService);
+    let currentCheckupService = serviceCandidates.find(isCheckupService);
     if (currentCheckupService) {
       const existingPlans = await HealthPlan.find({
         patientId: user._id,
@@ -12550,6 +12580,13 @@ router.post('/patients/:id/ai-annual-checkup-plan', staffAuth, async (req, res) 
       clientBrand: templateBrandFilter,
     }).lean();
     if (!template) return res.status(404).json({ success: false, message: '当前平台的体检套餐模板不存在或已停用，请重新选择' });
+
+    // 医护端主动发起与商城下单共用同一种体检服务实例。订单入口已有服务实例时原样复用；
+    // 没有订单时，根据 Admin 给体检产品发布的流程创建 staff_initiated 实例，后续任务链不再另走一套。
+    if (!currentCheckupService) {
+      const ensured = await ensureStaffInitiatedCheckupService({ patient: user, staff: req.staff, productId });
+      currentCheckupService = ensured.servicePlan;
+    }
 
     const year = new Date().getFullYear();
     const { chat } = require('../utils/ai');
@@ -12667,6 +12704,8 @@ ${addonListText}
         templateUpdatedAt: template.updatedAt,
         clientBrand: user.clientBrand,
         generationGoal: goal || '',
+        serviceInstanceId: currentCheckupService?._id || null,
+        serviceInitiationSource: currentCheckupService?.sourceOrderId ? 'order' : 'staff_initiated',
         evidence: {
           questionnaireResponseIds: questionnaireResponses.map(r => r._id),
           medicalReportIds: historicalReports.map(r => r._id),
@@ -12677,8 +12716,22 @@ ${addonListText}
 
     res.json({ success: true, data: plan });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(err.statusCode || 500).json({ success: false, message: err.message });
   }
+});
+
+// 医护端主动发起服务时，只展示 Admin 已上架且已发布对应流程的产品。
+// 订单入口继续使用下单时的不可变快照；这里用于没有订单的 staff_initiated 入口。
+router.get('/workflow-products', staffAuth, async (req, res) => {
+  try {
+    const key = String(req.query.key || '');
+    if (!['checkup'].includes(key)) return res.status(400).json({ success: false, message: '暂不支持该服务流程类型' });
+    const products = await Product.find({ status: 'on', 'serviceWorkflow.key': key, 'serviceWorkflow.modules.0': { $exists: true } })
+      .select('name subtitle category serviceWorkflow.notes serviceWorkflow.modules')
+      .sort({ sortOrder: 1, createdAt: -1 })
+      .lean();
+    res.json({ success: true, data: products });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
 router.resumeReportParseJobs = resumeReportParseJobs;

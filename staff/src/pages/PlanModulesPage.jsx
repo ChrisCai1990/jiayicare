@@ -319,7 +319,7 @@ function CheckupServiceWorkspace({ plan, moduleData, onOpenPatient }) {
 
       {questionnaireAnswers.length > 0 && <details style={{ ...card, marginTop: 14 }}>
         <summary style={{ cursor: 'pointer', color: '#29483C', fontSize: 13, fontWeight: 700 }}>
-          查看问卷与档案差异（{questionnaireAnswers.length}项{archiveChanges.length ? `，${archiveChanges.length}项变化待核对` : ''}）
+          本次问卷明细与档案变化（{questionnaireAnswers.length}项{archiveChanges.length ? `，${archiveChanges.length}项变化待核对` : ''}）
         </summary>
         <div style={{ marginTop: 8, ...muted }}>仅供核对，默认不展开；基础档案不会被本次问卷自动覆盖。</div>
         {archiveChanges.length > 0 ? <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 9 }}>

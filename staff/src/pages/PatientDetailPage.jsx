@@ -11771,9 +11771,9 @@ export default function PatientDetailPage() {
           initialBriefNote={showSelectTplModal === 'annual_checkup' ? buildCheckupQuestionnaireGoal(qResponses, plans) : ''}
           title={showSelectTplModal === 'annual_checkup' ? 'AI体检方案' : showSelectTplModal === 'nutrition' ? 'AI营养方案' : 'AI就医协助方案'}
           onClose={() => { setShowSelectTplModal(null); setPendingMedicalAssistOrderId('') }}
-          onGenerate={async (templateId, briefNote) => {
+          onGenerate={async (templateId, briefNote, productId) => {
             if (showSelectTplModal === 'annual_checkup') {
-              const generated = await staffAPI.generateAIAnnualCheckupPlan(id, templateId, briefNote)
+              const generated = await staffAPI.generateAIAnnualCheckupPlan(id, templateId, briefNote, productId)
               toast(generated.reused ? (generated.message || '本次体检已有方案，正在打开原方案') : 'AI体检方案已生成，正在打开方案')
               await loadPlans()
               nav(`/plans/${generated.data._id}`, {
@@ -13474,6 +13474,8 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, initialBri
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [selectedId, setSelectedId] = useState('')
+  const [workflowProducts, setWorkflowProducts] = useState([])
+  const [selectedProductId, setSelectedProductId] = useState('')
   const [generating, setGenerating] = useState(false)
   // 就医协助方案：模板本身是固定骨架(SOP)，不像体检/营养方案有结构化的"标准项目"可锁定，
   // 就医场景每次的具体情况差异很大（去哪家医院/是否加急/会员状况等），需要专员当场填一句
@@ -13485,17 +13487,26 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, initialBri
   }, [initialBriefNote])
 
   useEffect(() => {
-    staffAPI.getPlanTemplates(planType, patientId)
-      .then(res => setTemplates((res.data || []).filter(tpl => planType !== 'medical_assist' || staff?.role !== 'familyDoctor' || /住院一站式/.test(tpl.name || ''))))
+    Promise.all([
+      staffAPI.getPlanTemplates(planType, patientId),
+      planType === 'annual_checkup' ? staffAPI.getWorkflowProducts('checkup') : Promise.resolve({ data: [] }),
+    ])
+      .then(([res, productRes]) => {
+        setTemplates((res.data || []).filter(tpl => planType !== 'medical_assist' || staff?.role !== 'familyDoctor' || /住院一站式/.test(tpl.name || '')))
+        const products = productRes.data || []
+        setWorkflowProducts(products)
+        if (products.length === 1) setSelectedProductId(products[0]._id)
+      })
       .catch(err => setError(err.message || '加载失败'))
       .finally(() => setLoading(false))
   }, [planType, patientId])
 
   const handleGenerate = async () => {
     if (!selectedId) { toast('请先选择模板'); return }
+    if (planType === 'annual_checkup' && workflowProducts.length > 1 && !selectedProductId) { toast('请先选择本次使用的 Admin 体检服务流程'); return }
     setGenerating(true)
     try {
-      await onGenerate(selectedId, briefNote.trim())
+      await onGenerate(selectedId, briefNote.trim(), selectedProductId)
       onClose()
     } catch (err) { toast('AI生成失败：' + (err.message || '未知错误')) }
     finally { setGenerating(false) }
@@ -13510,6 +13521,14 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, initialBri
         </div>
         {/* 服务目标固定在模板列表之前，不随列表滚动，选模板前就能先看到并填写 */}
         <div style={{ flexShrink: 0, padding: '14px 20px 0' }}>
+          {planType === 'annual_checkup' && <div className="form-group" style={{ marginBottom: 12 }}>
+            <label className="form-label">执行服务流程（来自 Admin）</label>
+            <select className="form-input" value={selectedProductId} onChange={e => setSelectedProductId(e.target.value)}>
+              <option value="">请选择已发布的体检服务</option>
+              {workflowProducts.map(product => <option key={product._id} value={product._id}>{product.name}</option>)}
+            </select>
+            {!loading && !workflowProducts.length && <div style={{ color: '#8A6A35', fontSize: 12, marginTop: 6 }}>未发现当前上架流程；已有订单或服务实例仍可按其历史快照继续，新发起服务会由后端阻止。</div>}
+          </div>}
           <div className="form-group" style={{ marginBottom: 12 }}>
             <label className="form-label">服务目标（已自动带入客户本次问卷需求，可核对、补充或修改）</label>
             <textarea className="form-input" rows={2} placeholder={

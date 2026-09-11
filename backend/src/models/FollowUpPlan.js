@@ -24,6 +24,11 @@ const followUpPlanSchema = new mongoose.Schema({
   fixedToServiceDate: { type: Boolean, default: false }, // 陪诊/当日服务：执行任务始终与主服务日期同日
   requiresCoordination: { type: Boolean, default: false },
   completionStandard: { type: String, default: '' },
+  // 稳定的流程语义由 Admin 配置，运行时不得再只靠中文名称猜节点用途。
+  workflowStageKey: { type: String, default: '', trim: true },
+  workflowTaskRole: { type: String, enum: ['executor', 'supervisor'], default: 'executor' },
+  activationEvent: { type: String, enum: ['', 'previous_completed', 'report_audited'], default: '' },
+  closesService: { type: Boolean, default: false },
   default_content:   { type: mongoose.Schema.Types.Mixed, default: {} },
   status:            { type: String, enum: ['active', 'inactive'], default: 'active' },
   reviewStatus:      { type: String, enum: ['pending_review', 'approved'], default: 'approved' },

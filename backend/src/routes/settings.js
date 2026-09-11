@@ -781,7 +781,8 @@ router.get('/followup-plans', adminAuth, async (req, res) => {
 
 router.post('/followup-plans', adminAuth, async (req, res) => {
   const { name, formId, cycles, defaultEmployeeId, default_content, category, executorRole, supervisorRole,
-    remindDaysBefore, executorDueOffsetDays, supervisorDueOffsetDays, fixedToServiceDate, requiresCoordination, completionStandard } = req.body;
+    remindDaysBefore, executorDueOffsetDays, supervisorDueOffsetDays, fixedToServiceDate, requiresCoordination, completionStandard,
+    workflowStageKey, workflowTaskRole, activationEvent, closesService } = req.body;
   if (!name) return res.status(400).json({ success: false, message: '方案名称不能为空' });
   const plan = await FollowUpPlan.create({
     name, formId: formId || null,
@@ -793,6 +794,8 @@ router.post('/followup-plans', adminAuth, async (req, res) => {
     supervisorDueOffsetDays: Number.isFinite(Number(supervisorDueOffsetDays)) ? Number(supervisorDueOffsetDays) : 1,
     fixedToServiceDate: !!fixedToServiceDate,
     requiresCoordination: !!requiresCoordination, completionStandard: completionStandard || '',
+    workflowStageKey: String(workflowStageKey || '').trim(), workflowTaskRole: workflowTaskRole || 'executor',
+    activationEvent: activationEvent || '', closesService: !!closesService,
     default_content: default_content || {},
   });
   res.json({ success: true, data: plan, message: '随访方案已创建' });
@@ -800,7 +803,8 @@ router.post('/followup-plans', adminAuth, async (req, res) => {
 
 router.put('/followup-plans/:id', adminAuth, async (req, res) => {
   const { name, formId, cycles, defaultEmployeeId, status, default_content, category, executorRole, supervisorRole,
-    remindDaysBefore, executorDueOffsetDays, supervisorDueOffsetDays, fixedToServiceDate, requiresCoordination, completionStandard } = req.body;
+    remindDaysBefore, executorDueOffsetDays, supervisorDueOffsetDays, fixedToServiceDate, requiresCoordination, completionStandard,
+    workflowStageKey, workflowTaskRole, activationEvent, closesService } = req.body;
   const plan = await FollowUpPlan.findByIdAndUpdate(
     req.params.id,
     {
@@ -813,6 +817,8 @@ router.put('/followup-plans/:id', adminAuth, async (req, res) => {
       supervisorDueOffsetDays: Number.isFinite(Number(supervisorDueOffsetDays)) ? Number(supervisorDueOffsetDays) : 1,
       fixedToServiceDate: !!fixedToServiceDate,
       requiresCoordination: !!requiresCoordination, completionStandard: completionStandard || '',
+      workflowStageKey: String(workflowStageKey || '').trim(), workflowTaskRole: workflowTaskRole || 'executor',
+      activationEvent: activationEvent || '', closesService: !!closesService,
       status,
       default_content: default_content || {},
     },

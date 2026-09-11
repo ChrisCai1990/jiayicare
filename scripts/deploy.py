@@ -353,6 +353,16 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("健管专员历史体检收尾任务归并失败")
+        code, _ = remote(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/migrateCheckupSupervisionClosureV12.js ] && "
+            f"[ ! -f {REPO_DIR}/.checkup-supervision-closure-v12-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/migrateCheckupSupervisionClosureV12.js --apply && "
+            f"touch {REPO_DIR}/.checkup-supervision-closure-v12-applied; fi",
+            timeout=180,
+            label="增加体检结果评估、健康规划师总督办与最终验收",
+        )
+        if code:
+            raise RuntimeError("体检一站式最终闭环迁移失败")
         time.sleep(3)
 
         code, output = remote(

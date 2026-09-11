@@ -9,7 +9,7 @@ const ROLE_LABEL = {
 }
 
 const ROLE_OPTIONS = [
-  ['', '不限定'], ['healthManager', '健管专员'], ['healthPlanner', '就医专员/健康规划师'],
+  ['', '不限定'], ['healthManager', '健管专员'], ['healthPlanner', '健康规划师'], ['medicalAssistant', '就医专员'],
   ['familyDoctor', '健康顾问'], ['nutritionist', '营养师'], ['nurse', '护士'],
 ]
 const CATEGORY_OPTIONS = [
@@ -18,7 +18,7 @@ const CATEGORY_OPTIONS = [
 ]
 
 const emptyCycle = () => ({ cycleType: 'duration', cycleDuration: 30, cycleUnit: 'day', cycleDate: '', notes: '' })
-const EMPTY = { name: '', formId: '', cycles: [emptyCycle()], defaultEmployeeId: '', default_content: {}, category: 'general', executorRole: '', supervisorRole: '', remindDaysBefore: 3, executorDueOffsetDays: -1, supervisorDueOffsetDays: 1, fixedToServiceDate: false, requiresCoordination: false, completionStandard: '' }
+const EMPTY = { name: '', formId: '', cycles: [emptyCycle()], defaultEmployeeId: '', default_content: {}, category: 'general', executorRole: '', supervisorRole: '', remindDaysBefore: 3, executorDueOffsetDays: -1, supervisorDueOffsetDays: 1, fixedToServiceDate: false, requiresCoordination: false, completionStandard: '', workflowStageKey: '', workflowTaskRole: 'executor', activationEvent: '', closesService: false }
 
 // 按钮样式
 const btnStyle = (color, disabled) => ({
@@ -80,6 +80,8 @@ export default function FollowUpPlanPage() {
       supervisorDueOffsetDays: p.supervisorDueOffsetDays ?? 1, requiresCoordination: !!p.requiresCoordination,
       fixedToServiceDate: !!p.fixedToServiceDate,
       completionStandard: p.completionStandard || '',
+      workflowStageKey: p.workflowStageKey || '', workflowTaskRole: p.workflowTaskRole || 'executor',
+      activationEvent: p.activationEvent || '', closesService: !!p.closesService,
     })
     setError(''); setShowModal(true)
   }
@@ -106,6 +108,8 @@ export default function FollowUpPlanPage() {
         supervisorDueOffsetDays: Number(form.supervisorDueOffsetDays), requiresCoordination: form.requiresCoordination,
         fixedToServiceDate: form.fixedToServiceDate,
         completionStandard: form.completionStandard,
+        workflowStageKey: form.workflowStageKey, workflowTaskRole: form.workflowTaskRole,
+        activationEvent: form.activationEvent, closesService: form.closesService,
         cycles: form.cycles.map(c => ({
           cycleType: c.cycleType,
           cycleDuration: c.cycleType === 'duration' ? Number(c.cycleDuration) : null,
@@ -242,6 +246,15 @@ export default function FollowUpPlanPage() {
               </div>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, fontSize: 13 }}><input type="checkbox" checked={form.fixedToServiceDate} onChange={e => setForm(f => ({ ...f, fixedToServiceDate: e.target.checked, executorDueOffsetDays: e.target.checked ? 0 : f.executorDueOffsetDays }))} />执行任务固定在主服务日期当天（陪诊、当日体检等）</label>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, fontSize: 13 }}><input type="checkbox" checked={form.requiresCoordination} onChange={e => setForm(f => ({ ...f, requiresCoordination: e.target.checked }))} />需要执行人和督办人双人协作</label>
+              <div style={{ padding: 12, marginBottom: 14, borderRadius: 9, background: '#F4F8F6', border: '1px solid #DCE8E1' }}>
+                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 9 }}>统一服务流程语义</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">节点标识</label><input className="form-input" value={form.workflowStageKey} onChange={e => setForm(f => ({ ...f, workflowStageKey: e.target.value }))} placeholder="如 result_review" /></div>
+                  <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">任务性质</label><select className="form-input" value={form.workflowTaskRole} onChange={e => setForm(f => ({ ...f, workflowTaskRole: e.target.value }))}><option value="executor">岗位执行</option><option value="supervisor">全程督办/最终验收</option></select></div>
+                  <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">额外解锁事件</label><select className="form-input" value={form.activationEvent} onChange={e => setForm(f => ({ ...f, activationEvent: e.target.value }))}><option value="">只等待上一节点</option><option value="report_audited">报告完成解析并审核</option></select></div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, alignSelf: 'end', minHeight: 38, fontSize: 13 }}><input type="checkbox" checked={form.closesService} onChange={e => setForm(f => ({ ...f, closesService: e.target.checked }))} />完成后关闭服务与单次订单</label>
+                </div>
+              </div>
               <div className="form-group"><label className="form-label">完成标准</label><textarea className="form-input" rows={2} value={form.completionStandard} onChange={e => setForm(f => ({ ...f, completionStandard: e.target.value }))} placeholder="如：预约信息确认、服务完成、结果资料归档" /></div>
 
               {/* 关联随访表单 */}
