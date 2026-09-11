@@ -290,6 +290,26 @@ async function splitImageColumns(imageBuffer) {
   })));
 }
 
+// 密集纵向检验单常在一页内堆叠多张双栏化验单。按上下区域切分时保留完整宽度，
+// 避免左右切图把“项目-结果-参考范围”同行拆散；相邻区域保留重叠，跨边界行由后续去重合并。
+async function splitImageHorizontalBands(imageBuffer, bandCount = 3, overlapRatio = 0.08) {
+  const Jimp = require('jimp-compact');
+  const image = await Jimp.read(imageBuffer);
+  const width = image.bitmap.width;
+  const height = image.bitmap.height;
+  const overlap = Math.round(height * overlapRatio);
+  const step = Math.ceil(height / bandCount);
+  const crops = [];
+  for (let index = 0; index < bandCount; index++) {
+    const top = Math.max(0, index * step - (index ? overlap : 0));
+    const bottom = Math.min(height, (index + 1) * step + (index < bandCount - 1 ? overlap : 0));
+    crops.push(image.clone().crop(0, top, width, bottom - top));
+  }
+  return Promise.all(crops.map(crop => new Promise((resolve, reject) => {
+    crop.getBase64(Jimp.MIME_PNG, (error, value) => error ? reject(error) : resolve(String(value).split(',')[1]));
+  })));
+}
+
 // 判断报告是否为 PDF
 function isPdfReport(report) {
   return report.mimeType === 'application/pdf'
@@ -297,4 +317,4 @@ function isPdfReport(report) {
     || (report.content || '').startsWith('data:application/pdf');
 }
 
-module.exports = { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, getPdfPageCountFromBuffer, renderSinglePage, renderSinglePageRegions, renderSinglePageColumns, splitImageColumns };
+module.exports = { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, getPdfPageCountFromBuffer, renderSinglePage, renderSinglePageRegions, renderSinglePageColumns, splitImageColumns, splitImageHorizontalBands };
