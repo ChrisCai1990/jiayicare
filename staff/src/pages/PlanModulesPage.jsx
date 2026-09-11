@@ -449,7 +449,10 @@ export default function PlanModulesPage() {
   const handlePush = async () => {
     if (dirty) { toast('有未保存的更改，请先保存再推送'); return }
     const pendingReview = plan.content?.aiStatus === 'pending'
-    if (!window.confirm(pendingReview
+    const outpatientService = isOutpatientOneStop(plan.content || {}, plan.title)
+    if (!window.confirm(outpatientService
+      ? '确认启动本次门诊一站式服务？系统将直接把首个“资料收集与核对”任务转交客户所属健管专员；完成并经健康规划师验收后，再自动流转给健康顾问。'
+      : pendingReview
       ? '确认已完整核对本方案？审核通过后将立即推送给客户，并按 Admin 标准生成岗位任务。'
       : '确定将此方案推送给客户？客户端将立即可见。')) return
     setPushing(true)
@@ -461,7 +464,7 @@ export default function PlanModulesPage() {
       }
       const res = await staffAPI.pushPlan(id)
       setPlan(p => ({ ...p, content: res.data?.content || p.content, pushedAt: res.data?.pushedAt || new Date().toISOString(), status: 'active' }))
-      toast(pendingReview ? '方案已审核推送，岗位任务已生成' : '方案已推送给客户')
+      toast(outpatientService ? '服务已启动，资料收集任务已转交健管专员' : pendingReview ? '方案已审核推送，岗位任务已生成' : '方案已推送给客户')
     } catch (err) {
       toast(err.message || '推送失败')
     } finally {
@@ -551,14 +554,14 @@ export default function PlanModulesPage() {
             >{regeneratingPurposes ? '重新生成中…' : 'AI重新生成代办目的'}</button>
           )}
           {canDelete && <button onClick={handleDelete} style={{ background: '#fff', color: '#DC2626', border: '1px solid #FCA5A5', padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>删除方案</button>}
-          {canEdit && (
+          {canEdit && !(isOutpatientService && plan.pushedAt) && (
             <button
               onClick={handlePush}
               disabled={pushing || dirty}
               title={dirty ? '请先保存更改，再推送给客户' : ''}
               style={{ background: '#0077B6', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, opacity: (pushing || dirty) ? 0.5 : 1 }}
             >
-              {pushing ? '推送中...' : plan.content?.aiStatus === 'pending' ? '审核通过并推送' : plan.pushedAt ? '重新推送' : '推送给客户'}
+              {pushing ? '启动中...' : isOutpatientService ? '启动服务并转交健管专员' : plan.content?.aiStatus === 'pending' ? '审核通过并推送' : plan.pushedAt ? '重新推送' : '推送给客户'}
             </button>
           )}
         </div>
@@ -566,8 +569,13 @@ export default function PlanModulesPage() {
 
       {isCheckupService && <CheckupServiceWorkspace plan={plan} moduleData={moduleData} onOpenPatient={() => nav(`/patients/${plan.patientId?._id}`)} />}
 
+      {isOutpatientService && <div style={{ background: '#F0F8F4', borderRadius: 12, padding: 18, marginBottom: 20, border: '1px solid #CFE2D9' }}>
+        <div style={{ fontWeight: 700, color: '#173B2E' }}>{plan.pushedAt ? '服务已启动' : '健康规划师当前操作'}</div>
+        <div style={{ marginTop: 7, color: '#4A6558', fontSize: 13, lineHeight: 1.8 }}>{plan.pushedAt ? '首个资料收集任务已转交健管专员。后续环节按“执行完成 → 健康规划师验收 → 下一岗位解锁”自动流转。' : '无需在此预填医院、专家、检查或陪诊方案。确认订单信息后，直接启动服务并转交健管专员收集、上传和审核资料。'}</div>
+      </div>}
+
       {/* 体检订单的核心需求已在上方展示，避免健康规划师重复维护“服务目标”。 */}
-      {!isCheckupService && <div style={{ background: '#fff', borderRadius: 12, padding: 20, marginBottom: 20, border: '1px solid #E0D9CE' }}>
+      {!isCheckupService && !isOutpatientService && <div style={{ background: '#fff', borderRadius: 12, padding: 20, marginBottom: 20, border: '1px solid #E0D9CE' }}>
         <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24', marginBottom: 10 }}>{plan.type === 'medical_assist' ? (isOutpatientService ? '本次门诊一站式服务目标（简述）' : '本次代办总目标（简述）') : '服务目标'}</div>
         <textarea
           className="form-input"
@@ -638,7 +646,7 @@ export default function PlanModulesPage() {
           })}</div>
         </div>
       )}
-      <div style={{ marginBottom: 20 }}>
+      {!isOutpatientService && <div style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24' }}>{isCheckupService ? '填写体检安排' : '方案板块'}</div>
           <div style={{ fontSize: 12, color: '#8AA89C' }}>
@@ -657,7 +665,7 @@ export default function PlanModulesPage() {
             onChange={handleModuleChange}
           />
         ))}
-      </div>
+      </div>}
 
       {/* 底部保存 */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
@@ -672,7 +680,7 @@ export default function PlanModulesPage() {
         >
           返回上一页
         </button>
-        {canEdit && (
+        {canEdit && !isOutpatientService && (
           <button
             onClick={handlePush}
             disabled={pushing || dirty}
@@ -681,7 +689,7 @@ export default function PlanModulesPage() {
             {pushing ? '推送中...' : plan.content?.aiStatus === 'pending' ? '审核通过并推送' : '推送给客户'}
           </button>
         )}
-        {canEdit && (
+        {canEdit && !isOutpatientService && (
           <button
             onClick={handleSave}
             disabled={saving}

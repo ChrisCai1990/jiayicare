@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 
 const PRODUCT_NAME = '门诊一站式服务';
 const WORKFLOW_PLANS = [
-  { name: '门诊一站式：资料收集与核对', executorRole: 'healthManager', executorDueOffsetDays: -10, completionStandard: '已收齐并核对本次就医诉求、病历、既往报告、当前用药及身份医保资料，缺失项已明确。' },
+  { name: '门诊一站式：资料收集与核对', executorRole: 'healthManager', executorDueOffsetDays: -10, completionStandard: '已收齐本次就医诉求、病历、既往报告、当前用药及身份医保资料；客户提供的报告已上传归档；资料完整性已审核，缺失项和待补内容已明确。' },
   { name: '门诊一站式：健康顾问评估及医院专家确定', executorRole: 'familyDoctor', executorDueOffsetDays: -9, completionStandard: '健康顾问已完成医学评估分析，确定医院、科室和专家，列明预计涉及的检查单，并明确哪些检查需要专家及对应专家名称。' },
   { name: '门诊一站式：首次代诊门诊预约', executorRole: 'healthManager', executorDueOffsetDays: -8, completionStandard: '已按健康顾问确定的医院、科室和医生完成首次代诊门诊预约。' },
   { name: '门诊一站式：首次代诊开检查单', executorRole: 'medicalAssistant', executorDueOffsetDays: -7, completionStandard: '已完成首次代诊，按医嘱取得检查单和首次门诊病历，并完整反馈开单结果。' },

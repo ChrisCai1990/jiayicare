@@ -13,6 +13,7 @@ test('门诊一站式是完整多阶段服务，不是单次代办', () => {
   assert.ok(WORKFLOW_PLANS.every(item => item.executorRole));
   assert.deepEqual(WORKFLOW_PLANS.slice(0, 2).map(item => item.executorRole), ['healthManager', 'familyDoctor']);
   assert.match(WORKFLOW_PLANS[0].name, /资料收集/);
+  assert.match(WORKFLOW_PLANS[0].completionStandard, /报告已上传归档.*资料完整性已审核/);
   assert.match(WORKFLOW_PLANS[1].name, /健康顾问评估.*医院专家/);
   const template = TEMPLATE_NORMALIZATION[PRODUCT_NAME];
   assert.match(template.applicableScenario, /首次代诊开单、检查预约/);
@@ -28,4 +29,5 @@ test('健康规划师总督办并按上一阶段验收结果串行解锁', () =>
   assert.match(route, /dependsOnTaskId: options\.dependsOnTaskId \|\| null/);
   assert.match(route, /activationEvent: executorBlocked \? 'previous_stage_approved'/);
   assert.match(route, /dependsOnTaskId: followUp\._id[\s\S]*isBlocked: false/);
+  assert.match(route, /!c\.serviceDate && !isOutpatientOneStop/);
 });

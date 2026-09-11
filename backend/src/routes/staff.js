@@ -2237,6 +2237,7 @@ async function upsertMedicalAssistModuleTasks(plan, workflowPlan, options = {}) 
       coordinationGroupId: `medical-assist:${plan._id}`, workflowKey, taskRole: 'executor', followUpSchemeId: workflowPlan._id,
       theme: `执行${workflowPlan.name} · ${plan.title || ''}`, content: plan.description || '',
       plannedContent: [requirements, workflowPlan.completionStandard && `完成标准：${workflowPlan.completionStandard}`].filter(Boolean).join('\n'),
+      serviceChecklist: workflowPlan.completionStandard ? [{ key: `workflow_${workflowKey}`, purpose: workflowPlan.completionStandard }] : [],
       status: 'planned', isBlocked: executorBlocked, activationEvent: executorBlocked ? 'previous_stage_approved' : '',
       dependsOnTaskId: options.dependsOnTaskId || null,
     } },
@@ -2330,6 +2331,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
   if (plan.type === 'medical_assist') {
     const c = plan.content || {};
     const isCheckupService = c.serviceDomain === 'annual_checkup' || c.templateSnapshot?.serviceDomain === 'annual_checkup' || /体检/.test(`${c.templateName || ''} ${plan.title || ''}`);
+    const isOutpatientOneStop = /门诊一站式/.test(`${c.templateName || ''} ${plan.title || ''}`);
     if (isCheckupService && !c.reviewerId) {
       const patientOwner = await User.findById(plan.patientId).select('assignedFamilyDoctor').lean();
       if (patientOwner?.assignedFamilyDoctor) {
@@ -2340,7 +2342,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
         plan.markModified('content');
       }
     }
-    if (!c.serviceDate) return res.status(400).json({ success: false, message: '请先设置服务日期' });
+    if (!c.serviceDate && !isOutpatientOneStop) return res.status(400).json({ success: false, message: '请先设置服务日期' });
     if (isCheckupService && !c.bookingPlannerId) return res.status(400).json({ success: false, message: '请先选择体检预约负责人（健康规划师）' });
     if (isCheckupService && !c.escortStaffId) return res.status(400).json({ success: false, message: '请先选择陪同人员' });
     if (isCheckupService) {
@@ -2351,7 +2353,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
       if (!bookingPlanner) return res.status(400).json({ success: false, message: '体检预约负责人必须是有效的健康规划师' });
       if (!escortStaff) return res.status(400).json({ success: false, message: '陪同人员必须是有效的就医专员' });
     }
-    if (!isCheckupService && !c.staffId) return res.status(400).json({ success: false, message: '请先从员工库选择就医专员' });
+    if (!isCheckupService && !isOutpatientOneStop && !c.staffId) return res.status(400).json({ success: false, message: '请先从员工库选择就医专员' });
     if (isCheckupService && !c.reviewerId) return res.status(400).json({ success: false, message: '请先确认方案审核医生（健康顾问）' });
     if (!isCheckupService && !c.supervisorId) return res.status(400).json({ success: false, message: '请先从员工库选择督办人' });
     if (!(c.followUpPlans?.length || c.followUpPlanId)) return res.status(400).json({ success: false, message: '请先关联 Admin 岗位任务方案' });

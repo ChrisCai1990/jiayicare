@@ -247,6 +247,16 @@ def deploy(backend_only=False, clean=False, github_source=False):
         if code:
             raise RuntimeError("门诊一站式岗位顺序迁移失败")
         code, _ = remote(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOutpatientIntakeTaskV7.js ] && "
+            f"[ ! -f {REPO_DIR}/.outpatient-intake-task-v7-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/migrateOutpatientIntakeTaskV7.js && "
+            f"touch {REPO_DIR}/.outpatient-intake-task-v7-applied; fi",
+            timeout=120,
+            label="明确门诊一站式首环节资料上传与完整性审核",
+        )
+        if code:
+            raise RuntimeError("门诊一站式资料收集任务迁移失败")
+        code, _ = remote(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateCheckupPlanDesignV5.js ] && "
             f"[ ! -f {REPO_DIR}/.checkup-plan-design-v5-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateCheckupPlanDesignV5.js && "
