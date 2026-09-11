@@ -34,6 +34,10 @@ test('上下文按绑定客户查询两套历史，检索不设时间截止，�
   assert.equal(messageQueries.length,2);assert.equal(logQueries.length,2);
   for(const text of ['去年提过的午餐习惯','上次客服回答','测试报告','体重'])assert.ok(result.systemPrompt.includes(text));
   assert.equal(result.counts.retrieved,1);assert.equal(result.messages.at(-1).content,'之前午餐聊了什么');
+  assert.ok(result.systemPrompt.includes('当前微信身份已核验绑定'));
+  assert.ok(result.systemPrompt.includes('应直接从上方个人资料选择2至3项'));
+  assert.ok(result.systemPrompt.includes('本轮没有方案正文'));
+  assert.ok(result.systemPrompt.lastIndexOf('不得沿用')>result.systemPrompt.indexOf('上次客服回答'));
 });
 
 test('已删除或不存在的档案不能组装上下文',async t=>{
