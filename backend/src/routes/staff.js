@@ -1490,7 +1490,7 @@ router.post('/followups', staffAuth, checkPermission('followups', 'create'), asy
   res.json({ success: true, data: followUp });
 });
 
-// 串行服务任务只能退回直接上一环节；保留双方已有记录，并留下完整退回历史。
+// 串行服务任务退回上一实际执行环节；健康规划师自动督办节点只作流程门闸，不让用户手工处理。
 router.post('/followups/:id/return-previous', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
   const reason = String(req.body.reason || '').trim();
   if (!reason) return res.status(400).json({ success: false, message: '退回上一环节必须填写原因' });
@@ -1503,8 +1503,15 @@ router.post('/followups/:id/return-previous', staffAuth, checkPermission('follow
   });
   if (!current) return res.status(404).json({ success: false, message: '当前任务不存在、已结束或不属于您' });
   if (!current.dependsOnTaskId) return res.status(400).json({ success: false, message: '这是首个环节，没有可退回的上一层' });
-  const previous = await FollowUp.findOne({
+  const directPrevious = await FollowUp.findOne({
     _id: current.dependsOnTaskId,
+    sourceHealthPlanId: current.sourceHealthPlanId,
+    sourceType: 'health_plan',
+    status: { $ne: 'cancelled' },
+  });
+  const returnGate = directPrevious?.taskRole === 'supervisor' ? directPrevious : null;
+  const previous = await FollowUp.findOne({
+    _id: returnGate?.dependsOnTaskId || directPrevious?._id,
     sourceHealthPlanId: current.sourceHealthPlanId,
     sourceType: 'health_plan',
     taskRole: 'executor',
@@ -1532,6 +1539,13 @@ router.post('/followups/:id/return-previous', staffAuth, checkPermission('follow
   previous.remindAt = returnedAt;
   previous.nextFollowUpDate = returnedAt;
   await previous.save();
+  if (returnGate) {
+    returnGate.status = 'planned';
+    returnGate.isBlocked = true;
+    returnGate.completedAt = null;
+    returnGate.completedBy = null;
+    await returnGate.save();
+  }
   await current.save();
   await previous.populate('assignedTo', 'name role');
   res.json({ success: true, data: { current, previous }, message: `已退回上一环节${previous.assignedTo?.name ? `，由${previous.assignedTo.name}补充处理` : ''}` });

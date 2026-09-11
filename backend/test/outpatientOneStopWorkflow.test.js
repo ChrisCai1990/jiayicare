@@ -52,3 +52,10 @@ test('首次门诊预约展示顾问建议并保存实际预约安排', () => {
     assert.match(`${form}\n${fs.readFileSync(path.join(__dirname, '../../staff/src/pages/FollowUpsPage.jsx'), 'utf8')}`, new RegExp(text));
   }
 });
+
+test('预约退回时跳过自动督办节点并恢复健康顾问执行任务', () => {
+  const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+  assert.match(route, /directPrevious\?\.taskRole === 'supervisor'/);
+  assert.match(route, /returnGate\?\.dependsOnTaskId \|\| directPrevious\?\._id/);
+  assert.match(route, /returnGate\.status = 'planned'[\s\S]*returnGate\.isBlocked = true/);
+});
