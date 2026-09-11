@@ -383,6 +383,16 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("体检模板与产品流程统一迁移失败")
+        code, _ = remote(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/consolidateCheckupTemplatesV14.js ] && "
+            f"[ ! -f {REPO_DIR}/.checkup-template-consolidation-v14-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/consolidateCheckupTemplatesV14.js --apply && "
+            f"touch {REPO_DIR}/.checkup-template-consolidation-v14-applied; fi",
+            timeout=180,
+            label="合并嘉医管家与金伊森重复体检模板",
+        )
+        if code:
+            raise RuntimeError("体检模板合并迁移失败")
         time.sleep(3)
 
         code, output = remote(

@@ -36,3 +36,11 @@ test('Admin templates support multiple client brands and expose the checkup ques
   assert.match(page, /下单自动体检问卷/)
   assert.match(page, /updateProductServiceWorkflow/)
 })
+
+test('V14 consolidates duplicate checkup templates with a recoverable backup', () => {
+  const migration = read('src/scripts/consolidateCheckupTemplatesV14.js')
+  assert.match(migration, /maintenance_backups/)
+  assert.match(migration, /clientBrands: \['jiayiguanjia', 'jinyisen'\]/)
+  assert.match(migration, /healthplans/)
+  assert.match(migration, /deleteMany/)
+})
