@@ -73,6 +73,14 @@ test('门诊一站式任务不会因执行角色相同而误用体检表单', ()
   assert.match(checkupForm, /isCheckupServiceTask\(task\)[\s\S]*executorRole === 'healthPlanner'/);
 });
 
+test('首次代诊读取代诊日信息并完成检查预约', () => {
+  const booking = fs.readFileSync(path.join(__dirname, '../../staff/src/components/OutpatientAppointmentForm.jsx'), 'utf8');
+  const proxy = fs.readFileSync(path.join(__dirname, '../../staff/src/components/OutpatientProxyVisitForm.jsx'), 'utf8');
+  const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+  assert.match(booking, /campus/);
+  for (const text of ['健管专员确认的代诊日信息', 'proxyVisitCompleted', 'examOrderSummary', 'checkAppointments', 'bookingSnapshot']) assert.match(`${proxy}\n${route}`, new RegExp(text));
+});
+
 test('健康顾问环节使用结构化就医评估并由后端校验', () => {
   const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
   const form = fs.readFileSync(path.join(__dirname, '../../staff/src/components/OutpatientAdvisorAssessmentForm.jsx'), 'utf8');

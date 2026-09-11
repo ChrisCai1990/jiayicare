@@ -267,6 +267,13 @@ def deploy(backend_only=False, clean=False, github_source=False):
         if code:
             raise RuntimeError("门诊一站式执行人员安排迁移失败")
         code, _ = remote(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOutpatientBookingSnapshotV12.js ] && [ ! -f {REPO_DIR}/.outpatient-booking-snapshot-v12-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/migrateOutpatientBookingSnapshotV12.js && touch {REPO_DIR}/.outpatient-booking-snapshot-v12-applied; fi",
+            timeout=120, label="补齐门诊代诊日预约信息交接",
+        )
+        if code:
+            raise RuntimeError("门诊代诊日预约信息交接迁移失败")
+        code, _ = remote(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOutpatientIntakeTaskV7.js ] && "
             f"[ ! -f {REPO_DIR}/.outpatient-intake-task-v7-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateOutpatientIntakeTaskV7.js && "

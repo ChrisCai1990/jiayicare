@@ -1,0 +1,18 @@
+import React from 'react'
+
+export const isOutpatientProxyVisitTask = task => task?.taskRole === 'executor' && /门诊一站式.*首次代诊开检查单/.test(task?.theme || '')
+const bookingFromTask = task => task?.dependsOnTaskId?.formData?.bookingSnapshot || {}
+const labelStyle = { display: 'grid', gap: 5, fontSize: 12, color: '#65776F' }
+export const emptyOutpatientProxyVisit = (task, value = {}) => ({ proxyVisitCompleted: !!value.proxyVisitCompleted, proxyVisitResult: value.proxyVisitResult || '', examOrderSummary: value.examOrderSummary || '', checkAppointments: value.checkAppointments || [], bookingSnapshot: bookingFromTask(task) })
+export const validateOutpatientProxyVisit = value => !value?.proxyVisitCompleted ? '请确认已完成首次代诊' : !value?.proxyVisitResult?.trim() ? '请填写代诊实际结果' : !value?.examOrderSummary?.trim() ? '请填写取得的检查单/检查项目' : !value?.checkAppointments?.length ? '请填写检查预约安排' : value.checkAppointments.some(row => !row.item?.trim() || !row.appointmentDate || !row.appointmentTime) ? '请完整填写检查项目、预约日期和时间' : ''
+
+export default function OutpatientProxyVisitForm({ task, value, onChange }) {
+  const data = emptyOutpatientProxyVisit(task, value); const booking = data.bookingSnapshot || {}; const update = patch => onChange({ ...data, ...patch }); const updateCheck = (index, patch) => update({ checkAppointments: data.checkAppointments.map((row, i) => i === index ? { ...row, ...patch } : row) })
+  return <div style={{ display: 'grid', gap: 14 }}>
+    <section style={{ padding: 13, borderRadius: 10, background: '#FFFAF2', border: '1px solid #E8DCC8', display: 'grid', gap: 6 }}><b style={{ color: '#6F5222' }}>健管专员确认的代诊日信息（只读）</b><div>{booking.hospital || '医院待确认'} · {booking.campus || '院区待确认'}</div>{(booking.prescribingAppointments || []).map((row, index) => <div key={index}>{row.department || '科室待确认'} · {row.doctorName || '专家待确认'} · {[row.appointmentDate, row.appointmentTime].filter(Boolean).join(' ') || '时间待确认'}</div>)}</section>
+    <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="checkbox" checked={data.proxyVisitCompleted} onChange={e => update({ proxyVisitCompleted: e.target.checked })} />确认已完成首次代诊</label>
+    <label style={labelStyle}>代诊实际结果 *<textarea className="form-control" rows={3} value={data.proxyVisitResult} onChange={e => update({ proxyVisitResult: e.target.value })} /></label>
+    <label style={labelStyle}>取得的检查单/检查项目 *<textarea className="form-control" rows={3} value={data.examOrderSummary} onChange={e => update({ examOrderSummary: e.target.value })} /></label>
+    <section style={{ border: '1px solid #B9DDD0', borderRadius: 10, padding: 12, display: 'grid', gap: 10 }}><b>检查预约安排</b>{data.checkAppointments.map((row, index) => <div key={index} style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr 1fr', gap: 8 }}><input className="form-control" value={row.item || ''} onChange={e => updateCheck(index, { item: e.target.value })} placeholder="检查项目" /><input className="form-control" value={row.expertName || ''} onChange={e => updateCheck(index, { expertName: e.target.value })} placeholder="检查专家（选填）" /><input type="date" className="form-control" value={row.appointmentDate || ''} onChange={e => updateCheck(index, { appointmentDate: e.target.value })} /><input type="time" className="form-control" value={row.appointmentTime || ''} onChange={e => updateCheck(index, { appointmentTime: e.target.value })} /></div>)}<button type="button" className="btn btn-secondary" onClick={() => update({ checkAppointments: [...data.checkAppointments, { item: '', expertName: '', appointmentDate: '', appointmentTime: '' }] })}>+ 添加检查预约</button></section>
+  </div>
+}

@@ -1623,7 +1623,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     const appointments = Array.isArray(booking.prescribingAppointments) ? booking.prescribingAppointments : [];
     const specialChecks = Array.isArray(booking.specialCheckAppointments) ? booking.specialCheckAppointments : [];
     const postCheck = booking.postCheckAppointment || {};
-    if (!String(booking.hospital || '').trim() || !appointments.length
+    if (!String(booking.hospital || '').trim() || !String(booking.campus || '').trim() || !appointments.length
       || appointments.some(item => !String(item.department || '').trim() || !String(item.doctorName || '').trim() || !item.appointmentDate || !item.appointmentTime)
       || specialChecks.some(item => !item.appointmentDate || !item.appointmentTime || (item.expertRequired && !String(item.expertName || '').trim()))
       || !String(postCheck.department || '').trim() || !String(postCheck.expertName || '').trim() || !postCheck.appointmentDate || !postCheck.appointmentTime) {
@@ -1643,12 +1643,23 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
       return res.status(400).json({ success: false, message: '执行人员必须是当前有效的就医专员' });
     }
     const byId = new Map(assistants.map(item => [String(item._id), item]));
+    const bookingGate = followUp.dependsOnTaskId ? await FollowUp.findById(followUp.dependsOnTaskId).select('formData').lean() : null;
     outpatientStaffAssignment = {
       ...assignment,
+      bookingSnapshot: bookingGate?.formData?.bookingSnapshot || bookingGate?.formData || assignment.bookingSnapshot || {},
       proxyVisitStaffName: byId.get(String(assignment.proxyVisitStaffId))?.name || '',
       escortStaffName: byId.get(String(assignment.escortStaffId))?.name || '',
     };
     req.body.formData = outpatientStaffAssignment;
+  }
+  const isOutpatientProxyVisit = followUp.sourceType === 'health_plan' && followUp.taskRole === 'executor' && /门诊一站式.*首次代诊开检查单/.test(followUp.theme || '');
+  if (isOutpatientProxyVisit && req.body.status === 'completed') {
+    const result = req.body.formData || {};
+    if (!result.proxyVisitCompleted || !String(result.proxyVisitResult || '').trim() || !String(result.examOrderSummary || '').trim()
+      || !Array.isArray(result.checkAppointments) || !result.checkAppointments.length
+      || result.checkAppointments.some(item => !String(item.item || '').trim() || !item.appointmentDate || !item.appointmentTime)) {
+      return res.status(400).json({ success: false, message: '请确认完成代诊，并完整填写代诊结果、检查单和检查预约安排' });
+    }
   }
   const isSuper = req.staff.role === 'superadmin';
   const isOwner = isSuper || String(followUp.staffId) === String(req.staff._id);

@@ -12,6 +12,7 @@ export const emptyOutpatientAppointment = (task, value) => {
   const specialExisting = Array.isArray(value?.specialCheckAppointments) ? value.specialCheckAppointments : []
   return {
     hospital: value?.hospital || advice.recommendedHospital || '',
+    campus: value?.campus || '',
     prescribingAppointments: requirements.map((row, index) => ({ coveredChecks: row.coveredChecks || '', department: existing[index]?.department || row.department || '', doctorName: existing[index]?.doctorName || row.expertName || '', appointmentDate: existing[index]?.appointmentDate || '', appointmentTime: existing[index]?.appointmentTime || '', communicationContent: existing[index]?.communicationContent || row.communicationContent || '' })),
     specialCheckAppointments: checks.map((row, index) => ({ item: row.item || '', expertRequired: !!row.expertRequired, expertName: specialExisting[index]?.expertName || row.expertName || '', appointmentDate: specialExisting[index]?.appointmentDate || '', appointmentTime: specialExisting[index]?.appointmentTime || '' })),
     postCheckAppointment: { department: value?.postCheckAppointment?.department || advice.recommendedDepartment || '', expertName: value?.postCheckAppointment?.expertName || advice.recommendedExpert || '', appointmentDate: value?.postCheckAppointment?.appointmentDate || '', appointmentTime: value?.postCheckAppointment?.appointmentTime || '' },
@@ -21,6 +22,7 @@ export const emptyOutpatientAppointment = (task, value) => {
 
 export const validateOutpatientAppointment = value => {
   if (!value?.hospital?.trim()) return '请填写预约医院'
+  if (!value?.campus?.trim()) return '请填写预约院区'
   if (!value?.prescribingAppointments?.length) return '健康顾问尚未填写开检查单建议'
   if (value.prescribingAppointments.some(row => !row.department?.trim() || !row.doctorName?.trim() || !row.appointmentDate || !row.appointmentTime)) return '请完整确认开单科室、医生及预约时间'
   if (value.specialCheckAppointments?.some(row => !row.appointmentDate || !row.appointmentTime || (row.expertRequired && !row.expertName?.trim()))) return '请完整填写特殊检查预约时间及所需专家'
@@ -35,7 +37,7 @@ export default function OutpatientAppointmentForm({ task, value, onChange }) {
   const updateRow = (key, index, patch) => update({ [key]: data[key].map((row, i) => i === index ? { ...row, ...patch } : row) })
   return <div style={{ display: 'grid', gap: 14 }}>
     <div style={{ border: '1px solid #B9DDD0', borderRadius: 10, background: '#F2F8F5', padding: 13 }}><b style={{ color: '#1E6B50' }}>健康顾问建议已带入，请由健管专员确认实际预约</b></div>
-    <label style={labelStyle}>预约医院 *<input className="form-control" value={data.hospital} onChange={e => update({ hospital: e.target.value })} /></label>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}><label style={labelStyle}>预约医院 *<input className="form-control" value={data.hospital} onChange={e => update({ hospital: e.target.value })} /></label><label style={labelStyle}>院区 *<input className="form-control" value={data.campus} onChange={e => update({ campus: e.target.value })} placeholder="如：庆春院区" /></label></div>
     <section style={{ border: '1px solid #E0E8E3', borderRadius: 10, padding: 12, display: 'grid', gap: 10 }}><b>第一步：确认开检查单门诊预约</b>
       {data.prescribingAppointments.map((row, index) => <div key={index} style={{ display: 'grid', gap: 8, borderTop: index ? '1px solid #E0E8E3' : 0, paddingTop: index ? 10 : 0 }}>
         <div>拟开项目：<b>{row.coveredChecks}</b></div><div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
