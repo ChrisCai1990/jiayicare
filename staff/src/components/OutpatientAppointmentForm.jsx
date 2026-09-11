@@ -18,6 +18,8 @@ export const emptyOutpatientAppointment = (task, value) => {
       expertName: existing[index]?.expertName || requirement.expertName || '',
       appointmentDate: existing[index]?.appointmentDate || value?.appointmentDate || '',
       appointmentTime: existing[index]?.appointmentTime || value?.appointmentTime || '',
+      plannedAppointmentDate: requirement.plannedAppointmentDate || '',
+      plannedAppointmentTime: requirement.plannedAppointmentTime || '',
       appointmentNumber: existing[index]?.appointmentNumber || value?.appointmentNumber || '',
     })) : existing,
     bookingNote: value?.bookingNote || '',
@@ -47,6 +49,7 @@ export default function OutpatientAppointmentForm({ task, value, onChange }) {
     <div style={{ fontSize: 13, fontWeight: 750 }}>开检查单门诊预约</div>
     {data.prescribingAppointments.map((row, index) => <div key={`${row.coveredChecks}-${index}`} style={{ border: '1px solid #E0E8E3', borderRadius: 10, padding: 12, display: 'grid', gap: 9 }}>
       <div style={{ fontSize: 13, fontWeight: 700 }}>{index + 1}. 本次门诊拟开检查：{row.coveredChecks || '未填写项目'}</div>
+      <div style={{ fontSize: 12, color: '#65776F' }}>健康顾问建议预约：{row.plannedAppointmentDate || '未填写日期'} {row.plannedAppointmentTime || ''}</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 9 }}>
         <label style={{ fontSize: 12, color: '#65776F' }}>开单科室 *<input className="form-control" value={row.department} onChange={e => updateRow(index, { department: e.target.value })} /></label>
         <label style={{ fontSize: 12, color: '#65776F' }}>开单门诊类型<input className="form-control" disabled value={row.expertRequired ? '专家门诊' : '普通门诊'} /></label>

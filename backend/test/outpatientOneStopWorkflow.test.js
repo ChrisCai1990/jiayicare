@@ -35,12 +35,15 @@ test('健康规划师总览督办，岗位完成后直接串行解锁下一环�
 test('健康顾问环节使用结构化就医评估并由后端校验', () => {
   const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
   const form = fs.readFileSync(path.join(__dirname, '../../staff/src/components/OutpatientAdvisorAssessmentForm.jsx'), 'utf8');
-  for (const field of ['recommendedHospital', 'recommendedDepartment', 'recommendedExpert', 'expectedChecks', 'prescribingVisitRequirements', 'coveredChecks', 'department', 'expertRequired', 'expertName']) {
+  for (const field of ['recommendedHospital', 'recommendedDepartment', 'recommendedExpert', 'expectedChecks', 'prescribingVisitRequirements', 'coveredChecks', 'plannedAppointmentDate', 'plannedAppointmentTime', 'department', 'expertRequired', 'expertName']) {
     assert.match(form, new RegExp(field));
     assert.match(route, new RegExp(field));
   }
   assert.match(form, /健管专员已收集资料/);
   assert.match(form, /首次代诊开检查单预约条目/);
+  assert.match(form, /第一步：评估可能涉及的检查及检查专家要求/);
+  assert.match(form, /第二步：确定首次代诊开检查单的预约要求/);
+  assert.match(form, /第三步：确定检查完成后的专家门诊看诊信息/);
   assert.match(form, /完成评估并流转下一步|validateOutpatientAssessment/);
 });
 

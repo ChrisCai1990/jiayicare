@@ -1608,10 +1608,11 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
       || !String(assessment.recommendedDepartment || '').trim()
       || !String(assessment.recommendedExpert || '').trim()
       || !checks.length
+      || checks.some(item => item.expertRequired && !String(item.expertName || '').trim())
       || !visits.length
-      || visits.some(item => !String(item.coveredChecks || '').trim() || !String(item.department || '').trim())
+      || visits.some(item => !String(item.coveredChecks || '').trim() || !item.plannedAppointmentDate || !item.plannedAppointmentTime || !String(item.department || '').trim())
       || visits.some(item => item.expertRequired && !String(item.expertName || '').trim())) {
-      return res.status(400).json({ success: false, message: '请完整填写推荐医院、检查后就诊专家，并至少建立一条首次代诊开检查单预约要求' });
+      return res.status(400).json({ success: false, message: '请按顺序完整填写预计检查、检查专家要求、首次开单预约要求及检查后专家门诊信息' });
     }
   }
   const isOutpatientAppointment = followUp.sourceType === 'health_plan'
