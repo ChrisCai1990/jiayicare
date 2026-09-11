@@ -1671,6 +1671,15 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
       || result.checkAppointments.some(item => !String(item.item || '').trim() || !item.appointmentDate || !item.appointmentTime)) {
       return res.status(400).json({ success: false, message: '请确认完成代诊，并完整填写代诊结果、检查单和检查预约安排' });
     }
+    const booking = result.bookingSnapshot || {};
+    const inspectionDate = (booking.specialCheckAppointments || []).find(item => item?.appointmentDate)?.appointmentDate || booking.postCheckAppointment?.appointmentDate || '';
+    if (inspectionDate && result.checkAppointments.some(item => item.appointmentDate !== inspectionDate)) {
+      return res.status(400).json({ success: false, message: `所有检查应安排在检查日 ${inspectionDate}` });
+    }
+    const expertVisit = booking.postCheckAppointment || {};
+    if (expertVisit.appointmentDate && expertVisit.appointmentTime && result.checkAppointments.some(item => item.appointmentDate > expertVisit.appointmentDate || (item.appointmentDate === expertVisit.appointmentDate && item.appointmentTime >= expertVisit.appointmentTime))) {
+      return res.status(400).json({ success: false, message: '检查应安排在检查后专家门诊之前' });
+    }
   }
   const isSuper = req.staff.role === 'superadmin';
   const isOwner = isSuper || String(followUp.staffId) === String(req.staff._id);
