@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { TEMPLATE_NORMALIZATION } = require('../src/scripts/normalizeMedicalAssistTemplates');
-const { PRODUCT_NAME, WORKFLOW_PLANS } = require('../src/scripts/migrateOutpatientOneStopWorkflowV5');
+const { PRODUCT_NAME, WORKFLOW_PLANS, removeRedundantExpertBookingStage } = require('../src/scripts/migrateOutpatientOneStopWorkflowV5');
 
 test('门诊一站式是完整多阶段服务，不是单次代办', () => {
   assert.equal(PRODUCT_NAME, '门诊一站式服务');
@@ -11,6 +11,10 @@ test('门诊一站式是完整多阶段服务，不是单次代办', () => {
   const names = WORKFLOW_PLANS.map(item => item.name).join('\n');
   for (const expected of ['资料收集与核对', '健康顾问评估及医院专家确定', '代诊约诊服务', '首次代诊开检查单', '检查及专家门诊陪诊与归档']) assert.match(names, new RegExp(expected));
   assert.doesNotMatch(names, /检查日专家号预约/);
+  assert.equal(typeof removeRedundantExpertBookingStage, 'function');
+  const migration = fs.readFileSync(path.join(__dirname, '../src/scripts/migrateOutpatientOneStopWorkflowV5.js'), 'utf8');
+  assert.match(migration, /theme: \{ \$regex: '门诊一站式\.\*检查日专家号预约' \}/);
+  assert.match(migration, /status: \{ \$in: \['draft', 'active'\] \}/);
   assert.ok(WORKFLOW_PLANS.every(item => item.executorRole));
   assert.deepEqual(WORKFLOW_PLANS.slice(0, 2).map(item => item.executorRole), ['healthManager', 'familyDoctor']);
   assert.match(WORKFLOW_PLANS[0].name, /资料收集/);

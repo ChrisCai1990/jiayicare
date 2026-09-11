@@ -14,21 +14,26 @@ const WORKFLOW_PLANS = [
 async function removeRedundantExpertBookingStage(db, plans) {
   const obsoletePlans = await plans.find({ name: '门诊一站式：检查日专家号预约' }).toArray();
   const obsoletePlanIds = obsoletePlans.map(item => item._id);
-  if (!obsoletePlanIds.length) return { cancelled: 0, rewired: 0 };
-  await plans.updateMany({ _id: { $in: obsoletePlanIds } }, { $set: { status: 'inactive', updatedAt: new Date() } });
+  if (obsoletePlanIds.length) {
+    await plans.updateMany({ _id: { $in: obsoletePlanIds } }, { $set: { status: 'inactive', updatedAt: new Date() } });
+  }
 
   const followUps = db.collection('followups');
   const obsoleteExecutors = await followUps.find({
-    taskRole: 'executor', workflowKey: { $in: obsoletePlanIds.map(String) },
+    taskRole: 'executor',
+    $or: [
+      { workflowKey: { $in: obsoletePlanIds.map(String) } },
+      { theme: { $regex: '门诊一站式.*检查日专家号预约' } },
+    ],
     status: { $in: ['planned', 'in_progress'] },
   }).toArray();
   let rewired = 0;
+  const obsoleteTaskIds = [];
   for (const executor of obsoleteExecutors) {
-    const supervisor = await followUps.findOne({
-      sourceHealthPlanId: executor.sourceHealthPlanId,
-      taskRole: 'supervisor', workflowKey: executor.workflowKey,
-    });
+    obsoleteTaskIds.push(executor._id);
+    const supervisor = await followUps.findOne({ taskRole: 'supervisor', dependsOnTaskId: executor._id });
     if (supervisor) {
+      obsoleteTaskIds.push(supervisor._id);
       const previousGate = executor.dependsOnTaskId
         ? await followUps.findOne({ _id: executor.dependsOnTaskId }, { projection: { status: 1 } })
         : null;
@@ -46,7 +51,14 @@ async function removeRedundantExpertBookingStage(db, plans) {
     }
   }
   const cancelled = await followUps.updateMany(
-    { workflowKey: { $in: obsoletePlanIds.map(String) }, status: { $in: ['planned', 'in_progress'] } },
+    {
+      status: { $in: ['planned', 'in_progress'] },
+      $or: [
+        { _id: { $in: obsoleteTaskIds } },
+        { workflowKey: { $in: obsoletePlanIds.map(String) } },
+        { theme: { $regex: '门诊一站式.*检查日专家号预约' } },
+      ],
+    },
     { $set: { status: 'cancelled', isBlocked: false, cancelReason: '流程优化：专家门诊已在代诊约诊服务中一次性完成预约', updatedAt: new Date() } }
   );
   return { cancelled: cancelled.modifiedCount, rewired };
@@ -91,7 +103,7 @@ async function main() {
   );
   const embeddedPlans = modules.map((item, sequence) => ({ id: String(item.planId), name: WORKFLOW_PLANS[sequence].name, mode: 'fixed', trigger: '', sequence, reviewerRole: '' }));
   const planResult = await db.collection('healthplans').updateMany(
-    { type: 'medical_assist', status: 'draft', $or: [{ 'content.templateName': PRODUCT_NAME }, { title: /门诊一站式/ }] },
+    { type: 'medical_assist', status: { $in: ['draft', 'active'] }, $or: [{ 'content.templateName': PRODUCT_NAME }, { title: /门诊一站式/ }] },
     { $set: {
       'content.followUpPlanId': String(modules[0].planId), 'content.followUpPlanName': WORKFLOW_PLANS[0].name,
       'content.followUpPlans': embeddedPlans, 'content.workflowModules': embeddedPlans,
@@ -104,4 +116,4 @@ async function main() {
 
 if (require.main === module) main().catch(err => { console.error(err); process.exitCode = 1; }).finally(() => mongoose.disconnect());
 
-module.exports = { PRODUCT_NAME, WORKFLOW_PLANS };
+module.exports = { PRODUCT_NAME, WORKFLOW_PLANS, removeRedundantExpertBookingStage };
