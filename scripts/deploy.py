@@ -363,6 +363,16 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("体检一站式最终闭环迁移失败")
+        code, _ = remote(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/migrateCheckupTemplateWorkflowV13.js ] && "
+            f"[ ! -f {REPO_DIR}/.checkup-template-workflow-v13-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/migrateCheckupTemplateWorkflowV13.js --apply && "
+            f"touch {REPO_DIR}/.checkup-template-workflow-v13-applied; fi",
+            timeout=180,
+            label="统一体检模板与 Admin 产品流程并移除历史错误关联",
+        )
+        if code:
+            raise RuntimeError("体检模板与产品流程统一迁移失败")
         time.sleep(3)
 
         code, output = remote(

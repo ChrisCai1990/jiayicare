@@ -30,7 +30,7 @@ async function getCheckupWorkflowProduct(productId) {
   return { product, modules }
 }
 
-async function ensureStaffInitiatedCheckupService({ patient, staff, productId }) {
+async function ensureStaffInitiatedCheckupService({ patient, staff, productId, desiredServiceDate = '', serviceRequirements = '' }) {
   const active = await HealthPlan.find({
     patientId: patient._id,
     type: 'medical_assist',
@@ -69,6 +69,9 @@ async function ensureStaffInitiatedCheckupService({ patient, staff, productId })
       sourceProductName: product.name,
       initiatedBy: staff._id,
       initiatedAt: new Date(),
+      serviceDate: desiredServiceDate,
+      serviceRequirements,
+      tasks: serviceRequirements,
       serviceWorkflowSnapshot: workflowSnapshot,
       followUpPlanId: modules[0]?.id || '',
       followUpPlans: modules,

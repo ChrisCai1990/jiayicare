@@ -11771,9 +11771,9 @@ export default function PatientDetailPage() {
           initialBriefNote={showSelectTplModal === 'annual_checkup' ? buildCheckupQuestionnaireGoal(qResponses, plans) : ''}
           title={showSelectTplModal === 'annual_checkup' ? 'AI体检方案' : showSelectTplModal === 'nutrition' ? 'AI营养方案' : 'AI就医协助方案'}
           onClose={() => { setShowSelectTplModal(null); setPendingMedicalAssistOrderId('') }}
-          onGenerate={async (templateId, briefNote, productId) => {
+          onGenerate={async (templateId, briefNote, productId, desiredServiceDate, serviceRequirements) => {
             if (showSelectTplModal === 'annual_checkup') {
-              const generated = await staffAPI.generateAIAnnualCheckupPlan(id, templateId, briefNote, productId)
+              const generated = await staffAPI.generateAIAnnualCheckupPlan(id, templateId, briefNote, productId, desiredServiceDate, serviceRequirements)
               toast(generated.reused ? (generated.message || '本次体检已有方案，正在打开原方案') : 'AI体检方案已生成，正在打开方案')
               await loadPlans()
               nav(`/plans/${generated.data._id}`, {
@@ -13476,7 +13476,10 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, initialBri
   const [selectedId, setSelectedId] = useState('')
   const [workflowProducts, setWorkflowProducts] = useState([])
   const [selectedProductId, setSelectedProductId] = useState('')
+  const [desiredServiceDate, setDesiredServiceDate] = useState('')
+  const [serviceRequirements, setServiceRequirements] = useState('')
   const [generating, setGenerating] = useState(false)
+  const selectedWorkflowProduct = workflowProducts.find(product => product._id === selectedProductId)
   // 就医协助方案：模板本身是固定骨架(SOP)，不像体检/营养方案有结构化的"标准项目"可锁定，
   // 就医场景每次的具体情况差异很大（去哪家医院/是否加急/会员状况等），需要专员当场填一句
   // 简要说明，AI结合这句话+模板类型生成初稿，而不是完全靠AI自己猜（2026-07-13需求）
@@ -13504,9 +13507,11 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, initialBri
   const handleGenerate = async () => {
     if (!selectedId) { toast('请先选择模板'); return }
     if (planType === 'annual_checkup' && workflowProducts.length > 1 && !selectedProductId) { toast('请先选择本次使用的 Admin 体检服务流程'); return }
+    if (planType === 'annual_checkup' && !desiredServiceDate) { toast('请选择期望服务时间'); return }
+    if (planType === 'annual_checkup' && !serviceRequirements.trim()) { toast('请填写具体服务需求'); return }
     setGenerating(true)
     try {
-      await onGenerate(selectedId, briefNote.trim(), selectedProductId)
+      await onGenerate(selectedId, briefNote.trim(), selectedProductId, desiredServiceDate, serviceRequirements.trim())
       onClose()
     } catch (err) { toast('AI生成失败：' + (err.message || '未知错误')) }
     finally { setGenerating(false) }
@@ -13528,7 +13533,24 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, initialBri
               {workflowProducts.map(product => <option key={product._id} value={product._id}>{product.name}</option>)}
             </select>
             {!loading && !workflowProducts.length && <div style={{ color: '#8A6A35', fontSize: 12, marginTop: 6 }}>未发现当前上架流程；已有订单或服务实例仍可按其历史快照继续，新发起服务会由后端阻止。</div>}
+            {!!selectedWorkflowProduct?.serviceWorkflow?.modules?.length && <div style={{ marginTop: 8, padding: '9px 11px', borderRadius: 8, background: '#F0F9F4', color: '#426457', fontSize: 12, lineHeight: 1.7 }}>
+              <div style={{ fontWeight: 700, marginBottom: 3 }}>Admin 已发布流程</div>
+              {selectedWorkflowProduct.serviceWorkflow.modules
+                .slice()
+                .sort((a, b) => (a.sequence || 0) - (b.sequence || 0))
+                .map((module, index) => <div key={module.planId?._id || module.planId || index}>{index + 1}. {module.planId?.name || '未命名环节'}</div>)}
+            </div>}
           </div>}
+          {planType === 'annual_checkup' && <>
+            <div className="form-group" style={{ marginBottom: 12 }}>
+              <label className="form-label">期望服务时间 *</label>
+              <input className="form-input" type="date" value={desiredServiceDate} min={new Date().toISOString().slice(0, 10)} onChange={e => setDesiredServiceDate(e.target.value)} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 12 }}>
+              <label className="form-label">具体服务需求 *</label>
+              <textarea className="form-input" rows={2} maxLength={1000} placeholder="请填写服务地点、时间段及具体需求" value={serviceRequirements} onChange={e => setServiceRequirements(e.target.value)} />
+            </div>
+          </>}
           <div className="form-group" style={{ marginBottom: 12 }}>
             <label className="form-label">服务目标（已自动带入客户本次问卷需求，可核对、补充或修改）</label>
             <textarea className="form-input" rows={2} placeholder={

@@ -3621,6 +3621,11 @@ router.get('/plan-templates', staffAuth, async (req, res) => {
       patientBrand = patient.clientBrand;
     }
     let templates = await PlanTemplate.find(filter).sort({ name: 1 }).lean();
+    // 体检一站式由 Admin 产品 serviceWorkflow 驱动，不能再从通用“就医协助”入口
+    // 使用历史 PlanTemplate 创建另一套表单和任务链。体检模板只供体检方案入口使用。
+    if (type === 'medical_assist') {
+      templates = templates.filter(tpl => !['annual_checkup', 'checkup'].includes(tpl.content?.serviceDomain));
+    }
     if (patientBrand) {
       const inferLegacyBrand = tpl => {
         if (tpl.clientBrand) return tpl.clientBrand;
@@ -12539,7 +12544,7 @@ router.post('/patients/:id/ai-annual-checkup-plan', staffAuth, async (req, res) 
     return res.status(403).json({ success: false, message: '仅健康顾问可生成年度体检方案' });
   }
   try {
-    const { templateId, goal, productId } = req.body;
+    const { templateId, goal, productId, desiredServiceDate, serviceRequirements } = req.body;
     if (!templateId) return res.status(400).json({ success: false, message: '请先选择体检套餐模板' });
     const user = await User.findById(req.params.id)
       .select('name gender age chronicDiseases healthProfile clientBrand assignedFamilyDoctor assignedHealthPlanner assignedMedicalAssistant');
@@ -12593,7 +12598,13 @@ router.post('/patients/:id/ai-annual-checkup-plan', staffAuth, async (req, res) 
     // 医护端主动发起与商城下单共用同一种体检服务实例。订单入口已有服务实例时原样复用；
     // 没有订单时，根据 Admin 给体检产品发布的流程创建 staff_initiated 实例，后续任务链不再另走一套。
     if (!currentCheckupService) {
-      const ensured = await ensureStaffInitiatedCheckupService({ patient: user, staff: req.staff, productId });
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(desiredServiceDate || ''))) {
+        return res.status(400).json({ success: false, message: '请选择有效的期望服务时间' });
+      }
+      if (!String(serviceRequirements || '').trim()) {
+        return res.status(400).json({ success: false, message: '请填写具体服务需求' });
+      }
+      const ensured = await ensureStaffInitiatedCheckupService({ patient: user, staff: req.staff, productId, desiredServiceDate, serviceRequirements });
       currentCheckupService = ensured.servicePlan;
     }
 
@@ -12737,6 +12748,7 @@ router.get('/workflow-products', staffAuth, async (req, res) => {
     if (!['checkup'].includes(key)) return res.status(400).json({ success: false, message: '暂不支持该服务流程类型' });
     const products = await Product.find({ status: 'on', 'serviceWorkflow.key': key, 'serviceWorkflow.modules.0': { $exists: true } })
       .select('name subtitle category serviceWorkflow.notes serviceWorkflow.modules')
+      .populate('serviceWorkflow.modules.planId', 'name workflowStageKey workflowTaskRole activationEvent closesService')
       .sort({ sortOrder: 1, createdAt: -1 })
       .lean();
     res.json({ success: true, data: products });
