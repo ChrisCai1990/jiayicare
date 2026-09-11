@@ -1,11 +1,23 @@
 import React from 'react'
 
+export const isCheckupServiceTask = task => {
+  const plan = task?.sourceHealthPlanId
+  const content = plan && typeof plan === 'object' ? (plan.content || {}) : {}
+  const text = `${task?.theme || ''} ${content.templateName || ''} ${plan?.title || ''}`
+  if (/门诊一站式/.test(text)) return false
+  return content.serviceDomain === 'annual_checkup'
+    || content.templateSnapshot?.serviceDomain === 'annual_checkup'
+    || /体检/.test(text)
+}
+
 export const isCheckupBookingTask = task => task?.sourceType === 'health_plan'
   && task?.taskRole === 'executor'
+  && isCheckupServiceTask(task)
   && task?.followUpSchemeId?.executorRole === 'healthPlanner'
 
 export const isCheckupOnsiteTask = task => task?.sourceType === 'health_plan'
   && task?.taskRole === 'executor'
+  && isCheckupServiceTask(task)
   && task?.followUpSchemeId?.executorRole === 'medicalAssistant'
 
 export function normalizeCheckupOnsiteChecklist(task, checklist = []) {

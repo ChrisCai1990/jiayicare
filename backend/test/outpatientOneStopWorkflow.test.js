@@ -61,6 +61,14 @@ test('约诊完成后由健康规划师分别安排两类就医专员', () => {
   assert.match(followUpsPage, /OutpatientStaffAssignmentForm/);
 });
 
+test('门诊一站式任务不会因执行角色相同而误用体检表单', () => {
+  const checkupForm = fs.readFileSync(path.join(__dirname, '../../staff/src/components/CheckupBookingForm.jsx'), 'utf8');
+  assert.match(checkupForm, /isCheckupServiceTask/);
+  assert.match(checkupForm, /if \(\/门诊一站式\/\.test\(text\)\) return false/);
+  assert.match(checkupForm, /content\.serviceDomain === 'annual_checkup'/);
+  assert.match(checkupForm, /isCheckupServiceTask\(task\)[\s\S]*executorRole === 'healthPlanner'/);
+});
+
 test('健康顾问环节使用结构化就医评估并由后端校验', () => {
   const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
   const form = fs.readFileSync(path.join(__dirname, '../../staff/src/components/OutpatientAdvisorAssessmentForm.jsx'), 'utf8');
