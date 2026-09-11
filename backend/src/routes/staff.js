@@ -1668,7 +1668,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     const result = req.body.formData || {};
     if (!result.proxyVisitCompleted || !String(result.proxyVisitResult || '').trim() || !String(result.examOrderSummary || '').trim()
       || !Array.isArray(result.checkAppointments) || !result.checkAppointments.length
-      || result.checkAppointments.some(item => !String(item.item || '').trim() || !item.appointmentDate || !item.appointmentTime)) {
+      || result.checkAppointments.some(item => !String(item.item || '').trim() || !String(item.department || '').trim() || !String(item.location || '').trim() || !item.appointmentDate || !item.appointmentTime)) {
       return res.status(400).json({ success: false, message: '请确认完成代诊，并完整填写专家诊疗意见及医嘱、检验检查单和检查预约安排' });
     }
     const booking = result.bookingSnapshot || {};
