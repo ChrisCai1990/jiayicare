@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { isImageReportFile, isPdfReportFile } from '../src/utils/reportFileType.js'
 
@@ -20,4 +21,9 @@ test('recognizes image reports from the original file URL', () => {
   }
   assert.equal(isImageReportFile(report, report.previewUrl), true)
   assert.equal(isPdfReportFile(report, report.previewUrl), false)
+})
+
+test('opens PDF reports directly instead of sending them to the image lightbox', () => {
+  const source = readFileSync(new URL('../src/pages/PatientDetailPage.jsx', import.meta.url), 'utf8')
+  assert.match(source, /if \(isPdf \|\| !isImg\) \{\s*window\.open\(src, '_blank', 'noopener,noreferrer'\)/)
 })

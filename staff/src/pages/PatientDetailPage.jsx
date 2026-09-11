@@ -10781,7 +10781,14 @@ export default function PatientDetailPage() {
                         <div style={{ fontWeight: 500, fontSize: 13, color: '#1A2B24', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayName}</div>
                         {sizeKB && <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>{sizeKB >= 1024 ? `${(sizeKB / 1024).toFixed(1)} MB` : `${sizeKB} KB`}</div>}
                       </div>
-                      <button className="btn btn-primary btn-sm" onClick={() => { setPreviewRotation(0); setPreviewImageUrl(canRotateSave ? { url: src, reportId: showReportDetail._id } : src) }}>查看</button>
+                      <button className="btn btn-primary btn-sm" onClick={() => {
+                        if (isPdf || !isImg) {
+                          window.open(src, '_blank', 'noopener,noreferrer')
+                          return
+                        }
+                        setPreviewRotation(0)
+                        setPreviewImageUrl(canRotateSave ? { url: src, reportId: showReportDetail._id } : src)
+                      }}>查看</button>
                     </div>
                   )
                 })() : (
