@@ -257,6 +257,16 @@ def deploy(backend_only=False, clean=False, github_source=False):
         if code:
             raise RuntimeError("门诊一站式重复预约节点迁移失败")
         code, _ = remote(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOutpatientStaffAssignmentV11.js ] && "
+            f"[ ! -f {REPO_DIR}/.outpatient-staff-assignment-v11-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/migrateOutpatientStaffAssignmentV11.js && "
+            f"touch {REPO_DIR}/.outpatient-staff-assignment-v11-applied; fi",
+            timeout=120,
+            label="为门诊一站式增加健康规划师执行人员安排环节",
+        )
+        if code:
+            raise RuntimeError("门诊一站式执行人员安排迁移失败")
+        code, _ = remote(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOutpatientIntakeTaskV7.js ] && "
             f"[ ! -f {REPO_DIR}/.outpatient-intake-task-v7-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateOutpatientIntakeTaskV7.js && "

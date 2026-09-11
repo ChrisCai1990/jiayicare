@@ -1630,6 +1630,26 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
       return res.status(400).json({ success: false, message: '请依次完成开单门诊、特殊检查专家及检查后专家门诊的实际预约安排' });
     }
   }
+  const isOutpatientStaffAssignment = followUp.sourceType === 'health_plan'
+    && followUp.taskRole === 'executor'
+    && /门诊一站式.*执行人员安排/.test(followUp.theme || '');
+  let outpatientStaffAssignment = null;
+  if (isOutpatientStaffAssignment && req.body.status === 'completed') {
+    const assignment = req.body.formData || {};
+    const ids = [assignment.proxyVisitStaffId, assignment.escortStaffId].map(String).filter(Boolean);
+    if (ids.length !== 2) return res.status(400).json({ success: false, message: '请分别选择首次代诊和检查日陪诊就医专员' });
+    const assistants = await Admin.find({ _id: { $in: ids }, role: 'medicalAssistant', staffStatus: 'active' }).select('_id name').lean();
+    if (new Set(assistants.map(item => String(item._id))).size !== new Set(ids).size) {
+      return res.status(400).json({ success: false, message: '执行人员必须是当前有效的就医专员' });
+    }
+    const byId = new Map(assistants.map(item => [String(item._id), item]));
+    outpatientStaffAssignment = {
+      ...assignment,
+      proxyVisitStaffName: byId.get(String(assignment.proxyVisitStaffId))?.name || '',
+      escortStaffName: byId.get(String(assignment.escortStaffId))?.name || '',
+    };
+    req.body.formData = outpatientStaffAssignment;
+  }
   const isSuper = req.staff.role === 'superadmin';
   const isOwner = isSuper || String(followUp.staffId) === String(req.staff._id);
   // 计划层字段（何时、谁负责、要不要做）只有创建人（或超管）能改；执行人只能填写执行结果，
@@ -1669,6 +1689,13 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     followUp.completedBy = null;
   }
   await followUp.save();
+  if (outpatientStaffAssignment) {
+    const commonFilter = { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'executor', status: { $in: ['planned', 'in_progress'] } };
+    await Promise.all([
+      FollowUp.updateMany({ ...commonFilter, theme: { $regex: '门诊一站式.*首次代诊开检查单' } }, { $set: { assignedTo: outpatientStaffAssignment.proxyVisitStaffId } }),
+      FollowUp.updateMany({ ...commonFilter, theme: { $regex: '门诊一站式.*检查及专家门诊陪诊与归档' } }, { $set: { assignedTo: outpatientStaffAssignment.escortStaffId } }),
+    ]);
+  }
   await advanceCheckupTask(followUp);
 
   // 督办发现某项目未达成时，退回同一组执行任务补充；执行人再次完成后，
@@ -1702,12 +1729,11 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
         { $set: { status: 'completed', isBlocked: false, serviceChecklist: checklistForReview, formData: followUp.formData || null, completedAt: new Date(), completedBy: 'staff' } },
         { new: true }
       );
-      if (supervisor) {
-        await FollowUp.updateMany(
-          { sourceHealthPlanId: followUp.sourceHealthPlanId, dependsOnTaskId: supervisor._id, status: 'planned' },
-          { $set: { isBlocked: false, activationEvent: '', date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date() } }
-        );
-      }
+      const completedGateId = supervisor?._id || followUp._id;
+      await FollowUp.updateMany(
+        { sourceHealthPlanId: followUp.sourceHealthPlanId, dependsOnTaskId: completedGateId, status: 'planned' },
+        { $set: { isBlocked: false, activationEvent: '', date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date() } }
+      );
     } else {
       await FollowUp.updateOne(
         { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'supervisor', workflowKey: followUp.workflowKey || '', status: 'planned' },
@@ -2281,7 +2307,8 @@ async function upsertMedicalAssistModuleTasks(plan, workflowPlan, options = {}) 
     : workflowPlan.executorRole === 'medicalAssistant'
       ? c.escortStaffId
       : null;
-  const executorAssignee = explicitCheckupAssignee || resolveAssignee(workflowPlan.executorRole, selectedAssistantId);
+  const deferOutpatientAssistant = options.deferMedicalAssistantAssignment && workflowPlan.executorRole === 'medicalAssistant';
+  const executorAssignee = deferOutpatientAssistant ? null : (explicitCheckupAssignee || resolveAssignee(workflowPlan.executorRole, selectedAssistantId));
   const supervisorAssignee = selectedSupervisorId || resolveAssignee(workflowPlan.supervisorRole || 'healthPlanner', plan.staffId);
   const previousGate = options.dependsOnTaskId
     ? await FollowUp.findById(options.dependsOnTaskId).select('status').lean()
@@ -2515,7 +2542,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
       const workflowPlansToCreate = isMultiStageService ? fixedWorkflowPlans : [primaryWorkflowPlan];
       let previousGateId = null;
       for (const workflowPlan of workflowPlansToCreate) {
-        const gate = await upsertMedicalAssistModuleTasks(plan, workflowPlan, { patient, dependsOnTaskId: previousGateId, returnGate: isMultiStageService });
+        const gate = await upsertMedicalAssistModuleTasks(plan, workflowPlan, { patient, dependsOnTaskId: previousGateId, returnGate: isMultiStageService, deferMedicalAssistantAssignment: isOutpatientOneStop });
         previousGateId = isMultiStageService ? gate?._id : null;
       }
       const primaryWorkflowKey = String(primaryWorkflowPlan._id);

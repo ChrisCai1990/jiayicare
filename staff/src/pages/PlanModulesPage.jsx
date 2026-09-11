@@ -99,7 +99,16 @@ function isCheckupMedicalAssist(content = {}, planTitle = '') {
 }
 
 function medicalAssistModuleDefs(content = {}, planTitle = '', assignedReviewerId = '') {
-  if (!isCheckupMedicalAssist(content, planTitle)) return MODULE_DEFS_BY_TYPE.medical_assist
+  if (!isCheckupMedicalAssist(content, planTitle)) {
+    if (!isOutpatientOneStop(content, planTitle)) return MODULE_DEFS_BY_TYPE.medical_assist
+    return {
+      ...MODULE_DEFS_BY_TYPE.medical_assist,
+      visit: {
+        ...MODULE_DEFS_BY_TYPE.medical_assist.visit,
+        fields: MODULE_DEFS_BY_TYPE.medical_assist.visit.fields.filter(field => field.key !== 'staffId'),
+      },
+    }
+  }
   const { tasks: _legacyTasks, ...checkupBaseModules } = MODULE_DEFS_BY_TYPE.medical_assist
   return {
     ...checkupBaseModules,
@@ -403,10 +412,11 @@ export default function PlanModulesPage() {
     if (plan.type === 'medical_assist') {
       const visit = moduleData.visit || {}
       const checkupService = isCheckupMedicalAssist(plan.content || {}, plan.title)
+      const outpatientService = isOutpatientOneStop(plan.content || {}, plan.title)
       if (!visit.visitDate) { toast('请选择服务日期'); return }
       if (checkupService && !visit.bookingPlannerId) { toast('请选择体检预约负责人（健康规划师）'); return }
       if (checkupService && !visit.escortStaffId) { toast('请选择陪同人员'); return }
-      if (!checkupService && !visit.staffId) { toast('请选择就医专员'); return }
+      if (!checkupService && !outpatientService && !visit.staffId) { toast('请选择就医专员'); return }
       if (checkupService && !visit.reviewerId) { toast('客户尚未归属健康顾问，请先选择方案审核医生'); return }
       if (!checkupService && !visit.supervisorId) { toast('请选择督办人'); return }
       if (!checkupService && !(moduleData.tasks?.records || []).some(item => item.task?.trim())) { toast('请至少填写一条明确、可验收的本次代办目的'); return }

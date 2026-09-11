@@ -7,9 +7,9 @@ const { PRODUCT_NAME, WORKFLOW_PLANS, removeRedundantExpertBookingStage } = requ
 
 test('门诊一站式是完整多阶段服务，不是单次代办', () => {
   assert.equal(PRODUCT_NAME, '门诊一站式服务');
-  assert.equal(WORKFLOW_PLANS.length, 5);
+  assert.equal(WORKFLOW_PLANS.length, 6);
   const names = WORKFLOW_PLANS.map(item => item.name).join('\n');
-  for (const expected of ['资料收集与核对', '健康顾问评估及医院专家确定', '代诊约诊服务', '首次代诊开检查单', '检查及专家门诊陪诊与归档']) assert.match(names, new RegExp(expected));
+  for (const expected of ['资料收集与核对', '健康顾问评估及医院专家确定', '代诊约诊服务', '执行人员安排', '首次代诊开检查单', '检查及专家门诊陪诊与归档']) assert.match(names, new RegExp(expected));
   assert.doesNotMatch(names, /检查日专家号预约/);
   assert.equal(typeof removeRedundantExpertBookingStage, 'function');
   const migration = fs.readFileSync(path.join(__dirname, '../src/scripts/migrateOutpatientOneStopWorkflowV5.js'), 'utf8');
@@ -18,6 +18,8 @@ test('门诊一站式是完整多阶段服务，不是单次代办', () => {
   const deploy = fs.readFileSync(path.join(__dirname, '../../scripts/deploy.py'), 'utf8');
   assert.match(deploy, /migrateOutpatientRemoveDuplicateBookingV10\.js/);
   assert.match(deploy, /\.outpatient-remove-duplicate-booking-v10-applied/);
+  assert.match(deploy, /migrateOutpatientStaffAssignmentV11\.js/);
+  assert.match(deploy, /\.outpatient-staff-assignment-v11-applied/);
   assert.ok(WORKFLOW_PLANS.every(item => item.executorRole));
   assert.deepEqual(WORKFLOW_PLANS.slice(0, 2).map(item => item.executorRole), ['healthManager', 'familyDoctor']);
   assert.match(WORKFLOW_PLANS[0].name, /资料收集/);
@@ -31,13 +33,32 @@ test('门诊一站式是完整多阶段服务，不是单次代办', () => {
 });
 
 test('健康规划师总览督办，岗位完成后直接串行解锁下一环节', () => {
-  assert.ok(WORKFLOW_PLANS.every(item => item.executorRole !== 'healthPlanner'));
+  const assignment = WORKFLOW_PLANS.find(item => /执行人员安排/.test(item.name));
+  assert.equal(assignment.executorRole, 'healthPlanner');
+  assert.equal(assignment.requiresCoordination, false);
   const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
   assert.match(route, /supervisorRole \|\| 'healthPlanner'/);
   assert.match(route, /dependsOnTaskId: options\.dependsOnTaskId \|\| null/);
   assert.match(route, /activationEvent: executorBlocked \? 'previous_stage_approved'/);
-  assert.match(route, /isOutpatientOneStop[\s\S]*status: 'completed'[\s\S]*dependsOnTaskId: supervisor\._id[\s\S]*isBlocked: false/);
+  assert.match(route, /completedGateId = supervisor\?\._id \|\| followUp\._id/);
+  assert.match(route, /deferMedicalAssistantAssignment: isOutpatientOneStop/);
   assert.match(route, /!c\.serviceDate && !isOutpatientOneStop/);
+});
+
+test('约诊完成后由健康规划师分别安排两类就医专员', () => {
+  const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+  const form = fs.readFileSync(path.join(__dirname, '../../staff/src/components/OutpatientStaffAssignmentForm.jsx'), 'utf8');
+  const patientPage = fs.readFileSync(path.join(__dirname, '../../staff/src/pages/PatientDetailPage.jsx'), 'utf8');
+  const followUpsPage = fs.readFileSync(path.join(__dirname, '../../staff/src/pages/FollowUpsPage.jsx'), 'utf8');
+  for (const field of ['proxyVisitStaffId', 'escortStaffId']) {
+    assert.match(form, new RegExp(field));
+    assert.match(route, new RegExp(field));
+  }
+  assert.match(route, /role: 'medicalAssistant', staffStatus: 'active'/);
+  assert.match(route, /首次代诊开检查单/);
+  assert.match(route, /检查及专家门诊陪诊与归档/);
+  assert.match(patientPage, /OutpatientStaffAssignmentForm/);
+  assert.match(followUpsPage, /OutpatientStaffAssignmentForm/);
 });
 
 test('健康顾问环节使用结构化就医评估并由后端校验', () => {

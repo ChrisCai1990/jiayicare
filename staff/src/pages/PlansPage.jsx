@@ -613,10 +613,11 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
   }
 
   const handleSubmit = async () => {
+    const outpatientService = /门诊一站式/.test(`${selectedTpl?.name || ''} ${form.name || ''}`)
     if (!patientId) { setError('请搜索并选择会员'); return }
     if (!form.name.trim()) { setError('请填写方案名称'); return }
     if (!form.serviceDate) { setError('请选择服务日期'); return }
-    if (!form.staffId) { setError('请选择就医专员'); return }
+    if (!outpatientService && !form.staffId) { setError('请选择就医专员'); return }
     if (!form.supervisorId) { setError('请选择督办人'); return }
     if (!(form.followUpPlans?.length || form.followUpPlanId)) { setError('所选模板尚未关联 Admin 岗位任务方案，请先在 Admin 完成配置'); return }
     setError(''); setSaving(true)
@@ -735,7 +736,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
             {renderField('医院',     'hospital',   0, '医院名称')}
             {renderField('科室',     'department', 0, '科室名称')}
             {renderField('专家',     'expert',     0, '专家姓名（可选）')}
-            <div className="form-group" style={{ marginBottom: 0 }}>
+            {!/门诊一站式/.test(`${selectedTpl?.name || ''} ${form.name || ''}`) && <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">就医专员</label>
               <select
                 className="form-input"
@@ -750,7 +751,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
                   <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>
                 ))}
               </select>
-            </div>
+            </div>}
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">督办人 *</label>
               <select className="form-input" value={form.supervisorId || ''} onChange={e => set('supervisorId', e.target.value)}>

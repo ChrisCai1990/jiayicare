@@ -7,6 +7,7 @@ const WORKFLOW_PLANS = [
   { name: '门诊一站式：资料收集与核对', executorRole: 'healthManager', executorDueOffsetDays: -10, completionStandard: '已收齐本次就医诉求、病历、既往报告、当前用药及身份医保资料；客户提供的报告已上传归档；资料完整性已审核，缺失项和待补内容已明确。' },
   { name: '门诊一站式：健康顾问评估及医院专家确定', executorRole: 'familyDoctor', executorDueOffsetDays: -9, completionStandard: '健康顾问已完成医学评估分析，确定医院、科室和专家，列明预计涉及的检查单，并明确哪些检查需要专家及对应专家名称。' },
   { name: '门诊一站式：代诊约诊服务', executorRole: 'healthManager', executorDueOffsetDays: -8, completionStandard: '已按健康顾问建议安排代诊所需的约诊服务，并确认开单、特殊检查及检查后专家门诊安排。' },
+  { name: '门诊一站式：执行人员安排', executorRole: 'healthPlanner', executorDueOffsetDays: -7, requiresCoordination: false, completionStandard: '健康规划师已根据实际服务安排，分别指定首次代诊和检查日陪诊的就医专员。' },
   { name: '门诊一站式：首次代诊开检查单', executorRole: 'medicalAssistant', executorDueOffsetDays: -7, completionStandard: '已完成首次代诊，按医嘱取得检查单和首次门诊病历，并完整反馈开单结果。' },
   { name: '门诊一站式：检查及专家门诊陪诊与归档', executorRole: 'medicalAssistant', executorDueOffsetDays: 0, fixedToServiceDate: true, completionStandard: '已陪同客户完成检查和专家门诊，两次门诊病历、检查单及已取得结果均已上传归档，本次服务可验收结束。' },
 ];
@@ -84,7 +85,7 @@ async function main() {
   for (let sequence = 0; sequence < WORKFLOW_PLANS.length; sequence += 1) {
     const row = WORKFLOW_PLANS[sequence];
     const plan = await plans.findOneAndUpdate({ name: row.name }, { $set: {
-      ...row, category: 'medical_assist', supervisorRole: 'healthPlanner', requiresCoordination: true,
+      ...row, category: 'medical_assist', supervisorRole: 'healthPlanner', requiresCoordination: row.requiresCoordination !== false,
       supervisorDueOffsetDays: (row.executorDueOffsetDays || 0) + 1, remindDaysBefore: 1,
       status: 'active', reviewStatus: 'approved', updatedAt: new Date(),
     }, $setOnInsert: { createdAt: new Date() } }, { upsert: true, returnDocument: 'after' });
@@ -94,9 +95,9 @@ async function main() {
     'serviceWorkflow.key': 'medical_assist', 'serviceWorkflow.modules': modules,
     'serviceWorkflow.followUpPlanIds': modules.map(item => item.planId),
     'serviceWorkflow.followUpPlanId': modules[0].planId,
-    'serviceWorkflow.notes': '固定五阶段闭环；预约一次性完成，代诊开单后直接进入陪诊归档。', updatedAt: new Date(),
+    'serviceWorkflow.notes': '预约一次性完成后，由健康规划师安排首次代诊及检查日陪诊人员，再依次执行并归档。', updatedAt: new Date(),
   } });
-  const workflowSnapshot = { key: 'medical_assist', modules, followUpPlanIds: modules.map(item => item.planId), followUpPlanId: modules[0].planId, notes: '固定五阶段闭环；预约一次性完成，代诊开单后直接进入陪诊归档。' };
+  const workflowSnapshot = { key: 'medical_assist', modules, followUpPlanIds: modules.map(item => item.planId), followUpPlanId: modules[0].planId, notes: '预约一次性完成后，由健康规划师安排首次代诊及检查日陪诊人员，再依次执行并归档。' };
   const orderResult = await db.collection('orders').updateMany(
     { serviceName: PRODUCT_NAME, status: { $nin: ['completed', 'cancelled', 'refunded'] } },
     { $set: { serviceWorkflowSnapshot: workflowSnapshot, updatedAt: new Date() } }
