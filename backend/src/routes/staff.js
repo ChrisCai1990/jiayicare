@@ -455,7 +455,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     { path: 'assignedTo', select: 'name role' },
     { path: 'sourceHealthPlanId', select: 'title description content type' },
     { path: 'followUpSchemeId', select: 'name executorRole supervisorRole completionStandard' },
-    { path: 'dependsOnTaskId', select: 'theme serviceChecklist executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } },
+    { path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } },
   ]);
   const now = new Date();
   const tasks = queriedTasks.filter(task => {
@@ -1329,7 +1329,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
       .populate('assignedTo', 'name role title')
       .populate('sourceHealthPlanId', 'title description content type')
       .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard')
-      .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
+      .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
       .populate('sourceOrderId', 'serviceName servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt'),
     FollowUp.countDocuments(filter),
   ]);
@@ -1416,7 +1416,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
       .populate('assignedTo', 'name role')
       .populate('sourceHealthPlanId', 'title description content type')
       .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard')
-      .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
+      .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
       .populate('sourceOrderId', 'serviceName servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt'),
     FollowUp.countDocuments(filter),
   ]);
@@ -1597,6 +1597,16 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
       return res.status(400).json({ success: false, message: '请完整填写推荐医院、科室、专家，以及预计检查项目和所需检查专家' });
     }
   }
+  const isOutpatientAppointment = followUp.sourceType === 'health_plan'
+    && followUp.taskRole === 'executor'
+    && /首次代诊门诊预约/.test(followUp.theme || '');
+  if (isOutpatientAppointment && req.body.status === 'completed') {
+    const booking = req.body.formData || {};
+    if (!String(booking.hospital || '').trim() || !String(booking.department || '').trim()
+      || !String(booking.expert || '').trim() || !booking.appointmentDate || !booking.appointmentTime) {
+      return res.status(400).json({ success: false, message: '请完整填写实际预约医院、科室、专家及预约日期时间' });
+    }
+  }
   const isSuper = req.staff.role === 'superadmin';
   const isOwner = isSuper || String(followUp.staffId) === String(req.staff._id);
   // 计划层字段（何时、谁负责、要不要做）只有创建人（或超管）能改；执行人只能填写执行结果，
@@ -1666,7 +1676,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
       // 岗位执行人完成本环节后，归档对应督办节点并直接解锁下一岗位。
       const supervisor = await FollowUp.findOneAndUpdate(
         { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'supervisor', workflowKey: followUp.workflowKey || '', status: 'planned' },
-        { $set: { status: 'completed', isBlocked: false, serviceChecklist: checklistForReview, completedAt: new Date(), completedBy: 'staff' } },
+        { $set: { status: 'completed', isBlocked: false, serviceChecklist: checklistForReview, formData: followUp.formData || null, completedAt: new Date(), completedBy: 'staff' } },
         { new: true }
       );
       if (supervisor) {

@@ -42,3 +42,13 @@ test('健康顾问环节使用结构化就医评估并由后端校验', () => {
   assert.match(form, /健管专员已收集资料/);
   assert.match(form, /完成评估并流转下一步|validateOutpatientAssessment/);
 });
+
+test('首次门诊预约展示顾问建议并保存实际预约安排', () => {
+  const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+  const form = fs.readFileSync(path.join(__dirname, '../../staff/src/components/OutpatientAppointmentForm.jsx'), 'utf8');
+  assert.match(route, /serviceChecklist formData executedContent/);
+  assert.match(route, /formData: followUp\.formData \|\| null/);
+  for (const text of ['健康顾问评估建议', '实际预约安排', 'appointmentDate', 'appointmentTime', '确认预约并流转代诊']) {
+    assert.match(`${form}\n${fs.readFileSync(path.join(__dirname, '../../staff/src/pages/FollowUpsPage.jsx'), 'utf8')}`, new RegExp(text));
+  }
+});

@@ -267,6 +267,16 @@ def deploy(backend_only=False, clean=False, github_source=False):
         if code:
             raise RuntimeError("门诊一站式督办闸门迁移失败")
         code, _ = remote(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOutpatientAdvisorDataV9.js ] && "
+            f"[ ! -f {REPO_DIR}/.outpatient-advisor-data-v9-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/migrateOutpatientAdvisorDataV9.js && "
+            f"touch {REPO_DIR}/.outpatient-advisor-data-v9-applied; fi",
+            timeout=120,
+            label="向门诊预约环节补传健康顾问评估信息",
+        )
+        if code:
+            raise RuntimeError("健康顾问评估信息迁移失败")
+        code, _ = remote(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateCheckupPlanDesignV5.js ] && "
             f"[ ! -f {REPO_DIR}/.checkup-plan-design-v5-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateCheckupPlanDesignV5.js && "
