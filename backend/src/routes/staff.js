@@ -1539,12 +1539,15 @@ router.post('/followups/:id/return-previous', staffAuth, checkPermission('follow
 
 // ── PUT /api/staff/followups/:id ──────────────────────────────────
 router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
-  // 允许创建人或被分配人更新（各自能改的字段范围不同，见下）
-  const followUp = await FollowUp.findOne({
-    _id: req.params.id,
-    $or: [{ staffId: req.staff._id }, { assignedTo: req.staff._id }],
-  });
+  // 历史任务的 staffId/assignedTo 可能以字符串保存，而当前账号 _id 是 ObjectId。
+  // 先按任务 ID 读取，再统一转成字符串校验；否则负责人明明正确也会被 Mongoose
+  // 查询强制转换后误报“随访记录不存在”。
+  const followUp = await FollowUp.findById(req.params.id);
   if (!followUp) return res.status(404).json({ success: false, message: '随访记录不存在' });
+  const canUpdate = req.staff.role === 'superadmin'
+    || String(followUp.staffId || '') === String(req.staff._id)
+    || String(followUp.assignedTo || '') === String(req.staff._id);
+  if (!canUpdate) return res.status(403).json({ success: false, message: '该任务未分配给当前账号，无法保存' });
 
   if (followUp.isBlocked) {
     return res.status(409).json({ success: false, message: '上一环节尚未完成，当前任务只能查看，暂不能办理' });
