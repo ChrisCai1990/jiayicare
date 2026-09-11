@@ -1593,8 +1593,9 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
       || !String(assessment.recommendedDepartment || '').trim()
       || !String(assessment.recommendedExpert || '').trim()
       || !checks.length
-      || checks.some(item => item.expertRequired && !String(item.expertName || '').trim())) {
-      return res.status(400).json({ success: false, message: '请完整填写推荐医院、科室、专家，以及预计检查项目和所需检查专家' });
+      || checks.some(item => !String(item.prescribingDepartment || '').trim())
+      || checks.some(item => item.prescribingExpertRequired && !String(item.prescribingExpertName || '').trim())) {
+      return res.status(400).json({ success: false, message: '请完整填写推荐医院、检查后就诊专家，以及每项预计检查的开单科室和所需开单专家' });
     }
   }
   const isOutpatientAppointment = followUp.sourceType === 'health_plan'
@@ -1602,9 +1603,11 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     && /首次代诊门诊预约/.test(followUp.theme || '');
   if (isOutpatientAppointment && req.body.status === 'completed') {
     const booking = req.body.formData || {};
-    if (!String(booking.hospital || '').trim() || !String(booking.department || '').trim()
-      || !String(booking.expert || '').trim() || !booking.appointmentDate || !booking.appointmentTime) {
-      return res.status(400).json({ success: false, message: '请完整填写实际预约医院、科室、专家及预约日期时间' });
+    const appointments = Array.isArray(booking.prescribingAppointments) ? booking.prescribingAppointments : [];
+    if (!String(booking.hospital || '').trim() || !appointments.length
+      || appointments.some(item => !String(item.department || '').trim() || !item.appointmentDate || !item.appointmentTime)
+      || appointments.some(item => item.expertRequired && !String(item.expertName || '').trim())) {
+      return res.status(400).json({ success: false, message: '请按健康顾问要求，完整安排每项检查的开单科室、门诊类型及预约日期时间' });
     }
   }
   const isSuper = req.staff.role === 'superadmin';
