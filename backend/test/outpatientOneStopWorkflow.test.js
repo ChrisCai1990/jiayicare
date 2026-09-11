@@ -80,7 +80,7 @@ test('首次代诊读取代诊日信息并完成检查预约', () => {
   assert.match(booking, /campus/);
   for (const text of ['健管专员确认的代诊日信息', 'proxyVisitCompleted', 'examOrderSummary', 'checkAppointments', 'bookingSnapshot']) assert.match(`${proxy}\n${route}`, new RegExp(text));
   assert.match(proxy, /const saved = value \|\| \{\}/);
-  for (const text of ['需要开具', '需向专家沟通', '检查日总体安排', '检查后专家门诊', '所有检查应安排在检查日', '检查应安排在检查后专家门诊之前']) assert.match(`${proxy}\n${route}`, new RegExp(text));
+  for (const text of ['需要开具', '需向专家沟通', '专家诊疗意见及医嘱', '本次代诊实际开具的检验检查单/项目', '包括原计划项目和临时新增项目', '检查日总体安排', '检查后专家门诊', '所有检查应安排在检查日', '检查应安排在检查后专家门诊之前']) assert.match(`${proxy}\n${route}`, new RegExp(text));
 });
 
 test('健康顾问环节使用结构化就医评估并由后端校验', () => {
