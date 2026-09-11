@@ -10144,6 +10144,8 @@ export default function PatientDetailPage() {
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', overscrollBehavior: 'contain' }}>
               <ServiceTaskContextBanner task={execItem} />
+              {execItem.isBlocked && <div style={{ padding: '10px 12px', borderRadius: 9, background: '#F2F4F7', color: '#596273', fontSize: 13, border: '1px solid #D9DEE7' }}>⏳ 当前仅供查看：正在等待上一环节“{execItem.dependsOnTaskId?.theme || '就医专员陪诊'}”完成，完成后本任务会自动解锁。</div>}
+              <fieldset disabled={!!execItem.isBlocked} style={{ border: 0, padding: 0, margin: 0, display: 'grid', gap: 14, minWidth: 0 }}>
               {isCheckupReportCollectionTask(execItem) ? <CheckupReportCollectionForm task={execItem} plans={plans} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} /> : isCheckupBookingTask(execItem) ? <CheckupBookingForm value={execForm.appointmentDetails} onChange={appointmentDetails => setExecForm(form => ({ ...form, appointmentDetails }))} /> : execItem.taskRole && <ServiceTaskChecklist mode={execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor'} purposes={execItem.taskPurposes || []} source={execItem.dependsOnTaskId?.serviceChecklist || []} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} />}
               {execItem.taskRole && <details style={{ border: '1px solid #E0E8E3', borderRadius: 9, background: '#FAFBFA' }}>
                 <summary style={{ padding: '10px 12px', cursor: 'pointer', color: '#65776F', fontSize: 13, fontWeight: 650 }}>查看事务背景与注意事项</summary>
@@ -10205,12 +10207,13 @@ export default function PatientDetailPage() {
                   ))}
                 </div>
               </div>}
+              </fieldset>
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setExecItem(null)}>取消</button>
-              {execItem.taskRole === 'executor' && execItem.dependsOnTaskId?._id && <button className="btn btn-secondary" style={{ color: '#B45309', borderColor: '#D9A441' }} onClick={handleReturnPrevious} disabled={execSaving}>退回上一环节</button>}
-              <button className="btn btn-primary" onClick={handleExec} disabled={execSaving}>
-                {execSaving ? '保存中...' : isCheckupReportCollectionTask(execItem) ? (execForm.serviceChecklist?.[0]?.collectionStatus === 'complete' ? '完成闭环并进入解析' : '保存报告回收进度') : isCheckupBookingTask(execItem) ? '确认预约并转交陪诊' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : '保存随访结果'}
+              {!execItem.isBlocked && execItem.taskRole === 'executor' && execItem.dependsOnTaskId?._id && <button className="btn btn-secondary" style={{ color: '#B45309', borderColor: '#D9A441' }} onClick={handleReturnPrevious} disabled={execSaving}>退回上一环节</button>}
+              <button className="btn btn-primary" onClick={handleExec} disabled={execSaving || execItem.isBlocked}>
+                {execItem.isBlocked ? '等待上一环节完成' : execSaving ? '保存中...' : isCheckupReportCollectionTask(execItem) ? (execForm.serviceChecklist?.[0]?.collectionStatus === 'complete' ? '完成闭环并进入解析' : '保存报告回收进度') : isCheckupBookingTask(execItem) ? '确认预约并转交陪诊' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : '保存随访结果'}
               </button>
             </div>
           </div>

@@ -30,7 +30,6 @@ export default function ServiceTasksPanel() {
   const supervisorCount = items.filter(item => item.taskRole === 'supervisor').length
 
   const openTask = async (task) => {
-    if (task.isBlocked) return
     const sourcePlan = task.sourceHealthPlanId
     const sourcePlanId = sourcePlan?._id || sourcePlan
     const checkupText = `${sourcePlan?.title || ''} ${sourcePlan?.content?.templateName || ''}`
