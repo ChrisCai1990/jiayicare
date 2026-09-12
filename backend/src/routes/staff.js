@@ -3587,13 +3587,56 @@ router.delete('/medical-reports/:id', staffAuth, checkPermission('reports', 'del
       deletedByName: req.staff.name || req.staff.username || '', reason,
       snapshot: report.toObject(),
     });
-    await report.deleteOne();
     await Promise.all(keysToDelete.map(key => deleteFile(key)));
     // 级联清理：UserScreeningItem 里 reportId 指向这份报告的记录也要一并删除，
     // 否则报告本体没了但专项筛查索引还留着，页面上会出现一条内容空白、无法展开的孤儿记录
     // （2026-07-03 潘孝银"心脏超声"重复上传后删除旧报告，残留孤儿记录复现过一次）
     await UserScreeningItem.deleteMany({ reportId: req.params.id });
-    res.json({ success: true });
+    const isRequiredOutpatientDocument = report.sourceHealthPlanId
+      && ['prescription_order', 'outpatient_record'].includes(report.documentCategory);
+    if (isRequiredOutpatientDocument) {
+      // 门诊闭环中的两份必需资料删除的是客户文件和识别结果，不删除流程占位记录。
+      // 保留原 ID 后，健管专员可从重新出现的任务进入该资料并“补传文件”，也不会让
+      // 健康顾问因任务仍指向一个已不存在的 ID 而永久卡死。
+      Object.assign(report, {
+        fileUrl: '', fileUrls: [], ossKey: '', ossKeys: [], content: '', mimeType: '', fileSize: '',
+        reportItems: [], aiSummary: '', keyFindings: [], parseJob: null, pageParseStatus: {}, imagePageEvidence: {}, pageParseHistory: [],
+        audit_status: 'unaudited', aiStatus: 'pending', status: 'pending', audited_by: '', audited_at: null,
+        reviewedByStaff: null, reviewedAt: null, reject_reason: '', familyDoctorViewedAt: null, familyDoctorViewedBy: null,
+        familyDoctorAudit: { status: 'pending', by: null, byName: '', at: null, editLog: [] },
+        staffAuditSnapshot: { reportItems: null, snapshotAt: null },
+      });
+      await report.save();
+
+      const [patient, sourcePlan, linkedReports] = await Promise.all([
+        User.findById(report.user).select('assignedHealthManager').lean(),
+        HealthPlan.findById(report.sourceHealthPlanId).select('title status').lean(),
+        MedicalReport.find({ sourceHealthPlanId: report.sourceHealthPlanId, documentCategory: { $in: ['prescription_order', 'outpatient_record'] } }).select('_id documentCategory').lean(),
+      ]);
+      if (sourcePlan && sourcePlan.status !== 'completed') {
+        const missingName = report.documentCategory === 'outpatient_record' ? '当日门诊病历' : '当日检验检查单';
+        const auditTask = await FollowUp.findOneAndUpdate(
+          { sourceHealthPlanId: report.sourceHealthPlanId, sourceType: 'health_plan', taskRole: 'executor', workflowKey: 'system:outpatient_report_audit' },
+          { $set: {
+            patientId: report.user, assignedTo: patient?.assignedHealthManager || report.uploadedBy,
+            date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date(), status: 'planned',
+            completedAt: null, completedBy: null, isBlocked: false, activationEvent: '',
+            content: `${missingName}已删除，请补传文件并重新完成审核。`,
+            plannedContent: '补齐本次门诊病历和检验检查单，并在报告管理中逐份审核。',
+            theme: `审核门诊一站式病历与检验检查单 · ${sourcePlan.title || ''}`,
+            formData: { reportIds: linkedReports.map(item => item._id), missingCategories: [report.documentCategory] },
+          } },
+          { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
+        await FollowUp.updateMany(
+          { sourceHealthPlanId: report.sourceHealthPlanId, sourceType: 'health_plan', taskRole: 'executor', workflowKey: 'system:outpatient_post_visit_review', status: { $ne: 'cancelled' } },
+          { $set: { status: 'planned', completedAt: null, completedBy: null, isBlocked: true, activationEvent: 'outpatient_reports_audited', dependsOnTaskId: auditTask._id, formData: { reportIds: linkedReports.map(item => item._id) } } }
+        );
+      }
+      return res.json({ success: true, workflowReopened: true });
+    }
+    await report.deleteOne();
+    res.json({ success: true, workflowReopened: false });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -3605,6 +3648,11 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
   const report = await MedicalReport.findById(req.params.id);
   if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
   if (action === 'approve') {
+    const isRequiredOutpatientDocument = report.sourceHealthPlanId
+      && ['prescription_order', 'outpatient_record'].includes(report.documentCategory);
+    if (isRequiredOutpatientDocument && !(report.fileUrl || report.content || report.fileUrls?.length)) {
+      return res.status(409).json({ success: false, message: '该门诊必需资料文件已删除，请先补传文件再审核' });
+    }
     applyAuditedInstitution(report);
     report.audit_status = 'audited';
     // audit_status 与 aiStatus 是历史上先后引入的两套审核状态。无论从“审核AI结果”
@@ -3671,11 +3719,11 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
         sourceHealthPlanId: report.sourceHealthPlanId,
         title: { $in: ['门诊一站式·当日检验检查单', '门诊一站式·当日门诊病历'] },
       };
-      const [linkedCount, pendingCount] = await Promise.all([
-        MedicalReport.countDocuments(outpatientReportFilter),
-        MedicalReport.countDocuments({ ...outpatientReportFilter, audit_status: { $ne: 'audited' } }),
-      ]);
-      if (linkedCount > 0 && pendingCount === 0) {
+      const linkedReports = await MedicalReport.find(outpatientReportFilter).select('documentCategory audit_status').lean();
+      const linkedCategories = new Set(linkedReports.map(item => item.documentCategory));
+      const allRequiredReportsAudited = ['prescription_order', 'outpatient_record'].every(category => linkedCategories.has(category))
+        && linkedReports.every(item => item.audit_status === 'audited');
+      if (allRequiredReportsAudited) {
         const reportAuditTask = await FollowUp.findOneAndUpdate(
           { sourceHealthPlanId: report.sourceHealthPlanId, taskRole: 'executor', workflowKey: 'system:outpatient_report_audit', status: { $in: ['planned', 'in_progress'] } },
           { $set: { status: 'completed', isBlocked: false, completedAt: new Date(), completedBy: 'staff', content: '本次门诊病历和检验检查单已全部审核通过。' } },
