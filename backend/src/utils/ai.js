@@ -1,4 +1,5 @@
 const https = require('https');
+const { controlledCall } = require('./aiBudget');
 
 const QWEN_BASE = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
 const DEEPSEEK_BASE = 'https://api.deepseek.com/v1';
@@ -54,6 +55,7 @@ function httpPost(url, headers, body, timeoutMs = 45000) {
     // 会让 OCR worker 永久占住并发槽位；这里额外设置整次请求的硬截止时间。
     const deadline = setTimeout(() => {
       const error = new Error(`AI接口请求超时（${timeoutMs / 1000}秒）`);
+      error.code = 'AI_TIMEOUT';
       response?.destroy(error);
       req.destroy(error);
       finish(error);
@@ -73,7 +75,7 @@ async function chat(messages, { systemPrompt, maxTokens = 2000, provider, temper
   const model = p === 'deepseek' ? 'deepseek-chat' : 'qwen-plus';
   const msgs = systemPrompt ? [{ role: 'system', content: systemPrompt }, ...messages] : messages;
 
-  const result = await httpPost(
+  const result = await controlledCall({ provider: p, model, messages: msgs, maxTokens }, () => httpPost(
     `${getBase(p)}/chat/completions`,
     { Authorization: `Bearer ${getKey(p)}` },
     {
@@ -84,7 +86,7 @@ async function chat(messages, { systemPrompt, maxTokens = 2000, provider, temper
       ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
     },
     timeoutMs
-  );
+  ));
 
   if (result.error) throw new Error(result.error.message);
   return result.choices?.[0]?.message?.content || '';
@@ -108,7 +110,7 @@ function toImageDataUrl(source) {
   return `data:${mime};base64,${raw}`;
 }
 
-async function parseImage(imageSource, prompt, { isUrl = false, model = 'qwen-vl-plus', maxTokens = 3000, timeoutMs = 45000 } = {}) {
+async function parseImage(imageSource, prompt, { isUrl = false, model = 'qwen-vl-plus', maxTokens = 3000, timeoutMs = 45000, sourcePage, stage, reportId } = {}) {
   const key = process.env.QWEN_API_KEY;
   if (!key) throw new Error('图像解析需要 QWEN_API_KEY');
 
@@ -117,24 +119,21 @@ async function parseImage(imageSource, prompt, { isUrl = false, model = 'qwen-vl
     ? { type: 'image_url', image_url: { url: src } }
     : { type: 'image_url', image_url: { url: toImageDataUrl(src) } });
 
-  const result = await httpPost(
+  const messages = [{ role: 'user', content: [...imageContents, { type: 'text', text: prompt }] }];
+  const context = { ...(stage ? { stage } : {}), ...(sourcePage ? { page: sourcePage } : {}), ...(reportId ? { reportId: String(reportId), business: 'ocr' } : {}) };
+  const result = await controlledCall({ provider: 'qwen', model, messages, maxTokens, context }, () => httpPost(
     `${QWEN_BASE}/chat/completions`,
     { Authorization: `Bearer ${key}` },
     {
       model,
-      messages: [{ role: 'user', content: [...imageContents, { type: 'text', text: prompt }] }],
+      messages,
       max_tokens: maxTokens,
     },
     timeoutMs
-  );
+  ));
 
   if (result.error) throw new Error(result.error.message);
   return result.choices?.[0]?.message?.content || '';
-}
-
-// 调用日志记录（写入 console，后续接日志模块）
-function logCall(provider, model, tokensUsed, durationMs, success) {
-  console.log(JSON.stringify({ t: new Date().toISOString(), provider, model, tokens: tokensUsed, ms: durationMs, ok: success }));
 }
 
 module.exports = { chat, parseImage, selectProvider, toImageDataUrl };

@@ -49,6 +49,7 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ limit: '25mb', extended: true }));
 app.use(morgan('dev'));
+app.use((req, res, next) => require('./utils/aiBudget').withAiContext({ stage: 'request' }, next));
 
 // 健康检查
 app.get('/', (req, res) => {
@@ -91,6 +92,7 @@ app.use('/api/system',        require('./routes/system'));
 app.use('/api/share',         require('./routes/share'));
 app.use('/api/admin',         require('./routes/admin'));
 app.use('/api/admin',         require('./routes/settings'));
+app.use('/api/admin/ai-control', require('./routes/aiControl'));
 const staffRouter = require('./routes/staff');
 app.use('/api/staff',         staffRouter);
 app.use('/api/staff',         require('./routes/aiCaseReviews'));

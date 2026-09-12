@@ -88,7 +88,8 @@ function createReportImageParser(parseImage, { onEvidence = () => {}, report = {
   const imageReport = /ultrasound|radiology|mri|endoscopy|ecg|imaging/i.test(report.type || '')
     || /超声|彩超|B超|内镜|胃镜|肠镜|磁共振|心电|CT|MRI/i.test(report.title || '');
   return async (source, prompt, options = {}) => {
-    const { sourcePage, ...modelOptions } = options;
+    const { sourcePage } = options;
+    const modelOptions = { ...options, ...(report._id ? { reportId: String(report._id) } : {}) };
     if (imageOnlyPages.has(sourcePage)) {
       const skipped = imageOnlyPages.get(sourcePage);
       onEvidence(sourcePage, skipped.imageEvidence);
@@ -107,7 +108,7 @@ function createReportImageParser(parseImage, { onEvidence = () => {}, report = {
     if (!cache.has(key)) {
       if (cache.size >= 24) cache.delete(cache.keys().next().value);
       const pending = parseImage(source, IMAGE_EVIDENCE_PROMPT, {
-        ...modelOptions, model: 'qwen-vl-plus', maxTokens: 8192, timeoutMs: 45000,
+        ...modelOptions, stage: 'evidence', model: 'qwen-vl-plus', maxTokens: 8192, timeoutMs: 45000,
       }).then(result => {
         const evidence = parseJSON(result);
         guardImageEvidence({ items: [] }, evidence); // Validate before caching.

@@ -70,7 +70,7 @@ test('full extraction and repeated supplement candidates use one independent tra
   let reads = 0;
   const statuses = [];
   const parse = createReportImageParser(async (source, prompt, options) => {
-    assert.equal(options.sourcePage, undefined);
+    assert.equal(options.sourcePage, source === 'page-1' ? 1 : 2);
     if (prompt === IMAGE_EVIDENCE_PROMPT) {
       reads++;
       assert.ok(!prompt.includes(narrative.findings));
@@ -133,6 +133,8 @@ test('single-page route stops before coverage/classification and preserves exist
     '../utils/zheyiReportTemplate': { isZheyiReport: () => false },
   };
   const run = vm.runInNewContext(`${source.slice(start, end)};runReportPageParse`, {
+    withAiContext: require('../src/utils/aiBudget').withAiContext,
+    ...require('../src/utils/aiBudgetPolicy'),
     require: name => { assert.ok(modules[name], name); return modules[name]; },
     User: { findById: () => ({ select: () => ({ lean: async () => ({ age: 30 }) }) }) },
     isPediatricAge: () => false, UPLOADS_DIR: '', REPORT_PARSE_PROMPT: 'extract',
@@ -147,13 +149,17 @@ test('single-page route stops before coverage/classification and preserves exist
   assert.equal(report.reportItems[0], oldItem);
 });
 
-for (const pdf of [true, false]) test(`full ${pdf ? 'PDF' : 'photo'} OCR records image-only success without fabricated results or retries`, async () => {
+for (const mode of ['normal', 'budget-pause', 'checkpoint']) for (const pdf of [true, false]) test(`full ${pdf ? 'PDF' : 'photo'} OCR ${mode} preserves evidence and progress`, async () => {
   const fs = require('fs');
   const vm = require('vm');
   const source = fs.readFileSync(require.resolve('../src/routes/staff'), 'utf8');
   const start = source.indexOf('async function runReportParse(');
   const end = source.indexOf('// 只补提指定PDF页', start);
   const report = { _id: 'fixture', user: 'synthetic', type: 'ultrasound', title: '测试超声', reportItems: [], reviewRevision: 0 };
+  if (mode === 'budget-pause') report.parseJob = { progress: { version: 2, nextPage: 1, allItems: [] } };
+  if (mode === 'checkpoint') report.parseJob = pdf
+    ? { firstPassPages: { 1: { items: [], skipPage: true, imageEvidence: { status: 'image_only', message: '影像资料页' } } }, progress: { version: 2, nextPage: 1, imagePageEvidence: { 1: { status: 'image_only', message: '影像资料页' } } } }
+    : { imagePages: { 1: { items: [], evidence: { status: 'image_only', message: '影像资料页' } } } };
   const writes = [];
   const errors = [];
   let calls = 0;
@@ -162,7 +168,7 @@ for (const pdf of [true, false]) test(`full ${pdf ? 'PDF' : 'photo'} OCR records
     findByIdAndUpdate: async (_, update) => writes.push(update),
   };
   const modules = {
-    '../utils/ai': { parseImage: async (_, prompt) => { calls++; return JSON.stringify(prompt === IMAGE_EVIDENCE_PROMPT ? imageOnly : { items: [narrative] }); } },
+    '../utils/ai': { parseImage: async (_, prompt) => { calls++; if (mode === 'budget-pause') throw new (require('../src/utils/aiBudgetPolicy').AiControlError)('预算不足'); return JSON.stringify(prompt === IMAGE_EVIDENCE_PROMPT ? imageOnly : { items: [narrative] }); } },
     '../utils/reportImageEvidence': require('../src/utils/reportImageEvidence'),
     '../utils/reportPageSupplement': require('../src/utils/reportPageSupplement'),
     '../models/MedicalReport': db,
@@ -175,6 +181,8 @@ for (const pdf of [true, false]) test(`full ${pdf ? 'PDF' : 'photo'} OCR records
     '../utils/zheyiReportTemplate': { isZheyiReport: () => false },
   };
   const sandbox = {
+    withAiContext: require('../src/utils/aiBudget').withAiContext,
+    ...require('../src/utils/aiBudgetPolicy'),
     require: name => { assert.ok(modules[name], name); return modules[name]; },
     User: { findById: () => ({ select: () => ({ lean: async () => ({ age: 30 }) }) }) },
     isManualOnlyReport: () => false, isPediatricAge: () => false, UPLOADS_DIR: '',
@@ -198,10 +206,18 @@ for (const pdf of [true, false]) test(`full ${pdf ? 'PDF' : 'photo'} OCR records
   await run('fixture');
   assert.deepEqual(errors, []);
   const final = writes.at(-1).$set || writes.at(-1);
+  if (mode === 'budget-pause') {
+    assert.equal(final.aiStatus, 'failed');
+    assert.equal(final['parseJob.status'], 'paused');
+    assert.equal(final.parseJob, undefined); // Do not replace saved checkpoints.
+    assert.equal(calls, 1); // Must escape all inner retry/fallback catches.
+    assert.equal(final.reportItems, undefined);
+    return;
+  }
   assert.equal(final.aiStatus, 'pending');
   assert.equal(final.parseJob.status, 'completed');
   assert.equal(final.imagePageEvidence[1].status, 'image_only');
   assert.match(final.aiSummary, /影像资料页/);
-  assert.equal(calls, 2);
+  assert.equal(calls, mode === 'checkpoint' ? 0 : 2);
   assert.equal((final.reportItems || []).length, 0);
 });

@@ -221,6 +221,9 @@ router.post('/:id/parse-ai', auth, async (req, res) => {
       return res.json({ success: true, message: '已进入 AI 解析队列，请等待健管专员审核录入' });
     }
 
+    if (report.parseJob?.status === 'paused') return res.status(409).json({ success: false, message: '识别已暂停，请联系管理员恢复' });
+    if (report.aiStatus === 'processing') return res.json({ success: true, processing: true, message: '正在识别中' });
+
     // PDF 必须复用医护端的逐页渲染队列。轻量接口直接把 PDF URL 交给视觉模型会被当作图片而失败，
     // 且会阻塞请求；功能医学等多页 PDF 也应走同一条可恢复、待人工审核的正式链路。
     const { isPdfReport } = require('../utils/pdf');
@@ -229,10 +232,11 @@ router.post('/:id/parse-ai', auth, async (req, res) => {
       if (typeof staffRouter.scheduleReportParse !== 'function') {
         throw new Error('报告解析队列不可用');
       }
-      await MedicalReport.findByIdAndUpdate(report._id, {
+      const claimed = await MedicalReport.findOneAndUpdate({ _id: report._id, aiStatus: { $ne: 'processing' }, 'parseJob.status': { $ne: 'paused' }, 'pageParseStatus.status': { $ne: 'processing' } }, {
         aiStatus: 'processing',
-        parseJob: { status: 'processing', queuedAt: new Date(), startedAt: new Date(), attemptId: require('crypto').randomUUID(), message: '正在识别' },
+        parseJob: { status: 'processing', queuedAt: new Date(), startedAt: new Date(), attemptId: require('crypto').randomUUID(), actorId: String(req.user?._id || ''), message: '正在识别' },
       });
+      if (!claimed) return res.status(409).json({ success: false, message: '报告正在识别、补提或已暂停，请刷新' });
       staffRouter.scheduleReportParse(report._id);
       return res.json({
         success: true,
@@ -603,8 +607,8 @@ findings、diagnosis、conclusion 字段只放报告原文，绝对禁止写入�
     const storedOssKeys = report.ossKeys?.length ? report.ossKeys : (report.ossKey ? [report.ossKey] : []);
     const ossUrls = storedOssUrls.map((url, index) => signStoredUrl(url, storedOssKeys[index] || ''));
     const text = hasOssUrl
-      ? await parseImage(ossUrls.length > 1 ? ossUrls : ossUrls[0], prompt, { isUrl: true, maxTokens: 8000 })
-      : await parseImage(report.content, prompt, { isUrl: false, maxTokens: 8000 });
+      ? await parseImage(ossUrls.length > 1 ? ossUrls : ossUrls[0], prompt, { isUrl: true, maxTokens: 8000, reportId: String(report._id), sourcePage: ossUrls.length <= 1 ? 1 : undefined })
+      : await parseImage(report.content, prompt, { isUrl: false, maxTokens: 8000, reportId: String(report._id), sourcePage: 1 });
 
     let parsed = null;
     try {

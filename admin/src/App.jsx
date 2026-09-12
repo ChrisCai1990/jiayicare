@@ -36,6 +36,7 @@ import ReviewExperiencePage from './pages/settings/ReviewExperiencePage'
 import HealthFundConfigPage from './pages/settings/HealthFundConfigPage'
 import HealthAssistantConfigPage from './pages/settings/HealthAssistantConfigPage'
 import SupplyWorkflowConfigPage from './pages/settings/SupplyWorkflowConfigPage'
+import AiUsagePage from './pages/settings/AiUsagePage'
 
 // 项目设置
 import CategoryPage       from './pages/projects/CategoryPage'
@@ -139,6 +140,7 @@ export default function App() {
               <Route path="settings/daily-care" element={<DailyCareConfigPage />} />
               <Route path="settings/health-assistant" element={<HealthAssistantConfigPage />} />
               <Route path="settings/supply-workflow" element={<SupplyWorkflowConfigPage />} />
+              <Route path="settings/ai-usage" element={<AiUsagePage />} />
               <Route path="settings/review-experience" element={<ReviewExperiencePage />} />
               <Route path="health-fund" element={<HealthFundConfigPage />} />
 

@@ -1,5 +1,8 @@
 # Codex / Claude Code 双端统一项目记忆
 
+> 2026-09-12：AI 用量与预算管理已在本地实现并验收，尚未部署；Admin 入口、预算预留、暂停恢复和验证边界见 `docs/AI_USAGE_CONTROL.md`。
+
+
 > 2026-09-12：医学影像页原文校验已部署（代码 `fb86e2b2`）；行为、验证与历史数据边界见 `docs/OCR_IMAGE_EVIDENCE.md`。
 
 > 家庭服务助手（2026-09-09，首版已部署，企微待配置）：功能与企微接入边界见 `docs/SERVICE_GROUP_ASSISTANT.md`。消息桥接接收器不能被当作已经连通官方会话存档。

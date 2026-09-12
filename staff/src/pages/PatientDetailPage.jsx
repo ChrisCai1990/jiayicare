@@ -9469,6 +9469,7 @@ export default function PatientDetailPage() {
                           : r.audit_status === 'rejected' ? '已驳回'
                           : r.aiStatus === 'none' ? '待解析'
                           : r.aiStatus === 'processing' ? '解析中'
+                          : r.parseJob?.status === 'paused' ? '识别已暂停'
                           : r.aiStatus === 'failed' ? '识别失败'
                           : '待审核'
                         const auditColor = r.audit_status === 'audited' ? '#22A06B'
@@ -9480,6 +9481,7 @@ export default function PatientDetailPage() {
                           <tr>
                             <td>
                               <button type="button" onClick={() => openReportDetail(r)} className="report-table-list-title-btn">{r.title || '未命名报告'}</button>
+                              {r.parseJob?.status === 'paused' && <div style={{ fontSize: 11, color: '#B86A19', marginTop: 5, maxWidth: 280 }}>{r.parseJob.message}；请联系管理员恢复。</div>}
                               {r.screeningL2 && <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 3 }}>{r.screeningL2}</div>}
                             </td>
                             <td><strong style={{ fontSize: 12, color: '#315F4E', whiteSpace: 'nowrap' }}>{DOCUMENT_CATEGORY_LABEL[inferDocumentCategory(r)] || '其他资料'}</strong><div style={{ fontSize: 11, color: '#8AA89C', marginTop: 2 }}>{typeLabel}</div></td>
@@ -9491,9 +9493,9 @@ export default function PatientDetailPage() {
                                 <span style={{ fontSize: 11, color: '#aaa' }}>居家监测类不支持AI解析，请人工录入</span>
                               ) : (r.aiStatus === 'none' || r.aiStatus === 'failed') && (r.fileUrl || r.content || r.hasContent || (r.fileUrls && r.fileUrls.length)) ? (
                                 <button className="btn btn-primary btn-sm report-action-primary"
-                                  disabled={parsingReportId === r._id}
+                                  disabled={parsingReportId === r._id || r.parseJob?.status === 'paused'}
                                   onClick={() => handleParseReportAI(r._id)}>
-                                  {parsingReportId === r._id ? '提交中…' : r.aiStatus === 'failed' ? '重新识别' : 'AI解析'}
+                                  {r.parseJob?.status === 'paused' ? '等待管理员恢复' : parsingReportId === r._id ? '提交中…' : r.aiStatus === 'failed' ? '重新识别' : 'AI解析'}
                                 </button>
                               ) : (r.aiStatus === 'none' || r.aiStatus === 'failed') ? (
                                 <span style={{ fontSize: 11, color: '#D97706' }}>无报告文件，请让客户重新上传图片/PDF后再解析</span>

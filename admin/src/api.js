@@ -48,6 +48,12 @@ async function reqRoot(path, opts = {}) {
 }
 
 export const adminAPI = {
+  getAiControl: () => req('/ai-control'),
+  getAiUsage: (params = {}) => req(`/ai-control/usage?${new URLSearchParams(params)}`),
+  saveAiPolicy: (policy, revision) => req('/ai-control/policy', { method: 'PUT', body: JSON.stringify({ policy, revision }) }),
+  resetAiCircuit: key => req('/ai-control/circuits/reset', { method: 'POST', body: JSON.stringify({ key }) }),
+  addAiAllowance: (id, data) => req(`/ai-control/reports/${id}/allowance`, { method: 'POST', body: JSON.stringify(data) }),
+  resumeAiReport: id => req(`/ai-control/reports/${id}/resume`, { method: 'POST', body: '{}' }),
   login:            (username, password) => req('/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
   dashboard:        ()                   => req('/dashboard'),
   patients:         (params = {})        => req('/patients?' + new URLSearchParams(params).toString()),

@@ -14,7 +14,7 @@ function tenantContext(req, res, next) {
   const actor = req.staff || req.user || req.admin;
   const tenantId = actor?.tenantId || null;
   const isPlatformSuper = actor?.role === 'platformSuper'; // 预留：平台超管角色可跨机构查看全部数据
-  als.run({ tenantId: isPlatformSuper ? BYPASS : tenantId }, () => next());
+  als.run({ tenantId: isPlatformSuper ? BYPASS : tenantId }, () => require('./aiBudget').withAiContext({ actorId: actor?._id ? String(actor._id) : '', tenantId: tenantId ? String(tenantId) : '' }, next));
 }
 
 function getCurrentTenantId() {
