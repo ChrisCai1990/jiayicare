@@ -1613,22 +1613,32 @@ function CheckupManagementWorkspace({ plans, reports, followUps, questionnaireRe
   const serviceDate = currentPlan?.content?.serviceDate || currentPlan?.content?.moduleData?.visit?.visitDate || ''
   const ownerName = currentPlan?.staffId?.name || currentPlan?.content?.reviewerName || '-'
   const formatPlanMoment = value => value ? new Date(value).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : ''
-  const stages = ['需求问卷', '体检方案', '预约准备', '现场陪同', '报告管理']
+  const stages = ['健康文件', '体检方案', '预约准备', '现场执行', '报告审核', '结果评估', '最终验收']
   const customerConfirmed = !!currentPlan?.confirmedAt
   const pushedToCustomer = !!currentPlan?.pushedAt
-  const activeStage = !intake ? 0 : checkupReports.length ? 4 : customerConfirmed || checkupTasks.length ? 2 : 1
+  const taskAt = pattern => checkupTasks.find(task => pattern.test(task.theme || ''))
+  const onsiteTask = taskAt(/现场|陪同体检/)
+  const reportTask = taskAt(/报告.*(?:回收|归档)/)
+  const resultTask = taskAt(/结果评估与随访计划/)
+  const finalTask = taskAt(/最终验收/)
+  const activeStage = currentPlan?.status === 'completed' || finalTask?.status === 'completed' ? 6
+    : resultTask && !resultTask.isBlocked ? 5
+      : currentPlan?.content?.reportAuditedAt || checkupReports.length || (reportTask && !reportTask.isBlocked) ? 4
+        : onsiteTask && !onsiteTask.isBlocked ? 3
+          : customerConfirmed || checkupTasks.length ? 2
+            : intake?.status === 'submitted' ? 1 : 0
   const nextActionTitle = customerConfirmed
     ? '客户已确认体检方案，已转健康规划师预约'
     : pushedToCustomer
       ? '方案已发送，等待客户确认'
-      : intake
+      : intake?.status === 'submitted'
         ? '健康顾问核对需求并完善体检方案'
-        : '等待客户填写体检需求问卷'
+        : '等待客户填写体检健康文件'
   const nextActionHint = customerConfirmed
     ? '健康顾问无需重复生成方案；后续由健康规划师确认医院与预约信息。'
     : pushedToCustomer
       ? '客户确认后，健康顾问任务自动完成，并进入预约准备环节。'
-      : intake
+      : intake?.status === 'submitted'
         ? '如问卷发现档案变化，再单独生成变化核对；旧资料始终保留。'
         : '客户提交后，健康顾问应在24小时内完成方案定制。'
 
@@ -1654,7 +1664,7 @@ function CheckupManagementWorkspace({ plans, reports, followUps, questionnaireRe
         </div>
 
         <div style={{ padding: '18px 20px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,minmax(120px,1fr))', overflowX: 'auto', gap: 0, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,minmax(120px,1fr))', overflowX: 'auto', gap: 0, marginBottom: 16 }}>
             {stages.map((stage, index) => {
               const reached = index <= activeStage
               return <div key={stage} style={{ minWidth: 120, position: 'relative', textAlign: 'center', color: reached ? '#0077B6' : '#8AA89C' }}>

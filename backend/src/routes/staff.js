@@ -198,17 +198,28 @@ function withSignedReportFiles(report) {
 
 function withSignedServiceChecklist(task) {
   const obj = task?.toObject ? task.toObject() : { ...(task || {}) };
+  const signFiles = files => Array.isArray(files) ? files.map(file => ({
+    ...file,
+    previewUrl: signStoredUrl(file?.url || '', file?.ossKey || ''),
+  })) : [];
   const signChecklist = checklist => Array.isArray(checklist) ? checklist.map(item => ({
     ...item,
-    attachments: Array.isArray(item?.attachments) ? item.attachments.map(file => ({
-      ...file,
-      // 检查单保存在私有 OSS；每次读取任务时签发短时访问地址，数据库仍保留原始 URL/ossKey。
-      url: signStoredUrl(file?.url || '', file?.ossKey || ''),
-    })) : [],
+    // 检查单保存在私有 OSS；每次读取任务时签发短时预览地址，数据库仍保留原始 URL/ossKey。
+    attachments: signFiles(item?.attachments),
   })) : [];
+  const signFormData = formData => formData ? {
+    ...formData,
+    examOrderFiles: signFiles(formData.examOrderFiles),
+    medicalRecordFiles: signFiles(formData.medicalRecordFiles),
+  } : formData;
   obj.serviceChecklist = signChecklist(obj.serviceChecklist);
+  obj.formData = signFormData(obj.formData);
   if (obj.dependsOnTaskId && typeof obj.dependsOnTaskId === 'object') {
-    obj.dependsOnTaskId = { ...obj.dependsOnTaskId, serviceChecklist: signChecklist(obj.dependsOnTaskId.serviceChecklist) };
+    obj.dependsOnTaskId = {
+      ...obj.dependsOnTaskId,
+      serviceChecklist: signChecklist(obj.dependsOnTaskId.serviceChecklist),
+      formData: signFormData(obj.dependsOnTaskId.formData),
+    };
   }
   return obj;
 }
@@ -483,7 +494,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     { path: 'patientId', select: 'name phone gender age chronicDiseases' },
     { path: 'staffId', select: 'name role title' },
     { path: 'assignedTo', select: 'name role' },
-    { path: 'sourceHealthPlanId', select: 'title description content type' },
+    { path: 'sourceHealthPlanId', select: 'title description content type status' },
     { path: 'followUpSchemeId', select: 'name executorRole supervisorRole completionStandard' },
     { path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } },
   ]);
@@ -493,6 +504,8 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
       || (task.sourceType === 'insurance_service' && task.taskRole === 'executor')
       || (task.sourceType === 'scheduled' && (task.tags || []).includes('保险服务'));
     if (!isServiceTask) return false;
+    // 方案已闭环时，历史遗留的活动督办卡也不应再次出现在健康规划师工作台。
+    if (task.sourceType === 'health_plan' && task.sourceHealthPlanId?.status === 'completed') return false;
     if (status === 'active' && !['planned', 'in_progress', 'missed'].includes(task.status)) return false;
     if (status && status !== 'active' && task.status !== status) return false;
     if (includeFuture !== '1' && task.remindAt && task.remindAt > now) return false;
@@ -1873,16 +1886,24 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
         followUp.workflowKey ? { workflowKey: followUp.workflowKey } : null,
         { dependsOnTaskId: followUp._id },
       ].filter(Boolean);
-      const supervisor = await FollowUp.findOneAndUpdate(
+      const supervisor = await FollowUp.findOne(
         { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'supervisor', status: { $in: ['planned', 'in_progress'] }, $or: supervisorMatch },
-        { $set: { status: 'completed', isBlocked: false, serviceChecklist: checklistForReview, formData: followUp.formData || null, completedAt: new Date(), completedBy: 'staff' } },
-        { new: true }
       );
-      const completedGateIds = [followUp._id, supervisor?._id].filter(Boolean);
+      const supervisorScheme = supervisor?.followUpSchemeId
+        ? await FollowUpPlan.findById(supervisor.followUpSchemeId).select('closesService').lean()
+        : null;
+      const requiresFinalAcceptance = !!supervisorScheme?.closesService;
+      if (supervisor && !requiresFinalAcceptance) {
+        await FollowUp.updateOne({ _id: supervisor._id }, { $set: { status: 'completed', isBlocked: false, serviceChecklist: checklistForReview, formData: followUp.formData || null, completedAt: new Date(), completedBy: 'staff' } });
+      }
+      const completedGateIds = [followUp._id, !requiresFinalAcceptance ? supervisor?._id : null].filter(Boolean);
       await FollowUp.updateMany(
         { sourceHealthPlanId: followUp.sourceHealthPlanId, dependsOnTaskId: { $in: completedGateIds }, status: 'planned' },
         { $set: { isBlocked: false, activationEvent: '', date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date() } }
       );
+      if (supervisor && requiresFinalAcceptance) {
+        await FollowUp.updateOne({ _id: supervisor._id }, { $set: { isBlocked: false, status: 'in_progress', activationEvent: '', serviceChecklist: checklistForReview, date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date() } });
+      }
       if (/首次代诊开检查单/.test(followUp.theme || '')) {
         const assignment = await FollowUp.findOne({
           sourceHealthPlanId: followUp.sourceHealthPlanId,
@@ -1916,10 +1937,20 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
       status: { $nin: ['completed', 'cancelled'] },
     });
     if (remaining === 0) {
-      await HealthPlan.updateOne(
+      const completedPlan = await HealthPlan.findOneAndUpdate(
         { _id: followUp.sourceHealthPlanId, type: 'medical_assist' },
-        { $set: { status: 'completed', 'content.workflowCompletedAt': new Date(), 'content.workflowCompletedBy': req.staff._id } }
+        { $set: { status: 'completed', 'content.workflowCompletedAt': new Date(), 'content.workflowCompletedBy': req.staff._id } },
+        { new: true }
       );
+      const completedScheme = followUp.followUpSchemeId
+        ? await FollowUpPlan.findById(followUp.followUpSchemeId).select('closesService').lean()
+        : null;
+      if (completedPlan?.sourceOrderId && completedScheme?.closesService) {
+        await Order.updateOne(
+          { _id: completedPlan.sourceOrderId, totalUnits: { $lte: 1 }, status: { $nin: ['completed', 'cancelled'] } },
+          { $set: { status: 'completed', tradeStatus: 'completed', fulfillmentStatus: 'completed', completedAt: new Date(), usedUnits: 1 } }
+        );
+      }
     }
   }
 
@@ -3703,7 +3734,7 @@ router.post('/upload/report-file', staffAuth, uploadReportFile.single('file'), a
   if (!req.file) return res.status(400).json({ success: false, message: '未收到文件' });
   try {
     const result = await uploadBuffer(req.file.buffer, req.file.mimetype, 'reports');
-    res.json({ success: true, data: { url: result.url, ossKey: result.key, mimeType: result.mimeType, fileSize: result.size, orientationCorrected: result.orientationCorrected } });
+    res.json({ success: true, data: { url: result.url, previewUrl: signStoredUrl(result.url, result.key), ossKey: result.key, mimeType: result.mimeType, fileSize: result.size, orientationCorrected: result.orientationCorrected } });
   } catch (err) {
     console.error('[staff-report-upload] failed', { staffId: String(req.staff?._id || ''), message: err.message });
     res.status(503).json({ success: false, message: '报告存储失败，请稍后重试' });
@@ -12451,6 +12482,11 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
       if (existingPlan) {
         return res.json({ success: true, data: existingPlan, reused: true, message: '该订单已有服务方案，已打开原方案' });
       }
+      if (order.serviceWorkflowSnapshot?.key === 'checkup'
+        && order.serviceWorkflowSnapshot?.questionnaireId
+        && order.checkupIntake?.status !== 'submitted') {
+        return res.status(409).json({ success: false, message: '请等待用户完成本次体检健康文件后再制定方案' });
+      }
     }
     const { confirmedServiceSchedule } = require('../utils/confirmedServiceSchedule');
     const confirmedSchedule = confirmedServiceSchedule(order, briefNote);
@@ -12869,6 +12905,10 @@ router.post('/patients/:id/ai-annual-checkup-plan', staffAuth, async (req, res) 
       }
       const ensured = await ensureStaffInitiatedCheckupService({ patient: user, staff: req.staff, productId, desiredServiceDate, serviceRequirements });
       currentCheckupService = ensured.servicePlan;
+    }
+    if (currentCheckupService.content?.serviceWorkflowSnapshot?.questionnaireId
+      && currentCheckupService.content?.checkupIntake?.status !== 'submitted') {
+      return res.status(409).json({ success: false, message: '请等待用户完成本次体检健康文件后再制定方案' });
     }
 
     const year = new Date().getFullYear();

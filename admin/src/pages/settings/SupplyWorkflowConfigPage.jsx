@@ -25,8 +25,8 @@ const TRIGGER_OPTIONS = [['', '请选择识别条件'], ['report_uploaded', '有
 const FLOW_STAGE_TEXT = Object.fromEntries(FLOW_CARDS.map(([title, desc]) => [title, desc]))
 const FLOW_LABEL_BY_KEY = Object.fromEntries(FLOW_OPTIONS.map(([key, label]) => [key, label]))
 const PRODUCT_STAGE_TEXT = {
-  '体检一站式服务': '问卷采集 → 体检方案 → 机构预约 → 陪检 → 报告回收 → AI解析 → 健管审核 → 健康顾问结果评估及随访计划 → 健康规划师最终验收',
-  '门诊一站式服务': '健康规划师总督办 → 健管收集资料 → 健康顾问评估并确定医院专家及预计检查 → 健管预约首次门诊 → 就医专员代诊开单 → 健管预约检查日专家号 → 就医专员陪诊并归档',
+  '体检一站式服务': '健康规划师总督办 → 用户填写健康文件 → 健康顾问定方案 → 健康规划师预约 → 就医专员现场执行 → 健管收报告并审核 → 健康顾问结果评估和随访计划 → 健康规划师最终验收关闭',
+  '门诊一站式服务': '健康规划师总督办 → 健管收资料 → 健康顾问评估 → 健管约诊 → 健康规划师安排人员 → 就医专员代诊开单 → 就医专员陪诊归档 → 健康规划师最终验收关闭',
 }
 const normalizeModules = w => {
   if (w?.modules?.length) return w.modules.map((item, sequence) => ({ planId: String(typeof item.planId === 'object' ? item.planId?._id : item.planId), mode: item.mode || 'fixed', trigger: item.trigger || '', sequence: item.sequence ?? sequence }))

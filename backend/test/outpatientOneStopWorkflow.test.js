@@ -7,9 +7,9 @@ const { PRODUCT_NAME, WORKFLOW_PLANS, removeRedundantExpertBookingStage } = requ
 
 test('门诊一站式是完整多阶段服务，不是单次代办', () => {
   assert.equal(PRODUCT_NAME, '门诊一站式服务');
-  assert.equal(WORKFLOW_PLANS.length, 6);
+  assert.equal(WORKFLOW_PLANS.length, 7);
   const names = WORKFLOW_PLANS.map(item => item.name).join('\n');
-  for (const expected of ['资料收集与核对', '健康顾问评估及医院专家确定', '代诊约诊服务', '执行人员安排', '首次代诊开检查单', '检查及专家门诊陪诊与归档']) assert.match(names, new RegExp(expected));
+  for (const expected of ['资料收集与核对', '健康顾问评估及医院专家确定', '代诊约诊服务', '执行人员安排', '首次代诊开检查单', '检查及专家门诊陪诊与归档', '总督办与最终验收']) assert.match(names, new RegExp(expected));
   assert.doesNotMatch(names, /检查日专家号预约/);
   assert.equal(typeof removeRedundantExpertBookingStage, 'function');
   const migration = fs.readFileSync(path.join(__dirname, '../src/scripts/migrateOutpatientOneStopWorkflowV5.js'), 'utf8');
@@ -40,9 +40,17 @@ test('健康规划师总览督办，岗位完成后直接串行解锁下一环�
   assert.match(route, /supervisorRole \|\| 'healthPlanner'/);
   assert.match(route, /dependsOnTaskId: options\.dependsOnTaskId \|\| null/);
   assert.match(route, /activationEvent: workflowPlan\.activationEvent \|\| \(executorBlocked \? 'previous_stage_approved' : ''\)/);
-  assert.match(route, /completedGateIds = \[followUp\._id, supervisor\?\._id\]\.filter\(Boolean\)/);
+  assert.match(route, /completedGateIds = \[followUp\._id, !requiresFinalAcceptance \? supervisor\?\._id : null\]\.filter\(Boolean\)/);
+  assert.match(route, /dependsOnTaskId: \{ \$in: completedGateIds \}/);
   assert.match(route, /deferMedicalAssistantAssignment: isOutpatientOneStop/);
   assert.match(route, /!c\.serviceDate && !isOutpatientOneStop/);
+  const finalAcceptance = WORKFLOW_PLANS.at(-1);
+  assert.equal(finalAcceptance.workflowTaskRole, 'supervisor');
+  assert.equal(finalAcceptance.executorRole, 'healthPlanner');
+  assert.equal(finalAcceptance.closesService, true);
+  assert.match(route, /requiresFinalAcceptance/);
+  assert.match(route, /completedScheme\?\.closesService/);
+  assert.match(route, /tradeStatus: 'completed'/);
 });
 
 test('约诊完成后由健康规划师分别安排两类就医专员', () => {
@@ -100,9 +108,16 @@ test('陪诊完成后资料进入报告审核并由健康顾问生成随访计�
   const advisor = fs.readFileSync(path.join(__dirname, '../../staff/src/components/OutpatientPostVisitReviewForm.jsx'), 'utf8');
   const tasksPanel = fs.readFileSync(path.join(__dirname, '../../staff/src/components/ServiceTasksPanel.jsx'), 'utf8');
   for (const text of ['陪诊日安排', '检验检查过程', '特殊情况记录', '专家看诊情况、诊疗意见及医嘱', '已打印当日检验检查单', '已要求医生打印当日门诊病历', 'examOrderFiles', 'medicalRecordFiles']) assert.match(escort, new RegExp(text));
+  assert.match(escort, /timeline[\s\S]*\.sort/);
+  assert.match(route, /previewUrl: signStoredUrl/);
   for (const text of ['prescription_order', 'outpatient_record', "audit_status: 'unaudited'", "aiStatus: 'pending'", 'outpatient_reports_audited', 'system:outpatient_post_visit_review', '门诊一站式服务后续随访', "status: 'completed'", 'workflowCompletedAt']) assert.match(route, new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   for (const text of ['资料查看结论', '后续随访内容', '首次随访日期']) assert.match(advisor, new RegExp(text));
   assert.match(tasksPanel, /陪诊及资料闭环进行中/);
+  assert.match(route, /sourceHealthPlanId\?\.status === 'completed'/);
+  const finalMigration = fs.readFileSync(path.join(__dirname, '../src/scripts/migrateOutpatientFinalCompletionV15.js'), 'utf8');
+  assert.match(finalMigration, /system:outpatient_post_visit_review/);
+  assert.match(finalMigration, /supervisorTasksCompleted/);
+  assert.match(fs.readFileSync(path.join(__dirname, '../../scripts/deploy.py'), 'utf8'), /migrateOutpatientFinalCompletionV15/);
 });
 
 test('健康顾问环节使用结构化就医评估并由后端校验', () => {

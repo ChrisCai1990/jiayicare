@@ -12,7 +12,10 @@ async function run({ apply = false } = {}) {
     const templates = await db.collection('plantemplates').find({
       type: 'medical_assist', name: TEMPLATE_NAME,
     }).sort({ createdAt: 1, _id: 1 }).toArray()
-    if (!templates.length) throw new Error(`${TEMPLATE_NAME}模板不存在`)
+    if (!templates.length) {
+      console.log(JSON.stringify({ mode: apply ? 'applied' : 'dry-run', total: 0, skipped: 'template_not_found' }, null, 2))
+      return
+    }
 
     const canonical = templates[0]
     const duplicates = templates.slice(1)
