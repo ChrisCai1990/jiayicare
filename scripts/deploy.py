@@ -180,6 +180,14 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
                 if code:
                     raise RuntimeError(f"{label}失败")
 
+        code, _ = remote(
+            f"cd {REPO_DIR} && test \"$(git rev-parse HEAD)\" = \"{revision}\"",
+            timeout=15,
+            label="重启前确认线上版本未被其他发布修改",
+        )
+        if code:
+            raise RuntimeError("构建期间线上版本被其他发布修改，已停止本次重启和迁移")
+
         code, _ = remote("pm2 restart jiayicare-backend", timeout=30, label="重启后端")
         if code:
             raise RuntimeError("后端重启失败")
@@ -421,7 +429,7 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
         )
         if code:
             raise RuntimeError("体检模板合并迁移失败")
-        code, _ = remote(
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOneStopFinalFlowV15.js ] && "
             f"[ ! -f {REPO_DIR}/.one-stop-final-flow-v15-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateOneStopFinalFlowV15.js --apply && "
@@ -440,6 +448,14 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
         )
         if code:
             raise RuntimeError("健康检查失败")
+
+        code, _ = remote(
+            f"cd {REPO_DIR} && test \"$(git rev-parse HEAD)\" = \"{revision}\"",
+            timeout=15,
+            label="验收时再次确认线上 commit",
+        )
+        if code:
+            raise RuntimeError("验收期间线上版本被其他发布修改，不能将本次部署视为完成")
 
         print("部署完成")
         print("用户端（嘉医管家）：https://jiaycare.com")

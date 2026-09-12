@@ -1,6 +1,6 @@
 # Codex / Claude Code 双端统一项目记忆
 
-> 2026-09-12：AI 用量与预算管理已在本地实现并验收，尚未部署；Admin 入口、预算预留、暂停恢复和验证边界见 `docs/AI_USAGE_CONTROL.md`。
+> 2026-09-12：AI 用量管理首次发布后被其他流程覆盖，当前线上待确认；发布异常、额外迁移范围和后续验收见 `docs/AI_USAGE_CONTROL.md`。
 
 
 > 2026-09-12：医学影像页原文校验已部署（代码 `fb86e2b2`）；行为、验证与历史数据边界见 `docs/OCR_IMAGE_EVIDENCE.md`。
