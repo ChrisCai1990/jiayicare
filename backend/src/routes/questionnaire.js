@@ -166,7 +166,7 @@ router.get('/pending', auth, async (req, res) => {
       patientId: req.user._id,
       type: 'questionnaire',
       questionnaireId: { $ne: null },
-    }).select('questionnaireId sourceOrderId createdAt').sort({ createdAt: -1 }).lean();
+    }).select('questionnaireId sourceOrderId sourceHealthPlanId createdAt').sort({ createdAt: -1 }).lean();
     if (!pushRecords.length) {
       return res.json({ success: true, data: [] });
     }
@@ -197,7 +197,7 @@ router.get('/pending', auth, async (req, res) => {
     const filtered = pendingPushes.map(push => {
       const q = questionnaireMap.get(String(push.questionnaireId));
       const questions = (q?.questions || []).filter(item => !item.genderOnly || item.genderOnly === req.user.gender);
-      return q ? { ...q, assignmentId: push._id, sourceOrderId: push.sourceOrderId || null,
+      return q ? { ...q, assignmentId: push._id, sourceOrderId: push.sourceOrderId || null, sourceHealthPlanId: push.sourceHealthPlanId || null,
         questions, initialAnswers: buildInitialAnswers(profileUser, questions) } : null;
     }).filter(Boolean);
 
@@ -358,6 +358,10 @@ router.post('/:id/submit', auth, async (req, res) => {
       const intake = { questionnaireId: questionnaire._id, responseId: response._id, assignmentId: assignment._id, status: 'submitted', submittedAt: response.submittedAt };
       await Order.findByIdAndUpdate(assignment.sourceOrderId, { $set: { checkupIntake: intake } });
       await HealthPlan.updateMany({ sourceOrderId: assignment.sourceOrderId }, { $set: { 'content.checkupIntake': intake } });
+    }
+    if (assignment?.sourceHealthPlanId) {
+      const intake = { questionnaireId: questionnaire._id, responseId: response._id, assignmentId: assignment._id, status: 'submitted', submittedAt: response.submittedAt };
+      await HealthPlan.updateOne({ _id: assignment.sourceHealthPlanId, patientId: req.user._id }, { $set: { 'content.checkupIntake': intake } });
     }
 
     let scoreRange = null;

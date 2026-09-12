@@ -421,6 +421,16 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
         )
         if code:
             raise RuntimeError("体检模板合并迁移失败")
+        code, _ = remote(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOneStopFinalFlowV15.js ] && "
+            f"[ ! -f {REPO_DIR}/.one-stop-final-flow-v15-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/migrateOneStopFinalFlowV15.js --apply && "
+            f"touch {REPO_DIR}/.one-stop-final-flow-v15-applied; fi",
+            timeout=180,
+            label="对齐体检用户健康文件环节并增加门诊最终验收",
+        )
+        if code:
+            raise RuntimeError("一站式服务最终流程迁移失败")
         time.sleep(3)
 
         code, output = remote(

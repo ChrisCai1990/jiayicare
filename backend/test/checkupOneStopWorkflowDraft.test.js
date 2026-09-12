@@ -11,6 +11,13 @@ test('checkup one-stop Admin draft is internally consistent', () => {
   assert.ok(TASK_PLAN_DRAFTS.every(item => item.requiresCoordination === false));
 });
 
+test('checkup starts with a customer health-file action rather than a duplicate staff intake task', () => {
+  const intake = TASK_PLAN_DRAFTS.find(item => item.key === 'intake');
+  assert.match(intake.name, /用户健康文件填写/);
+  assert.equal(intake.executorRole, 'customer');
+  assert.match(intake.default_content.boundary, /不向医护人员生成重复/);
+});
+
 test('checkup one-stop draft separates fixed service work from abnormal follow-up review', () => {
   const conditional = TASK_PLAN_DRAFTS.filter(item => item.mode === 'conditional');
   assert.deepEqual(conditional.map(item => item.key), ['abnormal_followup']);
@@ -19,7 +26,7 @@ test('checkup one-stop draft separates fixed service work from abnormal follow-u
 
   const fixed = TASK_PLAN_DRAFTS.filter(item => item.mode === 'fixed');
   assert.deepEqual(fixed.map(item => item.key), ['intake', 'plan_design', 'booking', 'onsite', 'report_collection', 'result_review', 'final_acceptance']);
-  assert.deepEqual(fixed.map(item => item.executorRole), ['healthManager', 'familyDoctor', 'healthPlanner', 'medicalAssistant', 'healthManager', 'familyDoctor', 'healthPlanner']);
+  assert.deepEqual(fixed.map(item => item.executorRole), ['customer', 'familyDoctor', 'healthPlanner', 'medicalAssistant', 'healthManager', 'familyDoctor', 'healthPlanner']);
   assert.equal(fixed.find(item => item.key === 'plan_design').name, '【审核稿】体检方案定制与审核');
   assert.equal(fixed.find(item => item.key === 'onsite').name, '【审核稿】陪同体检与现场记录');
 });

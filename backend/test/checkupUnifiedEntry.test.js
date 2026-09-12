@@ -37,6 +37,18 @@ test('staff-initiated service copies the published Admin module snapshot', () =>
   assert.match(helper, /workflowModuleDecisions: modules\.filter\(item => item\.mode === 'conditional'\)/)
 })
 
+test('staff-initiated checkup automatically pushes the configured questionnaire', () => {
+  const helper = read('src/utils/checkupServiceInstance.js')
+  const questionnaire = read('src/routes/questionnaire.js')
+  const pushModel = read('src/models/PushRecord.js')
+  assert.match(helper, /product\.serviceWorkflow\?\.questionnaireId/)
+  assert.match(helper, /sourceHealthPlanId: servicePlan\._id/)
+  assert.match(helper, /status: 'pending'/)
+  assert.match(questionnaire, /assignment\?\.sourceHealthPlanId/)
+  assert.match(questionnaire, /HealthPlan\.updateOne\(\{ _id: assignment\.sourceHealthPlanId/)
+  assert.match(pushModel, /sourceHealthPlanId/)
+})
+
 test('generic medical-assist entry excludes checkup workflow templates', () => {
   const route = read('src/routes/staff.js')
   assert.match(route, /type === 'medical_assist'/)

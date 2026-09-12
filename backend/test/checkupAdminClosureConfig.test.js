@@ -45,3 +45,14 @@ test('V14 consolidates duplicate checkup templates with a recoverable backup', (
   assert.match(migration, /deleteMany/)
   assert.match(migration, /skipped: 'template_not_found'/)
 })
+
+test('V15 aligns customer intake and adds an outpatient final acceptance gate', () => {
+  const migration = read('src/scripts/migrateOneStopFinalFlowV15.js')
+  const outpatient = read('src/scripts/migrateOutpatientOneStopWorkflowV5.js')
+  const deploy = read('../scripts/deploy.py')
+  assert.match(migration, /用户先填写健康文件/)
+  assert.match(outpatient, /总督办与最终验收/)
+  assert.match(migration, /maintenance_backups/)
+  assert.match(migration, /finalTasks/)
+  assert.match(deploy, /migrateOneStopFinalFlowV15\.js --apply/)
+})

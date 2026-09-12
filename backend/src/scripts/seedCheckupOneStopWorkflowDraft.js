@@ -11,17 +11,17 @@ const TASK_PLAN_DRAFTS = [
   {
     key: 'intake',
     workflowStageKey: 'intake',
-    name: `${DRAFT}体检需求与资料确认`,
+    name: `${DRAFT}用户健康文件填写`,
     mode: 'fixed',
     trigger: '',
     category: 'checkup',
-    executorRole: 'healthManager',
+    executorRole: 'customer',
     remindDaysBefore: 1,
     executorDueOffsetDays: -7,
-    completionStandard: '客户体检目的、既往报告、慢病与用药情况、重点关注项目和可安排时间均已核对；缺失资料及需健康顾问确认的问题已标记。',
+    completionStandard: '用户已完成本次体检健康文件；体检目的、既往报告、慢病与用药情况、重点关注项目和可安排时间均已提交。',
     default_content: {
       fields: ['体检目的', '既往体检报告', '慢病与用药情况', '重点关注项目', '客户可安排时间', '缺失资料', '需专业确认事项'],
-      boundary: '仅做信息收集与完整性核验，不替代健康顾问确定体检项目。',
+      boundary: '这是用户端填写环节，不向医护人员生成重复的资料收集执行任务；健康顾问只在用户提交后定制方案。',
     },
   },
   {

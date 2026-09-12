@@ -7,9 +7,9 @@ const { PRODUCT_NAME, WORKFLOW_PLANS, removeRedundantExpertBookingStage } = requ
 
 test('门诊一站式是完整多阶段服务，不是单次代办', () => {
   assert.equal(PRODUCT_NAME, '门诊一站式服务');
-  assert.equal(WORKFLOW_PLANS.length, 6);
+  assert.equal(WORKFLOW_PLANS.length, 7);
   const names = WORKFLOW_PLANS.map(item => item.name).join('\n');
-  for (const expected of ['资料收集与核对', '健康顾问评估及医院专家确定', '代诊约诊服务', '执行人员安排', '首次代诊开检查单', '检查及专家门诊陪诊与归档']) assert.match(names, new RegExp(expected));
+  for (const expected of ['资料收集与核对', '健康顾问评估及医院专家确定', '代诊约诊服务', '执行人员安排', '首次代诊开检查单', '检查及专家门诊陪诊与归档', '总督办与最终验收']) assert.match(names, new RegExp(expected));
   assert.doesNotMatch(names, /检查日专家号预约/);
   assert.equal(typeof removeRedundantExpertBookingStage, 'function');
   const migration = fs.readFileSync(path.join(__dirname, '../src/scripts/migrateOutpatientOneStopWorkflowV5.js'), 'utf8');
@@ -40,9 +40,17 @@ test('健康规划师总览督办，岗位完成后直接串行解锁下一环�
   assert.match(route, /supervisorRole \|\| 'healthPlanner'/);
   assert.match(route, /dependsOnTaskId: options\.dependsOnTaskId \|\| null/);
   assert.match(route, /activationEvent: workflowPlan\.activationEvent \|\| \(executorBlocked \? 'previous_stage_approved' : ''\)/);
-  assert.match(route, /completedGateIds = \[followUp\._id, supervisor\?\._id\]\.filter\(Boolean\)/);
+  assert.match(route, /completedGateIds = \[followUp\._id, !requiresFinalAcceptance \? supervisor\?\._id : null\]\.filter\(Boolean\)/);
+  assert.match(route, /dependsOnTaskId: \{ \$in: completedGateIds \}/);
   assert.match(route, /deferMedicalAssistantAssignment: isOutpatientOneStop/);
   assert.match(route, /!c\.serviceDate && !isOutpatientOneStop/);
+  const finalAcceptance = WORKFLOW_PLANS.at(-1);
+  assert.equal(finalAcceptance.workflowTaskRole, 'supervisor');
+  assert.equal(finalAcceptance.executorRole, 'healthPlanner');
+  assert.equal(finalAcceptance.closesService, true);
+  assert.match(route, /requiresFinalAcceptance/);
+  assert.match(route, /completedScheme\?\.closesService/);
+  assert.match(route, /tradeStatus: 'completed'/);
 });
 
 test('约诊完成后由健康规划师分别安排两类就医专员', () => {

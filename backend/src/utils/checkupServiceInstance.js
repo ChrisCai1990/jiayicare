@@ -1,5 +1,7 @@
 const HealthPlan = require('../models/HealthPlan')
 const Product = require('../models/Product')
+const PushRecord = require('../models/PushRecord')
+const { DynamicQuestionnaire } = require('../models/DynamicQuestionnaire')
 
 const CHECKUP_WORKFLOW_KEY = 'checkup'
 
@@ -85,6 +87,31 @@ async function ensureStaffInitiatedCheckupService({ patient, staff, productId, d
     },
     status: 'draft',
   })
+  const questionnaireId = product.serviceWorkflow?.questionnaireId
+  if (questionnaireId) {
+    try {
+      const questionnaire = await DynamicQuestionnaire.findOne({ _id: questionnaireId, status: 'active', deletedAt: null }).select('title')
+      if (questionnaire) {
+        const assignment = await PushRecord.create({
+          staffId: staff._id,
+          patientId: patient._id,
+          type: 'questionnaire',
+          questionnaireId: questionnaire._id,
+          sourceHealthPlanId: servicePlan._id,
+          title: questionnaire.title,
+          content: `体检服务已发起，请填写《${questionnaire.title}》，提交后由健康顾问定制体检方案。`,
+        })
+        servicePlan.content.checkupIntake = { questionnaireId: questionnaire._id, assignmentId: assignment._id, status: 'pending', pushedAt: new Date() }
+        servicePlan.markModified('content')
+        await servicePlan.save()
+      }
+    } catch (error) {
+      servicePlan.content.checkupIntake = { questionnaireId, status: 'push_failed', failedAt: new Date() }
+      servicePlan.markModified('content')
+      await servicePlan.save()
+      console.error('[checkup-questionnaire] staff-initiated automatic push failed', { servicePlanId: String(servicePlan._id), error: error.message })
+    }
+  }
   return { servicePlan, reused: false, product }
 }
 

@@ -14,6 +14,7 @@ const pushRecordSchema = new mongoose.Schema({
   planId:          { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan',    default: null },
   questionnaireId: { type: mongoose.Schema.Types.ObjectId, ref: 'DynamicQuestionnaire', default: null },
   sourceOrderId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null },
+  sourceHealthPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null },
   // 内容摘要（用于列表展示）
   title:   { type: String, default: '' },
   content: { type: String, default: '' },
@@ -46,5 +47,6 @@ const pushRecordSchema = new mongoose.Schema({
 pushRecordSchema.index({ patientId: 1, createdAt: -1 });
 pushRecordSchema.index({ staffId: 1, createdAt: -1 });
 pushRecordSchema.index({ patientId: 1, questionnaireId: 1, sourceOrderId: 1 });
+pushRecordSchema.index({ patientId: 1, questionnaireId: 1, sourceHealthPlanId: 1 });
 
 module.exports = mongoose.model('PushRecord', pushRecordSchema);
