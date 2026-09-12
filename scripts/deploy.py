@@ -332,6 +332,16 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
         if code:
             raise RuntimeError("门诊一站式陪诊资料交接迁移失败")
         code, _ = run_migration(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOutpatientFinalCompletionV15.js ] && "
+            f"[ ! -f {REPO_DIR}/.outpatient-final-completion-v15-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/migrateOutpatientFinalCompletionV15.js && "
+            f"touch {REPO_DIR}/.outpatient-final-completion-v15-applied; fi",
+            timeout=120,
+            label="关闭门诊一站式完工后的历史健康规划师督办任务",
+        )
+        if code:
+            raise RuntimeError("门诊一站式最终完工状态迁移失败")
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateCheckupPlanDesignV5.js ] && "
             f"[ ! -f {REPO_DIR}/.checkup-plan-design-v5-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateCheckupPlanDesignV5.js && "

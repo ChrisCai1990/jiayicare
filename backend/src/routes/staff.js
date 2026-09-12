@@ -492,7 +492,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     { path: 'patientId', select: 'name phone gender age chronicDiseases' },
     { path: 'staffId', select: 'name role title' },
     { path: 'assignedTo', select: 'name role' },
-    { path: 'sourceHealthPlanId', select: 'title description content type' },
+    { path: 'sourceHealthPlanId', select: 'title description content type status' },
     { path: 'followUpSchemeId', select: 'name executorRole supervisorRole completionStandard' },
     { path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } },
   ]);
@@ -502,6 +502,8 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
       || (task.sourceType === 'insurance_service' && task.taskRole === 'executor')
       || (task.sourceType === 'scheduled' && (task.tags || []).includes('保险服务'));
     if (!isServiceTask) return false;
+    // 方案已闭环时，历史遗留的活动督办卡也不应再次出现在健康规划师工作台。
+    if (task.sourceType === 'health_plan' && task.sourceHealthPlanId?.status === 'completed') return false;
     if (status === 'active' && !['planned', 'in_progress', 'missed'].includes(task.status)) return false;
     if (status && status !== 'active' && task.status !== status) return false;
     if (includeFuture !== '1' && task.remindAt && task.remindAt > now) return false;

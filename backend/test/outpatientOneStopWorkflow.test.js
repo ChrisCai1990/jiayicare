@@ -105,6 +105,11 @@ test('陪诊完成后资料进入报告审核并由健康顾问生成随访计�
   for (const text of ['prescription_order', 'outpatient_record', "audit_status: 'unaudited'", "aiStatus: 'pending'", 'outpatient_reports_audited', 'system:outpatient_post_visit_review', '门诊一站式服务后续随访', "status: 'completed'", 'workflowCompletedAt']) assert.match(route, new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   for (const text of ['资料查看结论', '后续随访内容', '首次随访日期']) assert.match(advisor, new RegExp(text));
   assert.match(tasksPanel, /陪诊及资料闭环进行中/);
+  assert.match(route, /sourceHealthPlanId\?\.status === 'completed'/);
+  const finalMigration = fs.readFileSync(path.join(__dirname, '../src/scripts/migrateOutpatientFinalCompletionV15.js'), 'utf8');
+  assert.match(finalMigration, /system:outpatient_post_visit_review/);
+  assert.match(finalMigration, /supervisorTasksCompleted/);
+  assert.match(fs.readFileSync(path.join(__dirname, '../../scripts/deploy.py'), 'utf8'), /migrateOutpatientFinalCompletionV15/);
 });
 
 test('健康顾问环节使用结构化就医评估并由后端校验', () => {
