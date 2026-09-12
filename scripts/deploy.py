@@ -370,6 +370,16 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
         if code:
             raise RuntimeError("门诊一站式最终验收环节移除失败")
         code, _ = run_migration(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOutpatientReportAuditTaskV18.js ] && "
+            f"[ ! -f {REPO_DIR}/.outpatient-report-audit-task-v18-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/migrateOutpatientReportAuditTaskV18.js && "
+            f"touch {REPO_DIR}/.outpatient-report-audit-task-v18-applied; fi",
+            timeout=120,
+            label="补齐门诊一站式健管专员资料审核任务",
+        )
+        if code:
+            raise RuntimeError("门诊一站式资料审核任务迁移失败")
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateCheckupPlanDesignV5.js ] && "
             f"[ ! -f {REPO_DIR}/.checkup-plan-design-v5-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateCheckupPlanDesignV5.js && "

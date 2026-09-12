@@ -43,6 +43,11 @@ export default function ServiceTasksPanel() {
   const openTask = async (task) => {
     const sourcePlan = task.sourceHealthPlanId
     const sourcePlanId = sourcePlan?._id || sourcePlan
+    if (task.workflowKey === 'system:outpatient_report_audit') {
+      const reportId = task.formData?.reportIds?.[0]
+      nav(`/patients/${task.patientId?._id}?tab=reports${reportId ? `&reportId=${reportId}` : ''}`)
+      return
+    }
     const checkupText = `${sourcePlan?.title || ''} ${sourcePlan?.content?.templateName || ''}`
     const isCheckupPlanningTask = task.taskRole !== 'supervisor'
       && task.assignedTo?.role === 'familyDoctor'

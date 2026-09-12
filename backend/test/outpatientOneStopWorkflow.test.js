@@ -121,6 +121,13 @@ test('陪诊完成后资料进入报告审核并由健康顾问生成随访计�
   assert.match(tasksPanel, /陪诊及资料闭环进行中/);
   assert.match(tasksPanel, /等待资料审核/);
   assert.match(tasksPanel, /等待健管专员审核病历与检验检查单/);
+  assert.match(tasksPanel, /system:outpatient_report_audit/);
+  assert.match(route, /workflowKey: 'system:outpatient_report_audit'/);
+  assert.match(route, /审核门诊一站式病历与检验检查单/);
+  assert.match(route, /reportAuditTask[\s\S]*status: 'completed'/);
+  const auditMigration = fs.readFileSync(path.join(__dirname, '../src/scripts/migrateOutpatientReportAuditTaskV18.js'), 'utf8');
+  assert.match(auditMigration, /assignedHealthManager/);
+  assert.match(auditMigration, /system:outpatient_report_audit/);
   assert.match(route, /sourceHealthPlanId\?\.status === 'completed'/);
   assert.match(route, /task\.dependsOnTaskId\?\.status === 'completed'/);
   const finalMigration = fs.readFileSync(path.join(__dirname, '../src/scripts/migrateOutpatientFinalCompletionV15.js'), 'utf8');
@@ -128,6 +135,7 @@ test('陪诊完成后资料进入报告审核并由健康顾问生成随访计�
   assert.match(finalMigration, /supervisorTasksCompleted/);
   assert.match(fs.readFileSync(path.join(__dirname, '../../scripts/deploy.py'), 'utf8'), /migrateOutpatientFinalCompletionV15/);
   assert.match(fs.readFileSync(path.join(__dirname, '../../scripts/deploy.py'), 'utf8'), /migrateOutpatientStaleSupervisorsV16/);
+  assert.match(fs.readFileSync(path.join(__dirname, '../../scripts/deploy.py'), 'utf8'), /migrateOutpatientReportAuditTaskV18/);
 });
 
 test('健康顾问环节使用结构化就医评估并由后端校验', () => {

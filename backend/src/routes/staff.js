@@ -1838,7 +1838,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   }
   await followUp.save();
   if (isOutpatientEscortVisit && followUp.status === 'completed') {
-    const patient = await User.findById(followUp.patientId).select('tenantId assignedFamilyDoctor').lean();
+    const patient = await User.findById(followUp.patientId).select('tenantId assignedFamilyDoctor assignedHealthManager').lean();
     const handoff = followUp.formData?.handoffSnapshot || {};
     const booking = handoff.bookingSnapshot || {};
     const checkDate = handoff.checkAppointments?.find(item => item?.appointmentDate)?.appointmentDate
@@ -1864,6 +1864,19 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
       createLinkedReport({ title: '门诊一站式·当日门诊病历', documentCategory: 'outpatient_record', files: followUp.formData.medicalRecordFiles }),
     ]);
     const sourcePlan = await HealthPlan.findById(followUp.sourceHealthPlanId).select('title content.reviewerId').lean();
+    const reportAuditTask = await FollowUp.findOneAndUpdate(
+      { sourceHealthPlanId: followUp.sourceHealthPlanId, sourceType: 'health_plan', taskRole: 'executor', workflowKey: 'system:outpatient_report_audit' },
+      { $set: {
+        patientId: followUp.patientId, staffId: followUp.staffId, assignedTo: patient?.assignedHealthManager || followUp.staffId,
+        date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date(), type: 'other', status: 'planned',
+        content: '', plannedContent: '在报告管理中逐份审核本次门诊病历和检验检查单。',
+        theme: `审核门诊一站式病历与检验检查单 · ${sourcePlan?.title || ''}`,
+        coordinationGroupId: followUp.coordinationGroupId, taskRole: 'executor', workflowKey: 'system:outpatient_report_audit',
+        dependsOnTaskId: followUp._id, isBlocked: false, activationEvent: '', sourceHealthPlanId: followUp.sourceHealthPlanId,
+        formData: { reportIds: reports.map(report => report._id) },
+      } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
     const advisorId = patient?.assignedFamilyDoctor || sourcePlan?.content?.reviewerId || null;
     const advisorTask = await FollowUp.findOneAndUpdate(
       { sourceHealthPlanId: followUp.sourceHealthPlanId, sourceType: 'health_plan', taskRole: 'executor', workflowKey: 'system:outpatient_post_visit_review' },
@@ -1873,7 +1886,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
         content: '', plannedContent: '查看健管专员审核后的陪诊日检验检查单和门诊病历，形成后续随访计划。',
         theme: `执行门诊一站式：查看陪诊资料并制定随访计划 · ${sourcePlan?.title || ''}`,
         coordinationGroupId: followUp.coordinationGroupId, taskRole: 'executor', workflowKey: 'system:outpatient_post_visit_review',
-        dependsOnTaskId: followUp._id, isBlocked: true, activationEvent: 'outpatient_reports_audited',
+        dependsOnTaskId: reportAuditTask._id, isBlocked: true, activationEvent: 'outpatient_reports_audited',
         sourceHealthPlanId: followUp.sourceHealthPlanId, formData: { reportIds: reports.map(report => report._id) },
       } },
       { upsert: true, new: true, setDefaultsOnInsert: true }
@@ -3663,9 +3676,14 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
         MedicalReport.countDocuments({ ...outpatientReportFilter, audit_status: { $ne: 'audited' } }),
       ]);
       if (linkedCount > 0 && pendingCount === 0) {
+        const reportAuditTask = await FollowUp.findOneAndUpdate(
+          { sourceHealthPlanId: report.sourceHealthPlanId, taskRole: 'executor', workflowKey: 'system:outpatient_report_audit', status: { $in: ['planned', 'in_progress'] } },
+          { $set: { status: 'completed', isBlocked: false, completedAt: new Date(), completedBy: 'staff', content: '本次门诊病历和检验检查单已全部审核通过。' } },
+          { new: true }
+        );
         await FollowUp.updateMany(
           { sourceHealthPlanId: report.sourceHealthPlanId, taskRole: 'executor', status: 'planned', $or: [{ workflowKey: 'system:outpatient_post_visit_review' }, { theme: /门诊一站式.*查看陪诊资料并制定随访计划/ }] },
-          { $set: { isBlocked: false, activationEvent: '', date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date() } }
+          { $set: { isBlocked: false, activationEvent: '', ...(reportAuditTask?._id ? { dependsOnTaskId: reportAuditTask._id } : {}), date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date() } }
         );
       }
     }
@@ -9359,8 +9377,9 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         .populate('user', 'name phone').sort({ updatedAt: -1 }).limit(50).lean();
       pendingReports.forEach(r => {
         const createdAt = r.updatedAt || r.createdAt;
+        const isOutpatientMaterial = ['prescription_order', 'outpatient_record'].includes(r.documentCategory) || /门诊一站式/.test(r.title || '');
         todos.push({
-          id: 'report_' + r._id, type: 'report_review', label: '体检报告待审核', priority: 2,
+          id: 'report_' + r._id, type: 'report_review', label: isOutpatientMaterial ? '门诊资料待审核' : '体检报告待审核', priority: 2,
           patientName: r.user?.name || '未知', patientId: String(r.user?._id || ''),
           summary: r.aiSummary ? r.aiSummary.slice(0, 60) : `${r.title} · AI解析完成`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
