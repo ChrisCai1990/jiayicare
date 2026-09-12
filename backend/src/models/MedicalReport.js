@@ -85,6 +85,7 @@ const medicalReportSchema = new mongoose.Schema({
   parseJob:        { type: mongoose.Schema.Types.Mixed, default: null },
   pageParseStatus: { type: mongoose.Schema.Types.Mixed, default: null }, // 单页补提进度：{pageNum,status,startedAt,completedAt,message,itemCount}
   // 保留最近3次单页补提现场，人工修改 reportItems 后仍可追溯 AI 原始候选与最终接受项。
+  imagePageEvidence: { type: mongoose.Schema.Types.Mixed, default: {} }, // 页级影像原文校验状态，不保存图像或额外原文
   pageParseHistory: { type: mongoose.Schema.Types.Mixed, default: [] },
   reviewedByStaff: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   reviewedAt:      { type: Date, default: null },

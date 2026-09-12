@@ -9644,6 +9644,7 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
 规则B：跳过汇总页——页面标题含"异常结果""检查结果"等字样再加上"汇总""说明""及建议""及说明""解读"等词的组合（如"异常结果汇总""体检结果汇总""异常结果及建议""体检异常结果及说明"，不要求逐字匹配这几个例子，只要是同类"异常/结果+说明性后缀"的标题都算），或以"尊敬的XX先生/女士"开头的综合小结页，整页跳过不提取。判断汇总页的核心标准：这一页是把多个不同检查项目（胃镜/肠镜/超声/放射等）的结论压缩摘要在同一页里罗列，而不是聚焦单一检查项目的完整详细报告单。这类汇总页有时按科室分组罗列诊断名词（如"放射科：1、右肺结节 2、左肾上腺增粗"／"消化内镜：1、内痔 2、大肠息肉"），即使看起来像分了类别标题，这仍是汇总页，不是具体检查项目，禁止把"放射科""消化内镜""病理科""彩超"等科室/类别标题当成 name 生成条目，也不能把里面的诊断名词列表当作findings/diagnosis提取——这些内容详细报告单里都有，只从详细报告单提取。
 规则B2：跳过"名词解释""检查异常结果解读""温馨提示""健康建议"类科普说明页——这类页面是对某个诊断名词（如"甲状腺结节3类是什么"）的通用医学科普介绍，不是本次检查的具体所见，禁止把这类科普文字当成检查所见/项目提取（如"肾结石多与饮水少有关，建议..."这种句子禁止提取为任何条目）。
 规则B3：必须先判定整页类型并填写 pageType/pageTitle/skipPage。只有逐项展示原始检查数值、检查所见或诊断意见的详细报告页才是 detail。汇总、小结页=summary，封面/会员信息页=cover，目录/清单页=catalog，建议/科普/解读页=advice。凡不是 detail 的页面必须令 skipPage=true 且 items=[]；禁止一边标记跳过一边仍输出条目。
+规则B4：纯医学影像页（只有超声/CT/MRI/内镜图像、波形、机器参数和测量标记，没有文字所见/诊断/检验表格）必须 pageType="image_only"、hasMedicalImages=true、skipPage=true、items=[]。禁止依据图像、测量标记或人体位置图生成检查所见、正常判断、病灶性质或左右侧；图文混排时只抄图外实际印刷文字。
 规则C：跳过目录页、项目清单页（只有项目名称没有结果的页面）。
 规则D：name 字段必须干净，去除【】[]《》等括号符号和序号前缀，例：✗"内科】" → ✓"内科"。
 规则E：相似项目名称不可混淆，如"碳13"≠"碳14"，"空腹血糖"≠"餐后血糖"。
@@ -9785,7 +9786,8 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
 {
   "institution": "体检机构名称",
   "checkDate": "YYYY-MM-DD",
-  "pageType": "detail | summary | cover | catalog | advice | unknown",
+  "pageType": "detail | summary | cover | catalog | advice | image_only | unknown",
+  "hasMedicalImages": false,
   "pageTitle": "本页原始标题，找不到则留空",
   "skipPage": false,
   "items": [
@@ -9815,7 +9817,7 @@ function safeParseJSON(text) {
   catch { return null; }
 }
 
-const SKIPPED_REPORT_PAGE_TYPES = new Set(['summary', 'cover', 'catalog', 'advice', 'education']);
+const SKIPPED_REPORT_PAGE_TYPES = new Set(['summary', 'cover', 'catalog', 'advice', 'education', 'image_only']);
 function shouldSkipParsedReportPage(parsed) {
   if (!parsed || typeof parsed !== 'object') return false;
   if (parsed.skipPage === true || SKIPPED_REPORT_PAGE_TYPES.has(str(parsed.pageType).toLowerCase())) return true;
@@ -10885,7 +10887,8 @@ async function resumeReportParseJobs() {
 
 // 后台执行报告 AI 解析（不阻塞 HTTP 响应；完成后状态置 pending 待人工审核）
 async function runReportParse(reportId) {
-  const { parseImage } = require('../utils/ai');
+  const { parseImage: rawParseImage } = require('../utils/ai');
+  const { createReportImageParser, recordPageEvidence } = require('../utils/reportImageEvidence');
   const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, getPdfPageCountFromBuffer, isPdfReport, renderSinglePage } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
   const { hasReportItemEvidence, resolveImageParseCompletion } = require('../utils/reportPageSupplement');
@@ -10907,6 +10910,10 @@ async function runReportParse(reportId) {
   const zheyiTemplate = require('../utils/zheyiReportTemplate');
   const useZheyiTemplate = zheyiTemplate.isZheyiReport(report);
 
+  const imagePageEvidence = {};
+  const parseImage = createReportImageParser(rawParseImage, { report, onEvidence: (page, evidence) => {
+    recordPageEvidence(imagePageEvidence, page, evidence);
+  } });
   const isPdf = isPdfReport(report);
   const t0 = Date.now();
   try {
@@ -10937,7 +10944,8 @@ async function runReportParse(reportId) {
 
       // 每完成一个 8 页批次就把首轮结果与下一页位置写入 parseJob.progress。
       // 重启后只重新渲染/调用未完成批次；已完成页的结果继续进入后续质量复核和人工审核。
-      const savedProgress = report.parseJob?.progress?.version === 1 ? report.parseJob.progress : null;
+      const savedProgress = report.parseJob?.progress?.version === 2 ? report.parseJob.progress : null;
+      Object.assign(imagePageEvidence, savedProgress?.imagePageEvidence || {});
       const nextPage = Math.max(1, Number(savedProgress?.nextPage) || 1);
       const knownTotalPages = await getPdfPageCountFromBuffer(pdfBuf);
       let allItems = Array.isArray(savedProgress?.allItems) ? savedProgress.allItems : [];
@@ -10986,7 +10994,7 @@ async function runReportParse(reportId) {
                       + (useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : '')
                       + (useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : '');
                   const firstPassModel = report.type === 'body_comp' ? 'qwen-vl-max' : VL_MODEL;
-                  const text = await parseImage(batchImages[i], firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: FIRST_PASS_MAX_TOKENS, timeoutMs: FIRST_PASS_TIMEOUT_MS });
+                  const text = await parseImage(batchImages[i], firstPassPrompt, { sourcePage: pageNum, isUrl: false, model: firstPassModel, maxTokens: FIRST_PASS_MAX_TOKENS, timeoutMs: FIRST_PASS_TIMEOUT_MS });
                   const p = safeParseJSON(text);
                   if (p) { batchResults[i] = p; break; }
                   if (attempt === FIRST_PASS_ATTEMPTS - 1) console.log(`[parse-ai] 页${i + 1}解析失败 raw(前200)=${String(text).slice(0, 200)}`);
@@ -11000,6 +11008,7 @@ async function runReportParse(reportId) {
             const p = batchResults[i];
             if (!p) continue;
             const pageNum = batchIndex * BATCH_SIZE + i + 1;
+            if (p.imageEvidence?.status === 'image_only') { okPages++; continue; }
             if (p._templateSkip) { okPages++; continue; }
             const firstPassItems = tagReportPageItems(p.items, pageNum);
             if (isBodyCompositionPage(p, firstPassItems, report.type)) bodyCompCandidatePages.add(pageNum);
@@ -11030,7 +11039,8 @@ async function runReportParse(reportId) {
               'parseJob.status': 'processing',
               'parseJob.message': `已完成首轮识别第1-${completedThrough}页，正在继续`,
               'parseJob.progress': {
-                version: 1,
+                version: 2,
+                imagePageEvidence,
                 totalPages: knownTotalPages || totalPageCount,
                 nextPage: completedThrough + 1,
                 totalPageCount,
@@ -11056,7 +11066,7 @@ async function runReportParse(reportId) {
           try {
             const img = await renderSinglePage(pdfBuf, pageNum, 180);
             if (!img) continue;
-            const retryText = await parseImage(img, `${REPORT_PARSE_PROMPT}\n\n【高分辨率质量回退】首轮中本页存在空项目或未提取数值。请按原版面逐行完整重读；lab/data 项没有对应原文数值时不得输出该项，imaging 项没有所见或结论原文时不得输出该项。`, { isUrl: false, model: 'qwen-vl-max', maxTokens: 8192, timeoutMs: 120000 });
+            const retryText = await parseImage(img, `${REPORT_PARSE_PROMPT}\n\n【高分辨率质量回退】首轮中本页存在空项目或未提取数值。请按原版面逐行完整重读；lab/data 项没有对应原文数值时不得输出该项，imaging 项没有所见或结论原文时不得输出该项。`, { sourcePage: pageNum, isUrl: false, model: 'qwen-vl-max', maxTokens: 8192, timeoutMs: 120000 });
             const retryPage = safeParseJSON(retryText);
             if (!retryPage || shouldSkipParsedReportPage(retryPage) || !Array.isArray(retryPage.items)) continue;
             const oldPage = allItems.filter(item => item._page === pageNum);
@@ -11086,13 +11096,13 @@ async function runReportParse(reportId) {
               // 通用报告必须复核首尾明细页之间的每一页；中间页即使首轮误判为空，也不得跳过。
               return Array.from({ length: pages[pages.length - 1] - pages[0] + 1 }, (_, i) => pages[0] + i);
             })();
-        for (const pageNum of coveragePages) {
+        for (const pageNum of coveragePages.filter(page => imagePageEvidence[page]?.status !== 'image_only')) {
           try {
             const img = await renderSinglePage(pdfBuf, pageNum, useShaoyifuTemplate ? 180 : 144);
             if (!img) continue;
             const firstNames = allItems.filter(it => it._page === pageNum).map(it => str(it.name)).filter(Boolean);
             const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}${useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : ''}${useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : ''}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整页漏识别）'}`;
-            const text = await parseImage(img, auditPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: (useShaoyifuTemplate || useZheyiTemplate) ? 8192 : 4096, timeoutMs: (useShaoyifuTemplate || useZheyiTemplate) ? 120000 : 45000 });
+            const text = await parseImage(img, auditPrompt, { sourcePage: pageNum, isUrl: false, model: 'qwen-vl-max', maxTokens: (useShaoyifuTemplate || useZheyiTemplate) ? 8192 : 4096, timeoutMs: (useShaoyifuTemplate || useZheyiTemplate) ? 120000 : 45000 });
             const p = safeParseJSON(text);
             if (!p || !Array.isArray(p.items)) continue;
             const oldPage = allItems.filter(it => it._page === pageNum);
@@ -11122,7 +11132,7 @@ async function runReportParse(reportId) {
             try {
               const img = await renderSinglePage(pdfBuf, pageNum, 200);
               if (!img) continue;
-              const retryText = await parseImage(img, `${REPORT_PARSE_PROMPT}\n\n【邵逸夫模板缺项专项补提】${targetedPrompts[pageNum]}`, { isUrl: false, model: 'qwen-vl-max', maxTokens: 4096, timeoutMs: 120000 });
+              const retryText = await parseImage(img, `${REPORT_PARSE_PROMPT}\n\n【邵逸夫模板缺项专项补提】${targetedPrompts[pageNum]}`, { sourcePage: pageNum, isUrl: false, model: 'qwen-vl-max', maxTokens: 4096, timeoutMs: 120000 });
               const parsed = safeParseJSON(retryText);
               if (!parsed || !Array.isArray(parsed.items)) continue;
               const oldPage = allItems.filter(it => it._page === pageNum);
@@ -11155,7 +11165,7 @@ async function runReportParse(reportId) {
               const maxAttempts = pageNum === 14 ? 3 : 1;
               for (let attempt = 1; attempt <= maxAttempts; attempt++) {
                 try {
-                  retryText = await parseImage(img, `${REPORT_PARSE_PROMPT}${zheyiTemplate.promptForPage(pageNum)}\n\n【浙一缺项专项补提】${targetedPrompts[pageNum]}\n这是第${attempt}次完整性尝试，必须返回本页全部项目。`, { isUrl: false, model: 'qwen-vl-max', maxTokens: 8192, timeoutMs: 120000 });
+                  retryText = await parseImage(img, `${REPORT_PARSE_PROMPT}${zheyiTemplate.promptForPage(pageNum)}\n\n【浙一缺项专项补提】${targetedPrompts[pageNum]}\n这是第${attempt}次完整性尝试，必须返回本页全部项目。`, { sourcePage: pageNum, isUrl: false, model: 'qwen-vl-max', maxTokens: 8192, timeoutMs: 120000 });
                   if (safeParseJSON(retryText)?.items?.length) break;
                 } catch (error) {
                   if (attempt === maxAttempts) throw error;
@@ -11188,7 +11198,7 @@ async function runReportParse(reportId) {
             const img = await renderSinglePage(pdfBuf, pageNum, DPI);
             if (!img) continue;
             const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页曾提取到条数明显少于标题声明数量的检验单：${underOrders.filter(o => allItems.some(it => it._page === pageNum && it.orderName === o.orderName)).map(o => `"${o.orderName}"（标题写${o.expected}项，之前只提取到${o.actual}项）`).join('、')}。请重新逐行核对该检验单在图片中的每一行，确保每一个子项都单独输出一条，不得合并、省略或遗漏任何一行，即使多行结果完全相同（如都是阴性）也要逐条列出。`;
-            const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
+            const text = await parseImage(img, retryPrompt, { sourcePage: pageNum, isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
             const p = safeParseJSON(text);
             if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
             const retryItems = tagReportPageItems(p.items, pageNum);
@@ -11228,7 +11238,7 @@ async function runReportParse(reportId) {
             const img = await renderSinglePage(pdfBuf, pageNum, DPI);
             if (!img) continue;
             const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页的血常规/血细胞分析检验单曾漏提了部分子项（缺少：${missingGroups.join('、')}）。请重新逐行核对该检验单在图片中的每一行，血常规通常有白细胞、中性粒细胞、淋巴细胞、单核细胞、嗜酸性粒细胞、嗜碱性粒细胞、红细胞、血红蛋白、血小板等约20项子指标（含绝对值和百分比两种），必须逐条全部输出，不得省略或遗漏任何一行。`;
-            const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
+            const text = await parseImage(img, retryPrompt, { sourcePage: pageNum, isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
             const p = safeParseJSON(text);
             if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
             const retryItems = tagReportPageItems(p.items, pageNum);
@@ -11264,7 +11274,7 @@ async function runReportParse(reportId) {
           const img = await renderSinglePage(pdfBuf, pageNum, DPI);
           if (!img) continue;
           const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页曾把多个器官的超声内容合并写进了同一条记录（如肝、胆、胰、脾写在一起）。请重新逐句核对"超声所见"和"超声提示"部分，严格按器官各自拆成独立的一条记录，禁止把两个及以上器官的检查所见/诊断意见写进同一条 findings 或 diagnosis 里。`;
-          const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
+          const text = await parseImage(img, retryPrompt, { sourcePage: pageNum, isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
           const p = safeParseJSON(text);
           if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
           const retryItems = tagReportPageItems(p.items, pageNum);
@@ -11293,7 +11303,7 @@ async function runReportParse(reportId) {
           if (!img) continue;
           const emptyNames = allItems.filter(it => it._page === pageNum && PHYSICAL_EXAM_NAMES.some(n => str(it.name).startsWith(n)) && !str(it.findings) && !str(it.diagnosis)).map(it => it.name);
           const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页曾提取到"${emptyNames.join('、')}"项目但检查所见/诊断意见内容为空，请重新核对该项目在图片中的具体内容，完整填写findings和diagnosis字段，不要留空。`;
-          const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
+          const text = await parseImage(img, retryPrompt, { sourcePage: pageNum, isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
           const p = safeParseJSON(text);
           if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
           const retryItems = tagReportPageItems(p.items, pageNum);
@@ -11322,7 +11332,7 @@ async function runReportParse(reportId) {
           const oldPageItems = allItems.filter(it => it._page === pageNum);
           const img = await renderSinglePage(pdfBuf, pageNum, DPI);
           if (!img) continue;
-          const text = await parseImage(img, bodyCompositionPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: 2048 });
+          const text = await parseImage(img, bodyCompositionPrompt, { sourcePage: pageNum, isUrl: false, model: 'qwen-vl-max', maxTokens: 2048 });
           const p = safeParseJSON(text);
           if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
           const retryItems = tagReportPageItems(p.items, pageNum);
@@ -11332,7 +11342,7 @@ async function runReportParse(reportId) {
             ? mergePediatricBodyCompositionRetry(oldPageItems, retryItems)
             : mergeBodyCompositionRetry(oldPageItems, retryItems);
           if (!usePediatricBodyComposition) try {
-            const chartText = await parseImage(img, BODY_COMPOSITION_CHART_PROMPT, { isUrl: false, model: 'qwen-vl-max', maxTokens: 1200 });
+            const chartText = await parseImage(img, BODY_COMPOSITION_CHART_PROMPT, { sourcePage: pageNum, isUrl: false, model: 'qwen-vl-max', maxTokens: 1200 });
             const chartPage = safeParseJSON(chartText);
             if (chartPage && Array.isArray(chartPage.items)) {
               mergedPageItems = mergeBodyCompositionChartItems(mergedPageItems, tagReportPageItems(chartPage.items, pageNum));
@@ -11383,7 +11393,7 @@ async function runReportParse(reportId) {
       let filteredItems = fillEmptyDiagnosisFromFindings(realignUpperAbdomenConclusions(cleanupUltrasoundOverlap(departmentNormalized)));
       const classified = await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems)))))))));
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
-      const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');
+      const summaryText = [...new Set([...summaries, ...Object.entries(imagePageEvidence).filter(([, e]) => e.message).map(([p, e]) => `第${p}页：${e.message}`)].map(s => s.trim()).filter(Boolean))].join('\n');
       const failedPages = totalPageCount - okPages;
       const allFailed = totalPageCount > 0 && okPages === 0;
       const qualityWarning = qualityRetryPages.size
@@ -11396,6 +11406,7 @@ async function runReportParse(reportId) {
           : [summaryText, qualityWarning].filter(Boolean).join('\n');
       await MedicalReport.findByIdAndUpdate(reportId, {
         reportItems: classified,
+        imagePageEvidence,
         aiSummary:   aiSummaryOut,
         aiStatus:    'pending',
         parseJob:    { status: 'completed', completedAt: new Date(), message: `识别完成：${totalPageCount}页，提取${classified.length}项` },
@@ -11423,6 +11434,7 @@ async function runReportParse(reportId) {
         const originalBuffer = bufs[imageIndex];
         let activeBuffer = originalBuffer;
         lastRawText = await parseImage(activeBuffer.toString('base64'), firstPassPrompt, {
+          sourcePage: imageIndex + 1,
           isUrl: false,
           model: firstPassModel,
           maxTokens: report.type === 'body_comp' ? 4096 : 8192,
@@ -11431,11 +11443,11 @@ async function runReportParse(reportId) {
         let parsedPage = safeParseJSON(lastRawText);
         // 手机横拍且未写入 EXIF 方向时，首轮会出现“有原件但 0 项”。仅在这种空结果下
         // 依次尝试 90/270/180 度，正常横版报告不会增加额外识别调用。
-        if (report.type !== 'body_comp' && (!parsedPage || !Array.isArray(parsedPage.items) || parsedPage.items.length === 0)) {
+        if (parsedPage?.imageEvidence?.status !== 'image_only' && report.type !== 'body_comp' && (!parsedPage || !Array.isArray(parsedPage.items) || parsedPage.items.length === 0)) {
           for (const degrees of [90, 270, 180]) {
             try {
               const rotated = await rotateImageBuffer(originalBuffer, degrees);
-              const rotatedRaw = await parseImage(rotated.toString('base64'), firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: 4096 });
+              const rotatedRaw = await parseImage(rotated.toString('base64'), firstPassPrompt, { sourcePage: imageIndex + 1, isUrl: false, model: firstPassModel, maxTokens: 4096 });
               const rotatedPage = safeParseJSON(rotatedRaw);
               if (rotatedPage && Array.isArray(rotatedPage.items) && rotatedPage.items.length > 0) {
                 activeBuffer = rotated;
@@ -11451,7 +11463,7 @@ async function runReportParse(reportId) {
         }
         if (!parsedPage) continue;
         imageOkCount++;
-        if (shouldSkipParsedReportPage(parsedPage) && report.type !== 'body_comp') {
+        if (parsedPage.imageEvidence?.status === 'image_only' || (shouldSkipParsedReportPage(parsedPage) && report.type !== 'body_comp')) {
           console.log(`[parse-ai] 图片${imageIndex + 1}判定为${str(parsedPage.pageType) || '非明细页'}，程序层跳过全部条目`);
           continue;
         }
@@ -11461,7 +11473,7 @@ async function runReportParse(reportId) {
           try {
             const firstNames = pageItems.map(it => str(it.name)).filter(Boolean);
             const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整张漏识别）'}`;
-            const auditText = await parseImage(activeBuffer.toString('base64'), auditPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: 4096 });
+            const auditText = await parseImage(activeBuffer.toString('base64'), auditPrompt, { sourcePage: imageIndex + 1, isUrl: false, model: 'qwen-vl-max', maxTokens: 4096 });
             const auditPage = safeParseJSON(auditText);
             if (auditPage && Array.isArray(auditPage.items)) {
               const merged = mergeCoverageAuditItems(pageItems, tagReportPageItems(auditPage.items, imageIndex + 1));
@@ -11484,7 +11496,7 @@ async function runReportParse(reportId) {
           if (isUpperCombo && beforeUpperCount < 4) {
             try {
               const retryPrompt = `${REPORT_PARSE_PROMPT}\n\n【肝胆胰脾超声强制复核】原图是组合上腹部超声。必须逐段读取并只输出四条独立imaging记录：肝脏超声、胆囊超声、胰腺超声、脾脏超声。每条findings只能放对应器官原文；诊断结论按器官拆回，不得把诊断句另建成检查项目，不得缺少正常器官。`;
-              const retryText = await parseImage(activeBuffer.toString('base64'), retryPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: 4096, timeoutMs: 120000 });
+              const retryText = await parseImage(activeBuffer.toString('base64'), retryPrompt, { sourcePage: imageIndex + 1, isUrl: false, model: 'qwen-vl-max', maxTokens: 4096, timeoutMs: 120000 });
               const retryPage = safeParseJSON(retryText);
               if (retryPage && Array.isArray(retryPage.items)) {
                 const retryItems = tagReportPageItems(retryPage.items, imageIndex + 1);
@@ -11506,7 +11518,7 @@ async function runReportParse(reportId) {
         }
         if (isBodyCompPage && needsBodyCompositionRetry(pageItems, true)) {
           try {
-            const retryText = await parseImage(bufs[imageIndex].toString('base64'), bodyCompositionPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: 2048 });
+            const retryText = await parseImage(bufs[imageIndex].toString('base64'), bodyCompositionPrompt, { sourcePage: imageIndex + 1, isUrl: false, model: 'qwen-vl-max', maxTokens: 2048 });
             const retryPage = safeParseJSON(retryText);
             if (retryPage && !shouldSkipParsedReportPage(retryPage) && Array.isArray(retryPage.items)) {
               const retryItems = tagReportPageItems(retryPage.items, imageIndex + 1);
@@ -11530,7 +11542,7 @@ async function runReportParse(reportId) {
         }
         if (isBodyCompPage && !usePediatricBodyComposition) {
           try {
-            const chartText = await parseImage(bufs[imageIndex].toString('base64'), BODY_COMPOSITION_CHART_PROMPT, { isUrl: false, model: 'qwen-vl-max', maxTokens: 1200 });
+            const chartText = await parseImage(bufs[imageIndex].toString('base64'), BODY_COMPOSITION_CHART_PROMPT, { sourcePage: imageIndex + 1, isUrl: false, model: 'qwen-vl-max', maxTokens: 1200 });
             const chartPage = safeParseJSON(chartText);
             if (chartPage && Array.isArray(chartPage.items)) {
               pageItems = mergeBodyCompositionChartItems(pageItems, tagReportPageItems(chartPage.items, imageIndex + 1));
@@ -11573,12 +11585,13 @@ async function runReportParse(reportId) {
     if (completion.reason === 'revision_changed') console.log(`[parse-ai] 图片识别期间报告版本已变化，保留人工最新${resolvedImageItems.length}项，未覆盖`);
     else if (completion.reason === 'empty_result' && resolvedImageItems.length) console.log(`[parse-ai] 图片识别后无有效项，保留既有${resolvedImageItems.length}项，未覆盖`);
     const imgSummary = imageOkCount
-      ? [...new Set(imageSummaries.map(s => str(s)).filter(Boolean))].join('\n')
+      ? [...new Set([...imageSummaries, ...Object.entries(imagePageEvidence).filter(([, e]) => e.message).map(([p, e]) => `第${p}页：${e.message}`)].map(s => str(s)).filter(Boolean))].join('\n')
       : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${lastRawText ? '\n原始返回(前200字): ' + String(lastRawText).slice(0, 200) : ''}`;
     const preservedSummary = completion.reason === 'revision_changed'
       ? `${imgSummary}${imgSummary ? '\n' : ''}⚠️ 识别期间报告被编辑，本次结果未覆盖人工最新内容。`
       : keepExistingItems ? `${imgSummary}${imgSummary ? '\n' : ''}⚠️ 本次自动识别未提取到有效项目，已保留此前待审核结果。` : imgSummary;
     const imageUpdate = {
+      imagePageEvidence,
       aiSummary:   preservedSummary,
       aiStatus:    'pending',
       parseJob:    { status: 'completed', completedAt: new Date(), message: `识别完成：${bufs.length}张，提取${resolvedImageItems.length}项` },
@@ -11611,12 +11624,18 @@ async function runReportParse(reportId) {
 
 // 只补提指定PDF页并与该页已有结果合并；其他页面及其人工审核内容完全保留。
 async function runReportPageParse(reportId, pageNum) {
-  const { parseImage } = require('../utils/ai');
+  const { parseImage: rawParseImage } = require('../utils/ai');
+  const { createReportImageParser, recordPageEvidence } = require('../utils/reportImageEvidence');
   const { fetchReportBuffer, fetchReportBuffers, renderSinglePage, renderSinglePageRegions, renderSinglePageColumns, splitImageColumns, isPdfReport } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) throw new Error('报告不存在');
+  const imagePageEvidence = {};
+  const parseImage = createReportImageParser(rawParseImage, { report, onEvidence: (page, evidence) => {
+    recordPageEvidence(imagePageEvidence, page, evidence);
+  } });
+
   const { describeExistingReportItems, filterMissingReportItems, hasReportItemEvidence, inferMissingUltrasoundOrgans, mergeSupplementItems, reportItemIdentityKey } = require('../utils/reportPageSupplement');
   const belongsToRequestedPage = item => Number(item.sourcePage) === pageNum || (!item.sourcePage && pageNum === 1);
   const oldPageAtStart = (report.reportItems || []).filter(belongsToRequestedPage);
@@ -11658,7 +11677,7 @@ async function runReportPageParse(reportId, pageNum) {
       const pagePrompt = report.type === 'body_comp' && usePediatricBodyComposition
         ? REPORT_PARSE_PROMPT + PEDIATRIC_BODY_COMPOSITION_PROMPT
         : REPORT_PARSE_PROMPT;
-      const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}${missingOnlyPrompt}\n\n【单页补提】${regionHint}从上到下、从左到右逐行核对全页，仅提取已有清单中没有的项目。`, { isUrl: false, model: attempt === 3 ? 'qwen-vl-max' : 'qwen-vl-plus', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 180000 });
+      const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}${missingOnlyPrompt}\n\n【单页补提】${regionHint}从上到下、从左到右逐行核对全页，仅提取已有清单中没有的项目。`, { sourcePage: pageNum, isUrl: false, model: attempt === 3 ? 'qwen-vl-max' : 'qwen-vl-plus', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 180000 });
       parsed = safeParseJSON(raw);
       if (Array.isArray(parsed?.items)) break;
     } catch (error) {
@@ -11667,17 +11686,28 @@ async function runReportPageParse(reportId, pageNum) {
     }
     }
     if (!Array.isArray(parsed?.items)) throw new Error(`第${pageNum}页${images.length > 1 ? (regionIndex === 0 ? '上半部分' : '下半部分') : ''}未返回有效结果，原数据未改动`);
+    if (shouldSkipParsedReportPage(parsed)) continue;
     let regionItems = parsed.items;
     // 单页补提必须再做一次覆盖复核，专门扫描双栏表格的右半侧和下半部；只合并新增项，不覆盖已有人工数据。
     try {
       const existingNames = [existingItemText, ...regionItems.map(item => str(item.name)).filter(Boolean)].filter(Boolean).join('、');
-      const auditRaw = await parseImage(images[regionIndex], `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n本页已有或本轮已找到的项目：${existingNames || '无'}。请逐行核对右半侧后再核对左半侧，只输出清单之外的遗漏项目。`, { isUrl: false, model: 'qwen-vl-plus', maxTokens: 5000, timeoutMs: 180000 });
+      const auditRaw = await parseImage(images[regionIndex], `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n本页已有或本轮已找到的项目：${existingNames || '无'}。请逐行核对右半侧后再核对左半侧，只输出清单之外的遗漏项目。`, { sourcePage: pageNum, isUrl: false, model: 'qwen-vl-plus', maxTokens: 5000, timeoutMs: 180000 });
       const audit = safeParseJSON(auditRaw);
       if (audit?.items?.length) regionItems = mergeCoverageAuditItems(regionItems, audit.items);
     } catch (auditError) {
       console.log(`[parse-page] ${reportId} P${pageNum} 右栏覆盖复核异常: ${auditError.message}`);
     }
     parsedItems = mergeCoverageAuditItems(parsedItems, regionItems);
+  }
+  if (imagePageEvidence[pageNum]?.status === 'image_only') {
+    const evidence = imagePageEvidence[pageNum];
+    await MedicalReport.findByIdAndUpdate(reportId, { $set: {
+      [`imagePageEvidence.${pageNum}`]: evidence,
+      pageParseStatus: { pageNum, status: 'image_only', startedAt: report.pageParseStatus?.startedAt || new Date(),
+        completedAt: new Date(), itemCount: 0,
+        message: `${evidence.message} 已有条目不自动改写，请人工核对。` },
+    } });
+    return;
   }
   // 模型即使违反差量指令返回整页，也只允许真正缺项进入；同身份且原来为空的未审核项
   // 可由有原文证据的候选补全，避免“第一次空、补提仍被去重挡住”。
@@ -11708,17 +11738,20 @@ async function runReportPageParse(reportId, pageNum) {
     startedAt: report.pageParseStatus?.startedAt || new Date(),
     completedAt,
     targetOrgans,
+    imageEvidence: imagePageEvidence[pageNum] || null,
     beforeItems: oldPageAtStart,
     aiCandidates: parsedItems,
     acceptedItems: acceptedSupplementItems,
     afterItems: classifiedPage,
   }].slice(-3);
+  const pageEvidence = imagePageEvidence[pageNum];
   const resultMessage = acceptedSupplementItems.length
     ? `第${pageNum}页补提完成，新增${supplementMerge.added.length}项，补全${supplementMerge.enriched.length}项，本页共${classifiedPage.length}项`
     : `第${pageNum}页未找到有原文证据的遗漏项，已保留原${oldPage.length}项`;
   await MedicalReport.findByIdAndUpdate(reportId, {
     $set: {
       reportItems: combined,
+      ...(pageEvidence ? { [`imagePageEvidence.${pageNum}`]: pageEvidence } : {}),
       aiStatus: 'pending',
       pageParseStatus: { pageNum, status: acceptedSupplementItems.length ? 'success' : 'needs_review', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt, message: resultMessage, itemCount: acceptedSupplementItems.length },
       pageParseHistory,

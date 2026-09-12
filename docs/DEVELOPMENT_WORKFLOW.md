@@ -174,6 +174,8 @@ GitHub 与阿里云之间没有网络依赖。
 python scripts/deploy.py --push --backend
 ```
 
+本次只授权代码发布、无需执行历史业务数据迁移时，使用 `python scripts/deploy.py --push --skip-data-migrations`。该选项跳过数据迁移及其完成标记，仍执行代码同步、依赖检查、构建、重启和健康检查；不得把跳过称为迁移完成。
+
 代码已经人工推送，只执行服务器部署：
 
 ```powershell

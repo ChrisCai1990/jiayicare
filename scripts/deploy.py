@@ -61,7 +61,7 @@ def push_clean_master():
     print("GitHub push 完成")
 
 
-def deploy(backend_only=False, clean=False, github_source=False):
+def deploy(backend_only=False, clean=False, github_source=False, skip_data_migrations=False):
     require_clean_master()
     revision = run_git("rev-parse", "HEAD").stdout.strip()
     dependency_hash = dependency_fingerprint()
@@ -184,9 +184,17 @@ def deploy(backend_only=False, clean=False, github_source=False):
         if code:
             raise RuntimeError("后端重启失败")
 
+        def run_migration(command, **options):
+            if skip_data_migrations:
+                return 0, ""
+            return remote(command, **options)
+
+        if skip_data_migrations:
+            print("本次仅发布代码，跳过数据迁移；不创建迁移完成标记")
+
         # One-time, idempotent data migration. The server marker prevents later
         # deployments from overwriting Admin adjustments made after review.
-        code, _ = remote(
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/seedServiceWorkflowDrafts.js ] && "
             f"[ ! -f {REPO_DIR}/.service-workflow-drafts-v1-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/seedServiceWorkflowDrafts.js --apply && "
@@ -196,7 +204,7 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("服务流程审核稿初始化失败")
-        code, _ = remote(
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateUnifiedServiceWorkflowV2.js ] && "
             f"[ ! -f {REPO_DIR}/.unified-service-workflow-v2-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateUnifiedServiceWorkflowV2.js --apply && "
@@ -206,7 +214,7 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("统一服务流程数据修正失败")
-        code, _ = remote(
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateUnifiedServiceWorkflowV3Samples.js ] && "
             f"[ ! -f {REPO_DIR}/.unified-service-workflow-v3-samples-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateUnifiedServiceWorkflowV3Samples.js && "
@@ -216,7 +224,7 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("验收样例条件节点补齐失败")
-        code, _ = remote(
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateUnifiedServiceWorkflowV4Deduplicate.js ] && "
             f"[ ! -f {REPO_DIR}/.unified-service-workflow-v4-deduplicate-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateUnifiedServiceWorkflowV4Deduplicate.js && "
@@ -226,7 +234,7 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("门诊一站式重复节点修正失败")
-        code, _ = remote(
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOutpatientOneStopWorkflowV5.js ] && "
             f"[ ! -f {REPO_DIR}/.outpatient-one-stop-workflow-v5-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateOutpatientOneStopWorkflowV5.js && "
@@ -236,7 +244,7 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("门诊一站式六阶段流程迁移失败")
-        code, _ = remote(
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOutpatientOneStopRoleOrderV6.js ] && "
             f"[ ! -f {REPO_DIR}/.outpatient-one-stop-role-order-v6-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateOutpatientOneStopRoleOrderV6.js && "
@@ -246,7 +254,7 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("门诊一站式岗位顺序迁移失败")
-        code, _ = remote(
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOutpatientRemoveDuplicateBookingV10.js ] && "
             f"[ ! -f {REPO_DIR}/.outpatient-remove-duplicate-booking-v10-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateOutpatientRemoveDuplicateBookingV10.js && "
@@ -256,7 +264,7 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("门诊一站式重复预约节点迁移失败")
-        code, _ = remote(
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOutpatientStaffAssignmentV11.js ] && "
             f"[ ! -f {REPO_DIR}/.outpatient-staff-assignment-v11-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateOutpatientStaffAssignmentV11.js && "
@@ -266,14 +274,14 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("门诊一站式执行人员安排迁移失败")
-        code, _ = remote(
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOutpatientBookingSnapshotV12.js ] && [ ! -f {REPO_DIR}/.outpatient-booking-snapshot-v12-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateOutpatientBookingSnapshotV12.js && touch {REPO_DIR}/.outpatient-booking-snapshot-v12-applied; fi",
             timeout=120, label="补齐门诊代诊日预约信息交接",
         )
         if code:
             raise RuntimeError("门诊代诊日预约信息交接迁移失败")
-        code, _ = remote(
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOutpatientIntakeTaskV7.js ] && "
             f"[ ! -f {REPO_DIR}/.outpatient-intake-task-v7-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateOutpatientIntakeTaskV7.js && "
@@ -283,7 +291,7 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("门诊一站式资料收集任务迁移失败")
-        code, _ = remote(
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOutpatientSupervisorGateV8.js ] && "
             f"[ ! -f {REPO_DIR}/.outpatient-supervisor-gate-v8-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateOutpatientSupervisorGateV8.js && "
@@ -293,7 +301,7 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("门诊一站式督办闸门迁移失败")
-        code, _ = remote(
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOutpatientAdvisorDataV9.js ] && "
             f"[ ! -f {REPO_DIR}/.outpatient-advisor-data-v9-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateOutpatientAdvisorDataV9.js && "
@@ -303,7 +311,7 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("健康顾问评估信息迁移失败")
-        code, _ = remote(
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOutpatientProxyEscortHandoffV13.js ] && "
             f"[ ! -f {REPO_DIR}/.outpatient-proxy-escort-handoff-v13-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateOutpatientProxyEscortHandoffV13.js && "
@@ -313,7 +321,7 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("门诊一站式陪诊任务交接修复失败")
-        code, _ = remote(
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateCheckupPlanDesignV5.js ] && "
             f"[ ! -f {REPO_DIR}/.checkup-plan-design-v5-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateCheckupPlanDesignV5.js && "
@@ -323,7 +331,7 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("健康顾问体检方案定制节点补齐失败")
-        code, _ = remote(
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateCheckupSerialWorkflowV6.js ] && "
             f"[ ! -f {REPO_DIR}/.checkup-serial-workflow-v6-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateCheckupSerialWorkflowV6.js && "
@@ -333,7 +341,7 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("体检岗位串行任务迁移失败")
-        code, _ = remote(
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateCheckupSerialWorkflowV7.js ] && "
             f"[ ! -f {REPO_DIR}/.checkup-serial-workflow-v7-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateCheckupSerialWorkflowV7.js && "
@@ -343,7 +351,7 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("体检后续岗位任务阻塞状态迁移失败")
-        code, _ = remote(
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateCheckupClosureV9.js ] && "
             f"[ ! -f {REPO_DIR}/.checkup-closure-v9-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateCheckupClosureV9.js && "
@@ -353,7 +361,7 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("体检报告闭环关联迁移失败")
-        code, _ = remote(
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateLegacyHealthManagerClosureV10.js ] && "
             f"[ ! -f {REPO_DIR}/.legacy-health-manager-closure-v10-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateLegacyHealthManagerClosureV10.js && "
@@ -363,7 +371,7 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("健管专员历史体检收尾任务归并失败")
-        code, _ = remote(
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateCheckupSupervisionClosureV12.js ] && "
             f"[ ! -f {REPO_DIR}/.checkup-supervision-closure-v12-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateCheckupSupervisionClosureV12.js --apply && "
@@ -373,7 +381,7 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("体检一站式最终闭环迁移失败")
-        code, _ = remote(
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateCheckupTemplateWorkflowV13.js ] && "
             f"[ ! -f {REPO_DIR}/.checkup-template-workflow-v13-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateCheckupTemplateWorkflowV13.js --apply && "
@@ -383,7 +391,7 @@ def deploy(backend_only=False, clean=False, github_source=False):
         )
         if code:
             raise RuntimeError("体检模板与产品流程统一迁移失败")
-        code, _ = remote(
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/consolidateCheckupTemplatesV14.js ] && "
             f"[ ! -f {REPO_DIR}/.checkup-template-consolidation-v14-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/consolidateCheckupTemplatesV14.js --apply && "
@@ -424,6 +432,7 @@ def main():
     parser = argparse.ArgumentParser(description="安全部署 JiayiCare")
     parser.add_argument("--push", action="store_true", help="推送干净的 master 后部署")
     parser.add_argument("--backend", action="store_true", help="只安装依赖并重启后端")
+    parser.add_argument("--skip-data-migrations", action="store_true", help="仅发布代码，不执行数据迁移或创建迁移标记")
     parser.add_argument("--clean", action="store_true", help="先清理服务器 node_modules")
     parser.add_argument(
         "--github-source",
@@ -439,6 +448,7 @@ def main():
             backend_only=args.backend,
             clean=args.clean,
             github_source=args.github_source,
+            skip_data_migrations=args.skip_data_migrations,
         )
     except (RuntimeError, OSError) as exc:
         print(f"部署失败：{exc}", file=sys.stderr)

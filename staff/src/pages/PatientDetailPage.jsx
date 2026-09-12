@@ -5,6 +5,7 @@ import { useToast, useStaff } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
 import AiRuleHint from '../components/AiRuleHint'
 import AppIcon from '../components/AppIcon'
+import ReportImageEvidenceNotice from '../components/ReportImageEvidenceNotice'
 import AiCaseReviewPanel from '../components/AiCaseReviewPanel'
 import MedicalAssistRequirementsCard from '../components/MedicalAssistRequirementsCard'
 import ServiceTaskChecklist, { normalizeServiceChecklist, summarizeServiceChecklist } from '../components/ServiceTaskChecklist'
@@ -10935,11 +10936,13 @@ export default function PatientDetailPage() {
         const abnormalCount = ocrEditItems.filter(it => it.status === 'abnormal' || it.status === 'attention').length
         const sourcePages = [...new Set(ocrEditItems.map(it => Number(it.sourcePage)).filter(Number.isFinite).filter(n => n > 0))].sort((a, b) => a - b)
         const firstSourcePage = 1
-        const lastSourcePage = Math.max(Number(ocrReviewReport.pdfPageCount) || 0, sourcePages[sourcePages.length - 1] || 0, 1)
+        const lastSourcePage = Math.max(Number(ocrReviewReport.pdfPageCount) || 0, ocrReviewReport.fileUrls?.length || 0, ...Object.keys(ocrReviewReport.imagePageEvidence || {}).map(Number).filter(Number.isFinite), sourcePages[sourcePages.length - 1] || 0, 1)
         // OCR 可能因封面、病史页或快速扫描策略没有返回条目；审核必须仍可定位到原报告前面的页，
         // 以便明确提示“无提取数据”并按页补提，不能从首个有条目的页开始把它们隐藏掉。
         const expectedPages = Array.from({ length: lastSourcePage }, (_, i) => i + 1)
         const activePage = ocrReviewPage || firstSourcePage
+        const activeImageEvidence = ocrReviewReport.imagePageEvidence?.[activePage]
+        const isImageOnlyPage = activeImageEvidence?.status === 'image_only'
         const activePageParse = Number(ocrReviewReport.pageParseStatus?.pageNum) === activePage ? ocrReviewReport.pageParseStatus : null
         // 后端补提是进程内异步任务；发布重启等中断可能遗留 processing。
         // 超过15分钟后不再锁死按钮，让后端按同一规则接受重新补提。
@@ -11052,7 +11055,7 @@ export default function PatientDetailPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto', marginRight: 12 }}>
                   <button className="btn btn-secondary btn-sm" disabled={activePage <= firstSourcePage} onClick={() => setOcrReviewPage(p => Math.max(firstSourcePage, (p || firstSourcePage) - 1))}>上一页</button>
                   <select value={activePage} onChange={e => setOcrReviewPage(Number(e.target.value))} style={{ padding: '5px 8px', border: '1px solid #D8EDE3', borderRadius: 6 }}>
-                    {expectedPages.map(page => <option key={page} value={page}>第 {page} 页{missingPages.includes(page) ? '（无提取数据）' : ''}</option>)}
+                    {expectedPages.map(page => <option key={page} value={page}>第 {page} 页{ocrReviewReport.imagePageEvidence?.[page]?.status === 'image_only' ? '（影像资料）' : missingPages.includes(page) ? '（无提取数据）' : ''}</option>)}
                   </select>
                   <button className="btn btn-secondary btn-sm" disabled={activePage >= lastSourcePage} onClick={() => setOcrReviewPage(p => Math.min(lastSourcePage, (p || firstSourcePage) + 1))}>下一页</button>
                 </div>
@@ -11126,7 +11129,7 @@ export default function PatientDetailPage() {
                   )
                 })()}
               <div className="modal-body" ref={ocrModalBodyRef} style={{ overflowY: 'auto', flex: 1, minWidth: 0 }}>
-                {activePageParse && (
+                {activePageParse && activePageParse.status !== 'image_only' && (
                   <div style={{ margin: '10px 12px 0', padding: '9px 12px', borderRadius: 7, fontSize: 12, background: pageParsing ? '#FFF8E6' : activePageParse.status === 'success' ? '#F0FDF4' : '#FFF0F0', color: pageParsing ? '#9A6700' : activePageParse.status === 'success' ? '#1E6B50' : '#B42318' }}>
                     {pageParsing ? `第${activePage}页正在补提，请稍候，完成后本页会自动刷新。` : pageParseStale ? `第${activePage}页上次补提已中断，可以重新补提。` : activePageParse.message}
                   </div>
@@ -11154,13 +11157,14 @@ export default function PatientDetailPage() {
                   const attN = abn.filter(it => it.status === 'attention').length
                   return (
                     <>
+                      <ReportImageEvidenceNotice evidence={activeImageEvidence} hasItems={indexed.length > 0} />
                       {/* 异常快览：只看检验数值类异常，短标签一眼可见 */}
                       <div style={{ padding: '12px 14px', background: abn.length ? '#FFF7F5' : '#F3FAF6', borderRadius: 8, marginBottom: 12, border: `1px solid ${abn.length ? '#FAD9D2' : '#CDEBDD'}` }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: '#1A2B24', marginBottom: abn.length ? 8 : 0 }}>
                           检验指标 {labRows.length} 项{imgRows.length > 0 ? ` · 影像/检查 ${imgRows.length} 项` : ''}
                           {abnN > 0 && <span style={{ color: '#DC3545', marginLeft: 8 }}>异常 {abnN}</span>}
                           {attN > 0 && <span style={{ color: '#D97706', marginLeft: 8 }}>注意 {attN}</span>}
-                          {abn.length === 0 && <span style={{ color: '#22A06B', marginLeft: 8, fontWeight: 400 }}>· 检验值未见异常</span>}
+                          {labRows.length > 0 && !activeImageEvidence?.message && abn.length === 0 && <span style={{ color: '#22A06B', marginLeft: 8, fontWeight: 400 }}>· 检验值未见异常</span>}
                           <span style={{ marginLeft: 8, fontWeight: 400, color: '#1E6B50' }}>· 已自动归类 {matchedN} 项（将写入专项筛查）</span>
                           <span style={{ marginLeft: 8, fontWeight: 400, color: reviewedCount === indexedAll.length ? '#16A34A' : '#D97706' }}>· 人工已核对 {reviewedCount}/{indexedAll.length}</span>
                         </div>
@@ -11372,9 +11376,9 @@ export default function PatientDetailPage() {
               </div>
               <div className="modal-footer" style={{ flexShrink: 0, display: 'flex', gap: 8 }}>
                 <button className="btn btn-secondary" style={{ flex: 0.7 }}
-                  disabled={ocrSaving || pageParsing} onClick={handleParseCurrentPage}
-                  title={`只重新提取原报告第${activePage}页，其他页保持不变`}>
-                  {pageParsing ? `第${activePage}页补提中…` : ocrSaving ? '处理中…' : `补提第${activePage}页`}
+                  disabled={ocrSaving || pageParsing || isImageOnlyPage} onClick={handleParseCurrentPage}
+                  title={isImageOnlyPage ? '本页仅有影像资料，请查看文字报告或人工填写' : `只重新提取原报告第${activePage}页，其他页保持不变`}>
+                  {isImageOnlyPage ? '本页无文字可补提' : pageParsing ? `第${activePage}页补提中…` : ocrSaving ? '处理中…' : `补提第${activePage}页`}
                 </button>
                 <button className="btn btn-secondary" style={{ flex: 0.6 }}
                   disabled={ocrSaving} onClick={handleReclassifyOCR}
