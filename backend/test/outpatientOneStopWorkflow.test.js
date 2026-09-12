@@ -112,7 +112,9 @@ test('陪诊完成后资料进入报告审核并由健康顾问生成随访计�
   for (const text of ['陪诊日安排', '检验检查过程', '特殊情况记录', '专家看诊情况、诊疗意见及医嘱', '已打印当日检验检查单', '已要求医生打印当日门诊病历', 'examOrderFiles', 'medicalRecordFiles']) assert.match(escort, new RegExp(text));
   assert.match(escort, /timeline[\s\S]*\.sort/);
   assert.match(route, /previewUrl: signStoredUrl/);
+  const followUpModel = fs.readFileSync(path.join(__dirname, '../src/models/FollowUp.js'), 'utf8');
   for (const text of ['prescription_order', 'outpatient_record', "audit_status: 'unaudited'", "aiStatus: 'pending'", 'outpatient_reports_audited', 'system:outpatient_post_visit_review', '门诊一站式服务后续随访', "status: 'completed'", 'workflowCompletedAt']) assert.match(route, new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(followUpModel, /'outpatient_reports_audited'/);
   assert.match(route, /任务绑定的两份正式资料为准[\s\S]*allRequiredReportsAudited/);
   assert.match(route, /历史任务未保存 reportIds[\s\S]*prescription_order[\s\S]*outpatient_record/);
   assert.match(route, /outpatient-ai-draft[\s\S]*仅健康顾问可生成并审核随访草稿/);
