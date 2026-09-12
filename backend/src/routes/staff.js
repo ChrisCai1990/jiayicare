@@ -92,6 +92,33 @@ const { stepsForInsuranceScenario } = require('../utils/insuranceServiceWorkflow
 const { canUseInsuranceCoverage, isInsuranceScenario } = require('../utils/insuranceCoverage');
 const router = express.Router();
 const activeReportParseJobs = new Set();
+
+// 这两类资料仍可上传、由人工审核/录入，但不得触发视觉模型。documentCategory
+// 是资料归档口径，type 是历史报告技术分类；两者都要判断，避免入口不同而漏拦截。
+function isManualOnlyReport(report) {
+  return report?.type === 'home_monitor'
+    || report?.type === 'functional'
+    || report?.documentCategory === 'functional_medicine';
+}
+
+function manualOnlyReportMessage(report) {
+  return report?.type === 'home_monitor'
+    ? '居家监测报告不支持AI自动解析，请人工录入'
+    : '功能医学报告不支持AI自动解析，请人工审核录入';
+}
+
+async function markReportManualOnly(report) {
+  await MedicalReport.findByIdAndUpdate(report._id, {
+    $set: {
+      aiStatus: 'pending',
+      parseJob: {
+        status: 'skipped',
+        skippedAt: new Date(),
+        message: manualOnlyReportMessage(report),
+      },
+    },
+  });
+}
 // 仅服务端内存的短时页图缓存：同一审核窗口的前后台预加载不会反复转图；进程重启、超时或超量后自动释放。
 const reportPagePreviewCache = new Map();
 const REPORT_PAGE_PREVIEW_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -3330,16 +3357,18 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
 
     // 归类改动后自动重新AI解析：改类目常意味着此前AI按错误类目提取的内容不准了（如从居家监测改成
     // 肿瘤筛查，原本就没解析过；或从肿瘤筛查改成慢性病，原提取项对不上新类目），不能让医护端还得
-    // 另外点一次"重新解析"才生效。居家监测仍不支持自动解析；功能医学报告按原文提取后进入人工审核。
+    // 另外点一次"重新解析"才生效。居家监测和功能医学均只允许人工审核/录入。
     // 已审核报告前面已经挡掉type变更，不会走到这里。
-    if (typeChanged && (report.fileUrl || report.content) && type !== 'home_monitor') {
+    if (typeChanged && (report.fileUrl || report.content) && !isManualOnlyReport(report)) {
       if (process.env.QWEN_API_KEY) {
-        await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'processing' });
-        runReportParse(report._id).catch(err => {
-          console.error('[parse-ai] 归类变更后台重新解析异常', String(report._id), err.message);
-          MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' }).catch(() => {});
+        await MedicalReport.findByIdAndUpdate(report._id, {
+          aiStatus: 'processing',
+          parseJob: { status: 'processing', queuedAt: new Date(), startedAt: new Date(), attemptId: crypto.randomUUID(), message: '归类变更后正在识别' },
         });
+        scheduleReportParse(report._id);
       }
+    } else if (typeChanged && isManualOnlyReport(report)) {
+      await markReportManualOnly(report);
     }
 
     res.json({ success: true, data: report });
@@ -10821,7 +10850,7 @@ function scheduleReportParse(reportId, { resumed = false } = {}) {
       $set: {
         'parseJob.status': 'processing',
         'parseJob.resumedAt': new Date(),
-        'parseJob.message': '服务重启后已自动恢复识别',
+        'parseJob.message': '服务重启后从已保存进度继续识别',
       },
     }).catch(error => console.error('[parse-ai] 恢复任务状态写入失败', id, error.message));
   }
@@ -10838,11 +10867,18 @@ function scheduleReportParse(reportId, { resumed = false } = {}) {
 }
 
 async function resumeReportParseJobs() {
-  const interrupted = await MedicalReport.find({ aiStatus: 'processing' }).select('_id parseJob').lean();
+  const interrupted = await MedicalReport.find({ aiStatus: 'processing' }).select('_id type documentCategory parseJob').lean();
   if (!interrupted.length) return;
-  console.log(`[startup] 恢复 ${interrupted.length} 条报告解析任务`);
+  const manualOnly = interrupted.filter(isManualOnlyReport);
+  if (manualOnly.length) {
+    await Promise.all(manualOnly.map(report => markReportManualOnly(report)));
+    console.log(`[startup] 已将 ${manualOnly.length} 条仅人工审核报告移出AI解析队列`);
+  }
+  const resumable = interrupted.filter(report => !isManualOnlyReport(report));
+  if (!resumable.length) return;
+  console.log(`[startup] 恢复 ${resumable.length} 条报告解析任务`);
   // 单进程串行恢复，避免发布后把多份大扫描 PDF 同时送入视觉模型。
-  for (const report of interrupted) {
+  for (const report of resumable) {
     if (scheduleReportParse(report._id, { resumed: true })) break;
   }
 }
@@ -10850,12 +10886,16 @@ async function resumeReportParseJobs() {
 // 后台执行报告 AI 解析（不阻塞 HTTP 响应；完成后状态置 pending 待人工审核）
 async function runReportParse(reportId) {
   const { parseImage } = require('../utils/ai');
-  const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, renderSinglePage } = require('../utils/pdf');
+  const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, getPdfPageCountFromBuffer, isPdfReport, renderSinglePage } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
   const { hasReportItemEvidence, resolveImageParseCompletion } = require('../utils/reportPageSupplement');
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) return;
+  if (isManualOnlyReport(report)) {
+    await markReportManualOnly(report);
+    return;
+  }
   const parseStartRevision = Number(report.reviewRevision || 0);
   const reportUser = await User.findById(report.user).select('age').lean();
   const usePediatricBodyComposition = isPediatricAge(reportUser?.age);
@@ -10895,24 +10935,31 @@ async function runReportParse(reportId) {
       const BATCH_SIZE = 8;
       const DPI = firstPassDpi;
 
-      let allItems = [];
-      const summaries = [];
+      // 每完成一个 8 页批次就把首轮结果与下一页位置写入 parseJob.progress。
+      // 重启后只重新渲染/调用未完成批次；已完成页的结果继续进入后续质量复核和人工审核。
+      const savedProgress = report.parseJob?.progress?.version === 1 ? report.parseJob.progress : null;
+      const nextPage = Math.max(1, Number(savedProgress?.nextPage) || 1);
+      const knownTotalPages = await getPdfPageCountFromBuffer(pdfBuf);
+      let allItems = Array.isArray(savedProgress?.allItems) ? savedProgress.allItems : [];
+      const summaries = Array.isArray(savedProgress?.summaries) ? savedProgress.summaries : [];
       // 机构名称必须优先来自当前原件。旧档案中的 hospital/institution 可能是
       // 上传时的简称或历史误填，不能因为非空就覆盖首页可见的真实机构。
-      let institution = '';
-      let checkDate = report.checkDate;
-      let totalPageCount = 0;
-      let okPages = 0;
-      const bodyCompCandidatePages = new Set();
-      const detailPages = new Set();
+      let institution = savedProgress?.institution || '';
+      let checkDate = savedProgress?.checkDate || report.checkDate;
+      let totalPageCount = Number(savedProgress?.totalPageCount) || 0;
+      let okPages = Number(savedProgress?.okPages) || 0;
+      const bodyCompCandidatePages = new Set(savedProgress?.bodyCompCandidatePages || []);
+      const detailPages = new Set(savedProgress?.detailPages || []);
       // 大 PDF 不再把“合法 JSON + 空值”误记为成功。只有异常页才进行一次高分辨率回退，
       // 正常页仍保持快速首轮，避免整份报告翻倍消耗视觉 token。
-      const qualityRetryPages = new Set();
+      const qualityRetryPages = new Set(savedProgress?.qualityRetryPages || []);
+      if (nextPage > 1) console.log(`[parse-ai] ${reportId} 从第${nextPage}页继续识别，已保存${nextPage - 1}页首轮结果`);
 
       // onBatch：每批图片转出后立即识别，识别完就释放这批图片内存
       await pdfBufferToImages(pdfBuf, {
         dpi: DPI,
         batchSize: BATCH_SIZE,
+        startPage: nextPage,
         onBatch: async (batchImages, batchIndex) => {
           totalPageCount += batchImages.length;
           console.log(`[parse-ai] PDF批次${batchIndex + 1} ${reportId} ${batchImages.length}页`);
@@ -10977,6 +11024,28 @@ async function runReportParse(reportId) {
             if (!institution && p.institution && !isSuspiciousInstitution(p.institution)) institution = p.institution;
             if (!checkDate && p.checkDate) checkDate = p.checkDate;
           }
+          const completedThrough = batchIndex * BATCH_SIZE + batchImages.length;
+          await MedicalReport.findByIdAndUpdate(reportId, {
+            $set: {
+              'parseJob.status': 'processing',
+              'parseJob.message': `已完成首轮识别第1-${completedThrough}页，正在继续`,
+              'parseJob.progress': {
+                version: 1,
+                totalPages: knownTotalPages || totalPageCount,
+                nextPage: completedThrough + 1,
+                totalPageCount,
+                okPages,
+                allItems,
+                summaries,
+                institution,
+                checkDate,
+                bodyCompCandidatePages: [...bodyCompCandidatePages],
+                detailPages: [...detailPages],
+                qualityRetryPages: [...qualityRetryPages],
+                checkpointedAt: new Date(),
+              },
+            },
+          });
         },
       });
 
@@ -11677,9 +11746,9 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
     // 居家监测设备导出报告（动态血压/动态血糖等）格式五花八门、AI识别容易出错（曾出现机构名/数值
     // 幻觉），2026-07-21需求明确要求这类报告不走AI自动解析，完全人工录入。年度体检报告此前也在
     // 此列，2026-07-28随提取规则改造（改为按原文逐项提取，不再依赖固定分类模板）一并解除限制。
-    if (report.type === 'home_monitor') {
-      await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
-      return res.json({ success: true, message: '居家监测报告不支持AI自动解析，请人工录入', skipAi: true });
+    if (isManualOnlyReport(report)) {
+      await markReportManualOnly(report);
+      return res.json({ success: true, message: manualOnlyReportMessage(report), skipAi: true });
     }
     if (!process.env.QWEN_API_KEY) {
       await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
@@ -11696,7 +11765,7 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
     // 标记处理中，立即返回；识别在后台进行，避免多页 PDF 阻塞请求超时
     await MedicalReport.findByIdAndUpdate(report._id, {
       aiStatus: 'processing',
-      parseJob: { status: 'processing', queuedAt: new Date(), startedAt: new Date(), message: '正在识别' },
+      parseJob: { status: 'processing', queuedAt: new Date(), startedAt: new Date(), attemptId: crypto.randomUUID(), message: '正在识别' },
     });
     scheduleReportParse(report._id);
 

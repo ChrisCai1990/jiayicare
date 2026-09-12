@@ -205,11 +205,15 @@ router.post('/:id/parse-ai', auth, async (req, res) => {
       return res.status(400).json({ success: false, message: '报告无文件内容，无法解析' });
     }
 
-    // 居家监测（血压/血糖/心电等设备读数照片）格式不固定，仍不走自动解析。
-    // 功能医学报告按原文提取，结果一律进入人工审核，绝不自动放行。
-    if (report.type === 'home_monitor') {
-      await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
-      return res.json({ success: true, message: '该类型报告不支持AI自动解析，已加入待人工审核队列' });
+    // 居家监测与功能医学资料仅人工审核/录入，不能从用户端绕过医护端限制。
+    if (report.type === 'home_monitor' || report.type === 'functional' || report.documentCategory === 'functional_medicine') {
+      const message = report.type === 'home_monitor'
+        ? '该类型报告不支持AI自动解析，已加入待人工审核队列'
+        : '功能医学报告不支持AI自动解析，请人工审核录入';
+      await MedicalReport.findByIdAndUpdate(report._id, {
+        $set: { aiStatus: 'pending', parseJob: { status: 'skipped', skippedAt: new Date(), message } },
+      });
+      return res.json({ success: true, message, skipAi: true });
     }
 
     if (!process.env.QWEN_API_KEY) {
@@ -227,7 +231,7 @@ router.post('/:id/parse-ai', auth, async (req, res) => {
       }
       await MedicalReport.findByIdAndUpdate(report._id, {
         aiStatus: 'processing',
-        parseJob: { status: 'processing', queuedAt: new Date(), startedAt: new Date(), message: '正在识别' },
+        parseJob: { status: 'processing', queuedAt: new Date(), startedAt: new Date(), attemptId: require('crypto').randomUUID(), message: '正在识别' },
       });
       staffRouter.scheduleReportParse(report._id);
       return res.json({

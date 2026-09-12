@@ -175,9 +175,10 @@ async function convertPdfRangeWithFallback(pdfPath, firstPage, lastPage, dpi) {
  * @param {number} opts.dpi        默认 96
  * @param {number} opts.batchSize  每批页数，默认 8（内存可控）
  * @param {Function} [opts.onBatch]  async (images: string[], batchIndex: number) => void
+ * @param {number} [opts.startPage]  从该页开始转图（断点续跑时跳过已完成批次）
  * @returns {Promise<string[]>}  若有 onBatch 则返回空数组；否则返回全部图片
  */
-async function pdfBufferToImages(pdfBuffer, { dpi = 96, batchSize = 8, onBatch } = {}) {
+async function pdfBufferToImages(pdfBuffer, { dpi = 96, batchSize = 8, onBatch, startPage = 1 } = {}) {
   // 先把 PDF 写到临时文件（保留整个解析过程，批次共用）
   const tmpPdf = path.join(os.tmpdir(), `pdf-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
   fs.writeFileSync(tmpPdf, pdfBuffer);
@@ -190,9 +191,11 @@ async function pdfBufferToImages(pdfBuffer, { dpi = 96, batchSize = 8, onBatch }
     const knownTotal = totalPages || 999;
 
     const allImages = [];
-    let batchIndex = 0;
+    // startPage 只应落在批次边界；调用方每批落库一次进度，因此恢复时不会跳过半批。
+    const firstPage = Math.max(1, Number(startPage) || 1);
+    let batchIndex = Math.floor((firstPage - 1) / batchSize);
 
-    for (let first = 1; first <= knownTotal; first += batchSize) {
+    for (let first = firstPage; first <= knownTotal; first += batchSize) {
       const last = Math.min(first + batchSize - 1, knownTotal);
       const images = await convertPdfRangeWithFallback(tmpPdf, first, last, dpi);
       if (images.length === 0) break; // pdftoppm 返回空说明已超出实际页数
