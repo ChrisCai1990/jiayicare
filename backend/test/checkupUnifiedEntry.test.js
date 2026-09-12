@@ -18,7 +18,7 @@ test('staff-initiated checkup selects an Admin-published workflow product', () =
   assert.match(frontend, /具体服务需求 \*/)
   assert.match(frontend, /Admin 已发布流程/)
   assert.match(backend, /请选择有效的期望服务时间/)
-  assert.match(plansPage, /selectedTpl\?\.name === '体检一站式服务'/)
+  assert.match(plansPage, /\/体检一站式服务\/\.test\(selectedTpl\?\.name \|\| ''\)/)
   assert.match(plansPage, /generateAIAnnualCheckupPlan\(patientId, selectedTpl\._id/)
 })
 
@@ -55,7 +55,7 @@ test('staff-initiated checkup automatically pushes the configured questionnaire'
 test('medical-assist entry keeps checkup one-stop, excludes ordinary checkup templates and deduplicates names', () => {
   const route = read('src/routes/staff.js')
   assert.match(route, /type === 'medical_assist'/)
-  assert.match(route, /tpl\.name === '体检一站式服务'/)
+  assert.match(route, /\/体检一站式服务\/\.test\(tpl\.name \|\| ''\)/)
   assert.match(route, /\['annual_checkup', 'checkup'\]\.includes\(tpl\.content\?\.serviceDomain\)/)
   assert.match(route, /const uniqueTemplates = new Map\(\)/)
 })

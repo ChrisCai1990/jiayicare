@@ -619,7 +619,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
 
   const handleSubmit = async () => {
     const outpatientService = /门诊一站式/.test(`${selectedTpl?.name || ''} ${form.name || ''}`)
-    const checkupOneStop = selectedTpl?.name === '体检一站式服务'
+    const checkupOneStop = /体检一站式服务/.test(selectedTpl?.name || '')
     if (!patientId) { setError('请搜索并选择会员'); return }
     if (!form.name.trim()) { setError('请填写方案名称'); return }
     if (!form.serviceDate) { setError('请选择服务日期'); return }
@@ -663,7 +663,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
   }
 
   const inputStyle = { width: '100%', padding: '7px 10px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit' }
-  const checkupOneStop = selectedTpl?.name === '体检一站式服务'
+  const checkupOneStop = /体检一站式服务/.test(selectedTpl?.name || '')
   // 注意：作为函数调用而非 JSX 组件，避免每次 render 创建新组件导致输入框失焦
   const renderField = (label, fieldKey, rows, placeholder) => (
     <div className="form-group" style={{ marginBottom: 0 }}>

@@ -3815,7 +3815,7 @@ router.get('/plan-templates', staffAuth, async (req, res) => {
     // 普通体检模板仍只供体检方案入口使用；体检一站式必须保留在就医协助入口，
     // 后续创建时由 Admin 产品 serviceWorkflow 接管，不能因为 serviceDomain=annual_checkup 被误删。
     if (type === 'medical_assist') {
-      templates = templates.filter(tpl => tpl.name === '体检一站式服务'
+      templates = templates.filter(tpl => /体检一站式服务/.test(tpl.name || '')
         || !['annual_checkup', 'checkup'].includes(tpl.content?.serviceDomain));
     }
     if (patientBrand) {
