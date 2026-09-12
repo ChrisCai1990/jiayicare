@@ -1,4 +1,5 @@
-import React from 'react'
+import React, { useState } from 'react'
+import { staffAPI } from '../api'
 
 export const isOutpatientPostVisitReviewTask = task => task?.taskRole === 'executor' && /门诊一站式.*查看陪诊资料并制定随访计划/.test(task?.theme || '')
 
@@ -17,13 +18,32 @@ export const validateOutpatientPostVisitReview = value => !value?.reviewSummary?
 
 const labelStyle = { display: 'grid', gap: 5, fontSize: 12, color: '#65776F' }
 
-export default function OutpatientPostVisitReviewForm({ value, onChange }) {
+export default function OutpatientPostVisitReviewForm({ task, value, onChange }) {
   const data = emptyOutpatientPostVisitReview(value)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState('')
   const update = patch => onChange({ ...data, ...patch })
+  const generateDraft = async () => {
+    if (!task?._id) return
+    setAiLoading(true); setAiError('')
+    try {
+      const result = await staffAPI.generateOutpatientFollowUpDraft(task._id)
+      update(result.data || {})
+    } catch (error) {
+      setAiError(error.message || 'AI草稿生成失败')
+    } finally { setAiLoading(false) }
+  }
   return <div style={{ display: 'grid', gap: 14 }}>
     <section style={{ padding: 14, border: '1px solid #B9DDD0', borderRadius: 10, background: '#F2F8F5', lineHeight: 1.8 }}>
       <b>陪诊资料已由健管专员审核</b>
       <div style={{ fontSize: 12, color: '#65776F' }}>请先在报告管理中查看当日检验检查单和门诊病历，再记录医学判断并生成后续随访计划。</div>
+    </section>
+    <section style={{ padding: 14, border: '1px solid #D8E2DE', borderRadius: 10, background: '#FAFCFB' }}>
+      <button type="button" className="btn btn-secondary" onClick={generateDraft} disabled={aiLoading || task?.isBlocked}>
+        {aiLoading ? 'AI正在阅读资料...' : '✨ AI根据病历生成随访草稿'}
+      </button>
+      <div style={{ marginTop: 8, fontSize: 12, color: '#65776F' }}>AI只生成可编辑草稿，不会直接提交；请健康顾问核对医学事实、随访内容和日期后确认。</div>
+      {aiError && <div style={{ marginTop: 8, color: '#B42318', fontSize: 12 }}>{aiError}</div>}
     </section>
     <label style={labelStyle}>资料查看结论 *<textarea className="form-control" rows={4} value={data.reviewSummary} onChange={e => update({ reviewSummary: e.target.value })} placeholder="概括检查情况、专家诊疗意见、用药及后续关注重点" /></label>
     <label style={labelStyle}>后续随访内容 *<textarea className="form-control" rows={4} value={data.followUpContent} onChange={e => update({ followUpContent: e.target.value })} placeholder="填写需要跟进的症状、用药、检查结果、复查或复诊事项" /></label>

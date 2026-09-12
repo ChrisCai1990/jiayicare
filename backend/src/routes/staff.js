@@ -498,6 +498,19 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     { path: 'followUpSchemeId', select: 'name executorRole supervisorRole completionStandard' },
     { path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } },
   ]);
+  // 审核动作可能发生在任务迁移或重建之前。工作台加载时以任务绑定的两份正式资料为准
+  // 自愈解锁，避免健康顾问明明已拿到待办，页面却仍错误显示“等待上一环节”。
+  for (const task of queriedTasks) {
+    if (!task.isBlocked || task.taskRole !== 'executor' || !/门诊一站式.*查看陪诊资料并制定随访计划/.test(task.theme || '')) continue;
+    const reportIds = [...new Set((task.formData?.reportIds || []).map(String).filter(Boolean))];
+    if (!reportIds.length) continue;
+    const auditedCount = await MedicalReport.countDocuments({ _id: { $in: reportIds }, audit_status: 'audited' });
+    if (auditedCount !== reportIds.length) continue;
+    task.isBlocked = false;
+    task.activationEvent = '';
+    task.date = new Date(); task.remindAt = new Date(); task.nextFollowUpDate = new Date();
+    await FollowUp.updateOne({ _id: task._id }, { $set: { isBlocked: false, activationEvent: '', date: task.date, remindAt: task.remindAt, nextFollowUpDate: task.nextFollowUpDate } });
+  }
   const now = new Date();
   const tasks = queriedTasks.filter(task => {
     const isServiceTask = (task.sourceType === 'health_plan' && ['executor', 'supervisor'].includes(task.taskRole))
@@ -1594,6 +1607,35 @@ router.post('/followups/:id/return-previous', staffAuth, checkPermission('follow
   await current.save();
   await previous.populate('assignedTo', 'name role');
   res.json({ success: true, data: { current, previous }, message: `已退回上一环节${previous.assignedTo?.name ? `，由${previous.assignedTo.name}补充处理` : ''}` });
+});
+
+// AI只生成本次门诊资料的随访草稿；健康顾问仍需核对、修改并通过原任务提交。
+router.post('/followups/:id/outpatient-ai-draft', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可生成并审核随访草稿' });
+    const task = await FollowUp.findById(req.params.id).populate('patientId', 'name gender age chronicDiseases preferences').populate('dependsOnTaskId', 'formData executedContent');
+    if (!task || task.taskRole !== 'executor' || !/门诊一站式.*查看陪诊资料并制定随访计划/.test(task.theme || '')) return res.status(404).json({ success: false, message: '未找到门诊随访审核任务' });
+    if (req.staff.role !== 'superadmin' && String(task.assignedTo || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '该随访审核任务未分配给当前健康顾问' });
+    if (task.isBlocked) return res.status(409).json({ success: false, message: '资料尚未全部审核，暂不能生成随访草稿' });
+    const reportIds = [...new Set((task.formData?.reportIds || []).map(String).filter(Boolean))];
+    const reports = await MedicalReport.find({ _id: { $in: reportIds }, audit_status: 'audited' }).select('title documentCategory checkDate hospital reportItems aiSummary keyFindings note').lean();
+    if (!reports.length || reports.length !== reportIds.length) return res.status(409).json({ success: false, message: '本次病历或检验检查单尚未全部审核' });
+    const reportText = reports.map(report => {
+      const items = (report.reportItems || []).slice(0, 80).map(item => [item.name, item.value, item.unit, item.referenceRange ? `参考${item.referenceRange}` : '', item.status, item.findings, item.diagnosis, item.conclusion].filter(Boolean).join('｜')).join('\n');
+      return `【${report.title}】日期：${report.checkDate || '未记录'}；医院：${report.hospital || '未记录'}\n${items || report.aiSummary || (report.keyFindings || []).join('；') || report.note || '无结构化文字，请结合陪诊记录并提示人工核对原件'}`;
+    }).join('\n\n');
+    const escort = task.dependsOnTaskId?.formData || {};
+    const escortText = [escort.inspectionProcess && `检查过程：${escort.inspectionProcess}`, escort.specialSituations && `特殊情况：${escort.specialSituations}`, escort.expertVisitSummary && `专家看诊：${escort.expertVisitSummary}`].filter(Boolean).join('\n') || task.dependsOnTaskId?.executedContent || '无文字记录';
+    const { chat } = require('../utils/ai');
+    const today = new Date().toISOString().slice(0, 10);
+    const prompt = `你是协助健康顾问整理门诊随访计划的医疗文书助手。只能依据下列已审核资料和陪诊记录生成草稿，不得补写不存在的诊断、药物剂量、检查结果或复诊日期。信息不足时明确写“待健康顾问核对”。随访日期不得早于 ${today}。\n\n会员：${task.patientId?.name || ''}，${task.patientId?.gender || '性别未记录'}，${task.patientId?.age || '年龄未记录'}岁\n慢病：${task.patientId?.chronicDiseases?.join('、') || '未记录'}\n偏好与禁忌：${task.patientId?.preferences || '无'}\n\n${reportText}\n\n【陪诊记录】\n${escortText}\n\n仅输出JSON：{"reviewSummary":"对检查情况、专家意见、用药和关注点的客观概括","followUpContent":"分条列出需要跟进的症状、用药、结果、复查或复诊事项，并注明需核对项","followUpDate":"YYYY-MM-DD"}`;
+    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1400 });
+    let draft = {};
+    try { const match = text.trim().match(/\{[\s\S]*\}/); if (match) draft = JSON.parse(match[0]); } catch {}
+    if (!draft.reviewSummary || !draft.followUpContent || !/^\d{4}-\d{2}-\d{2}$/.test(draft.followUpDate || '')) return res.status(502).json({ success: false, message: 'AI未能生成完整草稿，请重试或人工填写' });
+    if (draft.followUpDate < today) draft.followUpDate = today;
+    res.json({ success: true, data: { reviewSummary: String(draft.reviewSummary), followUpContent: String(draft.followUpContent), followUpDate: draft.followUpDate, aiGenerated: true } });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
 // ── PUT /api/staff/followups/:id ──────────────────────────────────
@@ -3609,7 +3651,7 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
       ]);
       if (linkedCount > 0 && pendingCount === 0) {
         await FollowUp.updateMany(
-          { sourceHealthPlanId: report.sourceHealthPlanId, taskRole: 'executor', workflowKey: 'system:outpatient_post_visit_review', status: 'planned' },
+          { sourceHealthPlanId: report.sourceHealthPlanId, taskRole: 'executor', status: 'planned', $or: [{ workflowKey: 'system:outpatient_post_visit_review' }, { theme: /门诊一站式.*查看陪诊资料并制定随访计划/ }] },
           { $set: { isBlocked: false, activationEvent: '', date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date() } }
         );
       }
