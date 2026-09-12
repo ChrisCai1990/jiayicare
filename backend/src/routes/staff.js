@@ -1844,10 +1844,17 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
       { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'supervisor', status: { $in: ['planned', 'in_progress'] } },
       { $set: { status: 'completed', isBlocked: false, completedAt: new Date(), completedBy: 'staff', formData: result } }
     );
-    await HealthPlan.updateOne(
+    const completedPlan = await HealthPlan.findOneAndUpdate(
       { _id: followUp.sourceHealthPlanId },
-      { $set: { status: 'completed', 'content.workflowCompletedAt': new Date(), 'content.workflowCompletedBy': req.staff._id } }
+      { $set: { status: 'completed', 'content.workflowCompletedAt': new Date(), 'content.workflowCompletedBy': req.staff._id } },
+      { new: true }
     );
+    if (completedPlan?.sourceOrderId) {
+      await Order.updateOne(
+        { _id: completedPlan.sourceOrderId, totalUnits: { $lte: 1 }, status: { $nin: ['completed', 'cancelled'] } },
+        { $set: { status: 'completed', tradeStatus: 'completed', fulfillmentStatus: 'completed', completedAt: new Date(), usedUnits: 1 } }
+      );
+    }
   }
   if (outpatientStaffAssignment) {
     const commonFilter = { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'executor', status: { $in: ['planned', 'in_progress'] } };

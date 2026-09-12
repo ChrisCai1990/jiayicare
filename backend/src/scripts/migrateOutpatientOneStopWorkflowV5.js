@@ -9,8 +9,7 @@ const WORKFLOW_PLANS = [
   { name: '门诊一站式：代诊约诊服务', executorRole: 'healthManager', executorDueOffsetDays: -8, completionStandard: '已按健康顾问建议安排代诊所需的约诊服务，并确认开单、特殊检查及检查后专家门诊安排。' },
   { name: '门诊一站式：执行人员安排', executorRole: 'healthPlanner', executorDueOffsetDays: -7, requiresCoordination: false, completionStandard: '健康规划师已根据实际服务安排，分别指定首次代诊和检查日陪诊的就医专员。' },
   { name: '门诊一站式：首次代诊开检查单', executorRole: 'medicalAssistant', executorDueOffsetDays: -7, completionStandard: '已完成首次代诊，按医嘱取得检查单和首次门诊病历，并完整反馈开单结果。' },
-  { name: '门诊一站式：检查及专家门诊陪诊与归档', executorRole: 'medicalAssistant', executorDueOffsetDays: 0, fixedToServiceDate: true, completionStandard: '已陪同客户完成检查和专家门诊，两次门诊病历、检查单及已取得结果均已上传归档，已提交健康规划师最终验收。' },
-  { name: '门诊一站式：总督办与最终验收', workflowStageKey: 'final_acceptance', workflowTaskRole: 'supervisor', executorRole: 'healthPlanner', executorDueOffsetDays: 1, activationEvent: 'previous_completed', closesService: true, requiresCoordination: false, completionStandard: '健康规划师已核对资料、评估、预约、人员安排、首次代诊开单、检查及专家门诊陪诊归档均已完成；遗留事项已处理或明确交接，确认关闭本次服务。' },
+  { name: '门诊一站式：检查及专家门诊陪诊与归档', executorRole: 'medicalAssistant', executorDueOffsetDays: 0, fixedToServiceDate: true, completionStandard: '已陪同客户完成检查和专家门诊，两次门诊病历、检查单及已取得结果均已上传归档；资料审核后由健康顾问生成随访计划并自动结束服务。' },
 ];
 
 async function removeRedundantExpertBookingStage(db, plans) {

@@ -5,7 +5,7 @@ const { PRODUCT_NAME: OUTPATIENT_PRODUCT, WORKFLOW_PLANS } = require('./migrateO
 const { PRODUCT_NAME: CHECKUP_PRODUCT, TASK_PLAN_DRAFTS } = require('./seedCheckupOneStopWorkflowDraft');
 
 const CHECKUP_NOTE = '健康规划师全程总督办；用户先填写健康文件，健康顾问定制方案，报告解析并经健管审核后由健康顾问完成结果评估和随访计划，最终由健康规划师验收关闭。';
-const OUTPATIENT_NOTE = '健康规划师全程总督办；按健管收资料、健康顾问评估、健管约诊、健康规划师安排人员、就医专员代诊开单及陪诊归档流转，最终由健康规划师验收关闭。';
+const OUTPATIENT_NOTE = '健康规划师全程查看进度；按健管收资料、健康顾问评估、健管约诊、健康规划师安排人员、就医专员代诊开单及陪诊归档流转，资料审核后由健康顾问生成随访计划并自动关闭。';
 
 async function upsertPlans(plans, drafts, stripDraft = false, oneStopSupervisor = false) {
   const modules = [];
@@ -83,8 +83,10 @@ async function run({ apply = false } = {}) {
       const snapshot = isCheckup ? checkupSnapshot : outpatientSnapshot;
       await healthPlans.updateOne({ _id: service._id }, { $set: { 'content.followUpPlanId': modules[0].id, 'content.followUpPlans': modules, 'content.workflowModules': modules, 'content.serviceWorkflowSnapshot': snapshot, updatedAt: new Date() } });
       if (isCheckup || !service.pushedAt) continue;
-      const finalModule = outpatientModules[outpatientModules.length - 1];
-      const finalPlan = WORKFLOW_PLANS[WORKFLOW_PLANS.length - 1];
+      const finalPlan = WORKFLOW_PLANS.find(item => item.workflowTaskRole === 'supervisor' && item.closesService);
+      if (!finalPlan) continue;
+      const finalIndex = WORKFLOW_PLANS.indexOf(finalPlan);
+      const finalModule = outpatientModules[finalIndex];
       const patient = await db.collection('users').findOne({ _id: service.patientId }, { projection: { assignedHealthPlanner: 1 } });
       const assignedTo = service.content?.supervisorId || patient?.assignedHealthPlanner;
       if (!assignedTo) continue;
