@@ -119,6 +119,8 @@ test('陪诊完成后资料进入报告审核并由健康顾问生成随访计�
   assert.match(route, /只能依据下列已审核资料和陪诊记录生成草稿/);
   for (const text of ['资料查看结论', '后续随访内容', '首次随访日期']) assert.match(advisor, new RegExp(text));
   assert.match(tasksPanel, /陪诊及资料闭环进行中/);
+  assert.match(tasksPanel, /等待资料审核/);
+  assert.match(tasksPanel, /等待健管专员审核病历与检验检查单/);
   assert.match(route, /sourceHealthPlanId\?\.status === 'completed'/);
   assert.match(route, /task\.dependsOnTaskId\?\.status === 'completed'/);
   const finalMigration = fs.readFileSync(path.join(__dirname, '../src/scripts/migrateOutpatientFinalCompletionV15.js'), 'utf8');
