@@ -503,9 +503,22 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
   for (const task of queriedTasks) {
     if (!task.isBlocked || task.taskRole !== 'executor' || !/门诊一站式.*查看陪诊资料并制定随访计划/.test(task.theme || '')) continue;
     const reportIds = [...new Set((task.formData?.reportIds || []).map(String).filter(Boolean))];
-    if (!reportIds.length) continue;
-    const auditedCount = await MedicalReport.countDocuments({ _id: { $in: reportIds }, audit_status: 'audited' });
-    if (auditedCount !== reportIds.length) continue;
+    const sourceHealthPlanId = task.sourceHealthPlanId?._id || task.sourceHealthPlanId;
+    const reports = reportIds.length
+      ? await MedicalReport.find({ _id: { $in: reportIds } }).select('documentCategory title audit_status').lean()
+      : [];
+    // 兼容历史任务未保存 reportIds、保存了失效 ID，或资料在任务重建后被重新上传的情况：
+    // 回退到同一服务方案下的正式“检验检查单 + 门诊病历”两类资料判断，不能再依赖上一任务状态。
+    const effectiveReports = reports.length === reportIds.length && reports.length
+      ? reports
+      : await MedicalReport.find({ sourceHealthPlanId, $or: [
+        { documentCategory: { $in: ['prescription_order', 'outpatient_record'] } },
+        { title: { $in: ['门诊一站式·当日检验检查单', '门诊一站式·当日门诊病历'] } },
+      ] }).select('documentCategory title audit_status').lean();
+    const categories = new Set(effectiveReports.map(report => report.documentCategory || (/病历/.test(report.title || '') ? 'outpatient_record' : /检验检查单/.test(report.title || '') ? 'prescription_order' : '')));
+    const allRequiredReportsAudited = ['prescription_order', 'outpatient_record'].every(category => categories.has(category))
+      && effectiveReports.every(report => report.audit_status === 'audited');
+    if (!allRequiredReportsAudited) continue;
     task.isBlocked = false;
     task.activationEvent = '';
     task.date = new Date(); task.remindAt = new Date(); task.nextFollowUpDate = new Date();

@@ -35,8 +35,8 @@ export default function OutpatientPostVisitReviewForm({ task, value, onChange })
   }
   return <div style={{ display: 'grid', gap: 14 }}>
     <section style={{ padding: 14, border: '1px solid #B9DDD0', borderRadius: 10, background: '#F2F8F5', lineHeight: 1.8 }}>
-      <b>陪诊资料已由健管专员审核</b>
-      <div style={{ fontSize: 12, color: '#65776F' }}>请先在报告管理中查看当日检验检查单和门诊病历，再记录医学判断并生成后续随访计划。</div>
+      <b>{task?.isBlocked ? '陪诊资料尚待健管专员完成审核' : '陪诊资料已由健管专员审核'}</b>
+      <div style={{ fontSize: 12, color: '#65776F' }}>{task?.isBlocked ? '两份资料全部审核后，本任务和AI草稿按钮会自动启用。' : '请先在报告管理中查看当日检验检查单和门诊病历，再记录医学判断并生成后续随访计划。'}</div>
     </section>
     <section style={{ padding: 14, border: '1px solid #D8E2DE', borderRadius: 10, background: '#FAFCFB' }}>
       <button type="button" className="btn btn-secondary" onClick={generateDraft} disabled={aiLoading || task?.isBlocked}>
