@@ -35,7 +35,7 @@ export function ChecklistAttachments({ item, index, mode, update, uploadLabel = 
       const added = []
       for (const file of files) {
         const result = await staffAPI.uploadReportFile(file, () => {})
-        added.push({ url: result.url, ossKey: result.ossKey || '', name: file.name, mimeType: result.mimeType || file.type, fileSize: String(result.fileSize || file.size || '') })
+        added.push({ url: result.url, previewUrl: result.previewUrl || '', ossKey: result.ossKey || '', name: file.name, mimeType: result.mimeType || file.type, fileSize: String(result.fileSize || file.size || '') })
       }
       update(index, { attachments: [...attachments, ...added] })
     } catch (err) {
@@ -61,13 +61,13 @@ export function ChecklistAttachments({ item, index, mode, update, uploadLabel = 
       <div onClick={event => event.stopPropagation()} style={{ width: 'min(1000px, 94vw)', height: 'min(820px, 90vh)', background: '#fff', borderRadius: 12, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 18px 60px rgba(0,0,0,.28)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: '1px solid #E7ECE9' }}>
           <strong style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13 }}>{preview.name || '检查单预览'}</strong>
-          <a href={fileUrl(preview.url)} download target="_blank" rel="noreferrer" style={{ color: '#1E6B50', fontSize: 12 }}>下载原文件</a>
+          <a href={fileUrl(preview.previewUrl || preview.url)} download target="_blank" rel="noreferrer" style={{ color: '#1E6B50', fontSize: 12 }}>下载原文件</a>
           <button type="button" onClick={() => setPreview(null)} aria-label="关闭预览" style={{ border: 0, background: 'transparent', cursor: 'pointer', fontSize: 24, color: '#65776F', lineHeight: 1 }}>×</button>
         </div>
         <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#F3F5F4', padding: preview.mimeType === 'application/pdf' ? 0 : 12 }}>
           {preview.mimeType === 'application/pdf'
-            ? <iframe title={preview.name || '检查单PDF'} src={fileUrl(preview.url)} style={{ width: '100%', height: '100%', border: 0, background: '#fff' }} />
-            : <img src={fileUrl(preview.url)} alt={preview.name || '检查单'} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />}
+            ? <iframe title={preview.name || '检查单PDF'} src={fileUrl(preview.previewUrl || preview.url)} style={{ width: '100%', height: '100%', border: 0, background: '#fff' }} />
+            : <img src={fileUrl(preview.previewUrl || preview.url)} alt={preview.name || '检查单'} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />}
         </div>
       </div>
     </div>}

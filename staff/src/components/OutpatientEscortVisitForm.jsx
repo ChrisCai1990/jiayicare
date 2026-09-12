@@ -40,14 +40,17 @@ export default function OutpatientEscortVisitForm({ task, value, onChange }) {
   const booking = source.bookingSnapshot || {}
   const checks = source.checkAppointments?.length ? source.checkAppointments : (booking.specialCheckAppointments || [])
   const expertVisit = booking.postCheckAppointment || {}
+  const timeline = [
+    ...checks.map(row => ({ ...row, kind: 'check' })),
+    ...(expertVisit.appointmentDate || expertVisit.appointmentTime ? [{ ...expertVisit, item: '检查后专家门诊', kind: 'expert' }] : []),
+  ].sort((a, b) => `${a.appointmentDate || '9999-99-99'} ${a.appointmentTime || '99:99'}`.localeCompare(`${b.appointmentDate || '9999-99-99'} ${b.appointmentTime || '99:99'}`))
   const update = patch => onChange({ ...data, ...patch })
   const attachmentUpdate = key => (_, patch) => update({ [key]: patch.attachments || [] })
   return <div style={{ display: 'grid', gap: 14 }}>
     <section style={{ padding: 15, borderRadius: 10, background: '#FFFAF2', border: '1px solid #E8DCC8', display: 'grid', gap: 9 }}>
       <b style={{ color: '#6F5222' }}>陪诊日安排（只读）</b>
       <div><b>{booking.hospital || '医院待确认'} · {booking.campus || '院区待确认'}</b></div>
-      {checks.map((row, index) => <div key={index} style={{ padding: '9px 11px', borderRadius: 8, background: '#fff' }}><b>{index + 1}. {row.item || '项目待确认'}</b><div>{row.department || '科室待确认'} · {row.location || '地点待确认'} · {scheduleText(row)}{row.expertName ? ` · ${row.expertName}` : ''}</div></div>)}
-      <div style={{ padding: '9px 11px', borderRadius: 8, background: '#F2F8F5' }}><b>检查后专家门诊</b><div>{expertVisit.department || '科室待确认'} · {expertVisit.expertName || '专家待确认'} · {scheduleText(expertVisit)}</div></div>
+      {timeline.map((row, index) => <div key={`${row.kind}-${index}`} style={{ padding: '9px 11px', borderRadius: 8, background: row.kind === 'expert' ? '#F2F8F5' : '#fff' }}><b>{index + 1}. {row.item || '项目待确认'}</b><div>{row.department || '科室待确认'} · {row.location || (row.kind === 'expert' ? '门诊地点待确认' : '地点待确认')} · {scheduleText(row)} · {row.expertName || (row.kind === 'expert' ? '专家待确认' : '无')}</div></div>)}
     </section>
     <section style={{ padding: 15, border: '1px solid #B9DDD0', borderRadius: 10, display: 'grid', gap: 12 }}>
       <b>当日检验检查陪诊记录</b>

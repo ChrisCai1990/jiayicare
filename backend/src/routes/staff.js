@@ -196,17 +196,28 @@ function withSignedReportFiles(report) {
 
 function withSignedServiceChecklist(task) {
   const obj = task?.toObject ? task.toObject() : { ...(task || {}) };
+  const signFiles = files => Array.isArray(files) ? files.map(file => ({
+    ...file,
+    previewUrl: signStoredUrl(file?.url || '', file?.ossKey || ''),
+  })) : [];
   const signChecklist = checklist => Array.isArray(checklist) ? checklist.map(item => ({
     ...item,
-    attachments: Array.isArray(item?.attachments) ? item.attachments.map(file => ({
-      ...file,
-      // 检查单保存在私有 OSS；每次读取任务时签发短时访问地址，数据库仍保留原始 URL/ossKey。
-      url: signStoredUrl(file?.url || '', file?.ossKey || ''),
-    })) : [],
+    // 检查单保存在私有 OSS；每次读取任务时签发短时预览地址，数据库仍保留原始 URL/ossKey。
+    attachments: signFiles(item?.attachments),
   })) : [];
+  const signFormData = formData => formData ? {
+    ...formData,
+    examOrderFiles: signFiles(formData.examOrderFiles),
+    medicalRecordFiles: signFiles(formData.medicalRecordFiles),
+  } : formData;
   obj.serviceChecklist = signChecklist(obj.serviceChecklist);
+  obj.formData = signFormData(obj.formData);
   if (obj.dependsOnTaskId && typeof obj.dependsOnTaskId === 'object') {
-    obj.dependsOnTaskId = { ...obj.dependsOnTaskId, serviceChecklist: signChecklist(obj.dependsOnTaskId.serviceChecklist) };
+    obj.dependsOnTaskId = {
+      ...obj.dependsOnTaskId,
+      serviceChecklist: signChecklist(obj.dependsOnTaskId.serviceChecklist),
+      formData: signFormData(obj.dependsOnTaskId.formData),
+    };
   }
   return obj;
 }
@@ -3701,7 +3712,7 @@ router.post('/upload/report-file', staffAuth, uploadReportFile.single('file'), a
   if (!req.file) return res.status(400).json({ success: false, message: '未收到文件' });
   try {
     const result = await uploadBuffer(req.file.buffer, req.file.mimetype, 'reports');
-    res.json({ success: true, data: { url: result.url, ossKey: result.key, mimeType: result.mimeType, fileSize: result.size, orientationCorrected: result.orientationCorrected } });
+    res.json({ success: true, data: { url: result.url, previewUrl: signStoredUrl(result.url, result.key), ossKey: result.key, mimeType: result.mimeType, fileSize: result.size, orientationCorrected: result.orientationCorrected } });
   } catch (err) {
     console.error('[staff-report-upload] failed', { staffId: String(req.staff?._id || ''), message: err.message });
     res.status(503).json({ success: false, message: '报告存储失败，请稍后重试' });

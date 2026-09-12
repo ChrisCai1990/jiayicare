@@ -100,6 +100,8 @@ test('陪诊完成后资料进入报告审核并由健康顾问生成随访计�
   const advisor = fs.readFileSync(path.join(__dirname, '../../staff/src/components/OutpatientPostVisitReviewForm.jsx'), 'utf8');
   const tasksPanel = fs.readFileSync(path.join(__dirname, '../../staff/src/components/ServiceTasksPanel.jsx'), 'utf8');
   for (const text of ['陪诊日安排', '检验检查过程', '特殊情况记录', '专家看诊情况、诊疗意见及医嘱', '已打印当日检验检查单', '已要求医生打印当日门诊病历', 'examOrderFiles', 'medicalRecordFiles']) assert.match(escort, new RegExp(text));
+  assert.match(escort, /timeline[\s\S]*\.sort/);
+  assert.match(route, /previewUrl: signStoredUrl/);
   for (const text of ['prescription_order', 'outpatient_record', "audit_status: 'unaudited'", "aiStatus: 'pending'", 'outpatient_reports_audited', 'system:outpatient_post_visit_review', '门诊一站式服务后续随访', "status: 'completed'", 'workflowCompletedAt']) assert.match(route, new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   for (const text of ['资料查看结论', '后续随访内容', '首次随访日期']) assert.match(advisor, new RegExp(text));
   assert.match(tasksPanel, /陪诊及资料闭环进行中/);
