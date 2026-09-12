@@ -2031,7 +2031,9 @@ router.post('/plan-templates', adminAuth, async (req, res) => {
   const { type, name, status, content, clientBrand } = req.body;
   const clientBrands = [...new Set((Array.isArray(req.body.clientBrands) ? req.body.clientBrands : [clientBrand || content?.clientBrand]).filter(value => ['jiayiguanjia', 'jinyisen'].includes(value)))];
   if (!type || !name) return res.status(400).json({ success: false, message: '类型和名称不能为空' });
-  const tpl = await PlanTemplate.create({ type, name, status: status || 'active', clientBrand: clientBrands.length === 1 ? clientBrands[0] : '', clientBrands, content: { ...(content || {}), clientBrands } });
+  const duplicate = status !== 'inactive' && await PlanTemplate.findOne({ type, name: name.trim(), status: 'active' }).select('_id');
+  if (duplicate) return res.status(409).json({ success: false, message: '同类型下已存在同名启用模板，请编辑现有模板' });
+  const tpl = await PlanTemplate.create({ type, name: name.trim(), status: status || 'active', clientBrand: clientBrands.length === 1 ? clientBrands[0] : '', clientBrands, content: { ...(content || {}), clientBrands } });
   res.json({ success: true, data: tpl, message: '模板创建成功' });
 });
 
@@ -2039,9 +2041,14 @@ router.post('/plan-templates', adminAuth, async (req, res) => {
 router.put('/plan-templates/:id', adminAuth, async (req, res) => {
   const { name, status, content, clientBrand } = req.body;
   const clientBrands = [...new Set((Array.isArray(req.body.clientBrands) ? req.body.clientBrands : [clientBrand || content?.clientBrand]).filter(value => ['jiayiguanjia', 'jinyisen'].includes(value)))];
+  const existing = await PlanTemplate.findById(req.params.id).select('type');
+  if (!existing) return res.status(404).json({ success: false, message: '模板不存在' });
+  if (!String(name || '').trim()) return res.status(400).json({ success: false, message: '模板名称不能为空' });
+  const duplicate = status !== 'inactive' && await PlanTemplate.findOne({ _id: { $ne: req.params.id }, type: existing.type, name: String(name).trim(), status: 'active' }).select('_id');
+  if (duplicate) return res.status(409).json({ success: false, message: '同类型下已存在同名启用模板，请合并或停用后再保存' });
   const tpl = await PlanTemplate.findByIdAndUpdate(
     req.params.id,
-    { name, status, clientBrand: clientBrands.length === 1 ? clientBrands[0] : '', clientBrands, content: { ...(content || {}), clientBrands } },
+    { name: String(name).trim(), status, clientBrand: clientBrands.length === 1 ? clientBrands[0] : '', clientBrands, content: { ...(content || {}), clientBrands } },
     { new: true }
   );
   if (!tpl) return res.status(404).json({ success: false, message: '模板不存在' });
@@ -2060,6 +2067,10 @@ router.post('/plan-templates/:id/copy', adminAuth, async (req, res) => {
 router.patch('/plan-templates/:id/toggle', adminAuth, async (req, res) => {
   const tpl = await PlanTemplate.findById(req.params.id);
   if (!tpl) return res.status(404).json({ success: false, message: '模板不存在' });
+  if (tpl.status !== 'active') {
+    const duplicate = await PlanTemplate.findOne({ _id: { $ne: tpl._id }, type: tpl.type, name: tpl.name, status: 'active' }).select('_id');
+    if (duplicate) return res.status(409).json({ success: false, message: '同类型下已有同名启用模板，不能重复启用' });
+  }
   tpl.status = tpl.status === 'active' ? 'inactive' : 'active';
   await tpl.save();
   res.json({ success: true, data: tpl });

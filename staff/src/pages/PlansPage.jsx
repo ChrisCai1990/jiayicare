@@ -557,6 +557,8 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
   const [selectedTpl, setSelectedTpl] = useState(null)
   const [medicalAssistants, setMedicalAssistants] = useState([])
   const [supervisors, setSupervisors] = useState([])
+  const [workflowProducts, setWorkflowProducts] = useState([])
+  const [workflowProductId, setWorkflowProductId] = useState('')
 
   // 模板内容字段（与管理端完全一致）
   const [form, setForm] = useState({
@@ -575,11 +577,14 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
       staffAPI.getPlanTemplates('medical_assist'),
       staffAPI.getStaffList({ roles: 'medicalAssistant,healthPlanner' }),
       staffAPI.getStaffList({ roles: 'healthManager,familyDoctor,superadmin' }),
+      staffAPI.getWorkflowProducts('checkup'),
     ])
-      .then(([tplRes, staffRes, supervisorRes]) => {
+      .then(([tplRes, staffRes, supervisorRes, productRes]) => {
         setTemplates(tplRes.data || [])
         setMedicalAssistants(staffRes.data || [])
         setSupervisors(supervisorRes.data || [])
+        setWorkflowProducts(productRes.data || [])
+        if ((productRes.data || []).length === 1) setWorkflowProductId(productRes.data[0]._id)
       })
       .catch(err => setTplError(err.message || '加载失败'))
       .finally(() => setLoadingTpls(false))
@@ -614,14 +619,22 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
 
   const handleSubmit = async () => {
     const outpatientService = /门诊一站式/.test(`${selectedTpl?.name || ''} ${form.name || ''}`)
+    const checkupOneStop = selectedTpl?.name === '体检一站式服务'
     if (!patientId) { setError('请搜索并选择会员'); return }
     if (!form.name.trim()) { setError('请填写方案名称'); return }
     if (!form.serviceDate) { setError('请选择服务日期'); return }
-    if (!outpatientService && !form.staffId) { setError('请选择就医专员'); return }
-    if (!form.supervisorId) { setError('请选择督办人'); return }
+    if (checkupOneStop && !workflowProductId) { setError('请选择 Admin 已发布的体检服务流程'); return }
+    if (checkupOneStop && !description.trim()) { setError('请填写具体服务需求'); return }
+    if (!checkupOneStop && !outpatientService && !form.staffId) { setError('请选择就医专员'); return }
+    if (!checkupOneStop && !form.supervisorId) { setError('请选择督办人'); return }
     if (!(form.followUpPlans?.length || form.followUpPlanId)) { setError('所选模板尚未关联 Admin 岗位任务方案，请先在 Admin 完成配置'); return }
     setError(''); setSaving(true)
     try {
+      if (checkupOneStop) {
+        await staffAPI.generateAIAnnualCheckupPlan(patientId, selectedTpl._id, description.trim(), workflowProductId, form.serviceDate, description.trim())
+        onSaved()
+        return
+      }
       // items 从内容字段派生
       const items = []
       if (form.hospital) {
@@ -650,6 +663,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
   }
 
   const inputStyle = { width: '100%', padding: '7px 10px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit' }
+  const checkupOneStop = selectedTpl?.name === '体检一站式服务'
   // 注意：作为函数调用而非 JSX 组件，避免每次 render 创建新组件导致输入框失焦
   const renderField = (label, fieldKey, rows, placeholder) => (
     <div className="form-group" style={{ marginBottom: 0 }}>
@@ -731,12 +745,20 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
           {/* 方案名称 */}
           {renderField('方案名称 *', 'name', 0, '就医协助方案名称')}
 
+          {checkupOneStop && <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">执行服务流程（来自 Admin） *</label>
+            <select className="form-input" value={workflowProductId} onChange={e => setWorkflowProductId(e.target.value)}>
+              <option value="">请选择已发布的体检服务</option>
+              {workflowProducts.map(product => <option key={product._id} value={product._id}>{product.name}</option>)}
+            </select>
+          </div>}
+
           {/* 两栏布局 */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             {renderField('医院',     'hospital',   0, '医院名称')}
             {renderField('科室',     'department', 0, '科室名称')}
             {renderField('专家',     'expert',     0, '专家姓名（可选）')}
-            {!/门诊一站式/.test(`${selectedTpl?.name || ''} ${form.name || ''}`) && <div className="form-group" style={{ marginBottom: 0 }}>
+            {!checkupOneStop && !/门诊一站式/.test(`${selectedTpl?.name || ''} ${form.name || ''}`) && <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">就医专员</label>
               <select
                 className="form-input"
@@ -752,13 +774,13 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
                 ))}
               </select>
             </div>}
-            <div className="form-group" style={{ marginBottom: 0 }}>
+            {!checkupOneStop && <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">督办人 *</label>
               <select className="form-input" value={form.supervisorId || ''} onChange={e => set('supervisorId', e.target.value)}>
                 <option value="">请选择健管专员/家庭医生</option>
                 {supervisors.map(s => <option key={s._id} value={s._id}>{s.name} · {s.roleLabel}</option>)}
               </select>
-            </div>
+            </div>}
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">{form.serviceDomain === 'checkup' ? '体检日期' : '主服务日期'} *</label>
               <input className="form-input" type="date" value={form.serviceDate}
@@ -769,14 +791,14 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
           </div>
 
           {/* 全宽多行字段 */}
-          {renderField('具体服务事项', 'tasks', 3, '如：代取报告、陪同检查，每行一项')}
-          {renderField('酒店安排',     'hotel', 2, '是否需要住宿及酒店信息')}
-          {renderField('备注',         'notes', 2, '其他注意事项')}
+          {!checkupOneStop && renderField('具体服务事项', 'tasks', 3, '如：代取报告、陪同检查，每行一项')}
+          {!checkupOneStop && renderField('酒店安排',     'hotel', 2, '是否需要住宿及酒店信息')}
+          {!checkupOneStop && renderField('备注',         'notes', 2, '其他注意事项')}
 
           {/* 方案说明 */}
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">方案说明</label>
-            <textarea className="form-input" rows={3} placeholder="简要说明方案目标" value={description} onChange={e => setDescription(e.target.value)} />
+            <label className="form-label">{checkupOneStop ? '具体服务需求 *' : '方案说明'}</label>
+            <textarea className="form-input" rows={3} placeholder={checkupOneStop ? '请填写服务地点、时间段、体检目标及具体需求' : '简要说明方案目标'} value={description} onChange={e => setDescription(e.target.value)} />
           </div>
 
         </div>
@@ -784,7 +806,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
           <button className="btn btn-secondary" onClick={() => setStep(1)}>← 重新选模板</button>
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
           <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
-            {saving ? '创建中...' : '创建就医协助方案'}
+            {saving ? '创建中...' : checkupOneStop ? '生成体检一站式方案' : '创建就医协助方案'}
           </button>
         </div>
       </div>

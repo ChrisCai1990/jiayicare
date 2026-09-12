@@ -46,6 +46,19 @@ test('V14 consolidates duplicate checkup templates with a recoverable backup', (
   assert.match(migration, /skipped: 'template_not_found'/)
 })
 
+test('V18 consolidates every duplicate active medical-assist template and deployment runs it once', () => {
+  const migration = read('src/scripts/consolidateMedicalAssistTemplatesV18.js')
+  const admin = read('src/routes/admin.js')
+  const deploy = read('../scripts/deploy.py')
+  assert.match(migration, /maintenance_backups/)
+  assert.match(migration, /db\.collection\('healthplans'\)\.updateMany/)
+  assert.match(migration, /deleteMany/)
+  assert.match(migration, /clientBrands: brands/)
+  assert.match(admin, /同类型下已存在同名启用模板/)
+  assert.match(deploy, /consolidateMedicalAssistTemplatesV18\.js --apply/)
+  assert.match(deploy, /\.medical-assist-template-consolidation-v18-applied/)
+})
+
 test('V15 aligns customer intake and adds an outpatient final acceptance gate', () => {
   const migration = read('src/scripts/migrateOneStopFinalFlowV15.js')
   const outpatient = read('src/scripts/migrateOutpatientOneStopWorkflowV5.js')

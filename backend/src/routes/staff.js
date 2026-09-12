@@ -3812,10 +3812,11 @@ router.get('/plan-templates', staffAuth, async (req, res) => {
       patientBrand = patient.clientBrand;
     }
     let templates = await PlanTemplate.find(filter).sort({ name: 1 }).lean();
-    // 体检一站式由 Admin 产品 serviceWorkflow 驱动，不能再从通用“就医协助”入口
-    // 使用历史 PlanTemplate 创建另一套表单和任务链。体检模板只供体检方案入口使用。
+    // 普通体检模板仍只供体检方案入口使用；体检一站式必须保留在就医协助入口，
+    // 后续创建时由 Admin 产品 serviceWorkflow 接管，不能因为 serviceDomain=annual_checkup 被误删。
     if (type === 'medical_assist') {
-      templates = templates.filter(tpl => !['annual_checkup', 'checkup'].includes(tpl.content?.serviceDomain));
+      templates = templates.filter(tpl => tpl.name === '体检一站式服务'
+        || !['annual_checkup', 'checkup'].includes(tpl.content?.serviceDomain));
     }
     if (patientBrand) {
       const inferLegacyBrand = tpl => {
@@ -3843,6 +3844,17 @@ router.get('/plan-templates', staffAuth, async (req, res) => {
           content: { ...(tpl.content || {}), planType: inferPlanType(tpl) },
         }));
     }
+    // 历史上同名模板曾按嘉医管家、金伊森各存一份。无论是否传会员，医护端都只展示
+    // 一个业务模板；V18 会清理存量数据，这里同时作为迁移前及异常数据的展示兜底。
+    const uniqueTemplates = new Map();
+    templates.forEach(tpl => {
+      const key = `${tpl.type || ''}\u0000${String(tpl.name || '').trim()}`;
+      const current = uniqueTemplates.get(key);
+      const score = item => (Array.isArray(item.clientBrands) ? item.clientBrands.length : 0) * 1000
+        + Object.keys(item.content || {}).length;
+      if (!current || score(tpl) > score(current)) uniqueTemplates.set(key, tpl);
+    });
+    templates = [...uniqueTemplates.values()];
     res.json({ success: true, data: templates });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

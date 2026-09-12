@@ -450,6 +450,16 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
         if code:
             raise RuntimeError("体检模板合并迁移失败")
         code, _ = run_migration(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/consolidateMedicalAssistTemplatesV18.js ] && "
+            f"[ ! -f {REPO_DIR}/.medical-assist-template-consolidation-v18-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/consolidateMedicalAssistTemplatesV18.js --apply && "
+            f"touch {REPO_DIR}/.medical-assist-template-consolidation-v18-applied; fi",
+            timeout=180,
+            label="合并医护端重复的就医协助方案模板",
+        )
+        if code:
+            raise RuntimeError("就医协助模板合并迁移失败")
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOneStopFinalFlowV15.js ] && "
             f"[ ! -f {REPO_DIR}/.one-stop-final-flow-v15-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateOneStopFinalFlowV15.js --apply && "

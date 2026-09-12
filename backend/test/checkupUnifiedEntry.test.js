@@ -8,6 +8,7 @@ const read = file => fs.readFileSync(path.join(__dirname, '..', file), 'utf8')
 test('staff-initiated checkup selects an Admin-published workflow product', () => {
   const backend = read('src/routes/staff.js')
   const frontend = read('../staff/src/pages/PatientDetailPage.jsx')
+  const plansPage = read('../staff/src/pages/PlansPage.jsx')
   assert.match(backend, /router\.get\('\/workflow-products'/)
   assert.match(backend, /'serviceWorkflow\.key': key/)
   assert.match(frontend, /执行服务流程（来自 Admin）/)
@@ -17,6 +18,8 @@ test('staff-initiated checkup selects an Admin-published workflow product', () =
   assert.match(frontend, /具体服务需求 \*/)
   assert.match(frontend, /Admin 已发布流程/)
   assert.match(backend, /请选择有效的期望服务时间/)
+  assert.match(plansPage, /selectedTpl\?\.name === '体检一站式服务'/)
+  assert.match(plansPage, /generateAIAnnualCheckupPlan\(patientId, selectedTpl\._id/)
 })
 
 test('staff and order entries converge on one checkup service instance', () => {
@@ -49,10 +52,12 @@ test('staff-initiated checkup automatically pushes the configured questionnaire'
   assert.match(pushModel, /sourceHealthPlanId/)
 })
 
-test('generic medical-assist entry excludes checkup workflow templates', () => {
+test('medical-assist entry keeps checkup one-stop, excludes ordinary checkup templates and deduplicates names', () => {
   const route = read('src/routes/staff.js')
   assert.match(route, /type === 'medical_assist'/)
+  assert.match(route, /tpl\.name === '体检一站式服务'/)
   assert.match(route, /\['annual_checkup', 'checkup'\]\.includes\(tpl\.content\?\.serviceDomain\)/)
+  assert.match(route, /const uniqueTemplates = new Map\(\)/)
 })
 
 test('V13 keeps the Admin template display aligned with the product workflow', () => {
