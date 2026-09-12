@@ -20,7 +20,7 @@ const completionLabel = { completed: '已完成', partial: '部分完成', incom
 
 const fileUrl = url => url?.startsWith('/') ? `${API_ORIGIN}${url}` : url
 
-function ChecklistAttachments({ item, index, mode, update }) {
+export function ChecklistAttachments({ item, index, mode, update, uploadLabel = '+ 上传对应检查单', errorLabel = '文件上传失败', emptyLabel = '未上传文件' }) {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState(null)
@@ -39,7 +39,7 @@ function ChecklistAttachments({ item, index, mode, update }) {
       }
       update(index, { attachments: [...attachments, ...added] })
     } catch (err) {
-      setError(err.message || '检查单上传失败')
+      setError(err.message || errorLabel)
     } finally {
       setUploading(false)
     }
@@ -52,10 +52,10 @@ function ChecklistAttachments({ item, index, mode, update }) {
       </span>)}
     </div>}
     {mode === 'executor' && <label style={{ display: 'inline-block', marginTop: attachments.length ? 7 : 0, padding: '5px 10px', border: '1px solid #BCD8CB', borderRadius: 7, color: '#1E6B50', background: '#fff', cursor: uploading ? 'wait' : 'pointer', fontSize: 11 }}>
-      {uploading ? '上传中…' : '+ 上传对应检查单'}
+      {uploading ? '上传中…' : uploadLabel}
       <input type="file" accept="image/*,.pdf" multiple disabled={uploading} onChange={upload} style={{ display: 'none' }} />
     </label>}
-    {mode === 'supervisor' && attachments.length === 0 && <div style={{ color: '#8AA89C', fontSize: 11 }}>未上传检查单</div>}
+    {mode === 'supervisor' && attachments.length === 0 && <div style={{ color: '#8AA89C', fontSize: 11 }}>{emptyLabel}</div>}
     {error && <div style={{ marginTop: 5, color: '#DC3545', fontSize: 11 }}>{error}</div>}
     {preview && <div role="dialog" aria-modal="true" onClick={() => setPreview(null)} style={{ position: 'fixed', inset: 0, zIndex: 4000, background: 'rgba(20,32,27,.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div onClick={event => event.stopPropagation()} style={{ width: 'min(1000px, 94vw)', height: 'min(820px, 90vh)', background: '#fff', borderRadius: 12, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 18px 60px rgba(0,0,0,.28)' }}>

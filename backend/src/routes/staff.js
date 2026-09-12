@@ -1708,6 +1708,24 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
       return res.status(400).json({ success: false, message: '检查应安排在检查后专家门诊之前' });
     }
   }
+  const isOutpatientEscortVisit = followUp.sourceType === 'health_plan' && followUp.taskRole === 'executor' && /门诊一站式.*检查及专家门诊陪诊与归档/.test(followUp.theme || '');
+  if (isOutpatientEscortVisit && req.body.status === 'completed') {
+    const result = req.body.formData || {};
+    if (!result.inspectionCompleted || !String(result.inspectionProcess || '').trim() || !String(result.specialSituations || '').trim()
+      || !result.expertVisitCompleted || !String(result.expertVisitSummary || '').trim()
+      || !result.examOrdersPrinted || !result.medicalRecordPrinted
+      || !Array.isArray(result.examOrderFiles) || !result.examOrderFiles.length
+      || !Array.isArray(result.medicalRecordFiles) || !result.medicalRecordFiles.length) {
+      return res.status(400).json({ success: false, message: '请完整记录陪诊过程、特殊情况和专家看诊情况，并上传当日打印的检验检查单及门诊病历' });
+    }
+  }
+  const isOutpatientPostVisitReview = followUp.sourceType === 'health_plan' && followUp.taskRole === 'executor' && /门诊一站式.*查看陪诊资料并制定随访计划/.test(followUp.theme || '');
+  if (isOutpatientPostVisitReview && req.body.status === 'completed') {
+    const result = req.body.formData || {};
+    if (!String(result.reviewSummary || '').trim() || !String(result.followUpContent || '').trim() || !result.followUpDate) {
+      return res.status(400).json({ success: false, message: '请填写资料查看结论、随访内容和随访日期' });
+    }
+  }
   const isSuper = req.staff.role === 'superadmin';
   const isOwner = isSuper || String(followUp.staffId) === String(req.staff._id);
   // 计划层字段（何时、谁负责、要不要做）只有创建人（或超管）能改；执行人只能填写执行结果，
@@ -1747,6 +1765,73 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     followUp.completedBy = null;
   }
   await followUp.save();
+  if (isOutpatientEscortVisit && followUp.status === 'completed') {
+    const patient = await User.findById(followUp.patientId).select('tenantId assignedFamilyDoctor').lean();
+    const handoff = followUp.formData?.handoffSnapshot || {};
+    const booking = handoff.bookingSnapshot || {};
+    const checkDate = handoff.checkAppointments?.find(item => item?.appointmentDate)?.appointmentDate
+      || booking.specialCheckAppointments?.find(item => item?.appointmentDate)?.appointmentDate
+      || booking.postCheckAppointment?.appointmentDate || new Date().toISOString().slice(0, 10);
+    const createLinkedReport = async ({ title, documentCategory, files }) => {
+      const fileUrls = files.map(file => file.url).filter(Boolean);
+      const ossKeys = files.map(file => file.ossKey).filter(Boolean);
+      return MedicalReport.findOneAndUpdate(
+        { user: followUp.patientId, sourceHealthPlanId: followUp.sourceHealthPlanId, title, documentCategory },
+        { $set: {
+          tenantId: patient?.tenantId || null, type: 'other', hospital: booking.hospital || '', date: checkDate, checkDate,
+          reportYear: Number(String(checkDate).slice(0, 4)) || new Date().getFullYear(), fileUrl: fileUrls[0] || '', fileUrls,
+          ossKey: ossKeys[0] || '', ossKeys, mimeType: files[0]?.mimeType || '', fileSize: files[0]?.fileSize || '',
+          uploadedBy: req.staff._id, uploadedByRole: req.staff.role || '', sourceType: 'health_plan', sourceHealthPlanId: followUp.sourceHealthPlanId,
+          planId: followUp.sourceHealthPlanId, audit_status: 'unaudited', aiStatus: 'pending', status: 'pending',
+        } },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+    };
+    const reports = await Promise.all([
+      createLinkedReport({ title: '门诊一站式·当日检验检查单', documentCategory: 'prescription_order', files: followUp.formData.examOrderFiles }),
+      createLinkedReport({ title: '门诊一站式·当日门诊病历', documentCategory: 'outpatient_record', files: followUp.formData.medicalRecordFiles }),
+    ]);
+    const sourcePlan = await HealthPlan.findById(followUp.sourceHealthPlanId).select('title content.reviewerId').lean();
+    const advisorId = patient?.assignedFamilyDoctor || sourcePlan?.content?.reviewerId || null;
+    const advisorTask = await FollowUp.findOneAndUpdate(
+      { sourceHealthPlanId: followUp.sourceHealthPlanId, sourceType: 'health_plan', taskRole: 'executor', workflowKey: 'system:outpatient_post_visit_review' },
+      { $set: {
+        patientId: followUp.patientId, staffId: followUp.staffId, assignedTo: advisorId,
+        date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date(), type: 'other', status: 'planned',
+        content: '', plannedContent: '查看健管专员审核后的陪诊日检验检查单和门诊病历，形成后续随访计划。',
+        theme: `执行门诊一站式：查看陪诊资料并制定随访计划 · ${sourcePlan?.title || ''}`,
+        coordinationGroupId: followUp.coordinationGroupId, taskRole: 'executor', workflowKey: 'system:outpatient_post_visit_review',
+        dependsOnTaskId: followUp._id, isBlocked: true, activationEvent: 'outpatient_reports_audited',
+        sourceHealthPlanId: followUp.sourceHealthPlanId, formData: { reportIds: reports.map(report => report._id) },
+      } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    await FollowUp.updateMany(
+      { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'supervisor', workflowKey: followUp.workflowKey, status: { $in: ['planned', 'in_progress'] } },
+      { $set: { status: 'planned', isBlocked: true, activationEvent: 'outpatient_followup_created', dependsOnTaskId: advisorTask._id, content: '陪诊已完成；等待健管专员审核资料、健康顾问查看并生成随访计划后自动结束服务。' } }
+    );
+  }
+  if (isOutpatientPostVisitReview && followUp.status === 'completed') {
+    const result = followUp.formData || {};
+    await FollowUp.create({
+      patientId: followUp.patientId, staffId: req.staff._id, assignedTo: req.staff._id,
+      date: new Date(result.followUpDate), nextFollowUpDate: new Date(result.followUpDate), type: 'other', status: 'planned',
+      theme: '门诊一站式服务后续随访', content: result.followUpContent, plannedContent: result.followUpContent,
+      sourceType: 'scheduled', completedAt: null, completedBy: null,
+    });
+    await MedicalReport.updateMany(
+      { sourceHealthPlanId: followUp.sourceHealthPlanId, audit_status: 'audited' },
+      { $set: { familyDoctorViewedAt: new Date(), familyDoctorViewedBy: req.staff._id, status: 'analyzed' } }
+    );
+    await FollowUp.updateMany(
+      { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'supervisor', status: { $in: ['planned', 'in_progress'] } },
+      { $set: { status: 'completed', isBlocked: false, completedAt: new Date(), completedBy: 'staff', formData: result } }
+    );
+    await HealthPlan.updateOne(
+      { _id: followUp.sourceHealthPlanId },
+      { $set: { status: 'completed', 'content.workflowCompletedAt': new Date(), 'content.workflowCompletedBy': req.staff._id } }
+    );
+  }
   if (outpatientStaffAssignment) {
     const commonFilter = { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'executor', status: { $in: ['planned', 'in_progress'] } };
     await Promise.all([
@@ -1779,7 +1864,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
       ? followUp.serviceChecklist.map(({ supervisionStatus, supervisionNote, ...item }) => item)
       : [];
     const isOutpatientOneStop = /门诊一站式/.test(followUp.theme || '');
-    if (isOutpatientOneStop) {
+    if (isOutpatientOneStop && !isOutpatientEscortVisit && !isOutpatientPostVisitReview) {
       // 门诊一站式由健康规划师总览督办，不把督办卡当作逐节点人工审批闸门。
       // 岗位执行人完成本环节后，归档对应督办节点并直接解锁下一岗位。
       const supervisorMatch = [
@@ -1807,7 +1892,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
         if (escortStaffId) {
           await FollowUp.updateMany(
             { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'executor', theme: { $regex: '门诊一站式.*检查及专家门诊陪诊与归档' }, status: { $in: ['planned', 'in_progress'] } },
-            { $set: { assignedTo: escortStaffId, isBlocked: false, activationEvent: '', date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date() } }
+            { $set: { assignedTo: escortStaffId, isBlocked: false, activationEvent: '', date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date(), formData: { handoffSnapshot: followUp.formData || {} } } }
           );
         }
       }
@@ -3471,6 +3556,22 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
   }
   await report.save();
   if (action === 'approve') {
+    if (report.sourceHealthPlanId) {
+      const outpatientReportFilter = {
+        sourceHealthPlanId: report.sourceHealthPlanId,
+        title: { $in: ['门诊一站式·当日检验检查单', '门诊一站式·当日门诊病历'] },
+      };
+      const [linkedCount, pendingCount] = await Promise.all([
+        MedicalReport.countDocuments(outpatientReportFilter),
+        MedicalReport.countDocuments({ ...outpatientReportFilter, audit_status: { $ne: 'audited' } }),
+      ]);
+      if (linkedCount > 0 && pendingCount === 0) {
+        await FollowUp.updateMany(
+          { sourceHealthPlanId: report.sourceHealthPlanId, taskRole: 'executor', workflowKey: 'system:outpatient_post_visit_review', status: 'planned' },
+          { $set: { isBlocked: false, activationEvent: '', date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date() } }
+        );
+      }
+    }
     await syncBodyCompositionFromReport(report);
     await onCheckupReportAudited(report).catch(err => console.error('[checkup-workflow] failed to activate result review', err.message));
   }

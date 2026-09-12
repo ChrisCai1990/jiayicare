@@ -38,7 +38,7 @@ async function main() {
     if (supervisor) supervisorsCompleted += 1;
     const result = await followUps.updateMany(
       { sourceHealthPlanId: plan._id, taskRole: 'executor', theme: { $regex: '门诊一站式.*检查及专家门诊陪诊与归档' }, status: { $in: ['planned', 'in_progress'] } },
-      { $set: { assignedTo: escortStaffId, isBlocked: false, activationEvent: '', date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date(), updatedAt: new Date() } }
+      { $set: { assignedTo: escortStaffId, isBlocked: false, activationEvent: '', date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date(), formData: { handoffSnapshot: firstVisit.formData || {} }, updatedAt: new Date() } }
     );
     escortTasksUnlocked += result.modifiedCount;
   }

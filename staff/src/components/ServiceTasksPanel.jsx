@@ -89,10 +89,11 @@ export default function ServiceTasksPanel() {
           const task = service.task
           const isFuture = task.date && new Date(task.date).getTime() > Date.now()
           const isWaitingPrevious = !!task.isBlocked
+          const isOutpatientEscortProgress = isWaitingPrevious && task.taskRole === 'supervisor' && /门诊一站式.*检查及专家门诊陪诊与归档/.test(task.theme || '')
           return (
           <div key={task._id}
             onClick={() => openTask(task)}
-            title={isWaitingPrevious ? '上一环节完成后即可办理' : ''}
+            title={isOutpatientEscortProgress ? '当前已进入陪诊及资料闭环阶段' : isWaitingPrevious ? '上一环节完成后即可办理' : ''}
             style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 0', cursor: isWaitingPrevious ? 'default' : 'pointer', opacity: isWaitingPrevious ? 0.78 : 1, borderBottom: index < Math.min(visibleServices.length, 10) - 1 ? '1px solid #f0ede8' : 'none' }}>
             <span style={{ fontSize: 18 }}>{isWaitingPrevious ? '⏳' : task.taskRole === 'supervisor' ? '🔎' : '✅'}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -100,7 +101,7 @@ export default function ServiceTasksPanel() {
                 {task.theme}
                 {service.totalSteps > 1 && <span style={{ marginLeft: 8, fontSize: 11, color: '#1E6B50', background: '#EAF5F0', padding: '2px 6px', borderRadius: 8 }}>当前环节 · 共{service.totalSteps}环节</span>}
                 {isWaitingPrevious
-                  ? <span style={{ marginLeft: 8, fontSize: 11, color: '#667085', background: '#F2F4F7', padding: '2px 6px', borderRadius: 8 }}>等待上一环节</span>
+                  ? <span style={{ marginLeft: 8, fontSize: 11, color: isOutpatientEscortProgress ? '#1E6B50' : '#667085', background: isOutpatientEscortProgress ? '#EAF5F0' : '#F2F4F7', padding: '2px 6px', borderRadius: 8 }}>{isOutpatientEscortProgress ? '陪诊及资料闭环进行中' : '等待上一环节'}</span>
                   : isFuture && <span style={{ marginLeft: 8, fontSize: 11, color: '#8A6A20', background: '#FFF4D6', padding: '2px 6px', borderRadius: 8 }}>待开始</span>}
               </div>
               <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>

@@ -322,6 +322,16 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
         if code:
             raise RuntimeError("门诊一站式陪诊任务交接修复失败")
         code, _ = run_migration(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOutpatientEscortHandoffDataV14.js ] && "
+            f"[ ! -f {REPO_DIR}/.outpatient-escort-handoff-data-v14-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/migrateOutpatientEscortHandoffDataV14.js && "
+            f"touch {REPO_DIR}/.outpatient-escort-handoff-data-v14-applied; fi",
+            timeout=120,
+            label="补齐当前陪诊任务的代诊日与检查预约信息",
+        )
+        if code:
+            raise RuntimeError("门诊一站式陪诊资料交接迁移失败")
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateCheckupPlanDesignV5.js ] && "
             f"[ ! -f {REPO_DIR}/.checkup-plan-design-v5-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateCheckupPlanDesignV5.js && "
