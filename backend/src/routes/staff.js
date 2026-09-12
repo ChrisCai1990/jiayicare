@@ -479,6 +479,31 @@ async function getWorkbenchFollowUpOwnerFilter(staff) {
   ] };
 }
 
+async function syncOutpatientReportAuditCompletion(sourceHealthPlanId) {
+  if (!sourceHealthPlanId) return false;
+  const linkedReports = await MedicalReport.find({
+    sourceHealthPlanId,
+    documentCategory: { $in: ['prescription_order', 'outpatient_record'] },
+  }).select('documentCategory audit_status').lean();
+  const linkedCategories = new Set(linkedReports.map(item => item.documentCategory));
+  const allRequiredReportsAudited = ['prescription_order', 'outpatient_record'].every(category => linkedCategories.has(category))
+    && linkedReports.every(item => item.audit_status === 'audited');
+  if (!allRequiredReportsAudited) return false;
+  const reportAuditTask = await FollowUp.findOneAndUpdate(
+    { sourceHealthPlanId, taskRole: 'executor', workflowKey: 'system:outpatient_report_audit', status: { $in: ['planned', 'in_progress'] } },
+    { $set: { status: 'completed', isBlocked: false, completedAt: new Date(), completedBy: 'staff', content: '本次门诊病历和检验检查单已全部审核通过。' } },
+    { new: true }
+  );
+  const completedAuditTask = reportAuditTask || await FollowUp.findOne({
+    sourceHealthPlanId, taskRole: 'executor', workflowKey: 'system:outpatient_report_audit', status: 'completed',
+  }).select('_id').lean();
+  await FollowUp.updateMany(
+    { sourceHealthPlanId, taskRole: 'executor', status: 'planned', $or: [{ workflowKey: 'system:outpatient_post_visit_review' }, { theme: /门诊一站式.*查看陪诊资料并制定随访计划/ }] },
+    { $set: { isBlocked: false, activationEvent: '', ...(completedAuditTask?._id ? { dependsOnTaskId: completedAuditTask._id } : {}), date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date() } }
+  );
+  return true;
+}
+
 router.get('/service-tasks', staffAuth, async (req, res) => {
   const { status = 'active', includeFuture = '', limit = 100 } = req.query;
   const staffId = String(req.staff._id);
@@ -498,6 +523,13 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     { path: 'followUpSchemeId', select: 'name executorRole supervisorRole completionStandard' },
     { path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } },
   ]);
+  // 无论健管专员是从“审核报告”还是“确认 AI 结果”完成审核，工作台读取时都按
+  // 两份必需资料的最终状态自愈，避免已完成的审核任务继续残留。
+  for (const task of queriedTasks) {
+    if (task.workflowKey !== 'system:outpatient_report_audit' || !['planned', 'in_progress'].includes(task.status)) continue;
+    const sourceHealthPlanId = task.sourceHealthPlanId?._id || task.sourceHealthPlanId;
+    if (await syncOutpatientReportAuditCompletion(sourceHealthPlanId)) task.status = 'completed';
+  }
   // 审核动作可能发生在任务迁移或重建之前。工作台加载时以任务绑定的两份正式资料为准
   // 自愈解锁，避免健康顾问明明已拿到待办，页面却仍错误显示“等待上一环节”。
   for (const task of queriedTasks) {
@@ -3535,7 +3567,10 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     if (mimeType !== undefined) report.mimeType = mimeType;
     if (fileSize !== undefined) report.fileSize = fileSize;
     await report.save();
-    if (autoAuditPending) await onCheckupReportAudited(report).catch(err => console.error('[checkup-workflow] failed to activate result review', err.message));
+    if (autoAuditPending) {
+      await syncOutpatientReportAuditCompletion(report.sourceHealthPlanId);
+      await onCheckupReportAudited(report).catch(err => console.error('[checkup-workflow] failed to activate result review', err.message));
+    }
 
     // 2026-07-02修复：此前条件是 || 关系，"保存草稿"(aiStatus:'pending')只要带了reportItems字段
     // 也会触发同步，导致专项筛查在审核通过前就被写入。改成严格要求 aiStatus 变为 reviewed 才同步，
@@ -3714,27 +3749,7 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
   }
   await report.save();
   if (action === 'approve') {
-    if (report.sourceHealthPlanId) {
-      const outpatientReportFilter = {
-        sourceHealthPlanId: report.sourceHealthPlanId,
-        title: { $in: ['门诊一站式·当日检验检查单', '门诊一站式·当日门诊病历'] },
-      };
-      const linkedReports = await MedicalReport.find(outpatientReportFilter).select('documentCategory audit_status').lean();
-      const linkedCategories = new Set(linkedReports.map(item => item.documentCategory));
-      const allRequiredReportsAudited = ['prescription_order', 'outpatient_record'].every(category => linkedCategories.has(category))
-        && linkedReports.every(item => item.audit_status === 'audited');
-      if (allRequiredReportsAudited) {
-        const reportAuditTask = await FollowUp.findOneAndUpdate(
-          { sourceHealthPlanId: report.sourceHealthPlanId, taskRole: 'executor', workflowKey: 'system:outpatient_report_audit', status: { $in: ['planned', 'in_progress'] } },
-          { $set: { status: 'completed', isBlocked: false, completedAt: new Date(), completedBy: 'staff', content: '本次门诊病历和检验检查单已全部审核通过。' } },
-          { new: true }
-        );
-        await FollowUp.updateMany(
-          { sourceHealthPlanId: report.sourceHealthPlanId, taskRole: 'executor', status: 'planned', $or: [{ workflowKey: 'system:outpatient_post_visit_review' }, { theme: /门诊一站式.*查看陪诊资料并制定随访计划/ }] },
-          { $set: { isBlocked: false, activationEvent: '', ...(reportAuditTask?._id ? { dependsOnTaskId: reportAuditTask._id } : {}), date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date() } }
-        );
-      }
-    }
+    await syncOutpatientReportAuditCompletion(report.sourceHealthPlanId);
     await syncBodyCompositionFromReport(report);
     await onCheckupReportAudited(report).catch(err => console.error('[checkup-workflow] failed to activate result review', err.message));
   }
