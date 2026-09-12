@@ -43,4 +43,5 @@ test('V14 consolidates duplicate checkup templates with a recoverable backup', (
   assert.match(migration, /clientBrands: \['jiayiguanjia', 'jinyisen'\]/)
   assert.match(migration, /healthplans/)
   assert.match(migration, /deleteMany/)
+  assert.match(migration, /skipped: 'template_not_found'/)
 })
