@@ -506,6 +506,8 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     if (!isServiceTask) return false;
     // 方案已闭环时，历史遗留的活动督办卡也不应再次出现在健康规划师工作台。
     if (task.sourceType === 'health_plan' && task.sourceHealthPlanId?.status === 'completed') return false;
+    const isOutpatientPlan = /门诊一站式/.test(`${task.sourceHealthPlanId?.title || ''} ${task.sourceHealthPlanId?.content?.templateName || ''}`);
+    if (isOutpatientPlan && task.taskRole === 'supervisor' && task.dependsOnTaskId?.status === 'completed') return false;
     if (status === 'active' && !['planned', 'in_progress', 'missed'].includes(task.status)) return false;
     if (status && status !== 'active' && task.status !== status) return false;
     if (includeFuture !== '1' && task.remindAt && task.remindAt > now) return false;
