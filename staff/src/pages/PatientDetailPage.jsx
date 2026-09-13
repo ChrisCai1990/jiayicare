@@ -11402,11 +11402,11 @@ export default function PatientDetailPage() {
               </div>
               </div>
               <div className="modal-footer" style={{ flexShrink: 0, display: 'flex', gap: 8 }}>
-                <button className="btn btn-secondary" style={{ flex: 0.7 }}
+                {!isManualOnlyReport(ocrReviewReport) && <button className="btn btn-secondary" style={{ flex: 0.7 }}
                   disabled={ocrSaving || pageParsing || isImageOnlyPage} onClick={handleParseCurrentPage}
                   title={isImageOnlyPage ? '本页仅有影像资料，请查看文字报告或人工填写' : `只重新提取原报告第${activePage}页，其他页保持不变`}>
                   {isImageOnlyPage ? '本页无文字可补提' : pageParsing ? `第${activePage}页补提中…` : ocrSaving ? '处理中…' : `补提第${activePage}页`}
-                </button>
+                </button>}
                 <button className="btn btn-secondary" style={{ flex: 0.6 }}
                   disabled={ocrSaving} onClick={handleReclassifyOCR}
                   title="用最新专项筛查目录仅对待归类项目重新自动归类，已有及人工归类不受影响">

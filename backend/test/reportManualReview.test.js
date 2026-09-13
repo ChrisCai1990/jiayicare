@@ -60,3 +60,21 @@ test('workbench filters route legacy functional reports to review without reopen
   }
   assert.equal(parse({ type: 'annual', user: 'owner', aiStatus: 'none', fileUrl: 'test.pdf' }), true);
 });
+
+test('single-page supplement rejects manual-only reports before claiming a job', async () => {
+  const fs = require('node:fs');
+  const source = fs.readFileSync(path.resolve(__dirname, '../src/routes/staff.js'), 'utf8');
+  const start = source.indexOf("router.post('/medical-reports/:id/parse-page'");
+  const route = source.slice(start, source.indexOf('\n});', start) + 4);
+  let handler;
+  Function('router', 'staffAuth', 'require', 'isManualOnlyReport', 'manualOnlyReportMessage', route)(
+    { post: (...args) => { handler = args.at(-1); } }, () => {},
+    name => name.includes('MedicalReport') ? { findById: async () => ({ type: 'functional' }), findOneAndUpdate: () => { throw new Error('must not claim an AI job'); } } : {},
+    isManualOnlyReport, () => 'manual review only'
+  );
+  const result = {};
+  const res = { status: code => { result.status = code; return res; }, json: body => { result.body = body; return res; } };
+  await handler({ params: { id: 'test' }, body: { pageNum: 1 } }, res);
+  assert.equal(result.status, 400);
+  assert.equal(result.body.skipAi, true);
+});

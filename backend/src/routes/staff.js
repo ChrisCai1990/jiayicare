@@ -11957,6 +11957,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) throw new Error('报告不存在');
+  if (isManualOnlyReport(report)) throw new Error(manualOnlyReportMessage(report));
   const imagePageEvidence = {};
   const parseImage = createReportImageParser(rawParseImage, { report, onEvidence: (page, evidence) => {
     recordPageEvidence(imagePageEvidence, page, evidence);
@@ -12150,6 +12151,7 @@ router.post('/medical-reports/:id/parse-page', staffAuth, async (req, res) => {
     const { isActivePageParse } = require('../utils/reportPageSupplement');
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    if (isManualOnlyReport(report)) return res.status(400).json({ success: false, message: manualOnlyReportMessage(report), skipAi: true });
     if (isActivePageParse(report.pageParseStatus, pageNum)) {
       return res.json({ success: true, processing: true, duplicate: true, message: `第${pageNum}页正在补提，请勿重复点击` });
     }
