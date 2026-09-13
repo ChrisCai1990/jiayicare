@@ -553,11 +553,17 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     await FollowUp.updateOne({ _id: task._id }, { $set: { isBlocked: false, activationEvent: '', date: task.date, remindAt: task.remindAt, nextFollowUpDate: task.nextFollowUpDate } });
   }
   const now = new Date();
+  const proxyOrderIds = queriedTasks.filter(task => task.sourceType === 'order' && String(task.workflowKey || '').startsWith('medical_proxy:')).map(task => task.sourceOrderId).filter(Boolean);
+  const activeProxyOrderIds = new Set((proxyOrderIds.length
+    ? await Order.find({ _id: { $in: proxyOrderIds }, ...require('../utils/orderWorkItem').activeOrderWorkItemQuery() }).distinct('_id')
+    : []).map(String));
   const tasks = queriedTasks.filter(task => {
     const isServiceTask = (task.sourceType === 'health_plan' && ['executor', 'supervisor'].includes(task.taskRole))
+      || (task.sourceType === 'order' && String(task.workflowKey || '').startsWith('medical_proxy:') && task.taskRole === 'executor')
       || (task.sourceType === 'insurance_service' && task.taskRole === 'executor')
       || (task.sourceType === 'scheduled' && (task.tags || []).includes('保险服务'));
     if (!isServiceTask) return false;
+    if (task.sourceType === 'order' && !activeProxyOrderIds.has(String(task.sourceOrderId))) return false;
     // 方案已闭环时，历史遗留的活动督办卡也不应再次出现在健康规划师工作台。
     if (task.sourceType === 'health_plan' && task.sourceHealthPlanId?.status === 'completed') return false;
     const isOutpatientPlan = /门诊一站式/.test(`${task.sourceHealthPlanId?.title || ''} ${task.sourceHealthPlanId?.content?.templateName || ''}`);
@@ -1695,6 +1701,13 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     return res.status(409).json({ success: false, message: '上一环节尚未完成，当前任务只能查看，暂不能办理' });
   }
 
+  const medicalProxyWorkflow = require('../utils/medicalProxyWorkflow');
+  const proxyStage = medicalProxyWorkflow.stageOf(followUp);
+  if (proxyStage) {
+    const error = await medicalProxyWorkflow.validateMedicalProxyStage(followUp, req.body, req.staff);
+    if (error) return res.status(400).json({ success: false, message: error });
+  }
+
   if (req.body.status === 'cancelled' && !req.body.cancelReason && !followUp.cancelReason) {
     return res.status(400).json({ success: false, message: '取消随访必须填写取消原因' });
   }
@@ -1865,6 +1878,9 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     followUp.completedBy = null;
   }
   await followUp.save();
+  if (proxyStage && followUp.status === 'completed' && previousStatus !== 'completed') {
+    await medicalProxyWorkflow.advanceMedicalProxyWorkflow(followUp);
+  }
   if (isOutpatientEscortVisit && followUp.status === 'completed') {
     const patient = await User.findById(followUp.patientId).select('tenantId assignedFamilyDoctor assignedHealthManager').lean();
     const handoff = followUp.formData?.handoffSnapshot || {};
@@ -5759,6 +5775,18 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
     }
     const actionableOrder = await Order.exists({ _id: req.params.id, ...require('../utils/orderWorkItem').activeOrderWorkItemQuery() });
     if (!actionableOrder) return res.status(409).json({ success: false, message: '订单已退款、取消、完成或尚未支付，不能继续生成服务方案' });
+    const currentOrder = await Order.findById(req.params.id);
+    const { isMedicalProxyOrder, startMedicalProxyWorkflow } = require('../utils/medicalProxyWorkflow');
+    if (isMedicalProxyOrder(currentOrder?.serviceName)) {
+      if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '医疗代诊由健康规划师确认服务需求' });
+      if (!String(req.body.customerNeed || '').trim()) return res.status(400).json({ success: false, message: '请填写本次代诊诉求' });
+      const task = await startMedicalProxyWorkflow(currentOrder, req.staff._id, scheduledAt, String(req.body.customerNeed).trim());
+      const update = { status: 'scheduled', handledBy: req.staff._id };
+      if (scheduledAt) update.scheduledAt = new Date(scheduledAt);
+      if (note) update.note = note;
+      const order = await Order.findByIdAndUpdate(req.params.id, update, { new: true }).populate('user', 'name phone');
+      return res.json({ success: true, data: order, task, message: '已转健管专员收集并审核资料' });
+    }
     const newStatus = 'scheduled';
     const update = { status: newStatus, handledBy: req.staff._id };
     if (scheduledAt) update.scheduledAt = new Date(scheduledAt);
@@ -5768,7 +5796,7 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
     if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
     res.json({ success: true, data: order, message: '服务已安排' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(err.status || 500).json({ success: false, message: err.message });
   }
 });
 

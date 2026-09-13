@@ -60,6 +60,7 @@ const orderSchema = new mongoose.Schema({
     serviceTime: { type: String, default: '' }, serviceContent: { type: String, default: '' }, customerNeed: { type: String, default: '' },
     missingFields: { type: [String], default: [] }, riskFlags: { type: [String], default: [] }, summary: { type: String, default: '' },
   },
+  medicalProxyPlan: { type: mongoose.Schema.Types.Mixed, default: null },
 
   // ── 真实支付核算（本阶段先支持人工标记已支付，暂不接支付网关，见 backend/CLAUDE.md 待办）──
   paymentMethod: { type: String, enum: ['wechat', 'alipay', 'onsite', 'healthFund', ''], default: '' }, // 微信/支付宝/到店/健康基金抵扣
