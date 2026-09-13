@@ -226,7 +226,7 @@ export default function AiTodosPanel() {
               {/* 内容 */}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: cfg.color }}>{cfg.label}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: cfg.color }}>{todo.label || cfg.label}</span>
                   {todo.overdue && (
                     <span style={{ fontSize: 11, color: '#DC3545', background: '#DC354515', padding: '1px 6px', borderRadius: 4 }}>
                       超时

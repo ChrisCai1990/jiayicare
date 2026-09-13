@@ -97,11 +97,7 @@ const activeReportParseJobs = new Set();
 
 // 这两类资料仍可上传、由人工审核/录入，但不得触发视觉模型。documentCategory
 // 是资料归档口径，type 是历史报告技术分类；两者都要判断，避免入口不同而漏拦截。
-function isManualOnlyReport(report) {
-  return report?.type === 'home_monitor'
-    || report?.type === 'functional'
-    || report?.documentCategory === 'functional_medicine';
-}
+const { isManualOnlyReport, manualOnlyReportFilter } = require('../utils/reportManualReview');
 
 function manualOnlyReportMessage(report) {
   return report?.type === 'home_monitor'
@@ -3597,7 +3593,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
         });
         scheduleReportParse(report._id);
       }
-    } else if (typeChanged && isManualOnlyReport(report)) {
+    } else if ((typeChanged || documentCategory !== undefined) && isManualOnlyReport(report) && report.audit_status !== 'audited') {
       await markReportManualOnly(report);
     }
 
@@ -9407,6 +9403,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     if (can('report_parse')) {
       const parseFilter = {
         aiStatus: 'none',
+        audit_status: { $nin: ['audited', 'rejected'] },
+        $nor: [manualOnlyReportFilter],
         $or: [
           { fileUrl: /.+/ },
           { 'fileUrls.0': { $exists: true } },
@@ -9432,8 +9430,11 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       // 同时校验业务审核状态，兼容历史上 audit_status 已完成但 aiStatus 仍残留 pending 的数据。
       // 待办的统一口径是“现在仍需处理”，任一完成入口闭环后都不能再次出现。
       const reportFilter = {
-        aiStatus: 'pending',
-        audit_status: { $ne: 'audited' },
+        $or: [
+          { aiStatus: 'pending' },
+          { $and: [manualOnlyReportFilter, { aiStatus: { $in: ['none', 'failed'] } }, { $or: [{ fileUrl: /.+/ }, { 'fileUrls.0': { $exists: true } }, { content: /.+/ }] }] },
+        ],
+        audit_status: { $nin: ['audited', 'rejected'] },
         ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
       };
       const pendingReports = await MedicalReport.find(reportFilter)
@@ -9442,9 +9443,9 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         const createdAt = r.updatedAt || r.createdAt;
         const isOutpatientMaterial = ['prescription_order', 'outpatient_record'].includes(r.documentCategory) || /门诊一站式/.test(r.title || '');
         todos.push({
-          id: 'report_' + r._id, type: 'report_review', label: isOutpatientMaterial ? '门诊资料待审核' : '体检报告待审核', priority: 2,
+          id: 'report_' + r._id, type: 'report_review', label: isManualOnlyReport(r) ? (r.type === 'home_monitor' ? '居家监测待人工审核' : '功能医学待人工审核') : isOutpatientMaterial ? '门诊资料待审核' : '体检报告待审核', priority: 2,
           patientName: r.user?.name || '未知', patientId: String(r.user?._id || ''),
-          summary: r.aiSummary ? r.aiSummary.slice(0, 60) : `${r.title} · AI解析完成`,
+          summary: isManualOnlyReport(r) ? `${r.title} · 请人工核对原件并审核` : r.aiSummary ? r.aiSummary.slice(0, 60) : `${r.title} · AI解析完成`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${r.user?._id}?tab=reports&reportId=${r._id}`,
         });

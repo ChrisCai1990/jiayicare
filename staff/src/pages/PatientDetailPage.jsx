@@ -1,3 +1,4 @@
+import { isManualOnlyReport } from '../utils/reportManualReview'
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { staffAPI, API_ORIGIN } from '../api'
@@ -9330,6 +9331,7 @@ export default function PatientDetailPage() {
         const getReportTaskKey = (report) => {
           if (report.audit_status === 'audited' || report.aiStatus === 'reviewed') return 'audited'
           if (report.audit_status === 'rejected' || report.aiStatus === 'rejected') return 'rejected'
+          if (isManualOnlyReport(report)) return 'review'
           if (report.aiStatus === 'none') return 'parse'
           if (report.aiStatus === 'processing') return 'processing'
           if (report.aiStatus === 'failed') return 'failed'
@@ -9477,21 +9479,22 @@ export default function PatientDetailPage() {
                       {paginatedReportRows.map(({ report: r, typeLabel }) => {
                         const auditLabel = r.audit_status === 'audited' ? '已审核'
                           : r.audit_status === 'rejected' ? '已驳回'
+                          : isManualOnlyReport(r) ? '待人工审核'
                           : r.aiStatus === 'none' ? '待解析'
                           : r.aiStatus === 'processing' ? '解析中'
                           : r.parseJob?.status === 'paused' ? '识别已暂停'
                           : r.aiStatus === 'failed' ? '识别失败'
                           : '待审核'
                         const auditColor = r.audit_status === 'audited' ? '#22A06B'
-                          : (r.audit_status === 'rejected' || r.aiStatus === 'failed') ? '#DC3545' : '#D97706'
+                          : (r.audit_status === 'rejected' || (!isManualOnlyReport(r) && r.aiStatus === 'failed')) ? '#DC3545' : '#D97706'
                         // 居家监测设备导出报告格式差异大，不走 AI 自动解析。
-                        const isHomeMonitorReport = /居家监测/.test(typeLabel)
+                        const manualOnly = isManualOnlyReport(r)
                         return (
                           <React.Fragment key={r._id}>
                           <tr>
                             <td>
                               <button type="button" onClick={() => openReportDetail(r)} className="report-table-list-title-btn">{r.title || '未命名报告'}</button>
-                              {r.parseJob?.status === 'paused' && <div style={{ fontSize: 11, color: '#B86A19', marginTop: 5, maxWidth: 280 }}>{r.parseJob.message}；请联系管理员恢复。</div>}
+                              {!manualOnly && r.parseJob?.status === 'paused' && <div style={{ fontSize: 11, color: '#B86A19', marginTop: 5, maxWidth: 280 }}>{r.parseJob.message}；请联系管理员恢复。</div>}
                               {r.screeningL2 && <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 3 }}>{r.screeningL2}</div>}
                             </td>
                             <td><strong style={{ fontSize: 12, color: '#315F4E', whiteSpace: 'nowrap' }}>{DOCUMENT_CATEGORY_LABEL[inferDocumentCategory(r)] || '其他资料'}</strong><div style={{ fontSize: 11, color: '#8AA89C', marginTop: 2 }}>{typeLabel}</div></td>
@@ -9499,8 +9502,10 @@ export default function PatientDetailPage() {
                             <td style={{ color: '#8AA89C', whiteSpace: 'nowrap' }}>{r.checkDate || r.date || <span className="report-missing-field">待补</span>}</td>
                             <td><span style={{ fontSize: 11, fontWeight: 600, color: auditColor, background: `${auditColor}12`, borderRadius: 999, padding: '3px 7px', whiteSpace: 'nowrap' }}>{auditLabel}</span></td>
                             <td style={{ whiteSpace: 'nowrap' }}>
-                              {isHomeMonitorReport ? (
-                                <span style={{ fontSize: 11, color: '#aaa' }}>居家监测类不支持AI解析，请人工录入</span>
+                              {manualOnly ? (
+                                <button className="btn btn-sm report-action-primary" onClick={() => openReportDetail(r)}>
+                                  {['audited', 'rejected'].includes(r.audit_status) ? '查看资料' : '人工审核'}
+                                </button>
                               ) : (r.aiStatus === 'none' || r.aiStatus === 'failed') && (r.fileUrl || r.content || r.hasContent || (r.fileUrls && r.fileUrls.length)) ? (
                                 <button className="btn btn-primary btn-sm report-action-primary"
                                   disabled={parsingReportId === r._id || r.parseJob?.status === 'paused'}
@@ -9510,16 +9515,16 @@ export default function PatientDetailPage() {
                               ) : (r.aiStatus === 'none' || r.aiStatus === 'failed') ? (
                                 <span style={{ fontSize: 11, color: '#D97706' }}>无报告文件，请让客户重新上传图片/PDF后再解析</span>
                               ) : null}
-                              {r.aiStatus === 'processing' && (
+                              {!manualOnly && r.aiStatus === 'processing' && (
                                 <button className="btn btn-sm report-action-muted" disabled>
                                   <span style={{ display:'inline-block', width:10, height:10, border:'2px solid #7C3AED', borderTopColor:'transparent', borderRadius:'50%', marginRight:6, verticalAlign:'middle', animation:'spin 0.8s linear infinite' }} />
                                   识别中…
                                 </button>
                               )}
-                              {(r.aiStatus === 'pending' || r.aiStatus === 'reviewed') && (
+                              {(!manualOnly && (r.aiStatus === 'pending' || r.aiStatus === 'reviewed') || manualOnly && r.reportItems?.length > 0) && (
                                 <button className={`btn btn-sm ${r.aiStatus === 'reviewed' ? 'report-action-primary' : 'report-action-review'}`} style={r.aiStatus === 'reviewed' ? { background: '#22A06B' } : undefined}
                                   onClick={() => handleOpenOCRReview(r)}>
-                                  {r.aiStatus === 'reviewed' ? '编辑AI结果' : `审核AI结果${r.reportItems?.length ? `（${r.reportItems.length}项）` : ''}`}
+                                  {manualOnly ? '核对已有数据' : r.aiStatus === 'reviewed' ? '编辑AI结果' : `审核AI结果${r.reportItems?.length ? `（${r.reportItems.length}项）` : ''}`}
                                 </button>
                               )}
                               {r.audit_status !== 'audited' && (
@@ -10891,7 +10896,7 @@ export default function PatientDetailPage() {
                   的报告必须先在"审核AI结果"弹窗确认，这里不再单独放行；居家监测/功能医学检测等
                   本就不支持AI解析的报告(aiStatus一直是none)保留原有直接审核通道，否则永远无法审核。 */}
               {showReportDetail.audit_status !== 'audited' && showReportDetail.audit_status !== 'rejected'
-                && showReportDetail.aiStatus === 'none' && (
+                && (isManualOnlyReport(showReportDetail) || showReportDetail.aiStatus === 'none') && (
                 <>
                   {showRejectInput ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -10928,7 +10933,7 @@ export default function PatientDetailPage() {
                 </>
               )}
               {showReportDetail.audit_status !== 'audited' && showReportDetail.audit_status !== 'rejected'
-                && showReportDetail.aiStatus !== 'none' && (
+                && !isManualOnlyReport(showReportDetail) && showReportDetail.aiStatus !== 'none' && (
                 <div style={{ fontSize: 12, color: '#8AA89C', textAlign: 'center', padding: '4px 0' }}>
                   请在"审核AI结果"里确认检验数据，确认后自动完成审核
                 </div>

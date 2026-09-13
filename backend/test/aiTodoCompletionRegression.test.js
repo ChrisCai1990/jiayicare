@@ -22,7 +22,7 @@ test('AI todo aggregation excludes reports already audited through a legacy path
     staffRouteSource.indexOf('// ── 健康顾问：健康档案待查看确认'),
   );
 
-  assert.match(todoRoute, /aiStatus: 'pending',[\s\S]*audit_status: \{ \$ne: 'audited' \}/);
+  assert.match(todoRoute, /aiStatus: 'pending'[\s\S]*audit_status: \{ \$nin: \['audited', 'rejected'\] \}/);
 });
 
 test('AI todo aggregation keeps medical reports inside the current staff ownership scope', () => {

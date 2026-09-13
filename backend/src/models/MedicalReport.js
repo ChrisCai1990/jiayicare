@@ -215,6 +215,11 @@ const medicalReportSchema = new mongoose.Schema({
   screeningItemId:  { type: mongoose.Schema.Types.ObjectId, ref: 'UserScreeningItem', default: null },
 }, { timestamps: true });
 
+// Normalize new uploads and later edits; historical records remain read-only until saved.
+medicalReportSchema.pre('validate', function () {
+  require('../utils/reportManualReview').initializeManualReview(this);
+});
+
 medicalReportSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);
 medicalReportSchema.index({ user: 1, sourceSha256: 1 }, { unique: true, partialFilterExpression: { sourceSha256: { $type: 'string' } } });
 

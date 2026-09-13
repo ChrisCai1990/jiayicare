@@ -1,3 +1,4 @@
+const { isManualOnlyReport } = require('../utils/reportManualReview');
 const express = require('express');
 const multer = require('multer');
 const jwt = require('jsonwebtoken');
@@ -206,7 +207,7 @@ router.post('/:id/parse-ai', auth, async (req, res) => {
     }
 
     // 居家监测与功能医学资料仅人工审核/录入，不能从用户端绕过医护端限制。
-    if (report.type === 'home_monitor' || report.type === 'functional' || report.documentCategory === 'functional_medicine') {
+    if (isManualOnlyReport(report)) {
       const message = report.type === 'home_monitor'
         ? '该类型报告不支持AI自动解析，已加入待人工审核队列'
         : '功能医学报告不支持AI自动解析，请人工审核录入';
