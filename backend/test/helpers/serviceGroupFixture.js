@@ -26,6 +26,8 @@ function matches(row, filter = {}) {
           Array.isArray(actual) ? actual.some((y) => eq(y, x)) : eq(actual, x)
         );
       if ("$gt" in v) return actual > v.$gt;
+      if ("$lte" in v) return actual <= v.$lte;
+      if ("$ne" in v) return !eq(actual,v.$ne);
     }
     return Array.isArray(actual) ? actual.some((x) => eq(x, v)) : eq(actual, v);
   });

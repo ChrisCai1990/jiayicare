@@ -113,6 +113,7 @@ router.get("/capabilities", wrap(async (req, res) => {
       archiveConnected: !!collector?.lastSuccessAt && !collector.lastError && Date.now() - +new Date(collector.lastSuccessAt) < 180000,
       archiveLastSuccessAt: collector?.lastSuccessAt || null,
       followupDraftConfigured: process.env.SERVICE_GROUP_FOLLOWUP_DRAFT_ENABLED === 'true',
+      materialScheduleConfigured: process.env.SERVICE_GROUP_MATERIAL_SCHEDULE_ENABLED === 'true',
       archiveConfigured:
         process.env.SERVICE_GROUP_ARCHIVE_ENABLED === "true" &&
         !!process.env.SERVICE_GROUP_BRIDGE_SECRET &&
