@@ -2426,6 +2426,22 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
   res.json({ success: true, data: plan });
 });
 
+// 年度会员由健康顾问直接使用既有已审核资料发起医疗代诊，跳过客户资料收集和重复审核。
+router.post('/patients/:id/medical-proxy/annual-member-start', staffAuth, async (req, res) => {
+  if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可为年度会员直接发起医疗代诊' });
+  try {
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权为该会员发起服务' });
+    const patient = await User.findById(req.params.id).select('tenantId memberType servicePackage assignedFamilyDoctor assignedHealthPlanner assignedHealthManager').lean();
+    if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+    if (req.staff.role !== 'superadmin' && String(patient.assignedFamilyDoctor || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅该客户的健康顾问可发起' });
+    const required = ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'];
+    if (!req.body.serviceDate || required.some(key => !String(req.body[key] || '').trim())) return res.status(400).json({ success: false, message: '请完整填写服务日期、医院、科室、专家、代诊目标和交流内容' });
+    const result = await require('../utils/medicalProxyWorkflow').startAnnualMemberMedicalProxyWorkflow({ patient, advisorId: req.staff._id, serviceDate: req.body.serviceDate, plan: req.body });
+    res.json({ success: true, data: { orderId: result.order._id, supervisorTaskId: result.supervisor._id } });
+  } catch (err) { res.status(err.status || 500).json({ success: false, message: err.message }); }
+});
+
 // 部分方案类型只归特定角色负责（不论谁生成的），跟"仅制定人可改"是两条独立限制都要满足：
 // 年度体检方案/年度管理方案只有健康顾问能编辑/审核，营养干预方案只有营养师——
 // 2026-07-07 用户明确规则：健康顾问生成的方案营养师不能删改，反之亦然，按会员角色分工而非单纯创建人

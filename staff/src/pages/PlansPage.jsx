@@ -569,9 +569,20 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
 
   const [patientId, setPatientId] = useState('')
+  const [patientReports, setPatientReports] = useState([])
+  const [selectedReportIds, setSelectedReportIds] = useState([])
   const [description, setDescription] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const isMedicalProxy = /医疗代诊/.test(selectedTpl?.name || '')
+
+  useEffect(() => {
+    if (!patientId || !isMedicalProxy) { setPatientReports([]); setSelectedReportIds([]); return }
+    staffAPI.getPatientReports(patientId).then(res => {
+      const audited = (res.data || []).filter(report => report.audit_status === 'audited')
+      setPatientReports(audited)
+    }).catch(err => setError(err.message || '加载客户资料失败'))
+  }, [patientId, isMedicalProxy])
 
   useEffect(() => {
     Promise.all([
@@ -624,13 +635,20 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
     if (!patientId) { setError('请搜索并选择会员'); return }
     if (!form.name.trim()) { setError('请填写方案名称'); return }
     if (!form.serviceDate) { setError('请选择服务日期'); return }
+    if (isMedicalProxy && (!form.hospital.trim() || !form.department.trim() || !form.expert.trim() || !form.proxyGoal?.trim() || !form.communicationContent?.trim())) { setError('请完整填写医院、科室、专家、代诊目标和交流内容'); return }
+    if (isMedicalProxy && !selectedReportIds.length) { setError('请从客户既有资料中选择至少一份已审核资料'); return }
     if (checkupOneStop && !workflowProductId) { setError('请选择 Admin 已发布的体检服务流程'); return }
     if (checkupOneStop && !description.trim()) { setError('请填写具体服务需求'); return }
-    if (!checkupOneStop && !outpatientService && !form.staffId) { setError('请选择就医专员'); return }
-    if (!checkupOneStop && !form.supervisorId) { setError('请选择督办人'); return }
-    if (!(form.followUpPlans?.length || form.followUpPlanId)) { setError('所选模板尚未关联 Admin 岗位任务方案，请先在 Admin 完成配置'); return }
+    if (!isMedicalProxy && !checkupOneStop && !outpatientService && !form.staffId) { setError('请选择就医专员'); return }
+    if (!isMedicalProxy && !checkupOneStop && !form.supervisorId) { setError('请选择督办人'); return }
+    if (!isMedicalProxy && !(form.followUpPlans?.length || form.followUpPlanId)) { setError('所选模板尚未关联 Admin 岗位任务方案，请先在 Admin 完成配置'); return }
     setError(''); setSaving(true)
     try {
+      if (isMedicalProxy) {
+        await staffAPI.startAnnualMemberMedicalProxy(patientId, { serviceDate: form.serviceDate, hospital: form.hospital.trim(), department: form.department.trim(), expert: form.expert.trim(), proxyGoal: form.proxyGoal.trim(), communicationContent: form.communicationContent.trim(), selectedReportIds })
+        onSaved()
+        return
+      }
       if (checkupOneStop) {
         await staffAPI.generateAIAnnualCheckupPlan(patientId, selectedTpl._id, description.trim(), workflowProductId, form.serviceDate, description.trim())
         onSaved()
@@ -775,7 +793,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
             {renderField('医院',     'hospital',   0, '医院名称')}
             {renderField('科室',     'department', 0, '科室名称')}
             {renderField('专家',     'expert',     0, '专家姓名（可选）')}
-            {!checkupOneStop && !/门诊一站式/.test(`${selectedTpl?.name || ''} ${form.name || ''}`) && <div className="form-group" style={{ marginBottom: 0 }}>
+            {!isMedicalProxy && !checkupOneStop && !/门诊一站式/.test(`${selectedTpl?.name || ''} ${form.name || ''}`) && <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">就医专员</label>
               <select
                 className="form-input"
@@ -791,7 +809,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
                 ))}
               </select>
             </div>}
-            {!checkupOneStop && <div className="form-group" style={{ marginBottom: 0 }}>
+            {!isMedicalProxy && !checkupOneStop && <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">督办人 *</label>
               <select className="form-input" value={form.supervisorId || ''} onChange={e => set('supervisorId', e.target.value)}>
                 <option value="">请选择健管专员/家庭医生</option>
@@ -807,23 +825,39 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
             {renderField('交通接送', 'transport',  0, '是否专车、集合地点')}
           </div>
 
+          {isMedicalProxy && <>
+            {renderField('代诊目标 *', 'proxyGoal', 3, '本次希望专家明确或解决的问题')}
+            {renderField('与医生交流的内容 *', 'communicationContent', 4, '需要代为询问、核实和记录的具体内容')}
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">选择本次使用的已审核资料 *</label>
+              <div style={{ display: 'grid', gap: 7, padding: 10, border: '1px solid #E0D9CE', borderRadius: 8 }}>
+                {patientReports.map(report => <label key={report._id} style={{ fontSize: 13 }}>
+                  <input type="checkbox" checked={selectedReportIds.includes(String(report._id))} onChange={e => setSelectedReportIds(ids => e.target.checked ? [...ids, String(report._id)] : ids.filter(id => id !== String(report._id)))} /> {report.title || report.type || '资料'} · {report.checkDate || report.date || ''} <span style={{ color: '#1E6B50' }}>已审核</span>
+                </label>)}
+                {!patientId && <span style={{ color: '#8AA89C', fontSize: 13 }}>请先选择年度会员</span>}
+                {patientId && !patientReports.length && <span style={{ color: '#B45309', fontSize: 13 }}>该会员暂无已审核资料，不能直接发起</span>}
+              </div>
+            </div>
+            <div style={{ padding: 10, borderRadius: 8, background: '#EFF8F4', color: '#1E6B50', fontSize: 13 }}>健康顾问提交后，将自动生成健康规划师全程督办任务，并直接流转给健管专员预约专家。</div>
+          </>}
+
           {/* 全宽多行字段 */}
-          {!checkupOneStop && renderField('具体服务事项', 'tasks', 3, '如：代取报告、陪同检查，每行一项')}
-          {!checkupOneStop && renderField('酒店安排',     'hotel', 2, '是否需要住宿及酒店信息')}
-          {!checkupOneStop && renderField('备注',         'notes', 2, '其他注意事项')}
+          {!isMedicalProxy && !checkupOneStop && renderField('具体服务事项', 'tasks', 3, '如：代取报告、陪同检查，每行一项')}
+          {!isMedicalProxy && !checkupOneStop && renderField('酒店安排',     'hotel', 2, '是否需要住宿及酒店信息')}
+          {!isMedicalProxy && !checkupOneStop && renderField('备注',         'notes', 2, '其他注意事项')}
 
           {/* 方案说明 */}
-          <div className="form-group" style={{ marginBottom: 0 }}>
+          {!isMedicalProxy && <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">{checkupOneStop ? '具体服务需求 *' : '方案说明'}</label>
             <textarea className="form-input" rows={3} placeholder={checkupOneStop ? '请填写服务地点、时间段、体检目标及具体需求' : '简要说明方案目标'} value={description} onChange={e => setDescription(e.target.value)} />
-          </div>
+          </div>}
 
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={() => setStep(1)}>← 重新选模板</button>
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
           <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
-            {saving ? '创建中...' : checkupOneStop ? '生成体检一站式方案' : '创建就医协助方案'}
+            {saving ? '创建中...' : isMedicalProxy ? '确认方案并转健管预约' : checkupOneStop ? '生成体检一站式方案' : '创建就医协助方案'}
           </button>
         </div>
       </div>

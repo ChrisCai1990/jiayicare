@@ -6,7 +6,10 @@ const { activeOrderWorkItemQuery, restoreOrderAfterRefundFailure } = require('..
 
 test('工作台订单查询从底层排除退款和终态订单', () => {
   const query = activeOrderWorkItemQuery();
-  assert.equal(query.paymentStatus, 'paid');
+  assert.deepEqual(query.$or, [
+    { paymentStatus: 'paid' },
+    { initiationSource: 'annual_member_staff', paymentStatus: 'unpaid', servicePrice: 0 },
+  ]);
   assert.deepEqual(query.tradeStatus.$in, ['paid', 'fulfilling', 'partially_refunded']);
   assert.equal(query.tradeStatus.$in.includes('refund_pending'), false);
   assert.equal(query.tradeStatus.$in.includes('refunded'), false);

@@ -29,6 +29,7 @@ const orderSchema = new mongoose.Schema({
   performanceRuleSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
   servicePerformerRolesSnapshot: { type: [require('../utils/tenantScope').servicePerformerRoleSchema], default: [] },
   serviceWorkflowSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
+  initiationSource: { type: String, enum: ['', 'annual_member_staff'], default: '' },
   checkupIntake: { type: mongoose.Schema.Types.Mixed, default: null },
   serviceIcon: { type: String },
   note:        { type: String, default: '' },

@@ -6,6 +6,7 @@ const User = require('../models/User');
 
 const PREFIX = 'medical_proxy:';
 const STAGES = ['collect', 'audit', 'advisor', 'planner', 'booking', 'execute'];
+const STAFF_ANNUAL_SOURCE = 'annual_member_staff';
 const isMedicalProxyOrder = orderOrName => orderOrName?.serviceWorkflowSnapshot?.key === 'medical_proxy'
   || /医疗代诊/.test(String(typeof orderOrName === 'object' ? orderOrName?.serviceName : orderOrName || ''));
 const stageOf = task => task?.sourceType === 'order' && String(task.workflowKey || '').startsWith(PREFIX)
@@ -181,6 +182,42 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceC
   return task;
 }
 
+async function startAnnualMemberMedicalProxyWorkflow({ patient, advisorId, serviceDate, plan }) {
+  if (!/年度|年卡|一年|12个月/.test(`${patient.memberType || ''} ${patient.servicePackage || ''}`)) {
+    throw Object.assign(new Error('医护端直接发起医疗代诊仅适用于年度会员'), { status: 409 });
+  }
+  if (!patient.assignedHealthPlanner || !patient.assignedHealthManager) {
+    throw Object.assign(new Error('请先为客户分配健康规划师和健管专员'), { status: 409 });
+  }
+  const reportIds = [...new Set((plan.selectedReportIds || []).map(String).filter(Boolean))];
+  const reportCount = await MedicalReport.countDocuments({ _id: { $in: reportIds }, user: patient._id, audit_status: 'audited' });
+  if (!reportIds.length || reportCount !== reportIds.length) throw Object.assign(new Error('请选择该客户至少一份已审核资料'), { status: 400 });
+  const date = new Date(`${serviceDate}T09:00:00+08:00`);
+  if (Number.isNaN(date.getTime())) throw Object.assign(new Error('服务日期无效'), { status: 400 });
+  const order = await Order.create({
+    user: patient._id, tenantId: patient.tenantId || null, serviceId: `annual-member-medical-proxy-${Date.now()}`,
+    serviceName: '医疗代诊服务', servicePrice: 0, unitPrice: 0, paymentStatus: 'unpaid', tradeStatus: 'fulfilling',
+    status: 'scheduled', scheduledAt: date, desiredServiceDate: date, initiationSource: STAFF_ANNUAL_SOURCE,
+    serviceRequirements: `${plan.proxyGoal}\n${plan.communicationContent}`, serviceWorkflowSnapshot: { key: 'medical_proxy', source: STAFF_ANNUAL_SOURCE },
+  });
+  const supervisor = await FollowUp.create({
+    patientId: patient._id, staffId: patient.assignedHealthPlanner, assignedTo: patient.assignedHealthPlanner,
+    type: 'other', status: 'in_progress', date, remindAt: new Date(), sourceType: 'order', sourceOrderId: order._id,
+    workflowKey: `${PREFIX}supervise`, taskRole: 'supervisor', theme: '医疗代诊：健康规划师全程督办 · 医疗代诊服务',
+    plannedContent: `健康顾问已确认年度会员代诊方案。持续督办专家预约和代诊执行，服务完成后自动闭环。`,
+    formData: { currentStage: 'advisor', initiationSource: STAFF_ANNUAL_SOURCE },
+  });
+  const advisorTask = await FollowUp.create({
+    patientId: patient._id, staffId: advisorId, assignedTo: advisorId, type: 'other', status: 'completed',
+    date: new Date(), remindAt: new Date(), completedAt: new Date(), completedBy: 'staff', sourceType: 'order', sourceOrderId: order._id,
+    workflowKey: `${PREFIX}advisor`, taskRole: 'executor', theme: '医疗代诊：健康顾问确认代诊方案 · 医疗代诊服务',
+    plannedContent: '年度会员由健康顾问直接从既有已审核资料制定代诊方案。',
+    formData: { ...plan, selectedReportIds: reportIds, initiationSource: STAFF_ANNUAL_SOURCE },
+  });
+  await advanceMedicalProxyWorkflow(advisorTask);
+  return { order, supervisor };
+}
+
 async function validateMedicalProxyStage(task, body, staff) {
   const stage = stageOf(task);
   if (!stage) return '';
@@ -213,7 +250,7 @@ async function validateMedicalProxyStage(task, body, staff) {
     const ids = [...new Set((data.auditSnapshot?.collectionSnapshot?.reportIds || data.intakeSnapshot?.reportIds || []).map(String).filter(Boolean))];
     const count = ids.length ? await MedicalReport.countDocuments({ _id: { $in: ids }, user: task.patientId, audit_status: 'audited' }) : 0;
     if (!ids.length || count !== ids.length) return '本次资料已失效或尚未审核，请退回上一环节补齐';
-    if (data.auditSnapshot?.collectionSnapshot?.annualMember) {
+    if (data.auditSnapshot?.collectionSnapshot?.annualMember || data.initiationSource === STAFF_ANNUAL_SOURCE) {
       const selected = [...new Set((data.selectedReportIds || []).map(String).filter(Boolean))];
       if (!selected.length || selected.some(id => !ids.includes(id))) return '年度会员请由健康顾问从本次已审核资料中选择制定方案所用资料';
     }
@@ -230,7 +267,7 @@ async function validateMedicalProxyStage(task, body, staff) {
     if (![data.customerPreferredDate, data.appointmentDate].every(value => /^\d{4}-\d{2}-\d{2}$/.test(value)) || !/^\d{2}:\d{2}$/.test(data.appointmentTime)) return '预约日期或时间格式无效';
     if (data.appointmentDate !== data.customerPreferredDate && !nonempty(data.dateDifferenceNote)) return '约诊日期与客户期望日期不一致，请说明差异及客户确认情况';
     const assistant = await Admin.findOne({ _id: data.medicalAssistantId, role: 'medicalAssistant', staffStatus: 'active' }).select('_id').lean();
-    if (!assistant) return '原预指派就医专员已失效，请退回健康规划师重新指派';
+    if (!assistant) return data.planSnapshot?.initiationSource === STAFF_ANNUAL_SOURCE ? '请在预约完成后指派有效的就医专员' : '原预指派就医专员已失效，请退回健康规划师重新指派';
   }
   if (stage === 'execute' && (!nonempty(data.executionResult) || !Array.isArray(data.medicalRecordAttachments) || !data.medicalRecordAttachments.some(file => nonempty(file?.url)))) return '请填写代诊执行结果并上传至少一份代诊病历';
   if (stage === 'collect' || stage === 'audit' || stage === 'advisor' || stage === 'planner' || stage === 'intake') {
@@ -279,13 +316,19 @@ async function advanceMedicalProxyWorkflow(task) {
   if (index === STAGES.length - 1) {
     await archiveMedicalProxyRecords(task, order, patient?.tenantId);
     await createMedicalProxyFollowUpDrafts(task, order, patient?.assignedFamilyDoctor);
+    if (order.initiationSource === STAFF_ANNUAL_SOURCE) {
+      order.status = 'completed';
+      order.tradeStatus = 'completed';
+      order.completedAt = new Date();
+      await order.save();
+    }
     await FollowUp.updateOne(
       { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } },
       { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', content: '就医专员已完成代诊，健康规划师全程督办闭环。', 'formData.currentStage': 'completed' } },
     );
     return;
   }
-  const next = STAGES[index + 1];
+  const next = stage === 'advisor' && task.formData?.initiationSource === STAFF_ANNUAL_SOURCE ? 'booking' : STAGES[index + 1];
   const assignee = next === 'audit' ? patient?.assignedHealthManager
     : next === 'advisor' ? patient?.assignedFamilyDoctor
     : next === 'planner' ? patient?.assignedHealthPlanner
@@ -331,4 +374,4 @@ async function advanceMedicalProxyWorkflow(task) {
   );
 }
 
-module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, startMedicalProxyWorkflow, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
+module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, startMedicalProxyWorkflow, startAnnualMemberMedicalProxyWorkflow, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
