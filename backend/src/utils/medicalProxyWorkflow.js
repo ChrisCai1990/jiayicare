@@ -376,6 +376,10 @@ async function advanceMedicalProxyWorkflow(task) {
     await upsertMedicalProxyServiceRecord(task, order, false);
     if (/专家约诊/.test(order.serviceName || '')) {
       const requirement = nonempty(task.formData?.planSnapshot?.serviceContent || order.serviceRequirements);
+      const appointmentText = `预约时间：${task.formData.appointmentDate} ${task.formData.appointmentTime}\n约诊需求：${requirement || '已确认'}`;
+      await require('./appointmentReminderScheduler').scheduleExpertAppointmentReminders({
+        order, appointmentDate: order.scheduledAt, appointmentText,
+      });
       await require('../models/Message').findOneAndUpdate(
         { dedupeKey: `expert-appointment-confirmed:${order._id}` },
         { $setOnInsert: {
