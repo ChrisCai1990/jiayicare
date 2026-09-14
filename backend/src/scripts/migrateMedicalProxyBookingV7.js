@@ -59,7 +59,7 @@ async function main() {
     if (!booking) continue;
     if (!existingBooking) bookingTasksCreated += 1;
     const held = await FollowUp.updateOne({ _id: execute._id, status: { $in: ACTIVE } }, { $set: {
-      assignedTo: null, isBlocked: true, activationEvent: 'medical_proxy_booking_completed', dependsOnTaskId: booking._id,
+      assignedTo: null, isBlocked: true, activationEvent: '', dependsOnTaskId: booking._id,
       'formData.planSnapshot': execute.formData?.planSnapshot || order.medicalProxyPlan || {},
     } });
     executeTasksHeld += held.modifiedCount || 0;

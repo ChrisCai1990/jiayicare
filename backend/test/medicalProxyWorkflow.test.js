@@ -5,7 +5,7 @@ const path = require('node:path');
 const Admin = require('../src/models/Admin');
 const MedicalReport = require('../src/models/MedicalReport');
 const User = require('../src/models/User');
-const { stageOf, preparationDueDate, reportIdsFromTask, validateMedicalProxyStage } = require('../src/utils/medicalProxyWorkflow');
+const { stageOf, preparationDueDate, reportIdsFromTask, extractMedicalProxyRechecks, validateMedicalProxyStage } = require('../src/utils/medicalProxyWorkflow');
 
 test('collection is due three days before proxy visit or immediately inside the window', () => {
   assert.equal(preparationDueDate(new Date('2026-09-20T00:00:00+08:00'), new Date('2026-09-14T00:00:00+08:00')).toISOString(), new Date('2026-09-17T00:00:00+08:00').toISOString());
@@ -17,6 +17,18 @@ test('carries the explicit report selection from a prior service task', () => {
     formData: { selectedReportIds: ['report-1'], reportIds: ['report-1', 'report-2'] },
     serviceChecklist: [{ reportIds: ['report-2', 'report-3'] }],
   }), ['report-1', 'report-2', 'report-3']);
+});
+
+test('extracts calendar follow-up suggestions from proxy visit feedback', () => {
+  const [suggestion] = extractMedicalProxyRechecks('暂时不需要治疗，减少饮酒，1年后复查胃肠镜', new Date('2026-09-18T08:30:00+08:00'));
+  assert.equal(suggestion.action, '复查胃肠镜');
+  assert.equal(suggestion.due.toISOString(), new Date('2027-09-18T08:30:00+08:00').toISOString());
+});
+
+test('execution requires a result and an uploaded medical record', async () => {
+  const task = { sourceType: 'order', workflowKey: 'medical_proxy:execute', assignedTo: 'assistant-1' };
+  assert.match(await validateMedicalProxyStage(task, { status: 'completed', formData: { executionResult: '一年后复查' } }, { _id: 'assistant-1', role: 'medicalAssistant' }), /上传/);
+  assert.equal(await validateMedicalProxyStage(task, { status: 'completed', formData: { executionResult: '一年后复查', medicalRecordAttachments: [{ url: '/uploads/record.pdf' }] } }, { _id: 'assistant-1', role: 'medicalAssistant' }), '');
 });
 
 test('planner selects patient documents, then manager audit gates advisor handoff', async () => {
@@ -104,4 +116,5 @@ test('workflow keeps booking between planner and execution and shows the complet
     assert.match(form, new RegExp(text));
   }
   assert.doesNotMatch(form, /预约结果、预约凭证及就诊注意事项/);
+  assert.match(form, /上传代诊病历/);
 });

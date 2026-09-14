@@ -23,6 +23,75 @@ const preparationDueDate = (serviceDate, now = new Date()) => {
   return due < now ? new Date(now) : due;
 };
 
+const chineseNumber = value => {
+  if (/^\d+$/.test(value)) return Number(value);
+  const digits = { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+  if (value === '十') return 10;
+  if (value.includes('十')) {
+    const [tens, ones] = value.split('十');
+    return (tens ? digits[tens] : 1) * 10 + (ones ? digits[ones] : 0);
+  }
+  return digits[value] || 0;
+};
+
+function extractMedicalProxyRechecks(text, baseDate = new Date()) {
+  const suggestions = [];
+  const pattern = /([一二两三四五六七八九十\d]+)\s*(年|个?月|周|天)后\s*(复查|复诊)\s*([^。；;\n]*)/g;
+  for (const match of String(text || '').matchAll(pattern)) {
+    const amount = chineseNumber(match[1]);
+    if (!amount) continue;
+    const due = new Date(baseDate);
+    if (Number.isNaN(due.getTime())) continue;
+    if (match[2] === '年') due.setUTCFullYear(due.getUTCFullYear() + amount);
+    else if (match[2].includes('月')) due.setUTCMonth(due.getUTCMonth() + amount);
+    else due.setUTCDate(due.getUTCDate() + amount * (match[2] === '周' ? 7 : 1));
+    const action = `${match[3]}${match[4].trim()}`;
+    suggestions.push({ due, action, sourceText: match[0].trim() });
+  }
+  return suggestions;
+}
+
+async function archiveMedicalProxyRecords(task, order, tenantId) {
+  const files = Array.isArray(task.formData?.medicalRecordAttachments) ? task.formData.medicalRecordAttachments : [];
+  const checkDate = dateInput(task.date || new Date());
+  for (const [index, file] of files.entries()) {
+    if (!file?.url) continue;
+    await MedicalReport.findOneAndUpdate(
+      { user: task.patientId, sourceType: 'order', sourceOrderId: order._id, fileUrl: file.url },
+      { $setOnInsert: {
+        user: task.patientId, tenantId: tenantId || null, title: files.length > 1 ? `医疗代诊病历（${index + 1}）` : '医疗代诊病历',
+        type: 'other', documentCategory: 'outpatient_record', hospital: order.medicalProxyPlan?.hospital || '',
+        institution: order.medicalProxyPlan?.hospital || '', date: checkDate, checkDate,
+        reportYear: Number(checkDate.slice(0, 4)) || new Date().getFullYear(), fileUrl: file.url, fileUrls: [file.url],
+        ossKey: file.ossKey || '', ossKeys: file.ossKey ? [file.ossKey] : [], mimeType: file.mimeType || '', fileSize: String(file.fileSize || ''),
+        uploadedBy: task.assignedTo, uploadedByRole: 'medicalAssistant', sourceType: 'order', sourceOrderId: order._id,
+        audit_status: 'unaudited', aiStatus: 'none', note: `医疗代诊执行任务：${task.theme || ''}`,
+      } },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+  }
+}
+
+async function createMedicalProxyFollowUpDrafts(task, order, familyDoctorId) {
+  if (!familyDoctorId) return;
+  const result = nonempty(task.formData?.executionResult);
+  for (const suggestion of extractMedicalProxyRechecks(result, task.date || new Date())) {
+    const dueDate = dateInput(suggestion.due);
+    const key = `medical_proxy_recheck:${dueDate}:${suggestion.action}`;
+    await FollowUp.findOneAndUpdate(
+      { patientId: task.patientId, sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: key },
+      { $setOnInsert: {
+        patientId: task.patientId, staffId: familyDoctorId, assignedTo: familyDoctorId,
+        date: suggestion.due, remindAt: suggestion.due, type: 'other', status: 'planned',
+        theme: `医疗代诊后${suggestion.action}`, plannedContent: `代诊反馈：${result}\n建议：${suggestion.sourceText}`,
+        content: suggestion.sourceText, tags: ['医疗代诊', '复查建议'], sourceType: 'order', sourceOrderId: order._id,
+        sourceScheduleKey: key, aiStatus: 'pending', reviewRole: 'familyDoctor',
+      } },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+  }
+}
+
 function reportIdsFromTask(task = {}) {
   return [...new Set([
     ...(task.formData?.selectedReportIds || []),
@@ -162,7 +231,7 @@ async function validateMedicalProxyStage(task, body, staff) {
     const assistant = await Admin.findOne({ _id: data.medicalAssistantId, role: 'medicalAssistant', staffStatus: 'active' }).select('_id').lean();
     if (!assistant) return '原预指派就医专员已失效，请退回健康规划师重新指派';
   }
-  if (stage === 'execute' && !nonempty(data.executionResult)) return '请填写代诊执行结果';
+  if (stage === 'execute' && (!nonempty(data.executionResult) || !Array.isArray(data.medicalRecordAttachments) || !data.medicalRecordAttachments.some(file => nonempty(file?.url)))) return '请填写代诊执行结果并上传至少一份代诊病历';
   if (stage === 'collect' || stage === 'audit' || stage === 'advisor' || stage === 'planner' || stage === 'intake') {
     const patient = await User.findById(task.patientId).select('assignedFamilyDoctor assignedHealthPlanner assignedHealthManager').lean();
     if (stage === 'collect' && !patient?.assignedHealthManager) return '客户尚未分配健管专员，无法流转';
@@ -179,7 +248,7 @@ async function advanceMedicalProxyWorkflow(task) {
   const index = STAGES.indexOf(stage);
   const order = await Order.findById(task.sourceOrderId);
   if (!order) return;
-  const patient = await User.findById(task.patientId).select('assignedHealthManager assignedFamilyDoctor assignedHealthPlanner').lean();
+  const patient = await User.findById(task.patientId).select('tenantId assignedHealthManager assignedFamilyDoctor assignedHealthPlanner').lean();
   if (stage === 'advisor') {
     order.medicalProxyPlan = { ...task.formData, confirmedBy: task.assignedTo, confirmedAt: new Date(), intakeTaskId: task.dependsOnTaskId };
     order.markModified('medicalProxyPlan');
@@ -207,6 +276,8 @@ async function advanceMedicalProxyWorkflow(task) {
     return;
   }
   if (index === STAGES.length - 1) {
+    await archiveMedicalProxyRecords(task, order, patient?.tenantId);
+    await createMedicalProxyFollowUpDrafts(task, order, patient?.assignedFamilyDoctor);
     await FollowUp.updateOne(
       { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } },
       { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', content: '就医专员已完成代诊，健康规划师全程督办闭环。', 'formData.currentStage': 'completed' } },
@@ -259,4 +330,4 @@ async function advanceMedicalProxyWorkflow(task) {
   );
 }
 
-module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, startMedicalProxyWorkflow, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
+module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, startMedicalProxyWorkflow, validateMedicalProxyStage, advanceMedicalProxyWorkflow };

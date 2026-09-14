@@ -1,4 +1,5 @@
 import React from 'react'
+import { ChecklistAttachments } from './ServiceTaskChecklist'
 
 export const medicalProxyStage = task => task?.sourceType === 'order' && String(task.workflowKey || '').startsWith('medical_proxy:')
   ? String(task.workflowKey).slice('medical_proxy:'.length) : ''
@@ -20,7 +21,7 @@ export function validateMedicalProxyStage(stage, value) {
   if (stage === 'planner' && !value.medicalAssistantId) return '请指派就医专员'
   if (stage === 'booking' && ['customerPreferredDate', 'appointmentDate', 'appointmentTime'].some(key => !value[key]?.trim())) return '请完整填写客户期望日期、专家实际出诊及约诊日期时间'
   if (stage === 'booking' && value.appointmentDate !== value.customerPreferredDate && !value.dateDifferenceNote?.trim()) return '约诊日期与客户期望日期不一致，请说明差异及客户确认情况'
-  if (stage === 'execute' && !value.executionResult?.trim()) return '请填写代诊执行结果'
+  if (stage === 'execute' && (!value.executionResult?.trim() || !value.medicalRecordAttachments?.length)) return '请填写代诊执行结果并上传至少一份代诊病历'
   return ''
 }
 
@@ -107,6 +108,16 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
       {value.bookingSnapshot?.additionalNote && <div>预约补充说明：{value.bookingSnapshot.additionalNote}</div>}
     </div>
     {input('executionResult', fields.execute[0][1], 5)}
+    <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>代诊病历附件
+      <ChecklistAttachments
+        item={{ attachments: value.medicalRecordAttachments || [] }}
+        index={0}
+        mode="executor"
+        update={(_, patch) => set('medicalRecordAttachments', patch.attachments || [])}
+        uploadLabel="+ 上传代诊病历"
+        errorLabel="代诊病历上传失败"
+      />
+    </label>
   </div>
   return null
 }
