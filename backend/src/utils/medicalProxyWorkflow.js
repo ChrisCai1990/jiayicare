@@ -10,6 +10,11 @@ const isMedicalProxyOrder = name => /医疗代诊/.test(String(name || ''));
 const stageOf = task => task?.sourceType === 'order' && String(task.workflowKey || '').startsWith(PREFIX)
   ? String(task.workflowKey).slice(PREFIX.length) : '';
 const nonempty = value => String(value || '').trim();
+const preparationDueDate = (serviceDate, now = new Date()) => {
+  const due = new Date(serviceDate);
+  due.setDate(due.getDate() - 3);
+  return due < now ? new Date(now) : due;
+};
 
 function reportIdsFromTask(task = {}) {
   return [...new Set([
@@ -47,12 +52,13 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceC
   if (!manager) throw Object.assign(new Error('该客户尚未分配健管专员，请先完成分配'), { status: 409 });
   const date = serviceTime ? new Date(serviceTime) : new Date();
   if (Number.isNaN(date.getTime())) throw Object.assign(new Error('服务日期无效'), { status: 400 });
+  const collectionDueAt = preparationDueDate(date);
   const carriedReportIds = await findRecentSelectedReportIds(order.user);
   const supervisor = await FollowUp.findOneAndUpdate(
     { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise` },
     { $setOnInsert: {
       patientId: order.user, staffId: plannerId, assignedTo: plannerId, type: 'other', status: 'in_progress',
-      date: new Date(), remindAt: new Date(), sourceType: 'order', sourceOrderId: order._id,
+      date, remindAt: new Date(), sourceType: 'order', sourceOrderId: order._id,
       workflowKey: `${PREFIX}supervise`, taskRole: 'supervisor',
       theme: `医疗代诊：健康规划师全程督办 · ${order.serviceName}`,
       plannedContent: `服务日期：${date.toLocaleDateString('zh-CN')}\n服务内容：${serviceContent}\n客户诉求：${customerNeed}\n持续督办资料审核、健康顾问方案确认和就医专员代诊；代诊执行结束后关闭。`,
@@ -64,7 +70,7 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceC
     { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}collect` },
     { $setOnInsert: {
       patientId: order.user, staffId: plannerId, assignedTo: plannerId, type: 'other', status: 'planned',
-      date, remindAt: new Date(), sourceType: 'order', sourceOrderId: order._id,
+      date: collectionDueAt, remindAt: new Date(), sourceType: 'order', sourceOrderId: order._id,
       workflowKey: `${PREFIX}collect`, taskRole: 'executor',
       theme: `医疗代诊：指导上传并选定本次资料 · ${order.serviceName}`,
       plannedContent: `服务内容：${serviceContent}\n客户诉求：${customerNeed}\n指导客户上传病历、既往报告、当前用药、身份医保资料和代诊问题清单；选定本次需审核的资料后交健管专员审核。`,
@@ -203,4 +209,4 @@ async function advanceMedicalProxyWorkflow(task) {
   );
 }
 
-module.exports = { isMedicalProxyOrder, stageOf, reportIdsFromTask, findRecentSelectedReportIds, startMedicalProxyWorkflow, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
+module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, startMedicalProxyWorkflow, validateMedicalProxyStage, advanceMedicalProxyWorkflow };

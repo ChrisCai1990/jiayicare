@@ -3,7 +3,12 @@ const assert = require('node:assert/strict');
 const Admin = require('../src/models/Admin');
 const MedicalReport = require('../src/models/MedicalReport');
 const User = require('../src/models/User');
-const { stageOf, reportIdsFromTask, validateMedicalProxyStage } = require('../src/utils/medicalProxyWorkflow');
+const { stageOf, preparationDueDate, reportIdsFromTask, validateMedicalProxyStage } = require('../src/utils/medicalProxyWorkflow');
+
+test('collection is due three days before proxy visit or immediately inside the window', () => {
+  assert.equal(preparationDueDate(new Date('2026-09-20T00:00:00+08:00'), new Date('2026-09-14T00:00:00+08:00')).toISOString(), new Date('2026-09-17T00:00:00+08:00').toISOString());
+  assert.equal(preparationDueDate(new Date('2026-09-16T00:00:00+08:00'), new Date('2026-09-14T11:00:00+08:00')).toISOString(), new Date('2026-09-14T11:00:00+08:00').toISOString());
+});
 
 test('carries the explicit report selection from a prior service task', () => {
   assert.deepEqual(reportIdsFromTask({

@@ -500,6 +500,16 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
         if code:
             raise RuntimeError("医疗代诊已选资料迁移失败")
         code, _ = run_migration(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/migrateMedicalProxyTaskDatesV4.js ] && "
+            f"[ ! -f {REPO_DIR}/.medical-proxy-task-dates-v4-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/migrateMedicalProxyTaskDatesV4.js && "
+            f"touch {REPO_DIR}/.medical-proxy-task-dates-v4-applied; fi",
+            timeout=120,
+            label="提前医疗代诊资料收集日期并将督办日期对齐代诊日",
+        )
+        if code:
+            raise RuntimeError("医疗代诊任务日期迁移失败")
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOneStopFinalFlowV15.js ] && "
             f"[ ! -f {REPO_DIR}/.one-stop-final-flow-v15-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateOneStopFinalFlowV15.js --apply && "
