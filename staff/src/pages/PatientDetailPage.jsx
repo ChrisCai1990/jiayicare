@@ -12174,7 +12174,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
   const presenceSessionRef = useRef(`staff-${Date.now()}-${Math.random().toString(36).slice(2)}`)
   const msgCountRef = useRef(0) // 上次渲染的消息条数，用于判断是否真的有新消息（而不是轮询刷新了同样内容）
   const isNearBottomRef = useRef(true) // 用户是否停留在底部附近；往上翻看历史时轮询不应打断
-  const visibleMsgs = orderConversationMessages(msgs, orderId)
+  const visibleMsgs = orderConversationMessages(msgs, orderId, order?.createdAt)
 
   // 路由传来的预约是点击当时的快照。直接按会员订单读取最新详情，不能再从
   // “活动待办”反查：订单一旦退款/取消，待办会被过滤，旧快照反而永远无法刷新。
