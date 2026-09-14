@@ -38,13 +38,14 @@ async function scanAndSendAppointmentReminders(now = new Date()) {
     if (!reminder) break;
     try {
       const label = reminder.kind === 'day_before' ? '明天' : '2小时后';
+      const dedupeKey = `expert-appointment-reminder:${reminder.orderId}:${reminder.kind}:${new Date(reminder.appointmentAt).getTime()}`;
       await Message.findOneAndUpdate(
-        { dedupeKey: `expert-appointment-reminder:${reminder.orderId}:${reminder.kind}` },
+        { dedupeKey },
         { $setOnInsert: {
           user: reminder.user, type: 'system', sender: '嘉医管家', title: '专家就诊提醒',
           content: `${label}是您的专家门诊预约，请提前安排出行并携带就诊所需资料。\n${reminder.appointmentText}`,
           unread: true, isAI: false, aiGenerated: false,
-          dedupeKey: `expert-appointment-reminder:${reminder.orderId}:${reminder.kind}`,
+          dedupeKey,
           action: { type: 'expert_appointment_reminder', orderId: String(reminder.orderId) },
         } },
         { upsert: true, new: true, setDefaultsOnInsert: true },

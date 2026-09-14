@@ -127,7 +127,7 @@ test('advisor can continue an audited intake task created before workflow redesi
 test('workflow keeps booking between planner and execution and shows the complete handoff', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
   const form = fs.readFileSync(path.join(__dirname, '../../staff/src/components/MedicalProxyStageForm.jsx'), 'utf8');
-  assert.match(workflow, /\['collect', 'audit', 'advisor', 'planner', 'booking', 'execute'\]/);
+  assert.match(workflow, /const STAGES = \['collect', 'audit', 'advisor', 'planner', 'booking', 'execute'\]/);
   for (const text of ['客户期望日期（开始）', '客户期望日期（结束）', '专家实际出诊及约诊日期', '超出期望区间说明及客户确认情况', '代诊医院', '与医生交流内容', '预约补充说明']) {
     assert.match(form, new RegExp(text));
   }
@@ -227,7 +227,32 @@ test('high-end insurance booking requires a verified settlement outcome', async 
   }
 });
 
-test('expert appointment closes the order and supports advisor to manager initiation', () => {
+test('expert appointment stays open until post-visit reports are audited and reviewed', async () => {
+  const originalOrderFind = Order.findById;
+  const originalCount = MedicalReport.countDocuments;
+  const task = { sourceType: 'order', sourceOrderId: 'order-1', patientId: 'patient-1', assignedTo: 'manager-1', workflowKey: 'medical_proxy:post_visit_audit' };
+  const formData = { reportIds: ['report-1'], auditSummary: '病历及检查报告已审核' };
+  try {
+    Order.findById = () => ({ select: () => ({ lean: async () => ({ scheduledAt: new Date('2026-09-10T06:00:00Z') }) }) });
+    MedicalReport.countDocuments = async filter => {
+      assert.equal(filter.user, 'patient-1');
+      assert.equal(filter.audit_status, 'audited');
+      assert.equal(filter.createdAt.$gte.toISOString(), '2026-09-10T06:00:00.000Z');
+      return 0;
+    };
+    assert.match(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'manager-1', role: 'healthManager' }), /就诊后上传且已由健管专员审核/);
+    MedicalReport.countDocuments = async () => 1;
+    assert.equal(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'manager-1', role: 'healthManager' }), '');
+    assert.equal(await validateMedicalProxyStage(task, { status: 'completed', formData: { reportIds: [], noMaterialsConfirmed: true, auditSummary: '客户确认本次无资料' } }, { _id: 'manager-1', role: 'healthManager' }), '');
+    task.workflowKey = 'medical_proxy:post_visit_review'; task.assignedTo = 'advisor-1';
+    assert.match(await validateMedicalProxyStage(task, { status: 'completed', formData: {} }, { _id: 'advisor-1', role: 'familyDoctor' }), /查看结论/);
+  } finally {
+    Order.findById = originalOrderFind;
+    MedicalReport.countDocuments = originalCount;
+  }
+});
+
+test('expert appointment closes only after post-visit follow-up review and supports advisor initiation', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
   const migration = fs.readFileSync(path.join(__dirname, '../src/scripts/migrateExpertAppointmentWorkflowV12.js'), 'utf8');
   assert.match(workflow, /appointmentOnly[\s\S]*assignedHealthManager/);
