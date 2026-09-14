@@ -41,10 +41,10 @@ test('就医配取提醒归当前操作人并立即出现在其随访列表', as
   assert.match(res.data.message, /我的随访/);
 });
 
-test('代配待办分配给会员归属健管专员，同时保留创建人', async () => {
+test('代配待办也归当前操作人，可在其随访列表中查看', async () => {
   const { res, row } = await generate('proxy');
   assert.equal(res.code, 200);
   assert.equal(row.staffId, 'operator-1');
-  assert.equal(row.assignedTo, 'health-manager');
-  assert.match(res.data.message, /归属健管专员/);
+  assert.equal(row.assignedTo, 'operator-1');
+  assert.match(res.data.message, /我的随访/);
 });

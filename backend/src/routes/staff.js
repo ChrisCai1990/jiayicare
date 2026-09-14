@@ -6173,11 +6173,9 @@ router.put('/patients/:id/supply-reminders/:kind/:recordId', staffAuth, checkPer
     }
     const patient = await User.findById(req.params.id).select('assignedHealthManager');
     if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
-    // 就医/配取提醒由当前点击生成的人负责，保存后应立即出现在其“我的随访”中；
-    // 只有明确选择“代配待办”时，才优先派给会员的归属健管专员。
-    const assignee = mode === 'proxy'
-      ? (patient.assignedHealthManager || req.staff._id)
-      : req.staff._id;
+    // 一键生成后先归当前点击人负责，确保两种模式都立即出现在其“我的随访”中；
+    // 如需由其他岗位代办，可在随访列表中再明确转派负责人。
+    const assignee = req.staff._id;
     const itemType = kind === 'medication' ? '药物' : '营养素';
     const task = mode === 'proxy' ? '代配待办' : '就医配取提醒';
     const rows = Array.from({ length: cycles }, (_, index) => {
@@ -6193,10 +6191,7 @@ router.put('/patients/:id/supply-reminders/:kind/:recordId', staffAuth, checkPer
     });
     await FollowUp.deleteMany({ patientId: req.params.id, sourceType: 'supply_reminder', sourceId: record._id, status: 'planned', date: { $gte: new Date() } });
     await FollowUp.insertMany(rows);
-    const assignmentMessage = mode === 'proxy' && String(assignee) !== String(req.staff._id)
-      ? '，已分配给归属健管专员'
-      : '，可在我的随访中查看';
-    res.json({ success: true, generated: rows.length, message: `已生成${rows.length}条配取提醒随访${assignmentMessage}` });
+    res.json({ success: true, generated: rows.length, message: `已生成${rows.length}条配取提醒随访，可在我的随访中查看` });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
