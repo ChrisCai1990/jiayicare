@@ -59,7 +59,7 @@ function restoreOrderAfterRefundFailure(order) {
 
 function activeOrderWorkItemQuery() {
   return {
-    $or: [{ paymentStatus: 'paid' }, { initiationSource: 'annual_member_staff', paymentStatus: 'unpaid', servicePrice: 0 }],
+    $or: [{ paymentStatus: 'paid' }, { initiationSource: 'staff_direct', paymentStatus: 'unpaid', servicePrice: 0 }],
     tradeStatus: { $in: ACTIVE_ORDER_TRADE_STATUSES },
     refundStatus: { $in: [...ACTIVE_ORDER_REFUND_STATUSES, null] },
     status: { $in: ['pending', 'scheduled'] },

@@ -128,7 +128,7 @@ test('workflow keeps booking between planner and execution and shows the complet
 
 test('annual-member staff initiation skips collection, audit and planner execution stages', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
-  assert.match(workflow, /stage === 'advisor'.*STAFF_ANNUAL_SOURCE \? 'booking'/);
+  assert.match(workflow, /stage === 'advisor'.*STAFF_DIRECT_SOURCE \? 'booking'/);
   assert.match(workflow, /健康规划师全程督办/);
-  assert.match(workflow, /仅适用于年度会员/);
+  assert.doesNotMatch(workflow, /仅适用于年度会员/);
 });

@@ -645,7 +645,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
     setError(''); setSaving(true)
     try {
       if (isMedicalProxy) {
-        await staffAPI.startAnnualMemberMedicalProxy(patientId, { serviceDate: form.serviceDate, hospital: form.hospital.trim(), department: form.department.trim(), expert: form.expert.trim(), proxyGoal: form.proxyGoal.trim(), communicationContent: form.communicationContent.trim(), selectedReportIds })
+        await staffAPI.startStaffMedicalProxy(patientId, { serviceDate: form.serviceDate, hospital: form.hospital.trim(), department: form.department.trim(), expert: form.expert.trim(), proxyGoal: form.proxyGoal.trim(), communicationContent: form.communicationContent.trim(), selectedReportIds })
         onSaved()
         return
       }
@@ -834,7 +834,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
                 {patientReports.map(report => <label key={report._id} style={{ fontSize: 13 }}>
                   <input type="checkbox" checked={selectedReportIds.includes(String(report._id))} onChange={e => setSelectedReportIds(ids => e.target.checked ? [...ids, String(report._id)] : ids.filter(id => id !== String(report._id)))} /> {report.title || report.type || '资料'} · {report.checkDate || report.date || ''} <span style={{ color: '#1E6B50' }}>已审核</span>
                 </label>)}
-                {!patientId && <span style={{ color: '#8AA89C', fontSize: 13 }}>请先选择年度会员</span>}
+                {!patientId && <span style={{ color: '#8AA89C', fontSize: 13 }}>请先选择会员</span>}
                 {patientId && !patientReports.length && <span style={{ color: '#B45309', fontSize: 13 }}>该会员暂无已审核资料，不能直接发起</span>}
               </div>
             </div>
