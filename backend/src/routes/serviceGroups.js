@@ -98,7 +98,9 @@ router.get(
     })
   )
 );
-router.get("/capabilities", (req, res) =>
+router.get("/capabilities", wrap(async (req, res) => {
+  const collector = process.env.WECOM_ARCHIVE_COLLECTOR_ENABLED === 'true'
+    ? await require('../models/WecomArchiveCursor').findById('primary').select('lastSuccessAt lastError').lean() : null;
   res.json({
     success: true,
     data: {
@@ -108,7 +110,9 @@ router.get("/capabilities", (req, res) =>
         "WECOM_APP_SECRET",
         "WECOM_SIDEBAR_ORIGIN",
       ].every((k) => !!process.env[k]),
-      archiveConnected: false,
+      archiveConnected: !!collector?.lastSuccessAt && !collector.lastError && Date.now() - +new Date(collector.lastSuccessAt) < 180000,
+      archiveLastSuccessAt: collector?.lastSuccessAt || null,
+      followupDraftConfigured: process.env.SERVICE_GROUP_FOLLOWUP_DRAFT_ENABLED === 'true',
       archiveConfigured:
         process.env.SERVICE_GROUP_ARCHIVE_ENABLED === "true" &&
         !!process.env.SERVICE_GROUP_BRIDGE_SECRET &&
@@ -124,8 +128,8 @@ router.get("/capabilities", (req, res) =>
         "OSS_BUCKET",
       ].every((k) => !!process.env[k]),
     },
-  })
-);
+  });
+}));
 router.get('/family-candidates/:patientId', wrap(async (req, res) => {
   const p = await patient(req, req.params.patientId);
   const candidates = [];
@@ -454,6 +458,15 @@ router.patch(
     await member(req, g, e.patientId);
     if (req.body.version !== e.__v) fail("事项已被更新，请刷新后操作", 409);
     if (e.status === "draft") {
+      if (req.body.patientId !== undefined) {
+        await member(req, g, req.body.patientId);
+        e.patientId = req.body.patientId || null;
+      }
+      if (req.body.dueAt !== undefined) e.dueAt = req.body.dueAt ? checkedDate(req.body.dueAt) : null;
+      if (req.body.assignedTo !== undefined) {
+        if (!g.staffIds.some(id => same(id, req.body.assignedTo))) fail('负责人必须属于本群服务团队');
+        e.assignedTo = req.body.assignedTo;
+      }
       for (const key of ["title", "content"])
         if (req.body[key] !== undefined)
           e[key] = text(req.body[key], key === "title" ? 160 : 20000);
@@ -463,6 +476,11 @@ router.patch(
     if (next && next !== e.status) {
       if (!validTransition(e.status, next)) fail("不支持此状态变更");
       if (e.kind === "task" && next === "confirmed") fail("待办应确认成待跟进");
+      if (e.kind === 'task' && e.status === 'draft' && next === 'planned' && e.sourceType === 'wecom_archive') {
+        const reason = require('../utils/groupFollowupDraft').validateConfirmation(e, g);
+        if (reason) fail(reason);
+        await permit(req, 'followups', 'create');
+      }
       if (e.kind !== "task" && !["confirmed", "cancelled"].includes(next))
         fail("记录只能确认或取消");
       if (next === "completed" && !text(req.body.result))

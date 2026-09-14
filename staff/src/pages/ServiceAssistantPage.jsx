@@ -219,6 +219,21 @@ export default function ServiceAssistantPage() {
     };
   }, [groupId]);
   useEffect(() => {
+    if (!groupId || !g?.archiveConsent || form || busy || settings) return;
+    let active = true, running = false;
+    const poll = async () => {
+      if (running || document.visibilityState !== 'visible') return;
+      running = true;
+      try {
+        const [items, msgs, state] = await Promise.all([api.get('/' + groupId), api.get(`/${groupId}/messages`), api.get('/capabilities')]);
+        if (active && groupRef.current === groupId) { setBundle(items.data); setMessages(msgs.data); setCaps(state.data); }
+      } catch (error) { if (active) setError(error.message); }
+      finally { running = false; }
+    };
+    poll(); const timer = setInterval(poll, 15000);
+    return () => { active = false; clearInterval(timer); };
+  }, [groupId, g?.archiveConsent, !!form, busy, settings]);
+  useEffect(() => {
     let active = true;
     setNative(null);
     if (groupId && personId)
@@ -422,6 +437,9 @@ export default function ServiceAssistantPage() {
               version: form.__v,
               title: form.title,
               content: form.content,
+              patientId: form.patientId || null,
+              dueAt: form.dueAt || null,
+              assignedTo: idOf(form.assignedTo),
             });
           else await api.post(`/${groupId}/entries`, form);
           setForm(null);
@@ -437,7 +455,6 @@ export default function ServiceAssistantPage() {
       <label>
         服务对象
         <select
-          disabled={!!form._id}
           value={form.patientId || ""}
           onChange={(e) => setForm({ ...form, patientId: e.target.value })}
         >
@@ -470,12 +487,12 @@ export default function ServiceAssistantPage() {
           onChange={(e) => setForm({ ...form, content: e.target.value })}
         />
       </label>
-      {form.kind === "task" && !form._id && (
+      {form.kind === "task" && (
         <div className="sa-fields">
           <label>
             跟进日期
             <input
-              required
+              required={form.sourceType !== 'wecom_archive'}
               type="date"
               value={form.dueAt}
               onChange={(e) => setForm({ ...form, dueAt: e.target.value })}
@@ -797,6 +814,7 @@ export default function ServiceAssistantPage() {
             <section className="sa-card">
               <div className="sa-row">
                 <h3>群消息收件箱</h3>
+                <small>{caps?.archiveConnected ? '采集运行正常' : '尚未确认采集在线'}{caps?.followupDraftConfigured ? ' · 跟进事项自动生成待确认草稿' : ''}</small>
                 <button
                   disabled={busy}
                   onClick={() =>
@@ -1056,12 +1074,13 @@ export default function ServiceAssistantPage() {
                 <small>
                   {g.members.find(
                     (m) => idOf(m.patientId) === idOf(e.patientId)
-                  )?.patientId.name || "家庭共同事项"}{" "}
+                  )?.patientId.name || (e.sourceType === 'wecom_archive' ? "服务对象待确认" : "家庭共同事项")}{" "}
                   ·{" "}
                   {bundle.staff.find((s) => s._id === idOf(e.assignedTo))
                     ?.name || "服务人员"}
                   {e.dueAt ? " · " + date(e.dueAt) : ""}
                   {e.aiGenerated ? " · AI草稿" : ""}
+                  {e.sourceType === 'wecom_archive' ? " · 群消息自动草稿" : ""}
                 </small>
                 <p className="sa-pre">{e.content}</p>
                 {e.result && <p className="sa-pre">处理结果：{e.result}</p>}
@@ -1113,11 +1132,11 @@ export default function ServiceAssistantPage() {
                       "edit"
                     ) && (
                       <>
-                        <button disabled={busy} onClick={() => setForm(e)}>
-                          编辑
+                        <button disabled={busy} onClick={() => setForm({...e, patientId:idOf(e.patientId) || '', assignedTo:idOf(e.assignedTo), dueAt:e.dueAt ? new Date(e.dueAt).toLocaleDateString('en-CA', {timeZone:'Asia/Shanghai'}) : ''})}>
+                          {e.sourceType === 'wecom_archive' ? '核对成员和日期' : '编辑'}
                         </button>
                         <button
-                          disabled={busy}
+                          disabled={busy || (e.sourceType === 'wecom_archive' && (!e.patientId || !e.dueAt))}
                           className="sa-primary"
                           onClick={() =>
                             run(() =>

@@ -13,6 +13,7 @@ const schema = new mongoose.Schema(
     content: { type: String, default: "", maxlength: 20000 },
     sourceText: { type: String, default: "", maxlength: 20000, select: false },
     sourceMessageId: { type: String, default: "" },
+    sourceType: { type: String, enum: ['', 'wecom_archive'], default: '' },
     requestKey: { type: String, required: true, maxlength: 100 },
     status: {
       type: String,

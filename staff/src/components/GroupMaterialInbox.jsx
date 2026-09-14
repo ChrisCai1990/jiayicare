@@ -20,7 +20,7 @@ export default function GroupMaterialInbox({group,caps,busy,run,can}) {
   const allowed=can(purpose==='report'?'reports':'service_records','create');
   return <section className="sa-materials">
     <div className="sa-row"><h2>群资料待归档</h2><button disabled={busy||!group.archiveConsent} onClick={load}>刷新资料</button></div>
-    <small>{!caps?.archiveConfigured?'等待会话存档审核及采集接入；目前不会自动收到真实群图片。':!group.archiveConsent?'当前群尚未确认存档授权，请由负责人核对群设置。':'每15秒检查已接入资料；只收件，不自动入库。'}</small>
+    <small>{!group.archiveConsent?'当前群尚未确认存档授权，请由负责人核对群设置。':!caps?.archiveConnected?'采集尚未就绪或暂时离线；仍可查看已接入资料。':'每15秒检查已接入资料；只收件，不自动入库。'}</small>
     <small>最近100条消息内的附件，暂存30天。打卡原图存服务记录；就诊资料存报告待解析。多选逐份归档，不拼接图片。</small>
     {error&&<p role="alert">{error}</p>}
     <label className="sa-check"><input type="checkbox" checked={showDone} onChange={e=>setShowDone(e.target.checked)}/>显示已归档资料</label>
