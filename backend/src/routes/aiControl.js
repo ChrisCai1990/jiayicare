@@ -21,6 +21,20 @@ router.get('/', async (req, res) => {
   res.json({ success: true, data: { policy, defaults: DEFAULT_POLICY, counters, circuits, pausedReports, recentChanges, day, month } });
 });
 
+router.get('/reports', async (req, res) => {
+  const keyword = String(req.query.q || '').trim().slice(0, 100);
+  if (!keyword) return res.json({ success: true, data: { rows: [], hasMore: false } });
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const rows = await collection('medicalreports').find({ title: { $regex: escaped, $options: 'i' } }, {
+    projection: { title: 1, user: 1, checkDate: 1, date: 1 },
+  }).sort({ createdAt: -1, _id: -1 }).limit(51).toArray();
+  const customers = await collection('users').find({ _id: { $in: rows.map(row => row.user).filter(Boolean) } }, { projection: { name: 1 } }).toArray();
+  const names = new Map(customers.map(row => [String(row._id), row.name]));
+  res.json({ success: true, data: { rows: rows.slice(0, 50).map(row => ({
+    _id: row._id, title: row.title, customerName: names.get(String(row.user)) || '未关联客户', date: row.checkDate || row.date || '',
+  })), hasMore: rows.length > 50 } });
+});
+
 router.get('/usage', async (req, res) => {
   const filter = {};
   if (req.query.reportId) {

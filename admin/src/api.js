@@ -49,6 +49,7 @@ async function reqRoot(path, opts = {}) {
 
 export const adminAPI = {
   getAiControl: () => req('/ai-control'),
+  searchAiReports: (q) => req(`/ai-control/reports?${new URLSearchParams({ q })}`),
   getAiUsage: (params = {}) => req(`/ai-control/usage?${new URLSearchParams(params)}`),
   saveAiPolicy: (policy, revision) => req('/ai-control/policy', { method: 'PUT', body: JSON.stringify({ policy, revision }) }),
   resetAiCircuit: key => req('/ai-control/circuits/reset', { method: 'POST', body: JSON.stringify({ key }) }),

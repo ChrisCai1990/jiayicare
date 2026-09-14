@@ -23,6 +23,7 @@ async function main() {
     const { DEFAULT_POLICY, periodKeys } = require('../backend/src/utils/aiBudgetPolicy');
     const { day, month } = periodKeys();
     const adminId = new mongoose.Types.ObjectId(), reportId = new mongoose.Types.ObjectId();
+    await collection('users').insertOne({ _id: adminId, name: '搜索测试客户' });
     await collection('admins').insertOne({ _id: adminId, role: 'superadmin', name: '本地验收' });
     await collection('ai_control').insertOne({ _id: 'policy', ...DEFAULT_POLICY, revision: 0 });
     await collection('ai_budget_counters').insertMany([
@@ -32,7 +33,7 @@ async function main() {
       { _id: `business:other:${day}`, tokens: 26000, calls: 4, micros: 100000 },
     ]);
     await collection('ai_circuits').insertOne({ _id: 'qwen:qwen-vl-max', failures: 5, paused: true });
-    await collection('medicalreports').insertOne({ _id: reportId, aiStatus: 'failed', parseJob: { status: 'paused', message: '第 3 页累计预算不足，已暂停。请管理员调整额度后继续', pausedAt: new Date(), progress: { version: 2, nextPage: 3 } } });
+    await collection('medicalreports').insertOne({ _id: reportId, title: '体检报告（年度）', user: adminId, checkDate: '2026-09-14', aiStatus: 'failed', parseJob: { status: 'paused', message: '第 3 页累计预算不足，已暂停。请管理员调整额度后继续', pausedAt: new Date(), progress: { version: 2, nextPage: 3 } } });
     await collection('ai_usage').insertMany([
       { _id: randomUUID(), createdAt: new Date(), reportId: String(reportId), page: 3, business: 'ocr', stage: 'evidence', provider: 'qwen', model: 'qwen-vl-max', status: 'unknown', reservedTokens: 26000, actualTokens: null, costMicros: null, durationMs: 45000 },
       { _id: randomUUID(), createdAt: new Date(Date.now() - 60000), reportId: String(reportId), page: 2, business: 'ocr', stage: 'recognize', provider: 'qwen', model: 'qwen-vl-plus', status: 'success', inputTokens: 12000, outputTokens: 2000, actualTokens: 14000, costMicros: 28000, durationMs: 12400 },
@@ -72,6 +73,14 @@ async function main() {
     await page.getByText('预算保护运行中', { exact: true }).waitFor();
     await page.getByRole('button', { name: '查看 / 追加额度' }).click();
     await page.getByRole('cell', { name: /用量待核对/ }).waitFor();
+    await page.getByLabel('报告名称', { exact: true }).fill('.*');
+    await page.getByRole('button', { name: '搜索报告', exact: true }).click();
+    await page.getByText('没有找到匹配报告，请换个名称搜索。').waitFor();
+    await page.getByLabel('报告名称', { exact: true }).fill('体检报告');
+    await page.getByRole('button', { name: '搜索报告', exact: true }).click();
+    await page.getByRole('button', { name: '搜索测试客户 · 2026-09-14 · 体检报告（年度）', exact: true }).click();
+    await page.getByText('当前报告：体检报告（年度）', { exact: false }).waitFor();
+    assert.equal(await page.getByRole('cell', { name: /用量待核对/ }).count(), 1);
     await page.screenshot({ path: path.join(output, 'usage.png'), fullPage: true });
     await page.getByRole('button', { name: '追加额度', exact: true }).click();
     await page.getByText('追加额度已生效', { exact: true }).waitFor();
