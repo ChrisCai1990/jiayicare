@@ -182,9 +182,9 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceT
       patientId: order.user, staffId: plannerId, assignedTo: plannerId, type: 'other', status: 'in_progress',
       date, remindAt: new Date(), sourceType: 'order', sourceOrderId: order._id,
       workflowKey: `${PREFIX}supervise`, taskRole: 'supervisor',
-      theme: `医疗代诊：健康规划师全程督办 · ${order.serviceName}`,
-      plannedContent: `期望服务日期：${date.toLocaleDateString('zh-CN')} 至 ${endDate.toLocaleDateString('zh-CN')}\n服务内容：${serviceContent}\n客户诉求：${customerNeed}\n持续督办资料审核、健康顾问方案确认和就医专员代诊；代诊执行结束后关闭。`,
-      formData: { serviceContent, customerNeed, preferredDateStart: dateInput(date), preferredDateEnd: dateInput(endDate), currentStage: /专家约诊/.test(order.serviceName || '') ? 'booking' : medicalPlanning ? 'advisor' : 'collect' },
+      theme: medicalPlanning ? `就医规划：健康规划师全程督办 · ${order.serviceName}` : `医疗代诊：健康规划师全程督办 · ${order.serviceName}`,
+      plannedContent: medicalPlanning ? `服务内容：${serviceContent}\n客户诉求：${customerNeed}\n预期沟通时段：${communicationWindow.communicationDate} ${communicationWindow.communicationTimeStart}–${communicationWindow.communicationTimeEnd}\n健康顾问提出就医规划建议后，与客户沟通是否需要其他就医协助服务，再由规划师结案。` : `期望服务日期：${date.toLocaleDateString('zh-CN')} 至 ${endDate.toLocaleDateString('zh-CN')}\n服务内容：${serviceContent}\n客户诉求：${customerNeed}\n持续督办资料审核、健康顾问方案确认和就医专员代诊；代诊执行结束后关闭。`,
+      formData: { medicalPlanning, serviceContent, customerNeed, preferredDateStart: dateInput(date), preferredDateEnd: dateInput(endDate), currentStage: /专家约诊/.test(order.serviceName || '') ? 'booking' : medicalPlanning ? 'advisor' : 'collect' },
     } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
@@ -309,7 +309,18 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
 async function validateMedicalProxyStage(task, body, staff) {
   const stage = stageOf(task);
   if (!stage) return '';
-  if (stage === 'supervise') return '健康规划师督办任务将在代诊执行完成后自动结束';
+  if (stage === 'supervise') {
+    const supervisorOrder = task.sourceOrderId ? await Order.findById(task.sourceOrderId).select('serviceName').lean() : null;
+    if (!/就医规划/.test(supervisorOrder?.serviceName || '')) return '健康规划师督办任务将在代诊执行完成后自动结束';
+    if (body.status !== 'completed') return '';
+    if (staff.role !== 'superadmin' && String(task.assignedTo || '') !== String(staff._id)) return '仅健康规划师可结束本次就医规划';
+    const advisor = await FollowUp.findOne({ sourceType: 'order', sourceOrderId: task.sourceOrderId, workflowKey: `${PREFIX}advisor`, status: 'completed' }).select('_id').lean();
+    if (!advisor) return '请等待健康顾问完成就医规划建议后再与客户确认';
+    const data = body.formData || {};
+    if (!nonempty(data.customerCommunicationSummary) || !['no_additional_service', 'additional_service_needed'].includes(data.planningOutcome)) return '请记录与客户沟通结果，并确认是否需要其他就医协助服务';
+    if (data.planningOutcome === 'additional_service_needed' && !nonempty(data.additionalServiceNote)) return '请记录拟启用的服务及后续安排';
+    return '';
+  }
   if (body.status !== 'completed') return '';
   if (staff.role !== 'superadmin' && String(task.assignedTo || '') !== String(staff._id)) return '仅当前阶段负责人可完成此任务';
   const data = body.formData || {};
@@ -332,7 +343,7 @@ async function validateMedicalProxyStage(task, body, staff) {
     if (!ids.length || count !== ids.length) return '请先在报告管理完成本次全部资料审核，退回或补传缺失资料后再流转';
     if (!nonempty(data.auditSummary)) return '请填写本次资料审核结论';
   }
-  if (stage === 'advisor' && data.medicalPlanning === true && !nonempty(data.assessmentSummary)) return '请填写健康顾问就医规划评估结论';
+  if (stage === 'advisor' && data.medicalPlanning === true && ['problemAnalysis', 'hospitalRecommendations', 'departmentRecommendations', 'expertRecommendation1', 'expertRecommendation2'].some(key => !nonempty(data[key]))) return '请填写问题分析、建议医院与科室，并至少推荐两位专家';
   if (stage === 'advisor' && data.medicalPlanning !== true && ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].some(key => !nonempty(data[key]))) {
     return '请确认代诊医院、科室、专家、代诊目标和与医生交流内容';
   }
@@ -377,6 +388,7 @@ async function validateMedicalProxyStage(task, body, staff) {
 async function advanceMedicalProxyWorkflow(task) {
   const stage = stageOf(task);
   if (!stage || task.status !== 'completed') return;
+  if (stage === 'supervise') return;
   const index = STAGES.indexOf(stage);
   const order = await Order.findById(task.sourceOrderId);
   if (!order) return;
@@ -388,7 +400,7 @@ async function advanceMedicalProxyWorkflow(task) {
     if (task.formData?.medicalPlanning === true) {
       await FollowUp.updateOne(
         { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } },
-        { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', content: '健康顾问已完成就医规划评估。', 'formData.currentStage': 'completed' } },
+        { $set: { theme: `就医规划：健康规划师客户沟通与结案 · ${order.serviceName}`, content: '健康顾问已完成就医规划建议，请与客户沟通是否需要其他就医协助服务。', 'formData.currentStage': 'planner_followup', 'formData.medicalPlanning': true, 'formData.advisorSnapshot': task.formData, remindAt: new Date() } },
       );
       return;
     }
