@@ -321,6 +321,7 @@ export const staffAPI = {
   createPatientMedication:  (id, data) => req(`/staff/patients/${id}/medications`, { method: 'POST', body: JSON.stringify(data) }),
   updatePatientMedication:  (id, medId, data) => req(`/staff/patients/${id}/medications/${medId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deletePatientMedication:  (id, medId) => req(`/staff/patients/${id}/medications/${medId}`, { method: 'DELETE' }),
+  saveSupplyReminder: (id, kind, recordId, data) => req(`/staff/patients/${id}/supply-reminders/${kind}/${recordId}`, { method: 'PUT', body: JSON.stringify(data) }),
   setMedicationReminder:    (id, medId, data) => req(`/staff/patients/${id}/medications/${medId}/reminder`, { method: 'PUT', body: JSON.stringify(data) }),
 
   // 会员营养素管理

@@ -6155,6 +6155,44 @@ router.patch('/patients/:id/medications/:medId/review', staffAuth, async (req, r
 // ── 会员药物管理（医护端 CRUD）────────────────────────────────────
 // 停用不等于删除：停用后记录仍应在列表可见（标"已停用"，可恢复），此前用 active:true 过滤导致
 // 停用后从列表消失、跟真删除没区别——医护端无法找回来查看或恢复。改为返回全部，前端按 stopped 标注状态。
+router.put('/patients/:id/supply-reminders/:kind/:recordId', staffAuth, checkPermission('followups', 'create'), async (req, res) => {
+  try {
+    const { kind, recordId } = req.params;
+    if (!['medication', 'supplement'].includes(kind)) return res.status(400).json({ success: false, message: '提醒类型不正确' });
+    const Model = kind === 'medication' ? Medication : Supplement;
+    const record = await Model.findOne({ _id: recordId, user: req.params.id, stopped: false, aiStatus: { $ne: 'pending' } });
+    if (!record) return res.status(404).json({ success: false, message: '当前使用记录不存在' });
+    const intervalDays = Number(req.body.intervalDays);
+    const cycles = Number(req.body.cycles ?? 12);
+    const mode = req.body.mode;
+    const firstDate = String(req.body.firstDate || '');
+    const first = /^\d{4}-\d{2}-\d{2}$/.test(firstDate) ? new Date(`${firstDate}T09:00:00+08:00`) : new Date(NaN);
+    const today = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    if (!Number.isInteger(intervalDays) || intervalDays < 1 || intervalDays > 365 || !Number.isInteger(cycles) || cycles < 1 || cycles > 24 || !['visit', 'proxy'].includes(mode) || Number.isNaN(first.getTime()) || firstDate < today) {
+      return res.status(400).json({ success: false, message: '请填写有效的首次日期、周期、次数及提醒方式' });
+    }
+    const patient = await User.findById(req.params.id).select('assignedHealthManager');
+    if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+    const assignee = patient.assignedHealthManager || record.staffId || req.staff._id;
+    const itemType = kind === 'medication' ? '药物' : '营养素';
+    const task = mode === 'proxy' ? '代配待办' : '就医配取提醒';
+    const rows = Array.from({ length: cycles }, (_, index) => {
+      const date = new Date(first);
+      date.setUTCDate(date.getUTCDate() + index * intervalDays);
+      return {
+        patientId: req.params.id, staffId: assignee, assignedTo: assignee, date,
+        type: mode === 'proxy' ? 'other' : 'wechat', status: 'planned',
+        theme: `${task} · ${record.name}`,
+        plannedContent: `${mode === 'proxy' ? '请安排代配' : '请提醒会员定期就医/配取'}${itemType}「${record.name}」。配取前核对当前医嘱、剂量及余量；完成后记录结果。${req.body.note ? `\n备注：${String(req.body.note).trim().slice(0, 500)}` : ''}`,
+        tags: [task, itemType], sourceType: 'supply_reminder', sourceId: record._id,
+      };
+    });
+    await FollowUp.deleteMany({ patientId: req.params.id, sourceType: 'supply_reminder', sourceId: record._id, status: 'planned', date: { $gte: new Date() } });
+    await FollowUp.insertMany(rows);
+    res.json({ success: true, generated: rows.length, message: `已生成${rows.length}条配取提醒随访` });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 router.get('/patients/:id/medications', staffAuth, async (req, res) => {
   try {
     const meds = await Medication.find({ user: req.params.id }).sort({ createdAt: -1 });
@@ -6264,6 +6302,7 @@ router.patch('/patients/:id/medications/:medId', staffAuth, async (req, res) => 
       });
       med.reminder = { ...(med.reminder?.toObject?.() || med.reminder || {}), enabled: false, updatedAt: new Date(), updatedBy: req.staff._id };
       await FollowUp.deleteMany({ sourceType: 'medication_reminder', sourceId: med._id, status: { $in: ['planned', 'in_progress'] }, date: { $gte: new Date() } });
+      await FollowUp.deleteMany({ sourceType: 'supply_reminder', sourceId: med._id, status: { $in: ['planned', 'in_progress'] }, date: { $gte: new Date() } });
     } else {
       const allowed = ['name', 'brandName', 'specification', 'dosage', 'method', 'frequency', 'timing', 'startDate', 'endDate', 'purpose', 'note'];
       allowed.forEach(key => { if (req.body[key] !== undefined) med[key] = req.body[key]; });
@@ -6284,6 +6323,7 @@ router.delete('/patients/:id/medications/:medId', staffAuth, async (req, res) =>
     }
     await med.deleteOne();
     await FollowUp.deleteMany({ sourceType: 'medication_reminder', sourceId: med._id, status: { $in: ['planned', 'in_progress'] } });
+    await FollowUp.deleteMany({ sourceType: 'supply_reminder', sourceId: med._id, status: { $in: ['planned', 'in_progress'] } });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -6339,6 +6379,7 @@ router.patch('/patients/:id/supplements/:supId', staffAuth, async (req, res) => 
         stoppedBy: req.staff._id,
         stoppedByName: req.staff.name || '',
       });
+      await FollowUp.deleteMany({ sourceType: 'supply_reminder', sourceId: sup._id, status: { $in: ['planned', 'in_progress'] }, date: { $gte: new Date() } });
     } else {
       const allowed = ['name', 'brand', 'specification', 'dosage', 'method', 'frequency', 'startDate', 'endDate', 'purpose', 'note', 'aiStatus'];
       allowed.forEach(key => { if (req.body[key] !== undefined) sup[key] = req.body[key]; });
@@ -6359,6 +6400,7 @@ router.delete('/patients/:id/supplements/:supId', staffAuth, async (req, res) =>
       return res.status(403).json({ success: false, message: '仅记录创建人可删除' });
     }
     await sup.deleteOne();
+    await FollowUp.deleteMany({ sourceType: 'supply_reminder', sourceId: sup._id, status: { $in: ['planned', 'in_progress'] } });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });

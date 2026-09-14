@@ -61,7 +61,7 @@ const followUpSchema = new mongoose.Schema({
   sourceAnnualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', default: null },
   sourceScheduleKey: { type: String, default: '' }, // 年度方案内稳定排期键，防止定时刷新重复生成
   sourceHealthPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null }, // 来自AI体检/营养方案确认后自动生成
-  sourceType: { type: String, enum: ['scheduled', 'ai_review', 'health_plan', 'insurance_service', 'annual_coordination', 'medication_reminder', 'order', 'symptom', null], default: null },
+  sourceType: { type: String, enum: ['scheduled', 'ai_review', 'health_plan', 'insurance_service', 'annual_coordination', 'medication_reminder', 'supply_reminder', 'order', 'symptom', null], default: null },
   sourceId: { type: mongoose.Schema.Types.ObjectId, default: null }, // 通用来源ID；symptom 时关联 HealthRecord
   sourceOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null }, // sourceType='order'时关联的订单，供详情弹窗展示订单号/金额/支付方式
   aiStatus:   { type: String, enum: ['pending', 'approved', null], default: null },
@@ -74,5 +74,6 @@ const followUpSchema = new mongoose.Schema({
 followUpSchema.index({ staffId: 1, date: -1 });
 followUpSchema.index({ patientId: 1, date: -1 });
 followUpSchema.index({ coordinationGroupId: 1, workflowKey: 1, taskRole: 1 });
+followUpSchema.index({ patientId: 1, sourceType: 1, sourceId: 1, status: 1, date: 1 });
 
 module.exports = mongoose.model('FollowUp', followUpSchema);
