@@ -17,7 +17,8 @@ export function validateMedicalProxyStage(stage, value) {
   if (stage === 'collect' && value.communicationTimeEnd <= value.communicationTimeStart) return '预期沟通结束时间必须晚于开始时间'
   if (stage === 'intake' && (!value.customerNeed?.trim() || !value.materialSummary?.trim() || !value.reportIds?.length)) return '请填写诉求和资料清单，选定至少一份已审核资料'
   if (stage === 'audit' && !value.auditSummary?.trim()) return '请完成所选资料审核并填写审核结论'
-  if (stage === 'advisor' && fields.advisor.some(([key]) => !value[key]?.trim())) return '请完整填写医院、科室、专家、代诊目标及交流内容'
+  if (stage === 'advisor' && value.medicalPlanning && !value.assessmentSummary?.trim()) return '请填写健康顾问就医规划评估结论'
+  if (stage === 'advisor' && !value.medicalPlanning && fields.advisor.some(([key]) => !value[key]?.trim())) return '请完整填写医院、科室、专家、代诊目标及交流内容'
   if (stage === 'advisor' && value.auditSnapshot?.collectionSnapshot?.annualMember && !value.selectedReportIds?.length) return '请从本次已审核资料中选择制定方案所用资料'
   if (stage === 'planner' && !value.medicalAssistantId) return '请指派就医专员'
   if (stage === 'booking' && ['preferredDateStart', 'preferredDateEnd', 'appointmentDate', 'appointmentTime'].some(key => !value[key]?.trim())) return '请完整填写客户期望日期区间和实际约诊日期时间'
@@ -71,6 +72,15 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
         <span style={{ fontSize: 12, color: report?.audit_status === 'audited' ? '#1E6B50' : '#B45309' }}>{report?.audit_status === 'audited' ? '已审核' : '请先审核'}</span></div>
     })}
     {input('auditSummary', '健管专员审核结论与待补事项', 3)}
+  </div>
+  if (stage === 'advisor' && value.medicalPlanning) return <div style={{ display: 'grid', gap: 12 }}>
+    <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>
+      <div>本次服务内容：{value.serviceContent || '待确认'}</div>
+      <div>客户诉求：{value.customerNeed || '待确认'}</div>
+      <div>预期沟通时段：{value.communicationDate || '待确认'} {value.communicationTimeStart || ''}–{value.communicationTimeEnd || ''}</div>
+    </div>
+    <div style={{ color: '#B45309', fontSize: 12 }}>客户上传的报告须由健管专员审核后，才能作为已审核资料使用。</div>
+    {input('assessmentSummary', '健康顾问就医规划评估结论', 5)}
   </div>
   if (stage === 'advisor') return <div style={{ display: 'grid', gap: 12 }}>
     {(value.auditSnapshot?.collectionSnapshot?.materialSummary || value.intakeSnapshot?.materialSummary) && <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>客户诉求：{value.auditSnapshot?.collectionSnapshot?.customerNeed || value.intakeSnapshot?.customerNeed}<br />预期沟通时段：{value.auditSnapshot?.collectionSnapshot?.communicationDate || value.intakeSnapshot?.communicationDate || '待确认'} {value.auditSnapshot?.collectionSnapshot?.communicationTimeStart || value.intakeSnapshot?.communicationTimeStart || ''}–{value.auditSnapshot?.collectionSnapshot?.communicationTimeEnd || value.intakeSnapshot?.communicationTimeEnd || ''}<br />资料清单：{value.auditSnapshot?.collectionSnapshot?.materialSummary || value.intakeSnapshot?.materialSummary}<br />健管审核：{value.auditSnapshot?.auditSummary || '已审核'}</div>}

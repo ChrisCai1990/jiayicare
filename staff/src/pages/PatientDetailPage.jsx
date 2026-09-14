@@ -11882,7 +11882,7 @@ export default function PatientDetailPage() {
             const result = await staffAPI.startOrder(orderId, { action: 'schedule', scheduledAt, serviceDateEnd: serviceTimeEnd, note: confirmedNote, serviceContent, customerNeed, communicationDate, communicationTimeStart, communicationTimeEnd })
             setShowMessageModal(false)
             if (/医疗代诊|专家约诊|就医规划/.test(result.data?.serviceName || '')) {
-              toast(/专家约诊/.test(result.data?.serviceName || '') ? '已转给健管专员预约' : '服务信息已确认；请在工作台指导客户上传并选定本次资料')
+              toast(/专家约诊/.test(result.data?.serviceName || '') ? '已转给健管专员预约' : /就医规划/.test(result.data?.serviceName || '') ? '沟通信息已转到健康顾问工作台' : '服务信息已确认；请在工作台指导客户上传并选定本次资料')
               loadFollowUps()
               return
             }
@@ -12414,7 +12414,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
               </div>
             </div>
             {!bookingCollapsed && <>
-            <div style={{ fontSize: 11, color: '#8AA89C' }}>{isExpertAppointment ? '确认客户的医院、科室、专家和期望日期区间后，直接转给健管专员完成预约。' : isMedicalProxy ? '先完整核对本次沟通内容；确认后由您指导客户上传并选定资料，健管专员审核后交健康顾问。您将持续督办直到代诊完成。' : '已自动带入客户确认的信息；如有变化可直接修订，再生成方案。'}</div>
+            <div style={{ fontSize: 11, color: '#8AA89C' }}>{isExpertAppointment ? '确认客户的医院、科室、专家和期望日期区间后，直接转给健管专员完成预约。' : isMedicalPlanning ? '核对客户诉求和预期沟通时段后，直接转给健康顾问评估；客户上传的报告仍由健管专员独立审核。' : isMedicalProxy ? '先完整核对本次沟通内容；确认后由您指导客户上传并选定资料，健管专员审核后交健康顾问。您将持续督办直到代诊完成。' : '已自动带入客户确认的信息；如有变化可直接修订，再生成方案。'}</div>
             {(!isMedicalProxy || !proxyReviewReady || isExpertAppointment) ? <>
               {isMedicalProxy && <div style={{ textAlign: 'right' }}><button type="button" className="btn btn-secondary btn-sm" onClick={fillFromConversation}>从对话自动填入</button></div>}
               <div style={{ display: 'grid', gridTemplateColumns: isMedicalPlanning ? '1fr 1fr 1fr' : '1fr 1fr', gap: 12 }}>
@@ -12450,7 +12450,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
                 try { await onConfirmBooking?.({ orderId, serviceTime, serviceTimeEnd: isMedicalPlanning ? serviceTime : serviceTimeEnd, communicationDate: isMedicalPlanning ? serviceTime : '', communicationTimeStart, communicationTimeEnd, task: isMedicalProxy ? [proxyServiceContent.trim(), proxyCustomerNeed.trim()].filter(Boolean).join('；') : serviceTask.trim(), serviceContent: proxyServiceContent.trim(), customerNeed: proxyCustomerNeed.trim() }) }
                 catch (err) { setBookingError(err.message || '确认预约失败') }
                 finally { setConfirmingBooking(false) }
-              }}>{confirmingBooking ? '处理中…' : isExpertAppointment ? '确认并转给健管专员预约' : isMedicalProxy ? (proxyReviewReady ? '确认并开始资料收集' : '核对沟通信息') : '确认并生成方案'}</button>
+              }}>{confirmingBooking ? '处理中…' : isExpertAppointment ? '确认并转给健管专员预约' : isMedicalPlanning ? (proxyReviewReady ? '确认并转给健康顾问' : '核对沟通信息') : isMedicalProxy ? (proxyReviewReady ? '确认并开始资料收集' : '核对沟通信息') : '确认并生成方案'}</button>
             </div>
             </>}
           </div>
