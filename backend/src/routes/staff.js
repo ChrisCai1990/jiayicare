@@ -6173,14 +6173,18 @@ router.put('/patients/:id/supply-reminders/:kind/:recordId', staffAuth, checkPer
     }
     const patient = await User.findById(req.params.id).select('assignedHealthManager');
     if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
-    const assignee = patient.assignedHealthManager || record.staffId || req.staff._id;
+    // 就医/配取提醒由当前点击生成的人负责，保存后应立即出现在其“我的随访”中；
+    // 只有明确选择“代配待办”时，才优先派给会员的归属健管专员。
+    const assignee = mode === 'proxy'
+      ? (patient.assignedHealthManager || req.staff._id)
+      : req.staff._id;
     const itemType = kind === 'medication' ? '药物' : '营养素';
     const task = mode === 'proxy' ? '代配待办' : '就医配取提醒';
     const rows = Array.from({ length: cycles }, (_, index) => {
       const date = new Date(first);
       date.setUTCDate(date.getUTCDate() + index * intervalDays);
       return {
-        patientId: req.params.id, staffId: assignee, assignedTo: assignee, date,
+        patientId: req.params.id, staffId: req.staff._id, assignedTo: assignee, date,
         type: mode === 'proxy' ? 'other' : 'wechat', status: 'planned',
         theme: `${task} · ${record.name}`,
         plannedContent: `${mode === 'proxy' ? '请安排代配' : '请提醒会员定期就医/配取'}${itemType}「${record.name}」。配取前核对当前医嘱、剂量及余量；完成后记录结果。${req.body.note ? `\n备注：${String(req.body.note).trim().slice(0, 500)}` : ''}`,
@@ -6189,7 +6193,10 @@ router.put('/patients/:id/supply-reminders/:kind/:recordId', staffAuth, checkPer
     });
     await FollowUp.deleteMany({ patientId: req.params.id, sourceType: 'supply_reminder', sourceId: record._id, status: 'planned', date: { $gte: new Date() } });
     await FollowUp.insertMany(rows);
-    res.json({ success: true, generated: rows.length, message: `已生成${rows.length}条配取提醒随访` });
+    const assignmentMessage = mode === 'proxy' && String(assignee) !== String(req.staff._id)
+      ? '，已分配给归属健管专员'
+      : '，可在我的随访中查看';
+    res.json({ success: true, generated: rows.length, message: `已生成${rows.length}条配取提醒随访${assignmentMessage}` });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
