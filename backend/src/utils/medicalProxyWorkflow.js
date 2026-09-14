@@ -92,9 +92,11 @@ async function upsertMedicalProxyServiceRecord(task, order, completed = false) {
     update.result = nonempty(task.formData?.executionResult);
     update.attachments = (task.formData?.medicalRecordAttachments || []).filter(file => file?.url);
   }
+  const recordUpdate = { $set: update, $setOnInsert: { sourceOrderId: order._id, type: 'medical_visit' } };
+  if (!completed) recordUpdate.$setOnInsert.result = '';
   return ServiceRecord.findOneAndUpdate(
     { sourceOrderId: order._id, type: 'medical_visit' },
-    { $set: update, $setOnInsert: { sourceOrderId: order._id, type: 'medical_visit', result: '' } },
+    recordUpdate,
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
 }
