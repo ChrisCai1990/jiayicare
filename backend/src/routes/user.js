@@ -1260,6 +1260,9 @@ router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
     // 使用原子更新，仅修改完成状态字段。部分历史随访由旧版本写入过已废弃的枚举值，
     // document.save() 会重新校验整条旧记录，导致用户点击“完成”时报 validation failed。
     const updated = await FollowUp.findByIdAndUpdate(followup._id, { $set: changes }, { new: true });
+    if (updated.status === 'completed' && followup.status !== 'completed' && updated.sourceType === 'supply_reminder') {
+      await require('../utils/rollingSupplyReminder').generateNextSupplyReminder(updated);
+    }
     res.json({ success: true, data: updated });
   } catch (err) {
     res.status(500).json({ success: false, message: '操作失败', error: err.message });

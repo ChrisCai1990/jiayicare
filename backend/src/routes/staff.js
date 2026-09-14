@@ -1890,6 +1890,9 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     followUp.completedBy = null;
   }
   await followUp.save();
+  if (followUp.status === 'completed' && previousStatus !== 'completed' && followUp.sourceType === 'supply_reminder') {
+    await require('../utils/rollingSupplyReminder').generateNextSupplyReminder(followUp);
+  }
   if (proxyStage && followUp.status === 'completed' && previousStatus !== 'completed') {
     await medicalProxyWorkflow.advanceMedicalProxyWorkflow(followUp);
   }
@@ -6204,14 +6207,19 @@ router.put('/patients/:id/supply-reminders/:kind/:recordId', staffAuth, checkPer
     const Model = kind === 'medication' ? Medication : Supplement;
     const record = await Model.findOne({ _id: recordId, user: req.params.id, stopped: false, aiStatus: { $ne: 'pending' } });
     if (!record) return res.status(404).json({ success: false, message: '当前使用记录不存在' });
+    if (req.body.enabled === false) {
+      record.supplyReminder = { ...(record.supplyReminder?.toObject?.() || record.supplyReminder || {}), enabled: false, updatedAt: new Date(), updatedBy: req.staff._id };
+      await record.save();
+      res.json({ success: true, message: '已停止自动生成；当前待办仍保留，可单独完成或取消' });
+      return;
+    }
     const intervalDays = Number(req.body.intervalDays);
-    const cycles = Number(req.body.cycles ?? 12);
     const mode = req.body.mode;
     const firstDate = String(req.body.firstDate || '');
     const first = /^\d{4}-\d{2}-\d{2}$/.test(firstDate) ? new Date(`${firstDate}T09:00:00+08:00`) : new Date(NaN);
     const today = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    if (!Number.isInteger(intervalDays) || intervalDays < 1 || intervalDays > 365 || !Number.isInteger(cycles) || cycles < 1 || cycles > 24 || !['visit', 'proxy'].includes(mode) || Number.isNaN(first.getTime()) || firstDate < today) {
-      return res.status(400).json({ success: false, message: '请填写有效的首次日期、周期、次数及提醒方式' });
+    if (!Number.isInteger(intervalDays) || intervalDays < 1 || intervalDays > 365 || !['visit', 'proxy'].includes(mode) || Number.isNaN(first.getTime()) || firstDate < today) {
+      return res.status(400).json({ success: false, message: '请填写有效的首次日期、周期及提醒方式' });
     }
     const patient = await User.findById(req.params.id).select('assignedHealthManager');
     if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
@@ -6220,20 +6228,18 @@ router.put('/patients/:id/supply-reminders/:kind/:recordId', staffAuth, checkPer
     const assignee = req.staff._id;
     const itemType = kind === 'medication' ? '药物' : '营养素';
     const task = mode === 'proxy' ? '代配待办' : '就医配取提醒';
-    const rows = Array.from({ length: cycles }, (_, index) => {
-      const date = new Date(first);
-      date.setUTCDate(date.getUTCDate() + index * intervalDays);
-      return {
-        patientId: req.params.id, staffId: req.staff._id, assignedTo: assignee, date,
-        type: mode === 'proxy' ? 'other' : 'wechat', status: 'planned',
-        theme: `${task} · ${record.name}`,
-        plannedContent: `${mode === 'proxy' ? '请安排代配' : '请提醒会员定期就医/配取'}${itemType}「${record.name}」。配取前核对当前医嘱、剂量及余量；完成后记录结果。${req.body.note ? `\n备注：${String(req.body.note).trim().slice(0, 500)}` : ''}`,
-        tags: [task, itemType], sourceType: 'supply_reminder', sourceId: record._id,
-      };
-    });
+    const row = {
+      patientId: req.params.id, staffId: req.staff._id, assignedTo: assignee, date: first,
+      type: mode === 'proxy' ? 'other' : 'wechat', status: 'planned',
+      theme: `${task} · ${record.name}`,
+      plannedContent: `${mode === 'proxy' ? '请安排代配' : '请提醒会员定期就医/配取'}${itemType}「${record.name}」。配取前核对当前医嘱、剂量及余量；完成后记录结果。${req.body.note ? `\n备注：${String(req.body.note).trim().slice(0, 500)}` : ''}`,
+      tags: [task, itemType], sourceType: 'supply_reminder', sourceId: record._id,
+    };
+    record.supplyReminder = { enabled: true, intervalDays, mode, note: String(req.body.note || '').trim().slice(0, 500), updatedAt: new Date(), updatedBy: req.staff._id };
+    await record.save();
     await FollowUp.deleteMany({ patientId: req.params.id, sourceType: 'supply_reminder', sourceId: record._id, status: 'planned', date: { $gte: new Date() } });
-    await FollowUp.insertMany(rows);
-    res.json({ success: true, generated: rows.length, message: `已生成${rows.length}条配取提醒随访，可在我的随访中查看` });
+    await FollowUp.create(row);
+    res.json({ success: true, generated: 1, message: '已生成1条配取随访；完成后会自动生成下一条' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -6345,6 +6351,7 @@ router.patch('/patients/:id/medications/:medId', staffAuth, async (req, res) => 
         stoppedByName: req.staff.name || '',
       });
       med.reminder = { ...(med.reminder?.toObject?.() || med.reminder || {}), enabled: false, updatedAt: new Date(), updatedBy: req.staff._id };
+      med.supplyReminder = { ...(med.supplyReminder?.toObject?.() || med.supplyReminder || {}), enabled: false, updatedAt: new Date(), updatedBy: req.staff._id };
       await FollowUp.deleteMany({ sourceType: 'medication_reminder', sourceId: med._id, status: { $in: ['planned', 'in_progress'] }, date: { $gte: new Date() } });
       await FollowUp.deleteMany({ sourceType: 'supply_reminder', sourceId: med._id, status: { $in: ['planned', 'in_progress'] }, date: { $gte: new Date() } });
     } else {
@@ -6423,6 +6430,7 @@ router.patch('/patients/:id/supplements/:supId', staffAuth, async (req, res) => 
         stoppedBy: req.staff._id,
         stoppedByName: req.staff.name || '',
       });
+      sup.supplyReminder = { ...(sup.supplyReminder?.toObject?.() || sup.supplyReminder || {}), enabled: false, updatedAt: new Date(), updatedBy: req.staff._id };
       await FollowUp.deleteMany({ sourceType: 'supply_reminder', sourceId: sup._id, status: { $in: ['planned', 'in_progress'] }, date: { $gte: new Date() } });
     } else {
       const allowed = ['name', 'brand', 'specification', 'dosage', 'method', 'frequency', 'startDate', 'endDate', 'purpose', 'note', 'aiStatus'];

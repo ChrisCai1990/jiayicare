@@ -34,6 +34,14 @@ const supplementSchema = new mongoose.Schema({
   sourceType: { type: String, enum: ['manual', 'annual_plan', 'ai', ''], default: 'manual' },
   sourceAnnualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', default: null },
   sourceRecordKey: { type: String, default: '' },
+  supplyReminder: {
+    enabled:      { type: Boolean, default: false },
+    intervalDays: { type: Number, min: 1, max: 365, default: 30 },
+    mode:         { type: String, enum: ['visit', 'proxy'], default: 'visit' },
+    note:         { type: String, default: '' },
+    updatedAt:    { type: Date, default: null },
+    updatedBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  },
 }, { timestamps: true });
 
 supplementSchema.index({ user: 1, stopped: 1 });

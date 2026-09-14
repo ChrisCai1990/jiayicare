@@ -44,6 +44,14 @@ const medicationSchema = new mongoose.Schema({
     updatedAt:    { type: Date, default: null },
     updatedBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   },
+  supplyReminder: {
+    enabled:      { type: Boolean, default: false },
+    intervalDays: { type: Number, min: 1, max: 365, default: 30 },
+    mode:         { type: String, enum: ['visit', 'proxy'], default: 'visit' },
+    note:         { type: String, default: '' },
+    updatedAt:    { type: Date, default: null },
+    updatedBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  },
   // 今日打卡记录
   checkIns: [{
     date:   { type: String }, // YYYY-MM-DD
