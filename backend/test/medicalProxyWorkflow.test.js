@@ -5,22 +5,28 @@ const MedicalReport = require('../src/models/MedicalReport');
 const User = require('../src/models/User');
 const { stageOf, validateMedicalProxyStage } = require('../src/utils/medicalProxyWorkflow');
 
-test('medical proxy intake waits for audited patient documents before advisor handoff', async () => {
+test('planner selects patient documents, then manager audit gates advisor handoff', async () => {
   const originalCount = MedicalReport.countDocuments;
   const originalFind = User.findById;
   try {
     MedicalReport.countDocuments = async filter => {
       assert.equal(filter.user, 'patient-1');
-      assert.equal(filter.audit_status, 'audited');
+      assert.equal(filter.audit_status, undefined);
       return 0;
     };
-    User.findById = () => ({ select: () => ({ lean: async () => ({ assignedFamilyDoctor: 'doctor-1' }) }) });
-    const task = { sourceType: 'order', workflowKey: 'medical_proxy:intake', patientId: 'patient-1', assignedTo: 'manager-1' };
-    assert.equal(stageOf(task), 'intake');
+    User.findById = () => ({ select: () => ({ lean: async () => ({ assignedHealthManager: 'manager-1', assignedFamilyDoctor: 'doctor-1' }) }) });
+    const task = { sourceType: 'order', workflowKey: 'medical_proxy:collect', patientId: 'patient-1', assignedTo: 'planner-1' };
+    assert.equal(stageOf(task), 'collect');
     const body = { status: 'completed', formData: { customerNeed: '代诊诉求', materialSummary: '已核对资料', reportIds: ['report-1'] } };
-    assert.match(await validateMedicalProxyStage(task, body, { _id: 'manager-1', role: 'healthManager' }), /审核通过/);
+    assert.match(await validateMedicalProxyStage(task, body, { _id: 'planner-1', role: 'healthPlanner' }), /属于该客户/);
     MedicalReport.countDocuments = async () => 1;
-    assert.equal(await validateMedicalProxyStage(task, body, { _id: 'manager-1', role: 'healthManager' }), '');
+    assert.equal(await validateMedicalProxyStage(task, body, { _id: 'planner-1', role: 'healthPlanner' }), '');
+    const audit = { sourceType: 'order', workflowKey: 'medical_proxy:audit', patientId: 'patient-1', assignedTo: 'manager-1' };
+    const auditBody = { status: 'completed', formData: { collectionSnapshot: body.formData, auditSummary: '资料齐全' } };
+    MedicalReport.countDocuments = async () => 0;
+    assert.match(await validateMedicalProxyStage(audit, auditBody, { _id: 'manager-1', role: 'healthManager' }), /审核/);
+    MedicalReport.countDocuments = async () => 1;
+    assert.equal(await validateMedicalProxyStage(audit, auditBody, { _id: 'manager-1', role: 'healthManager' }), '');
   } finally {
     MedicalReport.countDocuments = originalCount;
     User.findById = originalFind;
@@ -36,10 +42,13 @@ test('advisor must confirm five proxy visit fields and planner must assign activ
     User.findById = () => ({ select: () => ({ lean: async () => ({ assignedHealthPlanner: 'planner-1' }) }) });
     Admin.findOne = () => ({ select: () => ({ lean: async () => ({ _id: 'assistant-1' }) }) });
     const advisor = { sourceType: 'order', workflowKey: 'medical_proxy:advisor', patientId: 'patient-1', assignedTo: 'doctor-1' };
-    const data = { intakeSnapshot: { reportIds: ['report-1'] }, hospital: '医院', department: '科室', expert: '专家', proxyGoal: '取得专业意见' };
+    const data = { auditSnapshot: { collectionSnapshot: { reportIds: ['report-1'], annualMember: true } }, hospital: '医院', department: '科室', expert: '专家', proxyGoal: '取得专业意见' };
     assert.match(await validateMedicalProxyStage(advisor, { status: 'completed', formData: data }, { _id: 'doctor-1', role: 'familyDoctor' }), /交流内容/);
     data.communicationContent = '向专家确认复查安排';
+    assert.match(await validateMedicalProxyStage(advisor, { status: 'completed', formData: data }, { _id: 'doctor-1', role: 'familyDoctor' }), /年度会员/);
+    data.selectedReportIds = ['report-1'];
     assert.equal(await validateMedicalProxyStage(advisor, { status: 'completed', formData: data }, { _id: 'doctor-1', role: 'familyDoctor' }), '');
+    assert.match(await validateMedicalProxyStage({ sourceType: 'order', workflowKey: 'medical_proxy:supervise' }, { status: 'completed' }, { role: 'healthPlanner' }), /自动结束/);
     const planner = { sourceType: 'order', workflowKey: 'medical_proxy:planner', assignedTo: 'planner-1' };
     assert.match(await validateMedicalProxyStage(planner, { status: 'completed', formData: {} }, { _id: 'planner-1', role: 'healthPlanner' }), /就医专员/);
     assert.equal(await validateMedicalProxyStage(planner, { status: 'completed', formData: { medicalAssistantId: 'assistant-1' } }, { _id: 'planner-1', role: 'healthPlanner' }), '');
@@ -47,5 +56,23 @@ test('advisor must confirm five proxy visit fields and planner must assign activ
     MedicalReport.countDocuments = originalCount;
     User.findById = originalFind;
     Admin.findOne = originalAdminFind;
+  }
+});
+
+test('advisor can continue an audited intake task created before workflow redesign', async () => {
+  const originalCount = MedicalReport.countDocuments;
+  const originalFind = User.findById;
+  try {
+    MedicalReport.countDocuments = async filter => {
+      assert.equal(filter.audit_status, 'audited');
+      return 1;
+    };
+    User.findById = () => ({ select: () => ({ lean: async () => ({ assignedHealthPlanner: 'planner-1' }) }) });
+    const task = { sourceType: 'order', workflowKey: 'medical_proxy:advisor', patientId: 'patient-1', assignedTo: 'doctor-1' };
+    const formData = { intakeSnapshot: { reportIds: ['report-1'] }, hospital: '医院', department: '科室', expert: '专家', proxyGoal: '目标', communicationContent: '交流内容' };
+    assert.equal(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'doctor-1', role: 'familyDoctor' }), '');
+  } finally {
+    MedicalReport.countDocuments = originalCount;
+    User.findById = originalFind;
   }
 });

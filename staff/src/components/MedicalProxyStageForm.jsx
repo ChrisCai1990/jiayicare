@@ -12,14 +12,17 @@ const fields = {
 }
 
 export function validateMedicalProxyStage(stage, value) {
-  if (stage === 'intake' && (!value.customerNeed?.trim() || !value.materialSummary?.trim() || !value.reportIds?.length)) return '请填写诉求和资料核对结果，关联至少一份已审核资料'
+  if (stage === 'collect' && (!value.customerNeed?.trim() || !value.materialSummary?.trim() || !value.reportIds?.length)) return '请填写诉求和资料清单，选定至少一份本次服务资料'
+  if (stage === 'intake' && (!value.customerNeed?.trim() || !value.materialSummary?.trim() || !value.reportIds?.length)) return '请填写诉求和资料清单，选定至少一份已审核资料'
+  if (stage === 'audit' && !value.auditSummary?.trim()) return '请完成所选资料审核并填写审核结论'
   if (stage === 'advisor' && fields.advisor.some(([key]) => !value[key]?.trim())) return '请完整填写医院、科室、专家、代诊目标及交流内容'
+  if (stage === 'advisor' && value.auditSnapshot?.collectionSnapshot?.annualMember && !value.selectedReportIds?.length) return '请从本次已审核资料中选择制定方案所用资料'
   if (stage === 'planner' && !value.medicalAssistantId) return '请指派就医专员'
   if (stage === 'execute' && !value.executionResult?.trim()) return '请填写代诊执行结果'
   return ''
 }
 
-export default function MedicalProxyStageForm({ task, value = {}, onChange, reports = [], staffList = [] }) {
+export default function MedicalProxyStageForm({ task, value = {}, onChange, reports = [], staffList = [], onOpenReport }) {
   const stage = medicalProxyStage(task)
   const set = (key, item) => onChange({ ...value, [key]: item })
   const input = (key, label, rows = 1) => <label key={key} style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>
@@ -28,17 +31,38 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
       ? <textarea className="form-control" rows={rows} value={value[key] || ''} onChange={e => set(key, e.target.value)} />
       : <input className="form-control" value={value[key] || ''} onChange={e => set(key, e.target.value)} />}
   </label>
-  if (stage === 'intake') return <div style={{ display: 'grid', gap: 12 }}>
+  if (stage === 'collect' || stage === 'intake') return <div style={{ display: 'grid', gap: 12 }}>
     {input('customerNeed', '客户本次诉求', 3)}
-    {input('materialSummary', '病历、报告、用药、身份医保与问题清单核对结果；缺失项请写明', 4)}
-    <div style={{ fontSize: 13, fontWeight: 600 }}>关联本次已审核资料</div>
-    {reports.filter(report => report.audit_status === 'audited').map(report => <label key={report._id} style={{ fontSize: 13 }}>
+    {input('materialSummary', '本次需准备的病历、报告、用药、身份医保与问题清单；缺失项请写明', 4)}
+    <div style={{ fontSize: 13, fontWeight: 600 }}>选定客户本次上传或已有的相关资料</div>
+    {reports.filter(report => stage !== 'intake' || report.audit_status === 'audited').map(report => <label key={report._id} style={{ fontSize: 13 }}>
       <input type="checkbox" checked={(value.reportIds || []).includes(report._id)} onChange={e => set('reportIds', e.target.checked ? [...(value.reportIds || []), report._id] : (value.reportIds || []).filter(id => id !== report._id))} /> {report.title || report.type || '资料'} · {report.checkDate || report.date || ''}
+      <span style={{ color: report.audit_status === 'audited' ? '#1E6B50' : '#B45309', marginLeft: 6 }}>{report.audit_status === 'audited' ? '已审核' : '待健管审核'}</span>
     </label>)}
-    {!reports.some(report => report.audit_status === 'audited') && <div style={{ color: '#B45309', fontSize: 13 }}>请先到报告管理上传资料并完成审核，再返回本任务关联资料。</div>}
+    {!reports.length && <div style={{ color: '#B45309', fontSize: 13 }}>请先指导客户上传资料，再返回本任务选定。</div>}
+  </div>
+  if (stage === 'audit') return <div style={{ display: 'grid', gap: 12 }}>
+    <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>客户诉求：{value.collectionSnapshot?.customerNeed}<br />资料清单：{value.collectionSnapshot?.materialSummary}</div>
+    <div style={{ fontSize: 13, fontWeight: 700 }}>本次待审核资料</div>
+    {(value.collectionSnapshot?.reportIds || []).map(id => {
+      const report = reports.find(item => String(item._id) === String(id))
+      return <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}><button type="button" className="btn btn-secondary btn-sm" onClick={() => onOpenReport?.(id, report?.title)}>{report?.title || '查看资料'}</button>
+        <span style={{ fontSize: 12, color: report?.audit_status === 'audited' ? '#1E6B50' : '#B45309' }}>{report?.audit_status === 'audited' ? '已审核' : '请先审核'}</span></div>
+    })}
+    {input('auditSummary', '健管专员审核结论与待补事项', 3)}
   </div>
   if (stage === 'advisor') return <div style={{ display: 'grid', gap: 12 }}>
-    {value.intakeSnapshot?.materialSummary && <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>客户诉求：{value.intakeSnapshot.customerNeed}<br />健管资料核对：{value.intakeSnapshot.materialSummary}</div>}
+    {(value.auditSnapshot?.collectionSnapshot?.materialSummary || value.intakeSnapshot?.materialSummary) && <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>客户诉求：{value.auditSnapshot?.collectionSnapshot?.customerNeed || value.intakeSnapshot?.customerNeed}<br />资料清单：{value.auditSnapshot?.collectionSnapshot?.materialSummary || value.intakeSnapshot?.materialSummary}<br />健管审核：{value.auditSnapshot?.auditSummary || '已审核'}</div>}
+    <div style={{ display: 'grid', gap: 6 }}>
+      <div style={{ fontSize: 13, fontWeight: 700 }}>本次已审核资料{value.auditSnapshot?.collectionSnapshot?.annualMember ? '（年度会员：请选定制定方案所用资料）' : ''}</div>
+      {(value.auditSnapshot?.collectionSnapshot?.reportIds || value.intakeSnapshot?.reportIds || []).map(id => {
+        const report = reports.find(item => String(item._id) === String(id))
+        return <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {value.auditSnapshot?.collectionSnapshot?.annualMember && <input type="checkbox" checked={(value.selectedReportIds || []).includes(id)} onChange={e => set('selectedReportIds', e.target.checked ? [...(value.selectedReportIds || []), id] : (value.selectedReportIds || []).filter(item => item !== id))} />}
+          <button type="button" className="btn btn-secondary btn-sm" style={{ textAlign: 'left' }} onClick={() => onOpenReport?.(id, report?.title)}>查看 {report?.title || '已审核资料'} {report?.checkDate || report?.date || ''}</button>
+        </div>
+      })}
+    </div>
     {fields.advisor.map(([key, label]) => input(key, label, key === 'proxyGoal' || key === 'communicationContent' ? 3 : 1))}
   </div>
   if (stage === 'planner') return <div style={{ display: 'grid', gap: 12 }}>

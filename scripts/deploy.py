@@ -480,6 +480,16 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
         if code:
             raise RuntimeError("就医协助模板合并迁移失败")
         code, _ = run_migration(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/migrateMedicalProxySupervisionV2.js ] && "
+            f"[ ! -f {REPO_DIR}/.medical-proxy-supervision-v2-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/migrateMedicalProxySupervisionV2.js && "
+            f"touch {REPO_DIR}/.medical-proxy-supervision-v2-applied; fi",
+            timeout=120,
+            label="为进行中的医疗代诊订单补建健康规划师督办任务",
+        )
+        if code:
+            raise RuntimeError("医疗代诊旧订单督办迁移失败")
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOneStopFinalFlowV15.js ] && "
             f"[ ! -f {REPO_DIR}/.one-stop-final-flow-v15-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateOneStopFinalFlowV15.js --apply && "
