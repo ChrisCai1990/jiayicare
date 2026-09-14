@@ -2288,6 +2288,21 @@ export default function PatientDetailPage() {
     } catch {}
   }
 
+  useEffect(() => {
+    const targetId = new URLSearchParams(location.search).get('followUpId')
+    if (tab !== 'followups' || !targetId) return
+    let cancelled = false
+    staffAPI.getPatientFollowUps(id, { followUpId: targetId })
+      .then(res => {
+        if (cancelled) return
+        const target = res.data?.followUps?.[0]
+        if (target?.aiStatus === 'pending') setFollowUpDetail(target)
+        else toast('该随访审核任务已处理或不存在')
+      })
+      .catch(err => { if (!cancelled) toast(err.message || '打开随访审核任务失败') })
+    return () => { cancelled = true }
+  }, [id, tab, location.search])
+
   // 执行随访：填写随访结果、标记完成/随访中，逻辑与 FollowUpsPage.jsx 一致
   const openExec = (f) => {
     setExecItem(f)
@@ -10440,6 +10455,20 @@ export default function PatientDetailPage() {
               )}
             </div>
             <div className="modal-footer">
+              {followUpDetail.aiStatus === 'pending' && <>
+                <button className="btn btn-secondary" onClick={async () => {
+                  try {
+                    await staffAPI.reviewFollowUp(followUpDetail._id, { action: 'reject' })
+                    setFollowUpDetail(null); loadFollowUps(); toast('已驳回')
+                  } catch (err) { toast(err.message || '驳回失败') }
+                }}>驳回计划</button>
+                <button className="btn btn-primary" onClick={async () => {
+                  try {
+                    await staffAPI.reviewFollowUp(followUpDetail._id, { action: 'approve' })
+                    setFollowUpDetail(null); loadFollowUps(); toast('已通过审核')
+                  } catch (err) { toast(err.message || '审核失败') }
+                }}>确认随访计划</button>
+              </>}
               {medicalProxyStage(followUpDetail) !== 'supervise' && <button className="btn btn-secondary" style={{ color: '#DC3545' }}
                 onClick={async () => {
                   if (!window.confirm('确认删除这条随访记录？删除后不可恢复。')) return

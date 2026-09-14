@@ -1410,7 +1410,8 @@ router.post('/patients/:id/recalculate-score', staffAuth, async (req, res) => {
 // 客户详情是全团队服务档案：先校验查看人属于该客户服务团队，再展示该客户的全部执行任务。
 // 个人工作台 /staff/followups 仍按 assignedTo 筛选，二者用途不同，不能把个人任务口径套到客户全貌。
 router.get('/patients/:id/followups', staffAuth, async (req, res) => {
-  const { page = 1, limit = 20 } = req.query;
+  const { page = 1, limit = 20, followUpId = '' } = req.query;
+  if (followUpId && !mongoose.isValidObjectId(followUpId)) return res.status(400).json({ success: false, message: '随访任务 ID 无效' });
   const skip = (Number(page) - 1) * Number(limit);
 
   if (req.staff.role !== 'superadmin') {
@@ -1424,7 +1425,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
   // 避免已取消服务仍显示“待执行”。全局启动扫描也会修复未被打开的会员。
   await require('../utils/orderWorkItem').reconcileInactiveOrderWorkItems(req.params.id);
 
-  const filter = { patientId: req.params.id };
+  const filter = { patientId: req.params.id, ...(followUpId ? { _id: followUpId } : {}) };
   const [followUps, total] = await Promise.all([
     FollowUp.find(filter)
       .sort({ date: -1 })
@@ -9862,7 +9863,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           patientName: f.patientId?.name || '未知', patientId: String(f.patientId?._id || ''),
           summary: `${f.theme || '随访'} · ${String(f.date).slice(0, 10)}${sourceLabel}`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
-          link: `/patients/${f.patientId?._id}?tab=followups`,
+          link: `/patients/${f.patientId?._id}?tab=followups&followUpId=${f._id}`,
         });
       });
     }
