@@ -12,6 +12,28 @@ const fields = {
   execute: [['executionResult', '代诊结果、医生反馈和后续事项']],
 }
 
+const parseAppointmentRequirement = text => {
+  const parts = String(text || '').split(/[；\n]/).map(item => item.trim()).filter(Boolean)
+  const take = label => parts.find(item => item.startsWith(`${label}：`))?.slice(label.length + 1) || ''
+  const baseParts = parts.filter(item => !/^(院区|门诊类型|费用与保险|保险公司|结算方式)：/.test(item))
+  return {
+    baseContent: baseParts.join('；'), campus: take('院区'),
+    clinicType: take('门诊类型') === '国际门诊' ? 'international' : take('门诊类型') === '普通门诊' ? 'general' : '',
+    insuranceUse: /高端医疗险/.test(take('费用与保险')) ? 'high_end' : take('费用与保险') === '自费' ? 'self_pay' : '',
+    insurerName: take('保险公司'),
+    settlementMethod: ({ '直付': 'direct', '先付后报': 'reimbursement', '待核实': 'pending' })[take('结算方式')] || 'pending',
+  }
+}
+
+const formatAppointmentRequirement = data => [
+  data.baseContent,
+  data.campus && `院区：${data.campus}`,
+  data.clinicType && `门诊类型：${data.clinicType === 'international' ? '国际门诊' : '普通门诊'}`,
+  data.insuranceUse && `费用与保险：${data.insuranceUse === 'high_end' ? '使用高端医疗险' : '自费'}`,
+  data.insuranceUse === 'high_end' && data.insurerName && `保险公司：${data.insurerName}`,
+  data.insuranceUse === 'high_end' && `结算方式：${({ direct: '直付', reimbursement: '先付后报' })[data.settlementMethod] || '待核实'}`,
+].filter(Boolean).join('；')
+
 export function validateMedicalProxyStage(stage, value) {
   if (stage === 'collect' && (!value.customerNeed?.trim() || !value.materialSummary?.trim() || !value.communicationDate?.trim() || !value.communicationTimeStart?.trim() || !value.communicationTimeEnd?.trim() || !value.reportIds?.length)) return '请填写诉求、预期沟通时段和资料清单，选定至少一份本次服务资料'
   if (stage === 'collect' && value.communicationTimeEnd <= value.communicationTimeStart) return '预期沟通结束时间必须晚于开始时间'
@@ -26,7 +48,8 @@ export function validateMedicalProxyStage(stage, value) {
   if (stage === 'booking' && ['preferredDateStart', 'preferredDateEnd', 'appointmentDate', 'appointmentTime'].some(key => !value[key]?.trim())) return '请完整填写客户期望日期区间和实际约诊日期时间'
   if (stage === 'booking' && (value.appointmentDate < value.preferredDateStart || value.appointmentDate > value.preferredDateEnd) && !value.dateDifferenceNote?.trim()) return '约诊日期不在客户期望区间内，请说明差异及客户确认情况'
   if (stage === 'booking' && /费用与保险：使用高端医疗险/.test(value.planSnapshot?.serviceContent || '') && !['direct_verified', 'reimbursement_verified', 'self_pay_confirmed'].includes(value.insuranceOutcome)) return '请核实高端医疗险结算方式，并记录最终办理结果'
-  if (stage === 'appointment_review' && (!value.serviceContent?.trim() || !value.preferredDateStart || !value.preferredDateEnd || value.preferredDateEnd < value.preferredDateStart)) return '请补充完整约诊需求和期望日期区间'
+  const appointmentRequirement = stage === 'appointment_review' ? { ...parseAppointmentRequirement(value.serviceContent), ...value } : null
+  if (stage === 'appointment_review' && (!appointmentRequirement.baseContent?.trim() || ['clinicType', 'insuranceUse'].some(key => !appointmentRequirement[key]?.trim()) || !value.preferredDateStart || !value.preferredDateEnd || value.preferredDateEnd < value.preferredDateStart)) return '请保留原约诊需求，并完善门诊类型、费用与保险及期望日期区间'
   if (stage === 'post_visit_audit' && (!value.reportIds?.length && !value.noMaterialsConfirmed)) return '请选择就诊后资料，或确认本次无资料'
   if (stage === 'post_visit_audit' && !value.auditSummary?.trim()) return '请填写健管专员审核结论'
   if (stage === 'post_visit_review' && !value.reviewSummary?.trim()) return '请查看报告并填写健康顾问查看结论'
@@ -44,11 +67,25 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
       ? <textarea className="form-control" rows={rows} value={value[key] || ''} onChange={e => set(key, e.target.value)} />
       : <input className="form-control" type={type} value={value[key] || ''} onChange={e => set(key, e.target.value)} />}
   </label>
-  if (stage === 'appointment_review') return <div style={{ display: 'grid', gap: 12 }}>
-    <div style={{ fontSize: 12, color: '#8A6D3B' }}>原预约记录会保留。请补齐新增的约诊信息，提交后交给健管专员重新预约。</div>
-    {input('serviceContent', '补充约诊需求（医院、院区、科室、专家、门诊类型及费用与保险）', 4)}
+  if (stage === 'appointment_review') {
+    const requirement = { ...parseAppointmentRequirement(value.serviceContent), ...value }
+    const setRequirement = (key, item) => {
+      const next = { ...requirement, [key]: item }
+      onChange({ ...value, ...next, serviceContent: formatAppointmentRequirement(next) })
+    }
+    const requirementInput = (key, label, placeholder = '') => <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>{label}<input className="form-control" value={requirement[key] || ''} placeholder={placeholder} onChange={e => setRequirement(key, e.target.value)} /></label>
+    return <div style={{ display: 'grid', gap: 12 }}>
+    <div style={{ fontSize: 12, color: '#8A6D3B' }}>本任务由原约诊环节回退。原来的医院、科室、专家和日期均已保留，只需完善新增类目；提交后重新流转给健管专员预约。</div>
+    <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>原约诊需求（已自动带入，可修正）<textarea className="form-control" rows={3} value={requirement.baseContent || ''} onChange={e => setRequirement('baseContent', e.target.value)} /></label>
+    {requirementInput('campus', '院区（新增）', '如：庆春院区')}
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+      <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>门诊类型 *<select className="form-control" value={requirement.clinicType || ''} onChange={e => setRequirement('clinicType', e.target.value)}><option value="">请选择</option><option value="general">普通门诊</option><option value="international">国际门诊</option></select></label>
+      <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>费用与保险 *<select className="form-control" value={requirement.insuranceUse || ''} onChange={e => setRequirement('insuranceUse', e.target.value)}><option value="">请选择</option><option value="self_pay">自费</option><option value="high_end">使用高端医疗险</option></select></label>
+    </div>
+    {requirement.insuranceUse === 'high_end' && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>{requirementInput('insurerName', '保险公司')}<label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>结算方式<select className="form-control" value={requirement.settlementMethod || 'pending'} onChange={e => setRequirement('settlementMethod', e.target.value)}><option value="pending">待核实</option><option value="direct">直付</option><option value="reimbursement">先付后报</option></select></label></div>}
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>{input('preferredDateStart', '期望开始日期', 1, 'date')}{input('preferredDateEnd', '期望结束日期', 1, 'date')}</div>
   </div>
+  }
   if (stage === 'post_visit_audit') {
     const eligible = reports.filter(report => !value.appointmentAt || new Date(report.createdAt) >= new Date(value.appointmentAt))
     return <div style={{ display: 'grid', gap: 12 }}>

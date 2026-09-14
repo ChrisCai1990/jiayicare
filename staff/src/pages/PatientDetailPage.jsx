@@ -1814,6 +1814,7 @@ export default function PatientDetailPage() {
   const [showUploadReport, setShowUploadReport] = useState(false)
   const [showMessageModal, setShowMessageModal] = useState(() => new URLSearchParams(location.search).get('openChat') === '1')
   const [planningChatContext, setPlanningChatContext] = useState(null)
+  const [appointmentReviewContext, setAppointmentReviewContext] = useState(null)
   const [auditLoading, setAuditLoading] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
   const [showRejectInput, setShowRejectInput] = useState(false)
@@ -2308,6 +2309,11 @@ export default function PatientDetailPage() {
 
   // 执行随访：填写随访结果、标记完成/随访中，逻辑与 FollowUpsPage.jsx 一致
   const openExec = (f) => {
+    if (medicalProxyStage(f) === 'appointment_review') {
+      setAppointmentReviewContext(f)
+      setShowMessageModal(true)
+      return
+    }
     setExecItem(f)
     const checklist = normalizeServiceChecklist(f.serviceChecklist, f.taskPurposes, f.dependsOnTaskId?.serviceChecklist)
     setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: medicalProxyStage(f) ? (f.formData || {}) : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f.formData) : emptyOutpatientAssessment(f.formData) })
@@ -10272,7 +10278,7 @@ export default function PatientDetailPage() {
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setExecItem(null) }}>
           <div className="modal" style={{ maxWidth: (medicalProxyStage(execItem) || isCheckupBookingTask(execItem) || isCheckupOnsiteTask(execItem) || isCheckupReportCollectionTask(execItem) || isOutpatientAdvisorAssessmentTask(execItem) || isOutpatientAppointmentTask(execItem) || isOutpatientStaffAssignmentTask(execItem) || isOutpatientEscortVisitTask(execItem) || isOutpatientPostVisitReviewTask(execItem)) ? 780 : 520 }}>
             <div className="modal-header">
-              <h3 className="modal-title">{medicalProxyStage(execItem) ? (/就医规划/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? medicalProxyStage(execItem) === 'advisor' ? '就医规划 · 健康顾问提出建议' : '就医规划 · 健康规划师客户沟通与结案' : ({ intake: '医疗代诊 · 核对既有资料', collect: '医疗代诊 · 指导上传并选定资料', audit: '医疗代诊 · 健管审核资料', advisor: '医疗代诊 · 健康顾问确认方案', planner: '医疗代诊 · 健康规划师复核方案', booking: '专家约诊 · 健管专员确认预约', execute: '医疗代诊 · 执行结果', appointment_review: '专家约诊 · 健康顾问补充约诊需求', post_visit_audit: '专家约诊 · 健管专员审核就诊资料', post_visit_review: '专家约诊 · 健康顾问查看就诊资料' }[medicalProxyStage(execItem)] || '专家约诊服务任务')) : isOutpatientEscortVisitTask(execItem) ? '记录检查及专家门诊陪诊' : isOutpatientPostVisitReviewTask(execItem) ? '查看陪诊资料并制定随访计划' : isOutpatientAppointmentTask(execItem) ? '安排代诊约诊服务' : isOutpatientStaffAssignmentTask(execItem) ? '安排门诊执行人员' : isOutpatientAdvisorAssessmentTask(execItem) ? '健康顾问就医评估' : isCheckupReportCollectionTask(execItem) ? '确认或上传体检报告' : isCheckupBookingTask(execItem) ? '确认体检预约并交接陪诊' : execItem.taskRole === 'supervisor' ? '核对代办结果与检查单' : execItem.taskRole ? '记录事务完成情况' : '执行随访'}</h3>
+              <h3 className="modal-title">{medicalProxyStage(execItem) ? (/就医规划/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? medicalProxyStage(execItem) === 'advisor' ? '就医规划 · 健康顾问提出建议' : '就医规划 · 健康规划师客户沟通与结案' : ({ intake: '医疗代诊 · 核对既有资料', collect: '医疗代诊 · 指导上传并选定资料', audit: '医疗代诊 · 健管审核资料', advisor: '医疗代诊 · 健康顾问确认方案', planner: '医疗代诊 · 健康规划师复核方案', booking: '专家约诊 · 健管专员确认预约', execute: '医疗代诊 · 执行结果', appointment_review: '专家约诊 · 健康顾问确认约诊建议', post_visit_audit: '专家约诊 · 健管专员审核就诊资料', post_visit_review: '专家约诊 · 健康顾问查看就诊资料' }[medicalProxyStage(execItem)] || '专家约诊服务任务')) : isOutpatientEscortVisitTask(execItem) ? '记录检查及专家门诊陪诊' : isOutpatientPostVisitReviewTask(execItem) ? '查看陪诊资料并制定随访计划' : isOutpatientAppointmentTask(execItem) ? '安排代诊约诊服务' : isOutpatientStaffAssignmentTask(execItem) ? '安排门诊执行人员' : isOutpatientAdvisorAssessmentTask(execItem) ? '健康顾问就医评估' : isCheckupReportCollectionTask(execItem) ? '确认或上传体检报告' : isCheckupBookingTask(execItem) ? '确认体检预约并交接陪诊' : execItem.taskRole === 'supervisor' ? '核对代办结果与检查单' : execItem.taskRole ? '记录事务完成情况' : '执行随访'}</h3>
               <button className="modal-close" onClick={() => setExecItem(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', overscrollBehavior: 'contain' }}>
@@ -10348,7 +10354,7 @@ export default function PatientDetailPage() {
               <button className="btn btn-secondary" onClick={() => setExecItem(null)}>取消</button>
               {!execItem.isBlocked && execItem.taskRole === 'executor' && execItem.dependsOnTaskId?._id && medicalProxyStage(execItem) !== 'appointment_review' && <button className="btn btn-secondary" style={{ color: '#B45309', borderColor: '#D9A441' }} onClick={handleReturnPrevious} disabled={execSaving}>退回上一环节</button>}
               <button className="btn btn-primary" onClick={handleExec} disabled={execSaving || execItem.isBlocked}>
-                {execItem.isBlocked ? (isOutpatientPostVisitReviewTask(execItem) ? '等待资料审核' : '等待上一环节完成') : execSaving ? '保存中...' : medicalProxyStage(execItem) ? (medicalProxyStage(execItem) === 'booking' && /专家约诊/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? '确认预约并通知客户' : /就医规划/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? medicalProxyStage(execItem) === 'advisor' ? '提交就医规划建议并转规划师' : '确认客户意向并结束本次规划' : ({ intake: '确认资料并转健康顾问', collect: '提交本次资料给健管审核', audit: '确认审核并转健康顾问', advisor: '确认代诊方案并转规划师', planner: '确认方案并转健管预约', booking: '确认预约并转就医专员', execute: '完成代诊并结束督办', appointment_review: '提交补充需求并转健管重新预约', post_visit_audit: '确认审核并转健康顾问查看', post_visit_review: '确认查看并结束约诊服务' }[medicalProxyStage(execItem)] || '保存')) : isOutpatientEscortVisitTask(execItem) ? '完成陪诊并提交资料审核' : isOutpatientPostVisitReviewTask(execItem) ? '生成随访计划并结束服务' : isOutpatientAppointmentTask(execItem) ? '确认预约并流转代诊' : isOutpatientAdvisorAssessmentTask(execItem) ? '完成评估并流转下一步' : isCheckupReportCollectionTask(execItem) ? (execForm.serviceChecklist?.[0]?.collectionStatus === 'complete' ? '完成闭环并进入解析' : '保存报告回收进度') : isCheckupBookingTask(execItem) ? '确认预约并转交陪诊' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : '保存随访结果'}
+                {execItem.isBlocked ? (isOutpatientPostVisitReviewTask(execItem) ? '等待资料审核' : '等待上一环节完成') : execSaving ? '保存中...' : medicalProxyStage(execItem) ? (medicalProxyStage(execItem) === 'booking' && /专家约诊/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? '确认预约并通知客户' : /就医规划/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? medicalProxyStage(execItem) === 'advisor' ? '提交就医规划建议并转规划师' : '确认客户意向并结束本次规划' : ({ intake: '确认资料并转健康顾问', collect: '提交本次资料给健管审核', audit: '确认审核并转健康顾问', advisor: '确认代诊方案并转规划师', planner: '确认方案并转健管预约', booking: '确认预约并转就医专员', execute: '完成代诊并结束督办', appointment_review: '完善类目并转健管重新预约', post_visit_audit: '确认审核并转健康顾问查看', post_visit_review: '确认查看并结束约诊服务' }[medicalProxyStage(execItem)] || '保存')) : isOutpatientEscortVisitTask(execItem) ? '完成陪诊并提交资料审核' : isOutpatientPostVisitReviewTask(execItem) ? '生成随访计划并结束服务' : isOutpatientAppointmentTask(execItem) ? '确认预约并流转代诊' : isOutpatientAdvisorAssessmentTask(execItem) ? '完成评估并流转下一步' : isCheckupReportCollectionTask(execItem) ? (execForm.serviceChecklist?.[0]?.collectionStatus === 'complete' ? '完成闭环并进入解析' : '保存报告回收进度') : isCheckupBookingTask(execItem) ? '确认预约并转交陪诊' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : '保存随访结果'}
               </button>
             </div>
           </div>
@@ -10436,7 +10442,7 @@ export default function PatientDetailPage() {
                 </div>
               )}
               {medicalProxyStage(followUpDetail) === 'supervise' && <div style={{ background: '#EFF8F4', padding: 12, borderRadius: 8, fontSize: 13 }}>
-                <strong>健康规划师持续督办</strong><br />当前环节：{({ collect: '指导客户上传并选定资料', audit: '健管专员审核', advisor: '健康顾问确认方案', planner_followup: '顾问建议已完成，待与客户沟通', planner: '规划师复核并预指派就医专员', booking: '健管专员预约专家门诊', appointment_review: '健康顾问补充约诊需求', post_visit_audit: '等待就诊后资料及健管审核', followup_review: '健康顾问审核AI随访计划', post_visit_review: '健康顾问查看就诊后资料', execute: '就医专员执行代诊', completed: '服务完成' })[followUpDetail.formData?.currentStage] || '处理中'}<br />服务内容：{followUpDetail.formData?.serviceContent || '-'}<br />客户诉求：{followUpDetail.formData?.customerNeed || '-'}
+                <strong>健康规划师持续督办</strong><br />当前环节：{({ collect: '指导客户上传并选定资料', audit: '健管专员审核', advisor: '健康顾问确认方案', planner_followup: '顾问建议已完成，待与客户沟通', planner: '规划师复核并预指派就医专员', booking: '健管专员预约专家门诊', appointment_review: '健康顾问确认约诊建议', post_visit_audit: '等待就诊后资料及健管审核', followup_review: '健康顾问审核AI随访计划', post_visit_review: '健康顾问查看就诊后资料', execute: '就医专员执行代诊', completed: '服务完成' })[followUpDetail.formData?.currentStage] || '处理中'}<br />服务内容：{followUpDetail.formData?.serviceContent || '-'}<br />客户诉求：{followUpDetail.formData?.customerNeed || '-'}
               </div>}
               {medicalProxyStage(followUpDetail) === 'supervise' && /就医规划/.test(followUpDetail.sourceOrderId?.serviceName || followUpDetail.theme || '') && <div style={{ border: '1px solid #B2D8C7', background: '#F6FBF8', borderRadius: 8, padding: 14, fontSize: 13, display: 'grid', gap: 8 }}>
                 <strong style={{ color: '#1E6B50' }}>健康顾问就医规划建议</strong>
@@ -11888,7 +11894,8 @@ export default function PatientDetailPage() {
         <SendMessageModal
           patientId={id}
           patientName={user.name}
-          serviceBooking={planningChatContext ? null : location.state?.serviceBooking}
+          serviceBooking={appointmentReviewContext || (planningChatContext ? null : location.state?.serviceBooking)}
+          initialBookingForm={appointmentReviewContext?.formData}
           initialOrder={planningChatContext?.order}
           initialDraft={planningChatContext?.draft}
           planningTask={planningChatContext?.task}
@@ -11902,6 +11909,13 @@ export default function PatientDetailPage() {
             loadFollowUps()
           }}
           onConfirmBooking={async ({ orderId, serviceTime, serviceTimeEnd, task, serviceContent, customerNeed, communicationDate, communicationTimeStart, communicationTimeEnd }) => {
+            if (appointmentReviewContext) {
+              await staffAPI.updateFollowUp(appointmentReviewContext._id, { status: 'completed', formData: { ...appointmentReviewContext.formData, serviceContent, preferredDateStart: serviceTime, preferredDateEnd: serviceTimeEnd } })
+              setShowMessageModal(false); setAppointmentReviewContext(null)
+              toast('约诊建议已更新并转给健管专员重新预约')
+              loadFollowUps()
+              return
+            }
             const originalNote = location.state?.serviceBooking?.sourceOrderId?.note || ''
             const cleanOriginalNote = String(originalNote).split('\n').filter(line => !/^已确认服务任务[:：]/.test(line.trim())).join('\n').trim()
             const confirmedNote = [cleanOriginalNote, `已确认服务任务：${task}`].filter(Boolean).join('\n')
@@ -11916,7 +11930,7 @@ export default function PatientDetailPage() {
             setTab('plans')
             nav(`${location.pathname}?tab=plans`, { state: { autoMedicalAssist: { orderId, briefNote: `客户下单时已确认服务时间：${serviceTime}\n客户下单时已确认服务内容：${task}` } } })
           }}
-          onClose={() => { setShowMessageModal(false); setPlanningChatContext(null) }}
+          onClose={() => { setShowMessageModal(false); setPlanningChatContext(null); setAppointmentReviewContext(null) }}
         />
       )}
 
@@ -12154,7 +12168,7 @@ function formatRecordValue(r) {
 }
 
 // ── 聊天对话弹窗 ──────────────────────────────────────────────
-function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder, initialDraft, planningTask, onFinishPlanning, onPlanningProductPushed, onConfirmBooking, onClose }) {
+function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder, initialDraft, initialBookingForm, planningTask, onFinishPlanning, onPlanningProductPushed, onConfirmBooking, onClose }) {
   const { staff } = useStaff()
   const chatRole = staff?.role === 'familyDoctor' ? 'doctor' : staff?.role === 'nutritionist' ? 'nutritionist' : staff?.role === 'healthPlanner' ? 'planner' : staff?.role === 'medicalAssistant' ? 'medicalAssistant' : 'manager'
   const toast = useToast()
@@ -12175,10 +12189,11 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   const isExpertAppointment = /专家约诊/.test(order?.serviceName || '')
   const isMedicalPlanning = /就医规划/.test(order?.serviceName || '')
   const orderId = order?._id || order
-  const customerTaskParts = String(order?.serviceRequirements || order?.note || '')
+  const initialRequirement = String(initialBookingForm?.serviceContent || order?.serviceRequirements || order?.note || '')
+  const customerTaskParts = initialRequirement
     .split(/[；\n]/)
     .map(item => item.trim().replace(/^已确认服务任务[:：]\s*/, ''))
-    .filter(item => item && !/^(规格：|健康基金抵扣|优惠券抵扣|支付方式：)/.test(item))
+    .filter(item => item && !/^(规格：|健康基金抵扣|优惠券抵扣|支付方式：|院区：|门诊类型：|费用与保险：|保险公司：|结算方式：)/.test(item))
   const customerTask = [...new Set(customerTaskParts)].join('；')
   const orderServiceDate = order?.desiredServiceDate || order?.scheduledAt || order?.confirmedServiceSchedule?.serviceDate
   const orderActionable = order && order.paymentStatus === 'paid'
@@ -12196,17 +12211,20 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   // 从订单/督办进入时先展示完整规划师会话，避免多订单并行时客户的最新回复
   // 因订单关联不同而被“仅看本单”过滤，造成规划师误以为客户没有回复。
   const [showFullConversation, setShowFullConversation] = useState(!!serviceBooking || !!initialOrder)
-  const [serviceTime, setServiceTime] = useState(formatServiceDate(orderServiceDate))
-  const [serviceTimeEnd, setServiceTimeEnd] = useState(formatServiceDate(order?.desiredServiceDateEnd || orderServiceDate))
+  const [serviceTime, setServiceTime] = useState(initialBookingForm?.preferredDateStart || formatServiceDate(orderServiceDate))
+  const [serviceTimeEnd, setServiceTimeEnd] = useState(initialBookingForm?.preferredDateEnd || formatServiceDate(order?.desiredServiceDateEnd || orderServiceDate))
   const [communicationTimeStart, setCommunicationTimeStart] = useState(order?.aiIntake?.communicationTimeStart || '')
   const [communicationTimeEnd, setCommunicationTimeEnd] = useState(order?.aiIntake?.communicationTimeEnd || '')
   const [serviceTask, setServiceTask] = useState(customerTask)
   const [proxyServiceContent, setProxyServiceContent] = useState(order?.aiIntake?.serviceContent || customerTask)
   const [proxyCustomerNeed, setProxyCustomerNeed] = useState(order?.aiIntake?.customerNeed || '')
-  const [clinicType, setClinicType] = useState(/国际门诊/.test(`${order?.aiIntake?.serviceContent || ''} ${customerTask || ''}`) ? 'international' : /普通门诊/.test(`${order?.aiIntake?.serviceContent || ''} ${customerTask || ''}`) ? 'general' : '')
-  const [insuranceUse, setInsuranceUse] = useState(/高端.{0,4}险/.test(`${order?.aiIntake?.serviceContent || ''} ${customerTask || ''}`) ? 'high_end' : /自费/.test(`${order?.aiIntake?.serviceContent || ''} ${customerTask || ''}`) ? 'self_pay' : '')
-  const [insurerName, setInsurerName] = useState('')
-  const [settlementMethod, setSettlementMethod] = useState('pending')
+  const categoryText = `${order?.aiIntake?.serviceContent || ''} ${customerTask || ''}`
+  const categoryValue = label => categoryText.match(new RegExp(`${label}：([^；\\n]+)`))?.[1]?.trim() || ''
+  const [campus, setCampus] = useState(categoryValue('院区'))
+  const [clinicType, setClinicType] = useState(/国际门诊/.test(categoryText) ? 'international' : /普通门诊/.test(categoryText) ? 'general' : '')
+  const [insuranceUse, setInsuranceUse] = useState(/高端.{0,4}险/.test(categoryText) ? 'high_end' : /自费/.test(categoryText) ? 'self_pay' : '')
+  const [insurerName, setInsurerName] = useState(categoryValue('保险公司'))
+  const [settlementMethod, setSettlementMethod] = useState(categoryValue('结算方式') === '直付' ? 'direct' : categoryValue('结算方式') === '先付后报' ? 'reimbursement' : 'pending')
   const [proxyReviewReady, setProxyReviewReady] = useState(false)
   const [confirmingBooking, setConfirmingBooking] = useState(false)
   const [bookingError, setBookingError] = useState('')
@@ -12504,7 +12522,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
         {showBookingConfirm && (
           <div style={{ padding: '12px 16px', borderBottom: '1px solid #E0D9CE', background: '#FFF8ED', display: 'grid', gap: 8, maxHeight: bookingCollapsed ? undefined : '38vh', overflowY: bookingCollapsed ? 'visible' : 'auto', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>确认本次服务信息 · {order?.serviceName || '服务订单'}</div>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>健康顾问约诊建议 · {order?.serviceName || '服务订单'}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 {order?.orderNo && <div style={{ fontSize: 11, color: '#8AA89C' }}>订单号：{order.orderNo}</div>}
                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => setBookingCollapsed(value => !value)}>{bookingCollapsed ? '展开确认信息' : '收起确认信息，查看对话'}</button>
@@ -12512,7 +12530,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
               </div>
             </div>
             {!bookingCollapsed && <>
-            <div style={{ fontSize: 11, color: '#8AA89C' }}>{isExpertAppointment ? '确认客户的医院、科室、专家和期望日期区间后，直接转给健管专员完成预约。' : isMedicalPlanning ? '核对客户诉求和预期沟通时段后，直接转给健康顾问评估；客户上传的报告仍由健管专员独立审核。' : isMedicalProxy ? '先完整核对本次沟通内容；确认后由您指导客户上传并选定资料，健管专员审核后交健康顾问。您将持续督办直到代诊完成。' : '已自动带入客户确认的信息；如有变化可直接修订，再生成方案。'}</div>
+            <div style={{ fontSize: 11, color: '#8AA89C' }}>{isExpertAppointment ? '完整确认约诊建议后转给健管专员预约；再次退回时仍使用本页面，并自动保留上次填写内容。' : isMedicalPlanning ? '核对客户诉求和预期沟通时段后，直接转给健康顾问评估；客户上传的报告仍由健管专员独立审核。' : isMedicalProxy ? '先完整核对本次沟通内容；确认后由您指导客户上传并选定资料，健管专员审核后交健康顾问。您将持续督办直到代诊完成。' : '已自动带入客户确认的信息；如有变化可直接修订，再生成方案。'}</div>
             {(!isMedicalProxy || !proxyReviewReady || isExpertAppointment) ? <>
               {isMedicalProxy && <div style={{ textAlign: 'right' }}><button type="button" className="btn btn-secondary btn-sm" onClick={fillFromConversation}>从对话自动填入</button></div>}
               <div style={{ display: 'grid', gridTemplateColumns: isMedicalPlanning ? '1fr 1fr 1fr' : '1fr 1fr', gap: 12 }}>
@@ -12524,6 +12542,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
               </div>
               {isMedicalProxy ? <>
                 {isExpertAppointment && <>
+                  <label style={{ fontSize: 12, fontWeight: 600 }}>院区<input className="form-input" value={campus} onChange={e => setCampus(e.target.value)} placeholder="如：庆春院区（可选）" /></label>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                     <label style={{ fontSize: 12, fontWeight: 600 }}>门诊类型<select className="form-input" value={clinicType} onChange={e => setClinicType(e.target.value)}><option value="">请选择</option><option value="general">普通门诊</option><option value="international">国际门诊</option></select></label>
                     <label style={{ fontSize: 12, fontWeight: 600 }}>费用与保险<select className="form-input" value={insuranceUse} onChange={e => setInsuranceUse(e.target.value)}><option value="">请选择</option><option value="self_pay">自费</option><option value="high_end">使用高端医疗险</option></select></label>
@@ -12557,6 +12576,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
                 setConfirmingBooking(true)
                 try {
                   const appointmentCategories = isExpertAppointment ? [
+                    campus.trim() && `院区：${campus.trim()}`,
                     `门诊类型：${clinicType === 'international' ? '国际门诊' : '普通门诊'}`,
                     `费用与保险：${insuranceUse === 'high_end' ? '使用高端医疗险' : '自费'}`,
                     insuranceUse === 'high_end' && insurerName.trim() && `保险公司：${insurerName.trim()}`,
