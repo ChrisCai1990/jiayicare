@@ -1,4 +1,5 @@
 import { isManualOnlyReport } from '../utils/reportManualReview'
+import { orderConversationMessages } from '../utils/orderConversation'
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { staffAPI, API_ORIGIN } from '../api'
@@ -12091,6 +12092,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
   const [proxyCustomerNeed, setProxyCustomerNeed] = useState(order?.aiIntake?.customerNeed || '')
   const [proxyReviewReady, setProxyReviewReady] = useState(false)
   const [confirmingBooking, setConfirmingBooking] = useState(false)
+  const [bookingError, setBookingError] = useState('')
   const [recording, setRecording] = useState(false)
   const scrollRef = useRef(null)
   const recorderRef = useRef(null)
@@ -12099,10 +12101,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
   const presenceSessionRef = useRef(`staff-${Date.now()}-${Math.random().toString(36).slice(2)}`)
   const msgCountRef = useRef(0) // 上次渲染的消息条数，用于判断是否真的有新消息（而不是轮询刷新了同样内容）
   const isNearBottomRef = useRef(true) // 用户是否停留在底部附近；往上翻看历史时轮询不应打断
-  const visibleMsgs = msgs.filter(message => {
-    if (!orderId) return true
-    return String(message.action?.orderId || '') === String(orderId)
-  })
+  const visibleMsgs = orderConversationMessages(msgs, orderId)
 
   // 路由传来的预约是点击当时的快照。直接按会员订单读取最新详情，不能再从
   // “活动待办”反查：订单一旦退款/取消，待办会被过滤，旧快照反而永远无法刷新。
@@ -12325,13 +12324,15 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
               </details>
             </div>}
             {!orderActionable && <div style={{ fontSize: 12, color: '#DC3545' }}>该订单已取消、退款、完成或尚未支付，不能继续生成服务方案。</div>}
+            {bookingError && <div role="alert" style={{ padding: '8px 10px', color: '#B42318', background: '#FFF0EF', borderRadius: 6, fontSize: 12 }}>{bookingError}</div>}
             <div style={{ textAlign: 'right', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               {isMedicalProxy && proxyReviewReady && <button className="btn btn-secondary btn-sm" onClick={() => setProxyReviewReady(false)}>返回修改</button>}
               <button className="btn btn-primary btn-sm" disabled={confirmingBooking || !orderActionable || !serviceTime || (isMedicalProxy ? !proxyServiceContent.trim() || !proxyCustomerNeed.trim() : !serviceTask.trim())} onClick={async () => {
+                setBookingError('')
                 if (isMedicalProxy && !proxyReviewReady) { setProxyReviewReady(true); return }
                 setConfirmingBooking(true)
                 try { await onConfirmBooking?.({ orderId, serviceTime, task: isMedicalProxy ? `${proxyServiceContent.trim()}；${proxyCustomerNeed.trim()}` : serviceTask.trim(), serviceContent: proxyServiceContent.trim(), customerNeed: proxyCustomerNeed.trim() }) }
-                catch (err) { toast(err.message || '确认预约失败') }
+                catch (err) { setBookingError(err.message || '确认预约失败') }
                 finally { setConfirmingBooking(false) }
               }}>{confirmingBooking ? '处理中…' : isMedicalProxy ? (proxyReviewReady ? '确认并开始资料收集' : '核对沟通信息') : '确认并生成方案'}</button>
             </div>

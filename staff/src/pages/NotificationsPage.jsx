@@ -673,6 +673,7 @@ const CHAT_DRAFT_DEFAULT_RANGE = { doctor: 'today', manager: 'today', nutritioni
 function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate }) {
   const toast = useToast()
   const [messages, setMessages] = useState([])
+  const [proxyOrders, setProxyOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [content, setContent] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -690,6 +691,20 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
   const presenceSessionRef = useRef(`staff-${Date.now()}-${Math.random().toString(36).slice(2)}`)
 
   const ROLE_LABEL = { doctor: '健康顾问', nutritionist: '营养师', manager: '健管师', planner: '健康规划师', medicalAssistant: '就医专员' }
+
+  useEffect(() => {
+    if (roleKey !== 'planner') return
+    let active = true
+    staffAPI.getPatientOrders(userId).then(res => {
+      const current = (res.data || []).filter(order => /医疗代诊/.test(order.serviceName || '')
+        && order.paymentStatus === 'paid'
+        && ['paid', 'fulfilling', 'partially_refunded'].includes(order.tradeStatus)
+        && ['pending', 'scheduled'].includes(order.status))
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      if (active) setProxyOrders(current)
+    }).catch(() => { if (active) setProxyOrders([]) })
+    return () => { active = false }
+  }, [userId, roleKey])
 
   useEffect(() => {
     let active = true
@@ -815,6 +830,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
             <button className="btn btn-secondary btn-sm" disabled={draftGenerating} onClick={handleGenerateDraft}>
               {draftGenerating ? '生成中…' : '🤖 生成随访草稿'}
             </button>
+            {proxyOrders.map(order => onNavigate && <button key={order._id} className="btn btn-primary btn-sm" onClick={() => { onNavigate(`/patients/${userId}?openChat=1`, { state: { serviceBooking: { sourceOrderId: order } } }); onClose() }}>确认代诊订单{proxyOrders.length > 1 ? ` ${order.orderNo || String(order._id).slice(-6)}` : ''}</button>)}
             {onNavigate && <button className="btn btn-secondary btn-sm" onClick={() => { onNavigate(`/patients/${userId}`); onClose() }}>查看档案</button>}
             <button className="modal-close" onClick={onClose}>✕</button>
           </div>
