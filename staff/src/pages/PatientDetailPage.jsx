@@ -12086,6 +12086,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
     return `${values.year}-${values.month}-${values.day}`
   }
   const [showBookingConfirm] = useState(!!serviceBooking)
+  const [bookingCollapsed, setBookingCollapsed] = useState(false)
   const [serviceTime, setServiceTime] = useState(formatServiceDate(orderServiceDate))
   const [serviceTask, setServiceTask] = useState(customerTask)
   const [proxyServiceContent, setProxyServiceContent] = useState(order?.aiIntake?.serviceContent || customerTask)
@@ -12288,7 +12289,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
 
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ width: 'min(860px, 94vw)', maxWidth: 860, height: '78vh', display: 'flex', flexDirection: 'column', padding: 0 }}>
+      <div className="modal" style={{ width: 'min(1200px, 96vw)', maxWidth: 1200, height: '92vh', maxHeight: '92vh', display: 'flex', flexDirection: 'column', padding: 0 }}>
         {/* 顶栏 */}
         <div className="modal-header" style={{ borderBottom: '1px solid #E0D9CE', flexShrink: 0 }}>
           <div>
@@ -12300,11 +12301,15 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
         </div>
 
         {showBookingConfirm && (
-          <div style={{ padding: '12px 16px', borderBottom: '1px solid #E0D9CE', background: '#FFF8ED', display: 'grid', gap: 8 }}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid #E0D9CE', background: '#FFF8ED', display: 'grid', gap: 8, maxHeight: bookingCollapsed ? undefined : '38vh', overflowY: bookingCollapsed ? 'visible' : 'auto', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
               <div style={{ fontSize: 13, fontWeight: 700 }}>确认本次服务信息 · {order?.serviceName || '服务订单'}</div>
-              {order?.orderNo && <div style={{ fontSize: 11, color: '#8AA89C' }}>订单号：{order.orderNo}</div>}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {order?.orderNo && <div style={{ fontSize: 11, color: '#8AA89C' }}>订单号：{order.orderNo}</div>}
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setBookingCollapsed(value => !value)}>{bookingCollapsed ? '展开确认信息' : '收起确认信息，查看对话'}</button>
+              </div>
             </div>
+            {!bookingCollapsed && <>
             <div style={{ fontSize: 11, color: '#8AA89C' }}>{isMedicalProxy ? '先完整核对本次沟通内容；确认后由您指导客户上传并选定资料，健管专员审核后交健康顾问。您将持续督办直到代诊完成。' : '已自动带入客户确认的信息；如有变化可直接修订，再生成方案。'}</div>
             {(!isMedicalProxy || !proxyReviewReady) ? <>
               <label style={{ fontSize: 12, fontWeight: 600 }}>服务日期<input className="form-input" type="date" value={serviceTime} onChange={e => { setServiceTime(e.target.value); setProxyReviewReady(false) }} /></label>
@@ -12318,7 +12323,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
               <div><b>客户主诉及沟通问题：</b>{proxyCustomerNeed}</div>
               {order?.aiIntake?.riskFlags?.length > 0 && <div><b>需人工关注：</b>{order.aiIntake.riskFlags.join('、')}</div>}
               <details><summary style={{ cursor: 'pointer' }}>查看本次完整对话记录（{visibleMsgs.length}条）</summary>
-                <div style={{ maxHeight: 150, overflowY: 'auto', whiteSpace: 'pre-wrap', marginTop: 6 }}>
+                <div style={{ maxHeight: '32vh', overflowY: 'auto', whiteSpace: 'pre-wrap', marginTop: 6 }}>
                   {visibleMsgs.filter(m => !m.recalled).map((m, i) => <div key={m._id || i} style={{ padding: '4px 0', borderBottom: '1px solid #E0E9E3' }}><b>{m.type === 'user' ? '客户' : m.sender || '服务人员'}：</b>{m.content || m.text || ''}</div>)}
                 </div>
               </details>
@@ -12336,6 +12341,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
                 finally { setConfirmingBooking(false) }
               }}>{confirmingBooking ? '处理中…' : isMedicalProxy ? (proxyReviewReady ? '确认并开始资料收集' : '核对沟通信息') : '确认并生成方案'}</button>
             </div>
+            </>}
           </div>
         )}
 
