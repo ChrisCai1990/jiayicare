@@ -12205,6 +12205,15 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   const presenceSessionRef = useRef(`staff-${Date.now()}-${Math.random().toString(36).slice(2)}`)
   const msgCountRef = useRef(0) // 上次渲染的消息条数，用于判断是否真的有新消息（而不是轮询刷新了同样内容）
   const isNearBottomRef = useRef(true) // 用户是否停留在底部附近；往上翻看历史时轮询不应打断
+  const scrollToConversationBottom = (behavior = 'auto') => {
+    const scroll = () => {
+      const el = scrollRef.current
+      if (el) el.scrollTo({ top: el.scrollHeight, behavior })
+    }
+    // 等待 React 提交消息气泡和浏览器完成布局；长文本换行后再校正一次。
+    requestAnimationFrame(() => requestAnimationFrame(scroll))
+    setTimeout(scroll, 120)
+  }
   const visibleMsgs = orderConversationMessages(msgs, orderId, order?.createdAt)
   const displayedMsgs = showFullConversation ? msgs : visibleMsgs
 
@@ -12252,7 +12261,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
       const res = await staffAPI.getChatThread(patientId, chatRole)
       setMsgs(previous => reconcileConversationMessages(previous, res.data || []))
       setHumanActive(!!res.humanActive)
-      setTimeout(() => scrollRef.current?.scrollTo({ top: 99999, behavior: 'auto' }), 80)
+      scrollToConversationBottom('auto')
     } catch {}
     finally { setLoading(false) }
   }
@@ -12296,7 +12305,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
     const hasNewMessage = msgs.length > msgCountRef.current
     msgCountRef.current = msgs.length
     if (hasNewMessage && isNearBottomRef.current) {
-      scrollRef.current?.scrollTo({ top: 99999, behavior: 'smooth' })
+      scrollToConversationBottom('smooth')
     }
   }, [msgs])
 
@@ -12314,7 +12323,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
       setImages([])
       isNearBottomRef.current = true // 自己发消息后，无论之前翻到哪，都应该跟到底部
       if (res.data) setMsgs(prev => [...prev, res.data])
-      setTimeout(() => scrollRef.current?.scrollTo({ top: 99999, behavior: 'smooth' }), 80)
+      scrollToConversationBottom('smooth')
     } catch (err) { setSendError(err.message || '消息发送失败，请重试') }
     finally { setSending(false) }
   }
@@ -12415,7 +12424,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
 
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ width: 'min(1200px, 96vw)', maxWidth: 1200, height: '92vh', maxHeight: '92vh', display: 'flex', flexDirection: 'column', padding: 0 }}>
+      <div className="modal" style={{ width: 'min(1200px, 96vw)', maxWidth: 1200, height: '92vh', maxHeight: '92vh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
         {/* 顶栏 */}
         <div className="modal-header" style={{ borderBottom: '1px solid #E0D9CE', flexShrink: 0 }}>
           <div>
@@ -12502,7 +12511,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
         )}
 
         {/* 消息列表 */}
-        <div ref={scrollRef} onScroll={handleScroll} style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', padding: '16px 16px 36px', display: 'flex', flexDirection: 'column', gap: 12, backgroundColor: '#F2EDE3', scrollPaddingBottom: 36 }}>
+        <div ref={scrollRef} onScroll={handleScroll} style={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto', overflowX: 'hidden', padding: '16px 16px 72px', display: 'flex', flexDirection: 'column', gap: 12, backgroundColor: '#F2EDE3', scrollPaddingBottom: 72 }}>
           {loading ? (
             <div style={{ textAlign: 'center', color: '#8AA89C', padding: 40 }}>加载中…</div>
           ) : displayedMsgs.length === 0 ? (
