@@ -30,3 +30,12 @@ test('explicit order message takes precedence over unrelated prompts after order
     { _id: 'customer', createdAt: '2026-09-14T03:03:00Z', type: 'user' },
   ], 'order-a', '2026-09-14T02:00:00Z').map(message => message._id), ['staff', 'customer'])
 })
+
+test('staff can still see a reply explicitly sent to an earlier order', () => {
+  assert.deepEqual(orderConversationMessages([
+    { _id: 'first-prompt', createdAt: '2026-09-14T01:00:00Z', action: { type: 'order_planner_confirmation', orderId: 'order-a' } },
+    { _id: 'first-customer', createdAt: '2026-09-14T01:01:00Z', type: 'user' },
+    { _id: 'next-prompt', createdAt: '2026-09-14T02:00:00Z', action: { type: 'order_planner_confirmation', orderId: 'order-b' } },
+    { _id: 'staff-reply', createdAt: '2026-09-14T02:01:00Z', action: { type: 'order_conversation', orderId: 'order-a' } },
+  ], 'order-a').map(message => message._id), ['first-prompt', 'first-customer', 'staff-reply'])
+})

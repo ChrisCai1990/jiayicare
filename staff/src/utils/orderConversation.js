@@ -13,8 +13,11 @@ export function orderConversationMessages(messages = [], orderId, orderCreatedAt
     : -1
   if (start < 0) return []
   const nextOrder = ordered.findIndex((message, index) => index > start && message.action?.type === 'order_planner_confirmation' && String(message.action.orderId || '') !== id)
-  return ordered.slice(start, nextOrder < 0 ? undefined : nextOrder).filter(message => {
+  return ordered.filter((message, index) => {
     const markedOrder = message.action?.orderId
-    return !markedOrder || String(markedOrder) === id
+    // An explicitly linked staff reply belongs to this order even when it was
+    // sent after another order prompt. Only untagged replies use the time window.
+    if (markedOrder) return String(markedOrder) === id
+    return index >= start && (nextOrder < 0 || index < nextOrder)
   })
 }
