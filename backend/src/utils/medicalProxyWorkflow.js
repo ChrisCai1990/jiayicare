@@ -73,6 +73,13 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceC
     } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
+  await FollowUp.updateMany({
+    _id: { $ne: supervisor._id }, patientId: order.user,
+    sourceType: 'order', workflowKey: `${PREFIX}supervise`,
+    sourceOrderId: { $ne: order._id }, status: { $in: ['planned', 'in_progress'] },
+    theme: /^医疗代诊[：:]\s*健康规划师全程督办\s*$/,
+    createdAt: { $lt: supervisor.createdAt },
+  }, { $set: { status: 'cancelled', cancelReason: '旧版医疗代诊督办已由当前订单督办替代' } });
   const task = await FollowUp.findOneAndUpdate(
     { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}collect` },
     { $setOnInsert: {

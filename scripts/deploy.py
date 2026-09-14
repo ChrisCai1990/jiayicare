@@ -520,6 +520,16 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
         if code:
             raise RuntimeError("医疗代诊重复督办清理失败")
         code, _ = run_migration(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/migrateMedicalProxyLegacyOrderSupervisorsV6.js ] && "
+            f"[ ! -f {REPO_DIR}/.medical-proxy-legacy-order-supervisors-v6-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/migrateMedicalProxyLegacyOrderSupervisorsV6.js && "
+            f"touch {REPO_DIR}/.medical-proxy-legacy-order-supervisors-v6-applied; fi",
+            timeout=120,
+            label="取消同一客户已被新订单替代的旧版医疗代诊督办",
+        )
+        if code:
+            raise RuntimeError("医疗代诊旧订单督办清理失败")
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOneStopFinalFlowV15.js ] && "
             f"[ ! -f {REPO_DIR}/.one-stop-final-flow-v15-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateOneStopFinalFlowV15.js --apply && "
