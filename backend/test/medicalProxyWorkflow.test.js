@@ -132,3 +132,12 @@ test('annual-member staff initiation skips collection, audit and planner executi
   assert.match(workflow, /健康规划师全程督办/);
   assert.doesNotMatch(workflow, /仅适用于年度会员/);
 });
+
+test('booking and execution write the shared hospital visit service archive', () => {
+  const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
+  const model = fs.readFileSync(path.join(__dirname, '../src/models/ServiceRecord.js'), 'utf8');
+  assert.match(workflow, /upsertMedicalProxyServiceRecord\(task, order, false\)/);
+  assert.match(workflow, /upsertMedicalProxyServiceRecord\(task, order, true\)/);
+  assert.match(workflow, /type: 'medical_visit'/);
+  assert.match(model, /sourceOrderId:/);
+});

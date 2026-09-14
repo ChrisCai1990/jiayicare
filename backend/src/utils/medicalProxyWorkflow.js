@@ -2,6 +2,7 @@ const Admin = require('../models/Admin');
 const FollowUp = require('../models/FollowUp');
 const MedicalReport = require('../models/MedicalReport');
 const Order = require('../models/Order');
+const ServiceRecord = require('../models/ServiceRecord');
 const User = require('../models/User');
 
 const PREFIX = 'medical_proxy:';
@@ -72,6 +73,30 @@ async function archiveMedicalProxyRecords(task, order, tenantId) {
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
   }
+}
+
+async function upsertMedicalProxyServiceRecord(task, order, completed = false) {
+  const plan = order.medicalProxyPlan || task.formData?.planSnapshot || {};
+  const booking = plan.booking || task.formData?.bookingSnapshot || (stageOf(task) === 'booking' ? task.formData : {});
+  const appointment = booking.appointmentDate && booking.appointmentTime ? appointmentAt(booking.appointmentDate, booking.appointmentTime) : (order.scheduledAt || task.date || new Date());
+  const content = [
+    plan.hospital && `医院：${plan.hospital}`, plan.department && `科室：${plan.department}`, plan.expert && `专家：${plan.expert}`,
+    plan.proxyGoal && `代诊目标：${plan.proxyGoal}`, plan.communicationContent && `交流内容：${plan.communicationContent}`,
+    booking.preferredDateStart && `客户期望日期：${booking.preferredDateStart} 至 ${booking.preferredDateEnd || booking.preferredDateStart}`,
+    booking.appointmentDate && `实际约诊时间：${booking.appointmentDate} ${booking.appointmentTime || ''}`,
+    booking.dateDifferenceNote && `日期差异确认：${booking.dateDifferenceNote}`,
+  ].filter(Boolean).join('\n');
+  const update = { staffId: task.assignedTo, patientId: task.patientId, date: appointment, title: '医疗代诊服务', content,
+    medicalEscort: { serviceType: 'proxy_visit', hospital: plan.hospital || '', department: plan.department || '', doctor: plan.expert || '' } };
+  if (completed) {
+    update.result = nonempty(task.formData?.executionResult);
+    update.attachments = (task.formData?.medicalRecordAttachments || []).filter(file => file?.url);
+  }
+  return ServiceRecord.findOneAndUpdate(
+    { sourceOrderId: order._id, type: 'medical_visit' },
+    { $set: update, $setOnInsert: { sourceOrderId: order._id, type: 'medical_visit', result: '' } },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
 }
 
 async function createMedicalProxyFollowUpDrafts(task, order, familyDoctorId) {
@@ -296,6 +321,7 @@ async function advanceMedicalProxyWorkflow(task) {
     order.status = 'scheduled';
     order.markModified('medicalProxyPlan');
     await order.save();
+    await upsertMedicalProxyServiceRecord(task, order, false);
   }
   if (stage === 'intake') {
     await FollowUp.findOneAndUpdate(
@@ -314,6 +340,7 @@ async function advanceMedicalProxyWorkflow(task) {
     return;
   }
   if (index === STAGES.length - 1) {
+    await upsertMedicalProxyServiceRecord(task, order, true);
     await archiveMedicalProxyRecords(task, order, patient?.tenantId);
     await createMedicalProxyFollowUpDrafts(task, order, patient?.assignedFamilyDoctor);
     if (order.initiationSource === STAFF_DIRECT_SOURCE) {
@@ -374,4 +401,4 @@ async function advanceMedicalProxyWorkflow(task) {
   );
 }
 
-module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
+module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, upsertMedicalProxyServiceRecord, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
