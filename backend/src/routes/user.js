@@ -49,6 +49,24 @@ const { reverseFamilyRelation, synchronizeFamilyGroup } = require('../utils/fami
 const { isActiveToday } = require('./reminders');
 const router = express.Router();
 
+// Keep pushed-product checkout aligned with the normal storefront checkout:
+// inpatient service starts with the assigned advisor; all other products are
+// supervised by the patient's health planner.
+async function resolveOrderWorkflowAssignee(userId, serviceName = '') {
+  if (/住院一站式/.test(serviceName)) {
+    const patient = await User.findById(userId).select('assignedFamilyDoctor').lean();
+    if (patient?.assignedFamilyDoctor) {
+      const activeAdvisor = await Admin.exists({
+        _id: patient.assignedFamilyDoctor,
+        role: 'familyDoctor',
+        staffStatus: 'active',
+      });
+      if (activeAdvisor) return patient.assignedFamilyDoctor;
+    }
+  }
+  return resolveHealthPlanner(userId);
+}
+
 async function applyOnboardingRewards(user, inviteCode, pendingInviterId) {
   const cfgRow = await SystemConfig.findOne({ key: 'healthFundPolicy' }).lean();
   const cfg = cfgRow?.value || {};

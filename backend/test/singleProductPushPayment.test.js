@@ -16,4 +16,6 @@ test('push-record payment accepts legacy records that only contain productId', (
   assert.match(source, /record\.products\?\.length \? record\.products : \(record\.productId/);
   assert.match(source, /new Set\(selectedProductIds\.map\(String\)\)/);
   assert.match(source, /selectedIdSet\.has\(String\(p\.productId\)\)/);
+  assert.match(source, /async function resolveOrderWorkflowAssignee\(userId, serviceName = ''\)/);
+  assert.match(source, /return resolveHealthPlanner\(userId\)/);
 });
