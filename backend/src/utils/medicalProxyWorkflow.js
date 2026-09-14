@@ -343,7 +343,7 @@ async function validateMedicalProxyStage(task, body, staff) {
     if (!ids.length || count !== ids.length) return '请先在报告管理完成本次全部资料审核，退回或补传缺失资料后再流转';
     if (!nonempty(data.auditSummary)) return '请填写本次资料审核结论';
   }
-  if (stage === 'advisor' && data.medicalPlanning === true && ['problemAnalysis', 'hospitalRecommendations', 'departmentRecommendations', 'expertRecommendation1', 'expertRecommendation2'].some(key => !nonempty(data[key]))) return '请填写问题分析、建议医院与科室，并至少推荐两位专家';
+  if (stage === 'advisor' && data.medicalPlanning === true && ['problemAnalysis', 'expertRecommendation1', 'expertRecommendation2'].some(key => !nonempty(data[key]))) return '请填写问题分析，并至少推荐两位专家（注明各自所在医院和科室）';
   if (stage === 'advisor' && data.medicalPlanning !== true && ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].some(key => !nonempty(data[key]))) {
     return '请确认代诊医院、科室、专家、代诊目标和与医生交流内容';
   }

@@ -149,7 +149,7 @@ test('planning advisor can complete an assessment without proxy-visit booking fi
   const originalFind = User.findById;
   try {
     User.findById = () => ({ select: () => ({ lean: async () => ({ assignedHealthPlanner: 'planner-1' }) }) });
-    const formData = { medicalPlanning: true, customerNeed: '需要解读报告并确定就医方向', problemAnalysis: '需要结合报告评估', hospitalRecommendations: '某医院', departmentRecommendations: '某科室', expertRecommendation1: '专家甲', expertRecommendation2: '专家乙' };
+    const formData = { medicalPlanning: true, customerNeed: '需要解读报告并确定就医方向', problemAnalysis: '需要结合报告评估', expertRecommendation1: '专家甲，某医院某科室', expertRecommendation2: '专家乙，另一医院某科室' };
     assert.equal(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'doctor-1', role: 'familyDoctor' }), '');
     delete formData.expertRecommendation2;
     assert.match(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'doctor-1', role: 'familyDoctor' }), /至少推荐两位专家/);

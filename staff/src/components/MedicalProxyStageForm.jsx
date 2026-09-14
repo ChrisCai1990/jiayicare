@@ -17,7 +17,7 @@ export function validateMedicalProxyStage(stage, value) {
   if (stage === 'collect' && value.communicationTimeEnd <= value.communicationTimeStart) return '预期沟通结束时间必须晚于开始时间'
   if (stage === 'intake' && (!value.customerNeed?.trim() || !value.materialSummary?.trim() || !value.reportIds?.length)) return '请填写诉求和资料清单，选定至少一份已审核资料'
   if (stage === 'audit' && !value.auditSummary?.trim()) return '请完成所选资料审核并填写审核结论'
-  if (stage === 'advisor' && value.medicalPlanning && ['problemAnalysis', 'hospitalRecommendations', 'departmentRecommendations', 'expertRecommendation1', 'expertRecommendation2'].some(key => !value[key]?.trim())) return '请填写问题分析、建议医院与科室，并至少推荐两位专家'
+  if (stage === 'advisor' && value.medicalPlanning && ['problemAnalysis', 'expertRecommendation1', 'expertRecommendation2'].some(key => !value[key]?.trim())) return '请填写问题分析，并至少推荐两位专家（注明各自所在医院和科室）'
   if (stage === 'supervise' && value.medicalPlanning && (!value.customerCommunicationSummary?.trim() || !['no_additional_service', 'additional_service_needed'].includes(value.planningOutcome))) return '请记录客户沟通结果并确认是否需要其他就医协助服务'
   if (stage === 'supervise' && value.medicalPlanning && value.planningOutcome === 'additional_service_needed' && !value.additionalServiceNote?.trim()) return '请记录拟启用的服务及后续安排'
   if (stage === 'advisor' && !value.medicalPlanning && fields.advisor.some(([key]) => !value[key]?.trim())) return '请完整填写医院、科室、专家、代诊目标及交流内容'
@@ -83,18 +83,16 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     </div>
     <div style={{ color: '#B45309', fontSize: 12 }}>客户上传的报告须由健管专员审核后，才能作为已审核资料使用。</div>
     {input('problemAnalysis', '问题分析', 4)}
-    {input('hospitalRecommendations', '建议就医医院', 3)}
-    {input('departmentRecommendations', '建议就医科室', 2)}
     {input('expertRecommendation1', '推荐专家 1（姓名及所在医院、科室）', 2)}
     {input('expertRecommendation2', '推荐专家 2（姓名及所在医院、科室）', 2)}
-    {input('expertRecommendation3', '推荐专家 3（选填）', 2)}
+    {input('expertRecommendation3', '推荐专家 3（姓名及所在医院、科室；选填）', 2)}
     {input('planningRemarks', '备注（选填）', 3)}
   </div>
   if (stage === 'supervise' && /就医规划/.test(`${task?.theme || ''} ${task?.sourceOrderId?.serviceName || ''}`)) {
     const plan = value.advisorSnapshot || {}
     return <div style={{ display: 'grid', gap: 12 }}>
       <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>
-        {plan.problemAnalysis ? <><div>问题分析：{plan.problemAnalysis}</div><div>建议医院：{plan.hospitalRecommendations}</div><div>建议科室：{plan.departmentRecommendations}</div><div>推荐专家：{[plan.expertRecommendation1, plan.expertRecommendation2, plan.expertRecommendation3].filter(Boolean).join('；')}</div>{plan.planningRemarks && <div>备注：{plan.planningRemarks}</div>}</> : <div>等待健康顾问完成就医规划建议；当前督办任务保持进行中。</div>}
+        {plan.problemAnalysis ? <><div>问题分析：{plan.problemAnalysis}</div><div>推荐专家（含所在医院、科室）：{[plan.expertRecommendation1, plan.expertRecommendation2, plan.expertRecommendation3].filter(Boolean).join('；')}</div>{plan.planningRemarks && <div>备注：{plan.planningRemarks}</div>}</> : <div>等待健康顾问完成就医规划建议；当前督办任务保持进行中。</div>}
       </div>
       {input('customerCommunicationSummary', '与客户沟通规划建议的结果', 4)}
       <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>是否需要其他就医协助服务
