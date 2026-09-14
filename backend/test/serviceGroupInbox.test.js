@@ -14,6 +14,12 @@ test('自动收件：纯图片、逐份确认、权限、重复及失败恢复',
  assert.equal(f.models.ServiceGroupMessage.rows.length,2);assert.equal(f.models.MedicalReport.rows.length,0,'收件不入正式报告');
  assert.equal((await req('/inbox',undefined,true)).status,403);
  const inbox=(await req('/inbox')).data;assert.equal(inbox.length,2);assert.ok(inbox[0].previewUrl);assert.equal(inbox[0].attachment,undefined);
+ assert.ok(inbox.every(m=>!m.senderPatientId));
+ assert.equal((await req('/inbox/sender-binding',{messageIds:inbox.map(m=>m._id),patientId:f.ids.outsider})).status,400);
+ assert.equal((await req('/inbox/sender-binding',{messageIds:inbox.map(m=>m._id),patientId:f.ids.patient})).status,200);
+ assert.equal((await req('/inbox/sender-binding',{messageIds:inbox.map(m=>m._id),patientId:f.ids.patient})).status,200);
+ assert.equal(g.senderBindings.length,1);
+ assert.ok((await req('/inbox')).data.every(m=>m.senderPatientId===f.ids.patient));
  const ids=inbox.map(m=>m._id),payload={messageIds:ids,patientId:f.ids.patient,purpose:'report',title:'就诊资料',date:'2026-09-09',documentCategory:'outpatient_record'};
  assert.equal((await req('/inbox/confirm',{...payload,patientId:f.ids.outsider})).status,400);
  const results=await req('/inbox/confirm',payload);assert.ok(results.data.every(r=>r.success));assert.equal(f.models.MedicalReport.rows.length,2);

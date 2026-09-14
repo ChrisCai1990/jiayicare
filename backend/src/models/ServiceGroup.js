@@ -15,6 +15,7 @@ const schema = new mongoose.Schema(
       },
     ],
     archiveConsent: { type: Boolean, default: false },
+    senderBindings: [{ sender: String, patientId: {type:oid,ref:'User'}, boundBy: {type:oid,ref:'Admin'}, boundAt: Date, _id:false }],
     lastMessageAt: Date,
     aiConsent: { type: Boolean, default: false },
     revisions: [

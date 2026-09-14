@@ -5,6 +5,7 @@ export default function GroupMaterialInbox({group,caps,busy,run,can}) {
   const [rows,setRows]=useState([]),[selected,setSelected]=useState([]),[error,setError]=useState('');
   const [patientId,setPatient]=useState(''),[purpose,setPurpose]=useState(''),[title,setTitle]=useState(''),[date,setDate]=useState('');
   const [category,setCategory]=useState('outpatient_record'),[result,setResult]=useState([]),[showDone,setShowDone]=useState(false);
+  const [rememberSender,setRememberSender]=useState(false);
   const active=useRef(true);
   const load=async()=>{
     try {const r=await api.get(`/${group._id}/inbox`);if(active.current){setRows(r.data);setError('');}}
@@ -16,7 +17,13 @@ export default function GroupMaterialInbox({group,caps,busy,run,can}) {
     poll();const timer=setInterval(poll,15000);document.addEventListener('visibilitychange',poll);
     return()=>{active.current=false;clearInterval(timer);document.removeEventListener('visibilitychange',poll);};
   },[group._id,group.archiveConsent]);
-  const choose=(id)=>setSelected(old=>old.includes(id)?old.filter(x=>x!==id):old.length<9?[...old,id]:old);
+  const choose=(id)=>{
+    const next=selected.includes(id)?selected.filter(x=>x!==id):selected.length<9?[...selected,id]:selected;
+    const selectedRows=rows.filter(r=>next.includes(r._id));
+    const matches=selectedRows.map(r=>r.senderPatientId);
+    setPatient(matches.length&&matches.every(p=>p&&p===matches[0])?matches[0]:'');
+    setRememberSender(false);setSelected(next);
+  };
   const allowed=can(purpose==='report'?'reports':'service_records','create');
   return <section className="sa-materials">
     <div className="sa-row"><h2>群资料待归档</h2><button disabled={busy||!group.archiveConsent} onClick={load}>刷新资料</button></div>
@@ -29,6 +36,7 @@ export default function GroupMaterialInbox({group,caps,busy,run,can}) {
     <div className="sa-material-grid">{rows.filter(m=>showDone||m.state!=='archived').map(m=><article className="sa-card" key={m._id}>
       {m.mimeType?.startsWith('image/')?<a href={m.previewUrl} target="_blank" rel="noreferrer"><img src={m.previewUrl} alt={m.name} loading="lazy"/></a>:<a href={m.previewUrl} target="_blank" rel="noreferrer">预览 PDF</a>}
       <small>{new Date(m.sentAt).toLocaleString('zh-CN')} · {m.sender}</small>
+      <small>{m.senderPatientId ? '优先归属：'+(group.members.find(x=>(x.patientId?._id||x.patientId)===m.senderPatientId)?.patientId?.name||'已关联成员') : '发送人尚未关联档案，请确认一次对应成员'}</small>
       <p>{m.name}</p>
       <small>{({pending:'待确认',queued:'已核对，等待12:00／20:00自动归档',processing:'正在归档，请勿重复提交',failed:'上次未完成，可按原确认信息重试',archived:'已归档'})[m.state]}</small>
       {m.patientId&&<small>已确认：{group.members.find(x=>(x.patientId?._id||x.patientId)===m.patientId)?.patientId?.name||'家庭成员'} · {m.title} · {m.date}</small>}
@@ -36,11 +44,14 @@ export default function GroupMaterialInbox({group,caps,busy,run,can}) {
       {['pending','failed'].includes(m.state)&&<label className="sa-check"><input type="checkbox" aria-label={'选择资料 '+m.name} disabled={busy||(!selected.includes(m._id)&&selected.length>=9)} checked={selected.includes(m._id)} onChange={()=>choose(m._id)}/>选择归档</label>}
     </article>)}</div>
     {!!selected.length&&<form className="sa-card sa-form" onSubmit={e=>{e.preventDefault();const schedule=e.nativeEvent.submitter?.value==='schedule';run(async()=>{
+      if(rememberSender)await api.post(`/${group._id}/inbox/sender-binding`,{messageIds:selected,patientId});
       const r=await api.post(`/${group._id}/inbox/confirm`,{messageIds:selected,patientId,purpose,title,date,documentCategory:category,schedule});
       if(!active.current)return;setResult(r.data);setSelected(r.data.filter(x=>!x.success).map(x=>x.messageId));await load();
     });}}>
       <h3>确认归档 {selected.length} 份原件</h3><small>发送人不一定是资料本人。请确认所选原件属于同一个人、同一天；不同人员请分批处理。</small>
       <label>资料所属成员<select required value={patientId} disabled={busy} onChange={e=>setPatient(e.target.value)}><option value="">请选择本人或家属</option>{group.members.map(m=><option key={m.patientId._id||m.patientId} value={m.patientId._id||m.patientId}>{m.patientId.name} · {m.relation||'成员'}</option>)}</select></label>
+      <small>优先带入发送人对应的成员；替家属发送的资料，请改选实际所属成员。</small>
+      {can('patients','edit')&&new Set(rows.filter(r=>selected.includes(r._id)).map(r=>r.sender)).size===1&&<label className="sa-check"><input type="checkbox" checked={rememberSender} onChange={e=>setRememberSender(e.target.checked)}/>发送人就是所选成员，记住此对应关系</label>}
       <label>归档用途<select required value={purpose} disabled={busy} onChange={e=>setPurpose(e.target.value)}><option value="">请选择用途</option><option value="checkin">日常检测原图（血压、血糖等）</option><option value="report">就诊／检查资料（待解析）</option></select></label>
       <label>检测／资料名称<input required maxLength={160} value={title} disabled={busy} onChange={e=>setTitle(e.target.value)}/></label>
       <label>检测／资料日期<input type="date" required value={date} disabled={busy} onChange={e=>setDate(e.target.value)}/></label>

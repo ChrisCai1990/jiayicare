@@ -4,6 +4,26 @@ const Receipt = require('../models/ServiceGroupReceipt');
 const Report = require('../models/MedicalReport');
 const {checkedDate,same} = require('../utils/serviceGroupRules');
 module.exports = function install(router, {wrap,group,member,permit,fail,oid,text}) {
+  router.post('/:groupId/inbox/sender-binding',wrap(async(req,res)=>{
+    const g=await group(req);
+    if(!g.archiveConsent)fail('本群存档授权未开启',403);
+    await permit(req,'patients','edit');
+    const p=await member(req,g,req.body.patientId);
+    if(!p)fail('请选择发送人对应的家庭成员');
+    const ids=req.body.messageIds;
+    if(!Array.isArray(ids)||!ids.length||ids.length>9)fail('请选择该发送人的资料');
+    ids.forEach(oid);
+    const rows=await Message.find({_id:{$in:ids},groupId:g._id,expiresAt:{$gt:new Date()}}).lean();
+    if(rows.length!==new Set(ids).size||new Set(rows.map(m=>m.sender)).size!==1)fail('请只选择同一发送人的资料');
+    const sender=rows[0].sender,existing=g.senderBindings.find(b=>b.sender===sender);
+    if(existing&&!same(existing.patientId,p._id))fail('发送人已关联其他成员，请核对；代发资料可单独改选归档成员',409);
+    if(!existing){
+      g.senderBindings.push({sender,patientId:p._id,boundBy:req.staff._id,boundAt:new Date()});
+      g.revisions.push({actor:req.staff._id,action:'确认群资料发送人与家庭成员对应关系'});
+      await g.save();
+    }
+    res.json({success:true,data:{patientId:p._id}});
+  }));
   router.get('/:groupId/inbox',wrap(async(req,res)=>{
     const g = await group(req);
     if (!g.archiveConsent) return res.json({success:true,data:[]});
@@ -12,10 +32,11 @@ module.exports = function install(router, {wrap,group,member,permit,fail,oid,tex
     const receipts = await Receipt.find({groupId:g._id,messageId:{$in:rows.map(m=>m._id)}}).lean();
     res.json({success:true,data:rows.filter(m=>m.attachment?.ossKey).map(m=>{
       const r = receipts.find(r=>same(r.messageId,m._id));
+      const binding=g.senderBindings.find(b=>b.sender===m.sender&&g.members.some(member=>same(member.patientId,b.patientId)));
       return {_id:m._id,sender:m.sender,sentAt:m.sentAt,name:m.attachment.name,
         mimeType:m.attachment.mimeType,size:m.attachment.size,
         previewUrl:require('../utils/oss').getSignedUrl(m.attachment.ossKey,120),
-        state:r?.state || 'pending', patientId:r?.patientId, purpose:r?.purpose,
+        state:r?.state || 'pending', patientId:r?.patientId, senderPatientId:binding?.patientId, purpose:r?.purpose,
         title:r?.title,date:r?.date,documentCategory:r?.documentCategory,resultId:r?.resultId};
     })});
   }));
