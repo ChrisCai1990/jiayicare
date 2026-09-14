@@ -158,7 +158,9 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceT
   if (/就医规划/.test(order.serviceName || '') && communicationWindow.communicationTimeEnd <= communicationWindow.communicationTimeStart) {
     throw Object.assign(new Error('预期沟通结束时间必须晚于开始时间'), { status: 400 });
   }
-  const patient = await User.findById(order.user).select('assignedHealthManager assignedHealthPlanner memberType servicePackage').lean();
+  const patient = await User.findById(order.user).select('assignedHealthManager assignedHealthPlanner assignedFamilyDoctor memberType servicePackage').lean();
+  const medicalPlanning = /就医规划/.test(order.serviceName || '');
+  if (medicalPlanning && !patient?.assignedFamilyDoctor) throw Object.assign(new Error('该客户尚未分配健康顾问，无法转交'), { status: 409 });
   const manager = patient?.assignedHealthManager;
   if (!manager) throw Object.assign(new Error('该客户尚未分配健管专员，请先完成分配'), { status: 409 });
   const date = serviceTime ? new Date(serviceTime) : new Date();
@@ -182,7 +184,7 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceT
       workflowKey: `${PREFIX}supervise`, taskRole: 'supervisor',
       theme: `医疗代诊：健康规划师全程督办 · ${order.serviceName}`,
       plannedContent: `期望服务日期：${date.toLocaleDateString('zh-CN')} 至 ${endDate.toLocaleDateString('zh-CN')}\n服务内容：${serviceContent}\n客户诉求：${customerNeed}\n持续督办资料审核、健康顾问方案确认和就医专员代诊；代诊执行结束后关闭。`,
-      formData: { serviceContent, customerNeed, preferredDateStart: dateInput(date), preferredDateEnd: dateInput(endDate), currentStage: /专家约诊/.test(order.serviceName || '') ? 'booking' : 'collect' },
+      formData: { serviceContent, customerNeed, preferredDateStart: dateInput(date), preferredDateEnd: dateInput(endDate), currentStage: /专家约诊/.test(order.serviceName || '') ? 'booking' : medicalPlanning ? 'advisor' : 'collect' },
     } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
@@ -215,6 +217,24 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceT
   const communicationDate = nonempty(communicationWindow.communicationDate || dateInput(date));
   const communicationTimeStart = nonempty(communicationWindow.communicationTimeStart);
   const communicationTimeEnd = nonempty(communicationWindow.communicationTimeEnd);
+  if (medicalPlanning) {
+    const advisorTask = await FollowUp.findOneAndUpdate(
+      { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}advisor` },
+      { $setOnInsert: {
+        patientId: order.user, staffId: plannerId, assignedTo: patient.assignedFamilyDoctor,
+        type: 'other', status: 'planned', date: new Date(), remindAt: new Date(),
+        sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}advisor`, taskRole: 'executor',
+        theme: `就医规划：健康顾问评估 · ${order.serviceName}`,
+        plannedContent: `健康规划师已核对服务内容和客户诉求，请在约定时段与客户沟通并评估。客户上传的报告仍须经健管专员审核后才能作为已审核资料使用。`,
+        formData: { medicalPlanning: true, serviceContent, customerNeed, communicationDate, communicationTimeStart, communicationTimeEnd, reportIds: [] },
+      } }, { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+    await FollowUp.updateMany(
+      { sourceType: 'order', sourceOrderId: order._id, _id: { $nin: [advisorTask._id, supervisor._id] }, workflowKey: { $in: ['', null] }, status: { $in: ['planned', 'in_progress'] } },
+      { $set: { status: 'cancelled', cancelReason: '就医规划已转健康顾问评估' } },
+    );
+    return advisorTask;
+  }
   const task = await FollowUp.findOneAndUpdate(
     { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}collect` },
     { $setOnInsert: {
@@ -312,10 +332,11 @@ async function validateMedicalProxyStage(task, body, staff) {
     if (!ids.length || count !== ids.length) return '请先在报告管理完成本次全部资料审核，退回或补传缺失资料后再流转';
     if (!nonempty(data.auditSummary)) return '请填写本次资料审核结论';
   }
-  if (stage === 'advisor' && ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].some(key => !nonempty(data[key]))) {
+  if (stage === 'advisor' && data.medicalPlanning === true && !nonempty(data.assessmentSummary)) return '请填写健康顾问就医规划评估结论';
+  if (stage === 'advisor' && data.medicalPlanning !== true && ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].some(key => !nonempty(data[key]))) {
     return '请确认代诊医院、科室、专家、代诊目标和与医生交流内容';
   }
-  if (stage === 'advisor') {
+  if (stage === 'advisor' && data.medicalPlanning !== true) {
     const ids = [...new Set((data.auditSnapshot?.collectionSnapshot?.reportIds || data.intakeSnapshot?.reportIds || []).map(String).filter(Boolean))];
     const count = ids.length ? await MedicalReport.countDocuments({ _id: { $in: ids }, user: task.patientId, audit_status: 'audited' }) : 0;
     if (!ids.length || count !== ids.length) return '本次资料已失效或尚未审核，请退回上一环节补齐';
@@ -364,6 +385,13 @@ async function advanceMedicalProxyWorkflow(task) {
     order.medicalProxyPlan = { ...task.formData, confirmedBy: task.assignedTo, confirmedAt: new Date(), intakeTaskId: task.dependsOnTaskId };
     order.markModified('medicalProxyPlan');
     await order.save();
+    if (task.formData?.medicalPlanning === true) {
+      await FollowUp.updateOne(
+        { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } },
+        { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', content: '健康顾问已完成就医规划评估。', 'formData.currentStage': 'completed' } },
+      );
+      return;
+    }
   }
   if (stage === 'booking') {
     order.medicalProxyPlan = { ...(order.medicalProxyPlan || {}), booking: task.formData, bookedBy: task.assignedTo, bookedAt: new Date() };

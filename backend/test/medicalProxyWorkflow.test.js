@@ -135,6 +135,24 @@ test('workflow keeps booking between planner and execution and shows the complet
   assert.match(form, /!isExpertAppointment/);
 });
 
+test('medical planning confirmation creates a direct advisor handoff without marking reports audited', () => {
+  const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
+  assert.match(workflow, /if \(medicalPlanning\) \{[\s\S]*workflowKey: `\$\{PREFIX\}advisor`/);
+  assert.match(workflow, /assignedTo: patient\.assignedFamilyDoctor/);
+  assert.match(workflow, /medicalPlanning: true, serviceContent, customerNeed, communicationDate, communicationTimeStart, communicationTimeEnd/);
+  assert.match(workflow, /reportIds: \[\]/);
+});
+
+test('planning advisor can complete an assessment without proxy-visit booking fields', async () => {
+  const task = { sourceType: 'order', workflowKey: 'medical_proxy:advisor', patientId: 'patient-1', assignedTo: 'doctor-1' };
+  const originalFind = User.findById;
+  try {
+    User.findById = () => ({ select: () => ({ lean: async () => ({ assignedHealthPlanner: 'planner-1' }) }) });
+    const formData = { medicalPlanning: true, customerNeed: '需要解读报告并确定就医方向', assessmentSummary: '已与客户沟通，建议先核对已审核报告。' };
+    assert.equal(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'doctor-1', role: 'familyDoctor' }), '');
+  } finally { User.findById = originalFind; }
+});
+
 test('annual-member staff initiation skips collection, audit and planner execution stages', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
   assert.match(workflow, /stage === 'advisor'.*STAFF_DIRECT_SOURCE \? 'booking'/);

@@ -5827,7 +5827,7 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
       if (req.body.serviceDateEnd) update.desiredServiceDateEnd = new Date(`${req.body.serviceDateEnd}T00:00:00+08:00`);
       if (note) update.note = note;
       const order = await Order.findByIdAndUpdate(req.params.id, update, { new: true }).populate('user', 'name phone');
-      return res.json({ success: true, data: order, task, message: /专家约诊/.test(currentOrder.serviceName || '') ? '服务信息已确认，已转给健管专员预约' : '服务信息已确认，健康规划师开始指导客户上传并选定本次资料' });
+      return res.json({ success: true, data: order, task, message: /专家约诊/.test(currentOrder.serviceName || '') ? '服务信息已确认，已转给健管专员预约' : /就医规划/.test(currentOrder.serviceName || '') ? '沟通信息已确认，已转到健康顾问工作台' : '服务信息已确认，健康规划师开始指导客户上传并选定本次资料' });
     }
     const newStatus = 'scheduled';
     const update = { status: newStatus, handledBy: req.staff._id };
