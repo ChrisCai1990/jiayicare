@@ -1436,7 +1436,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
       .populate('sourceHealthPlanId', 'title description content type')
       .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard')
       .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
-      .populate('sourceOrderId', 'serviceName servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt'),
+      .populate('sourceOrderId', 'serviceName servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt medicalProxyPlan'),
     FollowUp.countDocuments(filter),
   ]);
   res.json({
@@ -1523,7 +1523,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
       .populate('sourceHealthPlanId', 'title description content type')
       .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard')
       .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
-      .populate('sourceOrderId', 'serviceName servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt'),
+      .populate('sourceOrderId', 'serviceName servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt medicalProxyPlan'),
     FollowUp.countDocuments(filter),
   ]);
 
