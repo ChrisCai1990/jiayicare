@@ -12193,13 +12193,14 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   const customerTaskParts = initialRequirement
     .split(/[；\n]/)
     .map(item => item.trim().replace(/^已确认服务任务[:：]\s*/, ''))
-    .filter(item => item && !/^(规格：|健康基金抵扣|优惠券抵扣|支付方式：|院区：|门诊类型：|费用与保险：|保险公司：|结算方式：)/.test(item))
+    .filter(item => item && !/^(规格：|健康基金抵扣|优惠券抵扣|支付方式：|建议医院：|院区：|科室：|专家：|门诊类型：|保险类型：|费用与保险：|保险公司：|结算方式：)/.test(item))
   const customerTask = [...new Set(customerTaskParts)].join('；')
   const orderServiceDate = order?.desiredServiceDate || order?.scheduledAt || order?.confirmedServiceSchedule?.serviceDate
   const orderActionable = order && order.paymentStatus === 'paid'
     && ['paid', 'fulfilling', 'partially_refunded'].includes(order.tradeStatus)
     && ['', 'none', 'failed', 'partially_refunded'].includes(order.refundStatus || '')
     && ['pending', 'scheduled'].includes(order.status)
+  const canConfirmOrder = orderActionable || !!initialBookingForm
   const formatServiceDate = (value) => {
     if (!value) return ''
     const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(value))
@@ -12218,12 +12219,13 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   const [serviceTask, setServiceTask] = useState(customerTask)
   const [proxyServiceContent, setProxyServiceContent] = useState(order?.aiIntake?.serviceContent || customerTask)
   const [proxyCustomerNeed, setProxyCustomerNeed] = useState(order?.aiIntake?.customerNeed || '')
-  const categoryText = `${order?.aiIntake?.serviceContent || ''} ${customerTask || ''}`
+  const categoryText = `${order?.aiIntake?.serviceContent || ''} ${initialRequirement}`
   const categoryValue = label => categoryText.match(new RegExp(`${label}：([^；\\n]+)`))?.[1]?.trim() || ''
-  const [campus, setCampus] = useState(categoryValue('院区'))
-  const [clinicType, setClinicType] = useState(/国际门诊/.test(categoryText) ? 'international' : /普通门诊/.test(categoryText) ? 'general' : '')
-  const [insuranceUse, setInsuranceUse] = useState(/高端.{0,4}险/.test(categoryText) ? 'high_end' : /自费/.test(categoryText) ? 'self_pay' : '')
-  const [insurerName, setInsurerName] = useState(categoryValue('保险公司'))
+  const [suggestedHospital, setSuggestedHospital] = useState(categoryValue('建议医院'))
+  const [department, setDepartment] = useState(categoryValue('科室'))
+  const [expert, setExpert] = useState(categoryValue('专家'))
+  const [clinicType, setClinicType] = useState(/国际门诊/.test(categoryText) ? 'international' : /特需门诊/.test(categoryText) ? 'special' : /专家门诊/.test(categoryText) ? 'expert' : '')
+  const [insuranceUse, setInsuranceUse] = useState(/高端.{0,4}险/.test(categoryText) ? 'high_end' : /医保/.test(categoryText) ? 'medical_insurance' : /自费/.test(categoryText) ? 'self_pay' : '')
   const [settlementMethod, setSettlementMethod] = useState(categoryValue('结算方式') === '直付' ? 'direct' : categoryValue('结算方式') === '先付后报' ? 'reimbursement' : 'pending')
   const [proxyReviewReady, setProxyReviewReady] = useState(false)
   const [confirmingBooking, setConfirmingBooking] = useState(false)
@@ -12542,15 +12544,16 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
               </div>
               {isMedicalProxy ? <>
                 {isExpertAppointment && <>
-                  <label style={{ fontSize: 12, fontWeight: 600 }}>院区<input className="form-input" value={campus} onChange={e => setCampus(e.target.value)} placeholder="如：庆春院区（可选）" /></label>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                    <label style={{ fontSize: 12, fontWeight: 600 }}>门诊类型<select className="form-input" value={clinicType} onChange={e => setClinicType(e.target.value)}><option value="">请选择</option><option value="general">普通门诊</option><option value="international">国际门诊</option></select></label>
-                    <label style={{ fontSize: 12, fontWeight: 600 }}>费用与保险<select className="form-input" value={insuranceUse} onChange={e => setInsuranceUse(e.target.value)}><option value="">请选择</option><option value="self_pay">自费</option><option value="high_end">使用高端医疗险</option></select></label>
+                    <label style={{ fontSize: 12, fontWeight: 600 }}>建议医院 *<input className="form-input" value={suggestedHospital} onChange={e => setSuggestedHospital(e.target.value)} /></label>
+                    <label style={{ fontSize: 12, fontWeight: 600 }}>科室 *<input className="form-input" value={department} onChange={e => setDepartment(e.target.value)} /></label>
                   </div>
-                  {insuranceUse === 'high_end' && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                    <label style={{ fontSize: 12, fontWeight: 600 }}>保险公司<input className="form-input" value={insurerName} onChange={e => setInsurerName(e.target.value)} placeholder="保险公司名称（可选）" /></label>
-                    <label style={{ fontSize: 12, fontWeight: 600 }}>结算方式<select className="form-input" value={settlementMethod} onChange={e => setSettlementMethod(e.target.value)}><option value="pending">待核实</option><option value="direct">直付</option><option value="reimbursement">先付后报</option></select></label>
-                  </div>}
+                  <label style={{ fontSize: 12, fontWeight: 600 }}>专家 *<input className="form-input" value={expert} onChange={e => setExpert(e.target.value)} /></label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600 }}>门诊类型 *<select className="form-input" value={clinicType} onChange={e => setClinicType(e.target.value)}><option value="">请选择</option><option value="expert">专家门诊</option><option value="special">特需门诊</option><option value="international">国际门诊</option></select></label>
+                    <label style={{ fontSize: 12, fontWeight: 600 }}>保险类型 *<select className="form-input" value={insuranceUse} onChange={e => setInsuranceUse(e.target.value)}><option value="">请选择</option><option value="self_pay">自费</option><option value="medical_insurance">医保</option><option value="high_end">高端险</option></select></label>
+                  </div>
+                  <label style={{ fontSize: 12, fontWeight: 600 }}>支付方式 *<select className="form-input" value={settlementMethod} onChange={e => setSettlementMethod(e.target.value)}><option value="pending">请选择</option><option value="direct">直付</option><option value="reimbursement">先付后报</option></select></label>
                 </>}
                 <label style={{ fontSize: 12, fontWeight: 600 }}>{/专家约诊/.test(order?.serviceName || '') ? '约诊需求' : '本次服务内容'}<textarea className="form-input" rows={2} value={proxyServiceContent} onChange={e => { setProxyServiceContent(e.target.value); setProxyReviewReady(false) }} placeholder={/专家约诊/.test(order?.serviceName || '') ? '填写意向医院、科室和专家' : '例如意向医院、科室及代诊事项'} /></label>
                 {!/专家约诊/.test(order?.serviceName || '') && <label style={{ fontSize: 12, fontWeight: 600 }}>客户主诉与希望向专家沟通的问题<textarea className="form-input" rows={2} value={proxyCustomerNeed} onChange={e => { setProxyCustomerNeed(e.target.value); setProxyReviewReady(false) }} placeholder="填写客户本次要解决的问题" /></label>}
@@ -12566,21 +12569,22 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
                 </div>
               </details>
             </div>}
-            {!orderActionable && <div style={{ fontSize: 12, color: '#DC3545' }}>该订单已取消、退款、完成或尚未支付，不能继续生成服务方案。</div>}
+            {!canConfirmOrder && <div style={{ fontSize: 12, color: '#DC3545' }}>该订单已取消、退款、完成或尚未支付，不能继续生成服务方案。</div>}
             {bookingError && <div role="alert" style={{ padding: '8px 10px', color: '#B42318', background: '#FFF0EF', borderRadius: 6, fontSize: 12 }}>{bookingError}</div>}
             <div style={{ textAlign: 'right', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               {isMedicalProxy && proxyReviewReady && !isExpertAppointment && <button className="btn btn-secondary btn-sm" onClick={() => setProxyReviewReady(false)}>返回修改</button>}
-              <button className="btn btn-primary btn-sm" disabled={confirmingBooking || !orderActionable || !serviceTime || !serviceTimeEnd || serviceTimeEnd < serviceTime || (isExpertAppointment && (!clinicType || !insuranceUse)) || (isMedicalPlanning && (!communicationTimeStart || !communicationTimeEnd || communicationTimeEnd <= communicationTimeStart)) || (isMedicalProxy ? !proxyServiceContent.trim() || (!/专家约诊/.test(order?.serviceName || '') && !proxyCustomerNeed.trim()) : !serviceTask.trim())} onClick={async () => {
+              <button className="btn btn-primary btn-sm" disabled={confirmingBooking || !canConfirmOrder || !serviceTime || !serviceTimeEnd || serviceTimeEnd < serviceTime || (isExpertAppointment && (!suggestedHospital.trim() || !department.trim() || !expert.trim() || !clinicType || !insuranceUse || settlementMethod === 'pending')) || (isMedicalPlanning && (!communicationTimeStart || !communicationTimeEnd || communicationTimeEnd <= communicationTimeStart)) || (isMedicalProxy ? !proxyServiceContent.trim() || (!/专家约诊/.test(order?.serviceName || '') && !proxyCustomerNeed.trim()) : !serviceTask.trim())} onClick={async () => {
                 setBookingError('')
                 if (isMedicalProxy && !isExpertAppointment && !proxyReviewReady) { setProxyReviewReady(true); return }
                 setConfirmingBooking(true)
                 try {
                   const appointmentCategories = isExpertAppointment ? [
-                    campus.trim() && `院区：${campus.trim()}`,
-                    `门诊类型：${clinicType === 'international' ? '国际门诊' : '普通门诊'}`,
-                    `费用与保险：${insuranceUse === 'high_end' ? '使用高端医疗险' : '自费'}`,
-                    insuranceUse === 'high_end' && insurerName.trim() && `保险公司：${insurerName.trim()}`,
-                    insuranceUse === 'high_end' && `结算方式：${({ direct: '直付', reimbursement: '先付后报' })[settlementMethod] || '待核实'}`,
+                    `建议医院：${suggestedHospital.trim()}`,
+                    `科室：${department.trim()}`,
+                    `专家：${expert.trim()}`,
+                    `门诊类型：${({ expert: '专家门诊', special: '特需门诊', international: '国际门诊' })[clinicType]}`,
+                    `保险类型：${({ self_pay: '自费', medical_insurance: '医保', high_end: '高端险' })[insuranceUse]}`,
+                    `支付方式：${({ direct: '直付', reimbursement: '先付后报' })[settlementMethod]}`,
                   ].filter(Boolean).join('；') : ''
                   const confirmedContent = [proxyServiceContent.trim(), appointmentCategories].filter(Boolean).join('；')
                   await onConfirmBooking?.({ orderId, serviceTime, serviceTimeEnd: isMedicalPlanning ? serviceTime : serviceTimeEnd, communicationDate: isMedicalPlanning ? serviceTime : '', communicationTimeStart, communicationTimeEnd, task: isMedicalProxy ? [confirmedContent, proxyCustomerNeed.trim()].filter(Boolean).join('；') : serviceTask.trim(), serviceContent: confirmedContent, customerNeed: proxyCustomerNeed.trim() })
