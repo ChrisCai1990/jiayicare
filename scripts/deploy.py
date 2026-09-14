@@ -540,6 +540,16 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
         if code:
             raise RuntimeError("医疗代诊专家门诊预约迁移失败")
         code, _ = run_migration(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/migrateMedicalProxyAppointmentDateV8.js ] && "
+            f"[ ! -f {REPO_DIR}/.medical-proxy-appointment-date-v8-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/migrateMedicalProxyAppointmentDateV8.js && "
+            f"touch {REPO_DIR}/.medical-proxy-appointment-date-v8-applied; fi",
+            timeout=120,
+            label="合并专家出诊日期与实际约诊日期",
+        )
+        if code:
+            raise RuntimeError("医疗代诊预约日期合并迁移失败")
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOneStopFinalFlowV15.js ] && "
             f"[ ! -f {REPO_DIR}/.one-stop-final-flow-v15-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateOneStopFinalFlowV15.js --apply && "

@@ -154,10 +154,10 @@ async function validateMedicalProxyStage(task, body, staff) {
     if (!assistant) return '请选择当前有效的就医专员';
   }
   if (stage === 'booking') {
-    if (['customerPreferredDate', 'expertClinicDate', 'appointmentDate', 'appointmentTime', 'bookingConfirmation'].some(key => !nonempty(data[key]))) {
-      return '请完整填写客户期望日期、专家出诊日期、实际约诊日期时间和预约确认信息';
+    if (['customerPreferredDate', 'appointmentDate', 'appointmentTime', 'bookingConfirmation'].some(key => !nonempty(data[key]))) {
+      return '请完整填写客户期望日期、专家实际出诊及约诊日期时间和预约确认信息';
     }
-    if (![data.customerPreferredDate, data.expertClinicDate, data.appointmentDate].every(value => /^\d{4}-\d{2}-\d{2}$/.test(value)) || !/^\d{2}:\d{2}$/.test(data.appointmentTime)) return '预约日期或时间格式无效';
+    if (![data.customerPreferredDate, data.appointmentDate].every(value => /^\d{4}-\d{2}-\d{2}$/.test(value)) || !/^\d{2}:\d{2}$/.test(data.appointmentTime)) return '预约日期或时间格式无效';
     if (data.appointmentDate !== data.customerPreferredDate && !nonempty(data.dateDifferenceNote)) return '约诊日期与客户期望日期不一致，请说明差异及客户确认情况';
     const assistant = await Admin.findOne({ _id: data.medicalAssistantId, role: 'medicalAssistant', staffStatus: 'active' }).select('_id').lean();
     if (!assistant) return '原预指派就医专员已失效，请退回健康规划师重新指派';
@@ -234,7 +234,7 @@ async function advanceMedicalProxyWorkflow(task) {
         : next === 'advisor'
         ? '查看本次已审核资料及客户诉求，确认医院、科室、专家、代诊目标和与医生交流的具体内容。年度会员由健康顾问选定制定方案所用资料。'
         : next === 'planner' ? '核对健康顾问确认的代诊方案，预指派就医专员。'
-          : next === 'booking' ? '依据健康顾问方案预约专家门诊；分别记录客户期望日期、专家出诊日期和实际约诊日期，日期不一致时记录沟通确认结果。'
+          : next === 'booking' ? '依据健康顾问方案预约专家门诊；记录客户期望日期与专家实际出诊及约诊日期，日期不一致时记录沟通确认结果。'
             : '按健康顾问方案和健管专员确认的预约信息完成代诊，记录医生反馈、医嘱和后续事项。',
       formData: next === 'audit' ? { collectionSnapshot: task.formData }
         : next === 'advisor' ? { auditSnapshot: task.formData, selectedReportIds: task.formData?.collectionSnapshot?.annualMember ? [] : task.formData?.collectionSnapshot?.reportIds || [] }

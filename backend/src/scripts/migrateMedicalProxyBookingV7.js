@@ -52,7 +52,7 @@ async function main() {
         type: 'other', status: 'planned', date: new Date(), remindAt: new Date(), sourceType: 'order', sourceOrderId: execute.sourceOrderId,
         workflowKey: 'medical_proxy:booking', taskRole: 'executor', dependsOnTaskId: execute.dependsOnTaskId,
         theme: `医疗代诊：健管专员完成专家门诊预约 · ${order.serviceName}`,
-        plannedContent: '依据健康顾问方案预约专家门诊；分别记录客户期望日期、专家出诊日期和实际约诊日期，日期不一致时记录沟通确认结果。',
+        plannedContent: '依据健康顾问方案预约专家门诊；记录客户期望日期与专家实际出诊及约诊日期，日期不一致时记录沟通确认结果。',
         formData: { planSnapshot: execute.formData?.planSnapshot || order.medicalProxyPlan || {}, medicalAssistantId: execute.assignedTo, customerPreferredDate: dateInput(order.scheduledAt || order.desiredServiceDate) },
       } }, { upsert: true, new: true, setDefaultsOnInsert: true },
     );

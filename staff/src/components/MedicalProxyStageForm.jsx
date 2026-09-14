@@ -18,7 +18,7 @@ export function validateMedicalProxyStage(stage, value) {
   if (stage === 'advisor' && fields.advisor.some(([key]) => !value[key]?.trim())) return '请完整填写医院、科室、专家、代诊目标及交流内容'
   if (stage === 'advisor' && value.auditSnapshot?.collectionSnapshot?.annualMember && !value.selectedReportIds?.length) return '请从本次已审核资料中选择制定方案所用资料'
   if (stage === 'planner' && !value.medicalAssistantId) return '请指派就医专员'
-  if (stage === 'booking' && ['customerPreferredDate', 'expertClinicDate', 'appointmentDate', 'appointmentTime', 'bookingConfirmation'].some(key => !value[key]?.trim())) return '请完整填写客户期望日期、专家出诊日期、实际约诊日期时间和预约确认信息'
+  if (stage === 'booking' && ['customerPreferredDate', 'appointmentDate', 'appointmentTime', 'bookingConfirmation'].some(key => !value[key]?.trim())) return '请完整填写客户期望日期、专家实际出诊及约诊日期时间和预约确认信息'
   if (stage === 'booking' && value.appointmentDate !== value.customerPreferredDate && !value.dateDifferenceNote?.trim()) return '约诊日期与客户期望日期不一致，请说明差异及客户确认情况'
   if (stage === 'execute' && !value.executionResult?.trim()) return '请填写代诊执行结果'
   return ''
@@ -94,8 +94,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
       {['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].map((key, i) => <div key={key}>{['医院', '科室', '专家', '代诊目标', '交流内容'][i]}：{value.planSnapshot?.[key] || '待确认'}</div>)}
     </div>
     {input('customerPreferredDate', '客户期望日期', 1, 'date')}
-    {input('expertClinicDate', '专家实际出诊日期', 1, 'date')}
-    {input('appointmentDate', '实际约诊日期', 1, 'date')}
+    {input('appointmentDate', '专家实际出诊及约诊日期', 1, 'date')}
     {input('appointmentTime', '实际约诊时间', 1, 'time')}
     {value.appointmentDate && value.customerPreferredDate && value.appointmentDate !== value.customerPreferredDate && input('dateDifferenceNote', '日期不一致说明及客户确认情况', 3)}
     {input('bookingConfirmation', '预约结果、预约凭证及就诊注意事项', 4)}
@@ -104,8 +103,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>
       {['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].map((key, i) => <div key={key}>{['代诊医院', '科室', '专家', '代诊目标', '与医生交流内容'][i]}：{value.planSnapshot?.[key] || '未填写'}</div>)}
       <div style={{ marginTop: 8 }}>客户期望日期：{value.bookingSnapshot?.customerPreferredDate || '未填写'}</div>
-      <div>专家出诊日期：{value.bookingSnapshot?.expertClinicDate || '未填写'}</div>
-      <div>实际约诊时间：{value.bookingSnapshot?.appointmentDate || '未填写'} {value.bookingSnapshot?.appointmentTime || ''}</div>
+      <div>专家实际出诊及约诊时间：{value.bookingSnapshot?.appointmentDate || '未填写'} {value.bookingSnapshot?.appointmentTime || ''}</div>
       {value.bookingSnapshot?.dateDifferenceNote && <div>日期差异确认：{value.bookingSnapshot.dateDifferenceNote}</div>}
       <div>预约确认及注意事项：{value.bookingSnapshot?.bookingConfirmation || '未填写'}</div>
     </div>

@@ -67,7 +67,7 @@ test('advisor must confirm five proxy visit fields and planner must assign activ
     assert.match(await validateMedicalProxyStage(planner, { status: 'completed', formData: {} }, { _id: 'planner-1', role: 'healthPlanner' }), /就医专员/);
     assert.equal(await validateMedicalProxyStage(planner, { status: 'completed', formData: { medicalAssistantId: 'assistant-1' } }, { _id: 'planner-1', role: 'healthPlanner' }), '');
     const booking = { sourceType: 'order', workflowKey: 'medical_proxy:booking', assignedTo: 'manager-1' };
-    const bookingData = { medicalAssistantId: 'assistant-1', customerPreferredDate: '2026-09-16', expertClinicDate: '2026-09-17', appointmentDate: '2026-09-17', appointmentTime: '09:30', bookingConfirmation: '预约成功' };
+    const bookingData = { medicalAssistantId: 'assistant-1', customerPreferredDate: '2026-09-16', appointmentDate: '2026-09-17', appointmentTime: '09:30', bookingConfirmation: '预约成功' };
     assert.match(await validateMedicalProxyStage(booking, { status: 'completed', formData: bookingData }, { _id: 'manager-1', role: 'healthManager' }), /日期不一致/);
     bookingData.dateDifferenceNote = '客户已确认改为专家出诊日';
     assert.equal(await validateMedicalProxyStage(booking, { status: 'completed', formData: bookingData }, { _id: 'manager-1', role: 'healthManager' }), '');
@@ -100,7 +100,7 @@ test('workflow keeps booking between planner and execution and shows the complet
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
   const form = fs.readFileSync(path.join(__dirname, '../../staff/src/components/MedicalProxyStageForm.jsx'), 'utf8');
   assert.match(workflow, /\['collect', 'audit', 'advisor', 'planner', 'booking', 'execute'\]/);
-  for (const text of ['客户期望日期', '专家实际出诊日期', '实际约诊日期', '日期不一致说明及客户确认情况', '代诊医院', '与医生交流内容', '预约确认及注意事项']) {
+  for (const text of ['客户期望日期', '专家实际出诊及约诊日期', '日期不一致说明及客户确认情况', '代诊医院', '与医生交流内容', '预约确认及注意事项']) {
     assert.match(form, new RegExp(text));
   }
 });
