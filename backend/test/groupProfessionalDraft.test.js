@@ -1,0 +1,30 @@
+const test = require('node:test'), assert = require('node:assert/strict');
+const { parseDraft, refreshProfessionalDraft } = require('../src/utils/groupProfessionalDraft');
+const source = '下周二想复查，需要协助预约。';
+const response = JSON.stringify({ feedback: [{ text: '客户提出下周二复查需求。', sourceQuote: '下周二想复查' }], communication: [], questions: [{ text: '待核实具体就诊日期和科室。', sourceQuote: source }], plan: [{ text: '协助核对复查预约需求，预约状态待确认。', sourceQuote: '需要协助预约' }] });
+test('professional draft requires evidence for every section and keeps absent facts explicit', () => {
+  const r = parseDraft(response, source);
+  assert.match(r.content, /客户反馈/); assert.match(r.content, /原文未明确，待核实/);
+  assert.throws(() => parseDraft(response, '谢谢'), /evidence/);
+  assert.throws(() => parseDraft('{}', source), /shape/);
+});
+test('AI draft uses consent, retries and version checks without writing native records', async t => {
+  const f = require('./helpers/serviceGroupFixture').buildFixture(), g = f.models.ServiceGroup.rows[0];
+  process.env.SERVICE_GROUP_AI_ENABLED = 'true'; process.env.SERVICE_GROUP_BRIDGE_TENANT_ID = f.ids.tenant;
+  t.after(() => { delete process.env.SERVICE_GROUP_AI_ENABLED; delete process.env.SERVICE_GROUP_BRIDGE_TENANT_ID; });
+  g.archiveConsent = true; g.aiConsent = true;
+  await require('../src/utils/groupDailyRecord').createDailyRecord(g, { text: source, messageId: 'synthetic', sender: 'synthetic', sentAt: '2026-09-14T00:00:00Z' });
+  const e = f.models.ServiceGroupEntry.rows[0];
+  const opts = { now: new Date(Date.now() + 60000), chat: async () => response };
+  assert.equal(await refreshProfessionalDraft(opts), 'updated');
+  assert.equal(e.aiGenerated, true); assert.match(e.content, /后续计划/);
+  assert.equal(await refreshProfessionalDraft(opts), 'idle');
+  assert.equal(f.models.ServiceRecord.rows.length, 0);
+  e.professionalHash = ''; e.professionalRetryAt = null;
+  assert.equal(await refreshProfessionalDraft({ ...opts, chat: async () => { e.history.push({ actor: f.ids.staff, action: '编辑草稿' }); await e.save(); return response; } }), 'changed');
+  e.history = []; e.professionalRetryAt = null;
+  assert.equal(await refreshProfessionalDraft({ ...opts, chat: async () => { g.aiConsent = false; return response; } }), 'revoked');
+  g.aiConsent = true; e.professionalRetryAt = null;
+  assert.equal(await refreshProfessionalDraft({ ...opts, chat: async () => { throw Error('synthetic timeout'); } }), 'retry');
+  assert.equal(await refreshProfessionalDraft(opts), 'idle');
+});

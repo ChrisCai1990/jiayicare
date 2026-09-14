@@ -19,6 +19,10 @@ async function createDailyRecord(group, message, models = {}) {
       if (prior) {
         prior.sourceText = sourceText;
         prior.content = content;
+        prior.aiGenerated = false;
+        prior.professionalEvidence = [];
+        prior.professionalRetryAt = null;
+        prior.professionalError = false;
         prior.sourceMessageIds.push(message.messageId);
         await prior.save();
         return 'updated';

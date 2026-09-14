@@ -11,8 +11,8 @@ import GroupMaterialInbox from '../components/GroupMaterialInbox';
 import WecomKfBindingPanel from '../components/WecomKfBindingPanel';
 
 const labels = {
-  task: "待办",
-  record: "服务记录",
+  task: "待跟进",
+  record: "沟通记录",
   summary: "服务总结",
   notification: "群通知",
   command: "指令",
@@ -152,7 +152,7 @@ export default function ServiceAssistantPage() {
     [category, setCategory] = useState("physical_exam"),
     [receipt, setReceipt] = useState(null);
   const [sourceMessage, setSourceMessage] = useState(null);
-  useEffect(() => { if (command && commandPanelRef.current) commandPanelRef.current.open = true; }, [command]);
+  useEffect(() => { if (command && commandPanelRef.current) { commandPanelRef.current.open = true; const more = commandPanelRef.current.closest('.sa-tools'); if (more) more.open = true; } }, [command]);
   const version = useRef(0),
     fileRef = useRef(null),
     groupRef = useRef("");
@@ -526,7 +526,9 @@ export default function ServiceAssistantPage() {
       <header className="sa-heading">
         <h1>家庭服务助手</h1>
       <details className="sa-diagnostics">
-        <summary>连接状态与重试</summary>
+        <summary>设置</summary>
+        {g && can("patients", "edit") && <button disabled={busy} onClick={editSettings}>群设置</button>}
+        <h3>连接状态与重试</h3>
         <button disabled={busy} onClick={recognise}>
           {inGroupSidebar ? "重新识别当前群" : "识别当前企微群"}
         </button>
@@ -726,11 +728,7 @@ export default function ServiceAssistantPage() {
           <section className="sa-card sa-household">
             <div className="sa-row">
               <h2>{g.name}</h2>
-              {can("patients", "edit") && (
-                <button disabled={busy} onClick={editSettings}>
-                  群设置
-                </button>
-              )}
+
             </div>
             <label className="sa-person-picker">
               <span>服务对象</span>
@@ -792,12 +790,12 @@ export default function ServiceAssistantPage() {
             )}
           </section>
           <nav className="sa-tabs" aria-label="服务功能">
-            {Object.entries({ ...labels, report: "报告归档", inbox: "待归档" })
+            {Object.entries({ task: "待跟进", record: "沟通记录", inbox: "资料归档" })
               .filter(([k]) => k !== "command")
               .map(([k, v]) => (
                 <button
                   key={k}
-                  aria-pressed={tab === k}
+                  aria-pressed={tab === k || (k === "inbox" && tab === "report")}
                   onClick={() => {
                     setTab(k);
                     setForm(null);
@@ -807,6 +805,10 @@ export default function ServiceAssistantPage() {
                 </button>
               ))}
           </nav>
+          {['inbox', 'report'].includes(tab) && <nav className="sa-material-tabs" aria-label="资料归档方式">
+            <button aria-pressed={tab === 'inbox'} onClick={()=>{setTab('inbox');setForm(null);}}>群资料</button>
+            <button aria-pressed={tab === 'report'} onClick={()=>{setTab('report');setForm(null);}}>手动上传</button>
+          </nav>}
           {tab === 'inbox' && <GroupMaterialInbox key={groupId+'-'+g.archiveConsent} group={g} caps={caps} busy={busy} run={run} can={can}/>}
           {tab !== "report" && tab !== 'inbox' && (
             <div className="sa-row">
@@ -1010,9 +1012,11 @@ export default function ServiceAssistantPage() {
                   {e.sourceType === 'wecom_archive' ? " · 群消息自动草稿" : ""}
                 </small>
                 <p className="sa-pre">{e.content}</p>
+                {e.professionalError && e.status === 'draft' && <small>AI整理暂未完成，系统会重试；也可先人工核对草稿。</small>}
                 {e.result && <p className="sa-pre">处理结果：{e.result}</p>}
                 <details>
                   <summary>来源与操作记录</summary>
+                  {!!e.professionalEvidence?.length && <div><small>原文依据（请核对服务对象与表述）</small>{e.professionalEvidence.map((quote, i) => <p className="sa-pre" key={i}>{quote}</p>)}</div>}
                   <small>
                     创建时间：
                     {e.createdAt
@@ -1239,8 +1243,12 @@ export default function ServiceAssistantPage() {
               ] && <p>无此模块查看权限</p>}
             </section>
           )}
-          <section className="sa-tools" aria-label="辅助工具">
-            <h2>更多工具</h2>
+          <details className="sa-tools" aria-label="辅助工具">
+            <summary>更多功能</summary>
+            <div className="sa-actions">
+              <button aria-pressed={tab==='summary'} onClick={()=>{setTab('summary');setForm(null);}}>服务总结</button>
+              <button aria-pressed={tab==='notification'} onClick={()=>{setTab('notification');setForm(null);}}>群通知</button>
+            </div>
           <details className="sa-card">
             <summary>服务概览 · 交接与回复</summary>
             <small>依据助手最近200条已保存事项；不代表完整群聊历史。</small>
@@ -1290,7 +1298,7 @@ export default function ServiceAssistantPage() {
             </button>
             <small>当前指令在助手内处理；企微群口令监听尚未接入。</small>
           </details>
-          </section>
+          </details>
         </>
       )}
     </div>

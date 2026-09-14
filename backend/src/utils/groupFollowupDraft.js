@@ -40,6 +40,7 @@ async function createDraft(group, message, models = {}) {
     content: `群消息待核对（${new Date(message.sentAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}）\n原文：${pick.quote}\n\n请确认服务对象、日期及负责人。${pick.kind === '医护跟进' ? '涉及症状或用药，请交医护人员判断，不自动生成诊疗建议。' : ''}${pick.change ? '涉及变更，请核对原随访；正式随访不会自动改动。' : ''}`,
     dueAt: exactDate(message.text), requestKey, sourceMessageId: message.messageId,
     sourceType: 'wecom_archive',
+    sourceText: message.text,
     history: [{ action: '群消息自动生成待确认草稿' }],
   };
   // Explicit quoted-message changes may update an untouched draft, never a confirmed task.
@@ -47,7 +48,7 @@ async function createDraft(group, message, models = {}) {
     const prior = await Entry.findOne({ groupId: group._id, sourceMessageId: message.referencedMessageId, sourceType: 'wecom_archive', status: 'draft' });
     if (prior && prior.history.length === 1) {
       const result = await Entry.updateOne({ _id: prior._id, __v: prior.__v, status: 'draft' }, {
-        $set: { content: value.content, title: value.title, dueAt: value.dueAt, sourceMessageId: value.sourceMessageId, requestKey },
+        $set: { content: value.content, sourceText: value.sourceText, title: value.title, dueAt: value.dueAt, sourceMessageId: value.sourceMessageId, requestKey },
         $inc: { __v: 1 }, $push: { history: { action: '引用原消息的变更，待人工核对' } },
       });
       if (result.modifiedCount) return 'updated';

@@ -10,6 +10,7 @@ async function main() {
   process.on('SIGINT', () => { stopping = true; });
   while (!stopping) {
     try { await tick(); } catch (e) { console.error('[wecom-archive]', e.message); }
+    try { await require('../src/utils/groupProfessionalDraft').refreshProfessionalDraft(); } catch { console.error('[wecom-archive] draft_refresh_failed'); }
     if (process.argv.includes('--once')) break;
     await new Promise(resolve => setTimeout(resolve, 15000));
   }

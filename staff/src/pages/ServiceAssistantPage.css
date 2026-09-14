@@ -350,3 +350,13 @@
     width: 130px;
   }
 }
+
+/* Three primary actions fit a narrow WeCom sidebar without horizontal scrolling. */
+.sa-wecom .sa-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; gap: 0; }
+.sa-wecom .sa-tabs button { min-width: 0; font-size: 14px; padding: 12px 2px; }
+.sa-wecom .sa-material-tabs { display: flex; gap: 8px; margin: 0 0 12px; }
+.sa-wecom .sa-material-tabs button { background: transparent; font-size: 13px; }
+.sa-wecom .sa-material-tabs button[aria-pressed="true"] { color: #2878e8; border-color: #a6c8fb; background: #edf5ff; }
+.sa-wecom .sa-tools > summary { color: #737b87; font-size: 13px; }
+.sa-wecom .sa-tools > .sa-actions { margin: 12px 0; }
+.sa-wecom .sa-stats div { padding: 0; }

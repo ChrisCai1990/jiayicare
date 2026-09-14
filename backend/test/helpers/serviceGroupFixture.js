@@ -126,6 +126,8 @@ function installModel(name) {
     } else if (doc && update.$set) {
       Object.assign(doc, update.$set);
     }
+    if (doc && update.$inc) for (const [key, value] of Object.entries(update.$inc)) doc[key] = (doc[key] || 0) + value;
+    if (doc && update.$push) for (const [key, value] of Object.entries(update.$push)) doc[key].push(value);
     return { upsertedCount: created ? 1 : 0, modifiedCount: doc ? 1 : 0 };
   };
   Model.findOneAndUpdate = async (filter, update) => {

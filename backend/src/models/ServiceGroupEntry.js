@@ -15,6 +15,10 @@ const schema = new mongoose.Schema(
     sourceMessageId: { type: String, default: "" },
     sourceDay: { type: String, default: '' },
     sourceMessageIds: [{ type: String }],
+    professionalHash: { type: String, default: '' },
+    professionalRetryAt: Date,
+    professionalError: { type: Boolean, default: false },
+    professionalEvidence: [{ type: String }],
     sourceType: { type: String, enum: ['', 'wecom_archive'], default: '' },
     requestKey: { type: String, required: true, maxlength: 100 },
     status: {

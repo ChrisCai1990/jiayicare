@@ -34,7 +34,7 @@ const {createDraft}=require('../backend/src/utils/groupFollowupDraft');
     assert.deepEqual(errors,[]);
     await page.getByText('随访安排：下周三联系我复查',{exact:true}).scrollIntoViewIfNeeded();
     await page.screenshot({path:process.env.TEST_SCREENSHOT_PATH||'D:/Temp/jiayicare-group-followup-ui.png',fullPage:true});
-    await page.getByRole('button',{name:'服务记录',exact:true}).click();
+    await page.getByRole('button',{name:'沟通记录',exact:true}).click();
     await page.getByRole('button',{name:'核对成员和日期'}).click();
     await page.locator('.sa-form select').first().selectOption(f.ids.patient);
     await page.getByLabel('沟通日期',{exact:true}).fill('2026-09-14');
@@ -46,6 +46,20 @@ const {createDraft}=require('../backend/src/utils/groupFollowupDraft');
     assert.equal(f.models.ServiceRecord.rows[0].content,'已确认：今日沟通日常饮食情况。');
     await page.screenshot({path:'D:/Temp/jiayicare-daily-record-ui.png',fullPage:true});
     assert.deepEqual(errors,[]);
+    assert.equal(await page.getByRole('button',{name:'群通知',exact:true}).isVisible(),false);
+    assert.equal(await page.getByRole('button',{name:'群设置',exact:true}).isVisible(),false);
+    await page.getByRole('button',{name:'资料归档',exact:true}).click();
+    await page.getByRole('button',{name:'手动上传',exact:true}).click();
+    await page.getByRole('button',{name:'群资料',exact:true}).click();
+    await page.getByText('更多功能',{exact:true}).click();
+    await page.getByRole('button',{name:'群通知',exact:true}).click();
+    await page.getByRole('button',{name:'沟通记录',exact:true}).click();
+    await page.getByText('更多功能',{exact:true}).click();
+    for(const width of [430,360]) {
+      await page.setViewportSize({width,height:932});
+      assert.equal(await page.locator('.sa-tabs').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
+      await page.screenshot({path:`D:/Temp/jiayicare-sidebar-${width}.png`,fullPage:true});
+    }
     console.log('Mobile draft review and native follow-up confirmation passed; screenshot saved.');
   }finally{await browser.close();server.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
