@@ -256,6 +256,13 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceT
 
 async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
   const appointmentOnly = plan.appointmentOnly === true;
+  const appointmentRequirement = [
+    plan.hospital, plan.campus, plan.department, plan.expert,
+    `门诊类型：${plan.clinicType === 'international' ? '国际门诊' : '普通门诊'}`,
+    `费用与保险：${plan.insuranceUse === 'high_end' ? '使用高端医疗险' : '自费'}`,
+    plan.insuranceUse === 'high_end' && plan.insurerName && `保险公司：${String(plan.insurerName).trim()}`,
+    plan.insuranceUse === 'high_end' && `结算方式：${({ direct: '直付', reimbursement: '先付后报' })[plan.settlementMethod] || '待核实'}`,
+  ].filter(Boolean).join('；');
   if (!patient.assignedHealthManager || (!appointmentOnly && !patient.assignedHealthPlanner)) {
     throw Object.assign(new Error(appointmentOnly ? '请先为客户分配健管专员' : '请先为客户分配健康规划师和健管专员'), { status: 409 });
   }
@@ -272,7 +279,7 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
     status: 'pending', initiationSource: STAFF_DIRECT_SOURCE,
     desiredServiceDate: appointmentOnly ? appointmentAt(plan.preferredDateStart) : null,
     desiredServiceDateEnd: appointmentOnly ? appointmentAt(plan.preferredDateEnd) : null,
-    serviceRequirements: appointmentOnly ? [plan.hospital, plan.campus, plan.department, plan.expert].filter(Boolean).join(' ') : `${plan.proxyGoal}\n${plan.communicationContent}`,
+    serviceRequirements: appointmentOnly ? appointmentRequirement : `${plan.proxyGoal}\n${plan.communicationContent}`,
     serviceWorkflowSnapshot: { key: 'medical_proxy', source: STAFF_DIRECT_SOURCE },
   });
   if (appointmentOnly) {
@@ -282,7 +289,7 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
       workflowKey: `${PREFIX}booking`, taskRole: 'executor', theme: `医疗代诊：健管专员完成专家门诊预约 · ${serviceName}`,
       plannedContent: '健康顾问已发起专家约诊，请完成预约并记录实际日期时间。',
       formData: {
-        planSnapshot: { serviceContent: [plan.hospital, plan.campus, plan.department, plan.expert].filter(Boolean).join(' '), initiationSource: STAFF_DIRECT_SOURCE },
+        planSnapshot: { serviceContent: appointmentRequirement, initiationSource: STAFF_DIRECT_SOURCE },
         preferredDateStart: plan.preferredDateStart, preferredDateEnd: plan.preferredDateEnd,
       },
     });
@@ -368,6 +375,7 @@ async function validateMedicalProxyStage(task, body, staff) {
     if (![data.preferredDateStart, data.preferredDateEnd, data.appointmentDate].every(value => /^\d{4}-\d{2}-\d{2}$/.test(value)) || !/^\d{2}:\d{2}$/.test(data.appointmentTime)) return '预约日期或时间格式无效';
     if (data.preferredDateEnd < data.preferredDateStart) return '客户期望日期区间结束日期不能早于开始日期';
     if ((data.appointmentDate < data.preferredDateStart || data.appointmentDate > data.preferredDateEnd) && !nonempty(data.dateDifferenceNote)) return '约诊日期不在客户期望区间内，请说明差异及客户确认情况';
+    if (/费用与保险：使用高端医疗险/.test(data.planSnapshot?.serviceContent || '') && !['direct_verified', 'reimbursement_verified', 'self_pay_confirmed'].includes(data.insuranceOutcome)) return '请核实高端医疗险结算方式，并记录最终办理结果';
     const bookingOrder = task.sourceOrderId ? await Order.findById(task.sourceOrderId).select('serviceName').lean() : null;
     if (!/专家约诊/.test(bookingOrder?.serviceName || '')) {
       const assistant = await Admin.findOne({ _id: data.medicalAssistantId, role: 'medicalAssistant', staffStatus: 'active' }).select('_id').lean();
@@ -416,7 +424,9 @@ async function advanceMedicalProxyWorkflow(task) {
     await upsertMedicalProxyServiceRecord(task, order, false);
     if (/专家约诊/.test(order.serviceName || '')) {
       const requirement = nonempty(task.formData?.planSnapshot?.serviceContent || order.serviceRequirements);
-      const appointmentText = `预约时间：${task.formData.appointmentDate} ${task.formData.appointmentTime}\n约诊需求：${requirement || '已确认'}`;
+      const confirmedRequirement = requirement.replace(/；结算方式：(待核实|直付|先付后报)/g, '');
+      const insuranceResult = ({ direct_verified: '已核实可直付', reimbursement_verified: '已核实先付后报', self_pay_confirmed: '保险不适用，客户已确认自费' })[task.formData.insuranceOutcome];
+      const appointmentText = `预约时间：${task.formData.appointmentDate} ${task.formData.appointmentTime}\n约诊需求：${confirmedRequirement || '已确认'}${insuranceResult ? `\n保险办理：${insuranceResult}` : ''}`;
       await require('./appointmentReminderScheduler').scheduleExpertAppointmentReminders({
         order, appointmentDate: order.scheduledAt, appointmentText,
       });
@@ -424,7 +434,7 @@ async function advanceMedicalProxyWorkflow(task) {
         { dedupeKey: `expert-appointment-confirmed:${order._id}` },
         { $setOnInsert: {
           user: order.user, type: 'manager', sender: '嘉医管家', title: '专家约诊成功',
-          content: `您的专家约诊已完成。\n约诊需求：${requirement || '已确认'}\n预约时间：${task.formData.appointmentDate} ${task.formData.appointmentTime}${task.formData.dateDifferenceNote ? `\n补充说明：${task.formData.dateDifferenceNote}` : ''}`,
+          content: `您的专家约诊已完成。\n约诊需求：${confirmedRequirement || '已确认'}\n预约时间：${task.formData.appointmentDate} ${task.formData.appointmentTime}${insuranceResult ? `\n保险办理：${insuranceResult}` : ''}${task.formData.dateDifferenceNote ? `\n补充说明：${task.formData.dateDifferenceNote}` : ''}`,
           conversationId: `${order.user}_manager`, unread: true, isAI: false, aiGenerated: false,
           dedupeKey: `expert-appointment-confirmed:${order._id}`,
           action: { type: 'expert_appointment_confirmed', orderId: String(order._id) },

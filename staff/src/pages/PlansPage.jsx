@@ -564,7 +564,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
 
   // 模板内容字段（与管理端完全一致）
   const [form, setForm] = useState({
-    name: '', hospital: '', campus: '', department: '', expert: '',
+    name: '', hospital: '', campus: '', department: '', expert: '', clinicType: '', insuranceUse: '', insurerName: '', settlementMethod: 'pending',
     staffId: '', staffName: '', supervisorId: '', followUpPlanId: '', followUpPlanName: '', followUpPlans: [], serviceDomain: '', serviceMode: '', serviceDate: '', serviceTime: '', transport: '', tasks: '', hotel: '', notes: '',
     preferredDateStart: '', preferredDateEnd: '',
   })
@@ -614,6 +614,10 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
       campus:    c.campus    || '',
       department:c.department|| '',
       expert:    c.expert    || '',
+      clinicType: c.clinicType || '',
+      insuranceUse: c.insuranceUse || '',
+      insurerName: c.insurerName || '',
+      settlementMethod: c.settlementMethod || 'pending',
       staffId:   c.staffId || '',
       staffName: c.staffName || '',
       supervisorId: c.supervisorId || '',
@@ -642,6 +646,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
     if (!form.name.trim()) { setError('请填写方案名称'); return }
     if (!isMedicalProxy && !isExpertAppointment && !form.serviceDate) { setError('请选择服务日期'); return }
     if (isExpertAppointment && (!form.hospital.trim() || !form.department.trim() || !form.expert.trim() || !form.preferredDateStart || !form.preferredDateEnd || form.preferredDateEnd < form.preferredDateStart)) { setError('请完整填写医院、科室、专家和有效的期望日期区间'); return }
+    if (isExpertAppointment && (!form.clinicType || !form.insuranceUse)) { setError('请选择门诊类型和费用与保险方式'); return }
     if (isMedicalProxy && (!form.hospital.trim() || !form.department.trim() || !form.expert.trim() || !form.proxyGoal?.trim() || !form.communicationContent?.trim())) { setError('请完整填写医院、科室、专家、代诊目标和交流内容'); return }
     if (isMedicalProxy && !selectedReportIds.length) { setError('请从客户既有资料中选择至少一份已审核资料'); return }
     if (checkupOneStop && !workflowProductId) { setError('请选择 Admin 已发布的体检服务流程'); return }
@@ -652,7 +657,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
     setError(''); setSaving(true)
     try {
       if (isMedicalProxy || isExpertAppointment) {
-        await staffAPI.startStaffMedicalProxy(patientId, { hospital: form.hospital.trim(), campus: form.campus.trim(), department: form.department.trim(), expert: form.expert.trim(), proxyGoal: form.proxyGoal?.trim() || '', communicationContent: form.communicationContent?.trim() || '', selectedReportIds, appointmentOnly: isExpertAppointment, preferredDateStart: form.preferredDateStart, preferredDateEnd: form.preferredDateEnd })
+        await staffAPI.startStaffMedicalProxy(patientId, { hospital: form.hospital.trim(), campus: form.campus.trim(), department: form.department.trim(), expert: form.expert.trim(), clinicType: form.clinicType, insuranceUse: form.insuranceUse, insurerName: form.insurerName.trim(), settlementMethod: form.settlementMethod, proxyGoal: form.proxyGoal?.trim() || '', communicationContent: form.communicationContent?.trim() || '', selectedReportIds, appointmentOnly: isExpertAppointment, preferredDateStart: form.preferredDateStart, preferredDateEnd: form.preferredDateEnd })
         onSaved()
         return
       }
@@ -850,6 +855,15 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
             <div style={{ padding: 10, borderRadius: 8, background: '#EFF8F4', color: '#1E6B50', fontSize: 13 }}>健康顾问提交后，将自动生成健康规划师全程督办任务，并直接流转给健管专员预约专家。</div>
           </>}
           {isExpertAppointment && <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">门诊类型 *</label><select className="form-input" value={form.clinicType} onChange={e => set('clinicType', e.target.value)}><option value="">请选择</option><option value="general">普通门诊</option><option value="international">国际门诊</option></select></div>
+              <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">费用与保险 *</label><select className="form-input" value={form.insuranceUse} onChange={e => set('insuranceUse', e.target.value)}><option value="">请选择</option><option value="self_pay">自费</option><option value="high_end">使用高端医疗险</option></select></div>
+            </div>
+            {form.insuranceUse === 'high_end' && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              {renderField('保险公司', 'insurerName', 0, '保险公司名称（可选）')}
+              <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">结算方式</label><select className="form-input" value={form.settlementMethod} onChange={e => set('settlementMethod', e.target.value)}><option value="pending">待核实</option><option value="direct">直付</option><option value="reimbursement">先付后报</option></select></div>
+            </div>}
+            {form.insuranceUse === 'high_end' && <div style={{ fontSize: 12, color: '#8A6D3B' }}>健管专员预约前需核实医院、院区、国际门诊及保险直付或报销适用情况。</div>}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">期望开始日期 *</label><input className="form-input" type="date" value={form.preferredDateStart} onChange={e => set('preferredDateStart', e.target.value)} /></div>
               <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">期望结束日期 *</label><input className="form-input" type="date" min={form.preferredDateStart} value={form.preferredDateEnd} onChange={e => set('preferredDateEnd', e.target.value)} /></div>
