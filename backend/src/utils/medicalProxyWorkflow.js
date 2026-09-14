@@ -340,6 +340,25 @@ async function advanceMedicalProxyWorkflow(task) {
     order.markModified('medicalProxyPlan');
     await order.save();
     await upsertMedicalProxyServiceRecord(task, order, false);
+    if (/专家约诊/.test(order.serviceName || '')) {
+      const requirement = nonempty(task.formData?.planSnapshot?.serviceContent || order.serviceRequirements);
+      await require('../models/Message').findOneAndUpdate(
+        { dedupeKey: `expert-appointment-confirmed:${order._id}` },
+        { $setOnInsert: {
+          user: order.user, type: 'manager', sender: '嘉医管家', title: '专家约诊成功',
+          content: `您的专家约诊已完成。\n约诊需求：${requirement || '已确认'}\n预约时间：${task.formData.appointmentDate} ${task.formData.appointmentTime}${task.formData.dateDifferenceNote ? `\n补充说明：${task.formData.dateDifferenceNote}` : ''}`,
+          conversationId: `${order.user}_manager`, unread: true, isAI: false, aiGenerated: false,
+          dedupeKey: `expert-appointment-confirmed:${order._id}`,
+          action: { type: 'expert_appointment_confirmed', orderId: String(order._id) },
+        } },
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+      );
+      await FollowUp.updateOne(
+        { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } },
+        { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', content: '健管专员已完成专家约诊，预约信息已发送客户。', 'formData.currentStage': 'completed' } },
+      );
+      return;
+    }
   }
   if (stage === 'intake') {
     await FollowUp.findOneAndUpdate(
