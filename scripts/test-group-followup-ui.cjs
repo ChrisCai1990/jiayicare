@@ -8,6 +8,10 @@ const {createDraft}=require('../backend/src/utils/groupFollowupDraft');
   f.models.ServiceGroup.rows[0].archiveConsent=true;
   await require('../backend/src/utils/groupDailyRecord').createDailyRecord(f.models.ServiceGroup.rows[0],{text:'今天已沟通日常饮食情况',sender:'测试发言者',sentAt:'2026-09-14T01:00:00Z',messageId:'synthetic-daily-ui'});
   await require('../backend/src/models/ServiceGroupEntry').create({groupId:f.ids.group,kind:'task',status:'cancelled',title:'已取消测试事项',requestKey:'cancel-ui',assignedTo:f.ids.staff,createdBy:f.ids.staff});
+  process.env.SERVICE_GROUP_MATERIAL_SCHEDULE_ENABLED='true';
+  const png=Buffer.from('89504e470d0a1a0a0000000d49484452','hex');
+  const file=await require('../backend/src/utils/oss').uploadBuffer(png,'image/png','service-group-staging');
+  await require('../backend/src/models/ServiceGroupMessage').create({groupId:f.ids.group,messageId:'material-ui',sender:'synthetic',sentAt:new Date(),sealedText:'synthetic',expiresAt:new Date(Date.now()+86400000),attachment:{ossKey:file.key,name:'监测测试.png',mimeType:'image/png',sha256:require('crypto').createHash('sha256').update(png).digest('hex')}});
   const server=f.app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
   const browser=await chromium.launch({executablePath:process.env.TEST_CHROME_PATH||'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
   try{
@@ -66,6 +70,24 @@ const {createDraft}=require('../backend/src/utils/groupFollowupDraft');
       assert.equal(await page.locator('.sa-tabs').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
       await page.screenshot({path:`D:/Temp/jiayicare-sidebar-${width}.png`,fullPage:true});
     }
+    await page.getByRole('button',{name:'资料归档',exact:true}).click();
+    await page.getByLabel('选择资料 监测测试.png').check();
+    await page.getByLabel('资料所属成员').selectOption(f.ids.patient);
+    await page.getByLabel('归档用途').selectOption('checkin');
+    await page.getByLabel('检测／资料名称').fill('血压原图');
+    await page.getByLabel('检测／资料日期').fill('2026-09-14');
+    await page.getByLabel('发送人就是所选成员，记住此对应关系').check();
+    await page.getByRole('button',{name:'保存信息，定时归档'}).click();
+    await page.getByText('已核对，等待12:00／20:00自动归档',{exact:true}).waitFor();
+    assert.equal(f.models.ServiceGroupReceipt.rows[0].state,'queued');
+    assert.equal(f.models.ServiceGroup.rows[0].senderBindings.length,1);
+    await page.getByText('优先归属：演示客户甲',{exact:true}).waitFor();
+    assert.equal(f.models.ServiceRecord.rows.length,1);
+    await require('../backend/src/models/ServiceGroupMessage').create({groupId:f.ids.group,messageId:'sender-next-ui',sender:'synthetic',sentAt:new Date(),sealedText:'synthetic',expiresAt:new Date(Date.now()+86400000),attachment:{ossKey:file.key,name:'后续测试.png',mimeType:'image/png',sha256:require('crypto').createHash('sha256').update(png).digest('hex')}});
+    await page.getByRole('button',{name:'刷新资料',exact:true}).click();
+    await page.getByLabel('选择资料 后续测试.png').check();
+    assert.equal(await page.getByLabel('资料所属成员').inputValue(),f.ids.patient);
+    await page.screenshot({path:'D:/Temp/jiayicare-sender-priority-ui.png',fullPage:true});
     console.log('Mobile draft review and native follow-up confirmation passed; screenshot saved.');
   }finally{await browser.close();server.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

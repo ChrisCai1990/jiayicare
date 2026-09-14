@@ -5,6 +5,7 @@ export default function GroupMaterialInbox({group,caps,busy,run,can}) {
   const [rows,setRows]=useState([]),[selected,setSelected]=useState([]),[error,setError]=useState('');
   const [patientId,setPatient]=useState(''),[purpose,setPurpose]=useState(''),[title,setTitle]=useState(''),[date,setDate]=useState('');
   const [category,setCategory]=useState('outpatient_record'),[result,setResult]=useState([]),[showDone,setShowDone]=useState(false);
+  const [rememberSender,setRememberSender]=useState(false);
   const active=useRef(true);
   const load=async()=>{
     try {const r=await api.get(`/${group._id}/inbox`);if(active.current){setRows(r.data);setError('');}}
@@ -16,38 +17,50 @@ export default function GroupMaterialInbox({group,caps,busy,run,can}) {
     poll();const timer=setInterval(poll,15000);document.addEventListener('visibilitychange',poll);
     return()=>{active.current=false;clearInterval(timer);document.removeEventListener('visibilitychange',poll);};
   },[group._id,group.archiveConsent]);
-  const choose=(id)=>setSelected(old=>old.includes(id)?old.filter(x=>x!==id):old.length<9?[...old,id]:old);
+  const choose=(id)=>{
+    const next=selected.includes(id)?selected.filter(x=>x!==id):selected.length<9?[...selected,id]:selected;
+    const selectedRows=rows.filter(r=>next.includes(r._id));
+    const matches=selectedRows.map(r=>r.senderPatientId);
+    setPatient(matches.length&&matches.every(p=>p&&p===matches[0])?matches[0]:'');
+    setRememberSender(false);setSelected(next);
+  };
   const allowed=can(purpose==='report'?'reports':'service_records','create');
   return <section className="sa-materials">
     <div className="sa-row"><h2>群资料待归档</h2><button disabled={busy||!group.archiveConsent} onClick={load}>刷新资料</button></div>
-    <small>{!group.archiveConsent?'当前群尚未确认存档授权，请由负责人核对群设置。':!caps?.archiveConnected?'采集尚未就绪或暂时离线；仍可查看已接入资料。':'每15秒检查已接入资料；只收件，不自动入库。'}</small>
+    <small>{!group.archiveConsent?'当前群尚未确认存档授权，请由负责人核对群设置。':!caps?.archiveConnected?'采集尚未就绪或暂时离线；仍可查看已接入资料。':'自动接收群资料；归属不明确的资料保留待确认。'}</small>
     <small>最近100份附件，暂存30天。日常检测原图存客户服务记录；就诊资料存报告待解析。多选逐份归档，不拼接图片。</small>
+    {caps?.materialScheduleConfigured&&<p className="sa-notice">每天12:00、20:00（北京时间）归档已核对资料。请先填写成员、类别和资料日期，再保存为定时归档。</p>}
     {error&&<p role="alert">{error}</p>}
     <label className="sa-check"><input type="checkbox" checked={showDone} onChange={e=>setShowDone(e.target.checked)}/>显示已归档资料</label>
     {!rows.some(m=>showDone||m.state!=='archived')&&<div className="sa-empty">暂无待归档资料</div>}
     <div className="sa-material-grid">{rows.filter(m=>showDone||m.state!=='archived').map(m=><article className="sa-card" key={m._id}>
       {m.mimeType?.startsWith('image/')?<a href={m.previewUrl} target="_blank" rel="noreferrer"><img src={m.previewUrl} alt={m.name} loading="lazy"/></a>:<a href={m.previewUrl} target="_blank" rel="noreferrer">预览 PDF</a>}
       <small>{new Date(m.sentAt).toLocaleString('zh-CN')} · {m.sender}</small>
+      <small>{m.senderPatientId ? '优先归属：'+(group.members.find(x=>(x.patientId?._id||x.patientId)===m.senderPatientId)?.patientId?.name||'已关联成员') : '发送人尚未关联档案，请确认一次对应成员'}</small>
       <p>{m.name}</p>
-      <small>{({pending:'待确认',processing:'正在归档，请勿重复提交',failed:'上次未完成，可按原确认信息重试',archived:'已归档'})[m.state]}</small>
+      <small>{({pending:'待确认',queued:'已核对，等待12:00／20:00自动归档',processing:'正在归档，请勿重复提交',failed:'上次未完成，可按原确认信息重试',archived:'已归档'})[m.state]}</small>
       {m.patientId&&<small>已确认：{group.members.find(x=>(x.patientId?._id||x.patientId)===m.patientId)?.patientId?.name||'家庭成员'} · {m.title} · {m.date}</small>}
       {m.state==='failed'&&<button disabled={busy} onClick={()=>{setPatient(m.patientId);setPurpose(m.purpose);setTitle(m.title);setDate(m.date);setCategory(m.documentCategory);setSelected([m._id]);}}>载入上次确认信息</button>}
       {['pending','failed'].includes(m.state)&&<label className="sa-check"><input type="checkbox" aria-label={'选择资料 '+m.name} disabled={busy||(!selected.includes(m._id)&&selected.length>=9)} checked={selected.includes(m._id)} onChange={()=>choose(m._id)}/>选择归档</label>}
     </article>)}</div>
-    {!!selected.length&&<form className="sa-card sa-form" onSubmit={e=>{e.preventDefault();run(async()=>{
-      const r=await api.post(`/${group._id}/inbox/confirm`,{messageIds:selected,patientId,purpose,title,date,documentCategory:category});
+    {!!selected.length&&<form className="sa-card sa-form" onSubmit={e=>{e.preventDefault();const schedule=e.nativeEvent.submitter?.value==='schedule';run(async()=>{
+      if(rememberSender)await api.post(`/${group._id}/inbox/sender-binding`,{messageIds:selected,patientId});
+      const r=await api.post(`/${group._id}/inbox/confirm`,{messageIds:selected,patientId,purpose,title,date,documentCategory:category,schedule});
       if(!active.current)return;setResult(r.data);setSelected(r.data.filter(x=>!x.success).map(x=>x.messageId));await load();
     });}}>
       <h3>确认归档 {selected.length} 份原件</h3><small>发送人不一定是资料本人。请确认所选原件属于同一个人、同一天；不同人员请分批处理。</small>
       <label>资料所属成员<select required value={patientId} disabled={busy} onChange={e=>setPatient(e.target.value)}><option value="">请选择本人或家属</option>{group.members.map(m=><option key={m.patientId._id||m.patientId} value={m.patientId._id||m.patientId}>{m.patientId.name} · {m.relation||'成员'}</option>)}</select></label>
+      <small>优先带入发送人对应的成员；替家属发送的资料，请改选实际所属成员。</small>
+      {can('patients','edit')&&new Set(rows.filter(r=>selected.includes(r._id)).map(r=>r.sender)).size===1&&<label className="sa-check"><input type="checkbox" checked={rememberSender} onChange={e=>setRememberSender(e.target.checked)}/>发送人就是所选成员，记住此对应关系</label>}
       <label>归档用途<select required value={purpose} disabled={busy} onChange={e=>setPurpose(e.target.value)}><option value="">请选择用途</option><option value="checkin">日常检测原图（血压、血糖等）</option><option value="report">就诊／检查资料（待解析）</option></select></label>
       <label>检测／资料名称<input required maxLength={160} value={title} disabled={busy} onChange={e=>setTitle(e.target.value)}/></label>
       <label>检测／资料日期<input type="date" required value={date} disabled={busy} onChange={e=>setDate(e.target.value)}/></label>
       {purpose==='report'&&<label>就诊资料类别<select value={category} disabled={busy} onChange={e=>setCategory(e.target.value)}>{Object.entries({outpatient_record:'门诊病历',inpatient_record:'住院病历',lab_report:'检验报告',exam_report:'检查报告',prescription_order:'处方',physical_exam:'体检报告',other_customer_material:'其他资料'}).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>}
-      <button className="sa-primary" disabled={busy||!allowed||!patientId||!purpose}>确认归档所选资料</button>
+      {caps?.materialScheduleConfigured&&<button value="schedule" className="sa-primary" disabled={busy||!allowed||!patientId||!purpose}>保存信息，定时归档</button>}
+      <button value="now" disabled={busy||!allowed||!patientId||!purpose}>立即归档</button>
       <button type="button" disabled={busy} onClick={()=>setSelected([])}>取消选择</button>
       {!allowed&&<small>当前账号没有此类资料的归档权限。</small>}
     </form>}
-    {!!result.length&&<div className="sa-notice" role="status"><span>{result.filter(x=>x.success).length}份完成（其中{result.filter(x=>x.duplicate).length}份为已有原件），{result.filter(x=>!x.success).length}份未完成。{result.filter(x=>!x.success).map(x=><small key={x.messageId}>{x.message}</small>)}</span></div>}
+    {!!result.length&&<div className="sa-notice" role="status"><span>{result.filter(x=>x.queued).length}份等待定时归档，{result.filter(x=>x.success&&!x.queued).length}份已归档（其中{result.filter(x=>x.duplicate).length}份为已有原件），{result.filter(x=>!x.success).length}份未完成。{result.filter(x=>!x.success).map(x=><small key={x.messageId}>{x.message}</small>)}</span></div>}
   </section>;
 }

@@ -7,7 +7,8 @@ const schema = new mongoose.Schema({
   purpose: {type:String, enum:['checkin','report'], required:true},
   title: String, date: String, documentCategory: String,
   staffId: {type:mongoose.Schema.Types.ObjectId, ref:'Admin'},
-  state: {type:String, enum:['processing','failed','archived'], default:'processing'},
+  state: {type:String, enum:['queued','processing','failed','archived'], default:'processing'},
+  autoScheduled: {type:Boolean,default:false}, scheduledAt: Date, lastAutoSlot: String,
   resultId: mongoose.Schema.Types.ObjectId,
   duplicate: Boolean,
 }, {timestamps:true});

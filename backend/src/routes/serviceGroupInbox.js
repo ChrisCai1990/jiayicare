@@ -2,10 +2,28 @@
 const Message = require('../models/ServiceGroupMessage');
 const Receipt = require('../models/ServiceGroupReceipt');
 const Report = require('../models/MedicalReport');
-const Record = require('../models/ServiceRecord');
-const {createHash} = require('crypto');
-const {fileMime,checkedDate,same} = require('../utils/serviceGroupRules');
+const {checkedDate,same} = require('../utils/serviceGroupRules');
 module.exports = function install(router, {wrap,group,member,permit,fail,oid,text}) {
+  router.post('/:groupId/inbox/sender-binding',wrap(async(req,res)=>{
+    const g=await group(req);
+    if(!g.archiveConsent)fail('本群存档授权未开启',403);
+    await permit(req,'patients','edit');
+    const p=await member(req,g,req.body.patientId);
+    if(!p)fail('请选择发送人对应的家庭成员');
+    const ids=req.body.messageIds;
+    if(!Array.isArray(ids)||!ids.length||ids.length>9)fail('请选择该发送人的资料');
+    ids.forEach(oid);
+    const rows=await Message.find({_id:{$in:ids},groupId:g._id,expiresAt:{$gt:new Date()}}).lean();
+    if(rows.length!==new Set(ids).size||new Set(rows.map(m=>m.sender)).size!==1)fail('请只选择同一发送人的资料');
+    const sender=rows[0].sender,existing=g.senderBindings.find(b=>b.sender===sender);
+    if(existing&&!same(existing.patientId,p._id))fail('发送人已关联其他成员，请核对；代发资料可单独改选归档成员',409);
+    if(!existing){
+      g.senderBindings.push({sender,patientId:p._id,boundBy:req.staff._id,boundAt:new Date()});
+      g.revisions.push({actor:req.staff._id,action:'确认群资料发送人与家庭成员对应关系'});
+      await g.save();
+    }
+    res.json({success:true,data:{patientId:p._id}});
+  }));
   router.get('/:groupId/inbox',wrap(async(req,res)=>{
     const g = await group(req);
     if (!g.archiveConsent) return res.json({success:true,data:[]});
@@ -14,10 +32,11 @@ module.exports = function install(router, {wrap,group,member,permit,fail,oid,tex
     const receipts = await Receipt.find({groupId:g._id,messageId:{$in:rows.map(m=>m._id)}}).lean();
     res.json({success:true,data:rows.filter(m=>m.attachment?.ossKey).map(m=>{
       const r = receipts.find(r=>same(r.messageId,m._id));
+      const binding=g.senderBindings.find(b=>b.sender===m.sender&&g.members.some(member=>same(member.patientId,b.patientId)));
       return {_id:m._id,sender:m.sender,sentAt:m.sentAt,name:m.attachment.name,
         mimeType:m.attachment.mimeType,size:m.attachment.size,
         previewUrl:require('../utils/oss').getSignedUrl(m.attachment.ossKey,120),
-        state:r?.state || 'pending', patientId:r?.patientId, purpose:r?.purpose,
+        state:r?.state || 'pending', patientId:r?.patientId, senderPatientId:binding?.patientId, purpose:r?.purpose,
         title:r?.title,date:r?.date,documentCategory:r?.documentCategory,resultId:r?.resultId};
     })});
   }));
@@ -37,55 +56,28 @@ module.exports = function install(router, {wrap,group,member,permit,fail,oid,tex
     checkedDate(date);
     const category=text(req.body.documentCategory,40);
     if(purpose==='report'&&!Report.schema.path('documentCategory').enumValues.includes(category)) fail('资料类别无效');
-    const results=[];
-    for(const id of ids){
-      let receipt, owned=false;
-      try {
+    if(req.body.schedule === true) {
+      if(process.env.SERVICE_GROUP_MATERIAL_SCHEDULE_ENABLED !== 'true') fail('定时归档尚未启用',409);
+      const results=[];
+      for(const id of ids) {
         const m=await Message.findOne({_id:id,groupId:g._id,expiresAt:{$gt:new Date()}}).select('+attachment.ossKey');
-        if(!m?.attachment?.ossKey?.startsWith('service-group-staging/')) fail('原件已过期或不属于当前群',404);
-        if(purpose==='checkin'&&!m.attachment.mimeType?.startsWith('image/')) fail('打卡仅支持图片');
-        receipt=await Receipt.findOne({groupId:g._id,messageId:id});
-        if(receipt){
-          if(!same(receipt.patientId,p._id)||receipt.purpose!==purpose||receipt.title!==title||receipt.date!==date||receipt.documentCategory!==category)
-            fail('该原件已有确认记录，请核对已确认的成员、名称和分类，不能重复改绑',409);
-          if(receipt.state==='archived') {results.push({messageId:id,success:true,resultId:receipt.resultId,duplicate:true});continue;}
-          receipt=await Receipt.findOneAndUpdate({_id:receipt._id,state:'failed'},{$set:{state:'processing'}},{new:true});
-          if(!receipt) fail('该原件正在处理，请勿重复提交；长时间未完成请联系管理员核对',409);
-        }else{
-          receipt=await Receipt.create({groupId:g._id,messageId:id,patientId:p._id,purpose,title,date,documentCategory:category,staffId:req.staff._id});
-        }
-        owned=true;
-        const oss=require('../utils/oss');
-        const stream=(await oss.getObjectStream(m.attachment.ossKey)).stream;
-        const chunks=[]; let size=0;
-        for await(const chunk of stream){size+=chunk.length;if(size>20*1024*1024){stream.destroy();fail('原件超过20MB');}chunks.push(chunk);}
-        const buffer=Buffer.concat(chunks),mime=fileMime(buffer),digest=createHash('sha256').update(buffer).digest('hex');
-        if(!mime||digest!==m.attachment.sha256) fail('原件校验失败，请联系管理员');
-        const Model=purpose==='report'?Report:Record;
-        const filter=purpose==='report'?{user:p._id,sourceSha256:digest}:{patientId:p._id,sourceGroupImageSha256:digest};
-        let result=await Model.findOne(filter), duplicate=!!result;
-        if(!result){
-          const file=await oss.uploadBuffer(buffer,mime,purpose==='report'?'reports':'service-group-checkins');
-          try {
-            result=await Model.create(purpose==='report'?{
-              user:p._id,tenantId:p.tenantId||null,title,documentCategory:category,type:'other',date,checkDate:date,
-              fileUrl:file.url,fileUrls:[file.url],ossKey:file.key,ossKeys:[file.key],mimeType:mime,fileSize:String(size),
-              sourceSha256:digest,sourceServiceGroup:g._id,sourceGroupMessageId:m.messageId,uploadedBy:req.staff._id,uploadedByRole:req.staff.role,
-              aiStatus:'none',audit_status:'unaudited',
-            }:{patientId:p._id,staffId:req.staff._id,type:'group_service',title:'日常检测原图 · '+title,date:checkedDate(date),
-              content:'医护确认归档的日常检测原图；未自动提取数值，不代表指标已审核。',
-              structuredContent:{source:'wecom_archive',materialType:'daily_monitoring_image',sourceGroupId:String(g._id),measurementDate:date},
-              sourceGroupImageSha256:digest,sourceGroupMessageId:m.messageId,
-              attachments:[{url:file.url,ossKey:file.key,name:m.attachment.name,mimeType:mime,fileSize:String(size)}]});
-          }catch(e){await oss.deleteFile(file.key);if(e.code!==11000)throw e;result=await Model.findOne(filter);if(!result)throw e;duplicate=true;}
-        }
-        await Receipt.updateOne({_id:receipt._id},{$set:{state:'archived',resultId:result._id,duplicate}});
-        results.push({messageId:id,success:true,resultId:result._id,duplicate});
-      }catch(e){
-        if(owned) await Receipt.updateOne({_id:receipt._id},{$set:{state:'failed'}});
-        results.push({messageId:id,success:false,message:e.status?e.message:'归档未完成，请刷新后重试；仍失败请联系管理员'});
+        if(!m?.attachment?.ossKey || (purpose==='checkin'&&!m.attachment.mimeType?.startsWith('image/'))) fail('所选原件已过期或类型不符');
       }
+      for(const id of ids) {
+        const existing=await Receipt.findOne({groupId:g._id,messageId:id});
+        if(existing) {
+          if(!same(existing.patientId,p._id)||existing.purpose!==purpose||existing.title!==title||existing.date!==date||existing.documentCategory!==category) fail('该原件已有确认信息，不能重复改绑',409);
+          if(existing.state==='archived') {results.push({messageId:id,success:true,duplicate:true});continue;}
+          if(existing.state==='processing') fail('原件正在归档，请稍后刷新',409);
+          await Receipt.updateOne({_id:existing._id,state:{$in:['queued','failed']}},{$set:{state:'queued',autoScheduled:true,scheduledAt:new Date(),staffId:req.staff._id}});
+        } else {
+          await Receipt.create({groupId:g._id,messageId:id,patientId:p._id,purpose,title,date,documentCategory:category,staffId:req.staff._id,state:'queued',autoScheduled:true,scheduledAt:new Date()});
+        }
+        results.push({messageId:id,success:true,queued:true});
+      }
+      return res.json({success:true,data:results});
     }
+    const results=await require('../utils/archiveGroupMaterials')({g,p,staff:req.staff,ids,purpose,title,date,category});
     res.json({success:true,data:results});
   }));
 };
