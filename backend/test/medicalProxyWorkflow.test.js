@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const Admin = require('../src/models/Admin');
+const FollowUp = require('../src/models/FollowUp');
 const MedicalReport = require('../src/models/MedicalReport');
 const User = require('../src/models/User');
 const Order = require('../src/models/Order');
@@ -148,9 +149,37 @@ test('planning advisor can complete an assessment without proxy-visit booking fi
   const originalFind = User.findById;
   try {
     User.findById = () => ({ select: () => ({ lean: async () => ({ assignedHealthPlanner: 'planner-1' }) }) });
-    const formData = { medicalPlanning: true, customerNeed: '需要解读报告并确定就医方向', assessmentSummary: '已与客户沟通，建议先核对已审核报告。' };
+    const formData = { medicalPlanning: true, customerNeed: '需要解读报告并确定就医方向', problemAnalysis: '需要结合报告评估', hospitalRecommendations: '某医院', departmentRecommendations: '某科室', expertRecommendation1: '专家甲', expertRecommendation2: '专家乙' };
     assert.equal(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'doctor-1', role: 'familyDoctor' }), '');
+    delete formData.expertRecommendation2;
+    assert.match(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'doctor-1', role: 'familyDoctor' }), /至少推荐两位专家/);
   } finally { User.findById = originalFind; }
+});
+
+test('planning supervisor remains open until advisor completes and planner records customer decision', async () => {
+  const originalOrderFind = Order.findById;
+  const originalFollowUpFind = FollowUp.findOne;
+  try {
+    Order.findById = () => ({ select: () => ({ lean: async () => ({ serviceName: '就医规划服务' }) }) });
+    let advisorCompleted = false;
+    FollowUp.findOne = () => ({ select: () => ({ lean: async () => advisorCompleted ? { _id: 'advisor-1' } : null }) });
+    const task = { sourceType: 'order', sourceOrderId: 'order-1', workflowKey: 'medical_proxy:supervise', assignedTo: 'planner-1', formData: { medicalPlanning: true } };
+    const body = { status: 'completed', formData: { medicalPlanning: true, customerCommunicationSummary: '客户已确认建议', planningOutcome: 'no_additional_service' } };
+    const staff = { _id: 'planner-1', role: 'healthPlanner' };
+    assert.match(await validateMedicalProxyStage(task, body, staff), /等待健康顾问/);
+    advisorCompleted = true;
+    assert.equal(await validateMedicalProxyStage(task, body, staff), '');
+    delete body.formData.planningOutcome;
+    assert.match(await validateMedicalProxyStage(task, body, staff), /确认是否需要/);
+  } finally { Order.findById = originalOrderFind; FollowUp.findOne = originalFollowUpFind; }
+});
+
+test('advisor handoff reactivates planning supervision instead of auto-closing it', () => {
+  const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
+  const planningHandoff = workflow.split("if (task.formData?.medicalPlanning === true) {")[1].split('\n      return;')[0];
+  assert.match(planningHandoff, /planner_followup/);
+  assert.match(planningHandoff, /advisorSnapshot/);
+  assert.doesNotMatch(planningHandoff, /status: 'completed'/);
 });
 
 test('annual-member staff initiation skips collection, audit and planner execution stages', () => {
