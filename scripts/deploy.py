@@ -617,6 +617,16 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
         if code:
             raise RuntimeError("专家约诊就诊后闭环迁移失败")
         code, _ = run_migration(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/cleanupExpertAppointmentReviewV15.js ] && "
+            f"[ ! -f {REPO_DIR}/.expert-appointment-review-cleanup-v15-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/cleanupExpertAppointmentReviewV15.js && "
+            f"touch {REPO_DIR}/.expert-appointment-review-cleanup-v15-applied; fi",
+            timeout=120,
+            label="清理非指定客户的历史专家约诊复核任务",
+        )
+        if code:
+            raise RuntimeError("专家约诊历史复核任务清理失败")
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOneStopFinalFlowV15.js ] && "
             f"[ ! -f {REPO_DIR}/.one-stop-final-flow-v15-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateOneStopFinalFlowV15.js --apply && "
