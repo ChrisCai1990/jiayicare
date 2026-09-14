@@ -1,6 +1,7 @@
 import { isManualOnlyReport } from '../utils/reportManualReview'
 import { orderConversationMessages } from '../utils/orderConversation'
 import { inferAppointmentConversation } from '../utils/appointmentConversation'
+import { planningAdviceFromTask, hasPlanningAdvice, planningAdviceMessage } from '../utils/medicalPlanningAdvice'
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { staffAPI, API_ORIGIN } from '../api'
@@ -1812,6 +1813,7 @@ export default function PatientDetailPage() {
   const [followUpSaving, setFollowUpSaving] = useState(false)
   const [showUploadReport, setShowUploadReport] = useState(false)
   const [showMessageModal, setShowMessageModal] = useState(() => new URLSearchParams(location.search).get('openChat') === '1')
+  const [planningChatContext, setPlanningChatContext] = useState(null)
   const [auditLoading, setAuditLoading] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
   const [showRejectInput, setShowRejectInput] = useState(false)
@@ -10397,7 +10399,7 @@ export default function PatientDetailPage() {
                 </div>
               )}
               {/* 随访内容 */}
-              {followUpDetail.taskRequirements && (
+              {followUpDetail.taskRequirements && medicalProxyStage(followUpDetail) !== 'supervise' && (
                 <div>
                   <div style={{ fontSize: 11, color: '#1E6B50', marginBottom: 6, fontWeight: 700 }}>具体代办事项</div>
                   <div style={{ background: '#EFF8F4', borderRadius: 8, padding: '10px 14px', fontSize: 14, color: '#1A2B24', lineHeight: 1.7, whiteSpace: 'pre-wrap', border: '1px solid #B2D8C7' }}>
@@ -10434,7 +10436,19 @@ export default function PatientDetailPage() {
                 </div>
               )}
               {medicalProxyStage(followUpDetail) === 'supervise' && <div style={{ background: '#EFF8F4', padding: 12, borderRadius: 8, fontSize: 13 }}>
-                <strong>健康规划师持续督办</strong><br />当前环节：{({ collect: '指导客户上传并选定资料', audit: '健管专员审核', advisor: '健康顾问确认方案', planner: '规划师复核并预指派就医专员', booking: '健管专员预约专家门诊', execute: '就医专员执行代诊', completed: '代诊完成' })[followUpDetail.formData?.currentStage] || '处理中'}<br />服务内容：{followUpDetail.formData?.serviceContent || '-'}<br />客户诉求：{followUpDetail.formData?.customerNeed || '-'}
+                <strong>健康规划师持续督办</strong><br />当前环节：{({ collect: '指导客户上传并选定资料', audit: '健管专员审核', advisor: '健康顾问确认方案', planner_followup: '顾问建议已完成，待与客户沟通', planner: '规划师复核并预指派就医专员', booking: '健管专员预约专家门诊', execute: '就医专员执行代诊', completed: '服务完成' })[followUpDetail.formData?.currentStage] || '处理中'}<br />服务内容：{followUpDetail.formData?.serviceContent || '-'}<br />客户诉求：{followUpDetail.formData?.customerNeed || '-'}
+              </div>}
+              {medicalProxyStage(followUpDetail) === 'supervise' && /就医规划/.test(followUpDetail.sourceOrderId?.serviceName || followUpDetail.theme || '') && <div style={{ border: '1px solid #B2D8C7', background: '#F6FBF8', borderRadius: 8, padding: 14, fontSize: 13, display: 'grid', gap: 8 }}>
+                <strong style={{ color: '#1E6B50' }}>健康顾问就医规划建议</strong>
+                {hasPlanningAdvice(planningAdviceFromTask(followUpDetail)) ? <>
+                  <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{planningAdviceMessage(planningAdviceFromTask(followUpDetail)).split('请您看看这些建议')[0]}</div>
+                  <div style={{ color: '#65776F' }}>请先在客户对话中核对并发送建议，再确认客户是否需要启用其他就医协助服务。</div>
+                  <button className="btn btn-primary btn-sm" style={{ justifySelf: 'start' }} onClick={() => {
+                    setPlanningChatContext({ order: followUpDetail.sourceOrderId, draft: planningAdviceMessage(planningAdviceFromTask(followUpDetail)) })
+                    setFollowUpDetail(null)
+                    setShowMessageModal(true)
+                  }}>打开客户对话并带入建议</button>
+                </> : <div style={{ color: '#8A6B30' }}>顾问建议尚未同步到本任务，请刷新后查看；在建议到达前不能推送方案。</div>}
               </div>}
               {/* 表单内容（formData） */}
               {medicalProxyStage(followUpDetail) !== 'supervise' && followUpDetail.formData && Object.keys(followUpDetail.formData).length > 0 && (
@@ -10459,6 +10473,7 @@ export default function PatientDetailPage() {
               )}
             </div>
             <div className="modal-footer">
+              {medicalProxyStage(followUpDetail) === 'supervise' && /就医规划/.test(followUpDetail.sourceOrderId?.serviceName || followUpDetail.theme || '') && ['planned', 'in_progress'].includes(followUpDetail.status) && hasPlanningAdvice(planningAdviceFromTask(followUpDetail)) && <button className="btn btn-primary" onClick={() => { const task = { ...followUpDetail, formData: { ...followUpDetail.formData, medicalPlanning: true, advisorSnapshot: planningAdviceFromTask(followUpDetail) } }; setFollowUpDetail(null); openExec(task) }}>记录客户沟通与后续服务意向</button>}
               {followUpDetail.aiStatus === 'pending' && <>
                 <button className="btn btn-secondary" onClick={async () => {
                   try {
@@ -11873,7 +11888,9 @@ export default function PatientDetailPage() {
         <SendMessageModal
           patientId={id}
           patientName={user.name}
-          serviceBooking={location.state?.serviceBooking}
+          serviceBooking={planningChatContext ? null : location.state?.serviceBooking}
+          initialOrder={planningChatContext?.order}
+          initialDraft={planningChatContext?.draft}
           onConfirmBooking={async ({ orderId, serviceTime, serviceTimeEnd, task, serviceContent, customerNeed, communicationDate, communicationTimeStart, communicationTimeEnd }) => {
             const originalNote = location.state?.serviceBooking?.sourceOrderId?.note || ''
             const cleanOriginalNote = String(originalNote).split('\n').filter(line => !/^已确认服务任务[:：]/.test(line.trim())).join('\n').trim()
@@ -11889,7 +11906,7 @@ export default function PatientDetailPage() {
             setTab('plans')
             nav(`${location.pathname}?tab=plans`, { state: { autoMedicalAssist: { orderId, briefNote: `客户下单时已确认服务时间：${serviceTime}\n客户下单时已确认服务内容：${task}` } } })
           }}
-          onClose={() => setShowMessageModal(false)}
+          onClose={() => { setShowMessageModal(false); setPlanningChatContext(null) }}
         />
       )}
 
@@ -12127,19 +12144,19 @@ function formatRecordValue(r) {
 }
 
 // ── 聊天对话弹窗 ──────────────────────────────────────────────
-function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBooking, onClose }) {
+function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder, initialDraft, onConfirmBooking, onClose }) {
   const { staff } = useStaff()
   const chatRole = staff?.role === 'familyDoctor' ? 'doctor' : staff?.role === 'nutritionist' ? 'nutritionist' : staff?.role === 'healthPlanner' ? 'planner' : staff?.role === 'medicalAssistant' ? 'medicalAssistant' : 'manager'
   const toast = useToast()
   const [msgs, setMsgs] = useState([])
   const [loading, setLoading] = useState(true)
-  const [input, setInput] = useState('')
+  const [input, setInput] = useState(initialDraft || '')
   const [images, setImages] = useState([])
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
   const [humanActive, setHumanActive] = useState(false)
   const [switchingMode, setSwitchingMode] = useState(false)
-  const [currentBooking, setCurrentBooking] = useState(serviceBooking)
+  const [currentBooking, setCurrentBooking] = useState(serviceBooking || (initialOrder ? { sourceOrderId: initialOrder } : null))
   const order = currentBooking?.sourceOrderId
   const isMedicalProxy = order?.serviceWorkflowSnapshot?.key === 'medical_proxy' || /医疗代诊|专家约诊|就医规划/.test(order?.serviceName || '')
   const isExpertAppointment = /专家约诊/.test(order?.serviceName || '')
@@ -12206,7 +12223,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
   // 路由传来的预约是点击当时的快照。直接按会员订单读取最新详情，不能再从
   // “活动待办”反查：订单一旦退款/取消，待办会被过滤，旧快照反而永远无法刷新。
   useEffect(() => {
-    const sourceOrderId = serviceBooking?.sourceOrderId?._id || serviceBooking?.sourceOrderId
+    const sourceOrderId = serviceBooking?.sourceOrderId?._id || serviceBooking?.sourceOrderId || initialOrder?._id || initialOrder
     if (!sourceOrderId) return
     let active = true
     staffAPI.getPatientOrders(patientId)
@@ -12216,7 +12233,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
       })
       .catch(() => {})
     return () => { active = false }
-  }, [patientId, serviceBooking?.sourceOrderId])
+  }, [patientId, serviceBooking?.sourceOrderId, initialOrder])
 
   useEffect(() => {
     const confirmedDate = formatServiceDate(orderServiceDate)
@@ -12407,6 +12424,9 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
+        {initialOrder && <div style={{ padding: '9px 16px', background: '#EFF8F4', borderBottom: '1px solid #B2D8C7', fontSize: 13, color: '#1E6B50' }}>
+          本次订单：{order?.serviceName || '就医规划'}。顾问建议已带入输入框，请核对后点击发送；发送后再与客户确认是否需要其他就医协助服务。
+        </div>}
         {showBookingConfirm && (
           <div style={{ padding: '12px 16px', borderBottom: '1px solid #E0D9CE', background: '#FFF8ED', display: 'grid', gap: 8, maxHeight: bookingCollapsed ? undefined : '38vh', overflowY: bookingCollapsed ? 'visible' : 'auto', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
