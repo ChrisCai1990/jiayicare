@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const Admin = require('../src/models/Admin');
 const MedicalReport = require('../src/models/MedicalReport');
 const User = require('../src/models/User');
@@ -51,7 +53,7 @@ test('advisor must confirm five proxy visit fields and planner must assign activ
   const originalAdminFind = Admin.findOne;
   try {
     MedicalReport.countDocuments = async () => 1;
-    User.findById = () => ({ select: () => ({ lean: async () => ({ assignedHealthPlanner: 'planner-1' }) }) });
+    User.findById = () => ({ select: () => ({ lean: async () => ({ assignedHealthPlanner: 'planner-1', assignedHealthManager: 'manager-1' }) }) });
     Admin.findOne = () => ({ select: () => ({ lean: async () => ({ _id: 'assistant-1' }) }) });
     const advisor = { sourceType: 'order', workflowKey: 'medical_proxy:advisor', patientId: 'patient-1', assignedTo: 'doctor-1' };
     const data = { auditSnapshot: { collectionSnapshot: { reportIds: ['report-1'], annualMember: true } }, hospital: '医院', department: '科室', expert: '专家', proxyGoal: '取得专业意见' };
@@ -64,6 +66,11 @@ test('advisor must confirm five proxy visit fields and planner must assign activ
     const planner = { sourceType: 'order', workflowKey: 'medical_proxy:planner', assignedTo: 'planner-1' };
     assert.match(await validateMedicalProxyStage(planner, { status: 'completed', formData: {} }, { _id: 'planner-1', role: 'healthPlanner' }), /就医专员/);
     assert.equal(await validateMedicalProxyStage(planner, { status: 'completed', formData: { medicalAssistantId: 'assistant-1' } }, { _id: 'planner-1', role: 'healthPlanner' }), '');
+    const booking = { sourceType: 'order', workflowKey: 'medical_proxy:booking', assignedTo: 'manager-1' };
+    const bookingData = { medicalAssistantId: 'assistant-1', customerPreferredDate: '2026-09-16', expertClinicDate: '2026-09-17', appointmentDate: '2026-09-17', appointmentTime: '09:30', bookingConfirmation: '预约成功' };
+    assert.match(await validateMedicalProxyStage(booking, { status: 'completed', formData: bookingData }, { _id: 'manager-1', role: 'healthManager' }), /日期不一致/);
+    bookingData.dateDifferenceNote = '客户已确认改为专家出诊日';
+    assert.equal(await validateMedicalProxyStage(booking, { status: 'completed', formData: bookingData }, { _id: 'manager-1', role: 'healthManager' }), '');
   } finally {
     MedicalReport.countDocuments = originalCount;
     User.findById = originalFind;
@@ -86,5 +93,14 @@ test('advisor can continue an audited intake task created before workflow redesi
   } finally {
     MedicalReport.countDocuments = originalCount;
     User.findById = originalFind;
+  }
+});
+
+test('workflow keeps booking between planner and execution and shows the complete handoff', () => {
+  const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
+  const form = fs.readFileSync(path.join(__dirname, '../../staff/src/components/MedicalProxyStageForm.jsx'), 'utf8');
+  assert.match(workflow, /\['collect', 'audit', 'advisor', 'planner', 'booking', 'execute'\]/);
+  for (const text of ['客户期望日期', '专家实际出诊日期', '实际约诊日期', '日期不一致说明及客户确认情况', '代诊医院', '与医生交流内容', '预约确认及注意事项']) {
+    assert.match(form, new RegExp(text));
   }
 });

@@ -5,11 +5,18 @@ const Order = require('../models/Order');
 const User = require('../models/User');
 
 const PREFIX = 'medical_proxy:';
-const STAGES = ['collect', 'audit', 'advisor', 'planner', 'execute'];
+const STAGES = ['collect', 'audit', 'advisor', 'planner', 'booking', 'execute'];
 const isMedicalProxyOrder = name => /医疗代诊/.test(String(name || ''));
 const stageOf = task => task?.sourceType === 'order' && String(task.workflowKey || '').startsWith(PREFIX)
   ? String(task.workflowKey).slice(PREFIX.length) : '';
 const nonempty = value => String(value || '').trim();
+const dateInput = value => {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return '';
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date).map(part => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+};
+const appointmentAt = (date, time = '09:00') => new Date(`${date}T${time || '09:00'}:00+08:00`);
 const preparationDueDate = (serviceDate, now = new Date()) => {
   const due = new Date(serviceDate);
   due.setDate(due.getDate() - 3);
@@ -80,6 +87,11 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceC
     theme: /^医疗代诊[：:]\s*健康规划师全程督办\s*$/,
     createdAt: { $lt: supervisor.createdAt },
   }, { $set: { status: 'cancelled', cancelReason: '旧版医疗代诊督办已由当前订单督办替代' } });
+  await FollowUp.updateMany({
+    patientId: order.user, sourceType: 'order', sourceOrderId: { $ne: order._id },
+    workflowKey: { $in: STAGES.map(stage => `${PREFIX}${stage}`).concat(`${PREFIX}intake`) },
+    status: { $in: ['planned', 'in_progress'] }, createdAt: { $lt: supervisor.createdAt },
+  }, { $set: { status: 'cancelled', cancelReason: '旧医疗代诊订单任务已由当前订单替代' } });
   const task = await FollowUp.findOneAndUpdate(
     { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}collect` },
     { $setOnInsert: {
@@ -141,12 +153,22 @@ async function validateMedicalProxyStage(task, body, staff) {
     const assistant = await Admin.findOne({ _id: data.medicalAssistantId, role: 'medicalAssistant', staffStatus: 'active' }).select('_id').lean();
     if (!assistant) return '请选择当前有效的就医专员';
   }
+  if (stage === 'booking') {
+    if (['customerPreferredDate', 'expertClinicDate', 'appointmentDate', 'appointmentTime', 'bookingConfirmation'].some(key => !nonempty(data[key]))) {
+      return '请完整填写客户期望日期、专家出诊日期、实际约诊日期时间和预约确认信息';
+    }
+    if (![data.customerPreferredDate, data.expertClinicDate, data.appointmentDate].every(value => /^\d{4}-\d{2}-\d{2}$/.test(value)) || !/^\d{2}:\d{2}$/.test(data.appointmentTime)) return '预约日期或时间格式无效';
+    if (data.appointmentDate !== data.customerPreferredDate && !nonempty(data.dateDifferenceNote)) return '约诊日期与客户期望日期不一致，请说明差异及客户确认情况';
+    const assistant = await Admin.findOne({ _id: data.medicalAssistantId, role: 'medicalAssistant', staffStatus: 'active' }).select('_id').lean();
+    if (!assistant) return '原预指派就医专员已失效，请退回健康规划师重新指派';
+  }
   if (stage === 'execute' && !nonempty(data.executionResult)) return '请填写代诊执行结果';
-  if (stage === 'collect' || stage === 'audit' || stage === 'advisor' || stage === 'intake') {
+  if (stage === 'collect' || stage === 'audit' || stage === 'advisor' || stage === 'planner' || stage === 'intake') {
     const patient = await User.findById(task.patientId).select('assignedFamilyDoctor assignedHealthPlanner assignedHealthManager').lean();
     if (stage === 'collect' && !patient?.assignedHealthManager) return '客户尚未分配健管专员，无法流转';
     if ((stage === 'audit' || stage === 'intake') && !patient?.assignedFamilyDoctor) return '客户尚未分配健康顾问，无法流转';
     if (stage === 'advisor' && !patient?.assignedHealthPlanner) return '客户尚未分配健康规划师，无法流转';
+    if (stage === 'planner' && !patient?.assignedHealthManager) return '客户尚未分配健管专员，无法进入专家门诊预约环节';
   }
   return '';
 }
@@ -160,6 +182,11 @@ async function advanceMedicalProxyWorkflow(task) {
   const patient = await User.findById(task.patientId).select('assignedHealthManager assignedFamilyDoctor assignedHealthPlanner').lean();
   if (stage === 'advisor') {
     order.medicalProxyPlan = { ...task.formData, confirmedBy: task.assignedTo, confirmedAt: new Date(), intakeTaskId: task.dependsOnTaskId };
+    order.markModified('medicalProxyPlan');
+    await order.save();
+  }
+  if (stage === 'booking') {
+    order.medicalProxyPlan = { ...(order.medicalProxyPlan || {}), booking: task.formData, bookedBy: task.assignedTo, bookedAt: new Date() };
     order.markModified('medicalProxyPlan');
     await order.save();
   }
@@ -190,32 +217,40 @@ async function advanceMedicalProxyWorkflow(task) {
   const assignee = next === 'audit' ? patient?.assignedHealthManager
     : next === 'advisor' ? patient?.assignedFamilyDoctor
     : next === 'planner' ? patient?.assignedHealthPlanner
+      : next === 'booking' ? patient?.assignedHealthManager
       : task.formData?.medicalAssistantId;
-  if (!assignee) throw Object.assign(new Error(`客户尚未分配${next === 'audit' ? '健管专员' : next === 'advisor' ? '健康顾问' : next === 'planner' ? '健康规划师' : '就医专员'}，无法流转`), { status: 409 });
-  const labels = { audit: '健管专员审核本次资料', advisor: '健康顾问确认代诊方案', planner: '审核方案并指派就医专员', execute: '就医专员执行代诊' };
+  if (!assignee) throw Object.assign(new Error(`客户尚未分配${next === 'audit' || next === 'booking' ? '健管专员' : next === 'advisor' ? '健康顾问' : next === 'planner' ? '健康规划师' : '就医专员'}，无法流转`), { status: 409 });
+  const labels = { audit: '健管专员审核本次资料', advisor: '健康顾问确认代诊方案', planner: '审核方案并预指派就医专员', booking: '健管专员完成专家门诊预约', execute: '就医专员执行代诊' };
+  const nextDate = next === 'execute' && task.formData?.appointmentDate
+    ? appointmentAt(task.formData.appointmentDate, task.formData.appointmentTime) : new Date();
   const nextTask = await FollowUp.findOneAndUpdate(
     { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}${next}` },
     { $setOnInsert: {
       patientId: task.patientId, staffId: task.staffId, assignedTo: assignee, type: 'other', status: 'planned',
-      date: new Date(), remindAt: new Date(), sourceType: 'order', sourceOrderId: order._id,
+      date: nextDate, remindAt: next === 'execute' ? nextDate : new Date(), sourceType: 'order', sourceOrderId: order._id,
       workflowKey: `${PREFIX}${next}`, taskRole: 'executor', dependsOnTaskId: task._id,
       theme: `医疗代诊：${labels[next]} · ${order.serviceName}`,
       plannedContent: next === 'audit' ? '审核健康规划师选定的本次资料；客户需补传时退回资料收集环节。'
         : next === 'advisor'
         ? '查看本次已审核资料及客户诉求，确认医院、科室、专家、代诊目标和与医生交流的具体内容。年度会员由健康顾问选定制定方案所用资料。'
-        : next === 'planner' ? '核对健康顾问确认的代诊方案，指派就医专员执行。'
-          : '按健康顾问确认的方案完成代诊，记录医生反馈、医嘱和后续事项。',
+        : next === 'planner' ? '核对健康顾问确认的代诊方案，预指派就医专员。'
+          : next === 'booking' ? '依据健康顾问方案预约专家门诊；分别记录客户期望日期、专家出诊日期和实际约诊日期，日期不一致时记录沟通确认结果。'
+            : '按健康顾问方案和健管专员确认的预约信息完成代诊，记录医生反馈、医嘱和后续事项。',
       formData: next === 'audit' ? { collectionSnapshot: task.formData }
         : next === 'advisor' ? { auditSnapshot: task.formData, selectedReportIds: task.formData?.collectionSnapshot?.annualMember ? [] : task.formData?.collectionSnapshot?.reportIds || [] }
-          : { planSnapshot: order.medicalProxyPlan },
+          : next === 'planner' ? { planSnapshot: order.medicalProxyPlan }
+            : next === 'booking' ? { planSnapshot: order.medicalProxyPlan, medicalAssistantId: task.formData?.medicalAssistantId, customerPreferredDate: dateInput(order.scheduledAt || order.desiredServiceDate) }
+              : { planSnapshot: order.medicalProxyPlan, bookingSnapshot: task.formData },
     } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
   if (nextTask.isBlocked) {
     const nextFormData = next === 'audit' ? { ...nextTask.formData, collectionSnapshot: task.formData }
       : next === 'advisor' ? { ...nextTask.formData, auditSnapshot: task.formData, selectedReportIds: task.formData?.collectionSnapshot?.annualMember ? [] : task.formData?.collectionSnapshot?.reportIds || [] }
-        : { ...nextTask.formData, planSnapshot: order.medicalProxyPlan };
-    await FollowUp.updateOne({ _id: nextTask._id }, { $set: { status: 'planned', isBlocked: false, assignedTo: assignee, formData: nextFormData, remindAt: new Date() } });
+        : next === 'planner' ? { ...nextTask.formData, planSnapshot: order.medicalProxyPlan }
+          : next === 'booking' ? { ...nextTask.formData, planSnapshot: order.medicalProxyPlan, medicalAssistantId: task.formData?.medicalAssistantId, customerPreferredDate: nextTask.formData?.customerPreferredDate || dateInput(order.scheduledAt || order.desiredServiceDate) }
+            : { ...nextTask.formData, planSnapshot: order.medicalProxyPlan, bookingSnapshot: task.formData };
+    await FollowUp.updateOne({ _id: nextTask._id }, { $set: { status: 'planned', isBlocked: false, assignedTo: assignee, formData: nextFormData, date: nextDate, remindAt: next === 'execute' ? nextDate : new Date() } });
   }
   await FollowUp.updateOne(
     { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } },

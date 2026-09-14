@@ -530,6 +530,16 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
         if code:
             raise RuntimeError("医疗代诊旧订单督办清理失败")
         code, _ = run_migration(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/migrateMedicalProxyBookingV7.js ] && "
+            f"[ ! -f {REPO_DIR}/.medical-proxy-booking-v7-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/migrateMedicalProxyBookingV7.js && "
+            f"touch {REPO_DIR}/.medical-proxy-booking-v7-applied; fi",
+            timeout=120,
+            label="清理重复医疗代诊任务并补建专家门诊预约环节",
+        )
+        if code:
+            raise RuntimeError("医疗代诊专家门诊预约迁移失败")
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOneStopFinalFlowV15.js ] && "
             f"[ ! -f {REPO_DIR}/.one-stop-final-flow-v15-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateOneStopFinalFlowV15.js --apply && "
