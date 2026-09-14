@@ -12135,6 +12135,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
   const [input, setInput] = useState('')
   const [images, setImages] = useState([])
   const [sending, setSending] = useState(false)
+  const [sendError, setSendError] = useState('')
   const [humanActive, setHumanActive] = useState(false)
   const [switchingMode, setSwitchingMode] = useState(false)
   const [currentBooking, setCurrentBooking] = useState(serviceBooking)
@@ -12254,6 +12255,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
 
   const send = async () => {
     if ((!input.trim() && !images.length) || sending) return
+    setSendError('')
     setSending(true)
     try {
       const res = await staffAPI.replyChatMessage(patientId, input.trim(), {
@@ -12266,11 +12268,16 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
       isNearBottomRef.current = true // 自己发消息后，无论之前翻到哪，都应该跟到底部
       if (res.data) setMsgs(prev => [...prev, res.data])
       setTimeout(() => scrollRef.current?.scrollTo({ top: 99999, behavior: 'smooth' }), 80)
-    } catch (err) { toast(err.message || '消息发送失败，请重试') }
+    } catch (err) { setSendError(err.message || '消息发送失败，请重试') }
     finally { setSending(false) }
   }
 
-  const handleKey = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }
+  const handleKey = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent?.isComposing) {
+      e.preventDefault()
+      send()
+    }
+  }
 
   const addImageFiles = async (files) => {
     const available = 9 - images.length
@@ -12491,6 +12498,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
 
         {/* 输入栏 */}
         <div style={{ borderTop: '1px solid #E0D9CE', padding: '10px 14px', flexShrink: 0, backgroundColor: '#fff' }}>
+          {sendError && <div role="alert" style={{ marginBottom: 8, padding: '8px 10px', color: '#B42318', background: '#FFF0EF', borderRadius: 6, fontSize: 12 }}>{sendError}</div>}
           {images.length > 0 && (
             <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 8 }}>
               {images.map((image, index) => (
@@ -12516,6 +12524,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
             <input type="file" accept="image/*" multiple disabled={images.length >= 9} onChange={async e => { try { await addImageFiles(e.target.files) } catch { toast('读取图片失败') } finally { e.target.value = '' } }} style={{ display: 'none' }} />
           </label>
           <button
+            type="button"
             onClick={send}
             disabled={sending || (!input.trim() && !images.length)}
             style={{ padding: '8px 16px', borderRadius: 10, background: '#1E6B50', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14, opacity: (sending || (!input.trim() && !images.length)) ? 0.5 : 1 }}
