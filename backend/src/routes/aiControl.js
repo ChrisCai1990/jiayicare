@@ -38,6 +38,17 @@ router.get('/reports', async (req, res) => {
 
 router.get('/usage', async (req, res) => {
   const filter = {};
+  const keywords = String(req.query.q || '').trim().slice(0, 100).split(/\s+/).filter(Boolean).slice(0, 5);
+  if (keywords.length) {
+    const clauses = [];
+    for (const keyword of keywords) {
+      const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const customers = await collection('users').find({ name: { $regex: escaped, $options: 'i' } }, { projection: { _id: 1 } }).toArray();
+      clauses.push({ $or: [{ title: { $regex: escaped, $options: 'i' } }, { user: { $in: customers.map(row => row._id) } }] });
+    }
+    const reports = await collection('medicalreports').find({ $and: clauses }, { projection: { _id: 1 } }).toArray();
+    filter.reportId = { $in: reports.map(row => String(row._id)) };
+  }
   if (req.query.reportId) {
     if (!/^[a-f\d]{24}$/i.test(req.query.reportId)) return res.status(400).json({ success: false, message: '报告 ID 格式无效' });
     filter.reportId = req.query.reportId;
@@ -45,7 +56,7 @@ router.get('/usage', async (req, res) => {
   if (req.query.business && ['ocr', 'other'].includes(req.query.business)) filter.business = req.query.business;
   const page = Math.max(1, Math.min(10000, Number.parseInt(req.query.page, 10) || 1));
   const rows = await collection('ai_usage').find(filter, { projection: { scopes: 0, rate: 0, tenantId: 0, actorId: 0 } }).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * 30).limit(31).toArray();
-  const reportCounters = filter.reportId ? await collection('ai_budget_counters').find({ _id: { $regex: `^(report:${filter.reportId}$|page:${filter.reportId}:)` } }).toArray() : [];
+  const reportCounters = typeof filter.reportId === 'string' ? await collection('ai_budget_counters').find({ _id: { $regex: `^(report:${filter.reportId}$|page:${filter.reportId}:)` } }).toArray() : [];
   const visibleRows = rows.slice(0, 30);
   const reportIds = [...new Set(visibleRows.map(row => String(row.reportId || '')).filter(id => /^[a-f\d]{24}$/i.test(id)))];
   const reports = await collection('medicalreports').find({ _id: { $in: reportIds.map(id => new ObjectId(id)) } }, { projection: { title: 1, user: 1 } }).toArray();
