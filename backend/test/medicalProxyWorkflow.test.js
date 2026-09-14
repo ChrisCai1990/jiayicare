@@ -14,6 +14,11 @@ test('storefront and staff orders resolve to the same proxy workflow', () => {
   assert.equal(isMedicalProxyOrder({ serviceName: '门诊一站式服务', serviceWorkflowSnapshot: { key: 'medical_assist' } }), false);
 });
 
+test('service record upsert does not update result through conflicting operators', () => {
+  const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
+  assert.doesNotMatch(workflow, /\$setOnInsert:\s*\{[^}]*result:/);
+});
+
 test('collection is due three days before proxy visit or immediately inside the window', () => {
   assert.equal(preparationDueDate(new Date('2026-09-20T00:00:00+08:00'), new Date('2026-09-14T00:00:00+08:00')).toISOString(), new Date('2026-09-17T00:00:00+08:00').toISOString());
   assert.equal(preparationDueDate(new Date('2026-09-16T00:00:00+08:00'), new Date('2026-09-14T11:00:00+08:00')).toISOString(), new Date('2026-09-14T11:00:00+08:00').toISOString());
