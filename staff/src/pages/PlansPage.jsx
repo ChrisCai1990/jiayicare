@@ -552,6 +552,7 @@ function templateToItems(tpl) {
 function MedicalAssistPlanModal({ onClose, onSaved }) {
   const [step, setStep] = useState(1)
   const [templates, setTemplates] = useState([])
+  const [templateQuery, setTemplateQuery] = useState('')
   const [loadingTpls, setLoadingTpls] = useState(true)
   const [tplError, setTplError] = useState('')
   const [selectedTpl, setSelectedTpl] = useState(null)
@@ -664,6 +665,11 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
 
   const inputStyle = { width: '100%', padding: '7px 10px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit' }
   const checkupOneStop = /体检一站式服务/.test(selectedTpl?.name || '')
+  const normalizedTemplateQuery = templateQuery.trim().toLocaleLowerCase()
+  const visibleTemplates = normalizedTemplateQuery
+    ? templates.filter(tpl => [tpl.name, tpl.content?.hospital, tpl.content?.department, tpl.content?.expert]
+      .some(value => String(value || '').toLocaleLowerCase().includes(normalizedTemplateQuery)))
+    : templates
   // 注意：作为函数调用而非 JSX 组件，避免每次 render 创建新组件导致输入框失焦
   const renderField = (label, fieldKey, rows, placeholder) => (
     <div className="form-group" style={{ marginBottom: 0 }}>
@@ -684,12 +690,23 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body" style={{ maxHeight: 440, overflowY: 'auto' }}>
+          <input
+            type="search"
+            value={templateQuery}
+            onChange={e => setTemplateQuery(e.target.value)}
+            placeholder="搜索方案模板名称、医院、科室或专家"
+            aria-label="搜索就医协助方案模板"
+            style={{ ...inputStyle, marginBottom: 12 }}
+          />
           {loadingTpls && <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>加载模板中...</div>}
           {tplError && <div style={{ color: '#DC3545', fontSize: 13, padding: '8px 12px', background: '#FEF2F2', borderRadius: 8 }}>⚠️ {tplError}</div>}
           {!loadingTpls && !tplError && templates.length === 0 && (
             <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>暂无可用模板，请先在超管后台创建就医协助方案模板</div>
           )}
-          {templates.map(tpl => {
+          {!loadingTpls && !tplError && templates.length > 0 && visibleTemplates.length === 0 && (
+            <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>没有匹配的方案模板</div>
+          )}
+          {visibleTemplates.map(tpl => {
             const c = tpl.content || {}
             const summary = [c.hospital, c.department, c.expert].filter(Boolean).join(' · ')
             return (
