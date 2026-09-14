@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
 import { chooseImageWithPrivacy, showImagePickerError } from '../../utils/imagePicker';
+import { requestWechatPayment, waitForPayment } from '../../utils/wechatPay';
 
 // 完整对齐 app/src/screens/messages/MessagesScreen.js 的固定角色分组方案。
 // 简化点：
@@ -495,7 +496,11 @@ function ProductPushDetail({ msg, onClose }) {
     if (!checkedIds.length) return;
     setPaying(true); setPayError('');
     try {
-      await pushRecordsAPI.pay(msg._id, { selectedProductIds: checkedIds, useHealthFund: fundApplied, couponId, paymentMethod: payMethod });
+      const result = await pushRecordsAPI.pay(msg._id, { selectedProductIds: checkedIds, useHealthFund: fundApplied, couponId, paymentMethod: payMethod });
+      if (result.data?.paymentParams) {
+        await requestWechatPayment(result.data.paymentParams);
+        await waitForPayment(result.data.orderId);
+      }
       setPaid(true);
     } catch (e) {
       setPayError(e.message || '下单失败，请稍后重试');

@@ -18,4 +18,14 @@ test('push-record payment accepts legacy records that only contain productId', (
   assert.match(source, /selectedIdSet\.has\(String\(p\.productId\)\)/);
   assert.match(source, /async function resolveOrderWorkflowAssignee\(userId, serviceName = ''\)/);
   assert.match(source, /return resolveHealthPlanner\(userId\)/);
+  assert.match(source, /wechatPay\.createJsapiPayment/);
+  assert.match(source, /paymentParams: prepay\.client/);
+  assert.match(source, /if \(toPay\.length > 1\)/);
+  assert.match(source, /已切换为微信真实支付订单/);
+});
+
+test('miniprogram pushed-product checkout invokes and verifies WeChat payment', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', '..', 'miniprogram', 'src', 'pages', 'messages', 'index.jsx'), 'utf8');
+  assert.match(source, /requestWechatPayment\(result\.data\.paymentParams\)/);
+  assert.match(source, /waitForPayment\(result\.data\.orderId\)/);
 });

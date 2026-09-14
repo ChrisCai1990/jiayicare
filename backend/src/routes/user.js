@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 
@@ -34,6 +35,7 @@ const PointsLog    = require('../models/PointsLog');
 const HealthPlan   = require('../models/HealthPlan');
 const PushRecord   = require('../models/PushRecord');
 const Order        = require('../models/Order');
+const Payment      = require('../models/Payment');
 const Product      = require('../models/Product');
 const Coupon       = require('../models/Coupon');
 const Message      = require('../models/Message');
@@ -48,6 +50,7 @@ const { onCustomerConfirmedCheckupPlan } = require('../utils/checkupOneStopFlow'
 const { reverseFamilyRelation, synchronizeFamilyGroup } = require('../utils/familyLinks');
 const { isActiveToday } = require('./reminders');
 const router = express.Router();
+const wechatPay = require('../utils/wechatPay');
 
 // Keep pushed-product checkout aligned with the normal storefront checkout:
 // inpatient service starts with the assigned advisor; all other products are
@@ -1309,6 +1312,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
     const selectedIdSet = new Set(selectedProductIds.map(String));
     const toPay = pushedProducts.filter(p => selectedIdSet.has(String(p.productId)));
     if (!toPay.length) return res.status(400).json({ success: false, message: '所选产品不在推送列表中' });
+    if (toPay.length > 1) return res.status(400).json({ success: false, message: '微信支付请每次选择一项服务，支付完成后可继续购买其他服务' });
 
     const totalPrice = toPay.reduce((s, p) => s + (p.price || 0), 0);
 
@@ -1394,7 +1398,77 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
       if (!assignee) return res.status(409).json({ success: false, message: '当前没有可用的服务负责人，请联系平台处理后再购买' });
       orderAssignees.push(assignee);
     }
-    const orders = await Order.insertMany(orderDocs);
+    const product = await Product.findOne({ _id: toPay[0].productId, status: 'on' });
+    if (!product) return res.status(409).json({ success: false, message: '该服务已下架或发生调整，请联系健康规划师重新推荐' });
+    if (finalPrice > 0 && paymentMethod !== 'wechat') return res.status(400).json({ success: false, message: '该服务须使用微信小程序支付' });
+    if (finalPrice > 0 && product.paymentChannel !== 'wechat_pay') return res.status(409).json({ success: false, message: '该商品当前未配置普通微信支付，请联系客服' });
+    if (finalPrice > 0 && !req.user.wechatMpOpenid) return res.status(400).json({ success: false, message: '请先使用微信登录绑定当前小程序账号后再支付' });
+
+    // The legacy pushed checkout created an unpaid order and follow-up without
+    // opening WeChat Pay. Close those placeholders when the member retries so
+    // the genuine payment flow cannot leave duplicate orders/tasks behind.
+    const legacyOrders = await Order.find({
+      user: req.user._id,
+      pushRecordId: record._id,
+      serviceId: toPay[0].productId,
+      paymentStatus: 'unpaid',
+      paymentId: null,
+      status: { $in: ['pending', 'scheduled'] },
+    }).select('_id');
+    if (legacyOrders.length) {
+      const legacyOrderIds = legacyOrders.map(item => item._id);
+      await Promise.all([
+        Order.updateMany({ _id: { $in: legacyOrderIds } }, { $set: { status: 'cancelled', tradeStatus: 'closed' } }),
+        FollowUp.updateMany({ sourceType: 'order', sourceOrderId: { $in: legacyOrderIds }, status: { $nin: ['completed', 'cancelled'] } }, { $set: { status: 'cancelled', cancelReason: '已切换为微信真实支付订单' } }),
+      ]);
+    }
+
+    const inventory = await require('../utils/orderInventory').reserveProduct(product);
+    if (!inventory.available) return res.status(409).json({ success: false, message: '该商品已售罄，请联系健康规划师' });
+    const outTradeNo = `JY${Date.now()}${new mongoose.Types.ObjectId().toString().slice(-8)}`.slice(0, 32);
+    const orderDoc = orderDocs[0];
+    orderDoc.orderNo = outTradeNo;
+    orderDoc.tradeStatus = finalPrice > 0 ? 'awaiting_payment' : 'paid';
+    orderDoc.paymentStatus = finalPrice > 0 ? 'pending' : 'paid';
+    orderDoc.paymentMethod = finalPrice > 0 ? 'wechat' : (fundUsed > 0 ? 'healthFund' : '');
+    orderDoc.paidAmount = 0;
+    orderDoc.paymentExpectedAmount = finalPrice;
+    orderDoc.paymentOutTradeNo = finalPrice > 0 ? outTradeNo : '';
+    orderDoc.paymentEnvironment = finalPrice > 0 ? 'production' : '';
+    orderDoc.inventoryReserved = inventory.reserved;
+    orderDoc.fulfillmentType = product.fulfillmentType || 'offline_service';
+    orderDoc.performanceRuleSnapshot = product.performanceRule?.toObject?.() || product.performanceRule || null;
+    orderDoc.servicePerformerRolesSnapshot = (product.servicePerformerRoles || []).map(item => item.toObject ? item.toObject() : item);
+    orderDoc.serviceWorkflowSnapshot = product.serviceWorkflow?.toObject?.() || product.serviceWorkflow || null;
+    orderDoc.couponId = coupon?._id || null;
+    orderDoc.couponDiscount = couponDiscount;
+    orderDoc.healthFundEnterpriseId = fundEnterprise?._id || null;
+    let orders;
+    try { orders = [await Order.create(orderDoc)]; }
+    catch (error) {
+      if (inventory.reserved) await Product.updateOne({ _id: product._id }, { $inc: { stock: 1 } });
+      throw error;
+    }
+
+    if (finalPrice > 0) {
+      const payment = await Payment.create({ order: orders[0]._id, user: req.user._id, channel: 'wechat_pay', status: 'created', amount: finalPrice, outTradeNo });
+      try {
+        const prepay = await wechatPay.createJsapiPayment({ description: toPay[0].name, outTradeNo, amount: finalPrice, openid: req.user.wechatMpOpenid, attach: orders[0]._id.toString() });
+        payment.prepayId = prepay.prepayId;
+        payment.status = 'processing';
+        await payment.save();
+        orders[0].paymentId = payment._id;
+        await orders[0].save();
+        if (!record.readAt) await PushRecord.updateOne({ _id: record._id }, { readAt: new Date() });
+        return res.json({ success: true, message: '订单已创建，请完成微信支付；支付结果以微信服务端确认为准', data: { orderId: orders[0]._id, orderNo: outTradeNo, paymentParams: prepay.client, paymentStatus: 'pending' }, summary: { totalPrice, couponDiscount, fundUsed, finalPrice } });
+      } catch (error) {
+        payment.status = 'failed'; payment.failureCode = error.code || 'CREATE_PAYMENT_FAILED'; payment.failureMessage = error.message;
+        await payment.save();
+        orders[0].tradeStatus = 'closed'; orders[0].paymentStatus = 'failed'; await orders[0].save();
+        await require('../utils/orderInventory').releaseOrderInventory(orders[0]);
+        return res.status(503).json({ success: false, message: `微信支付下单失败：${error.message}`, data: { orderId: orders[0]._id } });
+      }
+    }
 
     // 下单后需要人工跟进的待办：与 services.js 的 /order 普通下单同一套逻辑——
     // 此前这里完全没生成 FollowUp，导致推送购买的订单不会出现在健康规划师/健管专员工作台
@@ -1427,9 +1501,11 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
     }
     await Promise.all(followUps);
 
+    orders[0].paidAt = new Date();
+    await orders[0].save();
     res.json({
       success: true,
-      data: orders,
+      data: { orderId: orders[0]._id, paymentStatus: 'paid' },
       message: `已创建 ${orders.length} 个订单`,
       summary: { totalPrice, couponDiscount, fundUsed, finalPrice },
     });
