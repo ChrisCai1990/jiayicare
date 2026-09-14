@@ -1,16 +1,24 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { customerOrderNote, extractExplicitServiceTime } = require('../src/utils/orderPlannerConversation');
+const Message = require('../src/models/Message');
+const Order = require('../src/models/Order');
+const { latestOpenOrderConversationAction } = require('../src/utils/orderPlannerConversation');
 
-test('planner prompt keeps customer requirements and removes settlement metadata', () => {
-  assert.equal(customerOrderNote('规格：基础版；周五上午；健康基金抵扣¥25；支付方式：wechat_pay'), '规格：基础版；周五上午');
-});
-
-test('planner prompt supports an order without time or notes', () => {
-  assert.equal(customerOrderNote('健康基金抵扣¥200'), '');
-});
-
-test('AI确认仅提取备注中明确出现的相对时间', () => {
-  assert.equal(extractExplicitServiceTime('希望能一周内安排陪检'), '一周内');
-  assert.equal(extractExplicitServiceTime('尽快安排陪检'), '');
+test('customer reply inherits the most recent real order conversation, not only a system prompt', async () => {
+  const originalFindOne = Message.findOne;
+  const originalExists = Order.exists;
+  try {
+    Message.findOne = filter => {
+      assert.deepEqual(filter['action.type'].$in, ['order_planner_confirmation', 'order_conversation']);
+      return { sort: () => ({ select: () => ({ lean: async () => ({ action: { type: 'order_conversation', orderId: 'planning-order' } }) }) }) };
+    };
+    Order.exists = async filter => {
+      assert.equal(filter._id, 'planning-order');
+      return true;
+    };
+    assert.deepEqual(await latestOpenOrderConversationAction('user-1', 'user-1_planner'), { type: 'order_conversation', orderId: 'planning-order' });
+  } finally {
+    Message.findOne = originalFindOne;
+    Order.exists = originalExists;
+  }
 });

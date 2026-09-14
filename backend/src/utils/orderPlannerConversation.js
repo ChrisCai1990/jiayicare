@@ -44,10 +44,12 @@ async function ensureOrderPlannerPrompt(order) {
 }
 
 async function latestOpenOrderConversationAction(userId, conversationId) {
+  // 客户回复应跟随最近一次实际发生的订单沟通。只找系统确认提示会在多订单
+  // 并行时把客户对规划师方案的回复错误标到另一笔订单，随后被“仅看本单”隐藏。
   const prompt = await Message.findOne({
     user: userId,
     conversationId,
-    'action.type': 'order_planner_confirmation',
+    'action.type': { $in: ['order_planner_confirmation', 'order_conversation'] },
     'action.orderId': { $exists: true, $ne: '' },
   }).sort({ createdAt: -1 }).select('action').lean();
   const orderId = prompt?.action?.orderId;

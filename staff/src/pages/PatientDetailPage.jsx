@@ -12180,7 +12180,9 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   }
   const [showBookingConfirm] = useState(!!serviceBooking)
   const [bookingCollapsed, setBookingCollapsed] = useState(false)
-  const [showFullConversation, setShowFullConversation] = useState(!!serviceBooking)
+  // 从订单/督办进入时先展示完整规划师会话，避免多订单并行时客户的最新回复
+  // 因订单关联不同而被“仅看本单”过滤，造成规划师误以为客户没有回复。
+  const [showFullConversation, setShowFullConversation] = useState(!!serviceBooking || !!initialOrder)
   const [serviceTime, setServiceTime] = useState(formatServiceDate(orderServiceDate))
   const [serviceTimeEnd, setServiceTimeEnd] = useState(formatServiceDate(order?.desiredServiceDateEnd || orderServiceDate))
   const [communicationTimeStart, setCommunicationTimeStart] = useState(order?.aiIntake?.communicationTimeStart || '')
