@@ -12171,6 +12171,10 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
   const [serviceTask, setServiceTask] = useState(customerTask)
   const [proxyServiceContent, setProxyServiceContent] = useState(order?.aiIntake?.serviceContent || customerTask)
   const [proxyCustomerNeed, setProxyCustomerNeed] = useState(order?.aiIntake?.customerNeed || '')
+  const [clinicType, setClinicType] = useState(/国际门诊/.test(`${order?.aiIntake?.serviceContent || ''} ${customerTask || ''}`) ? 'international' : /普通门诊/.test(`${order?.aiIntake?.serviceContent || ''} ${customerTask || ''}`) ? 'general' : '')
+  const [insuranceUse, setInsuranceUse] = useState(/高端.{0,4}险/.test(`${order?.aiIntake?.serviceContent || ''} ${customerTask || ''}`) ? 'high_end' : /自费/.test(`${order?.aiIntake?.serviceContent || ''} ${customerTask || ''}`) ? 'self_pay' : '')
+  const [insurerName, setInsurerName] = useState('')
+  const [settlementMethod, setSettlementMethod] = useState('pending')
   const [proxyReviewReady, setProxyReviewReady] = useState(false)
   const [confirmingBooking, setConfirmingBooking] = useState(false)
   const [bookingError, setBookingError] = useState('')
@@ -12425,6 +12429,16 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
                 </> : <label style={{ fontSize: 12, fontWeight: 600 }}>期望结束日期<input className="form-input" type="date" min={serviceTime} value={serviceTimeEnd} onChange={e => { setServiceTimeEnd(e.target.value); setProxyReviewReady(false) }} /></label>}
               </div>
               {isMedicalProxy ? <>
+                {isExpertAppointment && <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600 }}>门诊类型<select className="form-input" value={clinicType} onChange={e => setClinicType(e.target.value)}><option value="">请选择</option><option value="general">普通门诊</option><option value="international">国际门诊</option></select></label>
+                    <label style={{ fontSize: 12, fontWeight: 600 }}>费用与保险<select className="form-input" value={insuranceUse} onChange={e => setInsuranceUse(e.target.value)}><option value="">请选择</option><option value="self_pay">自费</option><option value="high_end">使用高端医疗险</option></select></label>
+                  </div>
+                  {insuranceUse === 'high_end' && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600 }}>保险公司<input className="form-input" value={insurerName} onChange={e => setInsurerName(e.target.value)} placeholder="保险公司名称（可选）" /></label>
+                    <label style={{ fontSize: 12, fontWeight: 600 }}>结算方式<select className="form-input" value={settlementMethod} onChange={e => setSettlementMethod(e.target.value)}><option value="pending">待核实</option><option value="direct">直付</option><option value="reimbursement">先付后报</option></select></label>
+                  </div>}
+                </>}
                 <label style={{ fontSize: 12, fontWeight: 600 }}>{/专家约诊/.test(order?.serviceName || '') ? '约诊需求' : '本次服务内容'}<textarea className="form-input" rows={2} value={proxyServiceContent} onChange={e => { setProxyServiceContent(e.target.value); setProxyReviewReady(false) }} placeholder={/专家约诊/.test(order?.serviceName || '') ? '填写意向医院、科室和专家' : '例如意向医院、科室及代诊事项'} /></label>
                 {!/专家约诊/.test(order?.serviceName || '') && <label style={{ fontSize: 12, fontWeight: 600 }}>客户主诉与希望向专家沟通的问题<textarea className="form-input" rows={2} value={proxyCustomerNeed} onChange={e => { setProxyCustomerNeed(e.target.value); setProxyReviewReady(false) }} placeholder="填写客户本次要解决的问题" /></label>}
               </> : <textarea className="form-input" rows={2} value={serviceTask} onChange={e => setServiceTask(e.target.value)} placeholder="服务内容与客户需求" />}
@@ -12443,11 +12457,20 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
             {bookingError && <div role="alert" style={{ padding: '8px 10px', color: '#B42318', background: '#FFF0EF', borderRadius: 6, fontSize: 12 }}>{bookingError}</div>}
             <div style={{ textAlign: 'right', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               {isMedicalProxy && proxyReviewReady && !isExpertAppointment && <button className="btn btn-secondary btn-sm" onClick={() => setProxyReviewReady(false)}>返回修改</button>}
-              <button className="btn btn-primary btn-sm" disabled={confirmingBooking || !orderActionable || !serviceTime || !serviceTimeEnd || serviceTimeEnd < serviceTime || (isMedicalPlanning && (!communicationTimeStart || !communicationTimeEnd || communicationTimeEnd <= communicationTimeStart)) || (isMedicalProxy ? !proxyServiceContent.trim() || (!/专家约诊/.test(order?.serviceName || '') && !proxyCustomerNeed.trim()) : !serviceTask.trim())} onClick={async () => {
+              <button className="btn btn-primary btn-sm" disabled={confirmingBooking || !orderActionable || !serviceTime || !serviceTimeEnd || serviceTimeEnd < serviceTime || (isExpertAppointment && (!clinicType || !insuranceUse)) || (isMedicalPlanning && (!communicationTimeStart || !communicationTimeEnd || communicationTimeEnd <= communicationTimeStart)) || (isMedicalProxy ? !proxyServiceContent.trim() || (!/专家约诊/.test(order?.serviceName || '') && !proxyCustomerNeed.trim()) : !serviceTask.trim())} onClick={async () => {
                 setBookingError('')
                 if (isMedicalProxy && !isExpertAppointment && !proxyReviewReady) { setProxyReviewReady(true); return }
                 setConfirmingBooking(true)
-                try { await onConfirmBooking?.({ orderId, serviceTime, serviceTimeEnd: isMedicalPlanning ? serviceTime : serviceTimeEnd, communicationDate: isMedicalPlanning ? serviceTime : '', communicationTimeStart, communicationTimeEnd, task: isMedicalProxy ? [proxyServiceContent.trim(), proxyCustomerNeed.trim()].filter(Boolean).join('；') : serviceTask.trim(), serviceContent: proxyServiceContent.trim(), customerNeed: proxyCustomerNeed.trim() }) }
+                try {
+                  const appointmentCategories = isExpertAppointment ? [
+                    `门诊类型：${clinicType === 'international' ? '国际门诊' : '普通门诊'}`,
+                    `费用与保险：${insuranceUse === 'high_end' ? '使用高端医疗险' : '自费'}`,
+                    insuranceUse === 'high_end' && insurerName.trim() && `保险公司：${insurerName.trim()}`,
+                    insuranceUse === 'high_end' && `结算方式：${({ direct: '直付', reimbursement: '先付后报' })[settlementMethod] || '待核实'}`,
+                  ].filter(Boolean).join('；') : ''
+                  const confirmedContent = [proxyServiceContent.trim(), appointmentCategories].filter(Boolean).join('；')
+                  await onConfirmBooking?.({ orderId, serviceTime, serviceTimeEnd: isMedicalPlanning ? serviceTime : serviceTimeEnd, communicationDate: isMedicalPlanning ? serviceTime : '', communicationTimeStart, communicationTimeEnd, task: isMedicalProxy ? [confirmedContent, proxyCustomerNeed.trim()].filter(Boolean).join('；') : serviceTask.trim(), serviceContent: confirmedContent, customerNeed: proxyCustomerNeed.trim() })
+                }
                 catch (err) { setBookingError(err.message || '确认预约失败') }
                 finally { setConfirmingBooking(false) }
               }}>{confirmingBooking ? '处理中…' : isExpertAppointment ? '确认并转给健管专员预约' : isMedicalPlanning ? (proxyReviewReady ? '确认并转给健康顾问' : '核对沟通信息') : isMedicalProxy ? (proxyReviewReady ? '确认并开始资料收集' : '核对沟通信息') : '确认并生成方案'}</button>

@@ -25,6 +25,7 @@ export function validateMedicalProxyStage(stage, value) {
   if (stage === 'planner' && !value.medicalAssistantId) return '请指派就医专员'
   if (stage === 'booking' && ['preferredDateStart', 'preferredDateEnd', 'appointmentDate', 'appointmentTime'].some(key => !value[key]?.trim())) return '请完整填写客户期望日期区间和实际约诊日期时间'
   if (stage === 'booking' && (value.appointmentDate < value.preferredDateStart || value.appointmentDate > value.preferredDateEnd) && !value.dateDifferenceNote?.trim()) return '约诊日期不在客户期望区间内，请说明差异及客户确认情况'
+  if (stage === 'booking' && /费用与保险：使用高端医疗险/.test(value.planSnapshot?.serviceContent || '') && !['direct_verified', 'reimbursement_verified', 'self_pay_confirmed'].includes(value.insuranceOutcome)) return '请核实高端医疗险结算方式，并记录最终办理结果'
   if (stage === 'execute' && (!value.executionResult?.trim() || !value.medicalRecordAttachments?.length)) return '请填写代诊执行结果并上传至少一份代诊病历'
   return ''
 }
@@ -141,6 +142,11 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     {input('appointmentDate', '专家实际出诊及约诊日期', 1, 'date')}
     {input('appointmentTime', '实际约诊时间', 1, 'time')}
     {value.appointmentDate && value.preferredDateStart && value.preferredDateEnd && (value.appointmentDate < value.preferredDateStart || value.appointmentDate > value.preferredDateEnd) && input('dateDifferenceNote', '超出期望区间说明及客户确认情况', 3)}
+    {/费用与保险：使用高端医疗险/.test(value.planSnapshot?.serviceContent || '') && <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>高端险核实结果 *
+      <select className="form-control" value={value.insuranceOutcome || ''} onChange={e => set('insuranceOutcome', e.target.value)}>
+        <option value="">请选择核实结果</option><option value="direct_verified">已核实可直付</option><option value="reimbursement_verified">已核实先付后报</option><option value="self_pay_confirmed">保险不适用，客户确认自费</option>
+      </select>
+    </label>}
     {value.planSnapshot?.initiationSource === 'staff_direct' && !isExpertAppointment && <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>预约确定后指派就医专员
       <select className="form-control" value={value.medicalAssistantId || ''} onChange={e => set('medicalAssistantId', e.target.value)}>
         <option value="">请选择</option>
