@@ -15,6 +15,7 @@ const schema = new mongoose.Schema(
     sourceMessageId: { type: String, default: "" },
     sourceDay: { type: String, default: '' },
     sourceMessageIds: [{ type: String }],
+    deletedAt: { type: Date, default: null },
     professionalHash: { type: String, default: '' },
     professionalRetryAt: Date,
     professionalError: { type: Boolean, default: false },

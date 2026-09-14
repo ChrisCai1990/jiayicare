@@ -1014,6 +1014,7 @@ export default function ServiceAssistantPage() {
                 <p className="sa-pre">{e.content}</p>
                 {e.professionalError && e.status === 'draft' && <small>AI整理暂未完成，系统会重试；也可先人工核对草稿。</small>}
                 {e.result && <p className="sa-pre">处理结果：{e.result}</p>}
+                {e.status === 'cancelled' && can(e.kind === 'task' ? 'followups' : 'service_records', 'edit') && <button disabled={busy} onClick={()=>run(async()=>{await update(e,{deleted:true});setNotice('已删除取消事项');})}>删除</button>}
                 <details>
                   <summary>来源与操作记录</summary>
                   {!!e.professionalEvidence?.length && <div><small>原文依据（请核对服务对象与表述）</small>{e.professionalEvidence.map((quote, i) => <p className="sa-pre" key={i}>{quote}</p>)}</div>}

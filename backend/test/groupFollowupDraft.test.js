@@ -46,3 +46,29 @@ test('群消息草稿必须由人工选择成员、日期并确认，重复确�
   assert.equal((await send({version:e.__v,status:'planned'})).status,200);
   assert.equal(f.models.FollowUp.rows.length,1);
 });
+
+
+test('重复预约忽略标点、星期数字和重复请求尾语，保留日期与成员差异', () => {
+  const a = fingerprint('下周2帮我安排下，浙二心血管内科', 'a', '2026-09-14T00:00:00Z');
+  assert.equal(a, fingerprint('下周二帮我安排下、浙二心血管内科 你这样向我询问看看', 'a', '2026-09-14T01:00:00Z'));
+  assert.notEqual(a, fingerprint('下周三帮我安排下，浙二心血管内科', 'a', '2026-09-14T01:00:00Z'));
+  assert.notEqual(a, fingerprint('下周二帮母亲安排下，浙二心血管内科', 'a', '2026-09-14T01:00:00Z'));
+});
+test('只有取消事项能删除，列表移除后仍拦截重复消息，兼容旧去重键', async t => {
+  const f=require('./helpers/serviceGroupFixture').buildFixture(),g=f.models.ServiceGroup.rows[0];
+  const msg={text:'下周2帮我安排下，浙二心血管内科',sender:'synthetic',sentAt:'2026-09-14T00:00:00Z',messageId:'delete-test'};
+  await createDraft(g,msg);const e=f.models.ServiceGroupEntry.rows[0];
+  e.requestKey='archive-'+require('crypto').createHash('sha256').update(`synthetic|2026-09-14|${msg.text}`).digest('hex');
+  const s=f.app.listen(0,'127.0.0.1');await new Promise(r=>s.once('listening',r));t.after(()=>s.close());
+  const base=`http://127.0.0.1:${s.address().port}/api/staff/service-groups/${g._id}`;
+  const patch=async body=>fetch(base+'/entries/'+e._id,{method:'PATCH',headers:{authorization:'test','content-type':'application/json'},body:JSON.stringify({version:e.__v,...body})});
+  assert.equal((await patch({deleted:true})).status,400);
+  assert.equal((await patch({status:'cancelled'})).status,200);
+  assert.equal((await patch({deleted:true})).status,200);
+  const listed=await (await fetch(base,{headers:{authorization:'test'}})).json();
+  assert.equal(listed.data.entries.length,0);
+  assert.equal(await createDraft(g,{...msg,text:msg.text+' 你这样向我询问看看',messageId:'repeat'}),'duplicate');
+  assert.equal(f.models.ServiceGroupEntry.rows.length,1);
+  assert.equal(f.models.FollowUp.rows.length,0);
+  assert.equal((await patch({status:'planned'})).status,410);
+});

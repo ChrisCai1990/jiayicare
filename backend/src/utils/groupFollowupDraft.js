@@ -23,7 +23,18 @@ function exactDate(text) {
 
 function fingerprint(text, sender, sentAt) {
   const day = new Date(+new Date(sentAt) + 8 * 3600000).toISOString().slice(0, 10);
-  return 'archive-' + createHash('sha256').update(`${sender}|${day}|${text.replace(/\s+/g, '')}`).digest('hex');
+  return 'archive-v2-' + createHash('sha256').update(`${sender}|${day}|${normalize(text)}`).digest('hex');
+}
+
+function normalize(text) {
+  return String(text).normalize('NFKC')
+    .replace(/(?:你这样向我询问看看|谢谢(?:你)?|辛苦了)[。！!，,\s]*$/g, '')
+    .replace(/(下周|本周|这周|周|星期)([1-7])/g, (_, prefix, day) => prefix + '一二三四五六日'[Number(day) - 1])
+    .replace(/[\s，,。.!！?？、；;：:]/g, '');
+}
+
+function originalText(e) {
+  return e.sourceText || e.content?.match(/原文：([\s\S]*?)\n\n请确认/)?.[1] || (e.professionalEvidence?.length === 1 ? e.professionalEvidence[0] : '');
 }
 
 async function createDraft(group, message, models = {}) {
@@ -33,6 +44,15 @@ async function createDraft(group, message, models = {}) {
   const requestKey = fingerprint(message.text, message.sender, message.sentAt);
   const existing = await Entry.findOne({ groupId: group._id, requestKey });
   if (existing) return 'duplicate';
+  // Include cancelled/deleted rows: removal must not allow the same request to reappear.
+  const priorRows = await Entry.find({ groupId: group._id, kind: 'task', sourceType: 'wecom_archive' }).select('+sourceText').sort({ createdAt: -1 }).limit(300);
+  const day = new Date(+new Date(message.sentAt) + 8 * 3600000).toISOString().slice(0, 10);
+  for (const prior of priorRows) {
+    const source = originalText(prior);
+    if (!source || normalize(source) !== normalize(message.text)) continue;
+    const legacy = 'archive-' + createHash('sha256').update(`${message.sender}|${day}|${source.replace(/\s+/g, '')}`).digest('hex');
+    if (prior.requestKey === legacy || prior.requestKey === fingerprint(source, message.sender, message.sentAt)) return 'duplicate';
+  }
   const value = {
     groupId: group._id, kind: 'task', status: 'draft', patientId: null,
     assignedTo: group.owner, createdBy: group.owner,
@@ -66,4 +86,4 @@ function validateConfirmation(entry, group) {
   return null;
 }
 
-module.exports = { classify, exactDate, fingerprint, createDraft, validateConfirmation };
+module.exports = { classify, exactDate, fingerprint, createDraft, validateConfirmation, normalize, originalText };

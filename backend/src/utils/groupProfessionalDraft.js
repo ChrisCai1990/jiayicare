@@ -45,7 +45,7 @@ async function refreshProfessionalDraft({ Entry = require('../models/ServiceGrou
       const consent = await Group.findOne({ _id: e.groupId, tenantId: process.env.SERVICE_GROUP_BRIDGE_TENANT_ID || null, archiveConsent: true, aiConsent: true }).lean();
       if (!consent) return 'revoked';
       const title = /改期|取消|推迟|提前/.test(source) ? '随访安排变更核实' : /复查|复诊/.test(source) ? '复查需求与安排核实' : /报告/.test(source) ? '报告反馈与后续跟进' : /症状|用药|胸痛|不舒服/.test(source) ? '健康情况与医护跟进' : '客户服务需求跟进';
-      const saved = await Entry.updateOne({ ...filter, __v: filter.__v + 1 }, { $set: { ...(e.kind === 'task' ? { title } : {}), content: result.content, professionalEvidence: result.evidence, professionalHash: hash, professionalError: false, aiGenerated: true }, $inc: { __v: 1 } });
+      const saved = await Entry.updateOne({ ...filter, __v: filter.__v + 1 }, { $set: { sourceText: source, ...(e.kind === 'task' ? { title } : {}), content: result.content, professionalEvidence: result.evidence, professionalHash: hash, professionalError: false, aiGenerated: true }, $inc: { __v: 1 } });
       return saved.modifiedCount ? 'updated' : 'changed';
     } catch {
       await Entry.updateOne({ ...filter, __v: filter.__v + 1 }, { $set: { professionalError: true } });
