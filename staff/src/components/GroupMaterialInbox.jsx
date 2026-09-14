@@ -20,8 +20,8 @@ export default function GroupMaterialInbox({group,caps,busy,run,can}) {
   const allowed=can(purpose==='report'?'reports':'service_records','create');
   return <section className="sa-materials">
     <div className="sa-row"><h2>群资料待归档</h2><button disabled={busy||!group.archiveConsent} onClick={load}>刷新资料</button></div>
-    <small>{!caps?.archiveConfigured?'等待会话存档审核及采集接入；目前不会自动收到真实群图片。':!group.archiveConsent?'当前群尚未确认存档授权，请由负责人核对群设置。':'每15秒检查已接入资料；只收件，不自动入库。'}</small>
-    <small>最近100条消息内的附件，暂存30天。打卡原图存服务记录；就诊资料存报告待解析。多选逐份归档，不拼接图片。</small>
+    <small>{!group.archiveConsent?'当前群尚未确认存档授权，请由负责人核对群设置。':!caps?.archiveConnected?'采集尚未就绪或暂时离线；仍可查看已接入资料。':'每15秒检查已接入资料；只收件，不自动入库。'}</small>
+    <small>最近100份附件，暂存30天。日常检测原图存客户服务记录；就诊资料存报告待解析。多选逐份归档，不拼接图片。</small>
     {error&&<p role="alert">{error}</p>}
     <label className="sa-check"><input type="checkbox" checked={showDone} onChange={e=>setShowDone(e.target.checked)}/>显示已归档资料</label>
     {!rows.some(m=>showDone||m.state!=='archived')&&<div className="sa-empty">暂无待归档资料</div>}
@@ -40,9 +40,9 @@ export default function GroupMaterialInbox({group,caps,busy,run,can}) {
     });}}>
       <h3>确认归档 {selected.length} 份原件</h3><small>发送人不一定是资料本人。请确认所选原件属于同一个人、同一天；不同人员请分批处理。</small>
       <label>资料所属成员<select required value={patientId} disabled={busy} onChange={e=>setPatient(e.target.value)}><option value="">请选择本人或家属</option>{group.members.map(m=><option key={m.patientId._id||m.patientId} value={m.patientId._id||m.patientId}>{m.patientId.name} · {m.relation||'成员'}</option>)}</select></label>
-      <label>归档用途<select required value={purpose} disabled={busy} onChange={e=>setPurpose(e.target.value)}><option value="">请选择用途</option><option value="checkin">打卡原图（不提取健康数值）</option><option value="report">就诊／检查资料（待解析）</option></select></label>
-      <label>本批资料名称<input required maxLength={160} value={title} disabled={busy} onChange={e=>setTitle(e.target.value)}/></label>
-      <label>资料日期<input type="date" required value={date} disabled={busy} onChange={e=>setDate(e.target.value)}/></label>
+      <label>归档用途<select required value={purpose} disabled={busy} onChange={e=>setPurpose(e.target.value)}><option value="">请选择用途</option><option value="checkin">日常检测原图（血压、血糖等）</option><option value="report">就诊／检查资料（待解析）</option></select></label>
+      <label>检测／资料名称<input required maxLength={160} value={title} disabled={busy} onChange={e=>setTitle(e.target.value)}/></label>
+      <label>检测／资料日期<input type="date" required value={date} disabled={busy} onChange={e=>setDate(e.target.value)}/></label>
       {purpose==='report'&&<label>就诊资料类别<select value={category} disabled={busy} onChange={e=>setCategory(e.target.value)}>{Object.entries({outpatient_record:'门诊病历',inpatient_record:'住院病历',lab_report:'检验报告',exam_report:'检查报告',prescription_order:'处方',physical_exam:'体检报告',other_customer_material:'其他资料'}).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>}
       <button className="sa-primary" disabled={busy||!allowed||!patientId||!purpose}>确认归档所选资料</button>
       <button type="button" disabled={busy} onClick={()=>setSelected([])}>取消选择</button>

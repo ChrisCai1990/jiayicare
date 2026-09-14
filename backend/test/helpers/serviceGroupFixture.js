@@ -14,7 +14,7 @@ const eq = (a, b) => String(a?._id || a || "") === String(b?._id || b || "");
 function matches(row, filter = {}) {
   return Object.entries(filter).every(([k, v]) => {
     if (k === "$or") return v.some((q) => matches(row, q));
-    const actual = row[k];
+    const actual = k.split('.').reduce((value, part) => value?.[part], row);
     if (
       v &&
       typeof v === "object" &&

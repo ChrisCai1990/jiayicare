@@ -272,7 +272,7 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
     status: 'pending', initiationSource: STAFF_DIRECT_SOURCE,
     desiredServiceDate: appointmentOnly ? appointmentAt(plan.preferredDateStart) : null,
     desiredServiceDateEnd: appointmentOnly ? appointmentAt(plan.preferredDateEnd) : null,
-    serviceRequirements: appointmentOnly ? `${plan.hospital} ${plan.department} ${plan.expert}` : `${plan.proxyGoal}\n${plan.communicationContent}`,
+    serviceRequirements: appointmentOnly ? [plan.hospital, plan.campus, plan.department, plan.expert].filter(Boolean).join(' ') : `${plan.proxyGoal}\n${plan.communicationContent}`,
     serviceWorkflowSnapshot: { key: 'medical_proxy', source: STAFF_DIRECT_SOURCE },
   });
   if (appointmentOnly) {
@@ -282,7 +282,7 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
       workflowKey: `${PREFIX}booking`, taskRole: 'executor', theme: `医疗代诊：健管专员完成专家门诊预约 · ${serviceName}`,
       plannedContent: '健康顾问已发起专家约诊，请完成预约并记录实际日期时间。',
       formData: {
-        planSnapshot: { serviceContent: `${plan.hospital} ${plan.department} ${plan.expert}`, initiationSource: STAFF_DIRECT_SOURCE },
+        planSnapshot: { serviceContent: [plan.hospital, plan.campus, plan.department, plan.expert].filter(Boolean).join(' '), initiationSource: STAFF_DIRECT_SOURCE },
         preferredDateStart: plan.preferredDateStart, preferredDateEnd: plan.preferredDateEnd,
       },
     });

@@ -482,9 +482,10 @@ function templateToItems(tpl) {
   if (tpl.type === 'medical_assist') {
     const items = []
     if (c.hospital) {
+      const campus = c.campus ? ` · ${c.campus}` : ''
       const dept   = c.department ? ` · ${c.department}` : ''
       const expert = c.expert     ? `（${c.expert}）`    : ''
-      items.push({ name: `就诊：${c.hospital}${dept}${expert}`, category: '就医协助' })
+      items.push({ name: `就诊：${c.hospital}${campus}${dept}${expert}`, category: '就医协助' })
     }
     if (c.datetime)  items.push({ name: `就医时间：${c.datetime}`, category: '就医协助' })
     if (c.staffName) items.push({ name: `服务专员：${c.staffName}`, category: '就医协助' })
@@ -563,7 +564,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
 
   // 模板内容字段（与管理端完全一致）
   const [form, setForm] = useState({
-    name: '', hospital: '', department: '', expert: '',
+    name: '', hospital: '', campus: '', department: '', expert: '',
     staffId: '', staffName: '', supervisorId: '', followUpPlanId: '', followUpPlanName: '', followUpPlans: [], serviceDomain: '', serviceMode: '', serviceDate: '', serviceTime: '', transport: '', tasks: '', hotel: '', notes: '',
     preferredDateStart: '', preferredDateEnd: '',
   })
@@ -610,6 +611,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
     setForm({
       name:      tpl.name || '',
       hospital:  c.hospital  || '',
+      campus:    c.campus    || '',
       department:c.department|| '',
       expert:    c.expert    || '',
       staffId:   c.staffId || '',
@@ -650,7 +652,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
     setError(''); setSaving(true)
     try {
       if (isMedicalProxy || isExpertAppointment) {
-        await staffAPI.startStaffMedicalProxy(patientId, { hospital: form.hospital.trim(), department: form.department.trim(), expert: form.expert.trim(), proxyGoal: form.proxyGoal?.trim() || '', communicationContent: form.communicationContent?.trim() || '', selectedReportIds, appointmentOnly: isExpertAppointment, preferredDateStart: form.preferredDateStart, preferredDateEnd: form.preferredDateEnd })
+        await staffAPI.startStaffMedicalProxy(patientId, { hospital: form.hospital.trim(), campus: form.campus.trim(), department: form.department.trim(), expert: form.expert.trim(), proxyGoal: form.proxyGoal?.trim() || '', communicationContent: form.communicationContent?.trim() || '', selectedReportIds, appointmentOnly: isExpertAppointment, preferredDateStart: form.preferredDateStart, preferredDateEnd: form.preferredDateEnd })
         onSaved()
         return
       }
@@ -662,9 +664,10 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
       // items 从内容字段派生
       const items = []
       if (form.hospital) {
+        const campus = form.campus ? ` · ${form.campus}` : ''
         const dept = form.department ? ` · ${form.department}` : ''
         const exp  = form.expert     ? `（${form.expert}）`    : ''
-        items.push({ name: `就诊：${form.hospital}${dept}${exp}`, category: '就医协助' })
+        items.push({ name: `就诊：${form.hospital}${campus}${dept}${exp}`, category: '就医协助' })
       }
       items.push({ name: `服务日期：${form.serviceDate}`, category: '就医协助' })
       if (form.serviceTime) items.push({ name: `具体时间：${form.serviceTime}`, category: '就医协助' })
@@ -690,7 +693,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
   const checkupOneStop = /体检一站式服务/.test(selectedTpl?.name || '')
   const normalizedTemplateQuery = templateQuery.trim().toLocaleLowerCase()
   const visibleTemplates = normalizedTemplateQuery
-    ? templates.filter(tpl => [tpl.name, tpl.content?.hospital, tpl.content?.department, tpl.content?.expert]
+    ? templates.filter(tpl => [tpl.name, tpl.content?.hospital, tpl.content?.campus, tpl.content?.department, tpl.content?.expert]
       .some(value => String(value || '').toLocaleLowerCase().includes(normalizedTemplateQuery)))
     : templates
   // 注意：作为函数调用而非 JSX 组件，避免每次 render 创建新组件导致输入框失焦
@@ -731,7 +734,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
           )}
           {visibleTemplates.map(tpl => {
             const c = tpl.content || {}
-            const summary = [c.hospital, c.department, c.expert].filter(Boolean).join(' · ')
+            const summary = [c.hospital, c.campus, c.department, c.expert].filter(Boolean).join(' · ')
             return (
               <div key={tpl._id} onClick={() => selectTemplate(tpl)}
                 style={{ border: '1px solid #E0D9CE', borderRadius: 10, padding: '14px 18px', marginBottom: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14 }}
@@ -796,6 +799,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
           {/* 两栏布局 */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             {renderField('医院',     'hospital',   0, '医院名称')}
+            {renderField('院区',     'campus',     0, '院区名称（可选）')}
             {renderField('科室',     'department', 0, '科室名称')}
             {renderField('专家',     'expert',     0, '专家姓名（可选）')}
             {!isMedicalProxy && !isExpertAppointment && !checkupOneStop && !/门诊一站式/.test(`${selectedTpl?.name || ''} ${form.name || ''}`) && <div className="form-group" style={{ marginBottom: 0 }}>

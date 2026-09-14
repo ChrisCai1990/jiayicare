@@ -33,5 +33,7 @@ test('自动收件：纯图片、逐份确认、权限、重复及失败恢复',
  oss.getObjectStream=original;
  assert.equal((await req('/inbox/confirm',check)).data[0].success,true);
  assert.equal(f.models.ServiceRecord.rows.length,1);assert.equal(f.models.ServiceRecord.rows[0].attachments.length,1);
+ assert.equal(f.models.ServiceRecord.rows[0].structuredContent.materialType,'daily_monitoring_image');
+ assert.equal(f.models.ServiceRecord.rows[0].structuredContent.measurementDate,check.date);
  g.archiveConsent=false;assert.deepEqual((await req('/inbox')).data,[]);assert.equal((await req('/inbox/confirm',check)).status,403);
 });

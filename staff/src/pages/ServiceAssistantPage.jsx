@@ -145,8 +145,7 @@ export default function ServiceAssistantPage() {
     [teamOptions, setTeamOptions] = useState([]);
   const [selectedTeam, setSelectedTeam] = useState([]),
     [aiConsent, setAiConsent] = useState(false);
-  const [archiveConsent, setArchiveConsent] = useState(false),
-    [messages, setMessages] = useState([]);
+  const [archiveConsent, setArchiveConsent] = useState(false);
   const [file, setFile] = useState(null),
     [reportTitle, setReportTitle] = useState(""),
     [reportDate, setReportDate] = useState(""),
@@ -211,13 +210,27 @@ export default function ServiceAssistantPage() {
     setError("");
     setNotice("");
     setSettings(false);
-    setMessages([]);
     if (fileRef.current) fileRef.current.value = "";
     if (prefetched?.group._id !== groupId) refresh(groupId).catch((e) => setError(e.message));
     return () => {
       version.current++;
     };
   }, [groupId]);
+  useEffect(() => {
+    if (!groupId || !g?.archiveConsent || form || busy || settings) return;
+    let active = true, running = false;
+    const poll = async () => {
+      if (running || document.visibilityState !== 'visible') return;
+      running = true;
+      try {
+        const [items, state] = await Promise.all([api.get('/' + groupId), api.get('/capabilities')]);
+        if (active && groupRef.current === groupId) { setBundle(items.data); setCaps(state.data); }
+      } catch (error) { if (active) setError(error.message); }
+      finally { running = false; }
+    };
+    poll(); const timer = setInterval(poll, 15000);
+    return () => { active = false; clearInterval(timer); };
+  }, [groupId, g?.archiveConsent, !!form, busy, settings]);
   useEffect(() => {
     let active = true;
     setNative(null);
@@ -422,6 +435,9 @@ export default function ServiceAssistantPage() {
               version: form.__v,
               title: form.title,
               content: form.content,
+              patientId: form.patientId || null,
+              dueAt: form.dueAt || null,
+              assignedTo: idOf(form.assignedTo),
             });
           else await api.post(`/${groupId}/entries`, form);
           setForm(null);
@@ -437,7 +453,6 @@ export default function ServiceAssistantPage() {
       <label>
         服务对象
         <select
-          disabled={!!form._id}
           value={form.patientId || ""}
           onChange={(e) => setForm({ ...form, patientId: e.target.value })}
         >
@@ -470,12 +485,12 @@ export default function ServiceAssistantPage() {
           onChange={(e) => setForm({ ...form, content: e.target.value })}
         />
       </label>
-      {form.kind === "task" && !form._id && (
+      {(form.kind === "task" || form.kind === "record") && (
         <div className="sa-fields">
           <label>
-            跟进日期
+            {form.kind === 'record' ? '沟通日期' : '跟进日期'}
             <input
-              required
+              required={form.sourceType !== 'wecom_archive'}
               type="date"
               value={form.dueAt}
               onChange={(e) => setForm({ ...form, dueAt: e.target.value })}
@@ -534,6 +549,7 @@ export default function ServiceAssistantPage() {
           "正在检查接入状态…"
         )}
       </div>
+      {can('patients', 'edit') && <WecomKfBindingPanel />}
       </details>
       </header>
       {error && (
@@ -547,7 +563,6 @@ export default function ServiceAssistantPage() {
           <button className="sa-dismiss" aria-label="关闭提示" onClick={() => setNotice('')}>×</button>
         </div>
       )}
-      {can('patients', 'edit') && <WecomKfBindingPanel />}
       {(!inGroupSidebar || !g) && <div className="sa-toolbar">
         {inGroupSidebar ? <div><small>当前群绑定家庭</small><p>{g?.name || (creating ? "当前群尚未绑定，请在下方完成首次绑定" : error ? "暂时无法读取，请在连接状态中重试" : "正在读取当前群的绑定关系…")}</p></div> : <>
         <label>
@@ -793,76 +808,6 @@ export default function ServiceAssistantPage() {
               ))}
           </nav>
           {tab === 'inbox' && <GroupMaterialInbox key={groupId+'-'+g.archiveConsent} group={g} caps={caps} busy={busy} run={run} can={can}/>}
-          {tab !== 'inbox' && g.archiveConsent && (
-            <section className="sa-card">
-              <div className="sa-row">
-                <h3>群消息收件箱</h3>
-                <button
-                  disabled={busy}
-                  onClick={() =>
-                    run(async () => {
-                      const r = await api.get(`/${groupId}/messages`);
-                      setMessages(r.data);
-                      if (!r.data.length)
-                        setNotice("暂无已接入的群消息，请核对存档采集器");
-                    })
-                  }
-                >
-                  读取已授权消息
-                </button>
-              </div>
-              {messages
-                .filter((m) => m.groupId === groupId)
-                .map((m) => (
-                  <div className="sa-native" key={m._id}>
-                    <small>
-                      {m.sender} · {date(m.sentAt)}
-                    </small>
-                    <p className="sa-pre">{m.text}</p>
-                    <div className="sa-actions">
-                      <button
-                        onClick={() => {
-                          setSource((old) =>
-                            [old, `${m.sender} ${date(m.sentAt)}：${m.text}`]
-                              .filter(Boolean)
-                              .join("\n")
-                          );
-                          setTab("summary");
-                        }}
-                      >
-                        加入总结
-                      </button>
-                      <button
-                        onClick={() => {
-                          openForm("task", m.text);
-                          setTab("task");
-                        }}
-                      >
-                        提取待办
-                      </button>
-                      {m.commandKind && (
-                        <button onClick={() => setCommand(m.text)}>
-                          填入快捷指令
-                        </button>
-                      )}
-                      {m.attachment?.name && (
-                        <button
-                          onClick={() => {
-                            setSourceMessage(m);
-                            setFile(null);
-                            setReportTitle(m.attachment.name);
-                            setTab("report");
-                            setReceipt(null);
-                          }}
-                        >
-                          归档群文件：{m.attachment.name}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-            </section>
-          )}
           {tab !== "report" && tab !== 'inbox' && (
             <div className="sa-row">
               <h2>{labels[tab]}</h2>
@@ -1056,12 +1001,13 @@ export default function ServiceAssistantPage() {
                 <small>
                   {g.members.find(
                     (m) => idOf(m.patientId) === idOf(e.patientId)
-                  )?.patientId.name || "家庭共同事项"}{" "}
+                  )?.patientId.name || (e.sourceType === 'wecom_archive' ? "服务对象待确认" : "家庭共同事项")}{" "}
                   ·{" "}
                   {bundle.staff.find((s) => s._id === idOf(e.assignedTo))
                     ?.name || "服务人员"}
                   {e.dueAt ? " · " + date(e.dueAt) : ""}
                   {e.aiGenerated ? " · AI草稿" : ""}
+                  {e.sourceType === 'wecom_archive' ? " · 群消息自动草稿" : ""}
                 </small>
                 <p className="sa-pre">{e.content}</p>
                 {e.result && <p className="sa-pre">处理结果：{e.result}</p>}
@@ -1113,11 +1059,11 @@ export default function ServiceAssistantPage() {
                       "edit"
                     ) && (
                       <>
-                        <button disabled={busy} onClick={() => setForm(e)}>
-                          编辑
+                        <button disabled={busy} onClick={() => setForm({...e, patientId:idOf(e.patientId) || '', assignedTo:idOf(e.assignedTo), dueAt:e.dueAt ? new Date(e.dueAt).toLocaleDateString('en-CA', {timeZone:'Asia/Shanghai'}) : ''})}>
+                          {e.sourceType === 'wecom_archive' ? '核对成员和日期' : '编辑'}
                         </button>
                         <button
-                          disabled={busy}
+                          disabled={busy || (e.sourceType === 'wecom_archive' && (!e.patientId || !e.dueAt))}
                           className="sa-primary"
                           onClick={() =>
                             run(() =>

@@ -1,0 +1,38 @@
+const test = require('node:test'), assert = require('node:assert/strict');
+const { createDailyRecord } = require('../src/utils/groupDailyRecord');
+const { buildFixture } = require('./helpers/serviceGroupFixture');
+test('daily communication uses native record confirmation; freezes edited batches, separates dates and retries', async t => {
+  const f = buildFixture(), g = f.models.ServiceGroup.rows[0];
+  g.archiveConsent = true;
+  const m = { messageId: 'day-1', sender: 'synthetic', sentAt: '2026-09-14T01:00:00Z', text: '今天已沟通饮食情况' };
+  assert.equal(await createDailyRecord(g, m), 'created');
+  assert.equal(await createDailyRecord(g, m), 'duplicate');
+  assert.equal(await createDailyRecord(g, { ...m, messageId: 'day-2', text: '已收到反馈' }), 'updated');
+  const e = f.models.ServiceGroupEntry.rows[0];
+  assert.equal(e.sourceMessageIds.length, 2);
+  assert.equal(e.patientId, null);
+  assert.equal(f.models.ServiceRecord.rows.length, 0);
+  const s = f.app.listen(0, '127.0.0.1'); await new Promise(r => s.once('listening', r)); t.after(() => s.close());
+  const send = async body => {
+    const r = await fetch(`http://127.0.0.1:${s.address().port}/api/staff/service-groups/${g._id}/entries/${e._id}`, { method: 'PATCH', headers: { authorization: 'test', 'content-type': 'application/json' }, body: JSON.stringify({ version: e.__v, ...body }) });
+    return r.status;
+  };
+  assert.equal(await send({ status: 'confirmed' }), 400);
+  assert.equal(await send({ patientId: f.ids.patient, content: '已核对的实际沟通', dueAt: '2026-09-14' }), 200);
+  assert.equal(await createDailyRecord(g, { ...m, messageId: 'day-3', text: '晚间补充反馈' }), 'created');
+  assert.equal(e.content, '已核对的实际沟通');
+  assert.equal(await send({ status: 'confirmed' }), 200);
+  assert.equal(await send({ status: 'confirmed' }), 200);
+  assert.equal(f.models.ServiceRecord.rows.length, 1);
+  const native = f.models.ServiceRecord.rows[0];
+  assert.equal(String(native._id), String(e._id));
+  assert.equal(native.type, 'group_service');
+  assert.equal(native.content, '已核对的实际沟通');
+  assert.equal(native.date.toISOString().slice(0, 10), '2026-09-14');
+  assert.equal(await createDailyRecord(g, { ...m, messageId: 'next-day', sentAt: '2026-09-14T17:00:00Z' }), 'created');
+  assert.equal(f.models.ServiceGroupEntry.rows.length, 3);
+  assert.equal(await createDailyRecord(g, m), 'duplicate');
+  assert.equal(f.models.FollowUp.rows.length, 0);
+  g.archiveConsent = false;
+  assert.equal(await createDailyRecord(g, { ...m, messageId: 'revoked' }), 'ignored');
+});

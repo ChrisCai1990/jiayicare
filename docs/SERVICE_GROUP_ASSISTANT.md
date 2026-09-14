@@ -159,3 +159,6 @@ node scripts/test-service-assistant.cjs
 手动连接真实本地开发库时，应明确设置 `VITE_API_URL=http://localhost:3000/api`，不要误用医护端既有的生产API默认值。此页面首次上线前应在测试环境完成MongoDB唯一索引、OSS真实上传、企微群识别与发送验证。
 
 2026-09-09：新增流程测试、真实路由+内存持久层集成测试、桌面与390px侧边栏交互回归通过。全量后端回归发现既有 `inpatientPlanPermission.test.js` 缺少 `upsertMedicalAssistModuleTasks` VM替身导致失败；该测试及被测 `staff.js` 本轮未修改。此限制不可用服务助手定向测试通过来掩盖。
+
+## 2026-09-14：持续采集与随访草稿
+最新实现与验收边界见 [WECOM_ARCHIVE_FOLLOWUP.md](WECOM_ARCHIVE_FOLLOWUP.md)。此前的未安装采集器、未配置存档凭据描述属于历史状态；当前在线情况必须检查采集游标心跳。

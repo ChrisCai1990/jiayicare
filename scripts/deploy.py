@@ -192,6 +192,13 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
         if code:
             raise RuntimeError("后端重启失败")
 
+        code, _ = remote(
+            "if pm2 describe jiayicare-wecom-archive >/dev/null 2>&1; then pm2 restart jiayicare-wecom-archive; fi",
+            timeout=30, label="更新已部署的群消息采集进程",
+        )
+        if code:
+            raise RuntimeError("群消息采集进程重启失败")
+
         def run_migration(command, **options):
             if skip_data_migrations:
                 return 0, ""
