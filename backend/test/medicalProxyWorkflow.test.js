@@ -5,6 +5,7 @@ const path = require('node:path');
 const Admin = require('../src/models/Admin');
 const MedicalReport = require('../src/models/MedicalReport');
 const User = require('../src/models/User');
+const Order = require('../src/models/Order');
 const { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, extractMedicalProxyRechecks, validateMedicalProxyStage } = require('../src/utils/medicalProxyWorkflow');
 
 test('storefront and staff orders resolve to the same proxy workflow', () => {
@@ -146,4 +147,19 @@ test('booking and execution write the shared hospital visit service archive', ()
   assert.match(workflow, /upsertMedicalProxyServiceRecord\(task, order, true\)/);
   assert.match(workflow, /type: 'medical_visit'/);
   assert.match(model, /sourceOrderId:/);
+});
+
+test('expert appointment booking completes without a medical assistant', async () => {
+  const originalOrderFind = Order.findById;
+  const originalAdminFind = Admin.findOne;
+  try {
+    Order.findById = () => ({ select: () => ({ lean: async () => ({ serviceName: '专家约诊服务' }) }) });
+    Admin.findOne = () => { throw new Error('expert appointment must not validate a medical assistant'); };
+    const task = { sourceType: 'order', sourceOrderId: 'order-1', workflowKey: 'medical_proxy:booking', assignedTo: 'manager-1' };
+    const formData = { preferredDateStart: '2026-09-16', preferredDateEnd: '2026-09-18', appointmentDate: '2026-09-17', appointmentTime: '10:00' };
+    assert.equal(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'manager-1', role: 'healthManager' }), '');
+  } finally {
+    Order.findById = originalOrderFind;
+    Admin.findOne = originalAdminFind;
+  }
 });
