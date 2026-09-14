@@ -7,6 +7,7 @@ const User = require('../models/User');
 
 const PREFIX = 'medical_proxy:';
 const STAGES = ['collect', 'audit', 'advisor', 'planner', 'booking', 'execute'];
+const ALL_STAGES = [...STAGES, 'appointment_review', 'post_visit_audit', 'post_visit_review'];
 const STAFF_DIRECT_SOURCE = 'staff_direct';
 const isMedicalProxyOrder = orderOrName => orderOrName?.serviceWorkflowSnapshot?.key === 'medical_proxy'
   || /医疗代诊|专家约诊|就医规划/.test(String(typeof orderOrName === 'object' ? orderOrName?.serviceName : orderOrName || ''));
@@ -121,6 +122,34 @@ async function createMedicalProxyFollowUpDrafts(task, order, familyDoctorId) {
   }
 }
 
+async function createExpertAppointmentFollowUpPlan(task, order, patient, reportIds) {
+  const reports = reportIds.length ? await MedicalReport.find({ _id: { $in: reportIds }, user: task.patientId, audit_status: 'audited' }).select('title documentCategory checkDate hospital reportItems aiSummary keyFindings note').lean() : [];
+  const sourceText = reports.map(report => {
+    const items = (report.reportItems || []).slice(0, 80).map(item => [item.name, item.value, item.unit, item.findings, item.diagnosis, item.conclusion].filter(Boolean).join('｜')).join('\n');
+    return `【${report.title || '就诊资料'}】${items || report.aiSummary || (report.keyFindings || []).join('；') || report.note || '仅有附件，待健康顾问查看原件'}`;
+  }).join('\n\n');
+  const fallbackContent = reports.length ? '查看本次就诊资料，跟进专家意见、检查结果、用药及复查安排；具体时间由健康顾问审核确认。' : '客户确认本次就诊暂无检查资料或病历可上传；健康顾问结合预约情况确认是否需要后续联系。';
+  let content = fallbackContent;
+  let followUpDate = new Date(); followUpDate.setDate(followUpDate.getDate() + 7);
+  try {
+    const { chat } = require('./ai');
+    const prompt = `你是医疗服务随访计划助手。根据专家约诊信息和已审核的就诊后资料生成一条简明、可执行的随访计划草稿。不得补写不存在的诊断、药物或检查结果；没有资料时明确需由健康顾问确认客户是否需要后续联系。仅输出JSON：{"content":"随访事项","daysLater":1到30的整数}。\n约诊信息：${order.serviceRequirements || ''}\n健管审核：${task.formData?.auditSummary || ''}\n资料：${sourceText || '客户或健管专员确认暂无资料上传'}`;
+    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 700, temperature: 0 });
+    const match = String(text || '').match(/\{[\s\S]*\}/);
+    const draft = match ? JSON.parse(match[0]) : {};
+    if (nonempty(draft.content)) content = nonempty(draft.content);
+    const days = Math.max(1, Math.min(30, Number(draft.daysLater) || 7));
+    followUpDate = new Date(); followUpDate.setDate(followUpDate.getDate() + days);
+  } catch (error) {
+    console.error('[expert-appointment] AI随访计划生成失败，使用安全草稿', error.message);
+  }
+  return FollowUp.findOneAndUpdate(
+    { sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `expert_appointment_followup:${order._id}` },
+    { $setOnInsert: { patientId: task.patientId, staffId: patient.assignedFamilyDoctor, assignedTo: patient.assignedFamilyDoctor, date: followUpDate, remindAt: followUpDate, type: 'other', status: 'planned', theme: '专家约诊后随访计划', content, plannedContent: content, tags: ['专家约诊', '就诊后随访'], sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `expert_appointment_followup:${order._id}`, aiStatus: 'pending', reviewRole: 'familyDoctor', formData: { reportIds, auditSummary: task.formData?.auditSummary || '', generatedFromExpertAppointment: true } } },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+}
+
 function reportIdsFromTask(task = {}) {
   return [...new Set([
     ...(task.formData?.selectedReportIds || []),
@@ -150,7 +179,7 @@ async function findRecentSelectedReportIds(patientId) {
 }
 
 async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceTimeEnd, serviceContent, customerNeed, communicationWindow = {}) {
-  const existing = await FollowUp.exists({ sourceType: 'order', sourceOrderId: order._id, workflowKey: { $in: STAGES.map(stage => `${PREFIX}${stage}`).concat(`${PREFIX}intake`) } });
+  const existing = await FollowUp.exists({ sourceType: 'order', sourceOrderId: order._id, workflowKey: { $in: ALL_STAGES.map(stage => `${PREFIX}${stage}`).concat(`${PREFIX}intake`) } });
   if (existing) throw Object.assign(new Error('该订单已进入医疗代诊分阶段流程，请在服务任务中继续办理'), { status: 409 });
   if (/就医规划/.test(order.serviceName || '') && (!nonempty(communicationWindow.communicationDate) || !nonempty(communicationWindow.communicationTimeStart) || !nonempty(communicationWindow.communicationTimeEnd))) {
     throw Object.assign(new Error('请确认客户预期沟通日期和起止时间'), { status: 400 });
@@ -197,7 +226,7 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceT
   }, { $set: { status: 'cancelled', cancelReason: '旧版医疗代诊督办已由当前订单督办替代' } });
   await FollowUp.updateMany({
     patientId: order.user, sourceType: 'order', sourceOrderId: { $ne: order._id },
-    workflowKey: { $in: STAGES.map(stage => `${PREFIX}${stage}`).concat(`${PREFIX}intake`) },
+    workflowKey: { $in: ALL_STAGES.map(stage => `${PREFIX}${stage}`).concat(`${PREFIX}intake`) },
     status: { $in: ['planned', 'in_progress'] }, createdAt: { $lt: supervisor.createdAt },
   }, { $set: { status: 'cancelled', cancelReason: '旧医疗代诊订单任务已由当前订单替代' } });
   if (/专家约诊/.test(order.serviceName || '')) {
@@ -382,6 +411,19 @@ async function validateMedicalProxyStage(task, body, staff) {
       if (!assistant) return data.planSnapshot?.initiationSource === STAFF_DIRECT_SOURCE ? '请在预约完成后指派有效的就医专员' : '原预指派就医专员已失效，请退回健康规划师重新指派';
     }
   }
+  if (stage === 'appointment_review') {
+    if (!nonempty(data.serviceContent) || !nonempty(data.preferredDateStart) || !nonempty(data.preferredDateEnd) || data.preferredDateEnd < data.preferredDateStart) return '请核对约诊需求和有效的期望日期区间';
+  }
+  if (stage === 'post_visit_audit') {
+    const ids = [...new Set((data.reportIds || []).map(String).filter(Boolean))];
+    if (!ids.length && data.noMaterialsConfirmed !== true) return '请选择已审核资料；如本次确实没有检查资料或病历，请勾选确认无资料';
+    if (!nonempty(data.auditSummary)) return '请填写健管专员审核结论';
+    const order = await Order.findById(task.sourceOrderId).select('scheduledAt').lean();
+    if (!order?.scheduledAt || new Date() < order.scheduledAt) return '就诊时间尚未到达，不能结束报告审核环节';
+    const count = ids.length ? await MedicalReport.countDocuments({ _id: { $in: ids }, user: task.patientId, audit_status: 'audited', createdAt: { $gte: order.scheduledAt } }) : 0;
+    if (count !== ids.length) return '只能选取本次就诊后上传且已由健管专员审核的报告';
+  }
+  if (stage === 'post_visit_review' && !nonempty(data.reviewSummary)) return '请查看本次已审核资料并填写健康顾问查看结论';
   if (stage === 'execute' && (!nonempty(data.executionResult) || !Array.isArray(data.medicalRecordAttachments) || !data.medicalRecordAttachments.some(file => nonempty(file?.url)))) return '请填写代诊执行结果并上传至少一份代诊病历';
   if (stage === 'collect' || stage === 'audit' || stage === 'advisor' || stage === 'planner' || stage === 'intake') {
     const patient = await User.findById(task.patientId).select('assignedFamilyDoctor assignedHealthPlanner assignedHealthManager').lean();
@@ -401,6 +443,23 @@ async function advanceMedicalProxyWorkflow(task) {
   const order = await Order.findById(task.sourceOrderId);
   if (!order) return;
   const patient = await User.findById(task.patientId).select('tenantId assignedHealthManager assignedFamilyDoctor assignedHealthPlanner').lean();
+  if (stage === 'appointment_review') {
+    if (!patient?.assignedHealthManager) throw Object.assign(new Error('客户尚未分配健管专员，无法重新预约'), { status: 409 });
+    const previousBooking = order.medicalProxyPlan?.booking || null;
+    const bookingRevision = Number(order.medicalProxyPlan?.bookingRevision || 0) + 1;
+    order.medicalProxyPlan = { ...(order.medicalProxyPlan || {}), previousBooking, bookingRevision, booking: null };
+    order.serviceRequirements = task.formData.serviceContent.trim();
+    order.desiredServiceDate = appointmentAt(task.formData.preferredDateStart);
+    order.desiredServiceDateEnd = appointmentAt(task.formData.preferredDateEnd);
+    order.scheduledAt = null; order.completedAt = null; order.status = 'pending'; order.tradeStatus = 'fulfilling';
+    order.markModified('medicalProxyPlan');
+    await order.save();
+    await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}booking` }, { $set: { status: 'planned', assignedTo: patient.assignedHealthManager, staffId: patient.assignedHealthManager, completedAt: null, completedBy: null, date: new Date(), remindAt: new Date(), formData: { planSnapshot: { serviceContent: order.serviceRequirements, initiationSource: order.initiationSource }, preferredDateStart: task.formData.preferredDateStart, preferredDateEnd: task.formData.preferredDateEnd }, plannedContent: '健康顾问已重新核对约诊需求，请重新确认预约并记录实际日期时间。' } });
+    await FollowUp.updateMany({ sourceType: 'order', sourceOrderId: order._id, workflowKey: { $in: [`${PREFIX}post_visit_audit`, `${PREFIX}post_visit_review`] }, status: { $in: ['planned', 'in_progress'] } }, { $set: { status: 'cancelled', cancelReason: '健康顾问重新核对约诊需求' } });
+    await require('../models/AppointmentReminder').updateMany({ orderId: order._id, status: { $in: ['pending', 'processing'] } }, { $set: { status: 'cancelled' } });
+    await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise` }, { $set: { 'formData.currentStage': 'booking', content: '健康顾问已重新核对需求，等待健管专员重新预约。' } });
+    return;
+  }
   if (stage === 'advisor') {
     order.medicalProxyPlan = { ...task.formData, confirmedBy: task.assignedTo, confirmedAt: new Date(), intakeTaskId: task.dependsOnTaskId };
     order.markModified('medicalProxyPlan');
@@ -430,27 +489,39 @@ async function advanceMedicalProxyWorkflow(task) {
       await require('./appointmentReminderScheduler').scheduleExpertAppointmentReminders({
         order, appointmentDate: order.scheduledAt, appointmentText,
       });
+      const confirmationKey = `expert-appointment-confirmed:${order._id}${order.medicalProxyPlan?.bookingRevision ? `:${order.medicalProxyPlan.bookingRevision}` : ''}`;
       await require('../models/Message').findOneAndUpdate(
-        { dedupeKey: `expert-appointment-confirmed:${order._id}` },
+        { dedupeKey: confirmationKey },
         { $setOnInsert: {
-          user: order.user, type: 'manager', sender: '嘉医管家', title: '专家约诊成功',
-          content: `您的专家约诊已完成。\n约诊需求：${confirmedRequirement || '已确认'}\n预约时间：${task.formData.appointmentDate} ${task.formData.appointmentTime}${insuranceResult ? `\n保险办理：${insuranceResult}` : ''}${task.formData.dateDifferenceNote ? `\n补充说明：${task.formData.dateDifferenceNote}` : ''}`,
+          user: order.user, type: 'manager', sender: '嘉医管家', title: '专家预约已确认',
+          content: `您的专家门诊预约已确认。就诊后请上传病历和检查报告；健管专员审核、健康顾问查看后，本项服务结束。\n约诊需求：${confirmedRequirement || '已确认'}\n预约时间：${task.formData.appointmentDate} ${task.formData.appointmentTime}${insuranceResult ? `\n保险办理：${insuranceResult}` : ''}${task.formData.dateDifferenceNote ? `\n补充说明：${task.formData.dateDifferenceNote}` : ''}`,
           conversationId: `${order.user}_manager`, unread: true, isAI: false, aiGenerated: false,
-          dedupeKey: `expert-appointment-confirmed:${order._id}`,
+          dedupeKey: confirmationKey,
           action: { type: 'expert_appointment_confirmed', orderId: String(order._id) },
         } },
         { upsert: true, new: true, setDefaultsOnInsert: true },
       );
-      await FollowUp.updateOne(
-        { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } },
-        { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', content: '健管专员已完成专家约诊，预约信息已发送客户。', 'formData.currentStage': 'completed' } },
+      await FollowUp.findOneAndUpdate(
+        { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}post_visit_audit` },
+        { $setOnInsert: { patientId: task.patientId, staffId: task.assignedTo, assignedTo: patient?.assignedHealthManager, type: 'other', status: 'planned', date: order.scheduledAt, remindAt: order.scheduledAt, sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}post_visit_audit`, taskRole: 'executor', dependsOnTaskId: task._id, theme: `专家约诊：健管专员审核就诊后资料 · ${order.serviceName}`, plannedContent: '客户就诊后上传病历和检查报告；请在报告管理完成审核，再选定本次报告交健康顾问查看。', formData: { reportIds: [], appointmentAt: order.scheduledAt } } },
+        { upsert: true, new: true, setDefaultsOnInsert: true },
       );
-      order.status = 'completed';
-      order.tradeStatus = 'completed';
-      order.completedAt = new Date();
-      await order.save();
+      await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise` }, { $set: { 'formData.currentStage': 'post_visit_audit', content: '预约已确认，等待客户就诊后上传资料并由健管专员审核。' } });
       return;
     }
+  }
+  if (stage === 'post_visit_audit') {
+    await createExpertAppointmentFollowUpPlan(task, order, patient, [...new Set((task.formData?.reportIds || []).map(String).filter(Boolean))]);
+    await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise` }, { $set: { 'formData.currentStage': 'followup_review', content: '健管专员已完成资料审核，AI已生成随访计划，等待健康顾问审核。' } });
+    return;
+  }
+  if (stage === 'post_visit_review') {
+    const ids = [...new Set((task.formData?.auditSnapshot?.reportIds || []).map(String).filter(Boolean))];
+    await MedicalReport.updateMany({ _id: { $in: ids }, user: task.patientId, audit_status: 'audited' }, { $set: { familyDoctorViewedAt: new Date() } });
+    order.status = 'completed'; order.tradeStatus = 'completed'; order.completedAt = new Date();
+    await order.save();
+    await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } }, { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', 'formData.currentStage': 'completed', content: '就诊后资料已由健管专员审核并由健康顾问查看，专家约诊服务结束。' } });
+    return;
   }
   if (stage === 'intake') {
     await FollowUp.findOneAndUpdate(

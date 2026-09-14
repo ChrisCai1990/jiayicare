@@ -2171,6 +2171,16 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
     }
     followUp.aiStatus = 'approved';
     await followUp.save();
+    if (followUp.sourceType === 'order' && followUp.formData?.generatedFromExpertAppointment && followUp.sourceOrderId) {
+      const order = await Order.findOne({ _id: followUp.sourceOrderId, serviceName: /专家约诊/ });
+      if (order) {
+        const reportIds = [...new Set((followUp.formData?.reportIds || []).map(String).filter(Boolean))];
+        if (reportIds.length) await MedicalReport.updateMany({ _id: { $in: reportIds }, user: followUp.patientId, audit_status: 'audited' }, { $set: { familyDoctorViewedAt: new Date() } });
+        order.status = 'completed'; order.tradeStatus = 'completed'; order.completedAt = new Date();
+        await order.save();
+        await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: 'medical_proxy:supervise', status: { $in: ['planned', 'in_progress'] } }, { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', content: '健管专员已审核就诊资料，AI随访计划已由健康顾问审核，专家约诊服务结束。', 'formData.currentStage': 'completed' } });
+      }
+    }
     res.json({ success: true, message: '已通过审核', data: followUp });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

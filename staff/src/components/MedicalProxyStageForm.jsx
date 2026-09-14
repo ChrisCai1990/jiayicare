@@ -26,6 +26,10 @@ export function validateMedicalProxyStage(stage, value) {
   if (stage === 'booking' && ['preferredDateStart', 'preferredDateEnd', 'appointmentDate', 'appointmentTime'].some(key => !value[key]?.trim())) return '请完整填写客户期望日期区间和实际约诊日期时间'
   if (stage === 'booking' && (value.appointmentDate < value.preferredDateStart || value.appointmentDate > value.preferredDateEnd) && !value.dateDifferenceNote?.trim()) return '约诊日期不在客户期望区间内，请说明差异及客户确认情况'
   if (stage === 'booking' && /费用与保险：使用高端医疗险/.test(value.planSnapshot?.serviceContent || '') && !['direct_verified', 'reimbursement_verified', 'self_pay_confirmed'].includes(value.insuranceOutcome)) return '请核实高端医疗险结算方式，并记录最终办理结果'
+  if (stage === 'appointment_review' && (!value.serviceContent?.trim() || !value.preferredDateStart || !value.preferredDateEnd || value.preferredDateEnd < value.preferredDateStart)) return '请核对约诊需求和期望日期区间'
+  if (stage === 'post_visit_audit' && (!value.reportIds?.length && !value.noMaterialsConfirmed)) return '请选择就诊后资料，或确认本次无资料'
+  if (stage === 'post_visit_audit' && !value.auditSummary?.trim()) return '请填写健管专员审核结论'
+  if (stage === 'post_visit_review' && !value.reviewSummary?.trim()) return '请查看报告并填写健康顾问查看结论'
   if (stage === 'execute' && (!value.executionResult?.trim() || !value.medicalRecordAttachments?.length)) return '请填写代诊执行结果并上传至少一份代诊病历'
   return ''
 }
@@ -40,6 +44,31 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
       ? <textarea className="form-control" rows={rows} value={value[key] || ''} onChange={e => set(key, e.target.value)} />
       : <input className="form-control" type={type} value={value[key] || ''} onChange={e => set(key, e.target.value)} />}
   </label>
+  if (stage === 'appointment_review') return <div style={{ display: 'grid', gap: 12 }}>
+    <div style={{ fontSize: 12, color: '#8A6D3B' }}>原预约记录会保留；提交后退回健管专员重新确认预约。</div>
+    {input('serviceContent', '重新核对约诊需求（含医院、院区、门诊类型及保险安排）', 3)}
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>{input('preferredDateStart', '期望开始日期', 1, 'date')}{input('preferredDateEnd', '期望结束日期', 1, 'date')}</div>
+  </div>
+  if (stage === 'post_visit_audit') {
+    const eligible = reports.filter(report => !value.appointmentAt || new Date(report.createdAt) >= new Date(value.appointmentAt))
+    return <div style={{ display: 'grid', gap: 12 }}>
+      <div style={{ fontSize: 13, color: '#63766D' }}>等待客户就诊后上传病历和检查报告。请先在报告管理审核，再选定本次资料交健康顾问查看。</div>
+      {!eligible.length && <div style={{ color: '#B45309', fontSize: 13 }}>暂无本次就诊后上传的报告。</div>}
+      {eligible.map(report => <label key={report._id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+        <input type="checkbox" checked={(value.reportIds || []).map(String).includes(String(report._id))} onChange={e => set('reportIds', e.target.checked ? [...new Set([...(value.reportIds || []), String(report._id)])] : (value.reportIds || []).filter(id => String(id) !== String(report._id)))} />
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => onOpenReport?.(report._id, report.title)}>{report.title || '报告'}</button>
+        <span style={{ color: report.audit_status === 'audited' ? '#1E6B50' : '#B45309' }}>{report.audit_status === 'audited' ? '已审核' : '待审核'}</span>
+      </label>)}
+      <label style={{ fontSize: 13 }}><input type="checkbox" checked={!!value.noMaterialsConfirmed} onChange={e => onChange({ ...value, noMaterialsConfirmed: e.target.checked, reportIds: e.target.checked ? [] : (value.reportIds || []) })} /> 本次客户及健管专员确认没有检查资料或病历可上传</label>
+      {input('auditSummary', '健管专员审核结论', 3)}
+    </div>
+  }
+  if (stage === 'post_visit_review') return <div style={{ display: 'grid', gap: 12 }}>
+    <div style={{ fontSize: 13, color: '#63766D' }}>请逐份查看健管专员审核后的病历和检查报告，确认后结束本项服务。</div>
+    {(value.auditSnapshot?.reportIds || []).map(id => { const report = reports.find(item => String(item._id) === String(id)); return <button key={id} type="button" className="btn btn-secondary btn-sm" onClick={() => onOpenReport?.(id, report?.title)}>{report?.title || '查看本次报告'}</button> })}
+    {value.auditSnapshot?.auditSummary && <div style={{ fontSize: 13 }}>健管审核结论：{value.auditSnapshot.auditSummary}</div>}
+    {input('reviewSummary', '健康顾问查看结论', 3)}
+  </div>
   if (stage === 'collect' || stage === 'intake') {
     const availableReports = reports.filter(report => stage !== 'intake' || report.audit_status === 'audited')
     const carriedIds = new Set((value.carriedReportIds || []).map(String))
