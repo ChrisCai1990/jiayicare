@@ -3,7 +3,14 @@ const assert = require('node:assert/strict');
 const Admin = require('../src/models/Admin');
 const MedicalReport = require('../src/models/MedicalReport');
 const User = require('../src/models/User');
-const { stageOf, validateMedicalProxyStage } = require('../src/utils/medicalProxyWorkflow');
+const { stageOf, reportIdsFromTask, validateMedicalProxyStage } = require('../src/utils/medicalProxyWorkflow');
+
+test('carries the explicit report selection from a prior service task', () => {
+  assert.deepEqual(reportIdsFromTask({
+    formData: { selectedReportIds: ['report-1'], reportIds: ['report-1', 'report-2'] },
+    serviceChecklist: [{ reportIds: ['report-2', 'report-3'] }],
+  }), ['report-1', 'report-2', 'report-3']);
+});
 
 test('planner selects patient documents, then manager audit gates advisor handoff', async () => {
   const originalCount = MedicalReport.countDocuments;

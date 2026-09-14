@@ -31,16 +31,27 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
       ? <textarea className="form-control" rows={rows} value={value[key] || ''} onChange={e => set(key, e.target.value)} />
       : <input className="form-control" value={value[key] || ''} onChange={e => set(key, e.target.value)} />}
   </label>
-  if (stage === 'collect' || stage === 'intake') return <div style={{ display: 'grid', gap: 12 }}>
+  if (stage === 'collect' || stage === 'intake') {
+    const availableReports = reports.filter(report => stage !== 'intake' || report.audit_status === 'audited')
+    const carriedIds = new Set((value.carriedReportIds || []).map(String))
+    const carriedReports = availableReports.filter(report => carriedIds.has(String(report._id)))
+    const otherReports = availableReports.filter(report => !carriedIds.has(String(report._id)))
+    const reportOption = report => <label key={report._id} style={{ fontSize: 13 }}>
+      <input type="checkbox" checked={(value.reportIds || []).map(String).includes(String(report._id))} onChange={e => set('reportIds', e.target.checked ? [...new Set([...(value.reportIds || []).map(String), String(report._id)])] : (value.reportIds || []).filter(id => String(id) !== String(report._id)))} /> {report.title || report.type || '资料'} · {report.checkDate || report.date || ''}
+      <span style={{ color: report.audit_status === 'audited' ? '#1E6B50' : '#B45309', marginLeft: 6 }}>{report.audit_status === 'audited' ? '已审核' : '待健管审核'}</span>
+    </label>
+    return <div style={{ display: 'grid', gap: 12 }}>
     {input('customerNeed', '客户本次诉求', 3)}
     {input('materialSummary', '本次需准备的病历、报告、用药、身份医保与问题清单；缺失项请写明', 4)}
-    <div style={{ fontSize: 13, fontWeight: 600 }}>选定客户本次上传或已有的相关资料</div>
-    {reports.filter(report => stage !== 'intake' || report.audit_status === 'audited').map(report => <label key={report._id} style={{ fontSize: 13 }}>
-      <input type="checkbox" checked={(value.reportIds || []).includes(report._id)} onChange={e => set('reportIds', e.target.checked ? [...(value.reportIds || []), report._id] : (value.reportIds || []).filter(id => id !== report._id))} /> {report.title || report.type || '资料'} · {report.checkDate || report.date || ''}
-      <span style={{ color: report.audit_status === 'audited' ? '#1E6B50' : '#B45309', marginLeft: 6 }}>{report.audit_status === 'audited' ? '已审核' : '待健管审核'}</span>
-    </label>)}
+    {!!carriedReports.length && <div style={{ display: 'grid', gap: 7, padding: 10, borderRadius: 8, background: '#EFF8F4', border: '1px solid #B2D8C7' }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>已从最近一次关联服务自动带入</div>
+      {carriedReports.map(reportOption)}
+    </div>}
+    <div style={{ fontSize: 13, fontWeight: 600 }}>{carriedReports.length ? '其他资料（按本次需求补选）' : '选定客户本次上传或已有的相关资料'}</div>
+    {otherReports.map(reportOption)}
     {!reports.length && <div style={{ color: '#B45309', fontSize: 13 }}>请先指导客户上传资料，再返回本任务选定。</div>}
   </div>
+  }
   if (stage === 'audit') return <div style={{ display: 'grid', gap: 12 }}>
     <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>客户诉求：{value.collectionSnapshot?.customerNeed}<br />资料清单：{value.collectionSnapshot?.materialSummary}</div>
     <div style={{ fontSize: 13, fontWeight: 700 }}>本次待审核资料</div>

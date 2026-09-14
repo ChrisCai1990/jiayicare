@@ -11,6 +11,34 @@ const stageOf = task => task?.sourceType === 'order' && String(task.workflowKey 
   ? String(task.workflowKey).slice(PREFIX.length) : '';
 const nonempty = value => String(value || '').trim();
 
+function reportIdsFromTask(task = {}) {
+  return [...new Set([
+    ...(task.formData?.selectedReportIds || []),
+    ...(task.formData?.reportIds || []),
+    ...(task.serviceChecklist || []).flatMap(item => item?.reportIds || []),
+  ].map(String).filter(Boolean))];
+}
+
+async function findRecentSelectedReportIds(patientId) {
+  const tasks = await FollowUp.find({
+    patientId, sourceType: 'health_plan', status: 'completed',
+    $or: [
+      { 'formData.selectedReportIds.0': { $exists: true } },
+      { 'formData.reportIds.0': { $exists: true } },
+      { 'serviceChecklist.reportIds.0': { $exists: true } },
+    ],
+  }).sort({ completedAt: -1, updatedAt: -1 }).limit(20).select('formData serviceChecklist').lean();
+  for (const priorTask of tasks) {
+    const ids = reportIdsFromTask(priorTask);
+    if (!ids.length) continue;
+    const valid = await MedicalReport.find({ _id: { $in: ids }, user: patientId }).select('_id').lean();
+    const validSet = new Set(valid.map(report => String(report._id)));
+    const selected = ids.filter(id => validSet.has(id));
+    if (selected.length) return selected;
+  }
+  return [];
+}
+
 async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceContent, customerNeed) {
   const existing = await FollowUp.exists({ sourceType: 'order', sourceOrderId: order._id, workflowKey: { $in: STAGES.map(stage => `${PREFIX}${stage}`).concat(`${PREFIX}intake`) } });
   if (existing) throw Object.assign(new Error('该订单已进入医疗代诊分阶段流程，请在服务任务中继续办理'), { status: 409 });
@@ -19,6 +47,7 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceC
   if (!manager) throw Object.assign(new Error('该客户尚未分配健管专员，请先完成分配'), { status: 409 });
   const date = serviceTime ? new Date(serviceTime) : new Date();
   if (Number.isNaN(date.getTime())) throw Object.assign(new Error('服务日期无效'), { status: 400 });
+  const carriedReportIds = await findRecentSelectedReportIds(order.user);
   const supervisor = await FollowUp.findOneAndUpdate(
     { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise` },
     { $setOnInsert: {
@@ -39,7 +68,7 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceC
       workflowKey: `${PREFIX}collect`, taskRole: 'executor',
       theme: `医疗代诊：指导上传并选定本次资料 · ${order.serviceName}`,
       plannedContent: `服务内容：${serviceContent}\n客户诉求：${customerNeed}\n指导客户上传病历、既往报告、当前用药、身份医保资料和代诊问题清单；选定本次需审核的资料后交健管专员审核。`,
-      formData: { serviceContent, customerNeed, reportIds: [], annualMember: /年度|年卡|一年|12个月/.test(`${patient.memberType || ''} ${patient.servicePackage || ''}`) },
+      formData: { serviceContent, customerNeed, reportIds: carriedReportIds, carriedReportIds, annualMember: /年度|年卡|一年|12个月/.test(`${patient.memberType || ''} ${patient.servicePackage || ''}`) },
     } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
@@ -174,4 +203,4 @@ async function advanceMedicalProxyWorkflow(task) {
   );
 }
 
-module.exports = { isMedicalProxyOrder, stageOf, startMedicalProxyWorkflow, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
+module.exports = { isMedicalProxyOrder, stageOf, reportIdsFromTask, findRecentSelectedReportIds, startMedicalProxyWorkflow, validateMedicalProxyStage, advanceMedicalProxyWorkflow };

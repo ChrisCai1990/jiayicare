@@ -490,6 +490,16 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
         if code:
             raise RuntimeError("医疗代诊旧订单督办迁移失败")
         code, _ = run_migration(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/migrateMedicalProxyCarriedReportsV3.js ] && "
+            f"[ ! -f {REPO_DIR}/.medical-proxy-carried-reports-v3-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/migrateMedicalProxyCarriedReportsV3.js && "
+            f"touch {REPO_DIR}/.medical-proxy-carried-reports-v3-applied; fi",
+            timeout=120,
+            label="将最近一次服务已选资料带入医疗代诊收集任务",
+        )
+        if code:
+            raise RuntimeError("医疗代诊已选资料迁移失败")
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOneStopFinalFlowV15.js ] && "
             f"[ ! -f {REPO_DIR}/.one-stop-final-flow-v15-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateOneStopFinalFlowV15.js --apply && "
