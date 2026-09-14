@@ -1298,8 +1298,14 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
   try {
     const record = await PushRecord.findOne({ _id: req.params.id, patientId: req.user._id });
     if (!record) return res.status(404).json({ success: false, message: '推送记录不存在' });
-    const { selectedProductIds, useHealthFund, couponId, paymentMethod } = req.body;
+    const { selectedProductIds, useHealthFund, couponId, paymentMethod, paymentCapability } = req.body;
     if (!selectedProductIds?.length) return res.status(400).json({ success: false, message: '请选择要购买的产品' });
+    // Released clients before 1.0.166 never call requestPayment and would show
+    // success immediately after this API returned. Refuse to create any order
+    // unless the client explicitly declares the verified JSAPI flow.
+    if (paymentCapability !== 'wechat_jsapi_v1') {
+      return res.status(426).json({ success: false, code: 'PUSH_PAYMENT_UPGRADE_REQUIRED', message: '当前版本暂不支持在推荐页直接支付，请关闭此页后前往“商城”选择该服务并完成微信支付' });
+    }
     // 新版组合推送使用 products；旧版单品推送只有 productId/price/title。
     // 支付端兼容两种记录，保证已推送到用户端的历史单品无需重新推送即可下单。
     const pushedProducts = record.products?.length ? record.products : (record.productId ? [{

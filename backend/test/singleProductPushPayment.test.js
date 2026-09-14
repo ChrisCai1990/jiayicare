@@ -7,8 +7,9 @@ const readRoute = name => fs.readFileSync(path.join(__dirname, '..', 'src', 'rou
 
 test('single-product staff pushes persist the canonical products array', () => {
   const source = readRoute('staff.js');
-  assert.match(source, /const productItem = \{/);
-  assert.match(source, /products: \[productItem\]/);
+  const singleRoute = source.slice(source.indexOf("router.post('/products/:id/push'"));
+  assert.match(singleRoute, /const productItem = \{/);
+  assert.match(singleRoute, /products: \[productItem\]/);
 });
 
 test('push-record payment accepts legacy records that only contain productId', () => {
@@ -22,10 +23,16 @@ test('push-record payment accepts legacy records that only contain productId', (
   assert.match(source, /paymentParams: prepay\.client/);
   assert.match(source, /if \(toPay\.length > 1\)/);
   assert.match(source, /已切换为微信真实支付订单/);
+  assert.match(source, /paymentCapability !== 'wechat_jsapi_v1'/);
+  assert.match(source, /PUSH_PAYMENT_UPGRADE_REQUIRED/);
 });
 
 test('miniprogram pushed-product checkout invokes and verifies WeChat payment', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', '..', 'miniprogram', 'src', 'pages', 'messages', 'index.jsx'), 'utf8');
   assert.match(source, /requestWechatPayment\(result\.data\.paymentParams\)/);
   assert.match(source, /waitForPayment\(result\.data\.orderId\)/);
+  assert.match(source, /paymentCapability: 'wechat_jsapi_v1'/);
+  assert.match(source, /useState\(\(\) => productList\[0\]\?\.productId \? \[productList\[0\]\.productId\] : \[\]\)/);
+  assert.match(source, /每次选择一项，逐项支付/);
+  assert.doesNotMatch(source, /key: 'alipay', label: '支付宝'/);
 });

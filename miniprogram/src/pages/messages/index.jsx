@@ -446,10 +446,7 @@ function MessageDetailModal({ msg, onClose }) {
   );
 }
 
-const RENEWAL_PAYMENT_METHODS = [
-  { key: 'wechat', label: '微信支付' },
-  { key: 'alipay', label: '支付宝' },
-];
+const RENEWAL_PAYMENT_METHODS = [{ key: 'wechat', label: '微信支付' }];
 
 function ProductPushDetail({ msg, onClose }) {
   const { user, updateUser } = useAuth();
@@ -457,7 +454,7 @@ function ProductPushDetail({ msg, onClose }) {
     ? msg.products
     : (msg.productId ? [{ productId: msg.productId, name: msg.productName, price: msg.price, category: '', icon: '🛍' }] : []);
 
-  const [checkedIds, setCheckedIds] = useState(() => productList.map((p) => p.productId));
+  const [checkedIds, setCheckedIds] = useState(() => productList[0]?.productId ? [productList[0].productId] : []);
   const [paying, setPaying] = useState(false);
   const [paid, setPaid] = useState(false);
   const [payError, setPayError] = useState('');
@@ -477,9 +474,7 @@ function ProductPushDetail({ msg, onClose }) {
     }).catch(() => setPayError('优惠权益加载失败，请检查网络后重试'));
   }, []);
 
-  const toggleItem = (id) => setCheckedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  const allChecked = checkedIds.length === productList.length;
-  const toggleAll = () => setCheckedIds(allChecked ? [] : productList.map((p) => p.productId));
+  const toggleItem = (id) => setCheckedIds((prev) => (prev.includes(id) ? [] : [id]));
   const checkedItems = productList.filter((p) => checkedIds.includes(p.productId));
   const total = checkedItems.reduce((s, p) => s + (p.price || 0), 0);
 
@@ -496,7 +491,7 @@ function ProductPushDetail({ msg, onClose }) {
     if (!checkedIds.length) return;
     setPaying(true); setPayError('');
     try {
-      const result = await pushRecordsAPI.pay(msg._id, { selectedProductIds: checkedIds, useHealthFund: fundApplied, couponId, paymentMethod: payMethod });
+      const result = await pushRecordsAPI.pay(msg._id, { selectedProductIds: checkedIds, useHealthFund: fundApplied, couponId, paymentMethod: payMethod, paymentCapability: 'wechat_jsapi_v1' });
       if (result.data?.paymentParams) {
         await requestWechatPayment(result.data.paymentParams);
         await waitForPayment(result.data.orderId);
@@ -516,7 +511,7 @@ function ProductPushDetail({ msg, onClose }) {
           <View style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
             <Icon name="✅" size={40} color={colors.primary} />
           </View>
-          <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary, display: 'block', marginBottom: '8px' }}>订单已提交</Text>
+          <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary, display: 'block', marginBottom: '8px' }}>支付已完成</Text>
           <Text style={{ fontSize: '14px', color: colors.textMuted, display: 'block', marginBottom: '8px' }}>共 {checkedItems.length} 项，实付 ¥{finalPrice}</Text>
           <Text style={{ fontSize: '13px', color: colors.textMuted, display: 'block', marginBottom: '32px' }}>健管师将尽快与您确认并安排后续服务</Text>
           <View onClick={onClose} style={{ backgroundColor: colors.primary, borderRadius: `${radius.md}px`, padding: '14px 40px', display: 'inline-block' }}>
@@ -533,7 +528,7 @@ function ProductPushDetail({ msg, onClose }) {
         <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 16px' }} />
         <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: `${spacing.sm}px` }}>
           <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary }}>为您推荐以下产品</Text>
-          <Text onClick={toggleAll} style={{ fontSize: '13px', color: colors.primary, fontWeight: 600 }}>{allChecked ? '取消全选' : '全选'}</Text>
+          {productList.length > 1 && <Text style={{ fontSize: '12px', color: colors.textMuted }}>每次选择一项，逐项支付</Text>}
         </View>
         <ScrollView scrollY style={{ flex: 1, marginBottom: `${spacing.sm}px` }}>
           {productList.map((p) => {

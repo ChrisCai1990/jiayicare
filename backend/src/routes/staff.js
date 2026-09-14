@@ -4564,15 +4564,6 @@ router.post('/products/push-bundle', staffAuth, checkPermission('products', 'sen
     ? servicePerformers.filter(sp => sp && sp.role && sp.staffId)
         .map(sp => ({ productId: sp.productId || null, role: sp.role, staffId: sp.staffId }))
     : [];
-  const productItem = {
-    productId: product._id.toString(),
-    name: product.name,
-    price: product.originalPrice ?? 0,
-    category: product.category || '',
-    icon: '🛍',
-    images: product.images || [],
-    servicePrices: product.servicePrices || [],
-  };
   const records = patientIds.map(pid => ({
     staffId: req.staff._id, patientId: pid,
     type: 'product', title, content,
@@ -4595,6 +4586,11 @@ router.post('/products/:id/push', staffAuth, checkPermission('products', 'send')
     ? servicePerformers.filter(sp => sp && sp.role && sp.staffId)
         .map(sp => ({ productId: product._id.toString(), role: sp.role, staffId: sp.staffId }))
     : [];
+  const productItem = {
+    productId: product._id.toString(), name: product.name,
+    price: product.originalPrice ?? 0, category: product.category || '', icon: '🛍',
+    images: product.images || [], servicePrices: product.servicePrices || [],
+  };
   const records = patientIds.map(pid => ({
     staffId: req.staff._id, patientId: pid,
     type: 'product',
