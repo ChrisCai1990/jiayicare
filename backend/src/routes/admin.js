@@ -1547,7 +1547,8 @@ router.post('/products/ai-draft', adminAuth, async (req, res) => {
 
 // POST /api/admin/products
 router.post('/products', adminAuth, async (req, res) => {
-  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles, serviceItems, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction, skus, aiProfile } = req.body;
+  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, stockLimited, status, performanceRule, servicePerformerRoles, serviceItems, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction, skus, aiProfile } = req.body;
+  if (stock !== undefined && (!Number.isInteger(Number(stock)) || Number(stock) < 0)) return res.status(400).json({ success: false, message: '库存必须是非负整数' });
   if (!name || !category || originalPrice === undefined) {
     return res.status(400).json({ success: false, message: '名称、分类、原价为必填项' });
   }
@@ -1558,7 +1559,7 @@ router.post('/products', adminAuth, async (req, res) => {
     name, subtitle: subtitle || '', images: images || [],
     originalPrice, servicePrices: servicePrices || [], memberPrices: memberPrices || {},
     category, sortOrder: sortOrder ?? 999, features: features || [],
-    description: description || '', stock: stock ?? 0, status: status || 'off',
+    description: description || '', stock: stock ?? 0, stockLimited: stockLimited === true || Number(stock) > 0, status: status || 'off',
     performanceRule: performanceRule || undefined,
     servicePerformerRoles: servicePerformerRoles || [],
     serviceItems: serviceItems || [],
@@ -1573,11 +1574,13 @@ router.post('/products', adminAuth, async (req, res) => {
 
 // PUT /api/admin/products/:id
 router.put('/products/:id', adminAuth, async (req, res) => {
-  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles, serviceItems, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction, skus, aiProfile } = req.body;
+  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, stockLimited, status, performanceRule, servicePerformerRoles, serviceItems, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction, skus, aiProfile } = req.body;
+  if (stock !== undefined && (!Number.isInteger(Number(stock)) || Number(stock) < 0)) return res.status(400).json({ success: false, message: '库存必须是非负整数' });
   if (paymentChannel && !['wechat_pay', 'offline'].includes(paymentChannel)) {
     return res.status(400).json({ success: false, message: '真实服务商品仅支持普通微信支付或线下收款' });
   }
   const updateData = { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles: servicePerformerRoles || [], serviceItems: serviceItems || [], fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction: healthFundDeduction || { mode:'inherit', value:0 }, skus: skus || [] };
+  if (stock !== undefined) updateData.stockLimited = stockLimited === true || Number(stock) > 0;
   // 兼容尚未升级的管理端：请求未携带 aiProfile 时保留原配置，避免普通产品编辑意外关闭 AI 推荐。
   if (aiProfile !== undefined) updateData.aiProfile = require('../utils/productAiProfile').normalizeAiProfile(aiProfile);
   const product = await Product.findByIdAndUpdate(req.params.id, updateData, { new: true });

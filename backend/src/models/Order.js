@@ -35,6 +35,8 @@ const orderSchema = new mongoose.Schema({
   desiredServiceDate: { type: Date, default: null },
   serviceRequirements: { type: String, default: '' },
   orderType:   { type: String, enum: ['service', 'package', 'product'], default: 'service' },
+  inventoryReserved: { type: Boolean, default: false },
+  inventoryReleased: { type: Boolean, default: false },
   orderNo:     { type: String, default: '', index: true },
   skuCode:     { type: String, default: '' },
   fulfillmentType: { type: String, enum: ['offline_service', 'remote_service', 'delivery_and_service', 'subscription_service', 'digital_content'], default: 'offline_service' },

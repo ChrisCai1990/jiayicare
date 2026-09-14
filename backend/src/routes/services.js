@@ -381,7 +381,10 @@ router.post('/order', auth, async (req, res) => {
 
   const outTradeNo = `JY${Date.now()}${new mongoose.Types.ObjectId().toString().slice(-8)}`.slice(0, 32);
   const orderNo = outTradeNo;
-  const order = await Order.create({
+  const inventory = await require('../utils/orderInventory').reserveProduct(product);
+  if (!inventory.available) return res.status(409).json({ success: false, message: '该商品已售罄，请刷新后重新选择' });
+  let order;
+  try { order = await Order.create({
     user:         req.user._id,
     serviceId:    service.id,
     serviceName:  isPkg ? `${service.name}（${service.duration}）` : service.name,
@@ -400,6 +403,7 @@ router.post('/order', auth, async (req, res) => {
     tradeStatus: paidAmount > 0 ? 'awaiting_payment' : 'paid',
     fulfillmentType: orderFulfillmentType,
     orderType:    isPkg ? 'package' : (product ? 'product' : 'service'),
+    inventoryReserved: inventory.reserved,
     referrerId,
     referralSource: productShare ? 'share' : 'direct',
     servicePerformers,
@@ -422,7 +426,10 @@ router.post('/order', auth, async (req, res) => {
     healthFundEnterpriseId: fundEnterprise?._id || null,
     couponId: coupon?._id || null,
     couponDiscount,
-  });
+  }); } catch (error) {
+    if (inventory.reserved) await Product.updateOne({ _id: product._id }, { $inc: { stock: 1 } });
+    throw error;
+  }
   // 体检产品在 Admin 服务流程中绑定问卷后，每笔订单独立推送一次；同一客户可按年度重复填写同一模板。
   const workflowQuestionnaireId = product?.serviceWorkflow?.questionnaireId;
   if (product?.serviceWorkflow?.key === 'checkup' && workflowQuestionnaireId) {
@@ -541,6 +548,7 @@ router.post('/order', auth, async (req, res) => {
       order.tradeStatus = 'closed';
       order.paymentStatus = 'failed';
       await order.save();
+      await require('../utils/orderInventory').releaseOrderInventory(order);
       return res.status(503).json({ success: false, message: `微信支付下单失败：${err.message}`, data: { orderId: order._id } });
     }
   }

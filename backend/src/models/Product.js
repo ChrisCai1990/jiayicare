@@ -32,6 +32,7 @@ const productSchema = new mongoose.Schema({
   features:      [{ type: String }],
   description:   { type: String, default: '' },
   stock:         { type: Number, default: 0 },
+  stockLimited:   { type: Boolean, default: false }, // 区分售罄的 0 和不限库存的 0
   sales:         { type: Number, default: 0 },
   status:        { type: String, enum: ['on', 'off'], default: 'off' },
   fulfillmentType: {

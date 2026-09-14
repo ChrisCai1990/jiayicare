@@ -17,7 +17,7 @@ function safeImgSrc(url) {
 
 const EMPTY_FORM = {
   name: '', subtitle: '', category: '', originalPrice: '', sortOrder: 999,
-  features: '', description: '', stock: 0, status: 'off',
+  features: '', description: '', stock: 0, stockLimited: false, status: 'off',
   images: [], servicePrices: [],
   fulfillmentType: 'offline_service', paymentChannel: 'wechat_pay', bookingRequired: true,
   deliveryRequired: false, serviceLocation: '', validityDays: 365,
@@ -352,6 +352,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
       features: (product.features || []).join(', '),
       description: product.description || '',
       stock: product.stock ?? 0,
+      stockLimited: product.stockLimited === true || Number(product.stock) > 0,
       status: product.status || 'off',
       images: product.images || [],
       servicePrices: (product.servicePrices || []).map(sp => ({ label: sp.label, price: String(sp.price) })),
@@ -444,6 +445,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
         features: form.features.split(',').map(s => s.trim()).filter(Boolean),
         description: form.description,
         stock: parseInt(form.stock) || 0,
+        stockLimited: !!form.stockLimited,
         status: form.status,
         images: form.images,
         servicePrices: cleanedPrices,
@@ -550,9 +552,10 @@ function ProductModal({ product, categories, onClose, onSaved }) {
                   onChange={e => set('sortOrder', e.target.value)} placeholder="数值越小越靠前" />
               </div>
               <div className="form-group">
-                <label className="form-label">库存（0 = 不限）</label>
-                <input className="form-input" type="number" value={form.stock}
-                  onChange={e => set('stock', e.target.value)} />
+                <label className="form-label">库存数量</label>
+                <input className="form-input" type="number" min="0" value={form.stock}
+                  onChange={e => { set('stock', e.target.value); if (Number(e.target.value) > 0) set('stockLimited', true); }} />
+                <label><input type="checkbox" checked={!!form.stockLimited} onChange={e => set('stockLimited', e.target.checked)} /> 有限库存（0 表示售罄；不勾选表示不限库存）</label>
               </div>
               <div className="form-group">
                 <label className="form-label">状态</label>
@@ -998,8 +1001,8 @@ export default function ProductsPage() {
                   <td>{p.category}</td>
                   <td style={{ color: '#888', textDecoration: 'line-through' }}>¥{p.originalPrice}</td>
                   <td>{pricePreview(p)}</td>
-                  <td style={{ color: p.stock === 0 ? '#aaa' : '#333' }}>
-                    {p.stock === 0 ? '不限' : p.stock}
+                  <td style={{ color: p.stock === 0 && !p.stockLimited ? '#aaa' : '#333' }}>
+                    {p.stock === 0 && !p.stockLimited ? '不限' : p.stock}
                   </td>
                   <td>
                     <span className={`badge ${p.status === 'on' ? 'badge-green' : 'badge-gray'}`}>

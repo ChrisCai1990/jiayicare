@@ -149,6 +149,7 @@ router.patch('/:id/cancel', auth, async (req, res) => {
     order.status = 'cancelled';
     order.tradeStatus = 'closed';
     await order.save();
+    await require('../utils/orderInventory').releaseOrderInventory(order);
     await require('../utils/healthFundPayment').reverseHealthFund({ order, remark: `订单${order.serviceName}取消返还` });
     if (order.couponId) {
       const Coupon = require('../models/Coupon');
