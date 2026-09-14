@@ -32,3 +32,12 @@ test('extracts a relative date from user dialogue', () => {
   assert.equal(result.preferredDateEnd, '2026-09-16')
   assert.match(result.customerNeed, /消化科/)
 })
+
+test('extracts a specific communication time window', () => {
+  const result = inferAppointmentConversation([
+    { type: 'user', content: '9月18日下午2点到4点方便沟通' },
+  ], new Date('2026-09-14T08:00:00+08:00'))
+  assert.equal(result.preferredDateStart, '2026-09-18')
+  assert.equal(result.preferredTimeStart, '14:00')
+  assert.equal(result.preferredTimeEnd, '16:00')
+})

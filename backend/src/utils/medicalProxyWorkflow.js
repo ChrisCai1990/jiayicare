@@ -9,7 +9,7 @@ const PREFIX = 'medical_proxy:';
 const STAGES = ['collect', 'audit', 'advisor', 'planner', 'booking', 'execute'];
 const STAFF_DIRECT_SOURCE = 'staff_direct';
 const isMedicalProxyOrder = orderOrName => orderOrName?.serviceWorkflowSnapshot?.key === 'medical_proxy'
-  || /医疗代诊|专家约诊/.test(String(typeof orderOrName === 'object' ? orderOrName?.serviceName : orderOrName || ''));
+  || /医疗代诊|专家约诊|就医规划/.test(String(typeof orderOrName === 'object' ? orderOrName?.serviceName : orderOrName || ''));
 const stageOf = task => task?.sourceType === 'order' && String(task.workflowKey || '').startsWith(PREFIX)
   ? String(task.workflowKey).slice(PREFIX.length) : '';
 const nonempty = value => String(value || '').trim();
@@ -149,9 +149,15 @@ async function findRecentSelectedReportIds(patientId) {
   return [];
 }
 
-async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceTimeEnd, serviceContent, customerNeed) {
+async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceTimeEnd, serviceContent, customerNeed, communicationWindow = {}) {
   const existing = await FollowUp.exists({ sourceType: 'order', sourceOrderId: order._id, workflowKey: { $in: STAGES.map(stage => `${PREFIX}${stage}`).concat(`${PREFIX}intake`) } });
   if (existing) throw Object.assign(new Error('该订单已进入医疗代诊分阶段流程，请在服务任务中继续办理'), { status: 409 });
+  if (/就医规划/.test(order.serviceName || '') && (!nonempty(communicationWindow.communicationDate) || !nonempty(communicationWindow.communicationTimeStart) || !nonempty(communicationWindow.communicationTimeEnd))) {
+    throw Object.assign(new Error('请确认客户预期沟通日期和起止时间'), { status: 400 });
+  }
+  if (/就医规划/.test(order.serviceName || '') && communicationWindow.communicationTimeEnd <= communicationWindow.communicationTimeStart) {
+    throw Object.assign(new Error('预期沟通结束时间必须晚于开始时间'), { status: 400 });
+  }
   const patient = await User.findById(order.user).select('assignedHealthManager assignedHealthPlanner memberType servicePackage').lean();
   const manager = patient?.assignedHealthManager;
   if (!manager) throw Object.assign(new Error('该客户尚未分配健管专员，请先完成分配'), { status: 409 });
@@ -206,6 +212,9 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceT
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
   }
+  const communicationDate = nonempty(communicationWindow.communicationDate || dateInput(date));
+  const communicationTimeStart = nonempty(communicationWindow.communicationTimeStart);
+  const communicationTimeEnd = nonempty(communicationWindow.communicationTimeEnd);
   const task = await FollowUp.findOneAndUpdate(
     { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}collect` },
     { $setOnInsert: {
@@ -214,7 +223,7 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceT
       workflowKey: `${PREFIX}collect`, taskRole: 'executor',
       theme: `医疗代诊：指导上传并选定本次资料 · ${order.serviceName}`,
       plannedContent: `服务内容：${serviceContent}\n客户诉求：${customerNeed}\n指导客户上传病历、既往报告、当前用药、身份医保资料和代诊问题清单；选定本次需审核的资料后交健管专员审核。`,
-      formData: { serviceContent, customerNeed, reportIds: carriedReportIds, carriedReportIds, annualMember: /年度|年卡|一年|12个月/.test(`${patient.memberType || ''} ${patient.servicePackage || ''}`) },
+      formData: { serviceContent, customerNeed, communicationDate, communicationTimeStart, communicationTimeEnd, reportIds: carriedReportIds, carriedReportIds, annualMember: /年度|年卡|一年|12个月/.test(`${patient.memberType || ''} ${patient.servicePackage || ''}`) },
     } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
@@ -286,7 +295,8 @@ async function validateMedicalProxyStage(task, body, staff) {
   const data = body.formData || {};
   if (stage === 'collect') {
     const ids = [...new Set((data.reportIds || []).map(String).filter(Boolean))];
-    if (!nonempty(data.customerNeed) || !nonempty(data.materialSummary) || !ids.length) return '请填写客户诉求和资料清单，并选定至少一份本次服务资料';
+    if (!nonempty(data.customerNeed) || !nonempty(data.materialSummary) || !nonempty(data.communicationDate) || !nonempty(data.communicationTimeStart) || !nonempty(data.communicationTimeEnd) || !ids.length) return '请填写客户诉求、预期沟通时段和资料清单，并选定至少一份本次服务资料';
+    if (data.communicationTimeEnd <= data.communicationTimeStart) return '预期沟通结束时间必须晚于开始时间';
     const count = await MedicalReport.countDocuments({ _id: { $in: ids }, user: task.patientId });
     if (count !== ids.length) return '所选资料必须属于该客户';
   }

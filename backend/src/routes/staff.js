@@ -5817,7 +5817,11 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
       if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '医疗代诊由健康规划师确认服务需求' });
       const appointmentOnly = /专家约诊/.test(currentOrder.serviceName || '');
       if (!String(req.body.serviceContent || '').trim() || (!appointmentOnly && !String(req.body.customerNeed || '').trim())) return res.status(400).json({ success: false, message: appointmentOnly ? '请确认医院、科室和专家约诊需求' : '请完整确认服务内容和本次代诊诉求' });
-      const task = await startMedicalProxyWorkflow(currentOrder, req.staff._id, scheduledAt, req.body.serviceDateEnd, String(req.body.serviceContent).trim(), String(req.body.customerNeed).trim());
+      const task = await startMedicalProxyWorkflow(currentOrder, req.staff._id, scheduledAt, req.body.serviceDateEnd, String(req.body.serviceContent).trim(), String(req.body.customerNeed).trim(), {
+        communicationDate: req.body.communicationDate,
+        communicationTimeStart: req.body.communicationTimeStart,
+        communicationTimeEnd: req.body.communicationTimeEnd,
+      });
       const update = { status: 'scheduled', handledBy: req.staff._id };
       if (scheduledAt) update.scheduledAt = new Date(scheduledAt);
       if (req.body.serviceDateEnd) update.desiredServiceDateEnd = new Date(`${req.body.serviceDateEnd}T00:00:00+08:00`);

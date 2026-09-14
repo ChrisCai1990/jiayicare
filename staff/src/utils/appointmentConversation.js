@@ -18,6 +18,8 @@ export function inferAppointmentConversation(messages = [], now = new Date()) {
   const text = [customerText, aiText].filter(Boolean).join('；')
   let start = ''
   let end = ''
+  let timeStart = ''
+  let timeEnd = ''
   const explicitRange = text.match(/(?:(\d{4})[年/-])?(\d{1,2})[月/-](\d{1,2})日?\s*[-到至~—－]\s*(?:(\d{4})[年/-])?(?:(\d{1,2})[月/-])?(\d{1,2})日?/)
   const explicitDate = text.match(/(?:(\d{4})[年/-])?(\d{1,2})[月/-](\d{1,2})日?/)
   const weekRange = text.match(/(?:周|星期)([一二三四五六日天])\s*[-到至~—－]\s*(?:周|星期)?([一二三四五六日天])/)
@@ -49,6 +51,19 @@ export function inferAppointmentConversation(messages = [], now = new Date()) {
     date.setDate(date.getDate() + (/后天/.test(text) ? 2 : 1))
     start = dateInput(date); end = start
   }
+  const normalizedTimeText = text.replace(/(\d{1,2})点(?!\d)/g, '$1:00')
+  const timeRange = normalizedTimeText.match(/(?:(上午|下午|晚上|中午)\s*)?(\d{1,2})(?:[:：点时](\d{1,2})分?)?\s*[-到至~—－]\s*(?:(上午|下午|晚上|中午)\s*)?(\d{1,2})(?:[:：点时](\d{1,2})分?)?/)
+  if (timeRange) {
+    const normalizeHour = (period, hour) => {
+      let value = Number(hour)
+      if ((period === '下午' || period === '晚上') && value < 12) value += 12
+      if (period === '中午' && value < 11) value += 12
+      return String(value).padStart(2, '0')
+    }
+    const endPeriod = timeRange[4] || timeRange[1]
+    timeStart = `${normalizeHour(timeRange[1], timeRange[2])}:${String(timeRange[3] || 0).padStart(2, '0')}`
+    timeEnd = `${normalizeHour(endPeriod, timeRange[5])}:${String(timeRange[6] || 0).padStart(2, '0')}`
+  }
   const meaningfulCustomerText = customerText.split('；')
     .map(value => value.replace(/^(你好|您好)[，,。\s]*/g, '').trim())
     .filter(value => value && !/^(好的|是的|对|可以|谢谢)[，,。！!\s]*$/.test(value))
@@ -60,6 +75,8 @@ export function inferAppointmentConversation(messages = [], now = new Date()) {
   return {
     preferredDateStart: start,
     preferredDateEnd: end,
+    preferredTimeStart: timeStart,
+    preferredTimeEnd: timeEnd,
     serviceContent: aiServiceContent || request,
     customerNeed: aiCustomerNeed || request,
   }

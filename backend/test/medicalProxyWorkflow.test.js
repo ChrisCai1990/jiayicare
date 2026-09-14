@@ -13,6 +13,7 @@ test('storefront and staff orders resolve to the same proxy workflow', () => {
   assert.equal(isMedicalProxyOrder({ serviceName: '专科咨询', serviceWorkflowSnapshot: { key: 'medical_proxy' } }), true);
   assert.equal(isMedicalProxyOrder({ serviceName: '医疗代诊服务' }), true);
   assert.equal(isMedicalProxyOrder({ serviceName: '专家约诊服务', serviceWorkflowSnapshot: { key: 'medical_assist' } }), true);
+  assert.equal(isMedicalProxyOrder({ serviceName: '就医规划服务', serviceWorkflowSnapshot: { key: 'medical_assist' } }), true);
   assert.equal(isMedicalProxyOrder({ serviceName: '门诊一站式服务', serviceWorkflowSnapshot: { key: 'medical_assist' } }), false);
 });
 
@@ -57,7 +58,7 @@ test('planner selects patient documents, then manager audit gates advisor handof
     User.findById = () => ({ select: () => ({ lean: async () => ({ assignedHealthManager: 'manager-1', assignedFamilyDoctor: 'doctor-1' }) }) });
     const task = { sourceType: 'order', workflowKey: 'medical_proxy:collect', patientId: 'patient-1', assignedTo: 'planner-1' };
     assert.equal(stageOf(task), 'collect');
-    const body = { status: 'completed', formData: { customerNeed: '代诊诉求', materialSummary: '已核对资料', reportIds: ['report-1'] } };
+    const body = { status: 'completed', formData: { customerNeed: '代诊诉求', communicationDate: '2026-09-18', communicationTimeStart: '14:00', communicationTimeEnd: '16:00', materialSummary: '已核对资料', reportIds: ['report-1'] } };
     assert.match(await validateMedicalProxyStage(task, body, { _id: 'planner-1', role: 'healthPlanner' }), /属于该客户/);
     MedicalReport.countDocuments = async () => 1;
     assert.equal(await validateMedicalProxyStage(task, body, { _id: 'planner-1', role: 'healthPlanner' }), '');

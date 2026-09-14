@@ -13,7 +13,8 @@ const fields = {
 }
 
 export function validateMedicalProxyStage(stage, value) {
-  if (stage === 'collect' && (!value.customerNeed?.trim() || !value.materialSummary?.trim() || !value.reportIds?.length)) return '请填写诉求和资料清单，选定至少一份本次服务资料'
+  if (stage === 'collect' && (!value.customerNeed?.trim() || !value.materialSummary?.trim() || !value.communicationDate?.trim() || !value.communicationTimeStart?.trim() || !value.communicationTimeEnd?.trim() || !value.reportIds?.length)) return '请填写诉求、预期沟通时段和资料清单，选定至少一份本次服务资料'
+  if (stage === 'collect' && value.communicationTimeEnd <= value.communicationTimeStart) return '预期沟通结束时间必须晚于开始时间'
   if (stage === 'intake' && (!value.customerNeed?.trim() || !value.materialSummary?.trim() || !value.reportIds?.length)) return '请填写诉求和资料清单，选定至少一份已审核资料'
   if (stage === 'audit' && !value.auditSummary?.trim()) return '请完成所选资料审核并填写审核结论'
   if (stage === 'advisor' && fields.advisor.some(([key]) => !value[key]?.trim())) return '请完整填写医院、科室、专家、代诊目标及交流内容'
@@ -46,6 +47,11 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     </label>
     return <div style={{ display: 'grid', gap: 12 }}>
     {input('customerNeed', '客户本次诉求', 3)}
+    {stage === 'collect' && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+      {input('communicationDate', '预期沟通日期', 1, 'date')}
+      {input('communicationTimeStart', '可沟通开始时间', 1, 'time')}
+      {input('communicationTimeEnd', '可沟通结束时间', 1, 'time')}
+    </div>}
     {input('materialSummary', '本次需准备的病历、报告、用药、身份医保与问题清单；缺失项请写明', 4)}
     {!!carriedReports.length && <div style={{ display: 'grid', gap: 7, padding: 10, borderRadius: 8, background: '#EFF8F4', border: '1px solid #B2D8C7' }}>
       <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>已从最近一次关联服务自动带入</div>
@@ -57,7 +63,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
   </div>
   }
   if (stage === 'audit') return <div style={{ display: 'grid', gap: 12 }}>
-    <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>客户诉求：{value.collectionSnapshot?.customerNeed}<br />资料清单：{value.collectionSnapshot?.materialSummary}</div>
+    <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>客户诉求：{value.collectionSnapshot?.customerNeed}<br />预期沟通时段：{value.collectionSnapshot?.communicationDate || '待确认'} {value.collectionSnapshot?.communicationTimeStart || ''}–{value.collectionSnapshot?.communicationTimeEnd || ''}<br />资料清单：{value.collectionSnapshot?.materialSummary}</div>
     <div style={{ fontSize: 13, fontWeight: 700 }}>本次待审核资料</div>
     {(value.collectionSnapshot?.reportIds || []).map(id => {
       const report = reports.find(item => String(item._id) === String(id))
@@ -67,7 +73,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     {input('auditSummary', '健管专员审核结论与待补事项', 3)}
   </div>
   if (stage === 'advisor') return <div style={{ display: 'grid', gap: 12 }}>
-    {(value.auditSnapshot?.collectionSnapshot?.materialSummary || value.intakeSnapshot?.materialSummary) && <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>客户诉求：{value.auditSnapshot?.collectionSnapshot?.customerNeed || value.intakeSnapshot?.customerNeed}<br />资料清单：{value.auditSnapshot?.collectionSnapshot?.materialSummary || value.intakeSnapshot?.materialSummary}<br />健管审核：{value.auditSnapshot?.auditSummary || '已审核'}</div>}
+    {(value.auditSnapshot?.collectionSnapshot?.materialSummary || value.intakeSnapshot?.materialSummary) && <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>客户诉求：{value.auditSnapshot?.collectionSnapshot?.customerNeed || value.intakeSnapshot?.customerNeed}<br />预期沟通时段：{value.auditSnapshot?.collectionSnapshot?.communicationDate || value.intakeSnapshot?.communicationDate || '待确认'} {value.auditSnapshot?.collectionSnapshot?.communicationTimeStart || value.intakeSnapshot?.communicationTimeStart || ''}–{value.auditSnapshot?.collectionSnapshot?.communicationTimeEnd || value.intakeSnapshot?.communicationTimeEnd || ''}<br />资料清单：{value.auditSnapshot?.collectionSnapshot?.materialSummary || value.intakeSnapshot?.materialSummary}<br />健管审核：{value.auditSnapshot?.auditSummary || '已审核'}</div>}
     <div style={{ display: 'grid', gap: 6 }}>
       <div style={{ fontSize: 13, fontWeight: 700 }}>本次已审核资料{value.auditSnapshot?.collectionSnapshot?.annualMember ? '（年度会员：请选定制定方案所用资料）' : ''}</div>
       {(value.auditSnapshot?.collectionSnapshot?.reportIds || value.intakeSnapshot?.reportIds || []).map(id => {

@@ -11874,14 +11874,14 @@ export default function PatientDetailPage() {
           patientId={id}
           patientName={user.name}
           serviceBooking={location.state?.serviceBooking}
-          onConfirmBooking={async ({ orderId, serviceTime, serviceTimeEnd, task, serviceContent, customerNeed }) => {
+          onConfirmBooking={async ({ orderId, serviceTime, serviceTimeEnd, task, serviceContent, customerNeed, communicationDate, communicationTimeStart, communicationTimeEnd }) => {
             const originalNote = location.state?.serviceBooking?.sourceOrderId?.note || ''
             const cleanOriginalNote = String(originalNote).split('\n').filter(line => !/^已确认服务任务[:：]/.test(line.trim())).join('\n').trim()
             const confirmedNote = [cleanOriginalNote, `已确认服务任务：${task}`].filter(Boolean).join('\n')
             const scheduledAt = /^\d{4}-\d{2}-\d{2}$/.test(serviceTime) ? `${serviceTime}T00:00:00+08:00` : serviceTime
-            const result = await staffAPI.startOrder(orderId, { action: 'schedule', scheduledAt, serviceDateEnd: serviceTimeEnd, note: confirmedNote, serviceContent, customerNeed })
+            const result = await staffAPI.startOrder(orderId, { action: 'schedule', scheduledAt, serviceDateEnd: serviceTimeEnd, note: confirmedNote, serviceContent, customerNeed, communicationDate, communicationTimeStart, communicationTimeEnd })
             setShowMessageModal(false)
-            if (/医疗代诊|专家约诊/.test(result.data?.serviceName || '')) {
+            if (/医疗代诊|专家约诊|就医规划/.test(result.data?.serviceName || '')) {
               toast(/专家约诊/.test(result.data?.serviceName || '') ? '已转给健管专员预约' : '服务信息已确认；请在工作台指导客户上传并选定本次资料')
               loadFollowUps()
               return
@@ -12141,8 +12141,9 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
   const [switchingMode, setSwitchingMode] = useState(false)
   const [currentBooking, setCurrentBooking] = useState(serviceBooking)
   const order = currentBooking?.sourceOrderId
-  const isMedicalProxy = order?.serviceWorkflowSnapshot?.key === 'medical_proxy' || /医疗代诊|专家约诊/.test(order?.serviceName || '')
+  const isMedicalProxy = order?.serviceWorkflowSnapshot?.key === 'medical_proxy' || /医疗代诊|专家约诊|就医规划/.test(order?.serviceName || '')
   const isExpertAppointment = /专家约诊/.test(order?.serviceName || '')
+  const isMedicalPlanning = /就医规划/.test(order?.serviceName || '')
   const orderId = order?._id || order
   const customerTaskParts = String(order?.serviceRequirements || order?.note || '')
     .split(/[；\n]/)
@@ -12162,9 +12163,11 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
   }
   const [showBookingConfirm] = useState(!!serviceBooking)
   const [bookingCollapsed, setBookingCollapsed] = useState(false)
-  const [showFullConversation, setShowFullConversation] = useState(false)
+  const [showFullConversation, setShowFullConversation] = useState(!!serviceBooking)
   const [serviceTime, setServiceTime] = useState(formatServiceDate(orderServiceDate))
   const [serviceTimeEnd, setServiceTimeEnd] = useState(formatServiceDate(order?.desiredServiceDateEnd || orderServiceDate))
+  const [communicationTimeStart, setCommunicationTimeStart] = useState(order?.aiIntake?.communicationTimeStart || '')
+  const [communicationTimeEnd, setCommunicationTimeEnd] = useState(order?.aiIntake?.communicationTimeEnd || '')
   const [serviceTask, setServiceTask] = useState(customerTask)
   const [proxyServiceContent, setProxyServiceContent] = useState(order?.aiIntake?.serviceContent || customerTask)
   const [proxyCustomerNeed, setProxyCustomerNeed] = useState(order?.aiIntake?.customerNeed || '')
@@ -12189,6 +12192,8 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
     const inferred = inferAppointmentConversation(msgs.slice(-50))
     if (inferred.preferredDateStart) setServiceTime(inferred.preferredDateStart)
     if (inferred.preferredDateEnd) setServiceTimeEnd(inferred.preferredDateEnd)
+    if (inferred.preferredTimeStart) setCommunicationTimeStart(inferred.preferredTimeStart)
+    if (inferred.preferredTimeEnd) setCommunicationTimeEnd(inferred.preferredTimeEnd)
     if (inferred.serviceContent) setProxyServiceContent(inferred.serviceContent)
     if (inferred.customerNeed && !/专家约诊/.test(order?.serviceName || '')) setProxyCustomerNeed(inferred.customerNeed)
     setProxyReviewReady(false)
@@ -12412,16 +12417,19 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
             <div style={{ fontSize: 11, color: '#8AA89C' }}>{isExpertAppointment ? '确认客户的医院、科室、专家和期望日期区间后，直接转给健管专员完成预约。' : isMedicalProxy ? '先完整核对本次沟通内容；确认后由您指导客户上传并选定资料，健管专员审核后交健康顾问。您将持续督办直到代诊完成。' : '已自动带入客户确认的信息；如有变化可直接修订，再生成方案。'}</div>
             {(!isMedicalProxy || !proxyReviewReady || isExpertAppointment) ? <>
               {isMedicalProxy && <div style={{ textAlign: 'right' }}><button type="button" className="btn btn-secondary btn-sm" onClick={fillFromConversation}>从对话自动填入</button></div>}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <label style={{ fontSize: 12, fontWeight: 600 }}>期望开始日期<input className="form-input" type="date" value={serviceTime} onChange={e => { setServiceTime(e.target.value); setProxyReviewReady(false) }} /></label>
-                <label style={{ fontSize: 12, fontWeight: 600 }}>期望结束日期<input className="form-input" type="date" min={serviceTime} value={serviceTimeEnd} onChange={e => { setServiceTimeEnd(e.target.value); setProxyReviewReady(false) }} /></label>
+              <div style={{ display: 'grid', gridTemplateColumns: isMedicalPlanning ? '1fr 1fr 1fr' : '1fr 1fr', gap: 12 }}>
+                <label style={{ fontSize: 12, fontWeight: 600 }}>{isMedicalPlanning ? '预期沟通日期' : '期望开始日期'}<input className="form-input" type="date" value={serviceTime} onChange={e => { setServiceTime(e.target.value); if (isMedicalPlanning) setServiceTimeEnd(e.target.value); setProxyReviewReady(false) }} /></label>
+                {isMedicalPlanning ? <>
+                  <label style={{ fontSize: 12, fontWeight: 600 }}>可沟通开始时间<input className="form-input" type="time" value={communicationTimeStart} onChange={e => { setCommunicationTimeStart(e.target.value); setProxyReviewReady(false) }} /></label>
+                  <label style={{ fontSize: 12, fontWeight: 600 }}>可沟通结束时间<input className="form-input" type="time" value={communicationTimeEnd} onChange={e => { setCommunicationTimeEnd(e.target.value); setProxyReviewReady(false) }} /></label>
+                </> : <label style={{ fontSize: 12, fontWeight: 600 }}>期望结束日期<input className="form-input" type="date" min={serviceTime} value={serviceTimeEnd} onChange={e => { setServiceTimeEnd(e.target.value); setProxyReviewReady(false) }} /></label>}
               </div>
               {isMedicalProxy ? <>
                 <label style={{ fontSize: 12, fontWeight: 600 }}>{/专家约诊/.test(order?.serviceName || '') ? '约诊需求' : '本次服务内容'}<textarea className="form-input" rows={2} value={proxyServiceContent} onChange={e => { setProxyServiceContent(e.target.value); setProxyReviewReady(false) }} placeholder={/专家约诊/.test(order?.serviceName || '') ? '填写意向医院、科室和专家' : '例如意向医院、科室及代诊事项'} /></label>
                 {!/专家约诊/.test(order?.serviceName || '') && <label style={{ fontSize: 12, fontWeight: 600 }}>客户主诉与希望向专家沟通的问题<textarea className="form-input" rows={2} value={proxyCustomerNeed} onChange={e => { setProxyCustomerNeed(e.target.value); setProxyReviewReady(false) }} placeholder="填写客户本次要解决的问题" /></label>}
               </> : <textarea className="form-input" rows={2} value={serviceTask} onChange={e => setServiceTask(e.target.value)} placeholder="服务内容与客户需求" />}
             </> : <div style={{ border: '1px solid #C9DCD3', background: '#F4FAF6', borderRadius: 8, padding: 12, fontSize: 13, display: 'grid', gap: 6 }}>
-              <div><b>期望日期：</b>{serviceTime} 至 {serviceTimeEnd}</div>
+              <div><b>{isMedicalPlanning ? '预期沟通时段' : '期望日期'}：</b>{isMedicalPlanning ? `${serviceTime} ${communicationTimeStart}–${communicationTimeEnd}` : `${serviceTime} 至 ${serviceTimeEnd}`}</div>
               <div><b>{/专家约诊/.test(order?.serviceName || '') ? '约诊需求' : '服务内容'}：</b>{proxyServiceContent}</div>
               {!/专家约诊/.test(order?.serviceName || '') && <div><b>客户主诉及沟通问题：</b>{proxyCustomerNeed}</div>}
               {order?.aiIntake?.riskFlags?.length > 0 && <div><b>需人工关注：</b>{order.aiIntake.riskFlags.join('、')}</div>}
@@ -12435,11 +12443,11 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
             {bookingError && <div role="alert" style={{ padding: '8px 10px', color: '#B42318', background: '#FFF0EF', borderRadius: 6, fontSize: 12 }}>{bookingError}</div>}
             <div style={{ textAlign: 'right', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               {isMedicalProxy && proxyReviewReady && !isExpertAppointment && <button className="btn btn-secondary btn-sm" onClick={() => setProxyReviewReady(false)}>返回修改</button>}
-              <button className="btn btn-primary btn-sm" disabled={confirmingBooking || !orderActionable || !serviceTime || !serviceTimeEnd || serviceTimeEnd < serviceTime || (isMedicalProxy ? !proxyServiceContent.trim() || (!/专家约诊/.test(order?.serviceName || '') && !proxyCustomerNeed.trim()) : !serviceTask.trim())} onClick={async () => {
+              <button className="btn btn-primary btn-sm" disabled={confirmingBooking || !orderActionable || !serviceTime || !serviceTimeEnd || serviceTimeEnd < serviceTime || (isMedicalPlanning && (!communicationTimeStart || !communicationTimeEnd || communicationTimeEnd <= communicationTimeStart)) || (isMedicalProxy ? !proxyServiceContent.trim() || (!/专家约诊/.test(order?.serviceName || '') && !proxyCustomerNeed.trim()) : !serviceTask.trim())} onClick={async () => {
                 setBookingError('')
                 if (isMedicalProxy && !isExpertAppointment && !proxyReviewReady) { setProxyReviewReady(true); return }
                 setConfirmingBooking(true)
-                try { await onConfirmBooking?.({ orderId, serviceTime, serviceTimeEnd, task: isMedicalProxy ? [proxyServiceContent.trim(), proxyCustomerNeed.trim()].filter(Boolean).join('；') : serviceTask.trim(), serviceContent: proxyServiceContent.trim(), customerNeed: proxyCustomerNeed.trim() }) }
+                try { await onConfirmBooking?.({ orderId, serviceTime, serviceTimeEnd: isMedicalPlanning ? serviceTime : serviceTimeEnd, communicationDate: isMedicalPlanning ? serviceTime : '', communicationTimeStart, communicationTimeEnd, task: isMedicalProxy ? [proxyServiceContent.trim(), proxyCustomerNeed.trim()].filter(Boolean).join('；') : serviceTask.trim(), serviceContent: proxyServiceContent.trim(), customerNeed: proxyCustomerNeed.trim() }) }
                 catch (err) { setBookingError(err.message || '确认预约失败') }
                 finally { setConfirmingBooking(false) }
               }}>{confirmingBooking ? '处理中…' : isExpertAppointment ? '确认并转给健管专员预约' : isMedicalProxy ? (proxyReviewReady ? '确认并开始资料收集' : '核对沟通信息') : '确认并生成方案'}</button>
