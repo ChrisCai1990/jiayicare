@@ -145,8 +145,7 @@ export default function ServiceAssistantPage() {
     [teamOptions, setTeamOptions] = useState([]);
   const [selectedTeam, setSelectedTeam] = useState([]),
     [aiConsent, setAiConsent] = useState(false);
-  const [archiveConsent, setArchiveConsent] = useState(false),
-    [messages, setMessages] = useState([]);
+  const [archiveConsent, setArchiveConsent] = useState(false);
   const [file, setFile] = useState(null),
     [reportTitle, setReportTitle] = useState(""),
     [reportDate, setReportDate] = useState(""),
@@ -211,7 +210,6 @@ export default function ServiceAssistantPage() {
     setError("");
     setNotice("");
     setSettings(false);
-    setMessages([]);
     if (fileRef.current) fileRef.current.value = "";
     if (prefetched?.group._id !== groupId) refresh(groupId).catch((e) => setError(e.message));
     return () => {
@@ -225,8 +223,8 @@ export default function ServiceAssistantPage() {
       if (running || document.visibilityState !== 'visible') return;
       running = true;
       try {
-        const [items, msgs, state] = await Promise.all([api.get('/' + groupId), api.get(`/${groupId}/messages`), api.get('/capabilities')]);
-        if (active && groupRef.current === groupId) { setBundle(items.data); setMessages(msgs.data); setCaps(state.data); }
+        const [items, state] = await Promise.all([api.get('/' + groupId), api.get('/capabilities')]);
+        if (active && groupRef.current === groupId) { setBundle(items.data); setCaps(state.data); }
       } catch (error) { if (active) setError(error.message); }
       finally { running = false; }
     };
@@ -810,77 +808,6 @@ export default function ServiceAssistantPage() {
               ))}
           </nav>
           {tab === 'inbox' && <GroupMaterialInbox key={groupId+'-'+g.archiveConsent} group={g} caps={caps} busy={busy} run={run} can={can}/>}
-          {tab !== 'inbox' && g.archiveConsent && (
-            <section className="sa-card">
-              <div className="sa-row">
-                <h3>群消息收件箱</h3>
-                <small>{caps?.archiveConnected ? '采集运行正常' : '尚未确认采集在线'}{caps?.followupDraftConfigured ? ' · 跟进事项自动生成待确认草稿' : ''}</small>
-                <button
-                  disabled={busy}
-                  onClick={() =>
-                    run(async () => {
-                      const r = await api.get(`/${groupId}/messages`);
-                      setMessages(r.data);
-                      if (!r.data.length)
-                        setNotice("暂无已接入的群消息，请核对存档采集器");
-                    })
-                  }
-                >
-                  读取已授权消息
-                </button>
-              </div>
-              {messages
-                .filter((m) => m.groupId === groupId)
-                .map((m) => (
-                  <div className="sa-native" key={m._id}>
-                    <small>
-                      {m.sender} · {date(m.sentAt)}
-                    </small>
-                    <p className="sa-pre">{m.text}</p>
-                    <div className="sa-actions">
-                      <button
-                        onClick={() => {
-                          setSource((old) =>
-                            [old, `${m.sender} ${date(m.sentAt)}：${m.text}`]
-                              .filter(Boolean)
-                              .join("\n")
-                          );
-                          setTab("summary");
-                        }}
-                      >
-                        加入总结
-                      </button>
-                      <button
-                        onClick={() => {
-                          openForm("task", m.text);
-                          setTab("task");
-                        }}
-                      >
-                        提取待办
-                      </button>
-                      {m.commandKind && (
-                        <button onClick={() => setCommand(m.text)}>
-                          填入快捷指令
-                        </button>
-                      )}
-                      {m.attachment?.name && (
-                        <button
-                          onClick={() => {
-                            setSourceMessage(m);
-                            setFile(null);
-                            setReportTitle(m.attachment.name);
-                            setTab("report");
-                            setReceipt(null);
-                          }}
-                        >
-                          归档群文件：{m.attachment.name}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-            </section>
-          )}
           {tab !== "report" && tab !== 'inbox' && (
             <div className="sa-row">
               <h2>{labels[tab]}</h2>
