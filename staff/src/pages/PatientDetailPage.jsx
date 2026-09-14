@@ -8891,7 +8891,7 @@ export default function PatientDetailPage() {
             const DONE_STATUSES = ['completed']
             const CANCELLED_STATUSES = ['cancelled']
             const executionCategoryOf = task => {
-              const text = `${task.theme || ''} ${task.content || ''} ${task.type || ''} ${task.sourceType || ''}`
+              const text = `${task.theme || ''} ${task.content || task.taskRequirements || task.plannedContent || ''} ${task.type || ''} ${task.sourceType || ''}`
               if (/营养|饮食|膳食|体重管理/.test(text)) return 'nutrition'
               if (/血压|血糖|体重|睡眠|运动|饮水|监测|打卡/.test(text)) return 'monitoring'
               if (/体检|复查|检验|检查|筛查|疫苗/.test(text)) return 'checkup'
@@ -9007,7 +9007,10 @@ export default function PatientDetailPage() {
                             <span style={{ fontWeight: 600 }}>{f.theme}</span>
                           </div>
                         )}
-                        {f.content ? (f.content.length > 60 ? f.content.slice(0, 60) + '…' : f.content) : '-'}
+                        {(() => {
+                          const content = f.content || f.taskRequirements || f.plannedContent || ''
+                          return content ? (content.length > 60 ? content.slice(0, 60) + '…' : content) : '-'
+                        })()}
                       </td>
                       <td style={{ fontSize: 12, color: '#8AA89C' }}>
                         {f.nextFollowUpDate ? new Date(f.nextFollowUpDate).toLocaleDateString('zh-CN') : '-'}
@@ -9072,7 +9075,10 @@ export default function PatientDetailPage() {
                               </span>
                             </td>
                             <td style={{ fontSize: 12, color: '#666' }}>{f.staffId?.name || '-'}</td>
-                            <td style={{ fontSize: 12, color: '#8AA89C', maxWidth: 200 }}>{f.content ? (f.content.length > 40 ? f.content.slice(0, 40) + '…' : f.content) : '-'}</td>
+                            <td style={{ fontSize: 12, color: '#8AA89C', maxWidth: 200 }}>{(() => {
+                              const content = f.content || f.taskRequirements || f.plannedContent || ''
+                              return content ? (content.length > 40 ? content.slice(0, 40) + '…' : content) : '-'
+                            })()}</td>
                             <td style={{ fontSize: 12, color: '#8AA89C' }}>{f.nextFollowUpDate ? new Date(f.nextFollowUpDate).toLocaleDateString('zh-CN') : '-'}</td>
                             <td onClick={e => e.stopPropagation()}>
                               {['planned', 'in_progress', 'missed'].includes(f.status) ? (

@@ -92,8 +92,8 @@ function DetailModal({ item, onClose }) {
           <Row label="执行人" value={item.assignedTo?.name || '未指定'} />
           <Row label="状态" value={STATUS_MAP[item.status] || item.status} />
           {item.checkInItems?.length > 0 && <Row label="打卡项目" value={item.checkInItems.map(k => CHECKIN_LABEL[k] || k).join('、')} />}
-          <Row label="计划内容" value={item.content} />
-          <Row label="本次服务要求" value={getMedicalAssistRequirements(item)} />
+          <Row label="计划内容" value={item.content || item.plannedContent} />
+          {getMedicalAssistRequirements(item) !== (item.content || item.plannedContent) && <Row label="本次服务要求" value={getMedicalAssistRequirements(item)} />}
           {item.status === 'completed' && (
             <>
               <div style={{ margin: '12px 0 6px', fontSize: 12, color: '#1E6B50', fontWeight: 700, borderTop: '2px solid #E8F5EF', paddingTop: 12 }}>随访结果</div>
@@ -459,9 +459,12 @@ export default function FollowUpsPage() {
                           {checkin.label}
                         </span>
                       )}
-                      {f.content && (
+                      {(f.content || f.taskRequirements || f.plannedContent) && (
                         <span style={{ fontSize: 12, color: '#8AA89C' }}>
-                          {f.content.length > 40 ? f.content.slice(0, 40) + '…' : f.content}
+                          {(() => {
+                            const content = f.content || f.taskRequirements || f.plannedContent
+                            return content.length > 40 ? content.slice(0, 40) + '…' : content
+                          })()}
                         </span>
                       )}
                       {f.status === 'cancelled' && f.cancelReason && (
