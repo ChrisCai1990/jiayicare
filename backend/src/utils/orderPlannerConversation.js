@@ -1,4 +1,5 @@
 const Message = require('../models/Message');
+const Order = require('../models/Order');
 const { isCustomerConfirmedServiceOrder } = require('./orderServiceConfirmation');
 
 function customerOrderNote(note = '') {
@@ -42,6 +43,24 @@ async function ensureOrderPlannerPrompt(order) {
   }
 }
 
+async function latestOpenOrderConversationAction(userId, conversationId) {
+  const prompt = await Message.findOne({
+    user: userId,
+    conversationId,
+    'action.type': 'order_planner_confirmation',
+    'action.orderId': { $exists: true, $ne: '' },
+  }).sort({ createdAt: -1 }).select('action').lean();
+  const orderId = prompt?.action?.orderId;
+  if (!orderId) return undefined;
+  const orderExists = await Order.exists({
+    _id: orderId,
+    user: userId,
+    status: { $in: ['pending', 'scheduled'] },
+    tradeStatus: { $in: ['paid', 'fulfilling', 'partially_refunded'] },
+  });
+  return orderExists ? { type: 'order_conversation', orderId: String(orderId) } : undefined;
+}
+
 function normalizeIntakeResult(input = {}, previous = {}) {
   const value = key => String(input[key] || previous[key] || '').trim().slice(0, 1000);
   const result = { serviceTime: value('serviceTime'), serviceContent: value('serviceContent'), customerNeed: value('customerNeed'), riskFlags: Array.isArray(input.riskFlags) ? input.riskFlags.map(String).filter(Boolean).slice(0, 10) : (previous.riskFlags || []) };
@@ -51,4 +70,4 @@ function normalizeIntakeResult(input = {}, previous = {}) {
   return result;
 }
 
-module.exports = { customerOrderNote, extractExplicitServiceTime, ensureOrderPlannerPrompt, normalizeIntakeResult };
+module.exports = { customerOrderNote, extractExplicitServiceTime, ensureOrderPlannerPrompt, latestOpenOrderConversationAction, normalizeIntakeResult };

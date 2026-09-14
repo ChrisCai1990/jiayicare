@@ -39,3 +39,20 @@ test('staff can still see a reply explicitly sent to an earlier order', () => {
     { _id: 'staff-reply', createdAt: '2026-09-14T02:01:00Z', action: { type: 'order_conversation', orderId: 'order-a' } },
   ], 'order-a').map(message => message._id), ['first-prompt', 'first-customer', 'staff-reply'])
 })
+
+test('legacy order recovers customer messages sent before the first tagged staff reply', () => {
+  assert.deepEqual(orderConversationMessages([
+    { _id: 'old', createdAt: '2026-09-14T01:00:00Z' },
+    { _id: 'customer', createdAt: '2026-09-14T02:01:00Z', type: 'user' },
+    { _id: 'staff', createdAt: '2026-09-14T02:02:00Z', action: { type: 'order_conversation', orderId: 'order-a' } },
+  ], 'order-a', '2026-09-14T02:00:00Z').map(message => message._id), ['customer', 'staff'])
+})
+
+test('legacy recovery does not pull messages across another order prompt', () => {
+  assert.deepEqual(orderConversationMessages([
+    { _id: 'earlier-customer', createdAt: '2026-09-14T02:01:00Z', type: 'user' },
+    { _id: 'other-prompt', createdAt: '2026-09-14T02:02:00Z', action: { type: 'order_planner_confirmation', orderId: 'order-b' } },
+    { _id: 'current-customer', createdAt: '2026-09-14T02:03:00Z', type: 'user' },
+    { _id: 'staff', createdAt: '2026-09-14T02:04:00Z', action: { type: 'order_conversation', orderId: 'order-a' } },
+  ], 'order-a', '2026-09-14T02:00:00Z').map(message => message._id), ['current-customer', 'staff'])
+})

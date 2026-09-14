@@ -213,6 +213,9 @@ router.post('/', auth, async (req, res) => {
 
     const senderName = req.user.name || req.user.phone;
     const conversationId = `${req.user._id}_${to}`;
+    const orderAction = to === 'planner'
+      ? await require('../utils/orderPlannerConversation').latestOpenOrderConversationAction(req.user._id, conversationId)
+      : undefined;
     let storedImageUrl = String(imageUrl || '');
     const storedImageUrls = [];
     if (image) {
@@ -249,6 +252,7 @@ router.post('/', auth, async (req, res) => {
       unread:  false,
       recipient: to,
       conversationId,
+      action: orderAction,
     });
 
     const responseMessage = withSignedMessageMedia(msg);

@@ -12,12 +12,27 @@ const startOfWeek = date => {
 
 export function inferAppointmentConversation(messages = [], now = new Date()) {
   const customerMessages = messages.filter(message => message.type === 'user' && !message.recalled)
-  const text = customerMessages.map(message => message.content || message.text || '').filter(Boolean).join('；')
+  const customerText = customerMessages.map(message => message.content || message.text || '').filter(Boolean).join('；')
+  const aiText = messages.filter(message => message.isAI && !message.recalled)
+    .map(message => message.content || message.text || '').filter(Boolean).join('；')
+  const text = [customerText, aiText].filter(Boolean).join('；')
   let start = ''
   let end = ''
+  const explicitRange = text.match(/(?:(\d{4})[年/-])?(\d{1,2})[月/-](\d{1,2})日?\s*[-到至~—－]\s*(?:(\d{4})[年/-])?(?:(\d{1,2})[月/-])?(\d{1,2})日?/)
+  const explicitDate = text.match(/(?:(\d{4})[年/-])?(\d{1,2})[月/-](\d{1,2})日?/)
   const weekRange = text.match(/(?:周|星期)([一二三四五六日天])\s*[-到至~—－]\s*(?:周|星期)?([一二三四五六日天])/)
   const weekday = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 日: 7, 天: 7 }
-  if (weekRange) {
+  const calendarDate = (year, month, day) => dateInput(new Date(Number(year), Number(month) - 1, Number(day)))
+  if (explicitRange) {
+    const startYear = explicitRange[1] || now.getFullYear()
+    const endYear = explicitRange[4] || startYear
+    const endMonth = explicitRange[5] || explicitRange[2]
+    start = calendarDate(startYear, explicitRange[2], explicitRange[3])
+    end = calendarDate(endYear, endMonth, explicitRange[6])
+  } else if (explicitDate) {
+    start = calendarDate(explicitDate[1] || now.getFullYear(), explicitDate[2], explicitDate[3])
+    end = start
+  } else if (weekRange) {
     const base = startOfWeek(now)
     const first = new Date(base); first.setDate(base.getDate() + weekday[weekRange[1]] - 1)
     const last = new Date(base); last.setDate(base.getDate() + weekday[weekRange[2]] - 1)
@@ -29,7 +44,23 @@ export function inferAppointmentConversation(messages = [], now = new Date()) {
   } else if (/本周|这周/.test(text)) {
     const first = new Date(now); const last = startOfWeek(now); last.setDate(last.getDate() + 6)
     start = dateInput(first); end = dateInput(last)
+  } else if (/明天|后天/.test(text)) {
+    const date = new Date(now)
+    date.setDate(date.getDate() + (/后天/.test(text) ? 2 : 1))
+    start = dateInput(date); end = start
   }
-  const request = text.replace(/^(你好|您好|好的|是的)[，,。\s]*/g, '').trim()
-  return { preferredDateStart: start, preferredDateEnd: end, serviceContent: request, customerNeed: request }
+  const meaningfulCustomerText = customerText.split('；')
+    .map(value => value.replace(/^(你好|您好)[，,。\s]*/g, '').trim())
+    .filter(value => value && !/^(好的|是的|对|可以|谢谢)[，,。！!\s]*$/.test(value))
+    .join('；')
+  const field = labels => aiText.match(new RegExp(`(?:${labels})[：:]\\s*([^；\\n]+)`))?.[1]?.trim() || ''
+  const aiServiceContent = field('服务内容|约诊需求|就医安排')
+  const aiCustomerNeed = field('客户诉求|客户需求|就医诉求|主诉')
+  const request = meaningfulCustomerText || aiCustomerNeed || aiServiceContent
+  return {
+    preferredDateStart: start,
+    preferredDateEnd: end,
+    serviceContent: aiServiceContent || request,
+    customerNeed: aiCustomerNeed || request,
+  }
 }

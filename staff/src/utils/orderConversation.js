@@ -6,11 +6,19 @@ export function orderConversationMessages(messages = [], orderId, orderCreatedAt
   const promptIndex = ordered.findIndex(startsOrder)
   const createdAt = new Date(orderCreatedAt).getTime()
   const firstLinkedIndex = ordered.findIndex(message => String(message.action?.orderId || '') === id)
-  // A legacy order may have no confirmation prompt. Anchor it at its first explicitly
-  // linked message; using order creation time can hit another order's prompt first.
-  const start = promptIndex >= 0 ? promptIndex : firstLinkedIndex >= 0 ? firstLinkedIndex : Number.isFinite(createdAt)
+  const createdIndex = Number.isFinite(createdAt)
     ? ordered.findIndex(message => new Date(message.createdAt).getTime() >= createdAt)
     : -1
+  // Legacy orders may have no confirmation prompt. Recover customer replies sent
+  // before the first tagged staff reply, but never cross a newer order prompt.
+  let legacyStart = firstLinkedIndex
+  if (firstLinkedIndex >= 0 && createdIndex >= 0 && createdIndex < firstLinkedIndex) {
+    const interveningPrompt = ordered.findLastIndex((message, index) => index >= createdIndex && index < firstLinkedIndex
+      && message.action?.type === 'order_planner_confirmation'
+      && String(message.action.orderId || '') !== id)
+    legacyStart = interveningPrompt >= 0 ? interveningPrompt + 1 : createdIndex
+  }
+  const start = promptIndex >= 0 ? promptIndex : firstLinkedIndex >= 0 ? legacyStart : createdIndex
   if (start < 0) return []
   const nextOrder = ordered.findIndex((message, index) => index > start && message.action?.type === 'order_planner_confirmation' && String(message.action.orderId || '') !== id)
   return ordered.filter((message, index) => {

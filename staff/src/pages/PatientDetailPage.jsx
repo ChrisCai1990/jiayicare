@@ -12183,7 +12183,10 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
   const displayedMsgs = showFullConversation ? msgs : visibleMsgs
 
   const fillFromConversation = () => {
-    const inferred = inferAppointmentConversation(visibleMsgs)
+    // The AI planning dialogue commonly happens before checkout, so it can sit
+    // just outside the order-only window. Use the recent unified planner thread
+    // for extraction while keeping the message display scoped to this order.
+    const inferred = inferAppointmentConversation(msgs.slice(-50))
     if (inferred.preferredDateStart) setServiceTime(inferred.preferredDateStart)
     if (inferred.preferredDateEnd) setServiceTimeEnd(inferred.preferredDateEnd)
     if (inferred.serviceContent) setProxyServiceContent(inferred.serviceContent)
