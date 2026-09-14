@@ -9,7 +9,7 @@ const PREFIX = 'medical_proxy:';
 const STAGES = ['collect', 'audit', 'advisor', 'planner', 'booking', 'execute'];
 const STAFF_DIRECT_SOURCE = 'staff_direct';
 const isMedicalProxyOrder = orderOrName => orderOrName?.serviceWorkflowSnapshot?.key === 'medical_proxy'
-  || /医疗代诊/.test(String(typeof orderOrName === 'object' ? orderOrName?.serviceName : orderOrName || ''));
+  || /医疗代诊|专家约诊/.test(String(typeof orderOrName === 'object' ? orderOrName?.serviceName : orderOrName || ''));
 const stageOf = task => task?.sourceType === 'order' && String(task.workflowKey || '').startsWith(PREFIX)
   ? String(task.workflowKey).slice(PREFIX.length) : '';
 const nonempty = value => String(value || '').trim();

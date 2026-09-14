@@ -11,6 +11,7 @@ test('storefront and staff orders resolve to the same proxy workflow', () => {
   assert.equal(isMedicalProxyOrder({ serviceName: '医疗代诊服务', serviceWorkflowSnapshot: { key: 'medical_proxy' } }), true);
   assert.equal(isMedicalProxyOrder({ serviceName: '专科咨询', serviceWorkflowSnapshot: { key: 'medical_proxy' } }), true);
   assert.equal(isMedicalProxyOrder({ serviceName: '医疗代诊服务' }), true);
+  assert.equal(isMedicalProxyOrder({ serviceName: '专家约诊服务', serviceWorkflowSnapshot: { key: 'medical_assist' } }), true);
   assert.equal(isMedicalProxyOrder({ serviceName: '门诊一站式服务', serviceWorkflowSnapshot: { key: 'medical_assist' } }), false);
 });
 
