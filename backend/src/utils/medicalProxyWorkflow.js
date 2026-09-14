@@ -54,6 +54,13 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceC
   if (Number.isNaN(date.getTime())) throw Object.assign(new Error('服务日期无效'), { status: 400 });
   const collectionDueAt = preparationDueDate(date);
   const carriedReportIds = await findRecentSelectedReportIds(order.user);
+  // 旧版曾创建不带 workflowKey / sourceOrderId 的同名督办卡。新流程启动前先关闭，
+  // 避免同一客户同时看到旧督办和订单级新督办。
+  await FollowUp.updateMany({
+    patientId: order.user, status: { $in: ['planned', 'in_progress'] },
+    theme: /^医疗代诊[：:]\s*健康规划师全程督办\s*$/,
+    $or: [{ workflowKey: { $exists: false } }, { workflowKey: { $in: ['', null] } }],
+  }, { $set: { status: 'cancelled', cancelReason: '已由订单级医疗代诊全程督办任务替代' } });
   const supervisor = await FollowUp.findOneAndUpdate(
     { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise` },
     { $setOnInsert: {
