@@ -2436,8 +2436,8 @@ router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => 
     if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
     if (req.staff.role !== 'superadmin' && String(patient.assignedFamilyDoctor || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅该客户的健康顾问可发起' });
     const required = ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'];
-    if (!req.body.serviceDate || required.some(key => !String(req.body[key] || '').trim())) return res.status(400).json({ success: false, message: '请完整填写服务日期、医院、科室、专家、代诊目标和交流内容' });
-    const result = await require('../utils/medicalProxyWorkflow').startStaffMedicalProxyWorkflow({ patient, advisorId: req.staff._id, serviceDate: req.body.serviceDate, plan: req.body });
+    if (required.some(key => !String(req.body[key] || '').trim())) return res.status(400).json({ success: false, message: '请完整填写医院、科室、专家、代诊目标和交流内容' });
+    const result = await require('../utils/medicalProxyWorkflow').startStaffMedicalProxyWorkflow({ patient, advisorId: req.staff._id, plan: req.body });
     res.json({ success: true, data: { orderId: result.order._id, supervisorTaskId: result.supervisor._id } });
   } catch (err) { res.status(err.status || 500).json({ success: false, message: err.message }); }
 });

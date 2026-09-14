@@ -182,19 +182,18 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceC
   return task;
 }
 
-async function startStaffMedicalProxyWorkflow({ patient, advisorId, serviceDate, plan }) {
+async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
   if (!patient.assignedHealthPlanner || !patient.assignedHealthManager) {
     throw Object.assign(new Error('请先为客户分配健康规划师和健管专员'), { status: 409 });
   }
   const reportIds = [...new Set((plan.selectedReportIds || []).map(String).filter(Boolean))];
   const reportCount = await MedicalReport.countDocuments({ _id: { $in: reportIds }, user: patient._id, audit_status: 'audited' });
   if (!reportIds.length || reportCount !== reportIds.length) throw Object.assign(new Error('请选择该客户至少一份已审核资料'), { status: 400 });
-  const date = new Date(`${serviceDate}T09:00:00+08:00`);
-  if (Number.isNaN(date.getTime())) throw Object.assign(new Error('服务日期无效'), { status: 400 });
+  const date = new Date();
   const order = await Order.create({
     user: patient._id, tenantId: patient.tenantId || null, serviceId: `annual-member-medical-proxy-${Date.now()}`,
     serviceName: '医疗代诊服务', servicePrice: 0, unitPrice: 0, paymentStatus: 'unpaid', tradeStatus: 'fulfilling',
-    status: 'scheduled', scheduledAt: date, desiredServiceDate: date, initiationSource: STAFF_DIRECT_SOURCE,
+    status: 'pending', initiationSource: STAFF_DIRECT_SOURCE,
     serviceRequirements: `${plan.proxyGoal}\n${plan.communicationContent}`, serviceWorkflowSnapshot: { key: 'medical_proxy', source: STAFF_DIRECT_SOURCE },
   });
   const supervisor = await FollowUp.create({
@@ -291,6 +290,9 @@ async function advanceMedicalProxyWorkflow(task) {
   }
   if (stage === 'booking') {
     order.medicalProxyPlan = { ...(order.medicalProxyPlan || {}), booking: task.formData, bookedBy: task.assignedTo, bookedAt: new Date() };
+    order.scheduledAt = appointmentAt(task.formData.appointmentDate, task.formData.appointmentTime);
+    order.desiredServiceDate = task.formData.customerPreferredDate ? appointmentAt(task.formData.customerPreferredDate) : null;
+    order.status = 'scheduled';
     order.markModified('medicalProxyPlan');
     await order.save();
   }

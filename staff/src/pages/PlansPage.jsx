@@ -634,7 +634,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
     const checkupOneStop = /体检一站式服务/.test(selectedTpl?.name || '')
     if (!patientId) { setError('请搜索并选择会员'); return }
     if (!form.name.trim()) { setError('请填写方案名称'); return }
-    if (!form.serviceDate) { setError('请选择服务日期'); return }
+    if (!isMedicalProxy && !form.serviceDate) { setError('请选择服务日期'); return }
     if (isMedicalProxy && (!form.hospital.trim() || !form.department.trim() || !form.expert.trim() || !form.proxyGoal?.trim() || !form.communicationContent?.trim())) { setError('请完整填写医院、科室、专家、代诊目标和交流内容'); return }
     if (isMedicalProxy && !selectedReportIds.length) { setError('请从客户既有资料中选择至少一份已审核资料'); return }
     if (checkupOneStop && !workflowProductId) { setError('请选择 Admin 已发布的体检服务流程'); return }
@@ -645,7 +645,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
     setError(''); setSaving(true)
     try {
       if (isMedicalProxy) {
-        await staffAPI.startStaffMedicalProxy(patientId, { serviceDate: form.serviceDate, hospital: form.hospital.trim(), department: form.department.trim(), expert: form.expert.trim(), proxyGoal: form.proxyGoal.trim(), communicationContent: form.communicationContent.trim(), selectedReportIds })
+        await staffAPI.startStaffMedicalProxy(patientId, { hospital: form.hospital.trim(), department: form.department.trim(), expert: form.expert.trim(), proxyGoal: form.proxyGoal.trim(), communicationContent: form.communicationContent.trim(), selectedReportIds })
         onSaved()
         return
       }
@@ -816,13 +816,13 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
                 {supervisors.map(s => <option key={s._id} value={s._id}>{s.name} · {s.roleLabel}</option>)}
               </select>
             </div>}
-            <div className="form-group" style={{ marginBottom: 0 }}>
+            {!isMedicalProxy && <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">{form.serviceDomain === 'checkup' ? '体检日期' : '主服务日期'} *</label>
               <input className="form-input" type="date" value={form.serviceDate}
                 onChange={e => set('serviceDate', e.target.value)} />
-            </div>
-            {renderField('具体时间安排', 'serviceTime', 0, '如：09:30，或 09:00-11:30')}
-            {renderField('交通接送', 'transport',  0, '是否专车、集合地点')}
+            </div>}
+            {!isMedicalProxy && renderField('具体时间安排', 'serviceTime', 0, '如：09:30，或 09:00-11:30')}
+            {!isMedicalProxy && renderField('交通接送', 'transport',  0, '是否专车、集合地点')}
           </div>
 
           {isMedicalProxy && <>
