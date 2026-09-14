@@ -5814,12 +5814,13 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
     if (isMedicalProxyOrder(currentOrder)) {
       if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '医疗代诊由健康规划师确认服务需求' });
       if (!String(req.body.serviceContent || '').trim() || !String(req.body.customerNeed || '').trim()) return res.status(400).json({ success: false, message: '请完整确认服务内容和本次代诊诉求' });
-      const task = await startMedicalProxyWorkflow(currentOrder, req.staff._id, scheduledAt, String(req.body.serviceContent).trim(), String(req.body.customerNeed).trim());
+      const task = await startMedicalProxyWorkflow(currentOrder, req.staff._id, scheduledAt, req.body.serviceDateEnd, String(req.body.serviceContent).trim(), String(req.body.customerNeed).trim());
       const update = { status: 'scheduled', handledBy: req.staff._id };
       if (scheduledAt) update.scheduledAt = new Date(scheduledAt);
+      if (req.body.serviceDateEnd) update.desiredServiceDateEnd = new Date(`${req.body.serviceDateEnd}T00:00:00+08:00`);
       if (note) update.note = note;
       const order = await Order.findByIdAndUpdate(req.params.id, update, { new: true }).populate('user', 'name phone');
-      return res.json({ success: true, data: order, task, message: '服务信息已确认，健康规划师开始指导客户上传并选定本次资料' });
+      return res.json({ success: true, data: order, task, message: /专家约诊/.test(currentOrder.serviceName || '') ? '服务信息已确认，已转给健管专员预约' : '服务信息已确认，健康规划师开始指导客户上传并选定本次资料' });
     }
     const newStatus = 'scheduled';
     const update = { status: newStatus, handledBy: req.staff._id };

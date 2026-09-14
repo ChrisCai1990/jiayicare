@@ -149,7 +149,7 @@ async function findRecentSelectedReportIds(patientId) {
   return [];
 }
 
-async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceContent, customerNeed) {
+async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceTimeEnd, serviceContent, customerNeed) {
   const existing = await FollowUp.exists({ sourceType: 'order', sourceOrderId: order._id, workflowKey: { $in: STAGES.map(stage => `${PREFIX}${stage}`).concat(`${PREFIX}intake`) } });
   if (existing) throw Object.assign(new Error('该订单已进入医疗代诊分阶段流程，请在服务任务中继续办理'), { status: 409 });
   const patient = await User.findById(order.user).select('assignedHealthManager assignedHealthPlanner memberType servicePackage').lean();
@@ -157,6 +157,8 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceC
   if (!manager) throw Object.assign(new Error('该客户尚未分配健管专员，请先完成分配'), { status: 409 });
   const date = serviceTime ? new Date(serviceTime) : new Date();
   if (Number.isNaN(date.getTime())) throw Object.assign(new Error('服务日期无效'), { status: 400 });
+  const endDate = serviceTimeEnd ? new Date(`${serviceTimeEnd}T00:00:00+08:00`) : date;
+  if (Number.isNaN(endDate.getTime()) || endDate < date) throw Object.assign(new Error('服务结束日期不能早于开始日期'), { status: 400 });
   const collectionDueAt = preparationDueDate(date);
   const carriedReportIds = await findRecentSelectedReportIds(order.user);
   // 旧版曾创建不带 workflowKey / sourceOrderId 的同名督办卡。新流程启动前先关闭，
@@ -173,8 +175,8 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceC
       date, remindAt: new Date(), sourceType: 'order', sourceOrderId: order._id,
       workflowKey: `${PREFIX}supervise`, taskRole: 'supervisor',
       theme: `医疗代诊：健康规划师全程督办 · ${order.serviceName}`,
-      plannedContent: `服务日期：${date.toLocaleDateString('zh-CN')}\n服务内容：${serviceContent}\n客户诉求：${customerNeed}\n持续督办资料审核、健康顾问方案确认和就医专员代诊；代诊执行结束后关闭。`,
-      formData: { serviceContent, customerNeed, currentStage: 'collect' },
+      plannedContent: `期望服务日期：${date.toLocaleDateString('zh-CN')} 至 ${endDate.toLocaleDateString('zh-CN')}\n服务内容：${serviceContent}\n客户诉求：${customerNeed}\n持续督办资料审核、健康顾问方案确认和就医专员代诊；代诊执行结束后关闭。`,
+      formData: { serviceContent, customerNeed, preferredDateStart: dateInput(date), preferredDateEnd: dateInput(endDate), currentStage: /专家约诊/.test(order.serviceName || '') ? 'booking' : 'collect' },
     } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
@@ -190,6 +192,20 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceC
     workflowKey: { $in: STAGES.map(stage => `${PREFIX}${stage}`).concat(`${PREFIX}intake`) },
     status: { $in: ['planned', 'in_progress'] }, createdAt: { $lt: supervisor.createdAt },
   }, { $set: { status: 'cancelled', cancelReason: '旧医疗代诊订单任务已由当前订单替代' } });
+  if (/专家约诊/.test(order.serviceName || '')) {
+    return FollowUp.findOneAndUpdate(
+      { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}booking` },
+      { $setOnInsert: {
+        patientId: order.user, staffId: manager, assignedTo: manager, type: 'other', status: 'planned',
+        date, remindAt: new Date(), sourceType: 'order', sourceOrderId: order._id,
+        workflowKey: `${PREFIX}booking`, taskRole: 'executor',
+        theme: `医疗代诊：健管专员完成专家门诊预约 · ${order.serviceName}`,
+        plannedContent: `客户已与健康规划师确认专家和期望日期区间，请完成专家门诊预约并记录实际时间。\n${serviceContent}`,
+        formData: { planSnapshot: { serviceContent, customerNeed }, preferredDateStart: dateInput(date), preferredDateEnd: dateInput(endDate) },
+      } },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+  }
   const task = await FollowUp.findOneAndUpdate(
     { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}collect` },
     { $setOnInsert: {

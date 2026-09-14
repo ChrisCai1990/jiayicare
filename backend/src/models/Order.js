@@ -34,6 +34,7 @@ const orderSchema = new mongoose.Schema({
   serviceIcon: { type: String },
   note:        { type: String, default: '' },
   desiredServiceDate: { type: Date, default: null },
+  desiredServiceDateEnd: { type: Date, default: null },
   serviceRequirements: { type: String, default: '' },
   orderType:   { type: String, enum: ['service', 'package', 'product'], default: 'service' },
   inventoryReserved: { type: Boolean, default: false },
