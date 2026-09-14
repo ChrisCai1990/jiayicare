@@ -12142,6 +12142,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
   const [currentBooking, setCurrentBooking] = useState(serviceBooking)
   const order = currentBooking?.sourceOrderId
   const isMedicalProxy = order?.serviceWorkflowSnapshot?.key === 'medical_proxy' || /医疗代诊|专家约诊/.test(order?.serviceName || '')
+  const isExpertAppointment = /专家约诊/.test(order?.serviceName || '')
   const orderId = order?._id || order
   const customerTaskParts = String(order?.serviceRequirements || order?.note || '')
     .split(/[；\n]/)
@@ -12405,8 +12406,8 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
               </div>
             </div>
             {!bookingCollapsed && <>
-            <div style={{ fontSize: 11, color: '#8AA89C' }}>{isMedicalProxy ? '先完整核对本次沟通内容；确认后由您指导客户上传并选定资料，健管专员审核后交健康顾问。您将持续督办直到代诊完成。' : '已自动带入客户确认的信息；如有变化可直接修订，再生成方案。'}</div>
-            {(!isMedicalProxy || !proxyReviewReady) ? <>
+            <div style={{ fontSize: 11, color: '#8AA89C' }}>{isExpertAppointment ? '确认客户的医院、科室、专家和期望日期区间后，直接转给健管专员完成预约。' : isMedicalProxy ? '先完整核对本次沟通内容；确认后由您指导客户上传并选定资料，健管专员审核后交健康顾问。您将持续督办直到代诊完成。' : '已自动带入客户确认的信息；如有变化可直接修订，再生成方案。'}</div>
+            {(!isMedicalProxy || !proxyReviewReady || isExpertAppointment) ? <>
               {isMedicalProxy && <div style={{ textAlign: 'right' }}><button type="button" className="btn btn-secondary btn-sm" onClick={fillFromConversation}>从对话自动填入</button></div>}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <label style={{ fontSize: 12, fontWeight: 600 }}>期望开始日期<input className="form-input" type="date" value={serviceTime} onChange={e => { setServiceTime(e.target.value); setProxyReviewReady(false) }} /></label>
@@ -12430,15 +12431,15 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
             {!orderActionable && <div style={{ fontSize: 12, color: '#DC3545' }}>该订单已取消、退款、完成或尚未支付，不能继续生成服务方案。</div>}
             {bookingError && <div role="alert" style={{ padding: '8px 10px', color: '#B42318', background: '#FFF0EF', borderRadius: 6, fontSize: 12 }}>{bookingError}</div>}
             <div style={{ textAlign: 'right', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              {isMedicalProxy && proxyReviewReady && <button className="btn btn-secondary btn-sm" onClick={() => setProxyReviewReady(false)}>返回修改</button>}
+              {isMedicalProxy && proxyReviewReady && !isExpertAppointment && <button className="btn btn-secondary btn-sm" onClick={() => setProxyReviewReady(false)}>返回修改</button>}
               <button className="btn btn-primary btn-sm" disabled={confirmingBooking || !orderActionable || !serviceTime || !serviceTimeEnd || serviceTimeEnd < serviceTime || (isMedicalProxy ? !proxyServiceContent.trim() || (!/专家约诊/.test(order?.serviceName || '') && !proxyCustomerNeed.trim()) : !serviceTask.trim())} onClick={async () => {
                 setBookingError('')
-                if (isMedicalProxy && !proxyReviewReady) { setProxyReviewReady(true); return }
+                if (isMedicalProxy && !isExpertAppointment && !proxyReviewReady) { setProxyReviewReady(true); return }
                 setConfirmingBooking(true)
                 try { await onConfirmBooking?.({ orderId, serviceTime, serviceTimeEnd, task: isMedicalProxy ? [proxyServiceContent.trim(), proxyCustomerNeed.trim()].filter(Boolean).join('；') : serviceTask.trim(), serviceContent: proxyServiceContent.trim(), customerNeed: proxyCustomerNeed.trim() }) }
                 catch (err) { setBookingError(err.message || '确认预约失败') }
                 finally { setConfirmingBooking(false) }
-              }}>{confirmingBooking ? '处理中…' : isMedicalProxy ? (proxyReviewReady ? (/专家约诊/.test(order?.serviceName || '') ? '确认并转给健管专员预约' : '确认并开始资料收集') : '核对沟通信息') : '确认并生成方案'}</button>
+              }}>{confirmingBooking ? '处理中…' : isExpertAppointment ? '确认并转给健管专员预约' : isMedicalProxy ? (proxyReviewReady ? '确认并开始资料收集' : '核对沟通信息') : '确认并生成方案'}</button>
             </div>
             </>}
           </div>
