@@ -1843,6 +1843,8 @@ export default function PatientDetailPage() {
   const [medications, setMedications] = useState([])
   const [supplements, setSupplements] = useState([])
   const [medSubTab, setMedSubTab] = useState('med') // 'med' | 'sup'
+  const [medHistoryTab, setMedHistoryTab] = useState('current')
+  const [supHistoryTab, setSupHistoryTab] = useState('current')
   const [aiSupGenerating, setAiSupGenerating] = useState(false)
   const [aiExamSuggesting, setAiExamSuggesting] = useState(false)
   const [aiNutritionGenerating, setAiNutritionGenerating] = useState(false)
@@ -1859,6 +1861,10 @@ export default function PatientDetailPage() {
   const [editingSup, setEditingSup] = useState(null)
   const [stoppingMed, setStoppingMed] = useState(null) // 待确认停用的用药记录
   const [reminderMed, setReminderMed] = useState(null)
+  const [supplyTarget, setSupplyTarget] = useState(null)
+  const [supplyForm, setSupplyForm] = useState({ firstDate: '', intervalDays: 30, cycles: 12, mode: 'visit', note: '' })
+  const [supplySaving, setSupplySaving] = useState(false)
+  const [supplyError, setSupplyError] = useState('')
   const [reminderForm, setReminderForm] = useState({ intervalDays: 30, startDate: '', endDate: '', remindTime: '09:00', note: '' })
   const [reminderSaving, setReminderSaving] = useState(false)
   const [stoppingSup, setStoppingSup] = useState(null) // 待确认停用的营养素记录
@@ -8342,6 +8348,7 @@ export default function PatientDetailPage() {
           {medSubTab === 'med' && (() => {
             const pendingMeds = medications.filter(m => m.aiStatus === 'pending')
             const activeMeds = medications.filter(m => m.aiStatus !== 'pending')
+            const visibleMeds = activeMeds.filter(m => medHistoryTab === 'stopped' ? m.stopped : !m.stopped)
             const canApproveMed = staff?.role === 'familyDoctor' || staff?.role === 'superadmin'
             return (
             <>
@@ -8387,23 +8394,26 @@ export default function PatientDetailPage() {
                 </table>
               </div>
             )}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              {[['current', '服用中'], ['stopped', '已停用']].map(([key, label]) => <button key={key} className={`btn btn-sm ${medHistoryTab === key ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setMedHistoryTab(key)}>{label}（{activeMeds.filter(m => key === 'stopped' ? m.stopped : !m.stopped).length}）</button>)}
+            </div>
             <div className="card" style={{ padding: 0 }}>
-              {activeMeds.length === 0 ? (
+              {visibleMeds.length === 0 ? (
                 <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无用药记录</div>
               ) : (
                 <table className="table">
                   <thead><tr><th>药品名称（化学名）</th><th>商品名</th><th>规格</th><th>剂量</th><th>用法/频次</th><th>服用目的</th><th>停用原因</th><th>开始日期</th><th>录入/审核</th><th>状态</th><th>操作</th></tr></thead>
                   <tbody>
-                    {activeMeds.map(m => (
+                    {visibleMeds.map(m => (
                       <tr key={m._id}>
-                        <td style={{ fontWeight: 600 }}>{m.name}</td>
+                        <td style={{ fontWeight: 600 }}>{m.name}{activeMeds.filter(other => other.name.trim() === m.name.trim()).length > 1 && <div style={{ fontSize: 11, color: '#7C3AED' }}>同名历史 {activeMeds.filter(other => other.name.trim() === m.name.trim()).length} 段</div>}</td>
                         <td style={{ color: '#666' }}>{m.brandName || '-'}</td>
                         <td>{m.specification || '-'}</td>
                         <td>{m.dosage}</td>
                         <td style={{ fontSize: 12 }}>{m.method} · {m.frequency}{m.timing ? ` · ${m.timing}` : ''}</td>
                         <td style={{ fontSize: 12, color: '#4A6558' }}>{m.purpose || m.note || '-'}</td>
                         <td style={{ fontSize: 12, color: m.stopped ? '#8A5A44' : '#aaa' }}>{m.stopReason || '-'}</td>
-                        <td style={{ fontSize: 12, color: '#8AA89C' }}>{m.startDate || '-'}{m.endDate ? ` → ${m.endDate}` : ''}</td>
+                        <td style={{ fontSize: 12, color: '#8AA89C' }}>{m.startDate || '-'}{m.stopped && m.stopDate ? ` → ${m.stopDate}` : m.endDate ? ` → ${m.endDate}` : ''}</td>
                         <td style={{ fontSize: 11, color: '#8AA89C' }}>
                           {m.createdByName ? <div>录入：{m.createdByName}</div> : null}
                           {m.reviewedByName ? <div>核对：{m.reviewedByName}</div> : null}
@@ -8421,6 +8431,8 @@ export default function PatientDetailPage() {
                               setMedForm({ name: m.name, brandName: m.brandName || '', specification: m.specification || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: m.startDate || '', endDate: m.endDate || '', purpose: m.purpose || '', note: m.note || '' })
                               setEditingMed(m._id); setShowMedModal(true)
                             }}>编辑</button>}
+                            {m.stopped && <button className="btn btn-secondary btn-sm" onClick={() => { setMedForm({ name: m.name, brandName: m.brandName || '', specification: m.specification || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: new Date().toISOString().slice(0, 10), endDate: '', purpose: m.purpose || '', note: '' }); setEditingMed(null); setShowMedModal(true) }}>再次使用</button>}
+                            {!m.stopped && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'medication', record: m }); setSupplyForm({ firstDate: '', intervalDays: 30, cycles: 12, mode: 'visit', note: '' }) }}>定期配药</button>}
                             {!m.stopped && <button className="btn btn-sm" style={{ background: '#F3EEFF', color: '#7C3AED', border: '1px solid #C4B5FD' }} onClick={() => {
                               const today = new Date().toISOString().slice(0, 10)
                               setReminderMed(m)
@@ -8459,6 +8471,7 @@ export default function PatientDetailPage() {
           {medSubTab === 'sup' && (() => {
             const pendingSups = supplements.filter(s => s.aiStatus === 'pending')
             const activeSups = supplements.filter(s => s.aiStatus !== 'pending')
+            const visibleSups = activeSups.filter(s => supHistoryTab === 'stopped' ? s.stopped : !s.stopped)
             const canApprove = staff?.role === 'nutritionist' || staff?.role === 'superadmin'
             return (
             <>
@@ -8506,23 +8519,26 @@ export default function PatientDetailPage() {
                 </table>
               </div>
             )}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              {[['current', '补充中'], ['stopped', '已停用']].map(([key, label]) => <button key={key} className={`btn btn-sm ${supHistoryTab === key ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setSupHistoryTab(key)}>{label}（{activeSups.filter(s => key === 'stopped' ? s.stopped : !s.stopped).length}）</button>)}
+            </div>
             <div className="card" style={{ padding: 0 }}>
-              {activeSups.length === 0 ? (
+              {visibleSups.length === 0 ? (
                 <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无营养素记录</div>
               ) : (
                 <table className="table">
                   <thead><tr><th>营养素名称</th><th>品牌</th><th>规格</th><th>剂量</th><th>用法/频次</th><th>补充目的</th><th>停用原因</th><th>开始日期</th><th>录入/审核</th><th>状态</th><th>操作</th></tr></thead>
                   <tbody>
-                    {activeSups.map(s => (
+                    {visibleSups.map(s => (
                       <tr key={s._id}>
-                        <td style={{ fontWeight: 600 }}>{s.name}</td>
+                        <td style={{ fontWeight: 600 }}>{s.name}{activeSups.filter(other => other.name.trim() === s.name.trim()).length > 1 && <div style={{ fontSize: 11, color: '#7C3AED' }}>同名历史 {activeSups.filter(other => other.name.trim() === s.name.trim()).length} 段</div>}</td>
                         <td style={{ color: '#666' }}>{s.brand || '-'}</td>
                         <td>{s.specification || '-'}</td>
                         <td>{s.dosage}</td>
                         <td style={{ fontSize: 12 }}>{s.method} · {s.frequency}</td>
                         <td style={{ fontSize: 12, color: '#4A6558' }}>{s.purpose || s.note || '-'}</td>
                         <td style={{ fontSize: 12, color: s.stopped ? '#8A5A44' : '#aaa' }}>{s.stopReason || '-'}</td>
-                        <td style={{ fontSize: 12, color: '#8AA89C' }}>{s.startDate || '-'}{s.endDate ? ` → ${s.endDate}` : ''}</td>
+                        <td style={{ fontSize: 12, color: '#8AA89C' }}>{s.startDate || '-'}{s.stopped && s.stopDate ? ` → ${s.stopDate}` : s.endDate ? ` → ${s.endDate}` : ''}</td>
                         <td style={{ fontSize: 11, color: '#8AA89C' }}>
                           {s.createdByName ? <div>录入：{s.createdByName}</div> : null}
                           {s.reviewedByName ? <div>审核：{s.reviewedByName}</div> : null}
@@ -8539,6 +8555,8 @@ export default function PatientDetailPage() {
                               setSupForm({ name: s.name, brand: s.brand || '', specification: s.specification || '', dosage: s.dosage, method: s.method || '随餐', frequency: s.frequency, startDate: s.startDate || '', endDate: s.endDate || '', purpose: s.purpose || '', note: s.note || '' })
                               setEditingSup(s._id); setEditingSupAiApprove(false); setShowSupModal(true)
                             }}>编辑</button>}
+                            {s.stopped && <button className="btn btn-secondary btn-sm" onClick={() => { setSupForm({ name: s.name, brand: s.brand || '', specification: s.specification || '', dosage: s.dosage, method: s.method || '随餐', frequency: s.frequency, startDate: new Date().toISOString().slice(0, 10), endDate: '', purpose: s.purpose || '', note: '' }); setEditingSup(null); setEditingSupAiApprove(false); setShowSupModal(true) }}>再次补充</button>}
+                            {!s.stopped && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'supplement', record: s }); setSupplyForm({ firstDate: '', intervalDays: 30, cycles: 12, mode: 'visit', note: '' }) }}>定期配取</button>}
                             {!s.stopped && <button className="btn btn-sm" style={{ background: '#fff8e1', color: '#D97706', border: '1px solid #D97706' }}
                                   onClick={() => setStoppingSup(s)}>
                                   停用
@@ -8562,6 +8580,22 @@ export default function PatientDetailPage() {
             </>
             )
           })()}
+
+          {supplyTarget && <div className="modal-overlay">
+            <div className="modal" style={{ maxWidth: 480 }}>
+              <div className="modal-header"><h3 className="modal-title">定期配取 · {supplyTarget.record.name}</h3><button className="modal-close" onClick={() => setSupplyTarget(null)}>✕</button></div>
+              <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
+                <label>首次提醒日期<input className="form-input" type="date" min={new Date().toISOString().slice(0, 10)} value={supplyForm.firstDate} onChange={e => setSupplyForm(f => ({ ...f, firstDate: e.target.value }))} /></label>
+                <label>每隔多少天提醒<input className="form-input" type="number" min="1" max="365" value={supplyForm.intervalDays} onChange={e => setSupplyForm(f => ({ ...f, intervalDays: e.target.value }))} /></label>
+                <label>生成次数（最多24次）<input className="form-input" type="number" min="1" max="24" value={supplyForm.cycles} onChange={e => setSupplyForm(f => ({ ...f, cycles: e.target.value }))} /></label>
+                <label>提醒方式<select className="form-input" value={supplyForm.mode} onChange={e => setSupplyForm(f => ({ ...f, mode: e.target.value }))}><option value="visit">就医/配取提醒</option><option value="proxy">代配待办</option></select></label>
+                <label>备注<input className="form-input" value={supplyForm.note} onChange={e => setSupplyForm(f => ({ ...f, note: e.target.value }))} placeholder="配取机构、注意事项等" /></label>
+                {supplyError && <div style={{ color: '#c00', fontSize: 13 }}>{supplyError}</div>}
+                <div style={{ fontSize: 12, color: '#8A5A44' }}>保存会更新这条记录尚未执行的未来配取随访；已完成记录保留。</div>
+              </div>
+              <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setSupplyTarget(null)}>取消</button><button className="btn btn-primary" disabled={supplySaving} onClick={async () => { try { setSupplyError(''); setSupplySaving(true); const result = await staffAPI.saveSupplyReminder(id, supplyTarget.kind, supplyTarget.record._id, supplyForm); setSupplyTarget(null); toast(result.message || '配取随访已生成'); loadFollowUps() } catch (err) { setSupplyError(err.message || '生成失败') } finally { setSupplySaving(false) } }}>{supplySaving ? '保存中...' : '生成随访'}</button></div>
+            </div>
+          </div>}
 
           {/* 新增/编辑药物弹窗：表单字段多，鼠标移出边界误触遮罩会丢失编辑，去掉点遮罩关闭 */}
           {showMedModal && (
