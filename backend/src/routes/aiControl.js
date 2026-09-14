@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const { randomUUID } = require('crypto');
+const { ObjectId } = require('mongoose').Types;
 const adminAuth = require('../middleware/adminAuth');
 const { collection, ensure, store } = require('../utils/aiBudgetStore');
 const { DEFAULT_POLICY, validatePolicy, periodKeys } = require('../utils/aiBudgetPolicy');
@@ -45,7 +46,17 @@ router.get('/usage', async (req, res) => {
   const page = Math.max(1, Math.min(10000, Number.parseInt(req.query.page, 10) || 1));
   const rows = await collection('ai_usage').find(filter, { projection: { scopes: 0, rate: 0, tenantId: 0, actorId: 0 } }).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * 30).limit(31).toArray();
   const reportCounters = filter.reportId ? await collection('ai_budget_counters').find({ _id: { $regex: `^(report:${filter.reportId}$|page:${filter.reportId}:)` } }).toArray() : [];
-  res.json({ success: true, data: { rows: rows.slice(0, 30), hasMore: rows.length > 30, page, reportCounters } });
+  const visibleRows = rows.slice(0, 30);
+  const reportIds = [...new Set(visibleRows.map(row => String(row.reportId || '')).filter(id => /^[a-f\d]{24}$/i.test(id)))];
+  const reports = await collection('medicalreports').find({ _id: { $in: reportIds.map(id => new ObjectId(id)) } }, { projection: { title: 1, user: 1 } }).toArray();
+  const customers = await collection('users').find({ _id: { $in: reports.map(row => row.user).filter(Boolean) } }, { projection: { name: 1 } }).toArray();
+  const names = new Map(customers.map(row => [String(row._id), row.name]));
+  const reportMap = new Map(reports.map(row => [String(row._id), row]));
+  const enrichedRows = visibleRows.map(row => {
+    const report = reportMap.get(String(row.reportId));
+    return { ...row, reportTitle: report?.title || '', customerName: report ? names.get(String(report.user)) || '' : '' };
+  });
+  res.json({ success: true, data: { rows: enrichedRows, hasMore: rows.length > 30, page, reportCounters } });
 });
 
 router.put('/policy', async (req, res) => {

@@ -81,6 +81,8 @@ async function main() {
     await page.getByRole('button', { name: '搜索测试客户 · 2026-09-14 · 体检报告（年度）', exact: true }).click();
     await page.getByText('当前报告：体检报告（年度）', { exact: false }).waitFor();
     assert.equal(await page.getByRole('cell', { name: /用量待核对/ }).count(), 1);
+    assert.equal(await page.getByRole('cell', { name: /搜索测试客户 · 体检报告（年度）/ }).count(), 2);
+    assert.equal(await page.getByRole('cell', { name: new RegExp(String(reportId)) }).count(), 0);
     await page.screenshot({ path: path.join(output, 'usage.png'), fullPage: true });
     await page.getByRole('button', { name: '追加额度', exact: true }).click();
     await page.getByText('追加额度已生效', { exact: true }).waitFor();
