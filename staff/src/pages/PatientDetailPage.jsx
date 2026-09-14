@@ -12208,9 +12208,9 @@ function SendMessageModal({ patientId, patientName, serviceBooking, onConfirmBoo
 
   useEffect(() => {
     const confirmedDate = formatServiceDate(orderServiceDate)
-    if (confirmedDate) setServiceTime(confirmedDate)
-    const confirmedEndDate = formatServiceDate(order?.desiredServiceDateEnd || orderServiceDate)
-    if (confirmedEndDate) setServiceTimeEnd(confirmedEndDate)
+    if (confirmedDate) setServiceTime(current => current || confirmedDate)
+    const confirmedEndDate = formatServiceDate(order?.desiredServiceDateEnd)
+    if (confirmedEndDate) setServiceTimeEnd(current => current || confirmedEndDate)
     if (customerTask) setServiceTask(customerTask)
     if (order?.aiIntake?.serviceContent || customerTask) setProxyServiceContent(order?.aiIntake?.serviceContent || customerTask)
     if (order?.aiIntake?.customerNeed) setProxyCustomerNeed(order.aiIntake.customerNeed)
