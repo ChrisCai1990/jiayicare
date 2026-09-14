@@ -10444,7 +10444,7 @@ export default function PatientDetailPage() {
                   <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{planningAdviceMessage(planningAdviceFromTask(followUpDetail)).split('请您看看这些建议')[0]}</div>
                   <div style={{ color: '#65776F' }}>请先在客户对话中核对并发送建议，再确认客户是否需要启用其他就医协助服务。</div>
                   <button className="btn btn-primary btn-sm" style={{ justifySelf: 'start' }} onClick={() => {
-                    setPlanningChatContext({ order: followUpDetail.sourceOrderId, draft: planningAdviceMessage(planningAdviceFromTask(followUpDetail)) })
+                    setPlanningChatContext({ order: followUpDetail.sourceOrderId, task: followUpDetail, draft: planningAdviceMessage(planningAdviceFromTask(followUpDetail)) })
                     setFollowUpDetail(null)
                     setShowMessageModal(true)
                   }}>打开客户对话并带入建议</button>
@@ -11891,6 +11891,16 @@ export default function PatientDetailPage() {
           serviceBooking={planningChatContext ? null : location.state?.serviceBooking}
           initialOrder={planningChatContext?.order}
           initialDraft={planningChatContext?.draft}
+          planningTask={planningChatContext?.task}
+          onFinishPlanning={async (task, summary) => {
+            await staffAPI.updateFollowUp(task._id, { status: 'completed', content: '客户确认暂无其他就医协助需求，本次就医规划服务结束。', formData: { ...(task.formData || {}), medicalPlanning: true, customerCommunicationSummary: summary, planningOutcome: 'no_additional_service' } })
+            toast('本次就医规划服务已结束')
+            setShowMessageModal(false); setPlanningChatContext(null); loadFollowUps()
+          }}
+          onPlanningProductPushed={async (task, product) => {
+            await staffAPI.updateFollowUp(task._id, { status: 'in_progress', content: `已向客户推送后续服务：${product.name}`, formData: { ...(task.formData || {}), medicalPlanning: true, planningOutcome: 'additional_service_needed', additionalServiceNote: `已推送：${product.name}` } })
+            loadFollowUps()
+          }}
           onConfirmBooking={async ({ orderId, serviceTime, serviceTimeEnd, task, serviceContent, customerNeed, communicationDate, communicationTimeStart, communicationTimeEnd }) => {
             const originalNote = location.state?.serviceBooking?.sourceOrderId?.note || ''
             const cleanOriginalNote = String(originalNote).split('\n').filter(line => !/^已确认服务任务[:：]/.test(line.trim())).join('\n').trim()
@@ -12144,7 +12154,7 @@ function formatRecordValue(r) {
 }
 
 // ── 聊天对话弹窗 ──────────────────────────────────────────────
-function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder, initialDraft, onConfirmBooking, onClose }) {
+function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder, initialDraft, planningTask, onFinishPlanning, onPlanningProductPushed, onConfirmBooking, onClose }) {
   const { staff } = useStaff()
   const chatRole = staff?.role === 'familyDoctor' ? 'doctor' : staff?.role === 'nutritionist' ? 'nutritionist' : staff?.role === 'healthPlanner' ? 'planner' : staff?.role === 'medicalAssistant' ? 'medicalAssistant' : 'manager'
   const toast = useToast()
@@ -12154,6 +12164,9 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   const [images, setImages] = useState([])
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
+  const [planningActionBusy, setPlanningActionBusy] = useState(false)
+  const [planningProducts, setPlanningProducts] = useState([])
+  const [planningProductsOpen, setPlanningProductsOpen] = useState(false)
   const [humanActive, setHumanActive] = useState(false)
   const [switchingMode, setSwitchingMode] = useState(false)
   const [currentBooking, setCurrentBooking] = useState(serviceBooking || (initialOrder ? { sourceOrderId: initialOrder } : null))
@@ -12422,6 +12435,45 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
     }
   }
 
+  const planningConversationSummary = () => displayedMsgs.filter(message => !message.recalled && message.content)
+    .slice(-10)
+    .map(message => `${message.type === 'user' ? '客户' : '健康规划师'}：${message.content}`)
+    .join('\n') || '客户在对话中确认暂无其他就医协助需求'
+
+  const finishPlanningHere = async () => {
+    if (!planningTask || planningActionBusy) return
+    if (!window.confirm('客户已确认暂无其他就医协助需求，结束本次就医规划服务？')) return
+    setPlanningActionBusy(true); setSendError('')
+    try { await onFinishPlanning?.(planningTask, planningConversationSummary()) }
+    catch (error) { setSendError(error.message || '结束服务失败，请重试') }
+    finally { setPlanningActionBusy(false) }
+  }
+
+  const openPlanningProducts = async () => {
+    setPlanningProductsOpen(true); setSendError('')
+    if (planningProducts.length) return
+    setPlanningActionBusy(true)
+    try {
+      const response = await staffAPI.getProducts()
+      const allProducts = response.data?.products || []
+      const medicalProducts = allProducts.filter(product => /就医|医疗|代诊|陪诊|约诊|门诊/.test(`${product.name || ''} ${product.category || ''}`))
+      setPlanningProducts(medicalProducts.length ? medicalProducts : allProducts)
+    } catch (error) { setSendError(error.message || '加载服务产品失败') }
+    finally { setPlanningActionBusy(false) }
+  }
+
+  const pushPlanningProduct = async product => {
+    if (!planningTask || planningActionBusy) return
+    setPlanningActionBusy(true); setSendError('')
+    try {
+      await staffAPI.pushProduct(product.id, { patientIds: [patientId] })
+      await onPlanningProductPushed?.(planningTask, product)
+      toast(`已向客户推送“${product.name}”`)
+      setPlanningProductsOpen(false)
+    } catch (error) { setSendError(error.message || '推送服务失败') }
+    finally { setPlanningActionBusy(false) }
+  }
+
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal" style={{ width: 'min(1200px, 96vw)', maxWidth: 1200, height: '92vh', maxHeight: '92vh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
@@ -12435,8 +12487,19 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
-        {initialOrder && <div style={{ padding: '9px 16px', background: '#EFF8F4', borderBottom: '1px solid #B2D8C7', fontSize: 13, color: '#1E6B50' }}>
-          本次订单：{order?.serviceName || '就医规划'}。顾问建议已带入输入框，请核对后点击发送；发送后再与客户确认是否需要其他就医协助服务。
+        {initialOrder && <div style={{ padding: '9px 16px', background: '#EFF8F4', borderBottom: '1px solid #B2D8C7', fontSize: 13, color: '#1E6B50', display: 'grid', gap: 8 }}>
+          <div>本次订单：{order?.serviceName || '就医规划'}。顾问建议已带入输入框，请核对后点击发送；发送后再与客户确认是否需要其他就医协助服务。</div>
+          {planningTask && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn-primary btn-sm" disabled={planningActionBusy} onClick={finishPlanningHere}>客户暂无需求，结束本次规划</button>
+            <button type="button" className="btn btn-secondary btn-sm" disabled={planningActionBusy} onClick={openPlanningProducts}>客户有需求，推荐后续服务</button>
+          </div>}
+          {planningProductsOpen && <div style={{ background: '#fff', border: '1px solid #B2D8C7', borderRadius: 8, padding: 10, maxHeight: 220, overflowY: 'auto', display: 'grid', gap: 7 }}>
+            <div style={{ fontWeight: 700 }}>选择一个已上架的就医协助服务直接推送</div>
+            {planningActionBusy && !planningProducts.length ? <div>加载中…</div> : planningProducts.length ? planningProducts.map(product => <div key={product.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '7px 9px', background: '#F7FAF8', borderRadius: 6 }}>
+              <span>{product.name} · ¥{product.price ?? product.originalPrice ?? 0}</span>
+              <button type="button" className="btn btn-primary btn-sm" disabled={planningActionBusy} onClick={() => pushPlanningProduct(product)}>推送</button>
+            </div>) : <div>暂无已上架的就医协助产品，请先在管理后台配置。</div>}
+          </div>}
         </div>}
         {showBookingConfirm && (
           <div style={{ padding: '12px 16px', borderBottom: '1px solid #E0D9CE', background: '#FFF8ED', display: 'grid', gap: 8, maxHeight: bookingCollapsed ? undefined : '38vh', overflowY: bookingCollapsed ? 'visible' : 'auto', flexShrink: 0 }}>
