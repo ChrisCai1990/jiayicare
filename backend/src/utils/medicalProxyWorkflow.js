@@ -257,11 +257,12 @@ async function validateMedicalProxyStage(task, body, staff) {
     if (!assistant) return '请选择当前有效的就医专员';
   }
   if (stage === 'booking') {
-    if (['customerPreferredDate', 'appointmentDate', 'appointmentTime'].some(key => !nonempty(data[key]))) {
-      return '请完整填写客户期望日期、专家实际出诊及约诊日期时间';
+    if (['preferredDateStart', 'preferredDateEnd', 'appointmentDate', 'appointmentTime'].some(key => !nonempty(data[key]))) {
+      return '请完整填写客户期望日期区间和实际约诊日期时间';
     }
-    if (![data.customerPreferredDate, data.appointmentDate].every(value => /^\d{4}-\d{2}-\d{2}$/.test(value)) || !/^\d{2}:\d{2}$/.test(data.appointmentTime)) return '预约日期或时间格式无效';
-    if (data.appointmentDate !== data.customerPreferredDate && !nonempty(data.dateDifferenceNote)) return '约诊日期与客户期望日期不一致，请说明差异及客户确认情况';
+    if (![data.preferredDateStart, data.preferredDateEnd, data.appointmentDate].every(value => /^\d{4}-\d{2}-\d{2}$/.test(value)) || !/^\d{2}:\d{2}$/.test(data.appointmentTime)) return '预约日期或时间格式无效';
+    if (data.preferredDateEnd < data.preferredDateStart) return '客户期望日期区间结束日期不能早于开始日期';
+    if ((data.appointmentDate < data.preferredDateStart || data.appointmentDate > data.preferredDateEnd) && !nonempty(data.dateDifferenceNote)) return '约诊日期不在客户期望区间内，请说明差异及客户确认情况';
     const assistant = await Admin.findOne({ _id: data.medicalAssistantId, role: 'medicalAssistant', staffStatus: 'active' }).select('_id').lean();
     if (!assistant) return data.planSnapshot?.initiationSource === STAFF_DIRECT_SOURCE ? '请在预约完成后指派有效的就医专员' : '原预指派就医专员已失效，请退回健康规划师重新指派';
   }
@@ -291,7 +292,7 @@ async function advanceMedicalProxyWorkflow(task) {
   if (stage === 'booking') {
     order.medicalProxyPlan = { ...(order.medicalProxyPlan || {}), booking: task.formData, bookedBy: task.assignedTo, bookedAt: new Date() };
     order.scheduledAt = appointmentAt(task.formData.appointmentDate, task.formData.appointmentTime);
-    order.desiredServiceDate = task.formData.customerPreferredDate ? appointmentAt(task.formData.customerPreferredDate) : null;
+    order.desiredServiceDate = task.formData.preferredDateStart ? appointmentAt(task.formData.preferredDateStart) : null;
     order.status = 'scheduled';
     order.markModified('medicalProxyPlan');
     await order.save();
@@ -349,12 +350,12 @@ async function advanceMedicalProxyWorkflow(task) {
         : next === 'advisor'
         ? '查看本次已审核资料及客户诉求，确认医院、科室、专家、代诊目标和与医生交流的具体内容。年度会员由健康顾问选定制定方案所用资料。'
         : next === 'planner' ? '核对健康顾问确认的代诊方案，预指派就医专员。'
-          : next === 'booking' ? '依据健康顾问方案预约专家门诊；记录客户期望日期与专家实际出诊及约诊日期，日期不一致时记录沟通确认结果。'
+          : next === 'booking' ? '依据健康顾问方案预约专家门诊；记录客户期望日期区间与实际约诊日期时间，超出期望区间时记录沟通确认结果。'
             : '按健康顾问方案和健管专员确认的预约信息完成代诊，记录医生反馈、医嘱和后续事项。',
       formData: next === 'audit' ? { collectionSnapshot: task.formData }
         : next === 'advisor' ? { auditSnapshot: task.formData, selectedReportIds: task.formData?.collectionSnapshot?.annualMember ? [] : task.formData?.collectionSnapshot?.reportIds || [] }
           : next === 'planner' ? { planSnapshot: order.medicalProxyPlan }
-            : next === 'booking' ? { planSnapshot: order.medicalProxyPlan, medicalAssistantId: task.formData?.medicalAssistantId, customerPreferredDate: dateInput(order.scheduledAt || order.desiredServiceDate) }
+            : next === 'booking' ? { planSnapshot: order.medicalProxyPlan, medicalAssistantId: task.formData?.medicalAssistantId, preferredDateStart: dateInput(order.desiredServiceDate || order.scheduledAt), preferredDateEnd: dateInput(order.desiredServiceDate || order.scheduledAt) }
               : { planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...task.formData, additionalNote: bookingNote } },
     } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
@@ -363,7 +364,7 @@ async function advanceMedicalProxyWorkflow(task) {
     const nextFormData = next === 'audit' ? { ...nextTask.formData, collectionSnapshot: task.formData }
       : next === 'advisor' ? { ...nextTask.formData, auditSnapshot: task.formData, selectedReportIds: task.formData?.collectionSnapshot?.annualMember ? [] : task.formData?.collectionSnapshot?.reportIds || [] }
         : next === 'planner' ? { ...nextTask.formData, planSnapshot: order.medicalProxyPlan }
-          : next === 'booking' ? { ...nextTask.formData, planSnapshot: order.medicalProxyPlan, medicalAssistantId: task.formData?.medicalAssistantId, customerPreferredDate: nextTask.formData?.customerPreferredDate || dateInput(order.scheduledAt || order.desiredServiceDate) }
+          : next === 'booking' ? { ...nextTask.formData, planSnapshot: order.medicalProxyPlan, medicalAssistantId: task.formData?.medicalAssistantId, preferredDateStart: nextTask.formData?.preferredDateStart || dateInput(order.desiredServiceDate || order.scheduledAt), preferredDateEnd: nextTask.formData?.preferredDateEnd || dateInput(order.desiredServiceDate || order.scheduledAt) }
             : { ...nextTask.formData, planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...task.formData, additionalNote: bookingNote } };
     await FollowUp.updateOne({ _id: nextTask._id }, { $set: { status: 'planned', isBlocked: false, assignedTo: assignee, formData: nextFormData, date: nextDate, remindAt: next === 'execute' ? nextDate : new Date() } });
   }
