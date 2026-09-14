@@ -647,6 +647,16 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
         if code:
             raise RuntimeError("专家约诊回退任务更新失败")
         code, _ = run_migration(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/unifyExpertAppointmentAdvisorV18.js ] && "
+            f"[ ! -f {REPO_DIR}/.expert-appointment-advisor-v18-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/unifyExpertAppointmentAdvisorV18.js && "
+            f"touch {REPO_DIR}/.expert-appointment-advisor-v18-applied; fi",
+            timeout=120,
+            label="统一健康顾问约诊建议页面与任务名称",
+        )
+        if code:
+            raise RuntimeError("健康顾问约诊建议任务统一失败")
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOneStopFinalFlowV15.js ] && "
             f"[ ! -f {REPO_DIR}/.one-stop-final-flow-v15-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateOneStopFinalFlowV15.js --apply && "
