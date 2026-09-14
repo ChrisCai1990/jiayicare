@@ -2,6 +2,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 const { createHmac, randomUUID } = require('crypto');
 const { createDraft } = require('./groupFollowupDraft');
+const { createDailyRecord } = require('./groupDailyRecord');
 const Cursor = require('../models/WecomArchiveCursor');
 const Group = require('../models/ServiceGroup');
 let tokenCache;
@@ -56,7 +57,7 @@ async function bridge(body) {
   return response.json();
 }
 
-async function tick({ sdk: fetchSdk = sdk, archiveApi: fetchApi = archiveApi, bridge: sendBridge = bridge, createDraft: makeDraft = createDraft, Cursor: C = Cursor, Group: G = Group } = {}) {
+async function tick({ sdk: fetchSdk = sdk, archiveApi: fetchApi = archiveApi, bridge: sendBridge = bridge, createDraft: makeDraft = createDraft, createDailyRecord: makeRecord = createDailyRecord, Cursor: C = Cursor, Group: G = Group } = {}) {
   const owner = randomUUID(), tenantId = process.env.SERVICE_GROUP_BRIDGE_TENANT_ID || null;
   await C.updateOne({ _id: 'primary' }, { $setOnInsert: { seq: 0 } }, { upsert: true });
   const cursor = await C.findOneAndUpdate({ _id: 'primary', $or: [{ leaseUntil: { $exists: false } }, { leaseUntil: { $lt: new Date() } }] }, { $set: { leaseOwner: owner, leaseUntil: new Date(Date.now() + 300000) } }, { new: true });
@@ -97,6 +98,9 @@ async function tick({ sdk: fetchSdk = sdk, archiveApi: fetchApi = archiveApi, br
             const body = { chatId: m.roomid, messageId: m.msgid, sender: m.from, sentAt: new Date(Number(m.msgtime)).toISOString(), text: String(text || '').slice(0, 20000), consent: true, ...(file ? { file } : {}) };
             const response = await sendBridge(body);
             if (!response.data?.duplicate) counters.stored++;
+            if (process.env.SERVICE_GROUP_DAILY_RECORD_ENABLED === 'true' && m.msgtype === 'text') {
+              await makeRecord(current, body);
+            }
             if (process.env.SERVICE_GROUP_FOLLOWUP_DRAFT_ENABLED === 'true' && m.msgtype === 'text') {
               const result = await makeDraft(current, { ...body, referencedMessageId: m.quote?.msgid || null });
               if (result === 'created') counters.draftCreated++;

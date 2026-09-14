@@ -10,6 +10,17 @@ function fixture(){
   }};
 }
 const row=(seq,roomid='room')=>({seq,message:{action:'send',msgtype:'text',msgid:'m'+seq,from:'staff',roomid,msgtime:Date.now(),text:{content:'请提醒我复查'}}});
+test('daily record failure retries after collection without advancing the cursor',async()=>{
+  const f=fixture();process.env.SERVICE_GROUP_DAILY_RECORD_ENABLED='true';
+  f.deps.sdk=async()=>({rows:[row(1)]});
+  f.deps.createDailyRecord=async()=>{throw Error('synthetic');};
+  try {
+    await assert.rejects(tick(f.deps));assert.equal(f.state.seq,0);
+    f.deps.createDailyRecord=async()=> 'created';
+    f.deps.bridge=async()=>({data:{duplicate:true}});
+    await tick(f.deps);assert.equal(f.state.seq,1);
+  } finally { delete process.env.SERVICE_GROUP_DAILY_RECORD_ENABLED; }
+});
 test('无授权群与拒绝同意不写库；游标仍推进，不能将其他群内容写入当前群',async()=>{
   const f=fixture();let writes=0;
   f.deps.sdk=async()=>({rows:[row(1,'unbound'),row(2)]});

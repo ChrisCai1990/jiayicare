@@ -11,8 +11,10 @@ const schema = new mongoose.Schema(
     patientId: { type: oid, ref: "User", default: null },
     title: { type: String, required: true, maxlength: 160 },
     content: { type: String, default: "", maxlength: 20000 },
-    sourceText: { type: String, default: "", maxlength: 20000, select: false },
+    sourceText: { type: String, default: "", maxlength: 24000, select: false },
     sourceMessageId: { type: String, default: "" },
+    sourceDay: { type: String, default: '' },
+    sourceMessageIds: [{ type: String }],
     sourceType: { type: String, enum: ['', 'wecom_archive'], default: '' },
     requestKey: { type: String, required: true, maxlength: 100 },
     status: {

@@ -485,10 +485,10 @@ export default function ServiceAssistantPage() {
           onChange={(e) => setForm({ ...form, content: e.target.value })}
         />
       </label>
-      {form.kind === "task" && (
+      {(form.kind === "task" || form.kind === "record") && (
         <div className="sa-fields">
           <label>
-            跟进日期
+            {form.kind === 'record' ? '沟通日期' : '跟进日期'}
             <input
               required={form.sourceType !== 'wecom_archive'}
               type="date"

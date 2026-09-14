@@ -476,6 +476,13 @@ router.patch(
     if (next && next !== e.status) {
       if (!validTransition(e.status, next)) fail("不支持此状态变更");
       if (e.kind === "task" && next === "confirmed") fail("待办应确认成待跟进");
+      if (e.kind === 'record' && next === 'confirmed') {
+        if (!e.patientId) fail('请先选择记录所属成员');
+        if (e.sourceType === 'wecom_archive' && !e.dueAt) fail('请确认沟通日期');
+        if (e.sourceType === 'wecom_archive' && !e.history.some(h => h.actor)) fail('请先核对成员和内容并保存草稿');
+        if (!e.content.trim()) fail('请填写实际沟通内容');
+        await permit(req, 'service_records', 'create');
+      }
       if (e.kind === 'task' && e.status === 'draft' && next === 'planned' && e.sourceType === 'wecom_archive') {
         const reason = require('../utils/groupFollowupDraft').validateConfirmation(e, g);
         if (reason) fail(reason);
@@ -546,7 +553,10 @@ router.patch(
               type: "group_service",
               title: e.title,
               content: e.content,
-              date: new Date(),
+              date: e.dueAt || new Date(),
+              ...(e.sourceType === 'wecom_archive' ? {
+                structuredContent: { source: 'wecom_archive', sourceGroupId: String(g._id), sourceDay: e.sourceDay, sourceMessageIds: e.sourceMessageIds },
+              } : {}),
             },
           },
           { upsert: true, runValidators: true }

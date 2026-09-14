@@ -9,7 +9,7 @@ module.exports = function install(router, {wrap,group,member,permit,fail,oid,tex
   router.get('/:groupId/inbox',wrap(async(req,res)=>{
     const g = await group(req);
     if (!g.archiveConsent) return res.json({success:true,data:[]});
-    const rows = await Message.find({groupId:g._id,expiresAt:{$gt:new Date()}})
+    const rows = await Message.find({groupId:g._id,expiresAt:{$gt:new Date()},'attachment.ossKey':{$gt:''}})
       .select('+attachment.ossKey').sort({sentAt:-1}).limit(100).lean();
     const receipts = await Receipt.find({groupId:g._id,messageId:{$in:rows.map(m=>m._id)}}).lean();
     res.json({success:true,data:rows.filter(m=>m.attachment?.ossKey).map(m=>{
@@ -72,8 +72,9 @@ module.exports = function install(router, {wrap,group,member,permit,fail,oid,tex
               fileUrl:file.url,fileUrls:[file.url],ossKey:file.key,ossKeys:[file.key],mimeType:mime,fileSize:String(size),
               sourceSha256:digest,sourceServiceGroup:g._id,sourceGroupMessageId:m.messageId,uploadedBy:req.staff._id,uploadedByRole:req.staff.role,
               aiStatus:'none',audit_status:'unaudited',
-            }:{patientId:p._id,staffId:req.staff._id,type:'group_service',title:'打卡原图 · '+title,date:checkedDate(date),
-              content:'医护确认归档的群打卡原图；未自动提取数值，不代表指标已审核。',
+            }:{patientId:p._id,staffId:req.staff._id,type:'group_service',title:'日常检测原图 · '+title,date:checkedDate(date),
+              content:'医护确认归档的日常检测原图；未自动提取数值，不代表指标已审核。',
+              structuredContent:{source:'wecom_archive',materialType:'daily_monitoring_image',sourceGroupId:String(g._id),measurementDate:date},
               sourceGroupImageSha256:digest,sourceGroupMessageId:m.messageId,
               attachments:[{url:file.url,ossKey:file.key,name:m.attachment.name,mimeType:mime,fileSize:String(size)}]});
           }catch(e){await oss.deleteFile(file.key);if(e.code!==11000)throw e;result=await Model.findOne(filter);if(!result)throw e;duplicate=true;}
