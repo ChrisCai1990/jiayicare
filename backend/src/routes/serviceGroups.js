@@ -236,7 +236,7 @@ router.post(
 async function sendGroupBundle(req, res) {
     const g = await group(req);
     await g.populate("members.patientId", "name phone");
-    let entries = await Entry.find({ groupId: g._id })
+    let entries = await Entry.find({ groupId: g._id, deletedAt: null })
       .sort({ createdAt: -1 })
       .limit(200)
       .lean();
@@ -287,7 +287,7 @@ router.post('/:groupId/workbench-draft', wrap(async (req, res) => {
   await permit(req, 'service_records', 'create');
   const p = await member(req, g, req.body.patientId);
   if (req.body.kind === 'reply' && !p) fail('回复草稿请先选择具体服务对象，避免混入家人资料');
-  let entries = await Entry.find({groupId:g._id}).sort({createdAt:-1}).limit(200).lean();
+  let entries = await Entry.find({groupId:g._id,deletedAt:null}).sort({createdAt:-1}).limit(200).lean();
   if (p) entries = entries.filter(e=>same(e.patientId,p._id));
   try { await permit(req, 'followups', 'view'); }
   catch(e) { if(e.status !== 403) throw e; entries = entries.filter(e=>e.kind !== 'task'); }
@@ -457,6 +457,18 @@ router.patch(
     );
     await member(req, g, e.patientId);
     if (req.body.version !== e.__v) fail("事项已被更新，请刷新后操作", 409);
+    if (e.deletedAt) fail('事项已删除', 410);
+    if (req.body.deleted === true) {
+      if (e.status !== 'cancelled') fail('仅已取消事项可以删除');
+      if (e.kind === 'task' && e.nativeId) {
+        const native = await FollowUp.findById(e.nativeId);
+        if (native && native.status !== 'cancelled') fail('原系统随访尚未取消，请先核对状态', 409);
+      }
+      e.deletedAt = new Date();
+      e.history.push({actor:req.staff._id,action:'删除已取消事项（保留去重记录）'});
+      await e.save();
+      return res.json({success:true,data:{_id:e._id,deleted:true}});
+    }
     if (e.status === "draft") {
       if (req.body.patientId !== undefined) {
         await member(req, g, req.body.patientId);
