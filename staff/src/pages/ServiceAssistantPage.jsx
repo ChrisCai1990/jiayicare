@@ -551,6 +551,7 @@ export default function ServiceAssistantPage() {
           "正在检查接入状态…"
         )}
       </div>
+      {can('patients', 'edit') && <WecomKfBindingPanel />}
       </details>
       </header>
       {error && (
@@ -564,7 +565,6 @@ export default function ServiceAssistantPage() {
           <button className="sa-dismiss" aria-label="关闭提示" onClick={() => setNotice('')}>×</button>
         </div>
       )}
-      {can('patients', 'edit') && <WecomKfBindingPanel />}
       {(!inGroupSidebar || !g) && <div className="sa-toolbar">
         {inGroupSidebar ? <div><small>当前群绑定家庭</small><p>{g?.name || (creating ? "当前群尚未绑定，请在下方完成首次绑定" : error ? "暂时无法读取，请在连接状态中重试" : "正在读取当前群的绑定关系…")}</p></div> : <>
         <label>
