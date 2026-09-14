@@ -1279,8 +1279,17 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
     if (!record) return res.status(404).json({ success: false, message: '推送记录不存在' });
     const { selectedProductIds, useHealthFund, couponId, paymentMethod } = req.body;
     if (!selectedProductIds?.length) return res.status(400).json({ success: false, message: '请选择要购买的产品' });
-    // 从 products 数组里找出选中的项
-    const toPay = (record.products || []).filter(p => selectedProductIds.includes(p.productId));
+    // 新版组合推送使用 products；旧版单品推送只有 productId/price/title。
+    // 支付端兼容两种记录，保证已推送到用户端的历史单品无需重新推送即可下单。
+    const pushedProducts = record.products?.length ? record.products : (record.productId ? [{
+      productId: String(record.productId),
+      name: record.title || '服务产品',
+      price: record.price ?? 0,
+      category: '',
+      icon: '🛍',
+    }] : []);
+    const selectedIdSet = new Set(selectedProductIds.map(String));
+    const toPay = pushedProducts.filter(p => selectedIdSet.has(String(p.productId)));
     if (!toPay.length) return res.status(400).json({ success: false, message: '所选产品不在推送列表中' });
 
     const totalPrice = toPay.reduce((s, p) => s + (p.price || 0), 0);
