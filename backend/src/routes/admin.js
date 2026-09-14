@@ -2142,9 +2142,14 @@ router.put('/system-config/health-assistant', adminAuth, async (req, res) => {
 });
 
 router.patch('/products/:id/service-workflow', adminAuth, async (req, res) => {
-  const allowedKeys = ['', 'annual_management', 'health_record_management', 'health_assessment', 'nutrition_intervention', 'checkup', 'medical_assist', 'rehab', 'tcm', 'psychology', 'medication_supply', 'supplement_supply', 'generic_followup', 'fulfillment_only'];
+  const allowedKeys = ['', 'annual_management', 'health_record_management', 'health_assessment', 'nutrition_intervention', 'checkup', 'medical_assist', 'medical_proxy', 'rehab', 'tcm', 'psychology', 'medication_supply', 'supplement_supply', 'generic_followup', 'fulfillment_only'];
   if (!allowedKeys.includes(req.body?.key)) return res.status(400).json({ success: false, message: '请选择有效的服务流程' });
   const key = req.body.key;
+  const workflowProduct = await Product.findById(req.params.id).select('name').lean();
+  if (!workflowProduct) return res.status(404).json({ success: false, message: '产品不存在' });
+  if ((/医疗代诊/.test(workflowProduct.name) && key !== 'medical_proxy') || (key === 'medical_proxy' && !/医疗代诊/.test(workflowProduct.name))) {
+    return res.status(400).json({ success: false, message: '医疗代诊商品必须使用专属医疗代诊流程' });
+  }
   const questionnaireId = key === 'checkup' ? (req.body?.questionnaireId || null) : null;
   if (questionnaireId && !mongoose.Types.ObjectId.isValid(questionnaireId)) return res.status(400).json({ success: false, message: '问卷参数无效' });
   if (questionnaireId && !await DynamicQuestionnaire.exists({ _id: questionnaireId, status: 'active', deletedAt: null })) {
@@ -2161,6 +2166,7 @@ router.patch('/products/:id/service-workflow', adminAuth, async (req, res) => {
   const allowedModes = new Set(['fixed', 'conditional', 'manual']);
   const allowedTriggers = new Set(['', 'report_uploaded', 'abnormal_found', 'exam_order_found', 'followup_instruction_found', 'documents_incomplete', 'customer_request']);
   const rawModules = Array.isArray(req.body?.modules) ? req.body.modules : followUpPlanIds.map((planId, sequence) => ({ planId, mode: 'fixed', trigger: '', sequence }));
+  if (key === 'medical_proxy' && rawModules.length) return res.status(400).json({ success: false, message: '医疗代诊岗位任务由订单流程统一生成，无需重复关联随访任务模块' });
   const modules = rawModules.map((item, sequence) => ({
     planId: String(item?.planId || ''), mode: String(item?.mode || 'fixed'), trigger: String(item?.trigger || ''),
     sequence: Number.isFinite(Number(item?.sequence)) ? Number(item.sequence) : sequence,

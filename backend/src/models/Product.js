@@ -73,7 +73,7 @@ const productSchema = new mongoose.Schema({
   }],
   aiProfile: { type: aiProfileSchema, default: () => ({}) },
   serviceWorkflow: {
-    key: { type: String, enum: ['', 'annual_management', 'health_record_management', 'health_assessment', 'nutrition_intervention', 'checkup', 'medical_assist', 'rehab', 'tcm', 'psychology', 'medication_supply', 'supplement_supply', 'generic_followup', 'fulfillment_only'], default: '' },
+    key: { type: String, enum: ['', 'annual_management', 'health_record_management', 'health_assessment', 'nutrition_intervention', 'checkup', 'medical_assist', 'medical_proxy', 'rehab', 'tcm', 'psychology', 'medication_supply', 'supplement_supply', 'generic_followup', 'fulfillment_only'], default: '' },
     followUpPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUpPlan', default: null },
     followUpPlanIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'FollowUpPlan' }],
     questionnaireId: { type: mongoose.Schema.Types.ObjectId, ref: 'DynamicQuestionnaire', default: null },

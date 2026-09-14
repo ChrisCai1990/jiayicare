@@ -8789,6 +8789,9 @@ export default function PatientDetailPage() {
                   {aiMedicalAssistGenerating ? '生成中…' : staff?.role === 'familyDoctor' ? '✨ 发起就医协助方案' : '✨ AI就医协助方案'}
                 </button>
               )}
+              {['healthPlanner', 'superadmin'].includes(staff?.role) && (
+                <button className="btn btn-secondary btn-sm" onClick={() => nav(`/products?medicalProxy=1&patientId=${id}`, { state: { initialPatient: { _id: id, name: data?.user?.name || '' } } })}>发起医疗代诊</button>
+              )}
               {['familyDoctor', 'superadmin'].includes(staff?.role) && (
                 <button className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${id}/annual-health`)}>
                   ✨ AI年度管理方案
@@ -13652,7 +13655,7 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, initialBri
       planType === 'annual_checkup' ? staffAPI.getWorkflowProducts('checkup') : Promise.resolve({ data: [] }),
     ])
       .then(([res, productRes]) => {
-        setTemplates((res.data || []).filter(tpl => planType !== 'medical_assist' || staff?.role !== 'familyDoctor' || /住院一站式/.test(tpl.name || '')))
+        setTemplates((res.data || []).filter(tpl => planType !== 'medical_assist' || (!/医疗代诊/.test(tpl.name || '') && (staff?.role !== 'familyDoctor' || /住院一站式/.test(tpl.name || '')))))
         const products = productRes.data || []
         setWorkflowProducts(products)
         if (products.length === 1) setSelectedProductId(products[0]._id)

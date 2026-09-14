@@ -23,9 +23,9 @@ const TEMPLATE_NORMALIZATION = {
   '医疗代诊服务': {
     serviceDomain: 'medical_assist', assistanceType: 'proxy_visit', requiresDoctorConfirm: true,
     applicableScenario: '客户不便到场，且医疗机构允许依据完整资料代为咨询。',
-    standardSteps: '确认代诊目的、医院、科室与专家\n核对病历、报告和问题清单\n确认是否需要客户远程连线\n完成代诊并准确记录医嘱\n向客户和家庭医生反馈并归档',
+    standardSteps: '健康规划师确认诉求并指导客户上传、选择本次资料\n健管专员审核资料\n健康顾问确认医院、科室、专家、代诊目标和交流内容\n健康规划师复核并预指派就医专员\n健管专员完成专家门诊预约并核对客户期望日期\n就医专员完成代诊、上传病历并记录医生反馈\n健康顾问确认后续随访计划；健康规划师督办至代诊结束',
     requiredMaterials: '有效身份证明、病历及检查资料、当前用药清单、授权信息、问题清单。',
-    completionStandard: '已取得可追溯的专业意见，完整反馈客户并写入服务档案。',
+    completionStandard: '就医专员完成代诊并上传病历，医生意见写入服务档案；复查建议形成待健康顾问确认的随访计划，健康规划师全程督办至代诊结束。',
     optionalLogistics: '资料递送或取回（确有需要时）。', riskNotes: '须符合医院规定；涉及诊断、处方或治疗调整时由医生确认。',
   },
   '医务代办服务-代约检（常规）': {

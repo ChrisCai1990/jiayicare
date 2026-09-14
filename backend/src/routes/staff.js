@@ -2929,7 +2929,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
     // （2026-07-13 反馈：进详情页/工作台待随访任务处理后应该自动转已完成，不该继续停在待处理）
     if (plan.sourceOrderId) {
       const sourceOrder = await Order.findById(plan.sourceOrderId).select('serviceName').lean();
-      if (!require('../utils/medicalProxyWorkflow').isMedicalProxyOrder(sourceOrder?.serviceName)) {
+      if (!require('../utils/medicalProxyWorkflow').isMedicalProxyOrder(sourceOrder)) {
         await FollowUp.updateMany(
           { sourceType: 'order', sourceOrderId: plan.sourceOrderId, status: { $ne: 'completed' } },
           { $set: { status: 'completed', completedAt: new Date() } }
@@ -5795,7 +5795,7 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
     if (!actionableOrder) return res.status(409).json({ success: false, message: '订单已退款、取消、完成或尚未支付，不能继续生成服务方案' });
     const currentOrder = await Order.findById(req.params.id);
     const { isMedicalProxyOrder, startMedicalProxyWorkflow } = require('../utils/medicalProxyWorkflow');
-    if (isMedicalProxyOrder(currentOrder?.serviceName)) {
+    if (isMedicalProxyOrder(currentOrder)) {
       if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '医疗代诊由健康规划师确认服务需求' });
       if (!String(req.body.serviceContent || '').trim() || !String(req.body.customerNeed || '').trim()) return res.status(400).json({ success: false, message: '请完整确认服务内容和本次代诊诉求' });
       const task = await startMedicalProxyWorkflow(currentOrder, req.staff._id, scheduledAt, String(req.body.serviceContent).trim(), String(req.body.customerNeed).trim());
@@ -6053,7 +6053,7 @@ router.post('/orders/:id/redeem', staffAuth, async (req, res) => {
     }
 
     const totalUnits = Math.max(1, Number(order.totalUnits) || 1);
-    if (require('../utils/medicalProxyWorkflow').isMedicalProxyOrder(order.serviceName)
+    if (require('../utils/medicalProxyWorkflow').isMedicalProxyOrder(order)
       && Number(order.usedUnits || 0) + 1 >= totalUnits) {
       const activeWorkflow = await FollowUp.exists({ sourceType: 'order', sourceOrderId: order._id, workflowKey: /^medical_proxy:/ });
       if (activeWorkflow) {
@@ -12736,7 +12736,7 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
     if (orderId) {
       order = await Order.findOne({ _id: orderId, user: user._id }).select('serviceName note desiredServiceDate serviceRequirements paidAmount serviceWorkflowSnapshot checkupIntake status tradeStatus refundStatus paymentStatus').lean();
       if (!order) return res.status(404).json({ success: false, message: '关联订单不存在' });
-      if (require('../utils/medicalProxyWorkflow').isMedicalProxyOrder(order.serviceName)) {
+      if (require('../utils/medicalProxyWorkflow').isMedicalProxyOrder(order)) {
         return res.status(409).json({ success: false, message: '医疗代诊请先在对话中完整确认服务内容和诉求，由健康规划师指导上传并选定资料，再交健管专员审核、健康顾问确认方案' });
       }
       const existingPlan = await HealthPlan.findOne({ patientId: user._id, sourceOrderId: order._id, type: 'medical_assist' })
@@ -12760,6 +12760,7 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
     if (templateId) {
       matchedTemplate = await PlanTemplate.findOne({ _id: templateId, type: 'medical_assist' }).lean();
       if (!matchedTemplate) return res.status(404).json({ success: false, message: '就医协助方案模板不存在' });
+      if (/医疗代诊/.test(matchedTemplate.name || '')) return res.status(409).json({ success: false, message: '医疗代诊请发起对应商品，由客户下单后进入统一医疗代诊流程' });
     } else if (order?.serviceName) {
       // 按订单服务名匹配就医协助模板库：服务名一般能对应到具体模板（如"医疗代诊服务"）；
       // 少数笼统服务名（如"就医陪同服务"）在模板库里被拆成多个细分模板，此时精确匹配不到，

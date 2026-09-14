@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast } from '../App'
 
@@ -8,6 +9,9 @@ const CAT_PALETTE = ['#0077B6', '#1E6B50', '#22A06B', '#8e44ad', '#D97706', '#DC
 const catColor = (name) => CAT_COLOR[name] || CAT_PALETTE[[...(name || '')].reduce((s, c) => s + c.charCodeAt(0), 0) % CAT_PALETTE.length]
 
 export default function ProductPushPage() {
+  const location = useLocation()
+  const requestedMedicalProxy = new URLSearchParams(location.search).get('medicalProxy') === '1'
+  const requestedPatientId = new URLSearchParams(location.search).get('patientId') || ''
   const toast = useToast()
   const [products, setProducts] = useState([])
   const [patients, setPatients] = useState([])
@@ -27,9 +31,21 @@ export default function ProductPushPage() {
       staffAPI.getProductCategories().catch(() => ({ data: { categories: [] } })),
     ]).then(([p, pt, pr, cat]) => {
       setProducts(p.data.products)
-      setPatients(pt.data.patients)
+      const loadedPatients = pt.data.patients || []
+      const initialPatient = location.state?.initialPatient
+      setPatients(initialPatient?._id && !loadedPatients.some(patient => String(patient._id) === String(initialPatient._id))
+        ? [initialPatient, ...loadedPatients] : loadedPatients)
       setPushRecords(pr.data.records)
       setCategories(['全部', ...(cat.data?.categories || [])])
+      if (requestedMedicalProxy) {
+        const proxy = (p.data.products || []).find(product => /医疗代诊/.test(product.name || ''))
+        if (proxy) {
+          setSelected([proxy.id])
+          const firstPrice = (proxy.servicePrices || []).find(item => item.label && item.price != null)?.price
+          setSelectedPrices({ [proxy.id]: firstPrice ?? proxy.price ?? 0 })
+          setShowPatientModal(true)
+        } else toast('未找到已上架的医疗代诊商品，请先在 Admin 配置并上架')
+      }
     }).catch(console.error).finally(() => setLoading(false))
   }, [])
 
@@ -268,6 +284,7 @@ export default function ProductPushPage() {
           selectedItems={selectedItems}
           totalPrice={totalPrice}
           selectedPrices={selectedPrices}
+          initialPatientId={requestedPatientId}
           onClose={() => setShowPatientModal(false)}
           onSaved={async (n) => {
             setShowPatientModal(false)
@@ -288,8 +305,8 @@ const PERFORMER_ROLE_LABEL = {
   specialist: '专科医师', tcmDoctor: '中医师',
 }
 
-function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrices, onClose, onSaved }) {
-  const [selectedPatients, setSelectedPatients] = useState([])
+function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrices, initialPatientId = '', onClose, onSaved }) {
+  const [selectedPatients, setSelectedPatients] = useState(() => patients.some(patient => String(patient._id || patient.id) === initialPatientId) ? [initialPatientId] : [])
   const [search, setSearch] = useState('')
   const [pushing, setPushing] = useState(false)
   const [staffList, setStaffList] = useState([])

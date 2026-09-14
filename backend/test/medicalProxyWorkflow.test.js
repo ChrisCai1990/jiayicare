@@ -5,7 +5,14 @@ const path = require('node:path');
 const Admin = require('../src/models/Admin');
 const MedicalReport = require('../src/models/MedicalReport');
 const User = require('../src/models/User');
-const { stageOf, preparationDueDate, reportIdsFromTask, extractMedicalProxyRechecks, validateMedicalProxyStage } = require('../src/utils/medicalProxyWorkflow');
+const { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, extractMedicalProxyRechecks, validateMedicalProxyStage } = require('../src/utils/medicalProxyWorkflow');
+
+test('storefront and staff orders resolve to the same proxy workflow', () => {
+  assert.equal(isMedicalProxyOrder({ serviceName: '医疗代诊服务', serviceWorkflowSnapshot: { key: 'medical_proxy' } }), true);
+  assert.equal(isMedicalProxyOrder({ serviceName: '专科咨询', serviceWorkflowSnapshot: { key: 'medical_proxy' } }), true);
+  assert.equal(isMedicalProxyOrder({ serviceName: '医疗代诊服务' }), true);
+  assert.equal(isMedicalProxyOrder({ serviceName: '门诊一站式服务', serviceWorkflowSnapshot: { key: 'medical_assist' } }), false);
+});
 
 test('collection is due three days before proxy visit or immediately inside the window', () => {
   assert.equal(preparationDueDate(new Date('2026-09-20T00:00:00+08:00'), new Date('2026-09-14T00:00:00+08:00')).toISOString(), new Date('2026-09-17T00:00:00+08:00').toISOString());

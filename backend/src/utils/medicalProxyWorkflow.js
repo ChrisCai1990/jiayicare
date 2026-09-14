@@ -6,7 +6,8 @@ const User = require('../models/User');
 
 const PREFIX = 'medical_proxy:';
 const STAGES = ['collect', 'audit', 'advisor', 'planner', 'booking', 'execute'];
-const isMedicalProxyOrder = name => /医疗代诊/.test(String(name || ''));
+const isMedicalProxyOrder = orderOrName => orderOrName?.serviceWorkflowSnapshot?.key === 'medical_proxy'
+  || /医疗代诊/.test(String(typeof orderOrName === 'object' ? orderOrName?.serviceName : orderOrName || ''));
 const stageOf = task => task?.sourceType === 'order' && String(task.workflowKey || '').startsWith(PREFIX)
   ? String(task.workflowKey).slice(PREFIX.length) : '';
 const nonempty = value => String(value || '').trim();
