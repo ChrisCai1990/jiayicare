@@ -163,3 +163,12 @@ test('expert appointment booking completes without a medical assistant', async (
     Admin.findOne = originalAdminFind;
   }
 });
+
+test('expert appointment closes the order and supports advisor to manager initiation', () => {
+  const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
+  const migration = fs.readFileSync(path.join(__dirname, '../src/scripts/migrateExpertAppointmentWorkflowV12.js'), 'utf8');
+  assert.match(workflow, /appointmentOnly[\s\S]*assignedHealthManager/);
+  assert.match(workflow, /serviceName = appointmentOnly \? '专家约诊服务'/);
+  assert.match(workflow, /order\.status = 'completed';[\s\S]*order\.tradeStatus = 'completed'/);
+  assert.match(migration, /assistanceType: 'expert_appointment'/);
+});

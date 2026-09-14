@@ -542,7 +542,7 @@ function PlanContentForm({ type, initialContent, contentRef }) {
       <div className="form-group">
         <label className="form-label">就医协助类型</label>
         <select className="form-input" value={content.assistanceType || ''} onChange={e => set('assistanceType', e.target.value)}>
-          <option value="">请选择</option><option value="consultation">健康咨询</option><option value="agency">代办服务</option><option value="proxy_visit">代诊服务</option><option value="medication">代配药</option><option value="escort">陪诊/陪检</option><option value="treatment">陪同治疗</option><option value="checkup">体检协调</option><option value="one_stop">一站式服务</option>
+          <option value="">请选择</option><option value="consultation">健康咨询</option><option value="expert_appointment">专家约诊</option><option value="agency">代办服务</option><option value="proxy_visit">代诊服务</option><option value="medication">代配药</option><option value="escort">陪诊/陪检</option><option value="treatment">陪同治疗</option><option value="checkup">体检协调</option><option value="one_stop">一站式服务</option>
         </select>
       </div>
       <div className="form-group">
@@ -660,7 +660,7 @@ function TemplateModal({ template, planType, onClose, onSaved }) {
       toast('❌ 请填写策略侧重点，避免不同年度策略只有名称不同')
       return
     }
-    if (planType === 'medical_assist' && !(content.followUpPlans?.length || content.followUpPlanId)) {
+    if (planType === 'medical_assist' && content.assistanceType !== 'expert_appointment' && !(content.followUpPlans?.length || content.followUpPlanId)) {
       toast('❌ 请选择关联岗位任务方案')
       return
     }

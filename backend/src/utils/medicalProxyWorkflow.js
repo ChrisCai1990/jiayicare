@@ -226,19 +226,39 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceT
 }
 
 async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
-  if (!patient.assignedHealthPlanner || !patient.assignedHealthManager) {
-    throw Object.assign(new Error('请先为客户分配健康规划师和健管专员'), { status: 409 });
+  const appointmentOnly = plan.appointmentOnly === true;
+  if (!patient.assignedHealthManager || (!appointmentOnly && !patient.assignedHealthPlanner)) {
+    throw Object.assign(new Error(appointmentOnly ? '请先为客户分配健管专员' : '请先为客户分配健康规划师和健管专员'), { status: 409 });
   }
   const reportIds = [...new Set((plan.selectedReportIds || []).map(String).filter(Boolean))];
-  const reportCount = await MedicalReport.countDocuments({ _id: { $in: reportIds }, user: patient._id, audit_status: 'audited' });
-  if (!reportIds.length || reportCount !== reportIds.length) throw Object.assign(new Error('请选择该客户至少一份已审核资料'), { status: 400 });
+  if (!appointmentOnly) {
+    const reportCount = await MedicalReport.countDocuments({ _id: { $in: reportIds }, user: patient._id, audit_status: 'audited' });
+    if (!reportIds.length || reportCount !== reportIds.length) throw Object.assign(new Error('请选择该客户至少一份已审核资料'), { status: 400 });
+  }
   const date = new Date();
+  const serviceName = appointmentOnly ? '专家约诊服务' : '医疗代诊服务';
   const order = await Order.create({
     user: patient._id, tenantId: patient.tenantId || null, serviceId: `annual-member-medical-proxy-${Date.now()}`,
-    serviceName: '医疗代诊服务', servicePrice: 0, unitPrice: 0, paymentStatus: 'unpaid', tradeStatus: 'fulfilling',
+    serviceName, servicePrice: 0, unitPrice: 0, paymentStatus: 'unpaid', tradeStatus: 'fulfilling',
     status: 'pending', initiationSource: STAFF_DIRECT_SOURCE,
-    serviceRequirements: `${plan.proxyGoal}\n${plan.communicationContent}`, serviceWorkflowSnapshot: { key: 'medical_proxy', source: STAFF_DIRECT_SOURCE },
+    desiredServiceDate: appointmentOnly ? appointmentAt(plan.preferredDateStart) : null,
+    desiredServiceDateEnd: appointmentOnly ? appointmentAt(plan.preferredDateEnd) : null,
+    serviceRequirements: appointmentOnly ? `${plan.hospital} ${plan.department} ${plan.expert}` : `${plan.proxyGoal}\n${plan.communicationContent}`,
+    serviceWorkflowSnapshot: { key: 'medical_proxy', source: STAFF_DIRECT_SOURCE },
   });
+  if (appointmentOnly) {
+    const booking = await FollowUp.create({
+      patientId: patient._id, staffId: advisorId, assignedTo: patient.assignedHealthManager,
+      type: 'other', status: 'planned', date, remindAt: new Date(), sourceType: 'order', sourceOrderId: order._id,
+      workflowKey: `${PREFIX}booking`, taskRole: 'executor', theme: `医疗代诊：健管专员完成专家门诊预约 · ${serviceName}`,
+      plannedContent: '健康顾问已发起专家约诊，请完成预约并记录实际日期时间。',
+      formData: {
+        planSnapshot: { serviceContent: `${plan.hospital} ${plan.department} ${plan.expert}`, initiationSource: STAFF_DIRECT_SOURCE },
+        preferredDateStart: plan.preferredDateStart, preferredDateEnd: plan.preferredDateEnd,
+      },
+    });
+    return { order, booking };
+  }
   const supervisor = await FollowUp.create({
     patientId: patient._id, staffId: patient.assignedHealthPlanner, assignedTo: patient.assignedHealthPlanner,
     type: 'other', status: 'in_progress', date, remindAt: new Date(), sourceType: 'order', sourceOrderId: order._id,
@@ -361,6 +381,10 @@ async function advanceMedicalProxyWorkflow(task) {
         { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } },
         { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', content: '健管专员已完成专家约诊，预约信息已发送客户。', 'formData.currentStage': 'completed' } },
       );
+      order.status = 'completed';
+      order.tradeStatus = 'completed';
+      order.completedAt = new Date();
+      await order.save();
       return;
     }
   }
