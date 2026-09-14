@@ -627,6 +627,16 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
         if code:
             raise RuntimeError("专家约诊历史复核任务清理失败")
         code, _ = run_migration(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/renameExpertAppointmentSupplementV16.js ] && "
+            f"[ ! -f {REPO_DIR}/.expert-appointment-supplement-v16-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/renameExpertAppointmentSupplementV16.js && "
+            f"touch {REPO_DIR}/.expert-appointment-supplement-v16-applied; fi",
+            timeout=120,
+            label="将专家约诊复核任务改为补充约诊需求",
+        )
+        if code:
+            raise RuntimeError("专家约诊补充需求任务更新失败")
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateOneStopFinalFlowV15.js ] && "
             f"[ ! -f {REPO_DIR}/.one-stop-final-flow-v15-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateOneStopFinalFlowV15.js --apply && "

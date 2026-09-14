@@ -412,7 +412,7 @@ async function validateMedicalProxyStage(task, body, staff) {
     }
   }
   if (stage === 'appointment_review') {
-    if (!nonempty(data.serviceContent) || !nonempty(data.preferredDateStart) || !nonempty(data.preferredDateEnd) || data.preferredDateEnd < data.preferredDateStart) return '请核对约诊需求和有效的期望日期区间';
+    if (!nonempty(data.serviceContent) || !nonempty(data.preferredDateStart) || !nonempty(data.preferredDateEnd) || data.preferredDateEnd < data.preferredDateStart) return '请补充完整约诊需求和有效的期望日期区间';
   }
   if (stage === 'post_visit_audit') {
     const ids = [...new Set((data.reportIds || []).map(String).filter(Boolean))];
@@ -454,10 +454,10 @@ async function advanceMedicalProxyWorkflow(task) {
     order.scheduledAt = null; order.completedAt = null; order.status = 'pending'; order.tradeStatus = 'fulfilling';
     order.markModified('medicalProxyPlan');
     await order.save();
-    await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}booking` }, { $set: { status: 'planned', assignedTo: patient.assignedHealthManager, staffId: patient.assignedHealthManager, completedAt: null, completedBy: null, date: new Date(), remindAt: new Date(), formData: { planSnapshot: { serviceContent: order.serviceRequirements, initiationSource: order.initiationSource }, preferredDateStart: task.formData.preferredDateStart, preferredDateEnd: task.formData.preferredDateEnd }, plannedContent: '健康顾问已重新核对约诊需求，请重新确认预约并记录实际日期时间。' } });
+    await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}booking` }, { $set: { status: 'planned', assignedTo: patient.assignedHealthManager, staffId: patient.assignedHealthManager, completedAt: null, completedBy: null, date: new Date(), remindAt: new Date(), formData: { planSnapshot: { serviceContent: order.serviceRequirements, initiationSource: order.initiationSource }, preferredDateStart: task.formData.preferredDateStart, preferredDateEnd: task.formData.preferredDateEnd }, plannedContent: '健康顾问已补充医院、院区、门诊类型及保险等约诊需求，请重新预约并记录实际日期时间。' } });
     await FollowUp.updateMany({ sourceType: 'order', sourceOrderId: order._id, workflowKey: { $in: [`${PREFIX}post_visit_audit`, `${PREFIX}post_visit_review`] }, status: { $in: ['planned', 'in_progress'] } }, { $set: { status: 'cancelled', cancelReason: '健康顾问重新核对约诊需求' } });
     await require('../models/AppointmentReminder').updateMany({ orderId: order._id, status: { $in: ['pending', 'processing'] } }, { $set: { status: 'cancelled' } });
-    await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise` }, { $set: { 'formData.currentStage': 'booking', content: '健康顾问已重新核对需求，等待健管专员重新预约。' } });
+    await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise` }, { $set: { 'formData.currentStage': 'booking', content: '健康顾问已补充约诊需求，等待健管专员重新预约。' } });
     return;
   }
   if (stage === 'advisor') {

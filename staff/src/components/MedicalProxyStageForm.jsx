@@ -26,7 +26,7 @@ export function validateMedicalProxyStage(stage, value) {
   if (stage === 'booking' && ['preferredDateStart', 'preferredDateEnd', 'appointmentDate', 'appointmentTime'].some(key => !value[key]?.trim())) return '请完整填写客户期望日期区间和实际约诊日期时间'
   if (stage === 'booking' && (value.appointmentDate < value.preferredDateStart || value.appointmentDate > value.preferredDateEnd) && !value.dateDifferenceNote?.trim()) return '约诊日期不在客户期望区间内，请说明差异及客户确认情况'
   if (stage === 'booking' && /费用与保险：使用高端医疗险/.test(value.planSnapshot?.serviceContent || '') && !['direct_verified', 'reimbursement_verified', 'self_pay_confirmed'].includes(value.insuranceOutcome)) return '请核实高端医疗险结算方式，并记录最终办理结果'
-  if (stage === 'appointment_review' && (!value.serviceContent?.trim() || !value.preferredDateStart || !value.preferredDateEnd || value.preferredDateEnd < value.preferredDateStart)) return '请核对约诊需求和期望日期区间'
+  if (stage === 'appointment_review' && (!value.serviceContent?.trim() || !value.preferredDateStart || !value.preferredDateEnd || value.preferredDateEnd < value.preferredDateStart)) return '请补充完整约诊需求和期望日期区间'
   if (stage === 'post_visit_audit' && (!value.reportIds?.length && !value.noMaterialsConfirmed)) return '请选择就诊后资料，或确认本次无资料'
   if (stage === 'post_visit_audit' && !value.auditSummary?.trim()) return '请填写健管专员审核结论'
   if (stage === 'post_visit_review' && !value.reviewSummary?.trim()) return '请查看报告并填写健康顾问查看结论'
@@ -45,8 +45,8 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
       : <input className="form-control" type={type} value={value[key] || ''} onChange={e => set(key, e.target.value)} />}
   </label>
   if (stage === 'appointment_review') return <div style={{ display: 'grid', gap: 12 }}>
-    <div style={{ fontSize: 12, color: '#8A6D3B' }}>原预约记录会保留；提交后退回健管专员重新确认预约。</div>
-    {input('serviceContent', '重新核对约诊需求（含医院、院区、门诊类型及保险安排）', 3)}
+    <div style={{ fontSize: 12, color: '#8A6D3B' }}>原预约记录会保留。请补齐新增的约诊信息，提交后交给健管专员重新预约。</div>
+    {input('serviceContent', '补充约诊需求（医院、院区、科室、专家、门诊类型及费用与保险）', 4)}
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>{input('preferredDateStart', '期望开始日期', 1, 'date')}{input('preferredDateEnd', '期望结束日期', 1, 'date')}</div>
   </div>
   if (stage === 'post_visit_audit') {
