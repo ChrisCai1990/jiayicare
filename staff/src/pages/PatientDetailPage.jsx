@@ -2304,6 +2304,14 @@ export default function PatientDetailPage() {
       setFollowUps(res.data.followUps)
     } catch {}
   }
+  const openPostCheckupReview = async (followUpId) => {
+    const res = await staffAPI.getPatientFollowUps(id, { followUpId })
+    const target = res.data?.followUps?.[0]
+    if (!target) throw new Error('AI随访计划未找到，请刷新后在服务执行任务中查看')
+    setFollowUps(current => [target, ...current.filter(item => item._id !== target._id)])
+    setTab('followups')
+    setFollowUpDetail(target)
+  }
 
   useEffect(() => {
     const targetId = new URLSearchParams(location.search).get('followUpId')
@@ -11939,11 +11947,10 @@ export default function PatientDetailPage() {
           patientId={id}
           patientName={user.name}
           onClose={() => setShowPostCheckupSupervisionModal(false)}
-          onStarted={async () => {
+          onStarted={async (followUpId) => {
             setShowPostCheckupSupervisionModal(false)
             toast('AI随访计划已生成，请在随访任务中审核确认')
-            await loadFollowUps()
-            setTab('followups')
+            await openPostCheckupReview(followUpId)
           }}
         />
       )}
@@ -12006,6 +12013,11 @@ export default function PatientDetailPage() {
           initialBriefNote={showSelectTplModal === 'annual_checkup' ? buildCheckupQuestionnaireGoal(qResponses, plans) : ''}
           title={showSelectTplModal === 'annual_checkup' ? 'AI体检方案' : showSelectTplModal === 'nutrition' ? 'AI营养方案' : 'AI就医协助方案'}
           onClose={() => { setShowSelectTplModal(null); setPendingMedicalAssistOrderId('') }}
+          onPostCheckupStarted={async (followUpId) => {
+            setShowSelectTplModal(null)
+            toast('AI随访计划已生成，请审核确认')
+            await openPostCheckupReview(followUpId)
+          }}
           onGenerate={async (templateId, briefNote, productId, desiredServiceDate, serviceRequirements) => {
             if (showSelectTplModal === 'annual_checkup') {
               const generated = await staffAPI.generateAIAnnualCheckupPlan(id, templateId, briefNote, productId, desiredServiceDate, serviceRequirements)
@@ -13898,7 +13910,7 @@ function AttachedHealthInfoView({ info }) {
 // ── AI方案生成前先选模板弹窗（体检方案/营养方案/就医协助方案通用）───────────────────
 // 2026-07-13：三类方案都是"AI只在模板骨架基础上定制"，不该让AI自由发明。此前AI一点即生成，
 // 完全跳过模板；改为先弹出模板选择，选定后才真正调用AI生成，模板骨架部分由后端原样锁定。
-function SelectTemplateAndGenerateModal({ planType, title, patientId, initialBriefNote = '', onClose, onGenerate }) {
+function SelectTemplateAndGenerateModal({ planType, title, patientId, initialBriefNote = '', onClose, onGenerate, onPostCheckupStarted }) {
   const toast = useToast()
   const [templates, setTemplates] = useState([])
   const [loading, setLoading] = useState(true)
@@ -13962,9 +13974,9 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, initialBri
             <button type="button" className="btn btn-primary btn-sm" style={{ justifySelf: 'start' }} disabled={generating} onClick={async () => {
               setGenerating(true)
               try {
-                await staffAPI.startPostCheckupSupervision(patientId, { note: briefNote.trim() })
-                toast('AI随访计划已生成，请在随访任务中审核确认')
-                onClose()
+                const result = await staffAPI.startPostCheckupSupervision(patientId, { note: briefNote.trim() })
+                if (onPostCheckupStarted) await onPostCheckupStarted(result.data?.followUpId)
+                else { toast('AI随访计划已生成，请在随访任务中审核确认'); onClose() }
               } catch (err) { toast(err.message || '发起复查督办失败') }
               finally { setGenerating(false) }
             }}>{generating ? '生成中…' : '发起复查督办服务'}</button>
@@ -14047,8 +14059,8 @@ function StartPostCheckupSupervisionModal({ patientId, patientName, onClose, onS
   const submit = async () => {
     setSaving(true); setError('')
     try {
-      await staffAPI.startPostCheckupSupervision(patientId, { note: note.trim() })
-      await onStarted()
+      const result = await staffAPI.startPostCheckupSupervision(patientId, { note: note.trim() })
+      await onStarted(result.data?.followUpId)
     } catch (err) { setError(err.message || '发起失败') }
     finally { setSaving(false) }
   }
