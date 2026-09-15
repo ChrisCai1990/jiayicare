@@ -68,7 +68,7 @@ const orderSchema = new mongoose.Schema({
 
   // 服务编排归属：发起来源、总督办与当前执行人相互独立。
   // supervisorId 在订单全生命周期保持为健康规划师；专业环节只更新 currentAssignee 或子任务 assignedTo。
-  initiationSource: { type: String, enum: ['customer', 'staff', 'admin', 'system'], default: 'customer', index: true },
+  initiationSource: { type: String, enum: ['customer', 'staff', 'staff_direct', 'admin', 'system'], default: 'customer', index: true },
   initiatedByStaff: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   supervisorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null, index: true },
   currentStage: { type: String, default: 'intake' },
