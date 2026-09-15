@@ -23,6 +23,7 @@ import OutpatientProxyVisitForm, { emptyOutpatientProxyVisit, isOutpatientProxyV
 import OutpatientEscortVisitForm, { emptyOutpatientEscortVisit, isOutpatientEscortVisitTask, validateOutpatientEscortVisit } from '../components/OutpatientEscortVisitForm'
 import OutpatientPostVisitReviewForm, { emptyOutpatientPostVisitReview, isOutpatientPostVisitReviewTask, validateOutpatientPostVisitReview } from '../components/OutpatientPostVisitReviewForm'
 import MedicalProxyStageForm, { medicalProxyStage, validateMedicalProxyStage } from '../components/MedicalProxyStageForm'
+import MedicationProxyStageForm, { medicationProxyStage } from '../components/MedicationProxyStageForm'
 import femalePortraitPhoto from '../assets/health-portrait-female.webp'
 import malePortraitPhoto from '../assets/health-portrait-male.webp'
 import { reconcileConversationMessages } from '../utils/conversationMessages'
@@ -1813,6 +1814,9 @@ export default function PatientDetailPage() {
   const [followUpSaving, setFollowUpSaving] = useState(false)
   const [showUploadReport, setShowUploadReport] = useState(false)
   const [showMessageModal, setShowMessageModal] = useState(() => new URLSearchParams(location.search).get('openChat') === '1')
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('openChat') === '1' && location.state?.serviceBooking) setShowMessageModal(true)
+  }, [location.search, location.state?.serviceBooking])
   const [planningChatContext, setPlanningChatContext] = useState(null)
   const [appointmentReviewContext, setAppointmentReviewContext] = useState(null)
   const [auditLoading, setAuditLoading] = useState(false)
@@ -2324,10 +2328,11 @@ export default function PatientDetailPage() {
     }
     setExecItem(f)
     const checklist = normalizeServiceChecklist(f.serviceChecklist, f.taskPurposes, f.dependsOnTaskId?.serviceChecklist)
-    setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: medicalProxyStage(f) ? (f.formData || {}) : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f.formData) : emptyOutpatientAssessment(f.formData) })
+    setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: (medicalProxyStage(f) || medicationProxyStage(f)) ? (f.formData || {}) : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f.formData) : emptyOutpatientAssessment(f.formData) })
   }
   const handleExec = async () => {
     const proxyStage = medicalProxyStage(execItem)
+    const medicationStage = medicationProxyStage(execItem)
     const isBooking = isCheckupBookingTask(execItem)
     const isReportCollection = isCheckupReportCollectionTask(execItem)
     const isAdvisorAssessment = isOutpatientAdvisorAssessmentTask(execItem)
@@ -2368,7 +2373,7 @@ export default function PatientDetailPage() {
     } else if (isPostVisitReview) {
       const error = validateOutpatientPostVisitReview(execForm.formData)
       if (error) { toast(error); return }
-    } else if (execItem?.taskRole && !isBooking && !isReportCollection) {
+    } else if (execItem?.taskRole && !medicationStage && !isBooking && !isReportCollection) {
       if (!execForm.serviceChecklist.length) { toast('请先在方案中补充明确的代办目的'); return }
       if (execItem.taskRole === 'supervisor' && execForm.serviceChecklist.some(item => !item.supervisionStatus)) { toast('请逐项完成督导核验'); return }
       if (execItem.taskRole !== 'supervisor' && execForm.serviceChecklist.some(item => !item.executionStatus || !item.executionResult?.trim() || (item.executionStatus !== 'completed' && !item.nextAction?.trim()))) { toast('请逐项填写完成状态、实际结果和未完成事项'); return }
@@ -2377,18 +2382,18 @@ export default function PatientDetailPage() {
     try {
       await staffAPI.updateFollowUp(execItem._id, {
         type: execForm.type,
-        content: execForm.content.trim() || (proxyStage ? (execForm.formData?.medicalPlanning ? proxyStage === 'advisor' ? '健康顾问已完成就医规划建议，转健康规划师与客户沟通' : '健康规划师已与客户确认就医规划及后续服务意向' : `医疗代诊${{ intake: '资料核对', collect: '资料收集', audit: '资料审核', advisor: '方案确认', planner: '方案复核', booking: '专家门诊预约', execute: '执行' }[proxyStage]}已完成`) : isAdvisorAssessment ? '已完成就医评估并确定推荐医院、科室、专家及预计检查安排' : isOutpatientAppointment ? '已完成代诊约诊服务安排' : isStaffAssignment ? '已完成首次代诊与检查日陪诊人员安排' : isEscortVisit ? '已完成检查及专家门诊陪诊，当日检验检查单和门诊病历已打印上传' : isPostVisitReview ? '已查看陪诊资料并生成后续随访计划' : summarizeServiceChecklist(submittedChecklist, execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor')),
+        content: execForm.content.trim() || (medicationStage ? `代配药${medicationStage}环节已完成` : proxyStage ? (execForm.formData?.medicalPlanning ? proxyStage === 'advisor' ? '健康顾问已完成就医规划建议，转健康规划师与客户沟通' : '健康规划师已与客户确认就医规划及后续服务意向' : `医疗代诊${{ intake: '资料核对', collect: '资料收集', audit: '资料审核', advisor: '方案确认', planner: '方案复核', booking: '专家门诊预约', execute: '执行' }[proxyStage]}已完成`) : isAdvisorAssessment ? '已完成就医评估并确定推荐医院、科室、专家及预计检查安排' : isOutpatientAppointment ? '已完成代诊约诊服务安排' : isStaffAssignment ? '已完成首次代诊与检查日陪诊人员安排' : isEscortVisit ? '已完成检查及专家门诊陪诊，当日检验检查单和门诊病历已打印上传' : isPostVisitReview ? '已查看陪诊资料并生成后续随访计划' : summarizeServiceChecklist(submittedChecklist, execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor')),
         status: isReportCollection
           ? (reportClosure?.collectionStatus === 'complete' ? 'completed' : 'in_progress')
           : execItem.taskRole === 'supervisor'
           ? (execForm.serviceChecklist.some(item => item.supervisionStatus === 'issue') ? 'in_progress' : 'completed')
-          : (proxyStage || isAdvisorAssessment || isOutpatientAppointment || isStaffAssignment || isProxyVisit || isEscortVisit || isPostVisitReview)
+          : (proxyStage || medicationStage || isAdvisorAssessment || isOutpatientAppointment || isStaffAssignment || isProxyVisit || isEscortVisit || isPostVisitReview)
             ? 'completed'
           : execItem.taskRole
             ? (submittedChecklist.every(item => item.executionStatus === 'completed') ? 'completed' : 'in_progress')
             : execForm.status,
         serviceChecklist: submittedChecklist,
-        formData: (proxyStage || isAdvisorAssessment || isOutpatientAppointment || isStaffAssignment || isProxyVisit || isEscortVisit || isPostVisitReview) ? execForm.formData : execItem.formData,
+        formData: (proxyStage || medicationStage || isAdvisorAssessment || isOutpatientAppointment || isStaffAssignment || isProxyVisit || isEscortVisit || isPostVisitReview) ? execForm.formData : execItem.formData,
       })
       toast(isReportCollection ? (reportClosure?.collectionStatus === 'complete' ? '体检报告已回收齐全，进入解析审核' : '报告回收进度已保存') : execItem?.taskRole === 'supervisor' ? '督办记录已完成' : execItem?.taskRole ? '事务记录已更新' : '随访记录已更新')
       setExecItem(null)
@@ -2675,6 +2680,11 @@ export default function PatientDetailPage() {
   useEffect(() => {
     if (tab === 'followups' && location.state?.openFollowUp) {
       const f = location.state.openFollowUp
+      if (medicationProxyStage(f)) {
+        openExec(f)
+        nav(location.pathname + location.search, { replace: true, state: {} })
+        return
+      }
       if (medicalProxyStage(f)) {
         if (medicalProxyStage(f) === 'supervise') setFollowUpDetail(f)
         else openExec(f)
@@ -2682,6 +2692,10 @@ export default function PatientDetailPage() {
         return
       }
       if (f.sourceType === 'order' && staff?.role === 'healthPlanner') {
+        if (/代配药|代取药/.test(f.sourceOrderId?.serviceName || f.theme || '')) {
+          nav(`${location.pathname}?openChat=1`, { replace: true, state: { serviceBooking: f } })
+          return
+        }
         setTab('plans')
         // 订单服务名已能唯一对应到具体模板，无需人工确认，跳转到方案tab后直接自动生成
         // （后端按服务名匹配到templateId后同样走模板固定内容锁定的生成逻辑，不是自由发挥）
@@ -9061,7 +9075,7 @@ export default function PatientDetailPage() {
                           </div>
                         ) : medicalProxyStage(f) === 'supervise' ? (
                           <button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(f)}>查看督办进度</button>
-                        ) : medicalProxyStage(f) && ['planned', 'in_progress', 'missed'].includes(f.status) ? (
+                        ) : (medicalProxyStage(f) || medicationProxyStage(f)) && ['planned', 'in_progress', 'missed'].includes(f.status) ? (
                           <button className="btn btn-sm" onClick={() => openExec(f)}>办理本环节</button>
                         ) : f.sourceType === 'order' ? (
                           // 商城服务订单：核心动作是"选执行人转派"，不是自己执行，主按钮走详情→编辑(assignedTo)
@@ -10285,16 +10299,16 @@ export default function PatientDetailPage() {
       {/* 执行任务弹窗：随访、监测、复查与就医等任务共用执行结果表单。 */}
       {execItem && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setExecItem(null) }}>
-          <div className="modal" style={{ maxWidth: (medicalProxyStage(execItem) || isCheckupBookingTask(execItem) || isCheckupOnsiteTask(execItem) || isCheckupReportCollectionTask(execItem) || isOutpatientAdvisorAssessmentTask(execItem) || isOutpatientAppointmentTask(execItem) || isOutpatientStaffAssignmentTask(execItem) || isOutpatientEscortVisitTask(execItem) || isOutpatientPostVisitReviewTask(execItem)) ? 780 : 520 }}>
+          <div className="modal" style={{ maxWidth: (medicalProxyStage(execItem) || medicationProxyStage(execItem) || isCheckupBookingTask(execItem) || isCheckupOnsiteTask(execItem) || isCheckupReportCollectionTask(execItem) || isOutpatientAdvisorAssessmentTask(execItem) || isOutpatientAppointmentTask(execItem) || isOutpatientStaffAssignmentTask(execItem) || isOutpatientEscortVisitTask(execItem) || isOutpatientPostVisitReviewTask(execItem)) ? 780 : 520 }}>
             <div className="modal-header">
-              <h3 className="modal-title">{medicalProxyStage(execItem) ? (/就医规划/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? medicalProxyStage(execItem) === 'advisor' ? '就医规划 · 健康顾问提出建议' : '就医规划 · 健康规划师客户沟通与结案' : ({ intake: '医疗代诊 · 核对既有资料', collect: '医疗代诊 · 指导上传并选定资料', audit: '医疗代诊 · 健管审核资料', advisor: '医疗代诊 · 健康顾问确认方案', planner: '医疗代诊 · 健康规划师复核方案', booking: '专家约诊 · 健管专员确认预约', execute: '医疗代诊 · 执行结果', appointment_review: '专家约诊 · 健康顾问确认约诊建议', post_visit_audit: '专家约诊 · 健管专员审核就诊资料', post_visit_review: '专家约诊 · 健康顾问查看就诊资料' }[medicalProxyStage(execItem)] || '专家约诊服务任务')) : isOutpatientEscortVisitTask(execItem) ? '记录检查及专家门诊陪诊' : isOutpatientPostVisitReviewTask(execItem) ? '查看陪诊资料并制定随访计划' : isOutpatientAppointmentTask(execItem) ? '安排代诊约诊服务' : isOutpatientStaffAssignmentTask(execItem) ? '安排门诊执行人员' : isOutpatientAdvisorAssessmentTask(execItem) ? '健康顾问就医评估' : isCheckupReportCollectionTask(execItem) ? '确认或上传体检报告' : isCheckupBookingTask(execItem) ? '确认体检预约并交接陪诊' : execItem.taskRole === 'supervisor' ? '核对代办结果与检查单' : execItem.taskRole ? '记录事务完成情况' : '执行随访'}</h3>
+              <h3 className="modal-title">{medicationProxyStage(execItem) ? ({ intake: '代配药 · 核对用药信息', advisor: '代配药 · 顾问评估', review: '代配药 · 规划师确认', booking: '代配药 · 医院预约', execute: '代配药 · 采购与配送' }[medicationProxyStage(execItem)]) : medicalProxyStage(execItem) ? (/就医规划/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? medicalProxyStage(execItem) === 'advisor' ? '就医规划 · 健康顾问提出建议' : '就医规划 · 健康规划师客户沟通与结案' : ({ intake: '医疗代诊 · 核对既有资料', collect: '医疗代诊 · 指导上传并选定资料', audit: '医疗代诊 · 健管审核资料', advisor: '医疗代诊 · 健康顾问确认方案', planner: '医疗代诊 · 健康规划师复核方案', booking: '专家约诊 · 健管专员确认预约', execute: '医疗代诊 · 执行结果', appointment_review: '专家约诊 · 健康顾问确认约诊建议', post_visit_audit: '专家约诊 · 健管专员审核就诊资料', post_visit_review: '专家约诊 · 健康顾问查看就诊资料' }[medicalProxyStage(execItem)] || '专家约诊服务任务')) : isOutpatientEscortVisitTask(execItem) ? '记录检查及专家门诊陪诊' : isOutpatientPostVisitReviewTask(execItem) ? '查看陪诊资料并制定随访计划' : isOutpatientAppointmentTask(execItem) ? '安排代诊约诊服务' : isOutpatientStaffAssignmentTask(execItem) ? '安排门诊执行人员' : isOutpatientAdvisorAssessmentTask(execItem) ? '健康顾问就医评估' : isCheckupReportCollectionTask(execItem) ? '确认或上传体检报告' : isCheckupBookingTask(execItem) ? '确认体检预约并交接陪诊' : execItem.taskRole === 'supervisor' ? '核对代办结果与检查单' : execItem.taskRole ? '记录事务完成情况' : '执行随访'}</h3>
               <button className="modal-close" onClick={() => setExecItem(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', overscrollBehavior: 'contain' }}>
               <ServiceTaskContextBanner task={execItem} />
               {execItem.isBlocked && <div style={{ padding: '10px 12px', borderRadius: 9, background: '#F2F4F7', color: '#596273', fontSize: 13, border: '1px solid #D9DEE7' }}>⏳ {isOutpatientPostVisitReviewTask(execItem) ? '当前等待健管专员在报告管理中审核本次门诊病历和检验检查单；两份资料均审核通过后，本任务会自动解锁。' : /门诊一站式.*检查及专家门诊陪诊与归档/.test(execItem.theme || '') ? `当前已进入陪诊及资料闭环阶段：${execItem.content || '等待陪诊专员完成陪诊、资料审核及健康顾问随访计划。'}` : `当前仅供查看：正在等待上一环节“${execItem.dependsOnTaskId?.theme || '就医专员陪诊'}”完成，完成后本任务会自动解锁。`}</div>}
               <fieldset disabled={!!execItem.isBlocked} style={{ border: 0, padding: 0, margin: 0, display: 'grid', gap: 14, minWidth: 0 }}>
-              {medicalProxyStage(execItem) ? <MedicalProxyStageForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} reports={reports} staffList={staffList} onOpenReport={(reportId, title) => openReportDetail({ _id: reportId, title: title || '本次服务资料' })} /> : isOutpatientEscortVisitTask(execItem) ? <OutpatientEscortVisitForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientPostVisitReviewTask(execItem) ? <OutpatientPostVisitReviewForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientAppointmentTask(execItem) ? <OutpatientAppointmentForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientStaffAssignmentTask(execItem) ? <OutpatientStaffAssignmentForm task={execItem} value={execForm.formData} staffList={staffList} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientProxyVisitTask(execItem) ? <OutpatientProxyVisitForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientAdvisorAssessmentTask(execItem) ? <OutpatientAdvisorAssessmentForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isCheckupReportCollectionTask(execItem) ? <CheckupReportCollectionForm task={execItem} plans={plans} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} /> : isCheckupBookingTask(execItem) ? <CheckupBookingForm value={execForm.appointmentDetails} onChange={appointmentDetails => setExecForm(form => ({ ...form, appointmentDetails }))} /> : execItem.taskRole && <ServiceTaskChecklist mode={execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor'} purposes={execItem.taskPurposes || []} source={execItem.dependsOnTaskId?.serviceChecklist || []} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} />}
+              {medicationProxyStage(execItem) ? <MedicationProxyStageForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : medicalProxyStage(execItem) ? <MedicalProxyStageForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} reports={reports} staffList={staffList} onOpenReport={(reportId, title) => openReportDetail({ _id: reportId, title: title || '本次服务资料' })} /> : isOutpatientEscortVisitTask(execItem) ? <OutpatientEscortVisitForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientPostVisitReviewTask(execItem) ? <OutpatientPostVisitReviewForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientAppointmentTask(execItem) ? <OutpatientAppointmentForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientStaffAssignmentTask(execItem) ? <OutpatientStaffAssignmentForm task={execItem} value={execForm.formData} staffList={staffList} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientProxyVisitTask(execItem) ? <OutpatientProxyVisitForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientAdvisorAssessmentTask(execItem) ? <OutpatientAdvisorAssessmentForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isCheckupReportCollectionTask(execItem) ? <CheckupReportCollectionForm task={execItem} plans={plans} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} /> : isCheckupBookingTask(execItem) ? <CheckupBookingForm value={execForm.appointmentDetails} onChange={appointmentDetails => setExecForm(form => ({ ...form, appointmentDetails }))} /> : execItem.taskRole && <ServiceTaskChecklist mode={execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor'} purposes={execItem.taskPurposes || []} source={execItem.dependsOnTaskId?.serviceChecklist || []} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} />}
               {medicalProxyStage(execItem) === 'collect' && <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setExecItem(null); setTab('reports'); loadReports() }}>查看客户上传资料</button>}
               {['audit', 'post_visit_audit'].includes(medicalProxyStage(execItem)) && <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setExecItem(null); setTab('reports'); loadReports() }}>进入报告管理完成审核</button>}
               {execItem.taskRole && !medicalProxyStage(execItem) && <details style={{ border: '1px solid #E0E8E3', borderRadius: 9, background: '#FAFBFA' }}>
@@ -10361,9 +10375,9 @@ export default function PatientDetailPage() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setExecItem(null)}>取消</button>
-              {!execItem.isBlocked && execItem.taskRole === 'executor' && execItem.dependsOnTaskId?._id && medicalProxyStage(execItem) !== 'appointment_review' && <button className="btn btn-secondary" style={{ color: '#B45309', borderColor: '#D9A441' }} onClick={handleReturnPrevious} disabled={execSaving}>退回上一环节</button>}
+              {!execItem.isBlocked && !medicationProxyStage(execItem) && execItem.taskRole === 'executor' && execItem.dependsOnTaskId?._id && medicalProxyStage(execItem) !== 'appointment_review' && <button className="btn btn-secondary" style={{ color: '#B45309', borderColor: '#D9A441' }} onClick={handleReturnPrevious} disabled={execSaving}>退回上一环节</button>}
               <button className="btn btn-primary" onClick={handleExec} disabled={execSaving || execItem.isBlocked}>
-                {execItem.isBlocked ? (isOutpatientPostVisitReviewTask(execItem) ? '等待资料审核' : '等待上一环节完成') : execSaving ? '保存中...' : medicalProxyStage(execItem) ? (medicalProxyStage(execItem) === 'booking' && /专家约诊/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? '确认预约并通知客户' : /就医规划/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? medicalProxyStage(execItem) === 'advisor' ? '提交就医规划建议并转规划师' : '确认客户意向并结束本次规划' : ({ intake: '确认资料并转健康顾问', collect: '提交本次资料给健管审核', audit: '确认审核并转健康顾问', advisor: '确认代诊方案并转规划师', planner: '确认方案并转健管预约', booking: '确认预约并转就医专员', execute: '完成代诊并结束督办', appointment_review: '完善类目并转健管重新预约', post_visit_audit: '确认审核并转健康顾问查看', post_visit_review: '确认查看并结束约诊服务' }[medicalProxyStage(execItem)] || '保存')) : isOutpatientEscortVisitTask(execItem) ? '完成陪诊并提交资料审核' : isOutpatientPostVisitReviewTask(execItem) ? '生成随访计划并结束服务' : isOutpatientAppointmentTask(execItem) ? '确认预约并流转代诊' : isOutpatientAdvisorAssessmentTask(execItem) ? '完成评估并流转下一步' : isCheckupReportCollectionTask(execItem) ? (execForm.serviceChecklist?.[0]?.collectionStatus === 'complete' ? '完成闭环并进入解析' : '保存报告回收进度') : isCheckupBookingTask(execItem) ? '确认预约并转交陪诊' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : '保存随访结果'}
+                {execItem.isBlocked ? (isOutpatientPostVisitReviewTask(execItem) ? '等待资料审核' : '等待上一环节完成') : execSaving ? '保存中...' : medicationProxyStage(execItem) ? ({ intake: '确认并流转代配药', advisor: '评估后返回规划师', review: '确认并转健管预约', booking: '确认预约并转就医专员', execute: '完成配药与配送安排' }[medicationProxyStage(execItem)]) : medicalProxyStage(execItem) ? (medicalProxyStage(execItem) === 'booking' && /专家约诊/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? '确认预约并通知客户' : /就医规划/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? medicalProxyStage(execItem) === 'advisor' ? '提交就医规划建议并转规划师' : '确认客户意向并结束本次规划' : ({ intake: '确认资料并转健康顾问', collect: '提交本次资料给健管审核', audit: '确认审核并转健康顾问', advisor: '确认代诊方案并转规划师', planner: '确认方案并转健管预约', booking: '确认预约并转就医专员', execute: '完成代诊并结束督办', appointment_review: '完善类目并转健管重新预约', post_visit_audit: '确认审核并转健康顾问查看', post_visit_review: '确认查看并结束约诊服务' }[medicalProxyStage(execItem)] || '保存')) : isOutpatientEscortVisitTask(execItem) ? '完成陪诊并提交资料审核' : isOutpatientPostVisitReviewTask(execItem) ? '生成随访计划并结束服务' : isOutpatientAppointmentTask(execItem) ? '确认预约并流转代诊' : isOutpatientAdvisorAssessmentTask(execItem) ? '完成评估并流转下一步' : isCheckupReportCollectionTask(execItem) ? (execForm.serviceChecklist?.[0]?.collectionStatus === 'complete' ? '完成闭环并进入解析' : '保存报告回收进度') : isCheckupBookingTask(execItem) ? '确认预约并转交陪诊' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : '保存随访结果'}
               </button>
             </div>
           </div>
@@ -11931,7 +11945,7 @@ export default function PatientDetailPage() {
             const scheduledAt = /^\d{4}-\d{2}-\d{2}$/.test(serviceTime) ? `${serviceTime}T00:00:00+08:00` : serviceTime
             const result = await staffAPI.startOrder(orderId, { action: 'schedule', scheduledAt, serviceDateEnd: serviceTimeEnd, note: confirmedNote, serviceContent, customerNeed, communicationDate, communicationTimeStart, communicationTimeEnd })
             setShowMessageModal(false)
-            if (/医疗代诊|专家约诊|就医规划/.test(result.data?.serviceName || '')) {
+            if (/医疗代诊|专家约诊|就医规划|代配药|代取药/.test(result.data?.serviceName || '')) {
               toast(/专家约诊/.test(result.data?.serviceName || '') ? '已转给健管专员预约' : /就医规划/.test(result.data?.serviceName || '') ? '沟通信息已转到健康顾问工作台' : '服务信息已确认；请在工作台指导客户上传并选定本次资料')
               loadFollowUps()
               return
@@ -12195,6 +12209,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   const [currentBooking, setCurrentBooking] = useState(serviceBooking || (initialOrder ? { sourceOrderId: initialOrder } : null))
   const order = currentBooking?.sourceOrderId
   const isMedicalProxy = order?.serviceWorkflowSnapshot?.key === 'medical_proxy' || /医疗代诊|专家约诊|就医规划/.test(order?.serviceName || '')
+  const isMedicationProxy = /代配药|代取药/.test(order?.serviceName || '')
   const isExpertAppointment = /专家约诊/.test(order?.serviceName || '')
   const isMedicalPlanning = /就医规划/.test(order?.serviceName || '')
   const orderId = order?._id || order
@@ -12541,7 +12556,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
               </div>
             </div>
             {!bookingCollapsed && <>
-            <div style={{ fontSize: 11, color: '#8AA89C' }}>{isExpertAppointment ? '完整确认约诊建议后转给健管专员预约；再次退回时仍使用本页面，并自动保留上次填写内容。' : isMedicalPlanning ? '核对客户诉求和预期沟通时段后，直接转给健康顾问评估；客户上传的报告仍由健管专员独立审核。' : isMedicalProxy ? '先完整核对本次沟通内容；确认后由您指导客户上传并选定资料，健管专员审核后交健康顾问。您将持续督办直到代诊完成。' : '已自动带入客户确认的信息；如有变化可直接修订，再生成方案。'}</div>
+            <div style={{ fontSize: 11, color: '#8AA89C' }}>{isMedicationProxy ? '启动后从订单对话和持续用药档案整理药品信息，再由规划师人工核对。' : isExpertAppointment ? '完整确认约诊建议后转给健管专员预约；再次退回时仍使用本页面，并自动保留上次填写内容。' : isMedicalPlanning ? '核对客户诉求和预期沟通时段后，直接转给健康顾问评估；客户上传的报告仍由健管专员独立审核。' : isMedicalProxy ? '先完整核对本次沟通内容；确认后由您指导客户上传并选定资料，健管专员审核后交健康顾问。您将持续督办直到代诊完成。' : '已自动带入客户确认的信息；如有变化可直接修订，再生成方案。'}</div>
             {(!isMedicalProxy || !proxyReviewReady || isExpertAppointment) ? <>
               {isMedicalProxy && <div style={{ textAlign: 'right' }}><button type="button" className="btn btn-secondary btn-sm" onClick={fillFromConversation}>从对话自动填入</button></div>}
               <div style={{ display: 'grid', gridTemplateColumns: isMedicalPlanning ? '1fr 1fr 1fr' : '1fr 1fr', gap: 12 }}>
@@ -12582,7 +12597,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
             {bookingError && <div role="alert" style={{ padding: '8px 10px', color: '#B42318', background: '#FFF0EF', borderRadius: 6, fontSize: 12 }}>{bookingError}</div>}
             <div style={{ textAlign: 'right', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               {isMedicalProxy && proxyReviewReady && !isExpertAppointment && <button className="btn btn-secondary btn-sm" onClick={() => setProxyReviewReady(false)}>返回修改</button>}
-              <button className="btn btn-primary btn-sm" disabled={confirmingBooking || !canConfirmOrder || !serviceTime || !serviceTimeEnd || serviceTimeEnd < serviceTime || (isExpertAppointment && (!suggestedHospital.trim() || !department.trim() || !expert.trim() || !clinicType || !insuranceUse || settlementMethod === 'pending')) || (isMedicalPlanning && (!communicationTimeStart || !communicationTimeEnd || communicationTimeEnd <= communicationTimeStart)) || (isMedicalProxy ? !proxyServiceContent.trim() || (!/专家约诊/.test(order?.serviceName || '') && !proxyCustomerNeed.trim()) : !serviceTask.trim())} onClick={async () => {
+              <button className="btn btn-primary btn-sm" disabled={confirmingBooking || !canConfirmOrder || (!isMedicationProxy && (!serviceTime || !serviceTimeEnd || serviceTimeEnd < serviceTime)) || (isExpertAppointment && (!suggestedHospital.trim() || !department.trim() || !expert.trim() || !clinicType || !insuranceUse || settlementMethod === 'pending')) || (isMedicalPlanning && (!communicationTimeStart || !communicationTimeEnd || communicationTimeEnd <= communicationTimeStart)) || (!isMedicationProxy && (isMedicalProxy ? !proxyServiceContent.trim() || (!/专家约诊/.test(order?.serviceName || '') && !proxyCustomerNeed.trim()) : !serviceTask.trim()))} onClick={async () => {
                 setBookingError('')
                 if (isMedicalProxy && !isExpertAppointment && !proxyReviewReady) { setProxyReviewReady(true); return }
                 setConfirmingBooking(true)
@@ -12600,7 +12615,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
                 }
                 catch (err) { setBookingError(err.message || '确认预约失败') }
                 finally { setConfirmingBooking(false) }
-              }}>{confirmingBooking ? '处理中…' : isExpertAppointment ? '确认并转给健管专员预约' : isMedicalPlanning ? (proxyReviewReady ? '确认并转给健康顾问' : '核对沟通信息') : isMedicalProxy ? (proxyReviewReady ? '确认并开始资料收集' : '核对沟通信息') : '确认并生成方案'}</button>
+              }}>{confirmingBooking ? '处理中…' : isMedicationProxy ? '开始代配药信息核对' : isExpertAppointment ? '确认并转给健管专员预约' : isMedicalPlanning ? (proxyReviewReady ? '确认并转给健康顾问' : '核对沟通信息') : isMedicalProxy ? (proxyReviewReady ? '确认并开始资料收集' : '核对沟通信息') : '确认并生成方案'}</button>
             </div>
             </>}
           </div>

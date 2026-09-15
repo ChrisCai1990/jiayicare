@@ -14,13 +14,13 @@ const PLAN_TYPE_LABEL = { medication: '配药', supplement: '配营养素' };
 async function scanAndNotifyDueSupplyPlans() {
   const now = new Date();
   const workflowConfig = await getSupplyWorkflowConfig();
-  const maxLeadDays = Math.max(workflowConfig.medication.leadDays, workflowConfig.supplement.leadDays);
+  const maxLeadDays = Math.max(60, workflowConfig.medication.leadDays, workflowConfig.supplement.leadDays);
   const candidates = await RecurringSupplyPlan.find({
     enabled: true, nextDueDate: { $lte: new Date(now.getTime() + maxLeadDays * 86400000) },
   }).populate('patientId', 'name');
   const due = candidates.filter(plan => {
     const typeConfig = workflowConfig[plan.planType];
-    return typeConfig?.enabled && isWithinLeadWindow(plan, now, typeConfig.leadDays);
+    return typeConfig?.enabled && isWithinLeadWindow(plan, now, Math.max(typeConfig.leadDays, Number(plan.leadDays) || 3));
   });
 
   let notified = 0;
@@ -65,7 +65,7 @@ async function scanAndNotifyDueSupplyPlans() {
 
 // 健管专员在会员详情页确认"已安排"后调用：nextDueDate 滚到下一周期，aiStatus 清空等待下次到期
 function advanceToNextCycle(plan) {
-  const days = FREQUENCY_DAYS[plan.frequency];
+  const days = plan.cycleDays || FREQUENCY_DAYS[plan.frequency];
   if (!days) return plan;
   plan.nextDueDate = new Date(plan.nextDueDate.getTime() + days * 86400000);
   plan.aiStatus = null;

@@ -9,6 +9,8 @@ const recurringSupplyPlanSchema = new mongoose.Schema({
   itemName:       { type: String, required: true },   // 药品/营养素名称
   dosage:         { type: String, default: '' },       // 剂量
   frequency:      { type: String, required: true },    // 配药/配营养素频率文案，如"每月一次"
+  cycleDays:      { type: Number, min: 1, default: null }, // 代配药按实际服用量推算的周期
+  sourceOrderId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null },
   institution:    { type: String, default: '' },       // 配置机构（药房/医院/渠道）
   notes:          { type: String, default: '' },
   nextDueDate:    { type: Date, required: true },       // 下次到期日，定时任务按此生成待办
@@ -43,6 +45,7 @@ const recurringSupplyPlanSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 recurringSupplyPlanSchema.index({ patientId: 1, planType: 1 });
+recurringSupplyPlanSchema.index({ sourceOrderId: 1 }, { unique: true, partialFilterExpression: { sourceOrderId: { $type: 'objectId' } } });
 recurringSupplyPlanSchema.index({ enabled: 1, nextDueDate: 1 });
 recurringSupplyPlanSchema.index({ workflowStatus: 1, nextDueDate: 1 });
 

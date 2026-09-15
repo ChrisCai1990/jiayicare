@@ -516,6 +516,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     { path: 'staffId', select: 'name role title' },
     { path: 'assignedTo', select: 'name role' },
     { path: 'sourceHealthPlanId', select: 'title description content type status' },
+    { path: 'sourceOrderId', select: 'serviceName orderNo createdAt status' },
     { path: 'followUpSchemeId', select: 'name executorRole supervisorRole completionStandard' },
     { path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } },
   ]);
@@ -553,17 +554,17 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     await FollowUp.updateOne({ _id: task._id }, { $set: { isBlocked: false, activationEvent: '', date: task.date, remindAt: task.remindAt, nextFollowUpDate: task.nextFollowUpDate } });
   }
   const now = new Date();
-  const proxyOrderIds = queriedTasks.filter(task => task.sourceType === 'order' && String(task.workflowKey || '').startsWith('medical_proxy:')).map(task => task.sourceOrderId).filter(Boolean);
+  const proxyOrderIds = queriedTasks.filter(task => task.sourceType === 'order' && /^(medical_proxy|medication_proxy):/.test(String(task.workflowKey || ''))).map(task => task.sourceOrderId?._id || task.sourceOrderId).filter(Boolean);
   const activeProxyOrderIds = new Set((proxyOrderIds.length
     ? await Order.find({ _id: { $in: proxyOrderIds }, ...require('../utils/orderWorkItem').activeOrderWorkItemQuery() }).distinct('_id')
     : []).map(String));
   const tasks = queriedTasks.filter(task => {
     const isServiceTask = (task.sourceType === 'health_plan' && ['executor', 'supervisor'].includes(task.taskRole))
-      || (task.sourceType === 'order' && String(task.workflowKey || '').startsWith('medical_proxy:') && ['executor', 'supervisor'].includes(task.taskRole))
+      || (task.sourceType === 'order' && /^(medical_proxy|medication_proxy):/.test(String(task.workflowKey || '')) && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'insurance_service' && task.taskRole === 'executor')
       || (task.sourceType === 'scheduled' && (task.tags || []).includes('保险服务'));
     if (!isServiceTask) return false;
-    if (task.sourceType === 'order' && !activeProxyOrderIds.has(String(task.sourceOrderId))) return false;
+    if (task.sourceType === 'order' && !activeProxyOrderIds.has(String(task.sourceOrderId?._id || task.sourceOrderId))) return false;
     // 方案已闭环时，历史遗留的活动督办卡也不应再次出现在健康规划师工作台。
     if (task.sourceType === 'health_plan' && task.sourceHealthPlanId?.status === 'completed') return false;
     const isOutpatientPlan = /门诊一站式/.test(`${task.sourceHealthPlanId?.title || ''} ${task.sourceHealthPlanId?.content?.templateName || ''}`);
@@ -1719,6 +1720,12 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     const error = await medicalProxyWorkflow.validateMedicalProxyStage(followUp, req.body, req.staff);
     if (error) return res.status(400).json({ success: false, message: error });
   }
+  const medicationProxyWorkflow = require('../utils/medicationProxyWorkflow');
+  const medicationStage = medicationProxyWorkflow.stageOf(followUp);
+  if (medicationStage) {
+    const error = await medicationProxyWorkflow.validate(followUp, req.body, req.staff);
+    if (error) return res.status(400).json({ success: false, message: error });
+  }
 
   if (req.body.status === 'cancelled' && !req.body.cancelReason && !followUp.cancelReason) {
     return res.status(400).json({ success: false, message: '取消随访必须填写取消原因' });
@@ -1896,6 +1903,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   if (proxyStage && followUp.status === 'completed' && previousStatus !== 'completed') {
     await medicalProxyWorkflow.advanceMedicalProxyWorkflow(followUp);
   }
+  if (medicationStage && followUp.status === 'completed' && previousStatus !== 'completed') await medicationProxyWorkflow.advance(followUp);
   if (isOutpatientEscortVisit && followUp.status === 'completed') {
     const patient = await User.findById(followUp.patientId).select('tenantId assignedFamilyDoctor assignedHealthManager').lean();
     const handoff = followUp.formData?.handoffSnapshot || {};
@@ -5823,6 +5831,20 @@ router.patch('/orders/:id/fulfiller', staffAuth, async (req, res) => {
 
 // ── PATCH /api/staff/orders/:id/start ────────────────────────────
 // 医护端仅启动服务。完成状态由核销次数自动决定，禁止绕过核销直接完成。
+router.post('/orders/:id/medication-draft', staffAuth, async (req, res) => {
+  try {
+    if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康规划师可整理代配药信息' });
+    const order = await Order.findById(req.params.id).select('user serviceName note').lean();
+    if (!order || !require('../utils/medicationProxyWorkflow').isMedicationProxyOrder(order.serviceName)) return res.status(404).json({ success: false, message: '代配药订单不存在' });
+    const [patient, records] = await Promise.all([User.findById(order.user).select('healthProfile.medications').lean(), require('../models/Medication').find({ user: order.user, stopped: false, active: { $ne: false }, aiStatus: { $ne: 'pending' } }).sort({ updatedAt: -1 }).limit(30).select('name brandName specification dosage frequency timing purpose note').lean()]);
+    const medications = [...records, ...(patient?.healthProfile?.medications || [])].slice(0, 50);
+    const messages = (Array.isArray(req.body.messages) ? req.body.messages : []).slice(-60).map(item => String(item || '').slice(0, 600));
+    const { chat } = require('../utils/ai');
+    const raw = await chat([{ role: 'user', content: `只整理明确的代配药信息，不推断。对话缺失时可从持续用药档案补充；冲突或不确定则留空。输出严格JSON：{"brandName":"","chemicalName":"","specification":"","singleDose":"","totalQuantity":"","dailyQuantity":"","institution":"","institutionType":"hospital或pharmacy或online或空","paymentMethod":"self_pay或medical_insurance或commercial_insurance或空","department":"","expert":"","expertRequired":false,"needsAdvisor":false,"regularSupply":false,"missingFields":[]}。用药档案：${JSON.stringify(medications).slice(0, 12000)}。订单备注：${String(order.note || '').slice(0, 1000)}。订单对话：${JSON.stringify(messages).slice(0, 18000)}` }], { maxTokens: 900, temperature: 0, jsonMode: true, timeoutMs: 60000 });
+    res.json({ success: true, data: JSON.parse(String(raw).match(/\{[\s\S]*\}/)?.[0] || '{}') });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 router.patch('/orders/:id/start', staffAuth, async (req, res) => {
   try {
     const { action = 'schedule', scheduledAt, note } = req.body;
@@ -5833,6 +5855,15 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
     if (!actionableOrder) return res.status(409).json({ success: false, message: '订单已退款、取消、完成或尚未支付，不能继续生成服务方案' });
     const currentOrder = await Order.findById(req.params.id);
     const { isMedicalProxyOrder, startMedicalProxyWorkflow } = require('../utils/medicalProxyWorkflow');
+    const medicationProxyWorkflow = require('../utils/medicationProxyWorkflow');
+    if (medicationProxyWorkflow.isMedicationProxyOrder(currentOrder?.serviceName)) {
+      if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '代配药由健康规划师先核对用药信息' });
+      const task = await medicationProxyWorkflow.start(currentOrder, req.staff._id);
+      const update = { status: 'scheduled', handledBy: req.staff._id };
+      if (scheduledAt) update.scheduledAt = new Date(scheduledAt);
+      const order = await Order.findByIdAndUpdate(req.params.id, update, { new: true }).populate('user', 'name phone');
+      return res.json({ success: true, data: order, task, message: '代配药已进入健康规划师核对环节' });
+    }
     if (isMedicalProxyOrder(currentOrder)) {
       if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '医疗代诊由健康规划师确认服务需求' });
       const appointmentOnly = /专家约诊/.test(currentOrder.serviceName || '');
@@ -6104,6 +6135,11 @@ router.post('/orders/:id/redeem', staffAuth, async (req, res) => {
         const execution = await FollowUp.findOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: 'medical_proxy:execute' }).select('status').lean();
         if (execution?.status !== 'completed') return res.status(409).json({ success: false, message: '请先完成就医专员代诊任务，再核销结束服务' });
       }
+    }
+    if (require('../utils/medicationProxyWorkflow').isMedicationProxyOrder(order.serviceName)
+      && Number(order.usedUnits || 0) + 1 >= totalUnits) {
+      const execution = await FollowUp.findOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: 'medication_proxy:execute' }).select('status').lean();
+      if (execution?.status !== 'completed') return res.status(409).json({ success: false, message: '请先完成采购或配药、客户确认与配送安排，再核销服务' });
     }
     const usedUnits = Math.max(Number(order.usedUnits) || 0, order.redemptions?.length || 0);
     if (usedUnits >= totalUnits) return res.status(400).json({ success: false, message: '该服务已无剩余次数' });
