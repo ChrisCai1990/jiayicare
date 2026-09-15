@@ -464,7 +464,10 @@ router.post('/order', auth, async (req, res) => {
   // Fully covered orders have no external payment step and can settle immediately.
   if (paidAmount === 0) {
   const pendingTasks = [];
-  if (followUpStaffId) {
+  const medicalReminderWorkflow = require('../utils/medicalReminderWorkflow');
+  if (medicalReminderWorkflow.isMedicalReminderOrder(order)) {
+    pendingTasks.push(medicalReminderWorkflow.ensureAdvisorIntakeTask(order));
+  } else if (followUpStaffId) {
     pendingTasks.push(FollowUp.create({
       staffId: followUpStaffId,
       assignedTo: followUpStaffId,

@@ -12226,7 +12226,8 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   const order = currentBooking?.sourceOrderId
   const isMedicalProxy = order?.serviceWorkflowSnapshot?.key === 'medical_proxy' || /医疗代诊|专家约诊|就医规划/.test(order?.serviceName || '')
   const isMedicationProxy = /代配药|代取药/.test([order?.serviceName, order?.specificationLabel, order?.note, order?.serviceRequirements].filter(Boolean).join(' '))
-  const isMedicalReminder = /复查督办|就医提醒/.test([order?.serviceName, order?.specificationLabel, order?.note, order?.serviceRequirements].filter(Boolean).join(' '))
+  const isMedicalReminderOrder = /复查督办|就医提醒/.test([order?.serviceName, order?.specificationLabel, order?.note, order?.serviceRequirements].filter(Boolean).join(' '))
+  const isMedicalReminder = isMedicalReminderOrder
   const isExpertAppointment = /专家约诊/.test(order?.serviceName || '')
   const isMedicalPlanning = /就医规划/.test(order?.serviceName || '')
   const orderId = order?._id || order
@@ -12579,7 +12580,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
             </div>) : <div>暂无已上架的就医协助产品，请先在管理后台配置。</div>}
           </div>}
         </div>}
-        {showBookingConfirm && (
+        {showBookingConfirm && !isMedicalReminderOrder && (
           <div style={{ padding: '12px 16px', borderBottom: '1px solid #E0D9CE', background: '#FFF8ED', display: 'grid', gap: 8, maxHeight: bookingCollapsed ? undefined : '38vh', overflowY: bookingCollapsed ? 'visible' : 'auto', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
               <div style={{ fontSize: 13, fontWeight: 700 }}>{isMedicalReminder ? '复查督办信息确认' : isMedicationProxy ? '代配药信息核对' : '健康顾问约诊建议'} · {order?.serviceName || '服务订单'}</div>

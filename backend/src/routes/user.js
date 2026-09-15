@@ -1487,8 +1487,12 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
       followUps.push(coupon.save());
     }
     for (const [index, order] of orders.entries()) {
-      const followUpStaffId = orderAssignees[index];
-      if (followUpStaffId) {
+      const medicalReminderWorkflow = require('../utils/medicalReminderWorkflow');
+      if (medicalReminderWorkflow.isMedicalReminderOrder(order)) {
+        followUps.push(medicalReminderWorkflow.ensureAdvisorIntakeTask(order));
+      } else {
+        const followUpStaffId = orderAssignees[index];
+        if (followUpStaffId) {
         followUps.push(FollowUp.create({
           staffId:   followUpStaffId,
           assignedTo: followUpStaffId,
@@ -1500,6 +1504,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
           sourceType: 'order',
           sourceOrderId: order._id,
         }));
+        }
       }
     }
     await Promise.all(followUps);

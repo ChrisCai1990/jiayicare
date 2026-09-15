@@ -5893,7 +5893,7 @@ router.post('/orders/:id/medication-draft', staffAuth, async (req, res) => {
 
 router.post('/orders/:id/medical-reminder-draft', staffAuth, async (req, res) => {
   try {
-    if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康规划师可整理复查督办信息' });
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可确认复查督办信息' });
     const order = await Order.findById(req.params.id).select('user serviceName specificationLabel serviceRequirements note medicalReminderIntake').lean();
     if (!order || !require('../utils/medicalReminderWorkflow').isMedicalReminderOrder(order)) return res.status(404).json({ success: false, message: '复查督办订单不存在' });
     const messages = (Array.isArray(req.body.messages) ? req.body.messages : []).slice(-80).map(item => String(item || '').slice(0, 800));
@@ -5917,7 +5917,7 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
     const medicationProxyWorkflow = require('../utils/medicationProxyWorkflow');
     const medicalReminderWorkflow = require('../utils/medicalReminderWorkflow');
     if (medicalReminderWorkflow.isMedicalReminderOrder(currentOrder)) {
-      if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '复查督办由健康规划师先确认信息' });
+      if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '复查督办由健康顾问确认信息' });
       const task = await medicalReminderWorkflow.start(currentOrder, req.staff._id, req.body.medicalReminderIntake || {});
       const order = await Order.findByIdAndUpdate(req.params.id, { status: 'scheduled', scheduledAt: new Date(`${req.body.medicalReminderIntake.visitDate}T09:00:00+08:00`), handledBy: req.staff._id }, { new: true }).populate('user', 'name phone');
       return res.json({ success: true, data: order, task, message: 'AI随访计划已转健康顾问审核' });

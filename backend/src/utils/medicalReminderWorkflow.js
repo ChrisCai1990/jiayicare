@@ -26,6 +26,39 @@ function validateIntake(data) {
   return missing.length ? '请完整确认就医日期、就医问题、就医目标、医院建议、科室建议和专家建议' : '';
 }
 
+// 复查督办不需要健康规划师二次录入。订单支付后由 AI 生成草稿，直接交健康顾问审核。
+async function ensureAdvisorIntakeTask(order) {
+  if (!isMedicalReminderOrder(order)) return null;
+  const patient = await User.findById(order.user).select('assignedFamilyDoctor assignedHealthManager').lean();
+  const advisorId = patient?.assignedFamilyDoctor;
+  if (!advisorId) return null;
+  const context = [order.specificationLabel, order.serviceRequirements, order.note].filter(Boolean).join('\n') || '客户已购买体检后复查督办服务，待结合订单对话确认具体复查事项。';
+  let content = '结合客户体检后的异常项和订单对话，确认复查时间、就诊安排及需要跟进的结果；如信息不足，先联系客户补充后再确定后续随访。';
+  let followUpDate = new Date(); followUpDate.setDate(followUpDate.getDate() + 7);
+  try {
+    const { chat } = require('./ai');
+    const text = await chat([{ role: 'user', content: `你是健康管理随访计划助手。客户已购买体检后复查督办服务。根据订单信息生成一条简明、可执行的随访计划草稿。不得虚构诊断、药物、检查结果或医院专家；信息不足时明确由健康顾问结合对话确认。仅输出JSON：{"content":"随访事项","daysLater":1到30的整数}。\n订单信息：${context}` }], { maxTokens: 700, temperature: 0 });
+    const match = String(text || '').match(/\{[\s\S]*\}/);
+    const draft = match ? JSON.parse(match[0]) : {};
+    if (clean(draft.content)) content = clean(draft.content);
+    const days = Math.max(1, Math.min(30, Number(draft.daysLater) || 7));
+    followUpDate.setDate(followUpDate.getDate() + days - 7);
+  } catch (error) { console.error('[medical-reminder] AI随访计划生成失败，使用安全草稿', error.message); }
+  const task = await FollowUp.findOneAndUpdate(
+    { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}advisor_review` },
+    { $set: { staffId: advisorId, assignedTo: advisorId, patientId: order.user, date: followUpDate, remindAt: followUpDate, nextFollowUpDate: followUpDate, type: 'other', status: 'planned',
+      theme: '复查督办随访计划', content, plannedContent: content, sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}advisor_review`, taskRole: '', isBlocked: false,
+      aiStatus: 'pending', reviewRole: 'familyDoctor', formData: { generatedFromPostCheckupSupervision: true, phase: 'advisor_review', managerId: String(patient.assignedHealthManager || '') } } },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+  await FollowUp.updateMany(
+    { sourceType: 'order', sourceOrderId: order._id, _id: { $ne: task._id }, workflowKey: { $in: ['', null] }, status: { $in: ['planned', 'in_progress'] } },
+    { $set: { status: 'cancelled', cancelReason: '复查督办订单已自动转健康顾问审核随访计划' } },
+  );
+  await Order.updateOne({ _id: order._id }, { $set: { currentStage: 'advisor_review', currentAssignee: advisorId, supervisionStatus: 'in_progress' } });
+  return task;
+}
+
 async function start(order, plannerId, input) {
   const intake = normalizeIntake(input, order.medicalReminderIntake || {});
   const error = validateIntake(intake);
@@ -58,6 +91,10 @@ async function start(order, plannerId, input) {
       sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}advisor_review`, taskRole: '', isBlocked: false, aiStatus: 'pending', reviewRole: 'familyDoctor',
       formData: { ...intake, managerId: String(managerId), generatedFromPostCheckupSupervision: true } } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+  await FollowUp.updateMany(
+    { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}intake`, status: { $in: ['planned', 'in_progress'] } },
+    { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', content: '健康顾问已确认复查信息，AI随访计划草稿待审核。' } },
   );
   await FollowUp.updateMany(
     { sourceType: 'order', sourceOrderId: order._id, _id: { $ne: task._id }, workflowKey: { $in: ['', null] }, status: { $in: ['planned', 'in_progress'] } },
@@ -120,4 +157,4 @@ async function scanReminders(now = new Date()) {
   return sent;
 }
 
-module.exports = { PREFIX, isMedicalReminderOrder, stageOf, normalizeIntake, validateIntake, start, markVisitCompleted, advanceStaffStage, scanReminders };
+module.exports = { PREFIX, isMedicalReminderOrder, stageOf, normalizeIntake, validateIntake, ensureAdvisorIntakeTask, start, markVisitCompleted, advanceStaffStage, scanReminders };

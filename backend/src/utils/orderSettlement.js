@@ -73,8 +73,12 @@ async function confirmPayment({ outTradeNo, transactionId, paidAt, snapshot }) {
   order.fulfillmentStatus = fulfillment.status;
   await order.save();
 
-  const plannerId = await resolveHealthPlanner(order.user);
-  if (plannerId) {
+  const medicalReminderWorkflow = require('./medicalReminderWorkflow');
+  if (medicalReminderWorkflow.isMedicalReminderOrder(order)) {
+    await medicalReminderWorkflow.ensureAdvisorIntakeTask(order);
+  } else {
+    const plannerId = await resolveHealthPlanner(order.user);
+    if (plannerId) {
     await FollowUp.findOneAndUpdate(
       { sourceType: 'order', sourceOrderId: order._id },
       { $setOnInsert: {
@@ -87,6 +91,7 @@ async function confirmPayment({ outTradeNo, transactionId, paidAt, snapshot }) {
       } },
       { upsert: true, new: true },
     );
+    }
   }
   await require('./orderPlannerConversation').ensureOrderPlannerPrompt(order);
   await require('./commissionSettlement').settleReferralCommission(order);
