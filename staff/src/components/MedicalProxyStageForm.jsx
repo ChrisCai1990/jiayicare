@@ -47,6 +47,7 @@ export function validateMedicalProxyStage(stage, value) {
   if (stage === 'planner' && !value.medicalAssistantId) return '请指派就医专员'
   if (stage === 'booking' && ['preferredDateStart', 'preferredDateEnd', 'appointmentDate', 'appointmentTime'].some(key => !value[key]?.trim())) return '请完整填写客户期望日期区间和实际约诊日期时间'
   if (stage === 'booking' && (value.appointmentDate < value.preferredDateStart || value.appointmentDate > value.preferredDateEnd) && !value.dateDifferenceNote?.trim()) return '约诊日期不在客户期望区间内，请说明差异及客户确认情况'
+  if (stage === 'booking' && (value.medicationProxy === true || /代配药|代取药/.test(`${value.planSnapshot?.serviceName || ''} ${value.planSnapshot?.serviceContent || ''}`)) && !['self_pay', 'medical_insurance', 'commercial_insurance'].includes(value.paymentMethod)) return '请选择支付方式'
   if (stage === 'booking' && /(?:保险类型：高端险|费用与保险：使用高端医疗险)/.test(value.planSnapshot?.serviceContent || '') && !['direct_verified', 'reimbursement_verified', 'self_pay_confirmed'].includes(value.insuranceOutcome)) return '请核实高端医疗险结算方式，并记录最终办理结果'
   const appointmentRequirement = stage === 'appointment_review' ? { ...parseAppointmentRequirement(value.serviceContent), ...value } : null
   if (stage === 'appointment_review' && (!appointmentRequirement.baseContent?.trim() || ['clinicType', 'insuranceUse'].some(key => !appointmentRequirement[key]?.trim()) || !value.preferredDateStart || !value.preferredDateEnd || value.preferredDateEnd < value.preferredDateStart)) return '请保留原约诊需求，并完善门诊类型、费用与保险及期望日期区间'
@@ -63,6 +64,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
   const appointmentRequirement = parseAppointmentRequirement(appointmentRequirementText)
   const isExpertAppointment = /专家约诊|专家门诊预约/.test(`${task?.theme || ''} ${task?.sourceOrderId?.serviceName || ''}`)
   const isHighEndInsurance = /(?:保险类型：高端险|费用与保险：使用高端医疗险)/.test(appointmentRequirementText)
+  const isMedicationProxy = value.medicationProxy === true || /代配药|代取药/.test(`${task?.theme || ''} ${task?.sourceOrderId?.serviceName || ''}`)
   const set = (key, item) => onChange({ ...value, [key]: item })
   const input = (key, label, rows = 1, type = 'text') => <label key={key} style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>
     {label}
@@ -203,6 +205,11 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
       {appointmentRequirementText ? <div>约诊需求：{appointmentRequirementText}</div> : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].map((key, i) => <div key={key}>{['医院', '科室', '专家', '代诊目标', '交流内容'][i]}：{value.planSnapshot?.[key] || '待确认'}</div>)}
     </div>
     {isExpertAppointment && input('campus', '院区 *')}
+    {isMedicationProxy && <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>支付方式 *
+      <select className="form-control" value={value.paymentMethod || ''} onChange={e => set('paymentMethod', e.target.value)}>
+        <option value="">请选择</option><option value="self_pay">自费</option><option value="medical_insurance">医保</option><option value="commercial_insurance">商保</option>
+      </select>
+    </label>}
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
       {input('preferredDateStart', '客户期望日期（开始）', 1, 'date')}
       {input('preferredDateEnd', '客户期望日期（结束）', 1, 'date')}
