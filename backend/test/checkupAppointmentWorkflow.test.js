@@ -7,6 +7,8 @@ const intake = { serviceType: 'special', preferredDateStart: '2026-10-01', prefe
 test('待约检服务可由工作流键或名称识别', () => {
   assert.equal(isCheckupAppointmentOrder({ serviceWorkflowSnapshot: { key: 'checkup_appointment' } }), true);
   assert.equal(isCheckupAppointmentOrder('特殊约检服务'), true);
+  assert.equal(isCheckupAppointmentOrder({ serviceName: '医务代办服务', specificationLabel: '代约检（常规）' }), true);
+  assert.equal(isCheckupAppointmentOrder({ serviceName: '医务代办服务', specificationLabel: '复查督办服务' }), false);
   assert.equal(isCheckupAppointmentOrder('门诊一站式服务'), false);
 });
 

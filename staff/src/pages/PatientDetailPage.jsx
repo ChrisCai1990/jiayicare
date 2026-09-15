@@ -12307,7 +12307,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   const [currentBooking, setCurrentBooking] = useState(serviceBooking || (initialOrder ? { sourceOrderId: initialOrder } : null))
   const order = currentBooking?.sourceOrderId
   const isMedicalProxy = order?.serviceWorkflowSnapshot?.key === 'medical_proxy' || /医疗代诊|专家约诊|就医规划/.test(order?.serviceName || '')
-  const isCheckupAppointment = order?.serviceWorkflowSnapshot?.key === 'checkup_appointment' || /待约检|常规约检|特殊约检/.test(order?.serviceName || '')
+  const isCheckupAppointment = /checkup_appointment|待约检|代约检|常规约检|特殊约检/.test([order?.serviceName, order?.specificationLabel, order?.serviceRequirements, order?.note, order?.serviceWorkflowSnapshot?.key].filter(Boolean).join(' '))
   const isMedicationProxy = /代配药|代取药/.test([order?.serviceName, order?.specificationLabel, order?.note, order?.serviceRequirements].filter(Boolean).join(' '))
   const isMedicalReminderOrder = /复查督办|就医提醒/.test([order?.serviceName, order?.specificationLabel, order?.note, order?.serviceRequirements].filter(Boolean).join(' '))
   const isMedicalReminder = isMedicalReminderOrder

@@ -3,8 +3,12 @@ const Order = require('../models/Order');
 const User = require('../models/User');
 
 const PREFIX = 'checkup_appointment:';
-const isCheckupAppointmentOrder = order => order?.serviceWorkflowSnapshot?.key === 'checkup_appointment'
-  || /待约检|常规约检|特殊约检/.test(String(order?.serviceName || order || ''));
+const isCheckupAppointmentOrder = order => {
+  const text = typeof order === 'object'
+    ? [order?.serviceName, order?.specificationLabel, order?.serviceRequirements, order?.note, order?.serviceWorkflowSnapshot?.key].filter(Boolean).join(' ')
+    : String(order || '');
+  return /checkup_appointment|待约检|代约检|常规约检|特殊约检/.test(text);
+};
 const stageOf = task => String(task?.workflowKey || '').startsWith(PREFIX)
   ? String(task.workflowKey).slice(PREFIX.length) : '';
 const required = value => String(value || '').trim();
