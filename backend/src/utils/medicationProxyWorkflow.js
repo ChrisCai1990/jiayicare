@@ -17,7 +17,7 @@ const value = input => String(input || '').trim();
 
 async function createStage(order, stage, assignee, previous, data = {}) {
   if (!assignee) throw Object.assign(new Error('下一环节负责人未分配，请先完成客户人员分配'), { status: 409 });
-  const labels = { intake: '规划师核对配药信息', advisor: '健康顾问评估科室与专家', review: '规划师确认顾问评估结果', booking: '健管专员预约配药门诊', execute: '就医专员配药、确认与配送' };
+  const labels = { intake: '规划师核对配药信息', advisor: '健康顾问评估科室与专家', review: '规划师确认顾问评估结果', booking: '健管专员预约配药门诊', execute: '就医专员配药、确认与配送', progress: '规划师查看代配药订单进度' };
   return FollowUp.findOneAndUpdate(
     { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}${stage}` },
     { $setOnInsert: {
@@ -43,6 +43,7 @@ async function validate(task, body, staff) {
   if (!stage || body.status !== 'completed') return '';
   if (staff.role !== 'superadmin' && String(task.assignedTo) !== String(staff._id)) return '仅当前环节负责人可完成任务';
   const data = body.formData || {};
+  if (stage === 'progress') return '订单进度由系统自动更新，无需手工完成';
   if (stage === 'intake') {
     data.institution = data.institutionType === 'hospital' ? [data.hospitalName, data.campus].filter(Boolean).join(' · ')
       : data.institutionType === 'pharmacy' ? data.pharmacyName : data.platformName;
@@ -125,6 +126,12 @@ async function advance(task) {
   else if (stage === 'booking') next = 'execute';
   assignee = next === 'advisor' ? patient?.assignedFamilyDoctor : next === 'review' ? patient?.assignedHealthPlanner : next === 'booking' ? patient?.assignedHealthManager : data.medicalAssistantId;
   const intakeSnapshot = stage === 'intake' ? data : data.intakeSnapshot;
+  if (stage === 'intake') await createStage(order, 'progress', patient?.assignedHealthPlanner, task, { intakeSnapshot, currentStage: next });
+  const progressLabels = { advisor: '健康顾问评估中', booking: '健管专员预约中', execute: '就医专员配药及配送中' };
+  await FollowUp.updateOne(
+    { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}progress`, status: { $in: ['planned', 'in_progress'] } },
+    { $set: { status: 'in_progress', content: `当前进度：${progressLabels[next] || next}`, 'formData.currentStage': next, 'formData.intakeSnapshot': intakeSnapshot } },
+  );
   await createStage(order, next, assignee, task, { ...intakeSnapshot, intakeSnapshot, ...(['advisor', 'review'].includes(stage) ? { department: data.department, expert: data.expert, expertRequired: data.expertRequired, advisorAssessment: data.assessment || data.advisorAssessment } : {}), ...(stage === 'booking' ? { bookingSnapshot: data } : {}) });
 }
 
