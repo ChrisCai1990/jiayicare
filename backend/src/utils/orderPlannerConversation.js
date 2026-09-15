@@ -10,18 +10,33 @@ function extractExplicitServiceTime(note = '') {
   return String(note).match(/(?:今天|明天|后天|本周|下周|这周|一周内|两周内|本月|下月|月底前|\d{1,2}月\d{1,2}日|周[一二三四五六日天])/u)?.[0] || '';
 }
 
-async function ensureOrderPlannerPrompt(order) {
-  if (!order?._id || !order.user) return null;
+function isPaidActiveOrder(order = {}) {
+  return order.paymentStatus === 'paid'
+    && ['paid', 'fulfilling', 'completed'].includes(order.tradeStatus)
+    && !['requested', 'processing', 'partially_refunded', 'refunded'].includes(order.refundStatus || 'none');
+}
+
+function buildOrderPlannerPrompt(order = {}) {
+  if (!isPaidActiveOrder(order)) return '';
   const confirmed = isCustomerConfirmedServiceOrder(order);
   const pending = require('./orderServiceConfirmation').needsCustomerServiceConfirmation(order);
-  if (!confirmed && !pending) return null;
-  const conversationId = `${order.user}_planner`;
   const note = customerOrderNote(order.note);
   const scheduled = order.desiredServiceDate ? new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai' }).format(new Date(order.desiredServiceDate)) : '';
   const explicitTime = extractExplicitServiceTime(note);
-  const content = confirmed
-    ? `已确认您的“${order.serviceName}”订单：服务时间为${scheduled}，服务内容为“${order.serviceRequirements}”${note ? `，补充备注为“${note}”` : ''}。信息已同步给嘉医管家，人工接手后可直接查看。`
-    : `已收到您的“${order.serviceName}”订单。${note ? `我从备注中了解到：“${note}”。` : ''}${explicitTime ? `已识别期望时间为“${explicitTime}”，` : ''}为便于安排，请确认具体服务内容${explicitTime ? '；如方便，也请补充更具体的日期' : '和期望时间'}。相对时间不会被自动改成未经您确认的具体日期。`;
+  if (confirmed) {
+    return `已确认您的“${order.serviceName}”订单：服务时间为${scheduled}，服务内容为“${order.serviceRequirements}”${note ? `，补充备注为“${note}”` : ''}。信息已同步给嘉医管家，人工接手后可直接查看。`;
+  }
+  if (pending) {
+    return `已收到您的“${order.serviceName}”订单。${note ? `我从备注中了解到：“${note}”。` : ''}${explicitTime ? `已识别期望时间为“${explicitTime}”，` : ''}为便于安排，请确认具体服务内容${explicitTime ? '；如方便，也请补充更具体的日期' : '和期望时间'}。相对时间不会被自动改成未经您确认的具体日期。`;
+  }
+  return `已收到您的“${order.serviceName}”订单，支付已确认。健康规划师会跟进后续服务或交付安排；如有需要补充的信息，可直接在这里留言。`;
+}
+
+async function ensureOrderPlannerPrompt(order) {
+  if (!order?._id || !order.user) return null;
+  const content = buildOrderPlannerPrompt(order);
+  if (!content) return null;
+  const conversationId = `${order.user}_planner`;
   const existing = await Message.findOne({
     conversationId,
     $or: [
@@ -72,4 +87,4 @@ function normalizeIntakeResult(input = {}, previous = {}) {
   return result;
 }
 
-module.exports = { customerOrderNote, extractExplicitServiceTime, ensureOrderPlannerPrompt, latestOpenOrderConversationAction, normalizeIntakeResult };
+module.exports = { customerOrderNote, extractExplicitServiceTime, isPaidActiveOrder, buildOrderPlannerPrompt, ensureOrderPlannerPrompt, latestOpenOrderConversationAction, normalizeIntakeResult };
