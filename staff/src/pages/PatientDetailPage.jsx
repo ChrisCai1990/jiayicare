@@ -2328,7 +2328,10 @@ export default function PatientDetailPage() {
     }
     setExecItem(f)
     const checklist = normalizeServiceChecklist(f.serviceChecklist, f.taskPurposes, f.dependsOnTaskId?.serviceChecklist)
-    setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: (medicalProxyStage(f) || medicationProxyStage(f)) ? (f.formData || {}) : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f.formData) : emptyOutpatientAssessment(f.formData) })
+    const workflowFormData = medicalProxyStage(f) === 'booking' && !f.formData?.planSnapshot?.serviceContent && f.sourceOrderId?.serviceRequirements
+      ? { ...(f.formData || {}), planSnapshot: { ...(f.formData?.planSnapshot || {}), serviceContent: f.sourceOrderId.serviceRequirements } }
+      : (f.formData || {})
+    setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: (medicalProxyStage(f) || medicationProxyStage(f)) ? workflowFormData : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f.formData) : emptyOutpatientAssessment(f.formData) })
   }
   const handleExec = async () => {
     const proxyStage = medicalProxyStage(execItem)

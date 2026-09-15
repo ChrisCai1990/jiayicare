@@ -59,7 +59,10 @@ export function validateMedicalProxyStage(stage, value) {
 
 export default function MedicalProxyStageForm({ task, value = {}, onChange, reports = [], staffList = [], onOpenReport }) {
   const stage = medicalProxyStage(task)
-  const isExpertAppointment = /专家约诊/.test(`${task?.theme || ''} ${task?.sourceOrderId?.serviceName || ''}`)
+  const appointmentRequirementText = value.planSnapshot?.serviceContent || task?.formData?.planSnapshot?.serviceContent || task?.sourceOrderId?.serviceRequirements || ''
+  const appointmentRequirement = parseAppointmentRequirement(appointmentRequirementText)
+  const isExpertAppointment = /专家约诊|专家门诊预约/.test(`${task?.theme || ''} ${task?.sourceOrderId?.serviceName || ''}`)
+  const isHighEndInsurance = /(?:保险类型：高端险|费用与保险：使用高端医疗险)/.test(appointmentRequirementText)
   const set = (key, item) => onChange({ ...value, [key]: item })
   const input = (key, label, rows = 1, type = 'text') => <label key={key} style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>
     {label}
@@ -197,7 +200,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
   </div>
   if (stage === 'booking') return <div style={{ display: 'grid', gap: 12 }}>
     <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>
-      {value.planSnapshot?.serviceContent ? <div>约诊需求：{value.planSnapshot.serviceContent}</div> : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].map((key, i) => <div key={key}>{['医院', '科室', '专家', '代诊目标', '交流内容'][i]}：{value.planSnapshot?.[key] || '待确认'}</div>)}
+      {appointmentRequirementText ? <div>约诊需求：{appointmentRequirementText}</div> : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].map((key, i) => <div key={key}>{['医院', '科室', '专家', '代诊目标', '交流内容'][i]}：{value.planSnapshot?.[key] || '待确认'}</div>)}
     </div>
     {isExpertAppointment && input('campus', '院区 *')}
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -207,7 +210,9 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     {input('appointmentDate', '专家实际出诊及约诊日期', 1, 'date')}
     {input('appointmentTime', '实际约诊时间', 1, 'time')}
     {value.appointmentDate && value.preferredDateStart && value.preferredDateEnd && (value.appointmentDate < value.preferredDateStart || value.appointmentDate > value.preferredDateEnd) && input('dateDifferenceNote', '超出期望区间说明及客户确认情况', 3)}
-    {/(?:保险类型：高端险|费用与保险：使用高端医疗险)/.test(value.planSnapshot?.serviceContent || '') && <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>高端险核实结果 *
+    {isHighEndInsurance && <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>
+      高端险实际结算核实结果 *
+      <span style={{ color: '#63766D', fontSize: 12, fontWeight: 400 }}>健康顾问记录的客户期望：{({ direct: '直付', reimbursement: '先付后报', pending: '待确认' })[appointmentRequirement.settlementMethod] || '待确认'}。请按医院或保险方的实际答复确认。</span>
       <select className="form-control" value={value.insuranceOutcome || ''} onChange={e => set('insuranceOutcome', e.target.value)}>
         <option value="">请选择核实结果</option><option value="direct_verified">已核实可直付</option><option value="reimbursement_verified">已核实先付后报</option><option value="self_pay_confirmed">保险不适用，客户确认自费</option>
       </select>
