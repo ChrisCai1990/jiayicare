@@ -10490,8 +10490,13 @@ export default function PatientDetailPage() {
                   }}>打开客户对话并带入建议</button>
                 </> : <div style={{ color: '#8A6B30' }}>顾问建议尚未同步到本任务，请刷新后查看；在建议到达前不能推送方案。</div>}
               </div>}
-              {/* 表单内容（formData） */}
-              {medicalProxyStage(followUpDetail) !== 'supervise' && followUpDetail.formData && Object.keys(followUpDetail.formData).length > 0 && (
+              {followUpDetail.formData?.generatedFromPostCheckupSupervision && (
+                <div style={{ border: '1px solid #B2D8C7', background: '#F6FBF8', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#4A6558', lineHeight: 1.7 }}>
+                  AI 已依据订单和客户对话生成随访计划草稿。请核对上方计划内容，必要时先编辑，再确认随访计划；确认后将同步给健管专员和客户，并结束本次复查督办订单。
+                </div>
+              )}
+              {/* 表单内容（formData）：工作流内部字段不展示给业务人员 */}
+              {medicalProxyStage(followUpDetail) !== 'supervise' && !followUpDetail.formData?.generatedFromPostCheckupSupervision && followUpDetail.formData && Object.keys(followUpDetail.formData).length > 0 && (
                 <div>
                   <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 6 }}>表单内容</div>
                   <div style={{ background: '#f9f7f3', borderRadius: 8, padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
