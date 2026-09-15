@@ -190,7 +190,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     {fields.advisor.map(([key, label]) => input(key, label, key === 'proxyGoal' || key === 'communicationContent' ? 3 : 1))}
   </div>
   if (stage === 'planner') {
-    const booking = { ...(task?.sourceOrderId?.medicalProxyPlan?.booking || {}), ...(value.bookingSnapshot || {}) }
+    const booking = { ...(task?.sourceOrderId?.medicalProxyPlan?.booking || {}), ...(value.bookingSnapshot?.planSnapshot?.booking || {}), ...(value.bookingSnapshot || {}) }
     const paymentLabel = ({ self_pay: '自费', medical_insurance: '医保', commercial_insurance: '商保' })[booking.paymentMethod] || '未填写'
     return <div style={{ display: 'grid', gap: 12 }}>
     <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>
@@ -241,7 +241,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     </label>}
   </div>
   if (stage === 'execute') {
-    const booking = { ...(task?.sourceOrderId?.medicalProxyPlan?.booking || {}), ...(value.bookingSnapshot || {}) }
+    const booking = { ...(task?.sourceOrderId?.medicalProxyPlan?.booking || {}), ...(value.bookingSnapshot?.planSnapshot?.booking || {}), ...(value.bookingSnapshot || {}) }
     const paymentLabel = ({ self_pay: '自费', medical_insurance: '医保', commercial_insurance: '商保' })[booking.paymentMethod] || '未填写'
     return <div style={{ display: 'grid', gap: 12 }}>
     <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>
