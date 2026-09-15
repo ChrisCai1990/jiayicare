@@ -79,7 +79,7 @@ async function validate(task, body, staff) {
     const patient = await User.findById(task.patientId).select('assignedHealthPlanner assignedHealthManager assignedFamilyDoctor assignedMedicalAssistant').lean();
     const nextAssignee = stage === 'intake' && data.institutionType === 'hospital'
       ? (data.needsAdvisor ? patient?.assignedFamilyDoctor : patient?.assignedHealthManager)
-      : stage === 'advisor' ? patient?.assignedHealthPlanner
+      : stage === 'advisor' ? patient?.assignedHealthManager
         : stage === 'review' ? patient?.assignedHealthManager : data.medicalAssistantId;
     if (!nextAssignee) return '下一环节负责人未分配，请先完成客户人员分配';
   }
@@ -120,7 +120,7 @@ async function advance(task) {
   let assignee;
   if (stage === 'intake') {
     next = data.institutionType === 'hospital' ? (data.needsAdvisor ? 'advisor' : 'booking') : 'execute';
-  } else if (stage === 'advisor') next = 'review';
+  } else if (stage === 'advisor') next = 'booking';
   else if (stage === 'review') next = 'booking';
   else if (stage === 'booking') next = 'execute';
   assignee = next === 'advisor' ? patient?.assignedFamilyDoctor : next === 'review' ? patient?.assignedHealthPlanner : next === 'booking' ? patient?.assignedHealthManager : data.medicalAssistantId;
