@@ -5,7 +5,11 @@ const User = require('../models/User');
 const RecurringSupplyPlan = require('../models/RecurringSupplyPlan');
 
 const PREFIX = 'medication_proxy:';
-const isMedicationProxyOrder = name => /代配药|代取药/.test(String(name || ''));
+const isMedicationProxyOrder = order => {
+  if (!order) return false;
+  if (typeof order === 'string') return /代配药|代取药/.test(order);
+  return /代配药|代取药/.test([order.serviceName, order.specificationLabel, order.note, order.serviceRequirements].filter(Boolean).join(' '));
+};
 const stageOf = task => task?.sourceType === 'order' && String(task.workflowKey || '').startsWith(PREFIX)
   ? task.workflowKey.slice(PREFIX.length) : '';
 const value = input => String(input || '').trim();
@@ -25,10 +29,10 @@ async function createStage(order, stage, assignee, previous, data = {}) {
   );
 }
 
-async function start(order, plannerId) {
+async function start(order, plannerId, formData = {}) {
   const existing = await FollowUp.exists({ sourceType: 'order', sourceOrderId: order._id, workflowKey: /^medication_proxy:/ });
   if (existing) throw Object.assign(new Error('该订单已进入代配药流程'), { status: 409 });
-  const task = await createStage(order, 'intake', plannerId, null, {});
+  const task = await createStage(order, 'intake', plannerId, null, formData);
   await FollowUp.updateMany({ sourceType: 'order', sourceOrderId: order._id, _id: { $ne: task._id }, workflowKey: { $in: ['', null] }, status: { $in: ['planned', 'in_progress'] } }, { $set: { status: 'cancelled', cancelReason: '已进入代配药分阶段流程' } });
   return task;
 }
