@@ -5,6 +5,7 @@ const { isMedicalReminderOrder, normalizeIntake, validateIntake, stageOf } = req
 test('only starts the dedicated workflow for medical reminder products', () => {
   assert.equal(isMedicalReminderOrder('就医提醒服务'), true);
   assert.equal(isMedicalReminderOrder('复查督办服务'), true);
+  assert.equal(isMedicalReminderOrder({ serviceName: '健康体检服务', specificationLabel: '复查督办服务' }), true);
   assert.equal(isMedicalReminderOrder('门诊一站式服务'), false);
 });
 

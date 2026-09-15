@@ -1437,7 +1437,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
       .populate('sourceHealthPlanId', 'title description content type')
       .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard')
       .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
-      .populate('sourceOrderId', 'serviceName servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt medicalProxyPlan'),
+      .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt medicalProxyPlan medicalReminderIntake'),
     FollowUp.countDocuments(filter),
   ]);
   res.json({
@@ -1524,7 +1524,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
       .populate('sourceHealthPlanId', 'title description content type')
       .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard')
       .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
-      .populate('sourceOrderId', 'serviceName servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt medicalProxyPlan'),
+      .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt medicalProxyPlan medicalReminderIntake'),
     FollowUp.countDocuments(filter),
   ]);
 
@@ -2187,6 +2187,9 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
       followUp.cancelReason = '健康顾问审核未通过';
       followUp.aiStatus = null;
       await followUp.save();
+      if (followUp.sourceType === 'order' && followUp.formData?.generatedFromPostCheckupSupervision && followUp.sourceOrderId) {
+        await Order.updateOne({ _id: followUp.sourceOrderId }, { $set: { currentStage: 'advisor_rejected', supervisionStatus: 'needs_attention' } });
+      }
       return res.json({ success: true, message: '已驳回' });
     }
 
@@ -2196,6 +2199,34 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
     }
     followUp.aiStatus = 'approved';
     await followUp.save();
+    if (followUp.sourceType === 'order' && followUp.formData?.generatedFromPostCheckupSupervision && followUp.sourceOrderId) {
+      const order = await Order.findById(followUp.sourceOrderId);
+      if (order) {
+        const managerId = followUp.formData?.managerId;
+        if (!managerId) throw new Error('复查督办订单缺少健管专员，无法推送随访计划');
+        const completedAt = new Date();
+        const delivery = await FollowUp.findOneAndUpdate(
+          { patientId: followUp.patientId, sourceType: 'scheduled', sourceOrderId: order._id, sourceScheduleKey: `post_checkup_supervision_followup:${order._id}` },
+          { $set: { patientId: followUp.patientId, staffId: managerId, assignedTo: managerId, date: followUp.date, remindAt: followUp.remindAt || followUp.date, nextFollowUpDate: followUp.date,
+            type: followUp.type || 'other', status: 'planned', theme: '复查督办后随访计划', content: followUp.content, plannedContent: followUp.content,
+            tags: ['复查督办', '健康顾问已审核'], sourceType: 'scheduled', sourceOrderId: order._id, sourceScheduleKey: `post_checkup_supervision_followup:${order._id}`,
+            formData: { generatedFromPostCheckupSupervision: true, approvedFollowUpId: String(followUp._id) } } },
+          { upsert: true, new: true, setDefaultsOnInsert: true },
+        );
+        followUp.status = 'completed'; followUp.completedAt = completedAt; followUp.completedBy = 'staff';
+        await followUp.save();
+        order.status = 'completed'; order.tradeStatus = 'completed'; order.fulfillmentStatus = 'completed'; order.completedAt = completedAt; order.usedUnits = Math.max(order.usedUnits || 0, 1);
+        order.currentStage = 'completed'; order.currentAssignee = null; order.supervisionStatus = 'completed';
+        await order.save();
+        await Message.findOneAndUpdate(
+          { dedupeKey: `medical-reminder-approved:${order._id}` },
+          { $setOnInsert: { user: followUp.patientId, type: 'planner', sender: 'AI健康规划师', title: '复查督办随访计划', conversationId: `${followUp.patientId}_planner`, isAI: true, unread: true,
+            content: `健康顾问已审核随访计划：\n${followUp.content}`, dedupeKey: `medical-reminder-approved:${order._id}`,
+            action: { type: 'followup_plan', followUpId: String(delivery._id), orderId: String(order._id) } } },
+          { upsert: true, new: true },
+        );
+      }
+    }
     if (followUp.sourceType === 'order' && followUp.formData?.generatedFromExpertAppointment && followUp.sourceOrderId) {
       const order = await Order.findOne({ _id: followUp.sourceOrderId, serviceName: /专家约诊/ });
       if (order) {
@@ -5863,8 +5894,8 @@ router.post('/orders/:id/medication-draft', staffAuth, async (req, res) => {
 router.post('/orders/:id/medical-reminder-draft', staffAuth, async (req, res) => {
   try {
     if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康规划师可整理复查督办信息' });
-    const order = await Order.findById(req.params.id).select('user serviceName note medicalReminderIntake').lean();
-    if (!order || !require('../utils/medicalReminderWorkflow').isMedicalReminderOrder(order.serviceName)) return res.status(404).json({ success: false, message: '复查督办订单不存在' });
+    const order = await Order.findById(req.params.id).select('user serviceName specificationLabel serviceRequirements note medicalReminderIntake').lean();
+    if (!order || !require('../utils/medicalReminderWorkflow').isMedicalReminderOrder(order)) return res.status(404).json({ success: false, message: '复查督办订单不存在' });
     const messages = (Array.isArray(req.body.messages) ? req.body.messages : []).slice(-80).map(item => String(item || '').slice(0, 800));
     const { chat } = require('../utils/ai');
     const raw = await chat([{ role: 'user', content: `你是体检后复查督办服务的信息整理助手。只能提取对话和订单中已明确的信息；医院、科室、专家建议允许整理对话中的建议，但不得自行诊断或虚构。缺失字段留空。仅输出JSON：{"visitDate":"YYYY-MM-DD或空","medicalIssue":"","visitGoal":"","hospitalSuggestion":"","departmentSuggestion":"","expertSuggestion":""}。订单备注：${String(order.note || '').slice(0, 1500)}。对话：${JSON.stringify(messages).slice(0, 20000)}` }], { maxTokens: 900, temperature: 0, jsonMode: true, timeoutMs: 60000 });
@@ -5885,11 +5916,11 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
     const { isMedicalProxyOrder, startMedicalProxyWorkflow } = require('../utils/medicalProxyWorkflow');
     const medicationProxyWorkflow = require('../utils/medicationProxyWorkflow');
     const medicalReminderWorkflow = require('../utils/medicalReminderWorkflow');
-    if (medicalReminderWorkflow.isMedicalReminderOrder(currentOrder?.serviceName)) {
+    if (medicalReminderWorkflow.isMedicalReminderOrder(currentOrder)) {
       if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '复查督办由健康规划师先确认信息' });
       const task = await medicalReminderWorkflow.start(currentOrder, req.staff._id, req.body.medicalReminderIntake || {});
       const order = await Order.findByIdAndUpdate(req.params.id, { status: 'scheduled', scheduledAt: new Date(`${req.body.medicalReminderIntake.visitDate}T09:00:00+08:00`), handledBy: req.staff._id }, { new: true }).populate('user', 'name phone');
-      return res.json({ success: true, data: order, task, message: '复查督办任务已同步给客户和健管专员' });
+      return res.json({ success: true, data: order, task, message: 'AI随访计划已转健康顾问审核' });
     }
     if (medicationProxyWorkflow.isMedicationProxyOrder(currentOrder)) {
       if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '代配药由健康规划师先核对用药信息' });

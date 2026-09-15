@@ -4,7 +4,12 @@ const User = require('../models/User');
 const Message = require('../models/Message');
 
 const PREFIX = 'medical_reminder:';
-const isMedicalReminderOrder = name => /复查督办|就医提醒/.test(String(name || ''));
+const isMedicalReminderOrder = orderOrName => {
+  const text = typeof orderOrName === 'object'
+    ? [orderOrName?.serviceName, orderOrName?.specificationLabel, orderOrName?.note, orderOrName?.serviceRequirements, orderOrName?.serviceWorkflowSnapshot?.key].filter(Boolean).join(' ')
+    : String(orderOrName || '');
+  return /复查督办|就医提醒/.test(text);
+};
 const stageOf = task => String(task?.workflowKey || '').startsWith(PREFIX) ? String(task.workflowKey).slice(PREFIX.length) : '';
 const clean = value => String(value || '').trim().slice(0, 1000);
 
@@ -27,31 +32,41 @@ async function start(order, plannerId, input) {
   if (error) { const exception = new Error(error); exception.status = 400; throw exception; }
   const patient = await User.findById(order.user).select('assignedHealthManager assignedFamilyDoctor').lean();
   const managerId = patient?.assignedHealthManager;
-  if (!managerId) { const exception = new Error('客户尚未分配健管专员，不能启动复查督办'); exception.status = 409; throw exception; }
+  const advisorId = patient?.assignedFamilyDoctor;
+  if (!managerId || !advisorId) { const exception = new Error(`客户尚未分配${!managerId ? '健管专员' : '健康顾问'}，不能启动复查督办`); exception.status = 409; throw exception; }
   const visitAt = new Date(`${intake.visitDate}T09:00:00+08:00`);
   if (Number.isNaN(visitAt.getTime())) { const exception = new Error('就医日期格式不正确'); exception.status = 400; throw exception; }
   order.medicalReminderIntake = intake;
-  order.currentStage = 'followup'; order.currentAssignee = managerId; order.supervisionStatus = 'in_progress';
+  order.currentStage = 'advisor_review'; order.currentAssignee = advisorId; order.supervisionStatus = 'in_progress';
   await order.save();
   const summary = `就医问题：${intake.medicalIssue}\n就医目标：${intake.visitGoal}\n医院建议：${intake.hospitalSuggestion}\n科室建议：${intake.departmentSuggestion}\n专家建议：${intake.expertSuggestion}`;
-  const firstReminderAt = new Date(visitAt.getTime() + 24 * 60 * 60 * 1000);
+  let content = `请围绕${intake.medicalIssue}完成复查督办：确认${intake.visitDate}的复查安排，并在复查后跟进结果、医嘱和下一步健康管理建议。`;
+  let followUpDate = new Date(visitAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+  try {
+    const { chat } = require('./ai');
+    const text = await chat([{ role: 'user', content: `你是健康管理随访计划助手。根据以下复查督办信息生成一条简明、可执行的随访计划草稿。不得补写诊断、药物或检查结果。仅输出JSON：{"content":"随访事项","daysLater":1到30的整数}。\n${summary}\n就医日期：${intake.visitDate}` }], { maxTokens: 700, temperature: 0 });
+    const match = String(text || '').match(/\{[\s\S]*\}/);
+    const draft = match ? JSON.parse(match[0]) : {};
+    if (clean(draft.content)) content = clean(draft.content);
+    const days = Math.max(1, Math.min(30, Number(draft.daysLater) || 7));
+    followUpDate = new Date(visitAt.getTime() + days * 24 * 60 * 60 * 1000);
+  } catch (error) { console.error('[medical-reminder] AI随访计划生成失败，使用安全草稿', error.message); }
   const task = await FollowUp.findOneAndUpdate(
-    { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}followup` },
-    { $set: { patientId: order.user, staffId: plannerId, assignedTo: managerId, date: visitAt, remindAt: firstReminderAt, nextFollowUpDate: visitAt,
-      type: 'other', status: 'planned', theme: `复查督办 · ${order.serviceName}`, plannedContent: summary, content: summary,
-      sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}followup`, taskRole: '', isBlocked: false,
-      formData: { ...intake, phase: 'waiting_visit', reminderCount: 0 } } },
+    { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}advisor_review` },
+    { $set: { patientId: order.user, staffId: advisorId, assignedTo: advisorId, date: followUpDate, remindAt: followUpDate, nextFollowUpDate: followUpDate,
+      type: 'other', status: 'planned', theme: '复查督办随访计划', plannedContent: content, content,
+      sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}advisor_review`, taskRole: '', isBlocked: false, aiStatus: 'pending', reviewRole: 'familyDoctor',
+      formData: { ...intake, managerId: String(managerId), generatedFromPostCheckupSupervision: true } } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
   await FollowUp.updateMany(
     { sourceType: 'order', sourceOrderId: order._id, _id: { $ne: task._id }, workflowKey: { $in: ['', null] }, status: { $in: ['planned', 'in_progress'] } },
-    { $set: { status: 'cancelled', cancelReason: '已进入复查督办随访流程' } },
+    { $set: { status: 'cancelled', cancelReason: '已转健康顾问审核复查督办随访计划' } },
   );
   await Message.findOneAndUpdate(
-    { dedupeKey: `medical-reminder-plan:${order._id}` },
-    { $setOnInsert: { user: order.user, type: 'planner', sender: 'AI健康规划师', title: '复查督办计划', conversationId: `${order.user}_planner`, isAI: true, unread: true,
-      content: `已为您建立${intake.visitDate}的复查督办。复查结束后请在任务中确认，并上传报告单和病历。`, dedupeKey: `medical-reminder-plan:${order._id}`,
-      action: { type: 'medical_reminder_followup', orderId: String(order._id), followUpId: String(task._id) } } }, { upsert: true, new: true });
+    { dedupeKey: `medical-reminder-review:${order._id}` },
+    { $setOnInsert: { user: order.user, type: 'planner', sender: 'AI健康规划师', title: '复查督办计划审核中', conversationId: `${order.user}_planner`, isAI: true, unread: true,
+      content: `已收到您${intake.visitDate}的复查督办信息，AI已生成随访计划草稿，正由健康顾问审核。`, dedupeKey: `medical-reminder-review:${order._id}` } }, { upsert: true, new: true });
   return task;
 }
 
