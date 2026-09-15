@@ -12019,7 +12019,7 @@ export default function PatientDetailPage() {
             await staffAPI.updateFollowUp(task._id, { status: 'in_progress', content: `已向客户推送后续服务：${product.name}`, formData: { ...(task.formData || {}), medicalPlanning: true, planningOutcome: 'additional_service_needed', additionalServiceNote: `已推送：${product.name}` } })
             loadFollowUps()
           }}
-          onConfirmBooking={async ({ orderId, serviceTime, serviceTimeEnd, task, serviceContent, customerNeed, communicationDate, communicationTimeStart, communicationTimeEnd, medicationData, medicalReminderIntake }) => {
+          onConfirmBooking={async ({ orderId, serviceTime, serviceTimeEnd, task, serviceContent, customerNeed, communicationDate, communicationTimeStart, communicationTimeEnd, medicationData, medicalReminderIntake, checkupAppointmentIntake }) => {
             if (appointmentReviewContext) {
               await staffAPI.updateFollowUp(appointmentReviewContext._id, { status: 'completed', formData: { ...appointmentReviewContext.formData, serviceContent, preferredDateStart: serviceTime, preferredDateEnd: serviceTimeEnd } })
               setShowMessageModal(false); setAppointmentReviewContext(null)
@@ -12031,7 +12031,7 @@ export default function PatientDetailPage() {
             const cleanOriginalNote = String(originalNote).split('\n').filter(line => !/^已确认服务任务[:：]/.test(line.trim())).join('\n').trim()
             const confirmedNote = [cleanOriginalNote, `已确认服务任务：${task}`].filter(Boolean).join('\n')
             const scheduledAt = /^\d{4}-\d{2}-\d{2}$/.test(serviceTime) ? `${serviceTime}T00:00:00+08:00` : serviceTime
-            const result = await staffAPI.startOrder(orderId, { action: 'schedule', scheduledAt, serviceDateEnd: serviceTimeEnd, note: confirmedNote, serviceContent, customerNeed, communicationDate, communicationTimeStart, communicationTimeEnd, medicationData, medicalReminderIntake })
+            const result = await staffAPI.startOrder(orderId, { action: 'schedule', scheduledAt, serviceDateEnd: serviceTimeEnd, note: confirmedNote, serviceContent, customerNeed, communicationDate, communicationTimeStart, communicationTimeEnd, medicationData, medicalReminderIntake, checkupAppointmentIntake })
             setShowMessageModal(false)
             if (/复查督办|就医提醒/.test([result.data?.serviceName, result.data?.specificationLabel, result.data?.note, result.data?.serviceRequirements].filter(Boolean).join(' '))) {
               toast('AI随访计划已转健康顾问审核')
@@ -12307,6 +12307,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   const [currentBooking, setCurrentBooking] = useState(serviceBooking || (initialOrder ? { sourceOrderId: initialOrder } : null))
   const order = currentBooking?.sourceOrderId
   const isMedicalProxy = order?.serviceWorkflowSnapshot?.key === 'medical_proxy' || /医疗代诊|专家约诊|就医规划/.test(order?.serviceName || '')
+  const isCheckupAppointment = order?.serviceWorkflowSnapshot?.key === 'checkup_appointment' || /待约检|常规约检|特殊约检/.test(order?.serviceName || '')
   const isMedicationProxy = /代配药|代取药/.test([order?.serviceName, order?.specificationLabel, order?.note, order?.serviceRequirements].filter(Boolean).join(' '))
   const isMedicalReminderOrder = /复查督办|就医提醒/.test([order?.serviceName, order?.specificationLabel, order?.note, order?.serviceRequirements].filter(Boolean).join(' '))
   const isMedicalReminder = isMedicalReminderOrder
@@ -12355,6 +12356,8 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   const [medicalReminder, setMedicalReminder] = useState(() => ({ visitDate: formatServiceDate(orderServiceDate), medicalIssue: '', visitGoal: '', hospitalSuggestion: '', departmentSuggestion: '', expertSuggestion: '', ...(order?.medicalReminderIntake || {}) }))
   const [extractingReminder, setExtractingReminder] = useState(false)
   const [medicationData, setMedicationData] = useState({})
+  const [checkupAppointmentType, setCheckupAppointmentType] = useState(/特殊约检/.test(order?.serviceName || '') ? 'special' : 'normal')
+  const [checkupFastingRequired, setCheckupFastingRequired] = useState('')
   const [medicationStaffList, setMedicationStaffList] = useState([])
   const [confirmingBooking, setConfirmingBooking] = useState(false)
   const [bookingError, setBookingError] = useState('')
@@ -12677,6 +12680,15 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
             {isMedicalReminder ? <div style={{ display: 'grid', gap: 8 }}>
               <div style={{ textAlign: 'right' }}><button type="button" className="btn btn-secondary btn-sm" disabled={extractingReminder} onClick={extractMedicalReminder}>{extractingReminder ? 'AI整理中…' : 'AI获取对话信息'}</button></div>
               {[['visitDate','就医日期','date'],['medicalIssue','就医问题'],['visitGoal','就医目标'],['hospitalSuggestion','医院建议'],['departmentSuggestion','科室建议'],['expertSuggestion','专家建议']].map(([key,label,type]) => <label key={key} style={{ fontSize: 12, fontWeight: 600 }}>{label} *{type === 'date' ? <input className="form-input" type="date" value={medicalReminder[key] || ''} onChange={e => updateMedicalReminder(key, e.target.value)} /> : <textarea className="form-input" rows={2} value={medicalReminder[key] || ''} onChange={e => updateMedicalReminder(key, e.target.value)} />}</label>)}
+            </div> : isCheckupAppointment ? <div style={{ display: 'grid', gap: 10 }}>
+              <div style={{ fontSize: 12, color: '#8AA89C' }}>确认客户期望日期、检查项目、机构、专家和空腹要求后，转健管专员预约两个号。</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <label style={{ fontSize: 12, fontWeight: 600 }}>约检类型<select className="form-input" value={checkupAppointmentType} onChange={e => setCheckupAppointmentType(e.target.value)}><option value="normal">常规约检</option><option value="special">特殊约检</option></select></label>
+                <label style={{ fontSize: 12, fontWeight: 600 }}>是否需要空腹 *<select className="form-input" value={checkupFastingRequired} onChange={e => setCheckupFastingRequired(e.target.value)}><option value="">请选择</option><option value="yes">需要</option><option value="no">不需要</option></select></label>
+              </div>
+              <label style={{ fontSize: 12, fontWeight: 600 }}>检查机构 *<input className="form-input" value={suggestedHospital} onChange={e => setSuggestedHospital(e.target.value)} /></label>
+              <label style={{ fontSize: 12, fontWeight: 600 }}>检查专家{checkupAppointmentType === 'special' ? ' *' : ''}<input className="form-input" value={expert} onChange={e => setExpert(e.target.value)} /></label>
+              <label style={{ fontSize: 12, fontWeight: 600 }}>检查项目 *<textarea className="form-input" rows={3} value={serviceTask} onChange={e => setServiceTask(e.target.value)} placeholder="每行一项；可填写客户需求或已建随访计划项目" /></label>
             </div> : isMedicationProxy ? <MedicationProxyStageForm task={{ sourceType: 'order', workflowKey: 'medication_proxy:intake', sourceOrderId: order, patientId }} value={medicationData} staffList={medicationStaffList} onChange={setMedicationData} /> : <>
             {(!isMedicalProxy || !proxyReviewReady || isExpertAppointment) ? <>
               {isMedicalProxy && <div style={{ textAlign: 'right' }}><button type="button" className="btn btn-secondary btn-sm" onClick={fillFromConversation}>从对话自动填入</button></div>}
@@ -12733,7 +12745,8 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
                     `支付方式：${({ direct: '直付', reimbursement: '先付后报' })[settlementMethod]}`,
                   ].filter(Boolean).join('；') : ''
                   const confirmedContent = [proxyServiceContent.trim(), appointmentCategories].filter(Boolean).join('；')
-                  await onConfirmBooking?.({ orderId, serviceTime: isMedicalReminder ? medicalReminder.visitDate : serviceTime, serviceTimeEnd: isMedicalReminder ? medicalReminder.visitDate : isMedicalPlanning ? serviceTime : serviceTimeEnd, communicationDate: isMedicalPlanning ? serviceTime : '', communicationTimeStart, communicationTimeEnd, task: isMedicalReminder ? `就医问题：${medicalReminder.medicalIssue}；就医目标：${medicalReminder.visitGoal}` : isMedicalProxy ? [confirmedContent, proxyCustomerNeed.trim()].filter(Boolean).join('；') : serviceTask.trim(), serviceContent: confirmedContent, customerNeed: proxyCustomerNeed.trim(), medicationData, medicalReminderIntake: isMedicalReminder ? medicalReminder : undefined })
+                  const checkupAppointmentIntake = isCheckupAppointment ? { serviceType: checkupAppointmentType, preferredDateStart: serviceTime, preferredDateEnd: serviceTimeEnd, checkItems: serviceTask.split('\n').map(name => ({ name: name.trim() })).filter(item => item.name), institution: suggestedHospital.trim(), expert: expert.trim(), fastingRequired: checkupFastingRequired === 'yes' } : undefined
+                  await onConfirmBooking?.({ orderId, serviceTime: isMedicalReminder ? medicalReminder.visitDate : serviceTime, serviceTimeEnd: isMedicalReminder ? medicalReminder.visitDate : isMedicalPlanning ? serviceTime : serviceTimeEnd, communicationDate: isMedicalPlanning ? serviceTime : '', communicationTimeStart, communicationTimeEnd, task: isMedicalReminder ? `就医问题：${medicalReminder.medicalIssue}；就医目标：${medicalReminder.visitGoal}` : isMedicalProxy ? [confirmedContent, proxyCustomerNeed.trim()].filter(Boolean).join('；') : serviceTask.trim(), serviceContent: confirmedContent, customerNeed: proxyCustomerNeed.trim(), medicationData, medicalReminderIntake: isMedicalReminder ? medicalReminder : undefined, checkupAppointmentIntake })
                 }
                 catch (err) { setBookingError(err.message || '确认预约失败') }
                 finally { setConfirmingBooking(false) }

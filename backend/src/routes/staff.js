@@ -1720,6 +1720,12 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     const error = await medicalProxyWorkflow.validateMedicalProxyStage(followUp, req.body, req.staff);
     if (error) return res.status(400).json({ success: false, message: error });
   }
+  const checkupAppointmentWorkflow = require('../utils/checkupAppointmentWorkflow');
+  const checkupAppointmentStage = checkupAppointmentWorkflow.stageOf(followUp);
+  if (checkupAppointmentStage) {
+    const error = await checkupAppointmentWorkflow.validate(followUp, req.body, req.staff);
+    if (error) return res.status(400).json({ success: false, message: error });
+  }
   const medicationProxyWorkflow = require('../utils/medicationProxyWorkflow');
   const medicationStage = medicationProxyWorkflow.stageOf(followUp);
   if (medicationStage) {
@@ -1915,6 +1921,9 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   }
   if (proxyStage && followUp.status === 'completed' && previousStatus !== 'completed') {
     await medicalProxyWorkflow.advanceMedicalProxyWorkflow(followUp);
+  }
+  if (checkupAppointmentStage && followUp.status === 'completed' && previousStatus !== 'completed') {
+    await checkupAppointmentWorkflow.advance(followUp);
   }
   if (medicationStage && followUp.status === 'completed' && previousStatus !== 'completed') await medicationProxyWorkflow.advance(followUp);
   if (medicalReminderStage && followUp.status === 'completed' && previousStatus !== 'completed') await medicalReminderWorkflow.advanceStaffStage(followUp, req.staff._id);
@@ -2235,6 +2244,19 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
         order.status = 'completed'; order.tradeStatus = 'completed'; order.completedAt = new Date();
         await order.save();
         await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: 'medical_proxy:supervise', status: { $in: ['planned', 'in_progress'] } }, { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', content: '健管专员已审核就诊资料，AI随访计划已由健康顾问审核，专家约诊服务结束。', 'formData.currentStage': 'completed' } });
+      }
+    }
+    if (followUp.sourceType === 'order' && followUp.formData?.generatedFromCheckupAppointment && followUp.sourceOrderId) {
+      const order = await Order.findById(followUp.sourceOrderId);
+      if (order) {
+        const completedAt = new Date();
+        order.status = 'completed'; order.tradeStatus = 'completed'; order.fulfillmentStatus = 'completed'; order.completedAt = completedAt;
+        order.usedUnits = Math.max(order.usedUnits || 0, 1);
+        await order.save();
+        await FollowUp.updateOne(
+          { sourceType: 'order', sourceOrderId: order._id, workflowKey: 'checkup_appointment:manager_review', status: { $in: ['planned', 'in_progress'] } },
+          { $set: { status: 'completed', completedAt, completedBy: 'staff', content: '健康顾问已审核后续随访计划，待约检服务结束。' } },
+        );
       }
     }
     res.json({ success: true, message: '已通过审核', data: followUp });
@@ -5950,6 +5972,7 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
     const { isMedicalProxyOrder, startMedicalProxyWorkflow } = require('../utils/medicalProxyWorkflow');
     const medicationProxyWorkflow = require('../utils/medicationProxyWorkflow');
     const medicalReminderWorkflow = require('../utils/medicalReminderWorkflow');
+    const checkupAppointmentWorkflow = require('../utils/checkupAppointmentWorkflow');
     if (medicalReminderWorkflow.isMedicalReminderOrder(currentOrder)) {
       if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '复查督办由健康顾问确认信息' });
       const task = await medicalReminderWorkflow.start(currentOrder, req.staff._id, req.body.medicalReminderIntake || {});
@@ -5985,6 +6008,12 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
       if (note) update.note = note;
       const order = await Order.findByIdAndUpdate(req.params.id, update, { new: true }).populate('user', 'name phone');
       return res.json({ success: true, data: order, task, message: /专家约诊/.test(currentOrder.serviceName || '') ? '服务信息已确认，已转给健管专员预约' : /就医规划/.test(currentOrder.serviceName || '') ? '沟通信息已确认，已转到健康顾问工作台' : '服务信息已确认，健康规划师开始指导客户上传并选定本次资料' });
+    }
+    if (checkupAppointmentWorkflow.isCheckupAppointmentOrder(currentOrder)) {
+      if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '待约检由健康规划师先确认检查需求' });
+      const task = await checkupAppointmentWorkflow.start(currentOrder, req.staff._id, req.body.checkupAppointmentIntake || {});
+      const order = await Order.findByIdAndUpdate(req.params.id, { status: 'scheduled', handledBy: req.staff._id }, { new: true }).populate('user', 'name phone');
+      return res.json({ success: true, data: order, task, message: '待约检信息已确认，已转健管专员预约两个号' });
     }
     const newStatus = 'scheduled';
     const update = { status: newStatus, handledBy: req.staff._id };
