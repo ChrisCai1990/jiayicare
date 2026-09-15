@@ -1809,6 +1809,7 @@ export default function PatientDetailPage() {
   const [assigningFulfillerOrder, setAssigningFulfillerOrder] = useState(null)
   const [fulfillerChoice, setFulfillerChoice] = useState('')
   const [showFollowUpModal, setShowFollowUpModal] = useState(false)
+  const [showPostCheckupSupervisionModal, setShowPostCheckupSupervisionModal] = useState(false)
   const [followUpDetail, setFollowUpDetail] = useState(null)
   const [editingFollowUp, setEditingFollowUp] = useState(null)
   const [followUpSaving, setFollowUpSaving] = useState(false)
@@ -8826,6 +8827,11 @@ export default function PatientDetailPage() {
                   ✨ AI体检方案
                 </button>
               )}
+              {['familyDoctor', 'superadmin'].includes(staff?.role) && (
+                <button className="btn btn-secondary btn-sm" onClick={() => setShowPostCheckupSupervisionModal(true)}>
+                  发起复查督办
+                </button>
+              )}
               {['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && (
                 <button className="btn btn-secondary btn-sm" disabled={aiMedicalAssistGenerating}
                   onClick={() => { setPendingMedicalAssistOrderId(''); setShowSelectTplModal('medical_assist') }}>
@@ -11928,6 +11934,20 @@ export default function PatientDetailPage() {
         />
       )}
 
+      {showPostCheckupSupervisionModal && (
+        <StartPostCheckupSupervisionModal
+          patientId={id}
+          patientName={user.name}
+          onClose={() => setShowPostCheckupSupervisionModal(false)}
+          onStarted={async () => {
+            setShowPostCheckupSupervisionModal(false)
+            toast('AI随访计划已生成，请在随访任务中审核确认')
+            await loadFollowUps()
+            setTab('followups')
+          }}
+        />
+      )}
+
       {/* 发消息弹窗 */}
       {showMessageModal && (
         <SendMessageModal
@@ -14002,6 +14022,33 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, initialBri
             {generating ? 'AI生成中…' : '✨ 确认生成'}
           </button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function StartPostCheckupSupervisionModal({ patientId, patientName, onClose, onStarted }) {
+  const [note, setNote] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const submit = async () => {
+    setSaving(true); setError('')
+    try {
+      await staffAPI.startPostCheckupSupervision(patientId, { note: note.trim() })
+      await onStarted()
+    } catch (err) { setError(err.message || '发起失败') }
+    finally { setSaving(false) }
+  }
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 520 }}>
+        <div className="modal-header"><h3 className="modal-title">发起复查督办</h3><button className="modal-close" onClick={onClose}>✕</button></div>
+        <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
+          <div style={{ color: '#4A6558', fontSize: 13, lineHeight: 1.7 }}>为 {patientName || '该客户'} 发起体检后复查督办。系统会立即生成 AI 随访计划草稿，由您审核确认后推送给客户和健管专员。</div>
+          <label className="form-label">复查重点或补充说明（选填）<textarea className="form-input" rows={4} maxLength={1000} placeholder="例如：重点核对体检异常项、医生建议的复查时间或客户已确认的就诊安排" value={note} onChange={e => setNote(e.target.value)} /></label>
+          {error && <div role="alert" style={{ color: '#B42318', background: '#FFF0EF', borderRadius: 6, padding: '8px 10px', fontSize: 13 }}>{error}</div>}
+        </div>
+        <div className="modal-footer"><button className="btn btn-secondary" disabled={saving} onClick={onClose}>取消</button><button className="btn btn-primary" disabled={saving} onClick={submit}>{saving ? 'AI生成中…' : '生成随访计划并审核'}</button></div>
       </div>
     </div>
   )

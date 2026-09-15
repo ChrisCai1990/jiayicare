@@ -2512,6 +2512,29 @@ router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => 
   } catch (err) { res.status(err.status || 500).json({ success: false, message: err.message }); }
 });
 
+// 健康顾问可从客户档案直接发起体检后复查督办，不经过健康规划师。
+router.post('/patients/:id/post-checkup-supervision/start', staffAuth, async (req, res) => {
+  if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可发起复查督办服务' });
+  try {
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权为该会员发起服务' });
+    const patient = await User.findById(req.params.id).select('name tenantId assignedFamilyDoctor assignedHealthManager').lean();
+    if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+    if (req.staff.role !== 'superadmin' && String(patient.assignedFamilyDoctor || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅该客户的健康顾问可发起' });
+    if (!patient.assignedHealthManager) return res.status(409).json({ success: false, message: '客户尚未分配健管专员，无法在确认后推送随访计划' });
+    const note = String(req.body?.note || '').trim().slice(0, 1000);
+    const order = await Order.create({
+      user: patient._id, tenantId: patient.tenantId || null, serviceId: 'staff_post_checkup_supervision', serviceName: '健康体检服务', specificationLabel: '复查督办服务',
+      servicePrice: 0, unitPrice: 0, totalUnits: 1, status: 'pending', tradeStatus: 'paid', paymentStatus: 'unpaid', initiationSource: 'staff_direct',
+      initiatedByStaff: req.staff._id, supervisorId: req.staff._id, currentAssignee: req.staff._id, currentStage: 'advisor_review', closureMode: 'automatic', supervisionStatus: 'in_progress',
+      serviceRequirements: note, note: note ? `医护端健康顾问发起复查督办：${note}` : '医护端健康顾问发起复查督办服务',
+    });
+    const task = await require('../utils/medicalReminderWorkflow').ensureAdvisorIntakeTask(order);
+    if (!task) throw Object.assign(new Error('未找到有效健康顾问，无法生成随访计划审核任务'), { status: 409 });
+    res.json({ success: true, data: { orderId: order._id, followUpId: task._id }, message: 'AI随访计划已生成，等待健康顾问审核确认' });
+  } catch (err) { res.status(err.status || 500).json({ success: false, message: err.message }); }
+});
+
 // 部分方案类型只归特定角色负责（不论谁生成的），跟"仅制定人可改"是两条独立限制都要满足：
 // 年度体检方案/年度管理方案只有健康顾问能编辑/审核，营养干预方案只有营养师——
 // 2026-07-07 用户明确规则：健康顾问生成的方案营养师不能删改，反之亦然，按会员角色分工而非单纯创建人

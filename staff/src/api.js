@@ -241,6 +241,7 @@ export const staffAPI = {
   getPatientPlans:          (id) => req(`/staff/patients/${id}/plans`),
   getPatientReports:        (id) => req(`/staff/patients/${id}/reports`),
   startStaffMedicalProxy: (id, data) => req(`/staff/patients/${id}/medical-proxy/start`, { method: 'POST', body: JSON.stringify(data) }),
+  startPostCheckupSupervision: (id, data) => req(`/staff/patients/${id}/post-checkup-supervision/start`, { method: 'POST', body: JSON.stringify(data) }),
   getPatientServiceRecords: (id) => req(`/staff/patients/${id}/service-records`),
 
   // P4 — Gift Service
