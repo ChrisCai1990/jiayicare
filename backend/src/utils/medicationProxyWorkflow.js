@@ -56,6 +56,10 @@ async function validate(task, body, staff) {
     if (data.institutionType === 'hospital' && (!value(data.hospitalName) || !value(data.campus))) return '医院配药请填写医院名称和院区';
     if (data.institutionType === 'pharmacy' && !value(data.pharmacyName)) return '线下药房配药请填写药房名称';
     if (data.institutionType === 'online' && !value(data.platformName)) return '线上采购请填写平台名称';
+    if (!value(data.medicalAssistantId)) return '请选择本单就医专员';
+    const selectedAssistant = await Admin.findOne({ _id: data.medicalAssistantId, role: 'medicalAssistant', staffStatus: 'active' }).select('_id name').lean();
+    if (!selectedAssistant) return '本单就医专员无效或已停用，请重新选择';
+    data.medicalAssistantName = selectedAssistant.name;
     if (data.institutionType === 'hospital' && !data.needsAdvisor && !value(data.department)) return '医院配药请填写科室，或转健康顾问评估';
     if (data.institutionType === 'hospital' && !data.needsAdvisor && data.expertRequired && !value(data.expert)) return '需要专家开方时请填写专家，或转健康顾问评估';
     if (data.regularSupply && !supply) return '定期配药需要可换算的规格、单次服用剂量、每日服用次数和配备总量';
@@ -63,6 +67,12 @@ async function validate(task, body, staff) {
   if (stage === 'advisor' && (!value(data.department) || (data.expertRequired && !value(data.expert)) || !value(data.assessment))) return '请填写科室、所需专家和评估结论';
   if (stage === 'review' && (!value(data.department) || (data.expertRequired && !value(data.expert)) || !data.plannerConfirmed)) return '请确认健康顾问建议的科室与专家';
   if (stage === 'booking' && (!value(data.department) || !value(data.appointmentDate) || !value(data.appointmentTime) || (data.expertRequired && !value(data.expert)))) return '请确认配药医生的科室、专家和预约时间';
+  if (stage === 'booking') {
+    if (!value(data.medicalAssistantId)) return '请选择本单就医专员后再流转';
+    const selectedAssistant = await Admin.findOne({ _id: data.medicalAssistantId, role: 'medicalAssistant', staffStatus: 'active' }).select('_id name').lean();
+    if (!selectedAssistant) return '本单就医专员无效或已停用，请重新选择';
+    data.medicalAssistantName = selectedAssistant.name;
+  }
   if (stage === 'execute' && (!value(data.dispensingResult) || !data.customerConfirmed || !value(data.deliveryArrangement) || !value(data.expectedDeliveryDate))) return '请记录采购或配药结果、客户确认、配送安排和预计送达日期';
   if (stage === 'execute' && data.intakeSnapshot?.institutionType === 'online' && (!value(data.purchaseChannel) || !value(data.purchasePrice) || !value(data.paymentConfirmation))) return '线上采购请核对购买渠道、价格和支付结果';
   if (stage !== 'execute') {
@@ -70,7 +80,7 @@ async function validate(task, body, staff) {
     const nextAssignee = stage === 'intake' && data.institutionType === 'hospital'
       ? (data.needsAdvisor ? patient?.assignedFamilyDoctor : patient?.assignedHealthManager)
       : stage === 'advisor' ? patient?.assignedHealthPlanner
-        : stage === 'review' ? patient?.assignedHealthManager : patient?.assignedMedicalAssistant;
+        : stage === 'review' ? patient?.assignedHealthManager : data.medicalAssistantId;
     if (!nextAssignee) return '下一环节负责人未分配，请先完成客户人员分配';
   }
   return '';
@@ -113,7 +123,7 @@ async function advance(task) {
   } else if (stage === 'advisor') next = 'review';
   else if (stage === 'review') next = 'booking';
   else if (stage === 'booking') next = 'execute';
-  assignee = next === 'advisor' ? patient?.assignedFamilyDoctor : next === 'review' ? patient?.assignedHealthPlanner : next === 'booking' ? patient?.assignedHealthManager : patient?.assignedMedicalAssistant;
+  assignee = next === 'advisor' ? patient?.assignedFamilyDoctor : next === 'review' ? patient?.assignedHealthPlanner : next === 'booking' ? patient?.assignedHealthManager : data.medicalAssistantId;
   const intakeSnapshot = stage === 'intake' ? data : data.intakeSnapshot;
   await createStage(order, next, assignee, task, { ...intakeSnapshot, intakeSnapshot, ...(['advisor', 'review'].includes(stage) ? { department: data.department, expert: data.expert, expertRequired: data.expertRequired, advisorAssessment: data.assessment || data.advisorAssessment } : {}), ...(stage === 'booking' ? { bookingSnapshot: data } : {}) });
 }

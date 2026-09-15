@@ -10,7 +10,7 @@ const FIELDS = [
 ]
 const label = { display: 'grid', gap: 5, fontSize: 12, color: '#4A6558' }
 
-export default function MedicationProxyStageForm({ task, value, onChange }) {
+export default function MedicationProxyStageForm({ task, value, onChange, staffList = [] }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const autoRequested = useRef(false)
@@ -31,6 +31,7 @@ export default function MedicationProxyStageForm({ task, value, onChange }) {
     if (data.institutionType === 'online') required.push(['platformName', '平台名称'])
     if (data.institutionType === 'hospital' && !data.needsAdvisor) required.push(['department', '配药科室'])
     if (data.institutionType === 'hospital' && !data.needsAdvisor && data.expertRequired) required.push(['expert', '配药专家'])
+    required.push(['medicalAssistantId', '本单就医专员'])
     return required.filter(([key]) => !String(data[key] ?? '').trim()).map(([, title]) => title)
   })()
   const extract = async () => {
@@ -51,6 +52,7 @@ export default function MedicationProxyStageForm({ task, value, onChange }) {
     }
   }, [stage, orderId])
   const field = (key, title, disabled = false) => <label key={key} style={label}>{title}<input className="form-control" value={data[key] || ''} disabled={disabled} onChange={e => update({ [key]: e.target.value })} /></label>
+  const assistantField = <label style={label}>本单就医专员 *<select className="form-control" value={data.medicalAssistantId || ''} onChange={e => { const selected = staffList.find(item => String(item._id) === e.target.value); update({ medicalAssistantId: e.target.value, medicalAssistantName: selected?.name || '' }) }}><option value="">请选择</option>{staffList.filter(item => item.role === 'medicalAssistant' && item.staffStatus !== 'inactive').map(item => <option key={item._id} value={item._id}>{item.name}{item.title ? ` · ${item.title}` : ''}</option>)}</select></label>
   return <div style={{ display: 'grid', gap: 12 }}>
     <div style={{ padding: 10, borderRadius: 8, background: '#EFF8F4', fontSize: 12 }}>药品与预约信息均须人工核对；AI仅从本订单对话和持续用药档案整理草稿，不代替处方核验。</div>
     {stage === 'intake' && <button type="button" className="btn btn-secondary btn-sm" disabled={loading} onClick={extract}>{loading ? '正在整理…' : '从对话和用药档案提取'}</button>}
@@ -63,15 +65,16 @@ export default function MedicationProxyStageForm({ task, value, onChange }) {
       {data.institutionType === 'pharmacy' && field('pharmacyName', '药房名称')}
       {data.institutionType === 'online' && field('platformName', '平台名称')}
       <label style={label}>支付方式<select className="form-control" value={data.paymentMethod || ''} onChange={e => update({ paymentMethod: e.target.value })}><option value="">请选择</option><option value="self_pay">自费</option><option value="medical_insurance">医保</option><option value="commercial_insurance">商保</option></select></label>
+      {assistantField}
       {data.institutionType === 'hospital' && <><div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>{FIELDS.slice(6).map(([key, title]) => field(key, title))}</div><label><input type="checkbox" checked={!!data.expertRequired} onChange={e => update({ expertRequired: e.target.checked })} /> 该药需要专家开方</label><label><input type="checkbox" checked={!!data.needsAdvisor} onChange={e => update({ needsAdvisor: e.target.checked })} /> 客户不确定科室或专家，先转健康顾问评估</label></>}
       <label><input type="checkbox" checked={!!data.regularSupply} onChange={e => update({ regularSupply: e.target.checked })} /> 需定期配药；完成后按配备总量和每日服用总量生成下次计划</label>
       {!!missingLabels.length && <div style={{ color: '#D97706', fontSize: 12 }}>仍需核对：{missingLabels.join('、')}</div>}
     </> : <>
-      <div style={{ fontSize: 13, lineHeight: 1.8 }}>药品：{data.intakeSnapshot?.brandName || data.brandName}（{data.intakeSnapshot?.chemicalName || data.chemicalName}）　规格：{data.intakeSnapshot?.specification || data.specification}<br />剂量：{data.intakeSnapshot?.singleDose || data.singleDose}　总量：{data.intakeSnapshot?.totalQuantity || data.totalQuantity}　机构：{data.intakeSnapshot?.institution || data.institution}</div>
+      <div style={{ fontSize: 13, lineHeight: 1.8 }}>药品：{data.intakeSnapshot?.brandName || data.brandName}（{data.intakeSnapshot?.chemicalName || data.chemicalName}）　规格：{data.intakeSnapshot?.specification || data.specification}<br />剂量：{data.intakeSnapshot?.singleDose || data.singleDose}　总量：{data.intakeSnapshot?.totalQuantity || data.totalQuantity}　机构：{data.intakeSnapshot?.institution || data.institution}<br />本单就医专员：{data.intakeSnapshot?.medicalAssistantName || data.medicalAssistantName || '未指定'}</div>
       {['advisor', 'review', 'booking'].includes(stage) && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>{FIELDS.slice(6).map(([key, title]) => field(key, title))}</div>}
       {stage === 'advisor' && <label style={label}>评估结论<textarea className="form-control" rows={2} value={data.assessment || ''} onChange={e => update({ assessment: e.target.value })} /></label>}
       {stage === 'review' && <label><input type="checkbox" checked={!!data.plannerConfirmed} onChange={e => update({ plannerConfirmed: e.target.checked })} /> 已确认顾问建议，流转健管专员预约</label>}
-      {stage === 'booking' && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}><label style={label}>预约日期<input type="date" className="form-control" value={data.appointmentDate || ''} onChange={e => update({ appointmentDate: e.target.value })} /></label><label style={label}>预约时间<input type="time" className="form-control" value={data.appointmentTime || ''} onChange={e => update({ appointmentTime: e.target.value })} /></label></div>}
+      {stage === 'booking' && <><div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}><label style={label}>预约日期<input type="date" className="form-control" value={data.appointmentDate || ''} onChange={e => update({ appointmentDate: e.target.value })} /></label><label style={label}>预约时间<input type="time" className="form-control" value={data.appointmentTime || ''} onChange={e => update({ appointmentTime: e.target.value })} /></label></div>{assistantField}</>}
       {stage === 'execute' && <>{data.intakeSnapshot?.institutionType === 'online' && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>{field('purchaseChannel', '线上购买渠道')}{field('purchasePrice', '实际价格')}{field('paymentConfirmation', '支付确认或凭据编号')}</div>}<label style={label}>采购/配药结果<textarea className="form-control" rows={2} value={data.dispensingResult || ''} onChange={e => update({ dispensingResult: e.target.value })} /></label><label><input type="checkbox" checked={!!data.customerConfirmed} onChange={e => update({ customerConfirmed: e.target.checked })} /> 已与客户核对药品、规格、数量和费用无误</label><label style={label}>配送安排<textarea className="form-control" rows={2} value={data.deliveryArrangement || ''} onChange={e => update({ deliveryArrangement: e.target.value })} /></label><div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}><label style={label}>预计首次送达日期 *<input type="date" className="form-control" value={data.expectedDeliveryDate || ''} onChange={e => update({ expectedDeliveryDate: e.target.value })} /></label><label style={label}>下次配药预留配送天数<input type="number" min="3" className="form-control" value={data.deliveryLeadDays || 3} onChange={e => update({ deliveryLeadDays: e.target.value })} /></label></div></>}
     </>}
   </div>
