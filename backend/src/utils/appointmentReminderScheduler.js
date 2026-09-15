@@ -63,6 +63,12 @@ async function scanAndSendAppointmentReminders(now = new Date()) {
 }
 
 function startAppointmentReminderScheduler() {
+  // Early versions stored the immediate appointment confirmation in the manager
+  // conversation, so it did not appear in the customer's notification center.
+  Message.updateMany(
+    { dedupeKey: /^expert-appointment-confirmed:/, type: { $ne: 'system' } },
+    { $set: { type: 'system', title: '专家就医提醒', conversationId: null, unread: true, readAt: null } },
+  ).catch(error => console.error('[appointment-reminder] 历史确认消息迁移失败', error.message));
   scanAndSendAppointmentReminders().catch(error => console.error('[appointment-reminder] 首次扫描失败', error.message));
   const timer = setInterval(() => scanAndSendAppointmentReminders().catch(error => console.error('[appointment-reminder] 定时扫描失败', error.message)), 60 * 1000);
   timer.unref();

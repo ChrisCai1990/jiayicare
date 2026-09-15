@@ -492,15 +492,15 @@ async function advanceMedicalProxyWorkflow(task) {
         order, appointmentDate: order.scheduledAt, appointmentText,
       });
       const confirmationKey = `expert-appointment-confirmed:${order._id}${order.medicalProxyPlan?.bookingRevision ? `:${order.medicalProxyPlan.bookingRevision}` : ''}`;
-      await require('../models/Message').findOneAndUpdate(
-        { dedupeKey: confirmationKey },
-        { $setOnInsert: {
-          user: order.user, type: 'manager', sender: '嘉医管家', title: '专家预约已确认',
-          content: `您的专家门诊预约已确认。就诊后请上传病历和检查报告；健管专员审核、健康顾问查看后，本项服务结束。\n约诊需求：${confirmedRequirement || '已确认'}\n院区：${task.formData.campus}\n预约时间：${task.formData.appointmentDate} ${task.formData.appointmentTime}${insuranceResult ? `\n保险办理：${insuranceResult}` : ''}${task.formData.dateDifferenceNote ? `\n补充说明：${task.formData.dateDifferenceNote}` : ''}`,
-          conversationId: `${order.user}_manager`, unread: true, isAI: false, aiGenerated: false,
-          dedupeKey: confirmationKey,
-          action: { type: 'expert_appointment_confirmed', orderId: String(order._id) },
-        } },
+        await require('../models/Message').findOneAndUpdate(
+          { dedupeKey: confirmationKey },
+          { $set: {
+            user: order.user, type: 'system', sender: '嘉医管家', title: '专家就医提醒',
+            content: `您的专家门诊预约已确认。就诊后请上传病历和检查报告；健管专员审核、健康顾问查看后，本项服务结束。\n约诊需求：${confirmedRequirement || '已确认'}\n院区：${task.formData.campus}\n预约时间：${task.formData.appointmentDate} ${task.formData.appointmentTime}${insuranceResult ? `\n保险办理：${insuranceResult}` : ''}${task.formData.dateDifferenceNote ? `\n补充说明：${task.formData.dateDifferenceNote}` : ''}`,
+            conversationId: null, unread: true, readAt: null, isAI: false, aiGenerated: false,
+            dedupeKey: confirmationKey,
+            action: { type: 'expert_appointment_confirmed', orderId: String(order._id) },
+          } },
         { upsert: true, new: true, setDefaultsOnInsert: true },
       );
       await FollowUp.findOneAndUpdate(
