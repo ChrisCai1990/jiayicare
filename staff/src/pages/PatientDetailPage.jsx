@@ -9051,13 +9051,14 @@ export default function PatientDetailPage() {
             ) : (
             <table className="table">
               <thead>
-                <tr><th>计划日期</th><th>任务类型</th><th>状态</th><th>负责人</th><th>执行内容</th><th>下一节点</th><th>操作</th></tr>
+                <tr><th>计划日期</th><th>建立时间</th><th>任务类型</th><th>状态</th><th>负责人</th><th>执行内容</th><th>下一节点</th><th>操作</th></tr>
               </thead>
               <tbody>
                 {(() => {
                   const renderRow = (f) => (
                     <tr key={f._id} style={{ cursor: 'pointer', background: f.aiStatus === 'pending' ? '#FFFBEB' : undefined }} onClick={() => setFollowUpDetail(f)}>
                       <td style={{ fontSize: 13, color: '#666' }}>{new Date(f.date).toLocaleDateString('zh-CN')}</td>
+                      <td style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>{f.createdAt ? new Date(f.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
                       <td><span className="badge badge-info">{TYPE_MAP[f.type] || f.type}</span></td>
                       <td>
                         <span style={{ fontSize: 13, fontWeight: 500, color: FOLLOWUP_LIST_STATUS_COLOR[f.status] || '#666' }}>
@@ -9127,6 +9128,7 @@ export default function PatientDetailPage() {
                         <tr style={{ cursor: 'pointer', background: '#F7F5F0' }}
                           onClick={() => setExpandedMonitorGroups(s => ({ ...s, [row.key]: !s[row.key] }))}>
                           <td style={{ fontSize: 13, color: '#666' }}>{new Date(nearest.date).toLocaleDateString('zh-CN')}{row.items.length > 1 ? ' 起' : ''}</td>
+                          <td style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>{nearest.createdAt ? new Date(nearest.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
                           <td><span className="badge badge-info">{TYPE_MAP[nearest.type] || nearest.type}</span></td>
                           <td>
                             <span style={{ fontSize: 13, fontWeight: 500, color: FOLLOWUP_LIST_STATUS_COLOR[row.status] || '#666' }}>
@@ -9143,6 +9145,7 @@ export default function PatientDetailPage() {
                         {expanded && sortedItems.map(f => (
                           <tr key={f._id} style={{ cursor: 'pointer', background: '#FCFBF8' }} onClick={() => setFollowUpDetail(f)}>
                             <td style={{ fontSize: 12, color: '#999', paddingLeft: 28 }}>{new Date(f.date).toLocaleDateString('zh-CN')}</td>
+                            <td style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>{f.createdAt ? new Date(f.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
                             <td><span className="badge badge-info">{TYPE_MAP[f.type] || f.type}</span></td>
                             <td>
                               <span style={{ fontSize: 12, color: FOLLOWUP_LIST_STATUS_COLOR[f.status] || '#666' }}>
@@ -10426,6 +10429,7 @@ export default function PatientDetailPage() {
                   { label: '随访人员', value: followUpDetail.assignedTo?.name || followUpDetail.staffId?.name || '-' },
                   { label: '参与人员', value: followUpDetail.participants || '-' },
                   { label: '随访主题', value: followUpDetail.theme || followUpDetail.planName || '-' },
+                  { label: '建立时间', value: followUpDetail.createdAt ? new Date(followUpDetail.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-' },
                   { label: '下次随访', value: followUpDetail.nextFollowUpDate ? new Date(followUpDetail.nextFollowUpDate).toLocaleDateString('zh-CN') : '-' },
                 ].map(({ label, value }) => (
                   <div key={label}>
