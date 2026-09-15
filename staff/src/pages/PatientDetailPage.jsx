@@ -12253,6 +12253,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   const [settlementMethod, setSettlementMethod] = useState(categoryValue('结算方式') === '直付' ? 'direct' : categoryValue('结算方式') === '先付后报' ? 'reimbursement' : 'pending')
   const [proxyReviewReady, setProxyReviewReady] = useState(false)
   const [medicationData, setMedicationData] = useState({})
+  const [medicationStaffList, setMedicationStaffList] = useState([])
   const [confirmingBooking, setConfirmingBooking] = useState(false)
   const [bookingError, setBookingError] = useState('')
   const [recording, setRecording] = useState(false)
@@ -12325,6 +12326,10 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   }
 
   useEffect(() => { loadThread() }, [patientId, chatRole])
+  useEffect(() => {
+    if (!isMedicationProxy) return
+    staffAPI.getStaffList().then(res => setMedicationStaffList(res.data || [])).catch(() => setMedicationStaffList([]))
+  }, [isMedicationProxy])
   useEffect(() => {
     let active = true
     const sessionId = presenceSessionRef.current
@@ -12558,7 +12563,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
             </div>
             {!bookingCollapsed && <>
             <div style={{ fontSize: 11, color: '#8AA89C' }}>{isMedicationProxy ? '启动后从订单对话和持续用药档案整理药品信息，再由规划师人工核对。' : isExpertAppointment ? '完整确认约诊建议后转给健管专员预约；再次退回时仍使用本页面，并自动保留上次填写内容。' : isMedicalPlanning ? '核对客户诉求和预期沟通时段后，直接转给健康顾问评估；客户上传的报告仍由健管专员独立审核。' : isMedicalProxy ? '先完整核对本次沟通内容；确认后由您指导客户上传并选定资料，健管专员审核后交健康顾问。您将持续督办直到代诊完成。' : '已自动带入客户确认的信息；如有变化可直接修订，再生成方案。'}</div>
-            {isMedicationProxy ? <MedicationProxyStageForm task={{ sourceType: 'order', workflowKey: 'medication_proxy:intake', sourceOrderId: order, patientId }} value={medicationData} staffList={staffList} onChange={setMedicationData} /> : <>
+            {isMedicationProxy ? <MedicationProxyStageForm task={{ sourceType: 'order', workflowKey: 'medication_proxy:intake', sourceOrderId: order, patientId }} value={medicationData} staffList={medicationStaffList} onChange={setMedicationData} /> : <>
             {(!isMedicalProxy || !proxyReviewReady || isExpertAppointment) ? <>
               {isMedicalProxy && <div style={{ textAlign: 'right' }}><button type="button" className="btn btn-secondary btn-sm" onClick={fillFromConversation}>从对话自动填入</button></div>}
               <div style={{ display: 'grid', gridTemplateColumns: isMedicalPlanning ? '1fr 1fr 1fr' : '1fr 1fr', gap: 12 }}>
