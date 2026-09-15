@@ -2328,8 +2328,16 @@ export default function PatientDetailPage() {
     }
     setExecItem(f)
     const checklist = normalizeServiceChecklist(f.serviceChecklist, f.taskPurposes, f.dependsOnTaskId?.serviceChecklist)
-    const workflowFormData = medicalProxyStage(f) === 'booking' && !f.formData?.planSnapshot?.serviceContent && f.sourceOrderId?.serviceRequirements
-      ? { ...(f.formData || {}), planSnapshot: { ...(f.formData?.planSnapshot || {}), serviceContent: f.sourceOrderId.serviceRequirements } }
+    const orderRequirement = f.formData?.planSnapshot?.serviceContent || f.sourceOrderId?.serviceRequirements || ''
+    const inferredInsuranceOutcome = /支付方式：直付/.test(orderRequirement)
+      ? 'direct_verified'
+      : /支付方式：先付后报/.test(orderRequirement) ? 'reimbursement_verified' : ''
+    const workflowFormData = medicalProxyStage(f) === 'booking'
+      ? {
+          ...(f.formData || {}),
+          planSnapshot: { ...(f.formData?.planSnapshot || {}), ...(orderRequirement ? { serviceContent: orderRequirement } : {}) },
+          insuranceOutcome: f.formData?.insuranceOutcome || inferredInsuranceOutcome,
+        }
       : (f.formData || {})
     setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: (medicalProxyStage(f) || medicationProxyStage(f)) ? workflowFormData : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f.formData) : emptyOutpatientAssessment(f.formData) })
   }
