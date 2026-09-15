@@ -9895,8 +9895,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       // 已推送方案已进入岗位执行流，不再重复作为“AI待审核”出现。
       const medicalAssistPlanFilter = { type: 'medical_assist', status: 'draft', 'content.aiStatus': 'pending', ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
       const medicalAssistPlans = await HealthPlan.find(medicalAssistPlanFilter)
-        .populate('patientId', 'name').sort({ createdAt: -1 }).limit(50).lean();
-      medicalAssistPlans.forEach(p => {
+        .populate('patientId', 'name').populate('sourceOrderId', 'serviceName specificationLabel note serviceRequirements').sort({ createdAt: -1 }).limit(50).lean();
+      medicalAssistPlans.filter(p => !require('../utils/medicationProxyWorkflow').isMedicationProxyOrder(p.sourceOrderId)).forEach(p => {
         const createdAt = p.createdAt || new Date();
         todos.push({
           id: 'medical_assist_plan_' + p._id, type: 'medical_assist_plan_review', label: 'AI就医协助方案待审核', priority: 3,
@@ -12829,6 +12829,9 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
       if (!order) return res.status(404).json({ success: false, message: '关联订单不存在' });
       if (require('../utils/medicalProxyWorkflow').isMedicalProxyOrder(order)) {
         return res.status(409).json({ success: false, message: '医疗代诊请先在对话中完整确认服务内容和诉求，由健康规划师指导上传并选定资料，再交健管专员审核、健康顾问确认方案' });
+      }
+      if (require('../utils/medicationProxyWorkflow').isMedicationProxyOrder(order)) {
+        return res.status(409).json({ success: false, message: '代配药订单直接显示动态服务流程，无需生成AI就医协助方案' });
       }
       const existingPlan = await HealthPlan.findOne({ patientId: user._id, sourceOrderId: order._id, type: 'medical_assist' })
         .sort({ createdAt: 1 });
