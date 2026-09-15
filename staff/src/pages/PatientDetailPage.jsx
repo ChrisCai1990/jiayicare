@@ -12358,6 +12358,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   const [medicationData, setMedicationData] = useState({})
   const [checkupAppointmentType, setCheckupAppointmentType] = useState(/特殊约检/.test(order?.serviceName || '') ? 'special' : 'normal')
   const [checkupFastingRequired, setCheckupFastingRequired] = useState('')
+  const [checkupPreparation, setCheckupPreparation] = useState('')
   const [medicationStaffList, setMedicationStaffList] = useState([])
   const [confirmingBooking, setConfirmingBooking] = useState(false)
   const [bookingError, setBookingError] = useState('')
@@ -12668,7 +12669,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
         {showBookingConfirm && !isMedicalReminderOrder && (
           <div style={{ padding: '12px 16px', borderBottom: '1px solid #E0D9CE', background: '#FFF8ED', display: 'grid', gap: 8, maxHeight: bookingCollapsed ? undefined : '38vh', overflowY: bookingCollapsed ? 'visible' : 'auto', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>{isMedicalReminder ? '复查督办信息确认' : isMedicationProxy ? '代配药信息核对' : '健康顾问约诊建议'} · {order?.serviceName || '服务订单'}</div>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>{isCheckupAppointment ? '待约检服务信息确认' : isMedicalReminder ? '复查督办信息确认' : isMedicationProxy ? '代配药信息核对' : '健康顾问约诊建议'} · {order?.serviceName || '服务订单'}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 {order?.orderNo && <div style={{ fontSize: 11, color: '#8AA89C' }}>订单号：{order.orderNo}</div>}
                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => setBookingCollapsed(value => !value)}>{bookingCollapsed ? '展开确认信息' : '收起确认信息，查看对话'}</button>
@@ -12676,7 +12677,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
               </div>
             </div>
             {!bookingCollapsed && <>
-            <div style={{ fontSize: 11, color: '#8AA89C' }}>{isMedicalReminder ? 'AI可从完整对话中整理六项复查信息；确认后自动生成随访计划并转健康顾问审核。' : isMedicationProxy ? '启动后从订单对话和持续用药档案整理药品信息，再由规划师人工核对。' : isExpertAppointment ? '完整确认约诊建议后转给健管专员预约；再次退回时仍使用本页面，并自动保留上次填写内容。' : isMedicalPlanning ? '核对客户诉求和预期沟通时段后，直接转给健康顾问评估；客户上传的报告仍由健管专员独立审核。' : isMedicalProxy ? '先完整核对本次沟通内容；确认后由您指导客户上传并选定资料，健管专员审核后交健康顾问。您将持续督办直到代诊完成。' : '已自动带入客户确认的信息；如有变化可直接修订，再生成方案。'}</div>
+            <div style={{ fontSize: 11, color: '#8AA89C' }}>{isCheckupAppointment ? '请根据对话确认约检信息。确认后将直接转交健管专员预约开检查单号和检查日专家号。' : isMedicalReminder ? 'AI可从完整对话中整理六项复查信息；确认后自动生成随访计划并转健康顾问审核。' : isMedicationProxy ? '启动后从订单对话和持续用药档案整理药品信息，再由规划师人工核对。' : isExpertAppointment ? '完整确认约诊建议后转给健管专员预约；再次退回时仍使用本页面，并自动保留上次填写内容。' : isMedicalPlanning ? '核对客户诉求和预期沟通时段后，直接转给健康顾问评估；客户上传的报告仍由健管专员独立审核。' : isMedicalProxy ? '先完整核对本次沟通内容；确认后由您指导客户上传并选定资料，健管专员审核后交健康顾问。您将持续督办直到代诊完成。' : '已自动带入客户确认的信息；如有变化可直接修订，再生成方案。'}</div>
             {isMedicalReminder ? <div style={{ display: 'grid', gap: 8 }}>
               <div style={{ textAlign: 'right' }}><button type="button" className="btn btn-secondary btn-sm" disabled={extractingReminder} onClick={extractMedicalReminder}>{extractingReminder ? 'AI整理中…' : 'AI获取对话信息'}</button></div>
               {[['visitDate','就医日期','date'],['medicalIssue','就医问题'],['visitGoal','就医目标'],['hospitalSuggestion','医院建议'],['departmentSuggestion','科室建议'],['expertSuggestion','专家建议']].map(([key,label,type]) => <label key={key} style={{ fontSize: 12, fontWeight: 600 }}>{label} *{type === 'date' ? <input className="form-input" type="date" value={medicalReminder[key] || ''} onChange={e => updateMedicalReminder(key, e.target.value)} /> : <textarea className="form-input" rows={2} value={medicalReminder[key] || ''} onChange={e => updateMedicalReminder(key, e.target.value)} />}</label>)}
@@ -12689,6 +12690,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
               <label style={{ fontSize: 12, fontWeight: 600 }}>检查机构 *<input className="form-input" value={suggestedHospital} onChange={e => setSuggestedHospital(e.target.value)} /></label>
               <label style={{ fontSize: 12, fontWeight: 600 }}>检查专家{checkupAppointmentType === 'special' ? ' *' : ''}<input className="form-input" value={expert} onChange={e => setExpert(e.target.value)} /></label>
               <label style={{ fontSize: 12, fontWeight: 600 }}>检查项目 *<textarea className="form-input" rows={3} value={serviceTask} onChange={e => setServiceTask(e.target.value)} placeholder="每行一项；可填写客户需求或已建随访计划项目" /></label>
+              <label style={{ fontSize: 12, fontWeight: 600 }}>特殊准备事项<textarea className="form-input" rows={2} value={checkupPreparation} onChange={e => setCheckupPreparation(e.target.value)} placeholder="如停药要求、携带既往报告、检查前饮水量等" /></label>
             </div> : isMedicationProxy ? <MedicationProxyStageForm task={{ sourceType: 'order', workflowKey: 'medication_proxy:intake', sourceOrderId: order, patientId }} value={medicationData} staffList={medicationStaffList} onChange={setMedicationData} /> : <>
             {(!isMedicalProxy || !proxyReviewReady || isExpertAppointment) ? <>
               {isMedicalProxy && <div style={{ textAlign: 'right' }}><button type="button" className="btn btn-secondary btn-sm" onClick={fillFromConversation}>从对话自动填入</button></div>}
@@ -12731,7 +12733,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
             {bookingError && <div role="alert" style={{ padding: '8px 10px', color: '#B42318', background: '#FFF0EF', borderRadius: 6, fontSize: 12 }}>{bookingError}</div>}
             <div style={{ textAlign: 'right', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               {isMedicalProxy && proxyReviewReady && !isExpertAppointment && <button className="btn btn-secondary btn-sm" onClick={() => setProxyReviewReady(false)}>返回修改</button>}
-              <button className="btn btn-primary btn-sm" disabled={confirmingBooking || !canConfirmOrder || (isMedicalReminder ? Object.values(medicalReminder).some(value => !String(value || '').trim()) : ((!isMedicationProxy && (!serviceTime || !serviceTimeEnd || serviceTimeEnd < serviceTime)) || (isExpertAppointment && (!suggestedHospital.trim() || !department.trim() || !expert.trim() || !clinicType || !insuranceUse || settlementMethod === 'pending')) || (isMedicalPlanning && (!communicationTimeStart || !communicationTimeEnd || communicationTimeEnd <= communicationTimeStart)) || (!isMedicationProxy && (isMedicalProxy ? !proxyServiceContent.trim() || (!/专家约诊/.test(order?.serviceName || '') && !proxyCustomerNeed.trim()) : !serviceTask.trim()))))} onClick={async () => {
+              <button className="btn btn-primary btn-sm" disabled={confirmingBooking || !canConfirmOrder || (isCheckupAppointment ? (!serviceTime || !serviceTimeEnd || serviceTimeEnd < serviceTime || !serviceTask.trim() || !suggestedHospital.trim() || !checkupFastingRequired || (checkupAppointmentType === 'special' && !expert.trim())) : isMedicalReminder ? Object.values(medicalReminder).some(value => !String(value || '').trim()) : ((!isMedicationProxy && (!serviceTime || !serviceTimeEnd || serviceTimeEnd < serviceTime)) || (isExpertAppointment && (!suggestedHospital.trim() || !department.trim() || !expert.trim() || !clinicType || !insuranceUse || settlementMethod === 'pending')) || (isMedicalPlanning && (!communicationTimeStart || !communicationTimeEnd || communicationTimeEnd <= communicationTimeStart)) || (!isMedicationProxy && (isMedicalProxy ? !proxyServiceContent.trim() || (!/专家约诊/.test(order?.serviceName || '') && !proxyCustomerNeed.trim()) : !serviceTask.trim()))))} onClick={async () => {
                 setBookingError('')
                 if (isMedicalProxy && !isExpertAppointment && !proxyReviewReady) { setProxyReviewReady(true); return }
                 setConfirmingBooking(true)
@@ -12745,12 +12747,12 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
                     `支付方式：${({ direct: '直付', reimbursement: '先付后报' })[settlementMethod]}`,
                   ].filter(Boolean).join('；') : ''
                   const confirmedContent = [proxyServiceContent.trim(), appointmentCategories].filter(Boolean).join('；')
-                  const checkupAppointmentIntake = isCheckupAppointment ? { serviceType: checkupAppointmentType, preferredDateStart: serviceTime, preferredDateEnd: serviceTimeEnd, checkItems: serviceTask.split('\n').map(name => ({ name: name.trim() })).filter(item => item.name), institution: suggestedHospital.trim(), expert: expert.trim(), fastingRequired: checkupFastingRequired === 'yes' } : undefined
+                  const checkupAppointmentIntake = isCheckupAppointment ? { serviceType: checkupAppointmentType, preferredDateStart: serviceTime, preferredDateEnd: serviceTimeEnd, checkItems: serviceTask.split('\n').map(name => ({ name: name.trim() })).filter(item => item.name), institution: suggestedHospital.trim(), expert: expert.trim(), fastingRequired: checkupFastingRequired === 'yes', preparation: checkupPreparation.trim() } : undefined
                   await onConfirmBooking?.({ orderId, serviceTime: isMedicalReminder ? medicalReminder.visitDate : serviceTime, serviceTimeEnd: isMedicalReminder ? medicalReminder.visitDate : isMedicalPlanning ? serviceTime : serviceTimeEnd, communicationDate: isMedicalPlanning ? serviceTime : '', communicationTimeStart, communicationTimeEnd, task: isMedicalReminder ? `就医问题：${medicalReminder.medicalIssue}；就医目标：${medicalReminder.visitGoal}` : isMedicalProxy ? [confirmedContent, proxyCustomerNeed.trim()].filter(Boolean).join('；') : serviceTask.trim(), serviceContent: confirmedContent, customerNeed: proxyCustomerNeed.trim(), medicationData, medicalReminderIntake: isMedicalReminder ? medicalReminder : undefined, checkupAppointmentIntake })
                 }
                 catch (err) { setBookingError(err.message || '确认预约失败') }
                 finally { setConfirmingBooking(false) }
-              }}>{confirmingBooking ? '处理中…' : isMedicalReminder ? '确认并转健康顾问审核' : isMedicationProxy ? '确认信息并流转' : isExpertAppointment ? '确认并转给健管专员预约' : isMedicalPlanning ? (proxyReviewReady ? '确认并转给健康顾问' : '核对沟通信息') : isMedicalProxy ? (proxyReviewReady ? '确认并开始资料收集' : '核对沟通信息') : '确认并生成方案'}</button>
+              }}>{confirmingBooking ? '处理中…' : isCheckupAppointment ? '确认并转健管专员双号预约' : isMedicalReminder ? '确认并转健康顾问审核' : isMedicationProxy ? '确认信息并流转' : isExpertAppointment ? '确认并转给健管专员预约' : isMedicalPlanning ? (proxyReviewReady ? '确认并转给健康顾问' : '核对沟通信息') : isMedicalProxy ? (proxyReviewReady ? '确认并开始资料收集' : '核对沟通信息') : '确认并生成方案'}</button>
             </div>
             </>}
           </div>
