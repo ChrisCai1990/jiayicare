@@ -57,7 +57,7 @@ export default function MedicationProxyStageForm({ task, value, onChange, staffL
     <div style={{ padding: 10, borderRadius: 8, background: '#EFF8F4', fontSize: 12 }}>药品与预约信息均须人工核对；AI仅从本订单对话和持续用药档案整理草稿，不代替处方核验。</div>
     {stage === 'intake' && <button type="button" className="btn btn-secondary btn-sm" disabled={loading} onClick={extract}>{loading ? '正在整理…' : '从对话和用药档案提取'}</button>}
     {error && <div role="alert" style={{ color: '#B42318' }}>{error}</div>}
-    {stage === 'intake' ? <>
+    {stage === 'progress' ? <div style={{ padding: 14, borderRadius: 10, background: '#EFF8F4', border: '1px solid #B9DDD0' }}><b>当前进度：{({ advisor: '健康顾问评估中', booking: '健管专员预约中', execute: '就医专员配药及配送中' })[data.currentStage] || '处理中'}</b><div style={{ marginTop: 6, fontSize: 12, color: '#65776F' }}>仅供健康规划师查看；完成配药、客户确认和配送安排后自动结束。</div></div> : stage === 'intake' ? <>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>{FIELDS.slice(0, 6).map(([key, title]) => field(key, title))}</div>
       <div style={{ padding: '8px 10px', background: '#F2F8F5', borderRadius: 8, fontSize: 12 }}>系统将结合药品规格、单次剂量、每日次数和配备总量，自动换算每日用量与可服用天数。</div>
       <label style={label}>配药类型<select className="form-control" value={data.institutionType || ''} onChange={e => update({ institutionType: e.target.value, hospitalName: '', campus: '', pharmacyName: '', platformName: '' })}><option value="">请选择</option><option value="hospital">医院配药</option><option value="pharmacy">线下药房</option><option value="online">线上采购</option></select></label>
