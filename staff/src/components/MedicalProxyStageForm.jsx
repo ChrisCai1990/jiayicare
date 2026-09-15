@@ -240,13 +240,23 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
       </select>
     </label>}
   </div>
-  if (stage === 'execute') return <div style={{ display: 'grid', gap: 12 }}>
+  if (stage === 'execute') {
+    const booking = value.bookingSnapshot || task?.sourceOrderId?.medicalProxyPlan?.booking || {}
+    const paymentLabel = ({ self_pay: '自费', medical_insurance: '医保', commercial_insurance: '商保' })[booking.paymentMethod] || '未填写'
+    return <div style={{ display: 'grid', gap: 12 }}>
     <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>
-      {['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].map((key, i) => <div key={key}>{['代诊医院', '科室', '专家', '代诊目标', '与医生交流内容'][i]}：{value.planSnapshot?.[key] || '未填写'}</div>)}
-      <div style={{ marginTop: 8 }}>客户期望日期区间：{value.bookingSnapshot?.preferredDateStart || '未填写'} 至 {value.bookingSnapshot?.preferredDateEnd || '未填写'}</div>
-      <div>专家实际出诊及约诊时间：{value.bookingSnapshot?.appointmentDate || '未填写'} {value.bookingSnapshot?.appointmentTime || ''}</div>
-      {value.bookingSnapshot?.dateDifferenceNote && <div>日期差异确认：{value.bookingSnapshot.dateDifferenceNote}</div>}
-      {value.bookingSnapshot?.additionalNote && <div>预约补充说明：{value.bookingSnapshot.additionalNote}</div>}
+      {isMedicationProxy ? <>
+        <div>配药医院：{value.planSnapshot?.hospital || '未填写'} {booking.campus || value.planSnapshot?.campus || ''}</div>
+        <div>配药科室：{value.planSnapshot?.department || '未填写'}；配药专家：{value.planSnapshot?.expert || '无'}</div>
+        <div>配药代办日期：{booking.appointmentDate || '未填写'} {booking.appointmentTime || ''}</div>
+        <div>支付方式：{paymentLabel}</div>
+      </> : <>
+        {['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].map((key, i) => <div key={key}>{['代诊医院', '科室', '专家', '代诊目标', '与医生交流内容'][i]}：{value.planSnapshot?.[key] || '未填写'}</div>)}
+        <div style={{ marginTop: 8 }}>客户期望日期区间：{booking.preferredDateStart || '未填写'} 至 {booking.preferredDateEnd || '未填写'}</div>
+        <div>专家实际出诊及约诊时间：{booking.appointmentDate || '未填写'} {booking.appointmentTime || ''}</div>
+        {booking.dateDifferenceNote && <div>日期差异确认：{booking.dateDifferenceNote}</div>}
+        {booking.additionalNote && <div>预约补充说明：{booking.additionalNote}</div>}
+      </>}
     </div>
     {input('executionResult', fields.execute[0][1], 5)}
     <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>代诊病历附件
@@ -260,5 +270,6 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
       />
     </label>
   </div>
+  }
   return null
 }

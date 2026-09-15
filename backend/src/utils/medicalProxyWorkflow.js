@@ -585,8 +585,9 @@ async function advanceMedicalProxyWorkflow(task) {
   if (!assignee) throw Object.assign(new Error(`客户尚未分配${next === 'audit' || next === 'booking' ? '健管专员' : next === 'advisor' ? '健康顾问' : next === 'planner' ? '健康规划师' : '就医专员'}，无法流转`), { status: 409 });
   const labels = { audit: '健管专员审核本次资料', advisor: '健康顾问确认代诊方案', planner: medicationProxy ? '健康规划师安排配药人员' : '审核方案并预指派就医专员', booking: medicationProxy ? '健管专员预约配药门诊' : '健管专员完成专家门诊预约', execute: medicationProxy ? '执行人员完成配药' : '就医专员执行代诊' };
   const bookingNote = stage === 'booking' && task.content !== '医疗代诊专家门诊预约已完成' ? nonempty(task.content) : '';
-  const nextDate = next === 'execute' && task.formData?.appointmentDate
-    ? appointmentAt(task.formData.appointmentDate, task.formData.appointmentTime) : new Date();
+  const bookedAppointment = task.formData?.bookingSnapshot || order.medicalProxyPlan?.booking || {};
+  const nextDate = next === 'execute' && (task.formData?.appointmentDate || bookedAppointment.appointmentDate)
+    ? appointmentAt(task.formData?.appointmentDate || bookedAppointment.appointmentDate, task.formData?.appointmentTime || bookedAppointment.appointmentTime) : new Date();
   const nextTask = await FollowUp.findOneAndUpdate(
     { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}${next}` },
     { $setOnInsert: {
@@ -604,7 +605,7 @@ async function advanceMedicalProxyWorkflow(task) {
         : next === 'advisor' ? { auditSnapshot: task.formData, selectedReportIds: task.formData?.collectionSnapshot?.annualMember ? [] : task.formData?.collectionSnapshot?.reportIds || [] }
           : next === 'planner' ? { planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...task.formData, additionalNote: bookingNote }, medicationProxy }
             : next === 'booking' ? { planSnapshot: order.medicalProxyPlan, medicalAssistantId: task.formData?.medicalAssistantId, preferredDateStart: dateInput(order.desiredServiceDate || order.scheduledAt), preferredDateEnd: dateInput(order.desiredServiceDateEnd || order.desiredServiceDate || order.scheduledAt) }
-              : { planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...task.formData, additionalNote: bookingNote } },
+              : { planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...bookedAppointment, ...task.formData, additionalNote: bookingNote }, medicationProxy },
     } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
@@ -613,7 +614,7 @@ async function advanceMedicalProxyWorkflow(task) {
       : next === 'advisor' ? { ...nextTask.formData, auditSnapshot: task.formData, selectedReportIds: task.formData?.collectionSnapshot?.annualMember ? [] : task.formData?.collectionSnapshot?.reportIds || [] }
         : next === 'planner' ? { ...nextTask.formData, planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...task.formData, additionalNote: bookingNote }, medicationProxy }
           : next === 'booking' ? { ...nextTask.formData, planSnapshot: order.medicalProxyPlan, medicalAssistantId: task.formData?.medicalAssistantId, preferredDateStart: nextTask.formData?.preferredDateStart || dateInput(order.desiredServiceDate || order.scheduledAt), preferredDateEnd: nextTask.formData?.preferredDateEnd || dateInput(order.desiredServiceDateEnd || order.desiredServiceDate || order.scheduledAt) }
-            : { ...nextTask.formData, planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...task.formData, additionalNote: bookingNote } };
+            : { ...nextTask.formData, planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...bookedAppointment, ...task.formData, additionalNote: bookingNote }, medicationProxy };
     await FollowUp.updateOne({ _id: nextTask._id }, { $set: { status: 'planned', isBlocked: false, assignedTo: assignee, formData: nextFormData, date: nextDate, remindAt: next === 'execute' ? nextDate : new Date() } });
   }
   await FollowUp.updateOne(
