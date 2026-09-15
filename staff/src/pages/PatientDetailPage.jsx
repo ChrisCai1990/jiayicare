@@ -10439,7 +10439,7 @@ export default function PatientDetailPage() {
                 </div>
               )}
               {/* 随访内容 */}
-              {followUpDetail.taskRequirements && medicalProxyStage(followUpDetail) !== 'supervise' && (
+              {followUpDetail.taskRequirements && medicalProxyStage(followUpDetail) !== 'supervise' && !followUpDetail.formData?.generatedFromPostCheckupSupervision && (
                 <div>
                   <div style={{ fontSize: 11, color: '#1E6B50', marginBottom: 6, fontWeight: 700 }}>具体代办事项</div>
                   <div style={{ background: '#EFF8F4', borderRadius: 8, padding: '10px 14px', fontSize: 14, color: '#1A2B24', lineHeight: 1.7, whiteSpace: 'pre-wrap', border: '1px solid #B2D8C7' }}>
@@ -10449,7 +10449,7 @@ export default function PatientDetailPage() {
               )}
               {followUpDetail.content && (
                 <div>
-                  <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 6 }}>随访内容</div>
+                  <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 6 }}>{followUpDetail.formData?.generatedFromPostCheckupSupervision ? 'AI 随访计划草稿' : '随访内容'}</div>
                   <div style={{ background: '#f9f7f3', borderRadius: 8, padding: '10px 14px', fontSize: 14, color: '#1A2B24', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
                     {followUpDetail.content}
                   </div>
