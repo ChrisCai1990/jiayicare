@@ -64,6 +64,9 @@ const followUpSchema = new mongoose.Schema({
   sourceType: { type: String, enum: ['scheduled', 'ai_review', 'health_plan', 'insurance_service', 'annual_coordination', 'medication_reminder', 'supply_reminder', 'order', 'symptom', null], default: null },
   sourceId: { type: mongoose.Schema.Types.ObjectId, default: null }, // 通用来源ID；symptom 时关联 HealthRecord
   sourceOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null }, // sourceType='order'时关联的订单，供详情弹窗展示订单号/金额/支付方式
+  reminderCount: { type: Number, default: 0, min: 0 },
+  lastRemindedAt: { type: Date, default: null },
+  escalatedAt: { type: Date, default: null },
   aiStatus:   { type: String, enum: ['pending', 'approved', null], default: null },
   // 待审核归属角色：为空时按固定规则由健康顾问审核（年度管理方案）；health_plan来源按方案类型区分（营养方案→营养师，体检方案→健康顾问）
   // Keep legacy medicalAssistant values readable/saveable: older medical-assist tasks were

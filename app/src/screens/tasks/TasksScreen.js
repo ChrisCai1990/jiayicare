@@ -409,7 +409,7 @@ export default function TasksScreen({ navigation }) {
       undoFollowupDone(id);
       return;
     }
-    setConfirmFollowup({ id, alreadyInProgress: current.status === 'in_progress' || !!current.assignedTo });
+    setConfirmFollowup({ id, workflowKey: current.workflowKey || '', alreadyInProgress: current.status === 'in_progress' || !!current.assignedTo });
   };
 
   const undoFollowupDone = async (id) => {
@@ -444,6 +444,10 @@ export default function TasksScreen({ navigation }) {
     }
     try {
       await followupTasksAPI.done(id, true, needFollowUp);
+      if (!needFollowUp && target.workflowKey === 'medical_reminder:followup') {
+        setDetailTask(null);
+        navigation.navigate('ReportUpload');
+      }
     } catch {
       setFollowupTasks(prev => prev.map(f => f._id === id ? current : f));
       if (target.isFromModal) setDetailTask(t => t ? { ...t, status: current.status === 'completed' ? 'completed' : 'pending' } : t);
@@ -462,10 +466,15 @@ export default function TasksScreen({ navigation }) {
   // 从详情弹窗完成任务：随访类先弹确认框问是否需要健管跟进，普通任务直接完成
   const handleCompleteFromModal = async () => {
     if (!detailTask || detailTask.status === 'completed') return;
+    if (detailTask.workflowKey === 'medical_reminder:documents') {
+      setDetailTask(null);
+      navigation.navigate('ReportUpload');
+      return;
+    }
     const id = detailTask._id || detailTask.id;
     if (detailTask.isFollowup) {
       const current = followupTasks.find(f => f._id === id);
-      setConfirmFollowup({ id, isFromModal: true, alreadyInProgress: current?.status === 'in_progress' || !!current?.assignedTo });
+      setConfirmFollowup({ id, workflowKey: current?.workflowKey || detailTask.workflowKey || '', isFromModal: true, alreadyInProgress: current?.status === 'in_progress' || !!current?.assignedTo });
       return;
     }
     setCompleting(true);
@@ -507,6 +516,7 @@ export default function TasksScreen({ navigation }) {
     dueTime: '',
     priority: f.sourceType === 'symptom' ? 'high' : 'medium',
     sourceType: f.sourceType || '',
+    workflowKey: f.workflowKey || '',
     status: f.status === 'completed' ? 'completed' : (f.status === 'in_progress' ? 'in_progress' : 'pending'),
     completedBy: f.completedBy || null,
     customerReadOnly: !!f.customerReadOnly,
@@ -883,7 +893,7 @@ export default function TasksScreen({ navigation }) {
                       ? <ActivityIndicator size="small" color={colors.white} />
                       : <Ionicons name="checkmark-circle-outline" size={16} color={colors.white} />
                     }
-                    <Text style={styles.modalCompleteBtnText}>{completing ? '处理中…' : '标记已完成'}</Text>
+                    <Text style={styles.modalCompleteBtnText}>{completing ? '处理中…' : detailTask.workflowKey === 'medical_reminder:documents' ? '上传报告单和病历' : '标记已完成'}</Text>
                   </TouchableOpacity>
                 ) : (
                   <View style={styles.modalDoneBtn}>
@@ -905,10 +915,12 @@ export default function TasksScreen({ navigation }) {
               <Ionicons name="help-circle" size={32} color={colors.primary} />
             </View>
             <Text style={styles.confirmTitle}>
-              {confirmFollowup?.alreadyInProgress ? '这件事是否已经处理完毕？' : '是否需要健管专员跟进此事？'}
+              {confirmFollowup?.workflowKey === 'medical_reminder:followup' ? '本次就医是否已经结束？' : confirmFollowup?.alreadyInProgress ? '这件事是否已经处理完毕？' : '是否需要健管专员跟进此事？'}
             </Text>
             <Text style={styles.confirmDesc}>
-              {confirmFollowup?.alreadyInProgress
+              {confirmFollowup?.workflowKey === 'medical_reminder:followup'
+                ? '确认结束后，请继续上传本次报告单和病历，由健管专员审核。'
+                : confirmFollowup?.alreadyInProgress
                 ? '如已处理完毕将直接标记完成；如仍需继续跟进，将保持当前处理进度。'
                 : '如不需要人工介入，将直接标记为已完成；如需要，健管专员会尽快联系您跟进。'}
             </Text>
@@ -917,7 +929,7 @@ export default function TasksScreen({ navigation }) {
                 <Text style={styles.confirmBtnGhostText}>{confirmFollowup?.alreadyInProgress ? '仍需继续跟进' : '需要，请联系我'}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.confirmBtnPrimary} onPress={() => submitFollowupDone(false)}>
-                <Text style={styles.confirmBtnPrimaryText}>{confirmFollowup?.alreadyInProgress ? '是，已处理' : '不需要，标记完成'}</Text>
+                <Text style={styles.confirmBtnPrimaryText}>{confirmFollowup?.workflowKey === 'medical_reminder:followup' ? '就医已结束' : confirmFollowup?.alreadyInProgress ? '是，已处理' : '不需要，标记完成'}</Text>
               </TouchableOpacity>
             </View>
             <TouchableOpacity style={styles.confirmCancelBtn} onPress={() => setConfirmFollowup(null)}>

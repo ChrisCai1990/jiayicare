@@ -28,13 +28,14 @@ export default function TasksPage() {
   useDidShow(load);
 
   const completeTask = async (id) => { try { await tasksAPI.complete(id); load(); } catch {} };
-  const doneFollowup = async (id) => {
+  const doneFollowup = async (item) => {
     try {
-      const result = await Taro.showActionSheet({ itemList: ['仍需健管专员跟进', '无需跟进，标记完成'] });
+      const result = await Taro.showActionSheet({ itemList: item.workflowKey === 'medical_reminder:followup' ? ['仍需健管专员跟进', '就医已结束，去上传资料'] : ['仍需健管专员跟进', '无需跟进，标记完成'] });
       const needFollowUp = result.tapIndex === 0;
-      await followupTasksAPI.done(id, true, needFollowUp);
+      await followupTasksAPI.done(item._id, true, needFollowUp);
       Taro.showToast({ title: needFollowUp ? '已通知健管专员跟进' : '已完成', icon: 'success' });
       load();
+      if (!needFollowUp && item.workflowKey === 'medical_reminder:followup') Taro.navigateTo({ url: '/pages/records/upload/index' });
     } catch (err) {
       if (!/cancel/i.test(err?.errMsg || '')) Taro.showToast({ title: err.message || '操作失败', icon: 'none' });
     }
@@ -77,7 +78,7 @@ export default function TasksPage() {
                 <Text style={{ fontSize: '12px', color: colors.textMuted }}>{item.staffId?.name || item.assignee || '健康管理团队'} · {dateKey(item)}</Text>
                 {!!item.content && <Text style={{ fontSize: '12px', color: colors.textSecondary, marginTop: '4px' }}>{item.content}</Text>}
               </View>
-              <View onClick={() => item._kind === 'followup' ? doneFollowup(item._id) : completeTask(item._id)} style={{ padding: '7px 14px', backgroundColor: colors.primary10, borderRadius: `${radius.full}px` }}><Text style={{ fontSize: '12px', color: colors.primary, fontWeight: 700 }}>完成</Text></View>
+              <View onClick={() => item.workflowKey === 'medical_reminder:documents' ? Taro.navigateTo({ url: '/pages/records/upload/index' }) : item._kind === 'followup' ? doneFollowup(item) : completeTask(item._id)} style={{ padding: '7px 14px', backgroundColor: colors.primary10, borderRadius: `${radius.full}px` }}><Text style={{ fontSize: '12px', color: colors.primary, fontWeight: 700 }}>{item.workflowKey === 'medical_reminder:documents' ? '上传资料' : '完成'}</Text></View>
             </View>
           </View>
         ))}

@@ -1726,6 +1726,19 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     const error = await medicationProxyWorkflow.validate(followUp, req.body, req.staff);
     if (error) return res.status(400).json({ success: false, message: error });
   }
+  const medicalReminderWorkflow = require('../utils/medicalReminderWorkflow');
+  const medicalReminderStage = medicalReminderWorkflow.stageOf(followUp);
+  if (medicalReminderStage === 'documents' && req.body.status === 'completed') {
+    if (!['healthManager', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '就医资料由健管专员审核' });
+    const reports = await MedicalReport.find({ user: followUp.patientId, createdAt: { $gte: followUp.createdAt }, audit_status: 'audited' }).select('documentCategory').lean();
+    const hasRecord = reports.some(item => ['outpatient_record', 'inpatient_record'].includes(item.documentCategory));
+    const hasReport = reports.some(item => ['physical_exam', 'lab_report', 'exam_report', 'body_composition', 'functional_medicine', 'genetic_test', 'prescription_order'].includes(item.documentCategory));
+    if (!hasRecord || !hasReport) return res.status(400).json({ success: false, message: '请先确认客户已上传报告单和病历，并在报告管理中完成审核' });
+  }
+  if (medicalReminderStage === 'plan_review' && req.body.status === 'completed') {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '随访计划由健康顾问确认' });
+    if (!String(req.body.content || '').trim()) return res.status(400).json({ success: false, message: '请填写确认后的随访计划或无需随访的结论' });
+  }
 
   if (req.body.status === 'cancelled' && !req.body.cancelReason && !followUp.cancelReason) {
     return res.status(400).json({ success: false, message: '取消随访必须填写取消原因' });
@@ -1904,6 +1917,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     await medicalProxyWorkflow.advanceMedicalProxyWorkflow(followUp);
   }
   if (medicationStage && followUp.status === 'completed' && previousStatus !== 'completed') await medicationProxyWorkflow.advance(followUp);
+  if (medicalReminderStage && followUp.status === 'completed' && previousStatus !== 'completed') await medicalReminderWorkflow.advanceStaffStage(followUp, req.staff._id);
   if (isOutpatientEscortVisit && followUp.status === 'completed') {
     const patient = await User.findById(followUp.patientId).select('tenantId assignedFamilyDoctor assignedHealthManager').lean();
     const handoff = followUp.formData?.handoffSnapshot || {};
@@ -5846,6 +5860,19 @@ router.post('/orders/:id/medication-draft', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+router.post('/orders/:id/medical-reminder-draft', staffAuth, async (req, res) => {
+  try {
+    if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康规划师可整理复查督办信息' });
+    const order = await Order.findById(req.params.id).select('user serviceName note medicalReminderIntake').lean();
+    if (!order || !require('../utils/medicalReminderWorkflow').isMedicalReminderOrder(order.serviceName)) return res.status(404).json({ success: false, message: '复查督办订单不存在' });
+    const messages = (Array.isArray(req.body.messages) ? req.body.messages : []).slice(-80).map(item => String(item || '').slice(0, 800));
+    const { chat } = require('../utils/ai');
+    const raw = await chat([{ role: 'user', content: `你是体检后复查督办服务的信息整理助手。只能提取对话和订单中已明确的信息；医院、科室、专家建议允许整理对话中的建议，但不得自行诊断或虚构。缺失字段留空。仅输出JSON：{"visitDate":"YYYY-MM-DD或空","medicalIssue":"","visitGoal":"","hospitalSuggestion":"","departmentSuggestion":"","expertSuggestion":""}。订单备注：${String(order.note || '').slice(0, 1500)}。对话：${JSON.stringify(messages).slice(0, 20000)}` }], { maxTokens: 900, temperature: 0, jsonMode: true, timeoutMs: 60000 });
+    const parsed = JSON.parse(String(raw).match(/\{[\s\S]*\}/)?.[0] || '{}');
+    res.json({ success: true, data: require('../utils/medicalReminderWorkflow').normalizeIntake(parsed, order.medicalReminderIntake || {}) });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 router.patch('/orders/:id/start', staffAuth, async (req, res) => {
   try {
     const { action = 'schedule', scheduledAt, note } = req.body;
@@ -5857,6 +5884,13 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
     const currentOrder = await Order.findById(req.params.id);
     const { isMedicalProxyOrder, startMedicalProxyWorkflow } = require('../utils/medicalProxyWorkflow');
     const medicationProxyWorkflow = require('../utils/medicationProxyWorkflow');
+    const medicalReminderWorkflow = require('../utils/medicalReminderWorkflow');
+    if (medicalReminderWorkflow.isMedicalReminderOrder(currentOrder?.serviceName)) {
+      if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '复查督办由健康规划师先确认信息' });
+      const task = await medicalReminderWorkflow.start(currentOrder, req.staff._id, req.body.medicalReminderIntake || {});
+      const order = await Order.findByIdAndUpdate(req.params.id, { status: 'scheduled', scheduledAt: new Date(`${req.body.medicalReminderIntake.visitDate}T09:00:00+08:00`), handledBy: req.staff._id }, { new: true }).populate('user', 'name phone');
+      return res.json({ success: true, data: order, task, message: '复查督办任务已同步给客户和健管专员' });
+    }
     if (medicationProxyWorkflow.isMedicationProxyOrder(currentOrder)) {
       if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '代配药由健康规划师先核对用药信息' });
       const medicationData = req.body.medicationData || {};

@@ -65,6 +65,7 @@ const orderSchema = new mongoose.Schema({
     missingFields: { type: [String], default: [] }, riskFlags: { type: [String], default: [] }, summary: { type: String, default: '' },
   },
   medicalProxyPlan: { type: mongoose.Schema.Types.Mixed, default: null },
+  medicalReminderIntake: { type: mongoose.Schema.Types.Mixed, default: null },
 
   // 服务编排归属：发起来源、总督办与当前执行人相互独立。
   // supervisorId 在订单全生命周期保持为健康规划师；专业环节只更新 currentAssignee 或子任务 assignedTo。

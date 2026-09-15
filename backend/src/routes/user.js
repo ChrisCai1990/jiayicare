@@ -1169,7 +1169,7 @@ router.get('/followup-tasks', auth, async (req, res) => {
       // 岗位执行与督办属于医护内部工作流。客户只查看已推送的服务方案，
       // 不应看到、也不能代替医护人员完成这些内部任务。
       $nor: [
-        { sourceType: 'order' },
+        { sourceType: 'order', workflowKey: { $not: /^medical_reminder:(?:followup|documents)$/ } },
         { sourceType: 'health_plan', taskRole: { $in: ['executor', 'supervisor'] } },
       ],
     })
@@ -1204,6 +1204,12 @@ router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
     if (!followup) return res.status(404).json({ success: false, message: '随访任务不存在' });
     if (followup.sourceType === 'health_plan' && ['executor', 'supervisor'].includes(followup.taskRole)) {
       return res.status(403).json({ success: false, message: '该任务由医护人员在工作台完成' });
+    }
+    if (followup.sourceType === 'order' && !/^medical_reminder:(?:followup|documents)$/.test(followup.workflowKey || '')) {
+      return res.status(403).json({ success: false, message: '该订单任务由医护人员在工作台完成' });
+    }
+    if (followup.workflowKey === 'medical_reminder:documents') {
+      return res.status(409).json({ success: false, message: '请上传报告单和病历，资料审核完成后由健管专员关闭此任务' });
     }
     const done = req.body.done !== false; // 默认 true，传 false 则取消
     const needFollowUp = req.body.needFollowUp === true;
@@ -1242,6 +1248,9 @@ router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
     // 使用原子更新，仅修改完成状态字段。部分历史随访由旧版本写入过已废弃的枚举值，
     // document.save() 会重新校验整条旧记录，导致用户点击“完成”时报 validation failed。
     const updated = await FollowUp.findByIdAndUpdate(followup._id, { $set: changes }, { new: true });
+    if (done && !needFollowUp && followup.workflowKey === 'medical_reminder:followup') {
+      await require('../utils/medicalReminderWorkflow').markVisitCompleted(updated);
+    }
     if (updated.status === 'completed' && followup.status !== 'completed' && updated.sourceType === 'supply_reminder') {
       await require('../utils/rollingSupplyReminder').generateNextSupplyReminder(updated);
     }
