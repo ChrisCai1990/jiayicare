@@ -2499,21 +2499,26 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
 });
 
 // 健康顾问直接使用既有已审核资料发起医疗代诊，跳过客户资料收集和重复审核。
+// 健管专员在客户确认后也可发起“代配药/代配营养素”这一单项服务；其他就医协助仍由健康顾问发起。
 router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => {
-  if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可直接发起医疗代诊' });
+  if (!['familyDoctor', 'healthManager', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问或健管专员可发起服务' });
   try {
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权为该会员发起服务' });
     const patient = await User.findById(req.params.id).select('tenantId memberType servicePackage assignedFamilyDoctor assignedHealthPlanner assignedHealthManager').lean();
     if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
-    if (req.staff.role !== 'superadmin' && String(patient.assignedFamilyDoctor || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅该客户的健康顾问可发起' });
     const appointmentOnly = req.body.appointmentOnly === true;
     const medicationProxy = req.body.medicationProxy === true;
+    if (req.staff.role === 'healthManager' && !medicationProxy) return res.status(403).json({ success: false, message: '健管专员仅可在客户确认后发起代配药或代配营养素服务' });
+    if (req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅该客户的健康顾问可发起' });
+    if (req.staff.role === 'healthManager' && String(patient.assignedHealthManager || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅该客户的健管专员可发起代配服务' });
     const required = medicationProxy ? ['hospital', 'department', 'preferredDateStart'] : appointmentOnly ? ['hospital', 'department', 'expert', 'preferredDateStart', 'preferredDateEnd'] : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'];
     if (required.some(key => !String(req.body[key] || '').trim())) return res.status(400).json({ success: false, message: medicationProxy ? '请填写配药医院、科室和期望日期' : appointmentOnly ? '请完整填写医院、科室、专家和期望日期区间' : '请完整填写医院、科室、专家、代诊目标和交流内容' });
     if (appointmentOnly && (req.body.preferredDateEnd < req.body.preferredDateStart || !/^\d{4}-\d{2}-\d{2}$/.test(req.body.preferredDateStart) || !/^\d{4}-\d{2}-\d{2}$/.test(req.body.preferredDateEnd))) return res.status(400).json({ success: false, message: '请填写有效的期望日期区间' });
     if (appointmentOnly && (!['general', 'international'].includes(req.body.clinicType) || !['self_pay', 'high_end'].includes(req.body.insuranceUse))) return res.status(400).json({ success: false, message: '请选择门诊类型和费用与保险方式' });
-    const result = await require('../utils/medicalProxyWorkflow').startStaffMedicalProxyWorkflow({ patient, advisorId: req.staff._id, plan: req.body });
+    // 服务由健管专员触发时，仍关联客户的健康顾问作为专业责任岗位；未分配健康顾问时由发起健管专员留痕。
+    const advisorId = req.staff.role === 'healthManager' ? (patient.assignedFamilyDoctor || req.staff._id) : req.staff._id;
+    const result = await require('../utils/medicalProxyWorkflow').startStaffMedicalProxyWorkflow({ patient, advisorId, plan: { ...req.body, initiatedByStaff: req.staff._id } });
     res.json({ success: true, data: { orderId: result.order._id, supervisorTaskId: result.supervisor?._id || null, bookingTaskId: result.booking?._id || null } });
   } catch (err) { res.status(err.status || 500).json({ success: false, message: err.message }); }
 });
