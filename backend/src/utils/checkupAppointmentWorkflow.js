@@ -15,8 +15,11 @@ const required = value => String(value || '').trim();
 const appointmentDate = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
 
 function plannerValidation(data = {}) {
-  if (!appointmentDate(data.preferredDateStart) || !appointmentDate(data.preferredDateEnd)) return '请填写期望检查日期区间';
-  if (data.preferredDateEnd < data.preferredDateStart) return '期望结束日期不能早于开始日期';
+  const hasPreferredDateStart = Boolean(required(data.preferredDateStart));
+  const hasPreferredDateEnd = Boolean(required(data.preferredDateEnd));
+  if (hasPreferredDateStart !== hasPreferredDateEnd) return '如填写期望检查日期，请补全开始和结束日期';
+  if (hasPreferredDateStart && (!appointmentDate(data.preferredDateStart) || !appointmentDate(data.preferredDateEnd))) return '期望检查日期格式不正确';
+  if (hasPreferredDateStart && data.preferredDateEnd < data.preferredDateStart) return '期望结束日期不能早于开始日期';
   if (!Array.isArray(data.checkItems) || !data.checkItems.some(item => required(item?.name))) return '请至少填写一项检查项目';
   if (!required(data.institution)) return '请确认检查机构';
   if (data.serviceType === 'special' && !required(data.expert)) return '特殊约检必须确认检查专家';

@@ -12684,12 +12684,16 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
             </div> : isCheckupAppointment ? <div style={{ display: 'grid', gap: 10 }}>
               <div style={{ fontSize: 12, color: '#8AA89C' }}>确认客户期望日期、检查项目、机构、专家和空腹要求后，转健管专员预约两个号。</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <label style={{ fontSize: 12, fontWeight: 600 }}>期望检查开始日期（如有）<input className="form-input" type="date" value={serviceTime} onChange={e => setServiceTime(e.target.value)} /></label>
+                <label style={{ fontSize: 12, fontWeight: 600 }}>期望检查结束日期（如有）<input className="form-input" type="date" min={serviceTime || undefined} value={serviceTimeEnd} onChange={e => setServiceTimeEnd(e.target.value)} /></label>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <label style={{ fontSize: 12, fontWeight: 600 }}>约检类型<select className="form-input" value={checkupAppointmentType} onChange={e => setCheckupAppointmentType(e.target.value)}><option value="normal">常规约检</option><option value="special">特殊约检</option></select></label>
                 <label style={{ fontSize: 12, fontWeight: 600 }}>是否需要空腹 *<select className="form-input" value={checkupFastingRequired} onChange={e => setCheckupFastingRequired(e.target.value)}><option value="">请选择</option><option value="yes">需要</option><option value="no">不需要</option></select></label>
               </div>
+              <label style={{ fontSize: 12, fontWeight: 600 }}>检查项目 *<textarea className="form-input" rows={3} value={serviceTask} onChange={e => setServiceTask(e.target.value)} placeholder="每行一项；可填写客户需求或已建随访计划项目" /></label>
               <label style={{ fontSize: 12, fontWeight: 600 }}>检查机构 *<input className="form-input" value={suggestedHospital} onChange={e => setSuggestedHospital(e.target.value)} /></label>
               <label style={{ fontSize: 12, fontWeight: 600 }}>检查专家{checkupAppointmentType === 'special' ? ' *' : ''}<input className="form-input" value={expert} onChange={e => setExpert(e.target.value)} /></label>
-              <label style={{ fontSize: 12, fontWeight: 600 }}>检查项目 *<textarea className="form-input" rows={3} value={serviceTask} onChange={e => setServiceTask(e.target.value)} placeholder="每行一项；可填写客户需求或已建随访计划项目" /></label>
               <label style={{ fontSize: 12, fontWeight: 600 }}>特殊准备事项<textarea className="form-input" rows={2} value={checkupPreparation} onChange={e => setCheckupPreparation(e.target.value)} placeholder="如停药要求、携带既往报告、检查前饮水量等" /></label>
             </div> : isMedicationProxy ? <MedicationProxyStageForm task={{ sourceType: 'order', workflowKey: 'medication_proxy:intake', sourceOrderId: order, patientId }} value={medicationData} staffList={medicationStaffList} onChange={setMedicationData} /> : <>
             {(!isMedicalProxy || !proxyReviewReady || isExpertAppointment) ? <>
@@ -12733,8 +12737,19 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
             {bookingError && <div role="alert" style={{ padding: '8px 10px', color: '#B42318', background: '#FFF0EF', borderRadius: 6, fontSize: 12 }}>{bookingError}</div>}
             <div style={{ textAlign: 'right', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               {isMedicalProxy && proxyReviewReady && !isExpertAppointment && <button className="btn btn-secondary btn-sm" onClick={() => setProxyReviewReady(false)}>返回修改</button>}
-              <button className="btn btn-primary btn-sm" disabled={confirmingBooking || !canConfirmOrder || (isCheckupAppointment ? (!serviceTime || !serviceTimeEnd || serviceTimeEnd < serviceTime || !serviceTask.trim() || !suggestedHospital.trim() || !checkupFastingRequired || (checkupAppointmentType === 'special' && !expert.trim())) : isMedicalReminder ? Object.values(medicalReminder).some(value => !String(value || '').trim()) : ((!isMedicationProxy && (!serviceTime || !serviceTimeEnd || serviceTimeEnd < serviceTime)) || (isExpertAppointment && (!suggestedHospital.trim() || !department.trim() || !expert.trim() || !clinicType || !insuranceUse || settlementMethod === 'pending')) || (isMedicalPlanning && (!communicationTimeStart || !communicationTimeEnd || communicationTimeEnd <= communicationTimeStart)) || (!isMedicationProxy && (isMedicalProxy ? !proxyServiceContent.trim() || (!/专家约诊/.test(order?.serviceName || '') && !proxyCustomerNeed.trim()) : !serviceTask.trim()))))} onClick={async () => {
+              <button className="btn btn-primary btn-sm" disabled={confirmingBooking || !canConfirmOrder || (isCheckupAppointment ? false : isMedicalReminder ? Object.values(medicalReminder).some(value => !String(value || '').trim()) : ((!isMedicationProxy && (!serviceTime || !serviceTimeEnd || serviceTimeEnd < serviceTime)) || (isExpertAppointment && (!suggestedHospital.trim() || !department.trim() || !expert.trim() || !clinicType || !insuranceUse || settlementMethod === 'pending')) || (isMedicalPlanning && (!communicationTimeStart || !communicationTimeEnd || communicationTimeEnd <= communicationTimeStart)) || (!isMedicationProxy && (isMedicalProxy ? !proxyServiceContent.trim() || (!/专家约诊/.test(order?.serviceName || '') && !proxyCustomerNeed.trim()) : !serviceTask.trim()))))} onClick={async () => {
                 setBookingError('')
+                if (isCheckupAppointment) {
+                  if (serviceTimeEnd && serviceTime && serviceTimeEnd < serviceTime) { setBookingError('期望检查结束日期不能早于开始日期'); return }
+                  const missingFields = [
+                    Boolean(serviceTime) !== Boolean(serviceTimeEnd) && '期望检查日期区间',
+                    !serviceTask.trim() && '检查项目',
+                    !suggestedHospital.trim() && '检查机构',
+                    !checkupFastingRequired && '是否需要空腹',
+                    checkupAppointmentType === 'special' && !expert.trim() && '检查专家',
+                  ].filter(Boolean)
+                  if (missingFields.length) { setBookingError(`请补充：${missingFields.join('、')}`); return }
+                }
                 if (isMedicalProxy && !isExpertAppointment && !proxyReviewReady) { setProxyReviewReady(true); return }
                 setConfirmingBooking(true)
                 try {

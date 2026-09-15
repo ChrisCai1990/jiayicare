@@ -16,6 +16,8 @@ test('特殊约检在规划师阶段必须确认专家与检查信息', () => {
   assert.equal(plannerValidation(intake), '');
   assert.match(plannerValidation({ ...intake, expert: '' }), /检查专家/);
   assert.match(plannerValidation({ ...intake, preferredDateEnd: '2026-09-30' }), /结束日期/);
+  assert.equal(plannerValidation({ ...intake, preferredDateStart: '', preferredDateEnd: '' }), '');
+  assert.match(plannerValidation({ ...intake, preferredDateStart: '', preferredDateEnd: '2026-10-03' }), /补全/);
 });
 
 test('健管专员必须完成开单号和检查日专家号', () => {
