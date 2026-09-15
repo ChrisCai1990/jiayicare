@@ -2248,11 +2248,17 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
 router.delete('/followups/:id', staffAuth, checkPermission('followups', 'delete'), async (req, res) => {
   const reason = String(req.body?.reason || '').trim();
   if (!reason) return res.status(400).json({ success: false, message: '删除随访计划必须填写原因' });
-  const query = req.staff.role === 'superadmin'
-    ? { _id: req.params.id }
-    : { _id: req.params.id, $or: [{ staffId: req.staff._id }, { assignedTo: req.staff._id }] };
-  const followUp = await FollowUp.findOne(query);
+  // 客户详情展示的是服务团队的完整执行档案，而非仅当前人的任务。此前删除接口
+  // 仍按“创建人或负责人”限制，造成有查看权限的健康顾问无法清理测试任务，
+  // 还错误提示“随访记录不存在”。删除权限改为与客户详情相同的服务团队范围。
+  const followUp = await FollowUp.findById(req.params.id);
   if (!followUp) return res.status(404).json({ success: false, message: '随访记录不存在' });
+  if (!['superadmin', 'platformSuper'].includes(req.staff.role)) {
+    const visibleStaffIds = await getVisibleStaffIds(req.staff);
+    const patientAccess = PLAN_ASSIGN_FIELDS.map(field => ({ [field]: { $in: visibleStaffIds } }));
+    const hasAccess = await User.exists({ _id: followUp.patientId, $or: patientAccess });
+    if (!hasAccess) return res.status(403).json({ success: false, message: '无权限删除该会员的随访记录' });
+  }
   if (followUp.sourceType === 'order' && String(followUp.workflowKey || '').startsWith('medical_proxy:') && !['completed', 'cancelled'].includes(followUp.status)) {
     return res.status(409).json({ success: false, message: '医疗代诊流程进行中，不能删除岗位任务或督办任务' });
   }
@@ -6358,19 +6364,19 @@ router.put('/patients/:id/supply-reminders/:kind/:recordId', staffAuth, checkPer
     // 如需由其他岗位代办，可在随访列表中再明确转派负责人。
     const assignee = req.staff._id;
     const itemType = kind === 'medication' ? '药物' : '营养素';
-    const task = mode === 'proxy' ? '代配待办' : '就医配取提醒';
+    const task = mode === 'proxy' ? '我方代配' : '提醒客户配取';
     const row = {
       patientId: req.params.id, staffId: req.staff._id, assignedTo: assignee, date: first,
       type: mode === 'proxy' ? 'other' : 'wechat', status: 'planned',
       theme: `${task} · ${record.name}`,
-      plannedContent: `${mode === 'proxy' ? '请安排代配' : '请提醒会员定期就医/配取'}${itemType}「${record.name}」。配取前核对当前医嘱、剂量及余量；完成后记录结果。${req.body.note ? `\n备注：${String(req.body.note).trim().slice(0, 500)}` : ''}`,
-      tags: [task, itemType], sourceType: 'supply_reminder', sourceId: record._id,
+      plannedContent: `${mode === 'proxy' ? '请安排我方代配' : '请提醒会员自行就医/配取'}${itemType}「${record.name}」。配取前核对当前医嘱、剂量及余量；完成后记录结果。${req.body.note ? `\n备注：${String(req.body.note).trim().slice(0, 500)}` : ''}`,
+      tags: ['配药与营养补充', task, itemType], sourceType: 'supply_reminder', sourceId: record._id,
     };
     record.supplyReminder = { enabled: true, intervalDays, mode, note: String(req.body.note || '').trim().slice(0, 500), updatedAt: new Date(), updatedBy: req.staff._id };
     await record.save();
     await FollowUp.deleteMany({ patientId: req.params.id, sourceType: 'supply_reminder', sourceId: record._id, status: 'planned', date: { $gte: new Date() } });
     await FollowUp.create(row);
-    res.json({ success: true, generated: 1, message: '已生成1条配取随访；完成后会自动生成下一条' });
+    res.json({ success: true, generated: 1, message: `已生成1条${task}任务；完成后会自动生成下一条` });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

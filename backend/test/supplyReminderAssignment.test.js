@@ -11,7 +11,7 @@ const end = source.indexOf('\n});', start) + 4;
 async function generate(mode) {
   let handler;
   let inserted = [];
-  const record = { _id: 'record-1', name: '维生素D', staffId: 'record-owner' };
+  const record = { _id: 'record-1', name: '维生素D', staffId: 'record-owner', save: async () => {} };
   vm.runInNewContext(source.slice(start, end), {
     router: { put: (_path, _auth, _permission, callback) => { handler = callback; } },
     staffAuth: () => {},
@@ -21,7 +21,7 @@ async function generate(mode) {
     User: { findById: () => ({ select: async () => ({ assignedHealthManager: 'health-manager' }) }) },
     FollowUp: {
       deleteMany: async () => {},
-      insertMany: async rows => { inserted = rows; },
+      create: async row => { inserted = [row]; },
     },
   });
   const res = { code: 200, status(code) { this.code = code; return this; }, json(data) { this.data = data; return this; } };
@@ -38,7 +38,9 @@ test('就医配取提醒归当前操作人并立即出现在其随访列表', as
   assert.equal(res.code, 200);
   assert.equal(row.staffId, 'operator-1');
   assert.equal(row.assignedTo, 'operator-1');
-  assert.match(res.data.message, /我的随访/);
+  assert.equal(row.sourceType, 'supply_reminder');
+  assert.match(row.theme, /提醒客户配取/);
+  assert.match(row.plannedContent, /提醒会员自行/);
 });
 
 test('代配待办也归当前操作人，可在其随访列表中查看', async () => {
@@ -46,5 +48,7 @@ test('代配待办也归当前操作人，可在其随访列表中查看', async
   assert.equal(res.code, 200);
   assert.equal(row.staffId, 'operator-1');
   assert.equal(row.assignedTo, 'operator-1');
-  assert.match(res.data.message, /我的随访/);
+  assert.equal(row.sourceType, 'supply_reminder');
+  assert.match(row.theme, /我方代配/);
+  assert.match(row.plannedContent, /安排我方代配/);
 });

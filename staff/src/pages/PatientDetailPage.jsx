@@ -8499,7 +8499,8 @@ export default function PatientDetailPage() {
                             }}>编辑</button>}
                             {m.stopped && <button className="btn btn-secondary btn-sm" onClick={() => { setMedForm({ name: m.name, brandName: m.brandName || '', specification: m.specification || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: new Date().toISOString().slice(0, 10), endDate: '', purpose: m.purpose || '', note: '' }); setEditingMed(null); setShowMedModal(true) }}>再次使用</button>}
                             {!m.stopped && !m.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'medication', record: m }); setSupplyForm({ firstDate: '', intervalDays: 30, mode: 'visit', note: '' }) }}>定期配药</button>}
-                            {!m.stopped && m.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => stopSupplyReminder('medication', m)}>停止自动配药随访</button>}
+                            {!m.stopped && m.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'medication', record: m }); setSupplyForm({ firstDate: new Date().toISOString().slice(0, 10), intervalDays: m.supplyReminder.intervalDays || 30, mode: m.supplyReminder.mode || 'visit', note: m.supplyReminder.note || '' }) }}>调整配药方式</button>}
+                            {!m.stopped && m.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => stopSupplyReminder('medication', m)}>停止自动配药任务</button>}
                             {!m.stopped && <button className="btn btn-sm" style={{ background: '#F3EEFF', color: '#7C3AED', border: '1px solid #C4B5FD' }} onClick={() => {
                               const today = new Date().toISOString().slice(0, 10)
                               setReminderMed(m)
@@ -8624,7 +8625,8 @@ export default function PatientDetailPage() {
                             }}>编辑</button>}
                             {s.stopped && <button className="btn btn-secondary btn-sm" onClick={() => { setSupForm({ name: s.name, brand: s.brand || '', specification: s.specification || '', dosage: s.dosage, method: s.method || '随餐', frequency: s.frequency, startDate: new Date().toISOString().slice(0, 10), endDate: '', purpose: s.purpose || '', note: '' }); setEditingSup(null); setEditingSupAiApprove(false); setShowSupModal(true) }}>再次补充</button>}
                             {!s.stopped && !s.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'supplement', record: s }); setSupplyForm({ firstDate: '', intervalDays: 30, mode: 'visit', note: '' }) }}>定期配取</button>}
-                            {!s.stopped && s.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => stopSupplyReminder('supplement', s)}>停止自动配取随访</button>}
+                            {!s.stopped && s.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'supplement', record: s }); setSupplyForm({ firstDate: new Date().toISOString().slice(0, 10), intervalDays: s.supplyReminder.intervalDays || 30, mode: s.supplyReminder.mode || 'visit', note: s.supplyReminder.note || '' }) }}>调整配取方式</button>}
+                            {!s.stopped && s.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => stopSupplyReminder('supplement', s)}>停止自动配取任务</button>}
                             {!s.stopped && <button className="btn btn-sm" style={{ background: '#fff8e1', color: '#D97706', border: '1px solid #D97706' }}
                                   onClick={() => setStoppingSup(s)}>
                                   停用
@@ -8655,7 +8657,7 @@ export default function PatientDetailPage() {
               <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
                 <label>首次提醒日期<input className="form-input" type="date" min={new Date().toISOString().slice(0, 10)} value={supplyForm.firstDate} onChange={e => setSupplyForm(f => ({ ...f, firstDate: e.target.value }))} /></label>
                 <label>每隔多少天提醒<input className="form-input" type="number" min="1" max="365" value={supplyForm.intervalDays} onChange={e => setSupplyForm(f => ({ ...f, intervalDays: e.target.value }))} /></label>
-                <label>提醒方式<select className="form-input" value={supplyForm.mode} onChange={e => setSupplyForm(f => ({ ...f, mode: e.target.value }))}><option value="visit">就医/配取提醒</option><option value="proxy">代配待办</option></select></label>
+                <label>服务方式<select className="form-input" value={supplyForm.mode} onChange={e => setSupplyForm(f => ({ ...f, mode: e.target.value }))}><option value="visit">提醒客户自行就医/配取</option><option value="proxy">我方代配服务</option></select></label>
                 <label>备注<input className="form-input" value={supplyForm.note} onChange={e => setSupplyForm(f => ({ ...f, note: e.target.value }))} placeholder="配取机构、注意事项等" /></label>
                 {supplyError && <div style={{ color: '#c00', fontSize: 13 }}>{supplyError}</div>}
                 <div style={{ fontSize: 12, color: '#8A5A44' }}>只生成最近一条；该条完成后按上述间隔自动生成下一条，直到手动停止。</div>
@@ -8967,6 +8969,7 @@ export default function PatientDetailPage() {
             const CANCELLED_STATUSES = ['cancelled']
             const executionCategoryOf = task => {
               const text = `${task.theme || ''} ${task.content || task.taskRequirements || task.plannedContent || ''} ${task.type || ''} ${task.sourceType || ''}`
+              if (task.sourceType === 'supply_reminder' || (task.tags || []).includes('配药与营养补充')) return 'supply'
               if (/营养|饮食|膳食|体重管理/.test(text)) return 'nutrition'
               if (/血压|血糖|体重|睡眠|运动|饮水|监测|打卡/.test(text)) return 'monitoring'
               if (/体检|复查|检验|检查|筛查|疫苗/.test(text)) return 'checkup'
@@ -8976,7 +8979,7 @@ export default function PatientDetailPage() {
             }
             const EXECUTION_CATEGORIES = [
               ['all', '全部任务'], ['nutrition', '营养干预'], ['monitoring', '健康监测'],
-              ['checkup', '体检与复查'], ['medical', '就医协助'], ['disease', '专病管理'], ['communication', '客户沟通'],
+              ['checkup', '体检与复查'], ['medical', '就医协助'], ['supply', '配药与营养补充'], ['disease', '专病管理'], ['communication', '客户沟通'],
             ]
             const statusFiltered = followUpFilter === 'planned' ? followUps.filter(f => PLANNED_STATUSES.includes(f.status))
               : followUpFilter === 'in_progress' ? followUps.filter(f => IN_PROGRESS_STATUSES.includes(f.status))
@@ -9059,7 +9062,7 @@ export default function PatientDetailPage() {
                     <tr key={f._id} style={{ cursor: 'pointer', background: f.aiStatus === 'pending' ? '#FFFBEB' : undefined }} onClick={() => setFollowUpDetail(f)}>
                       <td style={{ fontSize: 13, color: '#666' }}>{new Date(f.date).toLocaleDateString('zh-CN')}</td>
                       <td style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>{f.createdAt ? new Date(f.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
-                      <td><span className="badge badge-info">{TYPE_MAP[f.type] || f.type}</span></td>
+                      <td><span className="badge badge-info">{f.sourceType === 'supply_reminder' ? ((f.tags || []).includes('我方代配') ? '我方代配' : '配取提醒') : (TYPE_MAP[f.type] || f.type)}</span></td>
                       <td>
                         <span style={{ fontSize: 13, fontWeight: 500, color: FOLLOWUP_LIST_STATUS_COLOR[f.status] || '#666' }}>
                           {FOLLOWUP_LIST_STATUS_MAP[f.status] || f.status}
