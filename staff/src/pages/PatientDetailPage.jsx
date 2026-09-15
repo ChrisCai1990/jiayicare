@@ -13462,6 +13462,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
 // ── 家庭成员 Tab ────────────────────────────────────────────────────
 function FamilyTab({ patientId, user, onRefresh }) {
   const toast = useToast()
+  const navigate = useNavigate()
   const [members, setMembers] = useState([])
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
@@ -13581,14 +13582,20 @@ function FamilyTab({ patientId, user, onRefresh }) {
           : members.map(m => {
             const linked = m.linkedUser
             return (
-              <div key={m._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #f5f2ec' }}>
-                <div>
+              <div key={m._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 0', borderBottom: '1px solid #f5f2ec' }}>
+                <button
+                  type="button"
+                  disabled={!linked?._id}
+                  onClick={() => navigate(`/patients/${linked._id}`)}
+                  title={linked?._id ? `进入${linked.name || '该成员'}的客户档案` : undefined}
+                  style={{ flex: 1, minWidth: 0, padding: 0, border: 0, background: 'transparent', textAlign: 'left', color: 'inherit', cursor: linked?._id ? 'pointer' : 'default' }}
+                >
                   <span style={{ fontWeight: 600, fontSize: 14 }}>{linked?.name || '-'}</span>
                   <span style={{ color: '#8AA89C', fontSize: 12, marginLeft: 8 }}>{m.relation}</span>
                   <div style={{ fontSize: 12, color: '#aaa', marginTop: 2 }}>
                     {linked?.gender || ''}{linked?.gender ? ' · ' : ''}{linked?.birthDate ? calcAge(linked.birthDate) : ''}{linked?.phone ? ' · ' + linked.phone : ''}
                   </div>
-                </div>
+                </button>
                 <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc', fontSize: 12 }}
                   onClick={() => handleRemove(m._id)}>移除</button>
               </div>
