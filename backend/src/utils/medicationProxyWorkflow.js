@@ -3,6 +3,7 @@ const FollowUp = require('../models/FollowUp');
 const Order = require('../models/Order');
 const User = require('../models/User');
 const RecurringSupplyPlan = require('../models/RecurringSupplyPlan');
+const { calculateMedicationSupply, numberOf } = require('./medicationSupplyCalculation');
 
 const PREFIX = 'medication_proxy:';
 const isMedicationProxyOrder = order => {
@@ -45,9 +46,11 @@ async function validate(task, body, staff) {
   if (stage === 'intake') {
     data.institution = data.institutionType === 'hospital' ? [data.hospitalName, data.campus].filter(Boolean).join(' · ')
       : data.institutionType === 'pharmacy' ? data.pharmacyName : data.platformName;
-    data.dailyQuantity = Number(data.singleDose) * Number(data.dailyFrequency);
+    const supply = calculateMedicationSupply(data);
+    data.dailyQuantity = supply?.dailyUnits || '';
+    data.supplyDays = supply?.supplyDays || '';
     if (['brandName', 'chemicalName', 'specification', 'singleDose', 'dailyFrequency', 'totalQuantity', 'paymentMethod'].some(key => !value(data[key]))) return '请核对药品商品名、化学名、规格、单次服用剂量、每日服用次数、配备总量和支付方式';
-    if (!(Number(data.singleDose) > 0) || !(Number(data.dailyFrequency) > 0) || !(Number(data.totalQuantity) > 0)) return '单次服用剂量、每日服用次数和配备总量必须填写大于0的数字，并使用同一计量单位';
+    if (!(numberOf(data.singleDose) > 0) || !(numberOf(data.dailyFrequency) > 0) || !(numberOf(data.totalQuantity) > 0)) return '单次服用剂量、每日服用次数和配备总量必须包含大于0的数值';
     if (!['self_pay', 'medical_insurance', 'commercial_insurance'].includes(data.paymentMethod)) return '请选择有效的支付方式';
     if (!['hospital', 'pharmacy', 'online'].includes(data.institutionType)) return '请选择医院、药房或线上采购渠道';
     if (data.institutionType === 'hospital' && (!value(data.hospitalName) || !value(data.campus))) return '医院配药请填写医院名称和院区';
@@ -55,7 +58,7 @@ async function validate(task, body, staff) {
     if (data.institutionType === 'online' && !value(data.platformName)) return '线上采购请填写平台名称';
     if (data.institutionType === 'hospital' && !data.needsAdvisor && !value(data.department)) return '医院配药请填写科室，或转健康顾问评估';
     if (data.institutionType === 'hospital' && !data.needsAdvisor && data.expertRequired && !value(data.expert)) return '需要专家开方时请填写专家，或转健康顾问评估';
-    if (data.regularSupply && !(data.dailyQuantity > 0)) return '定期配药需要可计算的单次服用剂量和每日服用次数';
+    if (data.regularSupply && !supply) return '定期配药需要可换算的规格、单次服用剂量、每日服用次数和配备总量';
   }
   if (stage === 'advisor' && (!value(data.department) || (data.expertRequired && !value(data.expert)) || !value(data.assessment))) return '请填写科室、所需专家和评估结论';
   if (stage === 'review' && (!value(data.department) || (data.expertRequired && !value(data.expert)) || !data.plannerConfirmed)) return '请确认健康顾问建议的科室与专家';
@@ -82,10 +85,8 @@ async function advance(task) {
   const data = task.formData || {};
   if (stage === 'execute') {
     const intake = data.intakeSnapshot || {};
-    const daily = Number(intake.dailyQuantity);
-    const total = Number(intake.totalQuantity);
-    if (intake.regularSupply && Number.isFinite(daily) && daily > 0 && Number.isFinite(total) && total > 0) {
-      const days = Math.max(1, Math.ceil(total / daily));
+    const days = Number(intake.supplyDays) || calculateMedicationSupply(intake)?.supplyDays;
+    if (intake.regularSupply && days > 0) {
       const nextDueDate = new Date(data.expectedDeliveryDate);
       nextDueDate.setDate(nextDueDate.getDate() + days);
       const deliveryLeadDays = Math.min(60, Math.max(3, Math.ceil(Number(data.deliveryLeadDays) || 3)));
