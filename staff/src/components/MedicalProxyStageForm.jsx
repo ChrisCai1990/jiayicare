@@ -189,17 +189,26 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     </div>
     {fields.advisor.map(([key, label]) => input(key, label, key === 'proxyGoal' || key === 'communicationContent' ? 3 : 1))}
   </div>
-  if (stage === 'planner') return <div style={{ display: 'grid', gap: 12 }}>
+  if (stage === 'planner') {
+    const booking = value.bookingSnapshot || task?.sourceOrderId?.medicalProxyPlan?.booking || {}
+    const paymentLabel = ({ self_pay: '自费', medical_insurance: '医保', commercial_insurance: '商保' })[booking.paymentMethod] || '未填写'
+    return <div style={{ display: 'grid', gap: 12 }}>
     <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>
-      {['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].map((key, i) => <div key={key}>{['医院', '科室', '专家', '代诊目标', '交流内容'][i]}：{value.planSnapshot?.[key] || '待确认'}</div>)}
+      {isMedicationProxy ? <>
+        <div>配药医院：{value.planSnapshot?.hospital || '待确认'} {booking.campus || value.planSnapshot?.campus || ''}</div>
+        <div>配药科室：{value.planSnapshot?.department || '待确认'}；配药专家：{value.planSnapshot?.expert || '无'}</div>
+        <div>代办日期：{booking.appointmentDate || '未填写'} {booking.appointmentTime || ''}</div>
+        <div>支付方式：{paymentLabel}</div>
+      </> : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].map((key, i) => <div key={key}>{['医院', '科室', '专家', '代诊目标', '交流内容'][i]}：{value.planSnapshot?.[key] || '待确认'}</div>)}
     </div>
-    <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>预指派就医专员
+    <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>{isMedicationProxy ? '安排配药执行人员' : '预指派就医专员'}
       <select className="form-control" value={value.medicalAssistantId || ''} onChange={e => set('medicalAssistantId', e.target.value)}>
         <option value="">请选择</option>
         {staffList.filter(staff => staff.role === 'medicalAssistant' && staff.staffStatus !== 'inactive').map(staff => <option key={staff._id} value={staff._id}>{staff.name}</option>)}
       </select>
     </label>
   </div>
+  }
   if (stage === 'booking') return <div style={{ display: 'grid', gap: 12 }}>
     <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>
       {appointmentRequirementText ? <div>约诊需求：{appointmentRequirementText}</div> : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].map((key, i) => <div key={key}>{['医院', '科室', '专家', '代诊目标', '交流内容'][i]}：{value.planSnapshot?.[key] || '待确认'}</div>)}
