@@ -217,7 +217,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
         <option value="">请选择核实结果</option><option value="direct_verified">已核实可直付</option><option value="reimbursement_verified">已核实先付后报</option><option value="self_pay_confirmed">保险不适用，客户确认自费</option>
       </select>
     </label>}
-    {value.planSnapshot?.initiationSource === 'staff_direct' && !isExpertAppointment && <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>预约确定后指派就医专员
+    {value.planSnapshot?.initiationSource === 'staff_direct' && !value.medicationProxy && !isExpertAppointment && <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>预约确定后指派就医专员
       <select className="form-control" value={value.medicalAssistantId || ''} onChange={e => set('medicalAssistantId', e.target.value)}>
         <option value="">请选择</option>
         {staffList.filter(staff => staff.role === 'medicalAssistant' && staff.staffStatus !== 'inactive').map(staff => <option key={staff._id} value={staff._id}>{staff.name}</option>)}
