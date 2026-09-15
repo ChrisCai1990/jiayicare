@@ -59,6 +59,14 @@ const healthPlanSchema = new mongoose.Schema({
   content: { type: mongoose.Schema.Types.Mixed, default: {} },
   // 来源商城订单（就医协助方案等由订单触发生成时关联，用于订单-方案-随访状态联动追溯）
   sourceOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null },
+  // 无订单的医护端发起服务也遵循与订单相同的统一归属语义。
+  initiationSource: { type: String, enum: ['customer', 'staff', 'admin', 'system'], default: 'staff', index: true },
+  initiatedByStaff: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  supervisorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null, index: true },
+  currentStage: { type: String, default: 'intake' },
+  currentAssignee: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  closureMode: { type: String, enum: ['automatic', 'planner_review'], default: 'planner_review' },
+  supervisionStatus: { type: String, enum: ['pending_intake', 'in_progress', 'needs_attention', 'pending_closure', 'completed', 'cancelled'], default: 'pending_intake' },
   // 状态
   status: {
     type: String,

@@ -21,22 +21,7 @@ const Product = require('../models/Product');
 const ProductCategory = require('../models/ProductCategory');
 const { DynamicQuestionnaire } = require('../models/DynamicQuestionnaire');
 const PushRecord = require('../models/PushRecord');
-const { resolveHealthPlanner } = require('../utils/healthPlannerAssignment');
-
-async function resolveOrderWorkflowAssignee(userId, serviceName = '') {
-  if (/住院一站式/.test(serviceName)) {
-    const patient = await User.findById(userId).select('assignedFamilyDoctor').lean();
-    if (patient?.assignedFamilyDoctor) {
-      const activeAdvisor = await Admin.exists({
-        _id: patient.assignedFamilyDoctor,
-        role: 'familyDoctor',
-        staffStatus: 'active',
-      });
-      if (activeAdvisor) return patient.assignedFamilyDoctor;
-    }
-  }
-  return resolveHealthPlanner(userId);
-}
+const { resolveOrderWorkflowAssignee, orderOwnershipFields } = require('../utils/serviceOwnership');
 
 // GET /api/services — 从商城产品获取（管理员在后台维护的 Products）
 // Public catalogue: reviewers and prospective users must be able to browse
@@ -373,7 +358,7 @@ router.post('/order', auth, async (req, res) => {
     if (productShare?.sharerStaffId) referrerId = productShare.sharerStaffId;
   }
 
-  // 住院一站式先由健康顾问做医院/科室/专家评估和专家号预约方案，其他订单仍由健康规划师承接。
+  // 所有订单统一由客户所属健康规划师收单和总督办；住院等专业评估作为后续子任务分派给健康顾问。
   const followUpStaffId = await resolveOrderWorkflowAssignee(req.user._id, service.name);
   if (!followUpStaffId) {
     return res.status(409).json({ success: false, message: '当前没有可用的服务负责人，请联系平台处理后再下单' });
@@ -426,6 +411,11 @@ router.post('/order', auth, async (req, res) => {
     healthFundEnterpriseId: fundEnterprise?._id || null,
     couponId: coupon?._id || null,
     couponDiscount,
+    ...orderOwnershipFields({
+      supervisorId: followUpStaffId,
+      initiationSource: 'customer',
+      closureMode: product?.serviceWorkflow?.closureMode,
+    }),
   }); } catch (error) {
     if (inventory.reserved) await Product.updateOne({ _id: product._id }, { $inc: { stock: 1 } });
     throw error;

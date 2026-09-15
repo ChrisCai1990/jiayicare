@@ -35,6 +35,10 @@ async function start(order, plannerId, formData = {}) {
   if (existing) throw Object.assign(new Error('该订单已进入代配药流程'), { status: 409 });
   const task = await createStage(order, 'intake', plannerId, null, formData);
   await FollowUp.updateMany({ sourceType: 'order', sourceOrderId: order._id, _id: { $ne: task._id }, workflowKey: { $in: ['', null] }, status: { $in: ['planned', 'in_progress'] } }, { $set: { status: 'cancelled', cancelReason: '已进入代配药分阶段流程' } });
+  await Order.updateOne({ _id: order._id }, { $set: {
+    supervisorId: plannerId, currentStage: 'intake', currentAssignee: plannerId,
+    closureMode: 'automatic', supervisionStatus: 'in_progress',
+  } });
   return task;
 }
 
@@ -111,6 +115,9 @@ async function advance(task) {
       { _id: order._id, status: { $nin: ['completed', 'cancelled'] } },
       { $set: { status: 'completed', completedAt: new Date(), serviceStartedAt: order.serviceStartedAt || task.completedAt || new Date() }, $max: { usedUnits: Math.max(1, Number(order.totalUnits) || 1) } },
     );
+    await Order.updateOne({ _id: order._id }, { $set: {
+      currentStage: 'completed', currentAssignee: null, supervisionStatus: 'completed',
+    } });
     await FollowUp.updateMany(
       { sourceType: 'order', sourceOrderId: order._id, status: { $in: ['planned', 'in_progress', 'missed'] } },
       { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff' } },
@@ -133,6 +140,9 @@ async function advance(task) {
     { $set: { status: 'in_progress', content: `当前进度：${progressLabels[next] || next}`, 'formData.currentStage': next, 'formData.intakeSnapshot': intakeSnapshot } },
   );
   await createStage(order, next, assignee, task, { ...intakeSnapshot, intakeSnapshot, ...(['advisor', 'review'].includes(stage) ? { department: data.department, expert: data.expert, expertRequired: data.expertRequired, advisorAssessment: data.assessment || data.advisorAssessment } : {}), ...(stage === 'booking' ? { bookingSnapshot: data } : {}) });
+  await Order.updateOne({ _id: order._id }, { $set: {
+    currentStage: next, currentAssignee: assignee, supervisionStatus: 'in_progress',
+  } });
 }
 
 module.exports = { isMedicationProxyOrder, stageOf, start, validate, advance };

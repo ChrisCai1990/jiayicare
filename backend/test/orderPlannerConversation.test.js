@@ -2,8 +2,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const Message = require('../src/models/Message');
 const Order = require('../src/models/Order');
-const { buildOrderPlannerPrompt, latestOpenOrderConversationAction } = require('../src/utils/orderPlannerConversation');
+const { customerOrderNote, extractExplicitServiceTime, buildOrderPlannerPrompt, latestOpenOrderConversationAction } = require('../src/utils/orderPlannerConversation');
 
+test('planner prompt keeps customer requirements and removes settlement metadata', () => {
+  assert.equal(customerOrderNote('规格：基础版；周五上午；健康基金抵扣¥25；支付方式：wechat_pay'), '规格：基础版；周五上午');
+  assert.equal(extractExplicitServiceTime('希望周五上午安排'), '周五');
+});
 test('non-booking mall orders receive the standard planner message after payment', () => {
   const content = buildOrderPlannerPrompt({
     paymentStatus: 'paid', tradeStatus: 'paid', refundStatus: 'none',

@@ -66,6 +66,16 @@ const orderSchema = new mongoose.Schema({
   },
   medicalProxyPlan: { type: mongoose.Schema.Types.Mixed, default: null },
 
+  // 服务编排归属：发起来源、总督办与当前执行人相互独立。
+  // supervisorId 在订单全生命周期保持为健康规划师；专业环节只更新 currentAssignee 或子任务 assignedTo。
+  initiationSource: { type: String, enum: ['customer', 'staff', 'admin', 'system'], default: 'customer', index: true },
+  initiatedByStaff: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  supervisorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null, index: true },
+  currentStage: { type: String, default: 'intake' },
+  currentAssignee: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  closureMode: { type: String, enum: ['automatic', 'planner_review'], default: 'planner_review' },
+  supervisionStatus: { type: String, enum: ['pending_intake', 'in_progress', 'needs_attention', 'pending_closure', 'completed', 'cancelled'], default: 'pending_intake' },
+
   // ── 真实支付核算（本阶段先支持人工标记已支付，暂不接支付网关，见 backend/CLAUDE.md 待办）──
   paymentMethod: { type: String, enum: ['wechat', 'alipay', 'onsite', 'healthFund', ''], default: '' }, // 微信/支付宝/到店/健康基金抵扣
   paymentStatus: { type: String, enum: ['unpaid', 'pending', 'paid', 'failed', 'refunded'], default: 'unpaid' },

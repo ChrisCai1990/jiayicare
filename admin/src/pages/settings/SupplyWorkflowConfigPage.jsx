@@ -36,6 +36,7 @@ const normalizeModules = w => {
 }
 const normalizedWorkflow = w => ({
   key: w?.key || '',
+  closureMode: w?.closureMode === 'automatic' ? 'automatic' : 'planner_review',
   questionnaireId: String(typeof w?.questionnaireId === 'object' ? w.questionnaireId?._id || '' : w?.questionnaireId || ''),
   followUpPlanIds: w?.key === 'medical_proxy' ? [] : normalizeModules(w).map(item => item.planId),
   modules: w?.key === 'medical_proxy' ? [] : normalizeModules(w),
@@ -95,7 +96,7 @@ export default function SupplyWorkflowConfigPage() {
   const visibleProducts = useMemo(() => products.filter(p => !search || `${p.name} ${p.category}`.toLowerCase().includes(search.toLowerCase())), [products, search])
   const totalPages = Math.max(1, Math.ceil(visibleProducts.length / pageSize))
   const pagedProducts = visibleProducts.slice((Math.min(page, totalPages) - 1) * pageSize, Math.min(page, totalPages) * pageSize)
-  const patchProduct = (id, patch, markDirty = true) => { const current = products.find(p => p._id === id); const nextWorkflow = { key: '', followUpPlanId: null, followUpPlanIds: [], notes: '', ...(current?.serviceWorkflow || {}), ...patch }; setProducts(prev => prev.map(p => p._id === id ? { ...p, serviceWorkflow: nextWorkflow } : p)); if (markDirty) { setDirtyIds(prev => prev.includes(id) ? prev : [...prev, id]); setSavedIds(prev => prev.filter(v => v !== id)); setFailedIds(prev => prev.filter(v => v !== id)); clearTimeout(autoSaveTimers.current[id]); autoSaveTimers.current[id] = setTimeout(() => autoSaveWorkflow(id, nextWorkflow), 700) } }
+  const patchProduct = (id, patch, markDirty = true) => { const current = products.find(p => p._id === id); const nextWorkflow = { key: '', followUpPlanId: null, followUpPlanIds: [], closureMode: 'planner_review', notes: '', ...(current?.serviceWorkflow || {}), ...patch }; setProducts(prev => prev.map(p => p._id === id ? { ...p, serviceWorkflow: nextWorkflow } : p)); if (markDirty) { setDirtyIds(prev => prev.includes(id) ? prev : [...prev, id]); setSavedIds(prev => prev.filter(v => v !== id)); setFailedIds(prev => prev.filter(v => v !== id)); clearTimeout(autoSaveTimers.current[id]); autoSaveTimers.current[id] = setTimeout(() => autoSaveWorkflow(id, nextWorkflow), 700) } }
   const workflowPayload = product => normalizedWorkflow(product.serviceWorkflow)
   const clearDraft = id => { let drafts = {}; try { drafts = JSON.parse(localStorage.getItem(DRAFT_KEY) || '{}') } catch {} delete drafts[id]; localStorage.setItem(DRAFT_KEY, JSON.stringify(drafts)) }
   const autoSaveWorkflow = async (id, workflow) => { setSavingProduct(id); try { const r = await adminAPI.updateProductServiceWorkflow(id, normalizedWorkflow(workflow)); setProducts(prev => prev.map(p => p._id === id ? { ...p, serviceWorkflow: r.data } : p)); clearDraft(id); setDirtyIds(prev => prev.filter(v => v !== id)); setFailedIds(prev => prev.filter(v => v !== id)); setSavedIds(prev => prev.includes(id) ? prev : [...prev, id]); setTimeout(() => setSavedIds(prev => prev.filter(v => v !== id)), 1800) } catch (e) { setFailedIds(prev => prev.includes(id) ? prev : [...prev, id]); toast(`自动保存失败：${e.message}`) } finally { setSavingProduct(current => current === id ? '' : current) } }

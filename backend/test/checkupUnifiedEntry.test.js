@@ -31,6 +31,9 @@ test('staff and order entries converge on one checkup service instance', () => {
   assert.match(helper, /sourceType: 'staff_initiated'/)
   assert.match(helper, /serviceWorkflowSnapshot: workflowSnapshot/)
   assert.match(flow, /findCheckupServicePlan\(patientId, serviceInstanceId\)/)
+  assert.match(helper, /resolveServiceSupervisor\(patient\)/)
+  assert.match(helper, /workflowKey: 'service:intake'/)
+  assert.match(helper, /taskRole: 'supervisor'/)
 })
 
 test('staff-initiated service copies the published Admin module snapshot', () => {

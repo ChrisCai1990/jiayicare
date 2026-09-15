@@ -86,6 +86,7 @@ const productSchema = new mongoose.Schema({
       sequence: { type: Number, min: 0, default: 0 },
       _id: false,
     }],
+    closureMode: { type: String, enum: ['automatic', 'planner_review'], default: 'planner_review' },
     notes: { type: String, default: '', trim: true },
   },
 }, { timestamps: true });

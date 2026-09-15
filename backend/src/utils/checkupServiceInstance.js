@@ -2,6 +2,8 @@ const HealthPlan = require('../models/HealthPlan')
 const Product = require('../models/Product')
 const PushRecord = require('../models/PushRecord')
 const { DynamicQuestionnaire } = require('../models/DynamicQuestionnaire')
+const FollowUp = require('../models/FollowUp')
+const { resolveServiceSupervisor, serviceInstanceOwnershipFields } = require('./serviceOwnership')
 
 const CHECKUP_WORKFLOW_KEY = 'checkup'
 
@@ -48,6 +50,12 @@ async function ensureStaffInitiatedCheckupService({ patient, staff, productId, d
     throw error
   }
   const { product, modules } = resolved
+  const supervisorId = await resolveServiceSupervisor(patient)
+  if (!supervisorId) {
+    const error = new Error('客户尚未绑定可用的健康规划师，不能发起服务')
+    error.statusCode = 409
+    throw error
+  }
   const workflowSnapshot = {
     ...(product.serviceWorkflow || {}),
     modules: modules.map(item => ({ planId: item.id, mode: item.mode, trigger: item.trigger, sequence: item.sequence })),
@@ -81,12 +89,31 @@ async function ensureStaffInitiatedCheckupService({ patient, staff, productId, d
       workflowModuleDecisions: modules.filter(item => item.mode === 'conditional')
         .map(item => ({ ...item, decision: 'pending', decidedAt: null, decidedBy: null })),
       reviewerId: patient.assignedFamilyDoctor || (staff.role === 'familyDoctor' ? staff._id : null),
-      bookingPlannerId: patient.assignedHealthPlanner || null,
+      bookingPlannerId: supervisorId,
       escortStaffId: patient.assignedMedicalAssistant || null,
       notes: product.serviceWorkflow?.notes || '',
     },
+    ...serviceInstanceOwnershipFields({
+      supervisorId,
+      initiatedByStaff: staff._id,
+      closureMode: product.serviceWorkflow?.closureMode,
+    }),
     status: 'draft',
   })
+  await FollowUp.findOneAndUpdate(
+    { sourceType: 'health_plan', sourceHealthPlanId: servicePlan._id, workflowKey: 'service:intake', taskRole: 'supervisor' },
+    { $setOnInsert: {
+      patientId: patient._id, staffId: supervisorId, assignedTo: supervisorId,
+      type: 'other', status: 'planned', date: new Date(), remindAt: new Date(),
+      theme: `服务收单：${product.name}`,
+      content: `${staff.name || '医护人员'}已发起服务，已有信息已预填，请健康规划师核对后推进。`,
+      plannedContent: '核对发起信息、客户需求与服务边界；专业判断交由相应岗位子任务处理。',
+      sourceType: 'health_plan', sourceHealthPlanId: servicePlan._id,
+      coordinationGroupId: `service:${servicePlan._id}`, workflowKey: 'service:intake', taskRole: 'supervisor',
+      formData: { currentStage: 'intake', initiationSource: 'staff', initiatedByName: staff.name || '' },
+    } },
+    { upsert: true, new: true },
+  )
   const questionnaireId = product.serviceWorkflow?.questionnaireId
   if (questionnaireId) {
     try {

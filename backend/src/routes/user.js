@@ -18,7 +18,7 @@ function parseBloodType(str) {
 }
 const auth = require('../middleware/auth');
 const Admin = require('../models/Admin');
-const { resolveHealthPlanner } = require('../utils/healthPlannerAssignment');
+const { resolveOrderWorkflowAssignee, orderOwnershipFields } = require('../utils/serviceOwnership');
 const User = require('../models/User');
 const Enterprise = require('../models/Enterprise');
 const UserChangeLog = require('../models/UserChangeLog');
@@ -51,24 +51,6 @@ const { reverseFamilyRelation, synchronizeFamilyGroup } = require('../utils/fami
 const { isActiveToday } = require('./reminders');
 const router = express.Router();
 const wechatPay = require('../utils/wechatPay');
-
-// Keep pushed-product checkout aligned with the normal storefront checkout:
-// inpatient service starts with the assigned advisor; all other products are
-// supervised by the patient's health planner.
-async function resolveOrderWorkflowAssignee(userId, serviceName = '') {
-  if (/住院一站式/.test(serviceName)) {
-    const patient = await User.findById(userId).select('assignedFamilyDoctor').lean();
-    if (patient?.assignedFamilyDoctor) {
-      const activeAdvisor = await Admin.exists({
-        _id: patient.assignedFamilyDoctor,
-        role: 'familyDoctor',
-        staffStatus: 'active',
-      });
-      if (activeAdvisor) return patient.assignedFamilyDoctor;
-    }
-  }
-  return resolveHealthPlanner(userId);
-}
 
 async function applyOnboardingRewards(user, inviteCode, pendingInviterId) {
   const cfgRow = await SystemConfig.findOne({ key: 'healthFundPolicy' }).lean();
@@ -1407,6 +1389,10 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
       if (!assignee) return res.status(409).json({ success: false, message: '当前没有可用的服务负责人，请联系平台处理后再购买' });
       orderAssignees.push(assignee);
     }
+    orderDocs.forEach((orderDoc, index) => Object.assign(orderDoc, orderOwnershipFields({
+      supervisorId: orderAssignees[index],
+      initiationSource: 'customer',
+    })));
     const product = await Product.findOne({ _id: toPay[0].productId, status: 'on' });
     if (!product) return res.status(409).json({ success: false, message: '该服务已下架或发生调整，请联系健康规划师重新推荐' });
     if (finalPrice > 0 && paymentMethod !== 'wechat') return res.status(400).json({ success: false, message: '该服务须使用微信小程序支付' });
@@ -1478,7 +1464,6 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
         return res.status(503).json({ success: false, message: `微信支付下单失败：${error.message}`, data: { orderId: orders[0]._id } });
       }
     }
-
     // 下单后需要人工跟进的待办：与 services.js 的 /order 普通下单同一套逻辑——
     // 此前这里完全没生成 FollowUp，导致推送购买的订单不会出现在健康规划师/健管专员工作台
     // （2026-07-13 反馈：员工推送给客户、客户付费后，订单没有在工作台展示）。

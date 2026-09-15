@@ -2150,6 +2150,7 @@ router.patch('/products/:id/service-workflow', adminAuth, async (req, res) => {
   if ((/医疗代诊/.test(workflowProduct.name) && key !== 'medical_proxy') || (key === 'medical_proxy' && !/医疗代诊/.test(workflowProduct.name))) {
     return res.status(400).json({ success: false, message: '医疗代诊商品必须使用专属医疗代诊流程' });
   }
+  const closureMode = ['automatic', 'planner_review'].includes(req.body?.closureMode) ? req.body.closureMode : 'planner_review';
   const questionnaireId = key === 'checkup' ? (req.body?.questionnaireId || null) : null;
   if (questionnaireId && !mongoose.Types.ObjectId.isValid(questionnaireId)) return res.status(400).json({ success: false, message: '问卷参数无效' });
   if (questionnaireId && !await DynamicQuestionnaire.exists({ _id: questionnaireId, status: 'active', deletedAt: null })) {
@@ -2182,7 +2183,7 @@ router.patch('/products/:id/service-workflow', adminAuth, async (req, res) => {
     return res.status(400).json({ success: false, message: '流程模块关联的随访方案不存在或已停用' });
   }
   const product = await Product.findByIdAndUpdate(req.params.id, { $set: { serviceWorkflow: {
-    key, questionnaireId, followUpPlanId: modulePlanIds[0] || null, followUpPlanIds: modulePlanIds, modules, notes: String(req.body?.notes || '').trim().slice(0, 500),
+    key, questionnaireId, followUpPlanId: modulePlanIds[0] || null, followUpPlanIds: modulePlanIds, modules, closureMode, notes: String(req.body?.notes || '').trim().slice(0, 500),
   } } }, { new: true, runValidators: true });
   if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
   res.json({ success: true, data: product.serviceWorkflow, message: '产品服务流程已关联' });

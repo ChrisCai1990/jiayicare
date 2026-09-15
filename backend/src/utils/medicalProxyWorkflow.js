@@ -280,6 +280,10 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceT
     { sourceType: 'order', sourceOrderId: order._id, _id: { $nin: [task._id, supervisor._id] }, workflowKey: { $in: ['', null] }, status: { $in: ['planned', 'in_progress'] } },
     { $set: { status: 'cancelled', cancelReason: '医疗代诊已进入分阶段服务流程' } },
   );
+  await Order.updateOne({ _id: order._id }, { $set: {
+    supervisorId: plannerId, currentStage: 'collect', currentAssignee: plannerId,
+    closureMode: 'automatic', supervisionStatus: 'in_progress',
+  } });
   return task;
 }
 
@@ -539,6 +543,9 @@ async function advanceMedicalProxyWorkflow(task) {
       } }, { upsert: true, new: true, setDefaultsOnInsert: true },
     );
     await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise` }, { $set: { 'formData.currentStage': 'advisor' } });
+    await Order.updateOne({ _id: order._id }, { $set: {
+      currentStage: 'advisor', currentAssignee: patient?.assignedFamilyDoctor, supervisionStatus: 'in_progress',
+    } });
     return;
   }
   if (index === STAGES.length - 1) {
@@ -555,6 +562,9 @@ async function advanceMedicalProxyWorkflow(task) {
       { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } },
       { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', content: '就医专员已完成代诊，健康规划师全程督办闭环。', 'formData.currentStage': 'completed' } },
     );
+    await Order.updateOne({ _id: order._id }, { $set: {
+      currentStage: 'completed', currentAssignee: null, supervisionStatus: 'completed',
+    } });
     return;
   }
   const next = stage === 'advisor' && task.formData?.initiationSource === STAFF_DIRECT_SOURCE ? 'booking' : STAGES[index + 1];
@@ -601,6 +611,9 @@ async function advanceMedicalProxyWorkflow(task) {
     { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } },
     { $set: { 'formData.currentStage': next, content: `当前环节：${labels[next]}` } },
   );
+  await Order.updateOne({ _id: order._id }, { $set: {
+    currentStage: next, currentAssignee: assignee, supervisionStatus: 'in_progress',
+  } });
 }
 
 module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, upsertMedicalProxyServiceRecord, validateMedicalProxyStage, advanceMedicalProxyWorkflow };

@@ -25,15 +25,18 @@ async function reconcileInactiveOrderWorkItems(patientId = null) {
   // 订单仍有效时补建一次；已有完成/取消记录也算有历史，不自动重开，避免重复服务。
   const orderFilter = { ...activeOrderWorkItemQuery() };
   if (patientId) orderFilter.user = patientId;
-  const activeOrders = await Order.find(orderFilter).select('_id user serviceName note').lean();
+  const activeOrders = await Order.find(orderFilter).select('_id user serviceName note supervisorId').lean();
   if (activeOrders.length) {
     const existingIds = await FollowUp.find({ sourceType: 'order', sourceOrderId: { $in: activeOrders.map(order => order._id) } }).distinct('sourceOrderId');
     const existingSet = new Set(existingIds.map(String));
     const { resolveHealthPlanner } = require('./healthPlannerAssignment');
     for (const order of activeOrders) {
       if (existingSet.has(String(order._id))) continue;
-      const plannerId = await resolveHealthPlanner(order.user);
+      const plannerId = order.supervisorId || await resolveHealthPlanner(order.user);
       if (!plannerId) continue;
+      if (!order.supervisorId) await Order.updateOne({ _id: order._id, supervisorId: null }, { $set: {
+        supervisorId: plannerId, currentAssignee: plannerId, currentStage: 'intake', supervisionStatus: 'pending_intake',
+      } });
       await FollowUp.create({
         staffId: plannerId,
         assignedTo: plannerId,
