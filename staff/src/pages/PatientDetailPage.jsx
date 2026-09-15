@@ -13853,7 +13853,6 @@ function AttachedHealthInfoView({ info }) {
 // 2026-07-13：三类方案都是"AI只在模板骨架基础上定制"，不该让AI自由发明。此前AI一点即生成，
 // 完全跳过模板；改为先弹出模板选择，选定后才真正调用AI生成，模板骨架部分由后端原样锁定。
 function SelectTemplateAndGenerateModal({ planType, title, patientId, initialBriefNote = '', onClose, onGenerate }) {
-  const { staff } = useStaff()
   const toast = useToast()
   const [templates, setTemplates] = useState([])
   const [loading, setLoading] = useState(true)
@@ -13880,7 +13879,7 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, initialBri
       planType === 'annual_checkup' ? staffAPI.getWorkflowProducts('checkup') : Promise.resolve({ data: [] }),
     ])
       .then(([res, productRes]) => {
-        setTemplates((res.data || []).filter(tpl => planType !== 'medical_assist' || (!/医疗代诊/.test(tpl.name || '') && (staff?.role !== 'familyDoctor' || /住院一站式/.test(tpl.name || '')))))
+        setTemplates(res.data || [])
         const products = productRes.data || []
         setWorkflowProducts(products)
         if (products.length === 1) setSelectedProductId(products[0]._id)
