@@ -57,12 +57,9 @@ export default function PlansPage() {
   // 弹窗
   const [showModal, setShowModal]               = useState(false)
   const [showCheckupModal, setShowCheckupModal] = useState(false)
+  const [showMedicalModal, setShowMedicalModal] = useState(false)
   const [showNutritionModal, setShowNutritionModal] = useState(false)
   const [showAhModal, setShowAhModal]           = useState(false)
-  const [showServiceLauncher, setShowServiceLauncher] = useState(false)
-  const [showEscortModal, setShowEscortModal] = useState(false)
-  const [launchPatientId, setLaunchPatientId] = useState('')
-  const [launchPlanType, setLaunchPlanType] = useState('')
 
   const loadPlans = useCallback(async () => {
     setLoading(true)
@@ -114,8 +111,10 @@ export default function PlansPage() {
             className={`btn btn-sm ${typeFilter === opt.v ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setSearchParams(opt.v ? { type: opt.v } : {})}>{opt.l}</button>
         ))}
-        {can('plans', 'create') && ['familyDoctor', 'superadmin'].includes(staff?.role) && (
-          <button className="btn btn-primary btn-sm" onClick={() => setShowServiceLauncher(true)}>＋ 发起服务需求</button>
+        {typeFilter === 'medical_assist' && can('plans', 'create') && ['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && (
+          <button className="btn btn-primary btn-sm" onClick={() => setShowMedicalModal(true)}>
+            ＋ 新增就医协助方案
+          </button>
         )}
         <input
           className="form-control"
@@ -219,85 +218,14 @@ export default function PlansPage() {
                 </tbody>
               </table>}
           </div>
+          {showCheckupModal   && <AnnualCheckupPlanModal onClose={() => setShowCheckupModal(false)}   onSaved={() => { setShowCheckupModal(false);   loadPlans(); toast('体检方案已创建') }} />}
+          {showMedicalModal   && <MedicalAssistPlanModal onClose={() => setShowMedicalModal(false)}   onSaved={() => { setShowMedicalModal(false);   loadPlans(); toast('就医协助方案已创建') }} />}
+          {showNutritionModal && <NutritionPlanModal     onClose={() => setShowNutritionModal(false)} onSaved={() => { setShowNutritionModal(false); loadPlans(); toast('营养干预方案已创建') }} />}
+          {showModal && <NewPlanModal type={typeFilter || 'annual_checkup'} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); loadPlans(); toast('方案已创建') }} />}
         </>
       )}
-      {showServiceLauncher && <ServiceLaunchModal onClose={() => setShowServiceLauncher(false)} onSelect={(patientId, type) => {
-        setShowServiceLauncher(false); setLaunchPatientId(patientId); setLaunchPlanType(type)
-        if (type === 'annual_mgmt') nav(`/patients/${patientId}/annual-health`)
-        else if (type === 'annual_checkup') setShowCheckupModal(true)
-        else if (type === 'nutrition') setShowNutritionModal(true)
-        else if (type === 'medical_escort') setShowEscortModal(true)
-        else setShowModal(true)
-      }} />}
-      {showEscortModal && <MedicalEscortRequestModal patientId={launchPatientId} onClose={() => setShowEscortModal(false)} onSaved={() => { setShowEscortModal(false); loadPlans(); toast('就医陪同需求已提交给健康规划师') }} />}
-      {showCheckupModal && <AnnualCheckupPlanModal initialPatientId={launchPatientId} onClose={() => setShowCheckupModal(false)} onSaved={() => { setShowCheckupModal(false); loadPlans(); toast('体检方案已创建') }} />}
-      {showNutritionModal && <NutritionPlanModal initialPatientId={launchPatientId} onClose={() => setShowNutritionModal(false)} onSaved={() => { setShowNutritionModal(false); loadPlans(); toast('营养干预方案已创建') }} />}
-      {showModal && <NewPlanModal initialPatientId={launchPatientId} type={launchPlanType || typeFilter || 'annual_checkup'} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); loadPlans(); toast('方案已创建') }} />}
     </div>
   )
-}
-
-const LAUNCH_SERVICE_TYPES = [
-  { value: 'annual_checkup', label: '年度体检', description: '发起体检方案与后续服务' },
-  { value: 'annual_mgmt', label: '年度健康管理', description: '进入会员年度管理方案' },
-  { value: 'nutrition', label: '营养干预', description: '发起营养干预方案' },
-  { value: 'medical_escort', label: '就医陪同', description: '陪同检查、体检、看诊或治疗' },
-  { value: 'tcm', label: '中医调理', description: '发起中医调理服务' },
-  { value: 'rehab', label: '运动复健', description: '发起运动复健服务' },
-  { value: 'psychology', label: '心理咨询', description: '发起心理咨询服务' },
-]
-
-function ServiceLaunchModal({ onClose, onSelect }) {
-  const [patientId, setPatientId] = useState('')
-  const [serviceType, setServiceType] = useState('')
-  const [error, setError] = useState('')
-  const submit = () => {
-    if (!patientId) { setError('请先选择会员'); return }
-    if (!serviceType) { setError('请选择服务类型'); return }
-    onSelect(patientId, serviceType)
-  }
-  return <div className="modal-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
-    <div className="modal" style={{ maxWidth: 720 }}>
-      <div className="modal-header"><h3 className="modal-title">发起服务需求</h3><button className="modal-close" onClick={onClose}>✕</button></div>
-      {error && <div className="login-err" style={{ margin: '0 20px 8px' }}>⚠️ {error}</div>}
-      <div className="modal-body" style={{ display: 'grid', gap: 16 }}>
-        <label className="form-group"><span className="form-label">1. 选择会员 *</span><PatientSearchInput value={patientId} onChange={value => { setPatientId(value); setError('') }} /></label>
-        <div className="form-group">
-          <div className="form-label">2. 选择服务类型 *</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
-            {LAUNCH_SERVICE_TYPES.map(item => <button key={item.value} type="button" onClick={() => { setServiceType(item.value); setError('') }} style={{ textAlign: 'left', padding: '12px 14px', border: serviceType === item.value ? '1.5px solid #1E6B50' : '1px solid #E0D9CE', borderRadius: 10, background: serviceType === item.value ? '#EFF8F4' : '#fff', cursor: 'pointer' }}><div style={{ fontWeight: 700, color: '#1A2B24' }}>{item.label}</div><div style={{ marginTop: 3, fontSize: 12, color: '#65776F' }}>{item.description}</div></button>)}
-          </div>
-        </div>
-      </div>
-      <div className="modal-footer"><button className="btn btn-secondary" onClick={onClose}>取消</button><button className="btn btn-primary" onClick={submit}>下一步</button></div>
-    </div>
-  </div>
-}
-
-function MedicalEscortRequestModal({ patientId, onClose, onSaved }) {
-  const [assistants, setAssistants] = useState([])
-  const [form, setForm] = useState({ escortCategory: 'consultation', escortDate: '', escortTime: '', hospital: '', department: '', escortGoal: '', notes: '', medicalAssistantId: '' })
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const set = (key, value) => setForm(current => ({ ...current, [key]: value }))
-  useEffect(() => { staffAPI.getStaffList({ roles: 'medicalAssistant' }).then(res => setAssistants((res.data || []).filter(item => item.staffStatus !== 'inactive'))).catch(() => setAssistants([])) }, [])
-  const submit = async () => {
-    if (!form.escortDate || !form.escortTime || !form.hospital.trim() || !form.department.trim() || !form.escortGoal.trim()) { setError('请完整填写陪同日期、具体时间、医院、科室和陪同目标'); return }
-    setSaving(true); setError('')
-    try { await staffAPI.startStaffMedicalProxy(patientId, { ...form, hospital: form.hospital.trim(), department: form.department.trim(), escortGoal: form.escortGoal.trim(), notes: form.notes.trim(), medicalEscort: true }); await onSaved() }
-    catch (err) { setError(err.message || '发起就医陪同需求失败') }
-    finally { setSaving(false) }
-  }
-  return <div className="modal-overlay" onClick={event => event.target === event.currentTarget && onClose()}><div className="modal" style={{ maxWidth: 650 }}>
-    <div className="modal-header"><h3 className="modal-title">填写就医陪同需求</h3><button className="modal-close" onClick={onClose}>✕</button></div>
-    {error && <div className="login-err" style={{ margin: '0 20px 8px' }}>⚠️ {error}</div>}
-    <div className="modal-body" style={{ display: 'grid', gap: 14 }}><div style={{ padding: 12, borderRadius: 9, background: '#EFF8F4', color: '#1E6B50', fontSize: 13 }}>提交后进入健康规划师工作台，健康顾问全程查看进度。</div><div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-      <label className="form-group"><span className="form-label">陪同类目 *</span><select className="form-input" value={form.escortCategory} onChange={e => set('escortCategory', e.target.value)}><option value="exam">陪同检查</option><option value="checkup">陪同体检</option><option value="consultation">陪同看诊</option><option value="treatment">陪同治疗</option></select></label>
-      <label className="form-group"><span className="form-label">就医专员（可选）</span><select className="form-input" value={form.medicalAssistantId} onChange={e => set('medicalAssistantId', e.target.value)}><option value="">由健康规划师安排</option>{assistants.map(item => <option key={item._id} value={item._id}>{item.name}{item.title ? ` · ${item.title}` : ''}</option>)}</select></label>
-      <label className="form-group"><span className="form-label">陪同日期 *</span><input className="form-input" type="date" value={form.escortDate} onChange={e => set('escortDate', e.target.value)} /></label><label className="form-group"><span className="form-label">具体时间 *</span><input className="form-input" type="time" value={form.escortTime} onChange={e => set('escortTime', e.target.value)} /></label><label className="form-group"><span className="form-label">陪同医院 *</span><input className="form-input" value={form.hospital} onChange={e => set('hospital', e.target.value)} /></label><label className="form-group"><span className="form-label">科室 *</span><input className="form-input" value={form.department} onChange={e => set('department', e.target.value)} /></label>
-    </div><label className="form-group"><span className="form-label">陪同目标 *</span><textarea className="form-input" rows={3} value={form.escortGoal} onChange={e => set('escortGoal', e.target.value)} /></label><label className="form-group"><span className="form-label">备注</span><textarea className="form-input" rows={3} value={form.notes} onChange={e => set('notes', e.target.value)} /></label></div>
-    <div className="modal-footer"><button className="btn btn-secondary" onClick={onClose}>取消</button><button className="btn btn-primary" disabled={saving} onClick={submit}>{saving ? '提交中…' : '提交给健康规划师'}</button></div>
-  </div></div>
 }
 
 // ── 新建年度健康管理：选择会员弹窗 ────────────────────────────────────────
@@ -651,6 +579,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
   const isMedicalProxy = /医疗代诊/.test(selectedTpl?.name || '')
   const isExpertAppointment = selectedTpl?.content?.assistanceType === 'expert_appointment' || /专家约诊/.test(selectedTpl?.name || '')
   const isMedicationProxy = /代配药|代取药/.test(selectedTpl?.name || '')
+  const isMedicalEscort = /陪同就医|就医陪同/.test(selectedTpl?.name || '')
 
   useEffect(() => {
     if (!patientId || !isMedicationProxy) return
@@ -732,7 +661,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
     const outpatientService = /门诊一站式/.test(`${selectedTpl?.name || ''} ${form.name || ''}`)
     const checkupOneStop = /体检一站式服务/.test(selectedTpl?.name || '')
     if (!patientId) { setError('请搜索并选择会员'); return }
-    if (!form.name.trim()) { setError('请填写方案名称'); return }
+    if (!isMedicalEscort && !form.name.trim()) { setError('请填写方案名称'); return }
     if (!isMedicalProxy && !isExpertAppointment && !form.serviceDate) { setError('请选择服务日期'); return }
     if (isMedicationProxy && (!form.hospital.trim() || !form.department.trim())) { setError('请填写配药医院和科室'); return }
     if (isMedicationProxy && (!form.medicationName.trim() || !form.medicationBrand.trim() || !form.medicationQuantity.trim())) { setError('请确认配备药物名称、品牌和数量'); return }
@@ -742,13 +671,32 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
     if (isMedicalProxy && !selectedReportIds.length) { setError('请从客户既有资料中选择至少一份已审核资料'); return }
     if (checkupOneStop && !workflowProductId) { setError('请选择 Admin 已发布的体检服务流程'); return }
     if (checkupOneStop && !description.trim()) { setError('请填写具体服务需求'); return }
-    if (!isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && !outpatientService && !form.staffId) { setError('请选择就医专员'); return }
-    if (!isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && !form.supervisorId) { setError('请选择督办人'); return }
-    if (!isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !(form.followUpPlans?.length || form.followUpPlanId)) { setError('所选模板尚未关联 Admin 岗位任务方案，请先在 Admin 完成配置'); return }
+    if (isMedicalEscort && (!form.hospital.trim() || !form.campus.trim() || !form.department.trim() || !form.serviceDate || !form.serviceTime.trim() || !form.tasks.trim())) { setError('请完整填写服务日期时间、医院、院区、科室和具体服务事项'); return }
+    if (!isMedicalEscort && !isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && !outpatientService && !form.staffId) { setError('请选择就医专员'); return }
+    if (!isMedicalEscort && !isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && !form.supervisorId) { setError('请选择督办人'); return }
+    if (!isMedicalEscort && !isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !(form.followUpPlans?.length || form.followUpPlanId)) { setError('所选模板尚未关联 Admin 岗位任务方案，请先在 Admin 完成配置'); return }
     setError(''); setSaving(true)
     try {
       if (isMedicalProxy || isExpertAppointment || isMedicationProxy) {
         await staffAPI.startStaffMedicalProxy(patientId, { hospital: form.hospital.trim(), campus: form.campus.trim(), department: form.department.trim(), expert: form.expert.trim(), clinicType: form.clinicType, insuranceUse: form.insuranceUse, insurerName: form.insurerName.trim(), settlementMethod: form.settlementMethod, proxyGoal: form.proxyGoal?.trim() || '', communicationContent: form.communicationContent?.trim() || '', selectedReportIds, appointmentOnly: isExpertAppointment, medicationProxy: isMedicationProxy, medicationName: form.medicationName.trim(), medicationBrand: form.medicationBrand.trim(), medicationQuantity: form.medicationQuantity.trim(), preferredDateStart: isMedicationProxy ? form.serviceDate : form.preferredDateStart, preferredDateEnd: isMedicationProxy ? form.serviceDate : form.preferredDateEnd, serviceTime: form.serviceTime, notes: form.notes })
+        onSaved()
+        return
+      }
+      if (isMedicalEscort) {
+        await staffAPI.startStaffMedicalProxy(patientId, {
+          medicalEscort: true,
+          escortCategory: 'consultation',
+          escortDate: form.serviceDate,
+          escortTime: form.serviceTime.trim(),
+          hospital: form.hospital.trim(),
+          campus: form.campus.trim(),
+          department: form.department.trim(),
+          escortGoal: form.tasks.trim(),
+          medicalAssistantId: form.staffId || '',
+          transport: form.transport.trim(),
+          hotel: form.hotel.trim(),
+          notes: form.notes.trim(),
+        })
         onSaved()
         return
       }
@@ -860,7 +808,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ maxWidth: 600, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
         <div className="modal-header">
-          <h3 className="modal-title">新建就医协助方案</h3>
+          <h3 className="modal-title">{isMedicalEscort ? '发起陪同就医服务' : '新建就医协助方案'}</h3>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         {error && <div className="login-err" style={{ margin: '0 20px 8px' }}>⚠️ {error}</div>}
@@ -892,7 +840,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
           </div>
 
           {/* 方案名称 */}
-          {renderField('方案名称 *', 'name', 0, '就医协助方案名称')}
+          {!isMedicalEscort && renderField('方案名称 *', 'name', 0, '就医协助方案名称')}
 
           {checkupOneStop && <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">执行服务流程（来自 Admin） *</label>
@@ -919,12 +867,12 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
                 }}
               >
                 <option value="">请选择就医专员</option>
-                {medicalAssistants.map(s => (
+                {medicalAssistants.filter(s => !isMedicalEscort || s.role === 'medicalAssistant').map(s => (
                   <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>
                 ))}
               </select>
             </div>}
-            {!isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && <div className="form-group" style={{ marginBottom: 0 }}>
+            {!isMedicalEscort && !isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">督办人 *</label>
               <select className="form-input" value={form.supervisorId || ''} onChange={e => set('supervisorId', e.target.value)}>
                 <option value="">请选择健管专员/家庭医生</option>
@@ -978,17 +926,18 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
           {!isMedicalProxy && !isExpertAppointment && !checkupOneStop && renderField('备注',         'notes', 2, '其他注意事项')}
 
           {/* 方案说明 */}
-          {!isMedicationProxy && !isMedicalProxy && !isExpertAppointment && <div className="form-group" style={{ marginBottom: 0 }}>
+          {!isMedicalEscort && !isMedicationProxy && !isMedicalProxy && !isExpertAppointment && <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">{checkupOneStop ? '具体服务需求 *' : '方案说明'}</label>
             <textarea className="form-input" rows={3} placeholder={checkupOneStop ? '请填写服务地点、时间段、体检目标及具体需求' : '简要说明方案目标'} value={description} onChange={e => setDescription(e.target.value)} />
           </div>}
+          {isMedicalEscort && <div style={{ padding: 10, borderRadius: 8, background: '#EFF8F4', color: '#1E6B50', fontSize: 13 }}>健康规划师自动作为督办人。已选择就医专员时直接转健管专员预约；未选择时先由健康规划师安排人员，再转健管专员预约。此操作只创建陪同服务工单，不生成就医协助方案。</div>}
 
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={() => setStep(1)}>← 重新选模板</button>
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
           <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
-            {saving ? '创建中...' : isMedicationProxy ? '确认药物并转健管预约' : isMedicalProxy || isExpertAppointment ? '确认方案并转健管预约' : checkupOneStop ? '生成体检一站式方案' : '创建就医协助方案'}
+            {saving ? '创建中...' : isMedicalEscort ? '发起陪同就医服务' : isMedicationProxy ? '确认药物并转健管预约' : isMedicalProxy || isExpertAppointment ? '确认方案并转健管预约' : checkupOneStop ? '生成体检一站式方案' : '创建就医协助方案'}
           </button>
         </div>
       </div>
@@ -1014,7 +963,7 @@ const NUTRITION_INIT = {
   allowedFoods: '', forbiddenFoods: '',
 }
 
-function NutritionPlanModal({ onClose, onSaved, initialPatientId = '' }) {
+function NutritionPlanModal({ onClose, onSaved }) {
   const [step, setStep]               = useState(1)
   const [templates, setTemplates]     = useState([])
   const [loadingTpls, setLoadingTpls] = useState(true)
@@ -1023,7 +972,7 @@ function NutritionPlanModal({ onClose, onSaved, initialPatientId = '' }) {
   const [form, setForm]               = useState(NUTRITION_INIT)
   const set                           = (k, v) => setForm(p => ({ ...p, [k]: v }))
   const [planTitle, setPlanTitle]     = useState('')
-  const [patientId, setPatientId]     = useState(initialPatientId)
+  const [patientId, setPatientId]     = useState('')
   const [year, setYear]               = useState(new Date().getFullYear())
   const [description, setDescription] = useState('')
   const [saving, setSaving]           = useState(false)
@@ -1480,7 +1429,7 @@ function AnnualMgmtPlanModal({ onClose, onSaved }) {
 }
 
 // ── 年度体检方案：两步创建弹窗 ────────────────────────────────────────
-function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '' }) {
+function AnnualCheckupPlanModal({ onClose, onSaved }) {
   const [step, setStep] = useState(1)
   const [templates, setTemplates] = useState([])
   const [loadingTpls, setLoadingTpls] = useState(true)
@@ -1488,7 +1437,7 @@ function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '' }) {
   const [selectedTpl, setSelectedTpl] = useState(null)
 
   // 表单字段
-  const [patientId, setPatientId] = useState(initialPatientId)
+  const [patientId, setPatientId] = useState('')
   const [packageName, setPackageName] = useState('')
   const [packageDesc, setPackageDesc] = useState('')
   const [checkItems, setCheckItems] = useState([])   // { type, id, name }
@@ -1876,8 +1825,8 @@ function AddFreeItem({ onAdd }) {
   )
 }
 
-function NewPlanModal({ onClose, onSaved, type, initialPatientId = '' }) {
-  const [patientId, setPatientId]     = useState(initialPatientId)
+function NewPlanModal({ onClose, onSaved, type }) {
+  const [patientId, setPatientId]     = useState('')
   const [templateId, setTemplateId]   = useState('')
   const [year, setYear]               = useState(new Date().getFullYear())
   const [description, setDescription] = useState('')

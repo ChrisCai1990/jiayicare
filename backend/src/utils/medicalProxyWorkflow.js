@@ -345,19 +345,18 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
       sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, taskRole: 'supervisor',
       theme: `就医陪同：健康规划师全程督办 · ${serviceName}`,
       plannedContent: '健康顾问发起后，由健康规划师持续督办人员分配、陪同执行、资料审核和随访计划确认，直至服务结束。',
-      formData: { currentStage: directlyAssigned ? 'execute' : 'planner', medicalEscort: true, initiationSource: STAFF_DIRECT_SOURCE, assignmentMode: directlyAssigned ? 'automatic' : 'planner', medicalAssistantId: plan.medicalAssistantId || '' },
+      formData: { currentStage: directlyAssigned ? 'booking' : 'planner', medicalEscort: true, initiationSource: STAFF_DIRECT_SOURCE, assignmentMode: directlyAssigned ? 'automatic' : 'planner', medicalAssistantId: plan.medicalAssistantId || '' },
     });
     if (directlyAssigned) {
-      const execute = await FollowUp.create({
-        patientId: patient._id, staffId: advisorId, assignedTo: plan.medicalAssistantId, type: 'other', status: 'planned',
-        date: appointmentAt(plan.escortDate, plan.escortTime), remindAt: appointmentAt(plan.escortDate, plan.escortTime),
-        sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}execute`, taskRole: 'executor',
-        theme: `就医陪同：就医专员执行陪同 · ${serviceName}`,
-        plannedContent: '客户已有有效就医专员，系统已自动直达执行环节；请按计划完成陪同并上传报告、病历等资料。',
-        formData: { planSnapshot: { ...plan, initiationSource: STAFF_DIRECT_SOURCE }, medicalEscort: true, medicalAssistantId: plan.medicalAssistantId, assignmentMode: 'automatic' },
+      const booking = await FollowUp.create({
+        patientId: patient._id, staffId: advisorId, assignedTo: patient.assignedHealthManager, type: 'other', status: 'planned', date, remindAt: new Date(),
+        sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}booking`, taskRole: 'executor',
+        theme: `就医陪同：健管专员完成预约 · ${serviceName}`,
+        plannedContent: '就医专员已确定，请完成预约并记录实际服务日期时间；预约完成后转给该就医专员执行。',
+        formData: { planSnapshot: { ...plan, initiationSource: STAFF_DIRECT_SOURCE }, medicalEscort: true, medicalAssistantId: plan.medicalAssistantId, assignmentMode: 'automatic', preferredDateStart: plan.escortDate, preferredDateEnd: plan.escortDate },
       });
-      await Order.updateOne({ _id: order._id }, { $set: { supervisorId: patient.assignedHealthPlanner, currentStage: 'execute', currentAssignee: plan.medicalAssistantId, closureMode: 'advisor_confirmation', supervisionStatus: 'in_progress' } });
-      return { order, supervisor, execute };
+      await Order.updateOne({ _id: order._id }, { $set: { supervisorId: patient.assignedHealthPlanner, currentStage: 'booking', currentAssignee: patient.assignedHealthManager, closureMode: 'advisor_confirmation', supervisionStatus: 'in_progress' } });
+      return { order, supervisor, booking };
     }
     const planner = await FollowUp.create({
       patientId: patient._id, staffId: advisorId, assignedTo: patient.assignedHealthPlanner, type: 'other', status: 'planned', date, remindAt: new Date(),
@@ -678,7 +677,7 @@ async function advanceMedicalProxyWorkflow(task) {
     } });
     return;
   }
-  const next = task.formData?.medicalEscort === true && stage === 'planner' ? 'execute'
+  const next = task.formData?.medicalEscort === true && stage === 'planner' ? 'booking'
     : medicationProxy && stage === 'booking' ? 'planner'
     : medicationProxy && stage === 'planner' ? 'execute'
       : stage === 'advisor' && task.formData?.initiationSource === STAFF_DIRECT_SOURCE ? 'booking' : STAGES[index + 1];
@@ -688,7 +687,8 @@ async function advanceMedicalProxyWorkflow(task) {
       : next === 'booking' ? patient?.assignedHealthManager
       : task.formData?.medicalAssistantId;
   if (!assignee) throw Object.assign(new Error(`客户尚未分配${next === 'audit' || next === 'booking' ? '健管专员' : next === 'advisor' ? '健康顾问' : next === 'planner' ? '健康规划师' : '就医专员'}，无法流转`), { status: 409 });
-  const labels = { audit: '健管专员审核本次资料', advisor: '健康顾问确认代诊方案', planner: medicationProxy ? '健康规划师安排配药人员' : '审核方案并预指派就医专员', booking: medicationProxy ? '健管专员预约配药门诊' : '健管专员完成专家门诊预约', execute: medicationProxy ? '执行人员完成配药' : '就医专员执行代诊' };
+  const medicalEscort = task.formData?.medicalEscort === true || task.formData?.planSnapshot?.medicalEscort === true;
+  const labels = { audit: '健管专员审核本次资料', advisor: '健康顾问确认代诊方案', planner: medicationProxy ? '健康规划师安排配药人员' : medicalEscort ? '健康规划师安排就医专员' : '审核方案并预指派就医专员', booking: medicationProxy ? '健管专员预约配药门诊' : medicalEscort ? '健管专员完成陪同预约' : '健管专员完成专家门诊预约', execute: medicationProxy ? '执行人员完成配药' : medicalEscort ? '就医专员执行陪同' : '就医专员执行代诊' };
   const bookingNote = stage === 'booking' && task.content !== '医疗代诊专家门诊预约已完成' ? nonempty(task.content) : '';
   const bookedAppointment = task.formData?.bookingSnapshot || order.medicalProxyPlan?.booking || {};
   const nextDate = next === 'execute' && (task.formData?.appointmentDate || bookedAppointment.appointmentDate)
@@ -704,12 +704,12 @@ async function advanceMedicalProxyWorkflow(task) {
         : next === 'advisor'
         ? '查看本次已审核资料及客户诉求，确认医院、科室、专家、代诊目标和与医生交流的具体内容。年度会员由健康顾问选定制定方案所用资料。'
         : next === 'planner' ? (medicationProxy ? '核对健管专员确认的预约信息，并安排实际配药人员。' : '核对健康顾问确认的代诊方案，预指派就医专员。')
-          : next === 'booking' ? '依据健康顾问方案预约专家门诊；记录客户期望日期区间与实际约诊日期时间，超出期望区间时记录沟通确认结果。'
-            : '按健康顾问方案和健管专员确认的预约信息完成代诊，记录医生反馈、医嘱和后续事项。',
+          : next === 'booking' ? (medicalEscort ? '依据健康顾问发起的陪同需求完成预约，记录实际服务日期时间；预约后转给已确定的就医专员。' : '依据健康顾问方案预约专家门诊；记录客户期望日期区间与实际约诊日期时间，超出期望区间时记录沟通确认结果。')
+            : (medicalEscort ? '按健管专员确认的预约信息完成陪同，上传报告、病历并记录服务结果。' : '按健康顾问方案和健管专员确认的预约信息完成代诊，记录医生反馈、医嘱和后续事项。'),
       formData: next === 'audit' ? { collectionSnapshot: task.formData }
         : next === 'advisor' ? { auditSnapshot: task.formData, selectedReportIds: task.formData?.collectionSnapshot?.annualMember ? [] : task.formData?.collectionSnapshot?.reportIds || [] }
           : next === 'planner' ? { planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...task.formData, additionalNote: bookingNote }, medicationProxy }
-            : next === 'booking' ? { planSnapshot: order.medicalProxyPlan, medicalAssistantId: task.formData?.medicalAssistantId, preferredDateStart: dateInput(order.desiredServiceDate || order.scheduledAt), preferredDateEnd: dateInput(order.desiredServiceDateEnd || order.desiredServiceDate || order.scheduledAt) }
+            : next === 'booking' ? { planSnapshot: order.medicalProxyPlan, medicalEscort, medicalAssistantId: task.formData?.medicalAssistantId, preferredDateStart: dateInput(order.desiredServiceDate || order.scheduledAt), preferredDateEnd: dateInput(order.desiredServiceDateEnd || order.desiredServiceDate || order.scheduledAt) }
               : { planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...bookedAppointment, ...task.formData, additionalNote: bookingNote }, medicationProxy, medicalEscort: task.formData?.medicalEscort === true },
     } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
