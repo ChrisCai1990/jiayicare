@@ -198,6 +198,20 @@ test('staff-initiated medication booking hands off to the health planner for ass
   assert.match(page, /代配药门诊预约已完成，转健康规划师安排执行人员/);
 });
 
+test('staff-initiated medication keeps a planner supervision task until execution completes', () => {
+  const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
+  const page = fs.readFileSync(path.join(__dirname, '../../staff/src/pages/PatientDetailPage.jsx'), 'utf8');
+  const directStart = workflow.split('async function startStaffMedicalProxyWorkflow')[1].split('async function validateMedicalProxyStage')[0];
+  assert.match(directStart, /theme: `代配药：健康规划师全程督办/);
+  assert.match(directStart, /workflowKey: `\$\{PREFIX\}supervise`/);
+  assert.match(directStart, /taskRole: 'supervisor'/);
+  assert.match(directStart, /status: 'in_progress'/);
+  assert.match(directStart, /supervisorId: patient\.assignedHealthPlanner/);
+  assert.match(workflow, /medicationProxy \? '执行人员已完成配药确认与配送安排，健康规划师全程督办闭环/);
+  assert.match(page, /健康规划师分配配药执行人员/);
+  assert.match(page, /执行人员配药确认与配送/);
+});
+
 test('booking and execution write the shared hospital visit service archive', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
   const model = fs.readFileSync(path.join(__dirname, '../src/models/ServiceRecord.js'), 'utf8');

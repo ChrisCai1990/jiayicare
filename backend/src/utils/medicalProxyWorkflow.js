@@ -331,7 +331,21 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
         preferredDateStart: plan.preferredDateStart, preferredDateEnd: plan.preferredDateEnd || plan.preferredDateStart, medicationProxy,
       },
     });
-    return { order, booking };
+    let supervisor = null;
+    if (medicationProxy) {
+      supervisor = await FollowUp.create({
+        patientId: patient._id, staffId: patient.assignedHealthPlanner, assignedTo: patient.assignedHealthPlanner,
+        type: 'other', status: 'in_progress', date, remindAt: new Date(), sourceType: 'order', sourceOrderId: order._id,
+        workflowKey: `${PREFIX}supervise`, taskRole: 'supervisor', theme: `代配药：健康规划师全程督办 · ${serviceName}`,
+        plannedContent: '健康顾问已发起代配药服务。持续督办健管预约、执行人员分配、配药确认和配送，服务完成后自动闭环。',
+        formData: { currentStage: 'booking', medicationProxy: true, initiationSource: STAFF_DIRECT_SOURCE, serviceContent: appointmentRequirement, customerNeed: plan.notes || '' },
+      });
+      await Order.updateOne({ _id: order._id }, { $set: {
+        supervisorId: patient.assignedHealthPlanner, currentStage: 'booking', currentAssignee: patient.assignedHealthManager,
+        closureMode: 'automatic', supervisionStatus: 'in_progress',
+      } });
+    }
+    return { order, booking, supervisor };
   }
   const supervisor = await FollowUp.create({
     patientId: patient._id, staffId: patient.assignedHealthPlanner, assignedTo: patient.assignedHealthPlanner,
@@ -555,6 +569,7 @@ async function advanceMedicalProxyWorkflow(task) {
     } });
     return;
   }
+  const medicationProxy = /代配药|代取药/.test(order.serviceName || '');
   if (index === STAGES.length - 1) {
     await upsertMedicalProxyServiceRecord(task, order, true);
     await archiveMedicalProxyRecords(task, order, patient?.tenantId);
@@ -567,14 +582,13 @@ async function advanceMedicalProxyWorkflow(task) {
     }
     await FollowUp.updateOne(
       { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } },
-      { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', content: '就医专员已完成代诊，健康规划师全程督办闭环。', 'formData.currentStage': 'completed' } },
+      { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', content: medicationProxy ? '执行人员已完成配药确认与配送安排，健康规划师全程督办闭环。' : '就医专员已完成代诊，健康规划师全程督办闭环。', 'formData.currentStage': 'completed' } },
     );
     await Order.updateOne({ _id: order._id }, { $set: {
       currentStage: 'completed', currentAssignee: null, supervisionStatus: 'completed',
     } });
     return;
   }
-  const medicationProxy = /代配药|代取药/.test(order.serviceName || '');
   const next = medicationProxy && stage === 'booking' ? 'planner'
     : medicationProxy && stage === 'planner' ? 'execute'
       : stage === 'advisor' && task.formData?.initiationSource === STAFF_DIRECT_SOURCE ? 'booking' : STAGES[index + 1];
