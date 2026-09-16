@@ -119,7 +119,7 @@ export default function HomePage() {
           </div>
           <div className="card-body" style={{ padding: '8px 20px' }}>
             {pendingOrders.map((f, i) => (
-              <div key={f._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: i < pendingOrders.length - 1 ? '1px solid #f0ede8' : 'none', cursor: 'pointer' }} onClick={() => nav(`/patients/${f.patientId?._id}?openChat=1`, { state: { serviceBooking: f } })}>
+              <div key={f._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: i < pendingOrders.length - 1 ? '1px solid #f0ede8' : 'none', cursor: 'pointer' }} onClick={() => nav(`/patients/${f.patientId?._id}?tab=followups`, { state: { openFollowUp: f } })}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                   <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24', minWidth: 60, flexShrink: 0 }}>{f.patientId?.name || '未知'}</span>
                   <div style={{ minWidth: 0 }}>
