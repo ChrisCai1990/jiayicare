@@ -3863,7 +3863,10 @@ router.delete('/medical-reports/:id', staffAuth, checkPermission('reports', 'del
     await UserScreeningItem.deleteMany({ reportId: req.params.id });
     const isRequiredOutpatientDocument = report.sourceHealthPlanId
       && ['prescription_order', 'outpatient_record'].includes(report.documentCategory);
-    if (isRequiredOutpatientDocument) {
+    const sourcePlan = isRequiredOutpatientDocument
+      ? await HealthPlan.findById(report.sourceHealthPlanId).select('title status').lean()
+      : null;
+    if (isRequiredOutpatientDocument && sourcePlan) {
       // 门诊闭环中的两份必需资料删除的是客户文件和识别结果，不删除流程占位记录。
       // 保留原 ID 后，健管专员可从重新出现的任务进入该资料并“补传文件”，也不会让
       // 健康顾问因任务仍指向一个已不存在的 ID 而永久卡死。
@@ -3877,9 +3880,8 @@ router.delete('/medical-reports/:id', staffAuth, checkPermission('reports', 'del
       });
       await report.save();
 
-      const [patient, sourcePlan, linkedReports] = await Promise.all([
+      const [patient, linkedReports] = await Promise.all([
         User.findById(report.user).select('assignedHealthManager').lean(),
-        HealthPlan.findById(report.sourceHealthPlanId).select('title status').lean(),
         MedicalReport.find({ sourceHealthPlanId: report.sourceHealthPlanId, documentCategory: { $in: ['prescription_order', 'outpatient_record'] } }).select('_id documentCategory').lean(),
       ]);
       if (sourcePlan && sourcePlan.status !== 'completed') {
