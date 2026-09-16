@@ -22,6 +22,7 @@ const supplementSchema = new mongoose.Schema({
   stoppedBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   stoppedByName:{ type: String, default: '' },
   note:       { type: String, default: '' },
+  imageUrls:  [{ type: String }],              // 包装、成分表等核对图片
   // 医护端录入标识
   createdByStaff: { type: Boolean, default: false },
   staffId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },

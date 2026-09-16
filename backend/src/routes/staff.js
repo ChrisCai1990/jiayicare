@@ -6428,7 +6428,7 @@ router.get('/patients/:id/medications', staffAuth, async (req, res) => {
 
 router.post('/patients/:id/medications', staffAuth, async (req, res) => {
   try {
-    const { name, brandName, specification, dosage, method, frequency, timing, startDate, endDate, purpose, note } = req.body;
+    const { name, brandName, specification, dosage, method, frequency, timing, startDate, endDate, purpose, note, imageUrls } = req.body;
     if (!name || !dosage || !frequency) return res.status(400).json({ success: false, message: '药品名称、剂量、频次不能为空' });
     // 健管专员/就医专员录入的客户现有用药信息需健康顾问核对后归档；不代表平台开药或调整用药。
     const needReview = NEEDS_REVIEW_ROLES.includes(req.staff.role);
@@ -6436,6 +6436,7 @@ router.post('/patients/:id/medications', staffAuth, async (req, res) => {
       user: req.params.id, name, brandName: brandName || '', specification: specification || '', dosage, method: method || '口服',
       frequency, timing: timing || '', startDate: startDate || '', endDate: endDate || '',
       purpose: purpose || '', note: note || '', createdByStaff: true, staffId: req.staff._id,
+      imageUrls: Array.isArray(imageUrls) ? imageUrls.filter(url => typeof url === 'string' && url.trim()).slice(0, 6) : [],
       createdByName: req.staff.name || '',
       aiStatus: needReview ? 'pending' : null,
     });
@@ -6531,8 +6532,9 @@ router.patch('/patients/:id/medications/:medId', staffAuth, async (req, res) => 
       await FollowUp.deleteMany({ sourceType: 'medication_reminder', sourceId: med._id, status: { $in: ['planned', 'in_progress'] }, date: { $gte: new Date() } });
       await FollowUp.deleteMany({ sourceType: 'supply_reminder', sourceId: med._id, status: { $in: ['planned', 'in_progress'] }, date: { $gte: new Date() } });
     } else {
-      const allowed = ['name', 'brandName', 'specification', 'dosage', 'method', 'frequency', 'timing', 'startDate', 'endDate', 'purpose', 'note'];
+      const allowed = ['name', 'brandName', 'specification', 'dosage', 'method', 'frequency', 'timing', 'startDate', 'endDate', 'purpose', 'note', 'imageUrls'];
       allowed.forEach(key => { if (req.body[key] !== undefined) med[key] = req.body[key]; });
+      if (req.body.imageUrls !== undefined) med.imageUrls = Array.isArray(req.body.imageUrls) ? req.body.imageUrls.filter(url => typeof url === 'string' && url.trim()).slice(0, 6) : [];
     }
     await med.save();
     res.json({ success: true, data: med });
@@ -6567,7 +6569,7 @@ router.get('/patients/:id/supplements', staffAuth, async (req, res) => {
 
 router.post('/patients/:id/supplements', staffAuth, async (req, res) => {
   try {
-    const { name, brand, specification, dosage, method, frequency, startDate, endDate, purpose, note } = req.body;
+    const { name, brand, specification, dosage, method, frequency, startDate, endDate, purpose, note, imageUrls } = req.body;
     if (!name || !dosage || !frequency) return res.status(400).json({ success: false, message: '名称、剂量、频次不能为空' });
     // 健管专员/就医专员手动新增的营养素需营养师审核后才生效；营养师/超管等本人录入直接生效（不必自审）
     const needReview = NEEDS_REVIEW_ROLES.includes(req.staff.role);
@@ -6575,6 +6577,7 @@ router.post('/patients/:id/supplements', staffAuth, async (req, res) => {
       user: req.params.id, name, brand: brand || '', specification: specification || '', dosage, method: method || '随餐',
       frequency, startDate: startDate || '', endDate: endDate || '',
       purpose: purpose || '', note: note || '', createdByStaff: true, staffId: req.staff._id,
+      imageUrls: Array.isArray(imageUrls) ? imageUrls.filter(url => typeof url === 'string' && url.trim()).slice(0, 6) : [],
       createdByName: req.staff.name || '',
       aiStatus: needReview ? 'pending' : null,
     });
@@ -6609,8 +6612,9 @@ router.patch('/patients/:id/supplements/:supId', staffAuth, async (req, res) => 
       sup.supplyReminder = { ...(sup.supplyReminder?.toObject?.() || sup.supplyReminder || {}), enabled: false, updatedAt: new Date(), updatedBy: req.staff._id };
       await FollowUp.deleteMany({ sourceType: 'supply_reminder', sourceId: sup._id, status: { $in: ['planned', 'in_progress'] }, date: { $gte: new Date() } });
     } else {
-      const allowed = ['name', 'brand', 'specification', 'dosage', 'method', 'frequency', 'startDate', 'endDate', 'purpose', 'note', 'aiStatus'];
+      const allowed = ['name', 'brand', 'specification', 'dosage', 'method', 'frequency', 'startDate', 'endDate', 'purpose', 'note', 'imageUrls', 'aiStatus'];
       allowed.forEach(key => { if (req.body[key] !== undefined) sup[key] = req.body[key]; });
+      if (req.body.imageUrls !== undefined) sup.imageUrls = Array.isArray(req.body.imageUrls) ? req.body.imageUrls.filter(url => typeof url === 'string' && url.trim()).slice(0, 6) : [];
     }
     if (isApproveReview) { sup.reviewedByName = req.staff.name || ''; sup.reviewedAt = new Date(); }
     await sup.save();

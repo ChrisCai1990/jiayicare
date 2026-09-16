@@ -39,6 +39,51 @@ function PdfDocumentPreview({ src, activePage, title, zoom = 100 }) {
 }
 
 const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
+
+const resolveAttachmentUrl = url => url?.startsWith('/') ? `${API_ORIGIN}${url}` : url
+
+function RecordImageAttachments({ imageUrls = [] }) {
+  if (!imageUrls.length) return <span style={{ color: '#ccc', fontSize: 12 }}>—</span>
+  return <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+    {imageUrls.map((url, index) => <img key={`${url}-${index}`} src={resolveAttachmentUrl(url)} alt={`核对附件${index + 1}`}
+      title="点击查看原图" onClick={() => window.open(resolveAttachmentUrl(url), '_blank', 'noopener,noreferrer')}
+      style={{ width: 42, height: 42, objectFit: 'cover', borderRadius: 6, border: '1px solid #E0D9CE', cursor: 'zoom-in' }} />)}
+  </div>
+}
+
+function RecordImageUploader({ imageUrls = [], onChange, uploading, setUploading, onError }) {
+  const upload = async event => {
+    const files = [...(event.target.files || [])]
+    event.target.value = ''
+    if (!files.length) return
+    const remaining = 6 - imageUrls.length
+    if (remaining <= 0) { onError('最多上传6张图片'); return }
+    setUploading(true); onError('')
+    try {
+      const results = []
+      for (const file of files.slice(0, remaining)) results.push(await staffAPI.uploadImage(file))
+      onChange([...imageUrls, ...results.map(result => result.data.url)])
+      if (files.length > remaining) onError(`最多上传6张图片，已上传前${remaining}张`)
+    } catch (err) { onError(err.message || '图片上传失败') }
+    finally { setUploading(false) }
+  }
+  return <div className="form-group" style={{ gridColumn: '1/-1', marginBottom: 0 }}>
+    <label className="form-label">附件图片 <span style={{ color: '#8AA89C', fontWeight: 400 }}>（可选，最多6张）</span></label>
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+      {imageUrls.map((url, index) => <div key={`${url}-${index}`} style={{ position: 'relative' }}>
+        <img src={resolveAttachmentUrl(url)} alt={`附件${index + 1}`} onClick={() => window.open(resolveAttachmentUrl(url), '_blank', 'noopener,noreferrer')}
+          style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, border: '1px solid #DCE5E0', cursor: 'zoom-in' }} />
+        <button type="button" aria-label={`删除附件${index + 1}`} onClick={() => onChange(imageUrls.filter((_, itemIndex) => itemIndex !== index))}
+          style={{ position: 'absolute', top: -7, right: -7, width: 22, height: 22, padding: 0, border: 0, borderRadius: 11, background: '#C0392B', color: '#fff', cursor: 'pointer' }}>×</button>
+      </div>)}
+      {imageUrls.length < 6 && <label className="btn btn-secondary" style={{ width: 72, height: 72, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: uploading ? 'wait' : 'pointer' }}>
+        <span style={{ textAlign: 'center', fontSize: 12 }}>{uploading ? '上传中…' : '＋ 上传图片'}</span>
+        <input type="file" accept="image/*" multiple hidden disabled={uploading} onChange={upload} />
+      </label>}
+    </div>
+    <div style={{ color: '#8AA89C', fontSize: 12, marginTop: 6 }}>建议上传药盒/瓶身正面、规格或成分表，便于后续核对。</div>
+  </div>
+}
 const normalizeRiskTagValues = values => [...new Set((Array.isArray(values) ? values : [values])
   .flatMap(value => String(value || '').split(/[、,，;；\n]+/))
   .map(value => value.trim())
@@ -1900,6 +1945,8 @@ export default function PatientDetailPage() {
   const [medError, setMedError] = useState('')
   const [supForm, setSupForm] = useState({})
   const [medSaving, setMedSaving] = useState(false)
+  const [medImageUploading, setMedImageUploading] = useState(false)
+  const [supImageUploading, setSupImageUploading] = useState(false)
   // 健康顾问健康档案查看确认（2026-07-28改造）：不再逐份审核报告数据，改为客户维度的
   // "确认已查看健康档案"，AI健康解析/风险评估生成前强制要求此确认处于有效状态（未过期）。
   // pendingDoctorAuditReports 仍保留为"有哪些新审核完的报告需要提醒"的展示用途。
@@ -8417,7 +8464,7 @@ export default function PatientDetailPage() {
                 </button>
               )}
               <button className="btn btn-primary btn-sm"
-                onClick={() => { if (medSubTab === 'med') { setMedForm({ name:'', brandName:'', specification:'', dosage:'', method:'口服', frequency:'每日1次', timing:'', startDate:'', endDate:'', purpose:'', note:'' }); setEditingMed(null); setShowMedModal(true) } else { setSupForm({ name:'', brand:'', specification:'', dosage:'', method:'随餐', frequency:'每日1次', startDate:'', endDate:'', purpose:'', note:'' }); setEditingSup(null); setEditingSupAiApprove(false); setShowSupModal(true) } }}>
+                onClick={() => { if (medSubTab === 'med') { setMedForm({ name:'', brandName:'', specification:'', dosage:'', method:'口服', frequency:'每日1次', timing:'', startDate:'', endDate:'', purpose:'', note:'', imageUrls:[] }); setEditingMed(null); setMedError(''); setShowMedModal(true) } else { setSupForm({ name:'', brand:'', specification:'', dosage:'', method:'随餐', frequency:'每日1次', startDate:'', endDate:'', purpose:'', note:'', imageUrls:[] }); setEditingSup(null); setEditingSupAiApprove(false); setShowSupModal(true) } }}>
                 ＋ 新增{medSubTab === 'med' ? '药物' : '营养素'}
               </button>
             </div>
@@ -8438,7 +8485,7 @@ export default function PatientDetailPage() {
                   <span style={{ background: '#0077B615', color: '#0077B6', fontSize: 11, fontWeight: 700, borderRadius: 99, padding: '1px 8px' }}>{pendingMeds.length}</span>
                 </div>
                 <table className="table" style={{ marginBottom: 0 }}>
-                  <thead><tr><th>药品名称</th><th>剂量</th><th>用法/频次</th><th>服用目的</th><th>录入人</th><th>操作</th></tr></thead>
+                  <thead><tr><th>药品名称</th><th>剂量</th><th>用法/频次</th><th>服用目的</th><th>附件</th><th>录入人</th><th>操作</th></tr></thead>
                   <tbody>
                     {pendingMeds.map(m => (
                       <tr key={m._id} style={{ background: '#F5FBFF' }}>
@@ -8446,13 +8493,14 @@ export default function PatientDetailPage() {
                         <td>{m.dosage}</td>
                         <td style={{ fontSize: 12 }}>{m.method} · {m.frequency}{m.timing ? ` · ${m.timing}` : ''}</td>
                         <td style={{ fontSize: 12, color: '#4A6558' }}>{m.purpose || '-'}</td>
+                        <td><RecordImageAttachments imageUrls={m.imageUrls} /></td>
                         <td style={{ fontSize: 12, color: '#8AA89C' }}>{m.createdByName || '-'}</td>
                         <td>
                           {canApproveMed ? (
                             <div style={{ display: 'flex', gap: 6 }}>
                               <button className="btn btn-sm" style={{ background: '#0077B6', color: '#fff' }} onClick={() => reviewMedication(m._id, 'approve')}>确认一致</button>
                               <button className="btn btn-secondary btn-sm" onClick={() => {
-                                setMedForm({ name: m.name, brandName: m.brandName || '', specification: m.specification || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: m.startDate || '', endDate: m.endDate || '', purpose: m.purpose || '', note: m.note || '' })
+                                setMedForm({ name: m.name, brandName: m.brandName || '', specification: m.specification || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: m.startDate || '', endDate: m.endDate || '', purpose: m.purpose || '', note: m.note || '', imageUrls: m.imageUrls || [] })
                                 setEditingMed(m._id); setShowMedModal(true)
                               }}>编辑</button>
                               <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
@@ -8480,7 +8528,7 @@ export default function PatientDetailPage() {
                 <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无用药记录</div>
               ) : (
                 <table className="table">
-                  <thead><tr><th>药品名称（化学名）</th><th>商品名</th><th>规格</th><th>剂量</th><th>用法/频次</th><th>服用目的</th><th>停用原因</th><th>开始日期</th><th>录入/审核</th><th>状态</th><th>操作</th></tr></thead>
+                  <thead><tr><th>药品名称（化学名）</th><th>商品名</th><th>规格</th><th>剂量</th><th>用法/频次</th><th>服用目的</th><th>附件</th><th>停用原因</th><th>开始日期</th><th>录入/审核</th><th>状态</th><th>操作</th></tr></thead>
                   <tbody>
                     {visibleMeds.map(m => (
                       <tr key={m._id}>
@@ -8490,6 +8538,7 @@ export default function PatientDetailPage() {
                         <td>{m.dosage}</td>
                         <td style={{ fontSize: 12 }}>{m.method} · {m.frequency}{m.timing ? ` · ${m.timing}` : ''}</td>
                         <td style={{ fontSize: 12, color: '#4A6558' }}>{m.purpose || m.note || '-'}</td>
+                        <td><RecordImageAttachments imageUrls={m.imageUrls} /></td>
                         <td style={{ fontSize: 12, color: m.stopped ? '#8A5A44' : '#aaa' }}>{m.stopReason || '-'}</td>
                         <td style={{ fontSize: 12, color: '#8AA89C' }}>{m.startDate || '-'}{m.stopped && m.stopDate ? ` → ${m.stopDate}` : m.endDate ? ` → ${m.endDate}` : ''}</td>
                         <td style={{ fontSize: 11, color: '#8AA89C' }}>
@@ -8506,10 +8555,10 @@ export default function PatientDetailPage() {
                         <td>
                           <div style={{ display: 'flex', gap: 6 }}>
                             {!m.stopped && (canApproveMed || (staff?._id && String(m.staffId) === String(staff._id))) && <button className="btn btn-secondary btn-sm" onClick={() => {
-                              setMedForm({ name: m.name, brandName: m.brandName || '', specification: m.specification || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: m.startDate || '', endDate: m.endDate || '', purpose: m.purpose || '', note: m.note || '' })
+                              setMedForm({ name: m.name, brandName: m.brandName || '', specification: m.specification || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: m.startDate || '', endDate: m.endDate || '', purpose: m.purpose || '', note: m.note || '', imageUrls: m.imageUrls || [] })
                               setEditingMed(m._id); setShowMedModal(true)
                             }}>编辑</button>}
-                            {m.stopped && <button className="btn btn-secondary btn-sm" onClick={() => { setMedForm({ name: m.name, brandName: m.brandName || '', specification: m.specification || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: new Date().toISOString().slice(0, 10), endDate: '', purpose: m.purpose || '', note: '' }); setEditingMed(null); setShowMedModal(true) }}>再次使用</button>}
+                            {m.stopped && <button className="btn btn-secondary btn-sm" onClick={() => { setMedForm({ name: m.name, brandName: m.brandName || '', specification: m.specification || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: new Date().toISOString().slice(0, 10), endDate: '', purpose: m.purpose || '', note: '', imageUrls: m.imageUrls || [] }); setEditingMed(null); setShowMedModal(true) }}>再次使用</button>}
                             {!m.stopped && !m.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'medication', record: m }); setSupplyForm({ firstDate: '', intervalDays: 30, mode: 'visit', note: '' }) }}>定期配药</button>}
                             {!m.stopped && m.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'medication', record: m }); setSupplyForm({ firstDate: new Date().toISOString().slice(0, 10), intervalDays: m.supplyReminder.intervalDays || 30, mode: m.supplyReminder.mode || 'visit', note: m.supplyReminder.note || '' }) }}>调整配药方式</button>}
                             {!m.stopped && m.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => stopSupplyReminder('medication', m)}>停止自动配药任务</button>}
@@ -8563,7 +8612,7 @@ export default function PatientDetailPage() {
                   <span style={{ background: '#16A34A15', color: '#16A34A', fontSize: 11, fontWeight: 700, borderRadius: 99, padding: '1px 8px' }}>{pendingSups.length}</span>
                 </div>
                 <table className="table" style={{ marginBottom: 0 }}>
-                  <thead><tr><th>营养素名称</th><th>剂量</th><th>用法/频次</th><th>补充目的</th><th>录入人</th><th>操作</th></tr></thead>
+                  <thead><tr><th>营养素名称</th><th>剂量</th><th>用法/频次</th><th>补充目的</th><th>附件</th><th>录入人</th><th>操作</th></tr></thead>
                   <tbody>
                     {pendingSups.map(s => {
                       const isGenerator = staff?._id && String(s.staffId) === String(staff._id)
@@ -8573,13 +8622,14 @@ export default function PatientDetailPage() {
                         <td>{s.dosage}</td>
                         <td style={{ fontSize: 12 }}>{s.method} · {s.frequency}</td>
                         <td style={{ fontSize: 12, color: '#4A6558' }}>{s.purpose || '-'}</td>
+                        <td><RecordImageAttachments imageUrls={s.imageUrls} /></td>
                         <td style={{ fontSize: 12, color: '#8AA89C' }}>{s.createdByName || s.aiGeneratedBy || 'AI'}</td>
                         <td>
                           {canApprove ? (
                             <div style={{ display: 'flex', gap: 6 }}>
                               <button className="btn btn-sm" style={{ background: '#16A34A', color: '#fff' }} onClick={() => reviewAISupplement(s._id, 'approve')}>采纳</button>
                               <button className="btn btn-secondary btn-sm" onClick={() => {
-                                setSupForm({ name: s.name, brand: s.brand || '', specification: s.specification || '', dosage: s.dosage, method: s.method || '随餐', frequency: s.frequency, startDate: s.startDate || '', endDate: s.endDate || '', purpose: s.purpose || '', note: s.note || '' })
+                                setSupForm({ name: s.name, brand: s.brand || '', specification: s.specification || '', dosage: s.dosage, method: s.method || '随餐', frequency: s.frequency, startDate: s.startDate || '', endDate: s.endDate || '', purpose: s.purpose || '', note: s.note || '', imageUrls: s.imageUrls || [] })
                                 setEditingSup(s._id); setEditingSupAiApprove(true); setShowSupModal(true)
                               }}>编辑后采纳</button>
                               <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }} onClick={() => reviewAISupplement(s._id, 'reject')}>拒绝</button>
@@ -8607,7 +8657,7 @@ export default function PatientDetailPage() {
                 <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无营养素记录</div>
               ) : (
                 <table className="table">
-                  <thead><tr><th>营养素名称</th><th>品牌</th><th>规格</th><th>剂量</th><th>用法/频次</th><th>补充目的</th><th>停用原因</th><th>开始日期</th><th>录入/审核</th><th>状态</th><th>操作</th></tr></thead>
+                  <thead><tr><th>营养素名称</th><th>品牌</th><th>规格</th><th>剂量</th><th>用法/频次</th><th>补充目的</th><th>附件</th><th>停用原因</th><th>开始日期</th><th>录入/审核</th><th>状态</th><th>操作</th></tr></thead>
                   <tbody>
                     {visibleSups.map(s => (
                       <tr key={s._id}>
@@ -8617,6 +8667,7 @@ export default function PatientDetailPage() {
                         <td>{s.dosage}</td>
                         <td style={{ fontSize: 12 }}>{s.method} · {s.frequency}</td>
                         <td style={{ fontSize: 12, color: '#4A6558' }}>{s.purpose || s.note || '-'}</td>
+                        <td><RecordImageAttachments imageUrls={s.imageUrls} /></td>
                         <td style={{ fontSize: 12, color: s.stopped ? '#8A5A44' : '#aaa' }}>{s.stopReason || '-'}</td>
                         <td style={{ fontSize: 12, color: '#8AA89C' }}>{s.startDate || '-'}{s.stopped && s.stopDate ? ` → ${s.stopDate}` : s.endDate ? ` → ${s.endDate}` : ''}</td>
                         <td style={{ fontSize: 11, color: '#8AA89C' }}>
@@ -8632,10 +8683,10 @@ export default function PatientDetailPage() {
                         <td>
                           <div style={{ display: 'flex', gap: 6 }}>
                             {!s.stopped && <button className="btn btn-secondary btn-sm" onClick={() => {
-                              setSupForm({ name: s.name, brand: s.brand || '', specification: s.specification || '', dosage: s.dosage, method: s.method || '随餐', frequency: s.frequency, startDate: s.startDate || '', endDate: s.endDate || '', purpose: s.purpose || '', note: s.note || '' })
+                              setSupForm({ name: s.name, brand: s.brand || '', specification: s.specification || '', dosage: s.dosage, method: s.method || '随餐', frequency: s.frequency, startDate: s.startDate || '', endDate: s.endDate || '', purpose: s.purpose || '', note: s.note || '', imageUrls: s.imageUrls || [] })
                               setEditingSup(s._id); setEditingSupAiApprove(false); setShowSupModal(true)
                             }}>编辑</button>}
-                            {s.stopped && <button className="btn btn-secondary btn-sm" onClick={() => { setSupForm({ name: s.name, brand: s.brand || '', specification: s.specification || '', dosage: s.dosage, method: s.method || '随餐', frequency: s.frequency, startDate: new Date().toISOString().slice(0, 10), endDate: '', purpose: s.purpose || '', note: '' }); setEditingSup(null); setEditingSupAiApprove(false); setShowSupModal(true) }}>再次补充</button>}
+                            {s.stopped && <button className="btn btn-secondary btn-sm" onClick={() => { setSupForm({ name: s.name, brand: s.brand || '', specification: s.specification || '', dosage: s.dosage, method: s.method || '随餐', frequency: s.frequency, startDate: new Date().toISOString().slice(0, 10), endDate: '', purpose: s.purpose || '', note: '', imageUrls: s.imageUrls || [] }); setEditingSup(null); setEditingSupAiApprove(false); setShowSupModal(true) }}>再次补充</button>}
                             {!s.stopped && !s.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'supplement', record: s }); setSupplyForm({ firstDate: '', intervalDays: 30, mode: 'visit', note: '' }) }}>定期配取</button>}
                             {!s.stopped && s.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'supplement', record: s }); setSupplyForm({ firstDate: new Date().toISOString().slice(0, 10), intervalDays: s.supplyReminder.intervalDays || 30, mode: s.supplyReminder.mode || 'visit', note: s.supplyReminder.note || '' }) }}>调整配取方式</button>}
                             {!s.stopped && s.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => stopSupplyReminder('supplement', s)}>停止自动配取任务</button>}
@@ -8706,11 +8757,13 @@ export default function PatientDetailPage() {
                         onChange={e => setMedForm(f => ({ ...f, [k]: e.target.value }))} />
                     </div>
                   ))}
+                  <RecordImageUploader imageUrls={medForm.imageUrls || []} onChange={imageUrls => setMedForm(form => ({ ...form, imageUrls }))}
+                    uploading={medImageUploading} setUploading={setMedImageUploading} onError={setMedError} />
                 </div>
                 <div className="modal-footer" style={{ flexWrap: 'wrap' }}>
                   {medError && <div role="alert" style={{ color: '#C0392B', flex: '1 1 100%' }}>{medError}</div>}
                   <button className="btn btn-ghost" onClick={() => { setShowMedModal(false); setMedError('') }}>取消</button>
-                  <button className="btn btn-primary" disabled={medSaving} onClick={async () => {
+                  <button className="btn btn-primary" disabled={medSaving || medImageUploading} onClick={async () => {
                     setMedError('')
                     if (!medForm.name?.trim() || !medForm.dosage?.trim() || !medForm.frequency?.trim()) { setMedError('请填写药品化学名、剂量和频次'); return }
                     setMedSaving(true)
@@ -8722,7 +8775,7 @@ export default function PatientDetailPage() {
                       toast(editingMed ? '已保存' : needReview ? '已提交，待健康顾问审核' : '添加成功')
                     } catch (err) { setMedError(err.message || '保存失败，请稍后重试') }
                     finally { setMedSaving(false) }
-                  }}>{medSaving ? '保存中...' : '保存'}</button>
+                  }}>{medImageUploading ? '图片上传中...' : medSaving ? '保存中...' : '保存'}</button>
                 </div>
               </div>
             </div>
@@ -8755,10 +8808,12 @@ export default function PatientDetailPage() {
                         onChange={e => setSupForm(f => ({ ...f, [k]: e.target.value }))} />
                     </div>
                   ))}
+                  <RecordImageUploader imageUrls={supForm.imageUrls || []} onChange={imageUrls => setSupForm(form => ({ ...form, imageUrls }))}
+                    uploading={supImageUploading} setUploading={setSupImageUploading} onError={message => message && toast(message)} />
                 </div>
                 <div className="modal-footer">
                   <button className="btn btn-ghost" onClick={() => { setShowSupModal(false); setEditingSupAiApprove(false) }}>取消</button>
-                  <button className="btn btn-primary" disabled={medSaving} onClick={async () => {
+                  <button className="btn btn-primary" disabled={medSaving || supImageUploading} onClick={async () => {
                     if (!supForm.name || !supForm.dosage || !supForm.frequency) { toast('请填写必填项'); return }
                     setMedSaving(true)
                     try {
@@ -8770,7 +8825,7 @@ export default function PatientDetailPage() {
                       toast(editingSupAiApprove ? '已采纳并生效' : editingSup ? '已保存' : supNeedReview ? '已提交，待营养师审核' : '添加成功')
                     } catch (err) { toast(err.message) }
                     finally { setMedSaving(false) }
-                  }}>{medSaving ? '保存中...' : editingSupAiApprove ? '保存并采纳' : '保存'}</button>
+                  }}>{supImageUploading ? '图片上传中...' : medSaving ? '保存中...' : editingSupAiApprove ? '保存并采纳' : '保存'}</button>
                 </div>
               </div>
             </div>
