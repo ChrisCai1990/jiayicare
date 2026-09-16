@@ -38,3 +38,10 @@ test('健康规划师监督任务只能随流程自动结案', async () => {
   const error = await validate({ workflowKey: 'checkup_appointment:supervise' }, { status: 'completed' }, { role: 'healthPlanner' });
   assert.match(error, /自动结案/);
 });
+
+test('健管专员审核前必须收集检查报告和门诊病历', async () => {
+  const task = { workflowKey: 'checkup_appointment:manager_review' };
+  const base = { status: 'completed', formData: { reviewSummary: '资料齐全', followUpContent: '两周后电话随访' } };
+  assert.match(await validate(task, base, { role: 'healthManager' }), /检查报告和门诊病历/);
+  assert.equal(await validate(task, { ...base, formData: { ...base.formData, reportIds: ['report-1'], medicalRecordIds: ['record-1'] } }, { role: 'healthManager' }), '');
+});

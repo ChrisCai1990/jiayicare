@@ -107,7 +107,7 @@ async function validate(task, body, staff) {
   if (stage === 'supervise') return '待约检仍在流转中，请查看当前阶段；健康顾问审核随访计划后将自动结案';
   if (stage === 'booking') { if (!['healthManager', 'superadmin'].includes(staff.role)) return '三号预约由健管专员完成'; return bookingValidation(body.formData || {}); }
   if (stage === 'medical') { const data = body.formData || {}; if (!['medicalAssistant', 'superadmin'].includes(staff.role)) return '开单与检查预约由就医专员完成'; if (!required(data.examOrderStatus) || !Array.isArray(data.checkAppointments) || data.checkAppointments.some(item => !required(item.campus) || !required(item.department) || !required(item.location) || !appointmentDate(item.appointmentDate) || !required(item.appointmentTime))) return '请完整填写开检查单情况及各检查项目的院区、科室、具体地点和预约时间'; }
-  if (stage === 'manager_review') { if (!['healthManager', 'superadmin'].includes(staff.role)) return '报告与病历审核由健管专员完成'; if (!required((body.formData || {}).reviewSummary) || !required((body.formData || {}).followUpContent)) return '请填写资料审核结论和后续随访计划'; }
+  if (stage === 'manager_review') { const data = body.formData || {}; if (!['healthManager', 'superadmin'].includes(staff.role)) return '报告与病历审核由健管专员完成'; if (!Array.isArray(data.reportIds) || !data.reportIds.length || !Array.isArray(data.medicalRecordIds) || !data.medicalRecordIds.length) return '请上传或关联检查报告和门诊病历'; if (!required(data.reviewSummary) || !required(data.followUpContent)) return '请填写资料审核结论和后续随访计划'; }
   return '';
 }
 
