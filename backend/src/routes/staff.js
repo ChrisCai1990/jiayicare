@@ -2225,9 +2225,26 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
 
     if (action === 'reject') {
       followUp.status = 'cancelled';
-      followUp.cancelReason = '健康顾问审核未通过';
+      const isCheckupAppointmentReview = followUp.sourceType === 'order' && followUp.formData?.generatedFromCheckupAppointment && followUp.sourceOrderId;
+      followUp.cancelReason = isCheckupAppointmentReview ? '健康顾问退回健管专员修改' : '健康顾问审核未通过';
       followUp.aiStatus = null;
       await followUp.save();
+      if (isCheckupAppointmentReview) {
+        const order = await Order.findById(followUp.sourceOrderId);
+        const managerTask = await FollowUp.findOne({ sourceType: 'order', sourceOrderId: followUp.sourceOrderId, workflowKey: 'checkup_appointment:manager_review' });
+        if (order && managerTask) {
+          const returnNote = String(edits?.returnNote || '').trim();
+          managerTask.status = 'planned'; managerTask.completedAt = null; managerTask.completedBy = null;
+          managerTask.content = `健康顾问退回修改${returnNote ? `：${returnNote}` : '，请核对资料与后续随访计划后重新提交。'}`;
+          await managerTask.save();
+          await Order.updateOne({ _id: order._id }, { $set: { currentStage: 'checkup_manager_review', currentAssignee: managerTask.assignedTo, supervisionStatus: 'in_progress' } });
+          await FollowUp.updateOne(
+            { sourceType: 'order', sourceOrderId: order._id, workflowKey: 'checkup_appointment:supervise' },
+            { $set: { content: '当前环节：健管专员根据健康顾问意见修改资料与随访计划。', 'formData.currentStage': 'manager_review' } },
+          );
+          return res.json({ success: true, message: '已退回健管专员修改' });
+        }
+      }
       if (followUp.sourceType === 'order' && followUp.formData?.generatedFromPostCheckupSupervision && followUp.sourceOrderId) {
         await Order.updateOne({ _id: followUp.sourceOrderId }, { $set: { currentStage: 'advisor_rejected', supervisionStatus: 'needs_attention' } });
       }
@@ -2237,6 +2254,13 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
     const EDITABLE = ['date', 'theme', 'type', 'assignedTo', 'content'];
     if (edits && typeof edits === 'object') {
       EDITABLE.forEach(k => { if (edits[k] !== undefined) followUp[k] = edits[k]; });
+      if (followUp.formData?.generatedFromCheckupAppointment) {
+        const managerReview = { ...(followUp.formData.managerReview || {}) };
+        if (edits.reviewSummary !== undefined) managerReview.reviewSummary = String(edits.reviewSummary || '').trim();
+        if (edits.content !== undefined) managerReview.followUpContent = String(edits.content || '').trim();
+        if (edits.followUpDate !== undefined) managerReview.followUpDate = edits.followUpDate;
+        followUp.formData = { ...followUp.formData, managerReview };
+      }
     }
     followUp.aiStatus = 'approved';
     await followUp.save();

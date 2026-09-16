@@ -18,6 +18,7 @@ import CheckupReportCollectionForm, { isCheckupReportCollectionTask } from '../c
 import CheckupAppointmentBookingForm, { checkupAppointmentBookingFromTask, isCheckupAppointmentBookingTask } from '../components/CheckupAppointmentBookingForm'
 import CheckupMedicalExecutionForm, { checkupMedicalExecutionFromTask, isCheckupMedicalExecutionTask, validateCheckupMedicalExecution } from '../components/CheckupMedicalExecutionForm'
 import CheckupManagerReviewForm, { checkupManagerReviewFromTask, isCheckupManagerReviewTask, validateCheckupManagerReview } from '../components/CheckupManagerReviewForm'
+import CheckupAdvisorReviewModal, { isCheckupAdvisorReviewTask } from '../components/CheckupAdvisorReviewModal'
 import ServiceTaskContextBanner from '../components/ServiceTaskContextBanner'
 import OutpatientAdvisorAssessmentForm, { emptyOutpatientAssessment, isOutpatientAdvisorAssessmentTask, validateOutpatientAssessment } from '../components/OutpatientAdvisorAssessmentForm'
 import OutpatientAppointmentForm, { emptyOutpatientAppointment, isOutpatientAppointmentTask, validateOutpatientAppointment } from '../components/OutpatientAppointmentForm'
@@ -1859,6 +1860,7 @@ export default function PatientDetailPage() {
   const [showFollowUpModal, setShowFollowUpModal] = useState(false)
   const [showPostCheckupSupervisionModal, setShowPostCheckupSupervisionModal] = useState(false)
   const [followUpDetail, setFollowUpDetail] = useState(null)
+  const [checkupAdvisorReview, setCheckupAdvisorReview] = useState(null)
   const [editingFollowUp, setEditingFollowUp] = useState(null)
   const [followUpSaving, setFollowUpSaving] = useState(false)
   const [showUploadReport, setShowUploadReport] = useState(false)
@@ -2371,7 +2373,8 @@ export default function PatientDetailPage() {
       .then(res => {
         if (cancelled) return
         const target = res.data?.followUps?.[0]
-        if (target?.aiStatus === 'pending') setFollowUpDetail(target)
+        if (isCheckupAdvisorReviewTask(target)) setCheckupAdvisorReview(target)
+        else if (target?.aiStatus === 'pending') setFollowUpDetail(target)
         else toast('该随访审核任务已处理或不存在')
       })
       .catch(err => { if (!cancelled) toast(err.message || '打开随访审核任务失败') })
@@ -2759,6 +2762,11 @@ export default function PatientDetailPage() {
   useEffect(() => {
     if (tab === 'followups' && location.state?.openFollowUp) {
       const f = location.state.openFollowUp
+      if (isCheckupAdvisorReviewTask(f)) {
+        setCheckupAdvisorReview(f)
+        nav(location.pathname + location.search, { replace: true, state: {} })
+        return
+      }
       if (medicationProxyStage(f)) {
         openExec(f)
         nav(location.pathname + location.search, { replace: true, state: {} })
@@ -9154,7 +9162,7 @@ export default function PatientDetailPage() {
               <tbody>
                 {(() => {
                   const renderRow = (f) => (
-                    <tr key={f._id} style={{ cursor: 'pointer', background: f.aiStatus === 'pending' ? '#FFFBEB' : undefined }} onClick={() => (isCheckupAppointmentBookingTask(f) || isCheckupMedicalExecutionTask(f) || isCheckupManagerReviewTask(f)) ? openExec(f) : setFollowUpDetail(f)}>
+                    <tr key={f._id} style={{ cursor: 'pointer', background: f.aiStatus === 'pending' ? '#FFFBEB' : undefined }} onClick={() => (isCheckupAppointmentBookingTask(f) || isCheckupMedicalExecutionTask(f) || isCheckupManagerReviewTask(f)) ? openExec(f) : isCheckupAdvisorReviewTask(f) ? setCheckupAdvisorReview(f) : setFollowUpDetail(f)}>
                       <td style={{ fontSize: 13, color: '#666' }}>{new Date(f.date).toLocaleDateString('zh-CN')}</td>
                       <td style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>{f.createdAt ? new Date(f.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
                       <td><span className="badge badge-info">{f.sourceType === 'supply_reminder' ? ((f.tags || []).includes('我方代配') ? '我方代配' : '配取提醒') : (TYPE_MAP[f.type] || f.type)}</span></td>
@@ -9190,7 +9198,9 @@ export default function PatientDetailPage() {
                         {f.nextFollowUpDate ? new Date(f.nextFollowUpDate).toLocaleDateString('zh-CN') : '-'}
                       </td>
                       <td onClick={e => e.stopPropagation()}>
-                        {f.aiStatus === 'pending' ? (
+                        {isCheckupAdvisorReviewTask(f) ? (
+                          <button className="btn btn-primary btn-sm" onClick={() => setCheckupAdvisorReview(f)}>审核随访计划</button>
+                        ) : f.aiStatus === 'pending' ? (
                           <div style={{ display: 'flex', gap: 6 }}>
                             <button className="btn btn-sm" style={{ background: '#22A06B', color: '#fff' }}
                               onClick={async () => { await staffAPI.reviewFollowUp(f._id, { action: 'approve' }); loadFollowUps() }}>通过</button>
@@ -10530,12 +10540,14 @@ export default function PatientDetailPage() {
               <button className="btn btn-secondary" onClick={() => setExecItem(null)}>取消</button>
               {!execItem.isBlocked && !medicationProxyStage(execItem) && execItem.taskRole === 'executor' && execItem.dependsOnTaskId?._id && medicalProxyStage(execItem) !== 'appointment_review' && <button className="btn btn-secondary" style={{ color: '#B45309', borderColor: '#D9A441' }} onClick={handleReturnPrevious} disabled={execSaving}>退回上一环节</button>}
               {medicationProxyStage(execItem) !== 'progress' && <button className="btn btn-primary" onClick={handleExec} disabled={execSaving || execItem.isBlocked}>
-                {execItem.isBlocked ? (isOutpatientPostVisitReviewTask(execItem) ? '等待资料审核' : '等待上一环节完成') : execSaving ? '保存中...' : isCheckupAppointmentBookingTask(execItem) ? '确认三号预约并转交就医专员' : medicationProxyStage(execItem) ? ({ intake: '确认并流转代配药', advisor: '评估后返回规划师', review: '确认并转健管预约', booking: '确认并转就医专员', execute: '完成配药与配送安排' }[medicationProxyStage(execItem)]) : medicalProxyStage(execItem) ? (medicalProxyStage(execItem) === 'booking' && /专家约诊/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? '确认预约并通知客户' : /就医规划/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? medicalProxyStage(execItem) === 'advisor' ? '提交就医规划建议并转规划师' : '确认客户意向并结束本次规划' : ({ intake: '确认资料并转健康顾问', collect: '提交本次资料给健管审核', audit: '确认审核并转健康顾问', advisor: '确认代诊方案并转规划师', planner: '确认方案并转健管预约', booking: '确认预约并转就医专员', execute: '完成代诊并结束督办', appointment_review: '完善类目并转健管重新预约', post_visit_audit: '确认审核并转健康顾问查看', post_visit_review: '确认查看并结束约诊服务' }[medicalProxyStage(execItem)] || '保存')) : isOutpatientEscortVisitTask(execItem) ? '完成陪诊并提交资料审核' : isOutpatientPostVisitReviewTask(execItem) ? '生成随访计划并结束服务' : isOutpatientAppointmentTask(execItem) ? '确认预约并流转代诊' : isOutpatientAdvisorAssessmentTask(execItem) ? '完成评估并流转下一步' : isCheckupReportCollectionTask(execItem) ? (execForm.serviceChecklist?.[0]?.collectionStatus === 'complete' ? '完成闭环并进入解析' : '保存报告回收进度') : isCheckupBookingTask(execItem) ? '确认预约并转交陪诊' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : '保存随访结果'}
+                {execItem.isBlocked ? (isOutpatientPostVisitReviewTask(execItem) ? '等待资料审核' : '等待上一环节完成') : execSaving ? '保存中...' : isCheckupAppointmentBookingTask(execItem) ? '确认三号预约并转交就医专员' : isCheckupManagerReviewTask(execItem) ? '确认资料审核并转健康顾问' : medicationProxyStage(execItem) ? ({ intake: '确认并流转代配药', advisor: '评估后返回规划师', review: '确认并转健管预约', booking: '确认并转就医专员', execute: '完成配药与配送安排' }[medicationProxyStage(execItem)]) : medicalProxyStage(execItem) ? (medicalProxyStage(execItem) === 'booking' && /专家约诊/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? '确认预约并通知客户' : /就医规划/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? medicalProxyStage(execItem) === 'advisor' ? '提交就医规划建议并转规划师' : '确认客户意向并结束本次规划' : ({ intake: '确认资料并转健康顾问', collect: '提交本次资料给健管审核', audit: '确认审核并转健康顾问', advisor: '确认代诊方案并转规划师', planner: '确认方案并转健管预约', booking: '确认预约并转就医专员', execute: '完成代诊并结束督办', appointment_review: '完善类目并转健管重新预约', post_visit_audit: '确认审核并转健康顾问查看', post_visit_review: '确认查看并结束约诊服务' }[medicalProxyStage(execItem)] || '保存')) : isOutpatientEscortVisitTask(execItem) ? '完成陪诊并提交资料审核' : isOutpatientPostVisitReviewTask(execItem) ? '生成随访计划并结束服务' : isOutpatientAppointmentTask(execItem) ? '确认预约并流转代诊' : isOutpatientAdvisorAssessmentTask(execItem) ? '完成评估并流转下一步' : isCheckupReportCollectionTask(execItem) ? (execForm.serviceChecklist?.[0]?.collectionStatus === 'complete' ? '完成闭环并进入解析' : '保存报告回收进度') : isCheckupBookingTask(execItem) ? '确认预约并转交陪诊' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : '保存随访结果'}
               </button>}
             </div>
           </div>
         </div>
       )}
+
+      {checkupAdvisorReview && <CheckupAdvisorReviewModal task={checkupAdvisorReview} onClose={() => setCheckupAdvisorReview(null)} onOpenReport={(reportId, title) => openReportDetail({ _id: reportId, title: title || '本次服务资料' })} onDone={message => { setCheckupAdvisorReview(null); loadFollowUps(); toast(message) }} />}
 
       {followUpDetail && (
         <div className="modal-overlay" onClick={() => setFollowUpDetail(null)}>

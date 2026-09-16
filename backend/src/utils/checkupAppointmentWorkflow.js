@@ -66,11 +66,18 @@ function bookingValidation(data = {}) {
 }
 
 async function createTask({ order, patient, assignee, stage, theme, content, date = new Date(), formData = {}, aiStatus = null, reviewRole = null, taskRole = 'executor' }) {
-  return FollowUp.findOneAndUpdate(
+  const task = await FollowUp.findOneAndUpdate(
     { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}${stage}` },
     { $setOnInsert: { patientId: patient._id, staffId: assignee, assignedTo: assignee, type: 'other', status: 'planned', date, remindAt: new Date(), theme, content, plannedContent: content, sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}${stage}`, taskRole, formData, aiStatus, reviewRole } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
+  // 健康顾问退回健管专员后，同一订单需要再次生成审核任务。复用原任务 ID，避免留下
+  // 多张审核卡；只重开被本流程退回的任务，不影响已通过或人工取消的历史任务。
+  if (stage === 'advisor_review' && task.status === 'cancelled' && task.cancelReason === '健康顾问退回健管专员修改') {
+    Object.assign(task, { patientId: patient._id, staffId: assignee, assignedTo: assignee, status: 'planned', date, remindAt: new Date(), theme, content, plannedContent: content, formData, aiStatus, reviewRole, taskRole, completedAt: null, completedBy: null, cancelReason: '' });
+    await task.save();
+  }
+  return task;
 }
 
 async function start(order, plannerId, intake) {
