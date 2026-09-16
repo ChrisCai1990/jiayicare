@@ -2612,6 +2612,7 @@ router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => 
     if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
     const appointmentOnly = req.body.appointmentOnly === true;
     const medicationProxy = req.body.medicationProxy === true;
+    const medicalEscort = req.body.medicalEscort === true;
     if (req.staff.role === 'healthManager' && !medicationProxy) return res.status(403).json({ success: false, message: '健管专员仅可在客户确认后发起代配药或代配营养素服务' });
     if (req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅该客户的健康顾问可发起' });
     if (req.staff.role === 'healthManager' && String(patient.assignedHealthManager || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅该客户的健管专员可发起代配服务' });
@@ -2625,8 +2626,9 @@ router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => 
         req.body.medicationQuantity ||= String(supplyPlan?.intake?.totalQuantity || '');
       }
     }
-    const required = medicationProxy ? ['hospital', 'department', 'preferredDateStart', 'medicationName', 'medicationBrand', 'medicationQuantity'] : appointmentOnly ? ['hospital', 'department', 'expert', 'preferredDateStart', 'preferredDateEnd'] : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'];
-    if (required.some(key => !String(req.body[key] || '').trim())) return res.status(400).json({ success: false, message: medicationProxy ? '请填写配药医院、科室、期望日期，并确认药物名称、品牌和数量' : appointmentOnly ? '请完整填写医院、科室、专家和期望日期区间' : '请完整填写医院、科室、专家、代诊目标和交流内容' });
+    const required = medicalEscort ? ['escortCategory', 'escortDate', 'escortTime', 'hospital', 'department', 'escortGoal'] : medicationProxy ? ['hospital', 'department', 'preferredDateStart', 'medicationName', 'medicationBrand', 'medicationQuantity'] : appointmentOnly ? ['hospital', 'department', 'expert', 'preferredDateStart', 'preferredDateEnd'] : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'];
+    if (required.some(key => !String(req.body[key] || '').trim())) return res.status(400).json({ success: false, message: medicalEscort ? '请完整填写陪同类目、日期时间、医院、科室和陪同目标' : medicationProxy ? '请填写配药医院、科室、期望日期，并确认药物名称、品牌和数量' : appointmentOnly ? '请完整填写医院、科室、专家和期望日期区间' : '请完整填写医院、科室、专家、代诊目标和交流内容' });
+    if (medicalEscort && !['exam', 'checkup', 'consultation', 'treatment'].includes(req.body.escortCategory)) return res.status(400).json({ success: false, message: '请选择有效的陪同类目' });
     if (appointmentOnly && (req.body.preferredDateEnd < req.body.preferredDateStart || !/^\d{4}-\d{2}-\d{2}$/.test(req.body.preferredDateStart) || !/^\d{4}-\d{2}-\d{2}$/.test(req.body.preferredDateEnd))) return res.status(400).json({ success: false, message: '请填写有效的期望日期区间' });
     if (appointmentOnly && (!['general', 'international'].includes(req.body.clinicType) || !['self_pay', 'high_end'].includes(req.body.insuranceUse))) return res.status(400).json({ success: false, message: '请选择门诊类型和费用与保险方式' });
     // 服务由健管专员触发时，仍关联客户的健康顾问作为专业责任岗位；未分配健康顾问时由发起健管专员留痕。
