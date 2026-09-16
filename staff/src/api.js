@@ -325,7 +325,7 @@ export const staffAPI = {
 
   // 会员药物管理
   getPatientMedications:    (id)       => req(`/staff/patients/${id}/medications`),
-  getMedicationProxyDefaults: (id)     => req(`/staff/patients/${id}/medication-proxy/defaults`),
+  getMedicationProxyDefaults: (id, medicationId = '') => req(`/staff/patients/${id}/medication-proxy/defaults${medicationId ? `?medicationId=${encodeURIComponent(medicationId)}` : ''}`),
   createPatientMedication:  (id, data) => req(`/staff/patients/${id}/medications`, { method: 'POST', body: JSON.stringify(data) }),
   updatePatientMedication:  (id, medId, data) => req(`/staff/patients/${id}/medications/${medId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deletePatientMedication:  (id, medId) => req(`/staff/patients/${id}/medications/${medId}`, { method: 'DELETE' }),

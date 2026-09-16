@@ -566,7 +566,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
   const [form, setForm] = useState({
     name: '', hospital: '', campus: '', department: '', expert: '', clinicType: '', insuranceUse: '', insurerName: '', settlementMethod: 'pending',
     staffId: '', staffName: '', supervisorId: '', followUpPlanId: '', followUpPlanName: '', followUpPlans: [], serviceDomain: '', serviceMode: '', serviceDate: '', serviceTime: '', transport: '', tasks: '', hotel: '', notes: '',
-    preferredDateStart: '', preferredDateEnd: '', medicationName: '', medicationBrand: '', medicationQuantity: '', medicationAutoFilled: false,
+    preferredDateStart: '', preferredDateEnd: '', sourceMedicationId: '', medicationOptions: [], medicationName: '', medicationBrand: '', medicationSpecification: '', medicationQuantity: '', medicationAutoFilled: false, medicationAutoSource: '',
   })
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
 
@@ -587,10 +587,14 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
       if (!defaults.medicationName && !defaults.medicationBrand && !defaults.medicationQuantity) return
       setForm(prev => ({
         ...prev,
-        medicationName: defaults.medicationName || prev.medicationName,
-        medicationBrand: defaults.medicationBrand || prev.medicationBrand,
-        medicationQuantity: defaults.medicationQuantity || prev.medicationQuantity,
+        sourceMedicationId: defaults.sourceMedicationId || '',
+        medicationOptions: defaults.medicationOptions || [],
+        medicationName: defaults.medicationName || '',
+        medicationBrand: defaults.medicationBrand || '',
+        medicationSpecification: defaults.medicationSpecification || '',
+        medicationQuantity: defaults.medicationQuantity || '',
         medicationAutoFilled: true,
+        medicationAutoSource: defaults.sourceLabel || '配药随访计划',
       }))
     }).catch(err => setError(err.message || '读取客户配药提醒失败'))
   }, [patientId, isMedicationProxy])
@@ -650,7 +654,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
       notes:     c.notes     || '',
       preferredDateStart: '',
       preferredDateEnd: '',
-      medicationName: '', medicationBrand: '', medicationQuantity: '', medicationAutoFilled: false,
+      sourceMedicationId: '', medicationOptions: [], medicationName: '', medicationBrand: '', medicationSpecification: '', medicationQuantity: '', medicationAutoFilled: false, medicationAutoSource: '',
     })
     setStep(2)
     setError('')
@@ -662,8 +666,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
     if (!patientId) { setError('请搜索并选择会员'); return }
     if (!form.name.trim()) { setError('请填写方案名称'); return }
     if (!isMedicalProxy && !isExpertAppointment && !form.serviceDate) { setError('请选择服务日期'); return }
-    if (isMedicationProxy && (!form.hospital.trim() || !form.department.trim())) { setError('请填写配药医院和科室'); return }
-    if (isMedicationProxy && (!form.medicationName.trim() || !form.medicationBrand.trim() || !form.medicationQuantity.trim())) { setError('请确认配备药物名称、品牌和数量'); return }
+    if (isMedicationProxy && (!form.medicationName.trim() || !form.medicationBrand.trim() || !form.medicationSpecification.trim() || !form.medicationQuantity.trim())) { setError('请确认配备药物名称、品牌、规格和数量'); return }
     if (isExpertAppointment && (!form.hospital.trim() || !form.department.trim() || !form.expert.trim() || !form.preferredDateStart || !form.preferredDateEnd || form.preferredDateEnd < form.preferredDateStart)) { setError('请完整填写医院、科室、专家和有效的期望日期区间'); return }
     if (isExpertAppointment && (!form.clinicType || !form.insuranceUse)) { setError('请选择门诊类型和费用与保险方式'); return }
     if (isMedicalProxy && (!form.hospital.trim() || !form.department.trim() || !form.expert.trim() || !form.proxyGoal?.trim() || !form.communicationContent?.trim())) { setError('请完整填写医院、科室、专家、代诊目标和交流内容'); return }
@@ -676,7 +679,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
     setError(''); setSaving(true)
     try {
       if (isMedicalProxy || isExpertAppointment || isMedicationProxy) {
-        await staffAPI.startStaffMedicalProxy(patientId, { hospital: form.hospital.trim(), campus: form.campus.trim(), department: form.department.trim(), expert: form.expert.trim(), clinicType: form.clinicType, insuranceUse: form.insuranceUse, insurerName: form.insurerName.trim(), settlementMethod: form.settlementMethod, proxyGoal: form.proxyGoal?.trim() || '', communicationContent: form.communicationContent?.trim() || '', selectedReportIds, appointmentOnly: isExpertAppointment, medicationProxy: isMedicationProxy, medicationName: form.medicationName.trim(), medicationBrand: form.medicationBrand.trim(), medicationQuantity: form.medicationQuantity.trim(), preferredDateStart: isMedicationProxy ? form.serviceDate : form.preferredDateStart, preferredDateEnd: isMedicationProxy ? form.serviceDate : form.preferredDateEnd, serviceTime: form.serviceTime, notes: form.notes })
+        await staffAPI.startStaffMedicalProxy(patientId, { hospital: form.hospital.trim(), campus: form.campus.trim(), department: form.department.trim(), expert: form.expert.trim(), clinicType: form.clinicType, insuranceUse: form.insuranceUse, insurerName: form.insurerName.trim(), settlementMethod: form.settlementMethod, proxyGoal: form.proxyGoal?.trim() || '', communicationContent: form.communicationContent?.trim() || '', selectedReportIds, appointmentOnly: isExpertAppointment, medicationProxy: isMedicationProxy, sourceMedicationId: form.sourceMedicationId, medicationName: form.medicationName.trim(), medicationBrand: form.medicationBrand.trim(), medicationSpecification: form.medicationSpecification.trim(), medicationQuantity: form.medicationQuantity.trim(), preferredDateStart: isMedicationProxy ? form.serviceDate : form.preferredDateStart, preferredDateEnd: isMedicationProxy ? form.serviceDate : form.preferredDateEnd, serviceTime: form.serviceTime, notes: form.notes })
         onSaved()
         return
       }
@@ -805,10 +808,25 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
 
           {isMedicationProxy && <div style={{ display: 'grid', gap: 10, padding: 12, border: '1px solid #CFE4DA', borderRadius: 8, background: '#F7FBF9' }}>
             <div style={{ fontSize: 13, fontWeight: 650, color: '#1E6B50' }}>本次配备药物</div>
-            {form.medicationAutoFilled && <div style={{ fontSize: 12, color: '#1E6B50' }}>已根据客户现有配药提醒/周期计划自动获取，请核对后提交。</div>}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-              {renderField('药物名称 *', 'medicationName', 0, '通用名/药物名称')}
-              {renderField('品牌 *', 'medicationBrand', 0, '商品名或品牌')}
+            {form.medicationOptions.length > 1 && <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">关联药物 *</label>
+              <select className="form-input" value={form.sourceMedicationId} onChange={async e => {
+                const medicationId = e.target.value
+                set('sourceMedicationId', medicationId)
+                try {
+                  const res = await staffAPI.getMedicationProxyDefaults(patientId, medicationId)
+                  const defaults = res.data || {}
+                  setForm(prev => ({ ...prev, ...defaults, medicationOptions: prev.medicationOptions, medicationAutoFilled: true, medicationAutoSource: defaults.sourceLabel || '药物档案' }))
+                } catch (err) { setError(err.message || '读取关联药物失败') }
+              }}>
+                {form.medicationOptions.map(item => <option key={item.id} value={item.id}>{item.brandName || item.name}{item.specification ? ` · ${item.specification}` : ''}</option>)}
+              </select>
+            </div>}
+            {form.medicationAutoFilled && <div style={{ fontSize: 12, color: '#1E6B50' }}>AI 已从{form.medicationAutoSource || '药物档案'}自动关联；仅缺失项目需要补充。</div>}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              {form.medicationName ? <div><label className="form-label">药物名称</label><div className="form-input" style={{ background: '#EEF5F1' }}>{form.medicationName}</div></div> : renderField('药物名称 *', 'medicationName', 0, '请补充药物名称')}
+              {form.medicationBrand ? <div><label className="form-label">品牌</label><div className="form-input" style={{ background: '#EEF5F1' }}>{form.medicationBrand}</div></div> : renderField('品牌 *', 'medicationBrand', 0, '请补充商品名或品牌')}
+              {form.medicationSpecification ? <div><label className="form-label">规格</label><div className="form-input" style={{ background: '#EEF5F1' }}>{form.medicationSpecification}</div></div> : renderField('规格 *', 'medicationSpecification', 0, '请补充规格')}
               {renderField('数量 *', 'medicationQuantity', 0, '如：3盒、90片')}
             </div>
           </div>}
@@ -832,10 +850,10 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
 
           {/* 两栏布局 */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            {renderField('医院',     'hospital',   0, '医院名称')}
-            {renderField('院区',     'campus',     0, '院区名称（可选）')}
-            {renderField('科室',     'department', 0, '科室名称')}
-            {renderField('专家',     'expert',     0, '专家姓名（可选）')}
+            {!isMedicationProxy && renderField('医院',     'hospital',   0, '医院名称')}
+            {!isMedicationProxy && renderField('院区',     'campus',     0, '院区名称（可选）')}
+            {!isMedicationProxy && renderField('科室',     'department', 0, '科室名称')}
+            {!isMedicationProxy && renderField('专家',     'expert',     0, '专家姓名（可选）')}
             {!isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && !/门诊一站式/.test(`${selectedTpl?.name || ''} ${form.name || ''}`) && <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">就医专员</label>
               <select

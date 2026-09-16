@@ -52,6 +52,7 @@ const medicationSchema = new mongoose.Schema({
     note:         { type: String, default: '' },
     updatedAt:    { type: Date, default: null },
     updatedBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+    followUpTaskId:{ type: mongoose.Schema.Types.ObjectId, ref: 'FollowUp', default: null },
   },
   // 今日打卡记录
   checkIns: [{

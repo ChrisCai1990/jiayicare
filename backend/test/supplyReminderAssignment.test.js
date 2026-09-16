@@ -21,7 +21,7 @@ async function generate(mode) {
     User: { findById: () => ({ select: async () => ({ assignedHealthManager: 'health-manager' }) }) },
     FollowUp: {
       deleteMany: async () => {},
-      create: async row => { inserted = [row]; },
+      create: async row => { inserted = [row]; return { _id: 'follow-up-1', ...row }; },
     },
   });
   const res = { code: 200, status(code) { this.code = code; return this; }, json(data) { this.data = data; return this; } };
@@ -30,25 +30,27 @@ async function generate(mode) {
     body: { firstDate: '2099-01-01', intervalDays: 30, cycles: 1, mode },
     staff: { _id: 'operator-1' },
   }, res);
-  return { res, row: inserted[0] };
+  return { res, row: inserted[0], record };
 }
 
 test('就医配取提醒归当前操作人并立即出现在其随访列表', async () => {
-  const { res, row } = await generate('visit');
+  const { res, row, record } = await generate('visit');
   assert.equal(res.code, 200);
   assert.equal(row.staffId, 'operator-1');
   assert.equal(row.assignedTo, 'operator-1');
   assert.equal(row.sourceType, 'supply_reminder');
+  assert.equal(record.supplyReminder.followUpTaskId, 'follow-up-1');
   assert.match(row.theme, /提醒客户配取/);
   assert.match(row.plannedContent, /提醒会员自行/);
 });
 
 test('代配待办也归当前操作人，可在其随访列表中查看', async () => {
-  const { res, row } = await generate('proxy');
+  const { res, row, record } = await generate('proxy');
   assert.equal(res.code, 200);
   assert.equal(row.staffId, 'operator-1');
   assert.equal(row.assignedTo, 'operator-1');
   assert.equal(row.sourceType, 'supply_reminder');
+  assert.equal(record.supplyReminder.followUpTaskId, 'follow-up-1');
   assert.match(row.theme, /我方代配/);
   assert.match(row.plannedContent, /安排我方代配/);
 });
