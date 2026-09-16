@@ -244,7 +244,7 @@ export default function ServicePlansPage() {
       const annualMgmtPlans = (annualRes.success && annualRes.data?.length > 0)
         ? annualRes.data.map((ap) => ({
           _id: ap._id, title: `${ap.year}年 年度管理方案`, type: 'annual_mgmt', status: 'active',
-          description: ap.planType ? (PLAN_TYPE_LABEL[ap.planType] || '') : '个人专属健康管理方案',
+          description: ap.templateName || (ap.planType ? (PLAN_TYPE_LABEL[ap.strategyType || ap.planType] || '') : '个人专属健康管理方案'),
           staffId: ap.pushedBy, year: ap.year, notes: ap.notes || '',
           confirmedAt: ap.confirmedAt || null, pushedAt: ap.pushedAt || null,
           items: Array.isArray(ap.displayItems) ? ap.displayItems.map(item => ({

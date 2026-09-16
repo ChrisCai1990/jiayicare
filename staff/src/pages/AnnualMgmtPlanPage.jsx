@@ -12,6 +12,12 @@ const PLAN_TYPES = [
   { key: 'health_prevention', name: '健康预防方案',   icon: '🛡️', color: '#0077B6', bg: '#EFF6FF' },
 ]
 
+const SERVICE_VERSION_STRATEGY = {
+  jys_young: 'young_state', jys_stable: 'chronic_stable', jys_reshape: 'health_reshape', jys_advisor: 'chronic_stable',
+  jygj_escort: 'health_reshape', jygj_prevention: 'health_prevention', jygj_light: 'young_state',
+}
+const strategyOf = value => SERVICE_VERSION_STRATEGY[value] || value
+
 const SERVICE_MODE_FIELDS = [
   { key: 'serviceMode', label: '服务落地方式', type: 'select', defaultValue: 'reminder', options: [
     { value: 'reminder', label: '仅提醒（客户 + 健管专员）' },
@@ -330,7 +336,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [plan, setPlan]             = useState(null)
   const [planType, setPlanType]     = useState('')
   const [moduleData, setModuleData] = useState({})
-  const [plansByType, setPlansByType] = useState({}) // patientMode: { planType: plan }，4个类型各存一份
+  const [plansByType, setPlansByType] = useState({}) // patientMode: { servicePlanCode: plan }，各服务版本独立保存
   const [year, setYear]             = useState(new Date().getFullYear())
   const [loading, setLoading]       = useState(true)
   const [saving, setSaving]         = useState(false)
@@ -370,16 +376,16 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         // 后端返回该年度全部类型的方案数组，按 updatedAt 降序
         const list = Array.isArray(planRes.data) ? planRes.data : (planRes.data ? [planRes.data] : [])
         const map = {}
-        list.forEach(p => { if (p.planType) map[p.planType] = p })
+        list.forEach(p => { const key = p.servicePlanCode || p.planType; if (key) map[key] = p })
         setPlansByType(map)
         // 从"管理方案"tab点"✨ AI年度管理方案"按钮跳转过来时会带 ?planType=xxx，
         // 优先用它选中对应类型（而不是默认选"最近编辑过的那一份"），让用户选的类型立刻生效
         const queryPlanType = searchParams.get('planType')
         const target = queryPlanType && map[queryPlanType]
           ? map[queryPlanType]
-          : (queryPlanType ? null : list.find(p => p.planType))
+          : (queryPlanType ? null : list.find(p => p.servicePlanCode || p.planType))
         if (target) {
-          setPlanType(target.planType)
+          setPlanType(target.servicePlanCode || target.planType)
           setSelectedTemplateId(target.templateId || '')
           setModuleData(target.moduleData || {})
           setPushedAt(target.pushedAt || null)
@@ -456,7 +462,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     try {
       if (patientMode) {
         const selectedTemplate = adminTemplates.find(t => t._id === selectedTemplateId)
-        const res = await staffAPI.saveAnnualPlan(id, { planType, moduleData, year, templateId: selectedTemplateId || null, templateName: selectedTemplate?.name || '' })
+        const res = await staffAPI.saveAnnualPlan(id, { planType, servicePlanCode: planType, moduleData, year, templateId: selectedTemplateId || null, templateName: selectedTemplate?.content?.planName || selectedTemplate?.name || '' })
         const saved = res.data
         if (saved) {
           setPlansByType(prev => ({ ...prev, [planType]: saved }))
@@ -492,7 +498,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       // 只填充当前所选方案类型包含的板块，其余类型的板块忽略（一次只生成一个方案）
       const configuredRules = selectedTemplate?.content?.moduleRules || []
       const enabledRuleKeys = new Set(configuredRules.filter(rule => rule.enabled !== false && rule.aiCanGenerate !== false).map(rule => ADMIN_RULE_MODULE_MAP[rule.key]).filter(Boolean))
-      const configuredKeys = configuredRules.length ? (PLAN_TYPE_MODULES[type] || []).filter(key => enabledRuleKeys.has(key) || ![...Object.values(ADMIN_RULE_MODULE_MAP)].includes(key)) : (PLAN_TYPE_MODULES[type] || [])
+      const strategyType = strategyOf(type)
+      const configuredKeys = configuredRules.length ? (PLAN_TYPE_MODULES[strategyType] || []).filter(key => enabledRuleKeys.has(key) || ![...Object.values(ADMIN_RULE_MODULE_MAP)].includes(key)) : (PLAN_TYPE_MODULES[strategyType] || [])
       const allowedKeys = [...new Set([...configuredKeys, ...BASIC_STANDARD_MODULE_KEYS])]
       setModuleData(prev => {
         const merged = { ...prev }
@@ -575,7 +582,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const selectedAdminTemplate = adminTemplates.find(t => t._id === selectedTemplateId)
   const templateModuleEntries = selectedAdminTemplate
     ? templateEntries(selectedAdminTemplate)
-    : (PLAN_TYPE_MODULES[planType] || []).map(key => ({ key, def: MODULE_DEFS[key] }))
+    : (PLAN_TYPE_MODULES[strategyOf(planType)] || []).map(key => ({ key, def: MODULE_DEFS[key] }))
   const visibleModuleEntries = templateModuleEntries.filter(entry => {
     const data = moduleData[entry.key]
     if (!data) return false
@@ -598,8 +605,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     })(),
   }))
   const activePlanType = selectedAdminTemplate
-    ? { ...(PLAN_TYPES.find(pt => pt.key === planType) || PLAN_TYPES[3]), name: selectedAdminTemplate.content?.planName || selectedAdminTemplate.name }
-    : PLAN_TYPES.find(pt => pt.key === planType)
+    ? { ...(PLAN_TYPES.find(pt => pt.key === strategyOf(planType)) || PLAN_TYPES[3]), key: planType, name: selectedAdminTemplate.content?.planName || selectedAdminTemplate.name }
+    : PLAN_TYPES.find(pt => pt.key === strategyOf(planType))
   const backPath = patientMode ? '/plans?tab=annual_health_mgmt' : '/plans?type=annual_mgmt'
 
   const yearOptions = [new Date().getFullYear() - 1, new Date().getFullYear(), new Date().getFullYear() + 1]
@@ -688,8 +695,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           {templatesLoading && <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: 20, color: '#8AA89C' }}>正在从Admin后台加载模板...</div>}
           {!templatesLoading && adminTemplates.length === 0 && <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: 20, color: '#D97706' }}>该客户所属平台暂无健康管理方案模板，请在Admin后台配置“客户归属”和“方案归类”</div>}
           {adminTemplates.map((tpl, index) => {
-            const key = tpl.content?.planType || 'health_prevention'
-            const base = PLAN_TYPES.find(pt => pt.key === key) || PLAN_TYPES[index % PLAN_TYPES.length]
+            const key = tpl.content?.servicePlanCode || tpl.content?.planType || 'health_prevention'
+            const base = PLAN_TYPES.find(pt => pt.key === strategyOf(key)) || PLAN_TYPES[index % PLAN_TYPES.length]
             const pt = { ...base, key, templateId: tpl._id, name: tpl.content?.planName || tpl.name }
             const isSelected = selectedTemplateId === tpl._id
             return (

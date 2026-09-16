@@ -29,6 +29,16 @@ const ANNUAL_MODULE_RULES = [
 
 const DEFAULT_REQUIRED_FIELDS = ['项目名称', '设置依据', '建议时间/时间范围', '执行频率', '注意事项', '客户行动', '责任角色', '审核状态']
 
+const ANNUAL_SERVICE_VERSIONS = [
+  ['jys_young', '金伊森 · 健康年轻态计划', 'young_state'],
+  ['jys_stable', '金伊森 · 健康维稳计划', 'chronic_stable'],
+  ['jys_reshape', '金伊森 · 健康重塑计划', 'health_reshape'],
+  ['jys_advisor', '金伊森 · 健康顾问计划', 'chronic_stable'],
+  ['jygj_escort', '嘉医管家 · 健康护航计划', 'health_reshape'],
+  ['jygj_prevention', '嘉医管家 · 健康预防计划', 'health_prevention'],
+  ['jygj_light', '嘉医管家 · 轻享健康计划', 'young_state'],
+]
+
 const STANDARD_ACTION_DEFS = [
   { key: 'medical_treatment', label: '需要安排就医', hint: '客户存在明确就医需求时采用' },
   { key: 'checkup_completion', label: '需要完善体检', hint: '现有健康资料存在必要检查缺口时采用' },
@@ -46,6 +56,8 @@ const defaultContent = {
   },
   health_management: {
     templateVersion: 2,
+    servicePlanCode: '',
+    strategyType: 'health_prevention',
     planType: 'health_prevention',
     planName: '',
     planDesc: '',
@@ -58,6 +70,8 @@ const defaultContent = {
     standardActionPlans: {},
     personalizedFollowUpPlans: [],
     followUpPlans: [],
+    eligibleMemberTypes: [],
+    eligibleServicePackages: [],
   },
   health_record: {
     applicableScenario: '', standardSteps: '', requiredMaterials: '', completionStandard: '',
@@ -360,8 +374,15 @@ function PlanContentForm({ type, initialContent, contentRef }) {
         AI依据已确认综合研判，在下方启用模块和标准随访方案范围内组装客户年度总方案；健康顾问审核、客户确认后，系统自动生成随访计划及专业岗位指令。
       </div>
       <div className="form-group">
-        <label className="form-label">适用管理模式 *</label>
-        <select className="form-input" value={content.planType || 'health_prevention'} onChange={e => set('planType', e.target.value)}>
+        <label className="form-label">唯一服务版本 *</label>
+        <select className="form-input" value={content.servicePlanCode || ''} onChange={e => { const item = ANNUAL_SERVICE_VERSIONS.find(v => v[0] === e.target.value); set('servicePlanCode', e.target.value); if (item) { set('strategyType', item[2]); set('planType', item[2]) } }}>
+          <option value="">请选择</option>
+          {ANNUAL_SERVICE_VERSIONS.map(item => <option key={item[0]} value={item[0]}>{item[1]}</option>)}
+        </select>
+      </div>
+      <div className="form-group">
+        <label className="form-label">管理策略 *</label>
+        <select className="form-input" value={content.strategyType || content.planType || 'health_prevention'} onChange={e => { set('strategyType', e.target.value); set('planType', e.target.value) }}>
           <option value="health_reshape">健康重塑类</option>
           <option value="young_state">健康年轻态类</option>
           <option value="chronic_stable">慢病维稳类</option>
@@ -371,6 +392,14 @@ function PlanContentForm({ type, initialContent, contentRef }) {
       <div className="form-group">
         <label className="form-label">规则名称 *</label>
         <input className="form-input" value={content.planName || ''} onChange={e => set('planName', e.target.value)} placeholder="如：年度健康管理统一规则" />
+      </div>
+      <div className="form-group">
+        <label className="form-label">适用会员类型</label>
+        <input className="form-input" value={(content.eligibleMemberTypes || []).join('、')} onChange={e => set('eligibleMemberTypes', e.target.value.split(/[,，、]/).map(v => v.trim()).filter(Boolean))} placeholder="留空表示不限制，多个用顿号分隔" />
+      </div>
+      <div className="form-group">
+        <label className="form-label">适用服务包</label>
+        <input className="form-input" value={(content.eligibleServicePackages || []).join('、')} onChange={e => set('eligibleServicePackages', e.target.value.split(/[,，、]/).map(v => v.trim()).filter(Boolean))} placeholder="留空表示不限制，需与客户服务包名称一致" />
       </div>
       <FieldRow label="状态说明" fieldKey="planDesc" placeholder="方案适用场景或说明" half content={content} set={set} />
       <FieldRow label="策略侧重点 *" fieldKey="strategyFocus" rows={3} placeholder="说明本策略优先解决的方向，例如：体重与代谢重塑、睡眠和运动能力、慢病稳定与风险预警" content={content} set={set} />
@@ -652,6 +681,17 @@ function TemplateModal({ template, planType, onClose, onSaved }) {
   const save = async () => {
     if (!name.trim()) { toast('❌ 模板名称不能为空'); return }
     const content = { ...contentRef.current, clientBrands, workflowProductId }
+    if (planType === 'health_management' && !content.servicePlanCode) {
+      toast('❌ 请选择唯一服务版本')
+      return
+    }
+    if (planType === 'health_management') {
+      const expectedBrand = String(content.servicePlanCode).startsWith('jys_') ? 'jinyisen' : 'jiayiguanjia'
+      if (clientBrands.length !== 1 || clientBrands[0] !== expectedBrand) {
+        toast('❌ 年度服务版本必须且只能选择对应的客户归属')
+        return
+      }
+    }
     if (planType === 'health_management' && !Object.values(content.standardActionPlans || {}).some(item => item?.id)) {
       toast('❌ 请至少配置一项年度基础动作模板')
       return

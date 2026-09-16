@@ -3,7 +3,15 @@ const mongoose = require('mongoose');
 // 年度管理方案 — 每个会员每年一份，医护端配置
 const annualPlanSchema = new mongoose.Schema({
   patientId:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  planType:   { type: String, enum: ['health_reshape', 'young_state', 'chronic_stable', 'health_prevention'] },
+  // planType暂时保留为唯一索引键：新方案写入7个服务版本编码，旧方案仍可使用4个策略编码。
+  planType:   { type: String, enum: ['health_reshape', 'young_state', 'chronic_stable', 'health_prevention', 'jys_young', 'jys_stable', 'jys_reshape', 'jys_advisor', 'jygj_escort', 'jygj_prevention', 'jygj_light'] },
+  servicePlanCode: { type: String, default: '', index: true },
+  strategyType: { type: String, enum: ['health_reshape', 'young_state', 'chronic_stable', 'health_prevention', ''], default: '' },
+  clientBrand: { type: String, enum: ['jiayiguanjia', 'jinyisen', ''], default: '' },
+  memberTypeSnapshot: { type: String, default: '' },
+  servicePackageSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
+  entitlementSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
+  resourceSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
   templateId: { type: mongoose.Schema.Types.ObjectId, ref: 'PlanTemplate', default: null },
   templateName: { type: String, default: '' },
   templateSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },

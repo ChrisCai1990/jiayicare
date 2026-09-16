@@ -153,8 +153,8 @@ export default function PlansPage() {
                           <td style={{ color: '#8AA89C', fontSize: 12 }}>{p.patientId?.phone || '-'}</td>
                           <td>
                             {p.planType
-                              ? <span style={{ fontSize: 12, fontWeight: 600, color: ANNUAL_PLAN_TYPE_COLOR[p.planType] || '#666', background: '#F5F5F5', padding: '2px 8px', borderRadius: 20 }}>
-                                  {ANNUAL_PLAN_TYPE_LABEL[p.planType] || p.planType}
+                              ? <span style={{ fontSize: 12, fontWeight: 600, color: ANNUAL_PLAN_TYPE_COLOR[p.strategyType || p.planType] || '#666', background: '#F5F5F5', padding: '2px 8px', borderRadius: 20 }}>
+                                  {p.templateName || ANNUAL_PLAN_TYPE_LABEL[p.strategyType || p.planType] || p.planType}
                                 </span>
                               : <span style={{ fontSize: 12, color: '#aaa' }}>未选择</span>}
                           </td>

@@ -4365,11 +4365,13 @@ router.get('/plan-templates', staffAuth, async (req, res) => {
     const filter = { status: 'active' };
     if (type) filter.type = type;
     let patientBrand = '';
+    let patientProfile = null;
     if (patientId) {
-      const patient = await User.findById(patientId).select('clientBrand');
+      const patient = await User.findById(patientId).select('clientBrand memberType servicePackage');
       if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
       if (!patient.clientBrand) return res.json({ success: true, data: [] });
       patientBrand = patient.clientBrand;
+      patientProfile = patient.toObject ? patient.toObject() : patient;
     }
     let templates = await PlanTemplate.find(filter).sort({ name: 1 }).lean();
     // 普通体检模板仍只供体检方案入口使用；体检一站式必须保留在就医协助入口，
@@ -4385,24 +4387,14 @@ router.get('/plan-templates', staffAuth, async (req, res) => {
         if (/^嘉医管家\s*[|｜]/.test(tpl.name || '')) return 'jiayiguanjia';
         return ''; // 无品牌前缀的历史基础模板（如体检套餐）作为两平台共享模板
       };
-      const inferPlanType = tpl => {
-        if (tpl.content?.planType) return tpl.content.planType;
-        const name = tpl.name || '';
-        if (/重塑|护航/.test(name)) return 'health_reshape';
-        if (/年轻态|轻享/.test(name)) return 'young_state';
-        if (/维稳|顾问/.test(name)) return 'chronic_stable';
-        return 'health_prevention';
-      };
+      const { normalizeAnnualTemplate, templateMatchesPatient } = require('../utils/annualPlanServiceVersions');
       templates = templates
         .filter(tpl => {
           const brands = Array.isArray(tpl.clientBrands) ? tpl.clientBrands.filter(Boolean) : [];
           return brands.length ? brands.includes(patientBrand) : ['', patientBrand].includes(inferLegacyBrand(tpl));
         })
-        .map(tpl => ({
-          ...tpl,
-          effectiveClientBrand: inferLegacyBrand(tpl) || patientBrand,
-          content: { ...(tpl.content || {}), planType: inferPlanType(tpl) },
-        }));
+        .map(tpl => normalizeAnnualTemplate({ ...tpl, effectiveClientBrand: inferLegacyBrand(tpl) || patientBrand }, patientProfile || {}))
+        .filter(tpl => type !== 'health_management' || templateMatchesPatient(tpl, patientProfile || {}));
     }
     // 历史上同名模板曾按嘉医管家、金伊森各存一份。无论是否传会员，医护端都只展示
     // 一个业务模板；V18 会清理存量数据，这里同时作为迁移前及异常数据的展示兜底。
@@ -5060,11 +5052,14 @@ router.get('/patients/:id/plans', staffAuth, async (req, res) => {
         : total > 0 && completed >= total ? 'completed' : 'in_progress';
     return ({
     _id: ap._id,
-    title: `${ap.year}年 年度管理方案${ap.planType ? ` · ${PLAN_TYPE_LABEL[ap.planType] || ''}` : ''}`,
+    title: `${ap.year}年 年度管理方案${ap.templateName || ap.planType ? ` · ${ap.templateName || PLAN_TYPE_LABEL[ap.strategyType || ap.planType] || ''}` : ''}`,
     type: 'annual_mgmt',
     status: ap.pushedAt ? 'active' : 'draft',
     year: ap.year,
     planType: ap.planType,
+    servicePlanCode: ap.servicePlanCode || '',
+    strategyType: ap.strategyType || '',
+    templateName: ap.templateName || '',
     moduleData: ap.moduleData,
     staffId: ap.pushedBy,
     pushedAt: ap.pushedAt,
@@ -5871,16 +5866,24 @@ router.get('/patients/:id/annual-plan', staffAuth, async (req, res) => {
   if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权查看该会员的年度管理方案' });
   try {
     const { year, planType } = req.query;
+    const patient = await User.findById(req.params.id).select('clientBrand').lean();
+    const { inferServiceVersion } = require('../utils/annualPlanServiceVersions');
+    const exposeVersion = plan => {
+      if (!plan) return null;
+      const value = plan.toObject ? plan.toObject() : plan;
+      const inferred = inferServiceVersion({ code: value.servicePlanCode, planType: value.planType, name: value.templateName || value.templateSnapshot?.name, clientBrand: value.clientBrand || patient?.clientBrand });
+      return { ...value, servicePlanCode: value.servicePlanCode || inferred?.code || value.planType, strategyType: value.strategyType || inferred?.strategyType || value.planType };
+    };
     const query = { patientId: req.params.id };
     if (year) query.year = parseInt(year);
     // 指定 planType → 返回该类型单份；否则返回该年度全部类型的方案数组
     if (planType !== undefined && planType !== '') {
       query.planType = planType;
       const plan = await AnnualPlan.findOne(query);
-      return res.json({ success: true, data: plan || null });
+      return res.json({ success: true, data: exposeVersion(plan) });
     }
     const plans = await AnnualPlan.find(query).sort({ year: -1, updatedAt: -1 });
-    res.json({ success: true, data: plans });
+    res.json({ success: true, data: plans.map(exposeVersion) });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -5893,8 +5896,8 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     return res.status(403).json({ success: false, message: '仅健康顾问可生成/编辑年度管理方案' });
   }
   try {
-    const { planType, moduleData, notes, year, templateId, templateName } = req.body;
-    if (!planType) return res.status(400).json({ success: false, message: '缺少方案类型' });
+    const { planType, servicePlanCode: requestedServicePlanCode, moduleData, notes, year, templateId, templateName } = req.body;
+    if (!planType && !requestedServicePlanCode) return res.status(400).json({ success: false, message: '缺少服务版本' });
     const todayText = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
     const personalized = moduleData?.personalized_followups?.records || [];
     const allServiceRows = Object.values(moduleData || {}).flatMap(module => Array.isArray(module?.records) ? module.records : [module]).filter(Boolean);
@@ -5913,11 +5916,31 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       return res.status(400).json({ success: false, message: '每项随访都要选择主执行人和有效的未来日期；协同执行人和日期需要同时填写' });
     }
     const targetYear = year || new Date().getFullYear();
-    // 按「会员+年度+方案类型」定位，4个类型各存一份，互不覆盖
     const template = templateId ? await PlanTemplate.findOne({ _id: templateId, type: 'health_management' }).lean() : null;
+    if (!template) return res.status(400).json({ success: false, message: '请选择有效的Admin年度管理服务版本' });
+    const patient = await User.findById(req.params.id).select('clientBrand memberType servicePackage').lean();
+    if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+    const { normalizeAnnualTemplate, templateMatchesPatient, byCode } = require('../utils/annualPlanServiceVersions');
+    const normalizedTemplate = normalizeAnnualTemplate(template, patient);
+    const servicePlanCode = requestedServicePlanCode || normalizedTemplate.content?.servicePlanCode || planType;
+    const version = byCode(servicePlanCode);
+    if (!version || version.clientBrand !== patient.clientBrand) return res.status(400).json({ success: false, message: '服务版本与客户归属不匹配' });
+    if (!templateMatchesPatient(normalizedTemplate, patient)) return res.status(400).json({ success: false, message: '客户的会员类型或服务包不适用于该服务版本' });
+    const packageRecord = patient.servicePackage ? await ServicePackage.findOne({ clientBrand: patient.clientBrand, name: patient.servicePackage }).lean() : null;
+    // 新数据使用唯一服务版本编码作为planType索引键；同一策略下的“维稳/顾问”不再互相覆盖。
+    const legacy = await AnnualPlan.findOne({
+      patientId: req.params.id, year: targetYear,
+      planType: { $in: ['health_reshape', 'young_state', 'chronic_stable', 'health_prevention'] },
+      $or: [{ templateId: template._id }, { templateName: { $in: [templateName, normalizedTemplate.content?.planName, template.name].filter(Boolean) } }],
+    });
+    const selector = legacy ? { _id: legacy._id } : { patientId: req.params.id, year: targetYear, planType: servicePlanCode };
     const plan = await AnnualPlan.findOneAndUpdate(
-      { patientId: req.params.id, year: targetYear, planType },
-      { planType, moduleData: moduleData || {}, notes: notes || '', templateId: templateId || null, templateName: templateName || '',
+      selector,
+      { planType: servicePlanCode, servicePlanCode, strategyType: version.strategyType, clientBrand: patient.clientBrand,
+        memberTypeSnapshot: patient.memberType || '',
+        servicePackageSnapshot: packageRecord ? { id: packageRecord._id, name: packageRecord.name, capturedAt: new Date() } : { name: patient.servicePackage || '', capturedAt: new Date() },
+        entitlementSnapshot: packageRecord?.entitlements || {}, resourceSnapshot: normalizedTemplate.content?.resourceConfig || {},
+        moduleData: moduleData || {}, notes: notes || '', templateId: templateId || null, templateName: templateName || normalizedTemplate.content?.planName || template.name || '',
         templateSnapshot: template ? { name: template.name, type: template.type, content: template.content, capturedAt: new Date() } : null,
         createdBy: req.staff._id, reviewStatus: 'pending', reviewedBy: null, reviewedAt: null, reviewNote: '',
         pushedAt: null, pushedBy: null, confirmedAt: null },
@@ -6123,11 +6146,12 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     const { syncAnnualPlanSupplyPlans } = require('../utils/annualPlanSupplyPlans');
     const { syncAnnualPlanTreatments } = require('../utils/annualPlanTreatmentSync');
     await Promise.all([syncAnnualPlanTaskSplit(plan), syncAnnualPlanSupplyPlans(plan), syncAnnualPlanTreatments(plan)]);
+    const { byCode } = require('../utils/annualPlanServiceVersions');
     const PLAN_TYPE_NAMES = {
       health_reshape: '健康重塑方案', young_state: '健康年轻态方案',
       chronic_stable: '慢病维稳方案', health_prevention: '健康预防方案',
     };
-    const typeName = PLAN_TYPE_NAMES[plan.planType] || '健康管理方案';
+    const typeName = plan.templateName || byCode(plan.servicePlanCode || plan.planType)?.label || PLAN_TYPE_NAMES[plan.strategyType || plan.planType] || '健康管理方案';
     const pushTitle = `${targetYear}年度${typeName}`;
     // 同步写 PushRecord，让用户在消息中心收到通知（每个类型独立一条）
     const existing = await PushRecord.findOne({ patientId: req.params.id, type: 'plan', questionnaireId: null,
@@ -8678,6 +8702,15 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       selectedTemplate = await PlanTemplate.findOne({ _id: templateId, type: 'health_management', status: 'active' }).lean();
       if (!selectedTemplate) return res.status(404).json({ success: false, message: 'Admin健康管理方案模板不存在或已停用' });
     }
+    const { normalizeAnnualTemplate, templateMatchesPatient, byCode } = require('../utils/annualPlanServiceVersions');
+    const normalizedTemplate = selectedTemplate ? normalizeAnnualTemplate(selectedTemplate, user) : null;
+    if (normalizedTemplate && normalizedTemplate.content?.servicePlanCode && normalizedTemplate.content.servicePlanCode !== planType) {
+      return res.status(400).json({ success: false, message: '所选服务版本与Admin模板不一致' });
+    }
+    if (normalizedTemplate && !templateMatchesPatient(normalizedTemplate, user)) {
+      return res.status(400).json({ success: false, message: '客户的会员类型或服务包不适用于该服务版本' });
+    }
+    const strategyType = normalizedTemplate?.content?.strategyType || byCode(planType)?.strategyType || planType;
     const notes = req.body.notes || '';
     const configuredRules = Array.isArray(selectedTemplate?.content?.moduleRules) ? selectedTemplate.content.moduleRules : [];
     const ruleKeyMap = { medical_treatment: 'medical_service', specialist_collab: 'medical_service' };
@@ -8687,7 +8720,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       return !rule || (rule.enabled !== false && rule.aiCanGenerate !== false);
     };
     const requiredScreeningKeys = ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'annual_checkup'];
-    const allowedKeys = [...new Set([...(PLAN_TYPE_MODULES[planType] || GENERATABLE), ...requiredScreeningKeys])]
+    const allowedKeys = [...new Set([...(PLAN_TYPE_MODULES[strategyType] || GENERATABLE), ...requiredScreeningKeys])]
       .filter(k => GENERATABLE.includes(k) && (requiredScreeningKeys.includes(k) || allowedByTemplate(k)));
     const standardFollowUpPlans = await FollowUpPlan.find({ status: 'active', reviewStatus: { $ne: 'pending_review' } })
       .select('name cycles defaultRole defaultEmployeeId default_content').sort({ name: 1 }).lean();

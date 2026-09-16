@@ -610,7 +610,7 @@ export default function ServicePlansScreen({ navigation }) {
             title: `${ap.year}年 年度管理方案`,
             type: 'annual_mgmt',
             status: 'active',
-            description: ap.planType ? (PLAN_TYPE_LABEL[ap.planType] || '') : '个人专属健康管理方案',
+            description: ap.templateName || (ap.planType ? (PLAN_TYPE_LABEL[ap.strategyType || ap.planType] || '') : '个人专属健康管理方案'),
             staffId: ap.pushedBy,
             pushedAt: ap.pushedAt,
             year: ap.year,
