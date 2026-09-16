@@ -1865,6 +1865,7 @@ export default function PatientDetailPage() {
   const [fulfillerChoice, setFulfillerChoice] = useState('')
   const [showFollowUpModal, setShowFollowUpModal] = useState(false)
   const [showPostCheckupSupervisionModal, setShowPostCheckupSupervisionModal] = useState(false)
+  const [showMedicalEscortStartModal, setShowMedicalEscortStartModal] = useState(false)
   const [followUpDetail, setFollowUpDetail] = useState(null)
   const [checkupAdvisorReview, setCheckupAdvisorReview] = useState(null)
   const [editingFollowUp, setEditingFollowUp] = useState(null)
@@ -8928,6 +8929,11 @@ export default function PatientDetailPage() {
                   发起复查督办
                 </button>
               )}
+              {['familyDoctor', 'superadmin'].includes(staff?.role) && (
+                <button className="btn btn-secondary btn-sm" onClick={() => setShowMedicalEscortStartModal(true)}>
+                  发起就医陪同需求
+                </button>
+              )}
               {['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && (
                 <button className="btn btn-secondary btn-sm" disabled={aiMedicalAssistGenerating}
                   onClick={() => { setPendingMedicalAssistOrderId(''); setShowSelectTplModal('medical_assist') }}>
@@ -12108,6 +12114,21 @@ export default function PatientDetailPage() {
         />
       )}
 
+      {showMedicalEscortStartModal && (
+        <StartMedicalEscortModal
+          patientId={id}
+          patientName={user.name}
+          staffList={staffList}
+          onClose={() => setShowMedicalEscortStartModal(false)}
+          onStarted={async () => {
+            setShowMedicalEscortStartModal(false)
+            toast('就医陪同需求已转健康规划师工作台')
+            await loadFollowUps()
+            setTab('followups')
+          }}
+        />
+      )}
+
       {/* 发消息弹窗 */}
       {showMessageModal && (
         <SendMessageModal
@@ -14245,6 +14266,46 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, initialBri
       </div>
     </div>
   )
+}
+
+function StartMedicalEscortModal({ patientId, patientName, staffList = [], onClose, onStarted }) {
+  const [form, setForm] = useState({ escortCategory: 'consultation', escortDate: '', escortTime: '', hospital: '', department: '', escortGoal: '', notes: '', medicalAssistantId: '' })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const assistants = staffList.filter(item => item.role === 'medicalAssistant' && item.staffStatus !== 'inactive')
+  const set = (key, value) => setForm(current => ({ ...current, [key]: value }))
+  const submit = async () => {
+    if (!form.escortDate || !form.escortTime || !form.hospital.trim() || !form.department.trim() || !form.escortGoal.trim()) {
+      setError('请完整填写陪同日期、具体时间、医院、科室和陪同目标')
+      return
+    }
+    setSaving(true); setError('')
+    try {
+      await staffAPI.startStaffMedicalProxy(patientId, { ...form, hospital: form.hospital.trim(), department: form.department.trim(), escortGoal: form.escortGoal.trim(), notes: form.notes.trim(), medicalEscort: true })
+      await onStarted()
+    } catch (err) { setError(err.message || '发起就医陪同需求失败') }
+    finally { setSaving(false) }
+  }
+  return <div className="modal-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
+    <div className="modal" style={{ maxWidth: 650 }}>
+      <div className="modal-header"><h3 className="modal-title">发起就医陪同需求 · {patientName}</h3><button className="modal-close" onClick={onClose}>✕</button></div>
+      {error && <div className="login-err" style={{ margin: '0 20px 8px' }}>⚠️ {error}</div>}
+      <div className="modal-body" style={{ display: 'grid', gap: 14 }}>
+        <div style={{ padding: 12, borderRadius: 9, background: '#EFF8F4', color: '#1E6B50', fontSize: 13 }}>提交后直接进入健康规划师工作台。健康顾问全程查看进度，无需另选督办人。</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <label className="form-group"><span className="form-label">陪同类目 *</span><select className="form-input" value={form.escortCategory} onChange={e => set('escortCategory', e.target.value)}><option value="exam">陪同检查</option><option value="checkup">陪同体检</option><option value="consultation">陪同看诊</option><option value="treatment">陪同治疗</option></select></label>
+          <label className="form-group"><span className="form-label">就医专员（可选）</span><select className="form-input" value={form.medicalAssistantId} onChange={e => set('medicalAssistantId', e.target.value)}><option value="">由健康规划师安排</option>{assistants.map(item => <option key={item._id} value={item._id}>{item.name}{item.title ? ` · ${item.title}` : ''}</option>)}</select></label>
+          <label className="form-group"><span className="form-label">陪同日期 *</span><input className="form-input" type="date" value={form.escortDate} onChange={e => set('escortDate', e.target.value)} /></label>
+          <label className="form-group"><span className="form-label">具体时间 *</span><input className="form-input" type="time" value={form.escortTime} onChange={e => set('escortTime', e.target.value)} /></label>
+          <label className="form-group"><span className="form-label">陪同医院 *</span><input className="form-input" value={form.hospital} onChange={e => set('hospital', e.target.value)} /></label>
+          <label className="form-group"><span className="form-label">科室 *</span><input className="form-input" value={form.department} onChange={e => set('department', e.target.value)} /></label>
+        </div>
+        <label className="form-group"><span className="form-label">陪同目标 *</span><textarea className="form-input" rows={3} placeholder="本次就医、检查或治疗需要完成的事项" value={form.escortGoal} onChange={e => set('escortGoal', e.target.value)} /></label>
+        <label className="form-group"><span className="form-label">备注</span><textarea className="form-input" rows={3} placeholder="会合地点、行动注意事项、需携带材料等" value={form.notes} onChange={e => set('notes', e.target.value)} /></label>
+      </div>
+      <div className="modal-footer"><button className="btn btn-secondary" onClick={onClose}>取消</button><button className="btn btn-primary" disabled={saving} onClick={submit}>{saving ? '提交中…' : '提交给健康规划师'}</button></div>
+    </div>
+  </div>
 }
 
 function StartPostCheckupSupervisionModal({ patientId, patientName, onClose, onStarted }) {
