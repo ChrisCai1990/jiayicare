@@ -54,7 +54,7 @@ test('medical escort requires structured planner intake, accepts report or recor
     Admin.findOne = () => ({ select: () => ({ lean: async () => ({ _id: 'assistant-1' }) }) });
     User.findById = () => ({ select: () => ({ lean: async () => ({ assignedHealthManager: 'manager-1' }) }) });
     const planner = { sourceType: 'order', workflowKey: 'medical_proxy:planner', assignedTo: 'planner-1' };
-    const intake = { medicalEscort: true, escortCategory: 'consultation', escortDate: '2026-09-20', escortTime: '09:30', hospital: '某医院', department: '心内科', escortGoal: '陪同看诊并记录医嘱', medicalAssistantId: 'assistant-1' };
+    const intake = { medicalEscort: true, escortCategory: 'consultation', escortDate: '2026-09-20', escortTime: '09:30', hospital: '某医院', campus: '东院区', department: '心内科', escortGoal: '陪同看诊并记录医嘱', medicalAssistantId: 'assistant-1' };
     assert.equal(await validateMedicalProxyStage(planner, { status: 'completed', formData: intake }, { _id: 'planner-1', role: 'healthPlanner' }), '');
     delete intake.escortGoal;
     assert.match(await validateMedicalProxyStage(planner, { status: 'completed', formData: intake }, { _id: 'planner-1', role: 'healthPlanner' }), /陪同目标/);
@@ -242,6 +242,19 @@ test('staff-initiated medication keeps a planner supervision task until executio
   assert.match(workflow, /medicationProxy \? '执行人员已完成配药确认与配送安排，健康规划师全程督办闭环/);
   assert.match(page, /健康规划师分配配药执行人员/);
   assert.match(page, /执行人员配药确认与配送/);
+});
+
+test('medical escort keeps full planner supervision and auto-routes an assigned assistant', () => {
+  const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
+  const panel = fs.readFileSync(path.join(__dirname, '../../staff/src/components/ServiceTasksPanel.jsx'), 'utf8');
+  const directStart = workflow.split('async function startStaffMedicalProxyWorkflow')[1].split('async function validateMedicalProxyStage')[0];
+  assert.match(directStart, /theme: `就医陪同：健康规划师全程督办/);
+  assert.match(directStart, /supervisorId: patient\.assignedHealthPlanner/);
+  assert.match(directStart, /if \(directlyAssigned\)/);
+  assert.match(directStart, /workflowKey: `\$\{PREFIX\}execute`/);
+  assert.match(directStart, /assignmentMode: 'automatic'/);
+  assert.match(panel, /const medicalEscortProgress/);
+  assert.match(panel, /\['人员分配', '陪同执行', '资料审核', '顾问确认', '完成'\]/);
 });
 
 test('booking and execution write the shared hospital visit service archive', () => {
