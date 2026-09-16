@@ -294,15 +294,17 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceT
 async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
   const appointmentOnly = plan.appointmentOnly === true;
   const medicationProxy = plan.medicationProxy === true;
-  const appointmentRequirement = (medicationProxy ? [
+  const supplementProxy = plan.supplementProxy === true;
+  const supplyProxy = medicationProxy || supplementProxy;
+  const appointmentRequirement = (supplyProxy ? [
     plan.hospital, plan.campus, plan.department, plan.expert,
     plan.institutionType === 'online' && `线上平台：${plan.platformName || ''}`,
     plan.institutionType === 'pharmacy' && `线下药房：${plan.pharmacyName || ''}`,
     plan.purchasePath && `配取路径：${plan.purchasePath}`,
-    `药物名称：${plan.medicationName}`,
-    `品牌：${plan.medicationBrand}`,
-    `规格：${plan.medicationSpecification}`,
-    `数量：${plan.medicationQuantity}`,
+    `${supplementProxy ? '营养素名称' : '药物名称'}：${supplementProxy ? plan.supplementName : plan.medicationName}`,
+    `品牌：${supplementProxy ? plan.supplementBrand : plan.medicationBrand}`,
+    `规格：${supplementProxy ? plan.supplementSpecification : plan.medicationSpecification}`,
+    `数量：${supplementProxy ? plan.supplementQuantity : plan.medicationQuantity}`,
     plan.expectedDeliveryDate && `期望送达：${plan.expectedDeliveryDate}${plan.deliveryTime ? ` ${plan.deliveryTime}` : ''}`,
     plan.notes && `备注：${String(plan.notes).trim()}`,
   ] : [
@@ -312,46 +314,47 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
     plan.insuranceUse === 'high_end' && plan.insurerName && `保险公司：${String(plan.insurerName).trim()}`,
     plan.insuranceUse === 'high_end' && `结算方式：${({ direct: '直付', reimbursement: '先付后报' })[plan.settlementMethod] || '待核实'}`,
   ]).filter(Boolean).join('；');
-  if (!patient.assignedHealthManager || ((!appointmentOnly || medicationProxy) && !patient.assignedHealthPlanner)) {
+  if (!patient.assignedHealthManager || ((!appointmentOnly || supplyProxy) && !patient.assignedHealthPlanner)) {
     throw Object.assign(new Error(appointmentOnly ? '请先为客户分配健管专员' : '请先为客户分配健康规划师和健管专员'), { status: 409 });
   }
   const reportIds = [...new Set((plan.selectedReportIds || []).map(String).filter(Boolean))];
-  if (!appointmentOnly && !medicationProxy) {
+  if (!appointmentOnly && !supplyProxy) {
     const reportCount = await MedicalReport.countDocuments({ _id: { $in: reportIds }, user: patient._id, audit_status: 'audited' });
     if (!reportIds.length || reportCount !== reportIds.length) throw Object.assign(new Error('请选择该客户至少一份已审核资料'), { status: 400 });
   }
   const date = new Date();
-  const serviceName = medicationProxy ? '代配药服务' : appointmentOnly ? '专家约诊服务' : '医疗代诊服务';
+  const serviceName = medicationProxy ? '代配药服务' : supplementProxy ? '代配营养素服务' : appointmentOnly ? '专家约诊服务' : '医疗代诊服务';
   const order = await Order.create({
     user: patient._id, tenantId: patient.tenantId || null, serviceId: `annual-member-medical-proxy-${Date.now()}`,
     serviceName, servicePrice: 0, unitPrice: 0, paymentStatus: 'unpaid', tradeStatus: 'fulfilling',
     status: 'pending', initiationSource: STAFF_DIRECT_SOURCE,
-    desiredServiceDate: (appointmentOnly || medicationProxy) ? appointmentAt(plan.preferredDateStart, String(plan.serviceTime || '').match(/^\d{2}:\d{2}/)?.[0] || '09:00') : null,
-    desiredServiceDateEnd: (appointmentOnly || medicationProxy) ? appointmentAt(plan.preferredDateEnd || plan.preferredDateStart, String(plan.serviceTime || '').match(/^\d{2}:\d{2}/)?.[0] || '09:00') : null,
-    serviceRequirements: (appointmentOnly || medicationProxy) ? appointmentRequirement : `${plan.proxyGoal}\n${plan.communicationContent}`,
+    desiredServiceDate: (appointmentOnly || supplyProxy) ? appointmentAt(plan.preferredDateStart, String(plan.serviceTime || '').match(/^\d{2}:\d{2}/)?.[0] || '09:00') : null,
+    desiredServiceDateEnd: (appointmentOnly || supplyProxy) ? appointmentAt(plan.preferredDateEnd || plan.preferredDateStart, String(plan.serviceTime || '').match(/^\d{2}:\d{2}/)?.[0] || '09:00') : null,
+    serviceRequirements: (appointmentOnly || supplyProxy) ? appointmentRequirement : `${plan.proxyGoal}\n${plan.communicationContent}`,
     serviceWorkflowSnapshot: { key: 'medical_proxy', source: STAFF_DIRECT_SOURCE },
-    medicalProxyPlan: medicationProxy ? { ...plan, initiationSource: STAFF_DIRECT_SOURCE } : null,
+    medicalProxyPlan: supplyProxy ? { ...plan, initiationSource: STAFF_DIRECT_SOURCE } : null,
   });
-  if (appointmentOnly || medicationProxy) {
+  if (appointmentOnly || supplyProxy) {
     const booking = await FollowUp.create({
       patientId: patient._id, staffId: advisorId, assignedTo: patient.assignedHealthManager,
       type: 'other', status: 'planned', date, remindAt: new Date(), sourceType: 'order', sourceOrderId: order._id,
-      workflowKey: `${PREFIX}booking`, taskRole: 'executor', theme: medicationProxy ? `代配药：健管专员预约配药门诊 · ${serviceName}` : `医疗代诊：健管专员完成专家门诊预约 · ${serviceName}`,
-      plannedContent: medicationProxy ? (plan.institutionType === 'hospital' ? '系统已根据用药档案自动发起代配药服务，请核对并完成配药门诊预约；预约后转健康规划师安排执行人员。' : '系统已根据用药档案自动发起代配药服务，请核对采购渠道和时间；确认后转健康规划师安排执行人员。') : '健康顾问已发起专家约诊，请完成预约并记录实际日期时间。',
+      workflowKey: `${PREFIX}booking`, taskRole: 'executor', theme: supplyProxy ? `${supplementProxy ? '代配营养素' : '代配药'}：健管专员确认采购安排 · ${serviceName}` : `医疗代诊：健管专员完成专家门诊预约 · ${serviceName}`,
+      plannedContent: supplyProxy ? `系统已根据${supplementProxy ? '营养素' : '用药'}档案自动发起服务，请核对采购渠道、数量和配送时间；确认后转健康规划师安排执行人员。` : '健康顾问已发起专家约诊，请完成预约并记录实际日期时间。',
       formData: {
         planSnapshot: { ...plan, serviceContent: appointmentRequirement, initiationSource: STAFF_DIRECT_SOURCE },
-        preferredDateStart: plan.preferredDateStart, preferredDateEnd: plan.preferredDateEnd || plan.preferredDateStart, medicationProxy,
+        preferredDateStart: plan.preferredDateStart, preferredDateEnd: plan.preferredDateEnd || plan.preferredDateStart, medicationProxy, supplementProxy,
         medicationName: plan.medicationName || '', medicationBrand: plan.medicationBrand || '', medicationSpecification: plan.medicationSpecification || '', medicationQuantity: plan.medicationQuantity || '', paymentMethod: plan.paymentMethod || '',
+        supplementName: plan.supplementName || '', supplementBrand: plan.supplementBrand || '', supplementSpecification: plan.supplementSpecification || '', supplementQuantity: plan.supplementQuantity || '',
       },
     });
     let supervisor = null;
-    if (medicationProxy) {
+    if (supplyProxy) {
       supervisor = await FollowUp.create({
         patientId: patient._id, staffId: patient.assignedHealthPlanner, assignedTo: patient.assignedHealthPlanner,
         type: 'other', status: 'in_progress', date, remindAt: new Date(), sourceType: 'order', sourceOrderId: order._id,
-        workflowKey: `${PREFIX}supervise`, taskRole: 'supervisor', theme: `代配药：健康规划师全程督办 · ${serviceName}`,
+        workflowKey: `${PREFIX}supervise`, taskRole: 'supervisor', theme: `${supplementProxy ? '代配营养素' : '代配药'}：健康规划师全程督办 · ${serviceName}`,
         plannedContent: '健康顾问已发起代配药服务。持续督办健管预约、执行人员分配、配药确认和配送，服务完成后自动闭环。',
-        formData: { currentStage: 'booking', medicationProxy: true, initiationSource: STAFF_DIRECT_SOURCE, serviceContent: appointmentRequirement, customerNeed: plan.notes || '' },
+        formData: { currentStage: 'booking', medicationProxy, supplementProxy, initiationSource: STAFF_DIRECT_SOURCE, serviceContent: appointmentRequirement, customerNeed: plan.notes || '' },
       });
       await Order.updateOne({ _id: order._id }, { $set: {
         supervisorId: patient.assignedHealthPlanner, currentStage: 'booking', currentAssignee: patient.assignedHealthManager,
@@ -442,8 +445,11 @@ async function validateMedicalProxyStage(task, body, staff) {
     if ((data.appointmentDate < data.preferredDateStart || data.appointmentDate > data.preferredDateEnd) && !nonempty(data.dateDifferenceNote)) return '约诊日期不在客户期望区间内，请说明差异及客户确认情况';
     const bookingOrder = task.sourceOrderId ? await Order.findById(task.sourceOrderId).select('serviceName serviceRequirements').lean() : null;
     const medicationBooking = data.medicationProxy === true || /代配药|代取药/.test(bookingOrder?.serviceName || '');
+    const supplementBooking = data.supplementProxy === true || /代配营养素/.test(bookingOrder?.serviceName || '');
     if (medicationBooking && ['medicationName', 'medicationBrand', 'medicationSpecification', 'medicationQuantity'].some(key => !nonempty(data[key]))) return '请先确认药品名、商品名/品牌、规格和配备数量';
     if (medicationBooking && !['self_pay', 'medical_insurance', 'commercial_insurance'].includes(data.paymentMethod)) return '请选择支付方式（自费、医保或商保）';
+    if (supplementBooking && ['supplementName', 'supplementBrand', 'supplementSpecification', 'supplementQuantity'].some(key => !nonempty(data[key]))) return '请先确认营养素名称、品牌、规格和购买数量';
+    if (supplementBooking && !['self_pay', 'commercial_insurance'].includes(data.paymentMethod)) return '请选择支付方式（自费或商保）';
     if (data.paymentMethod === 'medical_insurance' && !['electronic', 'physical'].includes(data.medicalInsuranceCardType)) return '请确认使用电子医保卡还是实体医保卡';
     const appointmentRequirement = nonempty(data.planSnapshot?.serviceContent || bookingOrder?.serviceRequirements);
     if (/(?:保险类型：高端险|费用与保险：使用高端医疗险)/.test(appointmentRequirement) && !['direct_verified', 'reimbursement_verified', 'self_pay_confirmed'].includes(data.insuranceOutcome)) return '请核实高端医疗险实际结算方式，并选择办理结果';
@@ -470,8 +476,10 @@ async function validateMedicalProxyStage(task, body, staff) {
     const hasAttachment = key => Array.isArray(data[key]) && data[key].some(file => nonempty(file?.url));
     const executeOrder = task.sourceOrderId ? await Order.findById(task.sourceOrderId).select('serviceName').lean() : null;
     const medicationProxy = data.medicationProxy === true || /代配药|代取药/.test(executeOrder?.serviceName || '');
+    const supplementProxy = data.supplementProxy === true || /代配营养素/.test(executeOrder?.serviceName || '');
     if (medicationProxy && (!nonempty(data.executionResult) || !['medicationPhotoAttachments', 'medicationInstructionAttachments', 'medicalRecordAttachments', 'chargeReceiptAttachments'].every(hasAttachment))) return '请填写配药结果，并分别上传药品照片、药品服用单、病历和收费单';
-    if (!medicationProxy && (!nonempty(data.executionResult) || !hasAttachment('medicalRecordAttachments'))) return '请填写代诊执行结果并上传至少一份代诊病历';
+    if (supplementProxy && (!nonempty(data.executionResult) || !['supplementPhotoAttachments', 'chargeReceiptAttachments'].every(hasAttachment))) return '请填写购买与配送结果，并上传营养素产品照片和购买凭证';
+    if (!medicationProxy && !supplementProxy && (!nonempty(data.executionResult) || !hasAttachment('medicalRecordAttachments'))) return '请填写代诊执行结果并上传至少一份代诊病历';
   }
   if (stage === 'collect' || stage === 'audit' || stage === 'advisor' || stage === 'planner' || stage === 'intake') {
     const patient = await User.findById(task.patientId).select('assignedFamilyDoctor assignedHealthPlanner assignedHealthManager').lean();
@@ -596,7 +604,9 @@ async function advanceMedicalProxyWorkflow(task) {
     } });
     return;
   }
+  const supplementProxy = /代配营养素/.test(order.serviceName || '');
   const medicationProxy = /代配药|代取药/.test(order.serviceName || '');
+  const supplyProxy = medicationProxy || supplementProxy;
   if (index === STAGES.length - 1) {
     await upsertMedicalProxyServiceRecord(task, order, true);
     await archiveMedicalProxyRecords(task, order, patient?.tenantId);
@@ -609,15 +619,15 @@ async function advanceMedicalProxyWorkflow(task) {
     }
     await FollowUp.updateOne(
       { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } },
-      { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', content: medicationProxy ? '执行人员已完成配药确认与配送安排，健康规划师全程督办闭环。' : '就医专员已完成代诊，健康规划师全程督办闭环。', 'formData.currentStage': 'completed' } },
+      { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', content: supplyProxy ? `执行人员已完成${supplementProxy ? '营养素购买' : '配药'}确认与配送安排，健康规划师全程督办闭环。` : '就医专员已完成代诊，健康规划师全程督办闭环。', 'formData.currentStage': 'completed' } },
     );
     await Order.updateOne({ _id: order._id }, { $set: {
       currentStage: 'completed', currentAssignee: null, supervisionStatus: 'completed',
     } });
     return;
   }
-  const next = medicationProxy && stage === 'booking' ? 'planner'
-    : medicationProxy && stage === 'planner' ? 'execute'
+  const next = supplyProxy && stage === 'booking' ? 'planner'
+    : supplyProxy && stage === 'planner' ? 'execute'
       : stage === 'advisor' && task.formData?.initiationSource === STAFF_DIRECT_SOURCE ? 'booking' : STAGES[index + 1];
   const assignee = next === 'audit' ? patient?.assignedHealthManager
     : next === 'advisor' ? patient?.assignedFamilyDoctor
@@ -625,7 +635,7 @@ async function advanceMedicalProxyWorkflow(task) {
       : next === 'booking' ? patient?.assignedHealthManager
       : task.formData?.medicalAssistantId;
   if (!assignee) throw Object.assign(new Error(`客户尚未分配${next === 'audit' || next === 'booking' ? '健管专员' : next === 'advisor' ? '健康顾问' : next === 'planner' ? '健康规划师' : '就医专员'}，无法流转`), { status: 409 });
-  const labels = { audit: '健管专员审核本次资料', advisor: '健康顾问确认代诊方案', planner: medicationProxy ? '健康规划师安排配药人员' : '审核方案并预指派就医专员', booking: medicationProxy ? '健管专员预约配药门诊' : '健管专员完成专家门诊预约', execute: medicationProxy ? '执行人员完成配药' : '就医专员执行代诊' };
+  const labels = { audit: '健管专员审核本次资料', advisor: '健康顾问确认代诊方案', planner: supplyProxy ? `健康规划师安排${supplementProxy ? '营养素采购' : '配药'}人员` : '审核方案并预指派就医专员', booking: supplyProxy ? `健管专员确认${supplementProxy ? '营养素采购' : '配药'}安排` : '健管专员完成专家门诊预约', execute: supplyProxy ? `执行人员完成${supplementProxy ? '营养素购买' : '配药'}与配送` : '就医专员执行代诊' };
   const bookingNote = stage === 'booking' && task.content !== '医疗代诊专家门诊预约已完成' ? nonempty(task.content) : '';
   const bookedAppointment = task.formData?.bookingSnapshot || order.medicalProxyPlan?.booking || {};
   const nextDate = next === 'execute' && (task.formData?.appointmentDate || bookedAppointment.appointmentDate)
@@ -640,14 +650,14 @@ async function advanceMedicalProxyWorkflow(task) {
       plannedContent: next === 'audit' ? '审核健康规划师选定的本次资料；客户需补传时退回资料收集环节。'
         : next === 'advisor'
         ? '查看本次已审核资料及客户诉求，确认医院、科室、专家、代诊目标和与医生交流的具体内容。年度会员由健康顾问选定制定方案所用资料。'
-        : next === 'planner' ? (medicationProxy ? '核对健管专员确认的预约信息，并安排实际配药人员。' : '核对健康顾问确认的代诊方案，预指派就医专员。')
+        : next === 'planner' ? (supplyProxy ? `核对健管专员确认的采购信息，并安排实际${supplementProxy ? '营养素采购' : '配药'}人员。` : '核对健康顾问确认的代诊方案，预指派就医专员。')
           : next === 'booking' ? '依据健康顾问方案预约专家门诊；记录客户期望日期区间与实际约诊日期时间，超出期望区间时记录沟通确认结果。'
             : '按健康顾问方案和健管专员确认的预约信息完成代诊，记录医生反馈、医嘱和后续事项。',
       formData: next === 'audit' ? { collectionSnapshot: task.formData }
         : next === 'advisor' ? { auditSnapshot: task.formData, selectedReportIds: task.formData?.collectionSnapshot?.annualMember ? [] : task.formData?.collectionSnapshot?.reportIds || [] }
-          : next === 'planner' ? { planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...task.formData, additionalNote: bookingNote }, medicationProxy }
+          : next === 'planner' ? { planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...task.formData, additionalNote: bookingNote }, medicationProxy, supplementProxy }
             : next === 'booking' ? { planSnapshot: order.medicalProxyPlan, medicalAssistantId: task.formData?.medicalAssistantId, preferredDateStart: dateInput(order.desiredServiceDate || order.scheduledAt), preferredDateEnd: dateInput(order.desiredServiceDateEnd || order.desiredServiceDate || order.scheduledAt) }
-              : { planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...bookedAppointment, ...task.formData, additionalNote: bookingNote }, medicationProxy },
+              : { planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...bookedAppointment, ...task.formData, additionalNote: bookingNote }, medicationProxy, supplementProxy },
     } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
@@ -656,9 +666,9 @@ async function advanceMedicalProxyWorkflow(task) {
   if (nextTask.isBlocked || nextTask.status === 'cancelled') {
     const nextFormData = next === 'audit' ? { ...nextTask.formData, collectionSnapshot: task.formData }
       : next === 'advisor' ? { ...nextTask.formData, auditSnapshot: task.formData, selectedReportIds: task.formData?.collectionSnapshot?.annualMember ? [] : task.formData?.collectionSnapshot?.reportIds || [] }
-        : next === 'planner' ? { ...nextTask.formData, planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...task.formData, additionalNote: bookingNote }, medicationProxy }
+        : next === 'planner' ? { ...nextTask.formData, planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...task.formData, additionalNote: bookingNote }, medicationProxy, supplementProxy }
           : next === 'booking' ? { ...nextTask.formData, planSnapshot: order.medicalProxyPlan, medicalAssistantId: task.formData?.medicalAssistantId, preferredDateStart: nextTask.formData?.preferredDateStart || dateInput(order.desiredServiceDate || order.scheduledAt), preferredDateEnd: nextTask.formData?.preferredDateEnd || dateInput(order.desiredServiceDateEnd || order.desiredServiceDate || order.scheduledAt) }
-            : { ...nextTask.formData, planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...bookedAppointment, ...task.formData, additionalNote: bookingNote }, medicationProxy };
+            : { ...nextTask.formData, planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...bookedAppointment, ...task.formData, additionalNote: bookingNote }, medicationProxy, supplementProxy };
     await FollowUp.updateOne({ _id: nextTask._id }, { $set: { status: 'planned', isBlocked: false, assignedTo: assignee, formData: nextFormData, date: nextDate, remindAt: next === 'execute' ? nextDate : new Date(), cancelReason: '', completedAt: null, completedBy: null } });
   }
   await FollowUp.updateOne(

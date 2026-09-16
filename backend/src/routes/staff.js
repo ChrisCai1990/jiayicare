@@ -6568,7 +6568,7 @@ router.put('/patients/:id/supply-reminders/:kind/:recordId', staffAuth, checkPer
     if (institutionType === 'pharmacy' && !String(req.body.pharmacyName || '').trim()) return res.status(400).json({ success: false, message: '请填写线下药房名称' });
     const patient = await User.findById(req.params.id).select('tenantId assignedFamilyDoctor assignedHealthPlanner assignedHealthManager');
     if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
-    if (kind === 'medication' && mode === 'proxy' && (!patient.assignedHealthPlanner || !patient.assignedHealthManager)) {
+    if (mode === 'proxy' && (!patient.assignedHealthPlanner || !patient.assignedHealthManager)) {
       return res.status(409).json({ success: false, message: '请先为会员分配健康规划师和健管专员，才能自动生成正式代配药任务' });
     }
     // 一键生成后先归当前点击人负责，确保两种模式都立即出现在其“我的随访”中；
@@ -6590,11 +6590,11 @@ router.put('/patients/:id/supply-reminders/:kind/:recordId', staffAuth, checkPer
     const linkedTask = await FollowUp.create(row);
     record.supplyReminder.followUpTaskId = linkedTask._id;
     let linkedOrderId = null;
-    if (kind === 'medication' && mode === 'proxy') {
+    if (mode === 'proxy') {
       const existingOrder = await Order.findOne({
         user: patient._id,
         status: { $nin: ['completed', 'cancelled'] },
-        'medicalProxyPlan.sourceMedicationId': record._id,
+        [kind === 'medication' ? 'medicalProxyPlan.sourceMedicationId' : 'medicalProxyPlan.sourceSupplementId']: record._id,
         'medicalProxyPlan.preferredDateStart': firstDate,
       }).select('_id').lean();
       if (existingOrder) linkedOrderId = existingOrder._id;
@@ -6603,8 +6603,9 @@ router.put('/patients/:id/supply-reminders/:kind/:recordId', staffAuth, checkPer
           patient,
           advisorId: patient.assignedFamilyDoctor || req.staff._id,
           plan: {
-            medicationProxy: true,
-            sourceMedicationId: record._id,
+            medicationProxy: kind === 'medication',
+            supplementProxy: kind === 'supplement',
+            ...(kind === 'medication' ? { sourceMedicationId: record._id } : { sourceSupplementId: record._id }),
             sourceSupplyReminderTaskId: linkedTask._id,
             hospital: String(req.body.hospitalName || '').trim(),
             campus: String(req.body.campus || '').trim(),
@@ -6619,6 +6620,10 @@ router.put('/patients/:id/supply-reminders/:kind/:recordId', staffAuth, checkPer
             medicationBrand: record.brandName || record.name || '',
             medicationSpecification: record.specification || '',
             medicationQuantity: quantity,
+            supplementName: record.name || '',
+            supplementBrand: record.brand || record.name || '',
+            supplementSpecification: record.specification || '',
+            supplementQuantity: quantity,
             paymentMethod,
             expectedDeliveryDate: firstDate,
             deliveryTime,

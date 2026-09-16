@@ -47,8 +47,10 @@ export function validateMedicalProxyStage(stage, value) {
   if (stage === 'planner' && !value.medicalAssistantId) return '请指派就医专员'
   if (stage === 'booking' && ['preferredDateStart', 'preferredDateEnd', 'appointmentDate', 'appointmentTime'].some(key => !value[key]?.trim())) return '请完整填写客户期望日期区间和实际约诊日期时间'
   if (stage === 'booking' && (value.appointmentDate < value.preferredDateStart || value.appointmentDate > value.preferredDateEnd) && !value.dateDifferenceNote?.trim()) return '约诊日期不在客户期望区间内，请说明差异及客户确认情况'
+  const supplementProxy = value.supplementProxy === true || /代配营养素/.test(`${value.planSnapshot?.serviceName || ''} ${value.planSnapshot?.serviceContent || ''}`)
   if (stage === 'booking' && (value.medicationProxy === true || /代配药|代取药/.test(`${value.planSnapshot?.serviceName || ''} ${value.planSnapshot?.serviceContent || ''}`)) && ['medicationName', 'medicationBrand', 'medicationSpecification', 'medicationQuantity'].some(key => !value[key]?.trim())) return '请先确认药品名、商品名/品牌、规格和配备数量'
-  if (stage === 'booking' && (value.medicationProxy === true || /代配药|代取药/.test(`${value.planSnapshot?.serviceName || ''} ${value.planSnapshot?.serviceContent || ''}`)) && !['self_pay', 'medical_insurance', 'commercial_insurance'].includes(value.paymentMethod)) return '请选择支付方式'
+  if (stage === 'booking' && supplementProxy && ['supplementName', 'supplementBrand', 'supplementSpecification', 'supplementQuantity'].some(key => !value[key]?.trim())) return '请先确认营养素名称、品牌、规格和购买数量'
+  if (stage === 'booking' && (value.medicationProxy === true || supplementProxy || /代配药|代取药/.test(`${value.planSnapshot?.serviceName || ''} ${value.planSnapshot?.serviceContent || ''}`)) && !['self_pay', 'medical_insurance', 'commercial_insurance'].includes(value.paymentMethod)) return '请选择支付方式'
   if (stage === 'booking' && value.paymentMethod === 'medical_insurance' && !['electronic', 'physical'].includes(value.medicalInsuranceCardType)) return '请确认使用电子医保卡还是实体医保卡'
   if (stage === 'booking' && /(?:保险类型：高端险|费用与保险：使用高端医疗险)/.test(value.planSnapshot?.serviceContent || '') && !['direct_verified', 'reimbursement_verified', 'self_pay_confirmed'].includes(value.insuranceOutcome)) return '请核实高端医疗险结算方式，并记录最终办理结果'
   const appointmentRequirement = stage === 'appointment_review' ? { ...parseAppointmentRequirement(value.serviceContent), ...value } : null
@@ -59,7 +61,8 @@ export function validateMedicalProxyStage(stage, value) {
   const hasAttachment = key => value[key]?.some(file => file?.url)
   const medicationProxy = value.medicationProxy === true || /代配药|代取药/.test(`${value.planSnapshot?.serviceName || ''} ${value.planSnapshot?.serviceContent || ''}`)
   if (stage === 'execute' && medicationProxy && (!value.executionResult?.trim() || !['medicationPhotoAttachments', 'medicationInstructionAttachments', 'medicalRecordAttachments', 'chargeReceiptAttachments'].every(hasAttachment))) return '请填写配药结果，并分别上传药品照片、药品服用单、病历和收费单'
-  if (stage === 'execute' && !medicationProxy && (!value.executionResult?.trim() || !hasAttachment('medicalRecordAttachments'))) return '请填写代诊执行结果并上传至少一份代诊病历'
+  if (stage === 'execute' && supplementProxy && (!value.executionResult?.trim() || !['supplementPhotoAttachments', 'chargeReceiptAttachments'].every(hasAttachment))) return '请填写购买与配送结果，并上传产品照片和购买凭证'
+  if (stage === 'execute' && !medicationProxy && !supplementProxy && (!value.executionResult?.trim() || !hasAttachment('medicalRecordAttachments'))) return '请填写代诊执行结果并上传至少一份代诊病历'
   return ''
 }
 
@@ -70,6 +73,8 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
   const isExpertAppointment = /专家约诊|专家门诊预约/.test(`${task?.theme || ''} ${task?.sourceOrderId?.serviceName || ''}`)
   const isHighEndInsurance = /(?:保险类型：高端险|费用与保险：使用高端医疗险)/.test(appointmentRequirementText)
   const isMedicationProxy = value.medicationProxy === true || /代配药|代取药/.test(`${task?.theme || ''} ${task?.sourceOrderId?.serviceName || ''}`)
+  const isSupplementProxy = value.supplementProxy === true || /代配营养素/.test(`${task?.theme || ''} ${task?.sourceOrderId?.serviceName || ''}`)
+  const isSupplyProxy = isMedicationProxy || isSupplementProxy
   const set = (key, item) => onChange({ ...value, [key]: item })
   const input = (key, label, rows = 1, type = 'text') => <label key={key} style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>
     {label}
@@ -199,16 +204,16 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     const paymentLabel = ({ self_pay: '自费', medical_insurance: `医保（${({ electronic: '电子医保卡', physical: '实体医保卡' })[booking.medicalInsuranceCardType] || '未确认卡类型'}）`, commercial_insurance: '商保' })[booking.paymentMethod] || '未填写'
     return <div style={{ display: 'grid', gap: 12 }}>
     <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>
-      {isMedicationProxy ? <>
+      {isSupplyProxy ? <>
         <div>配药医院：{value.planSnapshot?.hospital || '待确认'} {booking.campus || value.planSnapshot?.campus || ''}</div>
         <div>配药科室：{value.planSnapshot?.department || '待确认'}；配药专家：{value.planSnapshot?.expert || '无'}</div>
-        <div>配备药物：{value.planSnapshot?.medicationName || booking.medicationName || '待确认'}；商品名/品牌：{value.planSnapshot?.medicationBrand || booking.medicationBrand || '待确认'}</div>
-        <div>规格：{value.planSnapshot?.medicationSpecification || booking.medicationSpecification || '待确认'}；数量：{value.planSnapshot?.medicationQuantity || booking.medicationQuantity || '待确认'}</div>
+        <div>{isSupplementProxy ? '营养素' : '配备药物'}：{isSupplementProxy ? (value.planSnapshot?.supplementName || booking.supplementName) : (value.planSnapshot?.medicationName || booking.medicationName) || '待确认'}；品牌：{isSupplementProxy ? (value.planSnapshot?.supplementBrand || booking.supplementBrand) : (value.planSnapshot?.medicationBrand || booking.medicationBrand) || '待确认'}</div>
+        <div>规格：{isSupplementProxy ? (value.planSnapshot?.supplementSpecification || booking.supplementSpecification) : (value.planSnapshot?.medicationSpecification || booking.medicationSpecification) || '待确认'}；数量：{isSupplementProxy ? (value.planSnapshot?.supplementQuantity || booking.supplementQuantity) : (value.planSnapshot?.medicationQuantity || booking.medicationQuantity) || '待确认'}</div>
         <div>代办日期：{booking.appointmentDate || '未填写'} {booking.appointmentTime || ''}</div>
         <div>支付方式：{paymentLabel}</div>
       </> : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].map((key, i) => <div key={key}>{['医院', '科室', '专家', '代诊目标', '交流内容'][i]}：{value.planSnapshot?.[key] || '待确认'}</div>)}
     </div>
-    <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>{isMedicationProxy ? '安排配药执行人员' : '预指派就医专员'}
+    <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>{isSupplyProxy ? `安排${isSupplementProxy ? '营养素采购' : '配药'}执行人员` : '预指派就医专员'}
       <select className="form-control" value={value.medicalAssistantId || ''} onChange={e => set('medicalAssistantId', e.target.value)}>
         <option value="">请选择</option>
         {staffList.filter(staff => staff.role === 'medicalAssistant' && staff.staffStatus !== 'inactive').map(staff => <option key={staff._id} value={staff._id}>{staff.name}</option>)}
@@ -221,18 +226,18 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
       {appointmentRequirementText ? <div>约诊需求：{appointmentRequirementText}</div> : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].map((key, i) => <div key={key}>{['医院', '科室', '专家', '代诊目标', '交流内容'][i]}：{value.planSnapshot?.[key] || '待确认'}</div>)}
     </div>
     {isExpertAppointment && input('campus', '院区 *')}
-    {isMedicationProxy && <div style={{ display: 'grid', gap: 10, padding: 12, borderRadius: 8, background: '#FFF8ED', border: '1px solid #F2D4A7' }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: '#8A4B08' }}>配药清单（流转给健康规划师和就医专员前必须确认）</div>
+    {isSupplyProxy && <div style={{ display: 'grid', gap: 10, padding: 12, borderRadius: 8, background: '#FFF8ED', border: '1px solid #F2D4A7' }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#8A4B08' }}>{isSupplementProxy ? '营养素采购' : '配药'}清单（流转前必须确认）</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        {input('medicationName', '药品名/通用名 *')}
-        {input('medicationBrand', '商品名/品牌 *')}
-        {input('medicationSpecification', '规格 *')}
-        {input('medicationQuantity', '配备数量 *')}
+        {input(isSupplementProxy ? 'supplementName' : 'medicationName', isSupplementProxy ? '营养素名称 *' : '药品名/通用名 *')}
+        {input(isSupplementProxy ? 'supplementBrand' : 'medicationBrand', '品牌 *')}
+        {input(isSupplementProxy ? 'supplementSpecification' : 'medicationSpecification', '规格 *')}
+        {input(isSupplementProxy ? 'supplementQuantity' : 'medicationQuantity', isSupplementProxy ? '购买数量 *' : '配备数量 *')}
       </div>
     </div>}
-    {isMedicationProxy && <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>支付方式 *
+    {isSupplyProxy && <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>支付方式 *
       <select className="form-control" value={value.paymentMethod || ''} onChange={e => onChange({ ...value, paymentMethod: e.target.value, medicalInsuranceCardType: e.target.value === 'medical_insurance' ? value.medicalInsuranceCardType : '' })}>
-        <option value="">请选择</option><option value="self_pay">自费</option><option value="medical_insurance">医保</option><option value="commercial_insurance">商保</option>
+        <option value="">请选择</option><option value="self_pay">自费</option>{!isSupplementProxy && <option value="medical_insurance">医保</option>}<option value="commercial_insurance">商保</option>
       </select>
     </label>}
     {isMedicationProxy && value.paymentMethod === 'medical_insurance' && <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>医保凭证类型 *
@@ -266,7 +271,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     const paymentLabel = ({ self_pay: '自费', medical_insurance: `医保（${({ electronic: '电子医保卡', physical: '实体医保卡' })[booking.medicalInsuranceCardType] || '未确认卡类型'}）`, commercial_insurance: '商保' })[booking.paymentMethod] || '未填写'
     return <div style={{ display: 'grid', gap: 12 }}>
     <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>
-      {isMedicationProxy ? <>
+      {isSupplyProxy ? <>
         <div>配药医院：{value.planSnapshot?.hospital || '未填写'} {booking.campus || value.planSnapshot?.campus || ''}</div>
         <div>配药科室：{value.planSnapshot?.department || '未填写'}；配药专家：{value.planSnapshot?.expert || '无'}</div>
         <div>配备药物：{value.planSnapshot?.medicationName || booking.medicationName || '未填写'}；商品名/品牌：{value.planSnapshot?.medicationBrand || booking.medicationBrand || '未填写'}</div>
@@ -281,8 +286,11 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
         {booking.additionalNote && <div>预约补充说明：{booking.additionalNote}</div>}
       </>}
     </div>
-    {input('executionResult', isMedicationProxy ? '配药结果、数量核对与交付说明' : fields.execute[0][1], 5)}
-    {(isMedicationProxy ? [
+    {input('executionResult', isSupplyProxy ? `${isSupplementProxy ? '购买' : '配药'}结果、数量核对与交付说明` : fields.execute[0][1], 5)}
+    {(isSupplementProxy ? [
+      ['supplementPhotoAttachments', '营养素产品照片（须清晰展示品牌、规格和数量） *', '+ 上传产品照片'],
+      ['chargeReceiptAttachments', '购买凭证 *', '+ 上传购买凭证'],
+    ] : isMedicationProxy ? [
       ['medicationPhotoAttachments', '药品照片（须清晰展示药盒和数量） *', '+ 上传药盒与数量照片'],
       ['medicationInstructionAttachments', '药品服用单（服用方式和方法） *', '+ 上传药品服用单'],
       ['medicalRecordAttachments', '病历 *', '+ 上传病历'],
