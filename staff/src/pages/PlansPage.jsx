@@ -111,9 +111,9 @@ export default function PlansPage() {
             className={`btn btn-sm ${typeFilter === opt.v ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setSearchParams(opt.v ? { type: opt.v } : {})}>{opt.l}</button>
         ))}
-        {can('plans', 'create') && ['familyDoctor', 'superadmin'].includes(staff?.role) && (
+        {typeFilter === 'medical_assist' && can('plans', 'create') && ['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && (
           <button className="btn btn-primary btn-sm" onClick={() => setShowMedicalModal(true)}>
-            ＋ 发起服务需求
+            ＋ 发起就医陪同需求
           </button>
         )}
         <input
@@ -219,7 +219,7 @@ export default function PlansPage() {
               </table>}
           </div>
           {showCheckupModal   && <AnnualCheckupPlanModal onClose={() => setShowCheckupModal(false)}   onSaved={() => { setShowCheckupModal(false);   loadPlans(); toast('体检方案已创建') }} />}
-          {showMedicalModal   && <ServiceRequestLauncherModal navigate={nav} onClose={() => setShowMedicalModal(false)} onSaved={() => { setShowMedicalModal(false); loadPlans(); toast('就医陪同需求已提交给健康规划师') }} />}
+          {showMedicalModal   && <MedicalEscortRequestModal onClose={() => setShowMedicalModal(false)} onSaved={() => { setShowMedicalModal(false); loadPlans(); toast('就医陪同需求已提交给健康规划师') }} />}
           {showNutritionModal && <NutritionPlanModal     onClose={() => setShowNutritionModal(false)} onSaved={() => { setShowNutritionModal(false); loadPlans(); toast('营养干预方案已创建') }} />}
           {showModal && <NewPlanModal type={typeFilter || 'annual_checkup'} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); loadPlans(); toast('方案已创建') }} />}
         </>
@@ -228,8 +228,7 @@ export default function PlansPage() {
   )
 }
 
-function ServiceRequestLauncherModal({ navigate, onClose, onSaved }) {
-  const [serviceType, setServiceType] = useState('')
+function MedicalEscortRequestModal({ onClose, onSaved }) {
   const [patientId, setPatientId] = useState('')
   const [assistants, setAssistants] = useState([])
   const [form, setForm] = useState({ escortCategory: 'consultation', escortDate: '', escortTime: '', hospital: '', department: '', escortGoal: '', notes: '', medicalAssistantId: '' })
@@ -242,26 +241,6 @@ function ServiceRequestLauncherModal({ navigate, onClose, onSaved }) {
       .then(res => setAssistants((res.data || []).filter(item => item.staffStatus !== 'inactive')))
       .catch(() => setAssistants([]))
   }, [])
-
-  if (!serviceType) return <div className="modal-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
-    <div className="modal" style={{ maxWidth: 650 }}>
-      <div className="modal-header"><h3 className="modal-title">发起服务需求</h3><button className="modal-close" onClick={onClose}>✕</button></div>
-      <div className="modal-body">
-        <div style={{ color: '#65776F', fontSize: 13, marginBottom: 14 }}>请选择本次需要发起的服务。健康顾问可从这里进入不同服务流程。</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <button type="button" onClick={() => setServiceType('medical_escort')} style={{ textAlign: 'left', padding: 18, border: '1px solid #B7D8C9', borderRadius: 12, background: '#F3FAF7', cursor: 'pointer' }}>
-            <div style={{ fontWeight: 700, color: '#1E6B50', marginBottom: 6 }}>就医陪同服务</div>
-            <div style={{ fontSize: 12, color: '#65776F', lineHeight: 1.6 }}>陪同检查、陪同体检、陪同看诊、陪同治疗</div>
-          </button>
-          <button type="button" onClick={() => { onClose(); navigate('/products') }} style={{ textAlign: 'left', padding: 18, border: '1px solid #E0D9CE', borderRadius: 12, background: '#fff', cursor: 'pointer' }}>
-            <div style={{ fontWeight: 700, color: '#1A2B24', marginBottom: 6 }}>其他服务</div>
-            <div style={{ fontSize: 12, color: '#65776F', lineHeight: 1.6 }}>进入服务中心，发起体检、医疗代诊、专家约诊、代配药等服务</div>
-          </button>
-        </div>
-      </div>
-      <div className="modal-footer"><button className="btn btn-secondary" onClick={onClose}>取消</button></div>
-    </div>
-  </div>
 
   const submit = async () => {
     if (!patientId) { setError('请搜索并选择会员'); return }
@@ -302,7 +281,7 @@ function ServiceRequestLauncherModal({ navigate, onClose, onSaved }) {
         <label className="form-group"><span className="form-label">陪同目标 *</span><textarea className="form-input" rows={3} placeholder="本次就医、检查或治疗需要完成的事项" value={form.escortGoal} onChange={e => set('escortGoal', e.target.value)} /></label>
         <label className="form-group"><span className="form-label">备注</span><textarea className="form-input" rows={3} placeholder="会合地点、行动注意事项、需携带材料等" value={form.notes} onChange={e => set('notes', e.target.value)} /></label>
       </div>
-      <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setServiceType('')}>← 返回服务选择</button><button className="btn btn-secondary" onClick={onClose}>取消</button><button className="btn btn-primary" disabled={saving} onClick={submit}>{saving ? '提交中…' : '提交给健康规划师'}</button></div>
+      <div className="modal-footer"><button className="btn btn-secondary" onClick={onClose}>取消</button><button className="btn btn-primary" disabled={saving} onClick={submit}>{saving ? '提交中…' : '提交给健康规划师'}</button></div>
     </div>
   </div>
 }
