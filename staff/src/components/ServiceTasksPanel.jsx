@@ -3,6 +3,18 @@ import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { formatChineseDate } from '../utils/date'
 
+const checkupProgress = task => {
+  if (task?.workflowKey !== 'checkup_appointment:supervise') return null
+  const stage = task.formData?.currentStage || 'booking'
+  const stages = {
+    booking: { step: 2, label: '健管专员预约中', next: '完成预约后转交就医专员' },
+    medical: { step: 3, label: '就医专员办理开单与检查预约', next: '检查后提醒客户上传报告和病历' },
+    manager_review: { step: 4, label: '健管专员审核报告与病历', next: '生成后续随访计划并转健康顾问审核' },
+    advisor_review: { step: 5, label: '健康顾问审核后续随访计划', next: '审核通过后服务自动结束' },
+  }
+  return stages[stage] || stages.booking
+}
+
 export default function ServiceTasksPanel() {
   const nav = useNavigate()
   const [items, setItems] = useState([])
@@ -94,6 +106,7 @@ export default function ServiceTasksPanel() {
           const task = service.task
           const isFuture = task.date && new Date(task.date).getTime() > Date.now()
           const isWaitingPrevious = !!task.isBlocked
+          const progress = checkupProgress(task)
           const isOutpatientEscortProgress = isWaitingPrevious && task.taskRole === 'supervisor' && /门诊一站式.*检查及专家门诊陪诊与归档/.test(task.theme || '')
           const isOutpatientReportAuditWait = isWaitingPrevious && task.taskRole === 'executor' && /门诊一站式.*查看陪诊资料并制定随访计划/.test(task.theme || '')
           return (
@@ -105,6 +118,7 @@ export default function ServiceTasksPanel() {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600, fontSize: 13, color: '#1A2B24' }}>
                 {task.theme}
+                {progress && <span style={{ marginLeft: 8, fontSize: 11, color: '#1E6B50', background: '#EAF5F0', padding: '2px 6px', borderRadius: 8 }}>进度 {progress.step}/5</span>}
                 {service.totalSteps > 1 && <span style={{ marginLeft: 8, fontSize: 11, color: '#1E6B50', background: '#EAF5F0', padding: '2px 6px', borderRadius: 8 }}>当前环节 · 共{service.totalSteps}环节</span>}
                 {isWaitingPrevious
                   ? <span style={{ marginLeft: 8, fontSize: 11, color: isOutpatientEscortProgress ? '#1E6B50' : '#667085', background: isOutpatientEscortProgress ? '#EAF5F0' : '#F2F4F7', padding: '2px 6px', borderRadius: 8 }}>{isOutpatientReportAuditWait ? '等待资料审核' : isOutpatientEscortProgress ? '陪诊及资料闭环进行中' : '等待上一环节'}</span>
@@ -113,6 +127,7 @@ export default function ServiceTasksPanel() {
               <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>
                 {task.patientId?.name || '未知'}{isOutpatientReportAuditWait ? ' · 等待健管专员审核病历与检验检查单' : isWaitingPrevious && task.dependsOnTaskId?.assignedTo?.name ? ` · 当前执行：${task.dependsOnTaskId.assignedTo.name}` : task.assignedTo?.name ? ` · 负责人：${task.assignedTo.name}` : ''}
               </div>
+              {progress && <div style={{ fontSize: 12, color: '#52685D', marginTop: 3 }}>当前阶段：<b>{progress.label}</b>　下一步：{progress.next}</div>}
               <div style={{ fontSize: 11, color: '#9AA9A2', marginTop: 2 }}>创建：{new Date(task.createdAt).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}</div>
             </div>
             {!isWaitingPrevious && <span style={{ fontSize: 11, color: '#8AA89C' }}>计划：{formatChineseDate(task.date, false)}</span>}
