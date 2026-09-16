@@ -666,6 +666,16 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
         )
         if code:
             raise RuntimeError("一站式服务最终流程迁移失败")
+        code, _ = run_migration(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/migrateSupplyProxyTaskDatesV1.js ] && "
+            f"[ ! -f {REPO_DIR}/.supply-proxy-task-dates-v1-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/migrateSupplyProxyTaskDatesV1.js && "
+            f"touch {REPO_DIR}/.supply-proxy-task-dates-v1-applied; fi",
+            timeout=120,
+            label="修正代配药及代配营养素活动任务的计划执行日期",
+        )
+        if code:
+            raise RuntimeError("代配服务计划执行日期迁移失败")
         time.sleep(3)
 
         code, output = remote(

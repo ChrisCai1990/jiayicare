@@ -323,6 +323,15 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
     if (!reportIds.length || reportCount !== reportIds.length) throw Object.assign(new Error('请选择该客户至少一份已审核资料'), { status: 400 });
   }
   const date = new Date();
+  // 代配服务的工作台日期必须来自建档时设置的计划，而不是任务生成时间。
+  // 首次期望送达日前 leadDays 天开始采购安排；若已经进入准备窗口，则今天办理。
+  const desiredSupplyDate = supplyProxy ? appointmentAt(plan.preferredDateStart, '09:00') : null;
+  const supplyTaskDate = desiredSupplyDate ? new Date(desiredSupplyDate) : null;
+  if (supplyTaskDate) {
+    supplyTaskDate.setDate(supplyTaskDate.getDate() - Math.max(0, Number(plan.leadDays) || 7));
+    if (supplyTaskDate < date) supplyTaskDate.setTime(date.getTime());
+  }
+  const initialTaskDate = supplyTaskDate || (appointmentOnly ? appointmentAt(plan.preferredDateStart, '09:00') : date);
   const serviceName = medicationProxy ? '代配药服务' : supplementProxy ? '代配营养素服务' : appointmentOnly ? '专家约诊服务' : '医疗代诊服务';
   const order = await Order.create({
     user: patient._id, tenantId: patient.tenantId || null, serviceId: `annual-member-medical-proxy-${Date.now()}`,
@@ -337,7 +346,7 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
   if (appointmentOnly || supplyProxy) {
     const booking = await FollowUp.create({
       patientId: patient._id, staffId: advisorId, assignedTo: patient.assignedHealthManager,
-      type: 'other', status: 'planned', date, remindAt: new Date(), sourceType: 'order', sourceOrderId: order._id,
+      type: 'other', status: 'planned', date: initialTaskDate, remindAt: initialTaskDate, sourceType: 'order', sourceOrderId: order._id,
       workflowKey: `${PREFIX}booking`, taskRole: 'executor', theme: supplyProxy ? `${supplementProxy ? '代配营养素' : '代配药'}：健管专员确认采购安排 · ${serviceName}` : `医疗代诊：健管专员完成专家门诊预约 · ${serviceName}`,
       plannedContent: supplyProxy ? `系统已根据${supplementProxy ? '营养素' : '用药'}档案自动发起服务，请核对采购渠道、数量和配送时间；确认后转健康规划师安排执行人员。` : '健康顾问已发起专家约诊，请完成预约并记录实际日期时间。',
       formData: {
@@ -351,7 +360,7 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
     if (supplyProxy) {
       supervisor = await FollowUp.create({
         patientId: patient._id, staffId: patient.assignedHealthPlanner, assignedTo: patient.assignedHealthPlanner,
-        type: 'other', status: 'in_progress', date, remindAt: new Date(), sourceType: 'order', sourceOrderId: order._id,
+        type: 'other', status: 'in_progress', date: initialTaskDate, remindAt: initialTaskDate, sourceType: 'order', sourceOrderId: order._id,
         workflowKey: `${PREFIX}supervise`, taskRole: 'supervisor', theme: `${supplementProxy ? '代配营养素' : '代配药'}：健康规划师全程督办 · ${serviceName}`,
         plannedContent: '健康顾问已发起代配药服务。持续督办健管预约、执行人员分配、配药确认和配送，服务完成后自动闭环。',
         formData: { currentStage: 'booking', medicationProxy, supplementProxy, initiationSource: STAFF_DIRECT_SOURCE, serviceContent: appointmentRequirement, customerNeed: plan.notes || '' },

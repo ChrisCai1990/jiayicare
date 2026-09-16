@@ -31,6 +31,7 @@ export default function ServiceTasksPanel() {
   const nav = useNavigate()
   const [items, setItems] = useState([])
   const [group, setGroup] = useState('all')
+  const [timeGroup, setTimeGroup] = useState('all')
 
   useEffect(() => {
     const refresh = () => staffAPI.getServiceTasks({ status: 'active', includeFuture: '1', limit: 100 })
@@ -61,7 +62,23 @@ export default function ServiceTasksPanel() {
     const supervisor = service.tasks.find(task => task.workflowKey === 'medical_proxy:supervise' && ['planned', 'in_progress', 'missed'].includes(task.status))
     return { ...service, task: supervisor || service.tasks[0], totalSteps: workflowModules.length || service.tasks.length }
   })
-  const visibleServices = group === 'all' ? serviceGroups : serviceGroups.filter(service => service.task.taskRole === group)
+  const now = new Date()
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const tomorrowStart = new Date(todayStart); tomorrowStart.setDate(tomorrowStart.getDate() + 1)
+  const weekEnd = new Date(todayStart); weekEnd.setDate(weekEnd.getDate() + 8)
+  const monthEnd = new Date(todayStart); monthEnd.setDate(monthEnd.getDate() + 31)
+  const bucketOf = value => {
+    const date = new Date(value)
+    if (date < todayStart) return 'overdue'
+    if (date < tomorrowStart) return 'today'
+    if (date < weekEnd) return 'week'
+    if (date < monthEnd) return 'month'
+    return 'later'
+  }
+  const roleServices = group === 'all' ? serviceGroups : serviceGroups.filter(service => service.task.taskRole === group)
+  const visibleServices = roleServices
+    .filter(service => timeGroup === 'all' || bucketOf(service.task.date) === timeGroup)
+    .sort((a, b) => new Date(a.task.date) - new Date(b.task.date))
   const executorCount = serviceGroups.filter(service => service.task.taskRole !== 'supervisor').length
   const supervisorCount = serviceGroups.filter(service => service.task.taskRole === 'supervisor').length
 
@@ -114,6 +131,12 @@ export default function ServiceTasksPanel() {
           <button key={key} onClick={() => setGroup(key)} style={{ border: group === key ? '1px solid #1E6B50' : '1px solid #DDD7CD', background: group === key ? '#EAF5F0' : '#fff', color: group === key ? '#1E6B50' : '#5F6B65', borderRadius: 16, padding: '5px 12px', cursor: 'pointer', fontSize: 12 }}>{label} {count}</button>
         ))}
       </div>
+      <div style={{ display: 'flex', gap: 8, padding: '4px 20px 8px', flexWrap: 'wrap' }}>
+        {[['all', '全部计划'], ['today', '今日'], ['week', '未来7天'], ['month', '未来30天'], ['later', '30天以后'], ['overdue', '已逾期']].map(([key, label]) => {
+          const count = key === 'all' ? roleServices.length : roleServices.filter(service => bucketOf(service.task.date) === key).length
+          return <button key={key} onClick={() => setTimeGroup(key)} style={{ border: timeGroup === key ? '1px solid #1E6B50' : '1px solid #DDD7CD', background: timeGroup === key ? '#EAF5F0' : '#fff', color: timeGroup === key ? '#1E6B50' : '#5F6B65', borderRadius: 16, padding: '5px 12px', cursor: 'pointer', fontSize: 12 }}>{label} {count}</button>
+        })}
+      </div>
       <div className="card-body" style={{ padding: '8px 20px' }}>
         {visibleServices.slice(0, 10).map((service, index) => {
           const task = service.task
@@ -143,7 +166,7 @@ export default function ServiceTasksPanel() {
               {progress && <div style={{ fontSize: 12, color: '#52685D', marginTop: 3 }}>当前阶段：<b>{progress.label}</b>　下一步：{progress.next}</div>}
               <div style={{ fontSize: 11, color: '#9AA9A2', marginTop: 2 }}>创建：{new Date(task.createdAt).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}</div>
             </div>
-            {!isWaitingPrevious && <span style={{ fontSize: 11, color: '#8AA89C' }}>计划：{formatChineseDate(task.date, false)}</span>}
+            {!isWaitingPrevious && <span style={{ fontSize: 11, color: '#8AA89C' }}>计划执行：{formatChineseDate(task.date, false)}</span>}
           </div>
           )
         })}

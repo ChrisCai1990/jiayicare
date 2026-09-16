@@ -220,6 +220,7 @@ test('staff-initiated medication keeps a planner supervision task until executio
   assert.match(directStart, /workflowKey: `\$\{PREFIX\}supervise`/);
   assert.match(directStart, /taskRole: 'supervisor'/);
   assert.match(directStart, /status: 'in_progress'/);
+  assert.match(directStart, /date: initialTaskDate, remindAt: initialTaskDate/);
   assert.match(directStart, /supervisorId: patient\.assignedHealthPlanner/);
   assert.match(workflow, /medicationProxy \? '执行人员已完成配药确认与配送安排，健康规划师全程督办闭环/);
   assert.match(page, /健康规划师分配配药执行人员/);
