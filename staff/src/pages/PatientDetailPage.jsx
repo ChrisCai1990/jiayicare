@@ -2461,13 +2461,13 @@ export default function PatientDetailPage() {
           ? (reportClosure?.collectionStatus === 'complete' ? 'completed' : 'in_progress')
           : execItem.taskRole === 'supervisor'
           ? (execForm.serviceChecklist.some(item => item.supervisionStatus === 'issue') ? 'in_progress' : 'completed')
-          : (isCheckupAppointmentBooking || proxyStage || medicationStage || isAdvisorAssessment || isOutpatientAppointment || isStaffAssignment || isProxyVisit || isEscortVisit || isPostVisitReview)
+          : (isCheckupAppointmentBooking || isCheckupMedicalExecution || proxyStage || medicationStage || isAdvisorAssessment || isOutpatientAppointment || isStaffAssignment || isProxyVisit || isEscortVisit || isPostVisitReview)
             ? 'completed'
           : execItem.taskRole
             ? (submittedChecklist.every(item => item.executionStatus === 'completed') ? 'completed' : 'in_progress')
             : execForm.status,
         serviceChecklist: submittedChecklist,
-        formData: (isCheckupAppointmentBooking || proxyStage || medicationStage || isAdvisorAssessment || isOutpatientAppointment || isStaffAssignment || isProxyVisit || isEscortVisit || isPostVisitReview) ? execForm.formData : execItem.formData,
+        formData: (isCheckupAppointmentBooking || isCheckupMedicalExecution || proxyStage || medicationStage || isAdvisorAssessment || isOutpatientAppointment || isStaffAssignment || isProxyVisit || isEscortVisit || isPostVisitReview) ? execForm.formData : execItem.formData,
       })
       toast(isReportCollection ? (reportClosure?.collectionStatus === 'complete' ? '体检报告已回收齐全，进入解析审核' : '报告回收进度已保存') : execItem?.taskRole === 'supervisor' ? '督办记录已完成' : execItem?.taskRole ? '事务记录已更新' : '随访记录已更新')
       setExecItem(null)
