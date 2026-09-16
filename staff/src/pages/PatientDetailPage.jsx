@@ -10024,6 +10024,13 @@ export default function PatientDetailPage() {
       {tab === 'consumption' && (() => {
         const ORDER_STATUS = { pending:'待安排', scheduled:'已安排', completed:'已完成', cancelled:'已取消' }
         const ORDER_STATUS_COLOR = { pending:'#D97706', scheduled:'#0077B6', completed:'#22A06B', cancelled:'#DC3545' }
+        const CHECKUP_STAGE_LABEL = {
+          checkup_manager_booking: '待约检：健管专员双号预约中',
+          checkup_medical_execution: '待约检：就医专员执行检查与资料归档中',
+          checkup_manager_review: '待约检：健管专员审核报告与病历中',
+          checkup_advisor_review: '待约检：健康顾问审核随访计划中',
+          checkup_completed: '待约检：服务已结束',
+        }
         const thisYear = new Date().getFullYear()
         const yearOrders = patientOrders.filter(o => new Date(o.createdAt).getFullYear() === thisYear)
         const billableYearOrders = yearOrders.filter(o => o.status !== 'cancelled' && o.paymentStatus !== 'refunded' && o.tradeStatus !== 'refunded' && o.tradeStatus !== 'closed')
@@ -10102,6 +10109,7 @@ export default function PatientDetailPage() {
                             color: ORDER_STATUS_COLOR[order.status] || '#aaa' }}>
                             {ORDER_STATUS[order.status] || order.status}
                           </span>
+                          {CHECKUP_STAGE_LABEL[order.currentStage] && <div style={{ marginTop: 5, fontSize: 12, color: '#4A6558' }}>{CHECKUP_STAGE_LABEL[order.currentStage]}</div>}
                         </td>
                         <td style={{ whiteSpace: 'nowrap' }}>
                           {order.status === 'pending' && (
@@ -12033,6 +12041,11 @@ export default function PatientDetailPage() {
             const scheduledAt = /^\d{4}-\d{2}-\d{2}$/.test(serviceTime) ? `${serviceTime}T00:00:00+08:00` : serviceTime
             const result = await staffAPI.startOrder(orderId, { action: 'schedule', scheduledAt, serviceDateEnd: serviceTimeEnd, note: confirmedNote, serviceContent, customerNeed, communicationDate, communicationTimeStart, communicationTimeEnd, medicationData, medicalReminderIntake, checkupAppointmentIntake })
             setShowMessageModal(false)
+            if (checkupAppointmentIntake) {
+              toast('待约检订单已转健管专员双号预约，可在订单中查看当前进度')
+              loadFollowUps()
+              return
+            }
             if (/复查督办|就医提醒/.test([result.data?.serviceName, result.data?.specificationLabel, result.data?.note, result.data?.serviceRequirements].filter(Boolean).join(' '))) {
               toast('AI随访计划已转健康顾问审核')
               loadFollowUps()

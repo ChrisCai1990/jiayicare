@@ -2251,6 +2251,7 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
       if (order) {
         const completedAt = new Date();
         order.status = 'completed'; order.tradeStatus = 'completed'; order.fulfillmentStatus = 'completed'; order.completedAt = completedAt;
+        order.currentStage = 'checkup_completed'; order.currentAssignee = null; order.supervisionStatus = 'completed';
         order.usedUnits = Math.max(order.usedUnits || 0, 1);
         await order.save();
         await FollowUp.updateOne(
