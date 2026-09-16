@@ -23,10 +23,12 @@ async function req(path, options = {}) {
   })
   const data = await res.json()
   if (res.status === 401) {
-    // Token 过期或无效：清空登录状态并跳回登录页
-    clearToken()
-    localStorage.removeItem('jy_staff_info')
-    window.location.href = '/login'
+    // 仅当失败响应仍属于当前账号时才退出。账号切换期间，旧 token 的迟到响应
+    // 不能清掉刚写入的新 token，也不能把新账号踢回登录页。
+    if (getToken() === token) {
+      clearToken()
+      window.location.href = '/login'
+    }
     throw new Error(data.message || 'Token 无效或已过期，请重新登录')
   }
   if (!res.ok) {

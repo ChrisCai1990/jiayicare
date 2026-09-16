@@ -15,7 +15,7 @@ class ErrorBoundary extends Component {
   }
 }
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { getToken, clearToken, staffAPI } from './api'
+import { getToken, setToken, clearToken, staffAPI } from './api'
 import LoginPage from './pages/LoginPage'
 import Layout from './components/Layout'
 import HomePage from './pages/HomePage'
@@ -91,7 +91,10 @@ function AuthProvider({ children }) {
   const [staff, setStaff] = useState(() => {
     try { return JSON.parse(localStorage.getItem('jy_staff_info')) } catch { return null }
   })
-  const login = (staffInfo) => {
+  const login = (staffInfo, token) => {
+    // 切换账号时先原子更新 token，再替换人员缓存。否则应用启动时针对旧 token
+    // 发出的 /staff/me 可能晚于新账号登录返回，并把新账号角色覆盖成旧账号角色。
+    if (token) setToken(token)
     setStaff(staffInfo)
     localStorage.setItem('jy_staff_info', JSON.stringify(staffInfo))
   }
@@ -102,9 +105,14 @@ function AuthProvider({ children }) {
   // 旧 staff 对象里 customPermissions 仍是登录时的旧值(通常是null)，导致侧边栏按固定角色显示全部菜单，
   // 必须手动退出重新登录才生效。这里应用挂载时主动拉一次最新 /staff/me 覆盖缓存，不依赖重新登录。
   React.useEffect(() => {
-    if (!getToken()) return
+    const tokenAtRequest = getToken()
+    if (!tokenAtRequest) return
     staffAPI.me().then(r => {
-      if (r.data) { setStaff(r.data); localStorage.setItem('jy_staff_info', JSON.stringify(r.data)) }
+      // 请求期间若已切换账号，丢弃旧账号响应，避免污染新账号的姓名、角色与权限。
+      if (r.data && getToken() === tokenAtRequest) {
+        setStaff(r.data)
+        localStorage.setItem('jy_staff_info', JSON.stringify(r.data))
+      }
     }).catch(() => {})
   }, [])
 

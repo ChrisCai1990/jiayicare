@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { staffAPI, setToken } from '../api'
+import { staffAPI } from '../api'
 import { useStaff } from '../App'
 
 export default function LoginPage() {
@@ -22,8 +22,7 @@ export default function LoginPage() {
     setError('')
     try {
       const res = await staffAPI.login(username.trim(), password)
-      setToken(res.data.token)
-      login(res.data.staff)
+      login(res.data.staff, res.data.token)
       const from = location.state?.from
       const target = typeof from === 'string' && from.startsWith('/') && !from.startsWith('//') ? from : '/home'
       nav(res.data.staff.mustChangePassword ? '/change-password' : target, { replace: true })
