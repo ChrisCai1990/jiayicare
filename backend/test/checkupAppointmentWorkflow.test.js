@@ -21,7 +21,7 @@ test('特殊约检在规划师阶段必须确认专家与检查信息', () => {
 });
 
 test('健管专员必须完成开单号和检查日专家号', () => {
-  const booking = { orderFormAppointment: { institution: '医院', department: '内科', doctor: '李医生', date: '2026-10-01', time: '09:00' }, expertAppointment: { institution: '医院', department: '超声科', doctor: '王医生', date: '2026-10-02', time: '10:00' } };
+  const booking = { orderFormAppointment: { campus: '庆春院区', department: '内科', doctor: '李医生', date: '2026-10-01', time: '09:00' }, expertAppointment: { campus: '庆春院区', department: '超声科', doctor: '王医生', date: '2026-10-02', time: '10:00' } };
   assert.equal(bookingValidation(booking), '');
   assert.match(bookingValidation({ ...booking, expertAppointment: { ...booking.expertAppointment, time: '' } }), /完整填写/);
 });

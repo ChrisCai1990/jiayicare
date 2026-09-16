@@ -3,7 +3,7 @@ import React from 'react'
 export const isCheckupAppointmentBookingTask = task => task?.sourceType === 'order'
   && task?.workflowKey === 'checkup_appointment:booking'
 
-const emptyAppointment = { institution: '', department: '', doctor: '', date: '', time: '' }
+const emptyAppointment = { campus: '', department: '', doctor: '', date: '', time: '' }
 
 export function checkupAppointmentBookingFromTask(task) {
   const data = task?.formData || {}
@@ -19,7 +19,7 @@ function AppointmentFields({ title, value, onChange, hint }) {
   return <section style={{ border: '1px solid #D8E7DF', borderRadius: 10, overflow: 'hidden' }}>
     <div style={{ padding: '11px 14px', background: '#F2F8F5', fontWeight: 750, color: '#29483C' }}>{title}</div>
     <div style={{ padding: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-      <label style={{ fontSize: 12, color: '#65776F' }}>预约机构 *<input className="form-control" value={value.institution || ''} onChange={e => update('institution', e.target.value)} /></label>
+      <label style={{ fontSize: 12, color: '#65776F' }}>院区 *<input className="form-control" placeholder="例如：庆春院区" value={value.campus || ''} onChange={e => update('campus', e.target.value)} /></label>
       <label style={{ fontSize: 12, color: '#65776F' }}>科室 *<input className="form-control" value={value.department || ''} onChange={e => update('department', e.target.value)} /></label>
       <label style={{ fontSize: 12, color: '#65776F' }}>医生/专家 *<input className="form-control" value={value.doctor || ''} onChange={e => update('doctor', e.target.value)} /></label>
       <label style={{ fontSize: 12, color: '#65776F' }}>预约日期 *<input type="date" className="form-control" value={value.date || ''} onChange={e => update('date', e.target.value)} /></label>

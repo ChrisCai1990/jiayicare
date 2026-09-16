@@ -31,7 +31,7 @@ function bookingValidation(data = {}) {
   const orderVisit = data.orderFormAppointment || {};
   const expertVisit = data.expertAppointment || {};
   for (const item of [orderVisit, expertVisit]) {
-    if (!required(item.institution) || !required(item.department) || !required(item.doctor) || !appointmentDate(item.date) || !required(item.time)) return '请完整填写开检查单号和检查日专家号的机构、科室、医生及时间';
+    if (!required(item.campus) || !required(item.department) || !required(item.doctor) || !appointmentDate(item.date) || !required(item.time)) return '请完整填写开检查单号和检查日专家号的院区、科室、医生及时间';
   }
   if (expertVisit.date < orderVisit.date) return '检查日专家号不能早于开检查单号';
   return '';
