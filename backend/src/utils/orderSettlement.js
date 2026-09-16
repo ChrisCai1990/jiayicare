@@ -79,6 +79,7 @@ async function confirmPayment({ outTradeNo, transactionId, paidAt, snapshot }) {
   } else {
     const plannerId = await resolveHealthPlanner(order.user);
     if (plannerId) {
+    const medicationProxy = require('./orderPlannerConversation').isMedicationProxyOrder(order);
     await FollowUp.findOneAndUpdate(
       { sourceType: 'order', sourceOrderId: order._id },
       { $setOnInsert: {
@@ -86,8 +87,9 @@ async function confirmPayment({ outTradeNo, transactionId, paidAt, snapshot }) {
         assignedTo: plannerId,
         patientId: order.user,
         type: 'other', status: 'planned',
-        theme: `订单服务：${order.serviceName}`,
-        content: order.note || '用户已完成支付，请联系确认服务安排',
+        theme: medicationProxy ? `代配药：AI沟通后由健康规划师确认 · ${order.serviceName}` : `订单服务：${order.serviceName}`,
+        content: medicationProxy ? '用户已完成支付，AI健康规划师正在收集药品、数量、配药机构、支付方式和送达日期；请查看本单对话并人工核对后启动代配药流程。' : (order.note || '用户已完成支付，请联系确认服务安排'),
+        formData: medicationProxy ? { currentStage: 'ai_communication', medicationProxy: true } : {},
       } },
       { upsert: true, new: true },
     );

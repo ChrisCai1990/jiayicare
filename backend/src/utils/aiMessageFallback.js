@@ -26,7 +26,7 @@ function resolveTitle(user) {
   return user?.name || '您';
 }
 
-function buildSystemPrompt(isFirstAIReply, title, healthContext = '') {
+function buildSystemPrompt(isFirstAIReply, title, healthContext = '', orderServiceContext = '') {
   return `你是嘉医汇健康管理平台中该服务人员自己的AI在线助手。你的任务是直接接住用户当下的话题，陪用户自然聊天并提供情绪价值。当前用户称呼："${title}"。
 
 要求：
@@ -44,8 +44,28 @@ function buildSystemPrompt(isFirstAIReply, title, healthContext = '') {
 12. 历史消息中“[语音转写，仅供理解]”后的文字来自自动识别，可用于理解日常聊天并自然接话；不要声称自己听了录音。若只有“[语音消息]”而没有转写，才温和确认收到并请用户方便时补充一句文字重点
 13. 用户说明“只是测试”“没什么事”“不用处理”或纠正你时，立即接受这个最新事实，简短自然回应即可；不要继续追问重点、表示要整理或延续已被否定的需求
 
+${orderServiceContext ? `当前订单沟通任务：
+${orderServiceContext}
+订单沟通任务优先于普通闲聊要求。只收集客户明确提供的信息；已明确的内容不要反复询问。每次优先询问1至3个最关键的缺失项，允许客户回答“不清楚”。不得建议换药、停药、调整剂量、替代药品或自行判断处方。` : ''}
+
 可客观引用的已确认资料（没有内容就不要主动提及；不得据此推断）：
 ${healthContext || '暂无可引用资料'}`;
+}
+
+async function buildOrderServiceContext(userId, conversationId) {
+  const linked = await Message.findOne({
+    user: userId, conversationId,
+    'action.type': { $in: ['order_planner_confirmation', 'order_conversation'] },
+    'action.orderId': { $exists: true, $ne: '' },
+  }).sort({ createdAt: -1 }).select('action').lean();
+  if (!linked?.action?.orderId) return '';
+  const order = await require('../models/Order').findOne({
+    _id: linked.action.orderId, user: userId,
+    status: { $in: ['pending', 'scheduled'] },
+    tradeStatus: { $in: ['paid', 'fulfilling', 'partially_refunded'] },
+  }).select('serviceName specificationLabel note serviceRequirements').lean();
+  if (!order || !require('./orderPlannerConversation').isMedicationProxyOrder(order)) return '';
+  return `这是代配药订单“${order.serviceName}”。请从本轮对话逐步核对：药品通用名、商品名/品牌、规格、单次服用剂量、每日服用次数、本次配备总量、配药机构类型及名称、医院院区/科室（如适用）、支付方式、期望送达日期。订单已有信息：${[order.specificationLabel, order.serviceRequirements, order.note].filter(Boolean).join('；') || '暂无'}。信息齐全后告知客户“信息已整理，等待健康规划师人工确认”，不要承诺已经预约、采购或配送。`;
 }
 
 function stripRepeatedOpeningTitle(replyText, isFirstAIReply, title) {
@@ -74,10 +94,11 @@ async function replyWithAI({ userId, recipient, content, conversationId }) {
   try {
     // 人工接手后 AI 必须静默。生成前后各检查一次，覆盖生成期间人工刚接手的并发场景。
     if (await ChatConversationState.exists(humanPresentQuery(conversationId))) return;
-    const [history, user, healthContext] = await Promise.all([
+    const [history, user, healthContext, orderServiceContext] = await Promise.all([
       Message.find({ conversationId, recalled: { $ne: true } }).sort({ createdAt: -1 }).limit(20).select('type content audioTranscript createdAt').lean(),
       User.findById(userId).select('name gender preferredTitle').lean(),
       buildHealthContext(userId),
+      recipient === 'planner' ? buildOrderServiceContext(userId, conversationId) : '',
     ]);
 
     history.reverse();
@@ -93,7 +114,7 @@ async function replyWithAI({ userId, recipient, content, conversationId }) {
     const isFirstAIReply = !recentHistory.some(m => m.type !== 'user');
     const disclaimer = isFirstAIReply ? FULL_DISCLAIMER : SHORT_DISCLAIMER;
     const title = resolveTitle(user);
-    const systemPrompt = buildSystemPrompt(isFirstAIReply, title, healthContext);
+    const systemPrompt = buildSystemPrompt(isFirstAIReply, title, healthContext, orderServiceContext);
 
     const chatMessages = recentHistory.map(m => ({
       role: m.type === 'user' ? 'user' : 'assistant',
@@ -118,4 +139,4 @@ async function replyWithAI({ userId, recipient, content, conversationId }) {
   }
 }
 
-module.exports = { replyWithAI, buildSystemPrompt, stripRepeatedOpeningTitle, buildHealthContext };
+module.exports = { replyWithAI, buildSystemPrompt, buildOrderServiceContext, stripRepeatedOpeningTitle, buildHealthContext };

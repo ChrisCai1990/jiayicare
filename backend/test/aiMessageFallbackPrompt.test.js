@@ -32,3 +32,10 @@ test('连续回复默认省略称呼并避免机械化表达', () => {
   assert.match(prompt, /避免固定的“回应一下＋再追问一句”模板/);
   assert.match(prompt, /不必强行开启新话题/);
 });
+
+test('代配药订单沟通只收集信息且保留人工确认边界', () => {
+  const prompt = buildSystemPrompt(false, '金老师', '', '这是代配药订单，请核对药品信息');
+  assert.match(prompt, /订单沟通任务优先/);
+  assert.match(prompt, /每次优先询问1至3个/);
+  assert.match(prompt, /不得建议换药、停药、调整剂量/);
+});

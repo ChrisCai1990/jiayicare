@@ -16,8 +16,16 @@ function isPaidActiveOrder(order = {}) {
     && !['requested', 'processing', 'partially_refunded', 'refunded'].includes(order.refundStatus || 'none');
 }
 
+function isMedicationProxyOrder(order = {}) {
+  return /代配药|代取药/.test([order.serviceName, order.specificationLabel, order.note, order.serviceRequirements].filter(Boolean).join(' '));
+}
+
 function buildOrderPlannerPrompt(order = {}) {
   if (!isPaidActiveOrder(order)) return '';
+  if (isMedicationProxyOrder(order)) {
+    const note = customerOrderNote(order.note);
+    return `已收到您的“${order.serviceName}”订单。为了安全、准确地安排代配药，我先协助您核对本次信息。请按现有处方或医嘱告诉我：药品通用名、商品名/品牌、规格、单次服用剂量、每日次数、本次需要的数量、配药机构（医院/线上平台/线下药房）、支付方式和期望送达日期。${note ? `订单备注：“${note}”。` : ''}不清楚的项目可以直接说“不清楚”，我会只继续询问缺失内容；最终由健康规划师人工确认，AI不会替您换药、改剂量或修改医嘱。`;
+  }
   const confirmed = isCustomerConfirmedServiceOrder(order);
   const pending = require('./orderServiceConfirmation').needsCustomerServiceConfirmation(order);
   const note = customerOrderNote(order.note);
@@ -87,4 +95,4 @@ function normalizeIntakeResult(input = {}, previous = {}) {
   return result;
 }
 
-module.exports = { customerOrderNote, extractExplicitServiceTime, isPaidActiveOrder, buildOrderPlannerPrompt, ensureOrderPlannerPrompt, latestOpenOrderConversationAction, normalizeIntakeResult };
+module.exports = { customerOrderNote, extractExplicitServiceTime, isPaidActiveOrder, isMedicationProxyOrder, buildOrderPlannerPrompt, ensureOrderPlannerPrompt, latestOpenOrderConversationAction, normalizeIntakeResult };

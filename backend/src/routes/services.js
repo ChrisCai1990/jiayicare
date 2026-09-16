@@ -465,6 +465,7 @@ router.post('/order', auth, async (req, res) => {
   if (paidAmount === 0) {
   const pendingTasks = [];
   const medicalReminderWorkflow = require('../utils/medicalReminderWorkflow');
+  const medicationProxy = require('../utils/orderPlannerConversation').isMedicationProxyOrder(order);
   if (medicalReminderWorkflow.isMedicalReminderOrder(order)) {
     pendingTasks.push(medicalReminderWorkflow.ensureAdvisorIntakeTask(order));
   } else if (followUpStaffId) {
@@ -474,8 +475,9 @@ router.post('/order', auth, async (req, res) => {
       patientId: req.user._id,
       type: 'other',
       status: 'planned',
-      theme: isPkg ? `服务包开通：${service.name}` : `预约：${service.name}`,
-      content: orderNote || (isPkg ? '用户申请开通服务包，请联系确认支付并激活' : '用户已提交服务预约，请联系确认安排'),
+      theme: medicationProxy ? `代配药：AI沟通后由健康规划师确认 · ${service.name}` : isPkg ? `服务包开通：${service.name}` : `预约：${service.name}`,
+      content: medicationProxy ? '用户已完成支付，AI健康规划师正在收集药品、数量、配药机构、支付方式和送达日期；请查看本单对话并人工核对后启动代配药流程。' : (orderNote || (isPkg ? '用户申请开通服务包，请联系确认支付并激活' : '用户已提交服务预约，请联系确认安排')),
+      formData: medicationProxy ? { currentStage: 'ai_communication', medicationProxy: true } : {},
       sourceType: 'order',
       sourceOrderId: order._id,
     }));
