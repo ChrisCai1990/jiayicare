@@ -15,6 +15,18 @@ const checkupProgress = task => {
   return stages[stage] || stages.booking
 }
 
+const medicationProxyProgress = task => {
+  if (task?.workflowKey !== 'medical_proxy:supervise' || task?.formData?.medicationProxy !== true) return null
+  const stage = task.formData?.currentStage || 'booking'
+  const stages = {
+    booking: { step: 1, label: '健管专员预约配药门诊', next: '预约完成后由健康规划师安排就医专员' },
+    planner: { step: 2, label: '健康规划师安排配药执行人员', next: '确认后直接转给就医专员' },
+    execute: { step: 3, label: '就医专员配药并上传交付资料', next: '资料齐全后完成服务' },
+    completed: { step: 4, label: '代配药服务已完成', next: '服务已闭环' },
+  }
+  return stages[stage] || stages.booking
+}
+
 export default function ServiceTasksPanel() {
   const nav = useNavigate()
   const [items, setItems] = useState([])
@@ -46,7 +58,8 @@ export default function ServiceTasksPanel() {
     const workflowModules = service.tasks[0]?.sourceHealthPlanId?.content?.workflowModules || []
     const sequenceByKey = new Map(workflowModules.map((item, sequence) => [String(item.id || item._id || ''), item.sequence ?? sequence]))
     service.tasks.sort((a, b) => (sequenceByKey.get(String(a.workflowKey || '')) ?? 999) - (sequenceByKey.get(String(b.workflowKey || '')) ?? 999))
-    return { ...service, task: service.tasks[0], totalSteps: workflowModules.length || service.tasks.length }
+    const supervisor = service.tasks.find(task => task.workflowKey === 'medical_proxy:supervise' && ['planned', 'in_progress', 'missed'].includes(task.status))
+    return { ...service, task: supervisor || service.tasks[0], totalSteps: workflowModules.length || service.tasks.length }
   })
   const visibleServices = group === 'all' ? serviceGroups : serviceGroups.filter(service => service.task.taskRole === group)
   const executorCount = serviceGroups.filter(service => service.task.taskRole !== 'supervisor').length
@@ -106,7 +119,7 @@ export default function ServiceTasksPanel() {
           const task = service.task
           const isFuture = task.date && new Date(task.date).getTime() > Date.now()
           const isWaitingPrevious = !!task.isBlocked
-          const progress = checkupProgress(task)
+          const progress = checkupProgress(task) || medicationProxyProgress(task)
           const isOutpatientEscortProgress = isWaitingPrevious && task.taskRole === 'supervisor' && /门诊一站式.*检查及专家门诊陪诊与归档/.test(task.theme || '')
           const isOutpatientReportAuditWait = isWaitingPrevious && task.taskRole === 'executor' && /门诊一站式.*查看陪诊资料并制定随访计划/.test(task.theme || '')
           return (
@@ -118,7 +131,7 @@ export default function ServiceTasksPanel() {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600, fontSize: 13, color: '#1A2B24' }}>
                 {task.theme}
-                {progress && <span style={{ marginLeft: 8, fontSize: 11, color: '#1E6B50', background: '#EAF5F0', padding: '2px 6px', borderRadius: 8 }}>进度 {progress.step}/5</span>}
+                {progress && <span style={{ marginLeft: 8, fontSize: 11, color: '#1E6B50', background: '#EAF5F0', padding: '2px 6px', borderRadius: 8 }}>进度 {progress.step}/{task.formData?.medicationProxy ? 4 : 5}</span>}
                 {service.totalSteps > 1 && <span style={{ marginLeft: 8, fontSize: 11, color: '#1E6B50', background: '#EAF5F0', padding: '2px 6px', borderRadius: 8 }}>当前环节 · 共{service.totalSteps}环节</span>}
                 {isWaitingPrevious
                   ? <span style={{ marginLeft: 8, fontSize: 11, color: isOutpatientEscortProgress ? '#1E6B50' : '#667085', background: isOutpatientEscortProgress ? '#EAF5F0' : '#F2F4F7', padding: '2px 6px', borderRadius: 8 }}>{isOutpatientReportAuditWait ? '等待资料审核' : isOutpatientEscortProgress ? '陪诊及资料闭环进行中' : '等待上一环节'}</span>

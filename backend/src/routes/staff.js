@@ -2584,6 +2584,23 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
 
 // 健康顾问直接使用既有已审核资料发起医疗代诊，跳过客户资料收集和重复审核。
 // 健管专员在客户确认后也可发起“代配药/代配营养素”这一单项服务；其他就医协助仍由健康顾问发起。
+router.get('/patients/:id/medication-proxy/defaults', staffAuth, async (req, res) => {
+  try {
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权查看该会员的配药信息' });
+    const medication = await Medication.findOne({ user: req.params.id, stopped: { $ne: true }, active: { $ne: false }, 'supplyReminder.enabled': true }).sort({ 'supplyReminder.updatedAt': -1, updatedAt: -1 }).lean();
+    if (!medication) return res.json({ success: true, data: {} });
+    const RecurringSupplyPlan = require('../models/RecurringSupplyPlan');
+    const plan = await RecurringSupplyPlan.findOne({ patientId: req.params.id, planType: 'medication', enabled: true, itemName: { $in: [medication.brandName, medication.name].filter(Boolean) } }).sort({ updatedAt: -1 }).lean();
+    res.json({ success: true, data: {
+      medicationName: medication.name || '',
+      medicationBrand: medication.brandName || medication.name || '',
+      medicationQuantity: String(plan?.intake?.totalQuantity || ''),
+      source: plan ? 'recurring_supply_plan' : 'medication_supply_reminder',
+    } });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => {
   if (!['familyDoctor', 'healthManager', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问或健管专员可发起服务' });
   try {
@@ -2596,8 +2613,18 @@ router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => 
     if (req.staff.role === 'healthManager' && !medicationProxy) return res.status(403).json({ success: false, message: '健管专员仅可在客户确认后发起代配药或代配营养素服务' });
     if (req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅该客户的健康顾问可发起' });
     if (req.staff.role === 'healthManager' && String(patient.assignedHealthManager || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅该客户的健管专员可发起代配服务' });
-    const required = medicationProxy ? ['hospital', 'department', 'preferredDateStart'] : appointmentOnly ? ['hospital', 'department', 'expert', 'preferredDateStart', 'preferredDateEnd'] : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'];
-    if (required.some(key => !String(req.body[key] || '').trim())) return res.status(400).json({ success: false, message: medicationProxy ? '请填写配药医院、科室和期望日期' : appointmentOnly ? '请完整填写医院、科室、专家和期望日期区间' : '请完整填写医院、科室、专家、代诊目标和交流内容' });
+    if (medicationProxy && ['medicationName', 'medicationBrand', 'medicationQuantity'].some(key => !String(req.body[key] || '').trim())) {
+      const reminder = await Medication.findOne({ user: patient._id, stopped: { $ne: true }, active: { $ne: false }, 'supplyReminder.enabled': true }).sort({ 'supplyReminder.updatedAt': -1, updatedAt: -1 }).lean();
+      if (reminder) {
+        const RecurringSupplyPlan = require('../models/RecurringSupplyPlan');
+        const supplyPlan = await RecurringSupplyPlan.findOne({ patientId: patient._id, planType: 'medication', enabled: true, itemName: { $in: [reminder.brandName, reminder.name].filter(Boolean) } }).sort({ updatedAt: -1 }).lean();
+        req.body.medicationName ||= reminder.name || '';
+        req.body.medicationBrand ||= reminder.brandName || reminder.name || '';
+        req.body.medicationQuantity ||= String(supplyPlan?.intake?.totalQuantity || '');
+      }
+    }
+    const required = medicationProxy ? ['hospital', 'department', 'preferredDateStart', 'medicationName', 'medicationBrand', 'medicationQuantity'] : appointmentOnly ? ['hospital', 'department', 'expert', 'preferredDateStart', 'preferredDateEnd'] : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'];
+    if (required.some(key => !String(req.body[key] || '').trim())) return res.status(400).json({ success: false, message: medicationProxy ? '请填写配药医院、科室、期望日期，并确认药物名称、品牌和数量' : appointmentOnly ? '请完整填写医院、科室、专家和期望日期区间' : '请完整填写医院、科室、专家、代诊目标和交流内容' });
     if (appointmentOnly && (req.body.preferredDateEnd < req.body.preferredDateStart || !/^\d{4}-\d{2}-\d{2}$/.test(req.body.preferredDateStart) || !/^\d{4}-\d{2}-\d{2}$/.test(req.body.preferredDateEnd))) return res.status(400).json({ success: false, message: '请填写有效的期望日期区间' });
     if (appointmentOnly && (!['general', 'international'].includes(req.body.clinicType) || !['self_pay', 'high_end'].includes(req.body.insuranceUse))) return res.status(400).json({ success: false, message: '请选择门诊类型和费用与保险方式' });
     // 服务由健管专员触发时，仍关联客户的健康顾问作为专业责任岗位；未分配健康顾问时由发起健管专员留痕。

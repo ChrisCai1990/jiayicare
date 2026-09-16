@@ -198,6 +198,19 @@ test('staff-initiated medication booking hands off to the health planner for ass
   assert.match(page, /代配药门诊预约已完成，转健康规划师安排执行人员/);
 });
 
+test('medication proxy execution requires all four delivery documents', async () => {
+  const originalFindById = Order.findById;
+  try {
+    Order.findById = () => ({ select: () => ({ lean: async () => ({ serviceName: '代配药服务' }) }) });
+    const task = { sourceType: 'order', sourceOrderId: 'order-1', workflowKey: 'medical_proxy:execute', assignedTo: 'assistant-1' };
+    const base = { executionResult: '已按清单配药并核对数量', medicationPhotoAttachments: [{ url: '/uploads/medicine.jpg' }], medicationInstructionAttachments: [{ url: '/uploads/instructions.pdf' }], medicalRecordAttachments: [{ url: '/uploads/record.pdf' }] };
+    assert.match(await validateMedicalProxyStage(task, { status: 'completed', formData: base }, { _id: 'assistant-1', role: 'medicalAssistant' }), /收费单/);
+    assert.equal(await validateMedicalProxyStage(task, { status: 'completed', formData: { ...base, chargeReceiptAttachments: [{ url: '/uploads/receipt.jpg' }] } }, { _id: 'assistant-1', role: 'medicalAssistant' }), '');
+  } finally {
+    Order.findById = originalFindById;
+  }
+});
+
 test('staff-initiated medication keeps a planner supervision task until execution completes', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
   const page = fs.readFileSync(path.join(__dirname, '../../staff/src/pages/PatientDetailPage.jsx'), 'utf8');

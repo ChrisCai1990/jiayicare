@@ -78,20 +78,24 @@ async function archiveMedicalProxyRecords(task, order, tenantId) {
 
 async function upsertMedicalProxyServiceRecord(task, order, completed = false) {
   const plan = order.medicalProxyPlan || task.formData?.planSnapshot || {};
+  const medicationProxy = /代配药|代取药/.test(order.serviceName || '');
   const booking = plan.booking || task.formData?.bookingSnapshot || (stageOf(task) === 'booking' ? task.formData : {});
   const appointment = booking.appointmentDate && booking.appointmentTime ? appointmentAt(booking.appointmentDate, booking.appointmentTime) : (order.scheduledAt || task.date || new Date());
   const content = [
     plan.hospital && `医院：${plan.hospital}`, plan.department && `科室：${plan.department}`, plan.expert && `专家：${plan.expert}`,
+    plan.medicationName && `药物名称：${plan.medicationName}`, plan.medicationBrand && `品牌：${plan.medicationBrand}`, plan.medicationQuantity && `数量：${plan.medicationQuantity}`,
     plan.proxyGoal && `代诊目标：${plan.proxyGoal}`, plan.communicationContent && `交流内容：${plan.communicationContent}`,
     booking.preferredDateStart && `客户期望日期：${booking.preferredDateStart} 至 ${booking.preferredDateEnd || booking.preferredDateStart}`,
     booking.appointmentDate && `实际约诊时间：${booking.appointmentDate} ${booking.appointmentTime || ''}`,
     booking.dateDifferenceNote && `日期差异确认：${booking.dateDifferenceNote}`,
   ].filter(Boolean).join('\n');
-  const update = { staffId: task.assignedTo, patientId: task.patientId, date: appointment, title: '医疗代诊服务', content,
+  const update = { staffId: task.assignedTo, patientId: task.patientId, date: appointment, title: medicationProxy ? '代配药服务' : '医疗代诊服务', content,
     medicalEscort: { serviceType: 'proxy_visit', hospital: plan.hospital || '', department: plan.department || '', doctor: plan.expert || '' } };
   if (completed) {
     update.result = nonempty(task.formData?.executionResult);
-    update.attachments = (task.formData?.medicalRecordAttachments || []).filter(file => file?.url);
+    update.attachments = (medicationProxy
+      ? ['medicationPhotoAttachments', 'medicationInstructionAttachments', 'medicalRecordAttachments', 'chargeReceiptAttachments'].flatMap(key => task.formData?.[key] || [])
+      : (task.formData?.medicalRecordAttachments || [])).filter(file => file?.url);
   }
   const recordUpdate = { $set: update, $setOnInsert: { sourceOrderId: order._id, type: 'medical_visit' } };
   if (!completed) recordUpdate.$setOnInsert.result = '';
@@ -292,6 +296,9 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
   const medicationProxy = plan.medicationProxy === true;
   const appointmentRequirement = (medicationProxy ? [
     plan.hospital, plan.campus, plan.department, plan.expert,
+    `药物名称：${plan.medicationName}`,
+    `品牌：${plan.medicationBrand}`,
+    `数量：${plan.medicationQuantity}`,
     plan.notes && `备注：${String(plan.notes).trim()}`,
   ] : [
     plan.hospital, plan.campus, plan.department, plan.expert,
@@ -451,7 +458,13 @@ async function validateMedicalProxyStage(task, body, staff) {
     if (count !== ids.length) return '只能选取本次就诊后上传且已由健管专员审核的报告';
   }
   if (stage === 'post_visit_review' && !nonempty(data.reviewSummary)) return '请查看本次已审核资料并填写健康顾问查看结论';
-  if (stage === 'execute' && (!nonempty(data.executionResult) || !Array.isArray(data.medicalRecordAttachments) || !data.medicalRecordAttachments.some(file => nonempty(file?.url)))) return '请填写代诊执行结果并上传至少一份代诊病历';
+  if (stage === 'execute') {
+    const hasAttachment = key => Array.isArray(data[key]) && data[key].some(file => nonempty(file?.url));
+    const executeOrder = task.sourceOrderId ? await Order.findById(task.sourceOrderId).select('serviceName').lean() : null;
+    const medicationProxy = data.medicationProxy === true || /代配药|代取药/.test(executeOrder?.serviceName || '');
+    if (medicationProxy && (!nonempty(data.executionResult) || !['medicationPhotoAttachments', 'medicationInstructionAttachments', 'medicalRecordAttachments', 'chargeReceiptAttachments'].every(hasAttachment))) return '请填写配药结果，并分别上传药品照片、药品服用单、病历和收费单';
+    if (!medicationProxy && (!nonempty(data.executionResult) || !hasAttachment('medicalRecordAttachments'))) return '请填写代诊执行结果并上传至少一份代诊病历';
+  }
   if (stage === 'collect' || stage === 'audit' || stage === 'advisor' || stage === 'planner' || stage === 'intake') {
     const patient = await User.findById(task.patientId).select('assignedFamilyDoctor assignedHealthPlanner assignedHealthManager').lean();
     if (stage === 'collect' && !patient?.assignedHealthManager) return '客户尚未分配健管专员，无法流转';
