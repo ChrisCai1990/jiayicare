@@ -480,6 +480,57 @@ async function getWorkbenchFollowUpOwnerFilter(staff) {
   ] };
 }
 
+const OPEN_INSURANCE_CASE_STATUSES = ['registered', 'verifying', 'materials', 'submitted', 'reviewing', 'supplement', 'paid', 'partially_paid', 'denied'];
+
+function insuranceTaskDefinition(serviceCase, taskRole) {
+  const stepTitles = (serviceCase.steps || []).map(step => step.title).filter(Boolean);
+  const purposes = stepTitles.length ? stepTitles : stepsForInsuranceScenario(serviceCase.scenario);
+  const isSupervisor = taskRole === 'supervisor';
+  return {
+    patientId: serviceCase.patientId,
+    type: 'other',
+    date: serviceCase.dueAt || serviceCase.createdAt || new Date(),
+    theme: `${isSupervisor ? '高端医疗险督办' : '高端医疗险'}：${serviceCase.title}`,
+    content: purposes[0] || '',
+    plannedContent: purposes.join('\n'),
+    tags: ['高端医疗险', '保险服务'],
+    sourceType: 'insurance_service',
+    sourceId: serviceCase._id,
+    taskRole,
+    serviceChecklist: purposes.map((purpose, index) => ({ key: `insurance_${index}`, purpose })),
+    coordinationGroupId: `insurance:${serviceCase._id}`,
+  };
+}
+
+async function ensureInsuranceServiceTask(serviceCase, taskRole, assignee) {
+  if (!assignee) return null;
+  const definition = insuranceTaskDefinition(serviceCase, taskRole);
+  return FollowUp.findOneAndUpdate(
+    { sourceType: 'insurance_service', sourceId: serviceCase._id, taskRole, status: { $in: ['planned', 'in_progress', 'missed'] } },
+    {
+      $set: { staffId: assignee, assignedTo: assignee },
+      $setOnInsert: { ...definition, status: 'planned' },
+    },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  );
+}
+
+async function ensureOpenInsuranceTasksForStaff(staff) {
+  const taskRole = staff.role === 'healthPlanner' ? 'supervisor' : staff.role === 'healthManager' ? 'executor' : '';
+  if (!taskRole) return;
+  const assignmentField = taskRole === 'supervisor' ? 'assignedHealthPlanner' : 'assignedHealthManager';
+  const patients = await User.find({ [assignmentField]: staff._id, isDeleted: { $ne: true } })
+    .select('_id assignedHealthManager assignedHealthPlanner')
+    .lean();
+  if (!patients.length) return;
+  const patientById = new Map(patients.map(patient => [String(patient._id), patient]));
+  const cases = await InsuranceServiceCase.find({ patientId: { $in: patients.map(patient => patient._id) }, status: { $in: OPEN_INSURANCE_CASE_STATUSES } }).lean();
+  await Promise.all(cases.map(serviceCase => {
+    const patient = patientById.get(String(serviceCase.patientId));
+    return ensureInsuranceServiceTask(serviceCase, taskRole, patient?.[assignmentField]);
+  }));
+}
+
 async function syncOutpatientReportAuditCompletion(sourceHealthPlanId) {
   if (!sourceHealthPlanId) return false;
   const linkedReports = await MedicalReport.find({
@@ -508,6 +559,9 @@ async function syncOutpatientReportAuditCompletion(sourceHealthPlanId) {
 router.get('/service-tasks', staffAuth, async (req, res) => {
   const { status = 'active', includeFuture = '', limit = 100 } = req.query;
   const staffId = String(req.staff._id);
+  // 保险案件是长期事务，历史任务可能缺失，客户负责人也可能在案件处理中调整。
+  // 每次进入对应角色工作台时按案件事实来源补齐/迁移活动任务，避免案件仍在处理中却无人可见。
+  await ensureOpenInsuranceTasksForStaff(req.staff);
   // 首页工作台需要同时展示“等待上一环节”的串行任务，让接手人提前知道后续工作。
   // isBlocked 只限制办理，不应让任务从负责人视野里完全消失。
   const filter = { assignedTo: { $in: [req.staff._id, staffId] } };
@@ -566,7 +620,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
   const tasks = queriedTasks.filter(task => {
     const isServiceTask = (task.sourceType === 'health_plan' && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'order' && /^(medical_proxy|medication_proxy|checkup_appointment):/.test(String(task.workflowKey || '')) && ['executor', 'supervisor'].includes(task.taskRole))
-      || (task.sourceType === 'insurance_service' && task.taskRole === 'executor')
+      || (task.sourceType === 'insurance_service' && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'scheduled' && (task.tags || []).includes('保险服务'));
     if (!isServiceTask) return false;
     if (task.sourceType === 'order' && !activeProxyOrderIds.has(String(task.sourceOrderId?._id || task.sourceOrderId))) return false;
@@ -1049,7 +1103,7 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
 });
 
 router.post('/patients/:id/insurance-cases', staffAuth, async (req, res) => {
-  const patient = await User.findById(req.params.id).select('name enterpriseId assignedHealthManager');
+  const patient = await User.findById(req.params.id).select('name enterpriseId assignedHealthManager assignedHealthPlanner');
   if (!patient || !patient.enterpriseId) return res.status(400).json({ success: false, message: '该会员未关联企业' });
   const enrollment = await InsuranceEnrollment.findOne({ userId: patient._id, enterpriseId: patient.enterpriseId, status: 'active' }).sort({ endAt: -1 });
   if (!enrollment) return res.status(400).json({ success: false, message: '该会员尚未配置有效的高端医疗险' });
@@ -1067,14 +1121,13 @@ router.post('/patients/:id/insurance-cases', staffAuth, async (req, res) => {
     steps: stepTitles.map(title => ({ title })), assignedTo: assignee,
     createdBy: req.staff._id, updatedBy: req.staff._id,
   });
-  await FollowUp.create({
-    staffId: assignee, assignedTo: assignee, patientId: patient._id, type: 'other', status: 'planned',
-    date: serviceCase.dueAt || new Date(), theme: `高端医疗险：${serviceCase.title}`,
-    content: stepTitles[0], plannedContent: stepTitles.join('\n'), tags: ['高端医疗险', '保险服务'],
-    sourceType: 'insurance_service', sourceId: serviceCase._id, taskRole: 'executor',
-    serviceChecklist: stepTitles.map((purpose, index) => ({ key: `insurance_${index}`, purpose })),
-  });
-  res.json({ success: true, data: serviceCase, message: '保险服务案件已建立，并进入健管专员工作台' });
+  await Promise.all([
+    ensureInsuranceServiceTask(serviceCase, 'executor', assignee),
+    ensureInsuranceServiceTask(serviceCase, 'supervisor', patient.assignedHealthPlanner),
+  ]);
+  res.json({ success: true, data: serviceCase, message: patient.assignedHealthPlanner
+    ? '保险服务案件已建立，并进入健管专员和健康规划师工作台'
+    : '保险服务案件已建立，并进入健管专员工作台' });
 });
 
 router.patch('/insurance-cases/:caseId/steps/:stepId', staffAuth, async (req, res) => {
