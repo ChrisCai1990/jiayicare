@@ -415,6 +415,7 @@ async function validateMedicalProxyStage(task, body, staff) {
     if ((data.appointmentDate < data.preferredDateStart || data.appointmentDate > data.preferredDateEnd) && !nonempty(data.dateDifferenceNote)) return '约诊日期不在客户期望区间内，请说明差异及客户确认情况';
     const bookingOrder = task.sourceOrderId ? await Order.findById(task.sourceOrderId).select('serviceName serviceRequirements').lean() : null;
     if ((data.medicationProxy === true || /代配药|代取药/.test(bookingOrder?.serviceName || '')) && !['self_pay', 'medical_insurance', 'commercial_insurance'].includes(data.paymentMethod)) return '请选择支付方式（自费、医保或商保）';
+    if (data.paymentMethod === 'medical_insurance' && !['electronic', 'physical'].includes(data.medicalInsuranceCardType)) return '请确认使用电子医保卡还是实体医保卡';
     const appointmentRequirement = nonempty(data.planSnapshot?.serviceContent || bookingOrder?.serviceRequirements);
     if (/(?:保险类型：高端险|费用与保险：使用高端医疗险)/.test(appointmentRequirement) && !['direct_verified', 'reimbursement_verified', 'self_pay_confirmed'].includes(data.insuranceOutcome)) return '请核实高端医疗险实际结算方式，并选择办理结果';
     if (/专家约诊/.test(bookingOrder?.serviceName || '') && /建议医院：/.test(appointmentRequirement) && !nonempty(data.campus)) return '请填写实际预约院区';

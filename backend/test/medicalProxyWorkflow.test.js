@@ -189,6 +189,15 @@ test('annual-member staff initiation skips collection, audit and planner executi
   assert.doesNotMatch(workflow, /仅适用于年度会员/);
 });
 
+test('staff-initiated medication booking hands off to the health planner for assignment', () => {
+  const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
+  const page = fs.readFileSync(path.join(__dirname, '../../staff/src/pages/PatientDetailPage.jsx'), 'utf8');
+  assert.match(workflow, /medicationProxy && stage === 'booking' \? 'planner'/);
+  assert.match(workflow, /next === 'planner' \? patient\?\.assignedHealthPlanner/);
+  assert.match(page, /确认预约并转健康规划师分配/);
+  assert.match(page, /代配药门诊预约已完成，转健康规划师安排执行人员/);
+});
+
 test('booking and execution write the shared hospital visit service archive', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
   const model = fs.readFileSync(path.join(__dirname, '../src/models/ServiceRecord.js'), 'utf8');
@@ -221,6 +230,20 @@ test('high-end insurance booking requires a verified settlement outcome', async 
     const formData = { planSnapshot: { serviceContent: '门诊类型：国际门诊；费用与保险：使用高端医疗险' }, preferredDateStart: '2026-09-16', preferredDateEnd: '2026-09-18', appointmentDate: '2026-09-17', appointmentTime: '10:00' };
     assert.match(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'manager-1', role: 'healthManager' }), /核实高端医疗险/);
     formData.insuranceOutcome = 'direct_verified';
+    assert.equal(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'manager-1', role: 'healthManager' }), '');
+  } finally {
+    Order.findById = originalOrderFind;
+  }
+});
+
+test('medication booking requires the medical insurance credential type', async () => {
+  const originalOrderFind = Order.findById;
+  try {
+    Order.findById = () => ({ select: () => ({ lean: async () => ({ serviceName: '代配药服务' }) }) });
+    const task = { sourceType: 'order', sourceOrderId: 'order-1', workflowKey: 'medical_proxy:booking', assignedTo: 'manager-1' };
+    const formData = { medicationProxy: true, paymentMethod: 'medical_insurance', preferredDateStart: '2026-09-16', preferredDateEnd: '2026-09-18', appointmentDate: '2026-09-17', appointmentTime: '10:00' };
+    assert.match(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'manager-1', role: 'healthManager' }), /电子医保卡.*实体医保卡/);
+    formData.medicalInsuranceCardType = 'electronic';
     assert.equal(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'manager-1', role: 'healthManager' }), '');
   } finally {
     Order.findById = originalOrderFind;

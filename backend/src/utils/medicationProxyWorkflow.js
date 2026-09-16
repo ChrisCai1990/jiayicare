@@ -57,6 +57,7 @@ async function validate(task, body, staff) {
     if (['brandName', 'chemicalName', 'specification', 'singleDose', 'dailyFrequency', 'totalQuantity', 'paymentMethod'].some(key => !value(data[key]))) return '请核对药品商品名、化学名、规格、单次服用剂量、每日服用次数、配备总量和支付方式';
     if (!(numberOf(data.singleDose) > 0) || !(numberOf(data.dailyFrequency) > 0) || !(numberOf(data.totalQuantity) > 0)) return '单次服用剂量、每日服用次数和配备总量必须包含大于0的数值';
     if (!['self_pay', 'medical_insurance', 'commercial_insurance'].includes(data.paymentMethod)) return '请选择有效的支付方式';
+    if (data.paymentMethod === 'medical_insurance' && !['electronic', 'physical'].includes(data.medicalInsuranceCardType)) return '请确认使用电子医保卡还是实体医保卡';
     if (!['hospital', 'pharmacy', 'online'].includes(data.institutionType)) return '请选择医院、药房或线上采购渠道';
     if (data.institutionType === 'hospital' && (!value(data.hospitalName) || !value(data.campus))) return '医院配药请填写医院名称和院区';
     if (data.institutionType === 'pharmacy' && !value(data.pharmacyName)) return '线下药房配药请填写药房名称';

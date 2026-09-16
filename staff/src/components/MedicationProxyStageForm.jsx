@@ -31,6 +31,7 @@ export default function MedicationProxyStageForm({ task, value, onChange, staffL
     if (data.institutionType === 'online') required.push(['platformName', '平台名称'])
     if (data.institutionType === 'hospital' && !data.needsAdvisor) required.push(['department', '配药科室'])
     if (data.institutionType === 'hospital' && !data.needsAdvisor && data.expertRequired) required.push(['expert', '配药专家'])
+    if (data.paymentMethod === 'medical_insurance') required.push(['medicalInsuranceCardType', '医保凭证类型'])
     required.push(['medicalAssistantId', '本单就医专员'])
     return required.filter(([key]) => !String(data[key] ?? '').trim()).map(([, title]) => title)
   })()
@@ -64,7 +65,8 @@ export default function MedicationProxyStageForm({ task, value, onChange, staffL
       {data.institutionType === 'hospital' && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>{field('hospitalName', '医院名称')}{field('campus', '院区')}</div>}
       {data.institutionType === 'pharmacy' && field('pharmacyName', '药房名称')}
       {data.institutionType === 'online' && field('platformName', '平台名称')}
-      <label style={label}>支付方式<select className="form-control" value={data.paymentMethod || ''} onChange={e => update({ paymentMethod: e.target.value })}><option value="">请选择</option><option value="self_pay">自费</option><option value="medical_insurance">医保</option><option value="commercial_insurance">商保</option></select></label>
+      <label style={label}>支付方式<select className="form-control" value={data.paymentMethod || ''} onChange={e => update({ paymentMethod: e.target.value, medicalInsuranceCardType: e.target.value === 'medical_insurance' ? data.medicalInsuranceCardType : '' })}><option value="">请选择</option><option value="self_pay">自费</option><option value="medical_insurance">医保</option><option value="commercial_insurance">商保</option></select></label>
+      {data.paymentMethod === 'medical_insurance' && <label style={label}>医保凭证类型 *<select className="form-control" value={data.medicalInsuranceCardType || ''} onChange={e => update({ medicalInsuranceCardType: e.target.value })}><option value="">请选择</option><option value="electronic">电子医保卡</option><option value="physical">实体医保卡</option></select></label>}
       {assistantField}
       {data.institutionType === 'hospital' && <><div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>{FIELDS.slice(6).map(([key, title]) => field(key, title))}</div><label><input type="checkbox" checked={!!data.expertRequired} onChange={e => update({ expertRequired: e.target.checked })} /> 该药需要专家开方</label><label><input type="checkbox" checked={!!data.needsAdvisor} onChange={e => update({ needsAdvisor: e.target.checked })} /> 客户不确定科室或专家，先转健康顾问评估</label></>}
       <label><input type="checkbox" checked={!!data.regularSupply} onChange={e => update({ regularSupply: e.target.checked })} /> 需定期配药；完成后按配备总量和每日服用总量生成下次计划</label>
