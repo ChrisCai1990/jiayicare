@@ -128,6 +128,8 @@ test('陪诊完成后资料进入报告审核并由健康顾问生成随访计�
   assert.match(route, /审核门诊一站式病历与检验检查单/);
   assert.match(route, /reportAuditTask[\s\S]*status: 'completed'/);
   assert.match(route, /isRequiredOutpatientDocument[\s\S]*workflowReopened: true/);
+  assert.match(route, /const sourcePlan = isRequiredOutpatientDocument[\s\S]*HealthPlan\.findById/);
+  assert.match(route, /if \(isRequiredOutpatientDocument && sourcePlan\)/);
   assert.match(route, /missingCategories[\s\S]*outpatient_reports_audited/);
   assert.match(route, /linkedCategories[\s\S]*prescription_order[\s\S]*outpatient_record[\s\S]*allRequiredReportsAudited/);
   assert.match(route, /autoAuditPending[\s\S]*syncOutpatientReportAuditCompletion/);

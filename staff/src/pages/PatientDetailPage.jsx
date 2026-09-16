@@ -9813,7 +9813,12 @@ export default function PatientDetailPage() {
                                     if (reason === null) return
                                     if (!reason.trim()) { toast('必须填写删除原因'); return }
                                     if (!window.confirm(`确认删除这条报告记录？\n\n删除原因：${reason.trim()}\n\n删除后不可恢复。`)) return
-                                    try { await staffAPI.deleteReport(r._id, reason.trim()); toast('报告已删除并记录删除原因'); setOpenReportActionId(null); loadReports() } catch (err) { toast(err.message) }
+                                    try {
+                                      const result = await staffAPI.deleteReport(r._id, reason.trim())
+                                      toast(result.workflowReopened ? '报告文件已删除；门诊流程仍在进行，已保留待补传资料的位置' : '报告已删除并记录删除原因')
+                                      setOpenReportActionId(null)
+                                      loadReports()
+                                    } catch (err) { toast(err.message) }
                                   }}>删除报告</button>
                               </td>
                             </tr>
