@@ -16,13 +16,10 @@ const checkupProgress = task => {
 }
 
 const medicationProxyProgress = task => {
-  if (task?.workflowKey !== 'medical_proxy:supervise' || !/代配药|代取药/.test(`${task?.sourceOrderId?.serviceName || ''} ${task?.theme || ''} ${task?.formData?.serviceContent || ''}`)) return null
+  if (task?.workflowKey !== 'medical_proxy:supervise' || task?.formData?.medicationProxy !== true) return null
   const stage = task.formData?.currentStage || 'booking'
-  const returned = /^上一环节待补资料：/.test(task.content || '')
   const stages = {
-    booking: returned
-      ? { step: 1, label: '健管专员补充配药信息', next: '补充完成后回到健康规划师安排执行人员' }
-      : { step: 1, label: '健管专员预约配药门诊', next: '预约完成后由健康规划师安排就医专员' },
+    booking: { step: 1, label: '健管专员预约配药门诊', next: '预约完成后由健康规划师安排就医专员' },
     planner: { step: 2, label: '健康规划师安排配药执行人员', next: '确认后直接转给就医专员' },
     execute: { step: 3, label: '就医专员配药并上传交付资料', next: '资料齐全后完成服务' },
     completed: { step: 4, label: '代配药服务已完成', next: '服务已闭环' },
@@ -53,8 +50,7 @@ export default function ServiceTasksPanel() {
 
   if (!items.length) return null
   const serviceGroups = Object.values(items.reduce((result, task) => {
-    const isMedicalProxyOrderTask = task.sourceType === 'order' && String(task.workflowKey || '').startsWith('medical_proxy:') && task.sourceOrderId
-    const key = task.coordinationGroupId || (isMedicalProxyOrderTask ? `medical-proxy:${task.sourceOrderId?._id || task.sourceOrderId}` : `task:${task._id}`)
+    const key = task.coordinationGroupId || `task:${task._id}`
     if (!result[key]) result[key] = { key, tasks: [] }
     result[key].tasks.push(task)
     return result
@@ -63,12 +59,11 @@ export default function ServiceTasksPanel() {
     const sequenceByKey = new Map(workflowModules.map((item, sequence) => [String(item.id || item._id || ''), item.sequence ?? sequence]))
     service.tasks.sort((a, b) => (sequenceByKey.get(String(a.workflowKey || '')) ?? 999) - (sequenceByKey.get(String(b.workflowKey || '')) ?? 999))
     const supervisor = service.tasks.find(task => task.workflowKey === 'medical_proxy:supervise' && ['planned', 'in_progress', 'missed'].includes(task.status))
-    const actionTask = service.tasks.find(task => task.taskRole === 'executor' && !task.isBlocked && ['planned', 'in_progress', 'missed'].includes(task.status))
-    return { ...service, task: supervisor || service.tasks[0], actionTask, role: actionTask ? 'executor' : (supervisor || service.tasks[0]).taskRole, totalSteps: workflowModules.length || service.tasks.length }
+    return { ...service, task: supervisor || service.tasks[0], totalSteps: workflowModules.length || service.tasks.length }
   })
-  const visibleServices = group === 'all' ? serviceGroups : serviceGroups.filter(service => service.role === group)
-  const executorCount = serviceGroups.filter(service => service.role === 'executor').length
-  const supervisorCount = serviceGroups.filter(service => service.role === 'supervisor').length
+  const visibleServices = group === 'all' ? serviceGroups : serviceGroups.filter(service => service.task.taskRole === group)
+  const executorCount = serviceGroups.filter(service => service.task.taskRole !== 'supervisor').length
+  const supervisorCount = serviceGroups.filter(service => service.task.taskRole === 'supervisor').length
 
   const openTask = async (task) => {
     const sourcePlan = task.sourceHealthPlanId
@@ -129,15 +124,15 @@ export default function ServiceTasksPanel() {
           const isOutpatientReportAuditWait = isWaitingPrevious && task.taskRole === 'executor' && /门诊一站式.*查看陪诊资料并制定随访计划/.test(task.theme || '')
           return (
           <div key={task._id}
-            onClick={() => openTask(service.actionTask || task)}
+            onClick={() => openTask(task)}
             title={isOutpatientReportAuditWait ? '等待健管专员审核本次门诊病历和检验检查单' : isOutpatientEscortProgress ? '当前已进入陪诊及资料闭环阶段' : isWaitingPrevious ? '上一环节完成后即可办理' : ''}
             style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 0', cursor: isWaitingPrevious ? 'default' : 'pointer', opacity: isWaitingPrevious ? 0.78 : 1, borderBottom: index < Math.min(visibleServices.length, 10) - 1 ? '1px solid #f0ede8' : 'none' }}>
             <span style={{ fontSize: 18 }}>{isWaitingPrevious ? '⏳' : task.taskRole === 'supervisor' ? '🔎' : '✅'}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600, fontSize: 13, color: '#1A2B24' }}>
                 {task.theme}
-                {progress && <span style={{ marginLeft: 8, fontSize: 11, color: '#1E6B50', background: '#EAF5F0', padding: '2px 6px', borderRadius: 8 }}>进度 {progress.step}/{/代配药|代取药/.test(`${task.sourceOrderId?.serviceName || ''} ${task.theme || ''}`) ? 4 : 5}</span>}
-                {!progress && service.totalSteps > 1 && <span style={{ marginLeft: 8, fontSize: 11, color: '#1E6B50', background: '#EAF5F0', padding: '2px 6px', borderRadius: 8 }}>当前环节 · 共{service.totalSteps}环节</span>}
+                {progress && <span style={{ marginLeft: 8, fontSize: 11, color: '#1E6B50', background: '#EAF5F0', padding: '2px 6px', borderRadius: 8 }}>进度 {progress.step}/{task.formData?.medicationProxy ? 4 : 5}</span>}
+                {service.totalSteps > 1 && <span style={{ marginLeft: 8, fontSize: 11, color: '#1E6B50', background: '#EAF5F0', padding: '2px 6px', borderRadius: 8 }}>当前环节 · 共{service.totalSteps}环节</span>}
                 {isWaitingPrevious
                   ? <span style={{ marginLeft: 8, fontSize: 11, color: isOutpatientEscortProgress ? '#1E6B50' : '#667085', background: isOutpatientEscortProgress ? '#EAF5F0' : '#F2F4F7', padding: '2px 6px', borderRadius: 8 }}>{isOutpatientReportAuditWait ? '等待资料审核' : isOutpatientEscortProgress ? '陪诊及资料闭环进行中' : '等待上一环节'}</span>
                   : isFuture && <span style={{ marginLeft: 8, fontSize: 11, color: '#8A6A20', background: '#FFF4D6', padding: '2px 6px', borderRadius: 8 }}>待开始</span>}
@@ -146,7 +141,6 @@ export default function ServiceTasksPanel() {
                 {task.patientId?.name || '未知'}{isOutpatientReportAuditWait ? ' · 等待健管专员审核病历与检验检查单' : isWaitingPrevious && task.dependsOnTaskId?.assignedTo?.name ? ` · 当前执行：${task.dependsOnTaskId.assignedTo.name}` : task.assignedTo?.name ? ` · 负责人：${task.assignedTo.name}` : ''}
               </div>
               {progress && <div style={{ fontSize: 12, color: '#52685D', marginTop: 3 }}>当前阶段：<b>{progress.label}</b>　下一步：{progress.next}</div>}
-              {progress && /^上一环节待补资料：/.test(task.content || '') && <div style={{ fontSize: 12, color: '#B45309', marginTop: 3, background: '#FFF7E8', borderRadius: 6, padding: '4px 7px' }}>退回补充：{String(task.content).replace(/^上一环节待补资料：/, '')}</div>}
               <div style={{ fontSize: 11, color: '#9AA9A2', marginTop: 2 }}>创建：{new Date(task.createdAt).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}</div>
             </div>
             {!isWaitingPrevious && <span style={{ fontSize: 11, color: '#8AA89C' }}>计划：{formatChineseDate(task.date, false)}</span>}

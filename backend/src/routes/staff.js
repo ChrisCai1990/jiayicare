@@ -1609,9 +1609,7 @@ router.post('/followups/:id/return-previous', staffAuth, checkPermission('follow
     const event = { reason, returnedAt: new Date(), returnedBy: req.staff._id };
     await FollowUp.updateOne({ _id: proxyTask._id }, { $set: { status: 'planned', isBlocked: true, completedAt: null, completedBy: null }, $push: { 'formData.returnHistory': event } });
     await FollowUp.updateOne({ _id: previous._id }, { $set: { status: 'in_progress', isBlocked: false, completedAt: null, completedBy: null, remindAt: new Date() }, $push: { 'formData.returnRequests': event } });
-    const previousStage = require('../utils/medicalProxyWorkflow').stageOf(previous);
-    await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: proxyTask.sourceOrderId, workflowKey: 'medical_proxy:supervise' }, { $set: { status: 'in_progress', 'formData.currentStage': previousStage, content: `上一环节待补资料：${reason}` } });
-    await Order.updateOne({ _id: proxyTask.sourceOrderId }, { $set: { currentStage: previousStage, currentAssignee: previous.assignedTo, supervisionStatus: 'needs_attention' } });
+    await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: proxyTask.sourceOrderId, workflowKey: 'medical_proxy:supervise' }, { $set: { 'formData.currentStage': require('../utils/medicalProxyWorkflow').stageOf(previous), content: `上一环节待补资料：${reason}` } });
     return res.json({ success: true, message: '已退回上一环节补充资料' });
   }
   const current = await FollowUp.findOne({
