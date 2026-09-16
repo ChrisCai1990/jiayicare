@@ -293,7 +293,12 @@ router.post('/login', async (req, res) => {
     'tcmDoctor', 'specialist', 'healthPlanner',
   ];
 
-  const admin = await Admin.findOne({ $or: [{ username }, { phone: username }] }).populate('customRoleId');
+  const loginId = String(username).trim();
+  // 医护端界面以“手机号码”作为登录标识，因此手机号必须优先于用户名。
+  // 历史数据里可能存在 A.username === B.phone；使用无序 $or/findOne 会随机登录到 A，
+  // 导致切换账号后显示成另一人的姓名、角色和权限。
+  let admin = await Admin.findOne({ phone: loginId }).populate('customRoleId');
+  if (!admin) admin = await Admin.findOne({ username: loginId }).populate('customRoleId');
   if (!admin || !(await admin.comparePassword(password))) {
     return res.status(401).json({ success: false, message: '用户名或密码错误' });
   }
