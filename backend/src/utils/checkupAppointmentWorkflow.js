@@ -31,13 +31,16 @@ function bookingValidation(data = {}) {
   const orderVisit = data.orderFormAppointment || {};
   const specialCheck = data.specialCheckAppointment || {};
   const finalConsultation = data.postCheckExpertAppointment || data.expertAppointment || {};
-  for (const item of [orderVisit, specialCheck, finalConsultation]) {
-    if (!required(item.campus) || !required(item.department) || !required(item.doctor) || !appointmentDate(item.date) || !required(item.time)) return '请完整填写开检查单号、特殊检查专家号和检查后专家看诊号的院区、科室、医生及时间';
+  const needsSpecialCheck = data?.intake?.serviceType === 'special';
+  for (const item of needsSpecialCheck ? [orderVisit, specialCheck, finalConsultation] : [orderVisit, finalConsultation]) {
+    if (!required(item.campus) || !required(item.department) || !required(item.doctor) || !appointmentDate(item.date) || !required(item.time)) return needsSpecialCheck ? '请完整填写开检查单号、特殊检查专家号和检查后专家看诊号的院区、科室、医生及时间' : '请完整填写开检查单号和检查后专家看诊号的院区、科室、医生及时间';
   }
-  if (!required(specialCheck.checkItem)) return '请填写特殊检查项目';
   const timeOf = item => `${item.date}T${item.time}`;
-  if (timeOf(specialCheck) < timeOf(orderVisit)) return '特殊检查专家号不能早于开检查单号';
-  if (timeOf(finalConsultation) <= timeOf(specialCheck)) return '特殊检查必须安排在检查后专家看诊之前';
+  if (needsSpecialCheck) {
+    if (!required(specialCheck.checkItem)) return '请填写特殊检查项目';
+    if (timeOf(specialCheck) < timeOf(orderVisit)) return '特殊检查专家号不能早于开检查单号';
+    if (timeOf(finalConsultation) <= timeOf(specialCheck)) return '特殊检查必须安排在检查后专家看诊之前';
+  } else if (timeOf(finalConsultation) < timeOf(orderVisit)) return '检查后专家看诊号不能早于开检查单号';
   return '';
 }
 
@@ -55,8 +58,10 @@ async function start(order, plannerId, intake) {
   if (!patient?.assignedHealthManager) throw Object.assign(new Error('该客户尚未分配健管专员，无法转交'), { status: 409 });
   const planner = await createTask({ order, patient, assignee: plannerId, stage: 'planner', theme: `待约检：健康规划师确认需求 · ${order.serviceName}`, content: '已确认客户检查需求，等待转交健管专员。', formData: intake });
   planner.status = 'completed'; planner.completedAt = new Date(); planner.completedBy = 'staff'; await planner.save();
-  const manager = await createTask({ order, patient, assignee: patient.assignedHealthManager, stage: 'booking', theme: `待约检：健管专员三号预约 · ${order.serviceName}`, content: '请预约开检查单号、特殊检查专家号和检查后专家看诊号；三个号均完成后才能转交就医专员。', formData: { intake, currentStage: 'booking' } });
-  await createTask({ order, patient, assignee: plannerId, stage: 'supervise', theme: `待约检：健康规划师跟进服务 · ${order.serviceName}`, content: '当前环节：健管专员三号预约中。订单将持续流转，待健康顾问审核后续随访计划后自动结束。', formData: { intake, currentStage: 'booking' }, taskRole: 'supervisor' });
+  const bookingLabel = intake.serviceType === 'special' ? '三号预约' : '双号预约';
+  const bookingContent = intake.serviceType === 'special' ? '请预约开检查单号、特殊检查专家号和检查后专家看诊号；三个号均完成后才能转交就医专员。' : '请预约开检查单号和检查后专家看诊号；两个号均完成后才能转交就医专员。';
+  const manager = await createTask({ order, patient, assignee: patient.assignedHealthManager, stage: 'booking', theme: `待约检：健管专员${bookingLabel} · ${order.serviceName}`, content: bookingContent, formData: { intake, currentStage: 'booking' } });
+  await createTask({ order, patient, assignee: plannerId, stage: 'supervise', theme: `待约检：健康规划师跟进服务 · ${order.serviceName}`, content: `当前环节：健管专员${bookingLabel}中。订单将持续流转，待健康顾问审核后续随访计划后自动结束。`, formData: { intake, currentStage: 'booking' }, taskRole: 'supervisor' });
   await Order.updateOne({ _id: order._id }, { $set: { checkupIntake: intake, supervisorId: plannerId, currentStage: 'checkup_manager_booking', currentAssignee: patient.assignedHealthManager, supervisionStatus: 'in_progress' } });
   await FollowUp.updateMany({ sourceType: 'order', sourceOrderId: order._id, workflowKey: { $in: ['', null] }, status: { $in: ['planned', 'in_progress'] } }, { $set: { status: 'cancelled', cancelReason: '已进入待约检分阶段流程' } });
   return manager;
@@ -67,14 +72,15 @@ async function advance(task) {
   const patient = await User.findById(task.patientId).select('assignedHealthManager assignedMedicalAssistant assignedFamilyDoctor').lean(); if (!patient) return;
   const stage = stageOf(task);
   if (stage === 'booking') {
-    const booking = task.formData || {}; const specialCheck = booking.specialCheckAppointment || {}; const finalConsultation = booking.postCheckExpertAppointment || booking.expertAppointment || {}; const date = new Date(`${specialCheck.date}T${specialCheck.time}:00+08:00`);
+    const booking = task.formData || {}; const specialCheck = booking.specialCheckAppointment || {}; const finalConsultation = booking.postCheckExpertAppointment || booking.expertAppointment || {}; const hasSpecialCheck = booking.intake?.serviceType === 'special'; const reminderAppointment = hasSpecialCheck ? specialCheck : finalConsultation; const date = new Date(`${reminderAppointment.date}T${reminderAppointment.time}:00+08:00`);
     if (!patient.assignedMedicalAssistant) throw new Error('该客户尚未分配就医专员，无法转交');
-    await createTask({ order, patient, assignee: patient.assignedMedicalAssistant, stage: 'medical', date, theme: `待约检：就医专员完成开单、检查及资料归档 · ${order.serviceName}`, content: '按顺序完成开检查单、特殊检查和检查后专家看诊；上传报告与病历后提交健管专员审核。', formData: { intake: booking.intake, booking, currentStage: 'medical' } });
+    await createTask({ order, patient, assignee: patient.assignedMedicalAssistant, stage: 'medical', date, theme: `待约检：就医专员完成开单、检查及资料归档 · ${order.serviceName}`, content: hasSpecialCheck ? '按顺序完成开检查单、特殊检查和检查后专家看诊；上传报告与病历后提交健管专员审核。' : '按顺序完成开检查单、常规检查和检查后专家看诊；上传报告与病历后提交健管专员审核。', formData: { intake: booking.intake, booking, currentStage: 'medical' } });
     await Order.updateOne({ _id: order._id }, { $set: { currentStage: 'checkup_medical_execution', currentAssignee: patient.assignedMedicalAssistant, supervisionStatus: 'in_progress' } });
     await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise` }, { $set: { content: '当前环节：就医专员执行开单、检查及资料归档。', 'formData.currentStage': 'medical' } });
     for (const [label, offset] of [['检查前1天提醒', 24 * 60 * 60 * 1000], ['检查前2小时提醒', 2 * 60 * 60 * 1000]]) {
       const remindAt = new Date(date.getTime() - offset);
-      await FollowUp.findOneAndUpdate({ patientId: patient._id, sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `checkup_appointment_reminder:${offset}` }, { $setOnInsert: { patientId: patient._id, staffId: patient.assignedMedicalAssistant, assignedTo: patient.assignedMedicalAssistant, date: remindAt, remindAt, type: 'other', status: 'planned', theme: label, content: `提醒客户于 ${specialCheck.date} ${specialCheck.time} 完成特殊检查，并于 ${finalConsultation.date} ${finalConsultation.time} 完成专家看诊。`, plannedContent: `提醒客户于 ${specialCheck.date} ${specialCheck.time} 完成特殊检查，并于 ${finalConsultation.date} ${finalConsultation.time} 完成专家看诊。`, tags: ['待约检', '就医提醒'], sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `checkup_appointment_reminder:${offset}` } }, { upsert: true, new: true, setDefaultsOnInsert: true });
+      const reminderText = hasSpecialCheck ? `提醒客户于 ${specialCheck.date} ${specialCheck.time} 完成特殊检查，并于 ${finalConsultation.date} ${finalConsultation.time} 完成专家看诊。` : `提醒客户于 ${finalConsultation.date} ${finalConsultation.time} 完成常规检查及专家看诊。`;
+      await FollowUp.findOneAndUpdate({ patientId: patient._id, sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `checkup_appointment_reminder:${offset}` }, { $setOnInsert: { patientId: patient._id, staffId: patient.assignedMedicalAssistant, assignedTo: patient.assignedMedicalAssistant, date: remindAt, remindAt, type: 'other', status: 'planned', theme: label, content: reminderText, plannedContent: reminderText, tags: ['待约检', '就医提醒'], sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `checkup_appointment_reminder:${offset}` } }, { upsert: true, new: true, setDefaultsOnInsert: true });
     }
   } else if (stage === 'medical') {
     await createTask({ order, patient, assignee: patient.assignedHealthManager, stage: 'manager_review', theme: `待约检：健管专员审核报告与病历 · ${order.serviceName}`, content: '审核本次检查报告和病历；通过后系统将生成待健康顾问审核的后续随访计划。', formData: { medical: task.formData || {} } });

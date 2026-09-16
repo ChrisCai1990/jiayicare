@@ -2395,7 +2395,7 @@ export default function PatientDetailPage() {
     } else if (isPostVisitReview) {
       const error = validateOutpatientPostVisitReview(execForm.formData)
       if (error) { toast(error); return }
-    } else if (execItem?.taskRole && !medicationStage && !isBooking && !isReportCollection) {
+    } else if (execItem?.taskRole && !medicationStage && !isBooking && !isCheckupAppointmentBooking && !isReportCollection) {
       if (!execForm.serviceChecklist.length) { toast('请先在方案中补充明确的代办目的'); return }
       if (execItem.taskRole === 'supervisor' && execForm.serviceChecklist.some(item => !item.supervisionStatus)) { toast('请逐项完成督导核验'); return }
       if (execItem.taskRole !== 'supervisor' && execForm.serviceChecklist.some(item => !item.executionStatus || !item.executionResult?.trim() || (item.executionStatus !== 'completed' && !item.nextAction?.trim()))) { toast('请逐项填写完成状态、实际结果和未完成事项'); return }
@@ -2404,7 +2404,7 @@ export default function PatientDetailPage() {
     try {
       await staffAPI.updateFollowUp(execItem._id, {
         type: execForm.type,
-        content: execForm.content.trim() || (isCheckupAppointmentBooking ? '已完成开检查单号和检查日专家看诊号预约，转交就医专员执行。' : medicationStage ? `代配药${medicationStage}环节已完成` : proxyStage ? (execForm.formData?.medicalPlanning ? proxyStage === 'advisor' ? '健康顾问已完成就医规划建议，转健康规划师与客户沟通' : '健康规划师已与客户确认就医规划及后续服务意向' : `医疗代诊${{ intake: '资料核对', collect: '资料收集', audit: '资料审核', advisor: '方案确认', planner: '方案复核', booking: '专家门诊预约', execute: '执行' }[proxyStage]}已完成`) : isAdvisorAssessment ? '已完成就医评估并确定推荐医院、科室、专家及预计检查安排' : isOutpatientAppointment ? '已完成代诊约诊服务安排' : isStaffAssignment ? '已完成首次代诊与检查日陪诊人员安排' : isEscortVisit ? '已完成检查及专家门诊陪诊，当日检验检查单和门诊病历已打印上传' : isPostVisitReview ? '已查看陪诊资料并生成后续随访计划' : summarizeServiceChecklist(submittedChecklist, execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor')),
+        content: execForm.content.trim() || (isCheckupAppointmentBooking ? '已完成待约检预约，转交就医专员执行。' : medicationStage ? `代配药${medicationStage}环节已完成` : proxyStage ? (execForm.formData?.medicalPlanning ? proxyStage === 'advisor' ? '健康顾问已完成就医规划建议，转健康规划师与客户沟通' : '健康规划师已与客户确认就医规划及后续服务意向' : `医疗代诊${{ intake: '资料核对', collect: '资料收集', audit: '资料审核', advisor: '方案确认', planner: '方案复核', booking: '专家门诊预约', execute: '执行' }[proxyStage]}已完成`) : isAdvisorAssessment ? '已完成就医评估并确定推荐医院、科室、专家及预计检查安排' : isOutpatientAppointment ? '已完成代诊约诊服务安排' : isStaffAssignment ? '已完成首次代诊与检查日陪诊人员安排' : isEscortVisit ? '已完成检查及专家门诊陪诊，当日检验检查单和门诊病历已打印上传' : isPostVisitReview ? '已查看陪诊资料并生成后续随访计划' : summarizeServiceChecklist(submittedChecklist, execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor')),
         status: isReportCollection
           ? (reportClosure?.collectionStatus === 'complete' ? 'completed' : 'in_progress')
           : execItem.taskRole === 'supervisor'

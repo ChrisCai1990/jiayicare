@@ -270,7 +270,7 @@ export default function FollowUpsPage() {
     } else if (isPostVisitReview) {
       const error = validateOutpatientPostVisitReview(execForm.formData)
       if (error) { toast(error); return }
-    } else if (execItem?.taskRole && !isBooking && !isReportCollection) {
+    } else if (execItem?.taskRole && !isBooking && !isCheckupAppointmentBooking && !isReportCollection) {
       if (!execForm.serviceChecklist.length) { toast('请先在方案中补充明确的代办目的'); return }
       if (execItem.taskRole === 'supervisor' && execForm.serviceChecklist.some(item => !item.supervisionStatus)) { toast('请逐项完成督导核验'); return }
       if (execItem.taskRole !== 'supervisor' && execForm.serviceChecklist.some(item => !item.executionStatus || !item.executionResult?.trim() || (item.executionStatus !== 'completed' && !item.nextAction?.trim()))) { toast('请逐项填写完成状态、实际结果和未完成事项'); return }
@@ -279,7 +279,7 @@ export default function FollowUpsPage() {
     try {
       await staffAPI.updateFollowUp(execItem._id, {
         type: execForm.type,
-        content: execForm.content.trim() || (isCheckupAppointmentBooking ? '已完成开检查单号和检查日专家看诊号预约，转交就医专员执行。' : isAdvisorAssessment ? '已完成就医评估并确定推荐医院、科室、专家及预计检查安排' : isOutpatientAppointment ? '已完成代诊约诊服务安排' : isStaffAssignment ? '已完成首次代诊与检查日陪诊人员安排' : isEscortVisit ? '已完成检查及专家门诊陪诊，当日检验检查单和门诊病历已打印上传' : isPostVisitReview ? '已查看陪诊资料并生成后续随访计划' : summarizeServiceChecklist(submittedChecklist, execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor')),
+        content: execForm.content.trim() || (isCheckupAppointmentBooking ? '已完成待约检预约，转交就医专员执行。' : isAdvisorAssessment ? '已完成就医评估并确定推荐医院、科室、专家及预计检查安排' : isOutpatientAppointment ? '已完成代诊约诊服务安排' : isStaffAssignment ? '已完成首次代诊与检查日陪诊人员安排' : isEscortVisit ? '已完成检查及专家门诊陪诊，当日检验检查单和门诊病历已打印上传' : isPostVisitReview ? '已查看陪诊资料并生成后续随访计划' : summarizeServiceChecklist(submittedChecklist, execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor')),
         status: isReportCollection
           ? (reportClosure?.collectionStatus === 'complete' ? 'completed' : 'in_progress')
           : execItem.taskRole === 'supervisor'

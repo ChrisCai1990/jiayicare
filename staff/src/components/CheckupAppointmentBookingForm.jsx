@@ -36,6 +36,7 @@ function AppointmentFields({ title, value, onChange, hint, specialCheck = false 
 export default function CheckupAppointmentBookingForm({ task, value, onChange }) {
   const data = checkupAppointmentBookingFromTask({ ...task, formData: value })
   const intake = data.intake || task?.formData?.intake || {}
+  const needsSpecialCheck = intake.serviceType === 'special'
   const update = (key, next) => onChange({ ...data, [key]: next })
   const checkItems = (intake.checkItems || []).map(item => item.name).filter(Boolean).join('、')
   return <div style={{ display: 'grid', gap: 12 }}>
@@ -44,7 +45,7 @@ export default function CheckupAppointmentBookingForm({ task, value, onChange })
       <b>检查机构：</b>{intake.institution || '—'}　<b>空腹：</b>{intake.fastingRequired ? '需要' : '不需要'}
     </div>
     <AppointmentFields title="① 开检查单号" value={data.orderFormAppointment} onChange={next => update('orderFormAppointment', next)} hint="用于开具本次检查所需的检查单。" />
-    <AppointmentFields title="② 特殊检查专家号" value={data.specialCheckAppointment} onChange={next => update('specialCheckAppointment', next)} hint="特殊检查应在最终专家看诊前完成。" specialCheck />
-    <AppointmentFields title="③ 检查后专家看诊号" value={data.postCheckExpertAppointment} onChange={next => update('postCheckExpertAppointment', next)} hint="检查完成后由专家看诊，时间须晚于特殊检查。" />
+    {needsSpecialCheck && <AppointmentFields title="② 特殊检查专家号" value={data.specialCheckAppointment} onChange={next => update('specialCheckAppointment', next)} hint="特殊检查应在最终专家看诊前完成。" specialCheck />}
+    <AppointmentFields title={needsSpecialCheck ? '③ 检查后专家看诊号' : '② 检查后专家看诊号'} value={data.postCheckExpertAppointment} onChange={next => update('postCheckExpertAppointment', next)} hint={needsSpecialCheck ? '检查完成后由专家看诊，时间须晚于特殊检查。' : '常规检查完成后由专家看诊，日期不能早于开检查单号。'} />
   </div>
 }
