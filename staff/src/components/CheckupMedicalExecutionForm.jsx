@@ -9,7 +9,8 @@ export function checkupMedicalExecutionFromTask(task) {
   const data = task?.formData || {}; const booking = data.booking || {}
   const intake = data.intake || booking.intake || {}
   const existing = Array.isArray(data.checkAppointments) ? data.checkAppointments : []
-  const checks = (intake.checkItems || []).map((item, index) => ({ item: item.name || '', department: existing[index]?.department || '', campus: existing[index]?.campus || '', appointmentDate: existing[index]?.appointmentDate || '', appointmentTime: existing[index]?.appointmentTime || '' }))
+  const requestedItems = (intake.checkItems || []).flatMap(item => String(item?.name || '').split(/[、，,\n；;]/).map(name => name.trim()).filter(Boolean))
+  const checks = requestedItems.map((item, index) => ({ item, department: existing[index]?.department || '', campus: existing[index]?.campus || '', appointmentDate: existing[index]?.appointmentDate || '', appointmentTime: existing[index]?.appointmentTime || '' }))
   return { ...data, intake, booking, examOrderStatus: data.examOrderStatus || '', examOrderNote: data.examOrderNote || '', checkAppointments: checks, inspectionCompleted: !!data.inspectionCompleted, expertVisitCompleted: !!data.expertVisitCompleted, expertVisitSummary: data.expertVisitSummary || '', reportIds: data.reportIds || [], medicalRecordIds: data.medicalRecordIds || [] }
 }
 
