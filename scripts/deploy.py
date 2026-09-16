@@ -497,16 +497,6 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
         if code:
             raise RuntimeError("医疗代诊旧订单督办迁移失败")
         code, _ = run_migration(
-            f"if [ -f {REPO_DIR}/backend/src/scripts/migrateMedicationProxySupervisorsV20.js ] && "
-            f"[ ! -f {REPO_DIR}/.medication-proxy-supervisors-v20-applied ]; then "
-            f"cd {REPO_DIR}/backend && node src/scripts/migrateMedicationProxySupervisorsV20.js && "
-            f"touch {REPO_DIR}/.medication-proxy-supervisors-v20-applied; fi",
-            timeout=120,
-            label="为进行中的代配药旧订单补建健康规划师进度督办任务",
-        )
-        if code:
-            raise RuntimeError("代配药旧订单督办迁移失败")
-        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateMedicalProxyCarriedReportsV3.js ] && "
             f"[ ! -f {REPO_DIR}/.medical-proxy-carried-reports-v3-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateMedicalProxyCarriedReportsV3.js && "
