@@ -20,10 +20,11 @@ test('特殊约检在规划师阶段必须确认专家与检查信息', () => {
   assert.match(plannerValidation({ ...intake, preferredDateStart: '', preferredDateEnd: '2026-10-03' }), /补全/);
 });
 
-test('健管专员必须完成开单号和检查日专家号', () => {
-  const booking = { orderFormAppointment: { campus: '庆春院区', department: '内科', doctor: '李医生', date: '2026-10-01', time: '09:00' }, expertAppointment: { campus: '庆春院区', department: '超声科', doctor: '王医生', date: '2026-10-02', time: '10:00' } };
+test('健管专员必须完成三个号，并让特殊检查先于最终专家看诊', () => {
+  const booking = { orderFormAppointment: { campus: '庆春院区', department: '全科', doctor: '李医生', date: '2026-10-01', time: '09:00' }, specialCheckAppointment: { checkItem: '甲状腺超声', campus: '庆春院区', department: '超声科', doctor: '王医生', date: '2026-10-02', time: '09:00' }, postCheckExpertAppointment: { campus: '庆春院区', department: '甲乳科', doctor: '赵医生', date: '2026-10-02', time: '10:00' } };
   assert.equal(bookingValidation(booking), '');
-  assert.match(bookingValidation({ ...booking, expertAppointment: { ...booking.expertAppointment, time: '' } }), /完整填写/);
+  assert.match(bookingValidation({ ...booking, postCheckExpertAppointment: { ...booking.postCheckExpertAppointment, time: '' } }), /完整填写/);
+  assert.match(bookingValidation({ ...booking, postCheckExpertAppointment: { ...booking.postCheckExpertAppointment, time: '09:00' } }), /之前/);
 });
 
 test('健康规划师监督任务只能随流程自动结案', async () => {
