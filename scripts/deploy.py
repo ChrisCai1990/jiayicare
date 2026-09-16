@@ -27,7 +27,8 @@ LOCAL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def run_git(*args, check=True):
     return subprocess.run(
-        ["git", *args], cwd=LOCAL_DIR, capture_output=True, text=True, check=check
+        ["git", "-c", f"safe.directory={LOCAL_DIR.replace(os.sep, '/')}", *args],
+        cwd=LOCAL_DIR, capture_output=True, text=True, check=check
     )
 
 
