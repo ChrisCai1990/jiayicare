@@ -1927,7 +1927,9 @@ export default function PatientDetailPage() {
   const [stoppingMed, setStoppingMed] = useState(null) // 待确认停用的用药记录
   const [reminderMed, setReminderMed] = useState(null)
   const [supplyTarget, setSupplyTarget] = useState(null)
-  const [supplyForm, setSupplyForm] = useState({ firstDate: '', intervalDays: 30, mode: 'visit', note: '' })
+  const emptySupplyForm = { firstDate: '', intervalDays: 30, mode: 'visit', institutionType: '', hospitalName: '', campus: '', department: '', expert: '', platformName: '', pharmacyName: '', pharmacyAddress: '', purchasePath: '', quantity: '', paymentMethod: '', note: '' }
+  const supplyFormFor = (record, firstDate = '') => ({ ...emptySupplyForm, ...record?.supplyReminder, firstDate, intervalDays: record?.supplyReminder?.intervalDays || 30, mode: record?.supplyReminder?.mode || 'visit' })
+  const [supplyForm, setSupplyForm] = useState(emptySupplyForm)
   const [supplySaving, setSupplySaving] = useState(false)
   const [supplyError, setSupplyError] = useState('')
   const stopSupplyReminder = async (kind, record) => {
@@ -8570,6 +8572,7 @@ export default function PatientDetailPage() {
                             {m.stopped ? '已停用' : '服用中'}
                           </span>
                           {m.reminder?.enabled && <div style={{ marginTop: 4, fontSize: 11, color: '#7C3AED', fontWeight: 600 }}>✨ 每{m.reminder.intervalDays}天提醒</div>}
+                          {m.supplyReminder?.enabled && <div style={{ marginTop: 4, fontSize: 11, color: '#1E6B50', fontWeight: 600 }}>每{m.supplyReminder.intervalDays}天 · {m.supplyReminder.institutionType === 'hospital' ? '医院' : m.supplyReminder.institutionType === 'online' ? '线上平台' : m.supplyReminder.institutionType === 'pharmacy' ? '线下药房' : '待补机构'} · {m.supplyReminder.quantity || '待补数量'}</div>}
                         </td>
                         <td>
                           <div style={{ display: 'flex', gap: 6 }}>
@@ -8578,8 +8581,8 @@ export default function PatientDetailPage() {
                               setEditingMed(m._id); setShowMedModal(true)
                             }}>编辑</button>}
                             {m.stopped && <button className="btn btn-secondary btn-sm" onClick={() => { setMedForm({ name: m.name, brandName: m.brandName || '', specification: m.specification || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: new Date().toISOString().slice(0, 10), endDate: '', purpose: m.purpose || '', note: '', imageUrls: m.imageUrls || [] }); setEditingMed(null); setShowMedModal(true) }}>再次使用</button>}
-                            {!m.stopped && !m.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'medication', record: m }); setSupplyForm({ firstDate: '', intervalDays: 30, mode: 'visit', note: '' }) }}>定期配药</button>}
-                            {!m.stopped && m.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'medication', record: m }); setSupplyForm({ firstDate: new Date().toISOString().slice(0, 10), intervalDays: m.supplyReminder.intervalDays || 30, mode: m.supplyReminder.mode || 'visit', note: m.supplyReminder.note || '' }) }}>调整配药方式</button>}
+                            {!m.stopped && !m.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'medication', record: m }); setSupplyForm(supplyFormFor(m)) }}>定期配药</button>}
+                            {!m.stopped && m.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'medication', record: m }); setSupplyForm(supplyFormFor(m, new Date().toISOString().slice(0, 10))) }}>调整配药方式</button>}
                             {!m.stopped && m.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => stopSupplyReminder('medication', m)}>停止自动配药任务</button>}
                             {!m.stopped && <button className="btn btn-sm" style={{ background: '#F3EEFF', color: '#7C3AED', border: '1px solid #C4B5FD' }} onClick={() => {
                               const today = new Date().toISOString().slice(0, 10)
@@ -8698,6 +8701,7 @@ export default function PatientDetailPage() {
                           <span style={{ fontSize: 12, fontWeight: 600, color: s.stopped ? '#aaa' : '#22A06B' }}>
                             {s.stopped ? '已停用' : '补充中'}
                           </span>
+                          {s.supplyReminder?.enabled && <div style={{ marginTop: 4, fontSize: 11, color: '#1E6B50', fontWeight: 600 }}>每{s.supplyReminder.intervalDays}天 · {s.supplyReminder.institutionType === 'hospital' ? '医院' : s.supplyReminder.institutionType === 'online' ? '线上平台' : s.supplyReminder.institutionType === 'pharmacy' ? '线下药房' : '待补机构'} · {s.supplyReminder.quantity || '待补数量'}</div>}
                         </td>
                         <td>
                           <div style={{ display: 'flex', gap: 6 }}>
@@ -8706,8 +8710,8 @@ export default function PatientDetailPage() {
                               setEditingSup(s._id); setEditingSupAiApprove(false); setShowSupModal(true)
                             }}>编辑</button>}
                             {s.stopped && <button className="btn btn-secondary btn-sm" onClick={() => { setSupForm({ name: s.name, brand: s.brand || '', specification: s.specification || '', dosage: s.dosage, method: s.method || '随餐', frequency: s.frequency, startDate: new Date().toISOString().slice(0, 10), endDate: '', purpose: s.purpose || '', note: '', imageUrls: s.imageUrls || [] }); setEditingSup(null); setEditingSupAiApprove(false); setShowSupModal(true) }}>再次补充</button>}
-                            {!s.stopped && !s.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'supplement', record: s }); setSupplyForm({ firstDate: '', intervalDays: 30, mode: 'visit', note: '' }) }}>定期配取</button>}
-                            {!s.stopped && s.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'supplement', record: s }); setSupplyForm({ firstDate: new Date().toISOString().slice(0, 10), intervalDays: s.supplyReminder.intervalDays || 30, mode: s.supplyReminder.mode || 'visit', note: s.supplyReminder.note || '' }) }}>调整配取方式</button>}
+                            {!s.stopped && !s.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'supplement', record: s }); setSupplyForm(supplyFormFor(s)) }}>定期配取</button>}
+                            {!s.stopped && s.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'supplement', record: s }); setSupplyForm(supplyFormFor(s, new Date().toISOString().slice(0, 10))) }}>调整配取方式</button>}
                             {!s.stopped && s.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => stopSupplyReminder('supplement', s)}>停止自动配取任务</button>}
                             {!s.stopped && <button className="btn btn-sm" style={{ background: '#fff8e1', color: '#D97706', border: '1px solid #D97706' }}
                                   onClick={() => setStoppingSup(s)}>
@@ -8734,13 +8738,34 @@ export default function PatientDetailPage() {
           })()}
 
           {supplyTarget && <div className="modal-overlay">
-            <div className="modal" style={{ maxWidth: 480 }}>
+            <div className="modal" style={{ maxWidth: 680, maxHeight: '92vh', overflowY: 'auto' }}>
               <div className="modal-header"><h3 className="modal-title">定期配取 · {supplyTarget.record.name}</h3><button className="modal-close" onClick={() => setSupplyTarget(null)}>✕</button></div>
               <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
                 <label>首次提醒日期<input className="form-input" type="date" min={new Date().toISOString().slice(0, 10)} value={supplyForm.firstDate} onChange={e => setSupplyForm(f => ({ ...f, firstDate: e.target.value }))} /></label>
                 <label>每隔多少天提醒<input className="form-input" type="number" min="1" max="365" value={supplyForm.intervalDays} onChange={e => setSupplyForm(f => ({ ...f, intervalDays: e.target.value }))} /></label>
                 <label>服务方式<select className="form-input" value={supplyForm.mode} onChange={e => setSupplyForm(f => ({ ...f, mode: e.target.value }))}><option value="visit">提醒客户自行就医/配取</option><option value="proxy">我方代配服务</option></select></label>
-                <label>备注<input className="form-input" value={supplyForm.note} onChange={e => setSupplyForm(f => ({ ...f, note: e.target.value }))} placeholder="配取机构、注意事项等" /></label>
+                <label>配备机构 *<select className="form-input" value={supplyForm.institutionType} onChange={e => setSupplyForm(f => ({ ...f, institutionType: e.target.value }))}><option value="">请选择</option><option value="hospital">医院</option><option value="online">线上平台</option><option value="pharmacy">线下药房</option></select></label>
+                {supplyForm.institutionType === 'hospital' && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <label>医院名称 *<input className="form-input" value={supplyForm.hospitalName} onChange={e => setSupplyForm(f => ({ ...f, hospitalName: e.target.value }))} /></label>
+                  <label>院区<input className="form-input" value={supplyForm.campus} onChange={e => setSupplyForm(f => ({ ...f, campus: e.target.value }))} /></label>
+                  <label>科室<input className="form-input" value={supplyForm.department} onChange={e => setSupplyForm(f => ({ ...f, department: e.target.value }))} /></label>
+                  <label>专家<input className="form-input" value={supplyForm.expert} onChange={e => setSupplyForm(f => ({ ...f, expert: e.target.value }))} /></label>
+                  <label style={{ gridColumn: '1 / -1' }}>院内配取路径/说明<input className="form-input" value={supplyForm.purchasePath} onChange={e => setSupplyForm(f => ({ ...f, purchasePath: e.target.value }))} placeholder="如：门诊开方后至1楼药房取药" /></label>
+                </div>}
+                {supplyForm.institutionType === 'online' && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <label>平台名称 *<input className="form-input" value={supplyForm.platformName} onChange={e => setSupplyForm(f => ({ ...f, platformName: e.target.value }))} placeholder="如：京东健康" /></label>
+                  <label>购买路径/链接 *<input className="form-input" value={supplyForm.purchasePath} onChange={e => setSupplyForm(f => ({ ...f, purchasePath: e.target.value }))} /></label>
+                </div>}
+                {supplyForm.institutionType === 'pharmacy' && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <label>药房名称 *<input className="form-input" value={supplyForm.pharmacyName} onChange={e => setSupplyForm(f => ({ ...f, pharmacyName: e.target.value }))} /></label>
+                  <label>药房地址<input className="form-input" value={supplyForm.pharmacyAddress} onChange={e => setSupplyForm(f => ({ ...f, pharmacyAddress: e.target.value }))} /></label>
+                  <label style={{ gridColumn: '1 / -1' }}>购买路径/联系人<input className="form-input" value={supplyForm.purchasePath} onChange={e => setSupplyForm(f => ({ ...f, purchasePath: e.target.value }))} /></label>
+                </div>}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <label>每次{ supplyTarget.kind === 'medication' ? '配药' : '购买' }数量 *<input className="form-input" value={supplyForm.quantity} onChange={e => setSupplyForm(f => ({ ...f, quantity: e.target.value }))} placeholder={supplyTarget.kind === 'medication' ? '如：3盒、90片' : '如：2瓶、120粒'} /></label>
+                  <label>支付方式<select className="form-input" value={supplyForm.paymentMethod} onChange={e => setSupplyForm(f => ({ ...f, paymentMethod: e.target.value }))}><option value="">待确认</option><option value="self_pay">自费</option>{supplyTarget.kind === 'medication' && <option value="medical_insurance">医保</option>}<option value="commercial_insurance">商业保险</option></select></label>
+                </div>
+                <label>备注<input className="form-input" value={supplyForm.note} onChange={e => setSupplyForm(f => ({ ...f, note: e.target.value }))} placeholder="特殊要求、注意事项等" /></label>
                 {supplyError && <div style={{ color: '#c00', fontSize: 13 }}>{supplyError}</div>}
                 <div style={{ fontSize: 12, color: '#8A5A44' }}>只生成最近一条；该条完成后按上述间隔自动生成下一条，直到手动停止。</div>
               </div>

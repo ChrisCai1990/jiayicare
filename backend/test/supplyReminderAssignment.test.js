@@ -27,7 +27,7 @@ async function generate(mode) {
   const res = { code: 200, status(code) { this.code = code; return this; }, json(data) { this.data = data; return this; } };
   await handler({
     params: { id: 'patient-1', kind: 'medication', recordId: 'record-1' },
-    body: { firstDate: '2099-01-01', intervalDays: 30, cycles: 1, mode },
+    body: { firstDate: '2099-01-01', intervalDays: 30, cycles: 1, mode, institutionType: 'hospital', hospitalName: '测试医院', department: '内科', quantity: '2盒' },
     staff: { _id: 'operator-1' },
   }, res);
   return { res, row: inserted[0], record };
@@ -42,6 +42,8 @@ test('就医配取提醒归当前操作人并立即出现在其随访列表', as
   assert.equal(record.supplyReminder.followUpTaskId, 'follow-up-1');
   assert.match(row.theme, /提醒客户配取/);
   assert.match(row.plannedContent, /提醒会员自行/);
+  assert.match(row.plannedContent, /测试医院/);
+  assert.equal(row.formData.quantity, '2盒');
 });
 
 test('代配待办也归当前操作人，可在其随访列表中查看', async () => {
@@ -53,4 +55,5 @@ test('代配待办也归当前操作人，可在其随访列表中查看', async
   assert.equal(record.supplyReminder.followUpTaskId, 'follow-up-1');
   assert.match(row.theme, /我方代配/);
   assert.match(row.plannedContent, /安排我方代配/);
+  assert.match(row.plannedContent, /2盒/);
 });

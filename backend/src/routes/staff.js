@@ -2621,7 +2621,7 @@ async function getMedicationProxyDefaults(patientId, selectedMedicationId = '') 
     medicationName: plan?.intake?.chemicalName || medication.name || plan?.itemName || '',
     medicationBrand: plan?.intake?.brandName || medication.brandName || medication.name || plan?.itemName || '',
     medicationSpecification: plan?.intake?.specification || medication.specification || '',
-    medicationQuantity: String(plan?.intake?.totalQuantity || medicationFollowUp?.formData?.medicationQuantity || ''),
+    medicationQuantity: String(plan?.intake?.totalQuantity || medication.supplyReminder?.quantity || medicationFollowUp?.formData?.medicationQuantity || ''),
     sourceMedicationId: medication._id,
     medicationOptions,
     source: medicationFollowUp ? 'linked_supply_follow_up' : (plan ? 'recurring_supply_plan' : 'medication_record'),
@@ -6553,6 +6553,14 @@ router.put('/patients/:id/supply-reminders/:kind/:recordId', staffAuth, checkPer
     if (!Number.isInteger(intervalDays) || intervalDays < 1 || intervalDays > 365 || !['visit', 'proxy'].includes(mode) || Number.isNaN(first.getTime()) || firstDate < today) {
       return res.status(400).json({ success: false, message: '请填写有效的首次日期、周期及提醒方式' });
     }
+    const institutionType = String(req.body.institutionType || '');
+    const quantity = String(req.body.quantity || '').trim().slice(0, 100);
+    const purchasePath = String(req.body.purchasePath || '').trim().slice(0, 1000);
+    const paymentMethod = ['self_pay', 'medical_insurance', 'commercial_insurance'].includes(req.body.paymentMethod) ? req.body.paymentMethod : '';
+    if (!['hospital', 'online', 'pharmacy'].includes(institutionType) || !quantity) return res.status(400).json({ success: false, message: '请选择配备机构并填写每次配备数量' });
+    if (institutionType === 'hospital' && !String(req.body.hospitalName || '').trim()) return res.status(400).json({ success: false, message: '请填写配药医院' });
+    if (institutionType === 'online' && (!String(req.body.platformName || '').trim() || !purchasePath)) return res.status(400).json({ success: false, message: '请填写平台名称和购买路径' });
+    if (institutionType === 'pharmacy' && !String(req.body.pharmacyName || '').trim()) return res.status(400).json({ success: false, message: '请填写线下药房名称' });
     const patient = await User.findById(req.params.id).select('assignedHealthManager');
     if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
     // 一键生成后先归当前点击人负责，确保两种模式都立即出现在其“我的随访”中；
@@ -6564,10 +6572,11 @@ router.put('/patients/:id/supply-reminders/:kind/:recordId', staffAuth, checkPer
       patientId: req.params.id, staffId: req.staff._id, assignedTo: assignee, date: first,
       type: mode === 'proxy' ? 'other' : 'wechat', status: 'planned',
       theme: `${task} · ${record.name}`,
-      plannedContent: `${mode === 'proxy' ? '请安排我方代配' : '请提醒会员自行就医/配取'}${itemType}「${record.name}」。配取前核对当前医嘱、剂量及余量；完成后记录结果。${req.body.note ? `\n备注：${String(req.body.note).trim().slice(0, 500)}` : ''}`,
+      plannedContent: `${mode === 'proxy' ? '请安排我方代配' : '请提醒会员自行就医/配取'}${itemType}「${record.name}」，本次数量：${quantity}。${institutionType === 'hospital' ? `医院：${String(req.body.hospitalName).trim()}${req.body.campus ? `（${String(req.body.campus).trim()}）` : ''}${req.body.department ? `，科室：${String(req.body.department).trim()}` : ''}${req.body.expert ? `，专家：${String(req.body.expert).trim()}` : ''}` : institutionType === 'online' ? `线上平台：${String(req.body.platformName).trim()}，购买路径：${purchasePath}` : `线下药房：${String(req.body.pharmacyName).trim()}${req.body.pharmacyAddress ? `，地址：${String(req.body.pharmacyAddress).trim()}` : ''}${purchasePath ? `，购买路径：${purchasePath}` : ''}`}。配取前核对当前医嘱、剂量及余量；完成后记录结果。${req.body.note ? `\n备注：${String(req.body.note).trim().slice(0, 500)}` : ''}`,
       tags: ['配药与营养补充', task, itemType], sourceType: 'supply_reminder', sourceId: record._id,
+      formData: { institutionType, hospitalName: String(req.body.hospitalName || '').trim(), campus: String(req.body.campus || '').trim(), department: String(req.body.department || '').trim(), expert: String(req.body.expert || '').trim(), platformName: String(req.body.platformName || '').trim(), pharmacyName: String(req.body.pharmacyName || '').trim(), pharmacyAddress: String(req.body.pharmacyAddress || '').trim(), purchasePath, quantity, paymentMethod },
     };
-    record.supplyReminder = { enabled: true, intervalDays, mode, note: String(req.body.note || '').trim().slice(0, 500), updatedAt: new Date(), updatedBy: req.staff._id };
+    record.supplyReminder = { enabled: true, intervalDays, mode, institutionType, hospitalName: String(req.body.hospitalName || '').trim(), campus: String(req.body.campus || '').trim(), department: String(req.body.department || '').trim(), expert: String(req.body.expert || '').trim(), platformName: String(req.body.platformName || '').trim(), pharmacyName: String(req.body.pharmacyName || '').trim(), pharmacyAddress: String(req.body.pharmacyAddress || '').trim(), purchasePath, quantity, paymentMethod, note: String(req.body.note || '').trim().slice(0, 500), updatedAt: new Date(), updatedBy: req.staff._id };
     await record.save();
     await FollowUp.deleteMany({ patientId: req.params.id, sourceType: 'supply_reminder', sourceId: record._id, status: 'planned', date: { $gte: new Date() } });
     const linkedTask = await FollowUp.create(row);
