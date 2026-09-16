@@ -3880,8 +3880,40 @@ router.delete('/medical-reports/:id', staffAuth, checkPermission('reports', 'del
       }
       return res.json({ success: true, workflowReopened: true });
     }
+    // 待约检的逐项报告一旦被删除，不能让已提交的健管审核和待健康顾问审核继续引用
+    // 一个已不存在的资料。将订单退回“健管专员审核报告与病历”，由健管专员补齐报告后
+    // 再生成新的健康顾问审核任务。只对尚未结案的待约检订单生效，避免历史已结案订单被改写。
+    const deletedReportId = String(report._id);
+    const checkupReviewTasks = await FollowUp.find({
+      sourceType: 'order', workflowKey: 'checkup_appointment:manager_review',
+      'formData.reportIds': { $in: [deletedReportId, report._id] },
+    });
+    let checkupWorkflowReopened = false;
+    for (const reviewTask of checkupReviewTasks) {
+      const order = await Order.findById(reviewTask.sourceOrderId);
+      if (!order || !['checkup_manager_review', 'checkup_advisor_review'].includes(order.currentStage)) continue;
+      const assignments = { ...(reviewTask.formData?.reportAssignments || {}) };
+      Object.keys(assignments).forEach(item => {
+        assignments[item] = (assignments[item] || []).filter(id => String(id) !== deletedReportId);
+      });
+      reviewTask.status = 'planned'; reviewTask.completedAt = null; reviewTask.completedBy = null;
+      reviewTask.content = '有已关联的检查报告被删除，请补齐逐项报告并重新生成随访计划草稿。';
+      reviewTask.formData = {
+        ...(reviewTask.formData || {}), reportAssignments: assignments,
+        reportIds: Object.values(assignments).flat().map(String), aiGenerated: false,
+        reviewSummary: '', followUpContent: '', followUpDate: '',
+      };
+      await reviewTask.save();
+      await FollowUp.deleteMany({ sourceType: 'order', sourceOrderId: order._id, workflowKey: 'checkup_appointment:advisor_review', status: { $in: ['planned', 'in_progress'] } });
+      await Order.updateOne({ _id: order._id }, { $set: { currentStage: 'checkup_manager_review', currentAssignee: reviewTask.assignedTo, supervisionStatus: 'in_progress' } });
+      await FollowUp.updateOne(
+        { sourceType: 'order', sourceOrderId: order._id, workflowKey: 'checkup_appointment:supervise' },
+        { $set: { content: '当前环节：健管专员审核检查报告与病历（有资料被删除，待补齐）。', 'formData.currentStage': 'manager_review' } },
+      );
+      checkupWorkflowReopened = true;
+    }
     await report.deleteOne();
-    res.json({ success: true, workflowReopened: false });
+    res.json({ success: true, workflowReopened: checkupWorkflowReopened });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
