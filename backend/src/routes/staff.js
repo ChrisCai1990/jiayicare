@@ -2617,11 +2617,25 @@ async function getMedicationProxyDefaults(patientId, selectedMedicationId = '') 
   const medicationFollowUp = linkedFollowUp && String(linkedFollowUp.sourceId || '') === String(medication._id) ? linkedFollowUp : null;
   const names = [medication.brandName, medication.name].filter(Boolean);
   const plan = await RecurringSupplyPlan.findOne({ patientId, planType: 'medication', enabled: true, ...(names.length ? { itemName: { $in: names } } : {}) }).sort({ nextDueDate: 1, updatedAt: -1 }).lean();
+  const supply = medication.supplyReminder || {};
+  const intake = plan?.intake || {};
+  const reminderData = medicationFollowUp?.formData || {};
   return {
     medicationName: plan?.intake?.chemicalName || medication.name || plan?.itemName || '',
     medicationBrand: plan?.intake?.brandName || medication.brandName || medication.name || plan?.itemName || '',
     medicationSpecification: plan?.intake?.specification || medication.specification || '',
     medicationQuantity: String(plan?.intake?.totalQuantity || medication.supplyReminder?.quantity || medicationFollowUp?.formData?.medicationQuantity || ''),
+    institutionType: intake.institutionType || supply.institutionType || reminderData.institutionType || '',
+    hospital: intake.hospitalName || supply.hospitalName || reminderData.hospitalName || '',
+    campus: intake.campus || supply.campus || reminderData.campus || '',
+    department: intake.department || supply.department || reminderData.department || '',
+    expert: intake.expert || supply.expert || reminderData.expert || '',
+    platformName: intake.platformName || supply.platformName || reminderData.platformName || '',
+    pharmacyName: intake.pharmacyName || supply.pharmacyName || reminderData.pharmacyName || '',
+    pharmacyAddress: intake.pharmacyAddress || supply.pharmacyAddress || reminderData.pharmacyAddress || '',
+    purchasePath: intake.purchasePath || supply.purchasePath || reminderData.purchasePath || '',
+    paymentMethod: intake.paymentMethod || supply.paymentMethod || reminderData.paymentMethod || '',
+    deliveryTime: supply.deliveryTime || reminderData.deliveryTime || '',
     sourceMedicationId: medication._id,
     medicationOptions,
     source: medicationFollowUp ? 'linked_supply_follow_up' : (plan ? 'recurring_supply_plan' : 'medication_record'),
@@ -2661,6 +2675,20 @@ router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => 
       req.body.medicationQuantity = defaults.medicationQuantity || req.body.medicationQuantity || '';
       req.body.sourceFollowUpId = defaults.sourceFollowUpId || null;
       req.body.sourcePlanId = defaults.sourcePlanId || null;
+      for (const key of ['institutionType', 'hospital', 'campus', 'department', 'expert', 'platformName', 'pharmacyName', 'pharmacyAddress', 'purchasePath', 'paymentMethod', 'deliveryTime']) {
+        req.body[key] = req.body[key] || defaults[key] || '';
+      }
+      const duplicateConditions = [];
+      if (req.body.sourceMedicationId) duplicateConditions.push({ 'medicalProxyPlan.sourceMedicationId': req.body.sourceMedicationId });
+      if (req.body.medicationName) duplicateConditions.push({ 'medicalProxyPlan.medicationName': req.body.medicationName, 'medicalProxyPlan.medicationSpecification': req.body.medicationSpecification || '' });
+      const duplicate = duplicateConditions.length ? await Order.findOne({
+        user: patient._id,
+        status: { $nin: ['completed', 'cancelled'] },
+        serviceName: /代配药|代取药/,
+        'medicalProxyPlan.preferredDateStart': req.body.preferredDateStart,
+        $or: duplicateConditions,
+      }).select('_id orderNo').lean() : null;
+      if (duplicate) throw Object.assign(new Error(`同一药品和服务日期已有未完成的代配药服务${duplicate.orderNo ? `（${duplicate.orderNo}）` : ''}，请勿重复创建`), { status: 409 });
     }
     const required = medicalEscort ? ['escortCategory', 'escortDate', 'escortTime', 'hospital', 'campus', 'department', 'escortGoal'] : medicationProxy ? ['preferredDateStart', 'medicationName', 'medicationBrand', 'medicationSpecification', 'medicationQuantity'] : appointmentOnly ? ['hospital', 'department', 'expert', 'preferredDateStart', 'preferredDateEnd'] : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'];
     if (required.some(key => !String(req.body[key] || '').trim())) return res.status(400).json({ success: false, message: medicalEscort ? '请完整填写服务日期时间、医院、院区、科室和具体服务事项' : medicationProxy ? '请选择服务日期；药物名称、品牌、规格和数量应从关联代配药任务自动获取' : appointmentOnly ? '请完整填写医院、科室、专家和期望日期区间' : '请完整填写医院、科室、专家、代诊目标和交流内容' });

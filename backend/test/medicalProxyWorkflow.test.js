@@ -227,6 +227,18 @@ test('staff-initiated medication keeps a planner supervision task until executio
   assert.match(page, /执行人员配药确认与配送/);
 });
 
+test('service-plan medication uses supply-entry fields and blocks duplicate active orders', () => {
+  const routes = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+  const plansPage = fs.readFileSync(path.join(__dirname, '../../staff/src/pages/PlansPage.jsx'), 'utf8');
+  assert.match(routes, /institutionType: intake\.institutionType \|\| supply\.institutionType/);
+  assert.match(routes, /同一药品和服务日期已有未完成的代配药服务/);
+  assert.match(routes, /'medicalProxyPlan\.preferredDateStart': req\.body\.preferredDateStart/);
+  assert.match(plansPage, /配备与交付信息/);
+  assert.match(plansPage, /institutionType: form\.institutionType/);
+  assert.match(plansPage, /paymentMethod: form\.paymentMethod/);
+  assert.match(plansPage, /expectedDeliveryDate: isMedicationProxy \? form\.serviceDate/);
+});
+
 test('medical escort skips booking and sends manager review only after execution', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
   const panel = fs.readFileSync(path.join(__dirname, '../../staff/src/components/ServiceTasksPanel.jsx'), 'utf8');
