@@ -34,6 +34,12 @@ const formatAppointmentRequirement = data => [
   data.insuranceUse === 'high_end' && `结算方式：${({ direct: '直付', reimbursement: '先付后报' })[data.settlementMethod] || '待核实'}`,
 ].filter(Boolean).join('；')
 
+const parseMedicationRequirement = text => {
+  const parts = String(text || '').split(/[；\n]/).map(item => item.trim()).filter(Boolean)
+  const take = label => parts.find(item => item.startsWith(`${label}：`))?.slice(label.length + 1) || ''
+  return { medicationName: take('药物名称'), medicationBrand: take('品牌'), medicationQuantity: take('数量') }
+}
+
 export function validateMedicalProxyStage(stage, value) {
   if (stage === 'collect' && (!value.customerNeed?.trim() || !value.materialSummary?.trim() || !value.communicationDate?.trim() || !value.communicationTimeStart?.trim() || !value.communicationTimeEnd?.trim() || !value.reportIds?.length)) return '请填写诉求、预期沟通时段和资料清单，选定至少一份本次服务资料'
   if (stage === 'collect' && value.communicationTimeEnd <= value.communicationTimeStart) return '预期沟通结束时间必须晚于开始时间'
@@ -47,6 +53,7 @@ export function validateMedicalProxyStage(stage, value) {
   if (stage === 'planner' && value.medicalEscort && (!['exam', 'checkup', 'consultation', 'treatment'].includes(value.escortCategory) || ['escortDate', 'escortTime', 'hospital', 'campus', 'department', 'escortGoal'].some(key => !value[key]?.trim()))) return '请完整填写陪同类目、日期、具体时间、医院、院区、科室和陪同目标'
   if (stage === 'planner' && !value.medicalAssistantId) return '请指派就医专员'
   if (stage === 'booking' && ['preferredDateStart', 'preferredDateEnd', 'appointmentDate', 'appointmentTime'].some(key => !value[key]?.trim())) return '请完整填写客户期望日期区间和实际约诊日期时间'
+  if (stage === 'booking' && value.medicationProxy === true && ['medicationName', 'medicationBrand', 'medicationQuantity'].some(key => !value.planSnapshot?.[key]?.trim())) return '请补齐药物名称、品牌和数量后再流转'
   if (stage === 'booking' && (value.appointmentDate < value.preferredDateStart || value.appointmentDate > value.preferredDateEnd) && !value.dateDifferenceNote?.trim()) return '约诊日期不在客户期望区间内，请说明差异及客户确认情况'
   if (stage === 'booking' && (value.medicationProxy === true || /代配药|代取药/.test(`${value.planSnapshot?.serviceName || ''} ${value.planSnapshot?.serviceContent || ''}`)) && !['self_pay', 'medical_insurance', 'commercial_insurance'].includes(value.paymentMethod)) return '请选择支付方式'
   if (stage === 'booking' && value.paymentMethod === 'medical_insurance' && !['electronic', 'physical'].includes(value.medicalInsuranceCardType)) return '请确认使用电子医保卡还是实体医保卡'
@@ -216,6 +223,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
       {isMedicationProxy ? <>
         <div>配药医院：{value.planSnapshot?.hospital || '待确认'} {booking.campus || value.planSnapshot?.campus || ''}</div>
         <div>配药科室：{value.planSnapshot?.department || '待确认'}；配药专家：{value.planSnapshot?.expert || '无'}</div>
+        <div style={{ marginTop: 6, fontWeight: 700, color: '#1E6B50' }}>药物名称：{value.planSnapshot?.medicationName || '待健管专员补充'}；品牌：{value.planSnapshot?.medicationBrand || '待补充'}；数量：{value.planSnapshot?.medicationQuantity || '待补充'}</div>
         <div>代办日期：{booking.appointmentDate || '未填写'} {booking.appointmentTime || ''}</div>
         <div>支付方式：{paymentLabel}</div>
       </> : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].map((key, i) => <div key={key}>{['医院', '科室', '专家', '代诊目标', '交流内容'][i]}：{value.planSnapshot?.[key] || '待确认'}</div>)}
@@ -228,11 +236,18 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     </label>
   </div>
   }
-  if (stage === 'booking') return <div style={{ display: 'grid', gap: 12 }}>
+  if (stage === 'booking') {
+    const setPlanSnapshot = (key, item) => onChange({ ...value, planSnapshot: { ...(value.planSnapshot || {}), [key]: item } })
+    const planInput = (key, label) => <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>{label}<input className="form-control" value={value.planSnapshot?.[key] || ''} onChange={e => setPlanSnapshot(key, e.target.value)} /></label>
+    return <div style={{ display: 'grid', gap: 12 }}>
     <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>
       {appointmentRequirementText ? <div>约诊需求：{appointmentRequirementText}</div> : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].map((key, i) => <div key={key}>{['医院', '科室', '专家', '代诊目标', '交流内容'][i]}：{value.planSnapshot?.[key] || '待确认'}</div>)}
     </div>
     {isExpertAppointment && input('campus', '院区 *')}
+    {isMedicationProxy && <div style={{ display: 'grid', gap: 10, padding: 12, borderRadius: 8, background: '#EFF8F4', border: '1px solid #B2D8C7' }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>本次配药清单（将同步给健康规划师和就医专员）</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>{planInput('medicationName', '药物名称 *')}{planInput('medicationBrand', '品牌 *')}{planInput('medicationQuantity', '数量 *')}</div>
+    </div>}
     {isMedicationProxy && <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>支付方式 *
       <select className="form-control" value={value.paymentMethod || ''} onChange={e => onChange({ ...value, paymentMethod: e.target.value, medicalInsuranceCardType: e.target.value === 'medical_insurance' ? value.medicalInsuranceCardType : '' })}>
         <option value="">请选择</option><option value="self_pay">自费</option><option value="medical_insurance">医保</option><option value="commercial_insurance">商保</option>
@@ -264,8 +279,11 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
       </select>
     </label>}
   </div>
+  }
   if (stage === 'execute') {
     const booking = { ...(task?.sourceOrderId?.medicalProxyPlan?.booking || {}), ...(value.bookingSnapshot?.planSnapshot?.booking || {}), ...(value.bookingSnapshot || {}) }
+    const medicationRequirement = parseMedicationRequirement(task?.sourceOrderId?.serviceRequirements || value.planSnapshot?.serviceContent || '')
+    const executionPlan = { ...(task?.sourceOrderId?.medicalProxyPlan || {}), ...(value.planSnapshot || {}) }
     const paymentLabel = ({ self_pay: '自费', medical_insurance: `医保（${({ electronic: '电子医保卡', physical: '实体医保卡' })[booking.medicalInsuranceCardType] || '未确认卡类型'}）`, commercial_insurance: '商保' })[booking.paymentMethod] || '未填写'
     if (isMedicalEscort) {
       const plan = value.planSnapshot || {}
@@ -282,9 +300,9 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     return <div style={{ display: 'grid', gap: 12 }}>
     <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>
       {isMedicationProxy ? <>
-        <div>配药医院：{value.planSnapshot?.hospital || '未填写'} {booking.campus || value.planSnapshot?.campus || ''}</div>
-        <div>配药科室：{value.planSnapshot?.department || '未填写'}；配药专家：{value.planSnapshot?.expert || '无'}</div>
-        <div>配备药物：{value.planSnapshot?.medicationName || '未填写'}；品牌：{value.planSnapshot?.medicationBrand || '未填写'}；数量：{value.planSnapshot?.medicationQuantity || '未填写'}</div>
+        <div>配药医院：{executionPlan.hospital || '未填写'} {booking.campus || executionPlan.campus || ''}</div>
+        <div>配药科室：{executionPlan.department || '未填写'}；配药专家：{executionPlan.expert || '无'}</div>
+        <div style={{ marginTop: 6, fontWeight: 700, color: '#1E6B50' }}>配备药物：{executionPlan.medicationName || medicationRequirement.medicationName || '未填写'}；品牌：{executionPlan.medicationBrand || medicationRequirement.medicationBrand || '未填写'}；数量：{executionPlan.medicationQuantity || medicationRequirement.medicationQuantity || '未填写'}</div>
         <div>配药代办日期：{booking.appointmentDate || '未填写'} {booking.appointmentTime || ''}</div>
         <div>支付方式：{paymentLabel}</div>
       </> : <>

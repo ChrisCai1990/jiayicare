@@ -230,6 +230,18 @@ test('medication proxy execution requires all four delivery documents', async ()
   }
 });
 
+test('medication booking persists the manager-confirmed drug list for planner and executor', () => {
+  const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
+  const form = fs.readFileSync(path.join(__dirname, '../../staff/src/components/MedicalProxyStageForm.jsx'), 'utf8');
+  assert.match(workflow, /请补齐药物名称、品牌和数量后再流转/);
+  assert.match(workflow, /medicationName: nonempty\(task\.formData\?\.planSnapshot\?\.medicationName\)/);
+  assert.match(workflow, /'formData\.medicationSnapshot'/);
+  assert.match(form, /本次配药清单（将同步给健康规划师和就医专员）/);
+  assert.match(form, /药品照片（须清晰展示药盒和数量）/);
+  assert.match(form, /药品服用单（服用方式和方法）/);
+  assert.match(form, /收费单 \*/);
+});
+
 test('staff-initiated medication keeps a planner supervision task until execution completes', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
   const page = fs.readFileSync(path.join(__dirname, '../../staff/src/pages/PatientDetailPage.jsx'), 'utf8');
@@ -300,7 +312,7 @@ test('medication booking requires the medical insurance credential type', async 
   try {
     Order.findById = () => ({ select: () => ({ lean: async () => ({ serviceName: '代配药服务' }) }) });
     const task = { sourceType: 'order', sourceOrderId: 'order-1', workflowKey: 'medical_proxy:booking', assignedTo: 'manager-1' };
-    const formData = { medicationProxy: true, paymentMethod: 'medical_insurance', preferredDateStart: '2026-09-16', preferredDateEnd: '2026-09-18', appointmentDate: '2026-09-17', appointmentTime: '10:00' };
+    const formData = { medicationProxy: true, planSnapshot: { medicationName: '药物A', medicationBrand: '品牌A', medicationQuantity: '2盒' }, paymentMethod: 'medical_insurance', preferredDateStart: '2026-09-16', preferredDateEnd: '2026-09-18', appointmentDate: '2026-09-17', appointmentTime: '10:00' };
     assert.match(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'manager-1', role: 'healthManager' }), /电子医保卡.*实体医保卡/);
     formData.medicalInsuranceCardType = 'electronic';
     assert.equal(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'manager-1', role: 'healthManager' }), '');

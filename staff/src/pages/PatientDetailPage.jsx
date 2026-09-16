@@ -9127,7 +9127,11 @@ export default function PatientDetailPage() {
             // 排序方向：待随访/随访中是还没发生的未来计划，按日期从近到远（离今天最近的先处理）；
             // 已随访/已取消是历史事件，按最近发生的在前。"全部"tab混合两类，按每行自身状态各自判断方向。
             const isFutureStatus = (status) => PLANNED_STATUSES.includes(status) || IN_PROGRESS_STATUSES.includes(status)
-            const serviceCurrentTask = row => row.items.find(item => item.workflowKey === 'medical_proxy:supervise' && ['planned', 'in_progress', 'missed'].includes(item.status))
+            const currentStaffId = String(staff?._id || '')
+            const serviceCurrentTask = row => row.items.find(item => item.taskRole === 'executor'
+                && String(item.assignedTo?._id || item.assignedTo || '') === currentStaffId
+                && ['planned', 'in_progress', 'missed'].includes(item.status))
+              || row.items.find(item => item.workflowKey === 'medical_proxy:supervise' && ['planned', 'in_progress', 'missed'].includes(item.status))
               || row.items.find(item => ['planned', 'in_progress', 'missed'].includes(item.status))
               || [...row.items].sort((a, b) => new Date(b.completedAt || b.updatedAt || b.createdAt || b.date) - new Date(a.completedAt || a.updatedAt || a.createdAt || a.date))[0]
             const rowStatus = (row) => row.type === 'group' ? row.status : row.type === 'medication_proxy_service' ? serviceCurrentTask(row).status : row.item.status
@@ -9248,7 +9252,8 @@ export default function PatientDetailPage() {
                       const current = serviceCurrentTask(row)
                       const serviceName = current.sourceOrderId?.serviceName || (/营养/.test(current.theme || '') ? '代配营养素服务' : '代配药服务')
                       const stageText = current.workflowKey === 'medical_proxy:supervise' ? ({ booking: '健管专员预约配药门诊', planner: '健康规划师安排配药执行人员', execute: '就医专员配药并上传交付资料', completed: '服务已完成' }[current.formData?.currentStage] || current.content || '处理中') : String(current.content || current.plannedContent || current.theme || '').replace(/^代配药[：:]\s*/, '')
-                      return <tr key={row.key} style={{ cursor: 'pointer', background: '#F2FAF6' }} onClick={() => setFollowUpDetail(current)}>
+                      const canHandleCurrent = current.taskRole === 'executor' && ['planned', 'in_progress', 'missed'].includes(current.status)
+                      return <tr key={row.key} style={{ cursor: 'pointer', background: '#F2FAF6' }} onClick={() => canHandleCurrent ? openExec(current) : setFollowUpDetail(current)}>
                         <td style={{ fontSize: 13, color: '#666' }}>{new Date(current.date).toLocaleDateString('zh-CN')}</td>
                         <td style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>{current.createdAt ? new Date(current.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
                         <td><span className="badge badge-info">代配服务</span></td>
@@ -9256,7 +9261,7 @@ export default function PatientDetailPage() {
                         <td style={{ fontSize: 13, color: '#666' }}>{current.assignedTo?.name || current.staffId?.name || '-'}</td>
                         <td style={{ fontSize: 13, color: '#1A2B24', maxWidth: 260 }}><div><span style={{ fontSize: 11, color: '#22A06B', background: '#22A06B18', padding: '1px 6px', borderRadius: 4, marginRight: 4 }}>单项服务</span><b>{serviceName}</b></div><div style={{ marginTop: 4, color: '#65776F' }}>当前进度：{stageText || '处理中'}</div></td>
                         <td style={{ fontSize: 12, color: '#8AA89C' }}>{current.nextFollowUpDate ? new Date(current.nextFollowUpDate).toLocaleDateString('zh-CN') : '-'}</td>
-                        <td onClick={e => e.stopPropagation()}><button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(current)}>查看服务</button></td>
+                        <td onClick={e => e.stopPropagation()}><button className={canHandleCurrent ? 'btn btn-sm' : 'btn btn-secondary btn-sm'} onClick={() => canHandleCurrent ? openExec(current) : setFollowUpDetail(current)}>{canHandleCurrent ? (medicalProxyStage(current) === 'execute' ? '配药并上传资料' : '办理本环节') : '查看服务'}</button></td>
                       </tr>
                     }
                     const expanded = !!expandedMonitorGroups[row.key]
@@ -10650,6 +10655,7 @@ export default function PatientDetailPage() {
               )}
               {medicalProxyStage(followUpDetail) === 'supervise' && <div style={{ background: '#EFF8F4', padding: 12, borderRadius: 8, fontSize: 13 }}>
                 <strong>健康规划师持续督办</strong><br />当前环节：{(isMedicalProxyMedicationTask(followUpDetail) ? ({ booking: '健管专员预约配药门诊', planner: '健康规划师分配配药执行人员', execute: '执行人员配药确认与配送', completed: '代配药服务完成' }) : ({ collect: '指导客户上传并选定资料', audit: '健管专员审核', advisor: '健康顾问确认方案', planner_followup: '顾问建议已完成，待与客户沟通', planner: '规划师复核并预指派就医专员', booking: '健管专员预约专家门诊', appointment_review: '健康顾问确认约诊建议', post_visit_audit: '等待就诊后资料及健管审核', followup_review: '健康顾问审核AI随访计划', post_visit_review: '健康顾问查看就诊后资料', execute: '就医专员执行代诊', completed: '服务完成' }))[followUpDetail.formData?.currentStage] || '处理中'}<br />服务内容：{followUpDetail.formData?.serviceContent || '-'}<br />客户诉求：{followUpDetail.formData?.customerNeed || '-'}
+                {isMedicalProxyMedicationTask(followUpDetail) && (() => { const plan = followUpDetail.sourceOrderId?.medicalProxyPlan || followUpDetail.formData?.medicationSnapshot || {}; return <><br /><strong>健管专员确认的配药信息</strong><br />药物名称：{plan.medicationName || '待补充'}<br />品牌：{plan.medicationBrand || '待补充'}<br />数量：{plan.medicationQuantity || '待补充'}<br />预约时间：{plan.booking?.appointmentDate || '-'} {plan.booking?.appointmentTime || ''}<br />支付方式：{({ self_pay: '自费', medical_insurance: `医保（${({ electronic: '电子医保卡', physical: '实体医保卡' })[plan.booking?.medicalInsuranceCardType] || '卡类型待确认'}）`, commercial_insurance: '商保' })[plan.booking?.paymentMethod] || '待确认'}</> })()}
               </div>}
               {medicalProxyStage(followUpDetail) === 'supervise' && /就医规划/.test(followUpDetail.sourceOrderId?.serviceName || followUpDetail.theme || '') && <div style={{ border: '1px solid #B2D8C7', background: '#F6FBF8', borderRadius: 8, padding: 14, fontSize: 13, display: 'grid', gap: 8 }}>
                 <strong style={{ color: '#1E6B50' }}>健康顾问就医规划建议</strong>

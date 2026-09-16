@@ -482,6 +482,7 @@ async function validateMedicalProxyStage(task, body, staff) {
     if ((data.appointmentDate < data.preferredDateStart || data.appointmentDate > data.preferredDateEnd) && !nonempty(data.dateDifferenceNote)) return '约诊日期不在客户期望区间内，请说明差异及客户确认情况';
     const bookingOrder = task.sourceOrderId ? await Order.findById(task.sourceOrderId).select('serviceName serviceRequirements').lean() : null;
     if ((data.medicationProxy === true || /代配药|代取药/.test(bookingOrder?.serviceName || '')) && !['self_pay', 'medical_insurance', 'commercial_insurance'].includes(data.paymentMethod)) return '请选择支付方式（自费、医保或商保）';
+    if ((data.medicationProxy === true || /代配药|代取药/.test(bookingOrder?.serviceName || '')) && ['medicationName', 'medicationBrand', 'medicationQuantity'].some(key => !nonempty(data.planSnapshot?.[key]))) return '请补齐药物名称、品牌和数量后再流转';
     if (data.paymentMethod === 'medical_insurance' && !['electronic', 'physical'].includes(data.medicalInsuranceCardType)) return '请确认使用电子医保卡还是实体医保卡';
     const appointmentRequirement = nonempty(data.planSnapshot?.serviceContent || bookingOrder?.serviceRequirements);
     if (/(?:保险类型：高端险|费用与保险：使用高端医疗险)/.test(appointmentRequirement) && !['direct_verified', 'reimbursement_verified', 'self_pay_confirmed'].includes(data.insuranceOutcome)) return '请核实高端医疗险实际结算方式，并选择办理结果';
@@ -562,7 +563,12 @@ async function advanceMedicalProxyWorkflow(task) {
     }
   }
   if (stage === 'booking') {
-    order.medicalProxyPlan = { ...(order.medicalProxyPlan || {}), booking: task.formData, bookedBy: task.assignedTo, bookedAt: new Date() };
+    const medicationDetails = /代配药|代取药/.test(order.serviceName || '') ? {
+      medicationName: nonempty(task.formData?.planSnapshot?.medicationName),
+      medicationBrand: nonempty(task.formData?.planSnapshot?.medicationBrand),
+      medicationQuantity: nonempty(task.formData?.planSnapshot?.medicationQuantity),
+    } : {};
+    order.medicalProxyPlan = { ...(order.medicalProxyPlan || {}), ...medicationDetails, booking: task.formData, bookedBy: task.assignedTo, bookedAt: new Date() };
     order.scheduledAt = appointmentAt(task.formData.appointmentDate, task.formData.appointmentTime);
     order.desiredServiceDate = task.formData.preferredDateStart ? appointmentAt(task.formData.preferredDateStart) : null;
     order.desiredServiceDateEnd = task.formData.preferredDateEnd ? appointmentAt(task.formData.preferredDateEnd) : null;
@@ -724,7 +730,13 @@ async function advanceMedicalProxyWorkflow(task) {
   }
   await FollowUp.updateOne(
     { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } },
-    { $set: { 'formData.currentStage': next, content: `当前环节：${labels[next]}` } },
+    { $set: {
+      'formData.currentStage': next,
+      ...(medicationProxy ? { 'formData.medicationSnapshot': {
+        medicationName: order.medicalProxyPlan?.medicationName || '', medicationBrand: order.medicalProxyPlan?.medicationBrand || '', medicationQuantity: order.medicalProxyPlan?.medicationQuantity || '',
+      } } : {}),
+      content: `当前环节：${labels[next]}`,
+    } },
   );
   await Order.updateOne({ _id: order._id }, { $set: {
     currentStage: next, currentAssignee: assignee, supervisionStatus: 'in_progress',

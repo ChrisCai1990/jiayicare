@@ -507,6 +507,16 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
         if code:
             raise RuntimeError("代配药旧订单督办迁移失败")
         code, _ = run_migration(
+            f"if [ -f {REPO_DIR}/backend/src/scripts/repairIncompleteMedicationDetailsV21.js ] && "
+            f"[ ! -f {REPO_DIR}/.incomplete-medication-details-v21-applied ]; then "
+            f"cd {REPO_DIR}/backend && node src/scripts/repairIncompleteMedicationDetailsV21.js && "
+            f"touch {REPO_DIR}/.incomplete-medication-details-v21-applied; fi",
+            timeout=120,
+            label="退回配药清单不完整的进行中任务并要求健管专员补齐",
+        )
+        if code:
+            raise RuntimeError("配药清单补齐迁移失败")
+        code, _ = run_migration(
             f"if [ -f {REPO_DIR}/backend/src/scripts/migrateMedicalProxyCarriedReportsV3.js ] && "
             f"[ ! -f {REPO_DIR}/.medical-proxy-carried-reports-v3-applied ]; then "
             f"cd {REPO_DIR}/backend && node src/scripts/migrateMedicalProxyCarriedReportsV3.js && "
