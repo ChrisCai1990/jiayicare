@@ -453,6 +453,7 @@ router.patch('/orders/:id/pay', adminAuth, async (req, res) => {
   // 生成核销码（8位大写字母数字，供到店核销时输入/扫码比对）
   order.verifyCode = crypto.randomBytes(4).toString('hex').toUpperCase();
   await order.save();
+  await require('../utils/orderSupplementArchive').ensureOrderSupplementDraft(order);
 
   // 消费积分：下单时已按 paidAmount 预记过（见 services.js POST /order），这里只对还没记过分的
   // 老订单补记，避免同一笔订单人工标记支付时重复计分（2026-07-13 改为下单即预记后新增的保护）

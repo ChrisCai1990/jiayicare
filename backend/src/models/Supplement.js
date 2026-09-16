@@ -32,8 +32,9 @@ const supplementSchema = new mongoose.Schema({
   aiGeneratedBy: { type: String, default: '' },
   reviewedByName: { type: String, default: '' },   // 审核人姓名（营养师）
   reviewedAt:     { type: Date, default: null },   // 审核时间
-  sourceType: { type: String, enum: ['manual', 'annual_plan', 'ai', ''], default: 'manual' },
+  sourceType: { type: String, enum: ['manual', 'annual_plan', 'ai', 'order', ''], default: 'manual' },
   sourceAnnualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', default: null },
+  sourceOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null },
   sourceRecordKey: { type: String, default: '' },
   supplyReminder: {
     enabled:      { type: Boolean, default: false },
@@ -62,5 +63,6 @@ const supplementSchema = new mongoose.Schema({
 
 supplementSchema.index({ user: 1, stopped: 1 });
 supplementSchema.index({ sourceAnnualPlanId: 1, sourceRecordKey: 1, stopped: 1 });
+supplementSchema.index({ sourceOrderId: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('Supplement', supplementSchema);

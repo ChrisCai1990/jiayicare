@@ -96,6 +96,7 @@ async function confirmPayment({ outTradeNo, transactionId, paidAt, snapshot }) {
     }
   }
   await require('./orderPlannerConversation').ensureOrderPlannerPrompt(order);
+  await require('./orderSupplementArchive').ensureOrderSupplementDraft(order);
   await require('./commissionSettlement').settleReferralCommission(order);
   await require('./productShareRewards').grantProductShareRewards(order);
   return order;
