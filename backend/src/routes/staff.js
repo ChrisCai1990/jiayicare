@@ -516,7 +516,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     { path: 'staffId', select: 'name role title' },
     { path: 'assignedTo', select: 'name role' },
     { path: 'sourceHealthPlanId', select: 'title description content type status' },
-    { path: 'sourceOrderId', select: 'serviceName orderNo createdAt status serviceRequirements medicalProxyPlan scheduledAt' },
+    { path: 'sourceOrderId', select: 'serviceName orderNo createdAt status' },
     { path: 'followUpSchemeId', select: 'name executorRole supervisorRole completionStandard' },
     { path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } },
   ]);
