@@ -8,6 +8,7 @@ const User = require('../src/models/User');
 const { startStaffMedicalProxyWorkflow } = require('../src/utils/medicalProxyWorkflow');
 
 const APPLY = process.argv.includes('--apply');
+const TARGET_REMINDER_ID = String(process.env.TARGET_REMINDER_ID || '').trim();
 const shanghaiDate = value => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value));
 
 async function main() {
@@ -17,6 +18,7 @@ async function main() {
   const reminders = await FollowUp.find({
     sourceType: 'supply_reminder', status: { $in: ['planned', 'in_progress'] }, date: { $gte: since },
     $or: [{ theme: /我方代配|代配药/ }, { tags: { $in: ['我方代配', '代配药'] } }],
+    ...(TARGET_REMINDER_ID ? { _id: TARGET_REMINDER_ID } : {}),
   }).sort({ date: 1 }).lean();
   const results = [];
   for (const reminder of reminders) {
