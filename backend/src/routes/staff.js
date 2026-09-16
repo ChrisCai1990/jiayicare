@@ -2262,6 +2262,24 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
         followUp.formData = { ...followUp.formData, managerReview };
       }
     }
+    // 待约检的健康顾问审核是服务的最后一步。使用原子更新写入审核任务、订单和督办状态，
+    // 避免先将 aiStatus 写为 approved、后续订单更新异常时留下“页面还在但无法再次审核”的半完成任务。
+    if (followUp.sourceType === 'order' && followUp.formData?.generatedFromCheckupAppointment && followUp.sourceOrderId) {
+      const completedAt = new Date();
+      await FollowUp.updateOne(
+        { _id: followUp._id, aiStatus: 'pending' },
+        { $set: { aiStatus: 'approved', status: 'completed', completedAt, completedBy: 'staff', content: followUp.content, date: followUp.date, formData: followUp.formData } },
+      );
+      await Order.updateOne(
+        { _id: followUp.sourceOrderId },
+        { $set: { status: 'completed', tradeStatus: 'completed', fulfillmentStatus: 'completed', completedAt, currentStage: 'checkup_completed', currentAssignee: null, supervisionStatus: 'completed' }, $max: { usedUnits: 1 } },
+      );
+      await FollowUp.updateMany(
+        { sourceType: 'order', sourceOrderId: followUp.sourceOrderId, workflowKey: { $in: ['checkup_appointment:manager_review', 'checkup_appointment:supervise'] }, status: { $in: ['planned', 'in_progress'] } },
+        { $set: { status: 'completed', completedAt, completedBy: 'staff', content: '健康顾问已审核后续随访计划，待约检服务结束。', 'formData.currentStage': 'completed' } },
+      );
+      return res.json({ success: true, message: '已通过审核' });
+    }
     followUp.aiStatus = 'approved';
     await followUp.save();
     if (followUp.sourceType === 'order' && followUp.formData?.generatedFromPostCheckupSupervision && followUp.sourceOrderId) {
@@ -2300,24 +2318,6 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
         order.status = 'completed'; order.tradeStatus = 'completed'; order.completedAt = new Date();
         await order.save();
         await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: 'medical_proxy:supervise', status: { $in: ['planned', 'in_progress'] } }, { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', content: '健管专员已审核就诊资料，AI随访计划已由健康顾问审核，专家约诊服务结束。', 'formData.currentStage': 'completed' } });
-      }
-    }
-    if (followUp.sourceType === 'order' && followUp.formData?.generatedFromCheckupAppointment && followUp.sourceOrderId) {
-      const order = await Order.findById(followUp.sourceOrderId);
-      if (order) {
-        const completedAt = new Date();
-        order.status = 'completed'; order.tradeStatus = 'completed'; order.fulfillmentStatus = 'completed'; order.completedAt = completedAt;
-        order.currentStage = 'checkup_completed'; order.currentAssignee = null; order.supervisionStatus = 'completed';
-        order.usedUnits = Math.max(order.usedUnits || 0, 1);
-        await order.save();
-        await FollowUp.updateOne(
-          { sourceType: 'order', sourceOrderId: order._id, workflowKey: 'checkup_appointment:manager_review', status: { $in: ['planned', 'in_progress'] } },
-          { $set: { status: 'completed', completedAt, completedBy: 'staff', content: '健康顾问已审核后续随访计划，待约检服务结束。' } },
-        );
-        await FollowUp.updateOne(
-          { sourceType: 'order', sourceOrderId: order._id, workflowKey: 'checkup_appointment:supervise', status: { $in: ['planned', 'in_progress'] } },
-          { $set: { status: 'completed', completedAt, completedBy: 'staff', content: '健康顾问已审核后续随访计划，待约检服务结束。', 'formData.currentStage': 'completed' } },
-        );
       }
     }
     res.json({ success: true, message: '已通过审核', data: followUp });
