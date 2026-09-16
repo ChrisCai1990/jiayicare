@@ -1,6 +1,7 @@
 const FollowUp = require('../models/FollowUp');
 const Order = require('../models/Order');
 const User = require('../models/User');
+const Message = require('../models/Message');
 
 const PREFIX = 'checkup_appointment:';
 const isCheckupAppointmentOrder = order => {
@@ -13,6 +14,26 @@ const stageOf = task => String(task?.workflowKey || '').startsWith(PREFIX)
   ? String(task.workflowKey).slice(PREFIX.length) : '';
 const required = value => String(value || '').trim();
 const appointmentDate = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
+
+async function ensureClientCheckupNotifications({ order, patient, medical }) {
+  const booking = medical?.booking || {}; const finalConsultation = booking.postCheckExpertAppointment || booking.expertAppointment || {};
+  const appointments = (medical?.checkAppointments || []).filter(item => appointmentDate(item.appointmentDate) && required(item.appointmentTime));
+  if (!appointments.length) return;
+  const sorted = [...appointments].sort((a, b) => `${a.appointmentDate}T${a.appointmentTime}`.localeCompare(`${b.appointmentDate}T${b.appointmentTime}`));
+  const first = sorted[0]; const firstAt = new Date(`${first.appointmentDate}T${first.appointmentTime}:00+08:00`);
+  const finalAt = appointmentDate(finalConsultation.date) ? new Date(`${finalConsultation.date}T${finalConsultation.time || '09:00'}:00+08:00`) : firstAt;
+  const schedule = sorted.map(item => `${item.item}：${item.appointmentDate} ${item.appointmentTime}，${item.campus || ''}${item.department || ''}${item.location ? `（${item.location}）` : ''}`).join('\n');
+  const appointmentText = `您的检查预约已安排：\n${schedule}${finalConsultation.date ? `\n专家看诊：${finalConsultation.date} ${finalConsultation.time || ''}，${finalConsultation.campus || ''}${finalConsultation.department || ''}${finalConsultation.doctor || ''}` : ''}${medical?.intake?.fastingRequired ? '\n请按要求空腹前往。' : ''}`;
+  await Message.findOneAndUpdate({ dedupeKey: `checkup-appointment-confirmed:${order._id}` }, { $setOnInsert: { user: patient._id, type: 'planner', sender: 'AI健康规划师', title: '检查预约已完成', content: appointmentText, conversationId: `${patient._id}_planner`, isAI: true, unread: true, dedupeKey: `checkup-appointment-confirmed:${order._id}`, action: { type: 'checkup_appointment', orderId: String(order._id) } } }, { upsert: true, new: true, setDefaultsOnInsert: true });
+  for (const [label, offset] of [['检查前1天提醒', 24 * 60 * 60 * 1000], ['检查前2小时提醒', 2 * 60 * 60 * 1000]]) {
+    const remindAt = new Date(firstAt.getTime() - offset);
+    await FollowUp.findOneAndUpdate({ patientId: patient._id, sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `checkup_appointment_client_reminder:${offset}` }, { $set: { patientId: patient._id, staffId: patient.assignedHealthManager, assignedTo: patient.assignedHealthManager, date: remindAt, remindAt, type: 'other', status: 'planned', theme: label, content: `${label}：\n${appointmentText}`, plannedContent: appointmentText, tags: ['待约检', '用户端提醒'], sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `checkup_appointment_client_reminder:${offset}` } }, { upsert: true, new: true, setDefaultsOnInsert: true });
+  }
+  for (const [label, offset] of [['AI提醒客户上传检查报告和病历', 24 * 60 * 60 * 1000], ['AI再次提醒客户补充资料', 3 * 24 * 60 * 60 * 1000]]) {
+    const date = new Date(finalAt.getTime() + offset);
+    await FollowUp.findOneAndUpdate({ patientId: patient._id, sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `checkup_appointment_upload_reminder:${offset}` }, { $set: { patientId: patient._id, staffId: patient.assignedHealthManager, assignedTo: patient.assignedHealthManager, date, remindAt: date, type: 'other', status: 'planned', theme: label, content: '请提醒客户上传本次各检查项目对应的检查报告；如有门诊病历也请一并上传。', plannedContent: 'AI提醒客户上传逐项检查报告及可选门诊病历。', tags: ['待约检', '资料上传提醒'], sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `checkup_appointment_upload_reminder:${offset}` } }, { upsert: true, new: true, setDefaultsOnInsert: true });
+  }
+}
 
 function plannerValidation(data = {}) {
   const hasPreferredDateStart = Boolean(required(data.preferredDateStart));
@@ -77,20 +98,8 @@ async function advance(task) {
     await createTask({ order, patient, assignee: patient.assignedMedicalAssistant, stage: 'medical', date, theme: `待约检：就医专员完成开单、检查及资料归档 · ${order.serviceName}`, content: hasSpecialCheck ? '按顺序完成开检查单、特殊检查和检查后专家看诊；上传报告与病历后提交健管专员审核。' : '按顺序完成开检查单、常规检查和检查后专家看诊；上传报告与病历后提交健管专员审核。', formData: { intake: booking.intake, booking, currentStage: 'medical' } });
     await Order.updateOne({ _id: order._id }, { $set: { currentStage: 'checkup_medical_execution', currentAssignee: patient.assignedMedicalAssistant, supervisionStatus: 'in_progress' } });
     await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise` }, { $set: { content: '当前环节：就医专员执行开单、检查及资料归档。', 'formData.currentStage': 'medical' } });
-    for (const [label, offset] of [['检查前1天提醒', 24 * 60 * 60 * 1000], ['检查前2小时提醒', 2 * 60 * 60 * 1000]]) {
-      const remindAt = new Date(date.getTime() - offset);
-      const reminderText = hasSpecialCheck ? `提醒客户于 ${specialCheck.date} ${specialCheck.time} 完成特殊检查，并于 ${finalConsultation.date} ${finalConsultation.time} 完成专家看诊。` : `提醒客户于 ${finalConsultation.date} ${finalConsultation.time} 完成常规检查及专家看诊。`;
-      await FollowUp.findOneAndUpdate({ patientId: patient._id, sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `checkup_appointment_reminder:${offset}` }, { $setOnInsert: { patientId: patient._id, staffId: patient.assignedMedicalAssistant, assignedTo: patient.assignedMedicalAssistant, date: remindAt, remindAt, type: 'other', status: 'planned', theme: label, content: reminderText, plannedContent: reminderText, tags: ['待约检', '就医提醒'], sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `checkup_appointment_reminder:${offset}` } }, { upsert: true, new: true, setDefaultsOnInsert: true });
-      await FollowUp.findOneAndUpdate({ patientId: patient._id, sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `checkup_appointment_manager_reminder:${offset}` }, { $setOnInsert: { patientId: patient._id, staffId: patient.assignedHealthManager, assignedTo: patient.assignedHealthManager, date: remindAt, remindAt, type: 'other', status: 'planned', theme: `${label}（健管专员）`, content: `请提醒客户：${reminderText}`, plannedContent: `请提醒客户：${reminderText}`, tags: ['待约检', '客户提醒'], sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `checkup_appointment_manager_reminder:${offset}` } }, { upsert: true, new: true, setDefaultsOnInsert: true });
-    }
   } else if (stage === 'medical') {
-    const booking = task.formData?.booking || {};
-    const finalConsultation = booking.postCheckExpertAppointment || booking.expertAppointment || {};
-    const followupAt = new Date(`${finalConsultation.date}T${finalConsultation.time || '09:00'}:00+08:00`);
-    for (const [label, offset] of [['AI提醒客户上传检查报告和病历', 24 * 60 * 60 * 1000], ['AI再次提醒客户补充资料', 3 * 24 * 60 * 60 * 1000]]) {
-      const date = new Date(followupAt.getTime() + offset);
-      await FollowUp.findOneAndUpdate({ patientId: patient._id, sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `checkup_appointment_upload_reminder:${offset}` }, { $setOnInsert: { patientId: patient._id, staffId: patient.assignedHealthManager, assignedTo: patient.assignedHealthManager, date, remindAt: date, type: 'other', status: 'planned', theme: label, content: 'AI将提醒客户上传本次检查报告和门诊病历；资料到齐后请完成审核并生成随访计划。', plannedContent: 'AI提醒客户上传本次检查报告和门诊病历。', tags: ['待约检', '资料上传提醒'], sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `checkup_appointment_upload_reminder:${offset}` } }, { upsert: true, new: true, setDefaultsOnInsert: true });
-    }
+    await ensureClientCheckupNotifications({ order, patient, medical: task.formData || {} });
     await createTask({ order, patient, assignee: patient.assignedHealthManager, stage: 'manager_review', theme: `待约检：健管专员审核报告与病历 · ${order.serviceName}`, content: '审核本次检查报告和病历；通过后系统将生成待健康顾问审核的后续随访计划。', formData: { medical: task.formData || {} } });
     await Order.updateOne({ _id: order._id }, { $set: { currentStage: 'checkup_manager_review', currentAssignee: patient.assignedHealthManager, supervisionStatus: 'in_progress' } });
     await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise` }, { $set: { content: '当前环节：健管专员审核检查报告与病历。', 'formData.currentStage': 'manager_review' } });
@@ -107,8 +116,8 @@ async function validate(task, body, staff) {
   if (stage === 'supervise') return '待约检仍在流转中，请查看当前阶段；健康顾问审核随访计划后将自动结案';
   if (stage === 'booking') { if (!['healthManager', 'superadmin'].includes(staff.role)) return '三号预约由健管专员完成'; return bookingValidation(body.formData || {}); }
   if (stage === 'medical') { const data = body.formData || {}; if (!['medicalAssistant', 'superadmin'].includes(staff.role)) return '开单与检查预约由就医专员完成'; if (!required(data.examOrderStatus) || !Array.isArray(data.checkAppointments) || data.checkAppointments.some(item => !required(item.campus) || !required(item.department) || !required(item.location) || !appointmentDate(item.appointmentDate) || !required(item.appointmentTime))) return '请完整填写开检查单情况及各检查项目的院区、科室、具体地点和预约时间'; }
-  if (stage === 'manager_review') { const data = body.formData || {}; if (!['healthManager', 'superadmin'].includes(staff.role)) return '报告与病历审核由健管专员完成'; if (!Array.isArray(data.reportIds) || !data.reportIds.length || !Array.isArray(data.medicalRecordIds) || !data.medicalRecordIds.length) return '请上传或关联检查报告和门诊病历'; if (!required(data.reviewSummary) || !required(data.followUpContent)) return '请填写资料审核结论和后续随访计划'; }
+  if (stage === 'manager_review') { const data = body.formData || {}; const items = data.medical?.checkAppointments || []; if (!['healthManager', 'superadmin'].includes(staff.role)) return '报告与病历审核由健管专员完成'; if (!items.length || items.some(item => !Array.isArray(data.reportAssignments?.[item.item]) || !data.reportAssignments[item.item].length)) return '请逐项上传或关联本次检查报告'; if (!data.aiGenerated) return '请先由 AI 根据检查资料生成随访计划草稿'; if (!required(data.reviewSummary) || !required(data.followUpContent)) return '请填写资料审核结论和后续随访计划'; }
   return '';
 }
 
-module.exports = { PREFIX, isCheckupAppointmentOrder, stageOf, start, advance, validate, plannerValidation, bookingValidation };
+module.exports = { PREFIX, isCheckupAppointmentOrder, stageOf, start, advance, validate, plannerValidation, bookingValidation, ensureClientCheckupNotifications };

@@ -157,4 +157,5 @@ app.listen(PORT, () => {
   require('./utils/recurringSupplyPlanScheduler').startRecurringSupplyPlanScheduler();
   require('./utils/medicationLifecycleScheduler').startMedicationLifecycleScheduler();
   require('./utils/appointmentReminderScheduler').startAppointmentReminderScheduler();
+  require('./utils/checkupAppointmentReminderScheduler').startCheckupAppointmentReminderScheduler();
 });

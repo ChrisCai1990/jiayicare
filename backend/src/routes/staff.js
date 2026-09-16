@@ -1698,6 +1698,38 @@ router.post('/followups/:id/outpatient-ai-draft', staffAuth, checkPermission('fo
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// 待约检资料审核：由健管专员在逐项核对检查报告后触发 AI 草稿，健康顾问仍负责最终审核。
+router.post('/followups/:id/checkup-appointment-ai-draft', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
+  try {
+    if (!['healthManager', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健管专员可生成待约检随访计划草稿' });
+    const task = await FollowUp.findById(req.params.id).populate('patientId', 'name gender age chronicDiseases preferences');
+    if (!task || task.workflowKey !== 'checkup_appointment:manager_review') return res.status(404).json({ success: false, message: '未找到待约检资料审核任务' });
+    if (req.staff.role !== 'superadmin' && String(task.assignedTo || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '该任务未分配给当前健管专员' });
+    const formData = { ...(task.formData || {}), ...(req.body?.formData || {}) };
+    const medical = formData.medical || {};
+    const items = medical.checkAppointments || [];
+    const assignments = formData.reportAssignments || {};
+    if (!items.length || items.some(item => !(assignments[item.item] || []).length)) return res.status(409).json({ success: false, message: '请先为每个检查项目分别关联检查报告' });
+    const reportIds = [...new Set(Object.values(assignments).flat().map(String).filter(Boolean))];
+    const medicalRecordIds = [...new Set((formData.medicalRecordIds || []).map(String).filter(Boolean))];
+    const reports = await MedicalReport.find({ _id: { $in: [...reportIds, ...medicalRecordIds] }, user: task.patientId._id }).select('title documentCategory checkDate hospital reportItems aiSummary keyFindings note audit_status').lean();
+    if (reports.length !== reportIds.length + medicalRecordIds.length) return res.status(409).json({ success: false, message: '存在无法读取的关联资料，请重新上传或关联' });
+    const byId = new Map(reports.map(report => [String(report._id), report]));
+    const reportText = items.map(item => {
+      const source = (assignments[item.item] || []).map(id => byId.get(String(id))).filter(Boolean);
+      return `【${item.item}】\n${source.map(report => `资料：${report.title || '未命名报告'}；日期：${report.checkDate || '未记录'}；机构：${report.hospital || '未记录'}；AI摘要：${report.aiSummary || report.keyFindings || report.note || '未提取到文字内容'}；审核状态：${report.audit_status || '未审核'}`).join('\n')}`;
+    }).join('\n\n');
+    const recordText = medicalRecordIds.length ? medicalRecordIds.map(id => byId.get(String(id))).filter(Boolean).map(report => `资料：${report.title || '门诊病历'}；内容摘要：${report.aiSummary || report.keyFindings || report.note || '未提取到文字内容'}`).join('\n') : '本次未上传门诊病历，需在草稿中标注“病历待补充”。';
+    const { chat } = require('../utils/ai'); const today = new Date().toISOString().slice(0, 10);
+    const prompt = `你是协助健康顾问整理待约检后随访计划的医疗文书助手。只能依据下列检查报告及可选门诊病历生成草稿，不得补写不存在的诊断、数值、用药剂量、复查日期或专家意见。信息不足时明确写“待健康顾问核对”或“病历待补充”。\n\n会员：${task.patientId?.name || ''}，${task.patientId?.gender || '性别未记录'}，${task.patientId?.age || '年龄未记录'}岁\n慢病：${task.patientId?.chronicDiseases?.join('、') || '未记录'}\n\n【逐项检查报告】\n${reportText}\n\n【门诊病历】\n${recordText}\n\n仅输出JSON：{"reviewSummary":"客观概括已核对资料、资料缺口和需关注事项","followUpContent":"分条列出需跟进的结果、症状、用药、复查或病历补充事项，并注明待核对项","followUpDate":"YYYY-MM-DD"}。随访日期不得早于 ${today}。`;
+    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1400 });
+    let draft = {}; try { const match = text.trim().match(/\{[\s\S]*\}/); if (match) draft = JSON.parse(match[0]); } catch {}
+    if (!draft.reviewSummary || !draft.followUpContent || !/^\d{4}-\d{2}-\d{2}$/.test(draft.followUpDate || '')) return res.status(502).json({ success: false, message: 'AI未能生成完整草稿，请重试或人工补充资料' });
+    if (draft.followUpDate < today) draft.followUpDate = today;
+    res.json({ success: true, data: { reviewSummary: String(draft.reviewSummary), followUpContent: String(draft.followUpContent), followUpDate: draft.followUpDate, aiGenerated: true } });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // ── PUT /api/staff/followups/:id ──────────────────────────────────
 router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
   // 历史任务的 staffId/assignedTo 可能以字符串保存，而当前账号 _id 是 ObjectId。
@@ -2408,6 +2440,7 @@ router.get('/plans', staffAuth, checkPermission('plans', 'view'), async (req, re
   if (patientId) filter.patientId = patientId;
   if (type) filter.type = type;
   if (status) filter.status = status;
+  else filter.status = { $ne: 'cancelled' };
   if (patientName) {
     const matchedUsers = await User.find({ name: { $regex: patientName, $options: 'i' } }).select('_id');
     filter.patientId = { $in: matchedUsers.map(u => u._id) };
@@ -12970,6 +13003,9 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
       }
       if (require('../utils/medicationProxyWorkflow').isMedicationProxyOrder(order)) {
         return res.status(409).json({ success: false, message: '代配药订单直接显示动态服务流程，无需生成AI就医协助方案' });
+      }
+      if (require('../utils/checkupAppointmentWorkflow').isCheckupAppointmentOrder(order)) {
+        return res.status(409).json({ success: false, message: '待约检服务按订单流转，不生成就医协助方案' });
       }
       const existingPlan = await HealthPlan.findOne({ patientId: user._id, sourceOrderId: order._id, type: 'medical_assist' })
         .sort({ createdAt: 1 });

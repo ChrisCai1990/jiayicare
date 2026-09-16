@@ -39,9 +39,10 @@ test('健康规划师监督任务只能随流程自动结案', async () => {
   assert.match(error, /自动结案/);
 });
 
-test('健管专员审核前必须收集检查报告和门诊病历', async () => {
+test('健管专员审核前必须逐项收集检查报告，病历可选', async () => {
   const task = { workflowKey: 'checkup_appointment:manager_review' };
-  const base = { status: 'completed', formData: { reviewSummary: '资料齐全', followUpContent: '两周后电话随访' } };
-  assert.match(await validate(task, base, { role: 'healthManager' }), /检查报告和门诊病历/);
-  assert.equal(await validate(task, { ...base, formData: { ...base.formData, reportIds: ['report-1'], medicalRecordIds: ['record-1'] } }, { role: 'healthManager' }), '');
+  const base = { status: 'completed', formData: { medical: { checkAppointments: [{ item: '甲状腺超声' }] }, reviewSummary: '资料齐全', followUpContent: '两周后电话随访' } };
+  assert.match(await validate(task, base, { role: 'healthManager' }), /逐项上传/);
+  assert.match(await validate(task, { ...base, formData: { ...base.formData, reportAssignments: { '甲状腺超声': ['report-1'] } } }, { role: 'healthManager' }), /AI/);
+  assert.equal(await validate(task, { ...base, formData: { ...base.formData, reportAssignments: { '甲状腺超声': ['report-1'] }, aiGenerated: true } }, { role: 'healthManager' }), '');
 });
