@@ -31,12 +31,12 @@ const medicalEscortProgress = task => {
   if (task?.workflowKey !== 'medical_proxy:supervise' || task?.formData?.medicalEscort !== true) return null
   const stage = task.formData?.currentStage || 'planner'
   const stages = {
-    planner: { step: 1, label: '健康规划师分配就医专员', next: '分配后转健管专员预约' },
-    booking: { step: 2, label: '健管专员预约中', next: '预约完成后转就医专员执行' },
-    execute: { step: 3, label: '就医专员执行陪同服务', next: '完成陪同并上传报告、病历等资料' },
+    planner: { step: 1, label: '健康规划师分配就医专员', next: '分配后进入陪同执行' },
+    execute: { step: 2, label: '就医专员执行陪同服务', next: '完成陪同并上传报告、病历等资料' },
+    post_visit_audit: { step: 3, label: '健管专员审核归档资料', next: '审核归档后结束服务' },
     completed: { step: 4, label: '就医陪同服务已完成', next: '服务已闭环' },
   }
-  return { ...(stages[stage] || stages.planner), total: 4, steps: ['人员分配', '预约', '陪同执行', '完成'], automaticAssignment: task.formData?.assignmentMode === 'automatic' }
+  return { ...(stages[stage] || stages.planner), total: 4, steps: ['人员分配', '陪同执行', '资料审核', '完成'], automaticAssignment: task.formData?.assignmentMode === 'automatic' }
 }
 
 export default function ServiceTasksPanel() {

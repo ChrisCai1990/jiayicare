@@ -948,7 +948,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
             <label className="form-label">{checkupOneStop ? '具体服务需求 *' : '方案说明'}</label>
             <textarea className="form-input" rows={3} placeholder={checkupOneStop ? '请填写服务地点、时间段、体检目标及具体需求' : '简要说明方案目标'} value={description} onChange={e => setDescription(e.target.value)} />
           </div>}
-          {isMedicalEscort && <div style={{ padding: 10, borderRadius: 8, background: '#EFF8F4', color: '#1E6B50', fontSize: 13 }}>健康规划师自动作为督办人。已选择就医专员时直接转健管专员预约；未选择时先由健康规划师安排人员，再转健管专员预约。此操作只创建陪同服务工单，不生成就医协助方案。</div>}
+          {isMedicalEscort && <div style={{ padding: 10, borderRadius: 8, background: '#EFF8F4', color: '#1E6B50', fontSize: 13 }}>健康规划师自动作为督办人。已选择就医专员时直接进入陪同执行；未选择时先由健康规划师安排人员。陪同结束并上传资料后，再由健管专员审核归档。此操作只创建陪同服务工单，不生成就医协助方案。</div>}
 
         </div>
         <div className="modal-footer">

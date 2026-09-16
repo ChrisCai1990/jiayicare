@@ -227,7 +227,7 @@ test('staff-initiated medication keeps a planner supervision task until executio
   assert.match(page, /执行人员配药确认与配送/);
 });
 
-test('medical escort keeps planner supervision and always routes through manager booking', () => {
+test('medical escort skips booking and sends manager review only after execution', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
   const panel = fs.readFileSync(path.join(__dirname, '../../staff/src/components/ServiceTasksPanel.jsx'), 'utf8');
   const plansPage = fs.readFileSync(path.join(__dirname, '../../staff/src/pages/PlansPage.jsx'), 'utf8');
@@ -235,12 +235,13 @@ test('medical escort keeps planner supervision and always routes through manager
   assert.match(directStart, /theme: `就医陪同：健康规划师全程督办/);
   assert.match(directStart, /supervisorId: patient\.assignedHealthPlanner/);
   assert.match(directStart, /if \(directlyAssigned\)/);
-  assert.match(directStart, /workflowKey: `\$\{PREFIX\}booking`/);
-  assert.match(directStart, /assignedTo: patient\.assignedHealthManager/);
-  assert.match(workflow, /medicalEscort === true && stage === 'planner' \? 'booking'/);
+  assert.match(directStart, /workflowKey: `\$\{PREFIX\}execute`/);
+  assert.match(directStart, /assignedTo: plan\.medicalAssistantId/);
+  assert.match(workflow, /medicalEscort === true && stage === 'planner' \? 'execute'/);
+  assert.match(workflow, /stage === 'execute' && task\.formData\?\.medicalEscort === true[\s\S]*post_visit_audit/);
   assert.match(directStart, /assignmentMode: 'automatic'/);
   assert.match(panel, /const medicalEscortProgress/);
-  assert.match(panel, /\['人员分配', '预约', '陪同执行', '完成'\]/);
+  assert.match(panel, /\['人员分配', '陪同执行', '资料审核', '完成'\]/);
   assert.match(plansPage, /if \(isMedicalEscort\)[\s\S]*startStaffMedicalProxy\(patientId/);
   assert.match(plansPage, /!isMedicalEscort[\s\S]*督办人/);
   assert.match(plansPage, /不生成就医协助方案/);
