@@ -5897,6 +5897,11 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     if (!planType) return res.status(400).json({ success: false, message: '缺少方案类型' });
     const todayText = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
     const personalized = moduleData?.personalized_followups?.records || [];
+    const allServiceRows = Object.values(moduleData || {}).flatMap(module => Array.isArray(module?.records) ? module.records : [module]).filter(Boolean);
+    const invalidServiceMode = allServiceRows.find(item => item.serviceMode && !['reminder', 'single', 'managed'].includes(item.serviceMode));
+    const missingSingleType = allServiceRows.find(item => item.serviceMode === 'single' && !item.serviceType);
+    if (invalidServiceMode) return res.status(400).json({ success: false, message: '服务落地方式无效' });
+    if (missingSingleType) return res.status(400).json({ success: false, message: '选择单项服务后，请明确代约、代诊、陪诊、陪检或会诊协调' });
     const invalidPersonalized = personalized.find(item =>
       !item.followUpStaff || !item.executionDate ||
       String(item.executionDate).slice(0, 10) < todayText ||
@@ -8886,6 +8891,8 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
       }
       result[key] = { records: records.map(record => ({
         ...record,
+        serviceMode: 'reminder',
+        serviceType: '',
         reviewStatus: 'pending_family_doctor_review',
         sourceRule: selectedTemplate?.content?.sourceRule || '仅使用已确认的年度管理研判结论',
         ...(record.items ? { items: conciseTitle(record.items) } : {}),

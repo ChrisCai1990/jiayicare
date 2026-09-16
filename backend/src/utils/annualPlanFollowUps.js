@@ -88,7 +88,7 @@ async function buildAnnualPlanFollowUps(plan) {
   // 现在按模块字段拼出有信息量的说明，让客户提前知道这次随访/提醒具体关于什么。
   // assignedTo：随访任务实际归属的执行人（方案里填的"随访人员"），决定随访出现在谁的工作台"名下"；
   // staffId 仅表示创建人，两者语义不同，混用会导致审核通过后随访挂不到指定人名下。
-  const push = (date, theme, content, assignedTo, sourceScheduleKey) => {
+  const push = (date, theme, content, assignedTo, sourceScheduleKey, delivery = {}) => {
     // 只有明确了随访时间和随访人，才构成可执行的随访计划；否则不向客户或工作台投放半成品。
     if (!date || !assignedTo) return;
     const d = new Date(date);
@@ -105,6 +105,8 @@ async function buildAnnualPlanFollowUps(plan) {
       sourceAnnualPlanId: plan._id,
       sourceScheduleKey,
       sourceType: 'scheduled',
+      deliveryMode: delivery.serviceMode || 'reminder',
+      deliveryType: delivery.serviceType || '',
       // 年度方案已经过健康顾问审核及客户确认，不再让健管专员重新制定、
       // 也不重复进入家庭医生审核；负责人可直接在工作台按计划执行。
       aiStatus: 'approved',
@@ -118,7 +120,9 @@ async function buildAnnualPlanFollowUps(plan) {
     if (!Array.isArray(records)) continue;
     records.forEach((rec, i) => {
       const label = rec.hospital || rec.name || rec.items || `第${i + 1}条`;
-      const executor = mod.key === 'medical_treatment' ? patient?.assignedHealthManager : rec.followUpStaff;
+      // 年度方案随访统一由客户的健管专员承接；patientId 让同一计划同步展示给客户。
+      // 其他岗位的代约、陪同、会诊等服务任务由 annualPlanServiceTasks 另行拆分。
+      const executor = patient?.assignedHealthManager;
       const lines = [
         rec.hospital && `就医/会诊医院：${rec.hospital}`,
         rec.department && `科室：${rec.department}`,
@@ -136,7 +140,7 @@ async function buildAnnualPlanFollowUps(plan) {
         rec.notes && `注意事项：${rec.notes}`,
       ].filter(Boolean);
       push(rec[mod.dateField], `${mod.theme} · ${label}`, lines.join('\n'), executor,
-        `${mod.key}:${String(rec[mod.dateField]).slice(0, 10)}:${String(label).trim()}`);
+        `${mod.key}:${String(rec[mod.dateField]).slice(0, 10)}:${String(label).trim()}`, rec);
     });
   }
 
@@ -154,12 +158,12 @@ async function buildAnnualPlanFollowUps(plan) {
         rec.time && `监测时间：${rec.time}`,
         rec.purpose && `监测目的：${rec.purpose}`,
         rec.frequency && `监测频率：${rec.frequency}`,
-        rec.followUpStaff && `随访人员：${staffName(rec.followUpStaff)}`,
+        patient?.assignedHealthManager && `随访人员：${staffName(patient.assignedHealthManager)}`,
         rec.notes && `注意事项：${rec.notes}`,
       ].filter(Boolean).join('\n');
       while (cursor <= horizonEnd) {
-        push(cursor, `日常监测随访 · ${rec.items || ''}`, monitorLines, rec.followUpStaff,
-          `monitoring:${rec.items || ''}:${cursor.toISOString().slice(0, 10)}`);
+        push(cursor, `日常监测随访 · ${rec.items || ''}`, monitorLines, patient?.assignedHealthManager,
+          `monitoring:${rec.items || ''}:${cursor.toISOString().slice(0, 10)}`, rec);
         cursor = new Date(cursor.getTime() + days * 86400000);
       }
     });
@@ -176,8 +180,8 @@ async function buildAnnualPlanFollowUps(plan) {
     ].filter(Boolean);
     const evalContent = evalItems.length ? `本次评估内容：${evalItems.join('、')}` : '';
     while (cursor <= horizonEnd) {
-      push(cursor, '季度评估随访', evalContent, quarterlyEval.followUpStaff,
-        `quarterly_eval:${cursor.toISOString().slice(0, 10)}`);
+      push(cursor, '季度评估随访', evalContent, patient?.assignedHealthManager,
+        `quarterly_eval:${cursor.toISOString().slice(0, 10)}`, quarterlyEval);
       cursor = new Date(cursor.getTime() + 90 * 86400000);
     }
   }
@@ -191,7 +195,7 @@ async function buildAnnualPlanFollowUps(plan) {
       annualCheckup.escort && '已安排陪检服务',
     ].filter(Boolean).join('\n');
     push(annualCheckup.date, `年度体检提醒 · ${annualCheckup.institution || ''}`, checkupLines, patient?.assignedHealthManager,
-      `annual_checkup:${String(annualCheckup.date).slice(0, 10)}`);
+      `annual_checkup:${String(annualCheckup.date).slice(0, 10)}`, annualCheckup);
   }
 
   // ⑤ 个性化随访方案：AI只能从Admin启用的标准随访方案库筛选，健康顾问
@@ -227,8 +231,8 @@ async function buildAnnualPlanFollowUps(plan) {
         rec.customerAction && `客户行动：${rec.customerAction}`,
       ].filter(Boolean).join('\n');
       dates.filter(date => !isNaN(date.getTime()) && date >= todayStart && date <= horizonEnd).forEach((date, cycleIndex) => {
-        push(date, `标准随访 · ${rec.standardPlanName || rec.items || '年度管理'}`, content, rec.followUpStaff,
-          `personalized:${rec.standardPlanId || recordIndex}:${cycleIndex}:${date.toISOString().slice(0, 10)}`);
+        push(date, `标准随访 · ${rec.standardPlanName || rec.items || '年度管理'}`, content, patient?.assignedHealthManager,
+          `personalized:${rec.standardPlanId || recordIndex}:${cycleIndex}:${date.toISOString().slice(0, 10)}`, rec);
       });
       if (rec.collaborator && rec.collaborationDate) {
         const collaborationDate = new Date(rec.collaborationDate);
@@ -262,7 +266,7 @@ async function syncAnnualPlanFollowUps(plan) {
       const keep = matches.find(item => item.status === 'completed') || matches.find(item => item.aiStatus === 'approved') || matches[0];
       if (keep.sourceScheduleKey !== row.sourceScheduleKey) keep.sourceScheduleKey = row.sourceScheduleKey;
       if (keep.aiStatus === 'pending') {
-        ['patientId', 'staffId', 'assignedTo', 'date', 'theme', 'content', 'aiStatus', 'reviewRole'].forEach(k => { keep[k] = row[k]; });
+        ['patientId', 'staffId', 'assignedTo', 'date', 'theme', 'content', 'aiStatus', 'reviewRole', 'deliveryMode', 'deliveryType'].forEach(k => { keep[k] = row[k]; });
       }
       // 已确认方案生成的未完成就医提醒也要跟随当前健管专员归属修正；已完成历史不改。
       if (/^(medical_treatment|annual_checkup):/.test(row.sourceScheduleKey || '') && keep.status !== 'completed') {

@@ -217,6 +217,8 @@ export const adminAPI = {
 
   // 随访方案列表（供模板选用）
   followUpPlans: () => req('/followup-plans'),
+  getServiceWorkflowReverseModel: () => req('/service-workflow-reverse-model'),
+  linkServiceWorkflowReverseModel: (templateId, data) => req(`/service-workflow-reverse-model/${templateId}/link`, { method: 'PATCH', body: JSON.stringify(data) }),
 
   // 动态问卷管理
   questionnaires:            ()         => req('/questionnaires'),

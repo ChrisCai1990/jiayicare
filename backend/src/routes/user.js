@@ -1003,8 +1003,9 @@ router.get('/annual-mgmt-plans', auth, async (req, res) => {
   try {
     const plans = await AnnualPlan.find({ patientId: req.user._id, pushedAt: { $ne: null } })
       .populate('pushedBy', 'name role title')
-      .sort({ year: -1 });
-    res.json({ success: true, data: plans });
+      .sort({ year: -1 }).lean();
+    const { buildAnnualPlanDisplayItems } = require('../utils/annualPlanPresentation');
+    res.json({ success: true, data: plans.map(plan => ({ ...plan, displayItems: buildAnnualPlanDisplayItems(plan.moduleData) })) });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取年度管理方案失败', error: err.message });
   }

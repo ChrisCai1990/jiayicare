@@ -2,6 +2,7 @@ const Task = require('../models/Task');
 const FollowUp = require('../models/FollowUp');
 const User = require('../models/User');
 const { syncAnnualPlanFollowUps } = require('./annualPlanFollowUps');
+const { syncAnnualPlanServiceTasks } = require('./annualPlanServiceTasks');
 
 const addDays = (date, days) => new Date(new Date(date).getTime() + days * 86400000);
 
@@ -59,10 +60,13 @@ async function syncAnnualPlanTaskSplit(plan) {
     );
     if (result.upsertedCount) staffTasks++;
   }
-  const scheduledFollowUps = await syncAnnualPlanFollowUps(plan);
+  const [scheduledFollowUps, serviceTasks] = await Promise.all([
+    syncAnnualPlanFollowUps(plan), syncAnnualPlanServiceTasks(plan),
+  ]);
   const warnings = [];
   if (!patient?.assignedHealthPlanner) warnings.push('客户尚未绑定健康规划师，未生成规划师协同待办');
-  return { clientTasks: clientResult.upsertedCount || 0, staffTasks, scheduledFollowUps, warnings };
+  warnings.push(...(serviceTasks.warnings || []));
+  return { clientTasks: clientResult.upsertedCount || 0, staffTasks, scheduledFollowUps, serviceTasks, warnings };
 }
 
 module.exports = { buildAnnualPlanKickoffTasks, syncAnnualPlanTaskSplit };

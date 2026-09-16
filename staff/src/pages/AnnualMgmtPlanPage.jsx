@@ -12,6 +12,22 @@ const PLAN_TYPES = [
   { key: 'health_prevention', name: '健康预防方案',   icon: '🛡️', color: '#0077B6', bg: '#EFF6FF' },
 ]
 
+const SERVICE_MODE_FIELDS = [
+  { key: 'serviceMode', label: '服务落地方式', type: 'select', defaultValue: 'reminder', options: [
+    { value: 'reminder', label: '仅提醒（客户 + 健管专员）' },
+    { value: 'single', label: '单项服务' },
+    { value: 'managed', label: '全托管（一站式服务）' },
+  ] },
+  { key: 'serviceType', label: '单项服务内容', type: 'select', options: [
+    { value: '', label: '请选择（仅单项服务需要）' },
+    { value: 'proxy_booking', label: '代约 / 代办' },
+    { value: 'proxy_visit', label: '代诊' },
+    { value: 'escort_visit', label: '陪诊' },
+    { value: 'escort_exam', label: '陪检' },
+    { value: 'consult_coordination', label: '会诊协调' },
+  ] },
+]
+
 // ── 板块定义（key → { name, icon, fields }）──────────────────────────
 const MODULE_DEFS = {
   medical_treatment: {
@@ -27,6 +43,7 @@ const MODULE_DEFS = {
       { key: 'reason',       label: '就医原因',   type: 'textarea' },
       { key: 'coordinator',  label: '协调专员',   type: 'staff-select' },
       { key: 'followUpStaff', label: '随访人员',  type: 'staff-select' },
+      ...SERVICE_MODE_FIELDS,
       { key: 'notes',        label: '注意事项',   type: 'textarea', internal: true },
     ],
   },
@@ -41,6 +58,7 @@ const MODULE_DEFS = {
       { key: 'purpose',      label: '会诊目的',     type: 'textarea' },
       { key: 'coordinator',  label: '协调专员',     type: 'staff-select' },
       { key: 'followUpStaff', label: '随访人员',    type: 'staff-select' },
+      ...SERVICE_MODE_FIELDS,
       { key: 'notes',        label: '注意事项',     type: 'textarea', internal: true },
     ],
   },
@@ -58,7 +76,7 @@ const MODULE_DEFS = {
       { key: 'expert',          label: '检查专家',       type: 'text' },
       { key: 'order_dept',      label: '开单科室',       type: 'text' },
       { key: 'order_expert',    label: '开单专家',       type: 'text' },
-      { key: 'assist',          label: '是否安排就医协助', type: 'yesno' },
+      ...SERVICE_MODE_FIELDS,
       { key: 'coordinator',     label: '协调专员',       type: 'staff-select' },
       { key: 'followUpStaff',   label: '随访人员',       type: 'staff-select' },
       { key: 'notes',           label: '注意事项',       type: 'textarea', internal: true },
@@ -76,6 +94,7 @@ const MODULE_DEFS = {
       { key: 'reason',      label: '接种原因', type: 'textarea' },
       { key: 'institution', label: '接种机构', type: 'text' },
       { key: 'followUpStaff', label: '随访人员', type: 'staff-select' },
+      ...SERVICE_MODE_FIELDS,
       { key: 'notes',       label: '注意事项', type: 'textarea', internal: true },
     ],
   },
@@ -88,6 +107,7 @@ const MODULE_DEFS = {
       { key: 'frequency', label: '监测频率', type: 'text', placeholder: '如：每日一次' },
       { key: 'followUpStaff', label: '随访人员', type: 'staff-select' },
       { key: 'notes',     label: '注意事项', type: 'textarea', internal: true },
+      ...SERVICE_MODE_FIELDS,
     ],
   },
   lifestyle: {
@@ -97,6 +117,7 @@ const MODULE_DEFS = {
       { key: 'focus', label: '评估重点', type: 'textarea' },
       { key: 'staff', label: '评估人员', type: 'staff-select' },
       { key: 'notes', label: '注意事项', type: 'textarea', internal: true },
+      ...SERVICE_MODE_FIELDS,
     ],
   },
   annual_checkup: {
@@ -108,7 +129,7 @@ const MODULE_DEFS = {
       { key: 'date',        label: '计划体检日期', type: 'date' },
       { key: 'institution', label: '计划体检机构', type: 'text' },
       { key: 'focus',       label: '重点关注',     type: 'textarea' },
-      { key: 'escort',      label: '是否提供陪检服务', type: 'yesno' },
+      ...SERVICE_MODE_FIELDS,
       { key: 'followUpStaff', label: '随访人员',   type: 'staff-select' },
     ],
   },
@@ -121,6 +142,7 @@ const MODULE_DEFS = {
       { key: 'time',        label: '检测时间', type: 'date' },
       { key: 'followUpStaff', label: '随访人员', type: 'staff-select' },
       { key: 'notes',       label: '注意事项', type: 'textarea', internal: true },
+      ...SERVICE_MODE_FIELDS,
     ],
   },
   quarterly_eval: {
@@ -129,6 +151,7 @@ const MODULE_DEFS = {
       { key: 'body_composition', label: '人体成分测量',   type: 'yesno' },
       { key: 'diet_analysis',    label: '膳食调研及分析', type: 'yesno' },
       { key: 'followUpStaff',    label: '随访人员',       type: 'staff-select' },
+      ...SERVICE_MODE_FIELDS,
     ],
   },
   medication: {
@@ -139,6 +162,7 @@ const MODULE_DEFS = {
       { key: 'time', label: '计划时间', type: 'date' },
       { key: 'followUpStaff', label: '随访人员', type: 'staff-select' },
       { key: 'notes', label: '注意事项', type: 'textarea', internal: true },
+      ...SERVICE_MODE_FIELDS,
     ],
   },
   supplement: {
@@ -149,6 +173,7 @@ const MODULE_DEFS = {
       { key: 'time', label: '计划时间', type: 'date' },
       { key: 'followUpStaff', label: '随访人员', type: 'staff-select' },
       { key: 'notes', label: '注意事项', type: 'textarea', internal: true },
+      ...SERVICE_MODE_FIELDS,
     ],
   },
   nutrition_intervention: {
@@ -159,6 +184,7 @@ const MODULE_DEFS = {
       { key: 'time', label: '计划时间', type: 'date' },
       { key: 'followUpStaff', label: '随访人员', type: 'staff-select' },
       { key: 'notes', label: '注意事项', type: 'textarea', internal: true },
+      ...SERVICE_MODE_FIELDS,
     ],
   },
   checkup_completion: {
@@ -171,6 +197,7 @@ const MODULE_DEFS = {
       { key: 'reason', label: '完善依据', type: 'textarea' },
       { key: 'time', label: '计划日期', type: 'date' },
       { key: 'followUpStaff', label: '执行人', type: 'staff-select' },
+      ...SERVICE_MODE_FIELDS,
       { key: 'notes', label: '注意事项', type: 'textarea', internal: true },
     ],
   },
@@ -189,6 +216,7 @@ const MODULE_DEFS = {
       { key: 'collaborationDate', label: '协同执行日期（可选）', type: 'date' },
       { key: 'precautions', label: '注意事项', type: 'textarea' },
       { key: 'customerAction', label: '客户行动', type: 'textarea' },
+      ...SERVICE_MODE_FIELDS,
     ],
   },
 }

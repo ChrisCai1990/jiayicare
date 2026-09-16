@@ -28,6 +28,8 @@ const followUpSchema = new mongoose.Schema({
   coordinationGroupId: { type: String, default: '' }, // 同一服务事项拆分出的执行/督办任务组
   taskRole: { type: String, enum: ['executor', 'supervisor', ''], default: '' },
   workflowKey: { type: String, default: '' }, // 同一子方案内对应的岗位任务方案ID；支持一站式服务拆成多组任务
+  deliveryMode: { type: String, enum: ['reminder', 'single', 'managed', ''], default: '' },
+  deliveryType: { type: String, enum: ['proxy_booking', 'proxy_visit', 'escort_visit', 'escort_exam', 'consult_coordination', ''], default: '' },
   dependsOnTaskId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUp', default: null },
   isBlocked: { type: Boolean, default: false }, // 前置节点未完成时不进入任何工作台/客户任务
   activationEvent: { type: String, enum: ['', 'customer_plan_confirmed', 'booking_completed', 'onsite_completed', 'executor_completed', 'checkup_report_uploaded', 'previous_stage_approved', 'previous_completed', 'report_audited', 'result_review_completed', 'outpatient_reports_audited'], default: '' },
@@ -61,7 +63,7 @@ const followUpSchema = new mongoose.Schema({
   sourceAnnualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', default: null },
   sourceScheduleKey: { type: String, default: '' }, // 年度方案内稳定排期键，防止定时刷新重复生成
   sourceHealthPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null }, // 来自AI体检/营养方案确认后自动生成
-  sourceType: { type: String, enum: ['scheduled', 'ai_review', 'health_plan', 'insurance_service', 'annual_coordination', 'medication_reminder', 'supply_reminder', 'order', 'symptom', null], default: null },
+  sourceType: { type: String, enum: ['scheduled', 'ai_review', 'health_plan', 'insurance_service', 'annual_coordination', 'annual_service', 'medication_reminder', 'supply_reminder', 'order', 'symptom', null], default: null },
   sourceId: { type: mongoose.Schema.Types.ObjectId, default: null }, // 通用来源ID；symptom 时关联 HealthRecord
   sourceOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null }, // sourceType='order'时关联的订单，供详情弹窗展示订单号/金额/支付方式
   reminderCount: { type: Number, default: 0, min: 0 },

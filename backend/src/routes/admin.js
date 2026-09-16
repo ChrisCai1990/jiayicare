@@ -2097,6 +2097,35 @@ router.get('/followup-plans', adminAuth, async (req, res) => {
   }
 });
 
+// 将已经在线上跑通的医护端服务方案反向登记到 Admin 产品流程。
+// 此处只建立显式映射和展示差异，不自动改写现有岗位节点，避免影响运行中的服务。
+router.get('/service-workflow-reverse-model', adminAuth, async (_req, res) => {
+  try {
+    const { buildReverseModelRows } = require('../utils/serviceWorkflowReverseModel');
+    const [templates, products] = await Promise.all([
+      PlanTemplate.find({ type: 'medical_assist' }).sort({ updatedAt: -1 }).lean(),
+      Product.find({ name: /代约检|约检|专家约诊|陪同就医|陪诊服务|医疗代诊|体检一站式|门诊一站式/ }).sort({ name: 1 }).lean(),
+    ]);
+    res.json({ success: true, data: buildReverseModelRows(templates, products) });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.patch('/service-workflow-reverse-model/:templateId/link', adminAuth, async (req, res) => {
+  try {
+    const { productId, familyKey } = req.body || {};
+    if (!mongoose.Types.ObjectId.isValid(productId)) return res.status(400).json({ success: false, message: '请选择有效的服务产品' });
+    const [template, product] = await Promise.all([
+      PlanTemplate.findOne({ _id: req.params.templateId, type: 'medical_assist' }),
+      Product.findById(productId).lean(),
+    ]);
+    if (!template || !product) return res.status(404).json({ success: false, message: '服务方案或产品不存在' });
+    template.content = { ...(template.content || {}), serviceProductId: product._id, serviceProductName: product.name, serviceFamilyKey: String(familyKey || ''), serviceWorkflowLinkedAt: new Date(), serviceWorkflowLinkSource: 'reverse_model_from_proven_flow' };
+    template.markModified('content');
+    await template.save();
+    res.json({ success: true, data: { templateId: template._id, productId: product._id }, message: '已建立映射；未改动现有服务流程和运行中任务' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // ── 系统配置 / 健康评分权重 ─────────────────────────────────────
 const DEFAULT_SCORING = {
   base: 60,

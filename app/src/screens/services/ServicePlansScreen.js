@@ -593,6 +593,17 @@ export default function ServicePlansScreen({ navigation }) {
         health_reshape: '健康重塑方案', young_state: '健康年轻态方案',
         chronic_stable: '慢病维稳方案', health_prevention: '健康预防方案',
       };
+      const displayItemNotes = item => [
+        item.problem && `当前问题：${item.problem}`, item.evidence && `设置依据：${item.evidence}`,
+        item.goal && `管理目标：${item.goal}`, item.schedule && `建议时间：${item.schedule}`,
+        item.frequency && `执行频率：${item.frequency}`,
+        item.careTarget?.hospital && `建议机构：${item.careTarget.hospital}`,
+        item.careTarget?.department && `建议科室：${item.careTarget.department}`,
+        item.careTarget?.expert && `建议专家：${item.careTarget.expert}`,
+        item.customerAction && `需要您完成：${item.customerAction}`,
+        item.precautions && `注意事项：${item.precautions}`,
+        `服务方式：${item.service?.modeLabel || '仅提醒'}${item.service?.typeLabel ? ` · ${item.service.typeLabel}` : ''}`,
+      ].filter(Boolean).join('\n');
       const annualMgmtPlans = (annualRes.success && annualRes.data?.length > 0)
         ? annualRes.data.map(ap => ({
             _id: ap._id,
@@ -606,7 +617,9 @@ export default function ServicePlansScreen({ navigation }) {
             notes: ap.notes || '',
             confirmedAt: ap.confirmedAt || null,
             pushedAt: ap.pushedAt || null,
-            items: Object.entries(ap.moduleData || {})
+            items: Array.isArray(ap.displayItems) ? ap.displayItems.map(item => ({
+              _id: item.id, name: `${item.category} · ${item.title}`, notes: displayItemNotes(item), status: 'pending',
+            })) : Object.entries(ap.moduleData || {})
               .filter(([, v]) => v && (Array.isArray(v) ? v.length > 0 : v.enabled !== false))
               .map(([key, v]) => ({
                 _id: key,
