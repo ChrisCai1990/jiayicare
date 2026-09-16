@@ -1927,7 +1927,7 @@ export default function PatientDetailPage() {
   const [stoppingMed, setStoppingMed] = useState(null) // 待确认停用的用药记录
   const [reminderMed, setReminderMed] = useState(null)
   const [supplyTarget, setSupplyTarget] = useState(null)
-  const emptySupplyForm = { firstDate: '', intervalDays: 30, mode: 'visit', institutionType: '', hospitalName: '', campus: '', department: '', expert: '', platformName: '', pharmacyName: '', pharmacyAddress: '', purchasePath: '', quantity: '', paymentMethod: '', note: '' }
+  const emptySupplyForm = { firstDate: '', intervalDays: 30, mode: 'visit', deliveryTime: '', institutionType: '', hospitalName: '', campus: '', department: '', expert: '', platformName: '', pharmacyName: '', pharmacyAddress: '', purchasePath: '', quantity: '', paymentMethod: '', note: '' }
   const supplyFormFor = (record, firstDate = '') => ({ ...emptySupplyForm, ...record?.supplyReminder, firstDate, intervalDays: record?.supplyReminder?.intervalDays || 30, mode: record?.supplyReminder?.mode || 'visit' })
   const [supplyForm, setSupplyForm] = useState(emptySupplyForm)
   const [supplySaving, setSupplySaving] = useState(false)
@@ -8741,7 +8741,8 @@ export default function PatientDetailPage() {
             <div className="modal" style={{ maxWidth: 680, maxHeight: '92vh', overflowY: 'auto' }}>
               <div className="modal-header"><h3 className="modal-title">定期配取 · {supplyTarget.record.name}</h3><button className="modal-close" onClick={() => setSupplyTarget(null)}>✕</button></div>
               <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
-                <label>首次提醒日期<input className="form-input" type="date" min={new Date().toISOString().slice(0, 10)} value={supplyForm.firstDate} onChange={e => setSupplyForm(f => ({ ...f, firstDate: e.target.value }))} /></label>
+                <label>{supplyForm.mode === 'proxy' ? '首次期望送达日期' : '首次提醒日期'}<input className="form-input" type="date" min={new Date().toISOString().slice(0, 10)} value={supplyForm.firstDate} onChange={e => setSupplyForm(f => ({ ...f, firstDate: e.target.value }))} /></label>
+                {supplyForm.mode === 'proxy' && <label>期望配送时间<input className="form-input" value={supplyForm.deliveryTime} onChange={e => setSupplyForm(f => ({ ...f, deliveryTime: e.target.value }))} placeholder="如：当天18:00前、09:00-12:00" /></label>}
                 <label>每隔多少天提醒<input className="form-input" type="number" min="1" max="365" value={supplyForm.intervalDays} onChange={e => setSupplyForm(f => ({ ...f, intervalDays: e.target.value }))} /></label>
                 <label>服务方式<select className="form-input" value={supplyForm.mode} onChange={e => setSupplyForm(f => ({ ...f, mode: e.target.value }))}><option value="visit">提醒客户自行就医/配取</option><option value="proxy">我方代配服务</option></select></label>
                 <label>配备机构 *<select className="form-input" value={supplyForm.institutionType} onChange={e => setSupplyForm(f => ({ ...f, institutionType: e.target.value }))}><option value="">请选择</option><option value="hospital">医院</option><option value="online">线上平台</option><option value="pharmacy">线下药房</option></select></label>
@@ -8767,7 +8768,7 @@ export default function PatientDetailPage() {
                 </div>
                 <label>备注<input className="form-input" value={supplyForm.note} onChange={e => setSupplyForm(f => ({ ...f, note: e.target.value }))} placeholder="特殊要求、注意事项等" /></label>
                 {supplyError && <div style={{ color: '#c00', fontSize: 13 }}>{supplyError}</div>}
-                <div style={{ fontSize: 12, color: '#8A5A44' }}>只生成最近一条；该条完成后按上述间隔自动生成下一条，直到手动停止。</div>
+                <div style={{ fontSize: 12, color: '#8A5A44' }}>{supplyForm.mode === 'proxy' ? '系统会按期望送达日期提前7天生成正式代配任务；不足7天时立即生成。' : '只生成最近一条；该条完成后按上述间隔自动生成下一条，直到手动停止。'}</div>
               </div>
               <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setSupplyTarget(null)}>取消</button><button className="btn btn-primary" disabled={supplySaving} onClick={async () => { try { setSupplyError(''); setSupplySaving(true); const result = await staffAPI.saveSupplyReminder(id, supplyTarget.kind, supplyTarget.record._id, supplyForm); setSupplyTarget(null); toast(result.message || '配取随访已生成'); await Promise.all([loadFollowUps(), supplyTarget.kind === 'medication' ? loadMedications() : loadSupplements()]) } catch (err) { setSupplyError(err.message || '生成失败') } finally { setSupplySaving(false) } }}>{supplySaving ? '保存中...' : '生成随访'}</button></div>
             </div>

@@ -6549,6 +6549,11 @@ router.put('/patients/:id/supply-reminders/:kind/:recordId', staffAuth, checkPer
     const mode = req.body.mode;
     const firstDate = String(req.body.firstDate || '');
     const first = /^\d{4}-\d{2}-\d{2}$/.test(firstDate) ? new Date(`${firstDate}T09:00:00+08:00`) : new Date(NaN);
+    const leadDays = mode === 'proxy' ? 7 : 0;
+    const deliveryTime = String(req.body.deliveryTime || '').trim().slice(0, 50);
+    const taskDate = new Date(first);
+    if (!Number.isNaN(taskDate.getTime()) && leadDays) taskDate.setDate(taskDate.getDate() - leadDays);
+    if (!Number.isNaN(taskDate.getTime()) && taskDate < new Date()) taskDate.setTime(Date.now());
     const today = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
     if (!Number.isInteger(intervalDays) || intervalDays < 1 || intervalDays > 365 || !['visit', 'proxy'].includes(mode) || Number.isNaN(first.getTime()) || firstDate < today) {
       return res.status(400).json({ success: false, message: '请填写有效的首次日期、周期及提醒方式' });
@@ -6561,28 +6566,76 @@ router.put('/patients/:id/supply-reminders/:kind/:recordId', staffAuth, checkPer
     if (institutionType === 'hospital' && !String(req.body.hospitalName || '').trim()) return res.status(400).json({ success: false, message: '请填写配药医院' });
     if (institutionType === 'online' && (!String(req.body.platformName || '').trim() || !purchasePath)) return res.status(400).json({ success: false, message: '请填写平台名称和购买路径' });
     if (institutionType === 'pharmacy' && !String(req.body.pharmacyName || '').trim()) return res.status(400).json({ success: false, message: '请填写线下药房名称' });
-    const patient = await User.findById(req.params.id).select('assignedHealthManager');
+    const patient = await User.findById(req.params.id).select('tenantId assignedFamilyDoctor assignedHealthPlanner assignedHealthManager');
     if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+    if (kind === 'medication' && mode === 'proxy' && (!patient.assignedHealthPlanner || !patient.assignedHealthManager)) {
+      return res.status(409).json({ success: false, message: '请先为会员分配健康规划师和健管专员，才能自动生成正式代配药任务' });
+    }
     // 一键生成后先归当前点击人负责，确保两种模式都立即出现在其“我的随访”中；
     // 如需由其他岗位代办，可在随访列表中再明确转派负责人。
     const assignee = req.staff._id;
     const itemType = kind === 'medication' ? '药物' : '营养素';
     const task = mode === 'proxy' ? '我方代配' : '提醒客户配取';
     const row = {
-      patientId: req.params.id, staffId: req.staff._id, assignedTo: assignee, date: first,
+      patientId: req.params.id, staffId: req.staff._id, assignedTo: assignee, date: taskDate,
       type: mode === 'proxy' ? 'other' : 'wechat', status: 'planned',
       theme: `${task} · ${record.name}`,
-      plannedContent: `${mode === 'proxy' ? '请安排我方代配' : '请提醒会员自行就医/配取'}${itemType}「${record.name}」，本次数量：${quantity}。${institutionType === 'hospital' ? `医院：${String(req.body.hospitalName).trim()}${req.body.campus ? `（${String(req.body.campus).trim()}）` : ''}${req.body.department ? `，科室：${String(req.body.department).trim()}` : ''}${req.body.expert ? `，专家：${String(req.body.expert).trim()}` : ''}` : institutionType === 'online' ? `线上平台：${String(req.body.platformName).trim()}，购买路径：${purchasePath}` : `线下药房：${String(req.body.pharmacyName).trim()}${req.body.pharmacyAddress ? `，地址：${String(req.body.pharmacyAddress).trim()}` : ''}${purchasePath ? `，购买路径：${purchasePath}` : ''}`}。配取前核对当前医嘱、剂量及余量；完成后记录结果。${req.body.note ? `\n备注：${String(req.body.note).trim().slice(0, 500)}` : ''}`,
+      plannedContent: `${mode === 'proxy' ? '请提前7天安排我方代配' : '请提醒会员自行就医/配取'}${itemType}「${record.name}」，本次数量：${quantity}${mode === 'proxy' ? `，期望送达：${firstDate}${deliveryTime ? ` ${deliveryTime}` : ''}` : ''}。${institutionType === 'hospital' ? `医院：${String(req.body.hospitalName).trim()}${req.body.campus ? `（${String(req.body.campus).trim()}）` : ''}${req.body.department ? `，科室：${String(req.body.department).trim()}` : ''}${req.body.expert ? `，专家：${String(req.body.expert).trim()}` : ''}` : institutionType === 'online' ? `线上平台：${String(req.body.platformName).trim()}，购买路径：${purchasePath}` : `线下药房：${String(req.body.pharmacyName).trim()}${req.body.pharmacyAddress ? `，地址：${String(req.body.pharmacyAddress).trim()}` : ''}${purchasePath ? `，购买路径：${purchasePath}` : ''}`}。配取前核对当前医嘱、剂量及余量；完成后记录结果。${req.body.note ? `\n备注：${String(req.body.note).trim().slice(0, 500)}` : ''}`,
       tags: ['配药与营养补充', task, itemType], sourceType: 'supply_reminder', sourceId: record._id,
-      formData: { institutionType, hospitalName: String(req.body.hospitalName || '').trim(), campus: String(req.body.campus || '').trim(), department: String(req.body.department || '').trim(), expert: String(req.body.expert || '').trim(), platformName: String(req.body.platformName || '').trim(), pharmacyName: String(req.body.pharmacyName || '').trim(), pharmacyAddress: String(req.body.pharmacyAddress || '').trim(), purchasePath, quantity, paymentMethod },
+      formData: { institutionType, hospitalName: String(req.body.hospitalName || '').trim(), campus: String(req.body.campus || '').trim(), department: String(req.body.department || '').trim(), expert: String(req.body.expert || '').trim(), platformName: String(req.body.platformName || '').trim(), pharmacyName: String(req.body.pharmacyName || '').trim(), pharmacyAddress: String(req.body.pharmacyAddress || '').trim(), purchasePath, quantity, paymentMethod, expectedDeliveryDate: mode === 'proxy' ? firstDate : '', deliveryTime, leadDays },
     };
-    record.supplyReminder = { enabled: true, intervalDays, mode, institutionType, hospitalName: String(req.body.hospitalName || '').trim(), campus: String(req.body.campus || '').trim(), department: String(req.body.department || '').trim(), expert: String(req.body.expert || '').trim(), platformName: String(req.body.platformName || '').trim(), pharmacyName: String(req.body.pharmacyName || '').trim(), pharmacyAddress: String(req.body.pharmacyAddress || '').trim(), purchasePath, quantity, paymentMethod, note: String(req.body.note || '').trim().slice(0, 500), updatedAt: new Date(), updatedBy: req.staff._id };
+    record.supplyReminder = { enabled: true, intervalDays, leadDays: leadDays || 7, deliveryTime, mode, institutionType, hospitalName: String(req.body.hospitalName || '').trim(), campus: String(req.body.campus || '').trim(), department: String(req.body.department || '').trim(), expert: String(req.body.expert || '').trim(), platformName: String(req.body.platformName || '').trim(), pharmacyName: String(req.body.pharmacyName || '').trim(), pharmacyAddress: String(req.body.pharmacyAddress || '').trim(), purchasePath, quantity, paymentMethod, note: String(req.body.note || '').trim().slice(0, 500), updatedAt: new Date(), updatedBy: req.staff._id };
     await record.save();
     await FollowUp.deleteMany({ patientId: req.params.id, sourceType: 'supply_reminder', sourceId: record._id, status: 'planned', date: { $gte: new Date() } });
     const linkedTask = await FollowUp.create(row);
     record.supplyReminder.followUpTaskId = linkedTask._id;
+    let linkedOrderId = null;
+    if (kind === 'medication' && mode === 'proxy') {
+      const existingOrder = await Order.findOne({
+        user: patient._id,
+        status: { $nin: ['completed', 'cancelled'] },
+        'medicalProxyPlan.sourceMedicationId': record._id,
+        'medicalProxyPlan.preferredDateStart': firstDate,
+      }).select('_id').lean();
+      if (existingOrder) linkedOrderId = existingOrder._id;
+      else {
+        const workflow = await require('../utils/medicalProxyWorkflow').startStaffMedicalProxyWorkflow({
+          patient,
+          advisorId: patient.assignedFamilyDoctor || req.staff._id,
+          plan: {
+            medicationProxy: true,
+            sourceMedicationId: record._id,
+            sourceSupplyReminderTaskId: linkedTask._id,
+            hospital: String(req.body.hospitalName || '').trim(),
+            campus: String(req.body.campus || '').trim(),
+            department: String(req.body.department || '').trim(),
+            expert: String(req.body.expert || '').trim(),
+            institutionType,
+            platformName: String(req.body.platformName || '').trim(),
+            pharmacyName: String(req.body.pharmacyName || '').trim(),
+            pharmacyAddress: String(req.body.pharmacyAddress || '').trim(),
+            purchasePath,
+            medicationName: record.name || '',
+            medicationBrand: record.brandName || record.name || '',
+            medicationSpecification: record.specification || '',
+            medicationQuantity: quantity,
+            paymentMethod,
+            expectedDeliveryDate: firstDate,
+            deliveryTime,
+            leadDays,
+            preferredDateStart: firstDate,
+            preferredDateEnd: firstDate,
+            notes: String(req.body.note || '').trim(),
+          },
+        });
+        linkedOrderId = workflow.order._id;
+      }
+      linkedTask.formData = { ...(linkedTask.formData || {}), linkedOrderId };
+      await linkedTask.save();
+      record.supplyReminder.sourceOrderId = linkedOrderId;
+    }
     await record.save();
-    res.json({ success: true, generated: 1, followUpTaskId: linkedTask._id, message: `已生成并关联1条${task}任务；完成后会自动生成下一条` });
+    res.json({ success: true, generated: 1, followUpTaskId: linkedTask._id, sourceOrderId: linkedOrderId, message: linkedOrderId ? '已生成随访计划，并自动创建正式代配药服务任务' : `已生成并关联1条${task}任务；完成后会自动生成下一条` });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

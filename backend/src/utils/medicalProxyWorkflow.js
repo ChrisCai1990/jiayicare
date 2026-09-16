@@ -296,9 +296,14 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
   const medicationProxy = plan.medicationProxy === true;
   const appointmentRequirement = (medicationProxy ? [
     plan.hospital, plan.campus, plan.department, plan.expert,
+    plan.institutionType === 'online' && `线上平台：${plan.platformName || ''}`,
+    plan.institutionType === 'pharmacy' && `线下药房：${plan.pharmacyName || ''}`,
+    plan.purchasePath && `配取路径：${plan.purchasePath}`,
     `药物名称：${plan.medicationName}`,
     `品牌：${plan.medicationBrand}`,
+    `规格：${plan.medicationSpecification}`,
     `数量：${plan.medicationQuantity}`,
+    plan.expectedDeliveryDate && `期望送达：${plan.expectedDeliveryDate}${plan.deliveryTime ? ` ${plan.deliveryTime}` : ''}`,
     plan.notes && `备注：${String(plan.notes).trim()}`,
   ] : [
     plan.hospital, plan.campus, plan.department, plan.expert,
@@ -332,10 +337,11 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
       patientId: patient._id, staffId: advisorId, assignedTo: patient.assignedHealthManager,
       type: 'other', status: 'planned', date, remindAt: new Date(), sourceType: 'order', sourceOrderId: order._id,
       workflowKey: `${PREFIX}booking`, taskRole: 'executor', theme: medicationProxy ? `代配药：健管专员预约配药门诊 · ${serviceName}` : `医疗代诊：健管专员完成专家门诊预约 · ${serviceName}`,
-      plannedContent: medicationProxy ? '健康顾问已发起代配药服务，请完成配药门诊预约；预约后转健康规划师安排执行人员。' : '健康顾问已发起专家约诊，请完成预约并记录实际日期时间。',
+      plannedContent: medicationProxy ? (plan.institutionType === 'hospital' ? '系统已根据用药档案自动发起代配药服务，请核对并完成配药门诊预约；预约后转健康规划师安排执行人员。' : '系统已根据用药档案自动发起代配药服务，请核对采购渠道和时间；确认后转健康规划师安排执行人员。') : '健康顾问已发起专家约诊，请完成预约并记录实际日期时间。',
       formData: {
         planSnapshot: { ...plan, serviceContent: appointmentRequirement, initiationSource: STAFF_DIRECT_SOURCE },
         preferredDateStart: plan.preferredDateStart, preferredDateEnd: plan.preferredDateEnd || plan.preferredDateStart, medicationProxy,
+        medicationName: plan.medicationName || '', medicationBrand: plan.medicationBrand || '', medicationSpecification: plan.medicationSpecification || '', medicationQuantity: plan.medicationQuantity || '', paymentMethod: plan.paymentMethod || '',
       },
     });
     let supervisor = null;

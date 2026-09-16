@@ -38,6 +38,8 @@ const medicationSchema = new mongoose.Schema({
   reminder: {
     enabled:      { type: Boolean, default: false },
     intervalDays: { type: Number, min: 1, max: 365, default: 30 },
+    leadDays:     { type: Number, min: 1, max: 30, default: 7 },
+    deliveryTime: { type: String, default: '' },
     startDate:    { type: String, default: '' },
     endDate:      { type: String, default: '' },
     remindTime:   { type: String, default: '09:00' },
@@ -64,6 +66,7 @@ const medicationSchema = new mongoose.Schema({
     updatedAt:    { type: Date, default: null },
     updatedBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
     followUpTaskId:{ type: mongoose.Schema.Types.ObjectId, ref: 'FollowUp', default: null },
+    sourceOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null },
   },
   // 今日打卡记录
   checkIns: [{

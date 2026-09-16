@@ -18,10 +18,15 @@ async function generate(mode) {
     checkPermission: () => () => {},
     Medication: { findOne: async () => record },
     Supplement: { findOne: async () => record },
-    User: { findById: () => ({ select: async () => ({ assignedHealthManager: 'health-manager' }) }) },
+    User: { findById: () => ({ select: async () => ({ _id: 'patient-1', assignedFamilyDoctor: 'advisor-1', assignedHealthPlanner: 'planner-1', assignedHealthManager: 'health-manager' }) }) },
+    Order: { findOne: () => ({ select: () => ({ lean: async () => null }) }) },
+    require: modulePath => {
+      if (modulePath === '../utils/medicalProxyWorkflow') return { startStaffMedicalProxyWorkflow: async () => ({ order: { _id: 'order-1' } }) };
+      throw new Error(`unexpected require: ${modulePath}`);
+    },
     FollowUp: {
       deleteMany: async () => {},
-      create: async row => { inserted = [row]; return { _id: 'follow-up-1', ...row }; },
+      create: async row => { inserted = [row]; return { _id: 'follow-up-1', ...row, save: async () => {} }; },
     },
   });
   const res = { code: 200, status(code) { this.code = code; return this; }, json(data) { this.data = data; return this; } };
@@ -56,4 +61,7 @@ test('代配待办也归当前操作人，可在其随访列表中查看', async
   assert.match(row.theme, /我方代配/);
   assert.match(row.plannedContent, /安排我方代配/);
   assert.match(row.plannedContent, /2盒/);
+  assert.match(row.plannedContent, /提前7天/);
+  assert.equal(record.supplyReminder.sourceOrderId, 'order-1');
+  assert.equal(res.data.sourceOrderId, 'order-1');
 });
