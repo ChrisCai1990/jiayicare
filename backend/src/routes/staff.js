@@ -2608,7 +2608,7 @@ router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => 
   try {
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权为该会员发起服务' });
-    const patient = await User.findById(req.params.id).select('tenantId memberType servicePackage assignedFamilyDoctor assignedHealthPlanner assignedHealthManager assignedMedicalAssistant').lean();
+    const patient = await User.findById(req.params.id).select('tenantId memberType servicePackage assignedFamilyDoctor assignedHealthPlanner assignedHealthManager').lean();
     if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
     const appointmentOnly = req.body.appointmentOnly === true;
     const medicationProxy = req.body.medicationProxy === true;
@@ -2626,23 +2626,15 @@ router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => 
         req.body.medicationQuantity ||= String(supplyPlan?.intake?.totalQuantity || '');
       }
     }
-    const required = medicalEscort ? ['escortCategory', 'escortDate', 'escortTime', 'hospital', 'campus', 'department', 'escortGoal'] : medicationProxy ? ['hospital', 'department', 'preferredDateStart', 'medicationName', 'medicationBrand', 'medicationQuantity'] : appointmentOnly ? ['hospital', 'department', 'expert', 'preferredDateStart', 'preferredDateEnd'] : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'];
-    if (required.some(key => !String(req.body[key] || '').trim())) return res.status(400).json({ success: false, message: medicalEscort ? '请完整填写陪同类目、日期时间、医院、院区、科室和陪同目标' : medicationProxy ? '请填写配药医院、科室、期望日期，并确认药物名称、品牌和数量' : appointmentOnly ? '请完整填写医院、科室、专家和期望日期区间' : '请完整填写医院、科室、专家、代诊目标和交流内容' });
+    const required = medicalEscort ? ['escortCategory', 'escortDate', 'escortTime', 'hospital', 'department', 'escortGoal'] : medicationProxy ? ['hospital', 'department', 'preferredDateStart', 'medicationName', 'medicationBrand', 'medicationQuantity'] : appointmentOnly ? ['hospital', 'department', 'expert', 'preferredDateStart', 'preferredDateEnd'] : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'];
+    if (required.some(key => !String(req.body[key] || '').trim())) return res.status(400).json({ success: false, message: medicalEscort ? '请完整填写陪同类目、日期时间、医院、科室和陪同目标' : medicationProxy ? '请填写配药医院、科室、期望日期，并确认药物名称、品牌和数量' : appointmentOnly ? '请完整填写医院、科室、专家和期望日期区间' : '请完整填写医院、科室、专家、代诊目标和交流内容' });
     if (medicalEscort && !['exam', 'checkup', 'consultation', 'treatment'].includes(req.body.escortCategory)) return res.status(400).json({ success: false, message: '请选择有效的陪同类目' });
-    if (medicalEscort) {
-      const requestedAssistantId = req.body.medicalAssistantId || patient.assignedMedicalAssistant;
-      if (requestedAssistantId) {
-        const assistant = await Admin.findOne({ _id: requestedAssistantId, role: 'medicalAssistant', staffStatus: 'active' }).select('_id').lean();
-        if (req.body.medicalAssistantId && !assistant) return res.status(400).json({ success: false, message: '请选择当前有效的就医专员' });
-        req.body.medicalAssistantId = assistant?._id || '';
-      }
-    }
     if (appointmentOnly && (req.body.preferredDateEnd < req.body.preferredDateStart || !/^\d{4}-\d{2}-\d{2}$/.test(req.body.preferredDateStart) || !/^\d{4}-\d{2}-\d{2}$/.test(req.body.preferredDateEnd))) return res.status(400).json({ success: false, message: '请填写有效的期望日期区间' });
     if (appointmentOnly && (!['general', 'international'].includes(req.body.clinicType) || !['self_pay', 'high_end'].includes(req.body.insuranceUse))) return res.status(400).json({ success: false, message: '请选择门诊类型和费用与保险方式' });
     // 服务由健管专员触发时，仍关联客户的健康顾问作为专业责任岗位；未分配健康顾问时由发起健管专员留痕。
     const advisorId = req.staff.role === 'healthManager' ? (patient.assignedFamilyDoctor || req.staff._id) : req.staff._id;
     const result = await require('../utils/medicalProxyWorkflow').startStaffMedicalProxyWorkflow({ patient, advisorId, plan: { ...req.body, initiatedByStaff: req.staff._id } });
-    res.json({ success: true, data: { orderId: result.order._id, supervisorTaskId: result.supervisor?._id || null, bookingTaskId: result.booking?._id || null, plannerTaskId: result.planner?._id || null, executeTaskId: result.execute?._id || null, autoRouted: !!result.execute } });
+    res.json({ success: true, data: { orderId: result.order._id, supervisorTaskId: result.supervisor?._id || null, bookingTaskId: result.booking?._id || null } });
   } catch (err) { res.status(err.status || 500).json({ success: false, message: err.message }); }
 });
 

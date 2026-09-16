@@ -88,7 +88,7 @@ async function upsertMedicalProxyServiceRecord(task, order, completed = false) {
   const booking = plan.booking || task.formData?.bookingSnapshot || (stageOf(task) === 'booking' ? task.formData : {});
   const appointment = booking.appointmentDate && booking.appointmentTime ? appointmentAt(booking.appointmentDate, booking.appointmentTime) : (order.scheduledAt || task.date || new Date());
   const content = [
-    plan.hospital && `医院：${plan.hospital}`, plan.campus && `院区：${plan.campus}`, plan.department && `科室：${plan.department}`, plan.expert && `专家：${plan.expert}`,
+    plan.hospital && `医院：${plan.hospital}`, plan.department && `科室：${plan.department}`, plan.expert && `专家：${plan.expert}`,
     plan.medicationName && `药物名称：${plan.medicationName}`, plan.medicationBrand && `品牌：${plan.medicationBrand}`, plan.medicationQuantity && `数量：${plan.medicationQuantity}`,
     plan.proxyGoal && `代诊目标：${plan.proxyGoal}`, plan.communicationContent && `交流内容：${plan.communicationContent}`,
     plan.escortGoal && `陪同目标：${plan.escortGoal}`, plan.notes && `备注：${plan.notes}`,
@@ -334,31 +334,18 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
     desiredServiceDate: medicalEscort ? appointmentAt(plan.escortDate, plan.escortTime) : (appointmentOnly || medicationProxy) ? appointmentAt(plan.preferredDateStart, String(plan.serviceTime || '').match(/^\d{2}:\d{2}/)?.[0] || '09:00') : null,
     desiredServiceDateEnd: medicalEscort ? appointmentAt(plan.escortDate, plan.escortTime) : (appointmentOnly || medicationProxy) ? appointmentAt(plan.preferredDateEnd || plan.preferredDateStart, String(plan.serviceTime || '').match(/^\d{2}:\d{2}/)?.[0] || '09:00') : null,
     scheduledAt: medicalEscort ? appointmentAt(plan.escortDate, plan.escortTime) : null,
-    serviceRequirements: medicalEscort ? [escortLabels[plan.escortCategory], plan.hospital, plan.campus, plan.department, plan.escortGoal, plan.notes].filter(Boolean).join('；') : (appointmentOnly || medicationProxy) ? appointmentRequirement : `${plan.proxyGoal}\n${plan.communicationContent}`,
+    serviceRequirements: medicalEscort ? [escortLabels[plan.escortCategory], plan.hospital, plan.department, plan.escortGoal, plan.notes].filter(Boolean).join('；') : (appointmentOnly || medicationProxy) ? appointmentRequirement : `${plan.proxyGoal}\n${plan.communicationContent}`,
     serviceWorkflowSnapshot: { key: 'medical_proxy', source: STAFF_DIRECT_SOURCE },
     medicalProxyPlan: (medicationProxy || medicalEscort) ? { ...plan, initiationSource: STAFF_DIRECT_SOURCE } : null,
   });
   if (medicalEscort) {
-    const directlyAssigned = !!plan.medicalAssistantId;
     const supervisor = await FollowUp.create({
-      patientId: patient._id, staffId: patient.assignedHealthPlanner, assignedTo: patient.assignedHealthPlanner, type: 'other', status: 'in_progress', date, remindAt: new Date(),
+      patientId: patient._id, staffId: advisorId, assignedTo: advisorId, type: 'other', status: 'in_progress', date, remindAt: new Date(),
       sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, taskRole: 'supervisor',
-      theme: `就医陪同：健康规划师全程督办 · ${serviceName}`,
-      plannedContent: '健康顾问发起后，由健康规划师持续督办人员分配、陪同执行、资料审核和随访计划确认，直至服务结束。',
-      formData: { currentStage: directlyAssigned ? 'execute' : 'planner', medicalEscort: true, initiationSource: STAFF_DIRECT_SOURCE, assignmentMode: directlyAssigned ? 'automatic' : 'planner', medicalAssistantId: plan.medicalAssistantId || '' },
+      theme: `就医陪同：健康顾问全程督办 · ${serviceName}`,
+      plannedContent: '健康顾问发起后持续督办规划师分配、陪同执行、资料审核和随访计划，最终确认后结束。',
+      formData: { currentStage: 'planner', medicalEscort: true, initiationSource: STAFF_DIRECT_SOURCE },
     });
-    if (directlyAssigned) {
-      const execute = await FollowUp.create({
-        patientId: patient._id, staffId: advisorId, assignedTo: plan.medicalAssistantId, type: 'other', status: 'planned',
-        date: appointmentAt(plan.escortDate, plan.escortTime), remindAt: appointmentAt(plan.escortDate, plan.escortTime),
-        sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}execute`, taskRole: 'executor',
-        theme: `就医陪同：就医专员执行陪同 · ${serviceName}`,
-        plannedContent: '客户已有有效就医专员，系统已自动直达执行环节；请按计划完成陪同并上传报告、病历等资料。',
-        formData: { planSnapshot: { ...plan, initiationSource: STAFF_DIRECT_SOURCE }, medicalEscort: true, medicalAssistantId: plan.medicalAssistantId, assignmentMode: 'automatic' },
-      });
-      await Order.updateOne({ _id: order._id }, { $set: { supervisorId: patient.assignedHealthPlanner, currentStage: 'execute', currentAssignee: plan.medicalAssistantId, closureMode: 'advisor_confirmation', supervisionStatus: 'in_progress' } });
-      return { order, supervisor, execute };
-    }
     const planner = await FollowUp.create({
       patientId: patient._id, staffId: advisorId, assignedTo: patient.assignedHealthPlanner, type: 'other', status: 'planned', date, remindAt: new Date(),
       sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}planner`, taskRole: 'executor',
@@ -366,7 +353,7 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
       plannedContent: '核对健康顾问发起的陪同信息，补齐后分配就医专员。',
       formData: { ...plan, medicalEscort: true, initiationSource: STAFF_DIRECT_SOURCE },
     });
-    await Order.updateOne({ _id: order._id }, { $set: { supervisorId: patient.assignedHealthPlanner, currentStage: 'planner', currentAssignee: patient.assignedHealthPlanner, closureMode: 'advisor_confirmation', supervisionStatus: 'in_progress' } });
+    await Order.updateOne({ _id: order._id }, { $set: { supervisorId: advisorId, currentStage: 'planner', currentAssignee: patient.assignedHealthPlanner, closureMode: 'advisor_confirmation', supervisionStatus: 'in_progress' } });
     return { order, supervisor, planner };
   }
   if (appointmentOnly || medicationProxy) {
@@ -466,8 +453,8 @@ async function validateMedicalProxyStage(task, body, staff) {
   }
   if (stage === 'planner') {
     if (data.medicalEscort === true && (!['exam', 'checkup', 'consultation', 'treatment'].includes(data.escortCategory)
-      || ['escortDate', 'escortTime', 'hospital', 'campus', 'department', 'escortGoal'].some(key => !nonempty(data[key])))) {
-      return '请完整填写陪同类目、日期、具体时间、医院、院区、科室和陪同目标';
+      || ['escortDate', 'escortTime', 'hospital', 'department', 'escortGoal'].some(key => !nonempty(data[key])))) {
+      return '请完整填写陪同类目、日期、具体时间、医院、科室和陪同目标';
     }
     if (!nonempty(data.medicalAssistantId)) return '请指派就医专员';
     const assistant = await Admin.findOne({ _id: data.medicalAssistantId, role: 'medicalAssistant', staffStatus: 'active' }).select('_id').lean();

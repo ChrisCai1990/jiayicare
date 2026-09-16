@@ -27,20 +27,7 @@ const medicationProxyProgress = task => {
     execute: { step: 3, label: '就医专员配药并上传交付资料', next: '资料齐全后完成服务' },
     completed: { step: 4, label: '代配药服务已完成', next: '服务已闭环' },
   }
-  return { ...(stages[stage] || stages.booking), total: 4, steps: ['预约', '人员分配', '配药执行', '完成'] }
-}
-
-const medicalEscortProgress = task => {
-  if (task?.workflowKey !== 'medical_proxy:supervise' || task?.formData?.medicalEscort !== true) return null
-  const stage = task.formData?.currentStage || 'planner'
-  const stages = {
-    planner: { step: 1, label: '健康规划师分配就医专员', next: '分配后进入陪同执行' },
-    execute: { step: 2, label: '就医专员执行陪同服务', next: '完成陪同并上传报告、病历等资料' },
-    post_visit_audit: { step: 3, label: '健管专员审核归档资料', next: '审核后由 AI 生成随访计划' },
-    followup_review: { step: 4, label: '健康顾问审核随访计划', next: '确认后服务自动闭环' },
-    completed: { step: 5, label: '就医陪同服务已完成', next: '服务已闭环' },
-  }
-  return { ...(stages[stage] || stages.planner), total: 5, steps: ['人员分配', '陪同执行', '资料审核', '顾问确认', '完成'], automaticAssignment: task.formData?.assignmentMode === 'automatic' }
+  return stages[stage] || stages.booking
 }
 
 export default function ServiceTasksPanel() {
@@ -137,7 +124,7 @@ export default function ServiceTasksPanel() {
           const task = service.task
           const isFuture = task.date && new Date(task.date).getTime() > Date.now()
           const isWaitingPrevious = !!task.isBlocked
-          const progress = checkupProgress(task) || medicationProxyProgress(task) || medicalEscortProgress(task)
+          const progress = checkupProgress(task) || medicationProxyProgress(task)
           const isOutpatientEscortProgress = isWaitingPrevious && task.taskRole === 'supervisor' && /门诊一站式.*检查及专家门诊陪诊与归档/.test(task.theme || '')
           const isOutpatientReportAuditWait = isWaitingPrevious && task.taskRole === 'executor' && /门诊一站式.*查看陪诊资料并制定随访计划/.test(task.theme || '')
           return (
@@ -149,7 +136,7 @@ export default function ServiceTasksPanel() {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600, fontSize: 13, color: '#1A2B24' }}>
                 {task.theme}
-                {progress && <span style={{ marginLeft: 8, fontSize: 11, color: '#1E6B50', background: '#EAF5F0', padding: '2px 6px', borderRadius: 8 }}>进度 {progress.step}/{progress.total || (/代配药|代取药/.test(`${task.sourceOrderId?.serviceName || ''} ${task.theme || ''}`) ? 4 : 5)}</span>}
+                {progress && <span style={{ marginLeft: 8, fontSize: 11, color: '#1E6B50', background: '#EAF5F0', padding: '2px 6px', borderRadius: 8 }}>进度 {progress.step}/{/代配药|代取药/.test(`${task.sourceOrderId?.serviceName || ''} ${task.theme || ''}`) ? 4 : 5}</span>}
                 {!progress && service.totalSteps > 1 && <span style={{ marginLeft: 8, fontSize: 11, color: '#1E6B50', background: '#EAF5F0', padding: '2px 6px', borderRadius: 8 }}>当前环节 · 共{service.totalSteps}环节</span>}
                 {isWaitingPrevious
                   ? <span style={{ marginLeft: 8, fontSize: 11, color: isOutpatientEscortProgress ? '#1E6B50' : '#667085', background: isOutpatientEscortProgress ? '#EAF5F0' : '#F2F4F7', padding: '2px 6px', borderRadius: 8 }}>{isOutpatientReportAuditWait ? '等待资料审核' : isOutpatientEscortProgress ? '陪诊及资料闭环进行中' : '等待上一环节'}</span>
@@ -159,11 +146,6 @@ export default function ServiceTasksPanel() {
                 {task.patientId?.name || '未知'}{isOutpatientReportAuditWait ? ' · 等待健管专员审核病历与检验检查单' : isWaitingPrevious && task.dependsOnTaskId?.assignedTo?.name ? ` · 当前执行：${task.dependsOnTaskId.assignedTo.name}` : task.assignedTo?.name ? ` · 负责人：${task.assignedTo.name}` : ''}
               </div>
               {progress && <div style={{ fontSize: 12, color: '#52685D', marginTop: 3 }}>当前阶段：<b>{progress.label}</b>　下一步：{progress.next}</div>}
-              {progress?.automaticAssignment && <div style={{ fontSize: 11, color: '#1E6B50', marginTop: 3 }}>客户已有就医专员，人员分配已由系统自动完成</div>}
-              {progress?.steps && <div style={{ marginTop: 7, maxWidth: 680 }}>
-                <div style={{ height: 5, borderRadius: 99, background: '#E4ECE8', overflow: 'hidden' }}><div style={{ height: '100%', width: `${Math.max(0, Math.min(100, (progress.step / progress.total) * 100))}%`, background: '#1E6B50', transition: 'width .2s ease' }} /></div>
-                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${progress.steps.length}, 1fr)`, gap: 4, marginTop: 3 }}>{progress.steps.map((label, stepIndex) => <span key={label} style={{ fontSize: 10, color: stepIndex < progress.step ? '#1E6B50' : '#9AA9A2', fontWeight: stepIndex === progress.step - 1 ? 600 : 400 }}>{label}</span>)}</div>
-              </div>}
               {progress && /^上一环节待补资料：/.test(task.content || '') && <div style={{ fontSize: 12, color: '#B45309', marginTop: 3, background: '#FFF7E8', borderRadius: 6, padding: '4px 7px' }}>退回补充：{String(task.content).replace(/^上一环节待补资料：/, '')}</div>}
               <div style={{ fontSize: 11, color: '#9AA9A2', marginTop: 2 }}>创建：{new Date(task.createdAt).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}</div>
             </div>

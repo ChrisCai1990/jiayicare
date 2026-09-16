@@ -44,7 +44,7 @@ export function validateMedicalProxyStage(stage, value) {
   if (stage === 'supervise' && value.medicalPlanning && value.planningOutcome === 'additional_service_needed' && !value.additionalServiceNote?.trim()) return '请记录拟启用的服务及后续安排'
   if (stage === 'advisor' && !value.medicalPlanning && fields.advisor.some(([key]) => !value[key]?.trim())) return '请完整填写医院、科室、专家、代诊目标及交流内容'
   if (stage === 'advisor' && value.auditSnapshot?.collectionSnapshot?.annualMember && !value.selectedReportIds?.length) return '请从本次已审核资料中选择制定方案所用资料'
-  if (stage === 'planner' && value.medicalEscort && (!['exam', 'checkup', 'consultation', 'treatment'].includes(value.escortCategory) || ['escortDate', 'escortTime', 'hospital', 'campus', 'department', 'escortGoal'].some(key => !value[key]?.trim()))) return '请完整填写陪同类目、日期、具体时间、医院、院区、科室和陪同目标'
+  if (stage === 'planner' && value.medicalEscort && (!['exam', 'checkup', 'consultation', 'treatment'].includes(value.escortCategory) || ['escortDate', 'escortTime', 'hospital', 'department', 'escortGoal'].some(key => !value[key]?.trim()))) return '请完整填写陪同类目、日期、具体时间、医院、科室和陪同目标'
   if (stage === 'planner' && !value.medicalAssistantId) return '请指派就医专员'
   if (stage === 'booking' && ['preferredDateStart', 'preferredDateEnd', 'appointmentDate', 'appointmentTime'].some(key => !value[key]?.trim())) return '请完整填写客户期望日期区间和实际约诊日期时间'
   if (stage === 'booking' && (value.appointmentDate < value.preferredDateStart || value.appointmentDate > value.preferredDateEnd) && !value.dateDifferenceNote?.trim()) return '约诊日期不在客户期望区间内，请说明差异及客户确认情况'
@@ -202,11 +202,10 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     const booking = { ...(task?.sourceOrderId?.medicalProxyPlan?.booking || {}), ...(value.bookingSnapshot?.planSnapshot?.booking || {}), ...(value.bookingSnapshot || {}) }
     const paymentLabel = ({ self_pay: '自费', medical_insurance: `医保（${({ electronic: '电子医保卡', physical: '实体医保卡' })[booking.medicalInsuranceCardType] || '未确认卡类型'}）`, commercial_insurance: '商保' })[booking.paymentMethod] || '未填写'
     if (isMedicalEscort) return <div style={{ display: 'grid', gap: 12 }}>
-      <div style={{ padding: 10, borderRadius: 8, background: '#EFF8F4', color: '#1E6B50', fontSize: 13 }}>健康规划师保持全程督办。请核对信息并分配就医专员。</div>
+      <div style={{ padding: 10, borderRadius: 8, background: '#EFF8F4', color: '#1E6B50', fontSize: 13 }}>健康顾问保持全程督办。请核对信息并分配就医专员。</div>
       <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>陪同类目 *<select className="form-control" value={value.escortCategory || ''} onChange={e => set('escortCategory', e.target.value)}><option value="">请选择</option><option value="exam">陪同检查</option><option value="checkup">陪同体检</option><option value="consultation">陪同看诊</option><option value="treatment">陪同治疗</option></select></label>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>{input('escortDate', '陪同日期 *', 1, 'date')}{input('escortTime', '具体时间 *', 1, 'time')}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>{input('hospital', '陪同医院 *')}{input('campus', '院区 *')}</div>
-      {input('department', '科室 *')}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>{input('hospital', '陪同医院 *')}{input('department', '科室 *')}</div>
       {input('escortGoal', '陪同目标 *', 3)}
       {input('notes', '备注', 3)}
       <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>分配就医专员 *<select className="form-control" value={value.medicalAssistantId || ''} onChange={e => set('medicalAssistantId', e.target.value)}><option value="">请选择</option>{staffList.filter(staff => staff.role === 'medicalAssistant' && staff.staffStatus !== 'inactive').map(staff => <option key={staff._id} value={staff._id}>{staff.name}</option>)}</select></label>
@@ -272,7 +271,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
       return <div style={{ display: 'grid', gap: 12 }}>
         <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>
           <div>类目：{({ exam: '陪同检查', checkup: '陪同体检', consultation: '陪同看诊', treatment: '陪同治疗' })[plan.escortCategory] || '未填写'}</div>
-          <div>时间：{plan.escortDate || '未填写'} {plan.escortTime || ''}</div><div>医院院区科室：{plan.hospital || '未填写'} · {plan.campus || '未填写'} · {plan.department || '未填写'}</div><div>陪同目标：{plan.escortGoal || '未填写'}</div>{plan.notes && <div>备注：{plan.notes}</div>}
+          <div>时间：{plan.escortDate || '未填写'} {plan.escortTime || ''}</div><div>医院科室：{plan.hospital || '未填写'} · {plan.department || '未填写'}</div><div>陪同目标：{plan.escortGoal || '未填写'}</div>{plan.notes && <div>备注：{plan.notes}</div>}
         </div>
         {input('executionResult', '陪诊信息、完成情况、医生意见和后续事项 *', 5)}
         <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>检查或治疗报告<ChecklistAttachments item={{ attachments: value.reportAttachments || [] }} index={0} mode="executor" update={(_, patch) => set('reportAttachments', patch.attachments || [])} uploadLabel="+ 上传报告" errorLabel="报告上传失败" /></label>
