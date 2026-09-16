@@ -103,7 +103,7 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
                 local_bundle = bundle_file.name
             try:
                 result = subprocess.run(
-                    ["git", "bundle", "create", local_bundle, "HEAD"],
+                    ["git", "-c", f"safe.directory={LOCAL_DIR.replace(os.sep, '/')}", "bundle", "create", local_bundle, "HEAD"],
                     cwd=LOCAL_DIR,
                     capture_output=True,
                     text=True,
