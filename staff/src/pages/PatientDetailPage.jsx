@@ -16,6 +16,7 @@ import ServiceTaskChecklist, { normalizeServiceChecklist, summarizeServiceCheckl
 import CheckupBookingForm, { bookingChecklist, bookingDetailsFromTask, isCheckupBookingTask, isCheckupOnsiteTask, normalizeCheckupOnsiteChecklist } from '../components/CheckupBookingForm'
 import CheckupReportCollectionForm, { isCheckupReportCollectionTask } from '../components/CheckupReportCollectionForm'
 import CheckupAppointmentBookingForm, { checkupAppointmentBookingFromTask, isCheckupAppointmentBookingTask } from '../components/CheckupAppointmentBookingForm'
+import CheckupMedicalExecutionForm, { checkupMedicalExecutionFromTask, isCheckupMedicalExecutionTask, validateCheckupMedicalExecution } from '../components/CheckupMedicalExecutionForm'
 import ServiceTaskContextBanner from '../components/ServiceTaskContextBanner'
 import OutpatientAdvisorAssessmentForm, { emptyOutpatientAssessment, isOutpatientAdvisorAssessmentTask, validateOutpatientAssessment } from '../components/OutpatientAdvisorAssessmentForm'
 import OutpatientAppointmentForm, { emptyOutpatientAppointment, isOutpatientAppointmentTask, validateOutpatientAppointment } from '../components/OutpatientAppointmentForm'
@@ -2349,13 +2350,14 @@ export default function PatientDetailPage() {
           insuranceOutcome: f.formData?.insuranceOutcome || inferredInsuranceOutcome,
         }
       : (f.formData || {})
-    setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: isCheckupAppointmentBookingTask(f) ? checkupAppointmentBookingFromTask(f) : (medicalProxyStage(f) || medicationProxyStage(f)) ? workflowFormData : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f.formData) : emptyOutpatientAssessment(f.formData) })
+    setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: isCheckupAppointmentBookingTask(f) ? checkupAppointmentBookingFromTask(f) : isCheckupMedicalExecutionTask(f) ? checkupMedicalExecutionFromTask(f) : (medicalProxyStage(f) || medicationProxyStage(f)) ? workflowFormData : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f.formData) : emptyOutpatientAssessment(f.formData) })
   }
   const handleExec = async () => {
     const proxyStage = medicalProxyStage(execItem)
     const medicationStage = medicationProxyStage(execItem)
     const isBooking = isCheckupBookingTask(execItem)
     const isCheckupAppointmentBooking = isCheckupAppointmentBookingTask(execItem)
+    const isCheckupMedicalExecution = isCheckupMedicalExecutionTask(execItem)
     const isReportCollection = isCheckupReportCollectionTask(execItem)
     const isAdvisorAssessment = isOutpatientAdvisorAssessmentTask(execItem)
     const isOutpatientAppointment = isOutpatientAppointmentTask(execItem)
@@ -2374,7 +2376,10 @@ export default function PatientDetailPage() {
       if (!reportClosure.itemChecks?.length) { toast('未读取到体检方案项目，暂不能完成闭环'); return }
       if (reportClosure.itemChecks.some(item => !['completed', 'not_completed'].includes(item.status))) { toast('仍有项目处于“报告待回收”，请逐项核对后再完成闭环'); return }
     }
-    if (proxyStage) {
+    if (isCheckupMedicalExecution) {
+      const error = validateCheckupMedicalExecution(execForm.formData)
+      if (error) { toast(error); return }
+    } else if (proxyStage) {
       const error = validateMedicalProxyStage(proxyStage, execForm.formData)
       if (error) { toast(error); return }
     } else if (isAdvisorAssessment) {
@@ -2713,7 +2718,7 @@ export default function PatientDetailPage() {
         nav(location.pathname + location.search, { replace: true, state: {} })
         return
       }
-      if (isCheckupAppointmentBookingTask(f)) {
+      if (isCheckupAppointmentBookingTask(f) || isCheckupMedicalExecutionTask(f)) {
         openExec(f)
         nav(location.pathname + location.search, { replace: true, state: {} })
         return
@@ -9089,7 +9094,7 @@ export default function PatientDetailPage() {
               <tbody>
                 {(() => {
                   const renderRow = (f) => (
-                    <tr key={f._id} style={{ cursor: 'pointer', background: f.aiStatus === 'pending' ? '#FFFBEB' : undefined }} onClick={() => isCheckupAppointmentBookingTask(f) ? openExec(f) : setFollowUpDetail(f)}>
+                    <tr key={f._id} style={{ cursor: 'pointer', background: f.aiStatus === 'pending' ? '#FFFBEB' : undefined }} onClick={() => (isCheckupAppointmentBookingTask(f) || isCheckupMedicalExecutionTask(f)) ? openExec(f) : setFollowUpDetail(f)}>
                       <td style={{ fontSize: 13, color: '#666' }}>{new Date(f.date).toLocaleDateString('zh-CN')}</td>
                       <td style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>{f.createdAt ? new Date(f.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
                       <td><span className="badge badge-info">{f.sourceType === 'supply_reminder' ? ((f.tags || []).includes('我方代配') ? '我方代配' : '配取提醒') : (TYPE_MAP[f.type] || f.type)}</span></td>
@@ -10394,7 +10399,7 @@ export default function PatientDetailPage() {
               <ServiceTaskContextBanner task={execItem} />
               {execItem.isBlocked && <div style={{ padding: '10px 12px', borderRadius: 9, background: '#F2F4F7', color: '#596273', fontSize: 13, border: '1px solid #D9DEE7' }}>⏳ {isOutpatientPostVisitReviewTask(execItem) ? '当前等待健管专员在报告管理中审核本次门诊病历和检验检查单；两份资料均审核通过后，本任务会自动解锁。' : /门诊一站式.*检查及专家门诊陪诊与归档/.test(execItem.theme || '') ? `当前已进入陪诊及资料闭环阶段：${execItem.content || '等待陪诊专员完成陪诊、资料审核及健康顾问随访计划。'}` : `当前仅供查看：正在等待上一环节“${execItem.dependsOnTaskId?.theme || '就医专员陪诊'}”完成，完成后本任务会自动解锁。`}</div>}
               <fieldset disabled={!!execItem.isBlocked} style={{ border: 0, padding: 0, margin: 0, display: 'grid', gap: 14, minWidth: 0 }}>
-              {isCheckupAppointmentBookingTask(execItem) ? <CheckupAppointmentBookingForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : medicationProxyStage(execItem) ? <MedicationProxyStageForm task={execItem} value={execForm.formData} staffList={staffList} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : medicalProxyStage(execItem) ? <MedicalProxyStageForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} reports={reports} staffList={staffList} onOpenReport={(reportId, title) => openReportDetail({ _id: reportId, title: title || '本次服务资料' })} /> : isOutpatientEscortVisitTask(execItem) ? <OutpatientEscortVisitForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientPostVisitReviewTask(execItem) ? <OutpatientPostVisitReviewForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientAppointmentTask(execItem) ? <OutpatientAppointmentForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientStaffAssignmentTask(execItem) ? <OutpatientStaffAssignmentForm task={execItem} value={execForm.formData} staffList={staffList} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientProxyVisitTask(execItem) ? <OutpatientProxyVisitForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientAdvisorAssessmentTask(execItem) ? <OutpatientAdvisorAssessmentForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isCheckupReportCollectionTask(execItem) ? <CheckupReportCollectionForm task={execItem} plans={plans} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} /> : isCheckupBookingTask(execItem) ? <CheckupBookingForm value={execForm.appointmentDetails} onChange={appointmentDetails => setExecForm(form => ({ ...form, appointmentDetails }))} /> : execItem.taskRole && <ServiceTaskChecklist mode={execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor'} purposes={execItem.taskPurposes || []} source={execItem.dependsOnTaskId?.serviceChecklist || []} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} />}
+              {isCheckupAppointmentBookingTask(execItem) ? <CheckupAppointmentBookingForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isCheckupMedicalExecutionTask(execItem) ? <CheckupMedicalExecutionForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : medicationProxyStage(execItem) ? <MedicationProxyStageForm task={execItem} value={execForm.formData} staffList={staffList} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : medicalProxyStage(execItem) ? <MedicalProxyStageForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} reports={reports} staffList={staffList} onOpenReport={(reportId, title) => openReportDetail({ _id: reportId, title: title || '本次服务资料' })} /> : isOutpatientEscortVisitTask(execItem) ? <OutpatientEscortVisitForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientPostVisitReviewTask(execItem) ? <OutpatientPostVisitReviewForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientAppointmentTask(execItem) ? <OutpatientAppointmentForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientStaffAssignmentTask(execItem) ? <OutpatientStaffAssignmentForm task={execItem} value={execForm.formData} staffList={staffList} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientProxyVisitTask(execItem) ? <OutpatientProxyVisitForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientAdvisorAssessmentTask(execItem) ? <OutpatientAdvisorAssessmentForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isCheckupReportCollectionTask(execItem) ? <CheckupReportCollectionForm task={execItem} plans={plans} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} /> : isCheckupBookingTask(execItem) ? <CheckupBookingForm value={execForm.appointmentDetails} onChange={appointmentDetails => setExecForm(form => ({ ...form, appointmentDetails }))} /> : execItem.taskRole && <ServiceTaskChecklist mode={execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor'} purposes={execItem.taskPurposes || []} source={execItem.dependsOnTaskId?.serviceChecklist || []} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} />}
               {medicalProxyStage(execItem) === 'collect' && <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setExecItem(null); setTab('reports'); loadReports() }}>查看客户上传资料</button>}
               {['audit', 'post_visit_audit'].includes(medicalProxyStage(execItem)) && <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setExecItem(null); setTab('reports'); loadReports() }}>进入报告管理完成审核</button>}
               {execItem.taskRole && !medicalProxyStage(execItem) && <details style={{ border: '1px solid #E0E8E3', borderRadius: 9, background: '#FAFBFA' }}>
