@@ -55,4 +55,31 @@ function templateMatchesPatient(template, patient = {}) {
   return true;
 }
 
-module.exports = { STRATEGIES, SERVICE_VERSIONS, byCode, legacyStrategy, inferServiceVersion, normalizeAnnualTemplate, templateMatchesPatient };
+const comparable = value => String(value || '')
+  .replace(/[金伊森嘉医管家·|｜\s]/g, '')
+  .replace(/(?:年度)?(?:健康)?(?:管理)?(?:服务)?(?:会员)?(?:计划|方案|套餐)$/g, '');
+const MATCH_KEYWORDS = ['年轻态', '维稳', '重塑', '顾问', '护航', '预防', '轻享'];
+
+function recommendedTemplateId(templates = [], patient = {}) {
+  if (!templates.length) return '';
+  const signals = [patient.servicePackage, patient.memberType].map(comparable).filter(Boolean);
+  const scored = templates.map(template => {
+    const content = template.content || {};
+    const version = byCode(content.servicePlanCode);
+    const names = [content.planName, template.name, version?.label].map(comparable).filter(Boolean);
+    let score = 0;
+    if ((content.eligibleServicePackages || []).includes(patient.servicePackage)) score += 120;
+    if ((content.eligibleMemberTypes || []).includes(patient.memberType)) score += 100;
+    signals.forEach(signal => names.forEach(name => {
+      if (signal === name) score = Math.max(score, 90);
+      else if (signal.length >= 2 && (signal.includes(name) || name.includes(signal))) score = Math.max(score, 70);
+      const keyword = MATCH_KEYWORDS.find(item => signal.includes(item) && name.includes(item));
+      if (keyword) score = Math.max(score, 80);
+    }));
+    return { id: String(template._id || ''), score };
+  }).sort((a, b) => b.score - a.score);
+  if (scored[0]?.score > 0 && scored[0].score > (scored[1]?.score || 0)) return scored[0].id;
+  return templates.length === 1 ? String(templates[0]._id || '') : '';
+}
+
+module.exports = { STRATEGIES, SERVICE_VERSIONS, byCode, legacyStrategy, inferServiceVersion, normalizeAnnualTemplate, templateMatchesPatient, recommendedTemplateId };

@@ -360,7 +360,16 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     if (!patientMode || !patient?._id) return
     setTemplatesLoading(true)
     staffAPI.getPlanTemplates('health_management', patient._id)
-      .then(r => setAdminTemplates(r.data || []))
+      .then(r => {
+        const templates = r.data || []
+        setAdminTemplates(templates)
+        const recommended = templates.find(item => item.isRecommended)
+        if (recommended) {
+          const key = recommended.content?.servicePlanCode || recommended.content?.planType || ''
+          setSelectedTemplateId(current => current || recommended._id)
+          setPlanType(current => current || key)
+        }
+      })
       .catch(err => { setAdminTemplates([]); toast(err.message || '加载Admin管理方案模板失败') })
       .finally(() => setTemplatesLoading(false))
   }, [patientMode, patient?._id])
@@ -694,6 +703,11 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
           {templatesLoading && <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: 20, color: '#8AA89C' }}>正在从Admin后台加载模板...</div>}
           {!templatesLoading && adminTemplates.length === 0 && <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: 20, color: '#D97706' }}>该客户所属平台暂无健康管理方案模板，请在Admin后台配置“客户归属”和“方案归类”</div>}
+          {!templatesLoading && adminTemplates.length > 1 && !adminTemplates.some(item => item.isRecommended) && !selectedTemplateId && (
+            <div style={{ gridColumn: '1/-1', padding: '10px 12px', borderRadius: 8, background: '#FEF9EC', color: '#9A6700', fontSize: 12 }}>
+              已读取客户资料：会员类型「{patient?.memberType || '未填写'}」，服务包「{patient?.servicePackage || '未填写'}」；尚未唯一匹配到年度服务版本，请在Admin模板中配置对应的适用会员类型或服务包。
+            </div>
+          )}
           {adminTemplates.map((tpl, index) => {
             const key = tpl.content?.servicePlanCode || tpl.content?.planType || 'health_prevention'
             const base = PLAN_TYPES.find(pt => pt.key === strategyOf(key)) || PLAN_TYPES[index % PLAN_TYPES.length]
@@ -713,6 +727,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             >
               <span style={{ fontSize: 22 }}>{pt.icon}</span>
               <div style={{ fontWeight: 600, fontSize: 14, color: isSelected ? pt.color : '#1A2B24' }}>{pt.name}</div>
+              {tpl.isRecommended && <span style={{ marginLeft: 'auto', fontSize: 11, color: '#1E6B50', background: '#E8F5EF', padding: '2px 7px', borderRadius: 10, fontWeight: 600 }}>系统已匹配</span>}
               {patientMode && plansByType[pt.key] && (
                 <span style={{
                   marginLeft: planType === pt.key ? 8 : 'auto', fontSize: 11, fontWeight: 600,

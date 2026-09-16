@@ -4387,7 +4387,7 @@ router.get('/plan-templates', staffAuth, async (req, res) => {
         if (/^嘉医管家\s*[|｜]/.test(tpl.name || '')) return 'jiayiguanjia';
         return ''; // 无品牌前缀的历史基础模板（如体检套餐）作为两平台共享模板
       };
-      const { normalizeAnnualTemplate, templateMatchesPatient } = require('../utils/annualPlanServiceVersions');
+      const { normalizeAnnualTemplate, templateMatchesPatient, recommendedTemplateId } = require('../utils/annualPlanServiceVersions');
       templates = templates
         .filter(tpl => {
           const brands = Array.isArray(tpl.clientBrands) ? tpl.clientBrands.filter(Boolean) : [];
@@ -4395,6 +4395,10 @@ router.get('/plan-templates', staffAuth, async (req, res) => {
         })
         .map(tpl => normalizeAnnualTemplate({ ...tpl, effectiveClientBrand: inferLegacyBrand(tpl) || patientBrand }, patientProfile || {}))
         .filter(tpl => type !== 'health_management' || templateMatchesPatient(tpl, patientProfile || {}));
+      if (type === 'health_management') {
+        const recommendedId = recommendedTemplateId(templates, patientProfile || {});
+        templates = templates.map(tpl => ({ ...tpl, isRecommended: String(tpl._id) === recommendedId }));
+      }
     }
     // 历史上同名模板曾按嘉医管家、金伊森各存一份。无论是否传会员，医护端都只展示
     // 一个业务模板；V18 会清理存量数据，这里同时作为迁移前及异常数据的展示兜底。
