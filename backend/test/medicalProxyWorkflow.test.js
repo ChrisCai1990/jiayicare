@@ -192,7 +192,7 @@ test('annual-member staff initiation skips collection, audit and planner executi
 test('staff-initiated medication booking hands off to the health planner for assignment', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
   const page = fs.readFileSync(path.join(__dirname, '../../staff/src/pages/PatientDetailPage.jsx'), 'utf8');
-  assert.match(workflow, /medicationProxy && stage === 'booking' \? 'planner'/);
+  assert.match(workflow, /supplyProxy && stage === 'booking' \? 'planner'/);
   assert.match(workflow, /nextTask\.isBlocked \|\| nextTask\.status === 'cancelled'/);
   assert.match(workflow, /next === 'planner' \? patient\?\.assignedHealthPlanner/);
   assert.match(page, /确认预约并转健康规划师分配/);
@@ -216,17 +216,35 @@ test('staff-initiated medication keeps a planner supervision task until executio
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
   const page = fs.readFileSync(path.join(__dirname, '../../staff/src/pages/PatientDetailPage.jsx'), 'utf8');
   const directStart = workflow.split('async function startStaffMedicalProxyWorkflow')[1].split('async function validateMedicalProxyStage')[0];
-  assert.match(directStart, /theme: `代配药：健康规划师全程督办/);
+  assert.match(directStart, /健康规划师全程督办/);
   assert.match(directStart, /workflowKey: `\$\{PREFIX\}supervise`/);
   assert.match(directStart, /taskRole: 'supervisor'/);
   assert.match(directStart, /status: 'in_progress'/);
   assert.match(directStart, /date: initialTaskDate, remindAt: initialTaskDate/);
   assert.match(directStart, /supervisorId: patient\.assignedHealthPlanner/);
-  assert.match(workflow, /medicationProxy \? '执行人员已完成配药确认与配送安排，健康规划师全程督办闭环/);
+  assert.match(workflow, /supplyProxy \? `执行人员已完成/);
   assert.match(page, /健康规划师分配配药执行人员/);
   assert.match(page, /执行人员配药确认与配送/);
 });
 
+test('medical escort keeps planner supervision and always routes through manager booking', () => {
+  const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
+  const panel = fs.readFileSync(path.join(__dirname, '../../staff/src/components/ServiceTasksPanel.jsx'), 'utf8');
+  const plansPage = fs.readFileSync(path.join(__dirname, '../../staff/src/pages/PlansPage.jsx'), 'utf8');
+  const directStart = workflow.split('async function startStaffMedicalProxyWorkflow')[1].split('async function validateMedicalProxyStage')[0];
+  assert.match(directStart, /theme: `就医陪同：健康规划师全程督办/);
+  assert.match(directStart, /supervisorId: patient\.assignedHealthPlanner/);
+  assert.match(directStart, /if \(directlyAssigned\)/);
+  assert.match(directStart, /workflowKey: `\$\{PREFIX\}booking`/);
+  assert.match(directStart, /assignedTo: patient\.assignedHealthManager/);
+  assert.match(workflow, /medicalEscort === true && stage === 'planner' \? 'booking'/);
+  assert.match(directStart, /assignmentMode: 'automatic'/);
+  assert.match(panel, /const medicalEscortProgress/);
+  assert.match(panel, /\['人员分配', '预约', '陪同执行', '完成'\]/);
+  assert.match(plansPage, /if \(isMedicalEscort\)[\s\S]*startStaffMedicalProxy\(patientId/);
+  assert.match(plansPage, /!isMedicalEscort[\s\S]*督办人/);
+  assert.match(plansPage, /不生成就医协助方案/);
+});
 test('booking and execution write the shared hospital visit service archive', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
   const model = fs.readFileSync(path.join(__dirname, '../src/models/ServiceRecord.js'), 'utf8');
@@ -308,7 +326,7 @@ test('expert appointment closes only after post-visit follow-up review and suppo
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
   const migration = fs.readFileSync(path.join(__dirname, '../src/scripts/migrateExpertAppointmentWorkflowV12.js'), 'utf8');
   assert.match(workflow, /appointmentOnly[\s\S]*assignedHealthManager/);
-  assert.match(workflow, /serviceName = appointmentOnly \? '专家约诊服务'/);
+  assert.match(workflow, /appointmentOnly \? '专家约诊服务'/);
   assert.match(workflow, /order\.status = 'completed';[\s\S]*order\.tradeStatus = 'completed'/);
   assert.match(migration, /assistanceType: 'expert_appointment'/);
 });

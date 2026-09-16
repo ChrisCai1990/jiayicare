@@ -295,6 +295,7 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
   const appointmentOnly = plan.appointmentOnly === true;
   const medicationProxy = plan.medicationProxy === true;
   const supplementProxy = plan.supplementProxy === true;
+  const medicalEscort = plan.medicalEscort === true;
   const supplyProxy = medicationProxy || supplementProxy;
   const appointmentRequirement = (supplyProxy ? [
     plan.hospital, plan.campus, plan.department, plan.expert,
@@ -314,11 +315,11 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
     plan.insuranceUse === 'high_end' && plan.insurerName && `保险公司：${String(plan.insurerName).trim()}`,
     plan.insuranceUse === 'high_end' && `结算方式：${({ direct: '直付', reimbursement: '先付后报' })[plan.settlementMethod] || '待核实'}`,
   ]).filter(Boolean).join('；');
-  if (!patient.assignedHealthManager || ((!appointmentOnly || supplyProxy) && !patient.assignedHealthPlanner)) {
+  if (!patient.assignedHealthManager || ((!appointmentOnly || supplyProxy || medicalEscort) && !patient.assignedHealthPlanner)) {
     throw Object.assign(new Error(appointmentOnly ? '请先为客户分配健管专员' : '请先为客户分配健康规划师和健管专员'), { status: 409 });
   }
   const reportIds = [...new Set((plan.selectedReportIds || []).map(String).filter(Boolean))];
-  if (!appointmentOnly && !supplyProxy) {
+  if (!appointmentOnly && !supplyProxy && !medicalEscort) {
     const reportCount = await MedicalReport.countDocuments({ _id: { $in: reportIds }, user: patient._id, audit_status: 'audited' });
     if (!reportIds.length || reportCount !== reportIds.length) throw Object.assign(new Error('请选择该客户至少一份已审核资料'), { status: 400 });
   }
@@ -332,17 +333,49 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
     if (supplyTaskDate < date) supplyTaskDate.setTime(date.getTime());
   }
   const initialTaskDate = supplyTaskDate || (appointmentOnly ? appointmentAt(plan.preferredDateStart, '09:00') : date);
-  const serviceName = medicationProxy ? '代配药服务' : supplementProxy ? '代配营养素服务' : appointmentOnly ? '专家约诊服务' : '医疗代诊服务';
+  const escortLabels = { exam: '陪同检查', checkup: '陪同体检', consultation: '陪同看诊', treatment: '陪同治疗' };
+  const serviceName = medicalEscort ? `${escortLabels[plan.escortCategory] || '陪同就医'}服务` : medicationProxy ? '代配药服务' : supplementProxy ? '代配营养素服务' : appointmentOnly ? '专家约诊服务' : '医疗代诊服务';
   const order = await Order.create({
     user: patient._id, tenantId: patient.tenantId || null, serviceId: `annual-member-medical-proxy-${Date.now()}`,
     serviceName, servicePrice: 0, unitPrice: 0, paymentStatus: 'unpaid', tradeStatus: 'fulfilling',
     status: 'pending', initiationSource: STAFF_DIRECT_SOURCE,
-    desiredServiceDate: (appointmentOnly || supplyProxy) ? appointmentAt(plan.preferredDateStart, String(plan.serviceTime || '').match(/^\d{2}:\d{2}/)?.[0] || '09:00') : null,
-    desiredServiceDateEnd: (appointmentOnly || supplyProxy) ? appointmentAt(plan.preferredDateEnd || plan.preferredDateStart, String(plan.serviceTime || '').match(/^\d{2}:\d{2}/)?.[0] || '09:00') : null,
-    serviceRequirements: (appointmentOnly || supplyProxy) ? appointmentRequirement : `${plan.proxyGoal}\n${plan.communicationContent}`,
+    desiredServiceDate: medicalEscort ? appointmentAt(plan.escortDate, plan.escortTime) : (appointmentOnly || supplyProxy) ? appointmentAt(plan.preferredDateStart, String(plan.serviceTime || '').match(/^\d{2}:\d{2}/)?.[0] || '09:00') : null,
+    desiredServiceDateEnd: medicalEscort ? appointmentAt(plan.escortDate, plan.escortTime) : (appointmentOnly || supplyProxy) ? appointmentAt(plan.preferredDateEnd || plan.preferredDateStart, String(plan.serviceTime || '').match(/^\d{2}:\d{2}/)?.[0] || '09:00') : null,
+    scheduledAt: medicalEscort ? appointmentAt(plan.escortDate, plan.escortTime) : null,
+    serviceRequirements: medicalEscort ? [escortLabels[plan.escortCategory], plan.hospital, plan.campus, plan.department, plan.escortGoal, plan.transport, plan.hotel, plan.notes].filter(Boolean).join('；') : (appointmentOnly || supplyProxy) ? appointmentRequirement : `${plan.proxyGoal}\n${plan.communicationContent}`,
     serviceWorkflowSnapshot: { key: 'medical_proxy', source: STAFF_DIRECT_SOURCE },
-    medicalProxyPlan: supplyProxy ? { ...plan, initiationSource: STAFF_DIRECT_SOURCE } : null,
+    medicalProxyPlan: (supplyProxy || medicalEscort) ? { ...plan, initiationSource: STAFF_DIRECT_SOURCE } : null,
   });
+  if (medicalEscort) {
+    const directlyAssigned = !!plan.medicalAssistantId;
+    const supervisor = await FollowUp.create({
+      patientId: patient._id, staffId: patient.assignedHealthPlanner, assignedTo: patient.assignedHealthPlanner, type: 'other', status: 'in_progress', date, remindAt: new Date(),
+      sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, taskRole: 'supervisor',
+      theme: `就医陪同：健康规划师全程督办 · ${serviceName}`,
+      plannedContent: '健康顾问发起后，由健康规划师持续督办人员分配、陪同执行、资料审核和随访计划确认，直至服务结束。',
+      formData: { currentStage: directlyAssigned ? 'booking' : 'planner', medicalEscort: true, initiationSource: STAFF_DIRECT_SOURCE, assignmentMode: directlyAssigned ? 'automatic' : 'planner', medicalAssistantId: plan.medicalAssistantId || '' },
+    });
+    if (directlyAssigned) {
+      const booking = await FollowUp.create({
+        patientId: patient._id, staffId: advisorId, assignedTo: patient.assignedHealthManager, type: 'other', status: 'planned', date, remindAt: new Date(),
+        sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}booking`, taskRole: 'executor',
+        theme: `就医陪同：健管专员完成预约 · ${serviceName}`,
+        plannedContent: '就医专员已确定，请完成预约并记录实际服务日期时间；预约完成后转给该就医专员执行。',
+        formData: { planSnapshot: { ...plan, initiationSource: STAFF_DIRECT_SOURCE }, medicalEscort: true, medicalAssistantId: plan.medicalAssistantId, assignmentMode: 'automatic', preferredDateStart: plan.escortDate, preferredDateEnd: plan.escortDate },
+      });
+      await Order.updateOne({ _id: order._id }, { $set: { supervisorId: patient.assignedHealthPlanner, currentStage: 'booking', currentAssignee: patient.assignedHealthManager, closureMode: 'advisor_confirmation', supervisionStatus: 'in_progress' } });
+      return { order, supervisor, booking };
+    }
+    const planner = await FollowUp.create({
+      patientId: patient._id, staffId: advisorId, assignedTo: patient.assignedHealthPlanner, type: 'other', status: 'planned', date, remindAt: new Date(),
+      sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}planner`, taskRole: 'executor',
+      theme: `就医陪同：健康规划师确认并分配 · ${serviceName}`,
+      plannedContent: '核对健康顾问发起的陪同信息，补齐后分配就医专员。',
+      formData: { ...plan, medicalEscort: true, initiationSource: STAFF_DIRECT_SOURCE },
+    });
+    await Order.updateOne({ _id: order._id }, { $set: { supervisorId: patient.assignedHealthPlanner, currentStage: 'planner', currentAssignee: patient.assignedHealthPlanner, closureMode: 'advisor_confirmation', supervisionStatus: 'in_progress' } });
+    return { order, supervisor, planner };
+  }
   if (appointmentOnly || supplyProxy) {
     const booking = await FollowUp.create({
       patientId: patient._id, staffId: advisorId, assignedTo: patient.assignedHealthManager,
@@ -635,7 +668,8 @@ async function advanceMedicalProxyWorkflow(task) {
     } });
     return;
   }
-  const next = supplyProxy && stage === 'booking' ? 'planner'
+  const next = task.formData?.medicalEscort === true && stage === 'planner' ? 'booking'
+    : supplyProxy && stage === 'booking' ? 'planner'
     : supplyProxy && stage === 'planner' ? 'execute'
       : stage === 'advisor' && task.formData?.initiationSource === STAFF_DIRECT_SOURCE ? 'booking' : STAGES[index + 1];
   const assignee = next === 'audit' ? patient?.assignedHealthManager
@@ -644,7 +678,8 @@ async function advanceMedicalProxyWorkflow(task) {
       : next === 'booking' ? patient?.assignedHealthManager
       : task.formData?.medicalAssistantId;
   if (!assignee) throw Object.assign(new Error(`客户尚未分配${next === 'audit' || next === 'booking' ? '健管专员' : next === 'advisor' ? '健康顾问' : next === 'planner' ? '健康规划师' : '就医专员'}，无法流转`), { status: 409 });
-  const labels = { audit: '健管专员审核本次资料', advisor: '健康顾问确认代诊方案', planner: supplyProxy ? `健康规划师安排${supplementProxy ? '营养素采购' : '配药'}人员` : '审核方案并预指派就医专员', booking: supplyProxy ? `健管专员确认${supplementProxy ? '营养素采购' : '配药'}安排` : '健管专员完成专家门诊预约', execute: supplyProxy ? `执行人员完成${supplementProxy ? '营养素购买' : '配药'}与配送` : '就医专员执行代诊' };
+  const medicalEscort = task.formData?.medicalEscort === true || task.formData?.planSnapshot?.medicalEscort === true;
+  const labels = { audit: '健管专员审核本次资料', advisor: '健康顾问确认代诊方案', planner: supplyProxy ? `健康规划师安排${supplementProxy ? '营养素采购' : '配药'}人员` : medicalEscort ? '健康规划师安排就医专员' : '审核方案并预指派就医专员', booking: supplyProxy ? `健管专员确认${supplementProxy ? '营养素采购' : '配药'}安排` : medicalEscort ? '健管专员完成陪同预约' : '健管专员完成专家门诊预约', execute: supplyProxy ? `执行人员完成${supplementProxy ? '营养素购买' : '配药'}与配送` : medicalEscort ? '就医专员执行陪同' : '就医专员执行代诊' };
   const bookingNote = stage === 'booking' && task.content !== '医疗代诊专家门诊预约已完成' ? nonempty(task.content) : '';
   const bookedAppointment = task.formData?.bookingSnapshot || order.medicalProxyPlan?.booking || {};
   const nextDate = next === 'execute' && (task.formData?.appointmentDate || bookedAppointment.appointmentDate)
@@ -660,13 +695,13 @@ async function advanceMedicalProxyWorkflow(task) {
         : next === 'advisor'
         ? '查看本次已审核资料及客户诉求，确认医院、科室、专家、代诊目标和与医生交流的具体内容。年度会员由健康顾问选定制定方案所用资料。'
         : next === 'planner' ? (supplyProxy ? `核对健管专员确认的采购信息，并安排实际${supplementProxy ? '营养素采购' : '配药'}人员。` : '核对健康顾问确认的代诊方案，预指派就医专员。')
-          : next === 'booking' ? '依据健康顾问方案预约专家门诊；记录客户期望日期区间与实际约诊日期时间，超出期望区间时记录沟通确认结果。'
-            : '按健康顾问方案和健管专员确认的预约信息完成代诊，记录医生反馈、医嘱和后续事项。',
+          : next === 'booking' ? (medicalEscort ? '依据健康顾问发起的陪同需求完成预约，记录实际服务日期时间；预约后转给已确定的就医专员。' : '依据健康顾问方案预约专家门诊；记录客户期望日期区间与实际约诊日期时间，超出期望区间时记录沟通确认结果。')
+            : (medicalEscort ? '按健管专员确认的预约信息完成陪同，上传报告、病历并记录服务结果。' : '按健康顾问方案和健管专员确认的预约信息完成代诊，记录医生反馈、医嘱和后续事项。'),
       formData: next === 'audit' ? { collectionSnapshot: task.formData }
         : next === 'advisor' ? { auditSnapshot: task.formData, selectedReportIds: task.formData?.collectionSnapshot?.annualMember ? [] : task.formData?.collectionSnapshot?.reportIds || [] }
           : next === 'planner' ? { planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...task.formData, additionalNote: bookingNote }, medicationProxy, supplementProxy }
-            : next === 'booking' ? { planSnapshot: order.medicalProxyPlan, medicalAssistantId: task.formData?.medicalAssistantId, preferredDateStart: dateInput(order.desiredServiceDate || order.scheduledAt), preferredDateEnd: dateInput(order.desiredServiceDateEnd || order.desiredServiceDate || order.scheduledAt) }
-              : { planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...bookedAppointment, ...task.formData, additionalNote: bookingNote }, medicationProxy, supplementProxy },
+            : next === 'booking' ? { planSnapshot: order.medicalProxyPlan, medicalEscort, medicalAssistantId: task.formData?.medicalAssistantId, preferredDateStart: dateInput(order.desiredServiceDate || order.scheduledAt), preferredDateEnd: dateInput(order.desiredServiceDateEnd || order.desiredServiceDate || order.scheduledAt) }
+              : { planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...bookedAppointment, ...task.formData, additionalNote: bookingNote }, medicationProxy, supplementProxy, medicalEscort: task.formData?.medicalEscort === true },
     } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
