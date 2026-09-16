@@ -60,9 +60,11 @@ export function validateMedicalProxyStage(stage, value) {
   if (stage === 'post_visit_review' && !value.reviewSummary?.trim()) return '请查看报告并填写健康顾问查看结论'
   const hasAttachment = key => value[key]?.some(file => file?.url)
   const medicationProxy = value.medicationProxy === true || /代配药|代取药/.test(`${value.planSnapshot?.serviceName || ''} ${value.planSnapshot?.serviceContent || ''}`)
+  const medicalEscort = value.medicalEscort === true || value.planSnapshot?.medicalEscort === true || /陪同就医|就医陪同|陪同看诊|陪同检查|陪同体检|陪同治疗/.test(`${value.planSnapshot?.serviceName || ''} ${value.planSnapshot?.serviceContent || ''}`)
   if (stage === 'execute' && medicationProxy && (!value.executionResult?.trim() || !['medicationPhotoAttachments', 'medicationInstructionAttachments', 'medicalRecordAttachments', 'chargeReceiptAttachments'].every(hasAttachment))) return '请填写配药结果，并分别上传药品照片、药品服用单、病历和收费单'
   if (stage === 'execute' && supplementProxy && (!value.executionResult?.trim() || !['supplementPhotoAttachments', 'chargeReceiptAttachments'].every(hasAttachment))) return '请填写购买与配送结果，并上传产品照片和购买凭证'
-  if (stage === 'execute' && !medicationProxy && !supplementProxy && (!value.executionResult?.trim() || !hasAttachment('medicalRecordAttachments'))) return '请填写代诊执行结果并上传至少一份代诊病历'
+  if (stage === 'execute' && medicalEscort && (!value.executionResult?.trim() || !hasAttachment('medicalRecordAttachments'))) return '请填写陪同执行结果并上传至少一份陪同资料'
+  if (stage === 'execute' && !medicalEscort && !medicationProxy && !supplementProxy && (!value.executionResult?.trim() || !hasAttachment('medicalRecordAttachments'))) return '请填写代诊执行结果并上传至少一份代诊病历'
   return ''
 }
 
@@ -74,6 +76,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
   const isHighEndInsurance = /(?:保险类型：高端险|费用与保险：使用高端医疗险)/.test(appointmentRequirementText)
   const isMedicationProxy = value.medicationProxy === true || /代配药|代取药/.test(`${task?.theme || ''} ${task?.sourceOrderId?.serviceName || ''}`)
   const isSupplementProxy = value.supplementProxy === true || /代配营养素/.test(`${task?.theme || ''} ${task?.sourceOrderId?.serviceName || ''}`)
+  const isMedicalEscort = value.medicalEscort === true || value.planSnapshot?.medicalEscort === true || task?.formData?.medicalEscort === true || task?.sourceOrderId?.medicalProxyPlan?.medicalEscort === true || /陪同就医|就医陪同|陪同看诊|陪同检查|陪同体检|陪同治疗/.test(`${task?.theme || ''} ${task?.sourceOrderId?.serviceName || ''}`)
   const isSupplyProxy = isMedicationProxy || isSupplementProxy
   const set = (key, item) => onChange({ ...value, [key]: item })
   const input = (key, label, rows = 1, type = 'text') => <label key={key} style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>
@@ -82,6 +85,18 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
       ? <textarea className="form-control" rows={rows} value={value[key] || ''} onChange={e => set(key, e.target.value)} />
       : <input className="form-control" type={type} value={value[key] || ''} onChange={e => set(key, e.target.value)} />}
   </label>
+  const escortPlan = value.planSnapshot?.medicalEscort === true ? value.planSnapshot : value.medicalEscort === true ? value : task?.formData?.planSnapshot?.medicalEscort === true ? task.formData.planSnapshot : task?.sourceOrderId?.medicalProxyPlan || value.planSnapshot || {}
+  const escortSummary = <div style={{ display: 'grid', gap: 7, background: '#F5F8F6', border: '1px solid #DCE8E1', borderRadius: 8, padding: 12, fontSize: 13 }}>
+    <div style={{ fontWeight: 700, color: '#1E6B50' }}>健康顾问提交的陪同服务信息</div>
+    <div>陪同类型：{({ consultation: '陪同看诊', exam: '陪同检查', checkup: '陪同体检', treatment: '陪同治疗' })[escortPlan.escortCategory] || escortPlan.escortCategory || '未填写'}</div>
+    <div>服务时间：{escortPlan.escortDate || '未填写'} {escortPlan.escortTime || ''}</div>
+    <div>医院：{escortPlan.hospital || '未填写'}{escortPlan.campus ? ` · ${escortPlan.campus}` : ''}</div>
+    <div>科室：{escortPlan.department || '未填写'}</div>
+    <div>具体服务事项：{escortPlan.escortGoal || '未填写'}</div>
+    <div>交通接送：{escortPlan.transport || '未填写'}</div>
+    <div>酒店安排：{escortPlan.hotel || '未填写'}</div>
+    <div>备注：{escortPlan.notes || '无'}</div>
+  </div>
   if (stage === 'appointment_review') {
     const requirement = { ...parseAppointmentRequirement(value.serviceContent), ...value }
     const setRequirement = (key, item) => {
@@ -104,14 +119,14 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
   if (stage === 'post_visit_audit') {
     const eligible = reports.filter(report => !value.appointmentAt || new Date(report.createdAt) >= new Date(value.appointmentAt))
     return <div style={{ display: 'grid', gap: 12 }}>
-      <div style={{ fontSize: 13, color: '#63766D' }}>等待客户就诊后上传病历和检查报告。请先在报告管理审核，再选定本次资料交健康顾问查看。</div>
+      <div style={{ fontSize: 13, color: '#63766D' }}>{isMedicalEscort ? '请审核就医专员上传的陪同资料，确认资料完整并完成归档后结束本次陪同服务。' : '等待客户就诊后上传病历和检查报告。请先在报告管理审核，再选定本次资料交健康顾问查看。'}</div>
       {!eligible.length && <div style={{ color: '#B45309', fontSize: 13 }}>暂无本次就诊后上传的报告。</div>}
       {eligible.map(report => <label key={report._id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
         <input type="checkbox" checked={(value.reportIds || []).map(String).includes(String(report._id))} onChange={e => set('reportIds', e.target.checked ? [...new Set([...(value.reportIds || []), String(report._id)])] : (value.reportIds || []).filter(id => String(id) !== String(report._id)))} />
         <button type="button" className="btn btn-secondary btn-sm" onClick={() => onOpenReport?.(report._id, report.title)}>{report.title || '报告'}</button>
         <span style={{ color: report.audit_status === 'audited' ? '#1E6B50' : '#B45309' }}>{report.audit_status === 'audited' ? '已审核' : '待审核'}</span>
       </label>)}
-      <label style={{ fontSize: 13 }}><input type="checkbox" checked={!!value.noMaterialsConfirmed} onChange={e => onChange({ ...value, noMaterialsConfirmed: e.target.checked, reportIds: e.target.checked ? [] : (value.reportIds || []) })} /> 本次客户及健管专员确认没有检查资料或病历可上传</label>
+      <label style={{ fontSize: 13 }}><input type="checkbox" checked={!!value.noMaterialsConfirmed} onChange={e => onChange({ ...value, noMaterialsConfirmed: e.target.checked, reportIds: e.target.checked ? [] : (value.reportIds || []) })} /> {isMedicalEscort ? '本次陪同确认没有报告、病历或其他资料需要归档' : '本次客户及健管专员确认没有检查资料或病历可上传'}</label>
       {input('auditSummary', '健管专员审核结论', 3)}
     </div>
   }
@@ -203,7 +218,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     const booking = { ...(task?.sourceOrderId?.medicalProxyPlan?.booking || {}), ...(value.bookingSnapshot?.planSnapshot?.booking || {}), ...(value.bookingSnapshot || {}) }
     const paymentLabel = ({ self_pay: '自费', medical_insurance: `医保（${({ electronic: '电子医保卡', physical: '实体医保卡' })[booking.medicalInsuranceCardType] || '未确认卡类型'}）`, commercial_insurance: '商保' })[booking.paymentMethod] || '未填写'
     return <div style={{ display: 'grid', gap: 12 }}>
-    <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>
+    {isMedicalEscort ? escortSummary : <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>
       {isSupplyProxy ? <>
         <div>配药医院：{value.planSnapshot?.hospital || '待确认'} {booking.campus || value.planSnapshot?.campus || ''}</div>
         <div>配药科室：{value.planSnapshot?.department || '待确认'}；配药专家：{value.planSnapshot?.expert || '无'}</div>
@@ -212,8 +227,8 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
         <div>代办日期：{booking.appointmentDate || '未填写'} {booking.appointmentTime || ''}</div>
         <div>支付方式：{paymentLabel}</div>
       </> : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].map((key, i) => <div key={key}>{['医院', '科室', '专家', '代诊目标', '交流内容'][i]}：{value.planSnapshot?.[key] || '待确认'}</div>)}
-    </div>
-    <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>{isSupplyProxy ? `安排${isSupplementProxy ? '营养素采购' : '配药'}执行人员` : '预指派就医专员'}
+    </div>}
+    <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>{isMedicalEscort ? '安排陪同就医专员' : isSupplyProxy ? `安排${isSupplementProxy ? '营养素采购' : '配药'}执行人员` : '预指派就医专员'}
       <select className="form-control" value={value.medicalAssistantId || ''} onChange={e => set('medicalAssistantId', e.target.value)}>
         <option value="">请选择</option>
         {staffList.filter(staff => staff.role === 'medicalAssistant' && staff.staffStatus !== 'inactive').map(staff => <option key={staff._id} value={staff._id}>{staff.name}</option>)}
@@ -270,7 +285,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     const booking = { ...(task?.sourceOrderId?.medicalProxyPlan?.booking || {}), ...(value.bookingSnapshot?.planSnapshot?.booking || {}), ...(value.bookingSnapshot || {}) }
     const paymentLabel = ({ self_pay: '自费', medical_insurance: `医保（${({ electronic: '电子医保卡', physical: '实体医保卡' })[booking.medicalInsuranceCardType] || '未确认卡类型'}）`, commercial_insurance: '商保' })[booking.paymentMethod] || '未填写'
     return <div style={{ display: 'grid', gap: 12 }}>
-    <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>
+    {isMedicalEscort ? escortSummary : <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>
       {isSupplyProxy ? <>
         <div>配药医院：{value.planSnapshot?.hospital || '未填写'} {booking.campus || value.planSnapshot?.campus || ''}</div>
         <div>配药科室：{value.planSnapshot?.department || '未填写'}；配药专家：{value.planSnapshot?.expert || '无'}</div>
@@ -285,9 +300,9 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
         {booking.dateDifferenceNote && <div>日期差异确认：{booking.dateDifferenceNote}</div>}
         {booking.additionalNote && <div>预约补充说明：{booking.additionalNote}</div>}
       </>}
-    </div>
-    {input('executionResult', isSupplyProxy ? `${isSupplementProxy ? '购买' : '配药'}结果、数量核对与交付说明` : fields.execute[0][1], 5)}
-    {(isSupplementProxy ? [
+    </div>}
+    {input('executionResult', isMedicalEscort ? '陪同执行结果、现场情况和后续事项' : isSupplyProxy ? `${isSupplementProxy ? '购买' : '配药'}结果、数量核对与交付说明` : fields.execute[0][1], 5)}
+    {(isMedicalEscort ? [['medicalRecordAttachments', '陪同资料附件（报告、病历等） *', '+ 上传陪同资料']] : isSupplementProxy ? [
       ['supplementPhotoAttachments', '营养素产品照片（须清晰展示品牌、规格和数量） *', '+ 上传产品照片'],
       ['chargeReceiptAttachments', '购买凭证 *', '+ 上传购买凭证'],
     ] : isMedicationProxy ? [
