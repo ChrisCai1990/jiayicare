@@ -21,6 +21,7 @@ const medicationSchema = new mongoose.Schema({
   stoppedBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   stoppedByName:{ type: String, default: '' },
   note:         { type: String, default: '' },
+  imageUrls:    [{ type: String }],              // 药盒、处方等核对图片
   active:       { type: Boolean, default: true },
   // 医护端录入标识
   createdByStaff: { type: Boolean, default: false },
