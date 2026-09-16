@@ -33,7 +33,7 @@ function bookingValidation(data = {}) {
   const finalConsultation = data.postCheckExpertAppointment || data.expertAppointment || {};
   const needsSpecialCheck = data?.intake?.serviceType === 'special';
   for (const item of needsSpecialCheck ? [orderVisit, specialCheck, finalConsultation] : [orderVisit, finalConsultation]) {
-    if (!required(item.campus) || !required(item.department) || !required(item.doctor) || !appointmentDate(item.date) || !required(item.time)) return needsSpecialCheck ? '请完整填写开检查单号、特殊检查专家号和检查后专家看诊号的院区、科室、医生及时间' : '请完整填写开检查单号和检查后专家看诊号的院区、科室、医生及时间';
+    if (!required(item.campus) || !required(item.department) || !required(item.location) || !required(item.doctor) || !appointmentDate(item.date) || !required(item.time)) return needsSpecialCheck ? '请完整填写开检查单号、特殊检查专家号和检查后专家看诊号的院区、科室、具体地点、医生及时间' : '请完整填写开检查单号和检查后专家看诊号的院区、科室、具体地点、医生及时间';
   }
   const timeOf = item => `${item.date}T${item.time}`;
   if (needsSpecialCheck) {
@@ -106,7 +106,7 @@ async function validate(task, body, staff) {
   const stage = stageOf(task); if (!stage || body.status !== 'completed') return '';
   if (stage === 'supervise') return '待约检仍在流转中，请查看当前阶段；健康顾问审核随访计划后将自动结案';
   if (stage === 'booking') { if (!['healthManager', 'superadmin'].includes(staff.role)) return '三号预约由健管专员完成'; return bookingValidation(body.formData || {}); }
-  if (stage === 'medical') { const data = body.formData || {}; if (!['medicalAssistant', 'superadmin'].includes(staff.role)) return '开单与检查预约由就医专员完成'; if (!required(data.examOrderStatus) || !Array.isArray(data.checkAppointments) || data.checkAppointments.some(item => !required(item.campus) || !required(item.department) || !appointmentDate(item.appointmentDate) || !required(item.appointmentTime))) return '请完整填写开检查单情况及各检查项目的预约信息'; }
+  if (stage === 'medical') { const data = body.formData || {}; if (!['medicalAssistant', 'superadmin'].includes(staff.role)) return '开单与检查预约由就医专员完成'; if (!required(data.examOrderStatus) || !Array.isArray(data.checkAppointments) || data.checkAppointments.some(item => !required(item.campus) || !required(item.department) || !required(item.location) || !appointmentDate(item.appointmentDate) || !required(item.appointmentTime))) return '请完整填写开检查单情况及各检查项目的院区、科室、具体地点和预约时间'; }
   if (stage === 'manager_review') { if (!['healthManager', 'superadmin'].includes(staff.role)) return '报告与病历审核由健管专员完成'; if (!required((body.formData || {}).reviewSummary) || !required((body.formData || {}).followUpContent)) return '请填写资料审核结论和后续随访计划'; }
   return '';
 }
