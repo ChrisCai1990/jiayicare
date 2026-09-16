@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { isCheckupAppointmentOrder, plannerValidation, bookingValidation } = require('../src/utils/checkupAppointmentWorkflow');
+const { isCheckupAppointmentOrder, plannerValidation, bookingValidation, validate } = require('../src/utils/checkupAppointmentWorkflow');
 
 const intake = { serviceType: 'special', preferredDateStart: '2026-10-01', preferredDateEnd: '2026-10-03', checkItems: [{ name: '甲状腺超声' }], institution: '嘉医汇合作医院', expert: '王医生', fastingRequired: true };
 
@@ -24,4 +24,9 @@ test('健管专员必须完成开单号和检查日专家号', () => {
   const booking = { orderFormAppointment: { institution: '医院', department: '内科', doctor: '李医生', date: '2026-10-01', time: '09:00' }, expertAppointment: { institution: '医院', department: '超声科', doctor: '王医生', date: '2026-10-02', time: '10:00' } };
   assert.equal(bookingValidation(booking), '');
   assert.match(bookingValidation({ ...booking, expertAppointment: { ...booking.expertAppointment, time: '' } }), /完整填写/);
+});
+
+test('健康规划师监督任务只能随流程自动结案', async () => {
+  const error = await validate({ workflowKey: 'checkup_appointment:supervise' }, { status: 'completed' }, { role: 'healthPlanner' });
+  assert.match(error, /自动结案/);
 });

@@ -554,13 +554,13 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     await FollowUp.updateOne({ _id: task._id }, { $set: { isBlocked: false, activationEvent: '', date: task.date, remindAt: task.remindAt, nextFollowUpDate: task.nextFollowUpDate } });
   }
   const now = new Date();
-  const proxyOrderIds = queriedTasks.filter(task => task.sourceType === 'order' && /^(medical_proxy|medication_proxy):/.test(String(task.workflowKey || ''))).map(task => task.sourceOrderId?._id || task.sourceOrderId).filter(Boolean);
+  const proxyOrderIds = queriedTasks.filter(task => task.sourceType === 'order' && /^(medical_proxy|medication_proxy|checkup_appointment):/.test(String(task.workflowKey || ''))).map(task => task.sourceOrderId?._id || task.sourceOrderId).filter(Boolean);
   const activeProxyOrderIds = new Set((proxyOrderIds.length
     ? await Order.find({ _id: { $in: proxyOrderIds }, ...require('../utils/orderWorkItem').activeOrderWorkItemQuery() }).distinct('_id')
     : []).map(String));
   const tasks = queriedTasks.filter(task => {
     const isServiceTask = (task.sourceType === 'health_plan' && ['executor', 'supervisor'].includes(task.taskRole))
-      || (task.sourceType === 'order' && /^(medical_proxy|medication_proxy):/.test(String(task.workflowKey || '')) && ['executor', 'supervisor'].includes(task.taskRole))
+      || (task.sourceType === 'order' && /^(medical_proxy|medication_proxy|checkup_appointment):/.test(String(task.workflowKey || '')) && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'insurance_service' && task.taskRole === 'executor')
       || (task.sourceType === 'scheduled' && (task.tags || []).includes('保险服务'));
     if (!isServiceTask) return false;
@@ -2257,6 +2257,10 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
         await FollowUp.updateOne(
           { sourceType: 'order', sourceOrderId: order._id, workflowKey: 'checkup_appointment:manager_review', status: { $in: ['planned', 'in_progress'] } },
           { $set: { status: 'completed', completedAt, completedBy: 'staff', content: '健康顾问已审核后续随访计划，待约检服务结束。' } },
+        );
+        await FollowUp.updateOne(
+          { sourceType: 'order', sourceOrderId: order._id, workflowKey: 'checkup_appointment:supervise', status: { $in: ['planned', 'in_progress'] } },
+          { $set: { status: 'completed', completedAt, completedBy: 'staff', content: '健康顾问已审核后续随访计划，待约检服务结束。', 'formData.currentStage': 'completed' } },
         );
       }
     }
