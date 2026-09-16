@@ -47,25 +47,6 @@ test('execution requires a result and an uploaded medical record', async () => {
   assert.equal(await validateMedicalProxyStage(task, { status: 'completed', formData: { executionResult: '一年后复查', medicalRecordAttachments: [{ url: '/uploads/record.pdf' }] } }, { _id: 'assistant-1', role: 'medicalAssistant' }), '');
 });
 
-test('medical escort requires structured planner intake, accepts report or record, and keeps final confirmation with advisor', async () => {
-  const originalAdminFind = Admin.findOne;
-  const originalUserFind = User.findById;
-  try {
-    Admin.findOne = () => ({ select: () => ({ lean: async () => ({ _id: 'assistant-1' }) }) });
-    User.findById = () => ({ select: () => ({ lean: async () => ({ assignedHealthManager: 'manager-1' }) }) });
-    const planner = { sourceType: 'order', workflowKey: 'medical_proxy:planner', assignedTo: 'planner-1' };
-    const intake = { medicalEscort: true, escortCategory: 'consultation', escortDate: '2026-09-20', escortTime: '09:30', hospital: '某医院', department: '心内科', escortGoal: '陪同看诊并记录医嘱', medicalAssistantId: 'assistant-1' };
-    assert.equal(await validateMedicalProxyStage(planner, { status: 'completed', formData: intake }, { _id: 'planner-1', role: 'healthPlanner' }), '');
-    delete intake.escortGoal;
-    assert.match(await validateMedicalProxyStage(planner, { status: 'completed', formData: intake }, { _id: 'planner-1', role: 'healthPlanner' }), /陪同目标/);
-    const execute = { sourceType: 'order', workflowKey: 'medical_proxy:execute', assignedTo: 'assistant-1' };
-    assert.equal(await validateMedicalProxyStage(execute, { status: 'completed', formData: { medicalEscort: true, executionResult: '已完成陪同', reportAttachments: [{ url: '/uploads/report.pdf' }] } }, { _id: 'assistant-1', role: 'medicalAssistant' }), '');
-    const close = { sourceType: 'order', workflowKey: 'medical_proxy:post_visit_review', assignedTo: 'doctor-1' };
-    assert.match(await validateMedicalProxyStage(close, { status: 'completed', formData: { medicalEscort: true, reviewSummary: '同意计划' } }, { _id: 'doctor-1', role: 'familyDoctor' }), /勾选确认/);
-    assert.equal(await validateMedicalProxyStage(close, { status: 'completed', formData: { medicalEscort: true, reviewSummary: '同意计划', followUpPlanConfirmed: true } }, { _id: 'doctor-1', role: 'familyDoctor' }), '');
-  } finally { Admin.findOne = originalAdminFind; User.findById = originalUserFind; }
-});
-
 test('planner selects patient documents, then manager audit gates advisor handoff', async () => {
   const originalCount = MedicalReport.countDocuments;
   const originalFind = User.findById;

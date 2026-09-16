@@ -56,19 +56,15 @@ function extractMedicalProxyRechecks(text, baseDate = new Date()) {
 }
 
 async function archiveMedicalProxyRecords(task, order, tenantId) {
-  const groups = [
-    { files: task.formData?.medicalRecordAttachments, title: '就医陪同病历', category: 'outpatient_record' },
-    { files: task.formData?.reportAttachments, title: '就医陪同报告', category: 'other' },
-  ];
+  const files = Array.isArray(task.formData?.medicalRecordAttachments) ? task.formData.medicalRecordAttachments : [];
   const checkDate = dateInput(task.date || new Date());
-  const reportIds = [];
-  for (const group of groups) for (const [index, file] of (Array.isArray(group.files) ? group.files : []).entries()) {
+  for (const [index, file] of files.entries()) {
     if (!file?.url) continue;
-    const report = await MedicalReport.findOneAndUpdate(
+    await MedicalReport.findOneAndUpdate(
       { user: task.patientId, sourceType: 'order', sourceOrderId: order._id, fileUrl: file.url },
       { $setOnInsert: {
-        user: task.patientId, tenantId: tenantId || null, title: group.files.length > 1 ? `${group.title}（${index + 1}）` : group.title,
-        type: 'other', documentCategory: group.category, hospital: order.medicalProxyPlan?.hospital || '',
+        user: task.patientId, tenantId: tenantId || null, title: files.length > 1 ? `医疗代诊病历（${index + 1}）` : '医疗代诊病历',
+        type: 'other', documentCategory: 'outpatient_record', hospital: order.medicalProxyPlan?.hospital || '',
         institution: order.medicalProxyPlan?.hospital || '', date: checkDate, checkDate,
         reportYear: Number(checkDate.slice(0, 4)) || new Date().getFullYear(), fileUrl: file.url, fileUrls: [file.url],
         ossKey: file.ossKey || '', ossKeys: file.ossKey ? [file.ossKey] : [], mimeType: file.mimeType || '', fileSize: String(file.fileSize || ''),
@@ -77,9 +73,7 @@ async function archiveMedicalProxyRecords(task, order, tenantId) {
       } },
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
-    reportIds.push(String(report._id));
   }
-  return reportIds;
 }
 
 async function upsertMedicalProxyServiceRecord(task, order, completed = false) {
@@ -91,18 +85,17 @@ async function upsertMedicalProxyServiceRecord(task, order, completed = false) {
     plan.hospital && `医院：${plan.hospital}`, plan.department && `科室：${plan.department}`, plan.expert && `专家：${plan.expert}`,
     plan.medicationName && `药物名称：${plan.medicationName}`, plan.medicationBrand && `品牌：${plan.medicationBrand}`, plan.medicationQuantity && `数量：${plan.medicationQuantity}`,
     plan.proxyGoal && `代诊目标：${plan.proxyGoal}`, plan.communicationContent && `交流内容：${plan.communicationContent}`,
-    plan.escortGoal && `陪同目标：${plan.escortGoal}`, plan.notes && `备注：${plan.notes}`,
     booking.preferredDateStart && `客户期望日期：${booking.preferredDateStart} 至 ${booking.preferredDateEnd || booking.preferredDateStart}`,
     booking.appointmentDate && `实际约诊时间：${booking.appointmentDate} ${booking.appointmentTime || ''}`,
     booking.dateDifferenceNote && `日期差异确认：${booking.dateDifferenceNote}`,
   ].filter(Boolean).join('\n');
-  const update = { staffId: task.assignedTo, patientId: task.patientId, date: appointment, title: plan.medicalEscort ? '就医陪同服务' : medicationProxy ? '代配药服务' : '医疗代诊服务', content,
-    medicalEscort: { serviceType: plan.medicalEscort ? 'escort' : 'proxy_visit', hospital: plan.hospital || '', department: plan.department || '', doctor: plan.expert || '' } };
+  const update = { staffId: task.assignedTo, patientId: task.patientId, date: appointment, title: medicationProxy ? '代配药服务' : '医疗代诊服务', content,
+    medicalEscort: { serviceType: 'proxy_visit', hospital: plan.hospital || '', department: plan.department || '', doctor: plan.expert || '' } };
   if (completed) {
     update.result = nonempty(task.formData?.executionResult);
     update.attachments = (medicationProxy
       ? ['medicationPhotoAttachments', 'medicationInstructionAttachments', 'medicalRecordAttachments', 'chargeReceiptAttachments'].flatMap(key => task.formData?.[key] || [])
-      : [...(task.formData?.medicalRecordAttachments || []), ...(task.formData?.reportAttachments || [])]).filter(file => file?.url);
+      : (task.formData?.medicalRecordAttachments || [])).filter(file => file?.url);
   }
   const recordUpdate = { $set: update, $setOnInsert: { sourceOrderId: order._id, type: 'medical_visit' } };
   if (!completed) recordUpdate.$setOnInsert.result = '';
@@ -301,7 +294,6 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceT
 async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
   const appointmentOnly = plan.appointmentOnly === true;
   const medicationProxy = plan.medicationProxy === true;
-  const medicalEscort = plan.medicalEscort === true;
   const appointmentRequirement = (medicationProxy ? [
     plan.hospital, plan.campus, plan.department, plan.expert,
     `药物名称：${plan.medicationName}`,
@@ -315,47 +307,26 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
     plan.insuranceUse === 'high_end' && plan.insurerName && `保险公司：${String(plan.insurerName).trim()}`,
     plan.insuranceUse === 'high_end' && `结算方式：${({ direct: '直付', reimbursement: '先付后报' })[plan.settlementMethod] || '待核实'}`,
   ]).filter(Boolean).join('；');
-  if (!patient.assignedHealthManager || ((!appointmentOnly || medicationProxy || medicalEscort) && !patient.assignedHealthPlanner)) {
+  if (!patient.assignedHealthManager || ((!appointmentOnly || medicationProxy) && !patient.assignedHealthPlanner)) {
     throw Object.assign(new Error(appointmentOnly ? '请先为客户分配健管专员' : '请先为客户分配健康规划师和健管专员'), { status: 409 });
   }
   const reportIds = [...new Set((plan.selectedReportIds || []).map(String).filter(Boolean))];
-  if (!appointmentOnly && !medicationProxy && !medicalEscort) {
+  if (!appointmentOnly && !medicationProxy) {
     const reportCount = await MedicalReport.countDocuments({ _id: { $in: reportIds }, user: patient._id, audit_status: 'audited' });
     if (!reportIds.length || reportCount !== reportIds.length) throw Object.assign(new Error('请选择该客户至少一份已审核资料'), { status: 400 });
   }
   const date = new Date();
-  const escortLabels = { exam: '陪同检查', checkup: '陪同体检', consultation: '陪同看诊', treatment: '陪同治疗' };
-  let serviceName = appointmentOnly ? '专家约诊服务' : medicationProxy ? '代配药服务' : '医疗代诊服务';
-  if (medicalEscort) serviceName = `${escortLabels[plan.escortCategory] || '就医陪同'}服务`;
+  const serviceName = medicationProxy ? '代配药服务' : appointmentOnly ? '专家约诊服务' : '医疗代诊服务';
   const order = await Order.create({
     user: patient._id, tenantId: patient.tenantId || null, serviceId: `annual-member-medical-proxy-${Date.now()}`,
     serviceName, servicePrice: 0, unitPrice: 0, paymentStatus: 'unpaid', tradeStatus: 'fulfilling',
     status: 'pending', initiationSource: STAFF_DIRECT_SOURCE,
-    desiredServiceDate: medicalEscort ? appointmentAt(plan.escortDate, plan.escortTime) : (appointmentOnly || medicationProxy) ? appointmentAt(plan.preferredDateStart, String(plan.serviceTime || '').match(/^\d{2}:\d{2}/)?.[0] || '09:00') : null,
-    desiredServiceDateEnd: medicalEscort ? appointmentAt(plan.escortDate, plan.escortTime) : (appointmentOnly || medicationProxy) ? appointmentAt(plan.preferredDateEnd || plan.preferredDateStart, String(plan.serviceTime || '').match(/^\d{2}:\d{2}/)?.[0] || '09:00') : null,
-    scheduledAt: medicalEscort ? appointmentAt(plan.escortDate, plan.escortTime) : null,
-    serviceRequirements: medicalEscort ? [escortLabels[plan.escortCategory], plan.hospital, plan.department, plan.escortGoal, plan.notes].filter(Boolean).join('；') : (appointmentOnly || medicationProxy) ? appointmentRequirement : `${plan.proxyGoal}\n${plan.communicationContent}`,
+    desiredServiceDate: (appointmentOnly || medicationProxy) ? appointmentAt(plan.preferredDateStart, String(plan.serviceTime || '').match(/^\d{2}:\d{2}/)?.[0] || '09:00') : null,
+    desiredServiceDateEnd: (appointmentOnly || medicationProxy) ? appointmentAt(plan.preferredDateEnd || plan.preferredDateStart, String(plan.serviceTime || '').match(/^\d{2}:\d{2}/)?.[0] || '09:00') : null,
+    serviceRequirements: (appointmentOnly || medicationProxy) ? appointmentRequirement : `${plan.proxyGoal}\n${plan.communicationContent}`,
     serviceWorkflowSnapshot: { key: 'medical_proxy', source: STAFF_DIRECT_SOURCE },
-    medicalProxyPlan: (medicationProxy || medicalEscort) ? { ...plan, initiationSource: STAFF_DIRECT_SOURCE } : null,
+    medicalProxyPlan: medicationProxy ? { ...plan, initiationSource: STAFF_DIRECT_SOURCE } : null,
   });
-  if (medicalEscort) {
-    const supervisor = await FollowUp.create({
-      patientId: patient._id, staffId: advisorId, assignedTo: advisorId, type: 'other', status: 'in_progress', date, remindAt: new Date(),
-      sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, taskRole: 'supervisor',
-      theme: `就医陪同：健康顾问全程督办 · ${serviceName}`,
-      plannedContent: '健康顾问发起后持续督办规划师分配、陪同执行、资料审核和随访计划，最终确认后结束。',
-      formData: { currentStage: 'planner', medicalEscort: true, initiationSource: STAFF_DIRECT_SOURCE },
-    });
-    const planner = await FollowUp.create({
-      patientId: patient._id, staffId: advisorId, assignedTo: patient.assignedHealthPlanner, type: 'other', status: 'planned', date, remindAt: new Date(),
-      sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}planner`, taskRole: 'executor',
-      theme: `就医陪同：健康规划师确认并分配 · ${serviceName}`,
-      plannedContent: '核对健康顾问发起的陪同信息，补齐后分配就医专员。',
-      formData: { ...plan, medicalEscort: true, initiationSource: STAFF_DIRECT_SOURCE },
-    });
-    await Order.updateOne({ _id: order._id }, { $set: { supervisorId: advisorId, currentStage: 'planner', currentAssignee: patient.assignedHealthPlanner, closureMode: 'advisor_confirmation', supervisionStatus: 'in_progress' } });
-    return { order, supervisor, planner };
-  }
   if (appointmentOnly || medicationProxy) {
     const booking = await FollowUp.create({
       patientId: patient._id, staffId: advisorId, assignedTo: patient.assignedHealthManager,
@@ -452,10 +423,6 @@ async function validateMedicalProxyStage(task, body, staff) {
     }
   }
   if (stage === 'planner') {
-    if (data.medicalEscort === true && (!['exam', 'checkup', 'consultation', 'treatment'].includes(data.escortCategory)
-      || ['escortDate', 'escortTime', 'hospital', 'department', 'escortGoal'].some(key => !nonempty(data[key])))) {
-      return '请完整填写陪同类目、日期、具体时间、医院、科室和陪同目标';
-    }
     if (!nonempty(data.medicalAssistantId)) return '请指派就医专员';
     const assistant = await Admin.findOne({ _id: data.medicalAssistantId, role: 'medicalAssistant', staffStatus: 'active' }).select('_id').lean();
     if (!assistant) return '请选择当前有效的就医专员';
@@ -487,19 +454,16 @@ async function validateMedicalProxyStage(task, body, staff) {
     if (!nonempty(data.auditSummary)) return '请填写健管专员审核结论';
     const order = await Order.findById(task.sourceOrderId).select('scheduledAt').lean();
     if (!order?.scheduledAt || new Date() < order.scheduledAt) return '就诊时间尚未到达，不能结束报告审核环节';
-    const reportFilter = { _id: { $in: ids }, user: task.patientId, audit_status: 'audited' };
-    if (task.formData?.medicalEscort !== true) reportFilter.createdAt = { $gte: order.scheduledAt };
-    const count = ids.length ? await MedicalReport.countDocuments(reportFilter) : 0;
+    const count = ids.length ? await MedicalReport.countDocuments({ _id: { $in: ids }, user: task.patientId, audit_status: 'audited', createdAt: { $gte: order.scheduledAt } }) : 0;
     if (count !== ids.length) return '只能选取本次就诊后上传且已由健管专员审核的报告';
   }
-  if (stage === 'post_visit_review' && (!nonempty(data.reviewSummary) || (data.medicalEscort === true && data.followUpPlanConfirmed !== true))) return data.medicalEscort === true ? '请审核随访计划、勾选确认并填写健康顾问结论' : '请查看本次已审核资料并填写健康顾问查看结论';
+  if (stage === 'post_visit_review' && !nonempty(data.reviewSummary)) return '请查看本次已审核资料并填写健康顾问查看结论';
   if (stage === 'execute') {
     const hasAttachment = key => Array.isArray(data[key]) && data[key].some(file => nonempty(file?.url));
     const executeOrder = task.sourceOrderId ? await Order.findById(task.sourceOrderId).select('serviceName').lean() : null;
     const medicationProxy = data.medicationProxy === true || /代配药|代取药/.test(executeOrder?.serviceName || '');
     if (medicationProxy && (!nonempty(data.executionResult) || !['medicationPhotoAttachments', 'medicationInstructionAttachments', 'medicalRecordAttachments', 'chargeReceiptAttachments'].every(hasAttachment))) return '请填写配药结果，并分别上传药品照片、药品服用单、病历和收费单';
-    if (data.medicalEscort === true && (!nonempty(data.executionResult) || ![...(data.medicalRecordAttachments || []), ...(data.reportAttachments || [])].some(file => nonempty(file?.url)))) return '请填写陪同执行信息，并上传至少一份报告或病历';
-    if (!medicationProxy && data.medicalEscort !== true && (!nonempty(data.executionResult) || !hasAttachment('medicalRecordAttachments'))) return '请填写代诊执行结果并上传至少一份代诊病历';
+    if (!medicationProxy && (!nonempty(data.executionResult) || !hasAttachment('medicalRecordAttachments'))) return '请填写代诊执行结果并上传至少一份代诊病历';
   }
   if (stage === 'collect' || stage === 'audit' || stage === 'advisor' || stage === 'planner' || stage === 'intake') {
     const patient = await User.findById(task.patientId).select('assignedFamilyDoctor assignedHealthPlanner assignedHealthManager').lean();
@@ -587,14 +551,7 @@ async function advanceMedicalProxyWorkflow(task) {
     }
   }
   if (stage === 'post_visit_audit') {
-    const followup = await createExpertAppointmentFollowUpPlan(task, order, patient, [...new Set((task.formData?.reportIds || []).map(String).filter(Boolean))]);
-    if (task.formData?.medicalEscort === true) {
-      await FollowUp.findOneAndUpdate(
-        { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}post_visit_review` },
-        { $setOnInsert: { patientId: task.patientId, staffId: task.staffId, assignedTo: patient?.assignedFamilyDoctor, type: 'other', status: 'planned', date: new Date(), remindAt: new Date(), sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}post_visit_review`, taskRole: 'executor', dependsOnTaskId: task._id, theme: `就医陪同：健康顾问审核随访并确认结束 · ${order.serviceName}`, plannedContent: '查看健管专员审核归档的报告、病历及系统生成的随访计划，确认后结束本次服务。', formData: { medicalEscort: true, auditSnapshot: task.formData, followUpPlanId: followup?._id || null, followUpPlanContent: followup?.content || followup?.plannedContent || '', followUpPlanDate: followup?.date || null, followUpPlanConfirmed: false } } },
-        { upsert: true, new: true, setDefaultsOnInsert: true },
-      );
-    }
+    await createExpertAppointmentFollowUpPlan(task, order, patient, [...new Set((task.formData?.reportIds || []).map(String).filter(Boolean))]);
     await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise` }, { $set: { 'formData.currentStage': 'followup_review', content: '健管专员已完成资料审核，AI已生成随访计划，等待健康顾问审核。' } });
     return;
   }
@@ -603,7 +560,7 @@ async function advanceMedicalProxyWorkflow(task) {
     await MedicalReport.updateMany({ _id: { $in: ids }, user: task.patientId, audit_status: 'audited' }, { $set: { familyDoctorViewedAt: new Date() } });
     order.status = 'completed'; order.tradeStatus = 'completed'; order.completedAt = new Date();
     await order.save();
-    await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } }, { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', 'formData.currentStage': 'completed', content: task.formData?.medicalEscort === true ? '报告和病历已归档，随访计划已由健康顾问审核确认，本次就医陪同结束。' : '就诊后资料已由健管专员审核并由健康顾问查看，专家约诊服务结束。' } });
+    await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } }, { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', 'formData.currentStage': 'completed', content: '就诊后资料已由健管专员审核并由健康顾问查看，专家约诊服务结束。' } });
     return;
   }
   if (stage === 'intake') {
@@ -626,26 +583,6 @@ async function advanceMedicalProxyWorkflow(task) {
     return;
   }
   const medicationProxy = /代配药|代取药/.test(order.serviceName || '');
-  if (stage === 'execute' && task.formData?.medicalEscort === true) {
-    await upsertMedicalProxyServiceRecord(task, order, true);
-    const reportIds = await archiveMedicalProxyRecords(task, order, patient?.tenantId);
-    const auditTask = await FollowUp.findOneAndUpdate(
-      { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}post_visit_audit` },
-      { $setOnInsert: { patientId: task.patientId, staffId: task.staffId, assignedTo: patient?.assignedHealthManager, type: 'other', status: 'planned', date: new Date(), remindAt: new Date(), sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}post_visit_audit`, taskRole: 'executor', dependsOnTaskId: task._id, theme: `就医陪同：健管专员审核归档 · ${order.serviceName}`, plannedContent: '审核就医专员上传的陪同记录、报告和病历；审核完成后系统自动生成随访计划。', formData: { medicalEscort: true, reportIds, auditSummary: '' } } },
-      { upsert: true, new: true, setDefaultsOnInsert: true },
-    );
-    await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise` }, { $set: { 'formData.currentStage': 'post_visit_audit', content: '就医专员已完成陪同，等待健管专员审核归档。' } });
-    await Order.updateOne({ _id: order._id }, { $set: { currentStage: 'post_visit_audit', currentAssignee: auditTask.assignedTo, supervisionStatus: 'in_progress' } });
-    return;
-  }
-  if (stage === 'planner' && task.formData?.medicalEscort === true) {
-    order.medicalProxyPlan = { ...task.formData, confirmedBy: task.assignedTo, confirmedAt: new Date() };
-    order.scheduledAt = appointmentAt(task.formData.escortDate, task.formData.escortTime);
-    order.desiredServiceDate = order.scheduledAt;
-    order.desiredServiceDateEnd = order.scheduledAt;
-    order.markModified('medicalProxyPlan');
-    await order.save();
-  }
   if (index === STAGES.length - 1) {
     await upsertMedicalProxyServiceRecord(task, order, true);
     await archiveMedicalProxyRecords(task, order, patient?.tenantId);
@@ -665,8 +602,7 @@ async function advanceMedicalProxyWorkflow(task) {
     } });
     return;
   }
-  const next = task.formData?.medicalEscort === true && stage === 'planner' ? 'execute'
-    : medicationProxy && stage === 'booking' ? 'planner'
+  const next = medicationProxy && stage === 'booking' ? 'planner'
     : medicationProxy && stage === 'planner' ? 'execute'
       : stage === 'advisor' && task.formData?.initiationSource === STAFF_DIRECT_SOURCE ? 'booking' : STAGES[index + 1];
   const assignee = next === 'audit' ? patient?.assignedHealthManager
@@ -697,7 +633,7 @@ async function advanceMedicalProxyWorkflow(task) {
         : next === 'advisor' ? { auditSnapshot: task.formData, selectedReportIds: task.formData?.collectionSnapshot?.annualMember ? [] : task.formData?.collectionSnapshot?.reportIds || [] }
           : next === 'planner' ? { planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...task.formData, additionalNote: bookingNote }, medicationProxy }
             : next === 'booking' ? { planSnapshot: order.medicalProxyPlan, medicalAssistantId: task.formData?.medicalAssistantId, preferredDateStart: dateInput(order.desiredServiceDate || order.scheduledAt), preferredDateEnd: dateInput(order.desiredServiceDateEnd || order.desiredServiceDate || order.scheduledAt) }
-              : { planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...bookedAppointment, ...task.formData, additionalNote: bookingNote }, medicationProxy, medicalEscort: task.formData?.medicalEscort === true },
+              : { planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...bookedAppointment, ...task.formData, additionalNote: bookingNote }, medicationProxy },
     } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
