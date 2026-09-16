@@ -435,7 +435,9 @@ async function validateMedicalProxyStage(task, body, staff) {
     if (data.preferredDateEnd < data.preferredDateStart) return '客户期望日期区间结束日期不能早于开始日期';
     if ((data.appointmentDate < data.preferredDateStart || data.appointmentDate > data.preferredDateEnd) && !nonempty(data.dateDifferenceNote)) return '约诊日期不在客户期望区间内，请说明差异及客户确认情况';
     const bookingOrder = task.sourceOrderId ? await Order.findById(task.sourceOrderId).select('serviceName serviceRequirements').lean() : null;
-    if ((data.medicationProxy === true || /代配药|代取药/.test(bookingOrder?.serviceName || '')) && !['self_pay', 'medical_insurance', 'commercial_insurance'].includes(data.paymentMethod)) return '请选择支付方式（自费、医保或商保）';
+    const medicationBooking = data.medicationProxy === true || /代配药|代取药/.test(bookingOrder?.serviceName || '');
+    if (medicationBooking && ['medicationName', 'medicationBrand', 'medicationSpecification', 'medicationQuantity'].some(key => !nonempty(data[key]))) return '请先确认药品名、商品名/品牌、规格和配备数量';
+    if (medicationBooking && !['self_pay', 'medical_insurance', 'commercial_insurance'].includes(data.paymentMethod)) return '请选择支付方式（自费、医保或商保）';
     if (data.paymentMethod === 'medical_insurance' && !['electronic', 'physical'].includes(data.medicalInsuranceCardType)) return '请确认使用电子医保卡还是实体医保卡';
     const appointmentRequirement = nonempty(data.planSnapshot?.serviceContent || bookingOrder?.serviceRequirements);
     if (/(?:保险类型：高端险|费用与保险：使用高端医疗险)/.test(appointmentRequirement) && !['direct_verified', 'reimbursement_verified', 'self_pay_confirmed'].includes(data.insuranceOutcome)) return '请核实高端医疗险实际结算方式，并选择办理结果';
@@ -513,7 +515,13 @@ async function advanceMedicalProxyWorkflow(task) {
     }
   }
   if (stage === 'booking') {
-    order.medicalProxyPlan = { ...(order.medicalProxyPlan || {}), booking: task.formData, bookedBy: task.assignedTo, bookedAt: new Date() };
+    const medicationFields = /代配药|代取药/.test(order.serviceName || '') ? {
+      medicationName: task.formData.medicationName,
+      medicationBrand: task.formData.medicationBrand,
+      medicationSpecification: task.formData.medicationSpecification,
+      medicationQuantity: task.formData.medicationQuantity,
+    } : {};
+    order.medicalProxyPlan = { ...(order.medicalProxyPlan || {}), ...medicationFields, booking: task.formData, bookedBy: task.assignedTo, bookedAt: new Date() };
     order.scheduledAt = appointmentAt(task.formData.appointmentDate, task.formData.appointmentTime);
     order.desiredServiceDate = task.formData.preferredDateStart ? appointmentAt(task.formData.preferredDateStart) : null;
     order.desiredServiceDateEnd = task.formData.preferredDateEnd ? appointmentAt(task.formData.preferredDateEnd) : null;
@@ -637,13 +645,15 @@ async function advanceMedicalProxyWorkflow(task) {
     } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
-  if (nextTask.isBlocked) {
+  // 退回上游时，下游任务会被阻塞或取消以免提前出现在执行人工作台；
+  // 上游重新完成后复用并重新激活原任务，避免重复建单。
+  if (nextTask.isBlocked || nextTask.status === 'cancelled') {
     const nextFormData = next === 'audit' ? { ...nextTask.formData, collectionSnapshot: task.formData }
       : next === 'advisor' ? { ...nextTask.formData, auditSnapshot: task.formData, selectedReportIds: task.formData?.collectionSnapshot?.annualMember ? [] : task.formData?.collectionSnapshot?.reportIds || [] }
         : next === 'planner' ? { ...nextTask.formData, planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...task.formData, additionalNote: bookingNote }, medicationProxy }
           : next === 'booking' ? { ...nextTask.formData, planSnapshot: order.medicalProxyPlan, medicalAssistantId: task.formData?.medicalAssistantId, preferredDateStart: nextTask.formData?.preferredDateStart || dateInput(order.desiredServiceDate || order.scheduledAt), preferredDateEnd: nextTask.formData?.preferredDateEnd || dateInput(order.desiredServiceDateEnd || order.desiredServiceDate || order.scheduledAt) }
             : { ...nextTask.formData, planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...bookedAppointment, ...task.formData, additionalNote: bookingNote }, medicationProxy };
-    await FollowUp.updateOne({ _id: nextTask._id }, { $set: { status: 'planned', isBlocked: false, assignedTo: assignee, formData: nextFormData, date: nextDate, remindAt: next === 'execute' ? nextDate : new Date() } });
+    await FollowUp.updateOne({ _id: nextTask._id }, { $set: { status: 'planned', isBlocked: false, assignedTo: assignee, formData: nextFormData, date: nextDate, remindAt: next === 'execute' ? nextDate : new Date(), cancelReason: '', completedAt: null, completedBy: null } });
   }
   await FollowUp.updateOne(
     { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } },
