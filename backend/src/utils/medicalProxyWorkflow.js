@@ -90,6 +90,63 @@ async function archiveMedicalProxyRecords(task, order, tenantId) {
   return archivedIds;
 }
 
+// 兼容修复上线前已卡住的陪同审核任务：就医专员任务已经完成，但当时的
+// post_visit_audit 仍保留 isBlocked，且没有保存执行快照。工作台读取时只按
+// 同一订单、同一执行任务的事实来源补齐，不触碰尚未完成的上游任务。
+async function repairCompletedMedicalEscortAuditTasks(assigneeId) {
+  if (!assigneeId) return 0;
+  const audits = await FollowUp.find({
+    assignedTo: assigneeId,
+    sourceType: 'order',
+    workflowKey: `${PREFIX}post_visit_audit`,
+    status: { $in: ['planned', 'in_progress'] },
+    isBlocked: true,
+    'formData.medicalEscort': true,
+  }).select('_id patientId sourceOrderId dependsOnTaskId').lean();
+  let repaired = 0;
+  for (const audit of audits) {
+    const execution = await FollowUp.findOne({
+      _id: audit.dependsOnTaskId,
+      sourceOrderId: audit.sourceOrderId,
+      workflowKey: `${PREFIX}execute`,
+      status: 'completed',
+      'formData.medicalEscort': true,
+    }).select('assignedTo completedAt formData').lean();
+    if (!execution) continue;
+    const attachments = (execution.formData?.medicalRecordAttachments || []).filter(file => nonempty(file?.url));
+    const urls = attachments.map(file => file.url);
+    const reports = urls.length ? await MedicalReport.find({
+      user: audit.patientId,
+      sourceType: 'order',
+      sourceOrderId: audit.sourceOrderId,
+      fileUrl: { $in: urls },
+    }).select('_id').lean() : [];
+    const executionSnapshot = {
+      executionResult: execution.formData?.executionResult || '',
+      medicalRecordAttachments: attachments,
+      completedAt: execution.completedAt,
+      completedBy: execution.assignedTo,
+    };
+    await FollowUp.updateOne({ _id: audit._id, isBlocked: true }, { $set: {
+      isBlocked: false,
+      status: 'planned',
+      date: new Date(),
+      remindAt: new Date(),
+      'formData.reportIds': reports.map(report => report._id),
+      'formData.auditSummary': '',
+      'formData.noMaterialsConfirmed': false,
+      'formData.executionSnapshot': executionSnapshot,
+    } });
+    await FollowUp.updateOne(
+      { sourceType: 'order', sourceOrderId: audit.sourceOrderId, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } },
+      { $set: { 'formData.currentStage': 'post_visit_audit', content: '就医专员已完成陪同，等待健管专员审核归档资料。' } },
+    );
+    await Order.updateOne({ _id: audit.sourceOrderId }, { $set: { currentStage: 'post_visit_audit', currentAssignee: assigneeId, supervisionStatus: 'in_progress' } });
+    repaired += 1;
+  }
+  return repaired;
+}
+
 async function upsertMedicalProxyServiceRecord(task, order, completed = false) {
   const plan = order.medicalProxyPlan || task.formData?.planSnapshot || {};
   const medicationProxy = /代配药|代取药/.test(order.serviceName || '');
@@ -771,4 +828,4 @@ async function advanceMedicalProxyWorkflow(task) {
   } });
 }
 
-module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, upsertMedicalProxyServiceRecord, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
+module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, validateMedicalProxyStage, advanceMedicalProxyWorkflow };

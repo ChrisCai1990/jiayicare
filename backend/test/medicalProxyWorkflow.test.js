@@ -268,6 +268,11 @@ test('medical escort skips booking and sends manager review only after execution
   assert.match(workflow, /const reportIds = await archiveMedicalProxyRecords/);
   assert.match(workflow, /status: 'planned', isBlocked: false[\s\S]*executionSnapshot/);
   assert.match(workflow, /MedicalReport\.deleteMany/);
+  assert.match(workflow, /async function repairCompletedMedicalEscortAuditTasks/);
+  assert.match(workflow, /workflowKey: `\$\{PREFIX\}execute`[\s\S]*status: 'completed'/);
+  assert.match(workflow, /'formData\.executionSnapshot': executionSnapshot/);
+  assert.match(workflow, /currentStage: 'post_visit_audit'/);
+  assert.match(fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8'), /repairCompletedMedicalEscortAuditTasks\(req\.staff\._id\)/);
   assert.match(directStart, /assignmentMode: 'automatic'/);
   assert.match(panel, /const medicalEscortProgress/);
   assert.match(panel, /medicationProxyProgress\(task\) \|\| medicalEscortProgress\(task\)/);

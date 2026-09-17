@@ -562,6 +562,9 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
   // 保险案件是长期事务，历史任务可能缺失，客户负责人也可能在案件处理中调整。
   // 每次进入对应角色工作台时按案件事实来源补齐/迁移活动任务，避免案件仍在处理中却无人可见。
   await ensureOpenInsuranceTasksForStaff(req.staff);
+  // 修复旧版本中“上游已完成、健管审核仍等待上一环节”的陪同任务，并补齐
+  // 就医专员本次提交内容。修复严格限定为当前负责人的已完成上游任务。
+  await require('../utils/medicalProxyWorkflow').repairCompletedMedicalEscortAuditTasks(req.staff._id);
   // 首页工作台需要同时展示“等待上一环节”的串行任务，让接手人提前知道后续工作。
   // isBlocked 只限制办理，不应让任务从负责人视野里完全消失。
   const filter = { assignedTo: { $in: [req.staff._id, staffId] } };
