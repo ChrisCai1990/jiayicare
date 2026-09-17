@@ -223,7 +223,7 @@ export default function NotificationsPage() {
                       )}
                       {r.responseOpinion && (
                         <div>
-                          <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 2 }}>协作反馈</div>
+                          <div style={{ fontSize: 13, color: '#176B4D', fontWeight: 800, marginBottom: 4 }}>转介意见／建议</div>
                           <div style={{ fontSize: 13, color: '#1A2B24' }}>{r.responseOpinion}</div>
                         </div>
                       )}
@@ -362,7 +362,7 @@ export default function NotificationsPage() {
                       )}
                       {r.responseOpinion && (
                         <div>
-                          <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 2 }}>协作反馈</div>
+                          <div style={{ fontSize: 13, color: '#176B4D', fontWeight: 800, marginBottom: 4 }}>转介意见／建议</div>
                           <div style={{ fontSize: 13, color: '#1A2B24' }}>{r.responseOpinion}</div>
                         </div>
                       )}
@@ -1106,6 +1106,7 @@ function HealthRecordList({ records, supplement = false }) {
 }
 
 function AttachedHealthInfoView({ info }) {
+  const [expanded, setExpanded] = useState(false)
   if (!info) return null
   const sections = Object.keys(info).filter(k => {
     const v = info[k]
@@ -1115,11 +1116,15 @@ function AttachedHealthInfoView({ info }) {
     return (ai < 0 ? 999 : ai) - (bi < 0 ? 999 : bi)
   })
   if (sections.length === 0) return null
+  const medicationCount = ['medicationRecords', 'supplementRecords'].reduce((total, key) => total + (Array.isArray(info[key]) ? info[key].length : 0), 0)
 
   return (
-    <div style={{ marginTop: 10, padding: '12px 14px', background: '#F5F9FC', borderRadius: 9, borderLeft: '4px solid #0077B6' }}>
-      <div style={{ fontSize: 13, color: '#006EAA', fontWeight: 700, marginBottom: 9 }}>附带健康档案</div>
-      {sections.map(k => {
+    <div style={{ marginTop: 10, padding: expanded ? '12px 14px' : '9px 14px', background: '#F5F9FC', borderRadius: 9, borderLeft: '4px solid #0077B6' }}>
+      <button type="button" onClick={() => setExpanded(value => !value)} style={{ width:'100%', border:0, padding:0, background:'transparent', display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, cursor:'pointer', textAlign:'left' }}>
+        <span style={{ fontSize: 13, color: '#006EAA', fontWeight: 700 }}>附带健康档案 <span style={{ color:'#7895A3', fontWeight:500 }}>· {sections.length} 项{medicationCount ? ` · ${medicationCount} 条用药/补充记录` : ''}</span></span>
+        <span style={{ color:'#0077B6', fontSize:12, fontWeight:700, whiteSpace:'nowrap' }}>{expanded ? '收起 ▲' : '展开查看 ▼'}</span>
+      </button>
+      {expanded && <div style={{ marginTop:9 }}>{sections.map(k => {
         const v = info[k]
         const label = HEALTH_SECTION_LABELS[k] || k
         if ((k === 'medicationRecords' || k === 'supplementRecords') && Array.isArray(v)) {
@@ -1138,7 +1143,7 @@ function AttachedHealthInfoView({ info }) {
             <div>{formatHealthValue(v)}</div>
           </div>
         )
-      })}
+      })}</div>}
     </div>
   )
 }
