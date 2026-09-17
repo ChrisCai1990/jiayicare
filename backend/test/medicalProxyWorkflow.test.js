@@ -43,8 +43,8 @@ test('extracts calendar follow-up suggestions from proxy visit feedback', () => 
 
 test('execution requires a result and an uploaded medical record', async () => {
   const task = { sourceType: 'order', workflowKey: 'medical_proxy:execute', assignedTo: 'assistant-1' };
-  assert.match(await validateMedicalProxyStage(task, { status: 'completed', formData: { executionResult: '一年后复查' } }, { _id: 'assistant-1', role: 'medicalAssistant' }), /上传/);
-  assert.equal(await validateMedicalProxyStage(task, { status: 'completed', formData: { executionResult: '一年后复查', medicalRecordAttachments: [{ url: '/uploads/record.pdf' }] } }, { _id: 'assistant-1', role: 'medicalAssistant' }), '');
+  assert.match(await validateMedicalProxyStage(task, { status: 'completed', formData: { executionOutcome: 'success', executionResult: '一年后复查' } }, { _id: 'assistant-1', role: 'medicalAssistant' }), /上传/);
+  assert.equal(await validateMedicalProxyStage(task, { status: 'completed', formData: { executionOutcome: 'success', executionResult: '一年后复查', medicalRecordAttachments: [{ url: '/uploads/record.pdf' }] } }, { _id: 'assistant-1', role: 'medicalAssistant' }), '');
 });
 
 test('planner selects patient documents, then manager audit gates advisor handoff', async () => {
@@ -204,9 +204,21 @@ test('medication proxy execution requires all four delivery documents', async ()
   try {
     Order.findById = () => ({ select: () => ({ lean: async () => ({ serviceName: '代配药服务' }) }) });
     const task = { sourceType: 'order', sourceOrderId: 'order-1', workflowKey: 'medical_proxy:execute', assignedTo: 'assistant-1' };
-    const base = { executionResult: '已按清单配药并核对数量', medicationPhotoAttachments: [{ url: '/uploads/medicine.jpg' }], medicationInstructionAttachments: [{ url: '/uploads/instructions.pdf' }], medicalRecordAttachments: [{ url: '/uploads/record.pdf' }] };
+    const base = { executionOutcome: 'success', executionResult: '已按清单配药并核对数量', medicationPhotoAttachments: [{ url: '/uploads/medicine.jpg' }], medicationInstructionAttachments: [{ url: '/uploads/instructions.pdf' }], medicalRecordAttachments: [{ url: '/uploads/record.pdf' }] };
     assert.match(await validateMedicalProxyStage(task, { status: 'completed', formData: base }, { _id: 'assistant-1', role: 'medicalAssistant' }), /收费单/);
     assert.equal(await validateMedicalProxyStage(task, { status: 'completed', formData: { ...base, chargeReceiptAttachments: [{ url: '/uploads/receipt.jpg' }] } }, { _id: 'assistant-1', role: 'medicalAssistant' }), '');
+  } finally {
+    Order.findById = originalFindById;
+  }
+});
+
+test('failed medication proxy execution allows completion without delivery documents', async () => {
+  const originalFindById = Order.findById;
+  try {
+    Order.findById = () => ({ select: () => ({ lean: async () => ({ serviceName: '代配药服务' }) }) });
+    const task = { sourceType: 'order', sourceOrderId: 'order-1', workflowKey: 'medical_proxy:execute', assignedTo: 'assistant-1' };
+    const formData = { executionOutcome: 'failed', executionResult: '普通门诊无法开具进口药，已建议客户改由互联网医院配药' };
+    assert.equal(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'assistant-1', role: 'medicalAssistant' }), '');
   } finally {
     Order.findById = originalFindById;
   }

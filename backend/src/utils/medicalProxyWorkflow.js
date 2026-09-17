@@ -519,9 +519,12 @@ async function validateMedicalProxyStage(task, body, staff) {
     const executeOrder = task.sourceOrderId ? await Order.findById(task.sourceOrderId).select('serviceName').lean() : null;
     const medicationProxy = data.medicationProxy === true || /代配药|代取药/.test(executeOrder?.serviceName || '');
     const supplementProxy = data.supplementProxy === true || /代配营养素/.test(executeOrder?.serviceName || '');
-    if (medicationProxy && (!nonempty(data.executionResult) || !['medicationPhotoAttachments', 'medicationInstructionAttachments', 'medicalRecordAttachments', 'chargeReceiptAttachments'].every(hasAttachment))) return '请填写配药结果，并分别上传药品照片、药品服用单、病历和收费单';
-    if (supplementProxy && (!nonempty(data.executionResult) || !['supplementPhotoAttachments', 'chargeReceiptAttachments'].every(hasAttachment))) return '请填写购买与配送结果，并上传营养素产品照片和购买凭证';
-    if (!medicationProxy && !supplementProxy && (!nonempty(data.executionResult) || !hasAttachment('medicalRecordAttachments'))) return '请填写代诊执行结果并上传至少一份代诊病历';
+    const executionFailed = data.executionOutcome === 'failed';
+    if (!['success', 'failed'].includes(data.executionOutcome)) return '请选择本次服务是否执行成功';
+    if (!nonempty(data.executionResult)) return executionFailed ? '请填写未执行成功的原因和后续处理说明' : '请填写执行结果';
+    if (!executionFailed && medicationProxy && !['medicationPhotoAttachments', 'medicationInstructionAttachments', 'medicalRecordAttachments', 'chargeReceiptAttachments'].every(hasAttachment)) return '执行成功时，请分别上传药品照片、药品服用单、病历和收费单';
+    if (!executionFailed && supplementProxy && !['supplementPhotoAttachments', 'chargeReceiptAttachments'].every(hasAttachment)) return '执行成功时，请上传营养素产品照片和购买凭证';
+    if (!executionFailed && !medicationProxy && !supplementProxy && !hasAttachment('medicalRecordAttachments')) return '执行成功时，请上传至少一份代诊病历';
   }
   if (stage === 'collect' || stage === 'audit' || stage === 'advisor' || stage === 'planner' || stage === 'intake') {
     const patient = await User.findById(task.patientId).select('assignedFamilyDoctor assignedHealthPlanner assignedHealthManager').lean();

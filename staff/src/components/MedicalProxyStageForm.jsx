@@ -59,12 +59,15 @@ export function validateMedicalProxyStage(stage, value) {
   if (stage === 'post_visit_audit' && !value.auditSummary?.trim()) return '请填写健管专员审核结论'
   if (stage === 'post_visit_review' && !value.reviewSummary?.trim()) return '请查看报告并填写健康顾问查看结论'
   const hasAttachment = key => value[key]?.some(file => file?.url)
+  const executionFailed = value.executionOutcome === 'failed'
   const medicationProxy = value.medicationProxy === true || /代配药|代取药/.test(`${value.planSnapshot?.serviceName || ''} ${value.planSnapshot?.serviceContent || ''}`)
   const medicalEscort = value.medicalEscort === true || value.planSnapshot?.medicalEscort === true || /陪同就医|就医陪同|陪同看诊|陪同检查|陪同体检|陪同治疗/.test(`${value.planSnapshot?.serviceName || ''} ${value.planSnapshot?.serviceContent || ''}`)
-  if (stage === 'execute' && medicationProxy && (!value.executionResult?.trim() || !['medicationPhotoAttachments', 'medicationInstructionAttachments', 'medicalRecordAttachments', 'chargeReceiptAttachments'].every(hasAttachment))) return '请填写配药结果，并分别上传药品照片、药品服用单、病历和收费单'
-  if (stage === 'execute' && supplementProxy && (!value.executionResult?.trim() || !['supplementPhotoAttachments', 'chargeReceiptAttachments'].every(hasAttachment))) return '请填写购买与配送结果，并上传产品照片和购买凭证'
-  if (stage === 'execute' && medicalEscort && (!value.executionResult?.trim() || !hasAttachment('medicalRecordAttachments'))) return '请填写陪同执行结果并上传至少一份陪同资料'
-  if (stage === 'execute' && !medicalEscort && !medicationProxy && !supplementProxy && (!value.executionResult?.trim() || !hasAttachment('medicalRecordAttachments'))) return '请填写代诊执行结果并上传至少一份代诊病历'
+  if (stage === 'execute' && !['success', 'failed'].includes(value.executionOutcome)) return '请选择本次服务是否执行成功'
+  if (stage === 'execute' && !value.executionResult?.trim()) return executionFailed ? '请填写未执行成功的原因和后续处理说明' : '请填写执行结果'
+  if (stage === 'execute' && !executionFailed && medicationProxy && !['medicationPhotoAttachments', 'medicationInstructionAttachments', 'medicalRecordAttachments', 'chargeReceiptAttachments'].every(hasAttachment)) return '执行成功时，请分别上传药品照片、药品服用单、病历和收费单'
+  if (stage === 'execute' && !executionFailed && supplementProxy && !['supplementPhotoAttachments', 'chargeReceiptAttachments'].every(hasAttachment)) return '执行成功时，请上传产品照片和购买凭证'
+  if (stage === 'execute' && !executionFailed && medicalEscort && !hasAttachment('medicalRecordAttachments')) return '执行成功时，请上传至少一份陪同资料'
+  if (stage === 'execute' && !executionFailed && !medicalEscort && !medicationProxy && !supplementProxy && !hasAttachment('medicalRecordAttachments')) return '执行成功时，请上传至少一份代诊病历'
   return ''
 }
 
@@ -301,15 +304,21 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
         {booking.additionalNote && <div>预约补充说明：{booking.additionalNote}</div>}
       </>}
     </div>}
+    <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>本次服务结果 *
+      <select className="form-control" value={value.executionOutcome || ''} onChange={e => set('executionOutcome', e.target.value)}>
+        <option value="">请选择</option><option value="success">执行成功</option><option value="failed">未执行成功</option>
+      </select>
+    </label>
+    {value.executionOutcome === 'failed' && <div style={{ color: '#B45309', fontSize: 12 }}>未执行成功时附件不强制上传，请在执行结果中写明原因及后续处理。</div>}
     {input('executionResult', isMedicalEscort ? '陪同执行结果、现场情况和后续事项' : isSupplyProxy ? `${isSupplementProxy ? '购买' : '配药'}结果、数量核对与交付说明` : fields.execute[0][1], 5)}
-    {(isMedicalEscort ? [['medicalRecordAttachments', '陪同资料附件（报告、病历等） *', '+ 上传陪同资料']] : isSupplementProxy ? [
-      ['supplementPhotoAttachments', '营养素产品照片（须清晰展示品牌、规格和数量） *', '+ 上传产品照片'],
-      ['chargeReceiptAttachments', '购买凭证 *', '+ 上传购买凭证'],
+    {(isMedicalEscort ? [['medicalRecordAttachments', `陪同资料附件（报告、病历等）${value.executionOutcome === 'failed' ? '（未成功时选填）' : ' *'}`, '+ 上传陪同资料']] : isSupplementProxy ? [
+      ['supplementPhotoAttachments', `营养素产品照片（须清晰展示品牌、规格和数量）${value.executionOutcome === 'failed' ? '（未成功时选填）' : ' *'}`, '+ 上传产品照片'],
+      ['chargeReceiptAttachments', `购买凭证${value.executionOutcome === 'failed' ? '（未成功时选填）' : ' *'}`, '+ 上传购买凭证'],
     ] : isMedicationProxy ? [
-      ['medicationPhotoAttachments', '药品照片（须清晰展示药盒和数量） *', '+ 上传药盒与数量照片'],
-      ['medicationInstructionAttachments', '药品服用单（服用方式和方法） *', '+ 上传药品服用单'],
-      ['medicalRecordAttachments', '病历 *', '+ 上传病历'],
-      ['chargeReceiptAttachments', '收费单 *', '+ 上传收费单'],
+      ['medicationPhotoAttachments', `药品照片（须清晰展示药盒和数量）${value.executionOutcome === 'failed' ? '（未成功时选填）' : ' *'}`, '+ 上传药盒与数量照片'],
+      ['medicationInstructionAttachments', `药品服用单（服用方式和方法）${value.executionOutcome === 'failed' ? '（未成功时选填）' : ' *'}`, '+ 上传药品服用单'],
+      ['medicalRecordAttachments', `病历${value.executionOutcome === 'failed' ? '（未成功时选填）' : ' *'}`, '+ 上传病历'],
+      ['chargeReceiptAttachments', `收费单${value.executionOutcome === 'failed' ? '（未成功时选填）' : ' *'}`, '+ 上传收费单'],
     ] : [['medicalRecordAttachments', '代诊病历附件', '+ 上传代诊病历']]).map(([key, label, uploadLabel]) => <label key={key} style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>{label}
       <ChecklistAttachments item={{ attachments: value[key] || [] }} index={0} mode="executor" update={(_, patch) => set(key, patch.attachments || [])} uploadLabel={uploadLabel} errorLabel={`${label.replace(/ \*$/, '')}上传失败`} />
     </label>)}
