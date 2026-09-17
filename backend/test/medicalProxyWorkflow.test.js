@@ -321,6 +321,12 @@ test('medical escort audit closes the linked visit reminder and creates an AI fo
   assert.match(escortAudit, /createPostVisitFollowUpPlan[\s\S]*medicalEscort: true/);
   assert.match(workflow, /就医陪同后AI随访计划/);
   assert.match(workflow, /aiStatus: 'pending'/);
+  const routes = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+  const patientPage = fs.readFileSync(path.join(__dirname, '../../staff/src/pages/PatientDetailPage.jsx'), 'utf8');
+  assert.match(routes, /仅该客户指定的健康顾问可审核此随访计划/);
+  assert.match(patientPage, /待\{reviewRoleLabel\(f\.reviewRole\)\}审核/);
+  assert.match(patientPage, /等待\{reviewRoleLabel\(f\.reviewRole\)\}审核/);
+  assert.match(patientPage, /const canReview = f/);
 });
 test('booking and execution write the shared hospital visit service archive', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');

@@ -8,10 +8,22 @@ async function reconcileInactiveOrderWorkItems(patientId = null) {
     sourceType: 'order',
     sourceOrderId: { $ne: null },
     status: { $in: ['planned', 'in_progress', 'missed'] },
+    // 订单完成后生成的随访计划是新的临床跟进任务，不是未完成的订单履约工作项。
+    // 不能因原订单已结束就将它取消。
+    sourceScheduleKey: { $not: /^(medical_escort_followup|expert_appointment_followup):/ },
   };
   if (patientId) followUpFilter.patientId = patientId;
+  const postVisitRepairFilter = {
+    sourceType: 'order',
+    sourceScheduleKey: /^(medical_escort_followup|expert_appointment_followup):/,
+    aiStatus: 'pending',
+    status: 'cancelled',
+    cancelReason: '关联订单已取消、退款或结束',
+    ...(patientId ? { patientId } : {}),
+  };
+  const repairedPlans = await FollowUp.updateMany(postVisitRepairFilter, { $set: { status: 'planned', cancelReason: '' } });
+  let modifiedCount = repairedPlans.modifiedCount || 0;
   const linkedOrderIds = await FollowUp.find(followUpFilter).distinct('sourceOrderId');
-  let modifiedCount = 0;
   if (linkedOrderIds.length) {
     const activeOrderIds = await Order.find({ _id: { $in: linkedOrderIds }, ...activeOrderWorkItemQuery() }).distinct('_id');
     const result = await FollowUp.updateMany(

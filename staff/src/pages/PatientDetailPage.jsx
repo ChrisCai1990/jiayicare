@@ -9352,6 +9352,8 @@ export default function PatientDetailPage() {
               </thead>
               <tbody>
                 {(() => {
+                  const reviewRoleLabel = role => ({ familyDoctor: '健康顾问', nutritionist: '营养师', healthPlanner: '健康规划师' })[role || 'familyDoctor'] || '指定专员'
+                  const canReview = f => f.aiStatus === 'pending' && (staff?.role === 'superadmin' || (staff?.role === (f.reviewRole || 'familyDoctor') && (!f.assignedTo || String(f.assignedTo?._id || f.assignedTo) === String(staff?._id))))
                   const renderRow = (f) => (
                     <tr key={f._id} style={{ cursor: 'pointer', background: f.aiStatus === 'pending' ? '#FFFBEB' : undefined }} onClick={() => (isCheckupAppointmentBookingTask(f) || isCheckupMedicalExecutionTask(f) || isCheckupManagerReviewTask(f)) ? openExec(f) : isCheckupAdvisorReviewTask(f) ? setCheckupAdvisorReview(f) : setFollowUpDetail(f)}>
                       <td style={{ fontSize: 13, color: '#666' }}>{new Date(f.date).toLocaleDateString('zh-CN')}</td>
@@ -9363,7 +9365,7 @@ export default function PatientDetailPage() {
                         </span>
                         {f.aiStatus === 'pending' && (
                           <span style={{ marginLeft: 6, fontSize: 11, color: '#D97706', background: '#D9770615', padding: '1px 6px', borderRadius: 4 }}>
-                            待审核{f.sourceType === 'ai_review' ? '·AI月度回顾' : f.sourceType === 'scheduled' ? '·方案排期' : ''}
+                            待{reviewRoleLabel(f.reviewRole)}审核{f.sourceType === 'ai_review' ? '·AI月度回顾' : f.sourceType === 'scheduled' ? '·方案排期' : ''}
                           </span>
                         )}
                         {f.status === 'completed' && f.completedBy && (
@@ -9372,7 +9374,7 @@ export default function PatientDetailPage() {
                           </span>
                         )}
                       </td>
-                      <td style={{ fontSize: 13, color: '#666' }}>{f.staffId?.name || '-'}</td>
+                      <td style={{ fontSize: 13, color: '#666' }}>{f.aiStatus === 'pending' ? `${f.assignedTo?.name || f.staffId?.name || '待分配'}（${reviewRoleLabel(f.reviewRole)}审核）` : (f.assignedTo?.name || f.staffId?.name || '-')}</td>
                       <td style={{ fontSize: 13, color: '#1A2B24', maxWidth: 200 }}>
                         {f.sourceType === 'order' && (
                           <div style={{ marginBottom: 2 }}>
@@ -9391,13 +9393,15 @@ export default function PatientDetailPage() {
                       <td onClick={e => e.stopPropagation()}>
                         {isCheckupAdvisorReviewTask(f) ? (
                           <button className="btn btn-primary btn-sm" onClick={() => setCheckupAdvisorReview(f)}>审核随访计划</button>
-                        ) : f.aiStatus === 'pending' ? (
+                        ) : canReview(f) ? (
                           <div style={{ display: 'flex', gap: 6 }}>
                             <button className="btn btn-sm" style={{ background: '#22A06B', color: '#fff' }}
                               onClick={async () => { await staffAPI.reviewFollowUp(f._id, { action: 'approve' }); loadFollowUps() }}>通过</button>
                             <button className="btn btn-secondary btn-sm"
                               onClick={async () => { await staffAPI.reviewFollowUp(f._id, { action: 'reject' }); loadFollowUps() }}>驳回</button>
                           </div>
+                        ) : f.aiStatus === 'pending' ? (
+                          <span style={{ fontSize: 12, color: '#8AA89C' }}>等待{reviewRoleLabel(f.reviewRole)}审核</span>
                         ) : medicalProxyStage(f) === 'supervise' ? (
                           <button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(f)}>查看督办进度</button>
                         ) : (medicalProxyStage(f) || medicationProxyStage(f)) && ['planned', 'in_progress', 'missed'].includes(f.status) ? (

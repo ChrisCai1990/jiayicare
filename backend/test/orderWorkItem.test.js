@@ -32,6 +32,15 @@ test('有效已支付订单缺少工作项时会补建且不重开历史完成�
   assert.match(source, /sourceOrderId: order\._id/);
 });
 
+test('订单结束不取消就诊后AI随访计划，并修复已被误取消的计划', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/utils/orderWorkItem.js'), 'utf8');
+  assert.match(source, /sourceScheduleKey: \{ \$not: \/\^\(medical_escort_followup\|expert_appointment_followup\):\//);
+  assert.match(source, /postVisitRepairFilter/);
+  assert.match(source, /aiStatus: 'pending'/);
+  assert.match(source, /status: 'cancelled'/);
+  assert.match(source, /status: 'planned', cancelReason: ''/);
+});
+
 test('退款成功会关闭订单产生的所有未完成待办', () => {
   const source = fs.readFileSync(path.join(__dirname, '../src/utils/orderSettlement.js'), 'utf8');
   assert.match(source, /FollowUp\.updateMany\([\s\S]*sourceType: 'order'[\s\S]*cancelReason: '订单已退款'/);

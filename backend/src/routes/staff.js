@@ -2398,6 +2398,9 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
     if (req.staff.role !== 'superadmin' && req.staff.role !== requiredRole) {
       return res.status(403).json({ success: false, message: '该随访计划不属于您的审核角色' });
     }
+    if (req.staff.role !== 'superadmin' && followUp.assignedTo && String(followUp.assignedTo) !== String(req.staff._id)) {
+      return res.status(403).json({ success: false, message: '仅该客户指定的健康顾问可审核此随访计划' });
+    }
 
     if (action === 'reject') {
       followUp.status = 'cancelled';
