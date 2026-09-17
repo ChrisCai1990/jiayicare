@@ -7,7 +7,7 @@ const FollowUp = require('../src/models/FollowUp');
 const MedicalReport = require('../src/models/MedicalReport');
 const User = require('../src/models/User');
 const Order = require('../src/models/Order');
-const { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, validateMedicalProxyStage } = require('../src/utils/medicalProxyWorkflow');
+const { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, supplyResolutionSummary, validateMedicalProxyStage } = require('../src/utils/medicalProxyWorkflow');
 
 test('storefront and staff orders resolve to the same proxy workflow', () => {
   assert.equal(isMedicalProxyOrder({ serviceName: '医疗代诊服务', serviceWorkflowSnapshot: { key: 'medical_proxy' } }), true);
@@ -255,6 +255,7 @@ test('staff-initiated medication keeps a planner supervision task until executio
   assert.match(workflow, /sourceType: 'supply_reminder'/);
   assert.match(workflow, /staffId: task\.assignedTo, assignedTo: task\.assignedTo/);
   assert.match(workflow, /generateNextSupplyReminder\(completed\)/);
+  assert.equal(supplyResolutionSummary({ resolutionType: 'online', purchaseActor: 'customer', purchaseChannel: '阿里药房' }), '健管专员指导客户自行采购（渠道：阿里药房）');
   assert.match(page, /健康规划师分配配药执行人员/);
   assert.match(page, /执行人员配药确认与配送/);
 });
@@ -329,6 +330,8 @@ test('medical escort skips booking and sends manager review only after execution
   assert.match(patientPage, /sourceHealthPlanId\?\.type === 'medical_assist'/);
   assert.match(patientPage, /isCancelledStageOfCompletedService/);
   assert.match(patientPage, /就医协助服务/);
+  assert.match(patientPage, /purchaseActor/);
+  assert.match(stageForm, /实际采购主体/);
   assert.match(patientPage, /就医专员已完成陪同，健管专员已审核资料并归档/);
   assert.match(plansPage, /if \(isMedicalEscort\)[\s\S]*startStaffMedicalProxy\(patientId/);
   assert.match(plansPage, /!isMedicalEscort[\s\S]*督办人/);

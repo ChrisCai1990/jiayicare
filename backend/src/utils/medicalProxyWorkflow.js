@@ -16,6 +16,14 @@ const isMedicalProxyOrder = orderOrName => orderOrName?.serviceWorkflowSnapshot?
 const stageOf = task => task?.sourceType === 'order' && String(task.workflowKey || '').startsWith(PREFIX)
   ? String(task.workflowKey).slice(PREFIX.length) : '';
 const nonempty = value => String(value || '').trim();
+const supplyResolutionSummary = data => {
+  if (data?.resolutionType === 'refund') return '无可行配药渠道，已按客户确认方案退费结案';
+  const actor = data?.purchaseActor === 'customer' ? '健管专员指导客户自行采购' : data?.purchaseActor === 'staff' ? '由我方代配/代购' : '';
+  const channel = nonempty(data?.purchaseChannel);
+  const type = ({ online: '互联网药房', pharmacy: '其他药房', other_hospital: '其他医院或门诊' })[data?.resolutionType] || '';
+  if (!actor) return '';
+  return `${actor}${channel ? `（渠道：${channel}）` : type ? `（渠道：${type}）` : ''}`;
+};
 const dateInput = value => {
   const date = value ? new Date(value) : null;
   if (!date || Number.isNaN(date.getTime())) return '';
@@ -179,7 +187,7 @@ async function upsertMedicalProxyServiceRecord(task, order, completed = false) {
   const update = { staffId: task.assignedTo, patientId: task.patientId, date: appointment, title: medicationProxy ? '代配药服务' : '医疗代诊服务', content,
     medicalEscort: { serviceType: 'proxy_visit', hospital: plan.hospital || '', department: plan.department || '', doctor: plan.expert || '' } };
   if (completed) {
-    update.result = nonempty(task.formData?.resolutionResult || task.formData?.fulfillmentProof || task.formData?.executionResult);
+    update.result = supplyResolutionSummary(task.formData) || nonempty(task.formData?.resolutionResult || task.formData?.fulfillmentProof || task.formData?.executionResult);
     update.attachments = (medicationProxy
       ? ['medicationPhotoAttachments', 'medicationInstructionAttachments', 'medicalRecordAttachments', 'chargeReceiptAttachments'].flatMap(key => task.formData?.[key] || [])
       : (task.formData?.medicalEscort === true ? medicalEscortAttachments(task.formData) : (task.formData?.medicalRecordAttachments || []))).filter(file => file?.url);
@@ -266,7 +274,7 @@ async function completeLinkedMedicalReminder(task, order) {
 async function completeLinkedSupplyReminder(task, order) {
   const sourceTaskId = order.medicalProxyPlan?.sourceSupplyReminderTaskId;
   if (!sourceTaskId) return null;
-  const resolutionResult = nonempty(task.formData?.resolutionResult || task.formData?.fulfillmentProof);
+  const resolutionResult = supplyResolutionSummary(task.formData) || nonempty(task.formData?.resolutionResult || task.formData?.fulfillmentProof);
   const executionResult = nonempty(task.formData?.executionResult);
   const result = resolutionResult || executionResult || '本次代配服务已完成。';
   const completed = await FollowUp.findOneAndUpdate(
@@ -712,6 +720,8 @@ async function validateMedicalProxyStage(task, body, staff) {
   }
   if (stage === 'resolution') {
     if (!['online', 'pharmacy', 'other_hospital', 'refund'].includes(data.resolutionType)) return '请选择异常解决方案';
+    if (data.resolutionType !== 'refund' && !['customer', 'staff'].includes(data.purchaseActor)) return '请选择实际采购主体';
+    if (data.resolutionType !== 'refund' && !nonempty(data.purchaseChannel)) return '请填写实际采购渠道或平台';
     if (!nonempty(data.resolutionPlan) || (!nonempty(data.resolutionResult) && !nonempty(data.fulfillmentProof))) return '请填写解决方案和实际处理结果及配药/采购凭据说明';
     if (data.customerConfirmed !== true) return '请确认客户已同意并确认处理结果';
     if (data.resolutionType !== 'refund' && !nonempty(data.deliveryArrangement)) return '请填写配送或交付安排';
@@ -978,4 +988,4 @@ async function advanceMedicalProxyWorkflow(task) {
   } });
 }
 
-module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
+module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, supplyResolutionSummary, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, validateMedicalProxyStage, advanceMedicalProxyWorkflow };

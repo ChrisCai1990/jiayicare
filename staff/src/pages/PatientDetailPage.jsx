@@ -10931,7 +10931,12 @@ export default function PatientDetailPage() {
                       const stage = String(item.workflowKey || '').split(':').at(-1)
                       const stageLabel = item.sourceType === 'supply_reminder' ? '服务完成'
                         : ({ intake: '服务受理', collect: '资料收集', documents: '资料准备', audit: '资料审核', advisor: '方案确认', advisor_review: '健康顾问审核', plan_review: '方案复核', planner: '人员安排', booking: '预约安排', medical: '现场执行', execute: '服务执行', manager_review: '健管专员审核', post_visit_audit: '就诊资料审核', post_visit_review: '健康顾问查看', followup: '后续随访', resolution: '异常解决与最终配药', supervise: '全程督办' })[stage] || item.theme || '服务处理'
-                      const detail = item.formData?.resolutionResult || item.formData?.fulfillmentProof || item.formData?.executionResult || item.executedContent || item.content || item.plannedContent || ''
+                      const rawDetail = item.formData?.resolutionResult || item.formData?.fulfillmentProof || item.formData?.executionResult || item.executedContent || item.content || item.plannedContent || ''
+                      const purchaseActor = item.formData?.purchaseActor === 'customer' ? '健管专员指导客户自行采购' : item.formData?.purchaseActor === 'staff' ? '由我方代配/代购' : ''
+                      const purchaseType = ({ online: '互联网药房', pharmacy: '其他药房', other_hospital: '其他医院或门诊' })[item.formData?.resolutionType] || ''
+                      const purchaseChannel = item.formData?.purchaseChannel || purchaseType
+                      const structuredResolution = item.formData?.resolutionType === 'refund' ? '无可行配药渠道，已按客户确认方案退费结案' : purchaseActor && `${purchaseActor}${purchaseChannel ? `（渠道：${purchaseChannel}）` : ''}`
+                      const detail = stage === 'resolution' && structuredResolution ? structuredResolution : rawDetail
                       const time = item.completedAt || item.updatedAt || item.createdAt || item.date
                       const resolutionExecutor = followUpDetail._serviceItems.find(serviceItem => serviceItem.workflowKey === 'medical_proxy:resolution')
                       const executor = item.sourceType === 'supply_reminder'
