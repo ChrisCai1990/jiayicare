@@ -10922,12 +10922,16 @@ export default function PatientDetailPage() {
                         : ({ collect: '资料收集', audit: '资料审核', advisor: '方案确认', planner: '人员安排', booking: '预约配药', execute: '医院配药执行', resolution: '异常解决与最终配药', supervise: '健康规划师督办' })[stage] || item.theme || '服务处理'
                       const detail = item.formData?.resolutionResult || item.formData?.fulfillmentProof || item.formData?.executionResult || item.executedContent || item.content || item.plannedContent || ''
                       const time = item.completedAt || item.updatedAt || item.createdAt || item.date
+                      const resolutionExecutor = followUpDetail._serviceItems.find(serviceItem => serviceItem.workflowKey === 'medical_proxy:resolution')
+                      const executor = item.sourceType === 'supply_reminder'
+                        ? (resolutionExecutor?.assignedTo || resolutionExecutor?.staffId)
+                        : (item.assignedTo || item.staffId)
                       return <div key={item._id || index} style={{ borderLeft: `3px solid ${item.status === 'completed' ? '#22A06B' : item.status === 'cancelled' ? '#AAB7B1' : '#D9A441'}`, padding: '7px 10px', background: '#F7FAF8', borderRadius: '0 7px 7px 0' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
                           <b style={{ fontSize: 13 }}>{stageLabel}</b>
                           <span style={{ fontSize: 12, color: '#65776F', whiteSpace: 'nowrap' }}>{time ? new Date(time).toLocaleString('zh-CN', { hour12: false }) : '-'}</span>
                         </div>
-                        <div style={{ fontSize: 12, color: '#65776F', marginTop: 3 }}>{STATUS_MAP[item.status] || item.status}{item.assignedTo?.name || item.staffId?.name ? ` · ${item.assignedTo?.name || item.staffId?.name}` : ''}</div>
+                        <div style={{ fontSize: 12, color: '#65776F', marginTop: 3 }}>{STATUS_MAP[item.status] || item.status}{executor?.name ? ` · ${executor.name}` : ''}</div>
                         {detail && <div style={{ fontSize: 13, color: '#1A2B24', marginTop: 5, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{detail}</div>}
                       </div>
                     })}

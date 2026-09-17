@@ -253,6 +253,7 @@ test('staff-initiated medication keeps a planner supervision task until executio
   assert.match(workflow, /if \(supplyProxy\) await completeLinkedSupplyReminder\(task, order\)/);
   assert.match(workflow, /sourceSupplyReminderTaskId/);
   assert.match(workflow, /sourceType: 'supply_reminder'/);
+  assert.match(workflow, /staffId: task\.assignedTo, assignedTo: task\.assignedTo/);
   assert.match(workflow, /generateNextSupplyReminder\(completed\)/);
   assert.match(page, /健康规划师分配配药执行人员/);
   assert.match(page, /执行人员配药确认与配送/);
@@ -316,6 +317,8 @@ test('medical escort skips booking and sends manager review only after execution
   assert.match(patientPage, /本次服务完整过程/);
   assert.match(patientPage, /异常解决与最终配药/);
   assert.match(patientPage, /sourceType === 'supply_reminder' \? '服务完成'/);
+  assert.match(patientPage, /workflowKey === 'medical_proxy:resolution'/);
+  assert.match(patientPage, /resolutionExecutor\?\.assignedTo/);
   assert.match(patientPage, /a\.completedAt \|\| a\.createdAt \|\| a\.date/);
   assert.match(patientPage, /sourceType === 'supply_reminder' \? 99/);
   assert.match(patientPage, />执行时间</);

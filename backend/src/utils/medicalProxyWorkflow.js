@@ -278,6 +278,7 @@ async function completeLinkedSupplyReminder(task, order) {
     },
     { $set: {
       status: 'completed', content: result, executedContent: result, executedType: 'other',
+      staffId: task.assignedTo, assignedTo: task.assignedTo,
       completedAt: new Date(), completedBy: 'staff',
       'formData.medicalProxyOrderId': order._id,
     } },
