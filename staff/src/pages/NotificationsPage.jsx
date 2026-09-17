@@ -6,7 +6,7 @@ import { reconcileConversationMessages } from '../utils/conversationMessages'
 
 const PUSH_TYPE_LABEL = { knowledge:'科普', questionnaire:'问卷', plan:'方案', product:'产品', supplement:'营养素', notice:'通知' }
 const PUSH_TYPE_COLOR = { knowledge:'#22A06B', questionnaire:'#0077B6', plan:'#D97706', product:'#1E6B50', supplement:'#8e44ad', notice:'#666' }
-const REFERRAL_STATUS_LABEL = { pending:'待处理', accepted:'已接受', completed:'已完成', rejected:'已退回' }
+const REFERRAL_STATUS_LABEL = { pending:'待处理', accepted:'处理中', completed:'已反馈', rejected:'已退回' }
 const REFERRAL_STATUS_COLOR = { pending:'#D97706', accepted:'#0077B6', completed:'#22A06B', rejected:'#DC3545' }
 
 const referralMonthKey = value => {
@@ -17,7 +17,9 @@ const referralMonthKey = value => {
 const referralMonthLabel = key => key === '日期待补充' ? key : `${Number(key.slice(0, 4))}年${Number(key.slice(5))}月`
 
 function ReferralGroupedList({ referrals, priorityStatuses = [], priorityPredicate, priorityLabel = '需要我处理', children }) {
-  const isPriority = item => priorityStatuses.includes(item.status) || !!priorityPredicate?.(item)
+  const hasSubmittedFeedback = item => !!(item.responseAnalysis || item.responseOpinion || item.response)
+  const effectiveStatus = item => item.status === 'accepted' && hasSubmittedFeedback(item) ? 'completed' : item.status
+  const isPriority = item => priorityStatuses.includes(effectiveStatus(item)) || !!priorityPredicate?.(item)
   const priority = referrals.filter(isPriority)
   const archived = referrals.filter(item => !isPriority(item))
   const groups = archived.reduce((result, item) => {
@@ -28,7 +30,8 @@ function ReferralGroupedList({ referrals, priorityStatuses = [], priorityPredica
   }, {})
   const currentMonth = referralMonthKey(new Date())
   const renderStats = items => Object.entries(items.reduce((result, item) => {
-    result[item.status] = (result[item.status] || 0) + 1
+    const status = effectiveStatus(item)
+    result[status] = (result[status] || 0) + 1
     return result
   }, {})).map(([status, count]) => `${REFERRAL_STATUS_LABEL[status] || status}${count}`).join('｜')
 
@@ -101,7 +104,7 @@ export default function NotificationsPage() {
   const handleRespond = async (id, status, responseAnalysis, responseOpinion, consultation = {}) => {
     try {
       await staffAPI.updateReferral(id, { status, responseAnalysis, responseOpinion, consultation })
-      toast(status === 'accepted' ? '已接受转介' : status === 'rejected' ? '已拒绝转介' : '已完成转介')
+      toast(status === 'accepted' ? '已接受转介' : status === 'rejected' ? '已退回转介' : '转介反馈已提交')
       setRespondModal(null); load()
       window.dispatchEvent(new Event('notif-refresh'))
     } catch (err) { toast(err.message) }
@@ -240,7 +243,7 @@ export default function NotificationsPage() {
                       <span style={{ fontSize: 11, background: '#DC3545', color: '#fff', padding: '1px 8px', borderRadius: 99, fontWeight: 600 }}>紧急</span>
                     )}
                     <span style={{ fontWeight: 600, fontSize: 15 }}>{r.reason}</span>
-                    <span style={{ fontSize: 12, color: REFERRAL_STATUS_COLOR[r.status], fontWeight: 600 }}>· {REFERRAL_STATUS_LABEL[r.status]}</span>
+                    <span style={{ fontSize: 12, color: REFERRAL_STATUS_COLOR[r.status], fontWeight: 600 }}>· {r.status === 'accepted' && (r.responseAnalysis || r.responseOpinion || r.response) ? '已反馈' : REFERRAL_STATUS_LABEL[r.status]}</span>
                   </div>
                   <div style={{ fontSize: 13, color: '#4A6558', marginBottom: 4 }}>
                     会员：<strong style={{ cursor: r.canViewPatient ? 'pointer' : 'default', color: '#1E6B50' }} onClick={() => r.canViewPatient && nav(`/patients/${r.patientId?._id}`)}>{r.patientId?.name}</strong>
@@ -281,8 +284,11 @@ export default function NotificationsPage() {
                     <button className="btn btn-primary btn-sm" onClick={() => setRespondModal({ ...r, action: 'accept' })}>接受</button>
                     <button className="btn btn-danger btn-sm" onClick={() => setRespondModal({ ...r, action: 'reject' })}>拒绝</button>
                   </>}
-                  {r.status === 'accepted' && (
-                    <button className="btn btn-primary btn-sm" onClick={() => setRespondModal({ ...r, action: 'complete' })}>提交反馈并完成</button>
+                  {r.status === 'accepted' && !(r.responseAnalysis || r.responseOpinion || r.response) && (
+                    <button className="btn btn-primary btn-sm" onClick={() => setRespondModal({ ...r, action: 'feedback' })}>填写并提交转介反馈</button>
+                  )}
+                  {(r.status === 'completed' || (r.status === 'accepted' && (r.responseAnalysis || r.responseOpinion || r.response))) && (
+                    <button className="btn btn-secondary btn-sm" onClick={() => setRespondModal({ ...r, action: 'editFeedback' })}>修改已提交反馈</button>
                   )}
                 </div>
               </div>
@@ -544,10 +550,18 @@ function RespondModal({ referral, onClose, onRespond }) {
   const [submitting, setSubmitting] = useState(false)
   const [aiDrafting, setAiDrafting] = useState(false)
   const isAccept = referral.action === 'accept'
-  const isComplete = referral.action === 'complete'
+  const isFeedback = referral.action === 'feedback' || referral.action === 'editFeedback'
+  const isEditFeedback = referral.action === 'editFeedback'
   const isReject = referral.action === 'reject'
 
-  const nextStatus = isAccept ? 'accepted' : isComplete ? 'completed' : 'rejected'
+  const nextStatus = isAccept ? 'accepted' : isFeedback ? 'completed' : 'rejected'
+
+  useEffect(() => {
+    if (!isEditFeedback) return
+    setResponseAnalysis(referral.responseAnalysis || '')
+    setResponseOpinion(referral.responseOpinion || referral.response || '')
+    if (referral.consultation) setConsultation(current => ({ ...current, ...referral.consultation, sourceDate: referral.consultation.sourceDate ? String(referral.consultation.sourceDate).slice(0, 10) : '' }))
+  }, [isEditFeedback, referral])
 
   const handleAiDraft = async () => {
     setAiDrafting(true)
@@ -560,11 +574,11 @@ function RespondModal({ referral, onClose, onRespond }) {
   }
 
   const handleSubmit = async () => {
-    if (isComplete && referral.requiresConclusion !== false && !responseOpinion.trim()) {
-      toast('请填写转介意见／建议，提交后本次转介将自动完成')
+    if (isFeedback && referral.requiresConclusion !== false && !responseOpinion.trim()) {
+      toast('请填写转介意见／建议')
       return
     }
-    if (isComplete && consultation.feedbackType === 'external_medical_record' && !consultation.noMedicalConclusion && !consultation.sourceInstitution.trim()) {
+    if (isFeedback && consultation.feedbackType === 'external_medical_record' && !consultation.noMedicalConclusion && !consultation.sourceInstitution.trim()) {
       toast('归档外部医疗信息时，请填写来源医疗机构')
       return
     }
@@ -575,7 +589,7 @@ function RespondModal({ referral, onClose, onRespond }) {
         nextStatus,
         isReject ? rejectReason : responseAnalysis,
         isReject ? '' : responseOpinion,
-        isComplete ? consultation : {},
+        isFeedback ? consultation : {},
       )
     }
     finally { setSubmitting(false) }
@@ -586,7 +600,7 @@ function RespondModal({ referral, onClose, onRespond }) {
       <div className="modal" style={{ maxWidth: 480 }}>
         <div className="modal-header">
           <h3 className="modal-title">
-            {isAccept ? '✓ 接受转介' : isComplete ? '✅ 提交反馈并完成' : '✗ 拒绝转介'}
+            {isAccept ? '✓ 接受转介' : isEditFeedback ? '✎ 修改已提交反馈' : isFeedback ? '提交转介反馈' : '✗ 退回转介'}
           </h3>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
@@ -606,7 +620,7 @@ function RespondModal({ referral, onClose, onRespond }) {
             </div>
           ) : isAccept ? (
             <div style={{ padding:'12px 14px', background:'#F0F8F4', color:'#315C4D', borderRadius:8, fontSize:13, lineHeight:1.7 }}>
-              接受仅表示确认接单，本次转介将进入“处理中”。完成协作后，请通过“提交反馈并完成”一次性填写正式意见，提交后系统自动结案。
+              接受仅表示确认接单，本次转介将进入“处理中”。整理好正式意见后，通过“填写并提交转介反馈”发送给发起方；提交后状态变为“已反馈”。
             </div>
           ) : (
             <>
@@ -647,7 +661,7 @@ function RespondModal({ referral, onClose, onRespond }) {
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
           <button className={`btn ${isReject ? 'btn-danger' : 'btn-primary'}`}
             onClick={handleSubmit} disabled={submitting || (isReject && !rejectReason)}>
-            {submitting ? '提交中...' : isAccept ? '确认接受并开始处理' : isComplete ? '提交反馈并完成' : '确认拒绝'}
+            {submitting ? '提交中...' : isAccept ? '确认接受并开始处理' : isEditFeedback ? '保存修改并重新通知' : isFeedback ? '提交转介反馈' : '确认退回'}
           </button>
         </div>
       </div>

@@ -44,6 +44,7 @@ const referralSchema = new Schema({
   courseDraftStatus: { type: String, enum: ['none', 'pending_review', 'approved', 'rejected'], default: 'none' },
   linkedCourseEntryId: { type: Schema.Types.ObjectId, default: null },
   revisionHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  responseRevisionHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
 }, { timestamps: true });
 
 referralSchema.index({ toStaffId: 1, status: 1 });

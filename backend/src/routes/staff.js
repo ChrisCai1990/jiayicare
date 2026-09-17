@@ -5866,14 +5866,28 @@ router.patch('/referrals/:id', staffAuth, async (req, res) => {
   const allowedTransitions = {
     pending: ['accepted', 'rejected'],
     accepted: ['completed', 'rejected'],
-    completed: [],
+    completed: ['completed'], // 已提交反馈允许修订；每次修订均保留历史并重新通知发起方
     rejected: [],
   };
   if (!status || !allowedTransitions[referral.status]?.includes(status)) {
     return res.status(409).json({ success: false, message: `当前状态“${referral.status}”不能变更为“${status || '未指定'}”` });
   }
-  // 接受只代表接单，不在此阶段写入正式意见；正式反馈仅在完成时一次性提交。
+  // 接受只代表接单，不在此阶段写入正式意见；提交正式反馈即进入“已反馈”。
   if (status === 'completed') {
+    const hadSubmittedFeedback = !!(referral.response || referral.responseAnalysis || referral.responseOpinion);
+    if (hadSubmittedFeedback) {
+      referral.responseRevisionHistory.push({
+        response: referral.response,
+        responseAnalysis: referral.responseAnalysis,
+        responseOpinion: referral.responseOpinion,
+        consultation: referral.consultation?.toObject?.() || referral.consultation || null,
+        submittedAt: referral.respondedAt,
+        revisedAt: new Date(),
+        revisedById: req.staff._id,
+        revisedByName: req.staff.name || req.staff.username || '',
+      });
+      referral.responseRevisionHistory = referral.responseRevisionHistory.slice(-30);
+    }
     if (response !== undefined && response.trim()) referral.response = response.trim();
     if (responseAnalysis !== undefined) referral.responseAnalysis = responseAnalysis.trim();
     if (responseOpinion !== undefined) referral.responseOpinion = responseOpinion.trim();

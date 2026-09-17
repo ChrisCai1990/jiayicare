@@ -58,15 +58,19 @@ test('AI只整理授权信息且不生成诊疗决策', () => {
   assert.match(route, /协作反馈/);
 });
 
-test('接受只接单，正式反馈提交时自动完成转介', () => {
+test('接受只接单，提交正式反馈即标记已反馈且允许保留历史后修订', () => {
   const route = read('backend/src/routes/staff.js');
   const notifications = read('staff/src/pages/NotificationsPage.jsx');
   assert.match(route, /pending: \['accepted', 'rejected'\]/);
   assert.match(route, /accepted: \['completed', 'rejected'\]/);
-  assert.match(route, /接受只代表接单，不在此阶段写入正式意见/);
+  assert.match(route, /completed: \['completed'\]/);
+  assert.match(route, /responseRevisionHistory\.push/);
+  assert.match(route, /提交正式反馈即进入“已反馈”/);
   assert.match(notifications, /确认接受并开始处理/);
-  assert.match(notifications, /提交反馈并完成/);
-  assert.match(notifications, /提交后本次转介将自动完成/);
+  assert.match(notifications, /填写并提交转介反馈/);
+  assert.match(notifications, /修改已提交反馈/);
+  assert.match(notifications, /保存修改并重新通知/);
+  assert.doesNotMatch(notifications, /提交反馈并完成/);
   assert.match(notifications, /consultation\.feedbackType === 'external_medical_record'/);
 });
 
