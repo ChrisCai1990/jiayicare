@@ -22,12 +22,10 @@ const medicationProxyProgress = task => {
     booking: { step: 1, label: '健管专员预约配药门诊', next: '预约完成后由健康规划师安排就医专员' },
     planner: { step: 2, label: '健康规划师安排配药执行人员', next: '确认后直接转给就医专员' },
     execute: { step: 3, label: '就医专员配药并上传交付资料', next: '资料齐全后完成服务' },
+    resolution: { step: 4, label: '健管专员制定并落实异常解决方案', next: '确认替代渠道或退费结果后结束服务' },
     completed: { step: 4, label: '代配药服务已完成', next: '服务已闭环' },
   }
-  const current = task.formData?.executionFailed && stage === 'booking'
-    ? { step: 1, label: '代配未成功，健管专员重新处理', next: task.formData?.lastExecutionFailure || '确认新的配药安排后再次流转' }
-    : (stages[stage] || stages.booking)
-  return { ...current, total: 4, steps: ['预约', '人员分配', '配药执行', '完成'] }
+  return { ...(stages[stage] || stages.booking), total: 5, steps: ['预约', '人员分配', '配药执行', '异常解决', '完成'] }
 }
 
 const medicalEscortProgress = task => {

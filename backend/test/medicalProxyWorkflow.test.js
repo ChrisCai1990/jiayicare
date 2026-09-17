@@ -224,18 +224,19 @@ test('failed medication proxy execution allows completion without delivery docum
   }
 });
 
-test('failed medication proxy execution returns to manager and keeps planner supervision active', () => {
+test('failed medication proxy execution creates a manager resolution task without restarting booking', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
   const panel = fs.readFileSync(path.join(__dirname, '../../staff/src/components/ServiceTasksPanel.jsx'), 'utf8');
   const failureBranch = workflow.split("task.formData?.executionOutcome === 'failed'")[1].split("if (stage === 'execute' && task.formData?.medicalEscort")[0];
-  assert.match(failureBranch, /workflowKey: `\$\{PREFIX\}booking`/);
-  assert.match(failureBranch, /assignedTo: patient\?\.assignedHealthManager/);
-  assert.match(failureBranch, /status: 'planned'/);
+  assert.match(failureBranch, /workflowKey: `\$\{PREFIX\}resolution`/);
+  assert.match(failureBranch, /assignedTo: patient\.assignedHealthManager/);
+  assert.match(failureBranch, /不重走预约和人员分配流程/);
   assert.match(failureBranch, /workflowKey: `\$\{PREFIX\}supervise`/);
+  assert.match(failureBranch, /currentStage': 'resolution'/);
   assert.match(failureBranch, /executionFailed': true/);
   assert.match(failureBranch, /supervisionStatus: 'in_progress'/);
-  assert.match(workflow, /retryCompletedExecution/);
-  assert.match(panel, /代配未成功，健管专员重新处理/);
+  assert.doesNotMatch(failureBranch, /workflowKey: `\$\{PREFIX\}booking`/);
+  assert.match(panel, /健管专员制定并落实异常解决方案/);
 });
 
 test('staff-initiated medication keeps a planner supervision task until execution completes', () => {

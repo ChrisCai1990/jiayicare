@@ -678,6 +678,12 @@ async function validateMedicalProxyStage(task, body, staff) {
     if (!executionFailed && medicalEscort && !['medicalRecordAttachments', 'prescriptionAttachments', 'examReportAttachments'].some(hasAttachment)) return '执行成功时，请按资料类型上传至少一份陪同资料';
     if (!executionFailed && !medicalEscort && !medicationProxy && !supplementProxy && !hasAttachment('medicalRecordAttachments')) return '执行成功时，请上传至少一份代诊病历';
   }
+  if (stage === 'resolution') {
+    if (!['online', 'pharmacy', 'other_hospital', 'refund'].includes(data.resolutionType)) return '请选择异常解决方案';
+    if (!nonempty(data.resolutionPlan) || !nonempty(data.resolutionResult)) return '请填写解决方案和实际处理结果';
+    if (data.customerConfirmed !== true) return '请确认客户已同意并确认处理结果';
+    if (data.resolutionType !== 'refund' && (!nonempty(data.fulfillmentProof) || !nonempty(data.deliveryArrangement))) return '请填写实际配药凭据和配送安排';
+  }
   if (stage === 'collect' || stage === 'audit' || stage === 'advisor' || stage === 'planner' || stage === 'intake') {
     const patient = await User.findById(task.patientId).select('assignedFamilyDoctor assignedHealthPlanner assignedHealthManager').lean();
     if (stage === 'collect' && !patient?.assignedHealthManager) return '客户尚未分配健管专员，无法流转';
@@ -818,31 +824,22 @@ async function advanceMedicalProxyWorkflow(task) {
   const supplyProxy = medicationProxy || supplementProxy;
   if (stage === 'execute' && supplyProxy && task.formData?.executionOutcome === 'failed') {
     const failureReason = nonempty(task.formData?.executionResult);
-    const retryDate = new Date();
-    const bookingTask = await FollowUp.findOneAndUpdate(
-      { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}booking` },
-      { $set: {
-        status: 'planned', isBlocked: false, assignedTo: patient?.assignedHealthManager,
-        date: retryDate, remindAt: retryDate, completedAt: null, completedBy: null, cancelReason: '',
-        content: '', plannedContent: `上次${supplementProxy ? '营养素采购' : '代配药'}未成功，请根据失败原因重新联系客户并确认采购或配药安排。失败原因：${failureReason}`,
-        'formData.retryAfterFailure': true, 'formData.lastExecutionFailure': failureReason,
-      } }, { new: true },
-    );
-    if (!bookingTask || !patient?.assignedHealthManager) throw Object.assign(new Error('客户尚未分配健管专员，无法继续处理未成功的代配服务'), { status: 409 });
-    await FollowUp.updateMany(
-      { sourceType: 'order', sourceOrderId: order._id, workflowKey: { $in: [`${PREFIX}planner`] }, status: { $in: ['planned', 'in_progress', 'completed'] } },
-      { $set: { status: 'cancelled', cancelReason: '上次代配未成功，等待健管专员重新确认安排' } },
+    if (!patient?.assignedHealthManager) throw Object.assign(new Error('客户尚未分配健管专员，无法继续处理未成功的代配服务'), { status: 409 });
+    const resolutionTask = await FollowUp.findOneAndUpdate(
+      { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}resolution` },
+      { $setOnInsert: { patientId: task.patientId, staffId: patient.assignedHealthManager, assignedTo: patient.assignedHealthManager, type: 'other', status: 'planned', date: new Date(), remindAt: new Date(), sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}resolution`, taskRole: 'executor', dependsOnTaskId: task._id, theme: `代配异常：健管专员制定并落实解决方案 · ${order.serviceName}`, plannedContent: '就医专员本次执行已结束但未成功代配；请直接制定并落实互联网配药、其他药房/医院或退费方案，不重走预约和人员分配流程。', formData: { supplyProxy: true, medicationProxy, supplementProxy, executionSnapshot: task.formData, failureReason, resolutionType: medicationProxy ? 'online' : '' } } },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
     );
     await FollowUp.updateOne(
       { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } },
       { $set: {
-        'formData.currentStage': 'booking', 'formData.executionFailed': true,
+        'formData.currentStage': 'resolution', 'formData.executionFailed': true,
         'formData.lastExecutionFailure': failureReason,
-        content: `代配未成功，已退回健管专员重新处理；健康规划师继续督办。失败原因：${failureReason}`,
+        content: `就医专员本次执行已结束但代配未成功，已转健管专员制定并落实解决方案；健康规划师继续督办。失败原因：${failureReason}`,
       } },
     );
     await Order.updateOne({ _id: order._id }, { $set: {
-      currentStage: 'booking', currentAssignee: patient.assignedHealthManager, supervisionStatus: 'in_progress',
+      currentStage: 'resolution', currentAssignee: resolutionTask.assignedTo, supervisionStatus: 'in_progress',
     } });
     return;
   }
@@ -869,7 +866,7 @@ async function advanceMedicalProxyWorkflow(task) {
     await Order.updateOne({ _id: order._id }, { $set: { currentStage: 'post_visit_audit', currentAssignee: auditTask.assignedTo, supervisionStatus: 'in_progress' } });
     return;
   }
-  if (index === STAGES.length - 1) {
+  if (index === STAGES.length - 1 || (stage === 'resolution' && supplyProxy)) {
     await upsertMedicalProxyServiceRecord(task, order, true);
     await archiveMedicalProxyRecords(task, order, patient?.tenantId);
     await createMedicalProxyFollowUpDrafts(task, order, patient?.assignedFamilyDoctor);

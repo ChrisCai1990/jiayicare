@@ -68,6 +68,10 @@ export function validateMedicalProxyStage(stage, value) {
   if (stage === 'execute' && !executionFailed && supplementProxy && !['supplementPhotoAttachments', 'chargeReceiptAttachments'].every(hasAttachment)) return '执行成功时，请上传产品照片和购买凭证'
   if (stage === 'execute' && !executionFailed && medicalEscort && !['medicalRecordAttachments', 'prescriptionAttachments', 'examReportAttachments'].some(hasAttachment)) return '执行成功时，请按资料类型上传至少一份陪同资料'
   if (stage === 'execute' && !executionFailed && !medicalEscort && !medicationProxy && !supplementProxy && !hasAttachment('medicalRecordAttachments')) return '执行成功时，请上传至少一份代诊病历'
+  if (stage === 'resolution' && !['online', 'pharmacy', 'other_hospital', 'refund'].includes(value.resolutionType)) return '请选择异常解决方案'
+  if (stage === 'resolution' && (!value.resolutionPlan?.trim() || !value.resolutionResult?.trim())) return '请填写解决方案和实际处理结果'
+  if (stage === 'resolution' && !value.customerConfirmed) return '请确认客户已同意并确认处理结果'
+  if (stage === 'resolution' && value.resolutionType !== 'refund' && (!value.fulfillmentProof?.trim() || !value.deliveryArrangement?.trim())) return '请填写实际配药凭据和配送安排'
   return ''
 }
 
@@ -337,5 +341,14 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     </label>)}
   </div>
   }
+  if (stage === 'resolution') return <div style={{ display: 'grid', gap: 12 }}>
+    <div style={{ padding: 12, borderRadius: 8, background: '#FFF8ED', border: '1px solid #F2D4A7', fontSize: 13, lineHeight: 1.7 }}><b>就医专员本次执行已结束，未成功代配</b><br />失败原因：{value.failureReason || value.executionSnapshot?.executionResult || '-'}<br />本任务用于直接制定和落实解决方案，不会重新走预约、规划师分配和就医专员执行流程。</div>
+    <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>解决方案类型 *<select className="form-control" value={value.resolutionType || ''} onChange={e => set('resolutionType', e.target.value)}><option value="">请选择</option><option value="online">互联网配药/采购</option><option value="pharmacy">其他药房</option><option value="other_hospital">其他医院或门诊</option><option value="refund">无可行渠道，退费结案</option></select></label>
+    {input('resolutionPlan', '解决方案及执行步骤 *', 4)}
+    {input('resolutionResult', '实际处理结果 *', 4)}
+    {value.resolutionType !== 'refund' && <>{input('fulfillmentProof', '实际配药/采购凭据说明 *', 3)}{input('deliveryArrangement', '配送或交付安排 *', 3)}</>}
+    <label><input type="checkbox" checked={!!value.customerConfirmed} onChange={e => set('customerConfirmed', e.target.checked)} /> 客户已同意该解决方案，并确认实际处理结果</label>
+    <div style={{ fontSize: 12, color: '#65776F' }}>提交后结束健管异常解决任务，并同步结束健康规划师督办及本订单。</div>
+  </div>
   return null
 }
