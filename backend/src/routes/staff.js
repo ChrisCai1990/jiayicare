@@ -2650,7 +2650,7 @@ router.get('/staff-list', staffAuth, async (req, res) => {
 // 转介选择器使用的启用医疗资源；只暴露专业资料，不返回内部联络备注。
 router.get('/medical-resources', staffAuth, async (req, res) => {
   const [institutions, departments, experts] = await Promise.all([
-    MedicalInstitution.find({ status: 'active' }).select('name level nature region campuses').sort({ name: 1 }).lean(),
+    MedicalInstitution.find({ status: 'active' }).select('name level nature region campuses campusDetails contactName contactTitle phone').sort({ name: 1 }).lean(),
     MedicalDepartment.find({ status: 'active' }).select('institutionId campus name specialties').sort({ name: 1 }).lean(),
     MedicalExpert.find({ status: 'active' }).select('name title institutionId departmentId campus expertise diseaseTags introduction serviceModes outpatientSchedule linkedStaffId').sort({ name: 1 }).lean(),
   ]);

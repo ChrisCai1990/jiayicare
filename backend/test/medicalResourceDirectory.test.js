@@ -10,6 +10,8 @@ test('医院、医院科室和专家使用独立资源模型', () => {
   const department = read('backend/src/models/MedicalDepartment.js');
   const expert = read('backend/src/models/MedicalExpert.js');
   assert.match(institution, /campuses/);
+  assert.match(institution, /campusDetails/);
+  assert.match(institution, /contactTitle/);
   assert.match(department, /institutionId/);
   assert.match(expert, /expertise/);
   assert.match(expert, /linkedStaffId/);
@@ -23,6 +25,8 @@ test('Admin 提供医疗资源库且专家账号为可选关联', () => {
   assert.match(routes, /medical-departments/);
   assert.match(routes, /medical-experts/);
   assert.match(page, /不关联（外部专家）/);
+  assert.match(page, /每个院区分别维护地址、联系人、职位和联系电话/);
+  assert.match(page, /医院总联系人/);
   assert.match(layout, /医疗资源库/);
 });
 

@@ -286,6 +286,13 @@ router.delete('/employees/:id', adminAuth, async (req, res) => {
 
 // ── 医疗资源库：医院 → 医院科室 → 专家；与公司内部部门、员工账号分离 ──
 const cleanList = value => [...new Set((Array.isArray(value) ? value : String(value || '').split(/[、,，;；\n]+/)).map(v => String(v).trim()).filter(Boolean))];
+const cleanCampuses = value => (Array.isArray(value) ? value : []).map(item => ({
+  name: String(item?.name || '').trim().slice(0, 100),
+  address: String(item?.address || '').trim().slice(0, 500),
+  contactName: String(item?.contactName || '').trim().slice(0, 100),
+  contactTitle: String(item?.contactTitle || '').trim().slice(0, 100),
+  phone: String(item?.phone || '').trim().slice(0, 100),
+})).filter(item => item.name);
 
 router.get('/medical-resources', adminAuth, async (req, res) => {
   const [institutions, departments, experts] = await Promise.all([
@@ -298,11 +305,13 @@ router.get('/medical-resources', adminAuth, async (req, res) => {
 
 router.post('/medical-institutions', adminAuth, async (req, res) => {
   if (!req.body.name?.trim()) return res.status(400).json({ success: false, message: '请填写医院名称' });
-  const item = await MedicalInstitution.create({ ...req.body, name: req.body.name.trim(), aliases: cleanList(req.body.aliases), campuses: cleanList(req.body.campuses) });
+  const campusDetails = cleanCampuses(req.body.campusDetails);
+  const item = await MedicalInstitution.create({ ...req.body, name: req.body.name.trim(), aliases: cleanList(req.body.aliases), campusDetails, campuses: campusDetails.map(item => item.name) });
   res.status(201).json({ success: true, data: item });
 });
 router.put('/medical-institutions/:id', adminAuth, async (req, res) => {
-  const item = await MedicalInstitution.findByIdAndUpdate(req.params.id, { ...req.body, aliases: cleanList(req.body.aliases), campuses: cleanList(req.body.campuses) }, { new: true, runValidators: true });
+  const campusDetails = cleanCampuses(req.body.campusDetails);
+  const item = await MedicalInstitution.findByIdAndUpdate(req.params.id, { ...req.body, aliases: cleanList(req.body.aliases), campusDetails, campuses: campusDetails.map(item => item.name) }, { new: true, runValidators: true });
   if (!item) return res.status(404).json({ success: false, message: '医院不存在' });
   res.json({ success: true, data: item });
 });
