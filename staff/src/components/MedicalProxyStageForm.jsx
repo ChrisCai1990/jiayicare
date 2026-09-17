@@ -66,7 +66,7 @@ export function validateMedicalProxyStage(stage, value) {
   if (stage === 'execute' && !value.executionResult?.trim()) return executionFailed ? '请填写未执行成功的原因和后续处理说明' : '请填写执行结果'
   if (stage === 'execute' && !executionFailed && medicationProxy && !['medicationPhotoAttachments', 'medicationInstructionAttachments', 'medicalRecordAttachments', 'chargeReceiptAttachments'].every(hasAttachment)) return '执行成功时，请分别上传药品照片、药品服用单、病历和收费单'
   if (stage === 'execute' && !executionFailed && supplementProxy && !['supplementPhotoAttachments', 'chargeReceiptAttachments'].every(hasAttachment)) return '执行成功时，请上传产品照片和购买凭证'
-  if (stage === 'execute' && !executionFailed && medicalEscort && !hasAttachment('medicalRecordAttachments')) return '执行成功时，请上传至少一份陪同资料'
+  if (stage === 'execute' && !executionFailed && medicalEscort && !['medicalRecordAttachments', 'prescriptionAttachments', 'examReportAttachments'].some(hasAttachment)) return '执行成功时，请按资料类型上传至少一份陪同资料'
   if (stage === 'execute' && !executionFailed && !medicalEscort && !medicationProxy && !supplementProxy && !hasAttachment('medicalRecordAttachments')) return '执行成功时，请上传至少一份代诊病历'
   return ''
 }
@@ -120,7 +120,8 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
   </div>
   }
   if (stage === 'post_visit_audit') {
-    const submittedReportIds = new Set((value.executionSnapshot?.medicalRecordAttachments?.length ? value.reportIds || [] : []).map(String))
+    const submittedAttachments = ['medicalRecordAttachments', 'prescriptionAttachments', 'examReportAttachments'].flatMap(key => value.executionSnapshot?.[key] || [])
+    const submittedReportIds = new Set((submittedAttachments.length ? value.reportIds || [] : []).map(String))
     const eligible = reports.filter(report => isMedicalEscort
       ? submittedReportIds.has(String(report._id))
       : (!value.appointmentAt || new Date(report.createdAt) >= new Date(value.appointmentAt)))
@@ -129,7 +130,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
       {isMedicalEscort && <div style={{ display: 'grid', gap: 7, background: '#F5F8F6', border: '1px solid #DCE8E1', borderRadius: 8, padding: 12, fontSize: 13 }}>
         <div style={{ fontWeight: 700, color: '#1E6B50' }}>就医专员本次提交内容</div>
         <div style={{ whiteSpace: 'pre-wrap' }}>陪同执行结果、现场情况和后续事项：{value.executionSnapshot?.executionResult || '未填写'}</div>
-        <div>提交资料：{value.executionSnapshot?.medicalRecordAttachments?.length || 0} 份（请在下方逐份打开审核）</div>
+        <div>提交资料：{submittedAttachments.length} 份（病历、处方和检验检查报告已分类，请在下方逐份打开审核）</div>
       </div>}
       {!eligible.length && <div style={{ color: '#B45309', fontSize: 13 }}>暂无本次就诊后上传的报告。</div>}
       {eligible.map(report => <label key={report._id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
@@ -319,7 +320,11 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     </label>
     {value.executionOutcome === 'failed' && <div style={{ color: '#B45309', fontSize: 12 }}>未执行成功时附件不强制上传，请在执行结果中写明原因及后续处理。</div>}
     {input('executionResult', isMedicalEscort ? '陪同执行结果、现场情况和后续事项' : isSupplyProxy ? `${isSupplementProxy ? '购买' : '配药'}结果、数量核对与交付说明` : fields.execute[0][1], 5)}
-    {(isMedicalEscort ? [['medicalRecordAttachments', `陪同资料附件（报告、病历等）${value.executionOutcome === 'failed' ? '（未成功时选填）' : ' *'}`, '+ 上传陪同资料']] : isSupplementProxy ? [
+    {(isMedicalEscort ? [
+      ['medicalRecordAttachments', `门诊病历${value.executionOutcome === 'failed' ? '（未成功时选填）' : ''}`, '+ 上传门诊病历'],
+      ['prescriptionAttachments', `处方/医嘱单${value.executionOutcome === 'failed' ? '（未成功时选填）' : ''}`, '+ 上传处方/医嘱单'],
+      ['examReportAttachments', `检验检查报告${value.executionOutcome === 'failed' ? '（未成功时选填）' : ''}`, '+ 上传检验检查报告'],
+    ] : isSupplementProxy ? [
       ['supplementPhotoAttachments', `营养素产品照片（须清晰展示品牌、规格和数量）${value.executionOutcome === 'failed' ? '（未成功时选填）' : ' *'}`, '+ 上传产品照片'],
       ['chargeReceiptAttachments', `购买凭证${value.executionOutcome === 'failed' ? '（未成功时选填）' : ' *'}`, '+ 上传购买凭证'],
     ] : isMedicationProxy ? [

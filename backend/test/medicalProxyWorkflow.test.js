@@ -7,7 +7,7 @@ const FollowUp = require('../src/models/FollowUp');
 const MedicalReport = require('../src/models/MedicalReport');
 const User = require('../src/models/User');
 const Order = require('../src/models/Order');
-const { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, extractMedicalProxyRechecks, validateMedicalProxyStage } = require('../src/utils/medicalProxyWorkflow');
+const { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, validateMedicalProxyStage } = require('../src/utils/medicalProxyWorkflow');
 
 test('storefront and staff orders resolve to the same proxy workflow', () => {
   assert.equal(isMedicalProxyOrder({ serviceName: '医疗代诊服务', serviceWorkflowSnapshot: { key: 'medical_proxy' } }), true);
@@ -295,7 +295,9 @@ test('medical escort skips booking and sends manager review only after execution
   assert.match(panel, /\['人员分配', '陪同执行', '资料审核', '完成'\]/);
   assert.match(stageForm, /健康顾问提交的陪同服务信息/);
   assert.match(stageForm, /陪同执行结果、现场情况和后续事项/);
-  assert.match(stageForm, /陪同资料附件（报告、病历等）/);
+  assert.match(stageForm, /上传门诊病历/);
+  assert.match(stageForm, /上传处方\/医嘱单/);
+  assert.match(stageForm, /上传检验检查报告/);
   assert.match(stageForm, /就医专员本次提交内容/);
   assert.match(stageForm, /submittedReportIds\.has/);
   assert.match(patientPage, /陪同就医 · 执行记录/);
@@ -317,6 +319,7 @@ test('medical escort audit closes the linked visit reminder and creates an AI fo
   assert.ok(workflow.includes('theme: /提醒就医|就医提醒/'));
   assert.match(workflow, /executedContent: result/);
   assert.match(escortAudit, /completeLinkedMedicalReminder/);
+  assert.match(escortAudit, /createPrescriptionMedicationDrafts/);
   assert.match(escortAudit, /purgeStaleMedicalEscortReports/);
   assert.match(escortAudit, /createPostVisitFollowUpPlan[\s\S]*medicalEscort: true/);
   assert.match(workflow, /就医陪同后AI随访计划/);
@@ -327,6 +330,15 @@ test('medical escort audit closes the linked visit reminder and creates an AI fo
   assert.match(patientPage, /待\{reviewRoleLabel\(f\.reviewRole\)\}审核/);
   assert.match(patientPage, /等待\{reviewRoleLabel\(f\.reviewRole\)\}审核/);
   assert.match(patientPage, /const canReview = f/);
+});
+
+test('medical escort attachments retain their document categories', () => {
+  const entries = medicalEscortAttachmentEntries({ medicalRecordAttachments: [{ url: '/record.pdf' }], prescriptionAttachments: [{ url: '/rx.pdf' }], examReportAttachments: [{ url: '/exam.pdf' }] });
+  assert.deepEqual(entries.map(item => [item.file.url, item.documentCategory, item.title]), [
+    ['/record.pdf', 'outpatient_record', '就医陪同门诊病历'],
+    ['/rx.pdf', 'prescription_order', '就医陪同处方/医嘱单'],
+    ['/exam.pdf', 'exam_report', '就医陪同检验检查报告'],
+  ]);
 });
 test('booking and execution write the shared hospital visit service archive', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');

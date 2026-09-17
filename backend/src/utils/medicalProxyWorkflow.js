@@ -1,6 +1,7 @@
 const Admin = require('../models/Admin');
 const FollowUp = require('../models/FollowUp');
 const MedicalReport = require('../models/MedicalReport');
+const Medication = require('../models/Medication');
 const Order = require('../models/Order');
 const ServiceRecord = require('../models/ServiceRecord');
 const User = require('../models/User');
@@ -26,6 +27,17 @@ const preparationDueDate = (serviceDate, now = new Date()) => {
   due.setDate(due.getDate() - 3);
   return due < now ? new Date(now) : due;
 };
+
+const MEDICAL_ESCORT_ATTACHMENT_TYPES = [
+  { key: 'medicalRecordAttachments', title: '就医陪同门诊病历', documentCategory: 'outpatient_record' },
+  { key: 'prescriptionAttachments', title: '就医陪同处方/医嘱单', documentCategory: 'prescription_order' },
+  { key: 'examReportAttachments', title: '就医陪同检验检查报告', documentCategory: 'exam_report' },
+];
+const medicalEscortAttachmentEntries = formData => MEDICAL_ESCORT_ATTACHMENT_TYPES.flatMap(group => {
+  const files = (Array.isArray(formData?.[group.key]) ? formData[group.key] : []).filter(file => nonempty(file?.url));
+  return files.map((file, index) => ({ file, key: group.key, documentCategory: group.documentCategory, title: files.length > 1 ? `${group.title}（${index + 1}）` : group.title }));
+});
+const medicalEscortAttachments = formData => medicalEscortAttachmentEntries(formData).map(entry => entry.file);
 
 const chineseNumber = value => {
   if (/^\d+$/.test(value)) return Number(value);
@@ -56,9 +68,11 @@ function extractMedicalProxyRechecks(text, baseDate = new Date()) {
 }
 
 async function archiveMedicalProxyRecords(task, order, tenantId) {
-  const files = Array.isArray(task.formData?.medicalRecordAttachments) ? task.formData.medicalRecordAttachments : [];
+  const medicalEscort = task.formData?.medicalEscort === true || task.formData?.planSnapshot?.medicalEscort === true || order.medicalProxyPlan?.medicalEscort === true;
+  const entries = medicalEscort ? medicalEscortAttachmentEntries(task.formData) : (Array.isArray(task.formData?.medicalRecordAttachments) ? task.formData.medicalRecordAttachments : [])
+    .filter(file => nonempty(file?.url)).map((file, index, files) => ({ file, documentCategory: 'outpatient_record', title: files.length > 1 ? `医疗代诊病历（${index + 1}）` : '医疗代诊病历' }));
   const checkDate = dateInput(task.date || new Date());
-  const currentUrls = files.map(file => nonempty(file?.url)).filter(Boolean);
+  const currentUrls = entries.map(entry => entry.file.url);
   // 执行环节被退回后允许就医专员删除旧附件并重新提交。自动归档必须以当前
   // 表单为准，否则第一次提交生成的 MedicalReport 会和第二次资料一起留在审核列表。
   await MedicalReport.deleteMany({
@@ -70,13 +84,12 @@ async function archiveMedicalProxyRecords(task, order, tenantId) {
     ...(currentUrls.length ? { fileUrl: { $nin: currentUrls } } : {}),
   });
   const archivedIds = [];
-  for (const [index, file] of files.entries()) {
-    if (!file?.url) continue;
+  for (const { file, title, documentCategory } of entries) {
     const report = await MedicalReport.findOneAndUpdate(
       { user: task.patientId, sourceType: 'order', sourceOrderId: order._id, fileUrl: file.url },
       { $setOnInsert: {
-        user: task.patientId, tenantId: tenantId || null, title: files.length > 1 ? `医疗代诊病历（${index + 1}）` : '医疗代诊病历',
-        type: 'other', documentCategory: 'outpatient_record', hospital: order.medicalProxyPlan?.hospital || '',
+        user: task.patientId, tenantId: tenantId || null, title,
+        type: 'other', documentCategory, hospital: order.medicalProxyPlan?.hospital || '',
         institution: order.medicalProxyPlan?.hospital || '', date: checkDate, checkDate,
         reportYear: Number(checkDate.slice(0, 4)) || new Date().getFullYear(), fileUrl: file.url, fileUrls: [file.url],
         ossKey: file.ossKey || '', ossKeys: file.ossKey ? [file.ossKey] : [], mimeType: file.mimeType || '', fileSize: String(file.fileSize || ''),
@@ -113,7 +126,7 @@ async function repairCompletedMedicalEscortAuditTasks(assigneeId) {
       'formData.medicalEscort': true,
     }).select('assignedTo completedAt formData').lean();
     if (!execution) continue;
-    const attachments = (execution.formData?.medicalRecordAttachments || []).filter(file => nonempty(file?.url));
+    const attachments = medicalEscortAttachments(execution.formData);
     const urls = attachments.map(file => file.url);
     const reports = urls.length ? await MedicalReport.find({
       user: audit.patientId,
@@ -123,7 +136,9 @@ async function repairCompletedMedicalEscortAuditTasks(assigneeId) {
     }).select('_id').lean() : [];
     const executionSnapshot = {
       executionResult: execution.formData?.executionResult || '',
-      medicalRecordAttachments: attachments,
+      medicalRecordAttachments: (execution.formData?.medicalRecordAttachments || []).filter(file => nonempty(file?.url)),
+      prescriptionAttachments: (execution.formData?.prescriptionAttachments || []).filter(file => nonempty(file?.url)),
+      examReportAttachments: (execution.formData?.examReportAttachments || []).filter(file => nonempty(file?.url)),
       completedAt: execution.completedAt,
       completedBy: execution.assignedTo,
     };
@@ -166,7 +181,7 @@ async function upsertMedicalProxyServiceRecord(task, order, completed = false) {
     update.result = nonempty(task.formData?.executionResult);
     update.attachments = (medicationProxy
       ? ['medicationPhotoAttachments', 'medicationInstructionAttachments', 'medicalRecordAttachments', 'chargeReceiptAttachments'].flatMap(key => task.formData?.[key] || [])
-      : (task.formData?.medicalRecordAttachments || [])).filter(file => file?.url);
+      : (task.formData?.medicalEscort === true ? medicalEscortAttachments(task.formData) : (task.formData?.medicalRecordAttachments || []))).filter(file => file?.url);
   }
   const recordUpdate = { $set: update, $setOnInsert: { sourceOrderId: order._id, type: 'medical_visit' } };
   if (!completed) recordUpdate.$setOnInsert.result = '';
@@ -242,7 +257,7 @@ async function completeLinkedMedicalReminder(task, order) {
 }
 
 async function purgeStaleMedicalEscortReports(task, order) {
-  const currentUrls = (task.formData?.executionSnapshot?.medicalRecordAttachments || []).map(file => nonempty(file?.url)).filter(Boolean);
+  const currentUrls = medicalEscortAttachments(task.formData?.executionSnapshot).map(file => file.url);
   return MedicalReport.deleteMany({
     user: task.patientId,
     sourceType: 'order',
@@ -250,6 +265,34 @@ async function purgeStaleMedicalEscortReports(task, order) {
     note: /^医疗代诊执行任务：/,
     ...(currentUrls.length ? { fileUrl: { $nin: currentUrls } } : {}),
   });
+}
+
+async function createPrescriptionMedicationDrafts(task, reportIds) {
+  if (!reportIds.length) return [];
+  const reports = await MedicalReport.find({ _id: { $in: reportIds }, user: task.patientId, audit_status: 'audited', documentCategory: 'prescription_order' }).select('_id title reportItems aiSummary keyFindings note fileUrls').lean();
+  if (!reports.length) return [];
+  const [patient, current] = await Promise.all([
+    User.findById(task.patientId).select('healthProfile chronicDiseases').lean(),
+    Medication.find({ user: task.patientId, stopped: false, aiStatus: { $ne: 'rejected' } }).select('name brandName specification dosage frequency timing').lean(),
+  ]);
+  try {
+    const { chat } = require('./ai');
+    const evidence = reports.map(report => ({ id: report._id, title: report.title, reportItems: report.reportItems, aiSummary: report.aiSummary, keyFindings: report.keyFindings, note: report.note }));
+    const raw = await chat([{ role: 'user', content: `你是处方信息录入助手。仅从已审核处方中提取明确记载、且相对当前用药属于新增的药物；病史仅用于识别同名药和核对，不得推断、推荐或调整用药。剂量或频次不明确的条目不要输出。仅输出JSON数组，每项格式：{"name":"通用名","brandName":"商品名或空","specification":"规格或空","dosage":"单次剂量","method":"用法","frequency":"频次","timing":"服药时机或空","startDate":"YYYY-MM-DD或空","endDate":"YYYY-MM-DD或空","purpose":"处方记载用途或空","sourceReportId":"来源报告ID"}。\n病史：${JSON.stringify({ chronicDiseases: patient?.chronicDiseases, healthProfile: patient?.healthProfile }).slice(0, 10000)}\n当前用药：${JSON.stringify(current).slice(0, 10000)}\n已审核处方：${JSON.stringify(evidence).slice(0, 18000)}` }], { maxTokens: 1400, temperature: 0, jsonMode: true, timeoutMs: 60000 });
+    const match = String(raw || '').match(/\[[\s\S]*\]/); const rows = match ? JSON.parse(match[0]) : [];
+    const validReportIds = new Set(reports.map(report => String(report._id))); const created = [];
+    for (const row of Array.isArray(rows) ? rows.slice(0, 20) : []) {
+      const name = nonempty(row?.name); const dosage = nonempty(row?.dosage); const frequency = nonempty(row?.frequency); const sourceReportId = nonempty(row?.sourceReportId);
+      if (!name || !dosage || !frequency || !validReportIds.has(sourceReportId)) continue;
+      const sourceRecordKey = `medical_escort_prescription:${sourceReportId}:${name}:${dosage}:${frequency}`;
+      const sourceReport = reports.find(report => String(report._id) === sourceReportId);
+      const medication = await Medication.findOneAndUpdate({ user: task.patientId, sourceRecordKey }, { $setOnInsert: {
+        user: task.patientId, name, brandName: nonempty(row.brandName), specification: nonempty(row.specification), dosage, method: nonempty(row.method) || '口服', frequency, timing: nonempty(row.timing), startDate: nonempty(row.startDate), endDate: nonempty(row.endDate), purpose: nonempty(row.purpose), note: 'AI依据已审核处方提取，待健康顾问核对原件。', imageUrls: sourceReport?.fileUrls || [], active: true, stopped: false, createdByStaff: true, staffId: task.assignedTo, createdByName: 'AI处方提取', aiStatus: 'pending', aiGeneratedBy: '就医陪同处方解析', sourceType: 'ai', sourceRecordKey,
+      } }, { upsert: true, new: true, setDefaultsOnInsert: true });
+      if (medication?._id) created.push(medication);
+    }
+    return created;
+  } catch (error) { console.error('[medical-escort] 处方用药草稿生成失败', error.message); return []; }
 }
 
 function reportIdsFromTask(task = {}) {
@@ -631,7 +674,9 @@ async function validateMedicalProxyStage(task, body, staff) {
     if (!nonempty(data.executionResult)) return executionFailed ? '请填写未执行成功的原因和后续处理说明' : '请填写执行结果';
     if (!executionFailed && medicationProxy && !['medicationPhotoAttachments', 'medicationInstructionAttachments', 'medicalRecordAttachments', 'chargeReceiptAttachments'].every(hasAttachment)) return '执行成功时，请分别上传药品照片、药品服用单、病历和收费单';
     if (!executionFailed && supplementProxy && !['supplementPhotoAttachments', 'chargeReceiptAttachments'].every(hasAttachment)) return '执行成功时，请上传营养素产品照片和购买凭证';
-    if (!executionFailed && !medicationProxy && !supplementProxy && !hasAttachment('medicalRecordAttachments')) return '执行成功时，请上传至少一份代诊病历';
+    const medicalEscort = data.medicalEscort === true || data.planSnapshot?.medicalEscort === true;
+    if (!executionFailed && medicalEscort && !['medicalRecordAttachments', 'prescriptionAttachments', 'examReportAttachments'].some(hasAttachment)) return '执行成功时，请按资料类型上传至少一份陪同资料';
+    if (!executionFailed && !medicalEscort && !medicationProxy && !supplementProxy && !hasAttachment('medicalRecordAttachments')) return '执行成功时，请上传至少一份代诊病历';
   }
   if (stage === 'collect' || stage === 'audit' || stage === 'advisor' || stage === 'planner' || stage === 'intake') {
     const patient = await User.findById(task.patientId).select('assignedFamilyDoctor assignedHealthPlanner assignedHealthManager').lean();
@@ -729,6 +774,7 @@ async function advanceMedicalProxyWorkflow(task) {
       const reportIds = [...new Set((task.formData?.reportIds || []).map(String).filter(Boolean))];
       await purgeStaleMedicalEscortReports(task, order);
       await completeLinkedMedicalReminder(task, order);
+      await createPrescriptionMedicationDrafts(task, reportIds);
       await createPostVisitFollowUpPlan(task, order, patient, reportIds, { medicalEscort: true });
       order.status = 'completed'; order.tradeStatus = 'completed'; order.completedAt = new Date();
       await order.save();
@@ -806,6 +852,8 @@ async function advanceMedicalProxyWorkflow(task) {
     const executionSnapshot = {
       executionResult: task.formData?.executionResult || '',
       medicalRecordAttachments: task.formData?.medicalRecordAttachments || [],
+      prescriptionAttachments: task.formData?.prescriptionAttachments || [],
+      examReportAttachments: task.formData?.examReportAttachments || [],
       completedAt: task.completedAt || new Date(),
       completedBy: task.assignedTo,
     };
@@ -888,7 +936,7 @@ async function advanceMedicalProxyWorkflow(task) {
         : next === 'planner' ? { ...nextTask.formData, planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...task.formData, additionalNote: bookingNote }, medicationProxy, supplementProxy }
           : next === 'booking' ? { ...nextTask.formData, planSnapshot: order.medicalProxyPlan, medicalAssistantId: task.formData?.medicalAssistantId, preferredDateStart: nextTask.formData?.preferredDateStart || dateInput(order.desiredServiceDate || order.scheduledAt), preferredDateEnd: nextTask.formData?.preferredDateEnd || dateInput(order.desiredServiceDateEnd || order.desiredServiceDate || order.scheduledAt) }
             : { ...nextTask.formData, planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...bookedAppointment, ...task.formData, additionalNote: bookingNote }, medicationProxy, supplementProxy,
-              executionOutcome: '', executionResult: '', medicationPhotoAttachments: [], medicationInstructionAttachments: [], medicalRecordAttachments: [], chargeReceiptAttachments: [], supplementPhotoAttachments: [] };
+              executionOutcome: '', executionResult: '', medicationPhotoAttachments: [], medicationInstructionAttachments: [], medicalRecordAttachments: [], prescriptionAttachments: [], examReportAttachments: [], chargeReceiptAttachments: [], supplementPhotoAttachments: [] };
     await FollowUp.updateOne({ _id: nextTask._id }, { $set: { status: 'planned', isBlocked: false, assignedTo: assignee, formData: nextFormData, date: nextDate, remindAt: next === 'execute' ? nextDate : new Date(), cancelReason: '', completedAt: null, completedBy: null } });
   }
   await FollowUp.updateOne(
@@ -900,4 +948,4 @@ async function advanceMedicalProxyWorkflow(task) {
   } });
 }
 
-module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
+module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
