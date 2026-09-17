@@ -1961,7 +1961,8 @@ export default function PatientDetailPage() {
   const [redeemingOrderId, setRedeemingOrderId] = useState(null)
   const [requisitions, setRequisitions] = useState([])
   const [showReqModal, setShowReqModal] = useState(false)
-  const [showReferralModal, setShowReferralModal] = useState(false)
+  const [showReferralModal, setShowReferralModal] = useState(() => !!location.state?.editReferral)
+  const [editingReferral, setEditingReferral] = useState(() => location.state?.editReferral || null)
   const [showReportDetail, setShowReportDetail] = useState(null)
   const [reportDetailLoading, setReportDetailLoading] = useState(false)
   const [showSRDetail, setShowSRDetail] = useState(null)
@@ -12390,8 +12391,9 @@ export default function PatientDetailPage() {
           patientName={user.name}
           patientUser={user}
           staffList={staffList}
-          onClose={() => setShowReferralModal(false)}
-          onSaved={() => { setShowReferralModal(false); toast('转介已发送') }}
+          initialReferral={editingReferral}
+          onClose={() => { setShowReferralModal(false); setEditingReferral(null); if (location.state?.editReferral) nav(location.pathname + location.search, { replace:true, state:{} }) }}
+          onSaved={() => { setShowReferralModal(false); setEditingReferral(null); toast(location.state?.editReferral ? '转介已修订并重新发送' : '转介已发送'); if (location.state?.editReferral) nav(location.pathname + location.search, { replace:true, state:{} }) }}
         />
       )}
 
@@ -13675,12 +13677,14 @@ const ROLE_LABEL_MAP = {
   tcmDoctor:'中医师', specialist:'专科医师', healthPlanner:'健康规划师', superadmin:'超级管理员',
 }
 
-function ReferralModal({ patientId, patientName, patientUser, staffList, onClose, onSaved }) {
+function ReferralModal({ patientId, patientName, patientUser, staffList, initialReferral, onClose, onSaved }) {
   const toast = useToast()
   const diseaseOptions = Array.isArray(patientUser?.diseaseRecords) ? patientUser.diseaseRecords : []
-  const [form, setForm] = useState({ referralType:'internal_collaboration', toStaffId: '', medicalExpertId:'', reason: '', content: '', urgency: 'normal', linkedDiseaseRecordId: '', linkedDiseaseName: '', referralPurpose: '', questionList: '', requiresConclusion: true })
+  const [form, setForm] = useState(() => ({ referralType:initialReferral?.referralType || 'internal_collaboration', toStaffId:initialReferral?.toStaffId?._id || initialReferral?.toStaffId || '', medicalExpertId:initialReferral?.medicalExpertId?._id || initialReferral?.medicalExpertId || '', reason:initialReferral?.reason || '', content:initialReferral?.content || '', urgency:initialReferral?.urgency || 'normal', linkedDiseaseRecordId:initialReferral?.linkedDiseaseRecordId || '', linkedDiseaseName:initialReferral?.linkedDiseaseName || '', referralPurpose:initialReferral?.referralPurpose || '', questionList:initialReferral?.questionList || '', requiresConclusion:initialReferral?.requiresConclusion !== false }))
   const [medicalResources, setMedicalResources] = useState({ institutions:[], departments:[], experts:[] })
-  const [selectedHealthSections, setSelectedHealthSections] = useState(['basicInfo'])
+  const [selectedHealthSections, setSelectedHealthSections] = useState(() => initialReferral?.attachedHealthInfo
+    ? [...new Set(Object.keys(initialReferral.attachedHealthInfo).map(key => key === 'longTermMeds' ? 'medicationRecords' : key === 'longTermSups' ? 'supplementRecords' : key))]
+    : ['basicInfo'])
   const [extraData, setExtraData] = useState({ medications: [], supplements: [], healthRecords: [] })
   const [saving, setSaving] = useState(false)
   const [aiDraftLoading, setAiDraftLoading] = useState(false)
@@ -13832,7 +13836,9 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
     if (!form.reason || (form.referralType === 'internal_collaboration' ? !form.toStaffId : !form.medicalExpertId)) { setError(form.referralType === 'external_medical' ? '外部专家和转介原因不能为空' : '接收人和转介原因不能为空'); return }
     setSaving(true); setError('')
     try {
-      await staffAPI.createReferral({ patientId, ...form, attachedHealthInfo: buildAttachedHealthInfo() })
+      const payload = { patientId, ...form, attachedHealthInfo: buildAttachedHealthInfo() }
+      if (initialReferral) await staffAPI.resubmitReferral(initialReferral._id, payload)
+      else await staffAPI.createReferral(payload)
       onSaved()
     } catch (err) { setError(err.message) }
     finally { setSaving(false) }
@@ -13842,7 +13848,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal" style={{ maxWidth: 500 }}>
         <div className="modal-header">
-          <h3 className="modal-title">🔀 转介 — {patientName}</h3>
+          <h3 className="modal-title">🔀 {initialReferral ? '编辑并重新发送转介' : '转介'} — {patientName}</h3>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         {error && <div className="login-err" style={{ margin: '0 20px 8px' }}>⚠️ {error}</div>}
@@ -14053,7 +14059,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '发送中...' : '发送转介'}</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '发送中...' : initialReferral ? '保存并重新发送' : '发送转介'}</button>
         </div>
       </div>
     </div>

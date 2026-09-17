@@ -5773,6 +5773,16 @@ router.patch('/referrals/:id/resubmit', staffAuth, async (req, res) => {
     if (referral.status !== 'rejected') return res.status(409).json({ success: false, message: '仅已退回的转介可以编辑后重新发送' });
     const reason = cleanMedicalText(req.body.reason, 500);
     if (!reason) return res.status(400).json({ success: false, message: '请填写转介原因' });
+    const patient = await User.findById(referral.patientId).select('diseaseRecords medicalRecord');
+    if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+    const diseaseRecords = normalizedDiseaseRecords(patient.toObject());
+    const linkedDisease = diseaseRecords.find(item => req.body.linkedDiseaseRecordId && String(item._id) === String(req.body.linkedDiseaseRecordId)) || diseaseRecords.find(item => item.name === req.body.linkedDiseaseName);
+    const referralType = req.body.referralType === 'external_medical' ? 'external_medical' : 'internal_collaboration';
+    let expert = null;
+    if (referralType === 'external_medical') {
+      expert = await MedicalExpert.findOne({ _id:req.body.medicalExpertId, status:'active' }).populate('institutionId', 'name level region').populate('departmentId', 'name campus').lean();
+      if (!expert) return res.status(400).json({ success:false, message:'请选择有效的外部专家' });
+    } else if (!req.body.toStaffId) return res.status(400).json({ success:false, message:'请选择接收人' });
     referral.revisionHistory.push({
       reason: referral.reason, content: referral.content, questionList: referral.questionList, urgency: referral.urgency,
       response: referral.response, responseAnalysis: referral.responseAnalysis, responseOpinion: referral.responseOpinion,
@@ -5783,6 +5793,16 @@ router.patch('/referrals/:id/resubmit', staffAuth, async (req, res) => {
     referral.content = cleanMedicalText(req.body.content, 5000);
     referral.questionList = cleanMedicalText(req.body.questionList, 5000);
     referral.urgency = req.body.urgency === 'urgent' ? 'urgent' : 'normal';
+    referral.toStaffId = referralType === 'external_medical' ? (expert.linkedStaffId || null) : req.body.toStaffId;
+    referral.referralType = referralType;
+    referral.medicalExpertId = expert?._id || null;
+    referral.medicalExpertSnapshot = expert ? { name:expert.name, title:expert.title, institutionName:expert.institutionId?.name || '', institutionLevel:expert.institutionId?.level || '', departmentName:expert.departmentId?.name || '', campus:expert.campus || expert.departmentId?.campus || '', expertise:expert.expertise || [], diseaseTags:expert.diseaseTags || [], capturedAt:new Date() } : null;
+    referral.linkedDiseaseRecordId = linkedDisease?._id || null;
+    referral.linkedDiseaseName = linkedDisease?.name || cleanMedicalText(req.body.linkedDiseaseName,100);
+    referral.linkedDiseaseSnapshot = linkedDisease ? { name:linkedDisease.name, summary:linkedDisease.summary || {}, recentCourseEntries:[...(linkedDisease.courseEntries || [])].sort((a,b)=>new Date(b.occurredAt || b.recordedAt || 0)-new Date(a.occurredAt || a.recordedAt || 0)).slice(0,10).map(entry => ({ occurredAt:entry.occurredAt || entry.recordedAt || null, content:entry.content || entry.symptoms || '', examination:entry.examination || '', diagnosis:entry.diagnosis || '', medicationChange:entry.medicationChange || '', treatmentResponse:entry.treatmentResponse || '', nextPlan:entry.nextPlan || '', sourceType:entry.sourceType || '', sourceInstitution:entry.sourceInstitution || '', verificationStatus:entry.verificationStatus || '' })), capturedAt:new Date() } : null;
+    referral.referralPurpose = cleanMedicalText(req.body.referralPurpose,100);
+    referral.requiresConclusion = req.body.requiresConclusion !== false;
+    referral.attachedHealthInfo = req.body.attachedHealthInfo || null;
     referral.status = 'pending';
     referral.response = ''; referral.responseAnalysis = ''; referral.responseOpinion = ''; referral.respondedAt = null;
     referral.fromStaffUnread = false;

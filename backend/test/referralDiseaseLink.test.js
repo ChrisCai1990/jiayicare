@@ -62,6 +62,7 @@ test('被退回的转介可由原发起方修订后重新发送并保留历史',
   const model = read('backend/src/models/Referral.js');
   const route = read('backend/src/routes/staff.js');
   const notifications = read('staff/src/pages/NotificationsPage.jsx');
+  const patient = read('staff/src/pages/PatientDetailPage.jsx');
   const api = read('staff/src/api.js');
   assert.match(model, /revisionHistory/);
   assert.match(route, /referrals\/:id\/resubmit/);
@@ -72,4 +73,10 @@ test('被退回的转介可由原发起方修订后重新发送并保留历史',
   assert.match(notifications, /编辑并重新发送/);
   assert.match(notifications, /保存并重新发送/);
   assert.match(notifications, /原退回意见和本次修订会保留/);
+  assert.match(notifications, /state: \{ editReferral: r \}/);
+  assert.match(patient, /initialReferral/);
+  assert.match(patient, /initialReferral\?\.attachedHealthInfo/);
+  assert.match(patient, /initialReferral \? '保存并重新发送'/);
+  assert.match(route, /referral\.attachedHealthInfo = req\.body\.attachedHealthInfo/);
+  assert.match(route, /referral\.linkedDiseaseSnapshot = linkedDisease/);
 });

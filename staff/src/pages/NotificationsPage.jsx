@@ -380,7 +380,7 @@ export default function NotificationsPage() {
                     <div style={{ marginTop: 6, fontSize: 12, color: '#aaa' }}>等待对方回复...</div>
                   )}
                 </div>
-                {r.status === 'rejected' && <button className="btn btn-primary btn-sm" style={{ marginLeft: 12 }} onClick={() => openReferralEditor(r)}>编辑并重新发送</button>}
+                {r.status === 'rejected' && <button className="btn btn-primary btn-sm" style={{ marginLeft: 12 }} onClick={() => nav(`/patients/${r.patientId?._id}`, { state: { editReferral: r } })}>编辑并重新发送</button>}
               </div>
             </div>
           ))}
