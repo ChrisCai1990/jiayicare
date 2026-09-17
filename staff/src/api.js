@@ -160,6 +160,8 @@ export const staffAPI = {
   parseReportPageAI: (id, pageNum) => req(`/staff/medical-reports/${id}/parse-page`, { method: 'POST', body: JSON.stringify({ pageNum }) }),
   reclassifyReport: (patientId, reportId) => req(`/staff/patients/${patientId}/reports/${reportId}/reclassify`, { method: 'POST' }),
   getScreeningCatalog: () => req('/staff/screening-catalog'),
+  generateHealthCourseDraft: (reportId, force = false) => req(`/staff/medical-reports/${reportId}/health-course-draft`, { method:'POST', body:JSON.stringify({ force }) }),
+  reviewHealthCourseDraft: (reportId, data) => req(`/staff/medical-reports/${reportId}/health-course-draft`, { method:'PUT', body:JSON.stringify(data) }),
   getScreeningYearSummaries: (id) => req(`/staff/patients/${id}/screening-year-summaries`),
   saveScreeningYearSummary: (id, year, sections, mode = 'new', recordIndex) => req(`/staff/patients/${id}/screening-year-summaries/${year}`, { method: 'PUT', body: JSON.stringify({ sections, mode, recordIndex }) }),
   generateScreeningYearSummary: (id, year) => req(`/staff/patients/${id}/screening-year-summaries/${year}/generate`, { method: 'POST' }),

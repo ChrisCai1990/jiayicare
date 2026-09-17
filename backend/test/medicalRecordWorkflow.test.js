@@ -87,3 +87,20 @@ test('健康变化支持修订并保留录入和修改审计信息', () => {
   assert.match(page, /修改：/);
   assert.match(page, /openCourseEditor/);
 });
+
+test('医疗资料由AI提取为待审核健康变化且健康顾问确认后才入档', () => {
+  const model = read('backend/src/models/MedicalReport.js');
+  const route = read('backend/src/routes/staff.js');
+  const page = read('staff/src/pages/PatientDetailPage.jsx');
+  const api = read('staff/src/api.js');
+  assert.match(model, /healthCourseDraft/);
+  assert.match(route, /health-course-draft/);
+  assert.match(route, /status:'pending_review'/);
+  assert.match(route, /只能忠实提取输入材料已有事实，不诊断、不推断、不提供治疗建议/);
+  assert.match(route, /\['familyDoctor','superadmin'\]/);
+  assert.match(route, /sourceReportId:report\._id/);
+  assert.match(route, /reviewedByName/);
+  assert.match(api, /generateHealthCourseDraft/);
+  assert.match(api, /reviewHealthCourseDraft/);
+  for (const text of ['AI提取健康变化', '审核健康变化', '查看原始资料', '确认并写入健康变化', '不入档']) assert.match(page, new RegExp(text));
+});

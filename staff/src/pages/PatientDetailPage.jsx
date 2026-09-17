@@ -609,6 +609,7 @@ const DOCUMENT_CATEGORIES = [
   { key: 'other_customer_material', label: '其他资料' },
 ]
 const DOCUMENT_CATEGORY_LABEL = Object.fromEntries(DOCUMENT_CATEGORIES.map(item => [item.key, item.label]))
+const HEALTH_COURSE_DOCUMENT_CATEGORIES = new Set(['outpatient_record', 'inpatient_record', 'prescription_order', 'exam_report', 'lab_report'])
 const inferDocumentCategory = report => {
   // 已保存的资料分类是人工选择；标题推断仅用于没有分类的历史资料。
   if (DOCUMENT_CATEGORY_LABEL[report.documentCategory]) return report.documentCategory
@@ -2286,6 +2287,9 @@ export default function PatientDetailPage() {
   const [aiHelper, setAiHelper] = useState(null)   // { type, loading, data, error }
   const [aiHelperBusy, setAiHelperBusy] = useState(false)
   const [ocrReviewReport, setOcrReviewReport] = useState(null)
+  const [healthCourseReview, setHealthCourseReview] = useState(null)
+  const [healthCourseSaving, setHealthCourseSaving] = useState(false)
+  const [healthCourseError, setHealthCourseError] = useState('')
   const [ocrEditItems, setOcrEditItems] = useState([])
   const [ocrReviewPage, setOcrReviewPage] = useState(null)
   // 审核时原件常是手机拍照页，或被嵌在窄栏中的 PDF；不能只依赖浏览器 PDF 工具栏。
@@ -2764,6 +2768,34 @@ export default function PatientDetailPage() {
         setReportScreeningData(matched)
       })
       .catch(() => {})
+  }
+
+  const openHealthCourseReview = async report => {
+    setHealthCourseSaving(true)
+    setHealthCourseError('')
+    try {
+      const response = await staffAPI.generateHealthCourseDraft(report._id)
+      const draft = response.data || {}
+      setHealthCourseReview({ report, diseaseName: draft.recommendedDiseaseName || '', content: draft.content || '', examination: draft.examination || '', diagnosis: draft.diagnosis || '', medicationChange: draft.medicationChange || '', treatmentResponse: draft.treatmentResponse || '', nextPlan: draft.nextPlan || '' })
+      await loadReports()
+    } catch (err) { toast(err.message || 'AI提取健康变化失败') }
+    finally { setHealthCourseSaving(false) }
+  }
+
+  const reviewHealthCourseDraft = async action => {
+    if (!healthCourseReview) return
+    if (action === 'approve' && !healthCourseReview.diseaseName) { setHealthCourseError('请选择要归入的专病档案'); return }
+    if (action === 'approve' && !healthCourseReview.content.trim()) { setHealthCourseError('本次健康及症状变化不能为空'); return }
+    setHealthCourseSaving(true)
+    setHealthCourseError('')
+    try {
+      const { report, ...form } = healthCourseReview
+      await staffAPI.reviewHealthCourseDraft(report._id, { action, ...form })
+      toast(action === 'approve' ? '已由健康顾问审核并写入健康变化时间轴' : '已忽略本次AI草稿，原始资料仍保留')
+      setHealthCourseReview(null)
+      await Promise.all([loadReports(), load()])
+    } catch (err) { setHealthCourseError(err.message || '审核失败') }
+    finally { setHealthCourseSaving(false) }
   }
 
   useEffect(() => {
@@ -10036,6 +10068,12 @@ export default function PatientDetailPage() {
                                   {manualOnly ? '核对已有数据' : r.aiStatus === 'reviewed' ? '编辑AI结果' : `审核AI结果${r.reportItems?.length ? `（${r.reportItems.length}项）` : ''}`}
                                 </button>
                               )}
+                              {['familyDoctor', 'superadmin'].includes(staff?.role) && r.audit_status === 'audited' && HEALTH_COURSE_DOCUMENT_CATEGORIES.has(inferDocumentCategory(r)) && (
+                                <button className="btn btn-sm report-action-primary" style={{ marginLeft: 6, background: r.healthCourseDraft?.status === 'approved' ? '#22A06B' : '#1E6B50' }}
+                                  disabled={healthCourseSaving || r.healthCourseDraft?.status === 'approved'} onClick={() => openHealthCourseReview(r)}>
+                                  {r.healthCourseDraft?.status === 'approved' ? '已入健康变化' : r.healthCourseDraft?.status === 'pending_review' ? '审核健康变化' : 'AI提取健康变化'}
+                                </button>
+                              )}
                               {r.audit_status !== 'audited' && (
                                 <button className="report-action-more" aria-label="更多报告操作" title="更多操作" onClick={() => setOpenReportActionId(current => current === r._id ? null : r._id)}>
                                   {openReportActionId === r._id ? '×' : '···'}
@@ -11502,6 +11540,27 @@ export default function PatientDetailPage() {
               )}
               <button className="btn btn-secondary" onClick={() => { setShowReportDetail(null); setShowRejectInput(false); setRejectReason('') }}>关闭</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {healthCourseReview && (
+        <div className="modal-overlay" onMouseDown={event => { if (event.target === event.currentTarget && !healthCourseSaving) setHealthCourseReview(null) }}>
+          <div className="modal" style={{ maxWidth: 820, width: '94vw', maxHeight: '92vh', overflow: 'auto' }}>
+            <div className="modal-header">
+              <div><h3 className="modal-title">审核 AI 提取的健康变化</h3><div style={{ marginTop: 5, color: '#789287', fontSize: 12 }}>来源：{healthCourseReview.report.title || '医疗资料'} · {healthCourseReview.report.hospital || healthCourseReview.report.institution || '来源机构待补'}</div></div>
+              <button className="modal-close" disabled={healthCourseSaving} onClick={() => setHealthCourseReview(null)}>×</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ padding: 12, marginBottom: 14, borderRadius: 8, background: '#FFF7E6', color: '#8A5A00', fontSize: 13 }}>AI仅从已审核原始资料中整理草稿，不新增诊断或治疗意见。健康顾问核对、修改并确认后，才会进入专病健康变化时间轴；原始资料与审核人员、时间会一并保留。</div>
+              {healthCourseError && <div style={{ padding: 10, marginBottom: 12, borderRadius: 8, background: '#FFF0F0', color: '#B42318', fontSize: 13 }}>{healthCourseError}</div>}
+              <div className="form-group"><label>归入专病档案 *</label><select className="form-input" value={healthCourseReview.diseaseName} onChange={event => setHealthCourseReview(value => ({ ...value, diseaseName: event.target.value }))}><option value="">请选择已有专病</option>{(data?.user?.diseaseRecords || []).map(record => <option key={record._id || record.name} value={record.name}>{record.name}</option>)}</select></div>
+              {[
+                ['content', '本次健康及症状变化 *', 4], ['examination', '医疗机构检查信息', 3], ['diagnosis', '医疗机构诊断归档', 3], ['medicationChange', '医疗机构用药医嘱归档', 3], ['treatmentResponse', '治疗后反馈', 3], ['nextPlan', '后续安排', 3],
+              ].map(([key, label, rows]) => <div className="form-group" key={key}><label>{label}</label><textarea className="form-input" rows={rows} value={healthCourseReview[key]} onChange={event => setHealthCourseReview(value => ({ ...value, [key]: event.target.value }))} /></div>)}
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => openReportDetail(healthCourseReview.report)}>查看原始资料</button>
+            </div>
+            <div className="modal-footer" style={{ display: 'flex', gap: 8 }}><button className="btn btn-secondary" disabled={healthCourseSaving} onClick={() => reviewHealthCourseDraft('dismiss')}>不入档</button><button className="btn btn-primary" disabled={healthCourseSaving} onClick={() => reviewHealthCourseDraft('approve')}>{healthCourseSaving ? '保存中…' : '确认并写入健康变化'}</button></div>
           </div>
         </div>
       )}

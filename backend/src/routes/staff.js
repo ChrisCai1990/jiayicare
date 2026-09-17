@@ -1165,6 +1165,34 @@ const mergedHealthChange = body => {
   const parts = [cleanMedicalText(body.content, 20000), cleanMedicalText(body.symptoms, 5000)].filter(Boolean);
   return [...new Set(parts)].join('\n').slice(0, 20000);
 };
+const HEALTH_COURSE_DOCUMENTS = new Set(['outpatient_record', 'inpatient_record', 'prescription_order', 'exam_report', 'lab_report']);
+const parseAiJson = raw => {
+  const text = String(raw || '').replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+  return JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1));
+};
+async function generateHealthCourseDraft(report) {
+  if (!report?.user || !HEALTH_COURSE_DOCUMENTS.has(report.documentCategory)) return null;
+  const patient = await User.findById(report.user).select('diseaseRecords').lean();
+  if (!patient) return null;
+  const diseaseNames = (patient.diseaseRecords || []).map(item => item.name).filter(Boolean);
+  const items = (report.reportItems || []).map(item => ({ name:item.name, value:item.value, findings:item.findings, diagnosis:item.diagnosis, conclusion:item.conclusion, status:item.status })).slice(0, 100);
+  const { chat } = require('../utils/ai');
+  const raw = await chat([{ role:'user', content: JSON.stringify({ title:report.title, documentCategory:report.documentCategory, hospital:report.hospital || report.institution, date:report.date || report.checkDate, aiSummary:report.aiSummary, reportItems:items, existingDiseases:diseaseNames }) }], {
+    jsonMode:true, maxTokens:2200, temperature:0,
+    systemPrompt:'你是健康管理资料整理助手。只能忠实提取输入材料已有事实，不诊断、不推断、不提供治疗建议。输出JSON对象，字段为 recommendedDiseaseName,content,examination,diagnosis,medicationChange,treatmentResponse,nextPlan。recommendedDiseaseName只能从existingDiseases原样选择，无法对应则为空。content记录健康状态、症状和主观感受变化；其余字段按名称归档。材料未提及的字段必须为空字符串。',
+  });
+  const parsed = parseAiJson(raw);
+  const now = new Date();
+  const draft = {
+    status:'pending_review', sourceReportId:report._id, generatedAt:now,
+    recommendedDiseaseName:cleanMedicalText(parsed.recommendedDiseaseName,100),
+    content:cleanMedicalText(parsed.content,20000), examination:cleanMedicalText(parsed.examination,5000), diagnosis:cleanMedicalText(parsed.diagnosis,5000),
+    medicationChange:cleanMedicalText(parsed.medicationChange,5000), treatmentResponse:cleanMedicalText(parsed.treatmentResponse,5000), nextPlan:cleanMedicalText(parsed.nextPlan,5000),
+  };
+  report.healthCourseDraft = draft;
+  await report.save();
+  return draft;
+}
 const HEALTH_INFO_SOURCE_TYPES = ['client_report', 'medical_record', 'exam_report', 'prescription', 'external_specialist', 'internal_collaboration'];
 const HEALTH_INFO_VERIFICATION = ['self_reported', 'pending_verification', 'source_verified'];
 const cleanHealthInfoProvenance = body => ({
@@ -4171,6 +4199,9 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     if (mimeType !== undefined) report.mimeType = mimeType;
     if (fileSize !== undefined) report.fileSize = fileSize;
     await report.save();
+    if (autoAuditPending && HEALTH_COURSE_DOCUMENTS.has(report.documentCategory)) {
+      setImmediate(() => MedicalReport.findById(report._id).then(latest => generateHealthCourseDraft(latest)).catch(error => console.error('[health-course-draft] automatic generation failed', report._id, error.message)));
+    }
     if (autoAuditPending) {
       await syncOutpatientReportAuditCompletion(report.sourceHealthPlanId);
       await onCheckupReportAudited(report).catch(err => console.error('[checkup-workflow] failed to activate result review', err.message));
@@ -4209,6 +4240,56 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
+});
+
+router.post('/medical-reports/:id/health-course-draft', staffAuth, async (req, res) => {
+  try {
+    const report = await MedicalReport.findById(req.params.id);
+    if (!report) return res.status(404).json({ success:false, message:'医疗资料不存在' });
+    if (!HEALTH_COURSE_DOCUMENTS.has(report.documentCategory)) return res.status(400).json({ success:false, message:'仅门诊病历、住院病历、处方医嘱和检验检查资料支持提取健康变化' });
+    if (report.audit_status !== 'audited') return res.status(409).json({ success:false, message:'请先完成医疗资料审核，再生成入档草稿' });
+    const draft = report.healthCourseDraft?.status === 'pending_review' && !req.body.force
+      ? report.healthCourseDraft : await generateHealthCourseDraft(report);
+    res.json({ success:true, data:draft });
+  } catch (err) { res.status(500).json({ success:false, message:err.message }); }
+});
+
+router.put('/medical-reports/:id/health-course-draft', staffAuth, async (req, res) => {
+  try {
+    if (!['familyDoctor','superadmin'].includes(req.staff.role)) return res.status(403).json({ success:false, message:'仅健康顾问可审核健康变化入档草稿' });
+    const report = await MedicalReport.findById(req.params.id);
+    if (!report || !report.healthCourseDraft) return res.status(404).json({ success:false, message:'待审核草稿不存在' });
+    if (req.body.action === 'dismiss') {
+      report.healthCourseDraft = { ...report.healthCourseDraft, status:'dismissed', reviewedAt:new Date(), reviewedBy:req.staff._id, reviewedByName:req.staff.name || req.staff.username || '' };
+      await report.save();
+      return res.json({ success:true, data:report.healthCourseDraft });
+    }
+    const patient = await User.findById(report.user).select('diseaseRecords medicalRecord').lean();
+    if (!patient) return res.status(404).json({ success:false, message:'会员不存在' });
+    const records = normalizedDiseaseRecords(patient);
+    const diseaseName = cleanMedicalText(req.body.diseaseName,100);
+    const record = records.find(item => item.name === diseaseName);
+    if (!record) return res.status(400).json({ success:false, message:'请选择已有专病档案' });
+    if ((record.courseEntries || []).some(item => String(item.sourceReportId || '') === String(report._id))) return res.status(409).json({ success:false, message:'该医疗资料已经写入健康变化时间轴' });
+    const draft = report.healthCourseDraft;
+    const content = mergedHealthChange({ content:req.body.content ?? draft.content, symptoms:'' });
+    if (!content) return res.status(400).json({ success:false, message:'本次健康及症状变化不能为空' });
+    const now = new Date();
+    const reviewerName = req.staff.name || req.staff.username || '';
+    const entry = {
+      _id:new mongoose.Types.ObjectId(), occurredAt:(report.date || report.checkDate) && !Number.isNaN(Date.parse(report.date || report.checkDate)) ? new Date(report.date || report.checkDate) : now,
+      content, symptoms:'', examination:cleanMedicalText(req.body.examination ?? draft.examination,5000), diagnosis:cleanMedicalText(req.body.diagnosis ?? draft.diagnosis,5000),
+      medicationChange:cleanMedicalText(req.body.medicationChange ?? draft.medicationChange,5000), treatmentResponse:cleanMedicalText(req.body.treatmentResponse ?? draft.treatmentResponse,5000), nextPlan:cleanMedicalText(req.body.nextPlan ?? draft.nextPlan,5000),
+      sourceType:'medical_record', sourceInstitution:cleanMedicalText(report.hospital || report.institution,200), verificationStatus:'source_verified', sourceReportId:report._id,
+      aiGenerated:true, aiGeneratedAt:draft.generatedAt, recordedAt:now, recordedById:req.staff._id, recordedByName:reviewerName, recordedByRole:req.staff.role,
+      reviewedAt:now, reviewedById:req.staff._id, reviewedByName:reviewerName,
+    };
+    record.courseEntries = [entry, ...(record.courseEntries || [])].slice(0,500);
+    await User.collection.updateOne({ _id:patient._id }, { $set:{ diseaseRecords:records } });
+    report.healthCourseDraft = { ...draft, status:'approved', diseaseName, approvedEntryId:entry._id, reviewedAt:now, reviewedBy:req.staff._id, reviewedByName:reviewerName, finalContent:entry };
+    await report.save();
+    res.json({ success:true, data:{ draft:report.healthCourseDraft, entry } });
+  } catch (err) { res.status(500).json({ success:false, message:err.message }); }
 });
 
 // DELETE /api/staff/medical-reports/:id — 删除报告（审核前可删）

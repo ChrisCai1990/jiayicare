@@ -90,6 +90,8 @@ const medicalReportSchema = new mongoose.Schema({
   reviewedByStaff: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   reviewedAt:      { type: Date, default: null },
   reviewNote:      { type: String, default: '' },
+  // 医疗资料 → 专病健康变化的 AI 待审核草稿。AI 不能直接入档，须由健康顾问确认。
+  healthCourseDraft: { type: mongoose.Schema.Types.Mixed, default: null },
 
   type: {
     type: String,
