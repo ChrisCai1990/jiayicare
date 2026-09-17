@@ -35,7 +35,17 @@ test('每项疾病建立独立专病档案并与管理服务记录分层展示',
   assert.match(route, /normalizedDiseaseRecords/);
   assert.match(route, /disease-records\/summary/);
   assert.match(route, /disease-records\/course-entries/);
-  for (const text of ['一项疾病一份档案', '当前病情摘要', '病程时间轴', '管理记录', '描述我们做过的服务']) assert.match(page, new RegExp(text));
+  for (const text of ['专病健康档案', '专病健康信息摘要', '健康变化时间轴', '管理记录', '平台不形成诊疗结论']) assert.match(page, new RegExp(text));
   assert.match(api, /updateDiseaseRecordSummary/);
   assert.match(api, /addDiseaseCourseEntry/);
+});
+
+test('专病健康信息保存来源与核验状态', () => {
+  const route = read('backend/src/routes/staff.js');
+  const page = read('staff/src/pages/PatientDetailPage.jsx');
+  assert.match(route, /cleanHealthInfoProvenance/);
+  assert.match(route, /sourceInstitution/);
+  assert.match(route, /verificationStatus/);
+  assert.match(page, /客户自述/);
+  assert.match(page, /已核对来源材料/);
 });

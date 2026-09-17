@@ -22,6 +22,12 @@ const referralSchema = new Schema({
   questionList: { type: String, default: '' },
   requiresConclusion: { type: Boolean, default: true },
   consultation: {
+    feedbackType: { type: String, enum: ['internal_collaboration', 'external_medical_record'], default: 'internal_collaboration' },
+    sourceInstitution: { type: String, default: '' },
+    sourceDepartment: { type: String, default: '' },
+    sourceDoctor: { type: String, default: '' },
+    sourceDate: { type: Date, default: null },
+    verificationStatus: { type: String, enum: ['self_reported', 'pending_verification', 'source_verified'], default: 'pending_verification' },
     diagnosis: { type: String, default: '' },
     diagnosisChanged: { type: Boolean, default: false },
     examinationAdvice: { type: String, default: '' },

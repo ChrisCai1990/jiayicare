@@ -100,7 +100,7 @@ const userSchema = new mongoose.Schema({
     recentMedication:   { type: String, default: '' },   // 最近1个月是否服用中药或西药
     recentSupplement:   { type: String, default: '' },   // 最近1个月是否服用营养补剂
   },
-  // 持续病历：首次建立摘要，后续仅追加病程。摘要修改前版本和每次续写都永久留痕。
+  // 历史兼容：健康管理平台仅归档健康信息，不形成诊断、治疗或用药决策。
   medicalRecord: {
     summary: {
       chiefComplaint: { type: String, default: '' },
@@ -117,7 +117,7 @@ const userSchema = new mongoose.Schema({
     summaryHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
     courseEntries: { type: [mongoose.Schema.Types.Mixed], default: [] },
   },
-  // 每个专病一份独立档案；medicalRecord 仅作 2026-09-17 旧版数据兼容。
+  // 每个专病一份独立健康档案；medicalRecord 仅作 2026-09-17 旧版数据兼容。
   diseaseRecords: { type: [mongoose.Schema.Types.Mixed], default: [] },
   // 健康需求
   healthConcern:       { type: String, default: '' }, // 本人比较关注的健康问题

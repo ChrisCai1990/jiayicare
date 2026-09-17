@@ -186,7 +186,7 @@ export default function NotificationsPage() {
                   <div style={{ fontSize:12, color:'#65776F', marginBottom:5 }}>关联专病：<strong>{r.linkedDiseaseName || '待明确'}</strong>{r.referralPurpose ? ` · 目的：${r.referralPurpose}` : ''}</div>
                   {r.questionList && <div style={{ fontSize:12, color:'#65776F', marginBottom:5 }}>需解决问题：{r.questionList}</div>}
                   {!r.canViewPatient && <div style={{ fontSize:12, color:'#8A5A00', background:'#FFF8E8', padding:'6px 9px', borderRadius:6, marginBottom:6 }}>有限授权视图：仅展示发起方在本次转介中提供的信息。</div>}
-                  {r.linkedDiseaseSnapshot?.summary && <AttachedHealthInfoView info={{ 专病病情摘要: r.linkedDiseaseSnapshot.summary }} />}
+                  {r.linkedDiseaseSnapshot?.summary && <AttachedHealthInfoView info={{ 专病健康信息摘要: r.linkedDiseaseSnapshot.summary }} />}
                   {r.attachedHealthInfo && <AttachedHealthInfoView info={r.attachedHealthInfo} />}
                   <div style={{ fontSize: 12, color: '#aaa' }}>
                     来自：{r.fromStaffId?.name} · {new Date(r.createdAt).toLocaleDateString('zh-CN')}
@@ -196,13 +196,13 @@ export default function NotificationsPage() {
                       <div style={{ fontSize: 11, color: '#8AA89C' }}>我的回复 · {r.respondedAt ? new Date(r.respondedAt).toLocaleDateString('zh-CN') : ''}</div>
                       {r.responseAnalysis && (
                         <div>
-                          <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 2 }}>当前问题分析</div>
+                          <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 2 }}>信息整理</div>
                           <div style={{ fontSize: 13, color: '#1A2B24' }}>{r.responseAnalysis}</div>
                         </div>
                       )}
                       {r.responseOpinion && (
                         <div>
-                          <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 2 }}>会诊意见</div>
+                          <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 2 }}>协作反馈</div>
                           <div style={{ fontSize: 13, color: '#1A2B24' }}>{r.responseOpinion}</div>
                         </div>
                       )}
@@ -335,13 +335,13 @@ export default function NotificationsPage() {
                       <div style={{ fontSize: 11, color: '#8AA89C' }}>对方回复 · {r.respondedAt ? new Date(r.respondedAt).toLocaleDateString('zh-CN') : ''}</div>
                       {r.responseAnalysis && (
                         <div>
-                          <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 2 }}>当前问题分析</div>
+                          <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 2 }}>信息整理</div>
                           <div style={{ fontSize: 13, color: '#1A2B24' }}>{r.responseAnalysis}</div>
                         </div>
                       )}
                       {r.responseOpinion && (
                         <div>
-                          <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 2 }}>会诊意见</div>
+                          <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 2 }}>协作反馈</div>
                           <div style={{ fontSize: 13, color: '#1A2B24' }}>{r.responseOpinion}</div>
                         </div>
                       )}
@@ -456,7 +456,7 @@ function RespondModal({ referral, onClose, onRespond }) {
   const [responseOpinion, setResponseOpinion] = useState('')
   const [rejectReason, setRejectReason] = useState('')
   const [summary, setSummary] = useState('')   // 接收人填写的处理概要，供AI扩写
-  const [consultation, setConsultation] = useState({ diagnosis:'', diagnosisChanged:false, examinationAdvice:'', treatmentAdvice:'', medicationAdvice:'', riskWarning:'', nextPlan:'', noMedicalConclusion:false })
+  const [consultation, setConsultation] = useState({ feedbackType:'internal_collaboration', sourceInstitution:'', sourceDepartment:'', sourceDoctor:'', sourceDate:'', verificationStatus:'pending_verification', diagnosis:'', diagnosisChanged:false, examinationAdvice:'', treatmentAdvice:'', medicationAdvice:'', riskWarning:'', nextPlan:'', noMedicalConclusion:false })
   const [submitting, setSubmitting] = useState(false)
   const [aiDrafting, setAiDrafting] = useState(false)
   const isAccept = referral.action === 'accept'
@@ -504,7 +504,7 @@ function RespondModal({ referral, onClose, onRespond }) {
             <div style={{ fontSize: 13, color: '#666' }}>会员：{referral.patientId?.name}</div>
             {referral.content && <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>{referral.content}</div>}
             {referral.attachedHealthInfo && <AttachedHealthInfoView info={referral.attachedHealthInfo} />}
-            {referral.linkedDiseaseSnapshot?.summary && <AttachedHealthInfoView info={{ 专病病情摘要: referral.linkedDiseaseSnapshot.summary }} />}
+            {referral.linkedDiseaseSnapshot?.summary && <AttachedHealthInfoView info={{ 专病健康信息摘要: referral.linkedDiseaseSnapshot.summary }} />}
           </div>
           {isReject ? (
             <div className="form-group" style={{ marginBottom: 0 }}>
@@ -516,11 +516,11 @@ function RespondModal({ referral, onClose, onRespond }) {
             <>
               <div className="form-group" style={{ marginBottom: 0, background: '#F7F9FC', borderRadius: 8, padding: '10px 12px' }}>
                 <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span>📝 处理概要</span>
-                  <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>用几句话写下你的处理思路，AI 会据此扩写成完整回复</span>
+                  <span>📝 协作概要</span>
+                  <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>写下已知事实和协作事项，AI 仅据此整理草稿</span>
                 </label>
                 <textarea className="form-input" rows={2} value={summary} onChange={e => setSummary(e.target.value)}
-                  placeholder="例：血压控制不佳，建议调整降压方案并加强随访监测..." />
+                  placeholder="例：已联系客户确认近期记录，建议携带资料至医疗机构复诊；待回收就诊结果。" />
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
                   <button type="button" className="btn btn-primary btn-sm" disabled={aiDrafting} onClick={handleAiDraft}>
                     {aiDrafting ? 'AI生成中…' : (summary.trim() ? '✨ 按概要生成草稿' : '✨ AI生成草稿')}
@@ -528,19 +528,21 @@ function RespondModal({ referral, onClose, onRespond }) {
                 </div>
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">问题分析{isAccept ? '（可选）' : ''}</label>
+                <label className="form-label">信息整理{isAccept ? '（可选）' : ''}</label>
                 <textarea className="form-input" rows={3} value={responseAnalysis} onChange={e => setResponseAnalysis(e.target.value)}
-                  placeholder="对会员当前问题的分析评估..." />
+                  placeholder="归纳已知事实、信息来源和待核实事项，不作诊疗判断..." />
               </div>
               {isComplete && <>
-                {[['diagnosis','专科判断／诊断'],['examinationAdvice','检查建议'],['treatmentAdvice','治疗建议'],['medicationAdvice','用药建议'],['riskWarning','风险提示'],['nextPlan','下一步计划']].map(([key,label]) => <div className="form-group" style={{ marginBottom:0 }} key={key}><label className="form-label">{label}</label><textarea className="form-input" rows={2} value={consultation[key]} onChange={e => setConsultation(c => ({...c,[key]:e.target.value}))} /></div>)}
-                <label style={{ display:'flex', alignItems:'center', gap:7, fontSize:13 }}><input type="checkbox" checked={consultation.diagnosisChanged} onChange={e => setConsultation(c => ({...c,diagnosisChanged:e.target.checked}))} />诊断发生变化，建议更新病情摘要</label>
-                <label style={{ display:'flex', alignItems:'center', gap:7, fontSize:13 }}><input type="checkbox" checked={consultation.noMedicalConclusion} onChange={e => setConsultation(c => ({...c,noMedicalConclusion:e.target.checked}))} />本次仅完成咨询／协调，无新增医学结论</label>
+                <div style={{padding:'9px 12px',background:'#FFF8E8',borderRadius:8,fontSize:12,color:'#74520B'}}>健康管理团队不形成诊断、治疗或用药决策。只有确有医疗机构来源时，才在下方归档医疗信息。</div>
+                <div className="form-group" style={{marginBottom:0}}><label className="form-label">反馈类型 *</label><select className="form-input" value={consultation.feedbackType} onChange={e=>setConsultation(c=>({...c,feedbackType:e.target.value}))}><option value="internal_collaboration">内部专业协作反馈</option><option value="external_medical_record">外部医疗机构信息归档</option></select></div>
+                {consultation.feedbackType === 'external_medical_record' && <><div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8}}><input className="form-input" placeholder="来源医疗机构 *" value={consultation.sourceInstitution} onChange={e=>setConsultation(c=>({...c,sourceInstitution:e.target.value}))}/><input className="form-input" placeholder="科室" value={consultation.sourceDepartment} onChange={e=>setConsultation(c=>({...c,sourceDepartment:e.target.value}))}/><input className="form-input" placeholder="医生" value={consultation.sourceDoctor} onChange={e=>setConsultation(c=>({...c,sourceDoctor:e.target.value}))}/></div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}><div><label className="form-label">发生/就诊日期</label><input type="date" className="form-input" value={consultation.sourceDate} onChange={e=>setConsultation(c=>({...c,sourceDate:e.target.value}))}/></div><div><label className="form-label">核验状态</label><select className="form-input" value={consultation.verificationStatus} onChange={e=>setConsultation(c=>({...c,verificationStatus:e.target.value}))}><option value="self_reported">客户转述</option><option value="pending_verification">待核验</option><option value="source_verified">已核对来源材料</option></select></div></div>{[['diagnosis','医疗机构诊断归档'],['examinationAdvice','医疗机构检查意见归档'],['treatmentAdvice','医疗机构治疗意见归档'],['medicationAdvice','医疗机构用药医嘱归档']].map(([key,label]) => <div className="form-group" style={{ marginBottom:0 }} key={key}><label className="form-label">{label}</label><textarea className="form-input" rows={2} value={consultation[key]} onChange={e => setConsultation(c => ({...c,[key]:e.target.value}))} /></div>)}<label style={{ display:'flex', alignItems:'center', gap:7, fontSize:13 }}><input type="checkbox" checked={consultation.diagnosisChanged} onChange={e => setConsultation(c => ({...c,diagnosisChanged:e.target.checked}))} />医疗机构诊断有更新，建议人工修订健康信息摘要</label></>}
+                {[['riskWarning','需关注事项'],['nextPlan','后续协作事项']].map(([key,label]) => <div className="form-group" style={{ marginBottom:0 }} key={key}><label className="form-label">{label}</label><textarea className="form-input" rows={2} value={consultation[key]} onChange={e => setConsultation(c => ({...c,[key]:e.target.value}))} /></div>)}
+                <label style={{ display:'flex', alignItems:'center', gap:7, fontSize:13 }}><input type="checkbox" checked={consultation.noMedicalConclusion} onChange={e => setConsultation(c => ({...c,noMedicalConclusion:e.target.checked}))} />本次仅完成咨询／协调，无外部医疗信息归档</label>
               </>}
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">会诊意见{isAccept ? '（可选）' : ''}</label>
+                <label className="form-label">协作反馈{isAccept ? '（可选）' : ''}</label>
                 <textarea className="form-input" rows={3} value={responseOpinion} onChange={e => setResponseOpinion(e.target.value)}
-                  placeholder="会诊结论、后续建议、转归方向..." />
+                  placeholder="已完成的协调、信息反馈及下一步服务安排..." />
               </div>
             </>
           )}

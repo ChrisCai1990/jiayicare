@@ -1158,6 +1158,15 @@ router.patch('/insurance-cases/:caseId/steps/:stepId', staffAuth, async (req, re
 
 const MEDICAL_SUMMARY_FIELDS = ['chiefComplaint', 'presentIllness', 'physicalExam', 'epidemiologicalHistory', 'initialDiagnosis', 'currentMedication'];
 const cleanMedicalText = (value, max = 10000) => String(value ?? '').trim().slice(0, max);
+const HEALTH_INFO_SOURCE_TYPES = ['client_report', 'medical_record', 'exam_report', 'prescription', 'external_specialist', 'internal_collaboration'];
+const HEALTH_INFO_VERIFICATION = ['self_reported', 'pending_verification', 'source_verified'];
+const cleanHealthInfoProvenance = body => ({
+  sourceType: HEALTH_INFO_SOURCE_TYPES.includes(body.sourceType) ? body.sourceType : 'client_report',
+  sourceInstitution: cleanMedicalText(body.sourceInstitution, 200),
+  sourceDepartment: cleanMedicalText(body.sourceDepartment, 100),
+  sourceDoctor: cleanMedicalText(body.sourceDoctor, 100),
+  verificationStatus: HEALTH_INFO_VERIFICATION.includes(body.verificationStatus) ? body.verificationStatus : 'self_reported',
+});
 const cleanLinkedDiseases = value => [...new Set((Array.isArray(value) ? value : String(value || '').split(/[、,，;；\n]+/)).map(item => cleanMedicalText(item, 100)).filter(Boolean))].slice(0, 30);
 const hasMedicalSummary = summary => MEDICAL_SUMMARY_FIELDS.some(key => summary?.[key]) || (summary?.linkedDiseases || []).length;
 const normalizedDiseaseRecords = patient => {
@@ -1178,7 +1187,7 @@ router.put('/patients/:id/disease-records/summary', staffAuth, checkPermission('
     if (!name) return res.status(400).json({ success: false, message: '请填写专病名称' });
     const summary = {};
     MEDICAL_SUMMARY_FIELDS.forEach(key => { summary[key] = cleanMedicalText(req.body[key]); });
-    if (!MEDICAL_SUMMARY_FIELDS.some(key => summary[key])) return res.status(400).json({ success: false, message: '请至少填写一项病情摘要' });
+    if (!MEDICAL_SUMMARY_FIELDS.some(key => summary[key])) return res.status(400).json({ success: false, message: '请至少填写一项健康信息摘要' });
     const records = normalizedDiseaseRecords(patient);
     const recordId = cleanMedicalText(req.body.recordId, 100);
     let record = records.find(item => recordId && String(item._id) === recordId) || records.find(item => item.name === name);
@@ -1191,7 +1200,7 @@ router.put('/patients/:id/disease-records/summary', staffAuth, checkPermission('
       record.summaryHistory = [...(record.summaryHistory || []), { ...record.summary, archivedAt: now, archivedById: req.staff._id, archivedByName: operator }].slice(-100);
     }
     record.name = name;
-    record.summary = { ...summary, updatedAt: now, updatedById: req.staff._id, updatedByName: operator };
+    record.summary = { ...summary, ...cleanHealthInfoProvenance(req.body), updatedAt: now, updatedById: req.staff._id, updatedByName: operator };
     await User.collection.updateOne({ _id: patient._id }, { $set: { diseaseRecords: records } });
     res.json({ success: true, data: record });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -1204,7 +1213,7 @@ router.post('/patients/:id/disease-records/course-entries', staffAuth, checkPerm
     const name = cleanMedicalText(req.body.diseaseName, 100);
     const content = cleanMedicalText(req.body.content, 20000);
     if (!name) return res.status(400).json({ success: false, message: '请先选择专病' });
-    if (!content) return res.status(400).json({ success: false, message: '请填写本次病情变化' });
+    if (!content) return res.status(400).json({ success: false, message: '请填写本次健康变化' });
     const records = normalizedDiseaseRecords(patient);
     const recordId = cleanMedicalText(req.body.recordId, 100);
     let record = records.find(item => recordId && String(item._id) === recordId) || records.find(item => item.name === name);
@@ -1213,6 +1222,7 @@ router.post('/patients/:id/disease-records/course-entries', staffAuth, checkPerm
       _id: new mongoose.Types.ObjectId(), occurredAt: req.body.occurredAt && !Number.isNaN(Date.parse(req.body.occurredAt)) ? new Date(req.body.occurredAt) : new Date(), content,
       symptoms: cleanMedicalText(req.body.symptoms, 5000), examination: cleanMedicalText(req.body.examination, 5000), diagnosis: cleanMedicalText(req.body.diagnosis, 5000),
       medicationChange: cleanMedicalText(req.body.medicationChange, 5000), treatmentResponse: cleanMedicalText(req.body.treatmentResponse, 5000), nextPlan: cleanMedicalText(req.body.nextPlan, 5000),
+      ...cleanHealthInfoProvenance(req.body),
       recordedAt: new Date(), recordedById: req.staff._id, recordedByName: req.staff.name || req.staff.username || '', recordedByRole: req.staff.role || '',
     };
     record.courseEntries = [entry, ...(record.courseEntries || [])].slice(0, 500);
@@ -5572,7 +5582,7 @@ router.patch('/referrals/mark-sent-read', staffAuth, async (req, res) => {
   res.json({ success: true });
 });
 
-// POST /api/staff/referrals/:id/ai-response-draft — AI辅助生成会诊回复草稿（问题分析+会诊意见），接收方人工审核后再提交
+// POST /api/staff/referrals/:id/ai-response-draft — AI仅整理授权信息和协作反馈，人工审核后提交
 router.post('/referrals/:id/ai-response-draft', staffAuth, async (req, res) => {
   try {
     const referral = await Referral.findOne({ _id: req.params.id, toStaffId: req.staff._id })
@@ -5583,13 +5593,13 @@ router.post('/referrals/:id/ai-response-draft', staffAuth, async (req, res) => {
     const user = referral.patientId;
     const { chat } = require('../utils/ai');
 
-    // 接收人填写的简要概要（可选）——有则让AI围绕它展开成完整回复草稿
+    // 接收人填写的简要概要（可选）——AI仅做忠实整理，不生成诊疗判断。
     const summary = (req.body?.summary || '').trim();
     const summaryBlock = summary
-      ? `\n【接收医师填写的处理概要（请以此为核心，扩写成专业、完整的会诊回复）】\n${summary}\n`
+      ? `\n【接收方填写的协作概要（请忠实整理，不增加新结论）】\n${summary}\n`
       : '';
 
-    const prompt = `你是一位专业医师，收到同事的会诊转介请求，请根据以下信息草拟你的会诊回复。${summary ? '重点：接收医师已给出处理概要，请忠实围绕该概要扩写，不要偏离或臆造其未提及的诊疗结论。' : ''}
+    const prompt = `你是健康管理公司的信息整理助手，正在整理一次跨岗位转介反馈。只可使用下列发起方明确授权的信息和接收方原文，不得扮演医师，不得新增诊断、治疗、检查或用药建议，不得把客户自述改写为医疗机构结论。${summary ? '接收方已填写协作概要，请忠实整理并保留来源限定。' : ''}
 
 【会员】${user.name}
 【关联专病】${referral.linkedDiseaseName || '待明确'}
@@ -5599,12 +5609,12 @@ router.post('/referrals/:id/ai-response-draft', staffAuth, async (req, res) => {
 【转介原因】${referral.reason}
 【转介详细说明】${referral.content || '无'}${summaryBlock}
 请分两行输出：
-问题分析：（对会员当前问题的分析评估，60字内）
-会诊意见：（会诊结论、后续建议、转归方向，80字内）`;
+信息整理：（归纳已知事实、待核实信息与信息来源，60字内）
+协作反馈：（归纳接收方已表达的服务建议或下一步协作事项，80字内；没有依据则写“待人工补充”）`;
 
     const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 400 });
-    const analysisMatch = text.match(/问题分析[：:]\s*(.+)/);
-    const opinionMatch = text.match(/会诊意见[：:]\s*([\s\S]+)/);
+    const analysisMatch = text.match(/(?:信息整理|问题分析)[：:]\s*(.+)/);
+    const opinionMatch = text.match(/(?:协作反馈|会诊意见)[：:]\s*([\s\S]+)/);
     res.json({
       success: true,
       data: {
@@ -5628,9 +5638,12 @@ router.patch('/referrals/:id', staffAuth, async (req, res) => {
   if (status === 'completed') {
     const c = consultation || referral.consultation?.toObject?.() || referral.consultation || {};
     const hasConclusion = [responseAnalysis, responseOpinion, c.diagnosis, c.examinationAdvice, c.treatmentAdvice, c.medicationAdvice, c.riskWarning, c.nextPlan].some(value => String(value || '').trim());
-    if (referral.requiresConclusion && !hasConclusion && !c.noMedicalConclusion) return res.status(400).json({ success: false, message: '请填写会诊结论，或确认本次无新增医学结论' });
+    if (referral.requiresConclusion && !hasConclusion && !c.noMedicalConclusion) return res.status(400).json({ success: false, message: '请填写协作反馈，或确认本次仅完成协调、无外部医疗信息归档' });
+    const hasExternalMedicalInfo = [c.diagnosis, c.examinationAdvice, c.treatmentAdvice, c.medicationAdvice].some(value => String(value || '').trim());
+    if (hasExternalMedicalInfo && c.feedbackType !== 'external_medical_record') return res.status(400).json({ success: false, message: '诊断、检查、治疗或用药信息只能作为外部医疗机构信息归档' });
+    if (hasExternalMedicalInfo && !String(c.sourceInstitution || '').trim()) return res.status(400).json({ success: false, message: '归档外部医疗信息时，请填写来源医疗机构' });
     if (hasConclusion && referral.linkedDiseaseName) {
-      referral.courseDraft = { occurredAt: new Date(), content: cleanMedicalText(responseOpinion || responseAnalysis || '专科会诊结论', 20000), diagnosis: cleanMedicalText(c.diagnosis, 5000), examination: cleanMedicalText(c.examinationAdvice, 5000), medicationChange: cleanMedicalText(c.medicationAdvice, 5000), treatmentResponse: cleanMedicalText(c.treatmentAdvice, 5000), nextPlan: cleanMedicalText(c.nextPlan, 5000), riskWarning: cleanMedicalText(c.riskWarning, 5000), sourceType: 'referral', sourceReferralId: referral._id, sourceLabel: '专科会诊', draftedAt: new Date(), draftedByName: req.staff.name || '' };
+      referral.courseDraft = { occurredAt: c.sourceDate || new Date(), content: cleanMedicalText(responseOpinion || responseAnalysis || '转介协作反馈', 20000), diagnosis: cleanMedicalText(c.diagnosis, 5000), examination: cleanMedicalText(c.examinationAdvice, 5000), medicationChange: cleanMedicalText(c.medicationAdvice, 5000), treatmentResponse: cleanMedicalText(c.treatmentAdvice, 5000), nextPlan: cleanMedicalText(c.nextPlan, 5000), riskWarning: cleanMedicalText(c.riskWarning, 5000), sourceType: c.feedbackType === 'external_medical_record' ? 'external_specialist' : 'internal_collaboration', sourceInstitution: cleanMedicalText(c.sourceInstitution, 200), sourceDepartment: cleanMedicalText(c.sourceDepartment, 100), sourceDoctor: cleanMedicalText(c.sourceDoctor, 100), verificationStatus: HEALTH_INFO_VERIFICATION.includes(c.verificationStatus) ? c.verificationStatus : 'pending_verification', sourceReferralId: referral._id, sourceLabel: c.feedbackType === 'external_medical_record' ? '医疗机构诊疗信息归档' : '专业协作反馈', draftedAt: new Date(), draftedByName: req.staff.name || '' };
       referral.courseDraftStatus = 'pending_review';
     }
   }
