@@ -22,7 +22,8 @@ export default function MedicalResourcesPage() {
   const load = async () => { try { const [r,s] = await Promise.all([adminAPI.medicalResources(), adminAPI.employees({ limit:500 })]); setData(r.data); setStaff((s.data || []).filter(x=>x.staffStatus !== 'inactive')) } catch(e) { toast(e.message) } }
   useEffect(()=>{ load() },[])
   const institutions = data.institutions || [], departments = data.departments || [], experts = data.experts || []
-  const filteredDepartments = departments.filter(d => !form.institutionId || String(d.institutionId?._id || d.institutionId) === String(form.institutionId))
+  const selectedInstitutionId = form?.institutionId || ''
+  const filteredDepartments = departments.filter(d => !selectedInstitutionId || String(d.institutionId?._id || d.institutionId) === String(selectedInstitutionId))
   const rows = useMemo(() => {
     const source = tab === 'institution' ? institutions : tab === 'department' ? departments : experts
     const keyword = q.trim().toLowerCase(); if (!keyword) return source

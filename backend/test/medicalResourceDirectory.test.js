@@ -27,6 +27,7 @@ test('Admin 提供医疗资源库且专家账号为可选关联', () => {
   assert.match(page, /不关联（外部专家）/);
   assert.match(page, /每个院区分别维护地址、联系人、职位和联系电话/);
   assert.match(page, /医院总联系人/);
+  assert.match(page, /form\?\.institutionId/);
   assert.match(layout, /医疗资源库/);
 });
 
