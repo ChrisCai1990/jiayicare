@@ -39,6 +39,7 @@ const referralSchema = new Schema({
     riskWarning: { type: String, default: '' },
     nextPlan: { type: String, default: '' },
     noMedicalConclusion: { type: Boolean, default: false },
+    sourceReportId: { type: Schema.Types.ObjectId, ref: 'MedicalReport', default: null },
   },
   courseDraft: { type: Schema.Types.Mixed, default: null },
   courseDraftStatus: { type: String, enum: ['none', 'pending_review', 'approved', 'rejected'], default: 'none' },

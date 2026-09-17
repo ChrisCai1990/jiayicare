@@ -74,6 +74,20 @@ test('接受只接单，提交正式反馈即标记已反馈且允许保留历�
   assert.match(notifications, /consultation\.feedbackType === 'external_medical_record'/);
 });
 
+test('外部医疗反馈锁定转介对象并由上传病历AI提取后人工核对', () => {
+  const route = read('backend/src/routes/staff.js');
+  const notifications = read('staff/src/pages/NotificationsPage.jsx');
+  const api = read('staff/src/api.js');
+  assert.match(route, /extract-medical-record/);
+  assert.match(route, /只能忠实提取病历原文已有信息/);
+  assert.match(route, /normalizedConsultation\.sourceInstitution = referral\.medicalExpertSnapshot\.institutionName/);
+  assert.match(api, /extractReferralMedicalRecord/);
+  assert.match(notifications, /本次转介对象（不可修改）/);
+  assert.match(notifications, /上传病历并智能提取/);
+  assert.match(notifications, /AI只按病历原文回填，提交前必须人工核对/);
+  assert.doesNotMatch(notifications, /placeholder="来源医疗机构 \*"/);
+});
+
 test('被退回的转介可由原发起方修订后重新发送并保留历史', () => {
   const model = read('backend/src/models/Referral.js');
   const route = read('backend/src/routes/staff.js');

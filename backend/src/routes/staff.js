@@ -5858,7 +5858,36 @@ router.post('/referrals/:id/ai-response-draft', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// PATCH /api/staff/referrals/:id — 更新转介状态（接收/完成/拒绝）
+// POST /api/staff/referrals/:id/extract-medical-record — 上传病历完成OCR后，按转介对象自动整理待审核反馈
+router.post('/referrals/:id/extract-medical-record', staffAuth, async (req, res) => {
+  try {
+    const referral = await Referral.findOne({ _id: req.params.id, toStaffId: req.staff._id });
+    if (!referral) return res.status(404).json({ success:false, message:'转介记录不存在或无权操作' });
+    if (referral.referralType !== 'external_medical' || !referral.medicalExpertSnapshot) return res.status(400).json({ success:false, message:'仅外部医疗转介支持从病历自动提取反馈' });
+    const report = await MedicalReport.findOne({ _id:req.body.reportId, user:referral.patientId });
+    if (!report) return res.status(404).json({ success:false, message:'病历不存在或与本次转介客户不一致' });
+    if (report.aiStatus === 'processing') return res.status(409).json({ success:false, processing:true, message:'病历仍在识别中，请稍候' });
+    if (report.aiStatus === 'failed') return res.status(409).json({ success:false, message:'病历识别失败，请重新识别或到健康资料中人工审核' });
+    const items = (report.reportItems || []).map(item => ({ name:item.name, value:item.value, findings:item.findings, diagnosis:item.diagnosis, conclusion:item.conclusion, orderName:item.orderName, sourcePage:item.sourcePage })).slice(0,150);
+    if (!items.length && !report.aiSummary && !report.note) return res.status(409).json({ success:false, message:'尚未提取到病历内容，请稍后重试或到健康资料中核对原件' });
+    const { chat } = require('../utils/ai');
+    const raw = await chat([{ role:'user', content:JSON.stringify({
+      referralQuestion:referral.questionList, referralPurpose:referral.referralPurpose,
+      source:{ institution:referral.medicalExpertSnapshot.institutionName, department:referral.medicalExpertSnapshot.departmentName, doctor:referral.medicalExpertSnapshot.name },
+      report:{ title:report.title, date:report.date || report.checkDate, aiSummary:report.aiSummary, note:report.note, items },
+    }) }], { jsonMode:true, maxTokens:2400, temperature:0, systemPrompt:'你是健康管理公司的医疗资料整理助手。只能忠实提取病历原文已有信息，不诊断、不推断、不新增治疗或用药建议。输出JSON对象：sourceDate,responseAnalysis,responseOpinion,diagnosis,examinationAdvice,treatmentAdvice,medicationAdvice,riskWarning,nextPlan。responseAnalysis概括病历已有事实与来源；responseOpinion仅整理病历中针对本次转介问题已有的结论或后续安排。材料未提及的字段必须为空字符串。日期使用YYYY-MM-DD，无法确认则为空。' });
+    const parsed = parseAiJson(raw);
+    const expert = referral.medicalExpertSnapshot;
+    res.json({ success:true, data:{
+      reportId:report._id, sourceInstitution:expert.institutionName || '', sourceDepartment:expert.departmentName || '', sourceDoctor:expert.name || '',
+      sourceDate:cleanMedicalText(parsed.sourceDate || report.date || report.checkDate,10), verificationStatus:'pending_verification',
+      responseAnalysis:cleanMedicalText(parsed.responseAnalysis,5000), responseOpinion:cleanMedicalText(parsed.responseOpinion,5000),
+      diagnosis:cleanMedicalText(parsed.diagnosis,5000), examinationAdvice:cleanMedicalText(parsed.examinationAdvice,5000), treatmentAdvice:cleanMedicalText(parsed.treatmentAdvice,5000), medicationAdvice:cleanMedicalText(parsed.medicationAdvice,5000), riskWarning:cleanMedicalText(parsed.riskWarning,5000), nextPlan:cleanMedicalText(parsed.nextPlan,5000),
+    } });
+  } catch (err) { res.status(500).json({ success:false, message:'病历信息提取失败：' + err.message }); }
+});
+
+// PATCH /api/staff/referrals/:id — 更新转介状态（接收/反馈/退回）
 router.patch('/referrals/:id', staffAuth, async (req, res) => {
   const { status, response, responseAnalysis, responseOpinion, consultation } = req.body;
   const referral = await Referral.findOne({ _id: req.params.id, toStaffId: req.staff._id });
@@ -5891,14 +5920,23 @@ router.patch('/referrals/:id', staffAuth, async (req, res) => {
     if (response !== undefined && response.trim()) referral.response = response.trim();
     if (responseAnalysis !== undefined) referral.responseAnalysis = responseAnalysis.trim();
     if (responseOpinion !== undefined) referral.responseOpinion = responseOpinion.trim();
-    if (consultation && typeof consultation === 'object') referral.consultation = consultation;
+    if (consultation && typeof consultation === 'object') {
+      const normalizedConsultation = { ...consultation };
+      if (referral.referralType === 'external_medical' && referral.medicalExpertSnapshot) {
+        normalizedConsultation.feedbackType = 'external_medical_record';
+        normalizedConsultation.sourceInstitution = referral.medicalExpertSnapshot.institutionName || '';
+        normalizedConsultation.sourceDepartment = referral.medicalExpertSnapshot.departmentName || '';
+        normalizedConsultation.sourceDoctor = referral.medicalExpertSnapshot.name || '';
+      }
+      referral.consultation = normalizedConsultation;
+    }
   } else if (status === 'rejected') {
     referral.responseAnalysis = cleanMedicalText(responseAnalysis || response, 5000);
     referral.responseOpinion = '';
   }
   referral.status = status;
   if (status === 'completed') {
-    const c = consultation || referral.consultation?.toObject?.() || referral.consultation || {};
+    const c = referral.consultation?.toObject?.() || referral.consultation || {};
     const hasConclusion = [responseAnalysis, responseOpinion, c.diagnosis, c.examinationAdvice, c.treatmentAdvice, c.medicationAdvice, c.riskWarning, c.nextPlan].some(value => String(value || '').trim());
     if (referral.requiresConclusion && !hasConclusion && !c.noMedicalConclusion) return res.status(400).json({ success: false, message: '请填写协作反馈，或确认本次仅完成协调、无外部医疗信息归档' });
     const hasExternalMedicalInfo = [c.diagnosis, c.examinationAdvice, c.treatmentAdvice, c.medicationAdvice].some(value => String(value || '').trim());

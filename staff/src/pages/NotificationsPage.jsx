@@ -546,15 +546,18 @@ function RespondModal({ referral, onClose, onRespond }) {
   const [responseOpinion, setResponseOpinion] = useState('')
   const [rejectReason, setRejectReason] = useState('')
   const [summary, setSummary] = useState('')   // 接收人填写的处理概要，供AI扩写
-  const [consultation, setConsultation] = useState({ feedbackType:referral.referralType === 'external_medical' ? 'external_medical_record' : 'internal_collaboration', sourceInstitution:'', sourceDepartment:'', sourceDoctor:'', sourceDate:'', verificationStatus:'pending_verification', diagnosis:'', diagnosisChanged:false, examinationAdvice:'', treatmentAdvice:'', medicationAdvice:'', riskWarning:'', nextPlan:'', noMedicalConclusion:false })
+  const [consultation, setConsultation] = useState({ feedbackType:referral.referralType === 'external_medical' ? 'external_medical_record' : 'internal_collaboration', sourceInstitution:referral.medicalExpertSnapshot?.institutionName || '', sourceDepartment:referral.medicalExpertSnapshot?.departmentName || '', sourceDoctor:referral.medicalExpertSnapshot?.name || '', sourceDate:'', verificationStatus:'pending_verification', diagnosis:'', diagnosisChanged:false, examinationAdvice:'', treatmentAdvice:'', medicationAdvice:'', riskWarning:'', nextPlan:'', noMedicalConclusion:false })
   const [submitting, setSubmitting] = useState(false)
   const [aiDrafting, setAiDrafting] = useState(false)
+  const [recordExtracting, setRecordExtracting] = useState(false)
+  const [recordProgress, setRecordProgress] = useState('')
   const isAccept = referral.action === 'accept'
   const isFeedback = referral.action === 'feedback' || referral.action === 'editFeedback'
   const isEditFeedback = referral.action === 'editFeedback'
   const isReject = referral.action === 'reject'
 
   const nextStatus = isAccept ? 'accepted' : isFeedback ? 'completed' : 'rejected'
+  const expert = referral.medicalExpertSnapshot || {}
 
   useEffect(() => {
     if (!isEditFeedback) return
@@ -571,6 +574,50 @@ function RespondModal({ referral, onClose, onRespond }) {
       setResponseOpinion(r.data.responseOpinion || '')
     } catch (err) { toast(err.message || 'AI生成失败') }
     finally { setAiDrafting(false) }
+  }
+
+  const waitForReportParse = async reportId => {
+    for (let attempt = 0; attempt < 90; attempt += 1) {
+      const latest = await staffAPI.getReport(reportId)
+      if (latest.data?.aiStatus !== 'processing') return latest.data
+      setRecordProgress(`AI正在识别病历…${attempt ? `（已等待${attempt * 2}秒）` : ''}`)
+      await new Promise(resolve => setTimeout(resolve, 2000))
+    }
+    throw new Error('病历识别仍在进行，请稍后重新打开本转介继续提取')
+  }
+
+  const handleMedicalRecordUpload = async event => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    setRecordExtracting(true)
+    try {
+      setRecordProgress('正在上传病历…')
+      const uploaded = await staffAPI.uploadReportFile(file, progress => setRecordProgress(`正在上传病历…${progress}%`))
+      const created = await staffAPI.uploadReport({
+        patientId: referral.patientId?._id || referral.patientId,
+        title: `转介病历-${referral.patientId?.name || '客户'}-${file.name.replace(/\.[^.]+$/, '')}`,
+        type: 'other', documentCategory: 'outpatient_record', hospital: expert.institutionName || '', date: '',
+        note: `来源：转介反馈 ${referral.reason || ''}`, fileUrl: uploaded.url, fileUrls: [uploaded.url],
+        ossKey: uploaded.ossKey || '', ossKeys: uploaded.ossKey ? [uploaded.ossKey] : [], mimeType: uploaded.mimeType, fileSize: String(uploaded.fileSize || ''),
+      })
+      const reportId = created.data?._id
+      if (!reportId) throw new Error('病历保存失败')
+      setRecordProgress('已上传，正在启动AI识别…')
+      await staffAPI.parseReportAI(reportId)
+      await waitForReportParse(reportId)
+      setRecordProgress('正在整理转介反馈草稿…')
+      const extracted = await staffAPI.extractReferralMedicalRecord(referral._id, reportId)
+      const d = extracted.data || {}
+      setResponseAnalysis(d.responseAnalysis || '')
+      setResponseOpinion(d.responseOpinion || '')
+      setConsultation(current => ({ ...current, ...d, feedbackType:'external_medical_record', sourceReportId:reportId, noMedicalConclusion:false }))
+      setRecordProgress('AI已回填，请对照病历原件逐项核对后提交')
+      toast('病历信息已自动提取，请人工核对')
+    } catch (err) {
+      setRecordProgress('')
+      toast(err.message || '病历上传或识别失败')
+    } finally { setRecordExtracting(false) }
   }
 
   const handleSubmit = async () => {
@@ -624,7 +671,7 @@ function RespondModal({ referral, onClose, onRespond }) {
             </div>
           ) : (
             <>
-              <div className="form-group" style={{ marginBottom: 0, background: '#F7F9FC', borderRadius: 8, padding: '10px 12px' }}>
+              {referral.referralType !== 'external_medical' && <div className="form-group" style={{ marginBottom: 0, background: '#F7F9FC', borderRadius: 8, padding: '10px 12px' }}>
                 <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span>📝 协作概要</span>
                   <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>写下已知事实和协作事项，AI 仅据此整理草稿</span>
@@ -636,7 +683,7 @@ function RespondModal({ referral, onClose, onRespond }) {
                     {aiDrafting ? 'AI生成中…' : (summary.trim() ? '✨ 按概要生成草稿' : '✨ AI生成草稿')}
                   </button>
                 </div>
-              </div>
+              </div>}
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">信息整理</label>
                 <textarea className="form-input" rows={3} value={responseAnalysis} onChange={e => setResponseAnalysis(e.target.value)}
@@ -644,8 +691,14 @@ function RespondModal({ referral, onClose, onRespond }) {
               </div>
               <>
                 <div style={{padding:'9px 12px',background:'#FFF8E8',borderRadius:8,fontSize:12,color:'#74520B'}}>健康管理团队不形成诊断、治疗或用药决策。只有确有医疗机构来源时，才在下方归档医疗信息。</div>
-                <div className="form-group" style={{marginBottom:0}}><label className="form-label">反馈类型 *</label><select className="form-input" value={consultation.feedbackType} onChange={e=>setConsultation(c=>({...c,feedbackType:e.target.value}))}><option value="internal_collaboration">内部专业协作反馈</option><option value="external_medical_record">外部医疗机构信息归档</option></select></div>
-                {consultation.feedbackType === 'external_medical_record' && <><div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8}}><input className="form-input" placeholder="来源医疗机构 *" value={consultation.sourceInstitution} onChange={e=>setConsultation(c=>({...c,sourceInstitution:e.target.value}))}/><input className="form-input" placeholder="科室" value={consultation.sourceDepartment} onChange={e=>setConsultation(c=>({...c,sourceDepartment:e.target.value}))}/><input className="form-input" placeholder="医生" value={consultation.sourceDoctor} onChange={e=>setConsultation(c=>({...c,sourceDoctor:e.target.value}))}/></div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}><div><label className="form-label">发生/就诊日期</label><input type="date" className="form-input" value={consultation.sourceDate} onChange={e=>setConsultation(c=>({...c,sourceDate:e.target.value}))}/></div><div><label className="form-label">核验状态</label><select className="form-input" value={consultation.verificationStatus} onChange={e=>setConsultation(c=>({...c,verificationStatus:e.target.value}))}><option value="self_reported">客户转述</option><option value="pending_verification">待核验</option><option value="source_verified">已核对来源材料</option></select></div></div>{[['diagnosis','医疗机构诊断归档'],['examinationAdvice','医疗机构检查意见归档'],['treatmentAdvice','医疗机构治疗意见归档'],['medicationAdvice','医疗机构用药医嘱归档']].map(([key,label]) => <div className="form-group" style={{ marginBottom:0 }} key={key}><label className="form-label">{label}</label><textarea className="form-input" rows={2} value={consultation[key]} onChange={e => setConsultation(c => ({...c,[key]:e.target.value}))} /></div>)}<label style={{ display:'flex', alignItems:'center', gap:7, fontSize:13 }}><input type="checkbox" checked={consultation.diagnosisChanged} onChange={e => setConsultation(c => ({...c,diagnosisChanged:e.target.checked}))} />医疗机构诊断有更新，建议人工修订健康信息摘要</label></>}
+                {referral.referralType !== 'external_medical' && <div className="form-group" style={{marginBottom:0}}><label className="form-label">反馈类型 *</label><select className="form-input" value={consultation.feedbackType} onChange={e=>setConsultation(c=>({...c,feedbackType:e.target.value}))}><option value="internal_collaboration">内部专业协作反馈</option><option value="external_medical_record">外部医疗机构信息归档</option></select></div>}
+                {consultation.feedbackType === 'external_medical_record' && <>
+                  <div style={{padding:'11px 12px',background:'#EFF7FC',borderLeft:'3px solid #0077B6',borderRadius:7,fontSize:13,lineHeight:1.7}}><div style={{fontWeight:800,color:'#006AA3'}}>本次转介对象（不可修改）</div><div>{[expert.institutionName, expert.campus, expert.departmentName, expert.name && `${expert.name}${expert.title ? `（${expert.title}）` : ''}`].filter(Boolean).join(' · ') || '转介对象信息待补充'}</div></div>
+                  <div style={{padding:'12px',border:'1px solid #DCE8E3',borderRadius:8,background:'#FAFCFB'}}><div style={{fontWeight:700,marginBottom:7}}>上传病历并智能提取</div><div style={{fontSize:12,color:'#65776F',marginBottom:9}}>支持图片或PDF。AI只按病历原文回填，提交前必须人工核对。</div><label className="btn btn-secondary btn-sm" style={{display:'inline-block',cursor:recordExtracting?'not-allowed':'pointer'}}>{recordExtracting?'识别中…':'选择病历文件'}<input type="file" accept="image/*,application/pdf" disabled={recordExtracting} onChange={handleMedicalRecordUpload} style={{display:'none'}} /></label>{recordProgress && <div style={{fontSize:12,color:recordProgress.startsWith('AI已')?'#1E6B50':'#0077B6',marginTop:8}}>{recordProgress}</div>}</div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}><div><label className="form-label">发生/就诊日期</label><input type="date" className="form-input" value={consultation.sourceDate} onChange={e=>setConsultation(c=>({...c,sourceDate:e.target.value}))}/></div><div><label className="form-label">核验状态</label><select className="form-input" value={consultation.verificationStatus} onChange={e=>setConsultation(c=>({...c,verificationStatus:e.target.value}))}><option value="pending_verification">待人工核验</option><option value="source_verified">已核对病历原件</option></select></div></div>
+                  {[['diagnosis','医疗机构诊断归档'],['examinationAdvice','医疗机构检查意见归档'],['treatmentAdvice','医疗机构治疗意见归档'],['medicationAdvice','医疗机构用药医嘱归档']].map(([key,label]) => <div className="form-group" style={{ marginBottom:0 }} key={key}><label className="form-label">{label}</label><textarea className="form-input" rows={2} value={consultation[key]} onChange={e => setConsultation(c => ({...c,[key]:e.target.value}))} placeholder="上传病历后由AI自动回填，请人工核对" /></div>)}
+                  <label style={{ display:'flex', alignItems:'center', gap:7, fontSize:13 }}><input type="checkbox" checked={consultation.diagnosisChanged} onChange={e => setConsultation(c => ({...c,diagnosisChanged:e.target.checked}))} />医疗机构诊断有更新，建议人工修订健康信息摘要</label>
+                </>}
                 {[['riskWarning','需关注事项'],['nextPlan','后续协作事项']].map(([key,label]) => <div className="form-group" style={{ marginBottom:0 }} key={key}><label className="form-label">{label}</label><textarea className="form-input" rows={2} value={consultation[key]} onChange={e => setConsultation(c => ({...c,[key]:e.target.value}))} /></div>)}
                 <label style={{ display:'flex', alignItems:'center', gap:7, fontSize:13 }}><input type="checkbox" checked={consultation.noMedicalConclusion} onChange={e => setConsultation(c => ({...c,noMedicalConclusion:e.target.checked}))} />本次仅完成咨询／协调，无外部医疗信息归档</label>
               </>
@@ -660,7 +713,7 @@ function RespondModal({ referral, onClose, onRespond }) {
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
           <button className={`btn ${isReject ? 'btn-danger' : 'btn-primary'}`}
-            onClick={handleSubmit} disabled={submitting || (isReject && !rejectReason)}>
+            onClick={handleSubmit} disabled={submitting || recordExtracting || (isReject && !rejectReason)}>
             {submitting ? '提交中...' : isAccept ? '确认接受并开始处理' : isEditFeedback ? '保存修改并重新通知' : isFeedback ? '提交转介反馈' : '确认退回'}
           </button>
         </div>

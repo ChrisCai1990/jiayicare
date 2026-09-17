@@ -278,6 +278,7 @@ export const staffAPI = {
   reviewReferralCourseDraft: (id, action) => req(`/staff/referrals/${id}/course-draft/review`, { method: 'POST', body: JSON.stringify({ action }) }),
   getPatientReferrals:   (patientId) => req(`/staff/referrals?patientId=${patientId}&limit=100`),
   generateAIReferralResponseDraft: (id, summary) => req(`/staff/referrals/${id}/ai-response-draft`, { method: 'POST', body: JSON.stringify({ summary: summary || '' }) }),
+  extractReferralMedicalRecord: (id, reportId) => req(`/staff/referrals/${id}/extract-medical-record`, { method: 'POST', body: JSON.stringify({ reportId }) }),
   markSentReferralsRead: ()          => req('/staff/referrals/mark-sent-read', { method: 'PATCH' }),
 
   // P4 — Notifications
