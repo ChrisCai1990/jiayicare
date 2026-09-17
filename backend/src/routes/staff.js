@@ -2403,16 +2403,19 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
     }
 
     if (action === 'reject') {
+      const rejectReason = String(req.body.rejectReason || edits?.returnNote || '').trim();
+      if (!rejectReason) return res.status(400).json({ success: false, message: '请填写驳回原因' });
       followUp.status = 'cancelled';
       const isCheckupAppointmentReview = followUp.sourceType === 'order' && followUp.formData?.generatedFromCheckupAppointment && followUp.sourceOrderId;
-      followUp.cancelReason = isCheckupAppointmentReview ? '健康顾问退回健管专员修改' : '健康顾问审核未通过';
+      followUp.cancelReason = rejectReason;
+      followUp.formData = { ...(followUp.formData || {}), reviewRejectReason: rejectReason, rejectedAt: new Date(), rejectedBy: req.staff._id };
       followUp.aiStatus = null;
       await followUp.save();
       if (isCheckupAppointmentReview) {
         const order = await Order.findById(followUp.sourceOrderId);
         const managerTask = await FollowUp.findOne({ sourceType: 'order', sourceOrderId: followUp.sourceOrderId, workflowKey: 'checkup_appointment:manager_review' });
         if (order && managerTask) {
-          const returnNote = String(edits?.returnNote || '').trim();
+          const returnNote = rejectReason;
           managerTask.status = 'planned'; managerTask.completedAt = null; managerTask.completedBy = null;
           managerTask.content = `健康顾问退回修改${returnNote ? `：${returnNote}` : '，请核对资料与后续随访计划后重新提交。'}`;
           await managerTask.save();

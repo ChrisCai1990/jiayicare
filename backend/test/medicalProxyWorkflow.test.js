@@ -323,6 +323,7 @@ test('medical escort audit closes the linked visit reminder and creates an AI fo
   assert.match(escortAudit, /purgeStaleMedicalEscortReports/);
   assert.match(escortAudit, /createPostVisitFollowUpPlan[\s\S]*medicalEscort: true/);
   assert.match(workflow, /就医陪同后AI随访计划/);
+  assert.match(workflow, /不得生成代配药、购药、配送或补药计划/);
   assert.match(workflow, /aiStatus: 'pending'/);
   const routes = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
   const patientPage = fs.readFileSync(path.join(__dirname, '../../staff/src/pages/PatientDetailPage.jsx'), 'utf8');

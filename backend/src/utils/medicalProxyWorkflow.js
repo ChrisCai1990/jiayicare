@@ -224,7 +224,7 @@ async function createPostVisitFollowUpPlan(task, order, patient, reportIds, { me
   let followUpDate = new Date(); followUpDate.setDate(followUpDate.getDate() + 7);
   try {
     const { chat } = require('./ai');
-    const prompt = `你是医疗服务随访计划助手。根据${medicalEscort ? '就医陪同执行情况' : '专家约诊信息'}和已审核的就诊后资料生成一条简明、可执行的随访计划草稿。不得补写不存在的诊断、药物或检查结果；没有资料时明确需由健康顾问确认客户是否需要后续联系。仅输出JSON：{"content":"随访事项","daysLater":1到30的整数}。\n服务信息：${order.serviceRequirements || ''}\n陪同/就诊结果：${task.formData?.executionSnapshot?.executionResult || ''}\n健管审核：${task.formData?.auditSummary || ''}\n资料：${sourceText || '客户或健管专员确认暂无资料上传'}`;
+    const prompt = `你是医疗服务随访计划助手。根据${medicalEscort ? '就医陪同执行情况' : '专家约诊信息'}和已审核的就诊后资料生成一条简明、可执行的随访计划草稿。${medicalEscort ? '本任务必须是提醒客户按医嘱就医、复诊或完成检查的随访，不得生成代配药、购药、配送或补药计划；处方和药物信息只能作为就医提醒中的核对事项。' : ''}不得补写不存在的诊断、药物或检查结果；没有资料时明确需由健康顾问确认客户是否需要后续联系。仅输出JSON：{"content":"随访事项","daysLater":1到30的整数}。\n服务信息：${order.serviceRequirements || ''}\n陪同/就诊结果：${task.formData?.executionSnapshot?.executionResult || ''}\n健管审核：${task.formData?.auditSummary || ''}\n资料：${sourceText || '客户或健管专员确认暂无资料上传'}`;
     const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 700, temperature: 0 });
     const match = String(text || '').match(/\{[\s\S]*\}/);
     const draft = match ? JSON.parse(match[0]) : {};

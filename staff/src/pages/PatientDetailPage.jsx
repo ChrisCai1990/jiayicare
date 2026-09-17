@@ -9398,7 +9398,12 @@ export default function PatientDetailPage() {
                             <button className="btn btn-sm" style={{ background: '#22A06B', color: '#fff' }}
                               onClick={async () => { await staffAPI.reviewFollowUp(f._id, { action: 'approve' }); loadFollowUps() }}>通过</button>
                             <button className="btn btn-secondary btn-sm"
-                              onClick={async () => { await staffAPI.reviewFollowUp(f._id, { action: 'reject' }); loadFollowUps() }}>驳回</button>
+                              onClick={async () => {
+                                const rejectReason = window.prompt('请填写驳回原因：', '')
+                                if (rejectReason === null) return
+                                if (!rejectReason.trim()) { toast('请填写驳回原因'); return }
+                                await staffAPI.reviewFollowUp(f._id, { action: 'reject', rejectReason: rejectReason.trim() }); loadFollowUps()
+                              }}>驳回</button>
                           </div>
                         ) : f.aiStatus === 'pending' ? (
                           <span style={{ fontSize: 12, color: '#8AA89C' }}>等待{reviewRoleLabel(f.reviewRole)}审核</span>
@@ -10878,7 +10883,10 @@ export default function PatientDetailPage() {
               {followUpDetail.aiStatus === 'pending' && <>
                 <button className="btn btn-secondary" onClick={async () => {
                   try {
-                    await staffAPI.reviewFollowUp(followUpDetail._id, { action: 'reject' })
+                    const rejectReason = window.prompt('请填写驳回原因：', '')
+                    if (rejectReason === null) return
+                    if (!rejectReason.trim()) { toast('请填写驳回原因'); return }
+                    await staffAPI.reviewFollowUp(followUpDetail._id, { action: 'reject', rejectReason: rejectReason.trim() })
                     setFollowUpDetail(null); loadFollowUps(); toast('已驳回')
                   } catch (err) { toast(err.message || '驳回失败') }
                 }}>驳回计划</button>
