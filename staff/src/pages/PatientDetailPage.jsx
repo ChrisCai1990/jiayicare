@@ -10182,6 +10182,8 @@ export default function PatientDetailPage() {
                         发起：<strong>{r.fromStaffId?.name}</strong> → 接收：<strong>{r.toStaffId?.name}</strong>（{r.toStaffId?.title || REFERRAL_CAT_MAP[r.toStaffId?.role] || r.toStaffId?.role}）
                       </div>
                       {r.content && <div style={{ fontSize: 13, color: '#666', marginBottom: 6 }}>{r.content}</div>}
+                      <div style={{ fontSize:12, color:'#65776F', marginBottom:5 }}>关联专病：<strong>{r.linkedDiseaseName || '待明确'}</strong>{r.referralPurpose ? ` · 目的：${r.referralPurpose}` : ''}</div>
+                      {r.questionList && <div style={{ fontSize:12, color:'#65776F', marginBottom:6 }}>需解决问题：{r.questionList}</div>}
                       {r.attachedHealthInfo && <AttachedHealthInfoView info={r.attachedHealthInfo} />}
                       {r.respondedAt && !(r.responseAnalysis || r.responseOpinion || r.response) && (
                         <div style={{ marginTop: 8, padding: '8px 11px', background: '#F6F9F7', borderRadius: 6, color: '#65776F', fontSize: 12 }}>
@@ -10211,6 +10213,8 @@ export default function PatientDetailPage() {
                           )}
                         </div>
                       )}
+                      {r.courseDraftStatus === 'pending_review' && <div style={{ marginTop:10, padding:'10px 12px', background:'#FFF8E8', borderRadius:7, color:'#8A5A00', fontSize:12 }}><div style={{ fontWeight:700, marginBottom:5 }}>会诊病程草稿待审核</div><div style={{ whiteSpace:'pre-wrap', marginBottom:8 }}>{r.courseDraft?.content}</div><div style={{ display:'flex', gap:8 }}><button className="btn btn-primary btn-sm" onClick={async () => { try { await staffAPI.reviewReferralCourseDraft(r._id,'approve'); toast('已写入专病病程'); loadPatientReferrals(); load(false) } catch (err) { toast(err.message) } }}>审核通过并写入病程</button><button className="btn btn-secondary btn-sm" onClick={async () => { try { await staffAPI.reviewReferralCourseDraft(r._id,'reject'); toast('已退回病程草稿'); loadPatientReferrals() } catch (err) { toast(err.message) } }}>不采纳</button></div></div>}
+                      {r.courseDraftStatus === 'approved' && <div style={{ marginTop:8, color:'#22A06B', fontSize:12 }}>✓ 会诊结论已由人工审核并写入专病病程</div>}
                     </div>
                   ))}
                 </div>}
@@ -13562,7 +13566,8 @@ const ROLE_LABEL_MAP = {
 
 function ReferralModal({ patientId, patientName, patientUser, staffList, onClose, onSaved }) {
   const toast = useToast()
-  const [form, setForm] = useState({ toStaffId: '', reason: '', content: '', urgency: 'normal' })
+  const diseaseOptions = Array.isArray(patientUser?.diseaseRecords) ? patientUser.diseaseRecords : []
+  const [form, setForm] = useState({ toStaffId: '', reason: '', content: '', urgency: 'normal', linkedDiseaseRecordId: '', linkedDiseaseName: '', referralPurpose: '', questionList: '', requiresConclusion: true })
   const [selectedHealthSections, setSelectedHealthSections] = useState(['basicInfo'])
   const [extraData, setExtraData] = useState({ medications: [], supplements: [], healthRecords: [] })
   const [saving, setSaving] = useState(false)
@@ -13683,6 +13688,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
         </div>
         {error && <div className="login-err" style={{ margin: '0 20px 8px' }}>⚠️ {error}</div>}
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">关联专病</label><select className="form-input" value={form.linkedDiseaseRecordId} onChange={e => { const disease = diseaseOptions.find(item => String(item._id) === e.target.value); setForm(f => ({ ...f, linkedDiseaseRecordId: e.target.value, linkedDiseaseName: disease?.name || '' })) }}><option value="">待明确／新问题</option>{diseaseOptions.map(item => <option key={item._id} value={item._id}>{item.name}</option>)}</select><div style={{ fontSize: 11, color: '#8AA89C', marginTop: 4 }}>接收方只能看到本次转介附带的信息；不会因此获得客户完整档案权限。</div></div>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">接收人 *</label>
             <select className="form-input" value={form.toStaffId} onChange={set('toStaffId')}>
@@ -13694,6 +13700,8 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
               ))}
             </select>
           </div>
+          <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">转介目的</label><select className="form-input" value={form.referralPurpose} onChange={set('referralPurpose')}><option value="">请选择</option>{['明确诊断','治疗方案建议','用药评估','检查建议','康复评估','营养评估','心理评估','其他'].map(item => <option key={item}>{item}</option>)}</select></div>
+          <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">需要接收方解决的问题</label><textarea className="form-input" rows={2} value={form.questionList} onChange={set('questionList')} placeholder="请列出希望会诊明确的问题" /></div>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">转介原因 *</label>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
@@ -13705,6 +13713,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
             </div>
             <input className="form-input" placeholder="或手动输入原因..." value={form.reason} onChange={set('reason')} />
           </div>
+          <label style={{ display:'flex', alignItems:'center', gap:7, fontSize:13 }}><input type="checkbox" checked={form.requiresConclusion} onChange={e => setForm(f => ({...f, requiresConclusion:e.target.checked}))} />要求回收正式会诊结论</label>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
               <label className="form-label" style={{ marginBottom: 0 }}>详细说明</label>

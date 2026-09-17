@@ -15,6 +15,25 @@ const referralSchema = new Schema({
   respondedAt:      { type: Date, default: null },
   fromStaffUnread:  { type: Boolean, default: false }, // B回复后置true，A查看后清除
   attachedHealthInfo: { type: mongoose.Schema.Types.Mixed, default: null }, // A附带的健康档案摘要
+  linkedDiseaseRecordId: { type: Schema.Types.ObjectId, default: null },
+  linkedDiseaseName: { type: String, default: '' },
+  linkedDiseaseSnapshot: { type: Schema.Types.Mixed, default: null }, // 发起时冻结；接收方只能看发起方授权的信息
+  referralPurpose: { type: String, default: '' },
+  questionList: { type: String, default: '' },
+  requiresConclusion: { type: Boolean, default: true },
+  consultation: {
+    diagnosis: { type: String, default: '' },
+    diagnosisChanged: { type: Boolean, default: false },
+    examinationAdvice: { type: String, default: '' },
+    treatmentAdvice: { type: String, default: '' },
+    medicationAdvice: { type: String, default: '' },
+    riskWarning: { type: String, default: '' },
+    nextPlan: { type: String, default: '' },
+    noMedicalConclusion: { type: Boolean, default: false },
+  },
+  courseDraft: { type: Schema.Types.Mixed, default: null },
+  courseDraftStatus: { type: String, enum: ['none', 'pending_review', 'approved', 'rejected'], default: 'none' },
+  linkedCourseEntryId: { type: Schema.Types.ObjectId, default: null },
 }, { timestamps: true });
 
 referralSchema.index({ toStaffId: 1, status: 1 });

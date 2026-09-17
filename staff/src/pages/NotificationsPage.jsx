@@ -53,9 +53,9 @@ export default function NotificationsPage() {
     window.dispatchEvent(new Event('notif-refresh'))
   }
 
-  const handleRespond = async (id, status, responseAnalysis, responseOpinion) => {
+  const handleRespond = async (id, status, responseAnalysis, responseOpinion, consultation = {}) => {
     try {
-      await staffAPI.updateReferral(id, { status, responseAnalysis, responseOpinion })
+      await staffAPI.updateReferral(id, { status, responseAnalysis, responseOpinion, consultation })
       toast(status === 'accepted' ? '已接受转介' : status === 'rejected' ? '已拒绝转介' : '已完成转介')
       setRespondModal(null); load()
       window.dispatchEvent(new Event('notif-refresh'))
@@ -179,10 +179,14 @@ export default function NotificationsPage() {
                     <span style={{ fontSize: 12, color: REFERRAL_STATUS_COLOR[r.status], fontWeight: 600 }}>· {REFERRAL_STATUS_LABEL[r.status]}</span>
                   </div>
                   <div style={{ fontSize: 13, color: '#4A6558', marginBottom: 4 }}>
-                    会员：<strong style={{ cursor: 'pointer', color: '#1E6B50' }} onClick={() => nav(`/patients/${r.patientId?._id}`)}>{r.patientId?.name}</strong>
+                    会员：<strong style={{ cursor: r.canViewPatient ? 'pointer' : 'default', color: '#1E6B50' }} onClick={() => r.canViewPatient && nav(`/patients/${r.patientId?._id}`)}>{r.patientId?.name}</strong>
                     <span style={{ color: '#aaa', marginLeft: 6 }}>{r.patientId?.phone}</span>
                   </div>
                   {r.content && <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>{r.content}</div>}
+                  <div style={{ fontSize:12, color:'#65776F', marginBottom:5 }}>关联专病：<strong>{r.linkedDiseaseName || '待明确'}</strong>{r.referralPurpose ? ` · 目的：${r.referralPurpose}` : ''}</div>
+                  {r.questionList && <div style={{ fontSize:12, color:'#65776F', marginBottom:5 }}>需解决问题：{r.questionList}</div>}
+                  {!r.canViewPatient && <div style={{ fontSize:12, color:'#8A5A00', background:'#FFF8E8', padding:'6px 9px', borderRadius:6, marginBottom:6 }}>有限授权视图：仅展示发起方在本次转介中提供的信息。</div>}
+                  {r.linkedDiseaseSnapshot?.summary && <AttachedHealthInfoView info={{ 专病病情摘要: r.linkedDiseaseSnapshot.summary }} />}
                   {r.attachedHealthInfo && <AttachedHealthInfoView info={r.attachedHealthInfo} />}
                   <div style={{ fontSize: 12, color: '#aaa' }}>
                     来自：{r.fromStaffId?.name} · {new Date(r.createdAt).toLocaleDateString('zh-CN')}
@@ -452,6 +456,7 @@ function RespondModal({ referral, onClose, onRespond }) {
   const [responseOpinion, setResponseOpinion] = useState('')
   const [rejectReason, setRejectReason] = useState('')
   const [summary, setSummary] = useState('')   // 接收人填写的处理概要，供AI扩写
+  const [consultation, setConsultation] = useState({ diagnosis:'', diagnosisChanged:false, examinationAdvice:'', treatmentAdvice:'', medicationAdvice:'', riskWarning:'', nextPlan:'', noMedicalConclusion:false })
   const [submitting, setSubmitting] = useState(false)
   const [aiDrafting, setAiDrafting] = useState(false)
   const isAccept = referral.action === 'accept'
@@ -478,6 +483,7 @@ function RespondModal({ referral, onClose, onRespond }) {
         nextStatus,
         isReject ? rejectReason : responseAnalysis,
         isReject ? '' : responseOpinion,
+        consultation,
       )
     }
     finally { setSubmitting(false) }
@@ -498,6 +504,7 @@ function RespondModal({ referral, onClose, onRespond }) {
             <div style={{ fontSize: 13, color: '#666' }}>会员：{referral.patientId?.name}</div>
             {referral.content && <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>{referral.content}</div>}
             {referral.attachedHealthInfo && <AttachedHealthInfoView info={referral.attachedHealthInfo} />}
+            {referral.linkedDiseaseSnapshot?.summary && <AttachedHealthInfoView info={{ 专病病情摘要: referral.linkedDiseaseSnapshot.summary }} />}
           </div>
           {isReject ? (
             <div className="form-group" style={{ marginBottom: 0 }}>
@@ -525,6 +532,11 @@ function RespondModal({ referral, onClose, onRespond }) {
                 <textarea className="form-input" rows={3} value={responseAnalysis} onChange={e => setResponseAnalysis(e.target.value)}
                   placeholder="对会员当前问题的分析评估..." />
               </div>
+              {isComplete && <>
+                {[['diagnosis','专科判断／诊断'],['examinationAdvice','检查建议'],['treatmentAdvice','治疗建议'],['medicationAdvice','用药建议'],['riskWarning','风险提示'],['nextPlan','下一步计划']].map(([key,label]) => <div className="form-group" style={{ marginBottom:0 }} key={key}><label className="form-label">{label}</label><textarea className="form-input" rows={2} value={consultation[key]} onChange={e => setConsultation(c => ({...c,[key]:e.target.value}))} /></div>)}
+                <label style={{ display:'flex', alignItems:'center', gap:7, fontSize:13 }}><input type="checkbox" checked={consultation.diagnosisChanged} onChange={e => setConsultation(c => ({...c,diagnosisChanged:e.target.checked}))} />诊断发生变化，建议更新病情摘要</label>
+                <label style={{ display:'flex', alignItems:'center', gap:7, fontSize:13 }}><input type="checkbox" checked={consultation.noMedicalConclusion} onChange={e => setConsultation(c => ({...c,noMedicalConclusion:e.target.checked}))} />本次仅完成咨询／协调，无新增医学结论</label>
+              </>}
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">会诊意见{isAccept ? '（可选）' : ''}</label>
                 <textarea className="form-input" rows={3} value={responseOpinion} onChange={e => setResponseOpinion(e.target.value)}
@@ -1015,7 +1027,7 @@ function AttachedHealthInfoView({ info }) {
         if (Array.isArray(v)) {
           display = v.map(item => typeof item === 'object' ? Object.values(item).filter(Boolean).join(' · ') : item).join('；')
         } else {
-          display = String(v)
+          display = typeof v === 'object' ? Object.entries(v).filter(([,value]) => value).map(([key,value]) => `${key}：${Array.isArray(value) ? value.join('、') : value}`).join('；') : String(v)
         }
         return (
           <div key={k} style={{ fontSize: 12, color: '#1A2B24', marginBottom: 3 }}>

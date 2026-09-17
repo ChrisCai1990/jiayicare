@@ -5505,14 +5505,22 @@ router.post('/patients/:id/message', staffAuth, async (req, res) => {
 // ── 跨角色转介 ──────────────────────────────────────────────
 // POST /api/staff/referrals — 发起转介
 router.post('/referrals', staffAuth, async (req, res) => {
-  const { patientId, toStaffId, reason, content, urgency, attachedHealthInfo } = req.body;
+  const { patientId, toStaffId, reason, content, urgency, attachedHealthInfo, linkedDiseaseRecordId, linkedDiseaseName, referralPurpose, questionList, requiresConclusion } = req.body;
   if (!patientId || !toStaffId || !reason) {
     return res.status(400).json({ success: false, message: '会员、接收人、原因不能为空' });
   }
+  const patient = await User.findById(patientId).select('diseaseRecords medicalRecord');
+  if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+  const diseaseRecords = normalizedDiseaseRecords(patient.toObject());
+  const linkedDisease = diseaseRecords.find(item => linkedDiseaseRecordId && String(item._id) === String(linkedDiseaseRecordId)) || diseaseRecords.find(item => item.name === linkedDiseaseName);
   const referral = await Referral.create({
     fromStaffId: req.staff._id, toStaffId, patientId,
     reason, content: content || '', urgency: urgency || 'normal',
     attachedHealthInfo: attachedHealthInfo || null,
+    linkedDiseaseRecordId: linkedDisease?._id || null,
+    linkedDiseaseName: linkedDisease?.name || cleanMedicalText(linkedDiseaseName, 100),
+    linkedDiseaseSnapshot: linkedDisease ? { name: linkedDisease.name, summary: linkedDisease.summary || {}, capturedAt: new Date() } : null,
+    referralPurpose: cleanMedicalText(referralPurpose, 100), questionList: cleanMedicalText(questionList, 5000), requiresConclusion: requiresConclusion !== false,
   });
   await referral.populate([
     { path: 'fromStaffId', select: 'name role' },
@@ -5540,10 +5548,19 @@ router.get('/referrals', staffAuth, async (req, res) => {
     Referral.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit))
       .populate('fromStaffId', 'name role title')
       .populate('toStaffId', 'name role title')
-      .populate('patientId', 'name phone chronicDiseases'),
+      .populate('patientId', 'name phone chronicDiseases assignedHealthManager assignedFamilyDoctor assignedNutritionist assignedSpecialist assignedTcmDoctor assignedPsychologist assignedRehabSpecialist assignedMedicalAssistant assignedHealthPlanner'),
     Referral.countDocuments(filter),
   ]);
-  res.json({ success: true, data: { referrals, total } });
+  const visibleIds = req.staff.role === 'superadmin' ? null : (await getVisibleStaffIds(req.staff)).map(String);
+  const data = referrals.map(doc => {
+    const item = doc.toObject();
+    const patient = item.patientId || {};
+    const canViewPatient = req.staff.role === 'superadmin' || ['assignedHealthManager','assignedFamilyDoctor','assignedNutritionist','assignedSpecialist','assignedTcmDoctor','assignedPsychologist','assignedRehabSpecialist','assignedMedicalAssistant','assignedHealthPlanner'].some(key => patient[key] && visibleIds.includes(String(patient[key])));
+    item.canViewPatient = canViewPatient;
+    item.patientId = { _id: patient._id, name: patient.name, phone: canViewPatient ? patient.phone : '', chronicDiseases: canViewPatient ? patient.chronicDiseases : [] };
+    return item;
+  });
+  res.json({ success: true, data: { referrals: data, total } });
 });
 
 // PATCH /api/staff/referrals/mark-sent-read — A清除"已回复"未读标记
@@ -5556,14 +5573,12 @@ router.patch('/referrals/mark-sent-read', staffAuth, async (req, res) => {
 router.post('/referrals/:id/ai-response-draft', staffAuth, async (req, res) => {
   try {
     const referral = await Referral.findOne({ _id: req.params.id, toStaffId: req.staff._id })
-      .populate('patientId', 'name gender age chronicDiseases healthProfile labValues')
+      .populate('patientId', 'name')
       .populate('fromStaffId', 'name role title');
     if (!referral) return res.status(404).json({ success: false, message: '转介记录不存在或无权操作' });
 
     const user = referral.patientId;
     const { chat } = require('../utils/ai');
-    const meds = await Medication.find({ user: user._id, stopped: false, aiStatus: { $ne: 'pending' } })
-      .select('name dosage').limit(5).lean();
 
     // 接收人填写的简要概要（可选）——有则让AI围绕它展开成完整回复草稿
     const summary = (req.body?.summary || '').trim();
@@ -5573,10 +5588,10 @@ router.post('/referrals/:id/ai-response-draft', staffAuth, async (req, res) => {
 
     const prompt = `你是一位专业医师，收到同事的会诊转介请求，请根据以下信息草拟你的会诊回复。${summary ? '重点：接收医师已给出处理概要，请忠实围绕该概要扩写，不要偏离或臆造其未提及的诊疗结论。' : ''}
 
-【会员】${user.name}，${user.gender || ''}，${user.age || '?'}岁
-【主要诊断/慢病】${(user.chronicDiseases || []).join('、') || '无'}
-【当前主要用药】${meds.length ? meds.map(m => `${m.name} ${m.dosage}`).join('；') : '无'}
-【药物过敏】${user.healthProfile?.drugAllergy || '无'}
+【会员】${user.name}
+【关联专病】${referral.linkedDiseaseName || '待明确'}
+【发起方授权的专病摘要】${JSON.stringify(referral.linkedDiseaseSnapshot?.summary || {})}
+【发起方授权的健康信息】${JSON.stringify(referral.attachedHealthInfo || {})}
 【发起方】${referral.fromStaffId?.name || ''}（${referral.fromStaffId?.role || ''}）
 【转介原因】${referral.reason}
 【转介详细说明】${referral.content || '无'}${summaryBlock}
@@ -5599,17 +5614,50 @@ router.post('/referrals/:id/ai-response-draft', staffAuth, async (req, res) => {
 
 // PATCH /api/staff/referrals/:id — 更新转介状态（接收/完成/拒绝）
 router.patch('/referrals/:id', staffAuth, async (req, res) => {
-  const { status, response, responseAnalysis, responseOpinion } = req.body;
+  const { status, response, responseAnalysis, responseOpinion, consultation } = req.body;
   const referral = await Referral.findOne({ _id: req.params.id, toStaffId: req.staff._id });
   if (!referral) return res.status(404).json({ success: false, message: '转介记录不存在或无权操作' });
   if (status) referral.status = status;
   if (response !== undefined && response.trim()) referral.response = response.trim();
   if (responseAnalysis !== undefined) referral.responseAnalysis = responseAnalysis.trim();
   if (responseOpinion !== undefined) referral.responseOpinion = responseOpinion.trim();
+  if (consultation && typeof consultation === 'object') referral.consultation = consultation;
+  if (status === 'completed') {
+    const c = consultation || referral.consultation?.toObject?.() || referral.consultation || {};
+    const hasConclusion = [responseAnalysis, responseOpinion, c.diagnosis, c.examinationAdvice, c.treatmentAdvice, c.medicationAdvice, c.riskWarning, c.nextPlan].some(value => String(value || '').trim());
+    if (referral.requiresConclusion && !hasConclusion && !c.noMedicalConclusion) return res.status(400).json({ success: false, message: '请填写会诊结论，或确认本次无新增医学结论' });
+    if (hasConclusion && referral.linkedDiseaseName) {
+      referral.courseDraft = { occurredAt: new Date(), content: cleanMedicalText(responseOpinion || responseAnalysis || '专科会诊结论', 20000), diagnosis: cleanMedicalText(c.diagnosis, 5000), examination: cleanMedicalText(c.examinationAdvice, 5000), medicationChange: cleanMedicalText(c.medicationAdvice, 5000), treatmentResponse: cleanMedicalText(c.treatmentAdvice, 5000), nextPlan: cleanMedicalText(c.nextPlan, 5000), riskWarning: cleanMedicalText(c.riskWarning, 5000), sourceType: 'referral', sourceReferralId: referral._id, sourceLabel: '专科会诊', draftedAt: new Date(), draftedByName: req.staff.name || '' };
+      referral.courseDraftStatus = 'pending_review';
+    }
+  }
   referral.respondedAt = new Date();
   referral.fromStaffUnread = true; // 通知发起方有新回复
   await referral.save();
   res.json({ success: true, data: referral });
+});
+
+// 健康顾问/发起方审核会诊形成的病程草稿；审核前绝不写入正式专病病程。
+router.post('/referrals/:id/course-draft/review', staffAuth, async (req, res) => {
+  try {
+    const referral = await Referral.findById(req.params.id);
+    if (!referral) return res.status(404).json({ success: false, message: '转介记录不存在' });
+    const canReview = req.staff.role === 'superadmin' || String(referral.fromStaffId) === String(req.staff._id) || req.staff.role === 'familyDoctor';
+    if (!canReview) return res.status(403).json({ success: false, message: '仅发起方、健康顾问或超级管理员可审核病程草稿' });
+    if (referral.courseDraftStatus !== 'pending_review' || !referral.courseDraft) return res.status(409).json({ success: false, message: '没有待审核的病程草稿' });
+    if (req.body.action === 'reject') { referral.courseDraftStatus = 'rejected'; await referral.save(); return res.json({ success: true, data: referral }); }
+    const patient = await User.findById(referral.patientId).select('diseaseRecords medicalRecord').lean();
+    if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+    const records = normalizedDiseaseRecords(patient);
+    let disease = records.find(item => referral.linkedDiseaseRecordId && String(item._id) === String(referral.linkedDiseaseRecordId)) || records.find(item => item.name === referral.linkedDiseaseName);
+    if (!disease) { disease = { _id: new mongoose.Types.ObjectId(), name: referral.linkedDiseaseName || '待明确专病', summary: {}, summaryHistory: [], courseEntries: [] }; records.push(disease); }
+    const entry = { ...referral.courseDraft, _id: new mongoose.Types.ObjectId(), reviewedAt: new Date(), reviewedById: req.staff._id, reviewedByName: req.staff.name || req.staff.username || '' };
+    disease.courseEntries = [entry, ...(disease.courseEntries || [])].slice(0, 500);
+    await User.collection.updateOne({ _id: patient._id }, { $set: { diseaseRecords: records } });
+    referral.courseDraftStatus = 'approved'; referral.linkedCourseEntryId = entry._id;
+    await referral.save();
+    res.json({ success: true, data: referral });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
 // ── 服务到期提醒 ────────────────────────────────────────────
