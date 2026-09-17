@@ -300,6 +300,11 @@ test('medical escort skips booking and sends manager review only after execution
   assert.match(stageForm, /submittedReportIds\.has/);
   assert.match(patientPage, /陪同就医 · 执行记录/);
   assert.match(patientPage, /完成陪同并提交资料审核/);
+  assert.match(patientPage, /const isOrderServiceWorkflowTask/);
+  assert.match(patientPage, /startsWith\('medical_proxy:'\)/);
+  assert.match(patientPage, /type: 'order_service'/);
+  assert.match(patientPage, />综合服务</);
+  assert.match(patientPage, /就医专员已完成陪同，健管专员已审核资料并归档/);
   assert.match(plansPage, /if \(isMedicalEscort\)[\s\S]*startStaffMedicalProxy\(patientId/);
   assert.match(plansPage, /!isMedicalEscort[\s\S]*督办人/);
   assert.match(plansPage, /不生成就医协助方案/);

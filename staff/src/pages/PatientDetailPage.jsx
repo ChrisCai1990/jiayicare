@@ -9245,12 +9245,14 @@ export default function PatientDetailPage() {
               if (/专病|慢病|疾病管理/.test(text)) return 'disease'
               return 'communication'
             }
-            // 预约、人员安排和履约属于同一项代配服务，只在客户档案中计作一项。
-            const isMedicationProxyServiceTask = task => task.sourceType === 'order' && /代配药|代取药|代配营养/.test(`${task.sourceOrderId?.serviceName || ''} ${task.sourceOrderId?.specificationLabel || ''} ${task.theme || ''}`)
+            // 同一订单下的预约、人员安排、执行、资料审核和督办是一次服务的内部岗位流转，
+            // 客户档案只计作一条综合服务。AI 生成的后续随访计划 workflowKey 为空，仍单独展示便于审核。
+            const isOrderServiceWorkflowTask = task => task.sourceType === 'order'
+              && String(task.workflowKey || '').startsWith('medical_proxy:')
             const displayTaskCount = tasks => {
               const seenServices = new Set()
               return tasks.reduce((count, task) => {
-                if (!isMedicationProxyServiceTask(task)) return count + 1
+                if (!isOrderServiceWorkflowTask(task)) return count + 1
                 const key = String(task.sourceOrderId?._id || task.sourceOrderId || task._id)
                 if (seenServices.has(key)) return count
                 seenServices.add(key)
@@ -9279,16 +9281,16 @@ export default function PatientDetailPage() {
             // 保证真实记录不再被同质占位淹没。
             const MONITOR_PREFIX = '日常监测随访 · '
             const monitorGroups = {} // key: theme+status → { theme, status, items: [] }
-            const medicationProxyServiceGroups = {}
-            const rows = [] // 最终渲染的行：单项任务、日常监测分组或代配服务分组
+            const orderServiceGroups = {}
+            const rows = [] // 最终渲染的行：单项任务、日常监测分组或订单服务分组
             filtered.forEach(f => {
-              if (isMedicationProxyServiceTask(f)) {
+              if (isOrderServiceWorkflowTask(f)) {
                 const key = String(f.sourceOrderId?._id || f.sourceOrderId || f._id)
-                if (!medicationProxyServiceGroups[key]) {
-                  medicationProxyServiceGroups[key] = { type: 'medication_proxy_service', key, items: [] }
-                  rows.push(medicationProxyServiceGroups[key])
+                if (!orderServiceGroups[key]) {
+                  orderServiceGroups[key] = { type: 'order_service', key, items: [] }
+                  rows.push(orderServiceGroups[key])
                 }
-                medicationProxyServiceGroups[key].items.push(f)
+                orderServiceGroups[key].items.push(f)
               } else if (f.sourceType === 'scheduled' && (f.theme || '').startsWith(MONITOR_PREFIX)) {
                 const key = f.theme + '|' + f.status
                 if (!monitorGroups[key]) {
@@ -9306,10 +9308,10 @@ export default function PatientDetailPage() {
             const serviceCurrentTask = row => row.items.find(item => item.workflowKey === 'medical_proxy:supervise' && ['planned', 'in_progress', 'missed'].includes(item.status))
               || row.items.find(item => ['planned', 'in_progress', 'missed'].includes(item.status))
               || [...row.items].sort((a, b) => new Date(b.completedAt || b.updatedAt || b.createdAt || b.date) - new Date(a.completedAt || a.updatedAt || a.createdAt || a.date))[0]
-            const rowStatus = (row) => row.type === 'group' ? row.status : row.type === 'medication_proxy_service' ? serviceCurrentTask(row).status : row.item.status
+            const rowStatus = (row) => row.type === 'group' ? row.status : row.type === 'order_service' ? serviceCurrentTask(row).status : row.item.status
             const rowDate = (row) => row.type === 'group'
               ? (isFutureStatus(row.status) ? Math.min(...row.items.map(i => new Date(i.date).getTime())) : Math.max(...row.items.map(i => new Date(i.date).getTime())))
-              : row.type === 'medication_proxy_service' ? new Date(serviceCurrentTask(row).date).getTime()
+              : row.type === 'order_service' ? new Date(serviceCurrentTask(row).date).getTime()
               : new Date(row.item.date).getTime()
             rows.sort((a, b) => {
               const aFuture = isFutureStatus(rowStatus(a))
@@ -9420,17 +9422,22 @@ export default function PatientDetailPage() {
                   )
                   return rows.map(row => {
                     if (row.type === 'single') return renderRow(row.item)
-                    if (row.type === 'medication_proxy_service') {
+                    if (row.type === 'order_service') {
                       const current = serviceCurrentTask(row)
-                      const serviceName = current.sourceOrderId?.serviceName || (/营养/.test(current.theme || '') ? '代配营养素服务' : '代配药服务')
-                      const stageText = current.workflowKey === 'medical_proxy:supervise' ? (current.formData?.executionFailed && current.formData?.currentStage === 'booking' ? `代配未成功，健管专员重新处理：${current.formData?.lastExecutionFailure || '待确认后续安排'}` : ({ booking: '健管专员预约配药门诊', planner: '健康规划师安排配药执行人员', execute: '就医专员配药并上传交付资料', completed: '服务已完成' }[current.formData?.currentStage] || current.content || '处理中')) : String(current.content || current.plannedContent || current.theme || '').replace(/^代配药[：:]\s*/, '')
+                      const serviceName = current.sourceOrderId?.serviceName || (isMedicalEscortTask(current) ? '就医陪同服务' : /营养/.test(current.theme || '') ? '代配营养素服务' : '医疗服务')
+                      const completed = row.items.every(item => ['completed', 'cancelled'].includes(item.status)) && row.items.some(item => item.status === 'completed')
+                      const stageText = completed
+                        ? (isMedicalEscortTask(current) ? '就医专员已完成陪同，健管专员已审核资料并归档' : '服务各岗位已完成流转并闭环')
+                        : current.workflowKey === 'medical_proxy:supervise'
+                          ? (current.formData?.executionFailed && current.formData?.currentStage === 'booking' ? `执行未成功，健管专员重新处理：${current.formData?.lastExecutionFailure || '待确认后续安排'}` : ({ booking: '健管专员确认预约', planner: '健康规划师安排执行人员', execute: '就医专员正在执行服务', post_visit_audit: '健管专员审核归档资料', completed: '服务已完成' }[current.formData?.currentStage] || current.content || '处理中'))
+                          : String(current.content || current.plannedContent || current.theme || '').replace(/^[^：:]+[：:]\s*/, '')
                       return <tr key={row.key} style={{ cursor: 'pointer', background: '#F2FAF6' }} onClick={() => setFollowUpDetail(current)}>
                         <td style={{ fontSize: 13, color: '#666' }}>{new Date(current.date).toLocaleDateString('zh-CN')}</td>
                         <td style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>{current.createdAt ? new Date(current.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
-                        <td><span className="badge badge-info">代配服务</span></td>
+                        <td><span className="badge badge-info">综合服务</span></td>
                         <td><span style={{ fontSize: 13, fontWeight: 500, color: FOLLOWUP_LIST_STATUS_COLOR[current.status] || '#666' }}>{FOLLOWUP_LIST_STATUS_MAP[current.status] || current.status}</span></td>
                         <td style={{ fontSize: 13, color: '#666' }}>{current.assignedTo?.name || current.staffId?.name || '-'}</td>
-                        <td style={{ fontSize: 13, color: '#1A2B24', maxWidth: 260 }}><div><span style={{ fontSize: 11, color: '#22A06B', background: '#22A06B18', padding: '1px 6px', borderRadius: 4, marginRight: 4 }}>单项服务</span><b>{serviceName}</b></div><div style={{ marginTop: 4, color: '#65776F' }}>当前进度：{stageText || '处理中'}</div></td>
+                        <td style={{ fontSize: 13, color: '#1A2B24', maxWidth: 300 }}><div><span style={{ fontSize: 11, color: '#22A06B', background: '#22A06B18', padding: '1px 6px', borderRadius: 4, marginRight: 4 }}>一次服务</span><b>{serviceName}</b></div><div style={{ marginTop: 4, color: '#65776F' }}>{completed ? '服务结果' : '当前进度'}：{stageText || '处理中'}</div></td>
                         <td style={{ fontSize: 12, color: '#8AA89C' }}>{current.nextFollowUpDate ? new Date(current.nextFollowUpDate).toLocaleDateString('zh-CN') : '-'}</td>
                         <td onClick={e => e.stopPropagation()}><button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(current)}>查看服务</button></td>
                       </tr>
