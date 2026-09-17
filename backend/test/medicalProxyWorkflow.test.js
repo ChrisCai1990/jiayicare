@@ -315,6 +315,9 @@ test('medical escort skips booking and sends manager review only after execution
   assert.match(patientPage, /medicalProxyOrderId/);
   assert.match(patientPage, /本次服务完整过程/);
   assert.match(patientPage, /异常解决与最终配药/);
+  assert.match(patientPage, /sourceType === 'supply_reminder' \? '服务完成'/);
+  assert.match(patientPage, /a\.completedAt \|\| a\.createdAt \|\| a\.date/);
+  assert.match(patientPage, /sourceType === 'supply_reminder' \? 99/);
   assert.match(patientPage, />执行时间</);
   assert.match(patientPage, /isSupersededDuplicateServiceTask/);
   assert.match(patientPage, /重复\.\*服务\|后台取消/);

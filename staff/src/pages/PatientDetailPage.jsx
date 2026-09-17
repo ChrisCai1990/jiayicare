@@ -9532,7 +9532,11 @@ export default function PatientDetailPage() {
                       const serviceName = orderTask?.sourceOrderId?.serviceName || current.sourceOrderId?.serviceName || (isMedicalEscortTask(current) ? '就医陪同服务' : /营养/.test(current.theme || '') ? '代配营养素服务' : '医疗服务')
                       const completed = row.items.every(item => ['completed', 'cancelled'].includes(item.status)) && row.items.some(item => item.status === 'completed')
                       const completedAt = row.items.map(item => item.completedAt).filter(Boolean).sort().at(-1)
-                      const serviceDetail = { ...current, completedAt: completedAt || current.completedAt, sourceOrderId: orderTask?.sourceOrderId || current.sourceOrderId, _serviceItems: [...row.items].sort((a, b) => new Date(a.createdAt || a.date) - new Date(b.createdAt || b.date)) }
+                      const serviceStageRank = item => item.sourceType === 'supply_reminder' ? 99 : ({ booking: 10, planner: 20, execute: 30, resolution: 40, supervise: 50 })[String(item.workflowKey || '').replace('medical_proxy:', '')] || 0
+                      const serviceDetail = { ...current, completedAt: completedAt || current.completedAt, sourceOrderId: orderTask?.sourceOrderId || current.sourceOrderId, _serviceItems: [...row.items].sort((a, b) => {
+                        const timeDifference = new Date(a.completedAt || a.createdAt || a.date) - new Date(b.completedAt || b.createdAt || b.date)
+                        return timeDifference || serviceStageRank(a) - serviceStageRank(b)
+                      }) }
                       const stageText = completed
                         ? (isMedicalEscortTask(current) ? '就医专员已完成陪同，健管专员已审核资料并归档' : '服务各岗位已完成流转并闭环')
                         : current.workflowKey === 'medical_proxy:supervise'
@@ -10914,7 +10918,7 @@ export default function PatientDetailPage() {
                   <div style={{ display: 'grid', gap: 8 }}>
                     {followUpDetail._serviceItems.map((item, index) => {
                       const stage = String(item.workflowKey || '').replace('medical_proxy:', '')
-                      const stageLabel = item.sourceType === 'supply_reminder' ? '服务发起'
+                      const stageLabel = item.sourceType === 'supply_reminder' ? '服务完成'
                         : ({ collect: '资料收集', audit: '资料审核', advisor: '方案确认', planner: '人员安排', booking: '预约配药', execute: '医院配药执行', resolution: '异常解决与最终配药', supervise: '健康规划师督办' })[stage] || item.theme || '服务处理'
                       const detail = item.formData?.resolutionResult || item.formData?.fulfillmentProof || item.formData?.executionResult || item.executedContent || item.content || item.plannedContent || ''
                       const time = item.completedAt || item.updatedAt || item.createdAt || item.date
