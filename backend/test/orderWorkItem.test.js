@@ -60,6 +60,29 @@ test('会员详情读取前会按订单事实状态校正历史待办', () => {
   assert.match(source.slice(start, end), /reconcileInactiveOrderWorkItems\(req\.params\.id\)/);
 });
 
+test('取消或退款的一次性综合服务会删除内部岗位任务', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/utils/orderWorkItem.js'), 'utf8');
+  assert.match(source, /cancelledOrderIds = await Order\.find/);
+  assert.match(source, /FollowUp\.deleteMany\(\{[\s\S]*workflowKey: \/\^\(medical_proxy\|medication_proxy\|checkup_appointment\):\//);
+});
+
+test('年度就医与复查提醒包含完整执行信息并拒绝空壳任务', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/utils/annualPlanFollowUps.js'), 'utf8');
+  assert.match(source, /!String\(content \|\| ''\)\.trim\(\)/);
+  assert.match(source, /rec\.basisSummary && `设置依据：/);
+  assert.match(source, /rec\.customerAction && `客户行动：/);
+  assert.match(source, /rec\.precautions \|\| rec\.notes/);
+  assert.match(source, /if \(!primaryDetails\.length\) return/);
+  assert.match(source, /content: \{ \$regex: \/\^\\s\*\(\?:-\|空腹\|暂无\|无\)\?\\s\*\$\//);
+});
+
+test('体检复查和疫苗关键词优先于普通健康监测指标', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../../staff/src/pages/PatientDetailPage.jsx'), 'utf8');
+  const checkupIndex = source.indexOf("if (/体检|复查|检验|检查|筛查|疫苗/.test(text)) return 'checkup'");
+  const monitoringIndex = source.indexOf("if (/血压|血糖|体重|睡眠|运动|饮水|监测|打卡/.test(text)) return 'monitoring'");
+  assert.ok(checkupIndex >= 0 && monitoringIndex > checkupIndex);
+});
+
 test('后台取消订单同步取消关联待办', () => {
   const source = fs.readFileSync(path.join(__dirname, '../src/routes/admin.js'), 'utf8');
   const start = source.indexOf("router.patch('/orders/:id/status'");

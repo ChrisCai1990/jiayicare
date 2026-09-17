@@ -4,6 +4,24 @@ const ACTIVE_ORDER_REFUND_STATUSES = ['', 'none', 'failed', 'partially_refunded'
 async function reconcileInactiveOrderWorkItems(patientId = null) {
   const Order = require('../models/Order');
   const FollowUp = require('../models/FollowUp');
+  // 取消或退款的一次性服务以订单作为审计记录即可；其内部岗位任务不属于服务历史，
+  // 直接从客户“服务执行任务”删除，避免长期留下“已取消综合服务”占位。
+  const cancelledOrderFilter = {
+    ...(patientId ? { user: patientId } : {}),
+    $or: [
+      { status: 'cancelled' },
+      { tradeStatus: { $in: ['closed', 'refund_pending', 'refunded'] } },
+      { refundStatus: { $in: ['requested', 'processing', 'refunded'] } },
+      { paymentStatus: 'refunded' },
+    ],
+  };
+  const cancelledOrderIds = await Order.find(cancelledOrderFilter).distinct('_id');
+  const removedServiceTasks = cancelledOrderIds.length ? await FollowUp.deleteMany({
+    sourceType: 'order',
+    sourceOrderId: { $in: cancelledOrderIds },
+    workflowKey: /^(medical_proxy|medication_proxy|checkup_appointment):/,
+    ...(patientId ? { patientId } : {}),
+  }) : { deletedCount: 0 };
   const followUpFilter = {
     sourceType: 'order',
     sourceOrderId: { $ne: null },
@@ -22,7 +40,7 @@ async function reconcileInactiveOrderWorkItems(patientId = null) {
     ...(patientId ? { patientId } : {}),
   };
   const repairedPlans = await FollowUp.updateMany(postVisitRepairFilter, { $set: { status: 'planned', cancelReason: '' } });
-  let modifiedCount = repairedPlans.modifiedCount || 0;
+  let modifiedCount = (repairedPlans.modifiedCount || 0) + (removedServiceTasks.deletedCount || 0);
   const linkedOrderIds = await FollowUp.find(followUpFilter).distinct('sourceOrderId');
   if (linkedOrderIds.length) {
     const activeOrderIds = await Order.find({ _id: { $in: linkedOrderIds }, ...activeOrderWorkItemQuery() }).distinct('_id');

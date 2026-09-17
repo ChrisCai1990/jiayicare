@@ -90,7 +90,7 @@ async function buildAnnualPlanFollowUps(plan) {
   // staffId 仅表示创建人，两者语义不同，混用会导致审核通过后随访挂不到指定人名下。
   const push = (date, theme, content, assignedTo, sourceScheduleKey, delivery = {}) => {
     // 只有明确了随访时间和随访人，才构成可执行的随访计划；否则不向客户或工作台投放半成品。
-    if (!date || !assignedTo) return;
+    if (!date || !assignedTo || !String(content || '').trim()) return;
     const d = new Date(date);
     if (isNaN(d.getTime())) return;
     const mongoose = require('mongoose');
@@ -119,26 +119,41 @@ async function buildAnnualPlanFollowUps(plan) {
     const records = moduleData[mod.key]?.records;
     if (!Array.isArray(records)) continue;
     records.forEach((rec, i) => {
-      const label = rec.hospital || rec.name || rec.items || `第${i + 1}条`;
+      const fallbackLabels = {
+        medical_treatment: '就医安排', specialist_collab: '联合会诊', checkup_completion: '体检完善',
+        abnormal_followup: '异常复查', vaccine: '疫苗接种', functional_medicine: '功能医学检测',
+      };
+      const label = rec.hospital || rec.name || rec.items || rec.standardPlanName || fallbackLabels[mod.key] || `第${i + 1}条`;
       // 年度方案随访统一由客户的健管专员承接；patientId 让同一计划同步展示给客户。
       // 其他岗位的代约、陪同、会诊等服务任务由 annualPlanServiceTasks 另行拆分。
       const executor = patient?.assignedHealthManager;
-      const lines = [
+      const primaryDetails = [
+        rec.standardPlanName && `执行方案：${rec.standardPlanName}`,
         rec.hospital && `就医/会诊医院：${rec.hospital}`,
         rec.department && `科室：${rec.department}`,
         rec.expert && `专家：${rec.expert}`,
         rec.reason && `原因：${rec.reason}`,
+        rec.basisSummary && `设置依据：${rec.basisSummary}`,
         rec.purpose && `目的：${rec.purpose}`,
         rec.items && `项目：${rec.items}`,
+        rec.name && `项目：${rec.name}`,
         rec.institution && `机构：${rec.institution}`,
         rec.brand && `品牌：${rec.brand}`,
         rec.order_dept && `开单科室：${rec.order_dept}`,
         rec.order_expert && rec.order_expert !== '无' && `开单专家：${rec.order_expert}`,
+        rec.standardContent && `标准执行内容：${rec.standardContent}`,
+        rec.customerAction && `客户行动：${rec.customerAction}`,
         rec.assist && '已安排就医协助',
-        rec.coordinator && `协调专员：${staffName(rec.coordinator)}`,
-        executor && `执行人员：${staffName(executor)}`,
-        rec.notes && `注意事项：${rec.notes}`,
       ].filter(Boolean);
+      // “空腹”“单次”等准备或频次信息不能单独构成一条就医计划。
+      if (!primaryDetails.length) return;
+      const details = [
+        ...primaryDetails,
+        rec.frequency && `执行频次：${rec.frequency}`,
+        rec.coordinator && `协调专员：${staffName(rec.coordinator)}`,
+        (rec.precautions || rec.notes) && `注意事项：${rec.precautions || rec.notes}`,
+      ].filter(Boolean);
+      const lines = [...details, executor && `执行人员：${staffName(executor)}`].filter(Boolean);
       push(rec[mod.dateField], `${mod.theme} · ${label}`, lines.join('\n'), executor,
         `${mod.key}:${String(rec[mod.dateField]).slice(0, 10)}:${String(label).trim()}`, rec);
     });
@@ -251,6 +266,18 @@ async function buildAnnualPlanFollowUps(plan) {
 // 从而既保留人工修改，又避免每天刷新把同一计划再次送审。
 async function syncAnnualPlanFollowUps(plan) {
   const toCreate = await buildAnnualPlanFollowUps(plan);
+  // 清理旧版本已经投放的空壳任务；它们只有“- / 空腹 / 暂无”等准备信息，
+  // 没有项目、原因、依据或客户行动，不能继续作为可执行计划展示。
+  await FollowUp.deleteMany({
+    sourceAnnualPlanId: plan._id,
+    sourceType: 'scheduled',
+    status: { $in: ['planned', 'in_progress'] },
+    $or: [
+      { content: { $exists: false } },
+      { content: null },
+      { content: { $regex: /^\s*(?:-|空腹|暂无|无)?\s*$/ } },
+    ],
+  });
   const existing = await FollowUp.find({ sourceAnnualPlanId: plan._id, sourceType: 'scheduled' }).sort({ createdAt: 1 });
   const desiredKeys = new Set(toCreate.map(row => row.sourceScheduleKey));
   let created = 0;

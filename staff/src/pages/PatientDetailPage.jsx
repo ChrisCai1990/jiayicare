@@ -9320,9 +9320,11 @@ export default function PatientDetailPage() {
               const text = `${task.theme || ''} ${task.content || task.taskRequirements || task.plannedContent || ''} ${task.type || ''} ${task.sourceType || ''}`
               if (task.sourceType === 'supply_reminder' || task.sourceOrderId?.medicalProxyPlan?.medicationProxy || task.sourceOrderId?.medicalProxyPlan?.supplementProxy || (task.tags || []).includes('配药与营养补充')) return 'supply'
               if (/营养|饮食|膳食|体重管理/.test(text)) return 'nutrition'
-              if (/血压|血糖|体重|睡眠|运动|饮水|监测|打卡/.test(text)) return 'monitoring'
+              // 体检、复查和疫苗任务常会同时提到“血压、体重、监测”等检查背景。
+              // 先按任务目的归类，避免被普通指标关键词抢到“健康监测”。
               if (/体检|复查|检验|检查|筛查|疫苗/.test(text)) return 'checkup'
               if (/就医|会诊|医院|挂号|陪诊|代诊|科室|医生/.test(text)) return 'medical'
+              if (/血压|血糖|体重|睡眠|运动|饮水|监测|打卡/.test(text)) return 'monitoring'
               if (/专病|慢病|疾病管理/.test(text)) return 'disease'
               return 'communication'
             }
