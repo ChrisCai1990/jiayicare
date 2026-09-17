@@ -1062,36 +1062,80 @@ const DISEASE_FIELD_LABELS = {
 
 const formatDate = value => value ? new Date(value).toLocaleDateString('zh-CN') : '日期未记录'
 
+const HEALTH_SECTION_ORDER = [
+  'basicInfo', 'allergies', 'foodAllergy', 'drugAllergy', 'medicalHistory', 'specialDiseases',
+  'familyHistory', 'surgeries', 'diseaseSummary', 'diseaseCourse', 'recentSymptoms',
+  'medicationRecords', 'supplementRecords', 'medications', 'longTermMeds', 'longTermSups',
+  'latestVitals', 'dietSummary',
+]
+
+const formatHealthValue = value => {
+  if (Array.isArray(value)) return value.map(item => typeof item === 'object'
+    ? Object.values(item).filter(Boolean).join(' · ')
+    : item).join('；')
+  if (typeof value === 'object') return Object.entries(value).filter(([, item]) => item)
+    .map(([key, item]) => `${key}：${Array.isArray(item) ? item.join('、') : item}`).join('；')
+  return String(value)
+}
+
+function HealthRecordList({ records, supplement = false }) {
+  const active = records.filter(item => item?.状态 !== '已停用')
+  const stopped = records.filter(item => item?.状态 === '已停用')
+  const renderGroup = (title, items, stoppedGroup) => items.length > 0 && (
+    <div style={{ marginTop: 7 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: stoppedGroup ? '#8A6B61' : '#1E6B50', marginBottom: 5 }}>
+        {title}（{items.length}）
+      </div>
+      <div style={{ display: 'grid', gap: 6 }}>
+        {items.map((item, index) => (
+          <div key={index} style={{ padding: '8px 10px', background: stoppedGroup ? '#FAF8F7' : '#FFFFFF', border: `1px solid ${stoppedGroup ? '#E8DFDB' : '#D8E8E1'}`, borderRadius: 7 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+              <strong style={{ color: '#173B2E', fontSize: 12 }}>{item?.药品 || item?.名称 || (supplement ? '未命名补充剂' : '未命名药品')}</strong>
+              <span style={{ padding: '2px 7px', borderRadius: 10, fontSize: 10, fontWeight: 700, color: stoppedGroup ? '#8A4B3D' : '#176B4D', background: stoppedGroup ? '#F5E8E4' : '#E7F5EF' }}>{item?.状态 || '状态未记录'}</span>
+            </div>
+            <div style={{ color: '#60756B', fontSize: 11, lineHeight: 1.65, marginTop: 4 }}>
+              <span>时间：{item?.开始时间 || '未记录'} → {item?.结束或停用时间 || '—'}</span>
+              {item?.用法 && <span style={{ marginLeft: 12 }}>用法：{item.用法}</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+  return <>{renderGroup(supplement ? '补充中／待审核' : '使用中／待审核', active, false)}{renderGroup('已停用', stopped, true)}</>
+}
+
 function AttachedHealthInfoView({ info }) {
   if (!info) return null
   const sections = Object.keys(info).filter(k => {
     const v = info[k]
     return v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0)
+  }).sort((a, b) => {
+    const ai = HEALTH_SECTION_ORDER.indexOf(a); const bi = HEALTH_SECTION_ORDER.indexOf(b)
+    return (ai < 0 ? 999 : ai) - (bi < 0 ? 999 : bi)
   })
   if (sections.length === 0) return null
 
   return (
-    <div style={{ marginTop: 8, padding: '10px 12px', background: '#f0f6ff', borderRadius: 6, borderLeft: '3px solid #0077B6' }}>
-      <div style={{ fontSize: 11, color: '#0077B6', fontWeight: 600, marginBottom: 6 }}>附带健康档案</div>
+    <div style={{ marginTop: 10, padding: '12px 14px', background: '#F5F9FC', borderRadius: 9, borderLeft: '4px solid #0077B6' }}>
+      <div style={{ fontSize: 13, color: '#006EAA', fontWeight: 700, marginBottom: 9 }}>附带健康档案</div>
       {sections.map(k => {
         const v = info[k]
         const label = HEALTH_SECTION_LABELS[k] || k
+        if ((k === 'medicationRecords' || k === 'supplementRecords') && Array.isArray(v)) {
+          return <div key={k} style={{ padding: '9px 10px', background: '#EDF5F1', borderRadius: 8, marginBottom: 8 }}><div style={{ color:'#355E4F', fontSize:12, fontWeight:700 }}>{label}</div><HealthRecordList records={v} supplement={k === 'supplementRecords'} /></div>
+        }
         if (k === 'diseaseSummary' && typeof v === 'object') {
           const rows = Object.entries(v).filter(([key, value]) => DISEASE_FIELD_LABELS[key] && String(value || '').trim())
-          return <div key={k} style={{ marginBottom: 8 }}><div style={{ color:'#4A6558', fontSize:12, fontWeight:700, marginBottom:4 }}>{label}</div>{rows.map(([key,value]) => <div key={key} style={{ fontSize:12, color:'#1A2B24', marginBottom:3 }}><span style={{ color:'#60756B' }}>{DISEASE_FIELD_LABELS[key]}：</span>{String(value)}</div>)}</div>
+          return <div key={k} style={{ padding:'9px 10px', background:'#FFFFFF', border:'1px solid #DCE8E3', borderRadius:8, marginBottom:8 }}><div style={{ color:'#355E4F', fontSize:12, fontWeight:700, marginBottom:6 }}>{label}</div>{rows.map(([key,value]) => <div key={key} style={{ fontSize:12, color:'#1A2B24', lineHeight:1.65, marginBottom:4 }}><span style={{ color:'#60756B', fontWeight:600 }}>{DISEASE_FIELD_LABELS[key]}：</span>{String(value)}</div>)}</div>
         }
         if (k === 'diseaseCourse' && Array.isArray(v)) {
-          return <div key={k}><div style={{ color:'#4A6558', fontSize:12, fontWeight:700, marginBottom:4 }}>{label}</div>{v.map((entry,index) => <div key={index} style={{ padding:'7px 0', borderTop:index ? '1px solid #DCE8E3':'none', fontSize:12 }}><div style={{ color:'#60756B', marginBottom:3 }}>{formatDate(entry.occurredAt)}{entry.sourceInstitution ? ` · ${entry.sourceInstitution}` : ''}</div>{Object.entries(entry).filter(([key,value]) => DISEASE_FIELD_LABELS[key] && String(value || '').trim()).map(([key,value]) => <div key={key}><span style={{ color:'#60756B' }}>{DISEASE_FIELD_LABELS[key]}：</span>{String(value)}</div>)}</div>)}</div>
-        }
-        let display = ''
-        if (Array.isArray(v)) {
-          display = v.map(item => typeof item === 'object' ? Object.values(item).filter(Boolean).join(' · ') : item).join('；')
-        } else {
-          display = typeof v === 'object' ? Object.entries(v).filter(([,value]) => value).map(([key,value]) => `${key}：${Array.isArray(value) ? value.join('、') : value}`).join('；') : String(v)
+          return <div key={k} style={{ padding:'9px 10px', background:'#FFFFFF', border:'1px solid #DCE8E3', borderRadius:8, marginBottom:8 }}><div style={{ color:'#355E4F', fontSize:12, fontWeight:700, marginBottom:4 }}>{label}</div>{v.map((entry,index) => <div key={index} style={{ padding:'7px 0', borderTop:index ? '1px solid #DCE8E3':'none', fontSize:12, lineHeight:1.65 }}><div style={{ color:'#60756B', fontWeight:600, marginBottom:3 }}>{formatDate(entry.occurredAt)}{entry.sourceInstitution ? ` · ${entry.sourceInstitution}` : ''}</div>{Object.entries(entry).filter(([key,value]) => DISEASE_FIELD_LABELS[key] && String(value || '').trim()).map(([key,value]) => <div key={key}><span style={{ color:'#60756B' }}>{DISEASE_FIELD_LABELS[key]}：</span>{String(value)}</div>)}</div>)}</div>
         }
         return (
-          <div key={k} style={{ fontSize: 12, color: '#1A2B24', marginBottom: 3 }}>
-            <span style={{ color: '#4A6558', marginRight: 4 }}>{label}：</span>{display}
+          <div key={k} style={{ padding: '7px 9px', background: '#FFFFFF', border: '1px solid #E1EAE6', borderRadius: 7, fontSize: 12, color: '#1A2B24', lineHeight: 1.65, marginBottom: 6 }}>
+            <div style={{ color: '#4A6558', fontWeight: 700, marginBottom: 2 }}>{label}</div>
+            <div>{formatHealthValue(v)}</div>
           </div>
         )
       })}
