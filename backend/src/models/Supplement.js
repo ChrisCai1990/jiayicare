@@ -39,7 +39,7 @@ const supplementSchema = new mongoose.Schema({
   supplyReminder: {
     enabled:      { type: Boolean, default: false },
     intervalDays: { type: Number, min: 1, max: 365, default: 30 },
-    leadDays:     { type: Number, min: 1, max: 30, default: 7 },
+    leadDays:     { type: Number, min: 0, max: 30, default: 0 },
     deliveryTime: { type: String, default: '' },
     mode:         { type: String, enum: ['visit', 'proxy'], default: 'visit' },
     institutionType: { type: String, enum: ['hospital', 'online', 'pharmacy', ''], default: '' },

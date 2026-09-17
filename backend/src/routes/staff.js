@@ -7193,10 +7193,17 @@ router.put('/patients/:id/supply-reminders/:kind/:recordId', staffAuth, checkPer
       tags: ['配药与营养补充', task, itemType], sourceType: 'supply_reminder', sourceId: record._id,
       formData: { institutionType, hospitalName: String(req.body.hospitalName || '').trim(), campus: String(req.body.campus || '').trim(), department: String(req.body.department || '').trim(), expert: String(req.body.expert || '').trim(), platformName: String(req.body.platformName || '').trim(), pharmacyName: String(req.body.pharmacyName || '').trim(), pharmacyAddress: String(req.body.pharmacyAddress || '').trim(), purchasePath, quantity, paymentMethod, expectedDeliveryDate: mode === 'proxy' ? firstDate : '', deliveryTime, leadDays },
     };
-    record.supplyReminder = { enabled: true, intervalDays, leadDays: leadDays || 7, deliveryTime, mode, institutionType, hospitalName: String(req.body.hospitalName || '').trim(), campus: String(req.body.campus || '').trim(), department: String(req.body.department || '').trim(), expert: String(req.body.expert || '').trim(), platformName: String(req.body.platformName || '').trim(), pharmacyName: String(req.body.pharmacyName || '').trim(), pharmacyAddress: String(req.body.pharmacyAddress || '').trim(), purchasePath, quantity, paymentMethod, note: String(req.body.note || '').trim().slice(0, 500), updatedAt: new Date(), updatedBy: req.staff._id };
-    await record.save();
-    await FollowUp.deleteMany({ patientId: req.params.id, sourceType: 'supply_reminder', sourceId: record._id, status: 'planned', date: { $gte: new Date() } });
-    const linkedTask = await FollowUp.create(row);
+    record.supplyReminder = { enabled: true, intervalDays, leadDays: mode === 'proxy' ? leadDays : 0, deliveryTime: mode === 'proxy' ? deliveryTime : '', mode, institutionType, hospitalName: String(req.body.hospitalName || '').trim(), campus: String(req.body.campus || '').trim(), department: String(req.body.department || '').trim(), expert: String(req.body.expert || '').trim(), platformName: String(req.body.platformName || '').trim(), pharmacyName: String(req.body.pharmacyName || '').trim(), pharmacyAddress: String(req.body.pharmacyAddress || '').trim(), purchasePath, quantity, paymentMethod, note: String(req.body.note || '').trim().slice(0, 500), updatedAt: new Date(), updatedBy: req.staff._id };
+    let linkedTask = await FollowUp.findOneAndUpdate(
+      { patientId: req.params.id, sourceType: 'supply_reminder', sourceId: record._id, status: 'planned' },
+      { $set: row, $unset: { sourceScheduleKey: 1 } },
+      { new: true, sort: { createdAt: -1 } },
+    );
+    if (!linkedTask) linkedTask = await FollowUp.create(row);
+    await FollowUp.updateMany(
+      { patientId: req.params.id, sourceType: 'supply_reminder', sourceId: record._id, status: 'planned', _id: { $ne: linkedTask._id } },
+      { $set: { status: 'cancelled', cancelReason: '调整配取方式后由最新随访计划替代' } },
+    );
     record.supplyReminder.followUpTaskId = linkedTask._id;
     let linkedOrderId = null;
     if (mode === 'proxy') {
@@ -7247,6 +7254,8 @@ router.put('/patients/:id/supply-reminders/:kind/:recordId', staffAuth, checkPer
       linkedTask.formData = { ...(linkedTask.formData || {}), linkedOrderId };
       await linkedTask.save();
       record.supplyReminder.sourceOrderId = linkedOrderId;
+    } else {
+      record.supplyReminder.sourceOrderId = null;
     }
     await record.save();
     res.json({ success: true, generated: 1, followUpTaskId: linkedTask._id, sourceOrderId: linkedOrderId, message: linkedOrderId ? '已生成随访计划，并自动创建正式代配药服务任务' : `已生成并关联1条${task}任务；完成后会自动生成下一条` });

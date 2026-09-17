@@ -25,7 +25,8 @@ async function generate(mode) {
       throw new Error(`unexpected require: ${modulePath}`);
     },
     FollowUp: {
-      deleteMany: async () => {},
+      findOneAndUpdate: async () => null,
+      updateMany: async () => {},
       create: async row => { inserted = [row]; return { _id: 'follow-up-1', ...row, save: async () => {} }; },
     },
   });
@@ -64,4 +65,22 @@ test('代配待办也归当前操作人，可在其随访列表中查看', async
   assert.match(row.plannedContent, /提前7天/);
   assert.equal(record.supplyReminder.sourceOrderId, 'order-1');
   assert.equal(res.data.sourceOrderId, 'order-1');
+});
+
+test('切换为客户自配会复用已有计划并解除旧代配订单关联', async () => {
+  let handler;
+  const existing = { _id: 'existing-follow-up', save: async () => {} };
+  const record = { _id: 'record-1', name: '测试药物', supplyReminder: { sourceOrderId: 'old-order' }, save: async () => {} };
+  vm.runInNewContext(source.slice(start, end), {
+    router: { put: (_path, _auth, _permission, callback) => { handler = callback; } }, staffAuth: () => {}, checkPermission: () => () => {},
+    Medication: { findOne: async () => record }, Supplement: { findOne: async () => record },
+    User: { findById: () => ({ select: async () => ({ _id: 'patient-1' }) }) },
+    FollowUp: { findOneAndUpdate: async () => existing, updateMany: async () => {}, create: async () => { throw new Error('不应新建重复计划'); } },
+  });
+  const res = { code: 200, status(code) { this.code = code; return this; }, json(data) { this.data = data; return this; } };
+  await handler({ params: { id: 'patient-1', kind: 'medication', recordId: 'record-1' }, body: { firstDate: '2099-01-01', intervalDays: 28, mode: 'visit', institutionType: 'hospital', hospitalName: '测试医院', quantity: '6盒' }, staff: { _id: 'operator-1' } }, res);
+  assert.equal(res.code, 200);
+  assert.equal(record.supplyReminder.mode, 'visit');
+  assert.equal(record.supplyReminder.sourceOrderId, null);
+  assert.equal(record.supplyReminder.followUpTaskId, 'existing-follow-up');
 });

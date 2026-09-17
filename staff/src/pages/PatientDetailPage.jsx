@@ -42,6 +42,11 @@ function PdfDocumentPreview({ src, activePage, title, zoom = 100 }) {
 
 const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
 
+const shanghaiDateInput = (value = new Date()) => {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(value).map(part => [part.type, part.value]))
+  return `${parts.year}-${parts.month}-${parts.day}`
+}
+
 const resolveAttachmentUrl = url => url?.startsWith('/') ? `${API_ORIGIN}${url}` : url
 const isMedicalProxyMedicationTask = task => /代配药|代取药/.test([
   task?.theme,
@@ -8814,7 +8819,7 @@ export default function PatientDetailPage() {
                             }}>编辑</button>}
                             {m.stopped && <button className="btn btn-secondary btn-sm" onClick={() => { setMedForm({ name: m.name, brandName: m.brandName || '', specification: m.specification || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: new Date().toISOString().slice(0, 10), endDate: '', purpose: m.purpose || '', note: '', imageUrls: m.imageUrls || [] }); setEditingMed(null); setShowMedModal(true) }}>再次使用</button>}
                             {!m.stopped && !m.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'medication', record: m }); setSupplyForm(supplyFormFor(m)) }}>定期配药</button>}
-                            {!m.stopped && m.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'medication', record: m }); setSupplyForm(supplyFormFor(m, new Date().toISOString().slice(0, 10))) }}>调整配药方式</button>}
+                            {!m.stopped && m.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'medication', record: m }); setSupplyForm(supplyFormFor(m, shanghaiDateInput())) }}>调整配药方式</button>}
                             {!m.stopped && m.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => stopSupplyReminder('medication', m)}>停止自动配药任务</button>}
                             {!m.stopped && <button className="btn btn-sm" style={{ background: '#F3EEFF', color: '#7C3AED', border: '1px solid #C4B5FD' }} onClick={() => {
                               const today = new Date().toISOString().slice(0, 10)
@@ -8943,7 +8948,7 @@ export default function PatientDetailPage() {
                             }}>编辑</button>}
                             {s.stopped && <button className="btn btn-secondary btn-sm" onClick={() => { setSupForm({ name: s.name, brand: s.brand || '', specification: s.specification || '', dosage: s.dosage, method: s.method || '随餐', frequency: s.frequency, startDate: new Date().toISOString().slice(0, 10), endDate: '', purpose: s.purpose || '', note: '', imageUrls: s.imageUrls || [] }); setEditingSup(null); setEditingSupAiApprove(false); setShowSupModal(true) }}>再次补充</button>}
                             {!s.stopped && !s.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'supplement', record: s }); setSupplyForm(supplyFormFor(s)) }}>定期配取</button>}
-                            {!s.stopped && s.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'supplement', record: s }); setSupplyForm(supplyFormFor(s, new Date().toISOString().slice(0, 10))) }}>调整配取方式</button>}
+                            {!s.stopped && s.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'supplement', record: s }); setSupplyForm(supplyFormFor(s, shanghaiDateInput())) }}>调整配取方式</button>}
                             {!s.stopped && s.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => stopSupplyReminder('supplement', s)}>停止自动配取任务</button>}
                             {!s.stopped && <button className="btn btn-sm" style={{ background: '#fff8e1', color: '#D97706', border: '1px solid #D97706' }}
                                   onClick={() => setStoppingSup(s)}>
@@ -8973,7 +8978,7 @@ export default function PatientDetailPage() {
             <div className="modal" style={{ maxWidth: 680, maxHeight: '92vh', overflowY: 'auto' }}>
               <div className="modal-header"><h3 className="modal-title">定期配取 · {supplyTarget.record.name}</h3><button className="modal-close" onClick={() => setSupplyTarget(null)}>✕</button></div>
               <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
-                <label>{supplyForm.mode === 'proxy' ? '首次期望送达日期' : '首次提醒日期'}<input className="form-input" type="date" min={new Date().toISOString().slice(0, 10)} value={supplyForm.firstDate} onChange={e => setSupplyForm(f => ({ ...f, firstDate: e.target.value }))} /></label>
+                <label>{supplyForm.mode === 'proxy' ? '首次期望送达日期' : '首次提醒日期'}<input className="form-input" type="date" min={shanghaiDateInput()} value={supplyForm.firstDate} onChange={e => setSupplyForm(f => ({ ...f, firstDate: e.target.value }))} /></label>
                 {supplyForm.mode === 'proxy' && <label>期望配送时间<input className="form-input" value={supplyForm.deliveryTime} onChange={e => setSupplyForm(f => ({ ...f, deliveryTime: e.target.value }))} placeholder="如：当天18:00前、09:00-12:00" /></label>}
                 <label>每隔多少天提醒<input className="form-input" type="number" min="1" max="365" value={supplyForm.intervalDays} onChange={e => setSupplyForm(f => ({ ...f, intervalDays: e.target.value }))} /></label>
                 <label>服务方式<select className="form-input" value={supplyForm.mode} onChange={e => setSupplyForm(f => ({ ...f, mode: e.target.value }))}><option value="visit">提醒客户自行就医/配取</option><option value="proxy">我方代配服务</option></select></label>
