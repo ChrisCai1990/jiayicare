@@ -49,3 +49,14 @@ test('专病健康信息保存来源与核验状态', () => {
   assert.match(page, /客户自述/);
   assert.match(page, /已核对来源材料/);
 });
+
+test('健康变化与症状感受统一录入并兼容历史分栏数据', () => {
+  const route = read('backend/src/routes/staff.js');
+  const page = read('staff/src/pages/PatientDetailPage.jsx');
+  assert.match(page, /本次健康及症状变化/);
+  assert.doesNotMatch(page, /\['symptoms','症状\/感受变化'\]/);
+  assert.doesNotMatch(page, /\['symptoms', '症状变化'\]/);
+  assert.match(page, /combinedHealthChange/);
+  assert.match(route, /mergedHealthChange/);
+  assert.match(route, /cleanMedicalText\(body\.symptoms, 5000\)/);
+});

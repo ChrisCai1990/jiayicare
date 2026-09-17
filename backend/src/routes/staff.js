@@ -1161,6 +1161,10 @@ router.patch('/insurance-cases/:caseId/steps/:stepId', staffAuth, async (req, re
 
 const MEDICAL_SUMMARY_FIELDS = ['chiefComplaint', 'presentIllness', 'physicalExam', 'epidemiologicalHistory', 'initialDiagnosis', 'currentMedication'];
 const cleanMedicalText = (value, max = 10000) => String(value ?? '').trim().slice(0, max);
+const mergedHealthChange = body => {
+  const parts = [cleanMedicalText(body.content, 20000), cleanMedicalText(body.symptoms, 5000)].filter(Boolean);
+  return [...new Set(parts)].join('\n').slice(0, 20000);
+};
 const HEALTH_INFO_SOURCE_TYPES = ['client_report', 'medical_record', 'exam_report', 'prescription', 'external_specialist', 'internal_collaboration'];
 const HEALTH_INFO_VERIFICATION = ['self_reported', 'pending_verification', 'source_verified'];
 const cleanHealthInfoProvenance = body => ({
@@ -1214,7 +1218,7 @@ router.post('/patients/:id/disease-records/course-entries', staffAuth, checkPerm
     const patient = await User.findById(req.params.id).select('diseaseRecords medicalRecord').lean();
     if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
     const name = cleanMedicalText(req.body.diseaseName, 100);
-    const content = cleanMedicalText(req.body.content, 20000);
+    const content = mergedHealthChange(req.body);
     if (!name) return res.status(400).json({ success: false, message: '请先选择专病' });
     if (!content) return res.status(400).json({ success: false, message: '请填写本次健康变化' });
     const records = normalizedDiseaseRecords(patient);
@@ -1223,7 +1227,7 @@ router.post('/patients/:id/disease-records/course-entries', staffAuth, checkPerm
     if (!record) { record = { _id: new mongoose.Types.ObjectId(), name, summary: {}, summaryHistory: [], courseEntries: [] }; records.push(record); }
     const entry = {
       _id: new mongoose.Types.ObjectId(), occurredAt: req.body.occurredAt && !Number.isNaN(Date.parse(req.body.occurredAt)) ? new Date(req.body.occurredAt) : new Date(), content,
-      symptoms: cleanMedicalText(req.body.symptoms, 5000), examination: cleanMedicalText(req.body.examination, 5000), diagnosis: cleanMedicalText(req.body.diagnosis, 5000),
+      symptoms: '', examination: cleanMedicalText(req.body.examination, 5000), diagnosis: cleanMedicalText(req.body.diagnosis, 5000),
       medicationChange: cleanMedicalText(req.body.medicationChange, 5000), treatmentResponse: cleanMedicalText(req.body.treatmentResponse, 5000), nextPlan: cleanMedicalText(req.body.nextPlan, 5000),
       ...cleanHealthInfoProvenance(req.body),
       recordedAt: new Date(), recordedById: req.staff._id, recordedByName: req.staff.name || req.staff.username || '', recordedByRole: req.staff.role || '',
@@ -1262,14 +1266,14 @@ router.post('/patients/:id/medical-record/course-entries', staffAuth, checkPermi
   try {
     const patient = await User.findById(req.params.id).select('_id');
     if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
-    const content = cleanMedicalText(req.body.content, 20000);
+    const content = mergedHealthChange(req.body);
     if (!content) return res.status(400).json({ success: false, message: '请填写本次病情变化' });
     const occurredAt = req.body.occurredAt && !Number.isNaN(Date.parse(req.body.occurredAt)) ? new Date(req.body.occurredAt) : new Date();
     const entry = {
       _id: new mongoose.Types.ObjectId(),
       occurredAt,
       content,
-      symptoms: cleanMedicalText(req.body.symptoms, 5000),
+      symptoms: '',
       examination: cleanMedicalText(req.body.examination, 5000),
       diagnosis: cleanMedicalText(req.body.diagnosis, 5000),
       medicationChange: cleanMedicalText(req.body.medicationChange, 5000),
