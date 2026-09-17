@@ -1156,6 +1156,60 @@ router.patch('/insurance-cases/:caseId/steps/:stepId', staffAuth, async (req, re
   res.json({ success: true, data: serviceCase });
 });
 
+const MEDICAL_SUMMARY_FIELDS = ['chiefComplaint', 'presentIllness', 'physicalExam', 'epidemiologicalHistory', 'initialDiagnosis', 'currentMedication'];
+const cleanMedicalText = (value, max = 10000) => String(value ?? '').trim().slice(0, max);
+const cleanLinkedDiseases = value => [...new Set((Array.isArray(value) ? value : String(value || '').split(/[、,，;；\n]+/)).map(item => cleanMedicalText(item, 100)).filter(Boolean))].slice(0, 30);
+
+// 当前有效病历摘要。修改时先把旧版本写入历史，不能覆盖后丢失。
+router.put('/patients/:id/medical-record/summary', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
+  try {
+    const patient = await User.findById(req.params.id).select('medicalRecord');
+    if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+    const summary = {};
+    MEDICAL_SUMMARY_FIELDS.forEach(key => { summary[key] = cleanMedicalText(req.body[key]); });
+    summary.linkedDiseases = cleanLinkedDiseases(req.body.linkedDiseases);
+    if (!MEDICAL_SUMMARY_FIELDS.some(key => summary[key]) && !summary.linkedDiseases.length) {
+      return res.status(400).json({ success: false, message: '请至少填写一项病历摘要' });
+    }
+    const now = new Date();
+    const operator = req.staff.name || req.staff.username || '';
+    const previous = patient.medicalRecord?.summary?.toObject?.() || patient.medicalRecord?.summary || {};
+    const hasPrevious = MEDICAL_SUMMARY_FIELDS.some(key => previous[key]) || (previous.linkedDiseases || []).length;
+    const next = { ...summary, updatedAt: now, updatedById: req.staff._id, updatedByName: operator };
+    const update = { $set: { 'medicalRecord.summary': next } };
+    if (hasPrevious) update.$push = { 'medicalRecord.summaryHistory': { $each: [{ ...previous, archivedAt: now, archivedById: req.staff._id, archivedByName: operator }], $slice: -100 } };
+    await User.collection.updateOne({ _id: patient._id }, update);
+    res.json({ success: true, data: next });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// 续写病程只追加，不要求重复主诉和完整现病史。
+router.post('/patients/:id/medical-record/course-entries', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
+  try {
+    const patient = await User.findById(req.params.id).select('_id');
+    if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+    const content = cleanMedicalText(req.body.content, 20000);
+    if (!content) return res.status(400).json({ success: false, message: '请填写本次病情变化' });
+    const occurredAt = req.body.occurredAt && !Number.isNaN(Date.parse(req.body.occurredAt)) ? new Date(req.body.occurredAt) : new Date();
+    const entry = {
+      _id: new mongoose.Types.ObjectId(),
+      occurredAt,
+      content,
+      symptoms: cleanMedicalText(req.body.symptoms, 5000),
+      examination: cleanMedicalText(req.body.examination, 5000),
+      diagnosis: cleanMedicalText(req.body.diagnosis, 5000),
+      medicationChange: cleanMedicalText(req.body.medicationChange, 5000),
+      treatmentResponse: cleanMedicalText(req.body.treatmentResponse, 5000),
+      nextPlan: cleanMedicalText(req.body.nextPlan, 5000),
+      linkedDiseases: cleanLinkedDiseases(req.body.linkedDiseases),
+      sourceType: ['followup', 'medical_visit', 'manual'].includes(req.body.sourceType) ? req.body.sourceType : 'manual',
+      recordedAt: new Date(), recordedById: req.staff._id, recordedByName: req.staff.name || req.staff.username || '', recordedByRole: req.staff.role || '',
+    };
+    await User.collection.updateOne({ _id: patient._id }, { $push: { 'medicalRecord.courseEntries': { $each: [entry], $position: 0, $slice: 500 } } });
+    res.status(201).json({ success: true, data: entry });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // ── PUT /api/staff/patients/:id ───────────────────────────────────
 router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
   const existingPatient = await User.findById(req.params.id).select('phone contactPhone lifestyle lifestyle_data').lean();

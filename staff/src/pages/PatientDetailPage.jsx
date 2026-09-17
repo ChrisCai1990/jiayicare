@@ -1901,6 +1901,12 @@ export default function PatientDetailPage() {
   const [editingReportForm, setEditingReportForm] = useState({})
   const [editingReportSaving, setEditingReportSaving] = useState(false)
   const [editingHealth, setEditingHealth] = useState(false)
+  const [medicalRecordView, setMedicalRecordView] = useState('summary')
+  const [editingMedicalSummary, setEditingMedicalSummary] = useState(false)
+  const [medicalSummaryForm, setMedicalSummaryForm] = useState({})
+  const [addingMedicalCourse, setAddingMedicalCourse] = useState(false)
+  const [medicalCourseForm, setMedicalCourseForm] = useState({ occurredAt: new Date().toISOString().slice(0, 10), content: '', symptoms: '', examination: '', diagnosis: '', medicationChange: '', treatmentResponse: '', nextPlan: '', linkedDiseases: '' })
+  const [medicalRecordSaving, setMedicalRecordSaving] = useState(false)
   const [editingLifestyle, setEditingLifestyle] = useState(false)
   const [showLifestyleChangeModal, setShowLifestyleChangeModal] = useState(false)
   const [lifestyleChangeSaving, setLifestyleChangeSaving] = useState(false)
@@ -2300,6 +2306,8 @@ export default function PatientDetailPage() {
       setBasicInfoForm(buildBasicInfoForm(res.data.user))
       setHealthNeedsForm(buildHealthNeedsForm(res.data.user))
       setHealthForm(buildHealthForm(res.data.user))
+      const summary = res.data.user.medicalRecord?.summary || {}
+      setMedicalSummaryForm({ ...summary, linkedDiseases: (summary.linkedDiseases || []).join('、') })
       setLifestyleForm(buildLifestyleForm(res.data.user))
       setInsuranceForm(buildInsuranceForm(res.data.user))
       setLabForm(res.data.user.labValues || {})
@@ -3136,6 +3144,30 @@ export default function PatientDetailPage() {
       setEditingHealth(false)
       load()
     } catch (err) { toast(err.message || '保存失败') }
+  }
+
+  const handleSaveMedicalSummary = async () => {
+    try {
+      setMedicalRecordSaving(true)
+      await staffAPI.updateMedicalRecordSummary(id, { ...medicalSummaryForm, linkedDiseases: medicalSummaryForm.linkedDiseases })
+      toast('病历摘要已保存，旧版本已留档')
+      setEditingMedicalSummary(false)
+      await load(false)
+    } catch (err) { toast(err.message || '保存失败') }
+    finally { setMedicalRecordSaving(false) }
+  }
+
+  const handleAddMedicalCourse = async () => {
+    try {
+      setMedicalRecordSaving(true)
+      await staffAPI.addMedicalCourseEntry(id, { ...medicalCourseForm, linkedDiseases: medicalCourseForm.linkedDiseases })
+      toast('续写病历已保存')
+      setAddingMedicalCourse(false)
+      setMedicalCourseForm({ occurredAt: new Date().toISOString().slice(0, 10), content: '', symptoms: '', examination: '', diagnosis: '', medicationChange: '', treatmentResponse: '', nextPlan: '', linkedDiseases: '' })
+      setMedicalRecordView('course')
+      await load(false)
+    } catch (err) { toast(err.message || '保存失败') }
+    finally { setMedicalRecordSaving(false) }
   }
 
   const handleSaveLifestyle = async () => {
@@ -4827,6 +4859,66 @@ export default function PatientDetailPage() {
             </div>
           )
         })()}
+
+        {/* ── 持续病历：完整病史建一次，后续只续写变化 ── */}
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-header" style={{ alignItems: 'flex-start' }}>
+            <div>
+              <div className="card-title">病历记录</div>
+              <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 4 }}>完整病史只建一次，后续通过续写记录症状、诊断、用药和疗效变化</div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => {
+                const summary = user.medicalRecord?.summary || {}
+                setMedicalSummaryForm({ ...summary, linkedDiseases: (summary.linkedDiseases || []).join('、') })
+                setEditingMedicalSummary(true)
+              }}>{user.medicalRecord?.summary?.chiefComplaint || user.medicalRecord?.summary?.presentIllness ? '修改摘要' : '建立病历摘要'}</button>
+              <button className="btn btn-primary btn-sm" onClick={() => setAddingMedicalCourse(true)}>＋ 续写病历</button>
+            </div>
+          </div>
+          <div className="card-body">
+            <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid #E0D9CE', marginBottom: 14 }}>
+              {[['summary', '当前病历摘要'], ['course', `病程时间轴（${user.medicalRecord?.courseEntries?.length || 0}）`], ['history', `摘要历史版本（${user.medicalRecord?.summaryHistory?.length || 0}）`]].map(([key, label]) => (
+                <button key={key} onClick={() => setMedicalRecordView(key)} style={{ border: 0, borderBottom: `2px solid ${medicalRecordView === key ? '#1E6B50' : 'transparent'}`, background: 'transparent', color: medicalRecordView === key ? '#1E6B50' : '#8AA89C', fontWeight: medicalRecordView === key ? 700 : 400, padding: '8px 12px', cursor: 'pointer' }}>{label}</button>
+              ))}
+            </div>
+            {medicalRecordView === 'summary' && (() => {
+              const summary = user.medicalRecord?.summary || {}
+              const rows = [['主诉', summary.chiefComplaint], ['现病史', summary.presentIllness], ['体格检查', summary.physicalExam], ['流行病学史', summary.epidemiologicalHistory], ['初步诊断', summary.initialDiagnosis], ['当前用药', summary.currentMedication]]
+              const hasSummary = rows.some(([, value]) => value) || summary.linkedDiseases?.length
+              if (!hasSummary) return <div style={{ textAlign: 'center', color: '#8AA89C', padding: '18px 0' }}>尚未建立病历摘要。首次完整录入后，后续无需反复描述病史。</div>
+              return <div>
+                <div style={{ padding: '9px 12px', background: '#EFF8F3', color: '#1E6B50', borderRadius: 8, fontSize: 12, marginBottom: 8 }}>后续随访只需续写本次变化；修改摘要会自动保留原版本。</div>
+                {rows.map(([label, value]) => value ? <div key={label} style={{ display: 'grid', gridTemplateColumns: '90px 1fr', gap: 14, padding: '10px 4px', borderBottom: '1px solid #F0EDE7' }}><span style={{ color: '#8AA89C', textAlign: 'right', fontSize: 13 }}>{label}</span><span style={{ color: '#1A2B24', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{value}</span></div> : null)}
+                {!!summary.linkedDiseases?.length && <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr', gap: 14, padding: '10px 4px' }}><span style={{ color: '#8AA89C', textAlign: 'right', fontSize: 13 }}>关联专病</span><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{summary.linkedDiseases.map(item => <span key={item} style={{ padding: '2px 9px', borderRadius: 12, background: '#E8F5EF', color: '#1E6B50', fontSize: 12 }}>{item}</span>)}</div></div>}
+                {summary.updatedAt && <div style={{ textAlign: 'right', color: '#8AA89C', fontSize: 11, marginTop: 8 }}>更新：{summary.updatedByName || '医护人员'} · {new Date(summary.updatedAt).toLocaleString('zh-CN')}</div>}
+              </div>
+            })()}
+            {medicalRecordView === 'course' && <div>
+              {!(user.medicalRecord?.courseEntries || []).length ? <div style={{ textAlign: 'center', color: '#8AA89C', padding: '18px 0' }}>暂无续写病历</div> : (user.medicalRecord.courseEntries || []).map((entry, index) => <div key={entry._id || index} style={{ display: 'grid', gridTemplateColumns: '18px 1fr', gap: 10 }}>
+                <div style={{ position: 'relative' }}><span style={{ display: 'block', width: 10, height: 10, borderRadius: '50%', background: '#1E6B50', marginTop: 6 }} />{index < user.medicalRecord.courseEntries.length - 1 && <span style={{ position: 'absolute', left: 4, top: 18, bottom: 0, borderLeft: '2px solid #E0D9CE' }} />}</div>
+                <div style={{ paddingBottom: 18 }}><div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 5 }}>{entry.occurredAt ? new Date(entry.occurredAt).toLocaleDateString('zh-CN') : '日期未记录'} · {entry.recordedByName || '医护人员'}</div><div style={{ lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{entry.content}</div>{[['症状变化', entry.symptoms], ['检查结果', entry.examination], ['诊断变化', entry.diagnosis], ['用药调整', entry.medicationChange], ['治疗反应', entry.treatmentResponse], ['下一步计划', entry.nextPlan]].map(([label, value]) => value ? <div key={label} style={{ fontSize: 13, marginTop: 5 }}><span style={{ color: '#8AA89C' }}>{label}：</span>{value}</div> : null)}{!!entry.linkedDiseases?.length && <div style={{ color: '#1E6B50', fontSize: 12, marginTop: 6 }}>关联专病：{entry.linkedDiseases.join('、')}</div>}</div>
+              </div>)}
+            </div>}
+            {medicalRecordView === 'history' && <div>
+              {!(user.medicalRecord?.summaryHistory || []).length ? <div style={{ textAlign: 'center', color: '#8AA89C', padding: '18px 0' }}>暂无历史版本</div> : [...user.medicalRecord.summaryHistory].reverse().map((item, index) => <details key={item.archivedAt || index} style={{ borderBottom: '1px solid #F0EDE7', padding: '10px 2px' }}><summary style={{ cursor: 'pointer', color: '#4A6558' }}>{item.archivedAt ? new Date(item.archivedAt).toLocaleString('zh-CN') : '历史版本'} · {item.archivedByName || item.updatedByName || '医护人员'}</summary><div style={{ padding: '10px 18px', fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{item.chiefComplaint && `主诉：${item.chiefComplaint}\n`}{item.presentIllness && `现病史：${item.presentIllness}\n`}{item.initialDiagnosis && `初步诊断：${item.initialDiagnosis}\n`}{item.currentMedication && `当前用药：${item.currentMedication}`}</div></details>)}
+            </div>}
+          </div>
+        </div>
+
+        {editingMedicalSummary && <div className="modal-overlay" onClick={() => setEditingMedicalSummary(false)}><div className="modal" style={{ maxWidth: 720 }} onClick={e => e.stopPropagation()}><div className="modal-header"><h3 className="modal-title">{user.medicalRecord?.summary?.chiefComplaint || user.medicalRecord?.summary?.presentIllness ? '修改病历摘要' : '建立病历摘要'}</h3><button className="modal-close" onClick={() => setEditingMedicalSummary(false)}>×</button></div><div className="modal-body" style={{ display: 'grid', gap: 10 }}>
+          <div style={{ padding: '9px 12px', background: '#FFF8E8', color: '#8A5A00', borderRadius: 8, fontSize: 12 }}>保存后旧摘要会进入历史版本，不会被覆盖删除。</div>
+          {[['chiefComplaint', '主诉', 2], ['presentIllness', '现病史', 5], ['physicalExam', '体格检查', 2], ['epidemiologicalHistory', '流行病学史', 2], ['initialDiagnosis', '初步诊断', 2], ['currentMedication', '当前用药', 3]].map(([key, label, rows]) => <div key={key}><label className="form-label">{label}</label><textarea className="form-control" rows={rows} value={medicalSummaryForm[key] || ''} onChange={e => setMedicalSummaryForm(f => ({ ...f, [key]: e.target.value }))} /></div>)}
+          <div><label className="form-label">关联专病</label><input className="form-control" value={medicalSummaryForm.linkedDiseases || ''} onChange={e => setMedicalSummaryForm(f => ({ ...f, linkedDiseases: e.target.value }))} placeholder="多个专病用顿号或逗号分隔" /></div>
+        </div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => setEditingMedicalSummary(false)}>取消</button><button className="btn btn-primary" disabled={medicalRecordSaving} onClick={handleSaveMedicalSummary}>{medicalRecordSaving ? '保存中…' : '保存摘要'}</button></div></div></div>}
+
+        {addingMedicalCourse && <div className="modal-overlay" onClick={() => setAddingMedicalCourse(false)}><div className="modal" style={{ maxWidth: 720 }} onClick={e => e.stopPropagation()}><div className="modal-header"><h3 className="modal-title">续写病历</h3><button className="modal-close" onClick={() => setAddingMedicalCourse(false)}>×</button></div><div className="modal-body" style={{ display: 'grid', gap: 10 }}>
+          <div style={{ padding: '9px 12px', background: '#EFF8F3', color: '#1E6B50', borderRadius: 8, fontSize: 12 }}>无需重复完整病史，只记录相对当前摘要发生的变化。</div>
+          <div><label className="form-label">发生日期</label><input type="date" className="form-control" value={medicalCourseForm.occurredAt} onChange={e => setMedicalCourseForm(f => ({ ...f, occurredAt: e.target.value }))} /></div>
+          <div><label className="form-label">本次病情变化 *</label><textarea className="form-control" rows={4} value={medicalCourseForm.content} onChange={e => setMedicalCourseForm(f => ({ ...f, content: e.target.value }))} placeholder="概括本次变化；下方有对应内容时再分项补充" /></div>
+          {[['symptoms', '症状变化'], ['examination', '新检查结果'], ['diagnosis', '诊断变化'], ['medicationChange', '用药调整'], ['treatmentResponse', '治疗反应／不良反应'], ['nextPlan', '下一步计划']].map(([key, label]) => <div key={key}><label className="form-label">{label}</label><textarea className="form-control" rows={2} value={medicalCourseForm[key]} onChange={e => setMedicalCourseForm(f => ({ ...f, [key]: e.target.value }))} /></div>)}
+          <div><label className="form-label">关联专病</label><input className="form-control" value={medicalCourseForm.linkedDiseases} onChange={e => setMedicalCourseForm(f => ({ ...f, linkedDiseases: e.target.value }))} placeholder="例如：焦虑／惊恐发作" /></div>
+        </div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => setAddingMedicalCourse(false)}>取消</button><button className="btn btn-primary" disabled={medicalRecordSaving || !medicalCourseForm.content.trim()} onClick={handleAddMedicalCourse}>{medicalRecordSaving ? '保存中…' : '保存续写'}</button></div></div></div>}
 
         {/* ── 基本档案 ── */}
         <div className="card" style={{ marginBottom: 16 }}>

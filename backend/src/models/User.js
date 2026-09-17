@@ -100,6 +100,23 @@ const userSchema = new mongoose.Schema({
     recentMedication:   { type: String, default: '' },   // 最近1个月是否服用中药或西药
     recentSupplement:   { type: String, default: '' },   // 最近1个月是否服用营养补剂
   },
+  // 持续病历：首次建立摘要，后续仅追加病程。摘要修改前版本和每次续写都永久留痕。
+  medicalRecord: {
+    summary: {
+      chiefComplaint: { type: String, default: '' },
+      presentIllness: { type: String, default: '' },
+      physicalExam: { type: String, default: '' },
+      epidemiologicalHistory: { type: String, default: '' },
+      initialDiagnosis: { type: String, default: '' },
+      currentMedication: { type: String, default: '' },
+      linkedDiseases: { type: [String], default: [] },
+      updatedAt: { type: Date, default: null },
+      updatedById: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+      updatedByName: { type: String, default: '' },
+    },
+    summaryHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    courseEntries: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  },
   // 健康需求
   healthConcern:       { type: String, default: '' }, // 本人比较关注的健康问题
   healthConcernFor:    { type: String, default: '' }, // 更关注谁的健康问题
