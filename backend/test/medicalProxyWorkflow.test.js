@@ -250,6 +250,10 @@ test('staff-initiated medication keeps a planner supervision task until executio
   assert.match(directStart, /date: initialTaskDate, remindAt: initialTaskDate/);
   assert.match(directStart, /supervisorId: patient\.assignedHealthPlanner/);
   assert.match(workflow, /supplyProxy \? `执行人员已完成/);
+  assert.match(workflow, /if \(supplyProxy\) await completeLinkedSupplyReminder\(task, order\)/);
+  assert.match(workflow, /sourceSupplyReminderTaskId/);
+  assert.match(workflow, /sourceType: 'supply_reminder'/);
+  assert.match(workflow, /generateNextSupplyReminder\(completed\)/);
   assert.match(page, /健康规划师分配配药执行人员/);
   assert.match(page, /执行人员配药确认与配送/);
 });

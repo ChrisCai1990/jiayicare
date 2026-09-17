@@ -179,7 +179,7 @@ async function upsertMedicalProxyServiceRecord(task, order, completed = false) {
   const update = { staffId: task.assignedTo, patientId: task.patientId, date: appointment, title: medicationProxy ? '代配药服务' : '医疗代诊服务', content,
     medicalEscort: { serviceType: 'proxy_visit', hospital: plan.hospital || '', department: plan.department || '', doctor: plan.expert || '' } };
   if (completed) {
-    update.result = nonempty(task.formData?.executionResult);
+    update.result = nonempty(task.formData?.resolutionResult || task.formData?.fulfillmentProof || task.formData?.executionResult);
     update.attachments = (medicationProxy
       ? ['medicationPhotoAttachments', 'medicationInstructionAttachments', 'medicalRecordAttachments', 'chargeReceiptAttachments'].flatMap(key => task.formData?.[key] || [])
       : (task.formData?.medicalEscort === true ? medicalEscortAttachments(task.formData) : (task.formData?.medicalRecordAttachments || []))).filter(file => file?.url);
@@ -261,6 +261,30 @@ async function completeLinkedMedicalReminder(task, order) {
     ? { _id: sourceFollowUpId, patientId: task.patientId, status: { $in: ['planned', 'in_progress'] } }
     : { patientId: task.patientId, status: { $in: ['planned', 'in_progress'] }, sourceType: { $ne: 'order' }, theme: /提醒就医|就医提醒/, date: { $gte: serviceDayStart, $lt: serviceDayEnd } };
   return FollowUp.findOneAndUpdate(query, { $set: { status: 'completed', content: result, executedContent: result, executedType: 'other', completedAt: new Date(), completedBy: 'staff', 'formData.medicalEscortOrderId': order._id } }, { sort: { date: -1 }, new: true });
+}
+
+async function completeLinkedSupplyReminder(task, order) {
+  const sourceTaskId = order.medicalProxyPlan?.sourceSupplyReminderTaskId;
+  if (!sourceTaskId) return null;
+  const resolutionResult = nonempty(task.formData?.resolutionResult || task.formData?.fulfillmentProof);
+  const executionResult = nonempty(task.formData?.executionResult);
+  const result = resolutionResult || executionResult || '本次代配服务已完成。';
+  const completed = await FollowUp.findOneAndUpdate(
+    {
+      _id: sourceTaskId,
+      patientId: task.patientId,
+      sourceType: 'supply_reminder',
+      status: { $in: ['planned', 'in_progress', 'missed'] },
+    },
+    { $set: {
+      status: 'completed', content: result, executedContent: result, executedType: 'other',
+      completedAt: new Date(), completedBy: 'staff',
+      'formData.medicalProxyOrderId': order._id,
+    } },
+    { new: true },
+  );
+  if (completed) await require('./rollingSupplyReminder').generateNextSupplyReminder(completed);
+  return completed;
 }
 
 async function purgeStaleMedicalEscortReports(task, order) {
@@ -877,6 +901,7 @@ async function advanceMedicalProxyWorkflow(task) {
     await upsertMedicalProxyServiceRecord(task, order, true);
     await archiveMedicalProxyRecords(task, order, patient?.tenantId);
     await createMedicalProxyFollowUpDrafts(task, order, patient?.assignedFamilyDoctor);
+    if (supplyProxy) await completeLinkedSupplyReminder(task, order);
     if (order.initiationSource === STAFF_DIRECT_SOURCE) {
       order.status = 'completed';
       order.tradeStatus = 'completed';
