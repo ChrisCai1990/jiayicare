@@ -5765,6 +5765,32 @@ router.patch('/referrals/mark-sent-read', staffAuth, async (req, res) => {
   res.json({ success: true });
 });
 
+// 发起方修订被退回的转介并重新发送；保留原内容和退回意见，便于完整追溯。
+router.patch('/referrals/:id/resubmit', staffAuth, async (req, res) => {
+  try {
+    const referral = await Referral.findOne({ _id: req.params.id, fromStaffId: req.staff._id });
+    if (!referral) return res.status(404).json({ success: false, message: '转介记录不存在或无权修改' });
+    if (referral.status !== 'rejected') return res.status(409).json({ success: false, message: '仅已退回的转介可以编辑后重新发送' });
+    const reason = cleanMedicalText(req.body.reason, 500);
+    if (!reason) return res.status(400).json({ success: false, message: '请填写转介原因' });
+    referral.revisionHistory.push({
+      reason: referral.reason, content: referral.content, questionList: referral.questionList, urgency: referral.urgency,
+      response: referral.response, responseAnalysis: referral.responseAnalysis, responseOpinion: referral.responseOpinion,
+      returnedAt: referral.respondedAt, revisedAt: new Date(), revisedById: req.staff._id, revisedByName: req.staff.name || req.staff.username || '',
+    });
+    referral.revisionHistory = referral.revisionHistory.slice(-30);
+    referral.reason = reason;
+    referral.content = cleanMedicalText(req.body.content, 5000);
+    referral.questionList = cleanMedicalText(req.body.questionList, 5000);
+    referral.urgency = req.body.urgency === 'urgent' ? 'urgent' : 'normal';
+    referral.status = 'pending';
+    referral.response = ''; referral.responseAnalysis = ''; referral.responseOpinion = ''; referral.respondedAt = null;
+    referral.fromStaffUnread = false;
+    await referral.save();
+    res.json({ success: true, data: referral, message: '已修订并重新发送，对方将在消息通知中看到' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // POST /api/staff/referrals/:id/ai-response-draft — AI仅整理授权信息和协作反馈，人工审核后提交
 router.post('/referrals/:id/ai-response-draft', staffAuth, async (req, res) => {
   try {

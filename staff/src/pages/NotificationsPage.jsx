@@ -6,7 +6,7 @@ import { reconcileConversationMessages } from '../utils/conversationMessages'
 
 const PUSH_TYPE_LABEL = { knowledge:'科普', questionnaire:'问卷', plan:'方案', product:'产品', supplement:'营养素', notice:'通知' }
 const PUSH_TYPE_COLOR = { knowledge:'#22A06B', questionnaire:'#0077B6', plan:'#D97706', product:'#1E6B50', supplement:'#8e44ad', notice:'#666' }
-const REFERRAL_STATUS_LABEL = { pending:'待处理', accepted:'已接受', completed:'已完成', rejected:'已拒绝' }
+const REFERRAL_STATUS_LABEL = { pending:'待处理', accepted:'已接受', completed:'已完成', rejected:'已退回' }
 const REFERRAL_STATUS_COLOR = { pending:'#D97706', accepted:'#0077B6', completed:'#22A06B', rejected:'#DC3545' }
 
 export default function NotificationsPage() {
@@ -23,6 +23,9 @@ export default function NotificationsPage() {
   const [userMessages, setUserMessages] = useState([])
   const [replyModal, setReplyModal] = useState(null)   // { userId, userName, roleKey }
   const [threadModal, setThreadModal] = useState(null) // { userId, userName, roleKey }
+  const [editReferral, setEditReferral] = useState(null)
+  const [editReferralSaving, setEditReferralSaving] = useState(false)
+  const [editReferralError, setEditReferralError] = useState('')
 
   const load = async () => {
     setLoading(true)
@@ -67,6 +70,24 @@ export default function NotificationsPage() {
     staffAPI.markSentReferralsRead()
       .then(() => window.dispatchEvent(new Event('notif-refresh')))
       .catch(() => {})
+  }
+
+  const openReferralEditor = referral => {
+    setEditReferral({ referral, reason: referral.reason || '', content: referral.content || '', questionList: referral.questionList || '', urgency: referral.urgency || 'normal' })
+    setEditReferralError('')
+  }
+
+  const saveAndResubmitReferral = async () => {
+    if (!editReferral?.reason.trim()) { setEditReferralError('请填写转介原因'); return }
+    setEditReferralSaving(true); setEditReferralError('')
+    try {
+      await staffAPI.resubmitReferral(editReferral.referral._id, { reason: editReferral.reason, content: editReferral.content, questionList: editReferral.questionList, urgency: editReferral.urgency })
+      toast('已修订并重新发送，对方将在消息通知中看到')
+      setEditReferral(null)
+      await load()
+      window.dispatchEvent(new Event('notif-refresh'))
+    } catch (err) { setEditReferralError(err.message || '重新发送失败') }
+    finally { setEditReferralSaving(false) }
   }
 
   if (loading) return <div className="page-loading">加载中...</div>
@@ -354,11 +375,12 @@ export default function NotificationsPage() {
                   ) : r.status === 'accepted' ? (
                     <div style={{ marginTop: 6, fontSize: 12, color: '#0077B6' }}>已接受，等待完成...</div>
                   ) : r.status === 'rejected' ? (
-                    <div style={{ marginTop: 6, fontSize: 12, color: '#DC3545' }}>已拒绝，未填写原因</div>
+                    <div style={{ marginTop: 6, fontSize: 12, color: '#DC3545' }}>已退回，可修改后重新发送</div>
                   ) : (
                     <div style={{ marginTop: 6, fontSize: 12, color: '#aaa' }}>等待对方回复...</div>
                   )}
                 </div>
+                {r.status === 'rejected' && <button className="btn btn-primary btn-sm" style={{ marginLeft: 12 }} onClick={() => openReferralEditor(r)}>编辑并重新发送</button>}
               </div>
             </div>
           ))}
@@ -417,6 +439,22 @@ export default function NotificationsPage() {
       {/* 转介回复弹窗 */}
       {respondModal && (
         <RespondModal referral={respondModal} onClose={() => setRespondModal(null)} onRespond={handleRespond} />
+      )}
+
+      {editReferral && (
+        <div className="modal-overlay" onMouseDown={event => { if (event.target === event.currentTarget && !editReferralSaving) setEditReferral(null) }}>
+          <div className="modal" style={{ maxWidth: 620 }}>
+            <div className="modal-header"><div><h3 className="modal-title">编辑并重新发送转介</h3><div style={{ fontSize:12, color:'#8AA89C', marginTop:4 }}>接收方不变；原退回意见和本次修订会保留在历史记录中。</div></div><button className="modal-close" disabled={editReferralSaving} onClick={() => setEditReferral(null)}>×</button></div>
+            <div className="modal-body" style={{ display:'flex', flexDirection:'column', gap:12 }}>
+              {editReferralError && <div className="login-err">⚠️ {editReferralError}</div>}
+              <div className="form-group"><label className="form-label">转介原因 *</label><input className="form-input" value={editReferral.reason} onChange={event => setEditReferral(value => ({ ...value, reason:event.target.value }))} /></div>
+              <div className="form-group"><label className="form-label">需要接收方解决的问题</label><textarea className="form-input" rows={3} value={editReferral.questionList} onChange={event => setEditReferral(value => ({ ...value, questionList:event.target.value }))} /></div>
+              <div className="form-group"><label className="form-label">详细说明</label><textarea className="form-input" rows={5} value={editReferral.content} onChange={event => setEditReferral(value => ({ ...value, content:event.target.value }))} /></div>
+              <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:13 }}><input type="checkbox" checked={editReferral.urgency === 'urgent'} onChange={event => setEditReferral(value => ({ ...value, urgency:event.target.checked ? 'urgent':'normal' }))} />标记为紧急</label>
+            </div>
+            <div className="modal-footer"><button className="btn btn-secondary" disabled={editReferralSaving} onClick={() => setEditReferral(null)}>取消</button><button className="btn btn-primary" disabled={editReferralSaving} onClick={saveAndResubmitReferral}>{editReferralSaving ? '发送中…':'保存并重新发送'}</button></div>
+          </div>
+        </div>
       )}
 
       {/* 推送消息详情弹窗 */}

@@ -57,3 +57,19 @@ test('AI只整理授权信息且不生成诊疗决策', () => {
   assert.match(route, /信息整理/);
   assert.match(route, /协作反馈/);
 });
+
+test('被退回的转介可由原发起方修订后重新发送并保留历史', () => {
+  const model = read('backend/src/models/Referral.js');
+  const route = read('backend/src/routes/staff.js');
+  const notifications = read('staff/src/pages/NotificationsPage.jsx');
+  const api = read('staff/src/api.js');
+  assert.match(model, /revisionHistory/);
+  assert.match(route, /referrals\/:id\/resubmit/);
+  assert.match(route, /仅已退回的转介可以编辑后重新发送/);
+  assert.match(route, /referral\.revisionHistory\.push/);
+  assert.match(route, /referral\.status = 'pending'/);
+  assert.match(api, /resubmitReferral/);
+  assert.match(notifications, /编辑并重新发送/);
+  assert.match(notifications, /保存并重新发送/);
+  assert.match(notifications, /原退回意见和本次修订会保留/);
+});

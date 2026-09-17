@@ -274,6 +274,7 @@ export const staffAPI = {
   getMedicalResources:   ()          => req('/staff/medical-resources'),
   getReferrals:          (p = {})    => req('/staff/referrals?' + qs(p)),
   updateReferral:        (id, data)  => req(`/staff/referrals/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  resubmitReferral:      (id, data)  => req(`/staff/referrals/${id}/resubmit`, { method: 'PATCH', body: JSON.stringify(data) }),
   reviewReferralCourseDraft: (id, action) => req(`/staff/referrals/${id}/course-draft/review`, { method: 'POST', body: JSON.stringify({ action }) }),
   getPatientReferrals:   (patientId) => req(`/staff/referrals?patientId=${patientId}&limit=100`),
   generateAIReferralResponseDraft: (id, summary) => req(`/staff/referrals/${id}/ai-response-draft`, { method: 'POST', body: JSON.stringify({ summary: summary || '' }) }),
