@@ -699,7 +699,8 @@ function DiseaseArchivePanel({ patientId, user, serviceRecords, onSaved, onOpenS
   const dossiers = stored.length ? stored : (hasLegacy ? [{ _id: 'legacy', name: legacySummary.linkedDiseases?.[0] || legacySummary.initialDiagnosis || '未命名专病', summary: legacySummary, summaryHistory: legacy.summaryHistory || [], courseEntries: legacy.courseEntries || [] }] : [])
   const serviceGroups = {}
   serviceRecords.forEach(record => {
-    const name = record.diseaseName?.trim() || record.title?.trim() || '未标注专病'
+    const name = record.diseaseName?.trim()
+    if (!name) return
     if (!serviceGroups[name]) serviceGroups[name] = []
     serviceGroups[name].push(record)
   })
@@ -708,11 +709,18 @@ function DiseaseArchivePanel({ patientId, user, serviceRecords, onSaved, onOpenS
   const [view, setView] = useState('summary')
   const [editingSummary, setEditingSummary] = useState(false)
   const [addingCourse, setAddingCourse] = useState(false)
+  const [editingCourseId, setEditingCourseId] = useState('')
   const [saving, setSaving] = useState(false)
   const emptySummary = { diseaseName: '', chiefComplaint: '', presentIllness: '', physicalExam: '', epidemiologicalHistory: '', initialDiagnosis: '', currentMedication: '', sourceType: 'client_report', sourceInstitution: '', sourceDepartment: '', sourceDoctor: '', verificationStatus: 'self_reported' }
   const emptyCourse = { occurredAt: new Date().toISOString().slice(0, 10), content: '', examination: '', diagnosis: '', medicationChange: '', treatmentResponse: '', nextPlan: '', sourceType: 'client_report', sourceInstitution: '', sourceDepartment: '', sourceDoctor: '', verificationStatus: 'self_reported' }
   const [summaryForm, setSummaryForm] = useState(emptySummary)
   const [courseForm, setCourseForm] = useState(emptyCourse)
+  useEffect(() => {
+    if (!addingCourse) {
+      setEditingCourseId('')
+      setCourseForm(emptyCourse)
+    }
+  }, [addingCourse])
   const activeName = names.includes(selectedName) ? selectedName : (names[0] || '')
   const dossier = dossiers.find(item => item.name === activeName) || { name: activeName, summary: {}, summaryHistory: [], courseEntries: [] }
   const managementRecords = serviceGroups[activeName] || []
@@ -723,8 +731,37 @@ function DiseaseArchivePanel({ patientId, user, serviceRecords, onSaved, onOpenS
     catch (err) { toast(err.message || '保存失败') } finally { setSaving(false) }
   }
   const saveCourse = async () => {
-    try { setSaving(true); await staffAPI.addDiseaseCourseEntry(patientId, { ...courseForm, diseaseName: activeName, recordId: dossier._id === 'legacy' ? '' : dossier._id }); toast('健康变化已追加'); setAddingCourse(false); setCourseForm(emptyCourse); setView('course'); await onSaved() }
+    try {
+      setSaving(true)
+      const payload = { ...courseForm, diseaseName: activeName, recordId: dossier._id === 'legacy' ? '' : dossier._id }
+      if (editingCourseId) await staffAPI.updateDiseaseCourseEntry(patientId, dossier._id, editingCourseId, payload)
+      else await staffAPI.addDiseaseCourseEntry(patientId, payload)
+      toast(editingCourseId ? '健康变化已修改，原版本已留档' : '健康变化已追加')
+      setAddingCourse(false); setEditingCourseId(''); setCourseForm(emptyCourse); setView('course'); await onSaved()
+    }
     catch (err) { toast(err.message || '保存失败') } finally { setSaving(false) }
+  }
+  const openCourseEditor = entry => {
+    setCourseForm({ ...emptyCourse, ...entry, occurredAt: entry.occurredAt ? new Date(entry.occurredAt).toISOString().slice(0, 10) : emptyCourse.occurredAt, content: combinedHealthChange(entry) })
+    setEditingCourseId(String(entry._id))
+    setAddingCourse(true)
+  }
+  const deleteDisease = async () => {
+    if (!activeName || dossier._id === 'legacy') return
+    const changeCount = dossier.courseEntries?.length || 0
+    const serviceCount = managementRecords.length
+    const detail = [changeCount ? `${changeCount} 条健康变化` : '', serviceCount ? `${serviceCount} 条管理服务将保留但解除专病归属` : ''].filter(Boolean).join('；')
+    if (!window.confirm(`确定删除专病档案“${dossier.name}”吗？${detail ? `\n${detail}` : ''}\n此操作无法撤销。`)) return
+    try {
+      setSaving(true)
+      if (dossier?._id) await staffAPI.deleteDiseaseRecord(patientId, dossier._id)
+      else await staffAPI.removeDiseaseGroup(patientId, activeName)
+      toast(dossier?._id ? '专病档案已删除，关联服务记录已保留' : '专病分组已移除，服务记录仍保留')
+      setSelectedName('')
+      setView('summary')
+      await onSaved()
+    } catch (err) { toast(err.message || '删除失败') }
+    finally { setSaving(false) }
   }
   const sourceLabels = { client_report:'客户自述', medical_record:'医疗机构病历', exam_report:'检查/检验报告', prescription:'医疗机构处方/医嘱', external_specialist:'外部专家意见', internal_collaboration:'内部专业协作' }
   const verifyLabels = { self_reported:'客户自述', pending_verification:'待核验', source_verified:'已核对来源材料' }
@@ -734,10 +771,10 @@ function DiseaseArchivePanel({ patientId, user, serviceRecords, onSaved, onOpenS
       <div className="card-header" style={{ alignItems: 'flex-start' }}><div><div className="card-title" style={{ color: '#0077B6' }}>专病健康档案</div><div style={{ marginTop: 4, color: '#65776F', fontSize: 12 }}>一项健康问题一份档案：健康信息摘要记录基础情况，健康变化时间轴记录后续变化，管理记录承载我们提供的服务。</div></div><button className="btn btn-secondary btn-sm" onClick={openNewDisease}>＋ 新建专病档案</button></div>
       {names.length === 0 ? <div style={{ padding: 24, textAlign: 'center', color: '#8AA89C' }}>暂无专病健康档案。建立后可持续归档健康信息、变化及管理服务。</div> : <div className="card-body">
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>{names.map(name => <button key={name} type="button" onClick={() => { setSelectedName(name); setView('summary') }} style={{ border: `1px solid ${activeName === name ? '#0077B6' : '#D8E1DC'}`, borderRadius: 18, padding: '6px 13px', background: activeName === name ? '#EAF5FB' : '#fff', color: activeName === name ? '#0077B6' : '#4A6558', cursor: 'pointer', fontWeight: activeName === name ? 700 : 400 }}>{name}</button>)}</div>
-        <div style={{ padding: '10px 12px', borderRadius: 8, background: '#F5F8F7', fontSize: 12, color: '#4A6558', marginBottom: 12 }}><b>当前专病：</b>{activeName}　健康变化 {dossier.courseEntries?.length || 0} 条　管理服务 {managementRecords.length} 条</div>
+        <div style={{ padding: '10px 12px', borderRadius: 8, background: '#F5F8F7', fontSize: 12, color: '#4A6558', marginBottom: 12, display:'flex', justifyContent:'space-between', alignItems:'center', gap:12 }}><span><b>当前专病：</b>{activeName}　健康变化 {dossier.courseEntries?.length || 0} 条　管理服务 {managementRecords.length} 条</span>{activeName && dossier._id !== 'legacy' && <button className="btn btn-secondary btn-sm" style={{color:'#C0392B',borderColor:'#E7B8B2'}} disabled={saving} onClick={deleteDisease}>{dossier._id ? '删除专病档案' : '移除专病分组'}</button>}</div>
         <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid #E0D9CE', marginBottom: 14 }}>{[['summary','专病健康信息摘要'],['course',`健康变化时间轴（${dossier.courseEntries?.length || 0}）`],['management',`管理记录（${managementRecords.length}）`],['history',`摘要历史（${dossier.summaryHistory?.length || 0}）`]].map(([key,label]) => <button key={key} onClick={() => setView(key)} style={{ border:0, borderBottom:`2px solid ${view === key ? '#0077B6':'transparent'}`, background:'transparent', color:view === key ? '#0077B6':'#8AA89C', fontWeight:view === key ? 700:400, padding:'8px 12px', cursor:'pointer' }}>{label}</button>)}</div>
         {view === 'summary' && <div><div style={{ padding:'9px 12px', background:'#FFF8E8', color:'#74520B', borderRadius:8, fontSize:12, marginBottom:10 }}>本平台仅整理和归档健康信息，不提供诊断、治疗或用药决策；相关信息应注明医疗机构或客户自述来源。</div><div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginBottom:6 }}><button className="btn btn-secondary btn-sm" onClick={openSummary}>{summaryRows.some(([,v]) => v) ? '修订健康信息摘要':'建立健康信息摘要'}</button><button className="btn btn-primary btn-sm" onClick={() => setAddingCourse(true)}>＋ 记录健康变化</button></div>{!summaryRows.some(([,v]) => v) ? <div style={{ padding:18, textAlign:'center', color:'#8AA89C' }}>尚未建立本专病的健康信息摘要</div> : <><div style={{fontSize:12,color:'#65776F',padding:'6px 4px'}}>来源：{sourceLabels[dossier.summary?.sourceType] || '历史资料'} · {verifyLabels[dossier.summary?.verificationStatus] || '待核验'}{dossier.summary?.sourceInstitution ? ` · ${dossier.summary.sourceInstitution}` : ''}</div>{summaryRows.map(([label,value]) => value ? <div key={label} style={{ display:'grid', gridTemplateColumns:'150px 1fr', gap:14, padding:'10px 4px', borderBottom:'1px solid #F0EDE7' }}><span style={{ textAlign:'right', color:'#8AA89C' }}>{label}</span><span style={{ lineHeight:1.7, whiteSpace:'pre-wrap' }}>{value}</span></div> : null)}</>}</div>}
-        {view === 'course' && <div>{!(dossier.courseEntries || []).length ? <div style={{ padding:18, textAlign:'center', color:'#8AA89C' }}>暂无健康变化记录</div> : dossier.courseEntries.map((entry,index) => <div key={entry._id || index} style={{ padding:'12px 4px', borderBottom:'1px solid #F0EDE7' }}><div style={{ fontSize:12, color:'#8AA89C' }}>{entry.occurredAt ? new Date(entry.occurredAt).toLocaleDateString('zh-CN') : '日期未记录'} · {entry.recordedByName || '工作人员'} · {sourceLabels[entry.sourceType] || entry.sourceLabel || '历史资料'} · {verifyLabels[entry.verificationStatus] || '待核验'}{entry.sourceInstitution ? ` · ${entry.sourceInstitution}` : ''}</div><div style={{ marginTop:6, lineHeight:1.7, whiteSpace:'pre-wrap' }}>{combinedHealthChange(entry)}</div>{[['医疗机构检查信息',entry.examination],['医疗机构诊断归档',entry.diagnosis],['医疗机构用药医嘱归档',entry.medicationChange],['治疗后反馈',entry.treatmentResponse],['后续协作事项',entry.nextPlan]].map(([label,value]) => value ? <div key={label} style={{ marginTop:4, fontSize:13 }}><span style={{ color:'#8AA89C' }}>{label}：</span>{value}</div>:null)}</div>)}</div>}
+        {view === 'course' && <div>{!(dossier.courseEntries || []).length ? <div style={{ padding:18, textAlign:'center', color:'#8AA89C' }}>暂无健康变化记录</div> : dossier.courseEntries.map((entry,index) => <div key={entry._id || index} style={{ padding:'12px 4px', borderBottom:'1px solid #F0EDE7' }}><div style={{display:'flex',justifyContent:'space-between',gap:10}}><div style={{ fontSize:12, color:'#8AA89C' }}>{entry.occurredAt ? new Date(entry.occurredAt).toLocaleDateString('zh-CN') : '日期未记录'} · {sourceLabels[entry.sourceType] || entry.sourceLabel || '历史资料'} · {verifyLabels[entry.verificationStatus] || '待核验'}{entry.sourceInstitution ? ` · ${entry.sourceInstitution}` : ''}<br/>录入：{entry.recordedAt ? new Date(entry.recordedAt).toLocaleString('zh-CN') : '历史时间未记录'} · {entry.recordedByName || '历史人员未记录'}{entry.updatedAt ? <><br/>修改：{new Date(entry.updatedAt).toLocaleString('zh-CN')} · {entry.updatedByName || '工作人员'}</> : null}</div>{dossier._id !== 'legacy' && <button type="button" className="btn btn-secondary btn-sm" onClick={() => openCourseEditor(entry)}>编辑</button>}</div><div style={{ marginTop:6, lineHeight:1.7, whiteSpace:'pre-wrap' }}>{combinedHealthChange(entry)}</div>{[['医疗机构检查信息',entry.examination],['医疗机构诊断归档',entry.diagnosis],['医疗机构用药医嘱归档',entry.medicationChange],['治疗后反馈',entry.treatmentResponse],['后续协作事项',entry.nextPlan]].map(([label,value]) => value ? <div key={label} style={{ marginTop:4, fontSize:13 }}><span style={{ color:'#8AA89C' }}>{label}：</span>{value}</div>:null)}{!!entry.revisionHistory?.length && <details style={{marginTop:6,fontSize:12,color:'#65776F'}}><summary style={{cursor:'pointer'}}>修订历史（{entry.revisionHistory.length}）</summary>{[...entry.revisionHistory].reverse().map((revision,revisionIndex)=><div key={revision.archivedAt || revisionIndex} style={{padding:'6px 10px'}}>原版本：{revision.archivedAt ? new Date(revision.archivedAt).toLocaleString('zh-CN') : '时间未记录'} · {revision.archivedByName || '人员未记录'}</div>)}</details>}</div>)}</div>}
         {view === 'management' && <div>{!managementRecords.length ? <div style={{ padding:18, textAlign:'center', color:'#8AA89C' }}>暂无管理服务记录</div> : <table className="table"><thead><tr><th>标题</th><th>服务内容</th><th>负责人</th><th>日期</th></tr></thead><tbody>{managementRecords.map(record => <tr key={record._id} onClick={() => onOpenServiceRecord(record)} style={{ cursor:'pointer' }}><td style={{ color:'#1E6B50', fontWeight:500 }}>{record.title || '-'}</td><td>{record.content ? (record.content.length > 80 ? record.content.slice(0,80)+'…':record.content):'-'}</td><td>{record.staffId?.name || '-'}</td><td>{new Date(record.date).toLocaleDateString('zh-CN')}</td></tr>)}</tbody></table>}</div>}
         {view === 'history' && <div>{!(dossier.summaryHistory || []).length ? <div style={{ padding:18, textAlign:'center', color:'#8AA89C' }}>暂无历史版本</div> : [...dossier.summaryHistory].reverse().map((item,index) => <details key={item.archivedAt || index} style={{ padding:'10px 2px', borderBottom:'1px solid #F0EDE7' }}><summary style={{ cursor:'pointer' }}>{item.archivedAt ? new Date(item.archivedAt).toLocaleString('zh-CN'):'历史版本'} · {item.archivedByName || item.updatedByName || '医护人员'}</summary><div style={{ padding:'8px 18px', whiteSpace:'pre-wrap', lineHeight:1.7 }}>{item.chiefComplaint && `主诉：${item.chiefComplaint}\n`}{item.presentIllness && `现病史：${item.presentIllness}\n`}{item.initialDiagnosis && `诊断：${item.initialDiagnosis}\n`}{item.currentMedication && `当前用药：${item.currentMedication}`}</div></details>)}</div>}
       </div>}

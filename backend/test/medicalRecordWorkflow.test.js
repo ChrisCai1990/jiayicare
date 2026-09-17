@@ -60,3 +60,30 @@ test('健康变化与症状感受统一录入并兼容历史分栏数据', () =>
   assert.match(route, /mergedHealthChange/);
   assert.match(route, /cleanMedicalText\(body\.symptoms, 5000\)/);
 });
+
+test('专病档案支持删除且保留并解除关联管理服务', () => {
+  const route = read('backend/src/routes/staff.js');
+  const page = read('staff/src/pages/PatientDetailPage.jsx');
+  const api = read('staff/src/api.js');
+  assert.match(route, /router\.delete\('\/patients\/:id\/disease-records\/:recordId'/);
+  assert.match(route, /\$pull:\s*\{ diseaseRecords/);
+  assert.match(route, /ServiceRecord\.updateMany/);
+  assert.match(page, /删除专病档案/);
+  assert.match(page, /管理服务将保留但解除专病归属/);
+  assert.match(api, /deleteDiseaseRecord/);
+  assert.match(api, /removeDiseaseGroup/);
+  assert.match(route, /disease-record-by-name/);
+  assert.match(page, /移除专病分组/);
+});
+
+test('健康变化支持修订并保留录入和修改审计信息', () => {
+  const route = read('backend/src/routes/staff.js');
+  const page = read('staff/src/pages/PatientDetailPage.jsx');
+  assert.match(route, /course-entries\/:entryId/);
+  assert.match(route, /recordedAt: previous\.recordedAt/);
+  assert.match(route, /updatedByName: operator/);
+  assert.match(route, /revisionHistory/);
+  assert.match(page, /录入：/);
+  assert.match(page, /修改：/);
+  assert.match(page, /openCourseEditor/);
+});

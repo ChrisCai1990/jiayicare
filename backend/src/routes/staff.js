@@ -1238,6 +1238,69 @@ router.post('/patients/:id/disease-records/course-entries', staffAuth, checkPerm
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+router.put('/patients/:id/disease-records/:recordId/course-entries/:entryId', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
+  try {
+    const patient = await User.findById(req.params.id).select('diseaseRecords medicalRecord').lean();
+    if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+    const records = normalizedDiseaseRecords(patient);
+    const record = records.find(item => String(item._id) === String(req.params.recordId));
+    if (!record) return res.status(404).json({ success: false, message: '专病档案不存在' });
+    const entryIndex = (record.courseEntries || []).findIndex(item => String(item._id) === String(req.params.entryId));
+    if (entryIndex < 0) return res.status(404).json({ success: false, message: '健康变化记录不存在' });
+    const previous = record.courseEntries[entryIndex];
+    const content = mergedHealthChange(req.body);
+    if (!content) return res.status(400).json({ success: false, message: '请填写本次健康及症状变化' });
+    const now = new Date();
+    const operator = req.staff.name || req.staff.username || '';
+    const { revisionHistory: ignoredHistory, ...previousSnapshot } = previous;
+    record.courseEntries[entryIndex] = {
+      ...previous,
+      occurredAt: req.body.occurredAt && !Number.isNaN(Date.parse(req.body.occurredAt)) ? new Date(req.body.occurredAt) : previous.occurredAt,
+      content, symptoms: '',
+      examination: cleanMedicalText(req.body.examination, 5000), diagnosis: cleanMedicalText(req.body.diagnosis, 5000),
+      medicationChange: cleanMedicalText(req.body.medicationChange, 5000), treatmentResponse: cleanMedicalText(req.body.treatmentResponse, 5000), nextPlan: cleanMedicalText(req.body.nextPlan, 5000),
+      ...cleanHealthInfoProvenance(req.body),
+      recordedAt: previous.recordedAt || now, recordedById: previous.recordedById || req.staff._id, recordedByName: previous.recordedByName || operator,
+      updatedAt: now, updatedById: req.staff._id, updatedByName: operator,
+      revisionHistory: [...(previous.revisionHistory || []), { ...previousSnapshot, archivedAt: now, archivedById: req.staff._id, archivedByName: operator }].slice(-50),
+    };
+    await User.collection.updateOne({ _id: patient._id }, { $set: { diseaseRecords: records } });
+    res.json({ success: true, data: record.courseEntries[entryIndex] });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.delete('/patients/:id/disease-record-by-name', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
+  try {
+    const patient = await User.findById(req.params.id).select('_id').lean();
+    if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+    const diseaseName = cleanMedicalText(req.body.diseaseName, 100);
+    if (!diseaseName) return res.status(400).json({ success: false, message: '专病名称不能为空' });
+    const detached = await ServiceRecord.updateMany({ patientId: patient._id, diseaseName }, { $set: { diseaseName: '' } });
+    if (!detached.modifiedCount) return res.status(404).json({ success: false, message: '专病分组不存在或已移除' });
+    res.json({ success: true, data: { diseaseName, detachedServiceRecords: detached.modifiedCount } });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.delete('/patients/:id/disease-records/:recordId', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
+  try {
+    const patient = await User.findById(req.params.id).select('diseaseRecords').lean();
+    if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+    const records = Array.isArray(patient.diseaseRecords) ? patient.diseaseRecords : [];
+    const target = records.find(item => String(item._id) === String(req.params.recordId));
+    if (!target) return res.status(404).json({ success: false, message: '专病档案不存在或已删除' });
+    const diseaseName = String(target.name || '').trim();
+    const result = await User.collection.updateOne(
+      { _id: patient._id, 'diseaseRecords._id': target._id },
+      { $pull: { diseaseRecords: { _id: target._id } } },
+    );
+    if (!result.modifiedCount) return res.status(409).json({ success: false, message: '专病档案已发生变化，请刷新后重试' });
+    const detached = diseaseName
+      ? await ServiceRecord.updateMany({ patientId: patient._id, diseaseName }, { $set: { diseaseName: '' } })
+      : { modifiedCount: 0 };
+    res.json({ success: true, data: { deletedRecordId: String(target._id), detachedServiceRecords: detached.modifiedCount || 0 } });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // 当前有效病历摘要。修改时先把旧版本写入历史，不能覆盖后丢失。
 router.put('/patients/:id/medical-record/summary', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
   try {
