@@ -687,9 +687,9 @@ async function validateMedicalProxyStage(task, body, staff) {
   }
   if (stage === 'resolution') {
     if (!['online', 'pharmacy', 'other_hospital', 'refund'].includes(data.resolutionType)) return '请选择异常解决方案';
-    if (!nonempty(data.resolutionPlan) || !nonempty(data.resolutionResult)) return '请填写解决方案和实际处理结果';
+    if (!nonempty(data.resolutionPlan) || (!nonempty(data.resolutionResult) && !nonempty(data.fulfillmentProof))) return '请填写解决方案和实际处理结果及配药/采购凭据说明';
     if (data.customerConfirmed !== true) return '请确认客户已同意并确认处理结果';
-    if (data.resolutionType !== 'refund' && (!nonempty(data.fulfillmentProof) || !nonempty(data.deliveryArrangement))) return '请填写实际配药凭据和配送安排';
+    if (data.resolutionType !== 'refund' && !nonempty(data.deliveryArrangement)) return '请填写配送或交付安排';
   }
   if (stage === 'collect' || stage === 'audit' || stage === 'advisor' || stage === 'planner' || stage === 'intake') {
     const patient = await User.findById(task.patientId).select('assignedFamilyDoctor assignedHealthPlanner assignedHealthManager').lean();
