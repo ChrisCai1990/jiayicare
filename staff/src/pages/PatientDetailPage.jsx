@@ -687,6 +687,60 @@ const SR_CATEGORY = {
 }
 const SR_CATEGORY_COLOR = { '营养干预':'#22A06B', '专病管理':'#0077B6', '医院就医':'#D97706', '阶段性健康评估':'#8A4AC7' }
 
+function DiseaseArchivePanel({ patientId, user, serviceRecords, onSaved, onOpenServiceRecord, toast }) {
+  const legacy = user.medicalRecord || {}
+  const legacySummary = legacy.summary || {}
+  const hasLegacy = ['chiefComplaint','presentIllness','physicalExam','epidemiologicalHistory','initialDiagnosis','currentMedication'].some(key => legacySummary[key])
+  const stored = Array.isArray(user.diseaseRecords) ? user.diseaseRecords : []
+  const dossiers = stored.length ? stored : (hasLegacy ? [{ _id: 'legacy', name: legacySummary.linkedDiseases?.[0] || legacySummary.initialDiagnosis || '未命名专病', summary: legacySummary, summaryHistory: legacy.summaryHistory || [], courseEntries: legacy.courseEntries || [] }] : [])
+  const serviceGroups = {}
+  serviceRecords.forEach(record => {
+    const name = record.diseaseName?.trim() || record.title?.trim() || '未标注专病'
+    if (!serviceGroups[name]) serviceGroups[name] = []
+    serviceGroups[name].push(record)
+  })
+  const names = [...new Set([...dossiers.map(item => item.name), ...Object.keys(serviceGroups)])]
+  const [selectedName, setSelectedName] = useState('')
+  const [view, setView] = useState('summary')
+  const [editingSummary, setEditingSummary] = useState(false)
+  const [addingCourse, setAddingCourse] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const emptySummary = { diseaseName: '', chiefComplaint: '', presentIllness: '', physicalExam: '', epidemiologicalHistory: '', initialDiagnosis: '', currentMedication: '' }
+  const emptyCourse = { occurredAt: new Date().toISOString().slice(0, 10), content: '', symptoms: '', examination: '', diagnosis: '', medicationChange: '', treatmentResponse: '', nextPlan: '' }
+  const [summaryForm, setSummaryForm] = useState(emptySummary)
+  const [courseForm, setCourseForm] = useState(emptyCourse)
+  const activeName = names.includes(selectedName) ? selectedName : (names[0] || '')
+  const dossier = dossiers.find(item => item.name === activeName) || { name: activeName, summary: {}, summaryHistory: [], courseEntries: [] }
+  const managementRecords = serviceGroups[activeName] || []
+  const openSummary = () => { setSummaryForm({ ...emptySummary, ...(dossier.summary || {}), diseaseName: dossier.name || activeName, recordId: dossier._id === 'legacy' ? '' : dossier._id }); setEditingSummary(true) }
+  const openNewDisease = () => { setSummaryForm(emptySummary); setEditingSummary(true) }
+  const saveSummary = async () => {
+    try { setSaving(true); await staffAPI.updateDiseaseRecordSummary(patientId, summaryForm); toast('专病摘要已保存，旧版本已留档'); setEditingSummary(false); await onSaved() }
+    catch (err) { toast(err.message || '保存失败') } finally { setSaving(false) }
+  }
+  const saveCourse = async () => {
+    try { setSaving(true); await staffAPI.addDiseaseCourseEntry(patientId, { ...courseForm, diseaseName: activeName, recordId: dossier._id === 'legacy' ? '' : dossier._id }); toast('病程变化已追加'); setAddingCourse(false); setCourseForm(emptyCourse); setView('course'); await onSaved() }
+    catch (err) { toast(err.message || '保存失败') } finally { setSaving(false) }
+  }
+  const summaryRows = [['主诉', dossier.summary?.chiefComplaint], ['现病史', dossier.summary?.presentIllness], ['体格检查', dossier.summary?.physicalExam], ['流行病学史', dossier.summary?.epidemiologicalHistory], ['诊断', dossier.summary?.initialDiagnosis], ['当前治疗与用药', dossier.summary?.currentMedication]]
+  return <>
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card-header" style={{ alignItems: 'flex-start' }}><div><div className="card-title" style={{ color: '#0077B6' }}>专病档案</div><div style={{ marginTop: 4, color: '#65776F', fontSize: 12 }}>一项疾病一份档案：病历描述病情变化，管理记录描述我们做过的服务</div></div><button className="btn btn-secondary btn-sm" onClick={openNewDisease}>＋ 新建专病档案</button></div>
+      {names.length === 0 ? <div style={{ padding: 24, textAlign: 'center', color: '#8AA89C' }}>暂无专病档案。建立后可持续记录病情摘要、病程及管理服务。</div> : <div className="card-body">
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>{names.map(name => <button key={name} type="button" onClick={() => { setSelectedName(name); setView('summary') }} style={{ border: `1px solid ${activeName === name ? '#0077B6' : '#D8E1DC'}`, borderRadius: 18, padding: '6px 13px', background: activeName === name ? '#EAF5FB' : '#fff', color: activeName === name ? '#0077B6' : '#4A6558', cursor: 'pointer', fontWeight: activeName === name ? 700 : 400 }}>{name}</button>)}</div>
+        <div style={{ padding: '10px 12px', borderRadius: 8, background: '#F5F8F7', fontSize: 12, color: '#4A6558', marginBottom: 12 }}><b>当前专病：</b>{activeName}　病程 {dossier.courseEntries?.length || 0} 条　管理服务 {managementRecords.length} 条</div>
+        <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid #E0D9CE', marginBottom: 14 }}>{[['summary','当前病情摘要'],['course',`病程时间轴（${dossier.courseEntries?.length || 0}）`],['management',`管理记录（${managementRecords.length}）`],['history',`摘要历史（${dossier.summaryHistory?.length || 0}）`]].map(([key,label]) => <button key={key} onClick={() => setView(key)} style={{ border:0, borderBottom:`2px solid ${view === key ? '#0077B6':'transparent'}`, background:'transparent', color:view === key ? '#0077B6':'#8AA89C', fontWeight:view === key ? 700:400, padding:'8px 12px', cursor:'pointer' }}>{label}</button>)}</div>
+        {view === 'summary' && <div><div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginBottom:6 }}><button className="btn btn-secondary btn-sm" onClick={openSummary}>{summaryRows.some(([,v]) => v) ? '修改病情摘要':'建立病情摘要'}</button><button className="btn btn-primary btn-sm" onClick={() => setAddingCourse(true)}>＋ 记录病程变化</button></div>{!summaryRows.some(([,v]) => v) ? <div style={{ padding:18, textAlign:'center', color:'#8AA89C' }}>尚未建立本专病的病情摘要</div> : summaryRows.map(([label,value]) => value ? <div key={label} style={{ display:'grid', gridTemplateColumns:'110px 1fr', gap:14, padding:'10px 4px', borderBottom:'1px solid #F0EDE7' }}><span style={{ textAlign:'right', color:'#8AA89C' }}>{label}</span><span style={{ lineHeight:1.7, whiteSpace:'pre-wrap' }}>{value}</span></div> : null)}</div>}
+        {view === 'course' && <div>{!(dossier.courseEntries || []).length ? <div style={{ padding:18, textAlign:'center', color:'#8AA89C' }}>暂无病程变化</div> : dossier.courseEntries.map((entry,index) => <div key={entry._id || index} style={{ padding:'12px 4px', borderBottom:'1px solid #F0EDE7' }}><div style={{ fontSize:12, color:'#8AA89C' }}>{entry.occurredAt ? new Date(entry.occurredAt).toLocaleDateString('zh-CN') : '日期未记录'} · {entry.recordedByName || '医护人员'}</div><div style={{ marginTop:6, lineHeight:1.7, whiteSpace:'pre-wrap' }}>{entry.content}</div>{[['症状',entry.symptoms],['检查',entry.examination],['诊断',entry.diagnosis],['用药调整',entry.medicationChange],['治疗反应',entry.treatmentResponse],['下一步计划',entry.nextPlan]].map(([label,value]) => value ? <div key={label} style={{ marginTop:4, fontSize:13 }}><span style={{ color:'#8AA89C' }}>{label}：</span>{value}</div>:null)}</div>)}</div>}
+        {view === 'management' && <div>{!managementRecords.length ? <div style={{ padding:18, textAlign:'center', color:'#8AA89C' }}>暂无管理服务记录</div> : <table className="table"><thead><tr><th>标题</th><th>服务内容</th><th>负责人</th><th>日期</th></tr></thead><tbody>{managementRecords.map(record => <tr key={record._id} onClick={() => onOpenServiceRecord(record)} style={{ cursor:'pointer' }}><td style={{ color:'#1E6B50', fontWeight:500 }}>{record.title || '-'}</td><td>{record.content ? (record.content.length > 80 ? record.content.slice(0,80)+'…':record.content):'-'}</td><td>{record.staffId?.name || '-'}</td><td>{new Date(record.date).toLocaleDateString('zh-CN')}</td></tr>)}</tbody></table>}</div>}
+        {view === 'history' && <div>{!(dossier.summaryHistory || []).length ? <div style={{ padding:18, textAlign:'center', color:'#8AA89C' }}>暂无历史版本</div> : [...dossier.summaryHistory].reverse().map((item,index) => <details key={item.archivedAt || index} style={{ padding:'10px 2px', borderBottom:'1px solid #F0EDE7' }}><summary style={{ cursor:'pointer' }}>{item.archivedAt ? new Date(item.archivedAt).toLocaleString('zh-CN'):'历史版本'} · {item.archivedByName || item.updatedByName || '医护人员'}</summary><div style={{ padding:'8px 18px', whiteSpace:'pre-wrap', lineHeight:1.7 }}>{item.chiefComplaint && `主诉：${item.chiefComplaint}\n`}{item.presentIllness && `现病史：${item.presentIllness}\n`}{item.initialDiagnosis && `诊断：${item.initialDiagnosis}\n`}{item.currentMedication && `当前用药：${item.currentMedication}`}</div></details>)}</div>}
+      </div>}
+    </div>
+    {editingSummary && <div className="modal-overlay" onClick={() => setEditingSummary(false)}><div className="modal" style={{ maxWidth:720 }} onClick={e => e.stopPropagation()}><div className="modal-header"><h3 className="modal-title">专病病情摘要</h3><button className="modal-close" onClick={() => setEditingSummary(false)}>×</button></div><div className="modal-body" style={{ display:'grid', gap:10 }}><div><label className="form-label">专病名称 *</label><input className="form-control" value={summaryForm.diseaseName || ''} onChange={e => setSummaryForm(f => ({...f,diseaseName:e.target.value}))} placeholder="如：焦虑惊恐发作" /></div>{[['chiefComplaint','主诉',2],['presentIllness','现病史',5],['physicalExam','体格检查',2],['epidemiologicalHistory','流行病学史',2],['initialDiagnosis','诊断',2],['currentMedication','当前治疗与用药',3]].map(([key,label,rows]) => <div key={key}><label className="form-label">{label}</label><textarea className="form-control" rows={rows} value={summaryForm[key] || ''} onChange={e => setSummaryForm(f => ({...f,[key]:e.target.value}))} /></div>)}</div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => setEditingSummary(false)}>取消</button><button className="btn btn-primary" disabled={saving || !summaryForm.diseaseName?.trim()} onClick={saveSummary}>{saving?'保存中…':'保存摘要'}</button></div></div></div>}
+    {addingCourse && <div className="modal-overlay" onClick={() => setAddingCourse(false)}><div className="modal" style={{ maxWidth:720 }} onClick={e => e.stopPropagation()}><div className="modal-header"><h3 className="modal-title">记录「{activeName}」病程变化</h3><button className="modal-close" onClick={() => setAddingCourse(false)}>×</button></div><div className="modal-body" style={{ display:'grid', gap:10 }}><div style={{ padding:'9px 12px', background:'#EFF8F3', color:'#1E6B50', borderRadius:8, fontSize:12 }}>这里只记录医学变化；联系、协调和服务过程仍记录在专病管理服务中。</div><div><label className="form-label">发生日期</label><input type="date" className="form-control" value={courseForm.occurredAt} onChange={e => setCourseForm(f => ({...f,occurredAt:e.target.value}))} /></div><div><label className="form-label">本次病情变化 *</label><textarea className="form-control" rows={4} value={courseForm.content} onChange={e => setCourseForm(f => ({...f,content:e.target.value}))} /></div>{[['symptoms','症状变化'],['examination','检查结果'],['diagnosis','诊断变化'],['medicationChange','用药调整'],['treatmentResponse','治疗反应／不良反应'],['nextPlan','下一步计划']].map(([key,label]) => <div key={key}><label className="form-label">{label}</label><textarea className="form-control" rows={2} value={courseForm[key]} onChange={e => setCourseForm(f => ({...f,[key]:e.target.value}))} /></div>)}</div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => setAddingCourse(false)}>取消</button><button className="btn btn-primary" disabled={saving || !courseForm.content.trim()} onClick={saveCourse}>{saving?'保存中…':'追加病程'}</button></div></div></div>}
+  </>
+}
+
 // ── 开单弹窗 ─────────────────────────────────────────────
 function RequisitionModal({ patientId, onClose, onSaved, prefillTitle = '', prefillNotes = '', prefillSuggestions = [] }) {
   const toast = useToast()
@@ -4860,7 +4914,8 @@ export default function PatientDetailPage() {
           )
         })()}
 
-        {/* ── 持续病历：完整病史建一次，后续只续写变化 ── */}
+        {/* 旧版全局病历界面停用；数据由服务档案中的专病档案兼容迁移。 */}
+        {false && <>
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-header" style={{ alignItems: 'flex-start' }}>
             <div>
@@ -4919,6 +4974,7 @@ export default function PatientDetailPage() {
           {[['symptoms', '症状变化'], ['examination', '新检查结果'], ['diagnosis', '诊断变化'], ['medicationChange', '用药调整'], ['treatmentResponse', '治疗反应／不良反应'], ['nextPlan', '下一步计划']].map(([key, label]) => <div key={key}><label className="form-label">{label}</label><textarea className="form-control" rows={2} value={medicalCourseForm[key]} onChange={e => setMedicalCourseForm(f => ({ ...f, [key]: e.target.value }))} /></div>)}
           <div><label className="form-label">关联专病</label><input className="form-control" value={medicalCourseForm.linkedDiseases} onChange={e => setMedicalCourseForm(f => ({ ...f, linkedDiseases: e.target.value }))} placeholder="例如：焦虑／惊恐发作" /></div>
         </div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => setAddingMedicalCourse(false)}>取消</button><button className="btn btn-primary" disabled={medicalRecordSaving || !medicalCourseForm.content.trim()} onClick={handleAddMedicalCourse}>{medicalRecordSaving ? '保存中…' : '保存续写'}</button></div></div></div>}
+        </>}
 
         {/* ── 基本档案 ── */}
         <div className="card" style={{ marginBottom: 16 }}>
@@ -10023,6 +10079,7 @@ export default function PatientDetailPage() {
                   if (!diseaseGroups[dn]) diseaseGroups[dn] = []
                   diseaseGroups[dn].push(r)
                 })
+                return <DiseaseArchivePanel patientId={id} user={user} serviceRecords={grouped[cat]} onSaved={() => load(false)} onOpenServiceRecord={setShowSRDetail} toast={toast} />
               }
               return <div className="card" key={cat}>
                 <div className="card-header">
@@ -10031,15 +10088,6 @@ export default function PatientDetailPage() {
                 </div>
                 {grouped[cat].length === 0 ? (
                   <div style={{ padding: '16px 20px', color: '#aaa', fontSize: 13 }}>暂无{cat}记录</div>
-                ) : isDiseaseMgmt ? (
-                  Object.keys(diseaseGroups).map(dn => (
-                    <div key={dn} style={{ borderTop: '1px solid #f5f2ec' }}>
-                      <div style={{ padding: '8px 20px', fontSize: 13, fontWeight: 600, color: '#4A6558', background: '#F9F6F0' }}>
-                        {dn} <span style={{ fontWeight: 400, color: '#8AA89C' }}>· {diseaseGroups[dn].length} 条</span>
-                      </div>
-                      {renderTable(diseaseGroups[dn])}
-                    </div>
-                  ))
                 ) : (
                   renderTable(grouped[cat])
                 )}

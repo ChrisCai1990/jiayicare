@@ -117,6 +117,8 @@ const userSchema = new mongoose.Schema({
     summaryHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
     courseEntries: { type: [mongoose.Schema.Types.Mixed], default: [] },
   },
+  // 每个专病一份独立档案；medicalRecord 仅作 2026-09-17 旧版数据兼容。
+  diseaseRecords: { type: [mongoose.Schema.Types.Mixed], default: [] },
   // 健康需求
   healthConcern:       { type: String, default: '' }, // 本人比较关注的健康问题
   healthConcernFor:    { type: String, default: '' }, // 更关注谁的健康问题

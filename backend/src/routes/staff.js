@@ -1159,6 +1159,67 @@ router.patch('/insurance-cases/:caseId/steps/:stepId', staffAuth, async (req, re
 const MEDICAL_SUMMARY_FIELDS = ['chiefComplaint', 'presentIllness', 'physicalExam', 'epidemiologicalHistory', 'initialDiagnosis', 'currentMedication'];
 const cleanMedicalText = (value, max = 10000) => String(value ?? '').trim().slice(0, max);
 const cleanLinkedDiseases = value => [...new Set((Array.isArray(value) ? value : String(value || '').split(/[、,，;；\n]+/)).map(item => cleanMedicalText(item, 100)).filter(Boolean))].slice(0, 30);
+const hasMedicalSummary = summary => MEDICAL_SUMMARY_FIELDS.some(key => summary?.[key]) || (summary?.linkedDiseases || []).length;
+const normalizedDiseaseRecords = patient => {
+  const records = Array.isArray(patient.diseaseRecords) ? patient.diseaseRecords.map(item => ({ ...item })) : [];
+  if (records.length || !hasMedicalSummary(patient.medicalRecord?.summary)) return records;
+  const legacy = patient.medicalRecord || {};
+  const summary = legacy.summary?.toObject?.() || legacy.summary || {};
+  const name = summary.linkedDiseases?.[0] || summary.initialDiagnosis || '未命名专病';
+  return [{ _id: new mongoose.Types.ObjectId(), name, summary, summaryHistory: legacy.summaryHistory || [], courseEntries: legacy.courseEntries || [], migratedFromLegacyAt: new Date() }];
+};
+
+// 一项疾病对应一份专病档案；服务记录通过 diseaseName 与它关联。
+router.put('/patients/:id/disease-records/summary', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
+  try {
+    const patient = await User.findById(req.params.id).select('diseaseRecords medicalRecord').lean();
+    if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+    const name = cleanMedicalText(req.body.diseaseName, 100);
+    if (!name) return res.status(400).json({ success: false, message: '请填写专病名称' });
+    const summary = {};
+    MEDICAL_SUMMARY_FIELDS.forEach(key => { summary[key] = cleanMedicalText(req.body[key]); });
+    if (!MEDICAL_SUMMARY_FIELDS.some(key => summary[key])) return res.status(400).json({ success: false, message: '请至少填写一项病情摘要' });
+    const records = normalizedDiseaseRecords(patient);
+    const recordId = cleanMedicalText(req.body.recordId, 100);
+    let record = records.find(item => recordId && String(item._id) === recordId) || records.find(item => item.name === name);
+    const now = new Date();
+    const operator = req.staff.name || req.staff.username || '';
+    if (!record) {
+      record = { _id: new mongoose.Types.ObjectId(), name, summaryHistory: [], courseEntries: [] };
+      records.push(record);
+    } else if (hasMedicalSummary(record.summary)) {
+      record.summaryHistory = [...(record.summaryHistory || []), { ...record.summary, archivedAt: now, archivedById: req.staff._id, archivedByName: operator }].slice(-100);
+    }
+    record.name = name;
+    record.summary = { ...summary, updatedAt: now, updatedById: req.staff._id, updatedByName: operator };
+    await User.collection.updateOne({ _id: patient._id }, { $set: { diseaseRecords: records } });
+    res.json({ success: true, data: record });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.post('/patients/:id/disease-records/course-entries', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
+  try {
+    const patient = await User.findById(req.params.id).select('diseaseRecords medicalRecord').lean();
+    if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+    const name = cleanMedicalText(req.body.diseaseName, 100);
+    const content = cleanMedicalText(req.body.content, 20000);
+    if (!name) return res.status(400).json({ success: false, message: '请先选择专病' });
+    if (!content) return res.status(400).json({ success: false, message: '请填写本次病情变化' });
+    const records = normalizedDiseaseRecords(patient);
+    const recordId = cleanMedicalText(req.body.recordId, 100);
+    let record = records.find(item => recordId && String(item._id) === recordId) || records.find(item => item.name === name);
+    if (!record) { record = { _id: new mongoose.Types.ObjectId(), name, summary: {}, summaryHistory: [], courseEntries: [] }; records.push(record); }
+    const entry = {
+      _id: new mongoose.Types.ObjectId(), occurredAt: req.body.occurredAt && !Number.isNaN(Date.parse(req.body.occurredAt)) ? new Date(req.body.occurredAt) : new Date(), content,
+      symptoms: cleanMedicalText(req.body.symptoms, 5000), examination: cleanMedicalText(req.body.examination, 5000), diagnosis: cleanMedicalText(req.body.diagnosis, 5000),
+      medicationChange: cleanMedicalText(req.body.medicationChange, 5000), treatmentResponse: cleanMedicalText(req.body.treatmentResponse, 5000), nextPlan: cleanMedicalText(req.body.nextPlan, 5000),
+      recordedAt: new Date(), recordedById: req.staff._id, recordedByName: req.staff.name || req.staff.username || '', recordedByRole: req.staff.role || '',
+    };
+    record.courseEntries = [entry, ...(record.courseEntries || [])].slice(0, 500);
+    await User.collection.updateOne({ _id: patient._id }, { $set: { diseaseRecords: records } });
+    res.status(201).json({ success: true, data: entry });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
 
 // 当前有效病历摘要。修改时先把旧版本写入历史，不能覆盖后丢失。
 router.put('/patients/:id/medical-record/summary', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
