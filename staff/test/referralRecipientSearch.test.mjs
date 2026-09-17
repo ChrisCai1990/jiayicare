@@ -10,3 +10,11 @@ test('referral recipient selector supports staff search while retaining staff id
   assert.match(source, /toStaffId: staff\._id/)
   assert.match(source, /未找到匹配的医护人员/)
 })
+
+test('external referral selector searches expert and medical resource fields', () => {
+  assert.match(source, /placeholder="搜索专家、医院、科室、院区或擅长领域"/)
+  assert.match(source, /expert\.name, expert\.title, expert\.campus, hospital\?\.name, department\?\.name/)
+  assert.match(source, /\.\.\.\(expert\.expertise \|\| \[\]\), \.\.\.\(expert\.diseaseTags \|\| \[\]\)/)
+  assert.match(source, /medicalExpertId: expert\._id/)
+  assert.match(source, /未找到匹配的外部专家/)
+})

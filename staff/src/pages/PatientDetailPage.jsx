@@ -13587,6 +13587,8 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
   const [error, setError] = useState('')
   const [recipientSearch, setRecipientSearch] = useState('')
   const [recipientMenuOpen, setRecipientMenuOpen] = useState(false)
+  const [expertSearch, setExpertSearch] = useState('')
+  const [expertMenuOpen, setExpertMenuOpen] = useState(false)
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
   const recipientLabel = (staff) => staff
@@ -13599,6 +13601,25 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
     return [staff.name, staff.role, staff.roleLabel, ROLE_LABEL_MAP[staff.role], staff.title]
       .filter(Boolean)
       .some(value => String(value).toLowerCase().includes(normalizedRecipientSearch))
+  })
+  const institutionForExpert = expert => (medicalResources.institutions || []).find(item => String(item._id) === String(expert?.institutionId))
+  const departmentForExpert = expert => (medicalResources.departments || []).find(item => String(item._id) === String(expert?.departmentId))
+  const selectedExpert = (medicalResources.experts || []).find(expert => String(expert._id) === String(form.medicalExpertId))
+  const expertLabel = expert => {
+    if (!expert) return ''
+    const hospital = institutionForExpert(expert)
+    const department = departmentForExpert(expert)
+    return `${expert.name}${expert.title ? ` · ${expert.title}` : ''}｜${hospital?.name || '医院待补充'} · ${department?.name || '科室待补充'}`
+  }
+  const normalizedExpertSearch = expertSearch.trim().toLowerCase()
+  const filteredExperts = (medicalResources.experts || []).filter(expert => {
+    if (!normalizedExpertSearch) return true
+    const hospital = institutionForExpert(expert)
+    const department = departmentForExpert(expert)
+    return [
+      expert.name, expert.title, expert.campus, hospital?.name, department?.name,
+      ...(expert.expertise || []), ...(expert.diseaseTags || []),
+    ].filter(Boolean).some(value => String(value).toLowerCase().includes(normalizedExpertSearch))
   })
 
   // 打开时拉取用药、营养补剂、近期打卡记录
@@ -13775,7 +13796,77 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
               </button>) : <div style={{padding:'12px',color:'#8AA89C',fontSize:13}}>未找到匹配的医护人员</div>}
             </div>}
             <div style={{fontSize:11,color:'#8AA89C',marginTop:4}}>可按姓名、角色或职称搜索</div>
-          </div> : <div className="form-group" style={{marginBottom:0}}><label className="form-label">医院 / 科室 / 专家 *</label><select className="form-input" value={form.medicalExpertId} onChange={set('medicalExpertId')}><option value="">-- 请按专业能力选择专家 --</option>{(medicalResources.experts||[]).map(expert=>{const hospital=(medicalResources.institutions||[]).find(x=>String(x._id)===String(expert.institutionId));const dept=(medicalResources.departments||[]).find(x=>String(x._id)===String(expert.departmentId));return <option key={expert._id} value={expert._id}>{expert.name}{expert.title?`｜${expert.title}`:''}｜{hospital?.name||'医院待补充'} · {dept?.name||'科室待补充'}｜擅长：{(expert.expertise||expert.diseaseTags||[]).join('、')||'待补充'}</option>})}</select>{form.medicalExpertId&&(()=>{const expert=(medicalResources.experts||[]).find(x=>x._id===form.medicalExpertId);const hospital=(medicalResources.institutions||[]).find(x=>String(x._id)===String(expert?.institutionId));const dept=(medicalResources.departments||[]).find(x=>String(x._id)===String(expert?.departmentId));return <div style={{padding:'9px 11px',marginTop:6,background:'#F5F8F7',borderRadius:7,fontSize:12,lineHeight:1.7}}><b>{expert?.name} {expert?.title}</b><br/>{hospital?.name} · {dept?.name}{expert?.campus?` · ${expert.campus}`:''}<br/>擅长：{(expert?.expertise||[]).join('、')||'待补充'}<br/>{expert?.linkedStaffId?'已关联医护端账号，可在线接收':'外部专家未关联账号，由团队线下联系'}</div>})()}</div>}
+          </div> : <div
+            className="form-group"
+            style={{marginBottom:0,position:'relative'}}
+            onBlur={event => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setExpertMenuOpen(false)
+            }}
+          >
+            <label className="form-label">医院 / 科室 / 专家 *</label>
+            <input
+              className="form-input"
+              value={expertMenuOpen ? expertSearch : expertLabel(selectedExpert)}
+              placeholder="搜索专家、医院、科室、院区或擅长领域"
+              autoComplete="off"
+              role="combobox"
+              aria-expanded={expertMenuOpen}
+              aria-controls="referral-expert-options"
+              onFocus={() => {
+                setExpertSearch('')
+                setExpertMenuOpen(true)
+              }}
+              onChange={event => {
+                setExpertSearch(event.target.value)
+                setExpertMenuOpen(true)
+                if (form.medicalExpertId) setForm(current => ({ ...current, medicalExpertId: '' }))
+              }}
+              onKeyDown={event => {
+                if (event.key === 'Escape') setExpertMenuOpen(false)
+                if (event.key === 'Enter' && expertMenuOpen && filteredExperts.length === 1) {
+                  event.preventDefault()
+                  setForm(current => ({ ...current, medicalExpertId: filteredExperts[0]._id }))
+                  setExpertSearch('')
+                  setExpertMenuOpen(false)
+                }
+              }}
+            />
+            {expertMenuOpen && <div
+              id="referral-expert-options"
+              role="listbox"
+              style={{position:'absolute',zIndex:20,top:'100%',left:0,right:0,marginTop:4,maxHeight:260,overflowY:'auto',background:'#fff',border:'1px solid #DCE5E1',borderRadius:8,boxShadow:'0 8px 24px rgba(20, 52, 42, .14)'}}
+            >
+              {filteredExperts.length ? filteredExperts.map(expert => {
+                const hospital = institutionForExpert(expert)
+                const department = departmentForExpert(expert)
+                const expertise = (expert.expertise || expert.diseaseTags || []).join('、')
+                return <button
+                  key={expert._id}
+                  type="button"
+                  role="option"
+                  aria-selected={String(expert._id) === String(form.medicalExpertId)}
+                  onMouseDown={event => event.preventDefault()}
+                  onClick={() => {
+                    setForm(current => ({ ...current, medicalExpertId: expert._id }))
+                    setExpertSearch('')
+                    setExpertMenuOpen(false)
+                  }}
+                  style={{display:'block',width:'100%',padding:'10px 12px',border:0,borderBottom:'1px solid #EEF2F0',background:String(expert._id) === String(form.medicalExpertId) ? '#E8F5EF' : '#fff',color:'#243A32',textAlign:'left',cursor:'pointer'}}
+                >
+                  <div><b>{expert.name}</b>{expert.title ? <span style={{marginLeft:8,color:'#668078',fontSize:12}}>{expert.title}</span> : null}</div>
+                  <div style={{color:'#668078',fontSize:12,marginTop:3}}>{hospital?.name || '医院待补充'} · {department?.name || '科室待补充'}{expert.campus ? ` · ${expert.campus}` : ''}</div>
+                  {expertise && <div style={{color:'#8AA89C',fontSize:11,marginTop:2}}>擅长：{expertise}</div>}
+                </button>
+              }) : <div style={{padding:'12px',color:'#8AA89C',fontSize:13}}>未找到匹配的外部专家</div>}
+            </div>}
+            <div style={{fontSize:11,color:'#8AA89C',marginTop:4}}>可按专家、医院、科室、院区、职称或擅长领域搜索</div>
+            {selectedExpert && <div style={{padding:'9px 11px',marginTop:6,background:'#F5F8F7',borderRadius:7,fontSize:12,lineHeight:1.7}}>
+              <b>{selectedExpert.name} {selectedExpert.title}</b><br/>
+              {institutionForExpert(selectedExpert)?.name} · {departmentForExpert(selectedExpert)?.name}{selectedExpert.campus ? ` · ${selectedExpert.campus}` : ''}<br/>
+              擅长：{(selectedExpert.expertise || selectedExpert.diseaseTags || []).join('、') || '待补充'}<br/>
+              {selectedExpert.linkedStaffId ? '已关联医护端账号，可在线接收' : '外部专家未关联账号，由团队线下联系'}
+            </div>}
+          </div>}
           <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">转介目的</label><select className="form-input" value={form.referralPurpose} onChange={set('referralPurpose')}><option value="">请选择</option>{['协助安排就医','回收医疗机构诊疗信息','健康资料解读与整理','康复支持评估','营养支持评估','心理支持评估','健康管理方案协作','其他'].map(item => <option key={item}>{item}</option>)}</select></div>
           <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">需要接收方解决的问题</label><textarea className="form-input" rows={2} value={form.questionList} onChange={set('questionList')} placeholder="请列出希望会诊明确的问题" /></div>
           <div className="form-group" style={{ marginBottom: 0 }}>
