@@ -58,9 +58,21 @@ function extractMedicalProxyRechecks(text, baseDate = new Date()) {
 async function archiveMedicalProxyRecords(task, order, tenantId) {
   const files = Array.isArray(task.formData?.medicalRecordAttachments) ? task.formData.medicalRecordAttachments : [];
   const checkDate = dateInput(task.date || new Date());
+  const currentUrls = files.map(file => nonempty(file?.url)).filter(Boolean);
+  // 执行环节被退回后允许就医专员删除旧附件并重新提交。自动归档必须以当前
+  // 表单为准，否则第一次提交生成的 MedicalReport 会和第二次资料一起留在审核列表。
+  await MedicalReport.deleteMany({
+    user: task.patientId,
+    sourceType: 'order',
+    sourceOrderId: order._id,
+    uploadedBy: task.assignedTo,
+    note: `医疗代诊执行任务：${task.theme || ''}`,
+    ...(currentUrls.length ? { fileUrl: { $nin: currentUrls } } : {}),
+  });
+  const archivedIds = [];
   for (const [index, file] of files.entries()) {
     if (!file?.url) continue;
-    await MedicalReport.findOneAndUpdate(
+    const report = await MedicalReport.findOneAndUpdate(
       { user: task.patientId, sourceType: 'order', sourceOrderId: order._id, fileUrl: file.url },
       { $setOnInsert: {
         user: task.patientId, tenantId: tenantId || null, title: files.length > 1 ? `医疗代诊病历（${index + 1}）` : '医疗代诊病历',
@@ -73,7 +85,9 @@ async function archiveMedicalProxyRecords(task, order, tenantId) {
       } },
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
+    if (report?._id) archivedIds.push(String(report._id));
   }
+  return archivedIds;
 }
 
 async function upsertMedicalProxyServiceRecord(task, order, completed = false) {
@@ -661,10 +675,19 @@ async function advanceMedicalProxyWorkflow(task) {
   const supplyProxy = medicationProxy || supplementProxy;
   if (stage === 'execute' && task.formData?.medicalEscort === true) {
     await upsertMedicalProxyServiceRecord(task, order, true);
-    await archiveMedicalProxyRecords(task, order, patient?.tenantId);
+    const reportIds = await archiveMedicalProxyRecords(task, order, patient?.tenantId);
+    const executionSnapshot = {
+      executionResult: task.formData?.executionResult || '',
+      medicalRecordAttachments: task.formData?.medicalRecordAttachments || [],
+      completedAt: task.completedAt || new Date(),
+      completedBy: task.assignedTo,
+    };
     const auditTask = await FollowUp.findOneAndUpdate(
       { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}post_visit_audit` },
-      { $setOnInsert: { patientId: task.patientId, staffId: task.staffId, assignedTo: patient?.assignedHealthManager, type: 'other', status: 'planned', date: new Date(), remindAt: new Date(), sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}post_visit_audit`, taskRole: 'executor', dependsOnTaskId: task._id, theme: `就医陪同：健管专员审核归档 · ${order.serviceName}`, plannedContent: '审核就医专员上传的陪同记录、报告和病历，确认资料归档后结束服务。', formData: { medicalEscort: true, reportIds: [], auditSummary: '' } } },
+      {
+        $setOnInsert: { patientId: task.patientId, staffId: task.staffId, type: 'other', sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}post_visit_audit`, taskRole: 'executor', theme: `就医陪同：健管专员审核归档 · ${order.serviceName}`, plannedContent: '审核就医专员上传的陪同记录、报告和病历，确认资料归档后结束服务。' },
+        $set: { assignedTo: patient?.assignedHealthManager, status: 'planned', isBlocked: false, date: new Date(), remindAt: new Date(), dependsOnTaskId: task._id, completedAt: null, completedBy: null, cancelReason: '', 'formData.medicalEscort': true, 'formData.reportIds': reportIds, 'formData.auditSummary': '', 'formData.noMaterialsConfirmed': false, 'formData.executionSnapshot': executionSnapshot },
+      },
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
     await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise` }, { $set: { 'formData.currentStage': 'post_visit_audit', content: '就医专员已完成陪同，等待健管专员审核归档资料。' } });

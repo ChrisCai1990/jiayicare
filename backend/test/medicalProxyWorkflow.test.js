@@ -265,6 +265,9 @@ test('medical escort skips booking and sends manager review only after execution
   assert.match(directStart, /assignedTo: plan\.medicalAssistantId/);
   assert.match(workflow, /medicalEscort === true && stage === 'planner' \? 'execute'/);
   assert.match(workflow, /stage === 'execute' && task\.formData\?\.medicalEscort === true[\s\S]*post_visit_audit/);
+  assert.match(workflow, /const reportIds = await archiveMedicalProxyRecords/);
+  assert.match(workflow, /status: 'planned', isBlocked: false[\s\S]*executionSnapshot/);
+  assert.match(workflow, /MedicalReport\.deleteMany/);
   assert.match(directStart, /assignmentMode: 'automatic'/);
   assert.match(panel, /const medicalEscortProgress/);
   assert.match(panel, /medicationProxyProgress\(task\) \|\| medicalEscortProgress\(task\)/);
@@ -273,6 +276,8 @@ test('medical escort skips booking and sends manager review only after execution
   assert.match(stageForm, /健康顾问提交的陪同服务信息/);
   assert.match(stageForm, /陪同执行结果、现场情况和后续事项/);
   assert.match(stageForm, /陪同资料附件（报告、病历等）/);
+  assert.match(stageForm, /就医专员本次提交内容/);
+  assert.match(stageForm, /submittedReportIds\.has/);
   assert.match(patientPage, /陪同就医 · 执行记录/);
   assert.match(patientPage, /完成陪同并提交资料审核/);
   assert.match(plansPage, /if \(isMedicalEscort\)[\s\S]*startStaffMedicalProxy\(patientId/);

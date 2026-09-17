@@ -120,9 +120,17 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
   </div>
   }
   if (stage === 'post_visit_audit') {
-    const eligible = reports.filter(report => !value.appointmentAt || new Date(report.createdAt) >= new Date(value.appointmentAt))
+    const submittedReportIds = new Set((value.executionSnapshot?.medicalRecordAttachments?.length ? value.reportIds || [] : []).map(String))
+    const eligible = reports.filter(report => isMedicalEscort
+      ? submittedReportIds.has(String(report._id))
+      : (!value.appointmentAt || new Date(report.createdAt) >= new Date(value.appointmentAt)))
     return <div style={{ display: 'grid', gap: 12 }}>
       <div style={{ fontSize: 13, color: '#63766D' }}>{isMedicalEscort ? '请审核就医专员上传的陪同资料，确认资料完整并完成归档后结束本次陪同服务。' : '等待客户就诊后上传病历和检查报告。请先在报告管理审核，再选定本次资料交健康顾问查看。'}</div>
+      {isMedicalEscort && <div style={{ display: 'grid', gap: 7, background: '#F5F8F6', border: '1px solid #DCE8E1', borderRadius: 8, padding: 12, fontSize: 13 }}>
+        <div style={{ fontWeight: 700, color: '#1E6B50' }}>就医专员本次提交内容</div>
+        <div style={{ whiteSpace: 'pre-wrap' }}>陪同执行结果、现场情况和后续事项：{value.executionSnapshot?.executionResult || '未填写'}</div>
+        <div>提交资料：{value.executionSnapshot?.medicalRecordAttachments?.length || 0} 份（请在下方逐份打开审核）</div>
+      </div>}
       {!eligible.length && <div style={{ color: '#B45309', fontSize: 13 }}>暂无本次就诊后上传的报告。</div>}
       {eligible.map(report => <label key={report._id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
         <input type="checkbox" checked={(value.reportIds || []).map(String).includes(String(report._id))} onChange={e => set('reportIds', e.target.checked ? [...new Set([...(value.reportIds || []), String(report._id)])] : (value.reportIds || []).filter(id => String(id) !== String(report._id)))} />
