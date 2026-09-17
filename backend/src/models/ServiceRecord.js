@@ -108,5 +108,6 @@ serviceRecordSchema.index({ staffId: 1, date: -1 });
 serviceRecordSchema.index({ sourceAiCaseReviewId: 1 }, { unique: true, partialFilterExpression: { sourceAiCaseReviewId: { $type: 'objectId' } } });
 serviceRecordSchema.index({ sourcePhaseAssessmentId: 1 }, { unique: true, partialFilterExpression: { sourcePhaseAssessmentId: { $type: 'objectId' } } });
 serviceRecordSchema.index({ sourceOrderId: 1, type: 1 }, { unique: true, partialFilterExpression: { sourceOrderId: { $type: 'objectId' } } });
+serviceRecordSchema.index({ sourceHealthPlanId: 1, type: 1 }, { unique: true, partialFilterExpression: { sourceHealthPlanId: { $type: 'objectId' } } });
 
 module.exports = mongoose.model('ServiceRecord', serviceRecordSchema);

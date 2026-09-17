@@ -4,6 +4,7 @@ const MedicalReport = require('../models/MedicalReport');
 const Medication = require('../models/Medication');
 const Order = require('../models/Order');
 const ServiceRecord = require('../models/ServiceRecord');
+const HealthPlan = require('../models/HealthPlan');
 const User = require('../models/User');
 
 const PREFIX = 'medical_proxy:';
@@ -183,10 +184,16 @@ async function upsertMedicalProxyServiceRecord(task, order, completed = false) {
       ? ['medicationPhotoAttachments', 'medicationInstructionAttachments', 'medicalRecordAttachments', 'chargeReceiptAttachments'].flatMap(key => task.formData?.[key] || [])
       : (task.formData?.medicalEscort === true ? medicalEscortAttachments(task.formData) : (task.formData?.medicalRecordAttachments || []))).filter(file => file?.url);
   }
-  const recordUpdate = { $set: update, $setOnInsert: { sourceOrderId: order._id, type: 'medical_visit' } };
+  const linkedPlan = await HealthPlan.findOne({ sourceOrderId: order._id, type: 'medical_assist' }).select('_id').sort({ createdAt: -1 }).lean();
+  update.sourceOrderId = order._id;
+  if (linkedPlan?._id) update.sourceHealthPlanId = linkedPlan._id;
+  const identity = linkedPlan?._id
+    ? { type: 'medical_visit', $or: [{ sourceOrderId: order._id }, { sourceHealthPlanId: linkedPlan._id }] }
+    : { sourceOrderId: order._id, type: 'medical_visit' };
+  const recordUpdate = { $set: update, $setOnInsert: { type: 'medical_visit' } };
   if (!completed) recordUpdate.$setOnInsert.result = '';
   return ServiceRecord.findOneAndUpdate(
-    { sourceOrderId: order._id, type: 'medical_visit' },
+    identity,
     recordUpdate,
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );

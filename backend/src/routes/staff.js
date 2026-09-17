@@ -2471,11 +2471,13 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
         c.notes && `注意事项：${c.notes}`,
       ].filter(Boolean).join('\n');
       await ServiceRecord.findOneAndUpdate(
-        { sourceHealthPlanId: sourcePlan._id, type: 'medical_visit' },
+        { type: 'medical_visit', $or: [{ sourceHealthPlanId: sourcePlan._id }, ...(sourcePlan.sourceOrderId ? [{ sourceOrderId: sourcePlan.sourceOrderId }] : [])] },
         {
           $set: {
             staffId: req.staff._id,
             patientId: followUp.patientId,
+            sourceHealthPlanId: sourcePlan._id,
+            ...(sourcePlan.sourceOrderId ? { sourceOrderId: sourcePlan.sourceOrderId } : {}),
             date: followUp.date || followUp.completedAt || new Date(),
             title: sourcePlan.title || '就医协助方案',
             content: requirements,
@@ -3542,11 +3544,13 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
     // result（就医结果）留空，等专员实际陪诊/代诊完成后回来补录——与详情页新增的"补录信息"入口配套
     // （2026-07-13 需求：方案要能自动在服务记录里记上一笔，等就医完毕可以补录信息）
     await ServiceRecord.findOneAndUpdate(
-      { sourceHealthPlanId: plan._id, type: 'medical_visit' },
+      { type: 'medical_visit', $or: [{ sourceHealthPlanId: plan._id }, ...(plan.sourceOrderId ? [{ sourceOrderId: plan.sourceOrderId }] : [])] },
       {
         $set: {
           staffId: selectedAssistantId,
           patientId: plan.patientId,
+          sourceHealthPlanId: plan._id,
+          ...(plan.sourceOrderId ? { sourceOrderId: plan.sourceOrderId } : {}),
           date: serviceDate,
           title: plan.title || '就医协助方案',
           content: requirements,

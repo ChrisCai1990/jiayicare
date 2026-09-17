@@ -345,10 +345,15 @@ test('medical escort attachments retain their document categories', () => {
 test('booking and execution write the shared hospital visit service archive', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
   const model = fs.readFileSync(path.join(__dirname, '../src/models/ServiceRecord.js'), 'utf8');
+  const routes = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
   assert.match(workflow, /upsertMedicalProxyServiceRecord\(task, order, false\)/);
   assert.match(workflow, /upsertMedicalProxyServiceRecord\(task, order, true\)/);
   assert.match(workflow, /type: 'medical_visit'/);
-  assert.match(model, /sourceOrderId:/);
+  assert.match(workflow, /\$or: \[\{ sourceOrderId: order\._id \}, \{ sourceHealthPlanId: linkedPlan\._id \}\]/);
+  assert.match(routes, /\$or: \[\{ sourceHealthPlanId: sourcePlan\._id \}, \.\.\.\(sourcePlan\.sourceOrderId/);
+  assert.match(routes, /\$or: \[\{ sourceHealthPlanId: plan\._id \}, \.\.\.\(plan\.sourceOrderId/);
+  assert.match(model, /sourceOrderId: 1, type: 1/);
+  assert.match(model, /sourceHealthPlanId: 1, type: 1/);
 });
 
 test('expert appointment booking completes without a medical assistant', async () => {
