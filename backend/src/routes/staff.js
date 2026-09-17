@@ -5699,7 +5699,20 @@ router.post('/referrals', staffAuth, async (req, res) => {
     attachedHealthInfo: attachedHealthInfo || null,
     linkedDiseaseRecordId: linkedDisease?._id || null,
     linkedDiseaseName: linkedDisease?.name || cleanMedicalText(linkedDiseaseName, 100),
-    linkedDiseaseSnapshot: linkedDisease ? { name: linkedDisease.name, summary: linkedDisease.summary || {}, capturedAt: new Date() } : null,
+    linkedDiseaseSnapshot: linkedDisease ? {
+      name: linkedDisease.name,
+      summary: linkedDisease.summary || {},
+      recentCourseEntries: [...(linkedDisease.courseEntries || [])]
+        .sort((a, b) => new Date(b.occurredAt || b.recordedAt || 0) - new Date(a.occurredAt || a.recordedAt || 0))
+        .slice(0, 10)
+        .map(entry => ({
+          occurredAt: entry.occurredAt || entry.recordedAt || null,
+          content: entry.content || entry.symptoms || '', examination: entry.examination || '', diagnosis: entry.diagnosis || '',
+          medicationChange: entry.medicationChange || '', treatmentResponse: entry.treatmentResponse || '', nextPlan: entry.nextPlan || '',
+          sourceType: entry.sourceType || '', sourceInstitution: entry.sourceInstitution || '', verificationStatus: entry.verificationStatus || '',
+        })),
+      capturedAt: new Date(),
+    } : null,
     referralPurpose: cleanMedicalText(referralPurpose, 100), questionList: cleanMedicalText(questionList, 5000), requiresConclusion: requiresConclusion !== false,
     referralType,
     medicalExpertId: expert?._id || null,

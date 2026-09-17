@@ -34,6 +34,23 @@ test('前端区分完整档案权限并展示专病关联与结构化协作反�
   assert.match(patient, /审核通过并写入时间轴/);
 });
 
+test('转介通知进入首页消息总数且附件明确药物状态与后续健康变化', () => {
+  const route = read('backend/src/routes/staff.js');
+  const home = read('staff/src/pages/HomePage.jsx');
+  const notifications = read('staff/src/pages/NotificationsPage.jsx');
+  const patient = read('staff/src/pages/PatientDetailPage.jsx');
+  assert.match(home, /pendingReferralCount/);
+  assert.match(home, /unreadRepliedCount/);
+  assert.match(home, /nav\('\/notifications'\)/);
+  assert.match(route, /recentCourseEntries/);
+  assert.match(route, /\.slice\(0, 10\)/);
+  assert.match(patient, /用药记录（含状态与时间）/);
+  assert.match(patient, /结束或停用时间/);
+  assert.match(notifications, /首次健康信息摘要/);
+  assert.match(notifications, /后续健康变化与医疗机构诊疗归档/);
+  assert.match(notifications, /主诉／主要健康诉求/);
+});
+
 test('AI只整理授权信息且不生成诊疗决策', () => {
   const route = read('backend/src/routes/staff.js');
   assert.match(route, /不得扮演医师，不得新增诊断、治疗、检查或用药建议/);

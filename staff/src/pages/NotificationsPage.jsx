@@ -186,7 +186,7 @@ export default function NotificationsPage() {
                   <div style={{ fontSize:12, color:'#65776F', marginBottom:5 }}>关联专病：<strong>{r.linkedDiseaseName || '待明确'}</strong>{r.referralPurpose ? ` · 目的：${r.referralPurpose}` : ''}</div>
                   {r.questionList && <div style={{ fontSize:12, color:'#65776F', marginBottom:5 }}>需解决问题：{r.questionList}</div>}
                   {!r.canViewPatient && <div style={{ fontSize:12, color:'#8A5A00', background:'#FFF8E8', padding:'6px 9px', borderRadius:6, marginBottom:6 }}>有限授权视图：仅展示发起方在本次转介中提供的信息。</div>}
-                  {r.linkedDiseaseSnapshot?.summary && <AttachedHealthInfoView info={{ 专病健康信息摘要: r.linkedDiseaseSnapshot.summary }} />}
+                  {r.linkedDiseaseSnapshot && <AttachedHealthInfoView info={{ diseaseSummary: r.linkedDiseaseSnapshot.summary, diseaseCourse: r.linkedDiseaseSnapshot.recentCourseEntries }} />}
                   {r.attachedHealthInfo && <AttachedHealthInfoView info={r.attachedHealthInfo} />}
                   <div style={{ fontSize: 12, color: '#aaa' }}>
                     来自：{r.fromStaffId?.name} · {new Date(r.createdAt).toLocaleDateString('zh-CN')}
@@ -504,7 +504,7 @@ function RespondModal({ referral, onClose, onRespond }) {
             <div style={{ fontSize: 13, color: '#666' }}>会员：{referral.patientId?.name}</div>
             {referral.content && <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>{referral.content}</div>}
             {referral.attachedHealthInfo && <AttachedHealthInfoView info={referral.attachedHealthInfo} />}
-            {referral.linkedDiseaseSnapshot?.summary && <AttachedHealthInfoView info={{ 专病健康信息摘要: referral.linkedDiseaseSnapshot.summary }} />}
+            {referral.linkedDiseaseSnapshot && <AttachedHealthInfoView info={{ diseaseSummary: referral.linkedDiseaseSnapshot.summary, diseaseCourse: referral.linkedDiseaseSnapshot.recentCourseEntries }} />}
           </div>
           {isReject ? (
             <div className="form-group" style={{ marginBottom: 0 }}>
@@ -1009,7 +1009,20 @@ const HEALTH_SECTION_LABELS = {
   medications:     '当前用药',
   surgeries:       '手术史',
   recentSymptoms:  '近期症状',
+  medicationRecords: '用药记录（含状态与时间）',
+  supplementRecords: '营养补充记录（含状态与时间）',
+  diseaseSummary: '首次健康信息摘要',
+  diseaseCourse: '后续健康变化与医疗机构诊疗归档',
 }
+
+const DISEASE_FIELD_LABELS = {
+  chiefComplaint:'主诉／主要健康诉求', presentIllness:'首次发病与既往经过', physicalExam:'医疗机构检查信息',
+  epidemiologicalHistory:'相关接触／流行病学信息', initialDiagnosis:'医疗机构诊断归档', currentMedication:'医疗机构治疗及用药信息',
+  content:'健康及症状变化', examination:'医疗机构检查信息', diagnosis:'医疗机构诊断归档', medicationChange:'用药医嘱变化',
+  treatmentResponse:'治疗后反馈', nextPlan:'后续安排', sourceInstitution:'来源医疗机构',
+}
+
+const formatDate = value => value ? new Date(value).toLocaleDateString('zh-CN') : '日期未记录'
 
 function AttachedHealthInfoView({ info }) {
   if (!info) return null
@@ -1025,6 +1038,13 @@ function AttachedHealthInfoView({ info }) {
       {sections.map(k => {
         const v = info[k]
         const label = HEALTH_SECTION_LABELS[k] || k
+        if (k === 'diseaseSummary' && typeof v === 'object') {
+          const rows = Object.entries(v).filter(([key, value]) => DISEASE_FIELD_LABELS[key] && String(value || '').trim())
+          return <div key={k} style={{ marginBottom: 8 }}><div style={{ color:'#4A6558', fontSize:12, fontWeight:700, marginBottom:4 }}>{label}</div>{rows.map(([key,value]) => <div key={key} style={{ fontSize:12, color:'#1A2B24', marginBottom:3 }}><span style={{ color:'#60756B' }}>{DISEASE_FIELD_LABELS[key]}：</span>{String(value)}</div>)}</div>
+        }
+        if (k === 'diseaseCourse' && Array.isArray(v)) {
+          return <div key={k}><div style={{ color:'#4A6558', fontSize:12, fontWeight:700, marginBottom:4 }}>{label}</div>{v.map((entry,index) => <div key={index} style={{ padding:'7px 0', borderTop:index ? '1px solid #DCE8E3':'none', fontSize:12 }}><div style={{ color:'#60756B', marginBottom:3 }}>{formatDate(entry.occurredAt)}{entry.sourceInstitution ? ` · ${entry.sourceInstitution}` : ''}</div>{Object.entries(entry).filter(([key,value]) => DISEASE_FIELD_LABELS[key] && String(value || '').trim()).map(([key,value]) => <div key={key}><span style={{ color:'#60756B' }}>{DISEASE_FIELD_LABELS[key]}：</span>{String(value)}</div>)}</div>)}</div>
+        }
         let display = ''
         if (Array.isArray(v)) {
           display = v.map(item => typeof item === 'object' ? Object.values(item).filter(Boolean).join(' · ') : item).join('；')

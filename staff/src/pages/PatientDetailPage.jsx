@@ -13787,8 +13787,19 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
       { key: 'medicalHistory',   label: '既往病史',     val: (() => { const v = u?.healthProfile?.medicalHistory; return Array.isArray(v) && v.length ? v : (v || null) })() },
       { key: 'specialDiseases',  label: '特殊疾病史',   val: u?.healthProfile?.pastHistory || (u?.chronicDiseases?.length ? u.chronicDiseases.join('；') : null) },
       { key: 'familyHistory',    label: '家族史',       val: (() => { const v = u?.healthProfile?.familyHistory; return Array.isArray(v) && v.length ? v : (v || null) })() },
-      { key: 'longTermMeds',     label: '长期用药',     val: ed.medications.length ? ed.medications.map(m => `${m.name}${m.dosage ? ` ${m.dosage}` : ''}`).join('；') : null },
-      { key: 'longTermSups',     label: '长期营养补剂', val: ed.supplements.length ? ed.supplements.map(s => s.name).join('；') : null },
+      { key: 'medicationRecords', label: '用药记录（含状态与时间）', val: ed.medications.length ? ed.medications.map(m => ({
+        药品: [m.name, m.dosage, m.frequency].filter(Boolean).join(' '),
+        状态: m.stopped || m.active === false ? '已停用' : m.aiStatus === 'pending' ? '待审核' : '使用中',
+        开始时间: m.startDate || '未记录',
+        结束或停用时间: m.stopDate || m.endDate || (m.stopped ? '未记录' : '—'),
+        用法: [m.method, m.timing].filter(Boolean).join('、') || '未记录',
+      })) : null },
+      { key: 'supplementRecords', label: '营养补充记录（含状态与时间）', val: ed.supplements.length ? ed.supplements.map(s => ({
+        名称: [s.name, s.dosage, s.frequency].filter(Boolean).join(' '),
+        状态: s.stopped ? '已停用' : s.aiStatus === 'pending' ? '待审核' : '使用中',
+        开始时间: s.startDate || '未记录',
+        结束或停用时间: s.stopDate || s.endDate || (s.stopped ? '未记录' : '—'),
+      })) : null },
       { key: 'dietSummary',      label: '膳食调查概述', val: dietSummary },
       { key: 'latestVitals',     label: '近期打卡数据', val: latestVitals },
     ].filter(s => s.val !== null && s.val !== '' && !(Array.isArray(s.val) && s.val.length === 0))
@@ -14531,6 +14542,8 @@ const REFERRAL_HEALTH_LABELS = {
   medications:     '当前用药',
   surgeries:       '手术史',
   recentSymptoms:  '近期症状',
+  medicationRecords: '用药记录（含状态与时间）',
+  supplementRecords: '营养补充记录（含状态与时间）',
 }
 
 function AttachedHealthInfoView({ info }) {
@@ -14548,7 +14561,7 @@ function AttachedHealthInfoView({ info }) {
         const label = REFERRAL_HEALTH_LABELS[k] || k
         let display = ''
         if (Array.isArray(v)) {
-          display = v.map(item => typeof item === 'object' ? Object.values(item).filter(Boolean).join(' · ') : item).join('；')
+          display = v.map(item => typeof item === 'object' ? Object.entries(item).filter(([,value]) => value).map(([key,value]) => `${key}：${value}`).join('，') : item).join('；')
         } else if (typeof v === 'object') {
           display = Object.entries(v).map(([kk, vv]) => `${kk}：${vv}`).join('；')
         } else {

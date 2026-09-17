@@ -51,8 +51,11 @@ export default function HomePage() {
       if (notifRes.status === 'fulfilled') {
         const s = notifRes.value.data?.summary || {}
         setExpiringPatients(notifRes.value.data?.expiringPatients || [])
+        const messages = msgRes.status === 'fulfilled' ? (msgRes.value.data || []) : []
+        const userUnread = msgRes.status === 'fulfilled' ? (msgRes.value.unreadCount ?? messages.filter(m => m.staffUnread).length) : 0
+        setUnreadMsgCount((s.pendingReferralCount || 0) + (s.unreadRepliedCount || 0) + userUnread)
       }
-      if (msgRes.status === 'fulfilled') {
+      if (msgRes.status === 'fulfilled' && notifRes.status !== 'fulfilled') {
         const messages = msgRes.value.data || []
         setUnreadMsgCount(msgRes.value.unreadCount ?? messages.filter(m => m.staffUnread).length ?? 0)
       }
@@ -60,8 +63,12 @@ export default function HomePage() {
   }, [])
 
   useEffect(() => {
-    const refreshMessageCount = () => staffAPI.getUserMessages()
-      .then(res => setUnreadMsgCount(res.unreadCount ?? (res.data || []).filter(m => m.staffUnread).length))
+    const refreshMessageCount = () => Promise.all([staffAPI.getNotifications(), staffAPI.getUserMessages()])
+      .then(([notifRes, msgRes]) => {
+        const summary = notifRes.data?.summary || {}
+        const userUnread = msgRes.unreadCount ?? (msgRes.data || []).filter(m => m.staffUnread).length
+        setUnreadMsgCount((summary.pendingReferralCount || 0) + (summary.unreadRepliedCount || 0) + userUnread)
+      })
       .catch(() => {})
     const timer = setInterval(refreshMessageCount, 5000)
     return () => clearInterval(timer)
@@ -104,7 +111,7 @@ export default function HomePage() {
           onCompleted={() => nav(followUpUrl({ status: 'completed', dateFrom: monthStartKey, dateTo: monthEndKey, dateField: 'completedAt' }))} /> : '-'} color="#22A06B" compact />
         <StatCard icon="⏰" label="逾期随访" value={reports?.overdue ?? '-'} color="#DC3545" onClick={() => nav(followUpUrl({ status: 'active', dateTo: yesterdayKey }))} />
         <StatCard icon="✅" label="今日健康监测" value={checkinRecords.length} color="#D97706" onClick={() => nav('/daily-checkin')} />
-        <StatCard icon="🔔" label="消息通知" value={unreadMsgCount} color="#DC3545" onClick={() => nav('/notifications', { state: { tab: 'userMsgs' } })} />
+        <StatCard icon="🔔" label="消息通知" value={unreadMsgCount} color="#DC3545" onClick={() => nav('/notifications')} />
       </div>
 
       {/* 待处理服务预约统一放在顶部统计区之后 */}
