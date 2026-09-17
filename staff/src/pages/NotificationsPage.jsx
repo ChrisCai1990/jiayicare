@@ -9,6 +9,48 @@ const PUSH_TYPE_COLOR = { knowledge:'#22A06B', questionnaire:'#0077B6', plan:'#D
 const REFERRAL_STATUS_LABEL = { pending:'待处理', accepted:'已接受', completed:'已完成', rejected:'已退回' }
 const REFERRAL_STATUS_COLOR = { pending:'#D97706', accepted:'#0077B6', completed:'#22A06B', rejected:'#DC3545' }
 
+const referralMonthKey = value => {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '日期待补充' : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+}
+
+const referralMonthLabel = key => key === '日期待补充' ? key : `${Number(key.slice(0, 4))}年${Number(key.slice(5))}月`
+
+function ReferralGroupedList({ referrals, priorityStatuses = [], priorityPredicate, priorityLabel = '需要我处理', children }) {
+  const isPriority = item => priorityStatuses.includes(item.status) || !!priorityPredicate?.(item)
+  const priority = referrals.filter(isPriority)
+  const archived = referrals.filter(item => !isPriority(item))
+  const groups = archived.reduce((result, item) => {
+    const key = referralMonthKey(item.createdAt)
+    if (!result[key]) result[key] = []
+    result[key].push(item)
+    return result
+  }, {})
+  const currentMonth = referralMonthKey(new Date())
+  const renderStats = items => Object.entries(items.reduce((result, item) => {
+    result[item.status] = (result[item.status] || 0) + 1
+    return result
+  }, {})).map(([status, count]) => `${REFERRAL_STATUS_LABEL[status] || status}${count}`).join('｜')
+
+  return <>
+    {priority.length > 0 && <section>
+      <div style={{ padding:'10px 16px', background:'#FFF8E8', borderBottom:'1px solid #F1E2BC', color:'#8A5A00', fontSize:13, fontWeight:800 }}>
+        {priorityLabel} · {priority.length} 条
+      </div>
+      {priority.map((item, index) => children(item, index, priority))}
+    </section>}
+    {Object.entries(groups).sort(([a], [b]) => b.localeCompare(a)).map(([month, items], groupIndex) => (
+      <details key={month} open={month === currentMonth} style={{ borderTop: priority.length || groupIndex ? '8px solid #F4F6F5' : 'none' }}>
+        <summary style={{ listStyle:'none', cursor:'pointer', padding:'12px 16px', background:'#F8FAF9', borderBottom:'1px solid #E7ECE9', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12 }}>
+          <span style={{ color:'#294D40', fontWeight:800 }}>{referralMonthLabel(month)} <span style={{ color:'#789087', fontWeight:500 }}>· {items.length} 次转介</span></span>
+          <span style={{ color:'#789087', fontSize:12 }}>{renderStats(items)}　展开／收起</span>
+        </summary>
+        {items.map((item, index) => children(item, index, items))}
+      </details>
+    ))}
+  </>
+}
+
 export default function NotificationsPage() {
   const nav = useNavigate()
   const location = useLocation()
@@ -188,8 +230,9 @@ export default function NotificationsPage() {
         <div className="card">
           {allReceivedReferrals.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无收到的转介 ✓</div>
-          ) : allReceivedReferrals.map((r, i) => (
-            <div key={r._id} style={{ padding: '16px', borderBottom: i < allReceivedReferrals.length - 1 ? '1px solid #f5f2ec' : 'none' }}>
+          ) : <ReferralGroupedList referrals={allReceivedReferrals} priorityStatuses={['pending', 'accepted']}>
+            {(r, i, group) => (
+            <div key={r._id} style={{ padding: '16px', borderBottom: i < group.length - 1 ? '1px solid #f5f2ec' : 'none' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
@@ -244,7 +287,8 @@ export default function NotificationsPage() {
                 </div>
               </div>
             </div>
-          ))}
+          )}
+          </ReferralGroupedList>}
         </div>
       )}
 
@@ -332,8 +376,9 @@ export default function NotificationsPage() {
         <div className="card">
           {sentReferrals.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无发出的转介记录</div>
-          ) : sentReferrals.map((r, i) => (
-            <div key={r._id} style={{ padding: '16px', borderBottom: i < sentReferrals.length - 1 ? '1px solid #f5f2ec' : 'none' }}>
+          ) : <ReferralGroupedList referrals={sentReferrals} priorityStatuses={['rejected']} priorityPredicate={item => item.fromStaffUnread} priorityLabel="需要我跟进">
+            {(r, i, group) => (
+            <div key={r._id} style={{ padding: '16px', borderBottom: i < group.length - 1 ? '1px solid #f5f2ec' : 'none' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
@@ -383,7 +428,8 @@ export default function NotificationsPage() {
                 {r.status === 'rejected' && <button className="btn btn-primary btn-sm" style={{ marginLeft: 12 }} onClick={() => nav(`/patients/${r.patientId?._id}`, { state: { editReferral: r } })}>编辑并重新发送</button>}
               </div>
             </div>
-          ))}
+          )}
+          </ReferralGroupedList>}
         </div>
       )}
 
