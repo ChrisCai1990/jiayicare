@@ -328,7 +328,7 @@ export default function NotificationsPage() {
                   {r.content && <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>{r.content}</div>}
                   {r.attachedHealthInfo && <AttachedHealthInfoView info={r.attachedHealthInfo} />}
                   <div style={{ fontSize: 12, color: '#aaa' }}>
-                    接收方：{r.toStaffId?.name} · {new Date(r.createdAt).toLocaleDateString('zh-CN')}
+                    接收方：{r.toStaffId?.name || r.medicalExpertSnapshot?.name || '外部医疗机构'} · {new Date(r.createdAt).toLocaleDateString('zh-CN')}
                   </div>
                   {(r.responseAnalysis || r.responseOpinion || r.response) ? (
                     <div style={{ marginTop: 8, padding: '10px 12px', background: '#f0faf5', borderRadius: 6, borderLeft: '3px solid #22A06B', display: 'flex', flexDirection: 'column', gap: 6 }}>

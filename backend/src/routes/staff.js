@@ -41,6 +41,9 @@ const Order = require('../models/Order');
 const GiftRecord = require('../models/GiftRecord');
 const Coupon = require('../models/Coupon');
 const Referral = require('../models/Referral');
+const MedicalInstitution = require('../models/MedicalInstitution');
+const MedicalDepartment = require('../models/MedicalDepartment');
+const MedicalExpert = require('../models/MedicalExpert');
 const { DynamicQuestionnaire, QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
 const Message        = require('../models/Message');
 const MemberLevel    = require('../models/MemberLevel');
@@ -2642,6 +2645,16 @@ router.get('/staff-list', staffAuth, async (req, res) => {
     department: s.department,
   }));
   res.json({ success: true, data: result });
+});
+
+// 转介选择器使用的启用医疗资源；只暴露专业资料，不返回内部联络备注。
+router.get('/medical-resources', staffAuth, async (req, res) => {
+  const [institutions, departments, experts] = await Promise.all([
+    MedicalInstitution.find({ status: 'active' }).select('name level nature region campuses').sort({ name: 1 }).lean(),
+    MedicalDepartment.find({ status: 'active' }).select('institutionId campus name specialties').sort({ name: 1 }).lean(),
+    MedicalExpert.find({ status: 'active' }).select('name title institutionId departmentId campus expertise diseaseTags introduction serviceModes outpatientSchedule linkedStaffId').sort({ name: 1 }).lean(),
+  ]);
+  res.json({ success: true, data: { institutions, departments, experts } });
 });
 
 // ════════════════════════════════════════════════════════
@@ -5518,22 +5531,31 @@ router.post('/patients/:id/message', staffAuth, async (req, res) => {
 // ── 跨角色转介 ──────────────────────────────────────────────
 // POST /api/staff/referrals — 发起转介
 router.post('/referrals', staffAuth, async (req, res) => {
-  const { patientId, toStaffId, reason, content, urgency, attachedHealthInfo, linkedDiseaseRecordId, linkedDiseaseName, referralPurpose, questionList, requiresConclusion } = req.body;
-  if (!patientId || !toStaffId || !reason) {
-    return res.status(400).json({ success: false, message: '会员、接收人、原因不能为空' });
+  const { patientId, toStaffId, reason, content, urgency, attachedHealthInfo, linkedDiseaseRecordId, linkedDiseaseName, referralPurpose, questionList, requiresConclusion, referralType = 'internal_collaboration', medicalExpertId } = req.body;
+  if (!patientId || !reason || (referralType === 'internal_collaboration' ? !toStaffId : !medicalExpertId)) {
+    return res.status(400).json({ success: false, message: referralType === 'external_medical' ? '会员、外部专家、原因不能为空' : '会员、接收人、原因不能为空' });
   }
   const patient = await User.findById(patientId).select('diseaseRecords medicalRecord');
   if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
   const diseaseRecords = normalizedDiseaseRecords(patient.toObject());
   const linkedDisease = diseaseRecords.find(item => linkedDiseaseRecordId && String(item._id) === String(linkedDiseaseRecordId)) || diseaseRecords.find(item => item.name === linkedDiseaseName);
+  let expert = null;
+  if (referralType === 'external_medical') {
+    expert = await MedicalExpert.findOne({ _id: medicalExpertId, status: 'active' }).populate('institutionId', 'name level region').populate('departmentId', 'name campus').lean();
+    if (!expert) return res.status(400).json({ success: false, message: '所选专家不存在或已停用' });
+  }
+  const resolvedToStaffId = referralType === 'external_medical' ? (expert?.linkedStaffId || null) : toStaffId;
   const referral = await Referral.create({
-    fromStaffId: req.staff._id, toStaffId, patientId,
+    fromStaffId: req.staff._id, toStaffId: resolvedToStaffId, patientId,
     reason, content: content || '', urgency: urgency || 'normal',
     attachedHealthInfo: attachedHealthInfo || null,
     linkedDiseaseRecordId: linkedDisease?._id || null,
     linkedDiseaseName: linkedDisease?.name || cleanMedicalText(linkedDiseaseName, 100),
     linkedDiseaseSnapshot: linkedDisease ? { name: linkedDisease.name, summary: linkedDisease.summary || {}, capturedAt: new Date() } : null,
     referralPurpose: cleanMedicalText(referralPurpose, 100), questionList: cleanMedicalText(questionList, 5000), requiresConclusion: requiresConclusion !== false,
+    referralType,
+    medicalExpertId: expert?._id || null,
+    medicalExpertSnapshot: expert ? { name: expert.name, title: expert.title, institutionName: expert.institutionId?.name || '', institutionLevel: expert.institutionId?.level || '', departmentName: expert.departmentId?.name || '', campus: expert.campus || expert.departmentId?.campus || '', expertise: expert.expertise || [], diseaseTags: expert.diseaseTags || [], capturedAt: new Date() } : null,
   });
   await referral.populate([
     { path: 'fromStaffId', select: 'name role' },

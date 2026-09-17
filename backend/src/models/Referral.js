@@ -3,7 +3,7 @@ const { Schema } = mongoose;
 
 const referralSchema = new Schema({
   fromStaffId: { type: Schema.Types.ObjectId, ref: 'Admin', required: true },
-  toStaffId:   { type: Schema.Types.ObjectId, ref: 'Admin', required: true },
+  toStaffId:   { type: Schema.Types.ObjectId, ref: 'Admin', default: null }, // 外部专家不登录系统时可为空
   patientId:   { type: Schema.Types.ObjectId, ref: 'User',  required: true },
   reason:      { type: String, required: true },  // 转介原因（简述）
   content:     { type: String, default: '' },     // 详细说明
@@ -21,6 +21,9 @@ const referralSchema = new Schema({
   referralPurpose: { type: String, default: '' },
   questionList: { type: String, default: '' },
   requiresConclusion: { type: Boolean, default: true },
+  referralType: { type: String, enum: ['internal_collaboration', 'external_medical'], default: 'internal_collaboration' },
+  medicalExpertId: { type: Schema.Types.ObjectId, ref: 'MedicalExpert', default: null },
+  medicalExpertSnapshot: { type: Schema.Types.Mixed, default: null }, // 冻结医院/科室/职称/擅长，保证历史可追溯
   consultation: {
     feedbackType: { type: String, enum: ['internal_collaboration', 'external_medical_record'], default: 'internal_collaboration' },
     sourceInstitution: { type: String, default: '' },

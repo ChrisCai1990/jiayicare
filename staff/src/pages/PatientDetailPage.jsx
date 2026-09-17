@@ -10186,8 +10186,9 @@ export default function PatientDetailPage() {
                       </div>
                       {/* 转介信息 */}
                       <div style={{ fontSize: 13, color: '#4A6558', marginBottom: 4 }}>
-                        发起：<strong>{r.fromStaffId?.name}</strong> → 接收：<strong>{r.toStaffId?.name}</strong>（{r.toStaffId?.title || REFERRAL_CAT_MAP[r.toStaffId?.role] || r.toStaffId?.role}）
+                        发起：<strong>{r.fromStaffId?.name}</strong> → {r.referralType === 'external_medical' ? <>外部专家：<strong>{r.medicalExpertSnapshot?.name}</strong>{r.medicalExpertSnapshot?.title ? `（${r.medicalExpertSnapshot.title}）` : ''}</> : <>接收：<strong>{r.toStaffId?.name}</strong>（{r.toStaffId?.title || REFERRAL_CAT_MAP[r.toStaffId?.role] || r.toStaffId?.role}）</>}
                       </div>
+                      {r.medicalExpertSnapshot && <div style={{fontSize:12,color:'#65776F',marginBottom:6,padding:'7px 10px',background:'#F5F8F7',borderRadius:6}}>{r.medicalExpertSnapshot.institutionName} · {r.medicalExpertSnapshot.departmentName}{r.medicalExpertSnapshot.campus?` · ${r.medicalExpertSnapshot.campus}`:''}{r.medicalExpertSnapshot.expertise?.length?`｜擅长：${r.medicalExpertSnapshot.expertise.join('、')}`:''}</div>}
                       {r.content && <div style={{ fontSize: 13, color: '#666', marginBottom: 6 }}>{r.content}</div>}
                       <div style={{ fontSize:12, color:'#65776F', marginBottom:5 }}>关联专病：<strong>{r.linkedDiseaseName || '待明确'}</strong>{r.referralPurpose ? ` · 目的：${r.referralPurpose}` : ''}</div>
                       {r.questionList && <div style={{ fontSize:12, color:'#65776F', marginBottom:6 }}>需解决问题：{r.questionList}</div>}
@@ -13577,7 +13578,8 @@ const ROLE_LABEL_MAP = {
 function ReferralModal({ patientId, patientName, patientUser, staffList, onClose, onSaved }) {
   const toast = useToast()
   const diseaseOptions = Array.isArray(patientUser?.diseaseRecords) ? patientUser.diseaseRecords : []
-  const [form, setForm] = useState({ toStaffId: '', reason: '', content: '', urgency: 'normal', linkedDiseaseRecordId: '', linkedDiseaseName: '', referralPurpose: '', questionList: '', requiresConclusion: true })
+  const [form, setForm] = useState({ referralType:'internal_collaboration', toStaffId: '', medicalExpertId:'', reason: '', content: '', urgency: 'normal', linkedDiseaseRecordId: '', linkedDiseaseName: '', referralPurpose: '', questionList: '', requiresConclusion: true })
+  const [medicalResources, setMedicalResources] = useState({ institutions:[], departments:[], experts:[] })
   const [selectedHealthSections, setSelectedHealthSections] = useState(['basicInfo'])
   const [extraData, setExtraData] = useState({ medications: [], supplements: [], healthRecords: [] })
   const [saving, setSaving] = useState(false)
@@ -13599,6 +13601,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
       })
     })
   }, [patientId])
+  useEffect(() => { staffAPI.getMedicalResources().then(r=>setMedicalResources(r.data || { institutions:[],departments:[],experts:[] })).catch(()=>{}) }, [])
 
   const REASON_PRESETS = ['需要就医协助', '营养干预评估', '心理咨询介入', '运动康复指导', '中医体质评估', '专科会诊', '健康方案制定', '体检报告解读']
 
@@ -13680,7 +13683,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
   }
 
   const handleSubmit = async () => {
-    if (!form.toStaffId || !form.reason) { setError('接收人和转介原因不能为空'); return }
+    if (!form.reason || (form.referralType === 'internal_collaboration' ? !form.toStaffId : !form.medicalExpertId)) { setError(form.referralType === 'external_medical' ? '外部专家和转介原因不能为空' : '接收人和转介原因不能为空'); return }
     setSaving(true); setError('')
     try {
       await staffAPI.createReferral({ patientId, ...form, attachedHealthInfo: buildAttachedHealthInfo() })
@@ -13698,8 +13701,9 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
         </div>
         {error && <div className="login-err" style={{ margin: '0 20px 8px' }}>⚠️ {error}</div>}
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="form-group" style={{marginBottom:0}}><label className="form-label">转介类型 *</label><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}><button type="button" className={`btn ${form.referralType==='internal_collaboration'?'btn-primary':'btn-secondary'}`} onClick={()=>setForm(f=>({...f,referralType:'internal_collaboration',medicalExpertId:''}))}>内部专业协作</button><button type="button" className={`btn ${form.referralType==='external_medical'?'btn-primary':'btn-secondary'}`} onClick={()=>setForm(f=>({...f,referralType:'external_medical',toStaffId:''}))}>外部医疗转介</button></div><div style={{fontSize:11,color:'#8AA89C',marginTop:4}}>{form.referralType==='internal_collaboration'?'选择系统员工，任务由其在线接收和反馈。':'选择医院资源库中的专家；未绑定账号的专家由健康管理人员线下联络并归档结果。'}</div></div>
           <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">关联专病</label><select className="form-input" value={form.linkedDiseaseRecordId} onChange={e => { const disease = diseaseOptions.find(item => String(item._id) === e.target.value); setForm(f => ({ ...f, linkedDiseaseRecordId: e.target.value, linkedDiseaseName: disease?.name || '' })) }}><option value="">待明确／新问题</option>{diseaseOptions.map(item => <option key={item._id} value={item._id}>{item.name}</option>)}</select><div style={{ fontSize: 11, color: '#8AA89C', marginTop: 4 }}>接收方只能看到本次转介附带的信息；不会因此获得客户完整档案权限。</div></div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
+          {form.referralType === 'internal_collaboration' ? <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">接收人 *</label>
             <select className="form-input" value={form.toStaffId} onChange={set('toStaffId')}>
               <option value="">-- 请选择接收医护人员 --</option>
@@ -13709,7 +13713,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
                 </option>
               ))}
             </select>
-          </div>
+          </div> : <div className="form-group" style={{marginBottom:0}}><label className="form-label">医院 / 科室 / 专家 *</label><select className="form-input" value={form.medicalExpertId} onChange={set('medicalExpertId')}><option value="">-- 请按专业能力选择专家 --</option>{(medicalResources.experts||[]).map(expert=>{const hospital=(medicalResources.institutions||[]).find(x=>String(x._id)===String(expert.institutionId));const dept=(medicalResources.departments||[]).find(x=>String(x._id)===String(expert.departmentId));return <option key={expert._id} value={expert._id}>{expert.name}{expert.title?`｜${expert.title}`:''}｜{hospital?.name||'医院待补充'} · {dept?.name||'科室待补充'}｜擅长：{(expert.expertise||expert.diseaseTags||[]).join('、')||'待补充'}</option>})}</select>{form.medicalExpertId&&(()=>{const expert=(medicalResources.experts||[]).find(x=>x._id===form.medicalExpertId);const hospital=(medicalResources.institutions||[]).find(x=>String(x._id)===String(expert?.institutionId));const dept=(medicalResources.departments||[]).find(x=>String(x._id)===String(expert?.departmentId));return <div style={{padding:'9px 11px',marginTop:6,background:'#F5F8F7',borderRadius:7,fontSize:12,lineHeight:1.7}}><b>{expert?.name} {expert?.title}</b><br/>{hospital?.name} · {dept?.name}{expert?.campus?` · ${expert.campus}`:''}<br/>擅长：{(expert?.expertise||[]).join('、')||'待补充'}<br/>{expert?.linkedStaffId?'已关联医护端账号，可在线接收':'外部专家未关联账号，由团队线下联系'}</div>})()}</div>}
           <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">转介目的</label><select className="form-input" value={form.referralPurpose} onChange={set('referralPurpose')}><option value="">请选择</option>{['协助安排就医','回收医疗机构诊疗信息','健康资料解读与整理','康复支持评估','营养支持评估','心理支持评估','健康管理方案协作','其他'].map(item => <option key={item}>{item}</option>)}</select></div>
           <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">需要接收方解决的问题</label><textarea className="form-input" rows={2} value={form.questionList} onChange={set('questionList')} placeholder="请列出希望会诊明确的问题" /></div>
           <div className="form-group" style={{ marginBottom: 0 }}>
@@ -13728,13 +13732,14 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
               <label className="form-label" style={{ marginBottom: 0 }}>详细说明</label>
               <button type="button" className="btn btn-secondary btn-sm" style={{ fontSize: 12 }}
-                disabled={aiDraftLoading || !form.toStaffId || !form.reason}
-                title={(!form.toStaffId || !form.reason) ? '请先选择接收人并填写转介原因' : ''}
+                disabled={aiDraftLoading || !(form.toStaffId || form.medicalExpertId) || !form.reason}
+                title={(!(form.toStaffId || form.medicalExpertId) || !form.reason) ? '请先选择接收方并填写转介原因' : ''}
                 onClick={async () => {
                   setAiDraftLoading(true)
                   try {
                     const toStaff = staffList.find(s => s._id === form.toStaffId)
-                    const r = await staffAPI.generateAIReferralDraft(patientId, toStaff?.roleLabel, toStaff?.name, form.reason, buildAttachedHealthInfoForAI())
+                    const expert = (medicalResources.experts||[]).find(s => s._id === form.medicalExpertId)
+                    const r = await staffAPI.generateAIReferralDraft(patientId, toStaff?.roleLabel || '外部医疗专家', toStaff?.name || expert?.name, form.reason, buildAttachedHealthInfoForAI())
                     if (r.data.content) setForm(f => ({ ...f, content: r.data.content }))
                     toast('AI已根据接收人、转介原因和附带信息生成说明，可直接修改')
                   } catch (err) { toast(err.message || 'AI生成失败') }

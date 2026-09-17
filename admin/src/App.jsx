@@ -38,6 +38,7 @@ import HealthAssistantConfigPage from './pages/settings/HealthAssistantConfigPag
 import SupplyWorkflowConfigPage from './pages/settings/SupplyWorkflowConfigPage'
 import ServiceWorkflowAlignmentPage from './pages/settings/ServiceWorkflowAlignmentPage'
 import AiUsagePage from './pages/settings/AiUsagePage'
+import MedicalResourcesPage from './pages/settings/MedicalResourcesPage'
 
 // 项目设置
 import CategoryPage       from './pages/projects/CategoryPage'
@@ -136,6 +137,7 @@ export default function App() {
               <Route path="settings/departments" element={<DepartmentPage />} />
               <Route path="settings/roles"       element={<RolePage />} />
               <Route path="settings/employees"   element={<EmployeePage />} />
+              <Route path="settings/medical-resources" element={<MedicalResourcesPage />} />
               <Route path="settings/members"  element={<MemberSettingsPage />} />
               <Route path="settings/scoring"  element={<ScoringConfigPage />} />
               <Route path="settings/daily-care" element={<DailyCareConfigPage />} />

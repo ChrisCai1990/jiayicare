@@ -258,6 +258,17 @@ export const adminAPI = {
   resetEmpPassword:  (id, password) => req(`/employees/${id}/reset-password`, { method: 'PATCH', body: JSON.stringify({ password }) }),
   deleteEmployee:    (id)       => req(`/employees/${id}`, { method: 'DELETE' }),
 
+  medicalResources:  ()         => req('/medical-resources'),
+  createMedicalInstitution: (data) => req('/medical-institutions', { method: 'POST', body: JSON.stringify(data) }),
+  updateMedicalInstitution: (id, data) => req(`/medical-institutions/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  toggleMedicalInstitution: (id) => req(`/medical-institutions/${id}/toggle`, { method: 'PATCH' }),
+  createMedicalDepartment: (data) => req('/medical-departments', { method: 'POST', body: JSON.stringify(data) }),
+  updateMedicalDepartment: (id, data) => req(`/medical-departments/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  toggleMedicalDepartment: (id) => req(`/medical-departments/${id}/toggle`, { method: 'PATCH' }),
+  createMedicalExpert: (data) => req('/medical-experts', { method: 'POST', body: JSON.stringify(data) }),
+  updateMedicalExpert: (id, data) => req(`/medical-experts/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  toggleMedicalExpert: (id) => req(`/medical-experts/${id}/toggle`, { method: 'PATCH' }),
+
   // 会员标签
   memberTags:        ()         => req('/member-tags'),
   createMemberTag:   (data)     => req('/member-tags', { method: 'POST', body: JSON.stringify(data) }),

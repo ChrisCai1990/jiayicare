@@ -23,6 +23,9 @@ const OtherCharge    = require('../models/OtherCharge');
 const ProjectTemplate = require('../models/ProjectTemplate');
 const FollowUpForm   = require('../models/FollowUpForm');
 const FollowUpPlan   = require('../models/FollowUpPlan');
+const MedicalInstitution = require('../models/MedicalInstitution');
+const MedicalDepartment = require('../models/MedicalDepartment');
+const MedicalExpert = require('../models/MedicalExpert');
 
 // ─────────────────────────────────────────────────────────────
 // 工具：拼音首字母助记码（简单实现，正式可接 pinyin 库）
@@ -279,6 +282,78 @@ router.delete('/employees/:id', adminAuth, async (req, res) => {
   }
   await emp.deleteOne();
   res.json({ success: true, message: '员工账号已删除' });
+});
+
+// ── 医疗资源库：医院 → 医院科室 → 专家；与公司内部部门、员工账号分离 ──
+const cleanList = value => [...new Set((Array.isArray(value) ? value : String(value || '').split(/[、,，;；\n]+/)).map(v => String(v).trim()).filter(Boolean))];
+
+router.get('/medical-resources', adminAuth, async (req, res) => {
+  const [institutions, departments, experts] = await Promise.all([
+    MedicalInstitution.find().sort({ name: 1 }).lean(),
+    MedicalDepartment.find().populate('institutionId', 'name').sort({ name: 1 }).lean(),
+    MedicalExpert.find().populate('institutionId', 'name level').populate('departmentId', 'name campus').populate('linkedStaffId', 'name role title').sort({ name: 1 }).lean(),
+  ]);
+  res.json({ success: true, data: { institutions, departments, experts } });
+});
+
+router.post('/medical-institutions', adminAuth, async (req, res) => {
+  if (!req.body.name?.trim()) return res.status(400).json({ success: false, message: '请填写医院名称' });
+  const item = await MedicalInstitution.create({ ...req.body, name: req.body.name.trim(), aliases: cleanList(req.body.aliases), campuses: cleanList(req.body.campuses) });
+  res.status(201).json({ success: true, data: item });
+});
+router.put('/medical-institutions/:id', adminAuth, async (req, res) => {
+  const item = await MedicalInstitution.findByIdAndUpdate(req.params.id, { ...req.body, aliases: cleanList(req.body.aliases), campuses: cleanList(req.body.campuses) }, { new: true, runValidators: true });
+  if (!item) return res.status(404).json({ success: false, message: '医院不存在' });
+  res.json({ success: true, data: item });
+});
+router.patch('/medical-institutions/:id/toggle', adminAuth, async (req, res) => {
+  const item = await MedicalInstitution.findById(req.params.id); if (!item) return res.status(404).json({ success: false, message: '医院不存在' });
+  item.status = item.status === 'active' ? 'inactive' : 'active'; await item.save(); res.json({ success: true, data: item });
+});
+
+router.post('/medical-departments', adminAuth, async (req, res) => {
+  if (!req.body.institutionId || !req.body.name?.trim()) return res.status(400).json({ success: false, message: '请选择医院并填写科室名称' });
+  if (!await MedicalInstitution.exists({ _id: req.body.institutionId })) return res.status(400).json({ success: false, message: '所选医院不存在' });
+  const item = await MedicalDepartment.create({ ...req.body, name: req.body.name.trim(), specialties: cleanList(req.body.specialties) });
+  res.status(201).json({ success: true, data: item });
+});
+router.put('/medical-departments/:id', adminAuth, async (req, res) => {
+  if (!await MedicalInstitution.exists({ _id: req.body.institutionId })) return res.status(400).json({ success: false, message: '所选医院不存在' });
+  const item = await MedicalDepartment.findByIdAndUpdate(req.params.id, { ...req.body, specialties: cleanList(req.body.specialties) }, { new: true, runValidators: true });
+  if (!item) return res.status(404).json({ success: false, message: '医院科室不存在' }); res.json({ success: true, data: item });
+});
+router.patch('/medical-departments/:id/toggle', adminAuth, async (req, res) => {
+  const item = await MedicalDepartment.findById(req.params.id); if (!item) return res.status(404).json({ success: false, message: '医院科室不存在' });
+  item.status = item.status === 'active' ? 'inactive' : 'active'; await item.save(); res.json({ success: true, data: item });
+});
+
+router.post('/medical-experts', adminAuth, async (req, res) => {
+  if (!req.body.name?.trim() || !req.body.institutionId || !req.body.departmentId) return res.status(400).json({ success: false, message: '姓名、医院和科室不能为空' });
+  const department = await MedicalDepartment.findOne({ _id: req.body.departmentId, institutionId: req.body.institutionId });
+  if (!department) return res.status(400).json({ success: false, message: '所选科室不属于该医院' });
+  const item = await MedicalExpert.create({ ...req.body, name: req.body.name.trim(), expertise: cleanList(req.body.expertise), diseaseTags: cleanList(req.body.diseaseTags), serviceModes: cleanList(req.body.serviceModes), linkedStaffId: req.body.linkedStaffId || null });
+  if (item.linkedStaffId) {
+    await MedicalExpert.updateMany({ _id: { $ne: item._id }, linkedStaffId: item.linkedStaffId }, { $set: { linkedStaffId: null } });
+    await Admin.findByIdAndUpdate(item.linkedStaffId, { expertProfileId: item._id });
+  }
+  res.status(201).json({ success: true, data: item });
+});
+router.put('/medical-experts/:id', adminAuth, async (req, res) => {
+  const previous = await MedicalExpert.findById(req.params.id); if (!previous) return res.status(404).json({ success: false, message: '专家不存在' });
+  const department = await MedicalDepartment.findOne({ _id: req.body.departmentId, institutionId: req.body.institutionId });
+  if (!department) return res.status(400).json({ success: false, message: '所选科室不属于该医院' });
+  const linkedStaffId = req.body.linkedStaffId || null;
+  const item = await MedicalExpert.findByIdAndUpdate(req.params.id, { ...req.body, expertise: cleanList(req.body.expertise), diseaseTags: cleanList(req.body.diseaseTags), serviceModes: cleanList(req.body.serviceModes), linkedStaffId }, { new: true, runValidators: true });
+  if (previous.linkedStaffId && String(previous.linkedStaffId) !== String(linkedStaffId || '')) await Admin.findByIdAndUpdate(previous.linkedStaffId, { $set: { expertProfileId: null } });
+  if (linkedStaffId) {
+    await MedicalExpert.updateMany({ _id: { $ne: item._id }, linkedStaffId }, { $set: { linkedStaffId: null } });
+    await Admin.findByIdAndUpdate(linkedStaffId, { expertProfileId: item._id });
+  }
+  res.json({ success: true, data: item });
+});
+router.patch('/medical-experts/:id/toggle', adminAuth, async (req, res) => {
+  const item = await MedicalExpert.findById(req.params.id); if (!item) return res.status(404).json({ success: false, message: '专家不存在' });
+  item.status = item.status === 'active' ? 'inactive' : 'active'; await item.save(); res.json({ success: true, data: item });
 });
 
 // ── 会员标签 ────────────────────────────────────────────────────

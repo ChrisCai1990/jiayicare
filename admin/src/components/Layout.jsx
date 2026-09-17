@@ -36,6 +36,7 @@ const NAV_SECTIONS = [
       { label: '部门管理', icon: 'department', path: '/settings/departments' },
       { label: '角色管理', icon: 'role', path: '/settings/roles' },
       { label: '员工管理', icon: 'staff', path: '/settings/employees' },
+      { label: '医疗资源库', icon: 'medical', path: '/settings/medical-resources' },
       { label: '会员设置', icon: 'member', path: '/settings/members' },
       { label: '健康评分配置', icon: 'score', path: '/settings/scoring' },
       { label: 'AI 每日关怀', icon: 'care', path: '/settings/daily-care' },

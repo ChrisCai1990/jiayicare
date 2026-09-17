@@ -266,6 +266,7 @@ export const staffAPI = {
 
   // P4 — Referrals
   createReferral:        (data)      => req('/staff/referrals', { method: 'POST', body: JSON.stringify(data) }),
+  getMedicalResources:   ()          => req('/staff/medical-resources'),
   getReferrals:          (p = {})    => req('/staff/referrals?' + qs(p)),
   updateReferral:        (id, data)  => req(`/staff/referrals/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   reviewReferralCourseDraft: (id, action) => req(`/staff/referrals/${id}/course-draft/review`, { method: 'POST', body: JSON.stringify({ action }) }),
