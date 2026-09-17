@@ -282,7 +282,7 @@ export default function NotificationsPage() {
                     <button className="btn btn-danger btn-sm" onClick={() => setRespondModal({ ...r, action: 'reject' })}>拒绝</button>
                   </>}
                   {r.status === 'accepted' && (
-                    <button className="btn btn-secondary btn-sm" onClick={() => setRespondModal({ ...r, action: 'complete' })}>完成转介</button>
+                    <button className="btn btn-primary btn-sm" onClick={() => setRespondModal({ ...r, action: 'complete' })}>提交反馈并完成</button>
                   )}
                 </div>
               </div>
@@ -540,7 +540,7 @@ function RespondModal({ referral, onClose, onRespond }) {
   const [responseOpinion, setResponseOpinion] = useState('')
   const [rejectReason, setRejectReason] = useState('')
   const [summary, setSummary] = useState('')   // 接收人填写的处理概要，供AI扩写
-  const [consultation, setConsultation] = useState({ feedbackType:'internal_collaboration', sourceInstitution:'', sourceDepartment:'', sourceDoctor:'', sourceDate:'', verificationStatus:'pending_verification', diagnosis:'', diagnosisChanged:false, examinationAdvice:'', treatmentAdvice:'', medicationAdvice:'', riskWarning:'', nextPlan:'', noMedicalConclusion:false })
+  const [consultation, setConsultation] = useState({ feedbackType:referral.referralType === 'external_medical' ? 'external_medical_record' : 'internal_collaboration', sourceInstitution:'', sourceDepartment:'', sourceDoctor:'', sourceDate:'', verificationStatus:'pending_verification', diagnosis:'', diagnosisChanged:false, examinationAdvice:'', treatmentAdvice:'', medicationAdvice:'', riskWarning:'', nextPlan:'', noMedicalConclusion:false })
   const [submitting, setSubmitting] = useState(false)
   const [aiDrafting, setAiDrafting] = useState(false)
   const isAccept = referral.action === 'accept'
@@ -560,6 +560,14 @@ function RespondModal({ referral, onClose, onRespond }) {
   }
 
   const handleSubmit = async () => {
+    if (isComplete && referral.requiresConclusion !== false && !responseOpinion.trim()) {
+      toast('请填写转介意见／建议，提交后本次转介将自动完成')
+      return
+    }
+    if (isComplete && consultation.feedbackType === 'external_medical_record' && !consultation.noMedicalConclusion && !consultation.sourceInstitution.trim()) {
+      toast('归档外部医疗信息时，请填写来源医疗机构')
+      return
+    }
     setSubmitting(true)
     try {
       await onRespond(
@@ -567,7 +575,7 @@ function RespondModal({ referral, onClose, onRespond }) {
         nextStatus,
         isReject ? rejectReason : responseAnalysis,
         isReject ? '' : responseOpinion,
-        consultation,
+        isComplete ? consultation : {},
       )
     }
     finally { setSubmitting(false) }
@@ -578,7 +586,7 @@ function RespondModal({ referral, onClose, onRespond }) {
       <div className="modal" style={{ maxWidth: 480 }}>
         <div className="modal-header">
           <h3 className="modal-title">
-            {isAccept ? '✓ 接受转介' : isComplete ? '✅ 完成转介' : '✗ 拒绝转介'}
+            {isAccept ? '✓ 接受转介' : isComplete ? '✅ 提交反馈并完成' : '✗ 拒绝转介'}
           </h3>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
@@ -596,6 +604,10 @@ function RespondModal({ referral, onClose, onRespond }) {
               <textarea className="form-input" rows={3} value={rejectReason} onChange={e => setRejectReason(e.target.value)}
                 placeholder="请说明拒绝原因..." />
             </div>
+          ) : isAccept ? (
+            <div style={{ padding:'12px 14px', background:'#F0F8F4', color:'#315C4D', borderRadius:8, fontSize:13, lineHeight:1.7 }}>
+              接受仅表示确认接单，本次转介将进入“处理中”。完成协作后，请通过“提交反馈并完成”一次性填写正式意见，提交后系统自动结案。
+            </div>
           ) : (
             <>
               <div className="form-group" style={{ marginBottom: 0, background: '#F7F9FC', borderRadius: 8, padding: '10px 12px' }}>
@@ -612,19 +624,19 @@ function RespondModal({ referral, onClose, onRespond }) {
                 </div>
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">信息整理{isAccept ? '（可选）' : ''}</label>
+                <label className="form-label">信息整理</label>
                 <textarea className="form-input" rows={3} value={responseAnalysis} onChange={e => setResponseAnalysis(e.target.value)}
                   placeholder="归纳已知事实、信息来源和待核实事项，不作诊疗判断..." />
               </div>
-              {isComplete && <>
+              <>
                 <div style={{padding:'9px 12px',background:'#FFF8E8',borderRadius:8,fontSize:12,color:'#74520B'}}>健康管理团队不形成诊断、治疗或用药决策。只有确有医疗机构来源时，才在下方归档医疗信息。</div>
                 <div className="form-group" style={{marginBottom:0}}><label className="form-label">反馈类型 *</label><select className="form-input" value={consultation.feedbackType} onChange={e=>setConsultation(c=>({...c,feedbackType:e.target.value}))}><option value="internal_collaboration">内部专业协作反馈</option><option value="external_medical_record">外部医疗机构信息归档</option></select></div>
                 {consultation.feedbackType === 'external_medical_record' && <><div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8}}><input className="form-input" placeholder="来源医疗机构 *" value={consultation.sourceInstitution} onChange={e=>setConsultation(c=>({...c,sourceInstitution:e.target.value}))}/><input className="form-input" placeholder="科室" value={consultation.sourceDepartment} onChange={e=>setConsultation(c=>({...c,sourceDepartment:e.target.value}))}/><input className="form-input" placeholder="医生" value={consultation.sourceDoctor} onChange={e=>setConsultation(c=>({...c,sourceDoctor:e.target.value}))}/></div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}><div><label className="form-label">发生/就诊日期</label><input type="date" className="form-input" value={consultation.sourceDate} onChange={e=>setConsultation(c=>({...c,sourceDate:e.target.value}))}/></div><div><label className="form-label">核验状态</label><select className="form-input" value={consultation.verificationStatus} onChange={e=>setConsultation(c=>({...c,verificationStatus:e.target.value}))}><option value="self_reported">客户转述</option><option value="pending_verification">待核验</option><option value="source_verified">已核对来源材料</option></select></div></div>{[['diagnosis','医疗机构诊断归档'],['examinationAdvice','医疗机构检查意见归档'],['treatmentAdvice','医疗机构治疗意见归档'],['medicationAdvice','医疗机构用药医嘱归档']].map(([key,label]) => <div className="form-group" style={{ marginBottom:0 }} key={key}><label className="form-label">{label}</label><textarea className="form-input" rows={2} value={consultation[key]} onChange={e => setConsultation(c => ({...c,[key]:e.target.value}))} /></div>)}<label style={{ display:'flex', alignItems:'center', gap:7, fontSize:13 }}><input type="checkbox" checked={consultation.diagnosisChanged} onChange={e => setConsultation(c => ({...c,diagnosisChanged:e.target.checked}))} />医疗机构诊断有更新，建议人工修订健康信息摘要</label></>}
                 {[['riskWarning','需关注事项'],['nextPlan','后续协作事项']].map(([key,label]) => <div className="form-group" style={{ marginBottom:0 }} key={key}><label className="form-label">{label}</label><textarea className="form-input" rows={2} value={consultation[key]} onChange={e => setConsultation(c => ({...c,[key]:e.target.value}))} /></div>)}
                 <label style={{ display:'flex', alignItems:'center', gap:7, fontSize:13 }}><input type="checkbox" checked={consultation.noMedicalConclusion} onChange={e => setConsultation(c => ({...c,noMedicalConclusion:e.target.checked}))} />本次仅完成咨询／协调，无外部医疗信息归档</label>
-              </>}
+              </>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">协作反馈{isAccept ? '（可选）' : ''}</label>
+                <label className="form-label">转介意见／建议{referral.requiresConclusion !== false ? ' *' : ''}</label>
                 <textarea className="form-input" rows={3} value={responseOpinion} onChange={e => setResponseOpinion(e.target.value)}
                   placeholder="已完成的协调、信息反馈及下一步服务安排..." />
               </div>
@@ -635,7 +647,7 @@ function RespondModal({ referral, onClose, onRespond }) {
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
           <button className={`btn ${isReject ? 'btn-danger' : 'btn-primary'}`}
             onClick={handleSubmit} disabled={submitting || (isReject && !rejectReason)}>
-            {submitting ? '提交中...' : isAccept ? '确认接受' : isComplete ? '确认完成' : '确认拒绝'}
+            {submitting ? '提交中...' : isAccept ? '确认接受并开始处理' : isComplete ? '提交反馈并完成' : '确认拒绝'}
           </button>
         </div>
       </div>

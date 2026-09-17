@@ -5863,11 +5863,26 @@ router.patch('/referrals/:id', staffAuth, async (req, res) => {
   const { status, response, responseAnalysis, responseOpinion, consultation } = req.body;
   const referral = await Referral.findOne({ _id: req.params.id, toStaffId: req.staff._id });
   if (!referral) return res.status(404).json({ success: false, message: '转介记录不存在或无权操作' });
-  if (status) referral.status = status;
-  if (response !== undefined && response.trim()) referral.response = response.trim();
-  if (responseAnalysis !== undefined) referral.responseAnalysis = responseAnalysis.trim();
-  if (responseOpinion !== undefined) referral.responseOpinion = responseOpinion.trim();
-  if (consultation && typeof consultation === 'object') referral.consultation = consultation;
+  const allowedTransitions = {
+    pending: ['accepted', 'rejected'],
+    accepted: ['completed', 'rejected'],
+    completed: [],
+    rejected: [],
+  };
+  if (!status || !allowedTransitions[referral.status]?.includes(status)) {
+    return res.status(409).json({ success: false, message: `当前状态“${referral.status}”不能变更为“${status || '未指定'}”` });
+  }
+  // 接受只代表接单，不在此阶段写入正式意见；正式反馈仅在完成时一次性提交。
+  if (status === 'completed') {
+    if (response !== undefined && response.trim()) referral.response = response.trim();
+    if (responseAnalysis !== undefined) referral.responseAnalysis = responseAnalysis.trim();
+    if (responseOpinion !== undefined) referral.responseOpinion = responseOpinion.trim();
+    if (consultation && typeof consultation === 'object') referral.consultation = consultation;
+  } else if (status === 'rejected') {
+    referral.responseAnalysis = cleanMedicalText(responseAnalysis || response, 5000);
+    referral.responseOpinion = '';
+  }
+  referral.status = status;
   if (status === 'completed') {
     const c = consultation || referral.consultation?.toObject?.() || referral.consultation || {};
     const hasConclusion = [responseAnalysis, responseOpinion, c.diagnosis, c.examinationAdvice, c.treatmentAdvice, c.medicationAdvice, c.riskWarning, c.nextPlan].some(value => String(value || '').trim());

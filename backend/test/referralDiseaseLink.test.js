@@ -58,6 +58,18 @@ test('AI只整理授权信息且不生成诊疗决策', () => {
   assert.match(route, /协作反馈/);
 });
 
+test('接受只接单，正式反馈提交时自动完成转介', () => {
+  const route = read('backend/src/routes/staff.js');
+  const notifications = read('staff/src/pages/NotificationsPage.jsx');
+  assert.match(route, /pending: \['accepted', 'rejected'\]/);
+  assert.match(route, /accepted: \['completed', 'rejected'\]/);
+  assert.match(route, /接受只代表接单，不在此阶段写入正式意见/);
+  assert.match(notifications, /确认接受并开始处理/);
+  assert.match(notifications, /提交反馈并完成/);
+  assert.match(notifications, /提交后本次转介将自动完成/);
+  assert.match(notifications, /consultation\.feedbackType === 'external_medical_record'/);
+});
+
 test('被退回的转介可由原发起方修订后重新发送并保留历史', () => {
   const model = read('backend/src/models/Referral.js');
   const route = read('backend/src/routes/staff.js');
