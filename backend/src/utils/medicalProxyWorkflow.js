@@ -730,6 +730,36 @@ async function advanceMedicalProxyWorkflow(task) {
   const supplementProxy = /代配营养素/.test(order.serviceName || '');
   const medicationProxy = /代配药|代取药/.test(order.serviceName || '');
   const supplyProxy = medicationProxy || supplementProxy;
+  if (stage === 'execute' && supplyProxy && task.formData?.executionOutcome === 'failed') {
+    const failureReason = nonempty(task.formData?.executionResult);
+    const retryDate = new Date();
+    const bookingTask = await FollowUp.findOneAndUpdate(
+      { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}booking` },
+      { $set: {
+        status: 'planned', isBlocked: false, assignedTo: patient?.assignedHealthManager,
+        date: retryDate, remindAt: retryDate, completedAt: null, completedBy: null, cancelReason: '',
+        content: '', plannedContent: `上次${supplementProxy ? '营养素采购' : '代配药'}未成功，请根据失败原因重新联系客户并确认采购或配药安排。失败原因：${failureReason}`,
+        'formData.retryAfterFailure': true, 'formData.lastExecutionFailure': failureReason,
+      } }, { new: true },
+    );
+    if (!bookingTask || !patient?.assignedHealthManager) throw Object.assign(new Error('客户尚未分配健管专员，无法继续处理未成功的代配服务'), { status: 409 });
+    await FollowUp.updateMany(
+      { sourceType: 'order', sourceOrderId: order._id, workflowKey: { $in: [`${PREFIX}planner`] }, status: { $in: ['planned', 'in_progress', 'completed'] } },
+      { $set: { status: 'cancelled', cancelReason: '上次代配未成功，等待健管专员重新确认安排' } },
+    );
+    await FollowUp.updateOne(
+      { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } },
+      { $set: {
+        'formData.currentStage': 'booking', 'formData.executionFailed': true,
+        'formData.lastExecutionFailure': failureReason,
+        content: `代配未成功，已退回健管专员重新处理；健康规划师继续督办。失败原因：${failureReason}`,
+      } },
+    );
+    await Order.updateOne({ _id: order._id }, { $set: {
+      currentStage: 'booking', currentAssignee: patient.assignedHealthManager, supervisionStatus: 'in_progress',
+    } });
+    return;
+  }
   if (stage === 'execute' && task.formData?.medicalEscort === true) {
     await upsertMedicalProxyServiceRecord(task, order, true);
     const reportIds = await archiveMedicalProxyRecords(task, order, patient?.tenantId);
@@ -811,12 +841,14 @@ async function advanceMedicalProxyWorkflow(task) {
   );
   // 退回上游时，下游任务会被阻塞或取消以免提前出现在执行人工作台；
   // 上游重新完成后复用并重新激活原任务，避免重复建单。
-  if (nextTask.isBlocked || nextTask.status === 'cancelled') {
+  const retryCompletedExecution = next === 'execute' && nextTask.status === 'completed' && nextTask.formData?.executionOutcome === 'failed';
+  if (nextTask.isBlocked || nextTask.status === 'cancelled' || retryCompletedExecution) {
     const nextFormData = next === 'audit' ? { ...nextTask.formData, collectionSnapshot: task.formData }
       : next === 'advisor' ? { ...nextTask.formData, auditSnapshot: task.formData, selectedReportIds: task.formData?.collectionSnapshot?.annualMember ? [] : task.formData?.collectionSnapshot?.reportIds || [] }
         : next === 'planner' ? { ...nextTask.formData, planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...task.formData, additionalNote: bookingNote }, medicationProxy, supplementProxy }
           : next === 'booking' ? { ...nextTask.formData, planSnapshot: order.medicalProxyPlan, medicalAssistantId: task.formData?.medicalAssistantId, preferredDateStart: nextTask.formData?.preferredDateStart || dateInput(order.desiredServiceDate || order.scheduledAt), preferredDateEnd: nextTask.formData?.preferredDateEnd || dateInput(order.desiredServiceDateEnd || order.desiredServiceDate || order.scheduledAt) }
-            : { ...nextTask.formData, planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...bookedAppointment, ...task.formData, additionalNote: bookingNote }, medicationProxy, supplementProxy };
+            : { ...nextTask.formData, planSnapshot: order.medicalProxyPlan, bookingSnapshot: { ...bookedAppointment, ...task.formData, additionalNote: bookingNote }, medicationProxy, supplementProxy,
+              executionOutcome: '', executionResult: '', medicationPhotoAttachments: [], medicationInstructionAttachments: [], medicalRecordAttachments: [], chargeReceiptAttachments: [], supplementPhotoAttachments: [] };
     await FollowUp.updateOne({ _id: nextTask._id }, { $set: { status: 'planned', isBlocked: false, assignedTo: assignee, formData: nextFormData, date: nextDate, remindAt: next === 'execute' ? nextDate : new Date(), cancelReason: '', completedAt: null, completedBy: null } });
   }
   await FollowUp.updateOne(

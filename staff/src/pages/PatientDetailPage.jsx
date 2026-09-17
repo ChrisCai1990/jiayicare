@@ -9275,7 +9275,7 @@ export default function PatientDetailPage() {
                     if (row.type === 'medication_proxy_service') {
                       const current = serviceCurrentTask(row)
                       const serviceName = current.sourceOrderId?.serviceName || (/营养/.test(current.theme || '') ? '代配营养素服务' : '代配药服务')
-                      const stageText = current.workflowKey === 'medical_proxy:supervise' ? ({ booking: '健管专员预约配药门诊', planner: '健康规划师安排配药执行人员', execute: '就医专员配药并上传交付资料', completed: '服务已完成' }[current.formData?.currentStage] || current.content || '处理中') : String(current.content || current.plannedContent || current.theme || '').replace(/^代配药[：:]\s*/, '')
+                      const stageText = current.workflowKey === 'medical_proxy:supervise' ? (current.formData?.executionFailed && current.formData?.currentStage === 'booking' ? `代配未成功，健管专员重新处理：${current.formData?.lastExecutionFailure || '待确认后续安排'}` : ({ booking: '健管专员预约配药门诊', planner: '健康规划师安排配药执行人员', execute: '就医专员配药并上传交付资料', completed: '服务已完成' }[current.formData?.currentStage] || current.content || '处理中')) : String(current.content || current.plannedContent || current.theme || '').replace(/^代配药[：:]\s*/, '')
                       return <tr key={row.key} style={{ cursor: 'pointer', background: '#F2FAF6' }} onClick={() => setFollowUpDetail(current)}>
                         <td style={{ fontSize: 13, color: '#666' }}>{new Date(current.date).toLocaleDateString('zh-CN')}</td>
                         <td style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>{current.createdAt ? new Date(current.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>

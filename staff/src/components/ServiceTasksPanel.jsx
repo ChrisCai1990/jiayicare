@@ -24,7 +24,10 @@ const medicationProxyProgress = task => {
     execute: { step: 3, label: '就医专员配药并上传交付资料', next: '资料齐全后完成服务' },
     completed: { step: 4, label: '代配药服务已完成', next: '服务已闭环' },
   }
-  return { ...(stages[stage] || stages.booking), total: 4, steps: ['预约', '人员分配', '配药执行', '完成'] }
+  const current = task.formData?.executionFailed && stage === 'booking'
+    ? { step: 1, label: '代配未成功，健管专员重新处理', next: task.formData?.lastExecutionFailure || '确认新的配药安排后再次流转' }
+    : (stages[stage] || stages.booking)
+  return { ...current, total: 4, steps: ['预约', '人员分配', '配药执行', '完成'] }
 }
 
 const medicalEscortProgress = task => {
