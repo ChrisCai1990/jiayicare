@@ -9334,6 +9334,15 @@ export default function PatientDetailPage() {
             const isOrderServiceWorkflowTask = task => (task.sourceType === 'order'
               && String(task.workflowKey || '').startsWith('medical_proxy:'))
               || (task.sourceType === 'supply_reminder' && (task.formData?.medicalProxyOrderId || supplyReminderOrderMap.has(String(task._id))))
+            const isSupersededDuplicateServiceTask = task => task.sourceType === 'order'
+              && task.status === 'cancelled'
+              && task.sourceOrderId?.status === 'cancelled'
+              && /重复.*服务|后台取消/.test(task.cancelReason || '')
+              && followUps.some(candidate => candidate.sourceType === 'order'
+                && candidate.sourceOrderId?.status === 'completed'
+                && candidate.sourceOrderId?.serviceName === task.sourceOrderId?.serviceName
+                && Math.abs(new Date(candidate.sourceOrderId.createdAt) - new Date(task.sourceOrderId.createdAt)) <= 7 * 24 * 60 * 60 * 1000)
+            const visibleFollowUps = followUps.filter(task => !isSupersededDuplicateServiceTask(task))
             const displayTaskCount = tasks => {
               const seenServices = new Set()
               return tasks.reduce((count, task) => {
@@ -9348,11 +9357,11 @@ export default function PatientDetailPage() {
               ['all', '全部任务'], ['nutrition', '营养干预'], ['monitoring', '健康监测'],
               ['checkup', '体检与复查'], ['medical', '就医协助'], ['supply', '配药与营养补充'], ['disease', '专病管理'], ['communication', '客户沟通'],
             ]
-            const statusFiltered = followUpFilter === 'planned' ? followUps.filter(f => PLANNED_STATUSES.includes(f.status))
-              : followUpFilter === 'in_progress' ? followUps.filter(f => IN_PROGRESS_STATUSES.includes(f.status))
-              : followUpFilter === 'done' ? followUps.filter(f => DONE_STATUSES.includes(f.status))
-              : followUpFilter === 'cancelled' ? followUps.filter(f => CANCELLED_STATUSES.includes(f.status))
-              : followUps
+            const statusFiltered = followUpFilter === 'planned' ? visibleFollowUps.filter(f => PLANNED_STATUSES.includes(f.status))
+              : followUpFilter === 'in_progress' ? visibleFollowUps.filter(f => IN_PROGRESS_STATUSES.includes(f.status))
+              : followUpFilter === 'done' ? visibleFollowUps.filter(f => DONE_STATUSES.includes(f.status))
+              : followUpFilter === 'cancelled' ? visibleFollowUps.filter(f => CANCELLED_STATUSES.includes(f.status))
+              : visibleFollowUps
             const filtered = statusFiltered.filter(task => executionCategory === 'all' || executionCategoryOf(task) === executionCategory)
             const plannedCount = followUps.filter(f => PLANNED_STATUSES.includes(f.status)).length
             const inProgressCount = followUps.filter(f => IN_PROGRESS_STATUSES.includes(f.status)).length
@@ -9411,17 +9420,17 @@ export default function PatientDetailPage() {
             <>
             <div style={{ display: 'flex', gap: 7, padding: '12px 16px 2px', flexWrap: 'wrap', borderBottom: '1px solid #EDF1EF' }}>
               {EXECUTION_CATEGORIES.map(([key, label]) => {
-                const count = key === 'all' ? displayTaskCount(followUps) : displayTaskCount(followUps.filter(task => executionCategoryOf(task) === key))
+                const count = key === 'all' ? displayTaskCount(visibleFollowUps) : displayTaskCount(visibleFollowUps.filter(task => executionCategoryOf(task) === key))
                 return <button key={key} type="button" className={executionCategory === key ? 'btn btn-sm' : 'btn btn-secondary btn-sm'} style={executionCategory === key ? { background: '#1E6B50', color: '#fff' } : {}} onClick={() => setExecutionCategory(key)}>{label} {count}</button>
               })}
             </div>
             <div style={{ display: 'flex', gap: 6, padding: '10px 16px 0' }}>
               {[
-                { k: 'all', label: `全部 ${displayTaskCount(followUps)}` },
-                { k: 'planned', label: `待执行 ${displayTaskCount(followUps.filter(f => PLANNED_STATUSES.includes(f.status)))}` },
-                { k: 'in_progress', label: `执行中 ${displayTaskCount(followUps.filter(f => IN_PROGRESS_STATUSES.includes(f.status)))}` },
-                { k: 'done', label: `已完成 ${displayTaskCount(followUps.filter(f => DONE_STATUSES.includes(f.status)))}` },
-                { k: 'cancelled', label: `已取消 ${displayTaskCount(followUps.filter(f => CANCELLED_STATUSES.includes(f.status)))}` },
+                { k: 'all', label: `全部 ${displayTaskCount(visibleFollowUps)}` },
+                { k: 'planned', label: `待执行 ${displayTaskCount(visibleFollowUps.filter(f => PLANNED_STATUSES.includes(f.status)))}` },
+                { k: 'in_progress', label: `执行中 ${displayTaskCount(visibleFollowUps.filter(f => IN_PROGRESS_STATUSES.includes(f.status)))}` },
+                { k: 'done', label: `已完成 ${displayTaskCount(visibleFollowUps.filter(f => DONE_STATUSES.includes(f.status)))}` },
+                { k: 'cancelled', label: `已取消 ${displayTaskCount(visibleFollowUps.filter(f => CANCELLED_STATUSES.includes(f.status)))}` },
               ].map(t => (
                 <button key={t.k} className={followUpFilter === t.k ? 'btn btn-sm' : 'btn btn-secondary btn-sm'}
                   style={followUpFilter === t.k ? { background: '#1E6B50', color: '#fff' } : {}}
