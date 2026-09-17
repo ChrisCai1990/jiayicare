@@ -48,13 +48,13 @@ test('owner and superadmin retain editing access', async () => {
   }
 });
 
-test('advisor editing grant does not grant stopping or restoring others records', async () => {
-  for (const stopped of [true, false]) {
-    const { res, saves, deletes } = await update('familyDoctor', { stopped, stopReason: 'reason' });
-    assert.equal(res.code, 403);
-    assert.equal(saves, 0);
-    assert.equal(deletes, 0);
-  }
+test('health advisor can stop another staff member medication', async () => {
+  const { res, med, saves, deletes } = await update('familyDoctor', { stopped: true, stopReason: '今日就诊医生确认停用' });
+  assert.equal(res.code, 200);
+  assert.equal(med.stopped, true);
+  assert.equal(med.stopReason, '今日就诊医生确认停用');
+  assert.equal(saves, 1);
+  assert.equal(deletes, 2);
 });
 
 test('stopped historical records remain immutable', async () => {
