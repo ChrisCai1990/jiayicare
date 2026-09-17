@@ -13585,7 +13585,21 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
   const [saving, setSaving] = useState(false)
   const [aiDraftLoading, setAiDraftLoading] = useState(false)
   const [error, setError] = useState('')
+  const [recipientSearch, setRecipientSearch] = useState('')
+  const [recipientMenuOpen, setRecipientMenuOpen] = useState(false)
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
+
+  const recipientLabel = (staff) => staff
+    ? `${staff.name} · ${ROLE_LABEL_MAP[staff.role] || staff.role}${staff.title ? ` (${staff.title})` : ''}`
+    : ''
+  const selectedRecipient = staffList.find(staff => String(staff._id) === String(form.toStaffId))
+  const normalizedRecipientSearch = recipientSearch.trim().toLowerCase()
+  const filteredRecipients = staffList.filter(staff => {
+    if (!normalizedRecipientSearch) return true
+    return [staff.name, staff.role, staff.roleLabel, ROLE_LABEL_MAP[staff.role], staff.title]
+      .filter(Boolean)
+      .some(value => String(value).toLowerCase().includes(normalizedRecipientSearch))
+  })
 
   // 打开时拉取用药、营养补剂、近期打卡记录
   useEffect(() => {
@@ -13703,16 +13717,64 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div className="form-group" style={{marginBottom:0}}><label className="form-label">转介类型 *</label><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}><button type="button" className={`btn ${form.referralType==='internal_collaboration'?'btn-primary':'btn-secondary'}`} onClick={()=>setForm(f=>({...f,referralType:'internal_collaboration',medicalExpertId:''}))}>内部专业协作</button><button type="button" className={`btn ${form.referralType==='external_medical'?'btn-primary':'btn-secondary'}`} onClick={()=>setForm(f=>({...f,referralType:'external_medical',toStaffId:''}))}>外部医疗转介</button></div><div style={{fontSize:11,color:'#8AA89C',marginTop:4}}>{form.referralType==='internal_collaboration'?'选择系统员工，任务由其在线接收和反馈。':'选择医院资源库中的专家；未绑定账号的专家由健康管理人员线下联络并归档结果。'}</div></div>
           <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">关联专病</label><select className="form-input" value={form.linkedDiseaseRecordId} onChange={e => { const disease = diseaseOptions.find(item => String(item._id) === e.target.value); setForm(f => ({ ...f, linkedDiseaseRecordId: e.target.value, linkedDiseaseName: disease?.name || '' })) }}><option value="">待明确／新问题</option>{diseaseOptions.map(item => <option key={item._id} value={item._id}>{item.name}</option>)}</select><div style={{ fontSize: 11, color: '#8AA89C', marginTop: 4 }}>接收方只能看到本次转介附带的信息；不会因此获得客户完整档案权限。</div></div>
-          {form.referralType === 'internal_collaboration' ? <div className="form-group" style={{ marginBottom: 0 }}>
+          {form.referralType === 'internal_collaboration' ? <div
+            className="form-group"
+            style={{ marginBottom: 0, position: 'relative' }}
+            onBlur={event => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setRecipientMenuOpen(false)
+            }}
+          >
             <label className="form-label">接收人 *</label>
-            <select className="form-input" value={form.toStaffId} onChange={set('toStaffId')}>
-              <option value="">-- 请选择接收医护人员 --</option>
-              {staffList.map(s => (
-                <option key={s._id} value={s._id}>
-                  {s.name} · {ROLE_LABEL_MAP[s.role] || s.role}{s.title ? ` (${s.title})` : ''}
-                </option>
-              ))}
-            </select>
+            <input
+              className="form-input"
+              value={recipientMenuOpen ? recipientSearch : recipientLabel(selectedRecipient)}
+              placeholder="搜索姓名、角色或职称"
+              autoComplete="off"
+              role="combobox"
+              aria-expanded={recipientMenuOpen}
+              aria-controls="referral-recipient-options"
+              onFocus={() => {
+                setRecipientSearch('')
+                setRecipientMenuOpen(true)
+              }}
+              onChange={event => {
+                setRecipientSearch(event.target.value)
+                setRecipientMenuOpen(true)
+                if (form.toStaffId) setForm(current => ({ ...current, toStaffId: '' }))
+              }}
+              onKeyDown={event => {
+                if (event.key === 'Escape') setRecipientMenuOpen(false)
+                if (event.key === 'Enter' && recipientMenuOpen && filteredRecipients.length === 1) {
+                  event.preventDefault()
+                  setForm(current => ({ ...current, toStaffId: filteredRecipients[0]._id }))
+                  setRecipientSearch('')
+                  setRecipientMenuOpen(false)
+                }
+              }}
+            />
+            {recipientMenuOpen && <div
+              id="referral-recipient-options"
+              role="listbox"
+              style={{ position:'absolute', zIndex:20, top:'100%', left:0, right:0, marginTop:4, maxHeight:220, overflowY:'auto', background:'#fff', border:'1px solid #DCE5E1', borderRadius:8, boxShadow:'0 8px 24px rgba(20, 52, 42, .14)' }}
+            >
+              {filteredRecipients.length ? filteredRecipients.map(staff => <button
+                key={staff._id}
+                type="button"
+                role="option"
+                aria-selected={String(staff._id) === String(form.toStaffId)}
+                onMouseDown={event => event.preventDefault()}
+                onClick={() => {
+                  setForm(current => ({ ...current, toStaffId: staff._id }))
+                  setRecipientSearch('')
+                  setRecipientMenuOpen(false)
+                }}
+                style={{ display:'block', width:'100%', padding:'10px 12px', border:0, borderBottom:'1px solid #EEF2F0', background:String(staff._id) === String(form.toStaffId) ? '#E8F5EF' : '#fff', color:'#243A32', textAlign:'left', cursor:'pointer' }}
+              >
+                <span style={{fontWeight:600}}>{staff.name}</span>
+                <span style={{marginLeft:8,color:'#668078',fontSize:12}}>{ROLE_LABEL_MAP[staff.role] || staff.role}{staff.title ? ` · ${staff.title}` : ''}</span>
+              </button>) : <div style={{padding:'12px',color:'#8AA89C',fontSize:13}}>未找到匹配的医护人员</div>}
+            </div>}
+            <div style={{fontSize:11,color:'#8AA89C',marginTop:4}}>可按姓名、角色或职称搜索</div>
           </div> : <div className="form-group" style={{marginBottom:0}}><label className="form-label">医院 / 科室 / 专家 *</label><select className="form-input" value={form.medicalExpertId} onChange={set('medicalExpertId')}><option value="">-- 请按专业能力选择专家 --</option>{(medicalResources.experts||[]).map(expert=>{const hospital=(medicalResources.institutions||[]).find(x=>String(x._id)===String(expert.institutionId));const dept=(medicalResources.departments||[]).find(x=>String(x._id)===String(expert.departmentId));return <option key={expert._id} value={expert._id}>{expert.name}{expert.title?`｜${expert.title}`:''}｜{hospital?.name||'医院待补充'} · {dept?.name||'科室待补充'}｜擅长：{(expert.expertise||expert.diseaseTags||[]).join('、')||'待补充'}</option>})}</select>{form.medicalExpertId&&(()=>{const expert=(medicalResources.experts||[]).find(x=>x._id===form.medicalExpertId);const hospital=(medicalResources.institutions||[]).find(x=>String(x._id)===String(expert?.institutionId));const dept=(medicalResources.departments||[]).find(x=>String(x._id)===String(expert?.departmentId));return <div style={{padding:'9px 11px',marginTop:6,background:'#F5F8F7',borderRadius:7,fontSize:12,lineHeight:1.7}}><b>{expert?.name} {expert?.title}</b><br/>{hospital?.name} · {dept?.name}{expert?.campus?` · ${expert.campus}`:''}<br/>擅长：{(expert?.expertise||[]).join('、')||'待补充'}<br/>{expert?.linkedStaffId?'已关联医护端账号，可在线接收':'外部专家未关联账号，由团队线下联系'}</div>})()}</div>}
           <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">转介目的</label><select className="form-input" value={form.referralPurpose} onChange={set('referralPurpose')}><option value="">请选择</option>{['协助安排就医','回收医疗机构诊疗信息','健康资料解读与整理','康复支持评估','营养支持评估','心理支持评估','健康管理方案协作','其他'].map(item => <option key={item}>{item}</option>)}</select></div>
           <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">需要接收方解决的问题</label><textarea className="form-input" rows={2} value={form.questionList} onChange={set('questionList')} placeholder="请列出希望会诊明确的问题" /></div>
