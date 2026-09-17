@@ -9313,7 +9313,7 @@ export default function PatientDetailPage() {
             const CANCELLED_STATUSES = ['cancelled']
             const executionCategoryOf = task => {
               const text = `${task.theme || ''} ${task.content || task.taskRequirements || task.plannedContent || ''} ${task.type || ''} ${task.sourceType || ''}`
-              if (task.sourceType === 'supply_reminder' || (task.tags || []).includes('配药与营养补充')) return 'supply'
+              if (task.sourceType === 'supply_reminder' || task.sourceOrderId?.medicalProxyPlan?.medicationProxy || task.sourceOrderId?.medicalProxyPlan?.supplementProxy || (task.tags || []).includes('配药与营养补充')) return 'supply'
               if (/营养|饮食|膳食|体重管理/.test(text)) return 'nutrition'
               if (/血压|血糖|体重|睡眠|运动|饮水|监测|打卡/.test(text)) return 'monitoring'
               if (/体检|复查|检验|检查|筛查|疫苗/.test(text)) return 'checkup'
@@ -9323,13 +9323,22 @@ export default function PatientDetailPage() {
             }
             // 同一订单下的预约、人员安排、执行、资料审核和督办是一次服务的内部岗位流转，
             // 客户档案只计作一条综合服务。AI 生成的后续随访计划 workflowKey 为空，仍单独展示便于审核。
-            const isOrderServiceWorkflowTask = task => task.sourceType === 'order'
-              && String(task.workflowKey || '').startsWith('medical_proxy:')
+            const supplyReminderOrderMap = new Map(followUps
+              .filter(task => task.sourceType === 'order' && task.sourceOrderId?.medicalProxyPlan?.sourceSupplyReminderTaskId)
+              .map(task => [String(task.sourceOrderId.medicalProxyPlan.sourceSupplyReminderTaskId), String(task.sourceOrderId._id)]))
+            const serviceGroupKey = task => String(
+              task.formData?.medicalProxyOrderId
+              || (task.sourceType === 'supply_reminder' && supplyReminderOrderMap.get(String(task._id)))
+              || task.sourceOrderId?._id || task.sourceOrderId || task._id
+            )
+            const isOrderServiceWorkflowTask = task => (task.sourceType === 'order'
+              && String(task.workflowKey || '').startsWith('medical_proxy:'))
+              || (task.sourceType === 'supply_reminder' && (task.formData?.medicalProxyOrderId || supplyReminderOrderMap.has(String(task._id))))
             const displayTaskCount = tasks => {
               const seenServices = new Set()
               return tasks.reduce((count, task) => {
                 if (!isOrderServiceWorkflowTask(task)) return count + 1
-                const key = String(task.sourceOrderId?._id || task.sourceOrderId || task._id)
+                const key = serviceGroupKey(task)
                 if (seenServices.has(key)) return count
                 seenServices.add(key)
                 return count + 1
@@ -9361,7 +9370,7 @@ export default function PatientDetailPage() {
             const rows = [] // 最终渲染的行：单项任务、日常监测分组或订单服务分组
             filtered.forEach(f => {
               if (isOrderServiceWorkflowTask(f)) {
-                const key = String(f.sourceOrderId?._id || f.sourceOrderId || f._id)
+                const key = serviceGroupKey(f)
                 if (!orderServiceGroups[key]) {
                   orderServiceGroups[key] = { type: 'order_service', key, items: [] }
                   rows.push(orderServiceGroups[key])
@@ -9424,7 +9433,7 @@ export default function PatientDetailPage() {
             ) : (
             <table className="table">
               <thead>
-                <tr><th>计划日期</th><th>建立时间</th><th>任务类型</th><th>状态</th><th>负责人</th><th>执行内容</th><th>下一节点</th><th>操作</th></tr>
+                <tr><th>计划日期</th><th>建立时间</th><th>执行时间</th><th>任务类型</th><th>状态</th><th>负责人</th><th>执行内容</th><th>下一节点</th><th>操作</th></tr>
               </thead>
               <tbody>
                 {(() => {
@@ -9434,6 +9443,7 @@ export default function PatientDetailPage() {
                     <tr key={f._id} style={{ cursor: 'pointer', background: f.aiStatus === 'pending' ? '#FFFBEB' : undefined }} onClick={() => (isCheckupAppointmentBookingTask(f) || isCheckupMedicalExecutionTask(f) || isCheckupManagerReviewTask(f)) ? openExec(f) : isCheckupAdvisorReviewTask(f) ? setCheckupAdvisorReview(f) : setFollowUpDetail(f)}>
                       <td style={{ fontSize: 13, color: '#666' }}>{new Date(f.date).toLocaleDateString('zh-CN')}</td>
                       <td style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>{f.createdAt ? new Date(f.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
+                      <td style={{ fontSize: 12, color: '#65776F', whiteSpace: 'nowrap' }}>{f.completedAt ? new Date(f.completedAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
                       <td><span className="badge badge-info">{f.sourceType === 'supply_reminder' ? ((f.tags || []).includes('我方代配') ? '我方代配' : '配取提醒') : (TYPE_MAP[f.type] || f.type)}</span></td>
                       <td>
                         <span style={{ fontSize: 13, fontWeight: 500, color: FOLLOWUP_LIST_STATUS_COLOR[f.status] || '#666' }}>
@@ -9509,22 +9519,26 @@ export default function PatientDetailPage() {
                     if (row.type === 'single') return renderRow(row.item)
                     if (row.type === 'order_service') {
                       const current = serviceCurrentTask(row)
-                      const serviceName = current.sourceOrderId?.serviceName || (isMedicalEscortTask(current) ? '就医陪同服务' : /营养/.test(current.theme || '') ? '代配营养素服务' : '医疗服务')
+                      const orderTask = row.items.find(item => item.sourceType === 'order' && item.sourceOrderId)
+                      const serviceName = orderTask?.sourceOrderId?.serviceName || current.sourceOrderId?.serviceName || (isMedicalEscortTask(current) ? '就医陪同服务' : /营养/.test(current.theme || '') ? '代配营养素服务' : '医疗服务')
                       const completed = row.items.every(item => ['completed', 'cancelled'].includes(item.status)) && row.items.some(item => item.status === 'completed')
+                      const completedAt = row.items.map(item => item.completedAt).filter(Boolean).sort().at(-1)
+                      const serviceDetail = { ...current, completedAt: completedAt || current.completedAt, sourceOrderId: orderTask?.sourceOrderId || current.sourceOrderId, _serviceItems: [...row.items].sort((a, b) => new Date(a.createdAt || a.date) - new Date(b.createdAt || b.date)) }
                       const stageText = completed
                         ? (isMedicalEscortTask(current) ? '就医专员已完成陪同，健管专员已审核资料并归档' : '服务各岗位已完成流转并闭环')
                         : current.workflowKey === 'medical_proxy:supervise'
                           ? (current.formData?.executionFailed && current.formData?.currentStage === 'booking' ? `执行未成功，健管专员重新处理：${current.formData?.lastExecutionFailure || '待确认后续安排'}` : ({ booking: '健管专员确认预约', planner: '健康规划师安排执行人员', execute: '就医专员正在执行服务', post_visit_audit: '健管专员审核归档资料', completed: '服务已完成' }[current.formData?.currentStage] || current.content || '处理中'))
                           : String(current.content || current.plannedContent || current.theme || '').replace(/^[^：:]+[：:]\s*/, '')
-                      return <tr key={row.key} style={{ cursor: 'pointer', background: '#F2FAF6' }} onClick={() => setFollowUpDetail(current)}>
+                      return <tr key={row.key} style={{ cursor: 'pointer', background: '#F2FAF6' }} onClick={() => setFollowUpDetail(serviceDetail)}>
                         <td style={{ fontSize: 13, color: '#666' }}>{new Date(current.date).toLocaleDateString('zh-CN')}</td>
                         <td style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>{current.createdAt ? new Date(current.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
+                        <td style={{ fontSize: 12, color: '#65776F', whiteSpace: 'nowrap' }}>{completedAt ? new Date(completedAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
                         <td><span className="badge badge-info">综合服务</span></td>
                         <td><span style={{ fontSize: 13, fontWeight: 500, color: FOLLOWUP_LIST_STATUS_COLOR[current.status] || '#666' }}>{FOLLOWUP_LIST_STATUS_MAP[current.status] || current.status}</span></td>
                         <td style={{ fontSize: 13, color: '#666' }}>{current.assignedTo?.name || current.staffId?.name || '-'}</td>
                         <td style={{ fontSize: 13, color: '#1A2B24', maxWidth: 300 }}><div><span style={{ fontSize: 11, color: '#22A06B', background: '#22A06B18', padding: '1px 6px', borderRadius: 4, marginRight: 4 }}>一次服务</span><b>{serviceName}</b></div><div style={{ marginTop: 4, color: '#65776F' }}>{completed ? '服务结果' : '当前进度'}：{stageText || '处理中'}</div></td>
                         <td style={{ fontSize: 12, color: '#8AA89C' }}>{current.nextFollowUpDate ? new Date(current.nextFollowUpDate).toLocaleDateString('zh-CN') : '-'}</td>
-                        <td onClick={e => e.stopPropagation()}><button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(current)}>查看服务</button></td>
+                        <td onClick={e => e.stopPropagation()}><button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(serviceDetail)}>查看服务</button></td>
                       </tr>
                     }
                     const expanded = !!expandedMonitorGroups[row.key]
@@ -9536,7 +9550,8 @@ export default function PatientDetailPage() {
                         <tr style={{ cursor: 'pointer', background: '#F7F5F0' }}
                           onClick={() => setExpandedMonitorGroups(s => ({ ...s, [row.key]: !s[row.key] }))}>
                           <td style={{ fontSize: 13, color: '#666' }}>{new Date(nearest.date).toLocaleDateString('zh-CN')}{row.items.length > 1 ? ' 起' : ''}</td>
-                          <td style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>{nearest.createdAt ? new Date(nearest.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
+                            <td style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>{nearest.createdAt ? new Date(nearest.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
+                            <td style={{ fontSize: 12, color: '#65776F', whiteSpace: 'nowrap' }}>{nearest.completedAt ? new Date(nearest.completedAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
                           <td><span className="badge badge-info">{TYPE_MAP[nearest.type] || nearest.type}</span></td>
                           <td>
                             <span style={{ fontSize: 13, fontWeight: 500, color: FOLLOWUP_LIST_STATUS_COLOR[row.status] || '#666' }}>
@@ -9554,6 +9569,7 @@ export default function PatientDetailPage() {
                           <tr key={f._id} style={{ cursor: 'pointer', background: '#FCFBF8' }} onClick={() => setFollowUpDetail(f)}>
                             <td style={{ fontSize: 12, color: '#999', paddingLeft: 28 }}>{new Date(f.date).toLocaleDateString('zh-CN')}</td>
                             <td style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>{f.createdAt ? new Date(f.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
+                            <td style={{ fontSize: 12, color: '#65776F', whiteSpace: 'nowrap' }}>{f.completedAt ? new Date(f.completedAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
                             <td><span className="badge badge-info">{TYPE_MAP[f.type] || f.type}</span></td>
                             <td>
                               <span style={{ fontSize: 12, color: FOLLOWUP_LIST_STATUS_COLOR[f.status] || '#666' }}>
@@ -10856,6 +10872,7 @@ export default function PatientDetailPage() {
                   { label: '参与人员', value: followUpDetail.participants || '-' },
                   { label: '随访主题', value: followUpDetail.theme || followUpDetail.planName || '-' },
                   { label: '建立时间', value: followUpDetail.createdAt ? new Date(followUpDetail.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-' },
+                  { label: '执行时间', value: followUpDetail.completedAt ? new Date(followUpDetail.completedAt).toLocaleString('zh-CN', { hour12: false }) : '-' },
                   { label: '下次随访', value: followUpDetail.nextFollowUpDate ? new Date(followUpDetail.nextFollowUpDate).toLocaleDateString('zh-CN') : '-' },
                 ].map(({ label, value }) => (
                   <div key={label}>
@@ -10879,6 +10896,28 @@ export default function PatientDetailPage() {
                     </div>
                     <button className="btn btn-secondary btn-sm" style={{ alignSelf: 'flex-start', marginTop: 4 }}
                       onClick={() => { setFollowUpDetail(null); setTab('consumption') }}>查看消费记录</button>
+                  </div>
+                </div>
+              )}
+              {followUpDetail._serviceItems?.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 12, color: '#1E6B50', marginBottom: 8, fontWeight: 700 }}>本次服务完整过程</div>
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    {followUpDetail._serviceItems.map((item, index) => {
+                      const stage = String(item.workflowKey || '').replace('medical_proxy:', '')
+                      const stageLabel = item.sourceType === 'supply_reminder' ? '服务发起'
+                        : ({ collect: '资料收集', audit: '资料审核', advisor: '方案确认', planner: '人员安排', booking: '预约配药', execute: '医院配药执行', resolution: '异常解决与最终配药', supervise: '健康规划师督办' })[stage] || item.theme || '服务处理'
+                      const detail = item.formData?.resolutionResult || item.formData?.fulfillmentProof || item.formData?.executionResult || item.executedContent || item.content || item.plannedContent || ''
+                      const time = item.completedAt || item.updatedAt || item.createdAt || item.date
+                      return <div key={item._id || index} style={{ borderLeft: `3px solid ${item.status === 'completed' ? '#22A06B' : item.status === 'cancelled' ? '#AAB7B1' : '#D9A441'}`, padding: '7px 10px', background: '#F7FAF8', borderRadius: '0 7px 7px 0' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                          <b style={{ fontSize: 13 }}>{stageLabel}</b>
+                          <span style={{ fontSize: 12, color: '#65776F', whiteSpace: 'nowrap' }}>{time ? new Date(time).toLocaleString('zh-CN', { hour12: false }) : '-'}</span>
+                        </div>
+                        <div style={{ fontSize: 12, color: '#65776F', marginTop: 3 }}>{STATUS_MAP[item.status] || item.status}{item.assignedTo?.name || item.staffId?.name ? ` · ${item.assignedTo?.name || item.staffId?.name}` : ''}</div>
+                        {detail && <div style={{ fontSize: 13, color: '#1A2B24', marginTop: 5, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{detail}</div>}
+                      </div>
+                    })}
                   </div>
                 </div>
               )}
