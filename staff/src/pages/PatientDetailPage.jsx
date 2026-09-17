@@ -9329,10 +9329,15 @@ export default function PatientDetailPage() {
             const serviceGroupKey = task => String(
               task.formData?.medicalProxyOrderId
               || (task.sourceType === 'supply_reminder' && supplyReminderOrderMap.get(String(task._id)))
-              || task.sourceOrderId?._id || task.sourceOrderId || task._id
+              || task.sourceOrderId?._id || task.sourceOrderId
+              || task.sourceHealthPlanId?._id || task.sourceHealthPlanId
+              || task.coordinationGroupId || task._id
             )
+            const medicalWorkflowKey = key => /^(medical_proxy|medication_proxy|medical_reminder|checkup_appointment):/.test(String(key || ''))
+              || /^system:(outpatient_|medical_document_collection)/.test(String(key || ''))
             const isOrderServiceWorkflowTask = task => (task.sourceType === 'order'
-              && String(task.workflowKey || '').startsWith('medical_proxy:'))
+              && (medicalWorkflowKey(task.workflowKey) || /代配药|代取药|代配营养素|医疗代诊|专家约诊|陪同就医|陪诊|门诊一站式|代约检|约检/.test(task.sourceOrderId?.serviceName || '')))
+              || (task.sourceType === 'health_plan' && task.sourceHealthPlanId?.type === 'medical_assist')
               || (task.sourceType === 'supply_reminder' && (task.formData?.medicalProxyOrderId || supplyReminderOrderMap.has(String(task._id))))
             const isSupersededDuplicateServiceTask = task => task.sourceType === 'order'
               && task.status === 'cancelled'
@@ -9342,7 +9347,13 @@ export default function PatientDetailPage() {
                 && candidate.sourceOrderId?.status === 'completed'
                 && candidate.sourceOrderId?.serviceName === task.sourceOrderId?.serviceName
                 && Math.abs(new Date(candidate.sourceOrderId.createdAt) - new Date(task.sourceOrderId.createdAt)) <= 7 * 24 * 60 * 60 * 1000)
-            const visibleFollowUps = followUps.filter(task => !isSupersededDuplicateServiceTask(task))
+            const isCancelledStageOfCompletedService = task => isOrderServiceWorkflowTask(task)
+              && task.status === 'cancelled'
+              && followUps.some(candidate => isOrderServiceWorkflowTask(candidate)
+                && serviceGroupKey(candidate) === serviceGroupKey(task)
+                && candidate.status === 'completed'
+                && (candidate.sourceOrderId?.status === 'completed' || candidate.sourceHealthPlanId?.status === 'completed'))
+            const visibleFollowUps = followUps.filter(task => !isSupersededDuplicateServiceTask(task) && !isCancelledStageOfCompletedService(task))
             const displayTaskCount = tasks => {
               const seenServices = new Set()
               return tasks.reduce((count, task) => {
@@ -9399,7 +9410,7 @@ export default function PatientDetailPage() {
             // 排序方向：待随访/随访中是还没发生的未来计划，按日期从近到远（离今天最近的先处理）；
             // 已随访/已取消是历史事件，按最近发生的在前。"全部"tab混合两类，按每行自身状态各自判断方向。
             const isFutureStatus = (status) => PLANNED_STATUSES.includes(status) || IN_PROGRESS_STATUSES.includes(status)
-            const serviceCurrentTask = row => row.items.find(item => item.workflowKey === 'medical_proxy:supervise' && ['planned', 'in_progress', 'missed'].includes(item.status))
+            const serviceCurrentTask = row => row.items.find(item => /:supervise$/.test(item.workflowKey || '') && ['planned', 'in_progress', 'missed'].includes(item.status))
               || row.items.find(item => ['planned', 'in_progress', 'missed'].includes(item.status))
               || [...row.items].sort((a, b) => new Date(b.completedAt || b.updatedAt || b.createdAt || b.date) - new Date(a.completedAt || a.updatedAt || a.createdAt || a.date))[0]
             const rowStatus = (row) => row.type === 'group' ? row.status : row.type === 'order_service' ? serviceCurrentTask(row).status : row.item.status
@@ -9529,7 +9540,7 @@ export default function PatientDetailPage() {
                     if (row.type === 'order_service') {
                       const current = serviceCurrentTask(row)
                       const orderTask = row.items.find(item => item.sourceType === 'order' && item.sourceOrderId)
-                      const serviceName = orderTask?.sourceOrderId?.serviceName || current.sourceOrderId?.serviceName || (isMedicalEscortTask(current) ? '就医陪同服务' : /营养/.test(current.theme || '') ? '代配营养素服务' : '医疗服务')
+                      const serviceName = orderTask?.sourceOrderId?.serviceName || current.sourceOrderId?.serviceName || current.sourceHealthPlanId?.title || (isMedicalEscortTask(current) ? '就医陪同服务' : /营养/.test(current.theme || '') ? '代配营养素服务' : '就医协助服务')
                       const completed = row.items.every(item => ['completed', 'cancelled'].includes(item.status)) && row.items.some(item => item.status === 'completed')
                       const completedAt = row.items.map(item => item.completedAt).filter(Boolean).sort().at(-1)
                       const serviceStageRank = item => item.sourceType === 'supply_reminder' ? 99 : ({ booking: 10, planner: 20, execute: 30, resolution: 40, supervise: 50 })[String(item.workflowKey || '').replace('medical_proxy:', '')] || 0
@@ -10917,9 +10928,9 @@ export default function PatientDetailPage() {
                   <div style={{ fontSize: 12, color: '#1E6B50', marginBottom: 8, fontWeight: 700 }}>本次服务完整过程</div>
                   <div style={{ display: 'grid', gap: 8 }}>
                     {followUpDetail._serviceItems.map((item, index) => {
-                      const stage = String(item.workflowKey || '').replace('medical_proxy:', '')
+                      const stage = String(item.workflowKey || '').split(':').at(-1)
                       const stageLabel = item.sourceType === 'supply_reminder' ? '服务完成'
-                        : ({ collect: '资料收集', audit: '资料审核', advisor: '方案确认', planner: '人员安排', booking: '预约配药', execute: '医院配药执行', resolution: '异常解决与最终配药', supervise: '健康规划师督办' })[stage] || item.theme || '服务处理'
+                        : ({ intake: '服务受理', collect: '资料收集', documents: '资料准备', audit: '资料审核', advisor: '方案确认', advisor_review: '健康顾问审核', plan_review: '方案复核', planner: '人员安排', booking: '预约安排', medical: '现场执行', execute: '服务执行', manager_review: '健管专员审核', post_visit_audit: '就诊资料审核', post_visit_review: '健康顾问查看', followup: '后续随访', resolution: '异常解决与最终配药', supervise: '全程督办' })[stage] || item.theme || '服务处理'
                       const detail = item.formData?.resolutionResult || item.formData?.fulfillmentProof || item.formData?.executionResult || item.executedContent || item.content || item.plannedContent || ''
                       const time = item.completedAt || item.updatedAt || item.createdAt || item.date
                       const resolutionExecutor = followUpDetail._serviceItems.find(serviceItem => serviceItem.workflowKey === 'medical_proxy:resolution')

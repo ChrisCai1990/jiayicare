@@ -309,7 +309,7 @@ test('medical escort skips booking and sends manager review only after execution
   assert.match(patientPage, /陪同就医 · 执行记录/);
   assert.match(patientPage, /完成陪同并提交资料审核/);
   assert.match(patientPage, /const isOrderServiceWorkflowTask/);
-  assert.match(patientPage, /startsWith\('medical_proxy:'\)/);
+  assert.match(patientPage, /medicalWorkflowKey\(task\.workflowKey\)/);
   assert.match(patientPage, /type: 'order_service'/);
   assert.match(patientPage, />综合服务</);
   assert.match(patientPage, /supplyReminderOrderMap/);
@@ -324,6 +324,11 @@ test('medical escort skips booking and sends manager review only after execution
   assert.match(patientPage, />执行时间</);
   assert.match(patientPage, /isSupersededDuplicateServiceTask/);
   assert.match(patientPage, /重复\.\*服务\|后台取消/);
+  assert.match(patientPage, /medicalWorkflowKey/);
+  assert.match(patientPage, /medical_proxy\|medication_proxy\|medical_reminder\|checkup_appointment/);
+  assert.match(patientPage, /sourceHealthPlanId\?\.type === 'medical_assist'/);
+  assert.match(patientPage, /isCancelledStageOfCompletedService/);
+  assert.match(patientPage, /就医协助服务/);
   assert.match(patientPage, /就医专员已完成陪同，健管专员已审核资料并归档/);
   assert.match(plansPage, /if \(isMedicalEscort\)[\s\S]*startStaffMedicalProxy\(patientId/);
   assert.match(plansPage, /!isMedicalEscort[\s\S]*督办人/);

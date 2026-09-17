@@ -1718,7 +1718,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
       .limit(Number(limit))
       .populate('staffId', 'name role title')
       .populate('assignedTo', 'name role title')
-      .populate('sourceHealthPlanId', 'title description content type')
+      .populate('sourceHealthPlanId', 'title description content type status')
       .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard')
       .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
       .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt medicalProxyPlan medicalReminderIntake'),
