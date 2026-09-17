@@ -282,6 +282,7 @@ test('medical escort skips booking and sends manager review only after execution
   assert.match(workflow, /const reportIds = await archiveMedicalProxyRecords/);
   assert.match(workflow, /status: 'planned', isBlocked: false[\s\S]*executionSnapshot/);
   assert.match(workflow, /MedicalReport\.deleteMany/);
+  assert.match(workflow, /fileUrl: \{ \$nin: currentUrls \}/);
   assert.match(workflow, /async function repairCompletedMedicalEscortAuditTasks/);
   assert.match(workflow, /workflowKey: `\$\{PREFIX\}execute`[\s\S]*status: 'completed'/);
   assert.match(workflow, /'formData\.executionSnapshot': executionSnapshot/);
@@ -302,6 +303,19 @@ test('medical escort skips booking and sends manager review only after execution
   assert.match(plansPage, /if \(isMedicalEscort\)[\s\S]*startStaffMedicalProxy\(patientId/);
   assert.match(plansPage, /!isMedicalEscort[\s\S]*督办人/);
   assert.match(plansPage, /不生成就医协助方案/);
+});
+
+test('medical escort audit closes the linked visit reminder and creates an AI follow-up draft', () => {
+  const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
+  const escortAudit = workflow.split("if (order.medicalProxyPlan?.medicalEscort === true) {")[1].split('\n      return;')[0];
+  assert.match(workflow, /sourceFollowUpId/);
+  assert.ok(workflow.includes('theme: /提醒就医|就医提醒/'));
+  assert.match(workflow, /executedContent: result/);
+  assert.match(escortAudit, /completeLinkedMedicalReminder/);
+  assert.match(escortAudit, /purgeStaleMedicalEscortReports/);
+  assert.match(escortAudit, /createPostVisitFollowUpPlan[\s\S]*medicalEscort: true/);
+  assert.match(workflow, /就医陪同后AI随访计划/);
+  assert.match(workflow, /aiStatus: 'pending'/);
 });
 test('booking and execution write the shared hospital visit service archive', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');

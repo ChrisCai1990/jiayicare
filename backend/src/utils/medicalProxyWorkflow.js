@@ -197,7 +197,8 @@ async function createMedicalProxyFollowUpDrafts(task, order, familyDoctorId) {
   }
 }
 
-async function createExpertAppointmentFollowUpPlan(task, order, patient, reportIds) {
+async function createPostVisitFollowUpPlan(task, order, patient, reportIds, { medicalEscort = false } = {}) {
+  if (!patient?.assignedFamilyDoctor) return null;
   const reports = reportIds.length ? await MedicalReport.find({ _id: { $in: reportIds }, user: task.patientId, audit_status: 'audited' }).select('title documentCategory checkDate hospital reportItems aiSummary keyFindings note').lean() : [];
   const sourceText = reports.map(report => {
     const items = (report.reportItems || []).slice(0, 80).map(item => [item.name, item.value, item.unit, item.findings, item.diagnosis, item.conclusion].filter(Boolean).join('｜')).join('\n');
@@ -208,7 +209,7 @@ async function createExpertAppointmentFollowUpPlan(task, order, patient, reportI
   let followUpDate = new Date(); followUpDate.setDate(followUpDate.getDate() + 7);
   try {
     const { chat } = require('./ai');
-    const prompt = `你是医疗服务随访计划助手。根据专家约诊信息和已审核的就诊后资料生成一条简明、可执行的随访计划草稿。不得补写不存在的诊断、药物或检查结果；没有资料时明确需由健康顾问确认客户是否需要后续联系。仅输出JSON：{"content":"随访事项","daysLater":1到30的整数}。\n约诊信息：${order.serviceRequirements || ''}\n健管审核：${task.formData?.auditSummary || ''}\n资料：${sourceText || '客户或健管专员确认暂无资料上传'}`;
+    const prompt = `你是医疗服务随访计划助手。根据${medicalEscort ? '就医陪同执行情况' : '专家约诊信息'}和已审核的就诊后资料生成一条简明、可执行的随访计划草稿。不得补写不存在的诊断、药物或检查结果；没有资料时明确需由健康顾问确认客户是否需要后续联系。仅输出JSON：{"content":"随访事项","daysLater":1到30的整数}。\n服务信息：${order.serviceRequirements || ''}\n陪同/就诊结果：${task.formData?.executionSnapshot?.executionResult || ''}\n健管审核：${task.formData?.auditSummary || ''}\n资料：${sourceText || '客户或健管专员确认暂无资料上传'}`;
     const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 700, temperature: 0 });
     const match = String(text || '').match(/\{[\s\S]*\}/);
     const draft = match ? JSON.parse(match[0]) : {};
@@ -216,13 +217,39 @@ async function createExpertAppointmentFollowUpPlan(task, order, patient, reportI
     const days = Math.max(1, Math.min(30, Number(draft.daysLater) || 7));
     followUpDate = new Date(); followUpDate.setDate(followUpDate.getDate() + days);
   } catch (error) {
-    console.error('[expert-appointment] AI随访计划生成失败，使用安全草稿', error.message);
+    console.error('[post-visit] AI随访计划生成失败，使用安全草稿', error.message);
   }
+  const schedulePrefix = medicalEscort ? 'medical_escort_followup' : 'expert_appointment_followup';
+  const theme = medicalEscort ? '就医陪同后AI随访计划' : '专家约诊后随访计划';
   return FollowUp.findOneAndUpdate(
-    { sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `expert_appointment_followup:${order._id}` },
-    { $setOnInsert: { patientId: task.patientId, staffId: patient.assignedFamilyDoctor, assignedTo: patient.assignedFamilyDoctor, date: followUpDate, remindAt: followUpDate, type: 'other', status: 'planned', theme: '专家约诊后随访计划', content, plannedContent: content, tags: ['专家约诊', '就诊后随访'], sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `expert_appointment_followup:${order._id}`, aiStatus: 'pending', reviewRole: 'familyDoctor', formData: { reportIds, auditSummary: task.formData?.auditSummary || '', generatedFromExpertAppointment: true } } },
+    { sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `${schedulePrefix}:${order._id}` },
+    { $setOnInsert: { patientId: task.patientId, staffId: patient.assignedFamilyDoctor, assignedTo: patient.assignedFamilyDoctor, date: followUpDate, remindAt: followUpDate, type: 'other', status: 'planned', theme, content, plannedContent: content, tags: [medicalEscort ? '就医陪同' : '专家约诊', '就诊后随访'], sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `${schedulePrefix}:${order._id}`, aiStatus: 'pending', reviewRole: 'familyDoctor', formData: { reportIds, auditSummary: task.formData?.auditSummary || '', generatedFromExpertAppointment: !medicalEscort, generatedFromMedicalEscort: medicalEscort } } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
+}
+
+async function completeLinkedMedicalReminder(task, order) {
+  const executionResult = nonempty(task.formData?.executionSnapshot?.executionResult);
+  const auditSummary = nonempty(task.formData?.auditSummary);
+  const result = [executionResult && `陪同结果：${executionResult}`, auditSummary && `资料审核：${auditSummary}`].filter(Boolean).join('\n') || '就医陪同已完成，相关资料已审核归档。';
+  const sourceFollowUpId = order.medicalProxyPlan?.sourceFollowUpId;
+  const serviceDayStart = appointmentAt(dateInput(order.scheduledAt || order.desiredServiceDate || task.date || new Date()), '00:00');
+  const serviceDayEnd = new Date(serviceDayStart); serviceDayEnd.setDate(serviceDayEnd.getDate() + 1);
+  const query = sourceFollowUpId
+    ? { _id: sourceFollowUpId, patientId: task.patientId, status: { $in: ['planned', 'in_progress'] } }
+    : { patientId: task.patientId, status: { $in: ['planned', 'in_progress'] }, sourceType: { $ne: 'order' }, theme: /提醒就医|就医提醒/, date: { $gte: serviceDayStart, $lt: serviceDayEnd } };
+  return FollowUp.findOneAndUpdate(query, { $set: { status: 'completed', content: result, executedContent: result, executedType: 'other', completedAt: new Date(), completedBy: 'staff', 'formData.medicalEscortOrderId': order._id } }, { sort: { date: -1 }, new: true });
+}
+
+async function purgeStaleMedicalEscortReports(task, order) {
+  const currentUrls = (task.formData?.executionSnapshot?.medicalRecordAttachments || []).map(file => nonempty(file?.url)).filter(Boolean);
+  return MedicalReport.deleteMany({
+    user: task.patientId,
+    sourceType: 'order',
+    sourceOrderId: order._id,
+    note: /^医疗代诊执行任务：/,
+    ...(currentUrls.length ? { fileUrl: { $nin: currentUrls } } : {}),
+  });
 }
 
 function reportIdsFromTask(task = {}) {
@@ -405,6 +432,15 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
   }
   const initialTaskDate = supplyTaskDate || (appointmentOnly ? appointmentAt(plan.preferredDateStart, '09:00') : date);
   const escortLabels = { exam: '陪同检查', checkup: '陪同体检', consultation: '陪同看诊', treatment: '陪同治疗' };
+  if (medicalEscort && !plan.sourceFollowUpId) {
+    const serviceDayStart = appointmentAt(plan.escortDate, '00:00');
+    const serviceDayEnd = new Date(serviceDayStart); serviceDayEnd.setDate(serviceDayEnd.getDate() + 1);
+    const reminder = await FollowUp.findOne({
+      patientId: patient._id, status: { $in: ['planned', 'in_progress'] }, sourceType: { $ne: 'order' },
+      theme: /提醒就医|就医提醒/, date: { $gte: serviceDayStart, $lt: serviceDayEnd },
+    }).sort({ createdAt: -1 }).select('_id').lean();
+    if (reminder?._id) plan.sourceFollowUpId = reminder._id;
+  }
   const serviceName = medicalEscort ? `${escortLabels[plan.escortCategory] || '陪同就医'}服务` : medicationProxy ? '代配药服务' : supplementProxy ? '代配营养素服务' : appointmentOnly ? '专家约诊服务' : '医疗代诊服务';
   const order = await Order.create({
     user: patient._id, tenantId: patient.tenantId || null, serviceId: `annual-member-medical-proxy-${Date.now()}`,
@@ -690,13 +726,17 @@ async function advanceMedicalProxyWorkflow(task) {
   }
   if (stage === 'post_visit_audit') {
     if (order.medicalProxyPlan?.medicalEscort === true) {
+      const reportIds = [...new Set((task.formData?.reportIds || []).map(String).filter(Boolean))];
+      await purgeStaleMedicalEscortReports(task, order);
+      await completeLinkedMedicalReminder(task, order);
+      await createPostVisitFollowUpPlan(task, order, patient, reportIds, { medicalEscort: true });
       order.status = 'completed'; order.tradeStatus = 'completed'; order.completedAt = new Date();
       await order.save();
       await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } }, { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', 'formData.currentStage': 'completed', content: '陪同资料已由健管专员审核归档，就医陪同服务结束。' } });
       await Order.updateOne({ _id: order._id }, { $set: { currentStage: 'completed', currentAssignee: null, supervisionStatus: 'completed' } });
       return;
     }
-    await createExpertAppointmentFollowUpPlan(task, order, patient, [...new Set((task.formData?.reportIds || []).map(String).filter(Boolean))]);
+    await createPostVisitFollowUpPlan(task, order, patient, [...new Set((task.formData?.reportIds || []).map(String).filter(Boolean))]);
     await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise` }, { $set: { 'formData.currentStage': 'followup_review', content: '健管专员已完成资料审核，AI已生成随访计划，等待健康顾问审核。' } });
     return;
   }
