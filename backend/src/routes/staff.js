@@ -9396,6 +9396,13 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     const confirmedReviewText = confirmedCaseReviews.length
       ? confirmedCaseReviews.map(item => `【${item.title}】${item.conclusion.content}`).join('\n\n').slice(0, 16000)
       : '无已确认的专题研判结论';
+    const professionalAssessments = await ProfessionalHealthAssessment.find({
+      patientId: user._id, purpose: 'annual_input', status: 'approved',
+      $or: [{ validUntil: null }, { validUntil: { $gte: new Date() } }],
+    }).sort({ advisorReviewedAt: -1 }).select('domain title collaborationMode facts risks missingInformation recommendations advisorReviewedAt').lean();
+    const professionalAssessmentText = professionalAssessments.length
+      ? professionalAssessments.map(item => `【${item.domain}｜${item.title}】\n已确认事实：${(item.facts || []).join('；') || '无'}\n重点关注：${(item.risks || []).join('；') || '无'}\n待补信息：${(item.missingInformation || []).join('；') || '无'}\n管理建议：${JSON.stringify(item.recommendations || {})}`).join('\n\n').slice(0, 20000)
+      : '无已审核的年度综合健康评估';
     const latestAssessment = confirmedCaseReviews.find(item => item.conclusion?.structured?.actions?.length)
       || confirmedCaseReviews[0];
     const assessmentFocus = latestAssessment ? {
@@ -9447,6 +9454,11 @@ ${notes ? notes : '（未填写目标，按会员情况常规定制）'}
 
 【医护团队已确认的AI辅助研判结论】
 ${confirmedReviewText}
+
+【已由专业人员提出、健康顾问终审的年度综合健康评估】
+${professionalAssessmentText}
+
+专业健康评估是年度方案的必需专业输入。只能采用已终审内容，AI可以整理和补全表达，但不得改变专业结论、添加诊断或治疗意见；涉及就医、检查、复查和生活方式管理的建议，应优先与上述评估保持一致。
 
 【本方案必须对齐的主评估】
 ${assessmentFocus ? JSON.stringify(assessmentFocus) : '暂无结构化主评估；仅可按本次服务目标生成，不得扩展主题'}

@@ -352,6 +352,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [preparation, setPreparation] = useState(null)
   const [preparationSaving, setPreparationSaving] = useState(false)
   const [preparationDraft, setPreparationDraft] = useState({ requiredAssessmentDomains: '', medicationStatus: 'unknown', supplementStatus: 'unknown', advisorReady: false })
+  const [professionalAssessments, setProfessionalAssessments] = useState([])
+  const [assessmentSaving, setAssessmentSaving] = useState(false)
+  const [assessmentDraft, setAssessmentDraft] = useState({ domain: '', title: '', facts: '', risks: '', missingInformation: '', recommendations: '' })
 
   useEffect(() => {
     staffAPI.getStaffList().then(r => setStaffList(r.data || [])).catch(() => {})
@@ -383,8 +386,10 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         staffAPI.getPatient(id),
         staffAPI.getAnnualPlan(id, year),
         staffAPI.getAnnualPlanPreparation(id, year),
-      ]).then(([patRes, planRes, preparationRes]) => {
+        staffAPI.getProfessionalHealthAssessments(id, { purpose: 'annual_input' }),
+      ]).then(([patRes, planRes, preparationRes, assessmentRes]) => {
         setPatient(patRes.data?.user || patRes.data)
+        setProfessionalAssessments(assessmentRes.data || [])
         const preparationData = preparationRes.data || null
         setPreparation(preparationData)
         setPreparationDraft({
@@ -580,6 +585,31 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     }
   }
 
+  const splitLines = value => value.split(/[\n；;]/).map(item => item.trim()).filter(Boolean)
+  const handleCreateAssessment = async () => {
+    if (!assessmentDraft.domain.trim() || !assessmentDraft.title.trim() || !assessmentDraft.facts.trim()) { toast('请填写评估领域、标题和客观评估结论'); return }
+    setAssessmentSaving(true)
+    try {
+      const res = await staffAPI.createProfessionalHealthAssessment(id, {
+        purpose: 'annual_input', domain: assessmentDraft.domain.trim(), title: assessmentDraft.title.trim(),
+        facts: splitLines(assessmentDraft.facts), risks: splitLines(assessmentDraft.risks), missingInformation: splitLines(assessmentDraft.missingInformation),
+        recommendations: { followUps: splitLines(assessmentDraft.recommendations).map(content => ({ content })) },
+      })
+      setProfessionalAssessments(prev => [res.data, ...prev])
+      setAssessmentDraft({ domain: '', title: '', facts: '', risks: '', missingInformation: '', recommendations: '' })
+      toast('专业健康评估草稿已建立，需健康顾问终审后才能进入年度方案')
+    } catch (err) { toast(err.message || '建立评估失败') } finally { setAssessmentSaving(false) }
+  }
+  const handleReviewAssessment = async (assessmentId, action) => {
+    try {
+      const res = await staffAPI.reviewProfessionalHealthAssessment(assessmentId, { action })
+      setProfessionalAssessments(prev => prev.map(item => item._id === assessmentId ? res.data : item))
+      const prepRes = await staffAPI.getAnnualPlanPreparation(id, year)
+      setPreparation(prepRes.data || null)
+      toast(action === 'approve_advisor' ? '健康顾问终审已通过' : '专业评估已提交健康顾问审核')
+    } catch (err) { toast(err.message || '审核失败') }
+  }
+
   const handlePush = async () => {
     if (dirty) { toast('有未保存的更改，请先保存再推送'); return }
     if (!planType) { toast('请先选择方案类型并保存'); return }
@@ -758,6 +788,31 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               <label style={{ gridColumn: '1 / -1', fontSize: 13, color: '#4A6558' }}><input type="checkbox" checked={preparationDraft.advisorReady} onChange={e => setPreparationDraft(prev => ({ ...prev, advisorReady: e.target.checked }))} /> 健康顾问已确认资料足够生成本年度方案</label>
             </div>
           )}
+        </div>
+      )}
+
+      {patientMode && (
+        <div style={{ background: '#fff', border: '1px solid #D7E4DD', borderRadius: 12, padding: 18, marginBottom: 20 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24' }}>年度综合健康评估</div>
+          <div style={{ fontSize: 13, color: '#6B7F75', marginTop: 4 }}>专业人员提供领域深度建议，健康顾问终审；只有“已终审”的评估会进入 AI 年度方案。</div>
+          <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+            {professionalAssessments.map(item => <div key={item._id} style={{ border: '1px solid #E8E3DA', borderRadius: 9, padding: 11, display: 'flex', gap: 12, alignItems: 'center' }}>
+              <div style={{ flex: 1 }}><b>{item.domain} · {item.title}</b><div style={{ fontSize: 12, color: '#6B7F75', marginTop: 3 }}>{(item.facts || []).join('；') || '暂无结论摘要'}</div></div>
+              <span style={{ fontSize: 12, color: item.status === 'approved' ? '#15803D' : '#B45309' }}>{item.status === 'approved' ? '已终审' : item.status === 'advisor_review' ? '待健康顾问终审' : '待专业审核'}</span>
+              {canEdit && item.status === 'advisor_review' && <button onClick={() => handleReviewAssessment(item._id, 'approve_advisor')} className="btn btn-primary btn-sm">终审通过</button>}
+              {!canEdit && item.status === 'professional_review' && <button onClick={() => handleReviewAssessment(item._id, 'submit_advisor')} className="btn btn-primary btn-sm">提交顾问审核</button>}
+            </div>)}
+            {!professionalAssessments.length && <div style={{ color: '#9A6A28', fontSize: 13 }}>尚无年度综合健康评估，年度方案准备清单会保持阻断。</div>}
+          </div>
+          <details style={{ marginTop: 14 }}>
+            <summary style={{ cursor: 'pointer', color: '#1E6B50', fontWeight: 600 }}>＋ 新建专业评估记录</summary>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10, marginTop: 12 }}>
+              <input value={assessmentDraft.domain} onChange={e => setAssessmentDraft(prev => ({ ...prev, domain: e.target.value }))} placeholder="评估领域，如心血管/生长发育/中医健康" className="form-control" />
+              <input value={assessmentDraft.title} onChange={e => setAssessmentDraft(prev => ({ ...prev, title: e.target.value }))} placeholder="评估标题" className="form-control" />
+              {[['facts','客观评估结论（必填，每行一项）'],['risks','重点关注（每行一项）'],['missingInformation','待补信息（每行一项）'],['recommendations','管理建议：就医、检查、复查或生活方式（每行一项）']].map(([key, label]) => <textarea key={key} value={assessmentDraft[key]} onChange={e => setAssessmentDraft(prev => ({ ...prev, [key]: e.target.value }))} placeholder={label} rows={3} className="form-control" style={{ gridColumn: '1 / -1' }} />)}
+              <button onClick={handleCreateAssessment} disabled={assessmentSaving} className="btn btn-primary" style={{ justifySelf: 'start' }}>{assessmentSaving ? '保存中…' : '保存评估草稿'}</button>
+            </div>
+          </details>
         </div>
       )}
 
