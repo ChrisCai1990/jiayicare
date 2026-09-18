@@ -1,11 +1,5 @@
 const FollowUp = require('../models/FollowUp');
 
-// 频率文案 → 周期天数，用于按方案配置的频率批量排期随访占位
-const FREQUENCY_DAYS = {
-  '每天': 1, '每日一次': 1, '每周一次': 7, '每两周一次': 14,
-  '每月一次': 30, '每季度一次': 90, '每半年一次': 182, '每年一次': 365,
-};
-
 // 占位记录预生成窗口：只提前生成未来 N 天内的，而不是一次性铺满全年。
 // 此前"每天"频率的监测项会一次性生成365条占位，单个客户能堆到几百条，
 // 把真实/已完成的随访记录挤到分页后面（2026-07-13 反馈：客户详情页随访记录
@@ -43,7 +37,7 @@ const DATED_RECORD_MODULES = [
 
 // 客户确认年度管理方案后，按 moduleData 内容直接生成可执行随访计划。这是"确认即联动随访"的核心函数：
 // ①有具体日期的模块（DATED_RECORD_MODULES）每条记录直接生成一条随访，日期取该记录自己的日期字段
-// ②日常监测(monitoring)按 frequency 文案批量排期到未来一年内
+// ②日常监测(monitoring)由 Reminder 独立承接，不进入随访计划
 // ③季度评估(quarterly_eval)固定每3个月生成一条，排到未来一年内
 // ④年度体检(annual_checkup)按 date 字段生成一条
 // ⑤生活方式评估(lifestyle)的评估周期是自由文本（如"2026年上半年"），无法解析成具体日期，不自动生成，需医护手动建随访
@@ -154,30 +148,8 @@ async function buildAnnualPlanFollowUps(plan) {
     });
   }
 
-  // ② 日常监测：multi:true 多条记录，每条各自按 frequency 排期，只提前生成未来 HORIZON_DAYS 天内的
-  const monitoringRecords = moduleData.monitoring?.records;
-  if (Array.isArray(monitoringRecords)) {
-    monitoringRecords.forEach((rec) => {
-      const days = FREQUENCY_DAYS[rec.frequency];
-      // 每日监测属于客户日常打卡，不生成逐日随访计划，避免医护端和客户端堆积。
-      if (!days || days === 1 || rec.repeatDaily === true) return;
-      const horizonEnd = new Date(Date.now() + HORIZON_DAYS * 86400000);
-      let cursor = new Date(Date.now() + days * 86400000);
-      const monitorLines = [
-        rec.items && `监测项目：${rec.items}`,
-        rec.time && `监测时间：${rec.time}`,
-        rec.purpose && `监测目的：${rec.purpose}`,
-        rec.frequency && `监测频率：${rec.frequency}`,
-        patient?.assignedHealthManager && `随访人员：${staffName(patient.assignedHealthManager)}`,
-        rec.notes && `注意事项：${rec.notes}`,
-      ].filter(Boolean).join('\n');
-      while (cursor <= horizonEnd) {
-        push(cursor, `日常监测随访 · ${rec.items || ''}`, monitorLines, patient?.assignedHealthManager,
-          `monitoring:${rec.items || ''}:${cursor.toISOString().slice(0, 10)}`, rec);
-        cursor = new Date(cursor.getTime() + days * 86400000);
-      }
-    });
-  }
+  // ② 日常监测不生成 FollowUp。血压/体重等由 annualPlanMonitoringReminders
+  // 生成聚合系统提醒，避免随访列表和消息未读数被高频打卡事项淹没。
 
   // ③ 季度评估：固定每3个月一条，只提前生成未来 HORIZON_DAYS 天内到期的那一条（如果有）
   const quarterlyEval = moduleData.quarterly_eval;
@@ -260,6 +232,13 @@ async function buildAnnualPlanFollowUps(plan) {
 // 保存/定时刷新都按稳定排期键原位同步。已审核记录永不重建；待审核记录仅更新，
 // 从而既保留人工修改，又避免每天刷新把同一计划再次送审。
 async function syncAnnualPlanFollowUps(plan) {
+  // 清理旧版本生成且尚未完成的监测随访；已完成记录作为历史保留。
+  await FollowUp.deleteMany({
+    sourceAnnualPlanId: plan._id,
+    sourceType: 'scheduled',
+    sourceScheduleKey: /^monitoring:/,
+    status: { $ne: 'completed' },
+  });
   const toCreate = await buildAnnualPlanFollowUps(plan);
   const existing = await FollowUp.find({ sourceAnnualPlanId: plan._id, sourceType: 'scheduled' }).sort({ createdAt: 1 });
   const desiredKeys = new Set(toCreate.map(row => row.sourceScheduleKey));

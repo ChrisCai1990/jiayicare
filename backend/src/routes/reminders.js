@@ -39,7 +39,7 @@ function isActiveToday(r) {
 // GET / — 列出所有提醒
 router.get('/', auth, async (req, res) => {
   const { category } = req.query;
-  const query = { user: req.user._id };
+  const query = { user: req.user._id, systemManaged: { $ne: true } };
   if (category) query.category = category;
   const reminders = await Reminder.find(query).sort({ createdAt: -1 });
 
@@ -53,7 +53,7 @@ router.get('/', auth, async (req, res) => {
 
 // GET /today — 仅返回今日激活的提醒
 router.get('/today', auth, async (req, res) => {
-  const all = await Reminder.find({ user: req.user._id, enabled: true });
+  const all = await Reminder.find({ user: req.user._id, enabled: true, systemManaged: { $ne: true } });
   const today = all.filter(isActiveToday).map(r => r.toObject());
   res.json({ success: true, data: today });
 });
@@ -70,9 +70,13 @@ router.post('/', auth, async (req, res) => {
 
 // PATCH /:id — 更新提醒
 router.patch('/:id', auth, async (req, res) => {
+  const current = await Reminder.findOne({ _id: req.params.id, user: req.user._id });
+  if (!current) return res.status(404).json({ success: false, message: '提醒不存在' });
+  const update = { ...req.body };
+  if (current.systemManaged && req.body.enabled !== undefined) update.userDisabled = req.body.enabled === false;
   const reminder = await Reminder.findOneAndUpdate(
     { _id: req.params.id, user: req.user._id },
-    req.body,
+    update,
     { new: true }
   );
   if (!reminder) return res.status(404).json({ success: false, message: '提醒不存在' });
@@ -84,12 +88,20 @@ router.patch('/:id/toggle', auth, async (req, res) => {
   const reminder = await Reminder.findOne({ _id: req.params.id, user: req.user._id });
   if (!reminder) return res.status(404).json({ success: false, message: '提醒不存在' });
   reminder.enabled = !reminder.enabled;
+  if (reminder.systemManaged) reminder.userDisabled = !reminder.enabled;
   await reminder.save();
   res.json({ success: true, data: reminder });
 });
 
 // DELETE /:id
 router.delete('/:id', auth, async (req, res) => {
+  const reminder = await Reminder.findOne({ _id: req.params.id, user: req.user._id });
+  if (reminder?.systemManaged) {
+    reminder.enabled = false;
+    reminder.userDisabled = true;
+    await reminder.save();
+    return res.json({ success: true, message: '已关闭系统监测提醒' });
+  }
   await Reminder.findOneAndDelete({ _id: req.params.id, user: req.user._id });
   res.json({ success: true, message: '删除成功' });
 });

@@ -133,6 +133,7 @@ app.listen(PORT, () => {
 
   // AI每日健康关怀
   require('./utils/dailyCareScheduler').startDailyCareScheduler();
+  require('./utils/monitoringReminderScheduler').startMonitoringReminderScheduler();
 
   // 已确认管理方案会员的月度AI随访回顾，每天扫描一次（命中月初才实际执行）
   require('./utils/monthlyFollowUpScheduler').startMonthlyReviewScheduler();

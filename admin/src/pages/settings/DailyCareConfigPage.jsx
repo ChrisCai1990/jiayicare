@@ -9,10 +9,11 @@ export default function DailyCareConfigPage() {
   const [enabled, setEnabled] = useState(true)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [temporarilyPaused, setTemporarilyPaused] = useState(false)
 
   useEffect(() => {
     adminAPI.getDailyCareConfig()
-      .then(r => setEnabled(r.data?.enabled !== false))
+      .then(r => { setEnabled(r.data?.enabled === true); setTemporarilyPaused(r.data?.temporarilyPaused === true) })
       .catch(e => toast(e.message))
       .finally(() => setLoading(false))
   }, [])
@@ -55,7 +56,7 @@ export default function DailyCareConfigPage() {
               {/* 开关按钮 */}
               <button
                 onClick={handleToggle}
-                disabled={saving}
+                disabled={saving || temporarilyPaused}
                 style={{
                   position: 'relative', width: 52, height: 30, borderRadius: 999, border: 'none',
                   background: enabled ? '#1E6B50' : '#D1D5DB', cursor: saving ? 'wait' : 'pointer',
@@ -72,6 +73,9 @@ export default function DailyCareConfigPage() {
 
             <div style={{ paddingTop: 18 }}>
               <div style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24', marginBottom: 10 }}>推送规则说明</div>
+              {temporarilyPaused && <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, background: '#EAF5EF', color: '#1E6B50', fontSize: 13 }}>
+                当前版本已暂停每日关怀，改由年度管理方案按规则生成血压、体重系统提醒；提醒不会进入聊天消息，也不会累积未读。
+              </div>}
               <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: '#4A6558', lineHeight: 2 }}>
                 <li>推送对象：近 30 天有过打卡，或近 30 天新建档的活跃客户（不打扰僵尸账号）</li>
                 <li>推送内容：结合客户打卡天数、慢病标签，由 AI 生成温暖话术；AI 不可用时用暖心模板兜底</li>

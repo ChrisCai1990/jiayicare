@@ -76,12 +76,14 @@ async function generateCareMessage(user) {
 }
 
 async function scanAndSendDailyCare() {
-  // 开关：SystemConfig.dailyCare.enabled 为 false 则不发（默认开启）
-  let enabled = true;
+  // 2026-09：高频关怀消息暂停，改由建档及服务周期生成血压/体重系统通知。
+  // 保留调度器与配置，便于后续重新设计后恢复，但当前版本不产生新的未读关怀消息。
+  const temporarilyPaused = true;
+  let enabled = false;
   try {
     const cfg = await SystemConfig.findOne({ key: 'dailyCare' }).lean();
-    if (cfg && cfg.value && cfg.value.enabled === false) enabled = false;
-  } catch (e) { /* 无配置表也不阻塞，默认开启 */ }
+    enabled = !temporarilyPaused && cfg?.value?.enabled === true;
+  } catch (e) { /* 读取失败时安全地保持关闭 */ }
   if (!enabled) { console.log('[daily-care] 已被管理员关闭，跳过'); return; }
 
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);

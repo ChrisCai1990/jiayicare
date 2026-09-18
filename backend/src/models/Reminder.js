@@ -38,10 +38,19 @@ const reminderSchema = new mongoose.Schema({
   endDate:            { type: Date },                        // 结束日期（可选，null=长期）
 
   streak: { type: Number, default: 0 },
+  // 年度方案自动生成的监测提醒。它只进入提醒列表，不生成聊天消息或随访任务。
+  sourceAnnualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', default: null },
+  sourceKey:          { type: String, default: '' },
+  systemManaged:      { type: Boolean, default: false },
+  userDisabled:       { type: Boolean, default: false },
 }, { timestamps: true });
 
 reminderSchema.index({ user: 1, enabled: 1 });
 reminderSchema.index({ user: 1, category: 1 });
+reminderSchema.index(
+  { user: 1, sourceKey: 1 },
+  { unique: true, partialFilterExpression: { systemManaged: true, sourceKey: { $gt: '' } } },
+);
 
 module.exports = mongoose.model('Reminder', reminderSchema);
 module.exports.CATEGORIES = CATEGORIES;

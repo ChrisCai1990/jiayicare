@@ -105,13 +105,12 @@ const MODULE_DEFS = {
     ],
   },
   monitoring: {
-    name: '日常监测', icon: '📊', multi: true, summaryKey: 'items', summaryLabel: '监测项目',
+    name: '自动监测提醒', icon: '📊', multi: true, summaryKey: 'items', summaryLabel: '监测项目',
     fields: [
       { key: 'items',     label: '监测项目', type: 'text' },
-      { key: 'time',      label: '监测时间', type: 'text', placeholder: '如：每天早晨' },
+      { key: 'time',      label: '系统提醒时间', type: 'text', placeholder: '如：08:00' },
       { key: 'purpose',   label: '监测目的', type: 'textarea' },
-      { key: 'frequency', label: '监测频率', type: 'text', placeholder: '如：每日一次' },
-      { key: 'followUpStaff', label: '随访人员', type: 'staff-select' },
+      { key: 'frequency', label: '系统提醒频率', type: 'text', placeholder: '如：每日一次、每周一次' },
       { key: 'notes',     label: '注意事项', type: 'textarea', internal: true },
       ...SERVICE_MODE_FIELDS,
     ],
@@ -303,7 +302,7 @@ const templateEntries = template => {
   const usedBaseKeys = new Set(entries.map(entry => entry.key.startsWith('lifestyle_') ? 'lifestyle' : entry.key))
   ;(template?.content?.moduleRules || []).filter(rule => rule.enabled !== false).forEach(rule => {
     const key = ADMIN_RULE_MODULE_MAP[rule.key]
-    if (!key || usedBaseKeys.has(key) || !MODULE_DEFS[key]) return
+    if (!key || key === 'monitoring' || usedBaseKeys.has(key) || !MODULE_DEFS[key]) return
     entries.push({ key, def: MODULE_DEFS[key], source: rule })
     usedBaseKeys.add(key)
   })
@@ -313,10 +312,10 @@ const templateEntries = template => {
 
 // ── 各方案类型包含的板块（按顺序）──────────────────────────────────
 const PLAN_TYPE_MODULES = {
-  health_reshape:    ['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'monitoring', 'lifestyle', 'annual_checkup', 'quarterly_eval'],
-  young_state:       ['abnormal_followup', 'vaccine', 'monitoring', 'functional_medicine', 'lifestyle', 'annual_checkup', 'quarterly_eval'],
-  chronic_stable:    ['abnormal_followup', 'vaccine', 'monitoring', 'lifestyle', 'annual_checkup', 'quarterly_eval'],
-  health_prevention: ['abnormal_followup', 'vaccine', 'monitoring', 'annual_checkup'],
+  health_reshape:    ['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'lifestyle', 'annual_checkup', 'quarterly_eval'],
+  young_state:       ['abnormal_followup', 'vaccine', 'functional_medicine', 'lifestyle', 'annual_checkup', 'quarterly_eval'],
+  chronic_stable:    ['abnormal_followup', 'vaccine', 'lifestyle', 'annual_checkup', 'quarterly_eval'],
+  health_prevention: ['abnormal_followup', 'vaccine', 'annual_checkup'],
 }
 
 

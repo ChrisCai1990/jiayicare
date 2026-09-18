@@ -335,6 +335,9 @@ router.post('/', auth, async (req, res) => {
 
     // 异步打卡积分（不阻断响应，历史补录不计分）
     awardCheckinPoints(req.user._id, type, record.recordedAt).catch(() => {});
+    if (type === 'bloodPressure' || type === 'weight') {
+      require('../utils/annualPlanMonitoringReminders').syncServiceCycleMonitoringReminders(req.user._id).catch(() => {});
+    }
 
     res.status(201).json({ success: true, data: record, message: '记录成功' });
   } catch (err) {
@@ -366,6 +369,9 @@ router.put('/:id', auth, async (req, res) => {
     await record.save();
 
     recalcHealthScore(req.user._id).catch(() => {});
+    if (record.type === 'bloodPressure' || record.type === 'weight') {
+      require('../utils/annualPlanMonitoringReminders').syncServiceCycleMonitoringReminders(req.user._id).catch(() => {});
+    }
 
     res.json({ success: true, data: record, message: '修改成功' });
   } catch (err) {

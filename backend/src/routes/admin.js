@@ -2146,11 +2146,10 @@ router.get('/system-config/scoring', adminAuth, async (req, res) => {
   }
 });
 
-// GET /api/admin/system-config/daily-care —— AI每日健康关怀开关（默认开启）
+// GET /api/admin/system-config/daily-care —— 高频每日关怀暂时停用，由血压/体重系统提醒替代
 router.get('/system-config/daily-care', adminAuth, async (req, res) => {
   try {
-    const cfg = await SystemConfig.findOne({ key: 'dailyCare' });
-    res.json({ success: true, data: cfg ? cfg.value : { enabled: true } });
+    res.json({ success: true, data: { enabled: false, temporarilyPaused: true, pausedReason: '已改用血压和体重系统提醒，避免累积未读消息' } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -2337,13 +2336,13 @@ router.put('/system-config/health-fund', adminAuth, async (req, res) => {
 // PUT /api/admin/system-config/daily-care —— 开关AI每日关怀
 router.put('/system-config/daily-care', adminAuth, async (req, res) => {
   try {
-    const value = { enabled: req.body.enabled !== false };
+    const value = { enabled: false, temporarilyPaused: true };
     await SystemConfig.findOneAndUpdate(
       { key: 'dailyCare' },
       { key: 'dailyCare', value, label: 'AI每日健康关怀开关' },
       { upsert: true, new: true }
     );
-    res.json({ success: true, message: value.enabled ? '已开启每日健康关怀' : '已关闭每日健康关怀' });
+    res.json({ success: true, data: value, message: '每日健康关怀暂时停用，当前使用血压和体重系统提醒' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

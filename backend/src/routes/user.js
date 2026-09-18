@@ -427,6 +427,7 @@ router.put('/me', auth, async (req, res) => {
     if (archiveChanges.length) pushData.archiveChangeLog = { $each: [{ source: 'customer', changedByName: req.user.name || '客户本人', changedAt: archiveChangedAt, items: archiveChanges }], $slice: -50 };
     if (Object.keys(pushData).length) updateOps.$push = pushData;
     await User.collection.updateOne({ _id: req.user._id }, updateOps);
+    await require('../utils/annualPlanMonitoringReminders').syncServiceCycleMonitoringReminders(req.user._id);
 
     // 异步写变更日志（不阻塞主响应）
     if (changeLogs.length > 0) {
@@ -573,6 +574,7 @@ router.post('/onboarding', auth, async (req, res) => {
     await applyOnboardingRewards(user, pendingInviteCode, pendingInviterId);
     if (pendingInviteCode || pendingInviterId) await User.updateOne({ _id: user._id }, { $unset: { pendingInviteCode: 1, pendingInviter: 1 } });
     user = await User.findById(user._id);
+    await require('../utils/annualPlanMonitoringReminders').syncServiceCycleMonitoringReminders(user._id);
 
     // 立即推送第一批问卷（健康问卷表），失败不影响 onboarding 本身完成
     try {
@@ -663,7 +665,7 @@ router.get('/dashboard', auth, async (req, res) => {
       ),
       Task.find({ user: userId, status: 'pending' })
         .sort({ priority: 1, createdAt: 1 }).limit(5).lean(),
-      Reminder.find({ user: userId, enabled: true }).lean(),
+      Reminder.find({ user: userId, enabled: true, systemManaged: { $ne: true } }).lean(),
       HealthRecord.countDocuments({ user: userId }),
       buildGrowthData(userId),
     ]);

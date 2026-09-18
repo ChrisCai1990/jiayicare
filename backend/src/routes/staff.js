@@ -1039,6 +1039,7 @@ router.post('/patients', staffAuth, checkPermission('patients', 'create'), async
   if (initRecords.length > 0) {
     await HealthRecord.insertMany(initRecords);
   }
+  await require('../utils/annualPlanMonitoringReminders').syncServiceCycleMonitoringReminders(user._id);
 
   res.json({ success: true, data: user });
 });
@@ -1580,6 +1581,7 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
   if (Object.keys(pushOps).length > 0) ops.$push = pushOps;
 
   await User.collection.updateOne({ _id: new mongoose.Types.ObjectId(req.params.id) }, ops);
+  await require('../utils/annualPlanMonitoringReminders').syncServiceCycleMonitoringReminders(req.params.id);
   // 保存设备档案时，把最近一次维护日期同步为负责人工作台任务；稳定键避免重复保存产生重复任务。
   if (Array.isArray(req.body.healthEquipment)) {
     const patient = await User.findById(req.params.id).select('assignedHealthManager assignedFamilyDoctor').lean();
@@ -6822,8 +6824,10 @@ router.delete('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       relatedFollowUpsDeleted: relatedFollowUps.length,
     });
     const RecurringSupplyPlan = require('../models/RecurringSupplyPlan');
+    const Reminder = require('../models/Reminder');
     await Promise.all([
       FollowUp.deleteMany({ _id: { $in: relatedFollowUps.map(f => f._id) } }),
+      Reminder.deleteMany({ sourceAnnualPlanId: plan._id, systemManaged: true }),
       RecurringSupplyPlan.updateMany({ sourceAnnualPlanId: plan._id }, { $set: { enabled: false } }),
       AnnualPlan.deleteOne({ _id: plan._id }),
     ]);
@@ -9186,13 +9190,13 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     // 各方案类型包含的板块（与前端 AnnualMgmtPlanPage 的 PLAN_TYPE_MODULES 保持一致）
     // 只生成所选方案类型对应的板块，不生成其它类型的板块
     const PLAN_TYPE_MODULES = {
-      health_reshape:    ['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'monitoring', 'lifestyle', 'annual_checkup'],
-      young_state:       ['abnormal_followup', 'vaccine', 'monitoring', 'lifestyle', 'annual_checkup'],
-      chronic_stable:    ['abnormal_followup', 'vaccine', 'monitoring', 'lifestyle', 'annual_checkup'],
-      health_prevention: ['abnormal_followup', 'vaccine', 'monitoring', 'annual_checkup'],
+      health_reshape:    ['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'lifestyle', 'annual_checkup'],
+      young_state:       ['abnormal_followup', 'vaccine', 'lifestyle', 'annual_checkup'],
+      chronic_stable:    ['abnormal_followup', 'vaccine', 'lifestyle', 'annual_checkup'],
+      health_prevention: ['abnormal_followup', 'vaccine', 'annual_checkup'],
     };
     // 后端实际能生成的板块全集
-    const GENERATABLE = ['medical_treatment', 'specialist_collab', 'checkup_completion', 'abnormal_followup', 'vaccine', 'monitoring', 'lifestyle', 'annual_checkup'];
+    const GENERATABLE = ['medical_treatment', 'specialist_collab', 'checkup_completion', 'abnormal_followup', 'vaccine', 'lifestyle', 'annual_checkup'];
     const planType = req.body.planType || '';
     const templateId = req.body.templateId || '';
     let selectedTemplate = null;
