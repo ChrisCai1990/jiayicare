@@ -41,6 +41,8 @@ const Order = require('../models/Order');
 const GiftRecord = require('../models/GiftRecord');
 const Coupon = require('../models/Coupon');
 const Referral = require('../models/Referral');
+const ProfessionalHealthAssessment = require('../models/ProfessionalHealthAssessment');
+const AnnualPlanPreparation = require('../models/AnnualPlanPreparation');
 const MedicalInstitution = require('../models/MedicalInstitution');
 const MedicalDepartment = require('../models/MedicalDepartment');
 const MedicalExpert = require('../models/MedicalExpert');
@@ -6351,6 +6353,91 @@ router.get('/annual-health-plans', staffAuth, async (req, res) => {
   }
 });
 
+// ── 专业健康评估：独立于专病档案，必要时可选择关联专病 ────────────────
+router.get('/patients/:id/professional-health-assessments', staffAuth, async (req, res) => {
+  const visibleIds = await getVisiblePlanPatientIds(req.staff);
+  if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权查看该会员的专业健康评估' });
+  const filter = { patientId: req.params.id };
+  if (req.query.purpose) filter.purpose = req.query.purpose;
+  if (req.query.status) filter.status = req.query.status;
+  const rows = await ProfessionalHealthAssessment.find(filter)
+    .populate('createdBy professionalReviewerIds advisorReviewedBy', 'name role')
+    .sort({ createdAt: -1 });
+  res.json({ success: true, data: rows });
+});
+
+router.post('/patients/:id/professional-health-assessments', staffAuth, async (req, res) => {
+  if (!['familyDoctor', 'specialist', 'nutritionist', 'rehabSpecialist', 'tcmDoctor', 'psychologist', 'superadmin'].includes(req.staff.role)) {
+    return res.status(403).json({ success: false, message: '当前岗位无权建立专业健康评估' });
+  }
+  const { purpose, domain, title, collaborationMode = 'single_discipline' } = req.body;
+  if (!['annual_input', 'issue_collaboration'].includes(purpose) || !String(domain || '').trim() || !String(title || '').trim()) {
+    return res.status(400).json({ success: false, message: '请填写评估用途、领域和标题' });
+  }
+  const patient = await User.findById(req.params.id).select('_id').lean();
+  if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+  const row = await ProfessionalHealthAssessment.create({
+    patientId: req.params.id, purpose, domain: String(domain).trim(), title: String(title).trim(), collaborationMode,
+    linkedDiseaseRecordId: req.body.linkedDiseaseRecordId || null, linkedDiseaseName: String(req.body.linkedDiseaseName || '').trim(),
+    sourceReferralIds: req.body.sourceReferralIds || [], sourceRecordIds: req.body.sourceRecordIds || [], sourceCutoffAt: req.body.sourceCutoffAt || null,
+    facts: req.body.facts || [], risks: req.body.risks || [], missingInformation: req.body.missingInformation || [],
+    recommendations: req.body.recommendations || {}, aiDraft: req.body.aiDraft || null,
+    status: req.staff.role === 'familyDoctor' || req.staff.role === 'superadmin' ? 'advisor_review' : 'professional_review',
+    createdBy: req.staff._id, createdByRole: req.staff.role,
+    auditLog: [{ action: 'created', at: new Date(), by: req.staff._id, role: req.staff.role }],
+  });
+  res.status(201).json({ success: true, data: row });
+});
+
+router.patch('/professional-health-assessments/:assessmentId/review', staffAuth, async (req, res) => {
+  const row = await ProfessionalHealthAssessment.findById(req.params.assessmentId);
+  if (!row) return res.status(404).json({ success: false, message: '专业健康评估不存在' });
+  const action = req.body.action;
+  if (!['approve_professional', 'submit_advisor', 'approve_advisor', 'reject'].includes(action)) return res.status(400).json({ success: false, message: '审核动作无效' });
+  if (action === 'approve_advisor') {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可完成综合审核' });
+    row.status = 'approved'; row.advisorReviewedBy = req.staff._id; row.advisorReviewedAt = new Date(); row.validFrom = row.validFrom || new Date();
+  } else if (action === 'reject') {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可退回评估' });
+    row.status = 'rejected'; row.advisorReviewedBy = req.staff._id; row.advisorReviewedAt = new Date();
+  } else {
+    if (!['familyDoctor', 'specialist', 'nutritionist', 'rehabSpecialist', 'tcmDoctor', 'psychologist', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '当前岗位不能确认专业评估内容' });
+    if (!row.professionalReviewerIds.some(id => String(id) === String(req.staff._id))) row.professionalReviewerIds.push(req.staff._id);
+    row.professionalReviewedAt = new Date(); row.status = 'advisor_review';
+  }
+  row.reviewNote = String(req.body.reviewNote || '').trim();
+  row.auditLog.push({ action, at: new Date(), by: req.staff._id, role: req.staff.role, note: row.reviewNote });
+  await row.save();
+  res.json({ success: true, data: row });
+});
+
+// ── 首次年度方案准备清单 ───────────────────────────────────────────────
+router.get('/patients/:id/annual-plan-preparation', staffAuth, async (req, res) => {
+  const visibleIds = await getVisiblePlanPatientIds(req.staff);
+  if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权查看该会员的年度方案准备情况' });
+  const year = Number(req.query.year) || new Date().getFullYear();
+  const result = await require('../utils/annualPlanPreparation').loadAnnualPlanPreparationChecklist(req.params.id, year);
+  if (!result) return res.status(404).json({ success: false, message: '会员不存在' });
+  res.json({ success: true, data: result });
+});
+
+router.put('/patients/:id/annual-plan-preparation', staffAuth, async (req, res) => {
+  if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可确认年度方案准备情况' });
+  const patient = await User.findById(req.params.id).select('_id').lean();
+  if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+  const year = Number(req.body.year) || new Date().getFullYear();
+  const medicationStatus = ['unknown', 'documented', 'none'].includes(req.body.medicationStatus) ? req.body.medicationStatus : 'unknown';
+  const supplementStatus = ['unknown', 'documented', 'none'].includes(req.body.supplementStatus) ? req.body.supplementStatus : 'unknown';
+  const requiredAssessmentDomains = [...new Set((req.body.requiredAssessmentDomains || []).map(item => String(item).trim()).filter(Boolean))];
+  const payload = { requiredAssessmentDomains, medicationStatus, supplementStatus, updatedBy: req.staff._id };
+  if (Array.isArray(req.body.waivers)) payload.waivers = req.body.waivers.filter(item => item?.key && String(item.reason || '').trim()).map(item => ({ key: String(item.key), reason: String(item.reason).trim(), waivedAt: new Date(), waivedBy: req.staff._id }));
+  if (req.body.advisorReady === true) { payload.advisorReadyConfirmedAt = new Date(); payload.advisorReadyConfirmedBy = req.staff._id; }
+  if (req.body.advisorReady === false) { payload.advisorReadyConfirmedAt = null; payload.advisorReadyConfirmedBy = null; }
+  await AnnualPlanPreparation.findOneAndUpdate({ patientId: req.params.id, year }, { $set: payload, $setOnInsert: { patientId: req.params.id, year } }, { upsert: true, new: true });
+  const result = await require('../utils/annualPlanPreparation').loadAnnualPlanPreparationChecklist(req.params.id, year);
+  res.json({ success: true, data: result });
+});
+
 // ── 年度管理方案 ─────────────────────────────────────────────────────
 router.get('/patients/:id/annual-plan', staffAuth, async (req, res) => {
   const visibleIds = await getVisiblePlanPatientIds(req.staff);
@@ -6425,6 +6512,8 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       $or: [{ templateId: template._id }, { templateName: { $in: [templateName, normalizedTemplate.content?.planName, template.name].filter(Boolean) } }],
     });
     const selector = legacy ? { _id: legacy._id } : { patientId: req.params.id, year: targetYear, planType: servicePlanCode };
+    const frozen = await AnnualPlan.findOne(selector).select('confirmedAt frozenAt').lean();
+    if (frozen?.confirmedAt || frozen?.frozenAt) return res.status(409).json({ success: false, message: '客户已确认的年度方案已经冻结；后续变化请生成动态随访计划' });
     const plan = await AnnualPlan.findOneAndUpdate(
       selector,
       { planType: servicePlanCode, servicePlanCode, strategyType: version.strategyType, clientBrand: patient.clientBrand,
@@ -6627,10 +6716,20 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     if (planType) query.planType = planType;
     const plan = await AnnualPlan.findOne(query);
     if (!plan) return res.status(404).json({ success: false, message: '方案不存在，请先保存' });
+    const preparation = await require('../utils/annualPlanPreparation').loadAnnualPlanPreparationChecklist(req.params.id, targetYear);
+    if (!preparation?.checklist?.ready) return res.status(409).json({ success: false, message: '首次年度方案准备清单尚未完成', data: preparation?.checklist || null });
+    const otherFormal = await AnnualPlan.findOne({
+      patientId: req.params.id,
+      year: targetYear,
+      _id: { $ne: plan._id },
+      $or: [{ formalizedAt: { $ne: null } }, { pushedAt: { $ne: null } }, { confirmedAt: { $ne: null } }],
+    }).select('_id templateName').lean();
+    if (otherFormal) return res.status(409).json({ success: false, message: `本年度已有正式年度方案${otherFormal.templateName ? `“${otherFormal.templateName}”` : ''}，不能重复发布` });
     plan.reviewStatus = 'approved';
     plan.reviewedBy = req.staff._id;
     plan.reviewedAt = new Date();
     plan.pushedAt = new Date();
+    plan.formalizedAt = plan.formalizedAt || new Date();
     plan.pushedBy = req.staff._id;
     await plan.save();
     const { syncAnnualPlanTaskSplit } = require('../utils/annualPlanTaskSplit');
@@ -8478,6 +8577,7 @@ router.patch('/patients/:id/body-composition-history/:index', staffAuth, async (
   try {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
+
     const idx = parseInt(req.params.index);
     const history = user.bodyCompHistory || [];
     if (idx < 0 || idx >= history.length) return res.status(400).json({ success: false, message: '索引越界' });
@@ -9182,6 +9282,12 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
+    const targetYear = Number(req.body.year) || new Date().getFullYear();
+    const preparation = await require('../utils/annualPlanPreparation').loadAnnualPlanPreparationChecklist(req.params.id, targetYear);
+    if (!preparation?.checklist?.ready) {
+      return res.status(409).json({ success: false, message: '首次年度方案准备清单尚未完成', data: preparation?.checklist || null });
+    }
+
     const ais = user.aiHealthSummary;
     if (!ais || !ais.sections) {
       return res.status(400).json({ success: false, message: '请先生成AI健康信息整理报告' });
@@ -9267,7 +9373,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     const { chat } = require('../utils/ai');
     const { nextAnnualCheckupDate, hepatitisBAllNegative, conciseTitle } = require('../utils/annualPlanGeneration');
     const s = ais.sections;
-    const year = new Date().getFullYear();
+    const year = targetYear;
 
     const reports = await MedicalReport.find({ user: user._id, audit_status: 'audited' })
       .select('checkDate reportItems.name reportItems.value reportItems.examDate')

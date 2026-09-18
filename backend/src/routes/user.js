@@ -1051,6 +1051,11 @@ router.patch('/annual-mgmt-plans/:id/confirm', auth, async (req, res) => {
     if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
     if (!plan.confirmedAt) {
       plan.confirmedAt = new Date();
+      plan.frozenAt = plan.confirmedAt;
+      await plan.save();
+    } else if (!plan.frozenAt) {
+      // 兼容历史已确认方案：再次进入确认接口时补齐冻结标记。
+      plan.frozenAt = plan.confirmedAt;
       await plan.save();
     }
     // 客户确认是年度任务拆分的唯一触发点；重复确认只做幂等同步，不会重复生成。

@@ -349,6 +349,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [standardPlans, setStandardPlans] = useState([])
   const [templatesLoading, setTemplatesLoading] = useState(false)
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
+  const [preparation, setPreparation] = useState(null)
+  const [preparationSaving, setPreparationSaving] = useState(false)
+  const [preparationDraft, setPreparationDraft] = useState({ requiredAssessmentDomains: '', medicationStatus: 'unknown', supplementStatus: 'unknown', advisorReady: false })
 
   useEffect(() => {
     staffAPI.getStaffList().then(r => setStaffList(r.data || [])).catch(() => {})
@@ -379,8 +382,17 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       Promise.all([
         staffAPI.getPatient(id),
         staffAPI.getAnnualPlan(id, year),
-      ]).then(([patRes, planRes]) => {
+        staffAPI.getAnnualPlanPreparation(id, year),
+      ]).then(([patRes, planRes, preparationRes]) => {
         setPatient(patRes.data?.user || patRes.data)
+        const preparationData = preparationRes.data || null
+        setPreparation(preparationData)
+        setPreparationDraft({
+          requiredAssessmentDomains: (preparationData?.preparation?.requiredAssessmentDomains || []).join('、'),
+          medicationStatus: preparationData?.preparation?.medicationStatus || 'unknown',
+          supplementStatus: preparationData?.preparation?.supplementStatus || 'unknown',
+          advisorReady: !!preparationData?.preparation?.advisorReadyConfirmedAt,
+        })
         // 后端返回该年度全部类型的方案数组，按 updatedAt 降序
         const list = Array.isArray(planRes.data) ? planRes.data : (planRes.data ? [planRes.data] : [])
         const map = {}
@@ -501,7 +513,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     if (!skipConfirm && !window.confirm(`AI将基于已审核的汇总分析，生成「${ptName}」对应的方案板块，现有内容将被覆盖，确认继续？`)) return
     setAiPlanLoading(true)
     try {
-      const res = await staffAPI.generateAIAnnualPlan(id, type, '', selectedTemplateId)
+      const res = await staffAPI.generateAIAnnualPlan(id, type, '', selectedTemplateId, year)
       const aiData = res.data || {}
       // 只填充当前所选方案类型包含的板块，其余类型的板块忽略（一次只生成一个方案）
       const configuredRules = selectedTemplate?.content?.moduleRules || []
@@ -547,6 +559,26 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     }
   }
   const handleGenerateAIAnnualPlan = () => runAIGenerate(planType, false)
+
+  const handleSavePreparation = async () => {
+    setPreparationSaving(true)
+    try {
+      const requiredAssessmentDomains = preparationDraft.requiredAssessmentDomains.split(/[、,，;；\n]/).map(item => item.trim()).filter(Boolean)
+      const res = await staffAPI.updateAnnualPlanPreparation(id, {
+        year,
+        requiredAssessmentDomains,
+        medicationStatus: preparationDraft.medicationStatus,
+        supplementStatus: preparationDraft.supplementStatus,
+        advisorReady: preparationDraft.advisorReady,
+      })
+      setPreparation(res.data || null)
+      toast(res.data?.checklist?.ready ? '准备清单已完成，可以生成年度方案' : '准备情况已保存，请继续完成未满足项目')
+    } catch (err) {
+      toast(err.message || '保存准备清单失败')
+    } finally {
+      setPreparationSaving(false)
+    }
+  }
 
   const handlePush = async () => {
     if (dirty) { toast('有未保存的更改，请先保存再推送'); return }
@@ -671,16 +703,17 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             <>
               <button
                 onClick={handleGenerateAIAnnualPlan}
-                disabled={aiPlanLoading || !patient?.aiHealthSummary?.sections}
-                title={!patient?.aiHealthSummary?.sections ? '请先在AI信息整理及方案标签页生成健康信息整理结果' : 'AI自动填充方案板块'}
-                style={{ background: '#7C3AED', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (aiPlanLoading || !patient?.aiHealthSummary?.sections) ? 0.5 : 1 }}
+                disabled={aiPlanLoading || !patient?.aiHealthSummary?.sections || !preparation?.checklist?.ready}
+                title={!preparation?.checklist?.ready ? '请先完成首次方案准备清单' : (!patient?.aiHealthSummary?.sections ? '请先在AI信息整理及方案标签页生成健康信息整理结果' : 'AI自动填充方案板块')}
+                style={{ background: '#7C3AED', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (aiPlanLoading || !patient?.aiHealthSummary?.sections || !preparation?.checklist?.ready) ? 0.5 : 1 }}
               >
                 {aiPlanLoading ? 'AI生成中…' : '✨ AI生成方案'}
               </button>
               <button
                 onClick={handlePush}
-                disabled={pushing || dirty || !planType}
-                style={{ background: pushedAt && !dirty ? '#0077B6' : '#1E6B50', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (pushing || dirty || !planType) ? 0.5 : 1 }}
+                disabled={pushing || dirty || !planType || !preparation?.checklist?.ready}
+                title={!preparation?.checklist?.ready ? '请先完成首次方案准备清单' : ''}
+                style={{ background: pushedAt && !dirty ? '#0077B6' : '#1E6B50', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (pushing || dirty || !planType || !preparation?.checklist?.ready) ? 0.5 : 1 }}
               >
                 {pushing ? '推送中...' : pushedAt && !dirty ? '重新推送' : '推送给客户'}
               </button>
@@ -695,6 +728,38 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           </button>
         </div>
       </div>
+
+      {patientMode && preparation?.checklist && (
+        <div style={{ background: preparation.checklist.ready ? '#F0FDF4' : '#FFFDF7', border: `1px solid ${preparation.checklist.ready ? '#86EFAC' : '#F3D49A'}`, borderRadius: 12, padding: 18, marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24' }}>首次方案准备清单</div>
+              <div style={{ fontSize: 13, color: '#6B7F75', marginTop: 4 }}>已完成 {preparation.checklist.progress.completed}/{preparation.checklist.progress.total}；未完成前不能由 AI 生成或正式发布年度方案。</div>
+            </div>
+            <span style={{ fontSize: 12, fontWeight: 700, color: preparation.checklist.ready ? '#15803D' : '#B45309' }}>{preparation.checklist.ready ? '✓ 已就绪' : '待完善'}</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 8, marginTop: 14 }}>
+            {preparation.checklist.items.map(item => (
+              <div key={item.key} style={{ fontSize: 13, color: item.complete ? '#287A50' : '#9A5B13' }}>{item.complete ? '✓' : '○'} {item.label}{item.waived ? '（已说明豁免）' : ''}</div>
+            ))}
+          </div>
+          {canEdit && (
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 10, alignItems: 'end', marginTop: 16 }}>
+              <label style={{ fontSize: 12, color: '#4A6558' }}>所需专业评估领域（用顿号分隔）
+                <input value={preparationDraft.requiredAssessmentDomains} onChange={e => setPreparationDraft(prev => ({ ...prev, requiredAssessmentDomains: e.target.value }))} placeholder="如：心血管、营养、中医健康" style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 5, padding: '8px 10px', border: '1px solid #D9D4CA', borderRadius: 8 }} />
+              </label>
+              <label style={{ fontSize: 12, color: '#4A6558' }}>用药档案
+                <select value={preparationDraft.medicationStatus} onChange={e => setPreparationDraft(prev => ({ ...prev, medicationStatus: e.target.value }))} style={{ display: 'block', width: '100%', marginTop: 5, padding: '8px', border: '1px solid #D9D4CA', borderRadius: 8 }}><option value="unknown">待完善</option><option value="documented">已完善</option><option value="none">确认无</option></select>
+              </label>
+              <label style={{ fontSize: 12, color: '#4A6558' }}>营养素档案
+                <select value={preparationDraft.supplementStatus} onChange={e => setPreparationDraft(prev => ({ ...prev, supplementStatus: e.target.value }))} style={{ display: 'block', width: '100%', marginTop: 5, padding: '8px', border: '1px solid #D9D4CA', borderRadius: 8 }}><option value="unknown">待完善</option><option value="documented">已完善</option><option value="none">确认无</option></select>
+              </label>
+              <button onClick={handleSavePreparation} disabled={preparationSaving} style={{ padding: '9px 14px', border: 'none', borderRadius: 8, color: '#fff', background: '#1E6B50', cursor: 'pointer' }}>{preparationSaving ? '保存中…' : '保存准备情况'}</button>
+              <label style={{ gridColumn: '1 / -1', fontSize: 13, color: '#4A6558' }}><input type="checkbox" checked={preparationDraft.advisorReady} onChange={e => setPreparationDraft(prev => ({ ...prev, advisorReady: e.target.checked }))} /> 健康顾问已确认资料足够生成本年度方案</label>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 方案类型选择 */}
       <div style={{ background: '#fff', borderRadius: 12, padding: 20, marginBottom: 20, border: '1px solid #E0D9CE' }}>
