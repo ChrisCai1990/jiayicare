@@ -24,6 +24,7 @@ router.post('/', auth, async (req, res) => {
   const med = await Medication.create({
     user: req.user._id, name, brandName, dosage, method, frequency, timing, startDate, note,
   });
+  await require('../utils/annualPlanPreparationTasks').completeAnnualPreparationTask(req.user._id, 'medications').catch(() => {});
   res.status(201).json({ success: true, data: med, message: '添加成功' });
 });
 

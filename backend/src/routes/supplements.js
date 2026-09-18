@@ -22,6 +22,7 @@ router.post('/', auth, async (req, res) => {
   const item = await Supplement.create({
     user: req.user._id, name, brand, dosage, method, frequency, startDate, note,
   });
+  await require('../utils/annualPlanPreparationTasks').completeAnnualPreparationTask(req.user._id, 'supplements').catch(() => {});
   res.status(201).json({ success: true, data: item, message: '添加成功' });
 });
 

@@ -629,6 +629,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     const isServiceTask = (task.sourceType === 'health_plan' && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'order' && /^(medical_proxy|medication_proxy|checkup_appointment):/.test(String(task.workflowKey || '')) && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'insurance_service' && ['executor', 'supervisor'].includes(task.taskRole))
+      || (task.sourceType === 'annual_service' && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'scheduled' && (task.tags || []).includes('保险服务'));
     if (!isServiceTask) return false;
     if (task.sourceType === 'order' && !activeProxyOrderIds.has(String(task.sourceOrderId?._id || task.sourceOrderId))) return false;
@@ -6418,7 +6419,8 @@ router.get('/patients/:id/annual-plan-preparation', staffAuth, async (req, res) 
   const year = Number(req.query.year) || new Date().getFullYear();
   const result = await require('../utils/annualPlanPreparation').loadAnnualPlanPreparationChecklist(req.params.id, year);
   if (!result) return res.status(404).json({ success: false, message: '会员不存在' });
-  res.json({ success: true, data: result });
+  const taskSync = await require('../utils/annualPlanPreparationTasks').syncAnnualPreparationTasks(req.params.id, year, result.checklist);
+  res.json({ success: true, data: { ...result, taskSync } });
 });
 
 router.put('/patients/:id/annual-plan-preparation', staffAuth, async (req, res) => {
@@ -6435,7 +6437,8 @@ router.put('/patients/:id/annual-plan-preparation', staffAuth, async (req, res) 
   if (req.body.advisorReady === false) { payload.advisorReadyConfirmedAt = null; payload.advisorReadyConfirmedBy = null; }
   await AnnualPlanPreparation.findOneAndUpdate({ patientId: req.params.id, year }, { $set: payload, $setOnInsert: { patientId: req.params.id, year } }, { upsert: true, new: true });
   const result = await require('../utils/annualPlanPreparation').loadAnnualPlanPreparationChecklist(req.params.id, year);
-  res.json({ success: true, data: result });
+  const taskSync = await require('../utils/annualPlanPreparationTasks').syncAnnualPreparationTasks(req.params.id, year, result.checklist);
+  res.json({ success: true, data: { ...result, taskSync } });
 });
 
 // ── 年度管理方案 ─────────────────────────────────────────────────────
@@ -7386,6 +7389,7 @@ router.post('/patients/:id/medications', staffAuth, async (req, res) => {
       createdByName: req.staff.name || '',
       aiStatus: needReview ? 'pending' : null,
     });
+    await require('../utils/annualPlanPreparationTasks').completeAnnualPreparationTask(req.params.id, 'medications').catch(() => {});
     res.status(201).json({ success: true, data: med });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -7527,6 +7531,7 @@ router.post('/patients/:id/supplements', staffAuth, async (req, res) => {
       createdByName: req.staff.name || '',
       aiStatus: needReview ? 'pending' : null,
     });
+    await require('../utils/annualPlanPreparationTasks').completeAnnualPreparationTask(req.params.id, 'supplements').catch(() => {});
     res.status(201).json({ success: true, data: sup });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
