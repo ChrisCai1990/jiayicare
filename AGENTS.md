@@ -1,5 +1,7 @@
 # Codex / Claude Code 双端统一项目记忆
 
+> 2026-09-18：健康管理闭环总体方案已由业务确认，后续年度综合健康评估、专业健康评估、年度方案、统一工作台、动态随访、阶段性评估、年度总评及专业服务流转均以 `docs/HEALTH_MANAGEMENT_CLOSED_LOOP_BLUEPRINT_2026-09.md` 为开发和验收基线。
+
 > 2026-09-12：AI 用量管理已先同步 GitHub 再部署，功能版本 `edc7eab6` 生产验收通过；默认限额、首次发布异常及后续验收见 `docs/AI_USAGE_CONTROL.md`。
 
 
