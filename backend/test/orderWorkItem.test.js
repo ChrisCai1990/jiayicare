@@ -66,14 +66,18 @@ test('取消或退款的一次性综合服务会删除内部岗位任务', () =>
   assert.match(source, /FollowUp\.deleteMany\(\{[\s\S]*workflowKey: \/\^\(medical_proxy\|medication_proxy\|checkup_appointment\):\//);
 });
 
-test('年度就医与复查提醒包含完整执行信息并拒绝空壳任务', () => {
+test('年度就医与复查提醒保留注意事项并补齐完整执行信息', () => {
   const source = fs.readFileSync(path.join(__dirname, '../src/utils/annualPlanFollowUps.js'), 'utf8');
-  assert.match(source, /!String\(content \|\| ''\)\.trim\(\)/);
   assert.match(source, /rec\.basisSummary && `设置依据：/);
   assert.match(source, /rec\.customerAction && `客户行动：/);
   assert.match(source, /rec\.precautions \|\| rec\.notes/);
-  assert.match(source, /if \(!primaryDetails\.length\) return/);
-  assert.match(source, /content: \{ \$regex: \/\^\\s\*\(\?:-\|空腹\|暂无\|无\)\?\\s\*\$\//);
+  assert.doesNotMatch(source, /空腹\|暂无\|无/);
+  assert.match(source, /keep\.content = row\.content/);
+});
+
+test('任务列表合并主题、计划要求和注意事项，不让空腹遮住计划主体', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../../staff/src/pages/PatientDetailPage.jsx'), 'utf8');
+  assert.match(source, /new Set\(\[f\.theme, f\.taskRequirements, f\.plannedContent, f\.content\]/);
 });
 
 test('体检复查和疫苗关键词优先于普通健康监测指标', () => {

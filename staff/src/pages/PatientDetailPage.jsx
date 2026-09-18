@@ -9496,7 +9496,10 @@ export default function PatientDetailPage() {
                           </div>
                         )}
                         {(() => {
-                          const content = f.content || f.taskRequirements || f.plannedContent || ''
+                          // 旧任务会把注意事项（如“空腹”）放在 content，而计划主体保存在
+                          // theme / taskRequirements / plannedContent。不能用第一个非空字段遮住其余内容。
+                          const content = [...new Set([f.theme, f.taskRequirements, f.plannedContent, f.content]
+                            .map(value => String(value || '').trim()).filter(Boolean))].join('；')
                           return content ? (content.length > 60 ? content.slice(0, 60) + '…' : content) : '-'
                         })()}
                       </td>
