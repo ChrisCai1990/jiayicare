@@ -80,6 +80,19 @@ test('任务列表合并主题、计划要求和注意事项，不让空腹遮�
   assert.match(source, /new Set\(\[f\.theme, f\.taskRequirements, f\.plannedContent, f\.content\]/);
 });
 
+test('旧版人工任务从结构化表单恢复完整执行内容', () => {
+  const { formatLegacyFollowUpFormData, followUpTaskRequirements } = require('../src/utils/medicalAssistRequirements');
+  const formData = {
+    '就医时间': '2026-10-14', '就医医院': '瑞安市人民医院', '就医科室': '临床心理科',
+    '本次就医重点': '评估当前用药有效性及不良反应', currentStage: 'internal', planSnapshot: { hidden: true },
+  };
+  const content = formatLegacyFollowUpFormData(formData);
+  assert.match(content, /就医时间：2026-10-14/);
+  assert.match(content, /本次就医重点：评估当前用药有效性及不良反应/);
+  assert.doesNotMatch(content, /currentStage|planSnapshot/);
+  assert.equal(followUpTaskRequirements({ content: '', plannedContent: '', formData }), content);
+});
+
 test('体检复查和疫苗关键词优先于普通健康监测指标', () => {
   const source = fs.readFileSync(path.join(__dirname, '../../staff/src/pages/PatientDetailPage.jsx'), 'utf8');
   const checkupIndex = source.indexOf("if (/体检|复查|检验|检查|筛查|疫苗/.test(text)) return 'checkup'");

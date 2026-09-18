@@ -23,9 +23,26 @@ function formatMedicalAssistRequirements(plan) {
   ].filter(Boolean).join('\n');
 }
 
+function formatLegacyFollowUpFormData(formData) {
+  if (!formData || typeof formData !== 'object' || Array.isArray(formData)) return '';
+  const hiddenKeys = new Set([
+    'currentStage', 'planSnapshot', 'bookingSnapshot', 'generatedFromPostCheckupSupervision',
+    'generatedFromCheckupAppointment', 'generatedFromExpertAppointment', 'medicalProxy',
+  ]);
+  return Object.entries(formData)
+    .filter(([key, value]) => !hiddenKeys.has(key)
+      && value !== undefined && value !== null && value !== ''
+      && ['string', 'number', 'boolean'].includes(typeof value))
+    .map(([key, value]) => `${key}：${typeof value === 'boolean' ? (value ? '是' : '否') : value}`)
+    .join('\n');
+}
+
 function followUpTaskRequirements(followUp) {
   const plan = followUp?.sourceHealthPlanId;
-  return formatMedicalAssistRequirements(plan) || followUp?.plannedContent || '';
+  return formatMedicalAssistRequirements(plan)
+    || followUp?.plannedContent
+    || formatLegacyFollowUpFormData(followUp?.formData)
+    || '';
 }
 
 function followUpTaskPurposes(followUp) {
@@ -38,4 +55,4 @@ function followUpTaskPurposes(followUp) {
   return String(c.tasks || '').split(/\r?\n/).map(item => item.replace(/^\s*\d+[.、]\s*/, '').trim()).filter(Boolean);
 }
 
-module.exports = { formatMedicalAssistRequirements, followUpTaskRequirements, followUpTaskPurposes };
+module.exports = { formatMedicalAssistRequirements, formatLegacyFollowUpFormData, followUpTaskRequirements, followUpTaskPurposes };
