@@ -630,6 +630,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
       || (task.sourceType === 'order' && /^(medical_proxy|medication_proxy|checkup_appointment):/.test(String(task.workflowKey || '')) && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'insurance_service' && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'annual_service' && ['executor', 'supervisor'].includes(task.taskRole))
+      || (task.sourceType === 'professional_assessment' && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'scheduled' && (task.tags || []).includes('保险服务'));
     if (!isServiceTask) return false;
     if (task.sourceType === 'order' && !activeProxyOrderIds.has(String(task.sourceOrderId?._id || task.sourceOrderId))) return false;
@@ -5727,6 +5728,7 @@ router.post('/referrals', staffAuth, async (req, res) => {
     medicalExpertId: expert?._id || null,
     medicalExpertSnapshot: expert ? { name: expert.name, title: expert.title, institutionName: expert.institutionId?.name || '', institutionLevel: expert.institutionId?.level || '', departmentName: expert.departmentId?.name || '', campus: expert.campus || expert.departmentId?.campus || '', expertise: expert.expertise || [], diseaseTags: expert.diseaseTags || [], capturedAt: new Date() } : null,
   });
+  await require('../utils/referralAssessmentWorkflow').createReferralWorkbenchTask(referral).catch(() => {});
   await referral.populate([
     { path: 'fromStaffId', select: 'name role' },
     { path: 'toStaffId', select: 'name role' },
@@ -5955,7 +5957,9 @@ router.patch('/referrals/:id', staffAuth, async (req, res) => {
   referral.respondedAt = new Date();
   referral.fromStaffUnread = true; // 通知发起方有新回复
   await referral.save();
-  res.json({ success: true, data: referral });
+  let professionalAssessment = null;
+  if (status === 'completed') professionalAssessment = await require('../utils/referralAssessmentWorkflow').completeReferralAndCreateAdvisorReview(referral, req.staff);
+  res.json({ success: true, data: referral, professionalAssessment });
 });
 
 // 健康顾问/发起方审核会诊形成的病程草稿；审核前绝不写入正式专病病程。
@@ -6398,9 +6402,11 @@ router.patch('/professional-health-assessments/:assessmentId/review', staffAuth,
   if (action === 'approve_advisor') {
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可完成综合审核' });
     row.status = 'approved'; row.advisorReviewedBy = req.staff._id; row.advisorReviewedAt = new Date(); row.validFrom = row.validFrom || new Date();
+    await require('../utils/referralAssessmentWorkflow').completeAdvisorReviewTask(row._id);
   } else if (action === 'reject') {
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可退回评估' });
     row.status = 'rejected'; row.advisorReviewedBy = req.staff._id; row.advisorReviewedAt = new Date();
+    await require('../utils/referralAssessmentWorkflow').completeAdvisorReviewTask(row._id);
   } else {
     if (!['familyDoctor', 'specialist', 'nutritionist', 'rehabSpecialist', 'tcmDoctor', 'psychologist', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '当前岗位不能确认专业评估内容' });
     if (!row.professionalReviewerIds.some(id => String(id) === String(req.staff._id))) row.professionalReviewerIds.push(req.staff._id);

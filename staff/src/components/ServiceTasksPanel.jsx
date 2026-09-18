@@ -96,6 +96,10 @@ export default function ServiceTasksPanel() {
   const supervisorCount = serviceGroups.filter(service => service.task.taskRole === 'supervisor').length
 
   const openTask = async (task) => {
+    if (task.sourceType === 'professional_assessment') {
+      nav(`/patients/${task.patientId?._id}?tab=referrals`)
+      return
+    }
     const sourcePlan = task.sourceHealthPlanId
     const sourcePlanId = sourcePlan?._id || sourcePlan
     if (task.workflowKey === 'system:outpatient_report_audit') {
