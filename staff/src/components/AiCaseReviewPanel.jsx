@@ -22,7 +22,6 @@ function StructuredAssessment({ data }) {
   </div>
 }
 
-  const primary = assessment.primaryReviewRole || 'nutritionist'
 function CleanText({ children }) {
   const lines = String(children || '').replace(/<br\s*\/?>/gi, '\n').split(/\r?\n/).map(line => line.replace(/^\s*#{1,6}\s*/, '').replace(/\*\*|__|`/g, '').trim()).filter(line => line && !/^[-—_]{3,}$/.test(line))
   return <div>{lines.map((line, index) => <div key={index} style={{ lineHeight: 1.65, fontSize: 14, marginTop: index ? 5 : 0 }}>{line.replace(/^[-*+]\s+/, '• ')}</div>)}</div>
@@ -62,6 +61,7 @@ function AssessmentLine({ line, color }) {
 
 function StageWorkflow({ assessment }) {
   if (!assessment) return <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 6 }}>尚未生成评估</div>
+  const primary = assessment.primaryReviewRole || 'nutritionist'
   const status = assessment.status === 'pending' ? 'nutrition_review' : assessment.status
   const clinicalRequired = assessment.clinicalReview?.required === true
   const steps = [
@@ -82,8 +82,8 @@ function StageWorkflow({ assessment }) {
   </div>
 }
 
-  const [assessmentDomain, setAssessmentDomain] = useState(({ nutritionist: 'nutrition', rehabSpecialist: 'exercise', tcmDoctor: 'tcm' })[staff?.role] || 'comprehensive')
 export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all', onNavigate }) {
+  const [assessmentDomain, setAssessmentDomain] = useState(({ nutritionist: 'nutrition', rehabSpecialist: 'exercise', tcmDoctor: 'tcm' })[staff?.role] || 'comprehensive')
   const [topics, setTopics] = useState([])
   const [managedTemplates, setManagedTemplates] = useState([])
   const [reviewSettings, setReviewSettings] = useState({ allowCustomTopic: true })
