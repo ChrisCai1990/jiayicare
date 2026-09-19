@@ -49,7 +49,8 @@ test('order refund balance update clamps both fund and points at zero', () => {
 
 test('admin cancellation checks the confirmed payment record before changing order state', () => {
   const source = fs.readFileSync(path.join(__dirname, '../src/routes/admin.js'), 'utf8');
-  assert.match(source, /Payment\.findOne\(\{ order: currentOrder\._id, status: 'succeeded' \}\)/);
+  assert.match(source, /paymentOrderQuery\(currentOrder\._id\), status: 'succeeded'/);
+  assert.match(source, /cancelGroupPayment\(currentOrder\)/);
   assert.match(source, /source: 'admin_cancel_guard'/);
 });
 

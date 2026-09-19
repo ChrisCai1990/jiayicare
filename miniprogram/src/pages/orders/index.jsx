@@ -52,6 +52,11 @@ export default function OrdersPage() {
   const visibleList = activeTab === 'all' ? list : list.filter((order) => getOrderCategory(order) === activeTab);
 
   const cancel = async (id) => {
+    const order = list.find(item => item._id === id);
+    if (order?.checkoutGroupId) {
+      const answer = await Taro.showModal({ title: '取消合并付款', content: '这会取消本次一起结算的全部待支付商品，之后可以重新勾选购买。是否继续？', confirmText: '确认取消' });
+      if (!answer.confirm) return;
+    }
     try {
       await ordersAPI.cancel(id);
       Taro.showToast({ title: '已取消', icon: 'success' });
@@ -78,9 +83,16 @@ export default function OrdersPage() {
       const bound = await authAPI.bindWechat();
       if (!bound.success) throw new Error(bound.message || '微信身份绑定失败');
       const result = await paymentsAPI.retry(id);
+      if (!result.success) throw new Error(result.message || '发起支付失败');
       if (result.data?.paymentParams) {
+        if (result.data.orderIds?.length > 1) {
+          const answer = await Taro.showModal({ title: '继续合并支付', content: `本次包含 ${result.data.orderIds.length} 件商品，合计 ¥${Number(result.data.checkoutAmount).toFixed(2)}。`, confirmText: '去支付' });
+          if (!answer.confirm) return;
+        }
         await requestWechatPayment(result.data.paymentParams);
         await waitForPayment(id);
+      } else if (!result.data?.alreadyPaid) {
+        throw new Error('支付结果待确认，请稍后刷新订单');
       }
       Taro.showToast({ title: '支付成功', icon: 'success' });
       load();
@@ -139,6 +151,7 @@ export default function OrdersPage() {
               {o.servicePrice != null && (
                 <Text style={{ fontSize: '15px', fontWeight: 800, color: colors.primary, display: 'block', marginTop: '6px' }}>¥{o.servicePrice}</Text>
               )}
+              {!!o.checkoutGroupId && <Text style={{ fontSize: '12px', color: colors.textSecondary, display: 'block', marginTop: '6px' }}>合并付款商品 · 本项{['paid', 'refunded'].includes(o.paymentStatus) ? '实付' : '待付'} ¥{Number(['paid', 'refunded'].includes(o.paymentStatus) ? o.paidAmount : o.paymentExpectedAmount).toFixed(2)}，售后按本项金额处理</Text>}
               {!!o.fulfillmentId?.status && (
                 <Text style={{ fontSize: '12px', color: colors.textSecondary, display: 'block', marginTop: '6px' }}>
                   服务进度：{FULFILLMENT_LABELS[o.fulfillmentId.status] || o.fulfillmentId.status}

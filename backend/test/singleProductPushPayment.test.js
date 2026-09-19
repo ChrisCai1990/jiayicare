@@ -34,7 +34,8 @@ test('miniprogram pushed-product checkout invokes and verifies WeChat payment', 
   assert.match(source, /requestWechatPayment\(result\.data\.paymentParams\)/);
   assert.match(source, /waitForPayment\(result\.data\.orderId\)/);
   assert.match(source, /paymentCapability: 'wechat_jsapi_v1'/);
-  assert.match(source, /useState\(\(\) => productList\[0\]\?\.productId \? \[productList\[0\]\.productId\] : \[\]\)/);
-  assert.match(source, /每次选择一项，逐项支付/);
+  assert.match(source, /useState\(\(\) => productList\.map\(p => p\.productId\)\)/);
+  assert.match(source, /合并支付/);
+  assert.doesNotMatch(source, /每次选择一项，逐项支付/);
   assert.doesNotMatch(source, /key: 'alipay', label: '支付宝'/);
 });

@@ -38,7 +38,9 @@ function refundBalanceFields({ awardedPoints, convertedFund, pointsPerYuan }) {
 
 // 下单成功后调用：预记本单消费积分（若 paidAmount<=0 则不产生记录）
 async function awardOrderPoints(order) {
-  const amount = pointsForAmount(order.paidAmount);
+  const amount = order.checkoutGroupId && Number.isSafeInteger(order.checkoutPointsAmount)
+    && order.checkoutPointsAmount >= 0 && order.checkoutPointsAmount <= Math.ceil(Number(order.paidAmount) || 0)
+    ? order.checkoutPointsAmount : pointsForAmount(order.paidAmount);
   if (amount <= 0) return;
   const alreadyAwarded = await PointsLog.findOne({ refType: 'Order', refId: order._id, source: 'consumption' });
   if (alreadyAwarded) return;

@@ -63,6 +63,8 @@ export default function OrdersPage() {
   useEffect(() => { setPage(1); load(1) }, [statusFilter, pageSize, search])
 
   const updateStatus = async (orderId, status) => {
+    const order = orders.find(item => item._id === orderId)
+    if (status === 'cancelled' && order?.checkoutGroupId && !window.confirm('这会关闭同一笔合并付款中的全部待支付商品，是否继续？')) return
     setUpdating(orderId)
     try {
       await adminAPI.updateOrderStatus(orderId, status)
@@ -95,10 +97,10 @@ export default function OrdersPage() {
     const reason = window.prompt(`请输入「${order.serviceName}」（${order.user?.name || ''}）的退款原因。退款将通过微信原路退回，提交后请等待微信确认。`, '用户申请退款')
     if (reason == null) return
     if (!reason.trim()) { toast('❌ 请输入退款原因'); return }
-    if (!window.confirm(`确认提交全额退款 ¥${oPaidAmount(order)}？提交后不能通过本后台撤销。`)) return
+    if (!window.confirm(`确认退回本商品剩余实付 ¥${oRefundAmount(order)}？${order.checkoutGroupId ? '不影响同笔付款中的其他商品。' : ''}提交后不能通过本后台撤销。`)) return
     setUpdating(order._id)
     try {
-      const res = await adminAPI.refundOrder(order._id, reason.trim(), oPaidAmount(order))
+      const res = await adminAPI.refundOrder(order._id, reason.trim(), oRefundAmount(order))
       toast('✅ ' + res.message)
       await load(page)
     } catch (err) {
@@ -106,7 +108,8 @@ export default function OrdersPage() {
     } finally { setUpdating(null) }
   }
 
-  const oPaidAmount = (order) => Number(order.paidAmount || order.paymentExpectedAmount || order.servicePrice || 0)
+  const oPaidAmount = (order) => Number(order.paidAmount ?? order.paymentExpectedAmount ?? order.servicePrice ?? 0)
+  const oRefundAmount = (order) => Math.max(0, Math.round((oPaidAmount(order) - Number(order.refundedAmount || 0)) * 100) / 100)
 
   const handleServiceStart = async (order) => {
     const evidence = window.prompt('填写实际启动事项（首次咨询、已开始代办等）。仅预约或分配人员不能确认启动。')

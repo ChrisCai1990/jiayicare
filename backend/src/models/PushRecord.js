@@ -42,6 +42,8 @@ const pushRecordSchema = new mongoose.Schema({
   }],
   // 阅读状态
   readAt: { type: Date, default: null },
+  checkoutLockUntil: { type: Date, default: null },
+  checkoutLockToken: { type: String, default: '' },
 }, { timestamps: true });
 
 pushRecordSchema.index({ patientId: 1, createdAt: -1 });

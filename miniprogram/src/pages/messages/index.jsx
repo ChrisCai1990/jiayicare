@@ -474,7 +474,10 @@ function ProductPushDetail({ msg, onClose }) {
     ? msg.products
     : (msg.productId ? [{ productId: msg.productId, name: msg.productName, price: msg.price, category: '', icon: '🛍' }] : []);
 
-  const [checkedIds, setCheckedIds] = useState(() => productList[0]?.productId ? [productList[0].productId] : []);
+  const [checkedIds, setCheckedIds] = useState(() => productList.map(p => p.productId));
+  const payingRef = useRef(false);
+  const [checkoutQuote, setCheckoutQuote] = useState(null);
+  const [pendingOrderId, setPendingOrderId] = useState('');
   const [paying, setPaying] = useState(false);
   const [paid, setPaid] = useState(false);
   const [payError, setPayError] = useState('');
@@ -494,7 +497,11 @@ function ProductPushDetail({ msg, onClose }) {
     }).catch(() => setPayError('优惠权益加载失败，请检查网络后重试'));
   }, []);
 
-  const toggleItem = (id) => setCheckedIds((prev) => (prev.includes(id) ? [] : [id]));
+  const toggleItem = (id) => {
+    if (payingRef.current) return;
+    setCheckoutQuote(null);
+    setCheckedIds(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
+  };
   const checkedItems = productList.filter((p) => checkedIds.includes(p.productId));
   const total = checkedItems.reduce((s, p) => s + (p.price || 0), 0);
 
@@ -505,14 +512,19 @@ function ProductPushDetail({ msg, onClose }) {
   const priceAfterCoupon = Math.max(0, Math.round((total - couponDiscount) * 100) / 100);
   const fundMaximum = maxFundDeduction(checkoutUser?.healthFund, priceAfterCoupon);
   const fundApplied = useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, fundMaximum) : 0;
-  const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundApplied) * 100) / 100);
+  const finalPrice = checkoutQuote?.finalPrice ?? Math.max(0, Math.round((priceAfterCoupon - fundApplied) * 100) / 100);
 
   const handlePay = async () => {
-    if (!checkedIds.length) return;
+    if (!checkedIds.length || payingRef.current) return;
+    if (pendingOrderId) { Taro.navigateTo({ url: '/pages/orders/index?tab=payment' }); return; }
+    payingRef.current = true;
     setPaying(true); setPayError('');
     try {
-      const result = await pushRecordsAPI.pay(msg._id, { selectedProductIds: checkedIds, useHealthFund: fundApplied, couponId, paymentMethod: payMethod, paymentCapability: 'wechat_jsapi_v1' });
+      const result = await pushRecordsAPI.pay(msg._id, { selectedProductIds: checkedIds, useHealthFund: fundApplied, couponId, paymentMethod: payMethod, paymentCapability: 'wechat_jsapi_v1', expectedAmount: finalPrice });
+      if (result.code === 'CHECKOUT_QUOTE_CHANGED') { setCheckoutQuote(result.summary); throw new Error(result.message); }
       if (!result.success) throw new Error(result.message || '下单失败，请稍后重试');
+      if (result.summary) setCheckoutQuote(result.summary);
+      if (result.data?.orderId) setPendingOrderId(result.data.orderId);
       if (result.data?.paymentParams) {
         await requestWechatPayment(result.data.paymentParams);
         await waitForPayment(result.data.orderId);
@@ -523,6 +535,7 @@ function ProductPushDetail({ msg, onClose }) {
     } catch (e) {
       setPayError(e.message || '下单失败，请稍后重试');
     } finally {
+      payingRef.current = false;
       setPaying(false);
     }
   };
@@ -551,7 +564,11 @@ function ProductPushDetail({ msg, onClose }) {
         <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 16px' }} />
         <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: `${spacing.sm}px` }}>
           <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary }}>为您推荐以下产品</Text>
-          {productList.length > 1 && <Text style={{ fontSize: '12px', color: colors.textMuted }}>每次选择一项，逐项支付</Text>}
+          {productList.length > 1 && <Text onClick={() => {
+            if (payingRef.current) return;
+            setCheckoutQuote(null);
+            setCheckedIds(checkedIds.length === productList.length ? [] : productList.map(p => p.productId));
+          }} style={{ fontSize: '12px', color: colors.primary }}>{checkedIds.length === productList.length ? '取消全选' : '全选'}</Text>}
         </View>
         <ScrollView scrollY style={{ flex: 1, marginBottom: `${spacing.sm}px` }}>
           {productList.map((p) => {
@@ -586,11 +603,11 @@ function ProductPushDetail({ msg, onClose }) {
             <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textPrimary, display: 'block', marginBottom: '6px' }}>抵用券</Text>
             {coupons.length === 0 && <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '6px' }}>当前账户暂无可用抵用券</Text>}
             <ScrollView scrollX style={{ whiteSpace: 'nowrap' }}>
-              <View onClick={() => setCouponId(null)} style={{ display: 'inline-block', padding: '8px 12px', borderRadius: `${radius.md}px`, marginRight: '8px', border: `1.5px solid ${!couponId ? colors.primary : colors.border}`, backgroundColor: !couponId ? colors.primary10 : '#fff' }}>
+              <View onClick={() => { if (payingRef.current) return; setCheckoutQuote(null); setCouponId(null); }} style={{ display: 'inline-block', padding: '8px 12px', borderRadius: `${radius.md}px`, marginRight: '8px', border: `1.5px solid ${!couponId ? colors.primary : colors.border}`, backgroundColor: !couponId ? colors.primary10 : '#fff' }}>
                 <Text style={{ fontSize: '12px', color: !couponId ? colors.primary : colors.textMuted, fontWeight: !couponId ? 700 : 500 }}>不使用</Text>
               </View>
               {coupons.map((c) => (
-                <View key={c._id} onClick={() => setCouponId(c._id)} style={{ display: 'inline-block', padding: '8px 12px', borderRadius: `${radius.md}px`, marginRight: '8px', border: `1.5px solid ${couponId === c._id ? colors.primary : colors.border}`, backgroundColor: couponId === c._id ? colors.primary10 : '#fff' }}>
+                <View key={c._id} onClick={() => { if (payingRef.current) return; setCheckoutQuote(null); setCouponId(c._id); }} style={{ display: 'inline-block', padding: '8px 12px', borderRadius: `${radius.md}px`, marginRight: '8px', border: `1.5px solid ${couponId === c._id ? colors.primary : colors.border}`, backgroundColor: couponId === c._id ? colors.primary10 : '#fff' }}>
                   <Text style={{ fontSize: '12px', color: couponId === c._id ? colors.primary : colors.textMuted, fontWeight: couponId === c._id ? 700 : 500 }}>
                     {c.title || (c.type === 'amount' ? `¥${c.value}抵用券` : `${c.value / 10}折优惠券`)}
                   </Text>
@@ -605,6 +622,8 @@ function ProductPushDetail({ msg, onClose }) {
             <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textPrimary }}>健康基金抵扣（余额¥{fundBalance.toFixed(2)}）</Text>
               <View onClick={() => {
+                if (payingRef.current) return;
+                setCheckoutQuote(null);
                 const next = !useFund;
                 setUseFund(next);
                 if (next) setFundAmountInput(String(fundMaximum));
@@ -637,11 +656,11 @@ function ProductPushDetail({ msg, onClose }) {
           <Text style={{ fontSize: '18px', fontWeight: 800, color: colors.primary }}>合计 ¥{finalPrice}</Text>
         </View>
         <View style={{ display: 'flex', gap: `${spacing.sm}px` }}>
-          <View onClick={onClose} style={{ flex: 1, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary }}>
+          <View onClick={paying ? undefined : onClose} style={{ flex: 1, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary }}>
             <Text style={{ color: '#fff', fontSize: '16px', fontWeight: 700 }}>关闭</Text>
           </View>
           <View onClick={!checkedIds.length || paying ? undefined : handlePay} style={{ flex: 2, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary, opacity: (!checkedIds.length || paying) ? 0.5 : 1 }}>
-            <Text style={{ color: '#fff', fontSize: '15px', fontWeight: 700 }}>{paying ? '提交中...' : `立即支付 ¥${finalPrice}`}</Text>
+            <Text style={{ color: '#fff', fontSize: '15px', fontWeight: 700 }}>{paying ? '提交中...' : pendingOrderId ? '查看待支付订单' : `${checkedIds.length > 1 ? '合并支付' : '立即支付'} ¥${finalPrice}`}</Text>
           </View>
         </View>
       </View>
