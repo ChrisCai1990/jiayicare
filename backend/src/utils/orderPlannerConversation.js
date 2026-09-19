@@ -20,11 +20,27 @@ function isMedicationProxyOrder(order = {}) {
   return /代配药|代取药/.test([order.serviceName, order.specificationLabel, order.note, order.serviceRequirements].filter(Boolean).join(' '));
 }
 
+function isNutritionDeliveryOrder(order = {}) {
+  const workflow = order.serviceWorkflowSnapshot?.key || '';
+  // Legacy configuration still marks this confirmed physical meal-replacement
+  // product as offline_service. This exception changes copy, not fulfillment.
+  if (String(order.serviceName || '').trim() === '营养改变生活') return true;
+  if (workflow) return workflow === 'supplement_supply'
+    || (workflow === 'nutrition_intervention' && order.fulfillmentType === 'delivery_and_service');
+  // Compatibility for old orders without a workflow snapshot. Do not infer
+  // warehouse shipping from arbitrary customer notes or all nutrition services.
+  return order.fulfillmentType === 'delivery_and_service'
+    && /营养补充|营养代餐|代餐|营养素/.test(String(order.serviceName || ''));
+}
+
 function buildOrderPlannerPrompt(order = {}) {
   if (!isPaidActiveOrder(order)) return '';
   if (isMedicationProxyOrder(order)) {
     const note = customerOrderNote(order.note);
     return `已收到您的“${order.serviceName}”订单。为了安全、准确地安排代配药，我先协助您核对本次信息。请按现有处方或医嘱告诉我：药品通用名、商品名/品牌、规格、单次服用剂量、每日次数、本次需要的数量、配药机构（医院/线上平台/线下药房）、支付方式和期望送达日期。${note ? `订单备注：“${note}”。` : ''}不清楚的项目可以直接说“不清楚”，我会只继续询问缺失内容；最终由健康规划师人工确认，AI不会替您换药、改剂量或修改医嘱。`;
+  }
+  if (isNutritionDeliveryOrder(order)) {
+    return `已收到您的“${order.serviceName}”订单，支付已确认。本订单涉及的营养产品由仓库安排发货。如尚未确认收货信息，请补充收货人、联系电话和详细收货地址；已提供的信息无需重复填写。具体发货安排以工作人员确认为准，如有配送方面的需求，可以直接在这里留言。`;
   }
   const confirmed = isCustomerConfirmedServiceOrder(order);
   const pending = require('./orderServiceConfirmation').needsCustomerServiceConfirmation(order);
@@ -95,4 +111,4 @@ function normalizeIntakeResult(input = {}, previous = {}) {
   return result;
 }
 
-module.exports = { customerOrderNote, extractExplicitServiceTime, isPaidActiveOrder, isMedicationProxyOrder, buildOrderPlannerPrompt, ensureOrderPlannerPrompt, latestOpenOrderConversationAction, normalizeIntakeResult };
+module.exports = { customerOrderNote, extractExplicitServiceTime, isPaidActiveOrder, isMedicationProxyOrder, isNutritionDeliveryOrder, buildOrderPlannerPrompt, ensureOrderPlannerPrompt, latestOpenOrderConversationAction, normalizeIntakeResult };
