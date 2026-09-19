@@ -16,13 +16,23 @@ function fixture() {
   const schemes = [{ _id: 'review', workflowStageKey: 'result_review', executorRole: 'familyDoctor' }, { _id: 'final', workflowStageKey: 'final_acceptance', workflowTaskRole: 'supervisor' }]
   const order = { _id: 'o', user: 'p', orderType: 'service', status: 'completed', fulfillmentStatus: 'completed', totalUnits: 1, usedUnits: 1 }
   const q = value => ({ lean: async () => value })
-  let failFinalWrite = false, changeBeforeWrite = false
+  let failFinalWrite = false, changeBeforeWrite = false, failOrderWrite = false
   const sync = createPreparationCompletion({
     Handoff: { updateOne: async (filter, update) => {
       if (failFinalWrite && update.$set.completion.status === 'completed') { failFinalWrite = false; throw Error('lost connection') }
       if (sift(filter)(link)) Object.assign(link, update.$set)
     } },
-    HealthPlan: { findById: () => q(service) }, Order: { findById: () => q(order) },
+    HealthPlan: { findById: () => q(service), updateOne: async (filter, update) => {
+      if (!sift(filter)(service)) return { modifiedCount: 0 }
+      service.status = update.$set.status
+      service.content.workflowCompletedAt = update.$set['content.workflowCompletedAt']
+      return { modifiedCount: 1 }
+    } }, Order: { findById: () => q(order), findOne: filter => q(sift(filter)(order) ? order : null),
+      updateOne: async (filter, update) => {
+        if (failOrderWrite) { failOrderWrite = false; throw Error('order write interrupted') }
+        if (!sift(filter)(order)) return { modifiedCount: 0 }
+        Object.assign(order, update.$set); return { modifiedCount: 1 }
+      } },
     User: { findById: () => q({ assignedHealthManager: 'hm' }) },
     FollowUpPlan: { find: filter => q(schemes.filter(sift(filter))) },
     FollowUp: { findById: id => q(tasks.find(x => x._id === id)), find: filter => q(tasks.filter(sift(filter)).map(x => ({ ...x }))),
@@ -33,7 +43,7 @@ function fixture() {
       } },
   })
   return { link, service, planner, manager, review, final, tasks, order, sync,
-    failWrite: () => { failFinalWrite = true }, change: () => { changeBeforeWrite = true } }
+    failWrite: () => { failFinalWrite = true }, failOrder: () => { failOrderWrite = true }, change: () => { changeBeforeWrite = true } }
 }
 test('completed exact service closes only original annual manager followup, replay is inert', async () => {
   const f = fixture(); assert.equal(await f.sync.reconcile(f.link), true)
@@ -56,7 +66,7 @@ test('concurrent cancellation wins', async () => {
   assert.equal(f.manager.status, 'cancelled'); assert.equal(f.link.completion.status, 'attention')
 })
 for (const [name, mutate] of Object.entries({
-  'service unfinished': f => { f.service.status = 'active' },
+  'service unfinished': f => { f.service.status = 'active'; f.final.status = 'planned' },
   'wrong patient': f => { f.service.patientId = 'other' },
   'missing completion evidence': f => { delete f.service.content.workflowCompletedAt },
   'wrong annual': f => { f.planner.sourceAnnualPlanId = 'old' },
@@ -79,4 +89,19 @@ for (const [name, mutate] of Object.entries({
 })
 test('single unit fulfilled order permits closure', async () => {
   const f = fixture(); f.service.sourceOrderId = 'o'; assert.equal(await f.sync.reconcile(f.link), true)
+})
+test('final acceptance persisted before service closure is recovered without executing tasks again', async () => {
+  const f = fixture(); f.service.status = 'active'; delete f.service.content.workflowCompletedAt
+  assert.equal(await f.sync.reconcile(f.link), true)
+  assert.equal(f.service.status, 'completed'); assert.equal(f.manager.status, 'completed')
+})
+test('service closure survives interrupted order write; retry only finishes remaining steps', async () => {
+  const f = fixture(); f.service.status = 'active'; f.service.sourceOrderId = 'o'
+  Object.assign(f.order, { status: 'scheduled', usedUnits: 0, paymentStatus: 'paid', tradeStatus: 'paid', refundStatus: 'none', redemptions: [] })
+  f.failOrder()
+  await assert.rejects(f.sync.reconcile(f.link), /interrupted/)
+  assert.equal(f.service.status, 'completed'); assert.equal(f.manager.status, 'planned')
+  assert.equal(await f.sync.reconcile(f.link), true)
+  assert.equal(f.order.usedUnits, 1); assert.equal(f.order.status, 'completed')
+  assert.equal(await f.sync.reconcile(f.link), false)
 })

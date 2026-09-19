@@ -4,25 +4,15 @@ function createPreparationCompletion({ Handoff, HealthPlan, FollowUp, FollowUpPl
   async function reconcile(link) {
     if (link?.status !== 'active' || link.completion?.status === 'completed') return false
     const service = await HealthPlan.findById(link.servicePlanId).lean()
-    if (!service || service.status !== 'completed') return false
+    if (!service || !['active', 'completed'].includes(service.status)) return false
     const guard = { _id: link._id, status: 'active', servicePlanId: link.servicePlanId, 'completion.status': { $ne: 'completed' } }
     async function attention(message) {
       await Handoff.updateOne(guard, { $set: { completion: { status: 'attention', message } } })
       return false
     }
     if (!same(service.patientId, link.patientId) || service.type !== 'medical_assist'
-      || service.content?.serviceDomain !== 'annual_checkup' || !service.content.workflowCompletedAt
+      || service.content?.serviceDomain !== 'annual_checkup'
       || ['cancelled', 'needs_attention'].includes(service.supervisionStatus)) return attention('服务完成凭据不完整，请核对原服务')
-    if (service.sourceOrderId) {
-      const order = await Order.findById(service.sourceOrderId).lean()
-      if (!order || !same(order.user, link.patientId) || order.orderType !== 'service'
-        || order.status !== 'completed' || order.fulfillmentStatus !== 'completed'
-        || ['closed', 'refund_pending', 'refunded'].includes(order.tradeStatus)
-        || ['requested', 'processing', 'refunded'].includes(order.refundStatus) || order.paymentStatus === 'refunded'
-        || Number(order.totalUnits || 1) !== 1 || Number(order.usedUnits) !== 1) {
-        return attention('订单完成或本次核销凭据尚未确认；多次服务需核对单次核销，不自动结束整单')
-      }
-    } else if (service.initiationSource !== 'staff' || !service.initiatedByStaff) return attention('缺少有效服务发起凭据')
     const planner = await FollowUp.findById(link.plannerTaskId).lean()
     const key = /^annual_checkup:\d{4}-\d{2}-\d{2}:prepare:healthPlanner$/.test(planner?.sourceScheduleKey || '')
       ? planner.sourceScheduleKey.replace(/:prepare:healthPlanner$/, '') : ''
@@ -40,7 +30,45 @@ function createPreparationCompletion({ Handoff, HealthPlan, FollowUp, FollowUpPl
     if (finals.length !== 1 || reviews.length !== 1 || finals[0].status !== 'completed' || reviews[0].status !== 'completed'
       || !same(finals[0].dependsOnTaskId, reviews[0]._id)
       || !String(finals[0].executedContent || '').trim() || !String(reviews[0].executedContent || '').trim()) {
+      if (service.status === 'active' && !finals.some(x => x.status === 'completed')) return false
       return attention('请确认原顾问结果评估和最终验收均已完成并留有结论')
+    }
+    let order = null, closeOrder = false
+    if (service.sourceOrderId) {
+      order = await Order.findById(service.sourceOrderId).lean()
+      if (!order || !same(order.user, link.patientId) || order.orderType !== 'service'
+        || order.status === 'cancelled'
+        || ['closed', 'refund_pending', 'refunded'].includes(order.tradeStatus)
+        || ['requested', 'processing', 'partially_refunded', 'refunded'].includes(order.refundStatus) || order.paymentStatus === 'refunded'
+        || Number(order.totalUnits || 1) !== 1) {
+        return attention('订单完成或本次核销凭据尚未确认；多次服务需核对单次核销，不自动结束整单')
+      }
+      closeOrder = order.status !== 'completed'
+      if (closeOrder) {
+        if (Number(order.usedUnits || 0) !== 0 || order.redemptions?.length
+          || !await Order.findOne({ _id: order._id, user: link.patientId, orderType: 'service',
+            ...require('./orderWorkItem').activeOrderWorkItemQuery() }).lean()) return attention('单次订单状态或核销记录有冲突，不自动关闭')
+      } else if (order.fulfillmentStatus !== 'completed' || Number(order.usedUnits) !== 1) return attention('已完成订单的履约或核销凭据需核对')
+    } else if (service.initiationSource !== 'staff' || !service.initiatedByStaff) return attention('缺少有效服务发起凭据')
+    // Final task completion is the durable intent. Resume only missing writes; never replay task execution.
+    const now = new Date()
+    if (service.status === 'active') {
+      const result = await HealthPlan.updateOne({ _id: service._id, patientId: link.patientId, updatedAt: service.updatedAt,
+        status: 'active', sourceOrderId: service.sourceOrderId || null,
+        supervisionStatus: service.supervisionStatus || null }, { $set: {
+        status: 'completed', 'content.workflowCompletedAt': now,
+        'content.workflowCompletedBy': finals[0].assignedTo || finals[0].staffId,
+        'content.checkupClosureEvidence': { handoffId: link._id, finalTaskId: finals[0]._id, reviewTaskId: reviews[0]._id },
+      } })
+      if (result.modifiedCount !== 1) return attention('服务状态已变化，关闭未执行，请刷新核对')
+    } else if (!service.content.workflowCompletedAt) return attention('服务完成凭据不完整，请核对原服务')
+    if (closeOrder) {
+      const result = await Order.updateOne({ _id: order._id, user: link.patientId, updatedAt: order.updatedAt,
+        totalUnits: 1, usedUnits: order.usedUnits || 0, 'redemptions.0': { $exists: false },
+        ...require('./orderWorkItem').activeOrderWorkItemQuery() }, { $set: {
+        status: 'completed', tradeStatus: 'completed', fulfillmentStatus: 'completed', completedAt: now, usedUnits: 1,
+      } })
+      if (result.modifiedCount !== 1) return attention('订单状态已变化；服务完成已保留，订单和随访等待核对')
     }
     const filter = { patientId: link.patientId, sourceAnnualPlanId: link.annualPlanId, sourceType: 'scheduled', sourceScheduleKey: key, taskRole: { $in: [null, ''] } }
     const managers = await FollowUp.find(filter).lean()

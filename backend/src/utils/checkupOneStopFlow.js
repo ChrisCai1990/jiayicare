@@ -182,6 +182,10 @@ async function advanceCheckupTask(followUp) {
   if (followUp.status !== 'completed' || !followUp.sourceHealthPlanId || !followUp.followUpSchemeId) return false
   const [servicePlan, scheme] = await Promise.all([HealthPlan.findById(followUp.sourceHealthPlanId), FollowUpPlan.findById(followUp.followUpSchemeId).lean()])
   if (!isCheckupService(servicePlan) || !scheme) return false
+  if (stageForScheme(scheme) === 'final_acceptance') {
+    const link = await require('../models/CheckupPreparationHandoff').findOne({ servicePlanId: servicePlan._id }).lean()
+    if (link) return require('./checkupPreparationCompletion').runtime().reconcile(link)
+  }
   if (stageForScheme(scheme) === 'report_collection') {
     const preparation = await require('./checkupPreparationReports').runtime().forPlan(servicePlan._id, servicePlan.patientId)
     if (preparation.handled) return preparation.activated
