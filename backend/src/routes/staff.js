@@ -11131,9 +11131,9 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       const assessmentFilter = { ...reviewQueueFilter(isSuper ? 'superadmin' : role), ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
       const assessments = await PhaseAssessment.find(assessmentFilter).populate('patientId', `name ${Object.values(PHASE_ROLE_FIELDS).join(' ')}`).sort({ createdAt: -1 }).limit(50).lean();
       assessments.filter(item => item.patientId && isAssignedPhaseReviewer(item.patientId, req.staff, phaseReviewer(item))).forEach(item => todos.push({
-        id: 'phase_assessment_' + item._id, type: 'phase_assessment_review', label: item.status === 'rejected' ? '阶段性评估待AI重生成' : `阶段性评估待${PHASE_ROLE_LABELS[phaseReviewer(item)]}审核`, priority: item.status === 'doctor_review' ? 3 : 2,
+        id: 'phase_assessment_' + item._id, type: 'phase_assessment_review', label: item.status === 'archive_pending' ? '阶段性评估已审核·待归档重试' : item.status === 'rejected' ? '阶段性评估待AI重生成' : `阶段性评估待${PHASE_ROLE_LABELS[phaseReviewer(item)]}审核`, priority: item.status === 'doctor_review' ? 3 : 2,
         patientName: item.patientId?.name || '未知', patientId: String(item.patientId?._id || ''),
-        summary: `${item.periodLabel} · ${item.templateSnapshot?.name || '阶段性评估'}，待${PHASE_ROLE_LABELS[phaseReviewer(item)]}${item.status === 'rejected' ? '发起AI重生成' : '审核'}`,
+        summary: `${item.periodLabel} · ${item.templateSnapshot?.name || '阶段性评估'}，待${PHASE_ROLE_LABELS[phaseReviewer(item)]}${item.status === 'archive_pending' ? '重试归档（无需重新审核）' : item.status === 'rejected' ? '发起AI重生成' : '审核'}`,
         createdAt: item.createdAt, overdue: (now - new Date(item.createdAt)) > DAY,
         link: `/patients/${item.patientId?._id}?tab=aiReview&phaseAssessmentId=${item._id}`,
       }));

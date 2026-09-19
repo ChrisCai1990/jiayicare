@@ -179,7 +179,7 @@ export const staffAPI = {
   // 客户级 AI 辅助研判（供应商可切换，专题与结论保存在本系统）
   getAiCaseReviewProviders: () => req('/staff/ai-case-review/providers'),
   getAiCaseReviewTemplates: () => req('/staff/ai-case-review/templates'),
-  getPhaseAssessments: (patientId) => req(`/staff/patients/${patientId}/phase-assessments`),
+  getPhaseAssessments: (patientId, assessmentId = '') => req(`/staff/patients/${patientId}/phase-assessments${assessmentId ? `?assessmentId=${encodeURIComponent(assessmentId)}` : ''}`),
   generatePhaseAssessment: (patientId, mode = 'routine', domain = 'comprehensive') => req(`/staff/patients/${patientId}/phase-assessments/generate`, { method: 'POST', body: JSON.stringify({ mode, domain }) }),
   reviewPhaseAssessment: (patientId, assessmentId, data) => req(`/staff/patients/${patientId}/phase-assessments/${assessmentId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   getAiCaseReviews: (patientId) => req(`/staff/patients/${patientId}/ai-case-reviews`),

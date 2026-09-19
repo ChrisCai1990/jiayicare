@@ -29,7 +29,14 @@ test('综合顾问直接审核，退回不交营养师', () => {
   assert.equal(nextAssessmentStatus({ currentStatus: 'doctor_review', actorRole: 'familyDoctor', primaryReviewRole: 'familyDoctor', action: 'return' }), 'rejected');
   assert.equal(currentReviewer({ status: 'rejected', primaryReviewRole: 'familyDoctor' }), 'familyDoctor');
   assert.deepEqual(reviewQueueFilter('familyDoctor').$or[1], { status: 'rejected', primaryReviewRole: 'familyDoctor' });
-  assert.equal(reviewQueueFilter('tcmDoctor').primaryReviewRole, 'tcmDoctor');
+  assert.equal(reviewQueueFilter('tcmDoctor').$or[0].primaryReviewRole, 'tcmDoctor');
+});
+test('归档待办保留在最终审核岗位而不是固定原初审岗位', () => {
+  assert.equal(currentReviewer({ status: 'archive_pending', primaryReviewRole: 'rehabSpecialist', finalReviewRole: 'familyDoctor' }), 'familyDoctor');
+  assert.ok(reviewQueueFilter('superadmin').status.$in.includes('archive_pending'));
+  for (const role of ['familyDoctor', 'nutritionist', 'rehabSpecialist', 'tcmDoctor']) {
+    assert.ok(reviewQueueFilter(role).$or.some(filter => filter.status === 'archive_pending' && filter.finalReviewRole === role));
+  }
 });
 test('工作台与审核必须匹配实际客户归属及岗位', () => {
   const user = { assignedRehabSpecialist: 'a' };

@@ -67,8 +67,8 @@ function StageWorkflow({ assessment }) {
   const steps = [
     { label: 'AI草稿', state: 'done', note: '已生成' },
     ...(primary === 'familyDoctor' ? [] : [{ label: `${PHASE_ROLES[primary]}审核`, state: ['nutrition_review', 'professional_review', 'rejected'].includes(status) ? 'current' : 'done', note: status === 'rejected' ? '已退回待调整' : ['nutrition_review', 'professional_review'].includes(status) ? '当前环节' : '已完成' }]),
-    { label: '健康顾问审核', state: status === 'doctor_review' || (status === 'rejected' && primary === 'familyDoctor') ? 'current' : ['finalized', 'approved'].includes(status) ? (clinicalRequired || primary === 'familyDoctor' ? 'done' : 'skipped') : 'waiting', note: status === 'doctor_review' ? '当前环节' : primary === 'familyDoctor' ? '综合审核' : '有风险或跨专业问题时复核' },
-    { label: '写入服务档案', state: ['finalized', 'approved'].includes(status) ? 'done' : 'waiting', note: ['finalized', 'approved'].includes(status) ? '已生成评估归档记录' : '待审核完成' },
+    { label: '健康顾问审核', state: status === 'doctor_review' || (status === 'rejected' && primary === 'familyDoctor') ? 'current' : ['archive_pending', 'finalized', 'approved'].includes(status) ? (clinicalRequired || primary === 'familyDoctor' ? 'done' : 'skipped') : 'waiting', note: status === 'doctor_review' ? '当前环节' : primary === 'familyDoctor' ? '综合审核' : '有风险或跨专业问题时复核' },
+    { label: '写入服务档案', state: ['finalized', 'approved'].includes(status) ? 'done' : status === 'archive_pending' ? 'current' : 'waiting', note: ['finalized', 'approved'].includes(status) ? '已生成评估归档记录' : status === 'archive_pending' ? '审核已完成，待归档重试' : '待审核完成' },
   ]
   return <div style={{ display: 'grid', gridTemplateColumns: `repeat(${steps.length},minmax(120px,1fr))`, gap: 8, marginTop: 10 }}>
     {steps.map((step, index) => {
@@ -118,9 +118,15 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
     try {
       const [topicRes, assessmentRes, templateRes] = mode === 'specialty'
         ? await Promise.all([staffAPI.getAiCaseReviews(patientId), Promise.resolve({ data: [] }), staffAPI.getAiCaseReviewTemplates()])
-        : await Promise.all([staffAPI.getAiCaseReviews(patientId), staffAPI.getPhaseAssessments(patientId), Promise.resolve({ data: [] })])
+        : await Promise.all([staffAPI.getAiCaseReviews(patientId), staffAPI.getPhaseAssessments(patientId, new URLSearchParams(window.location.search).get('phaseAssessmentId') || ''), Promise.resolve({ data: [] })])
       setTopics(topicRes.data || []); setManagedTemplates(templateRes.data || []); setReviewSettings(templateRes.settings || { allowCustomTopic: true })
       setAssessments(assessmentRes.data || [])
+      const targetId = new URLSearchParams(window.location.search).get('phaseAssessmentId')
+      const target = (assessmentRes.data || []).find(item => item._id === targetId)
+      if (target) {
+        setAssessmentMode(target.assessmentMode || 'routine')
+        setAssessments(items => [target, ...items.filter(item => item._id !== targetId)])
+      }
       setAssessmentEdits(Object.fromEntries((assessmentRes.data || []).map(item => [item._id, item.content || ''])))
     } catch (err) { toast(err.message, 'error') } finally { setLoading(false) }
   }
@@ -231,14 +237,14 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   }
   const reviewAssessment = async (assessment, action) => {
     const promptText = action === 'approve' ? '审核备注（可选）：' : action === 'escalate' ? '请说明需要健康顾问综合复核的问题：' : action === 'regenerate' ? '请填写需要AI修正的内容：' : '请填写退回原因：'
-    const reviewNote = window.prompt(promptText, '')
-    if (reviewNote === null || (action !== 'approve' && !reviewNote.trim())) return
+    const reviewNote = action === 'retry_archive' ? '' : window.prompt(promptText, '')
+    if (reviewNote === null || (!['approve', 'retry_archive'].includes(action) && !reviewNote.trim())) return
     setBusy(true)
     try {
       const res = await staffAPI.reviewPhaseAssessment(patientId, assessment._id, { action, revision: assessment.__v, reviewNote, content: assessmentEdits[assessment._id] ?? assessment.content, clinicalRequired: action === 'escalate' })
       setAssessments(list => list.map(item => item._id === assessment._id ? res.data : item))
       setAssessmentEdits(values => ({ ...values, [assessment._id]: res.data.content || '' }))
-      const message = action === 'regenerate' ? 'AI已重新生成草稿，等待对应岗位审核' : res.data.status === 'doctor_review' ? '已转健康顾问综合审核' : res.data.status === 'finalized' ? '阶段性评估已完成审核，并写入服务档案' : '阶段性评估已退回对应岗位'
+      const message = res.data.status === 'archive_pending' ? '审核结果已保存，归档暂未完成，请重试归档' : action === 'regenerate' ? 'AI已重新生成草稿，等待对应岗位审核' : res.data.status === 'doctor_review' ? '已转健康顾问综合审核' : res.data.status === 'finalized' ? '阶段性评估已完成审核，并写入服务档案' : '阶段性评估已退回对应岗位'
       toast(message)
     } catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
   }
@@ -255,9 +261,10 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
         {visibleAssessments.map(item => {
           const status = item.status === 'pending' ? 'nutrition_review' : item.status
           const primary = item.primaryReviewRole || 'nutritionist'
-          const statusLabel = { nutrition_review: '待营养师初审', professional_review: `待${PHASE_ROLES[primary]}审核`, doctor_review: '待健康顾问审核', finalized: '已写入服务档案', approved: '历史已审核', rejected: `已退回${PHASE_ROLES[primary]}` }[status] || status
+          const statusLabel = { nutrition_review: '待营养师初审', professional_review: `待${PHASE_ROLES[primary]}审核`, doctor_review: '待健康顾问审核', archive_pending: '已审核·待归档重试', finalized: '已写入服务档案', approved: '历史已审核', rejected: `已退回${PHASE_ROLES[primary]}` }[status] || status
           const canNutritionReview = [primary, 'superadmin'].includes(staff?.role) && ['nutrition_review', 'professional_review'].includes(status)
           const canRegenerate = [primary, 'superadmin'].includes(staff?.role) && status === 'rejected'
+          const canRetryArchive = [item.finalReviewRole, 'superadmin'].includes(staff?.role) && status === 'archive_pending'
           const canDoctorReview = ['familyDoctor', 'superadmin'].includes(staff?.role) && status === 'doctor_review'
           const expanded = expandedAssessments[item._id] === true
           const evidenceCount = (item.evidenceSources || []).length
@@ -268,6 +275,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><strong style={{ color: '#155E48' }}>📊 {item.periodLabel}{item.assessmentMode === 'intensive_nutrition' ? '评估' : '阶段性健康评估'}</strong><span style={{ fontSize: 12, fontWeight: 700, color: status === 'doctor_review' ? '#B45309' : status === 'finalized' ? '#16845B' : '#7C3AED' }}>{statusLabel}</span></div>
             <div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>{PHASE_DOMAINS[item.assessmentDomain] || '历史营养评估'} · {item.templateSnapshot?.name || '模板驱动评估'} · {evidenceCount ? `${evidenceCount}项依据` : '依据待核实'}{['finalized', 'approved'].includes(status) ? ' · 归档位置：服务档案 / 阶段性评估' : ''}</div>
             {['finalized', 'approved'].includes(status) && onNavigate && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 9 }} onClick={() => onNavigate('serviceRecords')}>查看服务档案中的评估记录</button>}
+            {status === 'archive_pending' && <div style={{ marginTop: 9, color: '#92400E', fontSize: 13 }}>审核结果已保存，无需重复审核。{canRetryArchive && <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'retry_archive')}>重试归档</button>}</div>}
             <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(4,minmax(120px,1fr))', gap: 9 }}>
               {stageSections.map((section, index) => <button key={section.label} type="button" onClick={() => setActiveAssessmentSections(values => ({ ...values, [item._id]: expanded ? index : values[item._id] === index ? null : index }))} style={{ border: `1px solid ${activeSectionIndex === index ? section.color : '#DCE8E1'}`, borderRadius: 10, padding: '12px 8px', background: activeSectionIndex === index ? section.background : '#fff', cursor: 'pointer', textAlign: 'center' }}>
                 <div style={{ fontSize: 25, lineHeight: 1 }}>{section.icon}</div>

@@ -9,11 +9,12 @@ let actor;
 const auth = require.resolve('../src/middleware/staffAuth'); require(auth);
 require.cache[auth].exports = (req, res, next) => { req.staff = actor; next(); };
 const router = require('../src/routes/aiCaseReviews');
-async function request(t, body) {
+async function request(t, body, method = 'PATCH') {
   const app = express(); app.use(express.json()); app.use(router);
   const server = await new Promise(resolve => { const srv = app.listen(0, '127.0.0.1', () => resolve(srv)); });
   t.after(() => new Promise(resolve => server.close(resolve)));
-  const res = await fetch(`http://127.0.0.1:${server.address().port}/patients/${ids.patient}/phase-assessments/${ids.assessment}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const suffix = method === 'GET' ? `?assessmentId=${ids.assessment}` : `/${ids.assessment}`;
+  const res = await fetch(`http://127.0.0.1:${server.address().port}/patients/${ids.patient}/phase-assessments${suffix}`, { method, headers: { 'Content-Type': 'application/json' }, ...(method === 'GET' ? {} : { body: JSON.stringify(body) }) });
   return { status: res.status, body: await res.json() };
 }
 function setup(t, role = 'rehabSpecialist', patch = {}) {
@@ -22,6 +23,12 @@ function setup(t, role = 'rehabSpecialist', patch = {}) {
   const row = { _id: ids.assessment, patientId: ids.patient, __v: 0, primaryReviewRole: role, status: role === 'familyDoctor' ? 'doctor_review' : 'professional_review', content: '作息较规律', auditLog: [], save: async () => {}, ...patch };
   t.mock.method(User, 'findById', async () => ({ _id: ids.patient, [fields[role]]: ids.reviewer, aiPilotFeatures: { stageAssessment: true } }));
   t.mock.method(PhaseAssessment, 'findOne', async () => row);
+  t.mock.method(PhaseAssessment, 'findOneAndUpdate', async (filter, update) => {
+    if (filter.status !== row.status) return null;
+    Object.assign(row, update.$set); row.__v += update.$inc?.__v || 0;
+    if (update.$push?.auditLog) row.auditLog.push(update.$push.auditLog);
+    return row;
+  });
   return row;
 }
 test('修改后的风险内容触发顾问审核，不提前归档', async t => {
@@ -50,4 +57,36 @@ test('顾问退回运动评估仍回到运动岗位', async t => {
   const row = setup(t, 'familyDoctor', { primaryReviewRole: 'rehabSpecialist' });
   assert.equal((await request(t, { action: 'return', revision: 0, reviewNote: '补充依据' })).status, 200);
   assert.equal(row.status, 'professional_review');
+});
+
+test('归档失败保留原审核快照与待办，重试忽略传入的内容', async t => {
+  const row = setup(t, 'familyDoctor'); let fail = true; let snapshot;
+  t.mock.method(ServiceRecord, 'findOneAndUpdate', async (filter, update) => {
+    if (fail) throw new Error('模拟数据库写入失败');
+    snapshot = update.$setOnInsert; return { _id: 'archive' };
+  });
+  const first = await request(t, { action: 'approve', revision: 0, content: '已审核的作息建议' });
+  assert.equal(first.status, 202); assert.equal(row.status, 'archive_pending');
+  assert.equal(row.finalReviewRole, 'familyDoctor'); assert.equal(row.finalizedBy, ids.reviewer);
+  assert.equal((await request(t, { action: 'approve', revision: row.__v, content: '不能替换' })).status, 409);
+  fail = false;
+  const retry = await request(t, { action: 'retry_archive', content: '不能替换', reviewNote: '不能替换' });
+  assert.equal(retry.status, 200); assert.equal(row.status, 'finalized');
+  assert.equal(row.content, '已审核的作息建议'); assert.equal(snapshot.staffId, ids.reviewer);
+  assert.equal(snapshot.writeback.reviewedBy, ids.reviewer);
+});
+
+test('归档重试不能由其他岗位越权执行', async t => {
+  setup(t, 'rehabSpecialist', { status: 'archive_pending', finalReviewRole: 'familyDoctor' });
+  assert.equal((await request(t, { action: 'retry_archive' })).status, 403);
+});
+test('工作台链接能读取最近20条以外的评估，且查询限定当前客户', async t => {
+  const row = setup(t, 'familyDoctor', { status: 'archive_pending', finalReviewRole: 'familyDoctor' });
+  t.mock.method(PhaseAssessment, 'find', () => ({ sort: () => ({ limit: () => ({ lean: async () => [] }) }) }));
+  t.mock.method(PhaseAssessment, 'findOne', filter => {
+    assert.equal(filter.patientId, ids.patient); assert.equal(filter._id, ids.assessment);
+    return { lean: async () => row };
+  });
+  const result = await request(t, null, 'GET');
+  assert.equal(result.status, 200); assert.equal(result.body.data[0]._id, ids.assessment);
 });

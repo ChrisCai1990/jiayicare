@@ -5,15 +5,14 @@ const staffAuth = require('../middleware/staffAuth');
 const User = require('../models/User');
 const AiCaseReview = require('../models/AiCaseReview');
 const PhaseAssessment = require('../models/PhaseAssessment');
-const ServiceRecord = require('../models/ServiceRecord');
 const PlanTemplate = require('../models/PlanTemplate');
 const AnnualPlan = require('../models/AnnualPlan');
 const HealthPlan = require('../models/HealthPlan');
-const { toStructuredAssessment, assessmentToPlainText, templateAssessmentFromContent, detectClinicalReview, nextAssessmentStatus } = require('../utils/phaseAssessment');
+const { toStructuredAssessment, assessmentToPlainText, detectClinicalReview, nextAssessmentStatus } = require('../utils/phaseAssessment');
 const { createAssessment, intensiveNutritionCheckpoint } = require('../utils/phaseAssessmentScheduler');
 const { buildContext, buildStageAssessmentContext } = require('../utils/aiCaseReviewContext');
 const providerAdapter = require('../utils/aiCaseReviewProvider');
-const { reviewedWriteback } = require('../utils/reviewedWriteback');
+const { completePhaseAssessmentArchive } = require('../utils/phaseAssessmentArchive');
 const { ROLE_FIELDS, ROLE_LABELS, DOMAIN_ROLES, primaryRole, currentReviewer, initialReviewStatus, isAssignedPhaseReviewer } = require('../utils/phaseAssessmentRouting');
 const { DEFAULT_SCOPES, ensureAiCaseReviewTemplates } = require('../utils/aiCaseReviewTemplates');
 
@@ -83,26 +82,17 @@ router.get('/patients/:patientId/phase-assessments', staffAuth, async (req, res)
     const user = await patientOr404(req, res); if (!user) return;
     // 被新结构替代的试跑草稿保留审计，但不再混入当前工作界面。
     const data = await PhaseAssessment.find({ patientId: user._id, periodKey: { $not: /-legacy-/ } }).sort({ createdAt: -1 }).limit(20).lean();
+    const targetId = req.query.assessmentId;
+    if (targetId) {
+      if (!mongoose.isValidObjectId(targetId)) return res.status(400).json({ success: false, message: '评估ID无效' });
+      if (!data.some(item => String(item._id) === targetId)) {
+        const target = await PhaseAssessment.findOne({ _id: targetId, patientId: user._id, periodKey: { $not: /-legacy-/ } }).lean();
+        if (target) data.unshift(target);
+      }
+    }
     res.json({ success: true, data });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
-
-async function archiveFinalAssessment(item, user, staff) {
-  const customerVersion = templateAssessmentFromContent(item.content, item);
-  const archivedAt = item.finalizedAt || new Date();
-  return ServiceRecord.findOneAndUpdate(
-    { sourcePhaseAssessmentId: item._id },
-    { $set: {
-      staffId: staff._id, patientId: user._id, type: 'stage_assessment', date: archivedAt,
-      title: `${item.periodLabel}${item.templateSnapshot?.name || '阶段性健康评估'}`,
-      content: customerVersion.sections.flatMap(section => [section.title, ...section.items.map(value => `• ${value}`)]).join('\n'),
-      result: item.doctorReview?.note || item.professionalReview?.note || item.nutritionReview?.note || '', structuredContent: customerVersion,
-      aiStatus: 'approved', aiGeneratedAt: item.createdAt,
-      writeback: reviewedWriteback({ staff, sourceType: 'ai_draft', at: archivedAt }),
-    }, $setOnInsert: { sourcePhaseAssessmentId: item._id } },
-    { new: true, upsert: true, setDefaultsOnInsert: true },
-  );
-}
 
 function isAssignedReviewer(user, staff, role) {
   return isAssignedPhaseReviewer(user, staff, role);
@@ -156,6 +146,11 @@ router.patch('/patients/:patientId/phase-assessments/:assessmentId', staffAuth, 
     const expectedRole = currentReviewer(item);
     const actorRole = req.staff.role === 'superadmin' ? expectedRole : req.staff.role;
     if (!expectedRole || actorRole !== expectedRole || !isAssignedReviewer(user, req.staff, expectedRole)) return res.status(403).json({ success: false, message: `当前应由该客户的${ROLE_LABELS[expectedRole] || '对应岗位'}处理` });
+    if (current === 'archive_pending') {
+      if (req.body.action !== 'retry_archive') return res.status(409).json({ success: false, message: '评估已审核，请重试归档；不能修改已审核内容' });
+      const result = await completePhaseAssessmentArchive(item, user, req.staff);
+      return res.status(result.data?.status === 'finalized' ? 200 : 202).json({ success: true, ...result });
+    }
     if (req.body.revision !== item.__v) return res.status(409).json({ success: false, message: '评估已更新，请刷新后审核' });
     if (req.body.action === 'regenerate') {
       if (actorRole !== primaryRole(item) || current !== 'rejected') return res.status(403).json({ success: false, message: '仅当前初审岗位可对退回的评估重新生成' });
@@ -190,12 +185,18 @@ router.patch('/patients/:patientId/phase-assessments/:assessmentId', staffAuth, 
     } else {
       item.doctorReview = { status: nextStatus === 'finalized' ? 'approved' : 'returned', note, reviewedBy: req.staff._id, reviewedByName: req.staff.name || '', reviewedAt: now };
     }
-    if (nextStatus === 'finalized') { item.finalizedAt = now; item.finalizedBy = req.staff._id; item.reviewedAt = now; item.reviewedBy = req.staff._id; item.reviewNote = note; }
-    item.auditLog.push({ action, fromStatus: current, toStatus: nextStatus, note, staffId: req.staff._id, staffName: req.staff.name || '', staffRole: actorRole, at: now });
+    if (nextStatus === 'finalized') {
+      item.status = 'archive_pending'; item.finalizedAt = now; item.finalizedBy = req.staff._id;
+      item.finalReviewRole = expectedRole; item.finalizedByName = req.staff.name || ''; item.finalizedByRole = req.staff.role;
+      item.reviewedAt = now; item.reviewedBy = req.staff._id; item.reviewNote = note;
+    }
+    item.auditLog.push({ action, fromStatus: current, toStatus: item.status, note, staffId: req.staff._id, staffName: req.staff.name || '', staffRole: actorRole, at: now });
     await item.save();
-    let serviceRecord = null;
-    if (nextStatus === 'finalized') serviceRecord = await archiveFinalAssessment(item, user, req.staff);
-    res.json({ success: true, data: item, serviceRecordId: serviceRecord?._id || null });
+    if (nextStatus === 'finalized') {
+      const result = await completePhaseAssessmentArchive(item, user, req.staff);
+      return res.status(result.data?.status === 'finalized' ? 200 : 202).json({ success: true, ...result });
+    }
+    res.json({ success: true, data: item, serviceRecordId: null });
   } catch (err) { res.status(err.name === 'VersionError' ? 409 : 500).json({ success: false, message: err.name === 'VersionError' ? '评估已更新，请刷新后审核' : err.message }); }
 });
 

@@ -15,7 +15,7 @@ const phaseAssessmentSchema = new mongoose.Schema({
   periodLabel: { type: String, default: '' },
   status: {
     type: String,
-    enum: ['pending', 'nutrition_review', 'professional_review', 'doctor_review', 'finalized', 'approved', 'rejected'],
+    enum: ['pending', 'nutrition_review', 'professional_review', 'doctor_review', 'archive_pending', 'finalized', 'approved', 'rejected'],
     default: 'nutrition_review', index: true,
   },
   content: { type: String, required: true },
@@ -39,6 +39,11 @@ const phaseAssessmentSchema = new mongoose.Schema({
   },
   finalizedAt: { type: Date, default: null },
   finalizedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  finalReviewRole: { type: String, default: '' }, // 归档异常由当前绑定的同岗位人员恢复。
+  finalizedByName: { type: String, default: '' },
+  finalizedByRole: { type: String, default: '' }, // 保留实际审核人，不能用重试操作人覆盖。
+  archiveError: { type: String, default: '' },
+  serviceRecordId: { type: mongoose.Schema.Types.ObjectId, ref: 'ServiceRecord', default: null },
   reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 兼容旧记录
   reviewedAt: { type: Date, default: null },
   reviewNote: { type: String, default: '' },
