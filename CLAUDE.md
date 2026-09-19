@@ -1,5 +1,7 @@
 # 双端共享记忆入口
 
+> 2026-09-20：新增STARTUP_SCHEMA_WRITES_ENABLED=false跳过启动自动索引/旧索引迁移，STARTUP_BACKGROUND_JOBS_ENABLED=false跳过listen回调后台任务，默认不变；247项相关测试通过，未部署。不是只读模式，API及模块导入副作用仍须核查；隔离fixture不是登录账号，多岗位页面验收待完成，见 `docs/STARTUP_SAFETY_CONTROLS.md`。
+
 > 2026-09-20：隔离虚构客户/三岗位fixture已建立，实际服务期与岗位归属/到期拦截测试新增，真实Mongo测试9项通过；不是可登录账号或全链路验收。上线审核见 `docs/HEALTH_MANAGEMENT_ROLLOUT_REVIEW.md`：分支相对生产181文件（8fd97281基线），启动副作用不能仅靠体检开关禁用；完整结构审计、启动控制及多岗验收仍待完成。未部署、未改生产。
 
 > 2026-09-20生产只读核查完成：仍为8fbda1cd，Mongo7.0.34 standalone，自动准备派发关闭；followups派发唯一索引及新体检承接/建议集合缺失。指定客户排除归档后唯一，但历史已确认方案不在准备窗口且无新承接，不能直接做新链路验收，不修改真实日期或造单。无生产写入；下一步部署/结构变更清单另行确认，详见 `docs/CHECKUP_PRODUCTION_PREFLIGHT.md`（不含客户身份数据）。

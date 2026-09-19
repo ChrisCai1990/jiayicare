@@ -119,6 +119,12 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
+  // Stops only the workers/initializers registered below, not HTTP writes or
+  // module-import side effects. Existing deployments retain their defaults.
+  if (process.env.STARTUP_BACKGROUND_JOBS_ENABLED === 'false') {
+    console.log(`[startup] background startup disabled; API listening on ${PORT}`);
+    return;
+  }
   require('./utils/serviceGroupCleanup').startServiceGroupCleanup();
   require('./utils/wecomEmployeeReminders').start();
   console.log(`🚀 服务启动成功，端口：${PORT}`);

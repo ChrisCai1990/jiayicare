@@ -2,8 +2,19 @@ const mongoose = require('mongoose');
 
 const connectDB = async () => {
   try {
+    // Explicit deployment/test control. Set before connect/model registration;
+    // this does not make HTTP routes or the database read-only.
+    const schemaWritesEnabled = process.env.STARTUP_SCHEMA_WRITES_ENABLED !== 'false';
+    if (!schemaWritesEnabled) {
+      mongoose.set('autoIndex', false);
+      mongoose.set('autoCreate', false);
+    }
     const conn = await mongoose.connect(process.env.MONGODB_URI);
     console.log(`✅ MongoDB 连接成功: ${conn.connection.host}`);
+    if (!schemaWritesEnabled) {
+      console.log('[startup] automatic schema writes disabled; indexes require reviewed migration');
+      return;
+    }
     // 报告 OCR 的 processing 状态由 reportParseJobs 在启动后续跑。这里不能清空，
     // 否则 PM2 发布/重启会丢掉几十页扫描 PDF 的解析任务。
     // 索引迁移：年度方案从「每人每年一份」改为「每人每年每类型一份」，需删除旧唯一索引
