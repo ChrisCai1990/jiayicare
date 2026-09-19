@@ -11151,6 +11151,15 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
+    // 复用原准备任务：只投影异常，不创建新的随访或在读待办时触发AI/业务写入。
+    if (isSuper || role === 'healthPlanner') {
+      const handoffs = await require('../models/CheckupPreparationHandoff').find({
+        ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}),
+        $or: [{ status: 'activation_failed' }, { status: 'active', 'completion.status': 'attention' }],
+      }).populate('patientId', 'name assignedHealthPlanner').populate('plannerTaskId').lean();
+      todos.push(...require('../utils/checkupPreparationTodos').buildCheckupPreparationTodos(handoffs, req.staff));
+    }
+
     // 凭据/岗位/同步异常归规划师，方案排期异常归顾问；正常等待不增加人工待办。
     if (isSuper || ['healthPlanner', 'familyDoctor'].includes(role)) {
       const renewalPlans = await AnnualPlan.find({ 'continuitySource.previousPlanId': { $ne: null }, ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) }).select('patientId year planType createdAt').populate('patientId', 'name assignedHealthPlanner assignedFamilyDoctor').sort({ createdAt: -1 }).lean();

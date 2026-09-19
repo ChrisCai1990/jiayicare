@@ -42,6 +42,11 @@ export default function CheckupPreparationReadiness({ task, staff }) {
         setBusy(true); setError('')
         try { await activate() } catch (err) { await refreshFailure(err) } finally { setBusy(false) }
       }}>核验并继续原预约办理</button>}
+      {planner && link?.completion?.status === 'attention' && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={async () => {
+        setBusy(true); setError('')
+        try { setLink((await staffAPI.retryCheckupCompletion(task._id)).data) }
+        catch (err) { await refreshFailure(err) } finally { setBusy(false) }
+      }}>问题处理后重新核验回写</button>}
       {staff?.role === 'superadmin' && link?.status === 'activating' && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={async () => {
         if (!window.confirm('必须核实旧承接请求/进程已停止，才能恢复。已确认？')) return
         const reason = window.prompt('填写核实结果与恢复原因')

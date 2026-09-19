@@ -91,6 +91,7 @@ export const staffAPI = {
   getCheckupPreparationServices: id => req(`/staff/followups/${id}/checkup-preparation/services`),
   linkCheckupPreparationService: (id, data) => req(`/staff/followups/${id}/checkup-preparation/service-link`, { method: 'POST', body: JSON.stringify(data) }),
   activateCheckupPreparation: id => req(`/staff/followups/${id}/checkup-preparation/activate`, { method: 'POST' }),
+  retryCheckupCompletion: id => req(`/staff/followups/${id}/checkup-preparation/completion-retry`, { method: 'POST' }),
   recoverCheckupPreparationActivation: (id, data) => req(`/staff/followups/${id}/checkup-preparation/activation-recover`, { method: 'POST', body: JSON.stringify(data) }),
   getCheckupPreparationAddons: id => req(`/staff/followups/${id}/checkup-preparation/addons`),
   generateCheckupPreparationAddons: (id, data) => req(`/staff/followups/${id}/checkup-preparation/addons`, { method: 'POST', body: JSON.stringify(data) }),

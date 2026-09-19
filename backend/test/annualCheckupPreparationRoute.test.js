@@ -41,6 +41,32 @@ function setup(t, row = task()) {
   t.mock.method(FollowUp, 'updateOne', async () => ({ matchedCount: 1 }));
 }
 
+test('完成回写重试仅复用数据库中的本年度承接，忽略客户端伪造服务', async t => {
+  setup(t, task('healthPlanner'));
+  const link = { _id: ids.plan, status: 'active' };
+  t.mock.method(require('../src/models/User'), 'findById', () => ({ select: () => ({ lean: async () => ({ assignedHealthPlanner: ids.planner }) }) }));
+  const Handoff = require('../src/models/CheckupPreparationHandoff');
+  t.mock.method(Handoff, 'findOne', filter => {
+    assert.equal(filter.plannerTaskId, ids.task); assert.equal(filter.patientId, ids.patient); assert.equal(filter.annualPlanId, ids.annual);
+    return { lean: async () => link };
+  });
+  t.mock.method(Handoff, 'findById', () => ({ lean: async () => link }));
+  let calls = 0;
+  t.mock.method(require('../src/utils/checkupPreparationCompletion'), 'runtime', () => ({ reconcile: async row => { assert.equal(row, link); calls++; } }));
+  assert.equal((await request(t, 'POST', { servicePlanId: 'forged' }, ids.task, '/completion-retry')).status, 200);
+  assert.equal(calls, 1);
+});
+
+test('顾问不能重试规划师完成回写，原规划师失去客户归属也被拒绝', async t => {
+  setup(t);
+  assert.equal((await request(t, 'POST', {}, ids.task, '/completion-retry')).status, 403);
+  const row = task('healthPlanner'); actor = { _id: ids.planner, role: 'healthPlanner' };
+  t.mock.method(FollowUp, 'findById', () => ({ lean: async () => row }));
+  t.mock.method(require('../src/models/User'), 'findById', () => ({ select: () => ({ lean: async () => ({ assignedHealthPlanner: ids.advisor }) }) }));
+  t.mock.method(require('../src/models/CheckupPreparationHandoff'), 'findOne', () => assert.fail('归属不符不得读取承接'));
+  assert.equal((await request(t, 'POST', {}, ids.task, '/completion-retry')).status, 403);
+});
+
 test('预约激活与恢复接口传入当前规划师任务及操作者', async t => {
   setup(t, task('healthPlanner'));
   t.mock.method(require('../src/utils/checkupPreparationActivation'), 'createActivationService', () => ({

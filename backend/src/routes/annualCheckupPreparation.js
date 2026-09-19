@@ -71,6 +71,17 @@ function activationService() {
   (id, actor) => require('../utils/checkupPreparationReadiness').loadReadiness(id, actor,
     { FollowUp, AnnualPlan, HealthPlan, User: require('../models/User') }, require('../utils/annualPeriodicGate').annualPeriodicGate), handoffService().target);
 }
+router.post('/:id/checkup-preparation/completion-retry', staffAuth, checkPermission('followups', 'edit'), checkPermission('plans', 'edit'), load, async (req, res) => {
+  if (evidence.assertPreparationOwner(req.checkupTask, req.staff) !== 'healthPlanner') return res.status(403).json({ success: false, message: '仅原准备规划师可核验完成回写' });
+  const User = require('../models/User');
+  const patient = await User.findById(req.checkupTask.patientId).select('assignedHealthPlanner').lean();
+  if (req.staff.role !== 'superadmin' && String(patient?.assignedHealthPlanner || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '客户归属已变化，请先核对改派' });
+  const Handoff = require('../models/CheckupPreparationHandoff');
+  const link = await Handoff.findOne({ plannerTaskId: req.checkupTask._id, patientId: req.checkupTask.patientId, annualPlanId: req.checkupTask.sourceAnnualPlanId }).lean();
+  if (!link) return res.status(404).json({ success: false, message: '服务承接不存在' });
+  await require('../utils/checkupPreparationCompletion').runtime().reconcile(link);
+  res.json({ success: true, data: await Handoff.findById(link._id).lean() });
+});
 for (const [suffix, action] of [['activate', 'activate'], ['activation-recover', 'recover']]) {
   router.post(`/:id/checkup-preparation/${suffix}`, staffAuth, checkPermission('followups', 'edit'), checkPermission('plans', 'edit'), load, async (req, res) => {
     res.json({ success: true, data: await activationService()[action](req.params.id, req.staff, req.body || {}) });
