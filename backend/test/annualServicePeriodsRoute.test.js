@@ -21,11 +21,11 @@ function setup(t, { existing = null, order = null } = {}) {
   t.mock.method(Order, 'findById', () => ({ lean: async () => order }));
   t.mock.method(Order, 'find', () => ({ sort: () => ({ limit: () => ({ lean: async () => order ? [order] : [] }) }) }));
 }
-async function request(t, method, input, id = ids.plan) {
+async function request(t, method, input, id = ids.plan, suffix = '') {
   const app = express(); app.use(express.json()); app.use(router);
   const server = await new Promise(resolve => { const srv = app.listen(0, '127.0.0.1', () => resolve(srv)); });
   t.after(() => new Promise(resolve => server.close(resolve)));
-  const response = await fetch(`http://127.0.0.1:${server.address().port}/annual-plans/${id}/service-period`, { method, headers: { 'Content-Type': 'application/json' }, ...(input ? { body: JSON.stringify(input) } : {}) });
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/annual-plans/${id}/service-period${suffix}`, { method, headers: { 'Content-Type': 'application/json' }, ...(input ? { body: JSON.stringify(input) } : {}) });
   return { status: response.status, body: await response.json() };
 }
 test('续约入口拒绝非法ID、其他客户人员和无权限岗位', async t => {
@@ -58,4 +58,17 @@ test('订单接口过滤未支付订单，拒绝不合格订单和无效ID', asy
 test('凭据唯一索引冲突返回可处理的409，不吞成成功', async t => {
   setup(t); t.mock.method(Period, 'create', async () => { throw Object.assign(Error('duplicate'), { code: 11000 }); });
   assert.equal((await request(t, 'POST', body())).status, 409);
+});
+test('重试仅所属规划师或顾问可操作，忽略请求中的方案与合同替换', async t => {
+  setup(t); let calls = 0;
+  t.mock.method(require('../src/utils/annualPlanTaskSplit'), 'syncAnnualPlanTaskSplit', async plan => {
+    calls++; assert.equal(plan._id, ids.plan); assert.equal(plan.moduleData, undefined); return { warnings: [] };
+  });
+  actor = { _id: ids.planner, role: 'healthManager' };
+  assert.equal((await request(t, 'POST', {}, ids.plan, '/retry')).status, 403);
+  actor = { _id: ids.old, role: 'familyDoctor' };
+  assert.equal((await request(t, 'POST', {}, ids.plan, '/retry')).status, 403);
+  actor = { _id: ids.planner, role: 'familyDoctor' };
+  assert.equal((await request(t, 'POST', { moduleData: { changed: true }, contractReference: 'untrusted' }, ids.plan, '/retry')).status, 200);
+  assert.equal(calls, 1);
 });

@@ -56,11 +56,18 @@ async function syncAnnualPlanServiceTasks(plan) {
       coordinationGroupId: `annual-plan:${plan._id}`, workflowKey: row.stage, taskRole: row.taskRole,
       status: existing?.status || 'planned', aiStatus: 'approved', reviewRole: null, isBlocked: false, activationEvent: '',
       deliveryMode: row.formData.serviceRequest.mode, deliveryType: row.formData.serviceRequest.serviceType };
-    if (existing) { Object.assign(existing, payload); await existing.save(); updated++; }
+    if (plan.continuitySource?.previousPlanId) {
+      const filter = { sourceAnnualPlanId: plan._id, sourceType: 'annual_service', sourceScheduleKey: row.key };
+      const { status, ...openFields } = payload;
+      const changed = await FollowUp.updateOne({ ...filter, status: { $in: ['planned', 'in_progress', 'missed'] }, 'serviceTracking.linkId': null }, { $set: openFields });
+      updated += changed.modifiedCount || 0;
+      const inserted = await require('./annualDispatchOnce').insertAnnualOnce(FollowUp, plan, 'annual_service', row.key, filter, { ...payload, ...filter });
+      created += inserted.upsertedCount || 0;
+    } else if (existing) { Object.assign(existing, payload); await existing.save(); updated++; }
     else { await FollowUp.create({ ...payload, sourceAnnualPlanId: plan._id, sourceType: 'annual_service', sourceScheduleKey: row.key }); created++; }
   }
-  const desired = assignableRows.map(row => row.key);
-  await FollowUp.updateMany({ sourceAnnualPlanId: plan._id, sourceType: 'annual_service', sourceScheduleKey: { $nin: desired }, status: { $in: ['planned', 'in_progress'] } }, { $set: { status: 'cancelled', cancelReason: '年度方案已调整或改为仅提醒' } });
+  const desired = (plan.continuitySource?.previousPlanId ? rows : assignableRows).map(row => row.key);
+  await FollowUp.updateMany({ sourceAnnualPlanId: plan._id, sourceType: 'annual_service', sourceScheduleKey: { $nin: desired }, status: { $in: ['planned', 'in_progress'] }, ...(plan.continuitySource?.previousPlanId ? { 'serviceTracking.linkId': null } : {}) }, { $set: { status: 'cancelled', cancelReason: '年度方案已调整或改为仅提醒' } });
   return { created, updated, warnings: patient?.assignedHealthPlanner ? [] : rows.map(row => `${row.theme}尚未绑定健康规划师`) };
 }
 

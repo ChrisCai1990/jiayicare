@@ -36,6 +36,7 @@ const supplementSchema = new mongoose.Schema({
   sourceAnnualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', default: null },
   sourceOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null },
   sourceRecordKey: { type: String, default: '' },
+  annualDispatchKey: { type: String },
   supplyReminder: {
     enabled:      { type: Boolean, default: false },
     intervalDays: { type: Number, min: 1, max: 365, default: 30 },
@@ -62,6 +63,7 @@ const supplementSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 supplementSchema.index({ user: 1, stopped: 1 });
+supplementSchema.index({ annualDispatchKey: 1 }, { unique: true, sparse: true });
 supplementSchema.index({ sourceAnnualPlanId: 1, sourceRecordKey: 1, stopped: 1 });
 supplementSchema.index({ sourceOrderId: 1 }, { unique: true, sparse: true });
 

@@ -38,7 +38,20 @@ router.post('/annual-plans/:planId/service-period', staffAuth, async (req, res) 
       try { const result = await require('../utils/annualPlanTaskSplit').syncAnnualPlanTaskSplit(data.plan); warning = (result.warnings || []).join('；'); }
       catch { warning = '服务期已确认，任务同步待系统重试'; }
     }
-    res.json({ success: true, data: { period, activation, warning } });
+    res.json({ success: true, data: { period: await Period.findOne({ annualPlanId: data.plan._id }).lean() || period, activation, warning } });
   } catch (error) { res.status(error.code === 11000 ? 409 : error.statusCode || 500).json({ success: false, message: error.code === 11000 ? '该方案或续约凭据已被使用，请刷新核对' : error.statusCode ? error.message : '确认服务期失败，请稍后重试' }); }
+});
+router.post('/annual-plans/:planId/service-period/retry', staffAuth, async (req, res) => {
+  try {
+    const data = await load(req, res); if (!data) return;
+    if (!['superadmin', 'healthPlanner', 'familyDoctor'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅所属健康规划师或健康顾问可重试同步' });
+    if (!data.plan.continuitySource?.previousPlanId) return res.status(409).json({ success: false, message: '此入口仅处理续年方案同步' });
+    // 不接收新方案/合同字段，不重新审核、不重复确认；使用数据库已冻结的方案。
+    let warning = '';
+    try { const result = await require('../utils/annualPlanTaskSplit').syncAnnualPlanTaskSplit(data.plan); warning = (result.warnings || []).join('；'); }
+    catch { warning = '同步尚未完成，请稍后重试'; }
+    const period = await Period.findOne({ annualPlanId: data.plan._id }).lean();
+    res.json({ success: true, data: { period, activation: await annualExecutionGate(data.plan), warning } });
+  } catch { res.status(500).json({ success: false, message: '无法读取同步结果，请稍后重试' }); }
 });
 module.exports = router;

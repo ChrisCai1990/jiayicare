@@ -28,7 +28,12 @@ function buildAnnualPlanKickoffTasks(plan, patient, confirmedAt = plan.confirmed
 async function syncAnnualPlanTaskSplit(plan) {
   if (!plan.confirmedAt) return { clientTasks: 0, staffTasks: 0, scheduledFollowUps: 0, warnings: ['客户尚未确认方案'] };
   const gate = await require('./annualServicePeriod').annualExecutionGate(plan);
-  if (!gate.allowed) return { clientTasks: 0, staffTasks: 0, scheduledFollowUps: 0, warnings: [gate.reason] };
+  const tracker = require('./annualRenewalSyncState');
+  const attemptId = gate.period ? await tracker.beginRenewalSync(gate.period) : null;
+  if (!gate.allowed) {
+    if (gate.period) await tracker.finishRenewalSync(gate.period, attemptId, { allowed: false, issue: gate.issue });
+    return { clientTasks: 0, staffTasks: 0, scheduledFollowUps: 0, warnings: [gate.reason] };
+  }
   if (plan.continuitySource?.previousPlanId) plan = { ...(plan.toObject ? plan.toObject() : plan), confirmedAt: gate.anchor };
   try {
   const patient = await User.findById(plan.patientId)
@@ -42,7 +47,13 @@ async function syncAnnualPlanTaskSplit(plan) {
     sourceScheduleKey: 'health_manager_kickoff',
     status: { $ne: 'completed' },
   });
-  const clientResult = await Task.updateOne(
+  const clientPayload = { user: plan.patientId, title: rows.client.title, description: rows.client.description,
+    category: 'annual_management', type: 'followup', priority: 'medium', dueDate: rows.client.dueDate, assignee: '客户', status: 'pending',
+    sourceAnnualPlanId: plan._id, sourceTaskKey: rows.client.key };
+  const clientResult = plan.continuitySource?.previousPlanId
+    ? await require('./annualDispatchOnce').insertAnnualOnce(Task, plan, 'client', rows.client.key,
+      { sourceAnnualPlanId: plan._id, sourceTaskKey: rows.client.key }, clientPayload)
+    : await Task.updateOne(
     { sourceAnnualPlanId: plan._id, sourceTaskKey: rows.client.key },
     { $set: {
       user: plan.patientId, title: rows.client.title, description: rows.client.description,
@@ -60,7 +71,9 @@ async function syncAnnualPlanTaskSplit(plan) {
     };
     // 开放任务可更新负责人，但不重置进行中/逾期状态；已完成、已取消的记录完全保留。
     await FollowUp.updateOne({ ...key, status: { $in: ['planned', 'in_progress', 'missed'] } }, { $set: payload });
-    const result = await FollowUp.updateOne(key, {
+    const result = plan.continuitySource?.previousPlanId
+      ? await require('./annualDispatchOnce').insertAnnualOnce(FollowUp, plan, 'coordination', row.key, key, { ...key, ...payload, status: 'planned', aiStatus: 'approved', reviewRole: null })
+      : await FollowUp.updateOne(key, {
       $setOnInsert: { ...key, ...payload, status: 'planned', aiStatus: 'approved', reviewRole: null },
     }, { upsert: true });
     if (result.upsertedCount) staffTasks++;
@@ -76,13 +89,10 @@ async function syncAnnualPlanTaskSplit(plan) {
   if (!patient?.assignedHealthPlanner) warnings.push('客户尚未绑定健康规划师，未生成规划师协同待办');
   if (gate.period && !patient?.assignedHealthManager) warnings.push('客户尚未绑定健管专员，请完善随访责任岗位');
   warnings.push(...(serviceTasks.warnings || []));
-  if (gate.period) await require('../models/AnnualServicePeriod').updateOne(
-    { _id: gate.period._id, ...(warnings.length ? { activationStatus: { $ne: 'active' } } : {}) },
-    { $set: warnings.length ? { activationStatus: 'failed', activationError: warnings.join('；') } : { activationStatus: 'active', activationError: '', activatedAt: gate.period.activatedAt || new Date() } },
-  );
+  if (gate.period) await tracker.finishRenewalSync(gate.period, attemptId, { issue: warnings.length ? { code: 'assignment', role: 'healthPlanner', message: warnings.join('；') } : null });
   return { clientTasks: clientResult.upsertedCount || 0, staffTasks, scheduledFollowUps, serviceTasks, warnings };
   } catch (error) {
-    if (gate.period) await require('../models/AnnualServicePeriod').updateOne({ _id: gate.period._id, activationStatus: { $ne: 'active' } }, { $set: { activationStatus: 'failed', activationError: '年度任务同步未完成，系统将重试；请核对服务期及岗位配置' } }).catch(() => {});
+    if (gate.period) await tracker.finishRenewalSync(gate.period, attemptId, { issue: { code: 'sync_failed', role: 'healthPlanner', message: error.code === 'ANNUAL_DISPATCH_INDEX_REQUIRED' ? '年度派发唯一索引尚未就绪，请联系管理员核对后重试' : '年度任务同步未完成，系统将每日重试；可在工作台核对后重新同步' } }).catch(() => {});
     throw error;
   }
 }

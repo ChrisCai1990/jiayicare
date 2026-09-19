@@ -67,3 +67,11 @@ test('退款后不再派新任务；客户较晚确认时以确认时间为排�
   const enabled = await annualExecutionGate(plan({ confirmedAt: new Date('2027-02-01') }), new Date('2027-05-01'), models(paid));
   assert.equal(enabled.anchor.toISOString(), '2027-02-01T00:00:00.000Z');
 });
+test('需人工处置的门槛异常包含准确岗位，服务未开始不算异常', async () => {
+  const invalidOrder = await annualExecutionGate(plan(), new Date('2027-05-01'), models(period({ sourceType: 'paid_order' }), order({ tradeStatus: 'refunded' })));
+  assert.equal(invalidOrder.issue.role, 'healthPlanner');
+  const badDate = await annualExecutionGate(plan({ moduleData: { medical_treatment: { records: [{ visit_time: '2026-01-01' }] } } }), new Date('2027-05-01'), models());
+  assert.equal(badDate.issue.role, 'familyDoctor');
+  const future = await annualExecutionGate(plan(), new Date('2026-01-01'), models());
+  assert.equal(future.issue, undefined);
+});

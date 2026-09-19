@@ -18,13 +18,19 @@ export default function AnnualServicePeriodPanel({ planId, staff }) {
     try { const res = await staffAPI.confirmAnnualServicePeriod(planId, form); setData(res.data) }
     catch (err) { setError(err.message) } finally { setBusy(false) }
   }
+  const retry = async () => {
+    setBusy(true); setError('')
+    try { const res = await staffAPI.retryAnnualServicePeriod(planId); setData(res.data) }
+    catch (err) { setError(err.message) } finally { setBusy(false) }
+  }
   return <section className="card" style={{ padding: 16, marginBottom: 20 }}>
     <strong>续约凭据与新年度启用</strong>
     <p style={{ fontSize: 13 }}>修改档案中的到期日期不代表续约。客户可先确认方案；有有效凭据且服务期开始后，系统才派发新年度任务。</p>
     {error && <p style={{ color: '#B42318' }}>{error}</p>}
     {!planId ? <p>请先保存本年度草稿，再由所属健康规划师核对续约凭据。</p> : data && <>
       <p>{data.activation?.allowed ? '已满足任务启用条件' : data.activation?.reason}{data.warning ? `；${data.warning}` : ''}</p>
-      {data.period?.activationStatus === 'failed' && <p style={{ color: '#B42318' }}>任务同步未完成，系统每日重试；请核对岗位配置，无需重复确认续约。</p>}
+      {(data.period?.syncIssue || data.period?.activationStatus === 'failed') && <p style={{ color: '#B42318' }}>{data.period.syncIssue?.message || data.period.activationError || '任务同步未完成，系统每日重试，无需重复确认续约。'}</p>}
+      {data.period && ['superadmin', 'healthPlanner', 'familyDoctor'].includes(staff?.role) && <button className="btn" disabled={busy} onClick={retry}>{busy ? '同步中…' : '重新核对并同步任务'}</button>}
       {data.period ? <p>已留存{data.period.sourceType === 'paid_order' ? '已支付年度订单' : '线下合同'}凭据：{data.period.startDate} 至 {data.period.endDate}。确认记录不可直接覆盖。</p> : ['healthPlanner', 'superadmin'].includes(staff?.role) ? <div style={{ display: 'grid', gap: 10, maxWidth: 600 }}>
         <label>续约凭据<select className="form-input" value={form.sourceType} onChange={e => update('sourceType', e.target.value)}><option value="paid_order">已支付年度服务订单</option><option value="offline_contract">已核验的线下合同</option></select></label>
         {form.sourceType === 'paid_order' ? <label>年度订单<select className="form-input" value={form.sourceOrderId} onChange={e => update('sourceOrderId', e.target.value)}><option value="">请选择</option>{(data.orders || []).map(order => <option key={order._id} value={order._id}>{order.orderNo || order._id} · {order.serviceName}</option>)}</select></label> : <>

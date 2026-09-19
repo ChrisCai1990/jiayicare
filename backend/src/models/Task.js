@@ -15,9 +15,11 @@ const taskSchema = new mongoose.Schema({
   abnormalReviewId:  { type: mongoose.Schema.Types.ObjectId, ref: 'AbnormalReview', default: null },
   sourceAnnualPlanId:{ type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', default: null },
   sourceTaskKey:     { type: String, default: '' },
+  annualDispatchKey: { type: String },
 }, { timestamps: true });
 
 taskSchema.index({ user: 1, status: 1 });
 taskSchema.index({ sourceAnnualPlanId: 1, sourceTaskKey: 1 });
+taskSchema.index({ annualDispatchKey: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('Task', taskSchema);

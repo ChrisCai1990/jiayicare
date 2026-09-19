@@ -49,7 +49,7 @@ async function syncAnnualPlanSupplyPlans(plan) {
         await found.save();
         updated++;
       } else {
-        await RecurringSupplyPlan.create({
+        const fields = {
           patientId: plan.patientId,
           planType,
           itemName: rec.itemName,
@@ -60,8 +60,12 @@ async function syncAnnualPlanSupplyPlans(plan) {
           nextDueDate: addDays(new Date(), days),
           sourceAnnualPlanId: plan._id,
           createdBy: plan.createdBy,
-        });
-        created++;
+        };
+        if (plan.continuitySource?.previousPlanId) {
+          const result = await require('./annualDispatchOnce').insertAnnualOnce(RecurringSupplyPlan, plan, `supply:${planType}`, rec.itemName,
+            { sourceAnnualPlanId: plan._id, planType, itemName: rec.itemName }, fields);
+          created += result.upsertedCount || 0;
+        } else { await RecurringSupplyPlan.create(fields); created++; }
       }
     }
 

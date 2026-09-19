@@ -256,6 +256,7 @@ async function syncAnnualPlanFollowUps(plan) {
     if (matches.length) {
       // 优先保留已执行，其次保留已审核记录；相同排期的待审副本直接清理。
       const keep = matches.find(item => item.status === 'completed') || matches.find(item => item.aiStatus === 'approved') || matches[0];
+      if (plan.continuitySource?.previousPlanId && ['completed', 'cancelled'].includes(keep.status)) continue;
       if (keep.sourceScheduleKey !== row.sourceScheduleKey) keep.sourceScheduleKey = row.sourceScheduleKey;
       if (keep.aiStatus === 'pending') {
         ['patientId', 'staffId', 'assignedTo', 'date', 'theme', 'content', 'aiStatus', 'reviewRole', 'deliveryMode', 'deliveryType'].forEach(k => { keep[k] = row[k]; });
@@ -275,8 +276,11 @@ async function syncAnnualPlanFollowUps(plan) {
       await keep.save();
       // 已存在的历史副本不在定时同步中批量删除；这里只阻止继续生成，具体旧数据按核实后定点清理。
     } else {
-      await FollowUp.create(row);
-      created++;
+      if (plan.continuitySource?.previousPlanId) {
+        const result = await require('./annualDispatchOnce').insertAnnualOnce(FollowUp, plan, 'scheduled', row.sourceScheduleKey,
+          { sourceAnnualPlanId: plan._id, sourceType: 'scheduled', sourceScheduleKey: row.sourceScheduleKey }, row);
+        created += result.upsertedCount || 0;
+      } else { await FollowUp.create(row); created++; }
     }
   }
 

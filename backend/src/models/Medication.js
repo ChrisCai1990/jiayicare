@@ -35,6 +35,7 @@ const medicationSchema = new mongoose.Schema({
   sourceType: { type: String, enum: ['manual', 'annual_plan', 'ai', ''], default: 'manual' },
   sourceAnnualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', default: null },
   sourceRecordKey: { type: String, default: '' },
+  annualDispatchKey: { type: String },
   reminder: {
     enabled:      { type: Boolean, default: false },
     intervalDays: { type: Number, min: 1, max: 365, default: 30 },
@@ -79,6 +80,7 @@ const medicationSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 medicationSchema.index({ user: 1, active: 1 });
+medicationSchema.index({ annualDispatchKey: 1 }, { unique: true, sparse: true });
 medicationSchema.index({ sourceAnnualPlanId: 1, sourceRecordKey: 1, stopped: 1 });
 
 module.exports = mongoose.model('Medication', medicationSchema);

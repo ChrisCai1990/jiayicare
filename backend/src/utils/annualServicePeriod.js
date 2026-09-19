@@ -68,16 +68,17 @@ async function annualExecutionGate(plan, now = new Date(), models = {}) {
   const Order = models.Order || require('../models/Order');
   const period = await Period.findOne({ annualPlanId: plan._id, patientId: plan.patientId }).lean();
   if (!period?.confirmedAt) return { allowed: false, reason: '等待健康规划师核验续约凭据及服务期' };
+  const blocked = (reason, code, role = 'healthPlanner') => ({ allowed: false, reason, period, issue: { code, role, message: reason } });
   if (period.sourceType === 'paid_order') {
     const order = await Order.findById(period.sourceOrderId).lean();
-    if (!isPaidAnnualOrder(order, plan.patientId)) return { allowed: false, reason: '续约订单已失效或退款，暂不派发新任务' };
-  } else if (period.sourceType !== 'offline_contract' || !period.contractReference) return { allowed: false, reason: '续约凭据无效' };
+    if (!isPaidAnnualOrder(order, plan.patientId)) return blocked('续约订单已失效或退款，请核对服务安排；暂不派发新任务', 'invalid_order');
+  } else if (period.sourceType !== 'offline_contract' || !period.contractReference) return blocked('续约凭据无效，请核对合同', 'invalid_evidence');
   const today = chinaDay(now);
-  if (!validDay(period.startDate) || !validDay(period.endDate)) return { allowed: false, reason: '服务期日期无效' };
+  if (!validDay(period.startDate) || !validDay(period.endDate) || period.endDate < period.startDate) return blocked('服务期日期无效，请核对合同服务期', 'invalid_period');
   try { validatePlanPeriodDates(plan, period.startDate, period.endDate); }
-  catch (error) { return { allowed: false, reason: error.message }; }
-  if (today < period.startDate) return { allowed: false, reason: `等待服务期开始（${period.startDate}）` };
-  if (today > period.endDate) return { allowed: false, reason: '该年度服务期已结束' };
+  catch (error) { return blocked(error.message, 'plan_dates', 'familyDoctor'); }
+  if (today < period.startDate) return { allowed: false, period, reason: `等待服务期开始（${period.startDate}）` };
+  if (today > period.endDate) return { allowed: false, period, reason: '该年度服务期已结束' };
   return { allowed: true, period, anchor: new Date(Math.max(new Date(plan.confirmedAt).getTime(), new Date(`${period.startDate}T00:00:00+08:00`).getTime())) };
 }
 module.exports = { confirmAnnualServicePeriod, annualExecutionGate, isPaidAnnualOrder, validatePeriodDates, validatePlanPeriodDates };

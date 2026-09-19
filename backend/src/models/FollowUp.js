@@ -72,6 +72,7 @@ const followUpSchema = new mongoose.Schema({
   lastRemindedAt: { type: Date, default: null },
   escalatedAt: { type: Date, default: null },
   aiStatus:   { type: String, enum: ['pending', 'approved', null], default: null },
+  annualDispatchKey: { type: String },
   // 待审核归属角色：为空时按固定规则由健康顾问审核（年度管理方案）；health_plan来源按方案类型区分（营养方案→营养师，体检方案→健康顾问）
   // Keep legacy medicalAssistant values readable/saveable: older medical-assist tasks were
   // written through findOneAndUpdate without validators. New tasks belong to healthPlanner.
@@ -80,6 +81,7 @@ const followUpSchema = new mongoose.Schema({
 
 followUpSchema.index({ staffId: 1, date: -1 });
 followUpSchema.index({ assessmentActionKey: 1 }, { unique: true, sparse: true });
+followUpSchema.index({ annualDispatchKey: 1 }, { unique: true, sparse: true });
 followUpSchema.index({ patientId: 1, date: -1 });
 followUpSchema.index({ coordinationGroupId: 1, workflowKey: 1, taskRole: 1 });
 followUpSchema.index({ patientId: 1, sourceType: 1, sourceId: 1, status: 1, date: 1 });

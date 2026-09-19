@@ -75,8 +75,11 @@ async function syncKind(plan, moduleKey, Model) {
       await existing.save();
       updated++;
     } else {
-      await Model.create(fields);
-      created++;
+      if (plan.continuitySource?.previousPlanId) {
+        const result = await require('./annualDispatchOnce').insertAnnualOnce(Model, plan, moduleKey, key,
+          { sourceAnnualPlanId: plan._id, sourceRecordKey: key }, fields);
+        created += result.upsertedCount || 0;
+      } else { await Model.create(fields); created++; }
     }
   }
 

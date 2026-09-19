@@ -42,9 +42,11 @@ const recurringSupplyPlanSchema = new mongoose.Schema({
   // 健管专员确认（对应实际配药/配营养素动作已安排）后置为'approved'，nextDueDate滚到下一周期
   aiStatus:       { type: String, enum: ['pending', 'approved'], default: null },
   lastNotifiedAt: { type: Date, default: null },        // 上次生成待办/提醒的时间，避免同一周期重复通知
+  annualDispatchKey: { type: String },
 }, { timestamps: true });
 
 recurringSupplyPlanSchema.index({ patientId: 1, planType: 1 });
+recurringSupplyPlanSchema.index({ annualDispatchKey: 1 }, { unique: true, sparse: true });
 recurringSupplyPlanSchema.index({ sourceOrderId: 1 }, { unique: true, partialFilterExpression: { sourceOrderId: { $type: 'objectId' } } });
 recurringSupplyPlanSchema.index({ enabled: 1, nextDueDate: 1 });
 recurringSupplyPlanSchema.index({ workflowStatus: 1, nextDueDate: 1 });

@@ -14,6 +14,11 @@ const schema = new mongoose.Schema({
   activationStatus: { type: String, enum: ['waiting', 'active', 'failed'], default: 'waiting' },
   activationError: { type: String, default: '' },
   activatedAt: { type: Date, default: null },
+  syncAttemptId: { type: String, default: '' },
+  syncState: { type: String, enum: ['idle', 'running', 'failed', 'blocked'], default: 'idle' },
+  syncStartedAt: { type: Date, default: null },
+  syncIssue: { type: mongoose.Schema.Types.Mixed, default: null },
+  lastSyncSuccessAt: { type: Date, default: null },
 }, { timestamps: true });
 schema.index({ sourceOrderId: 1 }, { unique: true, partialFilterExpression: { sourceOrderId: { $type: 'objectId' } } });
 schema.index({ patientId: 1, contractReference: 1, startDate: 1 }, { unique: true, partialFilterExpression: { sourceType: 'offline_contract' } });
