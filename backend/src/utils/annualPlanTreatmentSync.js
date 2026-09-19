@@ -44,8 +44,10 @@ async function syncKind(plan, moduleKey, Model) {
     const existing = await Model.findOne({
       sourceAnnualPlanId: plan._id,
       sourceRecordKey: key,
-      stopped: false,
+      ...(plan.continuitySource?.previousPlanId ? {} : { stopped: false }),
     }).sort({ createdAt: -1 });
+    // 续年启用会由日扫描重试；已承接的档案属于后续人工管理，不覆盖或恢复停用记录。
+    if (existing && plan.continuitySource?.previousPlanId) continue;
 
     const fields = {
       ...commonFields(record),
@@ -96,6 +98,7 @@ async function syncKind(plan, moduleKey, Model) {
 }
 
 async function syncAnnualPlanTreatments(plan) {
+  if (plan.continuitySource?.previousPlanId && !(await require('./annualServicePeriod').annualExecutionGate(plan)).allowed) return { skipped: true, reason: '等待续约服务期生效及客户确认' };
   const medication = await syncKind(plan, 'medication', Medication);
   const supplement = await syncKind(plan, 'supplement', Supplement);
   return { medication, supplement };

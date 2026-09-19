@@ -4,6 +4,7 @@ import { staffAPI } from '../api'
 import { useToast, useStaff } from '../App'
 import { StaffListContext, ModulePanel } from '../components/ModulePanel'
 import ReportFollowUpDrafts from '../components/ReportFollowUpDrafts'
+import AnnualServicePeriodPanel from '../components/AnnualServicePeriodPanel'
 
 // ── 方案类型 ─────────────────────────────────────────────────────────
 const PLAN_TYPES = [
@@ -337,7 +338,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [planType, setPlanType]     = useState('')
   const [moduleData, setModuleData] = useState({})
   const [plansByType, setPlansByType] = useState({}) // patientMode: { servicePlanCode: plan }，各服务版本独立保存
-  const [year, setYear]             = useState(new Date().getFullYear())
+  const [year, setYear]             = useState(() => Number(searchParams.get('year')) || new Date().getFullYear())
   const [loading, setLoading]       = useState(true)
   const [saving, setSaving]         = useState(false)
   const [pushing, setPushing]       = useState(false)
@@ -821,6 +822,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           )}
         </div>
       )}
+      {patientMode && ['superadmin', 'healthPlanner', 'familyDoctor', 'healthManager'].includes(staff?.role) && preparation?.continuity?.mode === 'renewal' && <AnnualServicePeriodPanel key={`${year}:${planType}`} planId={plansByType[planType]?._id} staff={staff} />}
 
       {patientMode && (
         <div id="professional-assessments" style={{ background: '#fff', border: '1px solid #D7E4DD', borderRadius: 12, padding: 18, marginBottom: 20 }}>

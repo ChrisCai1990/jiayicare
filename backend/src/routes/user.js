@@ -1049,20 +1049,12 @@ router.patch('/annual-mgmt-plans/:id/confirm', auth, async (req, res) => {
   try {
     const plan = await AnnualPlan.findOne({ _id: req.params.id, patientId: req.user._id });
     if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
-    if (!plan.confirmedAt) {
-      plan.confirmedAt = new Date();
-      plan.frozenAt = plan.confirmedAt;
-      await plan.save();
-    } else if (!plan.frozenAt) {
-      // 兼容历史已确认方案：再次进入确认接口时补齐冻结标记。
-      plan.frozenAt = plan.confirmedAt;
-      await plan.save();
-    }
-    // 客户确认是年度任务拆分的唯一触发点；重复确认只做幂等同步，不会重复生成。
+    await require('../utils/annualPlanConfirmation').confirmPublishedAnnualPlan(plan);
+    // 客户确认是必要门槛；续年另需有效凭据及服务期生效，日扫描也可补同步。
     const taskSplit = await syncAnnualPlanTaskSplit(plan);
     res.json({ success: true, data: plan, taskSplit });
   } catch (err) {
-    res.status(500).json({ success: false, message: '操作失败' });
+    res.status(err.statusCode || 500).json({ success: false, message: err.statusCode ? err.message : '操作失败' });
   }
 });
 

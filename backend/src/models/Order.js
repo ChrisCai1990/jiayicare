@@ -37,6 +37,7 @@ const orderSchema = new mongoose.Schema({
   desiredServiceDateEnd: { type: Date, default: null },
   serviceRequirements: { type: String, default: '' },
   orderType:   { type: String, enum: ['service', 'package', 'product'], default: 'service' },
+  annualServiceSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
   inventoryReserved: { type: Boolean, default: false },
   inventoryReleased: { type: Boolean, default: false },
   orderNo:     { type: String, default: '', index: true },

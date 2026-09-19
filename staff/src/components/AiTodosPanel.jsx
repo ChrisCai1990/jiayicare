@@ -29,6 +29,7 @@ const TYPE_CONFIG = {
   nutrition_plan_review:{ icon: '🥗', label: 'AI膳食信息草稿待核对', color: '#16A34A', priority: 3 },
   checkup_plan_review:  { icon: '🏥', label: 'AI体检方案待健康顾问审核', color: '#0077B6', priority: 3 },
   phase_assessment_review: { icon: '📊', label: '阶段性评估待审核', color: '#7C3AED', priority: 2 },
+  annual_renewal_confirmation: { icon: '📋', label: '续约凭据待核对', color: '#0077B6', priority: 2 },
   followup_review:      { icon: '📅', label: '随访计划待审核', color: '#0077B6', priority: 3 },
   service_draft_review: { icon: '🤖', label: 'AI随访草稿待审核', color: '#7C3AED', priority: 3 },
   medical_assist_plan_review: { icon: '🚑', label: 'AI就医协助方案待审核', color: '#0077B6', priority: 2 },
@@ -54,7 +55,7 @@ const PAGE_SIZE = 5
 const TODO_GROUPS = [
   { key: 'all', label: '全部' },
   { key: 'report', label: '报告与资料', types: ['report_parse','report_review','report_interpretation','archive_review','summary_review','lifestyle_review','dietary_survey_review','medication_review','supplement_review'] },
-  { key: 'plan', label: '方案与评估', types: ['trend_review','plan_review','nutrition_plan_review','checkup_plan_review','phase_assessment_review','followup_review','service_draft_review','medical_assist_plan_review','service_proposal_review'] },
+  { key: 'plan', label: '方案与评估', types: ['trend_review','plan_review','nutrition_plan_review','checkup_plan_review','phase_assessment_review','annual_renewal_confirmation','followup_review','service_draft_review','medical_assist_plan_review','service_proposal_review'] },
   { key: 'risk', label: '风险与异常', types: ['risk_review','bp_alert_review','risk_alert','transfer_human','wecom_kf_handoff'] },
   { key: 'content', label: '内容与安排', types: ['push_review','draft_review','supply_intake','supply_medication_risk_review','supply_supplement_risk_review','supply_arrangement','supply_fulfillment','supply_receipt'] },
 ]

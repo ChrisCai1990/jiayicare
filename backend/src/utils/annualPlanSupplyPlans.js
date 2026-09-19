@@ -17,6 +17,7 @@ function addDays(date, days) {
 // 周期打回原点）；不存在则新建，首次 nextDueDate = 保存当天 + 频率天数。
 // 方案里该条记录被删除时，对应计划置 enabled:false（不物理删除，保留历史）。
 async function syncAnnualPlanSupplyPlans(plan) {
+  if (plan.continuitySource?.previousPlanId && !(await require('./annualServicePeriod').annualExecutionGate(plan)).allowed) return { created: 0, updated: 0, disabled: 0 };
   const moduleData = plan.moduleData || {};
   const MODULE_TYPE_MAP = { medication: 'medication', supplement: 'supplement' };
 
@@ -37,6 +38,8 @@ async function syncAnnualPlanSupplyPlans(plan) {
 
       keepNames.add(rec.itemName);
       const found = existingByName.get(rec.itemName);
+      // 续年任务补同步仅补缺项，不恢复人工暂停或覆盖后续补给调整。
+      if (found && plan.continuitySource?.previousPlanId) continue;
       if (found) {
         found.dosage = rec.dosage || '';
         found.frequency = rec.frequency;

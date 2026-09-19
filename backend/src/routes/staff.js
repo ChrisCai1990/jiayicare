@@ -11145,6 +11145,20 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
+    // 续约凭据只交所属健康规划师核对；确认记录存在后自动退出此待办。
+    if (isSuper || role === 'healthPlanner') {
+      const renewalPlans = await AnnualPlan.find({ 'continuitySource.previousPlanId': { $ne: null }, ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) }).populate('patientId', 'name').sort({ createdAt: -1 }).limit(100).lean();
+      const periods = await require('../models/AnnualServicePeriod').find({ annualPlanId: { $in: renewalPlans.map(plan => plan._id) } }).select('annualPlanId activationStatus').lean();
+      const failed = new Set(periods.filter(period => period.activationStatus === 'failed').map(period => String(period.annualPlanId)));
+      const confirmed = new Set(periods.filter(period => period.activationStatus !== 'failed').map(period => String(period.annualPlanId)));
+      for (const plan of renewalPlans) if (plan.patientId && !confirmed.has(String(plan._id))) todos.push({
+        id: `annual_renewal_${plan._id}`, type: 'annual_renewal_confirmation', label: failed.has(String(plan._id)) ? '新年度任务同步异常·待核对' : '下一年度续约凭据待核对', priority: 2,
+        patientName: plan.patientId.name || '未知', patientId: String(plan.patientId._id),
+        summary: failed.has(String(plan._id)) ? '凭据已保存，任务同步未完成，系统将每日重试；请核对岗位配置' : `${plan.year}年度：核对已支付年度订单，或确认线下合同及服务起止日期`, createdAt: plan.createdAt, overdue: false,
+        link: `/patients/${plan.patientId._id}/annual-health?year=${plan.year}&planType=${encodeURIComponent(plan.planType)}`,
+      });
+    }
+
     // 阶段性评估按领域进入对应岗位；综合/升级评估归健康顾问，旧营养记录保留原路径。
     if (isSuper || PHASE_ROLE_FIELDS[role]) {
       const assessmentFilter = { ...reviewQueueFilter(isSuper ? 'superadmin' : role), ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };

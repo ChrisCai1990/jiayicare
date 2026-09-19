@@ -27,6 +27,10 @@ function buildAnnualPlanKickoffTasks(plan, patient, confirmedAt = plan.confirmed
 
 async function syncAnnualPlanTaskSplit(plan) {
   if (!plan.confirmedAt) return { clientTasks: 0, staffTasks: 0, scheduledFollowUps: 0, warnings: ['客户尚未确认方案'] };
+  const gate = await require('./annualServicePeriod').annualExecutionGate(plan);
+  if (!gate.allowed) return { clientTasks: 0, staffTasks: 0, scheduledFollowUps: 0, warnings: [gate.reason] };
+  if (plan.continuitySource?.previousPlanId) plan = { ...(plan.toObject ? plan.toObject() : plan), confirmedAt: gate.anchor };
+  try {
   const patient = await User.findById(plan.patientId)
     .select('assignedHealthManager assignedHealthPlanner').lean();
   const rows = buildAnnualPlanKickoffTasks(plan, patient);
@@ -49,24 +53,38 @@ async function syncAnnualPlanTaskSplit(plan) {
   );
   let staffTasks = 0;
   for (const row of rows.staff) {
-    const result = await FollowUp.updateOne(
-      { sourceAnnualPlanId: plan._id, sourceType: 'annual_coordination', sourceScheduleKey: row.key },
-      { $set: {
+    const key = { sourceAnnualPlanId: plan._id, sourceType: 'annual_coordination', sourceScheduleKey: row.key };
+    const payload = {
         patientId: plan.patientId, staffId: plan.createdBy || row.assignedTo, assignedTo: row.assignedTo,
         date: row.date, theme: row.theme, content: row.content, plannedContent: row.content,
-        status: 'planned', aiStatus: 'approved', reviewRole: null,
-      }, $setOnInsert: { sourceAnnualPlanId: plan._id, sourceType: 'annual_coordination', sourceScheduleKey: row.key } },
-      { upsert: true },
-    );
+    };
+    // 开放任务可更新负责人，但不重置进行中/逾期状态；已完成、已取消的记录完全保留。
+    await FollowUp.updateOne({ ...key, status: { $in: ['planned', 'in_progress', 'missed'] } }, { $set: payload });
+    const result = await FollowUp.updateOne(key, {
+      $setOnInsert: { ...key, ...payload, status: 'planned', aiStatus: 'approved', reviewRole: null },
+    }, { upsert: true });
     if (result.upsertedCount) staffTasks++;
   }
   const [scheduledFollowUps, serviceTasks] = await Promise.all([
     syncAnnualPlanFollowUps(plan), syncAnnualPlanServiceTasks(plan),
   ]);
+  if (plan.continuitySource?.previousPlanId && gate.period?.activationStatus !== 'active') {
+    await require('./annualPlanSupplyPlans').syncAnnualPlanSupplyPlans(plan);
+    await require('./annualPlanTreatmentSync').syncAnnualPlanTreatments(plan);
+  }
   const warnings = [];
   if (!patient?.assignedHealthPlanner) warnings.push('客户尚未绑定健康规划师，未生成规划师协同待办');
+  if (gate.period && !patient?.assignedHealthManager) warnings.push('客户尚未绑定健管专员，请完善随访责任岗位');
   warnings.push(...(serviceTasks.warnings || []));
+  if (gate.period) await require('../models/AnnualServicePeriod').updateOne(
+    { _id: gate.period._id, ...(warnings.length ? { activationStatus: { $ne: 'active' } } : {}) },
+    { $set: warnings.length ? { activationStatus: 'failed', activationError: warnings.join('；') } : { activationStatus: 'active', activationError: '', activatedAt: gate.period.activatedAt || new Date() } },
+  );
   return { clientTasks: clientResult.upsertedCount || 0, staffTasks, scheduledFollowUps, serviceTasks, warnings };
+  } catch (error) {
+    if (gate.period) await require('../models/AnnualServicePeriod').updateOne({ _id: gate.period._id, activationStatus: { $ne: 'active' } }, { $set: { activationStatus: 'failed', activationError: '年度任务同步未完成，系统将重试；请核对服务期及岗位配置' } }).catch(() => {});
+    throw error;
+  }
 }
 
 module.exports = { buildAnnualPlanKickoffTasks, syncAnnualPlanTaskSplit };

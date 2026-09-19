@@ -16,7 +16,10 @@ async function scanAndSyncScheduledWindow() {
   let total = 0;
   for (const plan of plans) {
     try {
-      total += await syncAnnualPlanFollowUps(plan);
+      if (plan.continuitySource?.previousPlanId) {
+        const result = await require('./annualPlanTaskSplit').syncAnnualPlanTaskSplit(plan);
+        total += result.scheduledFollowUps || 0;
+      } else total += await syncAnnualPlanFollowUps(plan);
     } catch (e) {
       console.error('[scheduled-followup-window] 方案 ' + plan._id + ' 补生成失败', e.message);
     }

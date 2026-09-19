@@ -96,6 +96,7 @@ app.use('/api/admin/ai-control', require('./routes/aiControl'));
 const staffRouter = require('./routes/staff');
 app.use('/api/staff',         staffRouter);
 app.use('/api/staff',         require('./routes/aiCaseReviews'));
+app.use('/api/staff',         require('./routes/annualServicePeriods'));
 app.use('/api/staff/service-groups', require('./routes/serviceGroups'));
 app.use('/api/integrations/service-groups', require('./routes/serviceGroupBridge'));
 app.use('/api/integrations/wecom-app', require('./routes/wecomAppCallback'));

@@ -232,6 +232,9 @@ async function buildAnnualPlanFollowUps(plan) {
 // 保存/定时刷新都按稳定排期键原位同步。已审核记录永不重建；待审核记录仅更新，
 // 从而既保留人工修改，又避免每天刷新把同一计划再次送审。
 async function syncAnnualPlanFollowUps(plan) {
+  const gate = await require('./annualServicePeriod').annualExecutionGate(plan);
+  if (!gate.allowed) return 0;
+  if (plan.continuitySource?.previousPlanId) plan = { ...(plan.toObject ? plan.toObject() : plan), confirmedAt: gate.anchor };
   // 清理旧版本生成且尚未完成的监测随访；已完成记录作为历史保留。
   await FollowUp.deleteMany({
     sourceAnnualPlanId: plan._id,

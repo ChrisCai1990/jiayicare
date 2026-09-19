@@ -388,6 +388,7 @@ router.post('/order', auth, async (req, res) => {
     tradeStatus: paidAmount > 0 ? 'awaiting_payment' : 'paid',
     fulfillmentType: orderFulfillmentType,
     orderType:    isPkg ? 'package' : (product ? 'product' : 'service'),
+    annualServiceSnapshot: isPkg ? { packageId: servicePackage?._id || null, clientBrand: req.user.clientBrand || 'jiayiguanjia', durationMonths: servicePackage ? Number(servicePackage.activation?.durationMonths || 12) : ({ pkg_1y: 12, pkg_6m: 6, pkg_3m: 3 })[service.id], capturedAt: new Date() } : null,
     inventoryReserved: inventory.reserved,
     referrerId,
     referralSource: productShare ? 'share' : 'direct',

@@ -180,6 +180,8 @@ export const staffAPI = {
   getAiCaseReviewProviders: () => req('/staff/ai-case-review/providers'),
   getAiCaseReviewTemplates: () => req('/staff/ai-case-review/templates'),
   getPhaseAssessments: (patientId, assessmentId = '') => req(`/staff/patients/${patientId}/phase-assessments${assessmentId ? `?assessmentId=${encodeURIComponent(assessmentId)}` : ''}`),
+  getAnnualServicePeriod: planId => req(`/staff/annual-plans/${planId}/service-period`),
+  confirmAnnualServicePeriod: (planId, data) => req(`/staff/annual-plans/${planId}/service-period`, { method: 'POST', body: JSON.stringify(data) }),
   generatePhaseAssessment: (patientId, mode = 'routine', domain = 'comprehensive', frequency = 'quarterly') => req(`/staff/patients/${patientId}/phase-assessments/generate`, { method: 'POST', body: JSON.stringify({ mode, domain, frequency }) }),
   reviewPhaseAssessment: (patientId, assessmentId, data) => req(`/staff/patients/${patientId}/phase-assessments/${assessmentId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   getAiCaseReviews: (patientId) => req(`/staff/patients/${patientId}/ai-case-reviews`),

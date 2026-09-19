@@ -70,6 +70,7 @@ async function scanAndCreatePhaseAssessments() {
   let created = 0;
   const seenPatients = new Set();
   for (const plan of plans) {
+    if (plan.continuitySource?.previousPlanId && !(await require('./annualServicePeriod').annualExecutionGate(plan)).allowed) continue;
     if (seenPatients.has(String(plan.patientId))) continue;
     seenPatients.add(String(plan.patientId));
     const user = await User.findById(plan.patientId).select('name age gender chronicDiseases healthProfile lifestyle aiHealthSummary clientBrand aiPilotFeatures serviceExpiry isDeleted assignedFamilyDoctor assignedNutritionist assignedRehabSpecialist assignedTcmDoctor');

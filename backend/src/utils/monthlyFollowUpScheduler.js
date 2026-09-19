@@ -17,6 +17,7 @@ async function scanAndRunMonthlyReview() {
   const seenPatients = new Set();
   let count = 0;
   for (const plan of plans) {
+    if (plan.continuitySource?.previousPlanId && !(await require('./annualServicePeriod').annualExecutionGate(plan)).allowed) continue;
     const patientKey = String(plan.patientId);
     if (seenPatients.has(patientKey)) continue;
     seenPatients.add(patientKey);
