@@ -17,7 +17,7 @@ async function scanAndNotifyDueSupplyPlans() {
   const maxLeadDays = Math.max(60, workflowConfig.medication.leadDays, workflowConfig.supplement.leadDays);
   const candidates = await RecurringSupplyPlan.find({
     enabled: true, nextDueDate: { $lte: new Date(now.getTime() + maxLeadDays * 86400000) },
-  }).populate('patientId', 'name');
+  }).populate('patientId', 'name serviceStartDate serviceExpiry isDeleted');
   const due = candidates.filter(plan => {
     const typeConfig = workflowConfig[plan.planType];
     return typeConfig?.enabled && isWithinLeadWindow(plan, now, Math.max(typeConfig.leadDays, Number(plan.leadDays) || 3));
@@ -37,6 +37,7 @@ async function scanAndNotifyDueSupplyPlans() {
     if ((plan.workflowStatus || 'idle') !== 'idle' || plan.aiStatus === 'pending') continue;
 
     try {
+      if (!(await require('./annualPeriodicGate').canStartAnnualSupplyCycle(plan, plan.patientId, now))) continue;
       plan.aiStatus = 'pending';
       plan.workflowStatus = 'intake_pending';
       plan.leadDays = workflowConfig[plan.planType].leadDays;

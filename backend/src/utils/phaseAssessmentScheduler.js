@@ -24,12 +24,12 @@ function periodFor(frequency, now = new Date(), confirmedAt) {
   return { key: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`, label: `${now.getFullYear()}年${now.getMonth() + 1}月` };
 }
 
-async function createAssessment({ plan, user, template, periodOverride = null, assessmentMode = 'routine', assessmentDomain, sourceNutritionPlanId = null, interventionWeek = null }) {
+async function createAssessment({ plan, user, template, periodOverride = null, assessmentMode = 'routine', assessmentDomain, sourceNutritionPlanId = null, interventionWeek = null, assessmentAnchor = plan.confirmedAt }) {
   const frequency = ['monthly', 'quarterly', 'yearly'].includes(template.content?.frequency)
     ? template.content.frequency : 'quarterly';
   const routing = routingFor(frequency === 'yearly' ? 'comprehensive' : assessmentDomain || template.content?.assessmentDomain || 'comprehensive', assessmentMode);
   if (!user[ROLE_FIELDS[routing.primaryReviewRole]]) throw new Error(`请先分配该客户的${ROLE_LABELS[routing.primaryReviewRole]}`);
-  const basePeriod = periodOverride || periodFor(frequency, new Date(), plan.confirmedAt);
+  const basePeriod = periodOverride || periodFor(frequency, new Date(), assessmentAnchor);
   const period = basePeriod && { ...basePeriod, key: `${basePeriod.key}:${routing.assessmentDomain}` };
   if (!period) return null;
   const existing = await PhaseAssessment.exists({ annualPlanId: plan._id, templateId: template._id, periodKey: { $in: [period.key, basePeriod.key] } });
@@ -70,13 +70,20 @@ async function scanAndCreatePhaseAssessments() {
   let created = 0;
   const seenPatients = new Set();
   for (const plan of plans) {
-    if (plan.continuitySource?.previousPlanId && !(await require('./annualServicePeriod').annualExecutionGate(plan)).allowed) continue;
     if (seenPatients.has(String(plan.patientId))) continue;
+    let user, gate;
+    try {
+      user = await User.findById(plan.patientId).select('name age gender chronicDiseases healthProfile lifestyle aiHealthSummary clientBrand aiPilotFeatures serviceStartDate serviceExpiry isDeleted assignedFamilyDoctor assignedNutritionist assignedRehabSpecialist assignedTcmDoctor');
+      if (!user || user.isDeleted || user.aiPilotFeatures?.stageAssessment !== true) continue;
+      gate = await require('./annualPeriodicGate').annualPeriodicGate(plan, user);
+      if (!gate.allowed || !eligibleForAutomaticAssessment(user, new Date(), gate.access)) continue;
+    } catch (error) {
+      console.error('[phase-assessment] eligibility failed', String(plan.patientId), error.message);
+      continue; // 单个客户凭据查询失败不阻断其他客户，也不带病调用AI。
+    }
     seenPatients.add(String(plan.patientId));
-    const user = await User.findById(plan.patientId).select('name age gender chronicDiseases healthProfile lifestyle aiHealthSummary clientBrand aiPilotFeatures serviceExpiry isDeleted assignedFamilyDoctor assignedNutritionist assignedRehabSpecialist assignedTcmDoctor');
-    if (!eligibleForAutomaticAssessment(user)) continue;
     for (const template of templates.filter(t => !t.clientBrand || t.clientBrand === user.clientBrand)) {
-      try { if (await createAssessment({ plan, user, template })) created++; }
+      try { if (await createAssessment({ plan, user, template, assessmentAnchor: gate.anchor })) created++; }
       catch (error) { console.error('[phase-assessment] create failed', String(plan.patientId), error.message); }
     }
   }
@@ -94,9 +101,11 @@ function startPhaseAssessmentScheduler() {
   setInterval(() => scanAndCreatePhaseAssessments().catch(error => console.error('[phase-assessment] scan failed', error.message)), 24 * 60 * 60 * 1000).unref?.();
 }
 
-function eligibleForAutomaticAssessment(user, now = new Date()) {
-  if (user?.isDeleted || user?.aiPilotFeatures?.stageAssessment !== true || !user.serviceExpiry) return false;
-  const expiry = /^\d{4}-\d{2}-\d{2}$/.test(user.serviceExpiry) ? new Date(`${user.serviceExpiry}T23:59:59.999+08:00`) : new Date(user.serviceExpiry);
-  return Number.isFinite(expiry.getTime()) && expiry >= now;
+function eligibleForAutomaticAssessment(user, now = new Date(), access = null) {
+  if (!user || user.isDeleted || user.aiPilotFeatures?.stageAssessment !== true) return false;
+  const { legacyAccess, dayOf } = require('./serviceAccess');
+  const effective = access || legacyAccess(user, now);
+  // 自动AI评估比普通访问更严格：必须有可核验的结束日期。
+  return effective.active === true && Boolean(dayOf(effective.endDate));
 }
 module.exports = { createAssessment, scanAndCreatePhaseAssessments, startPhaseAssessmentScheduler, INTENSIVE_NUTRITION_WEEKS, intensiveNutritionCheckpoint, eligibleForAutomaticAssessment, periodFor };
