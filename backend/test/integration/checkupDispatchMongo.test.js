@@ -16,10 +16,23 @@ test('real MongoDB: checkup preparation dispatch concurrency and partial recover
     serverSelectionTimeoutMS: 3000, autoIndex: false, autoCreate: false,
   }).asPromise()
   t.after(async () => { await connection.close() })
+  // Existing model plugins resolve models through the default connection.
+  // Bind that connection to the SAME isolated database, never application config.
+  await mongoose.connect(`mongodb://127.0.0.1:${port}/${dbName}`, {
+    serverSelectionTimeoutMS: 3000, autoIndex: false, autoCreate: false,
+  })
+  t.after(async () => { await mongoose.disconnect() })
   t.diagnostic(`Isolated local database retained: ${dbName}`)
+  const build = await connection.db.admin().command({ buildInfo: 1 })
+  const hello = await connection.db.admin().command({ hello: 1 })
+  assert.equal(build.version, '7.0.34', 'acceptance must match the verified production MongoDB version')
+  assert.equal(hello.setName, undefined, 'use standalone mode, not a replica set with transaction support')
+  assert.notEqual(hello.msg, 'isdbgrid', 'do not use a sharded cluster')
+  t.diagnostic(`Verified MongoDB ${build.version}, standalone, ${build.buildEnvironment?.target_os || 'unknown OS'}`)
   const AnnualPlan = connection.model('AnnualPlan', require('../../src/models/AnnualPlan').schema.clone())
   const User = connection.model('User', require('../../src/models/User').schema.clone())
   const FollowUp = connection.model('FollowUp', require('../../src/models/FollowUp').schema.clone())
+  const Order = connection.model('Order', require('../../src/models/Order').schema.clone())
   const now = new Date('2026-09-19T02:00:00Z')
   const patientId = new mongoose.Types.ObjectId(), advisorId = new mongoose.Types.ObjectId(), plannerId = new mongoose.Types.ObjectId()
   await User.collection.insertOne({ _id: patientId, assignedFamilyDoctor: advisorId, assignedHealthPlanner: plannerId })
@@ -73,5 +86,27 @@ test('real MongoDB: checkup preparation dispatch concurrency and partial recover
     const before = await FollowUp.find({ sourceAnnualPlanId: plan._id }).sort({ _id: 1 }).lean()
     await dispatcher.sync(plan, now)
     assert.deepEqual(await FollowUp.find({ sourceAnnualPlanId: plan._id }).sort({ _id: 1 }).lean(), before)
+  })
+  const { saveCheckupRedemption } = require('../../src/utils/checkupRedemptionSource')
+  await t.test('20 concurrent exact-service redemptions consume only one unit', async () => {
+    const original = { _id: new mongoose.Types.ObjectId(), user: patientId, updatedAt: now, status: 'scheduled',
+      totalUnits: 3, usedUnits: 0, paymentStatus: 'paid', refundStatus: 'none', tradeStatus: 'paid', redemptions: [] }
+    await Order.collection.insertOne(original)
+    const source = { servicePlanId: new mongoose.Types.ObjectId(), handoffId: new mongoose.Types.ObjectId(), finalTaskId: new mongoose.Types.ObjectId() }
+    const proposed = { ...original, usedUnits: 1, redemptions: [{ ...source, sequence: 1, redeemedAt: now, redeemedBy: plannerId }] }
+    const results = await Promise.all(Array.from({ length: 20 }, () => saveCheckupRedemption(Order, proposed, source, original)))
+    assert.equal(results.reduce((sum, result) => sum + result.modifiedCount, 0), 1)
+    const stored = await Order.findById(original._id).lean()
+    assert.equal(stored.usedUnits, 1); assert.equal(stored.redemptions.length, 1); assert.equal(stored.status, 'scheduled')
+    assert.equal(String(stored.redemptions[0].servicePlanId), String(source.servicePlanId))
+  })
+  await t.test('refund changed after read prevents stale redemption write', async () => {
+    const original = { _id: new mongoose.Types.ObjectId(), user: patientId, updatedAt: now, status: 'scheduled',
+      totalUnits: 3, usedUnits: 0, paymentStatus: 'paid', refundStatus: 'none', tradeStatus: 'paid', redemptions: [] }
+    await Order.collection.insertOne({ ...original, refundStatus: 'processing' })
+    const source = { servicePlanId: new mongoose.Types.ObjectId() }
+    const result = await saveCheckupRedemption(Order, { ...original, usedUnits: 1 }, source, original)
+    assert.equal(result.modifiedCount, 0)
+    assert.equal((await Order.findById(original._id).lean()).usedUnits, 0)
   })
 })
