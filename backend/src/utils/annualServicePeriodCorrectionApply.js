@@ -1,5 +1,6 @@
 const { correctionImpact, validateProposal, evidenceSnapshot } = require('./annualServicePeriodCorrection');
 const { dayOf } = require('./serviceAccess');
+const { projectAnnualSchedule, validateScheduleChanges, mergeScheduleAmendments } = require('./annualScheduleAmendments');
 const issue = (message, role = 'familyDoctor') => Object.assign(new Error(message), { correctionRole: role });
 function retainedAnchor(plan, period) {
   const start = new Date(`${period.startDate}T00:00:00+08:00`);
@@ -34,27 +35,38 @@ async function applyApprovedCorrection(plan, models = {}) {
   if (period.syncState === 'running') return { applied: false, waiting: true, reason: '等待当前任务同步完成' };
   try {
     if (!correction.reviewedBy || !correction.reviewedAt) throw issue('缺少顾问审核凭据，请重新核对');
-    if (correction.applicationPolicy !== 'retain_schedule') throw issue('历史审核未确认保留原排期后安全应用，请顾问重新核对');
-    if (JSON.stringify(evidenceSnapshot(period)) !== JSON.stringify(correction.original)) throw issue('生效凭据已发生变化，请规划师重新提交更正', 'healthPlanner');
+    if (!['retain_schedule', 'revise_unissued_fixed'].includes(correction.applicationPolicy)) throw issue('历史审核未确认保留原排期后安全应用，请顾问重新核对');
+    if (JSON.stringify(evidenceSnapshot(period)) !== JSON.stringify(evidenceSnapshot(correction.original))) throw issue('生效凭据已发生变化，请规划师重新提交更正', 'healthPlanner');
     let proposed;
     try {
       proposed = await validateProposal(plan, { _id: plan.patientId }, { ...correction.proposed, verified: correction.proposed.evidenceSnapshot?.verifiedByPlanner === true }, period, Model, models);
     } catch (error) { throw issue(error.statusCode ? error.message : '凭据核验失败，请稍后重试', 'healthPlanner'); }
-    const impact = await correctionImpact(plan, proposed, models);
+    const currentPlan = projectAnnualSchedule(plan, period.scheduleAmendments || []);
+    const impact = await correctionImpact(currentPlan, proposed, models);
     if (JSON.stringify(impact.planDates) !== JSON.stringify(correction.impact.planDates)) throw issue('审核后方案日期发生变化，请重新核对影响清单');
-    const executionAnchor = assertRetainedScheduleFits(plan, period, proposed, impact);
+    const changes = validateScheduleChanges(currentPlan, correction.scheduleChanges || [], proposed, impact);
+    if (changes.length && correction.applicationPolicy !== 'revise_unissued_fixed') throw issue('排期修订缺少明确审核确认');
+    const scheduleAmendments = mergeScheduleAmendments(period.scheduleAmendments || [], changes);
+    const executionPlan = projectAnnualSchedule(plan, scheduleAmendments);
+    const appliedImpact = changes.length ? await correctionImpact(executionPlan, proposed, models) : impact;
+    if (changes.length) {
+      // 二次扫描仍不得出现待修订事项的派发；最终CAS同时检查同步尝试ID。
+      validateScheduleChanges(currentPlan, changes, proposed, appliedImpact);
+      guard.syncAttemptId = period.syncAttemptId || { $in: ['', null] };
+    }
+    const executionAnchor = assertRetainedScheduleFits(executionPlan, period, proposed, appliedImpact);
     const orderIds = [...new Set([...(period.evidenceOrderIds || []), period.sourceOrderId, proposed.sourceOrderId].filter(Boolean).map(String))];
     if (orderIds.length) await require('./annualServiceOrderEvidence').requireEvidenceIndex(Model);
     const appliedAt = new Date();
-    const next = { ...correction, status: 'applied', applyIssue: null, appliedAt, appliedImpact: impact };
+    const next = { ...correction, status: 'applied', applyIssue: null, appliedAt, appliedImpact };
     const result = await Model.updateOne(guard, {
       $set: { sourceType: proposed.sourceType, contractReference: proposed.contractReference, startDate: proposed.startDate, endDate: proposed.endDate,
-        evidenceSnapshot: proposed.evidenceSnapshot, confirmedBy: correction.proposedBy, confirmedAt: appliedAt, executionAnchor,
+        evidenceSnapshot: proposed.evidenceSnapshot, confirmedBy: correction.proposedBy, confirmedAt: appliedAt, executionAnchor, scheduleAmendments,
         ...(proposed.sourceOrderId ? { sourceOrderId: proposed.sourceOrderId } : {}),
         ...(orderIds.length ? { evidenceOrderIds: orderIds } : {}), correction: next },
       ...(!proposed.sourceOrderId ? { $unset: { sourceOrderId: 1 } } : {}),
       $inc: { correctionRevision: 1 },
-      $push: { correctionHistory: { action: 'applied', correctionId: correction.id, at: appliedAt, by: 'system', reviewedBy: correction.reviewedBy, original: correction.original, effective: proposed, executionAnchor } },
+      $push: { correctionHistory: { action: 'applied', correctionId: correction.id, at: appliedAt, by: 'system', reviewedBy: correction.reviewedBy, original: correction.original, effective: proposed, executionAnchor, scheduleAmendments } },
     });
     return { applied: Boolean(result.matchedCount), waiting: !result.matchedCount };
   } catch (error) {

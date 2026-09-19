@@ -23,6 +23,7 @@ const schema = new mongoose.Schema({
   correction: { type: mongoose.Schema.Types.Mixed, default: null },
   correctionHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
   executionAnchor: { type: Date, default: null },
+  scheduleAmendments: { type: [mongoose.Schema.Types.Mixed], default: [] },
   evidenceOrderIds: { type: [mongoose.Schema.Types.ObjectId], default: undefined },
 }, { timestamps: true });
 schema.index({ sourceOrderId: 1 }, { unique: true, partialFilterExpression: { sourceOrderId: { $type: 'objectId' } } });

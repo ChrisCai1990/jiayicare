@@ -34,7 +34,7 @@ async function syncAnnualPlanTaskSplit(plan) {
     if (gate.period) await tracker.finishRenewalSync(gate.period, attemptId, { allowed: false, issue: gate.issue });
     return { clientTasks: 0, staffTasks: 0, scheduledFollowUps: 0, warnings: [gate.reason] };
   }
-  if (plan.continuitySource?.previousPlanId) plan = { ...(plan.toObject ? plan.toObject() : plan), confirmedAt: gate.anchor };
+  if (plan.continuitySource?.previousPlanId) plan = { ...(gate.executionPlan || (plan.toObject ? plan.toObject() : plan)), confirmedAt: gate.anchor };
   try {
   const patient = await User.findById(plan.patientId)
     .select('assignedHealthManager assignedHealthPlanner').lean();
@@ -92,7 +92,7 @@ async function syncAnnualPlanTaskSplit(plan) {
   if (gate.period) await tracker.finishRenewalSync(gate.period, attemptId, { issue: warnings.length ? { code: 'assignment', role: 'healthPlanner', message: warnings.join('；') } : null });
   return { clientTasks: clientResult.upsertedCount || 0, staffTasks, scheduledFollowUps, serviceTasks, warnings };
   } catch (error) {
-    if (gate.period) await tracker.finishRenewalSync(gate.period, attemptId, { issue: { code: 'sync_failed', role: 'healthPlanner', message: error.code === 'ANNUAL_DISPATCH_INDEX_REQUIRED' ? '年度派发唯一索引尚未就绪，请联系管理员核对后重试' : '年度任务同步未完成，系统将每日重试；可在工作台核对后重新同步' } }).catch(() => {});
+    if (gate.period) await tracker.finishRenewalSync(gate.period, attemptId, { issue: { code: 'sync_failed', role: error.code === 'ANNUAL_SCHEDULE_CONFLICT' ? 'familyDoctor' : 'healthPlanner', message: error.code === 'ANNUAL_SCHEDULE_CONFLICT' ? error.message : error.code === 'ANNUAL_DISPATCH_INDEX_REQUIRED' ? '年度派发唯一索引尚未就绪，请联系管理员核对后重试' : '年度任务同步未完成，系统将每日重试；可在工作台核对后重新同步' } }).catch(() => {});
     throw error;
   }
 }

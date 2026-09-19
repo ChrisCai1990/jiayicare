@@ -1,4 +1,5 @@
 const FollowUp = require('../models/FollowUp');
+const { sourceDate, assertAmendedRowUnchanged } = require('./annualScheduleAmendments');
 
 // 占位记录预生成窗口：只提前生成未来 N 天内的，而不是一次性铺满全年。
 // 此前"每天"频率的监测项会一次性生成365条占位，单个客户能堆到几百条，
@@ -144,7 +145,7 @@ async function buildAnnualPlanFollowUps(plan) {
       ].filter(Boolean);
       const lines = [...details, executor && `执行人员：${staffName(executor)}`].filter(Boolean);
       push(rec[mod.dateField], `${mod.theme} · ${label}`, lines.join('\n'), executor,
-        `${mod.key}:${String(rec[mod.dateField]).slice(0, 10)}:${String(label).trim()}`, rec);
+        `${mod.key}:${String(sourceDate(plan, mod.key, i, mod.dateField, rec[mod.dateField])).slice(0, 10)}:${String(label).trim()}`, rec);
     });
   }
 
@@ -177,7 +178,7 @@ async function buildAnnualPlanFollowUps(plan) {
       annualCheckup.escort && '已安排陪检服务',
     ].filter(Boolean).join('\n');
     push(annualCheckup.date, `年度体检提醒 · ${annualCheckup.institution || ''}`, checkupLines, patient?.assignedHealthManager,
-      `annual_checkup:${String(annualCheckup.date).slice(0, 10)}`, annualCheckup);
+      `annual_checkup:${String(sourceDate(plan, 'annual_checkup', 0, 'date', annualCheckup.date)).slice(0, 10)}`, annualCheckup);
   }
 
   // ⑤ 个性化随访方案：AI只能从Admin启用的标准随访方案库筛选，健康顾问
@@ -234,7 +235,7 @@ async function buildAnnualPlanFollowUps(plan) {
 async function syncAnnualPlanFollowUps(plan) {
   const gate = await require('./annualServicePeriod').annualExecutionGate(plan);
   if (!gate.allowed) return 0;
-  if (plan.continuitySource?.previousPlanId) plan = { ...(plan.toObject ? plan.toObject() : plan), confirmedAt: gate.anchor };
+  if (plan.continuitySource?.previousPlanId) plan = { ...(gate.executionPlan || (plan.toObject ? plan.toObject() : plan)), confirmedAt: gate.anchor };
   // 清理旧版本生成且尚未完成的监测随访；已完成记录作为历史保留。
   await FollowUp.deleteMany({
     sourceAnnualPlanId: plan._id,
@@ -256,6 +257,7 @@ async function syncAnnualPlanFollowUps(plan) {
     if (matches.length) {
       // 优先保留已执行，其次保留已审核记录；相同排期的待审副本直接清理。
       const keep = matches.find(item => item.status === 'completed') || matches.find(item => item.aiStatus === 'approved') || matches[0];
+      assertAmendedRowUnchanged(plan, row.sourceScheduleKey, keep.date, row.date);
       if (plan.continuitySource?.previousPlanId && ['completed', 'cancelled'].includes(keep.status)) continue;
       if (keep.sourceScheduleKey !== row.sourceScheduleKey) keep.sourceScheduleKey = row.sourceScheduleKey;
       if (keep.aiStatus === 'pending') {

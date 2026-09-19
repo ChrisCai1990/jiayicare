@@ -1,6 +1,7 @@
 const { randomUUID, createHash } = require('crypto');
 const { buildServicePeriodEvidence } = require('./annualServicePeriod');
 const { dayOf } = require('./serviceAccess');
+const { FIELDS, projectAnnualSchedule, validateScheduleChanges } = require('./annualScheduleAmendments');
 const fail = (message, statusCode = 409) => Object.assign(new Error(message), { statusCode });
 const ACTIVE = ['pending_review', 'approved_pending_apply'];
 function assertRole(patient, staff, role) {
@@ -8,12 +9,12 @@ function assertRole(patient, staff, role) {
   if (staff.role !== 'superadmin' && (staff.role !== role || String(patient[field] || '') !== String(staff._id))) throw fail('仅该客户所属岗位可执行此更正操作', 403);
 }
 function evidenceSnapshot(period) {
-  return Object.fromEntries(['sourceType', 'sourceOrderId', 'contractReference', 'startDate', 'endDate', 'evidenceSnapshot', 'confirmedBy', 'confirmedAt'].map(key => [key, period[key] ?? null]));
+  return Object.fromEntries(['sourceType', 'sourceOrderId', 'contractReference', 'startDate', 'endDate', 'evidenceSnapshot', 'confirmedBy', 'confirmedAt', 'scheduleAmendments'].map(key => [key, period[key] ?? (key === 'scheduleAmendments' ? [] : null)]));
 }
 async function correctionImpact(plan, proposed, models = {}) {
   const definitions = [
     ['task', models.Task || require('../models/Task'), 'status dueDate'],
-    ['followup', models.FollowUp || require('../models/FollowUp'), 'status date serviceTracking'],
+    ['followup', models.FollowUp || require('../models/FollowUp'), 'status date serviceTracking sourceScheduleKey'],
     ['supply', models.Supply || require('../models/RecurringSupplyPlan'), 'workflowStatus enabled nextDueDate'],
   ];
   const records = (await Promise.all(definitions.map(async ([kind, Model, fields]) => {
@@ -21,7 +22,7 @@ async function correctionImpact(plan, proposed, models = {}) {
     return rows.map(row => {
       const date = dayOf(row.dueDate || row.date || row.nextDueDate);
       const status = row.status || row.workflowStatus || 'idle';
-      return { kind, id: String(row._id), date, status, linked: Boolean(row.serviceTracking?.linkId), enabled: row.enabled ?? null,
+      return { kind, id: String(row._id), date, status, scheduleKey: row.sourceScheduleKey || '', linked: Boolean(row.serviceTracking?.linkId), enabled: row.enabled ?? null,
         outsidePeriod: Boolean(date && (date < proposed.startDate || date > proposed.endDate)),
         preserve: !['pending', 'planned', 'idle'].includes(status) || Boolean(row.serviceTracking?.linkId) || row.enabled === false };
     });
@@ -33,7 +34,7 @@ async function correctionImpact(plan, proposed, models = {}) {
       for (const field of ['visit_time', 'plan_time', 'time', 'date', 'executionDate', 'collaborationDate']) {
         const raw = String(row?.[field] || '').slice(0, 10);
         if (!/^\d{4}-\d{2}-\d{2}$/.test(raw) || !dayOf(raw)) continue;
-        planDates.push({ moduleKey, index, field, date: raw, outsidePeriod: raw < proposed.startDate || raw > proposed.endDate });
+        planDates.push({ moduleKey, index, field, date: raw, amendable: Object.hasOwn(FIELDS, moduleKey) && FIELDS[moduleKey] === field, outsidePeriod: raw < proposed.startDate || raw > proposed.endDate });
       }
     });
   }
@@ -76,7 +77,7 @@ async function proposeCorrection({ plan, patient, staff, input }, models = {}) {
   const proposed = await validateProposal(plan, patient, input, period, Model, models);
   if (['sourceType', 'sourceOrderId', 'contractReference', 'startDate', 'endDate'].every(key => String(proposed[key] || '') === String(period[key] || ''))) throw fail('凭据和日期没有变化，无需提交更正');
   const correction = { id: randomUUID(), status: 'pending_review', original: evidenceSnapshot(period), proposed, reason,
-    proposedBy: String(staff._id), proposedAt: new Date(), impact: await correctionImpact(plan, proposed, models) };
+    proposedBy: String(staff._id), proposedAt: new Date(), impact: await correctionImpact(projectAnnualSchedule(plan, period.scheduleAmendments || []), proposed, models) };
   return saveTransition(Model, period, input, correction, { action: 'submitted', ...correction });
 }
 async function reviewCorrection({ plan, patient, staff, input }, models = {}) {
@@ -88,24 +89,29 @@ async function reviewCorrection({ plan, patient, staff, input }, models = {}) {
   if (current?.status !== 'pending_review' || input.correctionId !== current.id) throw fail('此更正已处理或版本不匹配');
   if (!['approve', 'reject'].includes(input.decision)) throw fail('审核决定无效');
   const note = String(input.note || '').trim();
+  let scheduleChanges = [];
   if (note.length > 2000 || (input.decision === 'reject' && !note)) throw fail('退回请填写原因，审核意见最多2000字');
   if (input.decision === 'approve') {
     if (input.impactAcknowledged !== true) throw fail('请确认已核对排期影响及原执行记录保留规则');
-    if (input.applicationPolicy !== 'retain_schedule') throw fail('请刷新页面并确认保留原排期的安全应用规则');
+    if (!['retain_schedule', 'revise_unissued_fixed'].includes(input.applicationPolicy)) throw fail('请刷新页面并确认保留原排期的安全应用规则');
     await validateProposal(plan, patient, { ...current.proposed, verified: current.proposed.evidenceSnapshot?.verifiedByPlanner === true }, period, Model, models);
-    const latest = await correctionImpact(plan, current.proposed, models);
+    const executionPlan = projectAnnualSchedule(plan, period.scheduleAmendments || []);
+    const latest = await correctionImpact(executionPlan, current.proposed, models);
     if (latest.fingerprint !== current.impact.fingerprint) throw fail('任务或方案状态已变化，请刷新影响清单后再审核');
+    scheduleChanges = validateScheduleChanges(executionPlan, input.scheduleChanges || [], current.proposed, latest);
+    if (scheduleChanges.length && (input.applicationPolicy !== 'revise_unissued_fixed' || !note)) throw fail('修订未派发排期须明确确认，并填写审核原因');
+    if (input.applicationPolicy === 'revise_unissued_fixed' && !scheduleChanges.length) throw fail('请选择需要修订的未派发日期');
   }
-  const correction = { ...current, status: input.decision === 'approve' ? 'approved_pending_apply' : 'rejected', applicationPolicy: input.decision === 'approve' ? 'retain_schedule' : null, applyIssue: null, reviewedBy: String(staff._id), reviewedAt: new Date(), reviewNote: note };
+  const correction = { ...current, status: input.decision === 'approve' ? 'approved_pending_apply' : 'rejected', applicationPolicy: input.decision === 'approve' ? input.applicationPolicy : null, scheduleChanges, applyIssue: null, reviewedBy: String(staff._id), reviewedAt: new Date(), reviewNote: note };
   // 审核只写审计，不替换生效凭据，不重新确认/派发/修改冻结方案。
-  return saveTransition(Model, period, input, correction, { action: input.decision, correctionId: current.id, reviewedBy: correction.reviewedBy, reviewedAt: correction.reviewedAt, note });
+  return saveTransition(Model, period, input, correction, { action: input.decision, correctionId: current.id, reviewedBy: correction.reviewedBy, reviewedAt: correction.reviewedAt, note, scheduleChanges });
 }
 async function refreshCorrectionImpact({ plan, patient, staff, input }, models = {}) {
   assertRole(patient, staff, 'familyDoctor');
   const Model = models.Period || require('../models/AnnualServicePeriod');
   const period = await readPeriod(plan, Model);
   if (!(period.correction?.status === 'pending_review' || (period.correction?.status === 'approved_pending_apply' && period.correction.applyIssue)) || period.correction.id !== input.correctionId) throw fail('仅待审核或受阻更正可刷新影响清单');
-  const correction = { ...period.correction, status: 'pending_review', applyIssue: null, impact: await correctionImpact(plan, period.correction.proposed, models) };
+  const correction = { ...period.correction, status: 'pending_review', applyIssue: null, impact: await correctionImpact(projectAnnualSchedule(plan, period.scheduleAmendments || []), period.correction.proposed, models) };
   return saveTransition(Model, period, input, correction, { action: 'impact_refreshed', correctionId: correction.id, by: String(staff._id), at: new Date(), impact: correction.impact });
 }
 async function withdrawCorrection({ plan, patient, staff, input }, models = {}) {

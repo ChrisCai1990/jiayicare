@@ -7,6 +7,7 @@ const User = require('../models/User');
 const Order = require('../models/Order');
 const Period = require('../models/AnnualServicePeriod');
 const { confirmAnnualServicePeriod, annualExecutionGate, isPaidAnnualOrder } = require('../utils/annualServicePeriod');
+const publicActivation = ({ executionPlan, ...activation }) => activation;
 async function load(req, res) {
   if (!mongoose.isValidObjectId(req.params.planId)) { res.status(400).json({ success: false, message: '方案ID无效' }); return null; }
   const plan = await AnnualPlan.findById(req.params.planId).lean();
@@ -24,7 +25,7 @@ router.get('/annual-plans/:planId/service-period', staffAuth, async (req, res) =
       Order.find({ user: data.patient._id, orderType: 'package', paymentStatus: 'paid' }).sort({ paidAt: -1 }).limit(50).lean(),
       annualExecutionGate(data.plan),
     ]);
-    res.json({ success: true, data: { period, activation, orders: orders.filter(order => isPaidAnnualOrder(order, data.patient._id)).map(order => ({ _id: order._id, orderNo: order.orderNo, serviceName: order.serviceName, paidAt: order.paidAt })) } });
+    res.json({ success: true, data: { period, activation: publicActivation(activation), orders: orders.filter(order => isPaidAnnualOrder(order, data.patient._id)).map(order => ({ _id: order._id, orderNo: order.orderNo, serviceName: order.serviceName, paidAt: order.paidAt })) } });
   } catch (error) { res.status(500).json({ success: false, message: '加载续约服务期失败' }); }
 });
 router.post('/annual-plans/:planId/service-period', staffAuth, async (req, res) => {
@@ -38,7 +39,7 @@ router.post('/annual-plans/:planId/service-period', staffAuth, async (req, res) 
       try { const result = await require('../utils/annualPlanTaskSplit').syncAnnualPlanTaskSplit(data.plan); warning = (result.warnings || []).join('；'); }
       catch { warning = '服务期已确认，任务同步待系统重试'; }
     }
-    res.json({ success: true, data: { period: await Period.findOne({ annualPlanId: data.plan._id }).lean() || period, activation, warning } });
+    res.json({ success: true, data: { period: await Period.findOne({ annualPlanId: data.plan._id }).lean() || period, activation: publicActivation(activation), warning } });
   } catch (error) { res.status(error.code === 11000 ? 409 : error.statusCode || 500).json({ success: false, message: error.code === 11000 ? '该方案或续约凭据已被使用，请刷新核对' : error.statusCode ? error.message : '确认服务期失败，请稍后重试' }); }
 });
 router.post('/annual-plans/:planId/service-period/retry', staffAuth, async (req, res) => {
@@ -52,7 +53,7 @@ router.post('/annual-plans/:planId/service-period/retry', staffAuth, async (req,
     try { const result = await require('../utils/annualPlanTaskSplit').syncAnnualPlanTaskSplit(data.plan); warning = (result.warnings || []).join('；'); }
     catch { warning = '同步尚未完成，请稍后重试'; }
     const period = await Period.findOne({ annualPlanId: data.plan._id }).lean();
-    res.json({ success: true, data: { period, activation: await annualExecutionGate(data.plan), warning } });
+    res.json({ success: true, data: { period, activation: publicActivation(await annualExecutionGate(data.plan)), warning } });
   } catch { res.status(500).json({ success: false, message: '无法读取同步结果，请稍后重试' }); }
 });
 for (const [path, method] of [['corrections', 'proposeCorrection'], ['corrections/review', 'reviewCorrection'], ['corrections/refresh-impact', 'refreshCorrectionImpact'], ['corrections/withdraw', 'withdrawCorrection']]) {

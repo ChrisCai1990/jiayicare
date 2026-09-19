@@ -133,3 +133,22 @@ test('工作台待审核归顾问、退回归规划师，其他客户人员不�
   }
   assert.equal(buildAnnualRenewalTodos(plans, [{ annualPlanId: 'plan', correction: { status: 'approved_pending_apply' } }], s.advisor).length, 0);
 });
+test('顾问明确审核未派发固定日期，修订内容同时写入审核审计', async () => {
+  const s = setup(); s.plan.moduleData = { medical_treatment: { records: [{ visit_time: '2027-01-02' }] } };
+  await s.propose();
+  const scheduleChanges = [{ moduleKey: 'medical_treatment', index: 0, field: 'visit_time', from: '2027-01-02', to: '2027-03-02' }];
+  await assert.rejects(s.review({ scheduleChanges }), /明确确认/);
+  await assert.rejects(s.review({ scheduleChanges, applicationPolicy: 'revise_unissued_fixed' }), /审核原因/);
+  const result = await s.review({ scheduleChanges, applicationPolicy: 'revise_unissued_fixed', note: '按更正服务期安排' });
+  assert.deepEqual(result.correction.scheduleChanges, scheduleChanges);
+  assert.deepEqual(s.state.period.correctionHistory[1].scheduleChanges, scheduleChanges);
+  assert.equal(s.plan.moduleData.medical_treatment.records[0].visit_time, '2027-01-02');
+});
+test('顾问不能借日期审核替换其他字段，也不能修订已派发事项', async () => {
+  const s = setup(); s.plan.moduleData = { medical_treatment: { records: [{ visit_time: '2027-01-02' }] } };
+  s.state.followups = [{ _id: 'existing', sourceScheduleKey: 'medical_treatment:2027-01-02:事项', status: 'planned', date: '2027-01-02' }];
+  await s.propose();
+  const changes = [{ moduleKey: 'medical_treatment', index: 0, field: 'visit_time', from: '2027-01-02', to: '2027-03-02' }];
+  await assert.rejects(s.review({ scheduleChanges: changes, applicationPolicy: 'revise_unissued_fixed', note: '核对' }), /已有派发/);
+  await assert.rejects(s.review({ scheduleChanges: [{ ...changes[0], field: 'serviceMode' }], applicationPolicy: 'revise_unissued_fixed', note: '核对' }), /固定日期/);
+});

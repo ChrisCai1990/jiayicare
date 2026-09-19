@@ -1,3 +1,4 @@
+const { sourceDate, FIELDS, assertAmendedRowUnchanged } = require('./annualScheduleAmendments');
 const MODULES = [
   ['medical_treatment', 'visit_time', '医疗问题解决'], ['specialist_collab', 'plan_time', '全专联合会诊'],
   ['checkup_completion', 'time', '体检完善'], ['abnormal_followup', 'time', '定期复查'],
@@ -15,10 +16,11 @@ function buildAnnualPlanServiceTasks(plan, patient = {}) {
     const mode = record.serviceMode || 'reminder';
     if (!['single', 'managed'].includes(mode)) return;
     const executionDate = validDate(date) || new Date(plan.confirmedAt || Date.now());
+    const identityDate = validDate(sourceDate(plan, moduleKey, index, FIELDS[moduleKey], date)) || executionDate;
     const label = labelOf(record, fallback);
     const evidence = record.basisSummary || record.reason || record.matchReason || '';
     rows.push({
-      key: `service-request:${moduleKey}:${index}:${executionDate.toISOString().slice(0, 10)}`,
+      key: `service-request:${moduleKey}:${index}:${identityDate.toISOString().slice(0, 10)}`,
       date: executionDate, assignedTo: patient.assignedHealthPlanner || null,
       stage: 'service_request', taskRole: 'supervisor', theme: `服务需求待安排 · ${label}`,
       content: [
@@ -41,7 +43,7 @@ async function syncAnnualPlanServiceTasks(plan) {
   if (!plan.confirmedAt) return { created: 0, updated: 0, warnings: ['客户尚未确认方案'] };
   const gate = await require('./annualServicePeriod').annualExecutionGate(plan);
   if (!gate.allowed) return { created: 0, updated: 0, warnings: [gate.reason] };
-  if (plan.continuitySource?.previousPlanId) plan = { ...(plan.toObject ? plan.toObject() : plan), confirmedAt: gate.anchor };
+  if (plan.continuitySource?.previousPlanId) plan = { ...(gate.executionPlan || (plan.toObject ? plan.toObject() : plan)), confirmedAt: gate.anchor };
   const FollowUp = require('../models/FollowUp');
   const User = require('../models/User');
   const patient = await User.findById(plan.patientId).select('assignedHealthPlanner').lean();
@@ -50,6 +52,7 @@ async function syncAnnualPlanServiceTasks(plan) {
   let created = 0; let updated = 0;
   for (const row of assignableRows) {
     const existing = await FollowUp.findOne({ sourceAnnualPlanId: plan._id, sourceType: 'annual_service', sourceScheduleKey: row.key });
+    if (existing) assertAmendedRowUnchanged(plan, row.key, existing.date, row.date);
     if (['completed', 'cancelled'].includes(existing?.status) || existing?.serviceTracking?.linkId) continue;
     const payload = { patientId: plan.patientId, staffId: plan.createdBy, assignedTo: row.assignedTo, date: row.date, remindAt: row.date,
       theme: row.theme, content: row.content, plannedContent: row.content, formData: row.formData,

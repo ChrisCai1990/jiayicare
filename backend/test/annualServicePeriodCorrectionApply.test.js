@@ -16,6 +16,8 @@ async function setup() {
       init: async () => {}, collection: { indexes: async () => state.indexes ? [{ key: { evidenceOrderIds: 1 }, unique: true, sparse: true }] : [] },
       updateOne: async (q, u) => {
         const p = state.period;
+        if (state.newAttemptDuringApply && u.$set?.startDate) p.syncAttemptId = 'newer-attempt';
+        if (q.syncAttemptId && (typeof q.syncAttemptId === 'string' ? q.syncAttemptId !== p.syncAttemptId : !q.syncAttemptId.$in.includes(p.syncAttemptId ?? null))) return { matchedCount: 0 };
         if (q.correctionRevision !== undefined && q.correctionRevision !== p.correctionRevision) return { matchedCount: 0 };
         if (q.$or && p.correctionRevision) return { matchedCount: 0 };
         if (q['correction.status'] && p.correction.status !== q['correction.status']) return { matchedCount: 0 };
@@ -119,4 +121,32 @@ test('未审核或旧版仅审核不应用的申请不得自动生效', async ()
   const s = await setup(); delete s.state.period.correction.applicationPolicy;
   assert.match((await s.apply()).issue.message, /历史审核/);
   s.state.period.correction.status = 'pending_review'; assert.equal((await s.apply()).applied, false);
+});
+
+async function fixedAmendment() {
+  const s = await setup();
+  s.plan.moduleData.medical_treatment = { records: [{ visit_time: '2027-01-01', hospital: '医院', serviceMode: 'managed' }] };
+  s.state.period.correction.impact = await correctionImpact(s.plan, s.state.period.correction.proposed, s.models);
+  s.state.period.correction.applicationPolicy = 'revise_unissued_fixed';
+  s.state.period.correction.scheduleChanges = [{ moduleKey: 'medical_treatment', index: 0, field: 'visit_time', from: '2027-01-01', to: '2027-03-01' }];
+  return s;
+}
+test('未派发固定日期修订和凭据原子生效，门槛读取修订版而原方案保留', async () => {
+  const s = await fixedAmendment();
+  assert.equal((await s.apply()).applied, true);
+  assert.equal(s.state.period.scheduleAmendments.length, 1);
+  assert.equal(s.plan.moduleData.medical_treatment.records[0].visit_time, '2027-01-01');
+  const gate = await annualExecutionGate(s.plan, new Date('2027-02-01'), s.models);
+  assert.equal(gate.allowed, true); assert.equal(gate.executionPlan.moduleData.medical_treatment.records[0].visit_time, '2027-03-01');
+});
+test('审核后出现已派发事项则停止应用，不移动新出现的任务', async () => {
+  const s = await fixedAmendment();
+  s.state.follows = [{ _id: 'late', date: '2027-01-01', status: 'planned', sourceScheduleKey: 'medical_treatment:2027-01-01:医院' }];
+  assert.equal((await s.apply()).applied, false);
+  assert.equal(s.state.period.scheduleAmendments, undefined); assert.equal(s.state.follows[0].date, '2027-01-01');
+});
+test('应用检查期间启动过新同步，CAS不提交旧排期快照', async () => {
+  const s = await fixedAmendment(); s.state.newAttemptDuringApply = true;
+  assert.equal((await s.apply()).waiting, true);
+  assert.equal(s.state.period.correction.status, 'approved_pending_apply'); assert.equal(s.state.period.scheduleAmendments, undefined);
 });
