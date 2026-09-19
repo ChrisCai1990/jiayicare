@@ -35,6 +35,8 @@ export default function OrdersPage() {
   const [updating, setUpdating] = useState(null) // orderId being updated
   const [payModalOrder, setPayModalOrder] = useState(null)
   const [payMethod, setPayMethod] = useState('onsite')
+  const [cashReceived, setCashReceived] = useState('')
+  const [payError, setPayError] = useState('')
   const [verifyModalOrder, setVerifyModalOrder] = useState(null)
   const [verifyInput, setVerifyInput] = useState('')
   const [attrModalOrder, setAttrModalOrder] = useState(null)
@@ -73,14 +75,19 @@ export default function OrdersPage() {
 
   const confirmPay = async () => {
     if (!payModalOrder) return
+    if (!/^\d+(?:\.\d{1,2})?$/.test(cashReceived.trim())) {
+      setPayError('请填写实际收到的金额，最多保留两位小数')
+      return
+    }
+    setPayError('')
     setUpdating(payModalOrder._id)
     try {
-      const res = await adminAPI.payOrder(payModalOrder._id, payMethod, payModalOrder.servicePrice)
+      const res = await adminAPI.payOrder(payModalOrder._id, payMethod, Number(cashReceived))
       toast('✅ ' + res.message)
       setPayModalOrder(null)
       await load(page)
     } catch (err) {
-      toast('❌ ' + (err.message || '标记支付失败'))
+      setPayError(err.message || '标记支付失败')
     } finally { setUpdating(null) }
   }
 
@@ -264,7 +271,7 @@ export default function OrdersPage() {
                           {o.paymentStatus === 'paid' && o.status !== 'cancelled' && o.status !== 'completed' && !o.serviceStartedAt && <button className="btn btn-sm btn-ghost" disabled={updating === o._id} onClick={() => handleServiceStart(o)}>确认实际服务启动</button>}
                           {o.paymentStatus === 'unpaid' && !o.paymentId && o.paymentMethod !== 'wechat' && (
                             <button className="btn btn-sm status-btn" style={{ borderColor: '#10B981', color: '#10B981', background: '#10B98112' }}
-                              disabled={updating === o._id} onClick={() => { setPayModalOrder(o); setPayMethod('onsite') }}>
+                              disabled={updating === o._id} onClick={() => { setPayModalOrder(o); setPayMethod('onsite'); setCashReceived(''); setPayError('') }}>
                               登记线下收款
                             </button>
                           )}
@@ -353,16 +360,21 @@ export default function OrdersPage() {
               <div className="form-group">
                 <label className="form-label">支付方式</label>
                 <select className="form-input" value={payMethod} onChange={e => setPayMethod(e.target.value)}>
-                  {Object.entries(PAYMENT_METHOD_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                  {Object.entries(PAYMENT_METHOD_LABELS).filter(([k]) => k !== 'wechat').map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                 </select>
               </div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
-                暂未接入真实支付网关，此操作为人工确认已收到款项，确认后将生成核销码
+              <div className="form-group">
+                <label className="form-label" htmlFor="manual-cash-received">实际收款金额（元，不含基金及优惠券抵扣）</label>
+                <input id="manual-cash-received" className="form-input" type="number" min="0" step="0.01" value={cashReceived} onChange={e => setCashReceived(e.target.value)} placeholder="请根据实际收款凭证填写" />
               </div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
+                健康基金抵扣 ¥{Number(payModalOrder.healthFundAmount || 0).toFixed(2)}，优惠券抵扣 ¥{Number(payModalOrder.couponDiscount || 0).toFixed(2)}。消费积分仅按实际收款累积，全额抵扣请填写0。此操作只登记已收到的线下款项，微信订单由支付回调确认。
+              </div>
+              {!!payError && <div role="alert" style={{ color: '#DC3545', marginTop: 12, fontSize: 13 }}>{payError}</div>}
             </div>
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setPayModalOrder(null)}>取消</button>
-              <button className="btn btn-primary" onClick={confirmPay} disabled={updating === payModalOrder._id}>
+              <button className="btn btn-primary" onClick={confirmPay} disabled={updating === payModalOrder._id || !cashReceived.trim()}>
                 {updating === payModalOrder._id ? '处理中...' : '确认已支付'}
               </button>
             </div>

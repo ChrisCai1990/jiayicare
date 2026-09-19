@@ -431,7 +431,7 @@ router.patch('/orders/:id/status', adminAuth, async (req, res) => {
   res.json({ success: true, data: order, message: `订单已更新为：${status}` });
 });
 
-// ── PATCH /api/admin/orders/:id/pay — 人工标记已支付（暂未接支付网关，见backend/CLAUDE.md待办）──
+// ── PATCH /api/admin/orders/:id/pay — 登记线下实际收款；微信支付以回调为准 ──
 router.patch('/orders/:id/pay', adminAuth, async (req, res) => {
   const { paymentMethod, paidAmount } = req.body;
   const VALID_METHODS = ['onsite', 'healthFund'];
@@ -444,10 +444,15 @@ router.patch('/orders/:id/pay', adminAuth, async (req, res) => {
     return res.status(409).json({ success: false, message: '该订单已进入微信支付链路，不能改为线下已付款；请让用户继续支付或关闭后重新下单' });
   }
   if (order.paymentStatus === 'paid') return res.status(400).json({ success: false, message: '该订单已标记为已支付，请勿重复操作' });
+  if (order.status === 'cancelled' || ['closed', 'refunded', 'refund_pending'].includes(order.tradeStatus)) {
+    return res.status(409).json({ success: false, message: '已关闭或退款订单不能登记收款' });
+  }
+  const receipt = require('../utils/manualOrderPayment').validateManualOrderPayment(order, paymentMethod, paidAmount);
+  if (receipt.error) return res.status(400).json({ success: false, message: receipt.error });
 
   order.paymentMethod = paymentMethod;
   order.paymentStatus = 'paid';
-  order.paidAmount = paidAmount !== undefined ? Number(paidAmount) : order.servicePrice;
+  order.paidAmount = receipt.amount;
   order.paidAt = new Date();
   order.paidBy = req.admin._id;
   // 生成核销码（8位大写字母数字，供到店核销时输入/扫码比对）
@@ -455,18 +460,8 @@ router.patch('/orders/:id/pay', adminAuth, async (req, res) => {
   await order.save();
   await require('../utils/orderSupplementArchive').ensureOrderSupplementDraft(order);
 
-  // 消费积分：下单时已按 paidAmount 预记过（见 services.js POST /order），这里只对还没记过分的
-  // 老订单补记，避免同一笔订单人工标记支付时重复计分（2026-07-13 改为下单即预记后新增的保护）
-  const alreadyAwarded = await PointsLog.findOne({ refType: 'Order', refId: order._id, source: 'consumption' });
-  if (!alreadyAwarded && order.paidAmount > 0) {
-    const pointsAmount = Math.floor(order.paidAmount);
-    if (pointsAmount > 0) {
-      require('../utils/pointsHealthFund').awardPointsAndConvert({
-        userId:order.user, amount:pointsAmount, source:'consumption', refType:'Order', refId:order._id,
-        remark:`消费订单 ${order.serviceName}`,
-      }).catch(() => {});
-    }
-  }
+  // 与微信支付使用同一实付积分口径及已有订单去重规则。
+  await require('../utils/orderPoints').awardOrderPoints(order);
 
   res.json({ success: true, data: order, message: '已标记为已支付，核销码：' + order.verifyCode });
 });
