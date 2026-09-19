@@ -6,7 +6,8 @@ const ChatConversationState = require('../models/ChatConversationState');
 const { isHumanPresent } = require('../utils/chatPresence');
 const PushRecord = require('../models/PushRecord');
 const Order = require('../models/Order');
-const { QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
+const { QuestionnaireResponse, DynamicQuestionnaire } = require('../models/DynamicQuestionnaire');
+const { visibleMessageQuery, isInboxMessage, mergeInboxRecords } = require('../utils/messageInbox');
 const { uploadBase64, signStoredUrl } = require('../utils/oss');
 const { conversationRoleKeys, getConversationRole } = require('../utils/conversationRoles');
 const router = express.Router();
@@ -23,14 +24,15 @@ function withSignedMessageMedia(message) {
 
 // 获取未读消息数（含推送记录，用于导航角标）
 router.get('/unread-count', auth, async (req, res) => {
-  const [unreadMessages, unreadPushes, latestMessage] = await Promise.all([
-    Message.find({ user: req.user._id, unread: true, recalled: { $ne: true } }).select('type questionnaireId').lean(),
+  const [unreadMessages, unreadPushes] = await Promise.all([
+    Message.find(visibleMessageQuery(req.user._id, true)).select('type questionnaireId conversationId sender title createdAt').sort({ createdAt: -1 }).lean(),
     PushRecord.find({ patientId: req.user._id, readAt: null })
       .select('type questionnaireId sourceOrderId').lean(),
-    Message.findOne({ user: req.user._id, unread: true, recalled: { $ne: true } })
-      .sort({ createdAt: -1 }).select('sender type title content createdAt').lean(),
   ]);
   const questionnairePushes = unreadPushes.filter(item => item.type === 'questionnaire' && item.questionnaireId);
+  const activeQuestionnaireIds = new Set(questionnairePushes.length ? (await DynamicQuestionnaire.find({
+    _id: { $in: questionnairePushes.map(item => item.questionnaireId) }, status: 'active', deletedAt: null,
+  }).distinct('_id')).map(String) : []);
   const orderScopedPushes = questionnairePushes.filter(item => item.sourceOrderId);
   const validOrderIds = new Set(orderScopedPushes.length ? (await Order.find({
     _id: { $in: orderScopedPushes.map(item => item.sourceOrderId) },
@@ -46,23 +48,27 @@ router.get('/unread-count', auth, async (req, res) => {
   const answeredPushIds = new Set(responses.filter(item => item.pushRecordId).map(item => String(item.pushRecordId)));
   const legacyAnsweredQuestionnaireIds = new Set(responses.filter(item => !item.pushRecordId).map(item => String(item.questionnaire)));
   const pushCount = unreadPushes.filter(item => item.type !== 'questionnaire'
-    || (!answeredPushIds.has(String(item._id))
+    || (activeQuestionnaireIds.has(String(item.questionnaireId)) && !answeredPushIds.has(String(item._id))
       && (item.sourceOrderId ? validOrderIds.has(String(item.sourceOrderId)) : !legacyAnsweredQuestionnaireIds.has(String(item.questionnaireId))))).length;
-  const pendingQuestionnaireIds = new Set(questionnairePushes.filter(item => !answeredPushIds.has(String(item._id))
+  const pendingQuestionnaireIds = new Set(questionnairePushes.filter(item => activeQuestionnaireIds.has(String(item.questionnaireId)) && !answeredPushIds.has(String(item._id))
     && (item.sourceOrderId ? validOrderIds.has(String(item.sourceOrderId)) : !legacyAnsweredQuestionnaireIds.has(String(item.questionnaireId))))
     .map(item => String(item.questionnaireId)));
-  const msgCount = unreadMessages.filter(item => item.type !== 'questionnaire'
-    || pendingQuestionnaireIds.has(String(item.questionnaireId))).length;
-  res.json({ success: true, count: msgCount + pushCount, latestMessage });
+  const visibleUnread = unreadMessages.filter(item => isInboxMessage(item, req.user._id)
+    && (item.type !== 'questionnaire' || pendingQuestionnaireIds.has(String(item.questionnaireId))));
+  res.json({ success: true, count: visibleUnread.length + pushCount, latestMessage: visibleUnread[0] || null });
 });
 
 // 获取消息列表
 router.get('/', auth, async (req, res) => {
   const { type } = req.query;
-  const query = { user: req.user._id, recalled: { $ne: true } };
+  const query = visibleMessageQuery(req.user._id);
   if (type) query.type = type;
-  const messages = await Message.find(query).sort({ createdAt: -1 }).limit(50);
-  const unreadCount = await Message.countDocuments({ user: req.user._id, unread: true, recalled: { $ne: true } });
+  const [recent, unread] = await Promise.all([
+    Message.find(query).sort({ createdAt: -1 }).limit(50),
+    Message.find({ ...query, unread: true, ...(type ? {} : { type: { $ne: 'user' } }) }).sort({ createdAt: -1 }),
+  ]);
+  const messages = mergeInboxRecords(recent, unread);
+  const unreadCount = unread.filter(item => isInboxMessage(item, req.user._id)).length;
   res.json({ success: true, data: messages.map(withSignedMessageMedia), unreadCount });
 });
 
@@ -72,11 +78,9 @@ router.get('/thread/:role', auth, async (req, res) => {
   if (!conversationRoleKeys.includes(role)) return res.status(400).json({ success: false, message: '无效角色' });
   const conversationId = `${req.user._id}_${role}`;
   const threadMessageQuery = {
-    user: req.user._id,
-    recalled: { $ne: true },
+    ...visibleMessageQuery(req.user._id),
     $and: [
       { $or: [{ conversationId }, { type: role, conversationId: null }] },
-      { $or: [{ aiGenerated: { $ne: true } }, { aiReviewStatus: { $in: ['', 'approved'] } }] },
     ],
   };
   const [newestMessages, plannerLogs, state] = await Promise.all([

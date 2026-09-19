@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import Taro from '@tarojs/taro';
 import { loadToken, saveToken, clearToken, setUnauthorizedHandler, userAPI, authAPI } from '../services/api';
+import { resetUnreadBadge, refreshUnreadBadge } from '../utils/unreadBadge';
 
 const AuthContext = createContext(null);
 
@@ -43,10 +44,12 @@ export function AuthProvider({ children }) {
     // 主动索取手机号授权。
     const publicRoutes = new Set([
       'pages/home/index',
+      'pages/services/mall/index',
+      'pages/records/public-report/index',
       'pages/auth/login/index',
       'pages/legal/index',
     ]);
-    if (publicRoutes.has(route)) return;
+    if (!route || publicRoutes.has(route)) return;
     Taro.reLaunch({ url: '/pages/auth/login/index' }).catch(() => {});
   }, [loading, token]);
 
@@ -54,12 +57,15 @@ export function AuthProvider({ children }) {
     saveToken(tok);
     setToken(tok);
     setUser(userData);
+    resetUnreadBadge();
+    refreshUnreadBadge();
     try { Taro.setStorageSync('jy_user', JSON.stringify(userData)); } catch {}
   };
 
   const logout = async (notifyServer = true) => {
     if (notifyServer) { try { await authAPI.sessionActivity('logout'); } catch {} }
     clearToken();
+    resetUnreadBadge();
     setToken(null);
     setUser(null);
   };

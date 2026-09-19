@@ -24,6 +24,13 @@ export default function LoginPage() {
   const [notRegistered, setNotRegistered] = useState(false);
   const [agreed, setAgreed] = useState(false);
 
+  const cancelLogin = () => {
+    try { Taro.removeStorageSync('jy_post_login_url'); } catch {}
+    Taro.switchTab({ url: '/pages/home/index' }).catch(() => {
+      Taro.reLaunch({ url: '/pages/home/index' });
+    });
+  };
+
   const waitForAuthCommit = () => new Promise((resolve) => {
     if (typeof Taro.nextTick === 'function') Taro.nextTick(resolve);
     else setTimeout(resolve, 0);
@@ -136,6 +143,9 @@ export default function LoginPage() {
         padding: `${spacing.lg}px`,
       }}>
         <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 20px' }} />
+        <Button onClick={cancelLogin} style={{ width: '100%', margin: '0 0 16px', height: '46px', lineHeight: '46px', backgroundColor: '#fff', color: colors.primary, border: `1.5px solid ${colors.primary}`, borderRadius: `${radius.md}px`, fontSize: '16px', fontWeight: 700 }}>
+          暂不登录，先浏览
+        </Button>
         <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.textPrimary, display: 'block' }}>手机号登录</Text>
         <Text style={{ fontSize: '13px', color: colors.textMuted, marginBottom: '24px', display: 'block' }}>手机号验证码登录，新用户自动注册</Text>
 
@@ -230,7 +240,7 @@ export default function LoginPage() {
         </Button>
 
         <Text style={{ display: 'block', textAlign: 'center', marginTop: `${spacing.sm}px`, fontSize: '11px', color: colors.textMuted }}>
-          授权手机号后自动匹配账户；新用户需完善真实资料。
+          可先浏览公开服务；购买或使用个人健康服务时再登录。
         </Text>
 
         <View onClick={() => setAgreed(!agreed)} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: '6px', marginTop: `${spacing.md}px` }}>

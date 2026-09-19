@@ -1279,10 +1279,12 @@ router.post('/followup-tasks/:id/form', auth, async (req, res) => {
 // GET /api/user/push-records — 医护端推送给我的记录（科普/方案/问卷通知等）
 router.get('/push-records', auth, async (req, res) => {
   try {
-    const records = await PushRecord.find({ patientId: req.user._id })
-      .sort({ createdAt: -1 })
-      .limit(50)
-      .populate('staffId', 'name role title');
+    const [recent, unread] = await Promise.all([
+      PushRecord.find({ patientId: req.user._id }).sort({ createdAt: -1 }).limit(50).populate('staffId', 'name role title'),
+      PushRecord.find({ patientId: req.user._id, $or: [{ readAt: null }, { type: 'questionnaire' }] })
+        .sort({ createdAt: -1 }).populate('staffId', 'name role title'),
+    ]);
+    const records = require('../utils/messageInbox').mergeInboxRecords(recent, unread);
     res.json({ success: true, data: records });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取推送记录失败', error: err.message });

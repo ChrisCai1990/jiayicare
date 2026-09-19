@@ -8,6 +8,7 @@ import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
 import { chooseImageWithPrivacy, showImagePickerError } from '../../utils/imagePicker';
 import { requestWechatPayment, waitForPayment } from '../../utils/wechatPay';
+import { refreshUnreadBadge, withUnreadBadgeUpdate } from '../../utils/unreadBadge';
 
 // 完整对齐 app/src/screens/messages/MessagesScreen.js 的固定角色分组方案。
 // 简化点：
@@ -138,6 +139,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
 
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [threadRole, setThreadRole] = useState(null);
   const [showNotif, setShowNotif] = useState(false);
   const [notifTab, setNotifTab] = useState('全部');
@@ -145,12 +147,21 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
   const [pendingQuestionnaireIds, setPendingQuestionnaireIds] = useState(new Set());
   const [pendingQuestionnaireAssignmentIds, setPendingQuestionnaireAssignmentIds] = useState(new Set());
   const listPollRef = useRef(null);
+  const listRequestRef = useRef(0);
 
   const loadMessages = useCallback(async () => {
+    const requestId = ++listRequestRef.current;
     try {
       const [msgRes, pushRes, pendingRes] = await Promise.allSettled([
         messagesAPI.list(), pushRecordsAPI.list(), questionnaireAPI.pending(),
       ]);
+      if (requestId !== listRequestRef.current) return;
+      // Preserve the previous complete inbox if one of its sources fails.
+      if ([msgRes, pushRes, pendingRes].some(result => result.status !== 'fulfilled' || !result.value?.success)) {
+        setLoadError('消息暂未完整加载，点击重试');
+        return;
+      }
+      setLoadError('');
       const rawMessages = msgRes.status === 'fulfilled' && msgRes.value?.success ? msgRes.value.data : [];
       const msgData = Array.isArray(rawMessages) ? rawMessages : [];
       const rawPushRecords = pushRes.status === 'fulfilled' && pushRes.value?.success ? pushRes.value.data : [];
@@ -161,15 +172,10 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
       const pending = Array.isArray(rawPending) ? rawPending : [];
       setPendingQuestionnaireIds(new Set(pending.map((item) => String(item._id))));
       setPendingQuestionnaireAssignmentIds(new Set(pending.map((item) => String(item.assignmentId)).filter(Boolean)));
-      const pendingQuestionnaireIdSet = new Set(pending.map((item) => String(item._id)));
-      const pendingAssignmentIdSet = new Set(pending.map((item) => String(item.assignmentId)).filter(Boolean));
-      const unread = all.filter((item) => item.unread && (item.type !== 'questionnaire'
-        || pendingAssignmentIdSet.has(String(item._id))
-        || (!item.isPushRecord && pendingQuestionnaireIdSet.has(String(item.questionnaireId))))).length;
-      if (unread > 0) Taro.setTabBarBadge({ index: 2, text: String(Math.min(unread, 99)) }).catch(() => {});
-      else Taro.removeTabBarBadge({ index: 2 }).catch(() => {});
+      refreshUnreadBadge();
     } catch {
-      setMessages([]);
+      // A network failure is not an empty inbox.
+      if (requestId === listRequestRef.current) setLoadError('消息暂未完整加载，点击重试');
     } finally {
       setLoading(false);
     }
@@ -197,17 +203,19 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
   const systemMessages = notifMessages.filter((m) => m.type !== 'questionnaire' && !careMessages.includes(m));
 
   const roleConvs = ROLE_DEFS.map((r) => {
-    const msgs = messages.filter((m) => m.type === r.key || (m.conversationId && String(m.conversationId).endsWith(`_${r.key}`)));
+    const msgs = messages.filter((m) => !NOTIF_TYPES.has(m.type) && (m.conversationId
+      ? String(m.conversationId).endsWith(`_${r.key}`) : m.type === r.key));
     const last = msgs[0];
-    const unread = msgs.filter((m) => m.unread).length;
-    return { ...r, last, unread, lastTime: last ? new Date(last.createdAt).getTime() : 0, kind: 'role', assigned: hasRole(r.key), member: careTeamMember(r.key) };
+    const unread = msgs.filter((m) => m.type !== 'user' && m.unread).length;
+    return { ...r, last, unread, lastTime: last ? new Date(last.createdAt).getTime() : 0, kind: 'role', assigned: hasRole(r.key), hasHistory: msgs.length > 0, member: careTeamMember(r.key) };
   });
   const extraTeamMembers = careTeam
     .filter((member) => EXTRA_TEAM_META[member?.kind])
     .map((member) => ({ ...EXTRA_TEAM_META[member.kind], key: member.kind, member, assigned: true, kind: 'profile' }));
   const assignedTeamCount = roleConvs.filter((conv) => conv.assigned).length + extraTeamMembers.length;
 
-  const totalUnread = messages.filter((m) => m.unread && (m.type !== 'questionnaire' || questionnaireMessages.includes(m))).length;
+  const totalUnread = roleConvs.reduce((sum, conv) => sum + conv.unread, 0)
+    + notifMessages.filter((m) => m.unread && (m.type !== 'questionnaire' || questionnaireMessages.includes(m))).length;
 
   const notificationsForTab = (tab) => notifMessages.filter((m) => {
     if (tab === '待填问卷') return m.type === 'questionnaire' && questionnaireMessages.includes(m);
@@ -224,11 +232,12 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
     const viewed = notificationsForTab(tab).filter((m) => m.unread && m._id);
     if (!viewed.length) return;
     const viewedIds = new Set(viewed.map((m) => String(m._id)));
+    listRequestRef.current += 1;
     setMessages((prev) => prev.map((m) => viewedIds.has(String(m._id)) ? { ...m, unread: false, readAt: new Date().toISOString() } : m));
     const messageIds = viewed.filter((m) => !m.isPushRecord).map((m) => m._id);
     const pushRecordIds = viewed.filter((m) => m.isPushRecord).map((m) => m._id);
     try {
-      await messagesAPI.markBatchRead(messageIds, pushRecordIds);
+      await withUnreadBadgeUpdate(() => messagesAPI.markBatchRead(messageIds, pushRecordIds));
       await loadMessages();
     } catch {
       await loadMessages();
@@ -236,7 +245,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
   };
 
   const openConv = async (conv) => {
-    if (conv.kind === 'role' && conv.assigned === false) return;
+    if (conv.kind === 'role' && conv.assigned === false && !conv.hasHistory) return;
     if (conv.kind === 'notif') { setShowNotif(true); return; }
     setThreadRole(conv.key);
   };
@@ -244,14 +253,12 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
   const markReadAndOpenDetail = async (msg) => {
     setDetailMsg(msg);
     if (msg.unread) {
+      listRequestRef.current += 1;
       setMessages((prev) => prev.map((m) => (m._id === msg._id ? { ...m, unread: false } : m)));
       try {
-        if (msg.isPushRecord) await pushRecordsAPI.markRead(msg._id);
-        else await messagesAPI.markRead(msg._id);
-        const remaining = Math.max(0, totalUnread - 1);
-        if (remaining > 0) Taro.setTabBarBadge({ index: 2, text: String(Math.min(remaining, 99)) }).catch(() => {});
-        else Taro.removeTabBarBadge({ index: 2 }).catch(() => {});
-      } catch {}
+        await withUnreadBadgeUpdate(() => msg.isPushRecord ? pushRecordsAPI.markRead(msg._id) : messagesAPI.markRead(msg._id));
+      } catch { /* Refresh below restores the server state if marking read failed. */ }
+      finally { loadMessages(); }
     }
   };
 
@@ -270,6 +277,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
         )}
       </View>}
 
+      {!!loadError && <Text onClick={loadMessages} style={{ display: 'block', padding: '10px 16px', color: colors.danger, fontSize: '13px' }}>{loadError}</Text>}
       {loading ? (
         <Text style={{ fontSize: '13px', color: colors.textMuted, padding: `0 ${spacing.lg}px` }}>加载中...</Text>
       ) : (
@@ -283,7 +291,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
           </View>
           <View style={{ display: 'flex', flexDirection: 'column', gap: `${spacing.sm}px`, margin: `0 0 ${spacing.lg}px` }}>
           {[...roleConvs, ...extraTeamMembers].map((conv) => {
-            const unassigned = conv.kind === 'role' && conv.assigned === false;
+            const unassigned = conv.kind === 'role' && conv.assigned === false && !conv.hasHistory;
             const preview = unassigned
               ? '仅对年度会员开放，开通后为您配置专属服务团队'
               : visibleMessageContent(conv.last) || conv.last?.title || (conv.member ? `已配置：${conv.member.name}` : '暂无消息');
@@ -492,9 +500,12 @@ function ProductPushDetail({ msg, onClose }) {
     setPaying(true); setPayError('');
     try {
       const result = await pushRecordsAPI.pay(msg._id, { selectedProductIds: checkedIds, useHealthFund: fundApplied, couponId, paymentMethod: payMethod, paymentCapability: 'wechat_jsapi_v1' });
+      if (!result.success) throw new Error(result.message || '下单失败，请稍后重试');
       if (result.data?.paymentParams) {
         await requestWechatPayment(result.data.paymentParams);
         await waitForPayment(result.data.orderId);
+      } else if (result.data?.paymentStatus !== 'paid') {
+        throw new Error('支付信息未返回，请前往“我的订单”查看后继续支付');
       }
       setPaid(true);
     } catch (e) {
@@ -691,7 +702,7 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
 
   const loadThread = useCallback(async () => {
     try {
-      const res = await messagesAPI.getThread(role);
+      const res = await withUnreadBadgeUpdate(() => messagesAPI.getThread(role));
       const nextMessages = res.data || [];
       const signature = nextMessages.map((message) => `${message._id}:${message.updatedAt || message.createdAt}:${message.recalled ? 1 : 0}`).join('|');
       if (signature !== messageSignatureRef.current) {
