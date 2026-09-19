@@ -48,7 +48,7 @@ export default function ServiceTasksPanel() {
 
   useEffect(() => {
     const refresh = () => staffAPI.getServiceTasks({ status: 'active', includeFuture: '1', limit: 100 })
-      .then(r => setItems(r.data || []))
+      .then(r => setItems((r.data || []).filter(task => task.serviceTracking?.status !== 'waiting')))
       .catch(() => {})
     refresh()
     const refreshIfVisible = () => { if (document.visibilityState === 'visible') refresh() }
@@ -64,7 +64,7 @@ export default function ServiceTasksPanel() {
 
   if (!items.length) return null
   const serviceGroups = Object.values(items.reduce((result, task) => {
-    const key = task.coordinationGroupId || `task:${task._id}`
+    const key = task.sourceType === 'annual_service' && task.workflowKey === 'service_request' ? `request:${task._id}` : task.coordinationGroupId || `task:${task._id}`
     if (!result[key]) result[key] = { key, tasks: [] }
     result[key].tasks.push(task)
     return result

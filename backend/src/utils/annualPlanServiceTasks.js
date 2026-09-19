@@ -47,7 +47,7 @@ async function syncAnnualPlanServiceTasks(plan) {
   let created = 0; let updated = 0;
   for (const row of assignableRows) {
     const existing = await FollowUp.findOne({ sourceAnnualPlanId: plan._id, sourceType: 'annual_service', sourceScheduleKey: row.key });
-    if (existing?.status === 'completed') continue;
+    if (existing?.status === 'completed' || existing?.serviceTracking?.linkId) continue;
     const payload = { patientId: plan.patientId, staffId: plan.createdBy, assignedTo: row.assignedTo, date: row.date, remindAt: row.date,
       theme: row.theme, content: row.content, plannedContent: row.content, formData: row.formData,
       coordinationGroupId: `annual-plan:${plan._id}`, workflowKey: row.stage, taskRole: row.taskRole,

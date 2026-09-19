@@ -98,6 +98,7 @@ const { tagReportPageItems, sortReportItemsBySource, stripReportSourceOrder } = 
 const { stepsForInsuranceScenario } = require('../utils/insuranceServiceWorkflow');
 const { canUseInsuranceCoverage, isInsuranceScenario } = require('../utils/insuranceCoverage');
 const router = express.Router();
+router.use('/followups', require('./followUpServices'));
 const activeReportParseJobs = new Set();
 
 // 这两类资料仍可上传、由人工审核/录入，但不得触发视觉模型。documentCategory
@@ -564,6 +565,8 @@ async function syncOutpatientReportAuditCompletion(sourceHealthPlanId) {
 router.get('/service-tasks', staffAuth, async (req, res) => {
   const { status = 'active', includeFuture = '', limit = 100 } = req.query;
   const staffId = String(req.staff._id);
+  const linkedTaskIds = await FollowUp.find({ assignedTo: req.staff._id, 'serviceTracking.linkId': { $exists: true } }).distinct('_id');
+  await require('../utils/followUpServiceLink').safeReconcileServiceLinks({ requestTaskId: { $in: linkedTaskIds } });
   // 保险案件是长期事务，历史任务可能缺失，客户负责人也可能在案件处理中调整。
   // 每次进入对应角色工作台时按案件事实来源补齐/迁移活动任务，避免案件仍在处理中却无人可见。
   await ensureOpenInsuranceTasksForStaff(req.staff);
@@ -1715,6 +1718,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
   // 历史退款/取消链路可能只更新了订单而漏改待办；详情读取前以订单为事实来源校正，
   // 避免已取消服务仍显示“待执行”。全局启动扫描也会修复未被打开的会员。
   await require('../utils/orderWorkItem').reconcileInactiveOrderWorkItems(req.params.id);
+  await require('../utils/followUpServiceLink').safeReconcileServiceLinks({ patientId: req.params.id });
 
   const filter = { patientId: req.params.id, ...(followUpId ? { _id: followUpId } : {}) };
   const [followUps, total] = await Promise.all([
@@ -1746,6 +1750,8 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
 // ── GET /api/staff/followups ──────────────────────────────────────
 // 我的随访列表（含计划中、已完成；数据权限：创建人或被分配人）
 router.get('/followups', staffAuth, checkPermission('followups', 'view'), async (req, res) => {
+  const serviceLinkTaskIds = await FollowUp.find({ assignedTo: req.staff._id, 'serviceTracking.linkId': { $exists: true } }).distinct('_id');
+  await require('../utils/followUpServiceLink').safeReconcileServiceLinks({ $or: [{ followUpId: { $in: serviceLinkTaskIds } }, { requestTaskId: { $in: serviceLinkTaskIds } }] });
   const { page = 1, limit = 20, status = '', dateFrom = '', dateTo = '', dateField = 'date', patientName = '', assignedTo = '', sourceType = '', excludeSourceType = '', scope = '', includeFuture = '' } = req.query;
 
   // 如果按会员姓名搜索，先查出匹配的用户ID
@@ -2031,6 +2037,8 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     || String(followUp.staffId || '') === String(req.staff._id)
     || String(followUp.assignedTo || '') === String(req.staff._id);
   if (!canUpdate) return res.status(403).json({ success: false, message: '该任务未分配给当前账号，无法保存' });
+
+  if (followUp.serviceTracking?.status === 'waiting') return res.status(409).json({ success: false, message: '关联服务正在执行，随访由服务结果自动更新；请处理服务流程中的当前岗位任务' });
 
   if (followUp.isBlocked) {
     return res.status(409).json({ success: false, message: '上一环节尚未完成，当前任务只能查看，暂不能办理' });
@@ -2645,6 +2653,7 @@ router.delete('/followups/:id', staffAuth, checkPermission('followups', 'delete'
   }
   // “删除”与“取消”语义分开：删除后不再出现在医护端/客户端长列表；原因写入独立审计日志。
   const FollowUpDeletionLog = require('../models/FollowUpDeletionLog');
+  if (await require('../models/FollowUpServiceLink').exists({ status: 'waiting', $or: [{ followUpId: followUp._id }, { requestTaskId: followUp._id }] })) return res.status(409).json({ success: false, message: '关联服务进行中，不能删除随访；请先处理服务取消或异常' });
   await FollowUpDeletionLog.create({
     followUpId: followUp._id,
     patientId: followUp.patientId,

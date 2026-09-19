@@ -128,5 +128,6 @@ orderSchema.post('findOneAndUpdate', async function (doc) {
 });
 
 orderSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);
+orderSchema.plugin(require('../utils/followUpServiceLinkPlugin'), { targetType: 'order' });
 
 module.exports = mongoose.model('Order', orderSchema);

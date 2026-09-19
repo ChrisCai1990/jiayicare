@@ -7,6 +7,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { staffAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
+import FollowUpServiceLinkCard from '../components/FollowUpServiceLinkCard'
 import AiRuleHint from '../components/AiRuleHint'
 import AppIcon from '../components/AppIcon'
 import ReportImageEvidenceNotice from '../components/ReportImageEvidenceNotice'
@@ -2514,6 +2515,10 @@ export default function PatientDetailPage() {
 
   // 执行随访：填写随访结果、标记完成/随访中，逻辑与 FollowUpsPage.jsx 一致
   const openExec = (f) => {
+    if (f.serviceTracking?.status === 'waiting' || (f.taskRole === 'supervisor' && ((f.sourceType === 'annual_service' && f.workflowKey === 'service_request') || (f.sourceType === 'professional_assessment' && f.workflowKey === 'professional_assessment:service_request')))) {
+      setFollowUpDetail(f)
+      return
+    }
     if (medicalProxyStage(f) === 'appointment_review') {
       setAppointmentReviewContext(f)
       setShowMessageModal(true)
@@ -10896,6 +10901,7 @@ export default function PatientDetailPage() {
               <button className="modal-close" onClick={() => setFollowUpDetail(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <FollowUpServiceLinkCard key={followUpDetail._id} task={followUpDetail} staff={staff} onLinked={updated => { setFollowUpDetail(updated); loadFollowUps() }} />
               {/* 基本信息 */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 {[
@@ -11062,7 +11068,7 @@ export default function PatientDetailPage() {
                   } catch (err) { toast(err.message || '审核失败') }
                 }}>确认随访计划</button>
               </>}
-              {medicalProxyStage(followUpDetail) !== 'supervise' && <button className="btn btn-secondary" style={{ color: '#DC3545' }}
+              {medicalProxyStage(followUpDetail) !== 'supervise' && followUpDetail.serviceTracking?.status !== 'waiting' && <button className="btn btn-secondary" style={{ color: '#DC3545' }}
                 onClick={async () => {
                   if (!window.confirm('确认删除这条随访记录？删除后不可恢复。')) return
                   try {
@@ -11074,7 +11080,7 @@ export default function PatientDetailPage() {
                     setFollowUpDetail(null); loadFollowUps()
                   } catch (err) { toast(err.message || '删除失败') }
                 }}>删除</button>}
-              {medicalProxyStage(followUpDetail) !== 'supervise' && <button className="btn btn-secondary" onClick={() => setEditingFollowUp({
+              {medicalProxyStage(followUpDetail) !== 'supervise' && followUpDetail.serviceTracking?.status !== 'waiting' && <button className="btn btn-secondary" onClick={() => setEditingFollowUp({
                 date: followUpDetail.date ? new Date(followUpDetail.date).toISOString().slice(0, 10) : '',
                 type: followUpDetail.type || 'phone',
                 theme: followUpDetail.theme || '',

@@ -25,6 +25,7 @@ function formatDate(date) {
 export default function FollowUpsPanel() {
   const nav = useNavigate()
   const [items, setItems] = useState([])
+  const [serviceProgress, setServiceProgress] = useState([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(0)
@@ -32,7 +33,7 @@ export default function FollowUpsPanel() {
   const [timeGroup, setTimeGroup] = useState('all')
 
   useEffect(() => {
-    staffAPI.getFollowUps({ status: 'planned', includeFuture: '1', limit: 200 })
+    staffAPI.getFollowUps({ status: 'active', includeFuture: '1', limit: 200 })
       .then(r => {
         // 订单来源的待办（sourceType='order'，商城下单后生成）已经在首页"待处理服务预约"面板单独展示，
         // 这里要排除掉，否则同一条记录会在"待随访任务"里重复出现——它本质是服务预约，不是随访动作
@@ -42,8 +43,10 @@ export default function FollowUpsPanel() {
           && f.sourceType !== 'health_plan'
           && !isCustomerSelfServiceReminder(f)
         ))
-        setItems(followUpsOnly)
-        setTotal(followUpsOnly.length)
+        const actionable = followUpsOnly.filter(f => f.status === 'planned' && f.serviceTracking?.status !== 'waiting')
+        setServiceProgress(followUpsOnly.filter(f => f.serviceTracking?.status === 'waiting'))
+        setItems(actionable)
+        setTotal(actionable.length)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -109,6 +112,13 @@ export default function FollowUpsPanel() {
         <button className="btn btn-secondary btn-sm" onClick={() => nav('/followups')}>查看全部</button>
       </div>
       <div className="card-body" style={{ padding: '4px 20px 12px' }}>
+        {serviceProgress.length > 0 && <details style={{ fontSize: 13, color: '#52685D', margin: '8px 0 12px' }}>
+          <summary>服务进行中 {serviceProgress.length} 项（进度查看，无需重复办理）</summary>
+          {serviceProgress.map(task => <div key={task._id} style={{ marginTop: 8 }}>
+            <button className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${task.patientId?._id}?tab=followups`, { state: { openFollowUp: task } })}>{task.patientId?.name} · {task.theme}</button>
+            <div>{task.serviceTracking?.title} · {task.serviceTracking?.message}</div>
+          </div>)}
+        </details>}
         {items.length > 0 && (
           <input
             placeholder="搜索随访人员姓名"

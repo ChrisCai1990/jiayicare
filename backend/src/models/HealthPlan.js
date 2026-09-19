@@ -84,4 +84,5 @@ const healthPlanSchema = new mongoose.Schema({
 healthPlanSchema.index({ patientId: 1, type: 1, createdAt: -1 });
 healthPlanSchema.index({ staffId: 1, createdAt: -1 });
 
+healthPlanSchema.plugin(require('../utils/followUpServiceLinkPlugin'), { targetType: 'health_plan' });
 module.exports = mongoose.model('HealthPlan', healthPlanSchema);
