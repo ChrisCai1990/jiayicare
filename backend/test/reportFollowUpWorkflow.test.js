@@ -4,7 +4,7 @@ const Draft = require('../src/models/ReportFollowUpDraft');
 const Report = require('../src/models/MedicalReport');
 const FollowUp = require('../src/models/FollowUp');
 const User = require('../src/models/User');
-const { materializeReportEvent, generateReportDraft } = require('../src/utils/reportFollowUpAutomation');
+const { materializeReportEvent, generateReportDraft, syncReportReviewTask } = require('../src/utils/reportFollowUpAutomation');
 const { sourceDigest } = require('../src/utils/reportFollowUpSource');
 const { publishReportFollowUps } = require('../src/utils/dynamicAssessmentFollowUps');
 const { isServiceRequest } = require('../src/utils/followUpServiceState');
@@ -54,4 +54,14 @@ test('无明确后续行动的报告自动结束整理，不增加顾问审核�
   t.mock.method(FollowUp, 'findOneAndUpdate', async () => { throw Error('没有行动不应派任务'); });
   await generateReportDraft(row._id, { automatic: true });
   assert.equal(row.status, 'no_action'); assert.equal(row.followUpDrafts.length, 0);
+});
+
+test('已批准但发布中断的草稿保持工作台重试入口，不误当已完成', async t => {
+  t.mock.method(User, 'findById', () => ({ select: () => ({ lean: async () => ({ assignedFamilyDoctor: 'advisor' }) }) }));
+  t.mock.method(FollowUp, 'updateMany', async () => { throw Error('发布未完成不能关闭审核任务'); });
+  t.mock.method(FollowUp, 'findOneAndUpdate', async (q, u) => {
+    assert.equal(u.$set.status, 'planned'); assert.match(u.$set.theme, /重试/);
+    assert.equal(u.$setOnInsert.status, undefined); // MongoDB同字段不能同时$set和$setOnInsert。
+  });
+  await syncReportReviewTask({ _id: 'draft', patientId: 'patient', status: 'approved', followUpPublication: { status: 'failed' } });
 });

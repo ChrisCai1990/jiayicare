@@ -13,16 +13,17 @@ async function completeReportReview(id) {
 
 async function syncReportReviewTask(draft) {
   if (!draft) return;
-  if (draft.status !== 'advisor_review') return completeReportReview(draft._id);
-  if (['queued', 'running'].includes(draft.followUpAutomation?.status)) return;
+  const publicationPending = draft.status === 'approved' && draft.followUpPublication?.status !== 'published';
+  if (draft.status !== 'advisor_review' && !publicationPending) return completeReportReview(draft._id);
+  if (!publicationPending && ['queued', 'running'].includes(draft.followUpAutomation?.status)) return;
   const patient = await User.findById(draft.patientId).select('assignedFamilyDoctor assignedHealthPlanner assignedHealthManager').lean();
   const owner = patient?.assignedFamilyDoctor || patient?.assignedHealthPlanner || patient?.assignedHealthManager || draft.createdBy;
   if (!owner) throw new Error('缺少任务负责人');
   const key = `${draft._id}:report_review`;
   try {
     await FollowUp.findOneAndUpdate({ assessmentActionKey: key }, {
-      $set: { assignedTo: owner, theme: `${patient?.assignedFamilyDoctor ? '审核报告随访' : '请分配健康顾问'} · ${draft.title}`, plannedContent: draft.followUpAutomation?.message || '请核对来源原文和随访草稿，审核后才会派发。' },
-      $setOnInsert: { assessmentActionKey: key, patientId: draft.patientId, staffId: draft.createdBy || owner, sourceType: 'report_followup', sourceId: draft._id, workflowKey: 'report_followup:advisor_review', taskRole: 'executor', type: 'other', status: 'planned', aiStatus: 'approved', reviewRole: 'familyDoctor', date: new Date(), remindAt: new Date() },
+      $set: { assignedTo: owner, ...(publicationPending ? { status: 'planned', completedAt: null, completedBy: null } : {}), theme: `${patient?.assignedFamilyDoctor ? (publicationPending ? '重试报告随访发布' : '审核报告随访') : '请分配健康顾问'} · ${draft.title}`, plannedContent: publicationPending ? '随访尚未完整发布，请核对负责人后重试；已发布任务会保留。' : (draft.followUpAutomation?.message || '请核对来源原文和随访草稿，审核后才会派发。') },
+      $setOnInsert: { assessmentActionKey: key, patientId: draft.patientId, staffId: draft.createdBy || owner, sourceType: 'report_followup', sourceId: draft._id, workflowKey: 'report_followup:advisor_review', taskRole: 'executor', type: 'other', ...(!publicationPending ? { status: 'planned' } : {}), aiStatus: 'approved', reviewRole: 'familyDoctor', date: new Date(), remindAt: new Date() },
     }, { upsert: true });
   } catch (error) { if (error.code !== 11000 || !(await FollowUp.exists({ assessmentActionKey: key }))) throw error; }
 }
@@ -106,7 +107,10 @@ function wakeReportDraftWorker() {
 
 async function recoverReportDrafts() {
   await Draft.updateMany({ status: 'advisor_review', 'followUpAutomation.status': 'running', 'followUpAutomation.startedAt': { $lt: new Date(Date.now() - 10 * 60000) } }, { $set: { 'followUpAutomation.status': 'failed', 'followUpAutomation.message': '生成中断，请顾问重试或人工接管。' }, $inc: { __v: 1 } });
-  for await (const row of Draft.find({ status: 'advisor_review', 'followUpAutomation.status': { $in: ['ready', 'failed', 'skipped'] } }).cursor()) await syncReportReviewTask(row);
+  for await (const row of Draft.find({ $or: [
+    { status: 'advisor_review', 'followUpAutomation.status': { $in: ['ready', 'failed', 'skipped'] } },
+    { status: 'approved', 'followUpPublication.status': { $ne: 'published' } },
+  ] }).cursor()) await syncReportReviewTask(row);
   wakeReportDraftWorker();
 }
 function startReportDraftWorker() {
