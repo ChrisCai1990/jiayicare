@@ -197,7 +197,8 @@ async function advanceCheckupTask(followUp) {
     const appointmentAt = appointment?.appointmentDate
       ? new Date(`${appointment.appointmentDate}T${appointment.appointmentTime || '09:00'}:00+08:00`)
       : tasks.onsite.date
-    await FollowUp.updateOne({ _id: tasks.onsite._id }, { $set: {
+    // Only release a waiting task once; retries must preserve downstream work.
+    await FollowUp.updateOne({ _id: tasks.onsite._id, isBlocked: true, status: { $in: ['planned', 'missed'] } }, { $set: {
       isBlocked: false,
       status: 'planned',
       activationEvent: '',
@@ -216,7 +217,7 @@ async function advanceCheckupTask(followUp) {
     return true
   }
   if (stage === 'onsite' && tasks.report_collection) {
-    await FollowUp.updateOne({ _id: tasks.report_collection._id }, { $set: { isBlocked: false, status: 'planned', activationEvent: '' } })
+    await FollowUp.updateOne({ _id: tasks.report_collection._id, isBlocked: true, status: { $in: ['planned', 'missed'] } }, { $set: { isBlocked: false, status: 'planned', activationEvent: '' } })
     return true
   }
   if (stage === 'report_collection') {
