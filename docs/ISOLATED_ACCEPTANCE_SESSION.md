@@ -2,6 +2,15 @@
 
 2026-09-20：已建立真实本机后端、五岗位登录及纯虚构客户，未接生产。
 
+## 最新：标准八节点场景暴露客户前置错误（未通过）
+
+- 新场景manifest：`C:/Users/huawei/AppData/Local/Temp/jiayicare-acceptance-nsE3Fp/session.json`；后端exec19346替代2569，同端口且保持原出口隔离。旧jdmCHJ库及关闭证据完整保留，未重开旧任务。前端/Mongo仍沿用原进程，页面旧JWT失效需新manifest登录。
+- 新场景 `checkupPreparationHttp.js` 全部通过。`checkupServiceHttp.js <新manifest> --standard-template --prepare-only` 使用仓库八节点定义，只导入数据（dotenv已禁用，不运行迁移），模拟批准模板；无订单、无问卷绑定配置，不冒充完整生产配置。
+- 真实发布/关联通过，但激活409“原服务收单/前置任务尚未完成”。原始customer/intake模板被staff.js通用upsertMedicalAssistModuleTasks的负责人fallback派给familyDoctor；plan_design依赖该错误员工任务。当前无该客户任务自动完成桥接，不能靠人工替客户点完成证明闭环。
+- service-http.json已保存任务岗位/前置快照与activationFailure，保留activation_failed原现场。23项模板/问卷/激活既有单测通过，但不能掩盖此真实API失败。
+- 下一步修正客户节点与员工任务分离，同时保持资料门槛：核对有效问卷绑定/提交证据或已审核准备资料复用的规则，未具备证据不解锁；不要简单过滤节点而绕过前置，不直接批量删除/完成旧任务。相关入口：staff.js约3249负责人fallback、3463固定节点、3517串联；questionnaire.js约358仅写checkupIntake提交状态；checkupPreparationActivation.js约62检查原前置。
+- 此轮仅扩充隔离验收脚本及证据，未修改业务逻辑；标准模板多岗位办理仍待修复后重跑。当前无需生产审批，可继续本地安全诊断与修复。
+
 ## 最新接续：健管自动完成的可追溯展示
 
 - 原详情仅显示已随访/时间，未展示自动完成来源；新增只读 `CheckupCompletionEvidence`，仅completed且完整四项凭据存在时显示。保留人工记录，不写入虚构的executedContent，不新增按钮任务。

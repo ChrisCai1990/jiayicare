@@ -23,6 +23,8 @@ async function main() {
   assert.equal(prep.readiness.readyForServiceLink, true);
   const resultFile = path.join(path.dirname(sessionPath), 'service-http.json');
   const report = fs.existsSync(resultFile) ? JSON.parse(fs.readFileSync(resultFile, 'utf8')) : { checks: [] };
+  const standardTemplate = process.argv.includes('--standard-template');
+  if (report.productId) assert.equal(Boolean(report.standardTemplate), standardTemplate, 'Use a fresh scenario when switching templates');
   const save = () => fs.writeFileSync(resultFile, JSON.stringify(report, null, 2));
   const check = label => { if (!report.checks.includes(label)) report.checks.push(label); save(); console.log(label); };
   const request = async (route, token, method = 'GET', body, status = 200) => {
@@ -42,13 +44,18 @@ async function main() {
     const specs = [['plan_design', 'familyDoctor'], ['booking', 'healthPlanner'], ['onsite', 'medicalAssistant'],
       ['report_collection', 'healthManager'], ['result_review', 'familyDoctor'], ['final_acceptance', 'healthPlanner']];
     const schemes = [];
-    for (const [stage, role] of specs) schemes.push(await FollowUpPlan.create({ name: `隔离体检-${stage}`, category: 'checkup',
+    if (standardTemplate) {
+      // Import data only; never execute migration or load a credential-bearing .env.
+      require('dotenv').config = () => ({ parsed: {} });
+      const { TASK_PLAN_DRAFTS } = require('../../src/scripts/seedCheckupOneStopWorkflowDraft');
+      for (const draft of TASK_PLAN_DRAFTS) schemes.push(await FollowUpPlan.create({ ...draft, reviewStatus: 'approved' }));
+    } else for (const [stage, role] of specs) schemes.push(await FollowUpPlan.create({ name: `隔离体检-${stage}`, category: 'checkup',
       workflowStageKey: stage, executorRole: role, workflowTaskRole: stage === 'final_acceptance' ? 'supervisor' : 'executor',
       closesService: stage === 'final_acceptance', activationEvent: stage === 'result_review' ? 'report_audited' : '',
       completionStandard: '隔离验收模拟结果，非真实医疗服务', requiresCoordination: false }));
     const product = await Product.create({ name: '隔离体检流程（非销售商品）', originalPrice: 0, category: 'isolated_acceptance', status: 'on',
-      serviceWorkflow: { key: 'checkup', modules: schemes.map((s, i) => ({ planId: s._id, mode: 'fixed', sequence: i })) } });
-    report.productId = String(product._id); save();
+      serviceWorkflow: { key: 'checkup', modules: schemes.map((s, i) => ({ planId: s._id, mode: s.workflowStageKey === 'abnormal_followup' ? 'conditional' : 'fixed', trigger: s.workflowStageKey === 'abnormal_followup' ? 'abnormal_found' : '', sequence: i })) } });
+    report.productId = String(product._id); report.standardTemplate = standardTemplate; save();
   }
   if (!report.serviceId) {
     const advisor = await Admin.findById(patient.assignedFamilyDoctor);
@@ -70,7 +77,20 @@ async function main() {
   await request(root + '/service-link', tokens.healthPlanner, 'POST', { servicePlanId: report.serviceId, updatedAt: service.updatedAt });
   assert.equal(await Handoff.countDocuments({ servicePlanId: service._id }), 1);
   check('Exact service linked through real route; replay retained one handoff');
-  const activated = await request(root + '/activate', tokens.healthPlanner, 'POST', {});
+  const originalRows = await FollowUp.find({ sourceHealthPlanId: service._id }).populate('followUpSchemeId').lean();
+  report.taskIds = Object.fromEntries(originalRows.filter(r => r.followUpSchemeId).map(r => [r.followUpSchemeId.workflowStageKey, String(r._id)]));
+  report.taskSnapshot = originalRows.map(r => ({ id: String(r._id), stage: r.followUpSchemeId?.workflowStageKey || r.workflowKey,
+    configuredRole: r.followUpSchemeId?.executorRole, assignedTo: String(r.assignedTo || ''), status: r.status, parent: String(r.dependsOnTaskId || '') }));
+  save();
+  let activated;
+  try {
+    activated = await request(root + '/activate', tokens.healthPlanner, 'POST', {});
+    delete report.activationFailure;
+  } catch (error) {
+    report.activationFailure = { at: new Date().toISOString(), message: error.message };
+    save();
+    throw error;
+  }
   assert.equal(activated.data.status, 'active');
   await request(root + '/activate', tokens.healthPlanner, 'POST', {});
   assert.equal(await FollowUp.countDocuments({ sourceHealthPlanId: service._id }), before);
@@ -80,6 +100,10 @@ async function main() {
   assert.equal(design.status, 'completed'); assert.ok(['in_progress', 'completed'].includes(booking.status)); assert.equal(booking.isBlocked, false);
   report.taskIds = Object.fromEntries(rows.filter(r => r.followUpSchemeId).map(r => [r.followUpSchemeId.workflowStageKey, String(r._id)])); save();
   check('Existing design completed and booking activated exactly once; no duplicate tasks');
+  if (process.argv.includes('--prepare-only')) {
+    console.log('Stopped at booking for manual isolated UI acceptance; no execution results submitted.');
+    return;
+  }
   async function complete(stage, role, extra = {}) {
     const task = await FollowUp.findById(report.taskIds[stage]).lean();
     if (task.status === 'completed') return;
