@@ -70,7 +70,7 @@ async function syncAnnualPlanServiceTasks(plan) {
     else { await FollowUp.create({ ...payload, sourceAnnualPlanId: plan._id, sourceType: 'annual_service', sourceScheduleKey: row.key }); created++; }
   }
   const desired = (plan.continuitySource?.previousPlanId ? rows : assignableRows).map(row => row.key);
-  await FollowUp.updateMany({ sourceAnnualPlanId: plan._id, sourceType: 'annual_service', sourceScheduleKey: { $nin: desired }, status: { $in: ['planned', 'in_progress'] }, ...(plan.continuitySource?.previousPlanId ? { 'serviceTracking.linkId': null } : {}) }, { $set: { status: 'cancelled', cancelReason: '年度方案已调整或改为仅提醒' } });
+  await FollowUp.updateMany({ sourceAnnualPlanId: plan._id, sourceType: 'annual_service', workflowKey: { $not: /^annual_checkup_preparation:/ }, sourceScheduleKey: { $nin: desired }, status: { $in: ['planned', 'in_progress'] }, ...(plan.continuitySource?.previousPlanId ? { 'serviceTracking.linkId': null } : {}) }, { $set: { status: 'cancelled', cancelReason: '年度方案已调整或改为仅提醒' } });
   return { created, updated, warnings: patient?.assignedHealthPlanner ? [] : rows.map(row => `${row.theme}尚未绑定健康规划师`) };
 }
 

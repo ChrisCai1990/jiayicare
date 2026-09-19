@@ -100,6 +100,7 @@ const { stepsForInsuranceScenario } = require('../utils/insuranceServiceWorkflow
 const { canUseInsuranceCoverage, isInsuranceScenario } = require('../utils/insuranceCoverage');
 const router = express.Router();
 router.use('/followups', require('./followUpServices'));
+router.use('/followups', require('./annualCheckupPreparation'));
 router.use('/report-followups', require('./reportFollowUps')({ getVisiblePlanPatientIds }));
 const activeReportParseJobs = new Set();
 
@@ -572,6 +573,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
   // 保险案件是长期事务，历史任务可能缺失，客户负责人也可能在案件处理中调整。
   // 每次进入对应角色工作台时按案件事实来源补齐/迁移活动任务，避免案件仍在处理中却无人可见。
   await ensureOpenInsuranceTasksForStaff(req.staff);
+  await require('../utils/annualCheckupEvidence').safeReconcileCheckupPreparation({ assignedTo: req.staff._id });
   // 修复旧版本中“上游已完成、健管审核仍等待上一环节”的陪同任务，并补齐
   // 就医专员本次提交内容。修复严格限定为当前负责人的已完成上游任务。
   await require('../utils/medicalProxyWorkflow').repairCompletedMedicalEscortAuditTasks(req.staff._id);
@@ -2039,6 +2041,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     || String(followUp.staffId || '') === String(req.staff._id)
     || String(followUp.assignedTo || '') === String(req.staff._id);
   if (!canUpdate) return res.status(403).json({ success: false, message: '该任务未分配给当前账号，无法保存' });
+  if (require('../utils/annualCheckupEvidence').preparationRole(followUp)) return res.status(409).json({ success: false, message: '请在体检准备卡片中保存实际方案或沟通结果，不能通过通用随访完成' });
 
   if (followUp.serviceTracking?.status === 'waiting') return res.status(409).json({ success: false, message: '关联服务正在执行，随访由服务结果自动更新；请处理服务流程中的当前岗位任务' });
 
@@ -2520,6 +2523,7 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
     if (!['approve', 'reject'].includes(action)) return res.status(400).json({ success: false, message: 'action 必须为 approve 或 reject' });
     const followUp = await FollowUp.findOne({ _id: req.params.id, aiStatus: 'pending' });
     if (!followUp) return res.status(404).json({ success: false, message: '待审核随访计划不存在' });
+    if (require('../utils/annualCheckupEvidence').preparationRole(followUp)) return res.status(409).json({ success: false, message: '体检准备由实际方案审核结果更新，不能通过通用随访审核' });
     const requiredRole = followUp.reviewRole || 'familyDoctor';
     if (req.staff.role !== 'superadmin' && req.staff.role !== requiredRole) {
       return res.status(403).json({ success: false, message: '该随访计划不属于您的审核角色' });
@@ -2644,6 +2648,7 @@ router.delete('/followups/:id', staffAuth, checkPermission('followups', 'delete'
   // 还错误提示“随访记录不存在”。删除权限改为与客户详情相同的服务团队范围。
   const followUp = await FollowUp.findById(req.params.id);
   if (!followUp) return res.status(404).json({ success: false, message: '随访记录不存在' });
+  if (require('../utils/annualCheckupEvidence').preparationRole(followUp)) return res.status(409).json({ success: false, message: '体检准备记录用于流程追溯，不能删除' });
   if (!['superadmin', 'platformSuper'].includes(req.staff.role)) {
     const visibleStaffIds = await getVisibleStaffIds(req.staff);
     const patientAccess = PLAN_ASSIGN_FIELDS.map(field => ({ [field]: { $in: visibleStaffIds } }));

@@ -1,5 +1,11 @@
 module.exports = function followUpServiceLinkPlugin(schema, { targetType }) {
-  const reconcile = targetId => targetId && require('./followUpServiceLink').safeReconcileServiceLinks({ targetType, targetId });
+  const reconcile = async targetId => {
+    if (!targetId) return;
+    await require('./followUpServiceLink').safeReconcileServiceLinks({ targetType, targetId });
+    if (targetType === 'health_plan') await require('./annualCheckupEvidence').safeReconcileCheckupPreparation({
+      'formData.annualCheckupPreparation.evidence.healthPlanId': String(targetId),
+    });
+  };
   schema.post('save', async function (doc) { await reconcile(doc._id); });
   schema.post('findOneAndUpdate', async function (doc) { if (doc?._id) await reconcile(doc._id); });
   schema.post('updateOne', async function () {

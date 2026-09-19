@@ -8,6 +8,7 @@ import { staffAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
 import FollowUpServiceLinkCard from '../components/FollowUpServiceLinkCard'
+import AnnualCheckupPreparationCard, { isAnnualCheckupPreparation } from '../components/AnnualCheckupPreparationCard'
 import AiRuleHint from '../components/AiRuleHint'
 import AppIcon from '../components/AppIcon'
 import ReportImageEvidenceNotice from '../components/ReportImageEvidenceNotice'
@@ -2515,7 +2516,7 @@ export default function PatientDetailPage() {
 
   // 执行随访：填写随访结果、标记完成/随访中，逻辑与 FollowUpsPage.jsx 一致
   const openExec = (f) => {
-    if (f.serviceTracking?.status === 'waiting' || (f.taskRole === 'supervisor' && ((f.sourceType === 'annual_service' && f.workflowKey === 'service_request') || (['professional_assessment', 'report_followup'].includes(f.sourceType) && f.workflowKey === `${f.sourceType}:service_request`)))) {
+    if (isAnnualCheckupPreparation(f) || f.serviceTracking?.status === 'waiting' || (f.taskRole === 'supervisor' && ((f.sourceType === 'annual_service' && f.workflowKey === 'service_request') || (['professional_assessment', 'report_followup'].includes(f.sourceType) && f.workflowKey === `${f.sourceType}:service_request`)))) {
       setFollowUpDetail(f)
       return
     }
@@ -10902,6 +10903,7 @@ export default function PatientDetailPage() {
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <FollowUpServiceLinkCard key={followUpDetail._id} task={followUpDetail} staff={staff} onLinked={updated => { setFollowUpDetail(updated); loadFollowUps() }} />
+              <AnnualCheckupPreparationCard key={`checkup:${followUpDetail._id}`} task={followUpDetail} staff={staff} onSaved={updated => { setFollowUpDetail(updated); loadFollowUps() }} />
               {/* 基本信息 */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 {[
