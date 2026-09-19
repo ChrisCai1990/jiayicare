@@ -22,3 +22,16 @@ test('历史已确认且已审核发布方案仅补冻结标记', async () => {
   await confirmPublishedAnnualPlan(plan);
   assert.equal(plan.frozenAt, first); assert.equal(saves, 1);
 });
+
+test('准备派发启用后仅首次确认保存自动意图，历史重复确认不补标记', async t => {
+  const previous = process.env.CHECKUP_PREPARATION_AUTO_ENABLED;
+  t.after(() => { if (previous === undefined) delete process.env.CHECKUP_PREPARATION_AUTO_ENABLED; else process.env.CHECKUP_PREPARATION_AUTO_ENABLED = previous; });
+  process.env.CHECKUP_PREPARATION_AUTO_ENABLED = 'true';
+  const now = new Date('2026-09-20');
+  const current = { pushedAt: now, reviewStatus: 'approved', save: async () => {} };
+  await confirmPublishedAnnualPlan(current, now);
+  assert.equal(current.checkupPreparationAutoConfirmedAt, now);
+  const old = { pushedAt: now, reviewStatus: 'approved', confirmedAt: now, save: async () => {} };
+  await confirmPublishedAnnualPlan(old, now);
+  assert.equal(old.checkupPreparationAutoConfirmedAt, undefined);
+});

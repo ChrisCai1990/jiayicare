@@ -80,7 +80,7 @@ async function syncAnnualPlanTaskSplit(plan) {
   }
   // 必须等待所有子写入结束才释放同步状态；Promise.all的提前拒绝会让旧写入穿过改期事务。
   const settled = await Promise.allSettled([
-    syncAnnualPlanFollowUps(plan), syncAnnualPlanServiceTasks(plan),
+    syncAnnualPlanFollowUps(plan), syncAnnualPlanServiceTasks(plan), require('./annualCheckupDispatch').runtime().sync(plan),
   ]);
   const rejected = settled.find(result => result.status === 'rejected');
   if (rejected) throw rejected.reason;

@@ -31,6 +31,8 @@ const annualPlanSchema = new mongoose.Schema({
   pushedAt:    { type: Date, default: null },
   pushedBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   confirmedAt: { type: Date, default: null },
+  checkupPreparationAutoConfirmedAt: { type: Date, default: null }, // 仅启用后首次确认写入，不回填历史
+  checkupPreparationDispatch: { type: mongoose.Schema.Types.Mixed, default: null },
   // 正式方案每个服务年度只能有一份；推送时正式化，客户确认后冻结。
   formalizedAt: { type: Date, default: null },
   frozenAt: { type: Date, default: null },

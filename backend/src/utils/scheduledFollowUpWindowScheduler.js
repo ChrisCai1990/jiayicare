@@ -26,7 +26,10 @@ async function scanAndSyncScheduledWindow() {
         await require('./annualServicePeriodCorrectionApply').applyApprovedCorrection(plan);
         const result = await require('./annualPlanTaskSplit').syncAnnualPlanTaskSplit(plan);
         total += result.scheduledFollowUps || 0;
-      } else total += await syncAnnualPlanFollowUps(plan);
+      } else {
+        total += await syncAnnualPlanFollowUps(plan);
+        await require('./annualCheckupDispatch').runtime().sync(plan);
+      }
     } catch (e) {
       console.error('[scheduled-followup-window] 方案 ' + plan._id + ' 补生成失败', e.message);
     }

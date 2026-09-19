@@ -11175,6 +11175,10 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
 
     // 凭据/岗位/同步异常归规划师，方案排期异常归顾问；正常等待不增加人工待办。
     if (isSuper || ['healthPlanner', 'familyDoctor'].includes(role)) {
+      const checkupPlans = await AnnualPlan.find({ checkupPreparationAutoConfirmedAt: { $ne: null },
+        'checkupPreparationDispatch.issues.0': { $exists: true }, ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) })
+        .select('patientId year planType checkupPreparationDispatch').populate('patientId', 'name assignedHealthPlanner assignedFamilyDoctor').lean();
+      todos.push(...require('../utils/annualCheckupDispatch').buildDispatchTodos(checkupPlans, req.staff));
       const renewalPlans = await AnnualPlan.find({ 'continuitySource.previousPlanId': { $ne: null }, ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) }).select('patientId year planType createdAt').populate('patientId', 'name assignedHealthPlanner assignedFamilyDoctor').sort({ createdAt: -1 }).lean();
       const periods = await require('../models/AnnualServicePeriod').find({ annualPlanId: { $in: renewalPlans.map(plan => plan._id) } }).select('annualPlanId activationStatus activationError syncState syncIssue syncStartedAt correction.status correction.reviewNote correction.applyIssue').lean();
       todos.push(...require('../utils/annualRenewalSyncState').buildAnnualRenewalTodos(renewalPlans, periods, req.staff));

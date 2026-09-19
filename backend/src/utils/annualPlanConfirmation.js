@@ -5,6 +5,7 @@ async function confirmPublishedAnnualPlan(plan, now = new Date()) {
   if (!plan.confirmedAt) {
     plan.confirmedAt = now;
     plan.frozenAt = now;
+    if (require('./annualCheckupDispatch').enabled()) plan.checkupPreparationAutoConfirmedAt = now;
     await plan.save();
   } else if (!plan.frozenAt) {
     plan.frozenAt = plan.confirmedAt;

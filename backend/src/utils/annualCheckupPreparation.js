@@ -1,5 +1,5 @@
 // 只计算准备窗口及岗位任务候选，不派单、不调用AI、不启动体检服务。
-// 工作台处理入口和准备条件汇合接好前，不接入确认/每日扫描。
+// 派发由 annualCheckupDispatch 在显式启用且新确认时接入；本模块保持纯计算。
 const { dayOf, chinaDay } = require('./serviceAccess');
 const { sourceDate } = require('./annualScheduleAmendments');
 
