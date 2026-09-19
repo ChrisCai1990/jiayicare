@@ -27,13 +27,7 @@ async function scanAndSyncScheduledWindow() {
   }
   const FollowUp = require('../models/FollowUp');
   const User = require('../models/User');
-  const legacyRows = await FollowUp.find({ status: { $in: ['planned', 'in_progress', 'missed'] }, theme: { $regex: /就医提醒|年度体检/ } }).select('patientId assignedTo');
-  for (const row of legacyRows) {
-    const patient = await User.findById(row.patientId).select('assignedHealthManager').lean();
-    if (patient?.assignedHealthManager && String(row.assignedTo || '') !== String(patient.assignedHealthManager)) {
-      await FollowUp.updateOne({ _id: row._id }, { $set: { assignedTo: patient.assignedHealthManager } });
-    }
-  }
+  await require('./annualReminderAssignment').reconcileAnnualReminderAssignments({ FollowUp, User });
   // 旧版本把健康规划师人工消息写进 manager 且部分消息没有 conversationId，导致汇总有未读数、点进线程却为空。
   const Admin = require('../models/Admin');
   const Message = require('../models/Message');
