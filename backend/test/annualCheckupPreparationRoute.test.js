@@ -12,6 +12,7 @@ let actor;
 const auth = require.resolve('../src/middleware/staffAuth');
 require(auth); require.cache[auth].exports = (req, res, next) => { req.staff = actor; next(); };
 const router = require('../src/routes/annualCheckupPreparation');
+const suggestionService = require('../src/utils/checkupPreparationSuggestion');
 const updatedAt = new Date('2026-09-01T01:00:00Z');
 const annual = { _id: ids.annual, patientId: ids.patient, confirmedAt: '2026-09-01', pushedAt: '2026-08-30', reviewStatus: 'approved' };
 const checkup = { _id: ids.plan, patientId: ids.patient, title: '体检方案', type: 'annual_checkup', status: 'draft', createdAt: '2026-09-02', content: { aiStatus: 'pending' } };
@@ -38,6 +39,43 @@ function setup(t, row = task()) {
   t.mock.method(flow, 'reconcileCheckupPreparation', async () => 0);
   t.mock.method(FollowUp, 'updateOne', async () => ({ matchedCount: 1 }));
 }
+
+test('AI加项读取、生成、审核及恢复接口传入当前任务和真实操作者', async t => {
+  setup(t); const calls = [];
+  t.mock.method(suggestionService, 'createSuggestionService', models => {
+    assert.equal(models.HealthPlan, HealthPlan);
+    assert.equal(models.Suggestion.modelName, 'CheckupPreparationSuggestion');
+    return Object.fromEntries(['read', 'generate', 'review', 'recover'].map(action => [action, async (id, staff, body) => {
+      calls.push({ action, id, staff, body }); return { action };
+    }]));
+  });
+  for (const [method, suffix, action] of [['GET', '/addons', 'read'], ['POST', '/addons', 'generate'],
+    ['POST', '/addons/review', 'review'], ['POST', '/addons/recover', 'recover']]) {
+    const result = await request(t, method, { token: 'run', indexes: [] }, ids.task, suffix);
+    assert.equal(result.status, 200); assert.equal(result.body.data.action, action);
+    assert.equal(calls.at(-1).id, ids.task); assert.equal(calls.at(-1).staff._id, ids.advisor);
+  }
+});
+
+test('AI加项任务不归本人或无方案编辑权限时不调用生成服务', async t => {
+  setup(t);
+  t.mock.method(suggestionService, 'createSuggestionService', () => assert.fail('不能进入AI处理器'));
+  actor = { _id: ids.planner, role: 'familyDoctor' };
+  assert.equal((await request(t, 'POST', {}, ids.task, '/addons')).status, 403);
+  actor = { _id: ids.advisor, role: 'familyDoctor', customRoleId: ids.plan };
+  const Role = require('../src/models/StaffRole');
+  t.mock.method(Role, 'findById', () => ({ select: () => ({ lean: async () => ({ permissions: { followups: { edit: true }, plans: { view: true, edit: false } } }) }) }));
+  assert.equal((await request(t, 'POST', {}, ids.task, '/addons/review')).status, 403);
+});
+
+test('AI业务冲突以409返回，不伪造审核成功', async t => {
+  setup(t);
+  t.mock.method(suggestionService, 'createSuggestionService', () => ({ review: async () => {
+    throw Object.assign(new Error('方案或审核资料已变化'), { statusCode: 409 });
+  } }));
+  const result = await request(t, 'POST', { token: 'old', indexes: [0] }, ids.task, '/addons/review');
+  assert.equal(result.status, 409); assert.equal(result.body.success, false);
+});
 
 test('错误ID、不存在任务及同角色他人均不能读取准备信息', async t => {
   setup(t);

@@ -42,6 +42,27 @@ router.post('/:id/checkup-preparation/draft', staffAuth, checkPermission('follow
     res.json({ success: true, data: result.plan, reused: result.reused });
   });
 
+function addonService() {
+  return require('../utils/checkupPreparationSuggestion').createSuggestionService({
+    FollowUp, AnnualPlan, HealthPlan, User: require('../models/User'),
+    ProfessionalHealthAssessment: require('../models/ProfessionalHealthAssessment'), MedicalReport: require('../models/MedicalReport'),
+    Suggestion: require('../models/CheckupPreparationSuggestion'),
+  }, (messages, options, { actor, patient }) => require('../utils/aiBudget').withAiContext({
+    actorId: String(actor._id), tenantId: String(patient.tenantId || ''), business: 'other', stage: 'checkup_preparation_addons',
+  }, () => require('../utils/ai').chat(messages, options)));
+}
+
+router.get('/:id/checkup-preparation/addons', staffAuth, checkPermission('followups', 'view'),
+  checkPermission('plans', 'view'), checkPermission.checkPlanType(() => 'annual_checkup'), load, async (req, res) => {
+    res.json({ success: true, data: await addonService().read(req.params.id, req.staff) });
+  });
+for (const [suffix, action] of [['', 'generate'], ['/review', 'review'], ['/recover', 'recover']]) {
+  router.post(`/:id/checkup-preparation/addons${suffix}`, staffAuth, checkPermission('followups', 'edit'),
+    checkPermission('plans', 'edit'), checkPermission.checkPlanType(() => 'annual_checkup'), load, async (req, res) => {
+      res.json({ success: true, data: await addonService()[action](req.params.id, req.staff, req.body || {}) });
+    });
+}
+
 router.use((error, req, res, next) => {
   if (!error.statusCode) return next(error);
   res.status(error.statusCode).json({ success: false, message: error.message });

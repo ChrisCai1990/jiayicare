@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { staffAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
 import AiRuleHint from '../components/AiRuleHint'
+import CheckupPreparationAddons from '../components/CheckupPreparationAddons'
 
 // 方案类型 → AI 规则说明场景
 const PLAN_AI_SCENE = {
@@ -454,6 +455,7 @@ export default function PlanDetailPage() {
       </div>
 
       {PLAN_AI_SCENE[plan.type] && <AiRuleHint scene={PLAN_AI_SCENE[plan.type]} />}
+      {plan.preparationTaskId && canEdit && <CheckupPreparationAddons plan={plan} staff={staff} onSaved={load} />}
 
       {plan.type === 'annual_checkup' && (plan.items || []).some(isImportantCheckupItem) && (
         <div className="card" style={{ marginBottom: 20, border: '1.5px solid #F59E0B', background: '#FFFBEB' }}>
