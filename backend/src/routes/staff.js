@@ -2144,13 +2144,14 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
       return res.status(400).json({ success: false, message: '请依次完成开单门诊、特殊检查专家及检查后专家门诊的实际预约安排' });
     }
   }
+  const submittedExecutionContent = require('../utils/followUpExecutionContent').executionContent(req.body);
   if (followUp.sourceType === 'health_plan' && followUp.followUpSchemeId && req.body.status === 'completed') {
     const workflowScheme = await FollowUpPlan.findById(followUp.followUpSchemeId).lean();
     const workflowStage = workflowScheme ? stageForScheme(workflowScheme) : '';
-    if (workflowStage === 'result_review' && !String(req.body.executedContent || '').trim()) {
+    if (workflowStage === 'result_review' && !String(submittedExecutionContent || '').trim()) {
       return res.status(400).json({ success: false, message: '请填写体检结果评估，并明确后续随访计划；无需随访时请记录结论和依据' });
     }
-    if (workflowStage === 'final_acceptance' && !String(req.body.executedContent || '').trim()) {
+    if (workflowStage === 'final_acceptance' && !String(submittedExecutionContent || '').trim()) {
       return res.status(400).json({ success: false, message: '请填写最终验收结论和遗留事项交接情况' });
     }
   }
@@ -2235,8 +2236,8 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   if (!followUp.plannedContent && previousStatus !== 'completed') {
     followUp.plannedContent = previousContent || '';
   }
-  if (req.body.content !== undefined && ['completed', 'in_progress'].includes(req.body.status || followUp.status)) {
-    followUp.executedContent = req.body.content;
+  if (submittedExecutionContent !== undefined && ['completed', 'in_progress'].includes(req.body.status || followUp.status)) {
+    followUp.executedContent = submittedExecutionContent;
   }
   if (req.body.type !== undefined && ['completed', 'in_progress'].includes(req.body.status || followUp.status)) {
     followUp.executedType = req.body.type;
