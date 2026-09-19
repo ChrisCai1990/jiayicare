@@ -373,10 +373,14 @@ router.patch('/orders/:id/status', adminAuth, async (req, res) => {
   const currentOrder = await Order.findById(req.params.id);
   if (!currentOrder) return res.status(404).json({ success: false, message: '订单不存在' });
   if (status === 'cancelled') {
+    if (currentOrder.checkoutGroupId) {
+      try { return res.json(await require('../utils/groupPaymentActions').cancelGroupPayment(currentOrder)); }
+      catch (error) { return res.status(409).json({ success: false, message: error.message }); }
+    }
     if (currentOrder.paymentStatus === 'paid' || ['paid', 'fulfilling'].includes(currentOrder.tradeStatus)) {
       return res.status(409).json({ success: false, message: '已支付订单不能直接取消，请先通过微信退款流程原路退款' });
     }
-    const confirmedPayment = await Payment.findOne({ order: currentOrder._id, status: 'succeeded' }).sort({ createdAt: -1 });
+    const confirmedPayment = await Payment.findOne({ ...require('../utils/checkoutAmounts').paymentOrderQuery(currentOrder._id), status: 'succeeded' }).sort({ createdAt: -1 });
     if (confirmedPayment) {
       await require('../utils/orderSettlement').confirmPayment({
         outTradeNo: confirmedPayment.outTradeNo,
@@ -468,19 +472,25 @@ router.patch('/orders/:id/pay', adminAuth, async (req, res) => {
 
 // ── PATCH /api/admin/orders/:id/refund — 退款（paymentStatus 之前只定义了 refunded 枚举值，
 //    从未有接口真正写入过；2026-07-13 新增：退款时把预记的消费积分退回）──
-router.patch('/orders/:id/refund', adminAuth, async (req, res) => {
+async function handleOrderRefund(req, res) {
   const order = await Order.findById(req.params.id);
   if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
   if (order.paymentStatus !== 'paid') return res.status(400).json({ success: false, message: '只有已支付的订单才能退款' });
+  if (order.checkoutGroupId) {
+    const groupPayment = await Payment.findOne(require('../utils/checkoutAmounts').paymentOrderQuery(order._id)).sort({ createdAt: -1 });
+    if (groupPayment?.settlementLockUntil > new Date()) return res.status(409).json({ success: false, message: '合并付款正在入账，请稍后再提交退款' });
+  }
   const reason = String(req.body.reason || '').trim();
   if (!reason) return res.status(400).json({ success: false, message: '请输入退款原因' });
-  const payment = await Payment.findOne({ order: order._id, status: 'succeeded', channel: 'wechat_pay' }).sort({ createdAt: -1 });
-  const isFundOnly = !payment?.outTradeNo && order.healthFundAmount > 0 && Number(order.paidAmount || 0) === 0;
+  const payment = await Payment.findOne({ ...require('../utils/checkoutAmounts').paymentOrderQuery(order._id), status: 'succeeded', channel: 'wechat_pay' }).sort({ createdAt: -1 });
+  const isFundOnly = Number(order.paidAmount || 0) === 0 && (order.healthFundAmount > 0 || !!order.checkoutGroupId);
   if (!payment?.outTradeNo && !isFundOnly) {
     return res.status(409).json({ success: false, message: '该订单没有真实微信支付流水，不能在此标记为已退款；请按历史订单流程人工核对' });
   }
-  const amount = isFundOnly ? 0 : Number(req.body.amount || payment.amount);
-  if (!isFundOnly && (!Number.isFinite(amount) || amount <= 0 || amount > payment.amount)) {
+  const previousRefunds = await Refund.aggregate([{ $match: { order: order._id, status: 'succeeded' } }, { $group: { _id: null, amount: { $sum: '$amount' } } }]);
+  const refundable = Math.max(0, Math.round((order.paidAmount - (previousRefunds[0]?.amount || 0)) * 100) / 100);
+  const amount = isFundOnly ? 0 : Number(req.body.amount ?? refundable);
+  if (!isFundOnly && (!Number.isFinite(amount) || amount <= 0 || amount > refundable || Math.abs(amount * 100 - Math.round(amount * 100)) > 1e-7)) {
     return res.status(400).json({ success: false, message: '退款金额无效' });
   }
   let refund = await Refund.findOne({ order: order._id, status: { $in: ['requested', 'processing'] } });
@@ -523,6 +533,13 @@ router.patch('/orders/:id/refund', adminAuth, async (req, res) => {
     await require('../utils/orderWorkItem').reconcileInactiveOrderWorkItems(order.user);
     res.status(502).json({ success: false, message: `微信退款提交失败：${err.message}` });
   }
+}
+
+router.patch('/orders/:id/refund', adminAuth, async (req, res) => {
+  const order = await Order.findById(req.params.id);
+  if (!order?.checkoutGroupId) return handleOrderRefund(req, res);
+  try { return await require('../utils/groupPaymentActions').withGroupLock(order, () => handleOrderRefund(req, res)); }
+  catch (error) { return res.status(409).json({ success: false, message: error.message }); }
 });
 
 router.patch('/orders/:id/service-start', adminAuth, async (req, res) => {

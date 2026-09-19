@@ -40,3 +40,10 @@ test('6799 cash points plus existing residual points can convert 68 fund without
   assert.equal(h.calls[0].amount, 6799);
   assert.deepEqual(conversionFor(1, h.calls[0].amount, 0, 100), { pointsBalance: 0, redeemedPoints: 6800, fundAmount: 68 });
 });
+
+test('group rewards preserve the cash total rounding instead of losing a point on every fractional child', async () => {
+  const h = harness();
+  await h.award({ _id: 'a', user: 'user', checkoutGroupId: 'a', checkoutPointsAmount: 6683, paidAmount: 6683.08, paymentStatus: 'paid' });
+  await h.award({ _id: 'b', user: 'user', checkoutGroupId: 'a', checkoutPointsAmount: 2317, paidAmount: 2316.92, paymentStatus: 'paid' });
+  assert.equal(h.calls.reduce((sum, call) => sum + call.amount, 0), 9000);
+});

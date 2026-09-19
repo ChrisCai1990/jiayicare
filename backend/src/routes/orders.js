@@ -115,7 +115,11 @@ router.patch('/:id/cancel', auth, async (req, res) => {
     if (order.paymentStatus === 'paid' || ['paid', 'fulfilling'].includes(order.tradeStatus)) {
       return res.status(409).json({ success: false, message: '已支付订单不能直接取消，请提交退款申请' });
     }
-    const payment = await Payment.findOne({ order: order._id, status: { $in: ['processing', 'succeeded'] } }).sort({ createdAt: -1 });
+    if (order.checkoutGroupId) {
+      try { return res.json(await require('../utils/groupPaymentActions').cancelGroupPayment(order)); }
+      catch (error) { return res.status(409).json({ success: false, message: error.message }); }
+    }
+    const payment = await Payment.findOne({ ...require('../utils/checkoutAmounts').paymentOrderQuery(order._id), status: { $in: ['created', 'processing', 'succeeded'] } }).sort({ createdAt: -1 });
     if (payment?.status === 'succeeded') {
       await require('../utils/orderSettlement').confirmPayment({
         outTradeNo: payment.outTradeNo, transactionId: payment.transactionId, paidAt: payment.paidAt,
@@ -178,14 +182,14 @@ router.post('/:id/refund-request', auth, async (req, res) => {
   if (order.status === 'completed') return res.status(409).json({ success: false, message: '服务已全部完成，请联系客服核对可退款金额' });
   const reason = String(req.body.reason || '').trim();
   if (!reason) return res.status(400).json({ success: false, message: '请输入退款原因' });
-  const payment = await Payment.findOne({ order: order._id, status: 'succeeded', channel: 'wechat_pay' }).sort({ createdAt: -1 });
+  const payment = await Payment.findOne({ ...require('../utils/checkoutAmounts').paymentOrderQuery(order._id), status: 'succeeded', channel: 'wechat_pay' }).sort({ createdAt: -1 });
   if (!payment && !(order.healthFundAmount > 0)) return res.status(409).json({ success: false, message: '未找到可原路退回的支付记录，请联系客服' });
   const existing = await Refund.findOne({ order: order._id, status: { $in: ['requested', 'processing', 'succeeded'] } });
   if (existing) return res.json({ success: true, data: existing, message: '退款申请已提交，请勿重复申请' });
   const refund = await Refund.create({
     order: order._id, payment: payment?._id || null, user: req.user._id,
     outRefundNo: `RF${Date.now()}${order._id.toString().slice(-8)}`.slice(0, 32),
-    amount: payment?.amount || 0, totalAmount: payment?.amount || 0, reason, status: 'requested',
+    amount: payment ? order.paidAmount : 0, totalAmount: payment?.amount || 0, reason, status: 'requested',
   });
   order.tradeStatus = 'refund_pending'; order.refundStatus = 'requested'; await order.save();
   res.json({ success: true, data: refund, message: '退款申请已提交，工作人员审核后将原路退回' });

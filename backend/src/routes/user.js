@@ -1298,7 +1298,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
     const record = await PushRecord.findOne({ _id: req.params.id, patientId: req.user._id });
     if (!record) return res.status(404).json({ success: false, message: '推送记录不存在' });
     const { selectedProductIds, useHealthFund, couponId, paymentMethod, paymentCapability } = req.body;
-    if (!selectedProductIds?.length) return res.status(400).json({ success: false, message: '请选择要购买的产品' });
+    if (!Array.isArray(selectedProductIds) || !selectedProductIds.length) return res.status(400).json({ success: false, message: '请选择要购买的产品' });
     // Released clients before 1.0.166 never call requestPayment and would show
     // success immediately after this API returned. Refuse to create any order
     // unless the client explicitly declares the verified JSAPI flow.
@@ -1317,7 +1317,13 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
     const selectedIdSet = new Set(selectedProductIds.map(String));
     const toPay = pushedProducts.filter(p => selectedIdSet.has(String(p.productId)));
     if (!toPay.length) return res.status(400).json({ success: false, message: '所选产品不在推送列表中' });
-    if (toPay.length > 1) return res.status(400).json({ success: false, message: '微信支付请每次选择一项服务，支付完成后可继续购买其他服务' });
+    if (selectedIdSet.size !== toPay.length) return res.status(400).json({ success: false, message: '所选产品不在推送列表中或存在重复，请重新选择' });
+    if (toPay.length > 1) {
+      try {
+        const result = await require('../utils/pushGroupCheckout').createPushGroupCheckout({ record, user: req.user, items: toPay, options: req.body });
+        return res.json(result);
+      } catch (error) { return res.status(error.status || 500).json({ success: false, message: error.message || '合并下单失败' }); }
+    }
 
     const totalPrice = toPay.reduce((s, p) => s + (p.price || 0), 0);
 
@@ -1363,6 +1369,9 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
       } catch(err) { return res.status(400).json({success:false,message:err.message}); }
     }
     const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundUsed) * 100) / 100);
+    if (req.body.expectedAmount != null && require('../utils/checkoutAmounts').cents(req.body.expectedAmount) !== require('../utils/checkoutAmounts').cents(finalPrice)) {
+      return res.json({ success: false, code: 'CHECKOUT_QUOTE_CHANGED', message: '抵扣金额已按商品规则重新核算，请确认合计后再次支付', summary: { totalPrice, couponDiscount, fundUsed, finalPrice } });
+    }
     const totalDiscount = couponDiscount + fundUsed;
 
     // 按各产品价格占比分摊抵扣，得到每个订单的实付金额（最后一项吸收舍入误差）

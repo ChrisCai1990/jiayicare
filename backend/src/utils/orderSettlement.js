@@ -18,12 +18,41 @@ async function confirmPayment({ outTradeNo, transactionId, paidAt, snapshot }) {
     if (!payment) throw new Error('支付单不存在');
   }
 
-  const order = await Order.findById(payment.order);
+  if (payment.allocations?.length) {
+    const { paymentAllocations, cents } = require('./checkoutAmounts');
+    const allocations = paymentAllocations(payment);
+    const token = require('crypto').randomBytes(16).toString('hex');
+    const locked = await Payment.findOneAndUpdate({ _id: payment._id,
+      $or: [{ settlementLockUntil: null }, { settlementLockUntil: { $lt: new Date() } }],
+    }, { $set: { settlementLockUntil: new Date(Date.now() + 300000), settlementLockToken: token } }, { new: true });
+    if (!locked) throw new Error('合并付款正在确认，请稍后重试');
+    try {
+      const orders = [];
+      for (const allocation of allocations) {
+        const order = await Order.findById(allocation.order);
+        if (!order || String(order.user) !== String(payment.user) || cents(order.paymentExpectedAmount) !== cents(allocation.amount)) throw new Error('合并支付订单或金额不一致');
+        orders.push(order);
+      }
+      for (const [index, order] of orders.entries()) {
+        await settlePaidOrder(payment, order, allocations[index].amount);
+        await Payment.updateOne({ _id: payment._id, settlementLockToken: token }, { $set: { settlementLockUntil: new Date(Date.now() + 300000) } });
+      }
+      return orders[0];
+    } finally {
+      await Payment.updateOne({ _id: payment._id, settlementLockToken: token }, { $set: { settlementLockUntil: null, settlementLockToken: '' } });
+    }
+  }
+  return settlePaidOrder(payment, await Order.findById(payment.order), payment.amount);
+}
+
+async function settlePaidOrder(payment, order, cashAmount) {
   if (!order) throw new Error('订单不存在');
+  // Late/repeated success notifications must never resurrect a refunded child.
+  if (order.paymentStatus === 'refunded' || order.refundStatus === 'refunded') return order;
 
   const wasConfirmedPaid = order.paymentStatus === 'paid';
-  order.paymentMethod = 'wechat';
-  order.paidAmount = payment.amount;
+  order.paymentMethod = payment.channel === 'health_fund' ? 'healthFund' : 'wechat';
+  order.paidAmount = cashAmount;
   order.transactionId = payment.transactionId;
   order.paidAt = payment.paidAt;
   order.paymentId = payment._id;
@@ -46,11 +75,11 @@ async function confirmPayment({ outTradeNo, transactionId, paidAt, snapshot }) {
   if (order.couponId && !order.couponSettledAt) {
     const used = await Coupon.findOneAndUpdate(
       { _id: order.couponId, patientId: order.user, status: 'active' },
-      { status: 'used', usedAt: new Date(), usedOrderId: order._id },
+      { status: 'used', usedAt: new Date(), usedOrderId: order.checkoutGroupId || order._id },
       { new: true },
     );
     if (!used) {
-      const alreadyUsed = await Coupon.findOne({ _id: order.couponId, patientId: order.user, status: 'used', usedOrderId: order._id });
+      const alreadyUsed = await Coupon.findOne({ _id: order.couponId, patientId: order.user, status: 'used', usedOrderId: order.checkoutGroupId || order._id });
       if (!alreadyUsed) throw new Error('优惠券状态已变化，请人工核对订单');
     }
     order.couponSettledAt = new Date();
@@ -102,6 +131,15 @@ async function confirmPayment({ outTradeNo, transactionId, paidAt, snapshot }) {
   return order;
 }
 
+async function restoreRefundedCoupon(order) {
+  if (order.refundStatus !== 'refunded' || !order.couponId) return;
+  const retained = order.checkoutGroupId && await Order.findOne({ checkoutGroupId: order.checkoutGroupId, _id: { $ne: order._id }, refundStatus: { $ne: 'refunded' } });
+  if (!retained) await Coupon.updateOne(
+    { _id: order.couponId, usedOrderId: order.checkoutGroupId || order._id, status: 'used' },
+    { status: 'active', usedAt: null, usedOrderId: null },
+  );
+}
+
 async function confirmRefund(refund, snapshot) {
   const claimed = await require('../models/Refund').findOneAndUpdate(
     { _id: refund._id, status: { $ne: 'succeeded' } },
@@ -114,6 +152,7 @@ async function confirmRefund(refund, snapshot) {
     const existingOrder = await Order.findById(refund.order);
     if (existingOrder?.refundStatus === 'refunded') {
       await require('./commissionLifecycle').cancelOrderCommissions(existingOrder);
+      await restoreRefundedCoupon(existingOrder);
       return existingOrder;
     }
   } else {
@@ -125,7 +164,8 @@ async function confirmRefund(refund, snapshot) {
     { $match: { order: order._id, status: 'succeeded' } },
     { $group: { _id: null, amount: { $sum: '$amount' } } },
   ]);
-  const amount = totalRefunded[0]?.amount || 0;
+  const amount = Math.round((totalRefunded[0]?.amount || 0) * 100) / 100;
+  order.refundedAmount = amount;
   order.refundStatus = amount >= order.paidAmount ? 'refunded' : 'partially_refunded';
   if (order.refundStatus === 'partially_refunded') order.tradeStatus = 'partially_refunded';
   if (order.refundStatus === 'refunded') {
@@ -142,15 +182,12 @@ async function confirmRefund(refund, snapshot) {
     if (order.healthFundAmount > 0) {
       await require('./healthFundPayment').reverseHealthFund({ order, remark: `订单${order.serviceName}退款返还` });
     }
-    if (order.couponId) {
-      await Coupon.updateOne(
-        { _id: order.couponId, usedOrderId: order._id, status: 'used' },
-        { status: 'active', usedAt: null, usedOrderId: null },
-      );
-    }
     await require('./productShareRewards').reverseProductShareRewards(order);
   }
   await order.save();
+  // Persist first; concurrent child notifications and retries can then see
+  // the last completed refund before returning the shared coupon.
+  await restoreRefundedCoupon(order);
   return order;
 }
 

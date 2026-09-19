@@ -12,7 +12,7 @@ export function requestWechatPayment(params) {
 export async function waitForPayment(orderId, attempts = 5) {
   for (let index = 0; index < attempts; index += 1) {
     const result = await paymentsAPI.status(orderId);
-    if (result.data?.order?.paymentStatus === 'paid') return result.data.order;
+    if (result.data?.order?.paymentStatus === 'paid' && result.data?.checkoutPaid !== false) return result.data.order;
     if (index < attempts - 1) await new Promise(resolve => setTimeout(resolve, 1200));
   }
   throw new Error('付款结果正在确认，请稍后在“我的订单”查看');

@@ -38,6 +38,7 @@ function checkout(result, overrides = {}) {
   const end = source.indexOf('\n  if (paid)', start);
   const events = [];
   const ctx = { checkedIds: ['product-1'], msg: { _id: 'push-1' }, fundApplied: 0, couponId: null, payMethod: 'wechat',
+    payingRef: { current: false }, pendingOrderId: '', finalPrice: 6800, setCheckoutQuote: value => events.push(['quote', value]), setPendingOrderId: () => {},
     setPaying: value => events.push(['paying', value]), setPayError: value => events.push(['error', value]), setPaid: value => events.push(['paid', value]),
     pushRecordsAPI: { pay: async (id, params) => { events.push(['create', params.paymentCapability]); return result; } },
     requestWechatPayment: async () => { events.push(['cashier']); }, waitForPayment: async () => { events.push(['confirmed']); }, ...overrides };
@@ -74,4 +75,51 @@ test('shared cashier helper rejects incomplete parameters and reports user cance
   vm.runInNewContext(read('utils/wechatPay.js').replace(/^import .*;\r?\n/gm, '').replace(/export /g, ''), ctx);
   await assert.rejects(ctx.requestWechatPayment({}), /信息不完整/);
   await assert.rejects(ctx.requestWechatPayment({ package: 'prepay_id=1', paySign: 'signed' }), /取消支付/);
+});
+
+test('two products are independently selectable, including deselect-all/select-all', () => {
+  const source = read('pages/messages/index.jsx');
+  const component = source.slice(source.indexOf('function ProductPushDetail'), source.indexOf('\nconst ROLE_META'));
+  let cursor = 0;
+  const states = [];
+  const refs = [];
+  let refCursor = 0;
+  const ctx = {
+    React: { createElement: (type, props, ...children) => ({ type, props: props || {}, children }) },
+    useState: init => { const index = cursor++; if (!(index in states)) states[index] = typeof init === 'function' ? init() : init; return [states[index], value => { states[index] = typeof value === 'function' ? value(states[index]) : value; }]; },
+    useRef: value => { const index = refCursor++; if (!refs[index]) refs[index] = { current: value }; return refs[index]; },
+    useEffect() {}, useAuth: () => ({ user: {}, updateUser() {} }), maxFundDeduction: () => 0,
+    colors: {}, spacing: {}, radius: {}, View: 'View', Text: 'Text', ScrollView: 'ScrollView', Icon: 'Icon', RENEWAL_PAYMENT_METHODS: [{ key: 'wechat', label: '微信支付' }],
+  };
+  const code = babel.transformSync(component, { configFile: false, babelrc: false, presets: [require.resolve('@babel/preset-react')] }).code;
+  vm.runInNewContext(`${code}\nthis.render = ProductPushDetail;`, ctx);
+  function elements() {
+    cursor = 0; refCursor = 0;
+    const tree = ctx.render({ msg: { products: [{ productId: 'a', name: 'A', price: 6800 }, { productId: 'b', name: 'B', price: 318.44 }] }, onClose() {} });
+    const nodes = []; function visit(node) { if (!node || typeof node !== 'object') return; nodes.push(node); (node.children || []).flat(Infinity).forEach(visit); } visit(tree); return nodes;
+  }
+  assert.deepEqual(Array.from((elements(), states[0])), ['a', 'b']);
+  elements().find(n => n.props.key === 'b').props.onClick(); assert.deepEqual(Array.from(states[0]), ['a']);
+  elements().find(n => n.props.key === 'b').props.onClick(); assert.deepEqual(Array.from(states[0]), ['a', 'b']);
+  elements().find(n => n.type === 'Text' && n.children.includes('取消全选')).props.onClick(); assert.equal(states[0].length, 0);
+  elements().find(n => n.type === 'Text' && n.children.includes('全选')).props.onClick(); assert.equal(states[0].length, 2);
+});
+
+test('changed checkout quote does not call the cashier before a second confirmation', async () => {
+  const h = checkout({ success: false, code: 'CHECKOUT_QUOTE_CHANGED', message: '请确认新报价', summary: { finalPrice: 7118.44 } });
+  await h.run(); assert.ok(h.events.some(e => e[0] === 'quote')); assert.ok(!h.events.some(e => e[0] === 'cashier' || e[0] === 'paid'));
+});
+
+test('double tap starts one checkout; pending group is viewed rather than created again', async () => {
+  const h = checkout({ success: true, data: { orderId: 'a', paymentParams: {} } });
+  await Promise.all([h.run(), h.run()]); assert.equal(h.events.filter(e => e[0] === 'create').length, 1);
+  let navigated = false;
+  const pending = checkout({}, { pendingOrderId: 'a', Taro: { navigateTo: () => { navigated = true; } } });
+  await pending.run(); assert.equal(navigated, true); assert.equal(pending.events.filter(e => e[0] === 'create').length, 0);
+});
+
+test('cashier confirmation does not succeed when only the first child has settled', async () => {
+  const ctx = { Taro: {}, paymentsAPI: { status: async () => ({ data: { order: { paymentStatus: 'paid' }, checkoutPaid: false } }) } };
+  vm.runInNewContext(read('utils/wechatPay.js').replace(/^import .*;\r?\n/gm, '').replace(/export /g, ''), ctx);
+  await assert.rejects(ctx.waitForPayment('a', 1), /正在确认/);
 });

@@ -45,7 +45,11 @@ const orderSchema = new mongoose.Schema({
   tradeStatus: { type: String, enum: ['created', 'awaiting_payment', 'paid', 'fulfilling', 'completed', 'closed', 'refund_pending', 'partially_refunded', 'refunded'], default: 'created', index: true },
   fulfillmentStatus: { type: String, default: '' },
   refundStatus: { type: String, enum: ['', 'none', 'requested', 'processing', 'partially_refunded', 'refunded', 'failed'], default: 'none' },
+  refundedAmount: { type: Number, default: 0, min: 0 },
   paymentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment', default: null },
+  checkoutGroupId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null, index: true },
+  checkoutActionLockUntil: { type: Date, default: null },
+  checkoutActionLockToken: { type: String, default: '' },
   fulfillmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Fulfillment', default: null },
   pushRecordId:{ type: mongoose.Schema.Types.ObjectId, ref: 'PushRecord', default: null },
   status: {
@@ -82,6 +86,7 @@ const orderSchema = new mongoose.Schema({
   paymentStatus: { type: String, enum: ['unpaid', 'pending', 'paid', 'failed', 'refunded'], default: 'unpaid' },
   paidAmount:    { type: Number, default: 0 },   // 实付金额（区别于 servicePrice 标价）
   paymentExpectedAmount: { type: Number, default: 0 },
+  checkoutPointsAmount: { type: Number, default: null, min: 0 }, // 合并付款按总实付取整后分配的消费积分
   paymentOutTradeNo: { type: String, default: '', index: true },
   paymentProductId: { type: String, default: '' },
   paymentEnvironment: { type: String, enum: ['', 'sandbox', 'production'], default: '' },
