@@ -2,7 +2,7 @@ import Taro from '@tarojs/taro';
 import { paymentsAPI } from '../services/api';
 
 export function requestWechatPayment(params) {
-  if (!params?.package || !params?.paySign) return Promise.resolve();
+  if (!params?.package || !params?.paySign) return Promise.reject(new Error('微信支付信息不完整，请稍后在“我的订单”继续支付'));
   return Taro.requestPayment(params).catch((error) => {
     const cancelled = /cancel/i.test(error?.errMsg || '');
     throw new Error(cancelled ? '您已取消支付，订单仍可稍后继续支付' : (error?.errMsg || '微信支付失败，请重试'));

@@ -17,8 +17,10 @@ test('push-record payment accepts legacy records that only contain productId', (
   assert.match(source, /record\.products\?\.length \? record\.products : \(record\.productId/);
   assert.match(source, /new Set\(selectedProductIds\.map\(String\)\)/);
   assert.match(source, /selectedIdSet\.has\(String\(p\.productId\)\)/);
-  assert.match(source, /async function resolveOrderWorkflowAssignee\(userId, serviceName = ''\)/);
-  assert.match(source, /return resolveHealthPlanner\(userId\)/);
+  assert.match(source, /resolveOrderWorkflowAssignee, orderOwnershipFields.*require\('\.\.\/utils\/serviceOwnership'\)/);
+  const ownership = fs.readFileSync(path.join(__dirname, '../src/utils/serviceOwnership.js'), 'utf8');
+  assert.match(ownership, /resolveOrderWorkflowAssignee: resolveServiceSupervisor/);
+  assert.match(ownership, /return resolveHealthPlanner\(patientOrId\)/);
   assert.match(source, /wechatPay\.createJsapiPayment/);
   assert.match(source, /paymentParams: prepay\.client/);
   assert.match(source, /if \(toPay\.length > 1\)/);

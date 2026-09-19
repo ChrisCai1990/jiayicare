@@ -13,7 +13,12 @@ function loadQuickHealthParser() {
   const end = source.indexOf('function Chip');
   assert.ok(start >= 0 && end > start, 'quick health parser source should be discoverable');
   const parserSource = source.slice(start, end).replace('export function parseQuickHealthText', 'function parseQuickHealthText');
-  const context = { Date };
+  // The parser stamps today's records with the current time. Freeze that clock
+  // to the same day as the input fixtures so this regression is repeatable.
+  class FixtureDate extends Date {
+    constructor(...args) { super(...(args.length ? args : ['2026-09-11T12:00:00+08:00'])); }
+  }
+  const context = { Date: FixtureDate };
   vm.runInNewContext(`${parserSource}\nthis.parseQuickHealthText = parseQuickHealthText;`, context);
   return context.parseQuickHealthText;
 }
@@ -180,7 +185,7 @@ test('paid service checkout keeps money in cents and requires scheduling details
 test('completed questionnaire pushes are never reclassified as system notices', () => {
   const source = read('src/pages/messages/index.jsx');
   assert.match(source, /m\.type !== 'questionnaire' && !careMessages\.includes\(m\)/);
-  assert.match(source, /item\.type !== 'questionnaire'/);
+  assert.match(source, /m\.type !== 'questionnaire' \|\| questionnaireMessages\.includes\(m\)/);
 });
 
 test('notification categories clear their visible unread records without clearing pending questionnaires', () => {

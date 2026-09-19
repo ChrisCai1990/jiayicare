@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
 import Taro, { useDidShow, usePullDownRefresh } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
@@ -179,7 +179,7 @@ function TaskDetailModal({ task, onClose, onDone }) {
 }
 
 export default function HomePage() {
-  const { user: authUser, isDemo } = useAuth();
+  const { user: authUser, token, loading: authLoading, isDemo } = useAuth();
   const { statusBarHeight } = useNavBar();
   const runtimeInfo = (() => {
     try {
@@ -195,18 +195,23 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [taskDetail, setTaskDetail] = useState(null);
   const [popularServices, setPopularServices] = useState([]);
+  const loadRequestRef = useRef(0);
 
   // 首屏关键数据：仪表盘/待办/随访，3个并发请求，尽快渲染出首页骨架
   // 今日打卡状态已随打卡网格一起抽离到独立页 pages/checkin/index（2026-07-18 打卡页重构对齐）
   // BMI色带/血压血糖迷你走势图已删除：app端首页瘦身后不再展示这两块，2026-07-19对齐删除
   const loadCore = useCallback(async () => {
+    const requestId = ++loadRequestRef.current;
+    if (authLoading) return;
+    if (!token) { setDashData(null); setTasks([]); setFollowups([]); }
     try {
       const [dashRes, tasksRes, followRes, servicesRes] = await Promise.allSettled([
-        userAPI.getDashboard(),
-        tasksAPI.list(),
-        followupTasksAPI.list(),
+        token ? userAPI.getDashboard() : Promise.resolve(null),
+        token ? tasksAPI.list() : Promise.resolve(null),
+        token ? followupTasksAPI.list() : Promise.resolve(null),
         servicesAPI.list(),
       ]);
+      if (requestId !== loadRequestRef.current) return;
       if (dashRes.status === 'fulfilled' && dashRes.value?.success) setDashData(dashRes.value.data);
       if (tasksRes.status === 'fulfilled' && tasksRes.value?.success) {
         setTasks((tasksRes.value.data || []).filter((t) => t.status === 'pending'));
@@ -219,16 +224,19 @@ export default function HomePage() {
       }
     } catch {}
     setLoading(false);
-  }, []);
+  }, [token, authLoading]);
+
+  useEffect(() => { loadCore(); }, [loadCore]);
 
   useDidShow(() => { loadCore(); });
   usePullDownRefresh(() => { loadCore().then(() => { Taro.stopPullDownRefresh(); }); });
 
   // systemAPI.push() 同理挪到首屏之后延迟触发，fire-and-forget，不参与启动阶段的并发请求
   useEffect(() => {
+    if (!token) return undefined;
     const timer = setTimeout(() => { systemAPI.push().catch(() => {}); }, 1500);
     return () => clearTimeout(timer);
-  }, []);
+  }, [token]);
 
   const user = { ...(dashData?.user || {}), ...(authUser || {}) };
   const hasData = dashData?.has_any_health_data ?? false;

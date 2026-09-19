@@ -3,7 +3,7 @@ import { Component } from 'react';
 import Taro from '@tarojs/taro';
 import { View, Text } from '@tarojs/components';
 import { AuthProvider } from './context/AuthContext';
-import { messagesAPI } from './services/api';
+import { refreshUnreadBadge } from './utils/unreadBadge';
 import { captureInviteCode } from './utils/invitation';
 
 import './app.less';
@@ -41,20 +41,7 @@ class PageErrorBoundary extends Component {
 
 class App extends Component {
   unreadPollTimer = null;
-  lastUnreadCount = null;
-
-  refreshUnread = () => {
-    messagesAPI.unreadCount().then((res) => {
-      const count = Number(res?.count || 0);
-      if (this.lastUnreadCount !== null && count > this.lastUnreadCount) {
-        const sender = res?.latestMessage?.sender || res?.latestMessage?.title || '服务团队';
-        Taro.showToast({ title: `${sender}发来新消息`, icon: 'none', duration: 2500 });
-      }
-      this.lastUnreadCount = count;
-      if (count > 0) return Taro.setTabBarBadge({ index: 2, text: String(Math.min(count, 99)) });
-      return Taro.removeTabBarBadge({ index: 2 });
-    }).catch(() => {});
-  };
+  refreshUnread = () => refreshUnreadBadge({ notify: true });
 
   componentDidMount() {
     try {

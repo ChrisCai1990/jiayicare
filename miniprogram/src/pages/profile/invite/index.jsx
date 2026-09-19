@@ -9,7 +9,8 @@ import inviteShareCover from '../../../assets/invite-share-cover.png';
 
 export default function InvitePage() {
   const { user } = useAuth();
-  const { statusBarHeight } = useNavBar();
+  const { statusBarHeight, navBarHeight } = useNavBar();
+  const goBack = () => Taro.navigateBack({ delta: 1 }).catch(() => Taro.switchTab({ url: '/pages/profile/index/index' }));
   const [code, setCode] = useState(user?.referralCode || '');
   const [invitees, setInvitees] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -38,8 +39,11 @@ export default function InvitePage() {
     }),
   }));
   return <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
-    <View style={{ padding: `${statusBarHeight + 14}px ${spacing.lg}px 28px`, backgroundColor: colors.primary, textAlign: 'center' }}>
-      <Text style={{ display: 'block', color: '#fff', fontSize: '22px', fontWeight: 800 }}>邀请好友</Text>
+    <View style={{ padding: `${statusBarHeight}px ${spacing.lg}px 28px`, backgroundColor: colors.primary, textAlign: 'center' }}>
+      <View style={{ position: 'relative', height: `${navBarHeight}px`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <View onClick={goBack} ariaRole="button" ariaLabel="返回" style={{ position: 'absolute', left: 0, top: 0, minWidth: '64px', height: `${navBarHeight}px`, minHeight: '44px', display: 'flex', alignItems: 'center', color: '#fff', fontSize: '15px' }}><Text>‹ 返回</Text></View>
+        <Text style={{ display: 'block', color: '#fff', fontSize: '22px', fontWeight: 800 }}>邀请好友</Text>
+      </View>
       <Text style={{ display: 'block', color: 'rgba(255,255,255,.82)', fontSize: '14px', marginTop: '10px' }}>一起分享健康理念</Text>
     </View>
     <View style={{ margin: `${spacing.lg}px`, padding: '28px 22px', backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, textAlign: 'center' }}>
