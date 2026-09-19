@@ -148,43 +148,52 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
   const [pendingQuestionnaireAssignmentIds, setPendingQuestionnaireAssignmentIds] = useState(new Set());
   const listPollRef = useRef(null);
   const listRequestRef = useRef(0);
+  const listLoadingRef = useRef(false);
 
   const loadMessages = useCallback(async () => {
     const requestId = ++listRequestRef.current;
+    listLoadingRef.current = true;
     try {
       const [msgRes, pushRes, pendingRes] = await Promise.allSettled([
         messagesAPI.list(), pushRecordsAPI.list(), questionnaireAPI.pending(),
       ]);
       if (requestId !== listRequestRef.current) return;
-      // Preserve the previous complete inbox if one of its sources fails.
-      if ([msgRes, pushRes, pendingRes].some(result => result.status !== 'fulfilled' || !result.value?.success)) {
-        setLoadError('消息暂未完整加载，点击重试');
-        return;
+      // Each source replaces only its own snapshot. A failed questionnaire
+      // request must not hide successfully loaded conversations/notifications.
+      const ok = result => result.status === 'fulfilled' && result.value?.success && Array.isArray(result.value.data);
+      const failed = [[msgRes, '会话消息'], [pushRes, '推送通知'], [pendingRes, '待填问卷']]
+        .filter(([result]) => !ok(result)).map(([, label]) => label);
+      setLoadError(failed.length ? `${failed.join('、')}暂未完整加载，点击重试` : '');
+      setMessages(previous => {
+        const msgData = ok(msgRes) ? msgRes.value.data : previous.filter(m => !m.isPushRecord);
+        const pushData = ok(pushRes) ? pushRes.value.data.map(normalizePushRecord) : previous.filter(m => m.isPushRecord);
+        return [...msgData, ...pushData].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+      });
+      if (ok(pendingRes)) {
+        const pending = pendingRes.value.data;
+        setPendingQuestionnaireIds(new Set(pending.map(item => String(item._id))));
+        setPendingQuestionnaireAssignmentIds(new Set(pending.filter(item => item.assignmentId).map(item => String(item.assignmentId))));
       }
-      setLoadError('');
-      const rawMessages = msgRes.status === 'fulfilled' && msgRes.value?.success ? msgRes.value.data : [];
-      const msgData = Array.isArray(rawMessages) ? rawMessages : [];
-      const rawPushRecords = pushRes.status === 'fulfilled' && pushRes.value?.success ? pushRes.value.data : [];
-      const pushData = Array.isArray(rawPushRecords) ? rawPushRecords.map(normalizePushRecord) : [];
-      const all = [...msgData, ...pushData].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-      setMessages(all);
-      const rawPending = pendingRes.status === 'fulfilled' && pendingRes.value?.success ? pendingRes.value.data : [];
-      const pending = Array.isArray(rawPending) ? rawPending : [];
-      setPendingQuestionnaireIds(new Set(pending.map((item) => String(item._id))));
-      setPendingQuestionnaireAssignmentIds(new Set(pending.map((item) => String(item.assignmentId)).filter(Boolean)));
       refreshUnreadBadge();
     } catch {
       // A network failure is not an empty inbox.
       if (requestId === listRequestRef.current) setLoadError('消息暂未完整加载，点击重试');
     } finally {
-      setLoading(false);
+      if (requestId === listRequestRef.current) {
+        listLoadingRef.current = false;
+        setLoading(false);
+      }
     }
   }, []);
 
   useDidShow(() => {
     loadMessages();
     clearInterval(listPollRef.current);
-    listPollRef.current = setInterval(loadMessages, 5000);
+    // The request timeout is longer than the polling interval. Do not keep
+    // superseding slow requests, otherwise none of them can ever render.
+    listPollRef.current = setInterval(() => {
+      if (!listLoadingRef.current) loadMessages();
+    }, 5000);
   });
   useDidHide(() => { clearInterval(listPollRef.current); listPollRef.current = null; });
   useEffect(() => () => clearInterval(listPollRef.current), []);
@@ -342,7 +351,9 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
         <NotifModal
           messages={[...questionnaireMessages, ...notifMessages.filter((m) => m.type !== 'questionnaire')]}
           tab={notifTab}
-          setTab={setNotifTab}
+          setTab={openNotifications}
+          loadError={loadError}
+          onRetry={loadMessages}
           onClose={() => setShowNotif(false)}
           onPress={(m) => { setShowNotif(false); markReadAndOpenDetail(m); }}
         />
@@ -355,7 +366,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
   );
 }
 
-function NotifModal({ messages, tab, setTab, onClose, onPress }) {
+function NotifModal({ messages, tab, setTab, onClose, onPress, loadError, onRetry }) {
   const { statusBarHeight } = useNavBar();
   const filtered = messages.filter((m) => {
     if (tab === '待填问卷') return m.type === 'questionnaire';
@@ -378,9 +389,10 @@ function NotifModal({ messages, tab, setTab, onClose, onPress }) {
         ))}
       </View>
       <ScrollView scrollY enhanced showScrollbar style={{ flex: 1, height: 0 }}>
+        {!!loadError && <Text onClick={onRetry} style={{ display: 'block', padding: '10px 16px', color: colors.danger, fontSize: '13px' }}>{loadError}</Text>}
         {filtered.length === 0 ? (
           <View style={{ textAlign: 'center', padding: '60px 0' }}>
-            <Text style={{ fontSize: '14px', color: colors.textMuted }}>暂无通知</Text>
+            <Text style={{ fontSize: '14px', color: colors.textMuted }}>{loadError ? '部分消息加载失败，请点击上方重试' : '暂无通知'}</Text>
           </View>
         ) : (
           <View style={{ backgroundColor: '#fff', margin: `${spacing.xs}px ${spacing.md}px 96px`, borderRadius: `${radius.md}px`, overflow: 'hidden' }}>
