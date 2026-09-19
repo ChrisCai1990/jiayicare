@@ -25,7 +25,7 @@ function createHandoffService(models, readinessFor) {
       || fresh.sourceScheduleKey !== task.sourceScheduleKey) throw fail('准备来源已变化，请刷新');
     return { task, readiness };
   }
-  async function target(service, task, readiness) {
+  async function target(service, task, readiness, ownedTaskIds = []) {
     if (!service || idOf(service.patientId) !== idOf(task.patientId) || service.type !== 'medical_assist'
       || service.content?.serviceDomain !== 'annual_checkup' || !['draft', 'active'].includes(service.status)
       || service.content.workflowCompletedAt || service.supervisionStatus === 'cancelled'
@@ -38,7 +38,7 @@ function createHandoffService(models, readinessFor) {
       if (!order) return '服务订单未支付、失效或已结束';
     } else if (service.initiationSource !== 'staff' || !service.initiatedByStaff) return '服务缺少有效订单或员工发起凭据';
     if (await FollowUp.exists({ sourceHealthPlanId: service._id, sourceType: 'health_plan', workflowKey: { $ne: 'service:intake' },
-      status: { $in: ['in_progress', 'completed'] } })) return '服务已有执行记录，不得重新承接';
+      ...(ownedTaskIds.length ? { _id: { $nin: ownedTaskIds } } : {}), status: { $in: ['in_progress', 'completed'] } })) return '服务已有执行记录，不得重新承接';
     if (await HealthPlan.exists({ patientId: task.patientId, type: 'annual_checkup', _id: { $ne: readiness.plan?.id },
       'content.serviceInstanceId': { $in: [service._id, idOf(service._id)] } })) return '服务已被其他体检方案使用';
     const claimed = await Handoff.findOne({ servicePlanId: service._id }).lean();
@@ -84,6 +84,6 @@ function createHandoffService(models, readinessFor) {
     // exact service and evidence and recover partial task writes separately.
     return saved;
   }
-  return { options, link };
+  return { options, link, target };
 }
 module.exports = { createHandoffService, requireHandoffIndex };

@@ -65,6 +65,17 @@ router.get('/:id/checkup-preparation/services', staffAuth, checkPermission('foll
 router.post('/:id/checkup-preparation/service-link', staffAuth, checkPermission('followups', 'edit'), checkPermission('plans', 'edit'), load, async (req, res) => {
   res.json({ success: true, data: await handoffService().link(req.params.id, req.staff, req.body || {}) });
 });
+function activationService() {
+  return require('../utils/checkupPreparationActivation').createActivationService({ FollowUp, HealthPlan, User: require('../models/User'),
+    FollowUpPlan: require('../models/FollowUpPlan'), Handoff: require('../models/CheckupPreparationHandoff') },
+  (id, actor) => require('../utils/checkupPreparationReadiness').loadReadiness(id, actor,
+    { FollowUp, AnnualPlan, HealthPlan, User: require('../models/User') }, require('../utils/annualPeriodicGate').annualPeriodicGate), handoffService().target);
+}
+for (const [suffix, action] of [['activate', 'activate'], ['activation-recover', 'recover']]) {
+  router.post(`/:id/checkup-preparation/${suffix}`, staffAuth, checkPermission('followups', 'edit'), checkPermission('plans', 'edit'), load, async (req, res) => {
+    res.json({ success: true, data: await activationService()[action](req.params.id, req.staff, req.body || {}) });
+  });
+}
 
 router.get('/:id/checkup-preparation/addons', staffAuth, checkPermission('followups', 'view'),
   checkPermission('plans', 'view'), checkPermission.checkPlanType(() => 'annual_checkup'), load, async (req, res) => {

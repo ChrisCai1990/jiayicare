@@ -41,6 +41,26 @@ function setup(t, row = task()) {
   t.mock.method(FollowUp, 'updateOne', async () => ({ matchedCount: 1 }));
 }
 
+test('预约激活与恢复接口传入当前规划师任务及操作者', async t => {
+  setup(t, task('healthPlanner'));
+  t.mock.method(require('../src/utils/checkupPreparationActivation'), 'createActivationService', () => ({
+    activate: async (id, staff) => { assert.equal(id, ids.task); assert.equal(staff.role, 'healthPlanner'); return { status: 'active' }; },
+    recover: async (id, staff, input) => { assert.equal(input.token, 'run'); return { status: 'activation_failed' }; },
+  }));
+  assert.equal((await request(t, 'POST', {}, ids.task, '/activate')).body.data.status, 'active');
+  assert.equal((await request(t, 'POST', { token: 'run' }, ids.task, '/activation-recover')).body.data.status, 'activation_failed');
+});
+
+test('预约激活流程缺失明确返回409，不创建替代任务', async t => {
+  setup(t, task('healthPlanner'));
+  t.mock.method(require('../src/utils/checkupPreparationActivation'), 'createActivationService', () => ({ activate: async () => {
+    throw Object.assign(new Error('原任务不存在'), { statusCode: 409 });
+  } }));
+  t.mock.method(FollowUp, 'create', () => assert.fail('不得创建替代任务'));
+  const result = await request(t, 'POST', {}, ids.task, '/activate');
+  assert.equal(result.status, 409); assert.equal(result.body.success, false);
+});
+
 test('具体体检服务候选和关联接口使用独立承接处理器', async t => {
   setup(t, task('healthPlanner'));
   t.mock.method(require('../src/utils/checkupPreparationHandoff'), 'createHandoffService', () => ({
