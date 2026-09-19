@@ -1,4 +1,5 @@
 const { withAiContext } = require('../utils/aiBudget');
+const { ROLE_FIELDS: PHASE_ROLE_FIELDS, ROLE_LABELS: PHASE_ROLE_LABELS, currentReviewer: phaseReviewer, isAssignedPhaseReviewer, reviewQueueFilter } = require('../utils/phaseAssessmentRouting');
 const { isAiControlError, rethrowAiControl } = require('../utils/aiBudgetPolicy');
 const express = require('express');
 const jwt = require('jsonwebtoken');
@@ -11125,15 +11126,14 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
-    // ── 阶段性评估：营养师必经初审，临床问题再由健康顾问复审 ──
-    if (isSuper || role === 'nutritionist' || role === 'familyDoctor') {
-      const statusFilter = role === 'familyDoctor' ? ['doctor_review'] : role === 'nutritionist' ? ['pending', 'nutrition_review', 'rejected'] : ['pending', 'nutrition_review', 'doctor_review', 'rejected'];
-      const assessmentFilter = { status: { $in: statusFilter }, ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
-      const assessments = await PhaseAssessment.find(assessmentFilter).populate('patientId', 'name').sort({ createdAt: -1 }).limit(50).lean();
-      assessments.forEach(item => todos.push({
-        id: 'phase_assessment_' + item._id, type: 'phase_assessment_review', label: item.status === 'doctor_review' ? '阶段性评估待临床复审' : item.status === 'rejected' ? '阶段性评估待AI重生成' : '阶段性评估待营养初审', priority: item.status === 'doctor_review' ? 3 : 2,
+    // 阶段性评估按领域进入对应岗位；综合/升级评估归健康顾问，旧营养记录保留原路径。
+    if (isSuper || PHASE_ROLE_FIELDS[role]) {
+      const assessmentFilter = { ...reviewQueueFilter(isSuper ? 'superadmin' : role), ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
+      const assessments = await PhaseAssessment.find(assessmentFilter).populate('patientId', `name ${Object.values(PHASE_ROLE_FIELDS).join(' ')}`).sort({ createdAt: -1 }).limit(50).lean();
+      assessments.filter(item => item.patientId && isAssignedPhaseReviewer(item.patientId, req.staff, phaseReviewer(item))).forEach(item => todos.push({
+        id: 'phase_assessment_' + item._id, type: 'phase_assessment_review', label: item.status === 'rejected' ? '阶段性评估待AI重生成' : `阶段性评估待${PHASE_ROLE_LABELS[phaseReviewer(item)]}审核`, priority: item.status === 'doctor_review' ? 3 : 2,
         patientName: item.patientId?.name || '未知', patientId: String(item.patientId?._id || ''),
-        summary: `${item.periodLabel} · ${item.templateSnapshot?.name || '阶段性评估'}，${item.status === 'doctor_review' ? '待健康顾问复审' : item.status === 'rejected' ? '待营养师发起AI重生成' : '待营养师初审'}`,
+        summary: `${item.periodLabel} · ${item.templateSnapshot?.name || '阶段性评估'}，待${PHASE_ROLE_LABELS[phaseReviewer(item)]}${item.status === 'rejected' ? '发起AI重生成' : '审核'}`,
         createdAt: item.createdAt, overdue: (now - new Date(item.createdAt)) > DAY,
         link: `/patients/${item.patientId?._id}?tab=aiReview&phaseAssessmentId=${item._id}`,
       }));

@@ -93,15 +93,15 @@ function detectClinicalReview(content = '') {
   return CLINICAL_RULES.filter(([, pattern]) => pattern.test(text)).map(([reason]) => reason);
 }
 
-function nextAssessmentStatus({ currentStatus, actorRole, action, clinicalRequired = false }) {
+function nextAssessmentStatus({ currentStatus, actorRole, action, clinicalRequired = false, primaryReviewRole = 'nutritionist' }) {
   const current = currentStatus === 'pending' ? 'nutrition_review' : currentStatus;
-  if (current === 'nutrition_review' && actorRole === 'nutritionist') {
+  if (['nutrition_review', 'professional_review'].includes(current) && actorRole === primaryReviewRole) {
     if (action === 'return') return 'rejected';
-    if (action === 'escalate' || clinicalRequired) return 'doctor_review';
+    if (action === 'escalate' || (action === 'approve' && clinicalRequired)) return 'doctor_review';
     if (action === 'approve') return 'finalized';
   }
   if (current === 'doctor_review' && actorRole === 'familyDoctor') {
-    if (action === 'return') return 'nutrition_review';
+    if (action === 'return') return primaryReviewRole === 'familyDoctor' ? 'rejected' : require('./phaseAssessmentRouting').initialReviewStatus(primaryReviewRole);
     if (action === 'approve') return 'finalized';
   }
   return null;

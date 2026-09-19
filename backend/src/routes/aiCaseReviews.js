@@ -14,6 +14,7 @@ const { createAssessment, intensiveNutritionCheckpoint } = require('../utils/pha
 const { buildContext, buildStageAssessmentContext } = require('../utils/aiCaseReviewContext');
 const providerAdapter = require('../utils/aiCaseReviewProvider');
 const { reviewedWriteback } = require('../utils/reviewedWriteback');
+const { ROLE_FIELDS, ROLE_LABELS, DOMAIN_ROLES, primaryRole, currentReviewer, initialReviewStatus, isAssignedPhaseReviewer } = require('../utils/phaseAssessmentRouting');
 const { DEFAULT_SCOPES, ensureAiCaseReviewTemplates } = require('../utils/aiCaseReviewTemplates');
 
 const VALID_SCOPES = new Set(DEFAULT_SCOPES);
@@ -34,6 +35,10 @@ async function caseReviewPatientOr404(req, res) {
 async function patientOr404(req, res) {
   const user = await caseReviewPatientOr404(req, res);
   if (!user) return null;
+  const assignedFields = [...Object.values(ROLE_FIELDS), 'assignedHealthManager', 'assignedHealthPlanner', 'assignedSpecialist', 'assignedMedicalAssistant', 'assignedPsychologist'];
+  if (req.staff.role !== 'superadmin' && !assignedFields.some(field => user[field] && String(user[field]) === String(req.staff._id))) {
+    res.status(403).json({ success: false, message: '无权访问该客户的阶段评估' }); return null;
+  }
   if (user.aiPilotFeatures?.stageAssessment !== true) {
     res.status(403).json({ success: false, message: '该客户尚未进入阶段性健康评估试点' });
     return null;
@@ -91,7 +96,7 @@ async function archiveFinalAssessment(item, user, staff) {
       staffId: staff._id, patientId: user._id, type: 'stage_assessment', date: archivedAt,
       title: `${item.periodLabel}${item.templateSnapshot?.name || '阶段性健康评估'}`,
       content: customerVersion.sections.flatMap(section => [section.title, ...section.items.map(value => `• ${value}`)]).join('\n'),
-      result: item.doctorReview?.note || item.nutritionReview?.note || '', structuredContent: customerVersion,
+      result: item.doctorReview?.note || item.professionalReview?.note || item.nutritionReview?.note || '', structuredContent: customerVersion,
       aiStatus: 'approved', aiGeneratedAt: item.createdAt,
       writeback: reviewedWriteback({ staff, sourceType: 'ai_draft', at: archivedAt }),
     }, $setOnInsert: { sourcePhaseAssessmentId: item._id } },
@@ -100,21 +105,26 @@ async function archiveFinalAssessment(item, user, staff) {
 }
 
 function isAssignedReviewer(user, staff, role) {
-  if (staff.role === 'superadmin') return true;
-  const field = role === 'nutritionist' ? 'assignedNutritionist' : role === 'familyDoctor' ? 'assignedFamilyDoctor' : '';
-  return Boolean(field && user[field] && String(user[field]) === String(staff._id));
+  return isAssignedPhaseReviewer(user, staff, role);
 }
 
 router.post('/patients/:patientId/phase-assessments/generate', staffAuth, async (req, res) => {
   try {
-    if (!['nutritionist', 'familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅营养师或健康顾问可发起阶段性评估' });
+    if (![...Object.keys(ROLE_FIELDS), 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅对应专业人员或健康顾问可发起阶段性评估' });
     const user = await patientOr404(req, res); if (!user) return;
-    if (req.staff.role !== 'superadmin' && !isAssignedReviewer(user, req.staff, req.staff.role)) return res.status(403).json({ success: false, message: '仅该客户当前绑定的营养师或健康顾问可发起评估' });
+    if (req.staff.role !== 'superadmin' && !isAssignedReviewer(user, req.staff, req.staff.role)) return res.status(403).json({ success: false, message: '仅该客户当前绑定的专业人员或健康顾问可发起评估' });
     const plan = await AnnualPlan.findOne({ patientId: user._id, confirmedAt: { $ne: null } }).sort({ confirmedAt: -1 }).lean();
     if (!plan) return res.status(409).json({ success: false, message: '客户尚无已确认年度管理方案，暂不能生成阶段性评估' });
-    const template = await PlanTemplate.findOne({ type: 'phase_assessment', status: 'active', 'content.frequency': 'monthly', $or: [{ clientBrand: user.clientBrand || '' }, { clientBrand: '' }] }).sort({ clientBrand: -1, updatedAt: -1 }).lean();
-    if (!template) return res.status(409).json({ success: false, message: 'Admin尚未启用适用的月度阶段性评估模板' });
     const assessmentMode = req.body.mode === 'intensive_nutrition' ? 'intensive_nutrition' : 'routine';
+    const assessmentDomain = assessmentMode === 'intensive_nutrition' ? 'nutrition' : (req.body.domain || 'comprehensive');
+    if (!DOMAIN_ROLES[assessmentDomain]) return res.status(400).json({ success: false, message: '评估领域无效' });
+    if (!['superadmin', 'familyDoctor', DOMAIN_ROLES[assessmentDomain]].includes(req.staff.role)) return res.status(403).json({ success: false, message: '请由对应专业人员或健康顾问发起该领域评估' });
+    const frequency = assessmentMode === 'intensive_nutrition' ? 'monthly' : 'quarterly';
+    const template = await PlanTemplate.findOne({ type: 'phase_assessment', status: 'active', 'content.frequency': frequency, $and: [
+      { $or: [{ clientBrand: user.clientBrand || '' }, { clientBrand: '' }] },
+      { $or: [{ 'content.assessmentDomain': assessmentDomain }, { 'content.assessmentDomain': { $exists: false } }] },
+    ] }).sort({ 'content.assessmentDomain': -1, clientBrand: -1, updatedAt: -1 }).lean();
+    if (!template) return res.status(409).json({ success: false, message: 'Admin尚未启用适用领域的阶段性评估模板（常规季度/强化营养月度模板）' });
     let periodOverride = null; let sourceNutritionPlanId = null; let interventionWeek = null;
     if (assessmentMode === 'intensive_nutrition') {
       const nutritionPlan = await HealthPlan.findOne({ patientId: user._id, type: 'nutrition', confirmedAt: { $ne: null }, status: { $in: ['active', 'draft'] } }).sort({ confirmedAt: -1 }).lean();
@@ -128,9 +138,9 @@ router.post('/patients/:patientId/phase-assessments/generate', staffAuth, async 
       sourceNutritionPlanId = nutritionPlan._id;
       template.content = { ...template.content, windowDays: interventionWeek <= 4 ? 7 : 14 };
     }
-    const item = await createAssessment({ plan, user, template, periodOverride, assessmentMode, sourceNutritionPlanId, interventionWeek });
+    const item = await createAssessment({ plan, user, template, periodOverride, assessmentMode, assessmentDomain, sourceNutritionPlanId, interventionWeek });
     if (!item) {
-      const existing = await PhaseAssessment.findOne({ annualPlanId: plan._id, templateId: template._id, assessmentMode }).sort({ createdAt: -1 }).lean();
+      const existing = await PhaseAssessment.findOne({ annualPlanId: plan._id, templateId: template._id, assessmentMode, $or: [{ assessmentDomain }, { assessmentDomain: { $exists: false } }] }).sort({ createdAt: -1 }).lean();
       return res.status(409).json({ success: false, message: '本周期已经生成阶段性评估', data: existing });
     }
     res.status(201).json({ success: true, data: item });
@@ -143,34 +153,38 @@ router.patch('/patients/:patientId/phase-assessments/:assessmentId', staffAuth, 
     const item = await PhaseAssessment.findOne({ _id: req.params.assessmentId, patientId: user._id });
     if (!item) return res.status(404).json({ success: false, message: '阶段性评估不存在' });
     const current = item.status === 'pending' ? 'nutrition_review' : item.status;
-    const actorRole = req.staff.role === 'superadmin' ? (current === 'doctor_review' ? 'familyDoctor' : 'nutritionist') : req.staff.role;
-    if (!isAssignedReviewer(user, req.staff, actorRole)) return res.status(403).json({ success: false, message: actorRole === 'nutritionist' ? '仅该客户当前绑定的营养师可初审' : '仅该客户当前绑定的健康顾问可复审' });
+    const expectedRole = currentReviewer(item);
+    const actorRole = req.staff.role === 'superadmin' ? expectedRole : req.staff.role;
+    if (!expectedRole || actorRole !== expectedRole || !isAssignedReviewer(user, req.staff, expectedRole)) return res.status(403).json({ success: false, message: `当前应由该客户的${ROLE_LABELS[expectedRole] || '对应岗位'}处理` });
+    if (req.body.revision !== item.__v) return res.status(409).json({ success: false, message: '评估已更新，请刷新后审核' });
     if (req.body.action === 'regenerate') {
-      if (actorRole !== 'nutritionist' || !['nutrition_review', 'rejected'].includes(current)) return res.status(403).json({ success: false, message: '仅营养师可对退回的阶段评估重新生成' });
-      const snapshot = await buildStageAssessmentContext(user, item.templateSnapshot?.windowDays === 14 ? 14 : 30);
-      const note = String(req.body.reviewNote || item.nutritionReview?.note || '').trim();
-      const prompt = `请重新生成${item.periodLabel}阶段性健康评估。核心主线是“阶段数据变化→生活方式关联→潜在风险→下一步规划”。必须吸收营养师退回意见，不得诊断、开药、补造事实或把相关性写成因果。所有评估先由营养师审核，涉及临床问题再由健康顾问复审。\n\n【退回意见】${note || '请重新核对资料与结论'}\n【原草稿】${item.content}\n【最新阶段资料】${JSON.stringify(snapshot).slice(0, 45000)}\n\n严格使用四个栏目：${(item.templateSnapshot?.outputSections || []).join('；') || '阶段数据变化；生活方式关联分析；潜在风险与数据缺口；下一阶段行动规划'}。每栏最多6条，每条使用“简短判断标签：依据说明”。`;
+      if (actorRole !== primaryRole(item) || current !== 'rejected') return res.status(403).json({ success: false, message: '仅当前初审岗位可对退回的评估重新生成' });
+      const snapshot = await buildStageAssessmentContext(user, item.templateSnapshot?.windowDays || 30);
+      const note = String(req.body.reviewNote || item.doctorReview?.note || item.professionalReview?.note || item.nutritionReview?.note || '').trim();
+      const prompt = `请重新生成${item.periodLabel}阶段性健康评估，审核岗位为${ROLE_LABELS[primaryRole(item)]}。主线是“阶段变化→生活方式关联→风险缺口→下一步规划”。参考审核人退回意见，不得诊断、处方、辨证施治、补造事实或把相关性写成因果。健康风险交健康顾问综合复核。\n【退回意见】${note || '请核对资料与结论'}\n【原草稿】${item.content}\n【最新资料】${JSON.stringify(snapshot).slice(0, 45000)}\n使用四个栏目：${(item.templateSnapshot?.outputSections || []).join('；') || '阶段数据变化；生活方式关联分析；风险与数据缺口；下一阶段行动规划'}。每栏最多6条。`;
       const result = await providerAdapter.reply({ preferred: 'qwen', sessionId: String(item._id), prompt, context: snapshot, attachments: [], history: [] });
       if (!result.content) throw new Error('AI未返回阶段评估草稿');
-      item.content = result.content; item.evidenceSources = snapshot.sources || []; item.status = 'nutrition_review';
-      item.nutritionReview = { status: 'pending', note, reviewedBy: req.staff._id, reviewedByName: req.staff.name || '', reviewedAt: new Date() };
-      item.auditLog.push({ action: 'regenerate', fromStatus: current, toStatus: 'nutrition_review', note, staffId: req.staff._id, staffName: req.staff.name || '', staffRole: actorRole, at: new Date() });
+      item.content = result.content; item.evidenceSources = snapshot.sources || []; item.status = initialReviewStatus(primaryRole(item));
+      item[actorRole === 'nutritionist' ? 'nutritionReview' : actorRole === 'familyDoctor' ? 'doctorReview' : 'professionalReview'] = { status: 'pending', note, reviewedBy: req.staff._id, reviewedByName: req.staff.name || '', reviewedAt: new Date() };
+      item.auditLog.push({ action: 'regenerate', fromStatus: current, toStatus: item.status, note, staffId: req.staff._id, staffName: req.staff.name || '', staffRole: actorRole, at: new Date() });
       await item.save();
       return res.json({ success: true, data: item });
     }
     const actionMap = { approve: 'approve', reject: 'return', return: 'return', escalate: 'escalate' };
     const action = actionMap[req.body.action];
-    const ruleReasons = detectClinicalReview(item.content);
+    const reviewedContent = String(req.body.content ?? item.content).trim();
+    if (!reviewedContent) return res.status(400).json({ success: false, message: '评估内容不能为空' });
+    const ruleReasons = detectClinicalReview(reviewedContent);
     const clinicalRequired = ruleReasons.length > 0 || req.body.clinicalRequired === true || action === 'escalate';
-    const nextStatus = nextAssessmentStatus({ currentStatus: current, actorRole, action, clinicalRequired });
-    if (!nextStatus) return res.status(403).json({ success: false, message: current === 'nutrition_review' ? '当前仅允许营养师初审' : current === 'doctor_review' ? '当前仅允许健康顾问复审' : '当前状态不可审核' });
+    const nextStatus = nextAssessmentStatus({ currentStatus: current, actorRole, action, clinicalRequired, primaryReviewRole: primaryRole(item) });
+    if (!nextStatus) return res.status(403).json({ success: false, message: '当前岗位或状态不允许该审核操作' });
     const note = String(req.body.reviewNote || '').trim();
-    if ((action === 'return' || action === 'escalate') && !note) return res.status(400).json({ success: false, message: '退回或升级临床复审必须填写说明' });
+    if ((action === 'return' || action === 'escalate') && !note) return res.status(400).json({ success: false, message: '退回或转健康顾问综合复核必须填写说明' });
     const now = new Date();
     item.status = nextStatus;
-    item.content = String(req.body.content || item.content).trim();
-    if (actorRole === 'nutritionist') {
-      item.nutritionReview = { status: nextStatus === 'doctor_review' ? 'escalated' : nextStatus === 'finalized' ? 'approved' : 'returned', note, reviewedBy: req.staff._id, reviewedByName: req.staff.name || '', reviewedAt: now };
+    item.content = reviewedContent;
+    if (actorRole !== 'familyDoctor') {
+      item[actorRole === 'nutritionist' ? 'nutritionReview' : 'professionalReview'] = { status: nextStatus === 'doctor_review' ? 'escalated' : nextStatus === 'finalized' ? 'approved' : 'returned', note, reviewedBy: req.staff._id, reviewedByName: req.staff.name || '', reviewedAt: now };
       item.clinicalReview = { required: nextStatus === 'doctor_review', reasons: [...new Set([...ruleReasons, ...(Array.isArray(req.body.clinicalReasons) ? req.body.clinicalReasons : [])])], forcedByRule: ruleReasons.length > 0, escalatedByNutritionist: action === 'escalate' || req.body.clinicalRequired === true };
       if (nextStatus === 'doctor_review') item.doctorReview = { status: 'pending', note: '', reviewedBy: null, reviewedByName: '', reviewedAt: null };
     } else {
@@ -182,7 +196,7 @@ router.patch('/patients/:patientId/phase-assessments/:assessmentId', staffAuth, 
     let serviceRecord = null;
     if (nextStatus === 'finalized') serviceRecord = await archiveFinalAssessment(item, user, req.staff);
     res.json({ success: true, data: item, serviceRecordId: serviceRecord?._id || null });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(err.name === 'VersionError' ? 409 : 500).json({ success: false, message: err.name === 'VersionError' ? '评估已更新，请刷新后审核' : err.message }); }
 });
 
 router.get('/patients/:patientId/ai-case-reviews', staffAuth, async (req, res) => {
