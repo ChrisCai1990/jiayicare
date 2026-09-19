@@ -24,6 +24,8 @@ async function main() {
   const resultFile = path.join(path.dirname(sessionPath), 'service-http.json');
   const report = fs.existsSync(resultFile) ? JSON.parse(fs.readFileSync(resultFile, 'utf8')) : { checks: [] };
   const standardTemplate = process.argv.includes('--standard-template');
+  const withQuestionnaire = process.argv.includes('--with-questionnaire');
+  assert.ok(!withQuestionnaire || standardTemplate, 'Questionnaire scenario requires standard template');
   if (report.productId) assert.equal(Boolean(report.standardTemplate), standardTemplate, 'Use a fresh scenario when switching templates');
   const save = () => fs.writeFileSync(resultFile, JSON.stringify(report, null, 2));
   const check = label => { if (!report.checks.includes(label)) report.checks.push(label); save(); console.log(label); };
@@ -53,8 +55,14 @@ async function main() {
       workflowStageKey: stage, executorRole: role, workflowTaskRole: stage === 'final_acceptance' ? 'supervisor' : 'executor',
       closesService: stage === 'final_acceptance', activationEvent: stage === 'result_review' ? 'report_audited' : '',
       completionStandard: '隔离验收模拟结果，非真实医疗服务', requiresCoordination: false }));
+    let questionnaireId;
+    if (withQuestionnaire) {
+      const { DynamicQuestionnaire } = require('../../src/models/DynamicQuestionnaire');
+      questionnaireId = (await DynamicQuestionnaire.create({ title: '隔离模拟健康文件', status: 'active', questions: [{ id: 'goal', type: 'text', text: '模拟需求', required: true }] }))._id;
+      report.questionnaireId = String(questionnaireId);
+    }
     const product = await Product.create({ name: '隔离体检流程（非销售商品）', originalPrice: 0, category: 'isolated_acceptance', status: 'on',
-      serviceWorkflow: { key: 'checkup', modules: schemes.map((s, i) => ({ planId: s._id, mode: s.workflowStageKey === 'abnormal_followup' ? 'conditional' : 'fixed', trigger: s.workflowStageKey === 'abnormal_followup' ? 'abnormal_found' : '', sequence: i })) } });
+      serviceWorkflow: { key: 'checkup', questionnaireId, modules: schemes.map((s, i) => ({ planId: s._id, mode: s.workflowStageKey === 'abnormal_followup' ? 'conditional' : 'fixed', trigger: s.workflowStageKey === 'abnormal_followup' ? 'abnormal_found' : '', sequence: i })) } });
     report.productId = String(product._id); report.standardTemplate = standardTemplate; save();
   }
   if (!report.serviceId) {
@@ -66,6 +74,23 @@ async function main() {
     check('Actual staff-initiation helper created a synthetic no-order service from fixture workflow configuration');
   }
   let service = await HealthPlan.findById(report.serviceId).lean();
+  if (withQuestionnaire && service.content?.checkupIntake?.status !== 'submitted') {
+    assert.ok(report.questionnaireId, 'Use a fresh scenario with a bound questionnaire');
+    const PushRecord = require('../../src/models/PushRecord');
+    const assignment = await PushRecord.findOne({ sourceHealthPlanId: service._id, type: 'questionnaire', questionnaireId: report.questionnaireId }).lean();
+    assert.ok(assignment, 'Original service helper must create the assignment');
+    const before = await FollowUp.countDocuments({ sourceHealthPlanId: service._id });
+    await request(`/staff/plans/${service._id}/push`, tokens.familyDoctor, 'PATCH', {}, 409);
+    assert.equal(await FollowUp.countDocuments({ sourceHealthPlanId: service._id }), before);
+    check('Unsubmitted customer questionnaire blocks publishing without creating employee tasks');
+    const code = require('node:crypto').randomBytes(12).toString('hex');
+    await mongoose.connection.db.collection('verificationcodes').updateOne({ phone: patient.phone }, { $set: { phone: patient.phone, code, expiresAt: new Date(Date.now() + 60000) } }, { upsert: true });
+    const client = (await request('/auth/login', null, 'POST', { phone: patient.phone, code })).data.token;
+    await request(`/questionnaire/${report.questionnaireId}/submit`, client, 'POST', { assignmentId: String(assignment._id), answers: { goal: '纯虚构隔离验收需求，不代表医疗建议' } });
+    service = await HealthPlan.findById(report.serviceId).lean();
+    assert.equal(service.content.checkupIntake.status, 'submitted');
+    check('Actual customer questionnaire submission saved service-scoped intake evidence');
+  }
   if (!service.pushedAt) await request(`/staff/plans/${report.serviceId}/push`, tokens.familyDoctor, 'PATCH', {});
   service = await HealthPlan.findById(report.serviceId).lean();
   check('Actual publish route created service-stage tasks');
@@ -78,6 +103,10 @@ async function main() {
   assert.equal(await Handoff.countDocuments({ servicePlanId: service._id }), 1);
   check('Exact service linked through real route; replay retained one handoff');
   const originalRows = await FollowUp.find({ sourceHealthPlanId: service._id }).populate('followUpSchemeId').lean();
+  if (withQuestionnaire) {
+    assert.equal(originalRows.filter(r => r.followUpSchemeId?.executorRole === 'customer').length, 0);
+    check('Standard customer stage created no employee fallback task');
+  }
   report.taskIds = Object.fromEntries(originalRows.filter(r => r.followUpSchemeId).map(r => [r.followUpSchemeId.workflowStageKey, String(r._id)]));
   report.taskSnapshot = originalRows.map(r => ({ id: String(r._id), stage: r.followUpSchemeId?.workflowStageKey || r.workflowKey,
     configuredRole: r.followUpSchemeId?.executorRole, assignedTo: String(r.assignedTo || ''), status: r.status, parent: String(r.dependsOnTaskId || '') }));
