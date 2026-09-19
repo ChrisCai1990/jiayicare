@@ -142,7 +142,14 @@ async function onCheckupReportAudited(report) {
   const linkedPlanId = report.planId || report.sourceHealthPlanId
   if (linkedPlanId) {
     const linkedPlan = await HealthPlan.findOne({ _id: linkedPlanId, patientId })
-    if (linkedPlan?.preparationTaskId) return false
+    if (linkedPlan?.preparationTaskId) {
+      if (!report._id) return false
+      return (await require('./checkupPreparationReports').runtime().forPlan(linkedPlan._id, patientId)).activated
+    }
+    if (linkedPlan && report._id) {
+      const preparation = await require('./checkupPreparationReports').runtime().forPlan(linkedPlan._id, patientId)
+      if (preparation.handled) return preparation.activated
+    }
     if (isCheckupService(linkedPlan)) servicePlan = linkedPlan
     else if (linkedPlan?.type === 'annual_checkup') annualPlan = linkedPlan
   }
@@ -150,6 +157,9 @@ async function onCheckupReportAudited(report) {
   if (!servicePlan && report.sourceOrderId) servicePlan = await HealthPlan.findOne({ patientId, type: 'medical_assist', sourceOrderId: report.sourceOrderId, status: { $in: ['draft', 'active'] } })
   if (!servicePlan) servicePlan = await findCheckupServicePlan(patientId, annualPlan?.content?.serviceInstanceId)
   if (!servicePlan) return false
+  // A legacy latest-service/order lookup must never bypass preparation evidence.
+  const preparation = await require('./checkupPreparationReports').runtime().forPlan(servicePlan._id, patientId)
+  if (preparation.handled) return preparation.activated
   await HealthPlan.updateOne({ _id: servicePlan._id }, { $set: { 'content.reportAuditedAt': new Date(), 'content.reportAuditedId': report._id } })
   servicePlan.content = { ...(servicePlan.content || {}), reportAuditedAt: new Date(), reportAuditedId: report._id }
   return activateResultReview(servicePlan)
@@ -172,6 +182,10 @@ async function advanceCheckupTask(followUp) {
   if (followUp.status !== 'completed' || !followUp.sourceHealthPlanId || !followUp.followUpSchemeId) return false
   const [servicePlan, scheme] = await Promise.all([HealthPlan.findById(followUp.sourceHealthPlanId), FollowUpPlan.findById(followUp.followUpSchemeId).lean()])
   if (!isCheckupService(servicePlan) || !scheme) return false
+  if (stageForScheme(scheme) === 'report_collection') {
+    const preparation = await require('./checkupPreparationReports').runtime().forPlan(servicePlan._id, servicePlan.patientId)
+    if (preparation.handled) return preparation.activated
+  }
   const tasks = await ensureCheckupTasks(servicePlan)
   const stage = stageForScheme(scheme)
   if (stage === 'booking' && tasks.onsite) {
