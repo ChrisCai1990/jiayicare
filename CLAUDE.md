@@ -1,5 +1,7 @@
 # 双端共享记忆入口
 
+> 2026-09-20自动接续：双岗准备真实HTTP路径通过（初始年度/模板为模拟输入），重复确认不重复派发、越权403、审核发布及客户确认门槛通过。修复准备完成后待承接工作台入口缺失，只读投影复用原任务，规划师浏览器已验证。253项测试与员工端构建通过；尚无服务实例，承接至最终关闭仍待验收，未改生产。脚本/运行接续见 `docs/ISOLATED_ACCEPTANCE_SESSION.md`。
+
 > 2026-09-20自动接续：建立可登录隔离后端/五岗位/虚构客户，真实登录/工作台/随访API通过，浏览器发现并修复AiCaseReviewPanel顶层变量/Hook白屏；顾问页面登录通过。251项相关测试通过。完整服务闭环及其他岗位页面尚未验收，未接生产；运行入口和进程接续见 `docs/ISOLATED_ACCEPTANCE_SESSION.md`。
 
 > 2026-09-20：新增STARTUP_SCHEMA_WRITES_ENABLED=false跳过启动自动索引/旧索引迁移，STARTUP_BACKGROUND_JOBS_ENABLED=false跳过listen回调后台任务，默认不变；247项相关测试通过，未部署。不是只读模式，API及模块导入副作用仍须核查；隔离fixture不是登录账号，多岗位页面验收待完成，见 `docs/STARTUP_SAFETY_CONTROLS.md`。

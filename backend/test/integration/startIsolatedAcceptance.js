@@ -6,12 +6,15 @@ const crypto = require('node:crypto');
 
 async function main() {
   if (process.env.RUN_ISOLATED_ACCEPTANCE !== 'true') throw new Error('Explicit RUN_ISOLATED_ACCEPTANCE=true required');
+  const resumePath = process.env.ISOLATED_ACCEPTANCE_SESSION;
+  const resume = resumePath ? JSON.parse(fs.readFileSync(resumePath, 'utf8')) : null;
+  if (resume && (resume.api !== 'http://127.0.0.1:3000/api' || !/^jiayicare_acceptance_[a-f0-9]{32}$/.test(resume.database))) throw new Error('Invalid isolated resume manifest');
   // Discard inherited service credentials, proxies and runtime injection options.
   const keep = new Set(['SYSTEMROOT', 'WINDIR', 'PATH', 'TEMP', 'TMP', 'NODE_PATH']);
   for (const key of Object.keys(process.env)) if (!keep.has(key.toUpperCase())) delete process.env[key];
   const session = crypto.randomUUID().replace(/-/g, '');
-  const runtime = fs.mkdtempSync(path.join(os.tmpdir(), 'jiayicare-acceptance-'));
-  const database = `jiayicare_acceptance_${session}`;
+  const runtime = resume ? path.dirname(path.resolve(resumePath)) : fs.mkdtempSync(path.join(os.tmpdir(), 'jiayicare-acceptance-'));
+  const database = resume ? resume.database : `jiayicare_acceptance_${session}`;
   Object.assign(process.env, {
     NODE_ENV: 'test', PORT: '3000', JWT_SECRET: crypto.randomBytes(48).toString('hex'),
     MONGODB_URI: `mongodb://127.0.0.1:27134/${database}`,
@@ -28,6 +31,13 @@ async function main() {
   if (build.version !== '7.0.34') throw new Error('Acceptance requires MongoDB 7.0.34');
   const Admin = require('../../src/models/Admin');
   const User = require('../../src/models/User');
+  if (resume) {
+    const patient = await User.findById(resume.patientId).lean();
+    if (patient?.name !== '隔离验收客户（纯虚构）') throw new Error('Resume requires synthetic patient');
+    console.log(`ISOLATED_ACCEPTANCE_SESSION=${path.resolve(resumePath)}`);
+    require('../../src/index');
+    return;
+  }
   const accounts = [];
   const assignment = {};
   for (const [role, field] of [['familyDoctor', 'assignedFamilyDoctor'], ['healthPlanner', 'assignedHealthPlanner'], ['healthManager', 'assignedHealthManager'], ['medicalAssistant', null], ['superadmin', null]]) {

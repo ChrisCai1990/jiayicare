@@ -11171,6 +11171,13 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         $or: [{ status: 'activation_failed' }, { status: 'active', 'completion.status': 'attention' }],
       }).populate('patientId', 'name assignedHealthPlanner').populate('plannerTaskId').lean();
       todos.push(...require('../utils/checkupPreparationTodos').buildCheckupPreparationTodos(handoffs, req.staff));
+      const pendingPreparations = await FollowUp.find({ sourceType: 'annual_service', workflowKey: 'annual_checkup_preparation:healthPlanner',
+        status: 'completed', 'formData.annualCheckupPreparation.targetDate': { $gte: require('../utils/serviceAccess').chinaDay(now) },
+        ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}), ...(isSuper ? {} : { assignedTo: req.staff._id }),
+      }).populate('patientId', 'name assignedHealthPlanner').lean();
+      const pendingLinks = await require('../models/CheckupPreparationHandoff').find({ plannerTaskId: { $in: pendingPreparations.map(t => t._id) } }).lean();
+      todos.push(...await require('../utils/checkupPreparationTodos').buildPendingCheckupTodos(pendingPreparations, pendingLinks, req.staff,
+        (id, actor) => require('../utils/checkupPreparationReadiness').loadReadiness(id, actor, { FollowUp, AnnualPlan, HealthPlan, User }, require('../utils/annualPeriodicGate').annualPeriodicGate)));
     }
 
     // 凭据/岗位/同步异常归规划师，方案排期异常归顾问；正常等待不增加人工待办。

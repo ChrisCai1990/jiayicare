@@ -2,6 +2,25 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const { buildCheckupPreparationTodos: build } = require('../src/utils/checkupPreparationTodos')
 const actor = { _id: 'planner', role: 'healthPlanner' }
+const { buildPendingCheckupTodos: pending } = require('../src/utils/checkupPreparationTodos')
+function pendingTask() { const x = link(); return { ...x.plannerTaskId, patientId: x.patientId, status: 'completed' } }
+test('ready completed preparation stays actionable exactly once without new records', async () => {
+  const task = pendingTask()
+  const rows = await pending([task, task], [], actor, async () => ({ readyForServiceLink: true }))
+  assert.equal(rows.length, 1); assert.equal(rows[0].taskId, 'task'); assert.equal(rows[0].type, 'checkup_handoff_pending')
+  assert.match(rows[0].label, /待关联/)
+  assert.match((await pending([task], [{ plannerTaskId: 'task', status: 'linked_pending_activation' }], actor, async () => ({ readyForServiceLink: true })))[0].label, /待启动/)
+})
+test('pending handoff hides waiting, active, failed, duplicate links and wrong owners', async () => {
+  const task = pendingTask(), ready = async () => ({ readyForServiceLink: true })
+  assert.deepEqual(await pending([task], [], actor, async () => ({ readyForServiceLink: false })), [])
+  for (const status of ['active', 'activating', 'activation_failed']) assert.deepEqual(await pending([task], [{ plannerTaskId: 'task', status }], actor, ready), [])
+  assert.deepEqual(await pending([task], [{ plannerTaskId: 'task' }, { plannerTaskId: 'task' }], actor, ready), [])
+  assert.deepEqual(await pending([{ ...task, assignedTo: 'other' }], [], actor, ready), [])
+  assert.deepEqual(await pending([{ ...task, patientId: { ...task.patientId, assignedHealthPlanner: 'other' } }], [], actor, ready), [])
+  assert.deepEqual(await pending([task], [], { ...actor, role: 'healthManager' }, ready), [])
+  assert.deepEqual(await pending([task], [], actor, async () => { throw Object.assign(Error('changed'), { statusCode: 403 }) }), [])
+})
 function link() {
   return { _id: 'link', annualPlanId: 'annual', status: 'active', completion: { status: 'attention', message: '核对核销' },
     patientId: { _id: 'patient', name: '客户', assignedHealthPlanner: 'planner' },

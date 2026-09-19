@@ -32,6 +32,7 @@ const TYPE_CONFIG = {
   phase_assessment_review: { icon: '📊', label: '阶段性评估待审核', color: '#7C3AED', priority: 2 },
   annual_renewal_confirmation: { icon: '📋', label: '续约凭据待核对', color: '#0077B6', priority: 2 },
   checkup_handoff_attention: { icon: '🏥', label: '体检服务异常待核对', color: '#D97706', priority: 2 },
+  checkup_handoff_pending: { icon: '🏥', label: '体检服务待承接', color: '#0077B6', priority: 2 },
   checkup_preparation_dispatch: { icon: '📋', label: '体检准备派发待核对', color: '#D97706', priority: 2 },
   followup_review:      { icon: '📅', label: '随访计划待审核', color: '#0077B6', priority: 3 },
   service_draft_review: { icon: '🤖', label: 'AI随访草稿待审核', color: '#7C3AED', priority: 3 },
@@ -60,7 +61,7 @@ const TODO_GROUPS = [
   { key: 'report', label: '报告与资料', types: ['report_parse','report_review','report_interpretation','archive_review','summary_review','lifestyle_review','dietary_survey_review','medication_review','supplement_review'] },
   { key: 'plan', label: '方案与评估', types: ['trend_review','plan_review','nutrition_plan_review','checkup_plan_review','phase_assessment_review','annual_renewal_confirmation','followup_review','service_draft_review','medical_assist_plan_review','service_proposal_review'] },
   { key: 'risk', label: '风险与异常', types: ['risk_review','bp_alert_review','risk_alert','transfer_human','wecom_kf_handoff','checkup_handoff_attention','checkup_preparation_dispatch'] },
-  { key: 'content', label: '内容与安排', types: ['push_review','draft_review','supply_intake','supply_medication_risk_review','supply_supplement_risk_review','supply_arrangement','supply_fulfillment','supply_receipt'] },
+  { key: 'content', label: '内容与安排', types: ['checkup_handoff_pending','push_review','draft_review','supply_intake','supply_medication_risk_review','supply_supplement_risk_review','supply_arrangement','supply_fulfillment','supply_receipt'] },
 ]
 
 const SUPPLY_TYPES = new Set(['supply_intake','supply_medication_risk_review','supply_supplement_risk_review','supply_arrangement','supply_fulfillment','supply_receipt'])
@@ -209,7 +210,7 @@ export default function AiTodosPanel() {
           return (
             <div
               key={todo.id}
-              onClick={() => todo.type === 'checkup_handoff_attention' ? setCheckupTodo(todo) : SUPPLY_TYPES.has(todo.type) ? setSupplyTodo(todo) : nav(todo.link, { state: { sourceTodo: todo } })}
+              onClick={() => ['checkup_handoff_attention', 'checkup_handoff_pending'].includes(todo.type) ? setCheckupTodo(todo) : SUPPLY_TYPES.has(todo.type) ? setSupplyTodo(todo) : nav(todo.link, { state: { sourceTodo: todo } })}
               style={{
                 display: 'flex', alignItems: 'flex-start', gap: 12,
                 borderBottom: i < pageTodos.length - 1 ? '1px solid #f0ede8' : 'none',
