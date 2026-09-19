@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { formatChineseDate } from '../utils/date'
+import { isCheckupDesignStage } from '../utils/checkupTaskRouting'
 
 const checkupProgress = task => {
   if (task?.workflowKey !== 'checkup_appointment:supervise') return null
@@ -117,6 +118,7 @@ export default function ServiceTasksPanel() {
     }
     const checkupText = `${sourcePlan?.title || ''} ${sourcePlan?.content?.templateName || ''}`
     const isCheckupPlanningTask = task.taskRole !== 'supervisor'
+      && isCheckupDesignStage(task)
       && task.assignedTo?.role === 'familyDoctor'
       && sourcePlanId
       && (sourcePlan?.content?.serviceDomain === 'annual_checkup'

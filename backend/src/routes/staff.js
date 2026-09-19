@@ -591,7 +591,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     { path: 'assignedTo', select: 'name role' },
     { path: 'sourceHealthPlanId', select: 'title description content type status' },
     { path: 'sourceOrderId', select: 'serviceName orderNo createdAt status' },
-    { path: 'followUpSchemeId', select: 'name executorRole supervisorRole completionStandard' },
+    { path: 'followUpSchemeId', select: 'name executorRole supervisorRole completionStandard workflowStageKey' },
     { path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } },
   ]);
   // 无论健管专员是从“审核报告”还是“确认 AI 结果”完成审核，工作台读取时都按
@@ -1733,7 +1733,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
       .populate('staffId', 'name role title')
       .populate('assignedTo', 'name role title')
       .populate('sourceHealthPlanId', 'title description content type status')
-      .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard')
+      .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard workflowStageKey')
       .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
       .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt medicalProxyPlan medicalReminderIntake'),
     FollowUp.countDocuments(filter),
@@ -1822,7 +1822,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
       .populate('staffId', 'name role title')
       .populate('assignedTo', 'name role')
       .populate('sourceHealthPlanId', 'title description content type')
-      .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard')
+      .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard workflowStageKey')
       .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
       .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt medicalProxyPlan medicalReminderIntake'),
     FollowUp.countDocuments(filter),
