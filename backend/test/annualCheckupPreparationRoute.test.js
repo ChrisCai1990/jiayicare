@@ -41,6 +41,24 @@ function setup(t, row = task()) {
   t.mock.method(FollowUp, 'updateOne', async () => ({ matchedCount: 1 }));
 }
 
+test('双岗位汇合接口只读返回当前状态，不启动服务或写入任务', async t => {
+  setup(t, task('healthPlanner'));
+  t.mock.method(require('../src/utils/checkupPreparationReadiness'), 'loadReadiness', async (id, staff, models, gate) => {
+    assert.equal(id, ids.task); assert.equal(staff.role, 'healthPlanner'); assert.equal(models.FollowUp, FollowUp);
+    assert.equal(typeof gate, 'function'); return { state: 'ready_for_service_link', readyForServiceLink: true, serviceStarted: false };
+  });
+  t.mock.method(FollowUp, 'updateOne', () => assert.fail('只读不可写任务'));
+  t.mock.method(HealthPlan, 'updateOne', () => assert.fail('只读不可启动服务'));
+  const result = await request(t, 'GET', {}, ids.task, '/readiness');
+  assert.equal(result.status, 200); assert.equal(result.body.data.serviceStarted, false);
+});
+
+test('其他顾问无法读取双岗位汇合结果', async t => {
+  setup(t); actor._id = ids.planner;
+  t.mock.method(require('../src/utils/checkupPreparationReadiness'), 'loadReadiness', () => assert.fail('不得读取其他客户准备信息'));
+  assert.equal((await request(t, 'GET', {}, ids.task, '/readiness')).status, 403);
+});
+
 test('AI加项读取、生成、审核及恢复接口传入当前任务和真实操作者', async t => {
   setup(t); const calls = [];
   t.mock.method(suggestionService, 'createSuggestionService', models => {

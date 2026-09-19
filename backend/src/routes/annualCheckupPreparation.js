@@ -28,6 +28,12 @@ router.get('/:id/checkup-preparation', staffAuth, checkPermission('followups', '
   res.json({ success: true, data: { task, plans } });
 });
 
+router.get('/:id/checkup-preparation/readiness', staffAuth, checkPermission('followups', 'view'), load, async (req, res) => {
+  const data = await require('../utils/checkupPreparationReadiness').loadReadiness(req.params.id, req.staff,
+    { FollowUp, AnnualPlan, HealthPlan, User: require('../models/User') }, require('../utils/annualPeriodicGate').annualPeriodicGate);
+  res.json({ success: true, data });
+});
+
 router.put('/:id/checkup-preparation', staffAuth, checkPermission('followups', 'edit'), load, async (req, res) => {
   await evidence.savePreparationEvidence(req.checkupTask, req.checkupAnnual, req.body || {}, req.staff,
     { FollowUp, HealthPlan, isValidId: mongoose.isValidObjectId });

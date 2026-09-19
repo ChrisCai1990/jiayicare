@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
+import CheckupPreparationReadiness from './CheckupPreparationReadiness'
 
 export const isAnnualCheckupPreparation = task => task?.sourceType === 'annual_service'
   && task.formData?.annualCheckupPreparation?.version === 1
@@ -52,6 +53,7 @@ export default function AnnualCheckupPreparationCard({ task, staff, onSaved }) {
     {busy && !current && <p>正在读取…</p>}
     {current && <>
       <p>计划体检日期：{meta.targetDate}{meta.latePreparation ? '（准备时间不足14天）' : ''}</p>
+      <CheckupPreparationReadiness task={current} />
       {current.status === 'completed' && <p>已保存实际准备结果，无需再次确认完成。准备完成不等于预约或体检已完成。</p>}
       {current.status === 'cancelled' && <p>此准备任务已取消，仅保留记录。</p>}
       {role === 'familyDoctor' ? <div style={{ display: 'grid', gap: 8 }}>
