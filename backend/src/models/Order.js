@@ -17,6 +17,9 @@ const orderSchema = new mongoose.Schema({
     note:       { type: String, default: '' },
     serviceItemKey: { type: String, default: '' },
     serviceItemName: { type: String, default: '' },
+    servicePlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null },
+    handoffId: { type: mongoose.Schema.Types.ObjectId, ref: 'CheckupPreparationHandoff', default: null },
+    finalTaskId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUp', default: null },
   }],
   // 购买时快照，后续产品规则调整不影响历史订单。
   serviceItemsSnapshot: [{

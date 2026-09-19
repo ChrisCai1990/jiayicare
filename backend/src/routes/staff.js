@@ -7254,6 +7254,12 @@ router.post('/orders/:id/redeem', staffAuth, async (req, res) => {
     const usedUnits = Math.max(Number(order.usedUnits) || 0, order.redemptions?.length || 0);
     if (usedUnits >= totalUnits) return res.status(400).json({ success: false, message: '该服务已无剩余次数' });
 
+    const checkupSource = await require('../utils/checkupRedemptionSource').resolveCheckupRedemption(order, req.staff, {
+      HealthPlan, FollowUp, FollowUpPlan, User, Handoff: require('../models/CheckupPreparationHandoff'),
+    });
+    const originalUpdatedAt = order.updatedAt;
+    const originalUsedUnits = order.usedUnits;
+    const originalStatus = order.status;
     const sequence = usedUnits + 1;
     let serviceItem = null;
     if (order.serviceItemsSnapshot?.length) {
@@ -7263,6 +7269,7 @@ router.post('/orders/:id/redeem', staffAuth, async (req, res) => {
       serviceItem.usedUnits = (serviceItem.usedUnits || 0) + 1;
     }
     order.redemptions.push({
+      ...(checkupSource || {}),
       sequence,
       redeemedAt: new Date(),
       redeemedBy: req.staff._id,
@@ -7273,7 +7280,13 @@ router.post('/orders/:id/redeem', staffAuth, async (req, res) => {
     order.usedUnits = sequence;
     order.status = sequence >= totalUnits ? 'completed' : 'scheduled';
     if (order.status === 'completed') order.completedAt = new Date();
-    await order.save();
+    if (checkupSource) {
+      const saved = await require('../utils/checkupRedemptionSource').saveCheckupRedemption(Order, order, checkupSource,
+        { updatedAt: originalUpdatedAt, status: originalStatus, usedUnits: originalUsedUnits });
+      if (saved.modifiedCount !== 1) return res.status(409).json({ success: false, message: '订单状态已变化或本次已核销，请刷新核对，不重复扣次' });
+      try { await require('../utils/checkupPreparationCompletion').runtime().forService(checkupSource.servicePlanId); }
+      catch (error) { console.error('[checkup-redemption] 等待每日回写恢复', error.message); }
+    } else await order.save();
 
     const redemption = order.redemptions[order.redemptions.length - 1];
     const { settleRedemptionCommission, settleOrderCommission } = require('../utils/commissionSettlement');
@@ -7301,7 +7314,7 @@ router.post('/orders/:id/redeem', staffAuth, async (req, res) => {
         : `第${sequence}次核销成功，剩余${totalUnits - sequence}次${created.length ? `，生成${created.length}条绩效` : ''}`,
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(err.statusCode || 500).json({ success: false, message: err.message });
   }
 });
 

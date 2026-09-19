@@ -39,16 +39,19 @@ function createPreparationCompletion({ Handoff, HealthPlan, FollowUp, FollowUpPl
       if (!order || !same(order.user, link.patientId) || order.orderType !== 'service'
         || order.status === 'cancelled'
         || ['closed', 'refund_pending', 'refunded'].includes(order.tradeStatus)
-        || ['requested', 'processing', 'partially_refunded', 'refunded'].includes(order.refundStatus) || order.paymentStatus === 'refunded'
-        || Number(order.totalUnits || 1) !== 1) {
+        || ['requested', 'processing', 'partially_refunded', 'refunded'].includes(order.refundStatus) || order.paymentStatus === 'refunded') {
         return attention('订单完成或本次核销凭据尚未确认；多次服务需核对单次核销，不自动结束整单')
       }
+      if (Number(order.totalUnits || 1) > 1) {
+        if (!require('./checkupRedemptionSource').hasExactRedemption(order, service, link, finals[0])) return attention('请在原订单核销入口完成本次服务核销；必须明确关联本服务和验收，不自动结束整单')
+      } else {
       closeOrder = order.status !== 'completed'
       if (closeOrder) {
         if (Number(order.usedUnits || 0) !== 0 || order.redemptions?.length
           || !await Order.findOne({ _id: order._id, user: link.patientId, orderType: 'service',
             ...require('./orderWorkItem').activeOrderWorkItemQuery() }).lean()) return attention('单次订单状态或核销记录有冲突，不自动关闭')
       } else if (order.fulfillmentStatus !== 'completed' || Number(order.usedUnits) !== 1) return attention('已完成订单的履约或核销凭据需核对')
+      }
     } else if (service.initiationSource !== 'staff' || !service.initiatedByStaff) return attention('缺少有效服务发起凭据')
     // Final task completion is the durable intent. Resume only missing writes; never replay task execution.
     const now = new Date()

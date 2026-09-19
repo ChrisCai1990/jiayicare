@@ -90,6 +90,15 @@ for (const [name, mutate] of Object.entries({
 test('single unit fulfilled order permits closure', async () => {
   const f = fixture(); f.service.sourceOrderId = 'o'; assert.equal(await f.sync.reconcile(f.link), true)
 })
+test('exact multi-unit redemption closes this service and followup without closing or consuming order again', async () => {
+  const f = fixture(); f.service.sourceOrderId = 'o'; f.service.status = 'active'
+  Object.assign(f.order, { totalUnits: 3, usedUnits: 1, status: 'scheduled', paymentStatus: 'paid',
+    redemptions: [{ servicePlanId: 's', handoffId: 'prep', finalTaskId: 'f', sequence: 1, redeemedBy: 'staff', redeemedAt: new Date() }] })
+  const before = JSON.stringify(f.order)
+  assert.equal(await f.sync.reconcile(f.link), true)
+  assert.equal(f.service.status, 'completed'); assert.equal(f.manager.status, 'completed')
+  assert.equal(JSON.stringify(f.order), before)
+})
 test('final acceptance persisted before service closure is recovered without executing tasks again', async () => {
   const f = fixture(); f.service.status = 'active'; delete f.service.content.workflowCompletedAt
   assert.equal(await f.sync.reconcile(f.link), true)
