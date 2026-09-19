@@ -3410,6 +3410,8 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
     if (isCheckupService && !c.bookingPlannerId) return res.status(400).json({ success: false, message: '请先选择体检预约负责人（健康规划师）' });
     if (isCheckupService && !c.escortStaffId) return res.status(400).json({ success: false, message: '请先选择陪同人员' });
     if (isCheckupService) {
+      const intakeError = await require('../utils/checkupCustomerIntake').runtimeError(plan);
+      if (intakeError) return res.status(409).json({ success: false, message: intakeError });
       const [bookingPlanner, escortStaff] = await Promise.all([
         Admin.findOne({ _id: c.bookingPlannerId, role: 'healthPlanner', staffStatus: 'active' }).select('_id').lean(),
         Admin.findOne({ _id: c.escortStaffId, role: 'medicalAssistant', staffStatus: 'active' }).select('_id').lean(),
@@ -3461,6 +3463,8 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
       { mode: item.mode || 'fixed', trigger: item.trigger || '', sequence: item.sequence ?? sequence },
     ]));
     const fixedWorkflowPlans = workflowPlans
+      // Customer health files are carried by the questionnaire assignment, never an employee fallback task.
+      .filter(item => !isCheckupService || item.executorRole !== 'customer')
       .filter(item => isOutpatientOneStop || (moduleConfigMap.get(String(item._id))?.mode || 'fixed') === 'fixed')
       .sort((a, b) => (moduleConfigMap.get(String(a._id))?.sequence ?? 0) - (moduleConfigMap.get(String(b._id))?.sequence ?? 0));
     // 普通就医协助只建立一组方案级“执行 + 督办”。岗位模板可能同时配置

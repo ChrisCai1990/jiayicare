@@ -30,6 +30,10 @@ function createHandoffService(models, readinessFor) {
       || service.content?.serviceDomain !== 'annual_checkup' || !['draft', 'active'].includes(service.status)
       || service.content.workflowCompletedAt || service.supervisionStatus === 'cancelled'
       || service.content.serviceDate !== readiness.targetDate || !Number.isFinite(time(service.updatedAt))) return '服务客户、类型、日期或状态不匹配';
+    if (models.customerIntakeError) {
+      const intakeError = await models.customerIntakeError(service);
+      if (intakeError) return intakeError;
+    }
     const annual = await AnnualPlan.findById(task.sourceAnnualPlanId).lean();
     if (!annual?.confirmedAt || !(time(service.createdAt) >= time(annual.confirmedAt))) return '不能沿用本年度确认前的旧服务';
     if (service.sourceOrderId) {

@@ -55,6 +55,7 @@ function addonService() {
 
 function handoffService() {
   return require('../utils/checkupPreparationHandoff').createHandoffService({
+    customerIntakeError: require('../utils/checkupCustomerIntake').runtimeError,
     FollowUp, AnnualPlan, HealthPlan, Order: require('../models/Order'), Handoff: require('../models/CheckupPreparationHandoff'), isValidId: mongoose.isValidObjectId,
   }, (id, actor) => require('../utils/checkupPreparationReadiness').loadReadiness(id, actor,
     { FollowUp, AnnualPlan, HealthPlan, User: require('../models/User') }, require('../utils/annualPeriodicGate').annualPeriodicGate));
