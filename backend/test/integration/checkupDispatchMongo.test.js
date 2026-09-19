@@ -33,9 +33,18 @@ test('real MongoDB: checkup preparation dispatch concurrency and partial recover
   const User = connection.model('User', require('../../src/models/User').schema.clone())
   const FollowUp = connection.model('FollowUp', require('../../src/models/FollowUp').schema.clone())
   const Order = connection.model('Order', require('../../src/models/Order').schema.clone())
+  connection.model('Admin', require('../../src/models/Admin').schema.clone())
   const now = new Date('2026-09-19T02:00:00Z')
-  const patientId = new mongoose.Types.ObjectId(), advisorId = new mongoose.Types.ObjectId(), plannerId = new mongoose.Types.ObjectId()
-  await User.collection.insertOne({ _id: patientId, assignedFamilyDoctor: advisorId, assignedHealthPlanner: plannerId })
+  const patientId = new mongoose.Types.ObjectId(), advisorId = new mongoose.Types.ObjectId(), plannerId = new mongoose.Types.ObjectId(), managerId = new mongoose.Types.ObjectId()
+  // Deliberately synthetic identities: no phone, password, openid, contact or clinical data.
+  await connection.db.collection('admins').insertMany([
+    { _id: advisorId, name: '隔离验收顾问', role: 'familyDoctor', fixtureOnly: true },
+    { _id: plannerId, name: '隔离验收规划师', role: 'healthPlanner', fixtureOnly: true },
+    { _id: managerId, name: '隔离验收健管专员', role: 'healthManager', fixtureOnly: true },
+  ])
+  await User.collection.insertOne({ _id: patientId, name: '隔离验收客户（虚构）', fixtureOnly: true,
+    serviceStartDate: new Date('2026-09-01'), serviceExpiry: new Date('2027-08-31'),
+    assignedFamilyDoctor: advisorId, assignedHealthPlanner: plannerId, assignedHealthManager: managerId })
   const base = { patientId, checkupPreparationAutoConfirmedAt: now, confirmedAt: new Date('2026-09-01'),
     pushedAt: new Date('2026-08-31'), reviewStatus: 'approved', moduleData: { annual_checkup: { date: '2026-10-03' } }, updatedAt: now }
   const newPlan = async () => {
@@ -108,5 +117,22 @@ test('real MongoDB: checkup preparation dispatch concurrency and partial recover
     const result = await saveCheckupRedemption(Order, { ...original, usedUnits: 1 }, source, original)
     assert.equal(result.modifiedCount, 0)
     assert.equal((await Order.findById(original._id).lean()).usedUnits, 0)
+  })
+  await t.test('synthetic profile uses real service-access gate and routes to its two assigned roles', async () => {
+    const plan = await newPlan()
+    const liveGateDispatcher = createCheckupDispatch({ AnnualPlan, User, FollowUp }, require('../../src/utils/annualPeriodicGate').annualPeriodicGate, () => true)
+    assert.equal((await liveGateDispatcher.sync(plan, now)).created, 2)
+    const rows = await FollowUp.find({ sourceAnnualPlanId: plan._id }).populate('assignedTo', 'name role').lean()
+    assert.deepEqual(rows.map(x => x.assignedTo.role).sort(), ['familyDoctor', 'healthPlanner'])
+    assert.ok(rows.every(x => String(x.patientId) === String(patientId)))
+  })
+  await t.test('expired synthetic customer cannot receive new preparation tasks', async () => {
+    const plan = await newPlan()
+    await User.collection.updateOne({ _id: patientId }, { $set: { serviceExpiry: new Date('2026-09-18') } })
+    try {
+      const liveGateDispatcher = createCheckupDispatch({ AnnualPlan, User, FollowUp }, require('../../src/utils/annualPeriodicGate').annualPeriodicGate, () => true)
+      assert.equal((await liveGateDispatcher.sync(plan, now)).created, 0)
+      assert.equal(await FollowUp.countDocuments({ sourceAnnualPlanId: plan._id }), 0)
+    } finally { await User.collection.updateOne({ _id: patientId }, { $set: { serviceExpiry: new Date('2027-08-31') } }) }
   })
 })
