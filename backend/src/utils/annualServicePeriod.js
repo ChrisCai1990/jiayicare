@@ -29,15 +29,10 @@ function validatePlanPeriodDates(plan, startDate, endDate) {
     }
   }
 }
-async function confirmAnnualServicePeriod({ plan, patient, staff, input }, models = {}) {
-  const Period = models.Period || require('../models/AnnualServicePeriod');
+async function buildServicePeriodEvidence({ plan, patient, input }, models = {}) {
   const Order = models.Order || require('../models/Order');
-  if (staff.role !== 'superadmin' && (staff.role !== 'healthPlanner' || String(patient.assignedHealthPlanner || '') !== String(staff._id))) throw Object.assign(new Error('仅客户所属健康规划师可核对续约服务期'), { statusCode: 403 });
-  if (!plan.continuitySource?.previousPlanId) throw fail('此入口仅用于下一年度方案续约，不修改首次服务期');
-  if (String(plan.patientId) !== String(patient._id)) throw fail('方案与客户不匹配');
   const { startDate, endDate, sourceType } = input;
   validatePeriodDates(startDate, endDate, plan.year);
-  validatePlanPeriodDates(plan, startDate, endDate);
   let evidenceSnapshot; let sourceOrderId; let contractReference = '';
   if (sourceType === 'paid_order') {
     const order = await Order.findById(input.sourceOrderId).lean();
@@ -49,6 +44,15 @@ async function confirmAnnualServicePeriod({ plan, patient, staff, input }, model
     if (!contractReference || contractReference.length > 200 || input.verified !== true) throw fail('请填写线下合同编号，并确认已核验合同及服务期');
     evidenceSnapshot = { contractReference, verifiedByPlanner: true };
   } else throw fail('续约凭据类型无效');
+  return { startDate, endDate, sourceType, sourceOrderId, contractReference, evidenceSnapshot };
+}
+async function confirmAnnualServicePeriod({ plan, patient, staff, input }, models = {}) {
+  const Period = models.Period || require('../models/AnnualServicePeriod');
+  if (staff.role !== 'superadmin' && (staff.role !== 'healthPlanner' || String(patient.assignedHealthPlanner || '') !== String(staff._id))) throw Object.assign(new Error('仅客户所属健康规划师可核对续约服务期'), { statusCode: 403 });
+  if (!plan.continuitySource?.previousPlanId) throw fail('此入口仅用于下一年度方案续约，不修改首次服务期');
+  if (String(plan.patientId) !== String(patient._id)) throw fail('方案与客户不匹配');
+  const { startDate, endDate, sourceType, sourceOrderId, contractReference, evidenceSnapshot } = await buildServicePeriodEvidence({ plan, patient, input }, models);
+  validatePlanPeriodDates(plan, startDate, endDate);
   const previous = await Period.findOne({ annualPlanId: plan.continuitySource.previousPlanId }).lean();
   if (previous && startDate <= previous.endDate) throw fail('新服务期不能与上一年度已确认服务期重叠');
   const existing = await Period.findOne({ annualPlanId: plan._id }).lean();
@@ -81,4 +85,4 @@ async function annualExecutionGate(plan, now = new Date(), models = {}) {
   if (today > period.endDate) return { allowed: false, period, reason: '该年度服务期已结束' };
   return { allowed: true, period, anchor: new Date(Math.max(new Date(plan.confirmedAt).getTime(), new Date(`${period.startDate}T00:00:00+08:00`).getTime())) };
 }
-module.exports = { confirmAnnualServicePeriod, annualExecutionGate, isPaidAnnualOrder, validatePeriodDates, validatePlanPeriodDates };
+module.exports = { confirmAnnualServicePeriod, annualExecutionGate, isPaidAnnualOrder, validatePeriodDates, validatePlanPeriodDates, buildServicePeriodEvidence };

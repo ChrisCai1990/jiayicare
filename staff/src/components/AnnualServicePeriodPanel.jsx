@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
+import AnnualServicePeriodCorrection from './AnnualServicePeriodCorrection'
 
 export default function AnnualServicePeriodPanel({ planId, staff }) {
   const [data, setData] = useState(null)
@@ -41,6 +42,7 @@ export default function AnnualServicePeriodPanel({ planId, staff }) {
         <label>服务结束日期<input className="form-input" type="date" value={form.endDate} onChange={e => update('endDate', e.target.value)} /></label>
         <button className="btn btn-primary" disabled={busy} onClick={save}>{busy ? '确认中…' : '确认续约凭据及服务期'}</button>
       </div> : <p>由该客户所属健康规划师在工作台核对凭据。</p>}
+      {data.period && <AnnualServicePeriodCorrection key={planId} planId={planId} period={data.period} staff={staff} reload={async () => { const res = await staffAPI.getAnnualServicePeriod(planId); setData(res.data) }} />}
     </>}
   </section>
 }

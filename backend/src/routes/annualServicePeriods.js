@@ -54,4 +54,14 @@ router.post('/annual-plans/:planId/service-period/retry', staffAuth, async (req,
     res.json({ success: true, data: { period, activation: await annualExecutionGate(data.plan), warning } });
   } catch { res.status(500).json({ success: false, message: '无法读取同步结果，请稍后重试' }); }
 });
+for (const [path, method] of [['corrections', 'proposeCorrection'], ['corrections/review', 'reviewCorrection'], ['corrections/refresh-impact', 'refreshCorrectionImpact'], ['corrections/withdraw', 'withdrawCorrection']]) {
+  router.post(`/annual-plans/:planId/service-period/${path}`, staffAuth, async (req, res) => {
+    try {
+      const data = await load(req, res); if (!data) return;
+      if (method === 'proposeCorrection' && req.body.sourceType === 'paid_order' && !mongoose.isValidObjectId(req.body.sourceOrderId)) return res.status(400).json({ success: false, message: '请选择有效的年度订单' });
+      const result = await require('../utils/annualServicePeriodCorrection')[method]({ ...data, staff: req.staff, input: req.body });
+      res.json({ success: true, data: result });
+    } catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : '更正处理失败，请刷新后重试' }); }
+  });
+}
 module.exports = router;

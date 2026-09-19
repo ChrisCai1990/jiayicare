@@ -72,3 +72,38 @@ test('重试仅所属规划师或顾问可操作，忽略请求中的方案与�
   assert.equal((await request(t, 'POST', { moduleData: { changed: true }, contractReference: 'untrusted' }, ids.plan, '/retry')).status, 200);
   assert.equal(calls, 1);
 });
+
+function setupCorrection(t) {
+  const existing = { _id: 'period', annualPlanId: ids.plan, patientId: ids.patient, ...body(), evidenceSnapshot: { verifiedByPlanner: true }, confirmedAt: new Date(), confirmedBy: ids.planner };
+  setup(t, { existing });
+  t.mock.method(Period, 'findOne', query => ({ lean: async () => query.annualPlanId === ids.plan ? structuredClone(existing) : null }));
+  for (const name of ['Task', 'FollowUp', 'RecurringSupplyPlan']) t.mock.method(require(`../src/models/${name}`), 'find', () => ({ select: () => ({ lean: async () => [] }) }));
+  t.mock.method(Period, 'updateOne', async (query, update) => {
+    assert.equal(query._id, 'period');
+    Object.assign(existing, update.$set); existing.correctionRevision = (existing.correctionRevision || 0) + 1;
+    (existing.correctionHistory ||= []).push(update.$push.correctionHistory);
+    return { matchedCount: 1 };
+  });
+  return existing;
+}
+test('更正HTTP链路：提交、刷新、顾问审核，仅变更审计且GET可查看', async t => {
+  const period = setupCorrection(t);
+  assert.equal((await request(t, 'POST', body({ expectedRevision: 0, contractReference: 'CORRECTED', reason: '编号录入有误' }), ids.plan, '/corrections')).status, 200);
+  const base = { correctionId: period.correction.id, expectedRevision: 1 };
+  assert.equal((await request(t, 'POST', { ...base, decision: 'approve', impactAcknowledged: true }, ids.plan, '/corrections/review')).status, 403);
+  actor = { _id: ids.planner, role: 'familyDoctor' };
+  assert.equal((await request(t, 'POST', base, ids.plan, '/corrections/refresh-impact')).status, 200);
+  assert.equal((await request(t, 'POST', { ...base, expectedRevision: 2, decision: 'approve', impactAcknowledged: true, moduleData: { changed: true } }, ids.plan, '/corrections/review')).status, 200);
+  const result = (await request(t, 'GET')).body.data.period;
+  assert.equal(result.contractReference, 'C-2099'); assert.equal(result.correction.status, 'approved_pending_apply'); assert.equal(result.correctionHistory.length, 3);
+});
+test('更正HTTP拒绝他人及非法订单，规划师可撤回自己的待审申请', async t => {
+  const period = setupCorrection(t);
+  assert.equal((await request(t, 'POST', body({ sourceType: 'paid_order', sourceOrderId: 'bad' }), ids.plan, '/corrections')).status, 400);
+  actor = { _id: ids.old, role: 'healthPlanner' };
+  assert.equal((await request(t, 'POST', body(), ids.plan, '/corrections')).status, 403);
+  actor = { _id: ids.planner, role: 'healthPlanner' };
+  await request(t, 'POST', body({ expectedRevision: 0, contractReference: 'CORRECTED', reason: '编号错误' }), ids.plan, '/corrections');
+  assert.equal((await request(t, 'POST', { expectedRevision: 1, correctionId: period.correction.id }, ids.plan, '/corrections/withdraw')).status, 200);
+  assert.equal(period.correction.status, 'withdrawn'); assert.equal(period.contractReference, 'C-2099');
+});

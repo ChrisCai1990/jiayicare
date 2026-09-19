@@ -19,6 +19,9 @@ const schema = new mongoose.Schema({
   syncStartedAt: { type: Date, default: null },
   syncIssue: { type: mongoose.Schema.Types.Mixed, default: null },
   lastSyncSuccessAt: { type: Date, default: null },
+  correctionRevision: { type: Number, default: 0 },
+  correction: { type: mongoose.Schema.Types.Mixed, default: null },
+  correctionHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
 }, { timestamps: true });
 schema.index({ sourceOrderId: 1 }, { unique: true, partialFilterExpression: { sourceOrderId: { $type: 'objectId' } } });
 schema.index({ patientId: 1, contractReference: 1, startDate: 1 }, { unique: true, partialFilterExpression: { sourceType: 'offline_contract' } });
