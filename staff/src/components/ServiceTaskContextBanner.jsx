@@ -11,7 +11,7 @@ const isCheckupPlan = task => {
 }
 
 function nodeLabel(task) {
-  if (isCheckupReportCollectionTask(task)) return '体检报告回收（本次体检服务最终收尾）'
+  if (isCheckupReportCollectionTask(task)) return '体检报告回收（后续仍需审核、评估及最终验收）'
   if (isCheckupOnsiteTask(task)) return '体检日陪诊执行'
   if (isCheckupBookingTask(task)) return '体检预约确认'
   if (task?.taskRole === 'supervisor') return '独立服务订单督办核验'

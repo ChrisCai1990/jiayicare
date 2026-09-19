@@ -2,6 +2,14 @@
 
 2026-09-20：已建立真实本机后端、五岗位登录及纯虚构客户，未接生产。
 
+## 最新：标准陪检及报告回收页面通过
+
+- 沿用VmyQ9g/后端74429：就医专员首页唯一陪检待办打开执行表单，确认预约交接信息后，以明确模拟结论提交已完成；原报告回收解锁。
+- `checkupClosureHttp.js <manifest> --prepare-report-only`只创建模拟待审报告、保存closure-http.json及断言，不自动完成任何后续节点。未运行真实AI或上传原文件，页面“AI解析完成”来自模拟pending状态，不能作为AI验收证据。
+- 健管首页原回收待办→核对陪检→选择同服务模拟报告→整份覆盖全部项目→齐全→提交。页面成功，真实库断言collection.completed、review仍blocked、final未完成。
+- 发现回收按钮/横幅误称“完成闭环”“最终收尾”，已改为“完成回收并进入解析审核”“后续仍需审核、评估及最终验收”，涉及PatientDetailPage、FollowUpsPage、ServiceTaskContextBanner。业务状态未变。
+- 下一步健管从首页报告待审核入口审核本模拟报告，然后顾问结果评估、规划师最终验收页面。浏览器2保留健管会员页；三份历史库证据均保留，禁止复写原任务或把fixture标成真实医疗/AI验收。
+
 ## 最新：标准问卷正向及规划师页面通过
 
 - 当前manifest：`C:/Users/huawei/AppData/Local/Temp/jiayicare-acceptance-VmyQ9g/session.json`，后端74429替代45690；前两轮库完整保留。已加载6f2ae7a6全部保护。

@@ -36,6 +36,14 @@ async function main() {
     evidence.reportId = String(report._id); save();
   }
   const collection = await FollowUp.findById(service.taskIds.report_collection);
+  if (process.argv.includes('--prepare-report-only')) {
+    assert.equal((await FollowUp.findById(service.taskIds.onsite)).status, 'completed');
+    assert.equal(collection.isBlocked, false);
+    assert.notEqual(collection.status, 'completed');
+    assert.equal((await FollowUp.findById(service.taskIds.result_review)).isBlocked, true);
+    check('Browser onsite completion unlocked original collection, review still blocked; synthetic report seeded only');
+    return;
+  }
   if (collection.status !== 'completed') {
     await request(`/staff/followups/${collection._id}`, tokens.healthManager, 'PUT', { status: 'completed', content: '隔离模拟报告回收', serviceChecklist: [{ serviceReviewed: true, collectionStatus: 'complete', reportIds: [evidence.reportId], itemChecks: [{ name: '隔离模拟项目', status: 'completed' }] }] });
   }
