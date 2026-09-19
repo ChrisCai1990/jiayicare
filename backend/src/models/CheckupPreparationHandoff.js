@@ -9,6 +9,7 @@ const schema = new mongoose.Schema({
   status: { type: String, enum: ['linked_pending_activation', 'activating', 'activation_failed', 'active'], default: 'linked_pending_activation' },
   activation: { type: mongoose.Schema.Types.Mixed, default: null },
   activationHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  completion: { type: mongoose.Schema.Types.Mixed, default: null },
   evidence: { type: mongoose.Schema.Types.Mixed, required: true },
   serviceTitle: String,
   serviceUpdatedAt: Date,

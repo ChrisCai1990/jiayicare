@@ -64,6 +64,7 @@ const followUpSchema = new mongoose.Schema({
   sourceScheduleKey: { type: String, default: '' }, // 年度方案内稳定排期键，防止定时刷新重复生成
   assessmentActionKey: { type: String }, // 仅新评估动态任务使用；缺省不建键，兼容历史任务
   serviceTracking: { type: mongoose.Schema.Types.Mixed, default: null }, // 关联服务的只读投影，不允许通用编辑接口写入
+  checkupPreparationCompletion: { type: mongoose.Schema.Types.Mixed, default: null }, // 服务验收回写凭据，不接受通用编辑
   checkupPreparationActivation: { type: mongoose.Schema.Types.Mixed, default: null }, // 准备承接的同文档执行凭据，不接受通用编辑
   sourceHealthPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null }, // 来自AI体检/营养方案确认后自动生成
   sourceType: { type: String, enum: ['scheduled', 'ai_review', 'health_plan', 'insurance_service', 'annual_coordination', 'annual_service', 'annual_preparation', 'professional_assessment', 'report_followup', 'medication_reminder', 'supply_reminder', 'order', 'symptom', null], default: null },

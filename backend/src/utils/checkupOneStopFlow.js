@@ -225,6 +225,8 @@ async function advanceCheckupTask(followUp) {
   }
   if (stage === 'final_acceptance' && (scheme.closesService || scheme.workflowTaskRole === 'supervisor')) {
     await closeCheckupService(servicePlan, followUp)
+    try { await require('./checkupPreparationCompletion').runtime().forService(servicePlan._id) }
+    catch (error) { console.error('[checkup-preparation-completion] 等待每日恢复', error.message) }
     return true
   }
   return false

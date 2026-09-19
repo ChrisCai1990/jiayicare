@@ -36,8 +36,8 @@ export default function CheckupPreparationReadiness({ task, staff }) {
       {state.readyForServiceLink
         ? <p>顾问方案、客户确认及规划师资源凭据已齐备，等待衔接现有体检服务。</p>
         : <ul>{state.issues.map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.role === 'healthPlanner' ? '健康规划师' : '健康顾问'}：{issue.message}</li>)}</ul>}
-      {link && <p>已关联：{link.serviceTitle || '本次体检服务'}。{link.status === 'active' ? '原预约任务已进入办理，请在原服务工作台继续；不代表预约已完成。'
-        : link.status === 'activating' ? '承接处理中，请勿重复启动。' : link.activation?.message || '关联已保存，等待推进原预约任务。'}</p>}
+      {link && <p>已关联：{link.serviceTitle || '本次体检服务'}。{link.completion?.message || (link.status === 'active' ? '原预约任务已进入办理，请在原服务工作台继续；不代表预约已完成。'
+        : link.status === 'activating' ? '承接处理中，请勿重复启动。' : link.activation?.message || '关联已保存，等待推进原预约任务。')}</p>}
       {planner && link && ['linked_pending_activation', 'activation_failed'].includes(link.status) && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={async () => {
         setBusy(true); setError('')
         try { await activate() } catch (err) { await refreshFailure(err) } finally { setBusy(false) }

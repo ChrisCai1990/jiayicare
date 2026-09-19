@@ -10,6 +10,8 @@ async function scanAndSyncScheduledWindow() {
   await require('./annualCheckupEvidence').safeReconcileCheckupPreparation({});
   try { await require('./checkupPreparationReports').runtime().scan(); }
   catch (error) { console.error('[checkup-preparation-reports] 恢复扫描失败', error.message); }
+  try { await require('./checkupPreparationCompletion').runtime().scan(); }
+  catch (error) { console.error('[checkup-preparation-completion] 恢复扫描失败', error.message); }
   const [deduped, cancelledOrderTasks, migratedCollectionTasks, medicalReminderMessages] = await Promise.all([
     dedupeAnnualPlanFollowUps(),
     require('./orderWorkItem').reconcileInactiveOrderWorkItems(),
