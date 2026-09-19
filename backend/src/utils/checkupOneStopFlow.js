@@ -78,12 +78,14 @@ async function ensureCheckupTasks(servicePlan) {
 }
 
 async function onCustomerConfirmedCheckupPlan(planOrPatientId) {
+  // 独立准备方案只表示管理建议；双岗位汇合及显式服务承接尚未启用，禁止回退到旧服务。
+  if (planOrPatientId?.preparationTaskId) return null
   const patientId = planOrPatientId?.patientId || planOrPatientId
   const serviceInstanceId = planOrPatientId?.content?.serviceInstanceId || null
   const servicePlan = await findCheckupServicePlan(patientId, serviceInstanceId)
   if (!servicePlan) return null
   const tasks = await ensureCheckupTasks(servicePlan)
-  const annualPlanIds = await HealthPlan.find({ patientId, type: 'annual_checkup', confirmedAt: { $ne: null } }).distinct('_id')
+  const annualPlanIds = await HealthPlan.find({ patientId, type: 'annual_checkup', preparationTaskId: null, confirmedAt: { $ne: null } }).distinct('_id')
   await FollowUp.updateMany(
     { sourceHealthPlanId: { $in: annualPlanIds }, status: { $in: ['planned', 'in_progress', 'missed'] } },
     { $set: { status: 'cancelled', cancelReason: '客户确认体检方案后转入一站式预约流程' } }
@@ -140,10 +142,11 @@ async function onCheckupReportAudited(report) {
   const linkedPlanId = report.planId || report.sourceHealthPlanId
   if (linkedPlanId) {
     const linkedPlan = await HealthPlan.findOne({ _id: linkedPlanId, patientId })
+    if (linkedPlan?.preparationTaskId) return false
     if (isCheckupService(linkedPlan)) servicePlan = linkedPlan
     else if (linkedPlan?.type === 'annual_checkup') annualPlan = linkedPlan
   }
-  if (!annualPlan) annualPlan = await HealthPlan.findOne({ patientId, type: 'annual_checkup', confirmedAt: { $ne: null } }).sort({ confirmedAt: -1 }).lean()
+  if (!annualPlan) annualPlan = await HealthPlan.findOne({ patientId, type: 'annual_checkup', preparationTaskId: null, confirmedAt: { $ne: null } }).sort({ confirmedAt: -1 }).lean()
   if (!servicePlan && report.sourceOrderId) servicePlan = await HealthPlan.findOne({ patientId, type: 'medical_assist', sourceOrderId: report.sourceOrderId, status: { $in: ['draft', 'active'] } })
   if (!servicePlan) servicePlan = await findCheckupServicePlan(patientId, annualPlan?.content?.serviceInstanceId)
   if (!servicePlan) return false

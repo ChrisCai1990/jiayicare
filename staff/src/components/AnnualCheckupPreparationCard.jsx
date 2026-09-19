@@ -14,6 +14,8 @@ export default function AnnualCheckupPreparationCard({ task, staff, onSaved }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [templates, setTemplates] = useState([])
+  const [templateId, setTemplateId] = useState('')
   const [form, setForm] = useState({ healthPlanId: '', institution: '', note: '', customerConfirmed: false, resourceConfirmed: false })
   useEffect(() => {
     if (!canOpen) return
@@ -30,6 +32,14 @@ export default function AnnualCheckupPreparationCard({ task, staff, onSaved }) {
       .finally(() => { if (active) setBusy(false) })
     return () => { active = false }
   }, [task._id, task.updatedAt, canOpen])
+  useEffect(() => {
+    if (!canOpen || role !== 'familyDoctor') return
+    let active = true
+    staffAPI.getPlanTemplates('annual_checkup', task.patientId?._id || task.patientId)
+      .then(res => { if (active) setTemplates(res.data || []) })
+      .catch(err => { if (active) setError(err.message || '读取体检模板失败') })
+    return () => { active = false }
+  }, [task._id, canOpen, role])
   if (!canOpen) return null
   const current = data?.task
   const meta = current?.formData?.annualCheckupPreparation
@@ -53,7 +63,22 @@ export default function AnnualCheckupPreparationCard({ task, staff, onSaved }) {
           </select>
         </label>
         <div>关联草稿后，在原方案完成审核发布，此准备任务自动完成；不额外要求点击“完成”。这里不会启动体检服务或下单。</div>
-        {!data.plans?.length && <div>暂无本年度确认后建立的体检方案；请核对方案来源。纯准备模式的新建入口尚未启用。</div>}
+        {editable && !meta.evidence?.healthPlanId && <>
+          <label>新建独立准备草稿（不启动服务）
+            <select className="form-input" disabled={busy} value={templateId} onChange={e => setTemplateId(e.target.value)}>
+              <option value="">选择标准体检模板</option>
+              {templates.map(template => <option key={template._id} value={template._id}>{template.name}</option>)}
+            </select>
+          </label>
+          <div>复制标准套餐为待审草稿，保留可选加项库；在原方案页完成个性化调整及审核。此步骤不调用AI、不创建服务或订单。</div>
+          <button className="btn btn-secondary btn-sm" disabled={busy || !templateId} onClick={async () => {
+            setBusy(true); setError('')
+            try {
+              const res = await staffAPI.createCheckupPreparationDraft(task._id, { templateId, updatedAt: current.updatedAt })
+              nav(`/plans/${res.data._id}`, { state: { returnTo: `/patients/${task.patientId?._id || task.patientId}?tab=followups` } })
+            } catch (err) { setError(err.message || '新建失败，请重新打开后重试') } finally { setBusy(false) }
+          }}>建立并打开准备草稿</button>
+        </>}
         {form.healthPlanId && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={openPlan}>打开所选体检方案</button>}
       </div> : <div style={{ display: 'grid', gap: 8 }}>
         <label>拟安排体检机构<input className="form-input" value={form.institution} maxLength={200} disabled={busy || !editable} onChange={e => change('institution', e.target.value)} /></label>

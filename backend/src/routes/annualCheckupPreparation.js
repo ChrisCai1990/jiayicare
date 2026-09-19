@@ -23,7 +23,7 @@ router.get('/:id/checkup-preparation', staffAuth, checkPermission('followups', '
   const task = await FollowUp.findById(req.checkupTask._id).lean();
   evidence.assertPreparationOwner(task, req.staff); // 读后改派不可继续暴露方案列表。
   const plans = evidence.preparationRole(task) === 'familyDoctor'
-    ? await HealthPlan.find({ patientId: task.patientId, type: 'annual_checkup', status: { $in: ['draft', 'active'] }, createdAt: { $gte: req.checkupAnnual.confirmedAt } })
+    ? await HealthPlan.find({ patientId: task.patientId, type: 'annual_checkup', status: { $in: ['draft', 'active'] }, createdAt: { $gte: req.checkupAnnual.confirmedAt }, $or: [{ preparationTaskId: null }, { preparationTaskId: task._id }] })
       .select('title status content.aiStatus pushedAt createdAt').sort({ createdAt: -1 }).limit(100).lean() : [];
   res.json({ success: true, data: { task, plans } });
 });
@@ -33,6 +33,14 @@ router.put('/:id/checkup-preparation', staffAuth, checkPermission('followups', '
     { FollowUp, HealthPlan, isValidId: mongoose.isValidObjectId });
   res.json({ success: true, data: await FollowUp.findById(req.checkupTask._id).populate('assignedTo', 'name role') });
 });
+
+router.post('/:id/checkup-preparation/draft', staffAuth, checkPermission('followups', 'edit'), checkPermission('plans', 'create'),
+  checkPermission.checkPlanType(() => 'annual_checkup'), load, async (req, res) => {
+    const result = await require('../utils/checkupPreparationDraft').createPreparationDraft(req.checkupTask, req.checkupAnnual, req.body || {}, req.staff, {
+      FollowUp, HealthPlan, User: require('../models/User'), PlanTemplate: require('../models/PlanTemplate'), isValidId: mongoose.isValidObjectId,
+    });
+    res.json({ success: true, data: result.plan, reused: result.reused });
+  });
 
 router.use((error, req, res, next) => {
   if (!error.statusCode) return next(error);

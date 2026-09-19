@@ -20,12 +20,12 @@ const task = (role = 'familyDoctor') => ({ _id: ids.task, patientId: ids.patient
   sourceType: 'annual_service', workflowKey: `annual_checkup_preparation:${role}`, sourceScheduleKey: `annual_checkup:2027-03-15:prepare:${role}`,
   formData: { annualCheckupPreparation: { version: 1, role, targetDate: '2027-03-15' } } });
 
-async function request(t, method = 'GET', body = {}, id = ids.task) {
+async function request(t, method = 'GET', body = {}, id = ids.task, suffix = '') {
   const app = express(); app.use(express.json()); app.use('/followups', router);
   app.use((error, req, res, next) => res.status(error.statusCode || 500).json({ message: error.message }));
   const server = await new Promise(resolve => { const instance = app.listen(0, '127.0.0.1', () => resolve(instance)); });
   t.after(() => new Promise(resolve => server.close(resolve)));
-  const response = await fetch(`http://127.0.0.1:${server.address().port}/followups/${id}/checkup-preparation`, {
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/followups/${id}/checkup-preparation${suffix}`, {
     method, headers: { 'Content-Type': 'application/json' }, ...(method !== 'GET' ? { body: JSON.stringify(body) } : {}),
   });
   return { status: response.status, body: await response.json() };
@@ -100,4 +100,25 @@ test('重复提交已经完成的准备记录不重开也不覆盖证据', async
   setup(t, { ...task(), status: 'completed' });
   t.mock.method(FollowUp, 'updateOne', () => assert.fail('不能重写完成证据'));
   assert.equal((await request(t, 'PUT', { healthPlanId: ids.plan, updatedAt })).status, 409);
+});
+
+test('新建准备接口路由到独立草稿处理器', async t => {
+  setup(t);
+  const generator = require('../src/utils/checkupPreparationDraft');
+  t.mock.method(generator, 'createPreparationDraft', async (row, source, input, staff) => {
+    assert.equal(row._id, ids.task); assert.equal(source._id, ids.annual); assert.equal(staff._id, ids.advisor);
+    return { plan: checkup, reused: false };
+  });
+  const response = await request(t, 'POST', { templateId: ids.plan, updatedAt, startService: true }, ids.task, '/draft');
+  assert.equal(response.status, 200); assert.equal(response.body.data._id, ids.plan);
+});
+
+test('其他顾问或无创建方案权限的自定义角色不能新建准备草稿', async t => {
+  setup(t);
+  actor = { _id: ids.planner, role: 'familyDoctor' };
+  assert.equal((await request(t, 'POST', { updatedAt }, ids.task, '/draft')).status, 403);
+  const Role = require('../src/models/StaffRole');
+  actor = { _id: ids.advisor, role: 'familyDoctor', customRoleId: ids.plan };
+  t.mock.method(Role, 'findById', () => ({ select: () => ({ lean: async () => ({ permissions: { followups: { edit: true }, plans: { create: false } } }) }) }));
+  assert.equal((await request(t, 'POST', { updatedAt }, ids.task, '/draft')).status, 403);
 });

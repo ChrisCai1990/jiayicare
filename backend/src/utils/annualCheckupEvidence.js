@@ -24,6 +24,7 @@ function assertPreparationOwner(task, actor) {
 
 function eligibleCheckupPlan(plan, task, annual) {
   return Boolean(plan && annual?.confirmedAt && plan.type === 'annual_checkup'
+    && (!plan.preparationTaskId || (idOf(plan.preparationTaskId) === idOf(task._id) && idOf(plan.content?.annualPlanId) === idOf(annual._id)))
     && idOf(plan.patientId) === idOf(task.patientId) && ['draft', 'active'].includes(plan.status)
     && Number.isFinite(new Date(plan.createdAt).getTime())
     && new Date(plan.createdAt) >= new Date(annual.confirmedAt));

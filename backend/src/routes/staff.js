@@ -3740,6 +3740,7 @@ ${discussionText}
 router.delete('/plans/:id', staffAuth, checkPermission('plans', 'delete'), async (req, res) => {
   const plan = await HealthPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+  if (plan.preparationTaskId) return res.status(409).json({ success: false, message: '体检准备来源方案需保留追溯，请修改或取消，不可直接删除后重建' });
   const reason = String(req.body?.reason || '').trim();
   if (!reason) return res.status(400).json({ success: false, message: '请填写删除原因' });
   const isCreator = String(plan.staffId?._id || plan.staffId) === String(req.staff._id);
@@ -14453,6 +14454,7 @@ router.post('/patients/:id/ai-annual-checkup-plan', staffAuth, async (req, res) 
       const existingPlans = await HealthPlan.find({
         patientId: user._id,
         type: 'annual_checkup',
+        preparationTaskId: null,
         status: { $in: ['draft', 'active'] },
         createdAt: { $gte: currentCheckupService.createdAt },
       }).sort({ createdAt: -1 });

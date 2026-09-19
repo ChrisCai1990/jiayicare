@@ -1100,6 +1100,9 @@ router.patch('/plans/:planId/confirm', auth, async (req, res) => {
   try {
     const plan = await HealthPlan.findOne({ _id: req.params.planId, patientId: req.user._id });
     if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+    if (plan.preparationTaskId && (!plan.pushedAt || plan.status !== 'active' || plan.content?.aiStatus !== 'approved')) {
+      return res.status(409).json({ success: false, message: '体检准备方案尚未审核发布，暂不能确认' });
+    }
     if (plan.confirmedAt) {
       if (plan.type === 'annual_checkup') await onCustomerConfirmedCheckupPlan(plan);
       return res.json({ success: true, data: plan });
