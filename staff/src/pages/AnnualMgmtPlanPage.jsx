@@ -353,6 +353,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [preparationSaving, setPreparationSaving] = useState(false)
   const [preparationDraft, setPreparationDraft] = useState({ requiredAssessmentDomains: '', medicationStatus: 'unknown', supplementStatus: 'unknown', advisorReady: false })
   const [professionalAssessments, setProfessionalAssessments] = useState([])
+  const [assessmentBusy, setAssessmentBusy] = useState(false)
   const [assessmentSaving, setAssessmentSaving] = useState(false)
   const [assessmentDraft, setAssessmentDraft] = useState({ domain: '', title: '', facts: '', risks: '', missingInformation: '', recommendations: '' })
 
@@ -386,7 +387,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         staffAPI.getPatient(id),
         staffAPI.getAnnualPlan(id, year),
         staffAPI.getAnnualPlanPreparation(id, year),
-        staffAPI.getProfessionalHealthAssessments(id, { purpose: 'annual_input' }),
+        staffAPI.getProfessionalHealthAssessments(id),
       ]).then(([patRes, planRes, preparationRes, assessmentRes]) => {
         setPatient(patRes.data?.user || patRes.data)
         setProfessionalAssessments(assessmentRes.data || [])
@@ -601,13 +602,25 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     } catch (err) { toast(err.message || '建立评估失败') } finally { setAssessmentSaving(false) }
   }
   const handleReviewAssessment = async (assessmentId, action) => {
+    setAssessmentBusy(true)
     try {
-      const res = await staffAPI.reviewProfessionalHealthAssessment(assessmentId, { action })
+      const current = professionalAssessments.find(item => item._id === assessmentId)
+      const res = await staffAPI.reviewProfessionalHealthAssessment(assessmentId, { action, revision: current?.__v, followUpDrafts: action === 'approve_advisor' && current?.status !== 'approved' ? (current?.followUpDrafts || []) : undefined })
       setProfessionalAssessments(prev => prev.map(item => item._id === assessmentId ? res.data : item))
       const prepRes = await staffAPI.getAnnualPlanPreparation(id, year)
       setPreparation(prepRes.data || null)
-      toast(action === 'approve_advisor' ? '健康顾问终审已通过' : '专业评估已提交健康顾问审核')
-    } catch (err) { toast(err.message || '审核失败') }
+      toast(res.dynamicFollowUps?.warnings?.length ? res.dynamicFollowUps.warnings.join('；') : action === 'approve_advisor' ? '终审已通过，随访发布完成' : '专业评估已提交健康顾问审核')
+    } catch (err) { toast(err.message || '审核失败') } finally { setAssessmentBusy(false) }
+  }
+  const removeAssessmentFollowUpDraft = (assessmentId, index) => setProfessionalAssessments(prev => prev.map(item => item._id === assessmentId ? { ...item, followUpDrafts: (item.followUpDrafts || []).filter((_, draftIndex) => draftIndex !== index) } : item))
+  const updateAssessmentFollowUpDraft = (assessmentId, index, patch) => setProfessionalAssessments(prev => prev.map(item => item._id === assessmentId ? { ...item, followUpDrafts: (item.followUpDrafts || []).map((draft, draftIndex) => draftIndex === index ? { ...draft, ...patch } : draft) } : item))
+  const handleAssessmentFollowUpDraft = async assessmentId => {
+    setAssessmentBusy(true)
+    try {
+      const res = await staffAPI.generateAssessmentFollowUpDraft(assessmentId)
+      setProfessionalAssessments(prev => prev.map(item => item._id === assessmentId ? { ...item, followUpDrafts: res.data?.followUpDrafts || [], __v: res.data?.revision } : item))
+      toast(res.data?.followUpDrafts?.length ? `AI已生成 ${res.data.followUpDrafts.length} 条随访草稿，请核对后终审` : '当前评估没有明确的后续随访行动')
+    } catch (err) { toast(err.message || '生成随访草稿失败') } finally { setAssessmentBusy(false) }
   }
 
   const handlePush = async () => {
@@ -792,15 +805,34 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       )}
 
       {patientMode && (
-        <div style={{ background: '#fff', border: '1px solid #D7E4DD', borderRadius: 12, padding: 18, marginBottom: 20 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24' }}>年度综合健康评估</div>
-          <div style={{ fontSize: 13, color: '#6B7F75', marginTop: 4 }}>专业人员提供领域深度建议，健康顾问终审；只有“已终审”的评估会进入 AI 年度方案。</div>
+        <div id="professional-assessments" style={{ background: '#fff', border: '1px solid #D7E4DD', borderRadius: 12, padding: 18, marginBottom: 20 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24' }}>专业健康评估</div>
+          <div style={{ fontSize: 13, color: '#6B7F75', marginTop: 4 }}>年度综合评估输入经终审后用于年度方案；后续专项协作生成动态随访，不重建年度方案。</div>
           <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
-            {professionalAssessments.map(item => <div key={item._id} style={{ border: '1px solid #E8E3DA', borderRadius: 9, padding: 11, display: 'flex', gap: 12, alignItems: 'center' }}>
-              <div style={{ flex: 1 }}><b>{item.domain} · {item.title}</b><div style={{ fontSize: 12, color: '#6B7F75', marginTop: 3 }}>{(item.facts || []).join('；') || '暂无结论摘要'}</div></div>
+            {professionalAssessments.map(item => <div key={item._id} style={{ border: '1px solid #E8E3DA', borderRadius: 9, padding: 11, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ flex: 1 }}><b>{item.domain} · {item.title}</b><div style={{ fontSize: 12, color: '#6B7F75', marginTop: 3 }}>{item.purpose === 'annual_input' ? '年度综合评估输入' : '专项协作评估'} · {(item.facts || []).join('；') || '暂无结论摘要'}</div></div>
               <span style={{ fontSize: 12, color: item.status === 'approved' ? '#15803D' : '#B45309' }}>{item.status === 'approved' ? '已终审' : item.status === 'advisor_review' ? '待健康顾问终审' : '待专业审核'}</span>
-              {canEdit && item.status === 'advisor_review' && <button onClick={() => handleReviewAssessment(item._id, 'approve_advisor')} className="btn btn-primary btn-sm">终审通过</button>}
-              {!canEdit && item.status === 'professional_review' && <button onClick={() => handleReviewAssessment(item._id, 'submit_advisor')} className="btn btn-primary btn-sm">提交顾问审核</button>}
+              {canEdit && item.status === 'advisor_review' && <><button disabled={assessmentBusy} onClick={() => handleAssessmentFollowUpDraft(item._id)} className="btn btn-secondary btn-sm">{assessmentBusy ? '处理中…' : 'AI随访草稿'}</button><button disabled={assessmentBusy} onClick={() => handleReviewAssessment(item._id, 'approve_advisor')} className="btn btn-primary btn-sm">终审通过</button></>}
+              {!canEdit && item.status === 'professional_review' && <button disabled={assessmentBusy} onClick={() => handleReviewAssessment(item._id, 'submit_advisor')} className="btn btn-primary btn-sm">提交顾问审核</button>}
+              {item.status === 'approved' && item.followUpPublication?.status !== 'published' && !!item.followUpDrafts?.length && <div style={{ flexBasis: '100%', color: '#B45309' }}>
+                {item.followUpPublication?.message || '随访尚未完整发布'}
+                {canEdit && <button disabled={assessmentBusy} onClick={() => handleReviewAssessment(item._id, 'approve_advisor')} className="btn btn-secondary btn-sm">重试发布</button>}
+              </div>}
+              {!!item.followUpDrafts?.length && <div style={{ flexBasis: '100%', fontSize: 13, color: '#52685D' }}>
+                <b>{item.followUpPublication?.status === 'published' ? '已发布随访' : '随访草稿（终审后发布）'}</b>
+                {item.followUpDrafts.map((draft, index) => <fieldset key={index} disabled={assessmentBusy || !canEdit || item.status !== 'advisor_review'} style={{ border: '1px solid #E8E3DA', borderRadius: 8, padding: 10, marginTop: 8 }}>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <input aria-label={`随访${index + 1}标题`} value={draft.title} maxLength={40} onChange={e => updateAssessmentFollowUpDraft(item._id, index, { title: e.target.value })} style={{ flex: 1, minWidth: 150 }} />
+                    <input aria-label={`随访${index + 1}日期`} type="date" value={draft.date} onChange={e => updateAssessmentFollowUpDraft(item._id, index, { date: e.target.value })} />
+                    <select aria-label={`随访${index + 1}类型`} value={draft.category} onChange={e => updateAssessmentFollowUpDraft(item._id, index, { category: e.target.value })}>
+                      <option value="medical_visit">安排就医</option><option value="examination">完善检查</option><option value="review">复查随访</option><option value="lifestyle">生活方式</option><option value="information">资料核对</option>
+                    </select>
+                  </div>
+                  <textarea aria-label={`随访${index + 1}内容`} value={draft.content} maxLength={3000} rows={3} onChange={e => updateAssessmentFollowUpDraft(item._id, index, { content: e.target.value })} style={{ width: '100%', boxSizing: 'border-box', marginTop: 8 }} />
+                  <label><input type="checkbox" checked={draft.requiresService === true} onChange={e => updateAssessmentFollowUpDraft(item._id, index, { requiresService: e.target.checked })} />需健康规划师安排服务</label>
+                  {canEdit && item.status === 'advisor_review' && <button onClick={() => removeAssessmentFollowUpDraft(item._id, index)} style={{ border: 0, background: 'none', color: '#DC2626', cursor: 'pointer', marginLeft: 12 }}>移除</button>}
+                </fieldset>)}
+              </div>}
             </div>)}
             {!professionalAssessments.length && <div style={{ color: '#9A6A28', fontSize: 13 }}>尚无年度综合健康评估，年度方案准备清单会保持阻断。</div>}
           </div>

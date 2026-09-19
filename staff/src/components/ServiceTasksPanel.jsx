@@ -96,7 +96,11 @@ export default function ServiceTasksPanel() {
   const supervisorCount = serviceGroups.filter(service => service.task.taskRole === 'supervisor').length
 
   const openTask = async (task) => {
-    if (task.sourceType === 'professional_assessment') {
+    if (task.sourceType === 'professional_assessment' && task.workflowKey === 'professional_assessment:advisor_review') {
+      nav(`/patients/${task.patientId?._id}/annual-health#professional-assessments`)
+      return
+    }
+    if (task.sourceType === 'professional_assessment' && task.workflowKey === 'professional_assessment:professional_review') {
       nav(`/patients/${task.patientId?._id}?tab=referrals`)
       return
     }

@@ -62,6 +62,7 @@ const followUpSchema = new mongoose.Schema({
   // 方案确认后自动生成的随访计划：sourceType区分固定周期占位 / 月度AI回顾建议，aiStatus走审核
   sourceAnnualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', default: null },
   sourceScheduleKey: { type: String, default: '' }, // 年度方案内稳定排期键，防止定时刷新重复生成
+  assessmentActionKey: { type: String }, // 仅新评估动态任务使用；缺省不建键，兼容历史任务
   sourceHealthPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null }, // 来自AI体检/营养方案确认后自动生成
   sourceType: { type: String, enum: ['scheduled', 'ai_review', 'health_plan', 'insurance_service', 'annual_coordination', 'annual_service', 'annual_preparation', 'professional_assessment', 'medication_reminder', 'supply_reminder', 'order', 'symptom', null], default: null },
   sourceId: { type: mongoose.Schema.Types.ObjectId, default: null }, // 通用来源ID；symptom 时关联 HealthRecord
@@ -77,6 +78,7 @@ const followUpSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 followUpSchema.index({ staffId: 1, date: -1 });
+followUpSchema.index({ assessmentActionKey: 1 }, { unique: true, sparse: true });
 followUpSchema.index({ patientId: 1, date: -1 });
 followUpSchema.index({ coordinationGroupId: 1, workflowKey: 1, taskRole: 1 });
 followUpSchema.index({ patientId: 1, sourceType: 1, sourceId: 1, status: 1, date: 1 });

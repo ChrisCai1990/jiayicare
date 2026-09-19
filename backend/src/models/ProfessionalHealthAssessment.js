@@ -22,6 +22,13 @@ const professionalHealthAssessmentSchema = new mongoose.Schema({
     services: { type: [mongoose.Schema.Types.Mixed], default: [] },
   },
   aiDraft: { type: mongoose.Schema.Types.Mixed, default: null },
+  followUpDrafts: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  followUpDraftGeneratedAt: { type: Date, default: null },
+  followUpPublication: {
+    status: { type: String, enum: ['pending', 'published', 'failed'], default: 'pending' },
+    message: { type: String, default: '' },
+    publishedAt: { type: Date, default: null },
+  },
   status: { type: String, enum: ['draft', 'professional_review', 'advisor_review', 'approved', 'rejected', 'superseded'], default: 'draft', index: true },
   professionalReviewerIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Admin' }],
   professionalReviewedAt: { type: Date, default: null },
@@ -35,7 +42,7 @@ const professionalHealthAssessmentSchema = new mongoose.Schema({
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
   createdByRole: { type: String, default: '' },
   auditLog: { type: [mongoose.Schema.Types.Mixed], default: [] },
-}, { timestamps: true });
+}, { timestamps: true, optimisticConcurrency: true });
 
 professionalHealthAssessmentSchema.index({ patientId: 1, purpose: 1, domain: 1, status: 1 });
 professionalHealthAssessmentSchema.index({ sourceReferralIds: 1 });
