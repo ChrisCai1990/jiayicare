@@ -215,14 +215,22 @@ const medicalReportSchema = new mongoose.Schema({
   planItemId:       { type: mongoose.Schema.Types.ObjectId, default: null }, // 关联体检方案中的项目
   planId:           { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null },
   screeningItemId:  { type: mongoose.Schema.Types.ObjectId, ref: 'UserScreeningItem', default: null },
+  followUpSourceEvent: { type: mongoose.Schema.Types.Mixed, default: null },
 }, { timestamps: true });
 
 // Normalize new uploads and later edits; historical records remain read-only until saved.
 medicalReportSchema.pre('validate', function () {
   require('../utils/reportManualReview').initializeManualReview(this);
 });
+medicalReportSchema.pre('save', function () {
+  require('../utils/reportFollowUpSource').markReportFollowUpEvent(this);
+});
+medicalReportSchema.post('save', function (report) {
+  if (report.followUpSourceEvent?.status === 'queued') require('../utils/reportFollowUpAutomation').wakeReportDraftWorker();
+});
 
 medicalReportSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);
 medicalReportSchema.index({ user: 1, sourceSha256: 1 }, { unique: true, partialFilterExpression: { sourceSha256: { $type: 'string' } } });
+medicalReportSchema.index({ 'followUpSourceEvent.status': 1, 'followUpSourceEvent.queuedAt': 1 });
 
 module.exports = mongoose.model('MedicalReport', medicalReportSchema);

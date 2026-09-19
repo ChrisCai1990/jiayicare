@@ -20,7 +20,7 @@ async function loadServiceRequest(req, res, next) {
 
 function followUpFilter(task) {
   const common = { patientId: task.patientId, status: { $in: ['planned', 'in_progress', 'missed'] }, aiStatus: { $ne: 'pending' }, taskRole: { $in: ['', null] } };
-  if (task.sourceType === 'professional_assessment') return { ...common, assessmentActionKey: task.formData?.linkedFollowUpActionKey || '__missing__' };
+  if (['professional_assessment', 'report_followup'].includes(task.sourceType)) return { ...common, assessmentActionKey: task.formData?.linkedFollowUpActionKey || '__missing__' };
   return task.sourceAnnualPlanId ? { ...common, sourceType: 'scheduled', sourceAnnualPlanId: task.sourceAnnualPlanId } : { ...common, sourceScheduleKey: '__missing_annual_source__' };
 }
 

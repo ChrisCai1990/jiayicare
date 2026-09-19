@@ -1,5 +1,7 @@
 # Codex / Claude Code 双端统一项目记忆
 
+> 病历/报告审核保存已接入独立随访草稿队列，顾问审核后才派发；来源排除、修订、内部任务隔离和未部署边界见 `docs/REPORT_FOLLOWUP_AUTOMATION.md`。
+
 > 后续会诊/专项评估已接入自动随访草稿队列（仅待审，不自动发布）；年度输入不另派动态任务，修订保留版本。每日恢复、AI失败人工接管和未接入病历/报告的边界见 `docs/ASSESSMENT_FOLLOWUP_AUTOMATION.md`。
 
 > 功能分支新增管理随访与既有服务关联及状态回写，岗位入口、异常重选和上线核验见 `docs/FOLLOWUP_SERVICE_LINK.md`；未关联的既有专用流程保持原分派规则。

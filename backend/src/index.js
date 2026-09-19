@@ -153,6 +153,7 @@ app.listen(PORT, () => {
   // （此前一次性预生成未来365天导致单个客户堆积几百条占位，2026-07-13 改为滚动窗口）
   require('./utils/scheduledFollowUpWindowScheduler').startScheduledFollowUpWindowScheduler();
   require('./utils/assessmentFollowUpAutomation').startAssessmentDraftWorker();
+  require('./utils/reportFollowUpAutomation').startReportDraftWorker();
   require('./utils/groupMaterialSchedule').startMaterialSchedule();
 
   // 年度管理方案"药物管理/营养素管理"模块的定期配药/配营养素计划到期扫描，每天一次

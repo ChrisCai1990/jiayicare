@@ -23,7 +23,7 @@ function taskProjection(link, now = new Date()) {
 }
 
 function isServiceRequest(task) {
-  return task?.taskRole === 'supervisor' && ((task.sourceType === 'professional_assessment' && task.workflowKey === 'professional_assessment:service_request') || (task.sourceType === 'annual_service' && task.workflowKey === 'service_request'));
+  return task?.taskRole === 'supervisor' && ((['professional_assessment', 'report_followup'].includes(task.sourceType) && task.workflowKey === `${task.sourceType}:service_request`) || (task.sourceType === 'annual_service' && task.workflowKey === 'service_request'));
 }
 
 module.exports = { serviceOutcome, taskProjection, isServiceRequest };

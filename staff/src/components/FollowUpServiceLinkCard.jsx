@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
 
 export default function FollowUpServiceLinkCard({ task, staff, onLinked }) {
-  const request = task.taskRole === 'supervisor' && ((task.sourceType === 'professional_assessment' && task.workflowKey === 'professional_assessment:service_request') || (task.sourceType === 'annual_service' && task.workflowKey === 'service_request'))
+  const request = task.taskRole === 'supervisor' && ((['professional_assessment', 'report_followup'].includes(task.sourceType) && task.workflowKey === `${task.sourceType}:service_request`) || (task.sourceType === 'annual_service' && task.workflowKey === 'service_request'))
   const canLink = request && (staff?.role === 'superadmin' || (staff?.role === 'healthPlanner' && String(task.assignedTo?._id || task.assignedTo) === String(staff._id)))
   const [data, setData] = useState(null)
   const [error, setError] = useState('')

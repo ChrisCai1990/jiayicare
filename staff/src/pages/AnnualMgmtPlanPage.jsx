@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast, useStaff } from '../App'
 import { StaffListContext, ModulePanel } from '../components/ModulePanel'
+import ReportFollowUpDrafts from '../components/ReportFollowUpDrafts'
 
 // ── 方案类型 ─────────────────────────────────────────────────────────
 const PLAN_TYPES = [
@@ -866,6 +867,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         </div>
       )}
 
+      {patientMode && <ReportFollowUpDrafts patientId={id} canEdit={canEdit} />}
       {/* 方案类型选择 */}
       <div style={{ background: '#fff', borderRadius: 12, padding: 20, marginBottom: 20, border: '1px solid #E0D9CE' }}>
         <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24', marginBottom: 14 }}>选择方案类型</div>

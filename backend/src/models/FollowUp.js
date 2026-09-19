@@ -65,7 +65,7 @@ const followUpSchema = new mongoose.Schema({
   assessmentActionKey: { type: String }, // 仅新评估动态任务使用；缺省不建键，兼容历史任务
   serviceTracking: { type: mongoose.Schema.Types.Mixed, default: null }, // 关联服务的只读投影，不允许通用编辑接口写入
   sourceHealthPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null }, // 来自AI体检/营养方案确认后自动生成
-  sourceType: { type: String, enum: ['scheduled', 'ai_review', 'health_plan', 'insurance_service', 'annual_coordination', 'annual_service', 'annual_preparation', 'professional_assessment', 'medication_reminder', 'supply_reminder', 'order', 'symptom', null], default: null },
+  sourceType: { type: String, enum: ['scheduled', 'ai_review', 'health_plan', 'insurance_service', 'annual_coordination', 'annual_service', 'annual_preparation', 'professional_assessment', 'report_followup', 'medication_reminder', 'supply_reminder', 'order', 'symptom', null], default: null },
   sourceId: { type: mongoose.Schema.Types.ObjectId, default: null }, // 通用来源ID；symptom 时关联 HealthRecord
   sourceOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null }, // sourceType='order'时关联的订单，供详情弹窗展示订单号/金额/支付方式
   reminderCount: { type: Number, default: 0, min: 0 },

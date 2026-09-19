@@ -2515,7 +2515,7 @@ export default function PatientDetailPage() {
 
   // 执行随访：填写随访结果、标记完成/随访中，逻辑与 FollowUpsPage.jsx 一致
   const openExec = (f) => {
-    if (f.serviceTracking?.status === 'waiting' || (f.taskRole === 'supervisor' && ((f.sourceType === 'annual_service' && f.workflowKey === 'service_request') || (f.sourceType === 'professional_assessment' && f.workflowKey === 'professional_assessment:service_request')))) {
+    if (f.serviceTracking?.status === 'waiting' || (f.taskRole === 'supervisor' && ((f.sourceType === 'annual_service' && f.workflowKey === 'service_request') || (['professional_assessment', 'report_followup'].includes(f.sourceType) && f.workflowKey === `${f.sourceType}:service_request`)))) {
       setFollowUpDetail(f)
       return
     }

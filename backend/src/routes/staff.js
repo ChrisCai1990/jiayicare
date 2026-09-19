@@ -99,6 +99,7 @@ const { stepsForInsuranceScenario } = require('../utils/insuranceServiceWorkflow
 const { canUseInsuranceCoverage, isInsuranceScenario } = require('../utils/insuranceCoverage');
 const router = express.Router();
 router.use('/followups', require('./followUpServices'));
+router.use('/report-followups', require('./reportFollowUps')({ getVisiblePlanPatientIds }));
 const activeReportParseJobs = new Set();
 
 // 这两类资料仍可上传、由人工审核/录入，但不得触发视觉模型。documentCategory
@@ -633,7 +634,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
       || (task.sourceType === 'order' && /^(medical_proxy|medication_proxy|checkup_appointment):/.test(String(task.workflowKey || '')) && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'insurance_service' && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'annual_service' && ['executor', 'supervisor'].includes(task.taskRole))
-      || (task.sourceType === 'professional_assessment' && ['executor', 'supervisor'].includes(task.taskRole))
+      || (['professional_assessment', 'report_followup'].includes(task.sourceType) && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'scheduled' && (task.tags || []).includes('保险服务'));
     if (!isServiceTask) return false;
     if (task.sourceType === 'order' && !activeProxyOrderIds.has(String(task.sourceOrderId?._id || task.sourceOrderId))) return false;
