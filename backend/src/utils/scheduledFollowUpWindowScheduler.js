@@ -17,6 +17,7 @@ async function scanAndSyncScheduledWindow() {
   for (const plan of plans) {
     try {
       if (plan.continuitySource?.previousPlanId) {
+        await require('./annualServicePeriodCorrectionApply').applyApprovedCorrection(plan);
         const result = await require('./annualPlanTaskSplit').syncAnnualPlanTaskSplit(plan);
         total += result.scheduledFollowUps || 0;
       } else total += await syncAnnualPlanFollowUps(plan);

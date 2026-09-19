@@ -26,7 +26,7 @@ function setup() {
   const planner = { _id: 'planner', role: 'healthPlanner' }, advisor = { _id: 'advisor', role: 'familyDoctor' };
   const input = { expectedRevision: 0, sourceType: 'offline_contract', contractReference: 'corrected', startDate: '2027-02-01', endDate: '2028-01-31', verified: true, reason: '核对合同日期' };
   const propose = patch => proposeCorrection({ plan, patient, staff: planner, input: { ...input, ...patch } }, models);
-  const review = patch => reviewCorrection({ plan, patient, staff: advisor, input: { expectedRevision: state.period.correctionRevision, correctionId: state.period.correction?.id, decision: 'approve', impactAcknowledged: true, ...patch } }, models);
+  const review = patch => reviewCorrection({ plan, patient, staff: advisor, input: { expectedRevision: state.period.correctionRevision, correctionId: state.period.correction?.id, decision: 'approve', impactAcknowledged: true, applicationPolicy: 'retain_schedule', ...patch } }, models);
   return { plan, patient, state, models, planner, advisor, input, propose, review };
 }
 test('提交保留原生效凭据及冻结方案，只写更正快照和审计', async () => {
@@ -81,6 +81,7 @@ test('审核通过不激活更正、不写任务；重复审核不重复留痕',
 test('审核必须显式确认影响，拒绝旧版本和其他申请ID', async () => {
   const s = setup(); await s.propose();
   await assert.rejects(s.review({ impactAcknowledged: false }), /已核对/);
+  await assert.rejects(s.review({ applicationPolicy: undefined }), /安全应用规则/);
   await assert.rejects(s.review({ expectedRevision: 0 }), /版本/);
   await assert.rejects(s.review({ correctionId: 'other' }), /版本/);
 });

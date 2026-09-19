@@ -61,7 +61,11 @@ async function confirmAnnualServicePeriod({ plan, patient, staff, input }, model
     throw fail('服务期已有确认记录，不能覆盖原凭据；请核对后走更正流程');
   }
   const legacyServiceWindow = previous?.legacyServiceWindow || { serviceStartDate: patient.serviceStartDate || '', serviceExpiry: patient.serviceExpiry || '' };
-  return Period.create({ patientId: patient._id, annualPlanId: plan._id, sourceType, ...(sourceOrderId ? { sourceOrderId } : {}), contractReference, startDate, endDate, evidenceSnapshot, legacyServiceWindow, confirmedBy: staff._id, confirmedAt: new Date() });
+  if (sourceOrderId) {
+    await require('./annualServiceOrderEvidence').requireEvidenceIndex(Period);
+    if (await Period.findOne({ $or: [{ sourceOrderId }, { evidenceOrderIds: sourceOrderId }] }).lean()) throw fail('该年度订单已作为其他年度的当前或历史续约凭据使用');
+  }
+  return Period.create({ patientId: patient._id, annualPlanId: plan._id, sourceType, ...(sourceOrderId ? { sourceOrderId, evidenceOrderIds: [sourceOrderId] } : {}), contractReference, startDate, endDate, evidenceSnapshot, legacyServiceWindow, confirmedBy: staff._id, confirmedAt: new Date() });
 }
 
 async function annualExecutionGate(plan, now = new Date(), models = {}) {
@@ -83,6 +87,8 @@ async function annualExecutionGate(plan, now = new Date(), models = {}) {
   catch (error) { return blocked(error.message, 'plan_dates', 'familyDoctor'); }
   if (today < period.startDate) return { allowed: false, period, reason: `等待服务期开始（${period.startDate}）` };
   if (today > period.endDate) return { allowed: false, period, reason: '该年度服务期已结束' };
-  return { allowed: true, period, anchor: new Date(Math.max(new Date(plan.confirmedAt).getTime(), new Date(`${period.startDate}T00:00:00+08:00`).getTime())) };
+  const anchor = new Date(Math.max(new Date(plan.confirmedAt).getTime(), period.executionAnchor ? new Date(period.executionAnchor).getTime() : new Date(`${period.startDate}T00:00:00+08:00`).getTime()));
+  if (!Number.isFinite(anchor.getTime())) return blocked('年度执行起点无效，请联系管理员核对', 'invalid_anchor');
+  return { allowed: true, period, anchor };
 }
 module.exports = { confirmAnnualServicePeriod, annualExecutionGate, isPaidAnnualOrder, validatePeriodDates, validatePlanPeriodDates, buildServicePeriodEvidence };

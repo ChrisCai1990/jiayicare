@@ -39,10 +39,21 @@ test('普通到期日期、首次方案及他人订单不构成续约凭据', as
 });
 test('已支付年度订单保存付款快照，不改订单及档案', async () => {
   const fake = models(null); let saved;
+  fake.Period.init = async () => {};
+  fake.Period.collection = { indexes: async () => [{ key: { evidenceOrderIds: 1 }, unique: true, sparse: true }] };
   fake.Period.create = async row => (saved = row);
   await confirmAnnualServicePeriod(args({ input: input({ sourceType: 'paid_order', sourceOrderId: 'order' }) }), fake);
   assert.equal(saved.sourceOrderId, 'order'); assert.equal(saved.evidenceSnapshot.paymentStatus, 'paid');
   assert.equal(saved.contractReference, '');
+  assert.deepEqual(saved.evidenceOrderIds, ['order']);
+});
+
+test('已被更正替换的历史订单也不能用于另一年度确认', async () => {
+  const fake = models(null);
+  fake.Period.init = async () => {};
+  fake.Period.collection = { indexes: async () => [{ key: { evidenceOrderIds: 1 }, unique: true, sparse: true }] };
+  fake.Period.findOne = query => ({ lean: async () => query.$or ? { evidenceOrderIds: ['order'] } : null });
+  await assert.rejects(confirmAnnualServicePeriod(args({ input: input({ sourceType: 'paid_order', sourceOrderId: 'order' }) }), fake), /历史续约凭据/);
 });
 test('重复确认返回原记录，不允许覆盖，服务期不得重叠', async () => {
   const existing = period();

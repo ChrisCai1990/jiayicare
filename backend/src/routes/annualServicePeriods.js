@@ -48,6 +48,7 @@ router.post('/annual-plans/:planId/service-period/retry', staffAuth, async (req,
     if (!data.plan.continuitySource?.previousPlanId) return res.status(409).json({ success: false, message: '此入口仅处理续年方案同步' });
     // 不接收新方案/合同字段，不重新审核、不重复确认；使用数据库已冻结的方案。
     let warning = '';
+    await require('../utils/annualServicePeriodCorrectionApply').applyApprovedCorrection(data.plan);
     try { const result = await require('../utils/annualPlanTaskSplit').syncAnnualPlanTaskSplit(data.plan); warning = (result.warnings || []).join('；'); }
     catch { warning = '同步尚未完成，请稍后重试'; }
     const period = await Period.findOne({ annualPlanId: data.plan._id }).lean();
@@ -60,6 +61,11 @@ for (const [path, method] of [['corrections', 'proposeCorrection'], ['correction
       const data = await load(req, res); if (!data) return;
       if (method === 'proposeCorrection' && req.body.sourceType === 'paid_order' && !mongoose.isValidObjectId(req.body.sourceOrderId)) return res.status(400).json({ success: false, message: '请选择有效的年度订单' });
       const result = await require('../utils/annualServicePeriodCorrection')[method]({ ...data, staff: req.staff, input: req.body });
+      if (method === 'reviewCorrection' && result.correction.status === 'approved_pending_apply') {
+        // 审核已持久化；应用失败不能把已成功审核误报为失败，原队列留待每日重试。
+        try { result.application = await require('../utils/annualServicePeriodCorrectionApply').applyApprovedCorrection(data.plan); }
+        catch { result.application = { applied: false, waiting: true, reason: '已审核，更正应用待系统重试' }; }
+      }
       res.json({ success: true, data: result });
     } catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : '更正处理失败，请刷新后重试' }); }
   });

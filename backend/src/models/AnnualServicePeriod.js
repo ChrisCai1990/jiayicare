@@ -22,7 +22,11 @@ const schema = new mongoose.Schema({
   correctionRevision: { type: Number, default: 0 },
   correction: { type: mongoose.Schema.Types.Mixed, default: null },
   correctionHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  executionAnchor: { type: Date, default: null },
+  evidenceOrderIds: { type: [mongoose.Schema.Types.ObjectId], default: undefined },
 }, { timestamps: true });
 schema.index({ sourceOrderId: 1 }, { unique: true, partialFilterExpression: { sourceOrderId: { $type: 'objectId' } } });
+// 更换凭据后历史订单仍属于原服务期，不能被另一年度重复消费。
+schema.index({ evidenceOrderIds: 1 }, { unique: true, sparse: true });
 schema.index({ patientId: 1, contractReference: 1, startDate: 1 }, { unique: true, partialFilterExpression: { sourceType: 'offline_contract' } });
 module.exports = mongoose.model('AnnualServicePeriod', schema);

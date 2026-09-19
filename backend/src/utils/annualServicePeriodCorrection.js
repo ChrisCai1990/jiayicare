@@ -61,7 +61,7 @@ async function validateProposal(plan, patient, input, period, Model, models) {
   const proposed = await buildServicePeriodEvidence({ plan, patient, input }, models);
   const overlap = await Model.findOne({ patientId: plan.patientId, _id: { $ne: period._id }, startDate: { $lte: proposed.endDate }, endDate: { $gte: proposed.startDate } }).lean();
   if (overlap) throw fail('更正后的服务期与其他已确认服务期重叠');
-  if (proposed.sourceOrderId && await Model.findOne({ _id: { $ne: period._id }, sourceOrderId: proposed.sourceOrderId }).lean()) throw fail('该年度订单已被其他服务期使用');
+  if (proposed.sourceOrderId && await Model.findOne({ _id: { $ne: period._id }, $or: [{ sourceOrderId: proposed.sourceOrderId }, { evidenceOrderIds: proposed.sourceOrderId }] }).lean()) throw fail('该年度订单已被其他服务期使用');
   return proposed;
 }
 async function proposeCorrection({ plan, patient, staff, input }, models = {}) {
@@ -69,7 +69,7 @@ async function proposeCorrection({ plan, patient, staff, input }, models = {}) {
   const Model = models.Period || require('../models/AnnualServicePeriod');
   const period = await readPeriod(plan, Model);
   versionFilter(period, input);
-  if (ACTIVE.includes(period.correction?.status)) throw fail('已有待审核或待应用更正，不能重复提交');
+  if (ACTIVE.includes(period.correction?.status) && !period.correction?.applyIssue) throw fail('已有待审核或待应用更正，不能重复提交');
   const reason = String(input.reason || '').trim();
   if (!reason || reason.length > 2000) throw fail('请填写更正原因（最多2000字）');
   // 检查所有相邻年度，不只检查上一年；建议日期越界留给顾问在影响清单中审核。
@@ -91,11 +91,12 @@ async function reviewCorrection({ plan, patient, staff, input }, models = {}) {
   if (note.length > 2000 || (input.decision === 'reject' && !note)) throw fail('退回请填写原因，审核意见最多2000字');
   if (input.decision === 'approve') {
     if (input.impactAcknowledged !== true) throw fail('请确认已核对排期影响及原执行记录保留规则');
+    if (input.applicationPolicy !== 'retain_schedule') throw fail('请刷新页面并确认保留原排期的安全应用规则');
     await validateProposal(plan, patient, { ...current.proposed, verified: current.proposed.evidenceSnapshot?.verifiedByPlanner === true }, period, Model, models);
     const latest = await correctionImpact(plan, current.proposed, models);
     if (latest.fingerprint !== current.impact.fingerprint) throw fail('任务或方案状态已变化，请刷新影响清单后再审核');
   }
-  const correction = { ...current, status: input.decision === 'approve' ? 'approved_pending_apply' : 'rejected', reviewedBy: String(staff._id), reviewedAt: new Date(), reviewNote: note };
+  const correction = { ...current, status: input.decision === 'approve' ? 'approved_pending_apply' : 'rejected', applicationPolicy: input.decision === 'approve' ? 'retain_schedule' : null, applyIssue: null, reviewedBy: String(staff._id), reviewedAt: new Date(), reviewNote: note };
   // 审核只写审计，不替换生效凭据，不重新确认/派发/修改冻结方案。
   return saveTransition(Model, period, input, correction, { action: input.decision, correctionId: current.id, reviewedBy: correction.reviewedBy, reviewedAt: correction.reviewedAt, note });
 }
@@ -103,16 +104,16 @@ async function refreshCorrectionImpact({ plan, patient, staff, input }, models =
   assertRole(patient, staff, 'familyDoctor');
   const Model = models.Period || require('../models/AnnualServicePeriod');
   const period = await readPeriod(plan, Model);
-  if (period.correction?.status !== 'pending_review' || period.correction.id !== input.correctionId) throw fail('仅待审核更正可刷新影响清单');
-  const correction = { ...period.correction, impact: await correctionImpact(plan, period.correction.proposed, models) };
+  if (!(period.correction?.status === 'pending_review' || (period.correction?.status === 'approved_pending_apply' && period.correction.applyIssue)) || period.correction.id !== input.correctionId) throw fail('仅待审核或受阻更正可刷新影响清单');
+  const correction = { ...period.correction, status: 'pending_review', applyIssue: null, impact: await correctionImpact(plan, period.correction.proposed, models) };
   return saveTransition(Model, period, input, correction, { action: 'impact_refreshed', correctionId: correction.id, by: String(staff._id), at: new Date(), impact: correction.impact });
 }
 async function withdrawCorrection({ plan, patient, staff, input }, models = {}) {
   assertRole(patient, staff, 'healthPlanner');
   const Model = models.Period || require('../models/AnnualServicePeriod');
   const period = await readPeriod(plan, Model);
-  if (!['pending_review', 'rejected'].includes(period.correction?.status) || period.correction.id !== input.correctionId) throw fail('此状态不能撤回');
+  if (!(['pending_review', 'rejected'].includes(period.correction?.status) || (period.correction?.status === 'approved_pending_apply' && period.correction.applyIssue)) || period.correction.id !== input.correctionId) throw fail('此状态不能撤回');
   const correction = { ...period.correction, status: 'withdrawn', withdrawnBy: String(staff._id), withdrawnAt: new Date() };
   return saveTransition(Model, period, input, correction, { action: 'withdrawn', correctionId: correction.id, by: correction.withdrawnBy, at: correction.withdrawnAt });
 }
-module.exports = { proposeCorrection, reviewCorrection, refreshCorrectionImpact, withdrawCorrection, correctionImpact };
+module.exports = { proposeCorrection, reviewCorrection, refreshCorrectionImpact, withdrawCorrection, correctionImpact, validateProposal, evidenceSnapshot };

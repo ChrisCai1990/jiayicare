@@ -1,9 +1,9 @@
 import React, { useState } from 'react'
 import { staffAPI } from '../api'
 
-const labels = { pending_review: '待健康顾问审核', approved_pending_apply: '已审核，待系统安全应用（尚未生效）', rejected: '已退回规划师', withdrawn: '已撤回' }
+const labels = { pending_review: '待健康顾问审核', approved_pending_apply: '已审核，待系统安全应用（尚未生效）', applied: '更正已生效，原排期与执行记录保留', rejected: '已退回规划师', withdrawn: '已撤回' }
 const kinds = { task: '客户任务', followup: '随访任务', supply: '周期补给' }
-const actions = { submitted: '规划师提交', approve: '顾问审核通过', reject: '顾问退回', impact_refreshed: '刷新影响清单', withdrawn: '规划师撤回' }
+const actions = { submitted: '规划师提交', approve: '顾问审核通过', reject: '顾问退回', impact_refreshed: '刷新影响清单', withdrawn: '规划师撤回', applied: '系统应用生效', apply_blocked: '应用受阻' }
 export default function AnnualServicePeriodCorrection({ planId, period, staff, reload }) {
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({})
@@ -51,13 +51,14 @@ export default function AnnualServicePeriodCorrection({ planId, period, staff, r
       {advisor && correction.status === 'pending_review' && <div style={{ display: 'grid', gap: 8, maxWidth: 600 }}>
         <button className="btn" disabled={busy} onClick={() => run('refresh-impact')}>刷新排期影响清单</button>
         <textarea className="form-input" aria-label="更正审核意见" placeholder="审核意见（退回必填）" value={note} maxLength={2000} onChange={e => setNote(e.target.value)} />
-        <label><input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} /> 已核对影响，保留已执行记录；本次只审核，尚不应用更正</label>
-        <div><button className="btn btn-primary" disabled={busy || !ack} onClick={() => run('review', { decision: 'approve', note, impactAcknowledged: ack })}>审核通过，留待安全应用</button> <button className="btn" disabled={busy || !note.trim()} onClick={() => run('review', { decision: 'reject', note })}>退回规划师</button></div>
+        <label><input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} /> 已核对影响，保留原排期及已执行记录；符合安全条件时自动应用凭据更正，不平移任务</label>
+        <div><button className="btn btn-primary" disabled={busy || !ack} onClick={() => run('review', { decision: 'approve', note, impactAcknowledged: ack, applicationPolicy: 'retain_schedule' })}>审核通过并尝试安全应用</button> <button className="btn" disabled={busy || !note.trim()} onClick={() => run('review', { decision: 'reject', note })}>退回规划师</button></div>
       </div>}
-      {correction.status === 'approved_pending_apply' && <p style={{ color: '#B54708' }}>安全应用及任务更正承接尚未开放。当前仍按原生效服务期运行，无需重复点击审核；后续应用前仍需核验最新任务状态。</p>}
-      {planner && ['pending_review', 'rejected'].includes(correction.status) && <button className="btn" disabled={busy} onClick={() => run('withdraw')}>撤回本次更正，保留原记录</button>}
+      {correction.status === 'approved_pending_apply' && <p style={{ color: '#B54708' }}>{correction.applyIssue?.message || '已进入每日自动重试，也可使用上方重新核对按钮重试。当前仍按原生效服务期运行，无需重复审核。'}</p>}
+      {advisor && correction.status === 'approved_pending_apply' && correction.applyIssue && <button className="btn" disabled={busy} onClick={() => run('refresh-impact')}>刷新影响并重新核对</button>}
+      {planner && (['pending_review', 'rejected'].includes(correction.status) || (correction.status === 'approved_pending_apply' && correction.applyIssue)) && <button className="btn" disabled={busy} onClick={() => run('withdraw')}>撤回本次更正，保留原记录</button>}
     </>}
-    {planner && !['pending_review', 'approved_pending_apply'].includes(correction?.status) && !editing && <button className="btn" disabled={busy} onClick={begin}>提交凭据更正</button>}
+    {planner && (!['pending_review', 'approved_pending_apply'].includes(correction?.status) || correction?.applyIssue) && !editing && <button className="btn" disabled={busy} onClick={begin}>提交凭据更正</button>}
     {editing && <div style={{ display: 'grid', gap: 8, maxWidth: 600 }}>
       <label>拟更正凭据<select className="form-input" value={form.sourceType} onChange={e => update('sourceType', e.target.value)}><option value="paid_order">已支付年度订单</option><option value="offline_contract">线下合同</option></select></label>
       {form.sourceType === 'paid_order' ? <label>年度订单<select className="form-input" value={form.sourceOrderId} onChange={e => update('sourceOrderId', e.target.value)}><option value="">请选择</option>{orders.map(order => <option key={order._id} value={order._id}>{order.orderNo || order._id} · {order.serviceName}</option>)}</select></label> : <>
