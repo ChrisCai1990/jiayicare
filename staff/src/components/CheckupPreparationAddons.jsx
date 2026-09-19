@@ -13,10 +13,17 @@ export default function CheckupPreparationAddons({ plan, staff, onSaved }) {
   }
   useEffect(() => {
     let active = true
+    let timer
+    let reads = 0
     setData(null); setError('')
-    staffAPI.getCheckupPreparationAddons(taskId).then(res => { if (active) receive(res.data) })
-      .catch(err => { if (active) setError(err.message) })
-    return () => { active = false }
+    const refresh = () => staffAPI.getCheckupPreparationAddons(taskId).then(res => {
+      if (!active) return
+      receive(res.data)
+      const status = res.data.run?.status
+      if (++reads < 20 && (['queued', 'running'].includes(status) || (!status && plan.preparationAddonAuto && !res.data.review))) timer = setTimeout(refresh, 3000)
+    }).catch(err => { if (active) setError(err.message) })
+    refresh()
+    return () => { active = false; clearTimeout(timer) }
   }, [taskId, plan.updatedAt])
   const run = data?.run
   const editable = plan.status === 'draft' && !plan.pushedAt && plan.content?.aiStatus === 'pending' && !data?.review
@@ -32,6 +39,7 @@ export default function CheckupPreparationAddons({ plan, staff, onSaved }) {
     <p>只建议模板内加项，不改标准套餐。请核对下方资料依据；保存所选加项后，仍需原方案审核发布，不启动服务或收费。</p>
     {error && <p role="alert" style={{ color: '#DC3545' }}>{error}</p>}
     {data?.review && <p>本次加项已审核保存，不重复生成。后续调整请编辑方案项目。</p>}
+    {(run?.status === 'queued' || (!run && data && plan.preparationAddonAuto)) && <p>已进入自动准备队列，通常无需点击生成；刷新状态不会调用AI。</p>}
     {run?.status === 'running' && <p>正在生成，重复点击不会再次调用。若长时间未完成，请管理员确认旧请求已停止后恢复。</p>}
     {run?.status === 'failed' && <p>{run.message}</p>}
     {run?.result?.note && <p>{run.result.note}</p>}
@@ -48,7 +56,7 @@ export default function CheckupPreparationAddons({ plan, staff, onSaved }) {
     </div>)}
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
       <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => perform(async () => {})}>刷新生成状态</button>
-      {editable && data && run?.status !== 'running' && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => perform(() =>
+      {editable && data && !['queued', 'running'].includes(run?.status) && !(plan.preparationAddonAuto && !run) && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => perform(() =>
         staffAPI.generateCheckupPreparationAddons(taskId, { updatedAt: plan.updatedAt, token: run?.token }))}>{busy ? '处理中…' : run ? '更新建议（资料未变则复用）' : '生成加项建议'}</button>}
       {editable && ['ready', 'skipped'].includes(run?.status) && <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => perform(async () => {
         await staffAPI.reviewCheckupPreparationAddons(taskId, { token: run.token, indexes: selected })

@@ -5,6 +5,7 @@ const { syncAnnualPlanFollowUps, dedupeAnnualPlanFollowUps } = require('./annual
 // syncAnnualPlanFollowUps 按稳定排期键原位更新，每天仅补充新进入窗口的日期，
 // 已审核记录不会被重新生成，也不会再次进入审核队列。
 async function scanAndSyncScheduledWindow() {
+  require('./checkupSuggestionQueue').wakeCheckupSuggestionQueue();
   await require('./followUpServiceLink').safeReconcileServiceLinks({});
   await require('./annualCheckupEvidence').safeReconcileCheckupPreparation({});
   const [deduped, cancelledOrderTasks, migratedCollectionTasks, medicalReminderMessages] = await Promise.all([

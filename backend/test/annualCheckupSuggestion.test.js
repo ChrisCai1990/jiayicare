@@ -59,6 +59,13 @@ test('parallel first requests claim the unique plan record and call AI once', as
   assert.equal(f.state.calls, 1); assert.equal(f.state.run.status, 'ready');
 });
 
+test('queued automatic and manual attempts compete for one claim before AI', async () => {
+  const f = fixture(); f.state.run = { _id: 'plan', taskId: 'task', actorId: 'advisor', token: 'queued', status: 'queued', input: null };
+  const results = await Promise.allSettled([f.generate(), f.generate()]);
+  assert.equal(f.state.calls, 1); assert.equal(f.state.run.status, 'ready');
+  assert.equal(results.some(result => result.status === 'fulfilled'), true);
+});
+
 test('persisted running claim is never stolen by refresh or another generation', async () => {
   const f = fixture(); f.state.run = { _id: 'plan', token: 'old', status: 'running', startedAt: date };
   assert.equal((await f.generate()).run.token, 'old'); assert.equal(f.state.calls, 0);

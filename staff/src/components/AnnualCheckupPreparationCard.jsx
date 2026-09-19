@@ -70,7 +70,7 @@ export default function AnnualCheckupPreparationCard({ task, staff, onSaved }) {
               {templates.map(template => <option key={template._id} value={template._id}>{template.name}</option>)}
             </select>
           </label>
-          <div>复制标准套餐为待审草稿，保留可选加项库；在原方案页完成个性化调整及审核。此步骤不调用AI、不创建服务或订单。</div>
+          <div>建立标准套餐草稿后，系统自动整理可选加项建议；在原方案页核对依据并审核。不创建服务或订单。</div>
           <button className="btn btn-secondary btn-sm" disabled={busy || !templateId} onClick={async () => {
             setBusy(true); setError('')
             try {

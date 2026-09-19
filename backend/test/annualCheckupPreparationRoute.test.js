@@ -32,6 +32,7 @@ async function request(t, method = 'GET', body = {}, id = ids.task, suffix = '')
   return { status: response.status, body: await response.json() };
 }
 function setup(t, row = task()) {
+  t.mock.method(require('../src/utils/checkupSuggestionQueue'), 'wakeCheckupSuggestionQueue', () => {});
   actor = { _id: row.assignedTo, role: row.formData.annualCheckupPreparation.role };
   t.mock.method(FollowUp, 'findById', () => ({ lean: async () => row, populate: async () => row }));
   t.mock.method(AnnualPlan, 'findById', () => ({ lean: async () => annual }));

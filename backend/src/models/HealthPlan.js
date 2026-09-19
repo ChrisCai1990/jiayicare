@@ -61,6 +61,8 @@ const healthPlanSchema = new mongoose.Schema({
   sourceOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null },
   // 独立体检准备来源：不可由通用内容编辑移除，也不回退匹配旧服务。
   preparationTaskId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUp', immutable: true },
+  // Durable opt-in outbox, written with a newly created preparation draft only.
+  preparationAddonAuto: { type: Boolean, immutable: true },
   // Applied atomically with selected items; not accepted by generic plan editing.
   preparationAddonReview: { type: mongoose.Schema.Types.Mixed, default: null },
   // 无订单的医护端发起服务也遵循与订单相同的统一归属语义。

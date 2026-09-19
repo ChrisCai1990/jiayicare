@@ -13,7 +13,7 @@ function buildPreparationDraft(task, annual, patient, template, actor) {
   if (!Array.isArray(checkItems) || !checkItems.length || checkItems.some(item => !item || typeof item.name !== 'string' || !item.name.trim())) throw fail('模板缺少有效的标准体检项目，请先完善模板', 400);
   const types = { lab: ['检验检查', 'labTest'], exam: ['影像检查', 'specialExam'], func: ['功能医学检测', 'functionalTest'] };
   return {
-    _id: draftIdFor(task._id), preparationTaskId: task._id, patientId: task.patientId, staffId: actor._id,
+    _id: draftIdFor(task._id), preparationTaskId: task._id, preparationAddonAuto: true, patientId: task.patientId, staffId: actor._id,
     type: 'annual_checkup', year: annual.year, title: `${annual.year}年${patient.name || ''}体检准备方案`, status: 'draft',
     items: checkItems.map(item => ({ name: item.name, category: (types[item.type] || types.exam)[0],
       itemType: (types[item.type] || types.exam)[1], itemId: item.id || null, itemGroup: 'base', status: 'pending', scheduledDate: null })),

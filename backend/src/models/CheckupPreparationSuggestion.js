@@ -4,9 +4,10 @@ const mongoose = require('mongoose');
 const schema = new mongoose.Schema({
   _id: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan' },
   token: { type: String, required: true },
-  status: { type: String, enum: ['running', 'ready', 'skipped', 'failed'], required: true },
+  status: { type: String, enum: ['queued', 'running', 'ready', 'skipped', 'failed'], required: true },
+  taskId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUp' },
   actorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
-  input: { type: mongoose.Schema.Types.Mixed, required: true },
+  input: { type: mongoose.Schema.Types.Mixed, default: null },
   result: { type: mongoose.Schema.Types.Mixed, default: null },
   message: { type: String, default: '' },
   startedAt: Date,

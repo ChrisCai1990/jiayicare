@@ -39,17 +39,12 @@ router.post('/:id/checkup-preparation/draft', staffAuth, checkPermission('follow
     const result = await require('../utils/checkupPreparationDraft').createPreparationDraft(req.checkupTask, req.checkupAnnual, req.body || {}, req.staff, {
       FollowUp, HealthPlan, User: require('../models/User'), PlanTemplate: require('../models/PlanTemplate'), isValidId: mongoose.isValidObjectId,
     });
+    require('../utils/checkupSuggestionQueue').wakeCheckupSuggestionQueue();
     res.json({ success: true, data: result.plan, reused: result.reused });
   });
 
 function addonService() {
-  return require('../utils/checkupPreparationSuggestion').createSuggestionService({
-    FollowUp, AnnualPlan, HealthPlan, User: require('../models/User'),
-    ProfessionalHealthAssessment: require('../models/ProfessionalHealthAssessment'), MedicalReport: require('../models/MedicalReport'),
-    Suggestion: require('../models/CheckupPreparationSuggestion'),
-  }, (messages, options, { actor, patient }) => require('../utils/aiBudget').withAiContext({
-    actorId: String(actor._id), tenantId: String(patient.tenantId || ''), business: 'other', stage: 'checkup_preparation_addons',
-  }, () => require('../utils/ai').chat(messages, options)));
+  return require('../utils/checkupSuggestionRuntime').service();
 }
 
 router.get('/:id/checkup-preparation/addons', staffAuth, checkPermission('followups', 'view'),
