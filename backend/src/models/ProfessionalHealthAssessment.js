@@ -9,6 +9,8 @@ const professionalHealthAssessmentSchema = new mongoose.Schema({
   linkedDiseaseRecordId: { type: mongoose.Schema.Types.ObjectId, default: null },
   linkedDiseaseName: { type: String, default: '' },
   sourceReferralIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Referral' }],
+  // 已提交反馈的内容指纹；每版独立，绝不改写已终审快照。
+  sourceFeedbackKey: { type: String },
   sourceRecordIds: [{ type: mongoose.Schema.Types.ObjectId }],
   sourceCutoffAt: { type: Date, default: null },
   facts: { type: [String], default: [] },
@@ -24,6 +26,13 @@ const professionalHealthAssessmentSchema = new mongoose.Schema({
   aiDraft: { type: mongoose.Schema.Types.Mixed, default: null },
   followUpDrafts: { type: [mongoose.Schema.Types.Mixed], default: [] },
   followUpDraftGeneratedAt: { type: Date, default: null },
+  followUpAutomation: {
+    status: { type: String, enum: ['idle', 'queued', 'running', 'ready', 'failed', 'skipped'], default: 'idle' },
+    message: { type: String, default: '' },
+    token: { type: String, default: '' },
+    startedAt: { type: Date, default: null },
+    attempts: { type: Number, default: 0 },
+  },
   followUpPublication: {
     status: { type: String, enum: ['pending', 'published', 'failed'], default: 'pending' },
     message: { type: String, default: '' },
@@ -46,5 +55,16 @@ const professionalHealthAssessmentSchema = new mongoose.Schema({
 
 professionalHealthAssessmentSchema.index({ patientId: 1, purpose: 1, domain: 1, status: 1 });
 professionalHealthAssessmentSchema.index({ sourceReferralIds: 1 });
+professionalHealthAssessmentSchema.index({ sourceFeedbackKey: 1 }, { unique: true, sparse: true });
+professionalHealthAssessmentSchema.index({ 'followUpAutomation.status': 1, status: 1 });
+
+// 入队与业务记录同次保存。后台异常不会令原业务请求失败，队列可在重启/每日恢复。
+function wakeDraftWorker(row) {
+  if (row?.status === 'advisor_review' && row.followUpAutomation?.status === 'queued') {
+    require('../utils/assessmentFollowUpAutomation').wakeAssessmentDraftWorker();
+  }
+}
+professionalHealthAssessmentSchema.post('save', wakeDraftWorker);
+professionalHealthAssessmentSchema.post('findOneAndUpdate', wakeDraftWorker);
 
 module.exports = mongoose.model('ProfessionalHealthAssessment', professionalHealthAssessmentSchema);

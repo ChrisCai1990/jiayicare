@@ -298,7 +298,7 @@ export const staffAPI = {
   getProfessionalHealthAssessments: (patientId, query = {}) => req(`/staff/patients/${patientId}/professional-health-assessments?${qs(query)}`),
   createProfessionalHealthAssessment: (patientId, data) => req(`/staff/patients/${patientId}/professional-health-assessments`, { method: 'POST', body: JSON.stringify(data) }),
   reviewProfessionalHealthAssessment: (assessmentId, data) => req(`/staff/professional-health-assessments/${assessmentId}/review`, { method: 'PATCH', body: JSON.stringify(data) }),
-  generateAssessmentFollowUpDraft: (assessmentId) => req(`/staff/professional-health-assessments/${assessmentId}/ai-followup-draft`, { method: 'POST' }),
+  generateAssessmentFollowUpDraft: (assessmentId, data = {}) => req(`/staff/professional-health-assessments/${assessmentId}/ai-followup-draft`, { method: 'POST', body: JSON.stringify(data) }),
   saveAnnualPlan:       (patientId, data) => req(`/staff/patients/${patientId}/annual-plan`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteAnnualPlan:     (patientId, year, planType, reason) => req(`/staff/patients/${patientId}/annual-plan?year=${year}&planType=${encodeURIComponent(planType)}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
   getSupplyPlan:        (planId) => req(`/staff/supply-plans/${planId}`),

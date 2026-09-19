@@ -46,7 +46,8 @@ const referralSchema = new Schema({
   linkedCourseEntryId: { type: Schema.Types.ObjectId, default: null },
   revisionHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
   responseRevisionHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
-}, { timestamps: true });
+  feedbackVersion: { type: Number, default: 0 },
+}, { timestamps: true, optimisticConcurrency: true });
 
 referralSchema.index({ toStaffId: 1, status: 1 });
 referralSchema.index({ fromStaffId: 1 });

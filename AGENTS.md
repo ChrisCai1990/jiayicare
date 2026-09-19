@@ -1,5 +1,7 @@
 # Codex / Claude Code 双端统一项目记忆
 
+> 后续会诊/专项评估已接入自动随访草稿队列（仅待审，不自动发布）；年度输入不另派动态任务，修订保留版本。每日恢复、AI失败人工接管和未接入病历/报告的边界见 `docs/ASSESSMENT_FOLLOWUP_AUTOMATION.md`。
+
 > 功能分支新增管理随访与既有服务关联及状态回写，岗位入口、异常重选和上线核验见 `docs/FOLLOWUP_SERVICE_LINK.md`；未关联的既有专用流程保持原分派规则。
 
 > 动态随访功能分支：专业评估草稿审核发布、逐条幂等重试和工作台入口的当前能力及未完成项见 `docs/DYNAMIC_ASSESSMENT_FOLLOWUPS.md`；尚不能视为全自动闭环或生产已上线。

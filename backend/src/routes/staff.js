@@ -5908,6 +5908,8 @@ router.patch('/referrals/:id', staffAuth, async (req, res) => {
   const { status, response, responseAnalysis, responseOpinion, consultation } = req.body;
   const referral = await Referral.findOne({ _id: req.params.id, toStaffId: req.staff._id });
   if (!referral) return res.status(404).json({ success: false, message: '转介记录不存在或无权操作' });
+  const originalFeedbackDigest = require('../utils/referralAssessmentWorkflow').referralAssessmentSource(referral).digest;
+  const wasCompleted = referral.status === 'completed';
   const allowedTransitions = {
     pending: ['accepted', 'rejected'],
     accepted: ['completed', 'rejected'],
@@ -5965,6 +5967,7 @@ router.patch('/referrals/:id', staffAuth, async (req, res) => {
   }
   referral.respondedAt = new Date();
   referral.fromStaffUnread = true; // 通知发起方有新回复
+  if (status === 'completed' && (!wasCompleted || require('../utils/referralAssessmentWorkflow').referralAssessmentSource(referral).digest !== originalFeedbackDigest)) referral.feedbackVersion = (referral.feedbackVersion || 0) + 1;
   await referral.save();
   let professionalAssessment = null;
   if (status === 'completed') professionalAssessment = await require('../utils/referralAssessmentWorkflow').completeReferralAndCreateAdvisorReview(referral, req.staff);
@@ -6390,6 +6393,8 @@ router.post('/patients/:id/professional-health-assessments', staffAuth, async (r
   }
   const patient = await User.findById(req.params.id).select('_id').lean();
   if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+  const assessmentVisibleIds = await getVisiblePlanPatientIds(req.staff);
+  if (assessmentVisibleIds && !assessmentVisibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权建立该会员的专业健康评估' });
   const row = await ProfessionalHealthAssessment.create({
     patientId: req.params.id, purpose, domain: String(domain).trim(), title: String(title).trim(), collaborationMode,
     linkedDiseaseRecordId: req.body.linkedDiseaseRecordId || null, linkedDiseaseName: String(req.body.linkedDiseaseName || '').trim(),
@@ -6397,9 +6402,11 @@ router.post('/patients/:id/professional-health-assessments', staffAuth, async (r
     facts: req.body.facts || [], risks: req.body.risks || [], missingInformation: req.body.missingInformation || [],
     recommendations: req.body.recommendations || {}, aiDraft: req.body.aiDraft || null,
     status: req.staff.role === 'familyDoctor' || req.staff.role === 'superadmin' ? 'advisor_review' : 'professional_review',
+    followUpAutomation: ['familyDoctor', 'superadmin'].includes(req.staff.role) ? require('../utils/assessmentFollowUpAutomation').initialFollowUpAutomation(purpose) : { status: 'idle' },
     createdBy: req.staff._id, createdByRole: req.staff.role,
     auditLog: [{ action: 'created', at: new Date(), by: req.staff._id, role: req.staff.role }],
   });
+  await require('../utils/referralAssessmentWorkflow').ensureAdvisorReviewTask(row);
   res.status(201).json({ success: true, data: row });
 });
 
@@ -6409,12 +6416,24 @@ router.patch('/professional-health-assessments/:assessmentId/review', staffAuth,
   const visibleIds = await getVisiblePlanPatientIds(req.staff);
   if (visibleIds && !visibleIds.some(id => String(id) === String(row.patientId))) return res.status(403).json({ success: false, message: '无权审核该会员的评估' });
   const action = req.body.action;
-  if (!['approve_professional', 'submit_advisor', 'approve_advisor', 'reject'].includes(action)) return res.status(400).json({ success: false, message: '审核动作无效' });
+  if (!['approve_professional', 'submit_advisor', 'approve_advisor', 'reject', 'take_over_followups'].includes(action)) return res.status(400).json({ success: false, message: '审核动作无效' });
+  if (action === 'take_over_followups') {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可接管随访草稿' });
+    if (row.status !== 'advisor_review' || row.followUpAutomation?.status !== 'failed' || req.body.revision !== row.__v) return res.status(409).json({ success: false, message: '评估已更新，请刷新后查看' });
+    row = await ProfessionalHealthAssessment.findOneAndUpdate({ _id: row._id, status: 'advisor_review', __v: row.__v, 'followUpAutomation.status': 'failed' }, {
+      $set: { 'followUpAutomation.status': 'ready', 'followUpAutomation.message': '健康顾问已接管，请人工核对并补充必要随访；不需要新增时可保留空列表后终审。' },
+      $inc: { __v: 1 }, $push: { auditLog: { action, at: new Date(), by: req.staff._id, role: req.staff.role } },
+    }, { new: true });
+    if (!row) return res.status(409).json({ success: false, message: '评估已更新，请刷新' });
+    return res.json({ success: true, data: row });
+  }
   if (action === 'approve_advisor') {
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可完成综合审核' });
     if (!['advisor_review', 'approved'].includes(row.status)) return res.status(409).json({ success: false, message: '请先完成专业审核并提交健康顾问' });
     if (row.status === 'advisor_review') {
       if (req.body.revision !== row.__v) return res.status(409).json({ success: false, message: '评估内容已更新，请刷新后重新审核' });
+      if (!(await require('../utils/referralAssessmentWorkflow').isAssessmentSourceCurrent(row))) return res.status(409).json({ success: false, message: '来源转介反馈已修订，请改为审核最新评估' });
+      if (['queued', 'running', 'failed'].includes(row.followUpAutomation?.status)) return res.status(409).json({ success: false, message: row.followUpAutomation?.message || '随访草稿尚未完成，请刷新或重试生成后终审' });
       let drafts;
       try { drafts = require('../utils/assessmentFollowUpDrafts').validateAssessmentFollowUpDrafts(req.body.followUpDrafts ?? row.followUpDrafts ?? []); }
       catch (error) { return res.status(400).json({ success: false, message: error.message }); }
@@ -6445,13 +6464,16 @@ router.patch('/professional-health-assessments/:assessmentId/review', staffAuth,
     row.status = 'rejected'; row.advisorReviewedBy = req.staff._id; row.advisorReviewedAt = new Date();
   } else {
     if (!['familyDoctor', 'specialist', 'nutritionist', 'rehabSpecialist', 'tcmDoctor', 'psychologist', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '当前岗位不能确认专业评估内容' });
+    if (!['draft', 'professional_review', 'rejected'].includes(row.status)) return res.status(409).json({ success: false, message: '评估已提交健康顾问，无需重复提交' });
     if (!row.professionalReviewerIds.some(id => String(id) === String(req.staff._id))) row.professionalReviewerIds.push(req.staff._id);
     row.professionalReviewedAt = new Date(); row.status = 'advisor_review';
+    if (!row.followUpDraftGeneratedAt && !row.followUpDrafts?.length && ['idle', undefined].includes(row.followUpAutomation?.status)) row.followUpAutomation = require('../utils/assessmentFollowUpAutomation').initialFollowUpAutomation(row.purpose);
   }
   row.reviewNote = String(req.body.reviewNote || '').trim();
   row.auditLog.push({ action, at: new Date(), by: req.staff._id, role: req.staff.role, note: row.reviewNote });
   await row.save();
   if (action === 'reject') await require('../utils/referralAssessmentWorkflow').completeAdvisorReviewTask(row._id);
+  else await require('../utils/referralAssessmentWorkflow').ensureAdvisorReviewTask(row);
   res.json({ success: true, data: row });
 });
 
@@ -6462,25 +6484,12 @@ router.post('/professional-health-assessments/:assessmentId/ai-followup-draft', 
   const visibleIds = await getVisiblePlanPatientIds(req.staff);
   if (visibleIds && !visibleIds.some(id => String(id) === String(row.patientId?._id))) return res.status(403).json({ success: false, message: '无权处理该会员的评估' });
   if (row.status !== 'advisor_review') return res.status(409).json({ success: false, message: '只有待健康顾问终审的评估可以生成随访草稿' });
-  const { chat } = require('../utils/ai');
-  const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
-  const raw = await chat([{ role: 'user', content: JSON.stringify({
-    patient: row.patientId, purpose: row.purpose, domain: row.domain, title: row.title,
-    facts: row.facts, risks: row.risks, missingInformation: row.missingInformation, recommendations: row.recommendations,
-  }) }], { jsonMode: true, maxTokens: 1800, temperature: 0, systemPrompt: `你是健康管理公司的随访计划整理助手。只能依据已给出的专业健康评估生成后续管理草稿，不诊断、不处方、不增加不存在的检查或治疗意见。待补信息只能形成“核对/补充资料”任务。日期不得早于${today}。仅输出JSON：{"followUps":[{"title":"20字内动作名称","content":"客观说明随访目的、需核对内容和客户行动","date":"YYYY-MM-DD","category":"medical_visit|examination|review|lifestyle|information","requiresService":false}]}。没有明确后续行动时返回空数组。` });
-  const parsed = parseAiJson(raw);
-  let followUpDrafts;
   try {
-    followUpDrafts = require('../utils/assessmentFollowUpDrafts').validateAssessmentFollowUpDrafts(parsed?.followUps);
-    if (followUpDrafts.some(item => item.date < today)) throw new Error('AI草稿包含已过去的日期，请重新生成');
-  } catch (error) { return res.status(422).json({ success: false, message: error.message }); }
-  const generatedAt = new Date();
-  const updated = await ProfessionalHealthAssessment.findOneAndUpdate({ _id: row._id, status: 'advisor_review', __v: row.__v }, {
-    $set: { followUpDrafts, followUpDraftGeneratedAt: generatedAt, aiDraft: { ...(row.aiDraft || {}), followUpDrafts, generatedAt, requiresHumanReview: true } },
-    $inc: { __v: 1 },
-  }, { new: true });
-  if (!updated) return res.status(409).json({ success: false, message: '生成期间评估已更新，请刷新后查看' });
-  res.json({ success: true, data: { followUpDrafts, generatedAt, revision: updated.__v } });
+    await require('../utils/referralAssessmentWorkflow').ensureAdvisorReviewTask(row);
+    const updated = await require('../utils/assessmentFollowUpAutomation').runAssessmentDraft(row._id, { revision: req.body.revision, allowRevision: req.body.allowRevision === true });
+    if (!updated) return res.status(409).json({ success: false, message: '评估已更新，请刷新' });
+    res.json({ success: true, data: { followUpDrafts: updated.followUpDrafts || [], generatedAt: updated.followUpDraftGeneratedAt, revision: updated.__v, automation: updated.followUpAutomation } });
+  } catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : '生成未完成，请刷新后重试' }); }
 });
 
 // ── 首次年度方案准备清单 ───────────────────────────────────────────────
