@@ -41,6 +41,26 @@ function setup(t, row = task()) {
   t.mock.method(FollowUp, 'updateOne', async () => ({ matchedCount: 1 }));
 }
 
+test('具体体检服务候选和关联接口使用独立承接处理器', async t => {
+  setup(t, task('healthPlanner'));
+  t.mock.method(require('../src/utils/checkupPreparationHandoff'), 'createHandoffService', () => ({
+    options: async (id, staff) => { assert.equal(id, ids.task); assert.equal(staff.role, 'healthPlanner'); return { services: [] }; },
+    link: async (id, staff, input) => { assert.equal(input.servicePlanId, ids.plan); return { status: 'linked_pending_activation' }; },
+  }));
+  assert.equal((await request(t, 'GET', {}, ids.task, '/services')).status, 200);
+  const result = await request(t, 'POST', { servicePlanId: ids.plan }, ids.task, '/service-link');
+  assert.equal(result.status, 200); assert.equal(result.body.data.status, 'linked_pending_activation');
+});
+
+test('承接索引未就绪的冲突明确返回，不伪造预约成功', async t => {
+  setup(t, task('healthPlanner'));
+  t.mock.method(require('../src/utils/checkupPreparationHandoff'), 'createHandoffService', () => ({ link: async () => {
+    throw Object.assign(new Error('唯一索引未就绪'), { statusCode: 409 });
+  } }));
+  const result = await request(t, 'POST', {}, ids.task, '/service-link');
+  assert.equal(result.status, 409); assert.equal(result.body.success, false);
+});
+
 test('双岗位汇合接口只读返回当前状态，不启动服务或写入任务', async t => {
   setup(t, task('healthPlanner'));
   t.mock.method(require('../src/utils/checkupPreparationReadiness'), 'loadReadiness', async (id, staff, models, gate) => {

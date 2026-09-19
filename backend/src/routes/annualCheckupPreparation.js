@@ -53,6 +53,19 @@ function addonService() {
   return require('../utils/checkupSuggestionRuntime').service();
 }
 
+function handoffService() {
+  return require('../utils/checkupPreparationHandoff').createHandoffService({
+    FollowUp, AnnualPlan, HealthPlan, Order: require('../models/Order'), Handoff: require('../models/CheckupPreparationHandoff'), isValidId: mongoose.isValidObjectId,
+  }, (id, actor) => require('../utils/checkupPreparationReadiness').loadReadiness(id, actor,
+    { FollowUp, AnnualPlan, HealthPlan, User: require('../models/User') }, require('../utils/annualPeriodicGate').annualPeriodicGate));
+}
+router.get('/:id/checkup-preparation/services', staffAuth, checkPermission('followups', 'view'), load, async (req, res) => {
+  res.json({ success: true, data: await handoffService().options(req.params.id, req.staff) });
+});
+router.post('/:id/checkup-preparation/service-link', staffAuth, checkPermission('followups', 'edit'), checkPermission('plans', 'edit'), load, async (req, res) => {
+  res.json({ success: true, data: await handoffService().link(req.params.id, req.staff, req.body || {}) });
+});
+
 router.get('/:id/checkup-preparation/addons', staffAuth, checkPermission('followups', 'view'),
   checkPermission('plans', 'view'), checkPermission.checkPlanType(() => 'annual_checkup'), load, async (req, res) => {
     res.json({ success: true, data: await addonService().read(req.params.id, req.staff) });
