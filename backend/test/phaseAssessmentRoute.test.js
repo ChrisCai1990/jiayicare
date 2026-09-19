@@ -6,13 +6,20 @@ const PhaseAssessment = require('../src/models/PhaseAssessment');
 const ServiceRecord = require('../src/models/ServiceRecord');
 const AnnualPlan = require('../src/models/AnnualPlan');
 const PlanTemplate = require('../src/models/PlanTemplate');
-require('../src/utils/ai').chat = async () => '年度总评草稿';
+let aiCalls = 0;
+require('../src/utils/ai').chat = async () => { aiCalls++; return '年度总评草稿'; };
 require('../src/utils/aiCaseReviewContext').buildStageAssessmentContext = async () => ({ sources: [] });
 const ids = { patient: '000000000000000000000001', reviewer: '000000000000000000000002', assessment: '000000000000000000000003' };
 let actor;
 const auth = require.resolve('../src/middleware/staffAuth'); require(auth);
 require.cache[auth].exports = (req, res, next) => { req.staff = actor; next(); };
 const router = require('../src/routes/aiCaseReviews');
+const periodic = require('../src/utils/annualPeriodicGate');
+const actualPeriodicGate = periodic.annualPeriodicGate;
+test.beforeEach(t => {
+  aiCalls = 0;
+  t.mock.method(periodic, 'annualPeriodicGate', async plan => ({ allowed: true, anchor: plan.confirmedAt }));
+});
 async function request(t, body, method = 'PATCH') {
   const app = express(); app.use(express.json()); app.use(router);
   const server = await new Promise(resolve => { const srv = app.listen(0, '127.0.0.1', () => resolve(srv)); });
@@ -116,4 +123,73 @@ test('年度总评选择年度模板并固定综合顾问审核，不发布下�
   assert.equal(result.body.data.assessmentDomain, 'comprehensive');
   assert.equal(result.body.data.templateSnapshot.windowDays, 365);
   assert.equal(result.body.data.periodKey, 'Y1:comprehensive');
+});
+
+function generation(t, patch = {}) {
+  setup(t, 'familyDoctor');
+  const plan = { _id: 'plan', patientId: ids.patient, confirmedAt: '2020-01-01', ...patch };
+  t.mock.method(AnnualPlan, 'findOne', () => ({ sort: () => ({ lean: async () => plan }) }));
+  t.mock.method(PlanTemplate, 'findOne', filter => ({ sort: () => ({ lean: async () => ({ _id: 'template', content: { frequency: filter['content.frequency'] } }) }) }));
+  t.mock.method(PhaseAssessment, 'exists', async () => false);
+  t.mock.method(PhaseAssessment, 'create', async value => value);
+  return plan;
+}
+
+test('常规、年度总评和强化营养新评估均先核验可信服务期，不通过不调用AI', async t => {
+  generation(t);
+  t.mock.method(periodic, 'annualPeriodicGate', async () => ({ allowed: false, reason: '当前没有已生效且有效的续约服务期' }));
+  t.mock.method(PlanTemplate, 'findOne', () => assert.fail('门槛前不得查模板或启动评估'));
+  for (const body of [{}, { frequency: 'yearly' }, { mode: 'intensive_nutrition' }]) {
+    const res = await request(t, body, 'POST'); assert.equal(res.status, 409); assert.match(res.body.message, /续约服务期/);
+  }
+  assert.equal(aiCalls, 0);
+});
+test('手动年度总评使用有效执行起点，提前确认不能提前进入第11个月', async t => {
+  generation(t);
+  t.mock.method(periodic, 'annualPeriodicGate', async () => ({ allowed: true, anchor: new Date() }));
+  const res = await request(t, { frequency: 'yearly' }, 'POST');
+  assert.equal(res.status, 409); assert.match(res.body.message, /有效执行起点/); assert.equal(aiCalls, 0);
+});
+test('可信续约有效时档案旧到期日不阻断手动评估', async t => {
+  generation(t, { continuitySource: { previousPlanId: 'old' } });
+  t.mock.method(User, 'findById', async () => ({ _id: ids.patient, assignedFamilyDoctor: ids.reviewer, serviceExpiry: '2020-01-01', aiPilotFeatures: { stageAssessment: true } }));
+  t.mock.method(periodic, 'annualPeriodicGate', actualPeriodicGate);
+  t.mock.method(require('../src/utils/serviceAccess'), 'resolveServiceAccess', async () => ({ active: true, source: 'verified_renewal' }));
+  t.mock.method(require('../src/utils/annualServicePeriod'), 'annualExecutionGate', async () => ({ allowed: true, anchor: '2020-01-01' }));
+  assert.equal((await request(t, {}, 'POST')).status, 201); assert.equal(aiCalls, 1);
+});
+test('旧年度不能借已生效下一年度权益生成新评估，超级管理员也不绕过', async t => {
+  generation(t); actor.role = 'superadmin';
+  t.mock.method(periodic, 'annualPeriodicGate', actualPeriodicGate);
+  t.mock.method(require('../src/utils/serviceAccess'), 'resolveServiceAccess', async () => ({ active: true, source: 'verified_renewal' }));
+  const res = await request(t, {}, 'POST'); assert.equal(res.status, 409); assert.match(res.body.message, /旧年度/); assert.equal(aiCalls, 0);
+});
+test('服务期查询故障不默认放行，不产生AI调用', async t => {
+  generation(t);
+  t.mock.method(periodic, 'annualPeriodicGate', async () => { throw Error('服务期暂不可核验'); });
+  assert.equal((await request(t, {}, 'POST')).status, 500); assert.equal(aiCalls, 0);
+});
+test('过期后的已有评估仍可审核归档，不因新周期门槛卡住已启动服务', async t => {
+  const row = setup(t, 'familyDoctor');
+  t.mock.method(periodic, 'annualPeriodicGate', () => assert.fail('已有记录审核不调用新周期门槛'));
+  t.mock.method(ServiceRecord, 'findOneAndUpdate', async () => ({ _id: 'archive' }));
+  assert.equal((await request(t, { action: 'approve', revision: 0 })).status, 200);
+  assert.equal(row.status, 'finalized'); assert.equal(aiCalls, 0);
+});
+test('未来开始、无效开始和已结束营养方案不被误算为第1周', async t => {
+  generation(t);
+  const HealthPlan = require('../src/models/HealthPlan');
+  for (const dates of [{ startDate: '2999-01-01' }, { startDate: 'bad' }, { startDate: new Date(), endDate: '2020-01-01' }]) {
+    t.mock.method(HealthPlan, 'findOne', () => ({ sort: () => ({ lean: async () => ({ _id: 'nutrition', ...dates }) }) }));
+    assert.equal((await request(t, { mode: 'intensive_nutrition' }, 'POST')).status, 409);
+  }
+  assert.equal(aiCalls, 0);
+});
+test('有效强化营养仍沿用既有周节点、营养岗位和资料窗口', async t => {
+  generation(t);
+  t.mock.method(User, 'findById', async () => ({ _id: ids.patient, assignedFamilyDoctor: ids.reviewer, assignedNutritionist: 'nutritionist', aiPilotFeatures: { stageAssessment: true } }));
+  t.mock.method(require('../src/models/HealthPlan'), 'findOne', () => ({ sort: () => ({ lean: async () => ({ _id: 'nutrition', startDate: new Date(Date.now() - 8 * 86400000) }) }) }));
+  const res = await request(t, { mode: 'intensive_nutrition' }, 'POST');
+  assert.equal(res.status, 201); assert.equal(res.body.data.interventionWeek, 2);
+  assert.equal(res.body.data.primaryReviewRole, 'nutritionist'); assert.equal(res.body.data.templateSnapshot.windowDays, 7); assert.equal(aiCalls, 1);
 });

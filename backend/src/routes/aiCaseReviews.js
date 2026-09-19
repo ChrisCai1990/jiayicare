@@ -111,8 +111,11 @@ router.post('/patients/:patientId/phase-assessments/generate', staffAuth, async 
     if (!DOMAIN_ROLES[assessmentDomain]) return res.status(400).json({ success: false, message: '评估领域无效' });
     if (!['superadmin', 'familyDoctor', DOMAIN_ROLES[assessmentDomain]].includes(req.staff.role)) return res.status(403).json({ success: false, message: '请由对应专业人员或健康顾问发起该领域评估' });
     if (isAnnualReview && !['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '年度总评由健康顾问负责' });
+    // 手动新周期与自动扫描使用同一可信服务期；审核/归档旧记录不加此门槛。
+    const gate = await require('../utils/annualPeriodicGate').annualPeriodicGate(plan, user);
+    if (!gate.allowed) return res.status(409).json({ success: false, message: gate.reason || '当前年度服务期未生效，不能启动新评估' });
     const frequency = assessmentMode === 'intensive_nutrition' ? 'monthly' : isAnnualReview ? 'yearly' : 'quarterly';
-    if (isAnnualReview && !periodFor('yearly', new Date(), plan.confirmedAt)) return res.status(409).json({ success: false, message: '尚未进入本年度方案确认后的第11个月' });
+    if (isAnnualReview && !periodFor('yearly', new Date(), gate.anchor)) return res.status(409).json({ success: false, message: '尚未进入本年度有效执行起点后的第11个月' });
     const template = await PlanTemplate.findOne({ type: 'phase_assessment', status: 'active', 'content.frequency': frequency, $and: [
       { $or: [{ clientBrand: user.clientBrand || '' }, { clientBrand: '' }] },
       { $or: [{ 'content.assessmentDomain': assessmentDomain }, { 'content.assessmentDomain': { $exists: false } }] },
@@ -123,6 +126,8 @@ router.post('/patients/:patientId/phase-assessments/generate', staffAuth, async 
       const nutritionPlan = await HealthPlan.findOne({ patientId: user._id, type: 'nutrition', confirmedAt: { $ne: null }, status: { $in: ['active', 'draft'] } }).sort({ confirmedAt: -1 }).lean();
       if (!nutritionPlan) return res.status(409).json({ success: false, message: '客户尚无已确认的强化营养干预方案' });
       const startedAt = new Date(nutritionPlan.startDate || nutritionPlan.confirmedAt);
+      if (!Number.isFinite(startedAt.getTime()) || startedAt.getTime() > Date.now()) return res.status(409).json({ success: false, message: '强化营养干预尚未开始或开始日期无效' });
+      if (nutritionPlan.endDate && require('../utils/serviceAccess').dayOf(nutritionPlan.endDate) < require('../utils/serviceAccess').chinaDay(new Date())) return res.status(409).json({ success: false, message: '本轮强化营养干预已结束' });
       const elapsedDays = Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 86400000));
       const elapsedWeek = Math.floor(elapsedDays / 7) + 1;
       interventionWeek = intensiveNutritionCheckpoint(elapsedWeek);
@@ -131,7 +136,7 @@ router.post('/patients/:patientId/phase-assessments/generate', staffAuth, async 
       sourceNutritionPlanId = nutritionPlan._id;
       template.content = { ...template.content, windowDays: interventionWeek <= 4 ? 7 : 14 };
     }
-    const item = await createAssessment({ plan, user, template, periodOverride, assessmentMode, assessmentDomain, sourceNutritionPlanId, interventionWeek });
+    const item = await createAssessment({ plan, user, template, periodOverride, assessmentMode, assessmentDomain, sourceNutritionPlanId, interventionWeek, assessmentAnchor: gate.anchor });
     if (!item) {
       const existing = await PhaseAssessment.findOne({ annualPlanId: plan._id, templateId: template._id, assessmentMode, $or: [{ assessmentDomain }, { assessmentDomain: { $exists: false } }] }).sort({ createdAt: -1 }).lean();
       return res.status(409).json({ success: false, message: '本周期已经生成阶段性评估', data: existing });
