@@ -73,6 +73,7 @@ const followUpSchema = new mongoose.Schema({
   escalatedAt: { type: Date, default: null },
   aiStatus:   { type: String, enum: ['pending', 'approved', null], default: null },
   annualDispatchKey: { type: String },
+  annualScheduleHistory: { type: [mongoose.Schema.Types.Mixed], default: undefined }, // 顾问审核改期；原任务身份不变
   // 待审核归属角色：为空时按固定规则由健康顾问审核（年度管理方案）；health_plan来源按方案类型区分（营养方案→营养师，体检方案→健康顾问）
   // Keep legacy medicalAssistant values readable/saveable: older medical-assist tasks were
   // written through findOneAndUpdate without validators. New tasks belong to healthPlanner.

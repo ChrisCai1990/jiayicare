@@ -14,19 +14,21 @@ function evidenceSnapshot(period) {
 async function correctionImpact(plan, proposed, models = {}) {
   const definitions = [
     ['task', models.Task || require('../models/Task'), 'status dueDate'],
-    ['followup', models.FollowUp || require('../models/FollowUp'), 'status date serviceTracking sourceScheduleKey'],
+    ['followup', models.FollowUp || require('../models/FollowUp'), 'status date serviceTracking sourceScheduleKey updatedAt completedAt completedByUser executedContent executedType'],
     ['supply', models.Supply || require('../models/RecurringSupplyPlan'), 'workflowStatus enabled nextDueDate'],
   ];
-  const records = (await Promise.all(definitions.map(async ([kind, Model, fields]) => {
+  const groups = [];
+  for (const [kind, Model, fields] of definitions) {
     const rows = await Model.find({ sourceAnnualPlanId: plan._id }).select(fields).lean();
-    return rows.map(row => {
+    groups.push(rows.map(row => {
       const date = dayOf(row.dueDate || row.date || row.nextDueDate);
       const status = row.status || row.workflowStatus || 'idle';
-      return { kind, id: String(row._id), date, status, scheduleKey: row.sourceScheduleKey || '', linked: Boolean(row.serviceTracking?.linkId), enabled: row.enabled ?? null,
+      return { kind, id: String(row._id), date, status, scheduleKey: row.sourceScheduleKey || '', linked: Boolean(row.serviceTracking?.linkId), enabled: row.enabled ?? null, updatedAt: row.updatedAt || null,
         outsidePeriod: Boolean(date && (date < proposed.startDate || date > proposed.endDate)),
-        preserve: !['pending', 'planned', 'idle'].includes(status) || Boolean(row.serviceTracking?.linkId) || row.enabled === false };
-    });
-  }))).flat().sort((a, b) => `${a.kind}:${a.id}`.localeCompare(`${b.kind}:${b.id}`));
+        preserve: !['pending', 'planned', 'idle'].includes(status) || Boolean(row.serviceTracking?.linkId || row.completedAt || row.completedByUser || row.executedContent || row.executedType) || row.enabled === false };
+    }));
+  }
+  const records = groups.flat().sort((a, b) => `${a.kind}:${a.id}`.localeCompare(`${b.kind}:${b.id}`));
   const planDates = [];
   for (const [moduleKey, module] of Object.entries(plan.moduleData || {})) {
     if (!module || module.enabled === false) continue;
@@ -93,14 +95,14 @@ async function reviewCorrection({ plan, patient, staff, input }, models = {}) {
   if (note.length > 2000 || (input.decision === 'reject' && !note)) throw fail('退回请填写原因，审核意见最多2000字');
   if (input.decision === 'approve') {
     if (input.impactAcknowledged !== true) throw fail('请确认已核对排期影响及原执行记录保留规则');
-    if (!['retain_schedule', 'revise_unissued_fixed'].includes(input.applicationPolicy)) throw fail('请刷新页面并确认保留原排期的安全应用规则');
+    if (!['retain_schedule', 'revise_unissued_fixed', 'revise_planned_fixed'].includes(input.applicationPolicy)) throw fail('请刷新页面并确认保留原排期的安全应用规则');
     await validateProposal(plan, patient, { ...current.proposed, verified: current.proposed.evidenceSnapshot?.verifiedByPlanner === true }, period, Model, models);
     const executionPlan = projectAnnualSchedule(plan, period.scheduleAmendments || []);
     const latest = await correctionImpact(executionPlan, current.proposed, models);
     if (latest.fingerprint !== current.impact.fingerprint) throw fail('任务或方案状态已变化，请刷新影响清单后再审核');
-    scheduleChanges = validateScheduleChanges(executionPlan, input.scheduleChanges || [], current.proposed, latest);
-    if (scheduleChanges.length && (input.applicationPolicy !== 'revise_unissued_fixed' || !note)) throw fail('修订未派发排期须明确确认，并填写审核原因');
-    if (input.applicationPolicy === 'revise_unissued_fixed' && !scheduleChanges.length) throw fail('请选择需要修订的未派发日期');
+    scheduleChanges = validateScheduleChanges(executionPlan, input.scheduleChanges || [], current.proposed, latest, input.applicationPolicy === 'revise_planned_fixed');
+    if (scheduleChanges.length && (!['revise_unissued_fixed', 'revise_planned_fixed'].includes(input.applicationPolicy) || !note)) throw fail('修订排期须明确确认，并填写审核原因');
+    if (input.applicationPolicy !== 'retain_schedule' && !scheduleChanges.length) throw fail('请选择需要修订的日期');
   }
   const correction = { ...current, status: input.decision === 'approve' ? 'approved_pending_apply' : 'rejected', applicationPolicy: input.decision === 'approve' ? input.applicationPolicy : null, scheduleChanges, applyIssue: null, reviewedBy: String(staff._id), reviewedAt: new Date(), reviewNote: note };
   // 审核只写审计，不替换生效凭据，不重新确认/派发/修改冻结方案。

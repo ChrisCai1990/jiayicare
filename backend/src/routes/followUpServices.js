@@ -66,10 +66,12 @@ router.post('/:id/service-link', staffAuth, loadServiceRequest, async (req, res)
         if (!link) return res.status(409).json({ success: false, message: '关联已更新，请刷新' });
       }
     } else {
+      await require('../utils/annualServiceLinkStart').startAnnualServiceLink(task, parent);
       link = await Link.create({ patientId: task.patientId, requestTaskId: task._id, followUpId: parent._id, targetType, targetId, title, linkedBy: req.staff._id,
         history: [{ at: new Date(), by: req.staff._id, event: 'linked', targetType, targetId }] });
     }
   } catch (error) {
+    if (error.statusCode === 409) return res.status(409).json({ success: false, message: error.message });
     if (error.code === 11000) return res.status(409).json({ success: false, message: '该需求或随访已关联服务，请刷新查看' });
     throw error;
   }

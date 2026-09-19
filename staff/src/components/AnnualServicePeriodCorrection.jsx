@@ -13,8 +13,9 @@ export default function AnnualServicePeriodCorrection({ planId, period, staff, r
   const [note, setNote] = useState('')
   const [ack, setAck] = useState(false)
   const [dateDrafts, setDateDrafts] = useState({})
+  const [includeIssued, setIncludeIssued] = useState(false)
   const correction = period.correction
-  useEffect(() => { setDateDrafts({}); setAck(false) }, [correction?.id, period.correctionRevision])
+  useEffect(() => { setDateDrafts({}); setAck(false); setIncludeIssued(false) }, [correction?.id, period.correctionRevision])
   const dateKey = row => `${row.moduleKey}:${row.index}:${row.field}`
   const scheduleChanges = (correction?.impact?.planDates || []).filter(row => dateDrafts[dateKey(row)] && dateDrafts[dateKey(row)] !== row.date).map(row => ({ moduleKey: row.moduleKey, index: row.index, field: row.field, from: row.date, to: dateDrafts[dateKey(row)] }))
   const planner = ['healthPlanner', 'superadmin'].includes(staff?.role)
@@ -47,6 +48,7 @@ export default function AnnualServicePeriodCorrection({ planId, period, staff, r
       <p>原服务期：{correction.original.startDate} 至 {correction.original.endDate}；拟更正：{correction.proposed.startDate} 至 {correction.proposed.endDate}</p>
       <p>原凭据：{correction.original.contractReference || correction.original.evidenceSnapshot?.orderNo || correction.original.sourceOrderId}；拟更正：{correction.proposed.contractReference || correction.proposed.evidenceSnapshot?.orderNo || correction.proposed.sourceOrderId}</p>
       {correction.reviewNote && <p>审核意见：{correction.reviewNote}</p>}
+      {!!correction.movedTaskIds?.length && <p>已在同一事务中改期{correction.movedTaskIds.length}条待执行任务，原任务编号及前后日期留痕保留。</p>}
       {!!correction.scheduleChanges?.length && <ul>{correction.scheduleChanges.map(row => <li key={dateKey(row)}>已审核日期修订：{row.moduleKey} 第{row.index + 1}项 · {row.from} → {row.to}</li>)}</ul>}
       <details><summary>排期影响清单（快照，共{correction.impact?.records?.length || 0}条任务）</summary>
         <p>日期变化可能影响相对排期。以下只供核对，不自动移动、取消或重开任务。</p>
@@ -55,15 +57,16 @@ export default function AnnualServicePeriodCorrection({ planId, period, staff, r
       </details>
       {advisor && correction.status === 'pending_review' && <div style={{ display: 'grid', gap: 8, maxWidth: 600 }}>
         <button className="btn" disabled={busy} onClick={() => run('refresh-impact')}>刷新排期影响清单</button>
-        <details><summary>修订未派发的固定日期事项（可选）</summary>
-          <p>只改尚未派发的固定日期；已有任务、相对周期和服务执行记录不能在这里改。修订原因请填在审核意见中。</p>
+        <details><summary>修订固定日期事项（可选）</summary>
+          <p>默认只改尚未派发日期。可另行确认改期未开始、未关联服务的待执行事项；已执行、已关联及相对周期不改。修订原因请填在审核意见中。</p>
+          <label><input type="checkbox" checked={includeIssued} onChange={e => { setIncludeIssued(e.target.checked); setAck(false) }} /> 包含已派发待执行任务（须数据库支持事务；一项不满足则整批不改）</label>
           {(correction.impact?.planDates || []).filter(row => row.amendable).map(row => <label key={dateKey(row)} style={{ display: 'block', marginBottom: 8 }}>{row.moduleKey} 第{row.index + 1}项 · 原日期 {row.date}
             <input className="form-input" type="date" min={correction.proposed.startDate} max={correction.proposed.endDate} value={dateDrafts[dateKey(row)] || ''} onChange={e => { const value = e.target.value; setDateDrafts(current => ({ ...current, [dateKey(row)]: value })); setAck(false) }} />
           </label>)}
         </details>
         <textarea className="form-input" aria-label="更正审核意见" placeholder="审核意见（退回必填）" value={note} maxLength={2000} onChange={e => setNote(e.target.value)} />
-        <label><input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} /> 已核对影响及{scheduleChanges.length}项日期修订；仅在安全条件满足时生效，保留冻结原方案，不移动已派发任务</label>
-        <div><button className="btn btn-primary" disabled={busy || !ack || (scheduleChanges.length > 0 && !note.trim())} onClick={() => run('review', { decision: 'approve', note, impactAcknowledged: ack, applicationPolicy: scheduleChanges.length ? 'revise_unissued_fixed' : 'retain_schedule', scheduleChanges })}>审核通过并尝试安全应用</button> <button className="btn" disabled={busy || !note.trim()} onClick={() => run('review', { decision: 'reject', note })}>退回规划师</button></div>
+        <label><input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} /> 已核对影响及{scheduleChanges.length}项日期修订；保留冻结原方案和执行记录，{includeIssued ? '允许安全改期待执行任务' : '不移动已派发任务'}</label>
+        <div><button className="btn btn-primary" disabled={busy || !ack || (scheduleChanges.length > 0 && !note.trim())} onClick={() => run('review', { decision: 'approve', note, impactAcknowledged: ack, applicationPolicy: scheduleChanges.length ? (includeIssued ? 'revise_planned_fixed' : 'revise_unissued_fixed') : 'retain_schedule', scheduleChanges })}>审核通过并尝试安全应用</button> <button className="btn" disabled={busy || !note.trim()} onClick={() => run('review', { decision: 'reject', note })}>退回规划师</button></div>
       </div>}
       {correction.status === 'approved_pending_apply' && <p style={{ color: '#B54708' }}>{correction.applyIssue?.message || '已进入每日自动重试，也可使用上方重新核对按钮重试。当前仍按原生效服务期运行，无需重复审核。'}</p>}
       {advisor && correction.status === 'approved_pending_apply' && correction.applyIssue && <button className="btn" disabled={busy} onClick={() => run('refresh-impact')}>刷新影响并重新核对</button>}

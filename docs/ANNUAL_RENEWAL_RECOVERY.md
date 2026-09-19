@@ -1,5 +1,7 @@
 # 续年派发异常待办与并发防重（功能分支，2026-09-19）
 
+后续变更：为保护已派发事项的事务改期，运行中续年同步不再允许新尝试抢占；派发子分支全部结束才释放。超时不自动夺锁，进程中断需核验旧进程停止后恢复，具体见 [已派发改期](ANNUAL_ISSUED_SCHEDULE_CORRECTIONS.md)。本页下文为最初版本记录。
+
 ## 本轮交付
 
 - 续约凭据增加持久同步状态 `syncState/syncIssue/syncAttemptId/syncStartedAt/lastSyncSuccessAt`。首次启用与后续同步分开：已启用方案后续失败不抹掉首次启用历史，但仍保留异常待办。

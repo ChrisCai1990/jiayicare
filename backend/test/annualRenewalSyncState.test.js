@@ -1,15 +1,18 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { beginRenewalSync, finishRenewalSync, buildAnnualRenewalTodos } = require('../src/utils/annualRenewalSyncState');
-test('旧尝试迟到失败不能覆盖新尝试成功；已启用后的失败仍持久留待办', async () => {
+test('同步不抢占未结束尝试；旧尝试迟到写回不能覆盖新状态', async () => {
   const record = { _id: 'period', activationStatus: 'waiting' };
   const Model = { updateOne: async (filter, update) => {
+    if (filter.syncState?.$ne === record.syncState) return { matchedCount: 0 };
     if (filter.syncAttemptId && filter.syncAttemptId !== record.syncAttemptId) return { matchedCount: 0 };
     if (filter.activatedAt === null && record.activatedAt) return { matchedCount: 0 };
     if (filter.activationStatus?.$ne === record.activationStatus) return { matchedCount: 0 };
     Object.assign(record, update.$set); return { matchedCount: 1 };
   } };
   const first = await beginRenewalSync(record, Model);
+  await assert.rejects(beginRenewalSync(record, Model), /同步尚未结束/);
+  await finishRenewalSync(record, first, {}, Model);
   const second = await beginRenewalSync(record, Model);
   assert.notEqual(first, second);
   await finishRenewalSync(record, second, {}, Model);

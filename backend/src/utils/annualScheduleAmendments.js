@@ -1,4 +1,4 @@
-// 只支持未派发的固定日期事项；不修改冻结方案、相对周期、负责人或服务模式。
+// 固定日期修订默认仅未派发；已派发须显式审核并通过独立事务应用，不修改冻结方案。
 const FIELDS = { medical_treatment: 'visit_time', specialist_collab: 'plan_time', checkup_completion: 'time', abnormal_followup: 'time', vaccine: 'time', functional_medicine: 'time', annual_checkup: 'date' };
 const fail = message => Object.assign(new Error(message), { statusCode: 409, correctionRole: 'familyDoctor' });
 const keyOf = row => `${row.moduleKey}:${row.index}:${row.field}`;
@@ -24,7 +24,11 @@ function projectAnnualSchedule(plan, amendments = []) {
   }
   return { ...plan, moduleData, __frozenModuleData: frozen, __scheduleAmendments: amendments };
 }
-function validateScheduleChanges(plan, changes, period, impact) {
+function matchesChange(plan, item, row) {
+  const originalDay = String(sourceDate(plan, item.moduleKey, item.index, item.field, item.from)).slice(0, 10);
+  return row.kind === 'followup' && (!row.scheduleKey || row.scheduleKey.startsWith(`service-request:${item.moduleKey}:${item.index}:`) || row.scheduleKey.startsWith(item.moduleKey === 'annual_checkup' ? `annual_checkup:${originalDay}` : `${item.moduleKey}:${originalDay}:`) || (row.scheduleKey.startsWith(`${item.moduleKey}:`) && !/^\d{4}-\d{2}-\d{2}(?::|$)/.test(row.scheduleKey.slice(item.moduleKey.length + 1))));
+}
+function validateScheduleChanges(plan, changes, period, impact, allowIssued = false) {
   if (!Array.isArray(changes) || changes.length > 100) throw fail('排期修订须为不超过100条的列表');
   const seen = new Set();
   return changes.map(input => {
@@ -37,8 +41,9 @@ function validateScheduleChanges(plan, changes, period, impact) {
     if (!record || plan.moduleData[moduleKey]?.enabled === false || String(record[field] || '').slice(0, 10) !== from || !validDay(from)) throw fail('原日期已变化或来源无效，请刷新后审核');
     if (!validDay(to) || to < period.startDate || to > period.endDate || from === to) throw fail('修订日期必须有效、不同于原日期且位于拟服务期内');
     // 即使已取消/已完成也不重建该事项；旧记录缺稳定键时保守阻断。
-    const originalDay = String(sourceDate(plan, moduleKey, index, field, from)).slice(0, 10);
-    if (impact.records.some(row => row.kind === 'followup' && (!row.scheduleKey || row.scheduleKey.startsWith(`service-request:${moduleKey}:${index}:`) || row.scheduleKey.startsWith(moduleKey === 'annual_checkup' ? `annual_checkup:${originalDay}` : `${moduleKey}:${originalDay}:`) || (row.scheduleKey.startsWith(`${moduleKey}:`) && !/^\d{4}-\d{2}-\d{2}(?::|$)/.test(row.scheduleKey.slice(moduleKey.length + 1)))))) throw fail('该事项已有派发记录或历史键无法确认，不能使用未派发排期修订入口');
+    const matches = impact.records.filter(row => matchesChange(plan, input, row));
+    if (matches.length && !allowIssued) throw fail('该事项已有派发记录或历史键无法确认，不能使用未派发排期修订入口');
+    if (allowIssued && matches.some(row => row.status !== 'planned' || row.linked || row.preserve || row.date !== from || !row.scheduleKey)) throw fail('只能改期原日期一致、尚未开始且未关联服务的待执行事项');
     return { moduleKey, index, field, from, to };
   });
 }
@@ -54,4 +59,4 @@ function assertAmendedRowUnchanged(plan, key, oldDate, newDate) {
   });
   if (amended && new Date(oldDate).getTime() !== new Date(newDate).getTime()) throw Object.assign(fail('修订事项出现旧日期任务，请顾问核对；未覆盖已派记录'), { code: 'ANNUAL_SCHEDULE_CONFLICT' });
 }
-module.exports = { FIELDS, sourceDate, projectAnnualSchedule, validateScheduleChanges, mergeScheduleAmendments, assertAmendedRowUnchanged };
+module.exports = { FIELDS, sourceDate, projectAnnualSchedule, validateScheduleChanges, mergeScheduleAmendments, assertAmendedRowUnchanged, matchesChange };

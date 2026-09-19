@@ -3,6 +3,19 @@ const assert = require('node:assert/strict');
 const { proposeCorrection, reviewCorrection, refreshCorrectionImpact, withdrawCorrection, correctionImpact } = require('../src/utils/annualServicePeriodCorrection');
 const { buildAnnualRenewalTodos } = require('../src/utils/annualRenewalSyncState');
 const clone = value => structuredClone(value);
+test('已派发待执行改期需要顾问显式选择新策略，审核仍只保存草稿', async () => {
+  const s = setup();
+  s.plan.moduleData = { medical_treatment: { records: [{ visit_time: '2027-03-01', hospital: '医院' }] } };
+  s.state.followups = [{ _id: 'follow', status: 'planned', date: '2027-03-01', sourceScheduleKey: 'medical_treatment:2027-03-01:医院', updatedAt: new Date('2027-01-01') }];
+  await s.propose();
+  const changes = [{ moduleKey: 'medical_treatment', index: 0, field: 'visit_time', from: '2027-03-01', to: '2027-04-01' }];
+  await assert.rejects(s.review({ applicationPolicy: 'revise_unissued_fixed', scheduleChanges: changes, note: '更正日期' }), /已有派发/);
+  await assert.rejects(s.review({ applicationPolicy: 'revise_planned_fixed', scheduleChanges: changes }), /审核原因/);
+  const result = await s.review({ applicationPolicy: 'revise_planned_fixed', scheduleChanges: changes, note: '更正日期' });
+  assert.equal(result.correction.status, 'approved_pending_apply');
+  assert.equal(result.correction.applicationPolicy, 'revise_planned_fixed');
+  assert.equal(s.state.followups[0].date, '2027-03-01');
+});
 function setup() {
   const plan = { _id: 'plan', patientId: 'patient', year: 2027, confirmedAt: '2026-12-01', continuitySource: { previousPlanId: 'old' }, moduleData: { visit: { records: [{ date: '2027-01-02' }] } } };
   const patient = { _id: 'patient', assignedHealthPlanner: 'planner', assignedFamilyDoctor: 'advisor' };

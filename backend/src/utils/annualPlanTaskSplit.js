@@ -78,9 +78,13 @@ async function syncAnnualPlanTaskSplit(plan) {
     }, { upsert: true });
     if (result.upsertedCount) staffTasks++;
   }
-  const [scheduledFollowUps, serviceTasks] = await Promise.all([
+  // 必须等待所有子写入结束才释放同步状态；Promise.all的提前拒绝会让旧写入穿过改期事务。
+  const settled = await Promise.allSettled([
     syncAnnualPlanFollowUps(plan), syncAnnualPlanServiceTasks(plan),
   ]);
+  const rejected = settled.find(result => result.status === 'rejected');
+  if (rejected) throw rejected.reason;
+  const [scheduledFollowUps, serviceTasks] = settled.map(result => result.value);
   if (plan.continuitySource?.previousPlanId && gate.period?.activationStatus !== 'active') {
     await require('./annualPlanSupplyPlans').syncAnnualPlanSupplyPlans(plan);
     await require('./annualPlanTreatmentSync').syncAnnualPlanTreatments(plan);

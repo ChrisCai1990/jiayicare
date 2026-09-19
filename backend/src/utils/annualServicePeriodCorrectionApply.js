@@ -35,7 +35,8 @@ async function applyApprovedCorrection(plan, models = {}) {
   if (period.syncState === 'running') return { applied: false, waiting: true, reason: '等待当前任务同步完成' };
   try {
     if (!correction.reviewedBy || !correction.reviewedAt) throw issue('缺少顾问审核凭据，请重新核对');
-    if (!['retain_schedule', 'revise_unissued_fixed'].includes(correction.applicationPolicy)) throw issue('历史审核未确认保留原排期后安全应用，请顾问重新核对');
+    if (!['retain_schedule', 'revise_unissued_fixed', 'revise_planned_fixed'].includes(correction.applicationPolicy)) throw issue('历史审核未确认保留原排期后安全应用，请顾问重新核对');
+    if (correction.applicationPolicy === 'revise_planned_fixed') return await require('./annualIssuedScheduleCorrection').applyIssuedCorrection(plan, period, models);
     if (JSON.stringify(evidenceSnapshot(period)) !== JSON.stringify(evidenceSnapshot(correction.original))) throw issue('生效凭据已发生变化，请规划师重新提交更正', 'healthPlanner');
     let proposed;
     try {

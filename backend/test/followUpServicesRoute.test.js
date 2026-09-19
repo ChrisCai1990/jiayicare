@@ -80,3 +80,19 @@ test('有效服务只建立关联并回读任务，不改写订单的岗位流�
   assert.equal(saved.followUpId, ids.parent); assert.equal(saved.requestTaskId, ids.request);
   assert.equal(saved.patientId, ids.patient); assert.equal(saved.linkedBy, ids.planner);
 });
+
+for (const conflict of [false, true]) test(`年度需求关联与改期并发保护：${conflict ? '版本变化不创建关联' : '标记已开始后沿用原服务链'}`, async t => {
+  actor = { _id: ids.planner, role: 'healthPlanner' };
+  const annual = { ...task, sourceType: 'annual_service', workflowKey: 'service_request', sourceAnnualPlanId: ids.target, date: new Date('2027-03-01'), updatedAt: new Date('2027-01-01') };
+  const parent = { _id: ids.parent, assignedTo: ids.manager, date: annual.date, updatedAt: annual.updatedAt };
+  t.mock.method(FollowUp, 'findById', () => Object.assign(Promise.resolve(annual), { populate: async () => annual }));
+  t.mock.method(FollowUp, 'findOne', async () => parent);
+  t.mock.method(Order, 'findOne', () => ({ lean: async () => ({ status: 'scheduled', serviceName: '检查服务' }) }));
+  t.mock.method(Order, 'updateOne', () => assert.fail('不可改写订单流转'));
+  t.mock.method(Link, 'findOne', async () => null);
+  const events = [];
+  t.mock.method(FollowUp, 'updateOne', async (q, u) => { assert.ok(q.updatedAt); assert.equal(u.$set.status, 'in_progress'); events.push(String(q._id)); return { matchedCount: conflict ? 0 : 1 }; });
+  t.mock.method(Link, 'create', async row => { events.push('link'); return { ...row, _id: 'link' }; });
+  assert.equal((await request(t, { targetType: 'order', targetId: ids.target, followUpId: ids.parent })).status, conflict ? 409 : 200);
+  assert.deepEqual(events, conflict ? [ids.request] : [ids.request, ids.parent, 'link']);
+});

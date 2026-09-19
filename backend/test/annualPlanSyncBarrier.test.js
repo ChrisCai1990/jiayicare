@@ -1,0 +1,26 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+test('一个派发分支失败时仍等待另一分支结束，之后才释放同步写入屏障', async t => {
+  let release, entered;
+  const enteredPromise = new Promise(resolve => { entered = resolve; });
+  const pending = new Promise(resolve => { release = resolve; });
+  t.mock.method(require('../src/utils/annualPlanFollowUps'), 'syncAnnualPlanFollowUps', async () => { throw Error('随访派发失败'); });
+  t.mock.method(require('../src/utils/annualPlanServiceTasks'), 'syncAnnualPlanServiceTasks', async () => { entered(); await pending; return { warnings: [] }; });
+  const split = require('../src/utils/annualPlanTaskSplit');
+  const tracker = require('../src/utils/annualRenewalSyncState');
+  let finished = false;
+  t.mock.method(require('../src/utils/annualServicePeriod'), 'annualExecutionGate', async () => ({ allowed: true, anchor: new Date(), period: { _id: 'period', activationStatus: 'active' } }));
+  t.mock.method(tracker, 'beginRenewalSync', async () => 'attempt');
+  t.mock.method(tracker, 'finishRenewalSync', async () => { finished = true; });
+  t.mock.method(require('../src/models/User'), 'findById', () => ({ select: () => ({ lean: async () => ({ assignedHealthPlanner: 'planner', assignedHealthManager: 'manager' }) }) }));
+  const FollowUp = require('../src/models/FollowUp');
+  t.mock.method(FollowUp, 'deleteMany', async () => ({}));
+  t.mock.method(FollowUp, 'updateOne', async () => ({}));
+  t.mock.method(require('../src/utils/annualDispatchOnce'), 'insertAnnualOnce', async () => ({}));
+  const result = split.syncAnnualPlanTaskSplit({ _id: 'plan', confirmedAt: new Date(), continuitySource: { previousPlanId: 'old' } });
+  const rejected = assert.rejects(result, /随访派发失败/);
+  await enteredPromise;
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(finished, false);
+  release(); await rejected; assert.equal(finished, true);
+});
