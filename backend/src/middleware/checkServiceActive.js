@@ -1,4 +1,4 @@
-// 服务到期锁定：serviceExpiry 是字符串日期（如 '2026-12-31'），非 Date 类型。
+// 服务到期锁定：可信续约凭据优先；尚未进入新凭据周期的历史客户兼容 serviceExpiry。
 // 空值暂不视为到期（避免误伤 serviceExpiry 从未被写入过的存量老客户，待确认存量占比后可收紧为严格模式）。
 //
 // 用法：全局挂载在用户端专属路由前（user/records/medications/...），默认锁定所有请求；
@@ -6,11 +6,7 @@
 // 采用"默认锁+白名单放行"而非逐接口手动加锁，是为了避免新增接口漏挂导致锁形同虚设——
 // 新增的用户端写操作接口默认就是锁定状态，需要显式放行的才加进白名单。
 function isServiceExpired(user) {
-  if (!user.serviceExpiry) return false;
-  const expiry = new Date(user.serviceExpiry);
-  if (Number.isNaN(expiry.getTime())) return false;
-  expiry.setHours(23, 59, 59, 999); // 到期当天仍可用，次日零点后判定过期
-  return expiry.getTime() < Date.now();
+  return !require('../utils/serviceAccess').legacyAccess(user).active;
 }
 
 // { method, prefix } — prefix 匹配 req.originalUrl 以 /api 开头的路径前缀（含method匹配）
@@ -35,19 +31,27 @@ const WHITELIST = [
 
 function isWhitelisted(req) {
   const url = req.originalUrl.split('?')[0];
+  // 到期后仍可查看本人已发布方案并确认；派发门槛在确认接口内另行校验。
+  if (req.method === 'GET' && /^\/api\/user\/annual-mgmt-plans\/?$/.test(url)) return true;
+  if (req.method === 'PATCH' && /^\/api\/user\/annual-mgmt-plans\/[a-f\d]{24}\/confirm\/?$/i.test(url)) return true;
   return WHITELIST.some(w => (w.method === 'ALL' || w.method === req.method) && url.startsWith(w.prefix));
 }
 
-function checkServiceActive(req, res, next) {
+async function checkServiceActive(req, res, next) {
   if (isWhitelisted(req)) return next();
-  if (isServiceExpired(req.user)) {
+  try {
+    const access = await require('../utils/serviceAccess').resolveServiceAccess(req.user);
+    req.serviceAccess = access;
+    if (access.active) return next();
     return res.status(403).json({
       success: false,
       code: 'SERVICE_EXPIRED',
-      message: '您的服务已到期，该功能已锁定。如需继续使用请联系健康管理师续费。',
+      message: `${access.reason}，该功能暂不可用。如有疑问请联系健康规划师核对。`,
     });
+  } catch (error) {
+    // 数据库不可用时不能退回旧日期误放行；保留可重试而非误报到期。
+    return res.status(503).json({ success: false, code: 'SERVICE_ACCESS_UNAVAILABLE', message: '暂时无法核验服务状态，请稍后重试' });
   }
-  next();
 }
 
 module.exports = { checkServiceActive, isServiceExpired };

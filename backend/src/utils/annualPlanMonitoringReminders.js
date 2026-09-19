@@ -80,16 +80,21 @@ function buildMonitoringReminderSpecs(patient, moduleData = {}, recentBloodPress
 
 async function syncServiceCycleMonitoringReminders(userId) {
   const patient = await User.findById(userId)
-    .select('age birthDate birthday dateOfBirth height weight chronicDiseases medicalHistory healthProfile.medicalHistory healthConcern serviceStartDate serviceExpiry createdAt onboardingCompletedAt').lean();
+    .select('age birthDate birthday dateOfBirth height weight chronicDiseases medicalHistory healthProfile.medicalHistory healthConcern serviceStartDate serviceExpiry createdAt onboardingCompletedAt isDeleted').lean();
   if (!patient) return { created: 0, updated: 0 };
+  const access = await require('./serviceAccess').resolveServiceAccess(patient);
+  if (!access.active) {
+    await Reminder.updateMany({ user: patient._id, systemManaged: true, sourceKey: /^service-cycle:/ }, { $set: { enabled: false } });
+    await clearMonitoringSystemMessage(patient._id);
+    return { created: 0, updated: 0, paused: true };
+  }
   const HealthRecord = require('../models/HealthRecord');
   const recentBloodPressure = await HealthRecord.find({ user: patient._id, type: 'bloodPressure', recordedAt: { $gte: new Date(Date.now() - 30 * 86400000) } })
     .sort({ recordedAt: -1 }).limit(14).select('value extra recordedAt').lean();
   const specs = buildMonitoringReminderSpecs(patient, {}, recentBloodPressure);
   const activeKeys = specs.map(item => item.sourceKey);
-  const startDate = patient.serviceStartDate || patient.onboardingCompletedAt || patient.createdAt || new Date();
-  const endDate = patient.serviceExpiry ? new Date(`${patient.serviceExpiry}T23:59:59+08:00`) : null;
-  const serviceActive = !endDate || endDate >= new Date();
+  const startDate = access.startDate ? new Date(`${access.startDate}T00:00:00+08:00`) : patient.onboardingCompletedAt || patient.createdAt || new Date();
+  const endDate = access.endDate ? new Date(`${access.endDate}T23:59:59.999+08:00`) : null;
   let created = 0; let updated = 0;
   for (const spec of specs) {
     const sourceKey = `service-cycle:${spec.sourceKey}`;
@@ -98,7 +103,7 @@ async function syncServiceCycleMonitoringReminders(userId) {
       { user: patient._id, sourceKey, systemManaged: true },
       { $set: { category: spec.category, title: spec.title, description: spec.description,
         scheduleType: 'recurring', reminderTime: spec.reminderTime, daysOfWeek: spec.daysOfWeek || [],
-        customEveryNDays: spec.customEveryNDays, startDate, endDate, enabled: serviceActive && !existing?.userDisabled, systemManaged: true,
+        customEveryNDays: spec.customEveryNDays, startDate, endDate, enabled: !existing?.userDisabled, systemManaged: true,
         sourceAnnualPlanId: null },
         $setOnInsert: { user: patient._id, sourceKey } },
       { upsert: true },
@@ -109,30 +114,38 @@ async function syncServiceCycleMonitoringReminders(userId) {
     { user: patient._id, systemManaged: true, sourceKey: { $regex: '^service-cycle:', $nin: activeKeys.map(key => `service-cycle:${key}`) } },
     { $set: { enabled: false } },
   );
-  await syncMonitoringSystemMessage(patient._id);
+  await syncMonitoringSystemMessage(patient._id, new Date(), access);
   return { created, updated };
 }
 
 function activeToday(reminder, now = new Date()) {
   if (!reminder?.enabled) return false;
-  const today = new Date(now); today.setHours(0, 0, 0, 0);
-  const start = reminder.startDate ? new Date(reminder.startDate) : null;
-  const end = reminder.endDate ? new Date(reminder.endDate) : null;
-  if (start) { start.setHours(0, 0, 0, 0); if (start > today) return false; }
-  if (end) { end.setHours(0, 0, 0, 0); if (end < today) return false; }
+  const { chinaDay, dayOf } = require('./serviceAccess');
+  const today = chinaDay(now);
+  const start = dayOf(reminder.startDate);
+  const end = dayOf(reminder.endDate);
+  if (start && start > today) return false;
+  if (end && end < today) return false;
   if (reminder.customEveryNDays && start) {
-    return Math.floor((today - start) / 86400000) % reminder.customEveryNDays === 0;
+    return Math.floor((new Date(today) - new Date(start)) / 86400000) % reminder.customEveryNDays === 0;
   }
   if (!reminder.daysOfWeek?.length) return true;
-  return reminder.daysOfWeek.includes(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][today.getDay()]);
+  return reminder.daysOfWeek.includes(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(`${today}T00:00:00Z`).getUTCDay()]);
 }
 
-async function syncMonitoringSystemMessage(userId, now = new Date()) {
+async function clearMonitoringSystemMessage(userId) {
+  // 仅收起固定监测通知的未读，不删除消息、不影响复查及其他重要通知。
+  await require('../models/Message').updateOne({ user: userId, dedupeKey: `health-monitoring:${userId}`, unread: true }, { $set: { unread: false, readAt: new Date() } });
+}
+
+async function syncMonitoringSystemMessage(userId, now = new Date(), knownAccess) {
   const Message = require('../models/Message');
   const HealthRecord = require('../models/HealthRecord');
+  const access = knownAccess || await require('./serviceAccess').resolveServiceAccess(await User.findById(userId).select('serviceStartDate serviceExpiry isDeleted').lean(), now);
+  if (!access.active) { await clearMonitoringSystemMessage(userId); return null; }
   const reminders = await Reminder.find({ user: userId, systemManaged: true, sourceKey: /^service-cycle:/, enabled: true }).lean();
   const due = reminders.filter(item => activeToday(item, now));
-  if (!due.length) return null;
+  if (!due.length) { await clearMonitoringSystemMessage(userId); return null; }
   const cstDay = new Date(now.getTime() + 8 * 3600000).toISOString().slice(0, 10);
   const dayStart = new Date(`${cstDay}T00:00:00+08:00`);
   const dayEnd = new Date(`${cstDay}T23:59:59.999+08:00`);

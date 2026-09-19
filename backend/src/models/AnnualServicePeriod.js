@@ -8,6 +8,7 @@ const schema = new mongoose.Schema({
   startDate: { type: String, required: true },
   endDate: { type: String, required: true },
   evidenceSnapshot: { type: mongoose.Schema.Types.Mixed, required: true },
+  legacyServiceWindow: { type: mongoose.Schema.Types.Mixed, default: null },
   confirmedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
   confirmedAt: { type: Date, required: true },
   activationStatus: { type: String, enum: ['waiting', 'active', 'failed'], default: 'waiting' },

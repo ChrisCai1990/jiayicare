@@ -13,4 +13,10 @@ async function confirmPublishedAnnualPlan(plan, now = new Date()) {
   return plan;
 }
 
-module.exports = { confirmPublishedAnnualPlan };
+async function assertAnnualConfirmationAccess(plan, user) {
+  if (plan.continuitySource?.previousPlanId) return; // 仅续年方案可在服务空档提前确认。
+  const access = await require('./serviceAccess').resolveServiceAccess(user);
+  if (!access.active) throw Object.assign(new Error('服务期未生效，暂不能启动首次年度方案'), { statusCode: 403 });
+}
+
+module.exports = { confirmPublishedAnnualPlan, assertAnnualConfirmationAccess };

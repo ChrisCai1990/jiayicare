@@ -65,9 +65,9 @@ export default function ProfilePage() {
 
   useDidShow(() => { loadOrderCounts(); });
 
-  const hasService = !!(user?.servicePackage && user?.serviceExpiry);
+  const hasService = !!(user?.servicePackage && user?.serviceExpiry) || user?.serviceAccess?.source === 'verified_renewal';
   const expiry = hasService ? new Date(user.serviceExpiry) : null;
-  const daysLeft = expiry ? Math.max(0, Math.ceil((expiry - new Date()) / 86400000)) : 0;
+  const daysLeft = user?.serviceAccess?.active === false ? 0 : expiry ? Math.max(0, Math.ceil((expiry - new Date()) / 86400000)) : 0;
   const fund = user?.healthFund || {};
   const fundTotal = fund.total ?? 0;
   const fundPersonal = fund.personal ?? 0;
@@ -174,7 +174,7 @@ export default function ProfilePage() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{PACKAGE_LABELS[user.servicePackage] || user.servicePackage}</Text>
-              <Text style={{ fontSize: '12px', color: colors.textMuted, marginTop: '2px' }}>到期 {user.serviceExpiry} · 剩余 {daysLeft} 天</Text>
+              <Text style={{ fontSize: '12px', color: colors.textMuted, marginTop: '2px' }}>{user?.serviceAccess?.active === false ? user.serviceAccess.reason : `到期 ${user.serviceExpiry} · 剩余 ${daysLeft} 天`}</Text>
             </View>
             <View style={{ padding: '7px 14px', backgroundColor: colors.primary, borderRadius: `${radius.full}px` }} onClick={requestRenewal}>
               <Text style={{ fontSize: '12px', color: '#fff', fontWeight: 700 }}>续约服务</Text>

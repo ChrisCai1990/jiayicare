@@ -65,7 +65,7 @@ app.use('/api/auth',    require('./routes/auth'));
 app.use('/api/payments', require('./routes/payments'));
 
 // 用户端(app)专属路由：服务到期锁定统一在此挂载（默认锁+白名单放行，见 checkServiceActive.js 注释）。
-// auth 已把 req.user 挂好，checkServiceActive 直接读 req.user.serviceExpiry 判断，不需要每个路由文件单独引入。
+// auth 已把 req.user 挂好，checkServiceActive 统一核验可信续约期（历史客户兼容档案日期）。
 const { checkServiceActive } = require('./middleware/checkServiceActive');
 const auth = require('./middleware/auth');
 app.use('/api/user', auth, checkServiceActive, require('./routes/user'));

@@ -298,9 +298,9 @@ export default function ProfileScreen({ navigation }) {
     }).catch(() => {});
   }, []));
 
-  const hasService = !!(user?.servicePackage && user?.serviceExpiry);
+  const hasService = !!(user?.servicePackage && user?.serviceExpiry) || user?.serviceAccess?.source === 'verified_renewal';
   const expiry = hasService ? new Date(user.serviceExpiry) : null;
-  const daysLeft = expiry ? Math.max(0, Math.ceil((expiry - new Date()) / 86400000)) : 0;
+  const daysLeft = user?.serviceAccess?.active === false ? 0 : expiry ? Math.max(0, Math.ceil((expiry - new Date()) / 86400000)) : 0;
   // 健康基金
   const fund = user?.healthFund || {};
   const fundTotal    = fund.total    ?? 0;
@@ -421,7 +421,7 @@ export default function ProfileScreen({ navigation }) {
               <View style={styles.serviceInfo}>
                 <Text style={styles.serviceName} numberOfLines={1}>{PACKAGE_LABELS[user.servicePackage] || user.servicePackage}</Text>
                 <Text style={styles.serviceExpiry}>
-                  到期 {user.serviceExpiry} · 剩余 {daysLeft} 天
+                  {user?.serviceAccess?.active === false ? user.serviceAccess.reason : `到期 ${user.serviceExpiry} · 剩余 ${daysLeft} 天`}
                 </Text>
               </View>
               <TouchableOpacity style={styles.renewBtn} onPress={() => navigation.navigate('Renewal')}>

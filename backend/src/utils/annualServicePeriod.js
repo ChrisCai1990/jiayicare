@@ -56,7 +56,8 @@ async function confirmAnnualServicePeriod({ plan, patient, staff, input }, model
     if (existing.sourceType === sourceType && existing.startDate === startDate && existing.endDate === endDate && String(existing.sourceOrderId || '') === String(sourceOrderId || '') && existing.contractReference === contractReference) return existing;
     throw fail('服务期已有确认记录，不能覆盖原凭据；请核对后走更正流程');
   }
-  return Period.create({ patientId: patient._id, annualPlanId: plan._id, sourceType, ...(sourceOrderId ? { sourceOrderId } : {}), contractReference, startDate, endDate, evidenceSnapshot, confirmedBy: staff._id, confirmedAt: new Date() });
+  const legacyServiceWindow = previous?.legacyServiceWindow || { serviceStartDate: patient.serviceStartDate || '', serviceExpiry: patient.serviceExpiry || '' };
+  return Period.create({ patientId: patient._id, annualPlanId: plan._id, sourceType, ...(sourceOrderId ? { sourceOrderId } : {}), contractReference, startDate, endDate, evidenceSnapshot, legacyServiceWindow, confirmedBy: staff._id, confirmedAt: new Date() });
 }
 
 async function annualExecutionGate(plan, now = new Date(), models = {}) {

@@ -11,7 +11,7 @@ async function load(req, res) {
   if (!mongoose.isValidObjectId(req.params.planId)) { res.status(400).json({ success: false, message: '方案ID无效' }); return null; }
   const plan = await AnnualPlan.findById(req.params.planId).lean();
   if (!plan) { res.status(404).json({ success: false, message: '方案不存在' }); return null; }
-  const patient = await User.findById(plan.patientId).select('assignedHealthPlanner assignedFamilyDoctor assignedHealthManager').lean();
+  const patient = await User.findById(plan.patientId).select('assignedHealthPlanner assignedFamilyDoctor assignedHealthManager serviceStartDate serviceExpiry').lean();
   const field = { healthPlanner: 'assignedHealthPlanner', familyDoctor: 'assignedFamilyDoctor', healthManager: 'assignedHealthManager' }[req.staff.role];
   if (!patient || (req.staff.role !== 'superadmin' && (!field || String(patient[field] || '') !== String(req.staff._id)))) { res.status(403).json({ success: false, message: '无权查看该客户的续约凭据' }); return null; }
   return { plan, patient };

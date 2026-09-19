@@ -251,7 +251,7 @@ function ConfirmModal({ pkg, visible, onClose, onSuccess, isRenewal }) {
 // 无服务的新用户：仍可在此自主选 4 个通用服务包开通（这不是续约场景）。
 export default function RenewalScreen({ navigation }) {
   const { user } = useAuth();
-  const hasService = !!(user?.servicePackage && user?.serviceExpiry);
+  const hasService = !!(user?.servicePackage && user?.serviceExpiry) || user?.serviceAccess?.source === 'verified_renewal';
   const [packages, setPackages] = useState([]);
   const [packagesLoading, setPackagesLoading] = useState(true);
   const [packagesError, setPackagesError] = useState('');
@@ -290,8 +290,8 @@ export default function RenewalScreen({ navigation }) {
 
   const expiry = hasService ? new Date(user.serviceExpiry) : null;
   const daysLeft = expiry ? Math.max(0, Math.ceil((expiry - new Date()) / 86400000)) : 0;
-  const isExpired = hasService && daysLeft === 0;
-  const isExpiring = hasService && daysLeft > 0 && daysLeft <= 30;
+  const isExpired = hasService && (user?.serviceAccess ? !user.serviceAccess.active : daysLeft === 0);
+  const isExpiring = hasService && !isExpired && daysLeft > 0 && daysLeft <= 30;
 
   if (success) {
     return (
@@ -373,7 +373,7 @@ export default function RenewalScreen({ navigation }) {
             <View style={{ flex: 1 }}>
               <Text style={styles.statusCardTitle}>{user.servicePackage}</Text>
               <Text style={styles.statusCardSub}>
-                {isExpired ? '服务包已到期，续费后立即恢复全部功能'
+                {isExpired ? (user?.serviceAccess?.reason || '服务已到期，请联系健康规划师核对续约')
                   : isExpiring ? `服务包将于 ${daysLeft} 天后到期`
                   : `服务包有效，到期日 ${user.serviceExpiry}`}
               </Text>

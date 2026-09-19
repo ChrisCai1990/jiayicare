@@ -144,14 +144,13 @@ function historyWithoutCurrentBodyComposition(historyValue, currentValue) {
 
 // AI 健康信息权益：有效年度会员始终开放；同时配有健康顾问和健管专员的
 // 历史客户也视为年度会员，避免旧数据未写 servicePackage 时被误拦截。
-async function getAiEntitlements(user) {
+async function getAiEntitlements(user, serviceAccess) {
   const none = { aiHealthAnalysis: false, aiRiskAssessment: false };
   if (!user) return none;
+  const access = serviceAccess || await require('../utils/serviceAccess').resolveServiceAccess(user);
+  if (!access.active) return none;
+  if (access.source === 'verified_renewal') user = { ...(user.toObject ? user.toObject() : user), serviceExpiry: access.endDate };
   const hasAnnualTeam = Boolean(user.assignedFamilyDoctor && user.assignedHealthManager);
-  if (user.serviceExpiry) {
-    const expiry = new Date(`${user.serviceExpiry}T23:59:59`);
-    if (!Number.isNaN(expiry.getTime()) && expiry < new Date()) return none;
-  }
   if (hasAnnualTeam) {
     return { aiHealthAnalysis: true, aiRiskAssessment: true };
   }
@@ -259,8 +258,11 @@ router.get('/me', auth, async (req, res) => {
     };
 
     const userData = req.user.toObject();
+    userData.serviceAccess = await require('../utils/serviceAccess').resolveServiceAccess(req.user);
+    // 仅响应投影使用有效期；不覆盖原始档案/合同日期，不回传内部订单及合同凭据。
+    if (userData.serviceAccess.endDate) userData.serviceExpiry = userData.serviceAccess.endDate;
     userData.bodyCompHistory = historyWithoutCurrentBodyComposition(userData.bodyCompHistory, userData.bodyComposition);
-    userData.aiEntitlements = await getAiEntitlements(req.user);
+    userData.aiEntitlements = await getAiEntitlements(req.user, userData.serviceAccess);
     // 覆盖 doctor / manager 字段为真实分配数据
     const fdInfo = toStaffInfo(req.user.assignedFamilyDoctor, '健康顾问');
     const nsInfo = toStaffInfo(req.user.assignedNutritionist, '营养师');
@@ -313,7 +315,7 @@ router.get('/health-fund', auth, async (req, res) => {
 // 更新用户信息（支持 healthProfile + 联系信息变更日志）
 router.put('/me', auth, async (req, res) => {
   try {
-    const { name, age, gender, height, weight, servicePackage, serviceExpiry,
+    const { name, age, gender, height, weight,
             contactPhone, deliveryAddress, residence, healthProfile,
             bloodTypeABO, bloodTypeRH, lifestyle } = req.body;
 
@@ -328,8 +330,7 @@ router.put('/me', auth, async (req, res) => {
     if (gender !== undefined)         updateData.gender = gender;
     if (height !== undefined)         updateData.height = height;
     if (weight !== undefined)         updateData.weight = weight;
-    if (servicePackage !== undefined) updateData.servicePackage = servicePackage;
-    if (serviceExpiry !== undefined)  updateData.serviceExpiry = serviceExpiry;
+    // 服务包/服务期不属于客户自助编辑档案；支付/内部核验流程负责变更。
     // 联系信息（#34）
     if (contactPhone    !== undefined) updateData.contactPhone    = contactPhone;
     if (deliveryAddress !== undefined) updateData.deliveryAddress = deliveryAddress;
@@ -1049,7 +1050,9 @@ router.patch('/annual-mgmt-plans/:id/confirm', auth, async (req, res) => {
   try {
     const plan = await AnnualPlan.findOne({ _id: req.params.id, patientId: req.user._id });
     if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
-    await require('../utils/annualPlanConfirmation').confirmPublishedAnnualPlan(plan);
+    const confirmation = require('../utils/annualPlanConfirmation');
+    await confirmation.assertAnnualConfirmationAccess(plan, req.user);
+    await confirmation.confirmPublishedAnnualPlan(plan);
     // 客户确认是必要门槛；续年另需有效凭据及服务期生效，日扫描也可补同步。
     const taskSplit = await syncAnnualPlanTaskSplit(plan);
     res.json({ success: true, data: plan, taskSplit });

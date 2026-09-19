@@ -581,7 +581,7 @@ export default function ServiceMallScreen({ navigation, route }) {
   const [loadingList, setLoadingList] = useState(true);
   const [listError, setListError] = useState('');
 
-  const hasService = !!(user?.servicePackage && user?.serviceExpiry);
+  const hasService = user?.serviceAccess?.active !== false && (!!(user?.servicePackage && user?.serviceExpiry) || user?.serviceAccess?.source === 'verified_renewal');
   const isMember  = !!(user?.memberType) || hasService;
   const expiry   = hasService ? new Date(user.serviceExpiry) : null;
   const daysLeft = expiry ? Math.max(0, Math.ceil((expiry - new Date()) / 86400000)) : 0;
