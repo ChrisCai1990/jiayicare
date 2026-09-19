@@ -4,6 +4,10 @@ const express = require('express');
 const User = require('../src/models/User');
 const PhaseAssessment = require('../src/models/PhaseAssessment');
 const ServiceRecord = require('../src/models/ServiceRecord');
+const AnnualPlan = require('../src/models/AnnualPlan');
+const PlanTemplate = require('../src/models/PlanTemplate');
+require('../src/utils/ai').chat = async () => '年度总评草稿';
+require('../src/utils/aiCaseReviewContext').buildStageAssessmentContext = async () => ({ sources: [] });
 const ids = { patient: '000000000000000000000001', reviewer: '000000000000000000000002', assessment: '000000000000000000000003' };
 let actor;
 const auth = require.resolve('../src/middleware/staffAuth'); require(auth);
@@ -13,7 +17,7 @@ async function request(t, body, method = 'PATCH') {
   const app = express(); app.use(express.json()); app.use(router);
   const server = await new Promise(resolve => { const srv = app.listen(0, '127.0.0.1', () => resolve(srv)); });
   t.after(() => new Promise(resolve => server.close(resolve)));
-  const suffix = method === 'GET' ? `?assessmentId=${ids.assessment}` : `/${ids.assessment}`;
+  const suffix = method === 'GET' ? `?assessmentId=${ids.assessment}` : method === 'POST' ? '/generate' : `/${ids.assessment}`;
   const res = await fetch(`http://127.0.0.1:${server.address().port}/patients/${ids.patient}/phase-assessments${suffix}`, { method, headers: { 'Content-Type': 'application/json' }, ...(method === 'GET' ? {} : { body: JSON.stringify(body) }) });
   return { status: res.status, body: await res.json() };
 }
@@ -89,4 +93,27 @@ test('工作台链接能读取最近20条以外的评估，且查询限定当前
   });
   const result = await request(t, null, 'GET');
   assert.equal(result.status, 200); assert.equal(result.body.data[0]._id, ids.assessment);
+});
+test('年度总评入口仅健康顾问负责，未到第11个月阻断', async t => {
+  setup(t, 'nutritionist');
+  t.mock.method(AnnualPlan, 'findOne', () => ({ sort: () => ({ lean: async () => ({ _id: 'plan', confirmedAt: new Date() }) }) }));
+  assert.equal((await request(t, { frequency: 'yearly' }, 'POST')).status, 403);
+  actor.role = 'familyDoctor';
+  t.mock.method(User, 'findById', async () => ({ _id: ids.patient, assignedFamilyDoctor: ids.reviewer, aiPilotFeatures: { stageAssessment: true } }));
+  assert.equal((await request(t, { frequency: 'yearly' }, 'POST')).status, 409);
+});
+test('年度总评选择年度模板并固定综合顾问审核，不发布下一年方案', async t => {
+  setup(t, 'familyDoctor');
+  t.mock.method(AnnualPlan, 'findOne', () => ({ sort: () => ({ lean: async () => ({ _id: 'plan', confirmedAt: '2020-01-01' }) }) }));
+  t.mock.method(PlanTemplate, 'findOne', filter => {
+    assert.equal(filter['content.frequency'], 'yearly');
+    return { sort: () => ({ lean: async () => ({ _id: 'template', content: { frequency: 'yearly' } }) }) };
+  });
+  t.mock.method(PhaseAssessment, 'exists', async () => false);
+  t.mock.method(PhaseAssessment, 'create', async value => value);
+  const result = await request(t, { frequency: 'yearly', domain: 'nutrition' }, 'POST');
+  assert.equal(result.status, 201); assert.equal(result.body.data.status, 'doctor_review');
+  assert.equal(result.body.data.assessmentDomain, 'comprehensive');
+  assert.equal(result.body.data.templateSnapshot.windowDays, 365);
+  assert.equal(result.body.data.periodKey, 'Y1:comprehensive');
 });

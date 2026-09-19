@@ -18,6 +18,11 @@ const annualPlanSchema = new mongoose.Schema({
   year:       { type: Number, default: () => new Date().getFullYear() },
   moduleData: { type: mongoose.Schema.Types.Mixed, default: {} }, // { moduleKey: { enabled, field1, field2... } }
   notes:      { type: String, default: '' },
+  continuitySource: {
+    previousPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan' },
+    annualReviewId: { type: mongoose.Schema.Types.ObjectId, ref: 'PhaseAssessment' },
+    reviewedAt: Date,
+  },
   createdBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
   reviewStatus: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
   reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },

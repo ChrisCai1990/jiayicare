@@ -9,7 +9,7 @@ const PlanTemplate = require('../models/PlanTemplate');
 const AnnualPlan = require('../models/AnnualPlan');
 const HealthPlan = require('../models/HealthPlan');
 const { toStructuredAssessment, assessmentToPlainText, detectClinicalReview, nextAssessmentStatus } = require('../utils/phaseAssessment');
-const { createAssessment, intensiveNutritionCheckpoint } = require('../utils/phaseAssessmentScheduler');
+const { createAssessment, intensiveNutritionCheckpoint, periodFor } = require('../utils/phaseAssessmentScheduler');
 const { buildContext, buildStageAssessmentContext } = require('../utils/aiCaseReviewContext');
 const providerAdapter = require('../utils/aiCaseReviewProvider');
 const { completePhaseAssessmentArchive } = require('../utils/phaseAssessmentArchive');
@@ -106,15 +106,18 @@ router.post('/patients/:patientId/phase-assessments/generate', staffAuth, async 
     const plan = await AnnualPlan.findOne({ patientId: user._id, confirmedAt: { $ne: null } }).sort({ confirmedAt: -1 }).lean();
     if (!plan) return res.status(409).json({ success: false, message: '客户尚无已确认年度管理方案，暂不能生成阶段性评估' });
     const assessmentMode = req.body.mode === 'intensive_nutrition' ? 'intensive_nutrition' : 'routine';
-    const assessmentDomain = assessmentMode === 'intensive_nutrition' ? 'nutrition' : (req.body.domain || 'comprehensive');
+    const isAnnualReview = assessmentMode === 'routine' && req.body.frequency === 'yearly';
+    const assessmentDomain = assessmentMode === 'intensive_nutrition' ? 'nutrition' : isAnnualReview ? 'comprehensive' : (req.body.domain || 'comprehensive');
     if (!DOMAIN_ROLES[assessmentDomain]) return res.status(400).json({ success: false, message: '评估领域无效' });
     if (!['superadmin', 'familyDoctor', DOMAIN_ROLES[assessmentDomain]].includes(req.staff.role)) return res.status(403).json({ success: false, message: '请由对应专业人员或健康顾问发起该领域评估' });
-    const frequency = assessmentMode === 'intensive_nutrition' ? 'monthly' : 'quarterly';
+    if (isAnnualReview && !['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '年度总评由健康顾问负责' });
+    const frequency = assessmentMode === 'intensive_nutrition' ? 'monthly' : isAnnualReview ? 'yearly' : 'quarterly';
+    if (isAnnualReview && !periodFor('yearly', new Date(), plan.confirmedAt)) return res.status(409).json({ success: false, message: '尚未进入本年度方案确认后的第11个月' });
     const template = await PlanTemplate.findOne({ type: 'phase_assessment', status: 'active', 'content.frequency': frequency, $and: [
       { $or: [{ clientBrand: user.clientBrand || '' }, { clientBrand: '' }] },
       { $or: [{ 'content.assessmentDomain': assessmentDomain }, { 'content.assessmentDomain': { $exists: false } }] },
     ] }).sort({ 'content.assessmentDomain': -1, clientBrand: -1, updatedAt: -1 }).lean();
-    if (!template) return res.status(409).json({ success: false, message: 'Admin尚未启用适用领域的阶段性评估模板（常规季度/强化营养月度模板）' });
+    if (!template) return res.status(409).json({ success: false, message: 'Admin尚未启用本次适用的评估模板（季度/年度总评/强化营养）' });
     let periodOverride = null; let sourceNutritionPlanId = null; let interventionWeek = null;
     if (assessmentMode === 'intensive_nutrition') {
       const nutritionPlan = await HealthPlan.findOne({ patientId: user._id, type: 'nutrition', confirmedAt: { $ne: null }, status: { $in: ['active', 'draft'] } }).sort({ confirmedAt: -1 }).lean();

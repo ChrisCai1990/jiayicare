@@ -1,6 +1,6 @@
 const hasWaiver = (preparation, key) => (preparation?.waivers || []).some(item => item.key === key && String(item.reason || '').trim());
 
-function buildAnnualPlanPreparationChecklist({ patient = {}, preparation = null, auditedReportCount = 0, activeMedicationCount = 0, activeSupplementCount = 0, assessments = [] }) {
+function buildAnnualPlanPreparationChecklist({ patient = {}, preparation = null, auditedReportCount = 0, activeMedicationCount = 0, activeSupplementCount = 0, assessments = [], continuity = null }) {
   const items = [];
   const add = (key, label, complete, options = {}) => {
     const waived = !complete && options.waivable === true && hasWaiver(preparation, key);
@@ -15,16 +15,19 @@ function buildAnnualPlanPreparationChecklist({ patient = {}, preparation = null,
   add('medications', '当前用药已完善或确认无', preparation?.medicationStatus === 'none' || preparation?.medicationStatus === 'documented' || activeMedicationCount > 0);
   add('supplements', '当前营养素已完善或确认无', preparation?.supplementStatus === 'none' || preparation?.supplementStatus === 'documented' || activeSupplementCount > 0);
 
+  const isRenewal = continuity?.mode === 'renewal';
+  if (isRenewal) add('annual_review', '上一年度健康管理总评已由顾问终审并归档', continuity.ready === true);
   const approvedAnnualDomains = new Set(assessments
-    .filter(item => item.purpose === 'annual_input' && item.status === 'approved')
+    .filter(item => (item.purpose === 'annual_input' || (isRenewal && item.purpose === 'issue_collaboration')) && item.status === 'approved')
     .map(item => String(item.domain || '').trim()).filter(Boolean));
   const requiredDomains = [...new Set((preparation?.requiredAssessmentDomains || []).map(item => String(item).trim()).filter(Boolean))];
-  add('assessment_scope', '已确定首次方案所需专业评估领域', requiredDomains.length > 0);
+  if (!isRenewal) add('assessment_scope', '已确定首次方案所需专业评估领域', requiredDomains.length > 0);
   requiredDomains.forEach(domain => add(`assessment:${domain}`, `${domain}专业健康评估已审核`, approvedAnnualDomains.has(domain)));
   add('advisor_ready', '健康顾问已确认资料足够生成方案', !!preparation?.advisorReadyConfirmedAt);
 
   const blockingItems = items.filter(item => item.blocking && !item.complete);
   return {
+    mode: isRenewal ? 'renewal' : 'initial',
     year: preparation?.year || null,
     ready: blockingItems.length === 0,
     items,

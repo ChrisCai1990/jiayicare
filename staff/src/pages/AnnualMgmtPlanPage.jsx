@@ -351,6 +351,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [templatesLoading, setTemplatesLoading] = useState(false)
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [preparation, setPreparation] = useState(null)
+  const [continuitySource, setContinuitySource] = useState(null)
   const [preparationSaving, setPreparationSaving] = useState(false)
   const [preparationDraft, setPreparationDraft] = useState({ requiredAssessmentDomains: '', medicationStatus: 'unknown', supplementStatus: 'unknown', advisorReady: false })
   const [professionalAssessments, setProfessionalAssessments] = useState([])
@@ -411,6 +412,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         const target = queryPlanType && map[queryPlanType]
           ? map[queryPlanType]
           : (queryPlanType ? null : list.find(p => p.servicePlanCode || p.planType))
+        setContinuitySource(target?.continuitySource || preparationData?.continuity?.source || null)
         if (target) {
           setPlanType(target.servicePlanCode || target.planType)
           setSelectedTemplateId(target.templateId || '')
@@ -464,6 +466,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     if (dirty && !window.confirm('当前方案有未保存的更改，切换类型会丢失这些更改，确认切换？')) return
     // 加载该类型自己的数据（每个类型独立一份）
     const p = plansByType[key]
+    setContinuitySource(p?.continuitySource || preparation?.continuity?.source || null)
     setPlanType(key)
     setSelectedTemplateId(template?._id || p?.templateId || '')
     setModuleData(p?.moduleData || {})
@@ -489,7 +492,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     try {
       if (patientMode) {
         const selectedTemplate = adminTemplates.find(t => t._id === selectedTemplateId)
-        const res = await staffAPI.saveAnnualPlan(id, { planType, servicePlanCode: planType, moduleData, year, templateId: selectedTemplateId || null, templateName: selectedTemplate?.content?.planName || selectedTemplate?.name || '' })
+        const res = await staffAPI.saveAnnualPlan(id, { planType, servicePlanCode: planType, moduleData, year, continuitySource, templateId: selectedTemplateId || null, templateName: selectedTemplate?.content?.planName || selectedTemplate?.name || '' })
         const saved = res.data
         if (saved) {
           setPlansByType(prev => ({ ...prev, [planType]: saved }))
@@ -521,6 +524,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     setAiPlanLoading(true)
     try {
       const res = await staffAPI.generateAIAnnualPlan(id, type, '', selectedTemplateId, year)
+      setContinuitySource(res.continuitySource || null)
       const aiData = res.data || {}
       // 只填充当前所选方案类型包含的板块，其余类型的板块忽略（一次只生成一个方案）
       const configuredRules = selectedTemplate?.content?.moduleRules || []
@@ -579,6 +583,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         advisorReady: preparationDraft.advisorReady,
       })
       setPreparation(res.data || null)
+      setContinuitySource(current => current || res.data?.continuity?.source || null)
       toast(res.data?.checklist?.ready ? '准备清单已完成，可以生成年度方案' : '准备情况已保存，请继续完成未满足项目')
     } catch (err) {
       toast(err.message || '保存准备清单失败')
@@ -788,11 +793,12 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         <div style={{ background: preparation.checklist.ready ? '#F0FDF4' : '#FFFDF7', border: `1px solid ${preparation.checklist.ready ? '#86EFAC' : '#F3D49A'}`, borderRadius: 12, padding: 18, marginBottom: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
             <div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24' }}>首次方案准备清单</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24' }}>{preparation.continuity?.mode === 'renewal' ? '下一年度方案准备清单' : '首次方案准备清单'}</div>
               <div style={{ fontSize: 13, color: '#6B7F75', marginTop: 4 }}>已完成 {preparation.checklist.progress.completed}/{preparation.checklist.progress.total}；未完成前不能由 AI 生成或正式发布年度方案。</div>
             </div>
             <span style={{ fontSize: 12, fontWeight: 700, color: preparation.checklist.ready ? '#15803D' : '#B45309' }}>{preparation.checklist.ready ? '✓ 已就绪' : '待完善'}</span>
           </div>
+          {preparation.continuity?.mode === 'renewal' && <div style={{ marginTop: 10, fontSize: 13, color: '#4A6558' }}>引用 {preparation.continuity.previousYear} 年度总评；不重复要求首次会诊。<a href={`/patients/${id}?tab=aiReview${preparation.continuity.source?.annualReviewId ? `&phaseAssessmentId=${preparation.continuity.source.annualReviewId}` : ''}`}>查看/准备年度总评</a>{preparation.continuity.summary && <details style={{ marginTop: 8 }}><summary>已审核总评内容</summary><div style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>{preparation.continuity.summary}</div></details>}</div>}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 8, marginTop: 14 }}>
             {preparation.checklist.items.map(item => (
               <div key={item.key} style={{ fontSize: 13, color: item.complete ? '#287A50' : '#9A5B13' }}>{item.complete ? '✓' : '○'} {item.label}{item.waived ? '（已说明豁免）' : ''}</div>
@@ -800,7 +806,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           </div>
           {canEdit && (
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 10, alignItems: 'end', marginTop: 16 }}>
-              <label style={{ fontSize: 12, color: '#4A6558' }}>所需专业评估领域（用顿号分隔）
+              <label style={{ fontSize: 12, color: '#4A6558' }}>{preparation.continuity?.mode === 'renewal' ? '按需补充的专业评估领域（可留空）' : '所需专业评估领域（用顿号分隔）'}
                 <input value={preparationDraft.requiredAssessmentDomains} onChange={e => setPreparationDraft(prev => ({ ...prev, requiredAssessmentDomains: e.target.value }))} placeholder="如：心血管、营养、中医健康" style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 5, padding: '8px 10px', border: '1px solid #D9D4CA', borderRadius: 8 }} />
               </label>
               <label style={{ fontSize: 12, color: '#4A6558' }}>用药档案

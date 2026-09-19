@@ -13,22 +13,22 @@ function periodFor(frequency, now = new Date(), confirmedAt) {
   if (frequency === 'yearly') {
     if (!confirmedAt) return null;
     const startedAt = new Date(confirmedAt);
+    if (!Number.isFinite(startedAt.getTime())) return null;
     const completedMonths = (now.getFullYear() - startedAt.getFullYear()) * 12 + now.getMonth() - startedAt.getMonth()
       - (now.getDate() < startedAt.getDate() ? 1 : 0);
-    // 满 11 个月即启动首份年度复盘，为第 12 个月的续约准备预留人工处理时间；以后每 12 个月重复一次。
-    if (completedMonths < 11) return null;
-    const reviewCycle = 1 + Math.floor((completedMonths - 11) / 12);
-    return { key: `Y${reviewCycle}`, label: `年度管理第${reviewCycle}年复盘（续约准备）` };
+    // 进入第11个月（满10个月）准备总评；同一年度方案只形成一轮总评，不滚动复制下一年。
+    if (completedMonths < 10) return null;
+    return { key: 'Y1', label: '年度健康管理总评（下一年度准备）' };
   }
   if (frequency === 'quarterly') return { key: `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`, label: `${now.getFullYear()}年第${Math.floor(now.getMonth() / 3) + 1}季度` };
   return { key: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`, label: `${now.getFullYear()}年${now.getMonth() + 1}月` };
 }
 
 async function createAssessment({ plan, user, template, periodOverride = null, assessmentMode = 'routine', assessmentDomain, sourceNutritionPlanId = null, interventionWeek = null }) {
-  const routing = routingFor(assessmentDomain || template.content?.assessmentDomain || 'comprehensive', assessmentMode);
-  if (!user[ROLE_FIELDS[routing.primaryReviewRole]]) throw new Error(`请先分配该客户的${ROLE_LABELS[routing.primaryReviewRole]}`);
   const frequency = ['monthly', 'quarterly', 'yearly'].includes(template.content?.frequency)
     ? template.content.frequency : 'quarterly';
+  const routing = routingFor(frequency === 'yearly' ? 'comprehensive' : assessmentDomain || template.content?.assessmentDomain || 'comprehensive', assessmentMode);
+  if (!user[ROLE_FIELDS[routing.primaryReviewRole]]) throw new Error(`请先分配该客户的${ROLE_LABELS[routing.primaryReviewRole]}`);
   const basePeriod = periodOverride || periodFor(frequency, new Date(), plan.confirmedAt);
   const period = basePeriod && { ...basePeriod, key: `${basePeriod.key}:${routing.assessmentDomain}` };
   if (!period) return null;
@@ -36,6 +36,8 @@ async function createAssessment({ plan, user, template, periodOverride = null, a
   if (existing) return null;
   const windowDays = [7, 14, 30, 90, 365].includes(template.content?.windowDays) ? template.content.windowDays : frequency === 'yearly' ? 365 : frequency === 'quarterly' ? 90 : 30;
   const context = await buildStageAssessmentContext(user, windowDays);
+  // 固定本次评估对应方案，避免读取过程中出现另一份新确认方案而混用目标。
+  context.confirmedAnnualPlan = { _id: plan._id, year: plan.year, planType: plan.planType, templateName: plan.templateName, moduleData: plan.moduleData, notes: plan.notes, confirmedAt: plan.confirmedAt };
   const focus = template.content?.focus || '阶段数据变化、生活方式关联、潜在风险和下一步计划';
   const instructions = template.content?.instructions || '仅提出待审核建议，不得将推测写为事实；缺少数据时必须明确说明。';
   const minimumData = template.content?.minimumData || '资料不足时必须明确列为数据缺口。';

@@ -6507,6 +6507,8 @@ router.get('/patients/:id/annual-plan-preparation', staffAuth, async (req, res) 
 
 router.put('/patients/:id/annual-plan-preparation', staffAuth, async (req, res) => {
   if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可确认年度方案准备情况' });
+  const visibleIds = await getVisiblePlanPatientIds(req.staff);
+  if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权处理该会员的年度方案准备情况' });
   const patient = await User.findById(req.params.id).select('_id').lean();
   if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
   const year = Number(req.body.year) || new Date().getFullYear();
@@ -6560,6 +6562,8 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
   }
   try {
     const { planType, servicePlanCode: requestedServicePlanCode, moduleData, notes, year, templateId, templateName } = req.body;
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权编辑该会员的年度方案' });
     if (!planType && !requestedServicePlanCode) return res.status(400).json({ success: false, message: '缺少服务版本' });
     const todayText = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
     const personalized = moduleData?.personalized_followups?.records || [];
@@ -6579,6 +6583,10 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       return res.status(400).json({ success: false, message: '每项随访都要选择主执行人和有效的未来日期；协同执行人和日期需要同时填写' });
     }
     const targetYear = year || new Date().getFullYear();
+    const continuity = await require('../utils/annualPlanContinuity').loadAnnualPlanContinuity(req.params.id, targetYear);
+    if (continuity.mode === 'renewal' && (!continuity.ready || !require('../utils/annualPlanContinuity').matchesContinuitySource(req.body.continuitySource, continuity.source))) {
+      return res.status(409).json({ success: false, message: '下一年度草稿必须关联已终审归档的年度总评；请刷新准备清单并重新核对来源' });
+    }
     const template = templateId ? await PlanTemplate.findOne({ _id: templateId, type: 'health_management' }).lean() : null;
     if (!template) return res.status(400).json({ success: false, message: '请选择有效的Admin年度管理服务版本' });
     const patient = await User.findById(req.params.id).select('clientBrand memberType servicePackage').lean();
@@ -6605,7 +6613,7 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
         memberTypeSnapshot: patient.memberType || '',
         servicePackageSnapshot: packageRecord ? { id: packageRecord._id, name: packageRecord.name, capturedAt: new Date() } : { name: patient.servicePackage || '', capturedAt: new Date() },
         entitlementSnapshot: packageRecord?.entitlements || {}, resourceSnapshot: normalizedTemplate.content?.resourceConfig || {},
-        moduleData: moduleData || {}, notes: notes || '', templateId: templateId || null, templateName: templateName || normalizedTemplate.content?.planName || template.name || '',
+        moduleData: moduleData || {}, notes: notes || '', continuitySource: continuity.source || null, templateId: templateId || null, templateName: templateName || normalizedTemplate.content?.planName || template.name || '',
         templateSnapshot: template ? { name: template.name, type: template.type, content: template.content, capturedAt: new Date() } : null,
         createdBy: req.staff._id, reviewStatus: 'pending', reviewedBy: null, reviewedAt: null, reviewNote: '',
         pushedAt: null, pushedBy: null, confirmedAt: null },
@@ -6795,6 +6803,8 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     return res.status(403).json({ success: false, message: '仅健康顾问可审核并推送年度管理方案' });
   }
   try {
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权发布该会员的年度方案' });
     const { year, planType } = req.query;
     const targetYear = year ? parseInt(year) : new Date().getFullYear();
     const query = { patientId: req.params.id, year: targetYear };
@@ -6802,7 +6812,8 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     const plan = await AnnualPlan.findOne(query);
     if (!plan) return res.status(404).json({ success: false, message: '方案不存在，请先保存' });
     const preparation = await require('../utils/annualPlanPreparation').loadAnnualPlanPreparationChecklist(req.params.id, targetYear);
-    if (!preparation?.checklist?.ready) return res.status(409).json({ success: false, message: '首次年度方案准备清单尚未完成', data: preparation?.checklist || null });
+    if (!preparation?.checklist?.ready) return res.status(409).json({ success: false, message: '年度方案准备清单尚未完成', data: preparation?.checklist || null });
+    if (preparation.continuity?.mode === 'renewal' && !require('../utils/annualPlanContinuity').matchesContinuitySource(plan.continuitySource, preparation.continuity.source)) return res.status(409).json({ success: false, message: '年度总评来源已变化，请重新核对并保存下一年度草稿' });
     const otherFormal = await AnnualPlan.findOne({
       patientId: req.params.id,
       year: targetYear,
@@ -9366,13 +9377,15 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     return res.status(403).json({ success: false, message: '仅健康顾问可生成年度管理方案' });
   }
   try {
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权生成该会员的年度方案' });
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
     const targetYear = Number(req.body.year) || new Date().getFullYear();
     const preparation = await require('../utils/annualPlanPreparation').loadAnnualPlanPreparationChecklist(req.params.id, targetYear);
     if (!preparation?.checklist?.ready) {
-      return res.status(409).json({ success: false, message: '首次年度方案准备清单尚未完成', data: preparation?.checklist || null });
+      return res.status(409).json({ success: false, message: '年度方案准备清单尚未完成', data: preparation?.checklist || null });
     }
 
     const ais = user.aiHealthSummary;
@@ -9479,7 +9492,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       ? confirmedCaseReviews.map(item => `【${item.title}】${item.conclusion.content}`).join('\n\n').slice(0, 16000)
       : '无已确认的专题研判结论';
     const professionalAssessments = await ProfessionalHealthAssessment.find({
-      patientId: user._id, purpose: 'annual_input', status: 'approved',
+      patientId: user._id, purpose: preparation.continuity?.mode === 'renewal' ? { $in: ['annual_input', 'issue_collaboration'] } : 'annual_input', status: 'approved',
       $or: [{ validUntil: null }, { validUntil: { $gte: new Date() } }],
     }).sort({ advisorReviewedAt: -1 }).select('domain title collaborationMode facts risks missingInformation recommendations advisorReviewedAt').lean();
     const professionalAssessmentText = professionalAssessments.length
@@ -9487,7 +9500,11 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       : '无已审核的年度综合健康评估';
     const latestAssessment = confirmedCaseReviews.find(item => item.conclusion?.structured?.actions?.length)
       || confirmedCaseReviews[0];
-    const assessmentFocus = latestAssessment ? {
+    const assessmentFocus = preparation.continuity?.mode === 'renewal' ? {
+      title: '上一年度健康管理总评与下一年度重点',
+      annualReviewId: preparation.continuity.source.annualReviewId,
+      instruction: '以首要依据中的已审核年度总评作为主评估，结合最新已核验资料；不照搬原年度专题或已完成任务。',
+    } : latestAssessment ? {
       title: latestAssessment.title,
       summary: latestAssessment.conclusion?.structured?.summary || [],
       risks: latestAssessment.conclusion?.structured?.risks || [],
@@ -9533,6 +9550,8 @@ ${missingCheckups}
 
 【本次服务目标（健康顾问填写，方案要朝这个方向靠）】
 ${notes ? notes : '（未填写目标，按会员情况常规定制）'}
+
+${require('../utils/annualPlanContinuity').continuityPrompt(preparation.continuity)}
 
 【医护团队已确认的AI辅助研判结论】
 ${confirmedReviewText}
@@ -9665,7 +9684,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
       result.annual_checkup = { ...result.annual_checkup, date: suggestedCheckupDate };
     }
 
-    res.json({ success: true, data: result, basis: assessmentFocus, template: selectedTemplate ? { _id: selectedTemplate._id, name: selectedTemplate.name } : null });
+    res.json({ success: true, data: result, basis: assessmentFocus, continuitySource: preparation.continuity?.source || null, template: selectedTemplate ? { _id: selectedTemplate._id, name: selectedTemplate.name } : null });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
