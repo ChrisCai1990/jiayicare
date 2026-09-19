@@ -17,6 +17,7 @@ import OutpatientProxyVisitForm, { emptyOutpatientProxyVisit, isOutpatientProxyV
 import OutpatientEscortVisitForm, { emptyOutpatientEscortVisit, isOutpatientEscortVisitTask, validateOutpatientEscortVisit } from '../components/OutpatientEscortVisitForm'
 import OutpatientPostVisitReviewForm, { emptyOutpatientPostVisitReview, isOutpatientPostVisitReviewTask, validateOutpatientPostVisitReview } from '../components/OutpatientPostVisitReviewForm'
 import { formatChineseDate, formatChineseDateTime } from '../utils/date'
+import CheckupCompletionEvidence from '../components/CheckupCompletionEvidence'
 
 const TYPE_MAP   = { phone: '电话', wechat: '微信', visit: '上门', video: '视频', other: '其他' }
 const STATUS_MAP = { planned: '待随访', in_progress: '随访中', missed: '随访中', completed: '已随访', cancelled: '已取消' }
@@ -101,6 +102,7 @@ function DetailModal({ item, onClose }) {
               <Row label="执行方式" value={FOLLOWUP_TYPE[item.executedType] || item.executedType} />
               <Row label="随访记录" value={item.executedContent} />
               <Row label="完成时间" value={item.completedAt ? formatChineseDateTime(item.completedAt) : ''} />
+              <CheckupCompletionEvidence item={item} />
             </>
           )}
           {item.status === 'cancelled' && <Row label="取消原因" value={item.cancelReason} />}
