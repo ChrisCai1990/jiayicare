@@ -2,6 +2,10 @@ const { randomUUID } = require('node:crypto');
 const { completeAuditedPlanItem } = require('./auditedPlanItem');
 function arm(report) {
   if (report.audit_status !== 'audited' || !report.planId || !report.planItemId) return;
+  // An explicit keep-existing decision is not undone by re-saving the same audit.
+  const previous = report.planItemSync;
+  if (previous?.status === 'resolved' && previous.resolution?.action === 'keep_existing'
+    && previous.planId === String(report.planId) && previous.itemId === String(report.planItemId)) return;
   report.planItemSync = { token: randomUUID(), status: 'pending', requestedAt: new Date(),
     planId: String(report.planId), itemId: String(report.planItemId) };
 }

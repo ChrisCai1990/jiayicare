@@ -3924,6 +3924,41 @@ router.get('/medical-reports/:id', staffAuth, async (req, res) => {
   res.json({ success: true, data });
 });
 
+// Resolve only the conflict notification, never fabricate item completion or change its evidence.
+router.post('/medical-reports/:id/plan-item-conflict/resolve', staffAuth, async (req, res) => {
+  try {
+    if (!['healthManager', 'superadmin'].includes(req.staff.role)) {
+      return res.status(403).json({ success: false, message: '仅所属健管专员可核对项目关联冲突' });
+    }
+    const { token, action, reason } = req.body;
+    if (typeof token !== 'string' || !token || action !== 'keep_existing'
+      || typeof reason !== 'string' || !reason.trim() || reason.trim().length > 1000) {
+      return res.status(400).json({ success: false, message: '请提供当前冲突凭据和核对理由（1至1000字）' });
+    }
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: '报告编号无效' });
+    const report = await MedicalReport.findById(req.params.id).select('user audit_status planId planItemId planItemSync').lean();
+    if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    const owner = await User.exists({ _id: report.user, isDeleted: { $ne: true },
+      ...(req.staff.role === 'superadmin' ? {} : { assignedHealthManager: req.staff._id }) });
+    if (!owner) return res.status(403).json({ success: false, message: '客户已不在本人管理范围，请刷新工作台' });
+    const proof = report.planItemSync;
+    if (report.audit_status !== 'audited' || proof?.token !== token || proof.status !== 'conflict'
+      || proof.planId !== String(report.planId) || proof.itemId !== String(report.planItemId)) {
+      return res.status(409).json({ success: false, message: '报告或关联已变化，请刷新后重新核对' });
+    }
+    const resolution = { action, reason: reason.trim(), staffId: req.staff._id, resolvedAt: new Date() };
+    const result = await MedicalReport.updateOne({ _id: report._id, user: report.user, audit_status: 'audited',
+      planId: report.planId, planItemId: report.planItemId, 'planItemSync.token': token, 'planItemSync.status': 'conflict' },
+    { $set: { 'planItemSync.status': 'resolved', 'planItemSync.resolution': resolution },
+      $push: { planItemConflictResolutions: { ...resolution, token, planId: proof.planId, itemId: proof.itemId } } });
+    if (!result.modifiedCount) return res.status(409).json({ success: false, message: '冲突已被处理，请刷新查看' });
+    return res.json({ success: true, message: '已记录核对结论；原检查项目及报告内容保持不变' });
+  } catch (error) {
+    console.error('[report-plan-conflict]', error.message);
+    return res.status(500).json({ success: false, message: '核对结论保存失败，请稍后重试' });
+  }
+});
+
 // PATCH /api/staff/medical-reports/:id/items/:itemId — 单项目原子更新。
 // expectedRevision 防止两个窗口静默互相覆盖；冲突时返回服务器最新版，由用户刷新确认。
 router.patch('/medical-reports/:id/items/:itemId', staffAuth, async (req, res) => {

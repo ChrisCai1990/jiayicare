@@ -22,3 +22,12 @@ test('revoked audit or changed association stops queued write', async () => {
 test('unmarked legacy report cannot be reconciled accidentally', async () => {
   await createQueue({ MedicalReport: { findOne: () => assert.fail('missing token') } }).reconcile('legacy');
 });
+test('explicit keep-existing decision survives audit replay, but not a new association', () => {
+  const row = { audit_status: 'audited', planId: 'p', planItemId: 'i', planItemSync: {
+    token: 'reviewed-conflict', status: 'resolved', planId: 'p', itemId: 'i', resolution: { action: 'keep_existing' },
+  } };
+  arm(row); assert.equal(row.planItemSync.token, 'reviewed-conflict');
+  row.planItemId = 'new'; arm(row);
+  assert.equal(row.planItemSync.status, 'pending');
+  assert.notEqual(row.planItemSync.token, 'reviewed-conflict');
+});
