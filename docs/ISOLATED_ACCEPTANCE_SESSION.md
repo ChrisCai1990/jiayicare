@@ -1,5 +1,12 @@
 # 可登录隔离环境：验收接续
 
+## 16:50 上传项目关联边界通过
+
+- 新reportPlanLink上传前校验同客户方案/项目；项目reportId回填改为同客户pending及原reportId为空/本报告的原子更新，不覆盖人工完成/跳过/已绑其他报告。
+- 原空报告复用只看同日期分类，现在须同planId/planItemId、unaudited、无content/fileUrls；无方案上传不能占用已有服务来源记录。补传base64内容无需fileUrl也能保存。没有按名称猜测或覆盖历史文件。
+- auditedPlanItemHttp实跑：跨患者/不存在项目400且无新增，明确同项占位复用ID并保存合成内容，不同项目分开，已有内容不复用，原reportId保留、上传仍pending；两审核入口11组全部通过，4项单测通过。首跑分类ID用了文本导致500，修正脚本为隔离虚构有效分类后通过；首跑合成现场保留。无真实文件解码/AI质量验收。
+- 隔离后端原17196已停，新会话37417，fvvTxL库与出口边界不变，JWT刷新。原主链客户未改。自动补偿、关联冲突工作台提示及其他端完成入口仍待；未访问生产或部署。
+
 ## 16:15 常用AI结果审核入口补齐
 
 - 原PATCH medical-reports/:id（aiStatus=reviewed）只审核报告、不完成显式关联项目。现报告保存后且audit_status=audited时调用completeAuditedPlanItem；重复提交仍幂等，不更改审核门槛。驳回重提回unaudited、草稿pending不完成项目。

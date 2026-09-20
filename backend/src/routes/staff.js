@@ -3966,6 +3966,8 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
   try {
     const { patientId, title, type, documentCategory, hospital, date, fileUrl, fileUrls, ossKey, ossKeys, content, mimeType, fileSize, planId, planItemId, screeningL1, screeningL2, sourceOrderId, sourceProductId, sourceServiceRecordId } = req.body;
     if (!patientId || !title) return res.status(400).json({ success: false, message: '会员和标题不能为空' });
+    const planLinkError = await require('../utils/reportPlanLink').validateReportPlanLink(HealthPlan, patientId, planId, planItemId);
+    if (planLinkError) return res.status(400).json({ success: false, message: planLinkError });
     // fileUrls（一份报告多张照片场景）优先，fileUrl 仍取第一个做兼容，不破坏现有单文件读取逻辑
     const resolvedFileUrls = Array.isArray(fileUrls) && fileUrls.length ? fileUrls : (fileUrl ? [fileUrl] : []);
     const resolvedFileUrl = resolvedFileUrls[0] || '';
@@ -4013,7 +4015,12 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
     //    真实存在的报告。
     let report;
     if (resolvedScreeningL1 && checkDate) {
-      const existing = await MedicalReport.findOne({ user: patientId, checkDate, screeningL1: resolvedScreeningL1, screeningL2: screeningL2 || '', fileUrl: '' });
+      const existing = await MedicalReport.findOne({ user: patientId, checkDate, screeningL1: resolvedScreeningL1, screeningL2: screeningL2 || '',
+        fileUrl: '', content: { $in: ['', null] }, audit_status: 'unaudited',
+        $or: [{ fileUrls: { $exists: false } }, { fileUrls: { $size: 0 } }],
+        planId: planId || null, planItemId: planItemId || null,
+        ...(!planId ? { sourceHealthPlanId: null } : {}),
+      });
       if (existing) {
         if (title) existing.title = title;
         if (hospital) existing.hospital = hospital;
@@ -4024,7 +4031,7 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
         existing.sourceProductId = sourceProductId || existing.sourceProductId || null;
         existing.sourceServiceRecordId = sourceServiceRecordId || existing.sourceServiceRecordId || null;
         existing.uploadedByRole = req.staff.role || existing.uploadedByRole || '';
-        if (resolvedFileUrl) {
+        if (resolvedFileUrl || effectiveContent) {
           existing.fileUrl = resolvedFileUrl;
           existing.fileUrls = resolvedFileUrls;
           existing.ossKey = resolvedOssKey;
@@ -4036,11 +4043,7 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
         report = await existing.save();
         if (planId && planItemId) {
           try {
-            const plan = await HealthPlan.findById(planId);
-            if (plan) {
-              const item = plan.items.id(planItemId);
-              if (item) { item.reportId = report._id; await plan.save(); }
-            }
+            await require('../utils/reportPlanLink').attachReportPlanItem(HealthPlan, report);
           } catch (planErr) {
             console.error('报告已上传成功，但回填体检方案条目失败:', planErr);
           }
@@ -4066,11 +4069,7 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
     // (checkDate, screeningL1) 下出现两条真实报告）。回填单独 try/catch，失败只记日志不影响上传结果。
     if (planId && planItemId) {
       try {
-        const plan = await HealthPlan.findById(planId);
-        if (plan) {
-          const item = plan.items.id(planItemId);
-          if (item) { item.reportId = report._id; await plan.save(); }
-        }
+        await require('../utils/reportPlanLink').attachReportPlanItem(HealthPlan, report);
       } catch (planErr) {
         console.error('报告已上传成功，但回填体检方案条目失败:', planErr);
       }
