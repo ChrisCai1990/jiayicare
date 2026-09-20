@@ -1,5 +1,14 @@
 # 可登录隔离环境：验收接续
 
+## 当前工作区与审计（11:13更新，优先于下方历史）
+
+- 工作区：C:/Users/huawei/Documents/codex/health-management-isolated；既有feature/health-management-foundation-20260918。原deploy-health-monitoring-7630c892为master生产发布目录，不再切换该目录分支。自动接续提示已调整。
+- 隔离后端63318、前端56767已从新工作区启动；旧78444/83387已停止。仍使用VmyQ9g/session.json、127.0.0.1:27134和3000、localhost:5174；JWT重置需重新登录。根及staff/node_modules仅为既有依赖目录的junction（本机安装优化，不提交、不复制生产凭证）。启动围栏保持不变，五岗位登录/工作台/随访API与未登录拒绝通过。
+- 新只读审计脚本：node backend/test/integration/auditIsolatedCheckupTasks.js <session.json>。仅接受隔离清单，直连本机随机验收库，核对虚构客户后读取，不创建索引、不修复数据。
+- 实跑发现：service completed，共8任务，其中service:intake planned未阻塞，旧abnormal_followup planned阻塞，consistent=false。固定六阶段完成不等于所有工作台任务闭环。
+- 收单根因：checkupServiceInstance在新建服务时额外建立service:intake supervisor，原发布/承接和结束链未处理此独立待办。下一步设计精确收单复用/完成回写，需留真实办理凭据与幂等性，不可随意删除或仅隐藏。旧条件误派保留，后续新场景证明不再产生。
+- 本轮无生产访问/部署。医保专项此前已独立发布d3ca572e，与闭环功能发布无关。
+
 ## 最新：规划师最终验收页面与原健管回写通过
 
 - 后端已受控停止旧74429，按同一VmyQ9g清凭证/网络隔离入口重启为78444，加载8c5219b6；JWT刷新后浏览器重新登录虚构healthPlanner。
