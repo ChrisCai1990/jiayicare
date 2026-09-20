@@ -1,5 +1,14 @@
 # 可登录隔离环境：验收接续
 
+## 22:00 关键失败：旧快照仍可完成项目（上线阻断）
+
+- 新脚本 backend/test/integration/reportPlanItemStaleWorker.js <session.json>：仅回环随机隔离库、核验原虚构客户，另建纯虚构客户/两份方案报告；在真实queue读取报告后、HealthPlan.updateOne前确定性插入来源变化，使用真实Mongo写入，不是真实HTTP竞争或临床资料。
+- audit_revoked：report 6aafe51505d806471b694c68 / plan 6aafe51505d806471b694c62。来源已rejected，原项目仍completed，planItemSync也completed。
+- association_changed：report 6aafe51505d806471b694c79 / plan 6aafe51505d806471b694c73。来源已指向另一项目/新token，旧项目仍completed；报告新token保护了回执但没有保护跨文档项目写入。
+- 脚本退出1，两项安全断言失败，现场完整保留，未做回退清理伪造通过。此前双窗口更正/目标占用及页面正向通过仍成立，但不能覆盖此缺陷。禁止据此前证据批准闭环上线。
+- 根因：completeAuditedPlanItem只检查传入快照与目标项目，报告token条件仅用于事后队列回执。简单写前再查/写后再查仍有间隙，不能宣称强一致；需串行化来源变更与回写，并设计进程中断后的持久占用恢复，或经另行审批的事务架构，不自动改生产Mongo架构。
+- 下一轮优先修此缺陷及故障恢复，再重跑本脚本、原连续HTTP和页面。不因安全检查失败停止其他本地安全开发；无需用户提供真实数据或批准生产操作。运行仍后端44265/fvvTxL；此次只加测试/记录，不改业务或部署。
+
 ## 21:25 同方案更正页面正向通过
 
 - ReportPlanConflictCard增加处理方式和同方案合格项目下拉，排除原项、已完成/已绑定目标及已取消/完成方案；选择变化取消确认，理由+目标+明确确认齐备才可提交。后端再次校验，不依赖前端放行。
