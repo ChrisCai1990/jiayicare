@@ -492,7 +492,7 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
   ] : [
     plan.hospital, plan.campus, plan.department, plan.expert,
     `门诊类型：${plan.clinicType === 'international' ? '国际门诊' : '普通门诊'}`,
-    `费用与保险：${plan.insuranceUse === 'high_end' ? '使用高端医疗险' : '自费'}`,
+    `费用与保险：${plan.insuranceUse === 'high_end' ? '使用高端医疗险' : plan.insuranceUse === 'medical_insurance' ? '医保' : '自费'}`,
     plan.insuranceUse === 'high_end' && plan.insurerName && `保险公司：${String(plan.insurerName).trim()}`,
     plan.insuranceUse === 'high_end' && `结算方式：${({ direct: '直付', reimbursement: '先付后报' })[plan.settlementMethod] || '待核实'}`,
   ]).filter(Boolean).join('；');

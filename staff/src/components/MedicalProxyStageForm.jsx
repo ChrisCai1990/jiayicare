@@ -19,7 +19,7 @@ const parseAppointmentRequirement = text => {
   return {
     baseContent: baseParts.join('；'), campus: take('院区'),
     clinicType: take('门诊类型') === '国际门诊' ? 'international' : take('门诊类型') === '普通门诊' ? 'general' : '',
-    insuranceUse: /高端医疗险/.test(take('费用与保险')) ? 'high_end' : take('费用与保险') === '自费' ? 'self_pay' : '',
+    insuranceUse: /高端医疗险/.test(take('费用与保险')) ? 'high_end' : take('费用与保险') === '医保' ? 'medical_insurance' : take('费用与保险') === '自费' ? 'self_pay' : '',
     insurerName: take('保险公司'),
     settlementMethod: ({ '直付': 'direct', '先付后报': 'reimbursement', '待核实': 'pending' })[take('结算方式')] || 'pending',
   }
@@ -29,7 +29,7 @@ const formatAppointmentRequirement = data => [
   data.baseContent,
   data.campus && `院区：${data.campus}`,
   data.clinicType && `门诊类型：${data.clinicType === 'international' ? '国际门诊' : '普通门诊'}`,
-  data.insuranceUse && `费用与保险：${data.insuranceUse === 'high_end' ? '使用高端医疗险' : '自费'}`,
+  data.insuranceUse && `费用与保险：${data.insuranceUse === 'high_end' ? '使用高端医疗险' : data.insuranceUse === 'medical_insurance' ? '医保' : '自费'}`,
   data.insuranceUse === 'high_end' && data.insurerName && `保险公司：${data.insurerName}`,
   data.insuranceUse === 'high_end' && `结算方式：${({ direct: '直付', reimbursement: '先付后报' })[data.settlementMethod] || '待核实'}`,
 ].filter(Boolean).join('；')
@@ -119,7 +119,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     {requirementInput('campus', '院区（新增）', '如：庆春院区')}
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
       <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>门诊类型 *<select className="form-control" value={requirement.clinicType || ''} onChange={e => setRequirement('clinicType', e.target.value)}><option value="">请选择</option><option value="general">普通门诊</option><option value="international">国际门诊</option></select></label>
-      <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>费用与保险 *<select className="form-control" value={requirement.insuranceUse || ''} onChange={e => setRequirement('insuranceUse', e.target.value)}><option value="">请选择</option><option value="self_pay">自费</option><option value="high_end">使用高端医疗险</option></select></label>
+      <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>费用与保险 *<select className="form-control" value={requirement.insuranceUse || ''} onChange={e => setRequirement('insuranceUse', e.target.value)}><option value="">请选择</option><option value="self_pay">自费</option><option value="medical_insurance">医保</option><option value="high_end">使用高端医疗险</option></select></label>
     </div>
     {requirement.insuranceUse === 'high_end' && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>{requirementInput('insurerName', '保险公司')}<label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>结算方式<select className="form-control" value={requirement.settlementMethod || 'pending'} onChange={e => setRequirement('settlementMethod', e.target.value)}><option value="pending">待核实</option><option value="direct">直付</option><option value="reimbursement">先付后报</option></select></label></div>}
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>{input('preferredDateStart', '期望开始日期', 1, 'date')}{input('preferredDateEnd', '期望结束日期', 1, 'date')}</div>

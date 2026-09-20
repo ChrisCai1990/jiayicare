@@ -959,7 +959,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
           {isExpertAppointment && <>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">门诊类型 *</label><select className="form-input" value={form.clinicType} onChange={e => set('clinicType', e.target.value)}><option value="">请选择</option><option value="general">普通门诊</option><option value="international">国际门诊</option></select></div>
-              <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">费用与保险 *</label><select className="form-input" value={form.insuranceUse} onChange={e => set('insuranceUse', e.target.value)}><option value="">请选择</option><option value="self_pay">自费</option><option value="high_end">使用高端医疗险</option></select></div>
+              <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">费用与保险 *</label><select className="form-input" value={form.insuranceUse} onChange={e => set('insuranceUse', e.target.value)}><option value="">请选择</option><option value="self_pay">自费</option><option value="medical_insurance">医保</option><option value="high_end">使用高端医疗险</option></select></div>
             </div>
             {form.insuranceUse === 'high_end' && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               {renderField('保险公司', 'insurerName', 0, '保险公司名称（可选）')}
