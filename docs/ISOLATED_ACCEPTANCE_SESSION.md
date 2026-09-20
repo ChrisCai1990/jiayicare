@@ -1,5 +1,13 @@
 # 可登录隔离环境：验收接续
 
+## 最新：全新标准场景零服务任务残留（12:20）
+
+- 旧44184已停止，当前隔离后端29624，前端56767不变；新清单 C:/Users/huawei/AppData/Local/Temp/jiayicare-acceptance-fvvTxL/session.json。旧VmyQ9g及所有证据保留，不删除旧异常任务。浏览器需重新登录新清单账号并使用新patientId，不沿用旧URL。
+- 从零运行checkupPreparationHttp.js、checkupServiceHttp.js --standard-template --with-questionnaire、checkupClosureHttp.js全部通过。含问卷未提交阻断/真实提交、双岗与客户确认门槛、原服务启动、预约陪检、报告待审阻断/审核解锁、独立评估/验收、原健管唯一回写及重放幂等。没有收费订单。
+- auditIsolatedCheckupTasks.js结果：serviceStatus completed、taskCount 7、unfinished []、consistent true；固定6阶段+原收单均完成，无误建abnormal_followup。真实四岗位/staff/service-tasks皆200、data []。
+- 闭合脚本新增“无未完成源任务”和“四岗位服务工作台无残留”硬断言，后续不再仅以service completed判断通过。
+- 本轮为真实API/真实Mongo复跑，非本轮浏览器操作。初始年度方案/模板、问卷答案、报告及履约结论为合成数据，不能算真实AI/专业评估/支付核销验收。此前页面办理证据属于VmyQ9g场景。仍需核查顾问报告解读待办与服务进度投影、其他专业服务及真实AI授权边界。
+
 ## 最新：收单回写隔离API通过（11:46后）
 
 - checkupPreparationActivation增加精确service:intake复用：核对本承接设计/预约任务同文档凭据、准备证据plan ID、当前规划师归属、唯一未执行收单任务，以版本条件更新并保存formData.checkupPreparationIntake来源。已有人工完成不覆盖，重复/改派/缺证据拦截，不新增任务。正常激活及active重放均覆盖；其他非准备服务不套用此逻辑。

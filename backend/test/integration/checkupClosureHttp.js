@@ -71,6 +71,10 @@ async function main() {
   assert.equal(manager[0].status, 'completed');
   assert.equal(link.completion.status, 'completed');
   check('Service closure completed the single original annual manager followup');
+  const outstanding = await FollowUp.find({ patientId: session.patientId, sourceHealthPlanId: service.serviceId,
+    sourceType: 'health_plan', status: { $nin: ['completed', 'cancelled'] } }).select('_id workflowKey status').lean();
+  assert.deepEqual(outstanding, [], 'Completed service must not leave an intake or conditional task pending');
+  check('Completed service has no outstanding source-linked staff tasks');
   const beforeCount = await FollowUp.countDocuments({ patientId: session.patientId });
   const finalTask = await FollowUp.findById(service.taskIds.final_acceptance).lean();
   await request(`/staff/followups/${finalTask._id}`, tokens.healthPlanner, 'PUT', { status: 'completed', content: finalTask.executedContent });
@@ -79,5 +83,10 @@ async function main() {
   assert.equal(String(afterManager.completedAt), String(manager[0].completedAt));
   assert.equal(String(afterManager.updatedAt), String(manager[0].updatedAt));
   check('Final acceptance replay did not create tasks or rewrite original manager completion');
+  for (const role of ['familyDoctor', 'healthPlanner', 'healthManager', 'medicalAssistant']) {
+    const workbench = await request('/staff/service-tasks', tokens[role]);
+    assert.deepEqual(workbench.data, [], `Synthetic ${role} service workbench must have no remaining task`);
+  }
+  check('Four real role service workbench APIs contain no remaining service tasks');
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; }).finally(() => mongoose.disconnect());
