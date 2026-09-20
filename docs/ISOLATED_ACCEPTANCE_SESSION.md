@@ -1,5 +1,13 @@
 # 可登录隔离环境：验收接续
 
+## 09-21 00:55 旧异常审核副作用真实复现；一项修复、一项仍失败
+
+- 新reportAuditSideEffects.js <session.json>仅回环隔离API/随机库，独立虚构客户。无效severity使原接口500、报告unaudited但Task=1/Review=0（report 6ab00e8fb3f86cbfdb45082c）；连续两次合法approve均200却Task=2/Review=2（report 6ab00e8fb3f86cbfdb450833）。真实HTTP证据，不是静态推断；现场保留。
+- 最小修复：旧审核入口任何条件方案/任务变更前，用AbnormalReview模型validate异常列表、严重度、日期及相关字段；无效返回400/INVALID_ABNORMAL_REVIEW。不是创建子记录。复跑无效项report 6ab00ec6c413843210ba394f返回400且Task/Review均0、报告仍unaudited。
+- 重复approve尚未修复：report 6ab00ec6c413843210ba3956仍双Task/双Review；脚本退出1，不能称全绿/上线通过。下一轮设计报告同文档持久意图+固定子记录ID/幂等恢复，覆盖保存失败、重复/并发和Task成功Review失败；简单先查询是否存在或移至save后均不足。
+- 原auditedPlanItemHttp全部通过，11项专项回归通过。这些原场景abnormalItems为空，不能覆盖上述重复副作用。未做真实AI、消息、订单/核销或生产操作。
+- 已核对停止隔离PID27136并启动exec31303，同fvvTxL，加载上一轮最终catch收窄和本轮校验。JWT刷新；前端未改。首次副作用脚本两失败，修后仍一失败，保留测试和证据，不删除重复记录冒充修复。
+
 ## 09-21 00:20 两个报告审核入口占用提示
 
 - 员工PATCH medical-reports/:id与/:id/audit在已加载报告running时返回409/REPORT_WRITE_CONFLICT，提示刷新或持续占用联系管理员；模型原子保护仍保留。仅report.save的DocumentNotFoundError转409，其他错误不伪装冲突；找不到报告仍404。

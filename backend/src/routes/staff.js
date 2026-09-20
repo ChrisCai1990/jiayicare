@@ -4494,6 +4494,20 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
   if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
   if (report.planItemSync?.status === 'running') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
   if (action === 'approve') {
+    // Validate the prospective child before any task or conditional-plan mutation.
+    if (abnormalItems !== undefined && !Array.isArray(abnormalItems)) {
+      return res.status(400).json({ success: false, message: '异常项目必须为列表' });
+    }
+    if (abnormalItems?.length) {
+      try {
+        await new AbnormalReview({ patientId: report.user, reportId: report._id, staffId: req.staff._id,
+          abnormalItems, reviewReason: reviewReason || '', reviewHospital: reviewHospital || '',
+          reviewDepartment: reviewDepartment || '', reviewDate: reviewDate || null, notes: notes || '' }).validate();
+      } catch (error) {
+        if (error.name !== 'ValidationError') throw error;
+        return res.status(400).json({ success: false, code: 'INVALID_ABNORMAL_REVIEW', message: '异常复查内容或日期无效，请核对后重新提交' });
+      }
+    }
     const isRequiredOutpatientDocument = report.sourceHealthPlanId
       && ['prescription_order', 'outpatient_record'].includes(report.documentCategory);
     if (isRequiredOutpatientDocument && !(report.fileUrl || report.content || report.fileUrls?.length)) {
