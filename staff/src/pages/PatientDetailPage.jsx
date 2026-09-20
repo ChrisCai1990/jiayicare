@@ -1,3 +1,4 @@
+import ReportReviewQuality, { useReportReviewActivity } from '../components/ReportReviewQuality'
 import { isManualOnlyReport } from '../utils/reportManualReview'
 import { orderConversationMessages } from '../utils/orderConversation'
 import { inferAppointmentConversation } from '../utils/appointmentConversation'
@@ -3551,13 +3552,16 @@ export default function PatientDetailPage() {
     setOcrReviewPage(Number(focused?.sourcePage) || (pages.length ? Math.min(...pages) : 1))
   }
 
+  const reviewActivityFlush = useReportReviewActivity(ocrReviewReport?._id)
+
   const handleApproveOCR = async () => {
+    await reviewActivityFlush.current()
     await ocrSaveQueueRef.current.catch(() => {})
     setOcrSaving(true)
     try {
-      const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, aiStatus: 'reviewed', editSource: 'ocr_review', expectedRevision: ocrRevisionRef.current })
+      const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, hospital: ocrReviewReport.institution || ocrReviewReport.hospital || '', date: ocrReviewReport.checkDate || ocrReviewReport.date || '', institutionStatus: ocrReviewReport.institutionStatus, aiStatus: 'reviewed', editSource: 'ocr_review', expectedRevision: ocrRevisionRef.current })
       ocrRevisionRef.current = Number(saved.data?.reviewRevision ?? ocrRevisionRef.current)
-      toast('审核通过，数据已写入专项筛查，已进入待健康顾问审核')
+      toast('内容审核完成，已归类项目已同步；待归类项目由 admin 维护')
       setOcrReviewReport(null)
       loadReports()
     } catch (err) { toast(err.message || '保存失败') }
@@ -3569,7 +3573,7 @@ export default function PatientDetailPage() {
     setOcrSaving(true)
     try {
       await ocrSaveQueueRef.current.catch(() => {})
-      const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, aiStatus: 'pending', editSource: 'ocr_review', expectedRevision: ocrRevisionRef.current })
+      const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, hospital: ocrReviewReport.institution || ocrReviewReport.hospital || '', date: ocrReviewReport.checkDate || ocrReviewReport.date || '', institutionStatus: ocrReviewReport.institutionStatus, aiStatus: 'pending', editSource: 'ocr_review', expectedRevision: ocrRevisionRef.current })
       ocrRevisionRef.current = Number(saved.data?.reviewRevision ?? ocrRevisionRef.current)
       if (saved.data) setReports(current => current.map(report => report._id === saved.data._id ? { ...report, ...saved.data } : report))
       const savedItems = JSON.parse(JSON.stringify(saved.data?.reportItems || ocrEditItemsRef.current))
@@ -10066,7 +10070,7 @@ export default function PatientDetailPage() {
               <>
                   <div style={{ borderRadius: 8, border: '1px solid #e8e4dc', overflowX: 'auto', background: '#fff' }}>
                     <table className="table report-table" style={{ marginBottom: 0, minWidth: 920 }}>
-                      <thead><tr><th>资料名称</th><th>资料分类</th><th>来源机构</th><th>资料日期</th><th>处理状态</th><th>操作</th></tr></thead>
+                      <thead><tr><th>资料名称</th><th>资料分类</th><th>来源机构</th><th>资料日期</th><th>人工审核</th><th>处理状态</th><th>操作</th></tr></thead>
                       <tbody>
                       {paginatedReportRows.map(({ report: r, typeLabel }) => {
                         const auditLabel = r.audit_status === 'audited' ? '已审核'
@@ -10090,8 +10094,9 @@ export default function PatientDetailPage() {
                               {r.screeningL2 && <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 3 }}>{r.screeningL2}</div>}
                             </td>
                             <td><strong style={{ fontSize: 12, color: '#315F4E', whiteSpace: 'nowrap' }}>{DOCUMENT_CATEGORY_LABEL[inferDocumentCategory(r)] || '其他资料'}</strong><div style={{ fontSize: 11, color: '#8AA89C', marginTop: 2 }}>{typeLabel}</div></td>
-                            <td style={{ color: '#60756B' }}>{r.hospital || r.institution || <span className="report-missing-field">待补</span>}</td>
+                            <td style={{ color: '#60756B' }}>{r.hospital || r.institution || (r.institutionStatus === 'unknown' ? '来源机构不明' : '') || <span className="report-missing-field">待补</span>}</td>
                             <td style={{ color: '#8AA89C', whiteSpace: 'nowrap' }}>{r.checkDate || r.date || <span className="report-missing-field">待补</span>}</td>
+                            <td style={{ fontSize: 11 }}>{r.audited_at ? new Date(r.audited_at).toLocaleString() : '未完成'}<br />{r.audited_by || ''}<br />{Object.keys(r.reviewActivity || {}).length ? `有效时长 ${Math.round(Object.values(r.reviewActivity).reduce((sum, session) => sum + (session.durationMs || 0), 0) / 60000)} 分钟` : '时长未记录'}</td>
                             <td><span style={{ fontSize: 11, fontWeight: 600, color: auditColor, background: `${auditColor}12`, borderRadius: 999, padding: '3px 7px', whiteSpace: 'nowrap' }}>{auditLabel}</span></td>
                             <td style={{ whiteSpace: 'nowrap' }}>
                               {manualOnly ? (
@@ -10134,7 +10139,7 @@ export default function PatientDetailPage() {
                           </tr>
                           {openReportActionId === r._id && r.audit_status !== 'audited' && (
                             <tr>
-                              <td colSpan={6} style={{ padding: '8px 14px', background: '#F8FAF9', textAlign: 'right' }}>
+                              <td colSpan={7} style={{ padding: '8px 14px', background: '#F8FAF9', textAlign: 'right' }}>
                                 <span style={{ color: '#8AA89C', fontSize: 12, marginRight: 10 }}>更多操作</span>
                                 <button className="btn btn-secondary btn-sm" style={{ marginRight: 6 }} onClick={() => {
                                   setEditingReport(r)
@@ -11712,75 +11717,15 @@ export default function PatientDetailPage() {
         const unclassifiedN = ocrEditItems.length - matchedN
         // 所有可选归类项打平，供搜索用
         const allClassifyOpts = classifyGroups.flatMap(g => g.opts.map(o => ({ ...o, groupLabel: g.label })))
-        const classifyCell = (it, i) => {
-          const isOpen = !!ocrClassifyOpen[i]
-          const q = (ocrClassifySearch[i] ?? (it.screeningKey ? allClassifyOpts.find(o => o.value === it.screeningKey)?.label || '' : '')).toLowerCase()
-          const filtered = q.length >= 1
-            ? allClassifyOpts.filter(o => o.label.toLowerCase().includes(q)
-              || o.groupLabel.toLowerCase().includes(q)
-              || (o.searchTerms || []).some(term => String(term).toLowerCase().includes(q)))
-            : allClassifyOpts
-          const displayText = it.screeningKey ? (allClassifyOpts.find(o => o.value === it.screeningKey)?.label || it.screeningKey) : ''
-          // 2026-07-21修复(第二版)：第一版用 window.innerHeight 判断可用空间，但下拉框真正的裁切边界
-          // 是表格所在的 modal-body(overflow:auto 滚动容器)，不是浏览器视口——modal 顶部本身离视口
-          // 顶部可能还有一截空白，靠视口空间判断会误判"上方空间充足"，实际早被 modal-body 顶部裁切。
-          // 改成用 ocrModalBodyRef(滚动容器)的边界计算该行上下实际可用空间。
-          if (!ocrClassifyWrapRefs.current[i]) ocrClassifyWrapRefs.current[i] = { current: null }
-          const wrapRef = ocrClassifyWrapRefs.current[i]
-          const dropUp = ocrClassifyDropUp[i] !== false
-          const handleFocus = () => {
-            const el = wrapRef.current
-            const container = ocrModalBodyRef.current
-            if (el && container) {
-              const r = el.getBoundingClientRect()
-              const c = container.getBoundingClientRect()
-              const spaceAbove = r.top - c.top
-              const spaceBelow = c.bottom - r.bottom
-              setOcrClassifyDropUp(p => ({ ...p, [i]: spaceAbove >= 160 || spaceAbove >= spaceBelow }))
-            }
-            setOcrClassifyOpen(p => ({ ...p, [i]: true }))
-            setOcrClassifySearch(p => ({ ...p, [i]: '' }))
-          }
-          return (
-            <div ref={wrapRef} style={{ position: 'relative', width: '100%' }}>
-              <div style={{ display: 'flex', alignItems: 'center', border: `1px solid ${it.screeningKey ? '#A7F3D0' : '#FCD34D'}`, borderRadius: 4, background: it.screeningKey ? '#F0FDF4' : '#FFFBEB', overflow: 'hidden' }}>
-                <input
-                  style={{ flex: 1, padding: '3px 4px', fontSize: 11, border: 'none', background: 'transparent', outline: 'none', color: it.screeningKey ? '#1E6B50' : '#D97706', minWidth: 0 }}
-                  placeholder="⚠ 待归类（可搜索）"
-                  value={ocrClassifySearch[i] !== undefined ? ocrClassifySearch[i] : displayText}
-                  onFocus={handleFocus}
-                  onBlur={() => setTimeout(() => { setOcrClassifyOpen(p => ({ ...p, [i]: false })); setOcrClassifySearch(p => { const n = { ...p }; delete n[i]; return n }) }, 180)}
-                  onChange={e => setOcrClassifySearch(p => ({ ...p, [i]: e.target.value }))}
-                />
-                {it.screeningKey && (
-                  <button onClick={() => setClassify(i, '')} style={{ background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', padding: '0 4px', fontSize: 12, lineHeight: 1, flexShrink: 0 }}>✕</button>
-                )}
-              </div>
-              {isOpen && (
-                // 表格外层容器(modal-body)是 overflow:auto 的滚动区域，下拉列表无论往上或往下弹，
-                // 只要固定方向就可能被 modal 边界裁切。dropUp 由 handleFocus 里实测的上下可用空间决定。
-                <div style={{ position: 'absolute', ...(dropUp ? { bottom: '100%', marginBottom: 2 } : { top: '100%', marginTop: 2 }), left: 0, right: 0, zIndex: 1000, background: '#fff', border: '1px solid #E0D9CE', borderRadius: 4, boxShadow: dropUp ? '0 -4px 16px rgba(0,0,0,0.12)' : '0 4px 16px rgba(0,0,0,0.12)', maxHeight: 220, overflowY: 'auto' }}>
-                  <div onMouseDown={() => setClassify(i, '')} style={{ padding: '5px 8px', fontSize: 11, color: '#D97706', cursor: 'pointer', borderBottom: '1px solid #f5f2ec' }}>⚠ 清除归类</div>
-                  {filtered.length === 0 && <div style={{ padding: '8px', fontSize: 11, color: '#aaa', textAlign: 'center' }}>无匹配结果</div>}
-                  {filtered.map(o => (
-                    <div key={o.value} onMouseDown={() => { setClassify(i, o.value); setOcrClassifyOpen(p => ({ ...p, [i]: false })) }}
-                      style={{ padding: '5px 8px', fontSize: 11, cursor: 'pointer', color: o.value === it.screeningKey ? '#1E6B50' : '#1A2B24', background: o.value === it.screeningKey ? '#F0FDF4' : 'transparent', borderBottom: '1px solid #f9f7f4' }}
-                      onMouseEnter={e => e.currentTarget.style.background = '#F0FDF4'}
-                      onMouseLeave={e => e.currentTarget.style.background = o.value === it.screeningKey ? '#F0FDF4' : 'transparent'}>
-                      <span style={{ fontSize: 10, color: '#8AA89C', marginRight: 4 }}>{o.groupLabel}</span>{o.label}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )
-        }
+        const classifyCell = (it, i) => <span style={{ fontSize: 11, color: '#8AA89C' }}>{it.screeningKey ? '系统已归类' : '待 admin 维护'}</span>
+
         return (
           // 审核内容多且耗时，鼠标稍微移出弹窗点到遮罩层就会误触关闭丢失未保存的编辑，去掉点遮罩关闭，
           // 只能点右上角✕关闭（2026-07-13 反馈：之前只改了纯查看用的"体检报告详情弹窗"，这个才是真正
           // 审核AI识别结果、会长时间编辑的弹窗，之前漏改了）
           <div className="modal-overlay">
             <div className="modal" style={{ maxWidth: 1120, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+              <ReportReviewQuality report={ocrReviewReport} items={ocrEditItems} onChange={patch => setOcrReviewReport(current => ({ ...current, ...patch }))} onFocus={index => { setOcrReviewPage(Number(ocrEditItems[index]?.sourcePage) || 1); setOcrFocusItemIndex(index) }} />
               <div className="modal-header" style={{ flexShrink: 0 }}>
                 <h3 className="modal-title">审核AI识别结果 · {ocrReviewReport.title}</h3>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto', marginRight: 12 }}>
@@ -12114,7 +12059,7 @@ export default function PatientDetailPage() {
                 <button className="btn btn-secondary" style={{ flex: 0.6 }}
                   disabled={ocrSaving} onClick={handleReclassifyOCR}
                   title="用最新专项筛查目录仅对待归类项目重新自动归类，已有及人工归类不受影响">
-                  {ocrSaving ? '处理中…' : '🔄 重新归类'}
+                  {ocrSaving ? '处理中…' : '🔄 刷新系统分类'}
                 </button>
                 <button className="btn btn-secondary" style={{ flex: 0.6 }}
                   disabled={ocrSaving} onClick={handleSaveOCRDraft}>
@@ -13534,7 +13479,7 @@ function UploadReportModal({ patientId, onClose, onSaved }) {
               {DOCUMENT_CATEGORIES.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
             </select>
             <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 6 }}>
-              与原始资料页面使用同一套分类；专项筛查归类由AI解析后在审核环节确认。
+              与原始资料页面使用同一套分类；专项筛查归类由系统匹配 admin 目录。
             </div>
           </div>
 

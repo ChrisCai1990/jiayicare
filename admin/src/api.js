@@ -298,6 +298,9 @@ export const adminAPI = {
   // ── 项目设置 ────────────────────────────────────────────────
 
   // 分类管理
+  reportClassification: (page = 1, name = '') => req('/report-classification?page=' + page + '&name=' + encodeURIComponent(name)),
+  confirmReportClassification: data => req('/report-classification/confirm', { method: 'POST', body: JSON.stringify(data) }),
+  removeClassificationRule: (id, ruleId) => req(`/categories/${id}/confirmed-rules/${ruleId}`, { method: 'DELETE' }),
   categories:        ()         => req('/categories'),
   createCategory:    (data)     => req('/categories', { method: 'POST', body: JSON.stringify(data) }),
   updateCategory:    (id, data) => req(`/categories/${id}`, { method: 'PUT', body: JSON.stringify(data) }),

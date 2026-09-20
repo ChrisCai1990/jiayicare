@@ -3906,10 +3906,14 @@ router.patch('/medical-reports/:id/items/:itemId', staffAuth, async (req, res) =
     if (!Number.isInteger(expectedRevision) || expectedRevision < 0) {
       return res.status(400).json({ success: false, code: 'REPORT_REVISION_REQUIRED', message: '缺少有效的报告版本号，请刷新后重试' });
     }
-    const allowed = ['name', 'value', 'unit', 'referenceRange', 'status', 'itemType', 'bodyPart', 'findings', 'diagnosis', 'conclusion', 'screeningKey', 'screeningKeys', 'screeningCategory', 'screeningParent', 'matchStatus', 'matchConfidence', 'manualReviewStatus', 'manualReviewedAt'];
+    if (['screeningKey', 'screeningKeys', 'screeningCategory', 'screeningParent', 'matchStatus', 'matchConfidence'].some(field => req.body[field] !== undefined)) return res.status(403).json({ success: false, message: '分类请在 admin 端维护' });
+    const allowed = ['name', 'value', 'unit', 'referenceRange', 'status', 'itemType', 'bodyPart', 'findings', 'diagnosis', 'conclusion', 'manualReviewStatus', 'manualReviewedAt'];
     const set = {};
     for (const field of allowed) {
       if (req.body[field] !== undefined) set[`reportItems.$[item].${field}`] = req.body[field];
+    }
+    if (['name', 'unit', 'itemType', 'bodyPart'].some(field => req.body[field] !== undefined)) {
+      Object.assign(set, { 'reportItems.$[item].screeningKey': '', 'reportItems.$[item].screeningKeys': [], 'reportItems.$[item].screeningCategory': '', 'reportItems.$[item].screeningParent': '', 'reportItems.$[item].matchStatus': 'unclassified', 'reportItems.$[item].matchConfidence': 0 });
     }
     if (!Object.keys(set).length) return res.status(400).json({ success: false, message: '没有可更新的项目字段' });
     const updated = await MedicalReport.findOneAndUpdate(
@@ -4076,10 +4080,26 @@ function applyAuditedInstitution(report) {
   const canonical = sanitizeInstitution(report.hospital || report.institution || '');
   report.hospital = canonical;
   report.institution = canonical;
+  report.institutionStatus = canonical ? 'confirmed' : report.institutionStatus;
   if (canonical && Array.isArray(report.reportItems)) {
-    report.reportItems.forEach(item => { item.institution = canonical; });
+    report.reportItems.forEach(item => { if (!item.institution) item.institution = canonical; });
   }
 }
+
+router.post('/medical-reports/:id/review-activity', staffAuth, async (req, res) => {
+  const { sessionId, sequence } = req.body;
+  if (!/^[a-f\d-]{36}$/i.test(String(sessionId)) || !Number.isSafeInteger(sequence) || sequence < 1) return res.status(400).json({ success: false });
+  const report = await MedicalReport.findById(req.params.id).select('reviewActivity reviewActivityRevision audit_status').lean();
+  if (!report) return res.status(404).json({ success: false });
+  const key = `${req.staff._id}_${sessionId}`;
+  const entry = require('../utils/reportReviewActivity').reviewActivityEntry(report.reviewActivity, key, String(req.staff._id), req.staff.name || req.staff.username || '', sequence);
+  if (!entry) return res.json({ success: true });
+  const path = `reviewActivity.${key}`;
+  const revision = Number(report.reviewActivityRevision || 0);
+  const filter = { _id: report._id, ...(revision ? { reviewActivityRevision: revision } : { $or: [{ reviewActivityRevision: 0 }, { reviewActivityRevision: { $exists: false } }] }) };
+  const result = await MedicalReport.findOneAndUpdate(filter, { $set: { [path]: entry }, $inc: { reviewActivityRevision: 1 } });
+  return res.status(result ? 200 : 409).json({ success: Boolean(result) });
+});
 
 router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
   try {
@@ -4093,7 +4113,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
       }
     }
     // 已审核通过的报告：只允许更新 AI归类（aiStatus/reportItems），其余字段不可改
-    if (report.audit_status === 'audited' && (title || type || documentCategory || hospital || date || content)) {
+    if (report.audit_status === 'audited' && Object.entries({ title, type, documentCategory, hospital, date, content }).some(([field, value]) => value !== undefined && value !== report[field])) {
       return res.status(403).json({ success: false, message: '已审核通过的报告不可修改基本信息' });
     }
     if (title !== undefined) report.title = title;
@@ -4115,6 +4135,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
       }
     }
     if (hospital !== undefined) { report.hospital = hospital; report.institution = hospital; }
+    if (['pending', 'confirmed', 'unknown'].includes(req.body.institutionStatus)) report.institutionStatus = req.body.institutionStatus;
     if (date !== undefined) {
       report.date = date; report.checkDate = date;
       // 2026-07-09修复"同一检查同时出现在2025和2026"：编辑改了检查日期时，reportYear 必须跟着日期重算，
@@ -4136,7 +4157,8 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     let autoAuditPending = false;
     if (aiStatus !== undefined) {
       const wasRejected = report.audit_status === 'rejected';
-      report.aiStatus = aiStatus; report.reviewedAt = new Date(); report.reviewedByStaff = req.staff._id;
+      report.aiStatus = aiStatus;
+      if (aiStatus === 'reviewed') { report.reviewedAt = new Date(); report.reviewedByStaff = req.staff._id; }
       // 驳回后重新编辑AI结果并提交，此前只更新了aiStatus，audit_status一直停留在rejected，
       // 界面又把审核按钮组隐藏，导致再也无法审核（2026-07-17反馈）。重新提交视为"撤回驳回，
       // 回到待审核"，不能直接跳到已审核——还是要走一遍人工审核。
@@ -4157,6 +4179,20 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
         if (!it || typeof it !== 'object') return false;
         return !(_blank(it.name) && _blank(it.value) && _blank(it.findings) && _blank(it.diagnosis) && _blank(it.conclusion));
       });
+      // Content reviewers never define taxonomy. Preserve server classifications unless
+      // the identifying evidence changed, then rematch only against Admin's directory.
+      const previousById = new Map((report.reportItems || []).map(item => [item.itemId, item]));
+      const classificationFields = ['screeningKey', 'screeningKeys', 'screeningCategory', 'screeningParent', 'matchStatus', 'matchConfidence'];
+      for (const item of nextItems) {
+        const previous = previousById.get(item.itemId);
+        const changed = !previous || ['name', 'orderName', 'sourceSection', 'bodyPart', 'specimen', 'modality', 'unit'].some(field => String(previous[field] || '') !== String(item[field] || ''));
+        for (const field of classificationFields) {
+          if (!changed) item[field] = previous[field];
+          else delete item[field];
+        }
+      }
+      const matchedItems = await require('../utils/screeningMatch').classifyItemsAsync(nextItems);
+      nextItems.splice(0, nextItems.length, ...matchedItems);
       nextItems.forEach(item => {
         if (item.manualReviewStatus === 'reviewed') {
           item.manualReviewedAt = item.manualReviewedAt || new Date();
@@ -4180,10 +4216,17 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
           });
         }));
       }
+      const nextIds = new Set(nextItems.map(item => item.itemId).filter(Boolean));
+      const removed = (report.reportItems || []).filter(item => item.itemId && !nextIds.has(item.itemId));
+      if (editSource === 'ocr_review' && removed.length) report.deletedReportItems = [
+        ...(report.deletedReportItems || []), ...removed.map(item => Object.fromEntries(['name', 'itemType', 'orderName', 'sourceSection', 'bodyPart', 'specimen', 'modality', 'examDate', 'sourcePage', 'unit'].map(field => [field, item[field]]))),
+      ];
       report.reportItems = nextItems;
       report.reviewRevision = Number(report.reviewRevision || 0) + 1;
     }
     if (autoAuditPending) {
+      const metadataError = reviewMetadataError(report);
+      if (metadataError) return res.status(400).json({ success: false, message: metadataError });
       applyAuditedInstitution(report);
       report.audit_status = 'audited';
       report.audited_by = req.staff.name;
@@ -4408,6 +4451,8 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
   const report = await MedicalReport.findById(req.params.id);
   if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
   if (action === 'approve') {
+    const metadataError = reviewMetadataError(report);
+    if (metadataError) return res.status(400).json({ success: false, message: metadataError });
     const isRequiredOutpatientDocument = report.sourceHealthPlanId
       && ['prescription_order', 'outpatient_record'].includes(report.documentCategory);
     if (isRequiredOutpatientDocument && !(report.fileUrl || report.content || report.fileUrls?.length)) {
@@ -11114,181 +11159,7 @@ router.patch('/chat-transfers/:id/resolve', staffAuth, async (req, res) => {
   }
 });
 
-const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析这张体检报告图片，按以下规则提取数据。
-
-【基本规则】
-规则零：只提取本图中实际存在的内容，绝对不推断、联想或补全。
-规则A：跳过会员基本信息页——姓名、性别、年龄、出生日期、身份证号、手机号/电话、单位/工作单位、体检日期、体检编号/报告编号，一律不提取。
-规则B：跳过汇总页——页面标题含"异常结果""检查结果"等字样再加上"汇总""说明""及建议""及说明""解读"等词的组合（如"异常结果汇总""体检结果汇总""异常结果及建议""体检异常结果及说明"，不要求逐字匹配这几个例子，只要是同类"异常/结果+说明性后缀"的标题都算），或以"尊敬的XX先生/女士"开头的综合小结页，整页跳过不提取。判断汇总页的核心标准：这一页是把多个不同检查项目（胃镜/肠镜/超声/放射等）的结论压缩摘要在同一页里罗列，而不是聚焦单一检查项目的完整详细报告单。这类汇总页有时按科室分组罗列诊断名词（如"放射科：1、右肺结节 2、左肾上腺增粗"／"消化内镜：1、内痔 2、大肠息肉"），即使看起来像分了类别标题，这仍是汇总页，不是具体检查项目，禁止把"放射科""消化内镜""病理科""彩超"等科室/类别标题当成 name 生成条目，也不能把里面的诊断名词列表当作findings/diagnosis提取——这些内容详细报告单里都有，只从详细报告单提取。
-规则B2：跳过"名词解释""检查异常结果解读""温馨提示""健康建议"类科普说明页——这类页面是对某个诊断名词（如"甲状腺结节3类是什么"）的通用医学科普介绍，不是本次检查的具体所见，禁止把这类科普文字当成检查所见/项目提取（如"肾结石多与饮水少有关，建议..."这种句子禁止提取为任何条目）。
-规则B3：必须先判定整页类型并填写 pageType/pageTitle/skipPage。只有逐项展示原始检查数值、检查所见或诊断意见的详细报告页才是 detail。汇总、小结页=summary，封面/会员信息页=cover，目录/清单页=catalog，建议/科普/解读页=advice。凡不是 detail 的页面必须令 skipPage=true 且 items=[]；禁止一边标记跳过一边仍输出条目。
-规则B4：纯医学影像页（只有超声/CT/MRI/内镜图像、波形、机器参数和测量标记，没有文字所见/诊断/检验表格）必须 pageType="image_only"、hasMedicalImages=true、skipPage=true、items=[]。禁止依据图像、测量标记或人体位置图生成检查所见、正常判断、病灶性质或左右侧；图文混排时只抄图外实际印刷文字。
-规则C：跳过目录页、项目清单页（只有项目名称没有结果的页面）。
-规则D：name 字段必须干净，去除【】[]《》等括号符号和序号前缀，例：✗"内科】" → ✓"内科"。
-规则E：相似项目名称不可混淆，如"碳13"≠"碳14"，"空腹血糖"≠"餐后血糖"。
-规则F：检验数值必须与其对应项目严格匹配，不可串行填写。
-规则G：findings/diagnosis/conclusion 字段只填报告原文，不加解释或分析。
-规则H：诊断结论性短语本身不是检查项目，禁止单独作为一条 name 提取。如"左肾上腺稍增粗""慢性浅表性胃炎""窦性心动过缓""血脂异常""饮酒史""内痔"这类词，只是某个检查项目（如腹部超声/胃镜/心电图/血脂化验/既往史问诊）的诊断结论或病史条目，必须整句放进对应检查项目的 diagnosis/findings 字段里，不能单独拆出来生成新的 name/条目。判断标准：如果这段文字没有具体的测量数值/检查所见描述，只是一个诊断名词或病史陈述，就不能作为独立项目。
-规则I：diagnosis/conclusion 严禁把报告原文的中文自行替换/翻译成英文。部分检查（如宫颈液基细胞学/TCT病理）国内报告的诊断结论原文其实是中文（如"未见上皮内病变或恶性病变"），但AI可能凭自己知道的TBS分类法英文术语把它替换成英文短语（如"Negative for intraepithelial lesion or malignancy"）——这是幻觉错误，违反规则零。报告上印的是什么文字就原样提取什么文字，不能用自己知道的专业术语替换原文，无论中译英还是英译中都不允许。只有报告原文确实印刷的是英文（少数境外机构报告）时，才翻译成中文标准表述填入。此规则只管diagnosis/conclusion这类结论性文字，name/value/unit和findings里的英文缩写指标代号（如DOB/CRP/IgG等）仍按原文提取。
-规则J（客户展示字段，最高优先级）：institution（检查机构名称）会直接展示给客户，必须从当前图片可见的报告抬头、页眉、页脚、公章或二维码旁署名中逐字抄录完整印刷全称，并在输出前逐字复核。禁止简称、截断、同义改写、翻译、音译、纠错、补全、联想或添加后缀；例如原文为“浙江大学医学院附属邵逸夫医院”，不得输出“邵逸夫医院”。不得从文件名、历史报告、上一页机构、客户所属社区、体检套餐名称或常识推断机构。同一页出现多个机构时，只取签发本页检查结果的报告机构，不取送检单位、合作单位、社区卫生服务中心或医生所属单位。若当前页看不到可确认的完整机构全称，institution 必须输出空字符串，禁止沿用前一页或其他报告的机构。中文报告绝不允许生成“XX Hospital”“XX LLC”等英文或中英混杂名称；只有原文确实印刷为英文时才原样保留英文。
-规则K（最高优先级）：把整份报告当作一份需要顺序抄录的文档，不要重新组织内容。先从本页顶部开始，沿原版面从上到下、从左到右逐块读取；遇到一个有结果的项目就立即输出对应 item，再继续读取下一个。items 数组必须等于报告原文的阅读顺序。禁止先思考“这些数据该怎么分类”，禁止先收集全部检验再收集全部检查，禁止按 itemType(lab/imaging/data)、器官系统、科室或医学逻辑重新分组，禁止把前后不同位置的同类项目挪到一起。例：原文依次是“内科→血常规→心电图→肝功能→胸部CT”，输出也必须严格保持这个顺序。下面按类型给出的规则只用于决定当前读到的项目应填写哪些字段、是否拆成子项，不是让你按规则编号或类型重新扫描和排序报告。
-规则L（栏目驱动）：先识别页面中的栏目标题和横线分隔区，例如“一般项目/一般检查”“C13检测室”“心脏彩超”“肝胆胰脾彩超”。必须完整读完当前栏目内从第一行到“小结/结论”的所有实际结果，再进入页面下方的下一个栏目。栏目类型只决定字段：一般项目=data，化验/呼气试验=lab，超声/CT/MRI/心电图/内镜/科室体检=imaging。不得因同一页同时出现多种栏目而只提取其中一种，也不得把后一栏提前。
-规则M（可核对顺序字段）：每一条必须填写 sourceSectionOrder 和 sourceRowOrder。sourceSectionOrder 是该原件页中栏目标题从上到下、从左到右的第几个（从 1 开始）；同一栏目中的所有项目必须相同。sourceRowOrder 是该栏目中该项目的实际印刷行序（从 1 开始）。这两个字段只反映视觉版面顺序，不能按检查类型、医学分类或模型输出顺序填写。
-
-【字段填写规则（仅在顺序读到对应项目时使用；不得按下列编号重排报告）】
-
-1. 一般项目 / 一般检查
-   → itemType="data"，栏目中每个有实际结果的项目逐行单独一条，不限于示例项目
-   → 常见项目包括身高、体重、BMI/体重指数、脉搏、收缩压、舒张压、腰围、臀围、腰臀比；报告实际出现哪项就提取哪项，未出现的绝不补造
-   → 生活方式、现服药情况、家族史等纯问卷文字如果与一般检查同栏，也按原顺序逐行提取为 data，value 原样填写
-   → “小结”栏全部跳过：既不生成独立项目，也不写入任何项目的 conclusion/findings/diagnosis
-   → name=项目名，value=数值，unit=单位，referenceRange=参考范围
-   → conclusion=""（一般检查不提取小结）
-   → 【严禁编造】身高/体重/血压/脉搏这类生命体征，报告原文只写了一个数值就只输出一条，
-     绝对不能自己拆出"左侧/右侧""左上肢/右上肢"这类报告里并不存在的分组条目
-
-2. 血压
-   → itemType="data"，name="血压"
-   → value=血压值（如"120/80"），unit="mmHg"
-   → conclusion=""（血压不提取小结）
-   → 报告原文只有一个血压值就只输出一条名为"血压"的记录，不要编造"左上肢血压""右上肢血压"
-     这类原文没有写的分侧数据；只有报告原文确实分别印着左右两侧血压时才能各自输出一条
-
-3. 内外科 / 全科 / 耳鼻喉 / 牙科或口腔科 / 妇科 / 视力检查 / 眼压检查 / 眼科检查
-   → 体格检查项目，非检验项目，itemType="imaging"。每个印刷明细项目单独输出一条，name=明细项目名，
-     findings=该行检查所见/结果原文，sourceSection=科室名称；严禁把整个科室合并成一条大段文字
-   → 眼科必须逐行核对并提取原图可见的“前房清”“周边前房深度右”“周边前房深度左”等项目，不得只保留玻璃体、杯盘比等部分项目
-   → 按原文出现顺序逐条提取，不要求预先归好类再输出
-   → diagnosis=诊断意见/小结原文
-   → conclusion=同 diagnosis
-
-4. 裂隙灯检查 / 双眼眼底照相
-   → itemType="imaging"，每项单独一条
-   → findings=检查所见，diagnosis=诊断意见，conclusion=同 diagnosis
-
-5. 所有血液检查（肝肾功能/血糖/血脂/肿瘤标志物/尿微量白蛋白/尿肌酐/抗核抗体谱/血常规等免疫指标）
-   → itemType="lab"，每个子项单独一条，禁止合并为一条、禁止漏项；即使多个子项结果完全相同（如都是"阴性"），也必须逐项列出，不能合并成一条摘要
-   → name/value/unit/referenceRange/status 逐项填写
-   → orderName=所属检验单名称（如"肝功能""肾功能""血脂全套""抗核抗体谱""血常规"；同一化验单标题无论写"肾功能""肾功能四项""肾功能+尿酸"，一律 orderName="肾功能"）
-   → 【重要】diagnosis/conclusion 字段一律留空字符串，不得填写任何内容。原因：体检报告常把多个不同检查项目的"诊断结论"汇总印在同一页或相邻位置（如页面底部印着"子宫平滑肌瘤;乳房结节;血肌酐升高"这类跨项目诊断汇总），这些结论实际分属妇科超声/乳腺检查/肾功能等其他检查项目，与当前这条血液检验单毫无关系——曾出现"胃功能3项"化验单被错误塞入"子宫平滑肌瘤"诊断的串行错误。血液检验单本身通常没有"诊断意见"这一栏，只有数值和参考范围，禁止把报告页面上邻近位置的、可能属于其他检查项目的诊断文字当成这条lab记录的结论提取
-   → 【血常规专项自查——子项极易遗漏，务必逐项核对】血常规通常一次性印刷18~25项，且往往用很小的
-     表格字号密集排版，容易被漏读。常见完整项目清单（报告实际印刷了才提取，不要凭这份清单编造）：
-     白细胞计数(WBC)、中性粒细胞(绝对值+百分比)、淋巴细胞(绝对值+百分比)、单核细胞(绝对值+百分比)、
-     嗜酸性粒细胞(绝对值+百分比)、嗜碱性粒细胞(绝对值+百分比)、红细胞计数(RBC)、血红蛋白(HGB)、
-     红细胞压积/血细胞比容(HCT)、平均红细胞体积(MCV)、平均红细胞血红蛋白量(MCH)、平均红细胞血红蛋白
-     浓度(MCHC)、红细胞分布宽度(RDW-CV/RDW-SD)、血小板计数(PLT)、平均血小板体积(MPV)、血小板分布
-     宽度(PDW)、大血小板比率(P-LCR)。提取完成后自查：报告表格里印刷了几行数值，就必须对应生成几条
-     记录，不能只挑白细胞/红细胞/血红蛋白/血小板这几个"常见项"就停下，中性粒细胞/淋巴细胞等分类计数
-     和红细胞/血小板相关的各项衍生指标（MCV/MCH/MCHC/RDW/MPV/PDW等）同样要逐条提取，不能省略
-
-6. 尿常规 / 粪便常规
-   → 必须按照报告表格中实际印刷的检查项目逐行提取；颜色、性状、红细胞、白细胞、真菌、寄生虫、隐血等每个项目各输出一条独立item，禁止合并成“尿常规/粪便常规”摘要
-   → itemType="lab"，name=该行检查项目原名，value/unit/referenceRange/status严格取该行内容，orderName=报告实际印刷的检验单标题
-   → 表格印刷几行实际结果就输出几条，正常项和异常项都必须保留；禁止用findings代替逐行结构化结果
-   → 同一份尿/便检验单的子项常跨页打印（如流式法子项在一页、干化学法子项在下一页），只要下一页
-     开头没有出现新的检验单标题，就说明是同一份检验单续页，续页的子项 orderName 仍填同一个名字，
-     不能因为分页就当成两份不同的检验单
-   → findings/diagnosis/conclusion 留空字符串（与规则5同理，避免串入其他检查项目的结论）
-
-7. 碳13 / 碳14 呼气试验
-   → 这是检验项目，只输出一条 itemType="lab"，严禁再额外生成 imaging 条目
-   → name="碳13尿素呼气试验"或"碳14尿素呼气试验"（严格区分，不得改名）
-   → value=DOB测定值，unit=报告单位，referenceRange=报告印刷的阳性/阴性判断阈值，orderName按栏目原名填写（如"C13检测室"）
-   → 报告小结为阳性则 status="abnormal"，阴性则 status="normal"；diagnosis/conclusion 留空
-   → 例如栏目顺序是“一般项目→C13检测室→心脏彩超”，items 也必须先输出全部一般项目，再输出一条C13 lab，随后输出一条心脏彩超 imaging
-
-8. 超声（肝脏/胆囊/胰腺/脾脏/双肾输尿管膀胱/前列腺/甲状腺/颈动脉/心脏超声/乳腺/子宫附件或阴道等）
-   → 【核心规则】常见器官固定为：肝脏、胆囊、胰腺、脾脏、甲状腺、乳腺、子宫附件或阴道、双肾输尿管膀胱、前列腺、颈动脉、心脏超声——每个器官各自独立成一条，不得合并（包括肝胆胰脾这类常同页印刷的组合，胆囊/胰腺/脾脏各自单独一条，不要因为"常一起做"就把它们揉进同一条里）。
-   → 【2026-07-21修复】此前把"胆胰脾"当一个整体处理，导致AI有时只提取胆囊部分、把胰腺脾脏的检查所见漏掉（石道蓉2024-05-29肝胆胰脾超声复现：原文完整写了肝/胆/脾/胰四段所见，AI却只输出"胆囊彩超"一条，脾胰腺整段文字丢失）。合并处理给了AI"提取到哪段算完成"的自由发挥空间，容易漏。改成强制每个器官独立一条后，四段原文对应生成四条独立记录，不会互相牵连漏提。
-   → 报告上不管几个器官写在同一页/同一段落里，都必须按器官拆成多条，itemType="imaging"，每条只对应一个器官
-   → name = 该器官的检查名称原文（如"肝脏彩超""胆囊彩超""脾脏彩超""胰腺彩超""颈动脉超声""双肾输尿管膀胱彩超"），禁止把多个器官名称拼在同一个 name 里（如"甲状腺彩超、心脏彩超"或"胆胰脾彩超"这种禁止出现）
-   → findings = 报告原文里"超声所见"/"检查所见"部分中，只属于该器官的那一段文字，不得掺入其他器官的描述
-   → diagnosis = 报告原文里"超声提示"部分中，只属于该器官的那一句/那一条，不得掺入其他器官
-   → conclusion = 同 diagnosis
-   → 示例：报告里"超声提示：1.甲状腺结节；2.颈动脉未见异常；3.肝胆胰脾未见异常"这样分条列出的，必须按序号拆回各自对应的器官条目里（肝、胆、胰、脾各一条），不能整段照抄进同一条，也不能只挑其中一个器官输出
-   → 【自查】提取完成后逐句核对：原文"检查描述"里每一段（通常按肝→胆→脾→胰或类似顺序分段）是否都对应生成了一条独立记录？如果原文有4段但只输出了1-2条，说明漏提了，必须补全
-   → 【组合标题强制展开】只要栏目标题或项目名写有“肝胆胰脾超声/肝胆脾胰彩超/上腹部超声”等明确包含肝、胆、胰、脾的组合检查，即使某个器官结果只是“未见异常”，也必须输出肝脏超声、胆囊超声、胰腺超声、脾脏超声共四条；不得只输出有异常的器官，也不得只输出其中一条代表整组
-   → 跳过"温馨提示""健康建议"类科普说明文字（如"结石多与饮水少有关，建议..."），这类不是检查所见，不得提取为 findings
-
-9. 肺部CT
-   → itemType="imaging"，name="肺部CT"或报告原名
-   → findings=检查所见，diagnosis=诊断意见，conclusion=同 diagnosis
-
-10. 胃镜 / 肠镜（含胃镜/肠镜病理）
-    → 不再强制合并成一条：按报告原文实际排版逐段提取，报告上镜下所见、镜下诊断、大体所见、
-      病理诊断分别写在几段就对应生成几条记录，各自独立，不要求预先合并到同一条里
-    → itemType="imaging"，name="胃镜检查"/"肠镜检查"（病理相关的可用"胃镜病理"/"肠镜病理"区分）
-    → findings = 报告原文里内镜医生镜下所见的完整原文（描述粘膜/形态，如"粘膜光滑""充血水肿""见息肉"），按报告顺序整段抄写，不要删减
-    → diagnosis = 报告原文里镜下诊断的完整原文
-    → pathologyFindings = 如果报告里另有"大体所见"栏（描述送检标本肉眼形态，如"送检粘膜组织一块，大小0.3×0.2cm"），原样抄写在这里；没有这一栏就留空字符串
-    → pathologyDiagnosis = 如果报告里另有病理化验结果（含"慢性炎症""活动性""萎缩""肠化""HP""异型增生"等病理化验用词的病理诊断结论），原样抄写在这里；没有就留空字符串
-    → conclusion = 同 diagnosis
-    → 【重要】pathologyFindings/pathologyDiagnosis 是否为空完全取决于报告里有没有这部分内容，不要因为"看起来应该有"就编造，也不要把病理内容错填进 findings/diagnosis
-
-12. 常规心电图
-    → itemType="imaging"，name="心电图"
-    → findings=检查所见/描述，conclusion=结论原文，diagnosis=同 conclusion
-
-13. 睡眠呼吸监测 / 动态血压监测（24小时动态血压）
-    → 【重要】这类报告必须输出两条【彼此独立】的记录，不能合并成一条，也不能只出一条：
-      记录①（数值）：itemType="lab"，name="睡眠呼吸监测"/"动态血压监测"。报告里印刷了具体测量
-        数值+单位/参考范围的项（如AHI指数、最长呼吸暂停时长、最长低通气时长、最低血氧饱和度、
-        平均血氧饱和度、氧减指数、平均血压、血压负荷值等），逐项提取，不要漏项——数值表格里
-        出现的每一行都要提取，不能只挑1-2个"看起来主要"的指标。这条记录的 diagnosis/conclusion
-        留空字符串，不要把诊断文字塞进这条里。
-      记录②（诊断总结，必须单独输出，不能省略）：itemType="imaging"，name 同上（"睡眠呼吸监测"/
-        "动态血压监测"）。睡眠监测报告通常在数值表格之后印有整段文字结论，标题常见"医生诊断意见"
-        "初筛睡眠监测图诊断""诊断意见""检查提示"之类；动态血压报告则是"提示存在xx型血压"这类
-        整体判断句。只要报告里出现了这类文字段落（不管标题叫什么），必须在这条独立记录里原样
-        完整抄写：diagnosis = 该段文字完整原文（多条编号诊断就按原文顺序整段抄，不要摘要、
-        不要遗漏任何一条编号），conclusion = diagnosis的内容摘要复述一遍（不能留空）。
-      【自查】输出前检查：这两条记录的itemType是否一个是"lab"一个是"imaging"？如果报告里确实
-      有诊断文字段落但你只输出了一条记录，或者把诊断文字写进了itemType="lab"那条记录的字段里，
-      都是错误的，必须拆成上述两条。
-    → name统一为"睡眠呼吸监测"或"动态血压监测"（或报告实际印刷标题），不要与其他检查混淆
-
-14. 人体成分分析（InBody/BCA-2A等体成分测量仪报告）
-    → 只提取以下四项，其他体成分指标一律不输出：体重、体脂率、骨骼肌、内脏脂肪。
-    → 体重从“体成分构成/Body composition analysis”表格的“体重”同行读取实测值、kg单位和标准范围；sourceSection必须标记为“人体成分分析”，使其与一般检查体重分开保存，不得覆盖或替代一般检查体重。
-    → 体脂率从“身体参数/Body parameters analysis”柱状图的“体脂率”柱读取：柱体主要数值为实测值，柱旁上下两个界限值组成个人参考范围。严禁误取页面上方圆环区域的脂肪量百分比。
-    → 骨骼肌从“身体参数/Body parameters analysis”柱状图的“骨骼肌”柱读取：柱体主要数值为实测值，柱旁上下两个界限值组成个人参考范围。“骨骼肌”与“肌肉量”是不同项目，严禁相互替代。
-    → 内脏脂肪从独立的“内脏脂肪”指标卡读取实测值及卡片内“标准范围”；unit统一输出“级”。严禁从腰臀脂肪比、节段脂肪量或其他柱状图推测。
-    → 四项必须各自输出为一条独立记录：itemType="data"；name只能使用标准名“体重”“体脂率”“骨骼肌”“内脏脂肪”；value只抄实测值；
-      referenceRange只抄该项目在本次报告中明确印刷或明确连线标注的个人参考范围，没有、看不清或无法确认归属时留空，严禁按常识、性别或其他样本推算。
-    → 单位必须自查：体重和骨骼肌为kg，体脂率为%，内脏脂肪为级；任何单位与项目不匹配的数据都是串行错误，禁止输出。
-    → 如果报告只出现其中一项或两项，只输出实际出现的项目；看不清的数值不要猜测。
-    → 检测日期优先使用报告中的人体成分测量日期，并写入checkDate；不得使用打印日期替代明确的测量日期。
-
-【输出格式】
-仅输出 JSON，不要任何额外文字：
-{
-  "institution": "体检机构名称",
-  "checkDate": "YYYY-MM-DD",
-  "pageType": "detail | summary | cover | catalog | advice | image_only | unknown",
-  "hasMedicalImages": false,
-  "pageTitle": "本页原始标题，找不到则留空",
-  "skipPage": false,
-  "items": [
-    {
-      "name": "项目名称",
-      "sourceSection": "该项目在报告中所属的原始栏目标题，如一般项目、C13检测室、肝胆胰脾彩超",
-      "sourceSectionOrder": 1,
-      "sourceRowOrder": 1,
-      "itemType": "lab | imaging | data",
-      "value": "数值（lab/data类填写）",
-      "unit": "单位",
-      "referenceRange": "参考范围",
-      "status": "normal | abnormal | attention | unknown",
-      "orderName": "所属检验单（lab类填写，如肝功能、血脂全套）",
-      "bodyPart": "检查部位（imaging类可填）",
-      "findings": "检查描述/所见原文（imaging/data类填写）",
-      "diagnosis": "诊断意见原文（imaging类填写）",
-      "conclusion": "主要结论（imaging/data类填写，与diagnosis相同；lab类留空）",
-      "pathologyFindings": "仅胃镜/肠镜类填写：大体所见原文，没有则留空字符串",
-      "pathologyDiagnosis": "仅胃镜/肠镜类填写：病理诊断原文，没有则留空字符串"
-    }
-  ]
-}`;
+const { REPORT_PARSE_PROMPT, reviewMetadataError } = require('../utils/reportExtractionPolicy');
 
 function safeParseJSON(text) {
   try { return JSON.parse(String(text).trim().replace(/^```json\n?|\n?```$/g, '')); }
@@ -12895,14 +12766,16 @@ async function runReportParseControlled(reportId) {
         : failedPages > 0
           ? `${summaryText}${summaryText ? '\n' : ''}⚠️ 有${failedPages}/${totalPageCount}页识别失败，请核对是否有遗漏项目${qualityWarning ? `\n${qualityWarning}` : ''}`
           : [summaryText, qualityWarning].filter(Boolean).join('\n');
-      await MedicalReport.findByIdAndUpdate(reportId, {
+      const savedPdf = await MedicalReport.findOneAndUpdate({ _id: reportId, reviewRevision: parseStartRevision }, {
+        $inc: { reviewRevision: 1 },
         reportItems: classified,
         imagePageEvidence,
         aiSummary:   aiSummaryOut,
-        aiStatus:    'pending',
-        parseJob:    { status: 'completed', completedAt: new Date(), message: `识别完成：${totalPageCount}页，提取${classified.length}项` },
+        aiStatus:    allFailed ? 'failed' : 'pending',
+        parseJob:    { status: allFailed ? 'failed' : 'completed', completedAt: new Date(), message: `识别完成：${totalPageCount}页，提取${classified.length}项` },
         institution, checkDate,
       });
+      if (!savedPdf) throw new Error('审核期间内容已修改，AI结果未覆盖人工数据');
       const totalMs = Date.now() - t0;
       console.log(`[parse-ai] PDF完成 ${reportId} 共${totalPageCount}页 成功${okPages}页 提取${allItems.length}项 归类${matchedCount}项 | 总耗时${(totalMs/1000).toFixed(1)}s`);
       return;
@@ -13123,7 +12996,7 @@ async function runReportParseControlled(reportId) {
     await MedicalReport.findByIdAndUpdate(reportId, {
       // 转图或模型调用完全失败时不得伪装成“待审核”；前端会明确显示失败并允许重新识别。
       aiStatus: 'failed',
-      parseJob: { status: 'failed', completedAt: new Date(), message: e.message },
+      'parseJob.status': 'failed', 'parseJob.completedAt': new Date(), 'parseJob.message': e.message,
       aiSummary: '自动识别失败：' + e.message + '（请人工录入或重新识别）',
     }).catch(() => {});
   }
@@ -13238,7 +13111,9 @@ async function runReportPageParseControlled(reportId, pageNum) {
   const latestOriginalKeys = new Set(oldPage.map(reportItemIdentityKey));
   const latestMissing = filterMissingReportItems(oldPage, newPage, { targetOrgans });
   const latestEnrichment = newPage.filter(item => latestOriginalKeys.has(reportItemIdentityKey(item)) && hasReportItemEvidence(item));
-  const supplementMerge = mergeSupplementItems(oldPage, [...latestMissing, ...latestEnrichment]);
+  const { sameReportItem } = require('../utils/reportPageSupplement');
+  const deletedItems = (latest.deletedReportItems || []).filter(belongsToRequestedPage);
+  const supplementMerge = mergeSupplementItems(oldPage, [...latestMissing, ...latestEnrichment].filter(item => !deletedItems.some(deleted => sameReportItem(deleted, item))));
   const acceptedSupplementItems = [...supplementMerge.added, ...supplementMerge.enriched];
   const mergedPage = supplementMerge.items;
   const classifiedPage = await classifyItemsAsync(mergedPage);
@@ -13260,7 +13135,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
   const resultMessage = acceptedSupplementItems.length
     ? `第${pageNum}页补提完成，新增${supplementMerge.added.length}项，补全${supplementMerge.enriched.length}项，本页共${classifiedPage.length}项`
     : `第${pageNum}页未找到有原文证据的遗漏项，已保留原${oldPage.length}项`;
-  await MedicalReport.findByIdAndUpdate(reportId, {
+  const savedSupplement = await MedicalReport.findOneAndUpdate({ _id: reportId, reviewRevision: Number(latest.reviewRevision || 0) }, {
     $set: {
       reportItems: combined,
       ...(pageEvidence ? { [`imagePageEvidence.${pageNum}`]: pageEvidence } : {}),
@@ -13270,6 +13145,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
     },
     $inc: { reviewRevision: 1 },
   });
+  if (!savedSupplement) throw new Error('审核内容已发生变化，本次补提未覆盖人工数据，请刷新后继续');
   console.log(`[parse-page] ${reportId} P${pageNum} 完成：原${oldPage.length}项，AI候选${parsedItems.length}项，接受${acceptedSupplementItems.length}项，其他页保留${preserved.length}项`);
 }
 
@@ -13303,6 +13179,7 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
       await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
       return res.json({ success: true, message: '该格式暂不支持自动解析，已加入待审核队列' });
     }
+    if (report.parseJob?.status === 'completed' || report.audit_status === 'audited') return res.status(409).json({ success: false, message: '报告已完成识别，请使用审核中的补提本页，避免重复解析整份报告' });
     if (report.parseJob?.status === 'paused') return res.status(409).json({ success: false, message: report.parseJob.message + '；请管理员在 AI 用量管理中恢复' });
     if (report.aiStatus === 'processing') {
       return res.json({ success: true, processing: true, message: '正在识别中，请稍候刷新' });
@@ -13311,7 +13188,7 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
     // 标记处理中，立即返回；识别在后台进行，避免多页 PDF 阻塞请求超时
     const claimed = await MedicalReport.findOneAndUpdate({ _id: report._id, aiStatus: { $ne: 'processing' }, 'parseJob.status': { $ne: 'paused' }, 'pageParseStatus.status': { $ne: 'processing' } }, {
       aiStatus: 'processing',
-      parseJob: { status: 'processing', queuedAt: new Date(), startedAt: new Date(), attemptId: crypto.randomUUID(), actorId: String(req.staff?._id || ''), message: '正在识别' },
+      'parseJob.status': 'processing', 'parseJob.queuedAt': new Date(), 'parseJob.startedAt': new Date(), 'parseJob.attemptId': crypto.randomUUID(), 'parseJob.actorId': String(req.staff?._id || ''), 'parseJob.message': '正在识别',
     });
     if (!claimed) return res.status(409).json({ success: false, message: '报告已在识别、补提或暂停状态，请刷新' });
     scheduleReportParse(report._id);
@@ -14476,4 +14353,5 @@ router.get('/wecom-kf/handoffs', staffAuth, checkPermission('followups', 'view')
   }))});
 });
 
+router.syncScreeningItems = syncScreeningItems;
 module.exports = router;

@@ -10,7 +10,8 @@ class AiControlError extends Error {
   constructor(message, code = 'AI_BUDGET_PAUSED') { super(message); this.code = code; this.aiControl = true; }
 }
 const isAiControlError = error => error?.aiControl === true;
-function rethrowAiControl(error) { if (isAiControlError(error)) throw error; }
+// A page refusal stops only that page's provider calls; the outer report may keep its results.
+function rethrowAiControl(error) { if (isAiControlError(error) && error.code !== 'AI_PAGE_BUDGET_PAUSED') throw error; }
 function periodKeys(now = new Date()) {
   const day = new Date(now.getTime() + 8 * 3600000).toISOString().slice(0, 10);
   return { day, month: day.slice(0, 7) };

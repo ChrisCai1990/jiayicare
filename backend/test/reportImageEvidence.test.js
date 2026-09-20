@@ -138,6 +138,7 @@ test('single-page route stops before coverage/classification and preserves exist
     require: name => { assert.ok(modules[name], name); return modules[name]; },
     User: { findById: () => ({ select: () => ({ lean: async () => ({ age: 30 }) }) }) },
     isPediatricAge: () => false, UPLOADS_DIR: '', REPORT_PARSE_PROMPT: 'extract',
+    isManualOnlyReport: () => false,
     safeParseJSON: JSON.parse, shouldSkipParsedReportPage: parsed => parsed.skipPage === true, console,
   });
   await run('fixture', 1);
@@ -166,6 +167,10 @@ for (const mode of ['normal', 'budget-pause', 'checkpoint']) for (const pdf of [
   const db = {
     findById: () => ({ then: resolve => resolve(report), select: () => ({ lean: async () => report }) }),
     findByIdAndUpdate: async (_, update) => writes.push(update),
+    findOneAndUpdate: async (filter, update) => {
+      assert.equal(filter.reviewRevision, report.reviewRevision);
+      writes.push(update); return report;
+    },
   };
   const modules = {
     '../utils/ai': { parseImage: async (_, prompt) => { calls++; if (mode === 'budget-pause') throw new (require('../src/utils/aiBudgetPolicy').AiControlError)('预算不足'); return JSON.stringify(prompt === IMAGE_EVIDENCE_PROMPT ? imageOnly : { items: [narrative] }); } },

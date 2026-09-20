@@ -1,3 +1,4 @@
+import { useReportReviewActivity } from '../components/ReportReviewQuality'
 import React, { useEffect, useState, useCallback } from 'react'
 import { staffAPI, API_ORIGIN } from '../api'
 import { isImageReportFile, isPdfReportFile } from '../utils/reportFileType'
@@ -25,6 +26,7 @@ export default function ReportsPage() {
   const [rejectReason, setRejectReason] = useState('')
   const [editModal, setEditModal] = useState(null) // report object being edited
   const [editForm, setEditForm] = useState({ title: '', type: 'annual', hospital: '', date: '', note: '' })
+  const reviewActivityFlush = useReportReviewActivity((showDetail?.audit_status !== 'audited' ? showDetail?._id : null) || editModal?._id)
   const [editSaving, setEditSaving] = useState(false)
   const [patients, setPatients] = useState([])
   const [limit, setLimit] = useState(20)
@@ -104,7 +106,7 @@ export default function ReportsPage() {
         {loading ? <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>加载中...</div>
         : reports.length === 0 ? <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无报告</div>
         : <table className="table">
-            <thead><tr><th>标题</th><th>会员</th><th>类型</th><th>医院</th><th>日期</th><th>审核状态</th><th>上传人</th><th>操作</th></tr></thead>
+            <thead><tr><th>标题</th><th>会员</th><th>类型</th><th>医院</th><th>日期</th><th>审核时间 / 时长</th><th>审核状态</th><th>上传人</th><th>操作</th></tr></thead>
             <tbody>
               {reports.map(r => (
                 <tr key={r._id}>
@@ -113,6 +115,7 @@ export default function ReportsPage() {
                   <td><span className="badge badge-info">{REPORT_TYPE[r.type] || r.type}</span></td>
                   <td style={{ color: '#666', fontSize: 13 }}>{r.hospital || '-'}</td>
                   <td style={{ color: '#666', fontSize: 13 }}>{r.date || '-'}</td>
+                  <td style={{ fontSize: 11 }}>{r.audited_at ? new Date(r.audited_at).toLocaleString() : '未完成'}<br />{Object.keys(r.reviewActivity || {}).length ? `${Math.round(Object.values(r.reviewActivity).reduce((total, entry) => total + (entry.durationMs || 0), 0) / 60000)}分钟` : '时长未记录'}</td>
                   <td>
                     <span style={{ color: AUDIT_COLOR[r.audit_status], fontWeight: 500, fontSize: 13 }}>
                       {AUDIT_STATUS[r.audit_status]}
@@ -124,7 +127,7 @@ export default function ReportsPage() {
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       <button className="btn btn-secondary btn-sm" onClick={() => openDetail(r)}>查看</button>
                       {r.audit_status !== 'audited' && (
-                        <button className="btn btn-secondary btn-sm" onClick={() => { setEditModal(r); setEditForm({ title: r.title || '', type: r.type || 'annual', hospital: r.hospital || '', date: r.date || '', note: r.note || '' }) }}>✏️ 修改</button>
+                        <button className="btn btn-secondary btn-sm" onClick={() => { setEditModal(r); setEditForm({ title: r.title || '', type: r.type || 'annual', hospital: r.hospital || r.institution || '', date: r.checkDate || r.date || '', note: r.note || '', institutionStatus: r.institutionStatus || 'pending' }) }}>✏️ 修改</button>
                       )}
                       {can('reports', 'audit') && r.audit_status === 'unaudited' && (
                         <button className="btn btn-primary btn-sm" onClick={() => handleAudit(r._id, 'approve')}>✓ 通过</button>
@@ -253,6 +256,7 @@ export default function ReportsPage() {
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">医院</label>
                 <input className="form-input" value={editForm.hospital} onChange={e => setEditForm(f => ({ ...f, hospital: e.target.value }))} />
+                <label><input type="checkbox" checked={editForm.institutionStatus === 'unknown'} onChange={e => setEditForm(f => ({ ...f, institutionStatus: e.target.checked ? 'unknown' : 'pending', ...(e.target.checked ? { hospital: '' } : {}) }))} />已核实，来源机构不明</label>
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">备注</label>

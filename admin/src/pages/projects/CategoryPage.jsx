@@ -1,3 +1,4 @@
+import ReportClassificationQueue from './ReportClassificationQueue'
 import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
@@ -83,6 +84,7 @@ export default function CategoryPage() {
 
   return (
     <div>
+      <ReportClassificationQueue categories={flatList} onChanged={load} />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
           <h2 style={{ fontSize: 20, fontWeight: 700 }}>分类管理</h2>
