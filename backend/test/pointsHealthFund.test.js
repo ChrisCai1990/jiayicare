@@ -36,6 +36,7 @@ test('order-triggered conversions stay linked to the order and refund reverses t
   const refundSource = fs.readFileSync(path.join(__dirname, '../src/utils/orderPoints.js'), 'utf8');
   assert.match(conversionSource, /orderId: refType === 'Order' \? refId : null/);
   assert.match(conversionSource, /refType: refType === 'Order' \? 'Order' : 'HealthFund'/);
+  assert.match(conversionSource, /type: 'grant', source: 'enterprise', amount: conversion\.fundAmount/);
   assert.match(refundSource, /refundBalanceFields/);
   assert.match(refundSource, /reversedFund = Math\.min/);
 });

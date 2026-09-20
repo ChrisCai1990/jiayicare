@@ -90,7 +90,13 @@ router.get('/', async (req, res) => {
       serviceLocation: p.serviceLocation || '',
       validityDays: p.validityDays || 365,
       refundPolicy: p.refundPolicy || '',
-      healthFundDeduction: p.healthFundDeduction || { mode:'inherit', value:0 },
+      // 已发布的小程序会直接按商品规则展示可抵扣额；继承规则在接口层
+      // 下发为明确的10%，因此本次规则调整无需重新提交小程序审核。
+      healthFundDeduction: !p.healthFundDeduction?.mode || ['inherit', 'unlimited', 'fixedAmount'].includes(p.healthFundDeduction.mode)
+        ? { mode:'percentage', value:10 }
+        : p.healthFundDeduction.mode === 'percentage'
+          ? { mode:'percentage', value:Math.min(10, Math.max(0, Number(p.healthFundDeduction.value) || 0)) }
+          : p.healthFundDeduction,
       skus: p.skus || [],
     };
   });
