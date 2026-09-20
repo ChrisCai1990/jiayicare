@@ -3335,14 +3335,15 @@ async function draftConditionalModulesFromAuditedReport(report, explicitAbnormal
     ...(report.reportItems || []).filter(item => ['abnormal', 'attention'].includes(item.status)).map(item => item.name),
   ].filter(Boolean);
   const linkedFilter = report.sourceHealthPlanId || report.planId
-    ? { _id: report.sourceHealthPlanId || report.planId }
+    ? { _id: report.sourceHealthPlanId || report.planId, patientId: report.user }
     : { patientId: report.user, status: 'active', type: 'medical_assist' };
   const plans = await HealthPlan.find(linkedFilter);
-  let drafted = 0;
+  let drafted = 0, hasConditionalModules = false;
   for (const plan of plans) {
     const c = plan.content || {};
     const modules = (c.workflowModules || c.followUpPlans || []).filter(item => item.mode === 'conditional');
     if (!modules.length) continue;
+    hasConditionalModules = true;
     const previous = Array.isArray(c.workflowModuleDecisions) ? c.workflowModuleDecisions : [];
     let changed = false;
     for (const module of modules) {
@@ -3370,7 +3371,7 @@ async function draftConditionalModulesFromAuditedReport(report, explicitAbnormal
       await plan.save();
     }
   }
-  return drafted;
+  return { drafted, hasConditionalModules };
 }
 
 // PATCH /api/staff/plans/:id/push — 推送方案至客户端
@@ -4540,7 +4541,7 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
   }
   if (action === 'approve') {
     const conditionalDrafts = await draftConditionalModulesFromAuditedReport(report, abnormalItems || []);
-    if (abnormalItems?.length && conditionalDrafts === 0) {
+    if (abnormalItems?.length && !conditionalDrafts.hasConditionalModules) {
       try {
         await require('../utils/legacyReportReview').ensureLegacyReportReview({ Task, AbnormalReview, report, staff: req.staff,
           input: { abnormalItems, reviewReason, reviewHospital, reviewDepartment, reviewDate, notes } });

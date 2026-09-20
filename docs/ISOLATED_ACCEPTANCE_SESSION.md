@@ -1,5 +1,14 @@
 # 可登录隔离环境：验收接续
 
+## 09-21 02:00 条件分流与责任人重试修复
+
+- 真实HTTP先复现已not_needed条件仍旧派单：report 6ab01e642efa5e1abc52a1f7，Task/Review各1，测试退出1，证据保留。原因drafted=0既表示无模块也表示已有人工决定。
+- draftConditionalModulesFromAuditedReport返回drafted和hasConditionalModules；旧派单仅无条件模块时可进入，关联方案查询同时限定patientId。needed/not_needed不重写决定，pending仍生成草稿而不建旧Task。现有唯一调用点同步调整。
+- 新AbnormalReview.taskAssigneeSnapshot保存首次责任人展示名；补Task从此值取，不用重试人员。历史半成功若缺快照且无Task返回409，不猜测补派；已有Task不覆盖。本项仅冻结旧Task展示字段，不代表全部岗位ID归属机制已完成。
+- reportAuditSideEffects全通过：not_needed report 6ab01ecb4fd5b5bed1daac2d、needed ...ac3a、pending ...ac47均无旧Task/Review，原决定保持；重复/并发/无效项/半成功重试仍通过，改重试人员名也保留首次责任人。原auditedPlanItemHttp及11项回归通过，非临床或真实AI验收。
+- 核对停止隔离PID11952，新exec71219，同fvvTxL，加载本轮及上轮末次来源核对；JWT刷新，无前端/生产操作。前端旧会话需重登。
+- 尚待优先项保持：审核同文档持久意图、自动恢复及异常工作台；保存后硬退出漏派、并发撤销/删除保护与条件方案并发写。仍不认为完整闭环通过，不请求生产授权。
+
 ## 09-21 01:30 旧异常审核防重局部修复，自动恢复尚缺
 
 - 将条件草稿及旧复查创建移到report.save成功后，保存失败不执行这些后续写入。legacyReportReview以报告ID/类型散列固定Review和Task的24hex ID，依赖既有_id唯一约束做setOnInsert；并发重复键只在目标存在时再核对来源。不新增生产索引、不覆盖既有状态或内容。

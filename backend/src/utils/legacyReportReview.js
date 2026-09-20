@@ -10,7 +10,7 @@ async function ensureLegacyReportReview({ Task, AbnormalReview, report, staff, i
   }
   const title = `${report.title || '报告'}异常复查`;
   const review = { _id: reviewId, patientId: report.user, reportId: report._id, staffId: staff._id,
-    taskId, title, reviewReason: input.reviewReason || '', reviewHospital: input.reviewHospital || '',
+    taskId, taskAssigneeSnapshot: staff.name || staff.username || '健管师', title, reviewReason: input.reviewReason || '', reviewHospital: input.reviewHospital || '',
     reviewDepartment: input.reviewDepartment || '', abnormalItems: input.abnormalItems,
     reviewDate: input.reviewDate ? new Date(input.reviewDate) : null, notes: input.notes || '' };
   // _id uniqueness is the concurrency boundary, not a read-before-create check.
@@ -24,10 +24,13 @@ async function ensureLegacyReportReview({ Task, AbnormalReview, report, staff, i
     throw conflict('复查来源不一致，请联系管理员核对');
   }
   // Use the first durable review, never the losing/replayed request's content.
+  if (!saved.taskAssigneeSnapshot && !(await Task.exists({ _id: taskId }))) {
+    throw conflict('历史复查缺少原任务责任人凭据，请核对后处理');
+  }
   await insertOnce(Task, taskId, { _id: taskId, user: saved.patientId, title: saved.title,
     description: saved.reviewReason || saved.notes || '', category: 'followup_abnormal', type: 'followup_abnormal',
     priority: 'high', status: 'pending', dueDate: saved.reviewDate ? new Date(saved.reviewDate).toISOString().slice(0, 10) : null,
-    assignee: staff.name || staff.username || '健管师', abnormalReviewId: reviewId, createdAt: new Date(), updatedAt: new Date() });
+    assignee: saved.taskAssigneeSnapshot, abnormalReviewId: reviewId, createdAt: new Date(), updatedAt: new Date() });
   const savedTask = await Task.findById(taskId).lean();
   if (String(savedTask.user) !== String(saved.patientId) || String(savedTask.abnormalReviewId) !== reviewId) {
     throw conflict('复查任务来源不一致，请联系管理员核对');

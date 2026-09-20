@@ -22,9 +22,20 @@ async function main() {
   const login = await request('/staff/login', { username: account.username, password: account.password });
   assert.equal(login.status, 200);
   let failures = 0;
-  for (const scenario of ['invalid_child', 'replay', 'concurrent']) {
+  for (const scenario of ['invalid_child', 'replay', 'concurrent', 'conditional_decided', 'conditional_needed', 'conditional_pending']) {
     const patient = await User.create({ name: '隔离审核副作用客户（纯虚构）', assignedHealthManager: account.id });
     const report = await Report.create({ user: patient._id, title: `隔离审核副作用-${scenario}`, audit_status: 'unaudited' });
+    let conditionalPlan;
+    if (scenario.startsWith('conditional_')) {
+      const plan = await require('../../src/models/HealthPlan').create({ patientId: patient._id, staffId: account.id,
+        type: 'medical_assist', title: '隔离已有条件决定', status: 'active', content: {
+          workflowModules: [{ id: 'synthetic-condition', mode: 'conditional', trigger: 'abnormal_found' }],
+          workflowModuleDecisions: scenario === 'conditional_pending' ? [] : [{ id: 'synthetic-condition',
+            decision: scenario === 'conditional_needed' ? 'needed' : 'not_needed', evidence: '合成已审核决定' }],
+        } });
+      conditionalPlan = plan;
+      report.planId = plan._id; await report.save();
+    }
     const body = { action: 'approve', abnormalItems: [{ name: '合成异常（非医疗意见）', severity: scenario === 'invalid_child' ? 'invalid-test-value' : 'mild' }] };
     const statuses = [];
     if (scenario === 'concurrent') {
@@ -38,7 +49,13 @@ async function main() {
     const audit = (await Report.findById(report._id)).audit_status;
     const safe = scenario === 'invalid_child'
       ? statuses[0] >= 400 && taskCount === 0 && reviewCount === 0 && audit === 'unaudited'
-      : statuses.every(s => s === 200) && taskCount === 1 && reviewCount === 1 && audit === 'audited';
+      : statuses.every(s => s === 200) && taskCount === (conditionalPlan ? 0 : 1)
+        && reviewCount === (conditionalPlan ? 0 : 1) && audit === 'audited';
+    if (conditionalPlan) {
+      const savedPlan = await require('../../src/models/HealthPlan').findById(conditionalPlan._id);
+      assert.equal(savedPlan.content.workflowModuleDecisions[0].decision,
+        scenario === 'conditional_pending' ? 'pending' : scenario === 'conditional_needed' ? 'needed' : 'not_needed');
+    }
     console.log(JSON.stringify({ scenario, safe, statuses, patientId: String(patient._id), reportId: String(report._id), taskCount, reviewCount, audit }));
     if (!safe) failures++;
   }
@@ -50,9 +67,10 @@ async function main() {
   await assert.rejects(ensureLegacyReportReview({ ...args, Task: { updateOne() { throw new Error('injected task failure'); } } }), /injected/);
   assert.equal(await Review.countDocuments({ reportId: report._id }), 1);
   assert.equal(await Task.countDocuments({ user: patient._id }), 0);
-  const linked = await ensureLegacyReportReview({ ...args, input: { ...args.input, reviewReason: '重试不得覆盖' } });
+  const linked = await ensureLegacyReportReview({ ...args, staff: { _id: account.id, name: '重试人员不得替代' }, input: { ...args.input, reviewReason: '重试不得覆盖' } });
   const task = await Task.findById(linked.taskId);
   assert.equal(task.description, '首次内容保留');
+  assert.equal(task.assignee, '隔离健管');
   task.status = 'completed'; await task.save();
   await ensureLegacyReportReview(args);
   assert.equal((await Task.findById(linked.taskId)).status, 'completed');

@@ -12,6 +12,7 @@ const abnormalReviewSchema = new mongoose.Schema({
   reportId:         { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport',  default: null },
   staffId:          { type: mongoose.Schema.Types.ObjectId, ref: 'Admin',          required: true },
   taskId:           { type: mongoose.Schema.Types.ObjectId, ref: 'Task',           default: null },
+  taskAssigneeSnapshot: { type: String, default: '' }, // Freeze the originating audit's task owner display name.
   title:            { type: String, default: '' },
   reviewReason:     { type: String, default: '' },
   reviewHospital:   { type: String, default: '' },
