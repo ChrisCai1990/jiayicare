@@ -4179,15 +4179,21 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
         if (!it || typeof it !== 'object') return false;
         return !(_blank(it.name) && _blank(it.value) && _blank(it.findings) && _blank(it.diagnosis) && _blank(it.conclusion));
       });
-      // Content reviewers never define taxonomy. Preserve server classifications unless
-      // the identifying evidence changed, then rematch only against Admin's directory.
+      // Reviewers may choose existing Admin nodes for this item; no taxonomy/rule creation.
       const previousById = new Map((report.reportItems || []).map(item => [item.itemId, item]));
-      const classificationFields = ['screeningKey', 'screeningKeys', 'screeningCategory', 'screeningParent', 'matchStatus', 'matchConfidence'];
+      const classificationFields = ['screeningKey', 'screeningKeys', 'screeningCategory', 'screeningParent', 'matchStatus', 'matchConfidence', 'classificationSource', 'classificationReviewedBy', 'classificationReviewedAt'];
+      const manualIndex = nextItems.some(item => Object.hasOwn(item, 'manualClassificationKeys')) ? await require('../utils/screeningMatch').buildAdminIndex({ fresh: true }) : null;
       for (const item of nextItems) {
         const previous = previousById.get(item.itemId);
+        if (Object.hasOwn(item, 'manualClassificationKeys')) {
+          try { Object.assign(item, require('../utils/reportManualClassification').manualClassification(item.manualClassificationKeys, manualIndex, req.staff._id)); }
+          catch (error) { return res.status(400).json({ success: false, message: error.message }); }
+          delete item.manualClassificationKeys;
+          continue;
+        }
         const changed = !previous || ['name', 'orderName', 'sourceSection', 'bodyPart', 'specimen', 'modality', 'unit'].some(field => String(previous[field] || '') !== String(item[field] || ''));
         for (const field of classificationFields) {
-          if (!changed) item[field] = previous[field];
+          if (!changed || previous?.classificationSource === 'manual') item[field] = previous[field];
           else delete item[field];
         }
       }
@@ -13342,7 +13348,8 @@ router.post('/patients/:id/reports/:rid/reclassify', staffAuth, async (req, res)
     pendingIndexes.forEach((originalIndex, pendingIndex) => {
       reclassified[originalIndex] = newlyClassified[pendingIndex];
     });
-    const updated = await MedicalReport.findByIdAndUpdate(report._id, { $set: { reportItems: reclassified }, $inc: { reviewRevision: 1 } }, { new: true }).select('reviewRevision');
+    const updated = await MedicalReport.findOneAndUpdate({ _id: report._id, reviewRevision: Number(report.reviewRevision || 0) }, { $set: { reportItems: reclassified }, $inc: { reviewRevision: 1 } }, { new: true }).select('reviewRevision');
+    if (!updated) return res.status(409).json({ success: false, message: '审核内容已更新，请刷新后重新匹配，未覆盖人工修改' });
     const matchedCount = newlyClassified.filter(i => i.matchStatus === 'matched').length;
     res.json({ success: true, data: reclassified, matchedCount, reviewRevision: updated?.reviewRevision || 0 });
   } catch (err) {

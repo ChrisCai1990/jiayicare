@@ -45,6 +45,9 @@ const reportItemSchema = new mongoose.Schema({
 
   // ── 专项筛查自动归类标记（批次2 匹配引擎写入；批次1 先建字段）──
   screeningKeys:     [{ type: String }],             // 命中的所有筛查树节点 id 数组（支持多类目）
+  classificationSource: { type: String, default: '' },
+  classificationReviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  classificationReviewedAt: { type: Date, default: null },
   screeningKey:      { type: String, default: '' }, // 最佳命中节点 id（向后兼容单值）
   screeningCategory: { type: String, default: '' }, // 一级分类 key（tumor/cardiovascular/...）
   screeningParent:   { type: String, default: '' }, // 二级（如「肺癌」）

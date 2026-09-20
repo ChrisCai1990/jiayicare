@@ -3562,7 +3562,7 @@ export default function PatientDetailPage() {
     try {
       const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, hospital: ocrReviewReport.institution || ocrReviewReport.hospital || '', date: ocrReviewReport.checkDate || ocrReviewReport.date || '', institutionStatus: ocrReviewReport.institutionStatus, aiStatus: 'reviewed', editSource: 'ocr_review', expectedRevision: ocrRevisionRef.current })
       ocrRevisionRef.current = Number(saved.data?.reviewRevision ?? ocrRevisionRef.current)
-      toast('内容审核完成，已归类项目已同步；待归类项目由 admin 维护')
+      toast('内容审核完成，已归类项目已同步；未匹配项目可手动选择目录归类')
       setOcrReviewReport(null)
       loadReports()
     } catch (err) { toast(err.message || '保存失败') }
@@ -3633,6 +3633,8 @@ export default function PatientDetailPage() {
       const res = await staffAPI.reclassifyReport(id, ocrReviewReport._id)
       ocrRevisionRef.current = Number(res.reviewRevision ?? ocrRevisionRef.current)
       setOcrEditItems(res.data || [])
+      ocrEditItemsRef.current = res.data || []
+      setOcrReviewReport(current => current ? { ...current, reportItems: res.data || [] } : current)
       toast(`重新归类完成，已自动匹配 ${res.matchedCount || 0} 项`)
     } catch (err) { toast(err.message || '归类失败') }
     finally { setOcrSaving(false) }
@@ -11697,19 +11699,10 @@ export default function PatientDetailPage() {
           label: cat.label,
           opts: (cat.opts || []),
         }))
-        const setClassify = (i, key) => {
-          // 2026-07-09修复：医护手动改归类时必须同步 screeningKeys 数组。
-          // 后端展示层(GET screening)和写入层(syncScreeningItems)都优先读 screeningKeys 数组，
-          // 只改单值 screeningKey 而不动数组，会导致「人工改了归类但仍按 AI 二次模糊匹配的旧错值展示/写入」
-          // ——正是金娟反馈的"尿转铁蛋白改了没用还归到肿瘤铁蛋白"的根因。清空归类时数组也一并清空。
-          const parts = key ? key.split('|') : []
-          const classificationPatch = key
-            ? { screeningKey: key, screeningKeys: [key], screeningCategory: parts[0], screeningParent: parts[1], matchStatus: 'matched', matchConfidence: 1 }
-            : { screeningKey: '', screeningKeys: [], screeningCategory: '', screeningParent: '', matchStatus: 'unclassified', matchConfidence: 0 }
+        const setClassify = (i, keys) => {
           setOcrEditItems(items => {
-            const next = items.map((item, index) => index === i ? { ...item, ...classificationPatch } : item)
+            const next = items.map((item, index) => index === i ? { ...item, manualClassificationKeys: keys, screeningKeys: keys, screeningKey: keys[0] || '', classificationSource: keys.length ? 'manual' : '' } : item)
             ocrEditItemsRef.current = next
-            persistOCRItem(ocrReviewReport._id, next[i]?.itemId, classificationPatch).catch(error => toast(error.message || '归类自动保存失败，请刷新后重试'))
             return next
           })
         }
@@ -11723,9 +11716,22 @@ export default function PatientDetailPage() {
           const nameConcern = reportItemNameConcern(it)
           const original = ocrReviewReport.reportItems?.find(item => item.itemId && item.itemId === it.itemId)
           const identityChanged = original && ['name', 'bodyPart', 'orderName', 'sourceSection', 'specimen', 'modality', 'unit'].some(field => String(original[field] || '') !== String(it[field] || ''))
+          const manual = it.classificationSource === 'manual'
+          const selected = it.screeningKeys?.length ? it.screeningKeys : it.screeningKey ? [it.screeningKey] : []
+          const search = (ocrClassifySearch[i] || '').trim().toLowerCase()
+          const options = allClassifyOpts.filter(option => !search || [option.groupLabel, option.label, ...(option.searchTerms || [])].join(' ').toLowerCase().includes(search))
           return <div style={{ fontSize: 12, lineHeight: 1.6, overflowWrap: 'anywhere' }}>
-            {identityChanged ? <div style={{ color: '#B45309' }}>项目已修改，保存后重新匹配归类</div> : labels.length ? labels.map(label => <div key={label} style={{ color: '#1E6B50' }}>系统归类：{label}</div>)
-              : <div style={{ color: '#8AA89C' }}>待 Admin 维护归类</div>}
+            {identityChanged && !manual ? <div style={{ color: '#B45309' }}>项目已修改，保存后重新匹配归类</div> : labels.length ? labels.map(label => <div key={label} style={{ color: '#1E6B50' }}>{manual ? '人工归类' : '系统归类'}：{label}</div>)
+              : <div style={{ color: '#8AA89C' }}>暂未匹配，可手动归类</div>}
+            <details><summary style={{ cursor: 'pointer', color: '#0077B6' }}>选择 / 修改归类</summary>
+              <input style={{ ...inp, width: '100%', marginTop: 4 }} placeholder="搜索 Admin 分类或项目别名" value={ocrClassifySearch[i] || ''} onChange={e => setOcrClassifySearch(current => ({ ...current, [i]: e.target.value }))} />
+              <div style={{ maxHeight: 180, overflowY: 'auto' }}>{options.map(option => <label key={option.value} style={{ display: 'block', padding: '4px 0' }}>
+                <input type="checkbox" checked={selected.includes(option.value)} onChange={e => setClassify(i, e.target.checked ? [...selected, option.value] : selected.filter(key => key !== option.value))} /> {(option.path || [option.groupLabel, option.label]).join(' → ')}
+              </label>)}</div>
+              {!options.length && <div>目录中未找到，请交由 Admin 维护。</div>}
+              <div style={{ color: '#8AA89C' }}>可多选；保存草稿或提交审核后生效。</div>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setClassify(i, [])}>恢复自动匹配</button>
+            </details>
             {nameConcern && <div role="alert" style={{ color: '#B45309' }}>{nameConcern}</div>}
           </div>
         }
@@ -11852,7 +11858,7 @@ export default function PatientDetailPage() {
                           {abnN > 0 && <span style={{ color: '#DC3545', marginLeft: 8 }}>异常 {abnN}</span>}
                           {attN > 0 && <span style={{ color: '#D97706', marginLeft: 8 }}>注意 {attN}</span>}
                           {labRows.length > 0 && !activeImageEvidence?.message && abn.length === 0 && <span style={{ color: '#22A06B', marginLeft: 8, fontWeight: 400 }}>· 检验值未见异常</span>}
-                          <span style={{ marginLeft: 8, fontWeight: 400, color: '#1E6B50' }}>· 已自动归类 {matchedN} 项（将写入专项筛查）</span>
+                          <span style={{ marginLeft: 8, fontWeight: 400, color: '#1E6B50' }}>· 已归类 {matchedN} 项（将写入专项筛查）</span>
                           <span style={{ marginLeft: 8, fontWeight: 400, color: reviewedCount === indexedAll.length ? '#16A34A' : '#D97706' }}>· 人工已核对 {reviewedCount}/{indexedAll.length}</span>
                         </div>
                         {abn.length > 0 && (
@@ -12057,7 +12063,7 @@ export default function PatientDetailPage() {
                       )}
                       </div>
                       <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 8 }}>
-                        提示：AI识别可能有误，请重点核对<span style={{ color: '#DC3545' }}>异常项</span>的数值与单位。已自动归类项提交后将写入专项筛查，其余体检指标保留在报告中供查阅。
+                        提示：AI识别可能有误，请重点核对<span style={{ color: '#DC3545' }}>异常项</span>的数值与单位。已归类项提交后将写入专项筛查，未匹配或归类有误时可手动选择目录分类。
                       </div>
                     </>
                   )

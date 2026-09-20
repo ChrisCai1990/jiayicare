@@ -46,6 +46,26 @@ test('isolated Mongo: Admin confirmation, role checks, review metadata and idemp
     assert.equal((await classifyItemsAsync([item]))[0].matchStatus, 'unclassified');
 
     const base = `/staff/medical-reports/${report._id}`;
+    const otherLeaf = await Category.create({ name: '第二分类', parent: root._id });
+    const manualKeys = [`${root._id}|${root.name}|${leaf.name}`, `${root._id}|${root.name}|${otherLeaf.name}`];
+    let manualReport = await MedicalReport.findById(report._id).lean();
+    const invalidManual = await call(base, { reportItems: [{ ...manualReport.reportItems[0], manualClassificationKeys: ['fake|unknown|invented'] }], editSource: 'ocr_review', expectedRevision: manualReport.reviewRevision }, staff, 'PATCH');
+    assert.equal(invalidManual.status, 400);
+    const selected = await call(base, { reportItems: [{ ...manualReport.reportItems[0], manualClassificationKeys: manualKeys }], editSource: 'ocr_review', expectedRevision: manualReport.reviewRevision }, staff, 'PATCH');
+    assert.equal(selected.status, 200, selected.body.message);
+    manualReport = await MedicalReport.findById(report._id).lean();
+    assert.deepEqual(manualReport.reportItems[0].screeningKeys, manualKeys);
+    assert.equal(String(manualReport.reportItems[0].classificationReviewedBy), String(staff));
+    assert.equal(manualReport.reportItems[0].classificationSource, 'manual');
+    const renamed = await call(base, { reportItems: [{ ...manualReport.reportItems[0], name: '人工纠正的项目名' }], editSource: 'ocr_review', expectedRevision: manualReport.reviewRevision }, staff, 'PATCH');
+    assert.equal(renamed.status, 200);
+    assert.deepEqual(renamed.body.data.reportItems[0].screeningKeys, manualKeys);
+    assert.equal((await Category.findById(otherLeaf._id)).confirmedRules.length, 0);
+    manualReport = await MedicalReport.findById(report._id).lean();
+    const reset = await call(base, { reportItems: [{ ...manualReport.reportItems[0], name: '标准项目', manualClassificationKeys: [] }], editSource: 'ocr_review', expectedRevision: manualReport.reviewRevision }, staff, 'PATCH');
+    assert.equal(reset.status, 200);
+    assert.equal(reset.body.data.reportItems[0].screeningKey, manualKeys[0]);
+    assert.notEqual(reset.body.data.reportItems[0].classificationSource, 'manual');
     assert.equal((await call(base, { aiStatus: 'pending' }, admin, 'PATCH')).status, 200);
     const invalid = await call(base, { aiStatus: 'reviewed' }, admin, 'PATCH');
     assert.equal(invalid.status, 400); assert.match(invalid.body.message, /检查日期/);

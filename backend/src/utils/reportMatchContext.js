@@ -32,7 +32,11 @@ function confirmedRuleMatches(item, rule) {
 function contextualNames(item) {
   const name = String(item.name || '').trim();
   const sourceMode = modality(`${item.modality || ''} ${item.orderName || ''} ${item.sourceSection || ''}`);
-  if (name && sourceMode === 'ultrasound' && !modality(name)) return [`${name}超声`, `${name}彩超`];
+  const bodyPart = String(item.bodyPart || '').trim();
+  if (sourceMode === 'ultrasound' || modality(name) === 'ultrasound') {
+    if (/^(?:彩超|超声|B超|检查)$/i.test(name) && bodyPart && bodyPart.length <= 30) return [`${bodyPart}超声`, `${bodyPart}彩超`];
+    if (name && !modality(name)) return [`${name}超声`, `${name}彩超`];
+  }
   return [];
 }
 module.exports = { compatibleNode, confirmedRuleMatches, contextualNames };

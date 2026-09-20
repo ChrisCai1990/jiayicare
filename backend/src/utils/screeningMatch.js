@@ -131,9 +131,9 @@ function shouldExcludeClassificationNode({ brokenChain = false } = {}) {
   return Boolean(brokenChain);
 }
 
-async function buildAdminIndex() {
+async function buildAdminIndex({ fresh = false } = {}) {
   const now = Date.now();
-  if (adminIndexCache && (now - adminIndexCacheAt) < ADMIN_INDEX_TTL_MS) return adminIndexCache;
+  if (!fresh && adminIndexCache && (now - adminIndexCacheAt) < ADMIN_INDEX_TTL_MS) return adminIndexCache;
 
   const [cats, catalogItems] = await Promise.all([
     ProjectCategory.find({ status: 'active' }).lean(),
