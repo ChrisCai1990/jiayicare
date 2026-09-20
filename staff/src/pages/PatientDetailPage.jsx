@@ -11724,7 +11724,7 @@ export default function PatientDetailPage() {
             {identityChanged && !manual ? <div style={{ color: '#B45309' }}>项目已修改，保存后重新匹配归类</div> : labels.length ? labels.map(label => <div key={label} style={{ color: '#1E6B50' }}>{manual ? '人工归类' : '系统归类'}：{label}</div>)
               : <div style={{ color: '#8AA89C' }}>暂未匹配，可手动归类</div>}
             <details><summary style={{ cursor: 'pointer', color: '#0077B6' }}>选择 / 修改归类</summary>
-              <input style={{ ...inp, width: '100%', marginTop: 4 }} placeholder="搜索 Admin 分类或项目别名" value={ocrClassifySearch[i] || ''} onChange={e => setOcrClassifySearch(current => ({ ...current, [i]: e.target.value }))} />
+              <input style={{ width: '100%', marginTop: 4, padding: '4px 6px', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 12, boxSizing: 'border-box' }} placeholder="搜索 Admin 分类或项目别名" value={ocrClassifySearch[i] || ''} onChange={e => setOcrClassifySearch(current => ({ ...current, [i]: e.target.value }))} />
               <div style={{ maxHeight: 180, overflowY: 'auto' }}>{options.map(option => <label key={option.value} style={{ display: 'block', padding: '4px 0' }}>
                 <input type="checkbox" checked={selected.includes(option.value)} onChange={e => setClassify(i, e.target.checked ? [...selected, option.value] : selected.filter(key => key !== option.value))} /> {(option.path || [option.groupLabel, option.label]).join(' → ')}
               </label>)}</div>
