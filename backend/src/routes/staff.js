@@ -4528,38 +4528,6 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
     report.staffAuditSnapshot = report.staffAuditSnapshot?.snapshotAt
       ? report.staffAuditSnapshot
       : { reportItems: report.reportItems, snapshotAt: new Date() };
-    // 已接入统一服务流程时，先生成按需节点草稿，由健康顾问/健康规划师审核后再建任务；
-    // 未接入的历史客户继续沿用原异常复查逻辑，避免已有服务断档。
-    const conditionalDrafts = await draftConditionalModulesFromAuditedReport(report, abnormalItems || []);
-    if (abnormalItems && abnormalItems.length > 0 && conditionalDrafts === 0) {
-      const staffName = req.staff.name || req.staff.username || '健管师';
-      const reviewTitle = `${report.title || '报告'}异常复查`;
-      const task = await Task.create({
-        user:        report.user,
-        title:       reviewTitle,
-        description: reviewReason || notes || '',
-        category:    'followup_abnormal',
-        type:        'followup_abnormal',
-        priority:    'high',
-        status:      'pending',
-        dueDate:     reviewDate ? new Date(reviewDate).toISOString().slice(0, 10) : null,
-        assignee:    staffName,
-      });
-      const review = await AbnormalReview.create({
-        patientId:        report.user,
-        reportId:         report._id,
-        staffId:          req.staff._id,
-        taskId:           task._id,
-        title:            reviewTitle,
-        reviewReason:     reviewReason     || '',
-        reviewHospital:   reviewHospital   || '',
-        reviewDepartment: reviewDepartment || '',
-        abnormalItems,
-        reviewDate:       reviewDate ? new Date(reviewDate) : null,
-        notes:            notes || '',
-      });
-      await Task.findByIdAndUpdate(task._id, { abnormalReviewId: review._id });
-    }
   } else {
     report.audit_status = 'rejected';
     report.reject_reason = rejectReason || '';
@@ -4571,6 +4539,15 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
     throw err;
   }
   if (action === 'approve') {
+    const conditionalDrafts = await draftConditionalModulesFromAuditedReport(report, abnormalItems || []);
+    if (abnormalItems?.length && conditionalDrafts === 0) {
+      try {
+        await require('../utils/legacyReportReview').ensureLegacyReportReview({ Task, AbnormalReview, report, staff: req.staff,
+          input: { abnormalItems, reviewReason, reviewHospital, reviewDepartment, reviewDate, notes } });
+      } catch (error) {
+        return res.status(error.status || 500).json({ success: false, message: error.message });
+      }
+    }
     await require('../utils/reportPlanItemQueue').runtime().safeReconcile(report._id, report.planItemSync?.token);
     await syncOutpatientReportAuditCompletion(report.sourceHealthPlanId);
     await syncBodyCompositionFromReport(report);

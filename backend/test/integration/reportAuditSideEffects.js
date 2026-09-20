@@ -22,12 +22,15 @@ async function main() {
   const login = await request('/staff/login', { username: account.username, password: account.password });
   assert.equal(login.status, 200);
   let failures = 0;
-  for (const scenario of ['invalid_child', 'replay']) {
+  for (const scenario of ['invalid_child', 'replay', 'concurrent']) {
     const patient = await User.create({ name: '隔离审核副作用客户（纯虚构）', assignedHealthManager: account.id });
     const report = await Report.create({ user: patient._id, title: `隔离审核副作用-${scenario}`, audit_status: 'unaudited' });
     const body = { action: 'approve', abnormalItems: [{ name: '合成异常（非医疗意见）', severity: scenario === 'invalid_child' ? 'invalid-test-value' : 'mild' }] };
     const statuses = [];
-    for (let i = 0; i < (scenario === 'replay' ? 2 : 1); i++) {
+    if (scenario === 'concurrent') {
+      const results = await Promise.all([1, 2].map(() => request(`/staff/medical-reports/${report._id}/audit`, body, login.data.data.token, 'PATCH')));
+      statuses.push(...results.map(result => result.status));
+    } else for (let i = 0; i < (scenario === 'replay' ? 2 : 1); i++) {
       statuses.push((await request(`/staff/medical-reports/${report._id}/audit`, body, login.data.data.token, 'PATCH')).status);
     }
     const taskCount = await Task.countDocuments({ user: patient._id });
@@ -39,6 +42,22 @@ async function main() {
     console.log(JSON.stringify({ scenario, safe, statuses, patientId: String(patient._id), reportId: String(report._id), taskCount, reviewCount, audit }));
     if (!safe) failures++;
   }
+  const patient = await User.create({ name: '隔离半成功复查客户（纯虚构）', assignedHealthManager: account.id });
+  const report = await Report.create({ user: patient._id, title: '隔离复查中断', audit_status: 'audited' });
+  const { ensureLegacyReportReview } = require('../../src/utils/legacyReportReview');
+  const args = { Task, AbnormalReview: Review, report, staff: { _id: account.id, name: '隔离健管' },
+    input: { abnormalItems: [{ name: '合成项' }], reviewReason: '首次内容保留' } };
+  await assert.rejects(ensureLegacyReportReview({ ...args, Task: { updateOne() { throw new Error('injected task failure'); } } }), /injected/);
+  assert.equal(await Review.countDocuments({ reportId: report._id }), 1);
+  assert.equal(await Task.countDocuments({ user: patient._id }), 0);
+  const linked = await ensureLegacyReportReview({ ...args, input: { ...args.input, reviewReason: '重试不得覆盖' } });
+  const task = await Task.findById(linked.taskId);
+  assert.equal(task.description, '首次内容保留');
+  task.status = 'completed'; await task.save();
+  await ensureLegacyReportReview(args);
+  assert.equal((await Task.findById(linked.taskId)).status, 'completed');
+  assert.equal(await Task.countDocuments({ user: patient._id }), 1);
+  console.log('review persisted / task failure / retry and completed-task preservation PASS (injected failure, actual Mongo)');
   assert.equal(failures, 0, 'Audit side effects are not safe; synthetic evidence retained, rollout blocked');
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; }).finally(() => mongoose.disconnect());

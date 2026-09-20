@@ -1,5 +1,14 @@
 # 可登录隔离环境：验收接续
 
+## 09-21 01:30 旧异常审核防重局部修复，自动恢复尚缺
+
+- 将条件草稿及旧复查创建移到report.save成功后，保存失败不执行这些后续写入。legacyReportReview以报告ID/类型散列固定Review和Task的24hex ID，依赖既有_id唯一约束做setOnInsert；并发重复键只在目标存在时再核对来源。不新增生产索引、不覆盖既有状态或内容。
+- 先持久Review，再创建已包含abnormalReviewId的Task；重试读取首份Review内容，不用失败/迟到请求内容。不同ID的历史复查记录返回409待核对，不猜测迁移或删除。当前一个报告只创建一套旧审核复查，后续新随访应由明确的新管理事件处理。
+- reportAuditSideEffects真实HTTP已转通过：无效项400零写、重复200/200一对记录、并发200/200一对记录。最新重复report 6ab016e0c4ea3215f7945f6d、并发6ab016e0c4ea3215f7945f74。另真实Mongo注入Task创建异常，Review保留且重试恢复唯一任务/首份内容；完成Task后重试不重开。原失败现场保留。
+- 原auditedPlanItemHttp和11项回归通过；不代表所有异常窗口。隔离PID9996核对停止，新exec36659，同fvvTxL、JWT刷新。HTTP验证后补充了Task来源核对，最终helper通过直接Mongo重试测试，但长驻后端尚未加载此末次补充；下轮先重启再复验。
+- 重要缺口：尚未把审核后的动作意图与审核同文档原子保存，保存后/Review创建前硬退出仍可能漏派；当前半成功需再次调用，不是自动恢复。Review保存后Task失败也没有新工作台提示/每日补偿。并发撤销审核/报告删除仍需持久版本保护。不得称已完成持久意图机制或完整闭环。
+- 下一轮先设计持久意图及恢复/异常可见性；同时检查conditionalDrafts为0是否混淆“已有决定”与“无条件模块”，避免重新审核误落旧派单。归属/assignee在重试时仍由本次staff取值，需统一冻结来源。无生产/真实AI/订单通知。
+
 ## 09-21 00:55 旧异常审核副作用真实复现；一项修复、一项仍失败
 
 - 新reportAuditSideEffects.js <session.json>仅回环隔离API/随机库，独立虚构客户。无效severity使原接口500、报告unaudited但Task=1/Review=0（report 6ab00e8fb3f86cbfdb45082c）；连续两次合法approve均200却Task=2/Review=2（report 6ab00e8fb3f86cbfdb450833）。真实HTTP证据，不是静态推断；现场保留。
