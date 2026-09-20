@@ -1,4 +1,5 @@
 import React from 'react'
+import { checkupConclusionStage } from '../utils/checkupTaskRouting'
 import { isCheckupBookingTask, isCheckupOnsiteTask } from './CheckupBookingForm'
 import { isCheckupReportCollectionTask } from './CheckupReportCollectionForm'
 
@@ -11,6 +12,9 @@ const isCheckupPlan = task => {
 }
 
 function nodeLabel(task) {
+  const conclusion = checkupConclusionStage(task)
+  if (conclusion === 'final_acceptance') return '体检最终验收'
+  if (conclusion === 'result_review') return '体检结果评估与后续安排'
   if (isCheckupReportCollectionTask(task)) return '体检报告回收（后续仍需审核、评估及最终验收）'
   if (isCheckupOnsiteTask(task)) return '体检日陪诊执行'
   if (isCheckupBookingTask(task)) return '体检预约确认'
