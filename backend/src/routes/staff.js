@@ -4162,7 +4162,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
   try {
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-    if (report.planItemSync?.status === 'running') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
+    if (report.planItemSync?.status === 'running' || report.legacyReviewWrite?.status === 'running') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
     const { title, type, documentCategory, hospital, date, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, fileUrl, fileUrls, ossKey, ossKeys, mimeType, fileSize, editSource, expectedRevision } = req.body;
     if (reportItems !== undefined && editSource === 'ocr_review') {
       const requestedRevision = Number(expectedRevision);
@@ -4493,7 +4493,7 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
   const { action, rejectReason, abnormalItems, reviewReason, reviewHospital, reviewDepartment, reviewDate, notes } = req.body;
   const report = await MedicalReport.findById(req.params.id);
   if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-  if (report.planItemSync?.status === 'running') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
+  if (report.planItemSync?.status === 'running' || report.legacyReviewWrite?.status === 'running') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
   if (action === 'approve') {
     // Validate the prospective child before any task or conditional-plan mutation.
     if (abnormalItems !== undefined && !Array.isArray(abnormalItems)) {
@@ -10945,17 +10945,19 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       const conflicts = await MedicalReport.find({ audit_status: 'audited', $or: [
         { 'planItemSync.status': 'conflict' },
         { 'planItemSync.status': 'running', 'planItemSync.startedAt': { $lt: new Date(Date.now() - 5 * 60 * 1000) } },
+        { 'legacyReviewWrite.status': 'running', 'legacyReviewWrite.startedAt': { $lt: new Date(Date.now() - 5 * 60 * 1000) } },
       ],
         ...(myPatientIds ? { user: { $in: myPatientIds } } : {}) })
-        .select('_id user title planId planItemSync updatedAt').populate('user', 'name').sort({ updatedAt: -1 }).limit(50).lean();
+        .select('_id user title planId planItemSync legacyReviewWrite updatedAt').populate('user', 'name').sort({ updatedAt: -1 }).limit(50).lean();
       conflicts.forEach(r => {
         if (!r.user?._id) return;
-        const stalled = r.planItemSync.status === 'running';
-        todos.push({ id: 'reportplanconflict_' + r._id, type: 'report_plan_conflict', label: stalled ? '报告项目回写占用待检查' : '报告与检查项目关联待核对', priority: 1,
+        const legacyStalled = r.legacyReviewWrite?.status === 'running';
+        const stalled = r.planItemSync?.status === 'running' || legacyStalled;
+        todos.push({ id: 'reportplanconflict_' + r._id, type: 'report_plan_conflict', label: legacyStalled ? '报告复查派单占用待检查' : stalled ? '报告项目回写占用待检查' : '报告与检查项目关联待核对', priority: 1,
           patientName: r.user.name || '未知', patientId: String(r.user._id),
-          summary: stalled ? `${r.title} · 回写占用超过5分钟，请联系管理员核查运行进程；不要重复审核、改关联或强制清除占用。`
+          summary: stalled ? `${r.title} · 处理占用超过5分钟，请联系管理员核查运行进程；不要重复审核、改关联或强制清除占用。`
             : `${r.title} · 报告已审核，但关联项目未回写；请核对原方案项目及报告归属，不要重复上传或重新解析。`,
-          createdAt: r.planItemSync.finishedAt || r.updatedAt, overdue: false,
+          createdAt: r.planItemSync?.finishedAt || r.updatedAt, overdue: false,
           link: `/patients/${r.user._id}?tab=reports&reportId=${r._id}` });
       });
     }

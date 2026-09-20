@@ -1,8 +1,20 @@
-const { createHash } = require('node:crypto');
+const { createHash, randomUUID } = require('node:crypto');
+const { queueWrite } = require('./reportWriteFence');
 const idFor = (kind, reportId) => createHash('sha256').update(`report-audit:${kind}:${reportId}`).digest('hex').slice(0, 24);
 function conflict(message) { const error = new Error(message); error.status = 409; return error; }
 async function ensureLegacyReportReview({ Task, AbnormalReview, report, staff, input }) {
   if (report.audit_status !== 'audited') throw conflict('报告尚未审核，不能创建复查任务');
+  const MedicalReport = require('../models/MedicalReport');
+  const token = randomUUID();
+  // Persist the owner and input before target writes. Model fencing excludes either running queue.
+  const claimed = await MedicalReport.findOneAndUpdate({ _id: report._id, user: report.user,
+    audit_status: 'audited', updatedAt: report.updatedAt }, { $set: { legacyReviewWrite: {
+      token, status: 'running', startedAt: new Date(), staff: { _id: staff._id, name: staff.name, username: staff.username }, input,
+    } } }, { new: true }).lean();
+  if (!claimed) throw conflict('报告已变化或正在处理，请刷新后重试；持续占用需管理员核查');
+  report = claimed;
+  // Failure deliberately leaves the source locked: a timed-out target write can still arrive.
+  // Safe target fencing/recovery must be implemented before any automatic release on error.
   const reviewId = idFor('review', report._id), taskId = idFor('task', report._id);
   const existing = await AbnormalReview.find({ reportId: report._id }).select('_id taskId').limit(2).lean();
   if (existing.some(row => String(row._id) !== reviewId || String(row.taskId) !== taskId)) {
@@ -35,6 +47,10 @@ async function ensureLegacyReportReview({ Task, AbnormalReview, report, staff, i
   if (String(savedTask.user) !== String(saved.patientId) || String(savedTask.abnormalReviewId) !== reviewId) {
     throw conflict('复查任务来源不一致，请联系管理员核对');
   }
+  const released = await queueWrite(MedicalReport.updateOne({ _id: report._id, 'legacyReviewWrite.token': token,
+    'legacyReviewWrite.status': 'running' }, { $set: { 'legacyReviewWrite.status': 'completed',
+      'legacyReviewWrite.finishedAt': new Date(), 'legacyReviewWrite.reviewId': reviewId, 'legacyReviewWrite.taskId': taskId } }));
+  if (released.modifiedCount !== 1) throw conflict('复查已写入但回执未确认，请核查处理状态');
   return { reviewId, taskId };
 }
 module.exports = { ensureLegacyReportReview, idFor };

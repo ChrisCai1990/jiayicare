@@ -1,5 +1,14 @@
 # 可登录隔离环境：验收接续
 
+## 09-21 03:15 旧复查来源持久占用保护（恢复未实现）
+
+- MedicalReport.legacyReviewWrite记录运行token、时间、人员与输入；ensureLegacyReportReview在子记录写前按当前已审核/同客户/updatedAt原子领取。reportWriteFence普通save、查询更新和删除同时排除此占用与planItemSync.running，两执行者互斥；完成只凭本token更新回执并解锁。
+- 两项legacyReviewStaleSource通过：6ab02e89bc0d123d8ea3bdc5、...bdd4撤销尝试modifiedCount=0，来源仍audited，创建任务有效。不是撤销成功后补救取消。历史失败证据保留。
+- 失败不释放：网络错误可能仍有迟到目标写，安全屏障未完成前不允许超时/重复调用抢占。Task失败留下Review和running，来源修改/删除及再次派单均拒绝；原“半成功重复调用能恢复”的结论被此更严格保护取代，不能继续宣称自动恢复已实现。
+- reportAuditSideEffects：重复200/200唯一对，重叠并发409/200唯一对；独立正常来源已完成Task重试不重开；条件三态仍不误派。合成陈旧running记录通过本人ai-todos呈现“报告复查派单占用待检查”，审核API409；5分钟只用于显示，不用于接管。页面未验。
+- 原auditedPlanItemHttp、reportPlanItemStaleWorker（含硬退出及恢复失败）通过，11项回归通过。隔离PID19076核对停止，新exec46238，同fvvTxL，JWT刷新，前端未改。无生产操作。
+- 下一步：安全目标版本屏障/接管与自动恢复，审核保存和待办意图同文档原子化。当前save后领取前仍有漏派窗口；条件草稿在此锁前仍缺并发来源保护。历史冲突在领取后会保持running待核查，需在安全终态设计中处理；不开放人工强清锁，不部署。
+
 ## 09-21 02:35 撤销来源竞争两项失败，继续阻断上线
 
 - 新legacyReviewStaleSource.js使用实际本地Mongo及现有helper，在Review.updateOne或Task.updateOne前确定性执行报告rejected。不是实际HTTP竞速，而是目标边界故障调度。撤销modifiedCount=1，旧审核快照仍创建Task/Review各1，两个安全断言失败，最终单独运行退出1。

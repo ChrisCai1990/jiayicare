@@ -1,5 +1,7 @@
 # Codex / Claude Code 双端统一项目记忆
 
+> 2026-09-21旧复查来源占用保护已接：按审核/客户/updatedAt原子领取legacyReviewWrite并保存输入，模型写/删排除两种running；完成凭token解锁，异常保留锁不超时抢占。两项撤销竞争转通过，重复/并发/原项目恢复及11项回归通过；超时工作台API通过。硬中断自动恢复、审核同文档意图和条件草稿保护仍待，未部署。
+
 > 2026-09-21上线阻断复现：legacyReviewStaleSource真实隔离Mongo在写Review前/写Task前撤销审核成功，旧快照仍各建一Task/Review，两项失败退出1。现有防重不等于撤销安全；新增恢复设计但尚未实施，见docs/REPORT_AUDIT_EFFECTS_RECOVERY_PLAN.md。仅测试/证据，无业务修改或部署。
 
 > 2026-09-21条件分流修复：实测已判不需要仍误建旧复查，现区分有条件模块与新增草稿数，needed/not_needed/pending均不落旧派单，保留原决定。新复查冻结taskAssigneeSnapshot，半成功重试不改责任人。真实隔离两API脚本及11项回归通过；自动意图/补偿及撤销竞争仍待，未部署。

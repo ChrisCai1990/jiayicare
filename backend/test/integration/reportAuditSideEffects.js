@@ -49,7 +49,7 @@ async function main() {
     const audit = (await Report.findById(report._id)).audit_status;
     const safe = scenario === 'invalid_child'
       ? statuses[0] >= 400 && taskCount === 0 && reviewCount === 0 && audit === 'unaudited'
-      : statuses.every(s => s === 200) && taskCount === (conditionalPlan ? 0 : 1)
+      : statuses.includes(200) && statuses.every(s => s === 200 || (scenario === 'concurrent' && s === 409)) && taskCount === (conditionalPlan ? 0 : 1)
         && reviewCount === (conditionalPlan ? 0 : 1) && audit === 'audited';
     if (conditionalPlan) {
       const savedPlan = await require('../../src/models/HealthPlan').findById(conditionalPlan._id);
@@ -67,15 +67,30 @@ async function main() {
   await assert.rejects(ensureLegacyReportReview({ ...args, Task: { updateOne() { throw new Error('injected task failure'); } } }), /injected/);
   assert.equal(await Review.countDocuments({ reportId: report._id }), 1);
   assert.equal(await Task.countDocuments({ user: patient._id }), 0);
-  const linked = await ensureLegacyReportReview({ ...args, staff: { _id: account.id, name: '重试人员不得替代' }, input: { ...args.input, reviewReason: '重试不得覆盖' } });
+  assert.equal((await Report.findById(report._id)).legacyReviewWrite.status, 'running');
+  assert.equal((await Report.updateOne({ _id: report._id }, { $set: { audit_status: 'rejected' } })).modifiedCount, 0);
+  assert.equal((await Report.deleteOne({ _id: report._id })).deletedCount, 0);
+  await assert.rejects(ensureLegacyReportReview(args), error => error.status === 409);
+  assert.equal(await Task.countDocuments({ user: patient._id }), 0);
+  // A distinct successful source verifies completed-task replay. Do not clear the failed lock.
+  const goodReport = await Report.create({ user: patient._id, title: '隔离正常复查', audit_status: 'audited' });
+  const linked = await ensureLegacyReportReview({ ...args, report: goodReport });
   const task = await Task.findById(linked.taskId);
   assert.equal(task.description, '首次内容保留');
   assert.equal(task.assignee, '隔离健管');
   task.status = 'completed'; await task.save();
-  await ensureLegacyReportReview(args);
+  await ensureLegacyReportReview({ ...args, report: await Report.findById(goodReport._id),
+    staff: { _id: account.id, name: '重试人员不得替代' }, input: { ...args.input, reviewReason: '重试不得覆盖' } });
   assert.equal((await Task.findById(linked.taskId)).status, 'completed');
   assert.equal(await Task.countDocuments({ user: patient._id }), 1);
-  console.log('review persisted / task failure / retry and completed-task preservation PASS (injected failure, actual Mongo)');
+  console.log('task failure remains locked; source edits/deletion/retry blocked; separate completed-task replay preserved PASS (automatic recovery NOT implemented)');
+  const stalled = await Report.create({ user: patient._id, title: '隔离陈旧占用展示（合成时间）', audit_status: 'audited',
+    legacyReviewWrite: { token: 'synthetic-stalled', status: 'running', startedAt: new Date(Date.now() - 6 * 60 * 1000) } });
+  const todos = await request('/staff/ai-todos', undefined, login.data.data.token, 'GET');
+  assert.equal(todos.status, 200);
+  assert.equal(todos.data.data.find(row => row.id === 'reportplanconflict_' + stalled._id)?.label, '报告复查派单占用待检查');
+  assert.equal((await request(`/staff/medical-reports/${stalled._id}/audit`, { action: 'reject' }, login.data.data.token, 'PATCH')).status, 409);
+  console.log('synthetic aged claim appears in own workbench and audit edit returns 409 PASS');
   assert.equal(failures, 0, 'Audit side effects are not safe; synthetic evidence retained, rollout blocked');
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; }).finally(() => mongoose.disconnect());
