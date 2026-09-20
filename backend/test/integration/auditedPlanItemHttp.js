@@ -206,7 +206,12 @@ async function main() {
   const recoveryReport = new MedicalReport({ user: patient._id, title: '隔离故障恢复合成报告', audit_status: 'audited',
     planId: recoveryPlan._id, planItemId: recoveryPlan.items[0]._id });
   queueModule.arm(recoveryReport); await recoveryReport.save();
-  await assert.rejects(queueModule.createQueue({ MedicalReport, HealthPlan: { updateOne: async () => { throw new Error('injected failure before item write'); } } })
+  let failFirstWrite = true;
+  const firstWriteFailurePlan = { findOne: (...args) => HealthPlan.findOne(...args), updateOne: (...args) => {
+    if (failFirstWrite) { failFirstWrite = false; return Promise.reject(new Error('injected failure before item write')); }
+    return HealthPlan.updateOne(...args);
+  } };
+  await assert.rejects(queueModule.createQueue({ MedicalReport, HealthPlan: firstWriteFailurePlan })
     .reconcile(recoveryReport._id, recoveryReport.planItemSync.token));
   assert.equal((await readItem(recoveryPlan._id)).status, 'pending');
   assert.equal((await MedicalReport.findById(recoveryReport._id)).planItemSync.status, 'pending');
@@ -235,6 +240,6 @@ async function main() {
   await request(`/staff/medical-reports/${stranded._id}/plan-item-conflict/resolve`, {
     token: stranded.planItemSync.token, action: 'keep_existing', reason: '不能用确认现状解除运行占用',
   }, token, 'POST', 409);
-  console.log('simulated stranded claim: scan does not steal, staff workbench warning visible, conflict resolution cannot clear it PASS (recovery not implemented)');
+  console.log('legacy claim without epoch: scan does not steal, staff workbench warning visible, conflict resolution cannot clear it PASS (legacy recovery intentionally blocked)');
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; }).finally(() => mongoose.disconnect());

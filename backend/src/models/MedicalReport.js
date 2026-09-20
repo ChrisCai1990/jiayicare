@@ -214,6 +214,7 @@ const medicalReportSchema = new mongoose.Schema({
   uploadedByRole: { type: String, default: '' },
   planItemId:       { type: mongoose.Schema.Types.ObjectId, default: null }, // 关联体检方案中的项目
   planItemSync: { type: mongoose.Schema.Types.Mixed, default: null }, // New audit intent only; no historical backfill.
+  planItemWriteEpoch: { type: Number, default: 0 }, // Monotonic across re-audits/relinks; never reset by arm().
   planItemConflictResolutions: { type: [mongoose.Schema.Types.Mixed], default: [] }, // Append-only staff decisions; preserved if a later audit changes the link.
   planId:           { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null },
   screeningItemId:  { type: mongoose.Schema.Types.ObjectId, ref: 'UserScreeningItem', default: null },

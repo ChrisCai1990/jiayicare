@@ -14,6 +14,18 @@ async function main() {
   const { arm, createQueue } = require('../../src/utils/reportPlanItemQueue');
   assert.equal((await User.findById(session.patientId).lean()).name, '隔离验收客户（纯虚构）');
   const manager = session.accounts.find(a => a.role === 'healthManager');
+  if (process.argv[3] === '--crash-worker') {
+    const report = await MedicalReport.findById(process.argv[4]).lean();
+    assert.equal(report.title, '隔离进程硬退出报告');
+    const crashPlan = { findOne: (...args) => HealthPlan.findOne(...args), updateOne: async (...args) => {
+      if (args[0].items && process.argv[5] === 'before') process.exit(23);
+      const result = await HealthPlan.updateOne(...args);
+      if (args[0].items && process.argv[5] === 'after') process.exit(24);
+      return result;
+    } };
+    await createQueue({ MedicalReport, HealthPlan: crashPlan }).reconcile(report._id, report.planItemSync.token);
+    throw new Error('Expected hard exit was not reached');
+  }
   const patient = await User.create({ name: '隔离旧快照竞争客户（纯虚构）', assignedHealthManager: manager.id });
   let failures = 0;
   for (const scenario of ['audit_revoked', 'association_changed']) {
@@ -54,5 +66,57 @@ async function main() {
       originalItemStatus: result.items[0].status, sourceAudit: source.audit_status, sourceSync: source.planItemSync.status }));
   }
   if (failures) throw new Error(`${failures} stale-snapshot safety checks FAILED; synthetic evidence retained, do not approve rollout`);
+  // Keep the old worker alive, paused immediately before its item write, while recovery revokes its epoch.
+  const plan = await HealthPlan.create({ patientId: patient._id, staffId: manager.id, type: 'annual_checkup',
+    title: '隔离迟到写入恢复', items: [{ name: '合成恢复目标', status: 'pending' }] });
+  const report = new MedicalReport({ user: patient._id, title: '隔离迟到写入报告', audit_status: 'audited',
+    planId: plan._id, planItemId: plan.items[0]._id });
+  arm(report); await report.save();
+  let enterWrite, releaseWrite;
+  const entered = new Promise(resolve => { enterWrite = resolve; });
+  const released = new Promise(resolve => { releaseWrite = resolve; });
+  const delayedPlan = { findOne: (...args) => HealthPlan.findOne(...args), updateOne: async (...args) => {
+    if (args[0].items) { enterWrite(); await released; }
+    return HealthPlan.updateOne(...args);
+  } };
+  const oldWork = createQueue({ MedicalReport, HealthPlan: delayedPlan }).reconcile(report._id, report.planItemSync.token);
+  await entered;
+  const frozen = await MedicalReport.findById(report._id).lean();
+  const queue = createQueue({ MedicalReport, HealthPlan });
+  await queue.recover(frozen);
+  const recovered = await MedicalReport.findById(report._id).lean();
+  assert.equal(recovered.planItemSync.status, 'pending');
+  assert.ok(recovered.planItemWriteEpoch > frozen.planItemWriteEpoch);
+  assert.equal(await require('../../src/utils/reportItemEpoch').advanceFence(HealthPlan, frozen, frozen.planItemWriteEpoch), false, 'old worker cannot downgrade target fence');
+  await MedicalReport.updateOne({ _id: report._id }, { $set: { audit_status: 'rejected' } });
+  releaseWrite(); await oldWork;
+  assert.equal((await HealthPlan.findById(plan._id).lean()).items[0].status, 'pending');
+  assert.equal((await MedicalReport.findById(report._id).lean()).audit_status, 'rejected');
+  await queue.reconcile(report._id, report.planItemSync.token);
+  assert.equal((await MedicalReport.findById(report._id).lean()).planItemSync.status, 'obsolete');
+  console.log('live old worker after recovery: old target write and old acknowledgement fenced out, revoked report stays uncompleted PASS');
+  for (const phase of ['before', 'after']) {
+    const crashPlan = await HealthPlan.create({ patientId: patient._id, staffId: manager.id, type: 'annual_checkup',
+      title: `隔离进程硬退出-${phase}`, items: [{ name: '合成中断目标', status: 'pending' }] });
+    const crashReport = new MedicalReport({ user: patient._id, title: '隔离进程硬退出报告', audit_status: 'audited',
+      planId: crashPlan._id, planItemId: crashPlan.items[0]._id });
+    arm(crashReport); await crashReport.save();
+    const child = require('node:child_process').spawnSync(process.execPath, [__filename, process.argv[2], '--crash-worker', String(crashReport._id), phase], {
+      windowsHide: true, timeout: 15000, encoding: 'utf8',
+      env: { NODE_PATH: process.env.NODE_PATH || '', SystemRoot: process.env.SystemRoot || '', PATH: process.env.PATH || '' },
+    });
+    assert.equal(child.status, phase === 'before' ? 23 : 24, child.stderr);
+    const stranded = await MedicalReport.findById(crashReport._id).lean();
+    assert.equal(stranded.planItemSync.status, 'running');
+    const beforeRecovery = (await HealthPlan.findById(crashPlan._id).lean()).items[0];
+    assert.equal(beforeRecovery.status, phase === 'before' ? 'pending' : 'completed');
+    // Advance only the scanner clock, not persisted clinical or scheduling dates.
+    await createQueue({ MedicalReport, HealthPlan, now: () => Date.now() + 6 * 60 * 1000 }).scan();
+    const afterRecovery = (await HealthPlan.findById(crashPlan._id).lean()).items[0];
+    assert.equal(afterRecovery.status, 'completed');
+    if (phase === 'after') assert.equal(afterRecovery.completedAt.getTime(), beforeRecovery.completedAt.getTime());
+    assert.equal((await MedicalReport.findById(crashReport._id).lean()).planItemSync.status, 'completed');
+    console.log(`actual child hard-exit ${phase} item write -> fenced recovery -> completed, no duplicate completion: PASS`);
+  }
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; }).finally(() => mongoose.disconnect());

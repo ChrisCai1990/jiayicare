@@ -27,6 +27,7 @@ const planItemSchema = new mongoose.Schema({
 }, { _id: true });
 
 const healthPlanSchema = new mongoose.Schema({
+  reportItemWriteFences: { type: mongoose.Schema.Types.Mixed, default: {} }, // report ID -> latest accepted write epoch
   patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User',  required: true },
   staffId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
   type: {

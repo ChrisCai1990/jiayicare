@@ -1,5 +1,15 @@
 # 可登录隔离环境：验收接续
 
+## 23:10 新版本硬中断恢复通过；不等于完整上线验收
+
+- MedicalReport.planItemWriteEpoch单调递增（arm不重置）；HealthPlan.reportItemWriteFences按报告ID保存最新epoch。占用者先推进目标屏障，项目原子完成须epoch相等；迟到者不能降低屏障，报告回执/异常释放亦按epoch CAS。
+- 新running超过5分钟进入既有扫描恢复：先增加报告epoch保持锁定，再推进方案屏障，成功后才能变pending。时间只决定扫描资格，屏障才提供旧写失效保证；不是仅超时抢占。网络异常释放也走同一屏障，考虑服务端写仍在飞行。屏障失败/目标不存在保持running，不强解锁。
+- 无epoch或0的旧running不恢复，旧代码写入不检查epoch，不能外推安全。隔离历史合成占用继续保留，不迁移、删除或伪造通过。本轮未新增索引、未切Mongo架构。
+- reportPlanItemStaleWorker真实Mongo验证：两项旧快照来源更改被拒绝；另暂停仍存活旧执行者在项目写前，恢复后撤销审核，再放行旧执行者，项目仍pending、旧回执无效；旧epoch无法降级方案屏障。
+- 同脚本用无业务凭证的本地Node子进程真实process.exit(23/24)，分别在项目写前及写后回执前硬退出；真实库保留running。仅注入扫描器时钟+6分钟（不改客户/任务日期），调用实际scan恢复后completed；写后场景完成时间原值不变。这是本机真实进程退出/数据库恢复，不是真实AI/临床履约。
+- 连续auditedPlanItemHttp全段通过（含旧无epoch占用不接管/工作台提示）、14项回归通过。后端2604已核对停止，新exec48578，同fvvTxL清单/JWT刷新；无前端修改，不重复构建。生产未访问。
+- 尚待：恢复屏障本身中断/失败的专项覆盖，实际HTTP并发编辑需清晰409而非旧路由500/静默0，所有写入口审计及最终多岗位完整闭环复验。仍不批准整体上线；下一轮先补这些保护，不清除旧失败证据。
+
 ## 22:35 持久占用保护通过；恢复未完成，仍阻断上线
 
 - reportPlanItemQueue原子findOneAndUpdate抢pending→running，仅赢家读取冻结报告并写项目；完成/冲突/obsolete通过模块内部Symbol能力写回。普通异常在操作settled后退回pending；回执失败也尝试释放，释放失败保留running，不按时间接管，防旧进程继续写入。
