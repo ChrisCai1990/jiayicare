@@ -1,5 +1,5 @@
 import { isManualOnlyReport } from '../utils/reportManualReview'
-import { belongsToCheckupPlan, checkupProgress } from '../utils/checkupProgress'
+import { belongsToCheckupPlan, checkupProgress, groupCheckupPlans } from '../utils/checkupProgress'
 import { orderConversationMessages } from '../utils/orderConversation'
 import { inferAppointmentConversation } from '../utils/appointmentConversation'
 import { planningAdviceFromTask, hasPlanningAdvice, planningAdviceMessage } from '../utils/medicalPlanningAdvice'
@@ -1739,7 +1739,7 @@ function ServiceManagementCategories({ plans, active, onChange }) {
           const opened = categoryPlans.length > 0
           const selected = active === category.key
           const countLabel = category.key === 'checkup' && opened
-            ? `本次 1 · 既往 ${Math.max(0, categoryPlans.length - 1)}`
+            ? `本次 1 · 既往 ${Math.max(0, groupCheckupPlans(categoryPlans).length - 1)}`
             : opened ? `已开通 ${categoryPlans.length}` : '未开通'
           return (
             <button key={category.key} type="button" onClick={() => onChange(category.key)} style={{ textAlign: 'left', padding: '14px 15px', borderRadius: 12, border: `1px solid ${selected ? category.color : '#DCE5E0'}`, background: selected ? `${category.color}0D` : '#FAFCFB', cursor: 'pointer', boxShadow: selected ? `0 0 0 1px ${category.color}22` : 'none' }}>
@@ -1762,8 +1762,10 @@ function CheckupManagementWorkspace({ plans, reports, followUps, questionnaireRe
   const checkupPlans = plans
     .filter(plan => getServiceManagementCategory(plan) === 'checkup')
     .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
-  const currentPlan = checkupPlans[0]
-  const historicalPlans = checkupPlans.slice(1)
+  const groups = groupCheckupPlans(checkupPlans)
+  const currentPlan = groups[0]?.plan
+  const preparationPlans = (groups[0]?.members || []).filter(plan => plan._id !== currentPlan?._id)
+  const historicalPlans = groups.slice(1).map(group => group.plan)
   const planDate = currentPlan?.createdAt ? new Date(currentPlan.createdAt) : new Date()
   const year = currentPlan?.year || planDate.getFullYear()
   const intake = currentPlan?.content?.checkupIntake || currentPlan?.content?.checkupQuestionnaire
@@ -1834,8 +1836,9 @@ function CheckupManagementWorkspace({ plans, reports, followUps, questionnaireRe
             </div>
             <div style={{ padding: '13px 15px', border: '1px solid #DCE9ED', borderRadius: 10, background: '#F8FCFE' }}>
               <div style={{ fontSize: 12, color: '#56727D' }}>本次资料</div>
-              <div style={{ marginTop: 7, fontSize: 13, color: '#174B61', fontWeight: 700 }}>问卷 {intake ? 1 : 0}份 · 方案 {currentPlan ? 1 : 0}份</div>
+              <div style={{ marginTop: 7, fontSize: 13, color: '#174B61', fontWeight: 700 }}>问卷 {intake ? 1 : 0}份 · 方案 {groups[0]?.members.length || 0}份</div>
               <div style={{ marginTop: 4, fontSize: 12, color: '#56727D' }}>任务 {checkupTasks.length}项 · 报告 {checkupReports.length}份</div>
+              {preparationPlans.map(plan => <button key={plan._id} type="button" className="btn btn-sm btn-secondary" style={{ marginTop: 8 }} onClick={() => onOpenPlan(plan)}>查看本次准备方案（项目完成情况单独核对）</button>)}
             </div>
           </div>
 

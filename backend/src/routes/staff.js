@@ -5414,7 +5414,11 @@ router.get('/patients/:id/plans', staffAuth, async (req, res) => {
   });
   });
 
-  res.json({ success: true, data: [...annualMapped, ...healthPlans] });
+  const checkupLinks = await require('../models/CheckupPreparationHandoff').find({ patientId: req.params.id,
+    _id: { $in: healthPlans.filter(plan => plan.type === 'annual_checkup').map(plan => plan._id) } })
+    .select('_id servicePlanId patientId').lean();
+  const projectedPlans = require('../utils/checkupPlanProjection').projectCheckupLinks(healthPlans, checkupLinks);
+  res.json({ success: true, data: [...annualMapped, ...projectedPlans] });
 });
 
 // GET /api/staff/patients/:id/reports — 会员的体检报告列表

@@ -1,5 +1,21 @@
 const idOf = value => String(value?._id || value || '')
 
+export function groupCheckupPlans(plans = []) {
+  const byId = new Map(plans.map(plan => [idOf(plan._id), plan]))
+  const groups = new Map()
+  for (const plan of plans) {
+    const linkedId = idOf(plan.checkupServiceId || plan.content?.serviceInstanceId)
+    const service = byId.get(linkedId)
+    const valid = plan.type === 'annual_checkup' && service?.type === 'medical_assist'
+      && service.content?.serviceDomain === 'annual_checkup'
+      && idOf(service.patientId) === idOf(plan.patientId) && idOf(plan.patientId)
+    const key = valid ? linkedId : idOf(plan._id)
+    if (!groups.has(key)) groups.set(key, { plan: valid ? service : plan, members: [] })
+    groups.get(key).members.push(plan)
+  }
+  return [...groups.values()].sort((a, b) => String(b.plan.createdAt || '').localeCompare(String(a.plan.createdAt || '')))
+}
+
 export function belongsToCheckupPlan(record, plan) {
   if (!plan?._id) return false
   const ids = [idOf(plan._id), idOf(plan.content?.serviceInstanceId)].filter(Boolean)
