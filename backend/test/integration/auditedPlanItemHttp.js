@@ -233,6 +233,11 @@ async function main() {
   stranded.planItemSync.status = 'running';
   stranded.planItemSync.startedAt = new Date(Date.now() - 6 * 60 * 1000);
   await stranded.save();
+  for (const [suffix, body] of [['', { aiStatus: 'reviewed' }], ['/audit', { action: 'reject', rejectReason: '占用保护测试' }]]) {
+    const busyResponse = await request(`/staff/medical-reports/${stranded._id}${suffix}`, body, token, 'PATCH', 409);
+    assert.equal(busyResponse.code, 'REPORT_WRITE_CONFLICT');
+  }
+  assert.equal((await MedicalReport.findById(stranded._id)).audit_status, 'audited');
   await queueModule.createQueue({ MedicalReport, HealthPlan }).scan();
   assert.equal((await MedicalReport.findById(stranded._id)).planItemSync.status, 'running', 'elapsed time must not steal a potentially live worker');
   const strandedTodo = (await request('/staff/ai-todos', undefined, token, 'GET')).data.find(row => row.id === 'reportplanconflict_' + stranded._id);

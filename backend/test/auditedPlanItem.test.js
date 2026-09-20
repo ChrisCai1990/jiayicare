@@ -27,5 +27,9 @@ test('audit route persists report before completing its item', () => {
 });
 test('AI review entry uses the same completion helper only after saved audited review', () => {
   const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
-  assert.match(source, /await report.save\(\);\s*if \(aiStatus === 'reviewed' && report.audit_status === 'audited'\) \{\s*await require\('\.\.\/utils\/reportPlanItemQueue'\).runtime\(\).safeReconcile/);
+  const route = source.split("router.patch('/medical-reports/:id',")[1].split("router.post('/medical-reports/:id/health-course-draft'")[0];
+  assert.ok(route.indexOf('await report.save()') >= 0);
+  assert.ok(route.indexOf('await report.save()') < route.indexOf('.safeReconcile'));
+  assert.match(route, /catch \(err\) \{\s*if \(err.name === 'DocumentNotFoundError'\) return .*sendReportWriteConflict\(res\);\s*throw err;/);
+  assert.match(route, /if \(aiStatus === 'reviewed' && report.audit_status === 'audited'\) \{\s*await require\('\.\.\/utils\/reportPlanItemQueue'\).runtime\(\).safeReconcile/);
 });

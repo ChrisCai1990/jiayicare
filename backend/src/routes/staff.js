@@ -4161,6 +4161,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
   try {
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    if (report.planItemSync?.status === 'running') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
     const { title, type, documentCategory, hospital, date, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, fileUrl, fileUrls, ossKey, ossKeys, mimeType, fileSize, editSource, expectedRevision } = req.body;
     if (reportItems !== undefined && editSource === 'ocr_review') {
       const requestedRevision = Number(expectedRevision);
@@ -4281,7 +4282,11 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     if (mimeType !== undefined) report.mimeType = mimeType;
     if (fileSize !== undefined) report.fileSize = fileSize;
     if (aiStatus === 'reviewed') require('../utils/reportPlanItemQueue').arm(report);
-    await report.save();
+    try { await report.save(); }
+    catch (err) {
+      if (err.name === 'DocumentNotFoundError') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
+      throw err;
+    }
     if (aiStatus === 'reviewed' && report.audit_status === 'audited') {
       await require('../utils/reportPlanItemQueue').runtime().safeReconcile(report._id, report.planItemSync?.token);
     }
@@ -4487,6 +4492,7 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
   const { action, rejectReason, abnormalItems, reviewReason, reviewHospital, reviewDepartment, reviewDate, notes } = req.body;
   const report = await MedicalReport.findById(req.params.id);
   if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+  if (report.planItemSync?.status === 'running') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
   if (action === 'approve') {
     const isRequiredOutpatientDocument = report.sourceHealthPlanId
       && ['prescription_order', 'outpatient_record'].includes(report.documentCategory);
@@ -4545,7 +4551,11 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
     report.reject_reason = rejectReason || '';
   }
   if (action === 'approve') require('../utils/reportPlanItemQueue').arm(report);
-  await report.save();
+  try { await report.save(); }
+  catch (err) {
+    if (err.name === 'DocumentNotFoundError') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
+    throw err;
+  }
   if (action === 'approve') {
     await require('../utils/reportPlanItemQueue').runtime().safeReconcile(report._id, report.planItemSync?.token);
     await syncOutpatientReportAuditCompletion(report.sourceHealthPlanId);

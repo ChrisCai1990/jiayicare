@@ -1,5 +1,13 @@
 # 可登录隔离环境：验收接续
 
+## 09-21 00:20 两个报告审核入口占用提示
+
+- 员工PATCH medical-reports/:id与/:id/audit在已加载报告running时返回409/REPORT_WRITE_CONFLICT，提示刷新或持续占用联系管理员；模型原子保护仍保留。仅report.save的DocumentNotFoundError转409，其他错误不伪装冲突；找不到报告仍404。
+- auditedPlanItemHttp在合成历史running现场分别调用两接口，均409且报告仍audited；整个上传/审核/双岗进度/更正并发/恢复API脚本通过。保存过程中才发生竞争的HTTP确定性时序尚未覆盖，不把初始占用测试外推。
+- 11项回归通过。新增try/catch使旧静态相邻文本断言失败，改为限定路由、保存先于回写且catch必须return/throw的断言后通过；不是掩盖业务失败。
+- 核对后停止原隔离PID15996，新启动器exec80674，同fvvTxL且出口围栏不变。API验证后进一步将公共路由catch收窄至save，磁盘最终版本单测通过，但该微调尚未重启加载；下一轮先重启复跑。前端未改、JWT已刷新，无生产访问。
+- 尚待：单项编辑/删除/用户端/后台/AI回写入口审计与友好错误；旧audit在保存前调用draftConditionalModulesFromAuditedReport及Task/AbnormalReview创建，有并发保存失败留下副作用的风险。先做确定性复现及持久幂等后置机制设计，不仅搬到save后就声称故障闭合。当前无全量闭环/生产验收通过结论。
+
 ## 23:40 恢复本身失败时保护保留（隔离专项通过）
 
 - 扩展reportPlanItemStaleWorker：真实子进程项目写前/写后硬退出，再分别注入恢复目标屏障写失败、屏障已推进后的报告解锁失败。两种异常均保持running、epoch递增；真实源修改及删除返回0，不提前放行。
