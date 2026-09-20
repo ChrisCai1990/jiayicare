@@ -211,12 +211,30 @@ async function main() {
   assert.equal((await readItem(recoveryPlan._id)).status, 'pending');
   assert.equal((await MedicalReport.findById(recoveryReport._id)).planItemSync.status, 'pending');
   // Simulate interruption after item write, before the durable queue acknowledgement.
-  const failingReports = { findOne: (...args) => MedicalReport.findOne(...args), updateOne: async () => { throw new Error('injected acknowledgement failure'); } };
+  let failAcknowledgement = true;
+  const failingReports = { findOneAndUpdate: (...args) => MedicalReport.findOneAndUpdate(...args), updateOne: (...args) => {
+    if (failAcknowledgement) { failAcknowledgement = false; return Promise.reject(new Error('injected acknowledgement failure')); }
+    return MedicalReport.updateOne(...args);
+  } };
   await assert.rejects(queueModule.createQueue({ MedicalReport: failingReports, HealthPlan }).reconcile(recoveryReport._id, recoveryReport.planItemSync.token));
   const completedAt = (await readItem(recoveryPlan._id)).completedAt.getTime();
   await queueModule.createQueue({ MedicalReport, HealthPlan }).scan();
   assert.equal((await MedicalReport.findById(recoveryReport._id)).planItemSync.status, 'completed');
   assert.equal((await readItem(recoveryPlan._id)).completedAt.getTime(), completedAt);
   console.log('persisted new audit intent: before-write failure / after-write acknowledgement failure / recovery scan idempotence PASS');
+  const stranded = new MedicalReport({ user: patient._id, title: '隔离硬中断占用（合成现场）', audit_status: 'audited',
+    planId: recoveryPlan._id, planItemId: recoveryPlan.items[0]._id });
+  queueModule.arm(stranded);
+  stranded.planItemSync.status = 'running';
+  stranded.planItemSync.startedAt = new Date(Date.now() - 6 * 60 * 1000);
+  await stranded.save();
+  await queueModule.createQueue({ MedicalReport, HealthPlan }).scan();
+  assert.equal((await MedicalReport.findById(stranded._id)).planItemSync.status, 'running', 'elapsed time must not steal a potentially live worker');
+  const strandedTodo = (await request('/staff/ai-todos', undefined, token, 'GET')).data.find(row => row.id === 'reportplanconflict_' + stranded._id);
+  assert.equal(strandedTodo?.label, '报告项目回写占用待检查');
+  await request(`/staff/medical-reports/${stranded._id}/plan-item-conflict/resolve`, {
+    token: stranded.planItemSync.token, action: 'keep_existing', reason: '不能用确认现状解除运行占用',
+  }, token, 'POST', 409);
+  console.log('simulated stranded claim: scan does not steal, staff workbench warning visible, conflict resolution cannot clear it PASS (recovery not implemented)');
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; }).finally(() => mongoose.disconnect());

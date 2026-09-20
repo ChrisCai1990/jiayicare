@@ -12,7 +12,7 @@ test('only explicit audited links create durable intent; new audit replaces toke
 test('revoked audit or changed association stops queued write', async () => {
   for (const patch of [{ audit_status: 'rejected' }, { planItemId: 'new-item' }]) {
     let status;
-    const MedicalReport = { findOne: () => ({ lean: async () => ({ _id: 'r', user: 'u', audit_status: 'audited', planId: 'p', planItemId: 'i',
+    const MedicalReport = { findOneAndUpdate: () => ({ lean: async () => ({ _id: 'r', user: 'u', audit_status: 'audited', planId: 'p', planItemId: 'i',
       planItemSync: { token: 't', planId: 'p', itemId: 'i' }, ...patch }) }),
       updateOne: async (filter, update) => { assert.equal(filter['planItemSync.token'], 't'); status = update.$set['planItemSync.status']; } };
     await createQueue({ MedicalReport, HealthPlan: { updateOne: () => assert.fail('obsolete intent must not write') } }).reconcile('r', 't');
@@ -20,7 +20,7 @@ test('revoked audit or changed association stops queued write', async () => {
   }
 });
 test('unmarked legacy report cannot be reconciled accidentally', async () => {
-  await createQueue({ MedicalReport: { findOne: () => assert.fail('missing token') } }).reconcile('legacy');
+  await createQueue({ MedicalReport: { findOneAndUpdate: () => assert.fail('missing token') } }).reconcile('legacy');
 });
 test('explicit keep-existing decision survives audit replay, but not a new association', () => {
   const row = { audit_status: 'audited', planId: 'p', planItemId: 'i', planItemSync: {

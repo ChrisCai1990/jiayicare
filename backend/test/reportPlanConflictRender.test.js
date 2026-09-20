@@ -34,3 +34,8 @@ test('correction result distinguishes completion, recovery pending, and conflict
   assert.match(html, /尚不能认定检查已完成/);
   assert.doesNotMatch(html, /<button|<textarea/);
 });
+test('running claim renders a read-only warning, never a conflict resolution button', () => {
+  const html = render({ ...report, planItemSync: { status: 'running' } });
+  assert.match(html, /不能仅凭超时强制解除占用/);
+  assert.doesNotMatch(html, /<button|<textarea|<select/);
+});

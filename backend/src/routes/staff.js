@@ -10940,14 +10940,19 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
 
     // Read-only projection of a persisted conflict, not another task document.
     if (can('report_plan_conflict')) {
-      const conflicts = await MedicalReport.find({ audit_status: 'audited', 'planItemSync.status': 'conflict',
+      const conflicts = await MedicalReport.find({ audit_status: 'audited', $or: [
+        { 'planItemSync.status': 'conflict' },
+        { 'planItemSync.status': 'running', 'planItemSync.startedAt': { $lt: new Date(Date.now() - 5 * 60 * 1000) } },
+      ],
         ...(myPatientIds ? { user: { $in: myPatientIds } } : {}) })
         .select('_id user title planId planItemSync updatedAt').populate('user', 'name').sort({ updatedAt: -1 }).limit(50).lean();
       conflicts.forEach(r => {
         if (!r.user?._id) return;
-        todos.push({ id: 'reportplanconflict_' + r._id, type: 'report_plan_conflict', label: '报告与检查项目关联待核对', priority: 1,
+        const stalled = r.planItemSync.status === 'running';
+        todos.push({ id: 'reportplanconflict_' + r._id, type: 'report_plan_conflict', label: stalled ? '报告项目回写占用待检查' : '报告与检查项目关联待核对', priority: 1,
           patientName: r.user.name || '未知', patientId: String(r.user._id),
-          summary: `${r.title} · 报告已审核，但关联项目未回写；请核对原方案项目及报告归属，不要重复上传或重新解析。`,
+          summary: stalled ? `${r.title} · 回写占用超过5分钟，请联系管理员核查运行进程；不要重复审核、改关联或强制清除占用。`
+            : `${r.title} · 报告已审核，但关联项目未回写；请核对原方案项目及报告归属，不要重复上传或重新解析。`,
           createdAt: r.planItemSync.finishedAt || r.updatedAt, overdue: false,
           link: `/patients/${r.user._id}?tab=reports&reportId=${r._id}` });
       });

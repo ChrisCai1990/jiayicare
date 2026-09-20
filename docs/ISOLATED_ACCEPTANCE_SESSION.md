@@ -1,5 +1,14 @@
 # 可登录隔离环境：验收接续
 
+## 22:35 持久占用保护通过；恢复未完成，仍阻断上线
+
+- reportPlanItemQueue原子findOneAndUpdate抢pending→running，仅赢家读取冻结报告并写项目；完成/冲突/obsolete通过模块内部Symbol能力写回。普通异常在操作settled后退回pending；回执失败也尝试释放，释放失败保留running，不按时间接管，防旧进程继续写入。
+- MedicalReport挂reportWriteFence：现有文档save增加$where排除running，查询更新/替换/删除追加同条件；只有队列内部查询可绕过。扫描源码未见业务MedicalReport.bulkWrite/collection写来源，原生collection分类迁移脚本仍不受模型钩子保护；不将其称数据库级写隔离。文档save冲突会抛错，update可返回0，部分旧入口的友好409处理仍待。
+- reportPlanItemStaleWorker实跑两场景safe=true：并发源更改modifiedCount=0，源保持audited/原关联，所以项目完成有效；另验证运行中save拒绝、deleteOne删除0、第二个claim为空。不是允许撤销成功后仍完成。历史失败现场未修改或删除。
+- auditedPlanItemHttp全链及同方案竞争/两种异常恢复再次通过。新增合成硬中断running记录（并非实际杀进程）：scan不抢占，真实ai-todos显示报告项目回写占用待检查，普通resolve返回409。该记录保留，不能人工清状态来冒充恢复验收。
+- 员工报告详情running只读保护提示，不显示更正/确认按钮；14项回归和1897模块构建通过。尚未浏览器验running态。后端9132已核对停止，新exec30745，同fvvTxL清单，JWT刷新。
+- 下一步必须补安全恢复：先确认旧执行者已退出/不可再写，再恢复持久意图；不能仅用5分钟/TTL作为失效证明。当前没有管理员安全恢复入口，硬中断可能留下占用，因此仍阻断上线。还须实际HTTP并发编辑错误呈现、用户端/后台写入口和文档删除审计；无生产部署、无数据库架构变更。
+
 ## 22:00 关键失败：旧快照仍可完成项目（上线阻断）
 
 - 新脚本 backend/test/integration/reportPlanItemStaleWorker.js <session.json>：仅回环随机隔离库、核验原虚构客户，另建纯虚构客户/两份方案报告；在真实queue读取报告后、HealthPlan.updateOne前确定性插入来源变化，使用真实Mongo写入，不是真实HTTP竞争或临床资料。
