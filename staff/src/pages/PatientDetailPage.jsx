@@ -1,4 +1,5 @@
 import ReportReviewQuality, { useReportReviewActivity } from '../components/ReportReviewQuality'
+import { reportClassificationLabels, reportItemNameConcern, reportNameCorrection, sameReportConclusion } from '../utils/reportReviewQuality'
 import { isManualOnlyReport } from '../utils/reportManualReview'
 import { orderConversationMessages } from '../utils/orderConversation'
 import { inferAppointmentConversation } from '../utils/appointmentConversation'
@@ -11712,12 +11713,22 @@ export default function PatientDetailPage() {
             return next
           })
         }
-        const isClassified = it => Boolean(it?.screeningKey || (Array.isArray(it?.screeningKeys) && it.screeningKeys.length) || it?.matchStatus === 'matched')
+        const isClassified = it => Boolean(it?.screeningKey || (Array.isArray(it?.screeningKeys) && it.screeningKeys.length))
         const matchedN = ocrEditItems.filter(isClassified).length
         const unclassifiedN = ocrEditItems.length - matchedN
         // 所有可选归类项打平，供搜索用
         const allClassifyOpts = classifyGroups.flatMap(g => g.opts.map(o => ({ ...o, groupLabel: g.label })))
-        const classifyCell = (it, i) => <span style={{ fontSize: 11, color: '#8AA89C' }}>{it.screeningKey ? '系统已归类' : '待 admin 维护'}</span>
+        const classifyCell = (it, i) => {
+          const labels = reportClassificationLabels(it, screeningCatalog)
+          const nameConcern = reportItemNameConcern(it)
+          const original = ocrReviewReport.reportItems?.find(item => item.itemId && item.itemId === it.itemId)
+          const identityChanged = original && ['name', 'bodyPart', 'orderName', 'sourceSection', 'specimen', 'modality', 'unit'].some(field => String(original[field] || '') !== String(it[field] || ''))
+          return <div style={{ fontSize: 12, lineHeight: 1.6, overflowWrap: 'anywhere' }}>
+            {identityChanged ? <div style={{ color: '#B45309' }}>项目已修改，保存后重新匹配归类</div> : labels.length ? labels.map(label => <div key={label} style={{ color: '#1E6B50' }}>系统归类：{label}</div>)
+              : <div style={{ color: '#8AA89C' }}>待 Admin 维护归类</div>}
+            {nameConcern && <div role="alert" style={{ color: '#B45309' }}>{nameConcern}</div>}
+          </div>
+        }
 
         return (
           // 审核内容多且耗时，鼠标稍微移出弹窗点到遮罩层就会误触关闭丢失未保存的编辑，去掉点遮罩关闭，
@@ -11896,7 +11907,8 @@ export default function PatientDetailPage() {
                               style={{ border: isFocusedItem ? '2px solid #7C3AED' : '1px solid #E0D9CE', borderRadius: 8, padding: '10px 12px', background: isFocusedItem ? '#F5F3FF' : (isImaging(it) ? '#fafaf8' : '#fff'), boxShadow: isFocusedItem ? '0 0 0 3px rgba(124,58,237,.12)' : 'none' }}>
                               {isFocusedItem && <div style={{ fontSize: 11, color: '#7C3AED', fontWeight: 800, marginBottom: 6 }}>已定位到需要核对归属的项目</div>}
                               <div style={{ fontSize: 10, color: isImaging(it) ? '#0369A1' : '#7C3AED', fontWeight: 700, marginBottom: 6 }}>
-                                {it.sourcePage ? `原报告 P${it.sourcePage} · ` : ''}栏目内第 {it.sourceRowOrder || visibleIndex + 1} 项 · {isImaging(it) ? '检查/影像' : '检验/数值'}{it.orderName ? ` · ${it.orderName}` : ''}
+                                <span style={{ color: sc, fontSize: 12 }}>{STATUS_OPTS.find(s => s.v === it.status)?.label || '未知'}</span>
+                                <span style={{ color: '#8AA89C', fontWeight: 400, marginLeft: 8 }}>{it.sourcePage ? `P${it.sourcePage} · ` : ''}第 {it.sourceRowOrder || visibleIndex + 1} 项</span>
                                 <button onClick={() => updItem(i, {
                                   manualReviewStatus: it.manualReviewStatus === 'reviewed' ? 'pending' : 'reviewed',
                                   manualReviewedAt: it.manualReviewStatus === 'reviewed' ? null : (it.manualReviewedAt || new Date().toISOString()),
@@ -11908,6 +11920,7 @@ export default function PatientDetailPage() {
                                 <div style={{ flex: 2 }}>
                                   {isImaging(it) && <div style={{ fontSize: 10, color: '#8AA89C', marginBottom: 2 }}>原报告项目</div>}
                                   <input style={{ ...inp, fontWeight: 600, width: '100%' }} value={it.name || ''} placeholder="项目名称" onChange={e => updItem(i, { name: e.target.value })} />
+                                  {reportNameCorrection(it) && <button type="button" className="btn btn-secondary btn-sm" onClick={() => updItem(i, reportNameCorrection(it))}>名称改为“{it.sourceSection}”，原文保留至检查结果</button>}
                                 </div>
                                 {isImaging(it) ? (
                                   <div style={{ width: 110 }}>
@@ -11937,8 +11950,9 @@ export default function PatientDetailPage() {
                               {isImaging(it) && <>
                                 <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, margin: '2px 0' }}>检查结果（原报告同行内容）</div>
                                 <textarea style={{ ...inp, minHeight: 58, lineHeight: 1.6, resize: 'vertical', marginBottom: 6 }} value={it.findings || ''} placeholder="该项目对应的完整原文结果" onChange={e => updItem(i, { findings: e.target.value })} />
-                                <textarea style={{ ...inp, minHeight: 42, lineHeight: 1.6, resize: 'vertical', marginBottom: 6 }} value={it.diagnosis || ''} placeholder="诊断意见" onChange={e => updItem(i, { diagnosis: e.target.value })} />
-                                <input style={{ ...inp, background: '#F3EFFB', borderColor: '#C4B5FD', marginBottom: 6 }} value={it.conclusion || ''} placeholder="主要结论" onChange={e => updItem(i, { conclusion: e.target.value })} />
+                                <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, margin: '2px 0' }}>诊断 / 结论</div>
+                                <textarea style={{ ...inp, minHeight: 42, lineHeight: 1.6, resize: 'vertical', marginBottom: 6 }} value={it.diagnosis || it.conclusion || ''} placeholder="原报告诊断或结论" onChange={e => updItem(i, sameReportConclusion(it) ? { diagnosis: e.target.value, conclusion: e.target.value } : { diagnosis: e.target.value })} />
+                                {!sameReportConclusion(it) && <><div style={{ fontSize: 11, color: '#4A6558' }}>补充结论（与诊断不同）</div><textarea style={{ ...inp, minHeight: 42, marginBottom: 6 }} value={it.conclusion || ''} onChange={e => updItem(i, { conclusion: e.target.value })} /></>}
                               </>}
                               {classifyCell(it, i)}
                             </div>

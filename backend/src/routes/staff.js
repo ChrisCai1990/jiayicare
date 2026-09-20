@@ -13301,6 +13301,7 @@ router.get('/screening-catalog', staffAuth, async (req, res) => {
       if (!groupsByL1.has(l1.name)) groupsByL1.set(l1.name, []);
       groupsByL1.get(l1.name).push({
         value,
+        path: [...chain.map(node => node.name), leaf.name],
         // 只展示Admin真实分类层级；已归类项目名仅用于后台搜索/自动匹配，不伪装成分类名称。
         label: `${parentLabel !== leaf.name ? parentLabel + ' / ' : ''}${leaf.name}`,
         groupLabel: l1.name,
