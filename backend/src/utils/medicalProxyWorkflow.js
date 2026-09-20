@@ -477,6 +477,7 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
   const medicationProxy = plan.medicationProxy === true;
   const supplementProxy = plan.supplementProxy === true;
   const medicalEscort = plan.medicalEscort === true;
+  const escortScheduledAt = medicalEscort ? require('./medicalEscortSchedule').medicalEscortSchedule(plan.escortDate, plan.escortTime) : null;
   const supplyProxy = medicationProxy || supplementProxy;
   const appointmentRequirement = (supplyProxy ? [
     plan.hospital, plan.campus, plan.department, plan.expert,
@@ -529,9 +530,9 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
     user: patient._id, tenantId: patient.tenantId || null, serviceId: `annual-member-medical-proxy-${Date.now()}`,
     serviceName, servicePrice: 0, unitPrice: 0, paymentStatus: 'unpaid', tradeStatus: 'fulfilling',
     status: 'pending', initiationSource: STAFF_DIRECT_SOURCE,
-    desiredServiceDate: medicalEscort ? appointmentAt(plan.escortDate, plan.escortTime) : (appointmentOnly || supplyProxy) ? appointmentAt(plan.preferredDateStart, String(plan.serviceTime || '').match(/^\d{2}:\d{2}/)?.[0] || '09:00') : null,
-    desiredServiceDateEnd: medicalEscort ? appointmentAt(plan.escortDate, plan.escortTime) : (appointmentOnly || supplyProxy) ? appointmentAt(plan.preferredDateEnd || plan.preferredDateStart, String(plan.serviceTime || '').match(/^\d{2}:\d{2}/)?.[0] || '09:00') : null,
-    scheduledAt: medicalEscort ? appointmentAt(plan.escortDate, plan.escortTime) : null,
+    desiredServiceDate: medicalEscort ? escortScheduledAt : (appointmentOnly || supplyProxy) ? appointmentAt(plan.preferredDateStart, String(plan.serviceTime || '').match(/^\d{2}:\d{2}/)?.[0] || '09:00') : null,
+    desiredServiceDateEnd: medicalEscort ? escortScheduledAt : (appointmentOnly || supplyProxy) ? appointmentAt(plan.preferredDateEnd || plan.preferredDateStart, String(plan.serviceTime || '').match(/^\d{2}:\d{2}/)?.[0] || '09:00') : null,
+    scheduledAt: escortScheduledAt,
     serviceRequirements: medicalEscort ? [escortLabels[plan.escortCategory], plan.hospital, plan.campus, plan.department, plan.escortGoal, plan.transport, plan.hotel, plan.notes].filter(Boolean).join('；') : (appointmentOnly || supplyProxy) ? appointmentRequirement : `${plan.proxyGoal}\n${plan.communicationContent}`,
     serviceWorkflowSnapshot: { key: 'medical_proxy', source: STAFF_DIRECT_SOURCE },
     medicalProxyPlan: (supplyProxy || medicalEscort) ? { ...plan, initiationSource: STAFF_DIRECT_SOURCE } : null,
