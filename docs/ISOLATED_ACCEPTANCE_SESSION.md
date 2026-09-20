@@ -1,5 +1,12 @@
 # 可登录隔离环境：验收接续
 
+## 15:40 报告项目回写真正API验证
+
+- 修复原audit路由在报告持久化前先plan.save、未核对患者且重写完成时间的问题。新增completeAuditedPlanItem：审核保存后，同planId/patientId及pending项目，reportId为空或本报告时原子完成；skipped/其他报告/跨患者不覆盖。
+- 新脚本 node backend/test/integration/auditedPlanItemHttp.js <session.json>：严格本机随机库及原虚构客户校验，另建“隔离项目回写客户（纯虚构）”，不修改原服务现场。实际健管登录及PATCH审核覆盖matching（含重放首次完成时间不变）、other_patient、skipped、other_report、rejected，5组通过。报告/检查项目为合成输入，无真实文件/AI，不是临床或全部服务验收。合成记录保留。
+- 13项针对回归通过；原体检服务只读审计仍7任务、unfinished空。审核后写回若暂时失败，可重试审核恢复，但尚无独立自动补偿/工作台失败投影，本轮不宣称此故障闭合。其他报告审核入口及自动匹配路径还须审计，避免只覆盖旧audit接口。
+- 已停止原隔离后端30108并用原fvvTxL清单重启，会话3502；隔离出口和无生产凭证不变，陪同日期补丁也已加载，未创建任何陪同订单。JWT刷新后浏览器需重新登录。本轮无生产访问/部署。
+
 ## 15:00 同次分组页面通过
 
 - IAB tab3重新登录fvvTxL顾问，打开患者tab=plans&serviceView=checkup：本次1/既往0，方案2份，任务7/报告1，已完成及本次准备方案入口均正确。6a9c7409页面验收通过，不是全闭环验收。

@@ -4454,14 +4454,6 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
     report.staffAuditSnapshot = report.staffAuditSnapshot?.snapshotAt
       ? report.staffAuditSnapshot
       : { reportItems: report.reportItems, snapshotAt: new Date() };
-    // 如果关联方案项目，自动完成
-    if (report.planId && report.planItemId) {
-      const plan = await HealthPlan.findById(report.planId);
-      if (plan) {
-        const item = plan.items.id(report.planItemId);
-        if (item) { item.status = 'completed'; item.completedAt = new Date(); await plan.save(); }
-      }
-    }
     // 已接入统一服务流程时，先生成按需节点草稿，由健康顾问/健康规划师审核后再建任务；
     // 未接入的历史客户继续沿用原异常复查逻辑，避免已有服务断档。
     const conditionalDrafts = await draftConditionalModulesFromAuditedReport(report, abnormalItems || []);
@@ -4500,6 +4492,7 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
   }
   await report.save();
   if (action === 'approve') {
+    await require('../utils/auditedPlanItem').completeAuditedPlanItem(HealthPlan, report);
     await syncOutpatientReportAuditCompletion(report.sourceHealthPlanId);
     await syncBodyCompositionFromReport(report);
     await onCheckupReportAudited(report).catch(err => console.error('[checkup-workflow] failed to activate result review', err.message));
