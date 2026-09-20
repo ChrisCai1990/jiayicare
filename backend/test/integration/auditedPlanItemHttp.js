@@ -26,7 +26,7 @@ async function main() {
     assignedHealthPlanner: session.accounts.find(a => a.role === 'healthPlanner').id });
   const readItem = async id => (await HealthPlan.findById(id).lean()).items[0];
   const uploadPlan = await HealthPlan.create({ patientId: patient._id, staffId: account.id, type: 'annual_checkup',
-    title: '隔离上传关联测试（纯虚构）', items: [{ name: '合成项目A' }, { name: '合成项目B' }] });
+    title: '隔离上传关联测试（纯虚构）', items: [{ name: '合成项目A', itemType: 'specialExam' }, { name: '合成项目B', itemType: 'labTest' }] });
   const category = await require('../../src/models/ProjectCategory').create({ name: '隔离上传分类（非正式配置）' });
   const payload = { patientId: String(patient._id), title: '隔离上传占位（非真实医疗资料）', date: '2026-09-20',
     planId: String(uploadPlan._id), planItemId: String(uploadPlan.items[0]._id), screeningL1: String(category._id) };
@@ -46,6 +46,29 @@ async function main() {
   assert.equal(String((await readItem(uploadPlan._id)).reportId), String(first._id));
   assert.equal((await readItem(uploadPlan._id)).status, 'pending');
   console.log('upload: cross-patient/missing-item rejection, same-item empty fill, different-item separation, existing-content preservation PASS');
+  const advisor = session.accounts.find(a => a.role === 'familyDoctor');
+  const advisorToken = (await request('/staff/login', { username: advisor.username, password: advisor.password })).data.token;
+  const assertPendingCount = async count => {
+    for (const roleToken of [token, advisorToken]) {
+      const rows = (await request('/staff/checkup-progress', undefined, roleToken, 'GET')).data;
+      const row = rows.find(row => String(row.planId) === String(uploadPlan._id));
+      if (count) assert.equal(row?.pendingCount, count);
+      else assert.equal(row, undefined, 'completed plan items must leave both role progress queues');
+    }
+  };
+  await assertPendingCount(2);
+  await request(`/staff/medical-reports/${first._id}`, { aiStatus: 'reviewed' }, token, 'PATCH');
+  await assertPendingCount(1);
+  const firstCompleted = await readItem(uploadPlan._id);
+  // The second item uses the other real audit entry, with explicitly linked synthetic content.
+  const secondFill = (await request('/staff/medical-reports', { ...payload, planItemId: String(uploadPlan.items[1]._id), content, mimeType: 'image/png' }, token)).data;
+  assert.equal(String(secondFill._id), String(separate._id));
+  await request(`/staff/medical-reports/${separate._id}/audit`, { action: 'approve', abnormalItems: [] }, token, 'PATCH');
+  await assertPendingCount(0);
+  await request(`/staff/medical-reports/${first._id}`, { aiStatus: 'reviewed' }, token, 'PATCH');
+  assert.equal((await readItem(uploadPlan._id)).completedAt.getTime(), firstCompleted.completedAt.getTime());
+  await assertPendingCount(0);
+  console.log('upload -> two audit entries -> both staff progress queues 2/1/0 -> replay stable: PASS');
   for (const entry of ['audit', 'review']) for (const scenario of ['matching', 'other_patient', 'skipped', 'other_report', 'rejected', ...(entry === 'review' ? ['draft'] : [])]) {
     const plan = await HealthPlan.create({ patientId: scenario === 'other_patient' ? new mongoose.Types.ObjectId() : patient._id,
       staffId: account.id, type: 'annual_checkup', title: `隔离项目回写-${scenario}（非真实服务）`, status: 'active',
