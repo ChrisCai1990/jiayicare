@@ -1,5 +1,12 @@
 # 可登录隔离环境：验收接续
 
+## 15:00 同次分组页面通过
+
+- IAB tab3重新登录fvvTxL顾问，打开患者tab=plans&serviceView=checkup：本次1/既往0，方案2份，任务7/报告1，已完成及本次准备方案入口均正确。6a9c7409页面验收通过，不是全闭环验收。
+- 同页发现结构化serviceMode=one_stop/serviceScene=checkup_one_stop但模板名不含一站式时误标单独体检。新增统一checkupServiceMode供本次/历史使用，9项回归通过，浏览器实际显示体检一站式服务。
+- 项目审核完成机制在staff.js报告审核中，仅有report.planId+planItemId才回写对应item.status；当前空模拟报告无此项目映射。checkupPreparationReports回流门槛允许明确not_completed清单项，所以服务验收不能直接当成所有检查完成。保留0/1与报告解读待办，未写入假完成；下一轮补实际报告项目关联API及缺项处置验证，并核查回写同客户约束与失败恢复。
+- 本轮未重启后端60141，故陪同日期补丁运行加载/场景补验仍待；该专项已在用户单独授权的发布轮部署生产1b0d007c，本轮没有生产访问。
+
 ## 14:20 同次体检明确关联分组
 
 - 后端患者方案列表新增只读checkupServiceId投影，来源CheckupPreparationHandoff，核对同患者/正确方案类型/唯一承接；不写回HealthPlan、不改检查项目完成状态。前端按明确关联归组，执行服务为主卡，本次准备方案保留可点击入口；类别计数也按组计算，不按年份或名称合并。

@@ -1,5 +1,5 @@
 import { isManualOnlyReport } from '../utils/reportManualReview'
-import { belongsToCheckupPlan, checkupProgress, groupCheckupPlans } from '../utils/checkupProgress'
+import { belongsToCheckupPlan, checkupProgress, groupCheckupPlans, checkupServiceMode } from '../utils/checkupProgress'
 import { orderConversationMessages } from '../utils/orderConversation'
 import { inferAppointmentConversation } from '../utils/appointmentConversation'
 import { planningAdviceFromTask, hasPlanningAdvice, planningAdviceMessage } from '../utils/medicalPlanningAdvice'
@@ -1787,7 +1787,7 @@ function CheckupManagementWorkspace({ plans, reports, followUps, questionnaireRe
   }
   const checkupReports = reports.filter(report => belongsToCheckupPlan(report, currentPlan))
   const checkupTasks = followUps.filter(task => belongsToCheckupPlan(task, currentPlan))
-  const serviceMode = /一站式/.test(`${currentPlan?.title || ''} ${currentPlan?.content?.templateName || ''}`) ? '体检一站式服务' : '单独体检服务'
+  const serviceMode = checkupServiceMode(currentPlan)
   const statusText = currentPlan ? (PLAN_STATUS_LABEL[currentPlan.status] || currentPlan.status || '进行中') : '尚未开通'
   const serviceDate = currentPlan?.content?.serviceDate || currentPlan?.content?.moduleData?.visit?.visitDate || ''
   const ownerName = currentPlan?.staffId?.name || currentPlan?.content?.reviewerName || '-'
@@ -1873,7 +1873,7 @@ function CheckupManagementWorkspace({ plans, reports, followUps, questionnaireRe
         {historicalPlans.length ? <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
           {historicalPlans.map(plan => {
             const rowYear = plan.year || new Date(plan.createdAt || Date.now()).getFullYear()
-            const rowMode = /一站式/.test(`${plan.title || ''} ${plan.content?.templateName || ''}`) ? '一站式服务' : '单独体检服务'
+            const rowMode = checkupServiceMode(plan)
             const createdText = plan.createdAt ? new Date(plan.createdAt).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '时间未记录'
             return <button type="button" key={plan._id} onClick={() => onOpenPlan(plan)} style={{ border: '1px solid #E1EAE5', borderRadius: 9, background: '#fff', padding: '10px 13px', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', cursor: 'pointer' }}>
               <span style={{ fontWeight: 800, color: '#173B2E' }}>{rowYear}年</span>

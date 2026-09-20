@@ -3,6 +3,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const load = () => import('data:text/javascript;base64,' + Buffer.from(fs.readFileSync(path.join(__dirname, '../../staff/src/utils/checkupProgress.js'))).toString('base64'));
+test('structured one-stop services do not depend on their display title', async () => {
+  const { checkupServiceMode } = await load();
+  for (const content of [{ serviceMode: 'one_stop' }, { serviceScene: 'checkup_one_stop' }]) {
+    assert.equal(checkupServiceMode({ title: '隔离体检流程', content }), '体检一站式服务');
+  }
+  assert.equal(checkupServiceMode({ title: '既往体检一站式' }), '体检一站式服务');
+  assert.equal(checkupServiceMode({ title: '普通检查' }), '单独体检服务');
+});
 test('explicit preparation links group one occurrence without changing item completion', async () => {
   const { groupCheckupPlans } = await load();
   const service = { _id: 'service', patientId: 'p', type: 'medical_assist', content: { serviceDomain: 'annual_checkup' }, status: 'completed', createdAt: '2026-09-20' };

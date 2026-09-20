@@ -1,5 +1,12 @@
 const idOf = value => String(value?._id || value || '')
 
+export function checkupServiceMode(plan) {
+  const content = plan?.content || {}
+  return content.serviceMode === 'one_stop' || content.serviceScene === 'checkup_one_stop'
+    || /一站式/.test(`${plan?.title || ''} ${content.templateName || ''}`)
+    ? '体检一站式服务' : '单独体检服务'
+}
+
 export function groupCheckupPlans(plans = []) {
   const byId = new Map(plans.map(plan => [idOf(plan._id), plan]))
   const groups = new Map()
