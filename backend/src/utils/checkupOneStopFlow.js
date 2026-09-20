@@ -45,13 +45,20 @@ async function findCheckupServicePlan(patientId, serviceInstanceId = null) {
 async function ensureCheckupTasks(servicePlan) {
   if (!isCheckupService(servicePlan)) return {}
   const c = servicePlan.content || {}
-  const ids = (c.followUpPlans?.length ? c.followUpPlans.map(item => item.id || item._id) : [c.followUpPlanId]).filter(Boolean)
+  // Conditional modules belong to the explicit decision/activation flow, never
+  // to routine chain repair. Replaying a fixed step must not create review work.
+  const conditionalIds = new Set([...(c.followUpPlans || []), ...(c.workflowModules || [])]
+    .filter(item => item.mode === 'conditional')
+    .map(item => String(item.id || item._id || item.planId?._id || item.planId || '')))
+  const ids = (c.followUpPlans?.length ? c.followUpPlans.map(item => item.id || item._id) : [c.followUpPlanId])
+    .filter(id => id && !conditionalIds.has(String(id)))
   const schemes = await FollowUpPlan.find({ _id: { $in: ids }, status: 'active', reviewStatus: { $ne: 'pending_review' } }).lean()
   const patient = await User.findById(servicePlan.patientId).select('assignedFamilyDoctor assignedHealthPlanner assignedMedicalAssistant assignedHealthManager').lean()
   const serviceDate = c.serviceDate ? new Date(`${c.serviceDate}T${/^\d{2}:\d{2}/.test(c.serviceTime || '') ? c.serviceTime.slice(0, 5) : '09:00'}:00+08:00`) : new Date()
   const assignees = { familyDoctor: c.reviewerId || patient?.assignedFamilyDoctor, healthPlanner: c.bookingPlannerId || patient?.assignedHealthPlanner, medicalAssistant: c.escortStaffId || patient?.assignedMedicalAssistant, healthManager: patient?.assignedHealthManager }
   const result = {}
-  for (const scheme of schemes.filter(stageForScheme)) {
+  const chain = ['plan_design', 'booking', 'onsite', 'report_collection', 'result_review', 'final_acceptance']
+  for (const scheme of schemes.filter(item => !conditionalIds.has(String(item._id)) && chain.includes(stageForScheme(item)))) {
     const stage = stageForScheme(scheme)
     const assignedTo = assignees[scheme.executorRole]
     if (!assignedTo) continue
@@ -66,7 +73,6 @@ async function ensureCheckupTasks(servicePlan) {
     )
     result[stage] = task
   }
-  const chain = ['plan_design', 'booking', 'onsite', 'report_collection', 'result_review', 'final_acceptance']
   for (let index = 1; index < chain.length; index += 1) {
     const current = result[chain[index]], previous = result[chain[index - 1]]
     if (current && previous && String(current.dependsOnTaskId || '') !== String(previous._id)) {

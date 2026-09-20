@@ -1,5 +1,12 @@
 # 可登录隔离环境：验收接续
 
+## 最新：固定链补建不再提前派发条件审核
+
+- 根因：checkupOneStopFlow.ensureCheckupTasks读取所有followUpPlans，按任意非空stageKey补建；预约推进首次运行后将abnormal_followup也建立成永久阻塞待办。现按followUpPlans/workflowModules排除conditional，仅补建六个固定阶段；不删除既有任务、不代替原条件决策入口。
+- 新脚本 backend/test/integration/checkupFixedChainMongo.js：只连接127.0.0.1:27134随机数据库，不加载dotenv、不连接外部；真实保存六个固定任务，重放ID不变，条件任务为零。此次库jiayicare_acceptance_5d893add2848b7a98dffc0a02fb390e0保留，数据全部虚构。这是持久化回归，不是完整API/UI验收。
+- 针对12项通过；扩大annualCheckup*/checkup*/followUpExecutionContent回归289项中288通过，剩余为既有V15门诊迁移文本断言（总督办与最终验收）失败。此次未改前端，不重做构建。
+- VmyQ9g原场景及错误条件任务未改，旧运行后端尚未加载新修复。下一次先受控重启隔离后端，再完成规划师最终验收页面并核对原健管任务。随后新标准场景验证条件节点不会再次误建；不把旧现场删除当作修复证据。
+
 ## 最新：独立评估结论已从顾问工作台提交
 
 - VmyQ9g场景不变，浏览器tab 2仍为familyDoctor。结果评估/最终验收改用CheckupConclusionForm，两个员工入口均不继承上环节清单，隐藏重复补充说明。空结论提交被拦截。
