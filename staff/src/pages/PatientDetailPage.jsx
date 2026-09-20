@@ -13,6 +13,7 @@ import AnnualCheckupPreparationCard, { isAnnualCheckupPreparation } from '../com
 import AiRuleHint from '../components/AiRuleHint'
 import AppIcon from '../components/AppIcon'
 import ReportImageEvidenceNotice from '../components/ReportImageEvidenceNotice'
+import ReportPlanConflictCard from '../components/ReportPlanConflictCard'
 import AiCaseReviewPanel from '../components/AiCaseReviewPanel'
 import MedicalAssistRequirementsCard from '../components/MedicalAssistRequirementsCard'
 import ServiceTaskChecklist, { normalizeServiceChecklist, summarizeServiceChecklist } from '../components/ServiceTaskChecklist'
@@ -11302,6 +11303,7 @@ export default function PatientDetailPage() {
               <button className="modal-close" onClick={() => setShowReportDetail(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
+              <ReportPlanConflictCard key={`${showReportDetail._id}:${showReportDetail.planItemSync?.token || ''}`} report={showReportDetail} plans={plans} role={staff?.role} />
               {(() => {
                 const r = showReportDetail
                 const REPORT_TYPE_LABEL = { annual:'年度体检报告', blood:'血液检查', bloodTest:'血液检查', ultrasound:'超声检查', radiology:'放射检查', mri:'磁共振', ecg:'心电图', endoscopy:'内镜检查', pathology:'病理', functional:'功能医学', genetic:'基因检测', other:'其他', tumor:'肿瘤筛查', cardiovascular:'心脑血管病筛查', chronic:'慢性病筛查', health_promote:'健康促进', home_monitor:'居家监测' }
