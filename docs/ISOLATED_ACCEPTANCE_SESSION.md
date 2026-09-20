@@ -1,5 +1,12 @@
 # 可登录隔离环境：验收接续
 
+## 最新：收单回写隔离API通过（11:46后）
+
+- checkupPreparationActivation增加精确service:intake复用：核对本承接设计/预约任务同文档凭据、准备证据plan ID、当前规划师归属、唯一未执行收单任务，以版本条件更新并保存formData.checkupPreparationIntake来源。已有人工完成不覆盖，重复/改派/缺证据拦截，不新增任务。正常激活及active重放均覆盖；其他非准备服务不套用此逻辑。
+- 隔离后端63318已停止，新会话44184在独立工作区加载修复；前端56767不变。仍无生产凭证，出口围栏不变。
+- VmyQ9g用原规划师实际登录后，POST原准备任务/checkup-preparation/activate两次均200/active。只读审计service仍completed、任务总数仍8，未完成从2变1，仅旧abnormal_followup阻塞；service:intake不再残留。无删除、不修改异常任务，不代表全闭环通过。
+- 49项激活/完成/重放回归全部通过；本轮无前端改动，无真实AI/收费订单。尚须新标准场景全程验证无旧条件误派、各工作台与报告解读投影核对。active接口仅在有明确原承接证据时补回写，不做历史批量修复。
+
 ## 当前工作区与审计（11:13更新，优先于下方历史）
 
 - 工作区：C:/Users/huawei/Documents/codex/health-management-isolated；既有feature/health-management-foundation-20260918。原deploy-health-monitoring-7630c892为master生产发布目录，不再切换该目录分支。自动接续提示已调整。

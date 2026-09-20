@@ -1,5 +1,7 @@
 # Codex / Claude Code 双端统一项目记忆
 
+> 2026-09-20收单回写修复：原年度准备承接复用规划师/设计/预约同源凭据，完成唯一service:intake，不新增操作；保留人工完成、缺凭据/改派/重复拦截。隔离真实激活API重放两次通过，残留从2条降为旧abnormal_followup 1条，49项相关回归通过。旧条件任务未删除，全闭环仍待；未部署生产。
+
 > 2026-09-20隔离目录调整：闭环功能分支移至 C:/Users/huawei/Documents/codex/health-management-isolated，原deploy-health-monitoring-7630c892保留生产master，禁止切换影响另一任务。医保补丁已独立发布d3ca572e，不代表闭环上线。隔离五岗位API冒烟通过；只读审计发现已关闭服务仍有service:intake和旧误派abnormal_followup两项planned，未删除或伪造完成，完整闭环仍未通过。
 
 > 2026-09-20专家约诊补医保：新建及约诊审核编辑增加medical_insurance，后端请求白名单、交接文本和编辑解析同步支持“医保”；保留自费/高端险原逻辑，不改历史记录或报销规则。32项相关测试通过，未部署生产；同工作区健康基金等其他修改不纳入本次提交。

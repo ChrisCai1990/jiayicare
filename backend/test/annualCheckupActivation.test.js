@@ -49,6 +49,44 @@ function fixture() {
   });
   return { state, models, service, activate: () => service.activate('prep-task', state.actor) };
 }
+test('existing intake reuses explicit planner handoff evidence, replay is inert', async () => {
+  const f = fixture();
+  f.state.tasks.push({ _id: 'intake', patientId: 'patient', sourceHealthPlanId: 'service', sourceType: 'health_plan',
+    workflowKey: 'service:intake', taskRole: 'supervisor', assignedTo: 'planner', status: 'planned', updatedAt: '2026-09-19' });
+  await f.activate();
+  const intake = f.state.tasks[2];
+  assert.equal(intake.status, 'completed');
+  assert.equal(intake.formData.checkupPreparationIntake.linkId, f.state.link._id);
+  const writes = f.state.writes.length;
+  await f.activate();
+  assert.equal(f.state.writes.length, writes);
+});
+
+test('active handoff without stored preparation evidence cannot complete intake', async () => {
+  const f = fixture();
+  await f.activate();
+  f.state.tasks.push({ _id: 'intake', patientId: 'patient', sourceHealthPlanId: 'service', sourceType: 'health_plan',
+    workflowKey: 'service:intake', taskRole: 'supervisor', assignedTo: 'planner', status: 'planned' });
+  f.state.link.activation.evidence = null;
+  await assert.rejects(f.activate(), /凭据/);
+  assert.equal(f.state.tasks[2].status, 'planned');
+});
+
+test('intake evidence preserves human completion and rejects reassignment or duplicates', async () => {
+  for (const variant of ['completed', 'other_owner', 'duplicate']) {
+    const f = fixture();
+    const intake = { _id: 'intake', patientId: 'patient', sourceHealthPlanId: 'service', sourceType: 'health_plan',
+      workflowKey: 'service:intake', taskRole: 'supervisor', assignedTo: variant === 'other_owner' ? 'other' : 'planner',
+      status: variant === 'completed' ? 'completed' : 'planned', executedContent: 'human evidence' };
+    f.state.tasks.push(intake);
+    if (variant === 'duplicate') f.state.tasks.push({ ...intake, _id: 'intake2' });
+    if (variant === 'completed') await f.activate();
+    else await assert.rejects(f.activate(), /收单/);
+    assert.equal(intake.executedContent, 'human evidence');
+    assert.equal(intake.formData, undefined);
+  }
+});
+
 test('activates existing booking only, reuses completed preparation without creating tasks', async () => {
   const f = fixture(); await f.activate();
   assert.equal(f.state.link.status, 'active'); assert.equal(f.state.tasks[0].status, 'completed');

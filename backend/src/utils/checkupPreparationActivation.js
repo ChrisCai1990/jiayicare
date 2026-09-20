@@ -9,6 +9,36 @@ const owned = (task, link, step) => idOf(task?.checkupPreparationActivation?.lin
 
 function createActivationService(models, readinessFor, validateTarget) {
   const { FollowUp, FollowUpPlan, HealthPlan, User, Handoff } = models;
+  async function reconcileIntake(link, actor) {
+    const rows = (await FollowUp.find({ sourceHealthPlanId: link.servicePlanId, patientId: link.patientId,
+      sourceType: 'health_plan', workflowKey: 'service:intake', taskRole: 'supervisor' }).lean())
+      .filter(row => row.workflowKey === 'service:intake' && row.sourceType === 'health_plan'
+        && row.taskRole === 'supervisor' && idOf(row.patientId) === idOf(link.patientId)
+        && idOf(row.sourceHealthPlanId) === idOf(link.servicePlanId));
+    if (!rows.length) return;
+    if (rows.length !== 1) throw fail('服务收单任务重复，请核对后再承接');
+    const intake = rows[0];
+    if (intake.status === 'completed') return; // Preserve existing human evidence.
+    const [design, booking, patient] = await Promise.all([
+      FollowUp.findById(link.activation?.designTaskId).lean(),
+      FollowUp.findById(link.activation?.bookingTaskId).lean(),
+      User.findById(link.patientId).lean(),
+    ]);
+    if (!owned(design, link, 'design') || design.status !== 'completed'
+      || !owned(booking, link, 'booking') || !['in_progress', 'completed'].includes(booking.status)
+      || !link.activation?.evidence?.readyForServiceLink
+      || idOf(link.activation.evidence.plan?.id) !== idOf(link._id)
+      || idOf(intake.assignedTo) !== idOf(actor._id) || idOf(patient?.assignedHealthPlanner) !== idOf(actor._id)
+      || !['planned', 'missed'].includes(intake.status)) throw fail('服务收单已变化或承接凭据不完整，请核对');
+    const result = await FollowUp.updateOne({ _id: intake._id, updatedAt: intake.updatedAt, status: intake.status,
+      assignedTo: intake.assignedTo, sourceHealthPlanId: link.servicePlanId, workflowKey: 'service:intake' }, {
+      $set: { status: 'completed', isBlocked: false, completedAt: new Date(), completedBy: 'staff',
+        executedContent: '复用规划师已完成的年度准备及本次服务承接核验，不重复收单',
+        'formData.checkupPreparationIntake': { linkId: link._id, plannerTaskId: link.plannerTaskId,
+          designTaskId: design._id, bookingTaskId: booking._id, by: actor._id, at: new Date() } },
+    });
+    if (!result.matchedCount) throw fail('服务收单并发变化，请刷新重试');
+  }
   async function load(taskId, actor) {
     const task = await FollowUp.findById(taskId).lean();
     if (assertPreparationOwner(task, actor) !== 'healthPlanner') throw Object.assign(fail('仅本准备任务健康规划师可推进预约'), { statusCode: 403 });
@@ -18,7 +48,7 @@ function createActivationService(models, readinessFor, validateTarget) {
   }
   async function activate(taskId, actor) {
     const { task, link } = await load(taskId, actor);
-    if (link.status === 'active') return link;
+    if (link.status === 'active') { await reconcileIntake(link, actor); return link; }
     if (link.status === 'activating') throw fail('预约承接正在处理；中断时须管理员核实恢复，不可重复抢占');
     if (!['linked_pending_activation', 'activation_failed'].includes(link.status)) throw fail('承接状态不允许启动');
     await requireHandoffIndex(Handoff);
@@ -94,6 +124,8 @@ function createActivationService(models, readinessFor, validateTarget) {
         if (currentReason) throw fail(currentReason);
         await apply(booking, 'booking', { status: 'in_progress', isBlocked: false, activationEvent: '', date: new Date(), remindAt: new Date() });
       }
+      if (!(await Handoff.exists(guard))) throw fail('承接运行状态已变化，请刷新');
+      await reconcileIntake(await Handoff.findById(link._id).lean(), actor);
       const done = await Handoff.updateOne(guard, { $set: { status: 'active', 'activation.finishedAt': new Date() },
         $push: { activationHistory: { event: 'booking_activated', token, at: new Date() } } });
       if (!done.matchedCount) throw fail('任务已推进，承接记录需刷新核对');
