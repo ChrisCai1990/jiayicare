@@ -1,9 +1,12 @@
 const test = require('node:test');
-test('generic ultrasound title uses printed body part without collapsing combined organs', () => {
+test('specific ultrasound name refines broad body context while generic names retain combined organs', () => {
   const { contextualNames, compatibleNode } = require('../src/utils/reportMatchContext');
   assert.deepEqual(contextualNames({ name: '彩超', bodyPart: '心脏' }), ['心脏超声', '心脏彩超']);
   assert.deepEqual(contextualNames({ name: '彩超', bodyPart: '肝胆脾胰' }), ['肝胆脾胰超声', '肝胆脾胰彩超']);
-  assert.equal(compatibleNode({ name: '肝脏彩超', bodyPart: '肝胆脾胰' }, { label: '肝脏超声' }), false);
+  assert.equal(compatibleNode({ name: '肝脏彩超', bodyPart: '肝胆脾胰' }, { label: '肝脏超声' }), true);
+  assert.equal(compatibleNode({ name: '胆囊超声', bodyPart: '肝胆脾胰' }, { label: '胆囊超声' }), true);
+  assert.equal(compatibleNode({ name: '胆囊超声', bodyPart: '胰腺' }, { label: '胆囊超声' }), false);
+  assert.equal(compatibleNode({ name: '肝胆脾胰彩超' }, { label: '肝脏超声' }), false);
 });
 const assert = require('node:assert/strict');
 const { selectMatchesForItem, norm } = require('../src/utils/screeningMatch');

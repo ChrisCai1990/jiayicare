@@ -9,8 +9,10 @@ function modality(value) {
 }
 function organs(value) {
   const text = clean(value);
-  return ['肝', '胆囊', '胰', '脾', '肾', '甲状腺', '乳腺', '前列腺', '膀胱', '输尿管', '心脏', '颈动脉', '子宫', '附件']
+  const found = ['肝', '胆囊', '胰', '脾', '肾', '甲状腺', '乳腺', '前列腺', '膀胱', '输尿管', '心脏', '颈动脉', '子宫', '附件']
     .filter(word => text.includes(word));
+  if (!found.includes('胆囊') && /肝胆|胆[胰脾肾]|^胆$/.test(text)) found.push('胆囊');
+  return found;
 }
 function compatibleNode(item, node) {
   const sourceMode = modality(`${item.modality || ''} ${item.name || ''} ${item.orderName || ''} ${item.sourceSection || ''}`);
@@ -18,7 +20,12 @@ function compatibleNode(item, node) {
   const targetMode = modality(targetText);
   if (sourceMode && sourceMode !== targetMode) return false;
   if (sourceMode || targetMode) {
-    const sourceOrgans = organs(`${item.name || ''} ${item.bodyPart || ''}`);
+    const nameOrgans = organs(item.name);
+    const bodyOrgans = organs(item.bodyPart);
+    // A corrected specific project name can refine a broad inherited body-part heading.
+    // Still reject an explicitly different organ, and keep combined names combined.
+    if (nameOrgans.length && bodyOrgans.length && !nameOrgans.every(part => bodyOrgans.includes(part))) return false;
+    const sourceOrgans = nameOrgans.length ? nameOrgans : bodyOrgans;
     const targetOrgans = organs(node.label);
     if (sourceOrgans.length && targetOrgans.length
         && (!sourceOrgans.every(part => targetOrgans.includes(part)) || !targetOrgans.every(part => sourceOrgans.includes(part)))) return false;
