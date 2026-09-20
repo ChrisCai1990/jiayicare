@@ -1,4 +1,5 @@
 import { isManualOnlyReport } from '../utils/reportManualReview'
+import { belongsToCheckupPlan, checkupProgress } from '../utils/checkupProgress'
 import { orderConversationMessages } from '../utils/orderConversation'
 import { inferAppointmentConversation } from '../utils/appointmentConversation'
 import { planningAdviceFromTask, hasPlanningAdvice, planningAdviceMessage } from '../utils/medicalPlanningAdvice'
@@ -1782,41 +1783,15 @@ function CheckupManagementWorkspace({ plans, reports, followUps, questionnaireRe
     }
     return String(value ?? '')
   }
-  const checkupReports = reports.filter(report => /体检|检查|检验|影像|病理/.test(`${report.title || ''} ${report.category || ''} ${report.reportType || ''}`))
-  const checkupTasks = followUps.filter(task => /体检|检查|检验|预约|陪诊/.test(`${task.theme || ''} ${task.content || ''} ${task.type || ''}`))
+  const checkupReports = reports.filter(report => belongsToCheckupPlan(report, currentPlan))
+  const checkupTasks = followUps.filter(task => belongsToCheckupPlan(task, currentPlan))
   const serviceMode = /一站式/.test(`${currentPlan?.title || ''} ${currentPlan?.content?.templateName || ''}`) ? '体检一站式服务' : '单独体检服务'
   const statusText = currentPlan ? (PLAN_STATUS_LABEL[currentPlan.status] || currentPlan.status || '进行中') : '尚未开通'
   const serviceDate = currentPlan?.content?.serviceDate || currentPlan?.content?.moduleData?.visit?.visitDate || ''
   const ownerName = currentPlan?.staffId?.name || currentPlan?.content?.reviewerName || '-'
   const formatPlanMoment = value => value ? new Date(value).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : ''
   const stages = ['健康文件', '体检方案', '预约准备', '现场执行', '报告审核', '结果评估', '最终验收']
-  const customerConfirmed = !!currentPlan?.confirmedAt
-  const pushedToCustomer = !!currentPlan?.pushedAt
-  const taskAt = pattern => checkupTasks.find(task => pattern.test(task.theme || ''))
-  const onsiteTask = taskAt(/现场|陪同体检/)
-  const reportTask = taskAt(/报告.*(?:回收|归档)/)
-  const resultTask = taskAt(/结果评估与随访计划/)
-  const finalTask = taskAt(/最终验收/)
-  const activeStage = currentPlan?.status === 'completed' || finalTask?.status === 'completed' ? 6
-    : resultTask && !resultTask.isBlocked ? 5
-      : currentPlan?.content?.reportAuditedAt || checkupReports.length || (reportTask && !reportTask.isBlocked) ? 4
-        : onsiteTask && !onsiteTask.isBlocked ? 3
-          : customerConfirmed || checkupTasks.length ? 2
-            : intake?.status === 'submitted' ? 1 : 0
-  const nextActionTitle = customerConfirmed
-    ? '客户已确认体检方案，已转健康规划师预约'
-    : pushedToCustomer
-      ? '方案已发送，等待客户确认'
-      : intake?.status === 'submitted'
-        ? '健康顾问核对需求并完善体检方案'
-        : '等待客户填写体检健康文件'
-  const nextActionHint = customerConfirmed
-    ? '健康顾问无需重复生成方案；后续由健康规划师确认医院与预约信息。'
-    : pushedToCustomer
-      ? '客户确认后，健康顾问任务自动完成，并进入预约准备环节。'
-      : intake?.status === 'submitted'
-        ? '如问卷发现档案变化，再单独生成变化核对；旧资料始终保留。'
-        : '客户提交后，健康顾问应在24小时内完成方案定制。'
+  const { stage: activeStage, title: nextActionTitle, hint: nextActionHint } = checkupProgress(currentPlan, checkupTasks)
 
   return (
     <div style={{ margin: '16px 20px 20px' }}>

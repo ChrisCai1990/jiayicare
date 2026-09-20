@@ -1,5 +1,13 @@
 # 可登录隔离环境：验收接续
 
+## 最新：进度展示修复与待解读边界
+
+- CheckupManagementWorkspace原提示只看confirmedAt/pushedAt，服务完成仍会要求客户确认；任务/报告原先按名称匹配整位客户，可能混入其他年度。新增checkupProgress纯展示模块：严格按本plan ID或显式serviceInstanceId归集，完成/取消优先，本服务具体阶段优先于推送提示。无明确关联的历史报告不猜测属于本次，仍在原报告列表保留。
+- 6项展示/路由回归通过。新逻辑没有执行或修改客户/任务数据；本轮浏览器页面尚未验收，应以fvvTxL新账号/新patientId核对完成标题和本次报告计数，不能沿用旧URL。
+- 报告待解读源于MedicalReport audited+pending+familyDoctorViewedAt为空，原有独立顾问查看动作负责关闭；本轮不因result_review completed自动伪造“已查看/已沟通”。当前模拟API场景未实际查看报告，所以不能将service-tasks空泛化为整个工作台没有待办。后续需在评估入口整合查看/解读证据，避免遗漏或重复操作。
+- 环境仍为后端29624、前端56767、fvvTxL清单；未访问生产或外部AI。
+- 员工端构建1896模块通过，仅既有大包告警。
+
 ## 最新：全新标准场景零服务任务残留（12:20）
 
 - 旧44184已停止，当前隔离后端29624，前端56767不变；新清单 C:/Users/huawei/AppData/Local/Temp/jiayicare-acceptance-fvvTxL/session.json。旧VmyQ9g及所有证据保留，不删除旧异常任务。浏览器需重新登录新清单账号并使用新patientId，不沿用旧URL。
