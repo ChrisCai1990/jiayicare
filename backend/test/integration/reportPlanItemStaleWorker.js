@@ -110,13 +110,33 @@ async function main() {
     assert.equal(stranded.planItemSync.status, 'running');
     const beforeRecovery = (await HealthPlan.findById(crashPlan._id).lean()).items[0];
     assert.equal(beforeRecovery.status, phase === 'before' ? 'pending' : 'completed');
+    // Fail recovery itself at both boundaries. Neither failure may unlock source edits.
+    const recoveryModels = phase === 'before'
+      ? { MedicalReport, HealthPlan: { updateOne: () => { throw new Error('injected recovery barrier failure'); } } }
+      : { HealthPlan, MedicalReport: {
+        findOneAndUpdate: (...args) => MedicalReport.findOneAndUpdate(...args),
+        updateOne: () => { throw new Error('injected recovery release failure'); },
+      } };
+    await createQueue(recoveryModels).recover(stranded);
+    const stillLocked = await MedicalReport.findById(crashReport._id).lean();
+    assert.equal(stillLocked.planItemSync.status, 'running');
+    assert.equal(stillLocked.planItemWriteEpoch, stranded.planItemWriteEpoch + 1);
+    const fencedPlan = await HealthPlan.findById(crashPlan._id).lean();
+    assert.equal(fencedPlan.reportItemWriteFences[String(crashReport._id)],
+      phase === 'before' ? stranded.planItemWriteEpoch : stillLocked.planItemWriteEpoch);
+    assert.equal((await MedicalReport.updateOne({ _id: crashReport._id },
+      { $set: { audit_status: 'rejected' } })).modifiedCount, 0);
+    assert.equal((await MedicalReport.deleteOne({ _id: crashReport._id })).deletedCount, 0);
+    // Replaying the obsolete recovery snapshot cannot increment or release the new claim.
+    await createQueue({ MedicalReport, HealthPlan }).recover(stranded);
+    assert.equal((await MedicalReport.findById(crashReport._id).lean()).planItemWriteEpoch, stillLocked.planItemWriteEpoch);
     // Advance only the scanner clock, not persisted clinical or scheduling dates.
     await createQueue({ MedicalReport, HealthPlan, now: () => Date.now() + 6 * 60 * 1000 }).scan();
     const afterRecovery = (await HealthPlan.findById(crashPlan._id).lean()).items[0];
     assert.equal(afterRecovery.status, 'completed');
     if (phase === 'after') assert.equal(afterRecovery.completedAt.getTime(), beforeRecovery.completedAt.getTime());
     assert.equal((await MedicalReport.findById(crashReport._id).lean()).planItemSync.status, 'completed');
-    console.log(`actual child hard-exit ${phase} item write -> fenced recovery -> completed, no duplicate completion: PASS`);
+    console.log(`actual child hard-exit ${phase} item write -> recovery failure stays locked -> retry completed, no duplicate completion: PASS`);
   }
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; }).finally(() => mongoose.disconnect());

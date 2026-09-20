@@ -1,5 +1,13 @@
 # 可登录隔离环境：验收接续
 
+## 23:40 恢复本身失败时保护保留（隔离专项通过）
+
+- 扩展reportPlanItemStaleWorker：真实子进程项目写前/写后硬退出，再分别注入恢复目标屏障写失败、屏障已推进后的报告解锁失败。两种异常均保持running、epoch递增；真实源修改及删除返回0，不提前放行。
+- 旧恢复快照重放不推进epoch、不解除新占用。实际scan（仅扫描器时钟+6分钟）重试后completed；写后中断的项目完成时间不变。旧活进程迟到写及两项来源并发保护一并通过，10项队列/项目/关联回归通过。
+- 本轮合成报告证据：屏障失败6aaffecc9ce4d94f9f75870b；解锁失败6aaffecd9ce4d94f9f75872d。错误日志injected recovery ...为主动故障注入，不是生产错误；保留数据。恢复失败通过抛错模拟，并非真实断网；子进程退出是真实process.exit。
+- 仅新增测试及文档，不改业务代码，不重启前后端，不访问生产/AI/消息/订单。运行继续fvvTxL环境。复跑：设置既有NODE_PATH后运行node backend/test/integration/reportPlanItemStaleWorker.js <session.json>。
+- 尚待：并发编辑的友好409（旧接口可能500/更新0）、全部报告写入口审计、最终多岗位完整闭环验收。本轮不能称整体完成，不请求生产授权；下一轮先处理并发编辑错误提示。
+
 ## 23:10 新版本硬中断恢复通过；不等于完整上线验收
 
 - MedicalReport.planItemWriteEpoch单调递增（arm不重置）；HealthPlan.reportItemWriteFences按报告ID保存最新epoch。占用者先推进目标屏障，项目原子完成须epoch相等；迟到者不能降低屏障，报告回执/异常释放亦按epoch CAS。
