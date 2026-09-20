@@ -1,5 +1,12 @@
 # 可登录隔离环境：验收接续
 
+## 16:15 常用AI结果审核入口补齐
+
+- 原PATCH medical-reports/:id（aiStatus=reviewed）只审核报告、不完成显式关联项目。现报告保存后且audit_status=audited时调用completeAuditedPlanItem；重复提交仍幂等，不更改审核门槛。驳回重提回unaudited、草稿pending不完成项目。
+- auditedPlanItemHttp.js扩展两入口11组真实HTTP：旧audit五组，加review正向/跨客户/skipped/其他报告/驳回重提/草稿六组，全通过，正向重放完成时间不变。独立虚构客户与报告保留；没有外部AI调用或真实报告质量验证。10项回归通过，前端未改不重复构建。
+- 原隔离后端25076已停止，按同fvvTxL清单重启会话92556；JWT重置需重新登录。所有网络隔离与无生产凭证措施保持。未访问生产、未部署。
+- 尚待：报告审核已成功但项目回写失败的自动补偿与异常待办；上传报告planId/planItemId回填归属核查；用户端/专项筛查手动完成属于不同入口需分开审计。当前不能称项目全闭环或真实AI验收完成。
+
 ## 15:40 报告项目回写真正API验证
 
 - 修复原audit路由在报告持久化前先plan.save、未核对患者且重写完成时间的问题。新增completeAuditedPlanItem：审核保存后，同planId/patientId及pending项目，reportId为空或本报告时原子完成；skipped/其他报告/跨患者不覆盖。

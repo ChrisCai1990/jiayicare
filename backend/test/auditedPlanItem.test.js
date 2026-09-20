@@ -24,3 +24,7 @@ test('audit route persists report before completing its item', () => {
   assert.ok(route.indexOf('await report.save()') < route.indexOf('completeAuditedPlanItem'));
   assert.doesNotMatch(route, /await plan.save\(\)/);
 });
+test('AI review entry uses the same completion helper only after saved audited review', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+  assert.match(source, /await report.save\(\);\s*if \(aiStatus === 'reviewed' && report.audit_status === 'audited'\) \{\s*await require\('\.\.\/utils\/auditedPlanItem'\).completeAuditedPlanItem\(HealthPlan, report\)/);
+});

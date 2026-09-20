@@ -4231,6 +4231,9 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     if (mimeType !== undefined) report.mimeType = mimeType;
     if (fileSize !== undefined) report.fileSize = fileSize;
     await report.save();
+    if (aiStatus === 'reviewed' && report.audit_status === 'audited') {
+      await require('../utils/auditedPlanItem').completeAuditedPlanItem(HealthPlan, report);
+    }
     if (autoAuditPending && HEALTH_COURSE_DOCUMENTS.has(report.documentCategory)) {
       setImmediate(() => MedicalReport.findById(report._id).then(latest => generateHealthCourseDraft(latest)).catch(error => console.error('[health-course-draft] automatic generation failed', report._id, error.message)));
     }
