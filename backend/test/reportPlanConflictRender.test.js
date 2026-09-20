@@ -39,3 +39,13 @@ test('running claim renders a read-only warning, never a conflict resolution but
   assert.match(html, /不能仅凭超时强制解除占用/);
   assert.doesNotMatch(html, /<button|<textarea|<select/);
 });
+
+test('legacy dispatch lock is visible without plan-item metadata and overrides conflict actions', () => {
+  for (const planItemSync of [null, { status: 'conflict' }, { status: 'running' }]) {
+    const html = render({ ...report, planItemSync, legacyReviewWrite: { status: 'running' } });
+    assert.match(html, /报告复查派单处理中/);
+    assert.match(html, /不代表复查任务已全部生成/);
+    assert.doesNotMatch(html, /<button|<textarea|<select/);
+  }
+  assert.equal(render({ ...report, planItemSync: null, legacyReviewWrite: { status: 'completed' } }), '');
+});

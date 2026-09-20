@@ -18,6 +18,11 @@ export default function ReportPlanConflictCard({ report, plans = [], role }) {
   const [action, setAction] = useState('keep_existing')
   const [targetItemId, setTargetItemId] = useState('')
   const proof = report.planItemSync
+  if (report.legacyReviewWrite?.status === 'running') return <section aria-label="报告复查派单状态" role="status" style={{ padding: 14, marginBottom: 16, background: '#FFFAEF' }}>
+    <strong>报告复查派单处理中</strong>
+    <p>当前报告修改与删除暂时受保护。处理结果尚未全部确认，请勿重复审核或重复派单。</p>
+    <p>若超过5分钟仍未恢复，请联系管理员核查。不能仅凭超时强制解除占用；已有记录会保留，不代表复查任务已全部生成。</p>
+  </section>
   if (proof?.status === 'running') return <section aria-label="报告项目关联核对" role="status" style={{ padding: 14, marginBottom: 16, background: '#FFFAEF' }}>
     <strong>报告项目正在回写</strong>
     <p>为防止旧数据覆盖，当前报告修改与删除暂时受保护。请稍后刷新，不要重复审核或改关联。</p>

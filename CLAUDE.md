@@ -1,5 +1,7 @@
 # 双端共享记忆入口
 
+> 2026-09-21派单占用页面提示已补：legacyReviewWrite.running优先只读显示，缺planItemSync也可见，不提供强清或重复关联操作；16项回归/员工端1897模块构建通过，浏览器未验。推送因远程外发审批被拒，dc783df7及后续仅本地，等待用户确认具体GitHub目的地；不得重试绕过，未部署。
+
 > 2026-09-21旧复查来源占用保护已接：按审核/客户/updatedAt原子领取legacyReviewWrite并保存输入，模型写/删排除两种running；完成凭token解锁，异常保留锁不超时抢占。两项撤销竞争转通过，重复/并发/原项目恢复及11项回归通过；超时工作台API通过。硬中断自动恢复、审核同文档意图和条件草稿保护仍待，未部署。
 
 > 2026-09-21上线阻断复现：legacyReviewStaleSource真实隔离Mongo在写Review前/写Task前撤销审核成功，旧快照仍各建一Task/Review，两项失败退出1。现有防重不等于撤销安全；新增恢复设计但尚未实施，见docs/REPORT_AUDIT_EFFECTS_RECOVERY_PLAN.md。仅测试/证据，无业务修改或部署。
