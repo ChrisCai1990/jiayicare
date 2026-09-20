@@ -42,7 +42,9 @@ async function main() {
       const results = await Promise.all([1, 2].map(() => request(`/staff/medical-reports/${report._id}/audit`, body, login.data.data.token, 'PATCH')));
       statuses.push(...results.map(result => result.status));
     } else for (let i = 0; i < (scenario === 'replay' ? 2 : 1); i++) {
-      statuses.push((await request(`/staff/medical-reports/${report._id}/audit`, body, login.data.data.token, 'PATCH')).status);
+      const result = await request(`/staff/medical-reports/${report._id}/audit`, body, login.data.data.token, 'PATCH');
+      statuses.push(result.status);
+      if (result.status === 200) assert.equal(result.data.data.legacyDispatchIntent.status, 'completed', 'HTTP response must reflect the durable result');
     }
     const taskCount = await Task.countDocuments({ user: patient._id });
     const reviewCount = await Review.countDocuments({ reportId: report._id });
@@ -105,6 +107,7 @@ async function main() {
   for (const row of [firstAudit, otherAudit]) {
     row.audit_status = 'audited';
     armIntent(row, { _id: account.id, name: '首次人员' }, { abnormalItems: [{ name: '持久输入' }] });
+    row.legacyDispatchIntent.createdAt = new Date(Date.now() - 6 * 60 * 1000); // synthetic age, not a real elapsed wait
   }
   await firstAudit.save();
   await assert.rejects(otherAudit.save(), /No document found|not found/i);
@@ -113,6 +116,13 @@ async function main() {
   assert.equal(durable.legacyDispatchIntent.status, 'pending');
   assert.equal(durable.legacyDispatchIntent.token, firstAudit.legacyDispatchIntent.token);
   assert.equal(await Review.countDocuments({ reportId: pending._id }), 0);
+  const pendingTodos = await request('/staff/ai-todos', undefined, login.data.data.token, 'GET');
+  const pendingRows = pendingTodos.data.data.filter(row => row.id === 'reportplanconflict_' + pending._id);
+  assert.equal(pendingRows.length, 1);
+  assert.equal(pendingRows[0].label, '报告复查派单待恢复');
+  await Report.updateOne({ _id: pending._id }, { $set: { audit_status: 'rejected' } });
+  const revokedTodos = await request('/staff/ai-todos', undefined, login.data.data.token, 'GET');
+  assert.equal(revokedTodos.data.data.some(row => row.id === pendingRows[0].id), false, 'revoked audit must not prompt dispatch');
   console.log('audit plus intent saved atomically; competing save rejected; unexecuted durable input preserved PASS (not a process crash test)');
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; }).finally(() => mongoose.disconnect());

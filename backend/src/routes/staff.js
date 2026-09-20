@@ -4566,7 +4566,7 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
     await syncBodyCompositionFromReport(report);
     await onCheckupReportAudited(report).catch(err => console.error('[checkup-workflow] failed to activate result review', err.message));
   }
-  res.json({ success: true, data: report });
+  res.json({ success: true, data: await MedicalReport.findById(report._id) });
 });
 
 // GET /api/staff/patients/:id/reports/pending-doctor-audit — 该客户所有"健管专员已审核，
@@ -10958,16 +10958,19 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         { 'planItemSync.status': 'conflict' },
         { 'planItemSync.status': 'running', 'planItemSync.startedAt': { $lt: new Date(Date.now() - 5 * 60 * 1000) } },
         { 'legacyReviewWrite.status': 'running', 'legacyReviewWrite.startedAt': { $lt: new Date(Date.now() - 5 * 60 * 1000) } },
+        { 'legacyDispatchIntent.status': 'pending', 'legacyDispatchIntent.createdAt': { $lt: new Date(Date.now() - 5 * 60 * 1000) } },
       ],
         ...(myPatientIds ? { user: { $in: myPatientIds } } : {}) })
-        .select('_id user title planId planItemSync legacyReviewWrite updatedAt').populate('user', 'name').sort({ updatedAt: -1 }).limit(50).lean();
+        .select('_id user title planId planItemSync legacyReviewWrite legacyDispatchIntent updatedAt').populate('user', 'name').sort({ updatedAt: -1 }).limit(50).lean();
       conflicts.forEach(r => {
         if (!r.user?._id) return;
         const legacyStalled = r.legacyReviewWrite?.status === 'running';
         const stalled = r.planItemSync?.status === 'running' || legacyStalled;
-        todos.push({ id: 'reportplanconflict_' + r._id, type: 'report_plan_conflict', label: legacyStalled ? '报告复查派单占用待检查' : stalled ? '报告项目回写占用待检查' : '报告与检查项目关联待核对', priority: 1,
+        const dispatchPending = r.legacyDispatchIntent?.status === 'pending';
+        todos.push({ id: 'reportplanconflict_' + r._id, type: 'report_plan_conflict', label: legacyStalled ? '报告复查派单占用待检查' : stalled ? '报告项目回写占用待检查' : dispatchPending ? '报告复查派单待恢复' : '报告与检查项目关联待核对', priority: 1,
           patientName: r.user.name || '未知', patientId: String(r.user._id),
           summary: stalled ? `${r.title} · 处理占用超过5分钟，请联系管理员核查运行进程；不要重复审核、改关联或强制清除占用。`
+            : dispatchPending ? `${r.title} · 审核输入已保存，但后续派单尚未确认完成。请联系管理员核查，不要重复上传、审核或手工重复建任务。`
             : `${r.title} · 报告已审核，但关联项目未回写；请核对原方案项目及报告归属，不要重复上传或重新解析。`,
           createdAt: r.planItemSync?.finishedAt || r.updatedAt, overdue: false,
           link: `/patients/${r.user._id}?tab=reports&reportId=${r._id}` });

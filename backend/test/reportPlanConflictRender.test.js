@@ -49,3 +49,11 @@ test('legacy dispatch lock is visible without plan-item metadata and overrides c
   }
   assert.equal(render({ ...report, planItemSync: null, legacyReviewWrite: { status: 'completed' } }), '');
 });
+
+test('unexecuted dispatch input is visible but does not hide a separate item conflict', () => {
+  const pending = { ...report, planItemSync: null, legacyDispatchIntent: { status: 'pending' } };
+  assert.match(render(pending), /不是新的客户任务/);
+  assert.doesNotMatch(render(pending), /<button|<textarea|<select/);
+  assert.match(render({ ...pending, planItemSync: { status: 'conflict' } }), /关联核对理由/);
+  assert.equal(render({ ...pending, audit_status: 'rejected' }), '');
+});

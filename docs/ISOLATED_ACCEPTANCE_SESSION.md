@@ -1,5 +1,13 @@
 # 可登录隔离环境：验收接续
 
+## 09-21 06:00 未执行派单意图工作台与最新响应
+
+- ai-todos纳入显式legacyDispatchIntent.pending且创建超过5分钟，仍按本人客户/健管权限、稳定原报告ID投影唯一提示“报告复查派单待恢复”。running优先显示占用；不建新Task，不用提醒充当恢复。已撤销报告不再提示派单。
+- ReportPlanConflictCard在无独立项目冲突且未running时展示只读pending说明，明确输入已保存但后续任务未确认、不是新客户任务、不表示自动恢复；已有项目conflict仍保留原核对操作，不以pending卡片遮住。只有渲染验证，实际浏览器待验。
+- 旧audit响应改读最新报告，正常HTTP响应legacyDispatchIntent已completed，而非保存时的pending旧对象。reportAuditSideEffects验证正常响应、首次CAS与合成陈旧pending唯一工作台提示、撤销后提示消退；原auditedPlanItemHttp全通过，19项回归通过，员工端本地API构建1897模块通过，既有大包警告保留。
+- 核对停止隔离PID15644，新exec71834，同fvvTxL/JWT刷新；无生产操作/推送重试。本轮本地提交，GitHub外发授权仍待。当前提醒建议管理员核查，尚无安全自动恢复入口，不是闭环交付。
+- 下一步优先将处理器抽离路由并证明pending安全消费，覆盖真正进程退出；running不能直接超时接管。条件草稿并发保护和无显式异常项路径仍需补齐。
+
 ## 09-21 05:25 首次异常审核输入与审核同文档持久化
 
 - 新legacyDispatchIntent仅旧audit入口approve且显式abnormalItems非空时建立；保存首次人员、完整派单输入、客户/方案引用及token/pending。首次save附加legacyDispatchIntent:null条件，两个已加载请求不能覆盖首份意图；普通模型占用保护仍生效。历史报告不回填，无异常项和常用AI结果审核入口不在本轮范围。

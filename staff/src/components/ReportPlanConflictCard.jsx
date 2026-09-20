@@ -29,6 +29,11 @@ export default function ReportPlanConflictCard({ report, plans = [], role }) {
     <p>若超过5分钟仍未恢复，请联系管理员核查运行进程；不能仅凭超时强制解除占用。</p>
   </section>
   const latest = report.planItemConflictResolutions?.slice(-1)[0]
+  if (report.audit_status === 'audited' && report.legacyDispatchIntent?.status === 'pending' && proof?.status !== 'conflict') return <section aria-label="报告复查派单待恢复" role="status" style={{ padding: 14, marginBottom: 16, background: '#FFFAEF' }}>
+    <strong>报告复查派单尚未确认完成</strong>
+    <p>审核输入已保存，但不能据此认定后续任务已全部生成。请联系管理员核查，不要重复上传、审核或手工重复建任务。</p>
+    <p>此提示不是新的客户任务，也不表示系统已自动恢复。</p>
+  </section>
   const corrected = latest?.action === 'retarget_item' && String(latest.targetItemId) === String(report.planItemId)
   if (report.audit_status !== 'audited' || !proof || (!corrected && !['conflict', 'resolved'].includes(proof.status))) return null
   const plan = plans.find(p => String(p._id) === String(report.planId))
