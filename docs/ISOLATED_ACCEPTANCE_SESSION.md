@@ -1,5 +1,13 @@
 # 可登录隔离环境：验收接续
 
+## 09-21 05:25 首次异常审核输入与审核同文档持久化
+
+- 新legacyDispatchIntent仅旧audit入口approve且显式abnormalItems非空时建立；保存首次人员、完整派单输入、客户/方案引用及token/pending。首次save附加legacyDispatchIntent:null条件，两个已加载请求不能覆盖首份意图；普通模型占用保护仍生效。历史报告不回填，无异常项和常用AI结果审核入口不在本轮范围。
+- 保存后消费意图中的原输入/人员，来源引用不符返回409不自动改派。现有条件模块分流或旧复查完成后按token/pending回执completed，区分conditional_workflow/legacy_review。未启用后台自动消费；这不是安全接管机制。原接口响应仍使用原report对象，最终意图状态以重新读取数据库为准，后续需统一响应。
+- reportAuditSideEffects实际API验证无效项无意图、正常/重复/并发和条件三态完成回执；独立真实Mongo两个loaded文档竞争save，一个成功一个DocumentNotFound，原审核及pending输入同时保留且无子记录。这是刻意保存后不执行，不是实际杀进程测试。13项回归、原auditedPlanItemHttp及来源撤销/双队列互斥通过。
+- 隔离PID2532核对停止，新exec79767，同fvvTxL/JWT刷新；无前端或生产操作。本轮仅本地提交，GitHub外发仍待明确授权。
+- 必需接续：未执行pending的工作台可见性/真实进程退出恢复验证；将可恢复处理器从路由抽出后接每日扫描，但必须先解决条件草稿来源保护及running目标屏障，不能直接超时清锁。已审核无显式异常输入时的条件动作仍无同文档意图，全链仍未通过。
+
 ## 09-21 04:50 双队列交错互斥通过
 
 - 扩展legacyReviewStaleSource，在旧复查Review写边界插入真实项目reconcile，确认项目意图及项目仍pending；旧复查正常完成后再调用项目队列，双方完成。report 6ab0460aad61483fdfd8321c。

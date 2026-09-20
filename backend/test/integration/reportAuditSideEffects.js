@@ -47,6 +47,13 @@ async function main() {
     const taskCount = await Task.countDocuments({ user: patient._id });
     const reviewCount = await Review.countDocuments({ reportId: report._id });
     const audit = (await Report.findById(report._id)).audit_status;
+    const dispatch = (await Report.findById(report._id)).legacyDispatchIntent;
+    if (scenario === 'invalid_child') assert.equal(dispatch, null);
+    else {
+      assert.equal(dispatch.status, 'completed');
+      assert.equal(dispatch.input.abnormalItems[0].name, body.abnormalItems[0].name);
+      assert.equal(String(dispatch.staff._id), String(account.id));
+    }
     const safe = scenario === 'invalid_child'
       ? statuses[0] >= 400 && taskCount === 0 && reviewCount === 0 && audit === 'unaudited'
       : statuses.includes(200) && statuses.every(s => s === 200 || (scenario === 'concurrent' && s === 409)) && taskCount === (conditionalPlan ? 0 : 1)
@@ -92,5 +99,20 @@ async function main() {
   assert.equal((await request(`/staff/medical-reports/${stalled._id}/audit`, { action: 'reject' }, login.data.data.token, 'PATCH')).status, 409);
   console.log('synthetic aged claim appears in own workbench and audit edit returns 409 PASS');
   assert.equal(failures, 0, 'Audit side effects are not safe; synthetic evidence retained, rollout blocked');
+  const pending = await Report.create({ user: patient._id, title: '隔离已保存尚未执行意图', audit_status: 'unaudited' });
+  const firstAudit = await Report.findById(pending._id), otherAudit = await Report.findById(pending._id);
+  const armIntent = require('../../src/utils/legacyDispatchIntent').armLegacyDispatchIntent;
+  for (const row of [firstAudit, otherAudit]) {
+    row.audit_status = 'audited';
+    armIntent(row, { _id: account.id, name: '首次人员' }, { abnormalItems: [{ name: '持久输入' }] });
+  }
+  await firstAudit.save();
+  await assert.rejects(otherAudit.save(), /No document found|not found/i);
+  const durable = await Report.findById(pending._id);
+  assert.equal(durable.audit_status, 'audited');
+  assert.equal(durable.legacyDispatchIntent.status, 'pending');
+  assert.equal(durable.legacyDispatchIntent.token, firstAudit.legacyDispatchIntent.token);
+  assert.equal(await Review.countDocuments({ reportId: pending._id }), 0);
+  console.log('audit plus intent saved atomically; competing save rejected; unexecuted durable input preserved PASS (not a process crash test)');
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; }).finally(() => mongoose.disconnect());

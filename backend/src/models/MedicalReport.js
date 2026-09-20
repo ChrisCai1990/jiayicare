@@ -215,6 +215,7 @@ const medicalReportSchema = new mongoose.Schema({
   planItemId:       { type: mongoose.Schema.Types.ObjectId, default: null }, // 关联体检方案中的项目
   planItemSync: { type: mongoose.Schema.Types.Mixed, default: null }, // New audit intent only; no historical backfill.
   legacyReviewWrite: { type: mongoose.Schema.Types.Mixed, default: null }, // Durable source lock; no timeout takeover until target fencing exists.
+  legacyDispatchIntent: { type: mongoose.Schema.Types.Mixed, default: null }, // Explicit new abnormal audit input, atomically saved with audit; no historical backfill.
   planItemWriteEpoch: { type: Number, default: 0 }, // Monotonic across re-audits/relinks; never reset by arm().
   planItemConflictResolutions: { type: [mongoose.Schema.Types.Mixed], default: [] }, // Append-only staff decisions; preserved if a later audit changes the link.
   planId:           { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null },

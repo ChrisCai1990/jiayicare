@@ -4534,21 +4534,33 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
     report.reject_reason = rejectReason || '';
   }
   if (action === 'approve') require('../utils/reportPlanItemQueue').arm(report);
+  if (action === 'approve') require('../utils/legacyDispatchIntent').armLegacyDispatchIntent(report, req.staff,
+    { abnormalItems, reviewReason, reviewHospital, reviewDepartment, reviewDate, notes });
   try { await report.save(); }
   catch (err) {
     if (err.name === 'DocumentNotFoundError') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
     throw err;
   }
   if (action === 'approve') {
-    const conditionalDrafts = await draftConditionalModulesFromAuditedReport(report, abnormalItems || []);
-    if (abnormalItems?.length && !conditionalDrafts.hasConditionalModules) {
+    const intent = report.legacyDispatchIntent;
+    const dispatchInput = intent?.input || { abnormalItems, reviewReason, reviewHospital, reviewDepartment, reviewDate, notes };
+    if (intent && (intent.source.patientId !== String(report.user) || intent.source.planId !== String(report.planId || '')
+      || intent.source.sourceHealthPlanId !== String(report.sourceHealthPlanId || ''))) {
+      return res.status(409).json({ success: false, message: '复查待办来源已变更，请核对原审核记录，不自动改派' });
+    }
+    const conditionalDrafts = await draftConditionalModulesFromAuditedReport(report, dispatchInput.abnormalItems || []);
+    if (dispatchInput.abnormalItems?.length && !conditionalDrafts.hasConditionalModules) {
       try {
-        await require('../utils/legacyReportReview').ensureLegacyReportReview({ Task, AbnormalReview, report, staff: req.staff,
-          input: { abnormalItems, reviewReason, reviewHospital, reviewDepartment, reviewDate, notes } });
+        await require('../utils/legacyReportReview').ensureLegacyReportReview({ Task, AbnormalReview, report, staff: intent?.staff || req.staff,
+          input: dispatchInput });
       } catch (error) {
         return res.status(error.status || 500).json({ success: false, message: error.message });
       }
     }
+    if (intent) await MedicalReport.updateOne({ _id: report._id, 'legacyDispatchIntent.token': intent.token,
+      'legacyDispatchIntent.status': 'pending', audit_status: 'audited' },
+    { $set: { 'legacyDispatchIntent.status': 'completed', 'legacyDispatchIntent.completedAt': new Date(),
+      'legacyDispatchIntent.outcome': conditionalDrafts.hasConditionalModules ? 'conditional_workflow' : 'legacy_review' } });
     await require('../utils/reportPlanItemQueue').runtime().safeReconcile(report._id, report.planItemSync?.token);
     await syncOutpatientReportAuditCompletion(report.sourceHealthPlanId);
     await syncBodyCompositionFromReport(report);
