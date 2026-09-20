@@ -94,6 +94,20 @@ async function main() {
     console.log(`${entry}/${scenario}: PASS`);
   }
   console.log('Local actual audit API passed; synthetic records retained, no real AI or service acceptance.');
+  const myConflicts = (await request('/staff/ai-todos', undefined, token, 'GET')).data
+    .filter(row => row.type === 'report_plan_conflict' && row.patientId === String(patient._id));
+  assert.equal(myConflicts.length, 6, 'two audit entries each retain cross-patient/skipped/other-report conflicts');
+  assert.equal(new Set(myConflicts.map(row => row.id)).size, 6);
+  assert.ok(myConflicts.every(row => row.link.includes(`patients/${patient._id}?tab=reports&reportId=`)));
+  const advisorTodos = (await request('/staff/ai-todos', undefined, advisorToken, 'GET')).data;
+  assert.equal(advisorTodos.some(row => row.type === 'report_plan_conflict'), false);
+  const password = require('node:crypto').randomBytes(18).toString('hex');
+  const username = 'isolated_unassigned_' + new mongoose.Types.ObjectId();
+  await require('../../src/models/Admin').create({ username, password, name: '隔离未分配专员', role: 'healthManager' });
+  const otherToken = (await request('/staff/login', { username, password })).data.token;
+  const otherTodos = (await request('/staff/ai-todos', undefined, otherToken, 'GET')).data;
+  assert.equal(otherTodos.some(row => row.type === 'report_plan_conflict'), false);
+  console.log('conflict workbench: unique original-report rows, correct manager only, other-role/unassigned-manager excluded PASS');
   const queueModule = require('../../src/utils/reportPlanItemQueue');
   const recoveryPlan = await HealthPlan.create({ patientId: patient._id, staffId: account.id, type: 'annual_checkup',
     title: '隔离故障恢复测试', items: [{ name: '合成恢复项' }] });
