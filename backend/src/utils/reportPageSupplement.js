@@ -74,6 +74,17 @@ function mergeSupplementItems(existingItems, candidates) {
     if (!isHumanReviewed(current) && !hasReportItemEvidence(current)) {
       result[index] = { ...current, ...candidate, itemId: current.itemId || candidate.itemId };
       enriched.push(result[index]);
+    } else if (!isHumanReviewed(current)) {
+      // A missing conclusion is still a gap even when findings already exist.
+      // Never replace nonempty values or append competing OCR prose automatically.
+      const patch = {};
+      for (const field of ['value', 'findings', 'diagnosis', 'conclusion', 'pathologyFindings', 'pathologyDiagnosis']) {
+        if (!String(current[field] ?? '').trim() && String(candidate[field] ?? '').trim()) patch[field] = candidate[field];
+      }
+      if (Object.keys(patch).length) {
+        result[index] = { ...current, ...patch };
+        enriched.push(result[index]);
+      }
     }
   }
   return { items: result, added, enriched };

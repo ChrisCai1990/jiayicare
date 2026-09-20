@@ -13008,6 +13008,7 @@ async function runReportPageParse(reportId, pageNum) {
 }
 
 async function runReportPageParseControlled(reportId, pageNum) {
+  await require('../utils/aiBudget').assertSupplementCallCapacity({ reportId: String(reportId), page: pageNum });
   const { parseImage: rawParseImage } = require('../utils/ai');
   const { createReportImageParser, recordPageEvidence } = require('../utils/reportImageEvidence');
   const { fetchReportBuffer, fetchReportBuffers, renderSinglePage, renderSinglePageRegions, renderSinglePageColumns, splitImageColumns, isPdfReport } = require('../utils/pdf');
@@ -13066,7 +13067,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
       parsed = safeParseJSON(raw);
       if (Array.isArray(parsed?.items)) break;
     } catch (error) { rethrowAiControl(error);
-      if (attempt === 3) throw error;
+      if (error.aiControl || attempt === 3) throw error;
       console.log(`[parse-page] ${reportId} P${pageNum} 第${attempt}次失败，自动重试: ${error.message}`);
     }
     }
@@ -13096,9 +13097,9 @@ async function runReportPageParseControlled(reportId, pageNum) {
   }
   // 模型即使违反差量指令返回整页，也只允许真正缺项进入；同身份且原来为空的未审核项
   // 可由有原文证据的候选补全，避免“第一次空、补提仍被去重挡住”。
-  const originalKeys = new Set(oldPageAtStart.map(reportItemIdentityKey));
+  const { sameReportItem } = require('../utils/reportPageSupplement');
   const missingCandidates = filterMissingReportItems(oldPageAtStart, parsedItems, { targetOrgans });
-  const enrichmentCandidates = parsedItems.filter(item => originalKeys.has(reportItemIdentityKey(item)) && hasReportItemEvidence(item));
+  const enrichmentCandidates = parsedItems.filter(item => oldPageAtStart.some(existing => sameReportItem(existing, item)) && hasReportItemEvidence(item));
   let newPage = tagReportPageItems([...missingCandidates, ...enrichmentCandidates], pageNum);
   if (usePediatricBodyComposition && isBodyCompositionPage({}, newPage, report.type)) {
     newPage = sanitizePediatricBodyCompositionPage(newPage, true);
@@ -13108,10 +13109,8 @@ async function runReportPageParseControlled(reportId, pageNum) {
   newPage = normalizeSingleExamReportItems(normalizeDepartmentExamItems(normalizeBreathTestItems(newPage, report)), report);
   const latest = await MedicalReport.findById(reportId);
   const oldPage = (latest.reportItems || []).filter(belongsToRequestedPage);
-  const latestOriginalKeys = new Set(oldPage.map(reportItemIdentityKey));
   const latestMissing = filterMissingReportItems(oldPage, newPage, { targetOrgans });
-  const latestEnrichment = newPage.filter(item => latestOriginalKeys.has(reportItemIdentityKey(item)) && hasReportItemEvidence(item));
-  const { sameReportItem } = require('../utils/reportPageSupplement');
+  const latestEnrichment = newPage.filter(item => oldPage.some(existing => sameReportItem(existing, item)) && hasReportItemEvidence(item));
   const deletedItems = (latest.deletedReportItems || []).filter(belongsToRequestedPage);
   const supplementMerge = mergeSupplementItems(oldPage, [...latestMissing, ...latestEnrichment].filter(item => !deletedItems.some(deleted => sameReportItem(deleted, item))));
   const acceptedSupplementItems = [...supplementMerge.added, ...supplementMerge.enriched];

@@ -123,6 +123,7 @@ test('single-page route stops before coverage/classification and preserves exist
   let calls = 0;
   const db = { findById: async () => report, findByIdAndUpdate: async (_, update) => writes.push(update) };
   const modules = {
+    '../utils/aiBudget': { assertSupplementCallCapacity: async () => {} },
     '../utils/ai': { parseImage: async (_, prompt) => { calls++; return JSON.stringify(prompt === IMAGE_EVIDENCE_PROMPT ? imageOnly : { items: [narrative] }); } },
     '../utils/reportImageEvidence': require('../src/utils/reportImageEvidence'),
     '../utils/reportPageSupplement': require('../src/utils/reportPageSupplement'),

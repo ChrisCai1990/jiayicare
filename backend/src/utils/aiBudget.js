@@ -1,7 +1,7 @@
 const { AsyncLocalStorage } = require('async_hooks');
 const { randomUUID } = require('crypto');
 const { store } = require('./aiBudgetStore');
-const { AiControlError, isAiControlError, estimateTokens, actualUsage, costMicros, budgetScopes } = require('./aiBudgetPolicy');
+const { AiControlError, isAiControlError, estimateTokens, actualUsage, costMicros, budgetScopes, budgetRefusalReason } = require('./aiBudgetPolicy');
 const contextStorage = new AsyncLocalStorage();
 function withAiContext(context, fn) { return contextStorage.run({ ...contextStorage.getStore(), ...context }, fn); }
 
@@ -27,7 +27,10 @@ function createBudgetRunner(db = store, now = () => new Date()) {
       if ((policy.dailyYuan || policy.monthlyYuan) && !rate) throw new AiControlError(`模型 ${model} 未配置单价，金额预算启用后禁止调用`);
       estimatedMicros = costMicros(estimate, rate);
       for (const scope of budgetScopes(policy, ctx, started)) {
-        if (!await db.reserve(scope, estimate.total, estimatedMicros || 0)) throw new AiControlError(`${scope.label}不足，已暂停。请管理员调整额度后继续`, scope.id.startsWith('page:') ? 'AI_PAGE_BUDGET_PAUSED' : 'AI_BUDGET_PAUSED');
+        if (!await db.reserve(scope, estimate.total, estimatedMicros || 0)) {
+          const reason = db.counter ? budgetRefusalReason(scope, await db.counter(scope.id), estimate.total, estimatedMicros || 0) : '';
+          throw new AiControlError(reason || `${scope.label}不足，已暂停。请管理员调整额度后继续`, scope.id.startsWith('page:') ? 'AI_PAGE_BUDGET_PAUSED' : 'AI_BUDGET_PAUSED');
+        }
         reserved.push(scope.id);
       }
       await db.insert({ _id: id, createdAt: started, status: 'reserved', provider, model,
@@ -84,4 +87,14 @@ function createBudgetRunner(db = store, now = () => new Date()) {
   };
 }
 const controlledCall = createBudgetRunner();
-module.exports = { controlledCall, createBudgetRunner, withAiContext };
+// Read-only preflight for the supplement's extraction + independent evidence + coverage calls.
+// Per-call atomic reservations remain authoritative; this does not grant or reset any quota.
+async function assertSupplementCallCapacity(context, db = store) {
+  const policy = await db.policy();
+  for (const scope of budgetScopes(policy, { ...context, business: 'ocr' }, new Date())) {
+    if (!scope.calls) continue;
+    const reason = budgetRefusalReason(scope, await db.counter(scope.id), 0, 0, 3);
+    if (reason) throw new AiControlError(reason, scope.id.startsWith('page:') ? 'AI_PAGE_BUDGET_PAUSED' : 'AI_BUDGET_PAUSED');
+  }
+}
+module.exports = { controlledCall, createBudgetRunner, withAiContext, assertSupplementCallCapacity };

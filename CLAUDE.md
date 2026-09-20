@@ -365,3 +365,4 @@ pkg_1y（年度¥2980）/ pkg_6m（半年¥1680）/ pkg_3m（季度¥980）
 > 2026-09-14：侧栏三入口与专业随访草稿整理沿用原系统，详见 docs/WECOM_ARCHIVE_FOLLOWUP.md 的侧栏简化节。
 
 > 2026-09-14：群资料12:00/20:00定时归档仅处理已核对元数据的队列，复用原入库函数；详见 docs/WECOM_ARCHIVE_FOLLOWUP.md。
+> 2026-09-20：单页补提开始前核验 3 次调用容量，错误区分次数/Token/金额；预算拒绝不自动重试，不重置历史消耗。细节见 docs/REPORT_EXTRACTION_QUALITY.md。
