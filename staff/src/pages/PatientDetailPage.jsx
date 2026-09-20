@@ -12625,7 +12625,7 @@ function MembershipPanel({ user, patientId, onRefresh }) {
               </div>
             ))}
           </div>
-          <div style={{ fontSize: 12, color: '#8AA89C', marginTop: -8, marginBottom: 16 }}>每满100积分自动兑换¥1自有健康基金</div>
+          <div style={{ fontSize: 12, color: '#8AA89C', marginTop: -8, marginBottom: 16 }}>每满100积分自动兑换¥1企业赠送健康基金</div>
 
           {/* 编辑区 */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

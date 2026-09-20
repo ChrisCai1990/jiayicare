@@ -1602,11 +1602,11 @@ router.put('/products/:id', adminAuth, async (req, res) => {
 });
 
 router.patch('/products/:id/health-fund-deduction', adminAuth, async (req, res) => {
-  const allowedModes = ['inherit', 'disabled', 'unlimited', 'percentage', 'fixedAmount'];
+  const allowedModes = ['inherit', 'disabled', 'percentage'];
   const mode = allowedModes.includes(req.body?.mode) ? req.body.mode : 'inherit';
   const rawValue = Number(req.body?.value);
   const value = ['percentage', 'fixedAmount'].includes(mode)
-    ? Math.max(0, Math.min(mode === 'percentage' ? 100 : Number.MAX_SAFE_INTEGER, Number.isFinite(rawValue) ? rawValue : 0))
+    ? Math.max(0, Math.min(mode === 'percentage' ? 10 : Number.MAX_SAFE_INTEGER, Number.isFinite(rawValue) ? rawValue : 0))
     : 0;
   const product = await Product.findByIdAndUpdate(
     req.params.id,
@@ -2268,8 +2268,8 @@ const DEFAULT_HEALTH_FUND_POLICY = {
   personalPriority: true,
   personalDeductionType: 'unlimited',
   personalDeductionValue: 0,
-  corporateDeductionType: 'unlimited',
-  corporateDeductionValue: 0,
+  corporateDeductionType: 'percentage',
+  corporateDeductionValue: 10,
   minOrderAmount: 0,
   eligibleCategories: [],
   eligibleProductIds: [],
@@ -2293,7 +2293,7 @@ const DEFAULT_HEALTH_FUND_POLICY = {
 router.get('/system-config/health-fund', adminAuth, async (req, res) => {
   try {
     const cfg = await SystemConfig.findOne({ key:'healthFundPolicy' });
-    res.json({ success:true, data:{ ...DEFAULT_HEALTH_FUND_POLICY, ...(cfg?.value||{}) } });
+    res.json({ success:true, data:{ ...DEFAULT_HEALTH_FUND_POLICY, ...(cfg?.value||{}), corporateDeductionType:'percentage', corporateDeductionValue:10 } });
   } catch (err) { res.status(500).json({ success:false, message:err.message }); }
 });
 
@@ -2338,6 +2338,8 @@ router.put('/system-config/health-fund', adminAuth, async (req, res) => {
     ['personalDeductionType','corporateDeductionType','couponDeductionType'].forEach(k => { if (!types.includes(value[k])) value[k] = 'unlimited'; });
     ['personalDeductionValue','corporateDeductionValue','couponDeductionValue','minOrderAmount','sharerAmount','recipientAmount','inviterAmount','inviteeAmount','firstLoginAmount','healthCheckinPoints'].forEach(k => { value[k] = Math.max(0, Number(value[k]) || 0); });
     value.pointsPerYuan = Math.max(1, Math.floor(Number(value.pointsPerYuan) || 100));
+    value.corporateDeductionType = 'percentage';
+    value.corporateDeductionValue = 10;
     value.eligibleCategories = Array.isArray(value.eligibleCategories) ? value.eligibleCategories.map(String).map(v=>v.trim()).filter(Boolean) : [];
     value.eligibleProductIds = Array.isArray(value.eligibleProductIds) ? [...new Set(value.eligibleProductIds.map(String).filter(Boolean))] : [];
     await SystemConfig.findOneAndUpdate({ key:'healthFundPolicy' }, { key:'healthFundPolicy', value, label:'健康基金使用与退款规则' }, { upsert:true, new:true });

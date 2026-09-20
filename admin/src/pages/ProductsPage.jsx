@@ -642,18 +642,16 @@ function ProductModal({ product, categories, onClose, onSaved }) {
                 产品规则是最终抵扣上限；实际抵扣额还会受客户余额、自有/企业基金全局规则和订单应付金额限制。
               </div>
               <div className="form-group">
-                <label className="form-label">该产品健康基金抵扣方式</label>
+                <label className="form-label">该产品企业赠送健康基金抵扣方式</label>
                 <select className="form-input" value={rule.mode} onChange={e=>setRule('mode',e.target.value)}>
-                  <option value="inherit">继承健康基金全局规则</option>
-                  <option value="disabled">不允许使用健康基金</option>
-                  <option value="unlimited">余额内可100%抵扣</option>
+                  <option value="inherit">继承平台规则（默认最高10%）</option>
+                  <option value="disabled">不享有企业赠送基金抵扣</option>
                   <option value="percentage">按产品应付金额比例</option>
-                  <option value="fixedAmount">每单固定金额上限</option>
                 </select>
               </div>
-              {['percentage','fixedAmount'].includes(rule.mode) && <div className="form-group">
-                <label className="form-label">{rule.mode==='percentage'?'最高抵扣比例（%）':'每单最高抵扣金额（元）'}</label>
-                <input className="form-input" type="number" min="0" max={rule.mode==='percentage'?100:undefined} value={rule.value||0} onChange={e=>setRule('value',e.target.value)}/>
+              {rule.mode==='percentage' && <div className="form-group">
+                <label className="form-label">最高抵扣比例（1%-10%）</label>
+                <input className="form-input" type="number" min="1" max="10" value={rule.value||0} onChange={e=>setRule('value',e.target.value)}/>
               </div>}
             </div>
           })()}

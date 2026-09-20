@@ -7,7 +7,7 @@ const Product = require('../models/Product');
 const DEFAULT_HEALTH_FUND_POLICY = {
   title: '健康基金使用规则', description: '', personalPriority: true,
   personalDeductionType: 'unlimited', personalDeductionValue: 0,
-  corporateDeductionType: 'unlimited', corporateDeductionValue: 0,
+  corporateDeductionType: 'percentage', corporateDeductionValue: 10,
   minOrderAmount: 0, eligibleCategories: [], eligibleProductIds: [], allowCouponStacking: true,
   couponDeductionType: 'unlimited', couponDeductionValue: 0,
   refundToOriginalSource: true,
@@ -15,7 +15,12 @@ const DEFAULT_HEALTH_FUND_POLICY = {
 
 async function getHealthFundPolicy() {
   const cfg = await SystemConfig.findOne({ key: 'healthFundPolicy' }).lean();
-  return { ...DEFAULT_HEALTH_FUND_POLICY, ...(cfg?.value || {}) };
+  return {
+    ...DEFAULT_HEALTH_FUND_POLICY,
+    ...(cfg?.value || {}),
+    corporateDeductionType: 'percentage',
+    corporateDeductionValue: 10,
+  };
 }
 
 function deductionLimit(type, value, orderAmount) {
@@ -27,8 +32,11 @@ function deductionLimit(type, value, orderAmount) {
 function productDeductionLimit(rule, orderAmount) {
   const mode = rule?.mode || 'inherit';
   if (mode === 'disabled') return 0;
-  if (mode === 'inherit') return orderAmount;
-  return deductionLimit(mode, rule?.value, orderAmount);
+  const platformMaximum = deductionLimit('percentage', 10, orderAmount);
+  // 企业赠送基金无论采用历史固定金额、全额或当前比例配置，最终都不能
+  // 超过商品应付金额的10%；未单独配置的商品继承10%的默认上限。
+  if (['inherit', 'unlimited'].includes(mode)) return platformMaximum;
+  return Math.min(platformMaximum, deductionLimit(mode, rule?.value, orderAmount));
 }
 
 function corporateProductEligible(policy, productId, category, productRule) {
@@ -57,9 +65,14 @@ async function getCorporateFundAvailable(user) {
   const platformRewardRemarks = [
     '首次使用小程序健康基金奖励', '邀请好友首次使用小程序奖励', '通过好友邀请首次使用小程序奖励',
   ];
-  const [grants, legacyFirstLoginGrants, spent] = await Promise.all([GiftRecord.aggregate([
+  const [grants, pointsExchangeGrants, legacyFirstLoginGrants, spent] = await Promise.all([GiftRecord.aggregate([
     { $match: { patientId: user._id, giftType: 'fund', fundType: 'enterprise', status: 'active' } },
     { $group: { _id: null, total: { $sum: '$fundAmount' } } },
+  ]), HealthFundTransaction.aggregate([
+    // 积分是平台按客户行为赠送的权益，兑换所得属于企业赠送健康基金。
+    // 这类入账没有对应 GiftRecord，需要从健康基金流水单独汇总。
+    { $match: { userId: user._id, type: 'grant', source: 'enterprise', status: 'active', remark: /积分自动兑换.*元健康基金/ } },
+    { $group: { _id: null, total: { $sum: '$amount' } } },
   ]), HealthFundTransaction.aggregate([
     // 1.0.86 之前首登赠金曾误记为 promotion；按明确的业务备注兼容
     // 已发放余额，避免必须先跑数据迁移才能正确展示和抵扣。
@@ -69,7 +82,8 @@ async function getCorporateFundAvailable(user) {
     { $match: { userId: user._id, source: 'enterprise', status: 'active', type: { $in: ['deduction', 'adjustment'] } } },
     { $group: { _id: null, total: { $sum: '$amount' } } },
   ])]);
-  const ledgerBalance = (grants[0]?.total || 0) + (legacyFirstLoginGrants[0]?.total || 0) + (spent[0]?.total || 0);
+  const ledgerBalance = (grants[0]?.total || 0) + (pointsExchangeGrants[0]?.total || 0)
+    + (legacyFirstLoginGrants[0]?.total || 0) + (spent[0]?.total || 0);
   return Math.max(0, Math.min(Number(user.healthFundBalance) || 0, ledgerBalance));
 }
 

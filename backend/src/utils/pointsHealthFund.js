@@ -44,7 +44,7 @@ function pointsBalanceFields(points, pointsPolicy) {
 
 /**
  * Add points and immediately convert every complete 100 points to one yuan of
- * personal health fund. The aggregation-pipeline update makes the two balances
+ * enterprise-gifted health fund. The aggregation-pipeline update makes the two balances
  * change in one atomic MongoDB operation, including concurrent check-ins.
  */
 async function awardPointsAndConvert({ userId, amount = 0, source, refType = '', refId = null, remark = '' }) {
@@ -79,7 +79,7 @@ async function awardPointsAndConvert({ userId, amount = 0, source, refType = '',
     }));
     writes.push(HealthFundTransaction.create({
       userId, orderId: refType === 'Order' ? refId : null,
-      type: 'grant', source: 'promotion', amount: conversion.fundAmount,
+      type: 'grant', source: 'enterprise', amount: conversion.fundAmount,
       balanceAfter: Number(before.healthFundBalance || 0) + conversion.fundAmount,
       remark: conversionRemark,
     }));
