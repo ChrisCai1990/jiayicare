@@ -3931,7 +3931,7 @@ router.post('/medical-reports/:id/plan-item-conflict/resolve', staffAuth, async 
       return res.status(403).json({ success: false, message: '仅所属健管专员可核对项目关联冲突' });
     }
     const { token, action, reason } = req.body;
-    if (typeof token !== 'string' || !token || action !== 'keep_existing'
+    if (typeof token !== 'string' || !token || !['keep_existing', 'retarget_item'].includes(action)
       || typeof reason !== 'string' || !reason.trim() || reason.trim().length > 1000) {
       return res.status(400).json({ success: false, message: '请提供当前冲突凭据和核对理由（1至1000字）' });
     }
@@ -3947,11 +3947,27 @@ router.post('/medical-reports/:id/plan-item-conflict/resolve', staffAuth, async 
       return res.status(409).json({ success: false, message: '报告或关联已变化，请刷新后重新核对' });
     }
     const resolution = { action, reason: reason.trim(), staffId: req.staff._id, resolvedAt: new Date() };
+    let changes = { 'planItemSync.status': 'resolved', 'planItemSync.resolution': resolution };
+    let newIntent;
+    if (action === 'retarget_item') {
+      const prepared = await require('../utils/reportItemRelink').prepareReportItemRelink(HealthPlan, report, req.body.targetItemId);
+      if (prepared.error) return res.status(409).json({ success: false, message: prepared.error });
+      newIntent = prepared.intent;
+      changes = { planItemId: newIntent.itemId, planItemSync: newIntent };
+      resolution.targetItemId = newIntent.itemId;
+    }
     const result = await MedicalReport.updateOne({ _id: report._id, user: report.user, audit_status: 'audited',
       planId: report.planId, planItemId: report.planItemId, 'planItemSync.token': token, 'planItemSync.status': 'conflict' },
-    { $set: { 'planItemSync.status': 'resolved', 'planItemSync.resolution': resolution },
+    { $set: changes,
       $push: { planItemConflictResolutions: { ...resolution, token, planId: proof.planId, itemId: proof.itemId } } });
     if (!result.modifiedCount) return res.status(409).json({ success: false, message: '冲突已被处理，请刷新查看' });
+    if (newIntent) {
+      // Durable intent precedes cross-document completion; target races remain conflicts, not success.
+      await require('../utils/reportPlanItemQueue').runtime().safeReconcile(report._id, newIntent.token);
+      const current = await MedicalReport.findById(report._id).select('planItemSync').lean();
+      return res.json({ success: true, data: { syncStatus: current?.planItemSync?.status },
+        message: '已保存项目更正及理由，请核对项目回写结果' });
+    }
     return res.json({ success: true, message: '已记录核对结论；原检查项目及报告内容保持不变' });
   } catch (error) {
     console.error('[report-plan-conflict]', error.message);

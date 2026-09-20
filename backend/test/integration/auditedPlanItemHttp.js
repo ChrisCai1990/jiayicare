@@ -132,6 +132,32 @@ async function main() {
   assert.equal(afterTodos.filter(row => row.type === 'report_plan_conflict' && row.patientId === String(patient._id)).length, 5);
   console.log('conflict resolution: ownership/role/reason/version guards, one audit proof, item preserved, prompt removed and audit replay stable PASS');
   const queueModule = require('../../src/utils/reportPlanItemQueue');
+  const relinkPlan = await HealthPlan.create({ patientId: patient._id, staffId: account.id, type: 'annual_checkup',
+    title: '隔离关联更正（纯虚构）', status: 'active', items: [{ name: '原跳过项', status: 'skipped' },
+      { name: '正确合成目标', status: 'pending' }, { name: '已绑定目标', status: 'pending', reportId: new mongoose.Types.ObjectId() }] });
+  const relinkReport = new MedicalReport({ user: patient._id, title: '隔离关联更正报告（非临床）', audit_status: 'audited',
+    planId: relinkPlan._id, planItemId: relinkPlan.items[0]._id });
+  queueModule.arm(relinkReport); await relinkReport.save();
+  await queueModule.createQueue({ MedicalReport, HealthPlan }).reconcile(relinkReport._id, relinkReport.planItemSync.token);
+  const relinkUrl = `/staff/medical-reports/${relinkReport._id}/plan-item-conflict/resolve`;
+  const relinkBody = { token: relinkReport.planItemSync.token, action: 'retarget_item', reason: '隔离更正明确合成项目，非临床判断', targetItemId: String(relinkPlan.items[1]._id) };
+  await request(relinkUrl, relinkBody, otherToken, 'POST', 403);
+  await request(relinkUrl, { ...relinkBody, targetItemId: String(uploadPlan.items[0]._id) }, token, 'POST', 409);
+  await request(relinkUrl, { ...relinkBody, targetItemId: String(relinkPlan.items[2]._id) }, token, 'POST', 409);
+  assert.equal(String((await MedicalReport.findById(relinkReport._id)).planItemId), String(relinkPlan.items[0]._id));
+  const corrected = await request(relinkUrl, relinkBody, token);
+  assert.equal(corrected.data.syncStatus, 'completed');
+  await request(relinkUrl, relinkBody, token, 'POST', 409);
+  const targetAfter = await HealthPlan.findById(relinkPlan._id).lean();
+  assert.equal(targetAfter.items[0].status, 'skipped');
+  assert.equal(targetAfter.items[1].status, 'completed');
+  assert.equal(String(targetAfter.items[1].reportId), String(relinkReport._id));
+  const reportAfter = await MedicalReport.findById(relinkReport._id).lean();
+  assert.equal(reportAfter.planItemConflictResolutions.length, 1);
+  assert.equal(reportAfter.planItemConflictResolutions[0].itemId, String(relinkPlan.items[0]._id));
+  assert.equal(reportAfter.planItemConflictResolutions[0].targetItemId, relinkBody.targetItemId);
+  assert.equal(String(reportAfter.planId), String(relinkPlan._id));
+  console.log('same-plan relink: ownership/foreign-item/occupied-target rejection, old item preserved, target completion, single audit proof and replay guard PASS');
   const recoveryPlan = await HealthPlan.create({ patientId: patient._id, staffId: account.id, type: 'annual_checkup',
     title: '隔离故障恢复测试', items: [{ name: '合成恢复项' }] });
   const recoveryReport = new MedicalReport({ user: patient._id, title: '隔离故障恢复合成报告', audit_status: 'audited',
