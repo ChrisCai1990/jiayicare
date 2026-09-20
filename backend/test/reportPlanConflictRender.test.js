@@ -24,3 +24,13 @@ test('resolved decision shows reason without repeat action; unrelated reports st
   assert.equal(render({ ...report, audit_status: 'unaudited' }), '');
   assert.equal(render({ ...report, planItemSync: null }), '');
 });
+test('correction result distinguishes completion, recovery pending, and conflict', () => {
+  for (const [status, expected] of [['completed', '已按已审核报告完成回写'], ['pending', '尚不能认定检查已完成'], ['conflict', '未确认完成'], ['obsolete', '结果尚未确认']]) {
+    assert.ok(context.module.exports.relinkResultText(status).includes(expected));
+  }
+  const html = render({ ...report, planItemId: 'new', planItemSync: { status: 'pending' },
+    planItemConflictResolutions: [{ action: 'retarget_item', targetItemId: 'new', reason: '核对更正' }] });
+  assert.match(html, /核对更正/);
+  assert.match(html, /尚不能认定检查已完成/);
+  assert.doesNotMatch(html, /<button|<textarea/);
+});

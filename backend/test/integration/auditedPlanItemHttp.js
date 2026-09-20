@@ -145,6 +145,12 @@ async function main() {
   await request(relinkUrl, { ...relinkBody, targetItemId: String(uploadPlan.items[0]._id) }, token, 'POST', 409);
   await request(relinkUrl, { ...relinkBody, targetItemId: String(relinkPlan.items[2]._id) }, token, 'POST', 409);
   assert.equal(String((await MedicalReport.findById(relinkReport._id)).planItemId), String(relinkPlan.items[0]._id));
+  if (process.argv.includes('--prepare-relink-only')) {
+    console.log(JSON.stringify({ purpose: 'Synthetic UI correction fixture, NOT completed acceptance',
+      patientId: String(patient._id), reportId: String(relinkReport._id), planId: String(relinkPlan._id),
+      targetItemId: String(relinkPlan.items[1]._id), url: `http://localhost:5174/patients/${patient._id}?tab=reports&reportId=${relinkReport._id}` }));
+    return;
+  }
   const corrected = await request(relinkUrl, relinkBody, token);
   assert.equal(corrected.data.syncStatus, 'completed');
   await request(relinkUrl, relinkBody, token, 'POST', 409);
