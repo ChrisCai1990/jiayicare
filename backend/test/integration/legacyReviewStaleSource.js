@@ -42,5 +42,50 @@ async function main() {
     if (!safe) failures++;
   }
   assert.equal(failures, 0, 'Revoked source still creates legacy tasks; preserve evidence and block rollout');
+  const HealthPlan = require('../../src/models/HealthPlan');
+  const { arm, createQueue } = require('../../src/utils/reportPlanItemQueue');
+  for (const first of ['legacy', 'plan']) {
+    const patient = await User.create({ name: '隔离双队列互斥客户（纯虚构）', assignedHealthManager: staff.id });
+    const plan = await HealthPlan.create({ patientId: patient._id, staffId: staff.id, type: 'annual_checkup',
+      title: '隔离双队列方案', items: [{ name: '合成项目', status: 'pending' }] });
+    const report = new Report({ user: patient._id, title: `隔离双队列-${first}`, audit_status: 'audited',
+      planId: plan._id, planItemId: plan.items[0]._id });
+    arm(report); await report.save();
+    const queue = createQueue({ MedicalReport: Report, HealthPlan });
+    const args = { Task, AbnormalReview: Review, report, staff: { _id: staff.id, name: '隔离健管' },
+      input: { abnormalItems: [{ name: '合成项' }] } };
+    let attempted = false;
+    if (first === 'legacy') {
+      const wrappedReview = { find: (...a) => Review.find(...a), findById: (...a) => Review.findById(...a),
+        exists: (...a) => Review.exists(...a), updateOne: async (...a) => {
+          attempted = true;
+          await queue.reconcile(report._id, report.planItemSync.token);
+          assert.equal((await Report.findById(report._id)).planItemSync.status, 'pending');
+          assert.equal((await HealthPlan.findById(plan._id)).items[0].status, 'pending');
+          return Review.updateOne(...a);
+        } };
+      await ensureLegacyReportReview({ ...args, AbnormalReview: wrappedReview });
+      await queue.reconcile(report._id, report.planItemSync.token);
+    } else {
+      const wrappedPlan = { findOne: (...a) => HealthPlan.findOne(...a), updateOne: async (...a) => {
+        if (!attempted) {
+          attempted = true;
+          await assert.rejects(ensureLegacyReportReview({ ...args, report: await Report.findById(report._id) }), error => error.status === 409);
+          assert.equal(await Review.countDocuments({ reportId: report._id }), 0);
+          assert.equal(await Task.countDocuments({ user: patient._id }), 0);
+        }
+        return HealthPlan.updateOne(...a);
+      } };
+      await createQueue({ MedicalReport: Report, HealthPlan: wrappedPlan }).reconcile(report._id, report.planItemSync.token);
+      await ensureLegacyReportReview({ ...args, report: await Report.findById(report._id) });
+    }
+    assert.equal(attempted, true);
+    const latest = await Report.findById(report._id);
+    assert.equal(latest.planItemSync.status, 'completed');
+    assert.equal(latest.legacyReviewWrite.status, 'completed');
+    assert.equal(await Review.countDocuments({ reportId: report._id }), 1);
+    assert.equal(await Task.countDocuments({ user: patient._id }), 1);
+    console.log(JSON.stringify({ first, mutualExclusion: 'PASS', reportId: String(report._id), bothCompletedAfterRelease: true }));
+  }
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; }).finally(() => mongoose.disconnect());
