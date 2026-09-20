@@ -21,10 +21,10 @@ test('atomic filter keeps same patient, pending item and matching report', async
 test('audit route persists report before completing its item', () => {
   const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
   const route = source.split("router.patch('/medical-reports/:id/audit'")[1].split("// GET /api/staff/patients/:id/reports/pending-doctor-audit")[0];
-  assert.ok(route.indexOf('await report.save()') < route.indexOf('completeAuditedPlanItem'));
+  assert.ok(route.indexOf('await report.save()') < route.indexOf('.safeReconcile'));
   assert.doesNotMatch(route, /await plan.save\(\)/);
 });
 test('AI review entry uses the same completion helper only after saved audited review', () => {
   const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
-  assert.match(source, /await report.save\(\);\s*if \(aiStatus === 'reviewed' && report.audit_status === 'audited'\) \{\s*await require\('\.\.\/utils\/auditedPlanItem'\).completeAuditedPlanItem\(HealthPlan, report\)/);
+  assert.match(source, /await report.save\(\);\s*if \(aiStatus === 'reviewed' && report.audit_status === 'audited'\) \{\s*await require\('\.\.\/utils\/reportPlanItemQueue'\).runtime\(\).safeReconcile/);
 });

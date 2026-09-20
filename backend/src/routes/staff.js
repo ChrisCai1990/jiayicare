@@ -4229,9 +4229,10 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     if (ossKeys !== undefined) report.ossKeys = Array.isArray(ossKeys) ? ossKeys.filter(Boolean) : [];
     if (mimeType !== undefined) report.mimeType = mimeType;
     if (fileSize !== undefined) report.fileSize = fileSize;
+    if (aiStatus === 'reviewed') require('../utils/reportPlanItemQueue').arm(report);
     await report.save();
     if (aiStatus === 'reviewed' && report.audit_status === 'audited') {
-      await require('../utils/auditedPlanItem').completeAuditedPlanItem(HealthPlan, report);
+      await require('../utils/reportPlanItemQueue').runtime().safeReconcile(report._id, report.planItemSync?.token);
     }
     if (autoAuditPending && HEALTH_COURSE_DOCUMENTS.has(report.documentCategory)) {
       setImmediate(() => MedicalReport.findById(report._id).then(latest => generateHealthCourseDraft(latest)).catch(error => console.error('[health-course-draft] automatic generation failed', report._id, error.message)));
@@ -4492,9 +4493,10 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
     report.audit_status = 'rejected';
     report.reject_reason = rejectReason || '';
   }
+  if (action === 'approve') require('../utils/reportPlanItemQueue').arm(report);
   await report.save();
   if (action === 'approve') {
-    await require('../utils/auditedPlanItem').completeAuditedPlanItem(HealthPlan, report);
+    await require('../utils/reportPlanItemQueue').runtime().safeReconcile(report._id, report.planItemSync?.token);
     await syncOutpatientReportAuditCompletion(report.sourceHealthPlanId);
     await syncBodyCompositionFromReport(report);
     await onCheckupReportAudited(report).catch(err => console.error('[checkup-workflow] failed to activate result review', err.message));

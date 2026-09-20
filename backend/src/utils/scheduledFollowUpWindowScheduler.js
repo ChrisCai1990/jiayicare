@@ -5,6 +5,8 @@ const { syncAnnualPlanFollowUps, dedupeAnnualPlanFollowUps } = require('./annual
 // syncAnnualPlanFollowUps 按稳定排期键原位更新，每天仅补充新进入窗口的日期，
 // 已审核记录不会被重新生成，也不会再次进入审核队列。
 async function scanAndSyncScheduledWindow() {
+  try { await require('./reportPlanItemQueue').runtime().scan(); }
+  catch (error) { console.error('[report-plan-item] recovery scan failed', error.message); }
   require('./checkupSuggestionQueue').wakeCheckupSuggestionQueue();
   await require('./followUpServiceLink').safeReconcileServiceLinks({});
   await require('./annualCheckupEvidence').safeReconcileCheckupPreparation({});

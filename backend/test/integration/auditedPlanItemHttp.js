@@ -94,5 +94,23 @@ async function main() {
     console.log(`${entry}/${scenario}: PASS`);
   }
   console.log('Local actual audit API passed; synthetic records retained, no real AI or service acceptance.');
+  const queueModule = require('../../src/utils/reportPlanItemQueue');
+  const recoveryPlan = await HealthPlan.create({ patientId: patient._id, staffId: account.id, type: 'annual_checkup',
+    title: '隔离故障恢复测试', items: [{ name: '合成恢复项' }] });
+  const recoveryReport = new MedicalReport({ user: patient._id, title: '隔离故障恢复合成报告', audit_status: 'audited',
+    planId: recoveryPlan._id, planItemId: recoveryPlan.items[0]._id });
+  queueModule.arm(recoveryReport); await recoveryReport.save();
+  await assert.rejects(queueModule.createQueue({ MedicalReport, HealthPlan: { updateOne: async () => { throw new Error('injected failure before item write'); } } })
+    .reconcile(recoveryReport._id, recoveryReport.planItemSync.token));
+  assert.equal((await readItem(recoveryPlan._id)).status, 'pending');
+  assert.equal((await MedicalReport.findById(recoveryReport._id)).planItemSync.status, 'pending');
+  // Simulate interruption after item write, before the durable queue acknowledgement.
+  const failingReports = { findOne: (...args) => MedicalReport.findOne(...args), updateOne: async () => { throw new Error('injected acknowledgement failure'); } };
+  await assert.rejects(queueModule.createQueue({ MedicalReport: failingReports, HealthPlan }).reconcile(recoveryReport._id, recoveryReport.planItemSync.token));
+  const completedAt = (await readItem(recoveryPlan._id)).completedAt.getTime();
+  await queueModule.createQueue({ MedicalReport, HealthPlan }).scan();
+  assert.equal((await MedicalReport.findById(recoveryReport._id)).planItemSync.status, 'completed');
+  assert.equal((await readItem(recoveryPlan._id)).completedAt.getTime(), completedAt);
+  console.log('persisted new audit intent: before-write failure / after-write acknowledgement failure / recovery scan idempotence PASS');
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; }).finally(() => mongoose.disconnect());

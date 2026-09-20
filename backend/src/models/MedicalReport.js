@@ -213,6 +213,7 @@ const medicalReportSchema = new mongoose.Schema({
   sourceServiceRecordId: { type: mongoose.Schema.Types.ObjectId, ref: 'ServiceRecord', default: null },
   uploadedByRole: { type: String, default: '' },
   planItemId:       { type: mongoose.Schema.Types.ObjectId, default: null }, // 关联体检方案中的项目
+  planItemSync: { type: mongoose.Schema.Types.Mixed, default: null }, // New audit intent only; no historical backfill.
   planId:           { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null },
   screeningItemId:  { type: mongoose.Schema.Types.ObjectId, ref: 'UserScreeningItem', default: null },
   followUpSourceEvent: { type: mongoose.Schema.Types.Mixed, default: null },

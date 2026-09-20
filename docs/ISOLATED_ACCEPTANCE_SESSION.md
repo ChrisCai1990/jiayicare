@@ -1,5 +1,12 @@
 # 可登录隔离环境：验收接续
 
+## 18:00 报告项目故障恢复
+
+- 新MedicalReport.planItemSync存本次审核token/planId/itemId/pending，与报告审核同文档保存后立即reconcile；项目仍使用原同客户/待完成/原报告条件更新。临时异常保留pending不要求人工重复审核；接既有启动/24小时扫描，隔离后台调度保持禁用，本轮手动调用扫描函数验证。
+- 扫描只处理显式pending，不回填历史审核报告。完成项目且同reportId识别为幂等成功；不匹配记conflict，审核撤销或关联变化记obsolete，终态不无限重试。报告上的conflict尚未投影到工作台，这是下一步，不能称异常管理全闭合。
+- auditedPlanItemHttp完整上传/双岗2→1→0/11组审核重新通过；新增独立合成恢复报告的真实Mongo测试注入写前异常、项目写后回执异常，随后扫描恢复completed、completedAt不变。不是HTTP层故障注入，不是真实AI/临床/收费验收。7项针对回归通过，原主链7任务仍零残留。
+- 原隔离后端15072已停止，当前会话15266，同fvvTxL清单，JWT刷新；未触生产、未部署、无新AI/通知出口。跨文档瞬间并发撤销及冲突处理页面尚待专项测试；无前端改动，不重复构建。
+
 ## 17:20 上传至双岗项目待办消退连续API通过
 
 - auditedPlanItemHttp.js不再只分开验证上传与审核：同一合成方案两项明确itemType，实际POST上传并补传原report ID，分别走PATCH报告reviewed和PATCH audit approve。两个账号实际登录，GET checkup-progress均严格按本plan ID检查pendingCount从2到1，全部完成后本方案行消失；重复审核后仍消失且第一项completedAt不变。
