@@ -158,6 +158,43 @@ async function main() {
   assert.equal(reportAfter.planItemConflictResolutions[0].targetItemId, relinkBody.targetItemId);
   assert.equal(String(reportAfter.planId), String(relinkPlan._id));
   console.log('same-plan relink: ownership/foreign-item/occupied-target rejection, old item preserved, target completion, single audit proof and replay guard PASS');
+  // Two browser windows choose different items from the same conflict version.
+  const racePlan = await HealthPlan.create({ patientId: patient._id, staffId: account.id, type: 'annual_checkup',
+    title: '隔离并发更正（纯虚构）', status: 'active', items: [{ name: '原跳过项', status: 'skipped' },
+      { name: '候选一', status: 'pending' }, { name: '候选二', status: 'pending' }] });
+  const raceReport = new MedicalReport({ user: patient._id, title: '隔离并发更正报告', audit_status: 'audited',
+    planId: racePlan._id, planItemId: racePlan.items[0]._id });
+  queueModule.arm(raceReport); await raceReport.save();
+  await queueModule.createQueue({ MedicalReport, HealthPlan }).reconcile(raceReport._id, raceReport.planItemSync.token);
+  const attempts = await Promise.all(racePlan.items.slice(1).map(async item => {
+    const response = await fetch(session.api + `/staff/medical-reports/${raceReport._id}/plan-item-conflict/resolve`, {
+      method: 'POST', headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ token: raceReport.planItemSync.token, action: 'retarget_item',
+        targetItemId: String(item._id), reason: '隔离双窗口竞争测试' }), signal: AbortSignal.timeout(30000),
+    });
+    return { status: response.status, itemId: String(item._id) };
+  }));
+  assert.deepEqual(attempts.map(x => x.status).sort(), [200, 409]);
+  const raceAfter = await HealthPlan.findById(racePlan._id).lean();
+  const raceProof = await MedicalReport.findById(raceReport._id).lean();
+  assert.equal(raceProof.planItemConflictResolutions.length, 1);
+  assert.equal(String(raceProof.planItemId), attempts.find(x => x.status === 200).itemId);
+  assert.equal(raceAfter.items.filter(x => x.status === 'completed').length, 1);
+  assert.equal(raceAfter.items.find(x => String(x._id) === attempts.find(a => a.status === 409).itemId).status, 'pending');
+  assert.equal(raceAfter.items[0].status, 'skipped');
+  // An unrelated report claims the target after intent persistence, before recovery runs.
+  const occupiedPlan = await HealthPlan.create({ patientId: patient._id, staffId: account.id, type: 'annual_checkup',
+    title: '隔离目标占用竞争', items: [{ name: '合成目标', status: 'pending' }] });
+  const occupiedReport = new MedicalReport({ user: patient._id, title: '隔离目标竞争报告', audit_status: 'audited',
+    planId: occupiedPlan._id, planItemId: occupiedPlan.items[0]._id });
+  queueModule.arm(occupiedReport); await occupiedReport.save();
+  const competingId = new mongoose.Types.ObjectId();
+  await HealthPlan.updateOne({ _id: occupiedPlan._id }, { $set: { 'items.0.reportId': competingId } });
+  await queueModule.createQueue({ MedicalReport, HealthPlan }).reconcile(occupiedReport._id, occupiedReport.planItemSync.token);
+  assert.equal((await MedicalReport.findById(occupiedReport._id)).planItemSync.status, 'conflict');
+  assert.equal(String((await readItem(occupiedPlan._id)).reportId), String(competingId));
+  assert.equal((await readItem(occupiedPlan._id)).status, 'pending');
+  console.log('concurrency: two HTTP corrections yield one winner/one 409; target takeover before recovery preserves competing evidence PASS');
   const recoveryPlan = await HealthPlan.create({ patientId: patient._id, staffId: account.id, type: 'annual_checkup',
     title: '隔离故障恢复测试', items: [{ name: '合成恢复项' }] });
   const recoveryReport = new MedicalReport({ user: patient._id, title: '隔离故障恢复合成报告', audit_status: 'audited',
