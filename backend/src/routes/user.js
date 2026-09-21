@@ -1209,6 +1209,7 @@ router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
   try {
     const followup = await FollowUp.findOne({ _id: req.params.id, patientId: req.user._id });
     if (!followup) return res.status(404).json({ success: false, message: '随访任务不存在' });
+    if (require('../utils/followUpContinuity').requiresOutcomeReview(followup)) return res.status(409).json({ success: false, message: '此计划由健康管理团队跟进到结果审核完成；联系或检查完成不会直接结束计划' });
     if (followup.serviceTracking?.status === 'waiting') return res.status(409).json({ success: false, message: '服务正在进行，进度会自动更新；需要调整请联系健康管理团队' });
     if (['professional_assessment', 'report_followup'].includes(followup.sourceType) && ['executor', 'supervisor'].includes(followup.taskRole)) return res.status(403).json({ success: false, message: '该审核或服务安排任务仅由医护工作台处理' });
     if (followup.sourceType === 'health_plan' && ['executor', 'supervisor'].includes(followup.taskRole)) {

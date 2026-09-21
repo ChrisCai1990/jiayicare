@@ -25,6 +25,9 @@ async function main() {
   }
   const route = `/staff/orders/${service.orderId}/redeem`;
   const initial = await Order.findById(service.orderId).lean();
+  const managerBefore = await FollowUp.findById(closure.awaitingRedemption.managerTaskId).lean();
+  const awaitsOutcome = require('../../src/utils/followUpContinuity').requiresOutcomeReview(managerBefore)
+    && managerBefore.status !== 'completed';
   assert.equal(String(initial.user), session.patientId);
   assert.equal(initial.serviceName, '隔离双次体检核销（纯模拟，未真实付款）');
   assert.equal(initial.totalUnits, 2);
@@ -43,7 +46,13 @@ async function main() {
   assert.equal(String(order.redemptions[0].finalTaskId), service.taskIds.final_acceptance);
   const link = await Handoff.findById(service.handoffId).lean();
   const manager = await FollowUp.findById(closure.awaitingRedemption.managerTaskId).lean();
-  assert.equal(link.completion.status, 'completed'); assert.equal(manager.status, 'completed');
+  if (awaitsOutcome) {
+    assert.notEqual(link.completion.status, 'completed');
+    assert.equal(manager.status, managerBefore.status);
+    assert.equal(manager.outcomeReview, null);
+  } else {
+    assert.equal(link.completion.status, 'completed'); assert.equal(manager.status, 'completed');
+  }
   assert.equal((await HealthPlan.findById(service.serviceId)).status, 'completed');
   const duplicate = await call(route, tokens.healthPlanner, 'POST', { note: '隔离重复请求' });
   assert.equal(duplicate.status, 409, JSON.stringify(duplicate));
@@ -56,7 +65,7 @@ async function main() {
   const listing = await call(`/staff/patients/${session.patientId}/followups`, tokens.healthPlanner);
   assert.equal(listing.status, 200, JSON.stringify(listing));
   assert.equal(await FollowUp.countDocuments({ patientId: session.patientId, sourceType: 'order', sourceOrderId: service.orderId, status: { $nin: ['completed', 'cancelled'] } }), 0);
-  console.log('Exact redemption closed service/handoff/original followup; remaining unit preserved, replay rejected');
+  console.log(awaitsOutcome ? 'Service redeemed; original management plan stays open pending advisor outcome' : 'Historical closed plan preserved; redemption replay rejected (not new-policy closure evidence)');
   fs.writeFileSync(path.join(dir, 'redemption-http.json'), JSON.stringify({ patientId: session.patientId, serviceId: service.serviceId, orderId: service.orderId, managerTaskId: String(manager._id), completedAt: manager.completedAt, usedUnits: after.usedUnits, totalUnits: after.totalUnits, duplicateStatus: duplicate.status, syntheticPaymentOnly: true }, null, 2));
 }
 main().catch(e => { console.error(e); process.exitCode = 1; }).finally(() => mongoose.disconnect());

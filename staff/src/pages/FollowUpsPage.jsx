@@ -4,6 +4,8 @@ import { staffAPI } from '../api'
 import { useToast, useStaff, can } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
 import FollowUpProgressFields, { FollowUpProgressHistory } from '../components/FollowUpProgressFields'
+import FollowUpOutcomeReview from '../components/FollowUpOutcomeReview'
+import { canRecordProgress, requiresOutcomeReview } from '../utils/followUpContinuity'
 import Pagination from '../components/Pagination'
 import MedicalAssistRequirementsCard from '../components/MedicalAssistRequirementsCard'
 import ServiceTaskChecklist, { normalizeServiceChecklist, summarizeServiceChecklist } from '../components/ServiceTaskChecklist'
@@ -106,10 +108,11 @@ function DetailModal({ item, onClose }) {
               <Row label="随访记录" value={item.executedContent} />
               <Row label="完成时间" value={item.completedAt ? formatChineseDateTime(item.completedAt) : ''} />
               <CheckupCompletionEvidence item={item} />
-              <FollowUpProgressHistory item={item} />
             </>
           )}
           {item.status === 'cancelled' && <Row label="取消原因" value={item.cancelReason} />}
+          <FollowUpProgressHistory item={item} />
+          <FollowUpOutcomeReview key={item._id} item={item} />
           {/* 随访表单完整数据（formData） */}
           {item.formData && Object.keys(item.formData).length > 0 && (
             <div style={{ marginTop: 12 }}>
@@ -242,7 +245,7 @@ export default function FollowUpsPage() {
   }
 
   const handleExec = async () => {
-    if (!execItem.taskRole && !execItem.workflowKey && execForm.status === 'in_progress') {
+    if (canRecordProgress(execItem) && execForm.status === 'in_progress') {
       if (!execForm.content.trim()) { toast('请填写本次沟通情况'); return }
       setExecSaving(true)
       try {
@@ -599,7 +602,7 @@ export default function FollowUpsPage() {
                   {[
                     { v: 'completed',   l: execItem.taskRole === 'supervisor' ? '✅ 已核对并闭环' : execItem.taskRole ? '✅ 事务已完成' : '事项已全部完成（不是仅完成沟通）' },
                     { v: 'in_progress', l: execItem.taskRole === 'supervisor' ? '🔄 有遗留，继续督办' : execItem.taskRole ? '🔄 事务处理中' : '🔄 随访中（未完成/未接通）' },
-                  ].map(o => (
+                  ].filter(o => o.v !== 'completed' || !requiresOutcomeReview(execItem)).map(o => (
                     <label key={o.v} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14 }}>
                       <input type="radio" name="execStatus" value={o.v}
                         checked={execForm.status === o.v}

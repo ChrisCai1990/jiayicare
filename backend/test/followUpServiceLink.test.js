@@ -42,6 +42,7 @@ test('投影只更新同一关联的较旧版本，重复核验不覆盖人工�
   const FollowUp = require('../src/models/FollowUp');
   const { projectLink } = require('../src/utils/followUpServiceLink');
   let filter;
+  t.mock.method(FollowUp, 'findById', () => ({ lean: async () => ({}) }));
   t.mock.method(FollowUp, 'updateMany', async query => { filter = query; return { modifiedCount: 0 }; });
   await projectLink({ _id: 'link', __v: 4, requestTaskId: 'request', followUpId: 'parent', patientId: 'patient', status: 'attention', title: 'service' });
   assert.deepEqual(filter._id.$in, ['request', 'parent']);
@@ -58,7 +59,19 @@ test('已交人工处理的异常不会因旧服务再次完成而自动关闭',
   t.mock.method(Link, 'find', () => ({ lean: async () => [{ _id: 'link', __v: 2, status: 'attention', targetType: 'order', requestTaskId: 'request', followUpId: 'parent', patientId: 'patient' }] }));
   t.mock.method(Order, 'findOne', () => { throw new Error('旧来源不应重新裁决异常'); });
   let patch;
+  t.mock.method(FollowUp, 'findById', () => ({ lean: async () => ({}) }));
   t.mock.method(FollowUp, 'updateMany', async (_, update) => { patch = update.$set; });
   assert.equal(await reconcileServiceLinks({}), 1);
   assert.equal(patch.status, 'planned');
+});
+
+test('原管理计划与服务岗位分别投影，核销完成不结束管理计划', async t => {
+  const FollowUp = require('../src/models/FollowUp');
+  t.mock.method(FollowUp, 'findById', () => ({ lean: async () => ({ sourceType: 'scheduled', sourceScheduleKey: 'annual_checkup:2026-10-01' }) }));
+  let staffPatch, parentPatch, parentFilter;
+  t.mock.method(FollowUp, 'updateMany', async (q, u) => { assert.deepEqual(q._id.$in, ['request']); staffPatch = u.$set; });
+  t.mock.method(FollowUp, 'updateOne', async (q, u) => { parentFilter = q; parentPatch = u.$set; });
+  await require('../src/utils/followUpServiceLink').projectLink({ _id: 'link', __v: 4, requestTaskId: 'request', followUpId: 'parent', patientId: 'patient', status: 'completed' });
+  assert.equal(staffPatch.status, 'completed'); assert.equal(parentPatch.status, 'in_progress'); assert.equal(parentPatch.isBlocked, false);
+  assert.equal(parentPatch.completedAt, null); assert.deepEqual(parentFilter.status.$nin, ['completed', 'cancelled']); assert.equal(parentFilter.outcomeReview, null);
 });

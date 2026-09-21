@@ -1,6 +1,7 @@
 const same = (a, b) => Boolean(a && b && String(a) === String(b))
 
-function createPreparationCompletion({ Handoff, HealthPlan, FollowUp, FollowUpPlan, User, Order }) {
+function createPreparationCompletion({ Handoff, HealthPlan, FollowUp, FollowUpPlan, User, Order,
+  requiresOutcomeReview = require('./followUpContinuity').requiresOutcomeReview }) {
   async function reconcile(link) {
     if (link?.status !== 'active' || link.completion?.status === 'completed') return false
     const service = await HealthPlan.findById(link.servicePlanId).lean()
@@ -80,6 +81,9 @@ function createPreparationCompletion({ Handoff, HealthPlan, FollowUp, FollowUpPl
     const patient = await User.findById(link.patientId).lean()
     if (!same(task.assignedTo, patient?.assignedHealthManager) || task.aiStatus === 'pending' || task.serviceTracking) return attention('健管归属、审核状态或其他服务关联需核对')
     const proof = task.checkupPreparationCompletion
+    if (task.status !== 'completed' && requiresOutcomeReview(task)) {
+      return attention('服务履约已完成；原健管计划仍待报告审核与健康顾问结果处置，不因核销自动关闭')
+    }
     if (proof && (!same(proof.handoffId, link._id) || !same(proof.servicePlanId, service._id))) return attention('随访已有其他完成凭据，请核对')
     if (task.status !== 'completed') {
       if (!['planned', 'in_progress', 'missed'].includes(task.status)) return attention('随访已取消或处于不可自动完成状态，保留人工处理结果')

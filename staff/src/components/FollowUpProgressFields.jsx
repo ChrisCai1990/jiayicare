@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react'
+import { canRecordProgress } from '../utils/followUpContinuity'
 
 export function FollowUpProgressHistory({ item }) {
   if (!item?.progressRecords?.length) return null
@@ -13,7 +14,7 @@ export function FollowUpProgressHistory({ item }) {
 }
 
 export default function FollowUpProgressFields({ item, form, setForm }) {
-  const eligible = !item.taskRole && !item.workflowKey
+  const eligible = canRecordProgress(item)
   useEffect(() => {
     if (eligible) setForm(f => ({ ...f, status: 'in_progress', requestId: crypto.randomUUID(), nextContactAt: '' }))
   }, [item._id, eligible, setForm])

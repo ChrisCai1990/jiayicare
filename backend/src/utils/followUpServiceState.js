@@ -11,13 +11,13 @@ function serviceOutcome(type, target) {
   return { status: 'waiting', message: '服务进行中，随访保留为进度查看；当前操作按服务流程分派' };
 }
 
-function taskProjection(link, now = new Date()) {
+function taskProjection(link, now = new Date(), awaitingOutcome = false) {
   const waiting = link.status === 'waiting';
   const completed = link.status === 'completed';
   return {
     serviceTracking: { linkId: link._id, revision: link.__v || 0, status: link.status, title: link.title, message: link.message, targetType: link.targetType, targetId: link.targetId },
-    status: completed ? 'completed' : waiting ? 'in_progress' : 'planned',
-    isBlocked: waiting, completedAt: completed ? now : null, completedBy: completed ? 'staff' : null,
+    status: awaitingOutcome ? 'in_progress' : completed ? 'completed' : waiting ? 'in_progress' : 'planned',
+    isBlocked: awaitingOutcome ? false : waiting, completedAt: completed && !awaitingOutcome ? now : null, completedBy: completed && !awaitingOutcome ? 'staff' : null,
     ...(link.status === 'attention' ? { remindAt: now } : {}),
   };
 }

@@ -9,6 +9,8 @@ import { staffAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
 import FollowUpProgressFields, { FollowUpProgressHistory } from '../components/FollowUpProgressFields'
+import FollowUpOutcomeReview from '../components/FollowUpOutcomeReview'
+import { canRecordProgress, requiresOutcomeReview } from '../utils/followUpContinuity'
 import FollowUpServiceLinkCard from '../components/FollowUpServiceLinkCard'
 import AnnualCheckupPreparationCard, { isAnnualCheckupPreparation } from '../components/AnnualCheckupPreparationCard'
 import AiRuleHint from '../components/AiRuleHint'
@@ -2498,7 +2500,7 @@ export default function PatientDetailPage() {
 
   // 执行随访：填写随访结果、标记完成/随访中，逻辑与 FollowUpsPage.jsx 一致
   const openExec = (f) => {
-    if (isAnnualCheckupPreparation(f) || f.serviceTracking?.status === 'waiting' || (f.taskRole === 'supervisor' && ((f.sourceType === 'annual_service' && f.workflowKey === 'service_request') || (['professional_assessment', 'report_followup'].includes(f.sourceType) && f.workflowKey === `${f.sourceType}:service_request`)))) {
+    if (isAnnualCheckupPreparation(f) || (f.serviceTracking?.status === 'waiting' && !canRecordProgress(f)) || (f.taskRole === 'supervisor' && ((f.sourceType === 'annual_service' && f.workflowKey === 'service_request') || (['professional_assessment', 'report_followup'].includes(f.sourceType) && f.workflowKey === `${f.sourceType}:service_request`)))) {
       setFollowUpDetail(f)
       return
     }
@@ -2523,7 +2525,7 @@ export default function PatientDetailPage() {
     setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: isCheckupAppointmentBookingTask(f) ? checkupAppointmentBookingFromTask(f) : isCheckupMedicalExecutionTask(f) ? checkupMedicalExecutionFromTask(f) : isCheckupManagerReviewTask(f) ? checkupManagerReviewFromTask(f) : (medicalProxyStage(f) || medicationProxyStage(f)) ? workflowFormData : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f.formData) : emptyOutpatientAssessment(f.formData) })
   }
   const handleExec = async () => {
-    if (!execItem.taskRole && !execItem.workflowKey && execForm.status === 'in_progress') {
+    if (canRecordProgress(execItem) && execForm.status === 'in_progress') {
       if (!execForm.content.trim()) { toast('请填写本次沟通情况'); return }
       setExecSaving(true)
       try {
@@ -10868,7 +10870,7 @@ export default function PatientDetailPage() {
                   {[
                     { v: 'completed',   l: execItem.taskRole === 'supervisor' ? '✅ 已核对并闭环' : execItem.taskRole ? '✅ 事务已完成' : '事项已全部完成（不是仅完成沟通）' },
                     { v: 'in_progress', l: execItem.taskRole === 'supervisor' ? '🔄 有遗留，继续督办' : execItem.taskRole ? '🔄 事务处理中' : '🔄 随访中（未完成/未接通）' },
-                  ].map(o => (
+                  ].filter(o => o.v !== 'completed' || !requiresOutcomeReview(execItem)).map(o => (
                     <label key={o.v} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14 }}>
                       <input type="radio" name="execStatus" value={o.v}
                         checked={execForm.status === o.v}
@@ -10973,6 +10975,7 @@ export default function PatientDetailPage() {
               )}
               {/* 随访内容 */}
               <FollowUpProgressHistory item={followUpDetail} />
+              <FollowUpOutcomeReview key={followUpDetail._id} item={followUpDetail} onSaved={updated => { setFollowUpDetail({ ...updated, staffId: followUpDetail.staffId, assignedTo: followUpDetail.assignedTo }); loadFollowUps() }} />
               {followUpDetail.taskRequirements && medicalProxyStage(followUpDetail) !== 'supervise' && !followUpDetail.formData?.generatedFromPostCheckupSupervision && (
                 <div>
                   <div style={{ fontSize: 11, color: '#1E6B50', marginBottom: 6, fontWeight: 700 }}>具体代办事项</div>

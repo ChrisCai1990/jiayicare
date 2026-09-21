@@ -2038,6 +2038,14 @@ router.post('/followups/:id/progress', staffAuth, checkPermission('followups', '
   } catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.message }); }
 });
 
+router.post('/followups/:id/outcome-review', staffAuth, async (req, res) => {
+  try {
+    const data = await require('../utils/followUpOutcomeReview').reviewOutcome({ FollowUp, Report: MedicalReport, User,
+      Draft: require('../models/ReportFollowUpDraft'), id: req.params.id, actor: req.staff, body: req.body });
+    res.json({ success: true, data });
+  } catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.message }); }
+});
+
 router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
   // 历史任务的 staffId/assignedTo 可能以字符串保存，而当前账号 _id 是 ObjectId。
   // 先按任务 ID 读取，再统一转成字符串校验；否则负责人明明正确也会被 Mongoose
@@ -2048,6 +2056,10 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     || String(followUp.staffId || '') === String(req.staff._id)
     || String(followUp.assignedTo || '') === String(req.staff._id);
   if (!canUpdate) return res.status(403).json({ success: false, message: '该任务未分配给当前账号，无法保存' });
+  if (req.body.status === 'completed' && followUp.status !== 'completed'
+    && require('../utils/followUpContinuity').requiresOutcomeReview(followUp)) {
+    return res.status(409).json({ success: false, message: '本计划需完成检查、报告审核及健康顾问结果处置后关闭；请先保存沟通过程，不要另建重复任务' });
+  }
   if (require('../utils/annualCheckupEvidence').preparationRole(followUp)) return res.status(409).json({ success: false, message: '请在体检准备卡片中保存实际方案或沟通结果，不能通过通用随访完成' });
 
   if (followUp.serviceTracking?.status === 'waiting') return res.status(409).json({ success: false, message: '关联服务正在执行，随访由服务结果自动更新；请处理服务流程中的当前岗位任务' });

@@ -3,7 +3,9 @@ const assert = require('node:assert/strict')
 const sift = require('sift').default
 const { createPreparationCompletion } = require('../src/utils/checkupPreparationCompletion')
 
-function fixture() {
+// Existing tests exercise the legacy completion writer in isolation. New policy
+// tests below use the production classifier, rather than masking a pending review.
+function fixture(requiresOutcomeReview = () => false) {
   const link = { _id: 'prep', servicePlanId: 's', patientId: 'p', annualPlanId: 'a', plannerTaskId: 'planner', status: 'active' }
   const service = { _id: 's', patientId: 'p', type: 'medical_assist', status: 'completed', initiationSource: 'staff', initiatedByStaff: 'staff',
     content: { serviceDomain: 'annual_checkup', workflowCompletedAt: new Date(), followUpPlans: [{ id: 'review' }, { id: 'final' }] } }
@@ -18,6 +20,7 @@ function fixture() {
   const q = value => ({ lean: async () => value })
   let failFinalWrite = false, changeBeforeWrite = false, failOrderWrite = false
   const sync = createPreparationCompletion({
+    requiresOutcomeReview,
     Handoff: { updateOne: async (filter, update) => {
       if (failFinalWrite && update.$set.completion.status === 'completed') { failFinalWrite = false; throw Error('lost connection') }
       if (sift(filter)(link)) Object.assign(link, update.$set)
@@ -45,6 +48,22 @@ function fixture() {
   return { link, service, planner, manager, review, final, tasks, order, sync,
     failWrite: () => { failFinalWrite = true }, failOrder: () => { failOrderWrite = true }, change: () => { changeBeforeWrite = true } }
 }
+
+test('production policy: service completion never substitutes for management result review', async () => {
+  const f = fixture(require('../src/utils/followUpContinuity').requiresOutcomeReview)
+  assert.equal(await f.sync.reconcile(f.link), false)
+  assert.equal(f.manager.status, 'planned'); assert.equal(f.link.completion.status, 'attention')
+  assert.match(f.link.completion.message, /结果处置/)
+})
+
+test('production policy: redeemed service closes but original management plan remains open', async () => {
+  const f = fixture(require('../src/utils/followUpContinuity').requiresOutcomeReview)
+  f.service.sourceOrderId = 'o'; f.service.status = 'active'
+  Object.assign(f.order, { totalUnits: 2, usedUnits: 1, status: 'scheduled', paymentStatus: 'paid',
+    redemptions: [{ servicePlanId: 's', handoffId: 'prep', finalTaskId: 'f', sequence: 1, redeemedBy: 'staff', redeemedAt: new Date() }] })
+  assert.equal(await f.sync.reconcile(f.link), false)
+  assert.equal(f.service.status, 'completed'); assert.equal(f.manager.status, 'planned'); assert.equal(f.order.usedUnits, 1)
+})
 test('completed exact service closes only original annual manager followup, replay is inert', async () => {
   const f = fixture(); assert.equal(await f.sync.reconcile(f.link), true)
   assert.equal(f.manager.status, 'completed'); assert.equal(f.link.completion.status, 'completed')
