@@ -2031,6 +2031,13 @@ router.post('/followups/:id/checkup-appointment-ai-draft', staffAuth, checkPermi
 });
 
 // ── PUT /api/staff/followups/:id ──────────────────────────────────
+router.post('/followups/:id/progress', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
+  try {
+    const data = await require('../utils/followUpProgress').saveProgress({ FollowUp, id: req.params.id, actor: req.staff, body: req.body });
+    res.json({ success: true, data });
+  } catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.message }); }
+});
+
 router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
   // 历史任务的 staffId/assignedTo 可能以字符串保存，而当前账号 _id 是 ObjectId。
   // 先按任务 ID 读取，再统一转成字符串校验；否则负责人明明正确也会被 Mongoose

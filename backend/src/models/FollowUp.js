@@ -17,6 +17,12 @@ const followUpSchema = new mongoose.Schema({
   content:      { type: String, default: '' },  // 随访内容记录
   plannedContent:  { type: String, default: '' }, // 下发时的任务要求，执行后仍保留
   executedContent: { type: String, default: '' }, // 实际随访/服务执行结果
+  progressRecords: { type: [{
+    requestId: { type: String, required: true },
+    content: { type: String, required: true },
+    staffId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
+    staffName: String, type: { type: String }, recordedAt: Date, nextContactAt: Date,
+  }], default: undefined }, // 只追加的沟通过程；不代表管理事项完成
   executedType:    { type: String, enum: ['phone', 'wechat', 'visit', 'video', 'other', ''], default: '' },
   // 服务事务标准交付/督导清单。执行人与督办人使用同一组 key，督办逐项核验执行结果。
   serviceChecklist: { type: mongoose.Schema.Types.Mixed, default: [] },

@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast, useStaff, can } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
+import FollowUpProgressFields, { FollowUpProgressHistory } from '../components/FollowUpProgressFields'
 import Pagination from '../components/Pagination'
 import MedicalAssistRequirementsCard from '../components/MedicalAssistRequirementsCard'
 import ServiceTaskChecklist, { normalizeServiceChecklist, summarizeServiceChecklist } from '../components/ServiceTaskChecklist'
@@ -105,6 +106,7 @@ function DetailModal({ item, onClose }) {
               <Row label="随访记录" value={item.executedContent} />
               <Row label="完成时间" value={item.completedAt ? formatChineseDateTime(item.completedAt) : ''} />
               <CheckupCompletionEvidence item={item} />
+              <FollowUpProgressHistory item={item} />
             </>
           )}
           {item.status === 'cancelled' && <Row label="取消原因" value={item.cancelReason} />}
@@ -240,6 +242,20 @@ export default function FollowUpsPage() {
   }
 
   const handleExec = async () => {
+    if (!execItem.taskRole && !execItem.workflowKey && execForm.status === 'in_progress') {
+      if (!execForm.content.trim()) { toast('请填写本次沟通情况'); return }
+      setExecSaving(true)
+      try {
+        await staffAPI.saveFollowUpProgress(execItem._id, { content: execForm.content.trim(), type: execForm.type,
+          requestId: execForm.requestId, updatedAt: execItem.updatedAt,
+          nextContactAt: execForm.nextContactAt ? new Date(execForm.nextContactAt).toISOString() : null })
+        toast('过程已保存，原随访计划继续跟进')
+        setExecItem(null)
+        load()
+      } catch (err) { toast(err.message || '保存失败') }
+      finally { setExecSaving(false) }
+      return
+    }
     const isBooking = isCheckupBookingTask(execItem)
     const isCheckupAppointmentBooking = isCheckupAppointmentBookingTask(execItem)
     const isReportCollection = isCheckupReportCollectionTask(execItem)
@@ -576,11 +592,12 @@ export default function FollowUpsPage() {
                   value={execForm.content}
                   onChange={e => setExecForm(f => ({ ...f, content: e.target.value }))} />
               </div>}
+              <FollowUpProgressFields item={execItem} form={execForm} setForm={setExecForm} />
               {!execItem.taskRole && <div>
                 <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 8 }}>{execItem.taskRole ? '事务状态' : '随访结果状态'}</label>
                 <div style={{ display: 'flex', gap: 16 }}>
                   {[
-                    { v: 'completed',   l: execItem.taskRole === 'supervisor' ? '✅ 已核对并闭环' : execItem.taskRole ? '✅ 事务已完成' : '✅ 已随访（圆满完成）' },
+                    { v: 'completed',   l: execItem.taskRole === 'supervisor' ? '✅ 已核对并闭环' : execItem.taskRole ? '✅ 事务已完成' : '事项已全部完成（不是仅完成沟通）' },
                     { v: 'in_progress', l: execItem.taskRole === 'supervisor' ? '🔄 有遗留，继续督办' : execItem.taskRole ? '🔄 事务处理中' : '🔄 随访中（未完成/未接通）' },
                   ].map(o => (
                     <label key={o.v} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14 }}>
