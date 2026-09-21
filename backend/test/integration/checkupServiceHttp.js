@@ -74,6 +74,25 @@ async function main() {
     check('Actual staff-initiation helper created a synthetic no-order service from fixture workflow configuration');
   }
   let service = await HealthPlan.findById(report.serviceId).lean();
+  // Isolated test input only: no payment API, gateway, real sale or notification.
+  // Attach before publishing/activating any stage, never retrofit a closed service.
+  if (process.argv.includes('--synthetic-paid-order') && !report.orderId) {
+    assert.ok(!service.pushedAt, 'Paid fixture requires a fresh service');
+    const order = await require('../../src/models/Order').create({ user: patient._id, serviceId: report.productId,
+      serviceName: '隔离双次体检核销（纯模拟，未真实付款）', orderType: 'service', status: 'scheduled',
+      paymentStatus: 'paid', tradeStatus: 'paid', servicePrice: 2, unitPrice: 1, totalUnits: 2,
+      note: 'SYNTHETIC PAYMENT STATE ONLY. No gateway or funds.' });
+    await HealthPlan.updateOne({ _id: service._id, pushedAt: null }, { $set: { sourceOrderId: order._id } });
+    report.orderId = String(order._id); save();
+    service = await HealthPlan.findById(report.serviceId).lean();
+    assert.equal(String(service.sourceOrderId), report.orderId);
+  }
+  if (report.orderId && !service.pushedAt) {
+    // Normal paid orders already have intake history before publishing. Use the
+    // existing patient-scoped reconciler, not a fabricated completed task.
+    await require('../../src/utils/orderWorkItem').reconcileInactiveOrderWorkItems(patient._id);
+    assert.equal(await FollowUp.countDocuments({ sourceType: 'order', sourceOrderId: report.orderId }), 1);
+  }
   if (withQuestionnaire && service.content?.checkupIntake?.status !== 'submitted') {
     assert.ok(report.questionnaireId, 'Use a fresh scenario with a bound questionnaire');
     const PushRecord = require('../../src/models/PushRecord');

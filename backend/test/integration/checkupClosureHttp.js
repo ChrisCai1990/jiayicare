@@ -63,6 +63,19 @@ async function main() {
     assert.ok((await FollowUp.findById(service.taskIds[stage])).executedContent);
     check(`Actual ${stage} route saved conclusion and completed task`);
   }
+  if (process.argv.includes('--await-redemption')) {
+    assert.ok(service.orderId);
+    const order = await require('../../src/models/Order').findById(service.orderId).lean();
+    assert.equal(order.totalUnits, 2); assert.equal(order.usedUnits, 0);
+    const pendingLink = await Handoff.findById(service.handoffId).lean();
+    assert.notEqual(pendingLink.completion?.status, 'completed');
+    const managers = await FollowUp.find({ patientId: session.patientId, sourceAnnualPlanId: prep.annualId,
+      sourceType: 'scheduled', sourceScheduleKey: `annual_checkup:${prep.targetDate}` }).lean();
+    assert.equal(managers.length, 1); assert.notEqual(managers[0].status, 'completed');
+    evidence.awaitingRedemption = { orderId: service.orderId, managerTaskId: String(managers[0]._id) }; save();
+    check('Final acceptance does not bypass the multi-unit redemption gate or complete manager followup');
+    return;
+  }
   assert.equal((await HealthPlan.findById(service.serviceId)).status, 'completed');
   const link = await Handoff.findById(service.handoffId).lean();
   evidence.completion = link.completion; save();

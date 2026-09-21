@@ -1,5 +1,11 @@
 # 可登录隔离环境：验收接续
 
+## 09-21 核销补验接续（最新）
+
+- 新清单C:/Users/huawei/AppData/Local/Temp/jiayicare-round-two-gu4B4J/session.json；四个HTTP脚本全过，详见ROUND_TWO_CASE_EVIDENCE.md最新节。双次模拟订单并发仅核销1次、余1次；原健管随访自动完成，实际页面余额/任务对应通过。仅fixture支付状态，无真实付款。
+- 首次2qaGuZ遗漏初始订单受理记录，证据保留；测试发布前补调用已有客户限定reconcile方法，再用全新gu4B4J复跑，不覆盖旧完成记录。
+- 后端79103未重启，无业务代码变化。浏览器1/tab3为规划师、新gu4B4J客户消费记录页，已markHandoff。自动任务保持暂停；下一步只补年度首次评估生成审核入口，不扩范围。
+
 ## 09-21 第2轮同案例页面与API
 
 - 新roundTwoCaseAudit.js <manifest> --verify-complete通过：七服务任务完成/岗位正确，原健管完成时间不变，四岗无本次服务待办；顾问/健管准备项目待办1→0。没有重跑旧脚本以覆盖历史结论。
