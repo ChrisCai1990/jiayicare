@@ -13,7 +13,7 @@ async function main() {
     const plan = await Plan.create({ patientId: session.patientId, staffId: session.accounts[0].id,
       type: 'medical_assist', status: 'active', title: '隔离条件草稿竞争-' + scenario,
       content: { note: 'original', workflowModules: [{ id: 'condition', mode: 'conditional' }], workflowModuleDecisions: [] } });
-    const snapshot = structuredClone(plan.content);
+    const snapshot = plan.toObject().content;
     if (scenario === 'other_content') await Plan.updateOne({ _id: plan._id }, { $set: { 'content.note': '人工新内容' } });
     else if (scenario !== 'normal') await Plan.updateOne({ _id: plan._id }, { $set: { 'content.workflowModuleDecisions': [{ id: 'condition', decision: scenario, evidence: '人工决定' }] } });
     const write = () => saveConditionalDrafts(Plan, plan, snapshot, [{ id: 'condition', decision: 'pending', evidence: '规则草稿' }]);
@@ -24,5 +24,17 @@ async function main() {
     assert.equal(saved.content.workflowModuleDecisions[0]?.decision, scenario === 'normal' ? 'pending' : scenario === 'other_content' ? undefined : scenario);
     console.log(JSON.stringify({ scenario, planId: plan._id, passed: true }));
   }
+  const concurrent = await Plan.create({ patientId: session.patientId, staffId: session.accounts[0].id,
+    type: 'medical_assist', status: 'active', title: '隔离条件草稿双写',
+    content: { reference: new mongoose.Types.ObjectId(), at: new Date(), workflowModuleDecisions: [] } });
+  const before = concurrent.toObject().content;
+  const results = await Promise.allSettled(['first', 'second'].map(evidence =>
+    saveConditionalDrafts(Plan, concurrent, before, [{ id: 'condition', decision: 'pending', evidence }])));
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+  assert.equal(results.find(result => result.status === 'rejected').reason.code, 'CONDITIONAL_DRAFT_CONFLICT');
+  const persisted = await Plan.findById(concurrent._id);
+  assert.equal(String(persisted.content.reference), String(before.reference));
+  assert.equal(persisted.content.at.toISOString(), before.at.toISOString());
+  console.log(JSON.stringify({ scenario: 'two_writers_bson_snapshot', planId: concurrent._id, passed: true }));
 }
 main().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => mongoose.disconnect());

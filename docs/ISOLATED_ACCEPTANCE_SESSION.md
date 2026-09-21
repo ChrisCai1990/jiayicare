@@ -1,5 +1,13 @@
 # 可登录隔离环境：验收接续
 
+## 09-21 11:15 条件目标保护接口回归及双写
+
+- 核实唯一startIsolatedAcceptance进程后重载，同fvvTxL/3000，新exec44023；启动确认清除继承凭证、禁止dotenv、外部HTTP/AI/子进程出口，Mongo仅27134，自动索引/后台关闭。
+- reportAuditSideEffects、auditedPlanItemHttp真实HTTP全通过；needed/not_needed/pending均无旧任务，pending正常写草稿。复查并发200/409且唯一Task/Review。脚本后rg无匹配使组合命令最终exit1，但两脚本均已通过，非测试失败。
+- conditionalDraftWrite新增双执行者同快照实际并发，一成功一CONDITIONAL_DRAFT_CONFLICT；ObjectId/Date保留。五场景通过，最新双写方案6ab0a0f155e69b9752e2790a。
+- 发现通用错误处理固定500，路由新增只捕获CONDITIONAL_DRAFT_CONFLICT返回409及code，其他错误仍抛出；此最后响应分支尚未重载或实际HTTP冲突触发，不宣称接口冲突验收完成。
+- 来源报告撤销竞争、自动安全恢复、全岗位页面仍待。本轮不部署、不改生产/真实订单，不重复申请已被拒绝的功能分支推送；生产专项授权不扩展到功能分支。
+
 ## 09-21 10:45 代诊补丁后回归与条件草稿目标保护
 
 - 隔离分支干净起步，代诊专项已单独生产发布f9fb958b，本心跳未操作生产；功能分支包含同补丁。隔离后端为exec3411/fvvTxL，前端5174。

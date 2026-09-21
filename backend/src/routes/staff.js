@@ -4546,7 +4546,13 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
       || intent.source.sourceHealthPlanId !== String(report.sourceHealthPlanId || ''))) {
       return res.status(409).json({ success: false, message: '复查待办来源已变更，请核对原审核记录，不自动改派' });
     }
-    const conditionalDrafts = await draftConditionalModulesFromAuditedReport(report, dispatchInput.abnormalItems || []);
+    let conditionalDrafts;
+    try {
+      conditionalDrafts = await draftConditionalModulesFromAuditedReport(report, dispatchInput.abnormalItems || []);
+    } catch (error) {
+      if (error.code !== 'CONDITIONAL_DRAFT_CONFLICT') throw error;
+      return res.status(409).json({ success: false, code: error.code, message: error.message });
+    }
     if (dispatchInput.abnormalItems?.length && !conditionalDrafts.hasConditionalModules) {
       try {
         await require('../utils/legacyReportReview').ensureLegacyReportReview({ Task, AbnormalReview, report, staff: intent?.staff || req.staff,
