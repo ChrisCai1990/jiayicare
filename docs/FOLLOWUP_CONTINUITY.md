@@ -4,6 +4,8 @@
 
 ## 第二部分最新进展（未部署）
 
+来源预选已实际验证：后端42063，followUpCandidatesHttp同主session既有合成服务验证1份明确关联已审报告、健管403、无来源空、读接口不写原任务。computer-use顾问详情仅对应报告预选，其他报告不勾选，后续安排/完整资料声明不默认，结案按钮禁用，未提交结案。证据主session/followup-candidates-http.json；任务6ab0f76e2cdf8184a7f152a8。仅HTTP/页面来源预选通过，合并审核及跨文档保护仍待。
+
 报告预选新增：GET /staff/followups/:id/outcome-candidates仅所属顾问/superadmin可读；沿FollowUpServiceLink或精确年度冻结排期的唯一准备任务/active承接读取服务ID，再查同客户已审核报告。仅当前版本且已发布审核草稿可作后续候选，唯一时预选；无明确来源不猜测。只减少选择，不自动确认资料齐全/无需继续，也不关闭原计划。29项针对性测试和1900模块构建通过；待重载后实际API/页面验证（24274未加载本次改动）。
 
 兼容实测完成：后端24274已加载补丁；followUpHelpHttp实际客户认证/健管登录通过，求助保留状态和服务锁，禁止客户完成/已关闭重开，等待期间保存过程。computer-use健管患者页实际追加第二条沟通，重开显示两次过程，仍“随访中”，无完成选项。证据主隔离session/followup-help-http.json，客户6aaf5f24ffc92a5f30a5d2ab、任务6ab0f0130e930fd7ee7f26ae。认证令牌仅隔离启动器生成、2小时有效，不输出服务端密钥，不新增生产认证入口。此验证不等于报告自动关联/真实AI/全链完成。
