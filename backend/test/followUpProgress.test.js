@@ -35,3 +35,10 @@ for (const patch of [{ status: 'completed' }, { status: 'cancelled' }, { aiStatu
 }
 test('creator cannot edit reassigned execution progress', async () => { const s = setup(); s.args.actor._id = 'advisor'; await assert.rejects(saveProgress(s.args), { statusCode: 403 }); });
 test('invalid next date rejected before writing', async () => { const s = setup(); s.args.body.nextContactAt = 'invalid'; await assert.rejects(saveProgress(s.args), { statusCode: 400 }); assert.ok(!s.get().progressRecords); });
+test('service waiting permits original plan notes without unlocking service state', async () => {
+  const s = setup({ continuityRequired: true, isBlocked: true, serviceTracking: { status: 'waiting', revision: 2 } });
+  const row = await saveProgress(s.args);
+  assert.equal(row.status, 'in_progress'); assert.equal(row.isBlocked, true);
+  assert.deepEqual(row.serviceTracking, { status: 'waiting', revision: 2 });
+  assert.equal(row.progressRecords.length, 1);
+});

@@ -2509,7 +2509,9 @@ export default function PatientDetailPage() {
       setShowMessageModal(true)
       return
     }
-    setExecItem(f)
+    // A service lock blocks service execution, not contact notes on the original plan.
+    setExecItem(canRecordProgress(f) && requiresOutcomeReview(f) && f.serviceTracking?.status === 'waiting'
+      ? { ...f, isBlocked: false } : f)
     const checklist = checkupConclusionStage(f) ? [] : normalizeServiceChecklist(f.serviceChecklist, f.taskPurposes, f.dependsOnTaskId?.serviceChecklist)
     const orderRequirement = f.formData?.planSnapshot?.serviceContent || f.sourceOrderId?.serviceRequirements || ''
     const inferredInsuranceOutcome = /支付方式：直付/.test(orderRequirement)
