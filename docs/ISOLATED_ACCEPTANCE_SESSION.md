@@ -1,5 +1,14 @@
 # 可登录隔离环境：验收接续
 
+## 09-21 第1轮收尾，接第2轮
+
+- 隔离后端exec79103，原fvvTxL数据库，保持外部出口拦截和后台扫描禁用；前端未变。测试显式调用生产scan函数，不是等待24小时运行。自动任务仍暂停，无生产变更/推送。
+- legacyReportReview新占用标记recoveryVersion1/kind；恢复不先释放源锁，而是稳定ID只插入不覆盖两个目标，确认后同时完成占用/持久意图。无版本/旧无保护目标不恢复。
+- AbnormalReview新派生记录标记auditDispatchVersion1；删除API在源running时409，完成后保留隐藏删除凭据；查询/计数隐藏，物理删除保护避免迟到upsert复活。人工创建复查仍沿用原删除。客户Task不重开、不覆盖人工结论；本次不扩展取消联动规则。
+- legacyDispatchRecovery.js真实exit33三位置及延迟活worker、恢复写后回执故障再重试通过。真实HTTP删除占用409/恢复后200，普通人工复查删除回归通过。最新证据报告6ab0d1062e5a7e2e9202fd87、6ab0d1072e5a7e2e9202fda8、6ab0d1082e5a7e2e9202fdc9、6ab0d1092e5a7e2e9202fdea、6ab0d1092e5a7e2e9202fe08。
+- reportAuditSideEffects/auditedPlanItemHttp/proxyPlannerDispatch/legacyReviewStaleSource/conditionalClaimRecovery及新恢复脚本通过，另reportDispatchScan通过；16项相关单测通过。旧脚本日志的“automatic recovery NOT implemented”指该脚本未覆盖自动恢复，不是当前全局状态。
+- 下一步第2轮同一完整案例岗位API/页面验收；不要重复展开第一轮功能。历史无版本占用保留核查，不迁移。真实AI/收费核销仍未验，不把模拟输入与本地API成功说成生产成功。
+
 ## 09-21 手动推进：扫描接续已接入并重载
 
 - 后端exec13519替代旧进程，仍fvvTxL/session.json、127.0.0.1:3000及同一虚构数据库；启动器凭证清空/外部出口拦截/后台任务关闭均保留。浏览器旧JWT失效需重新登录。

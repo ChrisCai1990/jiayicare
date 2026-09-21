@@ -42,9 +42,12 @@ async function scan({ now = Date.now, reportIds } = {}) {
       if (row.legacyReviewWrite?.status === 'running') {
         const started = new Date(row.legacyReviewWrite.startedAt).getTime();
         if (!Number.isFinite(started) || started > now() - 5 * 60 * 1000
-            || !await recoverConditionalClaim(row)) { result.retained++; continue; }
+            || !(row.legacyReviewWrite.kind === 'legacy_review'
+              ? await require('./legacyReportReview').recoverLegacyClaim(row)
+              : await recoverConditionalClaim(row))) { result.retained++; continue; }
       }
       const fresh = await Report.findById(row._id);
+      if (fresh?.legacyDispatchIntent?.status === 'completed') { result.completed++; continue; }
       if (!fresh || fresh.legacyDispatchIntent?.status !== 'pending') continue;
       await dispatch(fresh);
       const after = await Report.findById(row._id).lean();

@@ -6314,6 +6314,13 @@ router.patch('/abnormal-reviews/:id', staffAuth, checkPermission('abnormal_revie
 
 // DELETE /api/staff/abnormal-reviews/:id
 router.delete('/abnormal-reviews/:id', staffAuth, checkPermission('abnormal_review', 'delete'), async (req, res) => {
+  const review = await AbnormalReview.findById(req.params.id).lean();
+  if (review?.auditDispatchVersion === 1) {
+    const source = await MedicalReport.findById(review.reportId).select('legacyReviewWrite').lean();
+    if (source?.legacyReviewWrite?.status === 'running') return res.status(409).json({ success: false, message: '报告派单尚未完成，请稍后再删除复查记录' });
+    await AbnormalReview.updateOne({ _id: review._id, auditDispatchDeletedAt: null }, { $set: { auditDispatchDeletedAt: new Date() } });
+    return res.json({ success: true });
+  }
   await AbnormalReview.findByIdAndDelete(req.params.id);
   res.json({ success: true });
 });
