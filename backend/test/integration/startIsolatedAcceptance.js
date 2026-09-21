@@ -34,6 +34,9 @@ async function main() {
   if (resume) {
     const patient = await User.findById(resume.patientId).lean();
     if (patient?.name !== '隔离验收客户（纯虚构）') throw new Error('Resume requires synthetic patient');
+    // Local synthetic customer authentication; never export server signing secret.
+    fs.writeFileSync(path.join(runtime, 'customer-test-token.json'), JSON.stringify({ patientId: String(patient._id),
+      token: require('jsonwebtoken').sign({ id: String(patient._id) }, process.env.JWT_SECRET, { expiresIn: '2h' }) }), { mode: 0o600 });
     console.log(`ISOLATED_ACCEPTANCE_SESSION=${path.resolve(resumePath)}`);
     require('../../src/index');
     return;
