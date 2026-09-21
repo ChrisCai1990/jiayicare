@@ -7,6 +7,8 @@ const { syncAnnualPlanFollowUps, dedupeAnnualPlanFollowUps } = require('./annual
 async function scanAndSyncScheduledWindow() {
   try { await require('./reportPlanItemQueue').runtime().scan(); }
   catch (error) { console.error('[report-plan-item] recovery scan failed', error.message); }
+  try { await require('./reportDispatchQueue').scan(); }
+  catch (error) { console.error('[report-dispatch] recovery scan failed', error.message); }
   require('./checkupSuggestionQueue').wakeCheckupSuggestionQueue();
   await require('./followUpServiceLink').safeReconcileServiceLinks({});
   await require('./annualCheckupEvidence').safeReconcileCheckupPreparation({});

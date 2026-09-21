@@ -1,5 +1,13 @@
 # 可登录隔离环境：验收接续
 
+## 09-21 手动推进：扫描接续已接入并重载
+
+- 后端exec13519替代旧进程，仍fvvTxL/session.json、127.0.0.1:3000及同一虚构数据库；启动器凭证清空/外部出口拦截/后台任务关闭均保留。浏览器旧JWT失效需重新登录。
+- reportConditionalDrafts从路由原样抽出；reportDispatchQueue供审核与既有每日扫描共用，completed不重复消费，仅有明确持久意图的新条件占用可安全恢复。无意图历史报告、来源不符、撤销、无版本旧占用不派单；旧Task/Review running不强清。
+- reportDispatchScan.js <manifest>真实子进程exit32（目标写前/后）、双扫描、鲜活锁不接管、人工not_needed保留、完成重扫无变更，以及未执行旧复查意图唯一派单通过。报告证据：6ab0ced75ae0621896557e71、6ab0ced85ae0621896557e9a、6ab0ced85ae0621896557eb8；另外三项拒绝证据保留。实际调用生产扫描函数，使用虚构输入和测试时钟，不是等待24小时或真实AI验收。
+- 重载后reportAuditSideEffects、auditedPlanItemHttp、proxyPlannerDispatch三份实际HTTP脚本通过；代诊订单为隔离合成6ab0cf37cd968649bd7b6d4c。reportPlanItemQueue/reportWriteConflict/reportAuditGate共7项通过。前端未修改未重构建。
+- 尚余旧复查Task/Review中断安全恢复（含删除后迟到插入风险）、同案例全岗位验收，不能宣称第1轮/完整闭环完成。未部署/推送；用户已暂停自动任务，后续手动继续。
+
 ## 09-21 14:05 第1轮条件中断恢复屏障
 
 - conditionalReportClaim领取递增既有planItemWriteEpoch并记录fenceVersion1，写目标前逐个推进既有reportItemWriteFences；conditionalDraftWrite接收claim并核对epoch，路由与测试预加载器传递claim。共享epoch受原两队列互斥保护。
