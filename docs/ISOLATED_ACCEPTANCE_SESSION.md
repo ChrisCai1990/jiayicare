@@ -1,5 +1,13 @@
 # 可登录隔离环境：验收接续
 
+## 09-21 12:20 条件草稿竞争真实HTTP验收
+
+- 新conditionalConflictPreload.js仅明确RUN_ISOLATED_ACCEPTANCE及随机隔离manifest允许载入；实际调用再校验回环Mongo URI、数据库名、唯一合成客户名/方案名。无业务测试开关或生产导入。
+- 通过node -r预加载至既有隔离启动器，仍清除生产凭证并阻断外部出口。在目标CAS前写入人工not_needed及备注，继续调用原始writer；没有伪造模型返回/HTTP响应。
+- conditionalConflictHttp.js实际登录及审核API：第一次409/CONDITIONAL_DRAFT_CONFLICT，审核已保存且意图pending；显式第二次200/意图completed，人工决定与备注保持，旧Task/Review均0。报告6ab0b09021bb374e51ae2a84，方案6ab0b09021bb374e51ae2a80。输入合成、确定性时序，不是自然双请求竞速或自动恢复。
+- 验收后确认停止唯一钩子后端，恢复正常无预加载隔离后端exec25665，数据库/manifest仍fvvTxL；reportAuditSideEffects回归通过。JWT已更新，浏览器需重新登录。
+- 本轮仅新增隔离测试和证据，本地提交。来源报告撤销保护、自动安全恢复和完整全岗位闭环仍待；未操作生产、未绕过功能分支推送审批。
+
 ## 09-21 11:50 待恢复提醒真实浏览器验收
 
 - 使用computer-use实际IAB tab3，隔离健管登录localhost:5174，从本人工作台“报告复查派单待恢复”打开报告详情；非直接深链替代入口测试。
