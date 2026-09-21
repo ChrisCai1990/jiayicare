@@ -49,7 +49,7 @@ export default function ServiceTasksPanel() {
 
   useEffect(() => {
     const refresh = () => staffAPI.getServiceTasks({ status: 'active', includeFuture: '1', limit: 100 })
-      .then(r => setItems((r.data || []).filter(task => task.serviceTracking?.status !== 'waiting')))
+      .then(r => setItems((r.data || []).filter(task => task.taskRole === 'supervisor' || task.serviceTracking?.status !== 'waiting')))
       .catch(() => {})
     refresh()
     const refreshIfVisible = () => { if (document.visibilityState === 'visible') refresh() }
@@ -168,11 +168,11 @@ export default function ServiceTasksPanel() {
         })}
       </div>
       <div className="card-body" style={{ padding: '8px 20px' }}>
-        {visibleServices.slice(0, 10).map((service, index) => {
+        {visibleServices.map((service, index) => {
           const task = service.task
           const isFuture = task.date && new Date(task.date).getTime() > Date.now()
           const isWaitingPrevious = !!task.isBlocked
-          const progress = checkupProgress(task) || medicationProxyProgress(task) || medicalEscortProgress(task)
+          const progress = task.taskRole === 'supervisor' ? null : checkupProgress(task) || medicationProxyProgress(task) || medicalEscortProgress(task)
           const isOutpatientEscortProgress = isWaitingPrevious && task.taskRole === 'supervisor' && /门诊一站式.*检查及专家门诊陪诊与归档/.test(task.theme || '')
           const isOutpatientReportAuditWait = isWaitingPrevious && task.taskRole === 'executor' && /门诊一站式.*查看陪诊资料并制定随访计划/.test(task.theme || '')
           return (
@@ -193,6 +193,11 @@ export default function ServiceTasksPanel() {
               <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>
                 {task.patientId?.name || '未知'}{isOutpatientReportAuditWait ? ' · 等待健管专员审核病历与检验检查单' : isWaitingPrevious && task.dependsOnTaskId?.assignedTo?.name ? ` · 当前执行：${task.dependsOnTaskId.assignedTo.name}` : task.assignedTo?.name ? ` · 负责人：${task.assignedTo.name}` : ''}
               </div>
+              {task.taskRole === 'supervisor' && <div style={{ fontSize: 12, color: '#52685D', marginTop: 5 }}>
+                <div>已生成执行任务：完成 {task.supervisionProgress?.completed ?? 0} / {task.supervisionProgress?.total ?? 0}（非服务完成率）</div>
+                {(task.supervisionProgress?.current || []).map(row => <div key={row.id}>当前环节：<b>{row.label}</b> · 处理人：{row.assignee}{row.blocked ? ' · 等待解锁' : ''}</div>)}
+                <div>{task.supervisionProgress?.message || '进度待核对，未推断服务已完成'}</div>
+              </div>}
               {progress && <div style={{ fontSize: 12, color: '#52685D', marginTop: 3 }}>当前阶段：<b>{progress.label}</b>　下一步：{progress.next}</div>}
               {progress?.steps && <div style={{ marginTop: 7, maxWidth: 680 }}>
                 <div style={{ height: 7, borderRadius: 99, background: '#E3ECE7', overflow: 'hidden' }}>

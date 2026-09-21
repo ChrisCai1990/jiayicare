@@ -650,6 +650,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     if (includeFuture !== '1' && task.remindAt && task.remindAt > now) return false;
     return true;
   }).slice(0, requestedLimit);
+  const supervisionProgress = await require('../utils/supervisionProgress').loadSupervisionProgress(tasks, FollowUp);
   res.json({ success: true, data: tasks.map(task => {
     const item = withSignedServiceChecklist(task);
     const isLegacyInsurance = item.sourceType === 'scheduled' && (item.tags || []).includes('保险服务');
@@ -659,7 +660,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
         item.serviceChecklist = String(item.plannedContent || item.content || '').split('\n').map((purpose, index) => ({ key: `insurance_${index}`, purpose: purpose.trim() })).filter(row => row.purpose);
       }
     }
-    return { ...item, taskRequirements: followUpTaskRequirements(task), taskPurposes: followUpTaskPurposes(task) };
+    return { ...item, supervisionProgress: supervisionProgress.get(String(task._id)), taskRequirements: followUpTaskRequirements(task), taskPurposes: followUpTaskPurposes(task) };
   }) });
 });
 
