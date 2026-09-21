@@ -16,7 +16,9 @@ function fixture() {
   return { args, draft, report, task, noService: () => { service = [] }, noNext: () => { next = [] } };
 }
 test('complete exact published plan and service proof closes original', async () => { const f = fixture(); const r = await reviewOutcome(f.args); assert.equal(r.status, 'completed'); assert.deepEqual(r.outcomeReview.nextFollowUpIds, ['next']); });
-test('explicit no-further decision needs no fabricated successor', async () => { const f = fixture(); f.args.body.decision = 'no_further'; const r = await reviewOutcome(f.args); assert.deepEqual(r.outcomeReview.nextFollowUpIds, []); });
+test('explicit no-further decision needs no fabricated successor', async () => { const f = fixture(); f.args.body.decision = 'no_further'; delete f.args.body.reportDraftId; const r = await reviewOutcome(f.args); assert.deepEqual(r.outcomeReview.nextFollowUpIds, []); });
+test('merged no-further retains approved empty draft provenance', async () => { const f = fixture(); f.args.body.decision = 'no_further'; f.draft.followUpDrafts = []; const r = await reviewOutcome(f.args); assert.equal(r.outcomeReview.sourceDraftId, 'd'); });
+test('no-further cannot bypass a selected draft with future actions', async () => { const f = fixture(); f.args.body.decision = 'no_further'; await assert.rejects(reviewOutcome(f.args), { statusCode: 409 }); });
 for (const [name, mutate] of Object.entries({
   'missing successor': f => f.noNext(), 'missing service handoff': f => f.noService(),
   'unpublished draft': f => { f.draft.followUpPublication.status = 'pending' },

@@ -17,6 +17,13 @@ async function reviewOutcome({ FollowUp, Report, User, Draft, id, actor, body, n
   const reports = await Report.find({ _id: { $in: reportIds }, user: task.patientId, audit_status: 'audited' }).lean();
   if (reports.length !== reportIds.length) throw fail('报告不属于本客户、缺失或尚未审核');
   let nextTasks = [], sourceDraft = null;
+  if (body.decision === 'no_further' && body.reportDraftId) {
+    sourceDraft = await Draft.findById(body.reportDraftId).lean();
+    if (!sourceDraft || !same(sourceDraft.patientId, task.patientId) || !reportIds.includes(String(sourceDraft.reportId))
+      || sourceDraft.status !== 'approved' || !sourceDraft.advisorReviewedBy || !sourceDraft.advisorReviewedAt
+      || sourceDraft.followUpPublication?.status !== 'published' || !Array.isArray(sourceDraft.followUpDrafts) || sourceDraft.followUpDrafts.length
+      || !require('./reportFollowUpSource').isReportSourceCurrent(sourceDraft, reports.find(r => same(r._id, sourceDraft.reportId)))) throw fail('无后续行动结论尚未完成有效审核，原计划保持开放');
+  }
   if (body.decision === 'new_plan') {
     sourceDraft = await Draft.findById(body.reportDraftId).lean();
     if (!sourceDraft || !same(sourceDraft.patientId, task.patientId) || !reportIds.includes(String(sourceDraft.reportId))
