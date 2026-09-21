@@ -3340,7 +3340,7 @@ async function draftConditionalModulesFromAuditedReport(report, explicitAbnormal
   const plans = await HealthPlan.find(linkedFilter);
   const conditionalPlans = plans.filter(plan => (plan.content?.workflowModules || plan.content?.followUpPlans || []).some(item => item.mode === 'conditional'));
   if (!conditionalPlans.length) return { drafted: 0, hasConditionalModules: false };
-  return require('../utils/conditionalReportClaim').withConditionalReportClaim(report, conditionalPlans.map(plan => plan._id), async () => {
+  return require('../utils/conditionalReportClaim').withConditionalReportClaim(report, conditionalPlans.map(plan => plan._id), async (claim) => {
   let drafted = 0, hasConditionalModules = false;
   for (const plan of plans) {
     const c = plan.content || {};
@@ -3369,7 +3369,7 @@ async function draftConditionalModulesFromAuditedReport(report, explicitAbnormal
       changed = true; drafted += 1;
     }
     if (changed) {
-      await require('../utils/conditionalDraftWrite').saveConditionalDrafts(HealthPlan, plan, originalContent, previous);
+      await require('../utils/conditionalDraftWrite').saveConditionalDrafts(HealthPlan, plan, originalContent, previous, claim);
     }
   }
   return { drafted, hasConditionalModules };

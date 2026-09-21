@@ -7,7 +7,7 @@ assert.equal(session.api, 'http://127.0.0.1:3000/api');
 assert.match(session.database, /^jiayicare_acceptance_[a-f0-9]{32}$/);
 const writer = require('../../src/utils/conditionalDraftWrite');
 const original = writer.saveConditionalDrafts;
-writer.saveConditionalDrafts = async (Model, plan, snapshot, decisions) => {
+writer.saveConditionalDrafts = async (Model, plan, snapshot, decisions, claim) => {
   if (plan.title === '隔离HTTP条件竞争（仅测试）') {
     assert.equal(process.env.MONGODB_URI, `mongodb://127.0.0.1:27134/${session.database}`);
     assert.equal(Model.db.name, session.database);
@@ -20,5 +20,5 @@ writer.saveConditionalDrafts = async (Model, plan, snapshot, decisions) => {
       'content.note': '并发人工修改保留',
     } });
   }
-  return original(Model, plan, snapshot, decisions);
+  return original(Model, plan, snapshot, decisions, claim);
 };

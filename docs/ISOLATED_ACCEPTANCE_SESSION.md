@@ -1,5 +1,12 @@
 # 可登录隔离环境：验收接续
 
+## 09-21 14:05 第1轮条件中断恢复屏障
+
+- conditionalReportClaim领取递增既有planItemWriteEpoch并记录fenceVersion1，写目标前逐个推进既有reportItemWriteFences；conditionalDraftWrite接收claim并核对epoch，路由与测试预加载器传递claim。共享epoch受原两队列互斥保护。
+- recoverConditionalClaim只接管明确pending意图、kind conditional_drafts、fenceVersion1、有非空目标列表的新占用；原token/epoch CAS领取，再推进所有目标屏障，最后写interrupted解锁，意图仍pending。失败保持占用，旧无版本/无意图不接管。尚无每日扫描调用。
+- conditionalClaimRecovery真实Mongo验证双恢复者仅一成功、旧执行者写拒绝、新占用可写，原来源四项回归通过。新增真实无生产凭证子进程在目标写前/写后exit31，恢复成功且既有草稿不改；报告6ab0c86c68cb5872ded2cde7、6ab0c86d68cb5872ded2cdf5。不是完整自动恢复闭环。
+- 本轮未重载后端（仍exec98143），下一轮重载并回归，继续既定第1轮安全恢复，不扩展功能。旧Task/Review恢复和扫描仍待；第2轮未开始。本地提交，未部署/推送，未修改生产。
+
 ## 09-21 13:05 三轮范围收敛；第1轮条件来源保护
 
 - 以docs/THREE_ROUND_ACCEPTANCE.md为当前范围，自动任务automation保持原频率但更新三轮/排除营养运动中医，不扩张功能。
