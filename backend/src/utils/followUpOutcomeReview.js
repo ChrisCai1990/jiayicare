@@ -1,12 +1,15 @@
 const { requiresOutcomeReview } = require('./followUpContinuity');
 const fail = (message, statusCode = 409) => Object.assign(new Error(message), { statusCode });
 const same = (a, b) => String(a || '') === String(b || '');
-async function reviewOutcome({ FollowUp, Report, User, Draft, id, actor, body, now = new Date() }) {
+async function reviewOutcome({ FollowUp, Report, User, Draft, id, actor, body, now = new Date(), fence = require('./outcomeEvidenceFence').fencedClose }) {
   const task = await FollowUp.findById(id).lean();
   if (!task) throw fail('随访不存在', 404);
   const patient = await User.findById(task.patientId).lean();
   if (!patient || (actor.role !== 'superadmin' && (actor.role !== 'familyDoctor' || !same(patient.assignedFamilyDoctor, actor._id)))) throw fail('仅所属健康顾问可确认结果处置', 403);
-  if (task.status === 'completed' && task.outcomeReview) return task;
+  if (task.status === 'completed' && task.outcomeReview) {
+    if (task.outcomeClosureIntent?.status === 'completed') await require('./outcomeEvidenceFence').releaseEvidence({ FollowUp, Report, Draft }, task.outcomeClosureIntent);
+    return task;
+  }
   if (!requiresOutcomeReview(task) || !['planned', 'in_progress', 'missed'].includes(task.status) || task.aiStatus === 'pending') throw fail('当前计划不能进行结果处置');
   if (new Date(body.updatedAt).getTime() !== new Date(task.updatedAt).getTime()) throw fail('计划进度已更新，请刷新后审核');
   const note = String(body.note || '').trim();
@@ -16,7 +19,7 @@ async function reviewOutcome({ FollowUp, Report, User, Draft, id, actor, body, n
   if (!reportIds.length || reportIds.length > 30) throw fail('请关联本次全部报告', 400);
   const reports = await Report.find({ _id: { $in: reportIds }, user: task.patientId, audit_status: 'audited' }).lean();
   if (reports.length !== reportIds.length) throw fail('报告不属于本客户、缺失或尚未审核');
-  let nextTasks = [], sourceDraft = null;
+  let nextTasks = [], sourceDraft = null, serviceTasks = [];
   if (body.decision === 'no_further' && body.reportDraftId) {
     sourceDraft = await Draft.findById(body.reportDraftId).lean();
     if (!sourceDraft || !same(sourceDraft.patientId, task.patientId) || !reportIds.includes(String(sourceDraft.reportId))
@@ -41,6 +44,7 @@ async function reviewOutcome({ FollowUp, Report, User, Draft, id, actor, body, n
       const requests = await FollowUp.find({ patientId: task.patientId, sourceType: 'report_followup', sourceId: sourceDraft._id,
         assessmentActionKey: { $in: serviceKeys }, status: { $ne: 'cancelled' }, aiStatus: 'approved', taskRole: 'supervisor' }).lean();
       if (requests.length !== serviceKeys.length || requests.some(t => !t.assignedTo)) throw fail('新计划的服务承接任务未完整落地，原计划保持开放');
+      serviceTasks = requests;
     }
   }
   // The advisor attests to the exact report snapshots below. Later report
@@ -48,9 +52,8 @@ async function reviewOutcome({ FollowUp, Report, User, Draft, id, actor, body, n
   const proof = { decision: body.decision, note, checksComplete: true, reviewedBy: actor._id, reviewedAt: now,
     reports: reports.map(r => ({ reportId: r._id, updatedAt: r.updatedAt, sourceSequence: r.followUpSourceEvent?.sequence })),
     sourceDraftId: sourceDraft?._id || null, nextFollowUpIds: nextTasks.map(t => t._id) };
-  const updated = await FollowUp.findOneAndUpdate({ _id: task._id, patientId: task.patientId, updatedAt: task.updatedAt, status: task.status,
-    outcomeReview: null }, { $set: { status: 'completed', completedAt: now, completedBy: 'staff', isBlocked: false, outcomeReview: proof }, $inc: { __v: 1 } }, { new: true });
-  if (!updated) throw fail('计划已更新或结果已处理，请刷新核对');
-  return updated;
+  return fence({ models: { FollowUp, Report, Draft }, task, actor, body, now, proof,
+    evidence: [...reports.map(row => ({ model: 'Report', row })), ...(sourceDraft ? [{ model: 'Draft', row: sourceDraft }] : []),
+      ...[...nextTasks, ...serviceTasks].map(row => ({ model: 'FollowUp', row }))] });
 }
 module.exports = { reviewOutcome };

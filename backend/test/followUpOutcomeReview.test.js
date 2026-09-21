@@ -7,7 +7,7 @@ function fixture() {
   const draft = { _id: 'd', patientId: 'p', reportId: 'r', status: 'approved', advisorReviewedBy: 'a', advisorReviewedAt: new Date(), followUpPublication: { status: 'published' },
     sourceSequence: 1, sourceKey: `r:1:${sourceDigest(report)}`, followUpDrafts: [{ date: '2026-10-01', requiresService: true }] };
   let service = [{ _id: 'service', assignedTo: 'planner' }], next = [{ _id: 'next', assessmentActionKey: 'd:dynamic:0:2026-10-01', assignedTo: 'hm' }];
-  const args = { id: 't', actor: { _id: 'a', role: 'familyDoctor' }, body: { updatedAt: task.updatedAt, checksComplete: true, note: '已核对', decision: 'new_plan', reportIds: ['r'], reportDraftId: 'd' },
+  const args = { fence: async ({ task, proof }) => ({ ...task, status: 'completed', outcomeReview: proof }), id: 't', actor: { _id: 'a', role: 'familyDoctor' }, body: { updatedAt: task.updatedAt, checksComplete: true, note: '已核对', decision: 'new_plan', reportIds: ['r'], reportDraftId: 'd' },
     User: { findById: () => ({ lean: async () => ({ assignedFamilyDoctor: 'a' }) }) },
     Report: { find: () => ({ lean: async () => report.audit_status === 'audited' ? [report] : [] }) },
     Draft: { findById: () => ({ lean: async () => draft }) },

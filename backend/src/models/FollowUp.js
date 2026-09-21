@@ -90,6 +90,8 @@ const followUpSchema = new mongoose.Schema({
   reviewRole: { type: String, enum: ['familyDoctor', 'nutritionist', 'medicalAssistant', 'healthPlanner', null], default: null },
 }, { timestamps: true });
 
+followUpSchema.add({ outcomeClosureIntent: { type: mongoose.Schema.Types.Mixed, default: null } });
+followUpSchema.plugin(require('../utils/outcomeEvidenceFence').outcomeEvidenceFence);
 followUpSchema.index({ staffId: 1, date: -1 });
 followUpSchema.index({ assessmentActionKey: 1 }, { unique: true, sparse: true });
 followUpSchema.index({ annualDispatchKey: 1 }, { unique: true, sparse: true });

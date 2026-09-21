@@ -17,6 +17,7 @@ const schema = new mongoose.Schema({
   advisorReviewedAt: Date,
   auditLog: { type: [mongoose.Schema.Types.Mixed], default: [] },
 }, { timestamps: true, optimisticConcurrency: true });
+schema.plugin(require('../utils/outcomeEvidenceFence').outcomeEvidenceFence);
 schema.index({ 'followUpAutomation.status': 1, status: 1 });
 schema.index({ reportId: 1, sourceSequence: -1 });
 module.exports = mongoose.model('ReportFollowUpDraft', schema);
