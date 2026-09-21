@@ -2038,6 +2038,15 @@ router.post('/followups/:id/progress', staffAuth, checkPermission('followups', '
   } catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.message }); }
 });
 
+router.get('/followups/:id/outcome-candidates', staffAuth, async (req, res) => {
+  try {
+    const data = await require('../utils/followUpOutcomeCandidates').outcomeCandidates({ FollowUp, User, Report: MedicalReport,
+      Link: require('../models/FollowUpServiceLink'), Handoff: require('../models/CheckupPreparationHandoff'),
+      Draft: require('../models/ReportFollowUpDraft'), id: req.params.id, actor: req.staff });
+    res.json({ success: true, data });
+  } catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.message }); }
+});
+
 router.post('/followups/:id/outcome-review', staffAuth, async (req, res) => {
   try {
     const data = await require('../utils/followUpOutcomeReview').reviewOutcome({ FollowUp, Report: MedicalReport, User,
