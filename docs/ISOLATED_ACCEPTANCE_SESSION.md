@@ -1,5 +1,13 @@
 # 可登录隔离环境：验收接续
 
+## 09-21 13:05 三轮范围收敛；第1轮条件来源保护
+
+- 以docs/THREE_ROUND_ACCEPTANCE.md为当前范围，自动任务automation保持原频率但更新三轮/排除营养运动中医，不扩张功能。
+- conditionalReportClaim复用来源legacyReviewWrite写/删互斥，按原已审核/患者/关联/updatedAt领取，记录kind和目标方案IDs。仅存在条件模块才领取；正常完成释放，明确目标CAS未命中释放，未知错误不解锁。无超时抢占，自动安全恢复未实现。
+- conditionalReportClaim.js真实Mongo四场景通过：撤销在前不执行回调；运行中撤销/删除/双领取拒绝；CAS冲突释放；未知错误锁定。报告6ab0ba1cd2c2109e18118b74/78/81/86。合成错误不是硬退出恢复证明。
+- 隔离后端重载至exec98143/fvvTxL，清凭证/阻断外部出口不变；reportAuditSideEffects实际HTTP回归全部通过，条件三态无旧Task/Review。本轮无页面改动。
+- 待续：第1轮剩余安全恢复及扩大队列竞争验证；完成后进入同案例多岗完整回归，不重新扩展营养/运动/中医。不部署生产、不推送被拒绝的功能分支。
+
 ## 09-21 12:20 条件草稿竞争真实HTTP验收
 
 - 新conditionalConflictPreload.js仅明确RUN_ISOLATED_ACCEPTANCE及随机隔离manifest允许载入；实际调用再校验回环Mongo URI、数据库名、唯一合成客户名/方案名。无业务测试开关或生产导入。

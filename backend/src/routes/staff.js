@@ -3338,6 +3338,9 @@ async function draftConditionalModulesFromAuditedReport(report, explicitAbnormal
     ? { _id: report.sourceHealthPlanId || report.planId, patientId: report.user }
     : { patientId: report.user, status: 'active', type: 'medical_assist' };
   const plans = await HealthPlan.find(linkedFilter);
+  const conditionalPlans = plans.filter(plan => (plan.content?.workflowModules || plan.content?.followUpPlans || []).some(item => item.mode === 'conditional'));
+  if (!conditionalPlans.length) return { drafted: 0, hasConditionalModules: false };
+  return require('../utils/conditionalReportClaim').withConditionalReportClaim(report, conditionalPlans.map(plan => plan._id), async () => {
   let drafted = 0, hasConditionalModules = false;
   for (const plan of plans) {
     const c = plan.content || {};
@@ -3370,6 +3373,7 @@ async function draftConditionalModulesFromAuditedReport(report, explicitAbnormal
     }
   }
   return { drafted, hasConditionalModules };
+  });
 }
 
 // PATCH /api/staff/plans/:id/push — 推送方案至客户端
