@@ -3341,6 +3341,7 @@ async function draftConditionalModulesFromAuditedReport(report, explicitAbnormal
   let drafted = 0, hasConditionalModules = false;
   for (const plan of plans) {
     const c = plan.content || {};
+    const originalContent = plan.toObject().content;
     const modules = (c.workflowModules || c.followUpPlans || []).filter(item => item.mode === 'conditional');
     if (!modules.length) continue;
     hasConditionalModules = true;
@@ -3365,10 +3366,7 @@ async function draftConditionalModulesFromAuditedReport(report, explicitAbnormal
       changed = true; drafted += 1;
     }
     if (changed) {
-      c.workflowModuleDecisions = previous;
-      plan.content = c;
-      plan.markModified('content');
-      await plan.save();
+      await require('../utils/conditionalDraftWrite').saveConditionalDrafts(HealthPlan, plan, originalContent, previous);
     }
   }
   return { drafted, hasConditionalModules };

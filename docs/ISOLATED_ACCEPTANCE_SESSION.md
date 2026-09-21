@@ -1,5 +1,14 @@
 # 可登录隔离环境：验收接续
 
+## 09-21 10:45 代诊补丁后回归与条件草稿目标保护
+
+- 隔离分支干净起步，代诊专项已单独生产发布f9fb958b，本心跳未操作生产；功能分支包含同补丁。隔离后端为exec3411/fvvTxL，前端5174。
+- auditedPlanItemHttp、reportAuditSideEffects、legacyDispatchHardExit实际HTTP及真实硬退出重跑通过；最新硬退出报告6ab098d36c2a9799b584ac6c。合成输入，不是真实AI/全履约验收。
+- 新conditionalDraftWrite通过原始content/患者/status精确匹配，仅写content.workflowModuleDecisions，冲突409；路由不再保存整个旧content。plan.toObject()保存BSON类型，避免JSON/structuredClone破坏ObjectId。
+- conditionalDraftWrite.js四场景真实Mongo通过：人工needed、not_needed、其他内容变化均拒绝，正常草稿可写；方案6ab0991819e1308d0cecb7bb/c6/d1/dc。
+- 新代码未重载长驻后端，下一轮先重载后做报告API回归。当前仅目标方案防覆盖，不是来源报告占用保护，也不是安全恢复；两者仍待。未改真实订单/外部出口，无生产部署。
+- 本轮本地提交；此前功能分支外发审批拒绝仍有效，生产专项授权不外推为整个功能分支的推送许可，不绕过重试。
+
 ## 09-21 09:30 审核保存后真实进程退出与显式重试
 
 - 新legacyDispatchHardExit.js <session.json>校验回环随机隔离库/虚构主客户，独立合成报告由无外部凭证子进程通过实际armLegacyDispatchIntent和report.save保存后立即process.exit(29)。不是把状态直接设pending冒充进程退出。
