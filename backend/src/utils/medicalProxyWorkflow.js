@@ -6,6 +6,7 @@ const Order = require('../models/Order');
 const ServiceRecord = require('../models/ServiceRecord');
 const HealthPlan = require('../models/HealthPlan');
 const User = require('../models/User');
+const { needsPlannerDispatch } = require('./proxyPlannerDispatch');
 
 const PREFIX = 'medical_proxy:';
 const STAGES = ['collect', 'audit', 'advisor', 'planner', 'booking', 'execute'];
@@ -687,7 +688,10 @@ async function validateMedicalProxyStage(task, body, staff) {
     const appointmentRequirement = nonempty(data.planSnapshot?.serviceContent || bookingOrder?.serviceRequirements);
     if (/(?:保险类型：高端险|费用与保险：使用高端医疗险)/.test(appointmentRequirement) && !['direct_verified', 'reimbursement_verified', 'self_pay_confirmed'].includes(data.insuranceOutcome)) return '请核实高端医疗险实际结算方式，并选择办理结果';
     if (/专家约诊/.test(bookingOrder?.serviceName || '') && /建议医院：/.test(appointmentRequirement) && !nonempty(data.campus)) return '请填写实际预约院区';
-    if (!/专家约诊|代配药|代取药/.test(bookingOrder?.serviceName || '')) {
+    if (needsPlannerDispatch(data, bookingOrder?.serviceName)) {
+      const patient = await User.findById(task.patientId).select('assignedHealthPlanner').lean();
+      if (!patient?.assignedHealthPlanner) return '客户尚未分配健康规划师，无法交接预约结果';
+    } else if (!/专家约诊|代配药|代取药/.test(bookingOrder?.serviceName || '')) {
       const assistant = await Admin.findOne({ _id: data.medicalAssistantId, role: 'medicalAssistant', staffStatus: 'active' }).select('_id').lean();
       if (!assistant) return data.planSnapshot?.initiationSource === STAFF_DIRECT_SOURCE ? '请在预约完成后指派有效的就医专员' : '原预指派就医专员已失效，请退回健康规划师重新指派';
     }
@@ -744,6 +748,11 @@ async function advanceMedicalProxyWorkflow(task) {
   const index = STAGES.indexOf(stage);
   const order = await Order.findById(task.sourceOrderId);
   if (!order) return;
+  // Replaying a completed upstream task must not reopen planner assignment or
+  // move an executing/closed direct-proxy order backwards.
+  if (needsPlannerDispatch(task.formData, order.serviceName)
+      && ['advisor', 'booking', 'planner'].includes(stage)
+      && ['execute', 'completed'].includes(order.currentStage)) return;
   const patient = await User.findById(task.patientId).select('tenantId assignedHealthManager assignedFamilyDoctor assignedHealthPlanner').lean();
   if (stage === 'appointment_review') {
     if (!patient?.assignedHealthManager) throw Object.assign(new Error('客户尚未分配健管专员，无法重新预约'), { status: 409 });
@@ -929,7 +938,10 @@ async function advanceMedicalProxyWorkflow(task) {
     } });
     return;
   }
-  const next = task.formData?.medicalEscort === true && stage === 'planner' ? 'execute'
+  const plannerDispatch = needsPlannerDispatch(task.formData, order.serviceName);
+  const next = plannerDispatch && stage === 'booking' ? 'planner'
+    : plannerDispatch && stage === 'planner' ? 'execute'
+    : task.formData?.medicalEscort === true && stage === 'planner' ? 'execute'
     : supplyProxy && stage === 'booking' ? 'planner'
     : supplyProxy && stage === 'planner' ? 'execute'
       : stage === 'advisor' && task.formData?.initiationSource === STAFF_DIRECT_SOURCE ? 'booking' : STAGES[index + 1];

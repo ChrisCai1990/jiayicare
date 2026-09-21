@@ -246,7 +246,15 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
         <div>支付方式：{paymentLabel}</div>
       </> : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].map((key, i) => <div key={key}>{['医院', '科室', '专家', '代诊目标', '交流内容'][i]}：{value.planSnapshot?.[key] || '待确认'}</div>)}
     </div>}
-    <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>{isMedicalEscort ? '安排陪同就医专员' : isSupplyProxy ? `安排${isSupplementProxy ? '营养素采购' : '配药'}执行人员` : '预指派就医专员'}
+    {!isSupplyProxy && !isMedicalEscort && <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>
+      <div>实际预约：{booking.appointmentDate || '待预约'} {booking.appointmentTime || ''}</div>
+      <div>客户期望：{booking.preferredDateStart || '未记录'} 至 {booking.preferredDateEnd || '未记录'}</div>
+      {booking.campus && <div>院区：{booking.campus}</div>}
+      {booking.dateDifferenceNote && <div>日期差异确认：{booking.dateDifferenceNote}</div>}
+      {booking.additionalNote && <div>预约备注：{booking.additionalNote}</div>}
+      {(value.planSnapshot?.selectedReportIds || []).map(id => <button key={id} type="button" className="btn btn-secondary btn-sm" onClick={() => onOpenReport?.(id, reports.find(report => String(report._id) === String(id))?.title)}>查看顾问选定资料</button>)}
+    </div>}
+    <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>{isMedicalEscort ? '安排陪同就医专员' : isSupplyProxy ? `安排${isSupplementProxy ? '营养素采购' : '配药'}执行人员` : '指派就医专员'}
       <select className="form-control" value={value.medicalAssistantId || ''} onChange={e => set('medicalAssistantId', e.target.value)}>
         <option value="">请选择</option>
         {staffList.filter(staff => staff.role === 'medicalAssistant' && staff.staffStatus !== 'inactive').map(staff => <option key={staff._id} value={staff._id}>{staff.name}</option>)}
@@ -292,12 +300,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
         <option value="">请选择核实结果</option><option value="direct_verified">已核实可直付</option><option value="reimbursement_verified">已核实先付后报</option><option value="self_pay_confirmed">保险不适用，客户确认自费</option>
       </select>
     </label>}
-    {value.planSnapshot?.initiationSource === 'staff_direct' && !value.medicationProxy && !isExpertAppointment && <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>预约确定后指派就医专员
-      <select className="form-control" value={value.medicalAssistantId || ''} onChange={e => set('medicalAssistantId', e.target.value)}>
-        <option value="">请选择</option>
-        {staffList.filter(staff => staff.role === 'medicalAssistant' && staff.staffStatus !== 'inactive').map(staff => <option key={staff._id} value={staff._id}>{staff.name}</option>)}
-      </select>
-    </label>}
+    {value.planSnapshot?.initiationSource === 'staff_direct' && !isSupplyProxy && !isExpertAppointment && !isMedicalEscort && <div style={{ fontSize: 13, color: '#63766D' }}>预约完成后自动交健康规划师核对资料并指派就医专员，无需健管专员重复派单。</div>}
   </div>
   if (stage === 'execute') {
     const booking = { ...(task?.sourceOrderId?.medicalProxyPlan?.booking || {}), ...(value.bookingSnapshot?.planSnapshot?.booking || {}), ...(value.bookingSnapshot || {}) }
