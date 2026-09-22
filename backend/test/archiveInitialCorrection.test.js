@@ -13,3 +13,14 @@ test('refuses later manual change, different answer, or existing baseline', () =
     const user = fixture(); modify(user); assert.throws(() => buildInitialCorrection(user, 'r'));
   }
 });
+test('explicit initial revision correction adopts latest review and retains every old version', () => {
+  const user = fixture();
+  user.archiveVersionHistory[0].effectiveAt = new Date('2026-09-22T01:00:00Z');
+  user.archiveVersionHistory[1].effectiveAt = new Date('2026-09-22T02:00:00Z');
+  user.archiveVersionHistory[1].to = '09:00';
+  const result = buildInitialCorrection(user, 'r', { includeInitialRevisions: true });
+  assert.equal(result.update.$set[path], '09:00');
+  assert.equal(result.update.$set.archiveBaselineSources.lifestyle_data__breakfastTime.responseId, 'r');
+  assert.equal(result.update.$set.archiveConfirmLog.at(-1).previousVersionEntries.length, 2);
+  assert.equal(result.update.$set.archiveVersionHistory.length, 0);
+});

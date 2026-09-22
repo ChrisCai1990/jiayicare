@@ -25,3 +25,22 @@ test('cleared draft, arbitrary and duplicate fields cannot confirm', () => {
   assert.throws(() => buildConfirmation(fixture(), [{ path: 'name', value: 'x' }], actor), { statusCode: 400 });
   assert.throws(() => buildConfirmation(fixture(), [{ path, value: 'a' }, { path, value: 'b' }], actor), { statusCode: 400 });
 });
+test('same initial response revisions update baseline, a new response creates changes', () => {
+  const user = fixture(); user.lifestyle_data.breakfastTime = '08:00';
+  user.archiveBaselineSources = { lifestyle_data__breakfastTime: { responseId: 'r', value: '08:00' } };
+  const revised = buildConfirmation(user, [{ path, value: '09:00' }], actor);
+  assert.equal(revised.update.$set[path], '09:00'); assert.equal(revised.changeCount, 0);
+  assert.equal(revised.update.$push.archiveConfirmLog.$each[0].items[0].mode, 'initial_revision');
+  user.archiveDraft.responseId = 'new';
+  const subsequent = buildConfirmation(user, [{ path, value: '09:00' }], actor);
+  assert.equal(subsequent.initialCount, 0); assert.equal(subsequent.changeCount, 1);
+  assert.equal(subsequent.update.$set[path], undefined);
+});
+test('old initial response cannot overwrite later staff or questionnaire updates', () => {
+  const user = fixture(); user.lifestyle_data.breakfastTime = '10:00';
+  user.archiveBaselineSources = { lifestyle_data__breakfastTime: { responseId: 'r', value: '08:00' } };
+  assert.throws(() => buildConfirmation(user, [{ path, value: '09:00' }], actor), { statusCode: 409 });
+  user.lifestyle_data.breakfastTime = '08:00';
+  user.archiveVersionHistory = [{ path, to: '11:00', confirmedBy: 'a' }];
+  assert.throws(() => buildConfirmation(user, [{ path, value: '09:00' }], actor), { statusCode: 409 });
+});
