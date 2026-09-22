@@ -66,7 +66,7 @@ async function scanAndCreatePhaseAssessments() {
   if (!process.env.QWEN_API_KEY) return 0;
   const templates = await PlanTemplate.find({ type: 'phase_assessment', status: 'active', 'content.frequency': { $in: ['quarterly', 'yearly'] } }).lean();
   if (!templates.length) return 0;
-  const plans = await AnnualPlan.find({ confirmedAt: { $ne: null } }).sort({ confirmedAt: -1 }).limit(500).lean();
+  const plans = await AnnualPlan.find({ ...require('./healthManagementRollout').patientFilter(), confirmedAt: { $ne: null } }).sort({ confirmedAt: -1 }).limit(500).lean();
   let created = 0;
   const seenPatients = new Set();
   for (const plan of plans) {

@@ -12,6 +12,7 @@ async function annualPeriodicGate(plan, user, now = new Date()) {
 }
 
 async function canStartAnnualSupplyCycle(supply, user, now = new Date()) {
+  if (!require('./healthManagementRollout').enabledForPatient(user?._id)) return true;
   if (!supply.sourceAnnualPlanId) return true; // 独立订单/人工补给仍按既有履约规则。
   const plan = await require('../models/AnnualPlan').findById(supply.sourceAnnualPlanId).lean();
   const gate = await annualPeriodicGate(plan, user, now);

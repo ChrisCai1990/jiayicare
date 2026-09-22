@@ -9,6 +9,7 @@ function runtime() {
   const User = require('../models/User'), Draft = require('../models/ReportFollowUpDraft');
   const Handoff = require('../models/CheckupPreparationHandoff');
   async function context(review, actor) {
+    if (!require('./healthManagementRollout').enabledForPatient(review.patientId)) return null;
     const patient = await User.findById(review.patientId).lean();
     if (!patient || (actor.role !== 'superadmin' && (actor.role !== 'familyDoctor'
       || !same(actor._id, patient.assignedFamilyDoctor) || !same(actor._id, review.assignedTo)))) throw fail('仅所属健康顾问可确认');

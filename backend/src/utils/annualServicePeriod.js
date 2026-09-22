@@ -69,6 +69,11 @@ async function confirmAnnualServicePeriod({ plan, patient, staff, input }, model
 }
 
 async function annualExecutionGate(plan, now = new Date(), models = {}) {
+  if (!require('./healthManagementRollout').enabledForPatient(plan.patientId)) {
+    // No new renewal work may resume for a customer removed from the pilot.
+    if (plan.continuitySource?.previousPlanId) return { allowed: false, reason: '该客户暂未开放新版健康管理闭环' };
+    return { allowed: !!plan.confirmedAt, anchor: plan.confirmedAt, reason: plan.confirmedAt ? '' : '等待客户确认方案' };
+  }
   if (!plan.confirmedAt) return { allowed: false, reason: '等待客户确认方案' };
   if (!plan.continuitySource?.previousPlanId) return { allowed: true, anchor: plan.confirmedAt }; // 保留首次/历史方案路径。
   if (!plan.pushedAt || plan.reviewStatus !== 'approved') return { allowed: false, reason: '等待顾问审核发布' };

@@ -34,7 +34,7 @@ async function scan({ now = Date.now, reportIds } = {}) {
   const Report = require('../models/MedicalReport');
   const scope = reportIds ? { _id: { $in: reportIds } } : {};
   const result = { completed: 0, retained: 0, failed: 0 };
-  for await (const row of Report.find({ ...scope, audit_status: 'audited', 'legacyDispatchIntent.status': 'pending' }).lean().cursor()) {
+  for await (const row of Report.find({ ...scope, ...require('./healthManagementRollout').patientFilter('user'), audit_status: 'audited', 'legacyDispatchIntent.status': 'pending' }).lean().cursor()) {
     try {
       if (!sourceMatches(row, row.legacyDispatchIntent) || !row.legacyDispatchIntent.staff?._id
           || !row.legacyDispatchIntent.input?.abnormalItems?.length) { result.retained++; continue; }

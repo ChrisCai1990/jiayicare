@@ -51,6 +51,8 @@ async function main() {
   if (report.audit_status !== 'audited') {
     assert.equal((await FollowUp.findById(service.taskIds.result_review)).isBlocked, true);
     check('Unaudited synthetic report did not unlock advisor result review');
+    // Current audit requires an explicit examination date; do not bypass the guard.
+    if (!report.checkDate) await request(`/staff/medical-reports/${report._id}`, tokens.healthManager, 'PATCH', { date: new Date().toISOString().slice(0, 10), hospital: '隔离虚构机构', institutionStatus: 'confirmed' });
     await request(`/staff/medical-reports/${report._id}/audit`, tokens.healthManager, 'PATCH', { action: 'approve' });
   }
   assert.equal((await FollowUp.findById(service.taskIds.result_review)).isBlocked, false);

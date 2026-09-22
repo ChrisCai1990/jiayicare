@@ -21,6 +21,7 @@ function legacyAccess(user, now = new Date()) {
 // 一旦进入新凭据周期，不再回退到可编辑的档案日期，以免退款/到期后被旧日期放行。
 async function resolveServiceAccess(user, now = new Date(), models = {}) {
   if (!user || user.isDeleted) return { active: false, source: 'unavailable', reason: '客户档案不可用', startDate: '', endDate: '' };
+  if (!require('./healthManagementRollout').enabledForPatient(user._id)) return legacyAccess(user, now);
   const Period = models.Period || require('../models/AnnualServicePeriod');
   const Order = models.Order || require('../models/Order');
   const periods = await Period.find({ patientId: user._id, confirmedAt: { $ne: null } }).sort({ startDate: 1 }).lean();

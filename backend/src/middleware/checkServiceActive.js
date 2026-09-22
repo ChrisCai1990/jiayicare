@@ -6,6 +6,13 @@
 // 采用"默认锁+白名单放行"而非逐接口手动加锁，是为了避免新增接口漏挂导致锁形同虚设——
 // 新增的用户端写操作接口默认就是锁定状态，需要显式放行的才加进白名单。
 function isServiceExpired(user) {
+  if (!require('../utils/healthManagementRollout').enabledForPatient(user?._id)) {
+    if (!user?.serviceExpiry) return false;
+    const expiry = new Date(user.serviceExpiry);
+    if (Number.isNaN(expiry.getTime())) return false;
+    expiry.setHours(23, 59, 59, 999);
+    return expiry.getTime() < Date.now();
+  }
   return !require('../utils/serviceAccess').legacyAccess(user).active;
 }
 
@@ -32,13 +39,19 @@ const WHITELIST = [
 function isWhitelisted(req) {
   const url = req.originalUrl.split('?')[0];
   // 到期后仍可查看本人已发布方案并确认；派发门槛在确认接口内另行校验。
-  if (req.method === 'GET' && /^\/api\/user\/annual-mgmt-plans\/?$/.test(url)) return true;
-  if (req.method === 'PATCH' && /^\/api\/user\/annual-mgmt-plans\/[a-f\d]{24}\/confirm\/?$/i.test(url)) return true;
+  if (require('../utils/healthManagementRollout').enabledForPatient(req.user?._id)) {
+    if (req.method === 'GET' && /^\/api\/user\/annual-mgmt-plans\/?$/.test(url)) return true;
+    if (req.method === 'PATCH' && /^\/api\/user\/annual-mgmt-plans\/[a-f\d]{24}\/confirm\/?$/i.test(url)) return true;
+  }
   return WHITELIST.some(w => (w.method === 'ALL' || w.method === req.method) && url.startsWith(w.prefix));
 }
 
 async function checkServiceActive(req, res, next) {
   if (isWhitelisted(req)) return next();
+  if (!require('../utils/healthManagementRollout').enabledForPatient(req.user?._id)) {
+    if (!isServiceExpired(req.user)) return next();
+    return res.status(403).json({ success: false, code: 'SERVICE_EXPIRED', message: '您的服务已到期，该功能已锁定。如需继续使用请联系健康管理师续费。' });
+  }
   try {
     const access = await require('../utils/serviceAccess').resolveServiceAccess(req.user);
     req.serviceAccess = access;

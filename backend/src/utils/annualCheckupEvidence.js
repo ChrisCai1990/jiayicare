@@ -14,6 +14,7 @@ function preparationRole(task) {
 }
 
 function assertPreparationOwner(task, actor) {
+  require('./healthManagementRollout').assertPatientEnabled(task?.patientId);
   const role = preparationRole(task);
   if (!role) throw fail('体检准备任务不存在', 404);
   if (actor?.role !== 'superadmin' && (actor?.role !== role || idOf(actor._id) !== idOf(task.assignedTo))) {
@@ -90,7 +91,7 @@ async function savePreparationEvidence(task, annual, input, actor, models, now =
 
 async function reconcileCheckupPreparation(filter = {}, providedModels) {
   const models = providedModels || { FollowUp: require('../models/FollowUp'), HealthPlan: require('../models/HealthPlan'), AnnualPlan: require('../models/AnnualPlan') };
-  const rows = await models.FollowUp.find({ $and: [filter, { sourceType: 'annual_service', workflowKey: 'annual_checkup_preparation:familyDoctor',
+  const rows = await models.FollowUp.find({ $and: [filter, require('./healthManagementRollout').patientFilter(), { sourceType: 'annual_service', workflowKey: 'annual_checkup_preparation:familyDoctor',
     status: { $in: OPEN }, 'formData.annualCheckupPreparation.evidence.healthPlanId': { $exists: true } }] }).lean();
   let completed = 0;
   const errors = [];

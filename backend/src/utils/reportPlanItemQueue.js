@@ -45,12 +45,12 @@ function createQueue({ MedicalReport, HealthPlan, now = Date.now }) {
   async function scan() {
     // Legacy pre-fence running claims remain blocked: their old workers did not enforce epochs.
     // Recovery must advance the target fence BEFORE making source edits possible again.
-    for await (const row of MedicalReport.find({ 'planItemSync.status': 'running', planItemWriteEpoch: { $gte: 1 },
+    for await (const row of MedicalReport.find({ ...require('./healthManagementRollout').patientFilter('user'), 'planItemSync.status': 'running', planItemWriteEpoch: { $gte: 1 },
       'planItemSync.startedAt': { $lt: new Date(now() - 5 * 60 * 1000) } }).select('_id planItemSync planItemWriteEpoch').lean().cursor()) {
       await recover(row);
     }
     // Explicit new audit intents only, bounded memory; conflicts are not retried endlessly.
-    for await (const row of MedicalReport.find({ 'planItemSync.status': 'pending' }).select('_id planItemSync').lean().cursor()) {
+    for await (const row of MedicalReport.find({ ...require('./healthManagementRollout').patientFilter('user'), 'planItemSync.status': 'pending' }).select('_id planItemSync').lean().cursor()) {
       await safeReconcile(row._id, row.planItemSync.token);
     }
   }

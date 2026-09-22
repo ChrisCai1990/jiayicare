@@ -91,6 +91,18 @@ const followUpSchema = new mongoose.Schema({
   reviewRole: { type: String, enum: ['familyDoctor', 'nutritionist', 'medicalAssistant', 'healthPlanner', null], default: null },
 }, { timestamps: true });
 
+// Computed capability only: never persist or trust a client-supplied rollout flag.
+followUpSchema.virtual('healthManagementEnabled').get(function () {
+  return require('../utils/healthManagementRollout').enabledForPatient(this.patientId);
+});
+followUpSchema.set('toJSON', { virtuals: true });
+followUpSchema.set('toObject', { virtuals: true });
+for (const method of ['find', 'findOne', 'findOneAndUpdate']) followUpSchema.post(method, function (result) {
+  if (!this.mongooseOptions().lean) return;
+  for (const row of Array.isArray(result) ? result : [result]) {
+    if (row) row.healthManagementEnabled = require('../utils/healthManagementRollout').enabledForPatient(row.patientId);
+  }
+});
 followUpSchema.add({ outcomeClosureIntent: { type: mongoose.Schema.Types.Mixed, default: null } });
 followUpSchema.plugin(require('../utils/outcomeEvidenceFence').outcomeEvidenceFence);
 followUpSchema.index({ staffId: 1, date: -1 });

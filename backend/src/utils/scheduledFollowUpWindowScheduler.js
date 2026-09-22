@@ -30,6 +30,7 @@ async function scanAndSyncScheduledWindow() {
   for (const plan of plans) {
     try {
       if (plan.continuitySource?.previousPlanId) {
+        if (!require('./healthManagementRollout').enabledForPatient(plan.patientId)) continue;
         if (!recoveryEnabled) continue;
         await require('./annualServicePeriodCorrectionApply').applyApprovedCorrection(plan);
         const result = await require('./annualPlanTaskSplit').syncAnnualPlanTaskSplit(plan);

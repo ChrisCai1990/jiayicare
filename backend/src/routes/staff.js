@@ -2261,17 +2261,19 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     }
   }
   const isOutpatientPostVisitReview = followUp.sourceType === 'health_plan' && followUp.taskRole === 'executor' && /门诊一站式.*查看陪诊资料并制定随访计划/.test(followUp.theme || '');
+  const closedLoopService = require('../utils/healthManagementRollout').enabledForPatient(followUp.patientId);
   if (isOutpatientPostVisitReview && req.body.status === 'completed') {
     const result = req.body.formData || {};
-    if (previousStatus === 'completed' && followUp.formData?.successorProtocol !== 'source_v1') {
+    if (closedLoopService && previousStatus === 'completed' && followUp.formData?.successorProtocol !== 'source_v1') {
       return res.status(409).json({ success: false, message: '历史已完成服务需先核对原后续随访，不自动重新建单' });
     }
-    if (previousStatus === 'completed' && ['reviewSummary', 'followUpContent', 'followUpDate'].some(key => result[key] !== followUp.formData?.[key])) {
+    if (closedLoopService && previousStatus === 'completed' && ['reviewSummary', 'followUpContent', 'followUpDate'].some(key => result[key] !== followUp.formData?.[key])) {
       return res.status(409).json({ success: false, message: '服务已审核，请按原内容重试，不覆盖已发布安排' });
     }
     if (!String(result.reviewSummary || '').trim() || !String(result.followUpContent || '').trim() || !result.followUpDate) {
       return res.status(400).json({ success: false, message: '请填写资料查看结论、随访内容和随访日期' });
     }
+    if (closedLoopService) {
     const patient = await User.findById(followUp.patientId).select('_id assignedHealthManager assignedFamilyDoctor').lean();
     if (!patient?.assignedHealthManager) return res.status(409).json({ success: false, message: '请先确认客户所属健管专员，后续随访不能派给顾问代办' });
     if (req.staff.role !== 'superadmin' && (req.staff.role !== 'familyDoctor' || String(patient.assignedFamilyDoctor) !== String(req.staff._id))) {
@@ -2287,6 +2289,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
       reviewedReportSources = reports.map(r => ({ id: String(r._id), digest: require('../utils/reportFollowUpSource').sourceDigest(r) }));
     }
     req.body.formData = { ...result, successorProtocol: 'source_v1', reviewedReportSources };
+    }
   }
   const isSuper = req.staff.role === 'superadmin';
   const isOwner = isSuper || String(followUp.staffId) === String(req.staff._id);
@@ -2399,8 +2402,17 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   }
   if (isOutpatientPostVisitReview && followUp.status === 'completed') {
     const result = followUp.formData || {};
+    if (closedLoopService) {
     const successorPatient = await User.findById(followUp.patientId).select('_id assignedHealthManager').lean();
     await require('../utils/serviceReviewSuccessor').ensureServiceReviewSuccessor({ FollowUp, review: followUp, patient: successorPatient });
+    } else {
+      await FollowUp.create({
+        patientId: followUp.patientId, staffId: req.staff._id, assignedTo: req.staff._id,
+        date: new Date(result.followUpDate), nextFollowUpDate: new Date(result.followUpDate), type: 'other', status: 'planned',
+        theme: '门诊一站式服务后续随访', content: result.followUpContent, plannedContent: result.followUpContent,
+        sourceType: 'scheduled', completedAt: null, completedBy: null,
+      });
+    }
     await MedicalReport.updateMany(
       { sourceHealthPlanId: followUp.sourceHealthPlanId, audit_status: 'audited' },
       { $set: { familyDoctorViewedAt: new Date(), familyDoctorViewedBy: req.staff._id, status: 'analyzed' } }
@@ -11354,11 +11366,13 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     // 复用原准备任务：只投影异常，不创建新的随访或在读待办时触发AI/业务写入。
     if (isSuper || role === 'healthPlanner') {
       const handoffs = await require('../models/CheckupPreparationHandoff').find({
+        $and: [require('../utils/healthManagementRollout').patientFilter()],
         ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}),
         $or: [{ status: 'activation_failed' }, { status: 'active', 'completion.status': 'attention' }],
       }).populate('patientId', 'name assignedHealthPlanner').populate('plannerTaskId').lean();
       todos.push(...require('../utils/checkupPreparationTodos').buildCheckupPreparationTodos(handoffs, req.staff));
       const pendingPreparations = await FollowUp.find({ sourceType: 'annual_service', workflowKey: 'annual_checkup_preparation:healthPlanner',
+        $and: [require('../utils/healthManagementRollout').patientFilter()],
         status: 'completed', 'formData.annualCheckupPreparation.targetDate': { $gte: require('../utils/serviceAccess').chinaDay(now) },
         ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}), ...(isSuper ? {} : { assignedTo: req.staff._id }),
       }).populate('patientId', 'name assignedHealthPlanner').lean();
@@ -11370,10 +11384,11 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     // 凭据/岗位/同步异常归规划师，方案排期异常归顾问；正常等待不增加人工待办。
     if (isSuper || ['healthPlanner', 'familyDoctor'].includes(role)) {
       const checkupPlans = await AnnualPlan.find({ checkupPreparationAutoConfirmedAt: { $ne: null },
+        $and: [require('../utils/healthManagementRollout').patientFilter()],
         'checkupPreparationDispatch.issues.0': { $exists: true }, ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) })
         .select('patientId year planType checkupPreparationDispatch').populate('patientId', 'name assignedHealthPlanner assignedFamilyDoctor').lean();
       todos.push(...require('../utils/annualCheckupDispatch').buildDispatchTodos(checkupPlans, req.staff));
-      const renewalPlans = await AnnualPlan.find({ 'continuitySource.previousPlanId': { $ne: null }, ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) }).select('patientId year planType createdAt').populate('patientId', 'name assignedHealthPlanner assignedFamilyDoctor').sort({ createdAt: -1 }).lean();
+      const renewalPlans = await AnnualPlan.find({ $and: [require('../utils/healthManagementRollout').patientFilter()], 'continuitySource.previousPlanId': { $ne: null }, ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) }).select('patientId year planType createdAt').populate('patientId', 'name assignedHealthPlanner assignedFamilyDoctor').sort({ createdAt: -1 }).lean();
       const periods = await require('../models/AnnualServicePeriod').find({ annualPlanId: { $in: renewalPlans.map(plan => plan._id) } }).select('annualPlanId activationStatus activationError syncState syncIssue syncStartedAt correction.status correction.reviewNote correction.applyIssue').lean();
       todos.push(...require('../utils/annualRenewalSyncState').buildAnnualRenewalTodos(renewalPlans, periods, req.staff));
     }

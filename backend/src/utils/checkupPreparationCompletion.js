@@ -3,6 +3,7 @@ const same = (a, b) => Boolean(a && b && String(a) === String(b))
 function createPreparationCompletion({ Handoff, HealthPlan, FollowUp, FollowUpPlan, User, Order,
   requiresOutcomeReview = require('./followUpContinuity').requiresOutcomeReview, closeReviewedOriginal }) {
   async function reconcile(link) {
+    if (!require('./healthManagementRollout').enabledForPatient(link?.patientId)) return false
     if (link?.status !== 'active' || link.completion?.status === 'completed') return false
     const service = await HealthPlan.findById(link.servicePlanId).lean()
     if (!service || !['active', 'completed'].includes(service.status)) return false
@@ -124,7 +125,7 @@ function createPreparationCompletion({ Handoff, HealthPlan, FollowUp, FollowUpPl
     return reconcile(links[0])
   }
   async function scan() {
-    for await (const link of Handoff.find({ status: 'active', 'completion.status': { $ne: 'completed' } }).lean().cursor()) {
+    for await (const link of Handoff.find({ ...require('./healthManagementRollout').patientFilter(), status: 'active', 'completion.status': { $ne: 'completed' } }).lean().cursor()) {
       try { await reconcile(link) } catch (error) { console.error('[checkup-preparation-completion]', String(link._id), error.message) }
     }
   }

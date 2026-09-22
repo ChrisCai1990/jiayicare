@@ -26,6 +26,7 @@ function assertRetainedScheduleFits(plan, period, proposed, impact) {
   return anchor;
 }
 async function applyApprovedCorrection(plan, models = {}) {
+  if (!require('./healthManagementRollout').enabledForPatient(plan.patientId)) return { applied: false };
   const Model = models.Period || require('../models/AnnualServicePeriod');
   const period = await Model.findOne({ annualPlanId: plan._id, patientId: plan.patientId }).lean();
   const correction = period?.correction;

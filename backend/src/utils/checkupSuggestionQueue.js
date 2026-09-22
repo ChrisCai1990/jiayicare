@@ -17,7 +17,7 @@ async function authorizedActor(run, plan, models) {
 async function drainQueue(models, service) {
   // The marker is in the initial plan insert, so a crash before queue insertion
   // remains discoverable. Old drafts without this marker are never backfilled.
-  const plans = models.HealthPlan.find({ preparationAddonAuto: true, preparationTaskId: { $ne: null },
+  const plans = models.HealthPlan.find({ ...require('./healthManagementRollout').patientFilter(), preparationAddonAuto: true, preparationTaskId: { $ne: null },
     preparationAddonReview: null, status: 'draft', pushedAt: null, 'content.aiStatus': 'pending' }).sort({ _id: 1 }).lean().cursor();
   for await (const plan of plans) {
     const task = await models.FollowUp.findById(plan.preparationTaskId).lean();
@@ -35,6 +35,7 @@ async function drainQueue(models, service) {
   for await (const run of queued) {
     try {
       const plan = await models.HealthPlan.findById(run._id).lean();
+      if (plan && !require('./healthManagementRollout').enabledForPatient(plan.patientId)) continue;
       if (!plan || !plan.preparationAddonAuto || idOf(plan.preparationTaskId) !== idOf(run.taskId)) throw new Error('invalid source');
       const actor = await authorizedActor(run, plan, models);
       await service.generate(run.taskId, actor, { updatedAt: plan.updatedAt, token: run.token });

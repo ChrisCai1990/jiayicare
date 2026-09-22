@@ -7,6 +7,8 @@ const crypto = require('node:crypto');
 async function main(liveOptions = null) {
   if (process.env.RUN_ISOLATED_ACCEPTANCE !== 'true') throw new Error('Explicit RUN_ISOLATED_ACCEPTANCE=true required');
   const resumePath = process.env.ISOLATED_ACCEPTANCE_SESSION;
+  const pilotPair = process.env.ISOLATED_ACCEPTANCE_PILOT_PAIR === 'true';
+  if (pilotPair && (resumePath || liveOptions)) throw new Error('Pilot pair requires a fresh, non-live synthetic session');
   const resume = resumePath ? JSON.parse(fs.readFileSync(resumePath, 'utf8')) : null;
   if (resume && (resume.api !== `http://127.0.0.1:${liveOptions ? 3002 : 3000}/api` || !/^jiayicare_acceptance_[a-f0-9]{32}$/.test(resume.database))) throw new Error('Invalid isolated resume manifest');
   // Discard inherited service credentials, proxies and runtime injection options.
@@ -38,6 +40,12 @@ async function main(liveOptions = null) {
   if (resume) {
     const patient = await User.findById(resume.patientId).lean();
     if (patient?.name !== '隔离验收客户（纯虚构）') throw new Error('Resume requires synthetic patient');
+    if (resume.rolloutMode) {
+      const excluded = await User.findById(resume.excludedPatientId).lean();
+      if (liveOptions || resume.rolloutMode !== 'allowlist' || excluded?.name !== '非白名单验收客户（纯虚构）' || String(excluded._id) === String(patient._id)) throw new Error('Invalid synthetic pilot pair');
+      process.env.HEALTH_MANAGEMENT_ROLLOUT_MODE = 'allowlist';
+      process.env.HEALTH_MANAGEMENT_PATIENT_IDS = String(patient._id);
+    }
     // Local synthetic customer authentication; never export server signing secret.
     fs.writeFileSync(path.join(runtime, 'customer-test-token.json'), JSON.stringify({ patientId: String(patient._id),
       token: require('jsonwebtoken').sign({ id: String(patient._id) }, process.env.JWT_SECRET, { expiresIn: '2h' }) }), { mode: 0o600 });
@@ -56,7 +64,16 @@ async function main(liveOptions = null) {
   }
   const patient = await User.create({ name: '隔离验收客户（纯虚构）', ...assignment,
     serviceStartDate: new Date().toISOString().slice(0, 10), serviceExpiry: '2027-12-31', onboardingCompleted: true });
+  let excludedPatientId;
+  if (pilotPair) {
+    const excluded = await User.create({ name: '非白名单验收客户（纯虚构）', ...assignment,
+      serviceStartDate: new Date().toISOString().slice(0, 10), serviceExpiry: '2027-12-31', onboardingCompleted: true });
+    excludedPatientId = String(excluded._id);
+    process.env.HEALTH_MANAGEMENT_ROLLOUT_MODE = 'allowlist';
+    process.env.HEALTH_MANAGEMENT_PATIENT_IDS = String(patient._id);
+  }
   const manifest = { database, runtime, api: `http://127.0.0.1:${process.env.PORT}/api`, patientId: String(patient._id), accounts,
+    ...(excludedPatientId ? { excludedPatientId, rolloutMode: 'allowlist' } : {}),
     boundary: liveOptions ? 'Synthetic data; bounded live Qwen only; no production DB/payment/notification.' : 'Synthetic local data; external network blocked; no real AI/payment/notification validation.' };
   fs.writeFileSync(path.join(runtime, 'session.json'), JSON.stringify(manifest, null, 2), { mode: 0o600 });
   console.log(`ISOLATED_ACCEPTANCE_SESSION=${path.join(runtime, 'session.json')}`);

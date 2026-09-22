@@ -3,6 +3,7 @@ const same = (a, b) => Boolean(a && b && String(a) === String(b))
 
 function createPreparationReportSync({ Handoff, HealthPlan, FollowUp, FollowUpPlan, MedicalReport, User, Order }) {
   async function reconcile(link) {
+    if (!require('./healthManagementRollout').enabledForPatient(link?.patientId)) return false
     if (link?.status !== 'active') return false
     const service = await HealthPlan.findById(link.servicePlanId).lean()
     if (!service || !same(service.patientId, link.patientId) || service.type !== 'medical_assist'
@@ -51,11 +52,12 @@ function createPreparationReportSync({ Handoff, HealthPlan, FollowUp, FollowUpPl
     return result.modifiedCount === 1
   }
   async function forPlan(planId, patientId) {
+    if (!require('./healthManagementRollout').enabledForPatient(patientId)) return { handled: false, activated: false }
     const link = await Handoff.findOne({ patientId, $or: [{ _id: planId }, { servicePlanId: planId }] }).lean()
     return link ? { handled: true, activated: await reconcile(link) } : { handled: false, activated: false }
   }
   async function scan() {
-    for await (const link of Handoff.find({ status: 'active' }).lean().cursor()) {
+    for await (const link of Handoff.find({ ...require('./healthManagementRollout').patientFilter(), status: 'active' }).lean().cursor()) {
       try { await reconcile(link) } catch (error) { console.error('[checkup-preparation-reports]', String(link._id), error.message) }
     }
   }

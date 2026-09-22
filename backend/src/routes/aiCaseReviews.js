@@ -90,7 +90,7 @@ router.get('/patients/:patientId/phase-assessments', staffAuth, async (req, res)
         if (target) data.unshift(target);
       }
     }
-    res.json({ success: true, data });
+    res.json({ success: true, data, healthManagementEnabled: require('../utils/healthManagementRollout').enabledForPatient(user._id) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -103,18 +103,20 @@ router.post('/patients/:patientId/phase-assessments/generate', staffAuth, async 
     if (![...Object.keys(ROLE_FIELDS), 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅对应专业人员或健康顾问可发起阶段性评估' });
     const user = await patientOr404(req, res); if (!user) return;
     if (req.staff.role !== 'superadmin' && !isAssignedReviewer(user, req.staff, req.staff.role)) return res.status(403).json({ success: false, message: '仅该客户当前绑定的专业人员或健康顾问可发起评估' });
+    const closedLoop = require('../utils/healthManagementRollout').enabledForPatient(user._id);
+    if (!closedLoop && !['nutritionist', 'familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅营养师或健康顾问可发起阶段性评估' });
     const plan = await AnnualPlan.findOne({ patientId: user._id, confirmedAt: { $ne: null } }).sort({ confirmedAt: -1 }).lean();
     if (!plan) return res.status(409).json({ success: false, message: '客户尚无已确认年度管理方案，暂不能生成阶段性评估' });
     const assessmentMode = req.body.mode === 'intensive_nutrition' ? 'intensive_nutrition' : 'routine';
-    const isAnnualReview = assessmentMode === 'routine' && req.body.frequency === 'yearly';
-    const assessmentDomain = assessmentMode === 'intensive_nutrition' ? 'nutrition' : isAnnualReview ? 'comprehensive' : (req.body.domain || 'comprehensive');
+    const isAnnualReview = closedLoop && assessmentMode === 'routine' && req.body.frequency === 'yearly';
+    const assessmentDomain = !closedLoop || assessmentMode === 'intensive_nutrition' ? 'nutrition' : isAnnualReview ? 'comprehensive' : (req.body.domain || 'comprehensive');
     if (!DOMAIN_ROLES[assessmentDomain]) return res.status(400).json({ success: false, message: '评估领域无效' });
     if (!['superadmin', 'familyDoctor', DOMAIN_ROLES[assessmentDomain]].includes(req.staff.role)) return res.status(403).json({ success: false, message: '请由对应专业人员或健康顾问发起该领域评估' });
     if (isAnnualReview && !['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '年度总评由健康顾问负责' });
     // 手动新周期与自动扫描使用同一可信服务期；审核/归档旧记录不加此门槛。
-    const gate = await require('../utils/annualPeriodicGate').annualPeriodicGate(plan, user);
+    const gate = closedLoop ? await require('../utils/annualPeriodicGate').annualPeriodicGate(plan, user) : { allowed: true, anchor: plan.confirmedAt };
     if (!gate.allowed) return res.status(409).json({ success: false, message: gate.reason || '当前年度服务期未生效，不能启动新评估' });
-    const frequency = assessmentMode === 'intensive_nutrition' ? 'monthly' : isAnnualReview ? 'yearly' : 'quarterly';
+    const frequency = !closedLoop || assessmentMode === 'intensive_nutrition' ? 'monthly' : isAnnualReview ? 'yearly' : 'quarterly';
     if (isAnnualReview && !periodFor('yearly', new Date(), gate.anchor)) return res.status(409).json({ success: false, message: '尚未进入本年度有效执行起点后的第11个月' });
     const template = await PlanTemplate.findOne({ type: 'phase_assessment', status: 'active', 'content.frequency': frequency, $and: [
       { $or: [{ clientBrand: user.clientBrand || '' }, { clientBrand: '' }] },

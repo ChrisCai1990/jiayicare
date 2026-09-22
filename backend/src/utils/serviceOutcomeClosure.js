@@ -4,6 +4,7 @@ const { successorSpec } = require('./serviceReviewSuccessor');
 const same = (a, b) => String(a || '') === String(b || '');
 const fail = message => Object.assign(new Error(message), { statusCode: 409 });
 async function closeServiceOriginal({ FollowUp, Report, Link, review, patient, actor, fence = require('./outcomeEvidenceFence').fencedClose }) {
+  if (!require('./healthManagementRollout').enabledForPatient(review.patientId)) return null;
   const links = await Link.find({ patientId: review.patientId, targetType: 'health_plan', targetId: review.sourceHealthPlanId, status: { $in: ['waiting', 'completed'] } }).lean();
   if (!links.length) return null;
   if (links.length !== 1) throw fail('服务关联多个原计划，请核对，不能猜测结案');

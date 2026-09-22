@@ -35,7 +35,7 @@ export default function OutpatientPostVisitReviewForm({ task, value, onChange })
     } finally { setAiLoading(false) }
   }
   return <div style={{ display: 'grid', gap: 14 }}>
-    <label><input type="checkbox" checked={data.checksComplete} onChange={e => update({ checksComplete: e.target.checked })} />本次检查资料已完整核对；后续计划落地后，自动结束明确关联的原随访。</label>
+    {task?.healthManagementEnabled !== false && <label><input type="checkbox" checked={data.checksComplete} onChange={e => update({ checksComplete: e.target.checked })} />本次检查资料已完整核对；后续计划落地后，自动结束明确关联的原随访。</label>}
     <section style={{ padding: 14, border: '1px solid #B9DDD0', borderRadius: 10, background: '#F2F8F5', lineHeight: 1.8 }}>
       <b>{task?.isBlocked ? '陪诊资料尚待健管专员完成审核' : '陪诊资料已由健管专员审核'}</b>
       <div style={{ fontSize: 12, color: '#65776F' }}>{task?.isBlocked ? '两份资料全部审核后，本任务和AI草稿按钮会自动启用。' : '请先在报告管理中查看当日检验检查单和门诊病历，再记录医学判断并生成后续随访计划。'}</div>
