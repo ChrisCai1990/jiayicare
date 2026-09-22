@@ -46,7 +46,13 @@ async function main() {
   assert.equal(String(order.redemptions[0].finalTaskId), service.taskIds.final_acceptance);
   const link = await Handoff.findById(service.handoffId).lean();
   const manager = await FollowUp.findById(closure.awaitingRedemption.managerTaskId).lean();
-  if (awaitsOutcome) {
+  if (process.argv.includes('--merged-outcome')) {
+    assert.equal(link.completion.status, 'completed', JSON.stringify(link.completion));
+    assert.equal(manager.status, 'completed');
+    assert.equal(String(manager.outcomeReview.sourceServiceReviewId), service.taskIds.result_review);
+    assert.equal(manager.outcomeReview.decision, process.argv.includes('--new-plan') ? 'new_plan' : 'no_further');
+    assert.equal(manager.outcomeReview.nextFollowUpIds.length, process.argv.includes('--new-plan') ? 1 : 0);
+  } else if (awaitsOutcome) {
     assert.notEqual(link.completion.status, 'completed');
     assert.equal(manager.status, managerBefore.status);
     assert.equal(manager.outcomeReview, null);
@@ -65,7 +71,7 @@ async function main() {
   const listing = await call(`/staff/patients/${session.patientId}/followups`, tokens.healthPlanner);
   assert.equal(listing.status, 200, JSON.stringify(listing));
   assert.equal(await FollowUp.countDocuments({ patientId: session.patientId, sourceType: 'order', sourceOrderId: service.orderId, status: { $nin: ['completed', 'cancelled'] } }), 0);
-  console.log(awaitsOutcome ? 'Service redeemed; original management plan stays open pending advisor outcome' : 'Historical closed plan preserved; redemption replay rejected (not new-policy closure evidence)');
+  console.log(process.argv.includes('--merged-outcome') ? 'PASS one advisor decision: original closed automatically after exact redemption, no separate outcome call' : awaitsOutcome ? 'Service redeemed; original management plan stays open pending advisor outcome' : 'Historical closed plan preserved; redemption replay rejected (not new-policy closure evidence)');
   fs.writeFileSync(path.join(dir, 'redemption-http.json'), JSON.stringify({ patientId: session.patientId, serviceId: service.serviceId, orderId: service.orderId, managerTaskId: String(manager._id), completedAt: manager.completedAt, usedUnits: after.usedUnits, totalUnits: after.totalUnits, duplicateStatus: duplicate.status, syntheticPaymentOnly: true }, null, 2));
 }
 main().catch(e => { console.error(e); process.exitCode = 1; }).finally(() => mongoose.disconnect());

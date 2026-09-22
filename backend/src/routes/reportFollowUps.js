@@ -44,9 +44,14 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
     let row = await load(req);
     const action = req.body.action;
     if (!['approve', 'reject', 'take_over'].includes(action)) fail('审核动作无效', 400);
+    const serviceReview = action === 'approve' && req.body.serviceReviewId;
+    if (serviceReview) await require('../utils/checkupMergedOutcome').runtime().assertDraft(row, req.staff, serviceReview);
+    if (serviceReview && row.status === 'approved' && row.followUpPublication?.status === 'published') {
+      return res.json({ success: true, data: row }); // Lost acknowledgement: preserve the exact reviewed evidence.
+    }
     if (row.status !== 'approved' || action !== 'approve') {
       if (!(row.status === 'advisor_review' || (action === 'take_over' && row.status === 'no_action')) || req.body.revision !== row.__v) fail('草稿状态已更新，请刷新');
-      if (action !== 'reject') await workflow.assertReportDraftSource(row);
+      if (action !== 'reject' && !serviceReview) await workflow.assertReportDraftSource(row);
       if (action === 'take_over' && row.followUpAutomation?.status !== 'failed' && row.status !== 'no_action') fail('仅生成失败或无新增行动的记录可人工接管');
       if (action === 'approve' && ['queued', 'running', 'failed'].includes(row.followUpAutomation?.status)) fail('请先完成草稿或人工接管');
       let drafts = row.followUpDrafts;

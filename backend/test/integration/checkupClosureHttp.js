@@ -55,10 +55,17 @@ async function main() {
   }
   assert.equal((await FollowUp.findById(service.taskIds.result_review)).isBlocked, false);
   check('Real report audit route unlocked original advisor task');
+  if (process.argv.includes('--prepare-result-only')) return;
   for (const [stage, role] of [['result_review', 'familyDoctor'], ['final_acceptance', 'healthPlanner']]) {
     await request(`/staff/followups/${service.taskIds[stage]}`, tokens[role], 'PUT', { status: 'completed', content: ' ', executedContent: 'stale value must not bypass empty content' }, 400);
     if ((await FollowUp.findById(service.taskIds[stage])).status !== 'completed') {
-      await request(`/staff/followups/${service.taskIds[stage]}`, tokens[role], 'PUT', { status: 'completed', content: `隔离模拟${stage}结论；非真实评估或履约` });
+      let checkupOutcome;
+      if (stage === 'result_review' && process.argv.includes('--merged-outcome')) {
+        const ctx = (await request(`/staff/followups/${service.taskIds[stage]}/checkup-outcome-context`, tokens[role])).data;
+        checkupOutcome = { updatedAt: ctx.item.updatedAt, reportIds: [evidence.reportId], checksComplete: true,
+          decision: 'no_further', note: '隔离合并确认，无后续事项，非医疗结论' };
+      }
+      await request(`/staff/followups/${service.taskIds[stage]}`, tokens[role], 'PUT', { status: 'completed', content: checkupOutcome?.note || `隔离模拟${stage}结论；非真实评估或履约`, checkupOutcome });
     }
     assert.ok((await FollowUp.findById(service.taskIds[stage])).executedContent);
     check(`Actual ${stage} route saved conclusion and completed task`);

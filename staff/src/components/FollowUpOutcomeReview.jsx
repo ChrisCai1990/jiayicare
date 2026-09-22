@@ -4,7 +4,7 @@ import { useStaff } from '../App'
 import { requiresOutcomeReview } from '../utils/followUpContinuity'
 import { submitMergedOutcome } from '../utils/mergedOutcomeReview.mjs'
 
-export default function FollowUpOutcomeReview({ item, onSaved }) {
+export default function FollowUpOutcomeReview({ item, onSaved, submitApi = staffAPI, serviceMode = false }) {
   const { staff } = useStaff()
   const [reports, setReports] = useState([]), [drafts, setDrafts] = useState([])
   const [loaded, setLoaded] = useState(false), [busy, setBusy] = useState(false), [message, setMessage] = useState('')
@@ -32,7 +32,7 @@ export default function FollowUpOutcomeReview({ item, onSaved }) {
   const submit = async () => {
     setBusy(true); setMessage('')
     try {
-      const r = await submitMergedOutcome({ api: staffAPI, item, reportIds: ids, decision, note, checked, draft: drafts.find(d => d._id === draftId) })
+      const r = await submitMergedOutcome({ api: submitApi, item, reportIds: ids, decision, note, checked, draft: drafts.find(d => d._id === draftId) })
       setSaved(r.data); onSaved?.(r.data)
     } catch (e) { setMessage(e.message) } finally { setBusy(false) }
   }
@@ -44,7 +44,7 @@ export default function FollowUpOutcomeReview({ item, onSaved }) {
       <select aria-label="结果处置" value={decision} onChange={e => { setDecision(e.target.value); setDraftId('') }}><option value="">请选择后续安排</option><option value="new_plan">需要继续，审核并发布后续计划</option><option value="no_further">本次已完成，无需后续计划</option></select>
       <select aria-label="后续随访草稿" value={draftId} onChange={e => setDraftId(e.target.value)}><option value="">{decision === 'new_plan' ? '选择本次报告随访' : '可关联本次无后续行动草稿一并审核'}</option>{drafts.filter(d => ids.includes(String(d.reportId?._id || d.reportId))).map(d => <option key={d._id} value={d._id}>{d.title} · {d.followUpDrafts?.length || 0}条 · {d.status === 'approved' ? '已审核' : '待审核'}</option>)}</select>
       {drafts.filter(d => d._id === draftId).map(d => <div key={d._id}>
-        <p>一次确认：审核并发布下列安排成功后，才结束原计划。已审核内容不可在此改写。</p>
+        <p>{serviceMode ? '一次确认并发布后续安排；原计划待服务最终验收和核销后自动结束。' : '一次确认：审核并发布下列安排成功后，才结束原计划。'}已审核内容不可在此改写。</p>
         {(d.followUpDrafts || []).map((f, i) => {
           const change = patch => setDrafts(rows => rows.map(row => row._id === d._id ? { ...row, followUpDrafts: row.followUpDrafts.map((v, j) => i === j ? { ...v, ...patch } : v) } : row))
           return <fieldset key={i} disabled={busy || d.status === 'approved'}>
@@ -58,7 +58,7 @@ export default function FollowUpOutcomeReview({ item, onSaved }) {
       </div>)}
       <textarea aria-label="结果处置结论" placeholder="结果处置结论及无需继续/后续跟进依据" value={note} onChange={e => setNote(e.target.value)} />
       <label><input type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)} />本次检查已完成，所选报告为本次完整资料，已核对后续安排</label>
-      <button disabled={busy || !checked || !note.trim() || !ids.length || !decision || (decision === 'new_plan' && !draftId)} onClick={submit}>确认审核与后续安排，并完成原计划</button>
+      <button disabled={busy || !checked || !note.trim() || !ids.length || !decision || (decision === 'new_plan' && !draftId)} onClick={submit}>{serviceMode ? '一次确认体检评估与后续安排' : '确认审核与后续安排，并完成原计划'}</button>
     </>}
     {message && <p role="alert">{message}</p>}
   </section>

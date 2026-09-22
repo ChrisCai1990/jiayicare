@@ -25,6 +25,7 @@ const followUpSchema = new mongoose.Schema({
   }], default: undefined }, // 只追加的沟通过程；不代表管理事项完成
   continuityRequired: { type: Boolean, default: false },
   outcomeReview: { type: mongoose.Schema.Types.Mixed, default: null }, // 顾问结果处置的只读凭据，通用编辑不能写入
+  checkupOutcomeDecision: { type: mongoose.Schema.Types.Mixed, default: null }, // 服务顾问确认，验收/核销后消费；只由专用校验写入
   executedType:    { type: String, enum: ['phone', 'wechat', 'visit', 'video', 'other', ''], default: '' },
   // 服务事务标准交付/督导清单。执行人与督办人使用同一组 key，督办逐项核验执行结果。
   serviceChecklist: { type: mongoose.Schema.Types.Mixed, default: [] },

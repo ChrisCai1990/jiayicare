@@ -1,7 +1,7 @@
 const same = (a, b) => Boolean(a && b && String(a) === String(b))
 
 function createPreparationCompletion({ Handoff, HealthPlan, FollowUp, FollowUpPlan, User, Order,
-  requiresOutcomeReview = require('./followUpContinuity').requiresOutcomeReview }) {
+  requiresOutcomeReview = require('./followUpContinuity').requiresOutcomeReview, closeReviewedOriginal }) {
   async function reconcile(link) {
     if (link?.status !== 'active' || link.completion?.status === 'completed') return false
     const service = await HealthPlan.findById(link.servicePlanId).lean()
@@ -77,12 +77,15 @@ function createPreparationCompletion({ Handoff, HealthPlan, FollowUp, FollowUpPl
     const filter = { patientId: link.patientId, sourceAnnualPlanId: link.annualPlanId, sourceType: 'scheduled', sourceScheduleKey: key, taskRole: { $in: [null, ''] } }
     const managers = await FollowUp.find(filter).lean()
     if (managers.length !== 1) return attention('对应年度健管随访缺失或重复，请核对；不会自动另建任务')
-    const task = managers[0]
+    let task = managers[0]
     const patient = await User.findById(link.patientId).lean()
     if (!same(task.assignedTo, patient?.assignedHealthManager) || task.aiStatus === 'pending' || task.serviceTracking) return attention('健管归属、审核状态或其他服务关联需核对')
     const proof = task.checkupPreparationCompletion
     if (task.status !== 'completed' && requiresOutcomeReview(task)) {
-      return attention('服务履约已完成；原健管计划仍待报告审核与健康顾问结果处置，不因核销自动关闭')
+      if (!reviews[0].checkupOutcomeDecision || !closeReviewedOriginal) return attention('服务履约已完成；原健管计划仍待报告审核与健康顾问结果处置，不因核销自动关闭')
+      try { task = await closeReviewedOriginal(task, reviews[0]) }
+      catch (error) { return attention(`合并审核结案待核对：${error.message}`) }
+      if (task?.status !== 'completed') return attention('原计划结果处置尚未完成')
     }
     if (proof && (!same(proof.handoffId, link._id) || !same(proof.servicePlanId, service._id))) return attention('随访已有其他完成凭据，请核对')
     if (task.status !== 'completed') {
@@ -130,6 +133,7 @@ function createPreparationCompletion({ Handoff, HealthPlan, FollowUp, FollowUpPl
 function runtime() {
   return createPreparationCompletion({ Handoff: require('../models/CheckupPreparationHandoff'),
     HealthPlan: require('../models/HealthPlan'), FollowUp: require('../models/FollowUp'),
-    FollowUpPlan: require('../models/FollowUpPlan'), User: require('../models/User'), Order: require('../models/Order') })
+    FollowUpPlan: require('../models/FollowUpPlan'), User: require('../models/User'), Order: require('../models/Order'),
+    closeReviewedOriginal: (task, review) => require('./checkupMergedOutcome').runtime().close(task, review) })
 }
 module.exports = { createPreparationCompletion, runtime }

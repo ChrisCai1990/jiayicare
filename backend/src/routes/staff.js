@@ -2050,6 +2050,15 @@ router.get('/followups/:id/outcome-candidates', staffAuth, async (req, res) => {
   } catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.message }); }
 });
 
+router.get('/followups/:id/checkup-outcome-context', staffAuth, async (req, res) => {
+  try {
+    const review = await FollowUp.findById(req.params.id).lean();
+    if (!review) return res.status(404).json({ success: false, message: '任务不存在' });
+    const context = await require('../utils/checkupMergedOutcome').runtime().context(review, req.staff);
+    res.json({ success: true, data: context ? { item: context.item } : null });
+  } catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.message }); }
+});
+
 router.post('/followups/:id/outcome-review', staffAuth, async (req, res) => {
   try {
     const data = await require('../utils/followUpOutcomeReview').reviewOutcome({ FollowUp, Report: MedicalReport, User,
@@ -2183,6 +2192,16 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   if (followUp.sourceType === 'health_plan' && followUp.followUpSchemeId && req.body.status === 'completed') {
     const workflowScheme = await FollowUpPlan.findById(followUp.followUpSchemeId).lean();
     const workflowStage = workflowScheme ? stageForScheme(workflowScheme) : '';
+    if (workflowStage === 'result_review' && String(submittedExecutionContent || '').trim()) {
+      try {
+        const attestation = await require('../utils/checkupMergedOutcome').runtime().prepare(followUp.toObject(), req.staff, req.body.checkupOutcome);
+        if (attestation) {
+          if (String(submittedExecutionContent).trim() !== String(attestation.body.note).trim()) return res.status(409).json({ success: false, message: '评估结论须与本次结果处置一致' });
+          followUp.checkupOutcomeDecision = attestation;
+          followUp.$where = { ...followUp.$where, updatedAt: followUp.updatedAt };
+        }
+      } catch (error) { return res.status(error.statusCode || 409).json({ success: false, message: error.message }); }
+    }
     if (workflowStage === 'result_review' && !String(submittedExecutionContent || '').trim()) {
       return res.status(400).json({ success: false, message: '请填写体检结果评估，并明确后续随访计划；无需随访时请记录结论和依据' });
     }
