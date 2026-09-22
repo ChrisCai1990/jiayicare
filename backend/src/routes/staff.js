@@ -1417,6 +1417,13 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
     'bodyComposition',
   ];
   const updateData = {};
+  try {
+    if (req.body.carePreferences !== undefined) updateData.carePreferences = require('../utils/carePreferences').normalizeCarePreferences(req.body.carePreferences);
+    if (req.body.residenceCity !== undefined) {
+      if (typeof req.body.residenceCity !== 'string' || req.body.residenceCity.length > 100) throw new Error('常住城市格式无效');
+      updateData['residence.city'] = req.body.residenceCity.trim();
+    }
+  } catch (err) { return res.status(400).json({ success: false, message: err.message }); }
   allowed.forEach(k => {
     if (req.body[k] !== undefined) updateData[k] = req.body[k];
   });
@@ -9836,7 +9843,8 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
       ...(s.checkup_completeness?.missing || []).map((item, i) => ({ id: `missing:${i}`, content: item })),
       { id: 'summary', content: s },
     ];
-    const checkedPrompt = closedLoop ? require('../utils/annualGenerationContract').annualGenerationPrompt(prompt, availableAnnualFollowUpCatalog, evidence, allowedKeys) : prompt;
+    const carePreferences = require('../utils/carePreferences').carePreferenceContext(user);
+    const checkedPrompt = closedLoop ? require('../utils/annualGenerationContract').annualGenerationPrompt(prompt, availableAnnualFollowUpCatalog, evidence, allowedKeys) + '\n就医偏好（仅物流参考，不作为医学依据或生成门槛；无已核实医院库时医院留空）：' + JSON.stringify(carePreferences) : prompt;
     const generate = async () => {
       const text = await chat([{ role: 'user', content: checkedPrompt }], { maxTokens: 6000, temperature: 0, jsonMode: true, timeoutMs: 90000 });
       let parsed;
@@ -9879,7 +9887,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
         records = records.map(record => hydrateStandardRecord(record, key)).filter(Boolean);
       }
       result[key] = { records: records.map(record => ({
-        ...record,
+        ...(closedLoop && ['medical_treatment', 'checkup_completion', 'abnormal_followup'].includes(key) ? require('../../../shared/annualAppointment.cjs').evaluatedTiming(record, key === 'medical_treatment' ? 'visit_time' : 'time') : record),
         serviceMode: 'reminder',
         serviceType: '',
         reviewStatus: 'pending_family_doctor_review',
@@ -9891,7 +9899,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     if (allowedKeys.includes('lifestyle') && raw.lifestyle && !Array.isArray(raw.lifestyle) && raw.lifestyle.focus) result.lifestyle = { enabled: true, ...raw.lifestyle };
     if (allowedKeys.includes('annual_checkup') && raw.annual_checkup && !Array.isArray(raw.annual_checkup) && raw.annual_checkup.focus) {
       const hydrated = hydrateStandardRecord(raw.annual_checkup, 'annual_checkup');
-      if (hydrated) result.annual_checkup = { enabled: true, ...hydrated };
+      if (hydrated) result.annual_checkup = { enabled: true, ...(closedLoop ? require('../../../shared/annualAppointment.cjs').evaluatedTiming(hydrated, 'date') : hydrated) };
     }
     const standardPlanByName = new Map(availableAnnualFollowUpCatalog.map(item => [item.name, item]));
     result.templateNodes = Array.isArray(raw.templateNodes) ? raw.templateNodes.map(node => {

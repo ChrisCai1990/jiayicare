@@ -1,4 +1,5 @@
 const FollowUp = require('../models/FollowUp');
+const { appointmentDay } = require('../../../shared/annualAppointment.cjs');
 const { sourceDate, assertAmendedRowUnchanged } = require('./annualScheduleAmendments');
 
 // 占位记录预生成窗口：只提前生成未来 N 天内的，而不是一次性铺满全年。
@@ -123,6 +124,7 @@ async function buildAnnualPlanFollowUps(plan) {
       // 其他岗位的代约、陪同、会诊等服务任务由 annualPlanServiceTasks 另行拆分。
       const executor = patient?.assignedHealthManager;
       const details = [
+        rec.appointmentSchedulingVersion === 1 && `预约安排日期：${appointmentDay(rec[mod.dateField])}；建议就医/检查日期：${rec[mod.dateField]}。一周内完成预约安排，日期已过则立即处理；实际就医时间以预约确认为准。`,
         rec.standardPlanName && `执行方案：${rec.standardPlanName}`,
         rec.hospital && `就医/会诊医院：${rec.hospital}`,
         rec.department && `科室：${rec.department}`,
@@ -144,7 +146,7 @@ async function buildAnnualPlanFollowUps(plan) {
         (rec.precautions || rec.notes) && `注意事项：${rec.precautions || rec.notes}`,
       ].filter(Boolean);
       const lines = [...details, executor && `执行人员：${staffName(executor)}`].filter(Boolean);
-      push(rec[mod.dateField], `${mod.theme} · ${label}`, lines.join('\n'), executor,
+      push(rec.appointmentSchedulingVersion === 1 ? appointmentDay(rec[mod.dateField]) : rec[mod.dateField], `${mod.theme} · ${label}`, lines.join('\n'), executor,
         `${mod.key}:${String(sourceDate(plan, mod.key, i, mod.dateField, rec[mod.dateField])).slice(0, 10)}:${String(label).trim()}`, rec);
     });
   }
@@ -173,11 +175,12 @@ async function buildAnnualPlanFollowUps(plan) {
   const annualCheckup = moduleData.annual_checkup;
   if (annualCheckup && annualCheckup.enabled !== false) {
     const checkupLines = [
+      annualCheckup.appointmentSchedulingVersion === 1 && `预约安排日期：${appointmentDay(annualCheckup.date)}；建议体检日期：${annualCheckup.date}。一周内完成预约安排，日期已过则立即处理。`,
       annualCheckup.institution && `计划体检机构：${annualCheckup.institution}`,
       annualCheckup.focus && `重点关注：${annualCheckup.focus}`,
       annualCheckup.escort && '已安排陪检服务',
     ].filter(Boolean).join('\n');
-    push(annualCheckup.date, `年度体检提醒 · ${annualCheckup.institution || ''}`, checkupLines, patient?.assignedHealthManager,
+    push(annualCheckup.appointmentSchedulingVersion === 1 ? appointmentDay(annualCheckup.date) : annualCheckup.date, `年度体检提醒 · ${annualCheckup.institution || ''}`, checkupLines, patient?.assignedHealthManager,
       `annual_checkup:${String(sourceDate(plan, 'annual_checkup', 0, 'date', annualCheckup.date)).slice(0, 10)}`, annualCheckup);
   }
 

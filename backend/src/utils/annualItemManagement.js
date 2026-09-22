@@ -11,6 +11,10 @@ function normalizeAnnualItems(data, managerId) {
         serviceType: mode === 'single' ? row.serviceType : '', managedServiceType: mode === 'managed' ? row.managedServiceType : '' };
     }) };
   }
+  if (data?.annual_checkup?.enabled !== false && data?.annual_checkup?.date) {
+    const normalized = normalizeAnnualItems({ medical_treatment: { records: [data.annual_checkup] } }, managerId);
+    result.annual_checkup = normalized.medical_treatment.records[0];
+  }
   return result;
 }
 module.exports = { normalizeAnnualItems };

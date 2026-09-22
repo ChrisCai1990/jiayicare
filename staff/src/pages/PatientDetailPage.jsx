@@ -3063,6 +3063,8 @@ export default function PatientDetailPage() {
     height: u.height || '',
     weight: u.weight || '',
     address: u.address || '',
+    residenceCity: u.residence?.city || '',
+    carePreferences: { city: '', hospitals: '', allowTravel: '', ...u.carePreferences },
     // 登录手机号与联系电话已合并；旧数据仅有 contactPhone 时作为兼容回填显示。
     phone: u.phone || u.contactPhone || '',
     contactName: u.contactName || '',
@@ -4329,6 +4331,7 @@ export default function PatientDetailPage() {
                     { key: 'height', label: '身高(cm)', type: 'number' },
                     { key: 'weight', label: '体重(kg)', type: 'number' },
                     { key: 'address', label: '联系地址' },
+                    { key: 'residenceCity', label: '常住城市' },
                     { key: 'contactName', label: '紧急联系人' },
                     { key: 'contactPhone2', label: '紧急联系电话' },
                     { key: 'deliveryAddress', label: '快递配送地址' },
@@ -4341,6 +4344,14 @@ export default function PatientDetailPage() {
                         onChange={e => setBasicInfoForm(f => ({ ...f, [key]: e.target.value }))} />
                     </div>
                   ))}
+                  <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                    <label>就医偏好（选填，不影响方案生成）</label>
+                    <input className="form-input" aria-label="首选就医城市" placeholder={`首选就医城市，可多选；留空沿用${basicInfoForm.residenceCity || '常住城市'}`} value={basicInfoForm.carePreferences?.city || ''} onChange={e => setBasicInfoForm(f => ({ ...f, carePreferences: { ...f.carePreferences, city: e.target.value } }))} />
+                    <input className="form-input" aria-label="偏好医院" placeholder="偏好医院，可填写多家或无偏好；不是已匹配医院" value={basicInfoForm.carePreferences?.hospitals || ''} onChange={e => setBasicInfoForm(f => ({ ...f, carePreferences: { ...f.carePreferences, hospitals: e.target.value } }))} />
+                    <select className="form-input" aria-label="接受异地就医" value={basicInfoForm.carePreferences?.allowTravel || ''} onChange={e => setBasicInfoForm(f => ({ ...f, carePreferences: { ...f.carePreferences, allowTravel: e.target.value } }))}>
+                      <option value="">是否接受异地就医：未确认</option><option value="yes">接受异地就医</option><option value="no">不接受异地就医</option>
+                    </select>
+                  </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label style={{ fontSize: 12, color: '#8AA89C' }}>性别</label>
                     <select className="form-input" value={basicInfoForm.gender || '未知'} onChange={e => setBasicInfoForm(f => ({ ...f, gender: e.target.value }))}>
@@ -4468,6 +4479,9 @@ export default function PatientDetailPage() {
                   {bmi && <InfoRow label="BMI" value={bmi} />}
                   <InfoRow label={user.idType === 'passport' ? '护照' : '身份证'} value={user.idNumber || '-'} />
                   <InfoRow label="常住所在地" value={[user.residence?.province, user.residence?.city, user.residence?.district].filter(Boolean).join(' ') || '-'} />
+                  <InfoRow label="首选就医城市" value={user.carePreferences?.city || user.residence?.city || '未填写'} />
+                  <InfoRow label="偏好医院" value={user.carePreferences?.hospitals || '未填写'} />
+                  <InfoRow label="接受异地就医" value={{ yes: '是', no: '否' }[user.carePreferences?.allowTravel] || '未确认'} />
                   <InfoRow label="联系地址" value={user.address || '-'} />
                   <InfoRow label="紧急联系人" value={user.contactName || '-'} />
                   <InfoRow label="紧急联系电话" value={user.contactPhone2 || '-'} />

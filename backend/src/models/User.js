@@ -144,6 +144,11 @@ const userSchema = new mongoose.Schema({
 
   // ── 成人完整健康档案扩展字段 ──────────────────────────────────────
   // 联系信息扩展
+  carePreferences: {
+    city: { type: String, default: '' },
+    hospitals: { type: String, default: '' },
+    allowTravel: { type: String, enum: ['', 'yes', 'no'], default: '' },
+  },
   address:        { type: String, default: '' },  // 联系地址
   contactName:    { type: String, default: '' },  // 联系人姓名
   contactPhone3:  { type: String, default: '' },  // 联系人电话

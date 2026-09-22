@@ -1,4 +1,11 @@
 import React, { useState, createContext, useContext } from 'react'
+import appointment from '../../../shared/annualAppointment.cjs'
+
+function readableValue(value) {
+  if (Array.isArray(value)) return value.map(readableValue).filter(Boolean).join('\n')
+  if (value && typeof value === 'object') return Object.entries(value).map(([key, val]) => `${key}：${readableValue(val)}`).join('\n')
+  return value == null ? '' : String(value)
+}
 
 // 板块化方案编辑的通用UI组件，从 AnnualMgmtPlanPage.jsx 抽出（2026-07-13），
 // 供年度管理方案/营养干预方案/就医协助方案共用同一套"板块折叠+多条记录行内展开+开关板块"交互，
@@ -74,7 +81,7 @@ export function FieldInput({ field, value, onChange }) {
   if (field.type === 'textarea') {
     return (
       <textarea
-        value={value || ''}
+        value={readableValue(value)}
         onChange={e => onChange(e.target.value)}
         placeholder={field.placeholder || `请填写${field.label}`}
         rows={field.rows || 3}
@@ -84,7 +91,8 @@ export function FieldInput({ field, value, onChange }) {
   }
   if (field.type === 'date' || field.type === 'time') {
     return (
-      <input type={field.type} value={value || ''} onChange={e => onChange(e.target.value)} style={inputStyle} />
+      <><input type={field.type} value={value || ''} onChange={e => onChange(e.target.value)} style={inputStyle} />
+      {field.appointmentDate && <div style={{ fontSize: 12, marginTop: 6 }}>预约安排日：{appointment.appointmentDay(value) || '待确定建议日期'}（提前7天；到期一周内完成预约安排，逾期立即处理）</div>}</>
     )
   }
   if (field.type === 'yesno') {
@@ -149,16 +157,15 @@ export function RecordEditor({ def, record, onChange, onDelete, index, total }) 
         <div style={{ padding: '0 12px 12px', borderTop: '1px solid #F0EDE7' }}>
           {def.fields.map(field => (
             <FieldRow key={field.key} label={field.label} internal={field.internal}>
-              <FieldInput field={field} value={record[field.key]} onChange={val => onChange({ ...record, [field.key]: val })} />
+              <FieldInput field={field} value={record[field.key]} onChange={val => onChange({ ...record, [field.key]: val, ...(field.appointmentDate ? { appointmentSchedulingVersion: 1 } : {}) })} />
             </FieldRow>
           ))}
           {def.annualServiceArrangement && <>
-            <FieldRow label="随访负责人"><div style={{ paddingTop: 8 }}>{def.managerName}（客户所属健管专员，自动关联）</div></FieldRow>
+            <FieldRow label="随访负责人"><div style={{ paddingTop: 8 }}>自动匹配：{def.managerName}。确认方案后任务派至该健管专员工作台。</div></FieldRow>
             <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #D7E4DD' }}><b>服务安排</b><div style={{ fontSize: 12, marginTop: 4 }}>先确定本项管理内容，再按客户需求选择服务；原健管随访持续保留。</div>
               {(def.serviceFields || []).filter(f => f.key !== 'serviceType' || record.serviceMode === 'single').map(field => <FieldRow key={field.key} label={field.label}><FieldInput field={field} value={record[field.key]} onChange={val => onChange({ ...record, [field.key]: val, ...(field.key === 'serviceMode' ? { serviceType: '', managedServiceType: '' } : {}) })} /></FieldRow>)}
               {record.serviceMode === 'managed' && <FieldRow label="一站式服务类型"><FieldInput field={{ type: 'select', options: [{ value: '', label: '请选择' }, { value: 'outpatient', label: '门诊一站式' }, { value: 'checkup', label: '体检一站式' }] }} value={record.managedServiceType} onChange={val => onChange({ ...record, managedServiceType: val })} /></FieldRow>}
             </div>
-            <details style={{ marginTop: 12, fontSize: 12 }}><summary>查看标准模板依据</summary>{['standardPlanName', 'standardContent', 'standardSchedule'].map(key => record[key] && <div key={key} style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>{record[key]}</div>)}</details>
           </>}
         </div>
       )}
@@ -259,11 +266,18 @@ export function ModulePanel({ moduleKey, def, data, onChange }) {
           ) : !enabled ? (
             <div style={{ padding: '14px 0', color: '#aaa', fontSize: 13, textAlign: 'center' }}>此板块已停用，点击开关启用</div>
           ) : (
-            def.fields.map(field => (
+            <>{def.fields.map(field => (
               <FieldRow key={field.key} label={field.label} internal={field.internal}>
-                <FieldInput field={field} value={data[field.key]} onChange={val => set(field.key, val)} />
+                <FieldInput field={field} value={data[field.key]} onChange={val => { set(field.key, val); if (field.appointmentDate) set('appointmentSchedulingVersion', 1) }} />
               </FieldRow>
-            ))
+            ))}
+            {def.annualServiceArrangement && <>
+              <FieldRow label="随访负责人">自动匹配：{def.managerName}。确认方案后任务派至该健管专员工作台。</FieldRow>
+              <h4>服务安排</h4>
+              {(def.serviceFields || []).filter(f => f.key !== 'serviceType' || data.serviceMode === 'single').map(field => <FieldRow key={field.key} label={field.label}><FieldInput field={field} value={data[field.key]} onChange={val => { set(field.key, val); if (field.key === 'serviceMode') { set('serviceType', ''); set('managedServiceType', '') } }} /></FieldRow>)}
+              {data.serviceMode === 'managed' && <FieldRow label="一站式服务类型"><FieldInput field={{ type: 'select', options: [{ value: '', label: '请选择' }, { value: 'outpatient', label: '门诊一站式' }, { value: 'checkup', label: '体检一站式' }] }} value={data.managedServiceType} onChange={val => set('managedServiceType', val)} /></FieldRow>}
+            </>}
+            </>
           )}
         </div>
       )}
