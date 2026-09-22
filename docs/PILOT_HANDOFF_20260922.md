@@ -15,7 +15,15 @@
 会话清单：`C:/Users/huawei/AppData/Local/Temp/jiayicare-acceptance-X9ca9X/session.json`。
 后端仅127.0.0.1:3000，Mongo仅127.0.0.1:27134，数据库为该清单指定的独立随机库；网络出口封锁，无生产凭证。重启用startIsolatedAcceptance.js的ISOLATED_ACCEPTANCE_SESSION模式，已校验并恢复同一白名单，不能默认改为all。
 
-## 唯一当前审批阻塞
+## 发布前置执行记录（2026-09-22）
+
+用户明确确认完整候选目的地及金娟白名单发布，原上传审批阻塞解除；29fd9326已同步功能分支。生产与远端master复核为c29e8942。
+
+私有备份`/var/backups/jiayicare/pilot-20260922-29fd9326`包含代码bundle、四端页面、配置与数据库。dump期间fsync锁已释放；gzip完整性及mongorestore dryRun通过，未做完整恢复演练。
+
+16项指定索引已新增，21项均存在且无冲突。单客户白名单及新扫描关闭配置已写入，实际生效须新进程验证。未写客户业务数据；代码发布仍以随后部署日志为准。
+
+### 已解除的审批记录
 
 安全审批拒绝向GitHub上传完整候选代码，要求用户明确批准目的地和内容：
 `https://github.com/ChrisCai1990/jiayicare` / `feature/health-management-foundation-20260918`，内容为已提交候选业务代码及验收文档，不含本机未跟踪脚本、运行凭证或数据库文件。未重试、未以直接生产部署规避。
