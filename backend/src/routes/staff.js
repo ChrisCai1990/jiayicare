@@ -2255,7 +2255,15 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
       return res.status(403).json({ success: false, message: '仅所属健康顾问可确认服务后续安排' });
     }
     require('../utils/serviceReviewSuccessor').successorSpec({ ...followUp.toObject(), status: 'completed', completedAt: new Date(), formData: result }, patient);
-    req.body.formData = { ...result, successorProtocol: 'source_v1' };
+    const linkedOriginal = await require('../models/FollowUpServiceLink').exists({ patientId: followUp.patientId, targetType: 'health_plan', targetId: followUp.sourceHealthPlanId, status: { $in: ['waiting', 'completed'] } });
+    let reviewedReportSources = followUp.formData?.reviewedReportSources;
+    if (linkedOriginal && previousStatus !== 'completed') {
+      const reportIds = [...new Set((followUp.formData?.reportIds || []).map(String))];
+      const reports = await MedicalReport.find({ _id: { $in: reportIds }, user: followUp.patientId, sourceHealthPlanId: followUp.sourceHealthPlanId, audit_status: 'audited' }).lean();
+      if (result.checksComplete !== true || !reportIds.length || reports.length !== reportIds.length) return res.status(409).json({ success: false, message: '请确认本次资料齐全且全部审核后再提交，原计划将保留至后续随访落地' });
+      reviewedReportSources = reports.map(r => ({ id: String(r._id), digest: require('../utils/reportFollowUpSource').sourceDigest(r) }));
+    }
+    req.body.formData = { ...result, successorProtocol: 'source_v1', reviewedReportSources };
   }
   const isSuper = req.staff.role === 'superadmin';
   const isOwner = isSuper || String(followUp.staffId) === String(req.staff._id);
@@ -2551,6 +2559,15 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
         },
         { upsert: true, new: true, setDefaultsOnInsert: true }
       );
+    }
+  }
+  if (isOutpatientPostVisitReview && followUp.status === 'completed') {
+    try {
+      await require('../utils/serviceOutcomeClosure').closeServiceOriginal({ FollowUp, Report: MedicalReport,
+        Link: require('../models/FollowUpServiceLink'), review: await FollowUp.findById(followUp._id).lean(),
+        patient: await User.findById(followUp.patientId).lean(), actor: req.staff });
+    } catch (error) {
+      return res.status(error.statusCode || 409).json({ success: false, message: `服务审核已保存，原随访尚未结案：${error.message}。请保留原任务核对后重试，不要另建。` });
     }
   }
   res.json({ success: true, data: followUp });

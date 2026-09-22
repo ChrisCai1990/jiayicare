@@ -7,7 +7,7 @@ async function reviewOutcome({ FollowUp, Report, User, Draft, id, actor, body, n
   const patient = await User.findById(task.patientId).lean();
   if (!patient || (actor.role !== 'superadmin' && (actor.role !== 'familyDoctor' || !same(patient.assignedFamilyDoctor, actor._id)))) throw fail('仅所属健康顾问可确认结果处置', 403);
   if (task.status === 'completed' && task.outcomeReview) {
-    if (task.outcomeClosureIntent?.status === 'completed') await require('./outcomeEvidenceFence').releaseEvidence({ FollowUp, Report, Draft }, task.outcomeClosureIntent);
+    if (task.outcomeClosureIntent?.status === 'completed') await require('./outcomeEvidenceFence').releaseEvidence({ FollowUp, Report, Draft, Link: require('../models/FollowUpServiceLink') }, task.outcomeClosureIntent);
     return task;
   }
   if (!requiresOutcomeReview(task) || !['planned', 'in_progress', 'missed'].includes(task.status) || task.aiStatus === 'pending') throw fail('当前计划不能进行结果处置');

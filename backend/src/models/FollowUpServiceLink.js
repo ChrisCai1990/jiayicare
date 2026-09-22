@@ -13,4 +13,5 @@ const schema = new mongoose.Schema({
   history: { type: [mongoose.Schema.Types.Mixed], default: [] },
 }, { timestamps: true, optimisticConcurrency: true });
 schema.index({ targetType: 1, targetId: 1, status: 1 });
+require('../utils/outcomeEvidenceFence').outcomeEvidenceFence(schema);
 module.exports = mongoose.model('FollowUpServiceLink', schema);
