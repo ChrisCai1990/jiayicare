@@ -457,7 +457,9 @@ export const staffAPI = {
   deleteAIHealthSummaryDiscussion: (id, index, year, recordIndex) => req(`/staff/patients/${id}/ai-health-summary/discussions/${index}?year=${year || ''}&recordIndex=${recordIndex ?? ''}`, { method: 'DELETE' }),
   generateAIHealthSummaryReply:    (id, year, recordIndex, sectionKey) => req(`/staff/patients/${id}/ai-health-summary/discussions/ai-reply`, { method: 'POST', body: JSON.stringify({ year, recordIndex, sectionKey }) }),
   applyAIHealthSummaryDiscussion:  (id, year, recordIndex, sectionKey) => req(`/staff/patients/${id}/ai-health-summary/discussions/apply`, { method: 'POST', body: JSON.stringify({ year, recordIndex, sectionKey }) }),
-  generateAIAnnualPlan:    (id, planType, notes, templateId, year) => req(`/staff/patients/${id}/ai-annual-plan`, { method: 'POST', body: JSON.stringify({ planType, notes, templateId, year }) }),
+  generateAIAnnualPlan:    (id, planType, notes, templateId, year, supplement) => req(`/staff/patients/${id}/ai-annual-plan`, { method: 'POST', body: JSON.stringify({ planType, notes, templateId, year, supplement }) }),
+  getAnnualSupplementSources: (id, planId = '') => req(`/staff/patients/${id}/annual-supplement-sources?planId=${encodeURIComponent(planId)}`),
+  saveAnnualSupplementRevision: (id, data) => req(`/staff/patients/${id}/annual-supplement-revision`, { method: 'POST', body: JSON.stringify(data) }),
   getWorkflowProducts:     (key) => req(`/staff/workflow-products?key=${encodeURIComponent(key)}`),
 
   // 场景七：AI 辅助生成文案草稿（kind: followup | service_record | plan_desc）

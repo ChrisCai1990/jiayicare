@@ -6808,10 +6808,10 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       if (!require('../utils/annualPlanSourceMatches').annualPlanSourceMatches(sourcePlan, normalizedTemplate, servicePlanCode, version.strategyType)) return res.status(409).json({ success: false, message: '原年度方案与所选服务版本不匹配，请刷新核对' });
     }
     const selector = sourcePlan ? { _id: sourcePlan._id } : legacy ? { _id: legacy._id } : { patientId: req.params.id, year: targetYear, planType: servicePlanCode };
-    const frozen = closedLoop ? await AnnualPlan.findOne(selector).select('confirmedAt frozenAt').lean() : null;
-    if (frozen?.confirmedAt || frozen?.frozenAt) return res.status(409).json({ success: false, message: '客户已确认的年度方案已经冻结；后续变化请生成动态随访计划' });
+    const frozen = closedLoop ? await AnnualPlan.findOne(selector).select('confirmedAt frozenAt pushedAt').lean() : null;
+    if (frozen?.confirmedAt || frozen?.frozenAt || frozen?.pushedAt) return res.status(409).json({ success: false, message: '已推送或已确认方案不可直接覆盖；请在补充依据入口保存修订草稿，执行任务保持不变' });
     const plan = await AnnualPlan.findOneAndUpdate(
-      selector,
+      frozen ? { ...selector, confirmedAt: null, frozenAt: null, pushedAt: null } : selector,
       { planType: servicePlanCode, servicePlanCode, strategyType: version.strategyType, clientBrand: patient.clientBrand,
         memberTypeSnapshot: patient.memberType || '',
         servicePackageSnapshot: packageRecord ? { id: packageRecord._id, name: packageRecord.name, capturedAt: new Date() } : { name: patient.servicePackage || '', capturedAt: new Date() },
@@ -6820,8 +6820,9 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
         templateSnapshot: template ? { name: template.name, type: template.type, content: template.content, capturedAt: new Date() } : null,
         createdBy: req.staff._id, reviewStatus: 'pending', reviewedBy: null, reviewedAt: null, reviewNote: '',
         pushedAt: null, pushedBy: null, confirmedAt: null },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+      { upsert: !frozen, new: true, setDefaultsOnInsert: true }
     );
+    if (!plan) return res.status(409).json({ success: false, message: '方案状态已变化，请刷新后核对' });
     res.json({ success: true, data: plan });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -9589,6 +9590,39 @@ router.post('/patients/:id/ai-health-summary/discussions/apply', staffAuth, asyn
 });
 
 // ── 4.5 AI管理方案生成 ──────────────────────────────────────────
+router.get('/patients/:id/annual-supplement-sources', staffAuth, async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可选择补充依据' });
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === req.params.id)) return res.status(403).json({ success: false, message: '无权查看该会员' });
+    const [reviews, reports] = await Promise.all([
+      AiCaseReview.find({ user: req.params.id, status: { $ne: 'archived' }, 'conclusion.status': 'confirmed' }).select('title reviewType conclusion.content conclusion.confirmedAt').sort({ updatedAt: -1 }).lean(),
+      MedicalReport.find({ user: req.params.id, audit_status: 'audited' }).select('title checkDate').sort({ checkDate: -1 }).lean(),
+    ]);
+    const plan = req.query.planId ? await AnnualPlan.findOne({ _id: req.query.planId, patientId: req.params.id }).select('+supplementRevisions').lean() : null;
+    res.json({ success: true, data: { reviews, reports, revisions: plan?.supplementRevisions || [] } });
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+router.post('/patients/:id/annual-supplement-revision', staffAuth, async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可保存修订建议' });
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === req.params.id)) return res.status(403).json({ success: false, message: '无权修改该会员' });
+    const plan = await AnnualPlan.findOne({ _id: req.body.planId, patientId: req.params.id }).lean();
+    if (!require('../utils/healthManagementRollout').enabledForPatient(req.params.id)) return res.status(403).json({ success: false, message: '当前客户尚未开放方案补充入口' });
+    if (!plan || String(plan.updatedAt?.toISOString()) !== req.body.baseUpdatedAt) return res.status(409).json({ success: false, message: '原方案已变化，请刷新后重新核对' });
+    const sources = await require('../utils/annualSupplementSources').loadSupplement(req.body.sources, req.params.id, AiCaseReview, MedicalReport);
+    if (!sources || !Array.isArray(req.body.changes) || !req.body.changes.length || req.body.changes.length > 100) return res.status(400).json({ success: false, message: '请选择待审核调整' });
+    const preview = require('../../../shared/annualSupplement.cjs').applySupplement(plan.moduleData || {}, req.body.changes);
+    const revisionId = require('../utils/annualGenerationConsistency').fingerprint({ planId: String(plan._id), sources, changes: req.body.changes });
+    const revision = { id: revisionId, status: 'pending_review', createdAt: new Date(), createdBy: req.staff._id, baseUpdatedAt: plan.updatedAt, sources, changes: req.body.changes, moduleData: preview };
+    const saved = await AnnualPlan.updateOne({ _id: plan._id, updatedAt: plan.updatedAt, 'supplementRevisions.id': { $ne: revisionId } }, { $push: { supplementRevisions: { $each: [revision], $slice: -20 } } });
+    if (!saved.modifiedCount) return res.status(409).json({ success: false, message: '方案已变化，请刷新后重试' });
+    res.json({ success: true, message: '修订建议已留档，原方案及执行任务未改变' });
+  } catch (error) { res.status(error.statusCode || 400).json({ success: false, message: error.message }); }
+});
+
 // POST /api/staff/patients/:id/ai-annual-plan
 // 年度管理方案只有健康顾问/超管可生成（同 annual-plan PUT 接口的角色限制）
 router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
@@ -9603,6 +9637,8 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
 
     const targetYear = Number(req.body.year) || new Date().getFullYear();
     const closedLoop = require('../utils/healthManagementRollout').enabledForPatient(user._id);
+    if (req.body.supplement && !closedLoop) return res.status(403).json({ success: false, message: '当前客户尚未开放方案补充入口' });
+    const supplement = req.body.supplement ? await require('../utils/annualSupplementSources').loadSupplement(req.body.supplement, user._id, AiCaseReview, MedicalReport) : null;
     const preparation = closedLoop ? await require('../utils/annualPlanPreparation').loadAnnualPlanPreparationChecklist(user._id, targetYear) : {};
     if (closedLoop && !preparation?.checklist?.ready) {
       return res.status(409).json({ success: false, message: '年度方案准备清单尚未完成', data: preparation?.checklist || null });
@@ -9700,7 +9736,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       .sort({ checkDate: -1, createdAt: -1 }).lean();
     const suggestedCheckupDate = nextAnnualCheckupDate(reports);
     const allHepatitisBMarkersNegative = hepatitisBAllNegative(reports);
-    const confirmedCaseReviews = await AiCaseReview.find(closedLoop ? {
+    let confirmedCaseReviews = await AiCaseReview.find(closedLoop ? {
       ...require('../utils/annualCaseReviewScope').annualCaseReviewQuery(user._id, targetYear), 'conclusion.status': 'confirmed',
     } : {
       user: user._id, 'conclusion.status': 'confirmed',
@@ -9710,6 +9746,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       ],
     })
       .sort({ 'conclusion.confirmedAt': -1, _id: 1 }).limit(closedLoop ? 0 : 20).select('title reviewType conclusion.content conclusion.structured conclusion.confirmedAt').lean();
+    if (supplement) confirmedCaseReviews = [...new Map([...confirmedCaseReviews, ...supplement.reviews].map(row => [String(row._id), row])).values()];
     const confirmedReviewText = confirmedCaseReviews.length
       ? confirmedCaseReviews.map(item => `【${item.title}】${item.conclusion.content}`).join('\n\n').slice(0, 16000)
       : '无已确认的专题研判结论';
@@ -9845,9 +9882,10 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
       ...(s.checkup_completeness?.missing || []).map((item, i) => ({ id: `missing:${i}`, content: item })),
       { id: 'summary', content: s },
       { id: 'report_history', content: timeline },
+      ...(supplement ? [{ id: 'supplement', content: { reviews: supplement.reviews, reports: supplement.reports, advisorConfirmedNote: supplement.note } }] : []),
     ];
     const carePreferences = require('../utils/carePreferences').carePreferenceContext(user);
-    const checkedPrompt = closedLoop ? require('../utils/annualGenerationContract').annualGenerationPrompt(prompt, availableAnnualFollowUpCatalog, evidence, allowedKeys) + '\n' + clinicalRules.clinicalRulesPrompt + '\n就医偏好（仅物流参考，不作为医学依据或生成门槛；无已核实医院库时医院留空）：' + JSON.stringify(carePreferences) : prompt;
+    const checkedPrompt = closedLoop ? require('../utils/annualGenerationContract').annualGenerationPrompt(prompt, availableAnnualFollowUpCatalog, evidence, allowedKeys) + '\n' + clinicalRules.clinicalRulesPrompt + '\n就医偏好（仅物流参考，不作为医学依据或生成门槛；无已核实医院库时医院留空）：' + JSON.stringify(carePreferences) + (supplement ? '\n【补充生成模式】只针对supplement中的顾问选定依据提出新增或需调整事项，不重新生成整份，不重复已落实行动。原方案仅供对照，不是新的医学依据：' + JSON.stringify(supplement.baseModuleData) + '\n未涉及的模块返回空，不能把未输出当作取消。年度focus只给新增重点，不重复原项目；其他原内容由系统保留。每项补充建议sourceIds必须包含supplement及具体来源。' : '') : prompt;
     const generate = async () => {
       const text = await chat([{ role: 'user', content: checkedPrompt }], { maxTokens: 6000, temperature: 0, jsonMode: true, timeoutMs: 90000 });
       let parsed;

@@ -5,6 +5,7 @@ import { useToast, useStaff } from '../App'
 import { StaffListContext, ModulePanel } from '../components/ModulePanel'
 import ReportFollowUpDrafts from '../components/ReportFollowUpDrafts'
 import AnnualServicePeriodPanel from '../components/AnnualServicePeriodPanel'
+import AnnualPlanSupplement from '../components/AnnualPlanSupplement'
 import { annualPlanReturnTarget } from '../utils/annualPlanNavigation.mjs'
 import assessmentCriteria from '../../../shared/annualAssessmentCriteria.json'
 import { annualTemplateCode, matchingAnnualTemplate } from '../utils/annualTemplateSelection.mjs'
@@ -836,6 +837,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       </div>
 
       {generationError && <div role="alert" style={{ padding: 16, marginBottom: 16, background: '#FFF1F2', color: '#9F1239', borderRadius: 10 }}>生成未完成：{generationError}。已有方案未被本次生成替换。</div>}
+      {patientMode && closedLoopEnabled && canEdit && <AnnualPlanSupplement key={`${id}:${year}:${planType}:${selectedTemplateId}`} patientId={id} year={year} planType={planType} template={adminTemplates.find(t => t._id === selectedTemplateId)} templateId={selectedTemplateId} plan={plansByType[planType]} moduleData={moduleData} canEdit={canEdit} blocked={preparationBlocked} toast={toast} onApply={data => { setModuleData(data); setDirty(true) }} />}
       {patientMode && closedLoopEnabled && preparation?.checklist && (
         <div style={{ background: preparation.checklist.ready ? '#F0FDF4' : '#FFFDF7', border: `1px solid ${preparation.checklist.ready ? '#86EFAC' : '#F3D49A'}`, borderRadius: 12, padding: 18, marginBottom: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
