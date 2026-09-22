@@ -12,6 +12,9 @@ async function main() {
   const prep = JSON.parse(fs.readFileSync(path.join(dir, 'preparation-http.json')));
   const service = JSON.parse(fs.readFileSync(path.join(dir, 'service-http.json')));
   const closure = JSON.parse(fs.readFileSync(path.join(dir, 'closure-http.json')));
+  const redemptionPath = path.join(dir, 'redemption-http.json');
+  const redemption = fs.existsSync(redemptionPath) ? JSON.parse(fs.readFileSync(redemptionPath)) : null;
+  if (redemption) assert.equal(redemption.patientId, session.patientId);
   const request = async (route, token, method = 'GET', body) => {
     const res = await fetch(session.api + route, { method, headers: { 'content-type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(20000) });
@@ -25,7 +28,7 @@ async function main() {
   const previous = fs.existsSync(resultFile) ? JSON.parse(fs.readFileSync(resultFile)) : {};
   const evidence = { patientId: session.patientId, annualId: prep.annualId, planId: prep.preparedPlanId, serviceId: service.serviceId,
     checkedAt: new Date(), supplementReportId: previous.supplementReportId, roles: {}, stages: [],
-    boundaries: ['annual plan is preapproved fixture, not real AI', 'no paid order/redemption', 'UI actions recorded separately'] };
+    boundaries: ['annual plan is preapproved fixture, not real AI', redemption ? 'synthetic paid state; real local redemption API, no real payment' : 'no paid order/redemption', 'UI actions recorded separately'] };
   if (process.argv.includes('--prepare-item-report') && !evidence.supplementReportId) {
     assert.equal(plan.items.length, 1); assert.equal(plan.items[0].status, 'pending'); assert.ok(!plan.items[0].reportId);
     const category = await require('../../src/models/ProjectCategory').create({ name: '隔离同案例补充分类（非正式配置）' });
@@ -43,8 +46,13 @@ async function main() {
     evidence.stages.push({ stage, taskId, status: task.status, assignedTo: String(task.assignedTo), completedAt: task.completedAt });
   }
   for (const taskId of [prep.advisorTaskId, prep.plannerTaskId]) assert.equal((await FollowUp.findById(taskId)).status, 'completed');
-  const manager = await FollowUp.findById(closure.completion.managerTaskId).lean();
+  const manager = await FollowUp.findById(closure.completion?.managerTaskId || redemption?.managerTaskId).lean();
   assert.equal(manager.status, 'completed'); assert.equal(String(manager.patientId), session.patientId);
+  if (process.argv.includes('--reconcile-completion')) {
+    // Run the existing daily consumer for this exact synthetic service only.
+    // Do not repair statuses directly or treat this as automatic timer acceptance.
+    await require('../../src/utils/checkupPreparationCompletion').runtime().forService(service.serviceId);
+  }
   const handoff = await Handoff.findById(service.handoffId).lean();
   assert.equal(handoff.completion.status, 'completed');
   assert.equal(String(handoff.completion.managerTaskId), String(manager._id));
