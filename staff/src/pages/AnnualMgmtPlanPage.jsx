@@ -352,6 +352,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [templatesLoading, setTemplatesLoading] = useState(false)
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [preparation, setPreparation] = useState(null)
+  const [closedLoopEnabled, setClosedLoopEnabled] = useState(true)
+  const preparationBlocked = closedLoopEnabled && !preparation?.checklist?.ready
   const [continuitySource, setContinuitySource] = useState(null)
   const [preparationSaving, setPreparationSaving] = useState(false)
   const [preparationDraft, setPreparationDraft] = useState({ requiredAssessmentDomains: '', medicationStatus: 'unknown', supplementStatus: 'unknown', advisorReady: false })
@@ -384,7 +386,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   }, [patientMode, patient?._id])
 
   useEffect(() => {
+    let cancelled = false
     setLoading(true)
+    setClosedLoopEnabled(true)
     if (patientMode) {
       Promise.all([
         staffAPI.getPatient(id),
@@ -392,6 +396,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         staffAPI.getAnnualPlanPreparation(id, year),
         staffAPI.getProfessionalHealthAssessments(id),
       ]).then(([patRes, planRes, preparationRes, assessmentRes]) => {
+        if (cancelled) return
+        setClosedLoopEnabled(preparationRes.enabled !== false)
         setPatient(patRes.data?.user || patRes.data)
         setProfessionalAssessments(assessmentRes.data || [])
         const preparationData = preparationRes.data || null
@@ -435,11 +441,12 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           setConfirmedAt(null)
         }
         setDirty(false)
-      }).catch(err => toast(err.message || '加载失败'))
-        .finally(() => setLoading(false))
+      }).catch(err => { if (!cancelled) toast(err.message || '加载失败') })
+        .finally(() => { if (!cancelled) setLoading(false) })
     } else {
       staffAPI.getPlan(id)
         .then(res => {
+          if (cancelled) return
           const p = res.data
           setPlan(p)
           const c = p.content || {}
@@ -447,9 +454,10 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           setModuleData(c.moduleData || {})
           setDirty(false)
         })
-        .catch(err => toast(err.message || '加载失败'))
-        .finally(() => setLoading(false))
+        .catch(err => { if (!cancelled) toast(err.message || '加载失败') })
+        .finally(() => { if (!cancelled) setLoading(false) })
     }
+    return () => { cancelled = true }
   }, [id, patientMode, year])
 
   const handleModuleChange = useCallback((moduleKey, fieldKey, value) => {
@@ -764,17 +772,17 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             <>
               <button
                 onClick={handleGenerateAIAnnualPlan}
-                disabled={aiPlanLoading || !patient?.aiHealthSummary?.sections || !preparation?.checklist?.ready}
-                title={!preparation?.checklist?.ready ? '请先完成首次方案准备清单' : (!patient?.aiHealthSummary?.sections ? '请先在AI信息整理及方案标签页生成健康信息整理结果' : 'AI自动填充方案板块')}
-                style={{ background: '#7C3AED', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (aiPlanLoading || !patient?.aiHealthSummary?.sections || !preparation?.checklist?.ready) ? 0.5 : 1 }}
+                disabled={aiPlanLoading || !patient?.aiHealthSummary?.sections || preparationBlocked}
+                title={preparationBlocked ? '请先完成首次方案准备清单' : (!patient?.aiHealthSummary?.sections ? '请先在AI信息整理及方案标签页生成健康信息整理结果' : 'AI自动填充方案板块')}
+                style={{ background: '#7C3AED', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (aiPlanLoading || !patient?.aiHealthSummary?.sections || preparationBlocked) ? 0.5 : 1 }}
               >
                 {aiPlanLoading ? 'AI生成中…' : '✨ AI生成方案'}
               </button>
               <button
                 onClick={handlePush}
-                disabled={pushing || dirty || !planType || !preparation?.checklist?.ready}
-                title={!preparation?.checklist?.ready ? '请先完成首次方案准备清单' : ''}
-                style={{ background: pushedAt && !dirty ? '#0077B6' : '#1E6B50', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (pushing || dirty || !planType || !preparation?.checklist?.ready) ? 0.5 : 1 }}
+                disabled={pushing || dirty || !planType || preparationBlocked}
+                title={preparationBlocked ? '请先完成首次方案准备清单' : ''}
+                style={{ background: pushedAt && !dirty ? '#0077B6' : '#1E6B50', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (pushing || dirty || !planType || preparationBlocked) ? 0.5 : 1 }}
               >
                 {pushing ? '推送中...' : pushedAt && !dirty ? '重新推送' : '推送给客户'}
               </button>
@@ -790,7 +798,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         </div>
       </div>
 
-      {patientMode && preparation?.checklist && (
+      {patientMode && closedLoopEnabled && preparation?.checklist && (
         <div style={{ background: preparation.checklist.ready ? '#F0FDF4' : '#FFFDF7', border: `1px solid ${preparation.checklist.ready ? '#86EFAC' : '#F3D49A'}`, borderRadius: 12, padding: 18, marginBottom: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
             <div>
@@ -824,7 +832,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       )}
       {patientMode && ['superadmin', 'healthPlanner', 'familyDoctor', 'healthManager'].includes(staff?.role) && preparation?.continuity?.mode === 'renewal' && <AnnualServicePeriodPanel key={`${year}:${planType}`} planId={plansByType[planType]?._id} staff={staff} />}
 
-      {patientMode && (
+      {patientMode && closedLoopEnabled && (
         <div id="professional-assessments" style={{ background: '#fff', border: '1px solid #D7E4DD', borderRadius: 12, padding: 18, marginBottom: 20 }}>
           <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24' }}>专业健康评估</div>
           <button disabled={assessmentBusy} onClick={refreshAssessments} className="btn btn-secondary btn-sm">刷新评估与草稿状态</button>
@@ -875,7 +883,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         </div>
       )}
 
-      {patientMode && <ReportFollowUpDrafts patientId={id} canEdit={canEdit} />}
+      {patientMode && closedLoopEnabled && <ReportFollowUpDrafts patientId={id} canEdit={canEdit} />}
       {/* 方案类型选择 */}
       <div style={{ background: '#fff', borderRadius: 12, padding: 20, marginBottom: 20, border: '1px solid #E0D9CE' }}>
         <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24', marginBottom: 14 }}>选择方案类型</div>

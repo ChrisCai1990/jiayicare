@@ -6745,7 +6745,8 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       return res.status(400).json({ success: false, message: '每项随访都要选择主执行人和有效的未来日期；协同执行人和日期需要同时填写' });
     }
     const targetYear = year || new Date().getFullYear();
-    const continuity = await require('../utils/annualPlanContinuity').loadAnnualPlanContinuity(req.params.id, targetYear);
+    const closedLoop = require('../utils/healthManagementRollout').enabledForPatient(req.params.id);
+    const continuity = closedLoop ? await require('../utils/annualPlanContinuity').loadAnnualPlanContinuity(req.params.id, targetYear) : {};
     if (continuity.mode === 'renewal' && (!continuity.ready || !require('../utils/annualPlanContinuity').matchesContinuitySource(req.body.continuitySource, continuity.source))) {
       return res.status(409).json({ success: false, message: '下一年度草稿必须关联已终审归档的年度总评；请刷新准备清单并重新核对来源' });
     }
@@ -6767,7 +6768,7 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       $or: [{ templateId: template._id }, { templateName: { $in: [templateName, normalizedTemplate.content?.planName, template.name].filter(Boolean) } }],
     });
     const selector = legacy ? { _id: legacy._id } : { patientId: req.params.id, year: targetYear, planType: servicePlanCode };
-    const frozen = await AnnualPlan.findOne(selector).select('confirmedAt frozenAt').lean();
+    const frozen = closedLoop ? await AnnualPlan.findOne(selector).select('confirmedAt frozenAt').lean() : null;
     if (frozen?.confirmedAt || frozen?.frozenAt) return res.status(409).json({ success: false, message: '客户已确认的年度方案已经冻结；后续变化请生成动态随访计划' });
     const plan = await AnnualPlan.findOneAndUpdate(
       selector,
@@ -6775,7 +6776,7 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
         memberTypeSnapshot: patient.memberType || '',
         servicePackageSnapshot: packageRecord ? { id: packageRecord._id, name: packageRecord.name, capturedAt: new Date() } : { name: patient.servicePackage || '', capturedAt: new Date() },
         entitlementSnapshot: packageRecord?.entitlements || {}, resourceSnapshot: normalizedTemplate.content?.resourceConfig || {},
-        moduleData: moduleData || {}, notes: notes || '', continuitySource: continuity.source || null, templateId: templateId || null, templateName: templateName || normalizedTemplate.content?.planName || template.name || '',
+        moduleData: moduleData || {}, notes: notes || '', ...(closedLoop ? { continuitySource: continuity.source || null } : {}), templateId: templateId || null, templateName: templateName || normalizedTemplate.content?.planName || template.name || '',
         templateSnapshot: template ? { name: template.name, type: template.type, content: template.content, capturedAt: new Date() } : null,
         createdBy: req.staff._id, reviewStatus: 'pending', reviewedBy: null, reviewedAt: null, reviewNote: '',
         pushedAt: null, pushedBy: null, confirmedAt: null },
@@ -6973,6 +6974,8 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     if (planType) query.planType = planType;
     const plan = await AnnualPlan.findOne(query);
     if (!plan) return res.status(404).json({ success: false, message: '方案不存在，请先保存' });
+    const closedLoop = require('../utils/healthManagementRollout').enabledForPatient(plan.patientId);
+    if (closedLoop) {
     const preparation = await require('../utils/annualPlanPreparation').loadAnnualPlanPreparationChecklist(req.params.id, targetYear);
     if (!preparation?.checklist?.ready) return res.status(409).json({ success: false, message: '年度方案准备清单尚未完成', data: preparation?.checklist || null });
     if (preparation.continuity?.mode === 'renewal' && !require('../utils/annualPlanContinuity').matchesContinuitySource(plan.continuitySource, preparation.continuity.source)) return res.status(409).json({ success: false, message: '年度总评来源已变化，请重新核对并保存下一年度草稿' });
@@ -6983,11 +6986,12 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
       $or: [{ formalizedAt: { $ne: null } }, { pushedAt: { $ne: null } }, { confirmedAt: { $ne: null } }],
     }).select('_id templateName').lean();
     if (otherFormal) return res.status(409).json({ success: false, message: `本年度已有正式年度方案${otherFormal.templateName ? `“${otherFormal.templateName}”` : ''}，不能重复发布` });
+    }
     plan.reviewStatus = 'approved';
     plan.reviewedBy = req.staff._id;
     plan.reviewedAt = new Date();
     plan.pushedAt = new Date();
-    plan.formalizedAt = plan.formalizedAt || new Date();
+    if (closedLoop) plan.formalizedAt = plan.formalizedAt || new Date();
     plan.pushedBy = req.staff._id;
     await plan.save();
     const { syncAnnualPlanTaskSplit } = require('../utils/annualPlanTaskSplit');
@@ -9558,8 +9562,9 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
     const targetYear = Number(req.body.year) || new Date().getFullYear();
-    const preparation = await require('../utils/annualPlanPreparation').loadAnnualPlanPreparationChecklist(req.params.id, targetYear);
-    if (!preparation?.checklist?.ready) {
+    const closedLoop = require('../utils/healthManagementRollout').enabledForPatient(user._id);
+    const preparation = closedLoop ? await require('../utils/annualPlanPreparation').loadAnnualPlanPreparationChecklist(user._id, targetYear) : {};
+    if (closedLoop && !preparation?.checklist?.ready) {
       return res.status(409).json({ success: false, message: '年度方案准备清单尚未完成', data: preparation?.checklist || null });
     }
 
@@ -9666,10 +9671,10 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     const confirmedReviewText = confirmedCaseReviews.length
       ? confirmedCaseReviews.map(item => `【${item.title}】${item.conclusion.content}`).join('\n\n').slice(0, 16000)
       : '无已确认的专题研判结论';
-    const professionalAssessments = await ProfessionalHealthAssessment.find({
+    const professionalAssessments = closedLoop ? await ProfessionalHealthAssessment.find({
       patientId: user._id, purpose: preparation.continuity?.mode === 'renewal' ? { $in: ['annual_input', 'issue_collaboration'] } : 'annual_input', status: 'approved',
       $or: [{ validUntil: null }, { validUntil: { $gte: new Date() } }],
-    }).sort({ advisorReviewedAt: -1 }).select('domain title collaborationMode facts risks missingInformation recommendations advisorReviewedAt').lean();
+    }).sort({ advisorReviewedAt: -1 }).select('domain title collaborationMode facts risks missingInformation recommendations advisorReviewedAt').lean() : [];
     const professionalAssessmentText = professionalAssessments.length
       ? professionalAssessments.map(item => `【${item.domain}｜${item.title}】\n已确认事实：${(item.facts || []).join('；') || '无'}\n重点关注：${(item.risks || []).join('；') || '无'}\n待补信息：${(item.missingInformation || []).join('；') || '无'}\n管理建议：${JSON.stringify(item.recommendations || {})}`).join('\n\n').slice(0, 20000)
       : '无已审核的年度综合健康评估';
@@ -9726,15 +9731,14 @@ ${missingCheckups}
 【本次服务目标（健康顾问填写，方案要朝这个方向靠）】
 ${notes ? notes : '（未填写目标，按会员情况常规定制）'}
 
-${require('../utils/annualPlanContinuity').continuityPrompt(preparation.continuity)}
+${closedLoop ? require('../utils/annualPlanContinuity').continuityPrompt(preparation.continuity) : ''}
 
 【医护团队已确认的AI辅助研判结论】
 ${confirmedReviewText}
 
-【已由专业人员提出、健康顾问终审的年度综合健康评估】
+${closedLoop ? `【已由专业人员提出、健康顾问终审的年度综合健康评估】
 ${professionalAssessmentText}
-
-专业健康评估是年度方案的必需专业输入。只能采用已终审内容，AI可以整理和补全表达，但不得改变专业结论、添加诊断或治疗意见；涉及就医、检查、复查和生活方式管理的建议，应优先与上述评估保持一致。
+专业健康评估是年度方案的必需专业输入。只能采用已终审内容，AI可以整理和补全表达，但不得改变专业结论、添加诊断或治疗意见；涉及就医、检查、复查和生活方式管理的建议，应优先与上述评估保持一致。` : ''}
 检查准备 precautions 只能摘取输入中明确存在的要求，未提供则填“待检查机构确认”；不得自行补充空腹时长、停药、禁食或其他医疗要求。年度体检没有明确项目依据时不得自行拼接“基础全套”项目清单，annual_checkup 返回空对象。每条实际建议的 basisSummary 必须注明具体评估或报告来源及原建议，不得以通用医学常识替代来源。
 
 【本方案必须对齐的主评估】
