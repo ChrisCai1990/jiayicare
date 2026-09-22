@@ -233,10 +233,9 @@ router.post('/:id/parse-ai', auth, async (req, res) => {
       if (typeof staffRouter.scheduleReportParse !== 'function') {
         throw new Error('报告解析队列不可用');
       }
-      const claimed = await MedicalReport.findOneAndUpdate({ _id: report._id, aiStatus: { $ne: 'processing' }, 'parseJob.status': { $ne: 'paused' }, 'pageParseStatus.status': { $ne: 'processing' } }, {
-        aiStatus: 'processing',
-        parseJob: { status: 'processing', queuedAt: new Date(), startedAt: new Date(), attemptId: require('crypto').randomUUID(), actorId: String(req.user?._id || ''), message: '正在识别' },
-      });
+      const claimed = await MedicalReport.findOneAndUpdate({ _id: report._id, aiStatus: { $ne: 'processing' }, 'parseJob.status': { $ne: 'paused' }, 'pageParseStatus.status': { $ne: 'processing' } }, require('../utils/reportParseJobUpdate').reportParseJobUpdate({
+        status: 'processing', queuedAt: new Date(), startedAt: new Date(), attemptId: require('crypto').randomUUID(), actorId: String(req.user?._id || ''), message: '正在识别',
+      }, { aiStatus: 'processing' }));
       if (!claimed) return res.status(409).json({ success: false, message: '报告正在识别、补提或已暂停，请刷新' });
       staffRouter.scheduleReportParse(report._id);
       return res.json({

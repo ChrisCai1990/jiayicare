@@ -256,6 +256,8 @@ const userSchema = new mongoose.Schema({
   // 只写字段本身，没记录"谁在什么时候确认写入的"）。[{ confirmedBy, confirmedByName, confirmedAt,
   // items: [{path,value}], sourceQuestionnaireId, sourceResponseId }]
   archiveConfirmLog: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  // First-entry lineage is independent of the bounded confirmation log.
+  archiveBaselineSources: { type: mongoose.Schema.Types.Mixed, default: {} },
   // 客户本人直接修改健康档案的字段级留痕，供健康顾问待办明确展示“改了什么”。
   archiveChangeLog: { type: [mongoose.Schema.Types.Mixed], default: [] },
   // 健管确认后的字段版本历史；当前字段只表示当前有效值，旧值、来源和生效时间永久保留在此。

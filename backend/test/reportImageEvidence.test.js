@@ -134,6 +134,7 @@ test('single-page route stops before coverage/classification and preserves exist
   };
   const run = vm.runInNewContext(`${source.slice(start, end)};runReportPageParse`, {
     withAiContext: require('../src/utils/aiBudget').withAiContext,
+    isManualOnlyReport: require('../src/utils/reportManualReview').isManualOnlyReport,
     ...require('../src/utils/aiBudgetPolicy'),
     require: name => { assert.ok(modules[name], name); return modules[name]; },
     User: { findById: () => ({ select: () => ({ lean: async () => ({ age: 30 }) }) }) },
