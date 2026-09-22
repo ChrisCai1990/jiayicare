@@ -1,6 +1,7 @@
 // 本地医护端也使用正式 HTTPS 域名：直接访问服务器 IP 会被重定向到 HTTPS，
 // 随后因证书不匹配导致浏览器 fetch 失败。
-const BASE = import.meta.env.VITE_API_URL || 'https://jiaycare.com/api'
+import { resolveApiBase } from './utils/isolatedApiBase.mjs'
+const BASE = resolveApiBase(import.meta.env)
 export const API_ORIGIN = BASE.replace(/\/api$/, '')
 
 export const getToken   = ()  => localStorage.getItem('jy_staff_token')

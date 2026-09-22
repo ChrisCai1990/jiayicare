@@ -1,5 +1,7 @@
 # 可登录隔离环境：验收接续
 
+> 2026-09-22同步后隔离接续：复用主session jdmCHJ/原Mongo数据，后端加载bb5369d0，五岗位登录/身份/工作台/随访冒烟、mergedOutcomeHttp与followUpOutcomeHttp真实HTTP全部通过（合成报告与草稿，不是真实AI）。Mongo exec57644/27134，后端exec73332/3000，前端exec6534/5174；后端NODE_PATH指向既有本机backend/node_modules，仅复用依赖，配置仍由隔离启动器清除。新增VITE_ISOLATED_ACCEPTANCE=true前端本机API精确校验，缺省/远程/伪本机地址拒绝，1项测试及1902模块构建通过。服务自有审核衔接、自动恢复、首次年度入口及最终页面验收仍待；未部署/推送/改生产数据。
+
 > 2026-09-22生产修复同步完成：隔离功能分支已按差量纳入e02eea5b/4b080650/c3dbce45/43781626的后端与测试、专项说明；解析入口冲突采用保留断点的原子初始化，保留本分支持续随访及结案保护，未整体覆盖路由。66项针对性回归和两份本地Mongo脚本通过；影像测试补入本分支已有人工报告规则的真实依赖（仅测试上下文）。未调用真实AI、未改生产/客户数据、未推送或部署；运行环境重载及全流程终验留待继续。此前“尚未同步”记录已由本条更新。
 
 > 2026-09-21结案依据并发保护：FollowUp/MedicalReport/ReportFollowUpDraft增加内部证据占用，结案前锁定并比对完整快照（含同毫秒变化），父任务token屏障、冻结原输入；仅原提交显式重试，未接自动恢复。隔离Mongo更新/save/文档与查询删除/父任务修改拒绝、并发唯一成功、真实子进程exit44后原输入恢复通过；78项针对性单测、重载86975后合并审核/客户求助/来源候选实际HTTP通过。扩大全套单测存在失败，尚未完成基线归因，不称全绿。服务自有结果审核合并、真实页面终验仍待，整体未闭环。无生产变更/推送，自动任务暂停。
@@ -497,6 +499,7 @@ node backend/test/integration/startIsolatedAcceptance.js
 
 ```powershell
 $env:VITE_API_URL='http://127.0.0.1:3000/api'
+$env:VITE_ISOLATED_ACCEPTANCE='true'
 node ../node_modules/vite/bin/vite.js --host localhost --port 5174 --strictPort
 ```
 
