@@ -11,7 +11,11 @@ function outcomeEvidenceFence(schema) {
   for (const op of ['updateOne', 'updateMany', 'findOneAndUpdate', 'replaceOne', 'findOneAndReplace', 'deleteOne', 'deleteMany', 'findOneAndDelete']) {
     schema.pre(op, { query: true, document: false }, function () {
       if (this[INTERNAL]) return;
-      this.setQuery({ $and: [this.getFilter(), { outcomeEvidenceLock: null, 'outcomeClosureIntent.status': { $ne: 'running' } }] });
+      // Keep equality keys at the top level. Mongoose uses them when deciding
+      // which defaults to add on upsert; nesting the whole filter caused source
+      // identifiers to be defaulted to null in newly generated service tasks.
+      const filter = this.getFilter();
+      this.setQuery({ ...filter, $and: [...(filter.$and || []), { outcomeEvidenceLock: null, 'outcomeClosureIntent.status': { $ne: 'running' } }] });
     });
   }
 }

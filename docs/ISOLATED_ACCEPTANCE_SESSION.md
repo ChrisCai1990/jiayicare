@@ -1,5 +1,7 @@
 # 可登录隔离环境：验收接续
 
+> 2026-09-22同案例体检复跑：发现outcomeEvidenceFence把整个查询包进$and，Mongoose upsert默认值覆盖来源等值键，新服务任务sourceType/sourceHealthPlanId变null；q8W4ej失败证据保留未补数据。已改保留顶层过滤键并追加锁条件，真实Mongo来源/防重/锁测试及既有并发/硬退出恢复通过。新JZWk4M同案例准备→客户问卷/确认→服务承接→预约/陪检→回收审核→顾问评估→最终验收→核销→顾问明确无需后续→原随访结案全部实际HTTP通过；重复核销/结案防重，37项相关单测通过。年度方案、报告与支付状态仍为合成输入；体检末次结果处置仍为独立顾问确认（未与服务评估合并），不是完整AI或页面终验。后端79233，证据JZWk4M/checkup-outcome-http.json；未部署/推送/修改生产。
+
 > 2026-09-22门诊服务审核至原计划结案已接：沿同客户唯一FollowUpServiceLink（health_plan）复用顾问原提交，确认资料齐全、冻结已审报告摘要、唯一健管后续落地后以既有证据锁完成原随访；Link也纳入锁，失败保留原计划，未另建AI草稿或审核任务。37项单测、serviceOutcomeHttp实际API完整提交/重复/未确认拦截及既有mergedOutcomeHttp/followUpOutcomeHttp回归通过，1902模块构建通过。输入为合成服务/已审报告，不是真实AI/预约/完整多岗页面验收。仅门诊一站式此路径，不冒充体检及其他服务全覆盖。主session/service-outcome-http.json留证，后端exec53635。硬中断时涉及服务审核锁的人工恢复尚未做真实故障回归，不承诺自动接续。未部署/推送，下一步同案例页面终验与原体检链核对，不扩功能。
 
 > 2026-09-22同步后隔离接续：复用主session jdmCHJ/原Mongo数据，后端加载bb5369d0，五岗位登录/身份/工作台/随访冒烟、mergedOutcomeHttp与followUpOutcomeHttp真实HTTP全部通过（合成报告与草稿，不是真实AI）。Mongo exec57644/27134，后端exec73332/3000，前端exec6534/5174；后端NODE_PATH指向既有本机backend/node_modules，仅复用依赖，配置仍由隔离启动器清除。新增VITE_ISOLATED_ACCEPTANCE=true前端本机API精确校验，缺省/远程/伪本机地址拒绝，1项测试及1902模块构建通过。服务自有审核衔接、自动恢复、首次年度入口及最终页面验收仍待；未部署/推送/改生产数据。
