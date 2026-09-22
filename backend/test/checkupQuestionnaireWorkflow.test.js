@@ -44,7 +44,7 @@ test('mapped questionnaire answers wait for review and confirmed changes retain 
   assert.match(staffSource, /archiveVersionHistory/)
   assert.match(staffSource, /基础档案不可变，仅追加变化记录/)
   assert.doesNotMatch(staffSource, /\$set\[it\.path\]\s*=/)
-  assert.match(staffSource, /mode: 'append_only'/)
+  assert.match(read('src/utils/archiveConfirmation.js'), /mode: 'append_only'/)
   assert.match(read('src/models/User.js'), /archiveVersionHistory/)
 })
 

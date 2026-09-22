@@ -13427,7 +13427,7 @@ router.post('/patients/:id/archive-draft', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// POST /api/staff/patients/:id/archive-draft/apply — 确认变化：基础档案不可变，仅追加变化记录并清空草稿
+// POST /api/staff/patients/:id/archive-draft/apply — 首次入档；基础档案不可变，仅追加变化记录（后续差异）
 router.post('/patients/:id/archive-draft/apply', staffAuth, async (req, res) => {
   try {
     const { items } = req.body; // [{ path, value }]
@@ -13436,40 +13436,13 @@ router.post('/patients/:id/archive-draft/apply', staffAuth, async (req, res) => 
     const validItems = items.filter(it => FIELD_MAP[it.path]); // 只允许白名单字段
     if (validItems.length === 0) return res.status(400).json({ success: false, message: '没有有效变化' });
 
-    // 基础档案是不可变基线。问卷中的新信息只能作为带来源、确认人和时间的变化记录追加，
-    // 不再用 $set[it.path] 改写原字段。下游需要“当前有效信息”时应组合基线与已确认变化读取。
-    const userBefore = await User.findById(req.params.id).select('archiveDraft').lean();
-    const confirmEntry = {
-      confirmedBy: req.staff._id, confirmedByName: req.staff.name || req.staff.username || '',
-      confirmedAt: new Date(),
-      mode: 'append_only',
-      items: validItems.map(it => ({ path: it.path, label: FIELD_MAP[it.path].label, value: it.value })),
-      sourceQuestionnaireId: userBefore?.archiveDraft?.questionnaireId || null,
-      sourceResponseId: userBefore?.archiveDraft?.responseId || null,
-    };
-    const draftByPath = new Map((userBefore?.archiveDraft?.items || []).map(item => [item.path, item]));
-    const versionEntries = validItems.map(it => {
-      const draftItem = draftByPath.get(it.path) || {};
-      return {
-        path: it.path, label: draftItem.label || FIELD_MAP[it.path].label,
-        from: draftItem.existing || '', to: it.value,
-        effectiveAt: new Date(), sourceType: 'questionnaire',
-        mode: 'append_only',
-        sourceQuestionnaireId: userBefore?.archiveDraft?.questionnaireId || null,
-        sourceResponseId: userBefore?.archiveDraft?.responseId || null,
-        confirmedBy: req.staff._id, confirmedByName: req.staff.name || req.staff.username || '',
-      };
-    });
-
-    await User.collection.updateOne(
-      { _id: new mongoose.Types.ObjectId(req.params.id) },
-      { $set: { archiveDraft: null }, $push: {
-        archiveConfirmLog: { $each: [confirmEntry], $slice: -50 },
-        archiveVersionHistory: { $each: versionEntries, $slice: -200 },
-      } }
-    );
-    res.json({ success: true, message: `已记录 ${validItems.length} 项档案变化，基础档案保持不变` });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    const userBefore = await User.collection.findOne({ _id: new mongoose.Types.ObjectId(req.params.id) });
+    if (!userBefore) return res.status(404).json({ success: false, message: '会员不存在' });
+    const confirmation = require('../utils/archiveConfirmation').buildConfirmation(userBefore, validItems, req.staff);
+    const result = await User.collection.updateOne(confirmation.filter, confirmation.update);
+    if (result.matchedCount !== 1) return res.status(409).json({ success: false, message: '档案或草稿已变化，请刷新核对后确认' });
+    res.json({ success: true, message: `首次入档 ${confirmation.initialCount} 项，记录变化 ${confirmation.changeCount} 项` });
+  } catch (err) { res.status(err.statusCode || 500).json({ success: false, message: err.message }); }
 });
 
 // POST /api/staff/patients/:id/archive-draft/dismiss — 忽略草稿
