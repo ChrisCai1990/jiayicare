@@ -9836,7 +9836,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
       ...(s.checkup_completeness?.missing || []).map((item, i) => ({ id: `missing:${i}`, content: item })),
       { id: 'summary', content: s },
     ];
-    const checkedPrompt = closedLoop ? `${prompt}\n【必须逐项核对的来源】${JSON.stringify(evidence)}\n额外输出evidenceCoverage数组，每个来源恰好一项：{sourceId,status:included或deferred或not_applicable,reason:具体原因}。每条生成事项添加sourceIds数组引用上述来源ID；included必须存在对应事项。不得遗漏来源。待补资料标deferred，不得编造检查建议；不适用要说明依据。相互矛盾的建议不得擅自取舍，标deferred交顾问确认。每条包括年度体检必须有basisSummary。` : prompt;
+    const checkedPrompt = closedLoop ? require('../utils/annualGenerationContract').annualGenerationPrompt(prompt, availableAnnualFollowUpCatalog, evidence, allowedKeys) : prompt;
     const generate = async () => {
       const text = await chat([{ role: 'user', content: checkedPrompt }], { maxTokens: 6000, temperature: 0, jsonMode: true, timeoutMs: 90000 });
       let parsed;
@@ -9847,7 +9847,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     };
     const generation = closedLoop ? await consistency.reuseAnnualGeneration(
       require('mongoose').connection.db.collection('annual_generation_snapshots'),
-      { patientId: String(user._id), year, templateId: String(templateId), ruleVersion: 1, model: process.env.QWEN_API_KEY ? 'qwen-plus' : 'deepseek-chat', prompt: checkedPrompt.split(todayText).join('<EXECUTION_DATE>'), sourceSnapshot: { sections: s, reports, confirmedCaseReviews, professionalAssessments, continuity: preparation.continuity || null, notes }, catalog: availableAnnualFollowUpCatalog }, generate,
+      { patientId: String(user._id), year, templateId: String(templateId), ruleVersion: 2, model: process.env.QWEN_API_KEY ? 'qwen-plus' : 'deepseek-chat', prompt: checkedPrompt.split(todayText).join('<EXECUTION_DATE>'), sourceSnapshot: { sections: s, reports, confirmedCaseReviews, professionalAssessments, continuity: preparation.continuity || null, notes }, catalog: availableAnnualFollowUpCatalog }, generate,
     ) : { raw: await generate() };
     const raw = generation.raw;
     const generationDay = generation.createdAt ? new Date(new Date(generation.createdAt).getTime() + 8 * 3600000).toISOString().slice(0, 10) : todayText;
@@ -9916,7 +9916,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
 
     res.json({ success: true, data: result, generation: { fingerprint: generation.fingerprint, reused: generation.reused, evidenceCoverage: raw.evidenceCoverage || [] }, basis: assessmentFocus, continuitySource: preparation.continuity?.source || null, template: selectedTemplate ? { _id: selectedTemplate._id, name: selectedTemplate.name } : null });
   } catch (err) {
-    res.status(err.statusCode || 500).json({ success: false, message: err.message });
+    res.status(err.statusCode || 500).json({ success: false, message: require('../utils/annualGenerationContract').annualGenerationError(err.message) });
   }
 });
 

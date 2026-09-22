@@ -352,6 +352,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [pushedAt, setPushedAt]     = useState(null)
   const [confirmedAt, setConfirmedAt] = useState(null)
   const [aiPlanLoading, setAiPlanLoading] = useState(false)
+  const [generationError, setGenerationError] = useState('')
+  useEffect(() => setGenerationError(''), [id, year, planType])
   const [staffList, setStaffList]   = useState([])
   const [adminTemplates, setAdminTemplates] = useState([])
   const [standardPlans, setStandardPlans] = useState([])
@@ -553,6 +555,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     const ptName = selectedTemplate?.content?.planName || selectedTemplate?.name || PLAN_TYPES.find(pt => pt.key === type)?.name || '该类型'
     if (!skipConfirm && !window.confirm(`AI将基于已审核的汇总分析，生成「${ptName}」对应的方案板块，现有内容将被覆盖，确认继续？`)) return
     setAiPlanLoading(true)
+    setGenerationError('')
     try {
       const res = await staffAPI.generateAIAnnualPlan(id, requestType, '', selectedTemplateId, year)
       setGenerationCoverage(res.generation?.evidenceCoverage || [])
@@ -598,6 +601,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         ? `AI已按「${ptName}」采用 ${appliedCount} 项方案，请检查并保存`
         : `「${ptName}」标准动作筛查完成，当前资料下暂无适用项目`)
     } catch (err) {
+      setGenerationError(err.message || 'AI生成方案失败')
       toast(err.message || 'AI生成方案失败')
     } finally {
       setAiPlanLoading(false)
@@ -831,6 +835,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         </div>
       </div>
 
+      {generationError && <div role="alert" style={{ padding: 16, marginBottom: 16, background: '#FFF1F2', color: '#9F1239', borderRadius: 10 }}>生成未完成：{generationError}。已有方案未被本次生成替换。</div>}
       {patientMode && closedLoopEnabled && preparation?.checklist && (
         <div style={{ background: preparation.checklist.ready ? '#F0FDF4' : '#FFFDF7', border: `1px solid ${preparation.checklist.ready ? '#86EFAC' : '#F3D49A'}`, borderRadius: 12, padding: 18, marginBottom: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
