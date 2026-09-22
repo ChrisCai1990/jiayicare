@@ -9854,21 +9854,24 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
       try { parsed = JSON.parse(text.trim().replace(/^```(?:json)?\s*|\s*```$/g, '')); }
       catch { throw Object.assign(new Error('AI返回的方案内容不完整，未替换现有方案'), { statusCode: 502 }); }
       try {
-        if (closedLoop) parsed = await require('../utils/annualFocusRepair').repairAnnualFocus(parsed, row => chat([
-          { role: 'user', content: checkedPrompt },
-          { role: 'user', content: '本次仅补正年度体检focus字段，不重新生成其他方案。原对象：' + JSON.stringify(row) + '\n本次已安排的就医/完善检查/复查（没有独立重复依据时不得再复制到年度focus）：' + JSON.stringify({ medical_treatment: parsed.medical_treatment, checkup_completion: parsed.checkup_completion, abnormal_followup: parsed.abnormal_followup }) + '\n只返回{"focus":"逐行列明本次体检重点或下次应增加的项目"}。只能使用原对象sourceIds对应的已审来源，不推测新增检查，不更改日期/来源。确无依据返回{"focus":""}，交人工核对，不编造。' },
-        ], { maxTokens: 1000, temperature: 0, jsonMode: true, timeoutMs: 45000 }));
         if (closedLoop) {
-          consistency.validateAnnualRaw(parsed, availableAnnualFollowUpCatalog, evidence, allowedKeys);
-          clinicalRules.validateClinicalRules(parsed, timeline, evidence);
+          const repair = require('../utils/annualOutputRepair');
+          parsed = await repair.validateOrRepairAnnual(parsed, candidate => {
+            consistency.validateAnnualRaw(candidate, availableAnnualFollowUpCatalog, evidence, allowedKeys);
+            clinicalRules.validateClinicalRules(candidate, timeline, evidence);
+          }, (candidate, message) => chat([
+            { role: 'user', content: checkedPrompt },
+            { role: 'assistant', content: JSON.stringify(candidate) },
+            { role: 'user', content: repair.correctionInstruction + '\n校验问题：' + message },
+          ], { maxTokens: 6000, temperature: 0, jsonMode: true, timeoutMs: 45000 }));
         }
         return parsed;
       }
-      catch (error) { error.generationRaw = parsed; throw error; }
+      catch (error) { error.generationRaw = error.generationRaw || parsed; throw error; }
     };
     const generation = closedLoop ? await consistency.reuseAnnualGeneration(
       require('mongoose').connection.db.collection('annual_generation_snapshots'),
-      { patientId: String(user._id), year, templateId: String(templateId), ruleVersion: 3, model: process.env.QWEN_API_KEY ? 'qwen-plus' : 'deepseek-chat', prompt: checkedPrompt.split(todayText).join('<EXECUTION_DATE>'), sourceSnapshot: { sections: s, reports, confirmedCaseReviews, professionalAssessments, continuity: preparation.continuity || null, notes }, catalog: availableAnnualFollowUpCatalog }, generate,
+      { patientId: String(user._id), year, templateId: String(templateId), ruleVersion: 4, model: process.env.QWEN_API_KEY ? 'qwen-plus' : 'deepseek-chat', prompt: checkedPrompt.split(todayText).join('<EXECUTION_DATE>'), sourceSnapshot: { sections: s, reports, confirmedCaseReviews, professionalAssessments, continuity: preparation.continuity || null, notes }, catalog: availableAnnualFollowUpCatalog }, generate,
     ) : { raw: await generate() };
     const raw = generation.raw;
     const generationDay = generation.createdAt ? new Date(new Date(generation.createdAt).getTime() + 8 * 3600000).toISOString().slice(0, 10) : todayText;
