@@ -13,9 +13,9 @@ test('actual annual page buttons preserve legacy availability and enforce pilot 
   const end = page.indexOf('</button>', page.indexOf('onClick={handlePush}', start)) + '</button>'.length;
   const expression = page.match(/const preparationBlocked = ([^\r\n]+)/)[1];
   const compiled = transformSync('const buttons = <>' + page.slice(start, end) + '</>; buttons;', { loader: 'jsx', format: 'cjs' }).code;
-  for (const [closedLoopEnabled, ready, disabled] of [[false, false, false], [true, false, true], [true, true, false]]) {
+  for (const [closedLoopEnabled, ready, disabled, preparationSelectionChanged = false] of [[false, false, false], [true, false, true], [true, true, false], [true, true, true, true], [false, true, false, true]]) {
     const preparation = { checklist: { ready } };
-    const preparationBlocked = vm.runInNewContext(expression, { closedLoopEnabled, preparation });
+    const preparationBlocked = vm.runInNewContext(expression, { closedLoopEnabled, preparation, preparationSelectionChanged });
     const buttons = vm.runInNewContext(compiled, { React, preparationBlocked, handleGenerateAIAnnualPlan() {}, handlePush() {},
       patient: { aiHealthSummary: { sections: {} } }, aiPlanLoading: false, pushing: false, dirty: false, planType: 'legacy', pushedAt: null });
     const html = renderToStaticMarkup(buttons);

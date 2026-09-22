@@ -4,6 +4,7 @@ const annualPlanPreparationSchema = new mongoose.Schema({
   patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   year: { type: Number, required: true },
   requiredAssessmentDomains: { type: [String], default: [] },
+  requiredCaseReviewIds: { type: [mongoose.Schema.Types.ObjectId], ref: 'AiCaseReview', default: [] },
   assessmentMode: { type: String, enum: ['required', 'none'], default: 'required' },
   assessmentConfirmedCriteria: { type: [String], default: [] },
   assessmentCriteriaVersion: { type: Number, default: null },

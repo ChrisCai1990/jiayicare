@@ -6692,6 +6692,13 @@ router.put('/patients/:id/annual-plan-preparation', staffAuth, async (req, res) 
   try { assessmentDecision = require('../utils/annualAssessmentDecision').annualAssessmentDecision(req.body, req.staff._id); }
   catch (error) { return res.status(error.statusCode || 400).json({ success: false, message: error.message }); }
   const payload = { ...assessmentDecision, medicationStatus, supplementStatus, updatedBy: req.staff._id };
+  if (req.body.requiredCaseReviewIds !== undefined) {
+    if (!Array.isArray(req.body.requiredCaseReviewIds) || req.body.requiredCaseReviewIds.some(id => !/^[a-f\d]{24}$/i.test(String(id)))) return res.status(400).json({ success: false, message: '必需研判选择无效' });
+    const ids = [...new Set(req.body.requiredCaseReviewIds.map(String))];
+    const available = await AiCaseReview.find({ ...require('../utils/annualCaseReviewScope').annualCaseReviewQuery(req.params.id, year), _id: { $in: ids } }).select('_id').lean();
+    if (available.length !== ids.length) return res.status(400).json({ success: false, message: '所选研判不属于该客户本年度可用范围，请刷新核对' });
+    payload.requiredCaseReviewIds = ids;
+  }
   if (Array.isArray(req.body.waivers)) payload.waivers = req.body.waivers.filter(item => item?.key && String(item.reason || '').trim()).map(item => ({ key: String(item.key), reason: String(item.reason).trim(), waivedAt: new Date(), waivedBy: req.staff._id }));
   if (req.body.advisorReady === true) { payload.advisorReadyConfirmedAt = new Date(); payload.advisorReadyConfirmedBy = req.staff._id; }
   if (req.body.advisorReady === false) { payload.advisorReadyConfirmedAt = null; payload.advisorReadyConfirmedBy = null; }

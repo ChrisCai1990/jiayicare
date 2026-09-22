@@ -9,6 +9,7 @@ import { annualPlanReturnTarget } from '../utils/annualPlanNavigation.mjs'
 import assessmentCriteria from '../../../shared/annualAssessmentCriteria.json'
 import { annualTemplateCode, matchingAnnualTemplate } from '../utils/annualTemplateSelection.mjs'
 import { annualItemLayout } from '../utils/annualItemLayout.mjs'
+import { supplementalAssessmentNote } from '../utils/annualAssessmentNote.mjs'
 
 // ── 方案类型 ─────────────────────────────────────────────────────────
 const PLAN_TYPES = [
@@ -358,12 +359,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [preparation, setPreparation] = useState(null)
   const [closedLoopEnabled, setClosedLoopEnabled] = useState(true)
-  const preparationBlocked = closedLoopEnabled && !preparation?.checklist?.ready
   const [continuitySource, setContinuitySource] = useState(null)
   const [generationCoverage, setGenerationCoverage] = useState([])
   useEffect(() => { setLastGenerationKey(''); setGenerationCoverage([]) }, [id, year, planType])
   const [preparationSaving, setPreparationSaving] = useState(false)
-  const [preparationDraft, setPreparationDraft] = useState({ assessmentMode: 'required', assessmentConfirmedCriteria: [], assessmentNotRequiredReason: '', requiredAssessmentDomains: '', medicationStatus: 'unknown', supplementStatus: 'unknown', advisorReady: false })
+  const [preparationDraft, setPreparationDraft] = useState({ assessmentMode: 'required', assessmentConfirmedCriteria: [], assessmentNotRequiredReason: '', requiredAssessmentDomains: '', requiredCaseReviewIds: [], medicationStatus: 'unknown', supplementStatus: 'unknown', advisorReady: false })
+  const preparationSelectionChanged = JSON.stringify([...(preparationDraft.requiredCaseReviewIds || [])].sort()) !== JSON.stringify([...(preparation?.preparation?.requiredCaseReviewIds || [])].map(String).sort()) || (preparationDraft.assessmentMode === 'none' && !assessmentCriteria.every(item => preparationDraft.assessmentConfirmedCriteria.includes(item.key)))
+  const preparationBlocked = closedLoopEnabled && (!preparation?.checklist?.ready || preparationSelectionChanged)
   const [professionalAssessments, setProfessionalAssessments] = useState([])
   const [assessmentBusy, setAssessmentBusy] = useState(false)
   const [assessmentSaving, setAssessmentSaving] = useState(false)
@@ -412,7 +414,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         setPreparationDraft({
           assessmentMode: preparationData?.preparation?.assessmentMode || 'required',
           assessmentConfirmedCriteria: preparationData?.preparation?.assessmentCriteriaVersion === 1 ? (preparationData.preparation.assessmentConfirmedCriteria || []) : [],
-          assessmentNotRequiredReason: preparationData?.preparation?.assessmentNotRequiredReason || '',
+          assessmentNotRequiredReason: supplementalAssessmentNote(preparationData?.preparation?.assessmentNotRequiredReason, assessmentCriteria),
+          requiredCaseReviewIds: preparationData?.preparation?.requiredCaseReviewIds || [],
           requiredAssessmentDomains: (preparationData?.preparation?.requiredAssessmentDomains || []).join('、'),
           medicationStatus: preparationData?.preparation?.medicationStatus || 'unknown',
           supplementStatus: preparationData?.preparation?.supplementStatus || 'unknown',
@@ -614,6 +617,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         assessmentMode: preparationDraft.assessmentMode,
         assessmentConfirmedCriteria: preparationDraft.assessmentConfirmedCriteria,
         assessmentNotRequiredReason: preparationDraft.assessmentNotRequiredReason,
+        requiredCaseReviewIds: preparationDraft.requiredCaseReviewIds || [],
         requiredAssessmentDomains,
         medicationStatus: preparationDraft.medicationStatus,
         supplementStatus: preparationDraft.supplementStatus,
@@ -833,11 +837,12 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             <div>
               <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24' }}>{preparation.continuity?.mode === 'renewal' ? '下一年度方案准备清单' : '首次方案准备清单'}</div>
               <div style={{ fontSize: 13, color: '#6B7F75', marginTop: 4 }}>已完成 {preparation.checklist.progress.completed}/{preparation.checklist.progress.total}；未完成前不能由 AI 生成或正式发布年度方案。</div>
+              {preparationSelectionChanged && <div style={{ color: '#9A5B13', marginTop: 6 }}>当前选择尚未满足或与已保存记录不同，请核对并保存准备情况。</div>}
             </div>
             <span style={{ fontSize: 12, fontWeight: 700, color: preparation.checklist.ready ? '#15803D' : '#B45309' }}>{preparation.checklist.ready ? '✓ 已就绪' : '待完善'}</span>
           </div>
           {preparation.continuity?.mode === 'renewal' && <div style={{ marginTop: 10, fontSize: 13, color: '#4A6558' }}>引用 {preparation.continuity.previousYear} 年度总评；不重复要求首次会诊。<a href={`/patients/${id}?tab=aiReview${preparation.continuity.source?.annualReviewId ? `&phaseAssessmentId=${preparation.continuity.source.annualReviewId}` : ''}`}>查看/准备年度总评</a>{preparation.continuity.summary && <details style={{ marginTop: 8 }}><summary>已审核总评内容</summary><div style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>{preparation.continuity.summary}</div></details>}</div>}
-          {!!preparation.caseReviews?.length && <details style={{ marginTop: 10 }}><summary>本年度研判依据（自动识别，无需重复录入）</summary>{preparation.caseReviews.map(item => <div key={item._id}>{item.title}：{item.conclusion?.status === 'confirmed' ? '已确认，将引用' : '待顾问确认'}</div>)}<a href={`/patients/${id}?tab=aiReview`}>查看研判</a></details>}
+          {!!preparation.caseReviews?.length && <details open={preparation.caseReviews.some(item => item.required && item.conclusion?.status !== 'confirmed')} style={{ marginTop: 10 }}><summary>本年度研判依据（仅明确必需的未确认研判阻断）</summary><div>已确认研判自动引用；其他草稿不引用。只有本次方案必须等待的研判才勾选，修改后保存准备情况。</div>{preparation.caseReviews.map(item => <label key={item._id} style={{ display: 'block', marginTop: 6 }}><input type="checkbox" disabled={!canEdit} checked={(preparationDraft.requiredCaseReviewIds || []).includes(String(item._id))} onChange={e => setPreparationDraft(prev => ({ ...prev, requiredCaseReviewIds: e.target.checked ? [...(prev.requiredCaseReviewIds || []), String(item._id)] : (prev.requiredCaseReviewIds || []).filter(id => id !== String(item._id)), advisorReady: false }))} /> 本次必需：{item.title}（{item.conclusion?.status === 'confirmed' ? '已确认，将引用' : item.required ? '待确认，阻断生成' : '未引用，不阻断'}）</label>)}<a href={`/patients/${id}?tab=aiReview`}>查看研判</a></details>}
           {!!generationCoverage.length && <details open style={{ marginTop: 10 }}><summary>本次来源核对（含待确认及未采用原因）</summary>{generationCoverage.map(item => <div key={item.sourceId}>{item.sourceId}：{{ included: '已纳入', deferred: '待确认', not_applicable: '未采用' }[item.status]}；{item.reason}</div>)}</details>}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 8, marginTop: 14 }}>
             {preparation.checklist.items.map(item => (
@@ -855,7 +860,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
                 <div>以下五项必须全部符合并由顾问确认，仅适用于本年度本次判断：</div>
                 {assessmentCriteria.map(item => <label key={item.key} style={{ display: 'block', marginTop: 8 }}><input type="checkbox" checked={preparationDraft.assessmentConfirmedCriteria.includes(item.key)} onChange={e => setPreparationDraft(prev => ({ ...prev, assessmentConfirmedCriteria: e.target.checked ? [...prev.assessmentConfirmedCriteria, item.key] : prev.assessmentConfirmedCriteria.filter(key => key !== item.key), advisorReady: false }))} /> {item.label}</label>)}
                 <div style={{ marginTop: 8, color: '#9A5B13' }}>任一项不符合或不确定，不得确认无需新增。客户拒绝、时间或费用原因属于暂缓/未完成，不代表无需；出现新情况应重新核对。本清单不替代医生判断。</div>
-                <label>补充说明（选填，系统记录已确认条件）<textarea aria-label="无需专科评估补充说明" className="form-control" rows={Math.max(5, String(preparationDraft.assessmentNotRequiredReason || '').split(/[；\n]/).length + 1)} style={{ lineHeight: 1.8, resize: 'vertical' }} value={preparationDraft.assessmentNotRequiredReason.replace(/；/g, '\n')} onChange={e => setPreparationDraft(prev => ({ ...prev, assessmentNotRequiredReason: e.target.value, advisorReady: false }))} /></label>
+                {!!preparationDraft.assessmentConfirmedCriteria.length && <div style={{ marginTop: 10 }}><b>已勾选条件</b>{assessmentCriteria.filter(item => preparationDraft.assessmentConfirmedCriteria.includes(item.key)).map(item => <div key={item.key}>{item.label}</div>)}</div>}
+                <label>补充说明（选填，仅填写额外说明）<textarea aria-label="无需专科评估补充说明" className="form-control" rows={Math.max(3, String(preparationDraft.assessmentNotRequiredReason || '').split('\n').length + 1)} style={{ lineHeight: 1.8, resize: 'vertical' }} value={preparationDraft.assessmentNotRequiredReason} onChange={e => setPreparationDraft(prev => ({ ...prev, assessmentNotRequiredReason: e.target.value, advisorReady: false }))} /></label>
               </div>}
               <label style={{ fontSize: 12, color: '#4A6558' }}>{preparation.continuity?.mode === 'renewal' ? '按需补充的专业评估领域（可留空）' : '所需专业评估领域（用顿号分隔）'}
                 <input disabled={preparationDraft.assessmentMode === 'none'} value={preparationDraft.assessmentMode === 'none' ? '' : preparationDraft.requiredAssessmentDomains} onChange={e => setPreparationDraft(prev => ({ ...prev, requiredAssessmentDomains: e.target.value }))} placeholder="如：心血管、营养、中医健康" style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 5, padding: '8px 10px', border: '1px solid #D9D4CA', borderRadius: 8 }} />

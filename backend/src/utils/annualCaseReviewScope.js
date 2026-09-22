@@ -6,4 +6,10 @@ function annualCaseReviewQuery(patientId, year) {
     { $or: [{ 'conclusion.confirmedAt': { $gte: start, $lt: end } }, { createdAt: { $gte: start, $lt: end } }] },
   ] };
 }
-module.exports = { annualCaseReviewQuery };
+function markRequiredCaseReviews(reviews, requiredIds = []) {
+  const ids = new Set(requiredIds.map(String));
+  const rows = reviews.map(item => ({ ...item, required: ids.has(String(item._id)) }));
+  for (const id of ids) if (!rows.some(item => String(item._id) === id)) rows.push({ _id: id, required: true, title: '已指定研判不可用，请核对或取消指定', conclusion: { status: 'missing' } });
+  return rows;
+}
+module.exports = { annualCaseReviewQuery, markRequiredCaseReviews };
