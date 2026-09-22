@@ -32,7 +32,10 @@ async function main() {
       { _id: `business:ocr:${day}`, tokens: 302000, calls: 22, micros: 1180000 },
       { _id: `business:other:${day}`, tokens: 26000, calls: 4, micros: 100000 },
     ]);
-    await collection('ai_circuits').insertOne({ _id: 'qwen:qwen-vl-max', failures: 5, paused: true });
+    await collection('ai_circuits').insertMany([
+      { _id: 'qwen:qwen-vl-max', failures: 5, paused: true },
+      { _id: `qwen:qwen-vl-plus:report:${reportId}:page:3`, failures: 8, paused: true },
+    ]);
     await collection('medicalreports').insertOne({ _id: reportId, title: '体检报告（年度）', user: adminId, checkDate: '2026-09-14', aiStatus: 'failed', parseJob: { status: 'paused', message: '第 3 页累计预算不足，已暂停。请管理员调整额度后继续', pausedAt: new Date(), progress: { version: 2, nextPage: 3 } } });
     await collection('ai_usage').insertMany([
       { _id: randomUUID(), createdAt: new Date(), reportId: String(reportId), page: 3, business: 'ocr', stage: 'evidence', provider: 'qwen', model: 'qwen-vl-max', status: 'unknown', reservedTokens: 26000, actualTokens: null, costMicros: null, durationMs: 45000 },
@@ -96,9 +99,11 @@ async function main() {
     assert.equal((await collection('ai_control').findOne({ _id: 'policy' })).dailyTokens, 2400000);
     await page.screenshot({ path: path.join(output, 'policy.png'), fullPage: true });
     await page.getByRole('tab', { name: '用量总览' }).click();
-    await page.getByRole('button', { name: '解除模型暂停' }).click();
-    await page.getByText('模型已解除暂停，报告任务需单独恢复。', { exact: true }).waitFor();
+    await page.getByRole('button', { name: '解除异常暂停' }).first().click();
+    await page.getByText('异常通道已解除暂停；若报告已暂停，请再恢复识别。', { exact: true }).waitFor();
     assert.equal((await collection('ai_circuits').findOne({ _id: 'qwen:qwen-vl-max' })).paused, false);
+    await page.getByRole('button', { name: '解除异常暂停' }).click();
+    assert.equal((await collection('ai_circuits').findOne({ _id: `qwen:qwen-vl-plus:report:${reportId}:page:3` })).paused, false);
     await page.getByRole('button', { name: '恢复识别', exact: true }).click();
     await page.getByText('任务已恢复排队', { exact: true }).waitFor();
     assert.equal(scheduled, String(reportId));
