@@ -21,7 +21,7 @@ function fixture(requiresOutcomeReview = () => false) {
   let failFinalWrite = false, changeBeforeWrite = false, failOrderWrite = false
   const sync = createPreparationCompletion({
     requiresOutcomeReview,
-    Handoff: { updateOne: async (filter, update) => {
+    Handoff: { find: filter => q([link].filter(sift(filter))), updateOne: async (filter, update) => {
       if (failFinalWrite && update.$set.completion.status === 'completed') { failFinalWrite = false; throw Error('lost connection') }
       if (sift(filter)(link)) Object.assign(link, update.$set)
     } },
@@ -54,6 +54,30 @@ test('production policy: service completion never substitutes for management res
   assert.equal(await f.sync.reconcile(f.link), false)
   assert.equal(f.manager.status, 'planned'); assert.equal(f.link.completion.status, 'attention')
   assert.match(f.link.completion.message, /结果处置/)
+})
+
+test('advisor outcome immediately reconciles handoff without rewriting reviewed original', async () => {
+  const f = fixture(require('../src/utils/followUpContinuity').requiresOutcomeReview)
+  f.manager.status = 'completed'; f.manager.outcomeReview = { decision: 'no_further' }
+  f.manager.completedAt = new Date('2026-09-22T05:00:00Z')
+  f.link.completion = { status: 'attention', message: '等待结果处置' }
+  const before = JSON.stringify(f.manager)
+  assert.equal(await f.sync.forOriginal(f.manager), true)
+  assert.equal(f.link.completion.status, 'completed')
+  assert.equal(JSON.stringify(f.manager), before)
+  assert.equal(await f.sync.forOriginal(f.manager), false)
+})
+
+test('outcome handoff sync still requires final acceptance and exact redemption', async () => {
+  for (const missing of ['final', 'redemption']) {
+    const f = fixture(require('../src/utils/followUpContinuity').requiresOutcomeReview)
+    f.manager.status = 'completed'; f.manager.outcomeReview = { decision: 'no_further' }
+    if (missing === 'final') f.final.status = 'planned'
+    else { f.service.sourceOrderId = 'o'; Object.assign(f.order, { totalUnits: 2, usedUnits: 0, status: 'scheduled', redemptions: [] }) }
+    assert.equal(await f.sync.forOriginal(f.manager), false)
+    assert.notEqual(f.link.completion?.status, 'completed')
+    assert.equal(f.manager.status, 'completed')
+  }
 })
 
 test('production policy: redeemed service closes but original management plan remains open', async () => {

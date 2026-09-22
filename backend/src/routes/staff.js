@@ -2054,6 +2054,10 @@ router.post('/followups/:id/outcome-review', staffAuth, async (req, res) => {
   try {
     const data = await require('../utils/followUpOutcomeReview').reviewOutcome({ FollowUp, Report: MedicalReport, User,
       Draft: require('../models/ReportFollowUpDraft'), id: req.params.id, actor: req.staff, body: req.body });
+    // A successful advisor decision is durable. Reconcile only its exact checkup
+    // handoff now; failures remain recoverable through the existing daily scan.
+    try { await require('../utils/checkupPreparationCompletion').runtime().forOriginal(data); }
+    catch (error) { console.error('[checkup-outcome] 结果已保存，承接状态等待同步', error.message); }
     res.json({ success: true, data });
   } catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.message }); }
 });

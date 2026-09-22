@@ -107,12 +107,25 @@ function createPreparationCompletion({ Handoff, HealthPlan, FollowUp, FollowUpPl
     const link = await Handoff.findOne({ servicePlanId, status: 'active' }).lean()
     return link ? reconcile(link) : false
   }
+  async function forOriginal(task) {
+    // Only the exact frozen annual slot can select a handoff. Never use the
+    // customer's latest service or touch another year's preparation.
+    if (task?.status !== 'completed' || !task.outcomeReview || task.sourceType !== 'scheduled'
+      || !task.sourceAnnualPlanId || !/^annual_checkup:\d{4}-\d{2}-\d{2}$/.test(task.sourceScheduleKey || '')) return false
+    const planners = await FollowUp.find({ patientId: task.patientId, sourceAnnualPlanId: task.sourceAnnualPlanId,
+      sourceType: 'annual_service', sourceScheduleKey: `${task.sourceScheduleKey}:prepare:healthPlanner` }).lean()
+    if (planners.length !== 1) return false
+    const links = await Handoff.find({ patientId: task.patientId, annualPlanId: task.sourceAnnualPlanId,
+      plannerTaskId: planners[0]._id, status: 'active' }).lean()
+    if (links.length !== 1) return false
+    return reconcile(links[0])
+  }
   async function scan() {
     for await (const link of Handoff.find({ status: 'active', 'completion.status': { $ne: 'completed' } }).lean().cursor()) {
       try { await reconcile(link) } catch (error) { console.error('[checkup-preparation-completion]', String(link._id), error.message) }
     }
   }
-  return { reconcile, forService, scan }
+  return { reconcile, forService, forOriginal, scan }
 }
 function runtime() {
   return createPreparationCompletion({ Handoff: require('../models/CheckupPreparationHandoff'),
