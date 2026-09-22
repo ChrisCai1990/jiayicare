@@ -6,6 +6,10 @@
 
 const ARCHIVE_FIELDS = [
   // 基本信息
+  { path: 'residence.city', label: '常住城市', group: '基本信息', type: 'text' },
+  { path: 'carePreferences.city', label: '首选就医城市', group: '基本信息', type: 'text' },
+  { path: 'carePreferences.hospitals', label: '偏好医院', group: '基本信息', type: 'text' },
+  { path: 'carePreferences.allowTravel', label: '接受异地就医', group: '基本信息', type: 'enum', options: ['yes', 'no'] },
   { path: 'gender',            label: '性别',         group: '基本信息', type: 'enum', options: ['男', '女', '未知'] },
   { path: 'birthDate',         label: '出生日期',     group: '基本信息', type: 'date' },
   { path: 'idType',            label: '证件类型',     group: '基本信息', type: 'enum', options: ['idCard', 'passport'] },

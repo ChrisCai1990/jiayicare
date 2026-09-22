@@ -152,6 +152,7 @@ const readArchiveField = (user, path) => {
 const buildInitialAnswers = (user, questions) => Object.fromEntries((questions || []).flatMap((question) => {
   const value = readArchiveField(user, question.archiveField);
   if (value === undefined || value === null || value === '') return [];
+  if (question.archiveField === 'carePreferences.allowTravel') return [[question.id, ({ yes: '接受', no: '不接受' })[value] || '暂不确定']];
   // flatMap must return a list of entries, not the entry itself.
   if (question.type === 'multi') return [[question.id, Array.isArray(value) ? value : [value]]];
   if (question.type === 'number') return [[question.id, Number.isFinite(Number(value)) ? Number(value) : value]];
