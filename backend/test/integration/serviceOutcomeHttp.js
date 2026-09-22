@@ -7,7 +7,9 @@ async function main() {
   const User = require('../../src/models/User'), FollowUp = require('../../src/models/FollowUp'), Plan = require('../../src/models/HealthPlan'), Report = require('../../src/models/MedicalReport'), Link = require('../../src/models/FollowUpServiceLink');
   assert.equal((await User.findById(session.patientId)).name, '隔离验收客户（纯虚构）');
   const roles = Object.fromEntries(session.accounts.map(x => [x.role, x]));
-  const patient = await User.create({ name: '隔离服务审核衔接（纯虚构）', assignedFamilyDoctor: roles.familyDoctor.id, assignedHealthManager: roles.healthManager.id, assignedHealthPlanner: roles.healthPlanner.id });
+  // Patient-scoped pilot servers must exercise the selected synthetic identity.
+  const patient = session.rolloutMode === 'allowlist' ? await User.findById(session.patientId)
+    : await User.create({ name: '隔离服务审核衔接（纯虚构）', assignedFamilyDoctor: roles.familyDoctor.id, assignedHealthManager: roles.healthManager.id, assignedHealthPlanner: roles.healthPlanner.id });
   const original = await FollowUp.create({ patientId: patient._id, assignedTo: roles.healthManager.id, staffId: roles.familyDoctor.id, theme: '原复查计划（模拟）', continuityRequired: true, status: 'in_progress' });
   const plan = await Plan.create({ patientId: patient._id, staffId: roles.familyDoctor.id, type: 'medical_assist', title: '门诊一站式（模拟）', status: 'active' });
   const report = { _id: new m.Types.ObjectId(), user: patient._id, sourceHealthPlanId: plan._id, title: '模拟门诊资料', documentCategory: 'outpatient_record', audit_status: 'audited', updatedAt: new Date(), createdAt: new Date() };

@@ -71,6 +71,11 @@ async function main() {
   const listing = await call(`/staff/patients/${session.patientId}/followups`, tokens.healthPlanner);
   assert.equal(listing.status, 200, JSON.stringify(listing));
   assert.equal(await FollowUp.countDocuments({ patientId: session.patientId, sourceType: 'order', sourceOrderId: service.orderId, status: { $nin: ['completed', 'cancelled'] } }), 0);
+  for (const role of ['familyDoctor', 'healthPlanner', 'healthManager', 'medicalAssistant']) {
+    const workbench = await call('/staff/service-tasks', tokens[role]);
+    assert.equal(workbench.status, 200);
+    assert.equal(JSON.stringify(workbench.body.data).includes(service.serviceId), false, `${role}: completed exact service must not remain pending`);
+  }
   console.log(process.argv.includes('--merged-outcome') ? 'PASS one advisor decision: original closed automatically after exact redemption, no separate outcome call' : awaitsOutcome ? 'Service redeemed; original management plan stays open pending advisor outcome' : 'Historical closed plan preserved; redemption replay rejected (not new-policy closure evidence)');
   fs.writeFileSync(path.join(dir, 'redemption-http.json'), JSON.stringify({ patientId: session.patientId, serviceId: service.serviceId, orderId: service.orderId, managerTaskId: String(manager._id), completedAt: manager.completedAt, usedUnits: after.usedUnits, totalUnits: after.totalUnits, duplicateStatus: duplicate.status, syntheticPaymentOnly: true }, null, 2));
 }
