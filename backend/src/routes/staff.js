@@ -2240,9 +2240,22 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   const isOutpatientPostVisitReview = followUp.sourceType === 'health_plan' && followUp.taskRole === 'executor' && /门诊一站式.*查看陪诊资料并制定随访计划/.test(followUp.theme || '');
   if (isOutpatientPostVisitReview && req.body.status === 'completed') {
     const result = req.body.formData || {};
+    if (previousStatus === 'completed' && followUp.formData?.successorProtocol !== 'source_v1') {
+      return res.status(409).json({ success: false, message: '历史已完成服务需先核对原后续随访，不自动重新建单' });
+    }
+    if (previousStatus === 'completed' && ['reviewSummary', 'followUpContent', 'followUpDate'].some(key => result[key] !== followUp.formData?.[key])) {
+      return res.status(409).json({ success: false, message: '服务已审核，请按原内容重试，不覆盖已发布安排' });
+    }
     if (!String(result.reviewSummary || '').trim() || !String(result.followUpContent || '').trim() || !result.followUpDate) {
       return res.status(400).json({ success: false, message: '请填写资料查看结论、随访内容和随访日期' });
     }
+    const patient = await User.findById(followUp.patientId).select('_id assignedHealthManager assignedFamilyDoctor').lean();
+    if (!patient?.assignedHealthManager) return res.status(409).json({ success: false, message: '请先确认客户所属健管专员，后续随访不能派给顾问代办' });
+    if (req.staff.role !== 'superadmin' && (req.staff.role !== 'familyDoctor' || String(patient.assignedFamilyDoctor) !== String(req.staff._id))) {
+      return res.status(403).json({ success: false, message: '仅所属健康顾问可确认服务后续安排' });
+    }
+    require('../utils/serviceReviewSuccessor').successorSpec({ ...followUp.toObject(), status: 'completed', completedAt: new Date(), formData: result }, patient);
+    req.body.formData = { ...result, successorProtocol: 'source_v1' };
   }
   const isSuper = req.staff.role === 'superadmin';
   const isOwner = isSuper || String(followUp.staffId) === String(req.staff._id);
@@ -2355,12 +2368,8 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   }
   if (isOutpatientPostVisitReview && followUp.status === 'completed') {
     const result = followUp.formData || {};
-    await FollowUp.create({
-      patientId: followUp.patientId, staffId: req.staff._id, assignedTo: req.staff._id,
-      date: new Date(result.followUpDate), nextFollowUpDate: new Date(result.followUpDate), type: 'other', status: 'planned',
-      theme: '门诊一站式服务后续随访', content: result.followUpContent, plannedContent: result.followUpContent,
-      sourceType: 'scheduled', completedAt: null, completedBy: null,
-    });
+    const successorPatient = await User.findById(followUp.patientId).select('_id assignedHealthManager').lean();
+    await require('../utils/serviceReviewSuccessor').ensureServiceReviewSuccessor({ FollowUp, review: followUp, patient: successorPatient });
     await MedicalReport.updateMany(
       { sourceHealthPlanId: followUp.sourceHealthPlanId, audit_status: 'audited' },
       { $set: { familyDoctorViewedAt: new Date(), familyDoctorViewedBy: req.staff._id, status: 'analyzed' } }
