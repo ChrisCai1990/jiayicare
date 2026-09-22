@@ -41,7 +41,7 @@ function validateAnnualRaw(raw, catalog, evidence = [], allowedKeys = null) {
     const rows = key === 'annual_checkup' ? (Object.keys(value).length ? [value] : []) : value;
     const seen = new Set();
     for (const row of rows) {
-      if (key === 'annual_checkup' && !String(row.focus || '').trim()) throw fail('年度体检缺少明确内容');
+      if (key === 'annual_checkup' && !require('./annualFocusRepair').hasFocus(row)) throw fail('年度体检缺少明确内容');
       const source = sources.get(String(row.standardPlanId || ''));
       if (!source || source.category !== (key === 'templateNodes' ? 'personalized' : key)) throw fail(`${key}存在模板不匹配项目，未删除项目，请核对生成记录`);
       if (!String(row.basisSummary || row.reason || row.matchReason || '').trim()) throw fail(`${key}缺少来源依据，未替换现有方案`);

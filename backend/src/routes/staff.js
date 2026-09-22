@@ -9850,7 +9850,13 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
       let parsed;
       try { parsed = JSON.parse(text.trim().replace(/^```(?:json)?\s*|\s*```$/g, '')); }
       catch { throw Object.assign(new Error('AI返回的方案内容不完整，未替换现有方案'), { statusCode: 502 }); }
-      try { return closedLoop ? consistency.validateAnnualRaw(parsed, availableAnnualFollowUpCatalog, evidence, allowedKeys) : parsed; }
+      try {
+        if (closedLoop) parsed = await require('../utils/annualFocusRepair').repairAnnualFocus(parsed, row => chat([
+          { role: 'user', content: checkedPrompt },
+          { role: 'user', content: '本次仅补正年度体检focus字段，不重新生成其他方案。原对象：' + JSON.stringify(row) + '\n只返回{"focus":"逐行列明本次体检重点或下次应增加的项目"}。只能使用原对象sourceIds对应的已审来源，不推测新增检查，不更改日期/来源。确无依据返回{"focus":""}，交人工核对，不编造。' },
+        ], { maxTokens: 1000, temperature: 0, jsonMode: true, timeoutMs: 45000 }));
+        return closedLoop ? consistency.validateAnnualRaw(parsed, availableAnnualFollowUpCatalog, evidence, allowedKeys) : parsed;
+      }
       catch (error) { error.generationRaw = parsed; throw error; }
     };
     const generation = closedLoop ? await consistency.reuseAnnualGeneration(
