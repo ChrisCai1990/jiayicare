@@ -8,6 +8,7 @@ import AnnualServicePeriodPanel from '../components/AnnualServicePeriodPanel'
 import { annualPlanReturnTarget } from '../utils/annualPlanNavigation.mjs'
 import assessmentCriteria from '../../../shared/annualAssessmentCriteria.json'
 import { annualTemplateCode, matchingAnnualTemplate } from '../utils/annualTemplateSelection.mjs'
+import { annualItemLayout } from '../utils/annualItemLayout.mjs'
 
 // ── 方案类型 ─────────────────────────────────────────────────────────
 const PLAN_TYPES = [
@@ -846,7 +847,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
                 <div>以下五项必须全部符合并由顾问确认，仅适用于本年度本次判断：</div>
                 {assessmentCriteria.map(item => <label key={item.key} style={{ display: 'block', marginTop: 8 }}><input type="checkbox" checked={preparationDraft.assessmentConfirmedCriteria.includes(item.key)} onChange={e => setPreparationDraft(prev => ({ ...prev, assessmentConfirmedCriteria: e.target.checked ? [...prev.assessmentConfirmedCriteria, item.key] : prev.assessmentConfirmedCriteria.filter(key => key !== item.key), advisorReady: false }))} /> {item.label}</label>)}
                 <div style={{ marginTop: 8, color: '#9A5B13' }}>任一项不符合或不确定，不得确认无需新增。客户拒绝、时间或费用原因属于暂缓/未完成，不代表无需；出现新情况应重新核对。本清单不替代医生判断。</div>
-                <label>补充说明（选填，系统记录已确认条件）<textarea aria-label="无需专科评估补充说明" className="form-control" value={preparationDraft.assessmentNotRequiredReason} onChange={e => setPreparationDraft(prev => ({ ...prev, assessmentNotRequiredReason: e.target.value, advisorReady: false }))} /></label>
+                <label>补充说明（选填，系统记录已确认条件）<textarea aria-label="无需专科评估补充说明" className="form-control" rows={Math.max(5, String(preparationDraft.assessmentNotRequiredReason || '').split(/[；\n]/).length + 1)} style={{ lineHeight: 1.8, resize: 'vertical' }} value={preparationDraft.assessmentNotRequiredReason.replace(/；/g, '\n')} onChange={e => setPreparationDraft(prev => ({ ...prev, assessmentNotRequiredReason: e.target.value, advisorReady: false }))} /></label>
               </div>}
               <label style={{ fontSize: 12, color: '#4A6558' }}>{preparation.continuity?.mode === 'renewal' ? '按需补充的专业评估领域（可留空）' : '所需专业评估领域（用顿号分隔）'}
                 <input disabled={preparationDraft.assessmentMode === 'none'} value={preparationDraft.assessmentMode === 'none' ? '' : preparationDraft.requiredAssessmentDomains} onChange={e => setPreparationDraft(prev => ({ ...prev, requiredAssessmentDomains: e.target.value }))} placeholder="如：心血管、营养、中医健康" style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 5, padding: '8px 10px', border: '1px solid #D9D4CA', borderRadius: 8 }} />
@@ -1017,7 +1018,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             <ModulePanel
               key={entry.key}
               moduleKey={entry.key}
-              def={entry.def}
+              def={patientMode && closedLoopEnabled ? annualItemLayout(entry.key, entry.def, patient?.assignedHealthManager?.name || staffList.find(s => String(s._id) === String(patient?.assignedHealthManager?._id || patient?.assignedHealthManager))?.name) : entry.def}
               data={moduleData[entry.key] || {}}
               onChange={handleModuleChange}
             />

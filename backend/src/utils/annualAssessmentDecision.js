@@ -9,7 +9,7 @@ function annualAssessmentDecision(body, reviewerId, now = new Date()) {
     throw Object.assign(new Error('无需新增专科评估时，须由健康顾问确认全部五项条件；不符合或不确定时不能放行'), { statusCode: 400 });
   }
   return {
-    assessmentMode: mode, assessmentNotRequiredReason: mode === 'none' ? (reason || CRITERIA.map(item => item.label).join('；')) : '',
+    assessmentMode: mode, assessmentNotRequiredReason: mode === 'none' ? reason : '',
     assessmentConfirmedCriteria: mode === 'none' ? CRITERIA.map(item => item.key) : [],
     assessmentCriteriaVersion: mode === 'none' ? 1 : null,
     assessmentDecisionBy: reviewerId, assessmentDecisionAt: now,

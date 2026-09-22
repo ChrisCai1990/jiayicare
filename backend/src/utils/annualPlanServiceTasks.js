@@ -25,6 +25,7 @@ function buildAnnualPlanServiceTasks(plan, patient = {}) {
       stage: 'service_request', taskRole: 'supervisor', theme: `服务需求待安排 · ${label}`,
       content: [
         `服务模式：${mode === 'managed' ? '全托管' : '单项服务'}`, record.serviceType && `服务类型：${record.serviceType}`,
+        mode === 'managed' && record.managedServiceType && `一站式类型：${record.managedServiceType === 'checkup' ? '体检一站式' : '门诊一站式'}`,
         `管理事项：${label}`, evidence && `设置依据：${evidence}`, record.customerAction && `客户行动：${record.customerAction}`,
         record.precautions && `注意事项：${record.precautions}`,
         '处理要求：健康规划师核对信息后，选择已经跑通的服务流程并安排后续岗位流转。',

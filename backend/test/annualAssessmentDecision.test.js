@@ -26,7 +26,7 @@ test('every missing condition, duplicates and unconfirmed legacy records fail cl
   assert.throws(() => annualAssessmentDecision({ assessmentMode: 'none', assessmentConfirmedCriteria: Array(5).fill(criteria[0]) }, 'd'));
   const saved = annualAssessmentDecision({ assessmentMode: 'none', assessmentConfirmedCriteria: criteria }, 'd');
   assert.equal(saved.assessmentCriteriaVersion, 1);
-  assert.ok(saved.assessmentNotRequiredReason.includes('关键档案'));
+  assert.equal(saved.assessmentNotRequiredReason, ''); // confirmations are separate; no duplicate prose
   for (const preparation of [{ ...saved, assessmentConfirmedCriteria: [] }, { ...saved, assessmentCriteriaVersion: null }]) {
     assert.ok(checklist({ patient, preparation }).blockingKeys.includes('assessment_scope'));
   }

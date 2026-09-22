@@ -152,6 +152,14 @@ export function RecordEditor({ def, record, onChange, onDelete, index, total }) 
               <FieldInput field={field} value={record[field.key]} onChange={val => onChange({ ...record, [field.key]: val })} />
             </FieldRow>
           ))}
+          {def.annualServiceArrangement && <>
+            <FieldRow label="随访负责人"><div style={{ paddingTop: 8 }}>{def.managerName}（客户所属健管专员，自动关联）</div></FieldRow>
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #D7E4DD' }}><b>服务安排</b><div style={{ fontSize: 12, marginTop: 4 }}>先确定本项管理内容，再按客户需求选择服务；原健管随访持续保留。</div>
+              {(def.serviceFields || []).filter(f => f.key !== 'serviceType' || record.serviceMode === 'single').map(field => <FieldRow key={field.key} label={field.label}><FieldInput field={field} value={record[field.key]} onChange={val => onChange({ ...record, [field.key]: val, ...(field.key === 'serviceMode' ? { serviceType: '', managedServiceType: '' } : {}) })} /></FieldRow>)}
+              {record.serviceMode === 'managed' && <FieldRow label="一站式服务类型"><FieldInput field={{ type: 'select', options: [{ value: '', label: '请选择' }, { value: 'outpatient', label: '门诊一站式' }, { value: 'checkup', label: '体检一站式' }] }} value={record.managedServiceType} onChange={val => onChange({ ...record, managedServiceType: val })} /></FieldRow>}
+            </div>
+            <details style={{ marginTop: 12, fontSize: 12 }}><summary>查看标准模板依据</summary>{['standardPlanName', 'standardContent', 'standardSchedule'].map(key => record[key] && <div key={key} style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>{record[key]}</div>)}</details>
+          </>}
         </div>
       )}
     </div>

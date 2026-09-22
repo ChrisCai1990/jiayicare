@@ -6737,7 +6737,8 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     return res.status(403).json({ success: false, message: '仅健康顾问可生成/编辑年度管理方案' });
   }
   try {
-    const { planType, servicePlanCode: requestedServicePlanCode, moduleData, notes, year, templateId, templateName } = req.body;
+    const { planType, servicePlanCode: requestedServicePlanCode, notes, year, templateId, templateName } = req.body;
+    let { moduleData } = req.body;
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权编辑该会员的年度方案' });
     if (!planType && !requestedServicePlanCode) return res.status(400).json({ success: false, message: '缺少服务版本' });
@@ -6766,8 +6767,12 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     }
     const template = templateId ? await PlanTemplate.findOne({ _id: templateId, type: 'health_management' }).lean() : null;
     if (!template) return res.status(400).json({ success: false, message: '请选择有效的Admin年度管理服务版本' });
-    const patient = await User.findById(req.params.id).select('clientBrand memberType servicePackage').lean();
+    const patient = await User.findById(req.params.id).select('clientBrand memberType servicePackage assignedHealthManager').lean();
     if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+    if (closedLoop) {
+      try { moduleData = require('../utils/annualItemManagement').normalizeAnnualItems(moduleData || {}, patient.assignedHealthManager); }
+      catch (error) { return res.status(error.statusCode || 400).json({ success: false, message: error.message }); }
+    }
     const { normalizeAnnualTemplate, templateMatchesPatient, byCode } = require('../utils/annualPlanServiceVersions');
     const normalizedTemplate = normalizeAnnualTemplate(template, patient);
     const servicePlanCode = requestedServicePlanCode || normalizedTemplate.content?.servicePlanCode || planType;
@@ -9748,6 +9753,7 @@ ${missingCheckups}
 【疫苗证据】乙肝三系是否五项全阴：${allHepatitisBMarkersNegative ? '是' : '否或资料不完整'}。只有本次服务目标或已确认阶段性评估明确把疫苗列为行动项时，才允许生成疫苗模块。
 
 【年度体检计划日期】${suggestedCheckupDate || '无可靠的上次体检日期，请给出建议并由健康顾问确认'}${suggestedCheckupDate ? '（按上次体检后11个月，即满一年提前1个月自动计算）' : ''}
+【就医与检查统筹】同一客户的本次就医、完善检查和复查，无来源明确的先后顺序、准备冲突、时限差异或实际预约限制时，优先建议同一天协调办理，减少往返；不得为分散项目随意错开日期。有必要拆开时在notes写明来源依据，不能编造号源或预约限制。不能为凑同一天延误有明确时限的事项。日期仅为建议，未确认可写待确认，绝不宣称已预约。只生成本次事项，frequency固定单次，后续时间由本次结果审核后决定；随访负责人由系统关联客户健管专员，AI不得指定协调人员或虚构服务选择。
 
 【本次服务目标（健康顾问填写，方案要朝这个方向靠）】
 ${notes ? notes : '（未填写目标，按会员情况常规定制）'}
