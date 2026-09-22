@@ -6771,6 +6771,7 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     const { normalizeAnnualTemplate, templateMatchesPatient, byCode } = require('../utils/annualPlanServiceVersions');
     const normalizedTemplate = normalizeAnnualTemplate(template, patient);
     const servicePlanCode = requestedServicePlanCode || normalizedTemplate.content?.servicePlanCode || planType;
+    if (servicePlanCode !== normalizedTemplate.content?.servicePlanCode) return res.status(400).json({ success: false, message: '所选服务版本与Admin模板不一致' });
     const version = byCode(servicePlanCode);
     if (!version || version.clientBrand !== patient.clientBrand) return res.status(400).json({ success: false, message: '服务版本与客户归属不匹配' });
     if (!templateMatchesPatient(normalizedTemplate, patient)) return res.status(400).json({ success: false, message: '客户的会员类型或服务包不适用于该服务版本' });
@@ -6781,7 +6782,13 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       planType: { $in: ['health_reshape', 'young_state', 'chronic_stable', 'health_prevention'] },
       $or: [{ templateId: template._id }, { templateName: { $in: [templateName, normalizedTemplate.content?.planName, template.name].filter(Boolean) } }],
     });
-    const selector = legacy ? { _id: legacy._id } : { patientId: req.params.id, year: targetYear, planType: servicePlanCode };
+    let sourcePlan = null;
+    if (req.body.sourcePlanId) {
+      if (!mongoose.isValidObjectId(req.body.sourcePlanId)) return res.status(400).json({ success: false, message: '原年度方案标识无效' });
+      sourcePlan = await AnnualPlan.findOne({ _id: req.body.sourcePlanId, patientId: req.params.id, year: targetYear }).lean();
+      if (!require('../utils/annualPlanSourceMatches').annualPlanSourceMatches(sourcePlan, normalizedTemplate, servicePlanCode, version.strategyType)) return res.status(409).json({ success: false, message: '原年度方案与所选服务版本不匹配，请刷新核对' });
+    }
+    const selector = sourcePlan ? { _id: sourcePlan._id } : legacy ? { _id: legacy._id } : { patientId: req.params.id, year: targetYear, planType: servicePlanCode };
     const frozen = closedLoop ? await AnnualPlan.findOne(selector).select('confirmedAt frozenAt').lean() : null;
     if (frozen?.confirmedAt || frozen?.frozenAt) return res.status(409).json({ success: false, message: '客户已确认的年度方案已经冻结；后续变化请生成动态随访计划' });
     const plan = await AnnualPlan.findOneAndUpdate(

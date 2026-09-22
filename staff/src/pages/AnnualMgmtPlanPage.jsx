@@ -7,6 +7,7 @@ import ReportFollowUpDrafts from '../components/ReportFollowUpDrafts'
 import AnnualServicePeriodPanel from '../components/AnnualServicePeriodPanel'
 import { annualPlanReturnTarget } from '../utils/annualPlanNavigation.mjs'
 import assessmentCriteria from '../../../shared/annualAssessmentCriteria.json'
+import { annualTemplateCode, matchingAnnualTemplate } from '../utils/annualTemplateSelection.mjs'
 
 // ── 方案类型 ─────────────────────────────────────────────────────────
 const PLAN_TYPES = [
@@ -376,7 +377,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       .then(r => {
         const templates = r.data || []
         setAdminTemplates(templates)
-        const recommended = templates.find(item => item.isRecommended)
+        const recommended = planType ? matchingAnnualTemplate(planType, templates) : templates.find(item => item.isRecommended)
         if (recommended) {
           const key = recommended.content?.servicePlanCode || recommended.content?.planType || ''
           setSelectedTemplateId(current => current || recommended._id)
@@ -506,10 +507,16 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     try {
       if (patientMode) {
         const selectedTemplate = adminTemplates.find(t => t._id === selectedTemplateId)
-        const res = await staffAPI.saveAnnualPlan(id, { planType, servicePlanCode: planType, moduleData, year, continuitySource, templateId: selectedTemplateId || null, templateName: selectedTemplate?.content?.planName || selectedTemplate?.name || '' })
+        const servicePlanCode = annualTemplateCode(planType, selectedTemplate)
+        const res = await staffAPI.saveAnnualPlan(id, { planType: servicePlanCode, servicePlanCode, sourcePlanId: plansByType[planType]?._id || null, moduleData, year, continuitySource, templateId: selectedTemplateId || null, templateName: selectedTemplate?.content?.planName || selectedTemplate?.name || '' })
         const saved = res.data
         if (saved) {
-          setPlansByType(prev => ({ ...prev, [planType]: saved }))
+          setPlansByType(prev => {
+            const next = { ...prev, [servicePlanCode]: saved }
+            if (planType !== servicePlanCode) delete next[planType]
+            return next
+          })
+          setPlanType(servicePlanCode)
           setPushedAt(saved.pushedAt || null)
           setConfirmedAt(saved.confirmedAt || null)
         }
@@ -533,11 +540,14 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     if (!type) { toast('请先在下方选择一个方案类型，再点AI生成'); return }
     const selectedTemplate = adminTemplates.find(t => t._id === selectedTemplateId)
     if (patientMode && !selectedTemplate) { toast('请先选择从Admin后台调取的健康管理方案模板'); return }
+    let requestType = type
+    try { if (patientMode) requestType = annualTemplateCode(type, selectedTemplate) }
+    catch (error) { toast(error.message); return }
     const ptName = selectedTemplate?.content?.planName || selectedTemplate?.name || PLAN_TYPES.find(pt => pt.key === type)?.name || '该类型'
     if (!skipConfirm && !window.confirm(`AI将基于已审核的汇总分析，生成「${ptName}」对应的方案板块，现有内容将被覆盖，确认继续？`)) return
     setAiPlanLoading(true)
     try {
-      const res = await staffAPI.generateAIAnnualPlan(id, type, '', selectedTemplateId, year)
+      const res = await staffAPI.generateAIAnnualPlan(id, requestType, '', selectedTemplateId, year)
       setContinuitySource(res.continuitySource || null)
       const aiData = res.data || {}
       // 只填充当前所选方案类型包含的板块，其余类型的板块忽略（一次只生成一个方案）
