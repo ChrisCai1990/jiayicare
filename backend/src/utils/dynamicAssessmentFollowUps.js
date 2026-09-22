@@ -2,6 +2,7 @@ const { dynamicFollowUpEligibility } = require('./dynamicFollowUpEligibility');
 const { validateAssessmentFollowUpDrafts } = require('./assessmentFollowUpDrafts');
 
 async function publishAssessmentFollowUps(assessment, advisor, models = {}, source = {}) {
+  require('./healthManagementRollout').assertPatientEnabled(assessment.patientId);
   const sourceType = source.type || 'professional_assessment';
   const sourceLabel = source.label || '专业健康评估';
   const contextIdField = source.contextIdField || 'assessmentId';

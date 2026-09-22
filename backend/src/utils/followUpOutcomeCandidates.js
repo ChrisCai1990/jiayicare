@@ -7,6 +7,7 @@ async function outcomeCandidates({ FollowUp, User, Link, Handoff, Report, Draft,
   if (!task) throw fail('随访不存在', 404);
   const patient = await User.findById(task.patientId).lean();
   if (!patient || (actor.role !== 'superadmin' && (actor.role !== 'familyDoctor' || !same(patient.assignedFamilyDoctor, actor._id)))) throw fail('仅所属健康顾问可核对结果', 403);
+  require('./healthManagementRollout').assertPatientEnabled(task.patientId);
   if (!requiresOutcomeReview(task)) throw fail('此任务不适用结果处置', 409);
   const sources = [];
   const links = await Link.find({ patientId: task.patientId, followUpId: task._id, status: { $in: ['waiting', 'completed'] } }).lean();

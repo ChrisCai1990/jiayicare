@@ -7,6 +7,7 @@ function createCheckupDispatch({ AnnualPlan, User, FollowUp }, gateFor, isEnable
     if (!isEnabled() || !input?.checkupPreparationAutoConfirmedAt) return { created: 0 }
     const plan = await AnnualPlan.findById(input._id).lean()
     if (!plan?.checkupPreparationAutoConfirmedAt) return { created: 0 }
+    if (!require('./healthManagementRollout').enabledForPatient(plan.patientId)) return { created: 0 }
     const patient = await User.findById(plan.patientId).lean()
     const gate = await gateFor(plan, patient, now)
     const result = buildAnnualCheckupPreparation(plan, patient, gate, now)

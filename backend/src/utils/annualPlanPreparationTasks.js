@@ -3,6 +3,7 @@ const User = require('../models/User');
 const { DEFINITIONS, buildAnnualPreparationTaskRows } = require('./annualPlanPreparationTaskRows');
 
 async function syncAnnualPreparationTasks(patientId, year, checklist) {
+  if (!require('./healthManagementRollout').enabledForPatient(patientId)) return { created: 0, completed: 0, warnings: [] };
   const patient = await User.findById(patientId).select('_id assignedHealthManager').lean();
   if (!patient) return { created: 0, completed: 0, warnings: ['会员不存在'] };
   const rows = buildAnnualPreparationTaskRows({ patient, year, checklist });
@@ -35,6 +36,7 @@ async function syncAnnualPreparationTasks(patientId, year, checklist) {
 }
 
 async function completeAnnualPreparationTask(patientId, itemKey) {
+  if (!require('./healthManagementRollout').enabledForPatient(patientId)) return 0;
   const definition = DEFINITIONS[itemKey];
   if (!definition) return 0;
   const result = await FollowUp.updateMany(

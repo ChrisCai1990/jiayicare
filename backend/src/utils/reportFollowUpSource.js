@@ -13,6 +13,7 @@ function sourceDigest(report) {
   return createHash('sha256').update(JSON.stringify({ snapshot: reportSnapshot(report), service: [report.sourceOrderId, report.sourceHealthPlanId, report.planId, report.sourceServiceRecordId].map(id => String(id || '')) })).digest('hex');
 }
 function markReportFollowUpEvent(report) {
+  if (!require('./healthManagementRollout').enabledForPatient(report.user)) return;
   if (report.audit_status !== 'audited' || !CATEGORIES.includes(report.documentCategory)) return;
   if (!report.isModified('audit_status') && !CLINICAL_FIELDS.some(field => report.isModified(field))) return;
   const digest = sourceDigest(report);

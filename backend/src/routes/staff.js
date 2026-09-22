@@ -6532,6 +6532,7 @@ router.get('/annual-health-plans', staffAuth, async (req, res) => {
 router.get('/patients/:id/professional-health-assessments', staffAuth, async (req, res) => {
   const visibleIds = await getVisiblePlanPatientIds(req.staff);
   if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权查看该会员的专业健康评估' });
+  if (!require('../utils/healthManagementRollout').enabledForPatient(req.params.id)) return res.json({ success: true, data: [], enabled: false });
   const filter = { patientId: req.params.id };
   if (req.query.purpose) filter.purpose = req.query.purpose;
   if (req.query.status) filter.status = req.query.status;
@@ -6553,6 +6554,7 @@ router.post('/patients/:id/professional-health-assessments', staffAuth, async (r
   if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
   const assessmentVisibleIds = await getVisiblePlanPatientIds(req.staff);
   if (assessmentVisibleIds && !assessmentVisibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权建立该会员的专业健康评估' });
+  if (!require('../utils/healthManagementRollout').enabledForPatient(patient._id)) return res.status(403).json({ success: false, code: 'HEALTH_MANAGEMENT_NOT_ENABLED', message: '该客户暂未开放新版健康管理闭环' });
   const row = await ProfessionalHealthAssessment.create({
     patientId: req.params.id, purpose, domain: String(domain).trim(), title: String(title).trim(), collaborationMode,
     linkedDiseaseRecordId: req.body.linkedDiseaseRecordId || null, linkedDiseaseName: String(req.body.linkedDiseaseName || '').trim(),
@@ -6573,6 +6575,7 @@ router.patch('/professional-health-assessments/:assessmentId/review', staffAuth,
   if (!row) return res.status(404).json({ success: false, message: '专业健康评估不存在' });
   const visibleIds = await getVisiblePlanPatientIds(req.staff);
   if (visibleIds && !visibleIds.some(id => String(id) === String(row.patientId))) return res.status(403).json({ success: false, message: '无权审核该会员的评估' });
+  if (!require('../utils/healthManagementRollout').enabledForPatient(row.patientId)) return res.status(403).json({ success: false, code: 'HEALTH_MANAGEMENT_NOT_ENABLED', message: '该客户暂未开放新版健康管理闭环' });
   const action = req.body.action;
   if (!['approve_professional', 'submit_advisor', 'approve_advisor', 'reject', 'take_over_followups'].includes(action)) return res.status(400).json({ success: false, message: '审核动作无效' });
   if (action === 'take_over_followups') {
@@ -6641,6 +6644,7 @@ router.post('/professional-health-assessments/:assessmentId/ai-followup-draft', 
   if (!row) return res.status(404).json({ success: false, message: '专业健康评估不存在' });
   const visibleIds = await getVisiblePlanPatientIds(req.staff);
   if (visibleIds && !visibleIds.some(id => String(id) === String(row.patientId?._id))) return res.status(403).json({ success: false, message: '无权处理该会员的评估' });
+  if (!require('../utils/healthManagementRollout').enabledForPatient(row.patientId)) return res.status(403).json({ success: false, code: 'HEALTH_MANAGEMENT_NOT_ENABLED', message: '该客户暂未开放新版健康管理闭环' });
   if (row.status !== 'advisor_review') return res.status(409).json({ success: false, message: '只有待健康顾问终审的评估可以生成随访草稿' });
   try {
     await require('../utils/referralAssessmentWorkflow').ensureAdvisorReviewTask(row);
@@ -6654,6 +6658,7 @@ router.post('/professional-health-assessments/:assessmentId/ai-followup-draft', 
 router.get('/patients/:id/annual-plan-preparation', staffAuth, async (req, res) => {
   const visibleIds = await getVisiblePlanPatientIds(req.staff);
   if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权查看该会员的年度方案准备情况' });
+  if (!require('../utils/healthManagementRollout').enabledForPatient(req.params.id)) return res.json({ success: true, data: null, enabled: false });
   const year = Number(req.query.year) || new Date().getFullYear();
   const result = await require('../utils/annualPlanPreparation').loadAnnualPlanPreparationChecklist(req.params.id, year);
   if (!result) return res.status(404).json({ success: false, message: '会员不存在' });
@@ -6665,6 +6670,7 @@ router.put('/patients/:id/annual-plan-preparation', staffAuth, async (req, res) 
   if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可确认年度方案准备情况' });
   const visibleIds = await getVisiblePlanPatientIds(req.staff);
   if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权处理该会员的年度方案准备情况' });
+  if (!require('../utils/healthManagementRollout').enabledForPatient(req.params.id)) return res.status(403).json({ success: false, code: 'HEALTH_MANAGEMENT_NOT_ENABLED', message: '该客户暂未开放新版健康管理闭环' });
   const patient = await User.findById(req.params.id).select('_id').lean();
   if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
   const year = Number(req.body.year) || new Date().getFullYear();

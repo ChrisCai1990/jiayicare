@@ -12,6 +12,7 @@ function initialFollowUpAutomation(purpose) {
 }
 
 async function generateDrafts(row, patient, dependencies = {}) {
+  require('./healthManagementRollout').assertPatientEnabled(row.patientId);
   const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
   const input = JSON.stringify({
     patient: { age: patient.age, gender: patient.gender }, purpose: row.purpose, domain: row.domain,
@@ -53,6 +54,7 @@ async function runAssessmentDraft(id, { automatic = false, revision, allowRevisi
   const Assessment = dependencies.Assessment || require('../models/ProfessionalHealthAssessment');
   const row = await Assessment.findById(id).lean();
   if (!row || row.status !== 'advisor_review') throw busy();
+  require('./healthManagementRollout').assertPatientEnabled(row.patientId);
   if (!automatic && revision !== row.__v) throw busy();
   if (automatic && row.followUpAutomation?.status !== 'queued') return row;
   if (row.followUpAutomation?.status === 'running') throw busy();
@@ -117,7 +119,7 @@ function wakeAssessmentDraftWorker() {
       const Assessment = require('../models/ProfessionalHealthAssessment');
       do {
         requested = false;
-        const rows = await Assessment.find({ status: 'advisor_review', 'followUpAutomation.status': 'queued' }).sort({ createdAt: 1 }).limit(25).select('_id').lean();
+        const rows = await Assessment.find({ ...require('./healthManagementRollout').patientFilter(), status: 'advisor_review', 'followUpAutomation.status': 'queued' }).sort({ createdAt: 1 }).limit(25).select('_id').lean();
         for (const row of rows) {
           try {
             await require('./referralAssessmentWorkflow').ensureAdvisorReviewTask(await Assessment.findById(row._id).lean());
@@ -136,11 +138,11 @@ function wakeAssessmentDraftWorker() {
 async function recoverAssessmentDraftQueue(dependencies = {}) {
   const Assessment = dependencies.Assessment || require('../models/ProfessionalHealthAssessment');
   // 超时调用是否已扣费不确定：转人工重试，不自动重发。
-  await Assessment.updateMany({ status: 'advisor_review', 'followUpAutomation.status': 'running', 'followUpAutomation.startedAt': { $lt: new Date(Date.now() - LEASE_MS) } }, {
+  await Assessment.updateMany({ ...require('./healthManagementRollout').patientFilter(), status: 'advisor_review', 'followUpAutomation.status': 'running', 'followUpAutomation.startedAt': { $lt: new Date(Date.now() - LEASE_MS) } }, {
     $set: { 'followUpAutomation.status': 'failed', 'followUpAutomation.message': failureMessage }, $inc: { __v: 1 },
   });
   // 只修复新机制标记过的审核待办；不扫描历史反馈，也不批量调用AI。
-  const cursor = Assessment.find({ status: 'advisor_review', 'followUpAutomation.status': { $in: ['queued', 'running', 'ready', 'failed', 'skipped'] } }).cursor();
+  const cursor = Assessment.find({ ...require('./healthManagementRollout').patientFilter(), status: 'advisor_review', 'followUpAutomation.status': { $in: ['queued', 'running', 'ready', 'failed', 'skipped'] } }).cursor();
   for await (const assessment of cursor) {
     await (dependencies.ensureReview || require('./referralAssessmentWorkflow').ensureAdvisorReviewTask)(assessment);
   }

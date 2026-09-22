@@ -37,6 +37,7 @@ async function isAssessmentSourceCurrent(assessment, dependencies = {}) {
 }
 
 async function createReferralWorkbenchTask(referral) {
+  if (!require('./healthManagementRollout').enabledForPatient(referral.patientId)) return;
   if (!referral.toStaffId) return null;
   return FollowUp.findOneAndUpdate(
     { sourceType: 'professional_assessment', sourceId: referral._id, workflowKey: 'professional_assessment:professional_review' },
@@ -52,6 +53,7 @@ async function createReferralWorkbenchTask(referral) {
 }
 
 async function completeReferralAndCreateAdvisorReview(referral, reviewer) {
+  if (!require('./healthManagementRollout').enabledForPatient(referral.patientId)) return null;
   await FollowUp.updateMany(
     { sourceType: 'professional_assessment', sourceId: referral._id, workflowKey: 'professional_assessment:professional_review', status: { $in: ['planned', 'in_progress', 'missed'] } },
     { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', executedContent: '转介反馈已提交，系统自动完成。' } },
@@ -91,6 +93,7 @@ async function completeReferralAndCreateAdvisorReview(referral, reviewer) {
 
 async function ensureAdvisorReviewTask(assessment) {
   if (!assessment || assessment.status !== 'advisor_review') return;
+  if (!require('./healthManagementRollout').enabledForPatient(assessment.patientId)) return;
   const patient = await User.findById(assessment.patientId).select('assignedFamilyDoctor assignedHealthPlanner assignedHealthManager').lean();
   const owner = patient?.assignedFamilyDoctor || patient?.assignedHealthPlanner || patient?.assignedHealthManager || assessment.createdBy;
   if (owner) {
@@ -114,7 +117,7 @@ async function ensureAdvisorReviewTask(assessment) {
 
 async function completeAdvisorReviewTask(assessmentId) {
   return FollowUp.updateMany(
-    { sourceType: 'professional_assessment', sourceId: assessmentId, workflowKey: 'professional_assessment:advisor_review', status: { $in: ['planned', 'in_progress', 'missed'] } },
+    { ...require('./healthManagementRollout').patientFilter(), sourceType: 'professional_assessment', sourceId: assessmentId, workflowKey: 'professional_assessment:advisor_review', status: { $in: ['planned', 'in_progress', 'missed'] } },
     { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', executedContent: '健康顾问已完成终审，系统自动完成。' } },
   );
 }

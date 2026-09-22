@@ -24,11 +24,13 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
     const row = await Draft.findById(req.params.id);
     if (!row) fail('草稿不存在', 404);
     await visible(req, row.patientId);
+    require('../utils/healthManagementRollout').assertPatientEnabled(row.patientId);
     return row;
   }
   router.get('/patients/:patientId', staffAuth, wrap(async (req, res) => {
     if (!mongoose.isValidObjectId(req.params.patientId)) fail('客户ID无效', 400);
     await visible(req, req.params.patientId);
+    if (!require('../utils/healthManagementRollout').enabledForPatient(req.params.patientId)) return res.json({ success: true, data: [], enabled: false });
     const rows = await Draft.find({ patientId: req.params.patientId }).sort({ createdAt: -1 }).limit(100).lean();
     res.json({ success: true, data: rows });
   }));

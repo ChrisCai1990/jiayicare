@@ -241,7 +241,7 @@ medicalReportSchema.pre('save', function () {
   require('../utils/reportFollowUpSource').markReportFollowUpEvent(this);
 });
 medicalReportSchema.post('save', function (report) {
-  if (report.followUpSourceEvent?.status === 'queued') require('../utils/reportFollowUpAutomation').wakeReportDraftWorker();
+  if (report.followUpSourceEvent?.status === 'queued' && require('../utils/healthManagementRollout').enabledForPatient(report.user)) require('../utils/reportFollowUpAutomation').wakeReportDraftWorker();
 });
 
 medicalReportSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);

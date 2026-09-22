@@ -14,6 +14,7 @@ async function loadServiceRequest(req, res, next) {
   const task = await FollowUp.findById(id);
   if (!task || !isServiceRequest(task)) return res.status(404).json({ success: false, message: '服务需求不存在' });
   if (req.staff.role !== 'superadmin' && (req.staff.role !== 'healthPlanner' || String(task.assignedTo) !== String(req.staff._id))) return res.status(403).json({ success: false, message: '仅本任务健康规划师可安排服务' });
+  if (!require('../utils/healthManagementRollout').enabledForPatient(task.patientId)) return res.status(403).json({ success: false, code: 'HEALTH_MANAGEMENT_NOT_ENABLED', message: '该客户暂未开放新版健康管理闭环' });
   req.serviceRequest = task;
   next();
 }

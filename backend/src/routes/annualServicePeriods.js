@@ -15,6 +15,10 @@ async function load(req, res) {
   const patient = await User.findById(plan.patientId).select('assignedHealthPlanner assignedFamilyDoctor assignedHealthManager serviceStartDate serviceExpiry').lean();
   const field = { healthPlanner: 'assignedHealthPlanner', familyDoctor: 'assignedFamilyDoctor', healthManager: 'assignedHealthManager' }[req.staff.role];
   if (!patient || (req.staff.role !== 'superadmin' && (!field || String(patient[field] || '') !== String(req.staff._id)))) { res.status(403).json({ success: false, message: '无权查看该客户的续约凭据' }); return null; }
+  if (!require('../utils/healthManagementRollout').enabledForPatient(plan.patientId)) {
+    res.status(403).json({ success: false, code: 'HEALTH_MANAGEMENT_NOT_ENABLED', message: '该客户暂未开放新版健康管理闭环' });
+    return null;
+  }
   return { plan, patient };
 }
 router.get('/annual-plans/:planId/service-period', staffAuth, async (req, res) => {

@@ -6,13 +6,14 @@ const { reportSnapshot, isReportSourceCurrent, reportExclusion } = require('./re
 const { runAssessmentDraft } = require('./assessmentFollowUpAutomation');
 
 async function completeReportReview(id) {
-  await FollowUp.updateMany({ sourceType: 'report_followup', sourceId: id, workflowKey: 'report_followup:advisor_review', status: { $in: ['planned', 'in_progress', 'missed'] } }, {
+  await FollowUp.updateMany({ ...require('./healthManagementRollout').patientFilter(), sourceType: 'report_followup', sourceId: id, workflowKey: 'report_followup:advisor_review', status: { $in: ['planned', 'in_progress', 'missed'] } }, {
     $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', executedContent: '报告随访审核已处理或来源已更新。' },
   });
 }
 
 async function syncReportReviewTask(draft) {
   if (!draft) return;
+  if (!require('./healthManagementRollout').enabledForPatient(draft.patientId)) return;
   const publicationPending = draft.status === 'approved' && draft.followUpPublication?.status !== 'published';
   if (draft.status !== 'advisor_review' && !publicationPending) return completeReportReview(draft._id);
   if (!publicationPending && ['queued', 'running'].includes(draft.followUpAutomation?.status)) return;
@@ -29,6 +30,7 @@ async function syncReportReviewTask(draft) {
 }
 
 async function assertReportDraftSource(draft) {
+  require('./healthManagementRollout').assertPatientEnabled(draft.patientId);
   const report = await Report.findById(draft.reportId).lean();
   if (!isReportSourceCurrent(draft, report)) throw Object.assign(new Error('报告已更新或撤销审核，请处理最新版本'), { statusCode: 409 });
   const reason = await reportExclusion(report);
@@ -36,6 +38,7 @@ async function assertReportDraftSource(draft) {
 }
 
 async function materializeReportEvent(report) {
+  if (!require('./healthManagementRollout').enabledForPatient(report.user)) return;
   const event = report.followUpSourceEvent;
   if (!event || event.status !== 'queued') return;
   const key = `${report._id}:${event.sequence}:${event.digest}`;
@@ -83,13 +86,13 @@ function wakeReportDraftWorker() {
     try {
       do {
         requested = false;
-        const reports = await Report.find({ 'followUpSourceEvent.status': 'queued' }).sort({ 'followUpSourceEvent.queuedAt': 1 }).limit(25);
+        const reports = await Report.find({ ...require('./healthManagementRollout').patientFilter('user'), 'followUpSourceEvent.status': 'queued' }).sort({ 'followUpSourceEvent.queuedAt': 1 }).limit(25);
         let progressed = 0;
         for (const report of reports) {
           try { await materializeReportEvent(report); progressed++; }
           catch { console.error('[report-followup] 来源事件待恢复'); }
         }
-        const drafts = await Draft.find({ status: 'advisor_review', 'followUpAutomation.status': 'queued' }).sort({ createdAt: 1 }).limit(25).select('_id').lean();
+        const drafts = await Draft.find({ ...require('./healthManagementRollout').patientFilter(), status: 'advisor_review', 'followUpAutomation.status': 'queued' }).sort({ createdAt: 1 }).limit(25).select('_id').lean();
         for (const row of drafts) {
           try { await generateReportDraft(row._id, { automatic: true }); }
           catch {
@@ -106,8 +109,8 @@ function wakeReportDraftWorker() {
 }
 
 async function recoverReportDrafts() {
-  await Draft.updateMany({ status: 'advisor_review', 'followUpAutomation.status': 'running', 'followUpAutomation.startedAt': { $lt: new Date(Date.now() - 10 * 60000) } }, { $set: { 'followUpAutomation.status': 'failed', 'followUpAutomation.message': '生成中断，请顾问重试或人工接管。' }, $inc: { __v: 1 } });
-  for await (const row of Draft.find({ $or: [
+  await Draft.updateMany({ ...require('./healthManagementRollout').patientFilter(), status: 'advisor_review', 'followUpAutomation.status': 'running', 'followUpAutomation.startedAt': { $lt: new Date(Date.now() - 10 * 60000) } }, { $set: { 'followUpAutomation.status': 'failed', 'followUpAutomation.message': '生成中断，请顾问重试或人工接管。' }, $inc: { __v: 1 } });
+  for await (const row of Draft.find({ ...require('./healthManagementRollout').patientFilter(), $or: [
     { status: 'advisor_review', 'followUpAutomation.status': { $in: ['ready', 'failed', 'skipped'] } },
     { status: 'approved', 'followUpPublication.status': { $ne: 'published' } },
   ] }).cursor()) await syncReportReviewTask(row);

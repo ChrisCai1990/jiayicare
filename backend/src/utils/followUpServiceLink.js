@@ -1,6 +1,7 @@
 const { serviceOutcome, taskProjection } = require('./followUpServiceState');
 
 async function projectLink(link) {
+  if (!require('./healthManagementRollout').enabledForPatient(link.patientId)) return;
   const FollowUp = require('../models/FollowUp');
   const original = await FollowUp.findById(link.followUpId).lean();
   const management = require('./followUpContinuity').requiresOutcomeReview(original);
@@ -22,7 +23,8 @@ async function reconcileServiceLinks(filter = {}) {
   const Link = require('../models/FollowUpServiceLink');
   const Order = require('../models/Order');
   const HealthPlan = require('../models/HealthPlan');
-  const links = await Link.find(filter).lean();
+  const scope = require('./healthManagementRollout').patientFilter();
+  const links = await Link.find(Object.keys(scope).length ? { $and: [filter, scope] } : filter).lean();
   let count = 0;
   for (let link of links) {
     // attention 已交人工处理，不能被旧服务后续事件自动重新关闭。
