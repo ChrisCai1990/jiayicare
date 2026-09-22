@@ -4,11 +4,11 @@ const fs = require('node:fs');
 const os = require('node:os');
 const crypto = require('node:crypto');
 
-async function main() {
+async function main(liveOptions = null) {
   if (process.env.RUN_ISOLATED_ACCEPTANCE !== 'true') throw new Error('Explicit RUN_ISOLATED_ACCEPTANCE=true required');
   const resumePath = process.env.ISOLATED_ACCEPTANCE_SESSION;
   const resume = resumePath ? JSON.parse(fs.readFileSync(resumePath, 'utf8')) : null;
-  if (resume && (resume.api !== 'http://127.0.0.1:3000/api' || !/^jiayicare_acceptance_[a-f0-9]{32}$/.test(resume.database))) throw new Error('Invalid isolated resume manifest');
+  if (resume && (resume.api !== `http://127.0.0.1:${liveOptions ? 3002 : 3000}/api` || !/^jiayicare_acceptance_[a-f0-9]{32}$/.test(resume.database))) throw new Error('Invalid isolated resume manifest');
   // Discard inherited service credentials, proxies and runtime injection options.
   const keep = new Set(['SYSTEMROOT', 'WINDIR', 'PATH', 'TEMP', 'TMP', 'NODE_PATH']);
   for (const key of Object.keys(process.env)) if (!keep.has(key.toUpperCase())) delete process.env[key];
@@ -16,13 +16,17 @@ async function main() {
   const runtime = resume ? path.dirname(path.resolve(resumePath)) : fs.mkdtempSync(path.join(os.tmpdir(), 'jiayicare-acceptance-'));
   const database = resume ? resume.database : `jiayicare_acceptance_${session}`;
   Object.assign(process.env, {
-    NODE_ENV: 'test', PORT: '3000', JWT_SECRET: crypto.randomBytes(48).toString('hex'),
+    NODE_ENV: 'test', PORT: liveOptions ? '3002' : '3000', JWT_SECRET: crypto.randomBytes(48).toString('hex'),
     MONGODB_URI: `mongodb://127.0.0.1:27134/${database}`,
     STARTUP_SCHEMA_WRITES_ENABLED: 'false', STARTUP_BACKGROUND_JOBS_ENABLED: 'false',
     UPLOADS_DIR: path.join(runtime, 'uploads'), CHECKUP_PREPARATION_AUTO_ENABLED: 'true',
   });
   require('dotenv').config = () => ({ parsed: {} });
-  installNetworkFence();
+  if (liveOptions) {
+    if (!liveOptions.qwenKey || (resume && resume.boundary !== 'Synthetic data; bounded live Qwen only; no production DB/payment/notification.')) throw new Error('Live AI requires dedicated synthetic database and memory-only credential');
+    process.env.QWEN_API_KEY = liveOptions.qwenKey;
+    require('./liveAiFence').install();
+  } else installNetworkFence();
   const mongoose = require('mongoose');
   mongoose.set('autoIndex', false);
   mongoose.set('autoCreate', false);
@@ -52,8 +56,8 @@ async function main() {
   }
   const patient = await User.create({ name: '隔离验收客户（纯虚构）', ...assignment,
     serviceStartDate: new Date().toISOString().slice(0, 10), serviceExpiry: '2027-12-31', onboardingCompleted: true });
-  const manifest = { database, runtime, api: 'http://127.0.0.1:3000/api', patientId: String(patient._id), accounts,
-    boundary: 'Synthetic local data; external network blocked; no real AI/payment/notification validation.' };
+  const manifest = { database, runtime, api: `http://127.0.0.1:${process.env.PORT}/api`, patientId: String(patient._id), accounts,
+    boundary: liveOptions ? 'Synthetic data; bounded live Qwen only; no production DB/payment/notification.' : 'Synthetic local data; external network blocked; no real AI/payment/notification validation.' };
   fs.writeFileSync(path.join(runtime, 'session.json'), JSON.stringify(manifest, null, 2), { mode: 0o600 });
   console.log(`ISOLATED_ACCEPTANCE_SESSION=${path.join(runtime, 'session.json')}`);
   // Backend connection reuses this exact URI. No .env is loaded.
@@ -85,4 +89,4 @@ function installNetworkFence() {
 }
 
 if (require.main === module) main().catch(error => { console.error(error.message); process.exit(1); });
-module.exports = { installNetworkFence };
+module.exports = { installNetworkFence, main };

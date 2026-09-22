@@ -5,8 +5,9 @@ const internal = query => { query[INTERNAL] = true; return query; };
 const fail = message => Object.assign(new Error(message), { statusCode: 409 });
 function outcomeEvidenceFence(schema) {
   schema.add({ outcomeEvidenceLock: { type: Object, default: null } });
+  const guard = () => ({ outcomeEvidenceLock: null, ...(schema.path('outcomeClosureIntent') ? { 'outcomeClosureIntent.status': { $ne: 'running' } } : {}) });
   schema.pre('save', function () {
-    if (!this.isNew) this.$where = { ...this.$where, outcomeEvidenceLock: null, 'outcomeClosureIntent.status': { $ne: 'running' } };
+    if (!this.isNew) this.$where = { ...this.$where, ...guard() };
   });
   for (const op of ['updateOne', 'updateMany', 'findOneAndUpdate', 'replaceOne', 'findOneAndReplace', 'deleteOne', 'deleteMany', 'findOneAndDelete']) {
     schema.pre(op, { query: true, document: false }, function () {
@@ -15,7 +16,7 @@ function outcomeEvidenceFence(schema) {
       // which defaults to add on upsert; nesting the whole filter caused source
       // identifiers to be defaulted to null in newly generated service tasks.
       const filter = this.getFilter();
-      this.setQuery({ ...filter, $and: [...(filter.$and || []), { outcomeEvidenceLock: null, 'outcomeClosureIntent.status': { $ne: 'running' } }] });
+      this.setQuery({ ...filter, $and: [...(filter.$and || []), guard()] });
     });
   }
 }

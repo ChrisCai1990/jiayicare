@@ -9678,6 +9678,7 @@ ${confirmedReviewText}
 ${professionalAssessmentText}
 
 专业健康评估是年度方案的必需专业输入。只能采用已终审内容，AI可以整理和补全表达，但不得改变专业结论、添加诊断或治疗意见；涉及就医、检查、复查和生活方式管理的建议，应优先与上述评估保持一致。
+检查准备 precautions 只能摘取输入中明确存在的要求，未提供则填“待检查机构确认”；不得自行补充空腹时长、停药、禁食或其他医疗要求。年度体检没有明确项目依据时不得自行拼接“基础全套”项目清单，annual_checkup 返回空对象。每条实际建议的 basisSummary 必须注明具体评估或报告来源及原建议，不得以通用医学常识替代来源。
 
 【本方案必须对齐的主评估】
 ${assessmentFocus ? JSON.stringify(assessmentFocus) : '暂无结构化主评估；仅可按本次服务目标生成，不得扩展主题'}
@@ -9708,7 +9709,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
   ],
   "specialist_collab": [],
   "checkup_completion": [
-    { "standardPlanId": "category=checkup_completion的真实模板id", "items": "需要补充的体检项目", "reason": "资料缺口或筛查依据", "time": "不早于${todayText}的日期", "frequency": "单次", "precautions": "检查准备", "customerAction": "完成检查并上传报告", "ownerRole": "健管专员" }
+    { "standardPlanId": "category=checkup_completion的真实模板id", "items": "需要补充的体检项目", "reason": "资料缺口或筛查依据", "basisSummary": "具体已审核评估或报告名称及原建议", "time": "不早于${todayText}的日期", "frequency": "单次", "precautions": "仅摘取来源准备要求，未提供填待检查机构确认", "customerAction": "完成检查并上传报告", "ownerRole": "健管专员" }
   ],
   "abnormal_followup": [
     { "standardPlanId": "category=abnormal_followup的真实模板id", "items": "复查项目名称", "reason": "复查原因", "time": "不早于${todayText}的日期", "basisSummary": "来源报告、日期和异常事实", "frequency": "单次", "precautions": "如需空腹、携带既往资料", "customerAction": "按确认时间完成复查", "ownerRole": "健管专员", "notes": "内部备注" }
