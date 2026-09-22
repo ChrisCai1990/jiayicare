@@ -1107,7 +1107,9 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
     }
   }
 
-  res.json({ success: true, data: { user, recentFollowUps, recentRecords, insuranceCoverage, insuranceCases } });
+  const displayedUser = user.toObject();
+  displayedUser.lifestyle_data = require('../utils/effectiveLifestyle').effectiveLifestyle(displayedUser);
+  res.json({ success: true, data: { user: displayedUser, recentFollowUps, recentRecords, insuranceCoverage, insuranceCases } });
 });
 
 router.post('/patients/:id/insurance-cases', staffAuth, async (req, res) => {
@@ -12204,13 +12206,9 @@ function scheduleReportParse(reportId, { resumed = false } = {}) {
   if (activeReportParseJobs.has(id) || activeReportParseJobs.size > 0) return false;
   activeReportParseJobs.add(id);
   if (resumed) {
-    MedicalReport.findByIdAndUpdate(reportId, {
-      $set: {
-        'parseJob.status': 'processing',
-        'parseJob.resumedAt': new Date(),
-        'parseJob.message': '服务重启后从已保存进度继续识别',
-      },
-    }).catch(error => console.error('[parse-ai] 恢复任务状态写入失败', id, error.message));
+    MedicalReport.findByIdAndUpdate(reportId, require('../utils/reportParseJobUpdate').reportParseJobUpdate({
+      status: 'processing', resumedAt: new Date(), message: '服务重启后从已保存进度继续识别',
+    })).catch(error => console.error('[parse-ai] 恢复任务状态写入失败', id, error.message));
   }
   // 脱离 HTTP 响应但保留 Mongo 任务状态；finally 确保同一报告不会在本进程内重复运行。
   Promise.resolve()
@@ -13192,10 +13190,9 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
     }
 
     // 标记处理中，立即返回；识别在后台进行，避免多页 PDF 阻塞请求超时
-    const claimed = await MedicalReport.findOneAndUpdate({ _id: report._id, aiStatus: { $ne: 'processing' }, 'parseJob.status': { $ne: 'paused' }, 'pageParseStatus.status': { $ne: 'processing' } }, {
-      aiStatus: 'processing',
-      'parseJob.status': 'processing', 'parseJob.queuedAt': new Date(), 'parseJob.startedAt': new Date(), 'parseJob.attemptId': crypto.randomUUID(), 'parseJob.actorId': String(req.staff?._id || ''), 'parseJob.message': '正在识别',
-    });
+    const claimed = await MedicalReport.findOneAndUpdate({ _id: report._id, aiStatus: { $ne: 'processing' }, 'parseJob.status': { $ne: 'paused' }, 'pageParseStatus.status': { $ne: 'processing' } }, require('../utils/reportParseJobUpdate').reportParseJobUpdate({
+      status: 'processing', queuedAt: new Date(), startedAt: new Date(), attemptId: crypto.randomUUID(), actorId: String(req.staff?._id || ''), message: '正在识别',
+    }, { aiStatus: 'processing' }));
     if (!claimed) return res.status(409).json({ success: false, message: '报告已在识别、补提或暂停状态，请刷新' });
     scheduleReportParse(report._id);
 
