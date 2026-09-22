@@ -34,4 +34,11 @@ function buildAnnualPlanDisplayItems(moduleData = {}) {
   return items;
 }
 
-module.exports = { buildAnnualPlanDisplayItems, normalizeItem };
+const internalFields = new Set(['notes', 'timingReason', 'timingBaseDate', 'timingIntervalMonths', 'timingSourceId', 'dateSelectionReason', 'scheduleSeparationReason', 'futureRepeatReason', 'futureRepeatSourceId']);
+// Legacy clients render raw moduleData, so hiding fields only in displayItems is insufficient.
+function customerModuleData(value) {
+  if (Array.isArray(value)) return value.map(customerModuleData);
+  if (!value || typeof value !== 'object' || value.constructor !== Object) return value;
+  return Object.fromEntries(Object.entries(value).filter(([key]) => !internalFields.has(key)).map(([key, child]) => [key, customerModuleData(child)]));
+}
+module.exports = { buildAnnualPlanDisplayItems, normalizeItem, customerModuleData };

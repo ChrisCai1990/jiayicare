@@ -4,7 +4,7 @@ function annualGenerationExample(catalog, evidence, allowedKeys) {
   const example = { templateNodes: [] };
   for (const key of ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'annual_checkup']) {
     const template = catalog.find(item => item.category === key);
-    const row = { standardPlanId: template?.id, basisSummary: '必须引用输入中明确的原建议，不得虚构', sourceIds, timingBaseDate: '', timingIntervalMonths: null, timingReason: '根据来源检查日期评估间隔及具体建议日期，交顾问审核', hospital: '' };
+    const row = { standardPlanId: template?.id, basisSummary: '必须引用输入中明确的原建议，不得虚构', sourceIds, timingBaseDate: '', timingSourceId: '', timingIntervalMonths: null, timingReason: '根据来源检查日期评估间隔及具体建议日期，交顾问审核', dateSelectionReason: '', scheduleSeparationReason: '', hospital: '' };
     if (key === 'annual_checkup') {
       example[key] = template ? { ...row, focus: '仅填写有来源的体检重点，无依据返回空对象', date: '待确认', escort: false } : {};
     } else {

@@ -9696,7 +9696,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     const year = targetYear;
 
     const reports = await MedicalReport.find({ user: user._id, audit_status: 'audited' })
-      .select('checkDate reportItems.name reportItems.value reportItems.examDate')
+      .select('title type checkDate reportItems.itemId reportItems.name reportItems.value reportItems.examDate reportItems.modality reportItems.findings reportItems.diagnosis reportItems.conclusion')
       .sort({ checkDate: -1, createdAt: -1 }).lean();
     const suggestedCheckupDate = nextAnnualCheckupDate(reports);
     const allHepatitisBMarkersNegative = hepatitisBAllNegative(reports);
@@ -9835,6 +9835,8 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
 注意：每个事项必须填写项目名称、basisSummary、时间或时间范围、frequency、precautions、customerAction、ownerRole；审核状态由系统统一设为待健康顾问审核。所有展示为项目名称的字段必须简单明确，只写“要做什么”，不得把原因、剂量、操作细节或注意事项塞进名称；items和name不超过20个汉字。templateNodes不是AI新建方案，而是从Admin标准随访方案库调用后做客户级调整；standardPlanId和standardPlanName必须原样引用，禁止另起名称、改写模板或为了填满页面创造新主题。medical_treatment仅填主评估明确的高优先级就医需求；specialist_collab仅在主评估明确会诊时填写。禁止生成没有依据的医院、专家姓名和已预约精确日期；可以根据证据给出建议日期或时间范围，未确认写“待确认”。无相关内容用空数组。`;
 
     const consistency = require('../utils/annualGenerationConsistency');
+    const clinicalRules = require('../utils/annualClinicalRules');
+    const timeline = clinicalRules.reportTimeline(reports);
     const evidence = [
       ...confirmedCaseReviews.map(item => ({ id: `review:${item._id}`, content: item.conclusion })),
       ...confirmedCaseReviews.flatMap(item => (Array.isArray(item.conclusion?.structured?.actions) ? item.conclusion.structured.actions : []).map((action, index) => ({ id: `review:${item._id}:action:${index}`, content: action }))),
@@ -9842,9 +9844,10 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
       ...(s.medical_priority?.items || []).map((item, i) => ({ id: `priority:${i}`, content: item })),
       ...(s.checkup_completeness?.missing || []).map((item, i) => ({ id: `missing:${i}`, content: item })),
       { id: 'summary', content: s },
+      { id: 'report_history', content: timeline },
     ];
     const carePreferences = require('../utils/carePreferences').carePreferenceContext(user);
-    const checkedPrompt = closedLoop ? require('../utils/annualGenerationContract').annualGenerationPrompt(prompt, availableAnnualFollowUpCatalog, evidence, allowedKeys) + '\n就医偏好（仅物流参考，不作为医学依据或生成门槛；无已核实医院库时医院留空）：' + JSON.stringify(carePreferences) : prompt;
+    const checkedPrompt = closedLoop ? require('../utils/annualGenerationContract').annualGenerationPrompt(prompt, availableAnnualFollowUpCatalog, evidence, allowedKeys) + '\n' + clinicalRules.clinicalRulesPrompt + '\n就医偏好（仅物流参考，不作为医学依据或生成门槛；无已核实医院库时医院留空）：' + JSON.stringify(carePreferences) : prompt;
     const generate = async () => {
       const text = await chat([{ role: 'user', content: checkedPrompt }], { maxTokens: 6000, temperature: 0, jsonMode: true, timeoutMs: 90000 });
       let parsed;
@@ -9853,15 +9856,19 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
       try {
         if (closedLoop) parsed = await require('../utils/annualFocusRepair').repairAnnualFocus(parsed, row => chat([
           { role: 'user', content: checkedPrompt },
-          { role: 'user', content: '本次仅补正年度体检focus字段，不重新生成其他方案。原对象：' + JSON.stringify(row) + '\n只返回{"focus":"逐行列明本次体检重点或下次应增加的项目"}。只能使用原对象sourceIds对应的已审来源，不推测新增检查，不更改日期/来源。确无依据返回{"focus":""}，交人工核对，不编造。' },
+          { role: 'user', content: '本次仅补正年度体检focus字段，不重新生成其他方案。原对象：' + JSON.stringify(row) + '\n本次已安排的就医/完善检查/复查（没有独立重复依据时不得再复制到年度focus）：' + JSON.stringify({ medical_treatment: parsed.medical_treatment, checkup_completion: parsed.checkup_completion, abnormal_followup: parsed.abnormal_followup }) + '\n只返回{"focus":"逐行列明本次体检重点或下次应增加的项目"}。只能使用原对象sourceIds对应的已审来源，不推测新增检查，不更改日期/来源。确无依据返回{"focus":""}，交人工核对，不编造。' },
         ], { maxTokens: 1000, temperature: 0, jsonMode: true, timeoutMs: 45000 }));
-        return closedLoop ? consistency.validateAnnualRaw(parsed, availableAnnualFollowUpCatalog, evidence, allowedKeys) : parsed;
+        if (closedLoop) {
+          consistency.validateAnnualRaw(parsed, availableAnnualFollowUpCatalog, evidence, allowedKeys);
+          clinicalRules.validateClinicalRules(parsed, timeline, evidence);
+        }
+        return parsed;
       }
       catch (error) { error.generationRaw = parsed; throw error; }
     };
     const generation = closedLoop ? await consistency.reuseAnnualGeneration(
       require('mongoose').connection.db.collection('annual_generation_snapshots'),
-      { patientId: String(user._id), year, templateId: String(templateId), ruleVersion: 2, model: process.env.QWEN_API_KEY ? 'qwen-plus' : 'deepseek-chat', prompt: checkedPrompt.split(todayText).join('<EXECUTION_DATE>'), sourceSnapshot: { sections: s, reports, confirmedCaseReviews, professionalAssessments, continuity: preparation.continuity || null, notes }, catalog: availableAnnualFollowUpCatalog }, generate,
+      { patientId: String(user._id), year, templateId: String(templateId), ruleVersion: 3, model: process.env.QWEN_API_KEY ? 'qwen-plus' : 'deepseek-chat', prompt: checkedPrompt.split(todayText).join('<EXECUTION_DATE>'), sourceSnapshot: { sections: s, reports, confirmedCaseReviews, professionalAssessments, continuity: preparation.continuity || null, notes }, catalog: availableAnnualFollowUpCatalog }, generate,
     ) : { raw: await generate() };
     const raw = generation.raw;
     const generationDay = generation.createdAt ? new Date(new Date(generation.createdAt).getTime() + 8 * 3600000).toISOString().slice(0, 10) : todayText;

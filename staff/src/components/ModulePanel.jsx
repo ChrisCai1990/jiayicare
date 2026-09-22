@@ -161,7 +161,7 @@ export function RecordEditor({ def, record, onChange, onDelete, index, total }) 
             </FieldRow>
           ))}
           {def.annualServiceArrangement && <>
-            <FieldRow label="随访负责人"><div style={{ paddingTop: 8 }}>自动匹配：{def.managerName}。确认方案后任务派至该健管专员工作台。</div></FieldRow>
+            <FieldRow label="随访人员"><div style={{ paddingTop: 8 }}>{def.managerName}</div></FieldRow>
             <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #D7E4DD' }}><b>服务安排</b><div style={{ fontSize: 12, marginTop: 4 }}>先确定本项管理内容，再按客户需求选择服务；原健管随访持续保留。</div>
               {(def.serviceFields || []).filter(f => f.key !== 'serviceType' || record.serviceMode === 'single').map(field => <FieldRow key={field.key} label={field.label}><FieldInput field={field} value={record[field.key]} onChange={val => onChange({ ...record, [field.key]: val, ...(field.key === 'serviceMode' ? { serviceType: '', managedServiceType: '' } : {}) })} /></FieldRow>)}
               {record.serviceMode === 'managed' && <FieldRow label="一站式服务类型"><FieldInput field={{ type: 'select', options: [{ value: '', label: '请选择' }, { value: 'outpatient', label: '门诊一站式' }, { value: 'checkup', label: '体检一站式' }] }} value={record.managedServiceType} onChange={val => onChange({ ...record, managedServiceType: val })} /></FieldRow>}
@@ -272,7 +272,7 @@ export function ModulePanel({ moduleKey, def, data, onChange }) {
               </FieldRow>
             ))}
             {def.annualServiceArrangement && <>
-              <FieldRow label="随访负责人">自动匹配：{def.managerName}。确认方案后任务派至该健管专员工作台。</FieldRow>
+              <FieldRow label="随访人员">{def.managerName}</FieldRow>
               <h4>服务安排</h4>
               {(def.serviceFields || []).filter(f => f.key !== 'serviceType' || data.serviceMode === 'single').map(field => <FieldRow key={field.key} label={field.label}><FieldInput field={field} value={data[field.key]} onChange={val => { set(field.key, val); if (field.key === 'serviceMode') { set('serviceType', ''); set('managedServiceType', '') } }} /></FieldRow>)}
               {data.serviceMode === 'managed' && <FieldRow label="一站式服务类型"><FieldInput field={{ type: 'select', options: [{ value: '', label: '请选择' }, { value: 'outpatient', label: '门诊一站式' }, { value: 'checkup', label: '体检一站式' }] }} value={data.managedServiceType} onChange={val => set('managedServiceType', val)} /></FieldRow>}
