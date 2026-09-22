@@ -5,6 +5,8 @@ const annualPlanPreparationSchema = new mongoose.Schema({
   year: { type: Number, required: true },
   requiredAssessmentDomains: { type: [String], default: [] },
   assessmentMode: { type: String, enum: ['required', 'none'], default: 'required' },
+  assessmentConfirmedCriteria: { type: [String], default: [] },
+  assessmentCriteriaVersion: { type: Number, default: null },
   assessmentNotRequiredReason: { type: String, default: '' },
   assessmentDecisionBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   assessmentDecisionAt: { type: Date, default: null },

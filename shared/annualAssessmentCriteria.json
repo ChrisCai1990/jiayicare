@@ -1,0 +1,7 @@
+[
+  { "key": "sufficient_information", "label": "关键档案及相关报告已审核，无影响管理方案判断的待补资料" },
+  { "key": "no_unresolved_concerns", "label": "无尚未得到专业解释的新症状、异常结果或健康状况变化" },
+  { "key": "no_pending_specialist_advice", "label": "无医生已建议但尚未完成的进一步评估或会诊" },
+  { "key": "clear_management_basis", "label": "仅需常规健康管理，或已有适用于当前情况的专业意见可直接承接，无需重复评估" },
+  { "key": "advisor_scope_confirmed", "label": "健康顾问已结合当前情况核对，方案不涉及由健康管理人员自行诊断或调整治疗" }
+]
