@@ -10,7 +10,8 @@ class AiControlError extends Error {
   constructor(message, code = 'AI_BUDGET_PAUSED') { super(message); this.code = code; this.aiControl = true; }
 }
 const isAiControlError = error => error?.aiControl === true;
-function rethrowAiControl(error) { if (isAiControlError(error)) throw error; }
+// A page refusal stops only that page's provider calls; the outer report may keep its results.
+function rethrowAiControl(error) { if (isAiControlError(error) && error.code !== 'AI_PAGE_BUDGET_PAUSED') throw error; }
 function periodKeys(now = new Date()) {
   const day = new Date(now.getTime() + 8 * 3600000).toISOString().slice(0, 10);
   return { day, month: day.slice(0, 7) };
@@ -72,4 +73,12 @@ function budgetScopes(policy, context, now) {
   }
   return scopes;
 }
-module.exports = { DEFAULT_POLICY, AiControlError, isAiControlError, rethrowAiControl, periodKeys, validatePolicy, estimateTokens, actualUsage, costMicros, budgetScopes };
+function budgetRefusalReason(scope, counter = {}, tokens = 0, micros = 0, calls = 1) {
+  const usedCalls = Number(counter.calls || 0), callLimit = Number(scope.calls || 0) + Number(counter.extraCalls || 0);
+  if (scope.calls && usedCalls + calls > callLimit) return `${scope.label}调用次数不足（已用 ${usedCalls}/${callLimit} 次，本次需要 ${calls} 次），请管理员追加该范围的调用次数后继续`;
+  const usedTokens = Number(counter.tokens || 0), tokenLimit = Number(scope.tokens || 0) + Number(counter.extraTokens || 0);
+  if (usedTokens + tokens > tokenLimit) return `${scope.label}Token 不足（已用 ${usedTokens}/${tokenLimit}，本次预留 ${tokens}），请管理员调整额度后继续`;
+  if (scope.micros && Number(counter.micros || 0) + micros > scope.micros) return `${scope.label}金额不足，请管理员调整金额额度后继续`;
+  return '';
+}
+module.exports = { DEFAULT_POLICY, AiControlError, isAiControlError, rethrowAiControl, periodKeys, validatePolicy, estimateTokens, actualUsage, costMicros, budgetScopes, budgetRefusalReason };

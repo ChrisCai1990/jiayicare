@@ -105,7 +105,8 @@ test('首次代诊完成后直接解锁已指定陪诊专员的任务', () => {
 });
 
 test('陪诊完成后资料进入报告审核并由健康顾问生成随访计划闭环', () => {
-  const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+  const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8')
+    + fs.readFileSync(path.join(__dirname, '../src/utils/serviceReviewSuccessor.js'), 'utf8');
   const escort = fs.readFileSync(path.join(__dirname, '../../staff/src/components/OutpatientEscortVisitForm.jsx'), 'utf8');
   const advisor = fs.readFileSync(path.join(__dirname, '../../staff/src/components/OutpatientPostVisitReviewForm.jsx'), 'utf8');
   const tasksPanel = fs.readFileSync(path.join(__dirname, '../../staff/src/components/ServiceTasksPanel.jsx'), 'utf8');

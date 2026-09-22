@@ -8,6 +8,11 @@ const projectCategorySchema = new mongoose.Schema({
   status:    { type: String, enum: ['active', 'inactive'], default: 'active' },
   // AI报告解析自动归类用的同义词/别名（如"总胆固醇"节点可加"TC""CHOL"），叶子节点填写，非必填
   aliases:   { type: [String], default: [] },
+  confirmedRules: [{
+    name: String, orderName: String, sourceSection: String, specimen: String,
+    modality: String, bodyPart: String, unit: String,
+    confirmedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' }, confirmedAt: Date,
+  }],
 }, { timestamps: true });
 
 projectCategorySchema.plugin(require('../utils/tenantScope').tenantScopePlugin);

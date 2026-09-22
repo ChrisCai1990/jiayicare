@@ -12,6 +12,7 @@ const ProjectCategory = require('../models/ProjectCategory');
 const LabTestOrder = require('../models/LabTestOrder');
 const LabTestItem = require('../models/LabTestItem');
 const SpecialExam = require('../models/SpecialExam');
+const { compatibleNode, confirmedRuleMatches, contextualNames } = require('./reportMatchContext');
 
 // 归一化：转小写、全角转半角、去标点空格、去常见检查后缀词
 function norm(s) {
@@ -130,9 +131,9 @@ function shouldExcludeClassificationNode({ brokenChain = false } = {}) {
   return Boolean(brokenChain);
 }
 
-async function buildAdminIndex() {
+async function buildAdminIndex({ fresh = false } = {}) {
   const now = Date.now();
-  if (adminIndexCache && (now - adminIndexCacheAt) < ADMIN_INDEX_TTL_MS) return adminIndexCache;
+  if (!fresh && adminIndexCache && (now - adminIndexCacheAt) < ADMIN_INDEX_TTL_MS) return adminIndexCache;
 
   const [cats, catalogItems] = await Promise.all([
     ProjectCategory.find({ status: 'active' }).lean(),
@@ -195,7 +196,9 @@ async function buildAdminIndex() {
       }
       return {
         id: `${String(l1._id)}|${parentLabel}|${c.name}`,
+        categoryId: String(c._id),
         label: c.name,
+        confirmedRules: c.confirmedRules || [],
         // 生产归类优先使用后台分类树；补充已确认的机构栏目别名，不能只改静态兜底树。
         aliases: [
           ...(c.aliases || []),
@@ -239,7 +242,7 @@ async function matchAllAdmin(rawName, itemType, threshold = 1) {
 
 // 给一条 reportItem 填充归类字段（支持多类目，screeningKeys 为数组）
 function classifyItemWithMatches(item, matches) {
-  if (item?.screeningKey || item?.matchStatus === 'matched') return { ...item };
+  if (hasConfirmedClassification(item)) return { ...item };
   if (!matches.length) {
     return {
       ...item,
@@ -281,12 +284,15 @@ function classificationCandidates(item) {
 // 项目名是归类的第一事实来源；检验单名/栏目名只在项目名完全无法命中Admin时兜底。
 // 避免“乳酸脱氢酶”因所属栏目写着“肝功能”，让栏目精确命中压过项目名对心肌酶谱的关键词命中。
 function selectMatchesForItem(item, index) {
+  index = index.filter(entry => compatibleNode(item, entry.node));
+  const learned = index.filter(entry => (entry.node.confirmedRules || []).some(rule => confirmedRuleMatches(item, rule)));
+  if (learned.length) return learned.length === 1 ? [{ node: learned[0].node, confidence: 1 }] : [];
   const authoritativePanel = authoritativePanelClassificationName(item);
   if (authoritativePanel) {
     const panelMatches = selectAdminMatches([authoritativePanel], item?.itemType, index);
-    if (panelMatches.length) return panelMatches;
+    return panelMatches;
   }
-  const primary = reportNameCandidates(item?.name);
+  const primary = [...reportNameCandidates(item?.name), ...contextualNames(item)];
   const primaryMatches = selectAdminMatches(primary, item?.itemType, index);
   if (primaryMatches.length) return primaryMatches;
   // 组合医嘱/混合套餐不能作为兜底分类依据。例如“胰岛素/电解质测定”中的胰岛素若
@@ -310,6 +316,7 @@ function authoritativePanelClassificationName(item) {
   if (/尿微量白蛋白|微量尿蛋白|尿肌酐|尿白蛋白.*肌酐|尿生化|尿肾功能/i.test(context)) return '';
   if (/尿常规|尿液分析|尿干化学|尿沉渣/i.test(context) || /^(?:尿常规|尿液分析)$/.test(name)) return '尿常规';
   if (/粪便常规|大便常规|便常规|粪便检查/i.test(context) || /^(?:粪便常规|大便常规|便常规)$/.test(name)) return '粪便常规';
+  if (/血常规|全血细胞计数|血细胞分析/i.test(context)) return '血常规';
   return '';
 }
 
@@ -375,15 +382,10 @@ function selectAdminMatches(candidates, itemType, index) {
 async function classifyItemsAsync(items) {
   const index = await buildAdminIndex();
   const list = items || [];
-  const urinePages = new Set(list.filter(item => /尿常规|尿液分析|尿干化学|尿沉渣/i.test(`${item?.orderName || ''} ${item?.sourceSection || ''}`))
-    .map(item => Number(item?._page || item?.sourcePage || 0)));
   return list.map(item => {
     // 增量归类：已归类项原样返回，只处理待归类项。既避免重复计算，也防止新规则覆盖审核结果。
     if (hasConfirmedClassification(item)) return { ...item };
-    const page = Number(item?._page || item?.sourcePage || 0);
-    const urineSibling = urinePages.has(page) && /^(?:潜血|隐血|尿隐血|尿潜血|葡萄糖|白细胞|红细胞|胆红素|尿胆原|酮体|亚硝酸盐|蛋白质|比重|酸碱度|pH)$/i.test(String(item?.name || '').trim());
-    const matchItem = urineSibling ? { ...item, sourceSection: item.sourceSection || '尿常规' } : item;
-    const matches = selectMatchesForItem(matchItem, index);
+    const matches = selectMatchesForItem(item, index);
     return classifyItemWithMatches(item, matches);
   });
 }

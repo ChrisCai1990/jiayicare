@@ -2,6 +2,12 @@ function normalizeSource(source) {
   return source === 'enterprise' ? 'enterprise' : (source || 'other');
 }
 
+function displaySource(transaction) {
+  return transaction.type === 'grant' && /积分自动兑换.*元健康基金/.test(transaction.remark || '')
+    ? 'enterprise'
+    : transaction.source;
+}
+
 function transactionMatchesGift(transaction, gift) {
   if (transaction.type !== 'grant') return false;
   if (normalizeSource(transaction.source) !== normalizeSource(gift.fundType)) return false;
@@ -13,7 +19,7 @@ function transactionMatchesGift(transaction, gift) {
 
 function mergeHealthFundLedger(transactions = [], grants = []) {
   const transactionRows = transactions.map(item => ({
-    _id:item._id, type:item.type, source:item.source, amount:Number(item.amount)||0,
+    _id:item._id, type:item.type, source:displaySource(item), amount:Number(item.amount)||0,
     remark:item.remark||'', orderName:item.orderId?.serviceName||'',
     orderNo:item.orderId?.orderNo||'', createdAt:item.createdAt,
   }));

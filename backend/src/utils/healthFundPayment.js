@@ -71,7 +71,9 @@ async function getCorporateFundAvailable(user) {
   ]), HealthFundTransaction.aggregate([
     // 积分是平台按客户行为赠送的权益，兑换所得属于企业赠送健康基金。
     // 这类入账没有对应 GiftRecord，需要从健康基金流水单独汇总。
-    { $match: { userId: user._id, type: 'grant', source: 'enterprise', status: 'active', remark: /积分自动兑换.*元健康基金/ } },
+    // 兼容本次规则生效前误记为 promotion 的兑换流水，使既有余额也正确
+    // 归入企业赠送基金，而不是继续按可全额抵扣的自有基金处理。
+    { $match: { userId: user._id, type: 'grant', source: { $in: ['enterprise', 'promotion'] }, status: 'active', remark: /积分自动兑换.*元健康基金/ } },
     { $group: { _id: null, total: { $sum: '$amount' } } },
   ]), HealthFundTransaction.aggregate([
     // 1.0.86 之前首登赠金曾误记为 promotion；按明确的业务备注兼容

@@ -1,7 +1,7 @@
 const { AsyncLocalStorage } = require('async_hooks');
 const { randomUUID } = require('crypto');
 const { store } = require('./aiBudgetStore');
-const { AiControlError, isAiControlError, estimateTokens, actualUsage, costMicros, budgetScopes } = require('./aiBudgetPolicy');
+const { AiControlError, isAiControlError, estimateTokens, actualUsage, costMicros, budgetScopes, budgetRefusalReason } = require('./aiBudgetPolicy');
 const contextStorage = new AsyncLocalStorage();
 function withAiContext(context, fn) { return contextStorage.run({ ...contextStorage.getStore(), ...context }, fn); }
 
@@ -13,19 +13,24 @@ function createBudgetRunner(db = store, now = () => new Date()) {
     const estimate = estimateTokens(messages, maxTokens);
     const reserved = [];
     const id = randomUUID();
-    const key = `${provider}:${model}`;
+    // OCR content/timeout failures are local to a report, never a global model outage.
+    const key = ctx.business === 'ocr' && ctx.reportId
+      ? `${provider}:${model}:report:${ctx.reportId}` : `${provider}:${model}`;
     let policy, rate, estimatedMicros;
     try {
       if (ctx.stopState?.error) throw ctx.stopState.error;
       policy = await db.policy();
       if (policy.paused || (ctx.business === 'ocr' && policy.ocrPaused)) throw new AiControlError('AI 调用已由管理员暂停');
       if (ctx.deadline && started.getTime() >= ctx.deadline) throw new AiControlError('本次 OCR 已到运行时限，已暂停');
-      if ((await db.circuit(key))?.paused) throw new AiControlError('模型连续异常，已自动暂停，请管理员检查后恢复', 'AI_CIRCUIT_PAUSED');
+      if ((await db.circuit(key))?.paused) throw new AiControlError(ctx.reportId ? '本报告连续调用异常，已暂停，请管理员检查后恢复；其他报告可继续' : '模型连续异常，已自动暂停，请管理员检查后恢复', 'AI_CIRCUIT_PAUSED');
       rate = policy.prices?.[model];
       if ((policy.dailyYuan || policy.monthlyYuan) && !rate) throw new AiControlError(`模型 ${model} 未配置单价，金额预算启用后禁止调用`);
       estimatedMicros = costMicros(estimate, rate);
       for (const scope of budgetScopes(policy, ctx, started)) {
-        if (!await db.reserve(scope, estimate.total, estimatedMicros || 0)) throw new AiControlError(`${scope.label}不足，已暂停。请管理员调整额度后继续`);
+        if (!await db.reserve(scope, estimate.total, estimatedMicros || 0)) {
+          const reason = db.counter ? budgetRefusalReason(scope, await db.counter(scope.id), estimate.total, estimatedMicros || 0) : '';
+          throw new AiControlError(reason || `${scope.label}不足，已暂停。请管理员调整额度后继续`, scope.id.startsWith('page:') ? 'AI_PAGE_BUDGET_PAUSED' : 'AI_BUDGET_PAUSED');
+        }
         reserved.push(scope.id);
       }
       await db.insert({ _id: id, createdAt: started, status: 'reserved', provider, model,
@@ -37,7 +42,7 @@ function createBudgetRunner(db = store, now = () => new Date()) {
       // Only a known preflight refusal is rolled back. An ambiguous DB write failure stays
       // reserved conservatively; crucially, no provider request is made in either case.
       if (isAiControlError(error)) {
-        if (ctx.stopState) ctx.stopState.error = error;
+        if (ctx.stopState && error.code !== 'AI_PAGE_BUDGET_PAUSED') ctx.stopState.error = error;
         for (const scope of reserved) await db.adjust(scope, -estimate.total, -(estimatedMicros || 0), -1);
         throw error;
       }
@@ -56,7 +61,8 @@ function createBudgetRunner(db = store, now = () => new Date()) {
     }
     const failed = Boolean(error || result?.error || malformed || !result?.choices?.[0]?.message?.content || result?.choices?.[0]?.finish_reason === 'length');
     try {
-      await db.outcome(key, failed, policy.failureThreshold);
+      // Truncation/invalid JSON are extraction failures, not service failures.
+      await db.outcome(key, Boolean(error || result?.error), policy.failureThreshold);
       // Missing usage (including timeout) retains its entire reservation. Never refund it
       // merely because our client disconnected; the supplier may have executed the request.
       if (usage) for (const scope of reserved) {
@@ -81,4 +87,14 @@ function createBudgetRunner(db = store, now = () => new Date()) {
   };
 }
 const controlledCall = createBudgetRunner();
-module.exports = { controlledCall, createBudgetRunner, withAiContext };
+// Read-only preflight for the supplement's extraction + independent evidence + coverage calls.
+// Per-call atomic reservations remain authoritative; this does not grant or reset any quota.
+async function assertSupplementCallCapacity(context, db = store) {
+  const policy = await db.policy();
+  for (const scope of budgetScopes(policy, { ...context, business: 'ocr' }, new Date())) {
+    if (!scope.calls) continue;
+    const reason = budgetRefusalReason(scope, await db.counter(scope.id), 0, 0, 3);
+    if (reason) throw new AiControlError(reason, scope.id.startsWith('page:') ? 'AI_PAGE_BUDGET_PAUSED' : 'AI_BUDGET_PAUSED');
+  }
+}
+module.exports = { controlledCall, createBudgetRunner, withAiContext, assertSupplementCallCapacity };

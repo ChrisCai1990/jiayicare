@@ -29,7 +29,7 @@ test('both staff entry points isolate conclusion content and suppress duplicate 
   for (const page of ['FollowUpsPage', 'PatientDetailPage']) {
     const source = fs.readFileSync(path.join(__dirname, '../../staff/src/pages', page + '.jsx'), 'utf8');
     assert.match(source, /checkupConclusionStage\(f\) \? \[\] : normalizeServiceChecklist/);
-    assert.match(source, /CheckupConclusionForm task=\{execItem\} value=\{execForm.content\}/);
+    assert.match(source, /CheckupConclusionForm[^\r\n]*task=\{execItem\} value=\{execForm.content\}/);
     assert.match(source, /!checkupConclusionStage\(execItem\) && !isCheckupAppointmentBookingTask/);
     assert.match(source, /请填写本阶段结论及后续安排/);
   }

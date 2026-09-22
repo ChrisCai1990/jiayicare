@@ -19,6 +19,10 @@ function tagReportPageItems(items, pageNum) {
   return (items || [])
     .filter(item => item?.name && String(item.name).trim())
     .map((item, index) => {
+      // A document/model cannot assert an Admin classification or human approval.
+      item = { ...item };
+      for (const field of ['manualClassificationKeys', 'classificationSource', 'classificationReviewedBy', 'classificationReviewedAt']) delete item[field];
+      for (const field of ['itemId', 'screeningKey', 'screeningKeys', 'screeningCategory', 'screeningParent', 'matchStatus', 'matchConfidence', 'manualReviewStatus', 'manualReviewedAt', 'manualReviewedBy']) delete item[field];
       const key = sectionKey(item);
       const explicitSectionOrder = asPositiveInteger(item.sourceSectionOrder);
       if (!sectionOrders.has(key)) {

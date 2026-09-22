@@ -131,6 +131,7 @@ export const staffAPI = {
   getReports:    (p = {}) => req('/staff/medical-reports?' + qs(p)),
   getReport:     (id)     => req(`/staff/medical-reports/${id}`),
   resolveReportPlanConflict: (id, data) => req(`/staff/medical-reports/${id}/plan-item-conflict/resolve`, { method: 'POST', body: JSON.stringify(data) }),
+  reportReviewActivity: (id, data) => req(`/staff/medical-reports/${id}/review-activity`, { method: 'POST', body: JSON.stringify(data) }),
   uploadReport:  (data)   => req('/staff/medical-reports', { method: 'POST', body: JSON.stringify(data) }),
   // 健康顾问健康档案查看确认（2026-07-28改造，不再逐份审核报告数据本身）
   getPendingDoctorAuditReports: (patientId) => req(`/staff/patients/${patientId}/reports/pending-doctor-audit`),

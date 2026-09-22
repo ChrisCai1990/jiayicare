@@ -568,6 +568,64 @@ const refreshClassificationIndex = () => {
   try { require('../utils/screeningMatch').invalidateAdminIndexCache(); } catch (_) { /* 下次读取重建 */ }
 };
 
+// A live queue over report items; no duplicated clinical data or background AI calls.
+router.get('/report-classification', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅管理员可维护归类' });
+  const MedicalReport = require('../models/MedicalReport');
+  const name = String(req.query.name || '').trim().slice(0, 100);
+  const itemFilter = name ? { name } : { name: { $ne: '' }, screeningKey: { $in: ['', null] }, 'screeningKeys.0': { $exists: false } };
+  const page = Math.max(1, Math.min(10000, Number(req.query.page) || 1));
+  const reports = await MedicalReport.find({ reportItems: { $elemMatch: itemFilter } })
+    .select('title reportItems reviewRevision institution checkDate audit_status').sort({ _id: 1 }).skip((page - 1) * 20).limit(20).lean();
+  const rows = reports.flatMap(report => (report.reportItems || []).filter(item => name ? item.name === name : item.name && !item.screeningKey && !item.screeningKeys?.length)
+    .map(item => ({ reportId: report._id, title: report.title, reviewRevision: report.reviewRevision || 0, item })));
+  res.json({ success: true, data: rows, hasMore: reports.length === 20 });
+});
+
+router.post('/report-classification/confirm', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅管理员可维护归类' });
+  const MedicalReport = require('../models/MedicalReport');
+  const { buildAdminIndex, invalidateAdminIndexCache } = require('../utils/screeningMatch');
+  const { confirmedRuleMatches, compatibleNode } = require('../utils/reportMatchContext');
+  const report = await MedicalReport.findById(req.body.reportId).lean();
+  if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+  if (Number(report.reviewRevision || 0) !== req.body.expectedRevision) return res.status(409).json({ success: false, message: '报告已修改，请刷新后确认' });
+  const item = report.reportItems.find(row => row.itemId === req.body.itemId);
+  if (!item) return res.status(404).json({ success: false, message: '项目不存在' });
+  const index = await buildAdminIndex();
+  const node = index.find(entry => entry.node.categoryId === req.body.categoryId)?.node;
+  if (!node || !compatibleNode(item, node)) return res.status(400).json({ success: false, message: '请选择有效末级分类；检查方式或部位不能冲突' });
+  if (index.some(entry => entry.node.categoryId !== node.categoryId && (entry.node.confirmedRules || []).some(rule => confirmedRuleMatches(item, rule)))) {
+    return res.status(409).json({ success: false, message: '已有冲突的确认规则，请先在原分类撤销该规则' });
+  }
+  const rule = Object.fromEntries(['name', 'orderName', 'sourceSection', 'specimen', 'modality', 'bodyPart', 'unit'].map(field => [field, String(item[field] || '')]));
+  if (!(node.confirmedRules || []).some(existing => confirmedRuleMatches(item, existing))) {
+    await ProjectCategory.findByIdAndUpdate(node.categoryId, { $push: { confirmedRules: { ...rule, confirmedBy: req.admin._id, confirmedAt: new Date() } } });
+    invalidateAdminIndexCache();
+  }
+  const patch = { screeningKey: node.id, screeningKeys: [node.id], screeningCategory: node.category, screeningParent: node.parent, matchStatus: 'matched', matchConfidence: 1 };
+  const set = Object.fromEntries(Object.entries(patch).map(([field, value]) => [`reportItems.$[item].${field}`, value]));
+  const updated = await MedicalReport.findOneAndUpdate({ _id: report._id, ...(req.body.expectedRevision === 0 ? { $or: [{ reviewRevision: 0 }, { reviewRevision: { $exists: false } }] } : { reviewRevision: req.body.expectedRevision }) },
+    { $set: set, $inc: { reviewRevision: 1 }, $push: { dataEditLog: { itemName: item.name, field: 'screeningKey', oldValue: item.screeningKey || '', newValue: node.id, operatorId: req.admin._id, operatorName: req.admin.name, source: 'admin_classification', at: new Date() } } },
+    { new: true, arrayFilters: [{ 'item.itemId': item.itemId }] });
+  if (!updated) return res.status(409).json({ success: false, message: '匹配规则已保存，报告发生并发修改，请刷新后再次应用' });
+  if (updated.audit_status === 'audited') {
+    await require('./staff').syncScreeningItems(updated.user, updated._id, updated.reportItems);
+    const previousKey = item.screeningKey || item.screeningKeys?.[0];
+    if (previousKey && previousKey !== node.id && !updated.reportItems.some(row => (row.screeningKey || row.screeningKeys?.[0]) === previousKey)) {
+      await require('../models/UserScreeningItem').deleteMany({ user: updated.user, reportId: updated._id, itemId: previousKey });
+    }
+  }
+  res.json({ success: true });
+});
+
+router.delete('/categories/:id/confirmed-rules/:ruleId', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'superadmin') return res.status(403).json({ success: false });
+  await ProjectCategory.findByIdAndUpdate(req.params.id, { $pull: { confirmedRules: { _id: req.params.ruleId } } });
+  refreshClassificationIndex();
+  res.json({ success: true });
+});
+
 router.get('/categories', adminAuth, async (req, res) => {
   const all = await ProjectCategory.find().sort({ sortOrder: 1, createdAt: 1 }).lean();
   const map = {};

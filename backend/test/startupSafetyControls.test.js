@@ -32,7 +32,7 @@ test('unspecified schema control preserves existing startup migrations', async (
   assert.equal(calls.filter(x => x[0] === 'sync').length, 2);
 });
 
-function runBackground(flag) {
+function runBackground(flag, extraEnv = {}) {
   const source = fs.readFileSync(path.join(__dirname, '../src/index.js'), 'utf8');
   const marker = 'app.listen(PORT, () => {';
   const offset = source.indexOf(marker);
@@ -41,7 +41,7 @@ function runBackground(flag) {
   const moduleMock = new Proxy({}, { get: (_, name) => () => { calls.push(String(name)); return Promise.resolve(); } });
   vm.runInNewContext(source.slice(offset), {
     app: { listen: (_, callback) => callback() }, PORT: 3000,
-    process: { env: flag === undefined ? {} : { STARTUP_BACKGROUND_JOBS_ENABLED: flag } },
+    process: { env: { ...(flag === undefined ? {} : { STARTUP_BACKGROUND_JOBS_ENABLED: flag }), ...extraEnv } },
     console: { log() {}, error() {} }, require: name => { calls.push(name); return moduleMock; },
     setTimeout: () => calls.push('timer'), staffRouter: {},
   });
@@ -55,4 +55,33 @@ test('unspecified background control preserves existing worker registration', ()
   for (const expected of ['timer', 'startScheduledFollowUpWindowScheduler', 'startReportDraftWorker', 'ensurePhaseAssessmentTemplateDrafts']) {
     assert.ok(calls.includes(expected), expected);
   }
+});
+
+test('new recovery can be paused without disabling existing reminders and OCR recovery', () => {
+  const calls = runBackground(undefined, { HEALTH_MANAGEMENT_RECOVERY_ENABLED: 'false' });
+  for (const name of ['timer', 'startMonitoringReminderScheduler', 'startScheduledFollowUpWindowScheduler', 'startMedicationLifecycleScheduler']) assert.ok(calls.includes(name), name);
+  for (const name of ['startAssessmentDraftWorker', 'startReportDraftWorker']) assert.ok(!calls.includes(name), name);
+});
+
+test('paused recovery preserves old annual window but skips new recovery and renewal dispatch', async () => {
+  const calls = [];
+  const plans = [{ _id: 'old' }, { _id: 'renewed', continuitySource: { previousPlanId: 'old' } }];
+  const moduleMock = new Proxy({}, { get: (_, name) => (...args) => {
+    calls.push(String(name));
+    if (name === 'syncAnnualPlanFollowUps') assert.equal(args[0]._id, 'old');
+    if (name === 'runtime') return { scan: async () => 0, sync: async () => 0 };
+    return Promise.resolve(0);
+  } });
+  const context = { module: { exports: {} }, console: { log() {}, error() {} },
+    process: { env: { HEALTH_MANAGEMENT_RECOVERY_ENABLED: 'false' } },
+    require: name => {
+      calls.push(name);
+      if (name === '../models/AnnualPlan') return { find: () => ({ lean: async () => plans }) };
+      if (name === '../models/Admin') return { find: () => ({ select: () => ({ lean: async () => [] }) }) };
+      return moduleMock;
+    } };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../src/utils/scheduledFollowUpWindowScheduler.js'), 'utf8'), context);
+  await context.module.exports.scanAndSyncScheduledWindow();
+  for (const name of ['syncAnnualPlanFollowUps', 'reconcileInactiveOrderWorkItems', 'scanReminders']) assert.ok(calls.includes(name), name);
+  for (const name of ['./reportPlanItemQueue', './reportDispatchQueue', './checkupSuggestionQueue', './followUpServiceLink', './annualCheckupEvidence', './checkupPreparationReports', './checkupPreparationCompletion', './annualServicePeriodCorrectionApply', './annualPlanTaskSplit', './annualCheckupDispatch']) assert.ok(!calls.includes(name), name);
 });

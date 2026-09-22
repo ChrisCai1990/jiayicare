@@ -1,15 +1,23 @@
 function cleanPart(value) {
-  return String(value || '').toLowerCase().replace(/[\s，,、:：;；()（）\[\]【】\-_/]/g, '');
+  return String(value || '').normalize('NFKC').toLowerCase().replace(/[\s，,、:：;；()（）\[\]【】\-_/]/g, '');
 }
 
 function reportItemIdentityKey(item) {
-  return [item?.itemType || '', cleanPart(item?.name), cleanPart(item?.orderName), cleanPart(item?.sourceSection), cleanPart(item?.bodyPart)].join('|');
+  return [item?.itemType || '', cleanPart(item?.name), cleanPart(item?.orderName || item?.sourceSection), cleanPart(item?.bodyPart), cleanPart(item?.specimen), cleanPart(item?.modality), cleanPart(item?.examDate), cleanPart(item?.unit)].join('|');
+}
+
+function sameReportItem(a, b) {
+  if (!cleanPart(a?.name) || cleanPart(a.name) !== cleanPart(b?.name)) return false;
+  const fields = ['itemType', 'bodyPart', 'specimen', 'modality', 'examDate', 'unit'];
+  if (fields.some(field => cleanPart(a[field]) && cleanPart(b[field]) && cleanPart(a[field]) !== cleanPart(b[field]))) return false;
+  const aContext = cleanPart(a.orderName || a.sourceSection), bContext = cleanPart(b.orderName || b.sourceSection);
+  return !(aContext && bContext && aContext !== bContext);
 }
 
 // “有项目名”并不等于识别成功：数值类必须有数值，检查类必须有可核对的原文。
 // 这条规则只用于 OCR 质量控制和补提，不会删除人工已经录入的项目。
 function hasReportItemEvidence(item) {
-  const value = String(item?.value || '').trim();
+  const value = String(item?.value ?? '').trim();
   const narrative = [item?.findings, item?.diagnosis, item?.conclusion]
     .some(field => String(field || '').trim());
   if (item?.itemType === 'lab' || item?.itemType === 'data') return Boolean(value || narrative);
@@ -54,7 +62,8 @@ function mergeSupplementItems(existingItems, candidates) {
   for (const candidate of (candidates || [])) {
     if (!cleanPart(candidate?.name) || !hasReportItemEvidence(candidate)) continue;
     const key = reportItemIdentityKey(candidate);
-    const index = indexByKey.get(key);
+    const compatible = result.map((item, index) => sameReportItem(item, candidate) ? index : -1).filter(index => index >= 0);
+    const index = indexByKey.get(key) ?? (compatible.length === 1 ? compatible[0] : undefined);
     if (index == null) {
       result.push(candidate);
       indexByKey.set(key, result.length - 1);
@@ -65,6 +74,17 @@ function mergeSupplementItems(existingItems, candidates) {
     if (!isHumanReviewed(current) && !hasReportItemEvidence(current)) {
       result[index] = { ...current, ...candidate, itemId: current.itemId || candidate.itemId };
       enriched.push(result[index]);
+    } else if (!isHumanReviewed(current)) {
+      // A missing conclusion is still a gap even when findings already exist.
+      // Never replace nonempty values or append competing OCR prose automatically.
+      const patch = {};
+      for (const field of ['value', 'findings', 'diagnosis', 'conclusion', 'pathologyFindings', 'pathologyDiagnosis']) {
+        if (!String(current[field] ?? '').trim() && String(candidate[field] ?? '').trim()) patch[field] = candidate[field];
+      }
+      if (Object.keys(patch).length) {
+        result[index] = { ...current, ...patch };
+        enriched.push(result[index]);
+      }
     }
   }
   return { items: result, added, enriched };
@@ -137,7 +157,7 @@ function filterMissingReportItems(existingItems, candidates, options = {}) {
       if (targeted.every(organ => existingCoveredOrgans.has(organ.key))) return false;
     }
     const key = reportItemIdentityKey(item);
-    if (existingKeys.has(key) || acceptedKeys.has(key)) return false;
+    if (existingKeys.has(key) || (existingItems || []).some(existing => sameReportItem(existing, item)) || acceptedKeys.has(key)) return false;
     acceptedKeys.add(key);
     return true;
   });
@@ -152,5 +172,6 @@ module.exports = {
   mergeSupplementItems,
   PAGE_PARSE_STALE_MS,
   reportItemIdentityKey,
+  sameReportItem,
   resolveImageParseCompletion,
 };

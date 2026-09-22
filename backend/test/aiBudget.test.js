@@ -62,8 +62,8 @@ test('Mongo integration: concurrent reservations, timeout accounting, circuits a
       const rows = await collection('ai_usage').find().toArray();
       assert.ok(rows.every(r => r.status === 'unknown' && r.actualTokens === null));
       assert.ok(!JSON.stringify(rows).includes('sensitive'));
-      await store.outcome('qwen:qwen-vl-plus', false, 2);
-      assert.equal((await store.circuit('qwen:qwen-vl-plus')).paused, true);
+      await store.outcome(`qwen:qwen-vl-plus:report:${options.context.reportId}`, false, 2);
+      assert.equal((await store.circuit(`qwen:qwen-vl-plus:report:${options.context.reportId}`)).paused, true);
     });
     await t.test('daily global token ceiling is atomic and blocks before send', async () => {
       await reset({ dailyTokens: 1000 });
@@ -85,10 +85,10 @@ test('Mongo integration: concurrent reservations, timeout accounting, circuits a
       assert.equal(row.costMicros, 160);
       assert.equal((await collection('ai_budget_counters').findOne({ _id: 'day:2026-09-12' })).micros, 160);
     });
-    await t.test('OCR malformed responses count toward circuit and successful missing usage remains reserved', async () => {
+    await t.test('OCR malformed responses stay local and successful missing usage remains reserved', async () => {
       await reset({ failureThreshold: 1 });
       await assert.rejects(run(options, async () => ({ ...(await success()), choices: [{ message: { content: 'invalid JSON' } }] })));
-      await assert.rejects(run(options, success), /连续异常/);
+      await run(options, success);
       await reset({});
       await run(options, async () => ({ choices: [{ message: { content: '{"items":[]}' } }] }));
       assert.equal((await collection('ai_usage').findOne({})).status, 'unknown');
@@ -122,7 +122,7 @@ test('Mongo integration: concurrent reservations, timeout accounting, circuits a
       const previousSecret = process.env.JWT_SECRET;
       process.env.JWT_SECRET = 'isolated-ai-budget-integration-test-only';
       const adminId = new mongoose.Types.ObjectId(), staffId = new mongoose.Types.ObjectId(), tenantAdminId = new mongoose.Types.ObjectId();
-      await Admin.collection.insertMany([{ _id: adminId, role: 'superadmin' }, { _id: staffId, role: 'healthManager' }, { _id: tenantAdminId, role: 'superadmin', tenantId: new mongoose.Types.ObjectId() }]);
+      await Admin.collection.insertMany([{ _id: adminId, username: 'budget_admin', role: 'superadmin' }, { _id: staffId, username: 'budget_staff', role: 'healthManager' }, { _id: tenantAdminId, username: 'budget_tenant', role: 'superadmin', tenantId: new mongoose.Types.ObjectId() }]);
       const app = express(); app.use(express.json()); app.use('/api/admin/ai-control', require('../src/routes/aiControl'));
       app.use((error, req, res, next) => res.status(500).json({ message: error.message }));
       const server = await new Promise(resolve => { const value = app.listen(0, '127.0.0.1', () => resolve(value)); });

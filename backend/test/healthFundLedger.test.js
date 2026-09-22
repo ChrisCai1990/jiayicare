@@ -19,3 +19,10 @@ test('legacy gift without a matching fund transaction remains visible', () => {
   assert.equal(rows.length, 1);
   assert.equal(rows[0].amount, 500);
 });
+
+test('historical points conversions display as enterprise-gifted fund', () => {
+  const rows = mergeHealthFundLedger([
+    { _id:'tx1', type:'grant', source:'promotion', amount:3, remark:'300积分自动兑换3元健康基金', createdAt:new Date() },
+  ]);
+  assert.equal(rows[0].source, 'enterprise');
+});

@@ -39,6 +39,15 @@ test('health fund deduction tolerates legacy floating point residue and rounds l
   assert.match(source, /corporateAmount/);
 });
 
+test('single-item push checkout passes its product identity to health fund eligibility checks', () => {
+  const source = read('src/routes/user.js');
+  const routeStart = source.indexOf("router.post('/push-records/:id/pay'");
+  const routeEnd = source.indexOf("router.get('/service-records'", routeStart);
+  const route = source.slice(routeStart, routeEnd === -1 ? source.length : routeEnd);
+  assert.match(route, /category:\s*categories\[0\]\s*\|\|\s*''/);
+  assert.match(route, /productId:\s*productIds\[0\]/);
+});
+
 test('batch read updates both messages and push records within the authenticated user scope', () => {
   const source = read('src/routes/messages.js');
   assert.match(source, /router\.patch\('\/read-batch'/);

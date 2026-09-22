@@ -87,7 +87,7 @@ router.put('/policy', async (req, res) => {
 });
 
 router.post('/circuits/reset', async (req, res) => {
-  if (typeof req.body.key !== 'string' || !/^[\w-]+:[\w-]+$/.test(req.body.key)) return res.status(400).json({ success: false, message: '模型标识无效' });
+  if (typeof req.body.key !== 'string' || !/^[\w-]+:[\w-]+(?::report:[a-f\d]{24})?$/.test(req.body.key)) return res.status(400).json({ success: false, message: '模型标识无效' });
   await collection('ai_control_audit').insertOne({ _id: randomUUID(), action: 'reset_circuit', target: req.body.key, at: new Date(), actorId: String(req.admin._id) });
   await collection('ai_circuits').updateOne({ _id: req.body.key }, { $set: { paused: false, failures: 0, updatedAt: new Date() } });
   res.json({ success: true });

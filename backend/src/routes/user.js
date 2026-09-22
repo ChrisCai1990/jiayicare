@@ -1379,7 +1379,17 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
           return sum + productDeductionLimit(productById.get(String(item.productId))?.healthFundDeduction, shareAfterCoupon);
         },0);
         const productIds = toPay.map(item=>String(item.productId));
-        const checked = await require('../utils/healthFundPayment').validateHealthFundDeduction({ user:req.user, requested:useHealthFund, orderAmount:priceAfterCoupon, categories, productIds, productLimit });
+        // 单件推送订单也必须传入商品本身的分类和 ID。此前只传了数组参数，
+        // 而抵扣校验按单个 productId/category 判断企业基金资格，结果会把
+        // 有明确商品抵扣规则的企业基金错误算成 0。
+        const checked = await require('../utils/healthFundPayment').validateHealthFundDeduction({
+          user: req.user,
+          requested: useHealthFund,
+          orderAmount: priceAfterCoupon,
+          category: categories[0] || '',
+          productId: productIds[0],
+          productLimit,
+        });
         if (checked.enterprise?.healthFundPaymentRule?.eligibleCategories?.length && categories.some(c=>!checked.enterprise.healthFundPaymentRule.eligibleCategories.includes(c))) throw new Error('所选服务中含有不支持企业健康基金抵扣的分类');
         fundUsed=checked.allowed; fundEnterprise=checked.enterprise; fundBreakdown=checked.breakdown;
       } catch(err) { return res.status(400).json({success:false,message:err.message}); }

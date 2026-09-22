@@ -33,6 +33,9 @@ const reportItemSchema = new mongoose.Schema({
 
   // ── 检查项目（imaging：超声/内镜/CT/MRI/心电图等）完整内容（需求：AI体检报告·检查项完整展示）──
   bodyPart:    { type: String, default: '' }, // 检查部位
+  specimen:    { type: String, default: '' },
+  modality:    { type: String, default: '' },
+  reviewIssues: [{ type: String }],
   findings:    { type: String, default: '' }, // 检查所见（完整原文，禁止截断）
   diagnosis:   { type: String, default: '' }, // 诊断意见（完整原文）
   examDate:    { type: String, default: '' }, // 检查时间（item 级，空则回退报告级 checkDate）
@@ -42,6 +45,9 @@ const reportItemSchema = new mongoose.Schema({
 
   // ── 专项筛查自动归类标记（批次2 匹配引擎写入；批次1 先建字段）──
   screeningKeys:     [{ type: String }],             // 命中的所有筛查树节点 id 数组（支持多类目）
+  classificationSource: { type: String, default: '' },
+  classificationReviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  classificationReviewedAt: { type: Date, default: null },
   screeningKey:      { type: String, default: '' }, // 最佳命中节点 id（向后兼容单值）
   screeningCategory: { type: String, default: '' }, // 一级分类 key（tumor/cardiovascular/...）
   screeningParent:   { type: String, default: '' }, // 二级（如「肺癌」）
@@ -65,6 +71,9 @@ const medicalReportSchema = new mongoose.Schema({
   reportYear:      { type: Number, default: null },   // 报告年份（如 2025）
   checkDate:       { type: String, default: '' },     // 检查日期
   institution:     { type: String, default: '' },     // 检查机构
+  institutionStatus: { type: String, enum: ['pending', 'confirmed', 'unknown'], default: 'pending' },
+  reviewActivity: { type: mongoose.Schema.Types.Mixed, default: {} },
+  reviewActivityRevision: { type: Number, default: 0 },
   screeningCategory: {
     type: String,
     enum: ['tumor', 'cardiovascular', 'brain_vessel', 'chronic', 'functional', 'other_routine', 'health_promote', 'infectious', 'hormone', ''],
@@ -79,6 +88,7 @@ const medicalReportSchema = new mongoose.Schema({
   examMainConclusions:  { type: mongoose.Schema.Types.Mixed, default: {} }, // 检查项主要结论 { [项目名]: '结论文字' }
   reportItems:     [reportItemSchema],                // 解析后的各项结果
   reviewRevision:  { type: Number, default: 0 },      // 审核编辑乐观锁；任何项目/整表写入后递增
+  deletedReportItems: { type: mongoose.Schema.Types.Mixed, default: [] }, // 补提排除人工删除项
   aiSummary:       { type: String, default: '' },     // AI 趋势分析文字
   aiStatus:        { type: String, enum: ['none', 'processing', 'pending', 'failed', 'reviewed', 'rejected'], default: 'none' },
   // 独立于 UI 的持久化任务状态；服务重启后按此恢复，不把原件或中间图片写入数据库。

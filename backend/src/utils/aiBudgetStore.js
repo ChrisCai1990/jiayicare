@@ -21,6 +21,7 @@ async function prepareUsageIndexes() {
   return usageIndexes;
 }
 const store = {
+  async counter(id) { return (await collection('ai_budget_counters').findOne({ _id: id })) || {}; },
   async policy() { return { ...DEFAULT_POLICY, ...(await collection('ai_control').findOne({ _id: 'policy' })) }; },
   async reserve(scope, tokens, micros) {
     await ensure('ai_budget_counters', scope.id, { tokens: 0, calls: 0, micros: 0, extraTokens: 0, extraCalls: 0 });

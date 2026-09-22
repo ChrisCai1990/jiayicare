@@ -5,6 +5,8 @@ const { syncAnnualPlanFollowUps, dedupeAnnualPlanFollowUps } = require('./annual
 // syncAnnualPlanFollowUps 按稳定排期键原位更新，每天仅补充新进入窗口的日期，
 // 已审核记录不会被重新生成，也不会再次进入审核队列。
 async function scanAndSyncScheduledWindow() {
+  const recoveryEnabled = process.env.HEALTH_MANAGEMENT_RECOVERY_ENABLED !== 'false';
+  if (recoveryEnabled) {
   try { await require('./reportPlanItemQueue').runtime().scan(); }
   catch (error) { console.error('[report-plan-item] recovery scan failed', error.message); }
   try { await require('./reportDispatchQueue').scan(); }
@@ -16,6 +18,7 @@ async function scanAndSyncScheduledWindow() {
   catch (error) { console.error('[checkup-preparation-reports] 恢复扫描失败', error.message); }
   try { await require('./checkupPreparationCompletion').runtime().scan(); }
   catch (error) { console.error('[checkup-preparation-completion] 恢复扫描失败', error.message); }
+  }
   const [deduped, cancelledOrderTasks, migratedCollectionTasks, medicalReminderMessages] = await Promise.all([
     dedupeAnnualPlanFollowUps(),
     require('./orderWorkItem').reconcileInactiveOrderWorkItems(),
@@ -27,12 +30,13 @@ async function scanAndSyncScheduledWindow() {
   for (const plan of plans) {
     try {
       if (plan.continuitySource?.previousPlanId) {
+        if (!recoveryEnabled) continue;
         await require('./annualServicePeriodCorrectionApply').applyApprovedCorrection(plan);
         const result = await require('./annualPlanTaskSplit').syncAnnualPlanTaskSplit(plan);
         total += result.scheduledFollowUps || 0;
       } else {
         total += await syncAnnualPlanFollowUps(plan);
-        await require('./annualCheckupDispatch').runtime().sync(plan);
+        if (recoveryEnabled) await require('./annualCheckupDispatch').runtime().sync(plan);
       }
     } catch (e) {
       console.error('[scheduled-followup-window] 方案 ' + plan._id + ' 补生成失败', e.message);
