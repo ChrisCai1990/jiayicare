@@ -4,6 +4,10 @@ const annualPlanPreparationSchema = new mongoose.Schema({
   patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   year: { type: Number, required: true },
   requiredAssessmentDomains: { type: [String], default: [] },
+  assessmentMode: { type: String, enum: ['required', 'none'], default: 'required' },
+  assessmentNotRequiredReason: { type: String, default: '' },
+  assessmentDecisionBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  assessmentDecisionAt: { type: Date, default: null },
   medicationStatus: { type: String, enum: ['unknown', 'documented', 'none'], default: 'unknown' },
   supplementStatus: { type: String, enum: ['unknown', 'documented', 'none'], default: 'unknown' },
   waivers: {

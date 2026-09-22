@@ -20,8 +20,10 @@ function buildAnnualPlanPreparationChecklist({ patient = {}, preparation = null,
   const approvedAnnualDomains = new Set(assessments
     .filter(item => (item.purpose === 'annual_input' || (isRenewal && item.purpose === 'issue_collaboration')) && item.status === 'approved')
     .map(item => String(item.domain || '').trim()).filter(Boolean));
-  const requiredDomains = [...new Set((preparation?.requiredAssessmentDomains || []).map(item => String(item).trim()).filter(Boolean))];
-  if (!isRenewal) add('assessment_scope', '已确定首次方案所需专业评估领域', requiredDomains.length > 0);
+  const noneSelected = preparation?.assessmentMode === 'none';
+  const noAssessmentConfirmed = noneSelected && !!String(preparation.assessmentNotRequiredReason || '').trim() && !!preparation.assessmentDecisionBy && !!preparation.assessmentDecisionAt;
+  const requiredDomains = noneSelected ? [] : [...new Set((preparation?.requiredAssessmentDomains || []).map(item => String(item).trim()).filter(Boolean))];
+  if (!isRenewal || noneSelected) add('assessment_scope', noneSelected ? '健康顾问已确认本年度无需专科评估（已记录依据）' : '已确定首次方案所需专业评估领域', noAssessmentConfirmed || (!noneSelected && requiredDomains.length > 0));
   requiredDomains.forEach(domain => add(`assessment:${domain}`, `${domain}专业健康评估已审核`, approvedAnnualDomains.has(domain)));
   add('advisor_ready', '健康顾问已确认资料足够生成方案', !!preparation?.advisorReadyConfirmedAt);
 

@@ -5,6 +5,7 @@ import { useToast, useStaff } from '../App'
 import { StaffListContext, ModulePanel } from '../components/ModulePanel'
 import ReportFollowUpDrafts from '../components/ReportFollowUpDrafts'
 import AnnualServicePeriodPanel from '../components/AnnualServicePeriodPanel'
+import { annualPlanReturnTarget } from '../utils/annualPlanNavigation.mjs'
 
 // ── 方案类型 ─────────────────────────────────────────────────────────
 const PLAN_TYPES = [
@@ -356,7 +357,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const preparationBlocked = closedLoopEnabled && !preparation?.checklist?.ready
   const [continuitySource, setContinuitySource] = useState(null)
   const [preparationSaving, setPreparationSaving] = useState(false)
-  const [preparationDraft, setPreparationDraft] = useState({ requiredAssessmentDomains: '', medicationStatus: 'unknown', supplementStatus: 'unknown', advisorReady: false })
+  const [preparationDraft, setPreparationDraft] = useState({ assessmentMode: 'required', assessmentNotRequiredReason: '', requiredAssessmentDomains: '', medicationStatus: 'unknown', supplementStatus: 'unknown', advisorReady: false })
   const [professionalAssessments, setProfessionalAssessments] = useState([])
   const [assessmentBusy, setAssessmentBusy] = useState(false)
   const [assessmentSaving, setAssessmentSaving] = useState(false)
@@ -403,6 +404,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         const preparationData = preparationRes.data || null
         setPreparation(preparationData)
         setPreparationDraft({
+          assessmentMode: preparationData?.preparation?.assessmentMode || 'required',
+          assessmentNotRequiredReason: preparationData?.preparation?.assessmentNotRequiredReason || '',
           requiredAssessmentDomains: (preparationData?.preparation?.requiredAssessmentDomains || []).join('、'),
           medicationStatus: preparationData?.preparation?.medicationStatus || 'unknown',
           supplementStatus: preparationData?.preparation?.supplementStatus || 'unknown',
@@ -586,6 +589,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       const requiredAssessmentDomains = preparationDraft.requiredAssessmentDomains.split(/[、,，;；\n]/).map(item => item.trim()).filter(Boolean)
       const res = await staffAPI.updateAnnualPlanPreparation(id, {
         year,
+        assessmentMode: preparationDraft.assessmentMode,
+        assessmentNotRequiredReason: preparationDraft.assessmentNotRequiredReason,
         requiredAssessmentDomains,
         medicationStatus: preparationDraft.medicationStatus,
         supplementStatus: preparationDraft.supplementStatus,
@@ -717,6 +722,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     ? { ...(PLAN_TYPES.find(pt => pt.key === strategyOf(planType)) || PLAN_TYPES[3]), key: planType, name: selectedAdminTemplate.content?.planName || selectedAdminTemplate.name }
     : PLAN_TYPES.find(pt => pt.key === strategyOf(planType))
   const backPath = patientMode ? '/plans?tab=annual_health_mgmt' : '/plans?type=annual_mgmt'
+  const goBack = () => nav(annualPlanReturnTarget(window.history.state?.idx, backPath))
 
   const yearOptions = [new Date().getFullYear() - 1, new Date().getFullYear(), new Date().getFullYear() + 1]
 
@@ -729,7 +735,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       {/* 顶部导航 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <button
-          onClick={() => nav(backPath)}
+          onClick={goBack}
           style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#4A6558', padding: 4 }}
         >←</button>
         <div>
@@ -815,8 +821,16 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           </div>
           {canEdit && (
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 10, alignItems: 'end', marginTop: 16 }}>
+              <label style={{ gridColumn: '1 / -1', fontSize: 13 }}>本年度专科评估需求
+                <select aria-label="本年度专科评估需求" value={preparationDraft.assessmentMode} onChange={e => setPreparationDraft(prev => ({ ...prev, assessmentMode: e.target.value, advisorReady: false }))} className="form-control">
+                  <option value="required">需要专科评估</option><option value="none">本次无需专科评估（健康顾问确认）</option>
+                </select>
+              </label>
+              {preparationDraft.assessmentMode === 'none' && <label style={{ gridColumn: '1 / -1', fontSize: 13 }}>确认依据（必填，仅适用于本年度）
+                <textarea aria-label="无需专科评估确认依据" className="form-control" value={preparationDraft.assessmentNotRequiredReason} onChange={e => setPreparationDraft(prev => ({ ...prev, assessmentNotRequiredReason: e.target.value, advisorReady: false }))} placeholder="请根据已审核资料说明本次无需专科评估的依据" />
+              </label>}
               <label style={{ fontSize: 12, color: '#4A6558' }}>{preparation.continuity?.mode === 'renewal' ? '按需补充的专业评估领域（可留空）' : '所需专业评估领域（用顿号分隔）'}
-                <input value={preparationDraft.requiredAssessmentDomains} onChange={e => setPreparationDraft(prev => ({ ...prev, requiredAssessmentDomains: e.target.value }))} placeholder="如：心血管、营养、中医健康" style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 5, padding: '8px 10px', border: '1px solid #D9D4CA', borderRadius: 8 }} />
+                <input disabled={preparationDraft.assessmentMode === 'none'} value={preparationDraft.assessmentMode === 'none' ? '' : preparationDraft.requiredAssessmentDomains} onChange={e => setPreparationDraft(prev => ({ ...prev, requiredAssessmentDomains: e.target.value }))} placeholder="如：心血管、营养、中医健康" style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 5, padding: '8px 10px', border: '1px solid #D9D4CA', borderRadius: 8 }} />
               </label>
               <label style={{ fontSize: 12, color: '#4A6558' }}>用药档案
                 <select value={preparationDraft.medicationStatus} onChange={e => setPreparationDraft(prev => ({ ...prev, medicationStatus: e.target.value }))} style={{ display: 'block', width: '100%', marginTop: 5, padding: '8px', border: '1px solid #D9D4CA', borderRadius: 8 }}><option value="unknown">待完善</option><option value="documented">已完善</option><option value="none">确认无</option></select>
@@ -869,7 +883,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
                 </fieldset>)}
               </div>}
             </div>)}
-            {!professionalAssessments.length && <div style={{ color: '#9A6A28', fontSize: 13 }}>尚无年度综合健康评估，年度方案准备清单会保持阻断。</div>}
+            {!professionalAssessments.length && <div style={{ color: '#9A6A28', fontSize: 13 }}>{preparation?.preparation?.assessmentMode === 'none' ? '本年度已选择无需专科评估；其余准备要求仍须完成。后续有需要时可另行启动专项评估。' : '暂无专业评估记录；请完成所需评估，或由健康顾问在准备清单中确认本次无需专科评估并填写依据。'}</div>}
           </div>
           <details style={{ marginTop: 14 }}>
             <summary style={{ cursor: 'pointer', color: '#1E6B50', fontWeight: 600 }}>＋ 新建专业评估记录</summary>
@@ -1009,7 +1023,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           </button>
         )}
         <button
-          onClick={() => nav(backPath)}
+          onClick={goBack}
           style={{ background: '#fff', color: '#666', border: '1px solid #ddd', padding: '10px 24px', borderRadius: 8, cursor: 'pointer', fontSize: 14 }}
         >
           返回方案列表

@@ -6688,8 +6688,10 @@ router.put('/patients/:id/annual-plan-preparation', staffAuth, async (req, res) 
   const year = Number(req.body.year) || new Date().getFullYear();
   const medicationStatus = ['unknown', 'documented', 'none'].includes(req.body.medicationStatus) ? req.body.medicationStatus : 'unknown';
   const supplementStatus = ['unknown', 'documented', 'none'].includes(req.body.supplementStatus) ? req.body.supplementStatus : 'unknown';
-  const requiredAssessmentDomains = [...new Set((req.body.requiredAssessmentDomains || []).map(item => String(item).trim()).filter(Boolean))];
-  const payload = { requiredAssessmentDomains, medicationStatus, supplementStatus, updatedBy: req.staff._id };
+  let assessmentDecision;
+  try { assessmentDecision = require('../utils/annualAssessmentDecision').annualAssessmentDecision(req.body, req.staff._id); }
+  catch (error) { return res.status(error.statusCode || 400).json({ success: false, message: error.message }); }
+  const payload = { ...assessmentDecision, medicationStatus, supplementStatus, updatedBy: req.staff._id };
   if (Array.isArray(req.body.waivers)) payload.waivers = req.body.waivers.filter(item => item?.key && String(item.reason || '').trim()).map(item => ({ key: String(item.key), reason: String(item.reason).trim(), waivedAt: new Date(), waivedBy: req.staff._id }));
   if (req.body.advisorReady === true) { payload.advisorReadyConfirmedAt = new Date(); payload.advisorReadyConfirmedBy = req.staff._id; }
   if (req.body.advisorReady === false) { payload.advisorReadyConfirmedAt = null; payload.advisorReadyConfirmedBy = null; }
