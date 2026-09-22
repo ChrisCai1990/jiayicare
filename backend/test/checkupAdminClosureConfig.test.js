@@ -60,12 +60,16 @@ test('V18 consolidates every duplicate active medical-assist template and deploy
   assert.match(deploy, /\.medical-assist-template-consolidation-v18-applied/)
 })
 
-test('V15 aligns customer intake and adds an outpatient final acceptance gate', () => {
+test('V15 preserves checkup acceptance and current outpatient advisor closure without duplicate planner acceptance', () => {
   const migration = read('src/scripts/migrateOneStopFinalFlowV15.js')
   const outpatient = read('src/scripts/migrateOutpatientOneStopWorkflowV5.js')
   const deploy = read('../scripts/deploy.py')
   assert.match(migration, /用户先填写健康文件/)
-  assert.match(outpatient, /总督办与最终验收/)
+  const drafts = outpatient.slice(outpatient.indexOf('const WORKFLOW_PLANS = ['), outpatient.indexOf('\n];'))
+  assert.doesNotMatch(drafts, /总督办与最终验收/)
+  assert.match(drafts, /资料审核后由健康顾问生成随访计划并自动结束服务/)
+  assert.match(migration, /最终由健康规划师验收关闭/)
+  assert.match(migration, /if \(!finalPlan\) continue/)
   assert.match(migration, /maintenance_backups/)
   assert.match(migration, /finalTasks/)
   assert.match(deploy, /migrateOneStopFinalFlowV15\.js --apply/)

@@ -16,18 +16,20 @@ function response() {
 async function generate({ role = 'familyDoctor', templateName = '住院一站式服务', orderName, visible = ['patient'] } = {}) {
   let handler, created, aiCalls = 0;
   const template = templateName ? { _id: 'template', name: templateName, content: {} } : null;
-  const query = value => ({ select: () => query(value), lean: async () => value, then: resolve => Promise.resolve(value).then(resolve) });
+  const query = value => ({ select: () => query(value), sort: () => query(value), lean: async () => value, then: resolve => Promise.resolve(value).then(resolve) });
   vm.runInNewContext(route('post', '/patients/:id/ai-medical-assist-plan'), {
     router: { post: (...args) => { handler = args.at(-1); } }, staffAuth: () => {},
     getVisiblePlanPatientIds: async () => visible,
     User: { findById: () => query({ _id: 'patient', name: '测试客户', healthProfile: {} }) },
     Order: { findOne: () => query(orderName ? { _id: 'order', serviceName: orderName } : null) },
     PlanTemplate: { findOne: () => query(template), find: () => query([]) },
-    HealthPlan: { create: async data => { created = data; return data; } },
+    HealthPlan: { findOne: () => query(null), create: async data => { created = data; return data; } },
+    generateCompactMedicalAssistPurposes: require('../src/utils/medicalAssistPurposeDraft').generateCompactMedicalAssistPurposes,
     require: name => {
       if (name === '../utils/confirmedServiceSchedule') return confirmedScheduleUtils;
+      if (['../utils/medicalProxyWorkflow', '../utils/medicationProxyWorkflow', '../utils/checkupAppointmentWorkflow'].includes(name)) return require(name.replace('../utils/', '../src/utils/'));
       assert.equal(name, '../utils/ai');
-      return { chat: async () => { aiCalls++; return '{"tasks":"确认就医需求\\n确认预约安排"}'; } };
+      return { chat: async () => { aiCalls++; return aiCalls === 1 ? '{"tasks":"确认就医需求\\n确认预约安排"}' : '{"purposes":["内科：确认住院预约安排"]}'; } };
     },
   });
   const res = response();
@@ -39,7 +41,7 @@ async function generate({ role = 'familyDoctor', templateName = '住院一站式
 test('advisor generates inpatient plan from selected template without an order', async () => {
   const { res, created, aiCalls } = await generate();
   assert.equal(res.code, 200, res.data?.message);
-  assert.equal(aiCalls, 1);
+  assert.equal(aiCalls, 2, 'plan generation and compact purposes use the injected AI stub');
   assert.equal(created.staffId, 'creator');
   assert.equal(created.content.serviceScene, 'inpatient_one_stop');
   assert.equal(created.content.aiStatus, 'pending');
@@ -92,7 +94,7 @@ test('inpatient advisor owner passes role and ownership gates, unrelated advisor
   }
   assert.equal(ctx.checkPlanTypeRole({ type: 'medical_assist', content: { templateName: '就医陪同服务' } }, 'familyDoctor'), false);
 });
-test('actual update route lets advisor save own inpatient plan', async () => {
+test('captured update handler with model doubles lets advisor save own inpatient plan', async () => {
   const ctx = permissions();
   let handler, saved = 0;
   const plan = { type: 'medical_assist', staffId: 'creator', content: { templateName: '住院一站式服务' }, markModified() {}, save: async () => { saved++; } };
@@ -104,10 +106,10 @@ test('actual update route lets advisor save own inpatient plan', async () => {
   assert.equal(saved, 1);
   assert.equal(plan.description, '已核对预约信息');
 });
-test('actual push route permits own inpatient plan and rejects another advisor', async () => {
+test('captured push handler with dispatch spy permits owner and rejects another advisor without side effects', async () => {
   for (const staffId of ['creator', 'other']) {
     const ctx = permissions();
-    let handler, saves = 0, pushes = 0;
+    let handler, saves = 0, pushes = 0, dispatches = 0, records = 0, updates = 0;
     const plan = { _id: 'plan', patientId: 'patient', type: 'medical_assist', staffId: 'creator', content: { serviceScene: 'inpatient_one_stop', serviceDate: '2026-09-10', staffId: 'assistant', supervisorId: 'supervisor', followUpPlanId: 'template' }, save: async () => { saves++; } };
     Object.assign(ctx, {
       router: { patch: (...args) => { handler = args.at(-1); } }, staffAuth: () => {},
@@ -115,8 +117,13 @@ test('actual push route permits own inpatient plan and rejects another advisor',
       HealthPlan: { findById: async () => plan }, PushRecord: { create: async () => { pushes++; } },
       FollowUpPlan: { find: () => ({ lean: async () => [{ _id: 'template', name: '岗位任务' }], distinct: async () => [] }) },
       isReportInterpretation: () => false,
+      upsertMedicalAssistModuleTasks: async (actualPlan, workflowPlan) => {
+        assert.equal(actualPlan, plan);
+        assert.equal(workflowPlan._id, 'template');
+        dispatches++;
+      },
       User: { findById: () => ({ select: () => ({ lean: async () => ({}) }) }) },
-      FollowUp: { updateMany: async () => ({}), findOneAndUpdate: async () => ({}) }, ServiceRecord: { findOneAndUpdate: async () => ({}) },
+      FollowUp: { updateMany: async () => { updates++; return {}; }, findOneAndUpdate: async () => ({}) }, ServiceRecord: { findOneAndUpdate: async () => { records++; return {}; } },
     });
     vm.runInContext(route('patch', '/plans/:id/push'), ctx);
     const res = response();
@@ -124,5 +131,8 @@ test('actual push route permits own inpatient plan and rejects another advisor',
     assert.equal(res.code, staffId === 'creator' ? 200 : 403, res.data?.message);
     assert.equal(saves, staffId === 'creator' ? 1 : 0);
     assert.equal(pushes, saves);
+    assert.equal(dispatches, staffId === 'creator' ? 1 : 0);
+    assert.equal(records, staffId === 'creator' ? 1 : 0);
+    if (staffId !== 'creator') assert.equal(updates, 0, 'unauthorized request must not change tasks');
   }
 });

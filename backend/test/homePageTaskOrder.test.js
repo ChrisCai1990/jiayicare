@@ -29,10 +29,11 @@ test('follow-up counters and list exclude service executor, supervisor and insur
 })
 
 test('insurance work is returned by the temporary service task endpoint', () => {
-  const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8')
-  const serviceTasks = route.slice(route.indexOf("router.get('/service-tasks'"), route.indexOf('// ── GET /api/staff/patients'))
-  assert.match(serviceTasks, /sourceType: 'insurance_service'/)
-  assert.match(serviceTasks, /sourceType: 'scheduled', tags: '保险服务'/)
+  const { staffTasks } = require('./helpers/taskVisibility')
+  const rows = ['executor', 'supervisor'].map(taskRole => ({ sourceType: 'insurance_service', taskRole }))
+  rows.push({ sourceType: 'scheduled', tags: ['保险服务'] })
+  assert.equal(staffTasks(rows).length, 3)
+  assert.equal(staffTasks([{ sourceType: 'insurance_service' }, { sourceType: 'scheduled', tags: [] }]).length, 0)
 })
 
 test('executor checklist uploads check orders per purpose for supervisor review', () => {
@@ -54,7 +55,7 @@ test('check-order attachments open in an in-page preview with download as a seco
   const checklist = fs.readFileSync(path.join(__dirname, '../../staff/src/components/ServiceTaskChecklist.jsx'), 'utf8')
   assert.match(checklist, /查看：\{file\.name/)
   assert.match(checklist, /role="dialog"/)
-  assert.match(checklist, /<img src=\{fileUrl\(preview\.url\)\}/)
+  assert.match(checklist, /<img src=\{fileUrl\(preview\.previewUrl \|\| preview\.url\)\}/)
   assert.match(checklist, /<iframe title=\{preview\.name/)
   assert.match(checklist, /下载原文件/)
 })
