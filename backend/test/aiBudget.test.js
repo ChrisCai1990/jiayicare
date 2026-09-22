@@ -62,8 +62,8 @@ test('Mongo integration: concurrent reservations, timeout accounting, circuits a
       const rows = await collection('ai_usage').find().toArray();
       assert.ok(rows.every(r => r.status === 'unknown' && r.actualTokens === null));
       assert.ok(!JSON.stringify(rows).includes('sensitive'));
-      await store.outcome(`qwen:qwen-vl-plus:report:${options.context.reportId}`, false, 2);
-      assert.equal((await store.circuit(`qwen:qwen-vl-plus:report:${options.context.reportId}`)).paused, true);
+      await store.outcome(`qwen:qwen-vl-plus:report:${options.context.reportId}:page:1`, false, 2);
+      assert.equal((await store.circuit(`qwen:qwen-vl-plus:report:${options.context.reportId}:page:1`)).paused, true);
     });
     await t.test('daily global token ceiling is atomic and blocks before send', async () => {
       await reset({ dailyTokens: 1000 });

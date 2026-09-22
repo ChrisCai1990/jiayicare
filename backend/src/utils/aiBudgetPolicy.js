@@ -2,7 +2,11 @@ const DEFAULT_POLICY = Object.freeze({
   paused: false, ocrPaused: false, dailyTokens: 2000000, monthlyTokens: 30000000,
   ocrDailyTokens: 1500000, otherDailyTokens: 500000,
   reportTokens: 1500000, pageTokens: 160000, reportCalls: 400, pageCalls: 8,
-  dailyCalls: 2000, failureThreshold: 5, warningPercent: 80,
+  // A visual-report job can include a number of independent pages and optional
+  // quality checks. Eight confirmed failures on the *same page* is a strong
+  // signal of an unavailable upstream service; five was too easy to reach
+  // during a short provider/network wobble.
+  dailyCalls: 2000, failureThreshold: 8, warningPercent: 80,
   dailyYuan: 0, monthlyYuan: 0, prices: {},
 });
 

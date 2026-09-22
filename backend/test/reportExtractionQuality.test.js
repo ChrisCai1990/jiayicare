@@ -69,15 +69,18 @@ function fakeBudget() {
     outcome: async (key, failed, threshold) => { const old = circuits.get(key) || { failures: 0 }; const failures = failed ? old.failures + 1 : 0; circuits.set(key, { failures, paused: old.paused || failures >= threshold }); },
   };
 }
-const request = reportId => ({ provider: 'qwen', model: 'test', messages: [], maxTokens: 100, context: { business: 'ocr', reportId, page: 1, stopState: {} } });
+const request = (reportId, page = 1) => ({ provider: 'qwen', model: 'test', messages: [], maxTokens: 100, context: { business: 'ocr', reportId, page, stopState: {} } });
 const response = () => ({ usage: { prompt_tokens: 10, completion_tokens: 10 }, choices: [{ message: { content: '{"items":[]}' }, finish_reason: 'stop' }] });
-test('report failures cannot trip another report or global model; truncation never trips service circuit', async () => {
+test('OCR failures are isolated to one report page; truncation never trips service circuit', async () => {
   const db = fakeBudget(), run = createBudgetRunner(db);
   for (let i = 0; i < 4; i++) await assert.rejects(run(request('truncated'), async () => ({ ...response(), choices: [{ message: { content: '{' }, finish_reason: 'length' }] })));
   await run(request('truncated'), async () => response());
   for (let i = 0; i < 2; i++) await assert.rejects(run(request('failed'), async () => { throw new Error('timeout'); }));
   await assert.rejects(run(request('failed'), async () => response()), error => error.code === 'AI_CIRCUIT_PAUSED');
+  await run(request('failed', 2), async () => response());
   await run(request('other'), async () => response());
+  assert.equal(db.circuits.has('qwen:test:report:failed:page:1'), true);
+  assert.equal(db.circuits.has('qwen:test:report:failed:page:2'), true);
   assert.equal(db.circuits.has('qwen:test'), false);
 });
 test('page quota refusal refunds preflight reservations and does not poison the report context', async () => {

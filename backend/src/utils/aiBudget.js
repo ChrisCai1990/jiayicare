@@ -13,16 +13,23 @@ function createBudgetRunner(db = store, now = () => new Date()) {
     const estimate = estimateTokens(messages, maxTokens);
     const reserved = [];
     const id = randomUUID();
-    // OCR content/timeout failures are local to a report, never a global model outage.
+    // OCR content/timeout failures are local to a report page, never a global
+    // model outage. A report is often processed page-by-page; using one key
+    // for the entire report meant independent, optional quality checks could
+    // collectively trip the circuit and stop an otherwise healthy job.
+    const page = Number(ctx.page);
+    const pageKey = Number.isInteger(page) && page > 0;
     const key = ctx.business === 'ocr' && ctx.reportId
-      ? `${provider}:${model}:report:${ctx.reportId}` : `${provider}:${model}`;
+      ? `${provider}:${model}:report:${ctx.reportId}${pageKey ? `:page:${page}` : ''}`
+      : `${provider}:${model}`;
+    const circuitLabel = pageKey ? `本报告第 ${page} 页` : '本报告';
     let policy, rate, estimatedMicros;
     try {
       if (ctx.stopState?.error) throw ctx.stopState.error;
       policy = await db.policy();
       if (policy.paused || (ctx.business === 'ocr' && policy.ocrPaused)) throw new AiControlError('AI 调用已由管理员暂停');
       if (ctx.deadline && started.getTime() >= ctx.deadline) throw new AiControlError('本次 OCR 已到运行时限，已暂停');
-      if ((await db.circuit(key))?.paused) throw new AiControlError(ctx.reportId ? '本报告连续调用异常，已暂停，请管理员检查后恢复；其他报告可继续' : '模型连续异常，已自动暂停，请管理员检查后恢复', 'AI_CIRCUIT_PAUSED');
+      if ((await db.circuit(key))?.paused) throw new AiControlError(ctx.reportId ? `${circuitLabel}连续调用异常，已暂停，请管理员检查后恢复；其他页面和报告可继续` : '模型连续异常，已自动暂停，请管理员检查后恢复', 'AI_CIRCUIT_PAUSED');
       rate = policy.prices?.[model];
       if ((policy.dailyYuan || policy.monthlyYuan) && !rate) throw new AiControlError(`模型 ${model} 未配置单价，金额预算启用后禁止调用`);
       estimatedMicros = costMicros(estimate, rate);
