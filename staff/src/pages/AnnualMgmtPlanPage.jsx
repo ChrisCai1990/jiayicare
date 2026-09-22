@@ -341,6 +341,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [plan, setPlan]             = useState(null)
   const [planType, setPlanType]     = useState('')
   const [moduleData, setModuleData] = useState({})
+  const [lastGenerationKey, setLastGenerationKey] = useState('')
   const [plansByType, setPlansByType] = useState({}) // patientMode: { servicePlanCode: plan }，各服务版本独立保存
   const [year, setYear]             = useState(() => Number(searchParams.get('year')) || new Date().getFullYear())
   const [loading, setLoading]       = useState(true)
@@ -359,6 +360,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [closedLoopEnabled, setClosedLoopEnabled] = useState(true)
   const preparationBlocked = closedLoopEnabled && !preparation?.checklist?.ready
   const [continuitySource, setContinuitySource] = useState(null)
+  const [generationCoverage, setGenerationCoverage] = useState([])
+  useEffect(() => { setLastGenerationKey(''); setGenerationCoverage([]) }, [id, year, planType])
   const [preparationSaving, setPreparationSaving] = useState(false)
   const [preparationDraft, setPreparationDraft] = useState({ assessmentMode: 'required', assessmentConfirmedCriteria: [], assessmentNotRequiredReason: '', requiredAssessmentDomains: '', medicationStatus: 'unknown', supplementStatus: 'unknown', advisorReady: false })
   const [professionalAssessments, setProfessionalAssessments] = useState([])
@@ -549,6 +552,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     setAiPlanLoading(true)
     try {
       const res = await staffAPI.generateAIAnnualPlan(id, requestType, '', selectedTemplateId, year)
+      setGenerationCoverage(res.generation?.evidenceCoverage || [])
+      if (res.generation?.fingerprint && (res.generation.fingerprint === lastGenerationKey || (res.generation.reused && dirty))) { toast('依据未变化，保留同一版本及您的编辑，不重复覆盖'); return }
+      setLastGenerationKey(res.generation?.fingerprint || '')
       setContinuitySource(res.continuitySource || null)
       const aiData = res.data || {}
       // 只填充当前所选方案类型包含的板块，其余类型的板块忽略（一次只生成一个方案）
@@ -831,6 +837,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             <span style={{ fontSize: 12, fontWeight: 700, color: preparation.checklist.ready ? '#15803D' : '#B45309' }}>{preparation.checklist.ready ? '✓ 已就绪' : '待完善'}</span>
           </div>
           {preparation.continuity?.mode === 'renewal' && <div style={{ marginTop: 10, fontSize: 13, color: '#4A6558' }}>引用 {preparation.continuity.previousYear} 年度总评；不重复要求首次会诊。<a href={`/patients/${id}?tab=aiReview${preparation.continuity.source?.annualReviewId ? `&phaseAssessmentId=${preparation.continuity.source.annualReviewId}` : ''}`}>查看/准备年度总评</a>{preparation.continuity.summary && <details style={{ marginTop: 8 }}><summary>已审核总评内容</summary><div style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>{preparation.continuity.summary}</div></details>}</div>}
+          {!!preparation.caseReviews?.length && <details style={{ marginTop: 10 }}><summary>本年度研判依据（自动识别，无需重复录入）</summary>{preparation.caseReviews.map(item => <div key={item._id}>{item.title}：{item.conclusion?.status === 'confirmed' ? '已确认，将引用' : '待顾问确认'}</div>)}<a href={`/patients/${id}?tab=aiReview`}>查看研判</a></details>}
+          {!!generationCoverage.length && <details open style={{ marginTop: 10 }}><summary>本次来源核对（含待确认及未采用原因）</summary>{generationCoverage.map(item => <div key={item.sourceId}>{item.sourceId}：{{ included: '已纳入', deferred: '待确认', not_applicable: '未采用' }[item.status]}；{item.reason}</div>)}</details>}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 8, marginTop: 14 }}>
             {preparation.checklist.items.map(item => (
               <div key={item.key} style={{ fontSize: 13, color: item.complete ? '#287A50' : '#9A5B13' }}>{item.complete ? '✓' : '○'} {item.label}{item.waived ? '（已说明豁免）' : ''}</div>

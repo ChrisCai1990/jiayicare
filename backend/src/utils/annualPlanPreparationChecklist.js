@@ -1,6 +1,6 @@
 const hasWaiver = (preparation, key) => (preparation?.waivers || []).some(item => item.key === key && String(item.reason || '').trim());
 
-function buildAnnualPlanPreparationChecklist({ patient = {}, preparation = null, auditedReportCount = 0, activeMedicationCount = 0, activeSupplementCount = 0, assessments = [], continuity = null }) {
+function buildAnnualPlanPreparationChecklist({ patient = {}, preparation = null, auditedReportCount = 0, activeMedicationCount = 0, activeSupplementCount = 0, assessments = [], continuity = null, caseReviews }) {
   const items = [];
   const add = (key, label, complete, options = {}) => {
     const waived = !complete && options.waivable === true && hasWaiver(preparation, key);
@@ -26,6 +26,7 @@ function buildAnnualPlanPreparationChecklist({ patient = {}, preparation = null,
   if (!isRenewal || noneSelected) add('assessment_scope', noneSelected ? '健康顾问已确认本年度无需新增专科评估的全部五项条件' : '已确定首次方案所需专业评估领域', noAssessmentConfirmed || (!noneSelected && requiredDomains.length > 0));
   requiredDomains.forEach(domain => add(`assessment:${domain}`, `${domain}专业健康评估已审核`, approvedAnnualDomains.has(domain)));
   add('advisor_ready', '健康顾问已确认资料足够生成方案', !!preparation?.advisorReadyConfirmedAt);
+  if (caseReviews) add('case_reviews', caseReviews.length ? '本年度相关研判已确认' : '本年度暂无已发起的相关研判（不强制新建）', caseReviews.every(item => item.conclusion?.status === 'confirmed'));
 
   const blockingItems = items.filter(item => item.blocking && !item.complete);
   return {

@@ -9637,7 +9637,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     const allowedKeys = [...new Set([...(PLAN_TYPE_MODULES[strategyType] || GENERATABLE), ...requiredScreeningKeys])]
       .filter(k => GENERATABLE.includes(k) && (requiredScreeningKeys.includes(k) || allowedByTemplate(k)));
     const standardFollowUpPlans = await FollowUpPlan.find({ status: 'active', reviewStatus: { $ne: 'pending_review' } })
-      .select('name cycles defaultRole defaultEmployeeId default_content').sort({ name: 1 }).lean();
+      .select('name cycles defaultRole defaultEmployeeId default_content').sort({ name: 1, _id: 1 }).lean();
     const standardFollowUpCatalog = standardFollowUpPlans.map((item, index) => ({
       index: index + 1, id: String(item._id), name: item.name,
       cycles: item.cycles || [], defaultRole: item.defaultRole || '',
@@ -9686,21 +9686,23 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       .sort({ checkDate: -1, createdAt: -1 }).lean();
     const suggestedCheckupDate = nextAnnualCheckupDate(reports);
     const allHepatitisBMarkersNegative = hepatitisBAllNegative(reports);
-    const confirmedCaseReviews = await AiCaseReview.find({
+    const confirmedCaseReviews = await AiCaseReview.find(closedLoop ? {
+      ...require('../utils/annualCaseReviewScope').annualCaseReviewQuery(user._id, targetYear), 'conclusion.status': 'confirmed',
+    } : {
       user: user._id, 'conclusion.status': 'confirmed',
       $or: [
         { reviewType: 'annual' },
         { reviewType: { $exists: false }, title: /年度管理研判/ },
       ],
     })
-      .sort({ 'conclusion.confirmedAt': -1 }).limit(20).select('title conclusion.content conclusion.structured conclusion.confirmedAt').lean();
+      .sort({ 'conclusion.confirmedAt': -1, _id: 1 }).limit(closedLoop ? 0 : 20).select('title reviewType conclusion.content conclusion.structured conclusion.confirmedAt').lean();
     const confirmedReviewText = confirmedCaseReviews.length
       ? confirmedCaseReviews.map(item => `【${item.title}】${item.conclusion.content}`).join('\n\n').slice(0, 16000)
       : '无已确认的专题研判结论';
     const professionalAssessments = closedLoop ? await ProfessionalHealthAssessment.find({
       patientId: user._id, purpose: preparation.continuity?.mode === 'renewal' ? { $in: ['annual_input', 'issue_collaboration'] } : 'annual_input', status: 'approved',
       $or: [{ validUntil: null }, { validUntil: { $gte: new Date() } }],
-    }).sort({ advisorReviewedAt: -1 }).select('domain title collaborationMode facts risks missingInformation recommendations advisorReviewedAt').lean() : [];
+    }).sort({ advisorReviewedAt: -1, _id: 1 }).select('domain title collaborationMode facts risks missingInformation recommendations advisorReviewedAt').lean() : [];
     const professionalAssessmentText = professionalAssessments.length
       ? professionalAssessments.map(item => `【${item.domain}｜${item.title}】\n已确认事实：${(item.facts || []).join('；') || '无'}\n重点关注：${(item.risks || []).join('；') || '无'}\n待补信息：${(item.missingInformation || []).join('；') || '无'}\n管理建议：${JSON.stringify(item.recommendations || {})}`).join('\n\n').slice(0, 20000)
       : '无已审核的年度综合健康评估';
@@ -9710,6 +9712,10 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       title: '上一年度健康管理总评与下一年度重点',
       annualReviewId: preparation.continuity.source.annualReviewId,
       instruction: '以首要依据中的已审核年度总评作为主评估，结合最新已核验资料；不照搬原年度专题或已完成任务。',
+    } : closedLoop && confirmedCaseReviews.length ? {
+      title: '本年度已确认的年度及专项研判',
+      sources: confirmedCaseReviews.map(item => ({ id: String(item._id), title: item.title, conclusion: item.conclusion })),
+      instruction: '逐项核对所有已确认研判，不得仅保留最新一条而遗漏其他有效行动；已完成、不适用或存在冲突的事项须在来源核对中说明，不自动派单。',
     } : latestAssessment ? {
       title: latestAssessment.title,
       summary: latestAssessment.conclusion?.structured?.summary || [],
@@ -9765,7 +9771,7 @@ ${confirmedReviewText}
 
 ${closedLoop ? `【已由专业人员提出、健康顾问终审的年度综合健康评估】
 ${professionalAssessmentText}
-专业健康评估是年度方案的必需专业输入。只能采用已终审内容，AI可以整理和补全表达，但不得改变专业结论、添加诊断或治疗意见；涉及就医、检查、复查和生活方式管理的建议，应优先与上述评估保持一致。` : ''}
+${preparation.preparation?.assessmentMode === 'none' ? '顾问已确认本年度无需新增专科评估，不得因没有新增评估而忽略已有已审核依据。' : '采用已完成终审的专业健康评估。'}只能采用已终审内容，AI可以整理表达，但不得改变专业结论、添加诊断或治疗意见；已确认的年度、就医及专项研判均作为本次依据，不得把未确认讨论当结论，已完成事项不得再次安排。` : ''}
 检查准备 precautions 只能摘取输入中明确存在的要求，未提供则填“待检查机构确认”；不得自行补充空腹时长、停药、禁食或其他医疗要求。年度体检没有明确项目依据时不得自行拼接“基础全套”项目清单，annual_checkup 返回空对象。每条实际建议的 basisSummary 必须注明具体评估或报告来源及原建议，不得以通用医学常识替代来源。
 
 【本方案必须对齐的主评估】
@@ -9814,20 +9820,30 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
 
 注意：每个事项必须填写项目名称、basisSummary、时间或时间范围、frequency、precautions、customerAction、ownerRole；审核状态由系统统一设为待健康顾问审核。所有展示为项目名称的字段必须简单明确，只写“要做什么”，不得把原因、剂量、操作细节或注意事项塞进名称；items和name不超过20个汉字。templateNodes不是AI新建方案，而是从Admin标准随访方案库调用后做客户级调整；standardPlanId和standardPlanName必须原样引用，禁止另起名称、改写模板或为了填满页面创造新主题。medical_treatment仅填主评估明确的高优先级就医需求；specialist_collab仅在主评估明确会诊时填写。禁止生成没有依据的医院、专家姓名和已预约精确日期；可以根据证据给出建议日期或时间范围，未确认写“待确认”。无相关内容用空数组。`;
 
-    const text = await chat([{ role: 'user', content: prompt }], {
-      maxTokens: 6000,
-      jsonMode: true,
-      timeoutMs: 90000,
-    });
-
-    let raw = {};
-    try {
-      const jsonMatch = text.trim().match(/\{[\s\S]*\}/);
-      if (jsonMatch) raw = JSON.parse(jsonMatch[0]);
-    } catch (parseError) {
-      console.error('AI annual plan JSON parse failed:', parseError.message, text.slice(0, 500));
-      return res.status(502).json({ success: false, message: 'AI返回的方案内容不完整，请重试' });
-    }
+    const consistency = require('../utils/annualGenerationConsistency');
+    const evidence = [
+      ...confirmedCaseReviews.map(item => ({ id: `review:${item._id}`, content: item.conclusion })),
+      ...confirmedCaseReviews.flatMap(item => (Array.isArray(item.conclusion?.structured?.actions) ? item.conclusion.structured.actions : []).map((action, index) => ({ id: `review:${item._id}:action:${index}`, content: action }))),
+      ...professionalAssessments.map(item => ({ id: `assessment:${item._id}`, content: item })),
+      ...(s.medical_priority?.items || []).map((item, i) => ({ id: `priority:${i}`, content: item })),
+      ...(s.checkup_completeness?.missing || []).map((item, i) => ({ id: `missing:${i}`, content: item })),
+      { id: 'summary', content: s },
+    ];
+    const checkedPrompt = closedLoop ? `${prompt}\n【必须逐项核对的来源】${JSON.stringify(evidence)}\n额外输出evidenceCoverage数组，每个来源恰好一项：{sourceId,status:included或deferred或not_applicable,reason:具体原因}。每条生成事项添加sourceIds数组引用上述来源ID；included必须存在对应事项。不得遗漏来源。待补资料标deferred，不得编造检查建议；不适用要说明依据。相互矛盾的建议不得擅自取舍，标deferred交顾问确认。每条包括年度体检必须有basisSummary。` : prompt;
+    const generate = async () => {
+      const text = await chat([{ role: 'user', content: checkedPrompt }], { maxTokens: 6000, temperature: 0, jsonMode: true, timeoutMs: 90000 });
+      let parsed;
+      try { parsed = JSON.parse(text.trim().replace(/^```(?:json)?\s*|\s*```$/g, '')); }
+      catch { throw Object.assign(new Error('AI返回的方案内容不完整，未替换现有方案'), { statusCode: 502 }); }
+      try { return closedLoop ? consistency.validateAnnualRaw(parsed, availableAnnualFollowUpCatalog, evidence, allowedKeys) : parsed; }
+      catch (error) { error.generationRaw = parsed; throw error; }
+    };
+    const generation = closedLoop ? await consistency.reuseAnnualGeneration(
+      require('mongoose').connection.db.collection('annual_generation_snapshots'),
+      { patientId: String(user._id), year, templateId: String(templateId), ruleVersion: 1, model: process.env.QWEN_API_KEY ? 'qwen-plus' : 'deepseek-chat', prompt: checkedPrompt.split(todayText).join('<EXECUTION_DATE>'), sourceSnapshot: { sections: s, reports, confirmedCaseReviews, professionalAssessments, continuity: preparation.continuity || null, notes }, catalog: availableAnnualFollowUpCatalog }, generate,
+    ) : { raw: await generate() };
+    const raw = generation.raw;
+    const generationDay = generation.createdAt ? new Date(new Date(generation.createdAt).getTime() + 8 * 3600000).toISOString().slice(0, 10) : todayText;
 
     // 转为 moduleData 结构（多条板块用 { records: [...] }）
     // 只输出当前所选方案类型包含的板块，其余板块不生成
@@ -9881,7 +9897,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
         defaultEmployeeId: source.defaultEmployeeId || '',
         executionDate: (() => {
           const candidate = String(node.executionDate || node.time || '').slice(0, 10);
-          return /^\d{4}-\d{2}-\d{2}$/.test(candidate) && candidate >= todayText ? candidate : todayText;
+          return /^\d{4}-\d{2}-\d{2}$/.test(candidate) && candidate >= generationDay ? candidate : generationDay;
         })(),
         title: source.name,
       };
@@ -9891,9 +9907,9 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
       result.annual_checkup = { ...result.annual_checkup, date: suggestedCheckupDate };
     }
 
-    res.json({ success: true, data: result, basis: assessmentFocus, continuitySource: preparation.continuity?.source || null, template: selectedTemplate ? { _id: selectedTemplate._id, name: selectedTemplate.name } : null });
+    res.json({ success: true, data: result, generation: { fingerprint: generation.fingerprint, reused: generation.reused, evidenceCoverage: raw.evidenceCoverage || [] }, basis: assessmentFocus, continuitySource: preparation.continuity?.source || null, template: selectedTemplate ? { _id: selectedTemplate._id, name: selectedTemplate.name } : null });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(err.statusCode || 500).json({ success: false, message: err.message });
   }
 });
 
