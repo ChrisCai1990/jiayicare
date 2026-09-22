@@ -44,3 +44,14 @@ test('old initial response cannot overwrite later staff or questionnaire updates
   user.archiveVersionHistory = [{ path, to: '11:00', confirmedBy: 'a' }];
   assert.throws(() => buildConfirmation(user, [{ path, value: '09:00' }], actor), { statusCode: 409 });
 });
+test('nutritionist initial assessment cannot be replaced by manager or reassigned on equal reconfirmation', () => {
+  const user = fixture(); user.lifestyle_data.breakfastTime = '08:00';
+  user.archiveBaselineSources = { lifestyle_data__breakfastTime: { responseId: 'r', value: '08:00', reviewedBy: 'n', reviewedRole: 'nutritionist' } };
+  assert.throws(() => buildConfirmation(user, [{ path, value: '09:00' }], { _id: 'm', role: 'healthManager' }), { statusCode: 409 });
+  const equal = buildConfirmation(user, [{ path, value: '08:00' }], { _id: 'm', role: 'healthManager' });
+  assert.equal(equal.update.$set.archiveBaselineSources, undefined);
+  const revised = buildConfirmation(user, [{ path, value: '09:00' }], { _id: 'n', role: 'nutritionist' });
+  assert.equal(revised.update.$set[path], '09:00'); assert.equal(revised.changeCount, 0);
+  delete user.archiveBaselineSources.lifestyle_data__breakfastTime.reviewedRole;
+  assert.throws(() => buildConfirmation(user, [{ path, value: '09:00' }], { _id: 'm', role: 'healthManager' }, new Date(), { n: 'nutritionist' }), { statusCode: 409 });
+});

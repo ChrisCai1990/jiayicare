@@ -13438,7 +13438,11 @@ router.post('/patients/:id/archive-draft/apply', staffAuth, async (req, res) => 
 
     const userBefore = await User.collection.findOne({ _id: new mongoose.Types.ObjectId(req.params.id) });
     if (!userBefore) return res.status(404).json({ success: false, message: '会员不存在' });
-    const confirmation = require('../utils/archiveConfirmation').buildConfirmation(userBefore, validItems, req.staff);
+    const reviewerIds = [...new Set([...Object.values(userBefore.archiveBaselineSources || {}).map(x => x.reviewedBy),
+      ...(userBefore.archiveConfirmLog || []).map(x => x.confirmedBy)].filter(x => x && mongoose.isValidObjectId(x)).map(String))];
+    const reviewers = await Admin.find({ _id: { $in: reviewerIds } }).select('_id role').lean();
+    const confirmation = require('../utils/archiveConfirmation').buildConfirmation(userBefore, validItems, req.staff, new Date(),
+      Object.fromEntries(reviewers.map(x => [String(x._id), x.role])));
     const result = await User.collection.updateOne(confirmation.filter, confirmation.update);
     if (result.matchedCount !== 1) return res.status(409).json({ success: false, message: '档案或草稿已变化，请刷新核对后确认' });
     res.json({ success: true, message: `首次入档 ${confirmation.initialCount} 项，记录变化 ${confirmation.changeCount} 项` });

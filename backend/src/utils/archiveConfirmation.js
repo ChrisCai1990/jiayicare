@@ -2,7 +2,7 @@ const { isDeepStrictEqual } = require('node:util');
 const { FIELD_MAP } = require('../config/archiveFields');
 const get = (obj, path) => path.split('.').reduce((value, key) => value?.[key], obj);
 const empty = value => value == null || value === '' || (Array.isArray(value) && value.length === 0);
-function buildConfirmation(user, items, actor, now = new Date()) {
+function buildConfirmation(user, items, actor, now = new Date(), reviewerRoles = {}) {
   const draft = user.archiveDraft;
   if (!draft?.responseId || !draft?.questionnaireId) throw Object.assign(new Error('草稿已处理或缺少来源，请刷新重新导入'), { statusCode: 409 });
   const allowed = new Set((draft.items || []).map(x => x.path));
@@ -20,6 +20,12 @@ function buildConfirmation(user, items, actor, now = new Date()) {
     const earlierInitial = (user.archiveConfirmLog || []).find(x => String(x.sourceResponseId) === String(draft.responseId)
       && (x.items || []).some(i => i.path === item.path && i.mode === 'initial'));
     const sameInitial = source ? String(source.responseId) === String(draft.responseId) : !!earlierInitial;
+    const sourceRole = source?.reviewedRole || reviewerRoles[String(source?.reviewedBy || earlierInitial?.confirmedBy)];
+    if (sameInitial && item.path.startsWith('lifestyle_data.') && sourceRole === 'nutritionist' && actor.role !== 'nutritionist') {
+      if (!isDeepStrictEqual(baseline, item.value)) throw Object.assign(new Error('本次膳食档案已由营养师评估确认，请由营养师修订，不能以原答卷覆盖'), { statusCode: 409 });
+      confirmed.push({ path: item.path, label: FIELD_MAP[item.path].label, value: baseline, mode: 'unchanged' });
+      continue; // Equal reconfirmation must not transfer specialist ownership.
+    }
     if (sameInitial && (history.length || (item.path.startsWith('lifestyle_data.') && (user.lifestyleHistory || []).some(x =>
       Object.hasOwn(x.changes?.lifestyle_data || {}, item.path.slice(15))))
       || (source && !isDeepStrictEqual(baseline, source.value)))) {
@@ -33,7 +39,7 @@ function buildConfirmation(user, items, actor, now = new Date()) {
     if (first || sameInitial) {
       set[item.path] = item.value; initial.push(row);
       sources[sourceKey] = { responseId: draft.responseId, questionnaireId: draft.questionnaireId,
-        establishedAt: source?.establishedAt || earlierInitial?.confirmedAt || now, reviewedAt: now, reviewedBy: actor._id, value: item.value };
+        establishedAt: source?.establishedAt || earlierInitial?.confirmedAt || now, reviewedAt: now, reviewedBy: actor._id, reviewedRole: actor.role, value: item.value };
     }
     else if (!isDeepStrictEqual(current ?? '', item.value ?? '')) {
       row.mode = 'append_only';
@@ -43,7 +49,7 @@ function buildConfirmation(user, items, actor, now = new Date()) {
     }
     confirmed.push(row);
   }
-  const entry = { confirmedBy: actor._id, confirmedByName: actor.name || actor.username || '', confirmedAt: now,
+  const entry = { confirmedBy: actor._id, confirmedByRole: actor.role, confirmedByName: actor.name || actor.username || '', confirmedAt: now,
     mode: initial.length ? (changes.length ? 'mixed' : 'initial') : 'append_only', items: confirmed,
     sourceQuestionnaireId: draft.questionnaireId, sourceResponseId: draft.responseId };
   const push = { archiveConfirmLog: { $each: [entry], $slice: -50 } };
