@@ -6545,13 +6545,13 @@ router.delete('/marketing/levels/:id', staffAuth, checkPermission('marketing', '
 
 // ── 官网 AI 咨询线索 ───────────────────────────────────
 // 仅营销权限人员可查看；访客的原始对话不落库，这里只有其主动提交的最少联系信息。
-router.get('/marketing/visitor-leads', staffAuth, checkPermission('marketing', 'view'), async (req, res) => {
+router.get('/marketing/visitor-leads', staffAuth, checkPermission('leads', 'view'), async (req, res) => {
   const status = ['new', 'contacted', 'closed'].includes(req.query.status) ? req.query.status : '';
   const rows = await VisitorLead.find(status ? { status } : {})
     .sort({ createdAt: -1 }).limit(200).populate('assignedTo', 'name').lean();
   res.json({ success: true, data: rows });
 });
-router.patch('/marketing/visitor-leads/:id', staffAuth, checkPermission('marketing', 'edit'), async (req, res) => {
+router.patch('/marketing/visitor-leads/:id', staffAuth, checkPermission('leads', 'edit'), async (req, res) => {
   const { status, contactNote } = req.body || {};
   if (!['new', 'contacted', 'closed'].includes(status)) return res.status(400).json({ success: false, message: '线索状态不正确' });
   const update = {

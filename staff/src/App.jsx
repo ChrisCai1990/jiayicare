@@ -36,6 +36,7 @@ import TeamPage from './pages/TeamPage'
 import ProfilePage from './pages/ProfilePage'
 import NotificationsPage from './pages/NotificationsPage'
 import MarketingPage from './pages/MarketingPage'
+import VisitorLeadsPage from './pages/VisitorLeadsPage'
 import AnnualPlanPage from './pages/AnnualPlanPage'
 import AnnualMgmtPlanPage from './pages/AnnualMgmtPlanPage'
 import PlanModulesPage from './pages/PlanModulesPage'
@@ -61,6 +62,7 @@ export const ROUTE_MODULE = {
   '/products': 'products',
   '/commission': 'commission',
   '/marketing': 'marketing',
+  '/visitor-leads': 'leads',
   '/team': 'team',
   '/operations': 'operations',
   '/daily-checkin': 'daily_checkin',
@@ -199,6 +201,7 @@ export default function App() {
               <Route path="profile" element={<ProfilePage />} />
               <Route path="notifications" element={<NotificationsPage />} />
               <Route path="marketing" element={<MarketingPage />} />
+              <Route path="visitor-leads" element={<VisitorLeadsPage />} />
               <Route path="daily-checkin" element={<DailyCheckinPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/home" replace />} />
