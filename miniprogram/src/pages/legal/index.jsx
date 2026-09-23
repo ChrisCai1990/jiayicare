@@ -10,7 +10,7 @@ const CONTENT = {
   terms: {
     title: '用户协议',
     sections: [
-      { heading: '1. 接受条款', body: '欢迎使用嘉医汇（以下简称"本应用"），由杭州嘉静佑辰科技有限公司运营。您在使用本应用前，请仔细阅读本用户协议。一旦您使用本应用，即表示您已阅读并同意遵守本协议的全部条款。' },
+      { heading: '1. 接受条款', body: '欢迎使用嘉医汇（以下简称"本应用"），由杭州嘉医汇健康管理有限公司运营。您在使用本应用前，请仔细阅读本用户协议。一旦您使用本应用，即表示您已阅读并同意遵守本协议的全部条款。' },
       { heading: '2. 服务内容', body: '本应用提供健康档案整理、体检信息整理、健康数据趋势展示、生活方式管理、健康提醒及健康体检服务。所有服务内容可能因地区、套餐类型不同而有所差异。' },
       { heading: '3. 用户注册与账号安全', body: '您需使用真实手机号注册账号。请妥善保管账号及验证码，不得转让或出借给他人使用。如发现账号被盗用，请立即联系客服。' },
       { heading: '4. 使用规范', body: '您不得利用本应用从事任何违法活动，不得上传虚假健康信息，不得干扰系统正常运行，不得侵犯他人合法权益。' },
@@ -80,7 +80,7 @@ export default function LegalPage() {
         <View style={{ width: '28px' }} />
       </View>
       <View style={{ backgroundColor: '#fff', padding: `${spacing.md}px ${spacing.lg}px`, borderBottom: `1px solid ${colors.borderLight}` }}>
-        <Text style={{ fontSize: '12px', color: colors.textMuted }}>更新日期：2026年1月1日</Text>
+        <Text style={{ fontSize: '12px', color: colors.textMuted }}>更新日期：2026年9月23日</Text>
       </View>
       <View style={{ padding: `${spacing.lg}px` }}>
         {doc.sections.map((s, i) => (
@@ -93,8 +93,9 @@ export default function LegalPage() {
           padding: `${spacing.md}px`, backgroundColor: '#fff', borderRadius: `${radius.md}px`,
           border: `1px solid ${colors.borderLight}`, textAlign: 'center',
         }}>
-          <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block' }}>嘉医汇 · 杭州嘉静佑辰科技有限公司</Text>
+          <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block' }}>嘉医汇 · 杭州嘉医汇健康管理有限公司</Text>
           <Text style={{ fontSize: '12px', color: colors.textMuted }}>客服电话：19106761448</Text>
+          <Text style={{ fontSize: '12px', color: colors.textMuted }}>地址：杭州市萧山区盈丰街道江峰商务名座1幢1015室</Text>
         </View>
       </View>
     </View>

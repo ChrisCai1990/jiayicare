@@ -6,13 +6,14 @@ import { feedbackAPI } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
 
-const TYPES = ['意见建议', '功能异常', '数据问题', '其他'];
+const TYPES = ['意见建议', '功能异常', '数据问题', '账号注销申请', '其他'];
 const FAQ = [
   { q: '如何录入健康数据？', a: '在首页点击“记录健康数据”即可录入。' },
   { q: '我的数据存储在哪里？是否安全？', a: '您的健康数据存储在经过加密的云端服务器，采用身份验证和访问控制，仅您本人及获得授权的服务人员可以查看。' },
   { q: '如何联系健康顾问或健管专员？', a: '进入“消息”页面，选择已为您配置的健康顾问、营养师或健管专员即可发送消息。' },
   { q: '忘记手机号怎么办？', a: '请联系客服（19106761448）提供身份信息，由客服协助进行账号找回或迁移。' },
   { q: '服务包到期后数据是否保留？', a: '服务包到期后，历史健康数据仍会保留；部分新增会员服务将在续约后恢复。' },
+  { q: '如何申请注销账号？', a: '选择“账号注销申请”后提交。我们会先核验身份，并在 3 个工作日内通过“我的反馈”告知处理进度；注销前请确认已了解相关数据处理说明。' },
   { q: 'AI健康规划师的回答是否可以作为诊断依据？', a: '不能。AI健康规划师仅用于健康管理需求梳理与服务规划，不提供诊断、治疗或处方。' },
 ];
 
@@ -81,7 +82,11 @@ export default function HelpFeedbackPage() {
 
       <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', display: 'block', marginBottom: `${spacing.sm}px` }}>意见反馈</Text>
       <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textSecondary, display: 'block', marginBottom: '8px' }}>反馈类型</Text>
-      <Picker mode="selector" range={TYPES} value={TYPES.indexOf(type)} onChange={(e) => setType(TYPES[e.detail.value])}>
+      <Picker mode="selector" range={TYPES} value={TYPES.indexOf(type)} onChange={(e) => {
+        const nextType = TYPES[e.detail.value];
+        setType(nextType);
+        if (nextType === '账号注销申请' && !content.trim()) setContent('我申请注销当前账号。请核验身份后告知后续处理进度。');
+      }}>
         <View style={{ border: `1.5px solid ${colors.border}`, borderRadius: `${radius.sm}px`, padding: '10px 12px', backgroundColor: '#fff', marginBottom: `${spacing.md}px` }}>
           <Text>{type}</Text>
         </View>

@@ -575,7 +575,15 @@ export default function ServiceMallScreen({ navigation, route }) {
   const [detailService, setDetailService]   = useState(null);   // 详情弹窗
   const [selectedService, setSelectedService] = useState(null); // 购买弹窗
   const [purchaseMode, setPurchaseMode]     = useState('consult'); // consult 预约 | pay 付费
-  const openPurchase = (svc, mode) => { setPurchaseMode(mode); setSelectedService(svc); };
+  const openPurchase = (svc, mode) => {
+    if (!user) {
+      navigation.navigate('Login');
+      return;
+    }
+    setPurchaseMode(mode);
+    setSelectedService(svc);
+  };
+  const goProtected = (screen) => navigation.navigate(user ? screen : 'Login');
   const [services, setServices]     = useState([]);
   const [categoryTree, setCategoryTree] = useState([]);
   const [loadingList, setLoadingList] = useState(true);
@@ -638,8 +646,8 @@ export default function ServiceMallScreen({ navigation, route }) {
             isMember={isMember}
             servicePackage={user?.servicePackage}
             daysLeft={daysLeft}
-            onViewOrders={() => navigation.navigate('Orders')}
-            onActivate={() => navigation.navigate('Renewal')}
+            onViewOrders={() => goProtected('Orders')}
+            onActivate={() => goProtected('Renewal')}
           />
         </View>
 

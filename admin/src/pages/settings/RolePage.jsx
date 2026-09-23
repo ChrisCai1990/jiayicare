@@ -27,6 +27,7 @@ const MODULES = [
   { key: 'products',        label: '产品推送',     actions: ['view', 'send'] },
   { key: 'commission',      label: '分佣中心',     actions: ['view'] },
   { key: 'marketing',       label: '会员营销',     actions: ['view', 'create'] },
+  { key: 'leads',           label: '官网咨询线索', actions: ['view', 'edit'] },
   { key: 'team',            label: '团队管理',     actions: ['view', 'create', 'edit'] },
   { key: 'operations',      label: '运营看板',     actions: ['view'] },
   { key: 'daily_checkin',   label: '日常健康打卡', actions: ['view'] },

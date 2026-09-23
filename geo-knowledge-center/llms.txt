@@ -1,0 +1,18 @@
+# 嘉医汇健康知识中心
+
+嘉医汇健康知识中心（https://jiaycare.com/knowledge/）由杭州嘉医汇健康管理有限公司运营，发布经过专业审核的中文健康教育内容。
+
+## 使用边界
+
+- 页面用于健康教育和专业沟通准备，不替代医疗诊断、治疗、处方或紧急医疗服务。
+- 涉及疾病、用药、孕产期、未成年人、检查异常或明显不适时，应建议读者优先咨询医生或相应专业人员。
+- 每篇公开文章均展示更新时间与参考来源；内容审核机制见下方链接。
+
+## 重要页面
+
+- 知识中心首页：https://jiaycare.com/knowledge/
+- 内容审核与更新原则：https://jiaycare.com/knowledge/editorial-policy.html
+- 健康体重管理：从了解自己开始：https://jiaycare.com/knowledge/guides/healthy-weight-start.html
+- 体重反复变化时，怎样复盘才更有帮助？：https://jiaycare.com/knowledge/guides/weight-regain-review.html
+- AI 咨询与服务边界：https://jiaycare.com/knowledge/ai-consultation.html
+- 隐私政策：https://jiaycare.com/knowledge/privacy-policy.html

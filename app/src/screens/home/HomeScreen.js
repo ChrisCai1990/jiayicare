@@ -213,7 +213,7 @@ function GrowthCard({ growth, onCheckin }) {
 
 // ── 主页面 ────────────────────────────────────────────────────────
 export default function HomeScreen({ navigation }) {
-  const { user: authUser, isDemo } = useAuth();
+  const { user: authUser, token, isDemo } = useAuth();
   const [dashData, setDashData]             = useState(null);
   const [scoreHistory, setScoreHistory]     = useState([]);
   const [loading, setLoading]               = useState(true);
@@ -233,9 +233,9 @@ export default function HomeScreen({ navigation }) {
     try {
       const [dashRes, followupRes, tasksRes, servicesRes] =
         await Promise.allSettled([
-          userAPI.getDashboard(),
-          followupTasksAPI.list(),
-          tasksAPI.list(),
+          token ? userAPI.getDashboard() : Promise.resolve(null),
+          token ? followupTasksAPI.list() : Promise.resolve(null),
+          token ? tasksAPI.list() : Promise.resolve(null),
           servicesAPI.list(),
         ]);
 
@@ -256,7 +256,7 @@ export default function HomeScreen({ navigation }) {
       }
     } catch {}
     finally { setLoading(false); setRefreshing(false); }
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     loadData();
@@ -265,7 +265,7 @@ export default function HomeScreen({ navigation }) {
       const pushKey = 'jy_last_push';
       const today = toLocalDateStr(new Date());
       const lastPush = localStorage.getItem(pushKey);
-      if (lastPush !== today) {
+      if (token && lastPush !== today) {
         systemAPI.push().then((res) => {
           localStorage.setItem(pushKey, today);
           // 若浏览器通知已授权且有新推送，弹出系统通知
@@ -275,7 +275,7 @@ export default function HomeScreen({ navigation }) {
         }).catch(() => {}); // 静默失败，不影响首页加载
       }
     } catch {}
-  }, [loadData]);
+  }, [loadData, token]);
 
   // 从录入页返回时自动刷新（focus listener）
   useEffect(() => {
@@ -287,6 +287,7 @@ export default function HomeScreen({ navigation }) {
   }, [navigation, loading, loadData]);
 
   const onRefresh = () => { setRefreshing(true); loadData(); };
+  const goProtected = (screen) => navigation.navigate(token ? screen : 'Login');
 
   // 合并两个来源：dashData 有服务器评分等，authUser 在编辑资料后立即更新（身高体重等）
   const user  = { ...(dashData?.user || {}), ...(authUser || {}) };
@@ -392,7 +393,7 @@ export default function HomeScreen({ navigation }) {
           </View>
           <TouchableOpacity
             style={styles.avatarChip}
-            onPress={() => navigation.navigate('Profile')}
+            onPress={() => goProtected('Profile')}
           >
             <Text style={styles.avatarInitial}>{name[0]}</Text>
           </TouchableOpacity>
@@ -474,7 +475,7 @@ export default function HomeScreen({ navigation }) {
           <GrowthCard growth={dashData?.growth} onCheckin={() => {}} />
           <TouchableOpacity
             style={styles.checkinEntryBtn}
-            onPress={() => navigation.navigate('Checkin')}
+            onPress={() => goProtected('Checkin')}
             activeOpacity={0.85}
           >
             <Ionicons name="checkmark-done-outline" size={20} color={colors.white} />
@@ -489,7 +490,7 @@ export default function HomeScreen({ navigation }) {
               <Text style={styles.sectionTitle}>待办任务</Text>
               <TouchableOpacity
                 style={styles.sectionMore}
-                onPress={() => navigation.navigate('Tasks')}
+                onPress={() => goProtected('Tasks')}
               >
                 <Text style={styles.sectionMoreText}>全部</Text>
                 <Ionicons name="chevron-forward" size={14} color={colors.primary} />
@@ -520,7 +521,7 @@ export default function HomeScreen({ navigation }) {
             {allPendingTaskItems.length > 3 && (
               <TouchableOpacity
                 style={styles.reminderHint}
-                onPress={() => navigation.navigate('Tasks')}
+                onPress={() => goProtected('Tasks')}
                 activeOpacity={0.7}
               >
                 <Ionicons name="ellipsis-horizontal-circle-outline" size={12} color={colors.primary} />
@@ -531,7 +532,7 @@ export default function HomeScreen({ navigation }) {
             {todayReminders.length > 0 && (
               <TouchableOpacity
                 style={styles.reminderHint}
-                onPress={() => navigation.navigate('Reminders')}
+                onPress={() => goProtected('Reminders')}
                 activeOpacity={0.7}
               >
                 <Ionicons name="notifications-outline" size={12} color={colors.primary} />

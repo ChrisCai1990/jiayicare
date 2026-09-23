@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>嘉医汇健康知识中心</title>
+  <id>https://jiaycare.com/knowledge/</id>
+  <link href="https://jiaycare.com/knowledge/feed.xml" rel="self"/>
+  <link href="https://jiaycare.com/knowledge/"/>
+  <updated>2026-09-23T00:00:00Z</updated>
+  <subtitle>经专业审核的健康教育内容</subtitle>
+  <entry>
+    <title>健康体重管理：从了解自己开始</title>
+    <id>https://jiaycare.com/knowledge/guides/healthy-weight-start.html</id>
+    <link href="https://jiaycare.com/knowledge/guides/healthy-weight-start.html"/>
+    <updated>2026-09-23T00:00:00Z</updated>
+    <summary>从记录当前状况、建立可持续饮食和活动习惯，到识别需要专业支持的情况，帮助你以健康教育方式启动第一步。</summary>
+  </entry>
+  <entry>
+    <title>体重反复变化时，怎样复盘才更有帮助？</title>
+    <id>https://jiaycare.com/knowledge/guides/weight-regain-review.html</id>
+    <link href="https://jiaycare.com/knowledge/guides/weight-regain-review.html"/>
+    <updated>2026-09-23T00:00:00Z</updated>
+    <summary>不把体重回升简单归因于意志力；从目标、日常节奏与支持条件出发，找到更可持续的下一步。</summary>
+  </entry>
+</feed>

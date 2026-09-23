@@ -15,6 +15,7 @@ const staffRoleSchema = new mongoose.Schema({
     products:        { type: Object, default: {} },
     commission:      { type: Object, default: {} },
     marketing:       { type: Object, default: {} },
+    leads:           { type: Object, default: {} },
     team:            { type: Object, default: {} },
     operations:      { type: Object, default: {} },
     daily_checkin:   { type: Object, default: {} },
