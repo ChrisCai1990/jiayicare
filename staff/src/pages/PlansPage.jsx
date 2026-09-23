@@ -958,14 +958,14 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
           </>}
           {isExpertAppointment && <>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">门诊类型 *</label><select className="form-input" value={form.clinicType} onChange={e => set('clinicType', e.target.value)}><option value="">请选择</option><option value="general">普通门诊</option><option value="international">国际门诊</option></select></div>
-              <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">费用与保险 *</label><select className="form-input" value={form.insuranceUse} onChange={e => set('insuranceUse', e.target.value)}><option value="">请选择</option><option value="self_pay">自费</option><option value="medical_insurance">医保</option><option value="high_end">使用高端医疗险</option></select></div>
+              <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">门诊类型 *</label><select className="form-input" value={form.clinicType} onChange={e => set('clinicType', e.target.value)}><option value="">请选择</option><option value="general">普通门诊</option><option value="expert">专家门诊</option><option value="special">特需门诊</option><option value="international">国际门诊</option></select></div>
+              <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">费用与保险 *</label><select className="form-input" value={form.insuranceUse} onChange={e => set('insuranceUse', e.target.value)}><option value="">请选择</option><option value="self_pay">自费</option><option value="medical_insurance">医保</option><option value="commercial_insurance">商保</option>{form.insuranceUse === 'high_end' && <option value="high_end">高端医疗险（历史方案）</option>}</select></div>
             </div>
-            {form.insuranceUse === 'high_end' && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            {['high_end', 'commercial_insurance'].includes(form.insuranceUse) && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               {renderField('保险公司', 'insurerName', 0, '保险公司名称（可选）')}
               <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">结算方式</label><select className="form-input" value={form.settlementMethod} onChange={e => set('settlementMethod', e.target.value)}><option value="pending">待核实</option><option value="direct">直付</option><option value="reimbursement">先付后报</option></select></div>
             </div>}
-            {form.insuranceUse === 'high_end' && <div style={{ fontSize: 12, color: '#8A6D3B' }}>健管专员预约前需核实医院、院区、国际门诊及保险直付或报销适用情况。</div>}
+            {['high_end', 'commercial_insurance'].includes(form.insuranceUse) && <div style={{ fontSize: 12, color: '#8A6D3B' }}>健管专员预约前需核实医院、院区、门诊类型及商保直付或报销适用情况。</div>}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">期望开始日期 *</label><input className="form-input" type="date" value={form.preferredDateStart} onChange={e => set('preferredDateStart', e.target.value)} /></div>
               <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">期望结束日期 *</label><input className="form-input" type="date" min={form.preferredDateStart} value={form.preferredDateEnd} onChange={e => set('preferredDateEnd', e.target.value)} /></div>

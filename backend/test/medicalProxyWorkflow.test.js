@@ -396,15 +396,17 @@ test('expert appointment booking completes without a medical assistant', async (
   }
 });
 
-test('high-end insurance booking requires a verified settlement outcome', async () => {
+test('commercial and legacy high-end insurance booking require a verified settlement outcome', async () => {
   const originalOrderFind = Order.findById;
   try {
     Order.findById = () => ({ select: () => ({ lean: async () => ({ serviceName: '专家约诊服务' }) }) });
     const task = { sourceType: 'order', sourceOrderId: 'order-1', workflowKey: 'medical_proxy:booking', assignedTo: 'manager-1' };
-    const formData = { planSnapshot: { serviceContent: '门诊类型：国际门诊；费用与保险：使用高端医疗险' }, preferredDateStart: '2026-09-16', preferredDateEnd: '2026-09-18', appointmentDate: '2026-09-17', appointmentTime: '10:00' };
-    assert.match(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'manager-1', role: 'healthManager' }), /核实高端医疗险/);
-    formData.insuranceOutcome = 'direct_verified';
-    assert.equal(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'manager-1', role: 'healthManager' }), '');
+    for (const label of ['商保', '使用高端医疗险']) {
+      const formData = { planSnapshot: { serviceContent: `门诊类型：国际门诊；费用与保险：${label}` }, preferredDateStart: '2026-09-16', preferredDateEnd: '2026-09-18', appointmentDate: '2026-09-17', appointmentTime: '10:00' };
+      assert.match(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'manager-1', role: 'healthManager' }), /核实商保/);
+      formData.insuranceOutcome = 'direct_verified';
+      assert.equal(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'manager-1', role: 'healthManager' }), '');
+    }
   } finally {
     Order.findById = originalOrderFind;
   }

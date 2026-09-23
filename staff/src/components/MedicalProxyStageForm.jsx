@@ -18,8 +18,8 @@ const parseAppointmentRequirement = text => {
   const baseParts = parts.filter(item => !/^(院区|门诊类型|费用与保险|保险公司|结算方式)：/.test(item))
   return {
     baseContent: baseParts.join('；'), campus: take('院区'),
-    clinicType: take('门诊类型') === '国际门诊' ? 'international' : take('门诊类型') === '普通门诊' ? 'general' : '',
-    insuranceUse: /高端医疗险/.test(take('费用与保险')) ? 'high_end' : take('费用与保险') === '医保' ? 'medical_insurance' : take('费用与保险') === '自费' ? 'self_pay' : '',
+    clinicType: ({ '普通门诊': 'general', '专家门诊': 'expert', '特需门诊': 'special', '国际门诊': 'international' })[take('门诊类型')] || '',
+    insuranceUse: ({ '自费': 'self_pay', '医保': 'medical_insurance', '商保': 'commercial_insurance', '使用高端医疗险': 'high_end' })[take('费用与保险')] || '',
     insurerName: take('保险公司'),
     settlementMethod: ({ '直付': 'direct', '先付后报': 'reimbursement', '待核实': 'pending' })[take('结算方式')] || 'pending',
   }
@@ -28,10 +28,10 @@ const parseAppointmentRequirement = text => {
 const formatAppointmentRequirement = data => [
   data.baseContent,
   data.campus && `院区：${data.campus}`,
-  data.clinicType && `门诊类型：${data.clinicType === 'international' ? '国际门诊' : '普通门诊'}`,
-  data.insuranceUse && `费用与保险：${data.insuranceUse === 'high_end' ? '使用高端医疗险' : data.insuranceUse === 'medical_insurance' ? '医保' : '自费'}`,
-  data.insuranceUse === 'high_end' && data.insurerName && `保险公司：${data.insurerName}`,
-  data.insuranceUse === 'high_end' && `结算方式：${({ direct: '直付', reimbursement: '先付后报' })[data.settlementMethod] || '待核实'}`,
+  data.clinicType && `门诊类型：${({ general: '普通门诊', expert: '专家门诊', special: '特需门诊', international: '国际门诊' })[data.clinicType] || '待核实'}`,
+  data.insuranceUse && `费用与保险：${({ self_pay: '自费', medical_insurance: '医保', commercial_insurance: '商保', high_end: '使用高端医疗险' })[data.insuranceUse] || '待核实'}`,
+  ['high_end', 'commercial_insurance'].includes(data.insuranceUse) && data.insurerName && `保险公司：${data.insurerName}`,
+  ['high_end', 'commercial_insurance'].includes(data.insuranceUse) && `结算方式：${({ direct: '直付', reimbursement: '先付后报' })[data.settlementMethod] || '待核实'}`,
 ].filter(Boolean).join('；')
 
 export function validateMedicalProxyStage(stage, value) {
@@ -52,7 +52,7 @@ export function validateMedicalProxyStage(stage, value) {
   if (stage === 'booking' && supplementProxy && ['supplementName', 'supplementBrand', 'supplementSpecification', 'supplementQuantity'].some(key => !value[key]?.trim())) return '请先确认营养素名称、品牌、规格和购买数量'
   if (stage === 'booking' && (value.medicationProxy === true || supplementProxy || /代配药|代取药/.test(`${value.planSnapshot?.serviceName || ''} ${value.planSnapshot?.serviceContent || ''}`)) && !['self_pay', 'medical_insurance', 'commercial_insurance'].includes(value.paymentMethod)) return '请选择支付方式'
   if (stage === 'booking' && value.paymentMethod === 'medical_insurance' && !['electronic', 'physical'].includes(value.medicalInsuranceCardType)) return '请确认使用电子医保卡还是实体医保卡'
-  if (stage === 'booking' && /(?:保险类型：高端险|费用与保险：使用高端医疗险)/.test(value.planSnapshot?.serviceContent || '') && !['direct_verified', 'reimbursement_verified', 'self_pay_confirmed'].includes(value.insuranceOutcome)) return '请核实高端医疗险结算方式，并记录最终办理结果'
+  if (stage === 'booking' && /(?:保险类型：高端险|费用与保险：(使用高端医疗险|商保))/.test(value.planSnapshot?.serviceContent || '') && !['direct_verified', 'reimbursement_verified', 'self_pay_confirmed'].includes(value.insuranceOutcome)) return '请核实商保结算方式，并记录最终办理结果'
   const appointmentRequirement = stage === 'appointment_review' ? { ...parseAppointmentRequirement(value.serviceContent), ...value } : null
   if (stage === 'appointment_review' && (!appointmentRequirement.baseContent?.trim() || ['clinicType', 'insuranceUse'].some(key => !appointmentRequirement[key]?.trim()) || !value.preferredDateStart || !value.preferredDateEnd || value.preferredDateEnd < value.preferredDateStart)) return '请保留原约诊需求，并完善门诊类型、费用与保险及期望日期区间'
   if (stage === 'post_visit_audit' && (!value.reportIds?.length && !value.noMaterialsConfirmed)) return '请选择就诊后资料，或确认本次无资料'
@@ -82,7 +82,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
   const appointmentRequirementText = value.planSnapshot?.serviceContent || task?.formData?.planSnapshot?.serviceContent || task?.sourceOrderId?.serviceRequirements || ''
   const appointmentRequirement = parseAppointmentRequirement(appointmentRequirementText)
   const isExpertAppointment = /专家约诊|专家门诊预约/.test(`${task?.theme || ''} ${task?.sourceOrderId?.serviceName || ''}`)
-  const isHighEndInsurance = /(?:保险类型：高端险|费用与保险：使用高端医疗险)/.test(appointmentRequirementText)
+  const isHighEndInsurance = /(?:保险类型：高端险|费用与保险：(使用高端医疗险|商保))/.test(appointmentRequirementText)
   const isMedicationProxy = value.medicationProxy === true || /代配药|代取药/.test(`${task?.theme || ''} ${task?.sourceOrderId?.serviceName || ''}`)
   const isSupplementProxy = value.supplementProxy === true || /代配营养素/.test(`${task?.theme || ''} ${task?.sourceOrderId?.serviceName || ''}`)
   const isMedicalEscort = value.medicalEscort === true || value.planSnapshot?.medicalEscort === true || task?.formData?.medicalEscort === true || task?.sourceOrderId?.medicalProxyPlan?.medicalEscort === true || /陪同就医|就医陪同|陪同看诊|陪同检查|陪同体检|陪同治疗/.test(`${task?.theme || ''} ${task?.sourceOrderId?.serviceName || ''}`)
@@ -118,10 +118,10 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>原约诊需求（已自动带入，可修正）<textarea className="form-control" rows={3} value={requirement.baseContent || ''} onChange={e => setRequirement('baseContent', e.target.value)} /></label>
     {requirementInput('campus', '院区（新增）', '如：庆春院区')}
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-      <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>门诊类型 *<select className="form-control" value={requirement.clinicType || ''} onChange={e => setRequirement('clinicType', e.target.value)}><option value="">请选择</option><option value="general">普通门诊</option><option value="international">国际门诊</option></select></label>
-      <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>费用与保险 *<select className="form-control" value={requirement.insuranceUse || ''} onChange={e => setRequirement('insuranceUse', e.target.value)}><option value="">请选择</option><option value="self_pay">自费</option><option value="medical_insurance">医保</option><option value="high_end">使用高端医疗险</option></select></label>
+      <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>门诊类型 *<select className="form-control" value={requirement.clinicType || ''} onChange={e => setRequirement('clinicType', e.target.value)}><option value="">请选择</option><option value="general">普通门诊</option><option value="expert">专家门诊</option><option value="special">特需门诊</option><option value="international">国际门诊</option></select></label>
+      <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>费用与保险 *<select className="form-control" value={requirement.insuranceUse || ''} onChange={e => setRequirement('insuranceUse', e.target.value)}><option value="">请选择</option><option value="self_pay">自费</option><option value="medical_insurance">医保</option><option value="commercial_insurance">商保</option>{requirement.insuranceUse === 'high_end' && <option value="high_end">高端医疗险（历史方案）</option>}</select></label>
     </div>
-    {requirement.insuranceUse === 'high_end' && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>{requirementInput('insurerName', '保险公司')}<label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>结算方式<select className="form-control" value={requirement.settlementMethod || 'pending'} onChange={e => setRequirement('settlementMethod', e.target.value)}><option value="pending">待核实</option><option value="direct">直付</option><option value="reimbursement">先付后报</option></select></label></div>}
+    {['high_end', 'commercial_insurance'].includes(requirement.insuranceUse) && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>{requirementInput('insurerName', '保险公司')}<label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>结算方式<select className="form-control" value={requirement.settlementMethod || 'pending'} onChange={e => setRequirement('settlementMethod', e.target.value)}><option value="pending">待核实</option><option value="direct">直付</option><option value="reimbursement">先付后报</option></select></label></div>}
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>{input('preferredDateStart', '期望开始日期', 1, 'date')}{input('preferredDateEnd', '期望结束日期', 1, 'date')}</div>
   </div>
   }
@@ -294,7 +294,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     {input('appointmentTime', '实际约诊时间', 1, 'time')}
     {value.appointmentDate && value.preferredDateStart && value.preferredDateEnd && (value.appointmentDate < value.preferredDateStart || value.appointmentDate > value.preferredDateEnd) && input('dateDifferenceNote', '超出期望区间说明及客户确认情况', 3)}
     {isHighEndInsurance && <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>
-      高端险实际结算核实结果 *
+      商保实际结算核实结果 *
       <span style={{ color: '#63766D', fontSize: 12, fontWeight: 400 }}>健康顾问记录的客户期望：{({ direct: '直付', reimbursement: '先付后报', pending: '待确认' })[appointmentRequirement.settlementMethod] || '待确认'}。请按医院或保险方的实际答复确认。</span>
       <select className="form-control" value={value.insuranceOutcome || ''} onChange={e => set('insuranceOutcome', e.target.value)}>
         <option value="">请选择核实结果</option><option value="direct_verified">已核实可直付</option><option value="reimbursement_verified">已核实先付后报</option><option value="self_pay_confirmed">保险不适用，客户确认自费</option>

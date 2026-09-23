@@ -493,10 +493,10 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
     plan.notes && `备注：${String(plan.notes).trim()}`,
   ] : [
     plan.hospital, plan.campus, plan.department, plan.expert,
-    `门诊类型：${plan.clinicType === 'international' ? '国际门诊' : '普通门诊'}`,
-    `费用与保险：${plan.insuranceUse === 'high_end' ? '使用高端医疗险' : plan.insuranceUse === 'medical_insurance' ? '医保' : '自费'}`,
-    plan.insuranceUse === 'high_end' && plan.insurerName && `保险公司：${String(plan.insurerName).trim()}`,
-    plan.insuranceUse === 'high_end' && `结算方式：${({ direct: '直付', reimbursement: '先付后报' })[plan.settlementMethod] || '待核实'}`,
+    `门诊类型：${({ general: '普通门诊', expert: '专家门诊', special: '特需门诊', international: '国际门诊' })[plan.clinicType] || '待核实'}`,
+    `费用与保险：${({ self_pay: '自费', medical_insurance: '医保', commercial_insurance: '商保', high_end: '使用高端医疗险' })[plan.insuranceUse] || '待核实'}`,
+    ['high_end', 'commercial_insurance'].includes(plan.insuranceUse) && plan.insurerName && `保险公司：${String(plan.insurerName).trim()}`,
+    ['high_end', 'commercial_insurance'].includes(plan.insuranceUse) && `结算方式：${({ direct: '直付', reimbursement: '先付后报' })[plan.settlementMethod] || '待核实'}`,
   ]).filter(Boolean).join('；');
   if (!patient.assignedHealthManager || ((!appointmentOnly || supplyProxy || medicalEscort) && !patient.assignedHealthPlanner)) {
     throw Object.assign(new Error(appointmentOnly ? '请先为客户分配健管专员' : '请先为客户分配健康规划师和健管专员'), { status: 409 });
@@ -686,7 +686,7 @@ async function validateMedicalProxyStage(task, body, staff) {
     if (supplementBooking && !['self_pay', 'commercial_insurance'].includes(data.paymentMethod)) return '请选择支付方式（自费或商保）';
     if (data.paymentMethod === 'medical_insurance' && !['electronic', 'physical'].includes(data.medicalInsuranceCardType)) return '请确认使用电子医保卡还是实体医保卡';
     const appointmentRequirement = nonempty(data.planSnapshot?.serviceContent || bookingOrder?.serviceRequirements);
-    if (/(?:保险类型：高端险|费用与保险：使用高端医疗险)/.test(appointmentRequirement) && !['direct_verified', 'reimbursement_verified', 'self_pay_confirmed'].includes(data.insuranceOutcome)) return '请核实高端医疗险实际结算方式，并选择办理结果';
+    if (/(?:保险类型：高端险|费用与保险：(使用高端医疗险|商保))/.test(appointmentRequirement) && !['direct_verified', 'reimbursement_verified', 'self_pay_confirmed'].includes(data.insuranceOutcome)) return '请核实商保实际结算方式，并选择办理结果';
     if (/专家约诊/.test(bookingOrder?.serviceName || '') && /建议医院：/.test(appointmentRequirement) && !nonempty(data.campus)) return '请填写实际预约院区';
     if (needsPlannerDispatch(data, bookingOrder?.serviceName)) {
       const patient = await User.findById(task.patientId).select('assignedHealthPlanner').lean();
