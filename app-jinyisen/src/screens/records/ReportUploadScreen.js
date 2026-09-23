@@ -1,3 +1,4 @@
+import CareReportUpload from './CareReportUpload';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
@@ -913,7 +914,10 @@ function TrendsTab({ reports, onPreview }) {
   );
 }
 
-export default function ReportUploadScreen({ navigation, route }) {
+export default function ReportUploadScreen(props) {
+  return props.route?.params?.careFlowId ? <CareReportUpload flowId={props.route.params.careFlowId} navigation={props.navigation}/> : <RegularReportUploadScreen {...props}/>;
+}
+function RegularReportUploadScreen({ navigation, route }) {
   const { isDemo } = useAuth();
   const initialType = route?.params?.type || null;
   const [reports, setReports]       = useState([]);

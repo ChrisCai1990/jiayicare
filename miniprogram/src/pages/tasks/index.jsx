@@ -8,7 +8,7 @@ import Icon from '../../components/Icon';
 
 const TIME_TABS = ['全部', '今日', '本周', '本月'];
 
-const dateOf = item => item.dueDate || item.date || item.scheduledAt || item.createdAt;
+const dateOf = item => item.dueDate || item.date || item.scheduledAt || (item.customerReadOnly ? '' : item.createdAt);
 const dateKey = item => dateOf(item) ? String(dateOf(item)).slice(0, 10) : '';
 
 export default function TasksPage() {
@@ -75,10 +75,10 @@ export default function TasksPage() {
             <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: '14px', fontWeight: 700, color: item.sourceType === 'symptom' ? colors.danger : colors.textPrimary, display: 'block' }}>{item.sourceType === 'symptom' ? '不适主诉待健康顾问处理' : (item.title || item.theme || '随访计划')}</Text>
-                <Text style={{ fontSize: '12px', color: colors.textMuted }}>{item.staffId?.name || item.assignee || '健康管理团队'} · {dateKey(item)}</Text>
-                {!!item.content && <Text style={{ fontSize: '12px', color: colors.textSecondary, marginTop: '4px' }}>{item.content}</Text>}
+                <Text style={{ fontSize: '12px', color: colors.textMuted }}>{item.staffId?.name || item.assignee || '健康管理团队'} · {dateKey(item)||item.scheduleLabel} {item.dueTime||''}</Text>
+                {!!item.description && <Text style={{display:'block',whiteSpace:'pre-wrap',lineHeight:'24px',fontSize:'13px',marginTop:'8px'}}>{item.description}</Text>}{!!item.content && <Text style={{ fontSize: '12px', color: colors.textSecondary, marginTop: '4px' }}>{item.content}</Text>}
               </View>
-              <View onClick={() => item.workflowKey === 'medical_reminder:documents' ? Taro.navigateTo({ url: '/pages/records/upload/index' }) : item._kind === 'followup' ? doneFollowup(item) : completeTask(item._id)} style={{ padding: '7px 14px', backgroundColor: colors.primary10, borderRadius: `${radius.full}px` }}><Text style={{ fontSize: '12px', color: colors.primary, fontWeight: 700 }}>{item.workflowKey === 'medical_reminder:documents' ? '上传资料' : '完成'}</Text></View>
+              <View onClick={() => item.canUploadReports ? Taro.navigateTo({url:'/pages/tasks/report-upload/index?flowId='+item.careFlowId}) : item.customerReadOnly ? Taro.showModal({title:item.title,content:item.description,showCancel:false}) : item.workflowKey === 'medical_reminder:documents' ? Taro.navigateTo({ url: '/pages/records/upload/index' }) : item._kind === 'followup' ? doneFollowup(item) : completeTask(item._id)} style={{ padding: '7px 14px', backgroundColor: colors.primary10, borderRadius: `${radius.full}px` }}><Text style={{ fontSize: '12px', color: colors.primary, fontWeight: 700 }}>{item.canUploadReports ? '上传本次资料' : item.customerReadOnly ? '查看安排' : item.workflowKey === 'medical_reminder:documents' ? '上传资料' : '完成'}</Text></View>
             </View>
           </View>
         ))}

@@ -4,6 +4,7 @@
 //  - 其余 API 分组/方法/路径/参数与 app 端保持一致（同一套后端）
 import Taro from '@tarojs/taro';
 
+
 const BASE_URL = 'https://jiaycare.com/api';
 
 // 后端返回的图片等资源常是相对路径(/api/uploads/xxx.png)，小程序 <Image> 需要完整 URL 才能加载。
@@ -201,6 +202,9 @@ export const supplementsAPI = {
 
 // ── Tasks ─────────────────────────────────────────────────────────
 export const tasksAPI = {
+  careReports: id => request(`/tasks/care-flow/${id}/reports`),
+  addCareReport: (id,data) => request(`/tasks/care-flow/${id}/reports`,{method:'POST',body:JSON.stringify(data)}),
+  completeCareReports: id => request(`/tasks/care-flow/${id}/reports/complete`,{method:'POST',body:JSON.stringify({confirmed:true})}),
   list: () => request('/tasks'),
   setStatus: (id, status) => request(`/tasks/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
   complete: (id) => request(`/tasks/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'completed' }) }),

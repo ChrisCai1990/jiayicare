@@ -3,6 +3,11 @@ const auth = require('../middleware/auth');
 const Task = require('../models/Task');
 const AbnormalReview = require('../models/AbnormalReview');
 const router = express.Router();
+const customerUploads=require('../utils/careFlowCustomerUpload').runtime();
+const uploadAction=fn=>async(req,res)=>{try{res.set('Cache-Control','no-store');res.json({success:true,data:await fn(req.params.flowId,req.user,req.body)});}catch(e){res.status(e.statusCode||500).json({success:false,message:e.message});}};
+router.get('/care-flow/:flowId/reports',auth,uploadAction(customerUploads.view));
+router.post('/care-flow/:flowId/reports',auth,uploadAction(customerUploads.add));
+router.post('/care-flow/:flowId/reports/complete',auth,uploadAction(customerUploads.complete));
 
 const VALID_TYPES     = ['record', 'followup', 'questionnaire', 'checkup', 'consultation', 'upload'];
 const VALID_PRIORITIES = ['high', 'medium', 'low'];
