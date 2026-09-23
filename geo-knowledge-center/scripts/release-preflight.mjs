@@ -17,11 +17,15 @@ function read(relativePath) {
 }
 
 const indexPage = read('index.html');
+const consultationPage = read('start-here.html');
 const robots = read('robots.txt');
 const sitemap = read('sitemap.xml');
 const privacyPage = path.join(siteDirectory, 'privacy-policy.html');
 
 if (!indexPage.includes('嘉医汇健康知识中心')) blockers.push('首页缺少知识中心标题。');
+if (!indexPage.includes('start-here.html') || !consultationPage.includes('tel:19106761448')) {
+  blockers.push('咨询承接页或客服电话入口配置不完整。');
+}
 if (!robots.includes('https://jiaycare.com/sitemap.xml')) blockers.push('robots.txt 未指向正式域名的站点地图。');
 if (!sitemap.includes('https://jiaycare.com/')) blockers.push('sitemap.xml 未使用正式域名。');
 if (!fs.existsSync(privacyPage)) blockers.push('缺少已法务确认的 privacy-policy.html；不可配置 App 的公开隐私政策链接。');
