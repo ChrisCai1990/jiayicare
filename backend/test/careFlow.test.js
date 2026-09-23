@@ -43,6 +43,17 @@ function setup(stage='booking'){
   return {flows,tasks,reports,api,Flow,Task};
 }
 async function complete(s,value){const f=s.flows.get('flow');return s.api.action('flow',actor(f.state.stage),{action:'complete',revision:f.revision,confirmed:true,correction:'已核对修订',value});}
+test('专员提交待预约检查可进入上传环节；遗漏字段明确提示且不推进状态',async()=>{
+  const s=setup('execute');
+  const exam={id:'exam-0',type:'exam',title:'肾脏超声',hospital:'医院甲',department:'超声科',mode:'onsite'};
+  s.flows.get('flow').state.data.booking={entries:[exam]};
+  const value={text:'专家沟通已完成',examinations:[{...exam,status:'pending',note:'先开单，缴费，再预约'}]};
+  await assert.rejects(complete(s,{...value,text:''}),/专家沟通与实际办理结果/);
+  await assert.rejects(complete(s,{...value,examinations:[{...value.examinations[0],department:''}]}),/第1项检查：请填写检查科室/);
+  assert.equal(s.flows.get('flow').state.stage,'execute');
+  const saved=await complete(s,value);
+  assert.equal(saved.state.stage,'upload');assert.equal(saved.state.data.execute.onsite[0].status,'pending');
+});
 
 test('全部人工环节可定向回退；修订直返且原年度内容不变',()=>{
   for(const stage of config.stages.slice(1))for(const target of config.targets(state(stage))){

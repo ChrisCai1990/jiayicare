@@ -24,7 +24,7 @@ export default function AnnualDispatchCard({ task, staff, onLinked }) {
     try { const r = await fn(task._id, payload); setData(r.data); onLinked?.(tools.isExecution(task) ? r.data.child : r.data.task) }
     catch (e) { setError(e.message); await load().catch(() => {}) } finally { setBusy(false) }
   }
-  if (task.careFlowId || fullFlow) return <CareFlowCard task={task} staff={staff} initialData={flowData} />
+  if (task.careFlowId || fullFlow) return <CareFlowCard task={task} staff={staff} onCompleted={()=>onLinked?.(null)} initialData={flowData} />
   if (!data) return <p role={error ? 'alert' : undefined}>{error || '正在加载派单事项…'}</p>
   const { parent, child } = data, request = data.task, d = request.annualDispatch
   const item = d?.itemSnapshot || request.formData?.serviceRequest?.itemSnapshot || {}
