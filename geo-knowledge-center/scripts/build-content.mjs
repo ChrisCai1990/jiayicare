@@ -101,6 +101,11 @@ function renderArticle(article, previewLabel) {
         <ul>${sources}
         </ul>
       </section>
+      <section class="article-cta">
+        <h2>需要进一步了解服务安排？</h2>
+        <p>如需梳理非医疗健康管理服务需求，可先使用咨询准备助手；请勿提交病历、检查报告、指标或用药信息。</p>
+        <a class="button button-primary" href="../ai-consultation.html?source=geo_${escapeHtml(article.slug)}">AI 梳理咨询需求</a>
+      </section>
       <aside class="medical-note">本页用于健康教育，不替代医生的诊断、治疗建议或紧急医疗服务。如有不适或个体化健康问题，请及时咨询专业人员。</aside>
     </article>
     <p class="content-governance"><a href="../editorial-policy.html">查看内容审核与更新原则</a></p>

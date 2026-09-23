@@ -32,6 +32,8 @@
   <script>
     (function () {
       var consent = document.getElementById('consent'), chat = document.getElementById('chat'), message = document.getElementById('message'), history = [];
+      var source = new URLSearchParams(window.location.search).get('source') || 'website_ai';
+      if (!/^[a-z0-9_-]{1,40}$/i.test(source)) source = 'website_ai';
       function append(text, kind) { var el = document.createElement('p'); el.className = kind === 'user' ? 'user-message' : 'assistant-message'; el.textContent = text; chat.appendChild(el); chat.scrollTop = chat.scrollHeight; }
       function consented() { if (consent.checked) return true; alert('请先阅读并勾选信息处理说明。'); return false; }
       document.querySelectorAll('[data-topic]').forEach(function (button) { button.addEventListener('click', function () { message.value = '我想了解' + button.dataset.topic; message.focus(); }); });
@@ -42,7 +44,7 @@
         catch (error) { append(error.message + ' 也可拨打客服电话19106761448。', 'assistant'); }
       });
       document.getElementById('handoff-form').addEventListener('submit', async function (event) {
-        event.preventDefault(); if (!consented()) return; var form = new FormData(event.currentTarget), result = document.getElementById('handoff-result'); var payload = { consent: true }; form.forEach(function (value, key) { payload[key] = value; });
+        event.preventDefault(); if (!consented()) return; var form = new FormData(event.currentTarget), result = document.getElementById('handoff-result'); var payload = { consent: true, source: source }; form.forEach(function (value, key) { payload[key] = value; });
         try { var response = await fetch('/api/visitor-assistant/handoff', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); var body = await response.json(); if (!response.ok || !body.success) throw new Error(body.message || '提交失败'); result.textContent = body.message; event.currentTarget.reset(); }
         catch (error) { result.textContent = error.message; }
       });
