@@ -21,6 +21,9 @@ const sitemapPath = isPreview
 const cataloguePath = isPreview
   ? path.join(siteDirectory, '.preview', 'published-articles.json')
   : path.join(siteDirectory, 'published-articles.json');
+const feedPath = isPreview
+  ? path.join(siteDirectory, '.preview', 'feed.xml')
+  : path.join(siteDirectory, 'feed.xml');
 const siteUrl = process.env.SITE_URL || 'https://jiaycare.com/knowledge';
 const validStatuses = new Set(['draft', 'review', 'published']);
 
@@ -124,6 +127,11 @@ const catalogue = eligible.map((article) => ({
 fs.mkdirSync(path.dirname(cataloguePath), { recursive: true });
 fs.writeFileSync(cataloguePath, `${JSON.stringify(catalogue, null, 2)}\n`, 'utf8');
 
+if (!isPreview) {
+  const feed = `<?xml version="1.0" encoding="UTF-8"?>\n<feed xmlns="http://www.w3.org/2005/Atom">\n  <title>嘉医汇健康知识中心</title>\n  <id>${siteUrl.replace(/\/$/, '')}/</id>\n  <link href="${siteUrl.replace(/\/$/, '')}/feed.xml" rel="self"/>\n  <link href="${siteUrl.replace(/\/$/, '')}/"/>\n  <updated>${eligible[0]?.updatedAt || '2026-09-23'}T00:00:00Z</updated>\n  <subtitle>经专业审核的健康教育内容</subtitle>\n${eligible.map((article) => `  <entry>\n    <title>${escapeHtml(article.title)}</title>\n    <id>${siteUrl.replace(/\/$/, '')}/guides/${article.slug}.html</id>\n    <link href="${siteUrl.replace(/\/$/, '')}/guides/${article.slug}.html"/>\n    <updated>${escapeHtml(article.updatedAt)}T00:00:00Z</updated>\n    <summary>${escapeHtml(article.summary)}</summary>\n  </entry>`).join('\n')}\n</feed>\n`;
+  fs.writeFileSync(feedPath, feed, 'utf8');
+}
+
 const staticGuides = isPublish && fs.existsSync(path.join(siteDirectory, 'guides'))
   ? fs.readdirSync(path.join(siteDirectory, 'guides'))
       .filter((file) => file.endsWith('.html') && !eligible.some((article) => `${article.slug}.html` === file))
@@ -134,7 +142,9 @@ const staticPages = ['index.html', 'start-here.html', 'ai-consultation.html', 'e
 const urls = isPreview ? generatedGuides : [...staticPages, ...staticGuides, ...generatedGuides];
 const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((url) => {
   const resolvedUrl = url === 'index.html' ? '' : url;
-  return `  <url><loc>${siteUrl.replace(/\/$/, '')}/${resolvedUrl}</loc></url>`;
+  const article = eligible.find((item) => `guides/${item.slug}.html` === url);
+  const lastModified = article ? `<lastmod>${article.updatedAt}</lastmod>` : '';
+  return `  <url><loc>${siteUrl.replace(/\/$/, '')}/${resolvedUrl}</loc>${lastModified}</url>`;
 }).join('\n')}\n</urlset>\n`;
 fs.mkdirSync(path.dirname(sitemapPath), { recursive: true });
 fs.writeFileSync(sitemapPath, sitemap, 'utf8');
