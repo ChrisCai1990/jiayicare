@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, Input, Button, Picker } from '@tarojs/components';
+import { View, Text, Input, Button, Picker, Switch } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius } from '../../theme';
 import { userAPI } from '../../services/api';
@@ -20,6 +20,7 @@ export default function OnboardingPage() {
   const [codeSending, setCodeSending] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [healthMonitoringConsent, setHealthMonitoringConsent] = useState(false);
 
   const canSubmit = name.trim() && idNumber.trim() && contactPhone.trim() && residence.length >= 2 && !submitting;
   const needsPhoneVerification = contactPhone.trim() !== (user?.phone || '').trim();
@@ -48,6 +49,7 @@ export default function OnboardingPage() {
         contactPhone: contactPhone.trim(),
         verificationCode: needsPhoneVerification ? verificationCode.trim() : undefined,
         residence: { province: residence[0], city: residence[1], district: residence[2] || '' },
+        healthMonitoringConsent,
       });
       if (res.success) {
         if (res.data.token) await login({ ...res.data.user, onboardingCompleted: true }, res.data.token);
@@ -140,6 +142,11 @@ export default function OnboardingPage() {
             <View style={{ backgroundColor: colors.surface, borderRadius: `${radius.sm}px`, border: `1.5px solid ${colors.border}`, padding: '12px' }}><Text style={{ fontSize: '15px', color: residence.length ? colors.textPrimary : colors.textMuted }}>{residence.length ? residence.join(' ') : '请选择省 / 市 / 区'}</Text></View>
           </Picker>
           <Text style={{ fontSize: '11px', color: colors.textMuted, marginTop: '6px', display: 'block' }}>仅用于匹配本地健康服务，不读取手机定位。</Text>
+        </View>
+
+        <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: `${spacing.lg}px` }}>
+          <Text style={{ flex: 1, fontSize: '13px', color: colors.textSecondary }}>同意开启免费血压、体重监测提醒（可在提醒管理中随时关闭）</Text>
+          <Switch checked={healthMonitoringConsent} onChange={e => setHealthMonitoringConsent(e.detail.value)} color={colors.primary} />
         </View>
 
         {!!errorMsg && (

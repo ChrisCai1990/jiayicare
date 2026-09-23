@@ -18,6 +18,7 @@ const CATEGORIES = [
 export default function RemindersPage() {
   const { statusBarHeight } = useNavBar();
   const [list, setList] = useState([]);
+  const [monitoringConsent, setMonitoringConsent] = useState(false);
   const [loading, setLoading] = useState(true);
   const [filterCat, setFilterCat] = useState('全部');
   const [showAdd, setShowAdd] = useState(false);
@@ -26,7 +27,7 @@ export default function RemindersPage() {
 
   const load = useCallback(() => {
     setLoading(true);
-    remindersAPI.list().then((res) => { if (res.success) setList(res.data || []); })
+    remindersAPI.list().then((res) => { if (res.success) { setList(res.data || []); setMonitoringConsent(res.healthMonitoringConsent === true); } })
       .catch(() => {}).finally(() => setLoading(false));
   }, []);
 
@@ -34,6 +35,11 @@ export default function RemindersPage() {
 
   const toggle = async (id) => {
     try { await remindersAPI.toggle(id); load(); } catch {}
+  };
+
+  const toggleMonitoringConsent = async (enabled) => {
+    try { await remindersAPI.setMonitoringConsent(enabled); setMonitoringConsent(enabled); load(); }
+    catch (err) { Taro.showToast({ title: err.message || '设置失败', icon: 'none' }); load(); }
   };
 
   const remove = async (item) => {
@@ -75,6 +81,10 @@ export default function RemindersPage() {
       </View>
 
       <View style={{ padding: `${spacing.lg}px` }}>
+      <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: `${spacing.md}px`, backgroundColor: '#fff', borderRadius: `${radius.md}px`, marginBottom: `${spacing.md}px` }}>
+        <View style={{ flex: 1 }}><Text style={{ display: 'block', fontSize: '14px', fontWeight: 600 }}>免费血压、体重提醒</Text><Text style={{ fontSize: '12px', color: colors.textMuted }}>无需年度方案；开启后按健康情况提醒，可随时关闭</Text></View>
+        <Switch checked={monitoringConsent} onChange={e => toggleMonitoringConsent(e.detail.value)} color={colors.primary} />
+      </View>
       <View style={{ whiteSpace: 'nowrap', overflowX: 'auto', marginBottom: `${spacing.md}px` }}>
         {['全部', ...CATEGORIES.map(c => c[0])].map(key => {
           const label = key === '全部' ? '全部' : CATEGORIES.find(c => c[0] === key)?.[1];

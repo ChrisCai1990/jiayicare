@@ -566,7 +566,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
   const [form, setForm] = useState({
     name: '', templateName: '', assistanceType: '', hospital: '', campus: '', department: '', expert: '', clinicType: '', insuranceUse: '', insurerName: '', settlementMethod: 'pending',
     staffId: '', staffName: '', supervisorId: '', followUpPlanId: '', followUpPlanName: '', followUpPlans: [], serviceDomain: '', serviceMode: '', serviceDate: '', serviceTime: '', escortDepartments: [{ department: '', expert: '', time: '' }], escortExams: [{ item: '', department: '', expert: '', time: '', precautions: '' }], escortTreatments: [{ item: '', department: '', time: '', medicalOrder: '', precautions: '', course: '' }], transport: '', tasks: '', hotel: '', notes: '',
-    preferredDateStart: '', preferredDateEnd: '', sourceMedicationId: '', medicationOptions: [], medicationName: '', medicationBrand: '', medicationSpecification: '', medicationQuantity: '', medicationAutoFilled: false, medicationAutoSource: '', institutionType: '', platformName: '', pharmacyName: '', pharmacyAddress: '', purchasePath: '', paymentMethod: '', deliveryTime: '',
+    preferredDateStart: '', preferredDateEnd: '', sourceMedicationId: '', medicationOptions: [], medicationItems: [{ sourceMedicationId: '', medicationName: '', medicationBrand: '', medicationSpecification: '', medicationQuantity: '' }], medicationName: '', medicationBrand: '', medicationSpecification: '', medicationQuantity: '', medicationAutoFilled: false, medicationAutoSource: '', institutionType: '', platformName: '', pharmacyName: '', pharmacyAddress: '', purchasePath: '', paymentMethod: '', deliveryTime: '', agencyExams: [{ item: '', department: '', expert: '', notes: '' }],
   })
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
 
@@ -581,6 +581,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
   const isExpertAppointment = selectedTpl?.content?.assistanceType === 'expert_appointment' || /专家约诊/.test(selectedTpl?.name || '')
   const isMedicationProxy = /代配药|代取药/.test(selectedTpl?.name || '')
   const isAgencyService = selectedTpl?.content?.assistanceType === 'agency' || (/医务代办服务-/.test(selectedTpl?.name || '') && !isMedicationProxy)
+  const isAgencyExamBooking = isAgencyService && /代约检/.test(selectedTpl?.name || '')
   const isExamEscort = /陪同检查/.test(selectedTpl?.name || '')
   const isTreatmentEscort = /陪同治疗/.test(selectedTpl?.name || '')
   const isMedicalEscort = isExamEscort || isTreatmentEscort || /陪同就医|就医陪同/.test(selectedTpl?.name || '')
@@ -597,9 +598,15 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
 
   useEffect(() => {
     if (!patientId || !isMedicationProxy) return
+    let active = true
+    setForm(prev => ({ ...prev, sourceMedicationId: '', medicationOptions: [], medicationItems: [{ sourceMedicationId: '', medicationName: '', medicationBrand: '', medicationSpecification: '', medicationQuantity: '' }], medicationName: '', medicationBrand: '', medicationSpecification: '', medicationQuantity: '', medicationAutoFilled: false, medicationAutoSource: '' }))
     staffAPI.getMedicationProxyDefaults(patientId).then(res => {
+      if (!active) return
       const defaults = res.data || {}
-      if (!defaults.medicationName && !defaults.medicationBrand && !defaults.medicationQuantity) return
+      if (!defaults.medicationName && !defaults.medicationBrand && !defaults.medicationQuantity) {
+        setForm(prev => ({ ...prev, medicationOptions: defaults.medicationOptions || [] }))
+        return
+      }
       setForm(prev => ({
         ...prev,
         sourceMedicationId: defaults.sourceMedicationId || '',
@@ -608,6 +615,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
         medicationBrand: defaults.medicationBrand || '',
         medicationSpecification: defaults.medicationSpecification || '',
         medicationQuantity: defaults.medicationQuantity || '',
+        medicationItems: [{ sourceMedicationId: defaults.sourceMedicationId || '', medicationName: defaults.medicationName || '', medicationBrand: defaults.medicationBrand || '', medicationSpecification: defaults.medicationSpecification || '', medicationQuantity: defaults.medicationQuantity || '' }],
         institutionType: defaults.institutionType || '',
         hospital: defaults.hospital || '',
         campus: defaults.campus || '',
@@ -622,7 +630,8 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
         medicationAutoFilled: true,
         medicationAutoSource: defaults.sourceLabel || '配药随访计划',
       }))
-    }).catch(err => setError(err.message || '读取客户配药提醒失败'))
+    }).catch(err => { if (active) setError(err.message || '读取客户配药提醒失败') })
+    return () => { active = false }
   }, [patientId, isMedicationProxy])
 
   useEffect(() => {
@@ -685,7 +694,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
       notes:     c.notes     || '',
       preferredDateStart: '',
       preferredDateEnd: '',
-      sourceMedicationId: '', medicationOptions: [], medicationName: '', medicationBrand: '', medicationSpecification: '', medicationQuantity: '', medicationAutoFilled: false, medicationAutoSource: '', institutionType: '', platformName: '', pharmacyName: '', pharmacyAddress: '', purchasePath: '', paymentMethod: '', deliveryTime: '',
+      sourceMedicationId: '', medicationOptions: [], medicationItems: [{ sourceMedicationId: '', medicationName: '', medicationBrand: '', medicationSpecification: '', medicationQuantity: '' }], medicationName: '', medicationBrand: '', medicationSpecification: '', medicationQuantity: '', medicationAutoFilled: false, medicationAutoSource: '', institutionType: '', platformName: '', pharmacyName: '', pharmacyAddress: '', purchasePath: '', paymentMethod: '', deliveryTime: '', agencyExams: [{ item: '', department: '', expert: '', notes: '' }],
     })
     setStep(2)
     setError('')
@@ -697,7 +706,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
     if (!patientId) { setError('请搜索并选择会员'); return }
     if (!isMedicalEscort && !form.name.trim()) { setError('请填写方案名称'); return }
     if (!isMedicalProxy && !isExpertAppointment && !form.serviceDate) { setError('请选择服务日期'); return }
-    if (isMedicationProxy && (!form.medicationName.trim() || !form.medicationBrand.trim() || !form.medicationSpecification.trim() || !form.medicationQuantity.trim())) { setError('请确认配备药物名称、品牌、规格和数量'); return }
+    if (isMedicationProxy && (!form.medicationItems?.length || form.medicationItems.length > 12 || form.medicationItems.some(row => !row.medicationName.trim() || !row.medicationBrand.trim() || !row.medicationSpecification.trim() || !row.medicationQuantity.trim()))) { setError('请逐项确认1至12种药物的名称、品牌、规格和数量'); return }
     if (isMedicationProxy && !['hospital', 'online', 'pharmacy'].includes(form.institutionType)) { setError('请选择配备机构'); return }
     if (isMedicationProxy && form.institutionType === 'hospital' && !form.hospital.trim()) { setError('请填写配药医院'); return }
     if (isMedicationProxy && form.institutionType === 'online' && (!form.platformName.trim() || !form.purchasePath.trim())) { setError('请填写线上平台和购买路径'); return }
@@ -708,7 +717,8 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
     if (isMedicalProxy && !selectedReportIds.length) { setError('请从客户既有资料中选择至少一份已审核资料'); return }
     if (checkupOneStop && !workflowProductId) { setError('请选择 Admin 已发布的体检服务流程'); return }
     if (checkupOneStop && !description.trim()) { setError('请填写具体服务需求'); return }
-    if (isAgencyService && !form.tasks.trim()) { setError('请填写本次代办事项或检查项目'); return }
+    if (isAgencyExamBooking && (!form.agencyExams?.length || form.agencyExams.length > 12 || form.agencyExams.some(row => !row.item.trim()))) { setError('请逐项填写1至12个代约检查项目'); return }
+    if (isAgencyService && !isAgencyExamBooking && !form.tasks.trim()) { setError('请填写本次代办事项'); return }
     if (isAgencyService && !assignedPlanner?._id) { setError('该客户尚未分配健康规划师，请先在客户档案中分配'); return }
     if (isMedicalEscort && (!form.hospital.trim() || !form.serviceDate || !form.serviceTime.trim() || !form.tasks.trim())) { setError('请完整填写服务日期时间、医院和具体服务事项'); return }
     if (isMedicalEscort && !isExamEscort && !isTreatmentEscort && (!form.escortDepartments?.length || form.escortDepartments.some(item => !item.department.trim()))) { setError('请填写每个就诊科室'); return }
@@ -720,7 +730,9 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
     setError(''); setSaving(true)
     try {
       if (isMedicalProxy || isExpertAppointment || isMedicationProxy) {
-        await staffAPI.startStaffMedicalProxy(patientId, { hospital: form.hospital.trim(), campus: form.campus.trim(), department: form.department.trim(), expert: form.expert.trim(), clinicType: form.clinicType, insuranceUse: form.insuranceUse, insurerName: form.insurerName.trim(), settlementMethod: form.settlementMethod, proxyGoal: form.proxyGoal?.trim() || '', communicationContent: form.communicationContent?.trim() || '', selectedReportIds, appointmentOnly: isExpertAppointment, medicationProxy: isMedicationProxy, sourceMedicationId: form.sourceMedicationId, medicationName: form.medicationName.trim(), medicationBrand: form.medicationBrand.trim(), medicationSpecification: form.medicationSpecification.trim(), medicationQuantity: form.medicationQuantity.trim(), institutionType: form.institutionType, platformName: form.platformName.trim(), pharmacyName: form.pharmacyName.trim(), pharmacyAddress: form.pharmacyAddress.trim(), purchasePath: form.purchasePath.trim(), paymentMethod: form.paymentMethod, expectedDeliveryDate: isMedicationProxy ? form.serviceDate : '', deliveryTime: form.deliveryTime.trim(), preferredDateStart: isMedicationProxy ? form.serviceDate : form.preferredDateStart, preferredDateEnd: isMedicationProxy ? form.serviceDate : form.preferredDateEnd, serviceTime: form.serviceTime, notes: form.notes })
+        const medicationItems = isMedicationProxy ? form.medicationItems.map(row => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, String(value || '').trim()]))) : []
+        const firstMedication = medicationItems[0] || {}
+        await staffAPI.startStaffMedicalProxy(patientId, { hospital: form.hospital.trim(), campus: form.campus.trim(), department: form.department.trim(), expert: form.expert.trim(), clinicType: form.clinicType, insuranceUse: form.insuranceUse, insurerName: form.insurerName.trim(), settlementMethod: form.settlementMethod, proxyGoal: form.proxyGoal?.trim() || '', communicationContent: form.communicationContent?.trim() || '', selectedReportIds, appointmentOnly: isExpertAppointment, medicationProxy: isMedicationProxy, ...firstMedication, medicationItems, institutionType: form.institutionType, platformName: form.platformName.trim(), pharmacyName: form.pharmacyName.trim(), pharmacyAddress: form.pharmacyAddress.trim(), purchasePath: form.purchasePath.trim(), paymentMethod: form.paymentMethod, expectedDeliveryDate: isMedicationProxy ? form.serviceDate : '', deliveryTime: form.deliveryTime.trim(), preferredDateStart: isMedicationProxy ? form.serviceDate : form.preferredDateStart, preferredDateEnd: isMedicationProxy ? form.serviceDate : form.preferredDateEnd, serviceTime: form.serviceTime, notes: form.notes })
         onSaved()
         return
       }
@@ -761,7 +773,8 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
       if (form.serviceTime) items.push({ name: `具体时间：${form.serviceTime}`, category: '就医协助' })
       if (!isAgencyService && form.staffName) items.push({ name: `服务专员：${form.staffName}`, category: '就医协助' })
       if (!isAgencyService && form.transport) items.push({ name: `交通接送：${form.transport}`, category: '就医协助' })
-      if (form.tasks) form.tasks.split('\n').filter(t => t.trim()).forEach(t =>
+      if (isAgencyExamBooking) form.agencyExams.forEach(row => items.push({ name: `代约检查：${row.item.trim()}${row.department.trim() ? ` · ${row.department.trim()}` : ''}`, category: '就医协助' }))
+      if (!isAgencyExamBooking && form.tasks) form.tasks.split('\n').filter(t => t.trim()).forEach(t =>
         items.push({ name: t.trim(), category: '就医协助' })
       )
       if (!isAgencyService && form.hotel) items.push({ name: `住宿安排：${form.hotel}`, category: '就医协助' })
@@ -770,7 +783,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
       await staffAPI.createPlan({
         patientId, type: 'medical_assist', title: form.name,
         description: isAgencyService ? '' : description, year: Number(form.serviceDate.slice(0, 4)), items,
-        content: { ...form, ...(isAgencyService ? { staffId: '', staffName: '', supervisorId: assignedPlanner._id, transport: '', hotel: '' } : {}), datetime: [form.serviceDate, form.serviceTime].filter(Boolean).join(' ') },
+        content: { ...form, ...(isAgencyService ? { staffId: '', staffName: '', supervisorId: assignedPlanner._id, transport: '', hotel: '' } : {}), ...(isAgencyExamBooking ? { tasks: form.agencyExams.map(row => [row.item, row.department, row.expert, row.notes].filter(Boolean).join(' · ')).join('\n') } : {}), datetime: [form.serviceDate, form.serviceTime].filter(Boolean).join(' ') },
       })
       onSaved()
     } catch (err) { setError(err.message) }
@@ -875,28 +888,23 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
           {isAgencyService && <div style={{ padding: '10px 12px', background: '#EFF8F4', borderRadius: 8, fontSize: 13, color: '#1E6B50' }}>督办人：{assignedPlanner?.name || (patientId ? '该客户尚未分配健康规划师' : '选择会员后自动带出客户的健康规划师')}（固定，不需手动选择）</div>}
 
           {isMedicationProxy && <div style={{ display: 'grid', gap: 10, padding: 12, border: '1px solid #CFE4DA', borderRadius: 8, background: '#F7FBF9' }}>
-            <div style={{ fontSize: 13, fontWeight: 650, color: '#1E6B50' }}>本次配备药物</div>
-            {form.medicationOptions.length > 1 && <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">关联药物 *</label>
-              <select className="form-input" value={form.sourceMedicationId} onChange={async e => {
-                const medicationId = e.target.value
-                set('sourceMedicationId', medicationId)
+            <div style={{ fontSize: 13, fontWeight: 650, color: '#1E6B50' }}>本次配备药物（可一次增加多种）</div>
+            {form.medicationItems.map((row, index) => <div key={index} style={{ background: '#fff', border: '1px solid #DCE8E1', borderRadius: 8, padding: 10, display: 'grid', gap: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><strong>药物 {index + 1}</strong>{form.medicationItems.length > 1 && <button type="button" className="btn btn-secondary" onClick={() => set('medicationItems', form.medicationItems.filter((_, i) => i !== index))}>删除此项</button>}</div>
+              {!!form.medicationOptions.length && <label className="form-group" style={{ marginBottom: 0 }}><span className="form-label">从药物档案带出（可选）</span><select className="form-input" value={row.sourceMedicationId || ''} onChange={async e => {
+                const id = e.target.value
+                if (!id) { set('medicationItems', form.medicationItems.map((item, i) => i === index ? { ...item, sourceMedicationId: '' } : item)); return }
                 try {
-                  const res = await staffAPI.getMedicationProxyDefaults(patientId, medicationId)
-                  const defaults = res.data || {}
-                  setForm(prev => ({ ...prev, ...defaults, medicationOptions: prev.medicationOptions, medicationAutoFilled: true, medicationAutoSource: defaults.sourceLabel || '药物档案' }))
+                  const res = await staffAPI.getMedicationProxyDefaults(patientId, id)
+                  const d = res.data || {}
+                  setForm(prev => ({ ...prev, medicationItems: prev.medicationItems.map((item, i) => i === index ? { sourceMedicationId: String(d.sourceMedicationId || id), medicationName: d.medicationName || '', medicationBrand: d.medicationBrand || '', medicationSpecification: d.medicationSpecification || '', medicationQuantity: d.medicationQuantity || '' } : item) }))
                 } catch (err) { setError(err.message || '读取关联药物失败') }
-              }}>
-                {form.medicationOptions.map(item => <option key={item.id} value={item.id}>{item.brandName || item.name}{item.specification ? ` · ${item.specification}` : ''}</option>)}
-              </select>
-            </div>}
-            {form.medicationAutoFilled && <div style={{ fontSize: 12, color: '#1E6B50' }}>AI 已从{form.medicationAutoSource || '药物档案'}自动关联；仅缺失项目需要补充。</div>}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              {form.medicationName ? <div><label className="form-label">药物名称</label><div className="form-input" style={{ background: '#EEF5F1' }}>{form.medicationName}</div></div> : renderField('药物名称 *', 'medicationName', 0, '请补充药物名称')}
-              {form.medicationBrand ? <div><label className="form-label">品牌</label><div className="form-input" style={{ background: '#EEF5F1' }}>{form.medicationBrand}</div></div> : renderField('品牌 *', 'medicationBrand', 0, '请补充商品名或品牌')}
-              {form.medicationSpecification ? <div><label className="form-label">规格</label><div className="form-input" style={{ background: '#EEF5F1' }}>{form.medicationSpecification}</div></div> : renderField('规格 *', 'medicationSpecification', 0, '请补充规格')}
-              {renderField('数量 *', 'medicationQuantity', 0, '如：3盒、90片')}
-            </div>
+              }}><option value="">手动填写</option>{form.medicationOptions.map(item => <option key={item.id} value={item.id}>{item.brandName || item.name}{item.specification ? ` · ${item.specification}` : ''}</option>)}</select></label>}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                {[['medicationName', '药物名称 *'], ['medicationBrand', '品牌 *'], ['medicationSpecification', '规格 *'], ['medicationQuantity', '数量 *']].map(([key, label]) => <label key={key} className="form-group" style={{ marginBottom: 0 }}><span className="form-label">{label}</span><input className="form-input" value={row[key] || ''} onChange={e => set('medicationItems', form.medicationItems.map((item, i) => i === index ? { ...item, [key]: e.target.value } : item))} /></label>)}
+              </div>
+            </div>)}
+            <button type="button" className="btn btn-secondary" disabled={form.medicationItems.length >= 12} onClick={() => set('medicationItems', [...form.medicationItems, { sourceMedicationId: '', medicationName: '', medicationBrand: '', medicationSpecification: '', medicationQuantity: '' }])}>＋ 增加药物</button>
             <div style={{ borderTop: '1px solid #DCE8E1', paddingTop: 10, fontSize: 13, fontWeight: 650, color: '#1E6B50' }}>配备与交付信息</div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">配备机构 *</label>
@@ -1043,7 +1051,17 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
           </>}
 
           {/* 全宽多行字段 */}
-          {!isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && renderField(isAgencyService ? '代办事项 / 检查项目 *' : isExamEscort || isTreatmentEscort ? '陪同服务事项 *' : '具体服务事项', 'tasks', 3, isAgencyService ? '填写需要代约的检查项目及已确认的申请单要求' : isTreatmentEscort ? '如：核对治疗单、协助签到缴费、记录完成情况及下一次治疗安排' : isExamEscort ? '如：核对检查申请单、协助签到、确认报告领取方式' : '如：代取报告、陪同检查，每行一项')}
+          {isAgencyExamBooking && <div style={{ display: 'grid', gap: 10, padding: 12, border: '1px solid #CFE4DA', borderRadius: 8, background: '#F7FBF9' }}>
+            <strong>本次代约检查项目</strong>
+            {form.agencyExams.map((row, index) => <div key={index} style={{ padding: 10, background: '#fff', border: '1px solid #DCE8E1', borderRadius: 8, display: 'grid', gap: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><strong>检查 {index + 1}</strong>{form.agencyExams.length > 1 && <button type="button" className="btn btn-secondary" onClick={() => set('agencyExams', form.agencyExams.filter((_, i) => i !== index))}>删除此项</button>}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
+                {[['item', '检查项目 *'], ['department', '检查科室'], ['expert', '指定专家'], ['notes', '预约要求 / 注意事项']].map(([key, label]) => <label key={key} className="form-group" style={{ marginBottom: 0 }}><span className="form-label">{label}</span><input className="form-input" value={row[key] || ''} onChange={e => set('agencyExams', form.agencyExams.map((item, i) => i === index ? { ...item, [key]: e.target.value } : item))} /></label>)}
+              </div>
+            </div>)}
+            <button type="button" className="btn btn-secondary" disabled={form.agencyExams.length >= 12} onClick={() => set('agencyExams', [...form.agencyExams, { item: '', department: '', expert: '', notes: '' }])}>＋ 增加检查项目</button>
+          </div>}
+          {!isAgencyExamBooking && !isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && renderField(isAgencyService ? '代办事项 *' : isExamEscort || isTreatmentEscort ? '陪同服务事项 *' : '具体服务事项', 'tasks', 3, isTreatmentEscort ? '如：核对治疗单、协助签到缴费、记录完成情况及下一次治疗安排' : isExamEscort ? '如：核对检查申请单、协助签到、确认报告领取方式' : '如：代取报告、陪同检查，每行一项')}
           {!isAgencyService && !isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && renderField('酒店安排',     'hotel', 2, '是否需要住宿及酒店信息')}
           {!isMedicalProxy && !isExpertAppointment && !checkupOneStop && renderField('备注',         'notes', 2, '其他注意事项')}
 

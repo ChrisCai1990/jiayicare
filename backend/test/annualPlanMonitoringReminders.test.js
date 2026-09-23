@@ -10,6 +10,12 @@ test('35岁及以上客户获得每周血压提醒和每周体重提醒', () => 
   assert.deepEqual(weight.daysOfWeek, ['Mon']);
 });
 
+test('未加入年度管理的年轻客户也获得每周血压和体重基础提醒', () => {
+  const specs = buildMonitoringReminderSpecs({ age: 24, chronicDiseases: [] });
+  assert.deepEqual(specs.find(item => item.sourceKey === 'blood_pressure').daysOfWeek, ['Mon']);
+  assert.deepEqual(specs.find(item => item.sourceKey === 'weight').daysOfWeek, ['Mon']);
+});
+
 test('高血压客户获得每周两次血压提醒，不受年龄限制', () => {
   const specs = buildMonitoringReminderSpecs({ age: 28, chronicDiseases: ['高血压'] });
   const bp = specs.find(item => item.sourceKey === 'blood_pressure');

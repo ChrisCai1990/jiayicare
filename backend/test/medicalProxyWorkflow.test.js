@@ -9,6 +9,31 @@ const User = require('../src/models/User');
 const Order = require('../src/models/Order');
 const { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, supplyResolutionSummary, validateMedicalProxyStage, ensureStaffExpertAppointmentTasksForStaff, startStaffMedicalProxyWorkflow } = require('../src/utils/medicalProxyWorkflow');
 
+test('one proxy medication order carries every drug to booking and later stages', async () => {
+  const previous = { orderCreate: Order.create, orderUpdate: Order.updateOne, taskCreate: FollowUp.create };
+  try {
+    Order.create = async row => ({ _id: 'multi-medication-order', ...row });
+    Order.updateOne = async () => ({ modifiedCount: 1 });
+    FollowUp.create = async row => ({ _id: `task-${row.workflowKey}`, ...row });
+    const medications = [
+      { medicationName: '药物甲', medicationBrand: '品牌甲', medicationSpecification: '10mg', medicationQuantity: '2盒' },
+      { medicationName: '药物乙', medicationBrand: '品牌乙', medicationSpecification: '20mg', medicationQuantity: '1盒' },
+    ];
+    const result = await startStaffMedicalProxyWorkflow({
+      patient: { _id: 'patient', assignedHealthManager: 'manager', assignedHealthPlanner: 'planner' }, advisorId: 'advisor',
+      plan: { medicationProxy: true, preferredDateStart: '2026-10-01', preferredDateEnd: '2026-10-01',
+        medicationItems: medications, ...medications[0] },
+    });
+    assert.deepEqual(result.order.medicalProxyPlan.medicationItems, medications);
+    assert.deepEqual(result.booking.formData.medicationItems, medications);
+    assert.deepEqual(result.booking.formData.planSnapshot.medicationItems, medications);
+    assert.match(result.order.serviceRequirements, /药物1：药物甲/);
+    assert.match(result.order.serviceRequirements, /药物2：药物乙/);
+  } finally {
+    Order.create = previous.orderCreate; Order.updateOne = previous.orderUpdate; FollowUp.create = previous.taskCreate;
+  }
+});
+
 test('on-site added consultation starts at the medical assistant, without a fabricated booking task', async () => {
   const previous = { orderCreate: Order.create, orderUpdate: Order.updateOne, taskCreate: FollowUp.create };
   const tasks = [];

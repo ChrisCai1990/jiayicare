@@ -187,7 +187,7 @@ async function upsertMedicalProxyServiceRecord(task, order, completed = false) {
   const appointment = booking.appointmentDate && booking.appointmentTime ? appointmentAt(booking.appointmentDate, booking.appointmentTime) : (order.scheduledAt || task.date || new Date());
   const content = [
     plan.hospital && `医院：${plan.hospital}`, ...escortArrangementLines(plan),
-    plan.medicationName && `药物名称：${plan.medicationName}`, plan.medicationBrand && `品牌：${plan.medicationBrand}`, plan.medicationQuantity && `数量：${plan.medicationQuantity}`,
+    ...(medicationProxy && plan.medicationItems?.length ? plan.medicationItems.map((row, index) => `药物${index + 1}：${row.medicationName}；品牌：${row.medicationBrand}；规格：${row.medicationSpecification}；数量：${row.medicationQuantity}`) : [plan.medicationName && `药物名称：${plan.medicationName}`, plan.medicationBrand && `品牌：${plan.medicationBrand}`, plan.medicationQuantity && `数量：${plan.medicationQuantity}`]),
     plan.proxyGoal && `代诊目标：${plan.proxyGoal}`, plan.communicationContent && `交流内容：${plan.communicationContent}`,
     plan.adHocConsultation && `临时加诊原因：${plan.escortGoal || ''}`,
     plan.adHocConsultation && `现场预约时间：${plan.escortDate || ''} ${plan.escortTime || ''}`,
@@ -502,10 +502,12 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
     plan.institutionType === 'online' && `线上平台：${plan.platformName || ''}`,
     plan.institutionType === 'pharmacy' && `线下药房：${plan.pharmacyName || ''}`,
     plan.purchasePath && `配取路径：${plan.purchasePath}`,
-    `${supplementProxy ? '营养素名称' : '药物名称'}：${supplementProxy ? plan.supplementName : plan.medicationName}`,
-    `品牌：${supplementProxy ? plan.supplementBrand : plan.medicationBrand}`,
-    `规格：${supplementProxy ? plan.supplementSpecification : plan.medicationSpecification}`,
-    `数量：${supplementProxy ? plan.supplementQuantity : plan.medicationQuantity}`,
+    ...(medicationProxy && plan.medicationItems?.length ? plan.medicationItems.map((row, index) => `药物${index + 1}：${row.medicationName}；品牌：${row.medicationBrand}；规格：${row.medicationSpecification}；数量：${row.medicationQuantity}`) : [
+      `${supplementProxy ? '营养素名称' : '药物名称'}：${supplementProxy ? plan.supplementName : plan.medicationName}`,
+      `品牌：${supplementProxy ? plan.supplementBrand : plan.medicationBrand}`,
+      `规格：${supplementProxy ? plan.supplementSpecification : plan.medicationSpecification}`,
+      `数量：${supplementProxy ? plan.supplementQuantity : plan.medicationQuantity}`,
+    ]),
     plan.expectedDeliveryDate && `期望送达：${plan.expectedDeliveryDate}${plan.deliveryTime ? ` ${plan.deliveryTime}` : ''}`,
     plan.notes && `备注：${String(plan.notes).trim()}`,
   ] : [
@@ -594,7 +596,7 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
       formData: {
         planSnapshot: { ...plan, serviceContent: appointmentRequirement, initiationSource: STAFF_DIRECT_SOURCE },
         preferredDateStart: plan.preferredDateStart, preferredDateEnd: plan.preferredDateEnd || plan.preferredDateStart, medicationProxy, supplementProxy,
-        medicationName: plan.medicationName || '', medicationBrand: plan.medicationBrand || '', medicationSpecification: plan.medicationSpecification || '', medicationQuantity: plan.medicationQuantity || '', paymentMethod: plan.paymentMethod || '',
+        medicationName: plan.medicationName || '', medicationBrand: plan.medicationBrand || '', medicationSpecification: plan.medicationSpecification || '', medicationQuantity: plan.medicationQuantity || '', medicationItems: plan.medicationItems || [], paymentMethod: plan.paymentMethod || '',
         supplementName: plan.supplementName || '', supplementBrand: plan.supplementBrand || '', supplementSpecification: plan.supplementSpecification || '', supplementQuantity: plan.supplementQuantity || '',
       },
     });
@@ -697,7 +699,7 @@ async function validateMedicalProxyStage(task, body, staff) {
     const bookingOrder = task.sourceOrderId ? await Order.findById(task.sourceOrderId).select('serviceName serviceRequirements').lean() : null;
     const medicationBooking = data.medicationProxy === true || /代配药|代取药/.test(bookingOrder?.serviceName || '');
     const supplementBooking = data.supplementProxy === true || /代配营养素/.test(bookingOrder?.serviceName || '');
-    if (medicationBooking && ['medicationName', 'medicationBrand', 'medicationSpecification', 'medicationQuantity'].some(key => !nonempty(data[key]))) return '请先确认药品名、商品名/品牌、规格和配备数量';
+    if (medicationBooking && (Array.isArray(data.medicationItems) && data.medicationItems.length ? data.medicationItems.some(row => ['medicationName', 'medicationBrand', 'medicationSpecification', 'medicationQuantity'].some(key => !nonempty(row?.[key]))) : ['medicationName', 'medicationBrand', 'medicationSpecification', 'medicationQuantity'].some(key => !nonempty(data[key])))) return '请逐项确认药品名、商品名/品牌、规格和配备数量';
     if (medicationBooking && !['self_pay', 'medical_insurance', 'commercial_insurance'].includes(data.paymentMethod)) return '请选择支付方式（自费、医保或商保）';
     if (supplementBooking && ['supplementName', 'supplementBrand', 'supplementSpecification', 'supplementQuantity'].some(key => !nonempty(data[key]))) return '请先确认营养素名称、品牌、规格和购买数量';
     if (supplementBooking && !['self_pay', 'commercial_insurance'].includes(data.paymentMethod)) return '请选择支付方式（自费或商保）';
@@ -801,7 +803,11 @@ async function advanceMedicalProxyWorkflow(task) {
     }
   }
   if (stage === 'booking') {
+    if (/代配药|代取药/.test(order.serviceName || '') && task.formData.medicationItems?.length) {
+      Object.assign(task.formData, task.formData.medicationItems[0]); // 历史单药字段仅保留首项兼容；完整清单始终用 medicationItems。
+    }
     const medicationFields = /代配药|代取药/.test(order.serviceName || '') ? {
+      medicationItems: task.formData.medicationItems || [],
       medicationName: task.formData.medicationName,
       medicationBrand: task.formData.medicationBrand,
       medicationSpecification: task.formData.medicationSpecification,

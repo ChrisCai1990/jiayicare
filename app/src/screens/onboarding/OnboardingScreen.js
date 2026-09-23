@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, SafeAreaView,
-  ScrollView, TextInput, ActivityIndicator,
+  ScrollView, TextInput, ActivityIndicator, Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
@@ -22,6 +22,7 @@ export default function OnboardingScreen({ navigation }) {
   const [codeSending, setCodeSending] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [healthMonitoringConsent, setHealthMonitoringConsent] = useState(false);
 
   const canSubmit = name.trim() && contactPhone.trim() && !submitting;
   const needsPhoneVerification = contactPhone.trim() !== (user?.phone || '').trim();
@@ -57,6 +58,7 @@ export default function OnboardingScreen({ navigation }) {
         idType,
         contactPhone: contactPhone.trim(),
         verificationCode: needsPhoneVerification ? verificationCode.trim() : undefined,
+        healthMonitoringConsent,
       });
       if (res.success) {
         const completedUser = { ...res.data.user, onboardingCompleted: true };
@@ -169,6 +171,11 @@ export default function OnboardingScreen({ navigation }) {
               </View>
             </>
           )}
+        </View>
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.lg }}>
+          <Text style={{ flex: 1, fontSize: 13, color: colors.textSecondary }}>同意开启免费血压、体重监测提醒（可随时关闭）</Text>
+          <Switch value={healthMonitoringConsent} onValueChange={setHealthMonitoringConsent} trackColor={{ true: colors.primary }} />
         </View>
 
         {!!errorMsg && (
