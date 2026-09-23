@@ -108,7 +108,8 @@ export default function HomePage() {
         </button>
       </div>
 
-      {['healthPlanner', 'superadmin'].includes(staff?.role) && (
+      {/* 官网咨询入口固定展示；无权限账号的接口不会返回线索内容。 */}
+      {staff && (
         <div className="card" style={{ marginBottom: 20, border: '2px solid #D97706', boxShadow: '0 8px 24px rgba(217,119,6,.12)' }}>
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
