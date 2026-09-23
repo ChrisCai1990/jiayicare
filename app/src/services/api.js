@@ -180,6 +180,7 @@ export const pushRecordsAPI = {
 // ── Reminders ────────────────────────────────────────────────────
 export const remindersAPI = {
   list:   ()     => request('/reminders'),
+  setMonitoringConsent: (enabled) => request('/reminders/monitoring-consent', { method: 'PATCH', body: JSON.stringify({ enabled }) }),
   toggle: (id)   => request(`/reminders/${id}/toggle`, { method: 'PATCH' }),
   create: (data) => request('/reminders', { method: 'POST', body: JSON.stringify(data) }),
   delete: (id)   => request(`/reminders/${id}`, { method: 'DELETE' }),

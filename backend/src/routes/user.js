@@ -448,7 +448,7 @@ router.put('/me', auth, async (req, res) => {
 // 其余健康信息（既往史/生活方式/心理健康等）交给问卷库分批推送采集，不在此处重复询问
 router.post('/onboarding', auth, async (req, res) => {
   try {
-    const { name, idNumber, idType, contactPhone, verificationCode, residence } = req.body;
+    const { name, idNumber, idType, contactPhone, verificationCode, residence, healthMonitoringConsent } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ success: false, message: '请填写姓名' });
     if (!idNumber || !idNumber.trim()) return res.status(400).json({ success: false, message: `请填写${idType === 'passport' ? '护照号' : '身份证号'}` });
     if (!contactPhone || !contactPhone.trim()) return res.status(400).json({ success: false, message: '请填写联系电话' });
@@ -489,6 +489,7 @@ router.post('/onboarding', auth, async (req, res) => {
       contactPhone: normalizedContactPhone,
       onboardingCompleted: true,
       onboardingCompletedAt: new Date(),
+      healthMonitoringConsentAt: healthMonitoringConsent === true ? new Date() : null,
     };
     if (residence?.province && residence?.city) updateData.residence = { province: String(residence.province).trim(), city: String(residence.city).trim(), district: String(residence.district || '').trim() };
     updateData.idNumber = normalizedIdNumber;
@@ -514,6 +515,7 @@ router.post('/onboarding', auth, async (req, res) => {
         lastLoginAt: current.lastLoginAt || new Date(),
         lastLoginMethod: current.lastLoginMethod || idOwner.lastLoginMethod,
       };
+      if (healthMonitoringConsent === true) setData.healthMonitoringConsentAt = new Date();
       if (residence?.province && residence?.city) setData.residence = updateData.residence;
       if (current.wechatOpenid) setData.wechatOpenid = current.wechatOpenid;
       if (current.wechatMpOpenid) setData.wechatMpOpenid = current.wechatMpOpenid;
@@ -666,7 +668,7 @@ router.get('/dashboard', auth, async (req, res) => {
       ),
       Task.find({ user: userId, status: 'pending' })
         .sort({ priority: 1, createdAt: 1 }).limit(5).lean(),
-      Reminder.find({ user: userId, enabled: true, systemManaged: { $ne: true } }).lean(),
+      Reminder.find({ user: userId, enabled: true, $or: [{ systemManaged: { $ne: true } }, { systemManaged: true, sourceKey: /^service-cycle:/ }] }).lean(),
       HealthRecord.countDocuments({ user: userId }),
       buildGrowthData(userId),
     ]);

@@ -483,6 +483,7 @@ function CreateModal({ visible, onClose, onCreate }) {
 export default function RemindersScreen({ navigation }) {
   const { isDemo } = useAuth();
   const [reminders, setReminders] = useState([]);
+  const [monitoringConsent, setMonitoringConsent] = useState(false);
   const [filterCat, setFilterCat] = useState('全部');
   const [refreshing, setRefreshing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -497,6 +498,7 @@ export default function RemindersScreen({ navigation }) {
     try {
       const res = await remindersAPI.list();
       setReminders(res.success && res.data?.length > 0 ? res.data : []);
+      if (res.success) setMonitoringConsent(res.healthMonitoringConsent === true);
     } catch { setReminders([]); }
     finally { setRefreshing(false); }
   }, []);
@@ -513,6 +515,11 @@ export default function RemindersScreen({ navigation }) {
   const handleToggle = async (id) => {
     setReminders(prev => prev.map(r => (r._id || r.id) === id ? { ...r, enabled: !r.enabled } : r));
     try { await remindersAPI.toggle(id); } catch {}
+  };
+
+  const handleMonitoringConsent = async (enabled) => {
+    try { await remindersAPI.setMonitoringConsent(enabled); setMonitoringConsent(enabled); await load(); }
+    catch { showToast('监测提醒设置失败', true); await load(); }
   };
 
   const handleDelete = (id, title) => {
@@ -552,6 +559,10 @@ export default function RemindersScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.primary} />}
       >
+        <View style={{ marginHorizontal: spacing.lg, marginTop: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surface, flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+          <View style={{ flex: 1 }}><Text style={{ fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>免费血压、体重提醒</Text><Text style={{ fontSize: 12, color: colors.textMuted }}>无需年度方案，可随时关闭</Text></View>
+          <Switch value={monitoringConsent} onValueChange={handleMonitoringConsent} trackColor={{ true: colors.primary }} />
+        </View>
         {/* 统计 */}
         <View style={styles.statsRow}>
           {[

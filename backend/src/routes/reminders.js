@@ -1,6 +1,7 @@
 const express = require('express');
 const auth = require('../middleware/auth');
 const Reminder = require('../models/Reminder');
+const User = require('../models/User');
 const router = express.Router();
 
 // 判断某提醒今天是否激活
@@ -39,7 +40,7 @@ function isActiveToday(r) {
 // GET / — 列出所有提醒
 router.get('/', auth, async (req, res) => {
   const { category } = req.query;
-  const query = { user: req.user._id, systemManaged: { $ne: true } };
+  const query = { user: req.user._id, $or: [{ systemManaged: { $ne: true } }, { systemManaged: true, sourceKey: /^service-cycle:/ }] };
   if (category) query.category = category;
   const reminders = await Reminder.find(query).sort({ createdAt: -1 });
 
@@ -48,12 +49,21 @@ router.get('/', auth, async (req, res) => {
     ...r.toObject(),
     isActiveToday: isActiveToday(r),
   }));
-  res.json({ success: true, data });
+  res.json({ success: true, data, healthMonitoringConsent: Boolean(req.user.healthMonitoringConsentAt) });
+});
+
+// 客户自主决定是否接收免费血压/体重监测提醒；撤回同意后立即停止并保留单项关闭偏好。
+router.patch('/monitoring-consent', auth, async (req, res) => {
+  if (typeof req.body.enabled !== 'boolean') return res.status(400).json({ success: false, message: '请明确选择开启或关闭' });
+  if (req.body.enabled && !req.user.onboardingCompleted) return res.status(409).json({ success: false, message: '请先完成健康档案建档' });
+  await User.updateOne({ _id: req.user._id }, { $set: { healthMonitoringConsentAt: req.body.enabled ? new Date() : null } });
+  await require('../utils/annualPlanMonitoringReminders').syncServiceCycleMonitoringReminders(req.user._id);
+  res.json({ success: true, healthMonitoringConsent: req.body.enabled });
 });
 
 // GET /today — 仅返回今日激活的提醒
 router.get('/today', auth, async (req, res) => {
-  const all = await Reminder.find({ user: req.user._id, enabled: true, systemManaged: { $ne: true } });
+  const all = await Reminder.find({ user: req.user._id, enabled: true, $or: [{ systemManaged: { $ne: true } }, ...(req.user.healthMonitoringConsentAt ? [{ systemManaged: true, sourceKey: /^service-cycle:/ }] : [])] });
   const today = all.filter(isActiveToday).map(r => r.toObject());
   res.json({ success: true, data: today });
 });
@@ -61,7 +71,7 @@ router.get('/today', auth, async (req, res) => {
 // POST / — 创建提醒
 router.post('/', auth, async (req, res) => {
   try {
-    const reminder = await Reminder.create({ user: req.user._id, ...req.body });
+    const reminder = await Reminder.create({ ...req.body, user: req.user._id, systemManaged: false, sourceKey: '' });
     res.status(201).json({ success: true, data: reminder });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -72,6 +82,8 @@ router.post('/', auth, async (req, res) => {
 router.patch('/:id', auth, async (req, res) => {
   const current = await Reminder.findOne({ _id: req.params.id, user: req.user._id });
   if (!current) return res.status(404).json({ success: false, message: '提醒不存在' });
+  if (current.systemManaged && (typeof req.body.enabled !== 'boolean' || Object.keys(req.body).some(key => key !== 'enabled'))) return res.status(400).json({ success: false, message: '系统监测提醒仅支持开启或关闭' });
+  if (current.systemManaged && req.body.enabled && !req.user.healthMonitoringConsentAt) return res.status(409).json({ success: false, message: '请先同意开启免费健康监测提醒' });
   const update = { ...req.body };
   if (current.systemManaged && req.body.enabled !== undefined) update.userDisabled = req.body.enabled === false;
   const reminder = await Reminder.findOneAndUpdate(
@@ -87,6 +99,7 @@ router.patch('/:id', auth, async (req, res) => {
 router.patch('/:id/toggle', auth, async (req, res) => {
   const reminder = await Reminder.findOne({ _id: req.params.id, user: req.user._id });
   if (!reminder) return res.status(404).json({ success: false, message: '提醒不存在' });
+  if (reminder.systemManaged && !reminder.enabled && !req.user.healthMonitoringConsentAt) return res.status(409).json({ success: false, message: '请先同意开启免费健康监测提醒' });
   reminder.enabled = !reminder.enabled;
   if (reminder.systemManaged) reminder.userDisabled = !reminder.enabled;
   await reminder.save();

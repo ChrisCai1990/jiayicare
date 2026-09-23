@@ -38,6 +38,7 @@ const userSchema = new mongoose.Schema({
   exercise: { type: String, default: '' },
   onboardingCompleted: { type: Boolean, default: false },
   onboardingCompletedAt: { type: Date, default: null }, // 完成首次登录建档的时间，用于分批推送问卷计时
+  healthMonitoringConsentAt: { type: Date, default: null }, // 客户主动同意免费血压/体重监测提醒；未同意不自动发送
   lastLoginAt: { type: Date, default: null },
   lastLoginMethod: { type: String, enum: ['phone_wechat', 'phone', 'wechat', ''], default: '' },
   loginCount: { type: Number, default: 0 },

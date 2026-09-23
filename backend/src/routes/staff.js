@@ -3046,6 +3046,12 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
   if (!patientId || !type || !title) return res.status(400).json({ success: false, message: '会员、类型、标题不能为空' });
   let planContent = content || {};
   if (type === 'medical_assist' && isAgencyMedicalAssistPlan(planContent, title)) {
+    if (/代约检/.test(`${planContent.templateName || ''} ${title || ''}`)) {
+      const rows = planContent.agencyExams;
+      if (!Array.isArray(rows) || !rows.length || rows.length > 12 || rows.some(row => !row || typeof row !== 'object' || !String(row.item || '').trim() || ['item', 'department', 'expert', 'notes'].some(key => row[key] !== undefined && (typeof row[key] !== 'string' || row[key].length > (key === 'notes' ? 500 : 120))))) return res.status(400).json({ success: false, message: '请逐项填写1至12个代约检查项目' });
+      const agencyExams = rows.map(row => ({ item: row.item.trim(), department: (row.department || '').trim(), expert: (row.expert || '').trim(), notes: (row.notes || '').trim() }));
+      planContent = { ...planContent, agencyExams, tasks: agencyExams.map(row => [row.item, row.department, row.expert, row.notes].filter(Boolean).join(' · ')).join('\n') };
+    }
     const patient = await User.findById(patientId).select('assignedHealthPlanner').lean();
     if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
     if (!patient.assignedHealthPlanner) return res.status(400).json({ success: false, message: '该客户尚未分配健康规划师，请先分配' });
@@ -3146,20 +3152,40 @@ router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => 
     if (req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅该客户的健康顾问可发起' });
     if (req.staff.role === 'healthManager' && String(patient.assignedHealthManager || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅该客户的健管专员可发起代配服务' });
     if (medicationProxy) {
+      const submittedItems = req.body.medicationItems === undefined ? null : req.body.medicationItems;
+      if (submittedItems !== null && (!Array.isArray(submittedItems) || !submittedItems.length || submittedItems.length > 12)) return res.status(400).json({ success: false, message: '请填写1至12种配备药物' });
+      if (submittedItems) {
+        const keys = ['sourceMedicationId', 'medicationName', 'medicationBrand', 'medicationSpecification', 'medicationQuantity'];
+        if (submittedItems.some(row => !row || typeof row !== 'object' || keys.some(key => row[key] !== undefined && (typeof row[key] !== 'string' || row[key].length > 120)) || keys.slice(1).some(key => !String(row[key] || '').trim()))) return res.status(400).json({ success: false, message: '请逐项确认药物名称、品牌、规格和数量' });
+        const normalized = submittedItems.map(row => Object.fromEntries(keys.map(key => [key, String(row[key] || '').trim()])));
+        const signatures = normalized.map(row => `${row.medicationName.toLowerCase()}|${row.medicationSpecification.toLowerCase()}`);
+        if (new Set(signatures).size !== signatures.length) return res.status(400).json({ success: false, message: '同一药物和规格请合并数量，不要重复添加' });
+        for (const row of normalized) {
+          if (!row.sourceMedicationId) continue;
+          if (!/^[a-f\d]{24}$/i.test(row.sourceMedicationId) || !await Medication.exists({ _id: row.sourceMedicationId, user: patient._id, stopped: { $ne: true }, active: { $ne: false } })) return res.status(400).json({ success: false, message: '关联药物必须属于该客户且当前有效' });
+        }
+        req.body.medicationItems = normalized;
+        Object.assign(req.body, normalized[0]);
+      } else {
+        const defaults = await getMedicationProxyDefaults(patient._id, req.body.sourceMedicationId);
+        req.body.sourceMedicationId = defaults.sourceMedicationId || req.body.sourceMedicationId || null;
+        req.body.medicationName = defaults.medicationName || req.body.medicationName || '';
+        req.body.medicationBrand = defaults.medicationBrand || req.body.medicationBrand || '';
+        req.body.medicationSpecification = defaults.medicationSpecification || req.body.medicationSpecification || '';
+        req.body.medicationQuantity = defaults.medicationQuantity || req.body.medicationQuantity || '';
+        req.body.medicationItems = [{ sourceMedicationId: String(req.body.sourceMedicationId || ''), medicationName: req.body.medicationName, medicationBrand: req.body.medicationBrand, medicationSpecification: req.body.medicationSpecification, medicationQuantity: req.body.medicationQuantity }];
+        req.body.sourceFollowUpId = defaults.sourceFollowUpId || null;
+        req.body.sourcePlanId = defaults.sourcePlanId || null;
+      }
       const defaults = await getMedicationProxyDefaults(patient._id, req.body.sourceMedicationId);
-      req.body.sourceMedicationId = defaults.sourceMedicationId || req.body.sourceMedicationId || null;
-      req.body.medicationName = defaults.medicationName || req.body.medicationName || '';
-      req.body.medicationBrand = defaults.medicationBrand || req.body.medicationBrand || '';
-      req.body.medicationSpecification = defaults.medicationSpecification || req.body.medicationSpecification || '';
-      req.body.medicationQuantity = defaults.medicationQuantity || req.body.medicationQuantity || '';
-      req.body.sourceFollowUpId = defaults.sourceFollowUpId || null;
-      req.body.sourcePlanId = defaults.sourcePlanId || null;
       for (const key of ['institutionType', 'hospital', 'campus', 'department', 'expert', 'platformName', 'pharmacyName', 'pharmacyAddress', 'purchasePath', 'paymentMethod', 'deliveryTime']) {
         req.body[key] = req.body[key] || defaults[key] || '';
       }
       const duplicateConditions = [];
-      if (req.body.sourceMedicationId) duplicateConditions.push({ 'medicalProxyPlan.sourceMedicationId': req.body.sourceMedicationId });
-      if (req.body.medicationName) duplicateConditions.push({ 'medicalProxyPlan.medicationName': req.body.medicationName, 'medicalProxyPlan.medicationSpecification': req.body.medicationSpecification || '' });
+      for (const row of req.body.medicationItems) {
+        if (row.sourceMedicationId) duplicateConditions.push({ $or: [{ 'medicalProxyPlan.sourceMedicationId': row.sourceMedicationId }, { 'medicalProxyPlan.medicationItems.sourceMedicationId': row.sourceMedicationId }] });
+        duplicateConditions.push({ $or: [{ 'medicalProxyPlan.medicationName': row.medicationName, 'medicalProxyPlan.medicationSpecification': row.medicationSpecification }, { 'medicalProxyPlan.medicationItems': { $elemMatch: { medicationName: row.medicationName, medicationSpecification: row.medicationSpecification } } }] });
+      }
       const duplicate = duplicateConditions.length ? await Order.findOne({
         user: patient._id,
         status: { $nin: ['completed', 'cancelled'] },

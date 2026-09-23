@@ -1,5 +1,6 @@
 const FollowUp = require('../models/FollowUp');
 const Message = require('../models/Message');
+const User = require('../models/User');
 
 // AI自主随访跟进试点（血压监测场景）：
 // 每天扫描当日到期、要求打卡血压但会员尚未打卡的随访计划，AI直接发消息提醒会员，
@@ -26,6 +27,8 @@ async function scanAndRemindMissingBP() {
 
   for (const patientId of patientIds) {
     try {
+      const patient = await User.findById(patientId).select('onboardingCompleted healthMonitoringConsentAt isDeleted').lean();
+      if (!patient?.onboardingCompleted || !patient.healthMonitoringConsentAt || patient.isDeleted) continue;
       const title = '血压监测提醒';
       const exists = await Message.findOne({
         user: patientId, type: 'system', title, createdAt: { $gt: oneDayAgo },

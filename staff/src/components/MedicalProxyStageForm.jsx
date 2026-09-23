@@ -12,6 +12,10 @@ const fields = {
   execute: [['executionResult', '代诊结果、医生反馈和后续事项']],
 }
 
+const medicationList = (booking, planSnapshot) => booking?.medicationItems?.length
+  ? booking.medicationItems
+  : (planSnapshot?.medicationItems?.length ? planSnapshot.medicationItems : [])
+
 const parseAppointmentRequirement = text => {
   const parts = String(text || '').split(/[；\n]/).map(item => item.trim()).filter(Boolean)
   const take = label => parts.find(item => item.startsWith(`${label}：`))?.slice(label.length + 1) || ''
@@ -48,7 +52,7 @@ export function validateMedicalProxyStage(stage, value) {
   if (stage === 'booking' && ['preferredDateStart', 'preferredDateEnd', 'appointmentDate', 'appointmentTime'].some(key => !value[key]?.trim())) return '请完整填写客户期望日期区间和实际约诊日期时间'
   if (stage === 'booking' && (value.appointmentDate < value.preferredDateStart || value.appointmentDate > value.preferredDateEnd) && !value.dateDifferenceNote?.trim()) return '约诊日期不在客户期望区间内，请说明差异及客户确认情况'
   const supplementProxy = value.supplementProxy === true || /代配营养素/.test(`${value.planSnapshot?.serviceName || ''} ${value.planSnapshot?.serviceContent || ''}`)
-  if (stage === 'booking' && (value.medicationProxy === true || /代配药|代取药/.test(`${value.planSnapshot?.serviceName || ''} ${value.planSnapshot?.serviceContent || ''}`)) && ['medicationName', 'medicationBrand', 'medicationSpecification', 'medicationQuantity'].some(key => !value[key]?.trim())) return '请先确认药品名、商品名/品牌、规格和配备数量'
+  if (stage === 'booking' && (value.medicationProxy === true || /代配药|代取药/.test(`${value.planSnapshot?.serviceName || ''} ${value.planSnapshot?.serviceContent || ''}`)) && (value.medicationItems?.length ? value.medicationItems.some(row => ['medicationName', 'medicationBrand', 'medicationSpecification', 'medicationQuantity'].some(key => !row?.[key]?.trim())) : ['medicationName', 'medicationBrand', 'medicationSpecification', 'medicationQuantity'].some(key => !value[key]?.trim()))) return '请逐项确认药品名、商品名/品牌、规格和配备数量'
   if (stage === 'booking' && supplementProxy && ['supplementName', 'supplementBrand', 'supplementSpecification', 'supplementQuantity'].some(key => !value[key]?.trim())) return '请先确认营养素名称、品牌、规格和购买数量'
   if (stage === 'booking' && (value.medicationProxy === true || supplementProxy || /代配药|代取药/.test(`${value.planSnapshot?.serviceName || ''} ${value.planSnapshot?.serviceContent || ''}`)) && !['self_pay', 'medical_insurance', 'commercial_insurance'].includes(value.paymentMethod)) return '请选择支付方式'
   if (stage === 'booking' && value.paymentMethod === 'medical_insurance' && !['electronic', 'physical'].includes(value.medicalInsuranceCardType)) return '请确认使用电子医保卡还是实体医保卡'
@@ -241,8 +245,10 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
       {isSupplyProxy ? <>
         <div>配药医院：{value.planSnapshot?.hospital || '待确认'} {booking.campus || value.planSnapshot?.campus || ''}</div>
         <div>配药科室：{value.planSnapshot?.department || '待确认'}；配药专家：{value.planSnapshot?.expert || '无'}</div>
-        <div>{isSupplementProxy ? '营养素' : '配备药物'}：{isSupplementProxy ? (value.planSnapshot?.supplementName || booking.supplementName) : (value.planSnapshot?.medicationName || booking.medicationName) || '待确认'}；品牌：{isSupplementProxy ? (value.planSnapshot?.supplementBrand || booking.supplementBrand) : (value.planSnapshot?.medicationBrand || booking.medicationBrand) || '待确认'}</div>
-        <div>规格：{isSupplementProxy ? (value.planSnapshot?.supplementSpecification || booking.supplementSpecification) : (value.planSnapshot?.medicationSpecification || booking.medicationSpecification) || '待确认'}；数量：{isSupplementProxy ? (value.planSnapshot?.supplementQuantity || booking.supplementQuantity) : (value.planSnapshot?.medicationQuantity || booking.medicationQuantity) || '待确认'}</div>
+        {!isSupplementProxy && medicationList(booking, value.planSnapshot).length ? medicationList(booking, value.planSnapshot).map((row, index) => <div key={index}>药物 {index + 1}：{row.medicationName}；品牌：{row.medicationBrand}；规格：{row.medicationSpecification}；数量：{row.medicationQuantity}</div>) : <>
+          <div>{isSupplementProxy ? '营养素' : '配备药物'}：{isSupplementProxy ? (value.planSnapshot?.supplementName || booking.supplementName) : (value.planSnapshot?.medicationName || booking.medicationName) || '待确认'}；品牌：{isSupplementProxy ? (value.planSnapshot?.supplementBrand || booking.supplementBrand) : (value.planSnapshot?.medicationBrand || booking.medicationBrand) || '待确认'}</div>
+          <div>规格：{isSupplementProxy ? (value.planSnapshot?.supplementSpecification || booking.supplementSpecification) : (value.planSnapshot?.medicationSpecification || booking.medicationSpecification) || '待确认'}；数量：{isSupplementProxy ? (value.planSnapshot?.supplementQuantity || booking.supplementQuantity) : (value.planSnapshot?.medicationQuantity || booking.medicationQuantity) || '待确认'}</div>
+        </>}
         <div>代办日期：{booking.appointmentDate || '未填写'} {booking.appointmentTime || ''}</div>
         <div>支付方式：{paymentLabel}</div>
       </> : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].map((key, i) => <div key={key}>{['医院', '科室', '专家', '代诊目标', '交流内容'][i]}：{value.planSnapshot?.[key] || '待确认'}</div>)}
@@ -270,12 +276,15 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     {isExpertAppointment && input('campus', '院区 *')}
     {isSupplyProxy && <div style={{ display: 'grid', gap: 10, padding: 12, borderRadius: 8, background: '#FFF8ED', border: '1px solid #F2D4A7' }}>
       <div style={{ fontSize: 13, fontWeight: 700, color: '#8A4B08' }}>{isSupplementProxy ? '营养素采购' : '配药'}清单（流转前必须确认）</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+      {!isSupplementProxy && value.medicationItems?.length ? value.medicationItems.map((row, index) => <div key={index} style={{ background: '#fff', borderRadius: 6, padding: 8, display: 'grid', gap: 6 }}>
+        <strong>药物 {index + 1}</strong>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>{[['medicationName', '药品名/通用名 *'], ['medicationBrand', '品牌 *'], ['medicationSpecification', '规格 *'], ['medicationQuantity', '配备数量 *']].map(([key, label]) => <label key={key} style={{ display: 'grid', gap: 4, fontSize: 12 }}>{label}<input className="form-control" value={row[key] || ''} onChange={e => set('medicationItems', value.medicationItems.map((item, i) => i === index ? { ...item, [key]: e.target.value } : item))} /></label>)}</div>
+      </div>) : <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         {input(isSupplementProxy ? 'supplementName' : 'medicationName', isSupplementProxy ? '营养素名称 *' : '药品名/通用名 *')}
         {input(isSupplementProxy ? 'supplementBrand' : 'medicationBrand', '品牌 *')}
         {input(isSupplementProxy ? 'supplementSpecification' : 'medicationSpecification', '规格 *')}
         {input(isSupplementProxy ? 'supplementQuantity' : 'medicationQuantity', isSupplementProxy ? '购买数量 *' : '配备数量 *')}
-      </div>
+      </div>}
     </div>}
     {isSupplyProxy && <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>支付方式 *
       <select className="form-control" value={value.paymentMethod || ''} onChange={e => onChange({ ...value, paymentMethod: e.target.value, medicalInsuranceCardType: e.target.value === 'medical_insurance' ? value.medicalInsuranceCardType : '' })}>
@@ -311,8 +320,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
       {isSupplyProxy ? <>
         <div>配药医院：{value.planSnapshot?.hospital || '未填写'} {booking.campus || value.planSnapshot?.campus || ''}</div>
         <div>配药科室：{value.planSnapshot?.department || '未填写'}；配药专家：{value.planSnapshot?.expert || '无'}</div>
-        <div>配备药物：{value.planSnapshot?.medicationName || booking.medicationName || '未填写'}；商品名/品牌：{value.planSnapshot?.medicationBrand || booking.medicationBrand || '未填写'}</div>
-        <div>规格：{value.planSnapshot?.medicationSpecification || booking.medicationSpecification || '未填写'}；数量：{value.planSnapshot?.medicationQuantity || booking.medicationQuantity || '未填写'}</div>
+        {medicationList(booking, value.planSnapshot).length ? medicationList(booking, value.planSnapshot).map((row, index) => <div key={index}>药物 {index + 1}：{row.medicationName}；品牌：{row.medicationBrand}；规格：{row.medicationSpecification}；数量：{row.medicationQuantity}</div>) : <><div>配备药物：{value.planSnapshot?.medicationName || booking.medicationName || '未填写'}；商品名/品牌：{value.planSnapshot?.medicationBrand || booking.medicationBrand || '未填写'}</div><div>规格：{value.planSnapshot?.medicationSpecification || booking.medicationSpecification || '未填写'}；数量：{value.planSnapshot?.medicationQuantity || booking.medicationQuantity || '未填写'}</div></>}
         <div>配药代办日期：{booking.appointmentDate || '未填写'} {booking.appointmentTime || ''}</div>
         <div>支付方式：{paymentLabel}</div>
       </> : <>

@@ -1,5 +1,6 @@
 const Reminder = require('../models/Reminder');
 const User = require('../models/User');
+const AnnualPlan = require('../models/AnnualPlan');
 
 const BP_RE = /血压|高血压|收缩压|舒张压/i;
 const WEIGHT_RE = /体重|减重|肥胖|超重|BMI|体脂/i;
@@ -38,11 +39,10 @@ function reminderTime(value, fallback = '08:00') {
 }
 
 // 体重：所有已建档客户每周提醒；有体重/代谢风险时每周两次。
-// 血压：35岁及以上每周；有高血压或130/80以上读数每周两次；近30天出现140/90以上则每日。
+// 血压：已建档且同意的客户每周；有高血压或130/80以上读数每周两次；近30天出现140/90以上则每日。
 function buildMonitoringReminderSpecs(patient, moduleData = {}, recentBloodPressure = []) {
   const records = Array.isArray(moduleData.monitoring?.records) ? moduleData.monitoring.records : [];
   const text = patientText(patient);
-  const age = patientAge(patient);
   const hasHypertension = HYPERTENSION_RE.test(text);
   const bpValues = recentBloodPressure.map(row => ({
     sys: Number(row?.extra?.sys || String(row?.value || '').split('/')[0]),
@@ -56,7 +56,7 @@ function buildMonitoringReminderSpecs(patient, moduleData = {}, recentBloodPress
   const explicitBp = records.find(row => BP_RE.test(`${row.items || ''} ${row.purpose || ''}`));
   const explicitWeight = records.find(row => WEIGHT_RE.test(`${row.items || ''} ${row.purpose || ''}`));
   const specs = [];
-  if (explicitBp || hasHypertension || hasElevatedReading || (age !== null && age >= 35)) {
+  {
     const bpSchedule = explicitBp
       ? scheduleFromFrequency(explicitBp.frequency, false)
       : (hasHighReading ? { daysOfWeek: [], customEveryNDays: 1 }
@@ -80,21 +80,22 @@ function buildMonitoringReminderSpecs(patient, moduleData = {}, recentBloodPress
 
 async function syncServiceCycleMonitoringReminders(userId) {
   const patient = await User.findById(userId)
-    .select('age birthDate birthday dateOfBirth height weight chronicDiseases medicalHistory healthProfile.medicalHistory healthConcern serviceStartDate serviceExpiry createdAt onboardingCompletedAt isDeleted').lean();
+    .select('age birthDate birthday dateOfBirth height weight chronicDiseases medicalHistory healthProfile.medicalHistory healthConcern serviceStartDate serviceExpiry createdAt onboardingCompleted onboardingCompletedAt healthMonitoringConsentAt isDeleted').lean();
   if (!patient) return { created: 0, updated: 0 };
-  const access = await require('./serviceAccess').resolveServiceAccess(patient);
-  if (!access.active) {
+  if (patient.isDeleted || !patient.onboardingCompleted || !patient.healthMonitoringConsentAt) {
     await Reminder.updateMany({ user: patient._id, systemManaged: true, sourceKey: /^service-cycle:/ }, { $set: { enabled: false } });
     await clearMonitoringSystemMessage(patient._id);
     return { created: 0, updated: 0, paused: true };
   }
+  const access = await require('./serviceAccess').resolveServiceAccess(patient);
+  const annualPlan = access.active ? await AnnualPlan.findOne({ patientId: patient._id, confirmedAt: { $ne: null } }).sort({ confirmedAt: -1 }).select('_id moduleData').lean() : null;
   const HealthRecord = require('../models/HealthRecord');
   const recentBloodPressure = await HealthRecord.find({ user: patient._id, type: 'bloodPressure', recordedAt: { $gte: new Date(Date.now() - 30 * 86400000) } })
     .sort({ recordedAt: -1 }).limit(14).select('value extra recordedAt').lean();
-  const specs = buildMonitoringReminderSpecs(patient, {}, recentBloodPressure);
+  const specs = buildMonitoringReminderSpecs(patient, annualPlan?.moduleData || {}, recentBloodPressure);
   const activeKeys = specs.map(item => item.sourceKey);
-  const startDate = access.startDate ? new Date(`${access.startDate}T00:00:00+08:00`) : patient.onboardingCompletedAt || patient.createdAt || new Date();
-  const endDate = access.endDate ? new Date(`${access.endDate}T23:59:59.999+08:00`) : null;
+  const startDate = patient.onboardingCompletedAt || patient.createdAt || new Date();
+  const endDate = null; // 免费基础监测不随付费服务期结束；年度方案仅覆盖个性化频次。
   let created = 0; let updated = 0;
   for (const spec of specs) {
     const sourceKey = `service-cycle:${spec.sourceKey}`;
@@ -104,7 +105,7 @@ async function syncServiceCycleMonitoringReminders(userId) {
       { $set: { category: spec.category, title: spec.title, description: spec.description,
         scheduleType: 'recurring', reminderTime: spec.reminderTime, daysOfWeek: spec.daysOfWeek || [],
         customEveryNDays: spec.customEveryNDays, startDate, endDate, enabled: !existing?.userDisabled, systemManaged: true,
-        sourceAnnualPlanId: null },
+        sourceAnnualPlanId: annualPlan?._id || null },
         $setOnInsert: { user: patient._id, sourceKey } },
       { upsert: true },
     );
@@ -114,7 +115,7 @@ async function syncServiceCycleMonitoringReminders(userId) {
     { user: patient._id, systemManaged: true, sourceKey: { $regex: '^service-cycle:', $nin: activeKeys.map(key => `service-cycle:${key}`) } },
     { $set: { enabled: false } },
   );
-  await syncMonitoringSystemMessage(patient._id, new Date(), access);
+  await syncMonitoringSystemMessage(patient._id);
   return { created, updated };
 }
 
@@ -138,11 +139,11 @@ async function clearMonitoringSystemMessage(userId) {
   await require('../models/Message').updateOne({ user: userId, dedupeKey: `health-monitoring:${userId}`, unread: true }, { $set: { unread: false, readAt: new Date() } });
 }
 
-async function syncMonitoringSystemMessage(userId, now = new Date(), knownAccess) {
+async function syncMonitoringSystemMessage(userId, now = new Date()) {
   const Message = require('../models/Message');
   const HealthRecord = require('../models/HealthRecord');
-  const access = knownAccess || await require('./serviceAccess').resolveServiceAccess(await User.findById(userId).select('serviceStartDate serviceExpiry isDeleted').lean(), now);
-  if (!access.active) { await clearMonitoringSystemMessage(userId); return null; }
+  const patient = await User.findById(userId).select('onboardingCompleted healthMonitoringConsentAt isDeleted').lean();
+  if (!patient?.onboardingCompleted || !patient.healthMonitoringConsentAt || patient.isDeleted) { await clearMonitoringSystemMessage(userId); return null; }
   const reminders = await Reminder.find({ user: userId, systemManaged: true, sourceKey: /^service-cycle:/, enabled: true }).lean();
   const due = reminders.filter(item => activeToday(item, now));
   if (!due.length) { await clearMonitoringSystemMessage(userId); return null; }
