@@ -2061,6 +2061,11 @@ router.post('/followups/:id/checkup-appointment-ai-draft', staffAuth, checkPermi
 router.post('/followups/:id/progress', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
   try {
     const data = await require('../utils/followUpProgress').saveProgress({ FollowUp, id: req.params.id, actor: req.staff, body: req.body });
+    const record=data.progressRecords?.find(r=>r.requestId===req.body.requestId);
+    if(record?.outcome==='visited'){
+      const flow=await require('../utils/careFlowRuntime').runtime().startReminder(req.params.id,req.staff);
+      return res.json({success:true,data,careFlowId:flow._id,message:'已保存就医记录，转入资料收集及审核；原事项尚未结束'});
+    }
     res.json({ success: true, data });
   } catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.message }); }
 });

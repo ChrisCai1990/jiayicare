@@ -16,6 +16,8 @@ function problemLabels(stage) {
 }
 const isTask = task => task?.sourceType === 'annual_service' && String(task.workflowKey || '').startsWith('care_flow:');
 function targets(state) {
-  return stages.slice(0, stages.indexOf(state.stage)).filter(s => s !== 'draft' && !(state.returns || []).some(r => r.from === s));
+  const path=pathFor(state);
+  return path.slice(0, path.indexOf(state.stage)).filter(s => s !== 'draft' && !(state.returns || []).some(r => r.from === s));
 }
-module.exports = { stages, labels, roles, categories, problemLabels, isTask, targets };
+const pathFor=state=>state.mode==='reminder'?['advisor','upload','audit','draft','review']:stages;
+module.exports = { stages, labels, roles, categories, problemLabels, isTask, targets,pathFor };

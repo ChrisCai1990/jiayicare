@@ -34,7 +34,8 @@ function advance(state, actor, action, data, at = new Date()) {
       // It stays in the audit history, but must be regenerated before approval.
       if (s.data.draft && ['advisor', 'execute', 'upload', 'audit'].includes(stage)) s.draftStale = true;
     } else {
-      s.stage = config.stages[config.stages.indexOf(stage) + 1] || 'closed';
+      const path=config.pathFor(s);
+      s.stage = path[path.indexOf(stage) + 1] || 'closed';
       Object.assign(event, { before, after: structuredClone(s.data) });
     }
   } else fail('未知操作', 400);

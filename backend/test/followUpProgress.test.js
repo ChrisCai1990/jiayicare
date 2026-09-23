@@ -1,6 +1,25 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { saveProgress } = require('../src/utils/followUpProgress');
+const medical = {sourceType:'scheduled',sourceScheduleKey:'medical_treatment:2026-09-23',deliveryMode:'reminder'};
+test('reminder outcomes retain one task and require confirmed real visit date',async()=>{
+  const s=setup(medical);
+  for(const outcome of ['reminded','unreachable','deferred','booked']){
+    const row=await saveProgress({...s.args,body:{...s.args.body,requestId:'contact-'+outcome,updatedAt:s.get().updatedAt,outcome}});
+    assert.equal(row.status,'in_progress');assert.equal(row.content,'完成本次复查');
+  }
+  const body={...s.args.body,updatedAt:s.get().updatedAt,outcome:'visited',visitDate:'2026-09-23',visitConfirmed:true};
+  for(const change of [{visitConfirmed:false},{visitDate:'2099-01-01'},{visitDate:'2026-02-30'}])await assert.rejects(saveProgress({...s.args,body:{...body,...change},now:new Date('2026-09-23')}),{statusCode:400});
+  await saveProgress({...s.args,body,now:new Date('2026-09-23')});
+  s.get().careFlowId='task';
+  await saveProgress({...s.args,body});
+  assert.equal(s.get().progressRecords.length,5);
+  await assert.rejects(saveProgress({...s.args,body:{...body,requestId:'new-contact'}}),{statusCode:409});
+});
+test('assistance cannot use pure reminder transition',async()=>{
+ const s=setup({...medical,deliveryMode:'single'});
+ await assert.rejects(saveProgress({...s.args,body:{...s.args.body,outcome:'visited'}}),{statusCode:400});
+});
 function setup(patch = {}) {
   let row = { _id: 'task', assignedTo: 'manager', staffId: 'advisor', status: 'planned', updatedAt: new Date('2026-09-21'),
     content: '完成本次复查', type: 'phone', ...patch };

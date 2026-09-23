@@ -40,7 +40,7 @@ function runtime(injected = {}) {
       if (!person?.id) fail('当前环节缺少负责人');
       await Task.updateOne({ _id: activeId }, { $setOnInsert: { patientId: flow.patientId, staffId: person.id, assignedTo: person.id,
         sourceType: 'annual_service', sourceId: flow._id, sourceAnnualPlanId: flow.annualPlanId, careFlowId: flow._id,
-        workflowKey: `care_flow:${s.stage}`, taskRole: 'executor', coordinationGroupId: `care:${flow._id}`, formData: { careFlowSequence: s.sequence },
+        workflowKey: `care_flow:${s.stage}`, taskRole: 'executor', coordinationGroupId: `care:${flow._id}`, formData: { careFlowSequence: s.sequence,careFlowMode:s.mode||'assistance' },
         theme: `${config.labels[s.stage]}${s.returns?.length ? ' · 退回修订' : ''} · ${s.title}`, status: 'planned', aiStatus: 'approved',
         date: due, remindAt: due, plannedContent: '仅处理本次服务交接；年度方案不覆盖。请打开专用流程查看要求与修订记录。',
       } }, { upsert: true });
@@ -70,6 +70,30 @@ function runtime(injected = {}) {
     if (after && after.state.sequence !== s.sequence) {
       await Task.updateOne({ _id: activeId, careFlowId: flow._id }, { $set: { status: 'completed', completedAt: new Date() } });
     }
+  }
+  async function startReminder(taskId,actor) {
+    const found=await resolve(taskId,actor);
+    if(!found.unstarted){if(found.state.mode!=='reminder')fail('不是纯就医提醒事项');await sync(found);return found;}
+    const task=found.task;
+    if(!require('../../../shared/reminderFollowUp.cjs').eligible({...task,careFlowId:null}))fail('仅纯就医提醒事项可进入此流程');
+    if(!['planned','in_progress','missed'].includes(task.status)||task.aiStatus==='pending')fail('事项已结束或尚待审核');
+    const visit=task.progressRecords?.at(-1);
+    if(visit?.outcome!=='visited'||!validDate(visit.visitDate))fail('请先保存已就医记录及实际日期');
+    const patient=await User.findOne({_id:task.patientId,tenantId:tenant(actor)}).lean();
+    if(!patient)fail('客户归属不一致',403);
+    const people={};
+    for(const [role,personId] of Object.entries({healthManager:task.assignedTo||task.staffId,familyDoctor:patient.assignedFamilyDoctor})){
+      const p=await Admin.findOne({_id:personId,role,staffStatus:'active',tenantId:tenant(actor)}).lean();
+      if(!p)fail('就医记录已保存；请先配置有效的健管专员及健康顾问，再重试转交');
+      people[role]={id:id(p._id),name:p.name,role};
+    }
+    const claimed=await Task.updateOne({_id:task._id,updatedAt:task.updatedAt,status:task.status,'serviceTracking.linkId':null},{$set:{careFlowId:task._id,formData:{...(task.formData||{}),careFlowMode:'reminder'}}});
+    if(!claimed.matchedCount)fail('事项刚刚更新，请刷新后重试');
+    const state={mode:'reminder',stage:'upload',sequence:0,title:task.theme||'就医提醒',people,returns:[],sourceScheduleKey:task.sourceScheduleKey,
+      progressRecords:task.progressRecords,data:{advisor:{text:task.plannedContent||task.content||''},visit:{date:visit.visitDate},execute:{text:visit.content,onsite:[]},upload:{reportIds:[]}}};
+    const flow=await Flow.findOneAndUpdate({_id:task._id,tenantId:tenant(actor)},{$setOnInsert:{tenantId:tenant(actor),patientId:task.patientId,parentId:task._id,annualPlanId:task.sourceAnnualPlanId||null,revision:0,state,
+      events:[{action:'reminder_visit_completed',stage:'upload',at:new Date(),by:id(actor._id),name:actor.name,sourceSnapshot:state.data}]}},{upsert:true,new:true}).lean();
+    await sync(flow);return flow;
   }
   async function start(taskId, actor) {
     const found = await resolve(taskId, actor);
@@ -182,6 +206,6 @@ function runtime(injected = {}) {
     const current = await view(flowId,actor); await sync(current);
     return view(flowId,actor);
   }
-  return { view, resolve, start, sync, reports, action, models: { Flow, Task, Report } };
+  return { view, resolve, start, startReminder, sync, reports, action, models: { Flow, Task, Report } };
 }
 module.exports = { runtime, hash, validDate };
