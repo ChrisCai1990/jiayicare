@@ -78,12 +78,10 @@ function renderArticle(article, previewLabel) {
   <main class="article-shell">
     <a class="back-link" href="../index.html">← 返回健康知识中心</a>
     <article>
-      ${label}
-      <p class="eyebrow">健康教育 · 更新于 ${escapeHtml(article.updatedAt)}</p>
+      ${label ? `${label}\n      ` : ''}<p class="eyebrow">健康教育 · 更新于 ${escapeHtml(article.updatedAt)}</p>
       <h1>${escapeHtml(article.title)}</h1>
       <p class="lead">${escapeHtml(article.summary)}</p>
-      ${reviewMeta}
-      ${sections}
+      ${reviewMeta ? `${reviewMeta}\n      ` : ''}${sections}
       <section class="source-list">
         <h2>参考来源</h2>
         <ul>${sources}
