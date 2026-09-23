@@ -11,7 +11,7 @@ function runtime(injected = {}) {
   const tenant = actor => actor.tenantId || null;
   async function view(flowId, actor) {
     const flow = await Flow.findOne({ _id: flowId, tenantId: tenant(actor) }).lean();
-    if (!flow || !enabled(flow.patientId)) fail('未找到已开放的本次服务', 404);
+    if (!flow || (!enabled(flow.patientId) && !(flow.state?.mode === 'reminder' && flow.state?.adHocMedicalReminder === true))) fail('未找到已开放的本次服务', 404);
     if (actor.staffStatus === 'inactive' || (actor.role !== 'superadmin' && !Object.values(flow.state.people).some(p => id(p.id) === id(actor._id) && p.role === actor.role))) fail('无本次服务权限', 403);
     return flow;
   }
@@ -24,7 +24,7 @@ function runtime(injected = {}) {
       if (id(task._id) !== id(task.careFlowId)) fail('流程初始化未完成，请由规划师重试接入');
     }
     if (id(task.assignedTo) !== id(actor._id) && actor.role !== 'superadmin') fail('仅本任务负责人可接入', 403);
-    if (!enabled(task.patientId)) fail('该客户未开放本流程', 403);
+    if (!enabled(task.patientId) && !(task.formData?.adHocMedicalReminder === true && (task.followUpSchemeId || task.careFlowId))) fail('该客户未开放本流程', 403);
     if (!await User.findOne({ _id: task.patientId, tenantId: tenant(actor) }).lean()) fail('客户归属不一致',403);
     return { task, unstarted: true };
   }
@@ -40,7 +40,7 @@ function runtime(injected = {}) {
       if (!person?.id) fail('当前环节缺少负责人');
       await Task.updateOne({ _id: activeId }, { $setOnInsert: { patientId: flow.patientId, staffId: person.id, assignedTo: person.id,
         sourceType: 'annual_service', sourceId: flow._id, sourceAnnualPlanId: flow.annualPlanId, careFlowId: flow._id,
-        workflowKey: `care_flow:${s.stage}`, taskRole: 'executor', coordinationGroupId: `care:${flow._id}`, formData: { careFlowSequence: s.sequence,careFlowMode:s.mode||'assistance' },
+        workflowKey: `care_flow:${s.stage}`, taskRole: 'executor', coordinationGroupId: `care:${flow._id}`, formData: { careFlowSequence: s.sequence,careFlowMode:s.mode||'assistance',adHocMedicalReminder:s.adHocMedicalReminder===true },
         theme: `${config.labels[s.stage]}${s.returns?.length ? ' · 退回修订' : ''} · ${s.title}`, status: 'planned', aiStatus: 'approved',
         date: due, remindAt: due, plannedContent: '仅处理本次服务交接；年度方案不覆盖。请打开专用流程查看要求与修订记录。',
       } }, { upsert: true });
@@ -89,7 +89,7 @@ function runtime(injected = {}) {
     }
     const claimed=await Task.updateOne({_id:task._id,updatedAt:task.updatedAt,status:task.status,'serviceTracking.linkId':null},{$set:{careFlowId:task._id,formData:{...(task.formData||{}),careFlowMode:'reminder'}}});
     if(!claimed.matchedCount)fail('事项刚刚更新，请刷新后重试');
-    const state={mode:'reminder',stage:'upload',sequence:0,title:task.theme||'就医提醒',people,returns:[],sourceScheduleKey:task.sourceScheduleKey,
+    const state={mode:'reminder',stage:'upload',sequence:0,title:task.theme||'就医提醒',people,returns:[],sourceScheduleKey:task.sourceScheduleKey,adHocMedicalReminder:task.formData?.adHocMedicalReminder===true,
       progressRecords:task.progressRecords,data:{advisor:{text:task.plannedContent||task.content||''},visit:{date:visit.visitDate},execute:{text:visit.content,onsite:[]},upload:{reportIds:[]}}};
     const flow=await Flow.findOneAndUpdate({_id:task._id,tenantId:tenant(actor)},{$setOnInsert:{tenantId:tenant(actor),patientId:task.patientId,parentId:task._id,annualPlanId:task.sourceAnnualPlanId||null,revision:0,state,
       events:[{action:'reminder_visit_completed',stage:'upload',at:new Date(),by:id(actor._id),name:actor.name,sourceSnapshot:state.data}]}},{upsert:true,new:true}).lean();

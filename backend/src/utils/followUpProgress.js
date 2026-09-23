@@ -4,7 +4,7 @@ async function saveProgress({ FollowUp, id, actor, body, now = new Date() }) {
   if (!task) throw fail('随访记录不存在', 404);
   const owner = task.assignedTo || task.staffId;
   if (actor.role !== 'superadmin' && String(owner) !== String(actor._id)) throw fail('仅当前任务负责人可记录进展', 403);
-  require('./healthManagementRollout').assertPatientEnabled(task.patientId);
+  if (!require('./healthManagementRollout').enabledForTask(task)) throw fail('该客户暂未开放新版健康管理闭环', 403);
   if (!require('./followUpContinuity').canRecordProgress(task)) throw fail('服务岗位任务请使用原流程入口');
   if (!/^[a-zA-Z0-9_-]{8,80}$/.test(body.requestId || '')) throw fail('缺少有效提交标识', 400);
   const prior = task.progressRecords?.find(row => row.requestId === body.requestId);

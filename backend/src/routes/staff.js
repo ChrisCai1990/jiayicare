@@ -581,7 +581,8 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
   await require('../utils/medicalProxyWorkflow').ensureStaffExpertAppointmentTasksForStaff(req.staff);
   if(req.staff.role==='healthManager') {
     const flows=await require('../models/CareFlow').find({tenantId:req.staff.tenantId||null,'state.people.healthManager.id':String(req.staff._id),'state.stage':{$in:['upload','audit']}}).lean();
-    for(const flow of flows) if(require('../utils/healthManagementRollout').enabledForPatient(flow.patientId)) await require('../utils/careFlowRuntime').runtime().sync(flow);
+    for(const flow of flows) if(require('../utils/healthManagementRollout').enabledForPatient(flow.patientId)
+      || (flow.state?.mode === 'reminder' && flow.state?.adHocMedicalReminder === true)) await require('../utils/careFlowRuntime').runtime().sync(flow);
   }
   // 首页工作台需要同时展示“等待上一环节”的串行任务，让接手人提前知道后续工作。
   // isBlocked 只限制办理，不应让任务从负责人视野里完全消失。
@@ -2343,6 +2344,14 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   const EXEC_FIELDS = ['status', 'content', 'cancelReason', 'vitals', 'checkInItems', 'participants', 'interviewMinutes', 'serviceChecklist', 'formData'];
   const allowed = isOwner ? [...OWNER_ONLY, ...EXEC_FIELDS] : EXEC_FIELDS;
   const OBJECTID_FIELDS = ['assignedTo'];
+  // This marker is assigned only by the validated template creation path. Generic edits may neither forge nor erase it.
+  if (req.body.formData !== undefined) {
+    const incoming = req.body.formData && typeof req.body.formData === 'object' && !Array.isArray(req.body.formData)
+      ? { ...req.body.formData } : {};
+    delete incoming.adHocMedicalReminder;
+    if (followUp.formData?.adHocMedicalReminder === true) incoming.adHocMedicalReminder = true;
+    req.body.formData = incoming;
+  }
   allowed.forEach(k => {
     if (req.body[k] !== undefined) {
       // ObjectId 字段传空字符串时设为 null，避免 Mongoose BSONError

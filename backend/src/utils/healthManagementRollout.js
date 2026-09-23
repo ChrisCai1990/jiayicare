@@ -16,6 +16,10 @@ function enabledForPatient(value, env = process.env) {
   const config = policy(env);
   return config.mode === 'all' || (config.mode === 'allowlist' && config.ids.includes(patientId(value)));
 }
+function enabledForTask(task, env = process.env) {
+  return enabledForPatient(task?.patientId, env)
+    || (task?.formData?.adHocMedicalReminder === true && !!(task?.followUpSchemeId || task?.careFlowId));
+}
 function patientFilter(field = 'patientId', env = process.env) {
   const config = policy(env);
   return config.mode === 'all' ? {} : { [field]: { $in: config.mode === 'allowlist' ? config.ids : [] } };
@@ -23,4 +27,4 @@ function patientFilter(field = 'patientId', env = process.env) {
 function assertPatientEnabled(value) {
   if (!enabledForPatient(value)) throw Object.assign(new Error('该客户暂未开放新版健康管理闭环'), { statusCode: 403, code: 'HEALTH_MANAGEMENT_NOT_ENABLED' });
 }
-module.exports = { policy, enabledForPatient, patientFilter, assertPatientEnabled };
+module.exports = { policy, enabledForPatient, enabledForTask, patientFilter, assertPatientEnabled };

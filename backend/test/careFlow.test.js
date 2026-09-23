@@ -33,15 +33,25 @@ function model(rows){
     updateMany:async(q,u)=>{for(const o of find(q))await update({_id:o._id},u)},
     findOneAndUpdate:(q,u,opts)=>({lean:async()=>{await update(q,u,opts);return copy(find(q)[0]);}})};
 }
-function setup(stage='booking'){
+function setup(stage='booking', rolloutEnabled=true){
   const flows=new Map([['flow',{_id:'flow',patientId:'patient',tenantId:null,parentId:'parent',annualPlanId:'annual',revision:0,state:state(stage),events:[]}]]);
   const tasks=new Map([['flow',{_id:'flow',careFlowId:'flow',status:'planned'}],['parent',{_id:'parent',plannedContent:'原年度顾问内容',status:'planned'}]]);
   const reports=new Map([['report',{_id:'report',user:'patient',tenantId:null,audit_status:'audited',title:'测试病历',reportItems:[],aiSummary:'已审核内容'}]]);
   const admins=new Map(Object.values(people).map(p=>[p.id,{_id:p.id,...p,tenantId:null,staffStatus:'active'}]));
   const Flow=model(flows),Task=model(tasks),Report=model(reports),User=model(new Map([['patient',{_id:'patient',tenantId:null,assignedFamilyDoctor:'familyDoctor',assignedMedicalAssistant:'medicalAssistant'}]]));
-  const api=runtime({Flow,Task,Report,User,Admin:model(admins),enabled:()=>true});
+  const api=runtime({Flow,Task,Report,User,Admin:model(admins),enabled:()=>rolloutEnabled});
   return {flows,tasks,reports,api,Flow,Task};
 }
+test('ad-hoc medical reminder can complete its scoped flow outside the annual-plan allowlist',async()=>{
+ const s=setup('booking',false);s.flows.clear();s.tasks.clear();
+ s.tasks.set('flow',{_id:'flow',patientId:'patient',assignedTo:'healthManager',sourceType:null,followUpSchemeId:'manual-reminder',
+   formData:{adHocMedicalReminder:true,category:'medical_visit'},status:'in_progress',updatedAt:0,plannedContent:'提醒就医',
+   progressRecords:[{outcome:'visited',visitDate:'2026-09-23',content:'客户已就医'}]});
+ const flow=await s.api.startReminder('flow',actor('upload'));
+ assert.equal(flow.state.adHocMedicalReminder,true);
+ assert.equal((await s.api.view('flow',actor('upload'))).state.stage,'upload');
+ assert.equal([...s.tasks.values()].find(task=>task.workflowKey==='care_flow:upload').formData.adHocMedicalReminder,true);
+});
 async function complete(s,value){const f=s.flows.get('flow');return s.api.action('flow',actor(f.state.stage),{action:'complete',revision:f.revision,confirmed:true,correction:'已核对修订',value});}
 test('pure reminder visits use upload/audit/advisor path without dispatch; idempotent and immutable original',async()=>{
  const s=setup();s.flows.clear();s.tasks.clear();
