@@ -878,7 +878,9 @@ export default function TasksScreen({ navigation }) {
                 <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setDetailTask(null)}>
                   <Text style={styles.modalCloseBtnText}>关闭</Text>
                 </TouchableOpacity>
-                {detailTask.customerReadOnly ? (
+                {detailTask.canUploadReports ? (
+                  <TouchableOpacity style={styles.modalCompleteBtn} onPress={()=>{setDetailTask(null);navigation.navigate('ReportUpload')}}><Text style={styles.modalCompleteBtnText}>上传报告及病历</Text></TouchableOpacity>
+                ) : detailTask.customerReadOnly ? (
                   <View style={styles.modalDoneBtn}>
                     <Ionicons name="people-outline" size={16} color={colors.primary} />
                     <Text style={styles.modalDoneBtnText}>由服务人员处理</Text>

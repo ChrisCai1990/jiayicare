@@ -1,0 +1,10 @@
+const test=require('node:test'),assert=require('node:assert/strict');
+const {project}=require('../src/utils/careFlowClientPlans');
+test('客户与健管读取实际检查时间，未安排不冒充门诊日期，内部依据不外泄',()=>{
+ const flow={_id:'flow',state:{stage:'upload',title:'检查',data:{advisor:{text:'内部研判'},booking:{entries:[{id:'outpatient',title:'门诊',status:'booked',date:'2026-09-28',time:'09:00'},{id:'exam',type:'exam',title:'肾脏彩超',mode:'onsite',status:'pending'}]},execute:{text:'内部意见',onsite:[{id:'exam',type:'exam',title:'MRI',hospital:'医院',department:'影像科',status:'booked',date:'2026-10-03',time:'14:00',reason:'内部原因'}]}}}};
+ const original=structuredClone(flow),rows=project(flow);
+ assert.equal(rows[1].dueDate,'2026-10-03');assert.equal(rows[1].dueTime,'14:00');assert.ok(rows[1].customerReadOnly);assert.ok(rows[1].canUploadReports);assert.ok(!JSON.stringify(rows).includes('内部'));assert.deepEqual(flow,original);
+ flow.state.data.execute.onsite[0].status='pending';const pending=project(flow)[1];assert.equal(pending.dueDate,undefined);assert.match(pending.description,/具体日期尚未确认/);
+ flow.state.data.execute.onsite[0].status='cancelled';assert.equal(project(flow).length,1);
+ flow.state.stage='execute';assert.deepEqual(project(flow),[]);
+});

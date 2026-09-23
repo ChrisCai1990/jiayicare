@@ -11,7 +11,7 @@ export default function CareFlowHandoff({state}) {
     booking:'按顾问要求逐项落实预约，填写具体日期、时间及现场交接。',
     planner:'核对下方预约和现场待办，安排合适的就医专员。',
     execute:'按预约时间办理，向专家沟通顾问要求，并记录实际结果。',
-    upload:'上传本次病历、医嘱及检查资料，说明完整性。',
+    upload:'健管专员核对实际检查安排，收集客户已上传资料或代为上传，再完成报告审核。',
     audit:'核对本次资料及办理结果，完成逐份报告审核。',
     draft:'根据已审核资料生成待顾问审核的随访草稿。',
     review:'审核随访内容及日期，通过后生成正式随访任务。',
@@ -29,7 +29,7 @@ export default function CareFlowHandoff({state}) {
         <b>{e.type==='exam'?'检查':'门诊'} · {e.title || p.items || '顾问指定事项'}</b>
         <dl style={{display:'grid',gridTemplateColumns:'minmax(80px,120px) minmax(0,1fr)',gap:'8px 16px',marginBottom:0}}>
           {field('医院',e.hospital || p.hospital)}{field('科室',e.department)}{field('专家',e.expert || '未指定专家')}
-          {field('办理状态',e.status==='cancelled'?'专家取消／无需检查':booked?'已预约':onsite?'待就医专员现场预约（未完成）':e.mode==='not_required'?'已确认无需预约':'待落实预约')}
+          {field('办理状态',e.status==='cancelled'?'专家取消／无需检查':booked?'已预约':onsite?(state.data.execute?'尚未落实预约（待跟进）':'待就医专员现场预约（未完成）'):e.mode==='not_required'?'已确认无需预约':'待落实预约')}
           {outcome?.reason&&field('专家意见／变更原因',outcome.reason)}
           {booked&&field('预约日期',e.date)}{booked&&field('具体时间',e.time)}
           {entry.note&&field('交接要求',entry.note)}{outcome?.note&&field('现场结果',outcome.note)}

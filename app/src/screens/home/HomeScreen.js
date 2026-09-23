@@ -641,7 +641,8 @@ export default function HomeScreen({ navigation }) {
                   >
                     <Text style={styles.taskModalCancelText}>关闭</Text>
                   </TouchableOpacity>
-                  {t.type !== 'followup' && (
+                  {t.canUploadReports && <TouchableOpacity style={styles.taskModalCompleteBtn} onPress={()=>{setTaskDetailModal(null);navigation.navigate('ReportUpload')}}><Text style={styles.taskModalCompleteText}>上传报告及病历</Text></TouchableOpacity>}
+                  {t.type !== 'followup' && !t.customerReadOnly && (
                     <TouchableOpacity
                       style={[styles.taskModalCompleteBtn, taskCompleting && { opacity: 0.6 }]}
                       onPress={handleComplete}

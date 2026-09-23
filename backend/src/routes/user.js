@@ -1176,6 +1176,7 @@ router.get('/followup-tasks', auth, async (req, res) => {
       // 不应看到、也不能代替医护人员完成这些内部任务。
       $nor: [
         { sourceType: 'annual_service' },
+        { sourceType: 'annual_coordination' },
         { sourceType: 'order', workflowKey: { $not: /^medical_reminder:(?:followup|documents)$/ } },
         { sourceType: 'health_plan', taskRole: { $in: ['executor', 'supervisor'] } },
         { sourceType: { $in: ['professional_assessment', 'report_followup'] }, taskRole: { $in: ['executor', 'supervisor'] } },
@@ -1186,7 +1187,9 @@ router.get('/followup-tasks', auth, async (req, res) => {
       .populate('assignedTo', 'name role title')
       .populate('sourceHealthPlanId', 'title description content type')
       .populate({ path: 'followUpSchemeId', populate: { path: 'formId' } });
-    const data = followups.map(followUp => ({
+    const carePlans=await require('../utils/careFlowClientPlans').clientPlans(req.user);
+    const arrangedFlows=new Set(carePlans.map(t=>t.careFlowId));
+    const data = followups.filter(f=>!f.careFlowId||!arrangedFlows.has(String(f.careFlowId))).map(followUp => ({
       ...followUp.toObject(),
       taskRequirements: followUpTaskRequirements(followUp),
     })).sort((a, b) => {

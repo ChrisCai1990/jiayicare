@@ -44,6 +44,14 @@ function runtime(injected = {}) {
         theme: `${config.labels[s.stage]}${s.returns?.length ? ' · 退回修订' : ''} · ${s.title}`, status: 'planned', aiStatus: 'approved',
         date: due, remindAt: due, plannedContent: '仅处理本次服务交接；年度方案不覆盖。请打开专用流程查看要求与修订记录。',
       } }, { upsert: true });
+      // Reconcile legacy upload ownership without rewriting execution or annual history.
+      if (s.stage === 'upload') {
+        const previous=await Task.findById(activeId).lean();
+        if(previous && id(previous.assignedTo)!==id(person.id)) {
+          const updated=await Task.updateOne({ _id:activeId,assignedTo:previous.assignedTo,status:{$in:['planned','in_progress']} },{$set:{assignedTo:person.id}});
+          if(updated.modifiedCount) await Flow.updateOne({_id:flow._id},{$push:{events:{action:'upload_owner_updated',stage:'upload',at:new Date(),role:'system',previousAssignee:id(previous.assignedTo),assignedTo:id(person.id),reason:'报告收集交健管专员承接，原执行记录保留'}}});
+        }
+      }
     } else {
       const review = s.data.review;
       if (!review?.content || !validDate(review.date)) fail('缺少顾问最终审核的随访计划');
@@ -138,8 +146,10 @@ function runtime(injected = {}) {
         return { text: result, onsite: outcomes };
       }
       case 'upload': {
-        if (!(s.data.upload?.reportIds || []).length) fail('请先上传本次报告或病历');
-        if(!Array.isArray(input.reportIds) || !input.reportIds.length || input.reportIds.some(v => !(s.data.upload.reportIds || []).map(String).includes(String(v)))) fail('请选择本次已上传的有效资料');
+        if(!Array.isArray(input.reportIds) || !input.reportIds.length || input.reportIds.length>50) fail('请选择本次有效报告或病历');
+        const selected = [...new Set(input.reportIds.map(String))];
+        const documents = await Report.find({_id:{$in:selected},user:flow.patientId,tenantId:flow.tenantId}).lean();
+        if(documents.length!==selected.length) fail('资料不存在或不属于本客户',403);
         return { reportIds: [...new Set(input.reportIds.map(String))], note: text(input.note, 3000) };
       }
       case 'audit': {
