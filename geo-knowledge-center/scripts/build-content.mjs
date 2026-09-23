@@ -18,6 +18,9 @@ const outputDirectory = isPreview
 const sitemapPath = isPreview
   ? path.join(siteDirectory, '.preview', 'sitemap.xml')
   : path.join(siteDirectory, 'sitemap.xml');
+const cataloguePath = isPreview
+  ? path.join(siteDirectory, '.preview', 'published-articles.json')
+  : path.join(siteDirectory, 'published-articles.json');
 const siteUrl = process.env.SITE_URL || 'https://jiaycare.com';
 const validStatuses = new Set(['draft', 'review', 'published']);
 
@@ -100,6 +103,15 @@ for (const article of eligible) {
   fs.writeFileSync(path.join(outputDirectory, `${article.slug}.html`), renderArticle(article, isPreview), 'utf8');
 }
 
+const catalogue = eligible.map((article) => ({
+  title: article.title,
+  summary: article.summary,
+  updatedAt: article.updatedAt,
+  href: `guides/${article.slug}.html`
+}));
+fs.mkdirSync(path.dirname(cataloguePath), { recursive: true });
+fs.writeFileSync(cataloguePath, `${JSON.stringify(catalogue, null, 2)}\n`, 'utf8');
+
 const staticGuides = isPublish && fs.existsSync(path.join(siteDirectory, 'guides'))
   ? fs.readdirSync(path.join(siteDirectory, 'guides'))
       .filter((file) => file.endsWith('.html') && !eligible.some((article) => `${article.slug}.html` === file))
@@ -107,9 +119,12 @@ const staticGuides = isPublish && fs.existsSync(path.join(siteDirectory, 'guides
   : [];
 const generatedGuides = eligible.map((article) => `guides/${article.slug}.html`);
 const urls = isPreview ? generatedGuides : ['index.html', ...staticGuides, ...generatedGuides];
-const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((url) => `  <url><loc>${siteUrl.replace(/\/$/, '')}/${url}</loc></url>`).join('\n')}\n</urlset>\n`;
+const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((url) => {
+  const resolvedUrl = url === 'index.html' ? '' : url;
+  return `  <url><loc>${siteUrl.replace(/\/$/, '')}/${resolvedUrl}</loc></url>`;
+}).join('\n')}\n</urlset>\n`;
 fs.mkdirSync(path.dirname(sitemapPath), { recursive: true });
 fs.writeFileSync(sitemapPath, sitemap, 'utf8');
 
-console.log(`${isPreview ? '内部预览' : '公开内容'}已生成：${eligible.length} 篇。`);
+console.log(`${isPreview ? '内部预览' : '公开内容'}已生成：${eligible.length} 篇，并已更新内容目录。`);
 if (isPublish) console.log('仅 status 为 published 且已填写审核信息的文章会进入公开网站。');
