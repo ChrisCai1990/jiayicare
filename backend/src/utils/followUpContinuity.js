@@ -2,6 +2,7 @@
 function requiresOutcomeReview(task) {
   if (!require('./healthManagementRollout').enabledForPatient(task?.patientId)) return false;
   if (!task || task.taskRole) return false;
+  if (!task.sourceType && task.formData?.adHocMedicalReminder === true && task.followUpSchemeId) return true;
   if (task.continuityRequired === true) return true;
   if (task.sourceType === 'scheduled' && /^(annual_checkup|checkup_completion|abnormal_followup|medical_treatment|functional_medicine):/.test(task.sourceScheduleKey || '')) return true;
   return ['professional_assessment', 'report_followup'].includes(task.sourceType)

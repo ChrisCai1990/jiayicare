@@ -1,6 +1,17 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { isMedicalReminderOrder, normalizeIntake, validateIntake, stageOf } = require('../src/utils/medicalReminderWorkflow');
+const reminder = require('../../shared/reminderFollowUp.cjs');
+const { requiresOutcomeReview } = require('../src/utils/followUpContinuity');
+
+test('ad-hoc medical reminder stays in one follow-up until visit and review', () => {
+  const task = { patientId: 'test-patient', sourceType: null, followUpSchemeId: 'reminder-template',
+    formData: { adHocMedicalReminder: true, category: 'medical_visit' }, status: 'planned' };
+  assert.equal(reminder.eligible(task), true);
+  assert.equal(requiresOutcomeReview(task), true);
+  assert.equal(reminder.eligible({ ...task, followUpSchemeId: null }), false);
+  assert.equal(reminder.eligible({ ...task, formData: { category: 'medical_visit' } }), false);
+});
 
 test('only starts the dedicated workflow for medical reminder products', () => {
   assert.equal(isMedicalReminderOrder('就医提醒服务'), true);

@@ -331,12 +331,26 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
   const [followupPlans, setFollowupPlans] = useState([])
   const [selectedSchemeId, setSelectedSchemeId] = useState('')
   const [schemeFormData, setSchemeFormData] = useState({}) // 预设内容（可编辑）
+  const isAdHocMedicalReminder = followupPlans.find(p => p._id === selectedSchemeId)?.name === '临时就医提醒'
 
   useEffect(() => {
     staffAPI.getStaffList().then(r => setStaffList(r.data)).catch(() => {})
     staffAPI.getFollowupForms().then(r => setFollowupForms(r.data || [])).catch(() => {})
     staffAPI.getFollowupPlans().then(r => setFollowupPlans(r.data || [])).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    if (!isAdHocMedicalReminder || !planPatientId) return
+    let active = true
+    staffAPI.getPatient(planPatientId).then(res => {
+      if (!active) return
+      const manager = res.data?.user?.assignedHealthManager
+      const managerId = String(manager?._id || manager || '')
+      if (managerId) setPlanRows(rows => rows.map(row => ({ ...row, assignedTo: managerId })))
+      else setError('该客户尚未分配健管专员，请先分配后创建就医提醒')
+    }).catch(err => { if (active) setError(err.message || '读取客户健管专员失败') })
+    return () => { active = false }
+  }, [isAdHocMedicalReminder, planPatientId])
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
 
@@ -358,6 +372,11 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
     const scheme = followupPlans.find(p => p._id === schemeId)
     if (!scheme) return
     if (scheme.name) setPlanName(scheme.name)
+    if (scheme.name === '临时就医提醒') {
+      setVisitTypeForm(false)
+      setVisitTypeRevisit(true)
+      setPlanRows([emptyRow()])
+    }
     if (scheme.formId?._id) {
       setPlanFormId(scheme.formId._id)
       setVisitTypeForm(true)
@@ -394,9 +413,11 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
     const pid = planPatientId
     if (!pid) { setError('请选择会员'); return }
     if (!planName.trim()) { setError('请填写方案名称'); return }
+    if (isAdHocMedicalReminder && (!visitTypeRevisit || !revisitReason.trim())) { setError('请填写本次提醒的就医原因'); return }
     if (!visitTypeForm && !visitTypeRevisit) { setError('请至少选择一种随访类型'); return }
     const validRows = planRows.filter(r => r.daysAfter || r.date)
     if (validRows.length === 0) { setError('请至少填写一行随访时间'); return }
+    if (isAdHocMedicalReminder && validRows.length !== 1) { setError('临时就医提醒只需一条任务，后续联系统一记录在本任务中'); return }
     const rowWithoutAssignee = validRows.find(r => !r.assignedTo)
     if (rowWithoutAssignee) { setError('每一条随访计划都必须选择随访人员'); return }
     setSaving(true); setError('')
@@ -421,7 +442,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
           type: planType,
           status: 'planned',
           theme: planName,
-          content: revisitContent || row.notes,
+          content: [revisitContent, row.notes].filter(Boolean).join('\n'),
           assignedTo: row.assignedTo || null,
           formId: visitTypeForm ? (planFormId || null) : null,
           followUpSchemeId: selectedSchemeId || null,
@@ -593,6 +614,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
                 onChange={handleSchemeChange}
               />
             )}
+            {isAdHocMedicalReminder && <div style={{ padding: '10px 12px', background: '#F0FAF5', borderRadius: 8, color: '#1E6B50', fontSize: 13 }}>只创建一条就医提醒，由健管专员持续记录提醒和客户进展；客户完成就医后转资料审核，不需为每次联系重复建任务。</div>}
 
             {/* 方案名称 */}
             <div className="form-group" style={{ marginBottom: 0 }}>
@@ -920,7 +942,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
                       flexShrink: 0,
                     }}
                   >−</button>
-                  {idx === planRows.length - 1 && (
+                  {idx === planRows.length - 1 && !isAdHocMedicalReminder && (
                     <button type="button" onClick={addRow} style={{ ...btnPlus, flexShrink: 0 }}>+</button>
                   )}
                 </div>

@@ -1883,6 +1883,17 @@ router.post('/followups', staffAuth, checkPermission('followups', 'create'), asy
   const patient = await User.findById(patientId);
   if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
 
+  const selectedScheme = followUpSchemeId ? await FollowUpPlan.findById(followUpSchemeId).select('name workflowStageKey status reviewStatus').lean() : null;
+  if (followUpSchemeId && (!selectedScheme || selectedScheme.status !== 'active' || selectedScheme.reviewStatus === 'pending_review')) return res.status(400).json({ success: false, message: '所选随访模板不可用，请刷新后重选' });
+  const adHocMedicalReminder = selectedScheme?.workflowStageKey === 'ad_hoc_medical_reminder';
+  if (adHocMedicalReminder) {
+    if (status !== 'planned' || !/^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) || !String(content || '').trim()) return res.status(400).json({ success: false, message: '临时就医提醒需要填写提醒日期和就医原因' });
+    if (!patient.assignedHealthManager || String(assignedTo) !== String(patient.assignedHealthManager)) return res.status(400).json({ success: false, message: '临时就医提醒须交由该客户的健管专员跟进' });
+  }
+  const safeFormData = formData && typeof formData === 'object' && !Array.isArray(formData) ? { ...formData } : {};
+  delete safeFormData.adHocMedicalReminder;
+  if (adHocMedicalReminder) { safeFormData.adHocMedicalReminder = true; safeFormData.category = 'medical_visit'; }
+
   if (status === 'cancelled' && !cancelReason) {
     return res.status(400).json({ success: false, message: '取消随访必须填写取消原因' });
   }
@@ -1916,7 +1927,7 @@ router.post('/followups', staffAuth, checkPermission('followups', 'create'), asy
     checkInItems: checkInItems || [],
     repeatDaily: !!repeatDaily,
     followUpSchemeId: followUpSchemeId || null,
-    formData: formData || null,
+    formData: Object.keys(safeFormData).length ? safeFormData : null,
     participants: participants || '',
     interviewMinutes: interviewMinutes || '',
   });
