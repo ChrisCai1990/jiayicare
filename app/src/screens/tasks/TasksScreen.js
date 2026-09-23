@@ -381,6 +381,7 @@ export default function TasksScreen({ navigation }) {
   }, [isDemo]);
 
   useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => navigation.addListener('focus', loadData), [navigation, loadData]);
   const onRefresh = () => { setRefreshing(true); loadData(); };
 
   const toggleTask = async (id) => {
@@ -662,7 +663,7 @@ export default function TasksScreen({ navigation }) {
             {filteredTasks.map(task => (
               task.isReminder
                 ? <ReminderCard key={task._id} reminder={reminders.find(r => r._id === task._id) || task} onToggle={toggleReminder} />
-                : <TaskCard key={task._id || task.id} task={task} onToggle={task.isFollowup ? toggleFollowup : toggleTask} onPress={setDetailTask} />
+                : <TaskCard key={task._id || task.id} task={task} onToggle={task.isFollowup ? toggleFollowup : toggleTask} onPress={t=>t.uploadReminder?navigation.navigate('ReportUpload',{careFlowId:t.careFlowId}):setDetailTask(t)} />
             ))}
           </>
         )}
@@ -879,7 +880,7 @@ export default function TasksScreen({ navigation }) {
                   <Text style={styles.modalCloseBtnText}>关闭</Text>
                 </TouchableOpacity>
                 {detailTask.canUploadReports ? (
-                  <TouchableOpacity style={styles.modalCompleteBtn} onPress={()=>{setDetailTask(null);navigation.navigate('ReportUpload')}}><Text style={styles.modalCompleteBtnText}>上传报告及病历</Text></TouchableOpacity>
+                  <TouchableOpacity style={styles.modalCompleteBtn} onPress={()=>{setDetailTask(null);navigation.navigate('ReportUpload',{careFlowId:detailTask.careFlowId})}}><Text style={styles.modalCompleteBtnText}>上传报告及病历</Text></TouchableOpacity>
                 ) : detailTask.customerReadOnly ? (
                   <View style={styles.modalDoneBtn}>
                     <Ionicons name="people-outline" size={16} color={colors.primary} />

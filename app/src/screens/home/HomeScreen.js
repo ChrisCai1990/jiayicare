@@ -91,7 +91,7 @@ const TASK_TABS = ['全部', '今日', '本周', '本月'];
 
 // ── 任务行 ────────────────────────────────────────────────────────
 function TaskItem({ task, isLast, onPress }) {
-  const urgency = URGENCY_CONFIG[task.priority] || URGENCY_CONFIG.low;
+  const urgency = task.scheduleLabel ? {...URGENCY_CONFIG.low,label:task.scheduleLabel} : URGENCY_CONFIG[task.priority] || URGENCY_CONFIG.low;
   const iconCfg = TASK_ICON_CONFIG[task.type] || TASK_ICON_CONFIG.followup;
 
   return (
@@ -505,7 +505,7 @@ export default function HomeScreen({ navigation }) {
                 <>
                   {allPendingTaskItems.slice(0, 3).map((t, i, arr) => {
                     const isLast = i === arr.length - 1 && todayReminders.length === 0;
-                    return <TaskItem key={t._id || t.id || i} task={t} isLast={isLast} onPress={setTaskDetailModal} />;
+                    return <TaskItem key={t._id || t.id || i} task={t} isLast={isLast} onPress={t=>t.uploadReminder?navigation.navigate('ReportUpload',{careFlowId:t.careFlowId}):setTaskDetailModal(t)} />;
                   })}
                   {todayReminders.map((r, i) => (
                     <ReminderItem
@@ -641,7 +641,7 @@ export default function HomeScreen({ navigation }) {
                   >
                     <Text style={styles.taskModalCancelText}>关闭</Text>
                   </TouchableOpacity>
-                  {t.canUploadReports && <TouchableOpacity style={styles.taskModalCompleteBtn} onPress={()=>{setTaskDetailModal(null);navigation.navigate('ReportUpload')}}><Text style={styles.taskModalCompleteText}>上传报告及病历</Text></TouchableOpacity>}
+                  {t.canUploadReports && <TouchableOpacity style={styles.taskModalCompleteBtn} onPress={()=>{setTaskDetailModal(null);navigation.navigate('ReportUpload',{careFlowId:t.careFlowId})}}><Text style={styles.taskModalCompleteText}>上传报告及病历</Text></TouchableOpacity>}
                   {t.type !== 'followup' && !t.customerReadOnly && (
                     <TouchableOpacity
                       style={[styles.taskModalCompleteBtn, taskCompleting && { opacity: 0.6 }]}

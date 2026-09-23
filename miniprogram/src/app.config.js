@@ -5,6 +5,7 @@ export default defineAppConfig({
     'pages/auth/login/index',
     'pages/records/index/index',
     'pages/tasks/index',
+    'pages/tasks/report-upload/index',
     'pages/messages/index',
     'pages/profile/index/index',
 

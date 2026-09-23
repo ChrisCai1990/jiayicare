@@ -61,7 +61,7 @@ function urgencyByDate(dateVal) {
 }
 
 function TaskItemRow({ task, isLast, onPress }) {
-  const urgency = URGENCY_CONFIG[task.priority] || URGENCY_CONFIG.low;
+  const urgency = task.scheduleLabel ? {...URGENCY_CONFIG.low,label:task.scheduleLabel} : URGENCY_CONFIG[task.priority] || URGENCY_CONFIG.low;
   const iconCfg = TASK_ICON_CONFIG[task.type] || TASK_ICON_CONFIG.followup;
   return (
     <View onClick={() => onPress(task)} style={{
@@ -104,6 +104,7 @@ function ReminderItemRow({ reminder, isLast }) {
   );
 }
 
+function ButtonUpload({task}){return <View onClick={()=>Taro.navigateTo({url:'/pages/tasks/report-upload/index?flowId='+task.careFlowId})} style={{padding:'12px',backgroundColor:'#E8F5EF',borderRadius:'12px'}}><Text>上传本次报告及病历</Text></View>}
 function TaskDetailModal({ task, onClose, onDone }) {
   const isFollowup = task.type === 'followup' || task._isFollowup;
   return (
@@ -167,7 +168,7 @@ function TaskDetailModal({ task, onClose, onDone }) {
           <View onClick={onClose} style={{ flex: 1, textAlign: 'center', padding: '12px', borderRadius: `${radius.md}px`, border: `1.5px solid ${colors.border}` }}>
             <Text style={{ fontSize: '14px', color: colors.textSecondary, fontWeight: 600 }}>关闭</Text>
           </View>
-          {!isFollowup && (
+          {task.canUploadReports && <ButtonUpload task={task}/>}{!isFollowup && !task.customerReadOnly && (
             <View onClick={onDone} style={{ flex: 2, textAlign: 'center', padding: '12px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary }}>
               <Text style={{ fontSize: '14px', color: '#fff', fontWeight: 700 }}>标记完成</Text>
             </View>
@@ -299,7 +300,7 @@ export default function HomePage() {
   ];
 
   const markTaskDone = async () => {
-    if (!taskDetail) return;
+    if (!taskDetail || taskDetail.customerReadOnly) return;
     try {
       if (taskDetail._isFollowup) await followupTasksAPI.done(taskDetail._id, true, false);
       else await tasksAPI.complete(taskDetail._id);
@@ -396,7 +397,7 @@ export default function HomePage() {
             ) : (
               <>
                 {allPendingTaskItems.slice(0, 3).map((t, i, arr) => (
-                  <TaskItemRow key={t._id || i} task={t} isLast={i === arr.length - 1 && todayReminders.length === 0} onPress={setTaskDetail} />
+                  <TaskItemRow key={t._id || i} task={t} isLast={i === arr.length - 1 && todayReminders.length === 0} onPress={t=>t.uploadReminder?Taro.navigateTo({url:'/pages/tasks/report-upload/index?flowId='+t.careFlowId}):setTaskDetail(t)} />
                 ))}
                 {todayReminders.map((r, i) => (
                   <ReminderItemRow key={r._id || i} reminder={r} isLast={i === todayReminders.length - 1} />

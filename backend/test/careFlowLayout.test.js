@@ -37,7 +37,7 @@ function render(stage,own=true){
   const people=Object.fromEntries([...new Set(Object.values(config.roles))].map(role=>[role,{id:role,role,name:role}]));
   const data={_id:'flow',revision:1,patientId:'patient',reports:[],assistants:[],events:[],state:{stage,title:'测试事项',people,returns:[],data:{advisor:{text:'医院：医院甲\n科室：内科\n原因：既往结果需核对\n项目：复诊'},draft:{content:'顾问待审核的草稿',date:''},upload:{reportIds:[]}}}};
   let n=0;const fakeReact={...React,useEffect:()=>{},useState:init=>[n++===0?data:typeof init==='function'?init():init,()=>{}]};
-  const ctx={module:{exports:{}},require:name=>name==='react'?fakeReact:name==='./CareFlowHandoff'?handoff():name==='./CareFlowExaminations'?examinations():name==='../api'?{careFlowAPI:{}}:name.includes('/shared/')?require(path.join(__dirname,'../../shared',path.basename(name))):{}};
+  const ctx={module:{exports:{}},require:name=>name==='react'?fakeReact:name==='./CareFlowReportUploads'?()=>null:name==='./CareFlowHandoff'?handoff():name==='./CareFlowExaminations'?examinations():name==='../api'?{careFlowAPI:{}}:name.includes('/shared/')?require(path.join(__dirname,'../../shared',path.basename(name))):{}};
   vm.runInNewContext(require('esbuild').transformSync(fs.readFileSync(path.join(__dirname,'../../staff/src/components/CareFlowCard.jsx'),'utf8'),{loader:'jsx',format:'cjs'}).code,ctx);
   return renderToStaticMarkup(React.createElement(ctx.module.exports.default,{task:{_id:'task'},staff}));
 }

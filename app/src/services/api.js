@@ -1,6 +1,7 @@
 // ─── API Service ─────────────────────────────────────────────────
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://jiaycare.com/api';
 
+
 // 后端返回的图片等资源常是相对路径(/api/uploads/xxx.png)，App 的 <Image> 需要完整 URL 才能加载。
 // origin = BASE_URL 去掉末尾 /api。mediaUrl 把相对路径拼成完整地址，已是 http(s) 的原样返回。
 const API_ORIGIN = BASE_URL.replace(/\/api\/?$/, '');
@@ -147,6 +148,9 @@ export const supplementsAPI = {
 
 // ── Tasks ─────────────────────────────────────────────────────────
 export const tasksAPI = {
+  careReports: id => request(`/tasks/care-flow/${id}/reports`),
+  addCareReport: (id,data) => request(`/tasks/care-flow/${id}/reports`,{method:'POST',body:JSON.stringify(data)}),
+  completeCareReports: id => request(`/tasks/care-flow/${id}/reports/complete`,{method:'POST',body:JSON.stringify({confirmed:true})}),
   list:       () => request('/tasks'),
   // 设置任务状态（completed / pending）
   setStatus:  (id, status) => request(`/tasks/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
