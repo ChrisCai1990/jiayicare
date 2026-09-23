@@ -300,6 +300,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
   const [revisitDate, setRevisitDate] = useState('')
   const [revisitHospital, setRevisitHospital] = useState('')
   const [revisitDept, setRevisitDept] = useState('')
+  const [reminderKind, setReminderKind] = useState('visit')
   const [mode, setMode] = useState('plan')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -331,7 +332,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
   const [followupPlans, setFollowupPlans] = useState([])
   const [selectedSchemeId, setSelectedSchemeId] = useState('')
   const [schemeFormData, setSchemeFormData] = useState({}) // 预设内容（可编辑）
-  const isAdHocMedicalReminder = followupPlans.find(p => p._id === selectedSchemeId)?.name === '临时就医提醒'
+  const isAdHocMedicalReminder = followupPlans.find(p => p._id === selectedSchemeId)?.workflowStageKey === 'ad_hoc_medical_reminder'
 
   useEffect(() => {
     staffAPI.getStaffList().then(r => setStaffList(r.data)).catch(() => {})
@@ -372,7 +373,9 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
     const scheme = followupPlans.find(p => p._id === schemeId)
     if (!scheme) return
     if (scheme.name) setPlanName(scheme.name)
-    if (scheme.name === '临时就医提醒') {
+    if (scheme.workflowStageKey === 'ad_hoc_medical_reminder') {
+      setPlanName('就医提醒')
+      setReminderKind('visit')
       setVisitTypeForm(false)
       setVisitTypeRevisit(true)
       setPlanRows([emptyRow()])
@@ -413,11 +416,12 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
     const pid = planPatientId
     if (!pid) { setError('请选择会员'); return }
     if (!planName.trim()) { setError('请填写方案名称'); return }
-    if (isAdHocMedicalReminder && (!visitTypeRevisit || !revisitReason.trim())) { setError('请填写本次提醒的就医原因'); return }
+    if (isAdHocMedicalReminder && !revisitReason.trim()) { setError('请填写本次提醒的具体原因'); return }
+    if (isAdHocMedicalReminder && reminderKind === 'medication' && !revisitDept.trim()) { setError('请填写需要配取的药品名称'); return }
     if (!visitTypeForm && !visitTypeRevisit) { setError('请至少选择一种随访类型'); return }
     const validRows = planRows.filter(r => r.daysAfter || r.date)
     if (validRows.length === 0) { setError('请至少填写一行随访时间'); return }
-    if (isAdHocMedicalReminder && validRows.length !== 1) { setError('临时就医提醒只需一条任务，后续联系统一记录在本任务中'); return }
+    if (isAdHocMedicalReminder && validRows.length !== 1) { setError('事项提醒只需一条任务，后续联系统一记录在本任务中'); return }
     const rowWithoutAssignee = validRows.find(r => !r.assignedTo)
     if (rowWithoutAssignee) { setError('每一条随访计划都必须选择随访人员'); return }
     setSaving(true); setError('')
@@ -425,10 +429,10 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
       // 如果是复诊随访，把结构化的复查详情格式化为用户可见的 content
       const revisitContent = visitTypeRevisit && (revisitReason || revisitHospital || revisitDept || revisitDate)
         ? [
-            revisitReason   ? `复查原因：${revisitReason}` : '',
-            revisitDate     ? `建议复查时间：${revisitDate}` : '',
-            revisitHospital ? `建议复查医院：${revisitHospital}` : '',
-            revisitDept     ? `建议科室/专家：${revisitDept}` : '',
+            revisitReason   ? `${isAdHocMedicalReminder ? '提醒原因' : '复查原因'}：${revisitReason}` : '',
+            revisitDate     ? `建议${isAdHocMedicalReminder ? '完成' : '复查'}时间：${revisitDate}` : '',
+            revisitHospital ? `${reminderKind === 'medication' && isAdHocMedicalReminder ? '配药机构' : isAdHocMedicalReminder ? '建议医院' : '建议复查医院'}：${revisitHospital}` : '',
+            revisitDept     ? `${reminderKind === 'medication' && isAdHocMedicalReminder ? '药品名称' : '建议科室/专家'}：${revisitDept}` : '',
           ].filter(Boolean).join('\n')
         : ''
 
@@ -446,7 +450,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
           assignedTo: row.assignedTo || null,
           formId: visitTypeForm ? (planFormId || null) : null,
           followUpSchemeId: selectedSchemeId || null,
-          formData: Object.keys(schemeFormData).length > 0 ? schemeFormData : null,
+          formData: isAdHocMedicalReminder ? { ...schemeFormData, reminderKind } : Object.keys(schemeFormData).length > 0 ? schemeFormData : null,
           checkInItems: checkInItems.length > 0 ? checkInItems : undefined,
           repeatDaily: checkInItems.length > 0 ? repeatDaily : undefined,
         })
@@ -614,9 +618,22 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
                 onChange={handleSchemeChange}
               />
             )}
-            {isAdHocMedicalReminder && <div style={{ padding: '10px 12px', background: '#F0FAF5', borderRadius: 8, color: '#1E6B50', fontSize: 13 }}>只创建一条就医提醒，由健管专员持续记录提醒和客户进展；客户完成就医后转资料审核，不需为每次联系重复建任务。</div>}
+            {isAdHocMedicalReminder && <div style={{ padding: '10px 12px', background: '#F0FAF5', borderRadius: 8, color: '#1E6B50', fontSize: 13 }}>只创建一条提醒，由健管专员持续记录进展。就医或复查完成后转资料审核；配药确认取得后结束提醒。</div>}
 
             {/* 方案名称 */}
+            {isAdHocMedicalReminder && <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">提醒事项 *</label>
+              <select className="form-input" value={reminderKind} onChange={e => {
+                const kind = e.target.value
+                setReminderKind(kind)
+                setPlanName(({ visit: '就医提醒', review: '复查提醒', medication: '配药提醒' })[kind])
+                setRevisitHospital(''); setRevisitDept('')
+              }}>
+                <option value="visit">看医生／就医</option>
+                <option value="review">复查／检查</option>
+                <option value="medication">配药</option>
+              </select>
+            </div>}
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">方案名称 *</label>
               <input
@@ -641,7 +658,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
             </div>
 
             {/* 随访类型 */}
-            <div className="form-group" style={{ marginBottom: 0 }}>
+            {!isAdHocMedicalReminder && <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">随访类型 *</label>
               <div style={{ display: 'flex', gap: 28, alignItems: 'center', marginTop: 6 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer', userSelect: 'none' }}>
@@ -663,28 +680,28 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
                   <span>复诊随访</span>
                 </label>
               </div>
-            </div>
+            </div>}
 
             {/* 复诊随访详情（仅复诊随访显示） */}
             {visitTypeRevisit && (
               <div style={{ background: '#FFF5F5', border: '1px solid #FECACA', borderRadius: 8, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#DC3545', marginBottom: 2 }}>🔴 复查详情（会员可见）</div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#DC3545', marginBottom: 2 }}>🔴 {isAdHocMedicalReminder ? '提醒详情（会员可见）' : '复查详情（会员可见）'}</div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label" style={{ fontSize: 12 }}>复查原因</label>
-                  <input className="form-input" placeholder="如：CA125升高，需复查排除异常" value={revisitReason} onChange={e => setRevisitReason(e.target.value)} />
+                  <label className="form-label" style={{ fontSize: 12 }}>{isAdHocMedicalReminder ? '提醒原因 *' : '复查原因'}</label>
+                  <input className="form-input" placeholder={isAdHocMedicalReminder ? '请写明本次需要提醒客户办理什么' : '如：CA125升高，需复查排除异常'} value={revisitReason} onChange={e => setRevisitReason(e.target.value)} />
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
-                    <label className="form-label" style={{ fontSize: 12 }}>建议复查时间</label>
+                    <label className="form-label" style={{ fontSize: 12 }}>{isAdHocMedicalReminder ? '建议完成日期' : '建议复查时间'}</label>
                     <input className="form-input" type="date" value={revisitDate} onChange={e => setRevisitDate(e.target.value)} />
                   </div>
                   <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
-                    <label className="form-label" style={{ fontSize: 12 }}>建议复查医院</label>
-                    <input className="form-input" placeholder="如：浙大一院" value={revisitHospital} onChange={e => setRevisitHospital(e.target.value)} />
+                    <label className="form-label" style={{ fontSize: 12 }}>{isAdHocMedicalReminder && reminderKind === 'medication' ? '配药机构（选填）' : isAdHocMedicalReminder ? '建议医院（选填）' : '建议复查医院'}</label>
+                    <input className="form-input" placeholder={reminderKind === 'medication' && isAdHocMedicalReminder ? '如：医院或药房' : '如：浙大一院'} value={revisitHospital} onChange={e => setRevisitHospital(e.target.value)} />
                   </div>
                   <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
-                    <label className="form-label" style={{ fontSize: 12 }}>建议科室/专家</label>
-                    <input className="form-input" placeholder="如：肿瘤内科" value={revisitDept} onChange={e => setRevisitDept(e.target.value)} />
+                    <label className="form-label" style={{ fontSize: 12 }}>{isAdHocMedicalReminder && reminderKind === 'medication' ? '药品名称 *' : isAdHocMedicalReminder ? '建议科室/专家（选填）' : '建议科室/专家'}</label>
+                    <input className="form-input" placeholder={reminderKind === 'medication' && isAdHocMedicalReminder ? '请填写已确认的药品名称' : '如：肿瘤内科'} value={revisitDept} onChange={e => setRevisitDept(e.target.value)} />
                   </div>
                 </div>
               </div>

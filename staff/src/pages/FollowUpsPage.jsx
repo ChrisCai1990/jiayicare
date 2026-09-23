@@ -256,7 +256,7 @@ export default function FollowUpsPage() {
           requestId: execForm.requestId, updatedAt: execItem.updatedAt,
           outcome:execForm.outcome,visitDate:execForm.visitDate,visitConfirmed:execForm.visitConfirmed,
           nextContactAt: execForm.nextContactAt ? new Date(execForm.nextContactAt).toISOString() : null })
-        toast(execForm.outcome==='visited'?'已转资料收集与审核，原事项尚未结束':'过程已保存，同一事项继续跟进')
+        toast(execForm.outcome==='obtained'?'已结束本次配药提醒':execForm.outcome==='visited'?'已转资料收集与审核，原事项尚未结束':'过程已保存，同一事项继续跟进')
         setExecItem(null)
         load()
       } catch (err) { toast(err.message || '保存失败') }

@@ -16,6 +16,14 @@ test('ad-hoc medical reminder stays in one follow-up until visit and review', ()
   assert.equal(enabledForTask(task, allowlist), true);
   assert.equal(enabledForTask({ ...task, formData: {} }, allowlist), false);
 });
+test('ad-hoc medication reminder is tracked but does not require a medical report review', () => {
+  const task = { patientId: 'test-patient', sourceType: null, followUpSchemeId: 'reminder-template',
+    formData: { adHocMedicalReminder: true, reminderKind: 'medication', category: 'medication' } };
+  assert.equal(reminder.eligible(task), true);
+  assert.equal(requiresOutcomeReview(task), false);
+  assert.equal(reminder.outcomesFor(task).obtained, '已取得药品，结束提醒');
+  assert.equal(reminder.outcomesFor(task).visited, undefined);
+});
 
 test('only starts the dedicated workflow for medical reminder products', () => {
   assert.equal(isMedicalReminderOrder('就医提醒服务'), true);

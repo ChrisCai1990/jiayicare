@@ -1887,13 +1887,16 @@ router.post('/followups', staffAuth, checkPermission('followups', 'create'), asy
   const selectedScheme = followUpSchemeId ? await FollowUpPlan.findById(followUpSchemeId).select('name workflowStageKey status reviewStatus').lean() : null;
   if (followUpSchemeId && (!selectedScheme || selectedScheme.status !== 'active' || selectedScheme.reviewStatus === 'pending_review')) return res.status(400).json({ success: false, message: '所选随访模板不可用，请刷新后重选' });
   const adHocMedicalReminder = selectedScheme?.workflowStageKey === 'ad_hoc_medical_reminder';
+  const reminderKind = adHocMedicalReminder ? String(formData?.reminderKind || 'visit') : '';
   if (adHocMedicalReminder) {
-    if (status !== 'planned' || !/^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) || !String(content || '').trim()) return res.status(400).json({ success: false, message: '临时就医提醒需要填写提醒日期和就医原因' });
-    if (!patient.assignedHealthManager || String(assignedTo) !== String(patient.assignedHealthManager)) return res.status(400).json({ success: false, message: '临时就医提醒须交由该客户的健管专员跟进' });
+    if (!['visit', 'review', 'medication'].includes(reminderKind)) return res.status(400).json({ success: false, message: '请选择就医、复查或配药提醒' });
+    if (status !== 'planned' || !/^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) || !String(content || '').trim()) return res.status(400).json({ success: false, message: '事项提醒需要填写提醒日期和具体原因' });
+    if (!patient.assignedHealthManager || String(assignedTo) !== String(patient.assignedHealthManager)) return res.status(400).json({ success: false, message: '事项提醒须交由该客户的健管专员跟进' });
   }
   const safeFormData = formData && typeof formData === 'object' && !Array.isArray(formData) ? { ...formData } : {};
   delete safeFormData.adHocMedicalReminder;
-  if (adHocMedicalReminder) { safeFormData.adHocMedicalReminder = true; safeFormData.category = 'medical_visit'; }
+  delete safeFormData.reminderKind;
+  if (adHocMedicalReminder) { safeFormData.adHocMedicalReminder = true; safeFormData.reminderKind = reminderKind; safeFormData.category = reminderKind === 'medication' ? 'medication' : reminderKind === 'review' ? 'review' : 'medical_visit'; }
 
   if (status === 'cancelled' && !cancelReason) {
     return res.status(400).json({ success: false, message: '取消随访必须填写取消原因' });
@@ -2079,6 +2082,7 @@ router.post('/followups/:id/progress', staffAuth, checkPermission('followups', '
       const flow=await require('../utils/careFlowRuntime').runtime().startReminder(req.params.id,req.staff);
       return res.json({success:true,data,careFlowId:flow._id,message:'已保存就医记录，转入资料收集及审核；原事项尚未结束'});
     }
+    if (record?.outcome === 'obtained') return res.json({ success: true, data, message: '已核实客户取得药品，本次配药提醒结束' });
     res.json({ success: true, data });
   } catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.message }); }
 });
@@ -2128,6 +2132,10 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   if (req.body.status === 'completed' && followUp.status !== 'completed'
     && require('../utils/followUpContinuity').requiresOutcomeReview(followUp)) {
     return res.status(409).json({ success: false, message: '本计划需完成检查、报告审核及健康顾问结果处置后关闭；请先保存沟通过程，不要另建重复任务' });
+  }
+  if (req.body.status === 'completed' && followUp.status !== 'completed'
+    && followUp.formData?.adHocMedicalReminder === true && followUp.formData?.reminderKind === 'medication') {
+    return res.status(409).json({ success: false, message: '配药提醒须记录取得药品并核实后结束' });
   }
   if (require('../utils/annualCheckupEvidence').preparationRole(followUp)) return res.status(409).json({ success: false, message: '请在体检准备卡片中保存实际方案或沟通结果，不能通过通用随访完成' });
 
@@ -2349,7 +2357,12 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     const incoming = req.body.formData && typeof req.body.formData === 'object' && !Array.isArray(req.body.formData)
       ? { ...req.body.formData } : {};
     delete incoming.adHocMedicalReminder;
-    if (followUp.formData?.adHocMedicalReminder === true) incoming.adHocMedicalReminder = true;
+    delete incoming.reminderKind;
+    if (followUp.formData?.adHocMedicalReminder === true) {
+      incoming.adHocMedicalReminder = true;
+      incoming.reminderKind = followUp.formData.reminderKind || 'visit';
+      incoming.category = followUp.formData.category;
+    }
     req.body.formData = incoming;
   }
   allowed.forEach(k => {
@@ -8109,6 +8122,24 @@ router.post('/patients/:id/supplements', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// A pending AI/order draft is reviewed by the nutritionist, not edited by its generator.
+router.patch('/patients/:id/supplements/:supId/edit-and-approve', staffAuth, async (req, res) => {
+  try {
+    if (!['nutritionist', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅营养师可审核营养素草稿' });
+    const sup = await Supplement.findOne({ _id: req.params.supId, user: req.params.id, aiStatus: 'pending' });
+    if (!sup) return res.status(404).json({ success: false, message: '待审核草稿不存在或已处理，请刷新列表' });
+    if (sup.stopped) return res.status(400).json({ success: false, message: '已停用记录不可采纳' });
+    Object.assign(sup, require('../utils/supplementReview').reviewedSupplementFields(req.body));
+    const error = require('../utils/supplementReview').validateApprovedSupplement(sup);
+    if (error) return res.status(400).json({ success: false, message: error });
+    sup.aiStatus = 'approved';
+    sup.reviewedByName = req.staff.name || '';
+    sup.reviewedAt = new Date();
+    await sup.save();
+    res.json({ success: true, data: sup });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // 仅记录创建人（staffId）或超管可修改/停用，避免他人越权改动其他医护录入的营养素记录。
 // 例外：营养师「编辑后采纳」待审记录（pending→approved）属于审核动作，虽非创建人也放行，并记审核人。
 router.patch('/patients/:id/supplements/:supId', staffAuth, async (req, res) => {
@@ -8141,6 +8172,10 @@ router.patch('/patients/:id/supplements/:supId', staffAuth, async (req, res) => 
       if (req.body.imageUrls !== undefined) sup.imageUrls = Array.isArray(req.body.imageUrls) ? req.body.imageUrls.filter(url => typeof url === 'string' && url.trim()).slice(0, 6) : [];
     }
     if (isApproveReview) { sup.reviewedByName = req.staff.name || ''; sup.reviewedAt = new Date(); }
+    if (isApproveReview) {
+      const error = require('../utils/supplementReview').validateApprovedSupplement(sup);
+      if (error) return res.status(400).json({ success: false, message: error });
+    }
     await sup.save();
     res.json({ success: true, data: sup });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -10640,6 +10675,8 @@ router.patch('/patients/:id/supplements/:sid/ai-review', staffAuth, async (req, 
     if (action === 'approve' || action === 'reject') {
       if (!isNutritionist) return res.status(403).json({ success: false, message: '仅营养师可审核该建议' });
       if (action === 'approve') {
+        const error = require('../utils/supplementReview').validateApprovedSupplement(sup);
+        if (error) return res.status(400).json({ success: false, message: error });
         sup.aiStatus = 'approved';
         sup.reviewedByName = req.staff.name || '';
         sup.reviewedAt = new Date();

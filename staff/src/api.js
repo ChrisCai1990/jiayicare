@@ -402,6 +402,7 @@ export const staffAPI = {
   getPatientSupplements:    (id)       => req(`/staff/patients/${id}/supplements`),
   createPatientSupplement:  (id, data) => req(`/staff/patients/${id}/supplements`, { method: 'POST', body: JSON.stringify(data) }),
   updatePatientSupplement:  (id, supId, data) => req(`/staff/patients/${id}/supplements/${supId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  approveEditedPatientSupplement: (id, supId, data) => req(`/staff/patients/${id}/supplements/${supId}/edit-and-approve`, { method: 'PATCH', body: JSON.stringify(data) }),
   deletePatientSupplement:  (id, supId) => req(`/staff/patients/${id}/supplements/${supId}`, { method: 'DELETE' }),
 
   // 专项筛查三层目录（从管理端套餐动态读取）
