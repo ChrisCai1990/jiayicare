@@ -578,6 +578,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
   // 修复旧版本中“上游已完成、健管审核仍等待上一环节”的陪同任务，并补齐
   // 就医专员本次提交内容。修复严格限定为当前负责人的已完成上游任务。
   await require('../utils/medicalProxyWorkflow').repairCompletedMedicalEscortAuditTasks(req.staff._id);
+  await require('../utils/medicalProxyWorkflow').ensureStaffExpertAppointmentTasksForStaff(req.staff);
   if(req.staff.role==='healthManager') {
     const flows=await require('../models/CareFlow').find({tenantId:req.staff.tenantId||null,'state.people.healthManager.id':String(req.staff._id),'state.stage':{$in:['upload','audit']}}).lean();
     for(const flow of flows) if(require('../utils/healthManagementRollout').enabledForPatient(flow.patientId)) await require('../utils/careFlowRuntime').runtime().sync(flow);
