@@ -38,7 +38,7 @@ git add <files> && git commit -m "..." && git push origin master
 | Legal | legal/LegalScreen | 用户协议/隐私/免责 |
 | ComingSoon | common/ComingSoonScreen | 即将开放 |
 
-底部Tab：Home（首页）/ Records（健康档案）/ Tasks（随访）/ Messages（消息）/ Profile（我的）
+底部Tab：Home（首页）/ Records（健康档案）/ Planning（健康管家）/ Profile（我的）。消息保留为 Profile 内的二级入口；访客可浏览首页和服务商城，涉及健康数据、订单与服务开通时再登录。
 
 ---
 
