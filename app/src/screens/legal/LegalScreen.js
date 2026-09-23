@@ -9,7 +9,7 @@ const CONTENT = {
     sections: [
       {
         heading: '1. 接受条款',
-        body: '欢迎使用嘉医汇（以下简称"本应用"），由杭州嘉静佑辰科技有限公司运营。您在使用本应用前，请仔细阅读本用户协议。一旦您使用本应用，即表示您已阅读并同意遵守本协议的全部条款。',
+        body: '欢迎使用嘉医汇（以下简称"本应用"），由杭州嘉医汇健康管理有限公司运营。您在使用本应用前，请仔细阅读本用户协议。一旦您使用本应用，即表示您已阅读并同意遵守本协议的全部条款。',
       },
       {
         heading: '2. 服务内容',
@@ -50,11 +50,11 @@ const CONTENT = {
       },
       {
         heading: '2. 信息使用',
-        body: '您的信息仅用于：提供个性化健康管理服务、与您的医生/健管师共享必要健康数据、发送服务通知与提醒、分析改善产品功能。我们不会将您的个人信息出售给第三方。',
+        body: '您的信息仅用于提供健康档案整理、趋势展示、服务通知与您主动选择的健康管理服务。向健康顾问或其他服务人员展示必要信息前，我们将依据服务关系和授权控制访问范围，不会出售您的个人信息。',
       },
       {
         heading: '3. 健康数据保护',
-        body: '健康数据属于敏感信息，受到严格保护。所有健康数据均经过加密存储，仅您本人及您明确授权的医疗人员可访问。我们不会将健康数据用于任何商业目的。',
+        body: '体检报告、健康档案、用药记录及聊天中涉及健康状况的信息属于敏感个人信息。我们将在取得单独同意后，按照明确目的和最小必要范围处理，并通过加密存储和授权访问保护健康数据；拒绝非必要处理不影响您使用其他基础功能。',
       },
       {
         heading: '4. 数据存储与安全',
@@ -62,18 +62,22 @@ const CONTENT = {
       },
       {
         heading: '5. 第三方服务',
-        body: '本应用可能使用第三方服务（如短信验证码服务商）。这些第三方服务商有其独立的隐私政策，我们会要求其遵守与我们相同的数据保护标准。',
+        body: '本应用可能使用短信、云存储、对象存储及已依法提供服务的AI模型接口。我们会在实际启用的隐私保护指引中列明第三方名称、处理目的和信息类型，并限制其仅按约定处理必要信息。',
       },
       {
-        heading: '6. 您的权利',
-        body: '您有权访问、更正、删除您的个人信息，并有权撤回对数据处理的同意。如需行使上述权利，请联系客服：19106761448。',
+        heading: '6. 保存期限',
+        body: '我们仅在实现服务目的所必需的期限内保存个人信息；法律法规另有保存要求的，从其规定。超过期限后将删除或匿名化处理。',
       },
       {
-        heading: '7. 未成年人保护',
+        heading: '7. 您的权利与账号注销',
+        body: '您有权访问、更正、复制、删除个人信息，撤回同意并申请注销账号。可通过“我的—帮助与反馈”提交申请；我们核验身份后依法处理。紧急投诉可联系客服：19106761448。',
+      },
+      {
+        heading: '8. 未成年人保护',
         body: '本应用不面向 18 周岁以下未成年人。如您是未成年人的监护人，请确保监护对象不单独使用本应用。',
       },
       {
-        heading: '8. 隐私政策更新',
+        heading: '9. 隐私政策更新',
         body: '本隐私政策可能不定期更新。重大变更时，我们将通过应用内通知或短信方式告知您。',
       },
     ],
@@ -126,7 +130,7 @@ export default function LegalScreen({ navigation, route }) {
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <Text style={styles.docTitle}>{doc.title}</Text>
-          <Text style={styles.updateDate}>更新日期：2025年1月1日</Text>
+          <Text style={styles.updateDate}>更新日期：2026年9月23日</Text>
         </View>
 
         <View style={styles.body}>
@@ -139,8 +143,9 @@ export default function LegalScreen({ navigation, route }) {
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>嘉医汇 · 杭州嘉静佑辰科技有限公司</Text>
+          <Text style={styles.footerText}>嘉医汇 · 杭州嘉医汇健康管理有限公司</Text>
           <Text style={styles.footerText}>客服电话：19106761448</Text>
+          <Text style={styles.footerText}>地址：杭州市萧山区盈丰街道江峰商务名座1幢1015室</Text>
         </View>
         <View style={{ height: 40 }} />
       </ScrollView>
