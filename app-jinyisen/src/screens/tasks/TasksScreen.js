@@ -234,7 +234,7 @@ function TaskCard({ task, onToggle, onPress }) {
     : null;
   const stageConf = followupStage ? FOLLOWUP_STAGE[followupStage] : null;
   // 健管专员执行完成的记录，用户端不可撤销勾选（只读展示，避免误触改动医护的处理结果）
-  const checkboxLocked = task.isFollowup && isCompleted && task.completedBy === 'staff';
+  const checkboxLocked = task.customerReadOnly || (task.isFollowup && isCompleted && task.completedBy === 'staff');
 
   return (
     <TouchableOpacity
@@ -846,7 +846,9 @@ export default function TasksScreen({ navigation }) {
                 <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setDetailTask(null)}>
                   <Text style={styles.modalCloseBtnText}>关闭</Text>
                 </TouchableOpacity>
-                {detailTask.status !== 'completed' ? (
+                {detailTask.canUploadReports ? (
+                  <TouchableOpacity style={styles.modalCompleteBtn} onPress={()=>{setDetailTask(null);navigation.navigate('ReportUpload')}}><Text style={styles.modalCompleteBtnText}>上传报告及病历</Text></TouchableOpacity>
+                ) : detailTask.customerReadOnly ? <Text>由健管专员核对处理</Text> : detailTask.status !== 'completed' ? (
                   <TouchableOpacity
                     style={[styles.modalCompleteBtn, completing && { opacity: 0.6 }]}
                     onPress={handleCompleteFromModal}

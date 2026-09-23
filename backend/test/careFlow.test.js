@@ -43,6 +43,24 @@ function setup(stage='booking'){
   return {flows,tasks,reports,api,Flow,Task};
 }
 async function complete(s,value){const f=s.flows.get('flow');return s.api.action('flow',actor(f.state.stage),{action:'complete',revision:f.revision,confirmed:true,correction:'已核对修订',value});}
+test('专员结束后健管承接报告，客户上传资料可关联，跨客户资料和未审核资料不能过关',async()=>{
+ const s=setup('execute');await complete(s,{text:'检查安排已交接'});
+ const flow=s.flows.get('flow'),task=s.tasks.get(hash(`care:flow:${flow.state.sequence}`));
+ assert.equal(task.assignedTo,'healthManager');assert.equal(task.workflowKey,'care_flow:upload');
+ await assert.rejects(s.api.action('flow',actor('execute'),{action:'complete',revision:flow.revision,confirmed:true,value:{reportIds:['report'],note:'完整'}}),/负责人/);
+ s.reports.set('customer',{_id:'customer',user:'patient',tenantId:null,title:'客户已上传',audit_status:'unaudited'});
+ s.reports.set('foreign',{_id:'foreign',user:'other',tenantId:null,audit_status:'audited'});
+ await assert.rejects(complete(s,{reportIds:['foreign'],note:'核对'}),/不属于/);
+ await complete(s,{reportIds:['customer'],note:'已核对是本次检查报告'});
+ await assert.rejects(complete(s,{note:'审核'}),/每份/);
+ s.reports.get('customer').audit_status='audited';await complete(s,{note:'资料齐全已审核'});assert.equal(s.flows.get('flow').state.stage,'draft');
+});
+test('已有上传任务归属自愈仅改当前活动负责人，留痕且不重复建任务',async()=>{
+ const s=setup('upload'),flow=s.flows.get('flow'),key=hash('care:flow:0');
+ s.tasks.set(key,{_id:key,careFlowId:'flow',workflowKey:'care_flow:upload',assignedTo:'medicalAssistant',status:'planned'});
+ await s.api.sync(flow);await s.api.sync(flow);
+ assert.equal(s.tasks.get(key).assignedTo,'healthManager');assert.equal(s.flows.get('flow').events.filter(e=>e.action==='upload_owner_updated').length,1);
+});
 test('专员提交待预约检查可进入上传环节；遗漏字段明确提示且不推进状态',async()=>{
   const s=setup('execute');
   const exam={id:'exam-0',type:'exam',title:'肾脏超声',hospital:'医院甲',department:'超声科',mode:'onsite'};

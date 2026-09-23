@@ -11,11 +11,12 @@ const VALID_STATUSES   = ['pending', 'completed', 'cancelled'];
 // 获取任务列表
 router.get('/', auth, async (req, res) => {
   const { status } = req.query;
-  const query = { user: req.user._id };
+  const query = { user: req.user._id, sourceTaskKey: { $ne: 'client_plan_execution' } };
   if (status) query.status = status;
   const tasks = await Task.find(query).sort({ createdAt: -1 })
     .populate('abnormalReviewId', 'title reviewReason reviewHospital reviewDepartment reviewDate abnormalItems notes status');
-  res.json({ success: true, data: tasks });
+  const plans=await require('../utils/careFlowClientPlans').clientPlans(req.user);
+  res.json({ success: true, data: [...tasks,...plans.filter(t=>!status||t.status===status)] });
 });
 
 // 新增任务
@@ -50,6 +51,7 @@ router.post('/', auth, async (req, res) => {
 
 // 更新任务状态（完成/取消）
 router.patch('/:id/status', auth, async (req, res) => {
+  if(req.params.id.startsWith('care-plan:'))return res.status(403).json({message:'检查安排由健管专员审核，不能自行标记完成'});
   const { status } = req.body;
   if (!VALID_STATUSES.includes(status)) {
     return res.status(400).json({ success: false, message: `status 无效，合法值：${VALID_STATUSES.join(', ')}` });
@@ -74,6 +76,7 @@ router.patch('/:id/status', auth, async (req, res) => {
 
 // 删除任务
 router.delete('/:id', auth, async (req, res) => {
+  if(req.params.id.startsWith('care-plan:'))return res.status(403).json({message:'不能删除正式检查安排'});
   const deleted = await Task.findOneAndDelete({ _id: req.params.id, user: req.user._id });
   if (!deleted) return res.status(404).json({ success: false, message: '任务不存在' });
   res.json({ success: true, message: '删除成功' });

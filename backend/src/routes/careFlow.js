@@ -14,7 +14,9 @@ async function output(flow,actor) {
   const reportRows = await api.models.Report.find({_id:{$in:flow.state.data.upload?.reportIds || []},user:flow.patientId,tenantId:flow.tenantId}).lean();
   const reports = await Promise.all(reportRows.map(async r => ({_id:r._id,title:r.title,audit_status:r.audit_status,url:await require('../utils/oss').signStoredUrl(r.fileUrl)})));
   const assistants = actor.role === 'healthPlanner' || actor.role === 'superadmin' ? await require('../models/Admin').find({role:'medicalAssistant',staffStatus:'active',tenantId:actor.tenantId || null}).select('name role').lean() : [];
-  return {...flow,reports,assistants};
+  const manager = actor.role==='superadmin'||(actor.role==='healthManager'&&String(flow.state.people.healthManager?.id)===String(actor._id));
+  const availableReports = manager && ['upload','audit'].includes(flow.state.stage) ? await api.models.Report.find({user:flow.patientId,tenantId:flow.tenantId}).select('_id title checkDate audit_status').sort({createdAt:-1}).limit(100).lean() : [];
+  return {...flow,reports,assistants,availableReports};
 }
 router.get('/task/:id',wrap(async(req,res)=>res.json({data:await output(await api.resolve(req.params.id,req.staff),req.staff)})));
 router.post('/task/:id/start',wrap(async(req,res)=>res.json({data:await output(await api.start(req.params.id,req.staff),req.staff)})));
@@ -34,7 +36,7 @@ const upload = multer({storage:multer.memoryStorage(),limits:{fileSize:20*1024*1
 router.post('/:id/reports',async(req,res,next)=>{
   try {
     const f=await api.view(req.params.id,req.staff);
-    if(f.state.stage!=='upload' || (req.staff.role!=='superadmin' && (req.staff.role!=='medicalAssistant' || String(f.state.people.medicalAssistant.id)!==String(req.staff._id)))) fail('仅本次上传环节负责人可上传',403);
+    if(f.state.stage!=='upload' || (req.staff.role!=='superadmin' && (req.staff.role!=='healthManager' || String(f.state.people.healthManager.id)!==String(req.staff._id)))) fail('仅本次健管专员可上传',403);
     req.flow=f;next();
   }catch(e){res.status(e.statusCode||500).json({message:e.message});}
 },upload.single('file'),wrap(async(req,res)=>{
