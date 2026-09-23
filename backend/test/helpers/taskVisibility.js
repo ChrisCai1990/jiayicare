@@ -17,6 +17,7 @@ function staffTasks(rows, options = {}) {
   const query = vm.runInNewContext('(' + assignment[1] + ')', { req: { staff: { _id: 'owner' } }, staffId: 'owner' });
   const queriedTasks = rows.map(row => ({ assignedTo: 'owner', status: 'planned', ...row })).filter(sift(JSON.parse(JSON.stringify(query))));
   return vm.runInNewContext(route.slice(start, end + '.slice(0, requestedLimit);'.length) + '\ntasks', {
+    require: require('node:module').createRequire(path.join(__dirname, '../../src/routes/staff.js')),
     queriedTasks, activeProxyOrderIds: new Set(['active-order']), now, status: 'active', includeFuture: '', requestedLimit: 100, ...options,
   });
 }

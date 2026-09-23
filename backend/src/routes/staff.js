@@ -638,7 +638,8 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
       || (task.sourceType === 'insurance_service' && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'annual_service' && ['executor', 'supervisor'].includes(task.taskRole))
       || (['professional_assessment', 'report_followup'].includes(task.sourceType) && ['executor', 'supervisor'].includes(task.taskRole))
-      || (task.sourceType === 'scheduled' && (task.tags || []).includes('保险服务'));
+      || (task.sourceType === 'scheduled' && (task.tags || []).includes('保险服务'))
+      || (require('../utils/healthManagementRollout').enabledForPatient(task.patientId?._id || task.patientId) && require('../../../shared/annualServiceItem.cjs').needsBooking(task));
     if (!isServiceTask) return false;
     if (task.sourceType === 'order' && !activeProxyOrderIds.has(String(task.sourceOrderId?._id || task.sourceOrderId))) return false;
     // 方案已闭环时，历史遗留的活动督办卡也不应再次出现在健康规划师工作台。
@@ -660,7 +661,8 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
         item.serviceChecklist = String(item.plannedContent || item.content || '').split('\n').map((purpose, index) => ({ key: `insurance_${index}`, purpose: purpose.trim() })).filter(row => row.purpose);
       }
     }
-    return { ...item, supervisionProgress: supervisionProgress.get(String(task._id)), taskRequirements: followUpTaskRequirements(task), taskPurposes: followUpTaskPurposes(task) };
+    const annualBookingTask = require('../utils/healthManagementRollout').enabledForPatient(task.patientId?._id || task.patientId) && require('../../../shared/annualServiceItem.cjs').needsBooking(task);
+    return { ...item, ...(annualBookingTask ? { annualBookingTask: true, taskRole: 'executor', theme: `预约安排 · ${task.theme}` } : {}), supervisionProgress: supervisionProgress.get(String(task._id)), taskRequirements: followUpTaskRequirements(task), taskPurposes: followUpTaskPurposes(task) };
   }) });
 });
 

@@ -91,6 +91,7 @@ export const staffAPI = {
   getFollowUpOutcomeCandidates: id => req(`/staff/followups/${id}/outcome-candidates`),
   getCheckupOutcomeContext: id => req(`/staff/followups/${id}/checkup-outcome-context`),
   getFollowUpServiceOptions: id => req(`/staff/followups/${id}/service-link-options`),
+  confirmAnnualBooking: (id, data) => req(`/staff/followups/${id}/annual-booking`, { method: 'POST', body: JSON.stringify(data) }),
   getCheckupPreparation: id => req(`/staff/followups/${id}/checkup-preparation`),
   getCheckupPreparationReadiness: id => req(`/staff/followups/${id}/checkup-preparation/readiness`),
   getCheckupPreparationServices: id => req(`/staff/followups/${id}/checkup-preparation/services`),

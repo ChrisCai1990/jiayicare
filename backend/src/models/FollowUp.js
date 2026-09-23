@@ -32,6 +32,7 @@ const followUpSchema = new mongoose.Schema({
   theme:        { type: String, default: '' },  // 随访主题
   followUpSchemeId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUpPlan', default: null },
   formData:     { type: mongoose.Schema.Types.Mixed, default: null },
+  annualBooking: { type: mongoose.Schema.Types.Mixed, default: null }, // Dedicated appointment receipt; never completes the follow-up.
   cancelReason: { type: String, default: '' },  // 取消原因（cancelled 时必填）
   assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 负责人
   coordinationGroupId: { type: String, default: '' }, // 同一服务事项拆分出的执行/督办任务组

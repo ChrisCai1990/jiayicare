@@ -65,7 +65,7 @@ export default function ServiceTasksPanel() {
 
   if (!items.length) return null
   const serviceGroups = Object.values(items.reduce((result, task) => {
-    const key = task.sourceType === 'annual_service' && task.workflowKey === 'service_request' ? `request:${task._id}` : task.coordinationGroupId || `task:${task._id}`
+    const key = task.annualBookingTask || (task.sourceType === 'annual_service' && task.workflowKey === 'service_request') ? `request:${task._id}` : task.coordinationGroupId || `task:${task._id}`
     if (!result[key]) result[key] = { key, tasks: [] }
     result[key].tasks.push(task)
     return result
