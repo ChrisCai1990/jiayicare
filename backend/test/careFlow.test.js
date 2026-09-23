@@ -43,6 +43,28 @@ function setup(stage='booking'){
   return {flows,tasks,reports,api,Flow,Task};
 }
 async function complete(s,value){const f=s.flows.get('flow');return s.api.action('flow',actor(f.state.stage),{action:'complete',revision:f.revision,confirmed:true,correction:'已核对修订',value});}
+test('pure reminder visits use upload/audit/advisor path without dispatch; idempotent and immutable original',async()=>{
+ const s=setup();s.flows.clear();s.tasks.clear();
+ s.tasks.set('flow',{_id:'flow',patientId:'patient',assignedTo:'healthManager',sourceType:'scheduled',sourceScheduleKey:'medical_treatment:2026-09-23',deliveryMode:'reminder',status:'in_progress',updatedAt:0,plannedContent:'原年度计划',progressRecords:[{outcome:'visited',visitDate:'2026-09-23',content:'已就医，待报告'}]});
+ const first=await s.api.startReminder('flow',actor('upload'));
+ await s.api.startReminder('flow',actor('upload'));
+ assert.equal(s.flows.size,1);assert.equal(s.tasks.size,2);assert.equal(first.state.stage,'upload');
+ assert.deepEqual(config.targets(first.state),['advisor']);
+ const projected=require('../src/utils/careFlowClientPlans').projectTasks(first);
+ assert.equal(projected.filter(p=>p.uploadReminder).length,1);assert.equal(projected[0].dueDate,'2026-09-23');
+ await complete(s,{reportIds:['report'],note:'资料齐全'});
+ s.reports.get('report').audit_status='unaudited';
+ await assert.rejects(complete(s,{note:'审核'}),/每份/);
+ s.reports.get('report').audit_status='audited';await complete(s,{note:'已审核'});
+ assert.equal(s.tasks.get('flow').status,'in_progress');
+ await generate(s.api,'flow',actor('draft'),false,async()=>JSON.stringify({content:'医嘱随访草稿',date:'2099-01-01'}));
+ assert.equal(s.flows.get('flow').state.stage,'review');
+ const final=await complete(s,{content:'顾问核对后的计划',date:'2099-01-01',note:'核对通过'});
+ await s.api.sync(final);
+ assert.equal(s.tasks.get('flow').status,'completed');assert.equal(s.tasks.get('flow').plannedContent,'原年度计划');
+ assert.equal([...s.tasks.values()].filter(t=>t.sourceScheduleKey==='care-followup:flow').length,1);
+ assert.ok([...s.tasks.values()].every(t=>!['healthPlanner','medicalAssistant'].includes(t.assignedTo)));
+});
 test('专员结束后健管承接报告，客户上传资料可关联，跨客户资料和未审核资料不能过关',async()=>{
  const s=setup('execute');await complete(s,{text:'检查安排已交接'});
  const flow=s.flows.get('flow'),task=s.tasks.get(hash(`care:flow:${flow.state.sequence}`));

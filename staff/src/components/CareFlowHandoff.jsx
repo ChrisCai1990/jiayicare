@@ -2,6 +2,7 @@ import React from 'react'
 import booking from '../../../shared/annualBookingPlan.cjs'
 
 export default function CareFlowHandoff({state}) {
+  if(state.mode==='reminder')return <section style={{display:'grid',gap:12,background:'#F6FBF8',padding:16,borderRadius:12}}><h3>就医提醒 · 资料与后续随访</h3><div>已就医日期：{state.data.visit?.date||'待核对'}</div><div style={{whiteSpace:'pre-wrap'}}>本次就医反馈：{state.data.execute?.text}</div><p>资料收集 → 健管审核 → AI随访草稿 → 顾问审核确认。原事项审核通过后结束，不经过预约派单。</p><details><summary>原顾问要求与历次跟进（{state.progressRecords?.length||0}次）</summary><div style={{whiteSpace:'pre-wrap'}}>{state.data.advisor?.text}</div>{state.progressRecords?.map(r=><div key={r.requestId} style={{padding:'8px 0',borderTop:'1px solid #ddd'}}>{new Date(r.recordedAt).toLocaleString('zh-CN')} · {r.staffName}<p style={{whiteSpace:'pre-wrap'}}>{r.content}</p></div>)}</details></section>
   const plan = {plannedContent:state.data.advisor?.text || '',sourceScheduleKey:state.sourceScheduleKey}
   const p = booking.bookingPlan(plan), receipt = state.data.booking
   const originalRows = receipt?.entries?.length ? receipt.entries : receipt ? [{...receipt,title:'门诊预约'}] : booking.bookingSlots(plan)

@@ -22,6 +22,7 @@ const followUpSchema = new mongoose.Schema({
     content: { type: String, required: true },
     staffId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
     staffName: String, type: { type: String }, recordedAt: Date, nextContactAt: Date,
+    outcome: {type:String,enum:['reminded','unreachable','deferred','booked','visited','']}, visitDate: String,
   }], default: undefined }, // 只追加的沟通过程；不代表管理事项完成
   continuityRequired: { type: Boolean, default: false },
   outcomeReview: { type: mongoose.Schema.Types.Mixed, default: null }, // 顾问结果处置的只读凭据，通用编辑不能写入

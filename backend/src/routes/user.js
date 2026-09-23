@@ -1213,6 +1213,7 @@ router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
   try {
     const followup = await FollowUp.findOne({ _id: req.params.id, patientId: req.user._id });
     if (!followup) return res.status(404).json({ success: false, message: '随访任务不存在' });
+    if(followup.careFlowId)return res.status(409).json({success:false,message:'本事项已进入资料与随访审核，请从健康计划上传本次资料；不能直接标记服务结束'});
     if (followup.sourceType === 'annual_service') return res.status(403).json({ message: '派单及办理任务仅由医护工作台处理' });
     if (require('../utils/followUpContinuity').requiresOutcomeReview(followup)) {
       try {

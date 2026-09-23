@@ -2546,8 +2546,9 @@ export default function PatientDetailPage() {
       try {
         await staffAPI.saveFollowUpProgress(execItem._id, { content: execForm.content.trim(), type: execForm.type,
           requestId: execForm.requestId, updatedAt: execItem.updatedAt,
+          outcome:execForm.outcome,visitDate:execForm.visitDate,visitConfirmed:execForm.visitConfirmed,
           nextContactAt: execForm.nextContactAt ? new Date(execForm.nextContactAt).toISOString() : null })
-        toast('过程已保存，原随访计划继续跟进')
+        toast(execForm.outcome==='visited'?'已转资料收集与审核，原事项尚未结束':'过程已保存，同一事项继续跟进')
         setExecItem(null)
         loadFollowUps()
       } catch (err) { toast(err.message || '保存失败') }

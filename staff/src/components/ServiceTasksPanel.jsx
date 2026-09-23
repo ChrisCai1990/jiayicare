@@ -233,7 +233,7 @@ export default function ServiceTasksPanel() {
         <button type="button" aria-label="下一页" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)} style={{ border: '1px solid #DDD7CD', background: '#fff', color: '#1E6B50', borderRadius: 6, padding: '3px 9px', cursor: currentPage === pageCount ? 'not-allowed' : 'pointer', opacity: currentPage === pageCount ? 0.45 : 1 }}>下一页</button>
       </div>}
       {dispatchTask && <div className="modal-overlay"><div className="modal" style={{ maxWidth: 780 }}>
-        <div className="modal-header"><h3>{dispatchTask.careFlowId ? '就医协助 · 全流程办理' : annualDispatch.isExecution(dispatchTask) ? '就医协助 · 办理记录' : '就医协助 · 派单安排'}</h3><button className="modal-close" onClick={() => setDispatchTask(null)}>×</button></div>
+        <div className="modal-header"><h3>{dispatchTask.formData?.careFlowMode==='reminder' ? '就医提醒 · 资料与随访审核' : dispatchTask.careFlowId ? '就医协助 · 全流程办理' : annualDispatch.isExecution(dispatchTask) ? '就医协助 · 办理记录' : '就医协助 · 派单安排'}</h3><button className="modal-close" onClick={() => setDispatchTask(null)}>×</button></div>
         <div className="modal-body"><AnnualDispatchCard key={dispatchTask._id} task={dispatchTask} staff={staff} onLinked={updated => { setDispatchTask(updated); staffAPI.getServiceTasks({ status: 'active', includeFuture: '1', limit: 100 }).then(r => setItems(r.data || [])) }} /></div>
         <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setDispatchTask(null)}>关闭</button></div>
       </div></div>}

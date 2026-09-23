@@ -1,5 +1,7 @@
 function project(flow) {
   const s=flow.state;
+  if(s.mode==='reminder')return [{_id:`care-plan:${flow._id}:visit`,careFlowId:String(flow._id),customerReadOnly:true,canUploadReports:!s.customerUpload?.completedAt&&['upload','audit'].includes(s.stage),
+    title:`已就医 · ${s.title}`,type:'followup',status:'completed',priority:'low',scheduleLabel:'已就医',dueDate:s.data.visit?.date,assignee:'健管专员',description:`已记录本次就医日期：${s.data.visit?.date||'待核对'}。请提交本次病历、处方或检查报告，由健管专员审核。`}];
   if(!s.data?.execute || !['upload','audit','draft','review','closed'].includes(s.stage)) return [];
   const booked=s.data.booking?.entries||[],actual=s.data.execute.onsite||[];
   const rows=[...booked.map(e=>({...e,...actual.find(v=>v.id===e.id)})),...actual.filter(e=>!booked.some(v=>v.id===e.id))];
