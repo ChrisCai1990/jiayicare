@@ -2029,7 +2029,6 @@ export default function PatientDetailPage() {
   // 三类方案生成前先选模板：值为要打开的弹窗类型('annual_checkup'|'nutrition'|'medical_assist')或null
   const [showSelectTplModal, setShowSelectTplModal] = useState(null)
   const [pendingMedicalAssistOrderId, setPendingMedicalAssistOrderId] = useState('') // 手动点按钮生成时若有关联订单，带给选模板弹窗
-  const [autoGenMedicalAssistOrder, setAutoGenMedicalAssistOrder] = useState(null)
   const [reqPrefill, setReqPrefill] = useState(null)
   const [showMedModal, setShowMedModal] = useState(false)
   const [showSupModal, setShowSupModal] = useState(false)
@@ -2934,9 +2933,8 @@ export default function PatientDetailPage() {
   // 来源+当前角色不同，目的地也不同：
   // - 普通随访任务（sourceType!=='order'）：工作台点进来就是要去处理，直接跳"执行随访"弹窗填写结果
   //   （2026-07-13 反馈：应该直接到执行随访界面，不然怎么填写随访内容）。
-  // - 商城服务订单（sourceType==='order'）+ 健康规划师本人：目的是去生成就医协助方案，不是执行随访，
-  //   直接跳"管理方案"tab并自动触发AI生成；方案生成后再安排就医专员执行，
-  //   AI先生成方案，审核后推送给客户，并自动建立随访计划）。
+  // - 客户线上订单由健康规划师先进入本单客户对话并确认服务信息；
+  //   不因点击订单待办就自动生成就医协助方案。
   // - 商城服务订单 + 其他执行角色：目的是"选执行人转派"，不是自己生成方案，
   //   执行随访弹窗没有转派入口会把这条路堵死（2026-07-13 反馈：跳到执行随访界面，无法选择执行人，
   //   没办法真正转到实际服务的人员）——跳只读详情弹窗，里面"编辑"按钮能选执行人(assignedTo)。
@@ -2966,16 +2964,7 @@ export default function PatientDetailPage() {
         return
       }
       if (f.sourceType === 'order' && staff?.role === 'healthPlanner') {
-        // 实物营养素与代配药一样，进入订单履约对话；不能落入下面“自动生成就医协助方案”的旧分支。
-        if (/代配药|代取药|营养素|营养补充|维生素|叶酸|益生菌|鱼油|蛋白粉|辅酶Q10|矿物质/.test([f.sourceOrderId?.serviceName, f.sourceOrderId?.specificationLabel, f.sourceOrderId?.note, f.theme, f.sourceOrderId?.serviceWorkflowSnapshot?.key].filter(Boolean).join(' '))) {
-          nav(`${location.pathname}?openChat=1`, { replace: true, state: { serviceBooking: f } })
-          return
-        }
-        setTab('plans')
-        // 订单服务名已能唯一对应到具体模板，无需人工确认，跳转到方案tab后直接自动生成
-        // （后端按服务名匹配到templateId后同样走模板固定内容锁定的生成逻辑，不是自由发挥）
-        setAutoGenMedicalAssistOrder({ orderId: (f.sourceOrderId?._id || f.sourceOrderId) || '', briefNote: '' })
-        nav(location.pathname + '?tab=plans', { replace: true })
+        nav(`${location.pathname}?openChat=1`, { replace: true, state: { serviceBooking: f } })
         return
       }
       if (f.sourceType === 'order') setFollowUpDetail(f)
@@ -2984,16 +2973,6 @@ export default function PatientDetailPage() {
       nav(location.pathname + location.search, { replace: true, state: {} })
     }
   }, [tab])
-  // 从商城订单待办跳转到"管理方案"tab后，自动触发一次AI生成，不用健康规划师再点一次按钮；
-  // 后端按订单服务名匹配到templateId后走的是模板固定内容锁定的生成逻辑，不是AI自由发挥
-  useEffect(() => {
-    const requested = location.state?.autoMedicalAssist || autoGenMedicalAssistOrder
-    if (tab === 'plans' && requested) {
-      genAIMedicalAssistPlan(requested.orderId, undefined, requested.briefNote)
-      setAutoGenMedicalAssistOrder(null)
-      nav(location.pathname + location.search, { replace: true, state: {} })
-    }
-  }, [tab, autoGenMedicalAssistOrder, location.state])
   // 体检一站式的健康顾问岗位不是执行/督办事务。工作台点击后直接打开
   // AI体检方案模板选择，进入方案设计状态，不在体检服务档案总览页停留。
   useEffect(() => {
@@ -12568,8 +12547,8 @@ export default function PatientDetailPage() {
               loadFollowUps()
               return
             }
-            setTab('plans')
-            nav(`${location.pathname}?tab=plans`, { state: { autoMedicalAssist: { orderId, briefNote: `客户下单时已确认服务时间：${serviceTime}\n客户下单时已确认服务内容：${task}` } } })
+            toast(result.message || '服务信息已确认，订单已进入执行流程')
+            loadFollowUps()
           }}
           onClose={() => { setShowMessageModal(false); setPlanningChatContext(null); setAppointmentReviewContext(null) }}
         />
@@ -13205,7 +13184,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
               </div>
             </div>
             {!bookingCollapsed && <>
-            <div style={{ fontSize: 11, color: '#8AA89C' }}>{isSupplementOrder ? '营养素订单不生成就医协助方案：先登记履约订单号，待客户确认收到后即可结束订单。' : isCheckupAppointment ? '请根据对话确认约检信息。确认后将直接转交健管专员预约开检查单号和检查日专家号。' : isMedicalReminder ? 'AI可从完整对话中整理六项复查信息；确认后自动生成随访计划并转健康顾问审核。' : isMedicationProxy ? '启动后从订单对话和持续用药档案整理药品信息，再由规划师人工核对。' : isExpertAppointment ? '完整确认约诊建议后转给健管专员预约；再次退回时仍使用本页面，并自动保留上次填写内容。' : isMedicalPlanning ? '核对客户诉求和预期沟通时段后，直接转给健康顾问评估；客户上传的报告仍由健管专员独立审核。' : isMedicalProxy ? '先完整核对本次沟通内容；确认后由您指导客户上传并选定资料，健管专员审核后交健康顾问。您将持续督办直到代诊完成。' : '已自动带入客户确认的信息；如有变化可直接修订，再生成方案。'}</div>
+            <div style={{ fontSize: 11, color: '#8AA89C' }}>{isSupplementOrder ? '先登记履约订单号，待客户确认收到后结束订单。' : isCheckupAppointment ? '请根据对话确认约检信息。确认后将直接转交健管专员预约开检查单号和检查日专家号。' : isMedicalReminder ? 'AI可从完整对话中整理六项复查信息；确认后自动生成随访计划并转健康顾问审核。' : isMedicationProxy ? '启动后从订单对话和持续用药档案整理药品信息，再由规划师人工核对。' : isExpertAppointment ? '完整确认约诊建议后转给健管专员预约；再次退回时仍使用本页面，并自动保留上次填写内容。' : isMedicalPlanning ? '核对客户诉求和预期沟通时段后，直接转给健康顾问评估；客户上传的报告仍由健管专员独立审核。' : isMedicalProxy ? '先完整核对本次沟通内容；确认后由您指导客户上传并选定资料，健管专员审核后交健康顾问。您将持续督办直到代诊完成。' : '请在本单对话中确认服务信息，确认后进入后续执行流程。'}</div>
             {isMedicalReminder ? <div style={{ display: 'grid', gap: 8 }}>
               <div style={{ textAlign: 'right' }}><button type="button" className="btn btn-secondary btn-sm" disabled={extractingReminder} onClick={extractMedicalReminder}>{extractingReminder ? 'AI整理中…' : 'AI获取对话信息'}</button></div>
               {[['visitDate','就医日期','date'],['medicalIssue','就医问题'],['visitGoal','就医目标'],['hospitalSuggestion','医院建议'],['departmentSuggestion','科室建议'],['expertSuggestion','专家建议']].map(([key,label,type]) => <label key={key} style={{ fontSize: 12, fontWeight: 600 }}>{label} *{type === 'date' ? <input className="form-input" type="date" value={medicalReminder[key] || ''} onChange={e => updateMedicalReminder(key, e.target.value)} /> : <textarea className="form-input" rows={2} value={medicalReminder[key] || ''} onChange={e => updateMedicalReminder(key, e.target.value)} />}</label>)}
@@ -13265,7 +13244,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
               </details>
             </div>}
             </>}
-            {!canConfirmOrder && <div style={{ fontSize: 12, color: '#DC3545' }}>该订单已取消、退款、完成或尚未支付，不能继续生成服务方案。</div>}
+            {!canConfirmOrder && <div style={{ fontSize: 12, color: '#DC3545' }}>该订单已取消、退款、完成或尚未支付，不能继续流转服务。</div>}
             {bookingError && <div role="alert" style={{ padding: '8px 10px', color: '#B42318', background: '#FFF0EF', borderRadius: 6, fontSize: 12 }}>{bookingError}</div>}
             <div style={{ textAlign: 'right', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               {isMedicalProxy && proxyReviewReady && !isExpertAppointment && <button className="btn btn-secondary btn-sm" onClick={() => setProxyReviewReady(false)}>返回修改</button>}
@@ -13303,7 +13282,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
                 }
                 catch (err) { setBookingError(err.message || '确认预约失败') }
                 finally { setConfirmingBooking(false) }
-              }}>{confirmingBooking ? '处理中…' : isSupplementOrder ? (order?.supplementFulfillment?.orderNo ? '确认客户已收到并结束订单' : '登记订单号并等待收货') : isCheckupAppointment ? '确认并转健管专员三号预约' : isMedicalReminder ? '确认并转健康顾问审核' : isMedicationProxy ? '确认信息并流转' : isExpertAppointment ? '确认并转给健管专员预约' : isMedicalPlanning ? (proxyReviewReady ? '确认并转给健康顾问' : '核对沟通信息') : isMedicalProxy ? (proxyReviewReady ? '确认并开始资料收集' : '核对沟通信息') : '确认并生成方案'}</button>
+              }}>{confirmingBooking ? '处理中…' : isSupplementOrder ? (order?.supplementFulfillment?.orderNo ? '确认客户已收到并结束订单' : '登记订单号并等待收货') : isCheckupAppointment ? '确认并转健管专员三号预约' : isMedicalReminder ? '确认并转健康顾问审核' : isMedicationProxy ? '确认信息并流转' : isExpertAppointment ? '确认并转给健管专员预约' : isMedicalPlanning ? (proxyReviewReady ? '确认并转给健康顾问' : '核对沟通信息') : isMedicalProxy ? (proxyReviewReady ? '确认并开始资料收集' : '核对沟通信息') : '确认信息并流转'}</button>
             </div>
             </>}
           </div>
