@@ -55,6 +55,28 @@ test('one escort order preserves multiple same-day departments in its handoff', 
   }
 });
 
+test('exam escort hands off each examination and its preparation notes, not a consultation department', async () => {
+  const previous = { orderCreate: Order.create, orderUpdate: Order.updateOne, taskCreate: FollowUp.create };
+  try {
+    Order.create = async row => ({ _id: 'exam-escort-order', ...row });
+    Order.updateOne = async () => ({ modifiedCount: 1 });
+    FollowUp.create = async row => ({ _id: `task-${row.workflowKey}`, ...row });
+    const exams = [{ item: '甲状腺超声', department: '超声科', expert: '检查专家', time: '09:30', precautions: '携带检查申请单' }, { item: '心电图', department: '功能检查科', expert: '', time: '10:30', precautions: '待检查机构核实' }];
+    const result = await startStaffMedicalProxyWorkflow({
+      patient: { _id: 'patient', assignedHealthManager: 'manager', assignedHealthPlanner: 'planner' }, advisorId: 'advisor',
+      plan: { medicalEscort: true, escortCategory: 'exam', escortDate: '2026-09-23', escortTime: '09:00-12:00',
+        hospital: '测试医院', escortExams: exams, escortGoal: '协助签到与报告领取', sourceFollowUpId: 'existing-follow-up', medicalAssistantId: 'assistant' },
+    });
+    assert.equal(result.order.serviceName, '陪同检查服务');
+    assert.deepEqual(result.order.medicalProxyPlan.escortExams, exams);
+    assert.match(result.order.serviceRequirements, /检查安排1：甲状腺超声 · 超声科 · 专家检查专家 · 09:30；注意事项：携带检查申请单/);
+    assert.match(result.order.serviceRequirements, /检查安排2：心电图 · 功能检查科 · 10:30；注意事项：待检查机构核实/);
+    assert.deepEqual(result.execute.formData.planSnapshot.escortExams, exams);
+  } finally {
+    Order.create = previous.orderCreate; Order.updateOne = previous.orderUpdate; FollowUp.create = previous.taskCreate;
+  }
+});
+
 test('on-site consultation keeps its parent escort open and closes only after advisor follow-up review', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
   const routes = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');

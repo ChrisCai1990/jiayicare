@@ -3162,12 +3162,20 @@ router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => 
     const required = medicalEscort ? ['escortCategory', 'escortDate', 'escortTime', 'hospital', 'escortGoal'] : medicationProxy ? ['preferredDateStart', 'medicationName', 'medicationBrand', 'medicationSpecification', 'medicationQuantity'] : appointmentOnly ? ['hospital', 'department', 'expert', 'preferredDateStart', 'preferredDateEnd'] : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'];
     if (required.some(key => !String(req.body[key] || '').trim())) return res.status(400).json({ success: false, message: medicalEscort ? '请完整填写服务日期时间、医院和具体服务事项' : medicationProxy ? '请选择服务日期；药物名称、品牌、规格和数量应从关联代配药任务自动获取' : appointmentOnly ? '请完整填写医院、科室、专家和期望日期区间' : '请完整填写医院、科室、专家、代诊目标和交流内容' });
     if (medicalEscort) {
-      const rows = req.body.escortDepartments === undefined ? [{ department: req.body.department, expert: req.body.expert, time: '' }] : req.body.escortDepartments;
-      if (!Array.isArray(rows) || rows.length < 1 || rows.length > 12 || rows.some(row => !row || typeof row !== 'object' || typeof row.department !== 'string' || !row.department.trim() || row.department.length > 100 || (row.expert !== undefined && (typeof row.expert !== 'string' || row.expert.length > 100)) || (row.time !== undefined && (typeof row.time !== 'string' || row.time.length > 100)))) return res.status(400).json({ success: false, message: '请填写1至12个有效的就诊科室，可选填对应专家和到诊时间' });
-      req.body.escortDepartments = rows.map(row => ({ department: row.department.trim(), expert: (row.expert || '').trim(), time: (row.time || '').trim() }));
-      req.body.department = req.body.escortDepartments[0].department;
-      req.body.expert = req.body.escortDepartments[0].expert;
       if (!['exam', 'checkup', 'consultation', 'treatment'].includes(req.body.escortCategory)) return res.status(400).json({ success: false, message: '请选择有效的陪同类目' });
+      if (req.body.escortCategory === 'exam') {
+        const rows = req.body.escortExams;
+        if (!Array.isArray(rows) || rows.length < 1 || rows.length > 12 || rows.some(row => !row || typeof row !== 'object' || typeof row.item !== 'string' || !row.item.trim() || ['item', 'department', 'expert', 'time', 'precautions'].some(key => row[key] !== undefined && (typeof row[key] !== 'string' || row[key].length > (key === 'precautions' ? 1000 : 100))))) return res.status(400).json({ success: false, message: '请填写1至12个检查项目，可分别填写检查科室、专家、时间和注意事项' });
+        req.body.escortExams = rows.map(row => ({ item: row.item.trim(), department: (row.department || '').trim(), expert: (row.expert || '').trim(), time: (row.time || '').trim(), precautions: (row.precautions || '').trim() }));
+        req.body.department = req.body.escortExams[0].department;
+        req.body.expert = req.body.escortExams[0].expert;
+      } else {
+        const rows = req.body.escortDepartments === undefined ? [{ department: req.body.department, expert: req.body.expert, time: '' }] : req.body.escortDepartments;
+        if (!Array.isArray(rows) || rows.length < 1 || rows.length > 12 || rows.some(row => !row || typeof row !== 'object' || typeof row.department !== 'string' || !row.department.trim() || row.department.length > 100 || (row.expert !== undefined && (typeof row.expert !== 'string' || row.expert.length > 100)) || (row.time !== undefined && (typeof row.time !== 'string' || row.time.length > 100)))) return res.status(400).json({ success: false, message: '请填写1至12个有效的就诊科室，可选填对应专家和到诊时间' });
+        req.body.escortDepartments = rows.map(row => ({ department: row.department.trim(), expert: (row.expert || '').trim(), time: (row.time || '').trim() }));
+        req.body.department = req.body.escortDepartments[0].department;
+        req.body.expert = req.body.escortDepartments[0].expert;
+      }
       const requestedAssistantId = req.body.medicalAssistantId || patient.assignedMedicalAssistant;
       if (requestedAssistantId) {
         const assistant = await Admin.findOne({ _id: requestedAssistantId, role: 'medicalAssistant', staffStatus: 'active' }).select('_id').lean();
