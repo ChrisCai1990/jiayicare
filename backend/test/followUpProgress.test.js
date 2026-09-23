@@ -20,6 +20,17 @@ test('assistance cannot use pure reminder transition',async()=>{
  const s=setup({...medical,deliveryMode:'single'});
  await assert.rejects(saveProgress({...s.args,body:{...s.args.body,outcome:'visited'}}),{statusCode:400});
 });
+test('medication reminder stays in one task until verified pickup, then closes without visit flow', async () => {
+  const s = setup({ patientId: 'test-patient', sourceType: null, followUpSchemeId: 'scheme', formData: { adHocMedicalReminder: true, reminderKind: 'medication' } });
+  const first = await saveProgress({ ...s.args, body: { ...s.args.body, outcome: 'reminded' } });
+  assert.equal(first.status, 'in_progress');
+  await assert.rejects(saveProgress({ ...s.args, body: { ...s.args.body, updatedAt: first.updatedAt, requestId: 'pickup-001', outcome: 'obtained' } }), { statusCode: 400 });
+  const done = await saveProgress({ ...s.args, body: { ...s.args.body, updatedAt: first.updatedAt, requestId: 'pickup-001', outcome: 'obtained', visitConfirmed: true } });
+  assert.equal(done.status, 'completed');
+  assert.equal(done.completedBy, 'staff');
+  assert.ok(done.completedAt);
+  assert.equal(done.careFlowId, undefined);
+});
 function setup(patch = {}) {
   let row = { _id: 'task', assignedTo: 'manager', staffId: 'advisor', status: 'planned', updatedAt: new Date('2026-09-21'),
     content: '完成本次复查', type: 'phone', ...patch };

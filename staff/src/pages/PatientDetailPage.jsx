@@ -2549,7 +2549,7 @@ export default function PatientDetailPage() {
           requestId: execForm.requestId, updatedAt: execItem.updatedAt,
           outcome:execForm.outcome,visitDate:execForm.visitDate,visitConfirmed:execForm.visitConfirmed,
           nextContactAt: execForm.nextContactAt ? new Date(execForm.nextContactAt).toISOString() : null })
-        toast(execForm.outcome==='visited'?'已转资料收集与审核，原事项尚未结束':'过程已保存，同一事项继续跟进')
+        toast(execForm.outcome==='obtained'?'已结束本次配药提醒':execForm.outcome==='visited'?'已转资料收集与审核，原事项尚未结束':'过程已保存，同一事项继续跟进')
         setExecItem(null)
         loadFollowUps()
       } catch (err) { toast(err.message || '保存失败') }
@@ -9143,7 +9143,7 @@ export default function PatientDetailPage() {
                     setMedSaving(true)
                     try {
                       const supNeedReview = !editingSup && !editingSupAiApprove && (staff?.role === 'healthManager' || staff?.role === 'medicalAssistant')
-                      if (editingSupAiApprove) await staffAPI.updatePatientSupplement(id, editingSup, { ...supForm, aiStatus: 'approved' })
+                      if (editingSupAiApprove) await staffAPI.approveEditedPatientSupplement(id, editingSup, supForm)
                       else if (editingSup) await staffAPI.updatePatientSupplement(id, editingSup, supForm)
                       else await staffAPI.createPatientSupplement(id, supForm)
                       setShowSupModal(false); setEditingSupAiApprove(false); loadSupplements()
