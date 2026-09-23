@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { buildAnnualPlanKickoffTasks } = require('../src/utils/annualPlanTaskSplit');
 
-test('年度方案确认后生成客户任务和健康规划师协同任务，不要求健管专员再次制定计划', () => {
+test('年度方案确认仅生成客户启动任务，不再生成年度统筹随访', () => {
   const confirmedAt = new Date('2026-08-28T00:00:00.000Z');
   const rows = buildAnnualPlanKickoffTasks(
     { year: 2026, confirmedAt },
@@ -11,9 +11,7 @@ test('年度方案确认后生成客户任务和健康规划师协同任务，�
   );
   assert.equal(rows.client.key, 'client_plan_execution');
   assert.equal(rows.client.dueDate, '2026-09-04');
-  assert.deepEqual(rows.staff.map(item => [item.key, item.assignedTo]), [
-    ['health_planner_coordination', 'hp-1'],
-  ]);
+  assert.deepEqual(rows.staff, []);
 });
 
 test('未绑定角色时不伪造负责人', () => {
