@@ -62,6 +62,7 @@ function renderArticle(article, previewLabel) {
   const sources = article.sources.map((source) => `
         <li><a href="${escapeHtml(source.url)}" rel="noopener noreferrer" target="_blank">${escapeHtml(source.name)}</a></li>`).join('');
   const label = previewLabel ? '<p class="draft-notice">内部预览：本页尚未公开发布。</p>' : '';
+  const reviewMeta = previewLabel ? '' : `<p class="review-meta">内容审核：${escapeHtml(article.reviewedBy)} · ${escapeHtml(article.reviewedAt)}</p>`;
   const stylesheetPath = previewLabel ? '../../styles.css' : '../styles.css';
 
   return `<!doctype html>
@@ -81,6 +82,7 @@ function renderArticle(article, previewLabel) {
       <p class="eyebrow">健康教育 · 更新于 ${escapeHtml(article.updatedAt)}</p>
       <h1>${escapeHtml(article.title)}</h1>
       <p class="lead">${escapeHtml(article.summary)}</p>
+      ${reviewMeta}
       ${sections}
       <section class="source-list">
         <h2>参考来源</h2>
