@@ -21,7 +21,7 @@ const sitemapPath = isPreview
 const cataloguePath = isPreview
   ? path.join(siteDirectory, '.preview', 'published-articles.json')
   : path.join(siteDirectory, 'published-articles.json');
-const siteUrl = process.env.SITE_URL || 'https://jiaycare.com';
+const siteUrl = process.env.SITE_URL || 'https://jiaycare.com/knowledge';
 const validStatuses = new Set(['draft', 'review', 'published']);
 
 function escapeHtml(value) {
@@ -67,6 +67,14 @@ function renderArticle(article, previewLabel) {
   const label = previewLabel ? '<p class="draft-notice">内部预览：本页尚未公开发布。</p>' : '';
   const reviewMeta = previewLabel ? '' : '<p class="review-meta">内容已完成专业审核</p>';
   const stylesheetPath = previewLabel ? '../../styles.css' : '../styles.css';
+  const canonicalUrl = `${siteUrl.replace(/\/$/, '')}/guides/${article.slug}.html`;
+  const structuredData = previewLabel ? '' : `\n  <link rel="canonical" href="${canonicalUrl}">\n  <script type="application/ld+json">${JSON.stringify({
+    '@context': 'https://schema.org', '@type': 'Article', headline: article.title,
+    description: article.summary, dateModified: article.updatedAt, inLanguage: 'zh-CN',
+    author: { '@type': 'Organization', name: '嘉医汇健康知识中心' },
+    publisher: { '@type': 'Organization', name: '杭州嘉医汇健康管理有限公司', url: `${siteUrl.replace(/\/$/, '')}/` },
+    mainEntityOfPage: canonicalUrl
+  }).replace(/</g, '\\u003c')}</script>`;
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -74,7 +82,7 @@ function renderArticle(article, previewLabel) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="${escapeHtml(article.summary)}">
-  <title>${escapeHtml(article.title)}｜嘉医汇健康知识中心</title>
+  <title>${escapeHtml(article.title)}｜嘉医汇健康知识中心</title>${structuredData}
   <link rel="stylesheet" href="${stylesheetPath}">
 </head>
 <body>
@@ -92,6 +100,7 @@ function renderArticle(article, previewLabel) {
       </section>
       <aside class="medical-note">本页用于健康教育，不替代医生的诊断、治疗建议或紧急医疗服务。如有不适或个体化健康问题，请及时咨询专业人员。</aside>
     </article>
+    <p class="content-governance"><a href="../editorial-policy.html">查看内容审核与更新原则</a></p>
   </main>
 </body>
 </html>`;
@@ -121,7 +130,8 @@ const staticGuides = isPublish && fs.existsSync(path.join(siteDirectory, 'guides
       .map((file) => `guides/${file}`)
   : [];
 const generatedGuides = eligible.map((article) => `guides/${article.slug}.html`);
-const urls = isPreview ? generatedGuides : ['index.html', ...staticGuides, ...generatedGuides];
+const staticPages = ['index.html', 'start-here.html', 'ai-consultation.html', 'editorial-policy.html', 'privacy-policy.html'];
+const urls = isPreview ? generatedGuides : [...staticPages, ...staticGuides, ...generatedGuides];
 const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((url) => {
   const resolvedUrl = url === 'index.html' ? '' : url;
   return `  <url><loc>${siteUrl.replace(/\/$/, '')}/${resolvedUrl}</loc></url>`;
