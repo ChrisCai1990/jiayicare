@@ -11,19 +11,23 @@ test('Admin can bind one active questionnaire to a checkup product workflow', ()
   assert.match(read('../admin/src/pages/settings/SupplyWorkflowConfigPage.jsx'), /下单自动问卷/)
 })
 
-test('each checkup order creates an order-scoped questionnaire assignment', () => {
-  const source = read('src/routes/services.js')
-  assert.match(source, /const PushRecord = require\('\.\.\/models\/PushRecord'\)/)
-  assert.match(source, /serviceWorkflow\?\.key === 'checkup'/)
-  assert.match(source, /sourceOrderId: order\._id/)
-  assert.match(source, /每笔订单独立推送一次/)
+test('each paid checkup order creates an order-scoped questionnaire assignment', () => {
+  const checkout = read('src/routes/services.js')
+  const settlement = read('src/utils/orderSettlement.js')
+  const push = read('src/utils/paidCheckupQuestionnaire.js')
+  assert.match(checkout, /if \(paidAmount === 0\)[\s\S]*ensurePaidCheckupQuestionnaire\(order\)/)
+  assert.match(settlement, /ensurePaidCheckupQuestionnaire\(order\)/)
+  assert.match(push, /order\.paymentStatus !== 'paid'/)
+  assert.match(push, /sourceOrderId: order\._id/)
+  assert.match(push, /paid-checkup-questionnaire:/)
 })
 
-test('questionnaire push failures never block the payment flow', () => {
-  const source = read('src/routes/services.js')
-  assert.match(source, /\[checkup-questionnaire\] push failed; payment flow continues/)
-  assert.match(source, /status: 'push_failed'/)
-  assert.ok(source.indexOf("status: 'push_failed'") < source.indexOf('wechatPay.createJsapiPayment'))
+test('questionnaire push failures never block paid order settlement', () => {
+  const push = read('src/utils/paidCheckupQuestionnaire.js')
+  const settlement = read('src/utils/orderSettlement.js')
+  assert.match(push, /status: 'push_failed'/)
+  assert.match(push, /return false;/)
+  assert.ok(settlement.indexOf("order.paymentStatus = 'paid'") < settlement.indexOf('ensurePaidCheckupQuestionnaire(order)'))
 })
 
 test('questionnaire submission is scoped to its push assignment and linked back to the order and plan', () => {

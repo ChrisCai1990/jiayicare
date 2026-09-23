@@ -427,11 +427,9 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceT
     theme: /^医疗代诊[：:]\s*健康规划师全程督办\s*$/,
     createdAt: { $lt: supervisor.createdAt },
   }, { $set: { status: 'cancelled', cancelReason: '旧版医疗代诊督办已由当前订单督办替代' } });
-  await FollowUp.updateMany({
-    patientId: order.user, sourceType: 'order', sourceOrderId: { $ne: order._id },
-    workflowKey: { $in: ALL_STAGES.map(stage => `${PREFIX}${stage}`).concat(`${PREFIX}intake`) },
-    status: { $in: ['planned', 'in_progress'] }, createdAt: { $lt: supervisor.createdAt },
-  }, { $set: { status: 'cancelled', cancelReason: '旧医疗代诊订单任务已由当前订单替代' } });
+  // A customer may have several paid medical services in progress. Starting this
+  // order must not cancel an earlier order's executor tasks, even when its stage
+  // and customer match this workflow.
   if (/专家约诊/.test(order.serviceName || '')) {
     return FollowUp.findOneAndUpdate(
       { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}booking` },

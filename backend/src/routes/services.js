@@ -19,8 +19,6 @@ const crypto = require('crypto');
 
 const Product = require('../models/Product');
 const ProductCategory = require('../models/ProductCategory');
-const { DynamicQuestionnaire } = require('../models/DynamicQuestionnaire');
-const PushRecord = require('../models/PushRecord');
 const { resolveOrderWorkflowAssignee, orderOwnershipFields } = require('../utils/serviceOwnership');
 
 // GET /api/services — 从商城产品获取（管理员在后台维护的 Products）
@@ -427,37 +425,6 @@ router.post('/order', auth, async (req, res) => {
     if (inventory.reserved) await Product.updateOne({ _id: product._id }, { $inc: { stock: 1 } });
     throw error;
   }
-  // 体检产品在 Admin 服务流程中绑定问卷后，每笔订单独立推送一次；同一客户可按年度重复填写同一模板。
-  const workflowQuestionnaireId = product?.serviceWorkflow?.questionnaireId;
-  if (product?.serviceWorkflow?.key === 'checkup' && workflowQuestionnaireId) {
-    try {
-      const questionnaire = await DynamicQuestionnaire.findOne({ _id: workflowQuestionnaireId, status: 'active', deletedAt: null }).select('title description');
-      if (questionnaire) {
-        await PushRecord.create({
-          staffId: followUpStaffId,
-          patientId: req.user._id,
-          type: 'questionnaire',
-          questionnaireId: questionnaire._id,
-          sourceOrderId: order._id,
-          title: questionnaire.title,
-          content: `体检服务已下单，请填写《${questionnaire.title}》，提交后由健康顾问在24小时内定制体检方案。`,
-        });
-        await DynamicQuestionnaire.findByIdAndUpdate(questionnaire._id, { $addToSet: { targetUsers: req.user._id } });
-        order.checkupIntake = { questionnaireId: questionnaire._id, status: 'pending', pushedAt: new Date() };
-        await order.save();
-      }
-    } catch (error) {
-      // 问卷属于支付后的可补偿业务，任何推送异常都不得阻断订单和微信预支付主链路。
-      console.error('[checkup-questionnaire] push failed; payment flow continues', {
-        orderId: String(order._id),
-        questionnaireId: String(workflowQuestionnaireId),
-        error: error.message,
-      });
-      await Order.updateOne({ _id: order._id }, { $set: {
-        checkupIntake: { questionnaireId: workflowQuestionnaireId, status: 'push_failed', failedAt: new Date() },
-      } }).catch(updateError => console.error('[checkup-questionnaire] failed to record retry state', updateError.message));
-    }
-  }
   if (productShare) {
     productShare.convertedOrderId = order._id;
     productShare.convertedAt = new Date();
@@ -512,6 +479,9 @@ router.post('/order', auth, async (req, res) => {
   order.fulfillmentId = fulfillment._id;
   order.fulfillmentStatus = fulfillment.status;
   await order.save();
+  if (order.serviceWorkflowSnapshot?.key === 'checkup' && order.serviceWorkflowSnapshot.questionnaireId) {
+    await require('../utils/paidCheckupQuestionnaire').ensurePaidCheckupQuestionnaire(order);
+  }
   await require('../utils/orderPlannerConversation').ensureOrderPlannerPrompt(order);
   await require('../utils/orderSupplementArchive').ensureOrderSupplementDraft(order);
   await require('../utils/commissionSettlement').settleReferralCommission(order);

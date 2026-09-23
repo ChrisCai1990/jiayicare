@@ -101,6 +101,9 @@ async function settlePaidOrder(payment, order, cashAmount) {
   order.fulfillmentId = fulfillment._id;
   order.fulfillmentStatus = fulfillment.status;
   await order.save();
+  if (order.serviceWorkflowSnapshot?.key === 'checkup' && order.serviceWorkflowSnapshot.questionnaireId) {
+    await require('./paidCheckupQuestionnaire').ensurePaidCheckupQuestionnaire(order);
+  }
 
   const medicalReminderWorkflow = require('./medicalReminderWorkflow');
   if (medicalReminderWorkflow.isMedicalReminderOrder(order)) {

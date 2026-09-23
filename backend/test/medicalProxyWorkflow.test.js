@@ -7,7 +7,24 @@ const FollowUp = require('../src/models/FollowUp');
 const MedicalReport = require('../src/models/MedicalReport');
 const User = require('../src/models/User');
 const Order = require('../src/models/Order');
-const { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, supplyResolutionSummary, validateMedicalProxyStage, ensureStaffExpertAppointmentTasksForStaff, startStaffMedicalProxyWorkflow } = require('../src/utils/medicalProxyWorkflow');
+const { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, supplyResolutionSummary, validateMedicalProxyStage, ensureStaffExpertAppointmentTasksForStaff, startStaffMedicalProxyWorkflow, startMedicalProxyWorkflow } = require('../src/utils/medicalProxyWorkflow');
+
+test('starting a second paid medical order does not cancel the first order executor', async () => {
+  const previous = { exists: FollowUp.exists, find: FollowUp.find, upsert: FollowUp.findOneAndUpdate, updateMany: FollowUp.updateMany, userFind: User.findById };
+  const cancelled = [];
+  try {
+    FollowUp.exists = async () => false;
+    FollowUp.find = () => ({ sort: () => ({ limit: () => ({ select: () => ({ lean: async () => [] }) }) }) });
+    FollowUp.findOneAndUpdate = async (filter, update) => ({ _id: filter.workflowKey, createdAt: new Date(), ...update.$setOnInsert });
+    FollowUp.updateMany = async (filter, update) => { cancelled.push({ filter, update }); return { modifiedCount: 0 }; };
+    User.findById = () => ({ select: () => ({ lean: async () => ({ assignedHealthManager: 'manager' }) }) });
+    await startMedicalProxyWorkflow({ _id: 'second-order', user: 'patient', serviceName: '专家约诊服务' }, 'planner', '2026-12-01', null, '专家门诊', '');
+    assert.equal(cancelled.some(({ filter }) => filter.sourceOrderId?.$ne === 'second-order' && filter.workflowKey?.$in?.includes('medical_proxy:booking')), false);
+  } finally {
+    FollowUp.exists = previous.exists; FollowUp.find = previous.find; FollowUp.findOneAndUpdate = previous.upsert;
+    FollowUp.updateMany = previous.updateMany; User.findById = previous.userFind;
+  }
+});
 
 test('one proxy medication order carries every drug to booking and later stages', async () => {
   const previous = { orderCreate: Order.create, orderUpdate: Order.updateOne, taskCreate: FollowUp.create };
