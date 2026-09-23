@@ -2,6 +2,8 @@
 
 ## 预约入口补丁
 
+已部署11223065a0d5fe75a5ebafa33ad5d0baf5fdca98：相关19项测试通过，生产四端构建通过，公网健康与Staff均200，新资源index-COwr79tV.js。跳过迁移，无客户业务代操作。用户刷新后从待处理预约任务重新打开验收。
+
 工作台投影设置executor后，客户页通用openExec误打开旧事务清单；该清单仅读取medical_assist目的，造成“顾问未给内容”的错误提示。修复在openExec首段分流annualBookingTask到已有预约详情，保留plannedContent/content原文，并标注健康顾问原计划只读。年度service_request同时转进度详情，不进入完成弹窗。实际入口分支VM回归通过：预约/服务需求进入详情、普通提醒仍走原路径；生产构建/发布结果随后记录。无需改客户数据。
 
 ## 已实现（已部署）
