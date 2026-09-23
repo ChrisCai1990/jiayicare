@@ -30,8 +30,8 @@ if (!indexPage.includes('start-here.html') || !consultationPage.includes('tel:19
 if (!indexPage.includes('ai-consultation.html') || !aiConsultationPage.includes('/api/visitor-assistant/reply') || !aiConsultationPage.includes('privacy-policy.html')) {
   blockers.push('AI 咨询入口、隐私同意或后端承接配置不完整。');
 }
-if (!robots.includes('https://jiaycare.com/sitemap.xml')) blockers.push('robots.txt 未指向正式域名的站点地图。');
-if (!sitemap.includes('https://jiaycare.com/')) blockers.push('sitemap.xml 未使用正式域名。');
+if (!robots.includes('https://jiaycare.com/knowledge/sitemap.xml')) blockers.push('robots.txt 未指向正式域名的站点地图。');
+if (!sitemap.includes('https://jiaycare.com/knowledge/')) blockers.push('sitemap.xml 未使用正式知识站地址。');
 if (!fs.existsSync(privacyPage)) blockers.push('缺少已法务确认的 privacy-policy.html；不可配置 App 的公开隐私政策链接。');
 
 const legacyGuidesDirectory = path.join(siteDirectory, 'guides');
