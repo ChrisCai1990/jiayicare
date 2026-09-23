@@ -7,6 +7,8 @@ import { useStaff } from '../App'
 import AnnualDispatchCard from './AnnualDispatchCard'
 import annualDispatch from '../../../shared/annualDispatch.cjs'
 
+const TASKS_PER_PAGE = 5
+
 const checkupProgress = task => {
   if (task?.workflowKey !== 'checkup_appointment:supervise') return null
   const stage = task.formData?.currentStage || 'booking'
@@ -51,6 +53,7 @@ export default function ServiceTasksPanel() {
   const [items, setItems] = useState([])
   const [group, setGroup] = useState('all')
   const [timeGroup, setTimeGroup] = useState('all')
+  const [page, setPage] = useState(1)
 
   useEffect(() => {
     const refresh = () => staffAPI.getServiceTasks({ status: 'active', includeFuture: '1', limit: 100 })
@@ -101,6 +104,9 @@ export default function ServiceTasksPanel() {
   const visibleServices = roleServices
     .filter(service => timeGroup === 'all' || bucketOf(service.task.date) === timeGroup)
     .sort((a, b) => new Date(a.task.date) - new Date(b.task.date))
+  const pageCount = Math.max(1, Math.ceil(visibleServices.length / TASKS_PER_PAGE))
+  const currentPage = Math.min(page, pageCount)
+  const pagedServices = visibleServices.slice((currentPage - 1) * TASKS_PER_PAGE, currentPage * TASKS_PER_PAGE)
   const executorCount = serviceGroups.filter(service => service.task.taskRole !== 'supervisor').length
   const supervisorCount = serviceGroups.filter(service => service.task.taskRole === 'supervisor').length
 
@@ -164,17 +170,17 @@ export default function ServiceTasksPanel() {
       </div>
       <div style={{ display: 'flex', gap: 8, padding: '10px 20px 6px', borderTop: '1px solid #F3EFE8' }}>
         {[['all', '全部', serviceGroups.length], ['executor', '待执行', executorCount], ['supervisor', '待督办', supervisorCount]].map(([key, label, count]) => count > 0 && (
-          <button key={key} onClick={() => setGroup(key)} style={{ border: group === key ? '1px solid #1E6B50' : '1px solid #DDD7CD', background: group === key ? '#EAF5F0' : '#fff', color: group === key ? '#1E6B50' : '#5F6B65', borderRadius: 16, padding: '5px 12px', cursor: 'pointer', fontSize: 12 }}>{label} {count}</button>
+          <button key={key} onClick={() => { setGroup(key); setPage(1) }} style={{ border: group === key ? '1px solid #1E6B50' : '1px solid #DDD7CD', background: group === key ? '#EAF5F0' : '#fff', color: group === key ? '#1E6B50' : '#5F6B65', borderRadius: 16, padding: '5px 12px', cursor: 'pointer', fontSize: 12 }}>{label} {count}</button>
         ))}
       </div>
       <div style={{ display: 'flex', gap: 8, padding: '4px 20px 8px', flexWrap: 'wrap' }}>
         {[['all', '全部计划'], ['today', '今日'], ['week', '未来7天'], ['month', '未来30天'], ['later', '30天以后'], ['overdue', '已逾期']].map(([key, label]) => {
           const count = key === 'all' ? roleServices.length : roleServices.filter(service => bucketOf(service.task.date) === key).length
-          return <button key={key} onClick={() => setTimeGroup(key)} style={{ border: timeGroup === key ? '1px solid #1E6B50' : '1px solid #DDD7CD', background: timeGroup === key ? '#EAF5F0' : '#fff', color: timeGroup === key ? '#1E6B50' : '#5F6B65', borderRadius: 16, padding: '5px 12px', cursor: 'pointer', fontSize: 12 }}>{label} {count}</button>
+          return <button key={key} onClick={() => { setTimeGroup(key); setPage(1) }} style={{ border: timeGroup === key ? '1px solid #1E6B50' : '1px solid #DDD7CD', background: timeGroup === key ? '#EAF5F0' : '#fff', color: timeGroup === key ? '#1E6B50' : '#5F6B65', borderRadius: 16, padding: '5px 12px', cursor: 'pointer', fontSize: 12 }}>{label} {count}</button>
         })}
       </div>
       <div className="card-body" style={{ padding: '8px 20px' }}>
-        {visibleServices.map((service, index) => {
+        {pagedServices.map((service, index) => {
           const task = service.task
           const isFuture = task.date && new Date(task.date).getTime() > Date.now()
           const isWaitingPrevious = !!task.isBlocked
@@ -185,7 +191,7 @@ export default function ServiceTasksPanel() {
           <div key={task._id}
             onClick={() => openTask(task)}
             title={isOutpatientReportAuditWait ? '等待健管专员审核本次门诊病历和检验检查单' : isOutpatientEscortProgress ? '当前已进入陪诊及资料闭环阶段' : isWaitingPrevious ? '上一环节完成后即可办理' : ''}
-            style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 0', cursor: isWaitingPrevious ? 'default' : 'pointer', opacity: isWaitingPrevious ? 0.78 : 1, borderBottom: index < Math.min(visibleServices.length, 10) - 1 ? '1px solid #f0ede8' : 'none' }}>
+            style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 0', cursor: isWaitingPrevious ? 'default' : 'pointer', opacity: isWaitingPrevious ? 0.78 : 1, borderBottom: index < pagedServices.length - 1 ? '1px solid #f0ede8' : 'none' }}>
             <span style={{ fontSize: 18 }}>{isWaitingPrevious ? '⏳' : task.taskRole === 'supervisor' ? '🔎' : '✅'}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600, fontSize: 13, color: '#1A2B24' }}>
@@ -220,6 +226,11 @@ export default function ServiceTasksPanel() {
           )
         })}
       </div>
+      {pageCount > 1 && <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, padding: '4px 20px 14px', borderTop: '1px solid #F3EFE8' }}>
+        <span style={{ fontSize: 12, color: '#667085' }}>第 {currentPage} / {pageCount} 页</span>
+        <button type="button" aria-label="上一页" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} style={{ border: '1px solid #DDD7CD', background: '#fff', color: '#1E6B50', borderRadius: 6, padding: '3px 9px', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', opacity: currentPage === 1 ? 0.45 : 1 }}>上一页</button>
+        <button type="button" aria-label="下一页" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)} style={{ border: '1px solid #DDD7CD', background: '#fff', color: '#1E6B50', borderRadius: 6, padding: '3px 9px', cursor: currentPage === pageCount ? 'not-allowed' : 'pointer', opacity: currentPage === pageCount ? 0.45 : 1 }}>下一页</button>
+      </div>}
       {dispatchTask && <div className="modal-overlay"><div className="modal" style={{ maxWidth: 780 }}>
         <div className="modal-header"><h3>{dispatchTask.careFlowId ? '就医协助 · 全流程办理' : annualDispatch.isExecution(dispatchTask) ? '就医协助 · 办理记录' : '就医协助 · 派单安排'}</h3><button className="modal-close" onClick={() => setDispatchTask(null)}>×</button></div>
         <div className="modal-body"><AnnualDispatchCard key={dispatchTask._id} task={dispatchTask} staff={staff} onLinked={updated => { setDispatchTask(updated); staffAPI.getServiceTasks({ status: 'active', includeFuture: '1', limit: 100 }).then(r => setItems(r.data || [])) }} /></div>
