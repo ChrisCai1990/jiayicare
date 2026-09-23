@@ -4,6 +4,7 @@ import { BookingSummary } from './AnnualBookingCard'
 import OnsiteBookingCard from './OnsiteBookingCard'
 import tools from '../../../shared/annualDispatch.cjs'
 import bookingTools from '../../../shared/annualBookingPlan.cjs'
+import consultationTools from '../../../shared/annualConsultationBrief.cjs'
 
 export default function AnnualDispatchCard({ task, staff, onLinked }) {
   const [data, setData] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false)
@@ -21,6 +22,7 @@ export default function AnnualDispatchCard({ task, staff, onLinked }) {
   const execution = tools.isExecution(task), mode = request.formData?.serviceRequest?.mode
   const locked = request.serviceTracking?.linkId || parent?.serviceTracking?.linkId
   const active = !['completed', 'cancelled'].includes(request.status)
+  const brief = consultationTools.consultationBrief(request, parent)
   return <section style={{ display: 'grid', gap: 16, fontSize: 14, lineHeight: 1.6 }}>
     <div style={{ background: '#F6FBF8', borderRadius: 12, padding: 16 }}>
       <h3 style={{ margin: '0 0 8px' }}>办理事项</h3>
@@ -28,6 +30,19 @@ export default function AnnualDispatchCard({ task, staff, onLinked }) {
       <div>服务：{mode === 'managed' ? '全托管服务' : tools.labels[request.deliveryType || request.formData?.serviceRequest?.serviceType] || '就医协助'}</div>
       {(item.precautions || item.notes) && <div>注意事项：{item.precautions || item.notes}</div>}
     </div>
+    <section aria-label="专家沟通交接" style={{ border: '1px solid #CDE3D8', borderRadius: 12, padding: 16 }}>
+      <h3 style={{ margin: '0 0 12px' }}>就医目的与专家沟通</h3>
+      <div style={{ marginBottom: 12 }}><b>为什么就医 / 申请检查</b><div style={{ whiteSpace: 'pre-wrap' }}>{brief.reason || (brief.basis ? '请向专家说明下方顾问记录的依据，由专家评估本次检查安排。' : '原计划未明确就医原因或检查依据，请健康顾问补充后再向专家转述。')}</div></div>
+      {brief.basis && <div style={{ marginBottom: 12 }}><b>顾问记录的相关依据（原文）</b><div style={{ whiteSpace: 'pre-wrap' }}>{brief.basis}</div></div>}
+      <b>与专家沟通什么</b>
+      {brief.communication && <div style={{ whiteSpace: 'pre-wrap', marginTop: 6 }}>{brief.communication}</div>}
+      {!brief.missingReason && <ol style={{ paddingLeft: 22, margin: '8px 0' }}>
+        <li>说明上述就医目的和已有检查记录；有原报告时一并提供，不把顾问记录转述为专家已确认的结论。</li>
+        <li>{brief.items ? <>请专家评估本次拟安排的“{brief.items}”是否适合、是否需要开单，以及具体检查要求。</> : '请专家评估本次就医事项与后续安排；未明确的检查项目由健康顾问补充，不自行增加。'}</li>
+        <li>询问并记录专家意见、实际开单项目、检查前准备要求，以及结果出来后如何复诊；与原计划不一致时反馈健康顾问。</li>
+      </ol>}
+      <small style={{ color: '#65776F' }}>以上为原计划转述与沟通提示，不新增诊断或检查建议；是否开单由接诊专家决定。</small>
+    </section>
     {!execution && <div><h3 style={{ margin: '0 0 8px' }}>预约与交接</h3><BookingSummary booking={parent?.annualBooking || d?.bookingSnapshot} /></div>}
     {execution && <OnsiteBookingCard task={child || task} staff={staff} />}
     <details><summary>查看完整顾问依据与原计划</summary><div style={{ whiteSpace: 'pre-wrap', padding: 12, color: '#65776F' }}>{d?.advisorPlanText || parent?.plannedContent || parent?.content || item.basisSummary || '暂无详细依据'}</div></details>
@@ -45,7 +60,7 @@ export default function AnnualDispatchCard({ task, staff, onLinked }) {
       <div style={{ background: '#F6FBF8', borderRadius: 12, padding: 16 }}><b>办理进度</b><div>就医专员：{d.assigneeName}</div><div>状态：{{ active: '已派单，待办理', pending_review: '已提交结果，待规划师验收', completed: '代办已验收' }[d.status]}</div>{d.note && <div>派单备注：{d.note}</div>}{d.result && <div style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>办理结果：{d.result.text}</div>}</div>
       {!child && !execution && <button className="btn btn-primary" disabled={busy} onClick={() => act(staffAPI.annualDispatch, { assigneeId: String(d.assigneeId), note: d.note })}>恢复本次派单（不会重复创建）</button>}
       {execution && d.status === 'active' && <>
-        <label>办理结果<textarea className="form-input" rows={4} maxLength={5000} value={result} onChange={e => setResult(e.target.value)} /></label>
+        <label>专家沟通与办理结果<textarea className="form-input" rows={4} maxLength={5000} placeholder="记录专家意见、实际开单项目、预约结果及需反馈健康顾问的问题；未完成事项请如实说明。" value={result} onChange={e => setResult(e.target.value)} /></label>
         <label><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} /> 已逐项核对顾问要求与本次交接，并如实记录办理结果</label>
         <button className="btn btn-primary" disabled={busy || !confirmed || !result.trim()} onClick={() => act(staffAPI.annualDispatchResult, { result, confirmed })}>提交办理结果，交规划师验收</button>
       </>}
