@@ -114,6 +114,22 @@ function LevelsTab({ toast }) {
   )
 }
 
+function VisitorLeadsTab({ toast }) {
+  const [leads, setLeads] = useState([])
+  const [status, setStatus] = useState('new')
+  const load = () => staffAPI.getVisitorLeads(status ? { status } : {}).then(r => setLeads(r.data || [])).catch(err => toast(err.message || '线索加载失败'))
+  useEffect(() => { load() }, [status])
+  const update = async (lead, nextStatus) => {
+    const note = window.prompt('联系记录（仅填写服务沟通情况，不要填写医疗信息）', lead.contactNote || '')
+    if (note === null) return
+    try { await staffAPI.updateVisitorLead(lead._id, { status: nextStatus, contactNote: note }); toast('线索已更新'); load() }
+    catch (err) { toast(err.message || '更新失败') }
+  }
+  return <div className="card"><div className="card-header" style={{ flexWrap: 'wrap', gap: 10 }}><div><div className="card-title">官网 AI 咨询线索</div><div style={{ marginTop: 4, color: '#6A7D73', fontSize: 12 }}>只显示访客同意提交的联系信息与非医疗需求；不含原始对话。</div></div><select className="form-control" value={status} onChange={e => setStatus(e.target.value)} style={{ width: 120 }}><option value="new">待联系</option><option value="contacted">已联系</option><option value="closed">已关闭</option><option value="">全部</option></select></div><div className="card-body" style={{ overflowX: 'auto' }}>
+    {!leads.length ? <p style={{ color: '#8AA89C', textAlign: 'center', padding: 24 }}>暂无线索</p> : <table className="table"><thead><tr><th>提交时间</th><th>联系人</th><th>城市 / 时间</th><th>咨询方向</th><th>非医疗摘要</th><th>状态</th><th>操作</th></tr></thead><tbody>{leads.map(lead => <tr key={lead._id}><td>{new Date(lead.createdAt).toLocaleString('zh-CN', { hour12: false })}</td><td>{lead.name}<br /><span style={{ color: '#6A7D73' }}>{lead.phone}</span></td><td>{[lead.city, lead.contactWindow].filter(Boolean).join(' / ') || '-'}</td><td>{lead.topic}</td><td style={{ maxWidth: 220, whiteSpace: 'pre-wrap' }}>{lead.summary || '-'}</td><td>{({ new: '待联系', contacted: '已联系', closed: '已关闭' })[lead.status]}</td><td style={{ whiteSpace: 'nowrap' }}>{lead.status === 'new' && <button className="btn btn-primary btn-sm" onClick={() => update(lead, 'contacted')}>标记已联系</button>}{lead.status === 'contacted' && <button className="btn btn-secondary btn-sm" onClick={() => update(lead, 'closed')}>关闭</button>}{lead.status === 'closed' && <button className="btn btn-secondary btn-sm" onClick={() => update(lead, 'new')}>重新打开</button>}</td></tr>)}</tbody></table>}
+  </div></div>
+}
+
 // ── 活动管理 ──────────────────────────────────────────────
 function ActivitiesTab({ toast }) {
   const [activities, setActivities] = useState([])
@@ -558,6 +574,7 @@ export default function MarketingPage() {
   const [tab, setTab] = useState('levels')
 
   const tabs = [
+    { v: 'visitorLeads', l: '🧭 官网线索' },
     { v: 'levels',     l: '🏅 会员等级' },
     { v: 'activities', l: '🎉 活动管理' },
     { v: 'points',     l: '⭐ 积分管理' },
@@ -587,6 +604,7 @@ export default function MarketingPage() {
       </div>
 
       {tab === 'levels'     && <LevelsTab     toast={toast} />}
+      {tab === 'visitorLeads' && <VisitorLeadsTab toast={toast} />}
       {tab === 'activities' && <ActivitiesTab toast={toast} />}
       {tab === 'points'     && <PointsTab     toast={toast} />}
       {tab === 'packages'   && <PackagesTab   toast={toast} />}

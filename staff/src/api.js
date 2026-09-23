@@ -377,6 +377,8 @@ export const staffAPI = {
   createLevel:       (data) => req('/staff/marketing/levels', { method: 'POST', body: JSON.stringify(data) }),
   updateLevel:       (id,d) => req(`/staff/marketing/levels/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
   deleteLevel:       (id)   => req(`/staff/marketing/levels/${id}`, { method: 'DELETE' }),
+  getVisitorLeads:   (p={}) => req('/staff/marketing/visitor-leads?' + qs(p)),
+  updateVisitorLead: (id,d) => req(`/staff/marketing/visitor-leads/${id}`, { method: 'PATCH', body: JSON.stringify(d) }),
 
   getActivities:     (p={}) => req('/staff/marketing/activities?' + qs(p)),
   createActivity:    (data) => req('/staff/marketing/activities', { method: 'POST', body: JSON.stringify(data) }),

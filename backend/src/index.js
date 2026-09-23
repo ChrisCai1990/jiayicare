@@ -83,6 +83,8 @@ app.use('/api/questionnaire', auth, checkServiceActive, require('./routes/questi
 // Catalogue must remain public so a recipient can preview a shared product before login.
 // Sensitive service routes enforce auth inside routes/services.js.
 app.use('/api/services',      require('./routes/services'));
+// 官网访客独立入口：不复用会员聊天和健康档案，避免未登录访客数据混入会员体系。
+app.use('/api/visitor-assistant', require('./routes/visitorAssistant'));
 app.use('/api/partner-benefits', require('./routes/partnerBenefits'));
 app.use('/api/enterprise-hr', require('./routes/enterpriseHr'));
 app.use('/api/ops-dashboard', require('./routes/opsDashboard'));
