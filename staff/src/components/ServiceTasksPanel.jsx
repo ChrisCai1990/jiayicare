@@ -47,7 +47,7 @@ const medicalEscortProgress = task => {
   return { ...(stages[stage] || stages.planner), total: 4, steps: ['人员分配', '陪同执行', '资料审核', '完成'], automaticAssignment: task.formData?.assignmentMode === 'automatic' }
 }
 
-export default function ServiceTasksPanel() {
+export default function ServiceTasksPanel({ onTasksLoaded }) {
   const nav = useNavigate()
   const { staff } = useStaff()
   const [dispatchTask, setDispatchTask] = useState(null)
@@ -59,7 +59,11 @@ export default function ServiceTasksPanel() {
 
   useEffect(() => {
     const refresh = () => staffAPI.getServiceTasks({ status: 'active', includeFuture: '1', limit: 100 })
-      .then(r => setItems((r.data || []).filter(task => task.taskRole === 'supervisor' || task.serviceTracking?.status !== 'waiting')))
+      .then(r => {
+        const tasks = (r.data || []).filter(task => task.taskRole === 'supervisor' || task.serviceTracking?.status !== 'waiting')
+        setItems(tasks)
+        onTasksLoaded?.(tasks)
+      })
       .catch(() => {})
     refresh()
     const refreshIfVisible = () => { if (document.visibilityState === 'visible') refresh() }
@@ -172,7 +176,7 @@ export default function ServiceTasksPanel() {
   }
 
   return (
-    <div className="card" style={{ marginBottom: 20, border: '1.5px solid #1E6B5035' }}>
+    <div id="service-tasks-panel" className="card" style={{ marginBottom: 20, border: '1.5px solid #1E6B5035' }}>
       <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span>待处理服务任务</span>
