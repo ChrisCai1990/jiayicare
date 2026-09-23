@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
-import AnnualBookingCard from './AnnualBookingCard'
+import AnnualBookingCard, { BookingSummary } from './AnnualBookingCard'
+import planTools from '../../../shared/annualBookingPlan.cjs'
 import itemTools from '../../../shared/annualServiceItem.cjs'
 
 export default function FollowUpServiceLinkCard({ task, staff, onLinked }) {
@@ -25,14 +26,14 @@ export default function FollowUpServiceLinkCard({ task, staff, onLinked }) {
   const tracking = data?.link ? { ...data.link, revision: data.link.__v } : task.serviceTracking
   if (!request && !tracking) return itemTools.isAssistance(task) ? <AnnualBookingCard task={task} staff={staff} onLinked={onLinked} /> : null
   const booking = data?.followUps?.find(row => row._id === followUpId)?.annualBooking
-  const bookingRequired = itemTools.isBookingRequest(task) && booking?.status !== 'booked'
+  const bookingRequired = itemTools.isBookingRequest(task) && !planTools.bookingReady(booking)
   const canChoose = canLink && data && (!data.link || data.link.status === 'attention') && !['completed', 'cancelled'].includes(task.status)
   return <section style={{ border: '1px solid #B2D8C7', borderRadius: 8, padding: 12, background: '#F6FBF8', fontSize: 13 }}>
     <b>服务与随访关联</b>
     {tracking && <div style={{ marginTop: 8 }}>{tracking.title}<br />{tracking.message || '等待服务进度同步'}</div>}
     {loading && <p>正在读取服务…</p>}
     {error && <p role="alert" style={{ color: '#DC3545' }}>{error}</p>}
-    {canChoose && itemTools.isBookingRequest(task) && <p>{bookingRequired ? '等待健管专员完成本事项预约；预约前不可安排服务。' : `预约已完成：${booking.date} ${booking.time || ''} · ${booking.hospital} · ${booking.department} · ${booking.expert || '未指定专家'} · ${booking.note || ''}`}</p>}
+    {canChoose && itemTools.isBookingRequest(task) && (bookingRequired ? <p>等待健管专员确认预约安排。</p> : <><b>预约结果与现场预约交接</b><BookingSummary booking={booking} /></>)}
     {canChoose && <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
       <label>对应健管随访
         <select className="form-input" value={followUpId} disabled={loading || !!data.link} onChange={e => setFollowUpId(e.target.value)}>

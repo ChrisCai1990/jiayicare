@@ -25,6 +25,25 @@ async function request(t, body, endpoint = 'service-link') {
   return { status: response.status, body: await response.json() };
 }
 
+for (const scenario of ['valid', 'wrong-role', 'wrong-owner', 'blocked', 'foreign-item', 'conflict']) test(`现场预约交接HTTP: ${scenario}`, async t => {
+  actor = { _id: ids.manager, role: scenario === 'wrong-role' ? 'healthManager' : 'medicalAssistant' };
+  const executor = { _id: ids.request, patientId: ids.patient, assignedTo: scenario === 'wrong-owner' ? ids.planner : ids.manager, sourceOrderId: ids.target, taskRole: 'executor', status: 'in_progress', isBlocked: scenario === 'blocked' };
+  const parent = { _id: ids.parent, patientId: ids.patient, updatedAt: new Date(), annualBooking: { status: 'arranged', entries: [{ id: 'exam-0', mode: 'onsite', status: 'pending', department: '超声科', hospital: '医院甲', expert: '专家甲', note: '先开单再现场预约' }] } };
+  t.mock.method(FollowUp, 'findById', async () => executor);
+  t.mock.method(Link, 'find', q => { assert.equal(q.patientId, ids.patient); assert.equal(q.targetId, ids.target); return { lean: async () => [{ followUpId: ids.parent }] }; });
+  t.mock.method(FollowUp, 'find', q => { assert.equal(q.patientId, ids.patient); assert.deepEqual(q._id.$in, [ids.parent]); return { lean: async () => [parent] }; });
+  let writes = 0;
+  t.mock.method(FollowUp, 'updateOne', async (q, u) => {
+    writes++; assert.equal(q._id, ids.parent); assert.ok(q.updatedAt); assert.equal(q['annualBooking.entries.0.status'], 'pending');
+    const entry = u.$set['annualBooking.entries.0']; assert.equal(entry.note, '先开单再现场预约'); assert.equal(entry.onsiteResult.by, ids.manager); assert.equal(entry.expert, '专家甲');
+    assert.deepEqual(Object.keys(u.$set), ['annualBooking.entries.0']);
+    return { modifiedCount: scenario === 'conflict' ? 0 : 1 };
+  });
+  const result = await request(t, { parentId: scenario === 'foreign-item' ? ids.target : ids.parent, entryId: 'exam-0', date: '2026-12-02', time: '10:00', note: '已预约' }, 'onsite-bookings');
+  assert.equal(result.status, { valid: 200, 'wrong-role': 403, 'wrong-owner': 403, blocked: 403, 'foreign-item': 409, conflict: 409 }[scenario]);
+  assert.equal(writes, ['valid', 'conflict'].includes(scenario) ? 1 : 0);
+});
+
 test('不是本需求负责人不能关联服务', async t => {
   actor = { _id: ids.manager, role: 'healthManager' };
   t.mock.method(FollowUp, 'findById', async () => task);
@@ -54,7 +73,7 @@ for (const scenario of ['valid', 'wrong-owner', 'reminder', 'booked', 'conflict'
   t.mock.method(FollowUp, 'findById', () => Object.assign(Promise.resolve(bookingTask), { populate: async () => bookingTask }));
   let writes = 0;
   t.mock.method(FollowUp, 'updateOne', async (filter, update) => {
-    writes++; assert.ok(filter.updatedAt); assert.equal(filter['annualBooking.status'].$ne, 'booked');
+    writes++; assert.ok(filter.updatedAt); assert.deepEqual(filter['annualBooking.status'].$nin, ['booked', 'arranged']);
     assert.deepEqual(Object.keys(update.$set), ['annualBooking']); // No status/date/plan overwrite.
     assert.equal(update.$set.annualBooking.confirmedBy, ids.manager);
     return { modifiedCount: scenario === 'conflict' ? 0 : 1 };

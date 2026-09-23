@@ -31,7 +31,11 @@ async function reconcileServiceLinks(filter = {}) {
     if (link.status === 'waiting') {
       const Target = link.targetType === 'order' ? Order : HealthPlan;
       const target = await Target.findOne({ _id: link.targetId, [link.targetType === 'order' ? 'user' : 'patientId']: link.patientId }).lean();
-      const outcome = serviceOutcome(link.targetType, target);
+      let outcome = serviceOutcome(link.targetType, target);
+      if (outcome.status === 'completed') {
+        const parent = await require('../models/FollowUp').findById(link.followUpId).lean();
+        if (require('../../../shared/annualBookingPlan.cjs').pendingOnsite(parent?.annualBooking).length) outcome = { status: 'waiting', message: '服务已结束，但现场预约结果尚未登记，请核对交接记录' };
+      }
       if (outcome.status !== link.status || outcome.message !== link.message) {
         const updated = await Link.findOneAndUpdate({ _id: link._id, __v: link.__v }, {
           $set: outcome, $inc: { __v: 1 }, $push: { history: { ...outcome, at: new Date(), event: 'service_state' } },

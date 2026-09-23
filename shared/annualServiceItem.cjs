@@ -17,7 +17,7 @@ function isAssistance(task) {
 }
 function needsBooking(task) {
   return isAssistance(task) && ['planned', 'in_progress', 'missed'].includes(task.status)
-    && !task.serviceTracking?.linkId && task.annualBooking?.status !== 'booked';
+    && !task.serviceTracking?.linkId && !require('./annualBookingPlan.cjs').bookingReady(task.annualBooking);
 }
 function isBookingRequest(task) {
   return task.sourceType === 'annual_service' && task.workflowKey === 'service_request' && appointmentModules.includes(task.formData?.serviceRequest?.moduleKey);

@@ -2,6 +2,17 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { serviceOutcome, taskProjection, isServiceRequest } = require('../src/utils/followUpServiceState');
 
+test('现场预约未回填时，服务完成不能伪造关联随访完成', async t => {
+  const Link = require('../src/models/FollowUpServiceLink'), FollowUp = require('../src/models/FollowUp'), Order = require('../src/models/Order');
+  const link = { _id: 'l', __v: 0, status: 'waiting', targetType: 'order', targetId: 'o', patientId: 'p', followUpId: 'f', requestTaskId: 'r' };
+  t.mock.method(Link, 'find', () => ({ lean: async () => [link] }));
+  t.mock.method(Order, 'findOne', () => ({ lean: async () => ({ status: 'completed' }) }));
+  t.mock.method(FollowUp, 'findById', () => ({ lean: async () => ({ annualBooking: { entries: [{ mode: 'onsite', status: 'pending' }] } }) }));
+  t.mock.method(Link, 'findOneAndUpdate', (q,u) => { assert.equal(u.$set.status, 'waiting'); assert.match(u.$set.message, /现场预约/); return { lean: async () => ({ ...link, ...u.$set, __v: 1 }) }; });
+  t.mock.method(FollowUp, 'updateMany', async (q,u) => { assert.equal(u.$set.status, 'in_progress'); });
+  await require('../src/utils/followUpServiceLink').reconcileServiceLinks({});
+});
+
 test('只有完整服务完成才关闭随访，预约和部分核销保持进行中', () => {
   for (const target of [{ status: 'pending' }, { status: 'scheduled' }, { status: 'scheduled', totalUnits: 3, usedUnits: 1 }]) {
     assert.equal(serviceOutcome('order', target).status, 'waiting');
