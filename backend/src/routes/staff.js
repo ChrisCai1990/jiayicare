@@ -3146,7 +3146,7 @@ router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => 
       }
     }
     if (appointmentOnly && (req.body.preferredDateEnd < req.body.preferredDateStart || !/^\d{4}-\d{2}-\d{2}$/.test(req.body.preferredDateStart) || !/^\d{4}-\d{2}-\d{2}$/.test(req.body.preferredDateEnd))) return res.status(400).json({ success: false, message: '请填写有效的期望日期区间' });
-    if (appointmentOnly && (!['general', 'international'].includes(req.body.clinicType) || !['self_pay', 'medical_insurance', 'high_end'].includes(req.body.insuranceUse))) return res.status(400).json({ success: false, message: '请选择门诊类型和费用与保险方式' });
+    if (appointmentOnly && (!['general', 'expert', 'special', 'international'].includes(req.body.clinicType) || !['self_pay', 'medical_insurance', 'commercial_insurance', 'high_end'].includes(req.body.insuranceUse))) return res.status(400).json({ success: false, message: '请选择门诊类型和费用与保险方式' });
     // 服务由健管专员触发时，仍关联客户的健康顾问作为专业责任岗位；未分配健康顾问时由发起健管专员留痕。
     const advisorId = req.staff.role === 'healthManager' ? (patient.assignedFamilyDoctor || req.staff._id) : req.staff._id;
     const result = await require('../utils/medicalProxyWorkflow').startStaffMedicalProxyWorkflow({ patient, advisorId, plan: { ...req.body, initiatedByStaff: req.staff._id } });
