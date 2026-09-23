@@ -59,8 +59,11 @@ function renderArticle(article, previewLabel) {
         <h2>${escapeHtml(section.heading)}</h2>
         ${section.paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('\n        ')}
       </section>`).join('');
-  const sources = article.sources.map((source) => `
-        <li><a href="${escapeHtml(source.url)}" rel="noopener noreferrer" target="_blank">${escapeHtml(source.name)}</a></li>`).join('');
+  const sources = article.sources.map((source) => source.url
+    ? `
+        <li><a href="${escapeHtml(source.url)}" rel="noopener noreferrer" target="_blank">${escapeHtml(source.name)}</a></li>`
+    : `
+        <li>${escapeHtml(source.name)}</li>`).join('');
   const label = previewLabel ? '<p class="draft-notice">内部预览：本页尚未公开发布。</p>' : '';
   const reviewMeta = previewLabel ? '' : '<p class="review-meta">内容已完成专业审核</p>';
   const stylesheetPath = previewLabel ? '../../styles.css' : '../styles.css';
