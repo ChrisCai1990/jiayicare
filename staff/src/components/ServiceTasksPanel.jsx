@@ -54,6 +54,7 @@ export default function ServiceTasksPanel() {
   const [items, setItems] = useState([])
   const [group, setGroup] = useState('all')
   const [timeGroup, setTimeGroup] = useState('all')
+  const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
 
   useEffect(() => {
@@ -104,6 +105,13 @@ export default function ServiceTasksPanel() {
   const roleServices = group === 'all' ? serviceGroups : serviceGroups.filter(service => service.task.taskRole === group)
   const visibleServices = roleServices
     .filter(service => timeGroup === 'all' || bucketOf(service.task.date) === timeGroup)
+    .filter(service => {
+      const query = search.trim().toLocaleLowerCase()
+      if (!query) return true
+      return service.tasks.some(task => [task.patientId?.name, task.patientId?.phone, task.theme,
+        task.sourceOrderId?.serviceName, task.sourceOrderId?.orderNo, task.plannedContent]
+        .some(value => String(value || '').toLocaleLowerCase().includes(query)))
+    })
     .sort((a, b) => new Date(a.task.date) - new Date(b.task.date))
   const pageCount = Math.max(1, Math.ceil(visibleServices.length / TASKS_PER_PAGE))
   const currentPage = Math.min(page, pageCount)
@@ -112,6 +120,8 @@ export default function ServiceTasksPanel() {
   const supervisorCount = serviceGroups.filter(service => service.task.taskRole === 'supervisor').length
 
   const openTask = async (task) => {
+    if (task.taskRole === 'supervisor' && task.workflowKey === 'medical_proxy:supervise'
+      && /专家约诊/.test(task.theme || '')) return
     if (annualDispatch.dedicated(task)) { setDispatchTask(task); return }
     if (task.sourceType === 'report_followup' && task.workflowKey === 'report_followup:advisor_review') {
       nav(`/patients/${task.patientId?._id}/annual-health#report-followup-drafts`)
@@ -169,6 +179,10 @@ export default function ServiceTasksPanel() {
           <span style={{ fontSize: 12, color: '#fff', background: '#1E6B50', padding: '2px 8px', borderRadius: 99 }}>{serviceGroups.length}</span>
         </div>
       </div>
+      <div style={{ padding: '10px 20px 2px' }}>
+        <input type="search" className="form-input" aria-label="搜索服务任务" placeholder="搜索客户姓名、手机号、服务名称或任务" value={search}
+          onChange={event => { setSearch(event.target.value); setPage(1) }} />
+      </div>
       <div style={{ display: 'flex', gap: 8, padding: '10px 20px 6px', borderTop: '1px solid #F3EFE8' }}>
         {[['all', '全部', serviceGroups.length], ['executor', '待执行', executorCount], ['supervisor', '待督办', supervisorCount]].map(([key, label, count]) => count > 0 && (
           <button key={key} onClick={() => { setGroup(key); setPage(1) }} style={{ border: group === key ? '1px solid #1E6B50' : '1px solid #DDD7CD', background: group === key ? '#EAF5F0' : '#fff', color: group === key ? '#1E6B50' : '#5F6B65', borderRadius: 16, padding: '5px 12px', cursor: 'pointer', fontSize: 12 }}>{label} {count}</button>
@@ -181,6 +195,7 @@ export default function ServiceTasksPanel() {
         })}
       </div>
       <div className="card-body" style={{ padding: '8px 20px' }}>
+        {!pagedServices.length && <div style={{ padding: '12px 0', color: '#667085', fontSize: 13 }}>没有找到匹配的服务任务</div>}
         {pagedServices.map((service, index) => {
           const task = service.task
           const isFuture = task.date && new Date(task.date).getTime() > Date.now()
@@ -188,15 +203,17 @@ export default function ServiceTasksPanel() {
           const progress = task.taskRole === 'supervisor' ? null : checkupProgress(task) || medicationProxyProgress(task) || medicalEscortProgress(task)
           const isOutpatientEscortProgress = isWaitingPrevious && task.taskRole === 'supervisor' && /门诊一站式.*检查及专家门诊陪诊与归档/.test(task.theme || '')
           const isOutpatientReportAuditWait = isWaitingPrevious && task.taskRole === 'executor' && /门诊一站式.*查看陪诊资料并制定随访计划/.test(task.theme || '')
+          const isReadOnlyExpertSupervision = task.taskRole === 'supervisor' && task.workflowKey === 'medical_proxy:supervise' && /专家约诊/.test(task.theme || '')
           return (
           <div key={task._id}
             onClick={() => openTask(task)}
-            title={isOutpatientReportAuditWait ? '等待健管专员审核本次门诊病历和检验检查单' : isOutpatientEscortProgress ? '当前已进入陪诊及资料闭环阶段' : isWaitingPrevious ? '上一环节完成后即可办理' : ''}
-            style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 0', cursor: isWaitingPrevious ? 'default' : 'pointer', opacity: isWaitingPrevious ? 0.78 : 1, borderBottom: index < pagedServices.length - 1 ? '1px solid #f0ede8' : 'none' }}>
+            title={isReadOnlyExpertSupervision ? '仅查看约诊进度，无需办理' : isOutpatientReportAuditWait ? '等待健管专员审核本次门诊病历和检验检查单' : isOutpatientEscortProgress ? '当前已进入陪诊及资料闭环阶段' : isWaitingPrevious ? '上一环节完成后即可办理' : ''}
+            style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 0', cursor: isWaitingPrevious || isReadOnlyExpertSupervision ? 'default' : 'pointer', opacity: isWaitingPrevious ? 0.78 : 1, borderBottom: index < pagedServices.length - 1 ? '1px solid #f0ede8' : 'none' }}>
             <span style={{ fontSize: 18 }}>{isWaitingPrevious ? '⏳' : task.taskRole === 'supervisor' ? '🔎' : '✅'}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600, fontSize: 13, color: '#1A2B24' }}>
                 {serviceTaskTitle(task)}
+                {isReadOnlyExpertSupervision && <span style={{ marginLeft: 8, fontSize: 11, color: '#1E6B50', background: '#EAF5F0', padding: '2px 6px', borderRadius: 8 }}>只读督办</span>}
                 {progress && <span style={{ marginLeft: 8, fontSize: 11, color: '#1E6B50', background: '#EAF5F0', padding: '2px 6px', borderRadius: 8 }}>进度 {progress.step}/{progress.total || 5}</span>}
                 {service.totalSteps > 1 && <span style={{ marginLeft: 8, fontSize: 11, color: '#1E6B50', background: '#EAF5F0', padding: '2px 6px', borderRadius: 8 }}>当前环节 · 共{service.totalSteps}环节</span>}
                 {isWaitingPrevious

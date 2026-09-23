@@ -6,6 +6,7 @@ const Order = require('../models/Order');
 const ServiceRecord = require('../models/ServiceRecord');
 const HealthPlan = require('../models/HealthPlan');
 const User = require('../models/User');
+const { createHash } = require('node:crypto');
 const { needsPlannerDispatch } = require('./proxyPlannerDispatch');
 
 const PREFIX = 'medical_proxy:';
@@ -498,8 +499,8 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
     ['high_end', 'commercial_insurance'].includes(plan.insuranceUse) && plan.insurerName && `保险公司：${String(plan.insurerName).trim()}`,
     ['high_end', 'commercial_insurance'].includes(plan.insuranceUse) && `结算方式：${({ direct: '直付', reimbursement: '先付后报' })[plan.settlementMethod] || '待核实'}`,
   ]).filter(Boolean).join('；');
-  if (!patient.assignedHealthManager || ((!appointmentOnly || supplyProxy || medicalEscort) && !patient.assignedHealthPlanner)) {
-    throw Object.assign(new Error(appointmentOnly ? '请先为客户分配健管专员' : '请先为客户分配健康规划师和健管专员'), { status: 409 });
+  if (!patient.assignedHealthManager || !patient.assignedHealthPlanner) {
+    throw Object.assign(new Error('请先为客户分配健康规划师和健管专员'), { status: 409 });
   }
   const reportIds = [...new Set((plan.selectedReportIds || []).map(String).filter(Boolean))];
   if (!appointmentOnly && !supplyProxy && !medicalEscort) {
@@ -515,7 +516,7 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
     supplyTaskDate.setDate(supplyTaskDate.getDate() - Math.max(0, Number(plan.leadDays) || 7));
     if (supplyTaskDate < date) supplyTaskDate.setTime(date.getTime());
   }
-  const initialTaskDate = supplyTaskDate || (appointmentOnly ? appointmentAt(plan.preferredDateStart, '09:00') : date);
+  const initialTaskDate = supplyTaskDate || date;
   const escortLabels = { exam: '陪同检查', checkup: '陪同体检', consultation: '陪同看诊', treatment: '陪同治疗' };
   if (medicalEscort && !plan.sourceFollowUpId) {
     const serviceDayStart = appointmentAt(plan.escortDate, '00:00');
@@ -582,12 +583,12 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
       },
     });
     let supervisor = null;
-    if (supplyProxy) {
+    if (appointmentOnly || supplyProxy) {
       supervisor = await FollowUp.create({
         patientId: patient._id, staffId: patient.assignedHealthPlanner, assignedTo: patient.assignedHealthPlanner,
         type: 'other', status: 'in_progress', date: initialTaskDate, remindAt: initialTaskDate, sourceType: 'order', sourceOrderId: order._id,
-        workflowKey: `${PREFIX}supervise`, taskRole: 'supervisor', theme: `${supplementProxy ? '代配营养素' : '代配药'}：健康规划师全程督办 · ${serviceName}`,
-        plannedContent: '健康顾问已发起代配药服务。持续督办健管预约、执行人员分配、配药确认和配送，服务完成后自动闭环。',
+        workflowKey: `${PREFIX}supervise`, taskRole: 'supervisor', theme: appointmentOnly ? `专家约诊：健康规划师全程督办 · ${serviceName}` : `${supplementProxy ? '代配营养素' : '代配药'}：健康规划师全程督办 · ${serviceName}`,
+        plannedContent: appointmentOnly ? '健康顾问已发起专家约诊。督办健管预约、客户通知、就诊后资料审核和顾问查看，按服务结果闭环。' : '健康顾问已发起代配药服务。持续督办健管预约、执行人员分配、配药确认和配送，服务完成后自动闭环。',
         formData: { currentStage: 'booking', medicationProxy, supplementProxy, initiationSource: STAFF_DIRECT_SOURCE, serviceContent: appointmentRequirement, customerNeed: plan.notes || '' },
       });
       await Order.updateOne({ _id: order._id }, { $set: {
@@ -1001,4 +1002,57 @@ async function advanceMedicalProxyWorkflow(task) {
   } });
 }
 
-module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, supplyResolutionSummary, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
+// Reconcile only active staff-initiated expert appointments. Older versions created
+// an order and booking task without the planner's read-only supervision card.
+async function ensureStaffExpertAppointmentTasksForStaff(staff) {
+  if (!['healthPlanner', 'healthManager'].includes(staff.role)) return 0;
+  const people = await User.find({ tenantId: staff.tenantId || null,
+    [staff.role === 'healthPlanner' ? 'assignedHealthPlanner' : 'assignedHealthManager']: staff._id })
+    .select('_id assignedHealthPlanner assignedHealthManager').lean();
+  if (!people.length) return 0;
+  const orders = await Order.find({ user: { $in: people.map(person => person._id) },
+    initiationSource: STAFF_DIRECT_SOURCE, serviceName: '专家约诊服务',
+    ...require('./orderWorkItem').activeOrderWorkItemQuery() })
+    .select('_id user currentStage desiredServiceDate desiredServiceDateEnd serviceRequirements supervisorId').lean();
+  const patientById = new Map(people.map(person => [String(person._id), person]));
+  let created = 0;
+  for (const order of orders) {
+    const patient = patientById.get(String(order.user));
+    if (!patient?.assignedHealthPlanner || !patient?.assignedHealthManager) continue;
+    const tasks = await FollowUp.find({ sourceType: 'order', sourceOrderId: order._id,
+      workflowKey: { $in: [`${PREFIX}booking`, `${PREFIX}supervise`] } }).select('_id workflowKey status date formData').lean();
+    const current = new Set(tasks.map(task => task.workflowKey));
+    const now = new Date();
+    const idFor = stage => createHash('sha256').update(`staff-expert-appointment:${order._id}:${stage}`).digest('hex').slice(0, 24);
+    const existingBooking = tasks.find(task => task.workflowKey === `${PREFIX}booking`);
+    if (existingBooking?.status === 'planned' && new Date(existingBooking.date) > now && !existingBooking.formData?.appointmentDate
+      && (!order.currentStage || order.currentStage === 'booking')) {
+      await FollowUp.updateOne({ _id: existingBooking._id, status: 'planned', date: existingBooking.date },
+        { $set: { date: now, remindAt: now } });
+    }
+    if (!current.has(`${PREFIX}booking`) && (!order.currentStage || order.currentStage === 'booking')) {
+      const result = await FollowUp.updateOne({ _id: idFor('booking') }, { $setOnInsert: {
+        patientId: patient._id, staffId: patient.assignedHealthManager, assignedTo: patient.assignedHealthManager,
+        type: 'other', status: 'planned', date: now, remindAt: now, sourceType: 'order', sourceOrderId: order._id,
+        workflowKey: `${PREFIX}booking`, taskRole: 'executor', theme: '专家约诊：健管专员完成预约 · 专家约诊服务',
+        plannedContent: '健康顾问已发起专家约诊，请完成预约并记录实际日期时间。',
+        formData: { planSnapshot: { serviceContent: order.serviceRequirements, initiationSource: STAFF_DIRECT_SOURCE },
+          preferredDateStart: dateInput(order.desiredServiceDate), preferredDateEnd: dateInput(order.desiredServiceDateEnd || order.desiredServiceDate) },
+      } }, { upsert: true });
+      created += result.upsertedCount || 0;
+    }
+    if (!current.has(`${PREFIX}supervise`)) {
+      const result = await FollowUp.updateOne({ _id: idFor('supervise') }, { $setOnInsert: {
+        patientId: patient._id, staffId: patient.assignedHealthPlanner, assignedTo: patient.assignedHealthPlanner,
+        type: 'other', status: 'in_progress', date: now, remindAt: now, sourceType: 'order', sourceOrderId: order._id,
+        workflowKey: `${PREFIX}supervise`, taskRole: 'supervisor', theme: '专家约诊：健康规划师全程督办 · 专家约诊服务',
+        plannedContent: '持续查看健管预约、客户通知和就诊后审核进度，按服务结果闭环。',
+        formData: { currentStage: order.currentStage || 'booking', initiationSource: STAFF_DIRECT_SOURCE, serviceContent: order.serviceRequirements },
+      } }, { upsert: true });
+      created += result.upsertedCount || 0;
+    }
+    if (!order.supervisorId) await Order.updateOne({ _id: order._id, supervisorId: null }, { $set: { supervisorId: patient.assignedHealthPlanner } });
+  }
+  return created;
+}
+module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, supplyResolutionSummary, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, ensureStaffExpertAppointmentTasksForStaff, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, validateMedicalProxyStage, advanceMedicalProxyWorkflow };

@@ -7,7 +7,36 @@ const FollowUp = require('../src/models/FollowUp');
 const MedicalReport = require('../src/models/MedicalReport');
 const User = require('../src/models/User');
 const Order = require('../src/models/Order');
-const { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, supplyResolutionSummary, validateMedicalProxyStage } = require('../src/utils/medicalProxyWorkflow');
+const { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, supplyResolutionSummary, validateMedicalProxyStage, ensureStaffExpertAppointmentTasksForStaff } = require('../src/utils/medicalProxyWorkflow');
+
+test('existing staff expert order gains one booking and one planner supervision task on either workbench', async () => {
+  const previous = { userFind: User.find, orderFind: Order.find, orderUpdate: Order.updateOne, taskFind: FollowUp.find, taskUpdate: FollowUp.updateOne };
+  const rows = new Map();
+  try {
+    User.find = () => ({ select: () => ({ lean: async () => [{ _id: 'patient', assignedHealthPlanner: 'planner', assignedHealthManager: 'manager' }] }) });
+    Order.find = () => ({ select: () => ({ lean: async () => [{ _id: 'order', user: 'patient', currentStage: 'booking', desiredServiceDate: new Date('2026-12-01'), serviceRequirements: '门诊类型：专家门诊；费用与保险：商保' }] }) });
+    Order.updateOne = async () => ({ modifiedCount: 1 });
+    FollowUp.find = () => ({ select: () => ({ lean: async () => [...rows.values()].map(row => ({ _id: row._id, workflowKey: row.workflowKey, status: row.status })) }) });
+    FollowUp.updateOne = async (query, update) => {
+      if (rows.has(query._id)) return { upsertedCount: 0 };
+      rows.set(query._id, { _id: query._id, ...update.$setOnInsert });
+      return { upsertedCount: 1 };
+    };
+    assert.equal(await ensureStaffExpertAppointmentTasksForStaff({ role: 'healthManager', _id: 'manager' }), 2);
+    assert.equal(await ensureStaffExpertAppointmentTasksForStaff({ role: 'healthPlanner', _id: 'planner' }), 0);
+    assert.equal(rows.size, 2);
+    const booking = [...rows.values()].find(row => row.workflowKey === 'medical_proxy:booking');
+    const supervisor = [...rows.values()].find(row => row.workflowKey === 'medical_proxy:supervise');
+    assert.equal(booking.assignedTo, 'manager');
+    assert.equal(booking.formData.preferredDateStart, '2026-12-01');
+    assert.ok(booking.date < new Date('2026-12-01'));
+    assert.equal(supervisor.assignedTo, 'planner');
+    assert.equal(supervisor.formData.currentStage, 'booking');
+  } finally {
+    User.find = previous.userFind; Order.find = previous.orderFind; Order.updateOne = previous.orderUpdate;
+    FollowUp.find = previous.taskFind; FollowUp.updateOne = previous.taskUpdate;
+  }
+});
 
 test('storefront and staff orders resolve to the same proxy workflow', () => {
   assert.equal(isMedicalProxyOrder({ serviceName: '医疗代诊服务', serviceWorkflowSnapshot: { key: 'medical_proxy' } }), true);
