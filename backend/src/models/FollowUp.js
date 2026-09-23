@@ -97,14 +97,14 @@ const followUpSchema = new mongoose.Schema({
 
 // Computed capability only: never persist or trust a client-supplied rollout flag.
 followUpSchema.virtual('healthManagementEnabled').get(function () {
-  return require('../utils/healthManagementRollout').enabledForPatient(this.patientId);
+  return require('../utils/healthManagementRollout').enabledForTask(this);
 });
 followUpSchema.set('toJSON', { virtuals: true });
 followUpSchema.set('toObject', { virtuals: true });
 for (const method of ['find', 'findOne', 'findOneAndUpdate']) followUpSchema.post(method, function (result) {
   if (!this.mongooseOptions().lean) return;
   for (const row of Array.isArray(result) ? result : [result]) {
-    if (row) row.healthManagementEnabled = require('../utils/healthManagementRollout').enabledForPatient(row.patientId);
+    if (row) row.healthManagementEnabled = require('../utils/healthManagementRollout').enabledForTask(row);
   }
 });
 followUpSchema.add({ outcomeClosureIntent: { type: mongoose.Schema.Types.Mixed, default: null } });
