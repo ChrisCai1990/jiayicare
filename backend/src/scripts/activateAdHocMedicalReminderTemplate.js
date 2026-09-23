@@ -21,14 +21,13 @@ async function main() {
   }
   const retired = await templates.updateMany({ ...filter, status: 'active' }, { $set: { status: 'inactive', updatedAt: new Date() } });
   const created = await followUps.updateOne(reminder ? { _id: reminder._id } : { name: reminderName }, {
-    $set: { name: reminderName, status: 'active', workflowStageKey: 'ad_hoc_medical_reminder', completionStandard: '就医或复查：记录每次提醒，完成后收集资料并经健管及顾问审核；配药：确认客户取得药品后结束提醒，不视为已经服用。' },
+    $set: { name: reminderName, status: 'active', workflowStageKey: 'ad_hoc_medical_reminder', completionStandard: '就医或复查：记录每次提醒，完成后收集资料并经健管及顾问审核；配药：确认客户取得药品后结束提醒，不视为已经服用。', default_content: { instructions: '按选择的事项提醒客户，未完成前记录每次沟通，不重复建任务。' } },
     $setOnInsert: {
       category: 'medical_assist', reviewStatus: 'approved',
       cycles: [{ cycleType: 'duration', cycleDuration: 1, cycleUnit: 'day', notes: '创建时填写本次提醒日期；后续联系均保留在同一任务中' }],
       defaultRole: 'healthManager', executorRole: 'healthManager', supervisorRole: '',
       remindDaysBefore: 0, executorDueOffsetDays: 0, supervisorDueOffsetDays: 0,
       requiresCoordination: false,
-      default_content: { instructions: '按选择的事项提醒客户，未完成前记录每次沟通，不重复建任务。' },
       createdAt: new Date(), updatedAt: new Date(),
     },
   }, { upsert: true });
