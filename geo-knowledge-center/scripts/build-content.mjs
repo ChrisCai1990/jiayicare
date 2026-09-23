@@ -62,7 +62,7 @@ function renderArticle(article, previewLabel) {
   const sources = article.sources.map((source) => `
         <li><a href="${escapeHtml(source.url)}" rel="noopener noreferrer" target="_blank">${escapeHtml(source.name)}</a></li>`).join('');
   const label = previewLabel ? '<p class="draft-notice">内部预览：本页尚未公开发布。</p>' : '';
-  const reviewMeta = previewLabel ? '' : `<p class="review-meta">内容审核：${escapeHtml(article.reviewedBy)} · ${escapeHtml(article.reviewedAt)}</p>`;
+  const reviewMeta = previewLabel ? '' : '<p class="review-meta">内容已完成专业审核</p>';
   const stylesheetPath = previewLabel ? '../../styles.css' : '../styles.css';
 
   return `<!doctype html>
