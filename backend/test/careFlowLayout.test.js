@@ -12,6 +12,13 @@ function examinations(){
   vm.runInNewContext(require('esbuild').transformSync(fs.readFileSync(path.join(__dirname,'../../staff/src/components/CareFlowExaminations.jsx'),'utf8'),{loader:'jsx',format:'cjs'}).code,ctx);
   return ctx.module.exports;
 }
+test('误增项目可删除，原项目和已提交项目不可删除，其他填写内容不变',()=>{
+  const rows=[{id:'exam-0',title:'原检查'},{id:'added-saved',title:'已提交',confirmedAt:'2026-09-23'},{id:'added-draft',title:'误点'},{id:'added-keep',title:'保留填写',note:'已填写'}];
+  let result;const tree=examinations().default({rows,onChange:v=>{result=v}});
+  const buttons=[];const walk=node=>{if(!node||typeof node!=='object')return;if(Array.isArray(node)){node.forEach(walk);return;}if(node.type==='button'&&node.props.children==='删除新增项目')buttons.push(node);walk(node.props?.children)};
+  walk(tree);assert.equal(buttons.length,2);buttons[0].props.onClick();
+  assert.deepEqual(result,[rows[0],rows[1],rows[3]]);assert.equal(rows.length,4);
+});
 function render(stage,own=true){
   const role=config.roles[stage],staff={_id:own?role:'other',role};
   const people=Object.fromEntries([...new Set(Object.values(config.roles))].map(role=>[role,{id:role,role,name:role}]));
