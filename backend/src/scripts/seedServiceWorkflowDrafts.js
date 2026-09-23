@@ -45,7 +45,8 @@ const templateDrafts = planIds => [
   { type: 'medical_assist', name: `${DRAFT}定期复诊管理方案`, status: 'active', content: { serviceDomain: 'medical_assist', assistanceType: 'one_stop', serviceMode: 'hybrid', applicableScenario: '客户因慢病、治疗后观察、专科管理或医生医嘱需要定期看医生。', standardSteps: '读取上次医嘱并确认复诊周期\n提前7天生成AI信息与风险草稿\n健康顾问审核并联系客户\n判断仅提醒或需要约诊、陪诊、代办\n需要约诊时完成医院科室医生和时间协调\n执行并记录服务\n复诊后回收病历检查处方和医嘱\n登记下一次复诊时间', requiredMaterials: '上次病历和医嘱、近期检查、当前用药、症状变化、身份证/医保卡及客户可就诊时间。', completionStandard: '人工风险审核完成；服务需求已确认；相关安排已送达；复诊资料和下一周期均已归档。', requiresDoctorConfirm: true, requiresExecutor: true, requiresSupervisor: true, followUpPlanId: planIds.revisit, followUpPlanName: `${DRAFT}定期复诊管理`, followUpPlans: [{ id: planIds.revisit, name: `${DRAFT}定期复诊管理` }], optionalLogistics: '按客户需要提供交通、住宿等协调，不默认生成。', riskNotes: 'AI不得直接通过审核；急症风险立即建议急诊；不得擅自停药、换药或调整剂量。' } },
   { type: 'psychology', name: `${DRAFT}心理支持阶段管理方案`, status: 'active', content: { frequency: '由心理专业人员确定', sessionCount: '按评估结果确定', duration: '按服务产品约定', mode: '线上/线下按需', homework: '由心理专业人员审核后布置', assessmentTools: '使用经确认的筛查或评估工具', followUpPlans: [{ id: planIds.psychology, name: `${DRAFT}心理支持阶段随访` }], riskNotes: '自伤、他伤或严重精神症状立即升级。' } },
   { type: 'medical_assist', name: `${DRAFT}口腔定期复诊方案`, status: 'active', content: { serviceDomain: 'professional_consultation', assistanceType: 'consultation', serviceMode: 'hybrid', applicableScenario: '口腔会员、治疗后复诊或牙医建议定期检查。', standardSteps: '读取上次口腔记录\n提前提醒并确认症状\n按需预约\n完成复诊\n归档结果和下一周期', requiredMaterials: '既往口腔记录、影像、治疗医嘱及近期症状。', completionStandard: '预约或提醒已完成，复诊结果及下一周期已归档。', requiresDoctorConfirm: true, requiresExecutor: true, requiresSupervisor: true, followUpPlanId: planIds.oral, followUpPlanName: `${DRAFT}口腔定期复诊`, followUpPlans: [{ id: planIds.oral, name: `${DRAFT}口腔定期复诊` }] } },
-];
+].map(draft => ['【审核稿】口腔定期复诊方案', '【审核稿】定期复诊管理方案'].includes(draft.name)
+  ? { ...draft, status: 'inactive' } : draft);
 
 function includesAny(name, words) { return words.some(word => name.includes(word)); }
 
