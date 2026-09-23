@@ -1824,6 +1824,10 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
     else if (status === 'in_progress') filter.status = { $in: ['in_progress', 'missed'] };
     else filter.status = status;
   }
+  // 旧年度统筹任务只保留历史，不再占用待随访；具体服务任务独立展示进度。
+  if (['active', 'planned', 'in_progress', 'missed'].includes(status)) {
+    filter.$and.push({ $nor: [{ sourceType: 'annual_coordination', sourceScheduleKey: { $in: ['health_planner_coordination', 'health_manager_kickoff'] } }] });
+  }
   if (dateFrom || dateTo) {
     const rangeField = status === 'completed' && dateField === 'completedAt' ? 'completedAt' : 'date';
     filter[rangeField] = {};

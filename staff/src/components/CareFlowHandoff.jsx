@@ -4,7 +4,8 @@ import booking from '../../../shared/annualBookingPlan.cjs'
 export default function CareFlowHandoff({state}) {
   const plan = {plannedContent:state.data.advisor?.text || '',sourceScheduleKey:state.sourceScheduleKey}
   const p = booking.bookingPlan(plan), receipt = state.data.booking
-  const rows = receipt?.entries?.length ? receipt.entries : receipt ? [{...receipt,title:'门诊预约'}] : booking.bookingSlots(plan)
+  const originalRows = receipt?.entries?.length ? receipt.entries : receipt ? [{...receipt,title:'门诊预约'}] : booking.bookingSlots(plan)
+  const rows = [...originalRows,...(state.data.execute?.onsite||[]).filter(e=>!originalRows.some(v=>v.id===e.id))]
   const instructions = {
     advisor:'核对就医目的、项目及科室要求，完善本次交接。',
     booking:'按顾问要求逐项落实预约，填写具体日期、时间及现场交接。',
@@ -28,7 +29,8 @@ export default function CareFlowHandoff({state}) {
         <b>{e.type==='exam'?'检查':'门诊'} · {e.title || p.items || '顾问指定事项'}</b>
         <dl style={{display:'grid',gridTemplateColumns:'minmax(80px,120px) minmax(0,1fr)',gap:'8px 16px',marginBottom:0}}>
           {field('医院',e.hospital || p.hospital)}{field('科室',e.department)}{field('专家',e.expert || '未指定专家')}
-          {field('办理状态',booked?'已预约':onsite?'待就医专员现场预约（未完成）':e.mode==='not_required'?'已确认无需预约':'待落实预约')}
+          {field('办理状态',e.status==='cancelled'?'专家取消／无需检查':booked?'已预约':onsite?'待就医专员现场预约（未完成）':e.mode==='not_required'?'已确认无需预约':'待落实预约')}
+          {outcome?.reason&&field('专家意见／变更原因',outcome.reason)}
           {booked&&field('预约日期',e.date)}{booked&&field('具体时间',e.time)}
           {entry.note&&field('交接要求',entry.note)}{outcome?.note&&field('现场结果',outcome.note)}
         </dl>

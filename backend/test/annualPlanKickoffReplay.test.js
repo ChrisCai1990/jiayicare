@@ -16,7 +16,7 @@ for (const status of ['completed', 'cancelled', 'in_progress', 'missed', 'planne
   test(`重复同步不重开任务：${status || '首次创建'}`, async t => {
     let row = status ? { status, assignedTo: 'original', executedContent: '原执行记录' } : null;
     t.mock.method(User, 'findById', () => ({ select: () => ({ lean: async () => ({ assignedHealthPlanner: 'current' }) }) }));
-    t.mock.method(FollowUp, 'deleteMany', async () => ({}));
+    t.mock.method(FollowUp, 'deleteMany', async () => assert.fail('历史统筹记录不得删除'));
     t.mock.method(Task, 'updateOne', async () => ({ upsertedCount: 0 }));
     t.mock.method(FollowUp, 'updateOne', async (filter, update, options) => {
       if (update.$set) {
@@ -28,9 +28,12 @@ for (const status of ['completed', 'cancelled', 'in_progress', 'missed', 'planne
     });
     const plan = { _id: 'plan', patientId: 'patient', year: 2026, confirmedAt: new Date('2026-09-19') };
     await syncAnnualPlanTaskSplit(plan); await syncAnnualPlanTaskSplit(plan);
-    assert.equal(row.status, status || 'planned');
-    if (['completed', 'cancelled'].includes(status)) { assert.equal(row.assignedTo, 'original'); assert.equal(row.executedContent, '原执行记录'); }
-    else assert.equal(row.assignedTo, 'current');
+    assert.equal(FollowUp.updateOne.mock.callCount(), 0);
+    if (status) {
+      assert.equal(row.status, status);
+      assert.equal(row.assignedTo, 'original');
+      assert.equal(row.executedContent, '原执行记录');
+    } else assert.equal(row, null);
   });
 }
 test('续年部分失败进入恢复状态，重试成功；迟到失败不能覆盖成功', async t => {

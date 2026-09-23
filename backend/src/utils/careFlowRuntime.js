@@ -126,6 +126,7 @@ function runtime(injected = {}) {
       }
       case 'execute': {
         const result = text(input.text, 5000), entries = s.data.booking?.entries || [];
+        if (input.examinations !== undefined) return { text: result, onsite: require('./careFlowExaminations').examinations(input.examinations, entries, actor._id) };
         const onsite = entries.filter(e => e.mode === 'onsite');
         const outcomes = onsite.map(e => {
           const v = (input.onsite || []).find(v => v.id === e.id);
