@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { staffAPI } from '../api'
+import { staffAPI, careFlowAPI } from '../api'
 import { BookingSummary } from './AnnualBookingCard'
 import OnsiteBookingCard from './OnsiteBookingCard'
 import tools from '../../../shared/annualDispatch.cjs'
@@ -11,6 +11,12 @@ export default function AnnualDispatchCard({ task, staff, onLinked }) {
   const [data, setData] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false)
   const [assigneeId, setAssignee] = useState(''), [note, setNote] = useState(''), [result, setResult] = useState(''), [confirmed, setConfirmed] = useState(false)
   const [fullFlow,setFullFlow] = useState(false)
+  const [flowData,setFlowData] = useState(null)
+  const openReturn = async () => {
+    setBusy(true); setError('')
+    try { const r = await careFlowAPI.start(task._id); setFlowData(r.data); setFullFlow(true) }
+    catch(e) { setError(e.message) } finally { setBusy(false) }
+  }
   const load = () => staffAPI.getAnnualDispatch(task._id).then(r => { setData(r.data); return r.data })
   useEffect(() => { if(task.careFlowId) return; let active = true; staffAPI.getAnnualDispatch(task._id).then(r => { if (active) setData(r.data) }).catch(e => { if (active) setError(e.message) }); return () => { active = false } }, [task._id,task.careFlowId])
   const act = async (fn, payload) => {
@@ -18,7 +24,7 @@ export default function AnnualDispatchCard({ task, staff, onLinked }) {
     try { const r = await fn(task._id, payload); setData(r.data); onLinked?.(tools.isExecution(task) ? r.data.child : r.data.task) }
     catch (e) { setError(e.message); await load().catch(() => {}) } finally { setBusy(false) }
   }
-  if (task.careFlowId || fullFlow) return <CareFlowCard task={task} staff={staff} />
+  if (task.careFlowId || fullFlow) return <CareFlowCard task={task} staff={staff} initialData={flowData} />
   if (!data) return <p role={error ? 'alert' : undefined}>{error || '正在加载派单事项…'}</p>
   const { parent, child } = data, request = data.task, d = request.annualDispatch
   const item = d?.itemSnapshot || request.formData?.serviceRequest?.itemSnapshot || {}
@@ -28,6 +34,7 @@ export default function AnnualDispatchCard({ task, staff, onLinked }) {
   const brief = consultationTools.consultationBrief(request, parent)
   return <section style={{ display: 'grid', gap: 16, fontSize: 14, lineHeight: 1.6 }}>
     {mode==='single' && !locked && active && <button className="btn btn-primary" onClick={()=>setFullFlow(true)}>进入完整就医流程（含定向回退与资料审核）</button>}
+    {mode==='single' && !locked && active && <button className="btn btn-secondary" disabled={busy} onClick={openReturn}>退回修订（选择责任环节）</button>}
     <div style={{ background: '#F6FBF8', borderRadius: 12, padding: 16 }}>
       <h3 style={{ margin: '0 0 8px' }}>办理事项</h3>
       <b>{item.items || item.name || item.purpose || '顾问指定事项'}</b>
@@ -58,6 +65,7 @@ export default function AnnualDispatchCard({ task, staff, onLinked }) {
         <label>办理人员<select className="form-input" value={assigneeId} onChange={e => setAssignee(e.target.value)}><option value="">请选择就医专员</option>{data.assistants.map(a => <option key={a._id} value={a._id}>{a.name}</option>)}</select></label>
         <label>派单备注（选填）<textarea className="form-input" rows={2} maxLength={2000} value={note} onChange={e => setNote(e.target.value)} /></label>
         <button className="btn btn-primary" disabled={busy || !active || !assigneeId || !bookingTools.bookingReady(parent?.annualBooking)} onClick={() => act(staffAPI.annualDispatch, { assigneeId, note })}>确认派单</button>
+        {!locked && active && <button className="btn btn-secondary" disabled={busy} onClick={openReturn}>退回修订（顾问 / 健管专员）</button>}
       </>}
     </>}
     {d && <>

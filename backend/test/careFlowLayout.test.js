@@ -14,7 +14,12 @@ function render(stage,own=true){
 for(const stage of config.stages)test(`实际组件渲染 ${stage}，显示交接与留痕，无编辑删除`,()=>{
   const html=render(stage);assert.ok(html.includes('就医目的与专家沟通'));assert.ok(html.includes('完整流转及修订记录'));
   assert.ok(!html.includes('>删除<'));assert.ok(!html.includes('>编辑<'));
-  if(stage!=='advisor')assert.ok(html.includes('退回责任环节修订'));
+  if(stage!=='advisor'){
+    assert.ok(html.includes('aria-label="退回修订"'));
+    assert.ok(html.includes('①选择退回环节和负责人'));
+    assert.ok(html.indexOf('aria-label="退回修订"')<html.indexOf('就医目的与专家沟通'));
+    assert.ok(!html.includes('<summary>退回'));
+  }
   if(stage==='review')assert.ok(html.includes('审核通过，生成随访任务并结束服务'));
 });
 test('其他参与人只读，不能提交或回退当前阶段',()=>{const html=render('execute',false);assert.ok(html.includes('等待当前负责人处理'));assert.ok(!html.includes('确认回退并留痕'));assert.ok(!html.includes('完成本环节，交下一步'));});

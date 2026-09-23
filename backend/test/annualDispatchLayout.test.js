@@ -16,6 +16,8 @@ test('规划师实际组件只保留办理事项、交接与选人，原依据�
   for(const text of ['办理事项','预约与交接','安排就医专员','确认派单','代办预约','就医专员甲']) assert.ok(html.includes(text));
   for(const text of ['对应健管随访','实际服务','具体代办事项','随访内容','proxy_booking','>删除<','>编辑<']) assert.ok(!html.includes(text));
   assert.equal((html.match(/<select/g)||[]).length,1); assert.match(html,/<details><summary>查看完整顾问依据/);
+  assert.ok(html.includes('退回修订（顾问 / 健管专员）'));
+  assert.ok(html.indexOf('退回修订（顾问 / 健管专员）')>html.indexOf('确认派单'));
 });
 test('专家沟通目的默认展开，缺依据明确提示而不编造',()=>{
   const html=render();

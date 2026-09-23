@@ -1,15 +1,17 @@
-import React,{useEffect,useState} from 'react'
+import React,{useEffect,useState,useRef} from 'react'
 import {careFlowAPI} from '../api'
 import config from '../../../shared/careFlow.cjs'
 import booking from '../../../shared/annualBookingPlan.cjs'
 import briefTools from '../../../shared/annualConsultationBrief.cjs'
 
-export default function CareFlowCard({task,staff}){
-  const [data,setData]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false)
+export default function CareFlowCard({task,staff,initialData=null}){
+  const [data,setData]=useState(initialData),[error,setError]=useState(''),[busy,setBusy]=useState(false)
   const [form,setForm]=useState({}),[back,setBack]=useState({}),[confirmed,setConfirmed]=useState(false),[correction,setCorrection]=useState('')
   const [file,setFile]=useState(null),[fileTitle,setFileTitle]=useState(''),[category,setCategory]=useState('outpatient_record')
+  const topRef=useRef(null)
+  useEffect(()=>{if(initialData)topRef.current?.scrollIntoView({block:'start'})},[initialData])
   const receive=r=>{setData(r.data);setForm({});setConfirmed(false);setCorrection('');setBack({})}
-  useEffect(()=>{let active=true;careFlowAPI.task(task._id).then(r=>{if(active)receive(r)}).catch(e=>{if(active)setError(e.message)});return()=>{active=false}},[task._id])
+  useEffect(()=>{if(initialData)return;let active=true;careFlowAPI.task(task._id).then(r=>{if(active)receive(r)}).catch(e=>{if(active)setError(e.message)});return()=>{active=false}},[task._id,initialData])
   const act=async fn=>{setBusy(true);setError('');try{receive(await fn())}catch(e){setError(e.message);if(data?._id)try{setData((await careFlowAPI.get(data._id)).data)}catch{}}finally{setBusy(false)}}
   if(!data)return <p role={error?'alert':undefined}>{error||'正在加载服务流程…'}</p>
   if(data.unstarted)return <section><h3>完整就医协助流程</h3><p>启用后，本次事项进入执行、资料上传、健管审核、随访草稿和顾问审核流程。各环节支持定向回退、修订直返，年度方案保持不变。</p><button className="btn btn-primary" disabled={busy} onClick={()=>act(()=>careFlowAPI.start(task._id))}>进入本次完整流程</button>{error&&<p role="alert">{error}</p>}</section>
@@ -28,9 +30,10 @@ export default function CareFlowCard({task,staff}){
     if(stage==='review')value={content:get('content',s.data.draft?.content||''),date:get('date',s.data.draft?.date||''),note:get('note')}
     return act(()=>careFlowAPI.action(data._id,{action:'complete',revision:data.revision,confirmed,correction,value}))
   }
-  return <section style={{display:'grid',gap:16,fontSize:14,lineHeight:1.6}}>
+  return <section ref={topRef} style={{display:'grid',gap:16,fontSize:14,lineHeight:1.6}}>
     <h3 style={{margin:0}}>{s.title}</h3><p>当前：{stage==='closed'&&!s.finalized?'顾问已通过，待同步随访任务':config.labels[stage]}{current&&` · ${current.name}`}</p>
     <small>{config.stages.map(k=>config.labels[k]).join(' → ')} → 服务结束</small>
+      {mine&&config.targets(s).length>0&&<section aria-label="退回修订" style={{border:"1px solid #E6B65C",borderRadius:12,padding:16,background:"#FFFBF2"}}><h3 style={{margin:"0 0 8px"}}>退回修订</h3><p>①选择退回环节和负责人　②选择问题分类并填写原因　③确认回退。修订完成后直接返回本环节，原年度方案不覆盖。</p><div style={{display:'grid',gap:8}}><select className="form-input" value={back.target||''} onChange={e=>setBack({...back,target:e.target.value})}><option value="">选择责任环节</option>{config.targets(s).map(k=><option key={k} value={k}>{config.labels[k]} · {s.people[config.roles[k]]?.name||'尚未分配'}</option>)}</select><select className="form-input" value={back.category||''} onChange={e=>setBack({...back,category:e.target.value})}><option value="">问题分类（非责任认定）</option>{Object.entries(config.categories).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select><textarea className="form-input" placeholder="具体问题及需修订内容（必填）" value={back.reason||''} onChange={e=>setBack({...back,reason:e.target.value})} maxLength={2000}/><button disabled={busy||!back.target||!back.category||!back.reason?.trim()} onClick={()=>act(()=>careFlowAPI.action(data._id,{action:'return',revision:data.revision,...back}))}>确认回退并留痕</button></div></section>}
     {s.returns?.length>0&&<div role="status" style={{background:'#FFF7E6',padding:12}}>退回修订：{s.returns.at(-1).reason}<br/>修订后直接返回：{config.labels[s.returns.at(-1).from]} · {s.returns.at(-1).name}</div>}
     {s.lastCorrection&&<div style={{background:'#EFF8F3',padding:12}}>最新修订：{s.lastCorrection.correction}（原内容保留在下方记录）</div>}
     {s.bookingStale&&<p role="alert">顾问要求已变化，请定向退回健管预约核对，再直返本环节。</p>}
@@ -48,7 +51,6 @@ export default function CareFlowCard({task,staff}){
       {stage==='review'&&!s.draftStale&&<>{input('content','审核修订随访计划',8,s.data.draft?.content||'')}<label>随访日期<input type="date" className="form-input" value={get('date',s.data.draft?.date||'')} onChange={e=>set('date',e.target.value)}/></label>{input('note','顾问审核意见')}</>}
       {s.returns?.length>0&&<label>本次修订说明（必填）<textarea className="form-input" value={correction} onChange={e=>setCorrection(e.target.value)} maxLength={3000}/></label>}
       {stage!=='draft'&&!(stage==='review'&&s.draftStale)&&<><label><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/> 我已核对本次交接及修订内容</label><button className="btn btn-primary" disabled={busy||!confirmed||(s.returns?.length>0&&!correction.trim())} onClick={complete}>{s.returns?.length?'修订完成，直接返回发起环节':stage==='review'?'审核通过，生成随访任务并结束服务':'完成本环节，交下一步'}</button></>}
-      {config.targets(s).length>0&&<details><summary>退回责任环节修订</summary><div style={{display:'grid',gap:8}}><select className="form-input" value={back.target||''} onChange={e=>setBack({...back,target:e.target.value})}><option value="">选择责任环节</option>{config.targets(s).map(k=><option key={k} value={k}>{config.labels[k]} · {s.people[config.roles[k]]?.name||'尚未分配'}</option>)}</select><select className="form-input" value={back.category||''} onChange={e=>setBack({...back,category:e.target.value})}><option value="">问题分类（非责任认定）</option>{Object.entries(config.categories).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select><textarea className="form-input" placeholder="具体问题及需修订内容（必填）" value={back.reason||''} onChange={e=>setBack({...back,reason:e.target.value})} maxLength={2000}/><button disabled={busy||!back.target||!back.category||!back.reason?.trim()} onClick={()=>act(()=>careFlowAPI.action(data._id,{action:'return',revision:data.revision,...back}))}>确认回退并留痕</button></div></details>}
     </>}
     {!mine&&stage!=='closed'&&<p>等待当前负责人处理；其他岗位不能越级提交。</p>}
     <button disabled={busy} onClick={()=>act(()=>careFlowAPI.action(data._id,{action:'sync'}))}>刷新并同步本环节任务（不重复创建）</button>
