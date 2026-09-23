@@ -18,7 +18,7 @@ function advance(state, actor, action, data, at = new Date()) {
     const token = `${s.sequence + 1}`;
     s.returns = [...(s.returns || []), { token, from: stage, to: data.target, by: event.by, name: event.name, at, reason, category: data.category, target: structuredClone(target), before }];
     s.stage = data.target;
-    Object.assign(event, { token, targetStage: data.target, targetId: target.id, targetName: target.name, reason, category: data.category, attribution: '待复核，不等于人员过错', before });
+    Object.assign(event, { token, targetStage: data.target, targetId: target.id, targetName: target.name, reason, category: data.category, categoryLabel: config.problemLabels(data.target)[data.category] || config.categories[data.category], attribution: '待复核，不等于人员过错', before });
   } else if (action === 'complete') {
     if (data.confirmed !== true) fail('请核对内容后确认提交', 400);
     const correction = s.returns?.length ? text(data.correction, 3000) : '';

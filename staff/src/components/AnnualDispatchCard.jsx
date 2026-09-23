@@ -33,8 +33,6 @@ export default function AnnualDispatchCard({ task, staff, onLinked }) {
   const active = !['completed', 'cancelled'].includes(request.status)
   const brief = consultationTools.consultationBrief(request, parent)
   return <section style={{ display: 'grid', gap: 16, fontSize: 14, lineHeight: 1.6 }}>
-    {mode==='single' && !locked && active && <button className="btn btn-primary" onClick={()=>setFullFlow(true)}>进入完整就医流程（含定向回退与资料审核）</button>}
-    {mode==='single' && !locked && active && <button className="btn btn-secondary" disabled={busy} onClick={openReturn}>退回修订（选择责任环节）</button>}
     <div style={{ background: '#F6FBF8', borderRadius: 12, padding: 16 }}>
       <h3 style={{ margin: '0 0 8px' }}>办理事项</h3>
       <b>{item.items || item.name || item.purpose || '顾问指定事项'}</b>
@@ -80,6 +78,7 @@ export default function AnnualDispatchCard({ task, staff, onLinked }) {
       {!execution && d.status === 'completed' && child?.status !== 'completed' && <button className="btn btn-primary" disabled={busy} onClick={() => act(staffAPI.annualDispatchReview, { confirmed: true })}>同步已验收的执行状态</button>}
       <small>代办验收不代替健康顾问的医疗结果审核，原健管随访继续保留。</small>
     </>}
+    {mode==='single' && !locked && active && <button className="btn btn-primary" onClick={()=>setFullFlow(true)}>继续办理（完整流程）</button>}
     {error && <p role="alert" style={{ color: '#B91C1C' }}>{error}</p>}
   </section>
 }

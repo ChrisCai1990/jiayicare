@@ -6,6 +6,13 @@ const {generate} = require('../src/utils/careFlowDraft');
 const copy = x => x == null ? x : structuredClone(x);
 const people = Object.fromEntries([...new Set(Object.values(config.roles))].map(role=>[role,{id:role,role,name:role}]));
 const actor = stage => ({_id:config.roles[stage],role:config.roles[stage],name:config.roles[stage],tenantId:null});
+test('退回问题按接收环节区分，并保留当时问题文案',()=>{
+  assert.notDeepEqual(config.problemLabels('advisor'),config.problemLabels('booking'));
+  for(const target of ['advisor','booking']){
+    const event=advance(state('planner'),actor('planner'),'return',{target,category:'missing',reason:'请核对'}).event;
+    assert.equal(event.categoryLabel,config.problemLabels(target).missing);
+  }
+});
 const state = stage => ({stage,sequence:0,people:copy(people),returns:[],title:'测试事项',data:{advisor:{text:'医院：医院甲\n科室：内科\n项目：复诊\n原因：原顾问要求'},booking:null,upload:{reportIds:['report']}}});
 const get = (o,k)=>k.split('.').reduce((v,p)=>v?.[p],o);
 function matches(o,q){return Object.entries(q).every(([k,v])=>{
