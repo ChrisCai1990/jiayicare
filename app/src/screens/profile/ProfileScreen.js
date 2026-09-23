@@ -510,6 +510,7 @@ export default function ProfileScreen({ navigation }) {
           <Text style={styles.sectionTitle}>账号设置</Text>
           <View style={styles.menuCard}>
             <MenuItem icon="notifications-outline" iconColor="#7C3AED" label="消息通知" value={notifLabel} onPress={() => navigation.navigate('NotificationSettings')} />
+            <MenuItem icon="chatbubbles-outline" iconColor="#0077B6" label="服务消息" onPress={() => navigation.navigate('Messages')} />
             <MenuItem icon="lock-closed-outline"   iconColor="#22A06B" label="账号安全"            onPress={() => navigation.navigate('AccountSecurity')} />
             <MenuItem icon="help-circle-outline"   iconColor="#D97706" label="帮助与反馈"          onPress={() => navigation.navigate('HelpFeedback')} isLast />
           </View>
