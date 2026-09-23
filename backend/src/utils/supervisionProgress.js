@@ -20,6 +20,8 @@ function summarize(task, siblings) {
   const key = scope(task);
   const rows = key ? siblings.filter(row => Object.entries(key).every(([field, value]) => id(row[field]) === id(value))
     && row.taskRole !== 'supervisor' && row.status !== 'cancelled'
+    // The original order intake/reminder is not another workflow stage.
+    && (task.sourceType !== 'order' || row.taskRole === 'executor')
     && (!(task.sourceType === 'annual_service' && task.workflowKey === 'service_request') || require('../../../shared/annualServiceItem.cjs').isAssistance(row))) : [];
   const active = rows.filter(row => ['planned', 'in_progress', 'missed'].includes(row.status));
   const ready = active.filter(row => !row.isBlocked);

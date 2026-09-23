@@ -12,6 +12,14 @@ test('patient/service boundaries and cancelled/supervisor rows excluded', () => 
   const p = summarize(task, [row({ status: 'completed' }), row({ patientId: 'other' }), row({ sourceOrderId: 'other' }), row({ status: 'cancelled' }), row({ taskRole: 'supervisor' })]);
   assert.equal(p.total, 1); assert.equal(p.completed, 1); assert.match(p.message, /待核对/);
 });
+test('order intake is not counted as a second active service stage', () => {
+  const p = summarize({ ...task, sourceType: 'order' }, [
+    row({ _id: 'intake', taskRole: '', theme: '订单服务', assignedTo: { name: '规划师' } }),
+    row({ _id: 'booking', theme: '健管预约', assignedTo: { name: '健管专员' } }),
+  ]);
+  assert.equal(p.total, 1);
+  assert.deepEqual(p.current.map(item => item.label), ['健管预约']);
+});
 test('parallel stages remain visible and blocked-only work is not portrayed as executable', () => {
   assert.equal(summarize(task, [row({ _id: 'a' }), row({ _id: 'b' })]).current.length, 2);
   const p = summarize(task, [row({ isBlocked: true })]); assert.equal(p.current[0].blocked, true); assert.match(p.message, /前置/);

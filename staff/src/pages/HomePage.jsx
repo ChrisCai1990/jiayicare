@@ -147,37 +147,37 @@ export default function HomePage() {
         <StatCard icon="🔔" label="消息通知" value={unreadMsgCount} color="#DC3545" onClick={() => nav('/notifications')} />
       </div>
 
-      {/* 未确认的订单与已进入流程的督办进度合并展示，不让初始待办结束后订单消失。 */}
+      {/* 用户端购买的服务单独展示；医护端发起的服务只在下方任务区出现。 */}
       {orderRows.length > 0 && (
         <div className="card" style={{ marginBottom: 20, border: '1.5px solid #22A06B40' }}>
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span>🛍 服务预约与进程</span>
+              <span>🛍 用户下单服务进程</span>
               <span style={{ fontSize: 12, fontWeight: 600, color: '#22A06B', background: '#22A06B18', padding: '2px 8px', borderRadius: 99 }}>{orderRows.length}</span>
             </div>
-            <button className="btn btn-secondary btn-sm" onClick={() => orderRows.some(row => row.supervisor)
-              ? document.getElementById('service-tasks-panel')?.scrollIntoView({ behavior: 'smooth' })
-              : nav('/followups?sourceType=order&status=active')}>{orderRows.some(row => row.supervisor) ? '查看任务详情' : '查看全部'}</button>
           </div>
           <div className="card-body" style={{ padding: '8px 20px' }}>
-            {orderRows.map(({ id, pending: f, supervisor: task }, i) => (
-              <div key={id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: i < orderRows.length - 1 ? '1px solid #f0ede8' : 'none', cursor: task ? 'default' : 'pointer' }} onClick={() => { if (f && !task) nav(`/patients/${f.patientId?._id}?tab=followups`, { state: { openFollowUp: f } }) }}>
+            {orderRows.map(({ id, pending: f, supervisor, task: serviceTask, action }, i) => {
+              const task = supervisor || serviceTask
+              const order = task?.sourceOrderId || f?.sourceOrderId
+              const openTarget = action || (supervisor && !/专家约诊/.test(supervisor.theme || '') ? supervisor : null) || (!task ? f : null)
+              return <div key={id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: i < orderRows.length - 1 ? '1px solid #f0ede8' : 'none', cursor: openTarget ? 'pointer' : 'default' }} onClick={() => { if (openTarget) nav(`/patients/${openTarget.patientId?._id}?tab=followups`, { state: { openFollowUp: openTarget } }) }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                   <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24', minWidth: 60, flexShrink: 0 }}>{(task || f)?.patientId?.name || '未知'}</span>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13, color: '#1A2B24', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(task || f)?.sourceOrderId?.serviceName || f?.theme || task?.theme}{f?.sourceOrderId && <span style={{ color: '#D97706', marginLeft: 8 }}>支付 ¥{(Number(f.sourceOrderId.paidAmount) + Number(f.sourceOrderId.healthFundAmount)).toFixed(2)}</span>}</div>
-                    {f && <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.sourceOrderId?.scheduledAt && `预约时间：${new Date(f.sourceOrderId.scheduledAt).toLocaleString('zh-CN')} · `}备注：{f.sourceOrderId?.note || f.content || '未填写，请联系客户确认时间'}</div>}
+                    <div style={{ fontSize: 13, color: '#1A2B24', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order?.serviceName || f?.theme || task?.theme}{order && <span style={{ color: '#D97706', marginLeft: 8 }}>支付 ¥{(Number(order.paidAmount || 0) + Number(order.healthFundAmount || 0)).toFixed(2)}</span>}</div>
+                    {(order?.scheduledAt || order?.note || f?.content) && <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order?.scheduledAt && `预约时间：${new Date(order.scheduledAt).toLocaleString('zh-CN')} · `}备注：{order?.note || f?.content || '未填写，请联系客户确认时间'}</div>}
                     <div style={{ fontSize: 12, color: '#1E6B50', marginTop: 5 }}>
-                      {task ? (task.supervisionProgress?.current?.length
-                        ? task.supervisionProgress.current.map(step => <div key={step.id}>当前环节：{step.label} · 处理人：{step.assignee}{step.blocked ? ' · 等待前置环节' : ''}</div>)
-                        : task.supervisionProgress?.message || '进度待核对')
+                      {task ? (supervisor?.supervisionProgress?.current?.length
+                        ? supervisor.supervisionProgress.current.map(step => <div key={step.id}>当前环节：{step.label} · 处理人：{step.assignee}{step.blocked ? ' · 等待前置环节' : ''}</div>)
+                        : task.supervisionProgress?.message || `当前环节：${task.theme || '待核对'} · 处理人：${task.assignedTo?.name || '待分配'}`)
                         : '待健康规划师确认客户需求并转交下一环节'}
                     </div>
                   </div>
                 </div>
-                <span style={{ fontSize: 12, color: '#aaa', flexShrink: 0, marginLeft: 12 }}>{task ? '流程进行中' : `下单 ${new Date(f.sourceOrderId?.createdAt || f.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}</span>
+                <span style={{ fontSize: 12, color: '#aaa', flexShrink: 0, marginLeft: 12 }}>{action ? '待我办理' : task ? '流程进行中' : `下单 ${new Date(order?.createdAt || f.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}</span>
               </div>
-            ))}
+            })}
           </div>
         </div>
       )}

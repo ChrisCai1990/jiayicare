@@ -598,7 +598,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     { path: 'staffId', select: 'name role title' },
     { path: 'assignedTo', select: 'name role' },
     { path: 'sourceHealthPlanId', select: 'title description content type status' },
-    { path: 'sourceOrderId', select: 'serviceName orderNo createdAt status' },
+    { path: 'sourceOrderId', select: 'serviceName orderNo createdAt status initiationSource paymentStatus paidAmount healthFundAmount scheduledAt note serviceWorkflowSnapshot' },
     { path: 'followUpSchemeId', select: 'name executorRole supervisorRole completionStandard workflowStageKey' },
     { path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } },
   ]);
@@ -1761,7 +1761,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
       .populate('sourceHealthPlanId', 'title description content type status')
       .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard workflowStageKey')
       .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
-      .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt orderNo serviceWorkflowSnapshot supplementFulfillment medicalProxyPlan medicalReminderIntake'),
+      .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt orderNo initiationSource serviceWorkflowSnapshot supplementFulfillment medicalProxyPlan medicalReminderIntake'),
     FollowUp.countDocuments(filter),
   ]);
   res.json({

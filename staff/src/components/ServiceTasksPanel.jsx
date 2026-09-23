@@ -7,6 +7,7 @@ import { useStaff } from '../App'
 import AnnualDispatchCard from './AnnualDispatchCard'
 import annualDispatch from '../../../shared/annualDispatch.cjs'
 import { serviceTaskTitle } from '../utils/serviceTaskTitle.mjs'
+import { isCustomerOrder, serviceTaskGroupKey } from '../utils/plannerOrderProgress.mjs'
 
 const TASKS_PER_PAGE = 5
 
@@ -77,9 +78,14 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
     }
   }, [])
 
-  if (!items.length && !dispatchTask) return null
-  const serviceGroups = Object.values(items.reduce((result, task) => {
-    const key = task.annualBookingTask || (task.sourceType === 'annual_service' && task.workflowKey === 'service_request') ? `request:${task._id}` : task.coordinationGroupId || `task:${task._id}`
+  // Customer purchases have one progress card in the order section above.
+  // Staff-originated services (including zero-price internal orders) stay here.
+  const visibleItems = staff?.role === 'healthPlanner'
+    ? items.filter(task => !(task.sourceType === 'order' && isCustomerOrder(task.sourceOrderId, task)))
+    : items
+  if (!visibleItems.length && !dispatchTask) return null
+  const serviceGroups = Object.values(visibleItems.reduce((result, task) => {
+    const key = serviceTaskGroupKey(task)
     if (!result[key]) result[key] = { key, tasks: [] }
     result[key].tasks.push(task)
     return result
@@ -87,10 +93,11 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
     const workflowModules = service.tasks[0]?.sourceHealthPlanId?.content?.workflowModules || []
     const sequenceByKey = new Map(workflowModules.map((item, sequence) => [String(item.id || item._id || ''), item.sequence ?? sequence]))
     service.tasks.sort((a, b) => (sequenceByKey.get(String(a.workflowKey || '')) ?? 999) - (sequenceByKey.get(String(b.workflowKey || '')) ?? 999))
-    const supervisor = service.tasks.find(task => task.workflowKey === 'medical_proxy:supervise' && ['planned', 'in_progress', 'missed'].includes(task.status))
+    const orderService = service.tasks[0]?.sourceType === 'order'
+    const supervisor = service.tasks.find(task => (orderService ? task.taskRole === 'supervisor' : task.workflowKey === 'medical_proxy:supervise') && ['planned', 'in_progress', 'missed'].includes(task.status))
     // The API returns this staff member's tasks. A read-only supervisor card must
     // not hide their actionable assignment for the same service.
-    const proxyAction = service.tasks.find(task => String(task.workflowKey || '').startsWith('medical_proxy:') && task.workflowKey !== 'medical_proxy:supervise' && !task.isBlocked && ['planned', 'in_progress', 'missed'].includes(task.status))
+    const proxyAction = service.tasks.find(task => (orderService ? task.taskRole === 'executor' : String(task.workflowKey || '').startsWith('medical_proxy:') && task.workflowKey !== 'medical_proxy:supervise') && !task.isBlocked && ['planned', 'in_progress', 'missed'].includes(task.status))
     return { ...service, task: proxyAction || supervisor || service.tasks[0], totalSteps: workflowModules.length || service.tasks.length }
   })
   const now = new Date()
