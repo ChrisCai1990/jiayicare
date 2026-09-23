@@ -7,7 +7,40 @@ const FollowUp = require('../src/models/FollowUp');
 const MedicalReport = require('../src/models/MedicalReport');
 const User = require('../src/models/User');
 const Order = require('../src/models/Order');
-const { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, supplyResolutionSummary, validateMedicalProxyStage, ensureStaffExpertAppointmentTasksForStaff } = require('../src/utils/medicalProxyWorkflow');
+const { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, supplyResolutionSummary, validateMedicalProxyStage, ensureStaffExpertAppointmentTasksForStaff, startStaffMedicalProxyWorkflow } = require('../src/utils/medicalProxyWorkflow');
+
+test('on-site added consultation starts at the medical assistant, without a fabricated booking task', async () => {
+  const previous = { orderCreate: Order.create, orderUpdate: Order.updateOne, taskCreate: FollowUp.create };
+  const tasks = [];
+  try {
+    Order.create = async row => ({ _id: 'new-order', ...row });
+    Order.updateOne = async () => ({ modifiedCount: 1 });
+    FollowUp.create = async row => { const task = { _id: `task-${tasks.length + 1}`, ...row }; tasks.push(task); return task; };
+    const result = await startStaffMedicalProxyWorkflow({
+      patient: { _id: 'patient', assignedHealthManager: 'manager', assignedHealthPlanner: 'planner' }, advisorId: 'advisor',
+      plan: { medicalEscort: true, adHocConsultation: true, escortCategory: 'consultation', escortDate: '2026-09-23',
+        escortTime: '14:30', hospital: '测试医院', department: '内科', expert: '测试专家', escortGoal: '客户现场要求加诊',
+        costNotice: '已告知自费', customerConfirmed: true, medicalAssistantId: 'assistant', sourceEscortTaskId: 'source-task' },
+    });
+    assert.equal(result.order.serviceName, '临时加诊服务');
+    assert.equal(result.order.medicalProxyPlan.sourceEscortTaskId, 'source-task');
+    assert.equal(result.order.medicalProxyPlan.sourceFollowUpId, undefined);
+    assert.deepEqual(tasks.map(task => task.workflowKey), ['medical_proxy:supervise', 'medical_proxy:execute']);
+    assert.equal(result.execute.assignedTo, 'assistant');
+    assert.equal(result.execute.formData.planSnapshot.adHocConsultation, true);
+  } finally {
+    Order.create = previous.orderCreate; Order.updateOne = previous.orderUpdate; FollowUp.create = previous.taskCreate;
+  }
+});
+
+test('on-site consultation keeps its parent escort open and closes only after advisor follow-up review', () => {
+  const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
+  const routes = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+  assert.match(workflow, /medicalEscort && !plan\.adHocConsultation && !plan\.sourceFollowUpId/);
+  assert.match(workflow, /!order\.medicalProxyPlan\?\.adHocConsultation\) await completeLinkedMedicalReminder/);
+  assert.match(workflow, /currentStage: 'followup_review', currentAssignee: reviewer/);
+  assert.match(routes, /generatedFromMedicalEscort && followUp\.sourceOrderId[\s\S]*?adHocConsultation[\s\S]*?currentStage: 'completed'/);
+});
 
 test('existing staff expert order gains one booking and one planner supervision task on either workbench', async () => {
   const previous = { userFind: User.find, orderFind: Order.find, orderUpdate: Order.updateOne, taskFind: FollowUp.find, taskUpdate: FollowUp.updateOne };
@@ -308,7 +341,7 @@ test('medical escort skips booking and sends manager review only after execution
   const patientPage = fs.readFileSync(path.join(__dirname, '../../staff/src/pages/PatientDetailPage.jsx'), 'utf8');
   const plansPage = fs.readFileSync(path.join(__dirname, '../../staff/src/pages/PlansPage.jsx'), 'utf8');
   const directStart = workflow.split('async function startStaffMedicalProxyWorkflow')[1].split('async function validateMedicalProxyStage')[0];
-  assert.match(directStart, /theme: `就医陪同：健康规划师全程督办/);
+  assert.match(directStart, /theme: `\$\{plan\.adHocConsultation \? '临时加诊' : '就医陪同'\}：健康规划师全程督办/);
   assert.match(directStart, /supervisorId: patient\.assignedHealthPlanner/);
   assert.match(directStart, /if \(directlyAssigned\)/);
   assert.match(directStart, /workflowKey: `\$\{PREFIX\}execute`/);

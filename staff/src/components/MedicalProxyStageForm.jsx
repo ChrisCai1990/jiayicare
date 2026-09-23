@@ -96,11 +96,13 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
   </label>
   const escortPlan = value.planSnapshot?.medicalEscort === true ? value.planSnapshot : value.medicalEscort === true ? value : task?.formData?.planSnapshot?.medicalEscort === true ? task.formData.planSnapshot : task?.sourceOrderId?.medicalProxyPlan || value.planSnapshot || {}
   const escortSummary = <div style={{ display: 'grid', gap: 7, background: '#F5F8F6', border: '1px solid #DCE8E1', borderRadius: 8, padding: 12, fontSize: 13 }}>
-    <div style={{ fontWeight: 700, color: '#1E6B50' }}>健康顾问提交的陪同服务信息</div>
+    <div style={{ fontWeight: 700, color: '#1E6B50' }}>{escortPlan.adHocConsultation ? '客户现场确认的临时加诊信息' : '健康顾问提交的陪同服务信息'}</div>
     <div>陪同类型：{({ consultation: '陪同看诊', exam: '陪同检查', checkup: '陪同体检', treatment: '陪同治疗' })[escortPlan.escortCategory] || escortPlan.escortCategory || '未填写'}</div>
     <div>服务时间：{escortPlan.escortDate || '未填写'} {escortPlan.escortTime || ''}</div>
     <div>医院：{escortPlan.hospital || '未填写'}{escortPlan.campus ? ` · ${escortPlan.campus}` : ''}</div>
     <div>科室：{escortPlan.department || '未填写'}</div>
+    {escortPlan.expert && <div>专家：{escortPlan.expert}</div>}
+    {escortPlan.adHocConsultation && <div>费用告知：{escortPlan.costNotice || '未填写'}</div>}
     <div>具体服务事项：{escortPlan.escortGoal || '未填写'}</div>
     <div>交通接送：{escortPlan.transport || '未填写'}</div>
     <div>酒店安排：{escortPlan.hotel || '未填写'}</div>
