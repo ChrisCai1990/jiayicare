@@ -44,10 +44,12 @@ router.post('/handoff', async (req, res) => {
   const name = normalizeText(body.name, 30); const phone = normalizeText(body.phone, 20);
   const city = normalizeText(body.city, 40); const contactWindow = normalizeText(body.contactWindow, 60);
   const topic = normalizeText(body.topic, 60); const summary = normalizeText(body.summary, 500);
+  const requestedSource = String(body.source || 'website_ai');
+  const source = /^[a-z0-9_-]{1,40}$/i.test(requestedSource) ? requestedSource : 'website_ai';
   if (!name || !/^1\d{10}$/.test(phone)) return res.status(400).json({ success: false, message: '请填写姓名和有效的中国大陆手机号。' });
   if (!topic) return res.status(400).json({ success: false, message: '请选择或填写咨询方向。' });
   if (hasEmergency(summary) || hasMedicalDetail(summary)) return res.status(400).json({ success: false, message: '线下对接申请中请勿填写病历、症状、检查指标或用药信息；相关问题请直接咨询正规医疗机构。' });
-  const lead = await VisitorLead.create({ name, phone, city, contactWindow, topic, summary, consentAt: new Date() });
+  const lead = await VisitorLead.create({ name, phone, city, contactWindow, topic, summary, source, consentAt: new Date() });
   return res.status(201).json({ success: true, data: { id: lead._id }, message: '已收到您的咨询申请。嘉医汇工作人员将根据您留下的联系方式确认服务安排。' });
 });
 
