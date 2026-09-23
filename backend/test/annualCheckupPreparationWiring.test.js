@@ -30,10 +30,12 @@ test('订单写入仍只走原关联同步，不借机扫描体检准备', async
 
 test('通用服务清理不取消独立准备任务，仍清理旧未采用的普通服务需求', () => {
   const source = fs.readFileSync(require.resolve('../src/utils/annualPlanServiceTasks'), 'utf8');
-  assert.match(source, /workflowKey: \{ \$not: \/\^annual_checkup_preparation:\//);
-  const matches = sift({ workflowKey: { $not: /^annual_checkup_preparation:/ } });
+  assert.match(source, /workflowKey: 'service_request', annualDispatch: null/);
+  const matches = sift({ workflowKey: 'service_request', annualDispatch: null });
   assert.equal(matches({ workflowKey: 'annual_checkup_preparation:familyDoctor' }), false);
   assert.equal(matches({ workflowKey: 'annual_checkup_preparation:healthPlanner' }), false);
   assert.equal(matches({ workflowKey: 'service_request' }), true);
-  assert.equal(matches({}), true);
+  assert.equal(matches({}), false);
+  assert.equal(matches({ workflowKey: 'assistance_execute' }), false);
+  assert.equal(matches({ workflowKey: 'service_request', annualDispatch: { status: 'active' } }), false);
 });

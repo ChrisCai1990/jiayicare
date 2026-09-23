@@ -17,6 +17,7 @@ import FollowUpServiceLinkCard from '../components/FollowUpServiceLinkCard'
 import OnsiteBookingCard from '../components/OnsiteBookingCard'
 import annualBookingPlan from '../../../shared/annualBookingPlan.cjs'
 import annualServiceItem from '../../../shared/annualServiceItem.cjs'
+import annualDispatch from '../../../shared/annualDispatch.cjs'
 import AnnualCheckupPreparationCard, { isAnnualCheckupPreparation } from '../components/AnnualCheckupPreparationCard'
 import AiRuleHint from '../components/AiRuleHint'
 import AppIcon from '../components/AppIcon'
@@ -2495,7 +2496,8 @@ export default function PatientDetailPage() {
       .then(res => {
         if (cancelled) return
         const target = res.data?.followUps?.[0]
-        if (isCheckupAdvisorReviewTask(target)) setCheckupAdvisorReview(target)
+        if (annualDispatch.dedicated(target)) setFollowUpDetail(target)
+        else if (isCheckupAdvisorReviewTask(target)) setCheckupAdvisorReview(target)
         else if (target?.aiStatus === 'pending') setFollowUpDetail(target)
         else toast('该随访审核任务已处理或不存在')
       })
@@ -2507,7 +2509,7 @@ export default function PatientDetailPage() {
   const openExec = (f) => {
     // Workbench appointment projection is not an execution checklist. Keep the
     // advisor plan visible and use the dedicated receipt without ending follow-up.
-    if (f.annualBookingTask === true || (f.sourceType === 'annual_service' && f.workflowKey === 'service_request')) {
+    if (f.annualBookingTask === true || annualDispatch.dedicated(f)) {
       setFollowUpDetail(f)
       return
     }
@@ -10933,15 +10935,15 @@ export default function PatientDetailPage() {
         <div className="modal-overlay" onClick={() => setFollowUpDetail(null)}>
           <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">{annualServiceItem.isAssistance(followUpDetail) ? '就医协助 · 预约安排' : '随访详情'}</h3>
+              <h3 className="modal-title">{annualDispatch.dedicated(followUpDetail) ? (annualDispatch.isExecution(followUpDetail) ? '就医协助 · 办理记录' : '就医协助 · 派单安排') : annualServiceItem.isAssistance(followUpDetail) ? '就医协助 · 预约安排' : '随访详情'}</h3>
               <button className="modal-close" onClick={() => setFollowUpDetail(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <FollowUpServiceLinkCard key={followUpDetail._id} task={followUpDetail} staff={staff} onLinked={updated => { setFollowUpDetail(updated); loadFollowUps() }} />
-              <OnsiteBookingCard key={`onsite-${followUpDetail._id}`} task={followUpDetail} staff={staff} />
+              {!annualDispatch.dedicated(followUpDetail) && <OnsiteBookingCard key={`onsite-${followUpDetail._id}`} task={followUpDetail} staff={staff} />}
               <AnnualCheckupPreparationCard key={`checkup:${followUpDetail._id}`} task={followUpDetail} staff={staff} onSaved={updated => { setFollowUpDetail(updated); loadFollowUps() }} />
               {/* 基本信息 */}
-              {!annualServiceItem.isAssistance(followUpDetail) && <>
+              {!annualServiceItem.isAssistance(followUpDetail) && !annualDispatch.dedicated(followUpDetail) && <>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 {[
                   { label: '随访日期', value: new Date(followUpDetail.date).toLocaleDateString('zh-CN') },

@@ -4,6 +4,7 @@ import { staffAPI } from '../api'
 import { useToast, useStaff, can } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
 import annualBookingPlan from '../../../shared/annualBookingPlan.cjs'
+import annualDispatch from '../../../shared/annualDispatch.cjs'
 import FollowUpProgressFields, { FollowUpProgressHistory } from '../components/FollowUpProgressFields'
 import FollowUpOutcomeReview from '../components/FollowUpOutcomeReview'
 import { canRecordProgress, requiresOutcomeReview } from '../utils/followUpContinuity'
@@ -240,6 +241,7 @@ export default function FollowUpsPage() {
   const handleSearch = (e) => { e.preventDefault(); setPage(1); load() }
 
   const openExec = (f) => {
+    if (annualDispatch.dedicated(f)) { nav(`/patients/${f.patientId?._id || f.patientId}?tab=followups&followUpId=${f._id}`); return }
     setExecItem(f)
     const checklist = checkupConclusionStage(f) ? [] : normalizeServiceChecklist(f.serviceChecklist, f.taskPurposes, f.dependsOnTaskId?.serviceChecklist)
     setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: isCheckupAppointmentBookingTask(f) ? checkupAppointmentBookingFromTask(f) : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f.formData) : emptyOutpatientAssessment(f.formData) })

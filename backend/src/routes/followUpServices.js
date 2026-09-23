@@ -8,6 +8,16 @@ const HealthPlan = require('../models/HealthPlan');
 const { isServiceRequest, serviceOutcome } = require('../utils/followUpServiceState');
 const { reconcileServiceLinks } = require('../utils/followUpServiceLink');
 
+for (const [method, suffix, action] of [['get', 'annual-dispatch', 'context'], ['post', 'annual-dispatch', 'dispatch'], ['post', 'annual-dispatch-result', 'submit'], ['post', 'annual-dispatch-review', 'review']]) {
+  router[method](`/:id/${suffix}`, staffAuth, async (req, res) => {
+    try {
+      if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ message: '任务ID无效' });
+      const data = await require('../utils/annualDirectDispatch').runtime()[action](req.params.id, req.staff, req.body);
+      res.json({ success: true, data });
+    } catch (e) { res.status(e.statusCode || 500).json({ message: e.message }); }
+  });
+}
+
 async function loadServiceRequest(req, res, next) {
   const id = req.params.id;
   if (!mongoose.isValidObjectId(id)) return res.status(400).json({ success: false, message: '任务ID无效' });
@@ -56,6 +66,7 @@ router.get('/:id/service-link-options', staffAuth, loadServiceRequest, async (re
 router.post('/:id/service-link', staffAuth, loadServiceRequest, async (req, res) => {
   const task = req.serviceRequest;
   const { targetType, targetId, followUpId, revision } = req.body;
+  if (task.annualDispatch) return res.status(409).json({ message: '已直接派单，不能重复关联其他服务' });
   if (!['order', 'health_plan'].includes(targetType) || !mongoose.isValidObjectId(targetId) || !mongoose.isValidObjectId(followUpId)) return res.status(400).json({ success: false, message: '请选择对应随访和实际服务' });
   if (['completed', 'cancelled'].includes(task.status)) return res.status(409).json({ success: false, message: '该服务需求已结束' });
   const [parent, target, existing] = await Promise.all([
@@ -105,6 +116,13 @@ async function onsiteContext(req, res, next) {
   if (!task) return res.status(404).json({ message: '任务不存在' });
   if (req.staff.role !== 'superadmin' && String(task.assignedTo) !== String(req.staff._id)) return res.status(403).json({ message: '仅本任务负责人可查看预约交接' });
   if (!require('../utils/healthManagementRollout').enabledForPatient(task.patientId)) return req.method === 'GET' ? res.json({ success: true, data: [] }) : res.status(403).json({ message: '该客户尚未开放预约登记' });
+  if (require('../../../shared/annualDispatch.cjs').isExecution(task)) {
+    const request = await FollowUp.findById(task.sourceId).lean();
+    if (!request || String(request.patientId) !== String(task.patientId) || String(request.annualDispatch?.executionId) !== String(task._id)) return res.status(409).json({ message: '现场预约派单来源不一致' });
+    const parent = await FollowUp.findById(request.annualDispatch.followUpId).lean();
+    if (!parent || String(parent.patientId) !== String(task.patientId)) return res.status(409).json({ message: '预约事项归属不一致' });
+    req.onsite = { task, links: [], parents: [parent] }; return next();
+  }
   const targetType = task.sourceOrderId ? 'order' : task.sourceHealthPlanId ? 'health_plan' : null;
   if (!targetType) return req.method === 'GET' ? res.json({ success: true, data: [] }) : res.status(404).json({ message: '任务未关联实际服务' });
   const links = await Link.find({ patientId: task.patientId, targetType, targetId: task.sourceOrderId || task.sourceHealthPlanId, status: 'waiting' }).lean();

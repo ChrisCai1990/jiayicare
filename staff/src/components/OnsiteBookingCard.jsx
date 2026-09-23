@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
 import { BookingSummary } from './AnnualBookingCard'
+import dispatchTools from '../../../shared/annualDispatch.cjs'
 
 export default function OnsiteBookingCard({ task, staff }) {
   const [rows, setRows] = useState([]), [error, setError] = useState(''), [forms, setForms] = useState({}), [busy, setBusy] = useState(false)
-  const eligible = !!(task.sourceOrderId || task.sourceHealthPlanId) && (staff?.role === 'superadmin' || String(task.assignedTo?._id || task.assignedTo) === String(staff?._id))
+  const eligible = !!(task.sourceOrderId || task.sourceHealthPlanId || dispatchTools.isExecution(task)) && (staff?.role === 'superadmin' || String(task.assignedTo?._id || task.assignedTo) === String(staff?._id))
   const canWrite = ['medicalAssistant', 'superadmin'].includes(staff?.role) && task.taskRole === 'executor' && !task.isBlocked && ['planned', 'in_progress', 'missed', 'completed'].includes(task.status)
   useEffect(() => {
     let active = true

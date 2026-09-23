@@ -2090,6 +2090,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     || String(followUp.staffId || '') === String(req.staff._id)
     || String(followUp.assignedTo || '') === String(req.staff._id);
   if (!canUpdate) return res.status(403).json({ success: false, message: '该任务未分配给当前账号，无法保存' });
+  if (require('../../../shared/annualDispatch.cjs').dedicated(followUp)) return res.status(403).json({ message: '请使用就医协助派单、执行或验收入口，不能通过随访编辑修改' });
   if (require('../../../shared/annualBookingPlan.cjs').protectedEdit(followUp, req.staff.role, req.body)) return res.status(403).json({ success: false, message: '顾问年度随访计划不能由执行人员修改或取消，请仅记录执行过程或预约结果' });
   if (req.body.status === 'completed' && followUp.status !== 'completed'
     && require('../utils/followUpContinuity').requiresOutcomeReview(followUp)) {

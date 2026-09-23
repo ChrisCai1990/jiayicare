@@ -1175,6 +1175,7 @@ router.get('/followup-tasks', auth, async (req, res) => {
       // 岗位执行与督办属于医护内部工作流。客户只查看已推送的服务方案，
       // 不应看到、也不能代替医护人员完成这些内部任务。
       $nor: [
+        { sourceType: 'annual_service' },
         { sourceType: 'order', workflowKey: { $not: /^medical_reminder:(?:followup|documents)$/ } },
         { sourceType: 'health_plan', taskRole: { $in: ['executor', 'supervisor'] } },
         { sourceType: { $in: ['professional_assessment', 'report_followup'] }, taskRole: { $in: ['executor', 'supervisor'] } },
@@ -1209,6 +1210,7 @@ router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
   try {
     const followup = await FollowUp.findOne({ _id: req.params.id, patientId: req.user._id });
     if (!followup) return res.status(404).json({ success: false, message: '随访任务不存在' });
+    if (followup.sourceType === 'annual_service') return res.status(403).json({ message: '派单及办理任务仅由医护工作台处理' });
     if (require('../utils/followUpContinuity').requiresOutcomeReview(followup)) {
       try {
         const updated = await require('../utils/followUpHelp').requestHelp({ FollowUp, task: followup, body: req.body });
@@ -1283,6 +1285,7 @@ router.post('/followup-tasks/:id/form', auth, async (req, res) => {
   try {
     const followup = await FollowUp.findOne({ _id: req.params.id, patientId: req.user._id });
     if (!followup) return res.status(404).json({ success: false, message: '随访记录不存在' });
+    if (followup.sourceType === 'annual_service') return res.status(403).json({ message: '不能提交内部派单任务的表单' });
     if (['professional_assessment', 'report_followup'].includes(followup.sourceType) && ['executor', 'supervisor'].includes(followup.taskRole)) return res.status(403).json({ success: false, message: '不能提交医护内部任务的表单' });
     followup.formData = req.body.formData;
     await followup.save();

@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { formatChineseDate } from '../utils/date'
 import { isCheckupDesignStage } from '../utils/checkupTaskRouting'
+import { useStaff } from '../App'
+import AnnualDispatchCard from './AnnualDispatchCard'
+import annualDispatch from '../../../shared/annualDispatch.cjs'
 
 const checkupProgress = task => {
   if (task?.workflowKey !== 'checkup_appointment:supervise') return null
@@ -43,6 +46,8 @@ const medicalEscortProgress = task => {
 
 export default function ServiceTasksPanel() {
   const nav = useNavigate()
+  const { staff } = useStaff()
+  const [dispatchTask, setDispatchTask] = useState(null)
   const [items, setItems] = useState([])
   const [group, setGroup] = useState('all')
   const [timeGroup, setTimeGroup] = useState('all')
@@ -63,7 +68,7 @@ export default function ServiceTasksPanel() {
     }
   }, [])
 
-  if (!items.length) return null
+  if (!items.length && !dispatchTask) return null
   const serviceGroups = Object.values(items.reduce((result, task) => {
     const key = task.annualBookingTask || (task.sourceType === 'annual_service' && task.workflowKey === 'service_request') ? `request:${task._id}` : task.coordinationGroupId || `task:${task._id}`
     if (!result[key]) result[key] = { key, tasks: [] }
@@ -100,6 +105,7 @@ export default function ServiceTasksPanel() {
   const supervisorCount = serviceGroups.filter(service => service.task.taskRole === 'supervisor').length
 
   const openTask = async (task) => {
+    if (annualDispatch.dedicated(task)) { setDispatchTask(task); return }
     if (task.sourceType === 'report_followup' && task.workflowKey === 'report_followup:advisor_review') {
       nav(`/patients/${task.patientId?._id}/annual-health#report-followup-drafts`)
       return
@@ -214,6 +220,11 @@ export default function ServiceTasksPanel() {
           )
         })}
       </div>
+      {dispatchTask && <div className="modal-overlay"><div className="modal" style={{ maxWidth: 780 }}>
+        <div className="modal-header"><h3>{annualDispatch.isExecution(dispatchTask) ? '就医协助 · 办理记录' : '就医协助 · 派单安排'}</h3><button className="modal-close" onClick={() => setDispatchTask(null)}>×</button></div>
+        <div className="modal-body"><AnnualDispatchCard key={dispatchTask._id} task={dispatchTask} staff={staff} onLinked={updated => { setDispatchTask(updated); staffAPI.getServiceTasks({ status: 'active', includeFuture: '1', limit: 100 }).then(r => setItems(r.data || [])) }} /></div>
+        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setDispatchTask(null)}>关闭</button></div>
+      </div></div>}
     </div>
   )
 }

@@ -13,6 +13,10 @@ function scope(task) {
   return null;
 }
 function summarize(task, siblings) {
+  if (task.annualDispatch) {
+    const d = task.annualDispatch;
+    return { total: 1, completed: d.status === 'completed' ? 1 : 0, current: d.status === 'completed' ? [] : [{ id: d.executionId, label: d.status === 'pending_review' ? '代办结果待规划师验收' : '已派单，等待就医专员办理', assignee: d.status === 'pending_review' ? task.assignedTo?.name || '健康规划师' : d.assigneeName, blocked: false }], message: d.status === 'completed' ? '代办已验收，原管理随访继续跟进' : '按本次派单跟进办理进度' };
+  }
   const key = scope(task);
   const rows = key ? siblings.filter(row => Object.entries(key).every(([field, value]) => id(row[field]) === id(value))
     && row.taskRole !== 'supervisor' && row.status !== 'cancelled'

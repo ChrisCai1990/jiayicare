@@ -24,7 +24,7 @@ function bookingPlan(task) {
     suggestedDate: text.match(/建议(?:就医\/检查|体检)日期：\s*(\d{4}-\d{2}-\d{2})/)?.[1] || '', text };
 }
 function advisorOwned(task) { return task?.sourceType === 'scheduled' && !!task.sourceAnnualPlanId; }
-function canEditPlan(task, role) { return !advisorOwned(task) || ['familyDoctor', 'superadmin'].includes(role); }
+function canEditPlan(task, role) { return !require('./annualDispatch.cjs').dedicated(task) && (!advisorOwned(task) || ['familyDoctor', 'superadmin'].includes(role)); }
 function protectedEdit(task, role, body) {
   return !canEditPlan(task, role) && (['date', 'theme', 'content', 'plannedContent', 'assignedTo', 'type', 'sourceAnnualPlanId', 'sourceScheduleKey', 'deliveryMode', 'deliveryType'].some(key => Object.hasOwn(body, key)) || body.status === 'cancelled');
 }

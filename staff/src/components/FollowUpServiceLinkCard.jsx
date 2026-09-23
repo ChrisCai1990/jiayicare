@@ -2,9 +2,15 @@ import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
 import AnnualBookingCard, { BookingSummary } from './AnnualBookingCard'
 import planTools from '../../../shared/annualBookingPlan.cjs'
+import dispatchTools from '../../../shared/annualDispatch.cjs'
+import AnnualDispatchCard from './AnnualDispatchCard'
 import itemTools from '../../../shared/annualServiceItem.cjs'
 
 export default function FollowUpServiceLinkCard({ task, staff, onLinked }) {
+  if (dispatchTools.dedicated(task)) return <AnnualDispatchCard task={task} staff={staff} onLinked={onLinked} />
+  return <LegacyServiceLinkCard task={task} staff={staff} onLinked={onLinked} />
+}
+function LegacyServiceLinkCard({ task, staff, onLinked }) {
   const request = task.taskRole === 'supervisor' && ((['professional_assessment', 'report_followup'].includes(task.sourceType) && task.workflowKey === `${task.sourceType}:service_request`) || (task.sourceType === 'annual_service' && task.workflowKey === 'service_request'))
   const canLink = request && (staff?.role === 'superadmin' || (staff?.role === 'healthPlanner' && String(task.assignedTo?._id || task.assignedTo) === String(staff._id)))
   const [data, setData] = useState(null)
