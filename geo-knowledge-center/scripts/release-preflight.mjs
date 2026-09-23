@@ -18,6 +18,7 @@ function read(relativePath) {
 
 const indexPage = read('index.html');
 const consultationPage = read('start-here.html');
+const aiConsultationPage = read('ai-consultation.html');
 const robots = read('robots.txt');
 const sitemap = read('sitemap.xml');
 const privacyPage = path.join(siteDirectory, 'privacy-policy.html');
@@ -25,6 +26,9 @@ const privacyPage = path.join(siteDirectory, 'privacy-policy.html');
 if (!indexPage.includes('嘉医汇健康知识中心')) blockers.push('首页缺少知识中心标题。');
 if (!indexPage.includes('start-here.html') || !consultationPage.includes('tel:19106761448')) {
   blockers.push('咨询承接页或客服电话入口配置不完整。');
+}
+if (!indexPage.includes('ai-consultation.html') || !aiConsultationPage.includes('/api/visitor-assistant/reply') || !aiConsultationPage.includes('privacy-policy.html')) {
+  blockers.push('AI 咨询入口、隐私同意或后端承接配置不完整。');
 }
 if (!robots.includes('https://jiaycare.com/sitemap.xml')) blockers.push('robots.txt 未指向正式域名的站点地图。');
 if (!sitemap.includes('https://jiaycare.com/')) blockers.push('sitemap.xml 未使用正式域名。');
