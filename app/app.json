@@ -42,6 +42,9 @@
       ]
     ],
     "extra": {
+      "release": {
+        "privacyPolicyUrl": ""
+      },
       "eas": {
         "projectId": "87f6e7f1-8bbe-4969-8faf-1954318111a7"
       }
