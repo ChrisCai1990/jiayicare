@@ -2685,6 +2685,18 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
       if (followUp.sourceType === 'order' && followUp.formData?.generatedFromPostCheckupSupervision && followUp.sourceOrderId) {
         await Order.updateOne({ _id: followUp.sourceOrderId }, { $set: { currentStage: 'advisor_rejected', supervisionStatus: 'needs_attention' } });
       }
+      if (followUp.sourceType === 'order' && followUp.formData?.generatedFromMedicalEscort && followUp.sourceOrderId) {
+        const order = await Order.findById(followUp.sourceOrderId).select('medicalProxyPlan').lean();
+        if (order?.medicalProxyPlan?.adHocConsultation) {
+          const auditTask = await FollowUp.findOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: 'medical_proxy:post_visit_audit' }).select('assignedTo').lean();
+          await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: 'medical_proxy:post_visit_audit' },
+            { $set: { status: 'planned', completedAt: null, completedBy: null, date: new Date(), remindAt: new Date(), content: `健康顾问退回临时加诊随访：${rejectReason}` } });
+          await Order.updateOne({ _id: order._id }, { $set: { currentStage: 'post_visit_audit', currentAssignee: auditTask?.assignedTo || null, supervisionStatus: 'needs_attention' } });
+          await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: 'medical_proxy:supervise' },
+            { $set: { 'formData.currentStage': 'post_visit_audit', content: `健康顾问退回随访，等待健管专员修订：${rejectReason}` } });
+          return res.json({ success: true, message: '已退回健管专员修订' });
+        }
+      }
       return res.json({ success: true, message: '已驳回' });
     }
 
@@ -2719,6 +2731,18 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
     }
     followUp.aiStatus = 'approved';
     await followUp.save();
+    if (followUp.sourceType === 'order' && followUp.formData?.generatedFromMedicalEscort && followUp.sourceOrderId) {
+      const order = await Order.findById(followUp.sourceOrderId).select('medicalProxyPlan').lean();
+      if (order?.medicalProxyPlan?.adHocConsultation) {
+        const completedAt = new Date();
+        const reportIds = [...new Set((followUp.formData?.reportIds || []).map(String).filter(Boolean))];
+        if (reportIds.length) await MedicalReport.updateMany({ _id: { $in: reportIds }, user: followUp.patientId, audit_status: 'audited' }, { $set: { familyDoctorViewedAt: completedAt } });
+        await Order.updateOne({ _id: order._id }, { $set: { status: 'completed', tradeStatus: 'completed', completedAt, currentStage: 'completed', currentAssignee: null, supervisionStatus: 'completed' } });
+        await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: 'medical_proxy:supervise', status: { $in: ['planned', 'in_progress'] } },
+          { $set: { status: 'completed', completedAt, completedBy: 'staff', 'formData.currentStage': 'completed', content: '健康顾问已审核临时加诊随访计划，服务结束。' } });
+        return res.json({ success: true, message: '已审核临时加诊随访计划，服务结束', data: followUp });
+      }
+    }
     if (followUp.sourceType === 'order' && followUp.formData?.generatedFromPostCheckupSupervision && followUp.sourceOrderId) {
       const order = await Order.findById(followUp.sourceOrderId);
       if (order) {
@@ -3152,6 +3176,45 @@ router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => 
     const advisorId = req.staff.role === 'healthManager' ? (patient.assignedFamilyDoctor || req.staff._id) : req.staff._id;
     const result = await require('../utils/medicalProxyWorkflow').startStaffMedicalProxyWorkflow({ patient, advisorId, plan: { ...req.body, initiatedByStaff: req.staff._id } });
     res.json({ success: true, data: { orderId: result.order._id, supervisorTaskId: result.supervisor?._id || null, bookingTaskId: result.booking?._id || null, plannerTaskId: result.planner?._id || null } });
+  } catch (err) { res.status(err.status || 500).json({ success: false, message: err.message }); }
+});
+
+// 就医专员在已承接的陪诊现场新增专家门诊：直接进入执行，不补造事前预约任务。
+router.post('/patients/:id/ad-hoc-consultation/start', staffAuth, async (req, res) => {
+  if (req.staff.role !== 'medicalAssistant') return res.status(403).json({ success: false, message: '仅本次陪诊就医专员可发起临时加诊' });
+  try {
+    if (!/^[a-f\d]{24}$/i.test(String(req.body.sourceFollowUpId || ''))) return res.status(400).json({ success: false, message: '请选择本次陪诊任务' });
+    const sourceTask = await FollowUp.findById(req.body.sourceFollowUpId).select('patientId assignedTo taskRole status theme workflowKey isBlocked').lean();
+    if (!sourceTask || String(sourceTask.patientId) !== String(req.params.id)
+      || String(sourceTask.assignedTo) !== String(req.staff._id) || sourceTask.taskRole !== 'executor'
+      || !['planned', 'in_progress'].includes(sourceTask.status) || sourceTask.isBlocked
+      || /临时加诊/.test(sourceTask.theme || '')
+      || !/陪诊|陪同|就医专员|门诊一站式/.test(`${sourceTask.theme || ''} ${sourceTask.workflowKey || ''}`)) {
+      return res.status(403).json({ success: false, message: '请从本人正在办理的陪诊任务发起临时加诊' });
+    }
+    const patient = await User.findById(req.params.id).select('tenantId assignedFamilyDoctor assignedHealthManager assignedHealthPlanner').lean();
+    if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+    const fields = ['hospital', 'department', 'expert', 'reason', 'appointmentDate', 'appointmentTime', 'costNotice'];
+    if (fields.some(key => !String(req.body[key] || '').trim()) || req.body.customerConfirmed !== true
+      || !/^\d{4}-\d{2}-\d{2}$/.test(req.body.appointmentDate) || !/^\d{2}:\d{2}$/.test(req.body.appointmentTime)) {
+      return res.status(400).json({ success: false, message: '请记录客户确认、加诊原因、医院科室专家、实际门诊时间及费用告知' });
+    }
+    const requestKey = String(req.body.requestKey || '').trim();
+    if (!/^[a-zA-Z0-9-]{12,80}$/.test(requestKey)) return res.status(400).json({ success: false, message: '请重新打开临时加诊表单后提交' });
+    const existing = await Order.findOne({ user: patient._id, serviceName: '临时加诊服务', 'medicalProxyPlan.adHocRequestKey': requestKey }).select('_id').lean();
+    if (existing) return res.json({ success: true, data: { orderId: existing._id, reused: true } });
+    const result = await require('../utils/medicalProxyWorkflow').startStaffMedicalProxyWorkflow({
+      patient, advisorId: patient.assignedFamilyDoctor || req.staff._id,
+      plan: { medicalEscort: true, adHocConsultation: true, escortCategory: 'consultation',
+        escortDate: req.body.appointmentDate, escortTime: req.body.appointmentTime,
+        hospital: String(req.body.hospital).trim(), campus: String(req.body.campus || '').trim(),
+        department: String(req.body.department).trim(), expert: String(req.body.expert).trim(),
+        escortGoal: String(req.body.reason).trim(), costNotice: String(req.body.costNotice).trim(),
+        notes: String(req.body.notes || '').trim(), customerConfirmed: true,
+        medicalAssistantId: req.staff._id, sourceEscortTaskId: sourceTask._id,
+        adHocRequestKey: requestKey, initiatedByStaff: req.staff._id },
+    });
+    res.json({ success: true, data: { orderId: result.order._id, executeTaskId: result.execute?._id, supervisorTaskId: result.supervisor?._id } });
   } catch (err) { res.status(err.status || 500).json({ success: false, message: err.message }); }
 });
 
