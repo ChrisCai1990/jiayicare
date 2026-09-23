@@ -19,6 +19,7 @@ import PartnersPage from './pages/PartnersPage'
 import EnterprisesPage from './pages/EnterprisesPage'
 import TenantsPage from './pages/TenantsPage'
 import OpsDashboardPage from './pages/OpsDashboardPage'
+import CareQualityPage from './pages/CareQualityPage'
 import HealthPlanTemplatePage from './pages/HealthPlanTemplatePage'
 import AiCaseReviewTemplatePage from './pages/AiCaseReviewTemplatePage'
 import AnnualPlanPage from './pages/AnnualPlanPage'
@@ -129,6 +130,7 @@ export default function App() {
               <Route path="enterprises" element={<EnterprisesPage />} />
               <Route path="tenants" element={<TenantsPage />} />
               <Route path="ops-dashboard" element={<OpsDashboardPage />} />
+              <Route path="care-quality" element={<CareQualityPage />} />
               <Route path="health-plan-templates" element={<HealthPlanTemplatePage />} />
               <Route path="ai-case-review-templates" element={<AiCaseReviewTemplatePage />} />
 

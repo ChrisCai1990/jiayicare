@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { staffAPI } from '../api'
 import itemTools from '../../../shared/annualServiceItem.cjs'
 import planTools from '../../../shared/annualBookingPlan.cjs'
+import CareFlowCard from './CareFlowCard'
 
 export function BookingSummary({ booking }) {
   if (!booking) return null
@@ -19,12 +20,15 @@ export default function AnnualBookingCard({ task, staff, onLinked }) {
   const slots = planTools.bookingSlots(task)
   const [entries, setEntries] = useState(() => slots.map(s => ({ id: s.id, mode: 'prebook', date: '', time: '', hospital: '', note: '' })))
   const [busy, setBusy] = useState(false), [error, setError] = useState('')
+  const [fullFlow,setFullFlow] = useState(false)
+  if(task.careFlowId || fullFlow) return <CareFlowCard task={task} staff={staff}/>
   if (!itemTools.isAssistance(task)) return null
   const plan = planTools.bookingPlan(task), booked = task.annualBooking
   const canEdit = staff?.role === 'superadmin' || (staff?.role === 'healthManager' && String(task.assignedTo?._id || task.assignedTo) === String(staff._id))
   const change = (id, key, value) => setEntries(prev => prev.map(e => e.id === id ? { ...e, [key]: value } : e))
   const valid = entries.every((e, i) => e.mode === 'prebook' ? e.date && e.time && slots[i].department && (slots[i].hospital || e.hospital.trim()) : e.note.trim() && (e.mode !== 'onsite' || slots[i].department))
   return <section style={{ fontSize: 14, lineHeight: 1.6 }}>
+    {task.deliveryMode==='single' && canEdit && <button className="btn btn-primary" onClick={()=>setFullFlow(true)}>进入完整流程 / 回退顾问修订</button>}
     <h3>顾问预约要求（只读）</h3>
     <p>建议日期：{plan.suggestedDate || '待确认'}{plan.precautions && ` · ${plan.precautions}`}</p>
     <details style={{ margin: '12px 0', color: '#65776F' }}><summary>查看顾问完整依据与原计划</summary><div style={{ whiteSpace: 'pre-wrap', marginTop: 10 }}>{plan.text}</div></details>

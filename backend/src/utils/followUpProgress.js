@@ -2,6 +2,7 @@ const fail = (message, statusCode = 409) => Object.assign(new Error(message), { 
 async function saveProgress({ FollowUp, id, actor, body, now = new Date() }) {
   const task = await FollowUp.findById(id).lean();
   if (!task) throw fail('随访记录不存在', 404);
+  if (task.careFlowId) throw fail('本事项请在完整就医流程中记录进展');
   const owner = task.assignedTo || task.staffId;
   if (actor.role !== 'superadmin' && String(owner) !== String(actor._id)) throw fail('仅当前任务负责人可记录进展', 403);
   require('./healthManagementRollout').assertPatientEnabled(task.patientId);

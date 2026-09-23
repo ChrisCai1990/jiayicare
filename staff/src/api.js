@@ -43,6 +43,15 @@ async function req(path, options = {}) {
 
 const qs = (params) => new URLSearchParams(params).toString()
 
+export const careFlowAPI = {
+  task: id => req(`/staff/care-flow/task/${id}`),
+  start: id => req(`/staff/care-flow/task/${id}/start`, {method:'POST',body:'{}'}),
+  get: id => req(`/staff/care-flow/${id}`),
+  action: (id,data) => req(`/staff/care-flow/${id}/action`,{method:'POST',body:JSON.stringify(data)}),
+  generate: id => req(`/staff/care-flow/${id}/generate`,{method:'POST',body:'{}'}),
+  upload: (id,data) => req(`/staff/care-flow/${id}/reports`,{method:'POST',body:data}),
+}
+
 export const serviceGroupAPI = {
   get: path => req('/staff/service-groups' + path),
   post: (path, data) => req('/staff/service-groups' + path, { method: 'POST', body: JSON.stringify(data) }),

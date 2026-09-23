@@ -5,17 +5,20 @@ import OnsiteBookingCard from './OnsiteBookingCard'
 import tools from '../../../shared/annualDispatch.cjs'
 import bookingTools from '../../../shared/annualBookingPlan.cjs'
 import consultationTools from '../../../shared/annualConsultationBrief.cjs'
+import CareFlowCard from './CareFlowCard'
 
 export default function AnnualDispatchCard({ task, staff, onLinked }) {
   const [data, setData] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false)
   const [assigneeId, setAssignee] = useState(''), [note, setNote] = useState(''), [result, setResult] = useState(''), [confirmed, setConfirmed] = useState(false)
+  const [fullFlow,setFullFlow] = useState(false)
   const load = () => staffAPI.getAnnualDispatch(task._id).then(r => { setData(r.data); return r.data })
-  useEffect(() => { let active = true; staffAPI.getAnnualDispatch(task._id).then(r => { if (active) setData(r.data) }).catch(e => { if (active) setError(e.message) }); return () => { active = false } }, [task._id])
+  useEffect(() => { if(task.careFlowId) return; let active = true; staffAPI.getAnnualDispatch(task._id).then(r => { if (active) setData(r.data) }).catch(e => { if (active) setError(e.message) }); return () => { active = false } }, [task._id,task.careFlowId])
   const act = async (fn, payload) => {
     setBusy(true); setError('')
     try { const r = await fn(task._id, payload); setData(r.data); onLinked?.(tools.isExecution(task) ? r.data.child : r.data.task) }
     catch (e) { setError(e.message); await load().catch(() => {}) } finally { setBusy(false) }
   }
+  if (task.careFlowId || fullFlow) return <CareFlowCard task={task} staff={staff} />
   if (!data) return <p role={error ? 'alert' : undefined}>{error || '正在加载派单事项…'}</p>
   const { parent, child } = data, request = data.task, d = request.annualDispatch
   const item = d?.itemSnapshot || request.formData?.serviceRequest?.itemSnapshot || {}
@@ -24,6 +27,7 @@ export default function AnnualDispatchCard({ task, staff, onLinked }) {
   const active = !['completed', 'cancelled'].includes(request.status)
   const brief = consultationTools.consultationBrief(request, parent)
   return <section style={{ display: 'grid', gap: 16, fontSize: 14, lineHeight: 1.6 }}>
+    {mode==='single' && !locked && active && <button className="btn btn-primary" onClick={()=>setFullFlow(true)}>进入完整就医流程（含定向回退与资料审核）</button>}
     <div style={{ background: '#F6FBF8', borderRadius: 12, padding: 16 }}>
       <h3 style={{ margin: '0 0 8px' }}>办理事项</h3>
       <b>{item.items || item.name || item.purpose || '顾问指定事项'}</b>

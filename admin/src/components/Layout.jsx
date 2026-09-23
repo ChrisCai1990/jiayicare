@@ -23,6 +23,7 @@ const NAV_SECTIONS = [
       { label: '企业客户', icon: 'company', path: '/enterprises' },
       { label: '健康基金', icon: 'fund', path: '/health-fund' },
       { label: '运营看板', icon: 'chart', path: '/ops-dashboard' },
+      { label: '就医协助质量', icon: 'chart', path: '/care-quality' },
       { label: '健康方案模板', icon: 'template', path: '/health-plan-templates' },
       { label: '专项研判设置', icon: 'medical', path: '/ai-case-review-templates' },
       { label: '问卷管理', icon: 'form', path: '/questionnaires' },

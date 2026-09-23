@@ -54,7 +54,7 @@ async function syncAnnualPlanServiceTasks(plan) {
   for (const row of assignableRows) {
     const existing = await FollowUp.findOne({ sourceAnnualPlanId: plan._id, sourceType: 'annual_service', sourceScheduleKey: row.key });
     if (existing) assertAmendedRowUnchanged(plan, row.key, existing.date, row.date);
-    if (['completed', 'cancelled'].includes(existing?.status) || existing?.serviceTracking?.linkId || existing?.annualDispatch) continue;
+    if (['completed', 'cancelled'].includes(existing?.status) || existing?.serviceTracking?.linkId || existing?.annualDispatch || existing?.careFlowId) continue;
     const payload = { patientId: plan.patientId, staffId: plan.createdBy, assignedTo: row.assignedTo, date: row.date, remindAt: row.date,
       theme: row.theme, content: row.content, plannedContent: row.content, formData: row.formData,
       coordinationGroupId: `annual-plan:${plan._id}`, workflowKey: row.stage, taskRole: row.taskRole,
@@ -63,18 +63,18 @@ async function syncAnnualPlanServiceTasks(plan) {
     if (plan.continuitySource?.previousPlanId) {
       const filter = { sourceAnnualPlanId: plan._id, sourceType: 'annual_service', sourceScheduleKey: row.key };
       const { status, ...openFields } = payload;
-      const changed = await FollowUp.updateOne({ ...filter, annualDispatch: null, status: { $in: ['planned', 'in_progress', 'missed'] }, 'serviceTracking.linkId': null }, { $set: openFields });
+      const changed = await FollowUp.updateOne({ ...filter, careFlowId: null, annualDispatch: null, status: { $in: ['planned', 'in_progress', 'missed'] }, 'serviceTracking.linkId': null }, { $set: openFields });
       updated += changed.modifiedCount || 0;
       const inserted = await require('./annualDispatchOnce').insertAnnualOnce(FollowUp, plan, 'annual_service', row.key, filter, { ...payload, ...filter });
       created += inserted.upsertedCount || 0;
     } else if (existing) {
-      const changed = await FollowUp.updateOne({ _id: existing._id, updatedAt: existing.updatedAt, annualDispatch: null, 'serviceTracking.linkId': null, status: { $in: ['planned', 'in_progress', 'missed'] } }, { $set: payload });
+      const changed = await FollowUp.updateOne({ _id: existing._id, updatedAt: existing.updatedAt, careFlowId: null, annualDispatch: null, 'serviceTracking.linkId': null, status: { $in: ['planned', 'in_progress', 'missed'] } }, { $set: payload });
       updated += changed.modifiedCount || 0;
     }
     else { await FollowUp.create({ ...payload, sourceAnnualPlanId: plan._id, sourceType: 'annual_service', sourceScheduleKey: row.key }); created++; }
   }
   const desired = (plan.continuitySource?.previousPlanId ? rows : assignableRows).map(row => row.key);
-  await FollowUp.updateMany({ sourceAnnualPlanId: plan._id, sourceType: 'annual_service', workflowKey: 'service_request', annualDispatch: null, sourceScheduleKey: { $nin: desired }, status: { $in: ['planned', 'in_progress'] }, ...(plan.continuitySource?.previousPlanId ? { 'serviceTracking.linkId': null } : {}) }, { $set: { status: 'cancelled', cancelReason: '年度方案已调整或改为仅提醒' } });
+  await FollowUp.updateMany({ sourceAnnualPlanId: plan._id, sourceType: 'annual_service', workflowKey: 'service_request', annualDispatch: null, careFlowId: null, sourceScheduleKey: { $nin: desired }, status: { $in: ['planned', 'in_progress'] }, ...(plan.continuitySource?.previousPlanId ? { 'serviceTracking.linkId': null } : {}) }, { $set: { status: 'cancelled', cancelReason: '年度方案已调整或改为仅提醒' } });
   return { created, updated, warnings: patient?.assignedHealthPlanner ? [] : rows.map(row => `${row.theme}尚未绑定健康规划师`) };
 }
 

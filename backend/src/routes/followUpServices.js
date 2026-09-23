@@ -23,6 +23,7 @@ async function loadServiceRequest(req, res, next) {
   if (!mongoose.isValidObjectId(id)) return res.status(400).json({ success: false, message: '任务ID无效' });
   const task = await FollowUp.findById(id);
   if (!task || !isServiceRequest(task)) return res.status(404).json({ success: false, message: '服务需求不存在' });
+  if (task.careFlowId) return res.status(409).json({message:'请在完整就医流程中办理'});
   if (req.staff.role !== 'superadmin' && (req.staff.role !== 'healthPlanner' || String(task.assignedTo) !== String(req.staff._id))) return res.status(403).json({ success: false, message: '仅本任务健康规划师可安排服务' });
   if (!require('../utils/healthManagementRollout').enabledForPatient(task.patientId)) return res.status(403).json({ success: false, code: 'HEALTH_MANAGEMENT_NOT_ENABLED', message: '该客户暂未开放新版健康管理闭环' });
   req.serviceRequest = task;
@@ -41,11 +42,12 @@ router.post('/:id/annual-booking', staffAuth, async (req, res) => {
     if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: '任务ID无效' });
     const task = await FollowUp.findById(req.params.id);
     if (!task || !require('../../../shared/annualServiceItem.cjs').isAssistance(task)) return res.status(404).json({ success: false, message: '就医协助预约事项不存在' });
+    if (task.careFlowId) return res.status(409).json({message:'请在完整就医流程中办理'});
     if (!require('../utils/healthManagementRollout').enabledForPatient(task.patientId)) return res.status(403).json({ success: false, message: '该客户尚未开放预约登记' });
     if (req.staff.role !== 'superadmin' && (req.staff.role !== 'healthManager' || String(task.assignedTo) !== String(req.staff._id))) return res.status(403).json({ success: false, message: '仅本任务健管专员可确认预约' });
     if (!require('../../../shared/annualServiceItem.cjs').needsBooking(task)) return res.status(409).json({ success: false, message: '预约已完成或事项已流转，请刷新核对' });
     const receipt = require('../utils/annualBookingReceipt').receipt(req.body, req.staff._id, task);
-    const saved = await FollowUp.updateOne({ _id: task._id, updatedAt: task.updatedAt, status: { $in: ['planned', 'in_progress', 'missed'] }, 'annualBooking.status': { $nin: ['booked', 'arranged'] }, 'serviceTracking.linkId': null }, { $set: { annualBooking: receipt } });
+    const saved = await FollowUp.updateOne({ _id: task._id, careFlowId: null, updatedAt: task.updatedAt, status: { $in: ['planned', 'in_progress', 'missed'] }, 'annualBooking.status': { $nin: ['booked', 'arranged'] }, 'serviceTracking.linkId': null }, { $set: { annualBooking: receipt } });
     if (!saved.modifiedCount) return res.status(409).json({ success: false, message: '任务已变化，请刷新核对' });
     res.json({ success: true, data: await FollowUp.findById(task._id).populate('assignedTo', 'name role') });
   } catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.message }); }
@@ -114,6 +116,7 @@ async function onsiteContext(req, res, next) {
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ message: '任务ID无效' });
   const task = await FollowUp.findById(req.params.id);
   if (!task) return res.status(404).json({ message: '任务不存在' });
+  if (task.careFlowId) return res.status(409).json({message:'请在完整就医流程中登记现场结果'});
   if (req.staff.role !== 'superadmin' && String(task.assignedTo) !== String(req.staff._id)) return res.status(403).json({ message: '仅本任务负责人可查看预约交接' });
   if (!require('../utils/healthManagementRollout').enabledForPatient(task.patientId)) return req.method === 'GET' ? res.json({ success: true, data: [] }) : res.status(403).json({ message: '该客户尚未开放预约登记' });
   if (require('../../../shared/annualDispatch.cjs').isExecution(task)) {
@@ -144,7 +147,7 @@ router.post('/:id/onsite-bookings', staffAuth, onsiteContext, async (req, res) =
     const result = require('../utils/annualBookingReceipt').receipt(req.body, req.staff._id, { plannedContent: `医院：${entry.hospital}\n科室：${entry.department}\n专家：${entry.expert}` });
     const updated = { ...entry, status: 'booked', date: result.date, time: result.time, hospital: result.hospital,
       onsiteResult: { note: result.note, by: req.staff._id, at: result.confirmedAt, taskId: task._id } };
-    const saved = await FollowUp.updateOne({ _id: parent._id, updatedAt: parent.updatedAt, [`annualBooking.entries.${index}.status`]: 'pending' }, { $set: { [`annualBooking.entries.${index}`]: updated } });
+    const saved = await FollowUp.updateOne({ _id: parent._id, careFlowId: null, updatedAt: parent.updatedAt, [`annualBooking.entries.${index}.status`]: 'pending' }, { $set: { [`annualBooking.entries.${index}`]: updated } });
     if (!saved.modifiedCount) return res.status(409).json({ message: '记录已变化，请刷新核对' });
     await reconcileServiceLinks({ followUpId: parent._id });
     res.json({ success: true });

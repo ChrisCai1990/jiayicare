@@ -632,7 +632,13 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
   const activeProxyOrderIds = new Set((proxyOrderIds.length
     ? await Order.find({ _id: { $in: proxyOrderIds }, ...require('../utils/orderWorkItem').activeOrderWorkItemQuery() }).distinct('_id')
     : []).map(String));
+  const careIds = queriedTasks.map(task => task.careFlowId).filter(Boolean);
+  const careCases = careIds.length ? await require('../models/CareFlow').find({ _id: { $in: careIds }, tenantId: req.staff.tenantId || null }).lean() : [];
   const tasks = queriedTasks.filter(task => {
+    if (task.careFlowId && task.taskRole !== 'supervisor') {
+      const c = careCases.find(c => String(c._id) === String(task.careFlowId));
+      if (!c || !require('../../../shared/careFlow.cjs').isTask(task) || c.state.stage === 'closed' || task.formData?.careFlowSequence !== c.state.sequence) return false;
+    }
     const isServiceTask = (task.sourceType === 'health_plan' && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'order' && /^(medical_proxy|medication_proxy|checkup_appointment):/.test(String(task.workflowKey || '')) && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'insurance_service' && ['executor', 'supervisor'].includes(task.taskRole))

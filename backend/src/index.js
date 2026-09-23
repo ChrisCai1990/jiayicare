@@ -98,6 +98,8 @@ app.use('/api/staff',         staffRouter);
 app.use('/api/staff',         require('./routes/aiCaseReviews'));
 app.use('/api/staff',         require('./routes/annualServicePeriods'));
 app.use('/api/staff/service-groups', require('./routes/serviceGroups'));
+app.use('/api/staff/care-flow', require('./routes/careFlow'));
+app.use('/api/admin/care-quality', require('./routes/careQuality'));
 app.use('/api/integrations/service-groups', require('./routes/serviceGroupBridge'));
 app.use('/api/integrations/wecom-app', require('./routes/wecomAppCallback'));
 // 微信客服为外部客户独立通道；不与员工应用回调或客户群会话存档混用。

@@ -11,11 +11,13 @@ function runtime(models = {}) {
   async function load(id, actor) {
     let task = await FollowUp.findById(id).lean();
     if (!task || !tools.dedicated(task)) fail('未找到就医协助任务', 404);
+    if (task.careFlowId) fail('本事项已进入完整就医流程，请刷新后在专用流程办理');
     owner(task, actor, tools.isExecution(task) ? 'medicalAssistant' : 'healthPlanner');
     if (!enabled(task.patientId)) fail('该客户未开放新版派单', 403);
     const execution = tools.isExecution(task) ? task : null;
     if (execution) {
       task = await FollowUp.findById(execution.sourceId).lean();
+      if (task?.careFlowId) fail('本事项已进入完整就医流程，请刷新');
       if (!task || String(task.patientId) !== String(execution.patientId) || String(task.annualDispatch?.executionId) !== String(execution._id)) fail('派单来源不一致');
     }
     const parent = task.annualDispatch ? await FollowUp.findById(task.annualDispatch.followUpId).lean() : null;
@@ -53,7 +55,7 @@ function runtime(models = {}) {
         assigneeName: c.assistants.find(a => String(a._id) === body.assigneeId).name,
         note: body.note.trim(), by: actor._id, at: new Date(), bookingSnapshot: parent.annualBooking,
         advisorPlanText: parent.plannedContent || parent.content, itemSnapshot: task.formData?.serviceRequest?.itemSnapshot || {} };
-      const saved = await FollowUp.updateOne({ _id: task._id, updatedAt: task.updatedAt, annualDispatch: null, 'serviceTracking.linkId': null, status: { $in: ['planned', 'missed'] } }, { $set: { annualDispatch: intent, status: 'in_progress' } });
+      const saved = await FollowUp.updateOne({ _id: task._id, careFlowId: null, updatedAt: task.updatedAt, annualDispatch: null, 'serviceTracking.linkId': null, status: { $in: ['planned', 'missed'] } }, { $set: { annualDispatch: intent, status: 'in_progress' } });
       if (!saved.modifiedCount) fail('任务已更新，请刷新核对');
     }
     // Durable intent precedes deterministic child upsert: interruption is retryable,
@@ -78,7 +80,7 @@ function runtime(models = {}) {
     if (booking.pendingOnsite(c.parent?.annualBooking).length) fail('请先登记现场预约结果');
     if (typeof body.result !== 'string' || !body.result.trim() || body.result.length > 5000 || body.confirmed !== true) fail('请核对所有办理事项并填写执行结果', 400);
     const result = { text: body.result.trim(), by: actor._id, at: new Date(), confirmed: true };
-    const saved = await FollowUp.updateOne({ _id: c.task._id, 'annualDispatch.status': 'active', updatedAt: c.task.updatedAt }, { $set: { 'annualDispatch.status': 'pending_review', 'annualDispatch.result': result } });
+    const saved = await FollowUp.updateOne({ _id: c.task._id, careFlowId: null, 'annualDispatch.status': 'active', updatedAt: c.task.updatedAt }, { $set: { 'annualDispatch.status': 'pending_review', 'annualDispatch.result': result } });
     if (!saved.modifiedCount) fail('任务已更新，请刷新');
     return context(id, actor);
   }
@@ -89,7 +91,7 @@ function runtime(models = {}) {
     if (body.confirmed !== true) fail('请确认办理结果', 400);
     if (booking.pendingOnsite(c.parent?.annualBooking).length) fail('现场预约结果尚未齐全');
     if (c.task.annualDispatch.status !== 'completed') {
-      const saved = await FollowUp.updateOne({ _id: c.task._id, updatedAt: c.task.updatedAt, 'annualDispatch.status': 'pending_review' }, { $set: { 'annualDispatch.status': 'completed', 'annualDispatch.review': { by: actor._id, at: new Date() }, status: 'completed', completedAt: new Date() } });
+      const saved = await FollowUp.updateOne({ _id: c.task._id, careFlowId: null, updatedAt: c.task.updatedAt, 'annualDispatch.status': 'pending_review' }, { $set: { 'annualDispatch.status': 'completed', 'annualDispatch.review': { by: actor._id, at: new Date() }, status: 'completed', completedAt: new Date() } });
       if (!saved.modifiedCount) fail('任务已变化，请刷新');
     }
     await FollowUp.updateOne({ _id: c.task.annualDispatch.executionId, sourceId: c.task._id, status: { $in: ['planned', 'in_progress'] } }, { $set: { status: 'completed', completedAt: c.task.annualDispatch.review?.at || new Date(), executedContent: c.task.annualDispatch.result.text } });

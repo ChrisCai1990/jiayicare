@@ -36,6 +36,14 @@ async function loadSupervisionProgress(tasks, FollowUp) {
   const rows = scopes.length ? await FollowUp.find({ $or: scopes, status: { $ne: 'cancelled' } })
     .select('patientId sourceOrderId sourceHealthPlanId sourceAnnualPlanId sourceType sourceId sourceScheduleKey deliveryMode annualBooking taskRole status isBlocked theme workflowKey assignedTo')
     .populate('assignedTo', 'name').lean() : [];
-  return new Map(supervisors.map(task => [id(task._id), summarize(task, rows)]));
+  const careIds = supervisors.map(t=>t.careFlowId).filter(Boolean);
+  const cases = careIds.length ? await require('../models/CareFlow').find({_id:{$in:careIds}}).lean() : [];
+  const config = require('../../../shared/careFlow.cjs');
+  return new Map(supervisors.map(task => {
+    const flow=cases.find(c=>id(c._id)===id(task.careFlowId));
+    if(!flow)return [id(task._id),summarize(task,rows)];
+    const s=flow.state,person=s.people[config.roles[s.stage]];
+    return [id(task._id),{total:config.stages.length,completed:s.finalized?config.stages.length:s.stage==='closed'?config.stages.length-1:Math.max(0,config.stages.indexOf(s.stage)),current:s.finalized?[]:[{id:task._id,label:(s.stage==='closed'?'顾问已通过，待同步随访':config.labels[s.stage])+(s.returns?.length?'（退回修订）':''),assignee:person?.name||'待同步',blocked:false}],message:s.finalized?'顾问审核通过，服务结束':'按本次就医流程办理；修订后直接返回发起环节'}];
+  }));
 }
 module.exports = { scope, summarize, loadSupervisionProgress };
