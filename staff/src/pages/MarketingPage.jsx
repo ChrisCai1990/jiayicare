@@ -114,7 +114,7 @@ function LevelsTab({ toast }) {
   )
 }
 
-function VisitorLeadsTab({ toast }) {
+export function VisitorLeadsTab({ toast }) {
   const [leads, setLeads] = useState([])
   const [status, setStatus] = useState('new')
   const load = () => staffAPI.getVisitorLeads(status ? { status } : {}).then(r => setLeads(r.data || [])).catch(err => toast(err.message || '线索加载失败'))
@@ -574,7 +574,6 @@ export default function MarketingPage() {
   const [tab, setTab] = useState('levels')
 
   const tabs = [
-    { v: 'visitorLeads', l: '🧭 官网线索' },
     { v: 'levels',     l: '🏅 会员等级' },
     { v: 'activities', l: '🎉 活动管理' },
     { v: 'points',     l: '⭐ 积分管理' },
@@ -604,7 +603,6 @@ export default function MarketingPage() {
       </div>
 
       {tab === 'levels'     && <LevelsTab     toast={toast} />}
-      {tab === 'visitorLeads' && <VisitorLeadsTab toast={toast} />}
       {tab === 'activities' && <ActivitiesTab toast={toast} />}
       {tab === 'points'     && <PointsTab     toast={toast} />}
       {tab === 'packages'   && <PackagesTab   toast={toast} />}

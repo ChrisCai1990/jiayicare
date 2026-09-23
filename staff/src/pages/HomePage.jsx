@@ -22,6 +22,7 @@ export default function HomePage() {
   const [checkupProgress, setCheckupProgress] = useState([])
   const [expiringPatients, setExpiringPatients] = useState([])
   const [pendingOrders, setPendingOrders] = useState([])
+  const [visitorLeads, setVisitorLeads] = useState([])
 
   useEffect(() => {
     staffAPI.getReports2()
@@ -43,6 +44,12 @@ export default function HomePage() {
     staffAPI.getFollowUps({ status: 'planned', sourceType: 'order', scope: 'assigned', limit: 20 })
       .then(r => setPendingOrders(r.data?.followUps || []))
       .catch(() => {})
+
+    if (['healthPlanner', 'superadmin'].includes(staff?.role)) {
+      staffAPI.getVisitorLeads({ status: 'new' })
+        .then(r => setVisitorLeads(r.data || []))
+        .catch(() => {})
+    }
 
     Promise.allSettled([
       staffAPI.getNotifications(),
@@ -100,6 +107,26 @@ export default function HomePage() {
           ＋ 新增会员
         </button>
       </div>
+
+      {['healthPlanner', 'superadmin'].includes(staff?.role) && visitorLeads.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, border: '2px solid #D97706', boxShadow: '0 8px 24px rgba(217,119,6,.12)' }}>
+          <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>🧭 官网新咨询，待健康规划师接单</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', background: '#D97706', padding: '2px 8px', borderRadius: 99 }}>{visitorLeads.length}</span>
+            </div>
+            <button className="btn btn-primary btn-sm" onClick={() => nav('/visitor-leads')}>立即处理</button>
+          </div>
+          <div className="card-body" style={{ padding: '8px 20px' }}>
+            {visitorLeads.slice(0, 3).map((lead, i) => (
+              <div key={lead._id} onClick={() => nav('/visitor-leads')} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', cursor: 'pointer', borderBottom: i < Math.min(visitorLeads.length, 3) - 1 ? '1px solid #f0ede8' : 'none' }}>
+                <div><strong>{lead.name}</strong><span style={{ marginLeft: 10, color: '#6A7D73', fontSize: 13 }}>{lead.topic || '服务咨询'} · {lead.city || '未填写城市'}</span></div>
+                <span style={{ color: '#8AA89C', fontSize: 12 }}>{new Date(lead.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 数据卡片 */}
       <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)', marginBottom: 24 }}>
