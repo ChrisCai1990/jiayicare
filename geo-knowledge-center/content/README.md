@@ -27,3 +27,5 @@
 4. 运行正式构建：`node scripts/build-content.mjs --publish`；它只会写入已发布内容与站点地图。
 
 `--publish` 不负责把网站部署到互联网；公开部署仍需在构建与验收通过后单独进行。
+
+审核职责与内容边界见 [审核治理说明](review-governance.md)。
