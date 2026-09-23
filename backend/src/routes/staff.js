@@ -39,6 +39,7 @@ const PushRecord = require('../models/PushRecord');
 const Commission = require('../models/Commission');
 const ServiceRecord = require('../models/ServiceRecord');
 const Order = require('../models/Order');
+const Fulfillment = require('../models/Fulfillment');
 const GiftRecord = require('../models/GiftRecord');
 const Coupon = require('../models/Coupon');
 const Referral = require('../models/Referral');
@@ -1753,7 +1754,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
       .populate('sourceHealthPlanId', 'title description content type status')
       .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard workflowStageKey')
       .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
-      .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt medicalProxyPlan medicalReminderIntake'),
+      .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt orderNo serviceWorkflowSnapshot supplementFulfillment medicalProxyPlan medicalReminderIntake'),
     FollowUp.countDocuments(filter),
   ]);
   res.json({
@@ -1842,7 +1843,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
       .populate('sourceHealthPlanId', 'title description content type')
       .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard workflowStageKey')
       .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
-      .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt medicalProxyPlan medicalReminderIntake'),
+      .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt orderNo serviceWorkflowSnapshot supplementFulfillment medicalProxyPlan medicalReminderIntake'),
     FollowUp.countDocuments(filter),
   ]);
 
@@ -5503,6 +5504,38 @@ router.get('/patients/:id/plans', staffAuth, async (req, res) => {
       .sort({ year: -1 })
       .populate('pushedBy', 'name role'),
   ]);
+  // 修复旧入口曾把商城营养素订单错误创建为“就医协助方案”的历史数据。
+  // 保留原记录作审计但取消其方案状态、从服务方案列表隐藏；订单本身仍回到营养素履约闭环。
+  const legacyPlanOrderIds = healthPlans
+    .filter(plan => plan.type === 'medical_assist' && plan.sourceOrderId)
+    .map(plan => plan.sourceOrderId);
+  if (legacyPlanOrderIds.length) {
+    const legacyOrders = await Order.find({ _id: { $in: legacyPlanOrderIds } })
+      .select('_id serviceId serviceName serviceWorkflowSnapshot').lean();
+    const productIds = legacyOrders.map(order => order.serviceId).filter(mongoose.isValidObjectId);
+    const products = productIds.length
+      ? await Product.find({ _id: { $in: productIds } }).select('_id name category serviceWorkflow').lean()
+      : [];
+    const productById = new Map(products.map(product => [String(product._id), product]));
+    const supplementOrderIds = new Set(legacyOrders
+      .filter(order => require('../utils/orderSupplementArchive').isSupplementOrder(order, productById.get(String(order.serviceId)) || {}))
+      .map(order => String(order._id)));
+    const legacyPlans = healthPlans.filter(plan => supplementOrderIds.has(String(plan.sourceOrderId)));
+    if (legacyPlans.length) {
+      await HealthPlan.updateMany(
+        { _id: { $in: legacyPlans.map(plan => plan._id) }, status: { $ne: 'cancelled' } },
+        { $set: { status: 'cancelled', supervisionStatus: 'cancelled', 'content.supplementOrderLegacy': true } },
+      );
+      const legacyPlanIds = legacyPlans.map(plan => plan._id);
+      await FollowUp.updateMany(
+        { sourceHealthPlanId: { $in: legacyPlanIds }, status: { $nin: ['completed', 'cancelled'] } },
+        { $set: { status: 'cancelled', cancelReason: '营养素订单不适用就医协助方案，已转为实物履约' } },
+      );
+      for (let index = healthPlans.length - 1; index >= 0; index -= 1) {
+        if (legacyPlans.some(plan => String(plan._id) === String(healthPlans[index]._id))) healthPlans.splice(index, 1);
+      }
+    }
+  }
   const annualPlanIds = annualPlans.map(plan => plan._id);
   const Task = require('../models/Task');
   const [annualFollowUps, annualClientTasks] = annualPlanIds.length ? await Promise.all([
@@ -7154,6 +7187,30 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
     const actionableOrder = await Order.exists({ _id: req.params.id, ...require('../utils/orderWorkItem').activeOrderWorkItemQuery() });
     if (!actionableOrder) return res.status(409).json({ success: false, message: '订单已退款、取消、完成或尚未支付，不能继续生成服务方案' });
     const currentOrder = await Order.findById(req.params.id);
+    const supplementArchive = require('../utils/orderSupplementArchive');
+    const supplementProduct = await Product.findById(currentOrder.serviceId).select('name category serviceWorkflow').lean().catch(() => null);
+    if (supplementArchive.isSupplementOrder(currentOrder, supplementProduct || {})) {
+      if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '营养素订单由健康规划师登记履约订单号' });
+      const externalOrderNo = String(req.body.supplementOrderNo || '').trim();
+      if (!externalOrderNo) return res.status(400).json({ success: false, message: '请补充营养素履约订单号' });
+      const now = new Date();
+      currentOrder.status = 'scheduled';
+      currentOrder.tradeStatus = 'fulfilling';
+      currentOrder.handledBy = req.staff._id;
+      currentOrder.currentAssignee = req.staff._id;
+      currentOrder.currentStage = 'supplement_delivery';
+      currentOrder.supplementFulfillment = { ...(currentOrder.supplementFulfillment || {}), orderNo: externalOrderNo, recordedAt: now, recordedBy: req.staff._id };
+      await currentOrder.save();
+      const fulfillment = await Fulfillment.findOneAndUpdate(
+        { order: currentOrder._id },
+        { $set: { status: 'shipped', trackingNo: externalOrderNo, note: '健康规划师已登记营养素履约订单号' }, $setOnInsert: { order: currentOrder._id, user: currentOrder.user, type: currentOrder.fulfillmentType || 'delivery_and_service' } },
+        { upsert: true, new: true },
+      );
+      currentOrder.fulfillmentId = fulfillment._id;
+      currentOrder.fulfillmentStatus = fulfillment.status;
+      await currentOrder.save();
+      return res.json({ success: true, data: currentOrder, message: '营养素履约订单号已登记，等待客户确认收货' });
+    }
     const { isMedicalProxyOrder, startMedicalProxyWorkflow } = require('../utils/medicalProxyWorkflow');
     const medicationProxyWorkflow = require('../utils/medicationProxyWorkflow');
     const medicalReminderWorkflow = require('../utils/medicalReminderWorkflow');
@@ -7211,6 +7268,34 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });
   }
+});
+
+// 营养素商城订单只登记履约订单号；健康规划师确认客户收到后直接结单，不创建就医协助方案。
+router.post('/orders/:id/supplement-received', staffAuth, async (req, res) => {
+  try {
+    if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康规划师可确认营养素收货' });
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
+    if (order.status === 'completed') return res.status(409).json({ success: false, message: '该营养素订单已结束' });
+    if (order.paymentStatus !== 'paid' || !['paid', 'fulfilling', 'partially_refunded'].includes(order.tradeStatus) || !['pending', 'scheduled'].includes(order.status)) {
+      return res.status(409).json({ success: false, message: '订单未支付、已取消或退款中，不能确认收货' });
+    }
+    const product = await Product.findById(order.serviceId).select('name category serviceWorkflow').lean().catch(() => null);
+    if (!require('../utils/orderSupplementArchive').isSupplementOrder(order, product || {})) return res.status(400).json({ success: false, message: '仅营养素订单可按收货确认结单' });
+    const externalOrderNo = String(order.supplementFulfillment?.orderNo || '').trim();
+    if (!externalOrderNo) return res.status(400).json({ success: false, message: '请先登记营养素履约订单号' });
+    const now = new Date();
+    order.status = 'completed'; order.tradeStatus = 'completed'; order.completedAt = now;
+    order.usedUnits = Math.max(1, Number(order.totalUnits) || 1);
+    order.supplementFulfillment = { ...order.supplementFulfillment, receivedConfirmedAt: now, receivedConfirmedBy: req.staff._id };
+    order.redemptions.push({ sequence: order.usedUnits, redeemedAt: now, redeemedBy: req.staff._id, note: `健康规划师确认客户已收到营养素；履约订单号：${externalOrderNo}` });
+    await order.save();
+    await Fulfillment.findOneAndUpdate({ order: order._id }, { $set: { status: 'completed', completedAt: now } });
+    await FollowUp.updateMany({ sourceType: 'order', sourceOrderId: order._id, status: { $nin: ['completed', 'cancelled'] } }, { $set: { status: 'completed', completedAt: now, completedBy: 'staff', content: `营养素履约完成，客户已确认收货（订单号：${externalOrderNo}）。` } });
+    const { settleOrderCommission } = require('../utils/commissionSettlement');
+    await settleOrderCommission(order);
+    res.json({ success: true, data: order, message: '已确认客户收货，营养素订单已结束' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
 // DELETE /api/staff/patients/:id/annual-plan — 删除选错类型的年度管理方案并清理未完成的自动随访。
