@@ -77,6 +77,27 @@ test('exam escort hands off each examination and its preparation notes, not a co
   }
 });
 
+test('treatment escort hands off the confirmed order, session and preparation notes', async () => {
+  const previous = { orderCreate: Order.create, orderUpdate: Order.updateOne, taskCreate: FollowUp.create };
+  try {
+    Order.create = async row => ({ _id: 'treatment-escort-order', ...row });
+    Order.updateOne = async () => ({ modifiedCount: 1 });
+    FollowUp.create = async row => ({ _id: `task-${row.workflowKey}`, ...row });
+    const treatments = [{ item: '门诊输液', department: '日间治疗中心', time: '14:00', medicalOrder: '已核对医生开具的治疗单', precautions: '按治疗机构要求携带治疗单', course: '第2次，共6次' }];
+    const result = await startStaffMedicalProxyWorkflow({
+      patient: { _id: 'patient', assignedHealthManager: 'manager', assignedHealthPlanner: 'planner' }, advisorId: 'advisor',
+      plan: { medicalEscort: true, escortCategory: 'treatment', escortDate: '2026-09-23', escortTime: '13:30-16:00',
+        hospital: '测试医院', escortTreatments: treatments, escortGoal: '协助签到和记录完成情况', sourceFollowUpId: 'existing-follow-up', medicalAssistantId: 'assistant' },
+    });
+    assert.equal(result.order.serviceName, '陪同治疗服务');
+    assert.deepEqual(result.order.medicalProxyPlan.escortTreatments, treatments);
+    assert.match(result.order.serviceRequirements, /治疗安排1：门诊输液 · 日间治疗中心 · 14:00 · 第2次，共6次；医嘱\/依据：已核对医生开具的治疗单；注意事项：按治疗机构要求携带治疗单/);
+    assert.deepEqual(result.execute.formData.planSnapshot.escortTreatments, treatments);
+  } finally {
+    Order.create = previous.orderCreate; Order.updateOne = previous.orderUpdate; FollowUp.create = previous.taskCreate;
+  }
+});
+
 test('on-site consultation keeps its parent escort open and closes only after advisor follow-up review', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
   const routes = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');

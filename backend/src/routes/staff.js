@@ -3169,6 +3169,12 @@ router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => 
         req.body.escortExams = rows.map(row => ({ item: row.item.trim(), department: (row.department || '').trim(), expert: (row.expert || '').trim(), time: (row.time || '').trim(), precautions: (row.precautions || '').trim() }));
         req.body.department = req.body.escortExams[0].department;
         req.body.expert = req.body.escortExams[0].expert;
+      } else if (req.body.escortCategory === 'treatment') {
+        const rows = req.body.escortTreatments;
+        if (!Array.isArray(rows) || rows.length < 1 || rows.length > 12 || rows.some(row => !row || typeof row !== 'object' || typeof row.item !== 'string' || !row.item.trim() || typeof row.medicalOrder !== 'string' || !row.medicalOrder.trim() || ['item', 'department', 'time', 'medicalOrder', 'precautions', 'course'].some(key => row[key] !== undefined && (typeof row[key] !== 'string' || row[key].length > (['medicalOrder', 'precautions'].includes(key) ? 1000 : 100))))) return res.status(400).json({ success: false, message: '请填写1至12个治疗项目及每项已确认的医嘱或治疗依据' });
+        req.body.escortTreatments = rows.map(row => ({ item: row.item.trim(), department: (row.department || '').trim(), time: (row.time || '').trim(), medicalOrder: row.medicalOrder.trim(), precautions: (row.precautions || '').trim(), course: (row.course || '').trim() }));
+        req.body.department = req.body.escortTreatments[0].department;
+        req.body.expert = '';
       } else {
         const rows = req.body.escortDepartments === undefined ? [{ department: req.body.department, expert: req.body.expert, time: '' }] : req.body.escortDepartments;
         if (!Array.isArray(rows) || rows.length < 1 || rows.length > 12 || rows.some(row => !row || typeof row !== 'object' || typeof row.department !== 'string' || !row.department.trim() || row.department.length > 100 || (row.expert !== undefined && (typeof row.expert !== 'string' || row.expert.length > 100)) || (row.time !== undefined && (typeof row.time !== 'string' || row.time.length > 100)))) return res.status(400).json({ success: false, message: '请填写1至12个有效的就诊科室，可选填对应专家和到诊时间' });

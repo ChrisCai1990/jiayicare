@@ -20,7 +20,9 @@ const stageOf = task => task?.sourceType === 'order' && String(task.workflowKey 
 const nonempty = value => String(value || '').trim();
 const escortArrangementLines = plan => plan.escortCategory === 'exam' && Array.isArray(plan.escortExams) && plan.escortExams.length
   ? plan.escortExams.map((exam, index) => `检查安排${index + 1}：${exam.item}${exam.department ? ` · ${exam.department}` : ''}${exam.expert ? ` · 专家${exam.expert}` : ''}${exam.time ? ` · ${exam.time}` : ''}${exam.precautions ? `；注意事项：${exam.precautions}` : ''}`)
-  : Array.isArray(plan.escortDepartments) && plan.escortDepartments.length
+  : plan.escortCategory === 'treatment' && Array.isArray(plan.escortTreatments) && plan.escortTreatments.length
+    ? plan.escortTreatments.map((item, index) => `治疗安排${index + 1}：${item.item}${item.department ? ` · ${item.department}` : ''}${item.time ? ` · ${item.time}` : ''}${item.course ? ` · ${item.course}` : ''}；医嘱/依据：${item.medicalOrder}${item.precautions ? `；注意事项：${item.precautions}` : ''}`)
+    : Array.isArray(plan.escortDepartments) && plan.escortDepartments.length
     ? plan.escortDepartments.map((item, index) => `就诊安排${index + 1}：${item.department}${item.expert ? ` · 专家${item.expert}` : ''}${item.time ? ` · ${item.time}` : ''}`)
     : [plan.department && `科室：${plan.department}`, plan.expert && `专家：${plan.expert}`].filter(Boolean);
 const supplyResolutionSummary = data => {
