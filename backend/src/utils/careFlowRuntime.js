@@ -125,6 +125,7 @@ function runtime(injected = {}) {
         return { assigneeId: id(p._id), note: typeof input.note === 'string' ? input.note.slice(0,2000) : '' };
       }
       case 'execute': {
+        if (typeof input.text !== 'string' || !input.text.trim()) fail('请填写上方“专家沟通与实际办理结果”后再提交',400);
         const result = text(input.text, 5000), entries = s.data.booking?.entries || [];
         if (input.examinations !== undefined) return { text: result, onsite: require('./careFlowExaminations').examinations(input.examinations, entries, actor._id) };
         const onsite = entries.filter(e => e.mode === 'onsite');

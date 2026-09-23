@@ -21,7 +21,7 @@ export default function AnnualBookingCard({ task, staff, onLinked }) {
   const [entries, setEntries] = useState(() => slots.map(s => ({ id: s.id, mode: 'prebook', date: '', time: '', hospital: '', note: '' })))
   const [busy, setBusy] = useState(false), [error, setError] = useState('')
   const [fullFlow,setFullFlow] = useState(false)
-  if(task.careFlowId || fullFlow) return <CareFlowCard task={task} staff={staff}/>
+  if(task.careFlowId || fullFlow) return <CareFlowCard task={task} staff={staff} onCompleted={()=>onLinked?.(null)}/>
   if (!itemTools.isAssistance(task)) return null
   const plan = planTools.bookingPlan(task), booked = task.annualBooking
   const canEdit = staff?.role === 'superadmin' || (staff?.role === 'healthManager' && String(task.assignedTo?._id || task.assignedTo) === String(staff._id))

@@ -6,15 +6,17 @@ import briefTools from '../../../shared/annualConsultationBrief.cjs'
 import CareFlowHandoff from './CareFlowHandoff'
 import CareFlowExaminations,{initialExaminations} from './CareFlowExaminations'
 
-export default function CareFlowCard({task,staff,initialData=null}){
+export default function CareFlowCard({task,staff,initialData=null,onCompleted}){
   const [data,setData]=useState(initialData),[error,setError]=useState(''),[busy,setBusy]=useState(false)
   const [form,setForm]=useState({}),[back,setBack]=useState({}),[confirmed,setConfirmed]=useState(false),[correction,setCorrection]=useState('')
   const [file,setFile]=useState(null),[fileTitle,setFileTitle]=useState(''),[category,setCategory]=useState('outpatient_record')
   const topRef=useRef(null)
+  const errorRef=useRef(null)
+  useEffect(()=>{if(error)errorRef.current?.scrollIntoView({block:'center',behavior:'smooth'})},[error,busy])
   useEffect(()=>{if(initialData)topRef.current?.scrollIntoView({block:'start'})},[initialData])
   const receive=r=>{setData(r.data);setForm({});setConfirmed(false);setCorrection('');setBack({})}
   useEffect(()=>{if(initialData)return;let active=true;careFlowAPI.task(task._id).then(r=>{if(active)receive(r)}).catch(e=>{if(active)setError(e.message)});return()=>{active=false}},[task._id,initialData])
-  const act=async fn=>{setBusy(true);setError('');try{receive(await fn())}catch(e){setError(e.message);if(data?._id)try{setData((await careFlowAPI.get(data._id)).data)}catch{}}finally{setBusy(false)}}
+  const act=async (fn,completed=false)=>{setBusy(true);setError('');try{receive(await fn());if(completed)onCompleted?.()}catch(e){setError(e.message);if(data?._id)try{setData((await careFlowAPI.get(data._id)).data)}catch{}}finally{setBusy(false)}}
   if(!data)return <p role={error?'alert':undefined}>{error||'正在加载服务流程…'}</p>
   if(data.unstarted)return <section><h3>完整就医协助流程</h3><p>启用后，本次事项进入执行、资料上传、健管审核、随访草稿和顾问审核流程。各环节支持定向回退、修订直返，年度方案保持不变。</p><button className="btn btn-primary" disabled={busy} onClick={()=>act(()=>careFlowAPI.start(task._id))}>进入本次完整流程</button>{error&&<p role="alert">{error}</p>}</section>
   const s=data.state,stage=s.stage,current=s.people[config.roles[stage]],mine=staff?.role==='superadmin'||(staff?.role===current?.role&&String(staff?._id)===String(current?.id))
@@ -31,11 +33,12 @@ export default function CareFlowCard({task,staff,initialData=null}){
     if(stage==='execute')value={...value,examinations:get('examinations',initialExaminations(s))}
     if(stage==='upload')value={reportIds:get('reportIds',s.data.upload?.reportIds||[]),note:get('note')}
     if(stage==='review')value={content:get('content',s.data.draft?.content||''),date:get('date',s.data.draft?.date||''),note:get('note')}
-    return act(()=>careFlowAPI.action(data._id,{action:'complete',revision:data.revision,confirmed,correction,value}))
+    return act(()=>careFlowAPI.action(data._id,{action:'complete',revision:data.revision,confirmed,correction,value}),true)
   }
   return <section ref={topRef} style={{display:'grid',gap:16,fontSize:14,lineHeight:1.6}}>
     <h3 style={{margin:0}}>{s.title}</h3><p>当前：{stage==='closed'&&!s.finalized?'顾问已通过，待同步随访任务':config.labels[stage]}{current&&` · ${current.name}`}</p>
     <CareFlowHandoff state={s}/>
+    {error&&<div ref={errorRef} role="alert" style={{color:'#B91C1C',background:'#FFF1F2',padding:16,borderRadius:12}}>提交未完成：{error}。已填写的内容仍保留，请核对后重试。</div>}
     {s.returns?.length>0&&<div role="status" style={{background:'#FFF7E6',padding:12}}>退回修订：{s.returns.at(-1).reason}<br/>修订后直接返回：{config.labels[s.returns.at(-1).from]} · {s.returns.at(-1).name}</div>}
     {s.lastCorrection&&<div style={{background:'#EFF8F3',padding:12}}>最新修订：{s.lastCorrection.correction}（原内容保留在下方记录）</div>}
     {s.bookingStale&&<p role="alert">顾问要求已变化，请定向退回健管预约核对，再直返本环节。</p>}

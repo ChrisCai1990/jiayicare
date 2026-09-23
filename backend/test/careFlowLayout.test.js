@@ -12,6 +12,19 @@ function examinations(){
   vm.runInNewContext(require('esbuild').transformSync(fs.readFileSync(path.join(__dirname,'../../staff/src/components/CareFlowExaminations.jsx'),'utf8'),{loader:'jsx',format:'cjs'}).code,ctx);
   return ctx.module.exports;
 }
+test('提交成功通知父弹窗关闭刷新，失败不关闭也不清空填写',async()=>{
+  for(const fails of [false,true]){
+    const data={_id:'flow',revision:1,state:{stage:'execute',people:{medicalAssistant:{id:'a',role:'medicalAssistant'}},data:{advisor:{text:''},execute:{text:'专家已确认'}},returns:[]},reports:[],events:[]};
+    let n=0,closed=0,cleared=0;
+    const fakeReact={...React,useEffect:()=>{},useRef:()=>({current:null}),useState:init=>{const i=n++;return [i===0?data:i===5?true:init,v=>{if(i===3&&Object.keys(v).length===0)cleared++}];}};
+    const api={action:async()=>{if(fails)throw Error('缺少内容');return {data:{...data,state:{...data.state,stage:'upload'}}}},get:async()=>({data})};
+    const ctx={module:{exports:{}},require:name=>name==='react'?fakeReact:name==='../api'?{careFlowAPI:api}:name==='./CareFlowExaminations'?examinations():name.includes('/shared/')?require(path.join(__dirname,'../../shared',path.basename(name))):()=>null};
+    vm.runInNewContext(require('esbuild').transformSync(fs.readFileSync(path.join(__dirname,'../../staff/src/components/CareFlowCard.jsx'),'utf8'),{loader:'jsx',format:'cjs'}).code,ctx);
+    const tree=ctx.module.exports.default({task:{_id:'task'},staff:{_id:'a',role:'medicalAssistant'},onCompleted:()=>closed++});
+    let submit;const walk=node=>{if(!node||typeof node!=='object')return;if(Array.isArray(node)){node.forEach(walk);return;}if(node.type==='button'&&node.props.children==='完成本环节，交下一步')submit=node;walk(node.props?.children)};
+    walk(tree);await submit.props.onClick();assert.equal(closed,fails?0:1);assert.equal(cleared,fails?0:1);
+  }
+});
 test('误增项目可删除，原项目和已提交项目不可删除，其他填写内容不变',()=>{
   const rows=[{id:'exam-0',title:'原检查'},{id:'added-saved',title:'已提交',confirmedAt:'2026-09-23'},{id:'added-draft',title:'误点'},{id:'added-keep',title:'保留填写',note:'已填写'}];
   let result;const tree=examinations().default({rows,onChange:v=>{result=v}});
