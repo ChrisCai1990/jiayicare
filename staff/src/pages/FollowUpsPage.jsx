@@ -5,7 +5,7 @@ import { useToast, useStaff, can } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
 import annualBookingPlan from '../../../shared/annualBookingPlan.cjs'
 import annualDispatch from '../../../shared/annualDispatch.cjs'
-import FollowUpProgressFields, { FollowUpProgressHistory } from '../components/FollowUpProgressFields'
+import FollowUpProgressFields, { FollowUpProgressHistory, followUpSaveLabel } from '../components/FollowUpProgressFields'
 import FollowUpOutcomeReview from '../components/FollowUpOutcomeReview'
 import { canRecordProgress, requiresOutcomeReview } from '../utils/followUpContinuity'
 import Pagination from '../components/Pagination'
@@ -600,7 +600,7 @@ export default function FollowUpsPage() {
                   onChange={e => setExecForm(f => ({ ...f, content: e.target.value }))} />
               </div>}
               <FollowUpProgressFields item={execItem} form={execForm} setForm={setExecForm} />
-              {!execItem.taskRole && <div>
+              {!execItem.taskRole && !canRecordProgress(execItem) && <div>
                 <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 8 }}>{execItem.taskRole ? '事务状态' : '随访结果状态'}</label>
                 <div style={{ display: 'flex', gap: 16 }}>
                   {[
@@ -621,7 +621,7 @@ export default function FollowUpsPage() {
               <button className="btn btn-secondary" onClick={() => setExecItem(null)}>取消</button>
               {execItem.taskRole === 'executor' && execItem.dependsOnTaskId?._id && <button className="btn btn-secondary" style={{ color: '#B45309', borderColor: '#D9A441' }} onClick={handleReturnPrevious} disabled={execSaving}>退回上一环节</button>}
               <button className="btn btn-primary" onClick={handleExec} disabled={execSaving || execForm.checkupMerged} style={execForm.checkupMerged ? { display: 'none' } : undefined}>
-                {execSaving ? '保存中...' : isCheckupAppointmentBookingTask(execItem) ? '确认三号预约并转交就医专员' : isOutpatientEscortVisitTask(execItem) ? '完成陪诊并提交资料审核' : isOutpatientPostVisitReviewTask(execItem) ? '生成随访计划并结束服务' : isOutpatientAppointmentTask(execItem) ? '确认预约并流转代诊' : isOutpatientAdvisorAssessmentTask(execItem) ? '完成评估并流转下一步' : isCheckupReportCollectionTask(execItem) ? (execForm.serviceChecklist?.[0]?.collectionStatus === 'complete' ? '完成回收并进入解析审核' : '保存报告回收进度') : isCheckupBookingTask(execItem) ? '确认预约并转交陪诊' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : '保存随访结果'}
+                {execSaving ? '保存中...' : isCheckupAppointmentBookingTask(execItem) ? '确认三号预约并转交就医专员' : isOutpatientEscortVisitTask(execItem) ? '完成陪诊并提交资料审核' : isOutpatientPostVisitReviewTask(execItem) ? '生成随访计划并结束服务' : isOutpatientAppointmentTask(execItem) ? '确认预约并流转代诊' : isOutpatientAdvisorAssessmentTask(execItem) ? '完成评估并流转下一步' : isCheckupReportCollectionTask(execItem) ? (execForm.serviceChecklist?.[0]?.collectionStatus === 'complete' ? '完成回收并进入解析审核' : '保存报告回收进度') : isCheckupBookingTask(execItem) ? '确认预约并转交陪诊' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : followUpSaveLabel(execItem, execForm)}
               </button>
             </div>
           </div>
