@@ -6,8 +6,7 @@ a { color:inherit; text-decoration:none; }
 .shell { width:min(calc(100% - 32px),var(--max)); margin:auto; }
 .site-header { background:rgba(255,255,255,.94); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; backdrop-filter:blur(12px); }
 .nav { min-height:68px; display:flex; align-items:center; justify-content:space-between; gap:20px; }
-.brand { display:flex; align-items:center; gap:10px; font-weight:800; letter-spacing:.02em; }
-.brand-mark { display:grid; place-items:center; width:34px; height:34px; border-radius:11px; color:#fff; background:var(--green); font-size:18px; }
+.brand { display:flex; align-items:center; gap:12px; font-weight:800; letter-spacing:.02em; }.brand-name { color:var(--green); font-size:clamp(1.45rem,2.5vw,2rem); letter-spacing:.08em; line-height:1; }.brand-copy { display:grid; gap:3px; color:var(--green-deep); font-size:.86rem; line-height:1.1; }.brand-copy small { color:var(--muted); font-size:.72rem; font-weight:700; letter-spacing:.08em; }
 .nav-links { display:flex; gap:22px; color:var(--muted); font-size:.94rem; }
 .nav-links a:hover { color:var(--green); }
 .hero { background:linear-gradient(120deg,#103e3d 0%,#156b58 56%,#4d977e 100%); color:#fff; padding:76px 0 64px; }
