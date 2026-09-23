@@ -33,6 +33,28 @@ test('on-site added consultation starts at the medical assistant, without a fabr
   }
 });
 
+test('one escort order preserves multiple same-day departments in its handoff', async () => {
+  const previous = { orderCreate: Order.create, orderUpdate: Order.updateOne, taskCreate: FollowUp.create };
+  try {
+    Order.create = async row => ({ _id: 'multi-department-order', ...row });
+    Order.updateOne = async () => ({ modifiedCount: 1 });
+    FollowUp.create = async row => ({ _id: `task-${row.workflowKey}`, ...row });
+    const rows = [{ department: '眼科', expert: '眼科专家', time: '09:00' }, { department: '耳鼻喉科', expert: '', time: '11:30' }];
+    const result = await startStaffMedicalProxyWorkflow({
+      patient: { _id: 'patient', assignedHealthManager: 'manager', assignedHealthPlanner: 'planner' }, advisorId: 'advisor',
+      plan: { medicalEscort: true, escortCategory: 'consultation', escortDate: '2026-09-23', escortTime: '09:00-12:00',
+        hospital: '测试医院', department: '眼科', escortDepartments: rows, escortGoal: '陪同两个科室就诊',
+        sourceFollowUpId: 'existing-follow-up', medicalAssistantId: 'assistant' },
+    });
+    assert.deepEqual(result.order.medicalProxyPlan.escortDepartments, rows);
+    assert.match(result.order.serviceRequirements, /就诊安排1：眼科 · 专家眼科专家 · 09:00/);
+    assert.match(result.order.serviceRequirements, /就诊安排2：耳鼻喉科 · 11:30/);
+    assert.deepEqual(result.execute.formData.planSnapshot.escortDepartments, rows);
+  } finally {
+    Order.create = previous.orderCreate; Order.updateOne = previous.orderUpdate; FollowUp.create = previous.taskCreate;
+  }
+});
+
 test('on-site consultation keeps its parent escort open and closes only after advisor follow-up review', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
   const routes = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');

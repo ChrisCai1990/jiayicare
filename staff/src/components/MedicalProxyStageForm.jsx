@@ -100,8 +100,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     <div>陪同类型：{({ consultation: '陪同看诊', exam: '陪同检查', checkup: '陪同体检', treatment: '陪同治疗' })[escortPlan.escortCategory] || escortPlan.escortCategory || '未填写'}</div>
     <div>服务时间：{escortPlan.escortDate || '未填写'} {escortPlan.escortTime || ''}</div>
     <div>医院：{escortPlan.hospital || '未填写'}{escortPlan.campus ? ` · ${escortPlan.campus}` : ''}</div>
-    <div>科室：{escortPlan.department || '未填写'}</div>
-    {escortPlan.expert && <div>专家：{escortPlan.expert}</div>}
+    {Array.isArray(escortPlan.escortDepartments) && escortPlan.escortDepartments.length ? escortPlan.escortDepartments.map((item, index) => <div key={index}>就诊安排 {index + 1}：{item.department || '未填写科室'}{item.expert ? ` · 专家：${item.expert}` : ''}{item.time ? ` · 到诊：${item.time}` : ''}</div>) : <><div>科室：{escortPlan.department || '未填写'}</div>{escortPlan.expert && <div>专家：{escortPlan.expert}</div>}</>}
     {escortPlan.adHocConsultation && <div>费用告知：{escortPlan.costNotice || '未填写'}</div>}
     <div>具体服务事项：{escortPlan.escortGoal || '未填写'}</div>
     <div>交通接送：{escortPlan.transport || '未填写'}</div>
