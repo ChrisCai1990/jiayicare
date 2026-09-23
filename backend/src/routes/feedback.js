@@ -18,7 +18,12 @@ router.post('/', auth, async (req, res) => {
     content: content.trim(),
   });
 
-  res.json({ success: true, message: '感谢您的反馈！我们会在 3 个工作日内处理。' });
+  res.json({
+    success: true,
+    message: type === '账号注销申请'
+      ? '注销申请已提交。我们会先核验身份，并在 3 个工作日内通过此处反馈处理进度。'
+      : '感谢您的反馈！我们会在 3 个工作日内处理。',
+  });
 });
 
 // GET /api/feedback/mine — 用户端查看自己提交过的反馈及回复

@@ -7,7 +7,6 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { useAuth } from '../context/AuthContext';
 import { colors } from '../theme';
-import { messagesAPI } from '../services/api';
 
 import LoginScreen from '../screens/auth/LoginScreen';
 import OnboardingScreen from '../screens/onboarding/OnboardingScreen';
@@ -49,23 +48,14 @@ const Tab = createBottomTabNavigator();
 const TAB_CONFIG = [
   { name: 'Home',         label: '首页',    icon: 'home',         component: HomeScreen },
   { name: 'Records',      label: '健康档案', icon: 'heart',        component: RecordsScreen },
-  { name: 'Planning',     label: '健康规划', icon: 'compass',      component: ChatScreen },
-  { name: 'Messages',     label: '消息',    icon: 'chatbubble',   component: MessagesScreen },
+  { name: 'Planning',     label: '健康管家', icon: 'compass',      component: ChatScreen },
   { name: 'Profile',      label: '我的',    icon: 'person',       component: ProfileScreen },
 ];
 
 function MainTabs() {
   const { token } = useAuth();
-  const [unreadCount, setUnreadCount] = React.useState(0);
-
-  React.useEffect(() => {
-    if (!token) return;
-    let mounted = true;
-    const fetch = () => messagesAPI.unreadCount().then(r => { if (mounted) setUnreadCount(r.count || 0); }).catch(() => {});
-    fetch();
-    const timer = setInterval(fetch, 60000); // 每分钟刷新
-    return () => { mounted = false; clearInterval(timer); };
-  }, [token]);
+  // 和小程序一致：访客可先浏览公开首页，个人档案和健康管家须登录后进入。
+  const visibleTabs = token ? TAB_CONFIG : TAB_CONFIG.filter(tab => tab.name === 'Home');
 
   return (
     <Tab.Navigator
@@ -92,20 +82,14 @@ function MainTabs() {
         },
       })}
     >
-      {TAB_CONFIG.map(tab => (
+      {visibleTabs.map(tab => (
         <Tab.Screen
           key={tab.name}
           name={tab.name}
           component={tab.component}
           options={{
             tabBarLabel: tab.label,
-            ...(tab.name === 'Messages' && unreadCount > 0
-              ? { tabBarBadge: unreadCount > 99 ? '99+' : unreadCount }
-              : {}),
           }}
-          listeners={tab.name === 'Messages' ? {
-            tabPress: () => setUnreadCount(0),
-          } : undefined}
         />
       ))}
     </Tab.Navigator>
@@ -142,8 +126,10 @@ export default function Navigation() {
             initialParams={{ token: shareToken }}
           />
         ) : !token ? (
-          // 未登录
+          // 访客可浏览首页和服务商城；个人健康数据相关能力在用户操作时再要求登录。
           <>
+            <Stack.Screen name="Main" component={MainTabs} />
+            <Stack.Screen name="ServiceMall" component={ServiceMallScreen} />
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Onboarding" component={OnboardingScreen} />
             <Stack.Screen name="Legal" component={LegalScreen} />

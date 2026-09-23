@@ -29,12 +29,16 @@ const FAQ = [
     a: '服务包到期后，您的健康数据仍会保留在系统中，不会被删除。您可以继续查看历史数据，但无法享受新增服务。续约后立即恢复全部功能。',
   },
   {
+    q: '如何申请注销账号？',
+    a: '在下方选择“账号注销申请”后提交。我们会先核验身份，并在 3 个工作日内通过“我的反馈”告知处理进度；注销前请确认已了解相关数据处理说明。',
+  },
+  {
     q: 'AI 健康规划师的回答是否可以作为诊断依据？',
     a: 'AI 助手的回答仅供参考，不构成医疗诊断或建议。如有健康问题，请以医生的专业诊断为准，必要时及时就医。',
   },
 ];
 
-const FEEDBACK_TYPES = ['意见建议', '功能异常', '数据问题', '其他'];
+const FEEDBACK_TYPES = ['意见建议', '功能异常', '数据问题', '账号注销申请', '其他'];
 
 function FaqItem({ item }) {
   const [open, setOpen] = useState(false);
@@ -166,7 +170,12 @@ export default function HelpFeedbackScreen({ navigation }) {
                 <TouchableOpacity
                   key={t}
                   style={[styles.typeChip, type === t && styles.typeChipActive]}
-                  onPress={() => setType(t)}
+                  onPress={() => {
+                    setType(t);
+                    if (t === '账号注销申请' && !content.trim()) {
+                      setContent('我申请注销当前账号。请核验身份后告知后续处理进度。');
+                    }
+                  }}
                 >
                   <Text style={[styles.typeChipText, type === t && styles.typeChipTextActive]}>{t}</Text>
                 </TouchableOpacity>
