@@ -179,7 +179,7 @@ async function upsertMedicalProxyServiceRecord(task, order, completed = false) {
   const booking = plan.booking || task.formData?.bookingSnapshot || (stageOf(task) === 'booking' ? task.formData : {});
   const appointment = booking.appointmentDate && booking.appointmentTime ? appointmentAt(booking.appointmentDate, booking.appointmentTime) : (order.scheduledAt || task.date || new Date());
   const content = [
-    plan.hospital && `医院：${plan.hospital}`, plan.department && `科室：${plan.department}`, plan.expert && `专家：${plan.expert}`,
+    plan.hospital && `医院：${plan.hospital}`, ...(Array.isArray(plan.escortDepartments) && plan.escortDepartments.length ? plan.escortDepartments.map((item, index) => `就诊安排${index + 1}：${item.department}${item.expert ? ` · ${item.expert}` : ''}${item.time ? ` · ${item.time}` : ''}`) : [plan.department && `科室：${plan.department}`, plan.expert && `专家：${plan.expert}`]),
     plan.medicationName && `药物名称：${plan.medicationName}`, plan.medicationBrand && `品牌：${plan.medicationBrand}`, plan.medicationQuantity && `数量：${plan.medicationQuantity}`,
     plan.proxyGoal && `代诊目标：${plan.proxyGoal}`, plan.communicationContent && `交流内容：${plan.communicationContent}`,
     plan.adHocConsultation && `临时加诊原因：${plan.escortGoal || ''}`,
@@ -544,7 +544,7 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
     desiredServiceDate: medicalEscort ? escortScheduledAt : (appointmentOnly || supplyProxy) ? appointmentAt(plan.preferredDateStart, String(plan.serviceTime || '').match(/^\d{2}:\d{2}/)?.[0] || '09:00') : null,
     desiredServiceDateEnd: medicalEscort ? escortScheduledAt : (appointmentOnly || supplyProxy) ? appointmentAt(plan.preferredDateEnd || plan.preferredDateStart, String(plan.serviceTime || '').match(/^\d{2}:\d{2}/)?.[0] || '09:00') : null,
     scheduledAt: escortScheduledAt,
-    serviceRequirements: medicalEscort ? [plan.adHocConsultation ? '客户现场提出临时加诊并已确认' : escortLabels[plan.escortCategory], plan.hospital, plan.campus, plan.department, plan.expert, plan.escortGoal, plan.adHocConsultation && `门诊费用告知：${plan.costNotice}`, plan.transport, plan.hotel, plan.notes].filter(Boolean).join('；') : (appointmentOnly || supplyProxy) ? appointmentRequirement : `${plan.proxyGoal}\n${plan.communicationContent}`,
+    serviceRequirements: medicalEscort ? [plan.adHocConsultation ? '客户现场提出临时加诊并已确认' : escortLabels[plan.escortCategory], `服务日期：${plan.escortDate || ''}`, `整体时间：${plan.escortTime || ''}`, plan.hospital, plan.campus, ...(Array.isArray(plan.escortDepartments) && plan.escortDepartments.length ? plan.escortDepartments.map((item, index) => `就诊安排${index + 1}：${item.department}${item.expert ? ` · 专家${item.expert}` : ''}${item.time ? ` · ${item.time}` : ''}`) : [plan.department, plan.expert]), plan.escortGoal, plan.adHocConsultation && `门诊费用告知：${plan.costNotice}`, plan.transport, plan.hotel, plan.notes].filter(Boolean).join('；') : (appointmentOnly || supplyProxy) ? appointmentRequirement : `${plan.proxyGoal}\n${plan.communicationContent}`,
     serviceWorkflowSnapshot: { key: 'medical_proxy', source: STAFF_DIRECT_SOURCE },
     medicalProxyPlan: (supplyProxy || medicalEscort) ? { ...plan, initiationSource: STAFF_DIRECT_SOURCE } : null,
   });
