@@ -32,7 +32,7 @@ export default function FollowUpServiceLinkCard({ task, staff, onLinked }) {
     {tracking && <div style={{ marginTop: 8 }}>{tracking.title}<br />{tracking.message || '等待服务进度同步'}</div>}
     {loading && <p>正在读取服务…</p>}
     {error && <p role="alert" style={{ color: '#DC3545' }}>{error}</p>}
-    {canChoose && itemTools.isBookingRequest(task) && <p>{bookingRequired ? '等待健管专员完成本事项预约；预约前不可安排服务。' : `预约已完成：${booking.date} · ${booking.hospital} · ${booking.department} · ${booking.note || ''}`}</p>}
+    {canChoose && itemTools.isBookingRequest(task) && <p>{bookingRequired ? '等待健管专员完成本事项预约；预约前不可安排服务。' : `预约已完成：${booking.date} ${booking.time || ''} · ${booking.hospital} · ${booking.department} · ${booking.expert || '未指定专家'} · ${booking.note || ''}`}</p>}
     {canChoose && <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
       <label>对应健管随访
         <select className="form-input" value={followUpId} disabled={loading || !!data.link} onChange={e => setFollowUpId(e.target.value)}>

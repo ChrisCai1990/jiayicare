@@ -34,7 +34,7 @@ router.post('/:id/annual-booking', staffAuth, async (req, res) => {
     if (!require('../utils/healthManagementRollout').enabledForPatient(task.patientId)) return res.status(403).json({ success: false, message: '该客户尚未开放预约登记' });
     if (req.staff.role !== 'superadmin' && (req.staff.role !== 'healthManager' || String(task.assignedTo) !== String(req.staff._id))) return res.status(403).json({ success: false, message: '仅本任务健管专员可确认预约' });
     if (!require('../../../shared/annualServiceItem.cjs').needsBooking(task)) return res.status(409).json({ success: false, message: '预约已完成或事项已流转，请刷新核对' });
-    const receipt = require('../utils/annualBookingReceipt').receipt(req.body, req.staff._id);
+    const receipt = require('../utils/annualBookingReceipt').receipt(req.body, req.staff._id, task);
     const saved = await FollowUp.updateOne({ _id: task._id, updatedAt: task.updatedAt, status: { $in: ['planned', 'in_progress', 'missed'] }, 'annualBooking.status': { $ne: 'booked' }, 'serviceTracking.linkId': null }, { $set: { annualBooking: receipt } });
     if (!saved.modifiedCount) return res.status(409).json({ success: false, message: '任务已变化，请刷新核对' });
     res.json({ success: true, data: await FollowUp.findById(task._id).populate('assignedTo', 'name role') });

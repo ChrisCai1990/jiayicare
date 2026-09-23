@@ -50,7 +50,7 @@ test('年度协助仅查询本项随访，未预约不得关联服务', async t 
 for (const scenario of ['valid', 'wrong-owner', 'reminder', 'booked', 'conflict']) test(`年度预约HTTP: ${scenario}`, async t => {
   actor = { _id: ids.manager, role: 'healthManager' };
   const bookingTask = { _id: ids.request, assignedTo: scenario === 'wrong-owner' ? ids.planner : ids.manager, patientId: ids.patient, sourceAnnualPlanId: ids.target,
-    sourceType: 'scheduled', sourceScheduleKey: 'abnormal_followup:2026-12-02:浙二', deliveryMode: scenario === 'reminder' ? 'reminder' : 'single', status: 'planned', updatedAt: new Date(), annualBooking: scenario === 'booked' ? { status: 'booked' } : null };
+    sourceType: 'scheduled', sourceScheduleKey: 'abnormal_followup:2026-12-02:浙二', plannedContent: '就医/会诊医院：浙二\n科室：超声科', deliveryMode: scenario === 'reminder' ? 'reminder' : 'single', status: 'planned', updatedAt: new Date(), annualBooking: scenario === 'booked' ? { status: 'booked' } : null };
   t.mock.method(FollowUp, 'findById', () => Object.assign(Promise.resolve(bookingTask), { populate: async () => bookingTask }));
   let writes = 0;
   t.mock.method(FollowUp, 'updateOne', async (filter, update) => {
@@ -59,7 +59,7 @@ for (const scenario of ['valid', 'wrong-owner', 'reminder', 'booked', 'conflict'
     assert.equal(update.$set.annualBooking.confirmedBy, ids.manager);
     return { modifiedCount: scenario === 'conflict' ? 0 : 1 };
   });
-  const result = await request(t, { date: '2026-12-02', hospital: '浙二', department: '超声科' }, 'annual-booking');
+  const result = await request(t, { date: '2026-12-02', time: '09:30' }, 'annual-booking');
   assert.equal(result.status, { valid: 200, 'wrong-owner': 403, reminder: 404, booked: 409, conflict: 409 }[scenario]);
   assert.equal(writes, ['valid', 'conflict'].includes(scenario) ? 1 : 0);
 });

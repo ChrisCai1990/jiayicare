@@ -22,7 +22,7 @@ function summarize(task, siblings) {
   const current = ready.length ? ready : active;
   return { total: rows.length, completed: rows.filter(row => row.status === 'completed').length,
     current: current.map(row => ({ id: row._id, label: task.sourceType === 'annual_service' && task.workflowKey === 'service_request' ? (row.annualBooking?.status === 'booked' ? '预约已完成，待健康规划师派单' : '健管专员待安排预约') : row.theme || row.workflowKey || '待核对环节',
-      assignee: row.assignedTo?.name || '未明确处理人', blocked: !!row.isBlocked })),
+      assignee: task.sourceType === 'annual_service' && task.workflowKey === 'service_request' && row.annualBooking?.status === 'booked' ? task.assignedTo?.name || '健康规划师' : row.assignedTo?.name || '未明确处理人', blocked: !!row.isBlocked })),
     message: !rows.length ? '暂无明确关联的执行进度，请核对服务承接' : !active.length ? '已生成执行任务均已结束，待核对服务是否结案'
       : ready.length ? '等待当前处理人办理' : '等待前置环节完成或资料审核' };
 }

@@ -14,6 +14,8 @@ import FollowUpProgressFields, { FollowUpProgressHistory } from '../components/F
 import FollowUpOutcomeReview from '../components/FollowUpOutcomeReview'
 import { canRecordProgress, requiresOutcomeReview } from '../utils/followUpContinuity'
 import FollowUpServiceLinkCard from '../components/FollowUpServiceLinkCard'
+import annualBookingPlan from '../../../shared/annualBookingPlan.cjs'
+import annualServiceItem from '../../../shared/annualServiceItem.cjs'
 import AnnualCheckupPreparationCard, { isAnnualCheckupPreparation } from '../components/AnnualCheckupPreparationCard'
 import AiRuleHint from '../components/AiRuleHint'
 import AppIcon from '../components/AppIcon'
@@ -10929,13 +10931,14 @@ export default function PatientDetailPage() {
         <div className="modal-overlay" onClick={() => setFollowUpDetail(null)}>
           <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">随访详情</h3>
+              <h3 className="modal-title">{annualServiceItem.isAssistance(followUpDetail) ? '就医协助 · 预约安排' : '随访详情'}</h3>
               <button className="modal-close" onClick={() => setFollowUpDetail(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <FollowUpServiceLinkCard key={followUpDetail._id} task={followUpDetail} staff={staff} onLinked={updated => { setFollowUpDetail(updated); loadFollowUps() }} />
               <AnnualCheckupPreparationCard key={`checkup:${followUpDetail._id}`} task={followUpDetail} staff={staff} onSaved={updated => { setFollowUpDetail(updated); loadFollowUps() }} />
               {/* 基本信息 */}
+              {!annualServiceItem.isAssistance(followUpDetail) && <>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 {[
                   { label: '随访日期', value: new Date(followUpDetail.date).toLocaleDateString('zh-CN') },
@@ -11083,6 +11086,7 @@ export default function PatientDetailPage() {
                   <div style={{ fontSize: 13, color: '#4A6558' }}>{followUpDetail.notes}</div>
                 </div>
               )}
+              </>}
             </div>
             <div className="modal-footer">
               {medicalProxyStage(followUpDetail) === 'supervise' && /就医规划/.test(followUpDetail.sourceOrderId?.serviceName || followUpDetail.theme || '') && ['planned', 'in_progress'].includes(followUpDetail.status) && hasPlanningAdvice(planningAdviceFromTask(followUpDetail)) && <button className="btn btn-primary" onClick={() => { const task = { ...followUpDetail, formData: { ...followUpDetail.formData, medicalPlanning: true, advisorSnapshot: planningAdviceFromTask(followUpDetail) } }; setFollowUpDetail(null); openExec(task) }}>记录客户沟通与后续服务意向</button>}
@@ -11103,7 +11107,7 @@ export default function PatientDetailPage() {
                   } catch (err) { toast(err.message || '审核失败') }
                 }}>确认随访计划</button>
               </>}
-              {medicalProxyStage(followUpDetail) !== 'supervise' && followUpDetail.serviceTracking?.status !== 'waiting' && <button className="btn btn-secondary" style={{ color: '#DC3545' }}
+              {annualBookingPlan.canEditPlan(followUpDetail, staff?.role) && medicalProxyStage(followUpDetail) !== 'supervise' && followUpDetail.serviceTracking?.status !== 'waiting' && <button className="btn btn-secondary" style={{ color: '#DC3545' }}
                 onClick={async () => {
                   if (!window.confirm('确认删除这条随访记录？删除后不可恢复。')) return
                   try {
@@ -11115,7 +11119,7 @@ export default function PatientDetailPage() {
                     setFollowUpDetail(null); loadFollowUps()
                   } catch (err) { toast(err.message || '删除失败') }
                 }}>删除</button>}
-              {medicalProxyStage(followUpDetail) !== 'supervise' && followUpDetail.serviceTracking?.status !== 'waiting' && <button className="btn btn-secondary" onClick={() => setEditingFollowUp({
+              {annualBookingPlan.canEditPlan(followUpDetail, staff?.role) && medicalProxyStage(followUpDetail) !== 'supervise' && followUpDetail.serviceTracking?.status !== 'waiting' && <button className="btn btn-secondary" onClick={() => setEditingFollowUp({
                 date: followUpDetail.date ? new Date(followUpDetail.date).toISOString().slice(0, 10) : '',
                 type: followUpDetail.type || 'phone',
                 theme: followUpDetail.theme || '',

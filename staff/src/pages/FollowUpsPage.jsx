@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast, useStaff, can } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
+import annualBookingPlan from '../../../shared/annualBookingPlan.cjs'
 import FollowUpProgressFields, { FollowUpProgressHistory } from '../components/FollowUpProgressFields'
 import FollowUpOutcomeReview from '../components/FollowUpOutcomeReview'
 import { canRecordProgress, requiresOutcomeReview } from '../utils/followUpContinuity'
@@ -505,11 +506,11 @@ export default function FollowUpsPage() {
                     {isPendingExec(f) && (
                       <button className="btn btn-primary btn-sm" onClick={() => openExec(f)}>{f.taskRole === 'supervisor' ? '处理督办' : f.taskRole ? '处理事务' : '执行随访'}</button>
                     )}
-                    {f.status !== 'cancelled' && staff && f.staffId && String(f.staffId._id || f.staffId) === String(staff._id) && (
+                    {annualBookingPlan.canEditPlan(f, staff?.role) && f.status !== 'cancelled' && staff && f.staffId && String(f.staffId._id || f.staffId) === String(staff._id) && (
                       <button className="btn btn-secondary btn-sm" onClick={() => openEdit(f)}>编辑</button>
                     )}
                     {isPendingExec(f) && (
-                      <button className="btn btn-secondary btn-sm" onClick={() => openCancel(f)}>取消</button>
+                      annualBookingPlan.canEditPlan(f, staff?.role) && <button className="btn btn-secondary btn-sm" onClick={() => openCancel(f)}>取消</button>
                     )}
                     <button className="btn btn-secondary btn-sm" onClick={() => isCheckupAppointmentBookingTask(f) ? openExec(f) : setDetailItem(f)}>{isCheckupAppointmentBookingTask(f) ? '填写三号预约' : '详情'}</button>
                     <button className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${f.patientId?._id}`)}>会员</button>

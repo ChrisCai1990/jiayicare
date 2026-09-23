@@ -2090,6 +2090,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     || String(followUp.staffId || '') === String(req.staff._id)
     || String(followUp.assignedTo || '') === String(req.staff._id);
   if (!canUpdate) return res.status(403).json({ success: false, message: '该任务未分配给当前账号，无法保存' });
+  if (require('../../../shared/annualBookingPlan.cjs').protectedEdit(followUp, req.staff.role, req.body)) return res.status(403).json({ success: false, message: '顾问年度随访计划不能由执行人员修改或取消，请仅记录执行过程或预约结果' });
   if (req.body.status === 'completed' && followUp.status !== 'completed'
     && require('../utils/followUpContinuity').requiresOutcomeReview(followUp)) {
     return res.status(409).json({ success: false, message: '本计划需完成检查、报告审核及健康顾问结果处置后关闭；请先保存沟通过程，不要另建重复任务' });
@@ -2750,6 +2751,7 @@ router.delete('/followups/:id', staffAuth, checkPermission('followups', 'delete'
   // 还错误提示“随访记录不存在”。删除权限改为与客户详情相同的服务团队范围。
   const followUp = await FollowUp.findById(req.params.id);
   if (!followUp) return res.status(404).json({ success: false, message: '随访记录不存在' });
+  if (!require('../../../shared/annualBookingPlan.cjs').canEditPlan(followUp, req.staff.role)) return res.status(403).json({ success: false, message: '顾问年度随访计划不能由执行人员删除' });
   if (require('../utils/annualCheckupEvidence').preparationRole(followUp)) return res.status(409).json({ success: false, message: '体检准备记录用于流程追溯，不能删除' });
   if (!['superadmin', 'platformSuper'].includes(req.staff.role)) {
     const visibleStaffIds = await getVisibleStaffIds(req.staff);

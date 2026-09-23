@@ -22,10 +22,12 @@ test('only assistance appointment stages enter service workbench; completion pre
   assert.match(summarize(request, [{ ...followup, annualBooking: { status: 'booked' } }]).current[0].label, /待健康规划师派单/);
 });
 test('appointment receipt requires real date/hospital/department and retains author', () => {
-  const body = { date: '2026-10-01', hospital: '浙二', department: '超声科', note: '上午' };
-  const result = receipt(body, 'manager');
+  const body = { date: '2026-10-01', time: '09:30', hospital: '浙二', department: '超声科', note: '上午' };
+  const task = { plannedContent: '就医/会诊医院：浙二\n科室：超声科\n专家：王医生' };
+  const result = receipt(body, 'manager', task);
   assert.equal(result.confirmedBy, 'manager'); assert.equal(result.status, 'booked'); assert.equal(result.note, '上午');
-  for (const patch of [{ date: '2026-02-30' }, { date: 'not a date' }, { hospital: '' }, { department: '' }, { note: {} }]) assert.throws(() => receipt({ ...body, ...patch }, 'manager'));
+  assert.equal(result.time, '09:30'); assert.equal(result.expert, '王医生');
+  for (const patch of [{ date: '2026-02-30' }, { time: '25:00' }, { date: 'not a date' }, { hospital: '' }, { department: '' }, { note: {} }]) assert.throws(() => receipt({ ...body, ...patch }, 'manager', task));
 });
 test('actual service route includes future booking only when requested, never reminders', () => {
   const { staffTasks } = require('./helpers/taskVisibility');
