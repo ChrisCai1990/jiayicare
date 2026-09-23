@@ -10,6 +10,7 @@ export default function AnnualBookingCard({ task, staff, onLinked }) {
   const canEdit = staff?.role === 'superadmin' || (staff?.role === 'healthManager' && String(task.assignedTo?._id || task.assignedTo) === String(staff._id))
   return <section style={{ border: '1px solid #B2D8C7', padding: 16, marginBottom: 16, borderRadius: 8 }}>
     <b>就医协助 · 预约安排</b>
+    <h4>健康顾问原计划（只读）</h4>
     <p style={{ whiteSpace: 'pre-wrap' }}>{task.plannedContent || task.content}</p>
     {booked?.status === 'booked' ? <p>预约已确认：{booked.date} · {booked.hospital} · {booked.department}<br />{booked.note}<br />待健康规划师安排服务；原随访继续保留。</p> : canEdit && itemTools.needsBooking(task) ? <>
       <label>实际预约日期<input className="form-input" type="date" value={date} onChange={e => setDate(e.target.value)} /></label>

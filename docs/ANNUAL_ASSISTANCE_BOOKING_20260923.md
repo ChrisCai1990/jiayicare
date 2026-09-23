@@ -1,5 +1,9 @@
 # 年度协助预约与进度隔离
 
+## 预约入口补丁
+
+工作台投影设置executor后，客户页通用openExec误打开旧事务清单；该清单仅读取medical_assist目的，造成“顾问未给内容”的错误提示。修复在openExec首段分流annualBookingTask到已有预约详情，保留plannedContent/content原文，并标注健康顾问原计划只读。年度service_request同时转进度详情，不进入完成弹窗。实际入口分支VM回归通过：预约/服务需求进入详情、普通提醒仍走原路径；生产构建/发布结果随后记录。无需改客户数据。
+
 ## 已实现（已部署）
 
 2026-09-23用户授权部署：生产与GitHub双分支为1104fddb4d37d5b897cc1eaceccf82206b3edde2，标准四端构建、后端及公网健康200、Staff资源index-D8oxpktf.js核验通过。金娟白名单保持，恢复/自动准备关闭，跳过数据迁移。未代客户登记预约或派单。
