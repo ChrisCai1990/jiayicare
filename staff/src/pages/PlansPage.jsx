@@ -565,7 +565,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
   // 模板内容字段（与管理端完全一致）
   const [form, setForm] = useState({
     name: '', hospital: '', campus: '', department: '', expert: '', clinicType: '', insuranceUse: '', insurerName: '', settlementMethod: 'pending',
-    staffId: '', staffName: '', supervisorId: '', followUpPlanId: '', followUpPlanName: '', followUpPlans: [], serviceDomain: '', serviceMode: '', serviceDate: '', serviceTime: '', escortDepartments: [{ department: '', expert: '', time: '' }], transport: '', tasks: '', hotel: '', notes: '',
+    staffId: '', staffName: '', supervisorId: '', followUpPlanId: '', followUpPlanName: '', followUpPlans: [], serviceDomain: '', serviceMode: '', serviceDate: '', serviceTime: '', escortDepartments: [{ department: '', expert: '', time: '' }], escortExams: [{ item: '', department: '', expert: '', time: '', precautions: '' }], transport: '', tasks: '', hotel: '', notes: '',
     preferredDateStart: '', preferredDateEnd: '', sourceMedicationId: '', medicationOptions: [], medicationName: '', medicationBrand: '', medicationSpecification: '', medicationQuantity: '', medicationAutoFilled: false, medicationAutoSource: '', institutionType: '', platformName: '', pharmacyName: '', pharmacyAddress: '', purchasePath: '', paymentMethod: '', deliveryTime: '',
   })
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
@@ -579,7 +579,8 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
   const isMedicalProxy = /医疗代诊/.test(selectedTpl?.name || '')
   const isExpertAppointment = selectedTpl?.content?.assistanceType === 'expert_appointment' || /专家约诊/.test(selectedTpl?.name || '')
   const isMedicationProxy = /代配药|代取药/.test(selectedTpl?.name || '')
-  const isMedicalEscort = /陪同就医|就医陪同/.test(selectedTpl?.name || '')
+  const isExamEscort = /陪同检查/.test(selectedTpl?.name || '')
+  const isMedicalEscort = isExamEscort || /陪同就医|就医陪同/.test(selectedTpl?.name || '')
 
   useEffect(() => {
     if (!patientId || !isMedicationProxy) return
@@ -647,6 +648,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
       department:c.department|| '',
       expert:    c.expert    || '',
       escortDepartments: Array.isArray(c.escortDepartments) && c.escortDepartments.length ? c.escortDepartments.map(item => ({ department: item.department || '', expert: item.expert || '', time: item.time || '' })) : [{ department: c.department || '', expert: c.expert || '', time: '' }],
+      escortExams: Array.isArray(c.escortExams) && c.escortExams.length ? c.escortExams.map(item => ({ item: item.item || '', department: item.department || '', expert: item.expert || '', time: item.time || '', precautions: item.precautions || '' })) : [{ item: c.examItem || '', department: c.department || '', expert: c.expert || '', time: '', precautions: c.examPrecautions || '' }],
       clinicType: c.clinicType || '',
       insuranceUse: c.insuranceUse || '',
       insurerName: c.insurerName || '',
@@ -690,7 +692,9 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
     if (isMedicalProxy && !selectedReportIds.length) { setError('请从客户既有资料中选择至少一份已审核资料'); return }
     if (checkupOneStop && !workflowProductId) { setError('请选择 Admin 已发布的体检服务流程'); return }
     if (checkupOneStop && !description.trim()) { setError('请填写具体服务需求'); return }
-    if (isMedicalEscort && (!form.hospital.trim() || !form.serviceDate || !form.serviceTime.trim() || !form.tasks.trim() || !form.escortDepartments?.length || form.escortDepartments.some(item => !item.department.trim()))) { setError('请完整填写服务日期时间、医院、每个就诊科室和具体服务事项'); return }
+    if (isMedicalEscort && (!form.hospital.trim() || !form.serviceDate || !form.serviceTime.trim() || !form.tasks.trim())) { setError('请完整填写服务日期时间、医院和具体服务事项'); return }
+    if (isMedicalEscort && !isExamEscort && (!form.escortDepartments?.length || form.escortDepartments.some(item => !item.department.trim()))) { setError('请填写每个就诊科室'); return }
+    if (isExamEscort && (!form.escortExams?.length || form.escortExams.some(item => !item.item.trim()))) { setError('请填写每个检查项目'); return }
     if (!isMedicalEscort && !isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && !outpatientService && !form.staffId) { setError('请选择就医专员'); return }
     if (!isMedicalEscort && !isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && !form.supervisorId) { setError('请选择督办人'); return }
     if (!isMedicalEscort && !isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !(form.followUpPlans?.length || form.followUpPlanId)) { setError('所选模板尚未关联 Admin 岗位任务方案，请先在 Admin 完成配置'); return }
@@ -704,14 +708,14 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
       if (isMedicalEscort) {
         await staffAPI.startStaffMedicalProxy(patientId, {
           medicalEscort: true,
-          escortCategory: 'consultation',
+          escortCategory: isExamEscort ? 'exam' : 'consultation',
           escortDate: form.serviceDate,
           escortTime: form.serviceTime.trim(),
           hospital: form.hospital.trim(),
           campus: form.campus.trim(),
-          department: form.escortDepartments[0].department.trim(),
-          expert: form.escortDepartments[0].expert.trim(),
-          escortDepartments: form.escortDepartments.map(item => ({ department: item.department.trim(), expert: item.expert.trim(), time: item.time.trim() })),
+          department: (isExamEscort ? form.escortExams[0].department : form.escortDepartments[0].department).trim(),
+          expert: (isExamEscort ? form.escortExams[0].expert : form.escortDepartments[0].expert).trim(),
+          ...(isExamEscort ? { escortExams: form.escortExams.map(item => ({ item: item.item.trim(), department: item.department.trim(), expert: item.expert.trim(), time: item.time.trim(), precautions: item.precautions.trim() })) } : { escortDepartments: form.escortDepartments.map(item => ({ department: item.department.trim(), expert: item.expert.trim(), time: item.time.trim() })) }),
           escortGoal: form.tasks.trim(),
           medicalAssistantId: form.staffId || '',
           transport: form.transport.trim(),
@@ -829,7 +833,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ maxWidth: 600, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
         <div className="modal-header">
-          <h3 className="modal-title">{isMedicalEscort ? '发起陪同就医服务' : '新建就医协助方案'}</h3>
+          <h3 className="modal-title">{isExamEscort ? '发起陪同检查服务' : isMedicalEscort ? '发起陪同就医服务' : '新建就医协助方案'}</h3>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         {error && <div className="login-err" style={{ margin: '0 20px 8px' }}>⚠️ {error}</div>}
@@ -940,11 +944,11 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
               <input className="form-input" type="date" value={form.serviceDate}
                 onChange={e => set('serviceDate', e.target.value)} />
             </div>}
-            {!isMedicalProxy && !isExpertAppointment && renderField('具体时间安排', 'serviceTime', 0, '如：09:30，或 09:00-11:30')}
+            {!isMedicalProxy && !isExpertAppointment && renderField(isMedicalEscort ? '整体时间安排 *' : '具体时间安排', 'serviceTime', 0, '如：09:30，或 09:00-11:30')}
             {!isMedicationProxy && !isMedicalProxy && !isExpertAppointment && renderField('交通接送', 'transport',  0, '是否专车、集合地点')}
           </div>
 
-          {isMedicalEscort && <div style={{ display: 'grid', gap: 10, padding: 12, border: '1px solid #CFE4DA', borderRadius: 8, background: '#F7FBF9' }}>
+          {isMedicalEscort && !isExamEscort && <div style={{ display: 'grid', gap: 10, padding: 12, border: '1px solid #CFE4DA', borderRadius: 8, background: '#F7FBF9' }}>
             <div style={{ fontWeight: 700, color: '#1E6B50' }}>当天就诊安排</div>
             <div style={{ fontSize: 12, color: '#60776C' }}>同一天多个科室可逐项新增；每项可记录专家和到诊时间。不同日期请分别发起服务。</div>
             {form.escortDepartments.map((item, index) => <div key={index} style={{ padding: 10, border: '1px solid #DCE8E1', borderRadius: 8, background: '#fff' }}>
@@ -957,6 +961,19 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
               </div>
             </div>)}
             <button type="button" className="btn btn-secondary" onClick={() => set('escortDepartments', [...form.escortDepartments, { department: '', expert: '', time: '' }])}>＋ 增加就诊科室</button>
+          </div>}
+
+          {isExamEscort && <div style={{ display: 'grid', gap: 10, padding: 12, border: '1px solid #CFE4DA', borderRadius: 8, background: '#F7FBF9' }}>
+            <div style={{ fontWeight: 700, color: '#1E6B50' }}>当天检查安排</div>
+            <div style={{ fontSize: 12, color: '#60776C' }}>每项检查单独记录项目、地点、时间和检查前注意事项；具体准备要求以开单医生及检查机构告知为准。</div>
+            {form.escortExams.map((item, index) => <div key={index} style={{ padding: 10, border: '1px solid #DCE8E1', borderRadius: 8, background: '#fff', display: 'grid', gap: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><strong>检查 {index + 1}</strong>{form.escortExams.length > 1 && <button type="button" className="btn btn-secondary" onClick={() => set('escortExams', form.escortExams.filter((_, rowIndex) => rowIndex !== index))}>删除此项</button>}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: 10 }}>
+                {[['item', '检查项目 *', '如：甲状腺超声'], ['department', '检查科室/地点', '如：超声科'], ['expert', '检查专家', '如有指定请填写'], ['time', '检查时间', '如：10:30']].map(([key, label, placeholder]) => <label key={key} className="form-group" style={{ marginBottom: 0 }}><span className="form-label">{label}</span><input type="text" value={item[key]} placeholder={placeholder} style={inputStyle} onChange={e => set('escortExams', form.escortExams.map((row, rowIndex) => rowIndex === index ? { ...row, [key]: e.target.value } : row))} /></label>)}
+              </div>
+              <label className="form-group" style={{ marginBottom: 0 }}><span className="form-label">检查前注意事项</span><textarea rows={2} value={item.precautions} placeholder="填写医生或检查机构已确认的准备要求；不确定时填写待核实" style={{ ...inputStyle, resize: 'vertical' }} onChange={e => set('escortExams', form.escortExams.map((row, rowIndex) => rowIndex === index ? { ...row, precautions: e.target.value } : row))} /></label>
+            </div>)}
+            <button type="button" className="btn btn-secondary" onClick={() => set('escortExams', [...form.escortExams, { item: '', department: '', expert: '', time: '', precautions: '' }])}>＋ 增加检查项目</button>
           </div>}
 
           {isMedicalProxy && <>
@@ -992,7 +1009,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
           </>}
 
           {/* 全宽多行字段 */}
-          {!isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && renderField('具体服务事项', 'tasks', 3, '如：代取报告、陪同检查，每行一项')}
+          {!isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && renderField(isExamEscort ? '陪同服务事项 *' : '具体服务事项', 'tasks', 3, isExamEscort ? '如：核对检查申请单、协助签到、确认报告领取方式' : '如：代取报告、陪同检查，每行一项')}
           {!isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && renderField('酒店安排',     'hotel', 2, '是否需要住宿及酒店信息')}
           {!isMedicalProxy && !isExpertAppointment && !checkupOneStop && renderField('备注',         'notes', 2, '其他注意事项')}
 
@@ -1008,7 +1025,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
           <button className="btn btn-secondary" onClick={() => setStep(1)}>← 重新选模板</button>
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
           <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
-            {saving ? '创建中...' : isMedicalEscort ? '发起陪同就医服务' : isMedicationProxy ? '确认药物并转健管预约' : isMedicalProxy || isExpertAppointment ? '确认方案并转健管预约' : checkupOneStop ? '生成体检一站式方案' : '创建就医协助方案'}
+            {saving ? '创建中...' : isExamEscort ? '发起陪同检查服务' : isMedicalEscort ? '发起陪同就医服务' : isMedicationProxy ? '确认药物并转健管预约' : isMedicalProxy || isExpertAppointment ? '确认方案并转健管预约' : checkupOneStop ? '生成体检一站式方案' : '创建就医协助方案'}
           </button>
         </div>
       </div>
