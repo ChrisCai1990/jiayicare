@@ -6,6 +6,7 @@ import { isCheckupDesignStage } from '../utils/checkupTaskRouting'
 import { useStaff } from '../App'
 import AnnualDispatchCard from './AnnualDispatchCard'
 import annualDispatch from '../../../shared/annualDispatch.cjs'
+import { serviceTaskTitle } from '../utils/serviceTaskTitle.mjs'
 
 const TASKS_PER_PAGE = 5
 
@@ -195,7 +196,7 @@ export default function ServiceTasksPanel() {
             <span style={{ fontSize: 18 }}>{isWaitingPrevious ? '⏳' : task.taskRole === 'supervisor' ? '🔎' : '✅'}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600, fontSize: 13, color: '#1A2B24' }}>
-                {task.theme}
+                {serviceTaskTitle(task)}
                 {progress && <span style={{ marginLeft: 8, fontSize: 11, color: '#1E6B50', background: '#EAF5F0', padding: '2px 6px', borderRadius: 8 }}>进度 {progress.step}/{progress.total || 5}</span>}
                 {service.totalSteps > 1 && <span style={{ marginLeft: 8, fontSize: 11, color: '#1E6B50', background: '#EAF5F0', padding: '2px 6px', borderRadius: 8 }}>当前环节 · 共{service.totalSteps}环节</span>}
                 {isWaitingPrevious
