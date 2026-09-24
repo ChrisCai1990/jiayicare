@@ -568,7 +568,10 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
     staffId: '', staffName: '', supervisorId: '', followUpPlanId: '', followUpPlanName: '', followUpPlans: [], serviceDomain: '', serviceMode: '', serviceDate: '', serviceTime: '', escortDepartments: [{ department: '', expert: '', time: '' }], escortExams: [{ item: '', department: '', expert: '', time: '', precautions: '' }], escortTreatments: [{ item: '', department: '', time: '', medicalOrder: '', precautions: '', course: '' }], transport: '', tasks: '', hotel: '', notes: '',
     preferredDateStart: '', preferredDateEnd: '', sourceMedicationId: '', medicationOptions: [], medicationItems: [{ sourceMedicationId: '', medicationName: '', medicationBrand: '', medicationSpecification: '', medicationQuantity: '' }], medicationName: '', medicationBrand: '', medicationSpecification: '', medicationQuantity: '', medicationAutoFilled: false, medicationAutoSource: '', institutionType: '', platformName: '', pharmacyName: '', pharmacyAddress: '', purchasePath: '', paymentMethod: '', deliveryTime: '', agencyExams: [{ item: '', department: '', expert: '', notes: '' }],
   })
-  const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
+  const set = (k, v) => {
+    setForm(prev => ({ ...prev, [k]: v }))
+    setError('')
+  }
 
   const [patientId, setPatientId] = useState('')
   const [assignedPlanner, setAssignedPlanner] = useState(null)
