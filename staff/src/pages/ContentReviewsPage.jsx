@@ -29,7 +29,7 @@ export default function ContentReviewsPage() {
   useEffect(() => { load() }, [id])
 
   const submit = async action => {
-    const note = action === 'return' ? window.prompt('请填写退回修改意见（仅填写内容审核意见）：') : window.prompt('审核备注（可留空）：', '')
+    const note = action === 'return' ? window.prompt('请填写退回修改意见（仅填写内容审核意见）：') : action === 'publish' ? '' : window.prompt('审核备注（可留空）：', '')
     if (action === 'return' && !note?.trim()) return
     setSubmitting(true)
     try {
