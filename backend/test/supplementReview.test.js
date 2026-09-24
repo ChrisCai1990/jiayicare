@@ -17,6 +17,8 @@ test('review changes only editable fields and preserves order provenance', () =>
 test('nutritionist can save an order-created supplement, including legacy records without sourceType', () => {
   assert.equal(canNutritionistEditOrderSupplement({ sourceType: 'order' }, 'nutritionist'), true);
   assert.equal(canNutritionistEditOrderSupplement({ sourceOrderId: 'order-1' }, 'nutritionist'), true);
+  assert.equal(canNutritionistEditOrderSupplement({ createdByName: '商城订单自动写入' }, 'nutritionist'), true);
+  assert.equal(canNutritionistEditOrderSupplement({ note: '商城购买：维生素D；订单号：JY001' }, 'nutritionist'), true);
   assert.equal(canNutritionistEditOrderSupplement({ sourceType: 'order' }, 'healthManager'), false);
   assert.equal(canNutritionistEditOrderSupplement({ sourceType: 'manual' }, 'nutritionist'), false);
 });
