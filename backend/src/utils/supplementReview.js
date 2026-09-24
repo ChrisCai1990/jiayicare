@@ -18,4 +18,11 @@ function reviewedSupplementFields(body) {
   return fields;
 }
 
-module.exports = { validateApprovedSupplement, reviewedSupplementFields };
+// 商城自动归档的记录没有医护创建人。即使是早期数据缺少 sourceType，
+// 只要仍关联商城订单，也只能由营养师（或超管）补充、核对其服用信息。
+function canNutritionistEditOrderSupplement(record, role) {
+  return ['nutritionist', 'superadmin'].includes(role)
+    && (record?.sourceType === 'order' || Boolean(record?.sourceOrderId));
+}
+
+module.exports = { validateApprovedSupplement, reviewedSupplementFields, canNutritionistEditOrderSupplement };
