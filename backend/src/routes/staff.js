@@ -14134,7 +14134,13 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
       await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
       return res.json({ success: true, message: '该格式暂不支持自动解析，已加入待审核队列' });
     }
-    if (report.parseJob?.status === 'completed' || report.audit_status === 'audited') return res.status(409).json({ success: false, message: '报告已完成识别，请使用审核中的补提本页，避免重复解析整份报告' });
+    // 审核页的“驳回”会清空 AI 结果并把 aiStatus 还原为 none，以便重新识别；
+    // 但此前完成的 parseJob 会保留作审计记录。不能仅因该历史任务是 completed
+    // 就阻止这次明确的重试，否则前端提示“可重新触发AI识别”实际无法完成。
+    const retryAfterRejectedReview = report.aiStatus === 'none' && report.audit_status !== 'audited';
+    if ((report.parseJob?.status === 'completed' && !retryAfterRejectedReview) || report.audit_status === 'audited') {
+      return res.status(409).json({ success: false, message: '报告已完成识别，请使用审核中的补提本页，避免重复解析整份报告' });
+    }
     if (report.parseJob?.status === 'paused') return res.status(409).json({ success: false, message: report.parseJob.message + '；请管理员在 AI 用量管理中恢复' });
     if (report.aiStatus === 'processing') {
       return res.json({ success: true, processing: true, message: '正在识别中，请稍候刷新' });
