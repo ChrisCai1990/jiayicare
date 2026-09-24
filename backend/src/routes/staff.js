@@ -11785,7 +11785,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
 
     // 统一归属闸门：非超管的所有工作台任务最终都必须属于本人可见客户范围。
     // 各任务查询仍尽量提前按归属过滤以控制数据量；这里负责兜底，防止新增任务类型漏加条件。
-    const scopedTodos = isSuper ? todos : todos.filter(todo => inMyScope(todo.patientId));
+    // GEO 稿件不关联会员，须绕开会员归属闸门；其余任务仍严格按本人会员范围过滤。
+    const scopedTodos = isSuper ? todos : todos.filter(todo => todo.type === 'geo_content_review' || inMyScope(todo.patientId));
 
     // 按优先级排序：priority越小越紧急，同级按时间倒序；超时优先
     scopedTodos.sort((a, b) => {
