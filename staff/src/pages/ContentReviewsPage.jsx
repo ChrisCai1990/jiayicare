@@ -14,7 +14,10 @@ export default function ContentReviewsPage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [checklist, setChecklist] = useState({ professionalReviewCompleted: false, contentAndBoundaryChecked: false, contactAndLinksChecked: false, privacyChecked: false, scopeChecked: false })
-  const requiresDoctor = item?.reviewChain?.includes('familyDoctor')
+  // 内容规则以受控稿件模板为准；旧任务记录中的历史链路不能让体检资料整理稿被误归到营养审核。
+  const reviewChain = item?.slug === 'checkup-report-organization' ? ['familyDoctor'] : (item?.reviewChain || [])
+  const requiresNutrition = reviewChain.includes('nutritionist')
+  const requiresDoctor = reviewChain.includes('familyDoctor')
   const targetPath = item?.slug ? `/knowledge/guides/${item.slug}.html` : '/knowledge/'
 
   const load = async () => {
@@ -50,7 +53,7 @@ export default function ContentReviewsPage() {
       <h2 style={{ margin: '8px 0' }}>{item.title}</h2>
       <p style={{ color: '#66756E' }}>{item.summary}</p>
       <div style={{ display: 'flex', gap: 18, margin: '16px 0', fontSize: 13, color: '#52615A' }}>
-        <span>营养审核：{reviewName(item.nutritionReview)}</span>
+        <span>营养审核：{requiresNutrition ? reviewName(item.nutritionReview) : '无需审核（体检资料整理稿）'}</span>
         <span>健康顾问审核：{requiresDoctor ? reviewName(item.doctorReview) : '无需审核（服务说明/非医疗健康教育稿）'}</span>
         <span>来源更新：{item.sourceUpdatedAt || '-'}</span>
       </div>
@@ -59,13 +62,13 @@ export default function ContentReviewsPage() {
       {item.currentRole === 'healthPlanner' && <div style={{ border: '1px solid #DCE7E1', borderRadius: 10, padding: 16, marginTop: 14 }}>
         <b style={{ fontSize: 14 }}>发布前核对清单（须全部确认）</b>
         <div style={{ marginTop: 10, padding: 12, background: '#F8FAF9', borderRadius: 8, fontSize: 12, lineHeight: 1.7, color: '#52615A' }}>
-          <div><b>审核链路：</b>{requiresDoctor ? '营养师 → 健康顾问 → 健康规划师' : '营养师 → 健康规划师（本稿无需健康顾问审核）'}</div>
+          <div><b>审核链路：</b>{requiresNutrition && requiresDoctor ? '营养师 → 健康顾问 → 健康规划师' : requiresDoctor ? '健康顾问 → 健康规划师（本稿无需营养师审核）' : '营养师 → 健康规划师（本稿无需健康顾问审核）'}</div>
           <div><b>发布范围：</b>官网 GEO 知识中心，面向公开访客</div>
           <div><b>目标页面：</b>{targetPath}</div>
           <div><b>固定联系方式：</b>客服电话 19106761448；官网 https://jiaycare.com</div>
         </div>
         {[
-          ['professionalReviewCompleted', requiresDoctor ? '营养师与健康顾问专业审核均已完成' : '营养师审核已完成（本稿无需健康顾问审核）'],
+          ['professionalReviewCompleted', requiresNutrition && requiresDoctor ? '营养师与健康顾问专业审核均已完成' : requiresDoctor ? '健康顾问审核已完成（本稿无需营养师审核）' : '营养师审核已完成（本稿无需健康顾问审核）'],
           ['contentAndBoundaryChecked', '标题、摘要、正文与健康教育服务边界已核对（核对上方正文首尾的服务边界说明）'],
           ['contactAndLinksChecked', '客服电话、官网链接与跳转内容已核对（核对本清单上方的固定联系方式）'],
           ['privacyChecked', '不含个人隐私、病历或未经授权的医疗信息'],
