@@ -1,0 +1,16 @@
+{
+  "slug": "meal-recording-basics",
+  "status": "review",
+  "title": "想了解自己的饮食习惯，可以怎样开始记录？",
+  "summary": "从时间、场景与感受入手，而不是急着计算或限制。",
+  "updatedAt": "2026-09-24",
+  "reviewedBy": "",
+  "reviewedAt": "",
+  "reviewNotes": "待营养师审核后公开。",
+  "sections": [
+    {"heading": "记录真实节奏", "paragraphs": ["可用几天记录大致用餐时间、食物类型、是否外食，以及当时的饥饿感和用餐场景。"]},
+    {"heading": "不必追求精细", "paragraphs": ["记录的目的在于理解习惯，而不是评判好坏；先选择自己容易坚持的方式。"]},
+    {"heading": "何时咨询专业人员", "paragraphs": ["有疾病、孕产期、未成年人或进食困扰时，应优先向医生或相关专业人员咨询。"]}
+  ],
+  "sources": [{"name": "世界卫生组织：健康饮食", "url": "https://www.who.int/news-room/fact-sheets/detail/healthy-diet"}]
+}

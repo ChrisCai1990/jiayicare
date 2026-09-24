@@ -1,0 +1,16 @@
+{
+  "slug": "hydration-routine-observation",
+  "status": "review",
+  "title": "想调整喝水习惯，先从观察日常开始",
+  "summary": "记录日常饮水场景与习惯，找到适合自己的提醒方式。",
+  "updatedAt": "2026-09-24",
+  "reviewedBy": "",
+  "reviewedAt": "",
+  "reviewNotes": "待营养师审核后公开。",
+  "sections": [
+    {"heading": "找出容易忽略的时段", "paragraphs": ["可以观察几天自己在哪些场景容易忘记喝水，例如通勤、会议、运动或外食时。"]},
+    {"heading": "用温和提醒代替硬性要求", "paragraphs": ["无需追求统一的固定数字；可结合天气、活动量、饮食和个人感受，尝试在容易忽略的时段设置一个温和提醒。"]},
+    {"heading": "边界提醒", "paragraphs": ["如有心、肾等疾病或医生已给出饮水限制，应以医疗团队的具体建议为准。本文仅作一般健康教育。"]}
+  ],
+  "sources": [{"name": "世界卫生组织：健康饮食", "url": "https://www.who.int/news-room/fact-sheets/detail/healthy-diet"}]
+}

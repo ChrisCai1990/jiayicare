@@ -1,0 +1,16 @@
+{
+  "slug": "checkup-report-comparison",
+  "status": "review",
+  "title": "对比历年体检报告时，先看哪些变化？",
+  "summary": "按同类项目、检查日期和当时背景排列资料，避免只看单次数字。",
+  "updatedAt": "2026-09-24",
+  "reviewedBy": "",
+  "reviewedAt": "",
+  "reviewNotes": "待健康顾问审核后公开。",
+  "sections": [
+    {"heading": "按时间整理同类项目", "paragraphs": ["把历年同类检查报告按日期放在一起，并标记当时是否空腹、是否生病、是否有生活方式或用药变化。"]},
+    {"heading": "带着具体问题沟通", "paragraphs": ["发现不同结果时，不必仅凭单项数值自行下结论；可将完整资料与具体疑问带给医生或相关专业人员。"]},
+    {"heading": "边界提醒", "paragraphs": ["如有突发或明显不适，应优先线下就医。本文仅作健康教育，不提供诊断或治疗建议。"]}
+  ],
+  "sources": [{"name": "国家卫生健康委员会", "url": "http://www.nhc.gov.cn/"}]
+}

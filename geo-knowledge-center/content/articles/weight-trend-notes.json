@@ -1,0 +1,16 @@
+{
+  "slug": "weight-trend-notes",
+  "status": "review",
+  "title": "关注体重变化时，哪些记录比单次数字更有用？",
+  "summary": "结合测量时间、生活节奏和身体感受，理解变化而非只追求数字。",
+  "updatedAt": "2026-09-24",
+  "reviewedBy": "",
+  "reviewedAt": "",
+  "reviewNotes": "待营养师审核后公开。",
+  "sections": [
+    {"heading": "保持相近条件", "paragraphs": ["如选择记录体重，可尽量保持相近的测量条件，并同步记录近期睡眠、饮食节奏、活动量和身体感受。"]},
+    {"heading": "不把短期波动当结论", "paragraphs": ["短期波动并不自动说明原因，不建议据此采取极端节食、过量运动或自行使用产品。"]},
+    {"heading": "何时咨询专业人员", "paragraphs": ["如体重变化明显、伴随不适，或存在孕产期、慢病、进食障碍等情况，应先咨询医生或相关专业人员。"]}
+  ],
+  "sources": [{"name": "世界卫生组织：健康饮食", "url": "https://www.who.int/news-room/fact-sheets/detail/healthy-diet"}]
+}

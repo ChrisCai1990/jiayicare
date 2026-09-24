@@ -1,0 +1,16 @@
+{
+  "slug": "medication-list-preparation",
+  "status": "review",
+  "title": "看健康资料前，怎样整理正在使用的药物？",
+  "summary": "保留药品名称、使用方式和开始时间，帮助专业沟通更完整。",
+  "updatedAt": "2026-09-24",
+  "reviewedBy": "",
+  "reviewedAt": "",
+  "reviewNotes": "待健康顾问审核后公开。",
+  "sections": [
+    {"heading": "保留关键信息", "paragraphs": ["可记录正在使用的药物、营养补充剂或外用产品的名称、开始时间和日常使用方式，并保留包装或处方信息。"]},
+    {"heading": "不自行调整", "paragraphs": ["不要因阅读健康内容或单次检查结果自行停用、增减或替换药物；相关调整应与医生或药师确认。"]},
+    {"heading": "边界提醒", "paragraphs": ["本文仅用于资料整理和沟通准备，不替代医疗建议。"]}
+  ],
+  "sources": [{"name": "国家药品监督管理局", "url": "https://www.nmpa.gov.cn/"}]
+}
