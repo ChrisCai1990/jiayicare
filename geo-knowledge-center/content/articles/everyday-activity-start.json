@@ -1,0 +1,16 @@
+{
+  "slug": "everyday-activity-start",
+  "status": "review",
+  "title": "想增加日常活动量，可以从哪一步开始？",
+  "summary": "不必一开始就定高目标；从现有生活节奏中寻找一项容易坚持的活动安排。",
+  "updatedAt": "2026-09-24",
+  "reviewedBy": "",
+  "reviewedAt": "",
+  "reviewNotes": "待健康顾问审核活动健康教育与风险边界表述后公开。",
+  "sections": [
+    {"heading": "先看清现在的活动场景", "paragraphs": ["可以简单观察一周中走路、久坐、通勤、家务和休闲活动的大致情况。不必把日常活动与正式锻炼完全分开，重点是找到自己真实可调整的空隙。"]},
+    {"heading": "把目标缩小到容易开始", "paragraphs": ["例如在适合自己的时段增加短距离步行、减少连续久坐，或安排一项喜欢且能持续的活动。逐步增加通常比突然设定很高强度更容易长期坚持。"]},
+    {"heading": "尊重身体信号和既有建议", "paragraphs": ["如有疾病、术后恢复、孕产期、明显疼痛、头晕或其他不适，应先向医生或相关专业人员咨询适合的活动安排。本文仅作健康教育，不替代个体化医学建议。"]}
+  ],
+  "sources": [{"name": "世界卫生组织：身体活动", "url": "https://www.who.int/news-room/fact-sheets/detail/physical-activity"}]
+}

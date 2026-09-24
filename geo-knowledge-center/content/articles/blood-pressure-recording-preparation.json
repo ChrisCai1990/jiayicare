@@ -1,0 +1,16 @@
+{
+  "slug": "blood-pressure-recording-preparation",
+  "status": "review",
+  "title": "准备记录血压前，先把这些信息留好",
+  "summary": "记录测量时间、环境和感受，为下一步与专业人员沟通做好准备。",
+  "updatedAt": "2026-09-24",
+  "reviewedBy": "",
+  "reviewedAt": "",
+  "reviewNotes": "待健康顾问审核血压记录与医疗边界表述后公开。",
+  "sections": [
+    {"heading": "让记录包含时间和当时情况", "paragraphs": ["如已在专业人员建议下进行血压记录，可同时留意测量日期与时间、当时是否刚活动、饮用咖啡或吸烟、以及是否有不适。保留真实情况比只记一个数字更方便后续沟通。"]},
+    {"heading": "不要只凭单次结果自行处理", "paragraphs": ["一次读数不能代替专业判断。不要因单次测量自行增减、停用或更换药物；如有既往疾病、孕产期或长期用药，应按医生或相关专业人员建议处理。"]},
+    {"heading": "识别需要及时线下帮助的情况", "paragraphs": ["出现胸痛、呼吸困难、意识异常、肢体无力或其他突发明显不适时，应及时寻求线下急救或医疗帮助。本文仅用于资料准备和健康教育，不提供诊断或治疗建议。"]}
+  ],
+  "sources": [{"name": "世界卫生组织：高血压", "url": "https://www.who.int/news-room/fact-sheets/detail/hypertension"}]
+}

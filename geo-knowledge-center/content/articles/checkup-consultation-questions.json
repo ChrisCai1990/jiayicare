@@ -1,0 +1,16 @@
+{
+  "slug": "checkup-consultation-questions",
+  "status": "review",
+  "title": "拿到体检报告后，怎样整理问题再去沟通？",
+  "summary": "保留完整报告、按时间梳理变化，并带着具体问题获得专业沟通支持。",
+  "updatedAt": "2026-09-24",
+  "reviewedBy": "",
+  "reviewedAt": "",
+  "reviewNotes": "待健康顾问审核体检沟通与就医边界表述后公开。",
+  "sections": [
+    {"heading": "带上完整资料，而不只截取异常项目", "paragraphs": ["沟通前可保留完整报告、检查日期和既往同类结果。将自己最关注的变化用简单语言标记出来，有助于后续更聚焦地说明问题。"]},
+    {"heading": "把疑问写成可回答的问题", "paragraphs": ["例如可以询问：本次结果需要结合哪些背景理解、是否需要进一步线下咨询、日常安排中有哪些事项值得留意。避免仅依据单一数值自行得出诊断或改变用药。"]},
+    {"heading": "先确认服务与医疗的边界", "paragraphs": ["健康管理服务可以协助整理资料和安排沟通，不替代医生诊断、治疗或紧急处置。出现胸痛、呼吸困难、晕厥等紧急或明显不适时，应优先线下就医。"]}
+  ],
+  "sources": [{"name": "嘉医汇：内容审核与更新原则", "url": "https://jiaycare.com/knowledge/editorial-policy.html"}]
+}
