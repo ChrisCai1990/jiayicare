@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast } from '../App'
 
-const statusLabel = status => ({ approved: '专业审核通过', ready_to_publish: '待健康规划师确认', publish_confirmed: '已确认可发布', changes_requested: '已退回修改' }[status] || status || '-')
+const statusLabel = status => ({ approved: '专业审核通过', ready_to_publish: '待健康规划师发布', published: '已发布官网', publish_confirmed: '已确认可发布', changes_requested: '已退回修改' }[status] || status || '-')
 const reviewText = review => review?.reviewedAt ? `${review.reviewedByName || '本人'} · ${new Date(review.reviewedAt).toLocaleString()}${review.note ? ` · ${review.note}` : ''}` : ''
 
 export default function ContentReviewHistoryPage() {

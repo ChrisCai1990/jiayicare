@@ -37,6 +37,7 @@ const HealthPlan = require('../models/HealthPlan');
 const KnowledgeItem = require('../models/KnowledgeItem');
 const ContentReview = require('../models/ContentReview');
 const { ensureContentReviews, advanceReview } = require('../utils/contentReviewWorkflow');
+const { publishGeoArticle } = require('../utils/geoStaticPublisher');
 const PushRecord = require('../models/PushRecord');
 const Commission = require('../models/Commission');
 const ServiceRecord = require('../models/ServiceRecord');
@@ -11506,7 +11507,7 @@ const TODO_REVIEW_ROLE = {
   service_proposal_review: 'healthPlanner',
 };
 
-// GEO 知识稿审核：内容审核快照独立于公开静态站，审核通过只会标记“待发布”。
+// GEO 知识稿审核：专业审核后由健康规划师一次确认并直接发布官网。
 router.get('/content-reviews', staffAuth, async (req, res) => {
   try {
     const role = req.staff.role;
@@ -11530,17 +11531,32 @@ router.patch('/content-reviews/:id/review', staffAuth, async (req, res) => {
     if (!['superadmin', 'nutritionist', 'familyDoctor', 'healthPlanner'].includes(role)) return res.status(403).json({ success: false, message: '当前角色无内容审核权限' });
     const record = await ContentReview.findById(req.params.id);
     if (!record) return res.status(404).json({ success: false, message: '审核稿不存在' });
-    if (role === 'healthPlanner' && req.body?.action === 'confirm_publish') {
+    if (role === 'healthPlanner' && req.body?.action === 'publish') {
       if (record.currentRole !== 'healthPlanner' || record.status !== 'ready_to_publish') throw new Error('该稿件尚未完成专业审核');
       const checklist = req.body?.checklist || {};
       const requiredChecks = ['professionalReviewCompleted', 'contentAndBoundaryChecked', 'contactAndLinksChecked', 'privacyChecked', 'scopeChecked'];
       if (!requiredChecks.every(key => checklist[key] === true)) throw new Error('请完成发布前核对清单');
-      record.currentRole = '';
-      record.status = 'publish_confirmed';
+      const now = new Date();
       record.publishChecklist = { ...Object.fromEntries(requiredChecks.map(key => [key, true])), checkedBy: req.staff._id, checkedByName: req.staff.name || '', checkedAt: new Date() };
-      record.auditLog.push({ action: 'confirm_publish', role, note: String(req.body?.note || '').trim(), by: req.staff._id, byName: req.staff.name || '', at: new Date() });
+      const alreadyPublished = await ContentReview.find({ status: 'published' }).select('slug').lean();
+      publishGeoArticle({ slug: record.slug, publishedBy: req.staff.name || '健康规划师', publishedAt: now, alreadyPublishedSlugs: alreadyPublished.map(item => item.slug).filter(Boolean) });
+      record.currentRole = '';
+      record.status = 'published';
+      record.auditLog.push({ action: 'publish', role, by: req.staff._id, byName: req.staff.name || '', at: now });
       await record.save();
-      return res.json({ success: true, data: record, publicationReady: true, message: '已确认可发布；文章仍未自动公开。' });
+      return res.json({ success: true, data: record, publicationReady: false, message: '已发布到官网知识中心。' });
+    }
+    if (role === 'healthPlanner' && req.body?.action === 'return') {
+      if (record.currentRole !== 'healthPlanner' || record.status !== 'ready_to_publish') throw new Error('该稿件当前不在发布确认环节');
+      const note = String(req.body?.note || '').trim();
+      if (!note) throw new Error('退回时请说明修改意见');
+      const previousRole = record.reviewChain.slice().reverse().find(Boolean);
+      if (!previousRole) throw new Error('未找到可退回的专业审核环节');
+      record.currentRole = previousRole;
+      record.status = 'changes_requested';
+      record.auditLog.push({ action: 'return', role, note, by: req.staff._id, byName: req.staff.name || '', at: new Date() });
+      await record.save();
+      return res.json({ success: true, data: record, message: `已退回给${previousRole === 'nutritionist' ? '营养师' : '健康顾问'}修改。` });
     }
     const actingRole = role === 'superadmin' ? record.currentRole : role;
     advanceReview(record, actingRole, req.body?.action, req.body?.note, req.staff);
