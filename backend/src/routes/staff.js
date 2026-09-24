@@ -11562,7 +11562,10 @@ router.patch('/content-reviews/:id/review', staffAuth, async (req, res) => {
     advanceReview(record, actingRole, req.body?.action, req.body?.note, req.staff);
     await record.save();
     res.json({ success: true, data: record, publicationReady: record.status === 'approved', message: record.status === 'approved' ? '审核已完成，文章已标记为待发布，尚未公开。' : '审核结果已保存。' });
-  } catch (err) { res.status(400).json({ success: false, message: err.message }); }
+  } catch (err) {
+    console.error('[content-review] operation failed', { recordId: req.params.id, role: req.staff?.role, action: req.body?.action, message: err.message });
+    res.status(400).json({ success: false, message: err.message });
+  }
 });
 
 router.get('/ai-todos', staffAuth, async (req, res) => {

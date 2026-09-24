@@ -40,7 +40,11 @@ export default function ContentReviewsPage() {
       const r = await staffAPI.reviewContentReview(id, { action, note: note || '', checklist })
       toast(r.message || '审核已保存', 'success')
       nav('/home')
-    } catch (e) { toast(e.message || '审核保存失败', 'error') }
+    } catch (e) {
+      const message = e.message || '审核保存失败'
+      toast(message, 'error')
+      if (action === 'publish') window.alert(`发布未完成：${message}`)
+    }
     finally { setSubmitting(false) }
   }
 
