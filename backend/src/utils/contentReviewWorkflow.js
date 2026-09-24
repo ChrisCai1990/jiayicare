@@ -34,6 +34,12 @@ async function ensureContentReviews(ContentReview) {
       },
       { $set: { slug: seed.slug, summary: seed.summary, sourceContent: seed.sourceContent, sourceUpdatedAt: seed.sourceUpdatedAt, reviewChain: seed.reviewChain } },
     );
+    // 审核链由受控稿件模板决定。旧记录可能已有正文却缺少（或保留了错误的）链路，
+    // 不能因此把涉及血脂、就医边界等内容错误显示成“无需健康顾问审核”。
+    await ContentReview.updateMany(
+      { $or: [{ slug: seed.slug }, { title: seed.title }] },
+      { $set: { reviewChain: seed.reviewChain } },
+    );
   }
   // 已完成的旧记录补入新增的“健康规划师发布确认”环节；历史公开稿的 approved_ready 不受影响。
   await ContentReview.updateMany(
