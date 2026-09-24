@@ -23,7 +23,7 @@ export function checkupMedicalExecutionFromTask(task) {
   const intake = data.intake || booking.intake || {}
   const existing = Array.isArray(data.checkAppointments) ? data.checkAppointments : []
   const requestedItems = (intake.checkItems || []).flatMap(item => String(item?.name || '').split(/[、，,\n；;]/).map(name => name.trim()).filter(Boolean))
-  const special = booking.specialCheckAppointment || {}
+  const special = booking.specialCheckRequired === true || intake.serviceType === 'special' ? booking.specialCheckAppointment || {} : {}
   const finalVisit = booking.postCheckExpertAppointment || booking.expertAppointment || {}
   const legacyItem = !special.checkItem ? legacyBookedItem(requestedItems, finalVisit) : ''
   const checks = requestedItems.map((item, index) => {

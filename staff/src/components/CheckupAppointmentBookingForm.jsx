@@ -11,6 +11,7 @@ export function checkupAppointmentBookingFromTask(task) {
   const legacyFinalConsultation = data.expertAppointment || {}
   return {
     ...data,
+    specialCheckRequired: data.intake?.serviceType === 'special' || data.specialCheckRequired === true,
     orderFormAppointment: { ...emptyAppointment, ...(data.orderFormAppointment || {}) },
     specialCheckAppointment: { ...emptySpecialCheckAppointment, ...(data.specialCheckAppointment || {}) },
     postCheckExpertAppointment: { ...emptyAppointment, ...legacyFinalConsultation, ...(data.postCheckExpertAppointment || {}) },
@@ -26,7 +27,7 @@ function AppointmentFields({ title, value, onChange, hint, specialCheck = false 
       <label style={{ fontSize: 12, color: '#65776F' }}>院区 *<input className="form-control" placeholder="例如：庆春院区" value={value.campus || ''} onChange={e => update('campus', e.target.value)} /></label>
       <label style={{ fontSize: 12, color: '#65776F' }}>科室 *<input className="form-control" value={value.department || ''} onChange={e => update('department', e.target.value)} /></label>
       <label style={{ fontSize: 12, color: '#65776F' }}>具体地点 *<input className="form-control" placeholder="例如：3号楼 2层 B区" value={value.location || ''} onChange={e => update('location', e.target.value)} /></label>
-      <label style={{ fontSize: 12, color: '#65776F' }}>医生/专家 *<input className="form-control" value={value.doctor || ''} onChange={e => update('doctor', e.target.value)} /></label>
+      <label style={{ fontSize: 12, color: '#65776F' }}>医生/专家{specialCheck ? '（如需指定）' : ' *'}<input className="form-control" value={value.doctor || ''} onChange={e => update('doctor', e.target.value)} /></label>
       <label style={{ fontSize: 12, color: '#65776F' }}>预约日期 *<input type="date" className="form-control" value={value.date || ''} onChange={e => update('date', e.target.value)} /></label>
       <label style={{ fontSize: 12, color: '#65776F' }}>预约时间 *<input type="time" className="form-control" value={value.time || ''} onChange={e => update('time', e.target.value)} /></label>
       <div style={{ alignSelf: 'end', fontSize: 12, color: '#65776F', lineHeight: 1.55 }}>{hint}</div>
@@ -37,7 +38,7 @@ function AppointmentFields({ title, value, onChange, hint, specialCheck = false 
 export default function CheckupAppointmentBookingForm({ task, value, onChange }) {
   const data = checkupAppointmentBookingFromTask({ ...task, formData: value })
   const intake = data.intake || task?.formData?.intake || {}
-  const needsSpecialCheck = intake.serviceType === 'special'
+  const needsSpecialCheck = data.specialCheckRequired
   const update = (key, next) => onChange({ ...data, [key]: next })
   const checkItems = (intake.checkItems || []).map(item => item.name).filter(Boolean).join('、')
   return <div style={{ display: 'grid', gap: 12 }}>
@@ -46,7 +47,14 @@ export default function CheckupAppointmentBookingForm({ task, value, onChange })
       <b>检查机构：</b>{intake.institution || '—'}　<b>空腹：</b>{intake.fastingRequired ? '需要' : '不需要'}
     </div>
     <AppointmentFields title="① 开检查单号" value={data.orderFormAppointment} onChange={next => update('orderFormAppointment', next)} hint="用于开具本次检查所需的检查单。" />
-    {needsSpecialCheck && <AppointmentFields title="② 特殊检查专家号" value={data.specialCheckAppointment} onChange={next => update('specialCheckAppointment', next)} hint="特殊检查应在最终专家看诊前完成。" specialCheck />}
-    <AppointmentFields title={needsSpecialCheck ? '③ 检查后专家看诊号' : '② 检查后专家看诊号'} value={data.postCheckExpertAppointment} onChange={next => update('postCheckExpertAppointment', next)} hint={needsSpecialCheck ? '检查完成后由专家看诊，时间须晚于特殊检查。' : '常规检查完成后由专家看诊，日期不能早于开检查单号。'} />
+    <section style={{ border: '1px solid #D8E7DF', borderRadius: 10, overflow: 'hidden' }}>
+      <div style={{ padding: '11px 14px', background: '#F2F8F5', fontWeight: 750, color: '#29483C' }}>② 特殊检查预约</div>
+      <div style={{ padding: 14 }}>
+        <label><input type="checkbox" checked={needsSpecialCheck} disabled={intake.serviceType === 'special'} onChange={e => onChange({ ...data, specialCheckRequired: e.target.checked, ...(e.target.checked ? {} : { specialCheckAppointment: { ...emptySpecialCheckAppointment } }) })} /> 本次有需要提前预约的特殊检查（如部分超声）</label>
+        <div style={{ fontSize: 12, color: '#65776F', marginTop: 6 }}>{intake.serviceType === 'special' ? '特殊约检必须填写本环节。' : '无需提前预约时不勾选，仍保留本环节以便核对。'}</div>
+      </div>
+      {needsSpecialCheck && <AppointmentFields title="特殊检查预约信息" value={data.specialCheckAppointment} onChange={next => update('specialCheckAppointment', next)} hint="填写检查项目、地点和时间；仅需指定医生的项目填写医生姓名。" specialCheck />}
+    </section>
+    <AppointmentFields title="③ 检查后专家门诊" value={data.postCheckExpertAppointment} onChange={next => update('postCheckExpertAppointment', next)} hint={needsSpecialCheck ? '检查完成后由专家看诊，时间须晚于特殊检查。' : '常规检查完成后由专家看诊，日期不能早于开检查单号。'} />
   </div>
 }
