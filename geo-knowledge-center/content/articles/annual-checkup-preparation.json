@@ -1,0 +1,16 @@
+{
+  "slug": "annual-checkup-preparation",
+  "status": "review",
+  "title": "年度体检前，提前准备哪些信息更有帮助？",
+  "summary": "把既往报告、用药与希望了解的问题提前整理好，让沟通更清楚。",
+  "updatedAt": "2026-09-24",
+  "reviewedBy": "",
+  "reviewedAt": "",
+  "reviewNotes": "待健康顾问审核后公开。",
+  "sections": [
+    {"heading": "把资料放在一起", "paragraphs": ["可先准备既往完整报告、近期身体感受、长期使用的药物或补充剂，以及最想了解的一个问题。"]},
+    {"heading": "以机构要求为准", "paragraphs": ["不确定检查前是否需要空腹、停用某类药物或调整日常安排时，应以体检机构或医生给出的具体要求为准。"]},
+    {"heading": "边界提醒", "paragraphs": ["本文用于资料准备和健康教育，不替代诊断、治疗或个体化检查建议。"]}
+  ],
+  "sources": [{"name": "国家卫生健康委员会", "url": "http://www.nhc.gov.cn/"}]
+}
