@@ -415,7 +415,7 @@ router.post('/order', auth, async (req, res) => {
     serviceWorkflowSnapshot: product?.serviceWorkflow ? (product.serviceWorkflow.toObject ? product.serviceWorkflow.toObject() : product.serviceWorkflow) : null,
     serviceProviderSnapshot: serviceProvider === 'jiayihui_health'
       ? { code: 'jiayihui_health', companyName: '杭州嘉医汇健康管理有限公司', consentVersion: '2026-09-24', consentedAt: new Date() }
-      : { code: 'platform', companyName: '杭州嘉静佑辰科技有限公司' },
+      : { code: 'platform', companyName: '杭州嘉医汇健康管理有限公司' },
     paymentMethod: fundUsed > 0 && paidAmount === 0 ? 'healthFund' : (paidAmount > 0 ? 'wechat' : ''),
     paymentStatus: paidAmount > 0 ? 'pending' : 'paid',
     paidAmount: 0,

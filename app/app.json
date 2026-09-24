@@ -3,6 +3,7 @@
     "name": "嘉医汇健康管家",
     "slug": "jiayicare",
     "version": "1.0.0",
+    "platforms": ["ios", "android", "web"],
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -14,6 +15,7 @@
     },
     "ios": {
       "bundleIdentifier": "com.jiayicare.app",
+      "buildNumber": "1",
       "supportsTablet": true,
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "需要访问相册，以便上传体检报告照片",
@@ -27,6 +29,7 @@
       },
       "edgeToEdgeEnabled": false,
       "package": "com.jiayicare.app",
+      "versionCode": 1,
       "permissions": ["CAMERA", "READ_MEDIA_IMAGES"]
     },
     "web": {

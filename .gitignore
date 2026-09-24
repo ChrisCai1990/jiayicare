@@ -26,6 +26,8 @@ artifacts/service-assistant/
 output/
 tmp/
 scripts/.codex_*.py
+.tools-npm-shim/
+app/dist-android-preflight/
 
 # Mini Program developer-tool artifacts
 miniprogram/node_modules.*/

@@ -35,6 +35,8 @@ const MedicalReport = require('../models/MedicalReport');
 const { REPORT_LIST_PROJECTION, toReportListItem } = require('../utils/reportListPayload');
 const HealthPlan = require('../models/HealthPlan');
 const KnowledgeItem = require('../models/KnowledgeItem');
+const ContentReview = require('../models/ContentReview');
+const { ensureContentReviews, advanceReview } = require('../utils/contentReviewWorkflow');
 const PushRecord = require('../models/PushRecord');
 const Commission = require('../models/Commission');
 const ServiceRecord = require('../models/ServiceRecord');
@@ -11137,6 +11139,34 @@ const TODO_REVIEW_ROLE = {
   service_proposal_review: 'healthPlanner',
 };
 
+// GEO 知识稿审核：内容审核快照独立于公开静态站，审核通过只会标记“待发布”。
+router.get('/content-reviews', staffAuth, async (req, res) => {
+  try {
+    const role = req.staff.role;
+    const isSuper = role === 'superadmin';
+    if (!isSuper && !['nutritionist', 'familyDoctor'].includes(role)) return res.status(403).json({ success: false, message: '当前角色无内容审核权限' });
+    await ensureContentReviews(ContentReview);
+    const filter = isSuper
+      ? {}
+      : { currentRole: role, status: { $in: ['pending', 'changes_requested'] } };
+    const data = await ContentReview.find(filter).sort({ updatedAt: -1 }).lean();
+    res.json({ success: true, data });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.patch('/content-reviews/:id/review', staffAuth, async (req, res) => {
+  try {
+    const role = req.staff.role;
+    if (!['superadmin', 'nutritionist', 'familyDoctor'].includes(role)) return res.status(403).json({ success: false, message: '当前角色无内容审核权限' });
+    const record = await ContentReview.findById(req.params.id);
+    if (!record) return res.status(404).json({ success: false, message: '审核稿不存在' });
+    const actingRole = role === 'superadmin' ? record.currentRole : role;
+    advanceReview(record, actingRole, req.body?.action, req.body?.note, req.staff);
+    await record.save();
+    res.json({ success: true, data: record, publicationReady: record.status === 'approved', message: record.status === 'approved' ? '审核已完成，文章已标记为待发布，尚未公开。' : '审核结果已保存。' });
+  } catch (err) { res.status(400).json({ success: false, message: err.message }); }
+});
+
 router.get('/ai-todos', staffAuth, async (req, res) => {
   try {
     const role = req.staff.role;
@@ -11155,6 +11185,27 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     const now = new Date();
     const DAY = 24 * 60 * 60 * 1000;
     const todos = [];
+
+    // 官网 GEO 稿件没有绑定会员，不能套用会员归属过滤；只展示当前审核角色的稿件。
+    if (isSuper || ['nutritionist', 'familyDoctor'].includes(role)) {
+      await ensureContentReviews(ContentReview);
+      const reviewFilter = isSuper
+        ? { status: { $in: ['pending', 'changes_requested'] }, currentRole: { $in: ['nutritionist', 'familyDoctor'] } }
+        : { status: { $in: ['pending', 'changes_requested'] }, currentRole: role };
+      const contentReviews = await ContentReview.find(reviewFilter).sort({ updatedAt: -1 }).limit(50).lean();
+      contentReviews.forEach(item => todos.push({
+        id: `geo_content_${item._id}`,
+        type: 'geo_content_review',
+        label: item.currentRole === 'familyDoctor' ? 'GEO 健康教育稿待医师审核' : 'GEO 健康教育稿待营养审核',
+        priority: 3,
+        patientName: '官网 GEO 内容',
+        patientId: '',
+        summary: item.title,
+        createdAt: item.updatedAt || item.createdAt,
+        overdue: false,
+        link: `/content-reviews/${item._id}`,
+      }));
+    }
 
     // 会员归属过滤：AI待办此前只按"角色能不能审这个类型"过滤，完全没按"这个会员是不是自己名下"过滤——
     // 2026-07-07 反馈：会员潘孝银归属营养师吴苗苗，但营养师赵菲盈也能在自己的待审核列表里看到该会员的任务。

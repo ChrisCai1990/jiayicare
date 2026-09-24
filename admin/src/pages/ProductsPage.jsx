@@ -583,7 +583,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
               </div>
               <div className="form-group" style={{ gridColumn: '1/-1' }}>
                 <label className="form-label">服务主体说明</label>
-                <div className="form-input" style={{ background: '#f6f8f7', color: '#5c6e6a' }}>平台由杭州嘉静佑辰科技有限公司运营；健康管理服务由杭州嘉医汇健康管理有限公司按实际服务安排提供。</div>
+                <div className="form-input" style={{ background: '#f6f8f7', color: '#5c6e6a' }}>平台及健康管理服务均由杭州嘉医汇健康管理有限公司提供。</div>
               </div>
               <div className="form-group">
                 <label className="form-label">服务有效期（天）</label>

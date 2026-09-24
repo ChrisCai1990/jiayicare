@@ -35,7 +35,7 @@ const orderSchema = new mongoose.Schema({
   // 下单时固定服务提供方与用户确认记录；后续商品配置调整不影响历史订单。
   serviceProviderSnapshot: {
     code: { type: String, enum: ['platform', 'jiayihui_health'], default: 'platform' },
-    companyName: { type: String, default: '杭州嘉静佑辰科技有限公司' },
+    companyName: { type: String, default: '杭州嘉医汇健康管理有限公司' },
     consentVersion: { type: String, default: '' },
     consentedAt: { type: Date, default: null },
   },
