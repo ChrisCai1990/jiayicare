@@ -591,7 +591,7 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
     const booking = await FollowUp.create({
       patientId: patient._id, staffId: advisorId, assignedTo: patient.assignedHealthManager,
       type: 'other', status: 'planned', date: initialTaskDate, remindAt: initialTaskDate, sourceType: 'order', sourceOrderId: order._id,
-      workflowKey: `${PREFIX}booking`, taskRole: 'executor', theme: supplyProxy ? `${supplementProxy ? '代配营养素' : '代配药'}：健管专员确认采购安排 · ${serviceName}` : `医疗代诊：健管专员完成专家门诊预约 · ${serviceName}`,
+      workflowKey: `${PREFIX}booking`, taskRole: 'executor', theme: supplyProxy ? `${supplementProxy ? '代配营养素' : '代配药'}：健管专员确认采购安排 · ${serviceName}` : `专家约诊：健管专员完成专家门诊预约 · ${serviceName}`,
       plannedContent: supplyProxy ? `系统已根据${supplementProxy ? '营养素' : '用药'}档案自动发起服务，请核对采购渠道、数量和配送时间；确认后转健康规划师安排执行人员。` : '健康顾问已发起专家约诊，请完成预约并记录实际日期时间。',
       formData: {
         planSnapshot: { ...plan, serviceContent: appointmentRequirement, initiationSource: STAFF_DIRECT_SOURCE },
@@ -601,7 +601,9 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
       },
     });
     let supervisor = null;
-    if (appointmentOnly || supplyProxy) {
+    // 专家约诊的唯一待办就是健管预约。它不是医疗代诊，创建只读督办卡会让
+    // 同一服务在工作台同时出现两条；代配服务仍保留全程督办卡。
+    if (supplyProxy) {
       supervisor = await FollowUp.create({
         patientId: patient._id, staffId: patient.assignedHealthPlanner, assignedTo: patient.assignedHealthPlanner,
         type: 'other', status: 'in_progress', date: initialTaskDate, remindAt: initialTaskDate, sourceType: 'order', sourceOrderId: order._id,
@@ -611,6 +613,11 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
       });
       await Order.updateOne({ _id: order._id }, { $set: {
         supervisorId: patient.assignedHealthPlanner, currentStage: 'booking', currentAssignee: patient.assignedHealthManager,
+        closureMode: 'automatic', supervisionStatus: 'in_progress',
+      } });
+    } else {
+      await Order.updateOne({ _id: order._id }, { $set: {
+        currentStage: 'booking', currentAssignee: patient.assignedHealthManager,
         closureMode: 'automatic', supervisionStatus: 'in_progress',
       } });
     }
@@ -1032,8 +1039,9 @@ async function advanceMedicalProxyWorkflow(task) {
   } });
 }
 
-// Reconcile only active staff-initiated expert appointments. Older versions created
-// an order and booking task without the planner's read-only supervision card.
+// Reconcile only active staff-initiated expert appointments.  An expert appointment
+// has exactly one actionable task at booking: it must never gain a planner supervision
+// card merely because an older version created one.
 async function ensureStaffExpertAppointmentTasksForStaff(staff) {
   if (!['healthPlanner', 'healthManager'].includes(staff.role)) return 0;
   const people = await User.find({ tenantId: staff.tenantId || null,
@@ -1071,17 +1079,14 @@ async function ensureStaffExpertAppointmentTasksForStaff(staff) {
       } }, { upsert: true });
       created += result.upsertedCount || 0;
     }
-    if (!current.has(`${PREFIX}supervise`)) {
-      const result = await FollowUp.updateOne({ _id: idFor('supervise') }, { $setOnInsert: {
-        patientId: patient._id, staffId: patient.assignedHealthPlanner, assignedTo: patient.assignedHealthPlanner,
-        type: 'other', status: 'in_progress', date: now, remindAt: now, sourceType: 'order', sourceOrderId: order._id,
-        workflowKey: `${PREFIX}supervise`, taskRole: 'supervisor', theme: '专家约诊：健康规划师全程督办 · 专家约诊服务',
-        plannedContent: '持续查看健管预约、客户通知和就诊后审核进度，按服务结果闭环。',
-        formData: { currentStage: order.currentStage || 'booking', initiationSource: STAFF_DIRECT_SOURCE, serviceContent: order.serviceRequirements },
-      } }, { upsert: true });
-      created += result.upsertedCount || 0;
-    }
-    if (!order.supervisorId) await Order.updateOne({ _id: order._id, supervisorId: null }, { $set: { supervisorId: patient.assignedHealthPlanner } });
+    const legacySupervisorIds = tasks.filter(task => task.workflowKey === `${PREFIX}supervise`
+      && ['planned', 'in_progress'].includes(task.status)).map(task => task._id);
+    if (legacySupervisorIds.length) await FollowUp.updateMany({ _id: { $in: legacySupervisorIds } },
+      { $set: { status: 'cancelled', cancelReason: '专家约诊仅保留健管预约任务', completedAt: null, completedBy: null } });
+    await FollowUp.updateMany({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}booking` },
+      { $set: { theme: '专家约诊：健管专员完成专家门诊预约 · 专家约诊服务' } });
+    await Order.updateOne({ _id: order._id, currentStage: 'booking' },
+      { $set: { currentAssignee: patient.assignedHealthManager, supervisorId: null, supervisionStatus: 'in_progress' } });
   }
   return created;
 }

@@ -132,8 +132,8 @@ test('on-site consultation keeps its parent escort open and closes only after ad
   assert.match(routes, /generatedFromMedicalEscort && followUp\.sourceOrderId[\s\S]*?adHocConsultation[\s\S]*?currentStage: 'completed'/);
 });
 
-test('existing staff expert order gains one booking and one planner supervision task on either workbench', async () => {
-  const previous = { userFind: User.find, orderFind: Order.find, orderUpdate: Order.updateOne, taskFind: FollowUp.find, taskUpdate: FollowUp.updateOne };
+test('existing staff expert order keeps one booking task and retires a legacy planner supervision task', async () => {
+  const previous = { userFind: User.find, orderFind: Order.find, orderUpdate: Order.updateOne, taskFind: FollowUp.find, taskUpdate: FollowUp.updateOne, taskUpdateMany: FollowUp.updateMany };
   const rows = new Map();
   try {
     User.find = () => ({ select: () => ({ lean: async () => [{ _id: 'patient', assignedHealthPlanner: 'planner', assignedHealthManager: 'manager' }] }) });
@@ -145,19 +145,37 @@ test('existing staff expert order gains one booking and one planner supervision 
       rows.set(query._id, { _id: query._id, ...update.$setOnInsert });
       return { upsertedCount: 1 };
     };
-    assert.equal(await ensureStaffExpertAppointmentTasksForStaff({ role: 'healthManager', _id: 'manager' }), 2);
+    FollowUp.updateMany = async () => ({ modifiedCount: 0 });
+    assert.equal(await ensureStaffExpertAppointmentTasksForStaff({ role: 'healthManager', _id: 'manager' }), 1);
     assert.equal(await ensureStaffExpertAppointmentTasksForStaff({ role: 'healthPlanner', _id: 'planner' }), 0);
-    assert.equal(rows.size, 2);
+    assert.equal(rows.size, 1);
     const booking = [...rows.values()].find(row => row.workflowKey === 'medical_proxy:booking');
-    const supervisor = [...rows.values()].find(row => row.workflowKey === 'medical_proxy:supervise');
     assert.equal(booking.assignedTo, 'manager');
     assert.equal(booking.formData.preferredDateStart, '2026-12-01');
     assert.ok(booking.date < new Date('2026-12-01'));
-    assert.equal(supervisor.assignedTo, 'planner');
-    assert.equal(supervisor.formData.currentStage, 'booking');
   } finally {
     User.find = previous.userFind; Order.find = previous.orderFind; Order.updateOne = previous.orderUpdate;
-    FollowUp.find = previous.taskFind; FollowUp.updateOne = previous.taskUpdate;
+    FollowUp.find = previous.taskFind; FollowUp.updateOne = previous.taskUpdate; FollowUp.updateMany = previous.taskUpdateMany;
+  }
+});
+
+test('staff-started expert appointment creates only a correctly named booking task', async () => {
+  const previous = { orderCreate: Order.create, orderUpdate: Order.updateOne, taskCreate: FollowUp.create };
+  const tasks = [];
+  try {
+    Order.create = async row => ({ _id: 'expert-order', ...row });
+    Order.updateOne = async () => ({ modifiedCount: 1 });
+    FollowUp.create = async row => { const task = { _id: `task-${tasks.length + 1}`, ...row }; tasks.push(task); return task; };
+    const result = await startStaffMedicalProxyWorkflow({
+      patient: { _id: 'patient', assignedHealthManager: 'manager', assignedHealthPlanner: 'planner' }, advisorId: 'advisor',
+      plan: { appointmentOnly: true, preferredDateStart: '2026-10-01', preferredDateEnd: '2026-10-02', hospital: '测试医院', department: '内科', expert: '测试专家', clinicType: 'expert', insuranceUse: 'medical_insurance' },
+    });
+    assert.deepEqual(tasks.map(task => task.workflowKey), ['medical_proxy:booking']);
+    assert.equal(result.supervisor, null);
+    assert.match(result.booking.theme, /^专家约诊：健管专员完成专家门诊预约/);
+    assert.doesNotMatch(result.booking.theme, /医疗代诊/);
+  } finally {
+    Order.create = previous.orderCreate; Order.updateOne = previous.orderUpdate; FollowUp.create = previous.taskCreate;
   }
 });
 
