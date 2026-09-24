@@ -16,3 +16,11 @@ test('handoff omits settlement for self-pay and medical insurance', () => {
   assert.match(source, /insuranceUse === 'commercial_insurance' && `结算方式：/)
   assert.doesNotMatch(source, /`支付方式：\$\{\(\{ direct:/)
 })
+
+test('advisor can leave expert unknown and manager can record the confirmed clinician', () => {
+  const plans = fs.readFileSync(path.join(__dirname, '../src/pages/PlansPage.jsx'), 'utf8')
+  const booking = fs.readFileSync(path.join(__dirname, '../src/components/MedicalProxyStageForm.jsx'), 'utf8')
+  assert.match(plans, /isExpertAppointment \? '期望专家或线索（选填）'/)
+  assert.match(plans, /isExpertAppointment && \(!form\.hospital\.trim\(\) \|\| !form\.department\.trim\(\) \|\| !form\.preferredDateStart/)
+  assert.match(booking, /input\('appointmentExpert', '实际预约专家\/医生（院方未确认可留空）'\)/)
+})

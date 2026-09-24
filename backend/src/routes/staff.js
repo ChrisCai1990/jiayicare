@@ -3235,8 +3235,8 @@ router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => 
       }).select('_id orderNo').lean() : null;
       if (duplicate) throw Object.assign(new Error(`同一药品和服务日期已有未完成的代配药服务${duplicate.orderNo ? `（${duplicate.orderNo}）` : ''}，请勿重复创建`), { status: 409 });
     }
-    const required = medicalEscort ? ['escortCategory', 'escortDate', 'escortTime', 'hospital', 'escortGoal'] : medicationProxy ? ['preferredDateStart', 'medicationName', 'medicationBrand', 'medicationSpecification', 'medicationQuantity'] : appointmentOnly ? ['hospital', 'department', 'expert', 'preferredDateStart', 'preferredDateEnd'] : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'];
-    if (required.some(key => !String(req.body[key] || '').trim())) return res.status(400).json({ success: false, message: medicalEscort ? '请完整填写服务日期时间、医院和具体服务事项' : medicationProxy ? '请选择服务日期；药物名称、品牌、规格和数量应从关联代配药任务自动获取' : appointmentOnly ? '请完整填写医院、科室、专家和期望日期区间' : '请完整填写医院、科室、专家、代诊目标和交流内容' });
+    const required = medicalEscort ? ['escortCategory', 'escortDate', 'escortTime', 'hospital', 'escortGoal'] : medicationProxy ? ['preferredDateStart', 'medicationName', 'medicationBrand', 'medicationSpecification', 'medicationQuantity'] : appointmentOnly ? ['hospital', 'department', 'preferredDateStart', 'preferredDateEnd'] : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'];
+    if (required.some(key => !String(req.body[key] || '').trim())) return res.status(400).json({ success: false, message: medicalEscort ? '请完整填写服务日期时间、医院和具体服务事项' : medicationProxy ? '请选择服务日期；药物名称、品牌、规格和数量应从关联代配药任务自动获取' : appointmentOnly ? '请完整填写医院、科室和期望日期区间' : '请完整填写医院、科室、专家、代诊目标和交流内容' });
     if (medicalEscort) {
       if (!['exam', 'checkup', 'consultation', 'treatment'].includes(req.body.escortCategory)) return res.status(400).json({ success: false, message: '请选择有效的陪同类目' });
       if (req.body.escortCategory === 'exam') {

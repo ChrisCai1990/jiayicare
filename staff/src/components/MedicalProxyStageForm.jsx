@@ -296,7 +296,11 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>
       {appointmentRequirementText ? <div>约诊需求：{appointmentRequirementText}</div> : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].map((key, i) => <div key={key}>{['医院', '科室', '专家', '代诊目标', '交流内容'][i]}：{value.planSnapshot?.[key] || '待确认'}</div>)}
     </div>
-    {isExpertAppointment && input('campus', '院区 *')}
+    {isExpertAppointment && <>
+      {input('campus', '院区 *')}
+      {input('appointmentExpert', '实际预约专家/医生（院方未确认可留空）')}
+      <div style={{ fontSize: 12, color: '#63766D' }}>顾问提供的专家信息仅作预约线索；请以医院确认的姓名填写。留空时客户通知会显示“待院方确认”。</div>
+    </>}
     {isSupplyProxy && <div style={{ display: 'grid', gap: 10, padding: 12, borderRadius: 8, background: '#FFF8ED', border: '1px solid #F2D4A7' }}>
       <div style={{ fontSize: 13, fontWeight: 700, color: '#8A4B08' }}>{isSupplementProxy ? '营养素采购' : '配药'}清单（流转前必须确认）</div>
       {!isSupplementProxy && value.medicationItems?.length ? value.medicationItems.map((row, index) => <div key={index} style={{ background: '#fff', borderRadius: 6, padding: 8, display: 'grid', gap: 6 }}>

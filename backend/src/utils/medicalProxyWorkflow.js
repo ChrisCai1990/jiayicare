@@ -194,10 +194,11 @@ async function upsertMedicalProxyServiceRecord(task, order, completed = false) {
     plan.adHocConsultation && `费用告知：${plan.costNotice || ''}`,
     booking.preferredDateStart && `客户期望日期：${booking.preferredDateStart} 至 ${booking.preferredDateEnd || booking.preferredDateStart}`,
     booking.appointmentDate && `实际约诊时间：${booking.appointmentDate} ${booking.appointmentTime || ''}`,
+    booking.appointmentExpert && `实际预约专家：${booking.appointmentExpert}`,
     booking.dateDifferenceNote && `日期差异确认：${booking.dateDifferenceNote}`,
   ].filter(Boolean).join('\n');
   const update = { staffId: task.assignedTo, patientId: task.patientId, date: appointment, title: plan.adHocConsultation ? '临时加诊服务' : medicationProxy ? '代配药服务' : '医疗代诊服务', content,
-    medicalEscort: { serviceType: 'proxy_visit', hospital: plan.hospital || '', department: plan.department || '', doctor: plan.expert || '' } };
+    medicalEscort: { serviceType: 'proxy_visit', hospital: plan.hospital || '', department: plan.department || '', doctor: /专家约诊/.test(order.serviceName || '') ? (booking.appointmentExpert || '') : (booking.appointmentExpert || plan.expert || '') } };
   if (completed) {
     update.result = supplyResolutionSummary(task.formData) || nonempty(task.formData?.resolutionResult || task.formData?.fulfillmentProof || task.formData?.executionResult);
     update.attachments = (medicationProxy
@@ -509,7 +510,7 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
     plan.expectedDeliveryDate && `期望送达：${plan.expectedDeliveryDate}${plan.deliveryTime ? ` ${plan.deliveryTime}` : ''}`,
     plan.notes && `备注：${String(plan.notes).trim()}`,
   ] : [
-    plan.hospital, plan.campus, plan.department, plan.expert,
+    plan.hospital, plan.campus, plan.department, plan.expert && `期望专家/线索：${plan.expert}`,
     `门诊类型：${({ general: '普通门诊', expert: '专家门诊', special: '特需门诊', international: '国际门诊' })[plan.clinicType] || '待核实'}`,
     `费用与保险：${({ self_pay: '自费', medical_insurance: '医保', commercial_insurance: '商保', high_end: '使用高端医疗险' })[plan.insuranceUse] || '待核实'}`,
     ['high_end', 'commercial_insurance'].includes(plan.insuranceUse) && plan.insurerName && `保险公司：${String(plan.insurerName).trim()}`,
@@ -836,7 +837,8 @@ async function advanceMedicalProxyWorkflow(task) {
       const requirement = nonempty(task.formData?.planSnapshot?.serviceContent || order.serviceRequirements);
       const confirmedRequirement = requirement.replace(/；结算方式：(待核实|直付|先付后报)/g, '');
       const insuranceResult = ({ direct_verified: '已核实可直付', reimbursement_verified: '已核实先付后报', self_pay_confirmed: '保险不适用，客户已确认自费' })[task.formData.insuranceOutcome];
-      const appointmentText = `预约时间：${task.formData.appointmentDate} ${task.formData.appointmentTime}\n院区：${task.formData.campus}\n约诊需求：${confirmedRequirement || '已确认'}${insuranceResult ? `\n保险办理：${insuranceResult}` : ''}`;
+      const actualExpert = nonempty(task.formData.appointmentExpert) || '待院方确认';
+      const appointmentText = `预约时间：${task.formData.appointmentDate} ${task.formData.appointmentTime}\n院区：${task.formData.campus}\n实际预约专家/医生：${actualExpert}\n约诊需求：${confirmedRequirement || '已确认'}${insuranceResult ? `\n保险办理：${insuranceResult}` : ''}`;
       await require('./appointmentReminderScheduler').scheduleExpertAppointmentReminders({
         order, appointmentDate: order.scheduledAt, appointmentText,
       });
@@ -845,7 +847,7 @@ async function advanceMedicalProxyWorkflow(task) {
           { dedupeKey: confirmationKey },
           { $set: {
             user: order.user, type: 'system', sender: '嘉医管家', title: '专家就医提醒',
-            content: `您的专家门诊预约已确认。就诊后请上传病历和检查报告；健管专员审核、健康顾问查看后，本项服务结束。\n约诊需求：${confirmedRequirement || '已确认'}\n院区：${task.formData.campus}\n预约时间：${task.formData.appointmentDate} ${task.formData.appointmentTime}${insuranceResult ? `\n保险办理：${insuranceResult}` : ''}${task.formData.dateDifferenceNote ? `\n补充说明：${task.formData.dateDifferenceNote}` : ''}`,
+            content: `您的专家门诊预约已确认。就诊后请上传病历和检查报告；健管专员审核、健康顾问查看后，本项服务结束。\n约诊需求：${confirmedRequirement || '已确认'}\n院区：${task.formData.campus}\n实际预约专家/医生：${actualExpert}\n预约时间：${task.formData.appointmentDate} ${task.formData.appointmentTime}${insuranceResult ? `\n保险办理：${insuranceResult}` : ''}${task.formData.dateDifferenceNote ? `\n补充说明：${task.formData.dateDifferenceNote}` : ''}`,
             conversationId: null, unread: true, readAt: null, isAI: false, aiGenerated: false,
             dedupeKey: confirmationKey,
             action: { type: 'expert_appointment_confirmed', orderId: String(order._id) },

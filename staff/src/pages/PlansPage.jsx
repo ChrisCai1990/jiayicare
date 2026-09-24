@@ -714,7 +714,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
     if (isMedicationProxy && form.institutionType === 'hospital' && !form.hospital.trim()) { setError('请填写配药医院'); return }
     if (isMedicationProxy && form.institutionType === 'online' && (!form.platformName.trim() || !form.purchasePath.trim())) { setError('请填写线上平台和购买路径'); return }
     if (isMedicationProxy && form.institutionType === 'pharmacy' && !form.pharmacyName.trim()) { setError('请填写线下药房'); return }
-    if (isExpertAppointment && (!form.hospital.trim() || !form.department.trim() || !form.expert.trim() || !form.preferredDateStart || !form.preferredDateEnd || form.preferredDateEnd < form.preferredDateStart)) { setError('请完整填写医院、科室、专家和有效的期望日期区间'); return }
+    if (isExpertAppointment && (!form.hospital.trim() || !form.department.trim() || !form.preferredDateStart || !form.preferredDateEnd || form.preferredDateEnd < form.preferredDateStart)) { setError('请完整填写医院、科室和有效的期望日期区间'); return }
     if (isExpertAppointment && (!form.clinicType || !form.insuranceUse)) { setError('请选择门诊类型和费用与保险方式'); return }
     if (isMedicalProxy && (!form.hospital.trim() || !form.department.trim() || !form.expert.trim() || !form.proxyGoal?.trim() || !form.communicationContent?.trim())) { setError('请完整填写医院、科室、专家、代诊目标和交流内容'); return }
     if (isMedicalProxy && !selectedReportIds.length) { setError('请从客户既有资料中选择至少一份已审核资料'); return }
@@ -946,7 +946,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
             {!isMedicationProxy && renderField('医院',     'hospital',   0, '医院名称')}
             {!isMedicationProxy && renderField('院区',     'campus',     0, '院区名称（可选）')}
             {!isMedicationProxy && !isMedicalEscort && renderField('科室',     'department', 0, '科室名称')}
-            {!isMedicationProxy && !isMedicalEscort && renderField('专家',     'expert',     0, '专家姓名（可选）')}
+            {!isMedicationProxy && !isMedicalEscort && renderField(isExpertAppointment ? '期望专家或线索（选填）' : '专家', 'expert', 0, isExpertAppointment ? '不清楚姓名可留空，由健管预约时核实' : '专家姓名（可选）')}
             {!isAgencyService && !isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && !/门诊一站式/.test(`${selectedTpl?.name || ''} ${form.name || ''}`) && <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">就医专员</label>
               <select
