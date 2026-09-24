@@ -14,6 +14,8 @@ export default function ContentReviewsPage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [checklist, setChecklist] = useState({ professionalReviewCompleted: false, contentAndBoundaryChecked: false, contactAndLinksChecked: false, privacyChecked: false, scopeChecked: false })
+  const requiresDoctor = item?.reviewChain?.includes('familyDoctor')
+  const targetPath = item?.slug ? `/knowledge/guides/${item.slug}.html` : '/knowledge/'
 
   const load = async () => {
     setLoading(true)
@@ -49,19 +51,25 @@ export default function ContentReviewsPage() {
       <p style={{ color: '#66756E' }}>{item.summary}</p>
       <div style={{ display: 'flex', gap: 18, margin: '16px 0', fontSize: 13, color: '#52615A' }}>
         <span>营养审核：{reviewName(item.nutritionReview)}</span>
-        <span>医师审核：{reviewName(item.doctorReview)}</span>
+        <span>健康顾问审核：{requiresDoctor ? reviewName(item.doctorReview) : '无需审核（服务说明/非医疗健康教育稿）'}</span>
         <span>来源更新：{item.sourceUpdatedAt || '-'}</span>
       </div>
       <div style={{ background: '#F8FAF9', border: '1px solid #E3E9E6', borderRadius: 10, padding: 18, whiteSpace: 'pre-wrap', lineHeight: 1.8, color: '#22352C' }}>{item.sourceContent}</div>
       <p style={{ fontSize: 12, color: '#8A968F', marginTop: 14 }}>{item.currentRole === 'healthPlanner' ? '确认后将列为“可发布”，仍不会自动公开到官网。' : '审核通过后将转入下一环节；专业审核全部通过后，由健康规划师确认可发布。'}</p>
       {item.currentRole === 'healthPlanner' && <div style={{ border: '1px solid #DCE7E1', borderRadius: 10, padding: 16, marginTop: 14 }}>
         <b style={{ fontSize: 14 }}>发布前核对清单（须全部确认）</b>
+        <div style={{ marginTop: 10, padding: 12, background: '#F8FAF9', borderRadius: 8, fontSize: 12, lineHeight: 1.7, color: '#52615A' }}>
+          <div><b>审核链路：</b>{requiresDoctor ? '营养师 → 健康顾问 → 健康规划师' : '营养师 → 健康规划师（本稿无需健康顾问审核）'}</div>
+          <div><b>发布范围：</b>官网 GEO 知识中心，面向公开访客</div>
+          <div><b>目标页面：</b>{targetPath}</div>
+          <div><b>固定联系方式：</b>客服电话 19106761448；官网 https://jiaycare.com</div>
+        </div>
         {[
-          ['professionalReviewCompleted', '营养师/健康顾问专业审核均已完成'],
-          ['contentAndBoundaryChecked', '标题、摘要、正文与健康教育服务边界已核对'],
-          ['contactAndLinksChecked', '客服电话、官网链接与跳转内容已核对'],
+          ['professionalReviewCompleted', requiresDoctor ? '营养师与健康顾问专业审核均已完成' : '营养师审核已完成（本稿无需健康顾问审核）'],
+          ['contentAndBoundaryChecked', '标题、摘要、正文与健康教育服务边界已核对（核对上方正文首尾的服务边界说明）'],
+          ['contactAndLinksChecked', '客服电话、官网链接与跳转内容已核对（核对本清单上方的固定联系方式）'],
           ['privacyChecked', '不含个人隐私、病历或未经授权的医疗信息'],
-          ['scopeChecked', '已确认本次公开范围与目标页面'],
+          ['scopeChecked', '已确认本次公开范围与目标页面（核对本清单上方的发布范围和目标页面）'],
         ].map(([key, label]) => <label key={key} style={{ display: 'block', marginTop: 10, fontSize: 13, color: '#34453C', cursor: 'pointer' }}><input type="checkbox" checked={checklist[key]} onChange={e => setChecklist(x => ({ ...x, [key]: e.target.checked }))} style={{ marginRight: 8 }} />{label}</label>)}
       </div>}
       <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
