@@ -1,0 +1,17 @@
+{
+  "slug": "sustainable-weight-management-goals",
+  "status": "review",
+  "title": "开始体重管理时，怎样设定更可持续的目标？",
+  "summary": "从可观察的日常变化开始，避免以极端限制或短期数字作为唯一目标。",
+  "updatedAt": "2026-09-24",
+  "reviewedBy": "",
+  "reviewedAt": "",
+  "reviewNotes": "待吴苗苗营养师审核；若补充疾病、用药或指标相关内容，须由蓝戈文医师复核。",
+  "sections": [
+    {"heading": "先了解自己的起点", "paragraphs": ["可以从一周的用餐节奏、睡眠、活动和体重变化感受开始记录。真实记录比临时改变生活方式更能帮助识别可调整的部分。"]},
+    {"heading": "把目标拆成可执行的行为", "paragraphs": ["相较只盯着短期体重数字，规律用餐、减少久坐、安排可承受的活动和稳定睡眠，往往更适合作为长期管理的观察点。", "不应以极端节食、断食或超出自身承受能力的运动作为通用方案。"]},
+    {"heading": "为反复留出空间", "paragraphs": ["体重变化会受生活节奏、压力、睡眠和环境影响。出现波动时，可以回顾发生了什么，再决定是否调整下一步，而不是简单归因为意志力不足。"]},
+    {"heading": "需要专业支持的情况", "paragraphs": ["孕产期、未成年人、明确慢性病、长期用药、明显不适或体检指标异常时，请先咨询医生或相关专业人员。"]}
+  ],
+  "sources": [{"name": "世界卫生组织：健康饮食", "url": "https://www.who.int/news-room/fact-sheets/detail/healthy-diet"}, {"name": "世界卫生组织：身体活动", "url": "https://www.who.int/news-room/fact-sheets/detail/physical-activity"}]
+}

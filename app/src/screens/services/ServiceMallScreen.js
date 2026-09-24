@@ -428,7 +428,7 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
 
           <View style={styles.providerNoticeRow}>
             <Ionicons name="shield-checkmark-outline" size={17} color={colors.primary} />
-            <Text style={styles.providerNoticeText}>本平台由杭州嘉静佑辰科技有限公司运营；健康管理服务由杭州嘉医汇健康管理有限公司按实际服务安排提供。</Text>
+            <Text style={styles.providerNoticeText}>本平台及健康管理服务由杭州嘉医汇健康管理有限公司提供。</Text>
           </View>
 
           {item.serviceProvider === 'jiayihui_health' && (

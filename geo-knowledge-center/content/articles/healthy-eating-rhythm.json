@@ -1,0 +1,17 @@
+{
+  "slug": "healthy-eating-rhythm",
+  "status": "review",
+  "title": "饮食总是难坚持？先观察自己的用餐节奏",
+  "summary": "不追求一次做到完美；通过观察饥饿、用餐时间和环境，寻找更容易长期保持的日常安排。",
+  "updatedAt": "2026-09-24",
+  "reviewedBy": "",
+  "reviewedAt": "",
+  "reviewNotes": "待吴苗苗营养师审核后公开。",
+  "sections": [
+    {"heading": "先记录，而不是立刻限制", "paragraphs": ["可用几天时间简单记录大致用餐时间、是否容易漏餐、进食环境和饥饿感变化。记录不是为了评判自己，而是为了理解日常节奏。"]},
+    {"heading": "从一个容易调整的环节开始", "paragraphs": ["例如为忙碌时段提前安排一份方便获得的餐食，或减少边工作边无意识进食的场景。一次只尝试一项变化，更容易知道是否适合自己。"]},
+    {"heading": "避免把单一做法当成标准答案", "paragraphs": ["不同人的作息、家庭安排、活动量和健康状况不同。没有一种饮食安排适合所有人，也不应承诺快速效果。"]},
+    {"heading": "边界提醒", "paragraphs": ["若存在疾病、长期用药、孕产期、未成年人或明显不适等情况，应优先咨询医生或相关专业人员。"]}
+  ],
+  "sources": [{"name": "世界卫生组织：健康饮食", "url": "https://www.who.int/news-room/fact-sheets/detail/healthy-diet"}]
+}

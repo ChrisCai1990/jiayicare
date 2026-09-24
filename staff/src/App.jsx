@@ -43,6 +43,7 @@ import PlanModulesPage from './pages/PlanModulesPage'
 import DailyCheckinPage from './pages/DailyCheckinPage'
 import ForcePasswordChangePage from './pages/ForcePasswordChangePage'
 import ServiceAssistantPage from './pages/ServiceAssistantPage'
+import ContentReviewsPage from './pages/ContentReviewsPage'
 
 // ── Auth Context ──────────────────────────────────────────────────
 const AuthCtx = createContext(null)
@@ -203,6 +204,7 @@ export default function App() {
               <Route path="marketing" element={<MarketingPage />} />
               <Route path="visitor-leads" element={<VisitorLeadsPage />} />
               <Route path="daily-checkin" element={<DailyCheckinPage />} />
+              <Route path="content-reviews/:id" element={<ContentReviewsPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/home" replace />} />
           </Routes>

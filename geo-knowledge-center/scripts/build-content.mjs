@@ -75,7 +75,7 @@ function renderArticle(article, previewLabel) {
     '@context': 'https://schema.org', '@type': 'Article', headline: article.title,
     description: article.summary, dateModified: article.updatedAt, inLanguage: 'zh-CN',
     author: { '@type': 'Organization', name: '嘉医汇健康知识中心' },
-    publisher: { '@type': 'Organization', name: '杭州嘉静佑辰科技有限公司', url: `${siteUrl.replace(/\/$/, '')}/` },
+    publisher: { '@type': 'Organization', name: '杭州嘉医汇健康管理有限公司', url: `${siteUrl.replace(/\/$/, '')}/` },
     mainEntityOfPage: canonicalUrl
   }).replace(/</g, '\\u003c')}</script>`;
 
@@ -143,7 +143,7 @@ const staticGuides = isPublish && fs.existsSync(path.join(siteDirectory, 'guides
       .map((file) => `guides/${file}`)
   : [];
 const generatedGuides = eligible.map((article) => `guides/${article.slug}.html`);
-const staticPages = ['index.html', 'start-here.html', 'ai-consultation.html', 'editorial-policy.html', 'privacy-policy.html'];
+const staticPages = ['index.html', 'start-here.html', 'ai-consultation.html', 'service-guide.html', 'faq.html', 'editorial-policy.html', 'privacy-policy.html'];
 const urls = isPreview ? generatedGuides : [...staticPages, ...staticGuides, ...generatedGuides];
 const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((url) => {
   const resolvedUrl = url === 'index.html' ? '' : url;
