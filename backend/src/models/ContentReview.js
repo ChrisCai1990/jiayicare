@@ -17,7 +17,7 @@ const contentReviewSchema = new mongoose.Schema({
   sourceUpdatedAt: { type: String, default: '' },
   reviewChain: [{ type: String, enum: ['nutritionist', 'familyDoctor'] }],
   currentRole: { type: String, enum: ['nutritionist', 'familyDoctor', 'healthPlanner', ''], default: '', index: true },
-  status: { type: String, enum: ['pending', 'changes_requested', 'ready_to_publish', 'publish_confirmed', 'approved'], default: 'pending', index: true },
+  status: { type: String, enum: ['pending', 'changes_requested', 'ready_to_publish', 'published', 'publish_confirmed', 'approved'], default: 'pending', index: true },
   nutritionReview: { type: reviewSchema, default: () => ({}) },
   doctorReview: { type: reviewSchema, default: () => ({}) },
   publishChecklist: {

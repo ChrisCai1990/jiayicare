@@ -29,11 +29,11 @@ export default function ContentReviewsPage() {
   useEffect(() => { load() }, [id])
 
   const submit = async action => {
-    const note = action === 'return' ? window.prompt('请填写退回修改意见（仅填写内容审核意见）：') : window.prompt(action === 'confirm_publish' ? '发布确认备注（可留空）：' : '审核备注（可留空）：', '')
+    const note = action === 'return' ? window.prompt('请填写退回修改意见（仅填写内容审核意见）：') : window.prompt('审核备注（可留空）：', '')
     if (action === 'return' && !note?.trim()) return
     setSubmitting(true)
     try {
-      if (action === 'confirm_publish' && !Object.values(checklist).every(Boolean)) { toast('请先完成发布前核对清单', 'error'); return }
+      if (action === 'publish' && !Object.values(checklist).every(Boolean)) { toast('请先完成发布前核对清单', 'error'); return }
       const r = await staffAPI.reviewContentReview(id, { action, note: note || '', checklist })
       toast(r.message || '审核已保存', 'success')
       nav('/home')
@@ -55,7 +55,7 @@ export default function ContentReviewsPage() {
         <span>来源更新：{item.sourceUpdatedAt || '-'}</span>
       </div>
       <div style={{ background: '#F8FAF9', border: '1px solid #E3E9E6', borderRadius: 10, padding: 18, whiteSpace: 'pre-wrap', lineHeight: 1.8, color: '#22352C' }}>{item.sourceContent}</div>
-      <p style={{ fontSize: 12, color: '#8A968F', marginTop: 14 }}>{item.currentRole === 'healthPlanner' ? '确认后将列为“可发布”，仍不会自动公开到官网。' : '审核通过后将转入下一环节；专业审核全部通过后，由健康规划师确认可发布。'}</p>
+      <p style={{ fontSize: 12, color: '#8A968F', marginTop: 14 }}>{item.currentRole === 'healthPlanner' ? '核对无误后直接发布到官网；如不适合发布，请退回上一专业审核环节修改。' : '审核通过后将转入下一环节；专业审核全部通过后，由健康规划师核对并直接发布。'}</p>
       {item.currentRole === 'healthPlanner' && <div style={{ border: '1px solid #DCE7E1', borderRadius: 10, padding: 16, marginTop: 14 }}>
         <b style={{ fontSize: 14 }}>发布前核对清单（须全部确认）</b>
         <div style={{ marginTop: 10, padding: 12, background: '#F8FAF9', borderRadius: 8, fontSize: 12, lineHeight: 1.7, color: '#52615A' }}>
@@ -73,7 +73,7 @@ export default function ContentReviewsPage() {
         ].map(([key, label]) => <label key={key} style={{ display: 'block', marginTop: 10, fontSize: 13, color: '#34453C', cursor: 'pointer' }}><input type="checkbox" checked={checklist[key]} onChange={e => setChecklist(x => ({ ...x, [key]: e.target.checked }))} style={{ marginRight: 8 }} />{label}</label>)}
       </div>}
       <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
-        {item.currentRole === 'healthPlanner' ? <button disabled={submitting} onClick={() => submit('confirm_publish')} className="btn btn-primary">确认可发布</button> : <><button disabled={submitting} onClick={() => submit('approve')} className="btn btn-primary">审核通过</button><button disabled={submitting} onClick={() => submit('return')} className="btn btn-outline">退回修改</button></>}
+        {item.currentRole === 'healthPlanner' ? <><button disabled={submitting} onClick={() => submit('publish')} className="btn btn-primary">确认并发布官网</button><button disabled={submitting} onClick={() => submit('return')} className="btn btn-outline">退回修改</button></> : <><button disabled={submitting} onClick={() => submit('approve')} className="btn btn-primary">审核通过</button><button disabled={submitting} onClick={() => submit('return')} className="btn btn-outline">退回修改</button></>}
       </div>
     </div>
   </div>
