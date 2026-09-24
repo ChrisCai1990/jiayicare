@@ -397,7 +397,7 @@ export default function HomePage() {
             ) : (
               <>
                 {allPendingTaskItems.slice(0, 3).map((t, i, arr) => (
-                  <TaskItemRow key={t._id || i} task={t} isLast={i === arr.length - 1 && todayReminders.length === 0} onPress={t=>t.uploadReminder?Taro.navigateTo({url:'/pages/tasks/report-upload/index?flowId='+t.careFlowId}):setTaskDetail(t)} />
+                  <TaskItemRow key={t._id || i} task={t} isLast={i === arr.length - 1 && todayReminders.length === 0} onPress={t=>t.canUploadReports?Taro.navigateTo({url:'/pages/tasks/report-upload/index?flowId='+t.careFlowId}):setTaskDetail(t)} />
                 ))}
                 {todayReminders.map((r, i) => (
                   <ReminderItemRow key={r._id || i} reminder={r} isLast={i === todayReminders.length - 1} />

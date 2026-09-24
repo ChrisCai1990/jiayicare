@@ -18,7 +18,8 @@ function runtime(deps={}) {
   async function view(id,user) {
     const f=await load(id,user);
     const reports=await Report.find({_id:{$in:f.state.data.upload?.reportIds||[]},user:user._id,tenantId:user.tenantId||null}).select('_id title documentCategory audit_status').lean();
-    return {id:String(f._id),completed:!!f.state.customerUpload?.completedAt,canUpload:!f.state.customerUpload?.completedAt&&['upload','audit'].includes(f.state.stage),plans:require('./careFlowClientPlans').project(f),reports};
+    const projection=require('./careFlowClientPlans');
+    return {id:String(f._id),...projection.uploadContext(f),completed:!!f.state.customerUpload?.completedAt,canUpload:!f.state.customerUpload?.completedAt&&['upload','audit'].includes(f.state.stage),plans:projection.project(f),reports};
   }
   async function save(f,user,fields,event) {
     const r=await Flow.updateOne({_id:f._id,patientId:user._id,tenantId:user.tenantId||null,revision:f.revision},{$set:fields,$inc:{revision:1},$push:{events:{...event,at:new Date(),by:String(user._id),role:'customer',stage:f.state.stage}}});

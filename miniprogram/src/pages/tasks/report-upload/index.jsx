@@ -39,9 +39,10 @@ export default function CareReportUpload(){
     finally{lock.current=false;setBusy(false)}
   }
   return <View style={{minHeight:'100vh',padding:`${statusBarHeight+12}px 16px 32px`,backgroundColor:'#F2EDE3'}}>
-    <Button disabled={busy} onClick={()=>Taro.navigateBack()}>返回</Button><Text style={{fontSize:'20px',fontWeight:700,display:'block',marginTop:'16px'}}>本次就医安排与资料上传</Text>
+    <Button disabled={busy} onClick={()=>Taro.navigateBack()}>返回</Button><Text style={{fontSize:'20px',fontWeight:700,display:'block',marginTop:'16px'}}>上传报告及病历 · {data?.serviceTitle||'本次就医'}</Text>
     {!!error&&<View style={{...card,color:'#B91C1C'}}>{error}</View>}
     {!data&&<Text>正在加载…</Text>}
+    {data&&<View style={card}>对应就医：{data.serviceTitle}<Text style={{display:'block',marginTop:'6px'}}>日期：{data.visitDate||'待核对'} · 服务编号：{data.serviceCode}</Text></View>}
     {data?.plans?.map(p=><View key={p._id} style={card}><Text style={{fontWeight:700,display:'block'}}>{p.title}</Text><Text style={{display:'block',whiteSpace:'pre-wrap',lineHeight:'24px',marginTop:'8px'}}>{p.description}</Text></View>)}
     {data?.completed?<View style={card}>本次资料已提交，上传提醒已结束。健管专员继续审核。需要追加时，请使用常规报告上传入口。</View>:data?.canUpload?<>
       <View style={card}>可同时上传多个类目的资料，每张分别分类。全部上传成功后才结束本次提醒。{data.reports.map(r=><Text key={r._id} style={{display:'block',marginTop:'8px'}}>已留存：{r.title}</Text>)}</View>
