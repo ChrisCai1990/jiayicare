@@ -16,10 +16,20 @@ const contentReviewSchema = new mongoose.Schema({
   sourceContent: { type: String, default: '', maxlength: 12000 },
   sourceUpdatedAt: { type: String, default: '' },
   reviewChain: [{ type: String, enum: ['nutritionist', 'familyDoctor'] }],
-  currentRole: { type: String, enum: ['nutritionist', 'familyDoctor', ''], default: '', index: true },
-  status: { type: String, enum: ['pending', 'changes_requested', 'approved'], default: 'pending', index: true },
+  currentRole: { type: String, enum: ['nutritionist', 'familyDoctor', 'healthPlanner', ''], default: '', index: true },
+  status: { type: String, enum: ['pending', 'changes_requested', 'ready_to_publish', 'publish_confirmed', 'approved'], default: 'pending', index: true },
   nutritionReview: { type: reviewSchema, default: () => ({}) },
   doctorReview: { type: reviewSchema, default: () => ({}) },
+  publishChecklist: {
+    professionalReviewCompleted: { type: Boolean, default: false },
+    contentAndBoundaryChecked: { type: Boolean, default: false },
+    contactAndLinksChecked: { type: Boolean, default: false },
+    privacyChecked: { type: Boolean, default: false },
+    scopeChecked: { type: Boolean, default: false },
+    checkedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+    checkedByName: { type: String, default: '' },
+    checkedAt: { type: Date, default: null },
+  },
   auditLog: [{ action: String, role: String, note: String, by: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' }, byName: String, at: Date }],
 }, { timestamps: true });
 

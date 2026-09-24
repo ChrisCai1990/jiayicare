@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast } from '../App'
 
-const roleName = role => role === 'nutritionist' ? '营养师' : '健康顾问/医师'
+const roleName = role => role === 'nutritionist' ? '营养师' : role === 'healthPlanner' ? '健康规划师' : '健康顾问/医师'
 const reviewName = review => review?.status === 'approved' ? '已通过' : review?.status === 'returned' ? '已退回' : '待审核'
 
 export default function ContentReviewsPage() {
@@ -13,6 +13,7 @@ export default function ContentReviewsPage() {
   const [item, setItem] = useState(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [checklist, setChecklist] = useState({ professionalReviewCompleted: false, contentAndBoundaryChecked: false, contactAndLinksChecked: false, privacyChecked: false, scopeChecked: false })
 
   const load = async () => {
     setLoading(true)
@@ -26,11 +27,12 @@ export default function ContentReviewsPage() {
   useEffect(() => { load() }, [id])
 
   const submit = async action => {
-    const note = action === 'return' ? window.prompt('请填写退回修改意见（仅填写内容审核意见）：') : window.prompt('审核备注（可留空）：', '')
+    const note = action === 'return' ? window.prompt('请填写退回修改意见（仅填写内容审核意见）：') : window.prompt(action === 'confirm_publish' ? '发布确认备注（可留空）：' : '审核备注（可留空）：', '')
     if (action === 'return' && !note?.trim()) return
     setSubmitting(true)
     try {
-      const r = await staffAPI.reviewContentReview(id, { action, note: note || '' })
+      if (action === 'confirm_publish' && !Object.values(checklist).every(Boolean)) { toast('请先完成发布前核对清单', 'error'); return }
+      const r = await staffAPI.reviewContentReview(id, { action, note: note || '', checklist })
       toast(r.message || '审核已保存', 'success')
       nav('/home')
     } catch (e) { toast(e.message || '审核保存失败', 'error') }
@@ -51,10 +53,19 @@ export default function ContentReviewsPage() {
         <span>来源更新：{item.sourceUpdatedAt || '-'}</span>
       </div>
       <div style={{ background: '#F8FAF9', border: '1px solid #E3E9E6', borderRadius: 10, padding: 18, whiteSpace: 'pre-wrap', lineHeight: 1.8, color: '#22352C' }}>{item.sourceContent}</div>
-      <p style={{ fontSize: 12, color: '#8A968F', marginTop: 14 }}>审核通过后只会标记为“待发布”，不会自动公开到官网。</p>
+      <p style={{ fontSize: 12, color: '#8A968F', marginTop: 14 }}>{item.currentRole === 'healthPlanner' ? '确认后将列为“可发布”，仍不会自动公开到官网。' : '审核通过后将转入下一环节；专业审核全部通过后，由健康规划师确认可发布。'}</p>
+      {item.currentRole === 'healthPlanner' && <div style={{ border: '1px solid #DCE7E1', borderRadius: 10, padding: 16, marginTop: 14 }}>
+        <b style={{ fontSize: 14 }}>发布前核对清单（须全部确认）</b>
+        {[
+          ['professionalReviewCompleted', '营养师/健康顾问专业审核均已完成'],
+          ['contentAndBoundaryChecked', '标题、摘要、正文与健康教育服务边界已核对'],
+          ['contactAndLinksChecked', '客服电话、官网链接与跳转内容已核对'],
+          ['privacyChecked', '不含个人隐私、病历或未经授权的医疗信息'],
+          ['scopeChecked', '已确认本次公开范围与目标页面'],
+        ].map(([key, label]) => <label key={key} style={{ display: 'block', marginTop: 10, fontSize: 13, color: '#34453C', cursor: 'pointer' }}><input type="checkbox" checked={checklist[key]} onChange={e => setChecklist(x => ({ ...x, [key]: e.target.checked }))} style={{ marginRight: 8 }} />{label}</label>)}
+      </div>}
       <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
-        <button disabled={submitting} onClick={() => submit('approve')} className="btn btn-primary">审核通过</button>
-        <button disabled={submitting} onClick={() => submit('return')} className="btn btn-outline">退回修改</button>
+        {item.currentRole === 'healthPlanner' ? <button disabled={submitting} onClick={() => submit('confirm_publish')} className="btn btn-primary">确认可发布</button> : <><button disabled={submitting} onClick={() => submit('approve')} className="btn btn-primary">审核通过</button><button disabled={submitting} onClick={() => submit('return')} className="btn btn-outline">退回修改</button></>}
       </div>
     </div>
   </div>

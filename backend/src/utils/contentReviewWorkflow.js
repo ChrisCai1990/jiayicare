@@ -23,6 +23,16 @@ async function ensureContentReviews(ContentReview) {
     updateOne: { filter: { slug: seed.slug }, update: { $setOnInsert: initialState(seed) }, upsert: true },
   }));
   if (operations.length) await ContentReview.bulkWrite(operations, { ordered: false });
+  // 已完成的旧记录补入新增的“健康规划师发布确认”环节；历史公开稿的 approved_ready 不受影响。
+  await ContentReview.updateMany(
+    { status: 'approved', currentRole: '' },
+    { $set: { status: 'ready_to_publish', currentRole: 'healthPlanner' } },
+  );
+  // 兼容早期血脂稿使用的 advisor_pending 状态，转入当前健康顾问待审核队列。
+  await ContentReview.updateMany(
+    { status: 'advisor_pending', $or: [{ currentRole: { $exists: false } }, { currentRole: null }, { currentRole: '' }] },
+    { $set: { status: 'pending', currentRole: 'familyDoctor' } },
+  );
 }
 
 function reviewField(role) { return role === 'nutritionist' ? 'nutritionReview' : 'doctorReview'; }
@@ -41,8 +51,8 @@ function advanceReview(record, role, action, note, staff) {
   }
   const currentIndex = record.reviewChain.indexOf(role);
   const nextRole = record.reviewChain.slice(currentIndex + 1).find(Boolean) || '';
-  record.currentRole = nextRole;
-  record.status = nextRole ? 'pending' : 'approved';
+  record.currentRole = nextRole || 'healthPlanner';
+  record.status = nextRole ? 'pending' : 'ready_to_publish';
   return record;
 }
 
