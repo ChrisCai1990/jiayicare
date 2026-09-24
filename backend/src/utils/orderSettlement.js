@@ -65,6 +65,9 @@ async function settlePaidOrder(payment, order, cashAmount) {
     if (order.status === 'cancelled') order.status = 'pending';
   }
   await order.save();
+  // 付款事实一旦落库，就先生成本单独立的规划师沟通消息。积分、基金、履约等
+  // 后续副作用若暂时失败，不应让已支付订单在对话页完全不可见。
+  await require('./orderPlannerConversation').ensureOrderPlannerPrompt(order);
 
   if (order.healthFundAmount > 0 && !order.healthFundSettledAt) {
     const enterprise = order.healthFundEnterpriseId ? { _id: order.healthFundEnterpriseId } : null;
@@ -127,7 +130,6 @@ async function settlePaidOrder(payment, order, cashAmount) {
     );
     }
   }
-  await require('./orderPlannerConversation').ensureOrderPlannerPrompt(order);
   await require('./orderSupplementArchive').ensureOrderSupplementDraft(order);
   await require('./commissionSettlement').settleReferralCommission(order);
   await require('./productShareRewards').grantProductShareRewards(order);

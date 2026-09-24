@@ -12,6 +12,7 @@ function harness() {
   const payment = { _id: 'pay', order: 'a', user: 'user', amount: 9000, channel: 'wechat_pay', status: 'processing', allocations: [{ order: 'a', amount: 8900 }, { order: 'b', amount: 100 }] };
   const coupon = { status: 'active' };
   let failFundOnce = false;
+  let failAwardFor = '';
   const mocks = {
     '../models/Order': { findById: async id => orders.find(o => o._id === id), findOne: async q => orders.find(o => o._id !== q._id.$ne && o.refundStatus !== 'refunded') },
     '../models/Payment': {
@@ -36,7 +37,7 @@ function harness() {
       findById: async id => refunds.find(r => r._id === id),
       aggregate: async query => [{ amount: refunds.filter(r => r.order === query[0].$match.order && r.status === 'succeeded').reduce((s, r) => s + r.amount, 0) }],
     },
-    './orderPoints': { awardOrderPoints: async o => { if (!awarded.has(o._id)) { awarded.add(o._id); events.push(['award', o._id, o.paidAmount]); } }, refundOrderPoints: async o => events.push(['reversePoints', o._id]) },
+    './orderPoints': { awardOrderPoints: async o => { if (failAwardFor === o._id) { failAwardFor = ''; throw new Error('points temporary'); } if (!awarded.has(o._id)) { awarded.add(o._id); events.push(['award', o._id, o.paidAmount]); } }, refundOrderPoints: async o => events.push(['reversePoints', o._id]) },
     './healthPlannerAssignment': { resolveHealthPlanner: async () => 'planner' },
     './checkoutAmounts': require('../src/utils/checkoutAmounts'),
     './healthFundPayment': { deductHealthFund: async ({ order }) => { if (failFundOnce) { failFundOnce = false; throw new Error('fund temporary'); } events.push(['fund', order._id]); }, reverseHealthFund: async ({ order }) => events.push(['reverseFund', order._id]) },
@@ -50,7 +51,7 @@ function harness() {
   };
   const ctx = { module: { exports: {} }, require: name => { if (!(name in mocks)) throw new Error(name); return mocks[name]; } };
   vm.runInNewContext(fs.readFileSync(require.resolve('../src/utils/orderSettlement'), 'utf8'), ctx);
-  return { ...ctx.module.exports, orders, payment, events, prompts, coupon, refunds, failFund: () => { failFundOnce = true; },
+  return { ...ctx.module.exports, orders, payment, events, prompts, coupon, refunds, failFund: () => { failFundOnce = true; }, failAward: id => { failAwardFor = id; },
     pay: () => ctx.module.exports.confirmPayment({ outTradeNo: 'merchant', transactionId: 'wx-id' }) };
 }
 
@@ -61,6 +62,16 @@ test('one successful WeChat payment settles every child at its own cash amount a
   assert.equal(h.events.filter(e => e[0] === 'fund').length, 1);
   assert.equal(h.events.filter(e => e[0] === 'award').length, 2);
   assert.equal(h.prompts.size, 2); assert.equal(h.coupon.usedOrderId, 'a');
+});
+
+test('each paid child gets its own planner message before a later side effect can fail', async () => {
+  const h = harness(); h.failAward('b');
+  await assert.rejects(h.pay(), /points temporary/);
+  assert.equal(h.orders[1].paymentStatus, 'paid');
+  assert.deepEqual([...h.prompts].sort(), ['a', 'b']);
+  await h.pay();
+  assert.equal(h.prompts.size, 2);
+  assert.equal(h.events.filter(e => e[0] === 'award').length, 2);
 });
 
 test('concurrent callbacks serialize group settlement and never double-deduct or double-award', async () => {
