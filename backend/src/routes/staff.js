@@ -8218,14 +8218,15 @@ router.patch('/patients/:id/supplements/:supId/edit-and-approve', staffAuth, asy
 });
 
 // 仅记录创建人（staffId）或超管可修改/停用，避免他人越权改动其他医护录入的营养素记录。
-// 例外：营养师「编辑后采纳」待审记录（pending→approved）属于审核动作，虽非创建人也放行，并记审核人。
+// 例外：营养师审核待审记录，及商城自动归档的订单记录（它没有 staffId）可由营养师核对后保存。
 router.patch('/patients/:id/supplements/:supId', staffAuth, async (req, res) => {
   try {
     const sup = await Supplement.findOne({ _id: req.params.supId, user: req.params.id });
     if (!sup) return res.status(404).json({ success: false, message: '记录不存在' });
     const isApproveReview = sup.aiStatus === 'pending' && req.body.aiStatus === 'approved'
       && (req.staff.role === 'nutritionist' || req.staff.role === 'superadmin');
-    if (!isApproveReview && req.staff.role !== 'superadmin' && String(sup.staffId) !== String(req.staff._id)) {
+    const isOrderReview = require('../utils/supplementReview').canNutritionistEditOrderSupplement(sup, req.staff.role);
+    if (!isApproveReview && !isOrderReview && req.staff.role !== 'superadmin' && String(sup.staffId) !== String(req.staff._id)) {
       return res.status(403).json({ success: false, message: '仅记录创建人可修改' });
     }
     if (sup.stopped) return res.status(400).json({ success: false, message: '已停用记录为历史记录，不支持修改或恢复；如需重新补充请新增记录' });
@@ -8248,7 +8249,7 @@ router.patch('/patients/:id/supplements/:supId', staffAuth, async (req, res) => 
       allowed.forEach(key => { if (req.body[key] !== undefined) sup[key] = req.body[key]; });
       if (req.body.imageUrls !== undefined) sup.imageUrls = Array.isArray(req.body.imageUrls) ? req.body.imageUrls.filter(url => typeof url === 'string' && url.trim()).slice(0, 6) : [];
     }
-    if (isApproveReview) { sup.reviewedByName = req.staff.name || ''; sup.reviewedAt = new Date(); }
+    if (isApproveReview || isOrderReview) { sup.reviewedByName = req.staff.name || ''; sup.reviewedAt = new Date(); }
     if (isApproveReview) {
       const error = require('../utils/supplementReview').validateApprovedSupplement(sup);
       if (error) return res.status(400).json({ success: false, message: error });
