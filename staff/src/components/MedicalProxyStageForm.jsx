@@ -16,6 +16,10 @@ const medicationList = (booking, planSnapshot) => booking?.medicationItems?.leng
   ? booking.medicationItems
   : (planSnapshot?.medicationItems?.length ? planSnapshot.medicationItems : [])
 
+const bookingSlots = data => Array.isArray(data?.appointmentSlots) && data.appointmentSlots.length
+  ? data.appointmentSlots
+  : [{ department: data?.department || '', expert: data?.appointmentExpert || '', campus: data?.campus || '', appointmentDate: data?.appointmentDate || '', appointmentTime: data?.appointmentTime || '' }]
+
 const parseAppointmentRequirement = text => {
   const parts = String(text || '').split(/[；\n]/).map(item => item.trim()).filter(Boolean)
   const take = label => parts.find(item => item.startsWith(`${label}：`))?.slice(label.length + 1) || ''
@@ -49,8 +53,9 @@ export function validateMedicalProxyStage(stage, value) {
   if (stage === 'advisor' && !value.medicalPlanning && fields.advisor.some(([key]) => !value[key]?.trim())) return '请完整填写医院、科室、专家、代诊目标及交流内容'
   if (stage === 'advisor' && value.auditSnapshot?.collectionSnapshot?.annualMember && !value.selectedReportIds?.length) return '请从本次已审核资料中选择制定方案所用资料'
   if (stage === 'planner' && !value.medicalAssistantId) return '请指派就医专员'
-  if (stage === 'booking' && ['preferredDateStart', 'preferredDateEnd', 'appointmentDate', 'appointmentTime'].some(key => !value[key]?.trim())) return '请完整填写客户期望日期区间和实际约诊日期时间'
-  if (stage === 'booking' && (value.appointmentDate < value.preferredDateStart || value.appointmentDate > value.preferredDateEnd) && !value.dateDifferenceNote?.trim()) return '约诊日期不在客户期望区间内，请说明差异及客户确认情况'
+  if (stage === 'booking' && (!value.preferredDateStart?.trim() || !value.preferredDateEnd?.trim() || bookingSlots(value).some(row => !row.appointmentDate?.trim() || !row.appointmentTime?.trim()))) return '请完整填写客户期望日期区间和每项实际预约日期时间'
+  if (stage === 'booking' && bookingSlots(value).length > 1 && bookingSlots(value).some(row => !row.department?.trim())) return '多项预约请逐项填写科室或检查项目'
+  if (stage === 'booking' && bookingSlots(value).some(row => row.appointmentDate < value.preferredDateStart || row.appointmentDate > value.preferredDateEnd) && !value.dateDifferenceNote?.trim()) return '有预约日期不在客户期望区间内，请说明差异及客户确认情况'
   const supplementProxy = value.supplementProxy === true || /代配营养素/.test(`${value.planSnapshot?.serviceName || ''} ${value.planSnapshot?.serviceContent || ''}`)
   if (stage === 'booking' && (value.medicationProxy === true || /代配药|代取药/.test(`${value.planSnapshot?.serviceName || ''} ${value.planSnapshot?.serviceContent || ''}`)) && (value.medicationItems?.length ? value.medicationItems.some(row => ['medicationName', 'medicationBrand', 'medicationSpecification', 'medicationQuantity'].some(key => !row?.[key]?.trim())) : ['medicationName', 'medicationBrand', 'medicationSpecification', 'medicationQuantity'].some(key => !value[key]?.trim()))) return '请逐项确认药品名、商品名/品牌、规格和配备数量'
   if (stage === 'booking' && supplementProxy && ['supplementName', 'supplementBrand', 'supplementSpecification', 'supplementQuantity'].some(key => !value[key]?.trim())) return '请先确认营养素名称、品牌、规格和购买数量'
@@ -272,12 +277,12 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
           <div>{isSupplementProxy ? '营养素' : '配备药物'}：{isSupplementProxy ? (value.planSnapshot?.supplementName || booking.supplementName) : (value.planSnapshot?.medicationName || booking.medicationName) || '待确认'}；品牌：{isSupplementProxy ? (value.planSnapshot?.supplementBrand || booking.supplementBrand) : (value.planSnapshot?.medicationBrand || booking.medicationBrand) || '待确认'}</div>
           <div>规格：{isSupplementProxy ? (value.planSnapshot?.supplementSpecification || booking.supplementSpecification) : (value.planSnapshot?.medicationSpecification || booking.medicationSpecification) || '待确认'}；数量：{isSupplementProxy ? (value.planSnapshot?.supplementQuantity || booking.supplementQuantity) : (value.planSnapshot?.medicationQuantity || booking.medicationQuantity) || '待确认'}</div>
         </>}
-        <div>代办日期：{booking.appointmentDate || '未填写'} {booking.appointmentTime || ''}</div>
+        {bookingSlots(booking).map((row, index) => <div key={index}>预约 {index + 1}：{row.appointmentDate || '未填写'} {row.appointmentTime || ''} {row.department || ''} {row.expert || ''}</div>)}
         <div>支付方式：{paymentLabel}</div>
       </> : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].map((key, i) => <div key={key}>{['医院', '科室', '专家', '代诊目标', '交流内容'][i]}：{value.planSnapshot?.[key] || '待确认'}</div>)}
     </div>}
     {!isSupplyProxy && !isMedicalEscort && <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>
-      <div>实际预约：{booking.appointmentDate || '待预约'} {booking.appointmentTime || ''}</div>
+      {bookingSlots(booking).map((row, index) => <div key={index}>实际预约 {index + 1}：{row.appointmentDate || '待预约'} {row.appointmentTime || ''} {row.department || ''} {row.expert || ''}</div>)}
       <div>客户期望：{booking.preferredDateStart || '未记录'} 至 {booking.preferredDateEnd || '未记录'}</div>
       {booking.campus && <div>院区：{booking.campus}</div>}
       {booking.dateDifferenceNote && <div>日期差异确认：{booking.dateDifferenceNote}</div>}
@@ -296,11 +301,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     <div style={{ background: '#F5F8F6', padding: 10, whiteSpace: 'pre-wrap', fontSize: 13 }}>
       {appointmentRequirementText ? <div>约诊需求：{appointmentRequirementText}</div> : ['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].map((key, i) => <div key={key}>{['医院', '科室', '专家', '代诊目标', '交流内容'][i]}：{value.planSnapshot?.[key] || '待确认'}</div>)}
     </div>
-    {isExpertAppointment && <>
-      {input('campus', '院区 *')}
-      {input('appointmentExpert', '实际预约专家/医生（院方未确认可留空）')}
-      <div style={{ fontSize: 12, color: '#63766D' }}>顾问提供的专家信息仅作预约线索；请以医院确认的姓名填写。留空时客户通知会显示“待院方确认”。</div>
-    </>}
+    {isExpertAppointment && <div style={{ fontSize: 12, color: '#63766D' }}>请逐项填写实际预约的科室、院区和专家；院方未确认专家时可留空。</div>}
     {isSupplyProxy && <div style={{ display: 'grid', gap: 10, padding: 12, borderRadius: 8, background: '#FFF8ED', border: '1px solid #F2D4A7' }}>
       <div style={{ fontSize: 13, fontWeight: 700, color: '#8A4B08' }}>{isSupplementProxy ? '营养素采购' : '配药'}清单（流转前必须确认）</div>
       {!isSupplementProxy && value.medicationItems?.length ? value.medicationItems.map((row, index) => <div key={index} style={{ background: '#fff', borderRadius: 6, padding: 8, display: 'grid', gap: 6 }}>
@@ -327,9 +328,12 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
       {input('preferredDateStart', '客户期望日期（开始）', 1, 'date')}
       {input('preferredDateEnd', '客户期望日期（结束）', 1, 'date')}
     </div>
-    {input('appointmentDate', '专家实际出诊及约诊日期', 1, 'date')}
-    {input('appointmentTime', '实际约诊时间', 1, 'time')}
-    {value.appointmentDate && value.preferredDateStart && value.preferredDateEnd && (value.appointmentDate < value.preferredDateStart || value.appointmentDate > value.preferredDateEnd) && input('dateDifferenceNote', '超出期望区间说明及客户确认情况', 3)}
+    {bookingSlots(value).map((row, index) => <div key={index} style={{ border: '1px solid #DCE8E2', borderRadius: 8, padding: 10, display: 'grid', gap: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}><strong>预约 {index + 1}</strong>{index > 0 && <button type="button" className="btn btn-secondary btn-sm" onClick={() => onChange({ ...value, appointmentSlots: bookingSlots(value).filter((_, i) => i !== index) })}>移除</button>}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>{[['department', '科室/检查项目'], ['expert', '专家/医生'], ['campus', '院区'], ['appointmentDate', '预约日期'], ['appointmentTime', '预约时间']].map(([key, title]) => <label key={key} style={{ display: 'grid', gap: 4, fontSize: 12 }}>{title}<input className="form-control" type={key === 'appointmentDate' ? 'date' : key === 'appointmentTime' ? 'time' : 'text'} value={row[key] || ''} onChange={e => { const slots = bookingSlots(value).map((item, i) => i === index ? { ...item, [key]: e.target.value } : item); onChange({ ...value, appointmentSlots: slots, ...(index === 0 ? { appointmentDate: slots[0].appointmentDate, appointmentTime: slots[0].appointmentTime, appointmentExpert: slots[0].expert, campus: slots[0].campus } : {}) }) }} /></label>)}</div>
+    </div>)}
+    <button type="button" className="btn btn-secondary btn-sm" onClick={() => onChange({ ...value, appointmentSlots: [...bookingSlots(value), { department: '', expert: '', campus: value.campus || '', appointmentDate: '', appointmentTime: '' }] })}>＋ 新增预约</button>
+    {bookingSlots(value).some(row => row.appointmentDate && value.preferredDateStart && value.preferredDateEnd && (row.appointmentDate < value.preferredDateStart || row.appointmentDate > value.preferredDateEnd)) && input('dateDifferenceNote', '超出期望区间说明及客户确认情况', 3)}
     {isHighEndInsurance && <label style={{ display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 }}>
       商保实际结算核实结果 *
       <span style={{ color: '#63766D', fontSize: 12, fontWeight: 400 }}>健康顾问记录的客户期望：{({ direct: '直付', reimbursement: '先付后报', pending: '待确认' })[appointmentRequirement.settlementMethod] || '待确认'}。请按医院或保险方的实际答复确认。</span>
@@ -348,12 +352,12 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
         <div>配药医院：{value.planSnapshot?.hospital || '未填写'} {booking.campus || value.planSnapshot?.campus || ''}</div>
         <div>配药科室：{value.planSnapshot?.department || '未填写'}；配药专家：{value.planSnapshot?.expert || '无'}</div>
         {medicationList(booking, value.planSnapshot).length ? medicationList(booking, value.planSnapshot).map((row, index) => <div key={index}>药物 {index + 1}：{row.medicationName}；品牌：{row.medicationBrand}；规格：{row.medicationSpecification}；数量：{row.medicationQuantity}</div>) : <><div>配备药物：{value.planSnapshot?.medicationName || booking.medicationName || '未填写'}；商品名/品牌：{value.planSnapshot?.medicationBrand || booking.medicationBrand || '未填写'}</div><div>规格：{value.planSnapshot?.medicationSpecification || booking.medicationSpecification || '未填写'}；数量：{value.planSnapshot?.medicationQuantity || booking.medicationQuantity || '未填写'}</div></>}
-        <div>配药代办日期：{booking.appointmentDate || '未填写'} {booking.appointmentTime || ''}</div>
+        {bookingSlots(booking).map((row, index) => <div key={index}>配药代办 {index + 1}：{row.appointmentDate || '未填写'} {row.appointmentTime || ''} {row.department || ''} {row.expert || ''}</div>)}
         <div>支付方式：{paymentLabel}</div>
       </> : <>
         {['hospital', 'department', 'expert', 'proxyGoal', 'communicationContent'].map((key, i) => <div key={key}>{['代诊医院', '科室', '专家', '代诊目标', '与医生交流内容'][i]}：{value.planSnapshot?.[key] || '未填写'}</div>)}
         <div style={{ marginTop: 8 }}>客户期望日期区间：{booking.preferredDateStart || '未填写'} 至 {booking.preferredDateEnd || '未填写'}</div>
-        <div>专家实际出诊及约诊时间：{booking.appointmentDate || '未填写'} {booking.appointmentTime || ''}</div>
+        {bookingSlots(booking).map((row, index) => <div key={index}>专家约诊 {index + 1}：{row.appointmentDate || '未填写'} {row.appointmentTime || ''} {row.department || ''} {row.expert || ''}</div>)}
         {booking.dateDifferenceNote && <div>日期差异确认：{booking.dateDifferenceNote}</div>}
         {booking.additionalNote && <div>预约补充说明：{booking.additionalNote}</div>}
       </>}

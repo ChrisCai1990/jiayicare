@@ -14,6 +14,8 @@ const isMedicationProxyOrder = order => {
 const stageOf = task => task?.sourceType === 'order' && String(task.workflowKey || '').startsWith(PREFIX)
   ? task.workflowKey.slice(PREFIX.length) : '';
 const value = input => String(input || '').trim();
+const appointmentSlots = data => Array.isArray(data?.appointmentSlots) && data.appointmentSlots.length
+  ? data.appointmentSlots : [{ department: data?.department, expert: data?.expert, appointmentDate: data?.appointmentDate, appointmentTime: data?.appointmentTime }];
 
 async function createStage(order, stage, assignee, previous, data = {}) {
   if (!assignee) throw Object.assign(new Error('下一环节负责人未分配，请先完成客户人员分配'), { status: 409 });
@@ -72,8 +74,10 @@ async function validate(task, body, staff) {
   }
   if (stage === 'advisor' && (!value(data.department) || (data.expertRequired && !value(data.expert)) || !value(data.assessment))) return '请填写科室、所需专家和评估结论';
   if (stage === 'review' && (!value(data.department) || (data.expertRequired && !value(data.expert)) || !data.plannerConfirmed)) return '请确认健康顾问建议的科室与专家';
-  if (stage === 'booking' && (!value(data.department) || !value(data.appointmentDate) || !value(data.appointmentTime) || (data.expertRequired && !value(data.expert)))) return '请确认配药医生的科室、专家和预约时间';
+  if (stage === 'booking' && appointmentSlots(data).some(row => !value(row.department) || !value(row.appointmentDate) || !value(row.appointmentTime) || (data.expertRequired && !value(row.expert)))) return '请逐项确认配药科室、专家和预约时间';
   if (stage === 'booking') {
+    data.appointmentSlots = appointmentSlots(data);
+    Object.assign(data, data.appointmentSlots[0]);
     // The planner owns assignment. Booking only confirms the appointment and hands off.
     if (task.formData?.intakeSnapshot) data.intakeSnapshot = task.formData.intakeSnapshot;
     const plannedAssistantId = value(task.formData?.intakeSnapshot?.medicalAssistantId || task.formData?.medicalAssistantId);

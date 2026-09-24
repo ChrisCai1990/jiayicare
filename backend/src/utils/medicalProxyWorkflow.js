@@ -40,6 +40,9 @@ const dateInput = value => {
   return `${parts.year}-${parts.month}-${parts.day}`;
 };
 const appointmentAt = (date, time = '09:00') => new Date(`${date}T${time || '09:00'}:00+08:00`);
+const bookingSlots = booking => Array.isArray(booking?.appointmentSlots) && booking.appointmentSlots.length
+  ? booking.appointmentSlots
+  : [{ department: booking?.department || '', expert: booking?.appointmentExpert || '', campus: booking?.campus || '', appointmentDate: booking?.appointmentDate || '', appointmentTime: booking?.appointmentTime || '' }];
 const preparationDueDate = (serviceDate, now = new Date()) => {
   const due = new Date(serviceDate);
   due.setDate(due.getDate() - 3);
@@ -184,7 +187,7 @@ async function upsertMedicalProxyServiceRecord(task, order, completed = false) {
   const plan = order.medicalProxyPlan || task.formData?.planSnapshot || {};
   const medicationProxy = /代配药|代取药/.test(order.serviceName || '');
   const booking = plan.booking || task.formData?.bookingSnapshot || (stageOf(task) === 'booking' ? task.formData : {});
-  const appointment = booking.appointmentDate && booking.appointmentTime ? appointmentAt(booking.appointmentDate, booking.appointmentTime) : (order.scheduledAt || task.date || new Date());
+  const appointment = order.scheduledAt || (booking.appointmentDate && booking.appointmentTime ? appointmentAt(booking.appointmentDate, booking.appointmentTime) : (task.date || new Date()));
   const content = [
     plan.hospital && `医院：${plan.hospital}`, ...escortArrangementLines(plan),
     ...(medicationProxy && plan.medicationItems?.length ? plan.medicationItems.map((row, index) => `药物${index + 1}：${row.medicationName}；品牌：${row.medicationBrand}；规格：${row.medicationSpecification}；数量：${row.medicationQuantity}`) : [plan.medicationName && `药物名称：${plan.medicationName}`, plan.medicationBrand && `品牌：${plan.medicationBrand}`, plan.medicationQuantity && `数量：${plan.medicationQuantity}`]),
@@ -193,8 +196,7 @@ async function upsertMedicalProxyServiceRecord(task, order, completed = false) {
     plan.adHocConsultation && `现场预约时间：${plan.escortDate || ''} ${plan.escortTime || ''}`,
     plan.adHocConsultation && `费用告知：${plan.costNotice || ''}`,
     booking.preferredDateStart && `客户期望日期：${booking.preferredDateStart} 至 ${booking.preferredDateEnd || booking.preferredDateStart}`,
-    booking.appointmentDate && `实际约诊时间：${booking.appointmentDate} ${booking.appointmentTime || ''}`,
-    booking.appointmentExpert && `实际预约专家：${booking.appointmentExpert}`,
+    ...bookingSlots(booking).filter(row => row.appointmentDate).map((row, index) => `预约${index + 1}：${row.appointmentDate} ${row.appointmentTime || ''}；${row.department || ''}；${row.campus || ''}；${row.expert || ''}`),
     booking.dateDifferenceNote && `日期差异确认：${booking.dateDifferenceNote}`,
   ].filter(Boolean).join('\n');
   const update = { staffId: task.assignedTo, patientId: task.patientId, date: appointment, title: plan.adHocConsultation ? '临时加诊服务' : medicationProxy ? '代配药服务' : '医疗代诊服务', content,
@@ -689,12 +691,14 @@ async function validateMedicalProxyStage(task, body, staff) {
     if (!assistant) return '请选择当前有效的就医专员';
   }
   if (stage === 'booking') {
-    if (['preferredDateStart', 'preferredDateEnd', 'appointmentDate', 'appointmentTime'].some(key => !nonempty(data[key]))) {
-      return '请完整填写客户期望日期区间和实际约诊日期时间';
+    const slots = bookingSlots(data);
+    if (['preferredDateStart', 'preferredDateEnd'].some(key => !nonempty(data[key])) || slots.some(row => !nonempty(row.appointmentDate) || !nonempty(row.appointmentTime))) {
+      return '请完整填写客户期望日期区间和每项实际预约日期时间';
     }
-    if (![data.preferredDateStart, data.preferredDateEnd, data.appointmentDate].every(value => /^\d{4}-\d{2}-\d{2}$/.test(value)) || !/^\d{2}:\d{2}$/.test(data.appointmentTime)) return '预约日期或时间格式无效';
+    if (slots.length > 1 && slots.some(row => !nonempty(row.department))) return '多项预约请逐项填写科室或检查项目';
+    if (![data.preferredDateStart, data.preferredDateEnd, ...slots.map(row => row.appointmentDate)].every(value => /^\d{4}-\d{2}-\d{2}$/.test(value)) || slots.some(row => !/^\d{2}:\d{2}$/.test(row.appointmentTime) || Number.isNaN(appointmentAt(row.appointmentDate, row.appointmentTime).getTime()))) return '预约日期或时间格式无效';
     if (data.preferredDateEnd < data.preferredDateStart) return '客户期望日期区间结束日期不能早于开始日期';
-    if ((data.appointmentDate < data.preferredDateStart || data.appointmentDate > data.preferredDateEnd) && !nonempty(data.dateDifferenceNote)) return '约诊日期不在客户期望区间内，请说明差异及客户确认情况';
+    if (slots.some(row => row.appointmentDate < data.preferredDateStart || row.appointmentDate > data.preferredDateEnd) && !nonempty(data.dateDifferenceNote)) return '有预约日期不在客户期望区间内，请说明差异及客户确认情况';
     const bookingOrder = task.sourceOrderId ? await Order.findById(task.sourceOrderId).select('serviceName serviceRequirements').lean() : null;
     const medicationBooking = data.medicationProxy === true || /代配药|代取药/.test(bookingOrder?.serviceName || '');
     const supplementBooking = data.supplementProxy === true || /代配营养素/.test(bookingOrder?.serviceName || '');
@@ -705,7 +709,7 @@ async function validateMedicalProxyStage(task, body, staff) {
     if (data.paymentMethod === 'medical_insurance' && !['electronic', 'physical'].includes(data.medicalInsuranceCardType)) return '请确认使用电子医保卡还是实体医保卡';
     const appointmentRequirement = nonempty(data.planSnapshot?.serviceContent || bookingOrder?.serviceRequirements);
     if (/(?:保险类型：高端险|费用与保险：(使用高端医疗险|商保))/.test(appointmentRequirement) && !['direct_verified', 'reimbursement_verified', 'self_pay_confirmed'].includes(data.insuranceOutcome)) return '请核实商保实际结算方式，并选择办理结果';
-    if (/专家约诊/.test(bookingOrder?.serviceName || '') && /建议医院：/.test(appointmentRequirement) && !nonempty(data.campus)) return '请填写实际预约院区';
+    if (/专家约诊/.test(bookingOrder?.serviceName || '') && /建议医院：/.test(appointmentRequirement) && slots.some(row => !nonempty(row.campus))) return '请逐项填写实际预约院区';
     if (needsPlannerDispatch(data, bookingOrder?.serviceName)) {
       const patient = await User.findById(task.patientId).select('assignedHealthPlanner').lean();
       if (!patient?.assignedHealthPlanner) return '客户尚未分配健康规划师，无法交接预约结果';
@@ -815,6 +819,12 @@ async function advanceMedicalProxyWorkflow(task) {
     }
   }
   if (stage === 'booking') {
+    const slots = bookingSlots(task.formData);
+    task.formData.appointmentSlots = slots;
+    task.formData.appointmentDate = slots[0].appointmentDate;
+    task.formData.appointmentTime = slots[0].appointmentTime;
+    task.formData.appointmentExpert = slots[0].expert || task.formData.appointmentExpert || '';
+    task.formData.campus = slots[0].campus || task.formData.campus || '';
     if (/代配药|代取药/.test(order.serviceName || '') && task.formData.medicationItems?.length) {
       Object.assign(task.formData, task.formData.medicationItems[0]); // 历史单药字段仅保留首项兼容；完整清单始终用 medicationItems。
     }
@@ -826,7 +836,7 @@ async function advanceMedicalProxyWorkflow(task) {
       medicationQuantity: task.formData.medicationQuantity,
     } : {};
     order.medicalProxyPlan = { ...(order.medicalProxyPlan || {}), ...medicationFields, booking: task.formData, bookedBy: task.assignedTo, bookedAt: new Date() };
-    order.scheduledAt = appointmentAt(task.formData.appointmentDate, task.formData.appointmentTime);
+    order.scheduledAt = new Date(Math.max(...slots.map(row => appointmentAt(row.appointmentDate, row.appointmentTime).getTime())));
     order.desiredServiceDate = task.formData.preferredDateStart ? appointmentAt(task.formData.preferredDateStart) : null;
     order.desiredServiceDateEnd = task.formData.preferredDateEnd ? appointmentAt(task.formData.preferredDateEnd) : null;
     order.status = 'scheduled';
@@ -837,17 +847,16 @@ async function advanceMedicalProxyWorkflow(task) {
       const requirement = nonempty(task.formData?.planSnapshot?.serviceContent || order.serviceRequirements);
       const confirmedRequirement = requirement.replace(/；结算方式：(待核实|直付|先付后报)/g, '');
       const insuranceResult = ({ direct_verified: '已核实可直付', reimbursement_verified: '已核实先付后报', self_pay_confirmed: '保险不适用，客户已确认自费' })[task.formData.insuranceOutcome];
-      const actualExpert = nonempty(task.formData.appointmentExpert) || '待院方确认';
-      const appointmentText = `预约时间：${task.formData.appointmentDate} ${task.formData.appointmentTime}\n院区：${task.formData.campus}\n实际预约专家/医生：${actualExpert}\n约诊需求：${confirmedRequirement || '已确认'}${insuranceResult ? `\n保险办理：${insuranceResult}` : ''}`;
-      await require('./appointmentReminderScheduler').scheduleExpertAppointmentReminders({
-        order, appointmentDate: order.scheduledAt, appointmentText,
+      const appointmentText = slots.map((row, index) => `预约${index + 1}：${row.appointmentDate} ${row.appointmentTime}；${row.department || '科室待确认'}；${row.campus || '院区待确认'}；${row.expert || '专家待院方确认'}`).join('\n');
+      for (const [index, row] of slots.entries()) await require('./appointmentReminderScheduler').scheduleExpertAppointmentReminders({
+        order, appointmentDate: appointmentAt(row.appointmentDate, row.appointmentTime), appointmentText: `${appointmentText}\n约诊需求：${confirmedRequirement || '已确认'}${insuranceResult ? `\n保险办理：${insuranceResult}` : ''}`, slotIndex: index,
       });
       const confirmationKey = `expert-appointment-confirmed:${order._id}${order.medicalProxyPlan?.bookingRevision ? `:${order.medicalProxyPlan.bookingRevision}` : ''}`;
         await require('../models/Message').findOneAndUpdate(
           { dedupeKey: confirmationKey },
           { $set: {
             user: order.user, type: 'system', sender: '嘉医管家', title: '专家就医提醒',
-            content: `您的专家门诊预约已确认。就诊后请上传病历和检查报告；健管专员审核、健康顾问查看后，本项服务结束。\n约诊需求：${confirmedRequirement || '已确认'}\n院区：${task.formData.campus}\n实际预约专家/医生：${actualExpert}\n预约时间：${task.formData.appointmentDate} ${task.formData.appointmentTime}${insuranceResult ? `\n保险办理：${insuranceResult}` : ''}${task.formData.dateDifferenceNote ? `\n补充说明：${task.formData.dateDifferenceNote}` : ''}`,
+            content: `您的专家门诊预约已确认。全部就诊结束后请上传病历和检查报告；健管专员审核、健康顾问查看后，本项服务结束。\n约诊需求：${confirmedRequirement || '已确认'}\n${appointmentText}${insuranceResult ? `\n保险办理：${insuranceResult}` : ''}${task.formData.dateDifferenceNote ? `\n补充说明：${task.formData.dateDifferenceNote}` : ''}`,
             conversationId: null, unread: true, readAt: null, isAI: false, aiGenerated: false,
             dedupeKey: confirmationKey,
             action: { type: 'expert_appointment_confirmed', orderId: String(order._id) },

@@ -50,6 +50,7 @@ export function bookingDetailsFromTask(task) {
     meetingPoint: saved.meetingPoint || content.meetingPoint || visit.meetingPoint || '',
     appointmentDate: saved.appointmentDate || String(rawDate).slice(0, 10),
     appointmentTime: saved.appointmentTime || String(rawTime).slice(0, 5),
+    appointments: saved.appointments || [],
     preparation: saved.preparation || content.checkupPreparation || visit.preparation || confirmedPreparation || '',
     specialExams: saved.specialExams || '',
     expertArrangements: saved.expertArrangements || '',
@@ -62,6 +63,7 @@ export function bookingChecklist(details) {
     `医院：${details.hospital}`,
     details.campus && `院区：${details.campus}`,
     `体检时间：${details.appointmentDate} ${details.appointmentTime}`,
+    ...(details.appointments || []).map((row, index) => `追加预约${index + 1}：${row.department || '科室待确认'} · ${row.expert || '医生待确认'} · ${row.item || '项目待确认'} · ${row.appointmentDate || ''} ${row.appointmentTime || ''}`),
     `报到地点：${[details.department, details.floor, details.registrationWindow].filter(Boolean).join(' · ')}`,
     details.contactName && `院方联系人：${details.contactName}${details.contactPhone ? ` ${details.contactPhone}` : ''}`,
     details.meetingPoint && `陪诊会合点：${details.meetingPoint}`,
@@ -79,6 +81,10 @@ export function bookingChecklist(details) {
   }]
 }
 
+export const validateAdditionalCheckupAppointments = details => (details?.appointments || []).some(row =>
+  !row.appointmentDate || !row.appointmentTime || !(row.department || row.item))
+  ? '请填写每条追加预约的科室或检查项目，以及日期和时间' : ''
+
 const fields = [
   ['hospital', '预约医院 *', '如：邵逸夫医院'],
   ['campus', '院区', '如：庆春院区'],
@@ -92,6 +98,7 @@ const fields = [
 
 export default function CheckupBookingForm({ value, onChange }) {
   const update = (key, next) => onChange({ ...value, [key]: next })
+  const appointments = value.appointments || []
   return <div style={{ border: '1px solid #D8E7DF', borderRadius: 10, overflow: 'hidden', flexShrink: 0 }}>
     <div style={{ padding: '12px 14px', background: '#F2F8F5' }}>
       <div style={{ fontSize: 14, fontWeight: 750, color: '#29483C' }}>体检预约确认与陪诊交接</div>
@@ -103,6 +110,7 @@ export default function CheckupBookingForm({ value, onChange }) {
       </label>)}
       <label style={{ fontSize: 12, color: '#65776F' }}>体检日期 *<input type="date" className="form-control" value={value.appointmentDate || ''} onChange={e => update('appointmentDate', e.target.value)} style={{ marginTop: 5 }} /></label>
       <label style={{ fontSize: 12, color: '#65776F' }}>到院时间 *<input type="time" className="form-control" value={value.appointmentTime || ''} onChange={e => update('appointmentTime', e.target.value)} style={{ marginTop: 5 }} /></label>
+      <div style={{ gridColumn: '1 / -1', display: 'grid', gap: 8 }}><strong style={{ fontSize: 13 }}>追加科室、专家或检查预约</strong>{appointments.map((row, index) => <div key={index} style={{ border: '1px solid #D8E7DF', borderRadius: 8, padding: 10, display: 'grid', gap: 8 }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><strong>预约 {index + 2}</strong><button type="button" className="btn btn-secondary btn-sm" onClick={() => update('appointments', appointments.filter((_, i) => i !== index))}>移除</button></div><div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>{[['department', '科室'], ['expert', '专家'], ['item', '检查项目'], ['appointmentDate', '预约日期'], ['appointmentTime', '预约时间']].map(([key, title]) => <label key={key} style={{ display: 'grid', gap: 4, fontSize: 12 }}>{title}<input className="form-control" type={key === 'appointmentDate' ? 'date' : key === 'appointmentTime' ? 'time' : 'text'} value={row[key] || ''} onChange={e => update('appointments', appointments.map((item, i) => i === index ? { ...item, [key]: e.target.value } : item))} /></label>)}</div></div>)}<button type="button" className="btn btn-secondary btn-sm" onClick={() => update('appointments', [...appointments, { department: '', expert: '', item: '', appointmentDate: '', appointmentTime: '' }])}>＋ 新增预约</button></div>
       <label style={{ gridColumn: '1 / -1', fontSize: 12, color: '#65776F' }}>体检前准备事项 *<textarea className="form-control" rows={3} value={value.preparation || ''} onChange={e => update('preparation', e.target.value)} placeholder="饮食、停药、证件、缴费、取号等注意事项" style={{ marginTop: 5 }} /></label>
       <label style={{ gridColumn: '1 / -1', fontSize: 12, color: '#65776F' }}>特殊检查安排<textarea className="form-control" rows={2} value={value.specialExams || ''} onChange={e => update('specialExams', e.target.value)} placeholder="如：胃肠镜、增强CT等检查的地点、顺序与时间" style={{ marginTop: 5 }} /></label>
       <label style={{ gridColumn: '1 / -1', fontSize: 12, color: '#65776F' }}>门诊/专家及时间安排<textarea className="form-control" rows={2} value={value.expertArrangements || ''} onChange={e => update('expertArrangements', e.target.value)} placeholder="如：检查后前往某科室，由某位专家于几点接诊" style={{ marginTop: 5 }} /></label>

@@ -3,6 +3,8 @@ import { staffAPI } from '../api'
 
 export default function ExpertAppointmentRescheduleForm({ task, onSaved }) {
   const booking = task?.sourceOrderId?.medicalProxyPlan?.booking || {}
+  const slots = booking.appointmentSlots?.length ? booking.appointmentSlots : [{ appointmentDate: booking.appointmentDate, appointmentTime: booking.appointmentTime, department: booking.department, expert: booking.appointmentExpert }]
+  const [slotIndex, setSlotIndex] = useState(0)
   const [open, setOpen] = useState(false)
   const [appointmentDate, setAppointmentDate] = useState(booking.appointmentDate || '')
   const [appointmentTime, setAppointmentTime] = useState(booking.appointmentTime || '')
@@ -20,7 +22,7 @@ export default function ExpertAppointmentRescheduleForm({ task, onSaved }) {
     setError('')
     setSaving(true)
     try {
-      await staffAPI.rescheduleExpertAppointment(task._id, { appointmentDate, appointmentTime, reason: reason.trim(), customerConfirmed, hospitalConfirmed })
+      await staffAPI.rescheduleExpertAppointment(task._id, { slotIndex, appointmentDate, appointmentTime, reason: reason.trim(), customerConfirmed, hospitalConfirmed })
       onSaved?.()
     } catch (err) {
       setError(err.message || '保存改期记录失败')
@@ -31,10 +33,11 @@ export default function ExpertAppointmentRescheduleForm({ task, onSaved }) {
 
   return <div style={{ border: '1px solid #CFE4DA', borderRadius: 8, padding: 12, display: 'grid', gap: 10 }}>
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-      <div><strong>当前已确认预约</strong>：{booking.appointmentDate || '未记录'} {booking.appointmentTime || ''}</div>
+      <div><strong>当前已确认预约</strong>：{slots.map((row, index) => `${index + 1}. ${row.department || ''} ${row.appointmentDate || '未记录'} ${row.appointmentTime || ''}`).join('；')}</div>
       <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOpen(value => !value)}>{open ? '收起' : '补记预约改期'}</button>
     </div>
     {open && <>
+      {slots.length > 1 && <label>选择需要改期的预约<select className="form-control" value={slotIndex} onChange={e => { const index = Number(e.target.value); setSlotIndex(index); setAppointmentDate(slots[index].appointmentDate || ''); setAppointmentTime(slots[index].appointmentTime || '') }}>{slots.map((row, index) => <option key={index} value={index}>{index + 1}. {row.department || row.expert || '预约'} · {row.appointmentDate} {row.appointmentTime}</option>)}</select></label>}
       <div style={{ fontSize: 12, color: '#63766D' }}>仅记录已经与医院及客户确认的新时间；保存后同步通知客户并更新就诊提醒，本单仍停留在等待就诊资料环节。</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         <label>新预约日期 *<input className="form-control" type="date" value={appointmentDate} onChange={e => setAppointmentDate(e.target.value)} /></label>

@@ -14,16 +14,29 @@ const stageOf = task => String(task?.workflowKey || '').startsWith(PREFIX)
   ? String(task.workflowKey).slice(PREFIX.length) : '';
 const required = value => String(value || '').trim();
 const appointmentDate = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
+const bookingRows = (booking, plural, legacy) => Array.isArray(booking?.[plural]) ? booking[plural] : (booking?.[legacy] ? [booking[legacy]] : []);
+const finalBookingRows = booking => Array.isArray(booking?.postCheckExpertAppointments) ? booking.postCheckExpertAppointments
+  : (booking?.postCheckExpertAppointment || booking?.expertAppointment ? [{ ...(booking.expertAppointment || {}), ...(booking.postCheckExpertAppointment || {}) }] : []);
+const appointmentTimeKey = item => `${item.date}T${item.time}`;
 
 async function ensureClientCheckupNotifications({ order, patient, medical }) {
-  const booking = medical?.booking || {}; const finalConsultation = booking.postCheckExpertAppointment || booking.expertAppointment || {};
+  const booking = medical?.booking || {};
+  const orderVisits = bookingRows(booking, 'orderFormAppointments', 'orderFormAppointment');
+  const specialChecks = booking.specialCheckRequired === true || booking.intake?.serviceType === 'special' ? bookingRows(booking, 'specialCheckAppointments', 'specialCheckAppointment') : [];
+  const finalConsultations = finalBookingRows(booking);
   const appointments = (medical?.checkAppointments || []).filter(item => appointmentDate(item.appointmentDate) && required(item.appointmentTime));
   if (!appointments.length) return;
   const sorted = [...appointments].sort((a, b) => `${a.appointmentDate}T${a.appointmentTime}`.localeCompare(`${b.appointmentDate}T${b.appointmentTime}`));
   const first = sorted[0]; const firstAt = new Date(`${first.appointmentDate}T${first.appointmentTime}:00+08:00`);
-  const finalAt = appointmentDate(finalConsultation.date) ? new Date(`${finalConsultation.date}T${finalConsultation.time || '09:00'}:00+08:00`) : firstAt;
+  const lastFinal = [...finalConsultations].sort((a, b) => appointmentTimeKey(b).localeCompare(appointmentTimeKey(a)))[0];
+  const finalAt = lastFinal && appointmentDate(lastFinal.date) ? new Date(`${lastFinal.date}T${lastFinal.time || '09:00'}:00+08:00`) : firstAt;
   const schedule = sorted.map(item => `${item.item}：${item.appointmentDate} ${item.appointmentTime}，${item.campus || ''}${item.department || ''}${item.location ? `（${item.location}）` : ''}`).join('\n');
-  const appointmentText = `您的检查预约已安排：\n${schedule}${finalConsultation.date ? `\n专家看诊：${finalConsultation.date} ${finalConsultation.time || ''}，${finalConsultation.campus || ''}${finalConsultation.department || ''}${finalConsultation.doctor || ''}` : ''}${medical?.intake?.fastingRequired ? '\n请按要求空腹前往。' : ''}`;
+  const bookedLines = [
+    ...orderVisits.map((item, index) => `开检查单${index + 1}：${item.date} ${item.time || ''}，${item.campus || ''}${item.department || ''} ${item.doctor || ''}${item.location ? `（${item.location}）` : ''}`),
+    ...specialChecks.map((item, index) => `特殊检查${index + 1} · ${item.checkItem || ''}：${item.date} ${item.time || ''}，${item.campus || ''}${item.department || ''}${item.location ? `（${item.location}）` : ''}`),
+    ...finalConsultations.filter(item => appointmentDate(item.date)).map((item, index) => `专家看诊${index + 1}：${item.date} ${item.time || ''}，${item.campus || ''}${item.department || ''} ${item.doctor || ''}${item.location ? `（${item.location}）` : ''}`),
+  ];
+  const appointmentText = `您的检查预约已安排：\n${bookedLines.join('\n')}\n检查项目：\n${schedule}${medical?.intake?.fastingRequired ? '\n请按要求空腹前往。' : ''}`;
   await Message.findOneAndUpdate({ dedupeKey: `checkup-appointment-confirmed:${order._id}` }, { $setOnInsert: { user: patient._id, type: 'planner', sender: 'AI健康规划师', title: '检查预约已完成', content: appointmentText, conversationId: `${patient._id}_planner`, isAI: true, unread: true, dedupeKey: `checkup-appointment-confirmed:${order._id}`, action: { type: 'checkup_appointment', orderId: String(order._id) } } }, { upsert: true, new: true, setDefaultsOnInsert: true });
   for (const [label, offset] of [['检查前1天提醒', 24 * 60 * 60 * 1000], ['检查前2小时提醒', 2 * 60 * 60 * 1000]]) {
     const remindAt = new Date(firstAt.getTime() - offset);
@@ -49,20 +62,25 @@ function plannerValidation(data = {}) {
 }
 
 function bookingValidation(data = {}) {
-  const orderVisit = data.orderFormAppointment || {};
-  const specialCheck = data.specialCheckAppointment || {};
-  const finalConsultation = data.postCheckExpertAppointment || data.expertAppointment || {};
+  const orderVisits = bookingRows(data, 'orderFormAppointments', 'orderFormAppointment');
+  const specialChecks = bookingRows(data, 'specialCheckAppointments', 'specialCheckAppointment');
+  const finalConsultations = finalBookingRows(data);
   const needsSpecialCheck = data?.intake?.serviceType === 'special' || data.specialCheckRequired === true;
-  for (const item of [orderVisit, finalConsultation]) {
-    if (!required(item.campus) || !required(item.department) || !required(item.location) || !required(item.doctor) || !appointmentDate(item.date) || !required(item.time)) return '请完整填写开检查单号和检查后专家门诊的院区、科室、具体地点、医生及时间';
+  if (!orderVisits.length || !finalConsultations.length) return '请至少填写一项开检查单号和一项检查后专家门诊';
+  for (const [label, rows] of [['开检查单号', orderVisits], ['检查后专家门诊', finalConsultations]]) {
+    if (rows.some(item => !required(item?.campus) || !required(item?.department) || !required(item?.location) || !required(item?.doctor) || !appointmentDate(item?.date) || !required(item?.time))) return `请完整填写每项${label}的院区、科室、具体地点、医生及时间`;
   }
-  if (needsSpecialCheck && (!required(specialCheck.campus) || !required(specialCheck.department) || !required(specialCheck.location) || !appointmentDate(specialCheck.date) || !required(specialCheck.time))) return '请完整填写特殊检查预约的院区、科室、具体地点及时间';
-  const timeOf = item => `${item.date}T${item.time}`;
   if (needsSpecialCheck) {
-    if (!required(specialCheck.checkItem)) return '请填写特殊检查项目';
-    if (timeOf(specialCheck) < timeOf(orderVisit)) return '特殊检查预约不能早于开检查单号';
-    if (timeOf(finalConsultation) <= timeOf(specialCheck)) return '特殊检查必须安排在检查后专家看诊之前';
-  } else if (timeOf(finalConsultation) < timeOf(orderVisit)) return '检查后专家看诊号不能早于开检查单号';
+    if (!specialChecks.length) return '请至少填写一项特殊检查预约';
+    if (specialChecks.some(item => !required(item?.campus) || !required(item?.department) || !required(item?.location) || !appointmentDate(item?.date) || !required(item?.time))) return '请完整填写每项特殊检查预约的院区、科室、具体地点及时间';
+    if (specialChecks.some(item => !required(item?.checkItem))) return '请填写每项特殊检查项目';
+  }
+  const lastOrder = orderVisits.map(appointmentTimeKey).sort().at(-1);
+  const firstFinal = finalConsultations.map(appointmentTimeKey).sort()[0];
+  if (needsSpecialCheck) {
+    if (specialChecks.some(item => appointmentTimeKey(item) < lastOrder)) return '特殊检查预约不能早于开检查单号';
+    if (specialChecks.some(item => firstFinal <= appointmentTimeKey(item))) return '特殊检查必须安排在检查后专家看诊之前';
+  } else if (firstFinal < lastOrder) return '检查后专家看诊号不能早于开检查单号';
   return '';
 }
 
@@ -101,7 +119,12 @@ async function advance(task) {
   const patient = await User.findById(task.patientId).select('assignedHealthManager assignedMedicalAssistant assignedFamilyDoctor').lean(); if (!patient) return;
   const stage = stageOf(task);
   if (stage === 'booking') {
-    const booking = task.formData || {}; const specialCheck = booking.specialCheckAppointment || {}; const finalConsultation = booking.postCheckExpertAppointment || booking.expertAppointment || {}; const hasSpecialCheck = booking.intake?.serviceType === 'special' || booking.specialCheckRequired === true; const reminderAppointment = hasSpecialCheck ? specialCheck : finalConsultation; const date = new Date(`${reminderAppointment.date}T${reminderAppointment.time}:00+08:00`);
+    const booking = task.formData || {}; const hasSpecialCheck = booking.intake?.serviceType === 'special' || booking.specialCheckRequired === true;
+    const specialChecks = bookingRows(booking, 'specialCheckAppointments', 'specialCheckAppointment');
+    const finalConsultations = finalBookingRows(booking);
+    const orderVisits = bookingRows(booking, 'orderFormAppointments', 'orderFormAppointment');
+    const firstAppointment = [...orderVisits, ...(hasSpecialCheck ? specialChecks : []), ...finalConsultations].sort((a, b) => appointmentTimeKey(a).localeCompare(appointmentTimeKey(b)))[0];
+    const date = new Date(`${firstAppointment.date}T${firstAppointment.time}:00+08:00`);
     if (!patient.assignedMedicalAssistant) throw new Error('该客户尚未分配就医专员，无法转交');
     await createTask({ order, patient, assignee: patient.assignedMedicalAssistant, stage: 'medical', date, theme: `待约检：就医专员完成开单、检查及资料归档 · ${order.serviceName}`, content: hasSpecialCheck ? '按顺序完成开检查单、特殊检查和检查后专家门诊；上传报告与病历后提交健管专员审核。' : '按顺序完成开检查单、常规检查和检查后专家门诊；上传报告与病历后提交健管专员审核。', formData: { intake: booking.intake, booking, currentStage: 'medical' } });
     await Order.updateOne({ _id: order._id }, { $set: { currentStage: 'checkup_medical_execution', currentAssignee: patient.assignedMedicalAssistant, supervisionStatus: 'in_progress' } });

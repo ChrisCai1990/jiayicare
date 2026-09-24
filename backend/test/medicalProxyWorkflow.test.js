@@ -297,7 +297,7 @@ test('workflow keeps booking between planner and execution and shows the complet
   const workflow = fs.readFileSync(path.join(__dirname, '../src/utils/medicalProxyWorkflow.js'), 'utf8');
   const form = fs.readFileSync(path.join(__dirname, '../../staff/src/components/MedicalProxyStageForm.jsx'), 'utf8');
   assert.match(workflow, /const STAGES = \['collect', 'audit', 'advisor', 'planner', 'booking', 'execute'\]/);
-  for (const text of ['客户期望日期（开始）', '客户期望日期（结束）', '专家实际出诊及约诊日期', '超出期望区间说明及客户确认情况', '代诊医院', '与医生交流内容', '预约补充说明']) {
+  for (const text of ['客户期望日期（开始）', '客户期望日期（结束）', '新增预约', '超出期望区间说明及客户确认情况', '代诊医院', '与医生交流内容', '预约补充说明']) {
     assert.match(form, new RegExp(text));
   }
   assert.doesNotMatch(form, /预约结果、预约凭证及就诊注意事项/);
@@ -627,4 +627,21 @@ test('expert appointment closes only after post-visit follow-up review and suppo
   assert.match(workflow, /appointmentOnly \? '专家约诊服务'/);
   assert.match(workflow, /order\.status = 'completed';[\s\S]*order\.tradeStatus = 'completed'/);
   assert.match(migration, /assistanceType: 'expert_appointment'/);
+});
+
+test('expert appointment validates every appointment in a single order', async () => {
+  const originalOrderFind = Order.findById;
+  try {
+    Order.findById = () => ({ select: () => ({ lean: async () => ({ serviceName: '专家约诊服务' }) }) });
+    const task = { sourceType: 'order', sourceOrderId: 'order-1', workflowKey: 'medical_proxy:booking', assignedTo: 'manager-1' };
+    const formData = { preferredDateStart: '2026-09-16', preferredDateEnd: '2026-09-18', appointmentSlots: [
+      { department: '心内科', appointmentDate: '2026-09-17', appointmentTime: '10:00' },
+      { department: '消化内科', appointmentDate: '', appointmentTime: '11:00' },
+    ] };
+    assert.match(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'manager-1', role: 'healthManager' }), /每项实际预约/);
+    formData.appointmentSlots[1].appointmentDate = '2026-09-19';
+    assert.match(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'manager-1', role: 'healthManager' }), /期望区间/);
+    formData.dateDifferenceNote = '客户确认第二项改到19日';
+    assert.equal(await validateMedicalProxyStage(task, { status: 'completed', formData }, { _id: 'manager-1', role: 'healthManager' }), '');
+  } finally { Order.findById = originalOrderFind; }
 });

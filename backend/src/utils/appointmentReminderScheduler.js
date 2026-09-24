@@ -13,11 +13,12 @@ function buildAppointmentReminderTimes(appointmentDate) {
   ];
 }
 
-async function scheduleExpertAppointmentReminders({ order, appointmentDate, appointmentText, now = new Date() }) {
+async function scheduleExpertAppointmentReminders({ order, appointmentDate, appointmentText, slotIndex = null, now = new Date() }) {
   for (const item of buildAppointmentReminderTimes(appointmentDate)) {
     if (item.remindAt <= now) continue;
+    const kind = slotIndex === null ? item.kind : `${item.kind}:${slotIndex}`;
     await AppointmentReminder.findOneAndUpdate(
-      { orderId: order._id, kind: item.kind },
+      { orderId: order._id, kind },
       { $set: { user: order.user, remindAt: item.remindAt, appointmentAt: new Date(appointmentDate), appointmentText, status: 'pending', processingAt: null, sentAt: null } },
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
@@ -38,15 +39,19 @@ async function scanAndSendAppointmentReminders(now = new Date()) {
     );
     if (!reminder) break;
     try {
-      const order = await Order.findById(reminder.orderId).select('scheduledAt status').lean();
-      if (!order || order.status !== 'scheduled' || new Date(order.scheduledAt).getTime() !== new Date(reminder.appointmentAt).getTime()) {
+      const order = await Order.findById(reminder.orderId).select('scheduledAt status medicalProxyPlan.booking').lean();
+      const slots = order?.medicalProxyPlan?.booking?.appointmentSlots;
+      const currentAppointments = Array.isArray(slots) && slots.length
+        ? slots.map(row => new Date(`${row.appointmentDate}T${row.appointmentTime}:00+08:00`).getTime())
+        : [new Date(order?.scheduledAt).getTime()];
+      if (!order || order.status !== 'scheduled' || !currentAppointments.includes(new Date(reminder.appointmentAt).getTime())) {
         await AppointmentReminder.updateOne(
           { _id: reminder._id, status: 'processing', appointmentAt: reminder.appointmentAt },
           { $set: { status: 'cancelled', processingAt: null } },
         );
         continue;
       }
-      const label = reminder.kind === 'day_before' ? '明天' : '2小时后';
+      const label = reminder.kind.startsWith('day_before') ? '明天' : '2小时后';
       const dedupeKey = `expert-appointment-reminder:${reminder.orderId}:${reminder.kind}:${new Date(reminder.appointmentAt).getTime()}`;
       await Message.findOneAndUpdate(
         { dedupeKey },

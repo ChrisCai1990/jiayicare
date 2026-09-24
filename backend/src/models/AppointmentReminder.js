@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const appointmentReminderSchema = new mongoose.Schema({
   orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', required: true },
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  kind: { type: String, enum: ['day_before', 'two_hours_before'], required: true },
+  kind: { type: String, required: true },
   remindAt: { type: Date, required: true, index: true },
   appointmentAt: { type: Date, required: true },
   appointmentText: { type: String, required: true },

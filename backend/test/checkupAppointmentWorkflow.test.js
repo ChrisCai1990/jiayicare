@@ -38,6 +38,26 @@ test('常规约检只需开检查单号和检查后专家看诊号', () => {
   assert.match(bookingValidation({ ...withSpecialCheck, postCheckExpertAppointment: { ...booking.postCheckExpertAppointment, time: '09:00' } }), /之前/);
 });
 
+test('三环节均可填写多项预约，并逐项校验与检查后门诊的时间顺序', () => {
+  const orderFormAppointments = [
+    { campus: '庆春', department: '内科', location: '1号楼', doctor: '李医生', date: '2026-10-01', time: '08:00' },
+    { campus: '庆春', department: '甲乳科', location: '2号楼', doctor: '王医生', date: '2026-10-01', time: '09:00' },
+  ];
+  const specialCheckAppointments = [
+    { checkItem: '甲状腺超声', campus: '庆春', department: '超声科', location: '3号楼', date: '2026-10-02', time: '09:00' },
+    { checkItem: '乳腺超声', campus: '庆春', department: '超声科', location: '3号楼', date: '2026-10-02', time: '10:00' },
+  ];
+  const postCheckExpertAppointments = [
+    { campus: '庆春', department: '甲乳科', location: '2号楼', doctor: '赵医生', date: '2026-10-02', time: '11:00' },
+    { campus: '庆春', department: '内科', location: '1号楼', doctor: '钱医生', date: '2026-10-02', time: '12:00' },
+  ];
+  const booking = { intake: { ...intake, serviceType: 'normal' }, specialCheckRequired: true, orderFormAppointments, specialCheckAppointments, postCheckExpertAppointments };
+  assert.equal(bookingValidation(booking), '');
+  assert.match(bookingValidation({ ...booking, orderFormAppointments: [...orderFormAppointments, { ...orderFormAppointments[1], doctor: '' }] }), /每项开检查单号/);
+  assert.match(bookingValidation({ ...booking, specialCheckAppointments: [...specialCheckAppointments, { ...specialCheckAppointments[1], location: '' }] }), /每项特殊检查预约/);
+  assert.match(bookingValidation({ ...booking, postCheckExpertAppointments: [{ ...postCheckExpertAppointments[0], time: '09:00' }, postCheckExpertAppointments[1]] }), /之前/);
+});
+
 test('健康规划师监督任务只能随流程自动结案', async () => {
   const error = await validate({ workflowKey: 'checkup_appointment:supervise' }, { status: 'completed' }, { role: 'healthPlanner' });
   assert.match(error, /自动结案/);

@@ -28,7 +28,7 @@ import MedicalAssistRequirementsCard from '../components/MedicalAssistRequiremen
 import ServiceTaskChecklist, { normalizeServiceChecklist, summarizeServiceChecklist } from '../components/ServiceTaskChecklist'
 import CheckupConclusionForm from '../components/CheckupConclusionForm'
 import { checkupConclusionStage } from '../utils/checkupTaskRouting'
-import CheckupBookingForm, { bookingChecklist, bookingDetailsFromTask, isCheckupBookingTask, isCheckupOnsiteTask, normalizeCheckupOnsiteChecklist } from '../components/CheckupBookingForm'
+import CheckupBookingForm, { bookingChecklist, bookingDetailsFromTask, isCheckupBookingTask, isCheckupOnsiteTask, normalizeCheckupOnsiteChecklist, validateAdditionalCheckupAppointments } from '../components/CheckupBookingForm'
 import CheckupReportCollectionForm, { isCheckupReportCollectionTask } from '../components/CheckupReportCollectionForm'
 import CheckupAppointmentBookingForm, { checkupAppointmentBookingFromTask, isCheckupAppointmentBookingTask } from '../components/CheckupAppointmentBookingForm'
 import CheckupMedicalExecutionForm, { checkupMedicalExecutionFromTask, isCheckupMedicalExecutionTask, validateCheckupMedicalExecution } from '../components/CheckupMedicalExecutionForm'
@@ -2574,6 +2574,7 @@ export default function PatientDetailPage() {
     if (isBooking && requiredBooking.some(key => !execForm.appointmentDetails?.[key]?.trim())) {
       toast('请完整填写预约医院、体检中心、楼层、会合地点、日期时间和行前准备事项'); return
     }
+    if (isBooking && validateAdditionalCheckupAppointments(execForm.appointmentDetails)) { toast(validateAdditionalCheckupAppointments(execForm.appointmentDetails)); return }
     const submittedChecklist = isBooking ? bookingChecklist(execForm.appointmentDetails) : execForm.serviceChecklist
     const reportClosure = isReportCollection ? execForm.serviceChecklist?.[0] : null
     if (isReportCollection && reportClosure?.collectionStatus === 'complete') {

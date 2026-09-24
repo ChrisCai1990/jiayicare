@@ -5,17 +5,29 @@ export const isCheckupAppointmentBookingTask = task => task?.sourceType === 'ord
 
 const emptyAppointment = { campus: '', department: '', location: '', doctor: '', date: '', time: '' }
 const emptySpecialCheckAppointment = { ...emptyAppointment, checkItem: '' }
+const appointmentRows = (rows, legacy, empty) => (Array.isArray(rows) ? rows : [legacy || empty]).map(row => ({ ...empty, ...(row || {}) }))
 
 export function checkupAppointmentBookingFromTask(task) {
   const data = task?.formData || {}
-  const legacyFinalConsultation = data.expertAppointment || {}
+  const legacyFinalConsultation = { ...(data.expertAppointment || {}), ...(data.postCheckExpertAppointment || {}) }
   return {
     ...data,
     specialCheckRequired: data.intake?.serviceType === 'special' || data.specialCheckRequired === true,
-    orderFormAppointment: { ...emptyAppointment, ...(data.orderFormAppointment || {}) },
-    specialCheckAppointment: { ...emptySpecialCheckAppointment, ...(data.specialCheckAppointment || {}) },
-    postCheckExpertAppointment: { ...emptyAppointment, ...legacyFinalConsultation, ...(data.postCheckExpertAppointment || {}) },
+    orderFormAppointments: appointmentRows(data.orderFormAppointments, data.orderFormAppointment, emptyAppointment),
+    specialCheckAppointments: appointmentRows(data.specialCheckAppointments, data.specialCheckAppointment, emptySpecialCheckAppointment),
+    postCheckExpertAppointments: appointmentRows(data.postCheckExpertAppointments, legacyFinalConsultation, emptyAppointment),
   }
+}
+
+function AppointmentList({ title, rows, onChange, hint, specialCheck = false }) {
+  const empty = specialCheck ? emptySpecialCheckAppointment : emptyAppointment
+  return <div style={{ display: 'grid', gap: 10 }}>
+    {rows.map((row, index) => <div key={index}>
+      <AppointmentFields title={`${title} ${index + 1}`} value={row} onChange={next => onChange(rows.map((item, i) => i === index ? next : item))} hint={hint} specialCheck={specialCheck} />
+      {rows.length > 1 && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 6 }} onClick={() => onChange(rows.filter((_, i) => i !== index))}>移除这项预约</button>}
+    </div>)}
+    <button type="button" className="btn btn-secondary btn-sm" style={{ justifySelf: 'start' }} onClick={() => onChange([...rows, { ...empty }])}>＋ 新增{title}</button>
+  </div>
 }
 
 function AppointmentFields({ title, value, onChange, hint, specialCheck = false }) {
@@ -46,15 +58,15 @@ export default function CheckupAppointmentBookingForm({ task, value, onChange })
       <b>客户检查需求：</b>{checkItems || '—'}<br />
       <b>检查机构：</b>{intake.institution || '—'}　<b>空腹：</b>{intake.fastingRequired ? '需要' : '不需要'}
     </div>
-    <AppointmentFields title="① 开检查单号" value={data.orderFormAppointment} onChange={next => update('orderFormAppointment', next)} hint="用于开具本次检查所需的检查单。" />
+    <AppointmentList title="① 开检查单号" rows={data.orderFormAppointments} onChange={next => update('orderFormAppointments', next)} hint="可按不同科室或医生分别预约开单。" />
     <section style={{ border: '1px solid #D8E7DF', borderRadius: 10, overflow: 'hidden' }}>
       <div style={{ padding: '11px 14px', background: '#F2F8F5', fontWeight: 750, color: '#29483C' }}>② 特殊检查预约</div>
       <div style={{ padding: 14 }}>
-        <label><input type="checkbox" checked={needsSpecialCheck} disabled={intake.serviceType === 'special'} onChange={e => onChange({ ...data, specialCheckRequired: e.target.checked, ...(e.target.checked ? {} : { specialCheckAppointment: { ...emptySpecialCheckAppointment } }) })} /> 本次有需要提前预约的特殊检查（如部分超声）</label>
+        <label><input type="checkbox" checked={needsSpecialCheck} disabled={intake.serviceType === 'special'} onChange={e => onChange({ ...data, specialCheckRequired: e.target.checked, specialCheckAppointments: e.target.checked ? [{ ...emptySpecialCheckAppointment }] : [], specialCheckAppointment: { ...emptySpecialCheckAppointment } })} /> 本次有需要提前预约的特殊检查（如部分超声）</label>
         <div style={{ fontSize: 12, color: '#65776F', marginTop: 6 }}>{intake.serviceType === 'special' ? '特殊约检必须填写本环节。' : '无需提前预约时不勾选，仍保留本环节以便核对。'}</div>
       </div>
-      {needsSpecialCheck && <AppointmentFields title="特殊检查预约信息" value={data.specialCheckAppointment} onChange={next => update('specialCheckAppointment', next)} hint="填写检查项目、地点和时间；仅需指定医生的项目填写医生姓名。" specialCheck />}
+      {needsSpecialCheck && <div style={{ padding: 14, paddingTop: 0 }}><AppointmentList title="特殊检查预约" rows={data.specialCheckAppointments} onChange={next => update('specialCheckAppointments', next)} hint="逐项填写检查项目、地点和时间；仅需指定医生时填写姓名。" specialCheck /></div>}
     </section>
-    <AppointmentFields title="③ 检查后专家门诊" value={data.postCheckExpertAppointment} onChange={next => update('postCheckExpertAppointment', next)} hint={needsSpecialCheck ? '检查完成后由专家看诊，时间须晚于特殊检查。' : '常规检查完成后由专家看诊，日期不能早于开检查单号。'} />
+    <AppointmentList title="③ 检查后专家门诊" rows={data.postCheckExpertAppointments} onChange={next => update('postCheckExpertAppointments', next)} hint={needsSpecialCheck ? '专家看诊时间须晚于全部特殊检查。' : '专家看诊时间不能早于开检查单。'} />
   </div>
 }

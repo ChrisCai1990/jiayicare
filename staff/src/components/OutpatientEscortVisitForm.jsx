@@ -39,10 +39,10 @@ export default function OutpatientEscortVisitForm({ task, value, onChange }) {
   const source = data.handoffSnapshot || {}
   const booking = source.bookingSnapshot || {}
   const checks = source.checkAppointments?.length ? source.checkAppointments : (booking.specialCheckAppointments || [])
-  const expertVisit = booking.postCheckAppointment || {}
+  const expertVisits = Array.isArray(booking.postCheckAppointments) ? booking.postCheckAppointments : (booking.postCheckAppointment ? [booking.postCheckAppointment] : [])
   const timeline = [
     ...checks.map(row => ({ ...row, kind: 'check' })),
-    ...(expertVisit.appointmentDate || expertVisit.appointmentTime ? [{ ...expertVisit, item: '检查后专家门诊', kind: 'expert' }] : []),
+    ...expertVisits.filter(row => row.appointmentDate || row.appointmentTime).map((row, index) => ({ ...row, item: `检查后专家门诊${index + 1}`, kind: 'expert' })),
   ].sort((a, b) => `${a.appointmentDate || '9999-99-99'} ${a.appointmentTime || '99:99'}`.localeCompare(`${b.appointmentDate || '9999-99-99'} ${b.appointmentTime || '99:99'}`))
   const update = patch => onChange({ ...data, ...patch })
   const attachmentUpdate = key => (_, patch) => update({ [key]: patch.attachments || [] })
