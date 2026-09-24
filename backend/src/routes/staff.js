@@ -11511,11 +11511,14 @@ router.get('/content-reviews', staffAuth, async (req, res) => {
   try {
     const role = req.staff.role;
     const isSuper = role === 'superadmin';
-    if (!isSuper && !['nutritionist', 'familyDoctor'].includes(role)) return res.status(403).json({ success: false, message: '当前角色无内容审核权限' });
+    if (!isSuper && !['nutritionist', 'familyDoctor', 'healthPlanner'].includes(role)) return res.status(403).json({ success: false, message: '当前角色无内容审核权限' });
     await ensureContentReviews(ContentReview);
+    const history = req.query.history === '1';
     const filter = isSuper
       ? {}
-      : { currentRole: role, status: { $in: ['pending', 'changes_requested'] } };
+      : history
+        ? { $or: [{ 'nutritionReview.reviewedBy': req.staff._id }, { 'doctorReview.reviewedBy': req.staff._id }, { 'auditLog.by': req.staff._id }] }
+        : { currentRole: role, status: role === 'healthPlanner' ? 'ready_to_publish' : { $in: ['pending', 'changes_requested'] } };
     const data = await ContentReview.find(filter).sort({ updatedAt: -1 }).lean();
     res.json({ success: true, data });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -11524,9 +11527,21 @@ router.get('/content-reviews', staffAuth, async (req, res) => {
 router.patch('/content-reviews/:id/review', staffAuth, async (req, res) => {
   try {
     const role = req.staff.role;
-    if (!['superadmin', 'nutritionist', 'familyDoctor'].includes(role)) return res.status(403).json({ success: false, message: '当前角色无内容审核权限' });
+    if (!['superadmin', 'nutritionist', 'familyDoctor', 'healthPlanner'].includes(role)) return res.status(403).json({ success: false, message: '当前角色无内容审核权限' });
     const record = await ContentReview.findById(req.params.id);
     if (!record) return res.status(404).json({ success: false, message: '审核稿不存在' });
+    if (role === 'healthPlanner' && req.body?.action === 'confirm_publish') {
+      if (record.currentRole !== 'healthPlanner' || record.status !== 'ready_to_publish') throw new Error('该稿件尚未完成专业审核');
+      const checklist = req.body?.checklist || {};
+      const requiredChecks = ['professionalReviewCompleted', 'contentAndBoundaryChecked', 'contactAndLinksChecked', 'privacyChecked', 'scopeChecked'];
+      if (!requiredChecks.every(key => checklist[key] === true)) throw new Error('请完成发布前核对清单');
+      record.currentRole = '';
+      record.status = 'publish_confirmed';
+      record.publishChecklist = { ...Object.fromEntries(requiredChecks.map(key => [key, true])), checkedBy: req.staff._id, checkedByName: req.staff.name || '', checkedAt: new Date() };
+      record.auditLog.push({ action: 'confirm_publish', role, note: String(req.body?.note || '').trim(), by: req.staff._id, byName: req.staff.name || '', at: new Date() });
+      await record.save();
+      return res.json({ success: true, data: record, publicationReady: true, message: '已确认可发布；文章仍未自动公开。' });
+    }
     const actingRole = role === 'superadmin' ? record.currentRole : role;
     advanceReview(record, actingRole, req.body?.action, req.body?.note, req.staff);
     await record.save();
@@ -11554,16 +11569,16 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     const todos = [];
 
     // 官网 GEO 稿件没有绑定会员，不能套用会员归属过滤；只展示当前审核角色的稿件。
-    if (isSuper || ['nutritionist', 'familyDoctor'].includes(role)) {
+    if (isSuper || ['nutritionist', 'familyDoctor', 'healthPlanner'].includes(role)) {
       await ensureContentReviews(ContentReview);
       const reviewFilter = isSuper
-        ? { status: { $in: ['pending', 'changes_requested'] }, currentRole: { $in: ['nutritionist', 'familyDoctor'] } }
-        : { status: { $in: ['pending', 'changes_requested'] }, currentRole: role };
+        ? { status: { $in: ['pending', 'changes_requested', 'ready_to_publish'] }, currentRole: { $in: ['nutritionist', 'familyDoctor', 'healthPlanner'] } }
+        : { status: role === 'healthPlanner' ? 'ready_to_publish' : { $in: ['pending', 'changes_requested'] }, currentRole: role };
       const contentReviews = await ContentReview.find(reviewFilter).sort({ updatedAt: -1 }).limit(50).lean();
       contentReviews.forEach(item => todos.push({
         id: `geo_content_${item._id}`,
         type: 'geo_content_review',
-        label: item.currentRole === 'familyDoctor' ? 'GEO 健康教育稿待医师审核' : 'GEO 健康教育稿待营养审核',
+        label: item.currentRole === 'healthPlanner' ? 'GEO 健康教育稿待发布确认' : item.currentRole === 'familyDoctor' ? 'GEO 健康教育稿待医师审核' : 'GEO 健康教育稿待营养审核',
         priority: 3,
         patientName: '官网 GEO 内容',
         patientId: '',

@@ -433,7 +433,7 @@ export const staffAPI = {
 
   // AI 待办任务聚合
   getAiTodos: () => req('/staff/ai-todos'),
-  getContentReviews: () => req('/staff/content-reviews'),
+  getContentReviews: (p = {}) => req('/staff/content-reviews?' + qs(p)),
   reviewContentReview: (id, data) => req(`/staff/content-reviews/${id}/review`, { method: 'PATCH', body: JSON.stringify(data) }),
   reviewServiceProposal: (id, data) => req(`/staff/service-proposals/${id}/review`, { method: 'PATCH', body: JSON.stringify(data) }),
 

@@ -190,6 +190,7 @@ export default function AiTodosPanel() {
             </span>
           )}
         </div>
+        {['nutritionist', 'familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && <button onClick={() => nav('/content-reviews')} style={{ border: 'none', background: 'none', color: '#1E6B50', cursor: 'pointer', fontSize: 12 }}>审核记录</button>}
       </div>
       {todos.length > 0 && (
         <div style={{ display: 'flex', gap: 8, padding: '10px 20px 6px', borderTop: '1px solid #F3EFE8', flexWrap: 'wrap' }}>
