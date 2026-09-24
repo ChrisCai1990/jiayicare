@@ -1,0 +1,16 @@
+{
+  "slug": "balanced-meal-flexibility",
+  "status": "review",
+  "title": "忙碌时，怎样让一餐更容易兼顾多样性？",
+  "summary": "从可获得的食物组合出发，为忙碌日常留出弹性。",
+  "updatedAt": "2026-09-24",
+  "reviewedBy": "",
+  "reviewedAt": "",
+  "reviewNotes": "待营养师审核后公开。",
+  "sections": [
+    {"heading": "从现有选择出发", "paragraphs": ["忙碌时不必追求每一餐都完美，可以尝试在现有选择中增加一种蔬果、蛋白质来源或主食搭配。"]},
+    {"heading": "为日常留出弹性", "paragraphs": ["提前准备容易获得的食物，比临时依靠严格限制更容易长期坚持。"]},
+    {"heading": "边界提醒", "paragraphs": ["具体安排仍应结合个人作息、文化习惯和健康情况。本文为一般健康教育，不提供个体化饮食处方或治疗建议。"]}
+  ],
+  "sources": [{"name": "世界卫生组织：健康饮食", "url": "https://www.who.int/news-room/fact-sheets/detail/healthy-diet"}]
+}

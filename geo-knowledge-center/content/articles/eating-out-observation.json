@@ -1,0 +1,16 @@
+{
+  "slug": "eating-out-observation",
+  "status": "review",
+  "title": "外食较多时，先观察哪几个饮食习惯？",
+  "summary": "从频率、用餐节奏和饮品选择中发现更容易调整的一个环节。",
+  "updatedAt": "2026-09-24",
+  "reviewedBy": "",
+  "reviewedAt": "",
+  "reviewNotes": "待营养师审核后公开。",
+  "sections": [
+    {"heading": "先看频率和节奏", "paragraphs": ["可以简单观察一周外食的次数、常见用餐时间、饮品选择，以及是否经常因忙碌而漏餐或匆忙进食。"]},
+    {"heading": "只改一个环节", "paragraphs": ["先从一个实际可行的调整开始，例如提前规划一餐、增加饮水，或为用餐留出更稳定的时间。"]},
+    {"heading": "边界提醒", "paragraphs": ["如有需要特殊饮食管理的疾病或其他健康情况，请咨询营养师或医生。"]}
+  ],
+  "sources": [{"name": "世界卫生组织：健康饮食", "url": "https://www.who.int/news-room/fact-sheets/detail/healthy-diet"}]
+}
