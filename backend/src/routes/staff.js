@@ -5217,18 +5217,72 @@ router.get('/push-records', staffAuth, async (req, res) => {
 });
 
 // ── 服务记录（就医/专科/心理/运动/中医） ──────────────────
+function serviceRecordAttachmentPreviewUrl(recordId, file, index, source = 'main') {
+  const key = file.ossKey || urlToKey(file.url || '');
+  if (!key) return file.url?.startsWith('/api/uploads/') ? file.url : '';
+  const token = jwt.sign({ scope: 'service-record-preview', recordId: String(recordId), source, fileIndex: index }, process.env.JWT_SECRET, { expiresIn: '30m' });
+  return `/api/staff/service-records/${recordId}/preview/${source}/${index}?token=${encodeURIComponent(token)}`;
+}
+
 function withSignedServiceRecord(record) {
   const obj = record?.toObject ? record.toObject() : { ...record };
-  obj.attachments = (obj.attachments || []).map(file => ({
+  obj.attachments = (obj.attachments || []).map((file, index) => ({
     ...file,
-    previewUrl: signStoredUrl(file.url || '', file.ossKey || ''),
+    previewUrl: serviceRecordAttachmentPreviewUrl(obj._id, file, index),
   }));
   obj.supplements = (obj.supplements || []).map(item => ({
     ...item,
-    attachments: (item.attachments || []).map(file => ({ ...file, previewUrl: signStoredUrl(file.url || '', file.ossKey || '') })),
+    attachments: (item.attachments || []).map((file, index) => ({ ...file, previewUrl: serviceRecordAttachmentPreviewUrl(obj._id, file, index, String(item._id)) })),
   }));
   return obj;
 }
+
+// 附件是私有 OSS 对象。用短时、仅绑定这条记录与文件序号的令牌由后端转发，
+// 不让浏览器直接访问 OSS（部分浏览器/存储策略会对签名 URL 返回 AccessDenied）。
+router.get('/service-records/:id/preview/:source/:index', async (req, res) => {
+  let payload;
+  try { payload = jwt.verify(String(req.query.token || ''), process.env.JWT_SECRET); }
+  catch { return res.status(403).json({ success: false, message: '预览链接无效或已失效' }); }
+  const index = Number(req.params.index);
+  if (payload.scope !== 'service-record-preview' || payload.recordId !== req.params.id
+    || payload.source !== req.params.source || payload.fileIndex !== index
+    || !Number.isInteger(index) || index < 0 || !mongoose.Types.ObjectId.isValid(req.params.id)
+    || (req.params.source !== 'main' && !mongoose.Types.ObjectId.isValid(req.params.source))) {
+    return res.status(403).json({ success: false, message: '预览链接无效或已失效' });
+  }
+  const record = await ServiceRecord.findById(req.params.id).select('attachments supplements');
+  if (!record) return res.status(404).json({ success: false, message: '服务记录不存在' });
+  const files = req.params.source === 'main'
+    ? record.attachments
+    : record.supplements.id(req.params.source)?.attachments;
+  const file = files?.[index];
+  const key = file?.ossKey || urlToKey(file?.url || '');
+  if (!key) return res.status(404).json({ success: false, message: '附件不存在' });
+  const range = String(req.headers.range || '').trim();
+  if (range && !/^bytes=\d*-\d*$/.test(range)) return res.status(416).set('Content-Range', 'bytes */*').end();
+  try {
+    const object = await getObjectStream(key, range ? { Range: range } : {});
+    const headers = object.res?.headers || {};
+    const mime = headers['content-type'] || file.mimeType || 'application/octet-stream';
+    const inline = /^(image\/(jpeg|png|gif|webp)|application\/pdf)$/.test(mime);
+    res.status(object.res?.status === 206 ? 206 : 200);
+    res.set({
+      'Content-Type': mime,
+      'Content-Disposition': inline ? 'inline' : 'attachment',
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'private, no-store',
+      'Referrer-Policy': 'no-referrer',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    if (headers['content-length']) res.set('Content-Length', headers['content-length']);
+    if (headers['content-range']) res.set('Content-Range', headers['content-range']);
+    object.stream.on('error', () => { if (!res.headersSent) res.status(502).end(); else res.destroy(); });
+    object.stream.pipe(res);
+  } catch (error) {
+    console.warn('[service-record-preview] failed:', error.message);
+    return res.status(502).json({ success: false, message: '附件读取失败，请稍后重试' });
+  }
+});
 // GET /api/staff/service-records?patientId=&type=
 router.get('/service-records', staffAuth, checkPermission('service_records', 'view'), async (req, res) => {
   const { patientId, type, page = 1, limit = 20 } = req.query;
