@@ -23,6 +23,18 @@ async function ensureContentReviews(ContentReview) {
     updateOne: { filter: { slug: seed.slug }, update: { $setOnInsert: initialState(seed) }, upsert: true },
   }));
   if (operations.length) await ContentReview.bulkWrite(operations, { ordered: false });
+  // 早期审核记录只有标题/状态，没有正文快照；补齐后才能在审核页逐段阅读。
+  for (const seed of CONTENT_REVIEW_SEEDS) {
+    await ContentReview.updateMany(
+      {
+        $and: [
+          { $or: [{ slug: seed.slug }, { title: seed.title }] },
+          { $or: [{ sourceContent: { $exists: false } }, { sourceContent: null }, { sourceContent: '' }] },
+        ],
+      },
+      { $set: { slug: seed.slug, summary: seed.summary, sourceContent: seed.sourceContent, sourceUpdatedAt: seed.sourceUpdatedAt } },
+    );
+  }
   // 已完成的旧记录补入新增的“健康规划师发布确认”环节；历史公开稿的 approved_ready 不受影响。
   await ContentReview.updateMany(
     { status: 'approved', currentRole: '' },
