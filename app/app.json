@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "嘉医汇",
+    "name": "嘉医汇健康管家",
     "slug": "jiayicare",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -13,6 +13,7 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
+      "bundleIdentifier": "com.jiayicare.app",
       "supportsTablet": true,
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "需要访问相册，以便上传体检报告照片",

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { loadToken, saveToken, clearToken, setUnauthorizedHandler, userAPI } from '../services/api';
+import { loadToken, saveToken, clearToken, setUnauthorizedHandler, storage, userAPI } from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -18,13 +18,13 @@ export function AuthProvider({ children }) {
           // 先用本地缓存快速展示，避免白屏；缓存可能是很久以前登录时的旧快照
           // （如careTeam这类后续新增的字段，老账号本地缓存里根本没有），必须紧接着用
           // /user/me 的最新响应覆盖一次，不能只依赖本地缓存
-          const cached = localStorage.getItem('jy_user');
+          const cached = await storage.getItem('jy_user');
           if (cached) { try { setUser(JSON.parse(cached)); } catch {} }
           try {
             const res = await userAPI.getMe();
             if (res?.success && res.data) {
               setUser(res.data);
-              localStorage.setItem('jy_user', JSON.stringify(res.data));
+              await storage.setItem('jy_user', JSON.stringify(res.data));
             }
           } catch {}
         }
@@ -37,7 +37,7 @@ export function AuthProvider({ children }) {
     await saveToken(tok);
     setToken(tok);
     setUser(userData);
-    try { localStorage.setItem('jy_user', JSON.stringify(userData)); } catch {}
+    try { await storage.setItem('jy_user', JSON.stringify(userData)); } catch {}
   };
 
   const logout = async () => {
@@ -56,7 +56,7 @@ export function AuthProvider({ children }) {
   const updateUser = (updates) => {
     const updated = { ...user, ...updates };
     setUser(updated);
-    try { localStorage.setItem('jy_user', JSON.stringify(updated)); } catch {}
+    storage.setItem('jy_user', JSON.stringify(updated)).catch(() => {});
   };
 
   // 演示账号（13800138000）才展示 mock 数据

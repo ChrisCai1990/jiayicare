@@ -9,7 +9,7 @@ const CONTENT = {
     sections: [
       {
         heading: '1. 接受条款',
-        body: '欢迎使用嘉医汇（以下简称"本应用"），由杭州嘉医汇健康管理有限公司运营。您在使用本应用前，请仔细阅读本用户协议。一旦您使用本应用，即表示您已阅读并同意遵守本协议的全部条款。',
+        body: '欢迎使用嘉医汇健康管家（以下简称“本应用”）。本应用由杭州嘉静佑辰科技有限公司运营；部分健康管理服务由杭州嘉医汇健康管理有限公司提供。您在使用本应用前，请仔细阅读本用户协议。一旦您使用本应用，即表示您已阅读并同意遵守本协议的全部条款。',
       },
       {
         heading: '2. 服务内容',
@@ -50,7 +50,7 @@ const CONTENT = {
       },
       {
         heading: '2. 信息使用',
-        body: '您的信息仅用于提供健康档案整理、趋势展示、服务通知与您主动选择的健康管理服务。向健康顾问或其他服务人员展示必要信息前，我们将依据服务关系和授权控制访问范围，不会出售您的个人信息。',
+        body: '您的信息仅用于提供健康档案整理、趋势展示、服务通知与您主动选择的健康管理服务。部分健康管理服务由杭州嘉医汇健康管理有限公司提供；如需向其提供必要信息，我们会在服务页面告知接收方、处理目的、信息类型与方式，并取得法律要求的单独同意。我们不会出售您的个人信息。',
       },
       {
         heading: '3. 健康数据保护',
@@ -143,9 +143,9 @@ export default function LegalScreen({ navigation, route }) {
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>嘉医汇 · 杭州嘉医汇健康管理有限公司</Text>
+          <Text style={styles.footerText}>嘉医汇健康管家 · 平台运营方：杭州嘉静佑辰科技有限公司</Text>
           <Text style={styles.footerText}>客服电话：19106761448</Text>
-          <Text style={styles.footerText}>地址：杭州市萧山区盈丰街道江峰商务名座1幢1015室</Text>
+          <Text style={styles.footerText}>健康管理服务联系地址：杭州市萧山区盈丰街道江峰商务名座1幢1015室</Text>
         </View>
         <View style={{ height: 40 }} />
       </ScrollView>

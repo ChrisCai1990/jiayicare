@@ -6,7 +6,7 @@
 
 | 项目 | 当前证据 | 状态 | 处理优先级 |
 | --- | --- | --- | --- |
-| 应用名 | Expo 配置为“嘉医汇” | 已有 | P0 |
+| 应用名 | Expo 配置为“嘉医汇健康管家”，与小程序统一 | 已完成 | P0 |
 | Android 包名 | `com.jiayicare.app` 已配置 | 已有 | P0 |
 | Android 生产构建 | EAS production 为 `app-bundle` | 已有 | P0 |
 | Android 预览构建 | EAS preview 为 APK | 已有 | P1 |
@@ -14,16 +14,16 @@
 | 相机/相册权限说明 | iOS 使用说明与 image-picker 插件配置已存在；Android 声明 CAMERA、READ_MEDIA_IMAGES | 待真机核对实际调用 | P0 |
 | 用户协议/隐私政策 | App 有本地页面；登录页有协议入口 | 待对外 URL 与内容复核 | P0 |
 | 账号注销说明 | 隐私政策文字说明可通过“帮助与反馈”申请 | 待补可发现入口与流程状态 | P0 |
-| iOS bundle identifier | 未配置 | 缺失 | P0 |
-| iOS production 构建 | `eas.json` 未定义 iOS production 配置 | 缺失 | P0 |
+| iOS bundle identifier | `com.jiayicare.app` 已配置，待金霞在 Apple 后台注册 | 待后台登记 | P0 |
+| iOS production 构建 | `eas.json` 已有 iOS production 配置 | 待 Apple 账号完成后构建 | P0 |
 | 商店截图/简介/关键词 | 未见版本化物料目录 | 待收集 | P0 |
 | 软著、主体、客服、官网 | 代码无法确认 | 待收集 | P0 |
 | 第三方 SDK 清单 | 代码可见 Expo 组件，但未见面向审核的完整清单 | 待梳理 | P0 |
-| 隐私政策可访问 URL | 代码仅见 App 内页面 | 待建设/确认 | P0 |
+| 隐私政策可访问 URL | `https://jiaycare.com/privacy-policy.html` 已写入 App 配置，且 App 内页与官网主体、电话、地址一致 | 已完成，备案迁移后复核 | P0 |
 
 ## 上架阻断项
 
-1. 明确 iOS bundle identifier、Apple Developer 团队与证书/签名归属，并补充 iOS production 构建配置。
+1. 金霞完成 Apple Developer 组织账号注册，并在后台登记已确定的 iOS Bundle Identifier。
 2. 发布独立、可在浏览器访问的用户协议和隐私政策 URL；内容与 App 内版本一致。
 3. 设计“账号注销”可发现入口、提交确认、身份核验、处理状态和完成通知；人工处理可以保留，但用户不能只能靠猜测路径。
 4. 建立商店物料包：图标源文件、启动图、各尺寸截图、功能简介、联系方式、版本说明、年龄分级和审核备注。
