@@ -1,6 +1,7 @@
 const FollowUp = require('../models/FollowUp');
 const { appointmentDay } = require('../../../shared/annualAppointment.cjs');
 const { sourceDate, assertAmendedRowUnchanged } = require('./annualScheduleAmendments');
+const { isAnnualUmbrellaRecord, obsoleteAnnualUmbrellaQuery } = require('./annualUmbrellaTask');
 
 // 占位记录预生成窗口：只提前生成未来 N 天内的，而不是一次性铺满全年。
 // 此前"每天"频率的监测项会一次性生成365条占位，单个客户能堆到几百条，
@@ -192,6 +193,7 @@ async function buildAnnualPlanFollowUps(plan) {
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     const horizonEnd = new Date(Date.now() + HORIZON_DAYS * 86400000);
     personalizedRecords.forEach((rec, recordIndex) => {
+      if (isAnnualUmbrellaRecord(rec)) return;
       const cycles = Array.isArray(rec.sourceCycles) ? rec.sourceCycles : [];
       const dates = [];
       if (rec.executionDate && !isNaN(new Date(rec.executionDate).getTime())) dates.push(new Date(rec.executionDate));
@@ -239,6 +241,9 @@ async function syncAnnualPlanFollowUps(plan) {
   const gate = await require('./annualServicePeriod').annualExecutionGate(plan);
   if (!gate.allowed) return 0;
   if (plan.continuitySource?.previousPlanId) plan = { ...(gate.executionPlan || (plan.toObject ? plan.toObject() : plan)), confirmedAt: gate.anchor };
+  // 已有年度统筹占位改为取消；保留原记录供历史追溯，不触碰具体服务随访。
+  await FollowUp.updateMany({ sourceAnnualPlanId: plan._id, status: { $in: ['planned', 'in_progress', 'missed'] }, ...obsoleteAnnualUmbrellaQuery },
+    { $set: { status: 'cancelled', cancelReason: '年度统筹改为按具体任务督办' } });
   // 清理旧版本生成且尚未完成的监测随访；已完成记录作为历史保留。
   await FollowUp.deleteMany({
     sourceAnnualPlanId: plan._id,
