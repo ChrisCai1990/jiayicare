@@ -35,6 +35,16 @@ test('planner action for a customer order is retained in its single progress row
   assert.equal(rows[0].action, action)
 })
 
+test('legacy medication progress cannot hide the planner assignment task', () => {
+  const sourceOrderId = { _id: 'order-medication', initiationSource: 'customer', paymentStatus: 'paid' }
+  const progress = { _id: 'progress', sourceType: 'order', taskRole: 'executor', workflowKey: 'medication_proxy:progress', sourceOrderId, status: 'in_progress' }
+  const assignment = { _id: 'assignment', sourceType: 'order', taskRole: 'executor', workflowKey: 'medication_proxy:planner', sourceOrderId, status: 'planned' }
+  const [row] = plannerOrderRows([], [progress, assignment])
+  assert.equal(row.supervisor, progress)
+  assert.equal(row.action, assignment)
+  assert.equal(plannerOrderRows([], [progress]).at(0).action, null)
+})
+
 test('one order has one service card but a second order remains distinct', () => {
   const one = { sourceType: 'order', sourceOrderId: { _id: 'order-1' } }
   assert.equal(serviceTaskGroupKey({ ...one, _id: 'supervisor', taskRole: 'supervisor' }), 'order:order-1')

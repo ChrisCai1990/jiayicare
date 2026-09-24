@@ -9,7 +9,7 @@ function harness() {
   const mocks = {
     '../models/Admin': { findOne: query => ({ select: () => ({ lean: async () => query._id === 'assistant' ? { _id: 'assistant', name: '执行人员' } : null }) }) },
     '../models/FollowUp': {
-      findOneAndUpdate: async (query, update) => { created.push({ stage: query.workflowKey, assignee: update.$setOnInsert.assignedTo, formData: update.$setOnInsert.formData }); return { _id: 'next-task' }; },
+      findOneAndUpdate: async (query, update) => { created.push({ stage: query.workflowKey, assignee: update.$setOnInsert.assignedTo, role: update.$setOnInsert.taskRole, formData: update.$setOnInsert.formData }); return { _id: 'next-task' }; },
       updateOne: async () => {},
       updateMany: async () => {},
     },
@@ -54,6 +54,8 @@ test('already assigned pharmacy or online orders go straight to execution; old u
   const preassigned = harness();
   const online = { ...intake, institutionType: 'online', platformName: '平台A', medicalAssistantId: 'assistant' };
   await preassigned.advance({ sourceType: 'order', workflowKey: 'medication_proxy:intake', sourceOrderId: 'order', patientId: 'member', status: 'completed', _id: 'intake', formData: online });
+  assert.equal(preassigned.created[0].stage, 'medication_proxy:progress');
+  assert.equal(preassigned.created[0].role, 'supervisor');
   assert.equal(preassigned.created.at(-1).stage, 'medication_proxy:execute');
   assert.equal(preassigned.created.at(-1).assignee, 'assistant');
 

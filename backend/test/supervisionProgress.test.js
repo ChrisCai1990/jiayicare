@@ -20,6 +20,14 @@ test('order intake is not counted as a second active service stage', () => {
   assert.equal(p.total, 1);
   assert.deepEqual(p.current.map(item => item.label), ['健管预约']);
 });
+test('legacy medication progress does not mask the planner assignment', () => {
+  const p = summarize({ ...task, sourceType: 'order', workflowKey: 'medication_proxy:progress' }, [
+    row({ _id: 'progress', workflowKey: 'medication_proxy:progress', theme: '规划师查看进度', status: 'in_progress' }),
+    row({ _id: 'assignment', workflowKey: 'medication_proxy:planner', theme: '健康规划师分配就医专员', assignedTo: { name: '规划师' } }),
+  ]);
+  assert.equal(p.total, 1);
+  assert.deepEqual(p.current.map(item => item.label), ['健康规划师分配就医专员']);
+});
 test('parallel stages remain visible and blocked-only work is not portrayed as executable', () => {
   assert.equal(summarize(task, [row({ _id: 'a' }), row({ _id: 'b' })]).current.length, 2);
   const p = summarize(task, [row({ isBlocked: true })]); assert.equal(p.current[0].blocked, true); assert.match(p.message, /前置/);

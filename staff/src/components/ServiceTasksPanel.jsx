@@ -119,7 +119,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
     const supervisor = service.tasks.find(task => (orderService ? task.taskRole === 'supervisor' : task.workflowKey === 'medical_proxy:supervise') && ['planned', 'in_progress', 'missed'].includes(task.status))
     // The API returns this staff member's tasks. A read-only supervisor card must
     // not hide their actionable assignment for the same service.
-    const proxyAction = service.tasks.find(task => (orderService ? task.taskRole === 'executor' : String(task.workflowKey || '').startsWith('medical_proxy:') && task.workflowKey !== 'medical_proxy:supervise') && !task.isBlocked && ['planned', 'in_progress', 'missed'].includes(task.status))
+    const proxyAction = service.tasks.find(task => (orderService ? task.taskRole === 'executor' && task.workflowKey !== 'medication_proxy:progress' : String(task.workflowKey || '').startsWith('medical_proxy:') && task.workflowKey !== 'medical_proxy:supervise') && !task.isBlocked && ['planned', 'in_progress', 'missed'].includes(task.status))
     return { ...service, task: proxyAction || supervisor || service.tasks[0], totalSteps: workflowModules.length || service.tasks.length }
   })
   const now = new Date()

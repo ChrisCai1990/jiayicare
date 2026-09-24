@@ -23,7 +23,7 @@ async function createStage(order, stage, assignee, previous, data = {}) {
     { $setOnInsert: {
       patientId: order.user, staffId: assignee, assignedTo: assignee, type: 'other', status: 'planned',
       date: new Date(), remindAt: new Date(), sourceType: 'order', sourceOrderId: order._id,
-      workflowKey: `${PREFIX}${stage}`, taskRole: 'executor', dependsOnTaskId: previous?._id || null,
+      workflowKey: `${PREFIX}${stage}`, taskRole: stage === 'progress' ? 'supervisor' : 'executor', dependsOnTaskId: previous?._id || null,
       theme: `代配药：${labels[stage]} · ${order.serviceName}`,
       plannedContent: labels[stage], formData: data,
     } }, { upsert: true, new: true, setDefaultsOnInsert: true },

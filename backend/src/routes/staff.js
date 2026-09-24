@@ -602,6 +602,11 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     { path: 'followUpSchemeId', select: 'name executorRole supervisorRole completionStandard workflowStageKey' },
     { path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } },
   ]);
+  // Older medication-proxy progress records were stored as executor tasks.
+  // Normalize only this response, so the actual planner assignment remains the actionable task.
+  for (const task of queriedTasks) {
+    if (task.workflowKey === 'medication_proxy:progress') task.taskRole = 'supervisor';
+  }
   // 无论健管专员是从“审核报告”还是“确认 AI 结果”完成审核，工作台读取时都按
   // 两份必需资料的最终状态自愈，避免已完成的审核任务继续残留。
   for (const task of queriedTasks) {
