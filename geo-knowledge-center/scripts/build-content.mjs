@@ -75,7 +75,7 @@ function renderArticle(article, previewLabel) {
     '@context': 'https://schema.org', '@type': 'Article', headline: article.title,
     description: article.summary, dateModified: article.updatedAt, inLanguage: 'zh-CN',
     author: { '@type': 'Organization', name: '嘉医汇健康知识中心' },
-    publisher: { '@type': 'Organization', name: '杭州嘉医汇健康管理有限公司', url: `${siteUrl.replace(/\/$/, '')}/` },
+    publisher: { '@type': 'Organization', name: '杭州嘉静佑辰科技有限公司', url: `${siteUrl.replace(/\/$/, '')}/` },
     mainEntityOfPage: canonicalUrl
   }).replace(/</g, '\\u003c')}</script>`;
 

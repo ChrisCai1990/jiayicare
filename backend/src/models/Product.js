@@ -41,6 +41,8 @@ const productSchema = new mongoose.Schema({
     default: 'offline_service',
   },
   paymentChannel: { type: String, enum: ['wechat_pay', 'offline'], default: 'wechat_pay' },
+  // 对外服务主体由商品逐项明确，避免把平台运营主体与实际服务提供方混淆。
+  serviceProvider: { type: String, enum: ['platform', 'jiayihui_health'], default: 'platform' },
   bookingRequired: { type: Boolean, default: true },
   deliveryRequired: { type: Boolean, default: false },
   serviceLocation: { type: String, default: '' },

@@ -1,4 +1,6 @@
 // ─── API Service ─────────────────────────────────────────────────
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://jiaycare.com/api';
 
 
@@ -11,20 +13,9 @@ export function mediaUrl(u) {
   return API_ORIGIN + (u.startsWith('/') ? u : '/' + u);
 }
 
-// Simple storage: uses localStorage on web, falls back gracefully
-const storage = {
-  getItem: (key) => {
-    try { return Promise.resolve(localStorage.getItem(key)); } catch { return Promise.resolve(null); }
-  },
-  setItem: (key, val) => {
-    try { localStorage.setItem(key, val); } catch {}
-    return Promise.resolve();
-  },
-  removeItem: (key) => {
-    try { localStorage.removeItem(key); } catch {}
-    return Promise.resolve();
-  },
-};
+// AsyncStorage supports iOS/Android and the existing Web build. Do not keep
+// authentication tokens only in browser-only localStorage.
+export const storage = AsyncStorage;
 
 let _token = null;
 let _onUnauthorized = null;  // 401 回调，由 AuthContext 注册
@@ -236,8 +227,8 @@ export const checkupAPI = {
 export const servicesAPI = {
   list:  ()                    => request('/services'),
   packages: ()                 => request('/services/packages'),
-  order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel) =>
-    request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel }) }),
+  order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, serviceProviderConsent) =>
+    request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, serviceProviderConsent }) }),
   coupons: () => request('/services/coupons'),
 };
 

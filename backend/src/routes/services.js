@@ -83,6 +83,7 @@ router.get('/', async (req, res) => {
       description: p.description || '',
       fulfillmentType: p.fulfillmentType || 'offline_service',
       paymentChannel: p.paymentChannel || 'wechat_pay',
+      serviceProvider: p.serviceProvider || 'platform',
       bookingRequired: p.bookingRequired !== false,
       deliveryRequired: !!p.deliveryRequired,
       serviceLocation: p.serviceLocation || '',
@@ -194,7 +195,7 @@ router.post('/inquiries', auth, async (req, res) => {
 // useHealthFund: 本次要抵扣的健康基金金额（元，<= 余额 且 <= 订单原价）
 // couponId: 本次要使用的优惠券 _id（amount 满减 或 percent 折扣，两者可叠加使用）
 router.post('/order', auth, async (req, res) => {
-  const { serviceId, specificationLabel, note, paymentMethod = 'wechat_pay', useHealthFund, couponId, shareToken = '', desiredServiceDate, serviceRequirements } = req.body;
+  const { serviceId, specificationLabel, note, paymentMethod = 'wechat_pay', useHealthFund, couponId, shareToken = '', desiredServiceDate, serviceRequirements, serviceProviderConsent } = req.body;
   if (!serviceId) {
     return res.status(400).json({ success: false, message: '请指定服务项目' });
   }
@@ -239,6 +240,7 @@ router.post('/order', auth, async (req, res) => {
       icon: 'storefront-outline',
       fulfillmentType: product.fulfillmentType || 'offline_service',
       paymentChannel: product.paymentChannel || 'wechat_pay',
+      serviceProvider: product.serviceProvider || 'platform',
     };
   }
   if (!service && mongoose.isValidObjectId(serviceId)) {
@@ -263,6 +265,11 @@ router.post('/order', auth, async (req, res) => {
   if (!service) service = PACKAGE_CATALOG.find(p => p.id === serviceId);
   if (!service) {
     return res.status(404).json({ success: false, message: '服务项目不存在' });
+  }
+
+  const serviceProvider = service.serviceProvider || 'platform';
+  if (serviceProvider === 'jiayihui_health' && serviceProviderConsent !== true) {
+    return res.status(400).json({ success: false, code: 'SERVICE_PROVIDER_CONSENT_REQUIRED', message: '请先确认本次服务由杭州嘉医汇健康管理有限公司提供' });
   }
 
   const isPkg = !!servicePackage || !!PACKAGE_CATALOG.find(p => p.id === serviceId);
@@ -404,6 +411,9 @@ router.post('/order', auth, async (req, res) => {
     performanceRuleSnapshot: product?.performanceRule ? (product.performanceRule.toObject ? product.performanceRule.toObject() : product.performanceRule) : null,
     servicePerformerRolesSnapshot: (product?.servicePerformerRoles || []).map(p => p.toObject ? p.toObject() : p),
     serviceWorkflowSnapshot: product?.serviceWorkflow ? (product.serviceWorkflow.toObject ? product.serviceWorkflow.toObject() : product.serviceWorkflow) : null,
+    serviceProviderSnapshot: serviceProvider === 'jiayihui_health'
+      ? { code: 'jiayihui_health', companyName: '杭州嘉医汇健康管理有限公司', consentVersion: '2026-09-24', consentedAt: new Date() }
+      : { code: 'platform', companyName: '杭州嘉静佑辰科技有限公司' },
     paymentMethod: fundUsed > 0 && paidAmount === 0 ? 'healthFund' : (paidAmount > 0 ? 'wechat' : ''),
     paymentStatus: paidAmount > 0 ? 'pending' : 'paid',
     paidAmount: 0,
