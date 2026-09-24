@@ -32,7 +32,7 @@ async function ensureContentReviews(ContentReview) {
           { $or: [{ sourceContent: { $exists: false } }, { sourceContent: null }, { sourceContent: '' }] },
         ],
       },
-      { $set: { slug: seed.slug, summary: seed.summary, sourceContent: seed.sourceContent, sourceUpdatedAt: seed.sourceUpdatedAt } },
+      { $set: { slug: seed.slug, summary: seed.summary, sourceContent: seed.sourceContent, sourceUpdatedAt: seed.sourceUpdatedAt, reviewChain: seed.reviewChain } },
     );
   }
   // 已完成的旧记录补入新增的“健康规划师发布确认”环节；历史公开稿的 approved_ready 不受影响。
