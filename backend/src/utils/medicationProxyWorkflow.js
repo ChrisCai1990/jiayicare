@@ -62,11 +62,10 @@ async function validate(task, body, staff) {
     if (data.institutionType === 'hospital' && (!value(data.hospitalName) || !value(data.campus))) return '医院配药请填写医院名称和院区';
     if (data.institutionType === 'pharmacy' && !value(data.pharmacyName)) return '线下药房配药请填写药房名称';
     if (data.institutionType === 'online' && !value(data.platformName)) return '线上采购请填写平台名称';
-    if (value(data.medicalAssistantId)) {
-      const selectedAssistant = await Admin.findOne({ _id: data.medicalAssistantId, role: 'medicalAssistant', staffStatus: 'active' }).select('_id name').lean();
-      if (!selectedAssistant) return '本单就医专员无效或已停用，请重新选择';
-      data.medicalAssistantName = selectedAssistant.name;
-    }
+    if (!value(data.medicalAssistantId)) return '请由健康规划师先指定本单就医专员';
+    const selectedAssistant = await Admin.findOne({ _id: data.medicalAssistantId, role: 'medicalAssistant', staffStatus: 'active' }).select('_id name').lean();
+    if (!selectedAssistant) return '本单就医专员无效或已停用，请重新选择';
+    data.medicalAssistantName = selectedAssistant.name;
     if (data.institutionType === 'hospital' && !data.needsAdvisor && !value(data.department)) return '医院配药请填写科室，或转健康顾问评估';
     if (data.institutionType === 'hospital' && !data.needsAdvisor && data.expertRequired && !value(data.expert)) return '需要专家开方时请填写专家，或转健康顾问评估';
     if (data.regularSupply && !supply) return '定期配药需要可换算的规格、单次服用剂量、每日服用次数和配备总量';
@@ -75,9 +74,14 @@ async function validate(task, body, staff) {
   if (stage === 'review' && (!value(data.department) || (data.expertRequired && !value(data.expert)) || !data.plannerConfirmed)) return '请确认健康顾问建议的科室与专家';
   if (stage === 'booking' && (!value(data.department) || !value(data.appointmentDate) || !value(data.appointmentTime) || (data.expertRequired && !value(data.expert)))) return '请确认配药医生的科室、专家和预约时间';
   if (stage === 'booking') {
-    if (value(data.medicalAssistantId)) {
-      const selectedAssistant = await Admin.findOne({ _id: data.medicalAssistantId, role: 'medicalAssistant', staffStatus: 'active' }).select('_id name').lean();
-      if (!selectedAssistant) return '本单就医专员无效或已停用，请重新选择';
+    // The planner owns assignment. Booking only confirms the appointment and hands off.
+    if (task.formData?.intakeSnapshot) data.intakeSnapshot = task.formData.intakeSnapshot;
+    const plannedAssistantId = value(task.formData?.intakeSnapshot?.medicalAssistantId || task.formData?.medicalAssistantId);
+    data.medicalAssistantId = plannedAssistantId;
+    if (plannedAssistantId) {
+      const selectedAssistant = await Admin.findOne({ _id: plannedAssistantId, role: 'medicalAssistant', staffStatus: 'active' }).select('_id name').lean();
+      if (!selectedAssistant) return '规划师指定的就医专员无效或已停用，请联系规划师调整';
+      data.medicalAssistantId = plannedAssistantId;
       data.medicalAssistantName = selectedAssistant.name;
     }
   }
@@ -142,6 +146,7 @@ async function advance(task) {
     next = data.institutionType === 'hospital' ? (data.needsAdvisor ? 'advisor' : 'booking') : (data.medicalAssistantId ? 'execute' : 'planner');
   } else if (stage === 'advisor') next = 'booking';
   else if (stage === 'review') next = 'booking';
+  // Older in-flight orders without an assignment still need the legacy planner fallback.
   else if (stage === 'booking') next = data.medicalAssistantId ? 'execute' : 'planner';
   else if (stage === 'planner') next = 'execute';
   assignee = next === 'advisor' ? patient?.assignedFamilyDoctor : next === 'review' || next === 'planner' ? patient?.assignedHealthPlanner : next === 'booking' ? patient?.assignedHealthManager : data.medicalAssistantId;
