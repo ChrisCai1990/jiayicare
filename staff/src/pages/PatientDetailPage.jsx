@@ -1976,6 +1976,8 @@ export default function PatientDetailPage() {
   const [followUpSaving, setFollowUpSaving] = useState(false)
   const [showUploadReport, setShowUploadReport] = useState(false)
   const [showMessageModal, setShowMessageModal] = useState(() => new URLSearchParams(location.search).get('openChat') === '1')
+  // 从打卡记录进入会话时，保留该条记录作为本次点评的上下文；图片已在 OSS，不能再要求工作人员下载后上传。
+  const [checkinChatContext, setCheckinChatContext] = useState(null)
   useEffect(() => {
     if (new URLSearchParams(location.search).get('openChat') === '1' && location.state?.serviceBooking) setShowMessageModal(true)
   }, [location.search, location.state?.serviceBooking])
@@ -7673,7 +7675,7 @@ export default function PatientDetailPage() {
                           </td>
                           <td>
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                              <button className="btn btn-primary btn-sm" onClick={() => setShowMessageModal(true)}>进入对话</button>
+                              <button className="btn btn-primary btn-sm" onClick={() => { setCheckinChatContext(r); setShowMessageModal(true) }}>带图进入对话</button>
                               <button className="btn btn-secondary btn-sm" onClick={() => startEditRecord(r)}>编辑</button>
                               {canDeleteHealthRecord && <button className="btn btn-secondary btn-sm" style={{ color: '#B42318' }} onClick={() => { setDeletingRecord(r); setDeleteRecordReason(''); setDeleteRecordError('') }}>删除</button>}
                             </div>
@@ -12513,6 +12515,7 @@ export default function PatientDetailPage() {
           initialBookingForm={appointmentReviewContext?.formData}
           initialOrder={planningChatContext?.order}
           initialDraft={planningChatContext?.draft}
+          initialCheckinRecord={checkinChatContext}
           planningTask={planningChatContext?.task}
           onFinishPlanning={async (task, summary) => {
             await staffAPI.updateFollowUp(task._id, { status: 'completed', content: '客户确认暂无其他就医协助需求，本次就医规划服务结束。', formData: { ...(task.formData || {}), medicalPlanning: true, customerCommunicationSummary: summary, planningOutcome: 'no_additional_service' } })
@@ -12571,7 +12574,7 @@ export default function PatientDetailPage() {
             setTab('plans')
             nav(`${location.pathname}?tab=plans`, { state: { autoMedicalAssist: { orderId, briefNote: `客户下单时已确认服务时间：${serviceTime}\n客户下单时已确认服务内容：${task}` } } })
           }}
-          onClose={() => { setShowMessageModal(false); setPlanningChatContext(null); setAppointmentReviewContext(null) }}
+          onClose={() => { setShowMessageModal(false); setPlanningChatContext(null); setAppointmentReviewContext(null); setCheckinChatContext(null) }}
         />
       )}
 
@@ -12814,7 +12817,7 @@ function formatRecordValue(r) {
 }
 
 // ── 聊天对话弹窗 ──────────────────────────────────────────────
-function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder, initialDraft, initialBookingForm, planningTask, onFinishPlanning, onPlanningProductPushed, onConfirmBooking, onClose }) {
+function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder, initialDraft, initialBookingForm, initialCheckinRecord, planningTask, onFinishPlanning, onPlanningProductPushed, onConfirmBooking, onClose }) {
   const { staff } = useStaff()
   const chatRole = staff?.role === 'familyDoctor' ? 'doctor' : staff?.role === 'nutritionist' ? 'nutritionist' : staff?.role === 'healthPlanner' ? 'planner' : staff?.role === 'medicalAssistant' ? 'medicalAssistant' : 'manager'
   const toast = useToast()
@@ -12891,6 +12894,11 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
   const [confirmingBooking, setConfirmingBooking] = useState(false)
   const [bookingError, setBookingError] = useState('')
   const [recording, setRecording] = useState(false)
+  const checkinImageUrls = [...new Set([
+    ...(Array.isArray(initialCheckinRecord?.imageUrls) ? initialCheckinRecord.imageUrls : []),
+    initialCheckinRecord?.imageUrl,
+    initialCheckinRecord?.extra?.imageUrl,
+  ].filter(Boolean))]
   const scrollRef = useRef(null)
   const recorderRef = useRef(null)
   const recordStreamRef = useRef(null)
@@ -13179,6 +13187,26 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
           <div style={{ marginLeft: 'auto', marginRight: 8, fontSize: 11, color: '#8AA89C' }}>发送回复后自动转人工</div>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
+
+        {initialCheckinRecord && (
+          <div style={{ padding: '10px 16px', background: '#F4FAF6', borderBottom: '1px solid #C9DCD3', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: checkinImageUrls.length ? 8 : 0 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>本次点评打卡</span>
+              <span className="badge badge-info">{RECORD_TYPE_LABEL[initialCheckinRecord.type] || initialCheckinRecord.type}</span>
+              <span style={{ fontSize: 12, color: '#4A6558' }}>{formatRecordValue(initialCheckinRecord) || '已上传图片'}</span>
+              {initialCheckinRecord.recordedAt && <span style={{ fontSize: 11, color: '#8AA89C' }}>{new Date(initialCheckinRecord.recordedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>}
+              <span style={{ marginLeft: 'auto', fontSize: 11, color: '#4A6558' }}>原图已带入，无需保存或发送</span>
+            </div>
+            {checkinImageUrls.length > 0 && (
+              <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
+                {checkinImageUrls.map((url, index) => (
+                  <img key={`${url}-${index}`} src={url} alt={`本次打卡原图${index + 1}`} onClick={() => window.open(url, '_blank')}
+                    style={{ width: 88, height: 88, objectFit: 'cover', borderRadius: 8, cursor: 'zoom-in', border: '1px solid #B7D4C5' }} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {initialOrder && <div style={{ padding: '9px 16px', background: '#EFF8F4', borderBottom: '1px solid #B2D8C7', fontSize: 13, color: '#1E6B50', display: 'grid', gap: 8 }}>
           <div>本次订单：{order?.serviceName || '就医规划'}。顾问建议已带入输入框，请核对后点击发送；发送后再与客户确认是否需要其他就医协助服务。</div>
