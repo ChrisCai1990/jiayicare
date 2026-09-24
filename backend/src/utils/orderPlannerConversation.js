@@ -35,12 +35,16 @@ function isNutritionDeliveryOrder(order = {}) {
 
 function buildOrderPlannerPrompt(order = {}) {
   if (!isPaidActiveOrder(order)) return '';
+  const serviceTitle = [order.serviceName, order.specificationLabel]
+    .map(value => String(value || '').trim())
+    .filter((value, index, items) => value && (index === 0 || !items[0].includes(value)))
+    .join(' · ');
   if (isMedicationProxyOrder(order)) {
     const note = customerOrderNote(order.note);
-    return `已收到您的“${order.serviceName}”订单。为了安全、准确地安排代配药，我先协助您核对本次信息。请按现有处方或医嘱告诉我：药品通用名、商品名/品牌、规格、单次服用剂量、每日次数、本次需要的数量、配药机构（医院/线上平台/线下药房）、支付方式和期望送达日期。${note ? `订单备注：“${note}”。` : ''}不清楚的项目可以直接说“不清楚”，我会只继续询问缺失内容；最终由健康规划师人工确认，AI不会替您换药、改剂量或修改医嘱。`;
+    return `已收到您的“${serviceTitle}”订单。为了安全、准确地安排代配药，我先协助您核对本次信息。请按现有处方或医嘱告诉我：药品通用名、商品名/品牌、规格、单次服用剂量、每日次数、本次需要的数量、配药机构（医院/线上平台/线下药房）、支付方式和期望送达日期。${note ? `订单备注：“${note}”。` : ''}不清楚的项目可以直接说“不清楚”，我会只继续询问缺失内容；最终由健康规划师人工确认，AI不会替您换药、改剂量或修改医嘱。`;
   }
   if (isNutritionDeliveryOrder(order)) {
-    return `已收到您的“${order.serviceName}”订单，支付已确认。本订单涉及的营养产品由仓库安排发货。如尚未确认收货信息，请补充收货人、联系电话和详细收货地址；已提供的信息无需重复填写。具体发货安排以工作人员确认为准，如有配送方面的需求，可以直接在这里留言。`;
+    return `已收到您的“${serviceTitle}”订单，支付已确认。本订单涉及的营养产品由仓库安排发货。如尚未确认收货信息，请补充收货人、联系电话和详细收货地址；已提供的信息无需重复填写。具体发货安排以工作人员确认为准，如有配送方面的需求，可以直接在这里留言。`;
   }
   const confirmed = isCustomerConfirmedServiceOrder(order);
   const pending = require('./orderServiceConfirmation').needsCustomerServiceConfirmation(order);
@@ -48,12 +52,12 @@ function buildOrderPlannerPrompt(order = {}) {
   const scheduled = order.desiredServiceDate ? new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai' }).format(new Date(order.desiredServiceDate)) : '';
   const explicitTime = extractExplicitServiceTime(note);
   if (confirmed) {
-    return `已确认您的“${order.serviceName}”订单：服务时间为${scheduled}，服务内容为“${order.serviceRequirements}”${note ? `，补充备注为“${note}”` : ''}。信息已同步给嘉医管家，人工接手后可直接查看。`;
+    return `已确认您的“${serviceTitle}”订单：服务时间为${scheduled}，服务内容为“${order.serviceRequirements}”${note ? `，补充备注为“${note}”` : ''}。信息已同步给嘉医管家，人工接手后可直接查看。`;
   }
   if (pending) {
-    return `已收到您的“${order.serviceName}”订单。${note ? `我从备注中了解到：“${note}”。` : ''}${explicitTime ? `已识别期望时间为“${explicitTime}”，` : ''}为便于安排，请确认具体服务内容${explicitTime ? '；如方便，也请补充更具体的日期' : '和期望时间'}。相对时间不会被自动改成未经您确认的具体日期。`;
+    return `已收到您的“${serviceTitle}”订单。${note ? `我从备注中了解到：“${note}”。` : ''}${explicitTime ? `已识别期望时间为“${explicitTime}”，` : ''}为便于安排，请确认具体服务内容${explicitTime ? '；如方便，也请补充更具体的日期' : '和期望时间'}。相对时间不会被自动改成未经您确认的具体日期。`;
   }
-  return `已收到您的“${order.serviceName}”订单，支付已确认。健康规划师会跟进后续服务或交付安排；如有需要补充的信息，可直接在这里留言。`;
+  return `已收到您的“${serviceTitle}”订单，支付已确认。健康规划师会跟进后续服务或交付安排；如有需要补充的信息，可直接在这里留言。`;
 }
 
 async function ensureOrderPlannerPrompt(order) {
@@ -65,7 +69,7 @@ async function ensureOrderPlannerPrompt(order) {
     conversationId,
     $or: [
       { 'action.type': 'order_planner_confirmation', 'action.orderId': String(order._id) },
-      { type: 'planner', isAI: true, title: '订单服务确认', content },
+      { dedupeKey: `order-planner-confirmation:${order._id}` },
     ],
   });
   if (existing) return existing;
