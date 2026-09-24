@@ -9,8 +9,8 @@ test('上传提醒独立关闭，安排仍保留，未定日期不显示今天',
 test('客户与健管读取实际检查时间，未安排不冒充门诊日期，内部依据不外泄',()=>{
  const flow={_id:'flow',state:{stage:'upload',title:'检查',data:{advisor:{text:'内部研判'},booking:{entries:[{id:'outpatient',title:'门诊',status:'booked',date:'2026-09-28',time:'09:00'},{id:'exam',type:'exam',title:'肾脏彩超',mode:'onsite',status:'pending'}]},execute:{text:'内部意见',onsite:[{id:'exam',type:'exam',title:'MRI',hospital:'医院',department:'影像科',status:'booked',date:'2026-10-03',time:'14:00',reason:'内部原因'}]}}}};
  const original=structuredClone(flow),rows=project(flow);
- assert.equal(rows[1].dueDate,'2026-10-03');assert.equal(rows[1].dueTime,'14:00');assert.ok(rows[1].customerReadOnly);assert.ok(rows[1].canUploadReports);assert.ok(!JSON.stringify(rows).includes('内部'));assert.deepEqual(flow,original);
- flow.state.data.execute.onsite[0].status='pending';const pending=project(flow)[1];assert.equal(pending.dueDate,undefined);assert.match(pending.description,/具体日期尚未确认/);
+ assert.equal(rows.length,1);assert.equal(rows[0].dueDate,'2026-09-28');assert.match(rows[0].description,/2026-10-03 14:00/);assert.match(rows[0].description,/MRI/);assert.ok(rows[0].customerReadOnly);assert.ok(rows[0].canUploadReports);assert.ok(!JSON.stringify(rows).includes('内部'));assert.deepEqual(flow,original);
+ flow.state.data.execute.onsite[0].status='pending';const pending=project(flow)[0];assert.equal(pending.dueDate,'2026-09-28');assert.match(pending.description,/时间：待安排/);
  flow.state.data.execute.onsite[0].status='cancelled';assert.equal(project(flow).length,1);
  flow.state.stage='execute';assert.deepEqual(project(flow),[]);
 });
@@ -36,4 +36,14 @@ test('两个就医服务的上传提醒标明对应名称、日期及独立服�
  assert.notEqual(first.careFlowId,second.careFlowId);
  assert.match(first.description,/服务编号：aaaaaa/);
  assert.match(second.description,/服务编号：bbbbbb/);
+});
+test('同一就医服务只显示一条安排，上传报告单独一条',()=>{
+ const {projectTasks}=require('../src/utils/careFlowClientPlans');
+ const flow={_id:'c'.repeat(24),state:{stage:'upload',title:'泌尿外科就医',data:{booking:{entries:[{id:'visit',title:'开单门诊',status:'booked',date:'2026-09-28',time:'09:00'},{id:'exam',type:'exam',title:'肾脏彩超',status:'booked',date:'2026-09-28',time:'11:00'}]},execute:{onsite:[]}}}};
+ const rows=projectTasks(flow);
+ assert.equal(rows.length,2);
+ assert.equal(rows.filter(row=>row.uploadReminder).length,1);
+ assert.match(rows[0].description,/开单门诊/);
+ assert.match(rows[0].description,/肾脏彩超/);
+ assert.equal(rows[0].careFlowId,rows[1].careFlowId);
 });

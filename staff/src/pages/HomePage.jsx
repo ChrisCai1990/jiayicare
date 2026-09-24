@@ -6,7 +6,7 @@ import AiTodosPanel from '../components/AiTodosPanel'
 import SymptomTodosPanel from '../components/SymptomTodosPanel'
 import FollowUpsPanel from '../components/FollowUpsPanel'
 import ServiceTasksPanel from '../components/ServiceTasksPanel'
-import { plannerOrderRows } from '../utils/plannerOrderProgress.mjs'
+import { isCustomerOrder, plannerOrderRows } from '../utils/plannerOrderProgress.mjs'
 
 const DISEASE_COLOR = {
   '高血压': '#e74c3c', '糖尿病': '#e67e22', '高血脂': '#f39c12',
@@ -23,6 +23,8 @@ export default function HomePage() {
   const [checkupProgress, setCheckupProgress] = useState([])
   const [expiringPatients, setExpiringPatients] = useState([])
   const [pendingOrders, setPendingOrders] = useState([])
+  const [completedOrders, setCompletedOrders] = useState([])
+  const [orderHistoryOpen, setOrderHistoryOpen] = useState(false)
   const [serviceTasks, setServiceTasks] = useState([])
   const [visitorLeads, setVisitorLeads] = useState([])
 
@@ -45,6 +47,9 @@ export default function HomePage() {
     // 健康顾问可在会员详情中查看名下会员全量记录，但未扭转给本人的任务不能进入个人待办。
     staffAPI.getFollowUps({ status: 'planned', sourceType: 'order', scope: 'assigned', limit: 20 })
       .then(r => setPendingOrders(r.data?.followUps || []))
+      .catch(() => {})
+    staffAPI.getFollowUps({ status: 'completed', sourceType: 'order', scope: 'assigned', limit: 100 })
+      .then(r => setCompletedOrders(r.data?.followUps || []))
       .catch(() => {})
 
     if (['healthPlanner', 'superadmin'].includes(staff?.role)) {
@@ -97,6 +102,10 @@ export default function HomePage() {
     return `/followups?${query}`
   }
   const orderRows = plannerOrderRows(pendingOrders, serviceTasks)
+  const orderHistoryRows = [...new Map(completedOrders
+    .filter(item => isCustomerOrder(item.sourceOrderId, item))
+    .sort((a, b) => new Date(b.completedAt || 0) - new Date(a.completedAt || 0))
+    .map(item => [String(item.sourceOrderId?._id || item._id), item])).values()]
 
   return (
     <div className="page">
@@ -148,13 +157,14 @@ export default function HomePage() {
       </div>
 
       {/* 用户端购买的服务单独展示；医护端发起的服务只在下方任务区出现。 */}
-      {orderRows.length > 0 && (
+      {(orderRows.length > 0 || orderHistoryRows.length > 0) && (
         <div className="card" style={{ marginBottom: 20, border: '1.5px solid #22A06B40' }}>
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span>🛍 用户下单服务进程</span>
               <span style={{ fontSize: 12, fontWeight: 600, color: '#22A06B', background: '#22A06B18', padding: '2px 8px', borderRadius: 99 }}>{orderRows.length}</span>
             </div>
+            {orderHistoryRows.length > 0 && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOrderHistoryOpen(value => !value)}>{orderHistoryOpen ? '收起已处理预约' : `查看已处理预约 ${orderHistoryRows.length}`}</button>}
           </div>
           <div className="card-body" style={{ padding: '8px 20px' }}>
             {orderRows.map(({ id, pending: f, supervisor, task: serviceTask, action }, i) => {
@@ -178,6 +188,13 @@ export default function HomePage() {
                 <span style={{ fontSize: 12, color: '#aaa', flexShrink: 0, marginLeft: 12 }}>{action ? '待我办理' : task ? '流程进行中' : `下单 ${new Date(order?.createdAt || f.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}</span>
               </div>
             })}
+            {orderHistoryOpen && <div style={{ borderTop: '1px solid #E3ECE7', marginTop: 8, paddingTop: 10 }}>
+              <div style={{ fontWeight: 600, color: '#52685D', marginBottom: 6 }}>过往已处理预约（不代表服务已结束）</div>
+              {orderHistoryRows.map(item => <div key={item._id} onClick={() => nav(`/patients/${item.patientId?._id}?tab=followups`)} style={{ padding: '9px 0', borderBottom: '1px solid #F0EDE8', cursor: 'pointer' }}>
+                <b>{item.patientId?.name || '未知客户'}</b> · {item.sourceOrderId?.serviceName || item.theme} · {item.completedAt ? new Date(item.completedAt).toLocaleString('zh-CN') : '已处理'}
+                <div style={{ color: '#667085', fontSize: 12, whiteSpace: 'pre-wrap' }}>{item.executedContent || item.content || '点击查看客户服务档案'}</div>
+              </div>)}
+            </div>}
           </div>
         </div>
       )}

@@ -57,6 +57,21 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
   const [timeGroup, setTimeGroup] = useState('all')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyItems, setHistoryItems] = useState([])
+  const [historySelected, setHistorySelected] = useState('')
+  const [historyLoading, setHistoryLoading] = useState(false)
+
+  const showHistory = async () => {
+    if (historyOpen) { setHistoryOpen(false); return }
+    setHistoryOpen(true)
+    setHistoryLoading(true)
+    try {
+      const response = await staffAPI.getServiceTasks({ status: 'completed', includeFuture: '1', limit: 200 })
+      setHistoryItems(response.data || [])
+    } catch { setHistoryItems([]) }
+    finally { setHistoryLoading(false) }
+  }
 
   useEffect(() => {
     const refresh = () => staffAPI.getServiceTasks({ status: 'active', includeFuture: '1', limit: 100 })
@@ -83,7 +98,14 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
   const visibleItems = staff?.role === 'healthPlanner'
     ? items.filter(task => !(task.sourceType === 'order' && isCustomerOrder(task.sourceOrderId, task)))
     : items
-  if (!visibleItems.length && !dispatchTask) return null
+  const historyGroups = Object.values(historyItems
+    .filter(task => staff?.role !== 'healthPlanner' || !(task.sourceType === 'order' && isCustomerOrder(task.sourceOrderId, task)))
+    .reduce((result, task) => {
+      const key = serviceTaskGroupKey(task)
+      if (!result[key]) result[key] = { key, tasks: [], lastAt: task.completedAt || task.updatedAt }
+      result[key].tasks.push(task)
+      return result
+    }, {})).sort((a, b) => new Date(b.lastAt || 0) - new Date(a.lastAt || 0))
   const serviceGroups = Object.values(visibleItems.reduce((result, task) => {
     const key = serviceTaskGroupKey(task)
     if (!result[key]) result[key] = { key, tasks: [] }
@@ -189,6 +211,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
           <span>待处理服务任务</span>
           <span style={{ fontSize: 12, color: '#fff', background: '#1E6B50', padding: '2px 8px', borderRadius: 99 }}>{serviceGroups.length}</span>
         </div>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={showHistory}>{historyOpen ? '收起已处理' : '查看已处理'}</button>
       </div>
       <div style={{ padding: '10px 20px 2px' }}>
         <input type="search" className="form-input" aria-label="搜索服务任务" placeholder="搜索客户姓名、手机号、服务名称或任务" value={search}
@@ -259,6 +282,18 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
         <span style={{ fontSize: 12, color: '#667085' }}>第 {currentPage} / {pageCount} 页</span>
         <button type="button" aria-label="上一页" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} style={{ border: '1px solid #DDD7CD', background: '#fff', color: '#1E6B50', borderRadius: 6, padding: '3px 9px', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', opacity: currentPage === 1 ? 0.45 : 1 }}>上一页</button>
         <button type="button" aria-label="下一页" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)} style={{ border: '1px solid #DDD7CD', background: '#fff', color: '#1E6B50', borderRadius: 6, padding: '3px 9px', cursor: currentPage === pageCount ? 'not-allowed' : 'pointer', opacity: currentPage === pageCount ? 0.45 : 1 }}>下一页</button>
+      </div>}
+      {historyOpen && <div style={{ borderTop: '1px solid #E3ECE7', padding: '12px 20px 18px' }}>
+        <div style={{ fontWeight: 600, marginBottom: 8 }}>过往已处理服务（只读）</div>
+        {historyLoading ? <div>正在加载…</div> : !historyGroups.length ? <div style={{ color: '#667085' }}>暂无已处理记录</div> : historyGroups.map(service => <div key={service.key} style={{ borderBottom: '1px solid #F0EDE8', padding: '9px 0' }}>
+          <button type="button" onClick={() => setHistorySelected(historySelected === service.key ? '' : service.key)} style={{ border: 0, background: 'transparent', color: '#1E6B50', cursor: 'pointer', textAlign: 'left', fontWeight: 600 }}>
+            {service.tasks[0]?.patientId?.name || '未知客户'} · {serviceTaskTitle(service.tasks[0])} · 已处理 {service.tasks.length} 项 · {service.lastAt ? new Date(service.lastAt).toLocaleDateString('zh-CN') : '日期待核对'} {historySelected === service.key ? '收起' : '查看'}
+          </button>
+          {historySelected === service.key && <div style={{ padding: '8px 12px', color: '#52685D', lineHeight: 1.7 }}>
+            {service.tasks.map(task => <div key={task._id} style={{ marginBottom: 10 }}><b>{serviceTaskTitle(task)}</b> · {task.completedAt ? new Date(task.completedAt).toLocaleString('zh-CN') : '已处理'}<div style={{ whiteSpace: 'pre-wrap' }}>{task.executedContent || task.content || task.plannedContent || '无补充记录'}</div></div>)}
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${service.tasks[0]?.patientId?._id}?tab=followups`)}>查看客户服务档案</button>
+          </div>}
+        </div>)}
       </div>}
       {dispatchTask && <div className="modal-overlay"><div className="modal" style={{ maxWidth: 780 }}>
         <div className="modal-header"><h3>{dispatchTask.formData?.careFlowMode==='reminder' ? '就医提醒 · 资料与随访审核' : dispatchTask.careFlowId ? '就医协助 · 全流程办理' : annualDispatch.isExecution(dispatchTask) ? '就医协助 · 办理记录' : '就医协助 · 派单安排'}</h3><button className="modal-close" onClick={() => setDispatchTask(null)}>×</button></div>

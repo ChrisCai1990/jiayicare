@@ -5,14 +5,23 @@ function project(flow) {
   if(!s.data?.execute || !['upload','audit','draft','review','closed'].includes(s.stage)) return [];
   const booked=s.data.booking?.entries||[],actual=s.data.execute.onsite||[];
   const rows=[...booked.map(e=>({...e,...actual.find(v=>v.id===e.id)})),...actual.filter(e=>!booked.some(v=>v.id===e.id))];
-  return rows.filter(e=>!['cancelled','not_required'].includes(e.status)).map((e,i)=>({
-    _id:`care-plan:${flow._id}:${e.id||i}`,careFlowId:String(flow._id),customerReadOnly:true,canUploadReports:!s.customerUpload?.completedAt&&['upload','audit'].includes(s.stage),
-    title:`${e.type==='exam'?'检查安排':'就医安排'} · ${e.title||s.title}`,
+  const entries=rows.filter(e=>!['cancelled','not_required'].includes(e.status));
+  if(!entries.length)return [];
+  const scheduled=entries.filter(e=>e.status==='booked'&&e.date).sort((a,b)=>`${a.date} ${a.time||''}`.localeCompare(`${b.date} ${b.time||''}`));
+  const description=entries.map((e,i)=>[
+    `${i+1}. ${e.type==='exam'?'检查':'门诊'}：${e.title||s.title||'本次就医'}`,
+    e.status==='booked'&&e.date?`时间：${e.date} ${e.time||'待确认'}`:'时间：待安排',
+    `医院：${e.hospital||'待明确'}`,
+    `科室：${e.department||'待明确'}`,
+    `专家：${e.expert||'未指定专家'}`,
+  ].join('\n')).join('\n\n');
+  return [{
+    _id:`care-plan:${flow._id}:arrangement`,careFlowId:String(flow._id),customerReadOnly:true,canUploadReports:!s.customerUpload?.completedAt&&['upload','audit'].includes(s.stage),
+    title:`本次就医安排 · ${s.title||entries[0].title||'就医服务'}`,
     type:'followup',status:['draft','review','closed'].includes(s.stage)?'completed':'pending',priority:'low',assignee:'健管专员',
-    scheduleLabel:e.status==='booked'&&e.date?'已预约':'待安排',
-    dueDate:e.status==='booked'?e.date:undefined,dueTime:e.status==='booked'?e.time:undefined,
-    description:[e.status==='booked'?`已预约：${e.date} ${e.time||'时间待确认'}`:'待安排：具体日期尚未确认',`医院：${e.hospital||'待明确'}`,`科室：${e.department||'待明确'}`,`专家：${e.expert||'未指定专家'}`,'检查后可上传报告及病历，由健管专员核对审核。'].filter(Boolean).join('\n'),
-  }));
+    scheduleLabel:scheduled.length?'已安排':'待安排',dueDate:scheduled[0]?.date,dueTime:scheduled[0]?.time,
+    description:`${description}\n\n就医后可上传本次报告及病历，由健管专员核对审核。`,
+  }];
 }
 function uploadContext(flow) {
     const s=flow.state||{}, actual=s.data?.execute?.onsite||[], booked=s.data?.booking?.entries||[];

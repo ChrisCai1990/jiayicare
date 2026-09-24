@@ -591,7 +591,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
   // 历史任务的 assignedTo 同时存在 ObjectId 与字符串两种存储形态；原生集合按两种类型
   // 一并取回，再 hydrate/populate，避免负责人正确的预约任务被类型转换静默漏掉。
   const requestedLimit = Math.min(Number(limit) || 100, 200);
-  const rawTasks = await FollowUp.collection.find(filter).sort({ date: 1 }).limit(1000).toArray();
+  const rawTasks = await FollowUp.collection.find(filter).sort(status === 'completed' ? { completedAt: -1 } : { date: 1 }).limit(1000).toArray();
   const queriedTasks = rawTasks.map(task => FollowUp.hydrate(task));
   await FollowUp.populate(queriedTasks, [
     { path: 'patientId', select: 'name phone gender age chronicDiseases' },
@@ -645,7 +645,8 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
   const tasks = queriedTasks.filter(task => {
     if (task.careFlowId && task.taskRole !== 'supervisor') {
       const c = careCases.find(c => String(c._id) === String(task.careFlowId));
-      if (!c || !require('../../../shared/careFlow.cjs').isTask(task) || c.state.stage === 'closed' || task.formData?.careFlowSequence !== c.state.sequence) return false;
+      if (!c || !require('../../../shared/careFlow.cjs').isTask(task)) return false;
+      if (status !== 'completed' && (c.state.stage === 'closed' || task.formData?.careFlowSequence !== c.state.sequence)) return false;
     }
     const isServiceTask = (task.sourceType === 'health_plan' && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'order' && /^(medical_proxy|medication_proxy|checkup_appointment):/.test(String(task.workflowKey || '')) && ['executor', 'supervisor'].includes(task.taskRole))
@@ -655,11 +656,11 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
       || (task.sourceType === 'scheduled' && (task.tags || []).includes('保险服务'))
       || (require('../utils/healthManagementRollout').enabledForPatient(task.patientId?._id || task.patientId) && require('../../../shared/annualServiceItem.cjs').needsBooking(task));
     if (!isServiceTask) return false;
-    if (task.sourceType === 'order' && !activeProxyOrderIds.has(String(task.sourceOrderId?._id || task.sourceOrderId))) return false;
+    if (status !== 'completed' && task.sourceType === 'order' && !activeProxyOrderIds.has(String(task.sourceOrderId?._id || task.sourceOrderId))) return false;
     // 方案已闭环时，历史遗留的活动督办卡也不应再次出现在健康规划师工作台。
-    if (task.sourceType === 'health_plan' && task.sourceHealthPlanId?.status === 'completed') return false;
+    if (status !== 'completed' && task.sourceType === 'health_plan' && task.sourceHealthPlanId?.status === 'completed') return false;
     const isOutpatientPlan = /门诊一站式/.test(`${task.sourceHealthPlanId?.title || ''} ${task.sourceHealthPlanId?.content?.templateName || ''}`);
-    if (isOutpatientPlan && task.taskRole === 'supervisor' && task.dependsOnTaskId?.status === 'completed') return false;
+    if (status !== 'completed' && isOutpatientPlan && task.taskRole === 'supervisor' && task.dependsOnTaskId?.status === 'completed') return false;
     if (status === 'active' && !['planned', 'in_progress', 'missed'].includes(task.status)) return false;
     if (status && status !== 'active' && task.status !== status) return false;
     if (includeFuture !== '1' && task.remindAt && task.remindAt > now) return false;
@@ -1812,7 +1813,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
     { tags: { $nin: ['保险服务'] } },
   ] };
   if (sourceType) filter.sourceType = sourceType;
-  if (sourceType === 'order') {
+  if (sourceType === 'order' && status !== 'completed') {
     // 订单待办的事实来源必须是订单本身。退款中、已退款、已取消或已完成的订单，
     // 即使历史 FollowUp 仍是 planned，也不能继续进入任何人的工作台。
     const activeOrderIds = await Order.find(require('../utils/orderWorkItem').activeOrderWorkItemQuery()).distinct('_id');
@@ -1854,7 +1855,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
       .populate('sourceHealthPlanId', 'title description content type')
       .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard workflowStageKey')
       .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
-      .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt orderNo serviceWorkflowSnapshot supplementFulfillment medicalProxyPlan medicalReminderIntake'),
+      .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod initiationSource createdAt orderNo serviceWorkflowSnapshot supplementFulfillment medicalProxyPlan medicalReminderIntake'),
     FollowUp.countDocuments(filter),
   ]);
 
