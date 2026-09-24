@@ -1,5 +1,6 @@
 const AppointmentReminder = require('../models/AppointmentReminder');
 const Message = require('../models/Message');
+const Order = require('../models/Order');
 
 const HOUR = 60 * 60 * 1000;
 
@@ -37,6 +38,14 @@ async function scanAndSendAppointmentReminders(now = new Date()) {
     );
     if (!reminder) break;
     try {
+      const order = await Order.findById(reminder.orderId).select('scheduledAt status').lean();
+      if (!order || order.status !== 'scheduled' || new Date(order.scheduledAt).getTime() !== new Date(reminder.appointmentAt).getTime()) {
+        await AppointmentReminder.updateOne(
+          { _id: reminder._id, status: 'processing', appointmentAt: reminder.appointmentAt },
+          { $set: { status: 'cancelled', processingAt: null } },
+        );
+        continue;
+      }
       const label = reminder.kind === 'day_before' ? '明天' : '2小时后';
       const dedupeKey = `expert-appointment-reminder:${reminder.orderId}:${reminder.kind}:${new Date(reminder.appointmentAt).getTime()}`;
       await Message.findOneAndUpdate(
@@ -50,11 +59,16 @@ async function scanAndSendAppointmentReminders(now = new Date()) {
         } },
         { upsert: true, new: true, setDefaultsOnInsert: true },
       );
-      reminder.status = 'sent'; reminder.sentAt = now; reminder.processingAt = null;
-      await reminder.save();
+      await AppointmentReminder.updateOne(
+        { _id: reminder._id, status: 'processing', appointmentAt: reminder.appointmentAt },
+        { $set: { status: 'sent', sentAt: now, processingAt: null } },
+      );
       sent++;
     } catch (error) {
-      await AppointmentReminder.updateOne({ _id: reminder._id }, { $set: { status: 'pending', processingAt: null } });
+      await AppointmentReminder.updateOne(
+        { _id: reminder._id, status: 'processing', appointmentAt: reminder.appointmentAt },
+        { $set: { status: 'pending', processingAt: null } },
+      );
       console.error('[appointment-reminder] 发送失败', error.message);
       break;
     }

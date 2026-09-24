@@ -5288,6 +5288,54 @@ router.get('/service-records/:id/preview/:source/:index', async (req, res) => {
     return res.status(502).json({ success: false, message: '附件读取失败，请稍后重试' });
   }
 });
+
+// 已确认专家预约后的改期只补记同一订单，不重新生成服务任务。
+router.post('/followups/:id/expert-appointment/reschedule', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
+  if (req.staff.role !== 'healthManager') return res.status(403).json({ success: false, message: '仅本单健管专员可补记预约改期' });
+  try {
+    const task = await FollowUp.findOne({ _id: req.params.id, sourceType: 'order', workflowKey: 'medical_proxy:post_visit_audit', assignedTo: req.staff._id, status: { $in: ['planned', 'in_progress', 'missed'] } }).lean();
+    if (!task) return res.status(404).json({ success: false, message: '未找到待就诊资料审核任务，或当前人员无权修改' });
+    const order = await Order.findOne({ _id: task.sourceOrderId, user: task.patientId, serviceName: /专家约诊/, status: 'scheduled' }).lean();
+    const oldBooking = order?.medicalProxyPlan?.booking;
+    if (!oldBooking?.appointmentDate || !oldBooking?.appointmentTime) return res.status(409).json({ success: false, message: '本单没有已确认的预约记录' });
+    const appointmentDate = String(req.body.appointmentDate || '').trim();
+    const appointmentTime = String(req.body.appointmentTime || '').trim();
+    const reason = String(req.body.reason || '').trim();
+    const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(appointmentDate);
+    const timeMatch = /^(\d{2}):(\d{2})$/.exec(appointmentTime);
+    if (!dateMatch || !timeMatch || !reason || reason.length > 500 || req.body.customerConfirmed !== true || req.body.hospitalConfirmed !== true) return res.status(400).json({ success: false, message: '请填写新预约日期时间、改期原因，并确认客户及医院均已确认' });
+    const [, year, month, day] = dateMatch.map(Number);
+    const [, hour, minute] = timeMatch.map(Number);
+    const calendarDay = new Date(Date.UTC(year, month - 1, day));
+    const scheduledAt = new Date(`${appointmentDate}T${appointmentTime}:00+08:00`);
+    if (calendarDay.getUTCFullYear() !== year || calendarDay.getUTCMonth() + 1 !== month || calendarDay.getUTCDate() !== day || hour > 23 || minute > 59 || scheduledAt <= new Date()) return res.status(400).json({ success: false, message: '请选择有效且尚未到来的新预约时间' });
+    if (oldBooking.appointmentDate === appointmentDate && oldBooking.appointmentTime === appointmentTime) return res.status(400).json({ success: false, message: '新预约时间与当前时间相同，无需补记改期' });
+    const revision = Number(order.medicalProxyPlan?.bookingRevision || 0) + 1;
+    const changedAt = new Date();
+    const change = { from: { appointmentDate: oldBooking.appointmentDate, appointmentTime: oldBooking.appointmentTime }, to: { appointmentDate, appointmentTime }, reason, changedAt, changedBy: req.staff._id, customerConfirmed: true, hospitalConfirmed: true };
+    const updated = await Order.findOneAndUpdate(
+      { _id: order._id, status: 'scheduled', 'medicalProxyPlan.booking.appointmentDate': oldBooking.appointmentDate, 'medicalProxyPlan.booking.appointmentTime': oldBooking.appointmentTime },
+      { $set: { scheduledAt, desiredServiceDate: scheduledAt, desiredServiceDateEnd: scheduledAt, 'medicalProxyPlan.booking.appointmentDate': appointmentDate, 'medicalProxyPlan.booking.appointmentTime': appointmentTime, 'medicalProxyPlan.booking.preferredDateStart': appointmentDate, 'medicalProxyPlan.booking.preferredDateEnd': appointmentDate, 'medicalProxyPlan.bookingRevision': revision }, $push: { 'medicalProxyPlan.bookingChanges': change } },
+      { new: true },
+    );
+    if (!updated) return res.status(409).json({ success: false, message: '预约记录已被其他人修改，请刷新后重试' });
+    const AppointmentReminder = require('../models/AppointmentReminder');
+    await AppointmentReminder.updateMany({ orderId: order._id, status: { $in: ['pending', 'processing'] } }, { $set: { status: 'cancelled', processingAt: null } });
+    const booking = updated.medicalProxyPlan.booking;
+    const appointmentText = `预约时间：${appointmentDate} ${appointmentTime}\n医院：${updated.medicalProxyPlan.hospital || '请核实'}\n院区：${booking.campus || updated.medicalProxyPlan.campus || '请核实'}\n科室：${updated.medicalProxyPlan.department || '请核实'}\n实际预约专家/医生：${booking.appointmentExpert || '待院方确认'}`;
+    await require('../utils/appointmentReminderScheduler').scheduleExpertAppointmentReminders({ order: updated, appointmentDate: scheduledAt, appointmentText });
+    await FollowUp.updateOne({ _id: task._id, status: { $in: ['planned', 'in_progress', 'missed'] } }, { $set: { status: 'planned', date: scheduledAt, remindAt: scheduledAt, 'formData.appointmentAt': scheduledAt } });
+    await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: 'medical_proxy:supervise' }, { $set: { content: `客户预约已改期为 ${appointmentDate} ${appointmentTime}；等待就诊后上传资料及健管审核。` } });
+    const bookingTask = await FollowUp.findOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: 'medical_proxy:booking' });
+    if (bookingTask) await require('../utils/medicalProxyWorkflow').upsertMedicalProxyServiceRecord(bookingTask, updated, false);
+    await Message.findOneAndUpdate(
+      { dedupeKey: `expert-appointment-rescheduled:${order._id}:${revision}` },
+      { $setOnInsert: { user: order.user, type: 'system', sender: '嘉医管家', title: '专家预约改期通知', content: `您确认的专家门诊预约已改期。原时间：${oldBooking.appointmentDate} ${oldBooking.appointmentTime}\n新时间：${appointmentDate} ${appointmentTime}\n${appointmentText}\n改期说明：${reason}`, conversationId: null, unread: true, isAI: false, aiGenerated: false, dedupeKey: `expert-appointment-rescheduled:${order._id}:${revision}`, action: { type: 'expert_appointment_confirmed', orderId: String(order._id) } } },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+    res.json({ success: true, data: { orderId: order._id, scheduledAt, revision } });
+  } catch (err) { res.status(err.status || 500).json({ success: false, message: err.message }); }
+});
 // GET /api/staff/service-records?patientId=&type=
 router.get('/service-records', staffAuth, checkPermission('service_records', 'view'), async (req, res) => {
   const { patientId, type, page = 1, limit = 20 } = req.query;

@@ -42,6 +42,7 @@ import OutpatientProxyVisitForm, { emptyOutpatientProxyVisit, isOutpatientProxyV
 import OutpatientEscortVisitForm, { emptyOutpatientEscortVisit, isOutpatientEscortVisitTask, validateOutpatientEscortVisit } from '../components/OutpatientEscortVisitForm'
 import OutpatientPostVisitReviewForm, { emptyOutpatientPostVisitReview, isOutpatientPostVisitReviewTask, validateOutpatientPostVisitReview } from '../components/OutpatientPostVisitReviewForm'
 import MedicalProxyStageForm, { medicalProxyStage, validateMedicalProxyStage } from '../components/MedicalProxyStageForm'
+import ExpertAppointmentRescheduleForm from '../components/ExpertAppointmentRescheduleForm'
 import AdHocConsultationForm from '../components/AdHocConsultationForm'
 import MedicationProxyStageForm, { medicationProxyStage } from '../components/MedicationProxyStageForm'
 import femalePortraitPhoto from '../assets/health-portrait-female.webp'
@@ -10852,6 +10853,7 @@ export default function PatientDetailPage() {
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', overscrollBehavior: 'contain' }}>
               <ServiceTaskContextBanner task={execItem} />
+              {staff?.role === 'healthManager' && medicalProxyStage(execItem) === 'post_visit_audit' && /专家约诊/.test(execItem.sourceOrderId?.serviceName || '') && <ExpertAppointmentRescheduleForm task={execItem} onSaved={() => { setExecItem(null); loadFollowUps(); loadServiceRecords(); toast('已补记预约改期，原服务任务继续等待就诊资料') }} />}
               <OnsiteBookingCard key={`onsite-exec-${execItem._id}`} task={execItem} staff={staff} />
               {execItem.isBlocked && <div style={{ padding: '10px 12px', borderRadius: 9, background: '#F2F4F7', color: '#596273', fontSize: 13, border: '1px solid #D9DEE7' }}>⏳ {isOutpatientPostVisitReviewTask(execItem) ? '当前等待健管专员在报告管理中审核本次门诊病历和检验检查单；两份资料均审核通过后，本任务会自动解锁。' : /门诊一站式.*检查及专家门诊陪诊与归档/.test(execItem.theme || '') ? `当前已进入陪诊及资料闭环阶段：${execItem.content || '等待陪诊专员完成陪诊、资料审核及健康顾问随访计划。'}` : `当前仅供查看：正在等待上一环节“${execItem.dependsOnTaskId?.theme || '就医专员陪诊'}”完成，完成后本任务会自动解锁。`}</div>}
               <fieldset disabled={!!execItem.isBlocked} style={{ border: 0, padding: 0, margin: 0, display: 'grid', gap: 14, minWidth: 0 }}>

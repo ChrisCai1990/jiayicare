@@ -95,6 +95,7 @@ export const staffAPI = {
   getPatientFollowUps: (id, p={})=> req(`/staff/patients/${id}/followups?` + qs(p)),
   createFollowUp:      (data)   => req('/staff/followups', { method: 'POST', body: JSON.stringify(data) }),
   updateFollowUp:      (id, d)  => req(`/staff/followups/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
+  rescheduleExpertAppointment: (id, data) => req(`/staff/followups/${id}/expert-appointment/reschedule`, { method: 'POST', body: JSON.stringify(data) }),
   saveFollowUpProgress: (id, d) => req(`/staff/followups/${id}/progress`, { method: 'POST', body: JSON.stringify(d) }),
   reviewFollowUpOutcome: (id, d) => req(`/staff/followups/${id}/outcome-review`, { method: 'POST', body: JSON.stringify(d) }),
   getFollowUpOutcomeCandidates: id => req(`/staff/followups/${id}/outcome-candidates`),
