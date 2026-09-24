@@ -720,8 +720,21 @@ async function validateMedicalProxyStage(task, body, staff) {
     const ids = [...new Set((data.reportIds || []).map(String).filter(Boolean))];
     if (!ids.length && data.noMaterialsConfirmed !== true) return '请选择已审核资料；如本次确实没有检查资料或病历，请勾选确认无资料';
     if (!nonempty(data.auditSummary)) return '请填写健管专员审核结论';
-    const order = await Order.findById(task.sourceOrderId).select('scheduledAt').lean();
+    const order = await Order.findById(task.sourceOrderId).select('scheduledAt medicalProxyPlan').lean();
     if (!order?.scheduledAt || new Date() < order.scheduledAt) return '就诊时间尚未到达，不能结束报告审核环节';
+    if (data.medicalEscort === true) {
+      const plan = order.medicalProxyPlan || {};
+      const planned = plan.escortCategory === 'exam' && plan.escortExams?.length ? plan.escortExams
+        : plan.escortCategory === 'treatment' && plan.escortTreatments?.length ? plan.escortTreatments
+          : plan.escortDepartments?.length ? plan.escortDepartments : [{}];
+      const record = await ServiceRecord.findOne({ sourceOrderId: order._id, type: 'medical_visit' }).select('supplements').lean();
+      const expected = [...planned.map((_, index) => `plan:${index}`), ...(record?.supplements || []).filter(item => item.kind === 'ad_hoc_visit').map(item => `supp:${item._id}`)];
+      const rows = Array.isArray(data.auditItems) ? data.auditItems : [];
+      if (rows.length !== expected.length || new Set(rows.map(row => row.key)).size !== expected.length
+        || expected.some(key => !rows.some(row => row.key === key && (row.noMaterial === true || (Array.isArray(row.reportIds) && row.reportIds.length && row.reportIds.every(id => ids.includes(String(id)))))))
+        || rows.some(row => !expected.includes(row.key) || (row.noMaterial === true && row.reportIds?.length))
+        || ids.some(id => !rows.some(row => (row.reportIds || []).map(String).includes(id)))) return '请逐项对应本次就医项目与已审核报告，或确认该项目确无资料';
+    }
     const count = ids.length ? await MedicalReport.countDocuments({ _id: { $in: ids }, user: task.patientId, audit_status: 'audited', createdAt: { $gte: order.scheduledAt } }) : 0;
     if (count !== ids.length) return '只能选取本次就诊后上传且已由健管专员审核的报告';
   }

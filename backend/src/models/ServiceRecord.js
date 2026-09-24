@@ -80,6 +80,14 @@ const serviceRecordSchema = new mongoose.Schema({
     content:   { type: String, default: '' },
     staffName: { type: String, default: '' },
     staffId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+    kind: { type: String, enum: ['note', 'ad_hoc_visit'], default: 'note' },
+    visit: {
+      hospital: { type: String, default: '' },
+      department: { type: String, default: '' },
+      expert: { type: String, default: '' },
+      appointmentAt: { type: Date, default: null },
+    },
+    attachments: [{ url: String, ossKey: String, name: String, mimeType: String, fileSize: String, _id: false }],
   }],
 
   // AI 从会员聊天记录提炼生成的随访草稿（routine/doctor_followup/nutrition 均可能来源于此）

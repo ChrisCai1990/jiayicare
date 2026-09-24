@@ -5217,6 +5217,18 @@ router.get('/push-records', staffAuth, async (req, res) => {
 });
 
 // ── 服务记录（就医/专科/心理/运动/中医） ──────────────────
+function withSignedServiceRecord(record) {
+  const obj = record?.toObject ? record.toObject() : { ...record };
+  obj.attachments = (obj.attachments || []).map(file => ({
+    ...file,
+    previewUrl: signStoredUrl(file.url || '', file.ossKey || ''),
+  }));
+  obj.supplements = (obj.supplements || []).map(item => ({
+    ...item,
+    attachments: (item.attachments || []).map(file => ({ ...file, previewUrl: signStoredUrl(file.url || '', file.ossKey || '') })),
+  }));
+  return obj;
+}
 // GET /api/staff/service-records?patientId=&type=
 router.get('/service-records', staffAuth, checkPermission('service_records', 'view'), async (req, res) => {
   const { patientId, type, page = 1, limit = 20 } = req.query;
@@ -5230,7 +5242,7 @@ router.get('/service-records', staffAuth, checkPermission('service_records', 'vi
       .populate('patientId', 'name phone gender age').populate('staffId', 'name role'),
     ServiceRecord.countDocuments(filter),
   ]);
-  res.json({ success: true, data: { records, total } });
+  res.json({ success: true, data: { records: records.map(withSignedServiceRecord), total } });
 });
 
 // POST /api/staff/service-records
@@ -5273,11 +5285,42 @@ router.post('/service-records/:id/supplement', staffAuth, checkPermission('servi
   try {
     const record = await ServiceRecord.findById(req.params.id);
     if (!record) return res.status(404).json({ success: false, message: '记录不存在' });
-    const { content, date } = req.body;
+    const { content, date, kind, visit, attachments } = req.body;
     if (!content) return res.status(400).json({ success: false, message: '内容不能为空' });
-    record.supplements.push({ content, date: date ? new Date(date) : new Date(), staffName: req.staff.name, staffId: req.staff._id });
+    if (kind === 'ad_hoc_visit' && record.type !== 'medical_visit') return res.status(400).json({ success: false, message: '仅就医记录可补录临时加诊' });
+    if (kind === 'ad_hoc_visit' && req.staff.role !== 'superadmin' && String(record.staffId || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅本次就医记录负责人可补录临时加诊' });
+    if (kind === 'ad_hoc_visit' && (!visit?.hospital?.trim() || !visit?.department?.trim() || !visit?.expert?.trim() || !visit?.appointmentAt)) return res.status(400).json({ success: false, message: '请填写临时加诊的医院、科室、专家和时间' });
+    const visitFiles = kind === 'ad_hoc_visit' && Array.isArray(attachments) ? attachments : [];
+    if (visitFiles.length > 10 || visitFiles.some(file => !file?.ossKey?.startsWith('reports/') || urlToKey(file.url || '') !== file.ossKey)) return res.status(400).json({ success: false, message: '加诊附件无效，请重新上传' });
+    record.supplements.push({ content, date: date ? new Date(date) : new Date(), staffName: req.staff.name, staffId: req.staff._id,
+      kind: kind === 'ad_hoc_visit' ? kind : 'note', visit: kind === 'ad_hoc_visit' ? visit : {},
+      attachments: visitFiles });
     await record.save();
-    res.json({ success: true, data: record });
+    let archiveWarning = kind === 'ad_hoc_visit' && visitFiles.length && !record.sourceOrderId
+      ? '补录已保存；此记录未关联就医订单，请在报告管理中单独上传资料' : '';
+    if (kind === 'ad_hoc_visit' && record.sourceOrderId) {
+      const patient = await User.findById(record.patientId).select('tenantId').lean();
+      const checkDate = String(visit.appointmentAt).slice(0, 10);
+      for (const file of visitFiles) {
+        try { await MedicalReport.findOneAndUpdate(
+          { user: record.patientId, sourceType: 'order', sourceOrderId: record.sourceOrderId, fileUrl: file.url },
+          { $setOnInsert: { user: record.patientId, tenantId: patient?.tenantId || null,
+            title: `临时加诊资料 · ${visit.department}`, type: 'other', documentCategory: 'outpatient_record',
+            hospital: visit.hospital, institution: visit.hospital, date: checkDate, checkDate,
+            reportYear: Number(checkDate.slice(0, 4)) || new Date().getFullYear(),
+            fileUrl: file.url, fileUrls: [file.url], ossKey: file.ossKey, ossKeys: [file.ossKey],
+            mimeType: file.mimeType || '', fileSize: String(file.fileSize || ''),
+            uploadedBy: req.staff._id, uploadedByRole: req.staff.role,
+            sourceType: 'order', sourceOrderId: record.sourceOrderId,
+            audit_status: 'unaudited', aiStatus: 'none', note: `临时加诊补录：${record.title || ''}` } },
+          { upsert: true, new: true, setDefaultsOnInsert: true },
+        ); } catch (error) {
+          console.error('[service-record-ad-hoc-archive] failed', { recordId: String(record._id), message: error.message });
+          archiveWarning = '补录已保存，但部分附件未进入报告管理；请在报告管理中核对并补传';
+        }
+      }
+    }
+    res.json({ success: true, data: withSignedServiceRecord(record), ...(archiveWarning ? { warning: archiveWarning } : {}) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -5289,11 +5332,12 @@ router.put('/service-records/:id/supplement/:suppId', staffAuth, checkPermission
     const supp = record.supplements.id(req.params.suppId);
     if (!supp) return res.status(404).json({ success: false, message: '补充记录不存在' });
     if (String(supp.staffId) !== String(req.staff._id)) return res.status(403).json({ success: false, message: '只能编辑自己的补充记录' });
+    if (supp.kind === 'ad_hoc_visit' && record.sourceOrderId && await FollowUp.exists({ sourceType: 'order', sourceOrderId: record.sourceOrderId, workflowKey: 'medical_proxy:post_visit_audit', status: 'completed' })) return res.status(409).json({ success: false, message: '健管审核已完成，不能修改加诊补录；请追加更正说明' });
     const { content, date } = req.body;
     if (content !== undefined) supp.content = content;
     if (date !== undefined) supp.date = new Date(date);
     await record.save();
-    res.json({ success: true, data: record });
+    res.json({ success: true, data: withSignedServiceRecord(record) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -5305,9 +5349,18 @@ router.delete('/service-records/:id/supplement/:suppId', staffAuth, checkPermiss
     const supp = record.supplements.id(req.params.suppId);
     if (!supp) return res.status(404).json({ success: false, message: '补充记录不存在' });
     if (String(supp.staffId) !== String(req.staff._id)) return res.status(403).json({ success: false, message: '只能删除自己的补充记录' });
+    if (supp.kind === 'ad_hoc_visit' && record.sourceOrderId) {
+      if (await FollowUp.exists({ sourceType: 'order', sourceOrderId: record.sourceOrderId, workflowKey: 'medical_proxy:post_visit_audit', status: 'completed' })) return res.status(409).json({ success: false, message: '健管审核已完成，不能删除加诊补录；请追加更正说明' });
+      const urls = (supp.attachments || []).map(file => file.url).filter(Boolean);
+      if (urls.length) {
+        const filter = { user: record.patientId, sourceType: 'order', sourceOrderId: record.sourceOrderId, uploadedBy: req.staff._id, fileUrl: { $in: urls } };
+        if (await MedicalReport.exists({ ...filter, audit_status: 'audited' })) return res.status(409).json({ success: false, message: '加诊资料已经审核，不能删除补录；请追加更正说明' });
+        await MedicalReport.deleteMany({ ...filter, audit_status: 'unaudited' });
+      }
+    }
     supp.deleteOne();
     await record.save();
-    res.json({ success: true, data: record });
+    res.json({ success: true, data: withSignedServiceRecord(record) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -5978,7 +6031,7 @@ router.get('/patients/:id/service-records', staffAuth, async (req, res) => {
     .sort({ date: -1 })
     .populate('staffId', 'name role');
   // 早期测试版曾把通用AI研判伪装成正式阶段评估；仅展示真正由PhaseAssessment模板任务产生并审核的记录。
-  res.json({ success: true, data: records.filter(record => record.type !== 'phase_assessment' || record.sourcePhaseAssessmentId) });
+  res.json({ success: true, data: records.filter(record => record.type !== 'phase_assessment' || record.sourcePhaseAssessmentId).map(withSignedServiceRecord) });
 });
 
 // 心理健康评估已改为走问卷库（Epworth/SCL90/SDS/SAS，questionnaire.js /:id/submit 自动写入 User.psychAssessments）

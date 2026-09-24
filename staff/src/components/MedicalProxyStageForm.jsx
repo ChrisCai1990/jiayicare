@@ -60,6 +60,7 @@ export function validateMedicalProxyStage(stage, value) {
   const appointmentRequirement = stage === 'appointment_review' ? { ...parseAppointmentRequirement(value.serviceContent), ...value } : null
   if (stage === 'appointment_review' && (!appointmentRequirement.baseContent?.trim() || ['clinicType', 'insuranceUse'].some(key => !appointmentRequirement[key]?.trim()) || !value.preferredDateStart || !value.preferredDateEnd || value.preferredDateEnd < value.preferredDateStart)) return '请保留原约诊需求，并完善门诊类型、费用与保险及期望日期区间'
   if (stage === 'post_visit_audit' && (!value.reportIds?.length && !value.noMaterialsConfirmed)) return '请选择就诊后资料，或确认本次无资料'
+  if (stage === 'post_visit_audit' && value.medicalEscort && (!value.auditItems?.length || value.auditItems.some(item => !item.reportIds?.length && !item.noMaterial))) return '请逐项对应审核资料或确认该项目确无资料'
   if (stage === 'post_visit_audit' && !value.auditSummary?.trim()) return '请填写健管专员审核结论'
   if (stage === 'post_visit_review' && !value.reviewSummary?.trim()) return '请查看报告并填写健康顾问查看结论'
   const hasAttachment = key => value[key]?.some(file => file?.url)
@@ -81,7 +82,7 @@ export function validateMedicalProxyStage(stage, value) {
   return ''
 }
 
-export default function MedicalProxyStageForm({ task, value = {}, onChange, reports = [], staffList = [], onOpenReport }) {
+export default function MedicalProxyStageForm({ task, value = {}, onChange, reports = [], serviceRecords = [], staffList = [], onOpenReport }) {
   const stage = medicalProxyStage(task)
   const appointmentRequirementText = value.planSnapshot?.serviceContent || task?.formData?.planSnapshot?.serviceContent || task?.sourceOrderId?.serviceRequirements || ''
   const appointmentRequirement = parseAppointmentRequirement(appointmentRequirementText)
@@ -98,7 +99,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
       ? <textarea className="form-control" rows={rows} value={value[key] || ''} onChange={e => set(key, e.target.value)} />
       : <input className="form-control" type={type} value={value[key] || ''} onChange={e => set(key, e.target.value)} />}
   </label>
-  const escortPlan = value.planSnapshot?.medicalEscort === true ? value.planSnapshot : value.medicalEscort === true ? value : task?.formData?.planSnapshot?.medicalEscort === true ? task.formData.planSnapshot : task?.sourceOrderId?.medicalProxyPlan || value.planSnapshot || {}
+  const escortPlan = value.planSnapshot?.medicalEscort === true ? value.planSnapshot : task?.formData?.planSnapshot?.medicalEscort === true ? task.formData.planSnapshot : task?.sourceOrderId?.medicalProxyPlan?.medicalEscort === true ? task.sourceOrderId.medicalProxyPlan : value.medicalEscort === true ? value : value.planSnapshot || {}
   const escortSummary = <div style={{ display: 'grid', gap: 7, background: '#F5F8F6', border: '1px solid #DCE8E1', borderRadius: 8, padding: 12, fontSize: 13 }}>
     <div style={{ fontWeight: 700, color: '#1E6B50' }}>{escortPlan.adHocConsultation ? '客户现场确认的临时加诊信息' : '健康顾问提交的陪同服务信息'}</div>
     <div>陪同类型：{({ consultation: '陪同看诊', exam: '陪同检查', checkup: '陪同体检', treatment: '陪同治疗' })[escortPlan.escortCategory] || escortPlan.escortCategory || '未填写'}</div>
@@ -133,6 +134,16 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
   if (stage === 'post_visit_audit') {
     const submittedAttachments = ['medicalRecordAttachments', 'prescriptionAttachments', 'examReportAttachments'].flatMap(key => value.executionSnapshot?.[key] || [])
     const submittedReportIds = new Set((submittedAttachments.length ? value.reportIds || [] : []).map(String))
+    const planItems = escortPlan.escortCategory === 'exam' && escortPlan.escortExams?.length
+      ? escortPlan.escortExams.map((item, index) => ({ key: `plan:${index}`, title: `检查 ${index + 1} · ${item.item || item.department || '待核对'}` }))
+      : escortPlan.escortCategory === 'treatment' && escortPlan.escortTreatments?.length
+        ? escortPlan.escortTreatments.map((item, index) => ({ key: `plan:${index}`, title: `治疗 ${index + 1} · ${item.item || item.department || '待核对'}` }))
+        : escortPlan.escortDepartments?.length
+          ? escortPlan.escortDepartments.map((item, index) => ({ key: `plan:${index}`, title: `门诊 ${index + 1} · ${item.department || '待核对'}${item.expert ? ` · ${item.expert}` : ''}` }))
+          : [{ key: 'plan:0', title: `本次就医 · ${escortPlan.department || escortPlan.hospital || '待核对'}` }]
+    const orderId = String(task?.sourceOrderId?._id || task?.sourceOrderId || '')
+    const linkedRecord = serviceRecords.find(record => String(record.sourceOrderId || '') === orderId && record.type === 'medical_visit')
+    const auditItems = isMedicalEscort ? [...planItems, ...(linkedRecord?.supplements || []).filter(item => item.kind === 'ad_hoc_visit').map(item => ({ key: `supp:${item._id}`, title: `临时加诊 · ${item.visit?.department || '待核对'} · ${item.visit?.expert || ''}`, note: item.content }))] : []
     const eligible = reports.filter(report => isMedicalEscort
       ? submittedReportIds.has(String(report._id))
       : (!value.appointmentAt || new Date(report.createdAt) >= new Date(value.appointmentAt)))
@@ -143,13 +154,25 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
         <div style={{ whiteSpace: 'pre-wrap' }}>陪同执行结果、现场情况和后续事项：{value.executionSnapshot?.executionResult || '未填写'}</div>
         <div>提交资料：{submittedAttachments.length} 份（病历、处方和检验检查报告已分类，请在下方逐份打开审核）</div>
       </div>}
-      {!eligible.length && <div style={{ color: '#B45309', fontSize: 13 }}>暂无本次就诊后上传的报告。</div>}
-      {eligible.map(report => <label key={report._id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+      {isMedicalEscort && <div style={{ display: 'grid', gap: 8 }}>
+        <div style={{ fontWeight: 700, color: '#1E6B50', fontSize: 13 }}>逐项核对本次就医资料</div>
+        {auditItems.map(item => { const selected = (value.auditItems || []).find(row => row.key === item.key) || {}; return <div key={item.key} style={{ border: '1px solid #DCE8E1', borderRadius: 8, padding: 10, display: 'grid', gap: 5, fontSize: 13 }}>
+          <strong>{item.title}</strong>{item.note && <span>{item.note}</span>}
+          {reports.filter(report => report.audit_status === 'audited' && (!task?.sourceOrderId?.scheduledAt || new Date(report.createdAt) >= new Date(task.sourceOrderId.scheduledAt))).map(report => <label key={report._id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input type="checkbox" checked={(selected.reportIds || []).map(String).includes(String(report._id))} onChange={e => { const selectedIds = e.target.checked ? [...new Set([...(selected.reportIds || []).map(String), String(report._id)])] : (selected.reportIds || []).filter(id => String(id) !== String(report._id)); const rows = (value.auditItems || []).filter(row => row.key !== item.key); const next = [...rows, { key: item.key, reportIds: selectedIds, noMaterial: false }]; onChange({ ...value, auditItems: next, reportIds: [...new Set(next.flatMap(row => row.reportIds || []))], noMaterialsConfirmed: false }) }} />
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => onOpenReport?.(report._id, report.title)}>{report.title || '报告'}</button>
+          </label>)}
+          <label><input type="checkbox" checked={!!selected.noMaterial} onChange={e => { const rows = (value.auditItems || []).filter(row => row.key !== item.key); const next = [...rows, { key: item.key, reportIds: [], noMaterial: e.target.checked }]; onChange({ ...value, auditItems: next, reportIds: [...new Set(next.flatMap(row => row.reportIds || []))], noMaterialsConfirmed: next.length === auditItems.length && next.every(row => row.noMaterial) }) }} /> 该项目确无资料</label>
+        </div> })}
+      </div>}
+      {!isMedicalEscort && !eligible.length && <div style={{ color: '#B45309', fontSize: 13 }}>暂无本次就诊后上传的报告。</div>}
+      {isMedicalEscort && reports.some(report => report.audit_status !== 'audited' && String(report.sourceOrderId?._id || report.sourceOrderId || '') === orderId) && <div style={{ color: '#B45309', fontSize: 13 }}>本次服务仍有待审核资料，请先到报告管理逐份审核，再返回此处关联。</div>}
+      {!isMedicalEscort && eligible.map(report => <label key={report._id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
         <input type="checkbox" checked={(value.reportIds || []).map(String).includes(String(report._id))} onChange={e => set('reportIds', e.target.checked ? [...new Set([...(value.reportIds || []), String(report._id)])] : (value.reportIds || []).filter(id => String(id) !== String(report._id)))} />
         <button type="button" className="btn btn-secondary btn-sm" onClick={() => onOpenReport?.(report._id, report.title)}>{report.title || '报告'}</button>
         <span style={{ color: report.audit_status === 'audited' ? '#1E6B50' : '#B45309' }}>{report.audit_status === 'audited' ? '已审核' : '待审核'}</span>
       </label>)}
-      <label style={{ fontSize: 13 }}><input type="checkbox" checked={!!value.noMaterialsConfirmed} onChange={e => onChange({ ...value, noMaterialsConfirmed: e.target.checked, reportIds: e.target.checked ? [] : (value.reportIds || []) })} /> {isMedicalEscort ? '本次陪同确认没有报告、病历或其他资料需要归档' : '本次客户及健管专员确认没有检查资料或病历可上传'}</label>
+      {!isMedicalEscort && <label style={{ fontSize: 13 }}><input type="checkbox" checked={!!value.noMaterialsConfirmed} onChange={e => onChange({ ...value, noMaterialsConfirmed: e.target.checked, reportIds: e.target.checked ? [] : (value.reportIds || []) })} /> 本次客户及健管专员确认没有检查资料或病历可上传</label>}
       {input('auditSummary', '健管专员审核结论', 3)}
     </div>
   }

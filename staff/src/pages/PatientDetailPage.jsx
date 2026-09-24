@@ -2507,6 +2507,7 @@ export default function PatientDetailPage() {
 
   // 执行随访：填写随访结果、标记完成/随访中，逻辑与 FollowUpsPage.jsx 一致
   const openExec = (f) => {
+    if (medicalProxyStage(f) === 'post_visit_audit') { loadServiceRecords(); loadReports() }
     // Workbench appointment projection is not an execution checklist. Keep the
     // advisor plan visible and use the dedicated receipt without ending follow-up.
     if (f.annualBookingTask === true || annualDispatch.dedicated(f)) {
@@ -10834,7 +10835,7 @@ export default function PatientDetailPage() {
               <OnsiteBookingCard key={`onsite-exec-${execItem._id}`} task={execItem} staff={staff} />
               {execItem.isBlocked && <div style={{ padding: '10px 12px', borderRadius: 9, background: '#F2F4F7', color: '#596273', fontSize: 13, border: '1px solid #D9DEE7' }}>⏳ {isOutpatientPostVisitReviewTask(execItem) ? '当前等待健管专员在报告管理中审核本次门诊病历和检验检查单；两份资料均审核通过后，本任务会自动解锁。' : /门诊一站式.*检查及专家门诊陪诊与归档/.test(execItem.theme || '') ? `当前已进入陪诊及资料闭环阶段：${execItem.content || '等待陪诊专员完成陪诊、资料审核及健康顾问随访计划。'}` : `当前仅供查看：正在等待上一环节“${execItem.dependsOnTaskId?.theme || '就医专员陪诊'}”完成，完成后本任务会自动解锁。`}</div>}
               <fieldset disabled={!!execItem.isBlocked} style={{ border: 0, padding: 0, margin: 0, display: 'grid', gap: 14, minWidth: 0 }}>
-              {checkupConclusionStage(execItem) ? <CheckupConclusionForm onMergedMode={checkupMerged => setExecForm(form => ({ ...form, checkupMerged }))} onSaved={() => window.location.reload()} task={execItem} value={execForm.content} onChange={content => setExecForm(form => ({ ...form, content }))} /> : isCheckupAppointmentBookingTask(execItem) ? <CheckupAppointmentBookingForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isCheckupMedicalExecutionTask(execItem) ? <CheckupMedicalExecutionForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isCheckupManagerReviewTask(execItem) ? <CheckupManagerReviewForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} onOpenReport={(reportId, title) => openReportDetail({ _id: reportId, title: title || '本次服务资料' })} /> : medicationProxyStage(execItem) ? <MedicationProxyStageForm task={execItem} value={execForm.formData} staffList={staffList} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : medicalProxyStage(execItem) ? <MedicalProxyStageForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} reports={reports} staffList={staffList} onOpenReport={(reportId, title) => openReportDetail({ _id: reportId, title: title || '本次服务资料' })} /> : isOutpatientEscortVisitTask(execItem) ? <OutpatientEscortVisitForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientPostVisitReviewTask(execItem) ? <OutpatientPostVisitReviewForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientAppointmentTask(execItem) ? <OutpatientAppointmentForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientStaffAssignmentTask(execItem) ? <OutpatientStaffAssignmentForm task={execItem} value={execForm.formData} staffList={staffList} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientProxyVisitTask(execItem) ? <OutpatientProxyVisitForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientAdvisorAssessmentTask(execItem) ? <OutpatientAdvisorAssessmentForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isCheckupReportCollectionTask(execItem) ? <CheckupReportCollectionForm task={execItem} plans={plans} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} /> : isCheckupBookingTask(execItem) ? <CheckupBookingForm value={execForm.appointmentDetails} onChange={appointmentDetails => setExecForm(form => ({ ...form, appointmentDetails }))} /> : execItem.taskRole && <ServiceTaskChecklist mode={execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor'} purposes={execItem.taskPurposes || []} source={execItem.dependsOnTaskId?.serviceChecklist || []} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} />}
+              {checkupConclusionStage(execItem) ? <CheckupConclusionForm onMergedMode={checkupMerged => setExecForm(form => ({ ...form, checkupMerged }))} onSaved={() => window.location.reload()} task={execItem} value={execForm.content} onChange={content => setExecForm(form => ({ ...form, content }))} /> : isCheckupAppointmentBookingTask(execItem) ? <CheckupAppointmentBookingForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isCheckupMedicalExecutionTask(execItem) ? <CheckupMedicalExecutionForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isCheckupManagerReviewTask(execItem) ? <CheckupManagerReviewForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} onOpenReport={(reportId, title) => openReportDetail({ _id: reportId, title: title || '本次服务资料' })} /> : medicationProxyStage(execItem) ? <MedicationProxyStageForm task={execItem} value={execForm.formData} staffList={staffList} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : medicalProxyStage(execItem) ? <MedicalProxyStageForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} reports={reports} serviceRecords={serviceRecords} staffList={staffList} onOpenReport={(reportId, title) => openReportDetail({ _id: reportId, title: title || '本次服务资料' })} /> : isOutpatientEscortVisitTask(execItem) ? <OutpatientEscortVisitForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientPostVisitReviewTask(execItem) ? <OutpatientPostVisitReviewForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientAppointmentTask(execItem) ? <OutpatientAppointmentForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientStaffAssignmentTask(execItem) ? <OutpatientStaffAssignmentForm task={execItem} value={execForm.formData} staffList={staffList} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientProxyVisitTask(execItem) ? <OutpatientProxyVisitForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientAdvisorAssessmentTask(execItem) ? <OutpatientAdvisorAssessmentForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isCheckupReportCollectionTask(execItem) ? <CheckupReportCollectionForm task={execItem} plans={plans} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} /> : isCheckupBookingTask(execItem) ? <CheckupBookingForm value={execForm.appointmentDetails} onChange={appointmentDetails => setExecForm(form => ({ ...form, appointmentDetails }))} /> : execItem.taskRole && <ServiceTaskChecklist mode={execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor'} purposes={execItem.taskPurposes || []} source={execItem.dependsOnTaskId?.serviceChecklist || []} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} />}
               {medicalProxyStage(execItem) === 'collect' && <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setExecItem(null); setTab('reports'); loadReports() }}>查看客户上传资料</button>}
               {['audit', 'post_visit_audit'].includes(medicalProxyStage(execItem)) && <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setExecItem(null); setTab('reports'); loadReports() }}>进入报告管理完成审核</button>}
               {staff?.role === 'medicalAssistant' && !execItem.isBlocked && !/临时加诊/.test(execItem.theme || '') && ((medicalProxyStage(execItem) === 'execute' && isMedicalEscortTask(execItem)) || isOutpatientEscortVisitTask(execItem)) && <AdHocConsultationForm key={execItem._id} task={execItem} />}
@@ -12255,6 +12256,10 @@ export default function PatientDetailPage() {
           const [attachUploading, setAttachUploading] = React.useState(false)
           const [suppContent, setSuppContent] = React.useState('')
           const [suppDate, setSuppDate] = React.useState(new Date().toISOString().slice(0,10))
+          const [suppKind, setSuppKind] = React.useState('note')
+          const [suppVisit, setSuppVisit] = React.useState({ hospital: '', department: '', expert: '', appointmentAt: '' })
+          const [suppAttachments, setSuppAttachments] = React.useState([])
+          const [suppError, setSuppError] = React.useState('')
           const [saving, setSaving] = React.useState(false)
           const [editingSuppId, setEditingSuppId] = React.useState(null)
           const [editSuppContent, setEditSuppContent] = React.useState('')
@@ -12304,12 +12309,15 @@ export default function PatientDetailPage() {
           }
 
           const handleSupplement = async () => {
-            if (!suppContent.trim()) { toast('请填写补充内容'); return }
+            setSuppError('')
+            if (!suppContent.trim()) { setSuppError('请填写补充内容'); return }
+            if (attachUploading) { setSuppError('请等待附件上传完成'); return }
             setSaving(true)
             try {
-              await staffAPI.addServiceSupplement(showSRDetail._id, { content: suppContent, date: suppDate })
-              toast('补充记录已添加'); setShowSRDetail(null); loadServiceRecords()
-            } catch (err) { toast(err.message || '添加失败') }
+              if (suppKind === 'ad_hoc_visit' && (!suppVisit.hospital.trim() || !suppVisit.department.trim() || !suppVisit.expert.trim() || !suppVisit.appointmentAt)) { setSuppError('请填写临时加诊的医院、科室、专家和时间'); return }
+              const res = await staffAPI.addServiceSupplement(showSRDetail._id, { content: suppContent, date: suppDate, kind: suppKind, visit: suppVisit, attachments: suppAttachments })
+              setShowSRDetail(null); loadServiceRecords(); loadReports(); toast(res.warning || '补充记录已添加')
+            } catch (err) { setSuppError(err.message || '添加失败') }
             finally { setSaving(false) }
           }
 
@@ -12350,7 +12358,8 @@ export default function PatientDetailPage() {
                           <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 6 }}>附件（{showSRDetail.attachments.length}）</div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                             {showSRDetail.attachments.map((a, i) => {
-                              const s = a.url.startsWith('/') ? API_ORIGIN + a.url : a.url
+                              const link = a.previewUrl || a.url || ''
+                              const s = link.startsWith('/') ? API_ORIGIN + link : link
                               return (
                                 <a key={i} href={s} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: '#1E6B50', display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}>
                                   {a.mimeType === 'application/pdf' ? '📄' : '🖼'} {a.name}
@@ -12390,7 +12399,11 @@ export default function PatientDetailPage() {
                                     </div>
                                   </div>
                                 ) : (
-                                  <div style={{ whiteSpace: 'pre-wrap' }}>{s.content}</div>
+                                  <div style={{ whiteSpace: 'pre-wrap' }}>
+                                    {s.kind === 'ad_hoc_visit' && <div style={{ fontWeight: 700, marginBottom: 4 }}>临时加诊 · {s.visit?.hospital} · {s.visit?.department} · {s.visit?.expert} · {s.visit?.appointmentAt ? new Date(s.visit.appointmentAt).toLocaleString('zh-CN') : ''}</div>}
+                                    {s.content}
+                                    {(s.attachments || []).map((a, index) => { const link = a.previewUrl || a.url || ''; return <div key={index}><a href={link.startsWith('/') ? API_ORIGIN + link : link} target="_blank" rel="noreferrer">{a.name || `附件 ${index + 1}`}</a></div> })}
+                                  </div>
                                 )}
                               </div>
                             )
@@ -12433,8 +12446,14 @@ export default function PatientDetailPage() {
                   {mode === 'supplement' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       <div style={{ fontSize: 13, color: '#8AA89C', marginBottom: 4 }}>为此记录追加补充，不影响原始内容</div>
+                      {showSRDetail.type === 'medical_visit' && (staff?.role === 'superadmin' || String(showSRDetail.staffId?._id || showSRDetail.staffId || '') === String(staff?._id || '')) && <div><label className="form-label">补充类型</label><select className="form-input" value={suppKind} onChange={e => setSuppKind(e.target.value)}><option value="note">一般补充</option><option value="ad_hoc_visit">临时加诊</option></select></div>}
+                      {suppKind === 'ad_hoc_visit' && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                        {[['hospital', '医院'], ['department', '科室'], ['expert', '专家'], ['appointmentAt', '就诊时间']].map(([key, label]) => <div key={key}><label className="form-label">{label} *</label><input className="form-input" type={key === 'appointmentAt' ? 'datetime-local' : 'text'} value={suppVisit[key]} onChange={e => setSuppVisit(v => ({ ...v, [key]: e.target.value }))} /></div>)}
+                      </div>}
                       <div><label className="form-label">补充日期</label><input className="form-input" type="date" value={suppDate} onChange={e => setSuppDate(e.target.value)} /></div>
-                      <div><label className="form-label">补充内容</label><textarea className="form-input" rows={5} placeholder="如：1周后随访，专病方案调整情况..." value={suppContent} onChange={e => setSuppContent(e.target.value)} /></div>
+                      <div><label className="form-label">补充内容 *</label><textarea className="form-input" rows={5} placeholder={suppKind === 'ad_hoc_visit' ? '记录加诊原因、就诊结果和后续安排' : '补充实际情况'} value={suppContent} onChange={e => setSuppContent(e.target.value)} /></div>
+                      {suppKind === 'ad_hoc_visit' && <div><label className="form-label">加诊资料（可选）</label><input type="file" accept="image/*,.pdf" multiple onChange={async e => { const files = Array.from(e.target.files || []); e.target.value = ''; setAttachUploading(true); try { for (const file of files) { const res = await staffAPI.uploadReportFile(file, () => {}); setSuppAttachments(previous => [...previous, { url: res.url, ossKey: res.ossKey || '', name: file.name, mimeType: res.mimeType, fileSize: String(res.fileSize || '') }]) } } catch (error) { setSuppError(error.message || '上传失败') } finally { setAttachUploading(false) } }} />{attachUploading && <span>上传中…</span>}{suppAttachments.map((file, index) => <div key={index}>{file.name} <button type="button" onClick={() => setSuppAttachments(files => files.filter((_, i) => i !== index))}>移除</button></div>)}</div>}
+                      {suppError && <div style={{ color: '#B42318', fontSize: 13 }}>{suppError}</div>}
                     </div>
                   )}
                 </div>
@@ -12447,7 +12466,7 @@ export default function PatientDetailPage() {
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button className="btn btn-secondary" onClick={() => setShowSRDetail(null)}>关闭</button>
                     {mode === 'edit' && <button className="btn btn-primary" disabled={saving} onClick={handleEdit}>{saving ? '保存中...' : '保存'}</button>}
-                    {mode === 'supplement' && <button className="btn btn-primary" disabled={saving} onClick={handleSupplement}>{saving ? '添加中...' : '添加补充'}</button>}
+                    {mode === 'supplement' && <button className="btn btn-primary" disabled={saving || attachUploading} onClick={handleSupplement}>{saving ? '添加中...' : '添加补充'}</button>}
                   </div>
                 </div>
               </div>
