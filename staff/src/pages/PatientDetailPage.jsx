@@ -2728,6 +2728,26 @@ export default function PatientDetailPage() {
   const loadServiceRecords = async () => {
     try { const res = await staffAPI.getPatientServiceRecords(id); setServiceRecords(res.data) } catch {}
   }
+  const openServiceRecordAttachment = async (event, recordId, index, supplementId) => {
+    event.preventDefault()
+    // 私有附件链接只有十分钟有效；点击时重新签发，避免长时间停留在档案页后打开旧链接。
+    const popup = window.open('', '_blank')
+    if (popup) popup.opener = null
+    try {
+      const res = await staffAPI.getPatientServiceRecords(id)
+      const record = (res.data || []).find(item => String(item._id) === String(recordId))
+      const supplement = supplementId && (record?.supplements || []).find(item => String(item._id) === String(supplementId))
+      const attachment = (supplementId ? supplement?.attachments : record?.attachments)?.[index]
+      const link = attachment?.previewUrl
+      if (!link || link === attachment.url) throw new Error('附件链接暂不可用，请稍后重试')
+      const target = link.startsWith('/') ? API_ORIGIN + link : link
+      if (popup) popup.location.replace(target)
+      else window.location.assign(target)
+    } catch (error) {
+      if (popup) popup.close()
+      toast(error.message || '附件打开失败，请重试')
+    }
+  }
   const loadPatientReferrals = async () => {
     try { const res = await staffAPI.getPatientReferrals(id); setPatientReferrals(res.data?.referrals || []) } catch {}
   }
@@ -12358,10 +12378,8 @@ export default function PatientDetailPage() {
                           <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 6 }}>附件（{showSRDetail.attachments.length}）</div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                             {showSRDetail.attachments.map((a, i) => {
-                              const link = a.previewUrl || a.url || ''
-                              const s = link.startsWith('/') ? API_ORIGIN + link : link
                               return (
-                                <a key={i} href={s} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: '#1E6B50', display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}>
+                                <a key={i} href="#" onClick={event => openServiceRecordAttachment(event, showSRDetail._id, i)} style={{ fontSize: 13, color: '#1E6B50', display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}>
                                   {a.mimeType === 'application/pdf' ? '📄' : '🖼'} {a.name}
                                 </a>
                               )
@@ -12402,7 +12420,7 @@ export default function PatientDetailPage() {
                                   <div style={{ whiteSpace: 'pre-wrap' }}>
                                     {s.kind === 'ad_hoc_visit' && <div style={{ fontWeight: 700, marginBottom: 4 }}>临时加诊 · {s.visit?.hospital} · {s.visit?.department} · {s.visit?.expert} · {s.visit?.appointmentAt ? new Date(s.visit.appointmentAt).toLocaleString('zh-CN') : ''}</div>}
                                     {s.content}
-                                    {(s.attachments || []).map((a, index) => { const link = a.previewUrl || a.url || ''; return <div key={index}><a href={link.startsWith('/') ? API_ORIGIN + link : link} target="_blank" rel="noreferrer">{a.name || `附件 ${index + 1}`}</a></div> })}
+                                    {(s.attachments || []).map((a, index) => <div key={index}><a href="#" onClick={event => openServiceRecordAttachment(event, showSRDetail._id, index, s._id)}>{a.name || `附件 ${index + 1}`}</a></div>)}
                                   </div>
                                 )}
                               </div>
