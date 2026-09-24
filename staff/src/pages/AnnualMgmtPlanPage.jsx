@@ -362,6 +362,11 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [preparation, setPreparation] = useState(null)
   const [closedLoopEnabled, setClosedLoopEnabled] = useState(true)
+  const [monthlyReviewEnabled, setMonthlyReviewEnabled] = useState(false)
+  useEffect(() => {
+    if (!patientMode) return
+    staffAPI.getMonthlyServiceReviews(id).then(result => setMonthlyReviewEnabled(result.enabled === true)).catch(() => setMonthlyReviewEnabled(false))
+  }, [patientMode, id])
   const [continuitySource, setContinuitySource] = useState(null)
   const [generationCoverage, setGenerationCoverage] = useState([])
   useEffect(() => { setLastGenerationKey(''); setGenerationCoverage([]) }, [id, year, planType])
@@ -787,6 +792,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           </select>
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          {patientMode && monthlyReviewEnabled && <button className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${id}/monthly-reviews`)}>月度服务复盘</button>}
           {pushedAt && !dirty && (
             <span style={{ fontSize: 12, color: '#22A06B', background: '#E8F5EF', padding: '4px 10px', borderRadius: 20 }}>
               ✓ 已推送 {new Date(pushedAt).toLocaleDateString('zh-CN')}
