@@ -36,13 +36,13 @@ test('AI todo aggregation keeps medical reports inside the current staff ownersh
   assert.match(todoRoute, /const reportFilter = \{[\s\S]*user: \{ \$in: myPatientIds \}/);
 });
 
-test('AI todo aggregation applies one final ownership gate to every non-superadmin task', () => {
+test('AI todo aggregation scopes patient tasks while allowing non-patient GEO review', () => {
   const todoRoute = staffRouteSource.slice(
     staffRouteSource.indexOf("router.get('/ai-todos'"),
     staffRouteSource.indexOf("router.patch('/service-proposals/:id/review'"),
   );
 
-  assert.match(todoRoute, /const scopedTodos = isSuper \? todos : todos\.filter\(todo => inMyScope\(todo\.patientId\)\)/);
+  assert.match(todoRoute, /const scopedTodos = isSuper \? todos : todos\.filter\(todo => todo\.type === 'geo_content_review' \|\| inMyScope\(todo\.patientId\)\)/);
   assert.match(todoRoute, /data: scopedTodos, total: scopedTodos\.length/);
 });
 

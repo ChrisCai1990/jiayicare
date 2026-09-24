@@ -35,6 +35,9 @@ const MedicalReport = require('../models/MedicalReport');
 const { REPORT_LIST_PROJECTION, toReportListItem } = require('../utils/reportListPayload');
 const HealthPlan = require('../models/HealthPlan');
 const KnowledgeItem = require('../models/KnowledgeItem');
+const ContentReview = require('../models/ContentReview');
+const { ensureContentReviews, advanceReview } = require('../utils/contentReviewWorkflow');
+const { publishGeoArticle } = require('../utils/geoStaticPublisher');
 const PushRecord = require('../models/PushRecord');
 const Commission = require('../models/Commission');
 const ServiceRecord = require('../models/ServiceRecord');
@@ -11504,6 +11507,67 @@ const TODO_REVIEW_ROLE = {
   service_proposal_review: 'healthPlanner',
 };
 
+// GEO 知识稿审核：专业审核后由健康规划师一次确认并直接发布官网。
+router.get('/content-reviews', staffAuth, async (req, res) => {
+  try {
+    const role = req.staff.role;
+    const isSuper = role === 'superadmin';
+    if (!isSuper && !['nutritionist', 'familyDoctor', 'healthPlanner'].includes(role)) return res.status(403).json({ success: false, message: '当前角色无内容审核权限' });
+    await ensureContentReviews(ContentReview);
+    const history = req.query.history === '1';
+    const filter = isSuper
+      ? {}
+      : history
+        ? { $or: [{ 'nutritionReview.reviewedBy': req.staff._id }, { 'doctorReview.reviewedBy': req.staff._id }, { 'auditLog.by': req.staff._id }] }
+        : { currentRole: role, status: role === 'healthPlanner' ? 'ready_to_publish' : { $in: ['pending', 'changes_requested'] } };
+    const data = await ContentReview.find(filter).sort({ updatedAt: -1 }).lean();
+    res.json({ success: true, data });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.patch('/content-reviews/:id/review', staffAuth, async (req, res) => {
+  try {
+    const role = req.staff.role;
+    if (!['superadmin', 'nutritionist', 'familyDoctor', 'healthPlanner'].includes(role)) return res.status(403).json({ success: false, message: '当前角色无内容审核权限' });
+    const record = await ContentReview.findById(req.params.id);
+    if (!record) return res.status(404).json({ success: false, message: '审核稿不存在' });
+    if (role === 'healthPlanner' && req.body?.action === 'publish') {
+      if (record.currentRole !== 'healthPlanner' || record.status !== 'ready_to_publish') throw new Error('该稿件尚未完成专业审核');
+      const checklist = req.body?.checklist || {};
+      const requiredChecks = ['professionalReviewCompleted', 'contentAndBoundaryChecked', 'contactAndLinksChecked', 'privacyChecked', 'scopeChecked'];
+      if (!requiredChecks.every(key => checklist[key] === true)) throw new Error('请完成发布前核对清单');
+      const now = new Date();
+      record.publishChecklist = { ...Object.fromEntries(requiredChecks.map(key => [key, true])), checkedBy: req.staff._id, checkedByName: req.staff.name || '', checkedAt: new Date() };
+      const alreadyPublished = await ContentReview.find({ status: 'published' }).select('slug').lean();
+      publishGeoArticle({ slug: record.slug, publishedBy: req.staff.name || '健康规划师', publishedAt: now, alreadyPublishedSlugs: alreadyPublished.map(item => item.slug).filter(Boolean) });
+      record.currentRole = '';
+      record.status = 'published';
+      record.auditLog.push({ action: 'publish', role, by: req.staff._id, byName: req.staff.name || '', at: now });
+      await record.save();
+      return res.json({ success: true, data: record, publicationReady: false, message: '已发布到官网知识中心。' });
+    }
+    if (role === 'healthPlanner' && req.body?.action === 'return') {
+      if (record.currentRole !== 'healthPlanner' || record.status !== 'ready_to_publish') throw new Error('该稿件当前不在发布确认环节');
+      const note = String(req.body?.note || '').trim();
+      if (!note) throw new Error('退回时请说明修改意见');
+      const previousRole = record.reviewChain.slice().reverse().find(Boolean);
+      if (!previousRole) throw new Error('未找到可退回的专业审核环节');
+      record.currentRole = previousRole;
+      record.status = 'changes_requested';
+      record.auditLog.push({ action: 'return', role, note, by: req.staff._id, byName: req.staff.name || '', at: new Date() });
+      await record.save();
+      return res.json({ success: true, data: record, message: `已退回给${previousRole === 'nutritionist' ? '营养师' : '健康顾问'}修改。` });
+    }
+    const actingRole = role === 'superadmin' ? record.currentRole : role;
+    advanceReview(record, actingRole, req.body?.action, req.body?.note, req.staff);
+    await record.save();
+    res.json({ success: true, data: record, publicationReady: record.status === 'approved', message: record.status === 'approved' ? '审核已完成，文章已标记为待发布，尚未公开。' : '审核结果已保存。' });
+  } catch (err) {
+    console.error('[content-review] operation failed', { recordId: req.params.id, role: req.staff?.role, action: req.body?.action, message: err.message });
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
+
 router.get('/ai-todos', staffAuth, async (req, res) => {
   try {
     const role = req.staff.role;
@@ -11522,6 +11586,27 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     const now = new Date();
     const DAY = 24 * 60 * 60 * 1000;
     const todos = [];
+
+    // 官网 GEO 稿件没有绑定会员，不能套用会员归属过滤；只展示当前审核角色的稿件。
+    if (isSuper || ['nutritionist', 'familyDoctor', 'healthPlanner'].includes(role)) {
+      await ensureContentReviews(ContentReview);
+      const reviewFilter = isSuper
+        ? { status: { $in: ['pending', 'changes_requested', 'ready_to_publish'] }, currentRole: { $in: ['nutritionist', 'familyDoctor', 'healthPlanner'] } }
+        : { status: role === 'healthPlanner' ? 'ready_to_publish' : { $in: ['pending', 'changes_requested'] }, currentRole: role };
+      const contentReviews = await ContentReview.find(reviewFilter).sort({ updatedAt: -1 }).limit(50).lean();
+      contentReviews.forEach(item => todos.push({
+        id: `geo_content_${item._id}`,
+        type: 'geo_content_review',
+        label: item.currentRole === 'healthPlanner' ? 'GEO 健康教育稿待发布确认' : item.currentRole === 'familyDoctor' ? 'GEO 健康教育稿待医师审核' : 'GEO 健康教育稿待营养审核',
+        priority: 3,
+        patientName: '官网 GEO 内容',
+        patientId: '',
+        summary: item.title,
+        createdAt: item.updatedAt || item.createdAt,
+        overdue: false,
+        link: `/content-reviews/${item._id}`,
+      }));
+    }
 
     // 会员归属过滤：AI待办此前只按"角色能不能审这个类型"过滤，完全没按"这个会员是不是自己名下"过滤——
     // 2026-07-07 反馈：会员潘孝银归属营养师吴苗苗，但营养师赵菲盈也能在自己的待审核列表里看到该会员的任务。
@@ -12101,7 +12186,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
 
     // 统一归属闸门：非超管的所有工作台任务最终都必须属于本人可见客户范围。
     // 各任务查询仍尽量提前按归属过滤以控制数据量；这里负责兜底，防止新增任务类型漏加条件。
-    const scopedTodos = isSuper ? todos : todos.filter(todo => inMyScope(todo.patientId));
+    // GEO 稿件不关联会员，须绕开会员归属闸门；其余任务仍严格按本人会员范围过滤。
+    const scopedTodos = isSuper ? todos : todos.filter(todo => todo.type === 'geo_content_review' || inMyScope(todo.patientId));
 
     // 按优先级排序：priority越小越紧急，同级按时间倒序；超时优先
     scopedTodos.sort((a, b) => {

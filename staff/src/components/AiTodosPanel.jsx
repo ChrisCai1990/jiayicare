@@ -45,6 +45,7 @@ const TYPE_CONFIG = {
   supply_fulfillment:  { icon: '🚚', label: '采购/配送待执行', color: '#7C3AED', priority: 2 },
   supply_receipt:      { icon: '✅', label: '购买/签收待确认', color: '#1E6B50', priority: 2 },
   service_proposal_review: { icon: '💼', label: '服务方案草稿待审核', color: '#1E6B50', priority: 2 },
+  geo_content_review: { icon: '🧾', label: 'GEO 内容待审核', color: '#7C3AED', priority: 3 },
 }
 
 function formatTime(date) {
@@ -62,7 +63,7 @@ const TODO_GROUPS = [
   { key: 'report', label: '报告与资料', types: ['report_parse','report_review','report_interpretation','report_plan_conflict','archive_review','summary_review','lifestyle_review','dietary_survey_review','medication_review','supplement_review'] },
   { key: 'plan', label: '方案与评估', types: ['trend_review','plan_review','nutrition_plan_review','checkup_plan_review','phase_assessment_review','annual_renewal_confirmation','followup_review','service_draft_review','medical_assist_plan_review','service_proposal_review'] },
   { key: 'risk', label: '风险与异常', types: ['risk_review','bp_alert_review','risk_alert','transfer_human','wecom_kf_handoff','checkup_handoff_attention','checkup_preparation_dispatch'] },
-  { key: 'content', label: '内容与安排', types: ['checkup_handoff_pending','push_review','draft_review','supply_intake','supply_medication_risk_review','supply_supplement_risk_review','supply_arrangement','supply_fulfillment','supply_receipt'] },
+  { key: 'content', label: '内容与安排', types: ['geo_content_review','checkup_handoff_pending','push_review','draft_review','supply_intake','supply_medication_risk_review','supply_supplement_risk_review','supply_arrangement','supply_fulfillment','supply_receipt'] },
 ]
 
 const SUPPLY_TYPES = new Set(['supply_intake','supply_medication_risk_review','supply_supplement_risk_review','supply_arrangement','supply_fulfillment','supply_receipt'])
@@ -189,6 +190,7 @@ export default function AiTodosPanel() {
             </span>
           )}
         </div>
+        {['nutritionist', 'familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && <button onClick={() => nav('/content-reviews')} style={{ border: 'none', background: 'none', color: '#1E6B50', cursor: 'pointer', fontSize: 12 }}>审核记录</button>}
       </div>
       {todos.length > 0 && (
         <div style={{ display: 'flex', gap: 8, padding: '10px 20px 6px', borderTop: '1px solid #F3EFE8', flexWrap: 'wrap' }}>

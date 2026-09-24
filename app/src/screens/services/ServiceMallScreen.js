@@ -149,6 +149,7 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errMsg, setErrMsg]       = useState('');
+  const [serviceProviderConsent, setServiceProviderConsent] = useState(false);
   // 多规格：默认选第一个规格
   const hasSpecs = !!(item?.servicePrices && item.servicePrices.length > 0);
   const [specIdx, setSpecIdx] = useState(0);
@@ -186,6 +187,10 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
   const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundApplied) * 100) / 100);
 
   const handleSubmit = async () => {
+    if (item.serviceProvider === 'jiayihui_health' && !serviceProviderConsent) {
+      setErrMsg('请先确认本次服务由杭州嘉医汇健康管理有限公司提供');
+      return;
+    }
     setSubmitting(true);
     setErrMsg('');
     try {
@@ -195,7 +200,7 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
       const res = await servicesAPI.order(
         item.id, noteWithSpec, isPay ? payMethod : undefined,
         isPay ? fundApplied : undefined, isPay ? couponId : undefined,
-        currentSpecLabel || undefined
+        currentSpecLabel || undefined, serviceProviderConsent
       );
       if (res.success) {
         setSubmitted(true);
@@ -420,6 +425,23 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
             multiline
             numberOfLines={3}
           />
+
+          <View style={styles.providerNoticeRow}>
+            <Ionicons name="shield-checkmark-outline" size={17} color={colors.primary} />
+            <Text style={styles.providerNoticeText}>本平台及健康管理服务由杭州嘉医汇健康管理有限公司提供。</Text>
+          </View>
+
+          {item.serviceProvider === 'jiayihui_health' && (
+            <TouchableOpacity
+              onPress={() => setServiceProviderConsent(value => !value)}
+              style={styles.providerConsentRow}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: serviceProviderConsent }}
+            >
+              <Ionicons name={serviceProviderConsent ? 'checkbox' : 'square-outline'} size={19} color={serviceProviderConsent ? colors.primary : colors.textMuted} />
+              <Text style={styles.providerConsentText}>我已知悉本次健康管理服务由杭州嘉医汇健康管理有限公司提供；平台将按隐私政策和必要范围处理服务信息。</Text>
+            </TouchableOpacity>
+          )}
 
           {!!errMsg && (
             <Text style={styles.errText}>{errMsg}</Text>
@@ -923,6 +945,10 @@ const styles = StyleSheet.create({
   errText: { fontSize: 13, color: colors.danger, marginBottom: spacing.sm, textAlign: 'center' },
   hintRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 4, marginBottom: spacing.lg },
   hintText: { flex: 1, fontSize: 11, color: colors.textMuted, lineHeight: 16 },
+  providerNoticeRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: spacing.md, padding: spacing.sm, backgroundColor: '#F6F8F7', borderRadius: radius.sm },
+  providerNoticeText: { flex: 1, fontSize: 12, lineHeight: 18, color: colors.textSecondary },
+  providerConsentRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: spacing.md, padding: spacing.sm, backgroundColor: '#F2F8F5', borderRadius: radius.sm },
+  providerConsentText: { flex: 1, fontSize: 12, lineHeight: 18, color: colors.textSecondary },
   modalBtns: { flexDirection: 'row', gap: spacing.sm },
   cancelBtn: {
     flex: 1, paddingVertical: 14, borderRadius: radius.md,

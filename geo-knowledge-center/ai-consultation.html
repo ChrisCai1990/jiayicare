@@ -41,11 +41,11 @@
         event.preventDefault(); if (!consented()) return; var text = message.value.trim(); if (!text) return;
         append(text, 'user'); history.push({ role: 'user', content: text }); message.value = '';
         try { var response = await fetch('/api/visitor-assistant/reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ consent: true, messages: history }) }); var payload = await response.json(); if (!response.ok || !payload.success) throw new Error(payload.message || '暂时无法回复'); var answer = payload.data.content; append(answer, 'assistant'); history.push({ role: 'assistant', content: answer }); }
-        catch (error) { append(error.message + ' 也可拨打客服电话19106761448。', 'assistant'); }
+        catch (error) { var hint = String(error.message || '暂时无法回复'); append(hint.includes('19106761448') ? hint : hint + ' 也可拨打客服电话19106761448。', 'assistant'); }
       });
       document.getElementById('handoff-form').addEventListener('submit', async function (event) {
-        event.preventDefault(); if (!consented()) return; var form = new FormData(event.currentTarget), result = document.getElementById('handoff-result'); var payload = { consent: true, source: source }; form.forEach(function (value, key) { payload[key] = value; });
-        try { var response = await fetch('/api/visitor-assistant/handoff', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); var body = await response.json(); if (!response.ok || !body.success) throw new Error(body.message || '提交失败'); result.textContent = body.message; event.currentTarget.reset(); }
+        event.preventDefault(); if (!consented()) return; var formElement = event.currentTarget, form = new FormData(formElement), result = document.getElementById('handoff-result'); var payload = { consent: true, source: source }; form.forEach(function (value, key) { payload[key] = value; });
+        try { var response = await fetch('/api/visitor-assistant/handoff', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); var body = await response.json(); if (!response.ok || !body.success) throw new Error(body.message || '提交失败'); result.textContent = body.message; formElement.reset(); }
         catch (error) { result.textContent = error.message; }
       });
     }());
