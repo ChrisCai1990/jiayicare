@@ -11942,6 +11942,12 @@ export default function PatientDetailPage() {
                         const currentPageItems = indexed
                         const inferredDates = [...new Set(currentPageItems.map(({ it }) => String(it.examDate || '').slice(0, 10)).filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value)))]
                         const currentPageDate = ocrPageDates[activePage] ?? (inferredDates.length === 1 ? inferredDates[0] : (activePage === 1 ? ocrReportMeta.checkDate : ''))
+                        const normalizePageDate = raw => {
+                          const digits = String(raw || '').replace(/\D/g, '').slice(0, 8)
+                          if (digits.length <= 4) return digits
+                          if (digits.length <= 6) return `${digits.slice(0, 4)}-${digits.slice(4)}`
+                          return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6)}`
+                        }
                         const updateCurrentPageDate = value => {
                           const next = { ...ocrPageDatesRef.current, [activePage]: value }
                           ocrPageDatesRef.current = next
@@ -11949,7 +11955,7 @@ export default function PatientDetailPage() {
                         }
                         return <div style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 0.7fr) minmax(220px, 1fr)', gap: 8, padding: '10px 12px', marginBottom: 12, background: '#F6F9F7', border: '1px solid #D8EDE3', borderRadius: 8 }}>
                         <label style={{ fontSize: 12, color: '#4A6558' }}>当前页检查日期（第 {activePage} 页）
-                          <input type="date" style={{ ...inp, marginTop: 4 }} value={currentPageDate} onChange={e => updateCurrentPageDate(e.target.value)} />
+                          <input type="text" inputMode="numeric" maxLength={10} placeholder="YYYY-MM-DD" style={{ ...inp, marginTop: 4 }} value={currentPageDate} onChange={e => updateCurrentPageDate(normalizePageDate(e.target.value))} onBlur={e => { if (e.target.value && !/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) updateCurrentPageDate('') }} />
                         </label>
                         <label style={{ fontSize: 12, color: '#4A6558' }}>来源机构
                           <input style={{ ...inp, marginTop: 4 }} value={ocrReportMeta.institution} onChange={e => setOcrReportMeta(meta => ({ ...meta, institution: e.target.value }))} placeholder="原件未写可留空" />
