@@ -95,7 +95,7 @@ function renderArticle(article, previewLabel) {
       ${label ? `${label}\n      ` : ''}<p class="eyebrow">健康教育 · 更新于 ${escapeHtml(article.updatedAt)}</p>
       <h1>${escapeHtml(article.title)}</h1>
       <p class="lead">${escapeHtml(article.summary)}</p>
-      ${reviewMeta ? `${reviewMeta}\n      ` : ''}${sections}
+      ${reviewMeta ? `${reviewMeta}\n` : ''}${sections}
       <section class="source-list">
         <h2>参考来源</h2>
         <ul>${sources}
@@ -116,7 +116,14 @@ function renderArticle(article, previewLabel) {
 
 const files = fs.readdirSync(contentDirectory).filter((file) => file.endsWith('.json'));
 const articles = files.map(parseArticle);
-const eligible = isPreview ? articles : articles.filter((article) => article.status === 'published');
+const byLatestPublication = (left, right) => {
+  const leftDate = left.reviewedAt || left.updatedAt;
+  const rightDate = right.reviewedAt || right.updatedAt;
+  const dateOrder = String(rightDate).localeCompare(String(leftDate));
+  return dateOrder || left.title.localeCompare(right.title, 'zh-CN');
+};
+const eligible = (isPreview ? articles : articles.filter((article) => article.status === 'published'))
+  .sort(byLatestPublication);
 
 fs.mkdirSync(outputDirectory, { recursive: true });
 for (const article of eligible) {
@@ -127,6 +134,7 @@ const catalogue = eligible.map((article) => ({
   title: article.title,
   summary: article.summary,
   updatedAt: article.updatedAt,
+  publishedAt: article.reviewedAt,
   href: `guides/${article.slug}.html`
 }));
 fs.mkdirSync(path.dirname(cataloguePath), { recursive: true });

@@ -1,11 +1,11 @@
 {
   "slug": "checkup-report-organization",
-  "status": "review",
+  "status": "published",
   "title": "体检报告整理前，先做这 4 件事",
   "summary": "不急着给单项指标下结论；先保留完整报告、核对日期、梳理变化，再带着问题寻求合适的专业支持。",
   "updatedAt": "2026-09-24",
-  "reviewedBy": "",
-  "reviewedAt": "",
+  "reviewedBy": "嘉医管家",
+  "reviewedAt": "2026-09-25",
   "reviewNotes": "涉及体检资料与就医边界，待蓝戈文医师审核后公开。",
   "sections": [
     {"heading": "保留完整报告和检查日期", "paragraphs": ["先保存完整报告、检查日期和检查机构信息。只截取带箭头的一项，往往会遗漏参考范围、检查条件和其他相关信息。", "资料整理的目的，是帮助后续沟通更有效率，不是自行诊断。"]},

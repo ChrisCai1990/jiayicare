@@ -1,14 +1,44 @@
 [
   {
+    "title": "体检报告整理前，先做这 4 件事",
+    "summary": "不急着给单项指标下结论；先保留完整报告、核对日期、梳理变化，再带着问题寻求合适的专业支持。",
+    "updatedAt": "2026-09-24",
+    "publishedAt": "2026-09-25",
+    "href": "guides/checkup-report-organization.html"
+  },
+  {
+    "title": "开始体重管理时，怎样设定更可持续的目标？",
+    "summary": "从可观察的日常变化开始，避免以极端限制或短期数字作为唯一目标。",
+    "updatedAt": "2026-09-24",
+    "publishedAt": "2026-09-24",
+    "href": "guides/sustainable-weight-management-goals.html"
+  },
+  {
+    "title": "体检提示血脂异常后，先准备哪些信息？",
+    "summary": "用“保留报告、了解背景、带着问题咨询”的方式，帮助你为下一步的专业沟通做准备。",
+    "updatedAt": "2026-09-23",
+    "publishedAt": "2026-09-24",
+    "href": "guides/lipids-first-steps.html"
+  },
+  {
+    "title": "饮食总是难坚持？先观察自己的用餐节奏",
+    "summary": "不追求一次做到完美；通过观察饥饿、用餐时间和环境，寻找更容易长期保持的日常安排。",
+    "updatedAt": "2026-09-24",
+    "publishedAt": "2026-09-24",
+    "href": "guides/healthy-eating-rhythm.html"
+  },
+  {
     "title": "健康体重管理：从了解自己开始",
     "summary": "从记录当前状况、建立可持续饮食和活动习惯，到识别需要专业支持的情况，帮助你以健康教育方式启动第一步。",
     "updatedAt": "2026-09-23",
+    "publishedAt": "2026-09-23",
     "href": "guides/healthy-weight-start.html"
   },
   {
     "title": "体重反复变化时，怎样复盘才更有帮助？",
     "summary": "不把体重回升简单归因于意志力；从目标、日常节奏与支持条件出发，找到更可持续的下一步。",
     "updatedAt": "2026-09-23",
+    "publishedAt": "2026-09-23",
     "href": "guides/weight-regain-review.html"
   }
 ]
