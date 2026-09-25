@@ -3537,8 +3537,12 @@ export default function PatientDetailPage() {
     } catch {}
     ocrRevisionRef.current = Number(latestReport.reviewRevision || 0)
     setOcrReviewReport(latestReport)
+    const validStoredDate = [latestReport.checkDate, latestReport.date]
+      .map(value => String(value || '').slice(0, 10))
+      .find(value => /^\d{4}-\d{2}-\d{2}$/.test(value)) || ''
     setOcrReportMeta({
-      checkDate: String(latestReport.checkDate || latestReport.date || '').slice(0, 10),
+      // 历史中可能留有 2025070 这类半截日期；不能让它阻塞用户保存。
+      checkDate: validStoredDate,
       institution: latestReport.institution || latestReport.hospital || '',
     })
     setOcrPageDates(latestReport.pageDates || {})
@@ -3602,7 +3606,8 @@ export default function PatientDetailPage() {
         .map(([, value]) => String(value || '').slice(0, 10)),
     ].filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value))
     const unique = [...new Set(dates)]
-    return unique.length === 1 ? unique[0] : unique.length > 1 ? '' : ocrReportMeta.checkDate
+    const fallbackDate = /^\d{4}-\d{2}-\d{2}$/.test(ocrReportMeta.checkDate || '') ? ocrReportMeta.checkDate : ''
+    return unique.length === 1 ? unique[0] : unique.length > 1 ? '' : fallbackDate
   }
 
   const handleApproveOCR = async () => {
@@ -11929,7 +11934,7 @@ export default function PatientDetailPage() {
                       {(() => {
                         const currentPageItems = indexed
                         const inferredDates = [...new Set(currentPageItems.map(({ it }) => String(it.examDate || '').slice(0, 10)).filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value)))]
-                        const currentPageDate = ocrPageDates[activePage] ?? (inferredDates.length === 1 ? inferredDates[0] : '')
+                        const currentPageDate = ocrPageDates[activePage] ?? (inferredDates.length === 1 ? inferredDates[0] : (activePage === 1 ? ocrReportMeta.checkDate : ''))
                         const updateCurrentPageDate = value => {
                           setOcrPageDates(dates => ({ ...dates, [activePage]: value }))
                         }
