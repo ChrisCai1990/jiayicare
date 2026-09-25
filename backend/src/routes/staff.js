@@ -4494,7 +4494,12 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
           Number.isInteger(Number(page)) && Number(page) > 0 && (value === '' || isCalendarDate(value))
         )
       );
-      report.set('pageDates', validPageDates);
+      // 老版本页面可能仍会提交空对象；不能让它清掉其他窗口已保存的页日期。
+      // 仅合并本次明确传入的页，空字符串仍可作为“清空本页”的显式操作。
+      const existingPageDates = report.pageDates instanceof Map
+        ? Object.fromEntries(report.pageDates.entries())
+        : (report.pageDates || {});
+      report.set('pageDates', { ...existingPageDates, ...validPageDates });
       report.markModified('pageDates');
     }
     // AI 审核字段
