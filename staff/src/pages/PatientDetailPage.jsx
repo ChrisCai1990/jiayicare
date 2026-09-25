@@ -3629,7 +3629,9 @@ export default function PatientDetailPage() {
     setOcrSaving(true)
     try {
       await ocrSaveQueueRef.current.catch(() => {})
-      const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, pageDates: ocrPageDates, hospital: ocrReportMeta.institution, date: resolvedOcrReportDate(), institutionStatus: ocrReviewReport.institutionStatus, aiStatus: 'pending', editSource: 'ocr_review', expectedRevision: ocrRevisionRef.current })
+      // 已审核资料保存页日期时不能被降回待审核；仅保存元数据/已核对内容。
+      const nextAiStatus = ocrReviewReport.aiStatus === 'reviewed' ? 'reviewed' : 'pending'
+      const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, pageDates: ocrPageDates, hospital: ocrReportMeta.institution, date: resolvedOcrReportDate(), institutionStatus: ocrReviewReport.institutionStatus, aiStatus: nextAiStatus, editSource: 'ocr_review', expectedRevision: ocrRevisionRef.current })
       ocrRevisionRef.current = Number(saved.data?.reviewRevision ?? ocrRevisionRef.current)
       if (saved.data) setReports(current => current.map(report => report._id === saved.data._id ? { ...report, ...saved.data } : report))
       const savedItems = JSON.parse(JSON.stringify(saved.data?.reportItems || ocrEditItemsRef.current))

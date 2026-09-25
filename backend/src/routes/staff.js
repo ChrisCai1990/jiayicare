@@ -4450,8 +4450,9 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
         return res.status(409).json({ success: false, code: 'REPORT_REVISION_CONFLICT', message: '报告已在其他窗口发生修改，为防止覆盖，请刷新后继续审核', currentRevision: report.reviewRevision || 0 });
       }
     }
-    // 已审核通过的报告：只允许更新 AI归类（aiStatus/reportItems），其余字段不可改
-    if (report.audit_status === 'audited' && Object.entries({ title, type, documentCategory, hospital, date, content }).some(([field, value]) => value !== undefined && value !== report[field])) {
+    // 归档后仍允许纠正来源机构、报告/分页日期；这些是原件元数据，不会改动
+    // 审核结论或已归类数据。标题、分类、原文件仍维持锁定。
+    if (report.audit_status === 'audited' && Object.entries({ title, type, documentCategory, content }).some(([field, value]) => value !== undefined && value !== report[field])) {
       return res.status(403).json({ success: false, message: '已审核通过的报告不可修改基本信息' });
     }
     if (title !== undefined) report.title = title;
