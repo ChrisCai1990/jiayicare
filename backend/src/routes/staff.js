@@ -7130,12 +7130,12 @@ router.put('/patients/:id/annual-plan-preparation', staffAuth, async (req, res) 
 
 // 月度服务复盘：团队内部记录，与阶段性临床评估及用户端健康计划分离。
 const monthlyReviewFields = ['healthProgress', 'serviceExecution', 'customerFeedback', 'teamCollaboration', 'unresolvedIssues'];
-async function monthlyReviewPatientAccess(staff, patientId) {
+async function monthlyReviewPatientAccess(staff, patientId, reviewId = null) {
   if (!mongoose.isValidObjectId(patientId)) return false;
   if (!require('../utils/monthlyReviewRollout').enabledForPatient(patientId)) return false;
   const visible = await getVisiblePlanPatientIds(staff);
   if (!visible || visible.some(id => String(id) === String(patientId))) return true;
-  return !!(await MonthlyServiceReview.exists({ patientId, 'actions.assigneeId': staff._id }));
+  return !!(await MonthlyServiceReview.exists({ patientId, ...(reviewId ? { _id: reviewId } : {}), 'actions.assigneeId': staff._id }));
 }
 async function monthlyReviewOrganizerAccess(staff, patientId) {
   return staff.role === 'superadmin' || (staff.role === 'healthPlanner' && !!(await User.exists({ _id: patientId, assignedHealthPlanner: staff._id, isDeleted: { $ne: true } })));
@@ -7194,7 +7194,7 @@ router.patch('/monthly-service-reviews/:reviewId', staffAuth, async (req, res) =
   try {
     const row = await MonthlyServiceReview.findById(req.params.reviewId).lean();
     if (!row) return res.status(404).json({ success: false, message: '月度复盘不存在' });
-    if (!(await monthlyReviewPatientAccess(req.staff, row.patientId))) return res.status(403).json({ success: false, message: '无权处理该客户复盘' });
+    if (!(await monthlyReviewPatientAccess(req.staff, row.patientId, row._id))) return res.status(403).json({ success: false, message: '无权处理该客户复盘' });
     if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康规划师可整理复盘及行动项；团队成员可补充讨论' });
     if (!(await monthlyReviewOrganizerAccess(req.staff, row.patientId))) return res.status(403).json({ success: false, message: '仅该客户的健康规划师可整理复盘' });
     if (row.status !== 'draft') return res.status(409).json({ success: false, message: '已确认复盘不能覆盖，请追加更正' });
@@ -7223,7 +7223,7 @@ router.post('/monthly-service-reviews/:reviewId/contributions', staffAuth, async
   try {
     const row = await MonthlyServiceReview.findById(req.params.reviewId).select('patientId status').lean();
     if (!row) return res.status(404).json({ success: false, message: '月度复盘不存在' });
-    if (!(await monthlyReviewPatientAccess(req.staff, row.patientId))) return res.status(403).json({ success: false, message: '无权补充该客户复盘' });
+    if (!(await monthlyReviewPatientAccess(req.staff, row.patientId, row._id))) return res.status(403).json({ success: false, message: '无权补充该客户复盘' });
     if (row.status !== 'draft') return res.status(409).json({ success: false, message: '已确认复盘请使用更正记录' });
     const section = String(req.body.section || 'teamCollaboration');
     const content = String(req.body.content || '').trim();
@@ -7239,7 +7239,7 @@ router.post('/monthly-service-reviews/:reviewId/confirm', staffAuth, async (req,
     if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康规划师可确认服务复盘' });
     const row = await MonthlyServiceReview.findById(req.params.reviewId).lean();
     if (!row) return res.status(404).json({ success: false, message: '月度复盘不存在' });
-    if (!(await monthlyReviewPatientAccess(req.staff, row.patientId))) return res.status(403).json({ success: false, message: '无权确认该客户复盘' });
+    if (!(await monthlyReviewPatientAccess(req.staff, row.patientId, row._id))) return res.status(403).json({ success: false, message: '无权确认该客户复盘' });
     if (!(await monthlyReviewOrganizerAccess(req.staff, row.patientId))) return res.status(403).json({ success: false, message: '仅该客户的健康规划师可确认复盘' });
     if (row.status !== 'draft' || Number(req.body.revision) !== row.__v) return res.status(409).json({ success: false, message: '复盘已更新或确认，请刷新' });
     if (!row.sections?.serviceExecution?.trim() || !row.sections?.unresolvedIssues?.trim()) return res.status(400).json({ success: false, message: '确认前请填写服务执行情况和遗留问题（无问题也请明确记录）' });
@@ -7254,7 +7254,7 @@ router.post('/monthly-service-reviews/:reviewId/corrections', staffAuth, async (
   try {
     const row = await MonthlyServiceReview.findById(req.params.reviewId).select('patientId status').lean();
     if (!row) return res.status(404).json({ success: false, message: '月度复盘不存在' });
-    if (!(await monthlyReviewPatientAccess(req.staff, row.patientId))) return res.status(403).json({ success: false, message: '无权更正该客户复盘' });
+    if (!(await monthlyReviewPatientAccess(req.staff, row.patientId, row._id))) return res.status(403).json({ success: false, message: '无权更正该客户复盘' });
     if (row.status !== 'confirmed') return res.status(409).json({ success: false, message: '草稿请直接修订' });
     const content = String(req.body.content || '').trim();
     if (!content || content.length > 2000) return res.status(400).json({ success: false, message: '请填写2000字以内的更正说明' });
@@ -7268,7 +7268,7 @@ router.post('/monthly-service-reviews/:reviewId/actions/:actionId/complete', sta
   try {
     const row = await MonthlyServiceReview.findById(req.params.reviewId).select('patientId status actions').lean();
     if (!row) return res.status(404).json({ success: false, message: '月度复盘不存在' });
-    if (!(await monthlyReviewPatientAccess(req.staff, row.patientId))) return res.status(403).json({ success: false, message: '无权处理该客户行动' });
+    if (!(await monthlyReviewPatientAccess(req.staff, row.patientId, row._id))) return res.status(403).json({ success: false, message: '无权处理该客户行动' });
     const action = row.actions.find(item => String(item._id) === req.params.actionId);
     if (!action) return res.status(404).json({ success: false, message: '行动项不存在' });
     if (req.staff.role !== 'superadmin' && String(action.assigneeId) !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅行动负责人可完成' });
