@@ -4435,6 +4435,15 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     if (report.planItemSync?.status === 'running' || report.legacyReviewWrite?.status === 'running') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
     const { title, type, documentCategory, hospital, date, pageDates, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, fileUrl, fileUrls, ossKey, ossKeys, mimeType, fileSize, editSource, expectedRevision } = req.body;
+    const isCalendarDate = value => {
+      const normalized = String(value || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return false;
+      const parsed = new Date(`${normalized}T00:00:00`);
+      return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === normalized;
+    };
+    if (date !== undefined && String(date || '').trim() && !isCalendarDate(date)) {
+      return res.status(400).json({ success: false, message: '检查日期格式不正确，请填写完整的 YYYY-MM-DD 日期' });
+    }
     if (reportItems !== undefined && editSource === 'ocr_review') {
       const requestedRevision = Number(expectedRevision);
       if (!Number.isInteger(requestedRevision) || requestedRevision !== Number(report.reviewRevision || 0)) {
@@ -4479,7 +4488,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     if (pageDates !== undefined) {
       const validPageDates = Object.fromEntries(
         Object.entries(pageDates || {}).filter(([page, value]) =>
-          Number.isInteger(Number(page)) && Number(page) > 0 && (value === '' || /^\d{4}-\d{2}-\d{2}$/.test(String(value)))
+          Number.isInteger(Number(page)) && Number(page) > 0 && (value === '' || isCalendarDate(value))
         )
       );
       report.pageDates = validPageDates;
