@@ -1944,6 +1944,15 @@ export default function PatientDetailPage() {
   const [followUps, setFollowUps] = useState([])
   const [plans, setPlans] = useState([])
   const [serviceManagementView, setServiceManagementView] = useState(requestedServiceView)
+  const [monthlyReviewEnabled, setMonthlyReviewEnabled] = useState(false)
+  useEffect(() => {
+    if (tab !== 'plans' || serviceManagementView !== 'annual') return
+    let active = true
+    staffAPI.getMonthlyServiceReviews(id)
+      .then(result => { if (active) setMonthlyReviewEnabled(result.enabled === true) })
+      .catch(() => { if (active) setMonthlyReviewEnabled(false) })
+    return () => { active = false }
+  }, [id, tab, serviceManagementView])
   const [reports, setReports] = useState([])
   const [serviceRecords, setServiceRecords] = useState([])
   const [serviceRecordCategory, setServiceRecordCategory] = useState('营养干预')
@@ -9304,6 +9313,12 @@ export default function PatientDetailPage() {
             </div>
           </div>
           <ServiceManagementCategories plans={plans} active={serviceManagementView} onChange={setServiceManagementView} />
+          {serviceManagementView === 'annual' && monthlyReviewEnabled && (
+            <div style={{ padding: '14px 20px', borderTop: '1px solid #EDF2EE', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <span style={{ color: '#65776F', fontSize: 13 }}>年度持续管理客户的每月团队服务复盘</span>
+              <button className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${id}/monthly-reviews`)}>查看月度服务复盘</button>
+            </div>
+          )}
           {serviceManagementView === 'checkup' && <CheckupManagementWorkspace
             plans={plans}
             reports={reports}
