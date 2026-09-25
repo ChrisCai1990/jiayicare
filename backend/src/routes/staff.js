@@ -14030,6 +14030,8 @@ async function runReportParseControlled(reportId) {
       const departmentNormalized = normalizeSingleExamReportItems(normalizeDepartmentExamItems(mergeInternalMedicineSubparts(cleanedItems)), report);
       let filteredItems = fillEmptyDiagnosisFromFindings(realignUpperAbdomenConclusions(cleanupUltrasoundOverlap(departmentNormalized)));
       const classified = await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems)))))))));
+      const parsedItemDates = [...new Set(classified.map(item => String(item.examDate || '').slice(0, 10)).filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value)))];
+      const resolvedCheckDate = parsedItemDates.length === 1 ? parsedItemDates[0] : parsedItemDates.length > 1 ? '' : checkDate;
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set([...summaries, ...Object.entries(imagePageEvidence).filter(([, e]) => e.message).map(([p, e]) => `第${p}页：${e.message}`)].map(s => s.trim()).filter(Boolean))].join('\n');
       const failedPages = totalPageCount - okPages;
@@ -14049,7 +14051,7 @@ async function runReportParseControlled(reportId) {
         aiSummary:   aiSummaryOut,
         aiStatus:    allFailed ? 'failed' : 'pending',
         parseJob:    { status: allFailed ? 'failed' : 'completed', completedAt: new Date(), message: `识别完成：${totalPageCount}页，提取${classified.length}项` },
-        institution, checkDate,
+        institution, checkDate: resolvedCheckDate,
       });
       if (!savedPdf) throw new Error('审核期间内容已修改，AI结果未覆盖人工数据');
       const totalMs = Date.now() - t0;
@@ -14233,6 +14235,8 @@ async function runReportParseControlled(reportId) {
     const latestReport = await MedicalReport.findById(reportId).select('reportItems reviewRevision').lean();
     const completion = resolveImageParseCompletion(parseStartRevision, latestReport?.reviewRevision, latestReport?.reportItems, classifiedImg);
     const resolvedImageItems = completion.items;
+    const parsedImageItemDates = [...new Set(resolvedImageItems.map(item => String(item.examDate || '').slice(0, 10)).filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value)))];
+    const resolvedImageCheckDate = parsedImageItemDates.length === 1 ? parsedImageItemDates[0] : parsedImageItemDates.length > 1 ? '' : imageCheckDate;
     const keepExistingItems = !completion.shouldWriteItems && resolvedImageItems.length > 0;
     if (completion.reason === 'revision_changed') console.log(`[parse-ai] 图片识别期间报告版本已变化，保留人工最新${resolvedImageItems.length}项，未覆盖`);
     else if (completion.reason === 'empty_result' && resolvedImageItems.length) console.log(`[parse-ai] 图片识别后无有效项，保留既有${resolvedImageItems.length}项，未覆盖`);
@@ -14248,7 +14252,7 @@ async function runReportParseControlled(reportId) {
       aiStatus:    'pending',
       parseJob:    { status: 'completed', completedAt: new Date(), message: `识别完成：${bufs.length}张，提取${resolvedImageItems.length}项` },
       institution: sanitizeInstitution(imageInstitution) || report.institution,
-      checkDate:   imageCheckDate || report.checkDate,
+      checkDate:   resolvedImageCheckDate || (parsedImageItemDates.length > 1 ? '' : report.checkDate),
     };
     if (completion.shouldWriteItems) {
       const saved = await MedicalReport.findOneAndUpdate(

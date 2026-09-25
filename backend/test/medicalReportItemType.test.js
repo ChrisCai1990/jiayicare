@@ -54,3 +54,17 @@ test('unknown report item status remains invalid instead of being silently accep
 
   assert.match(report.validateSync().message, /status/);
 });
+
+test('report items retain their own examination date for multi-date uploads', () => {
+  const report = new MedicalReport({
+    user: new mongoose.Types.ObjectId(),
+    title: '合并上传的检查资料',
+    reportItems: [
+      { name: '甲状腺超声', itemType: 'imaging', examDate: '2025-05-01' },
+      { name: '糖化血红蛋白', itemType: 'lab', examDate: '2025-05-03' },
+    ],
+  });
+
+  assert.equal(report.validateSync(), undefined);
+  assert.deepEqual(report.reportItems.map(item => item.examDate), ['2025-05-01', '2025-05-03']);
+});
