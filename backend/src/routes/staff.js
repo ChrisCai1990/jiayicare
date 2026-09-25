@@ -4431,6 +4431,25 @@ router.post('/medical-reports/:id/review-activity', staffAuth, async (req, res) 
   return res.status(result ? 200 : 409).json({ success: Boolean(result) });
 });
 
+// 单页日期独立原子保存：不经过整份报告/审核结果写入，避免多页互相覆盖。
+router.patch('/medical-reports/:id/page-dates/:page', staffAuth, async (req, res) => {
+  try {
+    const page = Number(req.params.page);
+    const value = String(req.body?.date || '').trim();
+    if (!Number.isInteger(page) || page < 1) return res.status(400).json({ success: false, message: '页码无效' });
+    if (value && !/^\d{4}-\d{2}-\d{2}$/.test(value)) return res.status(400).json({ success: false, message: '请填写完整的 YYYY-MM-DD 日期' });
+    const report = await MedicalReport.findByIdAndUpdate(
+      req.params.id,
+      { $set: { [`pageDates.${page}`]: value, updatedAt: new Date() } },
+      { new: true }
+    );
+    if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    return res.json({ success: true, data: { pageDates: Object.fromEntries(report.pageDates?.entries?.() || []) } });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
   try {
     const report = await MedicalReport.findById(req.params.id);
