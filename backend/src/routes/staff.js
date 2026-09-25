@@ -4492,7 +4492,8 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
           Number.isInteger(Number(page)) && Number(page) > 0 && (value === '' || isCalendarDate(value))
         )
       );
-      report.pageDates = validPageDates;
+      report.set('pageDates', validPageDates);
+      report.markModified('pageDates');
     }
     // AI 审核字段
     // 2026-07-21合并两步健管审核：audit_status 和 aiStatus 是历史上先后独立引入的两套字段
