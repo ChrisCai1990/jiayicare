@@ -34,9 +34,12 @@ function backendMode(){const rows=JSON.parse(cp.execFileSync('pm2',['jlist'],{en
   const queuedReports=await db.collection('medicalreports').countDocuments({'followUpSourceEvent.status':'queued'});
   if(!apply){console.log(JSON.stringify({ready:true,healthMode:'allowlist',runtimeHealthMode:backendMode(),monthlyMode:'allowlist',monthlyPatientCount:1,automaticRecovery:false,queuedReports}));return;}
   const backup='/var/backups/jiayicare/health-global-20260925-'+expected.slice(0,12);
-  check(!fs.existsSync(backup),'Backup target already exists; inspect before retry');
-  fs.mkdirSync(backup,{recursive:true,mode:0o700});fs.chmodSync(backup,0o700);
-  fs.copyFileSync('backend/.env',backup+'/backend.env');fs.chmodSync(backup+'/backend.env',0o600);
+  if(fs.existsSync(backup)){
+   check(fs.existsSync(backup+'/backend.env')&&fs.readFileSync(backup+'/backend.env').equals(fs.readFileSync('backend/.env')),'Existing backup does not match the restored environment');
+  }else{
+   fs.mkdirSync(backup,{recursive:true,mode:0o700});fs.chmodSync(backup,0o700);
+   fs.copyFileSync('backend/.env',backup+'/backend.env');fs.chmodSync(backup+'/backend.env',0o600);
+  }
   let content=fs.readFileSync('backend/.env','utf8');
   content=content.replace(/^\s*(?:export\s+)?HEALTH_MANAGEMENT_ROLLOUT_MODE\s*=.*$/gm,'');
   content+='\nHEALTH_MANAGEMENT_ROLLOUT_MODE=all\n';
@@ -53,7 +56,7 @@ function backendMode(){const rows=JSON.parse(cp.execFileSync('pm2',['jlist'],{en
     if(!healthy)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,1000);
    }
    check(healthy,'Backend health check failed');
-   const verify=command('node',['-e',"require('dotenv').config({path:'backend/.env',quiet:true});const h=require('./backend/src/utils/healthManagementRollout'),m=require('./backend/src/utils/monthlyReviewRollout');if(!h.enabledForPatient('000000000000000000000002')||m.enabledForPatient('000000000000000000000002')||!m.enabledForPatient('"+pilot+"'))process.exit(1)"],15000);
+   const verify=command('node',['-e',"require('dotenv').config({path:'backend/.env',quiet:true});const h=require('./backend/src/utils/healthManagementRollout'),m=require('./backend/src/utils/monthlyReviewRollout');if(!h.enabledForPatient('000000000000000000000002')||m.enabledForPatient('000000000000000000000002')||!m.enabledForPatient('"+pilot+"'))process.exit(1)"],15000,{HEALTH_MANAGEMENT_ROLLOUT_MODE:'all'});
    check(verify.status===0,'Rollout boundary verification failed');
   }catch(error){
    const restore='backend/.env.health-global-rollback-'+expected.slice(0,12)+'.tmp';
