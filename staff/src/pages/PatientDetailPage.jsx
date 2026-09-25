@@ -3588,9 +3588,18 @@ export default function PatientDetailPage() {
 
   const reviewActivityFlush = useReportReviewActivity(ocrReviewReport?._id)
   const resolvedOcrReportDate = () => {
+    const explicitPageDates = ocrPageDates || {}
+    const pageHasExplicitDate = page => Object.prototype.hasOwnProperty.call(explicitPageDates, page)
+    // 页日期一旦人工改过，就以它为准，不能再把同页旧项目日期混进来；否则
+    // 单页从 2025-01-01 改为 2025-01-02 时，会错误地留下两个日期。
     const dates = [
-      ...ocrEditItemsRef.current.map(item => String(item.examDate || '').slice(0, 10)),
-      ...Object.values(ocrPageDates || {}).map(value => String(value || '').slice(0, 10)),
+      ...ocrEditItemsRef.current.map(item => {
+        const page = String(Number(item.sourcePage) || 1)
+        return String(pageHasExplicitDate(page) ? explicitPageDates[page] : item.examDate || '').slice(0, 10)
+      }),
+      ...Object.entries(explicitPageDates)
+        .filter(([page]) => !ocrEditItemsRef.current.some(item => String(Number(item.sourcePage) || 1) === page))
+        .map(([, value]) => String(value || '').slice(0, 10)),
     ].filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value))
     const unique = [...new Set(dates)]
     return unique.length === 1 ? unique[0] : unique.length > 1 ? '' : ocrReportMeta.checkDate
@@ -11923,7 +11932,6 @@ export default function PatientDetailPage() {
                         const currentPageDate = ocrPageDates[activePage] ?? (inferredDates.length === 1 ? inferredDates[0] : '')
                         const updateCurrentPageDate = value => {
                           setOcrPageDates(dates => ({ ...dates, [activePage]: value }))
-                          setOcrEditItems(items => items.map(item => (Number(item.sourcePage) === activePage || (!item.sourcePage && activePage === 1)) ? { ...item, examDate: value } : item))
                         }
                         return <div style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 0.7fr) minmax(220px, 1fr)', gap: 8, padding: '10px 12px', marginBottom: 12, background: '#F6F9F7', border: '1px solid #D8EDE3', borderRadius: 8 }}>
                         <label style={{ fontSize: 12, color: '#4A6558' }}>当前页检查日期（第 {activePage} 页）
