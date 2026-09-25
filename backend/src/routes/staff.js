@@ -188,7 +188,9 @@ function withSignedMessageMedia(message) {
 }
 
 function withSignedReportFiles(report) {
-  const obj = report.toObject ? report.toObject() : { ...report };
+  // Mongoose Map defaults to serializing as an empty object. Page-level dates
+  // are stored in a Map, so flatten it before every report response.
+  const obj = report.toObject ? report.toObject({ flattenMaps: true }) : { ...report };
   const urls = obj.fileUrls?.length ? obj.fileUrls : (obj.fileUrl ? [obj.fileUrl] : []);
   const keys = obj.ossKeys?.length ? obj.ossKeys : (obj.ossKey ? [obj.ossKey] : []);
   const signedUrls = urls.map((url, index) => signStoredUrl(url, keys[index] || ''));
@@ -4381,7 +4383,7 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
         console.error('报告已上传成功，但回填体检方案条目失败:', planErr);
       }
     }
-    res.json({ success: true, data: report });
+    res.json({ success: true, data: withSignedReportFiles(report) });
   } catch (err) {
     console.error('上传报告失败:', err);
     res.status(500).json({ success: false, message: '上传失败：' + (err.message || '服务器内部错误') });
