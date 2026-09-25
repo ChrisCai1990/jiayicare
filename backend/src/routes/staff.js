@@ -4441,9 +4441,9 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
       const parsed = new Date(`${normalized}T00:00:00`);
       return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === normalized;
     };
-    if (date !== undefined && String(date || '').trim() && !isCalendarDate(date)) {
-      return res.status(400).json({ success: false, message: '检查日期格式不正确，请填写完整的 YYYY-MM-DD 日期' });
-    }
+    // 历史数据里可能已有半截日期（如 2025070）。审核保存不能被它锁死：
+    // 这类值按空日期处理，页面仍可保存本页日期和审核内容。
+    const safeDate = date !== undefined && String(date || '').trim() && !isCalendarDate(date) ? '' : date;
     if (reportItems !== undefined && editSource === 'ocr_review') {
       const requestedRevision = Number(expectedRevision);
       if (!Number.isInteger(requestedRevision) || requestedRevision !== Number(report.reviewRevision || 0)) {
@@ -4475,12 +4475,12 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     if (hospital !== undefined) { report.hospital = hospital; report.institution = hospital; }
     if (['pending', 'confirmed', 'unknown'].includes(req.body.institutionStatus)) report.institutionStatus = req.body.institutionStatus;
     if (date !== undefined) {
-      report.date = date; report.checkDate = date;
+      report.date = safeDate; report.checkDate = safeDate;
       // 2026-07-09修复"同一检查同时出现在2025和2026"：编辑改了检查日期时，reportYear 必须跟着日期重算，
       // 否则会出现 checkDate=2025-08-06 但 reportYear 仍停留在旧值2026 的错位，导致这份报告在两个年度里都出现。
       // 若前端本次同时显式传了 reportYear（见下方），以显式值为准；否则一律按新日期推导。
-      if (reportYear === undefined && date) {
-        const y = new Date(date).getFullYear();
+      if (reportYear === undefined && safeDate) {
+        const y = new Date(safeDate).getFullYear();
         if (!isNaN(y)) report.reportYear = y;
       }
     }
