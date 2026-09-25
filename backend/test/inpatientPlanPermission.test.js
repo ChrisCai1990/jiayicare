@@ -78,8 +78,11 @@ test('unrelated staff and inaccessible patients are rejected before AI or writes
 function permissions() {
   const start = source.indexOf('const PLAN_TYPE_OWNER_ROLE =');
   const end = source.indexOf('// 自定义角色的', start);
+  const agencyStart = source.indexOf('const isAgencyMedicalAssistPlan =');
+  const agencyEnd = source.indexOf('// POST /api/staff/plans', agencyStart);
   const ctx = { Admin: { findById: () => ({ select: () => ({ lean: async () => ({ role: 'familyDoctor' }) }) }) } };
   vm.createContext(ctx);
+  vm.runInContext(source.slice(agencyStart, agencyEnd), ctx);
   vm.runInContext(source.slice(start, end), ctx);
   return ctx;
 }

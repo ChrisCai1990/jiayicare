@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { shanghaiMonth, inPlanWindow, dueMonths } = require('../src/utils/monthlyServiceReview');
 const reviewRollout = require('../src/utils/monthlyReviewRollout');
+const healthRollout = require('../src/utils/healthManagementRollout');
 const pilotId = '507f1f77bcf86cd799439011';
 const otherId = '507f1f77bcf86cd799439012';
 
@@ -35,4 +36,12 @@ test('monthly review has separate patient allowlist on top of health management'
   assert.deepEqual(reviewRollout.patientFilter('patientId', env), { patientId: { $in: [pilotId] } });
   assert.equal(reviewRollout.enabledForPatient(pilotId, { ...env, MONTHLY_REVIEW_ROLLOUT_MODE: 'disabled' }), false);
   assert.equal(reviewRollout.enabledForPatient(pilotId, { NODE_ENV: 'production', HEALTH_MANAGEMENT_ROLLOUT_MODE: 'all' }), false);
+});
+
+test('global health workflow does not expand the monthly review pilot', () => {
+  const env = { NODE_ENV: 'production', HEALTH_MANAGEMENT_ROLLOUT_MODE: 'all', MONTHLY_REVIEW_ROLLOUT_MODE: 'allowlist', MONTHLY_REVIEW_PATIENT_IDS: pilotId };
+  assert.equal(healthRollout.enabledForPatient(otherId, env), true);
+  assert.equal(reviewRollout.enabledForPatient(pilotId, env), true);
+  assert.equal(reviewRollout.enabledForPatient(otherId, env), false);
+  assert.deepEqual(reviewRollout.patientFilter('patientId', env), { patientId: { $in: [pilotId] } });
 });
