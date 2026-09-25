@@ -8618,7 +8618,7 @@ router.get('/patients/:id/screening', staffAuth, async (req, res) => {
   try {
     const items = await UserScreeningItem.find({ user: req.params.id })
       .sort({ updatedAt: -1 })
-      .populate('reportId', 'checkDate institution title reportItems');
+      .populate('reportId', 'checkDate institution title pageDates reportItems');
 
     // 把 reportItem 的实际检查内容附加到每条 screeningItem
     // 2026-07-02修复：此前用 .find() 只取第一条匹配的 reportItem，但一个 itemId(如"肝功能")
@@ -8647,7 +8647,11 @@ router.get('/patients/:id/screening', staffAuth, async (req, res) => {
         // 汇总报告(如2026年度体检)里，它有自己的 examDate/institution。此前只取报告级 checkDate/institution，
         // 导致2025年的检查被显示成2026年、机构显示成整份报告的体检机构名。改为优先取 item 级真实日期/机构，
         // 仅在 item 级为空时才回退报告级，从根本上消除"时间归错年、机构归错家"。
-        obj.checkDate = (matched && matched.examDate) || report.checkDate || '';
+        const sourcePageDate = matched?.sourcePage
+          ? (report.pageDates?.get?.(String(matched.sourcePage)) || report.pageDates?.[String(matched.sourcePage)] || '')
+          : '';
+        // 同一报告可包含多天资料：项目自身日期优先，其次项目所属原件页日期，最后才是整份报告日期。
+        obj.checkDate = (matched && matched.examDate) || sourcePageDate || report.checkDate || '';
         // 客户侧必须展示报告签发机构的完整原文：项目页识别值优先，其次报告级识别值；
         // 上传时人工填写的 hospital 可能只是简称，仅在原报告无法识别机构时兜底。
         obj.institution = (matched && matched.institution) || report.institution || report.hospital || '';
