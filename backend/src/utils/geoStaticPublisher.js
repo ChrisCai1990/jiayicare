@@ -23,19 +23,44 @@ function copyPublicTree(source, target) {
   }
 }
 
-function publishGeoArticle({ slug, publishedBy, publishedAt, alreadyPublishedSlugs = [] }) {
-  const slugs = [...new Set([...alreadyPublishedSlugs, slug])];
+function publicationAudit(item) {
+  const audit = [...(item.auditLog || [])].reverse().find((entry) => entry.action === 'publish');
+  const reviewedBy = item.reviewedBy || item.publishChecklist?.checkedByName || audit?.byName || '';
+  const reviewedAt = item.reviewedAt || item.publishChecklist?.checkedAt || audit?.at || '';
+  const date = reviewedAt && !Number.isNaN(new Date(reviewedAt).getTime())
+    ? new Date(reviewedAt).toISOString().slice(0, 10)
+    : '';
+  return { reviewedBy: String(reviewedBy || '').trim(), reviewedAt: date };
+}
+
+function publishGeoArticle({ slug, publishedBy, publishedAt, alreadyPublished = [] }) {
+  const published = new Map(alreadyPublished
+    .filter((item) => item?.slug)
+    .map((item) => [item.slug, publicationAudit(item)]));
+  const slugs = [...new Set([...published.keys(), slug])];
   if (!slugs.length || !slugs.every(value => /^[a-z0-9-]+$/.test(String(value || '')))) throw new Error('无效的 GEO 稿件标识');
+  for (const itemSlug of slugs) {
+    if (itemSlug === slug) continue;
+    const audit = published.get(itemSlug);
+    if (!audit?.reviewedBy || !audit.reviewedAt) {
+      throw new Error(`${itemSlug} 缺少历史发布审核记录，不能重新公开发布`);
+    }
+  }
   const originalFiles = [];
   for (const itemSlug of slugs) {
     const articlePath = path.join(articlesRoot, `${itemSlug}.json`);
     if (!articlePath.startsWith(`${articlesRoot}${path.sep}`) || !fs.existsSync(articlePath)) continue;
     const original = fs.readFileSync(articlePath, 'utf8');
     const article = JSON.parse(original);
-    article.status = 'published';
     if (itemSlug === slug) {
+      article.status = 'published';
       article.reviewedBy = publishedBy || '健康规划师';
       article.reviewedAt = new Date(publishedAt || Date.now()).toISOString().slice(0, 10);
+    } else {
+      const audit = published.get(itemSlug);
+      article.status = 'published';
+      article.reviewedBy = audit.reviewedBy;
+      article.reviewedAt = audit.reviewedAt;
     }
     originalFiles.push([articlePath, original]);
     fs.writeFileSync(articlePath, `${JSON.stringify(article, null, 2)}\n`, 'utf8');

@@ -11718,8 +11718,10 @@ router.patch('/content-reviews/:id/review', staffAuth, async (req, res) => {
       if (!requiredChecks.every(key => checklist[key] === true)) throw new Error('请完成发布前核对清单');
       const now = new Date();
       record.publishChecklist = { ...Object.fromEntries(requiredChecks.map(key => [key, true])), checkedBy: req.staff._id, checkedByName: req.staff.name || '', checkedAt: new Date() };
-      const alreadyPublished = await ContentReview.find({ status: 'published' }).select('slug').lean();
-      publishGeoArticle({ slug: record.slug, publishedBy: req.staff.name || '健康规划师', publishedAt: now, alreadyPublishedSlugs: alreadyPublished.map(item => item.slug).filter(Boolean) });
+      const alreadyPublished = await ContentReview.find({ status: 'published' })
+        .select('slug publishChecklist auditLog')
+        .lean();
+      publishGeoArticle({ slug: record.slug, publishedBy: req.staff.name || '健康规划师', publishedAt: now, alreadyPublished });
       record.currentRole = '';
       record.status = 'published';
       record.auditLog.push({ action: 'publish', role, by: req.staff._id, byName: req.staff.name || '', at: now });
