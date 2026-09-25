@@ -4434,7 +4434,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     if (report.planItemSync?.status === 'running' || report.legacyReviewWrite?.status === 'running') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
-    const { title, type, documentCategory, hospital, date, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, fileUrl, fileUrls, ossKey, ossKeys, mimeType, fileSize, editSource, expectedRevision } = req.body;
+    const { title, type, documentCategory, hospital, date, pageDates, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, fileUrl, fileUrls, ossKey, ossKeys, mimeType, fileSize, editSource, expectedRevision } = req.body;
     if (reportItems !== undefined && editSource === 'ocr_review') {
       const requestedRevision = Number(expectedRevision);
       if (!Number.isInteger(requestedRevision) || requestedRevision !== Number(report.reviewRevision || 0)) {
@@ -4476,6 +4476,14 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
       }
     }
     if (note !== undefined) report.note = note;
+    if (pageDates !== undefined) {
+      const validPageDates = Object.fromEntries(
+        Object.entries(pageDates || {}).filter(([page, value]) =>
+          Number.isInteger(Number(page)) && Number(page) > 0 && (value === '' || /^\d{4}-\d{2}-\d{2}$/.test(String(value)))
+        )
+      );
+      report.pageDates = validPageDates;
+    }
     // AI 审核字段
     // 2026-07-21合并两步健管审核：audit_status 和 aiStatus 是历史上先后独立引入的两套字段
     // （audit_status先有、aiStatus后加，从未真正整合），此前健管专员要先在"审核AI结果"弹窗

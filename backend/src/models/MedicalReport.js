@@ -70,6 +70,7 @@ const medicalReportSchema = new mongoose.Schema({
   // ── 年度/类目结构（需求23）───────────────────────────────────────
   reportYear:      { type: Number, default: null },   // 报告年份（如 2025）
   checkDate:       { type: String, default: '' },     // 检查日期
+  pageDates:       { type: Map, of: String, default: {} }, // 审核时按原件页保存的日期；不修改其他页
   institution:     { type: String, default: '' },     // 检查机构
   institutionStatus: { type: String, enum: ['pending', 'confirmed', 'unknown'], default: 'pending' },
   reviewActivity: { type: mongoose.Schema.Types.Mixed, default: {} },

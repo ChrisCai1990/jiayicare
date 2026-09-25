@@ -2291,6 +2291,7 @@ export default function PatientDetailPage() {
   const [healthCourseError, setHealthCourseError] = useState('')
   const [ocrEditItems, setOcrEditItems] = useState([])
   const [ocrReportMeta, setOcrReportMeta] = useState({ checkDate: '', institution: '' })
+  const [ocrPageDates, setOcrPageDates] = useState({})
   const [ocrReviewPage, setOcrReviewPage] = useState(null)
   // 审核时原件常是手机拍照页，或被嵌在窄栏中的 PDF；不能只依赖浏览器 PDF 工具栏。
   const [ocrPreviewZoom, setOcrPreviewZoom] = useState(100)
@@ -3540,6 +3541,7 @@ export default function PatientDetailPage() {
       checkDate: String(latestReport.checkDate || latestReport.date || '').slice(0, 10),
       institution: latestReport.institution || latestReport.hospital || '',
     })
+    setOcrPageDates(latestReport.pageDates || {})
     setOcrDraftSavedAt(null)
     setOcrSaving(false)
     setOcrPreviewZoom(100)
@@ -3585,13 +3587,21 @@ export default function PatientDetailPage() {
   }
 
   const reviewActivityFlush = useReportReviewActivity(ocrReviewReport?._id)
+  const resolvedOcrReportDate = () => {
+    const dates = [
+      ...ocrEditItemsRef.current.map(item => String(item.examDate || '').slice(0, 10)),
+      ...Object.values(ocrPageDates || {}).map(value => String(value || '').slice(0, 10)),
+    ].filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value))
+    const unique = [...new Set(dates)]
+    return unique.length === 1 ? unique[0] : unique.length > 1 ? '' : ocrReportMeta.checkDate
+  }
 
   const handleApproveOCR = async () => {
     await reviewActivityFlush.current()
     await ocrSaveQueueRef.current.catch(() => {})
     setOcrSaving(true)
     try {
-      const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, hospital: ocrReportMeta.institution, date: ocrReportMeta.checkDate, institutionStatus: ocrReviewReport.institutionStatus, aiStatus: 'reviewed', editSource: 'ocr_review', expectedRevision: ocrRevisionRef.current })
+      const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, pageDates: ocrPageDates, hospital: ocrReportMeta.institution, date: resolvedOcrReportDate(), institutionStatus: ocrReviewReport.institutionStatus, aiStatus: 'reviewed', editSource: 'ocr_review', expectedRevision: ocrRevisionRef.current })
       ocrRevisionRef.current = Number(saved.data?.reviewRevision ?? ocrRevisionRef.current)
       toast('内容审核完成，已归类项目已同步；未匹配项目可手动选择目录归类')
       setOcrReviewReport(null)
@@ -3605,7 +3615,7 @@ export default function PatientDetailPage() {
     setOcrSaving(true)
     try {
       await ocrSaveQueueRef.current.catch(() => {})
-      const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, hospital: ocrReportMeta.institution, date: ocrReportMeta.checkDate, institutionStatus: ocrReviewReport.institutionStatus, aiStatus: 'pending', editSource: 'ocr_review', expectedRevision: ocrRevisionRef.current })
+      const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, pageDates: ocrPageDates, hospital: ocrReportMeta.institution, date: resolvedOcrReportDate(), institutionStatus: ocrReviewReport.institutionStatus, aiStatus: 'pending', editSource: 'ocr_review', expectedRevision: ocrRevisionRef.current })
       ocrRevisionRef.current = Number(saved.data?.reviewRevision ?? ocrRevisionRef.current)
       if (saved.data) setReports(current => current.map(report => report._id === saved.data._id ? { ...report, ...saved.data } : report))
       const savedItems = JSON.parse(JSON.stringify(saved.data?.reportItems || ocrEditItemsRef.current))
@@ -3625,7 +3635,7 @@ export default function PatientDetailPage() {
     try {
       // 先保存当前人工修改，再启动单页补提，避免覆盖尚未保存的审核内容。
       await ocrSaveQueueRef.current.catch(() => {})
-      const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, hospital: ocrReportMeta.institution, date: ocrReportMeta.checkDate, institutionStatus: ocrReviewReport.institutionStatus, aiStatus: 'pending', editSource: 'ocr_review', expectedRevision: ocrRevisionRef.current })
+      const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, pageDates: ocrPageDates, hospital: ocrReportMeta.institution, date: resolvedOcrReportDate(), institutionStatus: ocrReviewReport.institutionStatus, aiStatus: 'pending', editSource: 'ocr_review', expectedRevision: ocrRevisionRef.current })
       ocrRevisionRef.current = Number(saved.data?.reviewRevision ?? ocrRevisionRef.current)
       const res = await staffAPI.parseReportPageAI(ocrReviewReport._id, ocrReviewPage)
       toast(res.message || `第${ocrReviewPage}页补提已开始`)
@@ -3659,7 +3669,7 @@ export default function PatientDetailPage() {
       // 先持久化当前人工编辑，再让后端只对待归类项重跑；否则后端读取旧版本后返回整表，
       // 会把本窗口内尚未保存的数值、结论和手工归类全部覆盖。
       await ocrSaveQueueRef.current.catch(() => {})
-      const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, hospital: ocrReportMeta.institution, date: ocrReportMeta.checkDate, institutionStatus: ocrReviewReport.institutionStatus, aiStatus: 'pending', editSource: 'ocr_review', expectedRevision: ocrRevisionRef.current })
+      const saved = await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItemsRef.current, pageDates: ocrPageDates, hospital: ocrReportMeta.institution, date: resolvedOcrReportDate(), institutionStatus: ocrReviewReport.institutionStatus, aiStatus: 'pending', editSource: 'ocr_review', expectedRevision: ocrRevisionRef.current })
       ocrRevisionRef.current = Number(saved.data?.reviewRevision ?? ocrRevisionRef.current)
       const res = await staffAPI.reclassifyReport(id, ocrReviewReport._id)
       ocrRevisionRef.current = Number(res.reviewRevision ?? ocrRevisionRef.current)
@@ -11887,7 +11897,9 @@ export default function PatientDetailPage() {
                   // 顺序是原件页码 → 栏目 → 栏目内行序；绝不按检查类型重新排序。
                   const indexedAll = ocrEditItems.map((it, i) => ({ it, i }))
                   const indexed = indexedAll
-                    .filter(({ it }) => !it.sourcePage || Number(it.sourcePage) === activePage)
+                    // 旧报告可能没有 sourcePage；这类项目只归到第一页，不能在每一页
+                    // 都展示/修改，否则第 N 页录入日期会反向覆盖旧项目。
+                    .filter(({ it }) => Number(it.sourcePage) === activePage || (!it.sourcePage && activePage === 1))
                     .sort((a, b) => {
                       const section = (Number(a.it.sourceSectionOrder) || Number.MAX_SAFE_INTEGER) - (Number(b.it.sourceSectionOrder) || Number.MAX_SAFE_INTEGER)
                       if (section) return section
@@ -11905,15 +11917,24 @@ export default function PatientDetailPage() {
                   const attN = abn.filter(it => it.status === 'attention').length
                   return (
                     <>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 0.7fr) minmax(220px, 1fr)', gap: 8, padding: '10px 12px', marginBottom: 12, background: '#F6F9F7', border: '1px solid #D8EDE3', borderRadius: 8 }}>
-                        <label style={{ fontSize: 12, color: '#4A6558' }}>报告统一检查日期
-                          <input type="date" style={{ ...inp, marginTop: 4 }} value={ocrReportMeta.checkDate} onChange={e => setOcrReportMeta(meta => ({ ...meta, checkDate: e.target.value }))} />
+                      {(() => {
+                        const currentPageItems = indexed
+                        const inferredDates = [...new Set(currentPageItems.map(({ it }) => String(it.examDate || '').slice(0, 10)).filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value)))]
+                        const currentPageDate = ocrPageDates[activePage] ?? (inferredDates.length === 1 ? inferredDates[0] : '')
+                        const updateCurrentPageDate = value => {
+                          setOcrPageDates(dates => ({ ...dates, [activePage]: value }))
+                          setOcrEditItems(items => items.map(item => (Number(item.sourcePage) === activePage || (!item.sourcePage && activePage === 1)) ? { ...item, examDate: value } : item))
+                        }
+                        return <div style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 0.7fr) minmax(220px, 1fr)', gap: 8, padding: '10px 12px', marginBottom: 12, background: '#F6F9F7', border: '1px solid #D8EDE3', borderRadius: 8 }}>
+                        <label style={{ fontSize: 12, color: '#4A6558' }}>当前页检查日期（第 {activePage} 页）
+                          <input type="date" style={{ ...inp, marginTop: 4 }} value={currentPageDate} onChange={e => updateCurrentPageDate(e.target.value)} />
                         </label>
                         <label style={{ fontSize: 12, color: '#4A6558' }}>来源机构
                           <input style={{ ...inp, marginTop: 4 }} value={ocrReportMeta.institution} onChange={e => setOcrReportMeta(meta => ({ ...meta, institution: e.target.value }))} placeholder="原件未写可留空" />
                         </label>
-                        <div style={{ gridColumn: '1 / -1', fontSize: 11, color: '#6B7E75', lineHeight: 1.55 }}>仅整份资料只有一个明确日期时填写这里；同一文件含多日检查时留空，并在各项目分别填写日期。</div>
+                        <div style={{ gridColumn: '1 / -1', fontSize: 11, color: '#6B7E75', lineHeight: 1.55 }}>修改只应用并保存到当前页；其他页日期保持原样。不同页日期不同时，报告级日期会自动留空。</div>
                       </div>
+                      })()}
                       <ReportImageEvidenceNotice evidence={activeImageEvidence} hasItems={indexed.length > 0} />
                       {/* 异常快览：只看检验数值类异常，短标签一眼可见 */}
                       <div style={{ padding: '12px 14px', background: abn.length ? '#FFF7F5' : '#F3FAF6', borderRadius: 8, marginBottom: 12, border: `1px solid ${abn.length ? '#FAD9D2' : '#CDEBDD'}` }}>
