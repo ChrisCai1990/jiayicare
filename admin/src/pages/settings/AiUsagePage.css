@@ -3,3 +3,5 @@
 .aiu-page .page-header>div,.aiu-toolbar>div{min-width:0;max-width:100%}
 .aiu-page .page-subtitle{white-space:normal;line-height:1.7;margin-top:5px;color:#718078}
 @media(max-width:680px){.aiu-toolbar>div{width:100%}.aiu-toolbar .aiu-muted{display:block;margin-top:5px}}
+
+.aiu-report-title{font-weight:600;color:#263e34}
