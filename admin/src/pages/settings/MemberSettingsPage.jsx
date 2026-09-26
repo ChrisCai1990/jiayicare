@@ -219,6 +219,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                   </div>
                   <input className="form-input" value={productSearch} onChange={e => setProductSearch(e.target.value)} placeholder="搜索产品名称、分类或说明" style={{ marginBottom: 8 }} />
                   <div style={{ maxHeight: 330, overflowY: 'auto', border: '1px solid #E5E7EB', borderRadius: 8, padding: 8 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.15fr .35fr .8fr 1fr', gap: 8, padding: '4px 6px 7px', color: '#718096', fontSize: 11, fontWeight: 600, borderBottom: '1px solid #E5E7EB' }}><span>商城服务</span><span>独立次数</span><span>计次方式</span><span>周期／核销说明</span></div>
                     {visibleProducts.map(product => {
                       const saved = (configuration.serviceEntitlements || []).find(item => String(item.productId) === String(product._id)) || { productId: String(product._id), name: product.name, count: 0, schedule: '' }
                       const update = patch => setConfiguration(v => {
@@ -233,7 +234,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                       return <div key={product._id} style={{ display: 'grid', gridTemplateColumns: '1.15fr .35fr .8fr 1fr', gap: 8, padding: '7px 6px', borderBottom: '1px solid #F3F4F6', background: included ? '#F0FDF4' : 'transparent', borderRadius: 6 }}>
                         <div style={{ fontSize: 13, alignSelf: 'center' }}><strong>{product.name}</strong>{included && <span style={{ marginLeft: 6, padding: '1px 5px', borderRadius: 99, background: '#BBF7D0', color: '#166534', fontSize: 11 }}>已包含</span>}<small style={{ display: 'block', color: '#6B7280' }}>{product.category}</small></div>
                         {inPool ? <div className="form-input" title="由共享次数池统一扣减" style={{ color: '#6B7280', background: '#F9FAFB' }}>共享</div> : <input className="form-input" type="number" min="0" value={saved.count ?? 0} onChange={e => update({ count: Math.max(0, Number(e.target.value) || 0) })} title="包含次数" />}
-                        <select className="form-input" value={saved.poolKey || ''} onChange={e => update({ poolKey: e.target.value, count: e.target.value ? 0 : saved.count })} title="共享次数池"><option value="">独立次数</option>{(configuration.sharedEntitlementPools || []).map(pool => <option key={pool.key} value={pool.key}>{pool.name || '未命名共享池'}</option>)}</select>
+                        <select className="form-input" value={saved.poolKey || ''} onChange={e => update({ poolKey: e.target.value, count: e.target.value ? 0 : saved.count })} title="计次方式"><option value="">独立次数</option>{(configuration.sharedEntitlementPools || []).map(pool => <option key={pool.key} value={pool.key}>共享：{pool.name || '未命名次数池'}（{pool.count || 0}次）</option>)}</select>
                         <input className="form-input" value={saved.schedule || ''} placeholder="周期/核销说明（可选）" onChange={e => update({ schedule: e.target.value })} />
                       </div>
                     })}
