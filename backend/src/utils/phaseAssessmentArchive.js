@@ -1,5 +1,6 @@
 const PhaseAssessment = require('../models/PhaseAssessment');
 const ServiceRecord = require('../models/ServiceRecord');
+const Order = require('../models/Order');
 const { templateAssessmentFromContent } = require('./phaseAssessment');
 const { reviewedWriteback } = require('./reviewedWriteback');
 
@@ -26,6 +27,9 @@ async function completePhaseAssessmentArchive(item, user, actor, models = {}) {
       record = await Records.findOne(recordFilter); // 并发 upsert 已由另一个请求成功写入。
     }
     if (!record) throw new Error('未能读取评估归档记录');
+    if (item.packageEntitlementUsage?.executionOrderId) {
+      await Order.updateOne({ _id: item.packageEntitlementUsage.executionOrderId, status: { $ne: 'completed' } }, { $set: { status: 'completed', tradeStatus: 'completed', completedAt: new Date(), usedUnits: 1 } });
+    }
     const saved = await Assessments.findOneAndUpdate({ _id: item._id, status: 'archive_pending' }, {
       $set: { status: 'finalized', serviceRecordId: record._id, archiveError: '' }, $inc: { __v: 1 },
       $push: { auditLog: { action: 'archive', fromStatus: 'archive_pending', toStatus: 'finalized', staffId: actor._id, staffName: actor.name || '', staffRole: actor.role, at: new Date() } },

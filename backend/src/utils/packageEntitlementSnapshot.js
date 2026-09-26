@@ -20,6 +20,7 @@ async function buildPackageEntitlementSnapshot(servicePackage) {
       count: Math.max(0, Math.floor(Number(item?.count) || 0)),
       schedule: String(item?.schedule || '').trim(),
       poolKey: String(item?.poolKey || '').trim(),
+      systemService: String(item?.systemService || '').trim(),
     }))
     .filter(item => item.productId && mongoose.isValidObjectId(item.productId) && (item.count > 0 || item.poolKey));
 
@@ -44,6 +45,11 @@ async function buildPackageEntitlementSnapshot(servicePackage) {
     deliveryMode: configuration.deliveryMode || 'digital',
     includes365: !!configuration.includes365,
     familySharing: !!configuration.familySharing,
+    // AI 类权益也是售卖内容的一部分，必须随订单冻结；不能再按“年度会员”名称推断。
+    aiEntitlements: {
+      aiHealthAnalysis: !!servicePackageData.entitlements?.aiHealthAnalysis,
+      aiRiskAssessment: !!servicePackageData.entitlements?.aiRiskAssessment,
+    },
     membershipTier: String(configuration.membershipTier || '').trim(),
     reviewMode: configuration.reviewMode || 'exception',
     noResponseRule: configuration.noResponseRule || '',
@@ -58,6 +64,7 @@ async function buildPackageEntitlementSnapshot(servicePackage) {
         count: poolsByKey.has(row.poolKey) ? 0 : row.count,
         remainingCount: poolsByKey.has(row.poolKey) ? 0 : row.count,
         poolKey: poolsByKey.has(row.poolKey) ? row.poolKey : '',
+        systemService: String(row.systemService || '').trim(),
         schedule: row.schedule,
         productSnapshot: {
           category: product.category || '',

@@ -143,6 +143,17 @@ router.post('/patients/:patientId/phase-assessments/generate', staffAuth, async 
       const existing = await PhaseAssessment.findOne({ annualPlanId: plan._id, templateId: template._id, assessmentMode, $or: [{ assessmentDomain }, { assessmentDomain: { $exists: false } }] }).sort({ createdAt: -1 }).lean();
       return res.status(409).json({ success: false, message: '本周期已经生成阶段性评估', data: existing });
     }
+    try {
+      const usage = await require('../utils/packageEntitlements').consumeSystemServiceEntitlement(user, 'phase_assessment', {
+        note: `${item.periodLabel}阶段性评估自动发起`,
+      });
+      item.packageEntitlementUsage = { entitlementId: usage.entitlementId, productId: usage.productId, executionOrderId: usage.executionOrder._id, usedAt: new Date() };
+      if (typeof item.save === 'function') await item.save();
+    } catch (error) {
+      // 权益不足时不保留一份无法履约的 AI 草稿；客户可改为单次下单后重新发起。
+      await PhaseAssessment.deleteOne({ _id: item._id, status: { $in: ['pending', 'nutrition_review', 'professional_review'] } });
+      throw error;
+    }
     res.status(201).json({ success: true, data: item });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });

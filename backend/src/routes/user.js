@@ -30,7 +30,6 @@ const SystemConfig = require('../models/SystemConfig');
 const ShareToken = require('../models/ShareToken');
 const CheckupPlan = require('../models/CheckupPlan');
 const GiftRecord   = require('../models/GiftRecord');
-const ServicePackage = require('../models/ServicePackage');
 const PointsLog    = require('../models/PointsLog');
 const HealthPlan   = require('../models/HealthPlan');
 const PushRecord   = require('../models/PushRecord');
@@ -126,28 +125,9 @@ function historyWithoutCurrentBodyComposition(historyValue, currentValue) {
   });
 }
 
-// AI 健康信息权益：有效年度会员始终开放；同时配有健康顾问和健管专员的
-// 历史客户也视为年度会员，避免旧数据未写 servicePackage 时被误拦截。
 async function getAiEntitlements(user, serviceAccess) {
-  const none = { aiHealthAnalysis: false, aiRiskAssessment: false };
-  if (!user) return none;
   const access = serviceAccess || await require('../utils/serviceAccess').resolveServiceAccess(user);
-  if (!access.active) return none;
-  if (access.source === 'verified_renewal') user = { ...(user.toObject ? user.toObject() : user), serviceExpiry: access.endDate };
-  const hasAnnualTeam = Boolean(user.assignedFamilyDoctor && user.assignedHealthManager);
-  if (hasAnnualTeam) {
-    return { aiHealthAnalysis: true, aiRiskAssessment: true };
-  }
-  if (!user.servicePackage || !user.serviceExpiry) return none;
-  const names = [user.servicePackage, SERVICE_PACKAGE_LABELS[user.servicePackage]].filter(Boolean);
-  const pkg = await ServicePackage.findOne({ clientBrand: user.clientBrand || 'jiayiguanjia', name: { $in: names }, active: true }).lean();
-  const isAnnualMember = user.servicePackage === 'pkg_1y'
-    || names.some(name => /年度|全年|12\s*个月|健康预防|健康护航/.test(String(name)))
-    || Number(pkg?.activation?.durationMonths || 0) >= 12;
-  return {
-    aiHealthAnalysis: isAnnualMember,
-    aiRiskAssessment: isAnnualMember,
-  };
+  return require('../utils/packageFeatureEntitlements').getAiEntitlements(user, access);
 }
 
 async function requireAiEntitlement(user, key, res) {

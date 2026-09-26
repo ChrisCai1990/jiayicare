@@ -17,6 +17,11 @@ const MEMBERSHIP_TIERS = [
   { value: 'therapy', label: '疗程会员' },
   { value: 'enterprise', label: '企业会员' },
 ]
+const SYSTEM_SERVICE_OPTIONS = [
+  { value: '', label: '仅普通商城服务' },
+  { value: 'phase_assessment', label: '阶段性评估' },
+  { value: 'monthly_service_review', label: '月度服务复盘' },
+]
 
 // ─── 共用：简单列表管理组件（标签/来源） ─────────────────────────
 function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, deleteFn, withClientBrand = false, withEntitlements = false, withActivation = false }) {
@@ -184,11 +189,11 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                   ))}
                   <button type="button" className="btn btn-ghost" onClick={() => setConfiguration(v => ({ ...v, sharedEntitlementPools: [...(v.sharedEntitlementPools || []), { key: `pool_${Date.now()}`, name: '', count: 1 }] }))}>+ 新增共享次数池</button>
                   <label className="form-label" style={{ marginTop: 14 }}>方案包含的商城产品</label>
-                  <p style={{ color: '#6B7280', fontSize: 12, margin: '4px 0 8px' }}>商城产品自动列出；填写大于 0 的次数即写入客户权益，填 0 表示不包含。产品价格、抵扣比例和履约规则仍在商城产品中维护。</p>
+                  <p style={{ color: '#6B7280', fontSize: 12, margin: '4px 0 8px' }}>商城产品自动列出；填写大于 0 的次数即写入客户权益，填 0 表示不包含。阶段性评估、月度服务复盘如需套餐内自动扣减，请在对应商城产品中选择系统服务用途。产品价格、抵扣比例和履约规则仍在商城产品中维护。</p>
                   <input className="form-input" value={productSearch} onChange={e => setProductSearch(e.target.value)} placeholder="搜索产品名称、分类或说明" style={{ marginBottom: 8 }} />
                   <div style={{ maxHeight: 330, overflowY: 'auto', border: '1px solid #E5E7EB', borderRadius: 8, padding: 8 }}>
                     {visibleProducts.map(product => {
-                      const saved = (configuration.serviceEntitlements || []).find(item => String(item.productId) === String(product._id)) || { productId: String(product._id), name: product.name, count: 0, schedule: '' }
+                      const saved = (configuration.serviceEntitlements || []).find(item => String(item.productId) === String(product._id)) || { productId: String(product._id), name: product.name, count: 0, schedule: '', systemService: '' }
                       const update = patch => setConfiguration(v => {
                         const rows = [...(v.serviceEntitlements || [])]
                         const i = rows.findIndex(item => String(item.productId) === String(product._id))
@@ -197,10 +202,11 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                         return { ...v, serviceEntitlements: rows }
                       })
                       const inPool = !!saved.poolKey
-                      return <div key={product._id} style={{ display: 'grid', gridTemplateColumns: '1.15fr .35fr .8fr 1fr', gap: 8, padding: '7px 0', borderBottom: '1px solid #F3F4F6' }}>
+                      return <div key={product._id} style={{ display: 'grid', gridTemplateColumns: '1.15fr .35fr .8fr .9fr 1fr', gap: 8, padding: '7px 0', borderBottom: '1px solid #F3F4F6' }}>
                         <div style={{ fontSize: 13, alignSelf: 'center' }}><strong>{product.name}</strong><small style={{ display: 'block', color: '#6B7280' }}>{product.category}</small></div>
                         {inPool ? <div className="form-input" title="由共享次数池统一扣减" style={{ color: '#6B7280', background: '#F9FAFB' }}>共享</div> : <input className="form-input" type="number" min="0" value={saved.count ?? 0} onChange={e => update({ count: Math.max(0, Number(e.target.value) || 0) })} title="包含次数" />}
                         <select className="form-input" value={saved.poolKey || ''} onChange={e => update({ poolKey: e.target.value, count: e.target.value ? 0 : saved.count })} title="共享次数池"><option value="">独立次数</option>{(configuration.sharedEntitlementPools || []).map(pool => <option key={pool.key} value={pool.key}>{pool.name || '未命名共享池'}</option>)}</select>
+                        <select className="form-input" value={saved.systemService || ''} onChange={e => update({ systemService: e.target.value })} title="系统服务用途">{SYSTEM_SERVICE_OPTIONS.map(item => <option key={item.value || 'normal'} value={item.value}>{item.label}</option>)}</select>
                         <input className="form-input" value={saved.schedule || ''} placeholder="周期/核销说明（可选）" onChange={e => update({ schedule: e.target.value })} />
                       </div>
                     })}

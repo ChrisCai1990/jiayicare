@@ -44,6 +44,7 @@ const phaseAssessmentSchema = new mongoose.Schema({
   finalizedByRole: { type: String, default: '' }, // 保留实际审核人，不能用重试操作人覆盖。
   archiveError: { type: String, default: '' },
   serviceRecordId: { type: mongoose.Schema.Types.ObjectId, ref: 'ServiceRecord', default: null },
+  packageEntitlementUsage: { type: mongoose.Schema.Types.Mixed, default: null },
   reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 兼容旧记录
   reviewedAt: { type: Date, default: null },
   reviewNote: { type: String, default: '' },

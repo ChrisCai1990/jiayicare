@@ -14,11 +14,15 @@ let actor;
 const auth = require.resolve('../src/middleware/staffAuth'); require(auth);
 require.cache[auth].exports = (req, res, next) => { req.staff = actor; next(); };
 const router = require('../src/routes/aiCaseReviews');
+const packageEntitlements = require('../src/utils/packageEntitlements');
 const periodic = require('../src/utils/annualPeriodicGate');
 const actualPeriodicGate = periodic.annualPeriodicGate;
 test.beforeEach(t => {
   aiCalls = 0;
   t.mock.method(periodic, 'annualPeriodicGate', async plan => ({ allowed: true, anchor: plan.confirmedAt }));
+  t.mock.method(packageEntitlements, 'consumeSystemServiceEntitlement', async () => ({
+    entitlementId: '000000000000000000000004', productId: '000000000000000000000005', executionOrder: { _id: '000000000000000000000006' },
+  }));
 });
 async function request(t, body, method = 'PATCH') {
   const app = express(); app.use(express.json()); app.use(router);
