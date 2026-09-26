@@ -1,12 +1,11 @@
 const ServicePackage = require('../models/ServicePackage');
 const { applicableEntitlements } = require('./packageEntitlements');
 
-const NONE = { aiHealthAnalysis: false, aiRiskAssessment: false, phaseAssessment: false, monthlyServiceReview: false };
+const NONE = { aiHealthAnalysis: false, phaseAssessment: false, monthlyServiceReview: false };
 
 function aiRights(value) {
   return {
     aiHealthAnalysis: value?.aiHealthAnalysis === true,
-    aiRiskAssessment: value?.aiRiskAssessment === true,
     phaseAssessment: value?.phaseAssessment === true,
     monthlyServiceReview: value?.monthlyServiceReview === true,
   };

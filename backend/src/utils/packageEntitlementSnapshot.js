@@ -47,7 +47,6 @@ async function buildPackageEntitlementSnapshot(servicePackage) {
     // AI 类权益也是售卖内容的一部分，必须随订单冻结；不能再按“年度会员”名称推断。
     aiEntitlements: {
       aiHealthAnalysis: !!servicePackageData.entitlements?.aiHealthAnalysis,
-      aiRiskAssessment: !!servicePackageData.entitlements?.aiRiskAssessment,
       phaseAssessment: !!servicePackageData.entitlements?.phaseAssessment,
       monthlyServiceReview: !!servicePackageData.entitlements?.monthlyServiceReview,
     },
