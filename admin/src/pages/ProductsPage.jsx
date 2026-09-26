@@ -23,6 +23,7 @@ const EMPTY_FORM = {
   deliveryRequired: false, serviceLocation: '', validityDays: 365,
   refundPolicy: '服务开始前可申请退款；已发生的第三方费用及已完成服务不予退还。', skus: [],
   healthFundDeduction: { mode: 'inherit', value: 0 },
+  memberBundle: { enabled:false, allowedMembershipTiers:['consumer365','annual','therapy','enterprise'], selectionCount: 3, validityDays:730, purchaseLimitPerMembership:1, transferRemainingOnce:true, discountRules:[{ key:'standard', label:'会员专享价', discountRate:0.7 }], selectableProducts:[] },
   performanceRule: { ruleType: 'none', referrerRate: 0, fulfillerRate: 0, referrerAmount: 0, fulfillerAmount: 0 },
   servicePerformerRoles: [],
   serviceItems: [],
@@ -248,6 +249,33 @@ function ServicePricesForm({ servicePrices, onChange }) {
   )
 }
 
+function MemberBundleForm({ value, onChange, products }) {
+  const bundle = value || EMPTY_FORM.memberBundle
+  const set = (key, val) => onChange({ ...bundle, [key]: val })
+  const toggleProduct = (productId, checked) => set('selectableProducts', checked
+    ? [...(bundle.selectableProducts || []), { productId, pricingGroup:'standard' }]
+    : (bundle.selectableProducts || []).filter(item => String(item.productId) !== String(productId)))
+  const setGroup = (productId, pricingGroup) => set('selectableProducts', (bundle.selectableProducts || []).map(item => String(item.productId) === String(productId) ? { ...item, pricingGroup } : item))
+  const rules = bundle.discountRules || []
+  return <div>
+    <div style={{padding:14,background:'#fff8e8',border:'1px solid #f0dfb4',borderRadius:10,color:'#6f5312',fontSize:13,marginBottom:16}}>
+      仅用于“会员专享组合服务包”。客户只能在此勾选的既有商城服务中自选；系统按分组折扣实时计算，付款后写入 24 个月独立权益。健康基金与优惠券不可叠加。
+    </div>
+    <label style={{display:'flex',gap:8,alignItems:'center',fontWeight:600}}><input type="checkbox" checked={!!bundle.enabled} onChange={e=>set('enabled',e.target.checked)}/>启用会员专享组合规则</label>
+    {bundle.enabled && <>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginTop:16}}>
+        <div className="form-group"><label className="form-label">客户每包选择服务数</label><input className="form-input" type="number" min="1" value={bundle.selectionCount} onChange={e=>set('selectionCount',Math.max(1,parseInt(e.target.value)||1))}/></div>
+        <div className="form-group"><label className="form-label">权益有效期（天）</label><input className="form-input" type="number" min="1" value={bundle.validityDays} onChange={e=>set('validityDays',Math.max(1,parseInt(e.target.value)||730))}/><div style={{fontSize:12,color:'#888',marginTop:4}}>建议 730 天（两年）</div></div>
+        <div className="form-group"><label className="form-label">每个会员期最多购买包数</label><input className="form-input" type="number" min="1" value={bundle.purchaseLimitPerMembership} onChange={e=>set('purchaseLimitPerMembership',Math.max(1,parseInt(e.target.value)||1))}/></div>
+        <label style={{display:'flex',gap:8,alignItems:'center',paddingTop:20}}><input type="checkbox" checked={bundle.transferRemainingOnce !== false} onChange={e=>set('transferRemainingOnce',e.target.checked)}/>剩余权益允许转赠一次（受让人须为有效365+）</label>
+      </div>
+      <div className="form-group"><label className="form-label">可购买会员</label>{[['consumer365','365会员'],['annual','年度会员'],['therapy','疗程会员'],['enterprise','企业会员']].map(([key,label])=><label key={key} style={{marginRight:14}}><input type="checkbox" checked={(bundle.allowedMembershipTiers||[]).includes(key)} onChange={e=>set('allowedMembershipTiers',e.target.checked?[...(bundle.allowedMembershipTiers||[]),key]:(bundle.allowedMembershipTiers||[]).filter(v=>v!==key))}/>{label}</label>)}</div>
+      <div style={{borderTop:'1px solid #e0d9ce',paddingTop:14,marginTop:14}}><label className="form-label">折扣分组</label>{rules.map((rule,index)=><div key={index} style={{display:'grid',gridTemplateColumns:'1fr 1fr auto',gap:8,marginBottom:8}}><input className="form-input" value={rule.label||''} placeholder="分组名称" onChange={e=>set('discountRules',rules.map((item,i)=>i===index?{...item,label:e.target.value}:item))}/><input className="form-input" type="number" min="0.1" max="1" step="0.01" value={rule.discountRate} onChange={e=>set('discountRules',rules.map((item,i)=>i===index?{...item,discountRate:Math.min(1,Math.max(0.1,Number(e.target.value)||1))}:item))}/><button type="button" className="btn btn-ghost" onClick={()=>set('discountRules',rules.filter((_,i)=>i!==index))}>删除</button></div>)}<button type="button" className="btn btn-sm btn-ghost" onClick={()=>set('discountRules',[...rules,{key:`group_${Date.now()}`,label:'新分组',discountRate:0.7}])}>＋添加分组</button><div style={{fontSize:12,color:'#888',marginTop:5}}>填 0.7 即七折。不同成本服务可分组，例如“低成本 0.6”“陪诊/外部约诊 0.7”。</div></div>
+      <div style={{borderTop:'1px solid #e0d9ce',paddingTop:14,marginTop:16}}><label className="form-label">可选商城服务</label><div style={{fontSize:12,color:'#888',marginBottom:8}}>勾选后才可被客户选择；同一项服务仅计 1 次，医护端按独立权益核销。</div><div style={{maxHeight:280,overflowY:'auto',border:'1px solid #e0d9ce',borderRadius:8}}>{products.filter(p=>String(p._id)!==String(value?._id)).map(p=>{const selected=(bundle.selectableProducts||[]).find(item=>String(item.productId)===String(p._id));return <div key={p._id} style={{display:'grid',gridTemplateColumns:'auto 1fr 150px',gap:10,alignItems:'center',padding:'10px 12px',borderBottom:'1px solid #f0ece5'}}><input type="checkbox" checked={!!selected} onChange={e=>toggleProduct(p._id,e.target.checked)}/><div><div style={{fontWeight:600}}>{p.name}</div><div style={{fontSize:12,color:'#888'}}>¥{p.servicePrices?.[0]?.price ?? p.originalPrice}</div></div><select className="form-input" disabled={!selected} value={selected?.pricingGroup||'standard'} onChange={e=>setGroup(p._id,e.target.value)}>{rules.map(rule=><option key={rule.key} value={rule.key}>{rule.label||rule.key}</option>)}</select></div>})}</div></div>
+    </>}
+  </div>
+}
+
 // ── 图片上传（支持 URL 粘贴 + 文件上传） ──────────────────────────
 function ImageUploadList({ images, onChange }) {
   const toast = useToast()
@@ -364,6 +392,11 @@ function ProductModal({ product, categories, onClose, onSaved }) {
       validityDays: product.validityDays || 365,
       refundPolicy: product.refundPolicy || '',
       healthFundDeduction: { mode:'inherit', value:0, ...(product.healthFundDeduction || {}) },
+      memberBundle: { ...EMPTY_FORM.memberBundle, ...(product.memberBundle || {}),
+        allowedMembershipTiers: product.memberBundle?.allowedMembershipTiers?.length ? product.memberBundle.allowedMembershipTiers : EMPTY_FORM.memberBundle.allowedMembershipTiers,
+        discountRules: product.memberBundle?.discountRules?.length ? product.memberBundle.discountRules : EMPTY_FORM.memberBundle.discountRules,
+        selectableProducts: product.memberBundle?.selectableProducts || [],
+      },
       skus: product.skus || [],
       performanceRule: product.performanceRule || { ruleType: 'none', referrerRate: 0, fulfillerRate: 0, referrerAmount: 0, fulfillerAmount: 0 },
       servicePerformerRoles: (product.servicePerformerRoles || []).map(r => ({
@@ -392,11 +425,16 @@ function ProductModal({ product, categories, onClose, onSaved }) {
   const [generatingAi, setGeneratingAi] = useState(false)
   const [tab, setTab] = useState('basic')
   const [staffList, setStaffList] = useState([])
+  const [productsForBundle, setProductsForBundle] = useState([])
 
   useEffect(() => {
     adminAPI.staffList({ pageSize: 500 }).then(r => {
       setStaffList(r.data?.staff || r.data?.list || r.data || [])
     }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    adminAPI.products({}).then(r => setProductsForBundle(r.data || [])).catch(() => {})
   }, [])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -460,6 +498,16 @@ function ProductModal({ product, categories, onClose, onSaved }) {
           mode: form.healthFundDeduction?.mode || 'inherit',
           value: Math.max(0, Number(form.healthFundDeduction?.value) || 0),
         },
+        memberBundle: form.memberBundle?.enabled ? {
+          enabled: true,
+          allowedMembershipTiers: (form.memberBundle.allowedMembershipTiers || []).filter(Boolean),
+          selectionCount: Math.max(1, Number(form.memberBundle.selectionCount) || 1),
+          validityDays: Math.max(1, Number(form.memberBundle.validityDays) || 730),
+          purchaseLimitPerMembership: Math.max(1, Number(form.memberBundle.purchaseLimitPerMembership) || 1),
+          transferRemainingOnce: form.memberBundle.transferRemainingOnce !== false,
+          discountRules: (form.memberBundle.discountRules || []).filter(item => item.key && item.label).map(item => ({ key:item.key, label:item.label, discountRate:Math.min(1,Math.max(0.1,Number(item.discountRate)||1)) })),
+          selectableProducts: (form.memberBundle.selectableProducts || []).filter(item => item.productId).map(item => ({ productId:item.productId, pricingGroup:item.pricingGroup || 'standard' })),
+        } : { enabled:false },
         skus: form.skus || [],
         performanceRule: form.performanceRule,
         servicePerformerRoles: (form.servicePerformerRoles || [])
@@ -496,6 +544,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
     { key: 'basic', label: '基本信息' },
     { key: 'price', label: '收费项目' },
     { key: 'fund', label: '基金抵扣' },
+    { key: 'memberBundle', label: '会员专享包' },
     { key: 'performance', label: '绩效分配' },
     { key: 'images', label: '产品图片' },
     { key: 'desc', label: '详情描述' },
@@ -659,6 +708,8 @@ function ProductModal({ product, categories, onClose, onSaved }) {
               </div>}
             </div>
           })()}
+
+          {tab === 'memberBundle' && <MemberBundleForm value={form.memberBundle} onChange={v => set('memberBundle', v)} products={productsForBundle} />}
 
           {tab === 'performance' && (
             <div>

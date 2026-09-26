@@ -52,6 +52,27 @@ const productSchema = new mongoose.Schema({
     mode: { type: String, enum: ['inherit', 'disabled', 'unlimited', 'percentage', 'fixedAmount'], default: 'inherit' },
     value: { type: Number, default: 0, min: 0 },
   },
+  // 会员专享组合服务包。实际服务仍引用已有商城商品，支付后把每项服务写入
+  // 独立权益台账，避免用手工文案或一个笼统的次数池替代可核销服务。
+  memberBundle: {
+    enabled: { type: Boolean, default: false },
+    allowedMembershipTiers: [{ type: String, enum: ['consumer365', 'annual', 'therapy', 'enterprise'] }],
+    selectionCount: { type: Number, default: 0, min: 0 },
+    validityDays: { type: Number, default: 730, min: 1 },
+    purchaseLimitPerMembership: { type: Number, default: 1, min: 1 },
+    transferRemainingOnce: { type: Boolean, default: true },
+    discountRules: [{
+      key: { type: String, trim: true },
+      label: { type: String, trim: true },
+      discountRate: { type: Number, min: 0, max: 1 },
+      _id: false,
+    }],
+    selectableProducts: [{
+      productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
+      pricingGroup: { type: String, default: 'standard', trim: true },
+      _id: false,
+    }],
+  },
   // 绩效分配规则（引流人+单一服务人两个比例，历史结构，保留兼容）
   performanceRule: require('../utils/tenantScope').performanceRuleSchema,
   // 多服务岗位绩效：一个产品由多个岗位协同提供服务，每岗位各自的绩效比例（占实付价%）。

@@ -467,6 +467,7 @@ router.patch('/orders/:id/pay', adminAuth, async (req, res) => {
   // 与微信支付使用同一实付积分口径及已有订单去重规则。
   await require('../utils/orderPoints').awardOrderPoints(order);
   await require('../utils/packageEntitlements').ensurePackageEntitlement(order, { syncCustomerMembership: true });
+  await require('../utils/packageEntitlements').ensureMemberBundleEntitlement(order);
 
   res.json({ success: true, data: order, message: '已标记为已支付，核销码：' + order.verifyCode });
 });
@@ -1561,7 +1562,7 @@ router.post('/products/ai-draft', adminAuth, async (req, res) => {
 
 // POST /api/admin/products
 router.post('/products', adminAuth, async (req, res) => {
-  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, stockLimited, status, performanceRule, servicePerformerRoles, serviceItems, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction, skus, aiProfile } = req.body;
+  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, stockLimited, status, performanceRule, servicePerformerRoles, serviceItems, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction, memberBundle, skus, aiProfile } = req.body;
   if (stock !== undefined && (!Number.isInteger(Number(stock)) || Number(stock) < 0)) return res.status(400).json({ success: false, message: '库存必须是非负整数' });
   if (!name || !category || originalPrice === undefined) {
     return res.status(400).json({ success: false, message: '名称、分类、原价为必填项' });
@@ -1580,7 +1581,7 @@ router.post('/products', adminAuth, async (req, res) => {
     fulfillmentType: fulfillmentType || 'offline_service', paymentChannel: paymentChannel || 'wechat_pay',
     bookingRequired: bookingRequired !== false, deliveryRequired: !!deliveryRequired,
     serviceLocation: serviceLocation || '', validityDays: validityDays || 365,
-    refundPolicy: refundPolicy || undefined, healthFundDeduction: healthFundDeduction || undefined, skus: skus || [],
+    refundPolicy: refundPolicy || undefined, healthFundDeduction: healthFundDeduction || undefined, memberBundle: memberBundle || undefined, skus: skus || [],
     aiProfile: require('../utils/productAiProfile').normalizeAiProfile(aiProfile),
   });
   res.json({ success: true, data: product, message: '产品创建成功' });
@@ -1588,12 +1589,12 @@ router.post('/products', adminAuth, async (req, res) => {
 
 // PUT /api/admin/products/:id
 router.put('/products/:id', adminAuth, async (req, res) => {
-  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, stockLimited, status, performanceRule, servicePerformerRoles, serviceItems, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction, skus, aiProfile } = req.body;
+  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, stockLimited, status, performanceRule, servicePerformerRoles, serviceItems, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction, memberBundle, skus, aiProfile } = req.body;
   if (stock !== undefined && (!Number.isInteger(Number(stock)) || Number(stock) < 0)) return res.status(400).json({ success: false, message: '库存必须是非负整数' });
   if (paymentChannel && !['wechat_pay', 'offline'].includes(paymentChannel)) {
     return res.status(400).json({ success: false, message: '真实服务商品仅支持普通微信支付或线下收款' });
   }
-  const updateData = { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles: servicePerformerRoles || [], serviceItems: serviceItems || [], fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction: healthFundDeduction || { mode:'inherit', value:0 }, skus: skus || [] };
+  const updateData = { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles: servicePerformerRoles || [], serviceItems: serviceItems || [], fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction: healthFundDeduction || { mode:'inherit', value:0 }, memberBundle: memberBundle || { enabled:false }, skus: skus || [] };
   if (stock !== undefined) updateData.stockLimited = stockLimited === true || Number(stock) > 0;
   // 兼容尚未升级的管理端：请求未携带 aiProfile 时保留原配置，避免普通产品编辑意外关闭 AI 推荐。
   if (aiProfile !== undefined) updateData.aiProfile = require('../utils/productAiProfile').normalizeAiProfile(aiProfile);

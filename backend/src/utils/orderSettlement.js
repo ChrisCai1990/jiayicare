@@ -90,6 +90,7 @@ async function settlePaidOrder(payment, order, cashAmount) {
   await order.save();
   await awardOrderPoints(order);
   await require('./packageEntitlements').ensurePackageEntitlement(order, { syncCustomerMembership: true });
+  await require('./packageEntitlements').ensureMemberBundleEntitlement(order);
 
   const fulfillment = await Fulfillment.findOneAndUpdate(
     { order: order._id },
@@ -189,7 +190,7 @@ async function confirmRefund(refund, snapshot) {
       await require('./healthFundPayment').reverseHealthFund({ order, remark: `订单${order.serviceName}退款返还` });
     }
     await require('./productShareRewards').reverseProductShareRewards(order);
-    if (order.orderType === 'package') {
+    if (order.orderType === 'package' || order.annualServiceSnapshot?.memberBundleSnapshot?.productId) {
       await require('../models/PackageEntitlement').updateOne(
         { sourceOrderId: order._id, status: 'active' },
         { $set: { status: 'cancelled' } },

@@ -7006,8 +7006,12 @@ router.get('/patients/:id/package-entitlements', staffAuth, async (req, res) => 
   try {
     // 新台账上线前已经支付、且当时已有权益快照的订单，在首次查看客户权益时补齐。
     // 没有快照的历史订单不推测其包含内容，仍由运营按既有规则人工配置。
-    const packageOrders = await Order.find({ user: req.params.id, orderType: 'package', paymentStatus: 'paid', 'annualServiceSnapshot.entitlementSnapshot.packageId': { $ne: null } });
+    const packageOrders = await Order.find({ user: req.params.id, paymentStatus: 'paid', $or: [
+      { orderType: 'package', 'annualServiceSnapshot.entitlementSnapshot.packageId': { $ne: null } },
+      { 'annualServiceSnapshot.memberBundleSnapshot.productId': { $ne: null } },
+    ] });
     await Promise.all(packageOrders.map(order => require('../utils/packageEntitlements').ensurePackageEntitlement(order)));
+    await Promise.all(packageOrders.map(order => require('../utils/packageEntitlements').ensureMemberBundleEntitlement(order)));
     const rows = await require('../utils/packageEntitlements').applicableEntitlements(req.params.id);
     res.json({ success: true, data: rows.map(row => ({
       _id: row._id, ownerUserId: row.ownerUserId, sourceOrderId: row.sourceOrderId,

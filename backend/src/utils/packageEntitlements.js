@@ -48,6 +48,30 @@ async function ensurePackageEntitlement(order, { syncCustomerMembership = false 
   return entitlement;
 }
 
+// 组合包也是付费订单的权益台账，但不属于年度服务模板。每个选中的商城
+// 服务都保留为独立 productEntitlements，医护端发起服务时即可准确匹配并
+// 按最早到期权益扣减。
+async function ensureMemberBundleEntitlement(order) {
+  const snapshot = order?.annualServiceSnapshot?.memberBundleSnapshot;
+  if (order?.paymentStatus !== 'paid' || !snapshot?.productId || !order.user) return null;
+  const validFrom = order.paidAt || new Date();
+  const validUntil = new Date(validFrom.getTime() + Math.max(1, Number(snapshot.validityDays) || 730) * 86400000);
+  return PackageEntitlement.findOneAndUpdate(
+    { sourceOrderId: order._id },
+    { $setOnInsert: {
+      ownerUserId: order.user, tenantId: order.tenantId || null, sourceOrderId: order._id,
+      packageId: null, packageName: snapshot.name || order.serviceName || '会员专享服务包',
+      clientBrand: snapshot.clientBrand || 'jiayiguanjia', validFrom, validUntil,
+      familySharing: false,
+      rights: { productEntitlements: copy(snapshot.productEntitlements || []), memberBundle: {
+        productId: snapshot.productId, transferRemainingOnce: snapshot.transferRemainingOnce === true,
+        transferredAt: null, transferredToUserId: null,
+      } },
+    } },
+    { upsert: true, new: true },
+  );
+}
+
 async function applicableEntitlements(patientId, now = new Date()) {
   const patient = await User.findById(patientId).select('familyLinks').lean();
   if (!patient) return [];
@@ -65,4 +89,4 @@ function expirySweep(rows, now = new Date()) {
   return rows.filter(row => new Date(row.validUntil) >= now && row.status === 'active');
 }
 
-module.exports = { ensurePackageEntitlement, applicableEntitlements, expirySweep };
+module.exports = { ensurePackageEntitlement, ensureMemberBundleEntitlement, applicableEntitlements, expirySweep };

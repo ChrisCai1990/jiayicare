@@ -195,7 +195,7 @@ router.post('/inquiries', auth, async (req, res) => {
 // useHealthFund: 本次要抵扣的健康基金金额（元，<= 余额 且 <= 订单原价）
 // couponId: 本次要使用的优惠券 _id（amount 满减 或 percent 折扣，两者可叠加使用）
 router.post('/order', auth, async (req, res) => {
-  const { serviceId, specificationLabel, note, paymentMethod = 'wechat_pay', useHealthFund, couponId, shareToken = '', desiredServiceDate, serviceRequirements, serviceProviderConsent } = req.body;
+  const { serviceId, specificationLabel, note, paymentMethod = 'wechat_pay', useHealthFund, couponId, shareToken = '', desiredServiceDate, serviceRequirements, serviceProviderConsent, bundleSelections = [] } = req.body;
   if (!serviceId) {
     return res.status(400).json({ success: false, message: '请指定服务项目' });
   }
@@ -242,6 +242,42 @@ router.post('/order', auth, async (req, res) => {
       paymentChannel: product.paymentChannel || 'wechat_pay',
       serviceProvider: product.serviceProvider || 'platform',
     };
+  }
+  // 会员专享组合包由用户选取具体服务；价格、准入及权益均由服务端重算。
+  let memberBundleSnapshot = null;
+  if (product?.memberBundle?.enabled) {
+    const bundle = product.memberBundle;
+    const allowedTiers = (bundle.allowedMembershipTiers || []).map(String);
+    const canBuy = await require('../utils/packageFeatureEntitlements').hasMemberProductAccess(req.user, allowedTiers);
+    if (!canBuy) return res.status(403).json({ success: false, code: 'MEMBER_ONLY', message: '此服务包仅限有效365及以上会员购买' });
+    const activeMemberships = await require('../utils/packageEntitlements').applicableEntitlements(req.user._id);
+    const membershipStarts = activeMemberships.filter(row => row.rights?.includes365 === true || allowedTiers.includes(String(row.rights?.membershipTier || ''))).map(row => new Date(row.validFrom)).filter(date => !Number.isNaN(date.getTime()));
+    const membershipStart = membershipStarts.length ? new Date(Math.max(...membershipStarts.map(date => date.getTime()))) : new Date(0);
+    const boughtCount = await Order.countDocuments({ user: req.user._id, serviceId: String(product._id), paymentStatus: 'paid', paidAt: { $gte: membershipStart } });
+    if (boughtCount >= Math.max(1, Number(bundle.purchaseLimitPerMembership) || 1)) return res.status(409).json({ success: false, message: '本会员有效期内该服务包已达可购买次数' });
+    if (Number(useHealthFund) > 0) return res.status(400).json({ success: false, message: '会员专享服务包已享组合优惠，不支持叠加健康基金' });
+    if (couponId) return res.status(400).json({ success: false, message: '会员专享服务包已享组合优惠，不支持叠加优惠券' });
+    const selectedIds = Array.isArray(bundleSelections) ? bundleSelections.map(item => String(item?.productId || item)).filter(id => mongoose.isValidObjectId(id)) : [];
+    const expected = Math.max(1, Number(bundle.selectionCount) || 1);
+    if (selectedIds.length !== expected || new Set(selectedIds).size !== selectedIds.length) return res.status(400).json({ success: false, message: `请恰好选择 ${expected} 项不同服务` });
+    const selectable = new Map((bundle.selectableProducts || []).map(item => [String(item.productId), String(item.pricingGroup || 'standard')]));
+    if (selectedIds.some(id => !selectable.has(id))) return res.status(400).json({ success: false, message: '所选服务不在该会员服务包可选范围内，请刷新后重试' });
+    const sourceProducts = await Product.find({ _id: { $in: selectedIds }, status: 'on' }).lean();
+    const byId = new Map(sourceProducts.map(item => [String(item._id), item]));
+    if (selectedIds.some(id => !byId.has(id))) return res.status(409).json({ success: false, message: '所选服务已下架，请重新选择' });
+    const rules = new Map((bundle.discountRules || []).map(item => [String(item.key || 'standard'), Math.max(0, Math.min(1, Number(item.discountRate) || 1))]));
+    const productEntitlements = selectedIds.map(id => {
+      const source = byId.get(id); const group = selectable.get(id) || 'standard';
+      const listPrice = Number(source.servicePrices?.[0]?.price ?? source.originalPrice ?? 0);
+      const discountRate = rules.has(group) ? rules.get(group) : 1;
+      return { productId: source._id, productName: source.name, count: 1, remainingCount: 1, poolKey: '', schedule: '', listPrice, discountRate,
+        productSnapshot: { category: source.category || '', fulfillmentType: source.fulfillmentType || 'offline_service', serviceWorkflow: source.serviceWorkflow || {}, serviceItems: source.serviceItems || [] } };
+    });
+    const listTotal = productEntitlements.reduce((sum, item) => sum + item.listPrice, 0);
+    const bundlePrice = Math.round(productEntitlements.reduce((sum, item) => sum + item.listPrice * item.discountRate, 0) * 100) / 100;
+    service.price = bundlePrice; service.originalPrice = listTotal; service.specificationLabel = `${expected}项会员专享组合`;
+    service.skuFulfillmentType = 'subscription_service';
+    memberBundleSnapshot = { version: 1, productId: product._id, name: product.name, clientBrand: req.user.clientBrand || 'jiayiguanjia', validityDays: Math.max(1, Number(bundle.validityDays) || 730), transferRemainingOnce: bundle.transferRemainingOnce === true, allowedMembershipTiers: allowedTiers, listTotal, bundlePrice, productEntitlements, capturedAt: new Date() };
   }
   if (!service && mongoose.isValidObjectId(serviceId)) {
     servicePackage = await ServicePackage.findOne({
@@ -403,11 +439,12 @@ router.post('/order', auth, async (req, res) => {
     tradeStatus: paidAmount > 0 ? 'awaiting_payment' : 'paid',
     fulfillmentType: orderFulfillmentType,
     orderType:    isPkg ? 'package' : (product ? 'product' : 'service'),
-    annualServiceSnapshot: isPkg ? {
+    annualServiceSnapshot: (isPkg || memberBundleSnapshot) ? {
       packageId: servicePackage?._id || null,
       clientBrand: req.user.clientBrand || 'jiayiguanjia',
       durationMonths: servicePackage ? Number(servicePackage.activation?.durationMonths || 12) : ({ pkg_1y: 12, pkg_6m: 6, pkg_3m: 3 })[service.id],
       entitlementSnapshot: packageEntitlementSnapshot,
+      ...(memberBundleSnapshot ? { memberBundleSnapshot } : {}),
       capturedAt: new Date(),
     } : null,
     inventoryReserved: inventory.reserved,
@@ -492,6 +529,7 @@ router.post('/order', auth, async (req, res) => {
   await Promise.all(pendingTasks);
   order.paidAt = new Date();
   await require('../utils/packageEntitlements').ensurePackageEntitlement(order, { syncCustomerMembership: true });
+  await require('../utils/packageEntitlements').ensureMemberBundleEntitlement(order);
   const fulfillment = await Fulfillment.findOneAndUpdate(
     { order: order._id },
     { $setOnInsert: { order: order._id, user: order.user, type: order.fulfillmentType, status: order.fulfillmentType === 'delivery_and_service' ? 'awaiting_shipment' : 'awaiting_booking', note: order.note || '' } },

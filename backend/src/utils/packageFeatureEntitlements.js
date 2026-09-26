@@ -72,4 +72,20 @@ async function hasHealthFundAccess(user) {
   return legacyAccess(user).active;
 }
 
-module.exports = { getAiEntitlements, hasHealthFundAccess, NONE };
+// 会员专享商品与健康基金采用同一份“当前有效权益”事实来源，但商品可以
+// 再收窄到指定分层。不要只读客户资料上的 membershipTier：它不能处理
+// 家庭共享权益，也可能在历史订单到期后残留展示值。
+async function hasMemberProductAccess(user, allowedTiers = []) {
+  if (!user) return false;
+  const allowed = new Set((allowedTiers || []).map(String));
+  const rows = await applicableEntitlements(user._id);
+  if (rows.length) return rows.some(row => {
+    const tier = String(row.rights?.membershipTier || '');
+    return (row.rights?.includes365 === true && allowed.has('consumer365')) || allowed.has(tier);
+  });
+  if (!allowed.has(String(user.membershipTier || ''))) return false;
+  const { legacyAccess } = require('./serviceAccess');
+  return legacyAccess(user).active;
+}
+
+module.exports = { getAiEntitlements, hasHealthFundAccess, hasMemberProductAccess, NONE };
