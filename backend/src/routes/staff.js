@@ -6999,6 +6999,94 @@ router.patch('/patients/:id/membership', staffAuth, async (req, res) => {
   }
 });
 
+// ── 服务包权益台账 ────────────────────────────────────────────────
+// 只返回已支付、未到期的套餐权益。家庭共享仅限在 Admin 对套餐显式勾选后，
+// 并且双方已有系统内家庭关联；不从姓名、手机号等信息推断家庭关系。
+router.get('/patients/:id/package-entitlements', staffAuth, async (req, res) => {
+  try {
+    // 新台账上线前已经支付、且当时已有权益快照的订单，在首次查看客户权益时补齐。
+    // 没有快照的历史订单不推测其包含内容，仍由运营按既有规则人工配置。
+    const packageOrders = await Order.find({ user: req.params.id, orderType: 'package', paymentStatus: 'paid', 'annualServiceSnapshot.entitlementSnapshot.packageId': { $ne: null } });
+    await Promise.all(packageOrders.map(order => require('../utils/packageEntitlements').ensurePackageEntitlement(order)));
+    const rows = await require('../utils/packageEntitlements').applicableEntitlements(req.params.id);
+    res.json({ success: true, data: rows.map(row => ({
+      _id: row._id, ownerUserId: row.ownerUserId, sourceOrderId: row.sourceOrderId,
+      packageName: row.packageName, clientBrand: row.clientBrand, validFrom: row.validFrom,
+      validUntil: row.validUntil, familySharing: row.familySharing,
+      rights: row.rights || {}, usageRecords: row.usageRecords || [],
+    })) });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// 医护人员为客户启用一项“套餐已含”的商城服务。先原子扣减权益，再生成 0 元
+// 履约订单；后续仍使用既有的启动服务、按次核销、服务流程和绩效记录。
+router.post('/patients/:id/package-entitlements/:entitlementId/use', staffAuth, async (req, res) => {
+  try {
+    const patient = await User.findById(req.params.id).select('tenantId familyLinks').lean();
+    if (!patient) return res.status(404).json({ success: false, message: '客户不存在' });
+    const productId = String(req.body.productId || '');
+    if (!mongoose.isValidObjectId(productId)) return res.status(400).json({ success: false, message: '请选择商城产品' });
+    const entitlements = await require('../utils/packageEntitlements').applicableEntitlements(patient._id);
+    const entitlement = entitlements.find(item => String(item._id) === String(req.params.entitlementId));
+    if (!entitlement) return res.status(404).json({ success: false, message: '权益不存在、已过期，或当前客户无权使用' });
+    const productRightIndex = (entitlement.rights?.productEntitlements || []).findIndex(item => String(item.productId) === productId);
+    if (productRightIndex < 0) return res.status(400).json({ success: false, message: '该服务不在此套餐权益内' });
+    const productRight = entitlement.rights.productEntitlements[productRightIndex];
+    const poolIndex = productRight.poolKey
+      ? (entitlement.rights?.sharedEntitlementPools || []).findIndex(item => item.key === productRight.poolKey)
+      : -1;
+    const available = poolIndex >= 0
+      ? Number(entitlement.rights.sharedEntitlementPools[poolIndex]?.remainingCount || 0)
+      : Number(productRight.remainingCount || 0);
+    if (available < 1) return res.status(409).json({ success: false, message: poolIndex >= 0 ? '该共享权益次数已用完' : '该服务权益次数已用完' });
+
+    const product = await Product.findOne({ _id: productId, status: 'on' }).lean();
+    if (!product) return res.status(409).json({ success: false, message: '对应商城产品已下架，暂不能发起服务，请先在商城恢复上架或另行安排' });
+    const serviceItems = (product.serviceItems || []).filter(item => item.name && Number(item.units) > 0);
+    const totalUnits = serviceItems.length
+      ? serviceItems.reduce((sum, item) => sum + Math.max(1, Number(item.units) || 1), 0)
+      : 1;
+    const now = new Date();
+    const executionOrder = await Order.create({
+      user: patient._id, tenantId: patient.tenantId || null,
+      serviceId: String(product._id), serviceName: product.name,
+      servicePrice: 0, unitPrice: 0, totalUnits, usedUnits: 0,
+      orderNo: `ENT${Date.now()}${new mongoose.Types.ObjectId().toString().slice(-6)}`.slice(0, 32),
+      orderType: 'service', fulfillmentType: product.fulfillmentType || 'offline_service',
+      status: 'pending', tradeStatus: 'paid', paymentStatus: 'paid', paidAmount: 0,
+      paymentExpectedAmount: 0, paidAt: now, initiationSource: 'staff_direct',
+      serviceItemsSnapshot: serviceItems.map(item => ({ key: item.key, name: item.name, units: item.units, usedUnits: 0, performers: item.performers || [] })),
+      performanceRuleSnapshot: product.performanceRule || null,
+      servicePerformerRolesSnapshot: product.servicePerformerRoles || [],
+      serviceWorkflowSnapshot: product.serviceWorkflow || null,
+      serviceProviderSnapshot: { code: product.serviceProvider || 'platform', companyName: '杭州嘉医汇健康管理有限公司' },
+      note: String(req.body.note || '').trim(),
+      packageEntitlementUsage: {
+        entitlementId: entitlement._id, sourceOrderId: entitlement.sourceOrderId,
+        ownerUserId: entitlement.ownerUserId, productId: product._id,
+        poolKey: poolIndex >= 0 ? productRight.poolKey : '', usedAt: now,
+      },
+    });
+
+    const remainingPath = poolIndex >= 0
+      ? `rights.sharedEntitlementPools.${poolIndex}.remainingCount`
+      : `rights.productEntitlements.${productRightIndex}.remainingCount`;
+    const result = await require('../models/PackageEntitlement').updateOne({
+      _id: entitlement._id, status: 'active', validFrom: { $lte: now }, validUntil: { $gte: now }, updatedAt: entitlement.updatedAt,
+      [remainingPath]: { $gte: 1 },
+    }, {
+      $inc: { [remainingPath]: -1 },
+      $push: { usageRecords: { productId: product._id, productName: product.name, poolKey: poolIndex >= 0 ? productRight.poolKey : '', usedByUserId: patient._id, executionOrderId: executionOrder._id, usedAt: now, note: String(req.body.note || '').trim() } },
+    });
+    if (result.modifiedCount !== 1) {
+      await Order.deleteOne({ _id: executionOrder._id, status: 'pending', paymentStatus: 'paid', 'packageEntitlementUsage.entitlementId': entitlement._id });
+      return res.status(409).json({ success: false, message: '权益次数刚被其他操作使用，请刷新后重试' });
+    }
+    const updatedEntitlement = await require('../models/PackageEntitlement').findById(entitlement._id).lean();
+    res.json({ success: true, data: { entitlement: updatedEntitlement, executionOrder }, message: '已使用套餐权益创建履约单，请启动服务并在完成后按现有流程核销' });
+  } catch (err) { res.status(err.statusCode || 500).json({ success: false, message: err.message }); }
+});
+
 // ── 年度健康管理方案（全局列表）────────────────────────────────────────
 router.get('/annual-health-plans', staffAuth, async (req, res) => {
   try {

@@ -1967,6 +1967,8 @@ export default function PatientDetailPage() {
   const [reportPage, setReportPage] = useState(1)
   const [openReportActionId, setOpenReportActionId] = useState(null)
   const [patientOrders, setPatientOrders] = useState([])
+  const [packageEntitlements, setPackageEntitlements] = useState([])
+  const [usingEntitlementId, setUsingEntitlementId] = useState('')
   const [redeemingOrderId, setRedeemingOrderId] = useState(null)
   const [requisitions, setRequisitions] = useState([])
   const [showReqModal, setShowReqModal] = useState(false)
@@ -3047,7 +3049,10 @@ export default function PatientDetailPage() {
       // reports.find()找不到、按钮点了没反应（表现为"有些编辑键不可用"），这里同样按需补一次
       if (reports.length === 0) loadReports()
     }
-    else if (tab === 'consumption') staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {})
+    else if (tab === 'consumption') {
+      staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {})
+      staffAPI.getPackageEntitlements(id).then(r => setPackageEntitlements(r.data || [])).catch(() => setPackageEntitlements([]))
+    }
     else if (tab === 'ai') {
       loadScreening()
       // 健康顾问审核依赖 reports（要展示报告原文对照），同上按需补加载
@@ -10599,6 +10604,40 @@ export default function PatientDetailPage() {
                   </div>
                 ))}
               </div>
+            </div>
+
+            <div className="card">
+              <div className="card-header"><div className="card-title">套餐服务权益</div><span style={{ fontSize: 12, color: '#8AA89C' }}>点击“使用权益”后生成 0 元履约单，再按常规流程启动与核销</span></div>
+              {!packageEntitlements.length ? <div style={{ padding: 20, color: '#8AA89C', fontSize: 13 }}>当前客户没有有效的套餐服务权益。</div> : <div className="card-body" style={{ display: 'grid', gap: 12 }}>
+                {packageEntitlements.map(entitlement => {
+                  const pools = new Map((entitlement.rights?.sharedEntitlementPools || []).map(pool => [pool.key, pool]))
+                  const ownerIsPatient = String(entitlement.ownerUserId) === String(id)
+                  return <div key={entitlement._id} style={{ border: '1px solid #DCE7E1', borderRadius: 10, padding: 12, background: '#FCFEFD' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}><div><strong>{entitlement.packageName || '服务包'}</strong>{!ownerIsPatient && <span style={{ marginLeft: 8, fontSize: 12, color: '#1E6B50' }}>家庭共享权益</span>}</div><span style={{ fontSize: 12, color: '#8A5A00' }}>至 {new Date(entitlement.validUntil).toLocaleDateString('zh-CN')}</span></div>
+                    {(entitlement.rights?.sharedEntitlementPools || []).map(pool => <div key={pool.key} style={{ fontSize: 12, color: '#4A6558', marginBottom: 5 }}>共享池「{pool.name}」：剩余 <strong>{pool.remainingCount || 0}</strong> / {pool.count || 0} 次</div>)}
+                    <div style={{ display: 'grid', gap: 6 }}>
+                      {(entitlement.rights?.productEntitlements || []).map(right => {
+                        const pool = right.poolKey ? pools.get(right.poolKey) : null
+                        const remaining = pool ? Number(pool.remainingCount || 0) : Number(right.remainingCount || 0)
+                        return <div key={right.productId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingTop: 6, borderTop: '1px solid #EEF3F0' }}>
+                          <div><div style={{ fontSize: 13, fontWeight: 600 }}>{right.productName}</div><div style={{ fontSize: 12, color: '#8AA89C' }}>{pool ? `使用共享池「${pool.name}」` : `剩余 ${remaining} / ${right.count} 次`}{right.schedule ? ` · ${right.schedule}` : ''}</div></div>
+                          <button className="btn btn-sm" disabled={remaining < 1 || usingEntitlementId === `${entitlement._id}:${right.productId}`} style={{ background: remaining > 0 ? '#1E6B50' : '#D1D5DB', color: '#fff', border: 'none' }} onClick={async () => {
+                            if (!window.confirm(`确认以套餐权益为客户发起「${right.productName}」吗？将立即扣减 1 次并生成履约单。`)) return
+                            const key = `${entitlement._id}:${right.productId}`
+                            setUsingEntitlementId(key)
+                            try {
+                              const result = await staffAPI.usePackageEntitlement(id, entitlement._id, { productId: right.productId })
+                              setPackageEntitlements(prev => prev.map(item => item._id === entitlement._id ? result.data.entitlement : item))
+                              setPatientOrders(prev => [result.data.executionOrder, ...prev])
+                              toast(result.message || '已创建履约单')
+                            } catch (error) { toast(error.message || '权益使用失败') } finally { setUsingEntitlementId('') }
+                          }}>{usingEntitlementId === `${entitlement._id}:${right.productId}` ? '创建中…' : '使用权益'}</button>
+                        </div>
+                      })}
+                    </div>
+                  </div>
+                })}
+              </div>}
             </div>
 
             {/* 服务购买记录 */}

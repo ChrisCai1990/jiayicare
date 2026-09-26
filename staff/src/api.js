@@ -372,6 +372,8 @@ export const staffAPI = {
   pushAnnualPlan:       (patientId, year, planType) => req(`/staff/patients/${patientId}/annual-plan/push?year=${year}` + (planType ? `&planType=${planType}` : ''), { method: 'PATCH' }),
   // 订单管理
   getPatientOrders:     (patientId)       => req(`/staff/patients/${patientId}/orders`),
+  getPackageEntitlements: (patientId)     => req(`/staff/patients/${patientId}/package-entitlements`),
+  usePackageEntitlement: (patientId, entitlementId, data) => req(`/staff/patients/${patientId}/package-entitlements/${entitlementId}/use`, { method: 'POST', body: JSON.stringify(data) }),
   startOrder:           (orderId, data)   => req(`/staff/orders/${orderId}/start`, { method: 'PATCH', body: JSON.stringify(data) }),
   getMedicalReminderDraft: (orderId, messages) => req(`/staff/orders/${orderId}/medical-reminder-draft`, { method: 'POST', body: JSON.stringify({ messages }) }),
   getMedicationProxyDraft: (orderId, data) => req(`/staff/orders/${orderId}/medication-draft`, { method: 'POST', body: JSON.stringify(data) }),

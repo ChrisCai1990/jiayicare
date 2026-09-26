@@ -89,6 +89,7 @@ async function settlePaidOrder(payment, order, cashAmount) {
   }
   await order.save();
   await awardOrderPoints(order);
+  await require('./packageEntitlements').ensurePackageEntitlement(order);
 
   const fulfillment = await Fulfillment.findOneAndUpdate(
     { order: order._id },
@@ -188,6 +189,12 @@ async function confirmRefund(refund, snapshot) {
       await require('./healthFundPayment').reverseHealthFund({ order, remark: `订单${order.serviceName}退款返还` });
     }
     await require('./productShareRewards').reverseProductShareRewards(order);
+    if (order.orderType === 'package') {
+      await require('../models/PackageEntitlement').updateOne(
+        { sourceOrderId: order._id, status: 'active' },
+        { $set: { status: 'cancelled' } },
+      );
+    }
   }
   await order.save();
   // Persist first; concurrent child notifications and retries can then see

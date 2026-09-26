@@ -43,6 +43,7 @@ async function buildPackageEntitlementSnapshot(servicePackage) {
     clientBrand: servicePackageData.clientBrand || 'jiayiguanjia',
     deliveryMode: configuration.deliveryMode || 'digital',
     includes365: !!configuration.includes365,
+    familySharing: !!configuration.familySharing,
     reviewMode: configuration.reviewMode || 'exception',
     noResponseRule: configuration.noResponseRule || '',
     sharedEntitlementPools: sharedEntitlementPools.map(pool => ({ ...pool, remainingCount: pool.count })),
