@@ -206,6 +206,11 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                         <input className="form-input" type="number" min="1" value={pool.count ?? 1} title="共享次数" onChange={e => setConfiguration(v => ({ ...v, sharedEntitlementPools: (v.sharedEntitlementPools || []).map((item, i) => i === index ? { ...item, count: Math.max(1, Number(e.target.value) || 1) } : item) }))} />
                         <button type="button" className="btn btn-ghost" onClick={() => setConfiguration(v => ({ ...v, sharedEntitlementPools: (v.sharedEntitlementPools || []).filter((_, i) => i !== index), serviceEntitlements: (v.serviceEntitlements || []).map(item => item.poolKey === pool.key ? { ...item, poolKey: '' } : item) }))}>删除</button>
                       </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 9, fontSize: 12 }}>
+                        <strong style={{ color: '#166534' }}>已选服务 {((configuration.serviceEntitlements || []).filter(item => item.poolKey === pool.key)).length} 项：</strong>
+                        {(configuration.serviceEntitlements || []).filter(item => item.poolKey === pool.key).map(item => <span key={item.productId} style={{ padding: '3px 7px', borderRadius: 99, background: '#BBF7D0', color: '#166534' }}>{item.name || productCatalog.find(product => String(product._id) === String(item.productId))?.name || '未命名服务'}</span>)}
+                        {!(configuration.serviceEntitlements || []).some(item => item.poolKey === pool.key) && <span style={{ color: '#6B7280' }}>尚未选择</span>}
+                      </div>
                       <input className="form-input" value={poolProductSearch[pool.key] || ''} onChange={e => setPoolProductSearch(v => ({ ...v, [pool.key]: e.target.value }))} placeholder="搜索并勾选适用商城服务" style={{ marginTop: 8 }} />
                       <div style={{ maxHeight: 150, overflowY: 'auto', marginTop: 6, border: '1px solid #D1D5DB', borderRadius: 6, background: '#fff' }}>
                         {productCatalog.filter(product => {
@@ -213,7 +218,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                           return !keyword || [product.name, product.category, product.description].filter(Boolean).join(' ').toLowerCase().includes(keyword)
                         }).map(product => {
                           const selected = (configuration.serviceEntitlements || []).find(item => String(item.productId) === String(product._id))?.poolKey === pool.key
-                          return <label key={product._id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', cursor: 'pointer', borderBottom: '1px solid #F3F4F6', fontSize: 13 }}>
+                          return <label key={product._id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', cursor: 'pointer', borderBottom: '1px solid #F3F4F6', fontSize: 13, background: selected ? '#ECFDF5' : '#fff' }}>
                             <input type="checkbox" checked={selected} onChange={e => setConfiguration(v => {
                               const rows = [...(v.serviceEntitlements || [])]
                               const rowIndex = rows.findIndex(item => String(item.productId) === String(product._id))
