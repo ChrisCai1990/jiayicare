@@ -531,6 +531,9 @@ async function normalizeServicePackageConfiguration(clientBrand, configuration) 
   }
   delete next.membershipTypeName;
   next.membershipTier = membershipTier;
+  const allowedPhaseSchedule = new Set(['week2', 'month1', 'quarterly']);
+  next.phaseAssessmentSchedule = [...new Set((Array.isArray(next.phaseAssessmentSchedule) ? next.phaseAssessmentSchedule : []).filter(item => allowedPhaseSchedule.has(item)))];
+  next.monthlyReviewStartMonth = Math.min(12, Math.max(1, Math.floor(Number(next.monthlyReviewStartMonth) || 1)));
   return next;
 }
 

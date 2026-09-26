@@ -33,7 +33,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
   const [clientBrand, setClientBrand] = useState('jiayiguanjia')
   const [entitlements, setEntitlements] = useState({ aiHealthAnalysis: false, phaseAssessment: false, monthlyServiceReview: false })
   const [activation, setActivation] = useState({ enabled: false, durationMonths: 12, price: 0, originalPrice: 0, featuresText: '', tag: '', highlight: false })
-  const [configuration, setConfiguration] = useState({ deliveryMode: 'digital', includes365: false, familySharing: false, membershipTier: '', reviewMode: 'exception', noResponseRule: '连续3次（隔日）未配合转人工', serviceEntitlements: [], sharedEntitlementPools: [] })
+  const [configuration, setConfiguration] = useState({ deliveryMode: 'digital', includes365: false, familySharing: false, membershipTier: '', reviewMode: 'exception', noResponseRule: '连续3次（隔日）未配合转人工', phaseAssessmentSchedule: [], monthlyReviewStartMonth: 1, serviceEntitlements: [], sharedEntitlementPools: [] })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -48,7 +48,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
   }
   useEffect(() => { load() }, [])
 
-  const emptyConfiguration = { deliveryMode: 'digital', includes365: false, familySharing: false, membershipTier: '', reviewMode: 'exception', noResponseRule: '连续3次（隔日）未配合转人工', serviceEntitlements: [], sharedEntitlementPools: [] }
+  const emptyConfiguration = { deliveryMode: 'digital', includes365: false, familySharing: false, membershipTier: '', reviewMode: 'exception', noResponseRule: '连续3次（隔日）未配合转人工', phaseAssessmentSchedule: [], monthlyReviewStartMonth: 1, serviceEntitlements: [], sharedEntitlementPools: [] }
   const openCreate = () => { setEditId(null); setName(''); setClientBrand('jiayiguanjia'); setEntitlements({ aiHealthAnalysis: false, phaseAssessment: false, monthlyServiceReview: false }); setActivation({ enabled: false, durationMonths: 12, price: 0, originalPrice: 0, featuresText: '', tag: '', highlight: false }); setConfiguration(emptyConfiguration); setProductSearch(''); setShowIncludedOnly(false); setError(''); setShowModal(true) }
   const openEdit = item => { setEditId(item._id); setName(item.name); setClientBrand(item.clientBrand || 'jiayiguanjia'); setEntitlements({ aiHealthAnalysis: !!item.entitlements?.aiHealthAnalysis, phaseAssessment: !!item.entitlements?.phaseAssessment, monthlyServiceReview: !!item.entitlements?.monthlyServiceReview }); setActivation({ enabled: !!item.activation?.enabled, durationMonths: item.activation?.durationMonths || 12, price: item.activation?.price || 0, originalPrice: item.activation?.originalPrice || 0, featuresText: (item.activation?.features || []).join('\n'), tag: item.activation?.tag || '', highlight: !!item.activation?.highlight }); setConfiguration({ ...emptyConfiguration, ...(item.configuration || {}), serviceEntitlements: item.configuration?.serviceEntitlements || [], sharedEntitlementPools: item.configuration?.sharedEntitlementPools || [] }); setProductSearch(''); setShowIncludedOnly(false); setError(''); setShowModal(true) }
 
@@ -198,6 +198,12 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                       <button type="button" className="btn btn-ghost" onClick={() => setConfiguration(v => ({ ...v, sharedEntitlementPools: (v.sharedEntitlementPools || []).filter((_, i) => i !== index), serviceEntitlements: (v.serviceEntitlements || []).map(item => item.poolKey === pool.key ? { ...item, poolKey: '' } : item) }))}>删除</button>
                     </div>
                   ))}
+                  {entitlements.phaseAssessment && <div style={{ margin: '10px 0 0 26px', padding: 10, background: '#F7FAFC', borderRadius: 8 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#4A5568', marginBottom: 6 }}>阶段性评估节点</div>
+                    {[['week2', '第2周'], ['month1', '第1个月'], ['quarterly', '每季度']].map(([value, label]) => <label key={value} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginRight: 16, fontSize: 13, cursor: 'pointer' }}><input type="checkbox" checked={(configuration.phaseAssessmentSchedule || []).includes(value)} onChange={e => setConfiguration(v => ({ ...v, phaseAssessmentSchedule: e.target.checked ? [...new Set([...(v.phaseAssessmentSchedule || []), value])] : (v.phaseAssessmentSchedule || []).filter(item => item !== value) }))} />{label}</label>)}
+                    <div style={{ fontSize: 11, color: '#718096', marginTop: 6 }}>节点决定系统何时创建待办；首月节点与月度复盘会合并为一次工作提醒，避免重复。</div>
+                  </div>}
+                  {entitlements.monthlyServiceReview && <div style={{ margin: '10px 0 0 26px', display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ fontSize: 13, color: '#4A5568' }}>月度复盘从服务第</span><select className="form-input" style={{ width: 88, padding: '6px 8px' }} value={configuration.monthlyReviewStartMonth || 1} onChange={e => setConfiguration(v => ({ ...v, monthlyReviewStartMonth: Number(e.target.value) }))}>{Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}</select><span style={{ fontSize: 13, color: '#4A5568' }}>个月开始，每月一次</span></div>}
                   <button type="button" className="btn btn-ghost" onClick={() => setConfiguration(v => ({ ...v, sharedEntitlementPools: [...(v.sharedEntitlementPools || []), { key: `pool_${Date.now()}`, name: '', count: 1 }] }))}>+ 新增共享次数池</button>
                   <label className="form-label" style={{ marginTop: 14 }}>方案包含的商城产品</label>
                   <p style={{ color: '#6B7280', fontSize: 12, margin: '4px 0 8px' }}>商城产品自动列出；填写大于 0 的次数即写入客户权益，填 0 表示不包含。阶段性评估、月度服务复盘等套餐管理动作在上方“年度会员专属权益”中勾选，不在此处配置为商城产品。产品价格、抵扣比例和履约规则仍在商城产品中维护。</p>

@@ -51,6 +51,8 @@ async function buildPackageEntitlementSnapshot(servicePackage) {
       monthlyServiceReview: !!servicePackageData.entitlements?.monthlyServiceReview,
     },
     membershipTier: String(configuration.membershipTier || '').trim(),
+    phaseAssessmentSchedule: [...new Set((Array.isArray(configuration.phaseAssessmentSchedule) ? configuration.phaseAssessmentSchedule : []).filter(item => ['week2', 'month1', 'quarterly'].includes(item)))],
+    monthlyReviewStartMonth: Math.min(12, Math.max(1, Math.floor(Number(configuration.monthlyReviewStartMonth) || 1))),
     reviewMode: configuration.reviewMode || 'exception',
     noResponseRule: configuration.noResponseRule || '',
     sharedEntitlementPools: sharedEntitlementPools.map(pool => ({ ...pool, remainingCount: pool.count })),
