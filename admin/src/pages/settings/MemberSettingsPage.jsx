@@ -25,6 +25,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
   const [productCatalog, setProductCatalog] = useState([])
   const [productSearch, setProductSearch] = useState('')
   const [showIncludedOnly, setShowIncludedOnly] = useState(false)
+  const [statusFilter, setStatusFilter] = useState('all')
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editId, setEditId] = useState(null)
@@ -81,6 +82,13 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
   const visibleProducts = (normalizedProductSearch
     ? productCatalog.filter(item => [item.name, item.category, item.description].filter(Boolean).join(' ').toLowerCase().includes(normalizedProductSearch))
     : productCatalog).filter(item => !showIncludedOnly || includedIds.has(String(item._id)))
+  const isItemActive = item => item.active ?? item.status === 'active'
+  const statusCounts = {
+    all: list.length,
+    active: list.filter(isItemActive).length,
+    inactive: list.filter(item => !isItemActive(item)).length,
+  }
+  const visibleList = list.filter(item => statusFilter === 'all' || (statusFilter === 'active' ? isItemActive(item) : !isItemActive(item)))
 
   return (
     <div>
@@ -88,6 +96,9 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
         <p style={{ fontSize: 13, color: '#6B7280' }}>{desc}</p>
         <button className="btn btn-primary btn-sm" onClick={openCreate}>＋ 新增</button>
       </div>
+      {withActivation && <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+        {[['all', '全部'], ['active', '启用'], ['inactive', '停用']].map(([value, label]) => <button key={value} type="button" className={statusFilter === value ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} onClick={() => setStatusFilter(value)}>{label}（{statusCounts[value]}）</button>)}
+      </div>}
       {loading ? <div style={{ padding: 32, textAlign: 'center', color: '#aaa' }}>加载中...</div>
         : list.length === 0 ? <div style={{ padding: 32, textAlign: 'center', color: '#aaa' }}>暂无数据</div>
         : (
@@ -100,7 +111,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
             </tr>
           </thead>
           <tbody>
-            {list.map(item => (
+            {visibleList.map(item => (
               <tr key={item._id} style={{ borderBottom: '1px solid #F3F4F6' }}>
                 <td style={{ padding: '10px 14px', fontWeight: 500 }}>{item.name}</td>
                 {withClientBrand && <td style={{ padding: '10px 14px' }}>{brandLabel(item.clientBrand)}</td>}
@@ -111,17 +122,18 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                   {item.activation?.enabled ? `${item.activation.durationMonths || '-'}个月 / ¥${item.activation.price || 0}` : '不展示'}
                 </td>}
                 <td style={{ padding: '10px 14px' }}>
-                  <span style={{ padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600, background: (item.active ?? item.status === 'active') ? '#E8F5EF' : '#FEF2F2', color: (item.active ?? item.status === 'active') ? '#1E6B50' : '#DC2626' }}>
-                    {(item.active ?? item.status === 'active') ? '启用' : '停用'}
+                  <span style={{ padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600, background: isItemActive(item) ? '#E8F5EF' : '#FEF2F2', color: isItemActive(item) ? '#1E6B50' : '#DC2626' }}>
+                    {isItemActive(item) ? '启用' : '停用'}
                   </span>
                 </td>
                 <td style={{ padding: '10px 14px' }}>
                   <button className="btn btn-secondary btn-sm" onClick={() => openEdit(item)} style={{ marginRight: 6 }}>编辑</button>
-                  <button className="btn btn-secondary btn-sm" onClick={() => handleToggle(item)} style={{ marginRight: 6 }}>{(item.active ?? item.status === 'active') ? '停用' : '启用'}</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => handleToggle(item)} style={{ marginRight: 6 }}>{isItemActive(item) ? '停用' : '启用'}</button>
                   <button className="btn btn-danger btn-sm" onClick={() => handleDelete(item)}>删除</button>
                 </td>
               </tr>
             ))}
+            {!visibleList.length && <tr><td colSpan={withClientBrand ? 6 : 3} style={{ padding: 28, textAlign: 'center', color: '#6B7280' }}>当前筛选条件下暂无服务包</td></tr>}
           </tbody>
         </table>
       )}
