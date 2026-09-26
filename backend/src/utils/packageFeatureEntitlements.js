@@ -2,6 +2,7 @@ const ServicePackage = require('../models/ServicePackage');
 const { applicableEntitlements } = require('./packageEntitlements');
 
 const NONE = { aiHealthAnalysis: false, phaseAssessment: false, monthlyServiceReview: false };
+const HEALTH_FUND_TIERS = new Set(['consumer365', 'annual', 'therapy', 'enterprise']);
 
 function aiRights(value) {
   return {
@@ -43,4 +44,21 @@ async function getAiEntitlements(user, serviceAccess) {
   return aiRights(pkg?.entitlements);
 }
 
-module.exports = { getAiEntitlements, NONE };
+// 健康基金资格随“有效服务包权益”走，而不是只看客户资料上的展示分层。
+// 这样一个客户同时有 365 和年度包、或主账户把权益共享给家属时，都按仍在
+// 有效期内的冻结订单判断；旧订单没有台账时才兼容原有的服务期字段。
+async function hasHealthFundAccess(user) {
+  if (!user) return false;
+  const rows = await applicableEntitlements(user._id);
+  if (rows.length) {
+    return rows.some(row => {
+      const rights = row.rights || {};
+      return rights.includes365 === true || HEALTH_FUND_TIERS.has(String(rights.membershipTier || ''));
+    });
+  }
+  if (!HEALTH_FUND_TIERS.has(String(user.membershipTier || ''))) return false;
+  const { legacyAccess } = require('./serviceAccess');
+  return legacyAccess(user).active;
+}
+
+module.exports = { getAiEntitlements, hasHealthFundAccess, NONE };

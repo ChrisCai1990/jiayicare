@@ -7,7 +7,7 @@ const Product = require('../models/Product');
 const DEFAULT_HEALTH_FUND_POLICY = {
   title: '健康基金使用规则', description: '', personalPriority: true,
   personalDeductionType: 'unlimited', personalDeductionValue: 0,
-  corporateDeductionType: 'percentage', corporateDeductionValue: 10,
+  corporateDeductionType: 'percentage', corporateDeductionValue: 20,
   minOrderAmount: 0, eligibleCategories: [], eligibleProductIds: [], allowCouponStacking: true,
   couponDeductionType: 'unlimited', couponDeductionValue: 0,
   refundToOriginalSource: true,
@@ -19,7 +19,7 @@ async function getHealthFundPolicy() {
     ...DEFAULT_HEALTH_FUND_POLICY,
     ...(cfg?.value || {}),
     corporateDeductionType: 'percentage',
-    corporateDeductionValue: 10,
+    corporateDeductionValue: 20,
   };
 }
 
@@ -32,9 +32,9 @@ function deductionLimit(type, value, orderAmount) {
 function productDeductionLimit(rule, orderAmount) {
   const mode = rule?.mode || 'inherit';
   if (mode === 'disabled') return 0;
-  const platformMaximum = deductionLimit('percentage', 10, orderAmount);
-  // 企业赠送基金无论采用历史固定金额、全额或当前比例配置，最终都不能
-  // 超过商品应付金额的10%；未单独配置的商品继承10%的默认上限。
+  const platformMaximum = deductionLimit('percentage', 20, orderAmount);
+  // 无论余额来自首登、邀请、积分兑换或企业赠送，最终均由商品定义上限；
+  // 未单独配置的商品继承 20% 的平台上限。
   if (['inherit', 'unlimited'].includes(mode)) return platformMaximum;
   return Math.min(platformMaximum, deductionLimit(mode, rule?.value, orderAmount));
 }
@@ -50,13 +50,13 @@ function corporateProductEligible(policy, productId, category, productRule) {
 
 function allocateHealthFund({ orderAmount, personalAvailable, corporateAvailable, corporateEligible = true, productRule }) {
   const amount = Math.max(0, Number(orderAmount) || 0);
-  const personalUsed = Math.min(amount, Math.max(0, Number(personalAvailable) || 0));
-  const remainingAfterPersonal = Math.max(0, amount - personalUsed);
-  const corporateLimit = corporateEligible ? productDeductionLimit(productRule, remainingAfterPersonal) : 0;
+  const productLimit = productDeductionLimit(productRule, amount);
+  const personalUsed = Math.min(productLimit, Math.max(0, Number(personalAvailable) || 0));
+  const remainingAfterPersonal = Math.max(0, productLimit - personalUsed);
   const corporateUsed = Math.min(
     remainingAfterPersonal,
     Math.max(0, Number(corporateAvailable) || 0),
-    corporateLimit,
+    corporateEligible ? remainingAfterPersonal : 0,
   );
   return { personalUsed, corporateUsed, allowed: Math.round((personalUsed + corporateUsed) * 100) / 100 };
 }
@@ -116,6 +116,9 @@ async function getPersonalFundAvailable(user) {
 async function validateHealthFundDeduction({ user, requested, orderAmount, category, categories, productId, productIds, productLimit, maximize = false }) {
   const amount = Number(requested) || 0;
   if (amount <= 0) return { allowed: 0, enterprise: null };
+  if (!(await require('./packageFeatureEntitlements').hasHealthFundAccess(user))) {
+    throw new Error('健康基金仅限有效的365、年度、疗程或企业会员使用；基础会员可按原价购买服务');
+  }
   const policy = await getHealthFundPolicy();
   if (orderAmount < (Number(policy.minOrderAmount) || 0)) throw new Error(`订单满¥${policy.minOrderAmount}方可使用健康基金`);
   let productRule = null;
@@ -127,8 +130,6 @@ async function validateHealthFundDeduction({ user, requested, orderAmount, categ
   }
   const corporateEligible = corporateProductEligible(policy, productId, category, productRule);
   const personalAvailable = await getPersonalFundAvailable(user);
-  // 自有基金是客户自有余额，不受企业基金的商品分类范围限制。
-  const personalLimit = orderAmount;
   // 平台发放的首登企业健康基金并不要求用户先绑定某个企业档案。
   const corporateAvailable = await getCorporateFundAvailable(user);
   let enterprise = null;
@@ -143,11 +144,11 @@ async function validateHealthFundDeduction({ user, requested, orderAmount, categ
     }
   }
   // 正式小程序的基金开关会提交一个客户端报价。服务端只把正数视为
-  // “启用基金”，始终按实时余额重算：先自有，再以剩余金额为基数应用
-  // 商品上的企业基金比例。这样旧版客户端报价不会覆盖服务端规则。
+  // “启用基金”，始终按实时余额和商品上限重算。余额来源只影响流水归属，
+  // 不改变商品可抵扣上限；这样旧版客户端报价不会覆盖服务端规则。
   const allocation = allocateHealthFund({
     orderAmount: maximize ? orderAmount : Math.min(amount, orderAmount),
-    personalAvailable: Math.min(personalAvailable, personalLimit),
+    personalAvailable,
     corporateAvailable,
     corporateEligible: corporateEligible && enterpriseEnabled,
     productRule: productRule || (Number.isFinite(finalProductLimit) && finalProductLimit < orderAmount

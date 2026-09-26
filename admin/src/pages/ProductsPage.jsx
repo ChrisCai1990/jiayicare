@@ -643,19 +643,19 @@ function ProductModal({ product, categories, onClose, onSaved }) {
             const setRule = (key, value) => set('healthFundDeduction', { ...rule, [key]:value })
             return <div>
               <div style={{padding:14,background:'#ecfdf5',border:'1px solid #bbf7d0',borderRadius:10,color:'#166534',fontSize:13,marginBottom:18}}>
-                产品规则是最终抵扣上限；实际抵扣额还会受客户余额、自有/企业基金全局规则和订单应付金额限制。
+                商品规则是健康基金的最终抵扣上限；仅有效的365、年度、疗程或企业会员可用，基础会员仍可原价购买。
               </div>
               <div className="form-group">
-                <label className="form-label">该产品企业赠送健康基金抵扣方式</label>
+                <label className="form-label">该产品健康基金抵扣方式</label>
                 <select className="form-input" value={rule.mode} onChange={e=>setRule('mode',e.target.value)}>
-                  <option value="inherit">继承平台规则（默认最高10%）</option>
-                  <option value="disabled">不享有企业赠送基金抵扣</option>
+                  <option value="inherit">继承平台规则（默认最高20%）</option>
+                  <option value="disabled">不支持健康基金抵扣</option>
                   <option value="percentage">按产品应付金额比例</option>
                 </select>
               </div>
               {rule.mode==='percentage' && <div className="form-group">
-                <label className="form-label">最高抵扣比例（1%-10%）</label>
-                <input className="form-input" type="number" min="1" max="10" value={rule.value||0} onChange={e=>setRule('value',e.target.value)}/>
+                <label className="form-label">最高抵扣比例（1%-20%）</label>
+                <input className="form-input" type="number" min="1" max="20" value={rule.value||0} onChange={e=>setRule('value',e.target.value)}/>
               </div>}
             </div>
           })()}

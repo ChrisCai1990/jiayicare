@@ -29,13 +29,14 @@ async function quoteGroup(user, items, products, { couponId, useHealthFund }) {
   const afterCoupon = prices.map((price, index) => price - coupons[index]);
   let personal = prices.map(() => 0), corporate = prices.map(() => 0), enterprise = null;
   if (Number(useHealthFund) > 0) {
+    if (!(await require('./packageFeatureEntitlements').hasHealthFundAccess(user))) {
+      throw checkoutError('健康基金仅限有效的365、年度、疗程或企业会员使用；基础会员可按原价购买服务', 400);
+    }
     const afterTotal = total - couponTotal;
     if (afterTotal < cents(policy.minOrderAmount || 0)) throw checkoutError(`订单满 ¥${policy.minOrderAmount} 方可使用健康基金`);
     const requested = Math.min(cents(useHealthFund), afterTotal);
     const personalAvailable = cents(await fund.getPersonalFundAvailable(user));
     const corporateAvailable = cents(await fund.getCorporateFundAvailable(user));
-    personal = splitCents(Math.min(requested, personalAvailable), afterCoupon);
-    const afterPersonal = afterCoupon.map((value, index) => value - personal[index]);
     if (user.enterpriseId && corporateAvailable) enterprise = await require('../models/Enterprise').findById(user.enterpriseId);
     const enterpriseRule = enterprise?.healthFundPaymentRule;
     const capacities = products.map((product, index) => {
@@ -43,9 +44,13 @@ async function quoteGroup(user, items, products, { couponId, useHealthFund }) {
         afterTotal >= cents(enterpriseRule.minOrderAmount || 0) && (!enterpriseRule.eligibleCategories?.length || enterpriseRule.eligibleCategories.includes(product.category))
       )));
       if (!enterpriseEligible || !fund.corporateProductEligible(policy, product._id, product.category, product.healthFundDeduction)) return 0;
-      return Math.min(afterPersonal[index], Math.floor(fund.productDeductionLimit(product.healthFundDeduction, afterPersonal[index] / 100) * 100 + 1e-7));
+      return Math.min(afterCoupon[index], Math.floor(fund.productDeductionLimit(product.healthFundDeduction, afterCoupon[index] / 100) * 100 + 1e-7));
     });
-    corporate = splitCents(Math.min(requested - personal.reduce((s, v) => s + v, 0), corporateAvailable, capacities.reduce((s, v) => s + v, 0)), capacities);
+    // 所有健康基金来源共用商品上限；先使用哪类余额只影响流水归属，
+    // 不会把“自有”余额绕过商品的 0–20% 设置。
+    personal = splitCents(Math.min(requested, personalAvailable, capacities.reduce((s, v) => s + v, 0)), capacities);
+    const remainingCapacities = capacities.map((value, index) => Math.max(0, value - personal[index]));
+    corporate = splitCents(Math.min(requested - personal.reduce((s, v) => s + v, 0), corporateAvailable, remainingCapacities.reduce((s, v) => s + v, 0)), remainingCapacities);
   }
   const allocations = prices.map((price, index) => ({
     price: price / 100, coupon: coupons[index] / 100, personal: personal[index] / 100, corporate: corporate[index] / 100,
