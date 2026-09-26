@@ -7029,11 +7029,16 @@ router.post('/patients/:id/package-entitlements/:entitlementId/use', staffAuth, 
     const patient = await User.findById(req.params.id).select('tenantId familyLinks').lean();
     if (!patient) return res.status(404).json({ success: false, message: '客户不存在' });
     const productId = String(req.body.productId || '');
+    const entitlementKey = String(req.body.entitlementKey || '');
     if (!mongoose.isValidObjectId(productId)) return res.status(400).json({ success: false, message: '请选择商城产品' });
     const entitlements = await require('../utils/packageEntitlements').applicableEntitlements(patient._id);
     const entitlement = entitlements.find(item => String(item._id) === String(req.params.entitlementId));
     if (!entitlement) return res.status(404).json({ success: false, message: '权益不存在、已过期，或当前客户无权使用' });
-    const productRightIndex = (entitlement.rights?.productEntitlements || []).findIndex(item => String(item.productId) === productId);
+    const matchingIndexes = (entitlement.rights?.productEntitlements || []).map((item, index) => ({ item, index })).filter(({ item }) =>
+      entitlementKey ? String(item.entitlementKey || '') === entitlementKey : String(item.productId) === productId,
+    );
+    if (!entitlementKey && matchingIndexes.length > 1) return res.status(400).json({ success: false, message: '该商品包含多个收费规格，请选择要使用的具体权益' });
+    const productRightIndex = matchingIndexes[0]?.index ?? -1;
     if (productRightIndex < 0) return res.status(400).json({ success: false, message: '该服务不在此套餐权益内' });
     const productRight = entitlement.rights.productEntitlements[productRightIndex];
     const poolIndex = productRight.poolKey
@@ -7054,6 +7059,7 @@ router.post('/patients/:id/package-entitlements/:entitlementId/use', staffAuth, 
     const executionOrder = await Order.create({
       user: patient._id, tenantId: patient.tenantId || null,
       serviceId: String(product._id), serviceName: product.name,
+      specificationLabel: productRight.specificationLabel || '',
       servicePrice: 0, unitPrice: 0, totalUnits, usedUnits: 0,
       orderNo: `ENT${Date.now()}${new mongoose.Types.ObjectId().toString().slice(-6)}`.slice(0, 32),
       orderType: 'service', fulfillmentType: product.fulfillmentType || 'offline_service',

@@ -62,6 +62,7 @@ router.get('/', async (req, res) => {
   }
 
   const categories = ['全部', ...categoryTree.flatMap(category => [category.name, ...category.children.map(child => child.name)])];
+  const productById = new Map(products.map(product => [String(product._id), product]));
   const services = products.map(p => {
     const firstPrice = p.servicePrices?.[0];
     return {
@@ -96,6 +97,21 @@ router.get('/', async (req, res) => {
         : p.healthFundDeduction.mode === 'percentage'
           ? { mode:'percentage', value:Math.min(20, Math.max(0, Number(p.healthFundDeduction.value) || 0)) }
           : p.healthFundDeduction,
+      memberBundle: p.memberBundle?.enabled ? {
+        enabled: true,
+        selectionCount: Math.max(1, Number(p.memberBundle.selectionCount) || 1),
+        validityDays: Math.max(1, Number(p.memberBundle.validityDays) || 730),
+        allowedMembershipTiers: p.memberBundle.allowedMembershipTiers || [],
+        discountRules: (p.memberBundle.discountRules || []).map(item => ({ key:item.key, label:item.label, discountRate:item.discountRate })),
+        selectableServices: (p.memberBundle.selectableProducts || []).flatMap(item => {
+          const source = productById.get(String(item.productId));
+          if (!source) return [];
+          const specificationLabel = String(item.specificationLabel || '');
+          const price = specificationLabel ? source.servicePrices?.find(row => row.label === specificationLabel)?.price : (source.servicePrices?.[0]?.price ?? source.originalPrice);
+          if (!Number.isFinite(Number(price))) return [];
+          return [{ selectionKey: String(item.selectionKey || `${item.productId}:${specificationLabel || 'default'}`), productId:String(source._id), productName:source.name, specificationLabel, originalPrice:Number(price), pricingGroup:String(item.pricingGroup || 'standard') }];
+        }),
+      } : null,
       skus: p.skus || [],
     };
   });
@@ -290,20 +306,26 @@ router.post('/order', auth, async (req, res) => {
     if (boughtCount >= Math.max(1, Number(bundle.purchaseLimitPerMembership) || 1)) return res.status(409).json({ success: false, message: '本会员有效期内该服务包已达可购买次数' });
     if (Number(useHealthFund) > 0) return res.status(400).json({ success: false, message: '会员专享服务包已享组合优惠，不支持叠加健康基金' });
     if (couponId) return res.status(400).json({ success: false, message: '会员专享服务包已享组合优惠，不支持叠加优惠券' });
-    const selectedIds = Array.isArray(bundleSelections) ? bundleSelections.map(item => String(item?.productId || item)).filter(id => mongoose.isValidObjectId(id)) : [];
+    const selectedKeys = Array.isArray(bundleSelections) ? bundleSelections.map(item => String(item?.selectionKey || item?.key || item || '').trim()).filter(Boolean) : [];
     const expected = Math.max(1, Number(bundle.selectionCount) || 1);
-    if (selectedIds.length !== expected || new Set(selectedIds).size !== selectedIds.length) return res.status(400).json({ success: false, message: `请恰好选择 ${expected} 项不同服务` });
-    const selectable = new Map((bundle.selectableProducts || []).map(item => [String(item.productId), String(item.pricingGroup || 'standard')]));
-    if (selectedIds.some(id => !selectable.has(id))) return res.status(400).json({ success: false, message: '所选服务不在该会员服务包可选范围内，请刷新后重试' });
-    const sourceProducts = await Product.find({ _id: { $in: selectedIds }, status: 'on' }).lean();
+    if (selectedKeys.length !== expected || new Set(selectedKeys).size !== selectedKeys.length) return res.status(400).json({ success: false, message: `请恰好选择 ${expected} 项不同服务` });
+    const selectableRows = (bundle.selectableProducts || []).map(item => ({
+      selectionKey: String(item.selectionKey || `${item.productId}:${item.specificationLabel || 'default'}`),
+      productId: String(item.productId || ''), specificationLabel: String(item.specificationLabel || ''), pricingGroup: String(item.pricingGroup || 'standard'),
+    }));
+    const selectable = new Map(selectableRows.map(item => [item.selectionKey, item]));
+    if (selectedKeys.some(key => !selectable.has(key))) return res.status(400).json({ success: false, message: '所选服务或收费规格已调整，请刷新后重试' });
+    const sourceProducts = await Product.find({ _id: { $in: selectableRows.map(item => item.productId) }, status: 'on' }).lean();
     const byId = new Map(sourceProducts.map(item => [String(item._id), item]));
-    if (selectedIds.some(id => !byId.has(id))) return res.status(409).json({ success: false, message: '所选服务已下架，请重新选择' });
+    if (selectedKeys.some(key => !byId.has(selectable.get(key).productId))) return res.status(409).json({ success: false, message: '所选服务已下架，请重新选择' });
     const rules = new Map((bundle.discountRules || []).map(item => [String(item.key || 'standard'), Math.max(0, Math.min(1, Number(item.discountRate) || 1))]));
-    const productEntitlements = selectedIds.map(id => {
-      const source = byId.get(id); const group = selectable.get(id) || 'standard';
-      const listPrice = Number(source.servicePrices?.[0]?.price ?? source.originalPrice ?? 0);
+    const productEntitlements = selectedKeys.map(selectionKey => {
+      const option = selectable.get(selectionKey); const source = byId.get(option.productId); const group = option.pricingGroup;
+      const selectedPrice = option.specificationLabel ? (source.servicePrices || []).find(item => item.label === option.specificationLabel) : null;
+      if (option.specificationLabel && !selectedPrice) throw Object.assign(new Error(`收费规格「${option.specificationLabel}」已不存在，请刷新后重试`), { statusCode: 409 });
+      const listPrice = Number(selectedPrice?.price ?? source.originalPrice ?? 0);
       const discountRate = rules.has(group) ? rules.get(group) : 1;
-      return { productId: source._id, productName: source.name, count: 1, remainingCount: 1, poolKey: '', schedule: '', listPrice, discountRate,
+      return { entitlementKey: selectionKey, productId: source._id, productName: source.name, specificationLabel: option.specificationLabel, count: 1, remainingCount: 1, poolKey: '', schedule: '', listPrice, discountRate,
         productSnapshot: { category: source.category || '', fulfillmentType: source.fulfillmentType || 'offline_service', serviceWorkflow: source.serviceWorkflow || {}, serviceItems: source.serviceItems || [] } };
     });
     const listTotal = productEntitlements.reduce((sum, item) => sum + item.listPrice, 0);

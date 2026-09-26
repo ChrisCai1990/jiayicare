@@ -68,7 +68,11 @@ const productSchema = new mongoose.Schema({
       _id: false,
     }],
     selectableProducts: [{
+      // 一个商城商品可以有多个收费规格（如常规/复杂陪诊）。用稳定键而非
+      // 商品 ID 唯一化，才能在同一服务下卖出不同价格、不同核销权益。
+      selectionKey: { type: String, trim: true },
       productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
+      specificationLabel: { type: String, default: '', trim: true },
       pricingGroup: { type: String, default: 'standard', trim: true },
       _id: false,
     }],

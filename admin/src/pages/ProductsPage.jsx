@@ -252,10 +252,14 @@ function ServicePricesForm({ servicePrices, onChange }) {
 function MemberBundleForm({ value, onChange, products }) {
   const bundle = value || EMPTY_FORM.memberBundle
   const set = (key, val) => onChange({ ...bundle, [key]: val })
-  const toggleProduct = (productId, checked) => set('selectableProducts', checked
-    ? [...(bundle.selectableProducts || []), { productId, pricingGroup:'standard' }]
-    : (bundle.selectableProducts || []).filter(item => String(item.productId) !== String(productId)))
-  const setGroup = (productId, pricingGroup) => set('selectableProducts', (bundle.selectableProducts || []).map(item => String(item.productId) === String(productId) ? { ...item, pricingGroup } : item))
+  const selectionKey = (productId, specificationLabel = '') => `${productId}:${specificationLabel || 'default'}`
+  const toggleOption = (productId, specificationLabel, checked) => {
+    const key = selectionKey(productId, specificationLabel)
+    set('selectableProducts', checked
+      ? [...(bundle.selectableProducts || []), { selectionKey:key, productId, specificationLabel, pricingGroup:'standard' }]
+      : (bundle.selectableProducts || []).filter(item => String(item.selectionKey || selectionKey(item.productId, item.specificationLabel)) !== key))
+  }
+  const setGroup = (key, pricingGroup) => set('selectableProducts', (bundle.selectableProducts || []).map(item => String(item.selectionKey || selectionKey(item.productId, item.specificationLabel)) === key ? { ...item, selectionKey:key, pricingGroup } : item))
   const rules = bundle.discountRules || []
   return <div>
     <div style={{padding:14,background:'#fff8e8',border:'1px solid #f0dfb4',borderRadius:10,color:'#6f5312',fontSize:13,marginBottom:16}}>
@@ -271,7 +275,7 @@ function MemberBundleForm({ value, onChange, products }) {
       </div>
       <div className="form-group"><label className="form-label">可购买会员</label>{[['consumer365','365会员'],['annual','年度会员'],['therapy','疗程会员'],['enterprise','企业会员']].map(([key,label])=><label key={key} style={{marginRight:14}}><input type="checkbox" checked={(bundle.allowedMembershipTiers||[]).includes(key)} onChange={e=>set('allowedMembershipTiers',e.target.checked?[...(bundle.allowedMembershipTiers||[]),key]:(bundle.allowedMembershipTiers||[]).filter(v=>v!==key))}/>{label}</label>)}</div>
       <div style={{borderTop:'1px solid #e0d9ce',paddingTop:14,marginTop:14}}><label className="form-label">折扣分组</label>{rules.map((rule,index)=><div key={index} style={{display:'grid',gridTemplateColumns:'1fr 1fr auto',gap:8,marginBottom:8}}><input className="form-input" value={rule.label||''} placeholder="分组名称" onChange={e=>set('discountRules',rules.map((item,i)=>i===index?{...item,label:e.target.value}:item))}/><input className="form-input" type="number" min="0.1" max="1" step="0.01" value={rule.discountRate} onChange={e=>set('discountRules',rules.map((item,i)=>i===index?{...item,discountRate:Math.min(1,Math.max(0.1,Number(e.target.value)||1))}:item))}/><button type="button" className="btn btn-ghost" onClick={()=>set('discountRules',rules.filter((_,i)=>i!==index))}>删除</button></div>)}<button type="button" className="btn btn-sm btn-ghost" onClick={()=>set('discountRules',[...rules,{key:`group_${Date.now()}`,label:'新分组',discountRate:0.7}])}>＋添加分组</button><div style={{fontSize:12,color:'#888',marginTop:5}}>填 0.7 即七折。不同成本服务可分组，例如“低成本 0.6”“陪诊/外部约诊 0.7”。</div></div>
-      <div style={{borderTop:'1px solid #e0d9ce',paddingTop:14,marginTop:16}}><label className="form-label">可选商城服务</label><div style={{fontSize:12,color:'#888',marginBottom:8}}>勾选后才可被客户选择；同一项服务仅计 1 次，医护端按独立权益核销。</div><div style={{maxHeight:280,overflowY:'auto',border:'1px solid #e0d9ce',borderRadius:8}}>{products.filter(p=>String(p._id)!==String(value?._id)).map(p=>{const selected=(bundle.selectableProducts||[]).find(item=>String(item.productId)===String(p._id));return <div key={p._id} style={{display:'grid',gridTemplateColumns:'auto 1fr 150px',gap:10,alignItems:'center',padding:'10px 12px',borderBottom:'1px solid #f0ece5'}}><input type="checkbox" checked={!!selected} onChange={e=>toggleProduct(p._id,e.target.checked)}/><div><div style={{fontWeight:600}}>{p.name}</div><div style={{fontSize:12,color:'#888'}}>¥{p.servicePrices?.[0]?.price ?? p.originalPrice}</div></div><select className="form-input" disabled={!selected} value={selected?.pricingGroup||'standard'} onChange={e=>setGroup(p._id,e.target.value)}>{rules.map(rule=><option key={rule.key} value={rule.key}>{rule.label||rule.key}</option>)}</select></div>})}</div></div>
+      <div style={{borderTop:'1px solid #e0d9ce',paddingTop:14,marginTop:16}}><label className="form-label">可选商城服务及收费规格</label><div style={{fontSize:12,color:'#888',marginBottom:8}}>每个收费规格都可单独勾选和定价。例如“常规陪诊”与“复杂陪诊”是两个不同权益，医护端也会分别核销。</div><div style={{maxHeight:360,overflowY:'auto',border:'1px solid #e0d9ce',borderRadius:8}}>{products.filter(p=>String(p._id)!==String(value?._id)).flatMap(p=>{const options=(p.servicePrices?.length?p.servicePrices:[{label:'默认服务',price:p.originalPrice}]);return options.map(option=>{const key=selectionKey(p._id,option.label==='默认服务'?'':option.label);const selected=(bundle.selectableProducts||[]).find(item=>String(item.selectionKey||selectionKey(item.productId,item.specificationLabel))===key);return <div key={key} style={{display:'grid',gridTemplateColumns:'auto 1fr 150px',gap:10,alignItems:'center',padding:'10px 12px',borderBottom:'1px solid #f0ece5'}}><input type="checkbox" checked={!!selected} onChange={e=>toggleOption(p._id,option.label==='默认服务'?'':option.label,e.target.checked)}/><div><div style={{fontWeight:600}}>{p.name} · {option.label}</div><div style={{fontSize:12,color:'#888'}}>原价 ¥{option.price}</div></div><select className="form-input" disabled={!selected} value={selected?.pricingGroup||'standard'} onChange={e=>setGroup(key,e.target.value)}>{rules.map(rule=><option key={rule.key} value={rule.key}>{rule.label||rule.key}</option>)}</select></div>})})}</div></div>
     </>}
   </div>
 }
@@ -506,7 +510,10 @@ function ProductModal({ product, categories, onClose, onSaved }) {
           purchaseLimitPerMembership: Math.max(1, Number(form.memberBundle.purchaseLimitPerMembership) || 1),
           transferRemainingOnce: form.memberBundle.transferRemainingOnce !== false,
           discountRules: (form.memberBundle.discountRules || []).filter(item => item.key && item.label).map(item => ({ key:item.key, label:item.label, discountRate:Math.min(1,Math.max(0.1,Number(item.discountRate)||1)) })),
-          selectableProducts: (form.memberBundle.selectableProducts || []).filter(item => item.productId).map(item => ({ productId:item.productId, pricingGroup:item.pricingGroup || 'standard' })),
+          selectableProducts: (form.memberBundle.selectableProducts || []).filter(item => item.productId).map(item => ({
+            selectionKey: item.selectionKey || `${item.productId}:${item.specificationLabel || 'default'}`,
+            productId:item.productId, specificationLabel:item.specificationLabel || '', pricingGroup:item.pricingGroup || 'standard',
+          })),
         } : { enabled:false },
         skus: form.skus || [],
         performanceRule: form.performanceRule,
