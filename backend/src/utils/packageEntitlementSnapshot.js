@@ -51,6 +51,8 @@ async function buildPackageEntitlementSnapshot(servicePackage) {
       monthlyServiceReview: !!servicePackageData.entitlements?.monthlyServiceReview,
       healthConsultation: !!servicePackageData.entitlements?.healthConsultation,
       medicalPlanning: !!servicePackageData.entitlements?.medicalPlanning,
+      expertAppointment: !!servicePackageData.entitlements?.expertAppointment,
+      reportInterpretation: !!servicePackageData.entitlements?.reportInterpretation,
     },
     membershipTier: String(configuration.membershipTier || '').trim(),
     phaseAssessmentFrequency: ['biweekly', 'monthly', 'quarterly'].includes(configuration.phaseAssessmentFrequency) ? configuration.phaseAssessmentFrequency : '',

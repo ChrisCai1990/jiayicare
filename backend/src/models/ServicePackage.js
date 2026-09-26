@@ -17,6 +17,8 @@ const servicePackageSchema = new mongoose.Schema({
     monthlyServiceReview: { type: Boolean, default: false },
     healthConsultation: { type: Boolean, default: false },
     medicalPlanning: { type: Boolean, default: false },
+    expertAppointment: { type: Boolean, default: false },
+    reportInterpretation: { type: Boolean, default: false },
   },
   activation: {
     enabled: { type: Boolean, default: false },
