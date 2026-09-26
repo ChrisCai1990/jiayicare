@@ -35,9 +35,12 @@ export default function AiUsagePage() {
   const [selectedReport, setSelectedReport] = useState(null)
   const [business, setBusiness] = useState('')
   const [allowance, setAllowance] = useState({ tokens: 100000, calls: 3, page: '' })
-  const refresh = async () => {
-    const response = await adminAPI.getAiControl()
+  const [circuitsPage, setCircuitsPage] = useState(1)
+  const [pausedReportsPage, setPausedReportsPage] = useState(1)
+  const refresh = async (nextCircuitsPage = circuitsPage, nextPausedReportsPage = pausedReportsPage) => {
+    const response = await adminAPI.getAiControl({ circuitsPage: nextCircuitsPage, pausedReportsPage: nextPausedReportsPage })
     setSnapshot(response.data); setPolicy(response.data.policy)
+    setCircuitsPage(response.data.circuitsPage); setPausedReportsPage(response.data.pausedReportsPage)
   }
   const loadUsage = async (page = 1, filters = appliedFilters) => {
     const response = await adminAPI.getAiUsage({ page, ...filters })
@@ -74,8 +77,8 @@ export default function AiUsagePage() {
       {tab === 'overview' && <>
         <div className="aiu-grid">{card('今日 Token 占用', `day:${snapshot.day}`, snapshot.policy.dailyTokens, '包含未结算预留')}{card('本月 Token 占用', `month:${snapshot.month}`, snapshot.policy.monthlyTokens, '跨服务重启累计')}{card('OCR 今日占用', `business:ocr:${snapshot.day}`, snapshot.policy.ocrDailyTokens, '识别、校验和补提合计')}{card('其他 AI 今日占用', `business:other:${snapshot.day}`, snapshot.policy.otherDailyTokens, '问答与文本分析等')}</div>
         <div className="aiu-note">用量从功能启用后开始记录。Token 占用包含实际用量和未结算预留；未知用量不会自动归零。费用按调用时配置的单价估算，未定价调用不计入金额统计，最终以供应商账单为准。</div>
-        <section className="aiu-card"><h2>费用与异常</h2><p>今日已定价费用及预留：<b>{money(counter(`day:${snapshot.day}`).micros || 0)}</b>　 本月：<b>{money(counter(`month:${snapshot.month}`).micros || 0)}</b></p>{snapshot.circuits.length ? snapshot.circuits.map(row => <div className="aiu-row" key={row._id}><div><b>{row._id}</b><p className="aiu-muted">连续异常 {row.failures} 次 · {row.paused ? '已自动暂停' : '可调用'}</p></div>{row.paused && <button className="btn" disabled={busy} onClick={() => action(async () => { await adminAPI.resetAiCircuit(row._id); await refresh(); setMessage('异常通道已解除暂停；若报告已暂停，请再恢复识别。') })}>解除异常暂停</button>}</div>) : <p className="aiu-muted">暂未记录模型调用。</p>}</section>
-        <section className="aiu-card"><h2>已暂停的报告</h2><p className="aiu-muted">恢复会继续识别并产生费用，已有结果仍需人工审核。累计额度不会重置。</p>{snapshot.pausedReports.length ? snapshot.pausedReports.map(row => <div className="aiu-row" key={row._id}><div><code>{row._id}</code><p>{row.parseJob.message}</p><small className="aiu-muted">{time(row.parseJob.pausedAt)}</small></div><div className="aiu-actions"><button className="btn" disabled={busy} onClick={() => action(async () => { setReport(row._id); setAppliedFilters({ reportId: row._id }); setSelectedReport(null); setTab('usage'); const response = await adminAPI.getAiUsage({ reportId: row._id }); setUsage(response.data) })}>查看 / 追加额度</button><button className="btn btn-primary" disabled={busy} onClick={() => action(async () => { await adminAPI.resumeAiReport(row._id); await refresh(); setMessage('任务已恢复排队') })}>恢复识别</button></div></div>) : <p className="aiu-muted">当前没有因预算或异常保护而暂停的报告。</p>}</section>
+        <section className="aiu-card"><h2>费用与异常</h2><p>今日已定价费用及预留：<b>{money(counter(`day:${snapshot.day}`).micros || 0)}</b>　 本月：<b>{money(counter(`month:${snapshot.month}`).micros || 0)}</b></p>{snapshot.circuits.length ? snapshot.circuits.map(row => <div className="aiu-row" key={row._id}><div><b>{row._id}</b><p className="aiu-muted">连续异常 {row.failures} 次 · {row.paused ? '已自动暂停' : '可调用'}</p></div>{row.paused && <button className="btn" disabled={busy} onClick={() => action(async () => { await adminAPI.resetAiCircuit(row._id); await refresh(); setMessage('异常通道已解除暂停；若报告已暂停，请再恢复识别。') })}>解除异常暂停</button>}</div>) : <p className="aiu-muted">暂未记录模型调用。</p>}{snapshot.circuits.length > 0 && <Pager page={circuitsPage} hasMore={snapshot.circuitsHasMore} busy={busy} onPageChange={page => action(() => refresh(page, pausedReportsPage))} />}</section>
+        <section className="aiu-card"><h2>已暂停的报告</h2><p className="aiu-muted">恢复会继续识别并产生费用，已有结果仍需人工审核。累计额度不会重置。</p>{snapshot.pausedReports.length ? snapshot.pausedReports.map(row => <div className="aiu-row" key={row._id}><div><b>{row.customerName}</b><p className="aiu-report-title">报告：{row.reportTitle}{row.reportDate && ` · ${row.reportDate}`}</p><code>报告 ID：{row._id}</code><p>{row.parseJob.message}</p><small className="aiu-muted">{time(row.parseJob.pausedAt)}</small></div><div className="aiu-actions"><button className="btn" disabled={busy} onClick={() => action(async () => { setReport(row._id); setAppliedFilters({ reportId: row._id }); setSelectedReport({ title: row.reportTitle, customerName: row.customerName, date: row.reportDate }); setTab('usage'); const response = await adminAPI.getAiUsage({ reportId: row._id }); setUsage(response.data) })}>查看 / 追加额度</button><button className="btn btn-primary" disabled={busy} onClick={() => action(async () => { await adminAPI.resumeAiReport(row._id); await refresh(); setMessage('任务已恢复排队') })}>恢复识别</button></div></div>) : <p className="aiu-muted">当前没有因预算或异常保护而暂停的报告。</p>}{snapshot.pausedReports.length > 0 && <Pager page={pausedReportsPage} hasMore={snapshot.pausedReportsHasMore} busy={busy} onPageChange={page => action(() => refresh(circuitsPage, page))} />}</section>
       </>}
       {tab === 'usage' && <section className="aiu-card"><h2>调用明细</h2><form className="aiu-filter" onSubmit={e => { e.preventDefault(); action(searchUsage) }}><input aria-label="客户名或报告名" placeholder="搜索客户名或报告名，如：朱龙明 血常规" value={reportKeyword} onChange={e => setReportKeyword(e.target.value)} /><select aria-label="业务类型" value={business} onChange={e => setBusiness(e.target.value)}><option value="">全部业务</option><option value="ocr">OCR</option><option value="other">其他 AI</option></select><button type="submit" className="btn btn-primary" disabled={busy}>{busy ? '查询中…' : '查询'}</button><button type="button" className="btn" disabled={busy} onClick={() => action(async () => { await loadUsage(1, {}); setAppliedFilters({}); setReportKeyword(''); setBusiness(''); setReport(''); setSelectedReport(null) })}>重置</button></form>
         <p className="aiu-muted" role="status">{appliedFilters.q ? `搜索：${appliedFilters.q} · ` : ''}{appliedFilters.business === 'ocr' ? 'OCR' : appliedFilters.business === 'other' ? '其他 AI' : '全部业务'} · 多个关键词用空格分隔。客户搜索仅包含已关联报告的调用。</p>
@@ -88,4 +91,8 @@ export default function AiUsagePage() {
       <p className="aiu-footer">暂停阻止后续新请求；已经发出的请求可能继续计费。自动暂停不会自动审核或发布报告。</p>
     </>}
   </div>
+}
+
+function Pager({ page, hasMore, busy, onPageChange }) {
+  return <div className="aiu-actions aiu-pagination"><button className="btn" disabled={busy || page <= 1} onClick={() => onPageChange(page - 1)}>上一页</button><span>第 {page} 页</span><button className="btn" disabled={busy || !hasMore} onClick={() => onPageChange(page + 1)}>下一页</button></div>
 }
