@@ -115,6 +115,39 @@ router.get('/coupons', auth, async (req, res) => {
   res.json({ success: true, data: coupons });
 });
 
+// 会员专享组合包只允许将“尚未使用的全部权益”转赠一次。转赠后有效期
+// 不重算、不延长；受让人必须已经是有效365及以上会员，避免基础会员绕过
+// 准入购买或使用会员专享服务。
+router.post('/member-bundle-entitlements/:id/transfer', auth, async (req, res) => {
+  const recipientPhone = String(req.body?.recipientPhone || '').trim();
+  if (!recipientPhone) return res.status(400).json({ success:false, message:'请输入受让人的注册手机号' });
+  const recipient = await User.findOne({ $or: [{ phone: recipientPhone }, { contactPhone: recipientPhone }] });
+  if (!recipient) return res.status(404).json({ success:false, message:'未找到该手机号对应的客户' });
+  if (String(recipient._id) === String(req.user._id)) return res.status(400).json({ success:false, message:'不能转赠给本人' });
+  const eligible = await require('../utils/packageFeatureEntitlements').hasHealthFundAccess(recipient);
+  if (!eligible) return res.status(409).json({ success:false, message:'受让人须先成为有效365及以上会员' });
+  const PackageEntitlement = require('../models/PackageEntitlement');
+  const now = new Date();
+  const entitlement = await PackageEntitlement.findOne({
+    _id: req.params.id, ownerUserId: req.user._id, status:'active', validFrom:{ $lte:now }, validUntil:{ $gte:now },
+    'rights.memberBundle.transferRemainingOnce': true,
+    'rights.memberBundle.transferredAt': null,
+  });
+  if (!entitlement) return res.status(404).json({ success:false, message:'没有可转赠的有效会员专享服务包，或该服务包已转赠过' });
+  const remaining = (entitlement.rights?.productEntitlements || []).reduce((sum, item) => sum + Math.max(0, Number(item.remainingCount) || 0), 0);
+  if (!remaining) return res.status(409).json({ success:false, message:'该服务包已无剩余服务，不能转赠' });
+  const result = await PackageEntitlement.findOneAndUpdate({
+    _id: entitlement._id, ownerUserId:req.user._id, status:'active', updatedAt:entitlement.updatedAt,
+    'rights.memberBundle.transferredAt': null,
+  }, { $set: {
+    ownerUserId: recipient._id,
+    'rights.memberBundle.transferredAt': now,
+    'rights.memberBundle.transferredToUserId': recipient._id,
+  } }, { new:true });
+  if (!result) return res.status(409).json({ success:false, message:'权益状态刚发生变化，请刷新后重试' });
+  res.json({ success:true, data:{ entitlementId:String(result._id), recipientName:recipient.name || '', validUntil:result.validUntil }, message:'剩余服务已转赠；有效期保持不变，不能再次转赠' });
+});
+
 // Product-only sharing. A token identifies the sharer without exposing user ids in the URL.
 router.post('/product-shares', auth, async (req, res) => {
   const product = await Product.findOne({ _id: req.body.productId, status: 'on' }).select('_id name images');
