@@ -155,11 +155,12 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                   </select>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer' }}><input type="checkbox" checked={!!configuration.includes365} onChange={e => setConfiguration(v => ({ ...v, includes365: e.target.checked }))} />方案已含365健康管理权限</label>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer' }}><input type="checkbox" checked={!!configuration.familySharing} onChange={e => setConfiguration(v => ({ ...v, familySharing: e.target.checked }))} />套餐权益允许已关联家庭成员共享</label>
-                  <label className="form-label" style={{ marginTop: 12 }}>开通后写入会员类型</label>
+                  <label className="form-label" style={{ marginTop: 12 }}>开通后写入客户分层</label>
                   <select className="form-input" value={configuration.membershipTypeName || ''} onChange={e => setConfiguration(v => ({ ...v, membershipTypeName: e.target.value }))}>
-                    <option value="">不自动覆盖会员类型</option>
+                    <option value="">不自动覆盖客户分层</option>
                     {memberTypeCatalog.filter(item => item.clientBrand === clientBrand).map(item => <option key={item._id} value={item.name}>{item.name}</option>)}
                   </select>
+                  <p style={{ color: '#6B7280', fontSize: 12, margin: '5px 0 0' }}>仅用于客户档案识别、医护端筛选和服务模板匹配；实际服务权益、次数与扣减以本服务包下方的商城产品配置为准。</p>
                   <select className="form-input" style={{ marginTop: 10 }} value={configuration.reviewMode} onChange={e => setConfiguration(v => ({ ...v, reviewMode: e.target.value }))}>
                     <option value="none">档案处理：不安排人工审核</option><option value="exception">档案处理：标准内容AI跟进，异常/非标准转人工</option><option value="required">档案处理：需人工审核后启动服务</option>
                   </select>
