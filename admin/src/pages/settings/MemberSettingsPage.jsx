@@ -12,6 +12,7 @@ const brandLabel = value => CLIENT_BRANDS.find(item => item.value === value)?.la
 function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, deleteFn, withClientBrand = false, withEntitlements = false, withActivation = false }) {
   const toast = useToast()
   const [list, setList] = useState([])
+  const [productCatalog, setProductCatalog] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editId, setEditId] = useState(null)
@@ -19,17 +20,24 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
   const [clientBrand, setClientBrand] = useState('jiayiguanjia')
   const [entitlements, setEntitlements] = useState({ aiHealthAnalysis: false, aiRiskAssessment: false })
   const [activation, setActivation] = useState({ enabled: false, durationMonths: 12, price: 0, originalPrice: 0, featuresText: '', tag: '', highlight: false })
+  const [configuration, setConfiguration] = useState({ deliveryMode: 'digital', includes365: false, reviewMode: 'exception', noResponseRule: '连续3次（隔日）未配合转人工', serviceEntitlements: [] })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   const load = () => {
     setLoading(true)
-    fetchFn().then(r => setList(r.data)).catch(e => toast(e.message)).finally(() => setLoading(false))
+    const requests = [fetchFn()]
+    if (withActivation) requests.push(adminAPI.products({ limit: 500 }))
+    Promise.all(requests).then(([r, products]) => {
+      setList(r.data)
+      if (products) setProductCatalog((products.data || []).filter(item => item.status === 'on'))
+    }).catch(e => toast(e.message)).finally(() => setLoading(false))
   }
   useEffect(() => { load() }, [])
 
-  const openCreate = () => { setEditId(null); setName(''); setClientBrand('jiayiguanjia'); setEntitlements({ aiHealthAnalysis: false, aiRiskAssessment: false }); setActivation({ enabled: false, durationMonths: 12, price: 0, originalPrice: 0, featuresText: '', tag: '', highlight: false }); setError(''); setShowModal(true) }
-  const openEdit = item => { setEditId(item._id); setName(item.name); setClientBrand(item.clientBrand || 'jiayiguanjia'); setEntitlements({ aiHealthAnalysis: !!item.entitlements?.aiHealthAnalysis, aiRiskAssessment: !!item.entitlements?.aiRiskAssessment }); setActivation({ enabled: !!item.activation?.enabled, durationMonths: item.activation?.durationMonths || 12, price: item.activation?.price || 0, originalPrice: item.activation?.originalPrice || 0, featuresText: (item.activation?.features || []).join('\n'), tag: item.activation?.tag || '', highlight: !!item.activation?.highlight }); setError(''); setShowModal(true) }
+  const emptyConfiguration = { deliveryMode: 'digital', includes365: false, reviewMode: 'exception', noResponseRule: '连续3次（隔日）未配合转人工', serviceEntitlements: [] }
+  const openCreate = () => { setEditId(null); setName(''); setClientBrand('jiayiguanjia'); setEntitlements({ aiHealthAnalysis: false, aiRiskAssessment: false }); setActivation({ enabled: false, durationMonths: 12, price: 0, originalPrice: 0, featuresText: '', tag: '', highlight: false }); setConfiguration(emptyConfiguration); setError(''); setShowModal(true) }
+  const openEdit = item => { setEditId(item._id); setName(item.name); setClientBrand(item.clientBrand || 'jiayiguanjia'); setEntitlements({ aiHealthAnalysis: !!item.entitlements?.aiHealthAnalysis, aiRiskAssessment: !!item.entitlements?.aiRiskAssessment }); setActivation({ enabled: !!item.activation?.enabled, durationMonths: item.activation?.durationMonths || 12, price: item.activation?.price || 0, originalPrice: item.activation?.originalPrice || 0, featuresText: (item.activation?.features || []).join('\n'), tag: item.activation?.tag || '', highlight: !!item.activation?.highlight }); setConfiguration({ ...emptyConfiguration, ...(item.configuration || {}), serviceEntitlements: item.configuration?.serviceEntitlements || [] }); setError(''); setShowModal(true) }
 
   const handleSave = async () => {
     if (!name.trim()) { setError('名称不能为空'); return }
@@ -37,7 +45,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
     try {
       const activationPayload = { ...activation, features: activation.featuresText.split(/\r?\n/).map(v => v.trim()).filter(Boolean) }
       delete activationPayload.featuresText
-      const payload = withClientBrand ? { name, clientBrand, ...(withEntitlements ? { entitlements } : {}), ...(withActivation ? { activation: activationPayload } : {}) } : { name }
+      const payload = withClientBrand ? { name, clientBrand, ...(withEntitlements ? { entitlements } : {}), ...(withActivation ? { activation: activationPayload, configuration } : {}) } : { name }
       if (editId) { await updateFn(editId, payload); toast('已更新') }
       else { await createFn(payload); toast('已创建') }
       setShowModal(false); load()
@@ -128,6 +136,41 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                       <span>{label}</span>
                     </label>
                   ))}
+                </div>
+              )}
+              {withActivation && (
+                <div className="form-group" style={{ borderTop: '1px solid #E5E7EB', paddingTop: 14 }}>
+                  <label className="form-label">服务交付方式</label>
+                  <select className="form-input" value={configuration.deliveryMode} onChange={e => setConfiguration(v => ({ ...v, deliveryMode: e.target.value }))}>
+                    <option value="digital">数字自助型：AI/App 为主，必要时转人工</option>
+                    <option value="team">团队协同型：健管专员主动执行，顾问关键决策</option>
+                    <option value="human">人工主导型：服务团队主导，AI 作为工作台</option>
+                  </select>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer' }}><input type="checkbox" checked={!!configuration.includes365} onChange={e => setConfiguration(v => ({ ...v, includes365: e.target.checked }))} />方案已含365健康管理权限</label>
+                  <select className="form-input" style={{ marginTop: 10 }} value={configuration.reviewMode} onChange={e => setConfiguration(v => ({ ...v, reviewMode: e.target.value }))}>
+                    <option value="none">档案处理：不安排人工审核</option><option value="exception">档案处理：标准内容AI跟进，异常/非标准转人工</option><option value="required">档案处理：需人工审核后启动服务</option>
+                  </select>
+                  <input className="form-input" style={{ marginTop: 10 }} value={configuration.noResponseRule || ''} onChange={e => setConfiguration(v => ({ ...v, noResponseRule: e.target.value }))} placeholder="未配合转人工规则" />
+                  <label className="form-label" style={{ marginTop: 14 }}>方案包含的商城产品</label>
+                  <p style={{ color: '#6B7280', fontSize: 12, margin: '4px 0 8px' }}>商城产品自动列出；填写大于 0 的次数即写入客户权益，填 0 表示不包含。产品价格、抵扣比例和履约规则仍在商城产品中维护。</p>
+                  <div style={{ maxHeight: 330, overflowY: 'auto', border: '1px solid #E5E7EB', borderRadius: 8, padding: 8 }}>
+                    {productCatalog.map(product => {
+                      const saved = (configuration.serviceEntitlements || []).find(item => String(item.productId) === String(product._id)) || { productId: String(product._id), name: product.name, count: 0, schedule: '' }
+                      const update = patch => setConfiguration(v => {
+                        const rows = [...(v.serviceEntitlements || [])]
+                        const i = rows.findIndex(item => String(item.productId) === String(product._id))
+                        const next = { ...saved, ...patch, productId: String(product._id), name: product.name }
+                        if (i >= 0) rows[i] = next; else rows.push(next)
+                        return { ...v, serviceEntitlements: rows }
+                      })
+                      return <div key={product._id} style={{ display: 'grid', gridTemplateColumns: '1.3fr .45fr 1fr', gap: 8, padding: '7px 0', borderBottom: '1px solid #F3F4F6' }}>
+                        <div style={{ fontSize: 13, alignSelf: 'center' }}><strong>{product.name}</strong><small style={{ display: 'block', color: '#6B7280' }}>{product.category}</small></div>
+                        <input className="form-input" type="number" min="0" value={saved.count ?? 0} onChange={e => update({ count: Math.max(0, Number(e.target.value) || 0) })} title="包含次数" />
+                        <input className="form-input" value={saved.schedule || ''} placeholder="周期/核销说明（可选）" onChange={e => update({ schedule: e.target.value })} />
+                      </div>
+                    })}
+                    {!productCatalog.length && <p style={{ color: '#6B7280', padding: 8 }}>暂无上架商城产品，请先在“商城产品”中维护。</p>}
+                  </div>
                 </div>
               )}
               {withActivation && (

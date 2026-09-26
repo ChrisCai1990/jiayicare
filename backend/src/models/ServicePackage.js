@@ -23,6 +23,9 @@ const servicePackageSchema = new mongoose.Schema({
     tag: { type: String, trim: true, default: '' },
     highlight: { type: Boolean, default: false },
   },
+  // 后台配置的交付与权益模板。保留 Mixed，使运营可逐步扩展服务、次数和周期，
+  // 已售方案应另存快照，不能因调整此模板而改变历史客户权益。
+  configuration: { type: mongoose.Schema.Types.Mixed, default: {} },
 }, { timestamps: true });
 
 servicePackageSchema.index({ clientBrand: 1, name: 1 }, { unique: true });
