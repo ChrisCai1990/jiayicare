@@ -168,6 +168,12 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                       <span>{label}</span>
                     </label>
                   ))}
+                  {entitlements.phaseAssessment && <div style={{ margin: '10px 0 0 26px', padding: 10, background: '#F7FAFC', borderRadius: 8 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#4A5568', marginBottom: 6 }}>阶段性评估频率</div>
+                    <select className="form-input" value={configuration.phaseAssessmentFrequency || ''} onChange={e => setConfiguration(v => ({ ...v, phaseAssessmentFrequency: e.target.value }))}><option value="">请选择频率</option><option value="biweekly">每 2 周一次</option><option value="monthly">每月一次</option><option value="quarterly">每季度一次</option></select>
+                    <div style={{ fontSize: 11, color: '#718096', marginTop: 6 }}>持续执行频率；请选择与该套餐交付强度匹配的一种节奏。</div>
+                  </div>}
+                  {entitlements.monthlyServiceReview && <div style={{ margin: '10px 0 0 26px', display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ fontSize: 13, color: '#4A5568' }}>完成第</span><select className="form-input" style={{ width: 88, padding: '6px 8px' }} value={configuration.monthlyReviewStartMonth || 1} onChange={e => setConfiguration(v => ({ ...v, monthlyReviewStartMonth: Number(e.target.value) }))}>{Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}</select><span style={{ fontSize: 13, color: '#4A5568' }}>个服务月后开始复盘，每月一次</span></div>}
                 </div>
               )}
               {withActivation && (
@@ -198,12 +204,6 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                       <button type="button" className="btn btn-ghost" onClick={() => setConfiguration(v => ({ ...v, sharedEntitlementPools: (v.sharedEntitlementPools || []).filter((_, i) => i !== index), serviceEntitlements: (v.serviceEntitlements || []).map(item => item.poolKey === pool.key ? { ...item, poolKey: '' } : item) }))}>删除</button>
                     </div>
                   ))}
-                  {entitlements.phaseAssessment && <div style={{ margin: '10px 0 0 26px', padding: 10, background: '#F7FAFC', borderRadius: 8 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: '#4A5568', marginBottom: 6 }}>阶段性评估频率</div>
-                    <select className="form-input" value={configuration.phaseAssessmentFrequency || ''} onChange={e => setConfiguration(v => ({ ...v, phaseAssessmentFrequency: e.target.value }))}><option value="">请选择频率</option><option value="biweekly">每 2 周一次</option><option value="monthly">每月一次</option><option value="quarterly">每季度一次</option></select>
-                    <div style={{ fontSize: 11, color: '#718096', marginTop: 6 }}>这是持续执行频率，不是只评估一次；请选择与该套餐交付强度匹配的一种节奏。</div>
-                  </div>}
-                  {entitlements.monthlyServiceReview && <div style={{ margin: '10px 0 0 26px', display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ fontSize: 13, color: '#4A5568' }}>月度复盘从服务第</span><select className="form-input" style={{ width: 88, padding: '6px 8px' }} value={configuration.monthlyReviewStartMonth || 1} onChange={e => setConfiguration(v => ({ ...v, monthlyReviewStartMonth: Number(e.target.value) }))}>{Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}</select><span style={{ fontSize: 13, color: '#4A5568' }}>个月开始，每月一次</span></div>}
                   <button type="button" className="btn btn-ghost" onClick={() => setConfiguration(v => ({ ...v, sharedEntitlementPools: [...(v.sharedEntitlementPools || []), { key: `pool_${Date.now()}`, name: '', count: 1 }] }))}>+ 新增共享次数池</button>
                   <label className="form-label" style={{ marginTop: 14 }}>方案包含的商城产品</label>
                   <p style={{ color: '#6B7280', fontSize: 12, margin: '4px 0 8px' }}>商城产品自动列出；填写大于 0 的次数即写入客户权益，填 0 表示不包含。阶段性评估、月度服务复盘等套餐管理动作在上方“年度会员专属权益”中勾选，不在此处配置为商城产品。产品价格、抵扣比例和履约规则仍在商城产品中维护。</p>
