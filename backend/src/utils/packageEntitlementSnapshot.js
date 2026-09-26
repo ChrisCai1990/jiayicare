@@ -49,6 +49,7 @@ async function buildPackageEntitlementSnapshot(servicePackage) {
       aiHealthAnalysis: !!servicePackageData.entitlements?.aiHealthAnalysis,
       phaseAssessment: !!servicePackageData.entitlements?.phaseAssessment,
       monthlyServiceReview: !!servicePackageData.entitlements?.monthlyServiceReview,
+      healthArchiveConcierge: !!servicePackageData.entitlements?.healthArchiveConcierge,
       healthConsultation: !!servicePackageData.entitlements?.healthConsultation,
       medicalPlanning: !!servicePackageData.entitlements?.medicalPlanning,
       expertAppointment: !!servicePackageData.entitlements?.expertAppointment,
