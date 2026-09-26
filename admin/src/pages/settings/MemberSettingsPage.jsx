@@ -24,6 +24,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
   const [list, setList] = useState([])
   const [productCatalog, setProductCatalog] = useState([])
   const [productSearch, setProductSearch] = useState('')
+  const [poolProductSearch, setPoolProductSearch] = useState({})
   const [showIncludedOnly, setShowIncludedOnly] = useState(false)
   const [statusFilter, setStatusFilter] = useState('all')
   const [loading, setLoading] = useState(true)
@@ -49,8 +50,8 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
   useEffect(() => { load() }, [])
 
   const emptyConfiguration = { deliveryMode: 'digital', includes365: false, familySharing: false, membershipTier: '', reviewMode: 'exception', noResponseRule: '连续3次（隔日）未配合转人工', phaseAssessmentFrequency: '', monthlyReviewStartMonth: 1, serviceEntitlements: [], sharedEntitlementPools: [] }
-  const openCreate = () => { setEditId(null); setName(''); setClientBrand('jiayiguanjia'); setEntitlements({ aiHealthAnalysis: false, phaseAssessment: false, monthlyServiceReview: false, healthConsultation: false, medicalPlanning: false }); setActivation({ enabled: false, durationMonths: 12, price: 0, originalPrice: 0, featuresText: '', tag: '', highlight: false }); setConfiguration(emptyConfiguration); setProductSearch(''); setShowIncludedOnly(false); setError(''); setShowModal(true) }
-  const openEdit = item => { const legacySchedule = item.configuration?.phaseAssessmentSchedule || []; const legacyFrequency = legacySchedule.includes('week2') ? 'biweekly' : legacySchedule.includes('month1') ? 'monthly' : legacySchedule.includes('quarterly') ? 'quarterly' : ''; setEditId(item._id); setName(item.name); setClientBrand(item.clientBrand || 'jiayiguanjia'); setEntitlements({ aiHealthAnalysis: !!item.entitlements?.aiHealthAnalysis, phaseAssessment: !!item.entitlements?.phaseAssessment, monthlyServiceReview: !!item.entitlements?.monthlyServiceReview, healthConsultation: !!item.entitlements?.healthConsultation, medicalPlanning: !!item.entitlements?.medicalPlanning }); setActivation({ enabled: !!item.activation?.enabled, durationMonths: item.activation?.durationMonths || 12, price: item.activation?.price || 0, originalPrice: item.activation?.originalPrice || 0, featuresText: (item.activation?.features || []).join('\n'), tag: item.activation?.tag || '', highlight: !!item.activation?.highlight }); setConfiguration({ ...emptyConfiguration, ...(item.configuration || {}), phaseAssessmentFrequency: item.configuration?.phaseAssessmentFrequency || legacyFrequency, serviceEntitlements: item.configuration?.serviceEntitlements || [], sharedEntitlementPools: item.configuration?.sharedEntitlementPools || [] }); setProductSearch(''); setShowIncludedOnly(false); setError(''); setShowModal(true) }
+  const openCreate = () => { setEditId(null); setName(''); setClientBrand('jiayiguanjia'); setEntitlements({ aiHealthAnalysis: false, phaseAssessment: false, monthlyServiceReview: false, healthConsultation: false, medicalPlanning: false }); setActivation({ enabled: false, durationMonths: 12, price: 0, originalPrice: 0, featuresText: '', tag: '', highlight: false }); setConfiguration(emptyConfiguration); setProductSearch(''); setPoolProductSearch({}); setShowIncludedOnly(false); setError(''); setShowModal(true) }
+  const openEdit = item => { const legacySchedule = item.configuration?.phaseAssessmentSchedule || []; const legacyFrequency = legacySchedule.includes('week2') ? 'biweekly' : legacySchedule.includes('month1') ? 'monthly' : legacySchedule.includes('quarterly') ? 'quarterly' : ''; setEditId(item._id); setName(item.name); setClientBrand(item.clientBrand || 'jiayiguanjia'); setEntitlements({ aiHealthAnalysis: !!item.entitlements?.aiHealthAnalysis, phaseAssessment: !!item.entitlements?.phaseAssessment, monthlyServiceReview: !!item.entitlements?.monthlyServiceReview, healthConsultation: !!item.entitlements?.healthConsultation, medicalPlanning: !!item.entitlements?.medicalPlanning }); setActivation({ enabled: !!item.activation?.enabled, durationMonths: item.activation?.durationMonths || 12, price: item.activation?.price || 0, originalPrice: item.activation?.originalPrice || 0, featuresText: (item.activation?.features || []).join('\n'), tag: item.activation?.tag || '', highlight: !!item.activation?.highlight }); setConfiguration({ ...emptyConfiguration, ...(item.configuration || {}), phaseAssessmentFrequency: item.configuration?.phaseAssessmentFrequency || legacyFrequency, serviceEntitlements: item.configuration?.serviceEntitlements || [], sharedEntitlementPools: item.configuration?.sharedEntitlementPools || [] }); setProductSearch(''); setPoolProductSearch({}); setShowIncludedOnly(false); setError(''); setShowModal(true) }
 
   const handleSave = async () => {
     if (!name.trim()) { setError('名称不能为空'); return }
@@ -78,10 +79,11 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
   const normalizedProductSearch = productSearch.trim().toLowerCase()
   const includedProducts = (configuration.serviceEntitlements || []).filter(item => Number(item.count) > 0 || item.poolKey)
   const includedIds = new Set(includedProducts.map(item => String(item.productId)))
+  const pooledProductIds = new Set((configuration.serviceEntitlements || []).filter(item => item.poolKey).map(item => String(item.productId)))
   const poolByKey = new Map((configuration.sharedEntitlementPools || []).map(item => [item.key, item]))
   const visibleProducts = (normalizedProductSearch
     ? productCatalog.filter(item => [item.name, item.category, item.description].filter(Boolean).join(' ').toLowerCase().includes(normalizedProductSearch))
-    : productCatalog).filter(item => !showIncludedOnly || includedIds.has(String(item._id)))
+    : productCatalog).filter(item => !pooledProductIds.has(String(item._id))).filter(item => !showIncludedOnly || includedIds.has(String(item._id)))
   const isItemActive = item => item.active ?? item.status === 'active'
   const statusCounts = {
     all: list.length,
@@ -196,17 +198,41 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                   </select>
                   <input className="form-input" style={{ marginTop: 10 }} value={configuration.noResponseRule || ''} onChange={e => setConfiguration(v => ({ ...v, noResponseRule: e.target.value }))} placeholder="未配合转人工规则" />
                   <label className="form-label" style={{ marginTop: 14 }}>共享次数池（可选）</label>
-                  <p style={{ color: '#6B7280', fontSize: 12, margin: '4px 0 8px' }}>适用于“代办、代诊、陪诊共 2 次”这类合并权益。先新增次数池，再在下方商品中选择它；选入池的商品不再单独计次。</p>
+                  <p style={{ color: '#6B7280', fontSize: 12, margin: '4px 0 8px' }}>适用于“代办、代诊、陪诊共 2 次”这类合并权益。直接在每个次数池内搜索并勾选适用服务；选入池的服务不会在下方独立次数列表重复出现。</p>
                   {(configuration.sharedEntitlementPools || []).map((pool, index) => (
-                    <div key={pool.key || index} style={{ display: 'grid', gridTemplateColumns: '1fr .45fr auto', gap: 8, marginBottom: 8 }}>
-                      <input className="form-input" value={pool.name || ''} placeholder="例如：就医协助共享次数" onChange={e => setConfiguration(v => ({ ...v, sharedEntitlementPools: (v.sharedEntitlementPools || []).map((item, i) => i === index ? { ...item, name: e.target.value } : item) }))} />
-                      <input className="form-input" type="number" min="1" value={pool.count ?? 1} title="共享次数" onChange={e => setConfiguration(v => ({ ...v, sharedEntitlementPools: (v.sharedEntitlementPools || []).map((item, i) => i === index ? { ...item, count: Math.max(1, Number(e.target.value) || 1) } : item) }))} />
-                      <button type="button" className="btn btn-ghost" onClick={() => setConfiguration(v => ({ ...v, sharedEntitlementPools: (v.sharedEntitlementPools || []).filter((_, i) => i !== index), serviceEntitlements: (v.serviceEntitlements || []).map(item => item.poolKey === pool.key ? { ...item, poolKey: '' } : item) }))}>删除</button>
+                    <div key={pool.key || index} style={{ padding: 10, marginBottom: 10, border: '1px solid #D1FAE5', borderRadius: 8, background: '#F0FDFA' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr .45fr auto', gap: 8 }}>
+                        <input className="form-input" value={pool.name || ''} placeholder="例如：就医协助共享次数" onChange={e => setConfiguration(v => ({ ...v, sharedEntitlementPools: (v.sharedEntitlementPools || []).map((item, i) => i === index ? { ...item, name: e.target.value } : item) }))} />
+                        <input className="form-input" type="number" min="1" value={pool.count ?? 1} title="共享次数" onChange={e => setConfiguration(v => ({ ...v, sharedEntitlementPools: (v.sharedEntitlementPools || []).map((item, i) => i === index ? { ...item, count: Math.max(1, Number(e.target.value) || 1) } : item) }))} />
+                        <button type="button" className="btn btn-ghost" onClick={() => setConfiguration(v => ({ ...v, sharedEntitlementPools: (v.sharedEntitlementPools || []).filter((_, i) => i !== index), serviceEntitlements: (v.serviceEntitlements || []).map(item => item.poolKey === pool.key ? { ...item, poolKey: '' } : item) }))}>删除</button>
+                      </div>
+                      <input className="form-input" value={poolProductSearch[pool.key] || ''} onChange={e => setPoolProductSearch(v => ({ ...v, [pool.key]: e.target.value }))} placeholder="搜索并勾选适用商城服务" style={{ marginTop: 8 }} />
+                      <div style={{ maxHeight: 150, overflowY: 'auto', marginTop: 6, border: '1px solid #D1D5DB', borderRadius: 6, background: '#fff' }}>
+                        {productCatalog.filter(product => {
+                          const keyword = (poolProductSearch[pool.key] || '').trim().toLowerCase()
+                          return !keyword || [product.name, product.category, product.description].filter(Boolean).join(' ').toLowerCase().includes(keyword)
+                        }).map(product => {
+                          const selected = (configuration.serviceEntitlements || []).find(item => String(item.productId) === String(product._id))?.poolKey === pool.key
+                          return <label key={product._id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', cursor: 'pointer', borderBottom: '1px solid #F3F4F6', fontSize: 13 }}>
+                            <input type="checkbox" checked={selected} onChange={e => setConfiguration(v => {
+                              const rows = [...(v.serviceEntitlements || [])]
+                              const rowIndex = rows.findIndex(item => String(item.productId) === String(product._id))
+                              if (e.target.checked) {
+                                const next = { ...(rowIndex >= 0 ? rows[rowIndex] : {}), productId: String(product._id), name: product.name, count: 0, poolKey: pool.key }
+                                if (rowIndex >= 0) rows[rowIndex] = next; else rows.push(next)
+                              } else if (rowIndex >= 0) rows[rowIndex] = { ...rows[rowIndex], poolKey: '' }
+                              return { ...v, serviceEntitlements: rows }
+                            })} />
+                            <span><strong>{product.name}</strong><small style={{ marginLeft: 6, color: '#6B7280' }}>{product.category}</small></span>
+                          </label>
+                        })}
+                        {!productCatalog.length && <p style={{ margin: 0, padding: 8, color: '#6B7280', fontSize: 12 }}>暂无上架商城产品。</p>}
+                      </div>
                     </div>
                   ))}
                   <button type="button" className="btn btn-ghost" onClick={() => setConfiguration(v => ({ ...v, sharedEntitlementPools: [...(v.sharedEntitlementPools || []), { key: `pool_${Date.now()}`, name: '', count: 1 }] }))}>+ 新增共享次数池</button>
-                  <label className="form-label" style={{ marginTop: 14 }}>方案包含的商城产品</label>
-                  <p style={{ color: '#6B7280', fontSize: 12, margin: '4px 0 8px' }}>商城产品自动列出；填写大于 0 的次数即写入客户权益，填 0 表示不包含。阶段性评估、月度服务复盘等套餐管理动作在上方“年度会员专属权益”中勾选，不在此处配置为商城产品。产品价格、抵扣比例和履约规则仍在商城产品中维护。</p>
+                  <label className="form-label" style={{ marginTop: 14 }}>独立次数的商城产品</label>
+                  <p style={{ color: '#6B7280', fontSize: 12, margin: '4px 0 8px' }}>商城产品自动列出；填写大于 0 的次数即写入客户权益，填 0 表示不包含。已在共享次数池勾选的服务不会在此重复显示。阶段性评估、月度服务复盘等套餐管理动作在上方“年度会员专属权益”中勾选，不在此处配置为商城产品。产品价格、抵扣比例和履约规则仍在商城产品中维护。</p>
                   <div style={{ padding: 10, marginBottom: 10, border: '1px solid #BBF7D0', borderRadius: 8, background: '#F0FDF4' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginBottom: includedProducts.length ? 8 : 0 }}>
                       <strong style={{ fontSize: 13, color: '#166534' }}>已包含 {includedProducts.length} 项商城服务</strong>
@@ -219,7 +245,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                   </div>
                   <input className="form-input" value={productSearch} onChange={e => setProductSearch(e.target.value)} placeholder="搜索产品名称、分类或说明" style={{ marginBottom: 8 }} />
                   <div style={{ maxHeight: 330, overflowY: 'auto', border: '1px solid #E5E7EB', borderRadius: 8, padding: 8 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1.15fr .35fr .8fr 1fr', gap: 8, padding: '4px 6px 7px', color: '#718096', fontSize: 11, fontWeight: 600, borderBottom: '1px solid #E5E7EB' }}><span>商城服务</span><span>独立次数</span><span>计次方式</span><span>周期／核销说明</span></div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.35fr .35fr 1fr', gap: 8, padding: '4px 6px 7px', color: '#718096', fontSize: 11, fontWeight: 600, borderBottom: '1px solid #E5E7EB' }}><span>商城服务</span><span>包含次数</span><span>周期／核销说明</span></div>
                     {visibleProducts.map(product => {
                       const saved = (configuration.serviceEntitlements || []).find(item => String(item.productId) === String(product._id)) || { productId: String(product._id), name: product.name, count: 0, schedule: '' }
                       const update = patch => setConfiguration(v => {
@@ -229,12 +255,10 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                         if (i >= 0) rows[i] = next; else rows.push(next)
                         return { ...v, serviceEntitlements: rows }
                       })
-                      const inPool = !!saved.poolKey
-                      const included = Number(saved.count) > 0 || inPool
-                      return <div key={product._id} style={{ display: 'grid', gridTemplateColumns: '1.15fr .35fr .8fr 1fr', gap: 8, padding: '7px 6px', borderBottom: '1px solid #F3F4F6', background: included ? '#F0FDF4' : 'transparent', borderRadius: 6 }}>
+                      const included = Number(saved.count) > 0
+                      return <div key={product._id} style={{ display: 'grid', gridTemplateColumns: '1.35fr .35fr 1fr', gap: 8, padding: '7px 6px', borderBottom: '1px solid #F3F4F6', background: included ? '#F0FDF4' : 'transparent', borderRadius: 6 }}>
                         <div style={{ fontSize: 13, alignSelf: 'center' }}><strong>{product.name}</strong>{included && <span style={{ marginLeft: 6, padding: '1px 5px', borderRadius: 99, background: '#BBF7D0', color: '#166534', fontSize: 11 }}>已包含</span>}<small style={{ display: 'block', color: '#6B7280' }}>{product.category}</small></div>
-                        {inPool ? <div className="form-input" title="由共享次数池统一扣减" style={{ color: '#6B7280', background: '#F9FAFB' }}>共享</div> : <input className="form-input" type="number" min="0" value={saved.count ?? 0} onChange={e => update({ count: Math.max(0, Number(e.target.value) || 0) })} title="包含次数" />}
-                        <select className="form-input" value={saved.poolKey || ''} onChange={e => update({ poolKey: e.target.value, count: e.target.value ? 0 : saved.count })} title="计次方式"><option value="">独立次数</option>{(configuration.sharedEntitlementPools || []).map(pool => <option key={pool.key} value={pool.key}>共享：{pool.name || '未命名次数池'}（{pool.count || 0}次）</option>)}</select>
+                        <input className="form-input" type="number" min="0" value={saved.count ?? 0} onChange={e => update({ count: Math.max(0, Number(e.target.value) || 0), poolKey: '' })} title="包含次数" />
                         <input className="form-input" value={saved.schedule || ''} placeholder="周期/核销说明（可选）" onChange={e => update({ schedule: e.target.value })} />
                       </div>
                     })}
