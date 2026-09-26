@@ -24,6 +24,7 @@ const NAV_SECTIONS = [
       { label: '健康基金', icon: 'fund', path: '/health-fund' },
       { label: '运营看板', icon: 'chart', path: '/ops-dashboard' },
       { label: '就医协助质量', icon: 'chart', path: '/care-quality' },
+      { label: 'WONCA 研究管理', icon: 'chart', path: '/research-care-journeys', superadminOnly: true },
       { label: '健康方案模板', icon: 'template', path: '/health-plan-templates' },
       { label: '专项研判设置', icon: 'medical', path: '/ai-case-review-templates' },
       { label: '问卷管理', icon: 'form', path: '/questionnaires' },
@@ -103,7 +104,7 @@ export default function Layout() {
   const nav = useNavigate()
   const loc = useLocation()
   const visibleSections = useMemo(
-    () => NAV_SECTIONS.filter(section => !section.platformOnly || admin?.role === 'platformSuper').map(section => ({ ...section, items: section.items.filter(item => !item.aiControlOnly || admin?.role === 'platformSuper' || (admin?.role === 'superadmin' && !admin?.tenantId)) })),
+    () => NAV_SECTIONS.filter(section => !section.platformOnly || admin?.role === 'platformSuper').map(section => ({ ...section, items: section.items.filter(item => (!item.superadminOnly || admin?.role === 'superadmin') && (!item.aiControlOnly || admin?.role === 'platformSuper' || (admin?.role === 'superadmin' && !admin?.tenantId)) })),
     [admin?.role, admin?.tenantId],
   )
   const activeSection = visibleSections.find(section => section.items.some(item => isItemActive(loc.pathname, item.path)))?.label

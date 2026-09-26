@@ -48,6 +48,8 @@ async function reqRoot(path, opts = {}) {
 }
 
 export const adminAPI = {
+  researchJourneys: (year) => req(`/research-care-journeys/journeys?${new URLSearchParams(year ? { year } : {})}`),
+  enrollResearchJourney: data => req('/research-care-journeys/journeys', { method: 'POST', body: JSON.stringify(data) }),
   getCareQuality: () => req('/care-quality'),
   reviewCareQuality: (id,data) => req(`/care-quality/${id}/review`,{method:'POST',body:JSON.stringify(data)}),
   getAiControl: (params = {}) => req(`/ai-control?${new URLSearchParams(params)}`),
