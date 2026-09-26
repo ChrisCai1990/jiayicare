@@ -522,12 +522,15 @@ router.get('/service-packages', adminAuth, async (req, res) => {
 
 async function normalizeServicePackageConfiguration(clientBrand, configuration) {
   const next = configuration && typeof configuration === 'object' ? { ...configuration } : {};
-  const membershipTypeName = String(next.membershipTypeName || '').trim();
-  if (membershipTypeName) {
-    const type = await MemberType.findOne({ name: membershipTypeName, clientBrand, active: true }).lean();
-    if (!type) throw Object.assign(new Error('关联的会员类型不存在、已停用或不属于当前客户归属'), { statusCode: 400 });
-    next.membershipTypeName = membershipTypeName;
-  } else next.membershipTypeName = '';
+  // 不复用运营维护的 MemberType 树：其中可能有归属根节点和历史类型，
+  // 不适合作为购买服务包后自动写入的系统客户分层。
+  const membershipTier = String(next.membershipTier || '').trim();
+  const allowedMembershipTiers = new Set(['', 'basic', 'consumer365', 'annual', 'therapy', 'enterprise']);
+  if (!allowedMembershipTiers.has(membershipTier)) {
+    throw Object.assign(new Error('客户分层配置无效'), { statusCode: 400 });
+  }
+  delete next.membershipTypeName;
+  next.membershipTier = membershipTier;
   return next;
 }
 

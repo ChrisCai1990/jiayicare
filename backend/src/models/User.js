@@ -166,6 +166,8 @@ const userSchema = new mongoose.Schema({
   // 信仰
   belief:          { type: String, default: '' },   // 宗教信仰
   memberType:      { type: String, default: '' },   // 会员类型
+  // 固定系统客户分层；与运营可维护的 memberType 树、客户归属及具体服务包分开。
+  membershipTier:  { type: String, enum: ['', 'basic', 'consumer365', 'annual', 'therapy', 'enterprise'], default: 'basic', index: true },
   enterpriseId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Enterprise', default: null }, // 所属企业客户（B2B2C）
   enterpriseAssociationType: { type: String, enum: ['employee', 'dependent'], default: 'employee' }, // 家属可归属企业并参加团险，但不占员工采购名额
   isRegisteredClient: { type: Boolean, default: false }, // 系统正式录入客户，由医护/超管设置

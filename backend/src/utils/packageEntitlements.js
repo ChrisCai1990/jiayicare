@@ -33,7 +33,7 @@ async function ensurePackageEntitlement(order, { syncCustomerMembership = false 
     { upsert: true, new: true },
   );
   if (syncCustomerMembership) {
-    const user = await User.findById(order.user).select('serviceStartDate').lean();
+    const user = await User.findById(order.user).select('serviceStartDate membershipTier').lean();
     const currentStart = user?.serviceStartDate ? new Date(`${user.serviceStartDate}T00:00:00+08:00`) : null;
     if (!currentStart || !Number.isFinite(currentStart.getTime()) || currentStart <= validFrom) {
       await User.updateOne({ _id: order.user }, { $set: {
@@ -41,7 +41,7 @@ async function ensurePackageEntitlement(order, { syncCustomerMembership = false 
         servicePackage: snapshot.packageName || order.serviceName || '',
         serviceStartDate: validFrom.toISOString().slice(0, 10),
         serviceExpiry: addMonths(validFrom, durationMonths).toISOString().slice(0, 10),
-        ...(snapshot.membershipTypeName ? { memberType: snapshot.membershipTypeName } : {}),
+        ...(snapshot.membershipTier ? { membershipTier: snapshot.membershipTier } : {}),
       } });
     }
   }

@@ -59,6 +59,14 @@ function PdfDocumentPreview({ src, activePage, title, zoom = 100 }) {
 }
 
 const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
+const MEMBERSHIP_TIER_LABEL = {
+  basic: '基础会员',
+  consumer365: '365会员',
+  annual: '年度会员',
+  therapy: '疗程会员',
+  enterprise: '企业会员',
+}
+const membershipTierLabel = value => MEMBERSHIP_TIER_LABEL[value] || '基础会员'
 
 const shanghaiDateInput = (value = new Date()) => {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(value).map(part => [part.type, part.value]))
@@ -4724,7 +4732,8 @@ export default function PatientDetailPage() {
                   {user.assignedRehabSpecialist  && <InfoRow label="运动复健师" value={user.assignedRehabSpecialist?.name || '-'} />}
                   {user.assignedMedicalAssistant && <InfoRow label="就医专员"   value={user.assignedMedicalAssistant?.name|| '-'} />}
                   <InfoRow label="客户归属" value={user.clientBrand === 'jiayiguanjia' ? '嘉医管家' : user.clientBrand === 'jinyisen' ? '金伊森' : '-'} />
-                  <InfoRow label="会员类型" value={user.memberType || '-'} />
+                  <InfoRow label="客户分层" value={membershipTierLabel(user.membershipTier)} />
+                  <InfoRow label="会员类型（运营标签）" value={user.memberType || '-'} />
                   <InfoRow label="会员来源" value={user.source || '-'} />
                   <InfoRow label="服务包" value={getServicePackageLabel(user.servicePackage)} />
                   <InfoRow label="服务开始" value={user.serviceStartDate || '-'} />
@@ -12855,7 +12864,8 @@ function MembershipPanel({ user, patientId, onRefresh }) {
         <div className="card-header"><div className="card-title">会员基本信息</div></div>
         <div className="card-body">
           <InfoRow label="手机号" value={user.phone} />
-          <InfoRow label="会员类型" value={user.memberType || (user.patientType === 'vip' ? 'VIP会员' : user.patientType === 'trial' ? '试用会员' : '普通会员')} />
+          <InfoRow label="客户分层" value={membershipTierLabel(user.membershipTier)} />
+          <InfoRow label="会员类型（运营标签）" value={user.memberType || (user.patientType === 'vip' ? 'VIP会员' : user.patientType === 'trial' ? '试用会员' : '普通会员')} />
           <InfoRow label="服务包" value={getServicePackageLabel(user.servicePackage)} />
           <InfoRow label="服务开始" value={user.serviceStartDate ? new Date(user.serviceStartDate).toLocaleDateString('zh-CN') : '-'} />
           <InfoRow label="服务到期" value={user.serviceExpiry ? new Date(user.serviceExpiry).toLocaleDateString('zh-CN') : '-'} />
