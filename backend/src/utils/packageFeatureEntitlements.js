@@ -1,7 +1,7 @@
 const ServicePackage = require('../models/ServicePackage');
 const { applicableEntitlements } = require('./packageEntitlements');
 
-const NONE = { aiHealthAnalysis: false, phaseAssessment: false, monthlyServiceReview: false, healthConsultation: false, medicalPlanning: false, phaseAssessmentSchedule: [], monthlyReviewStartMonth: 1 };
+const NONE = { aiHealthAnalysis: false, phaseAssessment: false, monthlyServiceReview: false, healthConsultation: false, medicalPlanning: false, phaseAssessmentFrequency: '', monthlyReviewStartMonth: 1 };
 const HEALTH_FUND_TIERS = new Set(['consumer365', 'annual', 'therapy', 'enterprise']);
 
 function aiRights(value) {
@@ -11,7 +11,7 @@ function aiRights(value) {
     monthlyServiceReview: value?.monthlyServiceReview === true,
     healthConsultation: value?.healthConsultation === true,
     medicalPlanning: value?.medicalPlanning === true,
-    phaseAssessmentSchedule: [],
+    phaseAssessmentFrequency: '',
     monthlyReviewStartMonth: 1,
   };
 }
@@ -28,7 +28,7 @@ async function getAiEntitlements(user, serviceAccess) {
       if (row.rights && Object.prototype.hasOwnProperty.call(row.rights, 'aiEntitlements')) {
         const rights = aiRights(row.rights.aiEntitlements);
         ['aiHealthAnalysis', 'phaseAssessment', 'monthlyServiceReview', 'healthConsultation', 'medicalPlanning'].forEach(key => { result[key] ||= rights[key]; });
-        result.phaseAssessmentSchedule = [...new Set([...result.phaseAssessmentSchedule, ...(Array.isArray(row.rights.phaseAssessmentSchedule) ? row.rights.phaseAssessmentSchedule : [])])];
+        result.phaseAssessmentFrequency ||= row.rights.phaseAssessmentFrequency || '';
         result.monthlyReviewStartMonth = Math.min(result.monthlyReviewStartMonth, Math.max(1, Number(row.rights.monthlyReviewStartMonth) || 1));
       } else if (row.packageId) legacyPackageIds.push(row.packageId);
     }
@@ -37,7 +37,7 @@ async function getAiEntitlements(user, serviceAccess) {
       packages.forEach(item => {
         const rights = aiRights(item.entitlements);
         ['aiHealthAnalysis', 'phaseAssessment', 'monthlyServiceReview', 'healthConsultation', 'medicalPlanning'].forEach(key => { result[key] ||= rights[key]; });
-        result.phaseAssessmentSchedule = [...new Set([...result.phaseAssessmentSchedule, ...(Array.isArray(item.configuration?.phaseAssessmentSchedule) ? item.configuration.phaseAssessmentSchedule : [])])];
+        result.phaseAssessmentFrequency ||= item.configuration?.phaseAssessmentFrequency || '';
         result.monthlyReviewStartMonth = Math.min(result.monthlyReviewStartMonth, Math.max(1, Number(item.configuration?.monthlyReviewStartMonth) || 1));
       });
     }
@@ -49,7 +49,7 @@ async function getAiEntitlements(user, serviceAccess) {
   const pkg = await ServicePackage.findOne({
     clientBrand: user.clientBrand || 'jiayiguanjia', name: user.servicePackage, active: true,
   }).select('entitlements configuration').lean();
-  return { ...aiRights(pkg?.entitlements), phaseAssessmentSchedule: Array.isArray(pkg?.configuration?.phaseAssessmentSchedule) ? pkg.configuration.phaseAssessmentSchedule : [], monthlyReviewStartMonth: Math.max(1, Number(pkg?.configuration?.monthlyReviewStartMonth) || 1) };
+  return { ...aiRights(pkg?.entitlements), phaseAssessmentFrequency: pkg?.configuration?.phaseAssessmentFrequency || '', monthlyReviewStartMonth: Math.max(1, Number(pkg?.configuration?.monthlyReviewStartMonth) || 1) };
 }
 
 // 健康基金资格随“有效服务包权益”走，而不是只看客户资料上的展示分层。

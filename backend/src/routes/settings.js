@@ -531,8 +531,10 @@ async function normalizeServicePackageConfiguration(clientBrand, configuration) 
   }
   delete next.membershipTypeName;
   next.membershipTier = membershipTier;
-  const allowedPhaseSchedule = new Set(['week2', 'month1', 'quarterly']);
-  next.phaseAssessmentSchedule = [...new Set((Array.isArray(next.phaseAssessmentSchedule) ? next.phaseAssessmentSchedule : []).filter(item => allowedPhaseSchedule.has(item)))];
+  const legacySchedule = Array.isArray(next.phaseAssessmentSchedule) ? next.phaseAssessmentSchedule : [];
+  const mappedLegacyFrequency = legacySchedule.includes('week2') ? 'biweekly' : legacySchedule.includes('month1') ? 'monthly' : legacySchedule.includes('quarterly') ? 'quarterly' : '';
+  next.phaseAssessmentFrequency = ['biweekly', 'monthly', 'quarterly'].includes(next.phaseAssessmentFrequency) ? next.phaseAssessmentFrequency : mappedLegacyFrequency;
+  delete next.phaseAssessmentSchedule;
   next.monthlyReviewStartMonth = Math.min(12, Math.max(1, Math.floor(Number(next.monthlyReviewStartMonth) || 1)));
   return next;
 }

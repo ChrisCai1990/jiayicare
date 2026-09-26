@@ -53,7 +53,7 @@ async function buildPackageEntitlementSnapshot(servicePackage) {
       medicalPlanning: !!servicePackageData.entitlements?.medicalPlanning,
     },
     membershipTier: String(configuration.membershipTier || '').trim(),
-    phaseAssessmentSchedule: [...new Set((Array.isArray(configuration.phaseAssessmentSchedule) ? configuration.phaseAssessmentSchedule : []).filter(item => ['week2', 'month1', 'quarterly'].includes(item)))],
+    phaseAssessmentFrequency: ['biweekly', 'monthly', 'quarterly'].includes(configuration.phaseAssessmentFrequency) ? configuration.phaseAssessmentFrequency : '',
     monthlyReviewStartMonth: Math.min(12, Math.max(1, Math.floor(Number(configuration.monthlyReviewStartMonth) || 1))),
     reviewMode: configuration.reviewMode || 'exception',
     noResponseRule: configuration.noResponseRule || '',
