@@ -49,6 +49,8 @@ async function buildPackageEntitlementSnapshot(servicePackage) {
       aiHealthAnalysis: !!servicePackageData.entitlements?.aiHealthAnalysis,
       phaseAssessment: !!servicePackageData.entitlements?.phaseAssessment,
       monthlyServiceReview: !!servicePackageData.entitlements?.monthlyServiceReview,
+      healthConsultation: !!servicePackageData.entitlements?.healthConsultation,
+      medicalPlanning: !!servicePackageData.entitlements?.medicalPlanning,
     },
     membershipTier: String(configuration.membershipTier || '').trim(),
     phaseAssessmentSchedule: [...new Set((Array.isArray(configuration.phaseAssessmentSchedule) ? configuration.phaseAssessmentSchedule : []).filter(item => ['week2', 'month1', 'quarterly'].includes(item)))],

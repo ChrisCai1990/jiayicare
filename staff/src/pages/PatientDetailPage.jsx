@@ -10623,6 +10623,7 @@ export default function PatientDetailPage() {
                   const ownerIsPatient = String(entitlement.ownerUserId) === String(id)
                   return <div key={entitlement._id} style={{ border: '1px solid #DCE7E1', borderRadius: 10, padding: 12, background: '#FCFEFD' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}><div><strong>{entitlement.packageName || '服务包'}</strong>{!ownerIsPatient && <span style={{ marginLeft: 8, fontSize: 12, color: '#1E6B50' }}>家庭共享权益</span>}</div><span style={{ fontSize: 12, color: '#8A5A00' }}>至 {new Date(entitlement.validUntil).toLocaleDateString('zh-CN')}</span></div>
+                    {['healthConsultation', 'medicalPlanning'].some(key => entitlement.rights?.aiEntitlements?.[key]) && <div style={{ fontSize: 12, color: '#1E6B50', marginBottom: 7 }}>持续服务权益：{[entitlement.rights?.aiEntitlements?.healthConsultation && '健康顾问咨询（服务期内不限次数）', entitlement.rights?.aiEntitlements?.medicalPlanning && '就医规划支持（服务期内不限次数）'].filter(Boolean).join('、')}；每次服务请在服务日志中留痕，不扣减次数。</div>}
                     {(entitlement.rights?.sharedEntitlementPools || []).map(pool => <div key={pool.key} style={{ fontSize: 12, color: '#4A6558', marginBottom: 5 }}>共享池「{pool.name}」：剩余 <strong>{pool.remainingCount || 0}</strong> / {pool.count || 0} 次</div>)}
                     <div style={{ display: 'grid', gap: 6 }}>
                       {(entitlement.rights?.productEntitlements || []).map(right => {

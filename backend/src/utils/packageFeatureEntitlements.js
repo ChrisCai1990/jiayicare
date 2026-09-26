@@ -1,7 +1,7 @@
 const ServicePackage = require('../models/ServicePackage');
 const { applicableEntitlements } = require('./packageEntitlements');
 
-const NONE = { aiHealthAnalysis: false, phaseAssessment: false, monthlyServiceReview: false, phaseAssessmentSchedule: [], monthlyReviewStartMonth: 1 };
+const NONE = { aiHealthAnalysis: false, phaseAssessment: false, monthlyServiceReview: false, healthConsultation: false, medicalPlanning: false, phaseAssessmentSchedule: [], monthlyReviewStartMonth: 1 };
 const HEALTH_FUND_TIERS = new Set(['consumer365', 'annual', 'therapy', 'enterprise']);
 
 function aiRights(value) {
@@ -9,6 +9,8 @@ function aiRights(value) {
     aiHealthAnalysis: value?.aiHealthAnalysis === true,
     phaseAssessment: value?.phaseAssessment === true,
     monthlyServiceReview: value?.monthlyServiceReview === true,
+    healthConsultation: value?.healthConsultation === true,
+    medicalPlanning: value?.medicalPlanning === true,
     phaseAssessmentSchedule: [],
     monthlyReviewStartMonth: 1,
   };
@@ -25,7 +27,7 @@ async function getAiEntitlements(user, serviceAccess) {
     for (const row of rows) {
       if (row.rights && Object.prototype.hasOwnProperty.call(row.rights, 'aiEntitlements')) {
         const rights = aiRights(row.rights.aiEntitlements);
-        ['aiHealthAnalysis', 'phaseAssessment', 'monthlyServiceReview'].forEach(key => { result[key] ||= rights[key]; });
+        ['aiHealthAnalysis', 'phaseAssessment', 'monthlyServiceReview', 'healthConsultation', 'medicalPlanning'].forEach(key => { result[key] ||= rights[key]; });
         result.phaseAssessmentSchedule = [...new Set([...result.phaseAssessmentSchedule, ...(Array.isArray(row.rights.phaseAssessmentSchedule) ? row.rights.phaseAssessmentSchedule : [])])];
         result.monthlyReviewStartMonth = Math.min(result.monthlyReviewStartMonth, Math.max(1, Number(row.rights.monthlyReviewStartMonth) || 1));
       } else if (row.packageId) legacyPackageIds.push(row.packageId);
@@ -34,7 +36,7 @@ async function getAiEntitlements(user, serviceAccess) {
       const packages = await ServicePackage.find({ _id: { $in: legacyPackageIds } }).select('entitlements configuration').lean();
       packages.forEach(item => {
         const rights = aiRights(item.entitlements);
-        ['aiHealthAnalysis', 'phaseAssessment', 'monthlyServiceReview'].forEach(key => { result[key] ||= rights[key]; });
+        ['aiHealthAnalysis', 'phaseAssessment', 'monthlyServiceReview', 'healthConsultation', 'medicalPlanning'].forEach(key => { result[key] ||= rights[key]; });
         result.phaseAssessmentSchedule = [...new Set([...result.phaseAssessmentSchedule, ...(Array.isArray(item.configuration?.phaseAssessmentSchedule) ? item.configuration.phaseAssessmentSchedule : [])])];
         result.monthlyReviewStartMonth = Math.min(result.monthlyReviewStartMonth, Math.max(1, Number(item.configuration?.monthlyReviewStartMonth) || 1));
       });

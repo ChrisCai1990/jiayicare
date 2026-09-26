@@ -31,7 +31,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
   const [editId, setEditId] = useState(null)
   const [name, setName] = useState('')
   const [clientBrand, setClientBrand] = useState('jiayiguanjia')
-  const [entitlements, setEntitlements] = useState({ aiHealthAnalysis: false, phaseAssessment: false, monthlyServiceReview: false })
+  const [entitlements, setEntitlements] = useState({ aiHealthAnalysis: false, phaseAssessment: false, monthlyServiceReview: false, healthConsultation: false, medicalPlanning: false })
   const [activation, setActivation] = useState({ enabled: false, durationMonths: 12, price: 0, originalPrice: 0, featuresText: '', tag: '', highlight: false })
   const [configuration, setConfiguration] = useState({ deliveryMode: 'digital', includes365: false, familySharing: false, membershipTier: '', reviewMode: 'exception', noResponseRule: '连续3次（隔日）未配合转人工', phaseAssessmentSchedule: [], monthlyReviewStartMonth: 1, serviceEntitlements: [], sharedEntitlementPools: [] })
   const [saving, setSaving] = useState(false)
@@ -49,8 +49,8 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
   useEffect(() => { load() }, [])
 
   const emptyConfiguration = { deliveryMode: 'digital', includes365: false, familySharing: false, membershipTier: '', reviewMode: 'exception', noResponseRule: '连续3次（隔日）未配合转人工', phaseAssessmentSchedule: [], monthlyReviewStartMonth: 1, serviceEntitlements: [], sharedEntitlementPools: [] }
-  const openCreate = () => { setEditId(null); setName(''); setClientBrand('jiayiguanjia'); setEntitlements({ aiHealthAnalysis: false, phaseAssessment: false, monthlyServiceReview: false }); setActivation({ enabled: false, durationMonths: 12, price: 0, originalPrice: 0, featuresText: '', tag: '', highlight: false }); setConfiguration(emptyConfiguration); setProductSearch(''); setShowIncludedOnly(false); setError(''); setShowModal(true) }
-  const openEdit = item => { setEditId(item._id); setName(item.name); setClientBrand(item.clientBrand || 'jiayiguanjia'); setEntitlements({ aiHealthAnalysis: !!item.entitlements?.aiHealthAnalysis, phaseAssessment: !!item.entitlements?.phaseAssessment, monthlyServiceReview: !!item.entitlements?.monthlyServiceReview }); setActivation({ enabled: !!item.activation?.enabled, durationMonths: item.activation?.durationMonths || 12, price: item.activation?.price || 0, originalPrice: item.activation?.originalPrice || 0, featuresText: (item.activation?.features || []).join('\n'), tag: item.activation?.tag || '', highlight: !!item.activation?.highlight }); setConfiguration({ ...emptyConfiguration, ...(item.configuration || {}), serviceEntitlements: item.configuration?.serviceEntitlements || [], sharedEntitlementPools: item.configuration?.sharedEntitlementPools || [] }); setProductSearch(''); setShowIncludedOnly(false); setError(''); setShowModal(true) }
+  const openCreate = () => { setEditId(null); setName(''); setClientBrand('jiayiguanjia'); setEntitlements({ aiHealthAnalysis: false, phaseAssessment: false, monthlyServiceReview: false, healthConsultation: false, medicalPlanning: false }); setActivation({ enabled: false, durationMonths: 12, price: 0, originalPrice: 0, featuresText: '', tag: '', highlight: false }); setConfiguration(emptyConfiguration); setProductSearch(''); setShowIncludedOnly(false); setError(''); setShowModal(true) }
+  const openEdit = item => { setEditId(item._id); setName(item.name); setClientBrand(item.clientBrand || 'jiayiguanjia'); setEntitlements({ aiHealthAnalysis: !!item.entitlements?.aiHealthAnalysis, phaseAssessment: !!item.entitlements?.phaseAssessment, monthlyServiceReview: !!item.entitlements?.monthlyServiceReview, healthConsultation: !!item.entitlements?.healthConsultation, medicalPlanning: !!item.entitlements?.medicalPlanning }); setActivation({ enabled: !!item.activation?.enabled, durationMonths: item.activation?.durationMonths || 12, price: item.activation?.price || 0, originalPrice: item.activation?.originalPrice || 0, featuresText: (item.activation?.features || []).join('\n'), tag: item.activation?.tag || '', highlight: !!item.activation?.highlight }); setConfiguration({ ...emptyConfiguration, ...(item.configuration || {}), serviceEntitlements: item.configuration?.serviceEntitlements || [], sharedEntitlementPools: item.configuration?.sharedEntitlementPools || [] }); setProductSearch(''); setShowIncludedOnly(false); setError(''); setShowModal(true) }
 
   const handleSave = async () => {
     if (!name.trim()) { setError('名称不能为空'); return }
@@ -116,7 +116,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                 <td style={{ padding: '10px 14px', fontWeight: 500 }}>{item.name}</td>
                 {withClientBrand && <td style={{ padding: '10px 14px' }}>{brandLabel(item.clientBrand)}</td>}
                 {withEntitlements && <td style={{ padding: '10px 14px', fontSize: 12, color: '#4B5563' }}>
-                  {[item.entitlements?.aiHealthAnalysis && 'AI健康信息整理', item.entitlements?.phaseAssessment && '阶段性评估', item.entitlements?.monthlyServiceReview && '月度服务复盘'].filter(Boolean).join('、') || '无'}
+                  {[item.entitlements?.aiHealthAnalysis && 'AI健康信息整理', item.entitlements?.phaseAssessment && '阶段性评估', item.entitlements?.monthlyServiceReview && '月度服务复盘', item.entitlements?.healthConsultation && '持续咨询支持', item.entitlements?.medicalPlanning && '就医规划支持'].filter(Boolean).join('、') || '无'}
                 </td>}
                 {withActivation && <td style={{ padding: '10px 14px', fontSize: 12, color: '#4B5563' }}>
                   {item.activation?.enabled ? `${item.activation.durationMonths || '-'}个月 / ¥${item.activation.price || 0}` : '不展示'}
@@ -162,7 +162,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
               {withEntitlements && (
                 <div className="form-group">
                   <label className="form-label">服务包专属权益</label>
-                  {[['aiHealthAnalysis', 'AI健康信息整理'], ['phaseAssessment', '阶段性评估'], ['monthlyServiceReview', '月度服务复盘']].map(([key, label]) => (
+                  {[['aiHealthAnalysis', 'AI健康信息整理'], ['phaseAssessment', '阶段性评估'], ['monthlyServiceReview', '月度服务复盘'], ['healthConsultation', '健康顾问持续咨询支持（不计次数）'], ['medicalPlanning', '就医规划支持（不计次数）']].map(([key, label]) => (
                     <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer' }}>
                       <input type="checkbox" checked={!!entitlements[key]} onChange={e => setEntitlements(v => ({ ...v, [key]: e.target.checked }))} />
                       <span>{label}</span>
