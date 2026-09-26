@@ -89,7 +89,7 @@ async function settlePaidOrder(payment, order, cashAmount) {
   }
   await order.save();
   await awardOrderPoints(order);
-  await require('./packageEntitlements').ensurePackageEntitlement(order);
+  await require('./packageEntitlements').ensurePackageEntitlement(order, { syncCustomerMembership: true });
 
   const fulfillment = await Fulfillment.findOneAndUpdate(
     { order: order._id },

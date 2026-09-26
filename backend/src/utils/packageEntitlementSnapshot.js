@@ -44,6 +44,7 @@ async function buildPackageEntitlementSnapshot(servicePackage) {
     deliveryMode: configuration.deliveryMode || 'digital',
     includes365: !!configuration.includes365,
     familySharing: !!configuration.familySharing,
+    membershipTypeName: String(configuration.membershipTypeName || '').trim(),
     reviewMode: configuration.reviewMode || 'exception',
     noResponseRule: configuration.noResponseRule || '',
     sharedEntitlementPools: sharedEntitlementPools.map(pool => ({ ...pool, remainingCount: pool.count })),

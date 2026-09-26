@@ -466,7 +466,7 @@ router.patch('/orders/:id/pay', adminAuth, async (req, res) => {
 
   // 与微信支付使用同一实付积分口径及已有订单去重规则。
   await require('../utils/orderPoints').awardOrderPoints(order);
-  await require('../utils/packageEntitlements').ensurePackageEntitlement(order);
+  await require('../utils/packageEntitlements').ensurePackageEntitlement(order, { syncCustomerMembership: true });
 
   res.json({ success: true, data: order, message: '已标记为已支付，核销码：' + order.verifyCode });
 });

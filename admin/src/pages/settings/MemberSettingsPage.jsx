@@ -13,6 +13,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
   const toast = useToast()
   const [list, setList] = useState([])
   const [productCatalog, setProductCatalog] = useState([])
+  const [memberTypeCatalog, setMemberTypeCatalog] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editId, setEditId] = useState(null)
@@ -20,22 +21,28 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
   const [clientBrand, setClientBrand] = useState('jiayiguanjia')
   const [entitlements, setEntitlements] = useState({ aiHealthAnalysis: false, aiRiskAssessment: false })
   const [activation, setActivation] = useState({ enabled: false, durationMonths: 12, price: 0, originalPrice: 0, featuresText: '', tag: '', highlight: false })
-  const [configuration, setConfiguration] = useState({ deliveryMode: 'digital', includes365: false, familySharing: false, reviewMode: 'exception', noResponseRule: '连续3次（隔日）未配合转人工', serviceEntitlements: [], sharedEntitlementPools: [] })
+  const [configuration, setConfiguration] = useState({ deliveryMode: 'digital', includes365: false, familySharing: false, membershipTypeName: '', reviewMode: 'exception', noResponseRule: '连续3次（隔日）未配合转人工', serviceEntitlements: [], sharedEntitlementPools: [] })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   const load = () => {
     setLoading(true)
     const requests = [fetchFn()]
-    if (withActivation) requests.push(adminAPI.products({ limit: 500 }))
-    Promise.all(requests).then(([r, products]) => {
+    if (withActivation) requests.push(adminAPI.products({ limit: 500 }), adminAPI.memberTypesTree())
+    Promise.all(requests).then(([r, products, memberTypes]) => {
       setList(r.data)
       if (products) setProductCatalog((products.data || []).filter(item => item.status === 'on'))
+      if (memberTypes) {
+        const flat = []
+        const walk = nodes => (nodes || []).forEach(node => { flat.push(node); walk(node.children) })
+        walk(memberTypes.data)
+        setMemberTypeCatalog(flat.filter(item => item.active))
+      }
     }).catch(e => toast(e.message)).finally(() => setLoading(false))
   }
   useEffect(() => { load() }, [])
 
-  const emptyConfiguration = { deliveryMode: 'digital', includes365: false, familySharing: false, reviewMode: 'exception', noResponseRule: '连续3次（隔日）未配合转人工', serviceEntitlements: [], sharedEntitlementPools: [] }
+  const emptyConfiguration = { deliveryMode: 'digital', includes365: false, familySharing: false, membershipTypeName: '', reviewMode: 'exception', noResponseRule: '连续3次（隔日）未配合转人工', serviceEntitlements: [], sharedEntitlementPools: [] }
   const openCreate = () => { setEditId(null); setName(''); setClientBrand('jiayiguanjia'); setEntitlements({ aiHealthAnalysis: false, aiRiskAssessment: false }); setActivation({ enabled: false, durationMonths: 12, price: 0, originalPrice: 0, featuresText: '', tag: '', highlight: false }); setConfiguration(emptyConfiguration); setError(''); setShowModal(true) }
   const openEdit = item => { setEditId(item._id); setName(item.name); setClientBrand(item.clientBrand || 'jiayiguanjia'); setEntitlements({ aiHealthAnalysis: !!item.entitlements?.aiHealthAnalysis, aiRiskAssessment: !!item.entitlements?.aiRiskAssessment }); setActivation({ enabled: !!item.activation?.enabled, durationMonths: item.activation?.durationMonths || 12, price: item.activation?.price || 0, originalPrice: item.activation?.originalPrice || 0, featuresText: (item.activation?.features || []).join('\n'), tag: item.activation?.tag || '', highlight: !!item.activation?.highlight }); setConfiguration({ ...emptyConfiguration, ...(item.configuration || {}), serviceEntitlements: item.configuration?.serviceEntitlements || [], sharedEntitlementPools: item.configuration?.sharedEntitlementPools || [] }); setError(''); setShowModal(true) }
 
@@ -148,6 +155,11 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                   </select>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer' }}><input type="checkbox" checked={!!configuration.includes365} onChange={e => setConfiguration(v => ({ ...v, includes365: e.target.checked }))} />方案已含365健康管理权限</label>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer' }}><input type="checkbox" checked={!!configuration.familySharing} onChange={e => setConfiguration(v => ({ ...v, familySharing: e.target.checked }))} />套餐权益允许已关联家庭成员共享</label>
+                  <label className="form-label" style={{ marginTop: 12 }}>开通后写入会员类型</label>
+                  <select className="form-input" value={configuration.membershipTypeName || ''} onChange={e => setConfiguration(v => ({ ...v, membershipTypeName: e.target.value }))}>
+                    <option value="">不自动覆盖会员类型</option>
+                    {memberTypeCatalog.filter(item => item.clientBrand === clientBrand).map(item => <option key={item._id} value={item.name}>{item.name}</option>)}
+                  </select>
                   <select className="form-input" style={{ marginTop: 10 }} value={configuration.reviewMode} onChange={e => setConfiguration(v => ({ ...v, reviewMode: e.target.value }))}>
                     <option value="none">档案处理：不安排人工审核</option><option value="exception">档案处理：标准内容AI跟进，异常/非标准转人工</option><option value="required">档案处理：需人工审核后启动服务</option>
                   </select>

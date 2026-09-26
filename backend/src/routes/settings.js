@@ -520,12 +520,24 @@ router.get('/service-packages', adminAuth, async (req, res) => {
   res.json({ success: true, data: list });
 });
 
+async function normalizeServicePackageConfiguration(clientBrand, configuration) {
+  const next = configuration && typeof configuration === 'object' ? { ...configuration } : {};
+  const membershipTypeName = String(next.membershipTypeName || '').trim();
+  if (membershipTypeName) {
+    const type = await MemberType.findOne({ name: membershipTypeName, clientBrand, active: true }).lean();
+    if (!type) throw Object.assign(new Error('关联的会员类型不存在、已停用或不属于当前客户归属'), { statusCode: 400 });
+    next.membershipTypeName = membershipTypeName;
+  } else next.membershipTypeName = '';
+  return next;
+}
+
 router.post('/service-packages', adminAuth, async (req, res) => {
   const { name, clientBrand, sortOrder, entitlements, activation, configuration } = req.body;
   if (!name?.trim() || !['jiayiguanjia', 'jinyisen'].includes(clientBrand)) {
     return res.status(400).json({ success: false, message: '请填写名称并选择客户归属' });
   }
-  const item = await ServicePackage.create({ name: name.trim(), clientBrand, sortOrder: sortOrder || 0, entitlements: entitlements || {}, activation: activation || {}, configuration: configuration || {} });
+  const normalizedConfiguration = await normalizeServicePackageConfiguration(clientBrand, configuration);
+  const item = await ServicePackage.create({ name: name.trim(), clientBrand, sortOrder: sortOrder || 0, entitlements: entitlements || {}, activation: activation || {}, configuration: normalizedConfiguration });
   res.json({ success: true, data: item });
 });
 
@@ -534,9 +546,10 @@ router.put('/service-packages/:id', adminAuth, async (req, res) => {
   if (!name?.trim() || !['jiayiguanjia', 'jinyisen'].includes(clientBrand)) {
     return res.status(400).json({ success: false, message: '请填写名称并选择客户归属' });
   }
+  const normalizedConfiguration = await normalizeServicePackageConfiguration(clientBrand, configuration);
   const item = await ServicePackage.findByIdAndUpdate(
     req.params.id,
-    { name: name.trim(), clientBrand, sortOrder: sortOrder || 0, entitlements: entitlements || {}, activation: activation || {}, configuration: configuration || {} },
+    { name: name.trim(), clientBrand, sortOrder: sortOrder || 0, entitlements: entitlements || {}, activation: activation || {}, configuration: normalizedConfiguration },
     { new: true, runValidators: true }
   );
   if (!item) return res.status(404).json({ success: false, message: '服务包不存在' });

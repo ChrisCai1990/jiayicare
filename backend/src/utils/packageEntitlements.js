@@ -11,12 +11,12 @@ function copy(value) {
   return value ? JSON.parse(JSON.stringify(value)) : {};
 }
 
-async function ensurePackageEntitlement(order) {
+async function ensurePackageEntitlement(order, { syncCustomerMembership = false } = {}) {
   const snapshot = order?.annualServiceSnapshot?.entitlementSnapshot;
   if (order?.orderType !== 'package' || order.paymentStatus !== 'paid' || !snapshot?.packageId || !order.user) return null;
   const validFrom = order.paidAt || new Date();
   const durationMonths = Math.max(1, Number(order.annualServiceSnapshot?.durationMonths) || 12);
-  return PackageEntitlement.findOneAndUpdate(
+  const entitlement = await PackageEntitlement.findOneAndUpdate(
     { sourceOrderId: order._id },
     { $setOnInsert: {
       ownerUserId: order.user,
@@ -32,6 +32,20 @@ async function ensurePackageEntitlement(order) {
     } },
     { upsert: true, new: true },
   );
+  if (syncCustomerMembership) {
+    const user = await User.findById(order.user).select('serviceStartDate').lean();
+    const currentStart = user?.serviceStartDate ? new Date(`${user.serviceStartDate}T00:00:00+08:00`) : null;
+    if (!currentStart || !Number.isFinite(currentStart.getTime()) || currentStart <= validFrom) {
+      await User.updateOne({ _id: order.user }, { $set: {
+        clientBrand: snapshot.clientBrand || 'jiayiguanjia',
+        servicePackage: snapshot.packageName || order.serviceName || '',
+        serviceStartDate: validFrom.toISOString().slice(0, 10),
+        serviceExpiry: addMonths(validFrom, durationMonths).toISOString().slice(0, 10),
+        ...(snapshot.membershipTypeName ? { memberType: snapshot.membershipTypeName } : {}),
+      } });
+    }
+  }
+  return entitlement;
 }
 
 async function applicableEntitlements(patientId, now = new Date()) {

@@ -491,7 +491,7 @@ router.post('/order', auth, async (req, res) => {
   pendingTasks.push(awardOrderPoints(order));
   await Promise.all(pendingTasks);
   order.paidAt = new Date();
-  await require('../utils/packageEntitlements').ensurePackageEntitlement(order);
+  await require('../utils/packageEntitlements').ensurePackageEntitlement(order, { syncCustomerMembership: true });
   const fulfillment = await Fulfillment.findOneAndUpdate(
     { order: order._id },
     { $setOnInsert: { order: order._id, user: order.user, type: order.fulfillmentType, status: order.fulfillmentType === 'delivery_and_service' ? 'awaiting_shipment' : 'awaiting_booking', note: order.note || '' } },
