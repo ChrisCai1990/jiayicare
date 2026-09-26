@@ -19,8 +19,18 @@ async function buildPackageEntitlementSnapshot(servicePackage) {
       productId: String(item?.productId || ''),
       count: Math.max(0, Math.floor(Number(item?.count) || 0)),
       schedule: String(item?.schedule || '').trim(),
+      poolKey: String(item?.poolKey || '').trim(),
     }))
-    .filter(item => item.productId && mongoose.isValidObjectId(item.productId) && item.count > 0);
+    .filter(item => item.productId && mongoose.isValidObjectId(item.productId) && (item.count > 0 || item.poolKey));
+
+  const sharedEntitlementPools = (Array.isArray(configuration.sharedEntitlementPools) ? configuration.sharedEntitlementPools : [])
+    .map(pool => ({
+      key: String(pool?.key || '').trim(),
+      name: String(pool?.name || '').trim(),
+      count: Math.max(1, Math.floor(Number(pool?.count) || 1)),
+    }))
+    .filter(pool => pool.key && pool.name);
+  const poolsByKey = new Map(sharedEntitlementPools.map(pool => [pool.key, pool]));
 
   const ids = rows.map(item => item.productId);
   const products = ids.length ? await Product.find({ _id: { $in: ids } }).lean() : [];
@@ -35,6 +45,7 @@ async function buildPackageEntitlementSnapshot(servicePackage) {
     includes365: !!configuration.includes365,
     reviewMode: configuration.reviewMode || 'exception',
     noResponseRule: configuration.noResponseRule || '',
+    sharedEntitlementPools: sharedEntitlementPools.map(pool => ({ ...pool, remainingCount: pool.count })),
     // 仅保留当前实际存在的商城商品；管理员配置的失效商品不会被写成可履约权益。
     productEntitlements: rows.flatMap(row => {
       const product = byId.get(row.productId);
@@ -42,8 +53,9 @@ async function buildPackageEntitlementSnapshot(servicePackage) {
       return [{
         productId: product._id,
         productName: product.name,
-        count: row.count,
-        remainingCount: row.count,
+        count: poolsByKey.has(row.poolKey) ? 0 : row.count,
+        remainingCount: poolsByKey.has(row.poolKey) ? 0 : row.count,
+        poolKey: poolsByKey.has(row.poolKey) ? row.poolKey : '',
         schedule: row.schedule,
         productSnapshot: {
           category: product.category || '',
