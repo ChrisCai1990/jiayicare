@@ -379,6 +379,10 @@ router.post('/order', auth, async (req, res) => {
   const orderNo = outTradeNo;
   const inventory = await require('../utils/orderInventory').reserveProduct(product);
   if (!inventory.available) return res.status(409).json({ success: false, message: '该商品已售罄，请刷新后重新选择' });
+  // 套餐模板只能作为销售时的来源，后续运营修改模板不能影响本订单对应的权益。
+  const packageEntitlementSnapshot = servicePackage
+    ? await require('../utils/packageEntitlementSnapshot').buildPackageEntitlementSnapshot(servicePackage)
+    : null;
   let order;
   try { order = await Order.create({
     user:         req.user._id,
@@ -399,7 +403,13 @@ router.post('/order', auth, async (req, res) => {
     tradeStatus: paidAmount > 0 ? 'awaiting_payment' : 'paid',
     fulfillmentType: orderFulfillmentType,
     orderType:    isPkg ? 'package' : (product ? 'product' : 'service'),
-    annualServiceSnapshot: isPkg ? { packageId: servicePackage?._id || null, clientBrand: req.user.clientBrand || 'jiayiguanjia', durationMonths: servicePackage ? Number(servicePackage.activation?.durationMonths || 12) : ({ pkg_1y: 12, pkg_6m: 6, pkg_3m: 3 })[service.id], capturedAt: new Date() } : null,
+    annualServiceSnapshot: isPkg ? {
+      packageId: servicePackage?._id || null,
+      clientBrand: req.user.clientBrand || 'jiayiguanjia',
+      durationMonths: servicePackage ? Number(servicePackage.activation?.durationMonths || 12) : ({ pkg_1y: 12, pkg_6m: 6, pkg_3m: 3 })[service.id],
+      entitlementSnapshot: packageEntitlementSnapshot,
+      capturedAt: new Date(),
+    } : null,
     inventoryReserved: inventory.reserved,
     referrerId,
     referralSource: productShare ? 'share' : 'direct',
