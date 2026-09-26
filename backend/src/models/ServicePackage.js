@@ -13,6 +13,8 @@ const servicePackageSchema = new mongoose.Schema({
   entitlements: {
     aiHealthAnalysis: { type: Boolean, default: false },
     aiRiskAssessment: { type: Boolean, default: false },
+    phaseAssessment: { type: Boolean, default: false },
+    monthlyServiceReview: { type: Boolean, default: false },
   },
   activation: {
     enabled: { type: Boolean, default: false },

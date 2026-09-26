@@ -15,7 +15,6 @@ const monthlyServiceReviewSchema = new mongoose.Schema({
   month: { type: String, required: true, match: /^\d{4}-(0[1-9]|1[0-2])$/ },
   status: { type: String, enum: ['draft', 'confirmed'], default: 'draft' },
   facts: { type: mongoose.Schema.Types.Mixed, default: null },
-  packageEntitlementUsage: { type: mongoose.Schema.Types.Mixed, default: null },
   sections: {
     healthProgress: { type: String, default: '' },
     serviceExecution: { type: String, default: '' },

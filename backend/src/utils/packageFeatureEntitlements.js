@@ -1,12 +1,14 @@
 const ServicePackage = require('../models/ServicePackage');
 const { applicableEntitlements } = require('./packageEntitlements');
 
-const NONE = { aiHealthAnalysis: false, aiRiskAssessment: false };
+const NONE = { aiHealthAnalysis: false, aiRiskAssessment: false, phaseAssessment: false, monthlyServiceReview: false };
 
 function aiRights(value) {
   return {
     aiHealthAnalysis: value?.aiHealthAnalysis === true,
     aiRiskAssessment: value?.aiRiskAssessment === true,
+    phaseAssessment: value?.phaseAssessment === true,
+    monthlyServiceReview: value?.monthlyServiceReview === true,
   };
 }
 
@@ -21,16 +23,14 @@ async function getAiEntitlements(user, serviceAccess) {
     for (const row of rows) {
       if (row.rights && Object.prototype.hasOwnProperty.call(row.rights, 'aiEntitlements')) {
         const rights = aiRights(row.rights.aiEntitlements);
-        result.aiHealthAnalysis ||= rights.aiHealthAnalysis;
-        result.aiRiskAssessment ||= rights.aiRiskAssessment;
+        Object.keys(NONE).forEach(key => { result[key] ||= rights[key]; });
       } else if (row.packageId) legacyPackageIds.push(row.packageId);
     }
     if (legacyPackageIds.length) {
       const packages = await ServicePackage.find({ _id: { $in: legacyPackageIds } }).select('entitlements').lean();
       packages.forEach(item => {
         const rights = aiRights(item.entitlements);
-        result.aiHealthAnalysis ||= rights.aiHealthAnalysis;
-        result.aiRiskAssessment ||= rights.aiRiskAssessment;
+        Object.keys(NONE).forEach(key => { result[key] ||= rights[key]; });
       });
     }
     return result;

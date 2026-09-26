@@ -7280,9 +7280,17 @@ router.put('/patients/:id/annual-plan-preparation', staffAuth, async (req, res) 
 
 // 月度服务复盘：团队内部记录，与阶段性临床评估及用户端健康计划分离。
 const monthlyReviewFields = ['healthProgress', 'serviceExecution', 'customerFeedback', 'teamCollaboration', 'unresolvedIssues'];
+async function monthlyReviewEnabledForPatient(patientId) {
+  const user = await User.findById(patientId).select('servicePackage serviceStartDate serviceExpiry clientBrand familyLinks');
+  if (!user) return false;
+  const rights = await require('../utils/packageFeatureEntitlements').getAiEntitlements(
+    user, await require('../utils/serviceAccess').resolveServiceAccess(user)
+  );
+  return rights.monthlyServiceReview === true;
+}
 async function monthlyReviewPatientAccess(staff, patientId, reviewId = null) {
   if (!mongoose.isValidObjectId(patientId)) return false;
-  if (!require('../utils/monthlyReviewRollout').enabledForPatient(patientId)) return false;
+  if (!(await monthlyReviewEnabledForPatient(patientId))) return false;
   const visible = await getVisiblePlanPatientIds(staff);
   if (!visible || visible.some(id => String(id) === String(patientId))) return true;
   return !!(await MonthlyServiceReview.exists({ patientId, ...(reviewId ? { _id: reviewId } : {}), 'actions.assigneeId': staff._id }));
@@ -7309,7 +7317,7 @@ router.get('/patients/:id/monthly-service-reviews', staffAuth, async (req, res) 
     const visible = await getVisiblePlanPatientIds(req.staff);
     const patientScope = !visible || visible.some(id => String(id) === String(req.params.id));
     if (!mongoose.isValidObjectId(req.params.id) || (!patientScope && !(await MonthlyServiceReview.exists({ patientId: req.params.id, 'actions.assigneeId': req.staff._id })))) return res.status(403).json({ success: false, message: '无权查看该客户复盘' });
-    if (!require('../utils/monthlyReviewRollout').enabledForPatient(req.params.id)) return res.json({ success: true, enabled: false, data: { plans: [], reviews: [], canOrganize: false } });
+    if (!(await monthlyReviewEnabledForPatient(req.params.id))) return res.json({ success: true, enabled: false, data: { plans: [], reviews: [], canOrganize: false } });
     const allPlans = await AnnualPlan.find({ patientId: req.params.id, confirmedAt: { $ne: null } }).select('_id year servicePlanCode templateName confirmedAt').sort({ confirmedAt: -1 }).lean();
     const seenYears = new Set();
     let plans = allPlans.filter(plan => {
@@ -7333,17 +7341,6 @@ router.post('/patients/:id/monthly-service-reviews', staffAuth, async (req, res)
     if (existing) return res.json({ success: true, data: existing, existing: true });
     const facts = await monthlyReviewFacts(req.params.id, req.body.month);
     const row = await MonthlyServiceReview.create({ patientId: req.params.id, annualPlanId: plan._id, month: req.body.month, facts, auditLog: [{ action: 'created', by: req.staff._id, at: new Date() }] });
-    try {
-      const patient = await User.findById(req.params.id).select('tenantId familyLinks');
-      const usage = await require('../utils/packageEntitlements').consumeSystemServiceEntitlement(patient, 'monthly_service_review', {
-        note: `${req.body.month}月度服务复盘自动发起`,
-      });
-      row.packageEntitlementUsage = { entitlementId: usage.entitlementId, productId: usage.productId, executionOrderId: usage.executionOrder._id, usedAt: new Date() };
-      await row.save();
-    } catch (error) {
-      await MonthlyServiceReview.deleteOne({ _id: row._id, status: 'draft' });
-      throw error;
-    }
     res.status(201).json({ success: true, data: row });
   } catch (error) {
     if (error.code === 11000) return res.status(409).json({ success: false, message: '该月复盘已建立，请刷新' });
@@ -7407,9 +7404,6 @@ router.post('/monthly-service-reviews/:reviewId/confirm', staffAuth, async (req,
     const now = new Date();
     const updated = await MonthlyServiceReview.findOneAndUpdate({ _id: row._id, __v: row.__v, status: 'draft' }, { $set: { status: 'confirmed', confirmedAt: now, confirmedBy: req.staff._id }, $inc: { __v: 1 }, $push: { auditLog: { action: 'confirmed', by: req.staff._id, at: now } } }, { new: true });
     if (!updated) return res.status(409).json({ success: false, message: '复盘已更新，请刷新' });
-    if (updated.packageEntitlementUsage?.executionOrderId) {
-      await Order.updateOne({ _id: updated.packageEntitlementUsage.executionOrderId, status: { $ne: 'completed' } }, { $set: { status: 'completed', tradeStatus: 'completed', completedAt: now, usedUnits: 1 } });
-    }
     res.json({ success: true, data: updated });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });

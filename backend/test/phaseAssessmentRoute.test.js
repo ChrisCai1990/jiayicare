@@ -14,15 +14,15 @@ let actor;
 const auth = require.resolve('../src/middleware/staffAuth'); require(auth);
 require.cache[auth].exports = (req, res, next) => { req.staff = actor; next(); };
 const router = require('../src/routes/aiCaseReviews');
-const packageEntitlements = require('../src/utils/packageEntitlements');
+const packageFeatures = require('../src/utils/packageFeatureEntitlements');
+const serviceAccess = require('../src/utils/serviceAccess');
 const periodic = require('../src/utils/annualPeriodicGate');
 const actualPeriodicGate = periodic.annualPeriodicGate;
 test.beforeEach(t => {
   aiCalls = 0;
   t.mock.method(periodic, 'annualPeriodicGate', async plan => ({ allowed: true, anchor: plan.confirmedAt }));
-  t.mock.method(packageEntitlements, 'consumeSystemServiceEntitlement', async () => ({
-    entitlementId: '000000000000000000000004', productId: '000000000000000000000005', executionOrder: { _id: '000000000000000000000006' },
-  }));
+  t.mock.method(serviceAccess, 'resolveServiceAccess', async () => ({ active: true }));
+  t.mock.method(packageFeatures, 'getAiEntitlements', async () => ({ phaseAssessment: true }));
 });
 async function request(t, body, method = 'PATCH') {
   const app = express(); app.use(express.json()); app.use(router);
@@ -158,14 +158,14 @@ test('可信续约有效时档案旧到期日不阻断手动评估', async t => 
   generation(t, { continuitySource: { previousPlanId: 'old' } });
   t.mock.method(User, 'findById', async () => ({ _id: ids.patient, assignedFamilyDoctor: ids.reviewer, serviceExpiry: '2020-01-01', aiPilotFeatures: { stageAssessment: true } }));
   t.mock.method(periodic, 'annualPeriodicGate', actualPeriodicGate);
-  t.mock.method(require('../src/utils/serviceAccess'), 'resolveServiceAccess', async () => ({ active: true, source: 'verified_renewal' }));
   t.mock.method(require('../src/utils/annualServicePeriod'), 'annualExecutionGate', async () => ({ allowed: true, anchor: '2020-01-01' }));
   assert.equal((await request(t, {}, 'POST')).status, 201); assert.equal(aiCalls, 1);
 });
 test('旧年度不能借已生效下一年度权益生成新评估，超级管理员也不绕过', async t => {
   generation(t); actor.role = 'superadmin';
   t.mock.method(periodic, 'annualPeriodicGate', actualPeriodicGate);
-  t.mock.method(require('../src/utils/serviceAccess'), 'resolveServiceAccess', async () => ({ active: true, source: 'verified_renewal' }));
+  serviceAccess.resolveServiceAccess.mock.restore();
+  t.mock.method(serviceAccess, 'resolveServiceAccess', async () => ({ active: true, source: 'verified_renewal' }));
   const res = await request(t, {}, 'POST'); assert.equal(res.status, 409); assert.match(res.body.message, /旧年度/); assert.equal(aiCalls, 0);
 });
 test('服务期查询故障不默认放行，不产生AI调用', async t => {

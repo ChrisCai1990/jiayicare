@@ -531,14 +531,6 @@ async function normalizeServicePackageConfiguration(clientBrand, configuration) 
   }
   delete next.membershipTypeName;
   next.membershipTier = membershipTier;
-  const allowedSystemServices = new Set(['', 'phase_assessment', 'monthly_service_review']);
-  next.serviceEntitlements = (Array.isArray(next.serviceEntitlements) ? next.serviceEntitlements : []).map(item => {
-    const systemService = String(item?.systemService || '').trim();
-    if (!allowedSystemServices.has(systemService)) {
-      throw Object.assign(new Error('商城产品的系统服务用途无效'), { statusCode: 400 });
-    }
-    return { ...item, systemService };
-  });
   return next;
 }
 
