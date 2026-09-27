@@ -439,7 +439,9 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceT
         patientId: order.user, staffId: manager, assignedTo: manager, type: 'other', status: 'planned',
         date, remindAt: new Date(), sourceType: 'order', sourceOrderId: order._id,
         workflowKey: `${PREFIX}booking`, taskRole: 'executor',
-        theme: `医疗代诊：健管专员完成专家门诊预约 · ${order.serviceName}`,
+        // 专家约诊只涉及预约，不能沿用医疗代诊的名称；否则健管专员会误以为
+        // 还需要办理代诊全流程。
+        theme: `专家约诊：健管专员完成专家门诊预约 · ${order.serviceName}`,
         plannedContent: `客户已与健康规划师确认专家和期望日期区间，请完成专家门诊预约并记录实际时间。\n${serviceContent}`,
         formData: { planSnapshot: { serviceContent, customerNeed }, preferredDateStart: dateInput(date), preferredDateEnd: dateInput(endDate) },
       } },
@@ -557,6 +559,47 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
     serviceWorkflowSnapshot: { key: 'medical_proxy', source: STAFF_DIRECT_SOURCE },
     medicalProxyPlan: (supplyProxy || medicalEscort) ? { ...plan, initiationSource: STAFF_DIRECT_SOURCE } : null,
   });
+  // 专家约诊是订单驱动的轻量流程，过去只生成了健管任务，导致健康顾问在
+  // “服务方案”总览中看不到任何记录，无法确认发起是否成功。同步写入一份
+  // 只读的方案回执，让方案列表和任务工作台指向同一 sourceOrderId。
+  if (appointmentOnly) {
+    await HealthPlan.create({
+      patientId: patient._id,
+      staffId: advisorId,
+      type: 'medical_assist',
+      title: '专家约诊服务方案',
+      description: '已发起专家约诊，等待健管专员完成专家门诊预约。',
+      startDate: order.desiredServiceDate,
+      endDate: order.desiredServiceDateEnd,
+      sourceOrderId: order._id,
+      initiationSource: 'staff',
+      initiatedByStaff: advisorId,
+      supervisorId: patient.assignedHealthPlanner,
+      currentStage: 'booking',
+      currentAssignee: patient.assignedHealthManager,
+      closureMode: 'planner_review',
+      supervisionStatus: 'in_progress',
+      status: 'active',
+      content: {
+        templateName: '专家约诊服务',
+        assistanceType: 'expert_appointment',
+        serviceWorkflow: 'order_tracking',
+        serviceStatusLabel: '已发起，待健管专员预约',
+        hospital: plan.hospital || '',
+        campus: plan.campus || '',
+        department: plan.department || '',
+        expert: plan.expert || '',
+        preferredDateStart: plan.preferredDateStart || '',
+        preferredDateEnd: plan.preferredDateEnd || plan.preferredDateStart || '',
+      },
+      items: [{
+        name: '健管专员完成专家门诊预约',
+        category: '专家约诊服务',
+        scheduledDate: order.desiredServiceDate,
+        notes: appointmentRequirement,
+      }],
+    });
+  }
   if (medicalEscort) {
     const directlyAssigned = !!plan.medicalAssistantId;
     const supervisor = await FollowUp.create({

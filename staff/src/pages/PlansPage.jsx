@@ -14,9 +14,9 @@ const TYPE_LABEL = {
   // 旧类型兼容展示
   checkup:'体检方案', health:'健康管理方案', followup:'随访计划',
 }
-const STATUS_LABEL = { draft:'草稿', active:'已推送', confirmed:'已确认', completed:'已完成', cancelled:'已取消' }
-const STATUS_COLOR = { draft:'#8AA89C', active:'#1E6B50', confirmed:'#22A06B', completed:'#22A06B', cancelled:'#DC3545' }
-const getPlanStatus = (p) => p.confirmedAt ? 'confirmed' : p.status
+const STATUS_LABEL = { draft:'草稿', active:'已推送', confirmed:'已确认', completed:'已完成', cancelled:'已取消', service_started:'服务已发起' }
+const STATUS_COLOR = { draft:'#8AA89C', active:'#1E6B50', confirmed:'#22A06B', completed:'#22A06B', cancelled:'#DC3545', service_started:'#1E6B50' }
+const getPlanStatus = (p) => p.confirmedAt ? 'confirmed' : p.content?.serviceWorkflow === 'order_tracking' ? 'service_started' : p.status
 
 const ANNUAL_PLAN_TYPE_LABEL = {
   health_reshape:    '健康重塑方案',
