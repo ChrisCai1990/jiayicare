@@ -9299,13 +9299,13 @@ export default function PatientDetailPage() {
               {/* 2026-07-07 用户明确规则：AI营养方案只有营养师能生成；AI体检方案/年度管理方案
                   只有健康顾问能生成（营养师能查看这些方案内容，但不该有生成入口） */}
               {['nutritionist', 'superadmin'].includes(staff?.role) && (
-                <button className="btn btn-secondary btn-sm" onClick={() => setShowSelectTplModal('nutrition')}>
-                  ✨ AI营养方案
+                <button className="btn btn-secondary btn-sm" onClick={() => nav(`/plans?type=nutrition&patientId=${encodeURIComponent(id)}&patientName=${encodeURIComponent(data?.user?.name || '')}&openPlan=nutrition`)}>
+                  ✨ 发起营养干预方案
                 </button>
               )}
               {['familyDoctor', 'superadmin'].includes(staff?.role) && (
-                <button className="btn btn-secondary btn-sm" onClick={() => setShowSelectTplModal('annual_checkup')}>
-                  ✨ AI体检方案
+                <button className="btn btn-secondary btn-sm" onClick={() => nav(`/plans?type=annual_checkup&patientId=${encodeURIComponent(id)}&patientName=${encodeURIComponent(data?.user?.name || '')}&openPlan=annual_checkup`)}>
+                  ✨ 发起年度体检方案
                 </button>
               )}
               {['familyDoctor', 'superadmin'].includes(staff?.role) && (
@@ -9315,7 +9315,7 @@ export default function PatientDetailPage() {
               )}
               {['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && (
                 <button className="btn btn-secondary btn-sm" disabled={aiMedicalAssistGenerating}
-                  onClick={() => nav(`/plans?type=medical_assist&patientId=${encodeURIComponent(id)}&patientName=${encodeURIComponent(data?.user?.name || '')}&openMedicalAssist=1`)}>
+                  onClick={() => nav(`/plans?type=medical_assist&patientId=${encodeURIComponent(id)}&patientName=${encodeURIComponent(data?.user?.name || '')}&openPlan=medical_assist`)}>
                   {aiMedicalAssistGenerating ? '生成中…' : '✨ 发起就医协助方案'}
                 </button>
               )}
@@ -9323,8 +9323,8 @@ export default function PatientDetailPage() {
                 <button className="btn btn-secondary btn-sm" onClick={() => nav(`/products?medicalProxy=1&patientId=${id}`, { state: { initialPatient: { _id: id, name: data?.user?.name || '' } } })}>发起医疗代诊</button>
               )}
               {['familyDoctor', 'superadmin'].includes(staff?.role) && (
-                <button className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${id}/annual-health`)}>
-                  ✨ AI年度管理方案
+                <button className="btn btn-secondary btn-sm" onClick={() => nav(`/plans?type=annual_mgmt&patientId=${encodeURIComponent(id)}&patientName=${encodeURIComponent(data?.user?.name || '')}&openPlan=annual_mgmt`)}>
+                  ✨ 发起年度管理方案
                 </button>
               )}
             </div>
