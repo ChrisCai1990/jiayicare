@@ -62,6 +62,7 @@ app.get('/api/health', (req, res) => {
 
 // 路由
 app.use('/api/auth',    require('./routes/auth'));
+app.use('/api/metabolic-pilot', require('./routes/metabolicPilot'));
 app.use('/api/payments', require('./routes/payments'));
 
 // 用户端(app)专属路由：服务到期锁定统一在此挂载（默认锁+白名单放行，见 checkServiceActive.js 注释）。

@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
 
 const healthRecordSchema = new mongoose.Schema({
+  // Audit snapshot only; displayed pilot trends are recomputed from current non-deleted records.
+  metabolicFeedback: { type: mongoose.Schema.Types.Mixed, default: undefined },
   photoRecognition: {
     imageHash: String,
     originalValues: mongoose.Schema.Types.Mixed,

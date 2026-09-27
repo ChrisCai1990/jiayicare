@@ -53,12 +53,13 @@ export default function WeightPhoto({ onSaved }) {
     if (!Number.isFinite(kgValue) || kgValue <= 0 || kgValue >= 500) { setError('请填写有效的体重数值'); return; }
     lock.current = true; setBusy(true); setError('');
     try {
-      await recordsAPI.create({
+      const saved = await recordsAPI.create({
         type: 'weight', category: 'vitals', label: '体重', unit: 'kg', value: String(Math.round(kgValue * 100) / 100),
         recordedAt: when.date + 'T' + when.time + ':00+08:00', imageUrl: photo.image,
         photoRecognition: { token: draft.token, confirmed: true },
       });
       setDraft(null); setPhoto(null); setConfirmed(false);
+      if(saved.feedback) await Taro.showModal({title:saved.feedback.title,content:saved.feedback.text,showCancel:false,confirmText:'知道了'});
       Taro.showToast({ title: '记录已保存', icon: 'success' });
       onSaved?.();
     } catch (err) { setError(err.message || '保存失败，请重试'); }

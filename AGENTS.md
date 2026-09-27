@@ -762,6 +762,8 @@ pkg_1y（年度¥2980）/ pkg_6m（半年¥1680）/ pkg_3m（季度¥980）
 
 > 2026-09-14：群消息持续采集与本地规则随访草稿、人工确认边界见 docs/WECOM_ARCHIVE_FOLLOWUP.md。
 
+> 2026-09-28：体重管理试点独立白名单默认关闭、空名单；不复用年度名单，不自动收费或续费。反馈超时不影响记录保存，阶段回顾实时重算，求助按所属团队处理。发布跳过数据迁移，详见 docs/METABOLIC_PILOT_20260928.md。
+
 > 2026-09-14：日常检测原图与按日沟通草稿复用待归档、ServiceRecord 和 FollowUp；规则与验证见 docs/WECOM_ARCHIVE_FOLLOWUP.md。
 
 > 2026-09-14：侧栏三入口与专业随访草稿整理沿用原系统，详见 docs/WECOM_ARCHIVE_FOLLOWUP.md 的侧栏简化节。

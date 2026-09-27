@@ -4,10 +4,12 @@ import {
   StyleSheet, SafeAreaView, Modal, TextInput, Image, Platform, Alert, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { recordsAPI } from '../../services/api';
 import BloodPressurePhoto from '../../components/BloodPressurePhoto';
+import MetabolicPilotCard from '../../components/MetabolicPilotCard';
 
 // 本地日期字符串（YYYY-MM-DD）——不能用 toISOString()，那是 UTC 日期
 function toLocalDateStr(d) {
@@ -90,6 +92,9 @@ function calcSleepDuration(sleepTime, wakeTime) {
 export default function CheckinScreen({ navigation }) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [pilotRefresh,setPilotRefresh] = useState(0);
+  const [pilotMember,setPilotMember] = useState(false);
+  const [pilotFeedback,setPilotFeedback] = useState(null);
   const [doneTypes, setDoneTypes] = useState({}); // { type: { note, hasImage } }，来自后端今日打卡状态
 
   const todayStr = toLocalDateStr(new Date());
@@ -119,10 +124,10 @@ export default function CheckinScreen({ navigation }) {
       const res = await recordsAPI.todayStatus();
       if (res.success) setDoneTypes(res.doneTypes || {});
     } catch {}
-    finally { setLoading(false); }
+    finally { setLoading(false); setPilotRefresh(v=>v+1); }
   }, []);
 
-  useEffect(() => { loadTodayStatus(); }, [loadTodayStatus]);
+  useFocusEffect(useCallback(() => { setPilotFeedback(null); loadTodayStatus(); }, [loadTodayStatus]));
 
   // 根据用户慢病标签，决定血压/血糖是否为必打卡项；无对应慢病则归为可选，不做"未完成"提示
   const chronicDiseases = user?.chronicDiseases || [];
@@ -211,7 +216,8 @@ export default function CheckinScreen({ navigation }) {
 
     setMeasureSaving(true);
     try {
-      await recordsAPI.create(payload);
+      const saved = await recordsAPI.create(payload);
+      setPilotFeedback(saved.feedback || null);
     } catch (err) {
       setMeasureSaving(false);
       Alert.alert('保存失败', err.message || '网络异常，请重试');
@@ -234,6 +240,7 @@ export default function CheckinScreen({ navigation }) {
     const resolvedTimeSlot = item.key === 'exercise'
       ? (checkinTimeSlot === '现在' ? deriveCurrentTimeSlot() : checkinTimeSlot)
       : '';
+    setPilotFeedback(null);
     setCheckinSaving(true);
     const mealPrefix = item.key === 'diet' && checkinMealType ? `【${checkinMealType}】` : '';
     const slotPrefix = resolvedTimeSlot ? `【${resolvedTimeSlot}】` : '';
@@ -276,6 +283,7 @@ export default function CheckinScreen({ navigation }) {
       return;
     }
     const hasUrgent = selectedSymptoms.some(s => URGENT_SYMPTOMS.includes(s));
+    setPilotFeedback(null);
     setSymptomSaving(true);
     try {
       await recordsAPI.create({
@@ -338,7 +346,7 @@ export default function CheckinScreen({ navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.pageTitle}>今日健康打卡</Text>
+        <Text style={styles.pageTitle}>记录健康数据</Text>
         <View style={{ width: 30 }} />
       </View>
 
@@ -348,18 +356,19 @@ export default function CheckinScreen({ navigation }) {
         </View>
       ) : (
         <ScrollView contentContainerStyle={{ padding: spacing.lg }} showsVerticalScrollIndicator={false}>
+          <MetabolicPilotCard refreshKey={pilotRefresh} onStatus={setPilotMember} feedback={pilotFeedback} />
           {/* 必打卡项 */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>必打卡项</Text>
-              {mandatoryItems.length > 0 && (
+              <Text style={styles.sectionTitle}>记录健康数据</Text>
+              {!pilotMember && mandatoryItems.length > 0 && (
                 <Text style={styles.sectionProgress}>{doneMandatoryCount}/{mandatoryItems.length}</Text>
               )}
             </View>
             <View style={styles.checkinGrid}>
               {mandatoryItems.map(renderCheckinItem)}
             </View>
-            {allMandatoryDone && (
+            {!pilotMember && allMandatoryDone && (
               <View style={styles.checkinAllDone}>
                 <Ionicons name="star" size={14} color="#F39C12" />
                 <Text style={styles.checkinAllDoneText}>今日核心指标已完成！保持健康好习惯 🎉</Text>
@@ -370,7 +379,7 @@ export default function CheckinScreen({ navigation }) {
           {/* 可选打卡项：不做则不提示"未完成"，避免打卡疲劳 */}
           {optionalItems.length > 0 && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>可选打卡项</Text>
+              <Text style={styles.sectionTitle}>按需记录</Text>
               <View style={styles.checkinGrid}>
                 {optionalItems.map(renderCheckinItem)}
               </View>

@@ -190,6 +190,7 @@ export default function AddRecordScreen({ navigation, route }) {
   const [measureOption, setMeasureOption] = useState('');
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null); // { type: 'success'|'error'|'warn', msg: string }
+  const [savedFeedback,setSavedFeedback] = useState(null);
   const [timePicker, setTimePicker] = useState(null); // { key: 'sleepTime'|'wakeTime', title: string }
 
   // Toast 自动消失（成功 1.8s，错误 3s）
@@ -273,7 +274,11 @@ export default function AddRecordScreen({ navigation, route }) {
         }
       }
 
-      await recordsAPI.create(payload);
+      const saved = await recordsAPI.create(payload);
+      if (saved.feedback) {
+        setSavedFeedback(saved.feedback);
+        return;
+      }
       showToast('success', '✅ 记录成功，数据已保存');
       // 成功后 1.5s 自动返回
       setTimeout(() => navigation.goBack(), 1500);
@@ -294,6 +299,7 @@ export default function AddRecordScreen({ navigation, route }) {
         <View style={{ width: 36 }} />
       </View>
 
+      {savedFeedback&&<View style={{padding:16,backgroundColor:'#edf6f1',margin:16,borderRadius:12}}><Text style={{fontWeight:'700',marginBottom:8}}>{savedFeedback.title}</Text><Text>{savedFeedback.text}</Text>{savedFeedback.action&&<Text style={{marginTop:8}}>可以尝试：{savedFeedback.action.text}</Text>}<TouchableOpacity onPress={()=>navigation.goBack()}><Text style={{color:'#1e6b50',marginTop:12}}>知道了，返回</Text></TouchableOpacity></View>}
       {/* Toast 提示 Banner */}
       {toast && (
         <View style={[styles.toast, styles[`toast_${toast.type}`]]}>

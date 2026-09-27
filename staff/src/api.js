@@ -43,6 +43,10 @@ async function req(path, options = {}) {
 
 const qs = (params) => new URLSearchParams(params).toString()
 
+export const metabolicPilotAPI = {
+  get: () => req('/metabolic-pilot/staff'),
+  resolve: (id,data) => req(`/metabolic-pilot/staff/${id}/resolve`,{method:'POST',body:JSON.stringify(data)}),
+}
 export const careFlowAPI = {
   task: id => req(`/staff/care-flow/task/${id}`),
   start: id => req(`/staff/care-flow/task/${id}/start`, {method:'POST',body:'{}'}),
