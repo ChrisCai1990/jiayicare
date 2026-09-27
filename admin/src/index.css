@@ -131,7 +131,7 @@ a { text-decoration: none; color: inherit; }
   border-radius: 8px;
   background: transparent;
   color: #7B8490;
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 700;
   letter-spacing: .5px;
   text-align: left;
@@ -142,7 +142,7 @@ a { text-decoration: none; color: inherit; }
 .sidebar-section-label[aria-expanded="false"] .sidebar-chevron { transform: rotate(-90deg); }
 .sidebar-section-items { display: grid; gap: 2px; padding: 1px 0 4px; }
 .sidebar-nav-group + .sidebar-nav-group { margin-top: 8px; }
-.sidebar-nav-group-label { padding: 7px 10px 4px 38px; color: #A0AAA5; font-size: 10px; font-weight: 700; letter-spacing: .6px; }
+.sidebar-nav-group-label { padding: 10px 10px 6px 38px; color: #82938B; font-size: 13px; font-weight: 700; letter-spacing: .2px; }
 
 .sidebar-item {
   width: 100%;

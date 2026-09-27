@@ -155,7 +155,7 @@ export default function Layout() {
     : visibleSections
 
   useEffect(() => {
-    if (activeSection) setExpanded(prev => ({ ...prev, [activeSection]: true }))
+    if (activeSection) setExpanded({ [activeSection]: true })
     setMobileOpen(false)
   }, [activeSection, loc.pathname])
 
@@ -206,7 +206,7 @@ export default function Layout() {
                 <button
                   className="sidebar-section-label"
                   aria-expanded={isExpanded}
-                  onClick={() => setExpanded(prev => ({ ...prev, [section.label]: !prev[section.label] }))}
+                  onClick={() => setExpanded(prev => ({ [section.label]: !prev[section.label] }))}
                 >
                   <span>{section.label}</span>
                   <svg className="sidebar-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4" /></svg>
