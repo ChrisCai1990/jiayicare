@@ -104,7 +104,14 @@ export default function Layout() {
   const nav = useNavigate()
   const loc = useLocation()
   const visibleSections = useMemo(
-    () => NAV_SECTIONS.filter(section => !section.platformOnly || admin?.role === 'platformSuper').map(section => ({ ...section, items: section.items.filter(item => (!item.superadminOnly || admin?.role === 'superadmin') && (!item.aiControlOnly || admin?.role === 'platformSuper' || (admin?.role === 'superadmin' && !admin?.tenantId)) })),
+    () => NAV_SECTIONS
+      .filter(section => !section.platformOnly || admin?.role === 'platformSuper')
+      .map(section => ({
+        ...section,
+        items: section.items.filter(item =>
+          (!item.superadminOnly || admin?.role === 'superadmin')
+          && (!item.aiControlOnly || admin?.role === 'platformSuper' || (admin?.role === 'superadmin' && !admin?.tenantId))),
+      })),
     [admin?.role, admin?.tenantId],
   )
   const activeSection = visibleSections.find(section => section.items.some(item => isItemActive(loc.pathname, item.path)))?.label
