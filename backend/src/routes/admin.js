@@ -2013,6 +2013,23 @@ router.patch('/enterprises/:id/employees', adminAuth, async (req, res) => {
   res.json({ success: true, message: `${associationType === 'dependent' ? `已关联 ${userIds.length} 名高管家属（不占员工名额）` : `已关联 ${userIds.length} 名员工`}${servicePackage ? `，已写入「${servicePackage.name}」权益` : ''}` });
 });
 
+// POST /api/admin/enterprises/:id/service-packages/:packageId/grant-all
+// 企业先选合同服务包，再由管理员明确执行一次批量补写；避免编辑模板时静默改写
+// 已关联成员的权益，也支持存量企业在完成合同配置后直接启用。
+router.post('/enterprises/:id/service-packages/:packageId/grant-all', adminAuth, async (req, res) => {
+  const enterprise = await Enterprise.findById(req.params.id);
+  if (!enterprise) return res.status(404).json({ success: false, message: '企业不存在' });
+  if (!(enterprise.servicePackageIds || []).map(String).includes(String(req.params.packageId))) {
+    return res.status(400).json({ success: false, message: '该服务包未配置在此企业合同中' });
+  }
+  const servicePackage = await ServicePackage.findOne({ _id: req.params.packageId, active: true });
+  if (!servicePackage) return res.status(400).json({ success: false, message: '所选服务包未启用或不存在' });
+  const users = await User.find({ enterpriseId: enterprise._id }).select('_id').lean();
+  const { grantEnterprisePackageEntitlement } = require('../utils/packageEntitlements');
+  await Promise.all(users.map(user => grantEnterprisePackageEntitlement({ enterprise, userId: user._id, servicePackage })));
+  res.json({ success: true, data: { grantedCount: users.length }, message: `已向 ${users.length} 名已关联成员写入「${servicePackage.name}」权益` });
+});
+
 // DELETE /api/admin/enterprises/:id/employees/:userId —— 解除某员工与企业的关联
 router.delete('/enterprises/:id/employees/:userId', adminAuth, async (req, res) => {
   await User.updateOne({ _id: req.params.userId, enterpriseId: req.params.id }, { enterpriseId: null, enterpriseAssociationType: 'employee' });
