@@ -87,7 +87,7 @@ export function validateMedicalProxyStage(stage, value) {
   return ''
 }
 
-export default function MedicalProxyStageForm({ task, value = {}, onChange, reports = [], serviceRecords = [], staffList = [], onOpenReport }) {
+export default function MedicalProxyStageForm({ task, value = {}, onChange, reports = [], serviceRecords = [], staffList = [], onOpenReport, onUploadReport }) {
   const stage = medicalProxyStage(task)
   const appointmentRequirementText = value.planSnapshot?.serviceContent || task?.formData?.planSnapshot?.serviceContent || task?.sourceOrderId?.serviceRequirements || ''
   const appointmentRequirement = parseAppointmentRequirement(appointmentRequirementText)
@@ -170,7 +170,10 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
           <label><input type="checkbox" checked={!!selected.noMaterial} onChange={e => { const rows = (value.auditItems || []).filter(row => row.key !== item.key); const next = [...rows, { key: item.key, reportIds: [], noMaterial: e.target.checked }]; onChange({ ...value, auditItems: next, reportIds: [...new Set(next.flatMap(row => row.reportIds || []))], noMaterialsConfirmed: next.length === auditItems.length && next.every(row => row.noMaterial) }) }} /> 该项目确无资料</label>
         </div> })}
       </div>}
-      {!isMedicalEscort && !eligible.length && <div style={{ color: '#B45309', fontSize: 13 }}>暂无本次就诊后上传的报告。</div>}
+      {!isMedicalEscort && !eligible.length && <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', color: '#B45309', fontSize: 13 }}>
+        <span>暂无本次就诊后上传的报告。</span>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={onUploadReport}>上传本次报告</button>
+      </div>}
       {isMedicalEscort && reports.some(report => report.audit_status !== 'audited' && String(report.sourceOrderId?._id || report.sourceOrderId || '') === orderId) && <div style={{ color: '#B45309', fontSize: 13 }}>本次服务仍有待审核资料，请先到报告管理逐份审核，再返回此处关联。</div>}
       {!isMedicalEscort && eligible.map(report => <label key={report._id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
         <input type="checkbox" checked={(value.reportIds || []).map(String).includes(String(report._id))} onChange={e => set('reportIds', e.target.checked ? [...new Set([...(value.reportIds || []), String(report._id)])] : (value.reportIds || []).filter(id => String(id) !== String(report._id)))} />
