@@ -1,4 +1,5 @@
 import ReportReviewQuality, { useReportReviewActivity } from '../components/ReportReviewQuality'
+import ClinicalDocumentReviewFields from '../components/ClinicalDocumentReviewFields'
 import { reportClassificationLabels, reportItemNameConcern, reportNameCorrection, sameReportConclusion } from '../utils/reportReviewQuality'
 import { isManualOnlyReport } from '../utils/reportManualReview'
 import { belongsToCheckupPlan, checkupProgress, groupCheckupPlans, checkupServiceMode } from '../utils/checkupProgress'
@@ -10252,7 +10253,7 @@ export default function PatientDetailPage() {
                                   setEditingReport(r)
                                   setEditingReportForm({
                                     title: r.title || '', hospital: r.hospital || r.institution || '', date: r.date || r.checkDate || '',
-                                    note: r.note || '', documentCategory: inferDocumentCategory(r),
+                                    note: r.note || '', documentCategory: inferDocumentCategory(r), clinicalReview: r.clinicalReview || {},
                                   })
                                   setOpenReportActionId(null)
                                 }}>编辑报告</button>
@@ -11333,6 +11334,7 @@ export default function PatientDetailPage() {
                 <input className="form-input" value={editingReportForm.note || ''}
                   onChange={e => setEditingReportForm(f => ({ ...f, note: e.target.value }))} />
               </div>
+              <ClinicalDocumentReviewFields category={editingReportForm.documentCategory} value={editingReportForm.clinicalReview} onChange={clinicalReview => setEditingReportForm(f => ({ ...f, clinicalReview }))} />
             </div>
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setEditingReport(null)}>取消</button>

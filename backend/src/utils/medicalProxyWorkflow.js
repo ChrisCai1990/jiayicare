@@ -358,6 +358,27 @@ async function createPrescriptionMedicationDrafts(task, reportIds) {
   } catch (error) { console.error('[medical-escort] 处方用药草稿生成失败', error.message); return []; }
 }
 
+// 处方审核表单已经由医护人员逐项确认，不再依赖通用报告 AI 猜测用法。
+// 仅将明确勾选“纳入当前用药”的条目写为待健康顾问复核的草稿，保留报告来源实现幂等。
+async function createClinicalPrescriptionMedicationDrafts(report, staff) {
+  const review = report?.clinicalReview;
+  if (report?.documentCategory !== 'prescription_order' || review?.medicationDecision !== 'has_medications') return [];
+  const created = [];
+  for (const [index, row] of (review.medications || []).entries()) {
+    if (row?.includeInCurrentMedication !== true || !nonempty(row.name) || !nonempty(row.dosage) || !nonempty(row.frequency)) continue;
+    const sourceRecordKey = `prescription_review:${report._id}:${index}:${row.name}:${row.dosage}:${row.frequency}`;
+    const medication = await Medication.findOneAndUpdate({ user: report.user, sourceRecordKey }, { $setOnInsert: {
+      user: report.user, name: nonempty(row.name), brandName: nonempty(row.brandName), specification: nonempty(row.specification),
+      dosage: nonempty(row.dosage), method: nonempty(row.method) || '口服', frequency: nonempty(row.frequency), timing: nonempty(row.timing),
+      startDate: nonempty(row.startDate), endDate: nonempty(row.endDate), purpose: nonempty(row.purpose), note: nonempty(row.note) || '依据已审核处方/医嘱逐项录入，待健康顾问复核。',
+      imageUrls: report.fileUrls || [], active: true, stopped: false, createdByStaff: true, staffId: staff?._id || staff?.id || null,
+      createdByName: staff?.name || '医护审核', aiStatus: 'pending', aiGeneratedBy: '已审核处方/医嘱', sourceType: 'manual', sourceRecordKey,
+    } }, { upsert: true, new: true, setDefaultsOnInsert: true });
+    if (medication?._id) created.push(medication);
+  }
+  return created;
+}
+
 function reportIdsFromTask(task = {}) {
   return [...new Set([
     ...(task.formData?.selectedReportIds || []),
@@ -1109,4 +1130,4 @@ async function ensureStaffExpertAppointmentTasksForStaff(staff) {
   }
   return created;
 }
-module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, supplyResolutionSummary, createPrescriptionMedicationDrafts, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, ensureStaffExpertAppointmentTasksForStaff, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
+module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, supplyResolutionSummary, createPrescriptionMedicationDrafts, createClinicalPrescriptionMedicationDrafts, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, ensureStaffExpertAppointmentTasksForStaff, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, validateMedicalProxyStage, advanceMedicalProxyWorkflow };

@@ -166,6 +166,8 @@ const medicalReportSchema = new mongoose.Schema({
   audited_by:   { type: String, default: '' },
   audited_at:   { type: Date,   default: null },
   reject_reason:{ type: String, default: '' },
+  // 处方/门诊/住院资料不复用体检的 reportItems。此处保存人工逐项核对的业务结构及审核结论。
+  clinicalReview: { type: mongoose.Schema.Types.Mixed, default: null },
 
   // 健康顾问单份查看留痕（2026-07-28新增）：健康顾问在"待查看新增报告"清单里点开某份报告，
   // 立即持久化这份报告"已被查看"，不依赖最后一次性点击的"确认已查看"整体动作——否则中途退出
