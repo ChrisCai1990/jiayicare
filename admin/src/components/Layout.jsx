@@ -102,6 +102,10 @@ function groupNavItems(section) {
   return otherItems.length ? [...grouped, { label: '其他', items: otherItems }] : grouped
 }
 
+function groupKey(sectionLabel, groupLabel) {
+  return `${sectionLabel}:${groupLabel}`
+}
+
 const ROLE_MAP = { doctor: '医生', manager: '健康管理师', superadmin: '超级管理员', platformSuper: '平台超管' }
 
 const ICON_PATHS = {
@@ -145,7 +149,11 @@ export default function Layout() {
   )
   const activeSection = visibleSections.find(section => section.items.some(item => isItemActive(loc.pathname, item.path)))?.label
   const activeItem = visibleSections.flatMap(section => section.items).find(item => isItemActive(loc.pathname, item.path))
+  const activeGroup = activeSection && activeItem
+    ? groupNavItems(visibleSections.find(section => section.label === activeSection)).find(group => group.items.some(item => item.path === activeItem.path))?.label
+    : null
   const [expanded, setExpanded] = useState(() => activeSection ? { [activeSection]: true } : { 业务管理: true })
+  const [expandedGroups, setExpandedGroups] = useState(() => activeSection && activeGroup ? { [groupKey(activeSection, activeGroup)]: true } : {})
   const [mobileOpen, setMobileOpen] = useState(false)
   const [pendingFeedback, setPendingFeedback] = useState(0)
   const [navQuery, setNavQuery] = useState('')
@@ -156,8 +164,9 @@ export default function Layout() {
 
   useEffect(() => {
     if (activeSection) setExpanded({ [activeSection]: true })
+    if (activeSection && activeGroup) setExpandedGroups({ [groupKey(activeSection, activeGroup)]: true })
     setMobileOpen(false)
-  }, [activeSection, loc.pathname])
+  }, [activeSection, activeGroup, loc.pathname])
 
   useEffect(() => {
     let cancelled = false
@@ -213,9 +222,12 @@ export default function Layout() {
                 </button>
                 {isExpanded && (
                   <div className="sidebar-section-items">
-                    {groups.map(group => <div className="sidebar-nav-group" key={group.label || 'all'}>
-                      {group.label && <div className="sidebar-nav-group-label">{group.label}</div>}
-                      {group.items.map(item => {
+                    {groups.map(group => {
+                      const key = group.label ? groupKey(section.label, group.label) : null
+                      const groupExpanded = normalizedQuery || !key || !!expandedGroups[key]
+                      return <div className="sidebar-nav-group" key={group.label || 'all'}>
+                      {group.label && <button className="sidebar-nav-group-label" aria-expanded={groupExpanded} onClick={() => setExpandedGroups(prev => ({ [key]: !prev[key] }))}><span>{group.label}</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4" /></svg></button>}
+                      {groupExpanded && group.items.map(item => {
                         const active = isItemActive(loc.pathname, item.path)
                         return (
                           <button
@@ -232,7 +244,8 @@ export default function Layout() {
                           </button>
                         )
                       })}
-                    </div>)}
+                    </div>
+                    })}
                   </div>
                 )}
               </section>

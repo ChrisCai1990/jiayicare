@@ -141,8 +141,11 @@ a { text-decoration: none; color: inherit; }
 .sidebar-chevron { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; transition: transform .18s ease; }
 .sidebar-section-label[aria-expanded="false"] .sidebar-chevron { transform: rotate(-90deg); }
 .sidebar-section-items { display: grid; gap: 2px; padding: 1px 0 4px; }
-.sidebar-nav-group + .sidebar-nav-group { margin-top: 8px; }
-.sidebar-nav-group-label { padding: 10px 10px 6px 38px; color: #82938B; font-size: 13px; font-weight: 700; letter-spacing: .2px; }
+.sidebar-nav-group + .sidebar-nav-group { margin-top: 4px; }
+.sidebar-nav-group-label { width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 10px 10px 8px 38px; border-radius: 7px; color: #667A70; font-size: 13px; font-weight: 700; letter-spacing: .2px; text-align: left; }
+.sidebar-nav-group-label:hover { background: #F7F9F8; color: var(--primary); }
+.sidebar-nav-group-label svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; transition: transform .18s ease; }
+.sidebar-nav-group-label[aria-expanded="false"] svg { transform: rotate(-90deg); }
 
 .sidebar-item {
   width: 100%;
