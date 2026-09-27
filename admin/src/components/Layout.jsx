@@ -73,6 +73,35 @@ const NAV_SECTIONS = [
   },
 ]
 
+const NAV_GROUPS = {
+  '运营管理': {
+    '经营与服务': ['/products', '/partners', '/enterprises', '/health-fund'],
+    '运营与质量': ['/ops-dashboard', '/care-quality', '/research-care-journeys'],
+    '内容与工具': ['/health-plan-templates', '/ai-case-review-templates', '/questionnaires', '/change-logs'],
+  },
+  '基础设置': {
+    '组织与人员': ['/settings/company', '/settings/departments', '/settings/roles', '/settings/employees'],
+    '会员与医疗资源': ['/settings/medical-resources', '/settings/members', '/settings/scoring'],
+    '智能与服务流程': ['/settings/daily-care', '/settings/health-assistant', '/settings/ai-usage', '/settings/supply-workflow', '/settings/service-workflow-alignment', '/settings/review-experience'],
+  },
+  '项目设置': {
+    '基础项目库': ['/projects/categories', '/projects/diseases', '/projects/lab-test-items', '/projects/lab-test-orders', '/projects/lab-test-packages', '/projects/special-exams', '/projects/functional-medicine'],
+    '服务与随访': ['/projects/service-items', '/projects/other-charges', '/projects/templates', '/projects/followup-forms', '/projects/followup-plans'],
+  },
+}
+
+function groupNavItems(section) {
+  const definitions = NAV_GROUPS[section.label]
+  if (!definitions) return [{ label: null, items: section.items }]
+  const grouped = Object.entries(definitions).map(([label, paths]) => ({
+    label,
+    items: section.items.filter(item => paths.includes(item.path)),
+  })).filter(group => group.items.length)
+  const groupedPaths = new Set(Object.values(definitions).flat())
+  const otherItems = section.items.filter(item => !groupedPaths.has(item.path))
+  return otherItems.length ? [...grouped, { label: '其他', items: otherItems }] : grouped
+}
+
 const ROLE_MAP = { doctor: '医生', manager: '健康管理师', superadmin: '超级管理员', platformSuper: '平台超管' }
 
 const ICON_PATHS = {
@@ -119,6 +148,11 @@ export default function Layout() {
   const [expanded, setExpanded] = useState(() => activeSection ? { [activeSection]: true } : { 业务管理: true })
   const [mobileOpen, setMobileOpen] = useState(false)
   const [pendingFeedback, setPendingFeedback] = useState(0)
+  const [navQuery, setNavQuery] = useState('')
+  const normalizedQuery = navQuery.trim().toLowerCase()
+  const filteredSections = normalizedQuery
+    ? visibleSections.map(section => ({ ...section, items: section.items.filter(item => item.label.toLowerCase().includes(normalizedQuery)) })).filter(section => section.items.length)
+    : visibleSections
 
   useEffect(() => {
     if (activeSection) setExpanded(prev => ({ ...prev, [activeSection]: true }))
@@ -158,9 +192,15 @@ export default function Layout() {
         </div>
 
         <nav className="sidebar-nav" aria-label="主导航">
-          {visibleSections.map(section => {
-            const isExpanded = !!expanded[section.label]
+          <label className="sidebar-search">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.4-4.4m2.4-5.1a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z" /></svg>
+            <input value={navQuery} onChange={event => setNavQuery(event.target.value)} placeholder="搜索功能" aria-label="搜索功能" />
+            {navQuery && <button type="button" onClick={() => setNavQuery('')} aria-label="清除搜索">×</button>}
+          </label>
+          {filteredSections.map(section => {
+            const isExpanded = normalizedQuery ? true : !!expanded[section.label]
             const containsActive = section.label === activeSection
+            const groups = groupNavItems(section)
             return (
               <section className={`sidebar-section ${containsActive ? 'contains-active' : ''}`} key={section.label}>
                 <button
@@ -173,23 +213,26 @@ export default function Layout() {
                 </button>
                 {isExpanded && (
                   <div className="sidebar-section-items">
-                    {section.items.map(item => {
-                      const active = isItemActive(loc.pathname, item.path)
-                      return (
-                        <button
-                          key={item.path}
-                          className={`sidebar-item ${active ? 'active' : ''}`}
-                          aria-current={active ? 'page' : undefined}
-                          onClick={() => nav(item.path)}
-                        >
-                          <span className="sidebar-item-icon"><NavIcon name={item.icon} /></span>
-                          <span className="sidebar-item-label">{item.label}</span>
-                          {item.badgeKey === 'feedback' && pendingFeedback > 0 && (
-                            <span className="sidebar-badge">{pendingFeedback > 99 ? '99+' : pendingFeedback}</span>
-                          )}
-                        </button>
-                      )
-                    })}
+                    {groups.map(group => <div className="sidebar-nav-group" key={group.label || 'all'}>
+                      {group.label && <div className="sidebar-nav-group-label">{group.label}</div>}
+                      {group.items.map(item => {
+                        const active = isItemActive(loc.pathname, item.path)
+                        return (
+                          <button
+                            key={item.path}
+                            className={`sidebar-item ${active ? 'active' : ''}`}
+                            aria-current={active ? 'page' : undefined}
+                            onClick={() => nav(item.path)}
+                          >
+                            <span className="sidebar-item-icon"><NavIcon name={item.icon} /></span>
+                            <span className="sidebar-item-label">{item.label}</span>
+                            {item.badgeKey === 'feedback' && pendingFeedback > 0 && (
+                              <span className="sidebar-badge">{pendingFeedback > 99 ? '99+' : pendingFeedback}</span>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>)}
                   </div>
                 )}
               </section>
