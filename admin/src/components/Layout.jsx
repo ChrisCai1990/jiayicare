@@ -23,7 +23,7 @@ const NAV_SECTIONS = [
       { label: '企业客户', icon: 'company', path: '/enterprises' },
       { label: '健康基金', icon: 'fund', path: '/health-fund' },
       { label: '运营看板', icon: 'chart', path: '/ops-dashboard' },
-      { label: '体重管理试点', icon: 'chart', path: '/metabolic-pilot' },
+      { label: '体重管理试点', icon: 'chart', path: '/metabolic-pilot', superadminOnly: true },
       { label: '就医协助质量', icon: 'chart', path: '/care-quality' },
       { label: 'WONCA 研究管理', icon: 'chart', path: '/research-care-journeys', superadminOnly: true },
       { label: '健康方案模板', icon: 'template', path: '/health-plan-templates' },

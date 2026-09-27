@@ -92,6 +92,20 @@ test('pilot real Mongo/HTTP acceptance: auth, whitelist, feedback, correction, p
     const row=await Pilot.findById(user._id).lean();assert.equal(row.humanMinutes,2);
     assert.match((await call(user,'/metabolic-pilot/me')).body.data.help.reply,/提醒设置/);
   });
+  await t.test('kill switch and revoked whitelist stop feedback without losing records',async()=>{
+    const before=await Record.countDocuments({user:user._id});
+    assert.equal((await call(admin,`/metabolic-pilot/admin/${user._id}`,'PATCH',{action:'revoke'})).status,200);
+    const revoked=await call(user,'/metabolic-pilot/me');assert.equal(revoked.body.data.available,false);assert.equal(revoked.body.data.feedback,null);
+    assert.equal((await action('choose',{id:'meal-awareness',choice:'try'})).status,403);
+    assert.equal((await call(admin,`/metabolic-pilot/admin/${user._id}`,'PATCH',{action:'restore'})).status,200);
+    assert.equal((await call(admin,'/metabolic-pilot/admin/config','PUT',{enabled:false,accepting:false,revision:1})).status,200);
+    const saved=await call(user,'/records','POST',{type:'weight',value:'78',unit:'kg'});assert.equal(saved.status,201);assert.equal(saved.body.feedback,null);
+    assert.equal((await action('pause')).status,403);
+    assert.equal(await Record.countDocuments({user:user._id}),before+1);
+    assert.equal((await call(admin,'/metabolic-pilot/admin/config','PUT',{enabled:true,accepting:false,revision:2})).status,200);
+    assert.equal((await call(user,'/metabolic-pilot/me')).body.data.status,'active');
+    assert.equal((await call(admin,'/metabolic-pilot/admin/config','PUT',{enabled:true,accepting:true,revision:3})).status,200);
+  });
   await t.test('stages and end-of-cycle do not auto-charge or renew',async()=>{
     await Pilot.updateOne({_id:user._id},{$set:{startedAt:new Date(Date.now()-85*86400000),endsAt:new Date(Date.now()-86400000)}});
     const me=await call(user,'/metabolic-pilot/me');assert.equal(me.body.data.status,'completed');assert.equal(me.body.data.feedback,null);assert.equal(me.body.data.summary.checkpoints.length,3);

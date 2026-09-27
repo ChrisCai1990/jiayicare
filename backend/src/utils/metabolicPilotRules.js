@@ -61,7 +61,7 @@ function summaryFor(enrollment, records, now = new Date()) {
     return { day, recordedDays: new Set(rows.map(r => dayKey(r.recordedAt))).size,
       first: first ? { value: Number(first.value), date: dayKey(first.recordedAt) } : null,
       last: last ? { value: Number(last.value), date: dayKey(last.recordedAt) } : null,
-      note: rows.length < 2 ? '可比较数据不足，暂不判断变化。' : '展示有效记录的测量变化，不作为疗效或代谢改善判定。',
+      note: new Set(rows.map(r => dayKey(r.recordedAt))).size < 2 ? '可比较数据不足，暂不判断变化。' : '展示有效记录的测量变化，不作为疗效或代谢改善判定。',
       reflection: (enrollment.reflections || []).find(r => r.day === day)?.text || '' };
   });
   return { state, days, week: Math.min(12, Math.floor(days / 7) + 1), checkpoints,
