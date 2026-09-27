@@ -270,7 +270,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
                 {service.totalSteps > 1 && <span style={{ marginLeft: 8, fontSize: 11, color: '#1E6B50', background: '#EAF5F0', padding: '2px 6px', borderRadius: 8 }}>当前环节 · 共{service.totalSteps}环节</span>}
                 {isWaitingPrevious
                   ? <span style={{ marginLeft: 8, fontSize: 11, color: isOutpatientEscortProgress ? '#1E6B50' : '#667085', background: isOutpatientEscortProgress ? '#EAF5F0' : '#F2F4F7', padding: '2px 6px', borderRadius: 8 }}>{isOutpatientReportAuditWait ? '等待资料审核' : isOutpatientEscortProgress ? '陪诊及资料闭环进行中' : '等待上一环节'}</span>
-                  : isDueNow && <span style={{ marginLeft: 8, fontSize: 11, color: dueBucket === 'overdue' ? '#B42318' : '#8A6A20', background: dueBucket === 'overdue' ? '#FEF3F2' : '#FFF4D6', padding: '2px 6px', borderRadius: 8 }}>{dueBucket === 'overdue' ? '已逾期，优先处理' : '今天办理'}</span>
+                  : isDueNow ? <span style={{ marginLeft: 8, fontSize: 11, color: dueBucket === 'overdue' ? '#B42318' : '#8A6A20', background: dueBucket === 'overdue' ? '#FEF3F2' : '#FFF4D6', padding: '2px 6px', borderRadius: 8 }}>{dueBucket === 'overdue' ? '已逾期，优先处理' : '今天办理'}</span>
                   : isFuture && <span style={{ marginLeft: 8, fontSize: 11, color: '#8A6A20', background: '#FFF4D6', padding: '2px 6px', borderRadius: 8 }}>待开始</span>}
               </div>
               <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>
