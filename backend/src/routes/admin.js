@@ -24,6 +24,7 @@ const MemberType = require('../models/MemberType');
 const Partner = require('../models/Partner');
 const PartnerBenefit = require('../models/PartnerBenefit');
 const Enterprise = require('../models/Enterprise');
+const ServicePackage = require('../models/ServicePackage');
 const EnterpriseInsurancePolicy = require('../models/EnterpriseInsurancePolicy');
 const InsuranceEnrollment = require('../models/InsuranceEnrollment');
 const InsuranceServiceCase = require('../models/InsuranceServiceCase');
@@ -1770,13 +1771,21 @@ router.get('/enterprises', adminAuth, async (req, res) => {
 });
 
 // POST /api/admin/enterprises
+async function normalizeEnterpriseServicePackageIds(value) {
+  const ids = [...new Set((Array.isArray(value) ? value : []).map(String).filter(mongoose.isValidObjectId))];
+  if (!ids.length) return [];
+  const rows = await ServicePackage.find({ _id: { $in: ids } }).select('_id').lean();
+  if (rows.length !== ids.length) throw Object.assign(new Error('所选服务包不存在或已删除'), { statusCode: 400 });
+  return rows.map(row => row._id);
+}
+
 router.post('/enterprises', adminAuth, async (req, res) => {
-  const { name, creditCode, contactName, contactPhone, contactEmail, logo, contractStartAt, contractEndAt, seatsTotal, packageType, status, note, healthFundPaymentRule } = req.body;
+  const { name, creditCode, contactName, contactPhone, contactEmail, logo, contractStartAt, contractEndAt, seatsTotal, packageType, servicePackageIds, status, note, healthFundPaymentRule } = req.body;
   if (!name) return res.status(400).json({ success: false, message: '企业名称为必填项' });
   const enterprise = await Enterprise.create({
     name, creditCode: creditCode || '', contactName: contactName || '', contactPhone: contactPhone || '',
     contactEmail: contactEmail || '', logo: logo || '', contractStartAt: contractStartAt || null,
-    contractEndAt: contractEndAt || null, seatsTotal: seatsTotal ?? 0, packageType: packageType || '',
+    contractEndAt: contractEndAt || null, seatsTotal: seatsTotal ?? 0, packageType: packageType || '', servicePackageIds: await normalizeEnterpriseServicePackageIds(servicePackageIds),
     status: status || 'active', note: note || '', healthFundPaymentRule: healthFundPaymentRule || undefined,
   });
   res.json({ success: true, data: enterprise, message: '企业客户创建成功' });
@@ -1784,10 +1793,10 @@ router.post('/enterprises', adminAuth, async (req, res) => {
 
 // PUT /api/admin/enterprises/:id
 router.put('/enterprises/:id', adminAuth, async (req, res) => {
-  const { name, creditCode, contactName, contactPhone, contactEmail, logo, contractStartAt, contractEndAt, seatsTotal, packageType, status, note, healthFundPaymentRule } = req.body;
+  const { name, creditCode, contactName, contactPhone, contactEmail, logo, contractStartAt, contractEndAt, seatsTotal, packageType, servicePackageIds, status, note, healthFundPaymentRule } = req.body;
   const enterprise = await Enterprise.findByIdAndUpdate(
     req.params.id,
-    { name, creditCode, contactName, contactPhone, contactEmail, logo, contractStartAt, contractEndAt, seatsTotal, packageType, status, note, healthFundPaymentRule },
+    { name, creditCode, contactName, contactPhone, contactEmail, logo, contractStartAt, contractEndAt, seatsTotal, packageType, servicePackageIds: await normalizeEnterpriseServicePackageIds(servicePackageIds), status, note, healthFundPaymentRule },
     { new: true }
   );
   if (!enterprise) return res.status(404).json({ success: false, message: '企业不存在' });
@@ -1972,7 +1981,7 @@ router.put('/enterprises/:enterpriseId/insurance-policies/:policyId/enrollments'
 
 // PATCH /api/admin/enterprises/:id/employees —— 批量将员工关联到该企业（body: { userIds: [] }）
 router.patch('/enterprises/:id/employees', adminAuth, async (req, res) => {
-  const { userIds, associationType = 'employee' } = req.body;
+  const { userIds, associationType = 'employee', servicePackageId = '' } = req.body;
   if (!Array.isArray(userIds) || userIds.length === 0) {
     return res.status(400).json({ success: false, message: '请选择要关联的员工' });
   }
@@ -1987,13 +1996,27 @@ router.patch('/enterprises/:id/employees', adminAuth, async (req, res) => {
   if (enterprise.seatsTotal > 0 && seatsUsed + newSeatCount > enterprise.seatsTotal) {
     return res.status(400).json({ success: false, message: `超出采购名额（剩余 ${Math.max(enterprise.seatsTotal - seatsUsed, 0)} 个）` });
   }
+  const configuredPackageIds = (enterprise.servicePackageIds || []).map(String);
+  if (configuredPackageIds.length && !configuredPackageIds.includes(String(servicePackageId))) {
+    return res.status(400).json({ success: false, message: '请从该企业合同已配置的服务包中选择权益方案' });
+  }
+  let servicePackage = null;
+  if (servicePackageId) {
+    servicePackage = await ServicePackage.findOne({ _id: servicePackageId, active: true });
+    if (!servicePackage) return res.status(400).json({ success: false, message: '所选服务包未启用或不存在' });
+  }
   await User.updateMany({ _id: { $in: userIds } }, { enterpriseId: req.params.id, enterpriseAssociationType: associationType });
-  res.json({ success: true, message: associationType === 'dependent' ? `已关联 ${userIds.length} 名高管家属（不占员工名额）` : `已关联 ${userIds.length} 名员工` });
+  if (servicePackage) {
+    const { grantEnterprisePackageEntitlement } = require('../utils/packageEntitlements');
+    await Promise.all(userIds.map(userId => grantEnterprisePackageEntitlement({ enterprise, userId, servicePackage })));
+  }
+  res.json({ success: true, message: `${associationType === 'dependent' ? `已关联 ${userIds.length} 名高管家属（不占员工名额）` : `已关联 ${userIds.length} 名员工`}${servicePackage ? `，已写入「${servicePackage.name}」权益` : ''}` });
 });
 
 // DELETE /api/admin/enterprises/:id/employees/:userId —— 解除某员工与企业的关联
 router.delete('/enterprises/:id/employees/:userId', adminAuth, async (req, res) => {
   await User.updateOne({ _id: req.params.userId, enterpriseId: req.params.id }, { enterpriseId: null, enterpriseAssociationType: 'employee' });
+  await require('../utils/packageEntitlements').cancelEnterprisePackageEntitlements(req.params.id, req.params.userId);
   res.json({ success: true, message: '已解除关联' });
 });
 

@@ -1,5 +1,7 @@
 const PackageEntitlement = require('../models/PackageEntitlement');
 const User = require('../models/User');
+const mongoose = require('mongoose');
+const { buildPackageEntitlementSnapshot } = require('./packageEntitlementSnapshot');
 
 function addMonths(date, months) {
   const result = new Date(date);
@@ -72,6 +74,62 @@ async function ensureMemberBundleEntitlement(order) {
   );
 }
 
+// 企业合同直接引用服务包模板。授予时冻结模板，后续改模板不会反向改写员工
+// 已生效权益；同一企业、成员、服务包重复关联时复用原台账，不重复发放次数。
+async function grantEnterprisePackageEntitlement({ enterprise, userId, servicePackage }) {
+  if (!enterprise?._id || !userId || !servicePackage?._id) throw new Error('企业服务包授予参数不完整');
+  if (enterprise.status !== 'active') throw new Error('企业合同未处于合作中，不能授予服务权益');
+  const snapshot = await buildPackageEntitlementSnapshot(servicePackage);
+  const now = new Date();
+  const validFrom = enterprise.contractStartAt ? new Date(enterprise.contractStartAt) : now;
+  const durationMonths = Math.max(1, Number(servicePackage.activation?.durationMonths) || 12);
+  const validUntil = enterprise.contractEndAt ? new Date(enterprise.contractEndAt) : addMonths(validFrom, durationMonths);
+  if (!Number.isFinite(validFrom.getTime()) || !Number.isFinite(validUntil.getTime()) || validUntil < validFrom) {
+    throw new Error('企业合同有效期无效，无法授予服务权益');
+  }
+  const filter = {
+    sourceType: 'enterprise_contract',
+    sourceEnterpriseId: enterprise._id,
+    ownerUserId: userId,
+    packageId: servicePackage._id,
+  };
+  let entitlement = await PackageEntitlement.findOne(filter);
+  if (!entitlement) {
+    entitlement = await PackageEntitlement.create({
+      ownerUserId: userId,
+      sourceOrderId: new mongoose.Types.ObjectId(), // 企业合同来源的内部幂等标识，不代表商城订单
+      sourceType: 'enterprise_contract',
+      sourceEnterpriseId: enterprise._id,
+      packageId: servicePackage._id,
+      packageName: snapshot.packageName || servicePackage.name,
+      clientBrand: snapshot.clientBrand || servicePackage.clientBrand || 'jiayiguanjia',
+      validFrom,
+      validUntil,
+      familySharing: !!snapshot.familySharing,
+      rights: copy(snapshot),
+    });
+  }
+  const current = await User.findById(userId).select('serviceStartDate').lean();
+  const currentStart = current?.serviceStartDate ? new Date(`${current.serviceStartDate}T00:00:00+08:00`) : null;
+  if (!currentStart || !Number.isFinite(currentStart.getTime()) || currentStart <= validFrom) {
+    await User.updateOne({ _id: userId }, { $set: {
+      clientBrand: snapshot.clientBrand || servicePackage.clientBrand || 'jiayiguanjia',
+      servicePackage: snapshot.packageName || servicePackage.name,
+      serviceStartDate: validFrom.toISOString().slice(0, 10),
+      serviceExpiry: validUntil.toISOString().slice(0, 10),
+      ...(snapshot.membershipTier ? { membershipTier: snapshot.membershipTier } : {}),
+    } });
+  }
+  return entitlement;
+}
+
+async function cancelEnterprisePackageEntitlements(enterpriseId, userId) {
+  return PackageEntitlement.updateMany(
+    { sourceType: 'enterprise_contract', sourceEnterpriseId: enterpriseId, ownerUserId: userId, status: 'active' },
+    { $set: { status: 'cancelled' } },
+  );
+}
+
 async function applicableEntitlements(patientId, now = new Date()) {
   const patient = await User.findById(patientId).select('familyLinks').lean();
   if (!patient) return [];
@@ -89,4 +147,4 @@ function expirySweep(rows, now = new Date()) {
   return rows.filter(row => new Date(row.validUntil) >= now && row.status === 'active');
 }
 
-module.exports = { ensurePackageEntitlement, ensureMemberBundleEntitlement, applicableEntitlements, expirySweep };
+module.exports = { ensurePackageEntitlement, ensureMemberBundleEntitlement, grantEnterprisePackageEntitlement, cancelEnterprisePackageEntitlements, applicableEntitlements, expirySweep };

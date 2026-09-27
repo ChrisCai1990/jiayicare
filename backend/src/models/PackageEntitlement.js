@@ -6,6 +6,10 @@ const packageEntitlementSchema = new mongoose.Schema({
   ownerUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   tenantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', default: null, index: true },
   sourceOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', required: true, unique: true },
+  // 企业合同授予的权益没有商城订单；用企业+成员+服务包作为可追溯来源，
+  // sourceOrderId 仍保留一个内部幂等标识，以兼容既有订单台账索引。
+  sourceType: { type: String, enum: ['order', 'enterprise_contract'], default: 'order', index: true },
+  sourceEnterpriseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Enterprise', default: null, index: true },
   packageId: { type: mongoose.Schema.Types.ObjectId, ref: 'ServicePackage', default: null },
   packageName: { type: String, default: '' },
   clientBrand: { type: String, enum: ['jiayiguanjia', 'jinyisen'], default: 'jiayiguanjia' },
