@@ -115,6 +115,9 @@ const activeReportParseJobs = new Set();
 const { isManualOnlyReport, manualOnlyReportFilter } = require('../utils/reportManualReview');
 
 function manualOnlyReportMessage(report) {
+  if (report?.documentCategory === 'prescription_order') return '处方与医嘱需使用结构化人工审核，不进入检验项目解析';
+  if (report?.documentCategory === 'outpatient_record') return '门诊病历需使用结构化人工审核，不进入检验项目解析';
+  if (report?.documentCategory === 'inpatient_record') return '住院病历需使用结构化人工审核，不进入检验项目解析';
   return report?.type === 'home_monitor'
     ? '居家监测报告不支持AI自动解析，请人工录入'
     : '功能医学报告不支持AI自动解析，请人工审核录入';

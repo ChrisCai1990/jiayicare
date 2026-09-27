@@ -10208,8 +10208,12 @@ export default function PatientDetailPage() {
                             <td><span style={{ fontSize: 11, fontWeight: 600, color: auditColor, background: `${auditColor}12`, borderRadius: 999, padding: '3px 7px', whiteSpace: 'nowrap' }}>{auditLabel}</span></td>
                             <td style={{ whiteSpace: 'nowrap' }}>
                               {manualOnly ? (
-                                <button className="btn btn-sm report-action-primary" onClick={() => openReportDetail(r)}>
-                                  {['audited', 'rejected'].includes(r.audit_status) ? '查看资料' : '人工审核'}
+                                <button className="btn btn-sm report-action-primary" onClick={() => {
+                                  if (['audited', 'rejected'].includes(r.audit_status)) { openReportDetail(r); return }
+                                  setEditingReport(r)
+                                  setEditingReportForm({ title: r.title || '', hospital: r.hospital || r.institution || '', date: r.date || r.checkDate || '', note: r.note || '', documentCategory: inferDocumentCategory(r), clinicalReview: r.clinicalReview || {} })
+                                }}>
+                                  {['audited', 'rejected'].includes(r.audit_status) ? '查看资料' : ['prescription_order', 'outpatient_record', 'inpatient_record'].includes(inferDocumentCategory(r)) ? '结构化审核' : '人工审核'}
                                 </button>
                               ) : (r.aiStatus === 'none' || r.aiStatus === 'failed') && (r.fileUrl || r.content || r.hasContent || (r.fileUrls && r.fileUrls.length)) ? (
                                 <button className="btn btn-primary btn-sm report-action-primary"

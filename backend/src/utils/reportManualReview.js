@@ -2,12 +2,12 @@
 const manualOnlyReportFilter = {
   $or: [
     { type: { $in: ['home_monitor', 'functional'] } },
-    { documentCategory: 'functional_medicine' },
+    { documentCategory: { $in: ['functional_medicine', 'prescription_order', 'outpatient_record', 'inpatient_record'] } },
   ],
 };
 function isManualOnlyReport(report) {
   return report?.type === 'home_monitor' || report?.type === 'functional'
-    || report?.documentCategory === 'functional_medicine';
+    || ['functional_medicine', 'prescription_order', 'outpatient_record', 'inpatient_record'].includes(report?.documentCategory);
 }
 function initializeManualReview(report) {
   if (!isManualOnlyReport(report) || ['audited', 'rejected'].includes(report.audit_status)

@@ -1,4 +1,4 @@
 export function isManualOnlyReport(report) {
   return report?.type === 'home_monitor' || report?.type === 'functional'
-    || report?.documentCategory === 'functional_medicine'
+    || ['functional_medicine', 'prescription_order', 'outpatient_record', 'inpatient_record'].includes(report?.documentCategory)
 }
