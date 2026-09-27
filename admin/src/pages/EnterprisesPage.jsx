@@ -495,6 +495,14 @@ export default function EnterprisesPage() {
     catch (err) { toast('❌ ' + err.message) }
   }
 
+  const grantContractPackage = async (enterprise, servicePackage) => {
+    if (!window.confirm(`将「${servicePackage.name}」的当前权益写入 ${enterprise.seatsUsed + enterprise.dependentsCount} 名已关联成员？\n已有相同企业服务包权益不会重复发放。`)) return
+    try {
+      const result = await adminAPI.grantEnterpriseServicePackage(enterprise._id, servicePackage._id)
+      toast('✅ ' + result.message)
+    } catch (err) { toast('❌ ' + err.message) }
+  }
+
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString('zh-CN') : '-'
 
   return (
@@ -547,7 +555,7 @@ export default function EnterprisesPage() {
 
               {expandedId === e._id && (
                 <div style={{ borderTop: '1px solid #f0ede7', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  <div style={{ padding: 10, borderRadius: 8, background: '#F7FBF9', color: '#4A6558', fontSize: 12 }}><b>合同服务包：</b>{(e.servicePackageIds || []).length ? servicePackages.filter(item => (e.servicePackageIds || []).map(String).includes(String(item._id))).map(item => item.name).join('、') : '未配置（仅企业关联，不发放个人权益）'}</div>
+                  <div style={{ padding: 10, borderRadius: 8, background: '#F7FBF9', color: '#4A6558', fontSize: 12 }}><b>合同服务包：</b>{(e.servicePackageIds || []).length ? servicePackages.filter(item => (e.servicePackageIds || []).map(String).includes(String(item._id))).map(item => <span key={item._id} style={{ display: 'inline-flex', gap: 6, alignItems: 'center', marginLeft: 6 }}><b>{item.name}</b><button className="btn btn-sm btn-ghost" style={{ fontSize: 11 }} onClick={() => grantContractPackage(e, item)}>写入现有成员</button></span>) : '未配置（仅企业关联，不发放个人权益）'}</div>
                   {/* 员工列表 */}
                   <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>

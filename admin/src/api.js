@@ -174,6 +174,7 @@ export const adminAPI = {
   saveEnterpriseHrData:   (id, year, data) => req(`/enterprises/${id}/hr-data`, { method: 'PUT', body: JSON.stringify({ year, data }) }),
   enterpriseEmployees:    (id)       => req(`/enterprises/${id}/employees`),
   linkEnterpriseEmployees:(id, userIds, associationType = 'employee', servicePackageId = '') => req(`/enterprises/${id}/employees`, { method: 'PATCH', body: JSON.stringify({ userIds, associationType, servicePackageId }) }),
+  grantEnterpriseServicePackage: (id, packageId) => req(`/enterprises/${id}/service-packages/${packageId}/grant-all`, { method: 'POST' }),
   unlinkEnterpriseEmployee:(id, userId) => req(`/enterprises/${id}/employees/${userId}`, { method: 'DELETE' }),
   enterpriseInsurancePolicies: (id) => req(`/enterprises/${id}/insurance-policies`),
   enterpriseInsuranceOperationsSummary: (id) => req(`/enterprises/${id}/insurance-operations-summary`),
