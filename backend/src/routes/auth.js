@@ -75,27 +75,8 @@ async function applyFirstLoginRewards(user, inviteCode) {
     { _id: user._id, invitedBy: null },
     { $set: { invitedAt: now, invitedBy: inviter._id } }, { new: true },
   );
+  // 邀请关系用于归因和展示；基金奖励由首次问卷提交统一触发，不能在登录时提前到账。
   if (!claimed) return;
-  if (cfg.inviteEnabled !== true || claimed.referralRewardGrantedAt) return;
-  const rewardClaimed = await User.findOneAndUpdate(
-    { _id: user._id, referralRewardGrantedAt: null },
-    { $set: { referralRewardGrantedAt: now } }, { new: true },
-  );
-  if (!rewardClaimed) return;
-  await Promise.all([
-    grantPromotionFund(inviter._id, cfg.inviterAmount, '邀请好友首次使用小程序奖励', 'enterprise'),
-    grantPromotionFund(user._id, cfg.inviteeAmount, '通过好友邀请首次使用小程序奖励', 'enterprise'),
-  ]);
-  const notices = [];
-  if (Number(cfg.inviterAmount) > 0) notices.push(Message.create({
-    user: inviter._id, type: 'system', sender: '嘉医汇', title: '健康基金已到账', unread: true,
-    content: `好友已完成注册，¥${Number(cfg.inviterAmount)} 健康基金已到账。感谢你把健康理念分享给身边的人。`,
-  }));
-  if (Number(cfg.inviteeAmount) > 0) notices.push(Message.create({
-    user: user._id, type: 'system', sender: '嘉医汇', title: '健康基金已到账', unread: true,
-    content: `欢迎加入嘉医汇，¥${Number(cfg.inviteeAmount)} 健康基金已到账。愿健康理念陪伴你的每一天。`,
-  }));
-  await Promise.all(notices).catch(err => console.error('[invite-reward] 到账消息发送失败', err.message));
 }
 
 async function rememberPendingInvitation(user, inviteCode) {
@@ -447,6 +428,8 @@ router.post('/wechat-mp', async (req, res) => {
     if (user.onboardingCompleted) await applyFirstLoginRewards(user, inviteCode);
     else await rememberPendingInvitation(user, inviteCode);
     user = await User.findById(user._id);
+    await ensureAssignedHealthPlanner(user).catch(error => console.error('[health-planner-assignment] 微信登录时自动分配失败', error.message));
+    user = await User.findById(user._id);
     const sessionId = await beginLoginSession(req, user, 'wechat');
     user = await User.findById(user._id);
     const token = jwt.sign({ id: user._id, sessionId, persistent: true }, process.env.JWT_SECRET, {
@@ -525,6 +508,8 @@ router.post('/wechat-mp/phone-login', async (req, res) => {
     }
     if (user.onboardingCompleted) await applyFirstLoginRewards(user, inviteCode);
     else await rememberPendingInvitation(user, inviteCode);
+    user = await User.findById(user._id);
+    await ensureAssignedHealthPlanner(user).catch(error => console.error('[health-planner-assignment] 小程序登录时自动分配失败', error.message));
     user = await User.findById(user._id);
     const sessionId = await beginLoginSession(req, user, 'phone_wechat');
     user = await User.findById(user._id);

@@ -1099,7 +1099,8 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
     .populate('assignedPsychologist', 'name title role')
     .populate('assignedRehabSpecialist', 'name title role')
     .populate('assignedMedicalAssistant', 'name title role')
-    .populate('assignedHealthPlanner', 'name title role');
+    .populate('assignedHealthPlanner', 'name title role')
+    .populate('invitedBy', 'name phone');
   if (!user || user.isDeleted) return res.status(404).json({ success: false, message: '会员不存在' });
 
   // 权限校验：非超管只能查看分配给自己（或下属、团队成员）的会员

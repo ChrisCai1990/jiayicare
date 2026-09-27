@@ -4709,6 +4709,7 @@ export default function PatientDetailPage() {
                 <>
                   {/* 紧急联系人/紧急联系电话/快递配送地址已移至「基本信息」卡（2026-07-11） */}
                   <InfoRow label="健康规划师" value={user.assignedHealthPlanner?.name    || '-'} />
+                  <InfoRow label="邀请人" value={user.invitedBy ? `${user.invitedBy.name || '未命名'}${user.invitedBy.phone ? `（${user.invitedBy.phone}）` : ''}` : '-'} />
                   <InfoRow label="健康顾问"   value={user.assignedFamilyDoctor?.name     || '-'} />
                   <InfoRow label="营养师"     value={user.assignedNutritionist?.name     || '-'} />
                   <InfoRow label="健管专员"   value={user.assignedHealthManager?.name    || '-'} />
