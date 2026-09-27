@@ -15,6 +15,7 @@ function safeFileSrc(url) {
 const EMPTY_ENTERPRISE = {
   name: '', creditCode: '', contactName: '', contactPhone: '', contactEmail: '',
   contractStartAt: '', contractEndAt: '', seatsTotal: 0, packageType: '', status: 'active', note: '',
+  servicePackageIds: [],
   healthFundPaymentRule: { enabled:false, deductionType:'unlimited', deductionValue:0, minOrderAmount:0, eligibleCategories:[], note:'' },
 }
 
@@ -192,7 +193,7 @@ function InsurancePolicyModal({ enterprise, employees, onClose, toast }) {
 }
 
 // ── 企业信息表单 Modal ─────────────────────────────────────────────
-function EnterpriseModal({ enterprise, onClose, onSaved }) {
+function EnterpriseModal({ enterprise, servicePackages, onClose, onSaved }) {
   const toast = useToast()
   const isEdit = !!enterprise?._id
   const [form, setForm] = useState(isEdit ? {
@@ -203,6 +204,10 @@ function EnterpriseModal({ enterprise, onClose, onSaved }) {
   const [loading, setLoading] = useState(false)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const setFundRule = (k, v) => setForm(f => ({ ...f, healthFundPaymentRule:{ ...EMPTY_ENTERPRISE.healthFundPaymentRule, ...(f.healthFundPaymentRule || {}), [k]:v } }))
+  const selectedPackageIds = (form.servicePackageIds || []).map(String)
+  const togglePackage = id => set('servicePackageIds', selectedPackageIds.includes(String(id))
+    ? selectedPackageIds.filter(item => item !== String(id))
+    : [...selectedPackageIds, String(id)])
 
   const save = async () => {
     if (!form.name) { toast('❌ 企业名称为必填项'); return }
@@ -262,8 +267,14 @@ function EnterpriseModal({ enterprise, onClose, onSaved }) {
             <input className="form-input" type="date" value={form.contractEndAt} onChange={e => set('contractEndAt', e.target.value)} />
           </div>
           <div className="form-group" style={{ gridColumn: '1/-1' }}>
-            <label className="form-label">采购服务包类型</label>
-            <input className="form-input" value={form.packageType} onChange={e => set('packageType', e.target.value)} placeholder="如 pkg_1y" />
+            <label className="form-label">企业合同服务包</label>
+            <div style={{ fontSize: 12, color: '#65776F', marginBottom: 8 }}>直接选用「会员设置－服务包」中已启用的模板；权益、次数和评估频率自动读取，不在企业合同中重复填写。关联成员时再选择其适用方案。</div>
+            <div style={{ maxHeight: 190, overflowY: 'auto', border: '1px solid #E6E1D8', borderRadius: 8, padding: 8 }}>
+              {servicePackages.filter(item => item.active).map(item => <label key={item._id} style={{ display: 'block', padding: '7px 5px', borderBottom: '1px dashed #eee', cursor: 'pointer' }}>
+                <input type="checkbox" checked={selectedPackageIds.includes(String(item._id))} onChange={() => togglePackage(item._id)} /> <b>{item.name}</b> <span style={{ color: '#8AA89C', fontSize: 12 }}> · {item.clientBrand === 'jinyisen' ? '金伊森' : '嘉医管家'}</span>
+              </label>)}
+              {!servicePackages.some(item => item.active) && <div style={{ color: '#8AA89C', fontSize: 12, padding: 6 }}>暂无启用的服务包，请先在会员设置中配置。</div>}
+            </div>
           </div>
           <div className="form-group" style={{ gridColumn: '1/-1' }}>
             <label className="form-label">备注</label>
@@ -287,7 +298,7 @@ function EnterpriseModal({ enterprise, onClose, onSaved }) {
 }
 
 // ── 关联员工 Modal（搜索会员并加入企业）────────────────────────────
-function LinkEmployeesModal({ enterprise, onClose, onSaved }) {
+function LinkEmployeesModal({ enterprise, servicePackages, onClose, onSaved }) {
   const toast = useToast()
   const [q, setQ] = useState('')
   const [results, setResults] = useState([])
@@ -295,6 +306,8 @@ function LinkEmployeesModal({ enterprise, onClose, onSaved }) {
   const [searching, setSearching] = useState(false)
   const [saving, setSaving] = useState(false)
   const [associationType, setAssociationType] = useState('employee')
+  const [servicePackageId, setServicePackageId] = useState(() => (enterprise.servicePackageIds || []).length === 1 ? String(enterprise.servicePackageIds[0]) : '')
+  const contractPackages = servicePackages.filter(item => (enterprise.servicePackageIds || []).map(String).includes(String(item._id)) && item.active)
 
   const search = async () => {
     if (!q.trim()) { toast('请输入姓名或手机号搜索'); return }
@@ -313,7 +326,8 @@ function LinkEmployeesModal({ enterprise, onClose, onSaved }) {
     if (selected.length === 0) { toast('请至少选择一名员工'); return }
     setSaving(true)
     try {
-      await adminAPI.linkEnterpriseEmployees(enterprise._id, selected, associationType)
+      if (contractPackages.length && !servicePackageId) { toast('请选择该成员适用的企业合同服务包'); return }
+      await adminAPI.linkEnterpriseEmployees(enterprise._id, selected, associationType, servicePackageId)
       toast(associationType === 'dependent' ? `✅ 已关联 ${selected.length} 名高管家属，不占员工名额` : `✅ 已关联 ${selected.length} 名员工`)
       onSaved(); onClose()
     } catch (err) {
@@ -333,6 +347,8 @@ function LinkEmployeesModal({ enterprise, onClose, onSaved }) {
             <label><input type="radio" name="associationType" checked={associationType === 'employee'} onChange={() => setAssociationType('employee')} /> 企业员工（占采购名额）</label>
             <label><input type="radio" name="associationType" checked={associationType === 'dependent'} onChange={() => setAssociationType('dependent')} /> 高管家属（不占员工名额）</label>
           </div>
+          {contractPackages.length > 0 && <label className="form-group" style={{ display: 'block', marginBottom: 12 }}><span className="form-label">写入成员权益的合同服务包 *</span><select className="form-input" value={servicePackageId} onChange={e => setServicePackageId(e.target.value)}><option value="">请选择服务包</option>{contractPackages.map(item => <option key={item._id} value={item._id}>{item.name}</option>)}</select><span style={{ display: 'block', marginTop: 5, fontSize: 12, color: '#65776F' }}>保存后会冻结当前权益并写入该成员；服务包以后修改，不影响已关联成员。</span></label>}
+          {contractPackages.length === 0 && <div style={{ marginBottom: 12, padding: 9, background: '#FFF8E7', borderRadius: 8, color: '#8A5A00', fontSize: 12 }}>该企业尚未选择合同服务包。本次仅关联企业身份，不会发放服务权益。</div>}
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
             <input className="form-input" style={{ flex: 1 }} value={q} onChange={e => setQ(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), search())} placeholder="按姓名或手机号搜索会员" />
@@ -430,6 +446,7 @@ export default function EnterprisesPage() {
   const [showHrModal, setShowHrModal] = useState(false)
   const [hrDataEnt, setHrDataEnt] = useState(null)   // 正在录入HR看板数据的企业
   const [insuranceEnt, setInsuranceEnt] = useState(null)
+  const [servicePackages, setServicePackages] = useState([])
 
   const load = async (name) => {
     setLoading(true)
@@ -442,6 +459,7 @@ export default function EnterprisesPage() {
   }
 
   useEffect(() => { load(q) }, [q])
+  useEffect(() => { adminAPI.servicePackages().then(res => setServicePackages(res.data || [])).catch(err => toast('❌ 服务包加载失败：' + err.message)) }, [])
 
   const loadDetail = async (id) => {
     try {
@@ -529,6 +547,7 @@ export default function EnterprisesPage() {
 
               {expandedId === e._id && (
                 <div style={{ borderTop: '1px solid #f0ede7', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <div style={{ padding: 10, borderRadius: 8, background: '#F7FBF9', color: '#4A6558', fontSize: 12 }}><b>合同服务包：</b>{(e.servicePackageIds || []).length ? servicePackages.filter(item => (e.servicePackageIds || []).map(String).includes(String(item._id))).map(item => item.name).join('、') : '未配置（仅企业关联，不发放个人权益）'}</div>
                   {/* 员工列表 */}
                   <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -567,10 +586,10 @@ export default function EnterprisesPage() {
       )}
 
       {showEditModal && (
-        <EnterpriseModal enterprise={editing} onClose={() => setShowEditModal(false)} onSaved={() => load(q)} />
+        <EnterpriseModal enterprise={editing} servicePackages={servicePackages} onClose={() => setShowEditModal(false)} onSaved={() => load(q)} />
       )}
       {showLinkModal && expandedId && (
-        <LinkEmployeesModal enterprise={list.find(e => e._id === expandedId)} onClose={() => setShowLinkModal(false)} onSaved={() => { loadDetail(expandedId); load(q) }} />
+        <LinkEmployeesModal enterprise={list.find(e => e._id === expandedId)} servicePackages={servicePackages} onClose={() => setShowLinkModal(false)} onSaved={() => { loadDetail(expandedId); load(q) }} />
       )}
       {showHrModal && expandedId && (
         <HrAccountModal enterprise={list.find(e => e._id === expandedId)} onClose={() => setShowHrModal(false)} onSaved={() => loadDetail(expandedId)} />
