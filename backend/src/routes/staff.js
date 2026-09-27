@@ -4642,6 +4642,11 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     if (autoAuditPending) {
       await syncOutpatientReportAuditCompletion(report.sourceHealthPlanId);
       await onCheckupReportAudited(report).catch(err => console.error('[checkup-workflow] failed to activate result review', err.message));
+      if (report.documentCategory === 'prescription_order') {
+        await require('../utils/medicalProxyWorkflow').createPrescriptionMedicationDrafts(
+          { patientId: report.user, assignedTo: req.staff._id }, [String(report._id)]
+        );
+      }
     }
 
     // 2026-07-02修复：此前条件是 || 关系，"保存草稿"(aiStatus:'pending')只要带了reportItems字段
@@ -4899,6 +4904,11 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
     await syncOutpatientReportAuditCompletion(report.sourceHealthPlanId);
     await syncBodyCompositionFromReport(report);
     await onCheckupReportAudited(report).catch(err => console.error('[checkup-workflow] failed to activate result review', err.message));
+    if (report.documentCategory === 'prescription_order') {
+      await require('../utils/medicalProxyWorkflow').createPrescriptionMedicationDrafts(
+        { patientId: report.user, assignedTo: req.staff._id }, [String(report._id)]
+      );
+    }
   }
   res.json({ success: true, data: await MedicalReport.findById(report._id) });
 });

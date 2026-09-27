@@ -345,10 +345,12 @@ async function createPrescriptionMedicationDrafts(task, reportIds) {
     for (const row of Array.isArray(rows) ? rows.slice(0, 20) : []) {
       const name = nonempty(row?.name); const dosage = nonempty(row?.dosage); const frequency = nonempty(row?.frequency); const sourceReportId = nonempty(row?.sourceReportId);
       if (!name || !dosage || !frequency || !validReportIds.has(sourceReportId)) continue;
-      const sourceRecordKey = `medical_escort_prescription:${sourceReportId}:${name}:${dosage}:${frequency}`;
+      // 同一份处方无论来自就医陪同还是客户直接上传，都使用报告 ID 作为幂等来源。
+      // 这样重新审核不会重复生成用药记录。
+      const sourceRecordKey = `prescription_report:${sourceReportId}:${name}:${dosage}:${frequency}`;
       const sourceReport = reports.find(report => String(report._id) === sourceReportId);
       const medication = await Medication.findOneAndUpdate({ user: task.patientId, sourceRecordKey }, { $setOnInsert: {
-        user: task.patientId, name, brandName: nonempty(row.brandName), specification: nonempty(row.specification), dosage, method: nonempty(row.method) || '口服', frequency, timing: nonempty(row.timing), startDate: nonempty(row.startDate), endDate: nonempty(row.endDate), purpose: nonempty(row.purpose), note: 'AI依据已审核处方提取，待健康顾问核对原件。', imageUrls: sourceReport?.fileUrls || [], active: true, stopped: false, createdByStaff: true, staffId: task.assignedTo, createdByName: 'AI处方提取', aiStatus: 'pending', aiGeneratedBy: '就医陪同处方解析', sourceType: 'ai', sourceRecordKey,
+        user: task.patientId, name, brandName: nonempty(row.brandName), specification: nonempty(row.specification), dosage, method: nonempty(row.method) || '口服', frequency, timing: nonempty(row.timing), startDate: nonempty(row.startDate), endDate: nonempty(row.endDate), purpose: nonempty(row.purpose), note: 'AI依据已审核处方提取，待健康顾问核对原件。', imageUrls: sourceReport?.fileUrls || [], active: true, stopped: false, createdByStaff: true, staffId: task.assignedTo, createdByName: 'AI处方提取', aiStatus: 'pending', aiGeneratedBy: '已审核处方解析', sourceType: 'ai', sourceRecordKey,
       } }, { upsert: true, new: true, setDefaultsOnInsert: true });
       if (medication?._id) created.push(medication);
     }
@@ -1107,4 +1109,4 @@ async function ensureStaffExpertAppointmentTasksForStaff(staff) {
   }
   return created;
 }
-module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, supplyResolutionSummary, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, ensureStaffExpertAppointmentTasksForStaff, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
+module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, supplyResolutionSummary, createPrescriptionMedicationDrafts, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, ensureStaffExpertAppointmentTasksForStaff, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
