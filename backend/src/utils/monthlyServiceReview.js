@@ -17,21 +17,27 @@ function monthFromIndex(index) {
   return `${Math.floor(index / 12)}-${String(index % 12 + 1).padStart(2, '0')}`;
 }
 
-function inPlanWindow(plan, month, now = new Date()) {
+function normalizedStartMonth(value) {
+  return Math.min(12, Math.max(1, Math.floor(Number(value) || 1)));
+}
+
+function inPlanWindow(plan, month, now = new Date(), startMonth = 1) {
   if (!plan?.confirmedAt) return false;
   const target = monthIndex(month);
   const start = monthIndex(shanghaiMonth(new Date(plan.confirmedAt)));
+  const firstReviewMonth = start + normalizedStartMonth(startMonth) - 1;
   const current = monthIndex(shanghaiMonth(now));
-  return Number.isFinite(target) && target >= start && target < start + 12 && target <= current;
+  return Number.isFinite(target) && target >= firstReviewMonth && target < start + 12 && target <= current;
 }
 
-function dueMonths(plan, now = new Date()) {
+function dueMonths(plan, now = new Date(), startMonth = 1) {
   if (!plan?.confirmedAt) return [];
   const start = monthIndex(shanghaiMonth(new Date(plan.confirmedAt)));
   const current = monthIndex(shanghaiMonth(now));
   if (!Number.isFinite(start)) return [];
+  const firstReviewMonth = start + normalizedStartMonth(startMonth) - 1;
   const end = Math.min(start + 11, shanghaiDay(now) >= 25 ? current : current - 1);
-  return Array.from({ length: Math.max(0, end - start + 1) }, (_, i) => monthFromIndex(start + i));
+  return Array.from({ length: Math.max(0, end - firstReviewMonth + 1) }, (_, i) => monthFromIndex(firstReviewMonth + i));
 }
 
-module.exports = { shanghaiMonth, monthIndex, inPlanWindow, dueMonths };
+module.exports = { shanghaiMonth, monthIndex, inPlanWindow, dueMonths, normalizedStartMonth };

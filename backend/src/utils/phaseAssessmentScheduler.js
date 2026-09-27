@@ -10,6 +10,16 @@ const INTENSIVE_NUTRITION_WEEKS = [1, 2, 3, 4, 6, 8, 10, 12];
 const intensiveNutritionCheckpoint = elapsedWeek => [...INTENSIVE_NUTRITION_WEEKS].reverse().find(week => week <= elapsedWeek) || null;
 
 function periodFor(frequency, now = new Date(), confirmedAt) {
+  if (frequency === 'biweekly') {
+    if (!confirmedAt) return null;
+    const startedAt = new Date(confirmedAt);
+    if (!Number.isFinite(startedAt.getTime())) return null;
+    const elapsedDays = Math.floor((now.getTime() - startedAt.getTime()) / 86400000);
+    // 首次在服务满两周时出现，后续每两周一轮；不在服务启动当天生成一次“第2周评估”。
+    if (elapsedDays < 14) return null;
+    const round = Math.floor(elapsedDays / 14);
+    return { key: `W${round * 2}`, label: `服务第${round * 2}周阶段评估` };
+  }
   if (frequency === 'yearly') {
     if (!confirmedAt) return null;
     const startedAt = new Date(confirmedAt);
@@ -24,8 +34,9 @@ function periodFor(frequency, now = new Date(), confirmedAt) {
   return { key: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`, label: `${now.getFullYear()}年${now.getMonth() + 1}月` };
 }
 
-async function createAssessment({ plan, user, template, periodOverride = null, assessmentMode = 'routine', assessmentDomain, sourceNutritionPlanId = null, interventionWeek = null, assessmentAnchor = plan.confirmedAt }) {
-  const frequency = ['monthly', 'quarterly', 'yearly'].includes(template.content?.frequency)
+async function createAssessment({ plan, user, template, periodOverride = null, assessmentMode = 'routine', assessmentDomain, sourceNutritionPlanId = null, interventionWeek = null, assessmentAnchor = plan.confirmedAt, frequencyOverride = '' }) {
+  const frequency = ['biweekly', 'monthly', 'quarterly', 'yearly'].includes(frequencyOverride)
+    ? frequencyOverride : ['monthly', 'quarterly', 'yearly'].includes(template.content?.frequency)
     ? template.content.frequency : 'quarterly';
   const routing = routingFor(frequency === 'yearly' ? 'comprehensive' : assessmentDomain || template.content?.assessmentDomain || 'comprehensive', assessmentMode);
   if (!user[ROLE_FIELDS[routing.primaryReviewRole]]) throw new Error(`请先分配该客户的${ROLE_LABELS[routing.primaryReviewRole]}`);
@@ -64,26 +75,32 @@ async function createAssessment({ plan, user, template, periodOverride = null, a
 
 async function scanAndCreatePhaseAssessments() {
   if (!process.env.QWEN_API_KEY) return 0;
-  const templates = await PlanTemplate.find({ type: 'phase_assessment', status: 'active', 'content.frequency': { $in: ['quarterly', 'yearly'] } }).lean();
+  const templates = await PlanTemplate.find({ type: 'phase_assessment', status: 'active', 'content.frequency': { $in: ['monthly', 'quarterly', 'yearly'] } }).lean();
   if (!templates.length) return 0;
   const plans = await AnnualPlan.find({ ...require('./healthManagementRollout').patientFilter(), confirmedAt: { $ne: null } }).sort({ confirmedAt: -1 }).limit(500).lean();
   let created = 0;
   const seenPatients = new Set();
   for (const plan of plans) {
     if (seenPatients.has(String(plan.patientId))) continue;
-    let user, gate;
+    let user, gate, frequency;
     try {
       user = await User.findById(plan.patientId).select('name age gender chronicDiseases healthProfile lifestyle aiHealthSummary clientBrand aiPilotFeatures serviceStartDate serviceExpiry isDeleted assignedFamilyDoctor assignedNutritionist assignedRehabSpecialist assignedTcmDoctor');
       if (!user || user.isDeleted || user.aiPilotFeatures?.stageAssessment !== true) continue;
       gate = await require('./annualPeriodicGate').annualPeriodicGate(plan, user);
-      if (!gate.allowed || !eligibleForAutomaticAssessment(user, new Date(), gate.access)) continue;
+      const rights = await require('./packageFeatureEntitlements').getAiEntitlements(user, gate.access);
+      if (!gate.allowed || !rights.phaseAssessment || !['biweekly', 'monthly', 'quarterly'].includes(rights.phaseAssessmentFrequency) || !eligibleForAutomaticAssessment(user, new Date(), gate.access)) continue;
+      frequency = rights.phaseAssessmentFrequency;
     } catch (error) {
       console.error('[phase-assessment] eligibility failed', String(plan.patientId), error.message);
       continue; // 单个客户凭据查询失败不阻断其他客户，也不带病调用AI。
     }
     seenPatients.add(String(plan.patientId));
-    for (const template of templates.filter(t => !t.clientBrand || t.clientBrand === user.clientBrand)) {
-      try { if (await createAssessment({ plan, user, template, assessmentAnchor: gate.anchor })) created++; }
+    const eligibleTemplates = templates.filter(t => !t.clientBrand || t.clientBrand === user.clientBrand)
+      .filter(t => t.content?.frequency !== 'yearly')
+      // 优先用同频模板；没有时复用已启用的标准模板，但由服务包频率决定实际节点。
+      .sort((a, b) => Number(b.content?.frequency === frequency) - Number(a.content?.frequency === frequency));
+    for (const template of eligibleTemplates) {
+      try { if (await createAssessment({ plan, user, template, assessmentAnchor: gate.anchor, frequencyOverride: frequency })) created++; }
       catch (error) { console.error('[phase-assessment] create failed', String(plan.patientId), error.message); }
     }
   }

@@ -7032,21 +7032,32 @@ router.post('/patients/:id/package-entitlements/:entitlementId/use', staffAuth, 
     const entitlementKey = String(req.body.entitlementKey || '');
     if (!mongoose.isValidObjectId(productId)) return res.status(400).json({ success: false, message: '请选择商城产品' });
     const entitlements = await require('../utils/packageEntitlements').applicableEntitlements(patient._id);
-    const entitlement = entitlements.find(item => String(item._id) === String(req.params.entitlementId));
-    if (!entitlement) return res.status(404).json({ success: false, message: '权益不存在、已过期，或当前客户无权使用' });
-    const matchingIndexes = (entitlement.rights?.productEntitlements || []).map((item, index) => ({ item, index })).filter(({ item }) =>
-      entitlementKey ? String(item.entitlementKey || '') === entitlementKey : String(item.productId) === productId,
-    );
-    if (!entitlementKey && matchingIndexes.length > 1) return res.status(400).json({ success: false, message: '该商品包含多个收费规格，请选择要使用的具体权益' });
-    const productRightIndex = matchingIndexes[0]?.index ?? -1;
-    if (productRightIndex < 0) return res.status(400).json({ success: false, message: '该服务不在此套餐权益内' });
-    const productRight = entitlement.rights.productEntitlements[productRightIndex];
-    const poolIndex = productRight.poolKey
-      ? (entitlement.rights?.sharedEntitlementPools || []).findIndex(item => item.key === productRight.poolKey)
-      : -1;
-    const available = poolIndex >= 0
-      ? Number(entitlement.rights.sharedEntitlementPools[poolIndex]?.remainingCount || 0)
-      : Number(productRight.remainingCount || 0);
+    const autoMatch = String(req.params.entitlementId) === 'auto';
+    // 医护端“发起服务”不需要先人工判断客户属于哪一个年度包。权益台账已经
+    // 按最早到期排序；从中选择第一个仍有余量的同商品/同规格权益即可。
+    // 若是同一商品的不同收费规格，前端会传 entitlementKey，避免误扣。
+    const candidates = entitlements.map(entitlement => {
+      const matchingIndexes = (entitlement.rights?.productEntitlements || []).map((item, index) => ({ item, index })).filter(({ item }) =>
+        entitlementKey ? String(item.entitlementKey || '') === entitlementKey : String(item.productId) === productId,
+      );
+      if (!entitlementKey && matchingIndexes.length > 1) return { entitlement, ambiguous: true };
+      const productRightIndex = matchingIndexes[0]?.index ?? -1;
+      if (productRightIndex < 0) return null;
+      const productRight = entitlement.rights.productEntitlements[productRightIndex];
+      const poolIndex = productRight.poolKey
+        ? (entitlement.rights?.sharedEntitlementPools || []).findIndex(item => item.key === productRight.poolKey)
+        : -1;
+      const available = poolIndex >= 0
+        ? Number(entitlement.rights.sharedEntitlementPools[poolIndex]?.remainingCount || 0)
+        : Number(productRight.remainingCount || 0);
+      return { entitlement, productRightIndex, productRight, poolIndex, available };
+    }).filter(Boolean);
+    if (autoMatch && candidates.some(item => item.ambiguous)) return res.status(400).json({ success: false, message: '该商品包含多个收费规格，请先选择具体服务规格' });
+    const selected = autoMatch
+      ? candidates.find(item => !item.ambiguous && item.available >= 1)
+      : candidates.find(item => String(item.entitlement._id) === String(req.params.entitlementId));
+    if (!selected) return res.status(404).json({ success: false, message: autoMatch ? '没有可自动匹配的有效服务包权益，请按正常付费流程处理' : '权益不存在、已过期，或当前客户无权使用' });
+    const { entitlement, productRightIndex, productRight, poolIndex, available } = selected;
     if (available < 1) return res.status(409).json({ success: false, message: poolIndex >= 0 ? '该共享权益次数已用完' : '该服务权益次数已用完' });
 
     const product = await Product.findOne({ _id: productId, status: 'on' }).lean();
@@ -7093,7 +7104,7 @@ router.post('/patients/:id/package-entitlements/:entitlementId/use', staffAuth, 
       return res.status(409).json({ success: false, message: '权益次数刚被其他操作使用，请刷新后重试' });
     }
     const updatedEntitlement = await require('../models/PackageEntitlement').findById(entitlement._id).lean();
-    res.json({ success: true, data: { entitlement: updatedEntitlement, executionOrder }, message: '已使用套餐权益创建履约单，请启动服务并在完成后按现有流程核销' });
+    res.json({ success: true, data: { entitlement: updatedEntitlement, executionOrder, autoMatched: autoMatch }, message: `${autoMatch ? `已自动匹配「${entitlement.packageName || '服务包'}」权益并` : '已'}创建履约单，请启动服务并在完成后按现有流程核销` });
   } catch (err) { res.status(err.statusCode || 500).json({ success: false, message: err.message }); }
 });
 
@@ -7290,13 +7301,16 @@ router.put('/patients/:id/annual-plan-preparation', staffAuth, async (req, res) 
 
 // 月度服务复盘：团队内部记录，与阶段性临床评估及用户端健康计划分离。
 const monthlyReviewFields = ['healthProgress', 'serviceExecution', 'customerFeedback', 'teamCollaboration', 'unresolvedIssues'];
-async function monthlyReviewEnabledForPatient(patientId) {
+async function monthlyReviewRightsForPatient(patientId) {
   const user = await User.findById(patientId).select('servicePackage serviceStartDate serviceExpiry clientBrand familyLinks');
-  if (!user) return false;
-  const rights = await require('../utils/packageFeatureEntitlements').getAiEntitlements(
+  if (!user) return null;
+  return require('../utils/packageFeatureEntitlements').getAiEntitlements(
     user, await require('../utils/serviceAccess').resolveServiceAccess(user)
   );
-  return rights.monthlyServiceReview === true;
+}
+async function monthlyReviewEnabledForPatient(patientId) {
+  const rights = await monthlyReviewRightsForPatient(patientId);
+  return rights?.monthlyServiceReview === true;
 }
 async function monthlyReviewPatientAccess(staff, patientId, reviewId = null) {
   if (!mongoose.isValidObjectId(patientId)) return false;
@@ -7345,8 +7359,9 @@ router.post('/patients/:id/monthly-service-reviews', staffAuth, async (req, res)
     if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康规划师可发起月度服务复盘' });
     if (!(await monthlyReviewPatientAccess(req.staff, req.params.id))) return res.status(403).json({ success: false, message: '该客户未开放月度复盘或不在本人管理范围' });
     if (!(await monthlyReviewOrganizerAccess(req.staff, req.params.id))) return res.status(403).json({ success: false, message: '仅该客户的健康规划师可发起复盘' });
+    const rights = await monthlyReviewRightsForPatient(req.params.id);
     const plan = await AnnualPlan.findOne({ _id: req.body.annualPlanId, patientId: req.params.id, confirmedAt: { $ne: null } }).select('confirmedAt').lean();
-    if (!plan || !require('../utils/monthlyServiceReview').inPlanWindow(plan, req.body.month)) return res.status(400).json({ success: false, message: '请选择已确认年度服务期内的当月或历史月份' });
+    if (!plan || !require('../utils/monthlyServiceReview').inPlanWindow(plan, req.body.month, new Date(), rights?.monthlyReviewStartMonth || 1)) return res.status(400).json({ success: false, message: `请选择服务第${rights?.monthlyReviewStartMonth || 1}个月起、且仍在年度服务期内的月份` });
     const existing = await MonthlyServiceReview.findOne({ patientId: req.params.id, month: req.body.month });
     if (existing) return res.json({ success: true, data: existing, existing: true });
     const facts = await monthlyReviewFacts(req.params.id, req.body.month);
@@ -7459,12 +7474,17 @@ router.get('/monthly-service-reviews/workbench', staffAuth, async (req, res) => 
     } else if (req.staff.role !== 'superadmin') {
       patientFilter.patientId = { $in: [] };
     }
-    const allPlans = isPlanner ? await AnnualPlan.find({ ...patientFilter, confirmedAt: { $ne: null } }).select('_id patientId confirmedAt templateName').populate('patientId', 'name').sort({ confirmedAt: -1 }).lean() : [];
-    const plans = allPlans.filter(plan => plan.patientId?._id);
+    const allPlans = isPlanner ? await AnnualPlan.find({ ...patientFilter, confirmedAt: { $ne: null } }).select('_id patientId confirmedAt templateName').populate('patientId', 'name servicePackage serviceStartDate serviceExpiry clientBrand familyLinks').sort({ confirmedAt: -1 }).lean() : [];
+    const plans = (await Promise.all(allPlans.filter(plan => plan.patientId?._id).map(async plan => {
+      const rights = await require('../utils/packageFeatureEntitlements').getAiEntitlements(
+        plan.patientId, await require('../utils/serviceAccess').resolveServiceAccess(plan.patientId)
+      );
+      return rights.monthlyServiceReview ? { ...plan, monthlyReviewStartMonth: rights.monthlyReviewStartMonth || 1 } : null;
+    }))).filter(Boolean);
     const reviews = await MonthlyServiceReview.find({ patientId: { $in: plans.map(plan => plan.patientId?._id).filter(Boolean) } }).select('patientId annualPlanId month status actions').lean();
     const byPatientMonth = new Map(reviews.map(review => [`${review.patientId}:${review.month}`, review]));
     const pendingKeys = new Set();
-    const pending = plans.flatMap(plan => dueMonths(plan).filter(month => {
+    const pending = plans.flatMap(plan => dueMonths(plan, new Date(), plan.monthlyReviewStartMonth).filter(month => {
       const key = `${plan.patientId?._id}:${month}`;
       if (pendingKeys.has(key) || byPatientMonth.get(key)?.status === 'confirmed') return false;
       pendingKeys.add(key); return true;

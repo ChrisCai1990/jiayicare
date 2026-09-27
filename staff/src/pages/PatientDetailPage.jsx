@@ -1977,6 +1977,7 @@ export default function PatientDetailPage() {
   const [patientOrders, setPatientOrders] = useState([])
   const [packageEntitlements, setPackageEntitlements] = useState([])
   const [usingEntitlementId, setUsingEntitlementId] = useState('')
+  const [autoEntitlementSelection, setAutoEntitlementSelection] = useState('')
   const [redeemingOrderId, setRedeemingOrderId] = useState(null)
   const [requisitions, setRequisitions] = useState([])
   const [showReqModal, setShowReqModal] = useState(false)
@@ -10616,8 +10617,40 @@ export default function PatientDetailPage() {
             </div>
 
             <div className="card">
-              <div className="card-header"><div className="card-title">套餐服务权益</div><span style={{ fontSize: 12, color: '#8AA89C' }}>点击“使用权益”后生成 0 元履约单，再按常规流程启动与核销</span></div>
+              <div className="card-header"><div className="card-title">套餐服务权益</div><span style={{ fontSize: 12, color: '#8AA89C' }}>发起服务时优先自动匹配最早到期的有效权益；创建 0 元履约单后，再按常规流程启动与核销</span></div>
               {!packageEntitlements.length ? <div style={{ padding: 20, color: '#8AA89C', fontSize: 13 }}>当前客户没有有效的套餐服务权益。</div> : <div className="card-body" style={{ display: 'grid', gap: 12 }}>
+                {(() => {
+                  const autoOptions = packageEntitlements.flatMap(entitlement => {
+                    const pools = new Map((entitlement.rights?.sharedEntitlementPools || []).map(pool => [pool.key, pool]))
+                    return (entitlement.rights?.productEntitlements || []).map((right, index) => {
+                      const pool = right.poolKey ? pools.get(right.poolKey) : null
+                      const remaining = pool ? Number(pool.remainingCount || 0) : Number(right.remainingCount || 0)
+                      return { entitlement, right, index, remaining, pool }
+                    }).filter(item => item.remaining > 0)
+                  })
+                  const selectedAuto = autoOptions.find(item => `${item.right.productId}:${item.right.entitlementKey || ''}` === autoEntitlementSelection)
+                  return autoOptions.length > 0 && <div style={{ padding: 12, border: '1px solid #B2D8C7', borderRadius: 10, background: '#F2FBF6' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', marginBottom: 8 }}>发起服务（自动匹配服务包权益）</div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <select className="form-input" style={{ flex: '1 1 300px', minWidth: 240 }} value={autoEntitlementSelection} onChange={e => setAutoEntitlementSelection(e.target.value)}>
+                        <option value="">请选择本次要发起的服务</option>
+                        {autoOptions.map((item, optionIndex) => <option key={`${item.entitlement._id}:${item.right.productId}:${item.right.entitlementKey || optionIndex}`} value={`${item.right.productId}:${item.right.entitlementKey || ''}`}>{item.right.productName}{item.right.specificationLabel ? ` · ${item.right.specificationLabel}` : ''}（{item.pool ? `共享池剩余 ${item.remaining} 次` : `剩余 ${item.remaining} 次`}）</option>)}
+                      </select>
+                      <button className="btn btn-sm" disabled={!selectedAuto || usingEntitlementId === 'auto'} style={{ background: selectedAuto ? '#1E6B50' : '#D1D5DB', color: '#fff', border: 'none' }} onClick={async () => {
+                        if (!selectedAuto || !window.confirm(`确认发起「${selectedAuto.right.productName}」吗？系统将自动匹配最早到期的有效服务包权益并扣减 1 次。`)) return
+                        setUsingEntitlementId('auto')
+                        try {
+                          const result = await staffAPI.usePackageEntitlement(id, 'auto', { productId: selectedAuto.right.productId, entitlementKey: selectedAuto.right.entitlementKey || '' })
+                          setPackageEntitlements(prev => prev.map(item => item._id === result.data.entitlement._id ? result.data.entitlement : item))
+                          setPatientOrders(prev => [result.data.executionOrder, ...prev])
+                          setAutoEntitlementSelection('')
+                          toast(result.message || '已自动匹配服务包权益')
+                        } catch (error) { toast(error.message || '自动匹配权益失败') } finally { setUsingEntitlementId('') }
+                      }}>{usingEntitlementId === 'auto' ? '匹配中…' : '自动匹配并发起'}</button>
+                    </div>
+                    <div style={{ fontSize: 12, color: '#4A6558', marginTop: 7 }}>仅按服务包权益匹配，不读取“会员类型”标签；若无可用权益，请按正常付费流程处理。</div>
+                  </div>
+                })()}
                 {packageEntitlements.map(entitlement => {
                   const pools = new Map((entitlement.rights?.sharedEntitlementPools || []).map(pool => [pool.key, pool]))
                   const ownerIsPatient = String(entitlement.ownerUserId) === String(id)
@@ -10626,22 +10659,22 @@ export default function PatientDetailPage() {
                     {['healthArchiveConcierge', 'healthConsultation', 'medicalPlanning', 'expertAppointment', 'reportInterpretation'].some(key => entitlement.rights?.aiEntitlements?.[key]) && <div style={{ fontSize: 12, color: '#1E6B50', marginBottom: 7 }}>持续服务权益：{[entitlement.rights?.aiEntitlements?.healthArchiveConcierge && '健康档案管家（服务期内持续）', entitlement.rights?.aiEntitlements?.healthConsultation && '健康顾问咨询（服务期内不限次数）', entitlement.rights?.aiEntitlements?.medicalPlanning && '就医规划支持（服务期内不限次数）', entitlement.rights?.aiEntitlements?.expertAppointment && '常规专家约诊（服务期内不限次数）', entitlement.rights?.aiEntitlements?.reportInterpretation && '体检报告解读（服务期内不限次数）'].filter(Boolean).join('、')}；每次服务请在服务日志中留痕，不扣减次数。</div>}
                     {(entitlement.rights?.sharedEntitlementPools || []).map(pool => <div key={pool.key} style={{ fontSize: 12, color: '#4A6558', marginBottom: 5 }}>共享池「{pool.name}」：剩余 <strong>{pool.remainingCount || 0}</strong> / {pool.count || 0} 次</div>)}
                     <div style={{ display: 'grid', gap: 6 }}>
-                      {(entitlement.rights?.productEntitlements || []).map(right => {
+                      {(entitlement.rights?.productEntitlements || []).map((right, rightIndex) => {
                         const pool = right.poolKey ? pools.get(right.poolKey) : null
                         const remaining = pool ? Number(pool.remainingCount || 0) : Number(right.remainingCount || 0)
-                        return <div key={right.productId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingTop: 6, borderTop: '1px solid #EEF3F0' }}>
+                        return <div key={`${right.productId}:${right.entitlementKey || rightIndex}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingTop: 6, borderTop: '1px solid #EEF3F0' }}>
                           <div><div style={{ fontSize: 13, fontWeight: 600 }}>{right.productName}</div><div style={{ fontSize: 12, color: '#8AA89C' }}>{pool ? `使用共享池「${pool.name}」` : `剩余 ${remaining} / ${right.count} 次`}{right.schedule ? ` · ${right.schedule}` : ''}</div></div>
-                          <button className="btn btn-sm" disabled={remaining < 1 || usingEntitlementId === `${entitlement._id}:${right.productId}`} style={{ background: remaining > 0 ? '#1E6B50' : '#D1D5DB', color: '#fff', border: 'none' }} onClick={async () => {
+                          <button className="btn btn-sm" disabled={remaining < 1 || usingEntitlementId === `${entitlement._id}:${right.productId}:${right.entitlementKey || rightIndex}`} style={{ background: remaining > 0 ? '#1E6B50' : '#D1D5DB', color: '#fff', border: 'none' }} onClick={async () => {
                             if (!window.confirm(`确认以套餐权益为客户发起「${right.productName}」吗？将立即扣减 1 次并生成履约单。`)) return
-                            const key = `${entitlement._id}:${right.productId}`
+                            const key = `${entitlement._id}:${right.productId}:${right.entitlementKey || rightIndex}`
                             setUsingEntitlementId(key)
                             try {
-                              const result = await staffAPI.usePackageEntitlement(id, entitlement._id, { productId: right.productId })
+                              const result = await staffAPI.usePackageEntitlement(id, entitlement._id, { productId: right.productId, entitlementKey: right.entitlementKey || '' })
                               setPackageEntitlements(prev => prev.map(item => item._id === entitlement._id ? result.data.entitlement : item))
                               setPatientOrders(prev => [result.data.executionOrder, ...prev])
                               toast(result.message || '已创建履约单')
                             } catch (error) { toast(error.message || '权益使用失败') } finally { setUsingEntitlementId('') }
-                          }}>{usingEntitlementId === `${entitlement._id}:${right.productId}` ? '创建中…' : '使用权益'}</button>
+                          }}>{usingEntitlementId === `${entitlement._id}:${right.productId}:${right.entitlementKey || rightIndex}` ? '创建中…' : '使用权益'}</button>
                         </div>
                       })}
                     </div>
