@@ -18,11 +18,16 @@ router.get('/', async (req, res) => {
   const circuitsPage = Math.max(1, Math.min(10000, Number.parseInt(req.query.circuitsPage, 10) || 1));
   const pausedReportsPage = Math.max(1, Math.min(10000, Number.parseInt(req.query.pausedReportsPage, 10) || 1));
   const pageSize = 20;
-  const counters = await collection('ai_budget_counters').find({ _id: { $in: [`day:${day}`, `month:${month}`, `business:ocr:${day}`, `business:other:${day}`] } }).toArray();
-  const circuitRows = await collection('ai_circuits').find({}).sort({ paused: -1, updatedAt: -1, _id: 1 }).skip((circuitsPage - 1) * pageSize).limit(pageSize + 1).toArray();
-  const pausedReportRows = await collection('medicalreports').find({ 'parseJob.status': 'paused' }, {
+  const pausedFilter = { 'parseJob.status': 'paused' };
+  const [counters, circuitsTotal, pausedReportsTotal, circuitRows, pausedReportRows] = await Promise.all([
+    collection('ai_budget_counters').find({ _id: { $in: [`day:${day}`, `month:${month}`, `business:ocr:${day}`, `business:other:${day}`] } }).toArray(),
+    collection('ai_circuits').countDocuments({}),
+    collection('medicalreports').countDocuments(pausedFilter),
+    collection('ai_circuits').find({}).sort({ paused: -1, updatedAt: -1, _id: 1 }).skip((circuitsPage - 1) * pageSize).limit(pageSize + 1).toArray(),
+    collection('medicalreports').find(pausedFilter, {
     projection: { _id: 1, title: 1, user: 1, checkDate: 1, date: 1, 'parseJob.message': 1, 'parseJob.pausedAt': 1 },
-  }).sort({ 'parseJob.pausedAt': -1, _id: -1 }).skip((pausedReportsPage - 1) * pageSize).limit(pageSize + 1).toArray();
+    }).sort({ 'parseJob.pausedAt': -1, _id: -1 }).skip((pausedReportsPage - 1) * pageSize).limit(pageSize + 1).toArray(),
+  ]);
   const visiblePausedReports = pausedReportRows.slice(0, pageSize);
   const customers = await collection('users').find({ _id: { $in: visiblePausedReports.map(row => row.user).filter(Boolean) } }, { projection: { name: 1 } }).toArray();
   const customerNames = new Map(customers.map(row => [String(row._id), row.name]));
@@ -35,8 +40,8 @@ router.get('/', async (req, res) => {
   const recentChanges = await collection('ai_control_audit').find({}, { projection: { before: 0, after: 0 } }).sort({ at: -1 }).limit(10).toArray();
   res.json({ success: true, data: {
     policy, defaults: DEFAULT_POLICY, counters,
-    circuits: circuitRows.slice(0, pageSize), circuitsPage, circuitsHasMore: circuitRows.length > pageSize,
-    pausedReports, pausedReportsPage, pausedReportsHasMore: pausedReportRows.length > pageSize,
+    circuits: circuitRows.slice(0, pageSize), circuitsPage, circuitsTotal, circuitsHasMore: circuitRows.length > pageSize,
+    pausedReports, pausedReportsPage, pausedReportsTotal, pausedReportsHasMore: pausedReportRows.length > pageSize,
     recentChanges, day, month,
   } });
 });
