@@ -7353,6 +7353,82 @@ router.get('/monthly-service-reviews/workbench', staffAuth, async (req, res) => 
 });
 
 // ── 年度管理方案 ─────────────────────────────────────────────────────
+const AnnualServiceRecommendation = require('../models/AnnualServiceRecommendation');
+const { normalizeRecommendationInput } = require('../utils/annualServiceRecommendation');
+async function accessibleRecommendationPlan(req, res) {
+  const plan = await AnnualPlan.findById(req.params.planId).select('patientId pushedAt').lean();
+  if (!plan) { res.status(404).json({ success: false, message: '年度方案不存在' }); return null; }
+  const visibleIds = await getVisiblePlanPatientIds(req.staff);
+  if (visibleIds && !visibleIds.some(id => String(id) === String(plan.patientId))) {
+    res.status(403).json({ success: false, message: '无权查看该会员的年度方案' }); return null;
+  }
+  return plan;
+}
+
+router.get('/annual-plans/:planId/service-recommendations', staffAuth, async (req, res) => {
+  try {
+    const plan = await accessibleRecommendationPlan(req, res);
+    if (!plan) return;
+    const rows = await AnnualServiceRecommendation.find({ planId: plan._id }).sort({ createdAt: 1 }).lean();
+    res.json({ success: true, data: rows });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.post('/annual-plans/:planId/service-recommendations', staffAuth, async (req, res) => {
+  if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可维护服务建议' });
+  try {
+    const plan = await accessibleRecommendationPlan(req, res);
+    if (!plan) return;
+    const fields = normalizeRecommendationInput(req.body);
+    const row = await AnnualServiceRecommendation.create({ ...fields, planId: plan._id, patientId: plan.patientId, createdBy: req.staff._id });
+    res.status(201).json({ success: true, data: row });
+  } catch (err) { res.status(err.statusCode || 500).json({ success: false, message: err.message }); }
+});
+
+router.patch('/annual-plans/:planId/service-recommendations/:recommendationId', staffAuth, async (req, res) => {
+  if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可维护服务建议' });
+  try {
+    const plan = await accessibleRecommendationPlan(req, res);
+    if (!plan) return;
+    const filter = { _id: req.params.recommendationId, planId: plan._id, status: 'draft' };
+    const current = await AnnualServiceRecommendation.findOne(filter).lean();
+    if (!current) return res.status(409).json({ success: false, message: '建议已发布或不存在，不能覆盖；请新增一条建议' });
+    const fields = normalizeRecommendationInput({ ...current, ...req.body });
+    const row = await AnnualServiceRecommendation.findOneAndUpdate(filter, { $set: fields }, { new: true });
+    if (!row) return res.status(409).json({ success: false, message: '建议状态已变化，请刷新' });
+    res.json({ success: true, data: row });
+  } catch (err) { res.status(err.statusCode || 500).json({ success: false, message: err.message }); }
+});
+
+router.post('/annual-plans/:planId/service-recommendations/:recommendationId/publish', staffAuth, async (req, res) => {
+  if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可发布服务建议' });
+  try {
+    const plan = await accessibleRecommendationPlan(req, res);
+    if (!plan) return;
+    if (!plan.pushedAt) return res.status(409).json({ success: false, message: '请先审核并推送年度方案，再发布服务建议' });
+    const row = await AnnualServiceRecommendation.findOneAndUpdate(
+      { _id: req.params.recommendationId, planId: plan._id, status: 'draft' },
+      { $set: { status: 'published', publishedAt: new Date(), publishedBy: req.staff._id } }, { new: true });
+    if (!row) return res.status(409).json({ success: false, message: '建议已发布或不存在，请刷新' });
+    res.json({ success: true, data: row });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.post('/annual-plans/:planId/service-recommendations/:recommendationId/handle', staffAuth, async (req, res) => {
+  if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可记录服务建议跟进' });
+  try {
+    const plan = await accessibleRecommendationPlan(req, res);
+    if (!plan) return;
+    const note = String(req.body.note || '').trim();
+    if (!note || note.length > 500) return res.status(400).json({ success: false, message: '请填写不超过500字的实际联系或服务发起记录' });
+    const row = await AnnualServiceRecommendation.findOneAndUpdate(
+      { _id: req.params.recommendationId, planId: plan._id, status: 'published', response: 'interested', handledAt: null },
+      { $set: { handledAt: new Date(), handledBy: req.staff._id, handlingNote: note } }, { new: true });
+    if (!row) return res.status(409).json({ success: false, message: '客户意向已变化或该建议已处理，请刷新' });
+    res.json({ success: true, data: row });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 router.get('/patients/:id/annual-plan', staffAuth, async (req, res) => {
   const visibleIds = await getVisiblePlanPatientIds(req.staff);
   if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权查看该会员的年度管理方案' });
@@ -7908,10 +7984,11 @@ router.delete('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       sourceAnnualPlanId: plan._id,
       status: { $in: ['planned', 'in_progress', 'cancelled'] },
     }).lean();
+    const serviceRecommendations = await AnnualServiceRecommendation.find({ planId: plan._id }).lean();
     await PlanDeletionLog.create({
       planId: plan._id, planModel: 'AnnualPlan', patientId: plan.patientId,
       planType: plan.planType, title: `${plan.year}年度${plan.templateName || '管理方案'}`,
-      deletedBy: req.staff._id, reason, snapshot: plan.toObject(),
+      deletedBy: req.staff._id, reason, snapshot: { ...plan.toObject(), serviceRecommendations },
       relatedFollowUpsDeleted: relatedFollowUps.length,
     });
     const RecurringSupplyPlan = require('../models/RecurringSupplyPlan');
@@ -7920,6 +7997,7 @@ router.delete('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       FollowUp.deleteMany({ _id: { $in: relatedFollowUps.map(f => f._id) } }),
       Reminder.deleteMany({ sourceAnnualPlanId: plan._id, systemManaged: true }),
       RecurringSupplyPlan.updateMany({ sourceAnnualPlanId: plan._id }, { $set: { enabled: false } }),
+      AnnualServiceRecommendation.deleteMany({ planId: plan._id }),
       AnnualPlan.deleteOne({ _id: plan._id }),
     ]);
     res.json({ success: true, message: '已删除', relatedFollowUpsDeleted: relatedFollowUps.length });
@@ -12413,6 +12491,21 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           link: `/patients/${c.user?._id}?openChat=1`,
         });
       });
+    }
+
+    // 客户主动选择“需要协助”后才成为顾问待处理意向；不生成服务执行任务或订单。
+    if (isSuper || role === 'familyDoctor') {
+      const interestFilter = { status: 'published', response: 'interested', handledAt: null,
+        ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
+      const interests = await AnnualServiceRecommendation.find(interestFilter).sort({ respondedAt: -1 }).limit(100)
+        .populate('patientId', 'name').populate('planId', 'year').lean();
+      interests.filter(item => item.patientId && item.planId).forEach(item => todos.push({
+        id: 'annual_service_interest_' + item._id, type: 'annual_service_interest', label: '年度服务建议·客户需要协助', priority: 1,
+        patientName: item.patientId.name || '会员', patientId: String(item.patientId._id),
+        summary: `${item.recommendation}；请联系客户确认需求，再按现有服务流程发起。`,
+        createdAt: item.respondedAt || item.updatedAt, overdue: (now - new Date(item.respondedAt || item.updatedAt)) > DAY,
+        link: `/patients/${item.patientId._id}/annual-health?year=${item.planId.year}`,
+      }));
     }
 
     // 统一归属闸门：非超管的所有工作台任务最终都必须属于本人可见客户范围。

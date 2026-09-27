@@ -1010,10 +1010,38 @@ router.get('/annual-mgmt-plans', auth, async (req, res) => {
       .populate('pushedBy', 'name role title')
       .sort({ year: -1 }).lean();
     const { buildAnnualPlanDisplayItems, customerModuleData } = require('../utils/annualPlanPresentation');
-    res.json({ success: true, data: plans.map(plan => ({ ...plan, moduleData: customerModuleData(plan.moduleData), displayItems: buildAnnualPlanDisplayItems(plan.moduleData) })) });
+    const AnnualServiceRecommendation = require('../models/AnnualServiceRecommendation');
+    const suggestions = await AnnualServiceRecommendation.find({ patientId: req.user._id, planId: { $in: plans.map(plan => plan._id) }, status: 'published' })
+      .select('planId finding evidence recommendation timeframe nextStep response publishedAt').sort({ publishedAt: 1 }).lean();
+    const byPlan = new Map();
+    suggestions.forEach(row => {
+      const key = String(row.planId);
+      byPlan.set(key, [...(byPlan.get(key) || []), row]);
+    });
+    res.json({ success: true, data: plans.map(plan => ({ ...plan, moduleData: customerModuleData(plan.moduleData), displayItems: buildAnnualPlanDisplayItems(plan.moduleData), serviceRecommendations: byPlan.get(String(plan._id)) || [] })) });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取年度管理方案失败', error: err.message });
   }
+});
+
+// 客户只表达意向；不会据此自动生成任务、订单或支付。
+router.patch('/annual-mgmt-plans/:id/service-recommendations/:recommendationId/respond', auth, async (req, res) => {
+  try {
+    if (!['interested', 'declined'].includes(req.body.response)) return res.status(400).json({ success: false, message: '请选择需要协助或暂不安排' });
+    const plan = await AnnualPlan.findOne({ _id: req.params.id, patientId: req.user._id, pushedAt: { $ne: null } }).select('_id').lean();
+    if (!plan) return res.status(404).json({ success: false, message: '年度方案不存在' });
+    const AnnualServiceRecommendation = require('../models/AnnualServiceRecommendation');
+    const filter = { _id: req.params.recommendationId, planId: plan._id, patientId: req.user._id, status: 'published' };
+    const current = await AnnualServiceRecommendation.findOne(filter).select('response planId finding evidence recommendation timeframe nextStep publishedAt').lean();
+    if (!current) return res.status(404).json({ success: false, message: '服务建议不存在' });
+    if (current.response === req.body.response) return res.json({ success: true, data: current });
+    const row = await AnnualServiceRecommendation.findOneAndUpdate(
+      { ...filter, response: current.response },
+      { $set: { response: req.body.response, respondedAt: new Date(), handledAt: null, handledBy: null, handlingNote: '' } }, { new: true })
+      .select('planId finding evidence recommendation timeframe nextStep response publishedAt');
+    if (!row) return res.status(409).json({ success: false, message: '建议状态已变化，请刷新后重试' });
+    res.json({ success: true, data: row });
+  } catch (err) { res.status(500).json({ success: false, message: '保存选择失败' }); }
 });
 
 const { syncAnnualPlanTaskSplit } = require('../utils/annualPlanTaskSplit');

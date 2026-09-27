@@ -337,6 +337,11 @@ export const staffAPI = {
   // Annual Plan
   getAnnualHealthPlans: (year, patientName) => req(`/staff/annual-health-plans?` + qs({ year: year || '', patientName: patientName || '' })),
   getAnnualPlan:        (patientId, year) => req(`/staff/patients/${patientId}/annual-plan` + (year ? `?year=${year}` : '')),
+  getAnnualServiceRecommendations: planId => req(`/staff/annual-plans/${planId}/service-recommendations`),
+  addAnnualServiceRecommendation: (planId, data) => req(`/staff/annual-plans/${planId}/service-recommendations`, { method: 'POST', body: JSON.stringify(data) }),
+  updateAnnualServiceRecommendation: (planId, id, data) => req(`/staff/annual-plans/${planId}/service-recommendations/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  publishAnnualServiceRecommendation: (planId, id) => req(`/staff/annual-plans/${planId}/service-recommendations/${id}/publish`, { method: 'POST', body: '{}' }),
+  handleAnnualServiceRecommendation: (planId, id, note) => req(`/staff/annual-plans/${planId}/service-recommendations/${id}/handle`, { method: 'POST', body: JSON.stringify({ note }) }),
   getMonthlyServiceReviews: patientId => req(`/staff/patients/${patientId}/monthly-service-reviews`),
   createMonthlyServiceReview: (patientId, data) => req(`/staff/patients/${patientId}/monthly-service-reviews`, { method: 'POST', body: JSON.stringify(data) }),
   saveMonthlyServiceReview: (reviewId, data) => req(`/staff/monthly-service-reviews/${reviewId}`, { method: 'PATCH', body: JSON.stringify(data) }),

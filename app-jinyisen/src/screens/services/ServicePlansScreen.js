@@ -281,7 +281,7 @@ function ConfirmModal({ visible, title, message, confirmText, confirmColor, onCo
 }
 
 // ── 方案卡片 ─────────────────────────────────────────────────────
-function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confirming, onConsult, onRenew }) {
+function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confirming, onConsult, onRenew, onRecommendationResponse }) {
   const meta = plan.type === 'medical_assist'
     ? getAssistSubMeta(plan.content?.templateName)
     : (TYPE_META[plan.type] || DEFAULT_META);
@@ -437,6 +437,24 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
           {/* 进度 */}
           {progressTotal > 0 && (
             <Text style={s.progressText}>已完成 {progressDone}/{progressTotal} 项</Text>
+          )}
+
+          {plan.type === 'annual_mgmt' && (plan.serviceRecommendations || []).length > 0 && (
+            <View style={{ marginTop: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: colors.border }}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginBottom: 4 }}>服务建议</Text>
+              <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 9 }}>以下是可选择的建议，不是已安排的服务或待完成任务。</Text>
+              {plan.serviceRecommendations.map(row => <View key={row._id} style={{ backgroundColor: '#F1F8F4', borderRadius: 10, padding: 12, marginBottom: 9 }}>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary }}>{row.recommendation}</Text>
+                <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 5 }}>发现：{row.finding}{'\n'}依据：{row.evidence}</Text>
+                {!!row.timeframe && <Text style={{ fontSize: 11, color: colors.textSecondary }}>建议时机：{row.timeframe}</Text>}
+                {!!row.nextStep && <Text style={{ fontSize: 11, color: colors.textSecondary }}>下一步：{row.nextStep}</Text>}
+                <Text style={{ fontSize: 11, color: colors.primary, marginTop: 6 }}>{row.response === 'interested' ? '已选择需要协助，工作人员会核对安排' : row.response === 'declined' ? '已选择暂不安排' : '您可以选择是否需要协助'}</Text>
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 7 }}>
+                  <TouchableOpacity onPress={() => onRecommendationResponse(plan._id, row._id, 'interested')} style={{ padding: 7, borderRadius: 7, backgroundColor: row.response === 'interested' ? colors.primary : '#fff' }}><Text style={{ fontSize: 11, color: row.response === 'interested' ? '#fff' : colors.primary }}>需要协助</Text></TouchableOpacity>
+                  <TouchableOpacity onPress={() => onRecommendationResponse(plan._id, row._id, 'declined')} style={{ padding: 7, borderRadius: 7, backgroundColor: row.response === 'declined' ? '#DEE7E0' : '#fff' }}><Text style={{ fontSize: 11, color: colors.textSecondary }}>暂不安排</Text></TouchableOpacity>
+                </View>
+              </View>)}
+            </View>
           )}
 
           {/* 时间段 */}
@@ -605,6 +623,7 @@ export default function ServicePlansScreen({ navigation }) {
             year: ap.year,
             notes: ap.notes || '',
             confirmedAt: ap.confirmedAt || null,
+            serviceRecommendations: ap.serviceRecommendations || [],
             pushedAt: ap.pushedAt || null,
             items: Object.entries(ap.moduleData || {})
               .filter(([, v]) => v && (Array.isArray(v) ? v.length > 0 : v.enabled !== false))
@@ -650,6 +669,13 @@ export default function ServicePlansScreen({ navigation }) {
 
   // ── 方案确认流程 ──────────────────────────────────────────────
   const handleConfirmPlan = (plan) => setPlanConfirmTarget(plan);
+
+  const handleRecommendationResponse = async (planId, id, response) => {
+    try {
+      await plansAPI.respondAnnualRecommendation(planId, id, response);
+      setPlans(prev => prev.map(plan => plan._id !== planId ? plan : { ...plan, serviceRecommendations: (plan.serviceRecommendations || []).map(row => row._id === id ? { ...row, response } : row) }));
+    } catch (error) { Alert.alert('保存失败', error.message || '请稍后重试'); }
+  };
 
   const doConfirmPlan = async () => {
     if (!planConfirmTarget) return;
@@ -749,6 +775,7 @@ export default function ServicePlansScreen({ navigation }) {
                 confirming={confirmingPlanId === plan._id}
                 onConsult={handleConsult}
                 onRenew={() => navigation.navigate('Renewal')}
+                onRecommendationResponse={handleRecommendationResponse}
               />
             ))
           )}

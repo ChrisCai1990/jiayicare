@@ -261,6 +261,7 @@ export const systemAPI = {
 export const plansAPI = {
   list: () => request('/user/plans'),
   listAnnualMgmt: () => request('/user/annual-mgmt-plans'),
+  respondAnnualRecommendation: (planId, id, response) => request(`/user/annual-mgmt-plans/${planId}/service-recommendations/${id}/respond`, { method: 'PATCH', body: JSON.stringify({ response }) }),
   view: (planId) =>
     request(`/user/plans/${planId}/view`, { method: 'PATCH' }),
   confirm: (planId) =>

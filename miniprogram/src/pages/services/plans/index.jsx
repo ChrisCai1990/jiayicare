@@ -95,7 +95,7 @@ function buildNotes(v) {
   return lines.join('\n') || '';
 }
 
-function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confirming, onConsult, onRenew }) {
+function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confirming, onConsult, onRenew, onRecommendationResponse }) {
   const meta = TYPE_META[plan.type] || DEFAULT_META;
   const sm = STATUS_META[plan.status] || STATUS_META.draft;
   const isDraft = plan.status === 'draft';
@@ -186,6 +186,22 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
 
           {progressTotal > 0 && <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginTop: '4px', paddingLeft: '8px' }}>已完成 {progressDone}/{progressTotal} 项</Text>}
 
+          {plan.type === 'annual_mgmt' && (plan.serviceRecommendations || []).length > 0 && <View style={{ borderTop: `1px solid ${colors.borderLight}`, marginTop: '14px', paddingTop: '12px' }}>
+            <Text style={{ display: 'block', fontSize: '15px', fontWeight: 700, color: colors.textPrimary }}>服务建议</Text>
+            <Text style={{ display: 'block', fontSize: '11px', color: colors.textMuted, margin: '4px 0 9px' }}>以下是可选择的建议，不是已安排的服务或待完成任务。</Text>
+            {plan.serviceRecommendations.map(row => <View key={row._id} style={{ backgroundColor: '#F1F8F4', borderRadius: '10px', padding: '11px', marginBottom: '9px' }}>
+              <Text style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: colors.textPrimary }}>{row.recommendation}</Text>
+              <Text style={{ display: 'block', fontSize: '11px', color: colors.textSecondary, marginTop: '5px', whiteSpace: 'pre-wrap' }}>发现：{row.finding}{'\n'}依据：{row.evidence}</Text>
+              {!!row.timeframe && <Text style={{ display: 'block', fontSize: '11px', color: colors.textSecondary }}>建议时机：{row.timeframe}</Text>}
+              {!!row.nextStep && <Text style={{ display: 'block', fontSize: '11px', color: colors.textSecondary }}>下一步：{row.nextStep}</Text>}
+              <Text style={{ display: 'block', fontSize: '11px', color: colors.primary, marginTop: '6px' }}>{row.response === 'interested' ? '已选择需要协助，工作人员会核对安排' : row.response === 'declined' ? '已选择暂不安排' : '您可以选择是否需要协助'}</Text>
+              <View style={{ display: 'flex', gap: '8px', marginTop: '7px' }}>
+                <View onClick={() => onRecommendationResponse(plan._id, row._id, 'interested')} style={{ padding: '6px 9px', borderRadius: '7px', backgroundColor: row.response === 'interested' ? colors.primary : '#fff' }}><Text style={{ fontSize: '11px', color: row.response === 'interested' ? '#fff' : colors.primary }}>需要协助</Text></View>
+                <View onClick={() => onRecommendationResponse(plan._id, row._id, 'declined')} style={{ padding: '6px 9px', borderRadius: '7px', backgroundColor: row.response === 'declined' ? '#DEE7E0' : '#fff' }}><Text style={{ fontSize: '11px', color: colors.textSecondary }}>暂不安排</Text></View>
+              </View>
+            </View>)}
+          </View>}
+
           {(plan.startDate || plan.endDate) && (
             <View style={{ display: 'flex', gap: `${spacing.sm}px`, marginTop: `${spacing.sm}px`, borderTop: `1px solid ${colors.borderLight}`, paddingTop: `${spacing.sm}px` }}>
               <View style={{ flex: 1, textAlign: 'center', backgroundColor: colors.background, borderRadius: `${radius.sm}px`, padding: '8px' }}>
@@ -247,6 +263,7 @@ export default function ServicePlansPage() {
           description: ap.templateName || (ap.planType ? (PLAN_TYPE_LABEL[ap.strategyType || ap.planType] || '') : '个人专属健康管理方案'),
           staffId: ap.pushedBy, year: ap.year, notes: ap.notes || '',
           confirmedAt: ap.confirmedAt || null, pushedAt: ap.pushedAt || null,
+          serviceRecommendations: ap.serviceRecommendations || [],
           items: Array.isArray(ap.displayItems) ? ap.displayItems.map(item => ({
             _id: item.id, name: `${item.category} · ${item.title}`, notes: displayItemNotes(item), status: 'pending',
           })) : Object.entries(ap.moduleData || {})
@@ -277,6 +294,13 @@ export default function ServicePlansPage() {
   };
 
   const handleConfirmPlan = (plan) => setPlanConfirmTarget(plan);
+
+  const handleRecommendationResponse = async (planId, id, response) => {
+    try {
+      await plansAPI.respondAnnualRecommendation(planId, id, response);
+      setPlans(prev => prev.map(plan => plan._id !== planId ? plan : { ...plan, serviceRecommendations: (plan.serviceRecommendations || []).map(row => row._id === id ? { ...row, response } : row) }));
+    } catch (error) { Taro.showToast({ title: error.message || '保存失败，请稍后重试', icon: 'none' }); }
+  };
 
   const doConfirmPlan = async () => {
     if (!planConfirmTarget) return;
@@ -357,6 +381,7 @@ export default function ServicePlansPage() {
                 confirming={confirmingPlanId === plan._id}
                 onConsult={handleConsult}
                 onRenew={() => Taro.navigateTo({ url: '/pages/services/mall/index' })}
+                onRecommendationResponse={handleRecommendationResponse}
               />
             ))
           )}
