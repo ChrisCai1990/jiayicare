@@ -9238,8 +9238,8 @@ export default function PatientDetailPage() {
               )}
               {['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && (
                 <button className="btn btn-secondary btn-sm" disabled={aiMedicalAssistGenerating}
-                  onClick={() => { setPendingMedicalAssistOrderId(''); setShowSelectTplModal('medical_assist') }}>
-                  {aiMedicalAssistGenerating ? '生成中…' : staff?.role === 'familyDoctor' ? '✨ 发起就医协助方案' : '✨ AI就医协助方案'}
+                  onClick={() => nav(`/plans?type=medical_assist&patientId=${encodeURIComponent(id)}&patientName=${encodeURIComponent(data?.user?.name || '')}&openMedicalAssist=1`)}>
+                  {aiMedicalAssistGenerating ? '生成中…' : '✨ 发起就医协助方案'}
                 </button>
               )}
               {['healthPlanner', 'superadmin'].includes(staff?.role) && (

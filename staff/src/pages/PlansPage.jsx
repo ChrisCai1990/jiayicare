@@ -38,6 +38,10 @@ export default function PlansPage() {
   const { staff } = useStaff()
   const [searchParams, setSearchParams] = useSearchParams()
   const typeFilter = searchParams.get('type') || ''
+  // 会员档案页可直接打开这里的统一就医协助创建流程；会员已确定时不必再搜索一次。
+  const initialMedicalAssistPatientId = searchParams.get('patientId') || ''
+  const initialMedicalAssistPatientName = searchParams.get('patientName') || ''
+  const shouldOpenMedicalAssist = searchParams.get('openMedicalAssist') === '1'
 
   const isAnnualMgmt = typeFilter === 'annual_mgmt'
 
@@ -83,6 +87,15 @@ export default function PlansPage() {
     if (isAnnualMgmt) loadAhPlans()
     else loadPlans()
   }, [isAnnualMgmt, loadPlans, loadAhPlans])
+
+  useEffect(() => {
+    if (typeFilter === 'medical_assist' && shouldOpenMedicalAssist) setShowMedicalModal(true)
+  }, [typeFilter, shouldOpenMedicalAssist])
+
+  const closeMedicalAssistModal = () => {
+    setShowMedicalModal(false)
+    if (shouldOpenMedicalAssist) setSearchParams({ type: 'medical_assist' })
+  }
 
   const yearOptions = [new Date().getFullYear() - 1, new Date().getFullYear(), new Date().getFullYear() + 1]
 
@@ -219,7 +232,7 @@ export default function PlansPage() {
               </table>}
           </div>
           {showCheckupModal   && <AnnualCheckupPlanModal onClose={() => setShowCheckupModal(false)}   onSaved={() => { setShowCheckupModal(false);   loadPlans(); toast('体检方案已创建') }} />}
-          {showMedicalModal   && <MedicalAssistPlanModal onClose={() => setShowMedicalModal(false)}   onSaved={() => { setShowMedicalModal(false);   loadPlans(); toast('就医协助方案已创建') }} />}
+          {showMedicalModal   && <MedicalAssistPlanModal initialPatientId={initialMedicalAssistPatientId} initialPatientName={initialMedicalAssistPatientName} onClose={closeMedicalAssistModal} onSaved={() => { closeMedicalAssistModal(); loadPlans(); toast('就医协助方案已创建') }} />}
           {showNutritionModal && <NutritionPlanModal     onClose={() => setShowNutritionModal(false)} onSaved={() => { setShowNutritionModal(false); loadPlans(); toast('营养干预方案已创建') }} />}
           {showModal && <NewPlanModal type={typeFilter || 'annual_checkup'} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); loadPlans(); toast('方案已创建') }} />}
         </>
@@ -252,7 +265,7 @@ function SelectPatientForAhModal({ year, onClose, onSelected }) {
 }
 
 // ── 会员搜索组件（按姓名或手机号实时搜索） ────────────────────────────
-function PatientSearchInput({ value, onChange }) {
+function PatientSearchInput({ value, onChange, initialSelectedName = '', initialSelectedId = '' }) {
   const [keyword, setKeyword] = useState('')
   const [results, setResults] = useState([])
   const [searching, setSearching] = useState(false)
@@ -260,6 +273,10 @@ function PatientSearchInput({ value, onChange }) {
   const [selectedName, setSelectedName] = useState('')
   const timerRef = useRef(null)
   const wrapRef = useRef(null)
+
+  useEffect(() => {
+    if (value && value === initialSelectedId && initialSelectedName && !selectedName) setSelectedName(initialSelectedName)
+  }, [value, initialSelectedId, initialSelectedName, selectedName])
 
   // 点击外部关闭下拉
   useEffect(() => {
@@ -550,7 +567,7 @@ function templateToItems(tpl) {
 }
 
 // ── 就医协助方案：两步创建弹窗 ────────────────────────────────────────
-function MedicalAssistPlanModal({ onClose, onSaved }) {
+function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initialPatientName = '' }) {
   const [step, setStep] = useState(1)
   const [templates, setTemplates] = useState([])
   const [templateQuery, setTemplateQuery] = useState('')
@@ -570,7 +587,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
   })
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
 
-  const [patientId, setPatientId] = useState('')
+  const [patientId, setPatientId] = useState(initialPatientId)
   const [assignedPlanner, setAssignedPlanner] = useState(null)
   const [patientReports, setPatientReports] = useState([])
   const [selectedReportIds, setSelectedReportIds] = useState([])
@@ -882,7 +899,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
 
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">搜索会员 *</label>
-            <PatientSearchInput value={patientId} onChange={setPatientId} />
+            <PatientSearchInput value={patientId} onChange={setPatientId} initialSelectedId={initialPatientId} initialSelectedName={initialPatientName} />
           </div>
 
           {isAgencyService && <div style={{ padding: '10px 12px', background: '#EFF8F4', borderRadius: 8, fontSize: 13, color: '#1E6B50' }}>督办人：{assignedPlanner?.name || (patientId ? '该客户尚未分配健康规划师' : '选择会员后自动带出客户的健康规划师')}（固定，不需手动选择）</div>}
