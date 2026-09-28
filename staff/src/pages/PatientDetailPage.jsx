@@ -3605,6 +3605,8 @@ export default function PatientDetailPage() {
     const items = JSON.parse(JSON.stringify(latestReport.reportItems || []))
       .filter(it => it.name && String(it.name).trim())
       .map(it => {
+        // 旧处方曾借用 lab 类型；打开审核时即迁移为独立药品类型，保存后持久化。
+        if (latestReport.documentCategory === 'prescription_order') return { ...it, itemType: 'medication' }
         const isImg = it.itemType === 'imaging'
         if (isImg && !it.findings && it.value) return { ...it, findings: it.value, value: '' }
         return it
@@ -11896,7 +11898,7 @@ export default function PatientDetailPage() {
         ]
         const updItem = (i, patch) => setOcrEditItems(arr => arr.map((it, idx) => idx === i ? { ...it, ...patch } : it))
         const delItem = (i) => setOcrEditItems(arr => arr.filter((_, idx) => idx !== i))
-        const addItem = () => setOcrEditItems(arr => [...arr, { name: '', value: '', unit: '', referenceRange: '', status: 'normal', itemType: 'lab' }])
+        const addItem = () => setOcrEditItems(arr => [...arr, { name: '', value: '', unit: '', referenceRange: '', status: 'unknown', itemType: ocrReviewReport.documentCategory === 'prescription_order' ? 'medication' : 'lab' }])
         const abnormalCount = ocrEditItems.filter(it => it.status === 'abnormal' || it.status === 'attention').length
         const sourcePages = [...new Set(ocrEditItems.map(it => Number(it.sourcePage)).filter(Number.isFinite).filter(n => n > 0))].sort((a, b) => a - b)
         const firstSourcePage = 1
@@ -12115,8 +12117,8 @@ export default function PatientDetailPage() {
                       </div>
                       })()}
                       <ReportImageEvidenceNotice evidence={activeImageEvidence} hasItems={indexed.length > 0} />
-                      {/* 异常快览：只看检验数值类异常，短标签一眼可见 */}
-                      <div style={{ padding: '12px 14px', background: abn.length ? '#FFF7F5' : '#F3FAF6', borderRadius: 8, marginBottom: 12, border: `1px solid ${abn.length ? '#FAD9D2' : '#CDEBDD'}` }}>
+                      {/* 异常快览仅适用于检验数值，不用于处方。 */}
+                      {!isPrescription && <div style={{ padding: '12px 14px', background: abn.length ? '#FFF7F5' : '#F3FAF6', borderRadius: 8, marginBottom: 12, border: `1px solid ${abn.length ? '#FAD9D2' : '#CDEBDD'}` }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: '#1A2B24', marginBottom: abn.length ? 8 : 0 }}>
                           检验指标 {labRows.length} 项{imgRows.length > 0 ? ` · 影像/检查 ${imgRows.length} 项` : ''}
                           {abnN > 0 && <span style={{ color: '#DC3545', marginLeft: 8 }}>异常 {abnN}</span>}
@@ -12134,7 +12136,7 @@ export default function PatientDetailPage() {
                             ))}
                           </div>
                         )}
-                      </div>
+                      </div>}
                       {/* AI文字分析：折叠收起 */}
                       {ocrReviewReport.aiSummary && (
                         <details style={{ marginBottom: 14 }}>
@@ -12177,7 +12179,7 @@ export default function PatientDetailPage() {
                               style={{ border: isFocusedItem ? '2px solid #7C3AED' : '1px solid #E0D9CE', borderRadius: 8, padding: '10px 12px', background: isFocusedItem ? '#F5F3FF' : (isImaging(it) ? '#fafaf8' : '#fff'), boxShadow: isFocusedItem ? '0 0 0 3px rgba(124,58,237,.12)' : 'none' }}>
                               {isFocusedItem && <div style={{ fontSize: 11, color: '#7C3AED', fontWeight: 800, marginBottom: 6 }}>已定位到需要核对归属的项目</div>}
                               <div style={{ fontSize: 10, color: isImaging(it) ? '#0369A1' : '#7C3AED', fontWeight: 700, marginBottom: 6 }}>
-                                <span style={{ color: sc, fontSize: 12 }}>{STATUS_OPTS.find(s => s.v === it.status)?.label || '未知'}</span>
+                                <span style={{ color: isPrescription ? '#1E6B50' : sc, fontSize: 12 }}>{isPrescription ? '处方药品' : (STATUS_OPTS.find(s => s.v === it.status)?.label || '未知')}</span>
                                 <span style={{ color: '#8AA89C', fontWeight: 400, marginLeft: 8 }}>{it.sourcePage ? `P${it.sourcePage} · ` : ''}第 {it.sourceRowOrder || visibleIndex + 1} 项</span>
                                 <button onClick={() => updItem(i, {
                                   manualReviewStatus: it.manualReviewStatus === 'reviewed' ? 'pending' : 'reviewed',
@@ -12204,16 +12206,16 @@ export default function PatientDetailPage() {
                                 </>}
                                 {!isPrescription && <select style={{ ...inp, width: 80, color: sc, fontWeight: 600 }} value={it.status || 'unknown'} onChange={e => updItem(i, { status: e.target.value })}>{STATUS_OPTS.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}</select>}
                                 <button
-                                  title={`在“${it.name || '当前项目'}”下方新增${isImaging(it) ? '检查' : '检验'}项`}
+                                  title={`在“${it.name || '当前项目'}”下方新增${isPrescription ? '药品' : (isImaging(it) ? '检查' : '检验')}项`}
                                   onClick={() => setOcrEditItems(arr => insertReportItemBelow(
                                     arr,
                                     i,
                                     isImaging(it)
                                       ? { name: '', itemType: 'imaging', bodyPart: '', findings: '', diagnosis: '', conclusion: '', status: 'unknown' }
-                                      : { name: '', value: '', unit: '', referenceRange: '', status: 'normal', itemType: it.itemType === 'data' ? 'data' : 'lab', orderName: it.orderName || '' },
+                                      : { name: '', value: '', unit: '', referenceRange: '', status: 'unknown', itemType: isPrescription ? 'medication' : (it.itemType === 'data' ? 'data' : 'lab'), orderName: it.orderName || '' },
                                   ))}
                                   style={{ whiteSpace: 'nowrap', padding: '4px 7px', border: `1px solid ${isImaging(it) ? '#BAE6FD' : '#C4B5FD'}`, borderRadius: 4, background: isImaging(it) ? '#F0F9FF' : '#F3EFFB', color: isImaging(it) ? '#0369A1' : '#7C3AED', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>
-                                  下方新增
+                                  下方新增{isPrescription ? '药品' : ''}
                                 </button>
                                 <button onClick={() => delItem(i)} style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14 }}>✕</button>
                               </div>

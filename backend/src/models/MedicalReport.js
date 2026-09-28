@@ -27,7 +27,7 @@ const reportItemSchema = new mongoose.Schema({
   unit:           { type: String, default: '' }, // 单位
   referenceRange: { type: String, default: '' }, // 参考范围
   status:         { type: String, enum: ['normal', 'abnormal', 'attention', 'unknown'], default: 'unknown', set: normalizeReportItemStatus }, // 兼容空值及历史低风险状态，避免审核整份报告时枚举校验失败
-  itemType:       { type: String, enum: ['lab', 'imaging', 'data'], default: 'lab', set: normalizeReportItemType }, // 检验/影像文字/数据曲线类
+  itemType:       { type: String, enum: ['lab', 'imaging', 'data', 'medication'], default: 'lab', set: normalizeReportItemType }, // 检验/影像文字/数据曲线/处方药品
   orderName:      { type: String, default: '' }, // 所属检验医嘱组名（用于编辑时还原分组）
   sourcePage:     { type: Number, default: null }, // 原报告页码，供医护审核快速定位
 
