@@ -7060,7 +7060,9 @@ router.get('/patients/:id/package-entitlements', staffAuth, async (req, res) => 
     await Promise.all(packageOrders.map(order => require('../utils/packageEntitlements').ensurePackageEntitlement(order)));
     await Promise.all(packageOrders.map(order => require('../utils/packageEntitlements').ensureMemberBundleEntitlement(order)));
     const rows = await require('../utils/packageEntitlements').applicableEntitlements(req.params.id);
-    res.json({ success: true, data: rows.map(row => ({
+    const customer = await User.findById(req.params.id);
+    const summary = customer ? await require('../utils/membershipBenefits').membershipBenefits(customer, rows) : { plans:[],message:'客户不存在' };
+    res.json({ success: true, summary, data: rows.map(row => ({
       _id: row._id, ownerUserId: row.ownerUserId, sourceOrderId: row.sourceOrderId,
       packageName: row.packageName, clientBrand: row.clientBrand, validFrom: row.validFrom,
       validUntil: row.validUntil, familySharing: row.familySharing,

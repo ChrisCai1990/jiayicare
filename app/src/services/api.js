@@ -92,6 +92,7 @@ export const authAPI = {
 
 // ── User ─────────────────────────────────────────────────────────
 export const userAPI = {
+  getMembershipBenefits: () => request('/user/membership-benefits'),
   getMe:           ()             => request('/user/me'),
   getHealthFund:   ()             => request('/user/health-fund'),
   getDashboard:    ()             => request('/user/dashboard'),

@@ -137,6 +137,11 @@ async function requireAiEntitlement(user, key, res) {
   return false;
 }
 
+router.get('/membership-benefits', auth, async (req, res) => {
+  try { res.json({ success:true, data:await require('../utils/membershipBenefits').membershipBenefits(req.user) }); }
+  catch (error) { res.status(500).json({ success:false, message:'会员权益加载失败，请重试' }); }
+});
+
 // 获取当前用户信息（含健康基金汇总 + 责任团队真实数据）
 router.get('/me', auth, async (req, res) => {
   try {

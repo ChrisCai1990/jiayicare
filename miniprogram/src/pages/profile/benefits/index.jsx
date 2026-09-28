@@ -6,6 +6,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { giftsAPI, partnerBenefitsAPI, pointsAPI, userAPI } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
+import MembershipBenefits from '../../../components/MembershipBenefits';
 import { formatChineseDate, formatChineseDateTime } from '../../../utils/date';
 
 // 对齐 app/src/screens/profile/BenefitsScreen.js
@@ -154,6 +155,7 @@ export default function BenefitsPage() {
 
       {tab === 'mine' ? (
         <View style={{ padding: `0 ${spacing.lg}px` }}>
+          <MembershipBenefits />
           <View style={{ borderRadius: `${radius.md}px`, backgroundColor: '#1A2B24', padding: `${spacing.lg}px`, marginBottom: `${spacing.md}px`, boxShadow: shadow.md }}>
             <Text style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '6px' }}>健康基金余额</Text>
             <Text style={{ fontSize: '34px', fontWeight: 800, color: '#fff', display: 'block', marginBottom: `${spacing.md}px` }}>¥{Number(fundTotal).toFixed(2)}</Text>

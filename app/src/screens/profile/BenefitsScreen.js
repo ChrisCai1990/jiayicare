@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { giftsAPI, partnerBenefitsAPI, pointsAPI, userAPI } from '../../services/api';
+import MembershipBenefits from '../../components/MembershipBenefits';
 
 const POINTS_SOURCE_LABEL = { checkin: '打卡', consumption: '消费', redeem: '兑换', adjust: '调整' };
 
@@ -313,6 +314,7 @@ export default function BenefitsScreen({ navigation }) {
         {tab === 'mine' ? (
           <>
             {/* 健康基金卡 */}
+            <MembershipBenefits />
             <View style={styles.fundCard}>
               <Text style={styles.fundLabel}>健康基金余额</Text>
               <Text style={styles.fundTotal}>¥{fundTotal.toLocaleString()}</Text>

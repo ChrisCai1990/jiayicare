@@ -1,5 +1,6 @@
 import ReportReviewQuality, { useReportReviewActivity } from '../components/ReportReviewQuality'
 import ClinicalDocumentReviewFields from '../components/ClinicalDocumentReviewFields'
+import MembershipBenefitsSummary from '../components/MembershipBenefitsSummary'
 import { reportClassificationLabels, reportItemNameConcern, reportNameCorrection, sameReportConclusion } from '../utils/reportReviewQuality'
 import { isManualOnlyReport } from '../utils/reportManualReview'
 import { belongsToCheckupPlan, checkupProgress, groupCheckupPlans, checkupServiceMode } from '../utils/checkupProgress'
@@ -1976,6 +1977,15 @@ export default function PatientDetailPage() {
   const [openReportActionId, setOpenReportActionId] = useState(null)
   const [patientOrders, setPatientOrders] = useState([])
   const [packageEntitlements, setPackageEntitlements] = useState([])
+  const [membershipSummary, setMembershipSummary] = useState(null)
+  const [membershipError, setMembershipError] = useState('')
+  const loadMembership = () => {
+    setMembershipError('')
+    return staffAPI.getPackageEntitlements(id).then(r => {
+      setPackageEntitlements(r.data || [])
+      setMembershipSummary(r.summary || { plans: [], message: '权益摘要暂不可用' })
+    }).catch(() => { setMembershipSummary(null); setPackageEntitlements([]); setMembershipError('会员权益加载失败，请重试') })
+  }
   const [usingEntitlementId, setUsingEntitlementId] = useState('')
   const [autoEntitlementSelection, setAutoEntitlementSelection] = useState('')
   const [redeemingOrderId, setRedeemingOrderId] = useState(null)
@@ -3060,7 +3070,8 @@ export default function PatientDetailPage() {
     }
     else if (tab === 'consumption') {
       staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {})
-      staffAPI.getPackageEntitlements(id).then(r => setPackageEntitlements(r.data || [])).catch(() => setPackageEntitlements([]))
+      setMembershipSummary(null)
+      loadMembership()
     }
     else if (tab === 'ai') {
       loadScreening()
@@ -10617,8 +10628,9 @@ export default function PatientDetailPage() {
             </div>
 
             <div className="card">
+              <MembershipBenefitsSummary data={membershipSummary} error={membershipError} onRefresh={loadMembership} />
               <div className="card-header"><div className="card-title">套餐服务权益</div><span style={{ fontSize: 12, color: '#8AA89C' }}>发起服务时优先自动匹配最早到期的有效权益；创建 0 元履约单后，再按常规流程启动与核销</span></div>
-              {!packageEntitlements.length ? <div style={{ padding: 20, color: '#8AA89C', fontSize: 13 }}>当前客户没有有效的套餐服务权益。</div> : <div className="card-body" style={{ display: 'grid', gap: 12 }}>
+              {!packageEntitlements.length ? <div style={{ padding: 20, color: '#8AA89C', fontSize: 13 }}>尚无可直接核销的有效权益台账；已配置的计划内容请在上方核对，不能当作全部未使用。</div> : <div className="card-body" style={{ display: 'grid', gap: 12 }}>
                 {(() => {
                   const autoOptions = packageEntitlements.flatMap(entitlement => {
                     const pools = new Map((entitlement.rights?.sharedEntitlementPools || []).map(pool => [pool.key, pool]))
@@ -10642,6 +10654,7 @@ export default function PatientDetailPage() {
                         try {
                           const result = await staffAPI.usePackageEntitlement(id, 'auto', { productId: selectedAuto.right.productId, entitlementKey: selectedAuto.right.entitlementKey || '' })
                           setPackageEntitlements(prev => prev.map(item => item._id === result.data.entitlement._id ? result.data.entitlement : item))
+                          loadMembership()
                           setPatientOrders(prev => [result.data.executionOrder, ...prev])
                           setAutoEntitlementSelection('')
                           toast(result.message || '已自动匹配服务包权益')
@@ -10671,6 +10684,7 @@ export default function PatientDetailPage() {
                             try {
                               const result = await staffAPI.usePackageEntitlement(id, entitlement._id, { productId: right.productId, entitlementKey: right.entitlementKey || '' })
                               setPackageEntitlements(prev => prev.map(item => item._id === entitlement._id ? result.data.entitlement : item))
+                              loadMembership()
                               setPatientOrders(prev => [result.data.executionOrder, ...prev])
                               toast(result.message || '已创建履约单')
                             } catch (error) { toast(error.message || '权益使用失败') } finally { setUsingEntitlementId('') }
