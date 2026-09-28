@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const auditSchema = new mongoose.Schema({
-  action: { type: String, enum: ['created', 'submitted', 'published', 'returned', 'updated', 'expired', 'archived'], required: true },
+  action: { type: String, enum: ['created', 'revised', 'submitted', 'published', 'returned', 'updated', 'expired', 'archived'], required: true },
   note: { type: String, default: '' },
   actorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   version: { type: Number, default: 1 },
@@ -29,6 +29,7 @@ const schema = new mongoose.Schema({
   riskNotice: { type: String, default: '', maxlength: 2000 },
   sourceNote: { type: String, default: '', maxlength: 1000 },
   ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null, index: true },
+  supersedesId: { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalResourceKnowledge', default: null, index: true },
   status: { type: String, enum: ['draft', 'pending_review', 'published', 'returned', 'expired', 'archived'], default: 'draft', index: true },
   version: { type: Number, default: 1, min: 1 },
   submittedAt: { type: Date, default: null },

@@ -286,6 +286,7 @@ export const adminAPI = {
   submitMedicalResourceKnowledge: (id, note = '') => req(`/medical-resource-knowledge/${id}/submit`, { method: 'PATCH', body: JSON.stringify({ note }) }),
   reviewMedicalResourceKnowledge: (id, action, note = '') => req(`/medical-resource-knowledge/${id}/review`, { method: 'PATCH', body: JSON.stringify({ action, note }) }),
   archiveMedicalResourceKnowledge: (id, note = '') => req(`/medical-resource-knowledge/${id}/archive`, { method: 'PATCH', body: JSON.stringify({ note }) }),
+  reviseMedicalResourceKnowledge: (id) => req(`/medical-resource-knowledge/${id}/revise`, { method: 'POST' }),
 
   // 会员标签
   memberTags:        ()         => req('/member-tags'),
