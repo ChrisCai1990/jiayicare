@@ -140,6 +140,17 @@ test('确定性小结不遗漏肺CT异常', () => {
   assert.equal(result, '肺癌早筛：胸部低剂量CT：右肺上叶磨玻璃结节。');
 });
 
+test('多行影像主要结论仍作为同一个专项输出', () => {
+  const result = buildDeterministicSummary([{
+    projectName: '肺癌早筛',
+    conclusions: [{
+      name: '胸部CT', itemType: 'imaging', status: 'attention',
+      conclusion: '1.肺内结节（建议年度复查）\n2.肺内纤维索条影\n3.脂肪肝',
+    }],
+  }]);
+  assert.equal(result, '肺癌早筛：胸部CT：1.肺内结节（建议年度复查）；2.肺内纤维索条影；3.脂肪肝。');
+});
+
 test('确定性小结保留同项目的心脏超声等所有异常', () => {
   const result = buildDeterministicSummary([{
     projectName: '心血管病早筛',

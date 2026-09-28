@@ -16,6 +16,34 @@ test('AI task panel keeps review-specific wording', () => {
   assert.match(aiTodos, /暂无待审核任务/)
 })
 
+test('workbench labels distinguish service execution from AI review', () => {
+  const serviceTasks = fs.readFileSync(path.join(__dirname, '../../staff/src/components/ServiceTasksPanel.jsx'), 'utf8')
+  assert.match(serviceTasks, /服务流程任务（执行\/督办）/)
+  assert.match(serviceTasks, /与下方 AI 审核任务不是同一项/)
+  assert.match(aiTodos, /AI 生成内容或 AI 触发提醒的人工核对/)
+  assert.match(aiTodos, /会转入上方服务流程/)
+})
+
+test('report follow-up draft review is shown only in the AI review queue', () => {
+  const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8')
+  const serviceTasks = route.slice(route.indexOf("router.get('/service-tasks'"), route.indexOf('// ── GET /api/staff/patients'))
+  const aiTodosRoute = route.slice(route.indexOf("router.get('/ai-todos'"), route.indexOf("router.patch('/service-proposals"))
+  assert.match(serviceTasks, /task\.workflowKey !== 'report_followup:advisor_review'/)
+  assert.match(aiTodosRoute, /type: 'report_followup_review'/)
+  assert.match(aiTodosRoute, /报告随访草稿待审核/)
+  assert.match(aiTodos, /report_followup_review/)
+})
+
+test('prescription review does not create a duplicate health-course review, while clinical drafts appear in AI todos', () => {
+  const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8')
+  const patientDetail = fs.readFileSync(path.join(__dirname, '../../staff/src/pages/PatientDetailPage.jsx'), 'utf8')
+  assert.match(route, /HEALTH_COURSE_DOCUMENTS = new Set\(\['outpatient_record', 'inpatient_record', 'exam_report', 'lab_report'\]\)/)
+  assert.match(route, /documentCategory: \{ \$ne: 'prescription_order' \}/)
+  assert.match(route, /type: 'health_course_review'/)
+  assert.match(aiTodos, /health_course_review/)
+  assert.doesNotMatch(patientDetail.match(/const HEALTH_COURSE_DOCUMENT_CATEGORIES[^\n]+/)[0], /prescription_order/)
+})
+
 test('follow-up counters and list exclude service executor, supervisor and insurance work items', () => {
   const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8')
   const reports = route.slice(route.indexOf("router.get('/reports'"), route.indexOf("router.get('/staff-list'"))

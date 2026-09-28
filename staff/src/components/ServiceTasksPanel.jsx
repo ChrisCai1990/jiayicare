@@ -223,9 +223,12 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
   return (
     <div id="service-tasks-panel" className="card" style={{ marginBottom: 20, border: '1.5px solid #1E6B5035' }}>
       <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span>待处理服务任务</span>
-          <span style={{ fontSize: 12, color: '#fff', background: '#1E6B50', padding: '2px 8px', borderRadius: 99 }}>{serviceGroups.length}</span>
+        <div style={{ minWidth: 0 }}>
+          <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>服务流程任务（执行/督办）</span>
+            <span style={{ fontSize: 12, color: '#fff', background: '#1E6B50', padding: '2px 8px', borderRadius: 99 }}>{serviceGroups.length}</span>
+          </div>
+          <div style={{ marginTop: 3, fontSize: 12, color: '#667085' }}>已进入服务流程的岗位任务；与下方 AI 审核任务不是同一项。</div>
         </div>
         <button type="button" className="btn btn-secondary btn-sm" onClick={showHistory}>{historyOpen ? '收起已处理' : '查看已处理'}</button>
       </div>

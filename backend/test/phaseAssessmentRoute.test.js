@@ -117,7 +117,7 @@ test('年度总评选择年度模板并固定综合顾问审核，不发布下�
   setup(t, 'familyDoctor');
   t.mock.method(AnnualPlan, 'findOne', () => ({ sort: () => ({ lean: async () => ({ _id: 'plan', confirmedAt: '2020-01-01' }) }) }));
   t.mock.method(PlanTemplate, 'findOne', filter => {
-    assert.equal(filter['content.frequency'], 'yearly');
+    assert.deepEqual(filter['content.frequency'], { $in: ['yearly'] });
     return { sort: () => ({ lean: async () => ({ _id: 'template', content: { frequency: 'yearly' } }) }) };
   });
   t.mock.method(PhaseAssessment, 'exists', async () => false);

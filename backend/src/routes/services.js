@@ -248,14 +248,9 @@ router.post('/order', auth, async (req, res) => {
   if (!serviceId) {
     return res.status(400).json({ success: false, message: '请指定服务项目' });
   }
-  // 兼容新旧客户：完成统一建档，或档案已具备姓名、身份证/护照号和联系电话，均视为已实名。
-  const hasVerifiedIdentityFields = !!(
-    String(req.user.name || '').trim()
-    && String(req.user.idNumber || '').trim()
-    && String(req.user.contactPhone || req.user.phone || '').trim()
-  );
-  if (!req.user.onboardingCompleted && !hasVerifiedIdentityFields) {
-    return res.status(403).json({ success: false, code: 'REAL_NAME_REQUIRED', message: '购买服务前请先完成实名注册信息' });
+  // 服务提交必须走完整实名建档，避免仅有残缺历史字段的账户绕过身份证/联系电话核验。
+  if (!req.user.onboardingCompleted) {
+    return res.status(403).json({ success: false, code: 'REAL_NAME_REQUIRED', message: '提交服务前请先完成实名建档（姓名、证件号和联系电话）' });
   }
 
   // 先从 Product / Admin 服务包查，再查 Service，最后兼容旧版静态 ID

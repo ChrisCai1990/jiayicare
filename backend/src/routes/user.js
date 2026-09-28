@@ -137,9 +137,14 @@ async function requireAiEntitlement(user, key, res) {
   return false;
 }
 
+// Read-only summary for the already released mini program. Never grant/backfill rights here.
 router.get('/membership-benefits', auth, async (req, res) => {
-  try { res.json({ success:true, data:await require('../utils/membershipBenefits').membershipBenefits(req.user) }); }
-  catch (error) { res.status(500).json({ success:false, message:'会员权益加载失败，请重试' }); }
+  try {
+    res.json({ success: true, data: await require('../utils/membershipBenefits').membershipBenefits(req.user) });
+  } catch (err) {
+    console.error('[membership-benefits]', err.message);
+    res.status(500).json({ success: false, message: '会员权益加载失败，请稍后重试' });
+  }
 });
 
 // 获取当前用户信息（含健康基金汇总 + 责任团队真实数据）
@@ -424,7 +429,7 @@ router.put('/me', auth, async (req, res) => {
 // 其余健康信息（既往史/生活方式/心理健康等）交给问卷库分批推送采集，不在此处重复询问
 router.post('/onboarding', auth, async (req, res) => {
   try {
-    const { name, idNumber, idType, contactPhone, verificationCode, residence, healthMonitoringConsent } = req.body;
+    const { name, idNumber, idType, contactPhone, verificationCode, residence, healthMonitoringConsent, entrySource } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ success: false, message: '请填写姓名' });
     if (!idNumber || !idNumber.trim()) return res.status(400).json({ success: false, message: `请填写${idType === 'passport' ? '护照号' : '身份证号'}` });
     if (!contactPhone || !contactPhone.trim()) return res.status(400).json({ success: false, message: '请填写联系电话' });
@@ -467,6 +472,15 @@ router.post('/onboarding', auth, async (req, res) => {
       onboardingCompletedAt: new Date(),
       healthMonitoringConsentAt: healthMonitoringConsent === true ? new Date() : null,
     };
+    const entrySourceLabels = {
+      official_site: '官网服务入口',
+      wechat_service: '微信客服',
+      partner: '合作机构转介',
+      staff_referral: '工作人员转介',
+    };
+    const verifiedEntrySource = entrySourceLabels[String(entrySource || '').trim().toLowerCase()] || '';
+    // `source` 同时可由工作人员维护；只在其尚为空时写入小程序码的首次来源。
+    if (verifiedEntrySource && !String(req.user.source || '').trim()) updateData.source = verifiedEntrySource;
     if (residence?.province && residence?.city) updateData.residence = { province: String(residence.province).trim(), city: String(residence.city).trim(), district: String(residence.district || '').trim() };
     updateData.idNumber = normalizedIdNumber;
     updateData.idType = isPassport ? 'passport' : 'idCard';
@@ -517,6 +531,7 @@ router.post('/onboarding', auth, async (req, res) => {
         : '';
       if (transferredReferralCode) setData.referralCode = transferredReferralCode;
       if (!idOwner.name || idOwner.name === '微信用户') setData.name = name.trim();
+      if (verifiedEntrySource && !String(idOwner.source || '').trim()) setData.source = verifiedEntrySource;
 
       // 先释放临时账号上的唯一登录字段，再写入既有档案。
       const releasedUniqueFields = { phone: 1, wechatOpenid: 1, wechatMpOpenid: 1 };
@@ -1723,6 +1738,21 @@ router.get('/family-links/search', auth, async (req, res) => {
     })) });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/user/family-links/:memberId/service-overview
+// Only mutually linked members in the same tenant; never return clinical records.
+router.get('/family-links/:memberId/service-overview', auth, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.memberId)) {
+      return res.status(400).json({ success: false, message: '家庭成员信息无效' });
+    }
+    const data = await require('../utils/familyServiceOverview').loadOverview(req.user, req.params.memberId);
+    res.json({ success: true, data });
+  } catch (err) {
+    const status = err.status === 403 ? 403 : 500;
+    res.status(status).json({ success: false, message: status === 403 ? err.message : '获取家庭服务信息失败，请稍后重试' });
   }
 });
 

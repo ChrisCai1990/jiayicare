@@ -36,6 +36,7 @@ function route(orderFields = {}) {
     Order: { findById: async () => order }, crypto: { randomBytes: () => ({ toString: () => 'abcdef12' }) },
     require: name => ({
       '../utils/manualOrderPayment': { validateManualOrderPayment: validate },
+      '../utils/packageEntitlements': { ensurePackageEntitlement: async () => {}, ensureMemberBundleEntitlement: async () => {} },
       '../utils/orderSupplementArchive': { ensureOrderSupplementDraft: async () => {} },
       '../utils/orderPoints': { awardOrderPoints: async row => calls.push(['reward', row.paidAmount]) },
     })[name],
