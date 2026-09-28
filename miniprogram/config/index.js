@@ -21,6 +21,10 @@ const config = {
     enable: false,
   },
   mini: {
+    // Shared sources outside src must also pass through the mini-program Babel pipeline.
+    compile: {
+      include: [require('path').resolve(__dirname, '../../app/src/utils/healthFundPreview.js')],
+    },
     postcss: {
       pxtransform: {
         enable: true,

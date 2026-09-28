@@ -1,5 +1,7 @@
 # JiayiCare 小程序端说明
 
+> 2026-09-28：跨端基金源码必须纳入mini.compile.include，否则common.js残留可选链/空值合并，旧微信启动解析可能白屏。上传前先构建，再执行test/buildSyntax.test.js产物语法检查；构建成功不代表真机启动成功。
+
 技术栈：Taro 3.6.32 + React 18（JS，不用 TS，跟 app/ 保持一致降低维护成本）+ 微信小程序原生组件/API。
 共用后端：与 app/ 用同一套 `backend/` API，唯一区别是登录方式（见下）。
 
