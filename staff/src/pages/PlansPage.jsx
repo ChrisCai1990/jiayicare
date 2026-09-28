@@ -590,6 +590,8 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
   const [supervisors, setSupervisors] = useState([])
   const [workflowProducts, setWorkflowProducts] = useState([])
   const [workflowProductId, setWorkflowProductId] = useState('')
+  const [resourceKnowledge, setResourceKnowledge] = useState([])
+  const [selectedResourceIds, setSelectedResourceIds] = useState([])
 
   // 模板内容字段（与管理端完全一致）
   const [form, setForm] = useState({
@@ -680,12 +682,14 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
       staffAPI.getStaffList({ roles: 'medicalAssistant,healthPlanner' }),
       staffAPI.getStaffList({ roles: 'healthManager,familyDoctor,superadmin' }),
       staffAPI.getWorkflowProducts('checkup'),
+      staffAPI.getMedicalResourceKnowledge(),
     ])
-      .then(([tplRes, staffRes, supervisorRes, productRes]) => {
+      .then(([tplRes, staffRes, supervisorRes, productRes, knowledgeRes]) => {
         setTemplates(tplRes.data || [])
         setMedicalAssistants(staffRes.data || [])
         setSupervisors(supervisorRes.data || [])
         setWorkflowProducts(productRes.data || [])
+        setResourceKnowledge(knowledgeRes.data || [])
         if ((productRes.data || []).length === 1) setWorkflowProductId(productRes.data[0]._id)
       })
       .catch(err => setTplError(err.message || '加载失败'))
@@ -730,6 +734,28 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
     })
     setStep(2)
     setError('')
+    setSelectedResourceIds([])
+  }
+
+  const toggleResourceKnowledge = resourceId => {
+    const id = String(resourceId)
+    if (selectedResourceIds.includes(id)) {
+      setSelectedResourceIds(ids => ids.filter(item => item !== id))
+      return
+    }
+    const resource = resourceKnowledge.find(item => String(item._id) === id)
+    const appointment = resource?.appointmentInfo || {}
+    const noteParts = [
+      appointment.advanceDays ? `建议提前期：${appointment.advanceDays}` : '',
+      Array.isArray(appointment.materials) && appointment.materials.length ? `资料清单：${appointment.materials.join('、')}` : '',
+      appointment.feeAndInsurance ? `费用/保险：${appointment.feeAndInsurance}` : '',
+      resource?.precautions ? `注意事项：${resource.precautions}` : '',
+      resource?.serviceBoundary ? `服务边界：${resource.serviceBoundary}` : '',
+      resource?.riskNotice ? `风险提示：${resource.riskNotice}` : '',
+    ].filter(Boolean)
+    const block = noteParts.length ? `【资源引用：${resource.title}】\n${noteParts.join('\n')}` : ''
+    setSelectedResourceIds(ids => [...ids, id])
+    if (block) setForm(current => ({ ...current, notes: current.notes ? `${current.notes}\n\n${block}` : block }))
   }
 
   const handleSubmit = async () => {
@@ -815,7 +841,7 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
       await staffAPI.createPlan({
         patientId, type: 'medical_assist', title: form.name,
         description: isAgencyService ? '' : description, year: Number(form.serviceDate.slice(0, 4)), items,
-        content: { ...form, ...(isAgencyService ? { staffId: '', staffName: '', supervisorId: assignedPlanner._id, transport: '', hotel: '' } : {}), ...(isAgencyExamBooking ? { tasks: form.agencyExams.map(row => [row.item, row.department, row.expert, row.notes].filter(Boolean).join(' · ')).join('\n') } : {}), datetime: [form.serviceDate, form.serviceTime].filter(Boolean).join(' ') },
+        content: { ...form, resourceReferences: selectedResourceIds.map(resourceId => ({ resourceId })), ...(isAgencyService ? { staffId: '', staffName: '', supervisorId: assignedPlanner._id, transport: '', hotel: '' } : {}), ...(isAgencyExamBooking ? { tasks: form.agencyExams.map(row => [row.item, row.department, row.expert, row.notes].filter(Boolean).join(' · ')).join('\n') } : {}), datetime: [form.serviceDate, form.serviceTime].filter(Boolean).join(' ') },
       })
       onSaved()
     } catch (err) { setError(err.message) }
@@ -1094,6 +1120,11 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
             <button type="button" className="btn btn-secondary" disabled={form.agencyExams.length >= 12} onClick={() => set('agencyExams', [...form.agencyExams, { item: '', department: '', expert: '', notes: '' }])}>＋ 增加检查项目</button>
           </div>}
           {!isAgencyExamBooking && !isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && renderField(isAgencyService ? '代办事项 *' : isExamEscort || isTreatmentEscort ? '陪同服务事项 *' : '具体服务事项', 'tasks', 3, isTreatmentEscort ? '如：核对治疗单、协助签到缴费、记录完成情况及下一次治疗安排' : isExamEscort ? '如：核对检查申请单、协助签到、确认报告领取方式' : '如：代取报告、陪同检查，每行一项')}
+          {!isAgencyService && !isMedicalEscort && !isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && <div style={{ padding: 12, border: '1px solid #CFE4DA', borderRadius: 8, background: '#F7FBF9' }}>
+            <div style={{ fontWeight: 700, color: '#1E6B50', marginBottom: 4 }}>引用已发布的就医资源</div>
+            <div style={{ fontSize: 12, color: '#60776C', marginBottom: 8 }}>勾选后会自动带入预约要点、资料清单、注意事项和服务边界；保存方案时冻结当前资源版本。</div>
+            {!resourceKnowledge.length ? <div style={{ fontSize: 13, color: '#8AA89C' }}>暂无可引用资源，请联系管理员发布资源知识条目。</div> : <div style={{ display: 'grid', gap: 7, maxHeight: 180, overflowY: 'auto' }}>{resourceKnowledge.map(resource => <label key={resource._id} style={{ display: 'block', padding: '8px 10px', border: '1px solid #DCE8E1', borderRadius: 7, background: selectedResourceIds.includes(String(resource._id)) ? '#E8F5EF' : '#fff', fontSize: 13 }}><input type="checkbox" checked={selectedResourceIds.includes(String(resource._id))} onChange={() => toggleResourceKnowledge(resource._id)} /> <b>{resource.title}</b><span style={{ color: '#60776C' }}> · {resource.summary || [resource.institutionId?.name, resource.departmentId?.name, resource.expertId?.name].filter(Boolean).join(' / ') || '内部资源'}</span></label>)}</div>}
+          </div>}
           {!isAgencyService && !isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && renderField('酒店安排',     'hotel', 2, '是否需要住宿及酒店信息')}
           {!isMedicalProxy && !isExpertAppointment && !checkupOneStop && renderField('备注',         'notes', 2, '其他注意事项')}
 

@@ -322,6 +322,7 @@ export const staffAPI = {
   // P4 — Referrals
   createReferral:        (data)      => req('/staff/referrals', { method: 'POST', body: JSON.stringify(data) }),
   getMedicalResources:   ()          => req('/staff/medical-resources'),
+  getMedicalResourceKnowledge: (params = {}) => req('/staff/medical-resource-knowledge?' + qs(params)),
   getReferrals:          (p = {})    => req('/staff/referrals?' + qs(p)),
   updateReferral:        (id, data)  => req(`/staff/referrals/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   resubmitReferral:      (id, data)  => req(`/staff/referrals/${id}/resubmit`, { method: 'PATCH', body: JSON.stringify(data) }),

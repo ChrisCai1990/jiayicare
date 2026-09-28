@@ -280,6 +280,12 @@ export const adminAPI = {
   createMedicalExpert: (data) => req('/medical-experts', { method: 'POST', body: JSON.stringify(data) }),
   updateMedicalExpert: (id, data) => req(`/medical-experts/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   toggleMedicalExpert: (id) => req(`/medical-experts/${id}/toggle`, { method: 'PATCH' }),
+  medicalResourceKnowledge: (params = {}) => req('/medical-resource-knowledge?' + new URLSearchParams(params)),
+  createMedicalResourceKnowledge: (data) => req('/medical-resource-knowledge', { method: 'POST', body: JSON.stringify(data) }),
+  updateMedicalResourceKnowledge: (id, data) => req(`/medical-resource-knowledge/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  submitMedicalResourceKnowledge: (id, note = '') => req(`/medical-resource-knowledge/${id}/submit`, { method: 'PATCH', body: JSON.stringify({ note }) }),
+  reviewMedicalResourceKnowledge: (id, action, note = '') => req(`/medical-resource-knowledge/${id}/review`, { method: 'PATCH', body: JSON.stringify({ action, note }) }),
+  archiveMedicalResourceKnowledge: (id, note = '') => req(`/medical-resource-knowledge/${id}/archive`, { method: 'PATCH', body: JSON.stringify({ note }) }),
 
   // 会员标签
   memberTags:        ()         => req('/member-tags'),
