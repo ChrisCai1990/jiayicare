@@ -16,6 +16,14 @@ test('AI task panel keeps review-specific wording', () => {
   assert.match(aiTodos, /暂无待审核任务/)
 })
 
+test('workbench labels distinguish service execution from AI review', () => {
+  const serviceTasks = fs.readFileSync(path.join(__dirname, '../../staff/src/components/ServiceTasksPanel.jsx'), 'utf8')
+  assert.match(serviceTasks, /服务流程任务（执行\/督办）/)
+  assert.match(serviceTasks, /与下方 AI 审核任务不是同一项/)
+  assert.match(aiTodos, /AI 生成内容或 AI 触发提醒的人工核对/)
+  assert.match(aiTodos, /会转入上方服务流程/)
+})
+
 test('follow-up counters and list exclude service executor, supervisor and insurance work items', () => {
   const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8')
   const reports = route.slice(route.indexOf("router.get('/reports'"), route.indexOf("router.get('/staff-list'"))

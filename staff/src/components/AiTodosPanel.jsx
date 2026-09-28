@@ -172,23 +172,26 @@ export default function AiTodosPanel() {
   return (
     <div className="card" style={{ marginBottom: 20, border: overdueCount > 0 ? '1.5px solid #DC354540' : undefined }}>
       <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div className="card-title">AI 待审核任务</div>
-          {staff?.roleLabel && staff?.role !== 'superadmin' && (
-            <span style={{ fontSize: 12, color: '#8AA89C' }}>· {staff.roleLabel}（仅显示本人可审核项）</span>
-          )}
-          {todos.length > 0 && (
-            <span style={{
-              background: overdueCount > 0 ? '#DC3545' : '#1E6B50',
-              color: '#fff', fontSize: 11, fontWeight: 700,
-              borderRadius: 99, padding: '1px 8px', lineHeight: '18px',
-            }}>{todos.length}</span>
-          )}
-          {overdueCount > 0 && (
-            <span style={{ fontSize: 12, color: '#DC3545', fontWeight: 500 }}>
-              {overdueCount} 项超24小时
-            </span>
-          )}
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div className="card-title">AI 待审核任务</div>
+            {staff?.roleLabel && staff?.role !== 'superadmin' && (
+              <span style={{ fontSize: 12, color: '#8AA89C' }}>· {staff.roleLabel}（仅显示本人可审核项）</span>
+            )}
+            {todos.length > 0 && (
+              <span style={{
+                background: overdueCount > 0 ? '#DC3545' : '#1E6B50',
+                color: '#fff', fontSize: 11, fontWeight: 700,
+                borderRadius: 99, padding: '1px 8px', lineHeight: '18px',
+              }}>{todos.length}</span>
+            )}
+            {overdueCount > 0 && (
+              <span style={{ fontSize: 12, color: '#DC3545', fontWeight: 500 }}>
+                {overdueCount} 项超24小时
+              </span>
+            )}
+          </div>
+          <div style={{ marginTop: 3, fontSize: 12, color: '#667085' }}>AI 生成内容或 AI 触发提醒的人工核对；完成后如需办理，会转入上方服务流程。</div>
         </div>
         {['nutritionist', 'familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && <button onClick={() => nav('/content-reviews')} style={{ border: 'none', background: 'none', color: '#1E6B50', cursor: 'pointer', fontSize: 12 }}>审核记录</button>}
       </div>
