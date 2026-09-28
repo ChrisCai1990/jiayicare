@@ -1,10 +1,26 @@
 import React from 'react'
+const muted={fontSize:12,color:'#718579',lineHeight:1.7}
+function Quota({item,shared}) {
+  return <div style={{background:'#F4F7F3',borderRadius:12,padding:16}}>
+    <div style={{display:'flex',justifyContent:'space-between',gap:12}}><strong>{item.name}</strong><strong style={{fontSize:20,color:'#1E6B50'}}>{item.total==null?'待核对':item.total+' 次'}</strong></div>
+    {shared && <p style={muted}>可用于：{item.services.join('、')||'适用服务待核对'}<br/>上述服务合计共用，不按项目重复累计</p>}
+    <div style={muted}>{item.usageKnown?item.detail:'使用情况待核对 · 暂不显示剩余次数'}</div>
+  </div>
+}
 export default function MembershipBenefitsSummary({ data, error, onRefresh }) {
   return <div className="card" style={{marginBottom:16}}><div className="card-header"><div className="card-title">会员计划与使用情况</div><button className="btn btn-secondary btn-sm" onClick={onRefresh}>刷新权益</button></div><div className="card-body">
     {error||(!data?'正在加载…':data.message)}
-    {(data?.plans||[]).map(plan=><section key={plan.id} style={{marginBottom:16}}><h3>{plan.name}</h3><p>有效期：{String(plan.validFrom||'待核对').slice(0,10)} 至 {String(plan.validUntil||'待核对').slice(0,10)}</p><p style={{color:'#876B38'}}>{plan.notice}</p>
-      {plan.items.map((item,i)=><div key={i} style={{padding:'6px 0'}}><strong>{item.label}</strong>：{item.value}</div>)}
-      {plan.usage.map((item,i)=><div key={i}>客户使用记录：{item.name} · {String(item.usedAt).slice(0,10)}</div>)}
+    {(data?.plans||[]).map(plan=><section key={plan.id} style={{marginBottom:20}}>
+      <div style={{background:'#193C30',borderRadius:14,padding:20,color:'#fff'}}><h3 style={{margin:'0 0 8px'}}>{plan.name}</h3><div style={{fontSize:12,color:'#C5D9CE'}}>有效期：{String(plan.validFrom||'待核对').slice(0,10)} — {String(plan.validUntil||'待核对').slice(0,10)}</div></div>
+      {plan.groups ? <>
+        {!!plan.groups.features.length && <><h4>健康管理服务</h4><div style={{display:'flex',flexWrap:'wrap',gap:8}}>{plan.groups.features.map(name=><span key={name} style={{background:'#EDF4F0',color:'#365E4D',padding:'7px 12px',borderRadius:8,fontSize:13}}>{name}</span>)}</div><p style={muted}>计划内服务，按约定规则提供。</p></>}
+        {[['shared','服务共用次数'],['independent','独立次数权益']].map(([key,title])=>!!plan.groups[key].length && <div key={key}><h4>{title}</h4><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(240px,1fr))',gap:12}}>{plan.groups[key].map((item,i)=><Quota key={i} item={item} shared={key==='shared'}/>)}</div></div>)}
+      </> : (plan.items||[]).map((item,i)=><p key={i}>{item.label}：{item.value}</p>)}
+      <p style={muted}>{plan.notice}</p>
+      <details><summary style={{cursor:'pointer',color:'#1E6B50',padding:'10px 0'}}>客户使用记录</summary>
+        {(plan.usage||[]).map((item,i)=><div key={i} style={{padding:'8px 0',borderBottom:'1px solid #E7ECE7'}}>{item.name}<span style={{...muted,marginLeft:16}}>{String(item.usedAt||'待核对').slice(0,10)}</span></div>)}
+        {!plan.usage?.length && <p style={muted}>{plan.source==='configuration'?'历史记录待核对，不能据此认定未使用。':'暂无该客户使用记录；共用额度可能包含其他成员使用。'}</p>}
+      </details>
     </section>)}
   </div></div>
 }

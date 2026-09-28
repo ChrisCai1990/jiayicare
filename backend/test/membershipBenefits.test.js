@@ -51,6 +51,11 @@ test('frozen ledger wins over edited plan, reports pool totals and only own usag
   assert.match(plan.items[0].value, /已用 2 次 · 剩余 3 次/);
   assert.match(plan.items[1].value, /共享次数，不单独累计/);
   assert.equal(plan.usage.length,1);
+  assert.equal(plan.groups.shared.length,1);
+  assert.equal(plan.groups.shared[0].services[0],'Review');
+  assert.equal(plan.groups.shared[0].total,5);
+  assert.equal(plan.groups.shared[0].remaining,3);
+  assert.equal(plan.groups.independent.length,0);
   assert.equal(plan.usage[0].note,undefined);
   assert.equal(await api.hasHealthFundAccess(user),true);
 });
@@ -60,4 +65,5 @@ test('active ledger without qualifying tier cannot be overridden by legacy annua
 test('missing remaining quota is unknown, never presumed unused',()=>{
   const plan=fixture().project({rights:{productEntitlements:[{productName:'Review',count:5}]}},user._id);
   assert.match(plan.items[0].value,/待核对/);
+  assert.equal(plan.groups.independent[0].usageKnown,false);
 });

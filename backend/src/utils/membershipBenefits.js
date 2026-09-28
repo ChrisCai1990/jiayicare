@@ -20,13 +20,26 @@ function project(row, userId, legacy = false) {
   const rights = row.rights || {};
   const items = Object.entries(FEATURES).filter(([key])=>rights.aiEntitlements?.[key] === true).map(([,label])=>({label,value:'计划包含；按计划服务规则执行'}));
   const pools = rights.sharedEntitlementPools || [];
+  const services = rights.productEntitlements || [];
+  const describeQuota = item => ({
+    name:item.productName || item.name || '服务项目',
+    total:Number.isFinite(Number(item.count)) ? Number(item.count) : null,
+    usageKnown:!legacy && item.remainingCount != null && Number.isFinite(Number(item.remainingCount)) && Number.isFinite(Number(item.count)),
+    remaining:legacy || item.remainingCount == null ? null : Number(item.remainingCount),
+    detail:quota(item,legacy),
+  });
+  const groups = {
+    features:items.map(item=>item.label),
+    shared:pools.map(pool=>({...describeQuota(pool),services:services.filter(item=>item.poolKey===pool.key).map(item=>item.productName || '服务项目')})),
+    independent:services.filter(item=>!pools.some(pool=>pool.key===item.poolKey)).map(describeQuota),
+  };
   pools.forEach(pool=>items.push({label:`共享次数：${pool.name}`,value:quota(pool,legacy)}));
   (rights.productEntitlements || []).forEach(item=>{
     const pool=pools.find(p=>p.key===item.poolKey);
     items.push({label:item.productName || '服务项目',value:pool?`使用「${pool.name}」共享次数，不单独累计`:quota(item,legacy)});
   });
   return { id:String(row._id || 'legacy'), name:row.packageName, validFrom:row.validFrom, validUntil:row.validUntil,
-    source:legacy?'configuration':'ledger', notice:legacy?'当前计划配置参考；历史使用台账尚未建立，不能据此认定全部次数未使用。':'按已授予权益台账展示；共享次数包含家庭成员的使用。', items,
+    source:legacy?'configuration':'ledger', notice:legacy?'当前计划配置参考；历史使用台账尚未建立，不能据此认定全部次数未使用。':row.familySharing?'按已授予权益台账展示；家庭共用额度包含家庭成员的使用。':'按已授予权益台账展示。', items, groups,
     usage:(row.usageRecords || []).filter(r=>String(r.usedByUserId)===String(userId)).map(r=>({name:r.productName || '服务项目',usedAt:r.usedAt})) };
 }
 async function membershipBenefits(user, existingRows) {
