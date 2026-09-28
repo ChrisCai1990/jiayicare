@@ -40,6 +40,16 @@ sed -i '0,/server_name jiaycare\.com www\.jiaycare\.com;/s//server_name jiaycare
 install -d -m 755 "$site_root"
 install -m 644 "$stage_root/index.html" "$site_root/index.html"
 install -m 644 "$stage_root/styles.css" "$site_root/styles.css"
+if [ -f "$stage_root/robots.txt" ]; then
+  install -m 644 "$stage_root/robots.txt" "$site_root/robots.txt"
+fi
+if [ -f "$stage_root/sitemap.xml" ]; then
+  install -m 644 "$stage_root/sitemap.xml" "$site_root/sitemap.xml"
+fi
+if [ -d "$stage_root/services" ]; then
+  install -d -m 755 "$site_root/services"
+  find "$stage_root/services" -maxdepth 1 -type f -name '*.html' -exec install -m 644 {} "$site_root/services/" \;
+fi
 install -m 644 "$stage_root/nginx.www.conf" "$www_config"
 ln -sfn "$www_config" "$www_link"
 
