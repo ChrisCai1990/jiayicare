@@ -295,10 +295,13 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
       ...Object.fromEntries(['content', 'attachments', 'requestId'].map(key => [key, req.body[key]])),
     });
     const { topic } = accepted;
-    res.status(topic.generation?.status === 'running' ? 202 : 200).json({ success: true, data: forClient(topic) });
-    if (!accepted.claimed) return;
-    // Send acknowledgement before the potentially slow AI call; the client polls persisted state.
-    void finishSend(AiCaseReview, topic, async () => {
+    const legacy = req.body.requestId === undefined || req.body.requestId === null || req.body.requestId === '';
+    if (!legacy || !accepted.claimed) {
+      res.status(topic.generation?.status === 'running' ? 202 : 200).json({ success: true, data: forClient(topic) });
+      if (!accepted.claimed) return;
+    }
+    // New clients poll persisted state; already-open legacy pages still expect the reply in this response.
+    const completion = finishSend(AiCaseReview, topic, async () => {
       const message = topic.messages.find(item => item.role === 'staff' && item.requestId === topic.generation.requestId);
       const { content, attachments } = message;
       const snapshot = await buildContext(user, topic.contextScopes);
@@ -310,7 +313,16 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
         : '这是本主题首次讨论，请围绕本轮问题形成初步分析，并标明待确认信息。';
       const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: `【专项研判主题与要求】\n${topicGuide}\n\n【分析方式】\n${incrementalGuide}\n\n【本轮新增信息】\n${content || '请分析本轮上传的图文资料'}`, context: snapshot, attachments, history, maxTokens: isSupplement ? 500 : 1800 });
       return { result, snapshot };
-    }).catch(err => console.error('[ai-case-review] Persisting reply state failed:', err.message));
+    });
+    if (legacy) {
+      await completion;
+      const current = await AiCaseReview.findOne({ _id: topic._id, user: user._id });
+      if (current?.generation?.status === 'failed') return res.status(500).json({ success: false,
+        message: `提问已保存，AI回复失败：${current.generation.error}。请刷新页面后重试AI回复。` });
+      res.json({ success: true, data: forClient(current) });
+    } else {
+      void completion.catch(err => console.error('[ai-case-review] Persisting reply state failed:', err.message));
+    }
   } catch (err) { res.status(err.status || 500).json({ success: false, message: err.message }); }
 });
 

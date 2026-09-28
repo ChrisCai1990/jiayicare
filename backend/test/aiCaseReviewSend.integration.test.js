@@ -94,4 +94,28 @@ test('real Mongo send acceptance, retries and worker fencing', { skip: !process.
     const retry = await acceptSend(Model, { ...input, content: message.content, attachments: message.attachments });
     assert.equal(retry.topic.messages.length, 1);
   });
+  await t.test('already-open pages without requestId can send and replay without duplicates', async () => {
+    const input = await create(); delete input.requestId;
+    const first = await acceptSend(Model, input);
+    assert.equal(first.claimed, true);
+    assert.equal((await acceptSend(Model, input)).claimed, false);
+    await finishSend(Model, first.topic, good);
+    assert.equal((await acceptSend(Model, input)).claimed, false);
+    assert.equal((await Model.findById(input.topicId)).messages.length, 2);
+    const different = await acceptSend(Model, { ...input, content: 'another question' });
+    assert.equal(different.claimed, true);
+    assert.equal(different.topic.messages.length, 3);
+  });
+  await t.test('legacy failure retry and concurrent clicks reuse the same saved question', async () => {
+    const input = await create(); delete input.requestId;
+    const first = await acceptSend(Model, input);
+    await finishSend(Model, first.topic, async () => { throw new Error('timeout'); });
+    const attempts = await Promise.allSettled(Array.from({ length: 5 }, () => acceptSend(Model, input)));
+    const claims = attempts.filter(item => item.status === 'fulfilled' && item.value.claimed);
+    assert.equal(claims.length, 1);
+    assert.equal(claims[0].value.topic.generation.requestId, first.topic.generation.requestId);
+    assert.equal((await Model.findById(input.topicId)).messages.length, 1);
+    await finishSend(Model, claims[0].value.topic, good);
+    assert.equal((await Model.findById(input.topicId)).messages.length, 2);
+  });
 });

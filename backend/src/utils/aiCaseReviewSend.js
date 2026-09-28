@@ -7,7 +7,8 @@ const normalizedFiles = files => (Array.isArray(files) ? files : []).slice(0, 6)
 
 // Persist acceptance before starting AI. The document revision serializes claims across processes.
 async function acceptSend(Model, { patientId, topicId, staff, content, attachments, requestId }) {
-  if (typeof requestId !== 'string' || !/^[a-zA-Z0-9_-]{16,100}$/.test(requestId)) {
+  const legacy = requestId === undefined || requestId === null || requestId === '';
+  if (!legacy && (typeof requestId !== 'string' || !/^[a-zA-Z0-9_-]{16,100}$/.test(requestId))) {
     throw failure(400, '发送标识无效，请刷新页面后重试');
   }
   content = String(content || '').trim();
@@ -16,6 +17,16 @@ async function acceptSend(Model, { patientId, topicId, staff, content, attachmen
   content ||= '请分析本轮上传的图文资料';
   const topic = await Model.findOne({ _id: topicId, user: patientId, status: { $ne: 'archived' } });
   if (!topic) throw failure(404, '研判主题不存在');
+  if (legacy) {
+    // Pages open before deployment have no request ID. Reuse a matching recent last turn,
+    // or a still pending/failed turn, so transport retries cannot append duplicates.
+    const last = [...topic.messages].reverse().find(item => item.role === 'staff');
+    const retryable = last?.requestId && (Date.now() - new Date(last.createdAt).getTime() < 600000
+      || (topic.generation?.requestId === last.requestId && ['running', 'failed'].includes(topic.generation.status)));
+    requestId = retryable && String(last.staff) === String(staff._id) && last.content === content
+      && JSON.stringify(normalizedFiles(last.attachments)) === JSON.stringify(attachments)
+      ? last.requestId : randomUUID();
+  }
   const previous = topic.messages.find(item => item.role === 'staff' && item.requestId === requestId);
   // Explicit retry may replace a stalled worker after five minutes. The token fences any late result.
   const stalled = previous && topic.generation?.requestId === requestId
