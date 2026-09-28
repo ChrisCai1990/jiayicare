@@ -732,6 +732,9 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
 async function validateMedicalProxyStage(task, body, staff) {
   const stage = stageOf(task);
   if (!stage) return '';
+  // 健管专员在就诊后可反复补充资料、记录审核结论。只有明确提交完成时，
+  // 才校验报告已审核并流转健康顾问；草稿保存必须停留在当前审核环节。
+  if (stage === 'post_visit_audit' && body.status !== 'completed') return '';
   if (stage === 'supervise') {
     const supervisorOrder = task.sourceOrderId ? await Order.findById(task.sourceOrderId).select('serviceName').lean() : null;
     if (!/就医规划/.test(supervisorOrder?.serviceName || '')) return '健康规划师督办任务将在代诊执行完成后自动结束';
