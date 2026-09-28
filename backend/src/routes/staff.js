@@ -4485,6 +4485,14 @@ function applyAuditedInstitution(report) {
   }
 }
 
+// 仅设备导出/功能医学等明确不支持结构化识别的资料可走直接人工审核。
+// 其余资料（包括标题为“用药”、处方、病历、检验检查）必须先经 AI 解析并由健管专员核对结果，
+// 不能靠旧的直接审核接口绕过解析。
+function isManualOnlyReportAudit(report) {
+  return report?.type === 'home_monitor' || report?.type === 'functional'
+    || report?.documentCategory === 'functional_medicine';
+}
+
 router.post('/medical-reports/:id/review-activity', staffAuth, async (req, res) => {
   const { sessionId, sequence } = req.body;
   if (!/^[a-f\d-]{36}$/i.test(String(sessionId)) || !Number.isSafeInteger(sequence) || sequence < 1) return res.status(400).json({ success: false });
@@ -4925,6 +4933,9 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
   if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
   if (report.planItemSync?.status === 'running' || report.legacyReviewWrite?.status === 'running') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
   if (action === 'approve') {
+    if (!isManualOnlyReportAudit(report) && report.aiStatus !== 'reviewed') {
+      return res.status(409).json({ success: false, message: '该资料需先进行AI解析并核对解析结果，不能直接审核通过' });
+    }
     // Validate the prospective child before any task or conditional-plan mutation.
     if (abnormalItems !== undefined && !Array.isArray(abnormalItems)) {
       return res.status(400).json({ success: false, message: '异常项目必须为列表' });

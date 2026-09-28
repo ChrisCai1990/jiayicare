@@ -11858,14 +11858,10 @@ export default function PatientDetailPage() {
               </div>
             </div>
             <div className="modal-footer" style={{ flexDirection: 'column', gap: 8, alignItems: 'stretch' }}>
-              {/* 审核操作区：仅当报告待审核时展示。2026-07-21修复：确认AI结果(aiStatus→reviewed)
-                  现在会自动把audit_status一并置为audited(见PATCH /medical-reports/:id)，这里的
-                  独立审核入口此前可以绕过AI结果确认、直接把audit_status设audited，导致健康顾问
-                  拿到的是未经健管核对过的AI原始提取数据。收紧：走过AI解析流程(aiStatus不是none)
-                  的报告必须先在"审核AI结果"弹窗确认，这里不再单独放行；居家监测/功能医学检测等
-                  本就不支持AI解析的报告(aiStatus一直是none)保留原有直接审核通道，否则永远无法审核。 */}
+              {/* 只有明确无需结构化解析的资料可直接人工审核。用药、处方、病历和检验检查
+                  即使尚未开始解析也必须先进入 AI 解析/核对结果流程，避免空解析直接流转顾问。 */}
               {showReportDetail.audit_status !== 'audited' && showReportDetail.audit_status !== 'rejected'
-                && (isManualOnlyReport(showReportDetail) || showReportDetail.aiStatus === 'none') && (
+                && isManualOnlyReport(showReportDetail) && (
                 <>
                   {showRejectInput ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -11902,9 +11898,9 @@ export default function PatientDetailPage() {
                 </>
               )}
               {showReportDetail.audit_status !== 'audited' && showReportDetail.audit_status !== 'rejected'
-                && !isManualOnlyReport(showReportDetail) && showReportDetail.aiStatus !== 'none' && (
+                && !isManualOnlyReport(showReportDetail) && (
                 <div style={{ fontSize: 12, color: '#8AA89C', textAlign: 'center', padding: '4px 0' }}>
-                  请在"审核AI结果"里确认检验数据，确认后自动完成审核
+                  {showReportDetail.aiStatus === 'none' ? '请先返回报告列表点击“AI解析”，再在“审核AI结果”中核对并确认' : '请在“审核AI结果”里确认解析数据，确认后自动完成审核'}
                 </div>
               )}
               <button className="btn btn-secondary" onClick={() => { setShowReportDetail(null); setShowRejectInput(false); setRejectReason('') }}>关闭</button>
