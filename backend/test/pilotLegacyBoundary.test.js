@@ -40,6 +40,8 @@ test('manual nonpilot phase generation keeps monthly nutrition routing despite a
     createAssessment: async args => { generated = args; return { _id: 'assessment' }; },
     require: name => {
       if (name.endsWith('/healthManagementRollout')) return { enabledForPatient: () => false };
+      if (name.endsWith('/packageFeatureEntitlements')) return { getAiEntitlements: async () => ({ phaseAssessment: true, phaseAssessmentFrequency: 'quarterly' }) };
+      if (name.endsWith('/serviceAccess')) return { resolveServiceAccess: async () => ({ active: true }) };
       if (name.endsWith('/annualPeriodicGate')) return { annualPeriodicGate: async () => { gateReads++; throw Error('must not read new renewal gate'); } };
       throw Error('Unexpected ' + name);
     },
@@ -47,5 +49,5 @@ test('manual nonpilot phase generation keeps monthly nutrition routing despite a
   const res = { status(code) { this.code = code; return this; }, json(body) { this.body = body; } };
   await run({ staff: { role: 'familyDoctor' }, body: { frequency: 'yearly', domain: 'tcm' } }, res);
   assert.equal(res.code, 201, res.body?.message); assert.equal(gateReads, 0);
-  assert.equal(query['content.frequency'], 'monthly'); assert.equal(generated.assessmentDomain, 'nutrition');
+  assert.equal(JSON.stringify(query['content.frequency']), JSON.stringify({ $in: ['monthly'] })); assert.equal(generated.assessmentDomain, 'nutrition');
 });

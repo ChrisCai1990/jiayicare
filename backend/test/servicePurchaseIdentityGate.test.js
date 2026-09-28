@@ -3,10 +3,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-test('商城购买兼容完成标志及姓名证件联系电话齐全的历史实名档案', () => {
+test('商城购买必须完成实名建档，不允许残缺历史字段绕过', () => {
   const source = fs.readFileSync(path.join(__dirname, '../src/routes/services.js'), 'utf8');
-  assert.match(source, /hasVerifiedIdentityFields/);
-  assert.match(source, /req\.user\.idNumber/);
-  assert.match(source, /req\.user\.contactPhone \|\| req\.user\.phone/);
-  assert.match(source, /if \(!req\.user\.onboardingCompleted && !hasVerifiedIdentityFields\)/);
+  assert.doesNotMatch(source, /hasVerifiedIdentityFields/);
+  assert.match(source, /if \(!req\.user\.onboardingCompleted\)/);
+  assert.match(source, /REAL_NAME_REQUIRED/);
 });

@@ -20,5 +20,6 @@ test('agency form omits dispatch and logistics fields; medication form searches 
   assert.match(page, /!isAgencyService && !isMedicationProxy[^\n]*renderField\('交通接送'/);
   assert.match(page, /!isAgencyService && !isMedicationProxy[^\n]*renderField\('酒店安排'/);
   assert.match(page, /!isAgencyService && !isMedicalEscort[^\n]*<div className="form-group"[\s\S]{0,110}方案说明/);
-  assert.ok(page.indexOf('<PatientSearchInput value={patientId} onChange={setPatientId} />') < page.indexOf('{isMedicationProxy && <div style='));
+  const patientSearchIndex = page.indexOf('<PatientSearchInput value={patientId} onChange={setPatientId}');
+  assert.ok(patientSearchIndex >= 0 && patientSearchIndex < page.indexOf('{isMedicationProxy && <div style='));
 });

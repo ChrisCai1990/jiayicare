@@ -7,6 +7,7 @@ const Assessment = require('../src/models/PhaseAssessment');
 const Supply = require('../src/models/RecurringSupplyPlan');
 const Message = require('../src/models/Message');
 const gate = require('../src/utils/annualPeriodicGate');
+const packageFeatures = require('../src/utils/packageFeatureEntitlements');
 const ai = require('../src/utils/ai');
 const context = require('../src/utils/aiCaseReviewContext');
 let aiCalls = 0, saved = [];
@@ -18,6 +19,7 @@ const { scanAndNotifyDueSupplyPlans } = require('../src/utils/recurringSupplyPla
 const user = { _id: 'u', assignedFamilyDoctor: 'doctor', aiPilotFeatures: { stageAssessment: true }, serviceExpiry: '2020-01-01' };
 const plan = { _id: 'p', patientId: 'u', confirmedAt: '2020-01-01', continuitySource: { previousPlanId: 'old' } };
 test.beforeEach(t => {
+  t.mock.method(packageFeatures, 'getAiEntitlements', async () => ({ phaseAssessment: true, phaseAssessmentFrequency: 'quarterly' }));
   aiCalls = 0; saved = [];
   const previousKey = process.env.QWEN_API_KEY;
   process.env.QWEN_API_KEY = 'test-only-not-a-real-key';

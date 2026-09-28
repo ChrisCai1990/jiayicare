@@ -16,13 +16,15 @@ function response() {
 async function generate({ role = 'familyDoctor', templateName = '住院一站式服务', orderName, visible = ['patient'] } = {}) {
   let handler, created, aiCalls = 0;
   const template = templateName ? { _id: 'template', name: templateName, content: {} } : null;
-  const query = value => ({ select: () => query(value), sort: () => query(value), lean: async () => value, then: resolve => Promise.resolve(value).then(resolve) });
+  const query = value => ({ select: () => query(value), sort: () => query(value), limit: () => query(value), lean: async () => value, then: resolve => Promise.resolve(value).then(resolve) });
   vm.runInNewContext(route('post', '/patients/:id/ai-medical-assist-plan'), {
     router: { post: (...args) => { handler = args.at(-1); } }, staffAuth: () => {},
     getVisiblePlanPatientIds: async () => visible,
     User: { findById: () => query({ _id: 'patient', name: '测试客户', healthProfile: {} }) },
     Order: { findOne: () => query(orderName ? { _id: 'order', serviceName: orderName } : null) },
     PlanTemplate: { findOne: () => query(template), find: () => query([]) },
+    MedicalResourceKnowledge: { find: () => query([]) },
+    freezeMedicalResourceReferences: async ids => { assert.equal(ids.length, 0); return []; },
     HealthPlan: { findOne: () => query(null), create: async data => { created = data; return data; } },
     generateCompactMedicalAssistPurposes: require('../src/utils/medicalAssistPurposeDraft').generateCompactMedicalAssistPurposes,
     require: name => {
