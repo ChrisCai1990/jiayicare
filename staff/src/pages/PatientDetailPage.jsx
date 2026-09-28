@@ -90,11 +90,11 @@ const isMedicalEscortTask = task => task?.formData?.medicalEscort === true
     task?.sourceOrderId?.specificationLabel,
   ].filter(Boolean).join(' '))
 
-function RecordImageAttachments({ imageUrls = [] }) {
+function RecordImageAttachments({ imageUrls = [], onPreview }) {
   if (!imageUrls.length) return <span style={{ color: '#ccc', fontSize: 12 }}>—</span>
   return <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
     {imageUrls.map((url, index) => <img key={`${url}-${index}`} src={resolveAttachmentUrl(url)} alt={`核对附件${index + 1}`}
-      title="点击查看原图" onClick={() => window.open(resolveAttachmentUrl(url), '_blank', 'noopener,noreferrer')}
+      title="点击查看原图" onClick={() => onPreview ? onPreview(resolveAttachmentUrl(url)) : window.open(resolveAttachmentUrl(url), '_blank', 'noopener,noreferrer')}
       style={{ width: 42, height: 42, objectFit: 'cover', borderRadius: 6, border: '1px solid #E0D9CE', cursor: 'zoom-in' }} />)}
   </div>
 }
@@ -8911,7 +8911,7 @@ export default function PatientDetailPage() {
                         <td>{m.dosage}</td>
                         <td style={{ fontSize: 12 }}>{m.method} · {m.frequency}{m.timing ? ` · ${m.timing}` : ''}</td>
                         <td style={{ fontSize: 12, color: '#4A6558' }}>{m.purpose || '-'}</td>
-                        <td><RecordImageAttachments imageUrls={m.imageUrls} /></td>
+                        <td><RecordImageAttachments imageUrls={m.imageUrls} onPreview={setPreviewImageUrl} /></td>
                         <td style={{ fontSize: 12, color: '#8AA89C' }}>{m.createdByName || '-'}</td>
                         <td>
                           {canApproveMed ? (
@@ -8956,7 +8956,7 @@ export default function PatientDetailPage() {
                         <td>{m.dosage}</td>
                         <td style={{ fontSize: 12 }}>{m.method} · {m.frequency}{m.timing ? ` · ${m.timing}` : ''}</td>
                         <td style={{ fontSize: 12, color: '#4A6558' }}>{m.purpose || m.note || '-'}</td>
-                        <td><RecordImageAttachments imageUrls={m.imageUrls} /></td>
+                        <td><RecordImageAttachments imageUrls={m.imageUrls} onPreview={setPreviewImageUrl} /></td>
                         <td style={{ fontSize: 12, color: m.stopped ? '#8A5A44' : '#aaa' }}>{m.stopReason || '-'}</td>
                         <td style={{ fontSize: 12, color: '#8AA89C' }}>{m.startDate || '-'}{m.stopped && m.stopDate ? ` → ${m.stopDate}` : m.endDate ? ` → ${m.endDate}` : ''}</td>
                         <td style={{ fontSize: 11, color: '#8AA89C' }}>
@@ -9041,7 +9041,7 @@ export default function PatientDetailPage() {
                         <td>{s.dosage}</td>
                         <td style={{ fontSize: 12 }}>{s.method} · {s.frequency}</td>
                         <td style={{ fontSize: 12, color: '#4A6558' }}>{s.purpose || '-'}</td>
-                        <td><RecordImageAttachments imageUrls={s.imageUrls} /></td>
+                        <td><RecordImageAttachments imageUrls={s.imageUrls} onPreview={setPreviewImageUrl} /></td>
                         <td style={{ fontSize: 12, color: '#8AA89C' }}>{s.createdByName || s.aiGeneratedBy || 'AI'}</td>
                         <td>
                           {canApprove ? (
@@ -9086,7 +9086,7 @@ export default function PatientDetailPage() {
                         <td>{s.dosage}</td>
                         <td style={{ fontSize: 12 }}>{s.method} · {s.frequency}</td>
                         <td style={{ fontSize: 12, color: '#4A6558' }}>{s.purpose || s.note || '-'}</td>
-                        <td><RecordImageAttachments imageUrls={s.imageUrls} /></td>
+                        <td><RecordImageAttachments imageUrls={s.imageUrls} onPreview={setPreviewImageUrl} /></td>
                         <td style={{ fontSize: 12, color: s.stopped ? '#8A5A44' : '#aaa' }}>{s.stopReason || '-'}</td>
                         <td style={{ fontSize: 12, color: '#8AA89C' }}>{s.startDate || '-'}{s.stopped && s.stopDate ? ` → ${s.stopDate}` : s.endDate ? ` → ${s.endDate}` : ''}</td>
                         <td style={{ fontSize: 11, color: '#8AA89C' }}>
