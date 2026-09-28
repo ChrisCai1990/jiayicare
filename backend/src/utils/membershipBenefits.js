@@ -2,7 +2,7 @@ const PackageEntitlement = require('../models/PackageEntitlement');
 const ServicePackage = require('../models/ServicePackage');
 const { legacyAccess } = require('./serviceAccess');
 const { applicableEntitlements } = require('./packageEntitlements');
-const FEATURES = { aiHealthAnalysis:'AI健康分析', phaseAssessment:'阶段评估', monthlyServiceReview:'月度服务回顾', healthArchiveConcierge:'健康档案管理', healthConsultation:'健康咨询', medicalPlanning:'就医规划', expertAppointment:'专家约诊', reportInterpretation:'报告解读', aiRiskAssessment:'AI风险评估' };
+const FEATURES = { aiHealthAnalysis:'AI健康趋势分析', phaseAssessment:'阶段性评估', monthlyServiceReview:'月度服务回顾（内部）', healthArchiveConcierge:'健康档案更新与管理', healthConsultation:'健康咨询', medicalPlanning:'就医规划', expertAppointment:'专家约诊（不指定）', reportInterpretation:'报告解读', aiRiskAssessment:'AI风险评估' };
 
 async function legacyPackage(user) {
   if (!user?.servicePackage || !legacyAccess(user).active) return null;
@@ -30,6 +30,15 @@ function project(row, userId, legacy = false) {
   });
   const groups = {
     features:items.map(item=>item.label),
+    serviceStages:[
+      {name:'了解健康',keys:['healthArchiveConcierge','aiHealthAnalysis','aiRiskAssessment']},
+      {name:'持续管理',keys:['healthConsultation','reportInterpretation','phaseAssessment','monthlyServiceReview']},
+      {name:'就医支持',keys:['medicalPlanning','expertAppointment']},
+    ].map(stage=>({name:stage.name,services:stage.keys.filter(key=>rights.aiEntitlements?.[key]===true).map(key=>({
+      name:FEATURES[key],
+      internal:key==='monthlyServiceReview',
+      frequency:key==='phaseAssessment'?({biweekly:'每两周',monthly:'每月',quarterly:'每季度'}[rights.phaseAssessmentFrequency]||'按计划阶段安排'):key==='monthlyServiceReview'?`每月 · 第 ${rights.monthlyReviewStartMonth||1} 月起`:key==='healthArchiveConcierge'?'实时':key==='aiHealthAnalysis'?'每个会员服务期 1 次':['healthConsultation','medicalPlanning','expertAppointment','reportInterpretation'].includes(key)?'服务期内不限次':'已包含 · 频次待确认',
+    }))})).filter(stage=>stage.services.length),
     shared:pools.map(pool=>({...describeQuota(pool),services:services.filter(item=>item.poolKey===pool.key).map(item=>item.productName || '服务项目')})),
     independent:services.filter(item=>!pools.some(pool=>pool.key===item.poolKey)).map(describeQuota),
   };

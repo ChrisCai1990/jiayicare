@@ -67,3 +67,11 @@ test('missing remaining quota is unknown, never presumed unused',()=>{
   assert.match(plan.items[0].value,/待核对/);
   assert.equal(plan.groups.independent[0].usageKnown,false);
 });
+test('service stages expose approved wording and keep monthly review internal',()=>{
+  const plan=fixture().project({rights:{aiEntitlements:{healthArchiveConcierge:true,healthConsultation:true,phaseAssessment:true,monthlyServiceReview:true,expertAppointment:true},phaseAssessmentFrequency:'quarterly',monthlyReviewStartMonth:2}},user._id);
+  assert.equal(plan.groups.serviceStages.length,3);
+  const management=plan.groups.serviceStages[1].services;
+  assert.equal(management.find(x=>x.name==='阶段性评估').frequency,'每季度');
+  assert.equal(management.find(x=>x.internal).frequency,'每月 · 第 2 月起');
+  assert.equal(management.find(x=>x.name==='健康咨询').frequency,'服务期内不限次');
+});
