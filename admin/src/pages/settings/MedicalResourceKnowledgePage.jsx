@@ -4,7 +4,19 @@ import { useToast } from '../../App'
 
 const KINDS = [['department_advantage', '优势科室'], ['expert_recommendation', '专家内部推荐'], ['appointment_rule', '预约信息'], ['visit_guidance', '就诊注意事项'], ['service_case', '服务案例与话术']]
 const STATUS = { draft: '草稿', pending_review: '待审核', published: '已发布', returned: '已退回', expired: '已过期', archived: '已归档' }
-const blank = { kind: 'department_advantage', title: '', institutionId: '', departmentId: '', expertId: '', tags: '', applicableScenarios: '', summary: '', recommendationBasis: '', appointmentInfo: { channels: '', advanceDays: '', materials: '', feeAndInsurance: '' }, precautions: '', serviceBoundary: '', riskNotice: '', sourceNote: '', ownerId: '', expiresAt: '' }
+const blank = {
+  kind: 'department_advantage', title: '', institutionId: '', departmentId: '', expertId: '', tags: '', applicableScenarios: '', summary: '', recommendationBasis: '', ownerId: '', expiresAt: '',
+  appointmentInfo: {
+    channels: '医院官方公众号/小程序、官方挂号平台或电话；内部协调仅按已确认合作机制执行。',
+    advanceDays: '以医院实际放号周期为准，建议尽早关注官方号源。',
+    materials: '本人有效身份证件、医保卡/医保电子凭证、既往病历与检查报告、影像资料（含原始资料）、用药清单、转诊资料（如有）',
+    feeAndInsurance: '费用以医院当日公示为准；医保报销范围、比例及是否需要备案，以参保地和医院最新政策为准，服务团队不承诺报销结果。',
+  },
+  precautions: '请核实院区、科室、就诊日期与号源状态，并按预约要求提前到院；携带完整资料。如需取消或改期，请按平台或医院规则操作；急重症请直接急诊，不等待普通预约。',
+  serviceBoundary: '仅提供就医信息整理、预约路径建议与协作跟进；不承诺指定专家、号源、就诊时间、费用报销或治疗疗效；最终以医院、医生及官方平台规则为准。',
+  riskNotice: '出现胸痛、呼吸困难、意识障碍、持续高热、突发肢体无力或言语不清、严重出血等紧急症状，应立即拨打 120 或前往急诊；本条目不替代医生诊断和急救建议。',
+  sourceNote: '信息来源：医院官方渠道及内部协作记录；请在每次复核时补充核实日期、核实人和链接或附件。',
+}
 const dateValue = value => value ? String(value).slice(0, 10) : ''
 const listText = value => Array.isArray(value) ? value.join('、') : value || ''
 

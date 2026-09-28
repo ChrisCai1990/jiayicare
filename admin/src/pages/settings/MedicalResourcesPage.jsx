@@ -17,7 +17,8 @@ export default function MedicalResourcesPage() {
   const [tab, setTab] = useState('expert')
   const [q, setQ] = useState('')
   const [editing, setEditing] = useState(null)
-  const [form, setForm] = useState(blanks.expert)
+  // 表单只在点击“新增”或“编辑”后打开；初始空对象会被当成弹窗已打开。
+  const [form, setForm] = useState(null)
   const [busy, setBusy] = useState(false)
   const load = async () => { try { const [r,s] = await Promise.all([adminAPI.medicalResources(), adminAPI.employees({ limit:500 })]); setData(r.data); setStaff((s.data || []).filter(x=>x.staffStatus !== 'inactive')) } catch(e) { toast(e.message) } }
   useEffect(()=>{ load() },[])
