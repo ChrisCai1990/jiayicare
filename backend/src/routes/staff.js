@@ -1215,7 +1215,9 @@ const mergedHealthChange = body => {
   const parts = [cleanMedicalText(body.content, 20000), cleanMedicalText(body.symptoms, 5000)].filter(Boolean);
   return [...new Set(parts)].join('\n').slice(0, 20000);
 };
-const HEALTH_COURSE_DOCUMENTS = new Set(['outpatient_record', 'inpatient_record', 'prescription_order', 'exam_report', 'lab_report']);
+// 用药资料由“用药信息审核”独立闭环；不要再生成健康变化二次审核，避免同一处方要求健康顾问重复确认。
+// 病历和检查资料中的非用药健康变化，仍由健康顾问决定是否写入长期健康时间轴。
+const HEALTH_COURSE_DOCUMENTS = new Set(['outpatient_record', 'inpatient_record', 'exam_report', 'lab_report']);
 const parseAiJson = raw => {
   const text = String(raw || '').replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
   return JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1));
@@ -4696,7 +4698,7 @@ router.post('/medical-reports/:id/health-course-draft', staffAuth, async (req, r
   try {
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success:false, message:'医疗资料不存在' });
-    if (!HEALTH_COURSE_DOCUMENTS.has(report.documentCategory)) return res.status(400).json({ success:false, message:'仅门诊病历、住院病历、处方医嘱和检验检查资料支持提取健康变化' });
+    if (!HEALTH_COURSE_DOCUMENTS.has(report.documentCategory)) return res.status(400).json({ success:false, message:'仅门诊病历、住院病历和检验检查资料支持提取健康变化；用药信息请在用药模块审核' });
     if (report.audit_status !== 'audited') return res.status(409).json({ success:false, message:'请先完成医疗资料审核，再生成入档草稿' });
     const draft = report.healthCourseDraft?.status === 'pending_review' && !req.body.force
       ? report.healthCourseDraft : await generateHealthCourseDraft(report);
@@ -12225,6 +12227,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         audit_status: 'audited',
         status: 'pending',
         familyDoctorViewedAt: null,
+        // 处方/医嘱已经由“用药信息审核”闭环，不再作为体检报告解读或随访的第二入口。
+        documentCategory: { $ne: 'prescription_order' },
         ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
       };
       const reportsToInterpret = await MedicalReport.find(interpretationFilter)
@@ -12260,6 +12264,29 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           summary: `${task.theme || '报告随访'} · 请核对 AI 草稿后确认是否派发后续随访`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${task.patientId?._id}/annual-health#report-followup-drafts`,
+        });
+      });
+    }
+
+    // 已审核病历/检查资料若提炼出健康变化草稿，必须在工作台可见，不能只藏在会员详情页。
+    // 处方/医嘱明确由用药审核闭环，因此不进入这条健康变化审核队列。
+    if (isSuper || role === 'familyDoctor') {
+      const healthCourseFilter = {
+        audit_status: 'audited',
+        documentCategory: { $in: [...HEALTH_COURSE_DOCUMENTS] },
+        'healthCourseDraft.status': 'pending_review',
+        ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
+      };
+      const healthCourseReports = await MedicalReport.find(healthCourseFilter)
+        .populate('user', 'name').sort({ 'healthCourseDraft.generatedAt': -1, updatedAt: -1 }).limit(50).lean();
+      healthCourseReports.forEach(report => {
+        const createdAt = report.healthCourseDraft?.generatedAt || report.updatedAt || report.createdAt || now;
+        todos.push({
+          id: 'healthcourse_' + report._id, type: 'health_course_review', label: '健康变化待审核', priority: 2,
+          patientName: report.user?.name || '未知', patientId: String(report.user?._id || ''),
+          summary: `${report.title || '医疗资料'} · 请确认是否需要写入健康变化时间轴`,
+          createdAt, overdue: (now - new Date(createdAt)) > DAY,
+          link: `/patients/${report.user?._id}?tab=reports&reportId=${report._id}`,
         });
       });
     }
