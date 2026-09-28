@@ -2308,6 +2308,7 @@ export default function PatientDetailPage() {
   const [historyEditForm, setHistoryEditForm] = useState({})
   // 4.4 AI健康汇总
   const [aiSummaryLoading, setAiSummaryLoading] = useState(false)
+  const [aiSummaryError, setAiSummaryError] = useState('')
   const [parsingReportId, setParsingReportId] = useState(null)
   const [editingAISummary, setEditingAISummary] = useState(false)
   const [editingAISection, setEditingAISection] = useState('')
@@ -3539,6 +3540,7 @@ export default function PatientDetailPage() {
     const y = String(year || new Date().getFullYear())
     try {
       setAiSummaryLoading(true)
+      setAiSummaryError('')
       const res = await staffAPI.generateAIHealthSummary(id, y, scope, force)
       applyAIHealthSummary(res.data)
       // 生成接口已返回最新完整AI汇总，直接更新当前会员状态即可立即展示。
@@ -3546,10 +3548,11 @@ export default function PatientDetailPage() {
       setAiYear(y)
       toast(`${y}年度AI分析已生成`)
     } catch (err) {
+      if (!err.needConfirm) setAiSummaryError(err.message || 'AI生成失败')
       if (err.needConfirm) {
         const label = scope === 'nutrition' ? '生活方式信息整理' : (scope === 'doctor' ? '5维健康信息整理' : 'AI健康信息整理')
         if (window.confirm(`${err.message}${err.approvedBy ? `（审核人：${err.approvedBy}）` : ''}\n是否确认重新生成${label}？`)) {
-          return handleGenerateAISummary(year, scope, true)
+          return await handleGenerateAISummary(year, scope, true)
         }
       } else if (err.needReportAudit) {
         loadPendingDoctorAudit()
@@ -8165,6 +8168,8 @@ export default function PatientDetailPage() {
             </div>
             <details style={{ marginBottom: 12, padding: '10px 12px', border: '1px solid #DCE5E0', borderRadius: 9, background: '#FAFBFA' }}>
               <summary style={{ cursor: 'pointer', fontWeight: 700, color: '#1E6B50' }}>生成、年度与历史版本管理</summary>
+              {aiSummaryLoading && <div role="status" style={{ marginTop: 10, color: '#1E6B50' }}>正在生成，资料较多时可能需要2–4分钟，请勿重复提交。</div>}
+              {aiSummaryError && <div role="alert" style={{ marginTop: 10, color: '#B91C1C' }}>{aiSummaryError}</div>}
               <div style={{ marginTop: 12 }}>
             {/* 年度选择：下拉 select，✓=已审核 ●=已生成待审核 */}
             <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>

@@ -9997,6 +9997,7 @@ const { generateHealthSummarySections, DOCTOR_KEYS, LIFESTYLE_KEY } = require('.
 const activeAIHealthSummaryJobs = new Set();
 router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
   let generationJobKey = null;
+  let ownsGenerationJob = false;
   try {
     const user = await User.findById(req.params.id)
       .populate('assignedHealthManager', 'name')
@@ -10030,6 +10031,7 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       });
     }
     activeAIHealthSummaryJobs.add(generationJobKey);
+    ownsGenerationJob = true;
     // 双审强制前置：健康顾问生成AI健康分析前，必须先审核确认该客户所有健管专员已审核的报告
     // （2026-07-21需求），营养师维度的生活方式评估同样依赖报告数据，一并拦截。与 user.js 客户
     // 自助生成入口共用同一个 checkReportAuditGate，避免两处判断口径分裂（曾出现user.js完全
@@ -10218,7 +10220,7 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   } finally {
-    if (generationJobKey) activeAIHealthSummaryJobs.delete(generationJobKey);
+    if (ownsGenerationJob) activeAIHealthSummaryJobs.delete(generationJobKey);
   }
 });
 
