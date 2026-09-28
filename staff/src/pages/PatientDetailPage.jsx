@@ -10269,12 +10269,6 @@ export default function PatientDetailPage() {
                                   {manualOnly ? '核对已有数据' : r.aiStatus === 'reviewed' ? '编辑AI结果' : `审核AI结果${r.reportItems?.length ? `（${r.reportItems.length}项）` : ''}`}
                                 </button>
                               )}
-                              {!manualOnly && inferDocumentCategory(r) === 'prescription_order' && r.aiStatus === 'pending' && r.parseJob?.status === 'completed' && (
-                                <button className="btn btn-secondary btn-sm" style={{ marginLeft: 6 }} disabled={parsingReportId === r._id}
-                                  onClick={() => handleParseReportAI(r._id, { forcePrescriptionParse: true })}>
-                                  {parsingReportId === r._id ? '提交中…' : '按处方重新解析'}
-                                </button>
-                              )}
                               {['familyDoctor', 'superadmin'].includes(staff?.role) && r.audit_status === 'audited' && HEALTH_COURSE_DOCUMENT_CATEGORIES.has(inferDocumentCategory(r)) && (
                                 <button className="btn btn-sm report-action-primary" style={{ marginLeft: 6, background: r.healthCourseDraft?.status === 'approved' ? '#22A06B' : '#1E6B50' }}
                                   disabled={healthCourseSaving || r.healthCourseDraft?.status === 'approved'} onClick={() => openHealthCourseReview(r)}>
