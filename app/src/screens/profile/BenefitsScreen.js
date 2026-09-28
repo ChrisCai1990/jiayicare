@@ -215,7 +215,7 @@ function PartnerBenefitCard({ benefit, onPress }) {
   );
 }
 
-export default function BenefitsScreen({ navigation }) {
+export default function BenefitsScreen({ navigation, route }) {
   const { user } = useAuth();
   const [tab, setTab] = useState('mine'); // 'mine' | 'partner'
 
@@ -226,7 +226,8 @@ export default function BenefitsScreen({ navigation }) {
   const [detailGift, setDetailGift] = useState(null);
 
   const [fundDetail, setFundDetail] = useState(null);
-  const [mineSection, setMineSection] = useState('plan');
+  const [mineSection, setMineSection] = useState(route?.params?.section === 'fund' ? 'fund' : 'plan');
+  useEffect(() => { if (route?.params?.section) { setMineSection(route.params.section === 'fund' ? 'fund' : 'plan'); setTab('mine'); } }, [route?.params?.section]);
   const [fundPage, setFundPage] = useState(1);
   const fundPageCount = Math.max(1, Math.ceil((fundDetail?.transactions?.length || 0) / 5));
   const fund = fundDetail || user?.healthFund || {};

@@ -87,7 +87,7 @@ export default function BenefitsPage() {
   const [groupsLoading, setGroupsLoading] = useState(true);
   const [detailBenefit, setDetailBenefit] = useState(null);
   const [fundDetail, setFundDetail] = useState(null);
-  const [mineSection, setMineSection] = useState('plan');
+  const [mineSection, setMineSection] = useState(() => Taro.getCurrentInstance()?.router?.params?.section === 'fund' ? 'fund' : 'plan');
   const [fundPage, setFundPage] = useState(1);
   const fundPageCount = Math.max(1, Math.ceil((fundDetail?.transactions?.length || 0) / 5));
 
