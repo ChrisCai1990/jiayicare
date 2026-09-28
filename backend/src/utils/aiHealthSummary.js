@@ -539,7 +539,7 @@ ${reuseTumor ? '\n【肿瘤板块复用】本次肿瘤分析沿用已有结果�
   // 健康信息整理包含最长5年资料和10种常见肿瘤卡片，属于长文本任务；仅此场景放宽
   // 单次AI请求上限，普通聊天等接口仍保持ai.js默认45秒。
   const text = await chat([{ role: 'user', content: prompt }], {
-    maxTokens, temperature: 0.05, jsonMode: true, timeoutMs: wantDoctor ? 120000 : 45000,
+    maxTokens, temperature: 0.05, jsonMode: true, timeoutMs: wantDoctor ? 240000 : 45000,
   });
 
   let sections = null;

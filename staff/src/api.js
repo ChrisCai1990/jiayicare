@@ -22,7 +22,14 @@ async function req(path, options = {}) {
       ...(options.headers || {}),
     },
   })
-  const data = await res.json()
+  const data = await res.json().catch(() => {
+    if (res.ok) throw new Error('服务返回内容异常，请稍后重试')
+    return ({
+    message: res.status === 504
+      ? '生成请求等待超时，后台可能仍在处理。请稍后刷新查看结果，勿连续重复提交。'
+      : `服务响应异常（${res.status}），请稍后重试`,
+    })
+  })
   if (res.status === 401) {
     // 仅当失败响应仍属于当前账号时才退出。账号切换期间，旧 token 的迟到响应
     // 不能清掉刚写入的新 token，也不能把新账号踢回登录页。
@@ -35,6 +42,9 @@ async function req(path, options = {}) {
   if (!res.ok) {
     const err = new Error(data.message || '请求失败')
     err.status = res.status
+    for (const flag of ['needReportAudit', 'needDoctorAnalysis', 'needDietaryReview', 'generationInProgress']) {
+      if (data[flag]) err[flag] = true
+    }
     if (data.needConfirm) { err.needConfirm = true; err.approvedBy = data.approvedBy }
     throw err
   }
