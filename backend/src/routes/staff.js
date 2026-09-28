@@ -179,6 +179,17 @@ function withSignedRecordAttachments(record) {
   return obj;
 }
 
+function withMedicationAttachmentPreviews(record) {
+  const obj = record.toObject ? record.toObject() : { ...record };
+  obj.imageUrls = (obj.imageUrls || []).map((url, index) => {
+    const key = urlToKey(url || '');
+    if (!key || !obj._id || !process.env.JWT_SECRET) return signStoredUrl(url);
+    const token = jwt.sign({ scope: 'medication-attachment-preview', patientId: String(obj.user), medicationId: String(obj._id), index }, process.env.JWT_SECRET, { expiresIn: '30m' });
+    return `/api/staff/patients/${obj.user}/medications/${obj._id}/attachments/${index}/preview?token=${encodeURIComponent(token)}`;
+  });
+  return obj;
+}
+
 function withSignedMessageMedia(message) {
   const obj = message.toObject ? message.toObject() : { ...message };
   const urls = obj.imageUrls?.length ? obj.imageUrls : (obj.imageUrl ? [obj.imageUrl] : []);
@@ -8658,8 +8669,29 @@ router.put('/patients/:id/supply-reminders/:kind/:recordId', staffAuth, checkPer
 router.get('/patients/:id/medications', staffAuth, async (req, res) => {
   try {
     const meds = await Medication.find({ user: req.params.id }).sort({ createdAt: -1 }).lean();
-    res.json({ success: true, data: meds.map(withSignedRecordAttachments) });
+    res.json({ success: true, data: meds.map(withMedicationAttachmentPreviews) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// 私有 OSS 对象可能被设置为 attachment；通过受控接口统一以 inline 返回，点击只预览不下载。
+router.get('/patients/:id/medications/:medId/attachments/:index/preview', async (req, res) => {
+  try {
+    const payload = jwt.verify(String(req.query.token || ''), process.env.JWT_SECRET);
+    const index = Number(req.params.index);
+    if (payload.scope !== 'medication-attachment-preview' || payload.patientId !== String(req.params.id)
+      || payload.medicationId !== String(req.params.medId) || payload.index !== index || !Number.isInteger(index) || index < 0) {
+      return res.status(403).json({ success: false, message: '附件预览授权无效' });
+    }
+    const medication = await Medication.findOne({ _id: req.params.medId, user: req.params.id }).select('imageUrls').lean();
+    const key = urlToKey(medication?.imageUrls?.[index] || '');
+    if (!key) return res.status(404).json({ success: false, message: '附件不存在' });
+    const object = await getObjectStream(key);
+    const mime = object.res?.headers?.['content-type'] || 'image/jpeg';
+    res.status(200).set({ 'Content-Type': mime, 'Content-Disposition': 'inline; filename="medication-attachment"', 'Cache-Control': 'private, max-age=300', 'X-Content-Type-Options': 'nosniff' });
+    object.stream.pipe(res);
+  } catch (err) {
+    res.status(403).json({ success: false, message: '附件预览已失效，请刷新后重试' });
+  }
 });
 
 router.post('/patients/:id/medications', staffAuth, async (req, res) => {
