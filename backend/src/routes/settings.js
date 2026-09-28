@@ -476,6 +476,31 @@ router.patch('/medical-resource-knowledge/:id/archive', adminAuth, async (req, r
   res.json({ success: true, data: item, message: '已归档；不会影响既有方案中的引用快照' });
 });
 
+// 归档内容保留原记录；编辑时生成新的草稿版本，避免改写历史引用和审计轨迹。
+router.post('/medical-resource-knowledge/:id/revise', adminAuth, async (req, res) => {
+  try {
+    const source = await MedicalResourceKnowledge.findById(req.params.id);
+    if (!source) return res.status(404).json({ success: false, message: '资源知识条目不存在' });
+    if (source.status !== 'archived') return res.status(409).json({ success: false, message: '仅已归档条目可新建修订版本' });
+    const payload = cleanKnowledgePayload(source.toObject());
+    await validateKnowledgeLinks(payload);
+    const item = await MedicalResourceKnowledge.create({
+      ...payload,
+      ownerId: req.admin._id,
+      supersedesId: source._id,
+      status: 'draft',
+      version: (source.version || 1) + 1,
+      submittedAt: null,
+      reviewedAt: null,
+      reviewedBy: null,
+      reviewNote: '',
+      publishedAt: null,
+      auditLog: [{ action: 'revised', note: `基于归档版本 v${source.version || 1} 新建修订草稿`, actorId: req.admin._id, version: (source.version || 1) + 1 }],
+    });
+    res.status(201).json({ success: true, data: item, message: '已创建修订草稿，请修改后送审发布' });
+  } catch (err) { res.status(400).json({ success: false, message: err.message }); }
+});
+
 // ── 会员标签 ────────────────────────────────────────────────────
 router.get('/member-tags', adminAuth, async (req, res) => {
   const list = await MemberTag.find().sort({ createdAt: 1 });
