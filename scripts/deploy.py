@@ -88,11 +88,18 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
         return exit_code, "\n".join(output)
 
     try:
-        remote(f"rm -f {REPO_DIR}/.git/index.lock", timeout=5)
+        code, _ = remote(
+            f"cd {REPO_DIR} && test ! -e .git/index.lock "
+            '&& test -z "$(git status --porcelain --untracked-files=no)"',
+            timeout=15,
+            label="确认生产无进行中的 Git 操作或未提交修改",
+        )
+        if code:
+            raise RuntimeError("生产有 Git 锁或未提交修改，停止部署")
 
         if github_source:
             code, _ = remote(
-                f"cd {REPO_DIR} && git fetch origin master && git reset --hard origin/master",
+                f"cd {REPO_DIR} && git fetch origin master && git merge --ff-only origin/master",
                 timeout=60,
                 label="服务器从 GitHub 同步 origin/master（备用模式）",
             )
@@ -127,7 +134,7 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
 
             code, _ = remote(
                 f"cd {REPO_DIR} && git fetch {remote_bundle} HEAD "
-                f"&& git reset --hard {revision}",
+                f"&& git merge --ff-only {revision}",
                 timeout=60,
                 label="从本地 Git bundle 同步服务器代码",
             )
