@@ -8129,6 +8129,9 @@ export default function PatientDetailPage() {
               ].filter(group => group.key === aiAnalysisView).map(group => (
                 <div key={group.key} className="card" style={{ padding: '12px 14px', borderTop: `3px solid ${group.color}` }}>
                   <div style={{ fontWeight: 700, color: '#1A2B24', marginBottom: 8 }}>{group.title}</div>
+                  {aiSummaryLoading && <div role="status" style={{ marginBottom: 8, fontSize: 12, color: group.color, fontWeight: 600 }}>
+                    正在生成{group.key === 'doctor' ? '5维分析' : '生活方式分析'}，请稍候…
+                  </div>}
                   {group.records.length ? (
                     <>
                       <select className="form-input" value={group.current._recordIndex ?? group.records[0]._recordIndex}
@@ -8157,7 +8160,7 @@ export default function PatientDetailPage() {
                               if (approved && !window.confirm('最新一次评估已经审核。新增评估不会覆盖旧记录，确定继续？')) return
                               handleGenerateAISummary(curYear, group.key, approved)
                             }}>
-                            ＋ 新增{group.key === 'doctor' ? '5维分析' : '生活方式分析'}
+                            {aiSummaryLoading ? '生成中…' : `＋ 新增${group.key === 'doctor' ? '5维分析' : '生活方式分析'}`}
                           </button>
                           <button className="btn btn-sm" style={{ color: '#DC3545', borderColor: '#FCA5A5', background: '#FFF5F5' }}
                             onClick={() => handleDeleteAISummaryRecord(group.key, curYear, group.current._recordIndex, group.current.generatedAt)}>
@@ -8179,7 +8182,7 @@ export default function PatientDetailPage() {
                         <button className="btn btn-primary btn-sm"
                           disabled={aiSummaryLoading || (group.key === 'nutrition' && !latestDoctorApproved)}
                           onClick={() => handleGenerateAISummary(curYear, group.key, false)}>
-                          ＋ 新增{group.key === 'doctor' ? '5维分析' : '生活方式分析'}
+                          {aiSummaryLoading ? '生成中…' : `＋ 新增${group.key === 'doctor' ? '5维分析' : '生活方式分析'}`}
                         </button>
                       )}
                     </div>
