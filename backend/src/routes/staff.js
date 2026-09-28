@@ -4720,6 +4720,8 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     if (autoAuditPending) {
       await syncOutpatientReportAuditCompletion(report.sourceHealthPlanId);
       await onCheckupReportAudited(report).catch(err => console.error('[checkup-workflow] failed to activate result review', err.message));
+      await require('../utils/medicalProxyWorkflow').autoAdvancePostVisitAuditAfterReportAudit(report)
+        .catch(err => console.error('[medical-proxy] failed to auto-advance post-visit audit', err.message));
       if (report.documentCategory === 'prescription_order') {
         const workflow = require('../utils/medicalProxyWorkflow');
         await workflow.createClinicalPrescriptionMedicationDrafts(report, req.staff);
@@ -4984,6 +4986,8 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
     await syncOutpatientReportAuditCompletion(report.sourceHealthPlanId);
     await syncBodyCompositionFromReport(report);
     await onCheckupReportAudited(report).catch(err => console.error('[checkup-workflow] failed to activate result review', err.message));
+    await require('../utils/medicalProxyWorkflow').autoAdvancePostVisitAuditAfterReportAudit(report)
+      .catch(err => console.error('[medical-proxy] failed to auto-advance post-visit audit', err.message));
     if (report.documentCategory === 'prescription_order') {
       const workflow = require('../utils/medicalProxyWorkflow');
       await workflow.createClinicalPrescriptionMedicationDrafts(report, req.staff);

@@ -183,6 +183,45 @@ async function repairCompletedMedicalEscortAuditTasks(assigneeId) {
   return repaired;
 }
 
+// 报告管理是健管专员完成资料审核的实际工作界面。任务中已选定的资料全部审核通过后，
+// 自动完成该资料审核环节并交给健康顾问，避免要求工作人员返回工作台重复点击“确认完成”。
+async function autoAdvancePostVisitAuditAfterReportAudit(report) {
+  if (!report?.user || report.audit_status !== 'audited') return 0;
+  const tasks = await FollowUp.find({
+    patientId: report.user,
+    sourceType: 'order',
+    workflowKey: `${PREFIX}post_visit_audit`,
+    status: { $in: ['planned', 'in_progress'] },
+    'formData.reportIds': String(report._id),
+  });
+  let advanced = 0;
+  for (const task of tasks) {
+    // 陪同就医资料需逐个就医项目对应，不使用本自动收口，仍走原有逐项核对。
+    if (task.formData?.medicalEscort === true) continue;
+    const ids = [...new Set((task.formData?.reportIds || []).map(String).filter(Boolean))];
+    if (!ids.length) continue;
+    const order = await Order.findById(task.sourceOrderId).select('scheduledAt').lean();
+    if (!order?.scheduledAt) continue;
+    const audited = await MedicalReport.find({
+      _id: { $in: ids }, user: task.patientId, audit_status: 'audited', createdAt: { $gte: order.scheduledAt },
+    }).select('title').lean();
+    if (audited.length !== ids.length) continue;
+    task.formData = {
+      ...(task.formData || {}),
+      reportIds: ids,
+      noMaterialsConfirmed: false,
+      auditSummary: nonempty(task.formData?.auditSummary) || `已在报告管理完成审核：${audited.map(item => item.title || '就诊资料').join('、')}。`,
+    };
+    task.status = 'completed';
+    task.completedAt = new Date();
+    task.completedBy = 'staff';
+    await task.save();
+    await advanceMedicalProxyWorkflow(task);
+    advanced += 1;
+  }
+  return advanced;
+}
+
 async function upsertMedicalProxyServiceRecord(task, order, completed = false) {
   const plan = order.medicalProxyPlan || task.formData?.planSnapshot || {};
   const medicationProxy = /代配药|代取药/.test(order.serviceName || '');
@@ -1204,4 +1243,4 @@ async function ensureStaffExpertAppointmentTasksForStaff(staff) {
   }
   return created;
 }
-module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, supplyResolutionSummary, createPrescriptionMedicationDrafts, createClinicalPrescriptionMedicationDrafts, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, ensureStaffExpertAppointmentTasksForStaff, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
+module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, supplyResolutionSummary, createPrescriptionMedicationDrafts, createClinicalPrescriptionMedicationDrafts, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, ensureStaffExpertAppointmentTasksForStaff, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, autoAdvancePostVisitAuditAfterReportAudit, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
