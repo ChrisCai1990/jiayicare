@@ -183,6 +183,45 @@ async function repairCompletedMedicalEscortAuditTasks(assigneeId) {
   return repaired;
 }
 
+// 报告管理是健管专员完成资料审核的实际工作界面。任务中已选定的资料全部审核通过后，
+// 自动完成该资料审核环节并交给健康顾问，避免要求工作人员返回工作台重复点击“确认完成”。
+async function autoAdvancePostVisitAuditAfterReportAudit(report) {
+  if (!report?.user || report.audit_status !== 'audited') return 0;
+  const tasks = await FollowUp.find({
+    patientId: report.user,
+    sourceType: 'order',
+    workflowKey: `${PREFIX}post_visit_audit`,
+    status: { $in: ['planned', 'in_progress'] },
+    'formData.reportIds': String(report._id),
+  });
+  let advanced = 0;
+  for (const task of tasks) {
+    // 陪同就医资料需逐个就医项目对应，不使用本自动收口，仍走原有逐项核对。
+    if (task.formData?.medicalEscort === true) continue;
+    const ids = [...new Set((task.formData?.reportIds || []).map(String).filter(Boolean))];
+    if (!ids.length) continue;
+    const order = await Order.findById(task.sourceOrderId).select('scheduledAt').lean();
+    if (!order?.scheduledAt) continue;
+    const audited = await MedicalReport.find({
+      _id: { $in: ids }, user: task.patientId, audit_status: 'audited', createdAt: { $gte: order.scheduledAt },
+    }).select('title').lean();
+    if (audited.length !== ids.length) continue;
+    task.formData = {
+      ...(task.formData || {}),
+      reportIds: ids,
+      noMaterialsConfirmed: false,
+      auditSummary: nonempty(task.formData?.auditSummary) || `已在报告管理完成审核：${audited.map(item => item.title || '就诊资料').join('、')}。`,
+    };
+    task.status = 'completed';
+    task.completedAt = new Date();
+    task.completedBy = 'staff';
+    await task.save();
+    await advanceMedicalProxyWorkflow(task);
+    advanced += 1;
+  }
+  return advanced;
+}
+
 async function upsertMedicalProxyServiceRecord(task, order, completed = false) {
   const plan = order.medicalProxyPlan || task.formData?.planSnapshot || {};
   const medicationProxy = /代配药|代取药/.test(order.serviceName || '');
@@ -337,6 +376,34 @@ async function createPrescriptionMedicationDrafts(task, reportIds) {
     Medication.find({ user: task.patientId, stopped: false, aiStatus: { $ne: 'rejected' } }).select('name brandName specification dosage frequency timing').lean(),
   ]);
   try {
+    // 审核人对每条药已明确选择“新增为当前用药”时，直接用已核对的结构化字段建草稿，
+    // 不再让通用 AI 二次猜测，且“仅保留处方”与“已匹配”不会创建重复用药。
+    const hasExplicitMedicationActions = reports.some(report => (report.reportItems || []).some(item => item?.itemType === 'medication' && item?.medicationAction));
+    if (hasExplicitMedicationActions) {
+      const created = [];
+      for (const report of reports) {
+        for (const [index, item] of (report.reportItems || []).entries()) {
+          if (item?.itemType !== 'medication' || item?.medicationAction !== 'create') continue;
+          const name = nonempty(item.genericName || item.name);
+          const dosageMatch = String(item.referenceRange || '').match(/每次\s*([^\s，。；;]+)/);
+          const frequencyMatch = String(item.referenceRange || '').match(/每(?:天|日)\s*([^，。；;]+)/);
+          const dosage = nonempty(dosageMatch?.[1]);
+          const frequency = frequencyMatch ? `每天${nonempty(frequencyMatch[1])}` : '';
+          if (!name || !dosage || !frequency) continue;
+          const instruction = `${item.findings || ''} ${item.sourceSection || ''}`;
+          const method = (instruction.match(/口服|外用|注射|含服|吸入/) || [])[0] || '口服';
+          const timing = (instruction.match(/餐前|餐后|餐中|早饭后|晚饭后|睡前/) || [])[0] || '';
+          const sourceRecordKey = `prescription_report_review:${report._id}:${index}:${name}:${dosage}:${frequency}`;
+          const medication = await Medication.findOneAndUpdate({ user: task.patientId, sourceRecordKey }, { $setOnInsert: {
+            user: task.patientId, name, brandName: nonempty(item.brandName), specification: nonempty(item.value), dosage, method, frequency, timing,
+            startDate: nonempty(item.examDate || report.checkDate), purpose: nonempty(item.diagnosis), note: '依据已审核处方新增，待健康顾问确认。', imageUrls: report.fileUrls || [], active: true, stopped: false,
+            createdByStaff: true, staffId: task.assignedTo || null, createdByName: '处方审核', aiStatus: 'pending', aiGeneratedBy: '已审核处方/医嘱', sourceType: 'manual', sourceRecordKey,
+          } }, { upsert: true, new: true, setDefaultsOnInsert: true });
+          if (medication?._id) created.push(medication);
+        }
+      }
+      return created;
+    }
     const { chat } = require('./ai');
     const evidence = reports.map(report => ({ id: report._id, title: report.title, reportItems: report.reportItems, aiSummary: report.aiSummary, keyFindings: report.keyFindings, note: report.note }));
     const raw = await chat([{ role: 'user', content: `你是处方信息录入助手。仅从已审核处方中提取明确记载、且相对当前用药属于新增的药物；病史仅用于识别同名药和核对，不得推断、推荐或调整用药。剂量或频次不明确的条目不要输出。仅输出JSON数组，每项格式：{"name":"通用名","brandName":"商品名或空","specification":"规格或空","dosage":"单次剂量","method":"用法","frequency":"频次","timing":"服药时机或空","startDate":"YYYY-MM-DD或空","endDate":"YYYY-MM-DD或空","purpose":"处方记载用途或空","sourceReportId":"来源报告ID"}。\n病史：${JSON.stringify({ chronicDiseases: patient?.chronicDiseases, healthProfile: patient?.healthProfile }).slice(0, 10000)}\n当前用药：${JSON.stringify(current).slice(0, 10000)}\n已审核处方：${JSON.stringify(evidence).slice(0, 18000)}` }], { maxTokens: 1400, temperature: 0, jsonMode: true, timeoutMs: 60000 });
@@ -359,7 +426,7 @@ async function createPrescriptionMedicationDrafts(task, reportIds) {
 }
 
 // 处方审核表单已经由医护人员逐项确认，不再依赖通用报告 AI 猜测用法。
-// 仅将明确勾选“纳入当前用药”的条目写为待健康顾问复核的草稿，保留报告来源实现幂等。
+// 仅将明确勾选“纳入当前用药”的条目写为待健康顾问复核草稿，保留健康顾问的最终核对职责。
 async function createClinicalPrescriptionMedicationDrafts(report, staff) {
   const review = report?.clinicalReview;
   if (report?.documentCategory !== 'prescription_order' || review?.medicationDecision !== 'has_medications') return [];
@@ -704,6 +771,9 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
 async function validateMedicalProxyStage(task, body, staff) {
   const stage = stageOf(task);
   if (!stage) return '';
+  // 健管专员在就诊后可反复补充资料、记录审核结论。只有明确提交完成时，
+  // 才校验报告已审核并流转健康顾问；草稿保存必须停留在当前审核环节。
+  if (stage === 'post_visit_audit' && body.status !== 'completed') return '';
   if (stage === 'supervise') {
     const supervisorOrder = task.sourceOrderId ? await Order.findById(task.sourceOrderId).select('serviceName').lean() : null;
     if (!/就医规划/.test(supervisorOrder?.serviceName || '')) return '健康规划师督办任务将在代诊执行完成后自动结束';
@@ -1173,4 +1243,4 @@ async function ensureStaffExpertAppointmentTasksForStaff(staff) {
   }
   return created;
 }
-module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, supplyResolutionSummary, createPrescriptionMedicationDrafts, createClinicalPrescriptionMedicationDrafts, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, ensureStaffExpertAppointmentTasksForStaff, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
+module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, supplyResolutionSummary, createPrescriptionMedicationDrafts, createClinicalPrescriptionMedicationDrafts, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, ensureStaffExpertAppointmentTasksForStaff, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, autoAdvancePostVisitAuditAfterReportAudit, validateMedicalProxyStage, advanceMedicalProxyWorkflow };

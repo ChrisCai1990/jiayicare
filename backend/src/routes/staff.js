@@ -172,6 +172,24 @@ function withSignedHealthRecord(record) {
   return withSafeHealthRecordImages(record, signStoredUrl);
 }
 
+// 用药/营养素附件同样存储在私有 OSS；列表必须返回短时签名链接，不能把原始对象地址交给浏览器。
+function withSignedRecordAttachments(record) {
+  const obj = record.toObject ? record.toObject() : { ...record };
+  obj.imageUrls = (obj.imageUrls || []).map(url => signStoredUrl(url));
+  return obj;
+}
+
+function withMedicationAttachmentPreviews(record) {
+  const obj = record.toObject ? record.toObject() : { ...record };
+  obj.imageUrls = (obj.imageUrls || []).map((url, index) => {
+    const key = urlToKey(url || '');
+    if (!key || !obj._id || !process.env.JWT_SECRET) return signStoredUrl(url);
+    const token = jwt.sign({ scope: 'medication-attachment-preview', patientId: String(obj.user), medicationId: String(obj._id), index }, process.env.JWT_SECRET, { expiresIn: '30m' });
+    return `/api/staff/patients/${obj.user}/medications/${obj._id}/attachments/${index}/preview?token=${encodeURIComponent(token)}`;
+  });
+  return obj;
+}
+
 function withSignedMessageMedia(message) {
   const obj = message.toObject ? message.toObject() : { ...message };
   const urls = obj.imageUrls?.length ? obj.imageUrls : (obj.imageUrl ? [obj.imageUrl] : []);
@@ -4472,6 +4490,14 @@ function applyAuditedInstitution(report) {
   }
 }
 
+// 仅设备导出/功能医学等明确不支持结构化识别的资料可走直接人工审核。
+// 其余资料（包括标题为“用药”、处方、病历、检验检查）必须先经 AI 解析并由健管专员核对结果，
+// 不能靠旧的直接审核接口绕过解析。
+function isManualOnlyReportAudit(report) {
+  return report?.type === 'home_monitor' || report?.type === 'functional'
+    || report?.documentCategory === 'functional_medicine';
+}
+
 router.post('/medical-reports/:id/review-activity', staffAuth, async (req, res) => {
   const { sessionId, sequence } = req.body;
   if (!/^[a-f\d-]{36}$/i.test(String(sessionId)) || !Number.isSafeInteger(sequence) || sequence < 1) return res.status(400).json({ success: false });
@@ -4707,6 +4733,8 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     if (autoAuditPending) {
       await syncOutpatientReportAuditCompletion(report.sourceHealthPlanId);
       await onCheckupReportAudited(report).catch(err => console.error('[checkup-workflow] failed to activate result review', err.message));
+      await require('../utils/medicalProxyWorkflow').autoAdvancePostVisitAuditAfterReportAudit(report)
+        .catch(err => console.error('[medical-proxy] failed to auto-advance post-visit audit', err.message));
       if (report.documentCategory === 'prescription_order') {
         const workflow = require('../utils/medicalProxyWorkflow');
         await workflow.createClinicalPrescriptionMedicationDrafts(report, req.staff);
@@ -4910,6 +4938,9 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
   if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
   if (report.planItemSync?.status === 'running' || report.legacyReviewWrite?.status === 'running') return require('../utils/reportWriteConflict').sendReportWriteConflict(res);
   if (action === 'approve') {
+    if (!isManualOnlyReportAudit(report) && report.aiStatus !== 'reviewed') {
+      return res.status(409).json({ success: false, message: '该资料需先进行AI解析并核对解析结果，不能直接审核通过' });
+    }
     // Validate the prospective child before any task or conditional-plan mutation.
     if (abnormalItems !== undefined && !Array.isArray(abnormalItems)) {
       return res.status(400).json({ success: false, message: '异常项目必须为列表' });
@@ -4971,6 +5002,8 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
     await syncOutpatientReportAuditCompletion(report.sourceHealthPlanId);
     await syncBodyCompositionFromReport(report);
     await onCheckupReportAudited(report).catch(err => console.error('[checkup-workflow] failed to activate result review', err.message));
+    await require('../utils/medicalProxyWorkflow').autoAdvancePostVisitAuditAfterReportAudit(report)
+      .catch(err => console.error('[medical-proxy] failed to auto-advance post-visit audit', err.message));
     if (report.documentCategory === 'prescription_order') {
       const workflow = require('../utils/medicalProxyWorkflow');
       await workflow.createClinicalPrescriptionMedicationDrafts(report, req.staff);
@@ -8655,9 +8688,30 @@ router.put('/patients/:id/supply-reminders/:kind/:recordId', staffAuth, checkPer
 
 router.get('/patients/:id/medications', staffAuth, async (req, res) => {
   try {
-    const meds = await Medication.find({ user: req.params.id }).sort({ createdAt: -1 });
-    res.json({ success: true, data: meds });
+    const meds = await Medication.find({ user: req.params.id }).sort({ createdAt: -1 }).lean();
+    res.json({ success: true, data: meds.map(withMedicationAttachmentPreviews) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// 私有 OSS 对象可能被设置为 attachment；通过受控接口统一以 inline 返回，点击只预览不下载。
+router.get('/patients/:id/medications/:medId/attachments/:index/preview', async (req, res) => {
+  try {
+    const payload = jwt.verify(String(req.query.token || ''), process.env.JWT_SECRET);
+    const index = Number(req.params.index);
+    if (payload.scope !== 'medication-attachment-preview' || payload.patientId !== String(req.params.id)
+      || payload.medicationId !== String(req.params.medId) || payload.index !== index || !Number.isInteger(index) || index < 0) {
+      return res.status(403).json({ success: false, message: '附件预览授权无效' });
+    }
+    const medication = await Medication.findOne({ _id: req.params.medId, user: req.params.id }).select('imageUrls').lean();
+    const key = urlToKey(medication?.imageUrls?.[index] || '');
+    if (!key) return res.status(404).json({ success: false, message: '附件不存在' });
+    const object = await getObjectStream(key);
+    const mime = object.res?.headers?.['content-type'] || 'image/jpeg';
+    res.status(200).set({ 'Content-Type': mime, 'Content-Disposition': 'inline; filename="medication-attachment"', 'Cache-Control': 'private, max-age=300', 'X-Content-Type-Options': 'nosniff' });
+    object.stream.pipe(res);
+  } catch (err) {
+    res.status(403).json({ success: false, message: '附件预览已失效，请刷新后重试' });
+  }
 });
 
 router.post('/patients/:id/medications', staffAuth, async (req, res) => {
@@ -8797,8 +8851,8 @@ router.delete('/patients/:id/medications/:medId', staffAuth, async (req, res) =>
 // 停用后从列表消失、跟真删除没区别——医护端无法找回来查看或恢复。改为返回全部，前端按 stopped 标注状态。
 router.get('/patients/:id/supplements', staffAuth, async (req, res) => {
   try {
-    const sups = await Supplement.find({ user: req.params.id }).sort({ createdAt: -1 });
-    res.json({ success: true, data: sups });
+    const sups = await Supplement.find({ user: req.params.id }).sort({ createdAt: -1 }).lean();
+    res.json({ success: true, data: sups.map(withSignedRecordAttachments) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

@@ -90,11 +90,11 @@ const isMedicalEscortTask = task => task?.formData?.medicalEscort === true
     task?.sourceOrderId?.specificationLabel,
   ].filter(Boolean).join(' '))
 
-function RecordImageAttachments({ imageUrls = [] }) {
+function RecordImageAttachments({ imageUrls = [], onPreview }) {
   if (!imageUrls.length) return <span style={{ color: '#ccc', fontSize: 12 }}>—</span>
   return <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
     {imageUrls.map((url, index) => <img key={`${url}-${index}`} src={resolveAttachmentUrl(url)} alt={`核对附件${index + 1}`}
-      title="点击查看原图" onClick={() => window.open(resolveAttachmentUrl(url), '_blank', 'noopener,noreferrer')}
+      title="点击查看原图" onClick={() => onPreview ? onPreview(resolveAttachmentUrl(url)) : window.open(resolveAttachmentUrl(url), '_blank', 'noopener,noreferrer')}
       style={{ width: 42, height: 42, objectFit: 'cover', borderRadius: 6, border: '1px solid #E0D9CE', cursor: 'zoom-in' }} />)}
   </div>
 }
@@ -2192,6 +2192,7 @@ export default function PatientDetailPage() {
   const [expandedExamKey, setExpandedExamKey] = useState(null) // 展开的检查医嘱子项 key
   const [editingScreeningId, setEditingScreeningId] = useState(null) // 编辑中的记录 _id
   const [previewImageUrl, setPreviewImageUrl] = useState(null) // 灯箱预览：字符串=仅查看，{url,reportId}=可旋转保存
+  const [medicationEvidencePreview, setMedicationEvidencePreview] = useState({}) // 待核对用药：左栏内联查看的处方附件
   const [previewRotation, setPreviewRotation] = useState(0) // 灯箱当前旋转角度（0/90/180/270）
   const [previewSaving, setPreviewSaving] = useState(false)
   const [deletingRecord, setDeletingRecord] = useState(null)
@@ -2622,6 +2623,8 @@ export default function PatientDetailPage() {
     const isProxyVisit = isOutpatientProxyVisitTask(execItem)
     const isEscortVisit = isOutpatientEscortVisitTask(execItem)
     const isPostVisitReview = isOutpatientPostVisitReviewTask(execItem)
+    // 保存陪诊/就医执行资料后，下一步是报告解析与审核，而不是回到服务执行列表。
+    const opensReportAudit = isEscortVisit || (proxyStage === 'execute' && !isMedicalProxyMedicationTask(execItem))
     const requiredBooking = ['hospital', 'department', 'floor', 'meetingPoint', 'appointmentDate', 'appointmentTime', 'preparation']
     if (isBooking && requiredBooking.some(key => !execForm.appointmentDetails?.[key]?.trim())) {
       toast('请完整填写预约医院、体检中心、楼层、会合地点、日期时间和行前准备事项'); return
@@ -2685,7 +2688,30 @@ export default function PatientDetailPage() {
         serviceChecklist: submittedChecklist,
         formData: (isCheckupAppointmentBooking || isCheckupMedicalExecution || isCheckupManagerReview || proxyStage || medicationStage || isAdvisorAssessment || isOutpatientAppointment || isStaffAssignment || isProxyVisit || isEscortVisit || isPostVisitReview) ? execForm.formData : execItem.formData,
       })
-      toast(isReportCollection ? (reportClosure?.collectionStatus === 'complete' ? '体检报告已回收齐全，进入解析审核' : '报告回收进度已保存') : execItem?.taskRole === 'supervisor' ? '督办记录已完成' : execItem?.taskRole ? '事务记录已更新' : '随访记录已更新')
+      setExecItem(null)
+      if (opensReportAudit) {
+        setTab('reports')
+        await loadReports()
+        toast('资料已保存，已进入报告管理；请逐份完成AI解析与审核')
+      } else {
+        toast(isReportCollection ? (reportClosure?.collectionStatus === 'complete' ? '体检报告已回收齐全，进入解析审核' : '报告回收进度已保存') : execItem?.taskRole === 'supervisor' ? '督办记录已完成' : execItem?.taskRole ? '事务记录已更新' : '随访记录已更新')
+        loadFollowUps()
+      }
+    } catch (err) { toast(err.message || '保存失败') }
+    finally { setExecSaving(false) }
+  }
+  const handleSavePostVisitAuditDraft = async () => {
+    if (medicalProxyStage(execItem) !== 'post_visit_audit') return
+    setExecSaving(true)
+    try {
+      await staffAPI.updateFollowUp(execItem._id, {
+        type: execForm.type,
+        content: execForm.formData?.auditSummary?.trim() || '健管专员继续收集并审核就诊资料。',
+        status: 'in_progress',
+        serviceChecklist: execForm.serviceChecklist,
+        formData: execForm.formData,
+      })
+      toast('已保存，任务仍停留在健管专员资料审核阶段')
       setExecItem(null)
       loadFollowUps()
     } catch (err) { toast(err.message || '保存失败') }
@@ -3614,13 +3640,37 @@ export default function PatientDetailPage() {
     }
     // 每次打开审核弹窗都重新拉取归类目录，确保管理后端新增/修改的分类实时生效
     staffAPI.getScreeningCatalog().then(res => setScreeningCatalog(res.data || [])).catch(() => {})
+    let currentMedications = medications
+    if (latestReport.documentCategory === 'prescription_order') {
+      try {
+        const medicationRes = await staffAPI.getPatientMedications(id)
+        currentMedications = medicationRes.data || []
+        setMedications(currentMedications)
+      } catch {}
+    }
+    const medicationKey = value => String(value || '').toLowerCase().replace(/[\s（）()【】\[\]·、，,.-]/g, '')
+    const splitPrescriptionName = item => {
+      const rawName = String(item.genericName || item.name || '').trim()
+      const brandName = String(item.brandName || '').trim()
+      if (brandName) return { genericName: rawName, brandName }
+      const bracket = rawName.match(/^(.+?)[（(]([^（）()]+)[）)]/)
+      return bracket ? { genericName: bracket[1].trim(), brandName: bracket[2].trim() } : { genericName: rawName, brandName: '' }
+    }
+    const matchCurrentMedication = (genericName, brandName) => currentMedications.find(med => {
+      const candidates = [med.name, med.brandName].map(medicationKey).filter(Boolean)
+      return [genericName, brandName].map(medicationKey).filter(Boolean).some(value => candidates.includes(value))
+    })
     // 旧数据迁移：只有明确标记为 imaging 的旧记录才把 value 搬到 findings。
     // 不能用“内容长度 > 40”猜类型，否则用户只是打开并保存，字段内容也会被改写。
     const items = JSON.parse(JSON.stringify(latestReport.reportItems || []))
       .filter(it => it.name && String(it.name).trim())
       .map(it => {
         // 旧处方曾借用 lab 类型；打开审核时即迁移为独立药品类型，保存后持久化。
-        if (latestReport.documentCategory === 'prescription_order') return { ...it, itemType: 'medication' }
+        if (latestReport.documentCategory === 'prescription_order') {
+          const names = splitPrescriptionName(it)
+          const matched = it.medicationId ? currentMedications.find(med => String(med._id) === String(it.medicationId)) : matchCurrentMedication(names.genericName, names.brandName)
+          return { ...it, ...names, name: names.genericName, itemType: 'medication', medicationId: matched?._id ? String(matched._id) : '', medicationAction: matched?._id ? 'matched' : (it.medicationAction || 'create') }
+        }
         const isImg = it.itemType === 'imaging'
         if (isImg && !it.findings && it.value) return { ...it, findings: it.value, value: '' }
         return it
@@ -8895,40 +8945,48 @@ export default function PatientDetailPage() {
                   <span className="card-title" style={{ color: '#0077B6' }}>用药信息待核对·需健康顾问确认资料一致性</span>
                   <span style={{ background: '#0077B615', color: '#0077B6', fontSize: 11, fontWeight: 700, borderRadius: 99, padding: '1px 8px' }}>{pendingMeds.length}</span>
                 </div>
-                <table className="table" style={{ marginBottom: 0 }}>
-                  <thead><tr><th>药品名称</th><th>剂量</th><th>用法/频次</th><th>服用目的</th><th>附件</th><th>录入人</th><th>操作</th></tr></thead>
-                  <tbody>
-                    {pendingMeds.map(m => (
-                      <tr key={m._id} style={{ background: '#F5FBFF' }}>
-                        <td style={{ fontWeight: 600 }}>{m.name}{m.brandName ? <span style={{ fontSize: 11, color: '#8AA89C', marginLeft: 4 }}>({m.brandName})</span> : ''}</td>
-                        <td>{m.dosage}</td>
-                        <td style={{ fontSize: 12 }}>{m.method} · {m.frequency}{m.timing ? ` · ${m.timing}` : ''}</td>
-                        <td style={{ fontSize: 12, color: '#4A6558' }}>{m.purpose || '-'}</td>
-                        <td><RecordImageAttachments imageUrls={m.imageUrls} /></td>
-                        <td style={{ fontSize: 12, color: '#8AA89C' }}>{m.createdByName || '-'}</td>
-                        <td>
+                <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {pendingMeds.map(m => {
+                    const evidenceUrls = m.imageUrls || []
+                    const evidenceUrl = medicationEvidencePreview[m._id] || evidenceUrls[0]
+                    return <div key={m._id} style={{ display: 'grid', gridTemplateColumns: 'minmax(360px, .9fr) minmax(360px, 1.35fr)', border: '1px solid #CFE7F5', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
+                      <div style={{ padding: 14, background: '#F5FBFF', borderRight: '1px solid #CFE7F5' }}>
+                        <div style={{ fontWeight: 700, color: '#0077B6', marginBottom: 8 }}>处方依据</div>
+                        <div style={{ fontSize: 12, color: '#4A6558', marginBottom: 10 }}>原始处方附件（在左栏内查看，不会打开全屏）</div>
+                        {evidenceUrl ? <img src={resolveAttachmentUrl(evidenceUrl)} alt="处方原件" style={{ display: 'block', width: '100%', maxHeight: 440, objectFit: 'contain', objectPosition: 'top left', background: '#fff', border: '1px solid #D4E4EF', borderRadius: 6 }} /> : <div style={{ color: '#8AA89C', fontSize: 12, padding: '24px 0' }}>未上传处方附件</div>}
+                        {evidenceUrls.length > 1 && <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>{evidenceUrls.map((url, index) => <button type="button" key={`${url}-${index}`} title={`查看第${index + 1}页`} onClick={() => setMedicationEvidencePreview(current => ({ ...current, [m._id]: url }))} style={{ padding: 0, border: medicationEvidencePreview[m._id] === url || (!medicationEvidencePreview[m._id] && index === 0) ? '2px solid #0077B6' : '1px solid #D4E4EF', borderRadius: 5, background: '#fff', cursor: 'pointer' }}><img src={resolveAttachmentUrl(url)} alt={`处方第${index + 1}页`} style={{ display: 'block', width: 48, height: 48, objectFit: 'cover', borderRadius: 3 }} /></button>)}</div>}
+                        <div style={{ fontSize: 12, color: '#6F8D80', marginTop: 12 }}>录入来源：{m.createdByName || m.aiGeneratedBy || '处方审核'}</div>
+                        {m.note && <div style={{ fontSize: 12, color: '#4A6558', marginTop: 6 }}>处方说明：{m.note}</div>}
+                      </div>
+                      <div style={{ padding: 14 }}>
+                        <div style={{ fontWeight: 700, color: '#176B52', marginBottom: 10 }}>拟入当前用药</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '10px 20px', fontSize: 13 }}>
+                          <div><span style={{ color: '#7A9588' }}>化学名：</span><strong>{m.name || '-'}</strong></div>
+                          <div><span style={{ color: '#7A9588' }}>商品名：</span>{m.brandName || '-'}</div>
+                          <div><span style={{ color: '#7A9588' }}>规格：</span>{m.specification || '-'}</div>
+                          <div><span style={{ color: '#7A9588' }}>剂量：</span>{m.dosage || '-'}</div>
+                          <div><span style={{ color: '#7A9588' }}>用法/频次：</span>{[m.method, m.frequency, m.timing].filter(Boolean).join(' · ') || '-'}</div>
+                          <div><span style={{ color: '#7A9588' }}>开始日期：</span>{m.startDate || '-'}</div>
+                          <div style={{ gridColumn: '1 / -1' }}><span style={{ color: '#7A9588' }}>服用目的：</span>{m.purpose || '-'}</div>
+                        </div>
+                        <div style={{ borderTop: '1px solid #E5EFEA', marginTop: 14, paddingTop: 12 }}>
                           {canApproveMed ? (
-                            <div style={{ display: 'flex', gap: 6 }}>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                               <button className="btn btn-sm" style={{ background: '#0077B6', color: '#fff' }} onClick={() => reviewMedication(m._id, 'approve')}>确认一致</button>
                               <button className="btn btn-secondary btn-sm" onClick={() => {
                                 setMedForm({ name: m.name, brandName: m.brandName || '', specification: m.specification || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: m.startDate || '', endDate: m.endDate || '', purpose: m.purpose || '', note: m.note || '', imageUrls: m.imageUrls || [] })
                                 setEditingMed(m._id); setShowMedModal(true)
-                              }}>编辑</button>
-                              <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
-                                onClick={() => { if (window.confirm('确认退回并删除这条待核对记录？')) reviewMedication(m._id, 'reject') }}>退回订正</button>
+                              }}>编辑后确认</button>
+                              <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }} onClick={() => { if (window.confirm('确认退回并删除这条待核对记录？')) reviewMedication(m._id, 'reject') }}>退回订正</button>
                             </div>
                           ) : (staff?._id && String(m.staffId) === String(staff._id)) ? (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <span style={{ fontSize: 12, color: '#8AA89C' }}>等待健康顾问核对信息</span>
-                              <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
-                                onClick={() => { if (window.confirm('确认撤回这条你提交的待核对记录？')) reviewMedication(m._id, 'withdraw') }}>撤回</button>
-                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ fontSize: 12, color: '#8AA89C' }}>等待健康顾问核对信息</span><button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }} onClick={() => { if (window.confirm('确认撤回这条你提交的待核对记录？')) reviewMedication(m._id, 'withdraw') }}>撤回</button></div>
                           ) : <span style={{ fontSize: 12, color: '#8AA89C' }}>等待健康顾问核对信息</span>}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        </div>
+                      </div>
+                    </div>
+                  })}
+                </div>
               </div>
             )}
             <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
@@ -8949,7 +9007,7 @@ export default function PatientDetailPage() {
                         <td>{m.dosage}</td>
                         <td style={{ fontSize: 12 }}>{m.method} · {m.frequency}{m.timing ? ` · ${m.timing}` : ''}</td>
                         <td style={{ fontSize: 12, color: '#4A6558' }}>{m.purpose || m.note || '-'}</td>
-                        <td><RecordImageAttachments imageUrls={m.imageUrls} /></td>
+                        <td><RecordImageAttachments imageUrls={m.imageUrls} onPreview={setPreviewImageUrl} /></td>
                         <td style={{ fontSize: 12, color: m.stopped ? '#8A5A44' : '#aaa' }}>{m.stopReason || '-'}</td>
                         <td style={{ fontSize: 12, color: '#8AA89C' }}>{m.startDate || '-'}{m.stopped && m.stopDate ? ` → ${m.stopDate}` : m.endDate ? ` → ${m.endDate}` : ''}</td>
                         <td style={{ fontSize: 11, color: '#8AA89C' }}>
@@ -9034,7 +9092,7 @@ export default function PatientDetailPage() {
                         <td>{s.dosage}</td>
                         <td style={{ fontSize: 12 }}>{s.method} · {s.frequency}</td>
                         <td style={{ fontSize: 12, color: '#4A6558' }}>{s.purpose || '-'}</td>
-                        <td><RecordImageAttachments imageUrls={s.imageUrls} /></td>
+                        <td><RecordImageAttachments imageUrls={s.imageUrls} onPreview={setPreviewImageUrl} /></td>
                         <td style={{ fontSize: 12, color: '#8AA89C' }}>{s.createdByName || s.aiGeneratedBy || 'AI'}</td>
                         <td>
                           {canApprove ? (
@@ -9079,7 +9137,7 @@ export default function PatientDetailPage() {
                         <td>{s.dosage}</td>
                         <td style={{ fontSize: 12 }}>{s.method} · {s.frequency}</td>
                         <td style={{ fontSize: 12, color: '#4A6558' }}>{s.purpose || s.note || '-'}</td>
-                        <td><RecordImageAttachments imageUrls={s.imageUrls} /></td>
+                        <td><RecordImageAttachments imageUrls={s.imageUrls} onPreview={setPreviewImageUrl} /></td>
                         <td style={{ fontSize: 12, color: s.stopped ? '#8A5A44' : '#aaa' }}>{s.stopReason || '-'}</td>
                         <td style={{ fontSize: 12, color: '#8AA89C' }}>{s.startDate || '-'}{s.stopped && s.stopDate ? ` → ${s.stopDate}` : s.endDate ? ` → ${s.endDate}` : ''}</td>
                         <td style={{ fontSize: 11, color: '#8AA89C' }}>
@@ -11121,8 +11179,9 @@ export default function PatientDetailPage() {
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setExecItem(null)}>取消</button>
               {!execItem.isBlocked && !medicationProxyStage(execItem) && execItem.taskRole === 'executor' && execItem.dependsOnTaskId?._id && medicalProxyStage(execItem) !== 'appointment_review' && <button className="btn btn-secondary" style={{ color: '#B45309', borderColor: '#D9A441' }} onClick={handleReturnPrevious} disabled={execSaving}>退回上一环节</button>}
+              {!execItem.isBlocked && medicalProxyStage(execItem) === 'post_visit_audit' && <button className="btn btn-secondary" onClick={handleSavePostVisitAuditDraft} disabled={execSaving}>保存并继续资料审核</button>}
               {medicationProxyStage(execItem) !== 'progress' && !execForm.checkupMerged && <button className="btn btn-primary" onClick={handleExec} disabled={execSaving || execItem.isBlocked}>
-                {execItem.isBlocked ? (isOutpatientPostVisitReviewTask(execItem) ? '等待资料审核' : '等待上一环节完成') : execSaving ? '保存中...' : isCheckupAppointmentBookingTask(execItem) ? '确认三号预约并转交就医专员' : isCheckupManagerReviewTask(execItem) ? '确认资料审核并转健康顾问' : medicationProxyStage(execItem) ? ({ intake: '确认并流转代配药', advisor: '评估后返回规划师', review: '确认并转健管预约', booking: '确认预约并流转', planner: '确认执行人员并转就医专员', execute: '完成配药与配送安排' }[medicationProxyStage(execItem)]) : medicalProxyStage(execItem) ? (isMedicalEscortTask(execItem) ? ({ planner: '确认人员并转就医专员', execute: '完成陪同并提交资料审核', post_visit_audit: '确认资料审核并结束服务' }[medicalProxyStage(execItem)] || '保存') : medicalProxyStage(execItem) === 'planner' && isMedicalProxyMedicationTask(execItem) ? '确认执行人员并转就医专员' : medicalProxyStage(execItem) === 'booking' && isMedicalProxyMedicationTask(execItem) ? '确认预约并转健康规划师分配' : medicalProxyStage(execItem) === 'booking' && /专家约诊/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? '确认预约并通知客户' : /就医规划/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? medicalProxyStage(execItem) === 'advisor' ? '提交就医规划建议并转规划师' : '确认客户意向并结束本次规划' : ({ intake: '确认资料并转健康顾问', collect: '提交本次资料给健管审核', audit: '确认审核并转健康顾问', advisor: '确认代诊方案并转规划师', planner: '确认方案并转健管预约', booking: '确认预约并转就医专员', execute: '完成代诊并结束督办', appointment_review: '完善类目并转健管重新预约', post_visit_audit: '确认审核并转健康顾问查看', post_visit_review: '确认查看并结束约诊服务' }[medicalProxyStage(execItem)] || '保存')) : isOutpatientEscortVisitTask(execItem) ? '完成陪诊并提交资料审核' : isOutpatientPostVisitReviewTask(execItem) ? '生成随访计划并结束服务' : isOutpatientAppointmentTask(execItem) ? '确认预约并流转代诊' : isOutpatientAdvisorAssessmentTask(execItem) ? '完成评估并流转下一步' : isCheckupReportCollectionTask(execItem) ? (execForm.serviceChecklist?.[0]?.collectionStatus === 'complete' ? '完成回收并进入解析审核' : '保存报告回收进度') : isCheckupBookingTask(execItem) ? '确认预约并转交陪诊' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : followUpSaveLabel(execItem, execForm)}
+                {execItem.isBlocked ? (isOutpatientPostVisitReviewTask(execItem) ? '等待资料审核' : '等待上一环节完成') : execSaving ? '保存中...' : isCheckupAppointmentBookingTask(execItem) ? '确认三号预约并转交就医专员' : isCheckupManagerReviewTask(execItem) ? '确认资料审核并转健康顾问' : medicationProxyStage(execItem) ? ({ intake: '确认并流转代配药', advisor: '评估后返回规划师', review: '确认并转健管预约', booking: '确认预约并流转', planner: '确认执行人员并转就医专员', execute: '完成配药与配送安排' }[medicationProxyStage(execItem)]) : medicalProxyStage(execItem) ? (isMedicalEscortTask(execItem) ? ({ planner: '确认人员并转就医专员', execute: '完成陪同并提交资料审核', post_visit_audit: '确认资料审核并结束服务' }[medicalProxyStage(execItem)] || '保存') : medicalProxyStage(execItem) === 'planner' && isMedicalProxyMedicationTask(execItem) ? '确认执行人员并转就医专员' : medicalProxyStage(execItem) === 'booking' && isMedicalProxyMedicationTask(execItem) ? '确认预约并转健康规划师分配' : medicalProxyStage(execItem) === 'booking' && /专家约诊/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? '确认预约并通知客户' : /就医规划/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? medicalProxyStage(execItem) === 'advisor' ? '提交就医规划建议并转规划师' : '确认客户意向并结束本次规划' : ({ intake: '确认资料并转健康顾问', collect: '提交本次资料给健管审核', audit: '确认审核并转健康顾问', advisor: '确认代诊方案并转规划师', planner: '确认方案并转健管预约', booking: '确认预约并转就医专员', execute: '完成代诊并结束督办', appointment_review: '完善类目并转健管重新预约', post_visit_audit: '资料审核完成并转健康顾问查看', post_visit_review: '确认查看并结束约诊服务' }[medicalProxyStage(execItem)] || '保存')) : isOutpatientEscortVisitTask(execItem) ? '完成陪诊并提交资料审核' : isOutpatientPostVisitReviewTask(execItem) ? '生成随访计划并结束服务' : isOutpatientAppointmentTask(execItem) ? '确认预约并流转代诊' : isOutpatientAdvisorAssessmentTask(execItem) ? '完成评估并流转下一步' : isCheckupReportCollectionTask(execItem) ? (execForm.serviceChecklist?.[0]?.collectionStatus === 'complete' ? '完成回收并进入解析审核' : '保存报告回收进度') : isCheckupBookingTask(execItem) ? '确认预约并转交陪诊' : execItem.taskRole === 'supervisor' ? '保存督办结论' : execItem.taskRole ? '保存事务记录' : followUpSaveLabel(execItem, execForm)}
               </button>}
             </div>
           </div>
@@ -11824,14 +11883,10 @@ export default function PatientDetailPage() {
               </div>
             </div>
             <div className="modal-footer" style={{ flexDirection: 'column', gap: 8, alignItems: 'stretch' }}>
-              {/* 审核操作区：仅当报告待审核时展示。2026-07-21修复：确认AI结果(aiStatus→reviewed)
-                  现在会自动把audit_status一并置为audited(见PATCH /medical-reports/:id)，这里的
-                  独立审核入口此前可以绕过AI结果确认、直接把audit_status设audited，导致健康顾问
-                  拿到的是未经健管核对过的AI原始提取数据。收紧：走过AI解析流程(aiStatus不是none)
-                  的报告必须先在"审核AI结果"弹窗确认，这里不再单独放行；居家监测/功能医学检测等
-                  本就不支持AI解析的报告(aiStatus一直是none)保留原有直接审核通道，否则永远无法审核。 */}
+              {/* 只有明确无需结构化解析的资料可直接人工审核。用药、处方、病历和检验检查
+                  即使尚未开始解析也必须先进入 AI 解析/核对结果流程，避免空解析直接流转顾问。 */}
               {showReportDetail.audit_status !== 'audited' && showReportDetail.audit_status !== 'rejected'
-                && (isManualOnlyReport(showReportDetail) || showReportDetail.aiStatus === 'none') && (
+                && isManualOnlyReport(showReportDetail) && (
                 <>
                   {showRejectInput ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -11868,9 +11923,9 @@ export default function PatientDetailPage() {
                 </>
               )}
               {showReportDetail.audit_status !== 'audited' && showReportDetail.audit_status !== 'rejected'
-                && !isManualOnlyReport(showReportDetail) && showReportDetail.aiStatus !== 'none' && (
+                && !isManualOnlyReport(showReportDetail) && (
                 <div style={{ fontSize: 12, color: '#8AA89C', textAlign: 'center', padding: '4px 0' }}>
-                  请在"审核AI结果"里确认检验数据，确认后自动完成审核
+                  {showReportDetail.aiStatus === 'none' ? '请先返回报告列表点击“AI解析”，再在“审核AI结果”中核对并确认' : '请在“审核AI结果”里确认解析数据，确认后自动完成审核'}
                 </div>
               )}
               <button className="btn btn-secondary" onClick={() => { setShowReportDetail(null); setShowRejectInput(false); setRejectReason('') }}>关闭</button>
@@ -12206,11 +12261,20 @@ export default function PatientDetailPage() {
                                 </button>
                               </div>
                               <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
-                                <div style={{ flex: 2 }}>
+                                {isPrescription ? <>
+                                  <div style={{ flex: 1.35 }}>
+                                    <div style={{ fontSize: 10, color: '#8AA89C', marginBottom: 2 }}>化学名 / 通用名</div>
+                                    <input style={{ ...inp, fontWeight: 600, width: '100%' }} value={it.genericName || it.name || ''} placeholder="如：匹维溴铵片" onChange={e => updItem(i, { genericName: e.target.value, name: e.target.value })} />
+                                  </div>
+                                  <div style={{ flex: 1 }}>
+                                    <div style={{ fontSize: 10, color: '#8AA89C', marginBottom: 2 }}>商品名</div>
+                                    <input style={{ ...inp, width: '100%' }} value={it.brandName || ''} placeholder="原件未写可留空" onChange={e => updItem(i, { brandName: e.target.value })} />
+                                  </div>
+                                </> : <div style={{ flex: 2 }}>
                                   {isImaging(it) && <div style={{ fontSize: 10, color: '#8AA89C', marginBottom: 2 }}>原报告项目</div>}
-                                  <input style={{ ...inp, fontWeight: 600, width: '100%' }} value={it.name || ''} placeholder={isPrescription ? '药品名称' : '项目名称'} onChange={e => updItem(i, { name: e.target.value })} />
+                                  <input style={{ ...inp, fontWeight: 600, width: '100%' }} value={it.name || ''} placeholder="项目名称" onChange={e => updItem(i, { name: e.target.value })} />
                                   {reportNameCorrection(it) && <button type="button" className="btn btn-secondary btn-sm" onClick={() => updItem(i, reportNameCorrection(it))}>名称改为“{it.sourceSection}”，原文保留至检查结果</button>}
-                                </div>
+                                </div>}
                                 {isImaging(it) ? (
                                   <div style={{ width: 110 }}>
                                     <div style={{ fontSize: 10, color: '#8AA89C', marginBottom: 2 }}>检查部位</div>
@@ -12239,6 +12303,20 @@ export default function PatientDetailPage() {
                               <label style={{ display: 'block', fontSize: 10, color: '#6B7E75', marginBottom: 6 }}>{isPrescription ? '处方开具日期（仅原件明确归属时填写）' : '项目检查日期（仅原件明确归属时填写）'}
                                 <input type="date" style={{ ...inp, width: 160, marginLeft: 8 }} value={String(it.examDate || '').slice(0, 10)} onChange={e => updItem(i, { examDate: e.target.value })} />
                               </label>
+                              {isPrescription && <label style={{ display: 'block', fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 6 }}>匹配当前用药信息
+                                <select style={{ ...inp, width: '100%', marginTop: 4 }} value={it.medicationId || (it.medicationAction === 'keep' ? '__keep__' : '__create__')} onChange={e => {
+                                  const matched = medications.find(med => String(med._id) === e.target.value)
+                                  if (e.target.value === '__create__') { updItem(i, { medicationId: '', medicationAction: 'create' }); return }
+                                  if (e.target.value === '__keep__') { updItem(i, { medicationId: '', medicationAction: 'keep' }); return }
+                                  updItem(i, matched
+                                    ? { medicationId: String(matched._id), medicationAction: 'matched', genericName: matched.name || it.genericName || it.name || '', brandName: matched.brandName || it.brandName || '', name: matched.name || it.name || '' }
+                                    : { medicationId: '', medicationAction: 'create' })
+                                }}>
+                                  <option value="__create__">新增为当前用药（提交后待确认）</option>
+                                  <option value="__keep__">仅保留本次处方原文，不纳入当前用药</option>
+                                  {medications.map(med => <option key={med._id} value={med._id}>{med.name}{med.brandName ? `（${med.brandName}）` : ''}{med.specification ? ` · ${med.specification}` : ''}</option>)}
+                                </select>
+                              </label>}
                               {isImaging(it) && <>
                                 <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, margin: '2px 0' }}>检查结果（原报告同行内容）</div>
                                 <textarea style={{ ...inp, minHeight: 58, lineHeight: 1.6, resize: 'vertical', marginBottom: 6 }} value={it.findings || ''} placeholder="该项目对应的完整原文结果" onChange={e => updItem(i, { findings: e.target.value })} />

@@ -1,8 +1,5 @@
-// Native <input type="date"> uses browser-specific segmented editing. On some
-// Windows browsers typing a year never advances to the month segment, so a
-// normal continuous entry such as 20250705 becomes unusable. Convert every
-// web date input to a numeric-friendly text field while keeping its YYYY-MM-DD
-// value contract for existing React forms and APIs.
+// 日期字段必须保留浏览器原生 date 控件：既可手动输入，也可通过日历选择。
+// 过去为解决连续输入而把全部 date 改成 text，导致所有业务日期都失去选择器。
 export function normalizeDateTyping(value) {
   const source = String(value || '').trim()
   const digits = source.replace(/\D/g, '')
@@ -38,34 +35,5 @@ function prepareDateInput(input) {
 }
 
 export function installContinuousDateTyping() {
-  const prepareAll = root => root.querySelectorAll?.('input[type="date"], input[data-continuous-date="true"]').forEach(prepareDateInput)
-  prepareAll(document)
-  document.addEventListener('focusin', event => prepareDateInput(event.target), true)
-  document.addEventListener('input', event => {
-    const input = event.target
-    if (!(input instanceof HTMLInputElement) || input.dataset.continuousDate !== 'true') return
-    const normalized = normalizeDateTyping(input.value)
-    if (normalized !== input.value) input.value = normalized
-    syncValidity(input)
-  }, true)
-  document.addEventListener('blur', event => {
-    const input = event.target
-    if (!(input instanceof HTMLInputElement) || input.dataset.continuousDate !== 'true') return
-    const normalized = normalizeDateTyping(input.value)
-    if (normalized !== input.value) {
-      input.value = normalized
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-    }
-    if (input.value && !/^\d{4}-\d{2}-\d{2}$/.test(input.value)) {
-      input.value = ''
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-    }
-    syncValidity(input)
-  }, true)
-  new MutationObserver(records => records.forEach(record => record.addedNodes.forEach(node => {
-    if (node.nodeType === Node.ELEMENT_NODE) {
-      prepareDateInput(node)
-      prepareAll(node)
-    }
-  }))).observe(document.body, { childList: true, subtree: true })
+  // 保留调用点，避免其他入口改动；不再篡改 input[type=date] 的类型。
 }
