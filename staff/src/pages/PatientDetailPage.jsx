@@ -13589,6 +13589,14 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
                         </span>
                       )}
                     </div>
+                    {isStaff && m.readAt && (
+                      <div
+                        title={`客户于 ${new Date(m.readAt).toLocaleString('zh-CN')} 查看`}
+                        style={{ marginTop: 4, paddingRight: 2, fontSize: 11, lineHeight: 1, textAlign: 'right', color: '#1E6B50' }}
+                      >
+                        ✓ 已查看
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
