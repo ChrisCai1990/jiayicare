@@ -141,16 +141,19 @@ async function requireAiEntitlement(user, key, res) {
 router.get('/me', auth, async (req, res) => {
   try {
       const { getCorporateFundAvailable, getPersonalFundAvailable } = require('../utils/healthFundPayment');
-      const [personalAvailable, corporateAvailable, enterprise, platformFundPolicy] = await Promise.all([
+      const [personalAvailable, corporateAvailable, enterprise, platformFundPolicy, fundEligible] = await Promise.all([
         getPersonalFundAvailable(req.user),
         getCorporateFundAvailable(req.user),
-        req.user.enterpriseId ? Enterprise.findById(req.user.enterpriseId).select('healthFundPaymentRule').lean() : null,
+        req.user.enterpriseId ? Enterprise.findById(req.user.enterpriseId).select('status healthFundPaymentRule').lean() : null,
         require('../utils/healthFundPayment').getHealthFundPolicy(),
+        require('../utils/packageFeatureEntitlements').hasHealthFundAccess(req.user),
       ]);
       const cents = value => Math.round((Number(value) || 0) * 100) / 100;
       const totalBalance = cents(req.user.healthFundBalance);
       const personal = cents(Math.min(personalAvailable, totalBalance));
       const healthFund = {
+        eligible: fundEligible,
+        enterprise: { bound: !!req.user.enterpriseId, active: enterprise?.status === 'active', rule: enterprise?.healthFundPaymentRule || null },
         total:     totalBalance,
         corporate: cents(Math.min(corporateAvailable, Math.max(0, totalBalance - personal))),
         personal,
@@ -183,6 +186,7 @@ router.get('/me', auth, async (req, res) => {
           };
         })(),
         policy: {
+          eligibleCategories: platformFundPolicy.eligibleCategories || [],
           enabled: !!platformFundPolicy.enabled,
           minOrderAmount: Number(platformFundPolicy.minOrderAmount) || 0,
           eligibleProductIds: platformFundPolicy.eligibleProductIds || [],
@@ -193,6 +197,9 @@ router.get('/me', auth, async (req, res) => {
           description: platformFundPolicy.description || '',
         },
       };
+      healthFund.rule.description = fundEligible
+        ? '自有基金优先，两类基金合计受商品抵扣上限限制（最高20%）；适用范围及实际金额以服务端核价为准。'
+        : '当前会员权益不支持基金抵扣，可按原价购买；已有基金余额保留。';
 
     // 查询已分配的责任人员信息（实时 populate）
     // 健康规划师是服务协调岗位；已分配的就医专员属于客户可沟通的健康服务团队。
@@ -1303,7 +1310,14 @@ router.get('/push-records', auth, async (req, res) => {
       PushRecord.find({ patientId: req.user._id, $or: [{ readAt: null }, { type: 'questionnaire' }] })
         .sort({ createdAt: -1 }).populate('staffId', 'name role title'),
     ]);
-    const records = require('../utils/messageInbox').mergeInboxRecords(recent, unread);
+    const records = require('../utils/messageInbox').mergeInboxRecords(recent, unread).map(row => row.toObject ? row.toObject() : { ...row });
+    const productIds = [...new Set(records.flatMap(row => row.products?.length ? row.products.map(p=>String(p.productId)) : row.productId ? [String(row.productId)] : []))].filter(id=>mongoose.Types.ObjectId.isValid(id));
+    const fundProducts = await require('../models/Product').find({ _id: { $in: productIds } }).select('_id category healthFundDeduction').lean();
+    const fundById = new Map(fundProducts.map(p=>[String(p._id), { id:String(p._id), category:p.category, healthFundDeduction:p.healthFundDeduction }]));
+    for (const row of records) {
+      if (row.products?.length) row.products = row.products.map(p=>({ ...p, fundProduct:fundById.get(String(p.productId)) || null }));
+      else if (row.productId) row.fundProduct = fundById.get(String(row.productId)) || null;
+    }
     res.json({ success: true, data: records });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取推送记录失败', error: err.message });

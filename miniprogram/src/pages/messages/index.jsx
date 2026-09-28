@@ -9,6 +9,7 @@ import Icon from '../../components/Icon';
 import { chooseImageWithPrivacy, showImagePickerError } from '../../utils/imagePicker';
 import { requestWechatPayment, waitForPayment } from '../../utils/wechatPay';
 import { refreshUnreadBadge, withUnreadBadgeUpdate } from '../../utils/unreadBadge';
+import { maxFundDeduction as maxSingleFundDeduction, maxGroupFundDeduction } from '../../utils/healthFundCheckout';
 
 // 完整对齐 app/src/screens/messages/MessagesScreen.js 的固定角色分组方案。
 // 简化点：
@@ -55,16 +56,6 @@ function policyLimit(type, value, amount) {
   return amount;
 }
 
-function maxFundDeduction(healthFund, amount) {
-  const policy = healthFund?.policy || {};
-  if (amount < (Number(policy.minOrderAmount) || 0)) return 0;
-  const personal = Math.min(Number(healthFund?.personal) || 0, policyLimit(policy.personalDeductionType, policy.personalDeductionValue, amount));
-  let corporateLimit = policyLimit(policy.corporateDeductionType, policy.corporateDeductionValue, amount);
-  const corporate = healthFund?.rule?.enabled === false
-    ? 0
-    : Math.min(Number(healthFund?.corporate) || 0, corporateLimit);
-  return Math.max(0, Math.min(amount, personal + corporate));
-}
 
 const PUSH_TYPES = new Set(['knowledge', 'plan', 'questionnaire', 'supplement', 'product', 'notice']);
 const NOTIF_TYPES = new Set(['system', ...PUSH_TYPES]);
@@ -99,6 +90,7 @@ function normalizePushRecord(pr) {
     productName: pr.title || '',
     productId: pr.productId || null,
     products: pr.products || [],
+    fundProduct: pr.fundProduct || null,
     questionnaireId: pr.questionnaireId?._id || pr.questionnaireId || null,
   };
 }
@@ -472,7 +464,7 @@ function ProductPushDetail({ msg, onClose }) {
   const { user, updateUser } = useAuth();
   const productList = (msg.products && msg.products.length > 0)
     ? msg.products
-    : (msg.productId ? [{ productId: msg.productId, name: msg.productName, price: msg.price, category: '', icon: '🛍' }] : []);
+    : (msg.productId ? [{ productId: msg.productId, name: msg.productName, price: msg.price, category: '', icon: '🛍', fundProduct: msg.fundProduct }] : []);
 
   const [checkedIds, setCheckedIds] = useState(() => productList.map(p => p.productId));
   const payingRef = useRef(false);
@@ -510,7 +502,9 @@ function ProductPushDetail({ msg, onClose }) {
     ? Math.min(selectedCoupon.type === 'amount' ? selectedCoupon.value : Math.round(total * (100 - selectedCoupon.value)) / 100, total)
     : 0;
   const priceAfterCoupon = Math.max(0, Math.round((total - couponDiscount) * 100) / 100);
-  const fundMaximum = maxFundDeduction(checkoutUser?.healthFund, priceAfterCoupon);
+  const fundMaximum = checkedItems.length === 1
+    ? (checkedItems[0].fundProduct ? maxSingleFundDeduction(checkoutUser?.healthFund, priceAfterCoupon, checkedItems[0].fundProduct) : 0)
+    : maxGroupFundDeduction(checkoutUser?.healthFund, priceAfterCoupon, checkedItems);
   const fundApplied = useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, fundMaximum) : 0;
   const finalPrice = checkoutQuote?.finalPrice ?? Math.max(0, Math.round((priceAfterCoupon - fundApplied) * 100) / 100);
 
@@ -617,7 +611,7 @@ function ProductPushDetail({ msg, onClose }) {
           </View>
         )}
 
-        {fundBalance > 0 && (
+        {fundBalance > 0 && fundMaximum > 0 && (
           <View style={{ marginBottom: `${spacing.sm}px` }}>
             <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textPrimary }}>健康基金抵扣（余额¥{fundBalance.toFixed(2)}）</Text>

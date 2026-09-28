@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-function harness() {
+function harness(config = {}) {
   const events = [], awarded = new Set(), prompts = new Set(), refunds = [];
   const orders = [
     { _id: 'a', user: 'user', checkoutGroupId: 'a', paymentExpectedAmount: 8900, healthFundAmount: 1000, couponId: 'coupon', serviceName: 'A' },
@@ -13,6 +13,8 @@ function harness() {
   const coupon = { status: 'active' };
   let failFundOnce = false;
   let failAwardFor = '';
+  let failEntitlementOnce = config.failEntitlementOnce;
+  const packageCalls = [], bundleCalls = [];
   const mocks = {
     '../models/Order': { findById: async id => orders.find(o => o._id === id), findOne: async q => orders.find(o => o._id !== q._id.$ne && o.refundStatus !== 'refunded') },
     '../models/Payment': {
@@ -40,6 +42,15 @@ function harness() {
     './orderPoints': { awardOrderPoints: async o => { if (failAwardFor === o._id) { failAwardFor = ''; throw new Error('points temporary'); } if (!awarded.has(o._id)) { awarded.add(o._id); events.push(['award', o._id, o.paidAmount]); } }, refundOrderPoints: async o => events.push(['reversePoints', o._id]) },
     './healthPlannerAssignment': { resolveHealthPlanner: async () => 'planner' },
     './checkoutAmounts': require('../src/utils/checkoutAmounts'),
+    './packageEntitlements': {
+      ensurePackageEntitlement: async (order, options) => {
+        assert.equal(order.paymentStatus, 'paid');
+        assert.equal(options.syncCustomerMembership, true);
+        packageCalls.push(order._id);
+        if (failEntitlementOnce) { failEntitlementOnce = false; throw new Error('entitlement temporary'); }
+      },
+      ensureMemberBundleEntitlement: async order => { assert.equal(order.paymentStatus, 'paid'); bundleCalls.push(order._id); },
+    },
     './healthFundPayment': { deductHealthFund: async ({ order }) => { if (failFundOnce) { failFundOnce = false; throw new Error('fund temporary'); } events.push(['fund', order._id]); }, reverseHealthFund: async ({ order }) => events.push(['reverseFund', order._id]) },
     './medicalReminderWorkflow': { isMedicalReminderOrder: () => false },
     './orderPlannerConversation': { isMedicationProxyOrder: () => false, ensureOrderPlannerPrompt: async o => prompts.add(o._id) },
@@ -51,7 +62,7 @@ function harness() {
   };
   const ctx = { module: { exports: {} }, require: name => { if (!(name in mocks)) throw new Error(name); return mocks[name]; } };
   vm.runInNewContext(fs.readFileSync(require.resolve('../src/utils/orderSettlement'), 'utf8'), ctx);
-  return { ...ctx.module.exports, orders, payment, events, prompts, coupon, refunds, failFund: () => { failFundOnce = true; }, failAward: id => { failAwardFor = id; },
+  return { ...ctx.module.exports, orders, payment, events, prompts, coupon, refunds, packageCalls, bundleCalls, failFund: () => { failFundOnce = true; }, failAward: id => { failAwardFor = id; },
     pay: () => ctx.module.exports.confirmPayment({ outTradeNo: 'merchant', transactionId: 'wx-id' }) };
 }
 
@@ -62,6 +73,20 @@ test('one successful WeChat payment settles every child at its own cash amount a
   assert.equal(h.events.filter(e => e[0] === 'fund').length, 1);
   assert.equal(h.events.filter(e => e[0] === 'award').length, 2);
   assert.equal(h.prompts.size, 2); assert.equal(h.coupon.usedOrderId, 'a');
+  assert.deepEqual(h.packageCalls, ['a', 'b', 'a', 'b']);
+  assert.deepEqual(h.bundleCalls, ['a', 'b', 'a', 'b']);
+});
+
+test('entitlement failure retains payment facts and retries each child without repeated fund deduction or points', async () => {
+  const h = harness({ failEntitlementOnce: true });
+  await assert.rejects(h.pay(), /entitlement temporary/);
+  assert.equal(h.payment.status, 'succeeded'); assert.equal(h.payment.settlementLockToken, '');
+  assert.equal(h.orders[0].paymentStatus, 'paid'); assert.equal(h.orders[1].paymentStatus, 'pending');
+  await h.pay();
+  assert.ok(h.orders.every(o => o.paymentStatus === 'paid'));
+  assert.deepEqual(h.packageCalls, ['a', 'a', 'b']); assert.deepEqual(h.bundleCalls, ['a', 'b']);
+  assert.equal(h.events.filter(e => e[0] === 'fund').length, 1);
+  assert.equal(h.events.filter(e => e[0] === 'award').length, 2);
 });
 
 test('each paid child gets its own planner message before a later side effect can fail', async () => {
