@@ -1,5 +1,7 @@
 # JiayiCare 小程序端说明
 
+> 2026-09-28白屏续查：隔离目录缺少小程序专用依赖时，React别名误解到根目录19.2.6，与Taro的reconciler0.27不兼容。构建配置现强制校验18.2.0；builtRenderer.test.js直接加载dist的React/渲染器并验证初始化，上传前必须通过。只改编译环境，不改业务页面。
+
 > 2026-09-28：跨端基金源码必须纳入mini.compile.include，否则common.js残留可选链/空值合并，旧微信启动解析可能白屏。上传前先构建，再执行test/buildSyntax.test.js产物语法检查；构建成功不代表真机启动成功。
 
 技术栈：Taro 3.6.32 + React 18（JS，不用 TS，跟 app/ 保持一致降低维护成本）+ 微信小程序原生组件/API。

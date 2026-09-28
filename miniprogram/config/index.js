@@ -1,3 +1,8 @@
+// Fail before bundling if a worktree accidentally resolves the App's React 19.
+const requiredReact = require('../package.json').dependencies.react;
+if (require('react/package.json').version !== requiredReact || require('react-dom/package.json').version !== requiredReact) {
+  throw new Error(`小程序必须使用React ${requiredReact}；当前依赖解析错误，禁止构建上传。`);
+}
 const config = {
   projectName: 'miniprogram',
   date: '2026-7-17',
