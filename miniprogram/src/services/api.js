@@ -149,6 +149,7 @@ export const authAPI = {
 
 // ── User ─────────────────────────────────────────────────────────
 export const userAPI = {
+  getMembershipBenefits: () => request('/user/membership-benefits'),
   referrals: () => request('/user/referrals'),
   getMe: () => request('/user/me'),
   getHealthFund: () => request('/user/health-fund'),

@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { giftsAPI, partnerBenefitsAPI, pointsAPI, userAPI } from '../../services/api';
+import MembershipBenefits from '../../components/MembershipBenefits';
 
 const POINTS_SOURCE_LABEL = { checkin: '打卡', consumption: '消费', redeem: '兑换', adjust: '调整' };
 
@@ -214,7 +215,7 @@ function PartnerBenefitCard({ benefit, onPress }) {
   );
 }
 
-export default function BenefitsScreen({ navigation }) {
+export default function BenefitsScreen({ navigation, route }) {
   const { user } = useAuth();
   const [tab, setTab] = useState('mine'); // 'mine' | 'partner'
 
@@ -225,6 +226,10 @@ export default function BenefitsScreen({ navigation }) {
   const [detailGift, setDetailGift] = useState(null);
 
   const [fundDetail, setFundDetail] = useState(null);
+  const [mineSection, setMineSection] = useState(route?.params?.section === 'fund' ? 'fund' : 'plan');
+  useEffect(() => { if (route?.params?.section) { setMineSection(route.params.section === 'fund' ? 'fund' : 'plan'); setTab('mine'); } }, [route?.params?.section]);
+  const [fundPage, setFundPage] = useState(1);
+  const fundPageCount = Math.max(1, Math.ceil((fundDetail?.transactions?.length || 0) / 5));
   const fund = fundDetail || user?.healthFund || {};
   const fundTotal    = fund.total    ?? (user?.healthFundBalance || 0);
   const fundPersonal = fund.personal ?? 0;
@@ -238,7 +243,7 @@ export default function BenefitsScreen({ navigation }) {
     finally { setGiftsLoading(false); setRefreshing(false); }
   }, []);
   const loadFund = useCallback(async () => {
-    try { const res = await userAPI.getHealthFund(); if (res.success) setFundDetail(res.data); } catch {}
+    try { const res = await userAPI.getHealthFund(); if (res.success) { setFundDetail(res.data); setFundPage(1); } } catch {}
   }, []);
 
   // ── 积分 ──
@@ -313,6 +318,9 @@ export default function BenefitsScreen({ navigation }) {
         {tab === 'mine' ? (
           <>
             {/* 健康基金卡 */}
+            <View style={{flexDirection:'row',marginHorizontal:20,marginBottom:14,gap:8}}>{[['plan','健康服务'],['fund','健康基金'],['gift','赠送权益']].map(([key,label])=><TouchableOpacity key={key} onPress={()=>setMineSection(key)} style={{flex:1,alignItems:'center',paddingVertical:10,borderRadius:10,backgroundColor:mineSection===key?colors.primary:'#fff'}}><Text style={{fontSize:13,color:mineSection===key?'#fff':colors.textSecondary}}>{label}</Text></TouchableOpacity>)}</View>
+            {mineSection==='plan' && <MembershipBenefits />}
+            {mineSection==='fund' && <>
             <View style={styles.fundCard}>
               <Text style={styles.fundLabel}>健康基金余额</Text>
               <Text style={styles.fundTotal}>¥{fundTotal.toLocaleString()}</Text>
@@ -331,9 +339,11 @@ export default function BenefitsScreen({ navigation }) {
             {!!fund.policy?.description && <View style={styles.pointsCard}><Text style={styles.pointsLabel}>{fund.policy.title||'健康基金使用规则'}</Text><Text style={{fontSize:12,color:colors.textSecondary,lineHeight:19,marginTop:6}}>{fund.policy.description}</Text></View>}
             <View style={styles.pointsCard}>
               <Text style={styles.pointsLabel}>基金收支明细</Text>
-              {!fund.transactions?.length ? <Text style={{fontSize:12,color:colors.textMuted,marginTop:8}}>暂无基金收支记录</Text> : fund.transactions.map(item=><View key={`${item.type}-${item._id}`} style={{flexDirection:'row',justifyContent:'space-between',paddingVertical:9,borderTopWidth:1,borderTopColor:colors.border}}><View style={{flex:1}}><Text style={{fontSize:13,color:colors.textPrimary}}>{item.remark||item.orderName||'健康基金变动'}</Text><Text style={{fontSize:11,color:colors.textMuted}}>{new Date(item.createdAt).toLocaleString('zh-CN')}</Text></View><Text style={{fontSize:14,fontWeight:'700',color:item.amount>=0?colors.success:colors.danger}}>{item.amount>=0?'+':'-'}¥{Math.abs(item.amount).toFixed(2)}</Text></View>)}
+              {!fund.transactions?.length ? <Text style={{fontSize:12,color:colors.textMuted,marginTop:8}}>暂无基金收支记录</Text> : fund.transactions.slice((fundPage-1)*5,fundPage*5).map(item=><View key={`${item.type}-${item._id}`} style={{flexDirection:'row',justifyContent:'space-between',paddingVertical:9,borderTopWidth:1,borderTopColor:colors.border}}><View style={{flex:1}}><Text style={{fontSize:13,color:colors.textPrimary}}>{item.remark||item.orderName||'健康基金变动'}</Text><Text style={{fontSize:11,color:colors.textMuted}}>{new Date(item.createdAt).toLocaleString('zh-CN')}</Text></View><Text style={{fontSize:14,fontWeight:'700',color:item.amount>=0?colors.success:colors.danger}}>{item.amount>=0?'+':'-'}¥{Math.abs(item.amount).toFixed(2)}</Text></View>)}
             </View>
 
+            <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginHorizontal:20,marginBottom:12}}><TouchableOpacity disabled={fundPage===1} onPress={()=>setFundPage(p=>Math.max(1,p-1))}><Text style={{padding:8,color:fundPage===1?colors.textMuted:colors.primary}}>上一页</Text></TouchableOpacity><Text style={{fontSize:12,color:colors.textMuted}}>{fundPage} / {fundPageCount} 页</Text><TouchableOpacity disabled={fundPage===fundPageCount} onPress={()=>setFundPage(p=>Math.min(fundPageCount,p+1))}><Text style={{padding:8,color:fundPage===fundPageCount?colors.textMuted:colors.primary}}>下一页</Text></TouchableOpacity></View>
+            <Text style={{fontSize:11,color:colors.textMuted,marginHorizontal:20,marginBottom:14}}>每页 5 条，展示最近最多 100 条记录</Text>
             {/* 积分卡片 */}
             <TouchableOpacity style={styles.pointsCard} onPress={() => setPointsExpanded(v => !v)} activeOpacity={0.85}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -365,7 +375,8 @@ export default function BenefitsScreen({ navigation }) {
               )}
             </TouchableOpacity>
 
-            {giftsLoading ? (
+            </>}
+            {mineSection==='gift' && (giftsLoading ? (
               <View style={styles.loadingWrap}><ActivityIndicator color={colors.primary} /></View>
             ) : (
               <>
@@ -387,7 +398,7 @@ export default function BenefitsScreen({ navigation }) {
                   </>
                 )}
               </>
-            )}
+            ))}
           </>
         ) : (
           <>

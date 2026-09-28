@@ -53,7 +53,9 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
   const { staff } = useStaff()
   const [dispatchTask, setDispatchTask] = useState(null)
   const [items, setItems] = useState([])
-  const [group, setGroup] = useState('all')
+  // 默认只看今天需要亲自处理的事项；任务堆积时不会再把未来计划、督办卡和
+  // 等待上游的任务混在最前面。
+  const [group, setGroup] = useState('actionable')
   const [timeGroup, setTimeGroup] = useState('all')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -135,7 +137,15 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
     if (date < monthEnd) return 'month'
     return 'later'
   }
-  const roleServices = group === 'all' ? serviceGroups : serviceGroups.filter(service => service.task.taskRole === group)
+  const isActionableNow = service => {
+    const task = service.task
+    return task.taskRole === 'executor' && !task.isBlocked && bucketOf(task.date) !== 'week'
+      && bucketOf(task.date) !== 'month' && bucketOf(task.date) !== 'later'
+  }
+  const actionableCount = serviceGroups.filter(isActionableNow).length
+  const roleServices = group === 'all' ? serviceGroups
+    : group === 'actionable' ? serviceGroups.filter(isActionableNow)
+      : serviceGroups.filter(service => service.task.taskRole === group)
   const visibleServices = roleServices
     .filter(service => timeGroup === 'all' || bucketOf(service.task.date) === timeGroup)
     .filter(service => {
@@ -145,7 +155,13 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
         task.sourceOrderId?.serviceName, task.sourceOrderId?.orderNo, task.plannedContent]
         .some(value => String(value || '').toLocaleLowerCase().includes(query)))
     })
-    .sort((a, b) => new Date(a.task.date) - new Date(b.task.date))
+    .sort((a, b) => {
+      const priority = service => {
+        const bucket = bucketOf(service.task.date)
+        return bucket === 'overdue' ? 0 : bucket === 'today' ? 1 : bucket === 'week' ? 2 : bucket === 'month' ? 3 : 4
+      }
+      return priority(a) - priority(b) || new Date(a.task.date) - new Date(b.task.date)
+    })
   const pageCount = Math.max(1, Math.ceil(visibleServices.length / TASKS_PER_PAGE))
   const currentPage = Math.min(page, pageCount)
   const pagedServices = visibleServices.slice((currentPage - 1) * TASKS_PER_PAGE, currentPage * TASKS_PER_PAGE)
@@ -221,7 +237,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
           onChange={event => { setSearch(event.target.value); setPage(1) }} />
       </div>
       <div style={{ display: 'flex', gap: 8, padding: '10px 20px 6px', borderTop: '1px solid #F3EFE8' }}>
-        {[['all', '全部', serviceGroups.length], ['executor', '待执行', executorCount], ['supervisor', '待督办', supervisorCount]].map(([key, label, count]) => count > 0 && (
+        {[['actionable', '当前待办', actionableCount], ['executor', '待执行', executorCount], ['supervisor', '待督办', supervisorCount], ['all', '全部', serviceGroups.length]].map(([key, label, count]) => (key === 'actionable' || count > 0) && (
           <button key={key} onClick={() => { setGroup(key); setPage(1) }} style={{ border: group === key ? '1px solid #1E6B50' : '1px solid #DDD7CD', background: group === key ? '#EAF5F0' : '#fff', color: group === key ? '#1E6B50' : '#5F6B65', borderRadius: 16, padding: '5px 12px', cursor: 'pointer', fontSize: 12 }}>{label} {count}</button>
         ))}
       </div>
@@ -237,6 +253,8 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
           const task = service.task
           const isFuture = task.date && new Date(task.date).getTime() > Date.now()
           const isWaitingPrevious = !!task.isBlocked
+          const dueBucket = bucketOf(task.date)
+          const isDueNow = !isWaitingPrevious && task.taskRole === 'executor' && ['overdue', 'today'].includes(dueBucket)
           const progress = task.taskRole === 'supervisor' ? null : checkupProgress(task) || medicationProxyProgress(task) || medicalEscortProgress(task)
           const isOutpatientEscortProgress = isWaitingPrevious && task.taskRole === 'supervisor' && /门诊一站式.*检查及专家门诊陪诊与归档/.test(task.theme || '')
           const isOutpatientReportAuditWait = isWaitingPrevious && task.taskRole === 'executor' && /门诊一站式.*查看陪诊资料并制定随访计划/.test(task.theme || '')
@@ -245,7 +263,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
           <div key={task._id}
             onClick={() => openTask(task)}
             title={isReadOnlyExpertSupervision ? '仅查看约诊进度，无需办理' : isOutpatientReportAuditWait ? '等待健管专员审核本次门诊病历和检验检查单' : isOutpatientEscortProgress ? '当前已进入陪诊及资料闭环阶段' : isWaitingPrevious ? '上一环节完成后即可办理' : ''}
-            style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 0', cursor: isWaitingPrevious || isReadOnlyExpertSupervision ? 'default' : 'pointer', opacity: isWaitingPrevious ? 0.78 : 1, borderBottom: index < pagedServices.length - 1 ? '1px solid #f0ede8' : 'none' }}>
+            style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 8px', cursor: isWaitingPrevious || isReadOnlyExpertSupervision ? 'default' : 'pointer', opacity: isWaitingPrevious ? 0.78 : 1, borderBottom: index < pagedServices.length - 1 ? '1px solid #f0ede8' : 'none', borderRadius: 8, background: isDueNow ? '#FFF9EB' : 'transparent' }}>
             <span style={{ fontSize: 18 }}>{isWaitingPrevious ? '⏳' : task.taskRole === 'supervisor' ? '🔎' : '✅'}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600, fontSize: 13, color: '#1A2B24' }}>
@@ -255,6 +273,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
                 {service.totalSteps > 1 && <span style={{ marginLeft: 8, fontSize: 11, color: '#1E6B50', background: '#EAF5F0', padding: '2px 6px', borderRadius: 8 }}>当前环节 · 共{service.totalSteps}环节</span>}
                 {isWaitingPrevious
                   ? <span style={{ marginLeft: 8, fontSize: 11, color: isOutpatientEscortProgress ? '#1E6B50' : '#667085', background: isOutpatientEscortProgress ? '#EAF5F0' : '#F2F4F7', padding: '2px 6px', borderRadius: 8 }}>{isOutpatientReportAuditWait ? '等待资料审核' : isOutpatientEscortProgress ? '陪诊及资料闭环进行中' : '等待上一环节'}</span>
+                  : isDueNow ? <span style={{ marginLeft: 8, fontSize: 11, color: dueBucket === 'overdue' ? '#B42318' : '#8A6A20', background: dueBucket === 'overdue' ? '#FEF3F2' : '#FFF4D6', padding: '2px 6px', borderRadius: 8 }}>{dueBucket === 'overdue' ? '已逾期，优先处理' : '今天办理'}</span>
                   : isFuture && <span style={{ marginLeft: 8, fontSize: 11, color: '#8A6A20', background: '#FFF4D6', padding: '2px 6px', borderRadius: 8 }}>待开始</span>}
               </div>
               <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>

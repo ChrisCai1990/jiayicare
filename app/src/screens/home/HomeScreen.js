@@ -92,7 +92,7 @@ const TASK_TABS = ['全部', '今日', '本周', '本月'];
 // ── 任务行 ────────────────────────────────────────────────────────
 function TaskItem({ task, isLast, onPress }) {
   const urgency = task.scheduleLabel ? {...URGENCY_CONFIG.low,label:task.scheduleLabel} : URGENCY_CONFIG[task.priority] || URGENCY_CONFIG.low;
-  const iconCfg = TASK_ICON_CONFIG[task.type] || TASK_ICON_CONFIG.followup;
+  const iconCfg = task.uploadReminder ? {icon:'cloud-upload-outline',bg:'#E8F3FB',color:colors.primary} : TASK_ICON_CONFIG[task.type] || TASK_ICON_CONFIG.checkup;
 
   return (
     <TouchableOpacity
@@ -104,7 +104,7 @@ function TaskItem({ task, isLast, onPress }) {
         <Ionicons name={iconCfg.icon} size={20} color={iconCfg.color} />
       </View>
       <View style={styles.taskBody}>
-        <Text style={styles.taskTitle} numberOfLines={1}>{task.title}</Text>
+        <Text style={styles.taskTitle} numberOfLines={2}>{String(task.title||'健康安排').split(/[（(]/)[0].trim()}</Text>
         <Text style={styles.taskMeta} numberOfLines={1}>
           {task.assignee} · {task.dueDate} {task.dueTime}
         </Text>
@@ -401,49 +401,18 @@ export default function HomeScreen({ navigation }) {
 
         <View style={styles.body}>
 
-          {/* ── 问候英雄卡 ────────────────────────────────────────── */}
-          <View style={styles.heroCard}>
-            <Text style={styles.heroGreeting}>{greeting}</Text>
-            <Text style={styles.heroName}>
-              {name}，{statusText} {statusEmoji}
-            </Text>
-            <View style={styles.heroScoreRow}>
-              {scoreDisplay != null ? (
-                <AnimatedNumber value={scoreDisplay} style={styles.heroScoreNum} duration={900} />
-              ) : (
-                <Text style={[styles.heroScoreNum, { color: 'rgba(255,255,255,0.4)' }]}>--</Text>
-              )}
-              <View style={styles.heroScoreMeta}>
-                <Text style={styles.heroScoreLabel}>
-                  {scoreDisplay != null ? '健康评分 / 100' : '暂无评分，请录入数据'}
-                </Text>
-                {scoreDisplay != null && (() => {
-                  const grade = user?.healthScoreDetail?.grade || (scoreDisplay >= 90 ? '优' : scoreDisplay >= 75 ? '良' : scoreDisplay >= 60 ? '中' : '差')
-                  const gradeColors = { '优': '#22A06B', '良': '#86EFAC', '中': '#FCD34D', '差': '#FCA5A5' }
-                  return (
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: gradeColors[grade] || '#fff', marginTop: 2 }}>
-                      {grade}
-                    </Text>
-                  )
-                })()}
-                {isDemo && <Text style={styles.heroScoreTrend}>↑ 较上月 +3 分</Text>}
-              </View>
-              {scoreDisplay != null && scoreHistory.length >= 2 && (
-                <View style={styles.heroTrendLine}>
-                  <ScoreTrendLine history={scoreHistory} />
-                </View>
-              )}
-            </View>
-            {trendActionText && (
-              <Text style={styles.heroTrendActionText}>{trendActionText}</Text>
-            )}
+          <View style={{backgroundColor:'#fff',borderRadius:20,padding:20,marginBottom:22}}>
+            <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:10}}><View style={{flex:1}}><Text style={{fontSize:12,color:colors.textMuted}}>{name}，{greeting}</Text><Text style={{fontSize:20,fontWeight:'700',color:colors.textPrimary,marginTop:6}}>一起照顾好今天的你</Text></View><View style={{backgroundColor:colors.primary10,borderRadius:12,padding:10,alignItems:'center'}}><Text style={{fontSize:26,fontWeight:'700',color:colors.primary}}>{scoreDisplay ?? '--'}</Text><Text style={{fontSize:10,color:colors.textMuted}}>健康评分 / 100</Text></View></View>
+            <Text style={{fontSize:12,color:colors.textSecondary,lineHeight:19,marginVertical:16}}>{trendActionText || '记录近期变化，帮助了解健康趋势'}</Text>
+            <TouchableOpacity style={{flexDirection:'row',alignItems:'center',gap:9,backgroundColor:colors.primary,borderRadius:12,padding:14}} onPress={()=>goProtected('Checkin')}><Ionicons name="add-circle-outline" size={20} color="#fff"/><Text style={{flex:1,fontSize:15,fontWeight:'600',color:'#fff'}}>记录健康数据</Text><Ionicons name="chevron-forward" size={18} color="#fff"/></TouchableOpacity>
+            <Text style={{fontSize:11,color:colors.textMuted,textAlign:'center',marginTop:10}}>{dashData?.growth?.totalCheckinDays>0?`近30天已记录 ${dashData.growth.totalCheckinDays} 天 · 每一次记录，多一份了解`:'每一次记录，都多一份了解'}</Text>
           </View>
 
           {/* ── 大众服务商城：Admin 上架商品按排序取前4项 ───────── */}
           <View style={{ marginBottom: spacing.lg, order: 3 }}>
             <View style={styles.sectionHeader}>
               <View>
-                <Text style={styles.sectionTitle}>常用健康服务</Text>
+                <Text style={styles.sectionTitle}>更多健康服务</Text>
               </View>
               <TouchableOpacity style={styles.sectionMore} onPress={() => navigation.navigate('ServiceMall')}>
                 <Text style={styles.sectionMoreText}>全部商城</Text>
@@ -469,25 +438,12 @@ export default function HomeScreen({ navigation }) {
             </ScrollView>
           </View>
 
-          {/* ── 完成今日打卡（2026-07-18 打卡页重构）─────────────────
-              原内联打卡网格/情绪打卡/健康指标已抽离到独立打卡页 CheckinScreen，
-              首页只保留入口按钮，具体打卡逻辑与是否已完成的判断见该页。 */}
-          <GrowthCard growth={dashData?.growth} onCheckin={() => {}} />
-          <TouchableOpacity
-            style={styles.checkinEntryBtn}
-            onPress={() => goProtected('Checkin')}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="checkmark-done-outline" size={20} color={colors.white} />
-            <Text style={styles.checkinEntryBtnText}>记录健康数据</Text>
-            <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.8)" />
-          </TouchableOpacity>
 
 
           {/* ── 待办任务 ──────────────────────────────────────────── */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>待办任务</Text>
+              <Text style={styles.sectionTitle}>近期安排</Text>
               <TouchableOpacity
                 style={styles.sectionMore}
                 onPress={() => goProtected('Tasks')}
@@ -542,7 +498,10 @@ export default function HomeScreen({ navigation }) {
             )}
           </View>
 
-          {/* ── 我的健康管家团队已移至"我的"页（2026-07-18 首页瘦身）──── */}
+          <View style={{marginBottom:24,order:2}}>
+            <Text style={[styles.sectionTitle,{fontSize:17,color:colors.textPrimary}]}>我的会员权益</Text>
+            <View style={{flexDirection:'row',gap:10}}>{[['plan','会员权益','查看计划与使用情况','ribbon-outline'],['fund','健康基金',user?.healthFund?.total!=null?`余额 ¥${Number(user.healthFund.total).toFixed(2)}`:'查看余额与收支明细','wallet-outline']].map(([section,title,subtitle,icon])=><TouchableOpacity key={section} onPress={()=>token?navigation.navigate('Benefits',{section}):navigation.navigate('Login')} style={{flex:1,backgroundColor:'#fff',borderRadius:16,padding:16}}><Ionicons name={icon} size={22} color={colors.primary}/><Text style={{fontSize:15,fontWeight:'600',marginTop:10,color:colors.textPrimary}}>{title} ›</Text><Text style={{fontSize:11,color:colors.textMuted,marginTop:5}}>{subtitle}</Text></TouchableOpacity>)}</View>
+          </View>
 
 
         </View>
@@ -719,7 +678,7 @@ const styles = StyleSheet.create({
   // 通用 Section
   section: { marginBottom: spacing.lg },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm, gap: spacing.sm },
-  sectionTitle: { fontSize: 10, fontWeight: '700', color: colors.textMuted, marginBottom: 12, letterSpacing: 1.2, textTransform: 'uppercase' },
+  sectionTitle: { fontSize: 17, fontWeight: '700', color: colors.textPrimary, marginBottom: 12 },
   sectionMore: { flexDirection: 'row', alignItems: 'center', gap: 2, marginLeft: 'auto' },
   sectionMoreText: { fontSize: 13, color: colors.primary, fontWeight: '500' },
 

@@ -67,9 +67,13 @@ async function hasHealthFundAccess(user) {
       return rights.includes365 === true || HEALTH_FUND_TIERS.has(String(rights.membershipTier || ''));
     });
   }
-  if (!HEALTH_FUND_TIERS.has(String(user.membershipTier || ''))) return false;
   const { legacyAccess } = require('./serviceAccess');
-  return legacyAccess(user).active;
+  if (!legacyAccess(user).active) return false;
+  // Legacy assigned packages use the same explicit configuration as other package rights.
+  const pkg = await require('./membershipBenefits').legacyPackage(user);
+  if (pkg) return pkg.configuration?.includes365 === true || HEALTH_FUND_TIERS.has(String(pkg.configuration?.membershipTier || ''));
+  if (await require('../models/PackageEntitlement').exists({ ownerUserId:user._id })) return false;
+  return HEALTH_FUND_TIERS.has(String(user.membershipTier || ''));
 }
 
 // 会员专享商品与健康基金采用同一份“当前有效权益”事实来源，但商品可以

@@ -26,6 +26,8 @@ const FollowUpPlan   = require('../models/FollowUpPlan');
 const MedicalInstitution = require('../models/MedicalInstitution');
 const MedicalDepartment = require('../models/MedicalDepartment');
 const MedicalExpert = require('../models/MedicalExpert');
+const MedicalResourceKnowledge = require('../models/MedicalResourceKnowledge');
+const MedicalDeliveryResource = require('../models/MedicalDeliveryResource');
 
 // ─────────────────────────────────────────────────────────────
 // 工具：拼音首字母助记码（简单实现，正式可接 pinyin 库）
@@ -293,6 +295,46 @@ const cleanCampuses = value => (Array.isArray(value) ? value : []).map(item => (
   contactTitle: String(item?.contactTitle || '').trim().slice(0, 100),
   phone: String(item?.phone || '').trim().slice(0, 100),
 })).filter(item => item.name);
+const KNOWLEDGE_KINDS = new Set(['department_advantage', 'expert_recommendation', 'appointment_rule', 'visit_guidance', 'service_case']);
+const cleanText = (value, max = 4000) => String(value || '').trim().slice(0, max);
+const cleanKnowledgePayload = body => ({
+  kind: cleanText(body.kind, 50),
+  title: cleanText(body.title, 160),
+  institutionId: body.institutionId || null,
+  departmentId: body.departmentId || null,
+  expertId: body.expertId || null,
+  tags: cleanList(body.tags),
+  applicableScenarios: cleanList(body.applicableScenarios),
+  summary: cleanText(body.summary, 600),
+  recommendationBasis: cleanText(body.recommendationBasis, 4000),
+  appointmentInfo: {
+    channels: cleanList(body.appointmentInfo?.channels),
+    advanceDays: cleanText(body.appointmentInfo?.advanceDays, 100),
+    materials: cleanList(body.appointmentInfo?.materials),
+    feeAndInsurance: cleanText(body.appointmentInfo?.feeAndInsurance, 1000),
+  },
+  precautions: cleanText(body.precautions, 4000),
+  serviceBoundary: cleanText(body.serviceBoundary, 2000),
+  riskNotice: cleanText(body.riskNotice, 2000),
+  sourceNote: cleanText(body.sourceNote, 1000),
+  ownerId: body.ownerId || null,
+  expiresAt: body.expiresAt ? new Date(body.expiresAt) : null,
+});
+async function validateKnowledgeLinks(payload) {
+  if (!payload.kind || !KNOWLEDGE_KINDS.has(payload.kind) || !payload.title) throw new Error('请填写有效的资源类型和标题');
+  if (payload.expiresAt && Number.isNaN(payload.expiresAt.getTime())) throw new Error('复核截止日期格式无效');
+  const [institution, department, expert] = await Promise.all([
+    payload.institutionId ? MedicalInstitution.findById(payload.institutionId).select('_id').lean() : null,
+    payload.departmentId ? MedicalDepartment.findById(payload.departmentId).select('_id institutionId').lean() : null,
+    payload.expertId ? MedicalExpert.findById(payload.expertId).select('_id institutionId departmentId').lean() : null,
+  ]);
+  if (payload.institutionId && !institution) throw new Error('关联医院不存在');
+  if (payload.departmentId && !department) throw new Error('关联科室不存在');
+  if (payload.expertId && !expert) throw new Error('关联专家不存在');
+  if (department && payload.institutionId && String(department.institutionId) !== String(payload.institutionId)) throw new Error('关联科室不属于所选医院');
+  if (expert && payload.institutionId && String(expert.institutionId) !== String(payload.institutionId)) throw new Error('关联专家不属于所选医院');
+  if (expert && payload.departmentId && String(expert.departmentId) !== String(payload.departmentId)) throw new Error('关联专家不属于所选科室');
+}
 
 router.get('/medical-resources', adminAuth, async (req, res) => {
   const [institutions, departments, experts] = await Promise.all([
@@ -363,6 +405,101 @@ router.put('/medical-experts/:id', adminAuth, async (req, res) => {
 router.patch('/medical-experts/:id/toggle', adminAuth, async (req, res) => {
   const item = await MedicalExpert.findById(req.params.id); if (!item) return res.status(404).json({ success: false, message: '专家不存在' });
   item.status = item.status === 'active' ? 'inactive' : 'active'; await item.save(); res.json({ success: true, data: item });
+});
+
+// ── 就医资源知识条目：与医院/科室/专家基础档案分离，供团队引用和 AI 检索 ──
+router.get('/medical-resource-knowledge', adminAuth, async (req, res) => {
+  const { status = '', kind = '', q = '' } = req.query;
+  const filter = { ...(status ? { status } : {}), ...(kind ? { kind } : {}) };
+  const keywordText = String(q || '').trim();
+  if (keywordText) {
+    const keyword = new RegExp(keywordText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    filter.$or = [{ title: keyword }, { tags: keyword }, { applicableScenarios: keyword }, { summary: keyword }];
+  }
+  const rows = await MedicalResourceKnowledge.find(filter).populate('institutionId', 'name').populate('departmentId', 'name campus').populate('expertId', 'name title').populate('ownerId', 'name title').populate('reviewedBy', 'name title').sort({ updatedAt: -1 }).limit(500).lean();
+  res.json({ success: true, data: rows });
+});
+
+router.post('/medical-resource-knowledge', adminAuth, async (req, res) => {
+  try {
+    const payload = cleanKnowledgePayload(req.body || {});
+    await validateKnowledgeLinks(payload);
+    const item = await MedicalResourceKnowledge.create({ ...payload, ownerId: payload.ownerId || req.admin._id, auditLog: [{ action: 'created', actorId: req.admin._id, version: 1 }] });
+    res.status(201).json({ success: true, data: item, message: '资源知识条目已创建' });
+  } catch (err) { res.status(400).json({ success: false, message: err.message }); }
+});
+
+router.put('/medical-resource-knowledge/:id', adminAuth, async (req, res) => {
+  try {
+    const item = await MedicalResourceKnowledge.findById(req.params.id);
+    if (!item) return res.status(404).json({ success: false, message: '资源知识条目不存在' });
+    if (item.status === 'published') return res.status(409).json({ success: false, message: '已发布条目不可直接修改，请新建修订条目后重新送审' });
+    if (item.status === 'archived') return res.status(409).json({ success: false, message: '已归档条目不可修改' });
+    const payload = cleanKnowledgePayload(req.body || {});
+    await validateKnowledgeLinks(payload);
+    item.set(payload);
+    item.version += 1;
+    item.auditLog.push({ action: 'updated', actorId: req.admin._id, version: item.version });
+    await item.save();
+    res.json({ success: true, data: item, message: '资源知识条目已更新' });
+  } catch (err) { res.status(400).json({ success: false, message: err.message }); }
+});
+
+router.patch('/medical-resource-knowledge/:id/submit', adminAuth, async (req, res) => {
+  const item = await MedicalResourceKnowledge.findById(req.params.id);
+  if (!item) return res.status(404).json({ success: false, message: '资源知识条目不存在' });
+  if (!['draft', 'returned'].includes(item.status)) return res.status(409).json({ success: false, message: '当前状态不能送审' });
+  item.status = 'pending_review'; item.submittedAt = new Date(); item.reviewNote = '';
+  item.auditLog.push({ action: 'submitted', note: cleanText(req.body?.note, 1000), actorId: req.admin._id, version: item.version });
+  await item.save();
+  res.json({ success: true, data: item, message: '已提交审核' });
+});
+
+router.patch('/medical-resource-knowledge/:id/review', adminAuth, async (req, res) => {
+  const action = req.body?.action;
+  const item = await MedicalResourceKnowledge.findById(req.params.id);
+  if (!item) return res.status(404).json({ success: false, message: '资源知识条目不存在' });
+  if (item.status !== 'pending_review') return res.status(409).json({ success: false, message: '当前条目不在待审核状态' });
+  if (!['publish', 'return'].includes(action)) return res.status(400).json({ success: false, message: '审核动作无效' });
+  item.status = action === 'publish' ? 'published' : 'returned';
+  item.reviewedAt = new Date(); item.reviewedBy = req.admin._id; item.reviewNote = cleanText(req.body?.note, 1000);
+  if (action === 'publish') item.publishedAt = new Date();
+  item.auditLog.push({ action: action === 'publish' ? 'published' : 'returned', note: item.reviewNote, actorId: req.admin._id, version: item.version });
+  await item.save();
+  res.json({ success: true, data: item, message: action === 'publish' ? '已发布，医护端和 AI 可在授权范围内引用' : '已退回修改' });
+});
+
+router.patch('/medical-resource-knowledge/:id/archive', adminAuth, async (req, res) => {
+  const item = await MedicalResourceKnowledge.findById(req.params.id);
+  if (!item) return res.status(404).json({ success: false, message: '资源知识条目不存在' });
+  item.status = 'archived'; item.auditLog.push({ action: 'archived', note: cleanText(req.body?.note, 1000), actorId: req.admin._id, version: item.version });
+  await item.save();
+  res.json({ success: true, data: item, message: '已归档；不会影响既有方案中的引用快照' });
+});
+
+// 归档内容保留原记录；编辑时生成新的草稿版本，避免改写历史引用和审计轨迹。
+router.post('/medical-resource-knowledge/:id/revise', adminAuth, async (req, res) => {
+  try {
+    const source = await MedicalResourceKnowledge.findById(req.params.id);
+    if (!source) return res.status(404).json({ success: false, message: '资源知识条目不存在' });
+    if (source.status !== 'archived') return res.status(409).json({ success: false, message: '仅已归档条目可新建修订版本' });
+    const payload = cleanKnowledgePayload(source.toObject());
+    await validateKnowledgeLinks(payload);
+    const item = await MedicalResourceKnowledge.create({
+      ...payload,
+      ownerId: req.admin._id,
+      supersedesId: source._id,
+      status: 'draft',
+      version: (source.version || 1) + 1,
+      submittedAt: null,
+      reviewedAt: null,
+      reviewedBy: null,
+      reviewNote: '',
+      publishedAt: null,
+      auditLog: [{ action: 'revised', note: `基于归档版本 v${source.version || 1} 新建修订草稿`, actorId: req.admin._id, version: (source.version || 1) + 1 }],
+    });
+    res.status(201).json({ success: true, data: item, message: '已创建修订草稿，请修改后送审发布' });
+  } catch (err) { res.status(400).json({ success: false, message: err.message }); }
 });
 
 // ── 会员标签 ────────────────────────────────────────────────────
@@ -813,6 +950,7 @@ router.get('/lab-test-packages', adminAuth, async (req, res) => {
 });
 makeProjectCRUD(LabTestPackage, 'lab-test-packages');
 makeProjectCRUD(ServiceItem,    'service-items');
+makeProjectCRUD(MedicalDeliveryResource, 'medical-delivery-resources');
 makeProjectCRUD(OtherCharge,    'other-charges');
 
 // ── 特殊检查项目（额外支持软删除和检查类型筛选）──────────────────

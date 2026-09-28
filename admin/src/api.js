@@ -1,4 +1,5 @@
-const BASE = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/admin` : 'http://121.40.156.39/api/admin'
+// 管理端走同域 /api，由 Nginx 转发至后端，避免 HTTPS 页面请求 HTTP 接口被浏览器拦截。
+const BASE = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/admin` : '/api/admin'
 // 上传接口返回相对路径(如/api/uploads/xxx.jpg)，admin后台域名(admin.jiaycare.com)跟后端API
 // 域名(jiaycare.com)不同，直接用相对路径渲染<img>会按当前页面域名解析导致404——
 // 2026-07-07 商城产品图片"上传后不展示"的根因即此。导出API_ORIGIN供页面拼接完整图片URL。
@@ -58,7 +59,7 @@ export const adminAPI = {
   enrollResearchJourney: data => req('/research-care-journeys/journeys', { method: 'POST', body: JSON.stringify(data) }),
   getCareQuality: () => req('/care-quality'),
   reviewCareQuality: (id,data) => req(`/care-quality/${id}/review`,{method:'POST',body:JSON.stringify(data)}),
-  getAiControl: () => req('/ai-control'),
+  getAiControl: (params = {}) => req(`/ai-control?${new URLSearchParams(params)}`),
   searchAiReports: (q) => req(`/ai-control/reports?${new URLSearchParams({ q })}`),
   getAiUsage: (params = {}) => req(`/ai-control/usage?${new URLSearchParams(params)}`),
   saveAiPolicy: (policy, revision) => req('/ai-control/policy', { method: 'PUT', body: JSON.stringify({ policy, revision }) }),
@@ -279,6 +280,17 @@ export const adminAPI = {
   createMedicalExpert: (data) => req('/medical-experts', { method: 'POST', body: JSON.stringify(data) }),
   updateMedicalExpert: (id, data) => req(`/medical-experts/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   toggleMedicalExpert: (id) => req(`/medical-experts/${id}/toggle`, { method: 'PATCH' }),
+  medicalResourceKnowledge: (params = {}) => req('/medical-resource-knowledge?' + new URLSearchParams(params)),
+  createMedicalResourceKnowledge: (data) => req('/medical-resource-knowledge', { method: 'POST', body: JSON.stringify(data) }),
+  updateMedicalResourceKnowledge: (id, data) => req(`/medical-resource-knowledge/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  submitMedicalResourceKnowledge: (id, note = '') => req(`/medical-resource-knowledge/${id}/submit`, { method: 'PATCH', body: JSON.stringify({ note }) }),
+  reviewMedicalResourceKnowledge: (id, action, note = '') => req(`/medical-resource-knowledge/${id}/review`, { method: 'PATCH', body: JSON.stringify({ action, note }) }),
+  archiveMedicalResourceKnowledge: (id, note = '') => req(`/medical-resource-knowledge/${id}/archive`, { method: 'PATCH', body: JSON.stringify({ note }) }),
+  reviseMedicalResourceKnowledge: (id) => req(`/medical-resource-knowledge/${id}/revise`, { method: 'POST' }),
+  medicalDeliveryResources: (params = {}) => req('/medical-delivery-resources?' + new URLSearchParams(params)),
+  createMedicalDeliveryResource: (data) => req('/medical-delivery-resources', { method: 'POST', body: JSON.stringify(data) }),
+  updateMedicalDeliveryResource: (id, data) => req(`/medical-delivery-resources/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  toggleMedicalDeliveryResource: (id) => req(`/medical-delivery-resources/${id}/toggle`, { method: 'PATCH' }),
 
   // 会员标签
   memberTags:        ()         => req('/member-tags'),

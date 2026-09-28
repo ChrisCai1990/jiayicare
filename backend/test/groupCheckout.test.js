@@ -23,6 +23,11 @@ function harness(config = {}) {
     '../models/Enterprise': { findById: async () => null },
     './healthFundPayment': { ...actualFund, getHealthFundPolicy: async () => ({ ...actualFund.DEFAULT_HEALTH_FUND_POLICY, ...(config.policy || {}) }), getPersonalFundAvailable: async () => config.personal || 0, getCorporateFundAvailable: async () => config.corporate || 0 },
     './checkoutAmounts': require('../src/utils/checkoutAmounts'),
+    './packageFeatureEntitlements': { hasHealthFundAccess: async checkedUser => {
+      assert.equal(checkedUser, user);
+      if (config.eligibilityError) throw new Error('eligibility unavailable');
+      return config.fundEligible !== false;
+    } },
     './orderInventory': { reserveProduct: async p => { events.push(['reserve', p._id]); return { reserved: config.soldOut !== p._id, available: config.soldOut !== p._id }; }, releaseOrderInventory: async o => events.push(['release', o.serviceId]) },
     './serviceOwnership': { resolveOrderWorkflowAssignee: async () => 'planner', orderOwnershipFields: () => ({ supervisorId: 'planner' }) },
     './wechatPay': { createJsapiPayment: async args => { events.push(['gateway', args]); if (config.gatewayError) throw new Error('timeout'); return { prepayId: 'prepay', client: { package: 'prepay_id=prepay', paySign: 'sig' } }; } },
@@ -68,11 +73,13 @@ test('coupon and fund are allocated per item; cash sums to the single gateway ch
   assert.equal(h.orders.reduce((s, o) => s + cents(o.couponDiscount), 0), 10000);
 });
 
-test('corporate fund does not flow into an ineligible product, personal fund remains usable', async () => {
+test('disabled product rejects both fund sources; eligible product still uses personal balance first', async () => {
   const h = harness({ personal: 1, corporate: 100, products: { b: { healthFundDeduction: { mode: 'disabled' } } } });
   const q = await h.quoteGroup(h.user, h.items, h.products, { useHealthFund: 68 });
   assert.equal(q.allocations[1].corporate, 0);
-  assert.ok(q.allocations[1].personal > 0);
+  assert.equal(q.allocations[1].personal, 0);
+  assert.equal(q.allocations[0].personal, 1);
+  assert.equal(q.allocations[0].corporate, 67);
   assert.equal(q.summary.fundUsed, 68);
 });
 
@@ -98,9 +105,27 @@ test('gateway timeout preserves both orders and reservations for status/retry, n
   assert.equal(h.payments[0].status, 'processing'); assert.ok(!h.events.some(e => e[0] === 'release'));
 });
 
-test('fully funded group uses common settlement without calling WeChat; temporary settlement failure preserves recovery', async () => {
-  const h = harness({ personal: 7118.44 }); const result = await h.run({ useHealthFund: 7118.44 });
+test('large personal balance cannot bypass the per-product twenty percent cap', async () => {
+  const h = harness({ personal: 7118.44 }); await h.run({ useHealthFund: 7118.44 });
+  assert.equal(h.payments[0].amount, 5694.76);
+  assert.deepEqual(h.orders.map(o => o.healthFundAmount), [1360, 63.68]);
+  assert.equal(h.events.filter(e => e[0] === 'gateway').length, 1);
+});
+
+test('zero-cash coupon checkout uses settlement without WeChat and preserves recovery on failure', async () => {
+  const coupon = { _id: 'coupon', type: 'amount', value: 7118.44 };
+  const h = harness({ coupon }); const result = await h.run({ couponId: 'coupon' });
   assert.equal(result.data.paymentStatus, 'paid'); assert.equal(h.payments[0].amount, 0); assert.ok(!h.events.some(e => e[0] === 'gateway'));
-  const failed = harness({ personal: 7118.44, settlementError: true }); await assert.rejects(failed.run({ useHealthFund: 7118.44 }));
+  const failed = harness({ coupon, settlementError: true }); await assert.rejects(failed.run({ couponId: 'coupon' }));
   assert.ok(!failed.events.some(e => e[0] === 'release')); assert.ok(failed.orders.every(o => o.tradeStatus !== 'closed'));
+});
+
+test('ineligible membership or eligibility failure cannot reserve stock or create payment when using funds', async () => {
+  for (const config of [{ fundEligible: false }, { eligibilityError: true }]) {
+    const h = harness({ personal: 100, ...config });
+    await assert.rejects(h.run({ useHealthFund: 10 }), config.eligibilityError ? /eligibility unavailable/ : /健康基金仅限/);
+    assert.equal(h.orders.length, 0); assert.equal(h.payments.length, 0); assert.equal(h.events.length, 0);
+  }
+  const cash = harness({ fundEligible: false });
+  await cash.run(); assert.equal(cash.payments[0].amount, 7118.44);
 });

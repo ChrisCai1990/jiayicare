@@ -1,5 +1,6 @@
 import ReportReviewQuality, { useReportReviewActivity } from '../components/ReportReviewQuality'
 import ClinicalDocumentReviewFields from '../components/ClinicalDocumentReviewFields'
+import MembershipBenefitsSummary from '../components/MembershipBenefitsSummary'
 import { reportClassificationLabels, reportItemNameConcern, reportNameCorrection, sameReportConclusion } from '../utils/reportReviewQuality'
 import { isManualOnlyReport } from '../utils/reportManualReview'
 import { belongsToCheckupPlan, checkupProgress, groupCheckupPlans, checkupServiceMode } from '../utils/checkupProgress'
@@ -655,6 +656,7 @@ const DOCUMENT_CATEGORIES = [
 const DOCUMENT_CATEGORY_LABEL = Object.fromEntries(DOCUMENT_CATEGORIES.map(item => [item.key, item.label]))
 // 用药信息在“用药”模块审核后即完成闭环，不再要求健康顾问重复审核同一处方的健康变化。
 const HEALTH_COURSE_DOCUMENT_CATEGORIES = new Set(['outpatient_record', 'inpatient_record', 'exam_report', 'lab_report'])
+const CLINICAL_DOCUMENT_CATEGORIES = new Set(['prescription_order', 'outpatient_record', 'inpatient_record'])
 const inferDocumentCategory = report => {
   // 已保存的资料分类是人工选择；标题推断仅用于没有分类的历史资料。
   if (DOCUMENT_CATEGORY_LABEL[report.documentCategory]) return report.documentCategory
@@ -1990,6 +1992,15 @@ export default function PatientDetailPage() {
   const [openReportActionId, setOpenReportActionId] = useState(null)
   const [patientOrders, setPatientOrders] = useState([])
   const [packageEntitlements, setPackageEntitlements] = useState([])
+  const [membershipSummary, setMembershipSummary] = useState(null)
+  const [membershipError, setMembershipError] = useState('')
+  const loadMembership = () => {
+    setMembershipError('')
+    return staffAPI.getPackageEntitlements(id).then(r => {
+      setPackageEntitlements(r.data || [])
+      setMembershipSummary(r.summary || { plans: [], message: '权益摘要暂不可用' })
+    }).catch(() => { setMembershipSummary(null); setPackageEntitlements([]); setMembershipError('会员权益加载失败，请重试') })
+  }
   const [usingEntitlementId, setUsingEntitlementId] = useState('')
   const [autoEntitlementSelection, setAutoEntitlementSelection] = useState('')
   const [redeemingOrderId, setRedeemingOrderId] = useState(null)
@@ -3074,7 +3085,8 @@ export default function PatientDetailPage() {
     }
     else if (tab === 'consumption') {
       staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {})
-      staffAPI.getPackageEntitlements(id).then(r => setPackageEntitlements(r.data || [])).catch(() => setPackageEntitlements([]))
+      setMembershipSummary(null)
+      loadMembership()
     }
     else if (tab === 'ai') {
       loadScreening()
@@ -3539,10 +3551,10 @@ export default function PatientDetailPage() {
     finally { setAiSummaryLoading(false) }
   }
 
-  const handleParseReportAI = async (reportId) => {
+  const handleParseReportAI = async (reportId, options = {}) => {
     setParsingReportId(reportId)
     try {
-      const res = await staffAPI.parseReportAI(reportId)
+      const res = await staffAPI.parseReportAI(reportId, options)
       toast(res.message || 'AI解析完成')
       loadReports()
     } catch (err) { toast(err.message || 'AI解析失败') }
@@ -3607,6 +3619,8 @@ export default function PatientDetailPage() {
     const items = JSON.parse(JSON.stringify(latestReport.reportItems || []))
       .filter(it => it.name && String(it.name).trim())
       .map(it => {
+        // 旧处方曾借用 lab 类型；打开审核时即迁移为独立药品类型，保存后持久化。
+        if (latestReport.documentCategory === 'prescription_order') return { ...it, itemType: 'medication' }
         const isImg = it.itemType === 'imaging'
         if (isImg && !it.findings && it.value) return { ...it, findings: it.value, value: '' }
         return it
@@ -9316,13 +9330,13 @@ export default function PatientDetailPage() {
               {/* 2026-07-07 用户明确规则：AI营养方案只有营养师能生成；AI体检方案/年度管理方案
                   只有健康顾问能生成（营养师能查看这些方案内容，但不该有生成入口） */}
               {['nutritionist', 'superadmin'].includes(staff?.role) && (
-                <button className="btn btn-secondary btn-sm" onClick={() => setShowSelectTplModal('nutrition')}>
-                  ✨ AI营养方案
+                <button className="btn btn-secondary btn-sm" onClick={() => nav(`/plans?type=nutrition&patientId=${encodeURIComponent(id)}&patientName=${encodeURIComponent(data?.user?.name || '')}&openPlan=nutrition`)}>
+                  ✨ 发起营养干预方案
                 </button>
               )}
               {['familyDoctor', 'superadmin'].includes(staff?.role) && (
-                <button className="btn btn-secondary btn-sm" onClick={() => setShowSelectTplModal('annual_checkup')}>
-                  ✨ AI体检方案
+                <button className="btn btn-secondary btn-sm" onClick={() => nav(`/plans?type=annual_checkup&patientId=${encodeURIComponent(id)}&patientName=${encodeURIComponent(data?.user?.name || '')}&openPlan=annual_checkup`)}>
+                  ✨ 发起年度体检方案
                 </button>
               )}
               {['familyDoctor', 'superadmin'].includes(staff?.role) && (
@@ -9332,7 +9346,7 @@ export default function PatientDetailPage() {
               )}
               {['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && (
                 <button className="btn btn-secondary btn-sm" disabled={aiMedicalAssistGenerating}
-                  onClick={() => nav(`/plans?type=medical_assist&patientId=${encodeURIComponent(id)}&patientName=${encodeURIComponent(data?.user?.name || '')}&openMedicalAssist=1`)}>
+                  onClick={() => nav(`/plans?type=medical_assist&patientId=${encodeURIComponent(id)}&patientName=${encodeURIComponent(data?.user?.name || '')}&openPlan=medical_assist`)}>
                   {aiMedicalAssistGenerating ? '生成中…' : '✨ 发起就医协助方案'}
                 </button>
               )}
@@ -9340,8 +9354,8 @@ export default function PatientDetailPage() {
                 <button className="btn btn-secondary btn-sm" onClick={() => nav(`/products?medicalProxy=1&patientId=${id}`, { state: { initialPatient: { _id: id, name: data?.user?.name || '' } } })}>发起医疗代诊</button>
               )}
               {['familyDoctor', 'superadmin'].includes(staff?.role) && (
-                <button className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${id}/annual-health`)}>
-                  ✨ AI年度管理方案
+                <button className="btn btn-secondary btn-sm" onClick={() => nav(`/plans?type=annual_mgmt&patientId=${encodeURIComponent(id)}&patientName=${encodeURIComponent(data?.user?.name || '')}&openPlan=annual_mgmt`)}>
+                  ✨ 发起年度管理方案
                 </button>
               )}
             </div>
@@ -10068,6 +10082,8 @@ export default function PatientDetailPage() {
         const getReportTaskKey = (report) => {
           if (report.audit_status === 'audited' || report.aiStatus === 'reviewed') return 'audited'
           if (report.audit_status === 'rejected' || report.aiStatus === 'rejected') return 'rejected'
+          // 历史临床资料曾被跳过解析；归类修正后应回到待解析队列。
+          if (CLINICAL_DOCUMENT_CATEGORIES.has(inferDocumentCategory(report)) && report.parseJob?.status === 'skipped' && !report.reportItems?.length) return 'parse'
           if (isManualOnlyReport(report)) return 'review'
           if (report.aiStatus === 'none') return 'parse'
           if (report.aiStatus === 'processing') return 'processing'
@@ -10226,6 +10242,9 @@ export default function PatientDetailPage() {
                           : (r.audit_status === 'rejected' || (!isManualOnlyReport(r) && r.aiStatus === 'failed')) ? '#DC3545' : '#D97706'
                         // 居家监测设备导出报告格式差异大，不走 AI 自动解析。
                         const manualOnly = isManualOnlyReport(r)
+                        const isClinicalDocument = CLINICAL_DOCUMENT_CATEGORIES.has(inferDocumentCategory(r))
+                        const canParseLegacyClinical = isClinicalDocument && r.parseJob?.status === 'skipped' && !r.reportItems?.length
+                        const needsAIParse = !manualOnly && (['none', 'failed'].includes(r.aiStatus) || canParseLegacyClinical)
                         return (
                           <React.Fragment key={r._id}>
                           <tr>
@@ -10248,13 +10267,13 @@ export default function PatientDetailPage() {
                                 }}>
                                   {['audited', 'rejected'].includes(r.audit_status) ? '查看资料' : ['prescription_order', 'outpatient_record', 'inpatient_record'].includes(inferDocumentCategory(r)) ? '结构化审核' : '人工审核'}
                                 </button>
-                              ) : (r.aiStatus === 'none' || r.aiStatus === 'failed') && (r.fileUrl || r.content || r.hasContent || (r.fileUrls && r.fileUrls.length)) ? (
+                              ) : needsAIParse && (r.fileUrl || r.content || r.hasContent || (r.fileUrls && r.fileUrls.length)) ? (
                                 <button className="btn btn-primary btn-sm report-action-primary"
                                   disabled={parsingReportId === r._id || r.parseJob?.status === 'paused'}
                                   onClick={() => handleParseReportAI(r._id)}>
                                   {r.parseJob?.status === 'paused' ? '等待管理员恢复' : parsingReportId === r._id ? '提交中…' : r.aiStatus === 'failed' ? '重新识别' : 'AI解析'}
                                 </button>
-                              ) : (r.aiStatus === 'none' || r.aiStatus === 'failed') ? (
+                              ) : needsAIParse ? (
                                 <span style={{ fontSize: 11, color: '#D97706' }}>无报告文件，请让客户重新上传图片/PDF后再解析</span>
                               ) : null}
                               {!manualOnly && r.aiStatus === 'processing' && (
@@ -10634,8 +10653,9 @@ export default function PatientDetailPage() {
             </div>
 
             <div className="card">
+              <MembershipBenefitsSummary data={membershipSummary} error={membershipError} onRefresh={loadMembership} />
               <div className="card-header"><div className="card-title">套餐服务权益</div><span style={{ fontSize: 12, color: '#8AA89C' }}>发起服务时优先自动匹配最早到期的有效权益；创建 0 元履约单后，再按常规流程启动与核销</span></div>
-              {!packageEntitlements.length ? <div style={{ padding: 20, color: '#8AA89C', fontSize: 13 }}>当前客户没有有效的套餐服务权益。</div> : <div className="card-body" style={{ display: 'grid', gap: 12 }}>
+              {!packageEntitlements.length ? <div style={{ padding: 20, color: '#8AA89C', fontSize: 13 }}>尚无可直接核销的有效权益台账；已配置的计划内容请在上方核对，不能当作全部未使用。</div> : <div className="card-body" style={{ display: 'grid', gap: 12 }}>
                 {(() => {
                   const autoOptions = packageEntitlements.flatMap(entitlement => {
                     const pools = new Map((entitlement.rights?.sharedEntitlementPools || []).map(pool => [pool.key, pool]))
@@ -10659,6 +10679,7 @@ export default function PatientDetailPage() {
                         try {
                           const result = await staffAPI.usePackageEntitlement(id, 'auto', { productId: selectedAuto.right.productId, entitlementKey: selectedAuto.right.entitlementKey || '' })
                           setPackageEntitlements(prev => prev.map(item => item._id === result.data.entitlement._id ? result.data.entitlement : item))
+                          loadMembership()
                           setPatientOrders(prev => [result.data.executionOrder, ...prev])
                           setAutoEntitlementSelection('')
                           toast(result.message || '已自动匹配服务包权益')
@@ -10688,6 +10709,7 @@ export default function PatientDetailPage() {
                             try {
                               const result = await staffAPI.usePackageEntitlement(id, entitlement._id, { productId: right.productId, entitlementKey: right.entitlementKey || '' })
                               setPackageEntitlements(prev => prev.map(item => item._id === entitlement._id ? result.data.entitlement : item))
+                              loadMembership()
                               setPatientOrders(prev => [result.data.executionOrder, ...prev])
                               toast(result.message || '已创建履约单')
                             } catch (error) { toast(error.message || '权益使用失败') } finally { setUsingEntitlementId('') }
@@ -11893,7 +11915,7 @@ export default function PatientDetailPage() {
         ]
         const updItem = (i, patch) => setOcrEditItems(arr => arr.map((it, idx) => idx === i ? { ...it, ...patch } : it))
         const delItem = (i) => setOcrEditItems(arr => arr.filter((_, idx) => idx !== i))
-        const addItem = () => setOcrEditItems(arr => [...arr, { name: '', value: '', unit: '', referenceRange: '', status: 'normal', itemType: 'lab' }])
+        const addItem = () => setOcrEditItems(arr => [...arr, { name: '', value: '', unit: '', referenceRange: '', status: 'unknown', itemType: ocrReviewReport.documentCategory === 'prescription_order' ? 'medication' : 'lab' }])
         const abnormalCount = ocrEditItems.filter(it => it.status === 'abnormal' || it.status === 'attention').length
         const sourcePages = [...new Set(ocrEditItems.map(it => Number(it.sourcePage)).filter(Number.isFinite).filter(n => n > 0))].sort((a, b) => a - b)
         const firstSourcePage = 1
@@ -12067,6 +12089,7 @@ export default function PatientDetailPage() {
                   const pageAllReviewed = indexed.length > 0 && indexed.every(({ it }) => it.manualReviewStatus === 'reviewed')
                   // 影像/描述判定：标了 imaging，或数值是长文本（>40字，基本是诊断描述而非检验值）
                   const isImaging = (it) => it.itemType === 'imaging' || (it.value || '').length > 40
+                  const isPrescription = ocrReviewReport.documentCategory === 'prescription_order'
                   const labRows = indexed.filter(({ it }) => !isImaging(it))
                   const imgRows = indexed.filter(({ it }) => isImaging(it))
                   const abn = labRows.map(x => x.it).filter(it => it.status === 'abnormal' || it.status === 'attention')
@@ -12111,8 +12134,8 @@ export default function PatientDetailPage() {
                       </div>
                       })()}
                       <ReportImageEvidenceNotice evidence={activeImageEvidence} hasItems={indexed.length > 0} />
-                      {/* 异常快览：只看检验数值类异常，短标签一眼可见 */}
-                      <div style={{ padding: '12px 14px', background: abn.length ? '#FFF7F5' : '#F3FAF6', borderRadius: 8, marginBottom: 12, border: `1px solid ${abn.length ? '#FAD9D2' : '#CDEBDD'}` }}>
+                      {/* 异常快览仅适用于检验数值，不用于处方。 */}
+                      {!isPrescription && <div style={{ padding: '12px 14px', background: abn.length ? '#FFF7F5' : '#F3FAF6', borderRadius: 8, marginBottom: 12, border: `1px solid ${abn.length ? '#FAD9D2' : '#CDEBDD'}` }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: '#1A2B24', marginBottom: abn.length ? 8 : 0 }}>
                           检验指标 {labRows.length} 项{imgRows.length > 0 ? ` · 影像/检查 ${imgRows.length} 项` : ''}
                           {abnN > 0 && <span style={{ color: '#DC3545', marginLeft: 8 }}>异常 {abnN}</span>}
@@ -12130,7 +12153,7 @@ export default function PatientDetailPage() {
                             ))}
                           </div>
                         )}
-                      </div>
+                      </div>}
                       {/* AI文字分析：折叠收起 */}
                       {ocrReviewReport.aiSummary && (
                         <details style={{ marginBottom: 14 }}>
@@ -12144,7 +12167,7 @@ export default function PatientDetailPage() {
 
                       {/* 严格按 reportItems 原序渲染，检验和检查不再拆区 */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>报告原序（{indexed.length} 项）</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>{isPrescription ? '处方原序' : '报告原序'}（{indexed.length} 项）</div>
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button className="btn btn-secondary btn-sm" onClick={() => {
                             const pageIndexes = new Set(indexed.map(({ i }) => i))
@@ -12154,8 +12177,8 @@ export default function PatientDetailPage() {
                               manualReviewedAt: pageAllReviewed ? null : (item.manualReviewedAt || new Date().toISOString()),
                             } : item))
                           }}>{pageAllReviewed ? '撤销本页已核对' : '✓ 标记本页已核对'}</button>
-                          <button className="btn btn-secondary btn-sm" onClick={addItem}>＋ 新增检验项</button>
-                          <button className="btn btn-secondary btn-sm" onClick={() => setOcrEditItems(arr => [...arr, { name: '', itemType: 'imaging', bodyPart: '', findings: '', diagnosis: '', conclusion: '', status: 'unknown' }])}>＋ 新增检查项</button>
+                          <button className="btn btn-secondary btn-sm" onClick={addItem}>＋ 新增{isPrescription ? '药品' : '检验项'}</button>
+                          {!isPrescription && <button className="btn btn-secondary btn-sm" onClick={() => setOcrEditItems(arr => [...arr, { name: '', itemType: 'imaging', bodyPart: '', findings: '', diagnosis: '', conclusion: '', status: 'unknown' }])}>＋ 新增检查项</button>}
                         </div>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
@@ -12173,7 +12196,7 @@ export default function PatientDetailPage() {
                               style={{ border: isFocusedItem ? '2px solid #7C3AED' : '1px solid #E0D9CE', borderRadius: 8, padding: '10px 12px', background: isFocusedItem ? '#F5F3FF' : (isImaging(it) ? '#fafaf8' : '#fff'), boxShadow: isFocusedItem ? '0 0 0 3px rgba(124,58,237,.12)' : 'none' }}>
                               {isFocusedItem && <div style={{ fontSize: 11, color: '#7C3AED', fontWeight: 800, marginBottom: 6 }}>已定位到需要核对归属的项目</div>}
                               <div style={{ fontSize: 10, color: isImaging(it) ? '#0369A1' : '#7C3AED', fontWeight: 700, marginBottom: 6 }}>
-                                <span style={{ color: sc, fontSize: 12 }}>{STATUS_OPTS.find(s => s.v === it.status)?.label || '未知'}</span>
+                                <span style={{ color: isPrescription ? '#1E6B50' : sc, fontSize: 12 }}>{isPrescription ? '处方药品' : (STATUS_OPTS.find(s => s.v === it.status)?.label || '未知')}</span>
                                 <span style={{ color: '#8AA89C', fontWeight: 400, marginLeft: 8 }}>{it.sourcePage ? `P${it.sourcePage} · ` : ''}第 {it.sourceRowOrder || visibleIndex + 1} 项</span>
                                 <button onClick={() => updItem(i, {
                                   manualReviewStatus: it.manualReviewStatus === 'reviewed' ? 'pending' : 'reviewed',
@@ -12185,7 +12208,7 @@ export default function PatientDetailPage() {
                               <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
                                 <div style={{ flex: 2 }}>
                                   {isImaging(it) && <div style={{ fontSize: 10, color: '#8AA89C', marginBottom: 2 }}>原报告项目</div>}
-                                  <input style={{ ...inp, fontWeight: 600, width: '100%' }} value={it.name || ''} placeholder="项目名称" onChange={e => updItem(i, { name: e.target.value })} />
+                                  <input style={{ ...inp, fontWeight: 600, width: '100%' }} value={it.name || ''} placeholder={isPrescription ? '药品名称' : '项目名称'} onChange={e => updItem(i, { name: e.target.value })} />
                                   {reportNameCorrection(it) && <button type="button" className="btn btn-secondary btn-sm" onClick={() => updItem(i, reportNameCorrection(it))}>名称改为“{it.sourceSection}”，原文保留至检查结果</button>}
                                 </div>
                                 {isImaging(it) ? (
@@ -12194,26 +12217,26 @@ export default function PatientDetailPage() {
                                     <input style={{ ...inp, width: '100%' }} value={it.bodyPart || ''} placeholder="可留空" onChange={e => updItem(i, { bodyPart: e.target.value })} />
                                   </div>
                                 ) : <>
-                                  <input style={{ ...inp, flex: 1, color: sc }} value={it.value || ''} placeholder="数值" onChange={e => updItem(i, { value: e.target.value })} />
-                                  <input style={{ ...inp, width: 70 }} value={it.unit || ''} placeholder="单位" onChange={e => updItem(i, { unit: e.target.value })} />
-                                  <input style={{ ...inp, flex: 1 }} value={it.referenceRange || ''} placeholder="参考范围" onChange={e => updItem(i, { referenceRange: e.target.value })} />
+                                  <input style={{ ...inp, flex: 1, color: sc }} value={it.value || ''} placeholder={isPrescription ? '规格' : '数值'} onChange={e => updItem(i, { value: e.target.value })} />
+                                  <input style={{ ...inp, width: 90 }} value={it.unit || ''} placeholder={isPrescription ? '数量' : '单位'} onChange={e => updItem(i, { unit: e.target.value })} />
+                                  <input style={{ ...inp, flex: 1 }} value={it.referenceRange || ''} placeholder={isPrescription ? '用法用量' : '参考范围'} onChange={e => updItem(i, { referenceRange: e.target.value })} />
                                 </>}
-                                <select style={{ ...inp, width: 80, color: sc, fontWeight: 600 }} value={it.status || 'unknown'} onChange={e => updItem(i, { status: e.target.value })}>{STATUS_OPTS.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}</select>
+                                {!isPrescription && <select style={{ ...inp, width: 80, color: sc, fontWeight: 600 }} value={it.status || 'unknown'} onChange={e => updItem(i, { status: e.target.value })}>{STATUS_OPTS.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}</select>}
                                 <button
-                                  title={`在“${it.name || '当前项目'}”下方新增${isImaging(it) ? '检查' : '检验'}项`}
+                                  title={`在“${it.name || '当前项目'}”下方新增${isPrescription ? '药品' : (isImaging(it) ? '检查' : '检验')}项`}
                                   onClick={() => setOcrEditItems(arr => insertReportItemBelow(
                                     arr,
                                     i,
                                     isImaging(it)
                                       ? { name: '', itemType: 'imaging', bodyPart: '', findings: '', diagnosis: '', conclusion: '', status: 'unknown' }
-                                      : { name: '', value: '', unit: '', referenceRange: '', status: 'normal', itemType: it.itemType === 'data' ? 'data' : 'lab', orderName: it.orderName || '' },
+                                      : { name: '', value: '', unit: '', referenceRange: '', status: 'unknown', itemType: isPrescription ? 'medication' : (it.itemType === 'data' ? 'data' : 'lab'), orderName: it.orderName || '' },
                                   ))}
                                   style={{ whiteSpace: 'nowrap', padding: '4px 7px', border: `1px solid ${isImaging(it) ? '#BAE6FD' : '#C4B5FD'}`, borderRadius: 4, background: isImaging(it) ? '#F0F9FF' : '#F3EFFB', color: isImaging(it) ? '#0369A1' : '#7C3AED', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>
-                                  下方新增
+                                  下方新增{isPrescription ? '药品' : ''}
                                 </button>
                                 <button onClick={() => delItem(i)} style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14 }}>✕</button>
                               </div>
-                              <label style={{ display: 'block', fontSize: 10, color: '#6B7E75', marginBottom: 6 }}>项目检查日期（仅原件明确归属时填写）
+                              <label style={{ display: 'block', fontSize: 10, color: '#6B7E75', marginBottom: 6 }}>{isPrescription ? '处方开具日期（仅原件明确归属时填写）' : '项目检查日期（仅原件明确归属时填写）'}
                                 <input type="date" style={{ ...inp, width: 160, marginLeft: 8 }} value={String(it.examDate || '').slice(0, 10)} onChange={e => updItem(i, { examDate: e.target.value })} />
                               </label>
                               {isImaging(it) && <>
@@ -12223,7 +12246,8 @@ export default function PatientDetailPage() {
                                 <textarea style={{ ...inp, minHeight: 42, lineHeight: 1.6, resize: 'vertical', marginBottom: 6 }} value={it.diagnosis || it.conclusion || ''} placeholder="原报告诊断或结论" onChange={e => updItem(i, sameReportConclusion(it) ? { diagnosis: e.target.value, conclusion: e.target.value } : { diagnosis: e.target.value })} />
                                 {!sameReportConclusion(it) && <><div style={{ fontSize: 11, color: '#4A6558' }}>补充结论（与诊断不同）</div><textarea style={{ ...inp, minHeight: 42, marginBottom: 6 }} value={it.conclusion || ''} onChange={e => updItem(i, { conclusion: e.target.value })} /></>}
                               </>}
-                              {classifyCell(it, i)}
+                              {isPrescription && !isImaging(it) && <><div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, margin: '2px 0' }}>用药说明 / 药师交代</div><textarea style={{ ...inp, minHeight: 42, lineHeight: 1.6, resize: 'vertical', marginBottom: 6 }} value={it.findings || ''} placeholder="给药途径、饭前/后、疗程等原文说明" onChange={e => updItem(i, { findings: e.target.value })} /></>}
+                              {!isPrescription && classifyCell(it, i)}
                             </div>
                             </React.Fragment>
                           )
@@ -13606,6 +13630,14 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
                         </span>
                       )}
                     </div>
+                    {isStaff && (
+                      <div
+                        title={m.readAt ? `客户于 ${new Date(m.readAt).toLocaleString('zh-CN')} 查看` : '客户尚未查看'}
+                        style={{ marginTop: 4, paddingRight: 2, fontSize: 11, lineHeight: 1, textAlign: 'right', color: m.readAt ? '#1E6B50' : '#8AA89C' }}
+                      >
+                        {m.readAt ? '✓ 已查看' : '○ 待查看'}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

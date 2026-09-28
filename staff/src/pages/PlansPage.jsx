@@ -14,9 +14,9 @@ const TYPE_LABEL = {
   // 旧类型兼容展示
   checkup:'体检方案', health:'健康管理方案', followup:'随访计划',
 }
-const STATUS_LABEL = { draft:'草稿', active:'已推送', confirmed:'已确认', completed:'已完成', cancelled:'已取消' }
-const STATUS_COLOR = { draft:'#8AA89C', active:'#1E6B50', confirmed:'#22A06B', completed:'#22A06B', cancelled:'#DC3545' }
-const getPlanStatus = (p) => p.confirmedAt ? 'confirmed' : p.status
+const STATUS_LABEL = { draft:'草稿', active:'已推送', confirmed:'已确认', completed:'已完成', cancelled:'已取消', service_started:'服务已发起' }
+const STATUS_COLOR = { draft:'#8AA89C', active:'#1E6B50', confirmed:'#22A06B', completed:'#22A06B', cancelled:'#DC3545', service_started:'#1E6B50' }
+const getPlanStatus = (p) => p.confirmedAt ? 'confirmed' : p.content?.serviceWorkflow === 'order_tracking' ? 'service_started' : p.status
 
 const ANNUAL_PLAN_TYPE_LABEL = {
   health_reshape:    '健康重塑方案',
@@ -38,10 +38,10 @@ export default function PlansPage() {
   const { staff } = useStaff()
   const [searchParams, setSearchParams] = useSearchParams()
   const typeFilter = searchParams.get('type') || ''
-  // 会员档案页可直接打开这里的统一就医协助创建流程；会员已确定时不必再搜索一次。
-  const initialMedicalAssistPatientId = searchParams.get('patientId') || ''
-  const initialMedicalAssistPatientName = searchParams.get('patientName') || ''
-  const shouldOpenMedicalAssist = searchParams.get('openMedicalAssist') === '1'
+  // 会员档案页与本页共用同一套方案创建弹窗；从会员页进入时只预选会员，不另走一套流程。
+  const initialPatientId = searchParams.get('patientId') || ''
+  const initialPatientName = searchParams.get('patientName') || ''
+  const requestedPlanType = searchParams.get('openPlan') || (searchParams.get('openMedicalAssist') === '1' ? 'medical_assist' : '')
 
   const isAnnualMgmt = typeFilter === 'annual_mgmt'
 
@@ -89,12 +89,15 @@ export default function PlansPage() {
   }, [isAnnualMgmt, loadPlans, loadAhPlans])
 
   useEffect(() => {
-    if (typeFilter === 'medical_assist' && shouldOpenMedicalAssist) setShowMedicalModal(true)
-  }, [typeFilter, shouldOpenMedicalAssist])
+    if (requestedPlanType === 'annual_checkup') setShowCheckupModal(true)
+    if (requestedPlanType === 'annual_mgmt') setShowAhModal(true)
+    if (requestedPlanType === 'nutrition') setShowNutritionModal(true)
+    if (requestedPlanType === 'medical_assist') setShowMedicalModal(true)
+  }, [requestedPlanType])
 
-  const closeMedicalAssistModal = () => {
-    setShowMedicalModal(false)
-    if (shouldOpenMedicalAssist) setSearchParams({ type: 'medical_assist' })
+  const closePlanModal = (setVisible) => {
+    setVisible(false)
+    if (requestedPlanType) setSearchParams(typeFilter ? { type: typeFilter } : {})
   }
 
   const yearOptions = [new Date().getFullYear() - 1, new Date().getFullYear(), new Date().getFullYear() + 1]
@@ -104,7 +107,7 @@ export default function PlansPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">服务方案</h1>
-          <p className="page-subtitle">跨客户方案总览 · {isAnnualMgmt ? `${ahPlans.length} 份年度管理方案` : `共 ${total} 个方案`}；新方案请进入对应客户页面生成</p>
+          <p className="page-subtitle">跨客户方案总览 · {isAnnualMgmt ? `${ahPlans.length} 份年度管理方案` : `共 ${total} 个方案`}；可从此处选择模板后再选会员，也可从会员档案预选会员后进入同一流程</p>
         </div>
       </div>
 
@@ -128,6 +131,15 @@ export default function PlansPage() {
           <button className="btn btn-primary btn-sm" onClick={() => setShowMedicalModal(true)}>
             ＋ 新增就医协助方案
           </button>
+        )}
+        {typeFilter === 'annual_checkup' && can('plans', 'create') && ['familyDoctor', 'superadmin'].includes(staff?.role) && (
+          <button className="btn btn-primary btn-sm" onClick={() => setShowCheckupModal(true)}>＋ 新增年度体检方案</button>
+        )}
+        {typeFilter === 'nutrition' && can('plans', 'create') && ['nutritionist', 'superadmin'].includes(staff?.role) && (
+          <button className="btn btn-primary btn-sm" onClick={() => setShowNutritionModal(true)}>＋ 新增营养干预方案</button>
+        )}
+        {typeFilter === 'annual_mgmt' && can('plans', 'create') && ['familyDoctor', 'superadmin'].includes(staff?.role) && (
+          <button className="btn btn-primary btn-sm" onClick={() => setShowAhModal(true)}>＋ 新增年度管理方案</button>
         )}
         <input
           className="form-control"
@@ -189,7 +201,7 @@ export default function PlansPage() {
                     </tbody>
                   </table>}
           </div>
-          {showAhModal && <SelectPatientForAhModal year={ahYear} onClose={() => setShowAhModal(false)} onSelected={patientId => { setShowAhModal(false); nav(`/patients/${patientId}/annual-health`) }} />}
+          {showAhModal && <SelectPatientForAhModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} year={ahYear} onClose={() => closePlanModal(setShowAhModal)} onSelected={patientId => { closePlanModal(setShowAhModal); nav(`/patients/${patientId}/annual-health`) }} />}
         </>
       )}
 
@@ -231,9 +243,9 @@ export default function PlansPage() {
                 </tbody>
               </table>}
           </div>
-          {showCheckupModal   && <AnnualCheckupPlanModal onClose={() => setShowCheckupModal(false)}   onSaved={() => { setShowCheckupModal(false);   loadPlans(); toast('体检方案已创建') }} />}
-          {showMedicalModal   && <MedicalAssistPlanModal initialPatientId={initialMedicalAssistPatientId} initialPatientName={initialMedicalAssistPatientName} onClose={closeMedicalAssistModal} onSaved={() => { closeMedicalAssistModal(); loadPlans(); toast('就医协助方案已创建') }} />}
-          {showNutritionModal && <NutritionPlanModal     onClose={() => setShowNutritionModal(false)} onSaved={() => { setShowNutritionModal(false); loadPlans(); toast('营养干预方案已创建') }} />}
+          {showCheckupModal   && <AnnualCheckupPlanModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} onClose={() => closePlanModal(setShowCheckupModal)} onSaved={() => { closePlanModal(setShowCheckupModal); loadPlans(); toast('体检方案已创建') }} />}
+          {showMedicalModal   && <MedicalAssistPlanModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} onClose={() => closePlanModal(setShowMedicalModal)} onSaved={() => { closePlanModal(setShowMedicalModal); loadPlans(); toast('就医协助方案已创建') }} />}
+          {showNutritionModal && <NutritionPlanModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} onClose={() => closePlanModal(setShowNutritionModal)} onSaved={() => { closePlanModal(setShowNutritionModal); loadPlans(); toast('营养干预方案已创建') }} />}
           {showModal && <NewPlanModal type={typeFilter || 'annual_checkup'} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); loadPlans(); toast('方案已创建') }} />}
         </>
       )}
@@ -242,8 +254,8 @@ export default function PlansPage() {
 }
 
 // ── 新建年度健康管理：选择会员弹窗 ────────────────────────────────────────
-function SelectPatientForAhModal({ year, onClose, onSelected }) {
-  const [patientId, setPatientId] = useState('')
+function SelectPatientForAhModal({ year, onClose, onSelected, initialPatientId = '', initialPatientName = '' }) {
+  const [patientId, setPatientId] = useState(initialPatientId)
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
@@ -253,7 +265,7 @@ function SelectPatientForAhModal({ year, onClose, onSelected }) {
         </div>
         <div className="modal-body">
           <label className="form-label">选择会员</label>
-          <PatientSearchInput value={patientId} onChange={setPatientId} />
+          <PatientSearchInput value={patientId} onChange={setPatientId} initialSelectedId={initialPatientId} initialSelectedName={initialPatientName} />
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
@@ -578,6 +590,8 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
   const [supervisors, setSupervisors] = useState([])
   const [workflowProducts, setWorkflowProducts] = useState([])
   const [workflowProductId, setWorkflowProductId] = useState('')
+  const [resourceKnowledge, setResourceKnowledge] = useState([])
+  const [selectedResourceIds, setSelectedResourceIds] = useState([])
 
   // 模板内容字段（与管理端完全一致）
   const [form, setForm] = useState({
@@ -668,12 +682,14 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
       staffAPI.getStaffList({ roles: 'medicalAssistant,healthPlanner' }),
       staffAPI.getStaffList({ roles: 'healthManager,familyDoctor,superadmin' }),
       staffAPI.getWorkflowProducts('checkup'),
+      staffAPI.getMedicalResourceKnowledge(),
     ])
-      .then(([tplRes, staffRes, supervisorRes, productRes]) => {
+      .then(([tplRes, staffRes, supervisorRes, productRes, knowledgeRes]) => {
         setTemplates(tplRes.data || [])
         setMedicalAssistants(staffRes.data || [])
         setSupervisors(supervisorRes.data || [])
         setWorkflowProducts(productRes.data || [])
+        setResourceKnowledge(knowledgeRes.data || [])
         if ((productRes.data || []).length === 1) setWorkflowProductId(productRes.data[0]._id)
       })
       .catch(err => setTplError(err.message || '加载失败'))
@@ -718,6 +734,28 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
     })
     setStep(2)
     setError('')
+    setSelectedResourceIds([])
+  }
+
+  const toggleResourceKnowledge = resourceId => {
+    const id = String(resourceId)
+    if (selectedResourceIds.includes(id)) {
+      setSelectedResourceIds(ids => ids.filter(item => item !== id))
+      return
+    }
+    const resource = resourceKnowledge.find(item => String(item._id) === id)
+    const appointment = resource?.appointmentInfo || {}
+    const noteParts = [
+      appointment.advanceDays ? `建议提前期：${appointment.advanceDays}` : '',
+      Array.isArray(appointment.materials) && appointment.materials.length ? `资料清单：${appointment.materials.join('、')}` : '',
+      appointment.feeAndInsurance ? `费用/保险：${appointment.feeAndInsurance}` : '',
+      resource?.precautions ? `注意事项：${resource.precautions}` : '',
+      resource?.serviceBoundary ? `服务边界：${resource.serviceBoundary}` : '',
+      resource?.riskNotice ? `风险提示：${resource.riskNotice}` : '',
+    ].filter(Boolean)
+    const block = noteParts.length ? `【资源引用：${resource.title}】\n${noteParts.join('\n')}` : ''
+    setSelectedResourceIds(ids => [...ids, id])
+    if (block) setForm(current => ({ ...current, notes: current.notes ? `${current.notes}\n\n${block}` : block }))
   }
 
   const handleSubmit = async () => {
@@ -803,7 +841,7 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
       await staffAPI.createPlan({
         patientId, type: 'medical_assist', title: form.name,
         description: isAgencyService ? '' : description, year: Number(form.serviceDate.slice(0, 4)), items,
-        content: { ...form, ...(isAgencyService ? { staffId: '', staffName: '', supervisorId: assignedPlanner._id, transport: '', hotel: '' } : {}), ...(isAgencyExamBooking ? { tasks: form.agencyExams.map(row => [row.item, row.department, row.expert, row.notes].filter(Boolean).join(' · ')).join('\n') } : {}), datetime: [form.serviceDate, form.serviceTime].filter(Boolean).join(' ') },
+        content: { ...form, resourceReferences: selectedResourceIds.map(resourceId => ({ resourceId })), ...(isAgencyService ? { staffId: '', staffName: '', supervisorId: assignedPlanner._id, transport: '', hotel: '' } : {}), ...(isAgencyExamBooking ? { tasks: form.agencyExams.map(row => [row.item, row.department, row.expert, row.notes].filter(Boolean).join(' · ')).join('\n') } : {}), datetime: [form.serviceDate, form.serviceTime].filter(Boolean).join(' ') },
       })
       onSaved()
     } catch (err) { setError(err.message) }
@@ -1082,6 +1120,11 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
             <button type="button" className="btn btn-secondary" disabled={form.agencyExams.length >= 12} onClick={() => set('agencyExams', [...form.agencyExams, { item: '', department: '', expert: '', notes: '' }])}>＋ 增加检查项目</button>
           </div>}
           {!isAgencyExamBooking && !isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && renderField(isAgencyService ? '代办事项 *' : isExamEscort || isTreatmentEscort ? '陪同服务事项 *' : '具体服务事项', 'tasks', 3, isTreatmentEscort ? '如：核对治疗单、协助签到缴费、记录完成情况及下一次治疗安排' : isExamEscort ? '如：核对检查申请单、协助签到、确认报告领取方式' : '如：代取报告、陪同检查，每行一项')}
+          {!isAgencyService && !isMedicalEscort && !isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && <div style={{ padding: 12, border: '1px solid #CFE4DA', borderRadius: 8, background: '#F7FBF9' }}>
+            <div style={{ fontWeight: 700, color: '#1E6B50', marginBottom: 4 }}>引用已发布的就医资源</div>
+            <div style={{ fontSize: 12, color: '#60776C', marginBottom: 8 }}>勾选后会自动带入预约要点、资料清单、注意事项和服务边界；保存方案时冻结当前资源版本。</div>
+            {!resourceKnowledge.length ? <div style={{ fontSize: 13, color: '#8AA89C' }}>暂无可引用资源，请联系管理员发布资源知识条目。</div> : <div style={{ display: 'grid', gap: 7, maxHeight: 180, overflowY: 'auto' }}>{resourceKnowledge.map(resource => <label key={resource._id} style={{ display: 'block', padding: '8px 10px', border: '1px solid #DCE8E1', borderRadius: 7, background: selectedResourceIds.includes(String(resource._id)) ? '#E8F5EF' : '#fff', fontSize: 13 }}><input type="checkbox" checked={selectedResourceIds.includes(String(resource._id))} onChange={() => toggleResourceKnowledge(resource._id)} /> <b>{resource.title}</b><span style={{ color: '#60776C' }}> · {resource.summary || [resource.institutionId?.name, resource.departmentId?.name, resource.expertId?.name].filter(Boolean).join(' / ') || '内部资源'}</span></label>)}</div>}
+          </div>}
           {!isAgencyService && !isMedicationProxy && !isMedicalProxy && !isExpertAppointment && !checkupOneStop && renderField('酒店安排',     'hotel', 2, '是否需要住宿及酒店信息')}
           {!isMedicalProxy && !isExpertAppointment && !checkupOneStop && renderField('备注',         'notes', 2, '其他注意事项')}
 
@@ -1123,7 +1166,7 @@ const NUTRITION_INIT = {
   allowedFoods: '', forbiddenFoods: '',
 }
 
-function NutritionPlanModal({ onClose, onSaved }) {
+function NutritionPlanModal({ onClose, onSaved, initialPatientId = '', initialPatientName = '' }) {
   const [step, setStep]               = useState(1)
   const [templates, setTemplates]     = useState([])
   const [loadingTpls, setLoadingTpls] = useState(true)
@@ -1132,7 +1175,7 @@ function NutritionPlanModal({ onClose, onSaved }) {
   const [form, setForm]               = useState(NUTRITION_INIT)
   const set                           = (k, v) => setForm(p => ({ ...p, [k]: v }))
   const [planTitle, setPlanTitle]     = useState('')
-  const [patientId, setPatientId]     = useState('')
+  const [patientId, setPatientId]     = useState(initialPatientId)
   const [year, setYear]               = useState(new Date().getFullYear())
   const [description, setDescription] = useState('')
   const [saving, setSaving]           = useState(false)
@@ -1229,7 +1272,7 @@ function NutritionPlanModal({ onClose, onSaved }) {
           {/* 搜索会员 */}
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">搜索会员 *</label>
-            <PatientSearchInput value={patientId} onChange={setPatientId} />
+            <PatientSearchInput value={patientId} onChange={setPatientId} initialSelectedId={initialPatientId} initialSelectedName={initialPatientName} />
           </div>
           {/* 方案名称 */}
           <div className="form-group" style={{ marginBottom: 0 }}>
@@ -1589,7 +1632,7 @@ function AnnualMgmtPlanModal({ onClose, onSaved }) {
 }
 
 // ── 年度体检方案：两步创建弹窗 ────────────────────────────────────────
-function AnnualCheckupPlanModal({ onClose, onSaved }) {
+function AnnualCheckupPlanModal({ onClose, onSaved, initialPatientId = '', initialPatientName = '' }) {
   const [step, setStep] = useState(1)
   const [templates, setTemplates] = useState([])
   const [loadingTpls, setLoadingTpls] = useState(true)
@@ -1597,7 +1640,7 @@ function AnnualCheckupPlanModal({ onClose, onSaved }) {
   const [selectedTpl, setSelectedTpl] = useState(null)
 
   // 表单字段
-  const [patientId, setPatientId] = useState('')
+  const [patientId, setPatientId] = useState(initialPatientId)
   const [packageName, setPackageName] = useState('')
   const [packageDesc, setPackageDesc] = useState('')
   const [checkItems, setCheckItems] = useState([])   // { type, id, name }
@@ -1794,7 +1837,7 @@ function AnnualCheckupPlanModal({ onClose, onSaved }) {
           {/* 搜索会员 */}
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">搜索会员 *</label>
-            <PatientSearchInput value={patientId} onChange={setPatientId} />
+            <PatientSearchInput value={patientId} onChange={setPatientId} initialSelectedId={initialPatientId} initialSelectedName={initialPatientName} />
           </div>
 
           {/* 套餐名称 */}

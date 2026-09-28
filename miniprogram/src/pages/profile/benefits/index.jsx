@@ -6,6 +6,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { giftsAPI, partnerBenefitsAPI, pointsAPI, userAPI } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
+import MembershipBenefits from '../../../components/MembershipBenefits';
 import { formatChineseDate, formatChineseDateTime } from '../../../utils/date';
 
 // 对齐 app/src/screens/profile/BenefitsScreen.js
@@ -86,6 +87,9 @@ export default function BenefitsPage() {
   const [groupsLoading, setGroupsLoading] = useState(true);
   const [detailBenefit, setDetailBenefit] = useState(null);
   const [fundDetail, setFundDetail] = useState(null);
+  const [mineSection, setMineSection] = useState(() => Taro.getCurrentInstance()?.router?.params?.section === 'fund' ? 'fund' : 'plan');
+  const [fundPage, setFundPage] = useState(1);
+  const fundPageCount = Math.max(1, Math.ceil((fundDetail?.transactions?.length || 0) / 5));
 
   const fund = fundDetail || user?.healthFund || {};
   const fundTotal = fund.total ?? (user?.healthFundBalance || 0);
@@ -107,7 +111,7 @@ export default function BenefitsPage() {
   }, []);
 
   const loadFund = useCallback(async () => {
-    try { const res = await userAPI.getHealthFund(); if (res.success) setFundDetail(res.data); } catch {}
+    try { const res = await userAPI.getHealthFund(); if (res.success) { setFundDetail(res.data); setFundPage(1); } } catch {}
   }, []);
 
   const loadPartnerBenefits = useCallback(async () => {
@@ -154,6 +158,9 @@ export default function BenefitsPage() {
 
       {tab === 'mine' ? (
         <View style={{ padding: `0 ${spacing.lg}px` }}>
+          <View style={{display:'flex',gap:'8px',marginBottom:'14px'}}>{[['plan','健康服务'],['fund','健康基金'],['gift','赠送权益']].map(([key,label])=><View key={key} onClick={()=>setMineSection(key)} style={{flex:1,textAlign:'center',padding:'10px 0',borderRadius:'10px',backgroundColor:mineSection===key?colors.primary:'#fff'}}><Text style={{fontSize:'13px',color:mineSection===key?'#fff':colors.textSecondary}}>{label}</Text></View>)}</View>
+          {mineSection==='plan' && <MembershipBenefits />}
+          {mineSection==='fund' && <>
           <View style={{ borderRadius: `${radius.md}px`, backgroundColor: '#1A2B24', padding: `${spacing.lg}px`, marginBottom: `${spacing.md}px`, boxShadow: shadow.md }}>
             <Text style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '6px' }}>健康基金余额</Text>
             <Text style={{ fontSize: '34px', fontWeight: 800, color: '#fff', display: 'block', marginBottom: `${spacing.md}px` }}>¥{Number(fundTotal).toFixed(2)}</Text>
@@ -176,10 +183,12 @@ export default function BenefitsPage() {
 
           <View style={{ backgroundColor:'#fff', borderRadius:`${radius.md}px`, border:`1px solid ${colors.border}`, padding:`${spacing.md}px`, marginBottom:`${spacing.md}px` }}>
             <Text style={{fontSize:'13px',fontWeight:700,color:colors.textPrimary,display:'block',marginBottom:'6px'}}>基金收支明细</Text>
-            {!fund.transactions?.length ? <Text style={{fontSize:'12px',color:colors.textMuted}}>暂无基金收支记录</Text> : fund.transactions.map(item=><View key={`${item.type}-${item._id}`} style={{display:'flex',justifyContent:'space-between',padding:'9px 0',borderTop:`1px solid ${colors.borderLight}`}}>
+            {!fund.transactions?.length ? <Text style={{fontSize:'12px',color:colors.textMuted}}>暂无基金收支记录</Text> : fund.transactions.slice((fundPage-1)*5,fundPage*5).map(item=><View key={`${item.type}-${item._id}`} style={{display:'flex',justifyContent:'space-between',padding:'9px 0',borderTop:`1px solid ${colors.borderLight}`}}>
               <View style={{flex:1,minWidth:0}}><Text style={{fontSize:'13px',color:colors.textPrimary,display:'block'}}>{item.remark||item.orderName||'健康基金变动'}</Text><Text style={{fontSize:'11px',color:colors.textMuted}}>{formatChineseDateTime(item.createdAt)}{item.orderNo?` · ${item.orderNo}`:''}</Text></View>
               <Text style={{fontSize:'14px',fontWeight:700,color:item.amount>=0?colors.success:colors.danger}}>{item.amount>=0?'+':'-'}¥{Math.abs(item.amount).toFixed(2)}</Text>
             </View>)}
+            {!!fund.transactions?.length && <View style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'14px'}}><Text onClick={()=>setFundPage(p=>Math.max(1,p-1))} style={{padding:'8px',color:fundPage===1?colors.textMuted:colors.primary}}>上一页</Text><Text style={{fontSize:'12px',color:colors.textMuted}}>{fundPage} / {fundPageCount} 页</Text><Text onClick={()=>setFundPage(p=>Math.min(fundPageCount,p+1))} style={{padding:'8px',color:fundPage===fundPageCount?colors.textMuted:colors.primary}}>下一页</Text></View>}
+            <Text style={{fontSize:'11px',color:colors.textMuted,display:'block',marginTop:'8px'}}>每页 5 条，展示最近最多 100 条记录</Text>
           </View>
 
           <View onClick={() => setPointsExpanded((v) => !v)} style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, padding: `${spacing.lg}px`, marginBottom: `${spacing.md}px`, boxShadow: shadow.xs }}>
@@ -210,7 +219,8 @@ export default function BenefitsPage() {
             )}
           </View>
 
-          {giftsLoading ? (
+          </>}
+          {mineSection==='gift' && (giftsLoading ? (
             <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
           ) : (
             <>
@@ -233,7 +243,7 @@ export default function BenefitsPage() {
                 </>
               )}
             </>
-          )}
+          ))}
         </View>
       ) : (
         <View style={{ padding: `0 ${spacing.lg}px` }}>

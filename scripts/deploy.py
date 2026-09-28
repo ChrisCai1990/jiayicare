@@ -187,6 +187,19 @@ def deploy(backend_only=False, clean=False, github_source=False, skip_data_migra
                 )
                 if code:
                     raise RuntimeError(f"{label}失败")
+                if workspace == "admin":
+                    # Nginx legitimately caches /assets for a year. Vite's entry
+                    # filename is not guaranteed to change for every source edit,
+                    # so make the HTML point at a revisioned URL on each release.
+                    # index.html itself is served no-cache.
+                    code, _ = remote(
+                        f"cd {REPO_DIR}/admin/dist && sed -i -E "
+                        f"'s#(src|href)=\"(/assets/[^\"?]+)(\\?[^\"]*)?\"#\\1=\"\\2?v={revision}\"#g' index.html",
+                        timeout=15,
+                        label="为管理端静态资源写入发布版本号",
+                    )
+                    if code:
+                        raise RuntimeError("管理端静态资源版本号写入失败")
 
         code, _ = remote(
             f"cd {REPO_DIR} && test \"$(git rev-parse HEAD)\" = \"{revision}\"",

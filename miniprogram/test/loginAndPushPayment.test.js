@@ -88,7 +88,7 @@ test('two products are independently selectable, including deselect-all/select-a
     React: { createElement: (type, props, ...children) => ({ type, props: props || {}, children }) },
     useState: init => { const index = cursor++; if (!(index in states)) states[index] = typeof init === 'function' ? init() : init; return [states[index], value => { states[index] = typeof value === 'function' ? value(states[index]) : value; }]; },
     useRef: value => { const index = refCursor++; if (!refs[index]) refs[index] = { current: value }; return refs[index]; },
-    useEffect() {}, useAuth: () => ({ user: {}, updateUser() {} }), maxFundDeduction: () => 0,
+    useEffect() {}, useAuth: () => ({ user: {}, updateUser() {} }), maxSingleFundDeduction: () => 0, maxGroupFundDeduction: () => 0,
     colors: {}, spacing: {}, radius: {}, View: 'View', Text: 'Text', ScrollView: 'ScrollView', Icon: 'Icon', RENEWAL_PAYMENT_METHODS: [{ key: 'wechat', label: '微信支付' }],
   };
   const code = babel.transformSync(component, { configFile: false, babelrc: false, presets: [require.resolve('@babel/preset-react')] }).code;

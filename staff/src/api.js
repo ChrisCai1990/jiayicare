@@ -200,7 +200,7 @@ export const staffAPI = {
   updateReportPageDate: (id, page, date) => req(`/staff/medical-reports/${id}/page-dates/${page}`, { method: 'PATCH', body: JSON.stringify({ date }) }),
   updateReportItem: (id, itemId, d) => req(`/staff/medical-reports/${id}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(d) }),
   deleteReport:  (id, reason) => req(`/staff/medical-reports/${id}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
-  parseReportAI: (id)     => req(`/staff/medical-reports/${id}/parse-ai`, { method: 'POST' }),
+  parseReportAI: (id, data = {}) => req(`/staff/medical-reports/${id}/parse-ai`, { method: 'POST', body: JSON.stringify(data) }),
   parseReportPageAI: (id, pageNum) => req(`/staff/medical-reports/${id}/parse-page`, { method: 'POST', body: JSON.stringify({ pageNum }) }),
   reclassifyReport: (patientId, reportId) => req(`/staff/patients/${patientId}/reports/${reportId}/reclassify`, { method: 'POST' }),
   getScreeningCatalog: () => req('/staff/screening-catalog'),
@@ -322,6 +322,7 @@ export const staffAPI = {
   // P4 — Referrals
   createReferral:        (data)      => req('/staff/referrals', { method: 'POST', body: JSON.stringify(data) }),
   getMedicalResources:   ()          => req('/staff/medical-resources'),
+  getMedicalResourceKnowledge: (params = {}) => req('/staff/medical-resource-knowledge?' + qs(params)),
   getReferrals:          (p = {})    => req('/staff/referrals?' + qs(p)),
   updateReferral:        (id, data)  => req(`/staff/referrals/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   resubmitReferral:      (id, data)  => req(`/staff/referrals/${id}/resubmit`, { method: 'PATCH', body: JSON.stringify(data) }),

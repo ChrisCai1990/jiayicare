@@ -147,7 +147,7 @@ async function validateHealthFundDeduction({ user, requested, orderAmount, categ
   // “启用基金”，始终按实时余额和商品上限重算。余额来源只影响流水归属，
   // 不改变商品可抵扣上限；这样旧版客户端报价不会覆盖服务端规则。
   const allocation = allocateHealthFund({
-    orderAmount: maximize ? orderAmount : Math.min(amount, orderAmount),
+    orderAmount,
     personalAvailable,
     corporateAvailable,
     corporateEligible: corporateEligible && enterpriseEnabled,
@@ -155,9 +155,10 @@ async function validateHealthFundDeduction({ user, requested, orderAmount, categ
       ? { mode: 'fixedAmount', value: finalProductLimit }
       : { mode: 'inherit', value: 0 }),
   });
-  const allowed = allocation.allowed;
-  const personalUsed = allocation.personalUsed;
-  const corporateUsed = allocation.corporateUsed;
+  // The requested deduction is a ceiling, not the base for the product percentage.
+  const allowed = Math.floor(Math.min(maximize ? allocation.allowed : amount, allocation.allowed) * 100 + 1e-7) / 100;
+  const personalUsed = Math.min(allocation.personalUsed, allowed);
+  const corporateUsed = Math.round((allowed - personalUsed) * 100) / 100;
   return { allowed, enterprise, policy, breakdown: { personal: personalUsed, corporate: corporateUsed } };
 }
 

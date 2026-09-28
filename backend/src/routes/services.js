@@ -92,7 +92,7 @@ router.get('/', async (req, res) => {
       refundPolicy: p.refundPolicy || '',
       // 已发布的小程序会直接按商品规则展示可抵扣额；继承规则在接口层
       // 下发为明确的20%，客户端只负责展示，最终以结算服务端重算为准。
-      healthFundDeduction: !p.healthFundDeduction?.mode || ['inherit', 'unlimited', 'fixedAmount'].includes(p.healthFundDeduction.mode)
+      healthFundDeduction: !p.healthFundDeduction?.mode || ['inherit', 'unlimited'].includes(p.healthFundDeduction.mode)
         ? { mode:'percentage', value:20 }
         : p.healthFundDeduction.mode === 'percentage'
           ? { mode:'percentage', value:Math.min(20, Math.max(0, Number(p.healthFundDeduction.value) || 0)) }

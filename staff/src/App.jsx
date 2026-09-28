@@ -47,6 +47,7 @@ import ForcePasswordChangePage from './pages/ForcePasswordChangePage'
 import ServiceAssistantPage from './pages/ServiceAssistantPage'
 import ContentReviewsPage from './pages/ContentReviewsPage'
 import ContentReviewHistoryPage from './pages/ContentReviewHistoryPage'
+import MedicalResourceKnowledgePage from './pages/MedicalResourceKnowledgePage'
 
 // ── Auth Context ──────────────────────────────────────────────────
 const AuthCtx = createContext(null)
@@ -191,6 +192,7 @@ export default function App() {
               <Route path="patients/:id/annual-plan" element={<AnnualPlanPage />} />
               <Route path="followups" element={<FollowUpsPage />} />
               <Route path="plans" element={<PlansPage />} />
+              <Route path="medical-resource-knowledge" element={<MedicalResourceKnowledgePage />} />
               <Route path="plans/mgmt/:id" element={<AnnualMgmtPlanPage />} />
               <Route path="patients/:id/annual-health" element={<AnnualMgmtPlanPage patientMode />} />
               <Route path="patients/:id/monthly-reviews" element={<ErrorBoundary><MonthlyServiceReviewPage /></ErrorBoundary>} />

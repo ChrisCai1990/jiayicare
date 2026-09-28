@@ -62,7 +62,7 @@ function urgencyByDate(dateVal) {
 
 function TaskItemRow({ task, isLast, onPress }) {
   const urgency = task.scheduleLabel ? {...URGENCY_CONFIG.low,label:task.scheduleLabel} : URGENCY_CONFIG[task.priority] || URGENCY_CONFIG.low;
-  const iconCfg = TASK_ICON_CONFIG[task.type] || TASK_ICON_CONFIG.followup;
+  const iconCfg = task.canUploadReports ? {icon:'📋',bg:'#E8F3FB'} : TASK_ICON_CONFIG[task.type] || TASK_ICON_CONFIG.checkup;
   return (
     <View onClick={() => onPress(task)} style={{
       display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, padding: '14px 0',
@@ -72,7 +72,7 @@ function TaskItemRow({ task, isLast, onPress }) {
         <Icon name={iconCfg.icon} size={20} />
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }} numberOfLines={1}>{task.title}</Text>
+        <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: '-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical',overflow:'hidden' }}>{String(task.title||'健康安排').split(/[（(]/)[0].trim()}</Text>
         <Text style={{ fontSize: '12px', color: colors.textMuted, marginTop: '2px' }} numberOfLines={1}>{task.assignee} · {displayTaskDate(task.dueDate || task.date)} {task.dueTime}</Text>
       </View>
       <View style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
@@ -314,73 +314,30 @@ export default function HomePage() {
 
   return (
     <ScrollView scrollY style={{ minHeight: '100vh', backgroundColor: colors.background }}>
-      {/* 顶部Logo栏：像素级对齐app端topBar（22px logo/38x38 primary实心头像chip）。
-          paddingTop加状态栏高度，因navigationStyle:custom后系统导航栏已隐藏，需自己避让胶囊按钮所在区域 */}
-      <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.sm}px`, backgroundColor: colors.background }}>
-        <View>
-          <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.primary, display: 'block', letterSpacing: '-0.3px' }}>嘉医汇<Text style={{ fontSize: '8px', verticalAlign: 'top' }}>®</Text> | 嘉医管家</Text>
-          <View style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-            <Text style={{ fontSize: '10px', color: colors.textMuted, letterSpacing: '0.2px' }}>健康有人管 · 生活更安心</Text>
-            <Text style={{ fontSize: '8px', color: colors.textMuted }}>· {runtimeInfo}</Text>
-          </View>
-        </View>
-        <View
-          style={{ width: '38px', height: '38px', borderRadius: '19px', backgroundColor: colors.primary, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          onClick={() => Taro.switchTab({ url: '/pages/profile/index/index' })}
-        >
-          <Text style={{ fontSize: '16px', color: '#fff', fontWeight: 700 }}>{name[0]}</Text>
-        </View>
+      <View style={{padding:`${statusBarHeight+8}px ${spacing.lg}px 18px`,paddingRight:'112px',backgroundColor:colors.background}}>
+        <Text style={{fontSize:'18px',fontWeight:700,color:colors.primary,display:'block'}}>嘉医汇 · 嘉医管家</Text>
+        <Text style={{fontSize:'11px',color:colors.textMuted,display:'block',marginTop:'4px'}}>健康有人管，生活更安心</Text>
       </View>
-
       <View style={{ padding: `0 ${spacing.lg}px` }}>
-        <View style={{ display: 'flex', alignItems: 'center', backgroundColor: '#fff', borderRadius: `${radius.lg}px`, padding: '18px 18px', marginBottom: '12px', minHeight: '96px', boxShadow: shadow.card }}>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block' }}>{greeting}</Text>
-            <Text style={{ fontSize: '18px', fontWeight: 750, color: colors.textPrimary, display: 'block', marginTop: '5px' }} numberOfLines={1}>{name}，{statusText}</Text>
-            {trendActionText && <Text style={{ fontSize: '11px', color: colors.textSecondary, display: 'block', marginTop: '7px' }} numberOfLines={1}>{trendActionText}</Text>}
-          </View>
-          <View style={{ display: 'flex', alignItems: 'baseline', marginLeft: '10px' }}>
-            <Text style={{ fontSize: '46px', fontWeight: 800, color: colors.textPrimary, lineHeight: '50px' }}>{scoreDisplay != null ? scoreDisplay : '--'}</Text>
-            <Text style={{ fontSize: '12px', color: gradeColors[grade] || colors.primary, marginLeft: '5px' }}>{scoreDisplay != null ? `${grade} / 100` : '待录入'}</Text>
-          </View>
-        </View>
-
-        {/* 成长打卡卡片：像素级对齐 app 端 GrowthCard 组件。从未打卡（streak=0且totalCheckinDays=0）时不渲染，
-            新用户先引导打卡，不空谈成长——与app端一致 */}
-        {(growth.streak > 0 || growth.totalCheckinDays > 0) && (
-          <View style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '9px 13px', marginBottom: '8px', boxShadow: '0px 4px 12px rgba(30,107,80,0.06)' }}>
-            <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <View style={{ display: 'flex', alignItems: 'baseline' }}>
-                <Icon name="🔥" size={20} color="#D97706" style={{ marginRight: '6px' }} />
-                <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.primary, lineHeight: '26px' }}>{growth.streak}</Text>
-                <Text style={{ fontSize: '13px', color: '#4A6558', fontWeight: 600, marginLeft: '3px' }}>天连续记录</Text>
-              </View>
-              <View style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                <Text style={{ fontSize: '10px', color: colors.textMuted }}>近30天累计</Text>
-                <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary }}>{growth.totalCheckinDays} 天</Text>
-              </View>
+        <View style={{backgroundColor:'#fff',borderRadius:'20px',padding:'20px',marginBottom:'22px'}}>
+          <View style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'10px'}}>
+            <View style={{flex:1,minWidth:0}}><Text style={{fontSize:'12px',color:colors.textMuted,display:'block'}}>{name}，{greeting}</Text><Text style={{fontSize:'20px',fontWeight:700,color:colors.textPrimary,display:'block',marginTop:'6px'}}>一起照顾好今天的你</Text></View>
+            <View onClick={()=>Taro.showModal({title:'健康评分',content:'评分依据已记录的健康信息计算，仅供健康管理参考，不作为医学诊断。',showCancel:false})} style={{padding:'8px 10px',borderRadius:'12px',backgroundColor:colors.primary10,textAlign:'center',flexShrink:0}}>
+              <Text style={{fontSize:'26px',fontWeight:700,color:colors.primary,display:'block'}}>{scoreDisplay ?? '--'}</Text><Text style={{fontSize:'10px',color:colors.textMuted}}>健康评分 / 100</Text>
             </View>
-
-            {!!growth.trendHighlight && <Text style={{ marginTop: '4px', fontSize: '9px', color: colors.primary, display: 'block' }} numberOfLines={1}>↑ {growth.trendHighlight.label}在变好：{growth.trendHighlight.from}{growth.trendHighlight.unit} → {growth.trendHighlight.to}{growth.trendHighlight.unit}</Text>}
           </View>
-        )}
-
-        {/* 完成今日打卡（2026-07-18 打卡页重构对齐）：原内联打卡网格已抽离到独立页 pages/checkin/index，
-            首页只保留入口按钮，健康管家团队卡片已移至"我的"页 */}
-        <View onClick={() => Taro.navigateTo({ url: '/pages/checkin/index' })} style={{
-          display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: '#fff',
-          border: `2px solid ${colors.primary}`, borderRadius: `${radius.lg}px`, padding: '12px 16px', marginBottom: `${spacing.md}px`, boxShadow: shadow.sm,
-        }}>
-          <Icon name="✅" size={18} color={colors.primary} />
-          <Text style={{ flex: 1, fontSize: '15px', fontWeight: 700, color: colors.textPrimary }}>健康数据记录</Text>
-          <Text style={{ fontSize: '18px', letterSpacing: '-3px', color: colors.primary, fontWeight: 800 }}>›››</Text>
+          <Text style={{fontSize:'12px',lineHeight:'19px',color:colors.textSecondary,display:'block',margin:'16px 0'}}>{trendActionText || '记录近期变化，帮助了解健康趋势'}</Text>
+          <View onClick={()=>Taro.navigateTo({url:'/pages/checkin/index'})} style={{display:'flex',alignItems:'center',gap:'9px',backgroundColor:colors.primary,borderRadius:'12px',padding:'13px 15px'}}>
+            <Icon name="✅" size={19} color="#fff"/><Text style={{flex:1,fontSize:'15px',fontWeight:600,color:'#fff'}}>记录健康数据</Text><Text style={{color:'#fff'}}>›</Text>
+          </View>
+          <Text style={{fontSize:'11px',color:colors.textMuted,display:'block',textAlign:'center',marginTop:'10px'}}>{growth.totalCheckinDays>0?`近30天已记录 ${growth.totalCheckinDays} 天 · 每一次记录，多一份了解`:'每一次记录，都多一份了解'}</Text>
         </View>
 
         {/* 待办任务：像素级对齐app端TaskItem/ReminderItem图标行+紧急度徽章，
             "随访"已移出Tab，"全部"入口跳转独立随访页（2026-07-18 Tab结构调整） */}
         <View style={{ marginBottom: `${spacing.lg}px` }}>
           <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
-            <Text style={{ fontSize: '10px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1.2px', textTransform: 'uppercase' }}>健康计划</Text>
+            <Text style={{ fontSize: '17px', fontWeight: 700, color: colors.textPrimary }}>近期安排</Text>
             <View onClick={() => Taro.navigateTo({ url: '/pages/tasks/index' })} style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
               <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 500 }}>全部</Text>
               <Text style={{ fontSize: '13px', color: colors.primary }}>›</Text>
@@ -421,9 +378,15 @@ export default function HomePage() {
           )}
         </View>
 
+        <View style={{marginBottom:'24px'}}>
+          <Text style={{fontSize:'17px',fontWeight:700,color:colors.textPrimary,display:'block',marginBottom:'12px'}}>我的会员权益</Text>
+          <View style={{display:'flex',gap:'10px'}}>
+            {[['plan','会员权益','查看计划与使用情况','🎁'],['fund','健康基金',user?.healthFund?.total!=null?`余额 ¥${Number(user.healthFund.total).toFixed(2)}`:'查看余额与收支明细','💰']].map(([section,title,subtitle,icon])=><View key={section} onClick={()=>Taro.navigateTo({url:'/pages/profile/benefits/index?section='+section})} style={{flex:1,minWidth:0,backgroundColor:'#fff',borderRadius:'16px',padding:'16px'}}><Icon name={icon} size={22} color={colors.primary}/><Text style={{fontSize:'15px',fontWeight:600,display:'block',marginTop:'10px',color:colors.textPrimary}}>{title} ›</Text><Text style={{fontSize:'11px',color:colors.textMuted,display:'block',marginTop:'5px'}}>{subtitle}</Text></View>)}
+          </View>
+        </View>
         <View style={{ marginBottom: `${spacing.lg}px` }}>
           <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
-            <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>常用健康服务</Text>
+            <Text style={{ fontSize: '17px', fontWeight: 700, color: colors.textPrimary }}>更多健康服务</Text>
             <View onClick={() => Taro.navigateTo({ url: '/pages/services/mall/index' })}><Text style={{ fontSize: '12px', color: colors.primary }}>全部商城 ›</Text></View>
           </View>
           <ScrollView scrollX enhanced showScrollbar={false} style={{ width: '100%' }}>

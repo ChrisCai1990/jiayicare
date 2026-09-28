@@ -12,6 +12,7 @@ const ALL_NAV = [
   { label: '我的会员',     icon: 'patients', path: '/patients',     roles: [],                                                                                  moduleKey: 'patients' },
   { label: '随访管理',     icon: 'followups', path: '/followups',   roles: [],                                                                                  moduleKey: 'followups' },
   { label: '服务方案',     icon: 'plans', path: '/plans',           roles: ['familyDoctor','nutritionist','rehabSpecialist','tcmDoctor','superadmin'],           moduleKey: 'plans' },
+  { label: '就医资源',     icon: 'knowledge', path: '/medical-resource-knowledge', roles: [] },
   { label: '报告管理',     icon: 'reports', path: '/reports',       roles: ['healthManager','familyDoctor','superadmin'],                                        moduleKey: 'reports' },
   { label: '服务记录',     icon: 'services', path: '/service-records', roles: [],                                                                                moduleKey: 'service_records' },
   { label: '科普推送',     icon: 'knowledge', path: '/knowledge',   roles: ['healthManager','nutritionist','familyDoctor','superadmin'],                         moduleKey: 'knowledge' },

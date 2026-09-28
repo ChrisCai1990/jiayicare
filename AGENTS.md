@@ -756,11 +756,19 @@ pkg_1y（年度¥2980）/ pkg_6m（半年¥1680）/ pkg_3m（季度¥980）
 
 ## 佣金结算规则
 
+> 2026-09-28：小程序白屏根因续查为误用根React19；构建强制18.2.0，新增builtRenderer.test.js检查真实包渲染器初始化。不得仅凭语法或业务单测上传。
+
+> 2026-09-28：小程序共享源码须纳入转译，白屏排查发现common.js残留ES2020语法；上传前构建并运行miniprogram/test/buildSyntax.test.js，真机仍需验收。
+
+> 2026-09-28：医护试点工作台及跨端基金预估修复见 docs/MINIPROGRAM_PAYMENT_REGRESSION_20260928.md；资格/商品规则未知时不预估抵扣，前端不得替代服务端核价，构建通过不等于真机支付验收。
+
 佣金业务规则遵循 `docs/decisions/commission-settlement-policy.md`：支付后预估，转介绍须实际服务启动且支付满7天才进入审核；服务绩效按完成/核销；取消退款同步调整，人员修改保留审计。不得以预约或分配人员代替实际启动。
 
 > 2026-09-13：功能医学上传状态、列表人工审核和首页待办统一，历史记录按分类兼容，不批量迁移；详见 `docs/FUNCTIONAL_MANUAL_REVIEW.md`。
 
 > 2026-09-14：群消息持续采集与本地规则随访草稿、人工确认边界见 docs/WECOM_ARCHIVE_FOLLOWUP.md。
+
+> 2026-09-28：体重管理试点独立白名单默认关闭、空名单；不复用年度名单，不自动收费或续费。反馈超时不影响记录保存，阶段回顾实时重算，求助按所属团队处理。发布跳过数据迁移，详见 docs/METABOLIC_PILOT_20260928.md。
 
 > 2026-09-14：日常检测原图与按日沟通草稿复用待归档、ServiceRecord 和 FollowUp；规则与验证见 docs/WECOM_ARCHIVE_FOLLOWUP.md。
 

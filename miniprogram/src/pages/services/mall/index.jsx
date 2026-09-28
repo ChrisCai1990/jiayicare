@@ -145,6 +145,7 @@ function ServiceDetailModal({ item, onClose, onConsult, onPay, isAuthenticated, 
 }
 
 function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
+  const { statusBarHeight, navBarHeight, totalHeight } = useNavBar();
   const { user, updateUser } = useAuth();
   const isPay = mode === 'pay';
   const [note, setNote] = useState('');
@@ -168,18 +169,24 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
   const [couponId, setCouponId] = useState(null);
   const [benefitsLoading, setBenefitsLoading] = useState(false);
   const [benefitsError, setBenefitsError] = useState('');
+  const [benefitsRefresh, setBenefitsRefresh] = useState(0);
 
   useEffect(() => {
     if (!isPay) return;
     setBenefitsLoading(true);
     setBenefitsError('');
-    Promise.all([servicesAPI.coupons(), userAPI.getMe()]).then(([couponRes, userRes]) => {
+    let live = true;
+    Promise.all([
+      servicesAPI.coupons().catch(() => ({ success: false })),
+      userAPI.getMe().catch(() => ({ success: false })),
+    ]).then(([couponRes, userRes]) => {
+      if (!live) return;
       if (couponRes.success) setCoupons(couponRes.data || []);
       if (userRes.success) { setCheckoutUser(userRes.data); updateUser(userRes.data); }
-      if (!couponRes.success || !userRes.success) setBenefitsError('优惠权益加载失败，请重试');
-    }).catch(() => setBenefitsError('优惠权益加载失败，请检查网络后重试'))
-      .finally(() => setBenefitsLoading(false));
-  }, [isPay]);
+      if (!couponRes.success || !userRes.success) setBenefitsError('部分优惠权益加载失败，点击重试');
+    }).finally(() => { if (live) setBenefitsLoading(false); });
+    return () => { live = false; };
+  }, [isPay, benefitsRefresh]);
 
   const currentPrice = hasSpecs ? (item.servicePrices[specIdx]?.price ?? item.price) : item.price;
   const currentSpecLabel = hasSpecs ? item.servicePrices[specIdx]?.label : '';
@@ -215,7 +222,10 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
         const boundUser = {
           ...bound.data,
           healthFund: {
+            ...(checkoutUser?.healthFund || {}),
             ...(bound.data?.healthFund || {}),
+            eligible: checkoutUser?.healthFund?.eligible,
+            enterprise: checkoutUser?.healthFund?.enterprise,
             policy: checkoutUser?.healthFund?.policy,
             rule: checkoutUser?.healthFund?.rule,
           },
@@ -262,7 +272,11 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
   }
 
   return (
-    <ScrollView scrollY enhanced showScrollbar style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100vh', backgroundColor: '#fff', zIndex: 100 }}>
+    <View style={{position:'fixed',top:0,left:0,right:0,bottom:0,backgroundColor:'#fff',zIndex:100}}>
+    <View style={{paddingTop:`${statusBarHeight}px`,height:`${totalHeight}px`,boxSizing:'border-box',backgroundColor:'#fff'}}>
+      <View onClick={onClose} style={{height:`${navBarHeight}px`,display:'flex',alignItems:'center',paddingLeft:'20px',width:'120px'}}><Text style={{fontSize:'17px',color:colors.primary}}>‹ 返回商城</Text></View>
+    </View>
+    <ScrollView scrollY enhanced showScrollbar style={{ position: 'absolute', top: `${totalHeight}px`, left: 0, right: 0, bottom: 0, width: '100%', height: `calc(100vh - ${totalHeight}px)`, backgroundColor: '#fff' }}>
       <View style={{ padding: `${spacing.lg}px`, paddingBottom: '40px', width: '100%', minHeight: '100vh', boxSizing: 'border-box' }}>
         <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 16px' }} />
         <View>
@@ -373,10 +387,10 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
           )}
 
           {isPay && !benefitsLoading && !canUseFund && (
-            <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: `${spacing.md}px` }}>当前账户在本单暂无可抵扣健康基金</Text>
+            <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: `${spacing.md}px` }}>{benefitsError ? '基金资格暂未核实，请重试加载' : `基金余额 ¥${fundBalance.toFixed(2)}；${checkoutUser?.healthFund?.eligible === false ? '当前会员计划资格未通过，请联系团队核对' : '本商品按当前抵扣规则暂无可用额度'}`}</Text>
           )}
           {isPay && benefitsError && (
-            <Text style={{ fontSize: '12px', color: colors.danger, display: 'block', marginBottom: `${spacing.md}px` }}>{benefitsError}</Text>
+            <Text onClick={() => setBenefitsRefresh(n => n + 1)} style={{ fontSize: '12px', color: colors.danger, display: 'block', marginBottom: `${spacing.md}px` }}>{benefitsError}</Text>
           )}
 
           {isPay && (couponDiscount > 0 || fundApplied > 0) && (
@@ -444,6 +458,7 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
         </View>
       </View>
     </ScrollView>
+    </View>
   );
 }
 

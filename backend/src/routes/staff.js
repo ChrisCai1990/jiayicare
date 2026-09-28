@@ -51,6 +51,7 @@ const AnnualPlanPreparation = require('../models/AnnualPlanPreparation');
 const MedicalInstitution = require('../models/MedicalInstitution');
 const MedicalDepartment = require('../models/MedicalDepartment');
 const MedicalExpert = require('../models/MedicalExpert');
+const MedicalResourceKnowledge = require('../models/MedicalResourceKnowledge');
 const { DynamicQuestionnaire, QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
 const Message        = require('../models/Message');
 const MemberLevel    = require('../models/MemberLevel');
@@ -2979,6 +2980,26 @@ router.get('/medical-resources', staffAuth, async (req, res) => {
   res.json({ success: true, data: { institutions, departments, experts } });
 });
 
+// 仅返回已发布且仍在复核有效期内的资源知识；内部来源、责任人和审核备注不下发给医护端。
+router.get('/medical-resource-knowledge', staffAuth, async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  const kind = String(req.query.kind || '').trim();
+  const filter = {
+    status: 'published',
+    ...(kind ? { kind } : {}),
+    $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }],
+  };
+  if (q) {
+    const keyword = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    filter.$and = [{ $or: [{ title: keyword }, { tags: keyword }, { applicableScenarios: keyword }, { summary: keyword }] }];
+  }
+  const rows = await MedicalResourceKnowledge.find(filter)
+    .select('kind title institutionId departmentId expertId tags applicableScenarios summary recommendationBasis appointmentInfo precautions serviceBoundary riskNotice version updatedAt expiresAt')
+    .populate('institutionId', 'name').populate('departmentId', 'name campus').populate('expertId', 'name title')
+    .sort({ updatedAt: -1 }).limit(100).lean();
+  res.json({ success: true, data: rows });
+});
+
 // ════════════════════════════════════════════════════════
 // P2 路由
 // ════════════════════════════════════════════════════════
@@ -3093,11 +3114,37 @@ router.get('/plans/:id', staffAuth, async (req, res) => {
 const isAgencyMedicalAssistPlan = (content, title) => content?.assistanceType === 'agency'
   || (/医务代办服务-/.test(`${content?.templateName || ''} ${title || ''}`) && !/代配药|代取药/.test(`${content?.templateName || ''} ${title || ''}`));
 
+async function freezeMedicalResourceReferences(rawReferences) {
+  if (rawReferences == null) return [];
+  if (!Array.isArray(rawReferences) || rawReferences.length > 8) throw new Error('每次方案最多引用 8 条资源知识');
+  const ids = [...new Set(rawReferences.map(item => String(item?.resourceId || item?._id || item || '')).filter(Boolean))];
+  if (ids.some(id => !mongoose.Types.ObjectId.isValid(id))) throw new Error('资源知识引用参数无效');
+  const rows = await MedicalResourceKnowledge.find({
+    _id: { $in: ids }, status: 'published', $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }],
+  }).populate('institutionId', 'name').populate('departmentId', 'name campus').populate('expertId', 'name title').lean();
+  if (rows.length !== ids.length) throw new Error('所引用的资源已停用、过期或不存在，请重新选择');
+  const byId = new Map(rows.map(item => [String(item._id), item]));
+  return ids.map(resourceId => {
+    const item = byId.get(resourceId);
+    return {
+      resourceId: item._id, version: item.version, kind: item.kind, title: item.title,
+      resourceUpdatedAt: item.updatedAt,
+      institutionName: item.institutionId?.name || '', departmentName: item.departmentId?.name || '', expertName: item.expertId?.name || '',
+      summary: item.summary || '', recommendationBasis: item.recommendationBasis || '',
+      appointmentInfo: item.appointmentInfo || {}, precautions: item.precautions || '', serviceBoundary: item.serviceBoundary || '', riskNotice: item.riskNotice || '',
+    };
+  });
+}
+
 // POST /api/staff/plans
 router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanType(req => req.body.type), async (req, res) => {
   const { patientId, type, title, description, year, startDate, endDate, checkupDate, items, followupFrequency, summary, content } = req.body;
   if (!patientId || !type || !title) return res.status(400).json({ success: false, message: '会员、类型、标题不能为空' });
   let planContent = content || {};
+  if (type === 'medical_assist') {
+    try { planContent = { ...planContent, resourceReferences: await freezeMedicalResourceReferences(planContent.resourceReferences) }; }
+    catch (err) { return res.status(400).json({ success: false, message: err.message }); }
+  }
   if (type === 'medical_assist' && isAgencyMedicalAssistPlan(planContent, title)) {
     if (/代约检/.test(`${planContent.templateName || ''} ${title || ''}`)) {
       const rows = planContent.agencyExams;
@@ -4581,7 +4628,15 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
           else delete item[field];
         }
       }
-      const matchedItems = await require('../utils/screeningMatch').classifyItemsAsync(nextItems);
+      // 处方药品不属于专项筛查项目，禁止按药名尝试匹配检验目录。
+      const matchedItems = report.documentCategory === 'prescription_order'
+        ? nextItems.map(item => {
+          classificationFields.forEach(field => delete item[field]);
+          item.matchStatus = 'unclassified';
+          item.matchConfidence = 0;
+          return item;
+        })
+        : await require('../utils/screeningMatch').classifyItemsAsync(nextItems);
       nextItems.splice(0, nextItems.length, ...matchedItems);
       nextItems.forEach(item => {
         if (item.manualReviewStatus === 'reviewed') {
@@ -4662,7 +4717,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     // 2026-07-02修复：此前条件是 || 关系，"保存草稿"(aiStatus:'pending')只要带了reportItems字段
     // 也会触发同步，导致专项筛查在审核通过前就被写入。改成严格要求 aiStatus 变为 reviewed 才同步，
     // 跟前端"提交审核（写入专项筛查）"按钮的文案设计意图一致——只有审核通过后才应该出现在专项筛查。
-    if (aiStatus === 'reviewed' && report.user) {
+    if (aiStatus === 'reviewed' && report.user && report.documentCategory !== 'prescription_order') {
       await syncScreeningItems(report.user, report._id, report.reportItems);
       if (report.audit_status === 'audited') await syncBodyCompositionFromReport(report);
     }
@@ -7018,7 +7073,9 @@ router.get('/patients/:id/package-entitlements', staffAuth, async (req, res) => 
     await Promise.all(packageOrders.map(order => require('../utils/packageEntitlements').ensurePackageEntitlement(order)));
     await Promise.all(packageOrders.map(order => require('../utils/packageEntitlements').ensureMemberBundleEntitlement(order)));
     const rows = await require('../utils/packageEntitlements').applicableEntitlements(req.params.id);
-    res.json({ success: true, data: rows.map(row => ({
+    const customer = await User.findById(req.params.id);
+    const summary = customer ? await require('../utils/membershipBenefits').membershipBenefits(customer, rows) : { plans:[],message:'客户不存在' };
+    res.json({ success: true, summary, data: rows.map(row => ({
       _id: row._id, ownerUserId: row.ownerUserId, sourceOrderId: row.sourceOrderId,
       packageName: row.packageName, clientBrand: row.clientBrand, validFrom: row.validFrom,
       validUntil: row.validUntil, familySharing: row.familySharing,
@@ -12789,7 +12846,7 @@ router.patch('/chat-transfers/:id/resolve', staffAuth, async (req, res) => {
   }
 });
 
-const { REPORT_PARSE_PROMPT, reviewMetadataError } = require('../utils/reportExtractionPolicy');
+const { REPORT_PARSE_PROMPT, PRESCRIPTION_PARSE_PROMPT, reviewMetadataError } = require('../utils/reportExtractionPolicy');
 
 function safeParseJSON(text) {
   try { return JSON.parse(String(text).trim().replace(/^```json\n?|\n?```$/g, '')); }
@@ -13880,6 +13937,8 @@ async function runReportParseControlled(reportId) {
     return;
   }
   const parseStartRevision = Number(report.reviewRevision || 0);
+  const isPrescriptionReport = report.documentCategory === 'prescription_order';
+  const reportParsePrompt = isPrescriptionReport ? PRESCRIPTION_PARSE_PROMPT : REPORT_PARSE_PROMPT;
   const reportUser = await User.findById(report.user).select('age').lean();
   const usePediatricBodyComposition = isPediatricAge(reportUser?.age);
   const bodyCompositionPrompt = usePediatricBodyComposition
@@ -13972,7 +14031,7 @@ async function runReportParseControlled(reportId) {
                 try {
                   const firstPassPrompt = report.type === 'body_comp'
                     ? bodyCompositionPrompt
-                    : REPORT_PARSE_PROMPT
+                    : reportParsePrompt
                       + (useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : '')
                       + (useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : '');
                   const firstPassModel = report.type === 'body_comp' ? 'qwen-vl-max' : VL_MODEL;
@@ -14431,7 +14490,7 @@ async function runReportParseControlled(reportId) {
         continue;
       }
       try {
-        const firstPassPrompt = report.type === 'body_comp' ? bodyCompositionPrompt : REPORT_PARSE_PROMPT;
+        const firstPassPrompt = report.type === 'body_comp' ? bodyCompositionPrompt : reportParsePrompt;
         const firstPassModel = report.type === 'body_comp' ? 'qwen-vl-max' : 'qwen-vl-plus';
         const originalBuffer = bufs[imageIndex];
         let activeBuffer = originalBuffer;
@@ -14472,7 +14531,7 @@ async function runReportParseControlled(reportId) {
         }
         let pageItems = tagReportPageItems(parsedPage.items, imageIndex + 1);
         const isBodyCompPage = isBodyCompositionPage(parsedPage, pageItems, report.type);
-        if (!isBodyCompPage) {
+        if (!isPrescriptionReport && !isBodyCompPage) {
           try {
             const firstNames = pageItems.map(it => str(it.name)).filter(Boolean);
             const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整张漏识别）'}`;
@@ -14489,7 +14548,7 @@ async function runReportParseControlled(reportId) {
         }
         // 图片报告没有PDF分支的逐页超声复核。组合上腹部检查若未覆盖肝、胆、胰、脾四个
         // 独立器官，使用原图做一次定向复核，并且只在器官覆盖数确实增加时采用结果。
-        if (!isBodyCompPage) {
+        if (!isPrescriptionReport && !isBodyCompPage) {
           const upperText = pageItems.map(it => `${str(it.name)} ${str(it.orderName)} ${str(it.sourceSection)}`).join(' ');
           const isUpperCombo = /肝.*胆.*(?:胰.*脾|脾.*胰)|上腹部.*(?:超声|彩超)/.test(upperText);
           const upperCount = items => new Set((items || []).flatMap(it =>
@@ -14785,6 +14844,8 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
     const MedicalReport = require('../models/MedicalReport');
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    const forcePrescriptionParse = req.body?.forcePrescriptionParse === true
+      && report.documentCategory === 'prescription_order' && report.audit_status !== 'audited';
 
     const hasFile = !!report.fileUrl || !!report.content;
     const isImage = report.mimeType?.startsWith('image/');
@@ -14812,7 +14873,7 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
     // 但此前完成的 parseJob 会保留作审计记录。不能仅因该历史任务是 completed
     // 就阻止这次明确的重试，否则前端提示“可重新触发AI识别”实际无法完成。
     const retryAfterRejectedReview = report.aiStatus === 'none' && report.audit_status !== 'audited';
-    if ((report.parseJob?.status === 'completed' && !retryAfterRejectedReview) || report.audit_status === 'audited') {
+    if ((report.parseJob?.status === 'completed' && !retryAfterRejectedReview && !forcePrescriptionParse) || report.audit_status === 'audited') {
       return res.status(409).json({ success: false, message: '报告已完成识别，请使用审核中的补提本页，避免重复解析整份报告' });
     }
     if (report.parseJob?.status === 'paused') return res.status(409).json({ success: false, message: report.parseJob.message + '；请管理员在 AI 用量管理中恢复' });
@@ -15376,6 +15437,28 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
     const orderInfo = order
       ? `客户已下单服务：${order.serviceName}${order.desiredServiceDate ? `，已确认服务时间：${new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai' }).format(new Date(order.desiredServiceDate))}` : ''}${order.serviceRequirements ? `，已确认服务内容：${order.serviceRequirements}` : ''}${order.note ? `，其他备注：${order.note}` : ''}`
       : '（无关联订单，请按会员情况酌情安排）';
+    // 只提供已发布、未过期的资源知识；按本次需求、订单和慢病标签优先检索，不把责任人、来源备注或审核意见交给模型。
+    const resourceSearchTerms = [...new Set([
+      ...(user.chronicDiseases || []), briefNote, order?.serviceRequirements, order?.note, order?.serviceName,
+    ].flatMap(value => String(value || '').split(/[、,，;；\n。！？\s]+/).map(item => item.trim()).filter(item => item.length >= 2)).slice(0, 12))];
+    const activeResourceFilter = { status: 'published', $and: [{ $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }] }] };
+    if (resourceSearchTerms.length) {
+      activeResourceFilter.$and.push({ $or: resourceSearchTerms.flatMap(term => {
+        const keyword = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        return [{ tags: keyword }, { applicableScenarios: keyword }, { title: keyword }, { summary: keyword }];
+      }) });
+    }
+    let resourceKnowledge = await MedicalResourceKnowledge.find(activeResourceFilter)
+      .select('kind title tags applicableScenarios summary recommendationBasis appointmentInfo precautions serviceBoundary riskNotice version').sort({ updatedAt: -1 }).limit(6).lean();
+    if (!resourceKnowledge.length && resourceSearchTerms.length) {
+      resourceKnowledge = await MedicalResourceKnowledge.find({ status: 'published', $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }] })
+        .select('kind title tags applicableScenarios summary recommendationBasis appointmentInfo precautions serviceBoundary riskNotice version').sort({ updatedAt: -1 }).limit(6).lean();
+    }
+    const resourceKnowledgeById = new Map(resourceKnowledge.map(item => [String(item._id), item]));
+    const promptResourceText = (value, max = 500) => String(value || '').trim().slice(0, max);
+    const resourceKnowledgeBlock = resourceKnowledge.length
+      ? resourceKnowledge.map(item => `ID=${item._id}；版本=v${item.version}；类型=${item.kind}；标题=${promptResourceText(item.title, 160)}；适用=${promptResourceText((item.applicableScenarios || []).join('、'), 220)}；摘要=${promptResourceText(item.summary, 350) || '无'}；预约=${promptResourceText(JSON.stringify(item.appointmentInfo || {}), 500)}；依据=${promptResourceText(item.recommendationBasis, 400) || '无'}；注意=${promptResourceText(item.precautions, 400) || '无'}；边界=${promptResourceText(item.serviceBoundary, 300) || '无'}；风险=${promptResourceText(item.riskNotice, 300) || '无'}`).join('\n')
+      : '（暂无可用的已发布资源知识）';
 
     // 只有模板明确允许的可选后勤项目才交给 AI 个性化，避免把住宿、交通变成所有服务的固定字段。
     // 旧模板仍按 hotel/transport 非空兼容；新模板统一读取 optionalLogistics。
@@ -15409,6 +15492,7 @@ ${candidateTemplates.map(t => `《${t.name}》：${JSON.stringify(t.content)}`).
       askFields.transport && `"transport": "本次交通安排（结合会员情况具体化，如模板固定为'无需安排'则原样返回）"`,
       `"tasks": "${isCheckupService ? '本次体检服务的必要执行节点，每行一项；只写方案确认、预约协调、体检准备、现场陪检、报告回收与解读，不得写门诊挂号、就诊科室、建议专家或虚构具体检查项目' : isOutpatientOneStop ? '本次门诊一站式服务的个性化目标，不复述标准流程；包括就医目标、首次代诊需解决的开单事项、待预约检查及检查后专家门诊目标；未确认内容标注待确认，不得虚构' : '本次代办目的，每行一项、一项只写一个可验收结果，尽量不超过50字；必须明确科室或专家，以及要开具的具体检查单/处方、要预约的检查或要打印领取的报告；不要写背景、携带材料、流程说明或笼统的陪同就医' }"`,
       `"notes": "本次注意事项，若模板notes是待填空的清单（如'挂号科室：\\n时间安排：'），请把冒号后面的内容具体填好"`,
+      `"resourceReferenceIds": ["只能填写下方资源知识列表中的 ID；仅在确实适用时引用，最多3项；不适用则返回空数组"]`,
     ].filter(Boolean).join(',\n  ');
 
     const prompt = `你是一位就医协助服务专员，请根据会员信息、已下单的服务和标准方案模板生成个性化就医协助方案。
@@ -15425,6 +15509,10 @@ ${orderInfo}
 
 【本次简要情况（就医专员当场填写，优先级高于订单信息，如有冲突以此为准）】
 ${briefNote ? briefNote : '（就医专员未补充说明，按会员信息与订单信息判断）'}
+
+【可引用的内部就医资源知识】
+${resourceKnowledgeBlock}
+只能基于上述条目的明确内容填写医院、科室、专家、预约要点和注意事项；不得虚构专家、号源、收费、保险适用性或疗效。即使引用资源，也必须保留其中的服务边界和风险提示，并由人工审核后才可对外使用。
 
 【标准模板（参考，不要照抄）】
 ${templateBlock}
@@ -15484,6 +15572,8 @@ ${templateBlock}
     if (raw.hotel) items.push({ name: `住宿安排：${raw.hotel}`, category: '就医协助' });
     if (raw.transport) items.push({ name: `交通安排：${raw.transport}`, category: '就医协助' });
     if (raw.notes) items.push({ name: `注意事项：${raw.notes}`, category: '就医协助' });
+    const requestedResourceIds = Array.isArray(raw.resourceReferenceIds) ? [...new Set(raw.resourceReferenceIds.map(String))].filter(id => resourceKnowledgeById.has(id)).slice(0, 3) : [];
+    const resourceReferences = await freezeMedicalResourceReferences(requestedResourceIds);
 
     const usedTemplate = matchedTemplate || (candidateTemplates.length ? candidateTemplates.find(t => t.name === raw.title) : null) || templateForFields;
     const templateFollowUpPlans = usedTemplate?.content?.followUpPlans?.length
@@ -15525,6 +15615,7 @@ ${templateBlock}
     const moduleData = {
       visit: {
         hospital: raw.hospital || '', department: raw.department || '', expert: raw.expert || '',
+        resourceReferences,
         visitDate: confirmedSchedule.serviceDate,
         serviceTime: confirmedSchedule.serviceTime,
         supervisorId: user.assignedHealthPlanner || (req.staff.role === 'healthPlanner' ? req.staff._id : ''),
@@ -15548,6 +15639,7 @@ ${templateBlock}
         templateId: usedTemplate?._id || null,
         templateName: usedTemplate?.name || '',
         goal: briefNote || '',
+        resourceReferences,
         // 模板原始骨架快照——不经AI改写，前端"标准动作"区块直接展示这份，
         // 跟下面AI生成的个性化内容分开陈列，避免两者混在一起分不清
         templateSnapshot: usedTemplate ? {
