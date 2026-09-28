@@ -2609,6 +2609,8 @@ export default function PatientDetailPage() {
     const isProxyVisit = isOutpatientProxyVisitTask(execItem)
     const isEscortVisit = isOutpatientEscortVisitTask(execItem)
     const isPostVisitReview = isOutpatientPostVisitReviewTask(execItem)
+    // 保存陪诊/就医执行资料后，下一步是报告解析与审核，而不是回到服务执行列表。
+    const opensReportAudit = isEscortVisit || (proxyStage === 'execute' && !isMedicalProxyMedicationTask(execItem))
     const requiredBooking = ['hospital', 'department', 'floor', 'meetingPoint', 'appointmentDate', 'appointmentTime', 'preparation']
     if (isBooking && requiredBooking.some(key => !execForm.appointmentDetails?.[key]?.trim())) {
       toast('请完整填写预约医院、体检中心、楼层、会合地点、日期时间和行前准备事项'); return
@@ -2672,9 +2674,15 @@ export default function PatientDetailPage() {
         serviceChecklist: submittedChecklist,
         formData: (isCheckupAppointmentBooking || isCheckupMedicalExecution || isCheckupManagerReview || proxyStage || medicationStage || isAdvisorAssessment || isOutpatientAppointment || isStaffAssignment || isProxyVisit || isEscortVisit || isPostVisitReview) ? execForm.formData : execItem.formData,
       })
-      toast(isReportCollection ? (reportClosure?.collectionStatus === 'complete' ? '体检报告已回收齐全，进入解析审核' : '报告回收进度已保存') : execItem?.taskRole === 'supervisor' ? '督办记录已完成' : execItem?.taskRole ? '事务记录已更新' : '随访记录已更新')
       setExecItem(null)
-      loadFollowUps()
+      if (opensReportAudit) {
+        setTab('reports')
+        await loadReports()
+        toast('资料已保存，已进入报告管理；请逐份完成AI解析与审核')
+      } else {
+        toast(isReportCollection ? (reportClosure?.collectionStatus === 'complete' ? '体检报告已回收齐全，进入解析审核' : '报告回收进度已保存') : execItem?.taskRole === 'supervisor' ? '督办记录已完成' : execItem?.taskRole ? '事务记录已更新' : '随访记录已更新')
+        loadFollowUps()
+      }
     } catch (err) { toast(err.message || '保存失败') }
     finally { setExecSaving(false) }
   }
