@@ -14,3 +14,12 @@ test('visitor assistant trims untrusted conversation input', () => {
   assert.equal(messages.length, 6);
   assert.equal(messages[0].content, '第2条');
 });
+
+test('visitor assistant never forwards medical or emergency content to the model', () => {
+  const messages = safeConversation([
+    { role: 'user', content: '我想了解体重管理服务流程' },
+    { role: 'user', content: '我的血脂指标高' },
+    { role: 'user', content: '突发胸痛' },
+  ]);
+  assert.deepEqual(messages, [{ role: 'user', content: '我想了解体重管理服务流程' }]);
+});

@@ -17,7 +17,7 @@ function safeConversation(messages) {
   return messages.slice(-6).map(item => ({
     role: item?.role === 'assistant' ? 'assistant' : 'user',
     content: normalizeText(item?.content, 500),
-  })).filter(item => item.content);
+  })).filter(item => item.content && !hasEmergency(item.content) && !hasMedicalDetail(item.content));
 }
 
 module.exports = { normalizeText, hasEmergency, hasMedicalDetail, emergencyReply, safeConversation };

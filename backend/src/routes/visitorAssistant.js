@@ -16,16 +16,19 @@ function allowRequest(req) {
   entry.count += 1; usageByIp.set(key, entry); return true;
 }
 
-const SYSTEM_PROMPT = `你是嘉医汇官网的“咨询准备助手”。只帮助访客梳理非医疗健康管理咨询需求，例如体重管理、生活方式安排、体检资料整理和服务流程。\n\n严格规则：\n1. 不诊断疾病、不解释检查指标、不提供治疗、处方、药物或用药调整建议。\n2. 不索要或复述病历、症状、检查报告、指标、用药等医疗信息；访客提及这些内容时，提醒其不要在本入口提交，并建议向正规医疗机构咨询。\n3. 遇到紧急不适，提示立即拨打120或前往急诊。\n4. 每次只追问一个最必要的非医疗问题；回答不超过160字。\n5. 不承诺服务效果、专家、号源、联系时效或已经转接人工。\n6. 可建议访客留下姓名、电话、城市和方便联系时间，由人工确认服务安排。`;
+const SYSTEM_PROMPT = `你是嘉医汇官网的“咨询准备助手”。只帮助访客梳理非医疗健康管理咨询需求，例如体重管理、生活方式安排、体检资料整理和服务流程。\n\n严格规则：\n1. 不诊断疾病、不解释检查指标、不提供治疗、处方、药物或用药调整建议。\n2. 不索要或复述病历、症状、检查报告、指标、用药等医疗信息；访客提及这些内容时，提醒其不要在本入口提交，并建议向正规医疗机构咨询。\n3. 遇到紧急不适，提示立即拨打120或前往急诊。\n4. 每次只追问一个最必要的非医疗问题；回答不超过160字。\n5. 不承诺服务效果、专家、号源、联系时效或已经转接人工。\n6. 不在聊天中询问姓名、电话、城市或方便联系时间；如访客希望线下沟通，提醒其在页面下方的“线下沟通申请”一次性填写。`;
 
 router.post('/reply', async (req, res) => {
   if (req.body?.consent !== true) return res.status(400).json({ success: false, message: '请先阅读并同意访客咨询信息处理说明。' });
   if (!allowRequest(req)) return res.status(429).json({ success: false, message: '咨询请求过于频繁，请稍后再试或拨打客服电话19106761448。' });
-  const messages = safeConversation(req.body?.messages);
+  const rawMessages = Array.isArray(req.body?.messages) ? req.body.messages : [];
+  const rawLast = normalizeText(rawMessages[rawMessages.length - 1]?.content, 500);
+  if (!rawLast) return res.status(400).json({ success: false, message: '请先输入您的咨询方向。' });
+  if (hasEmergency(rawLast)) return res.json({ success: true, data: { content: emergencyReply(), handoffSuggested: false, safetyBlocked: true } });
+  if (hasMedicalDetail(rawLast)) return res.json({ success: true, data: { content: '为保护您的隐私，请不要在官网咨询入口提交症状、病历、检查指标或用药信息。涉及这些内容请咨询正规医疗机构；如仅需健康管理服务流程协助，我可以继续帮您整理非医疗需求。', handoffSuggested: false, safetyBlocked: true } });
+  const messages = safeConversation(rawMessages);
   const last = messages[messages.length - 1]?.content || '';
   if (!last) return res.status(400).json({ success: false, message: '请先输入您的咨询方向。' });
-  if (hasEmergency(last)) return res.json({ success: true, data: { content: emergencyReply(), handoffSuggested: false, safetyBlocked: true } });
-  if (hasMedicalDetail(last)) return res.json({ success: true, data: { content: '为保护您的隐私，请不要在官网咨询入口提交症状、病历、检查指标或用药信息。涉及这些内容请咨询正规医疗机构；如仅需健康管理服务流程协助，我可以继续帮您整理非医疗需求。', handoffSuggested: false, safetyBlocked: true } });
   if (!process.env.QWEN_API_KEY && !process.env.DEEPSEEK_API_KEY) {
     return res.json({ success: true, data: { content: '我可以先帮您梳理咨询准备。请问您更关注体重管理、生活方式安排、体检资料整理，还是了解嘉医汇服务流程？', handoffSuggested: true, aiAvailable: false } });
   }
