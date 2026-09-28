@@ -1,13 +1,16 @@
 // Shared policy for uploads, parsing and workbench queries.
 const manualOnlyReportFilter = {
   $or: [
-    { type: { $in: ['home_monitor', 'functional'] } },
-    { documentCategory: { $in: ['functional_medicine', 'prescription_order', 'outpatient_record', 'inpatient_record'] } },
+    { type: 'home_monitor' },
+    { type: 'functional', documentCategory: { $nin: ['prescription_order', 'outpatient_record', 'inpatient_record'] } },
+    { documentCategory: 'functional_medicine' },
   ],
 };
 function isManualOnlyReport(report) {
+  // 当前人工归类优先于旧 type，避免历史 functional 值把处方锁在人工审核入口。
+  if (['prescription_order', 'outpatient_record', 'inpatient_record'].includes(report?.documentCategory)) return false;
   return report?.type === 'home_monitor' || report?.type === 'functional'
-    || ['functional_medicine', 'prescription_order', 'outpatient_record', 'inpatient_record'].includes(report?.documentCategory);
+    || report?.documentCategory === 'functional_medicine';
 }
 function initializeManualReview(report) {
   if (!isManualOnlyReport(report) || ['audited', 'rejected'].includes(report.audit_status)

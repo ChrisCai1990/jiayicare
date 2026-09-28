@@ -12785,7 +12785,7 @@ router.patch('/chat-transfers/:id/resolve', staffAuth, async (req, res) => {
   }
 });
 
-const { REPORT_PARSE_PROMPT, reviewMetadataError } = require('../utils/reportExtractionPolicy');
+const { REPORT_PARSE_PROMPT, PRESCRIPTION_PARSE_PROMPT, reviewMetadataError } = require('../utils/reportExtractionPolicy');
 
 function safeParseJSON(text) {
   try { return JSON.parse(String(text).trim().replace(/^```json\n?|\n?```$/g, '')); }
@@ -13876,6 +13876,8 @@ async function runReportParseControlled(reportId) {
     return;
   }
   const parseStartRevision = Number(report.reviewRevision || 0);
+  const isPrescriptionReport = report.documentCategory === 'prescription_order';
+  const reportParsePrompt = isPrescriptionReport ? PRESCRIPTION_PARSE_PROMPT : REPORT_PARSE_PROMPT;
   const reportUser = await User.findById(report.user).select('age').lean();
   const usePediatricBodyComposition = isPediatricAge(reportUser?.age);
   const bodyCompositionPrompt = usePediatricBodyComposition
@@ -13968,7 +13970,7 @@ async function runReportParseControlled(reportId) {
                 try {
                   const firstPassPrompt = report.type === 'body_comp'
                     ? bodyCompositionPrompt
-                    : REPORT_PARSE_PROMPT
+                    : reportParsePrompt
                       + (useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : '')
                       + (useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : '');
                   const firstPassModel = report.type === 'body_comp' ? 'qwen-vl-max' : VL_MODEL;
@@ -14427,7 +14429,7 @@ async function runReportParseControlled(reportId) {
         continue;
       }
       try {
-        const firstPassPrompt = report.type === 'body_comp' ? bodyCompositionPrompt : REPORT_PARSE_PROMPT;
+        const firstPassPrompt = report.type === 'body_comp' ? bodyCompositionPrompt : reportParsePrompt;
         const firstPassModel = report.type === 'body_comp' ? 'qwen-vl-max' : 'qwen-vl-plus';
         const originalBuffer = bufs[imageIndex];
         let activeBuffer = originalBuffer;
@@ -14468,7 +14470,7 @@ async function runReportParseControlled(reportId) {
         }
         let pageItems = tagReportPageItems(parsedPage.items, imageIndex + 1);
         const isBodyCompPage = isBodyCompositionPage(parsedPage, pageItems, report.type);
-        if (!isBodyCompPage) {
+        if (!isPrescriptionReport && !isBodyCompPage) {
           try {
             const firstNames = pageItems.map(it => str(it.name)).filter(Boolean);
             const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整张漏识别）'}`;
@@ -14485,7 +14487,7 @@ async function runReportParseControlled(reportId) {
         }
         // 图片报告没有PDF分支的逐页超声复核。组合上腹部检查若未覆盖肝、胆、胰、脾四个
         // 独立器官，使用原图做一次定向复核，并且只在器官覆盖数确实增加时采用结果。
-        if (!isBodyCompPage) {
+        if (!isPrescriptionReport && !isBodyCompPage) {
           const upperText = pageItems.map(it => `${str(it.name)} ${str(it.orderName)} ${str(it.sourceSection)}`).join(' ');
           const isUpperCombo = /肝.*胆.*(?:胰.*脾|脾.*胰)|上腹部.*(?:超声|彩超)/.test(upperText);
           const upperCount = items => new Set((items || []).flatMap(it =>
@@ -14781,6 +14783,8 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
     const MedicalReport = require('../models/MedicalReport');
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    const forcePrescriptionParse = req.body?.forcePrescriptionParse === true
+      && report.documentCategory === 'prescription_order' && report.audit_status !== 'audited';
 
     const hasFile = !!report.fileUrl || !!report.content;
     const isImage = report.mimeType?.startsWith('image/');
@@ -14808,7 +14812,7 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
     // 但此前完成的 parseJob 会保留作审计记录。不能仅因该历史任务是 completed
     // 就阻止这次明确的重试，否则前端提示“可重新触发AI识别”实际无法完成。
     const retryAfterRejectedReview = report.aiStatus === 'none' && report.audit_status !== 'audited';
-    if ((report.parseJob?.status === 'completed' && !retryAfterRejectedReview) || report.audit_status === 'audited') {
+    if ((report.parseJob?.status === 'completed' && !retryAfterRejectedReview && !forcePrescriptionParse) || report.audit_status === 'audited') {
       return res.status(409).json({ success: false, message: '报告已完成识别，请使用审核中的补提本页，避免重复解析整份报告' });
     }
     if (report.parseJob?.status === 'paused') return res.status(409).json({ success: false, message: report.parseJob.message + '；请管理员在 AI 用量管理中恢复' });
