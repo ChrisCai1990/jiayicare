@@ -357,8 +357,8 @@ async function createPrescriptionMedicationDrafts(task, reportIds) {
           const sourceRecordKey = `prescription_report_review:${report._id}:${index}:${name}:${dosage}:${frequency}`;
           const medication = await Medication.findOneAndUpdate({ user: task.patientId, sourceRecordKey }, { $setOnInsert: {
             user: task.patientId, name, brandName: nonempty(item.brandName), specification: nonempty(item.value), dosage, method, frequency, timing,
-            startDate: nonempty(item.examDate || report.checkDate), purpose: nonempty(item.diagnosis), note: '依据已审核处方新增，待健康顾问确认。', imageUrls: report.fileUrls || [], active: true, stopped: false,
-            createdByStaff: true, staffId: task.assignedTo || null, createdByName: '处方审核', aiStatus: 'pending', aiGeneratedBy: '已审核处方/医嘱', sourceType: 'manual', sourceRecordKey,
+            startDate: nonempty(item.examDate || report.checkDate), purpose: nonempty(item.diagnosis), note: '依据已审核处方逐项确认并新增。', imageUrls: report.fileUrls || [], active: true, stopped: false,
+            createdByStaff: true, staffId: task.assignedTo || null, createdByName: '处方审核', aiStatus: 'approved', aiGeneratedBy: '已审核处方/医嘱', reviewedByName: '处方审核', reviewedAt: new Date(), sourceType: 'manual', sourceRecordKey,
           } }, { upsert: true, new: true, setDefaultsOnInsert: true });
           if (medication?._id) created.push(medication);
         }
@@ -387,7 +387,7 @@ async function createPrescriptionMedicationDrafts(task, reportIds) {
 }
 
 // 处方审核表单已经由医护人员逐项确认，不再依赖通用报告 AI 猜测用法。
-// 仅将明确勾选“纳入当前用药”的条目写为待健康顾问复核的草稿，保留报告来源实现幂等。
+// 仅将明确勾选“纳入当前用药”的条目直接写入当前用药；处方审核已完成逐项核对，不再重复审核。
 async function createClinicalPrescriptionMedicationDrafts(report, staff) {
   const review = report?.clinicalReview;
   if (report?.documentCategory !== 'prescription_order' || review?.medicationDecision !== 'has_medications') return [];
@@ -398,9 +398,9 @@ async function createClinicalPrescriptionMedicationDrafts(report, staff) {
     const medication = await Medication.findOneAndUpdate({ user: report.user, sourceRecordKey }, { $setOnInsert: {
       user: report.user, name: nonempty(row.name), brandName: nonempty(row.brandName), specification: nonempty(row.specification),
       dosage: nonempty(row.dosage), method: nonempty(row.method) || '口服', frequency: nonempty(row.frequency), timing: nonempty(row.timing),
-      startDate: nonempty(row.startDate), endDate: nonempty(row.endDate), purpose: nonempty(row.purpose), note: nonempty(row.note) || '依据已审核处方/医嘱逐项录入，待健康顾问复核。',
+      startDate: nonempty(row.startDate), endDate: nonempty(row.endDate), purpose: nonempty(row.purpose), note: nonempty(row.note) || '依据已审核处方/医嘱逐项确认并录入。',
       imageUrls: report.fileUrls || [], active: true, stopped: false, createdByStaff: true, staffId: staff?._id || staff?.id || null,
-      createdByName: staff?.name || '医护审核', aiStatus: 'pending', aiGeneratedBy: '已审核处方/医嘱', sourceType: 'manual', sourceRecordKey,
+      createdByName: staff?.name || '医护审核', aiStatus: 'approved', aiGeneratedBy: '已审核处方/医嘱', reviewedByName: staff?.name || '医护审核', reviewedAt: new Date(), sourceType: 'manual', sourceRecordKey,
     } }, { upsert: true, new: true, setDefaultsOnInsert: true });
     if (medication?._id) created.push(medication);
   }
