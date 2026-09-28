@@ -642,6 +642,7 @@ const DOCUMENT_CATEGORIES = [
 ]
 const DOCUMENT_CATEGORY_LABEL = Object.fromEntries(DOCUMENT_CATEGORIES.map(item => [item.key, item.label]))
 const HEALTH_COURSE_DOCUMENT_CATEGORIES = new Set(['outpatient_record', 'inpatient_record', 'prescription_order', 'exam_report', 'lab_report'])
+const CLINICAL_DOCUMENT_CATEGORIES = new Set(['prescription_order', 'outpatient_record', 'inpatient_record'])
 const inferDocumentCategory = report => {
   // 已保存的资料分类是人工选择；标题推断仅用于没有分类的历史资料。
   if (DOCUMENT_CATEGORY_LABEL[report.documentCategory]) return report.documentCategory
@@ -10062,6 +10063,8 @@ export default function PatientDetailPage() {
         const getReportTaskKey = (report) => {
           if (report.audit_status === 'audited' || report.aiStatus === 'reviewed') return 'audited'
           if (report.audit_status === 'rejected' || report.aiStatus === 'rejected') return 'rejected'
+          // 历史临床资料曾被跳过解析；归类修正后应回到待解析队列。
+          if (CLINICAL_DOCUMENT_CATEGORIES.has(inferDocumentCategory(report)) && report.parseJob?.status === 'skipped' && !report.reportItems?.length) return 'parse'
           if (isManualOnlyReport(report)) return 'review'
           if (report.aiStatus === 'none') return 'parse'
           if (report.aiStatus === 'processing') return 'processing'
@@ -10220,6 +10223,9 @@ export default function PatientDetailPage() {
                           : (r.audit_status === 'rejected' || (!isManualOnlyReport(r) && r.aiStatus === 'failed')) ? '#DC3545' : '#D97706'
                         // 居家监测设备导出报告格式差异大，不走 AI 自动解析。
                         const manualOnly = isManualOnlyReport(r)
+                        const isClinicalDocument = CLINICAL_DOCUMENT_CATEGORIES.has(inferDocumentCategory(r))
+                        const canParseLegacyClinical = isClinicalDocument && r.parseJob?.status === 'skipped' && !r.reportItems?.length
+                        const needsAIParse = !manualOnly && (['none', 'failed'].includes(r.aiStatus) || canParseLegacyClinical)
                         return (
                           <React.Fragment key={r._id}>
                           <tr>
@@ -10242,13 +10248,13 @@ export default function PatientDetailPage() {
                                 }}>
                                   {['audited', 'rejected'].includes(r.audit_status) ? '查看资料' : ['prescription_order', 'outpatient_record', 'inpatient_record'].includes(inferDocumentCategory(r)) ? '结构化审核' : '人工审核'}
                                 </button>
-                              ) : (r.aiStatus === 'none' || r.aiStatus === 'failed') && (r.fileUrl || r.content || r.hasContent || (r.fileUrls && r.fileUrls.length)) ? (
+                              ) : needsAIParse && (r.fileUrl || r.content || r.hasContent || (r.fileUrls && r.fileUrls.length)) ? (
                                 <button className="btn btn-primary btn-sm report-action-primary"
                                   disabled={parsingReportId === r._id || r.parseJob?.status === 'paused'}
                                   onClick={() => handleParseReportAI(r._id)}>
                                   {r.parseJob?.status === 'paused' ? '等待管理员恢复' : parsingReportId === r._id ? '提交中…' : r.aiStatus === 'failed' ? '重新识别' : 'AI解析'}
                                 </button>
-                              ) : (r.aiStatus === 'none' || r.aiStatus === 'failed') ? (
+                              ) : needsAIParse ? (
                                 <span style={{ fontSize: 11, color: '#D97706' }}>无报告文件，请让客户重新上传图片/PDF后再解析</span>
                               ) : null}
                               {!manualOnly && r.aiStatus === 'processing' && (
