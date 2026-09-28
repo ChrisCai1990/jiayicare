@@ -2178,6 +2178,7 @@ export default function PatientDetailPage() {
   const [expandedExamKey, setExpandedExamKey] = useState(null) // 展开的检查医嘱子项 key
   const [editingScreeningId, setEditingScreeningId] = useState(null) // 编辑中的记录 _id
   const [previewImageUrl, setPreviewImageUrl] = useState(null) // 灯箱预览：字符串=仅查看，{url,reportId}=可旋转保存
+  const [medicationEvidencePreview, setMedicationEvidencePreview] = useState({}) // 待核对用药：左栏内联查看的处方附件
   const [previewRotation, setPreviewRotation] = useState(0) // 灯箱当前旋转角度（0/90/180/270）
   const [previewSaving, setPreviewSaving] = useState(false)
   const [deletingRecord, setDeletingRecord] = useState(null)
@@ -8903,12 +8904,15 @@ export default function PatientDetailPage() {
                   <span style={{ background: '#0077B615', color: '#0077B6', fontSize: 11, fontWeight: 700, borderRadius: 99, padding: '1px 8px' }}>{pendingMeds.length}</span>
                 </div>
                 <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {pendingMeds.map(m => (
-                    <div key={m._id} style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, .9fr) minmax(360px, 1.35fr)', border: '1px solid #CFE7F5', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
+                  {pendingMeds.map(m => {
+                    const evidenceUrls = m.imageUrls || []
+                    const evidenceUrl = medicationEvidencePreview[m._id] || evidenceUrls[0]
+                    return <div key={m._id} style={{ display: 'grid', gridTemplateColumns: 'minmax(360px, .9fr) minmax(360px, 1.35fr)', border: '1px solid #CFE7F5', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
                       <div style={{ padding: 14, background: '#F5FBFF', borderRight: '1px solid #CFE7F5' }}>
                         <div style={{ fontWeight: 700, color: '#0077B6', marginBottom: 8 }}>处方依据</div>
-                        <div style={{ fontSize: 12, color: '#4A6558', marginBottom: 10 }}>原始处方附件（点击可放大核对）</div>
-                        <RecordImageAttachments imageUrls={m.imageUrls} onPreview={setPreviewImageUrl} />
+                        <div style={{ fontSize: 12, color: '#4A6558', marginBottom: 10 }}>原始处方附件（在左栏内查看，不会打开全屏）</div>
+                        {evidenceUrl ? <img src={resolveAttachmentUrl(evidenceUrl)} alt="处方原件" style={{ display: 'block', width: '100%', maxHeight: 440, objectFit: 'contain', objectPosition: 'top left', background: '#fff', border: '1px solid #D4E4EF', borderRadius: 6 }} /> : <div style={{ color: '#8AA89C', fontSize: 12, padding: '24px 0' }}>未上传处方附件</div>}
+                        {evidenceUrls.length > 1 && <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>{evidenceUrls.map((url, index) => <button type="button" key={`${url}-${index}`} title={`查看第${index + 1}页`} onClick={() => setMedicationEvidencePreview(current => ({ ...current, [m._id]: url }))} style={{ padding: 0, border: medicationEvidencePreview[m._id] === url || (!medicationEvidencePreview[m._id] && index === 0) ? '2px solid #0077B6' : '1px solid #D4E4EF', borderRadius: 5, background: '#fff', cursor: 'pointer' }}><img src={resolveAttachmentUrl(url)} alt={`处方第${index + 1}页`} style={{ display: 'block', width: 48, height: 48, objectFit: 'cover', borderRadius: 3 }} /></button>)}</div>}
                         <div style={{ fontSize: 12, color: '#6F8D80', marginTop: 12 }}>录入来源：{m.createdByName || m.aiGeneratedBy || '处方审核'}</div>
                         {m.note && <div style={{ fontSize: 12, color: '#4A6558', marginTop: 6 }}>处方说明：{m.note}</div>}
                       </div>
@@ -8939,7 +8943,7 @@ export default function PatientDetailPage() {
                         </div>
                       </div>
                     </div>
-                  ))}
+                  })}
                 </div>
               </div>
             )}
