@@ -4623,7 +4623,15 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
           else delete item[field];
         }
       }
-      const matchedItems = await require('../utils/screeningMatch').classifyItemsAsync(nextItems);
+      // 处方药品不属于专项筛查项目，禁止按药名尝试匹配检验目录。
+      const matchedItems = report.documentCategory === 'prescription_order'
+        ? nextItems.map(item => {
+          classificationFields.forEach(field => delete item[field]);
+          item.matchStatus = 'unclassified';
+          item.matchConfidence = 0;
+          return item;
+        })
+        : await require('../utils/screeningMatch').classifyItemsAsync(nextItems);
       nextItems.splice(0, nextItems.length, ...matchedItems);
       nextItems.forEach(item => {
         if (item.manualReviewStatus === 'reviewed') {
@@ -4704,7 +4712,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     // 2026-07-02修复：此前条件是 || 关系，"保存草稿"(aiStatus:'pending')只要带了reportItems字段
     // 也会触发同步，导致专项筛查在审核通过前就被写入。改成严格要求 aiStatus 变为 reviewed 才同步，
     // 跟前端"提交审核（写入专项筛查）"按钮的文案设计意图一致——只有审核通过后才应该出现在专项筛查。
-    if (aiStatus === 'reviewed' && report.user) {
+    if (aiStatus === 'reviewed' && report.user && report.documentCategory !== 'prescription_order') {
       await syncScreeningItems(report.user, report._id, report.reportItems);
       if (report.audit_status === 'audited') await syncBodyCompositionFromReport(report);
     }

@@ -64,7 +64,7 @@ function guardImageEvidence(parsed, evidence) {
   const items = evidence.readability !== 'clear' || imageOnly ? [] : candidates.filter(item => {
     const fields = ['findings', 'diagnosis', 'conclusion', 'pathologyFindings', 'pathologyDiagnosis'];
     if (fields.some(key => String(item[key] || '').trim() && !isNarrativeAnchored(item[key], clinicalText))) return false;
-    if (item.itemType === 'lab' || item.itemType === 'data') {
+    if (item.itemType === 'lab' || item.itemType === 'data' || item.itemType === 'medication') {
       return isAnchored(item.name, transcript) && isAnchored(item.value, transcript)
         && (!item.unit || isAnchored(item.unit, transcript));
     }
