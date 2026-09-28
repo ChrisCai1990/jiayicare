@@ -98,6 +98,11 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   const [busy, setBusy] = useState(false)
   const [draft, setDraft] = useState('')
   const [files, setFiles] = useState([])
+  const [sendNotice, setSendNotice] = useState(null)
+  const sendingRef = useRef(false)
+  const pendingSendRef = useRef(null)
+  const patientRef = useRef(patientId)
+  patientRef.current = patientId
   const [showCreate, setShowCreate] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const [headerExpanded, setHeaderExpanded] = useState(false)
@@ -106,6 +111,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   const [conclusionText, setConclusionText] = useState('')
   const chatRef = useRef(null)
   const active = useMemo(() => topics.find(item => item._id === activeId) || null, [topics, activeId])
+  const sendStalled = active?.generation?.status === 'running' && Date.now() - new Date(active.generation.startedAt).getTime() > 300000
   const participantNames = useMemo(() => active ? [...new Set([active.createdByName, ...(active.messages || []).filter(item => item.role === 'staff').map(item => item.staffName)].filter(Boolean))] : [], [active])
   const reviewTemplates = managedTemplates
   const isStageAssessmentTopic = active?.reviewType === 'assessment' || /阶段性.*评估/.test(`${active?.title || ''} ${active?.description || ''}`)
@@ -133,6 +139,40 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
     } catch (err) { toast(err.message, 'error') } finally { setLoading(false) }
   }
   useEffect(() => { load() }, [patientId])
+  useEffect(() => {
+    setDraft(''); setFiles([]); setSendNotice(null); pendingSendRef.current = null
+  }, [patientId])
+  const acceptTopic = topic => {
+    setTopics(items => [topic, ...items.filter(item => item._id !== topic._id)])
+    const pending = pendingSendRef.current
+    if (pending?.topicId === topic._id && topic.messages?.some(message => message.requestId === pending.requestId)) {
+      setDraft(value => value === pending.content ? '' : value)
+      setFiles(value => value === pending.attachments ? [] : value)
+      pendingSendRef.current = null
+      setSendNotice(null)
+    }
+  }
+  const needsSendRefresh = topics.some(topic => topic.generation?.status === 'running') || !!sendNotice
+  useEffect(() => {
+    if (!needsSendRefresh) return
+    let cancelled = false, refreshing = false
+    const refresh = async () => {
+      if (refreshing) return
+      refreshing = true
+      try {
+        const res = await staffAPI.getAiCaseReviews(patientId)
+        if (!cancelled) {
+          setTopics(res.data || [])
+          const pending = pendingSendRef.current
+          const topic = (res.data || []).find(item => item._id === pending?.topicId)
+          if (topic) acceptTopic(topic)
+        }
+      } catch { /* Keep the persisted send state visible; the next refresh can recover. */ }
+      finally { refreshing = false }
+    }
+    const timer = setInterval(refresh, 2500)
+    return () => { cancelled = true; clearInterval(timer) }
+  }, [patientId, needsSendRefresh])
   useEffect(() => {
     setConclusionText(active?.conclusion?.content || '')
     setTimeout(() => { if (chatRef.current) chatRef.current.scrollTo({ top: chatRef.current.scrollHeight, behavior: 'smooth' }) }, 30)
@@ -190,13 +230,25 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
       setFiles(list => [...list, ...uploaded].slice(0, 6))
     } catch (err) { toast(err.message, 'error') } finally { setBusy(false); event.target.value = '' }
   }
-  const send = async () => {
-    if (!draft.trim() && !files.length) return
+  const send = async (retryMessage = null) => {
+    if (busy || sendingRef.current || !active || (active.generation?.status === 'running' && !(retryMessage && sendStalled))) return
+    const content = retryMessage ? retryMessage.content : draft
+    const attachments = retryMessage ? retryMessage.attachments || [] : files
+    if (!content.trim() && !attachments.length) return
+    const signature = JSON.stringify([patientId, active._id, content, attachments])
+    const previous = pendingSendRef.current
+    const requestId = retryMessage?.requestId || (previous?.signature === signature ? previous.requestId : crypto.randomUUID())
+    const pending = { signature, requestId, topicId: active._id, patientId, content, attachments }
+    pendingSendRef.current = pending
+    sendingRef.current = true
+    setSendNotice(null)
     setBusy(true)
     try {
-      const res = await staffAPI.sendAiCaseReviewMessage(patientId, active._id, { content: draft, attachments: files })
-      replaceTopic(res.data); setDraft(''); setFiles([])
-    } catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
+      const res = await staffAPI.sendAiCaseReviewMessage(patientId, pending.topicId, { content, attachments, requestId })
+      if (patientRef.current === patientId) acceptTopic(res.data)
+    } catch (err) {
+      if (patientRef.current === patientId) setSendNotice({ topicId: pending.topicId, text: `${err.message}。正在核对发送状态；再次发送会核对同一条消息。` })
+    } finally { sendingRef.current = false; setBusy(false) }
   }
   const generateConclusion = async () => {
     setBusy(true)
@@ -360,8 +412,14 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
 
       <div className="card"><div className="card-body" style={{ padding: 12 }}>
         {!!files.length && <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>{files.map((file, index) => <span key={index} style={{ fontSize: 12, background: '#EEF7F2', padding: '5px 8px', borderRadius: 6 }}>{file.name}<button onClick={() => setFiles(list => list.filter((_, i) => i !== index))} style={{ border: 0, background: 'none', cursor: 'pointer' }}>×</button></span>)}</div>}
-        <textarea className="form-input" rows={3} value={draft} onChange={e => setDraft(e.target.value)} placeholder="补充本轮新信息或修订意见，AI将只分析新增变化，不再从头重复…" onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }} />
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}><label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>添加图片<input type="file" accept="image/*" multiple hidden onChange={uploadSelected} /></label><button className="btn btn-primary btn-sm" disabled={busy || (!draft.trim() && !files.length)} onClick={send}>{busy ? '处理中…' : '发送给AI'}</button></div>
+        {active.generation?.status === 'running' && <div role="status" style={{ color: '#1E6B50', marginBottom: 8 }}>提问已保存，AI正在回复，结果会自动显示，无需重复发送。</div>}
+        {(active.generation?.status === 'failed' || sendStalled) && <div role="alert" style={{ color: '#B42318', marginBottom: 8 }}>提问已保存，{sendStalled ? 'AI回复等待时间过长，可重试原消息' : `但AI回复失败：${active.generation.error || '请稍后重试'}`}。{(() => {
+          const message = active.messages?.find(item => item.role === 'staff' && item.requestId === active.generation.requestId)
+          return message && String(message.staff) === String(staff?._id) && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => send(message)}>重试AI回复</button>
+        })()}</div>}
+        {sendNotice?.topicId === active._id && <div role="alert" style={{ color: '#B42318', marginBottom: 8 }}>{sendNotice.text}</div>}
+        <textarea className="form-input" rows={3} value={draft} onChange={e => setDraft(e.target.value)} placeholder="补充本轮新信息或修订意见，AI将只分析新增变化，不再从头重复…" onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); send() } }} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}><label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>添加图片<input type="file" accept="image/*" multiple hidden disabled={busy} onChange={uploadSelected} /></label><button className="btn btn-primary btn-sm" disabled={busy || active.generation?.status === 'running' || (!draft.trim() && !files.length)} onClick={() => send()}>{busy ? '处理中…' : active.generation?.status === 'running' ? 'AI回复中…' : '发送给AI'}</button></div>
       </div></div>
 
       {!!active.messages?.length && <div className="card"><div className="card-header"><div className="card-title">阶段性结论（当前有效信息）</div><button className="btn btn-secondary btn-sm" disabled={busy} onClick={generateConclusion}>AI整理结论</button></div><div className="card-body">

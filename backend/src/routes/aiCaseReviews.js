@@ -12,6 +12,7 @@ const { toStructuredAssessment, assessmentToPlainText, detectClinicalReview, nex
 const { createAssessment, intensiveNutritionCheckpoint, periodFor } = require('../utils/phaseAssessmentScheduler');
 const { buildContext, buildStageAssessmentContext } = require('../utils/aiCaseReviewContext');
 const providerAdapter = require('../utils/aiCaseReviewProvider');
+const { acceptSend, finishSend } = require('../utils/aiCaseReviewSend');
 const { completePhaseAssessmentArchive } = require('../utils/phaseAssessmentArchive');
 const { ROLE_FIELDS, ROLE_LABELS, DOMAIN_ROLES, primaryRole, currentReviewer, initialReviewStatus, isAssignedPhaseReviewer } = require('../utils/phaseAssessmentRouting');
 const { DEFAULT_SCOPES, ensureAiCaseReviewTemplates } = require('../utils/aiCaseReviewTemplates');
@@ -50,6 +51,7 @@ async function patientOr404(req, res) {
 
 function forClient(doc) {
   const data = doc.toObject ? doc.toObject() : doc;
+  if (data.generation) delete data.generation.token;
   data.messages = (data.messages || []).map(message => ({
     ...message,
     contextSnapshot: message.contextSnapshot ? {
@@ -257,6 +259,7 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId', staffAuth, async (
     const user = await caseReviewPatientOr404(req, res); if (!user) return;
     const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id });
     if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
+    if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在回复，请等待本轮完成后修改' });
     if (req.body.title !== undefined) topic.title = String(req.body.title).trim();
     if (req.body.description !== undefined) topic.description = String(req.body.description).trim();
     if (req.body.reviewType !== undefined && VALID_REVIEW_TYPES.has(req.body.reviewType)) topic.reviewType = req.body.reviewType;
@@ -275,6 +278,7 @@ router.delete('/patients/:patientId/ai-case-reviews/:topicId', staffAuth, async 
     const user = await caseReviewPatientOr404(req, res); if (!user) return;
     const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id });
     if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
+    if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在回复，请等待本轮完成后修改' });
     topic.status = 'archived';
     topic.lastActivityAt = new Date();
     await topic.save();
@@ -285,29 +289,29 @@ router.delete('/patients/:patientId/ai-case-reviews/:topicId', staffAuth, async 
 router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth, async (req, res) => {
   try {
     const user = await caseReviewPatientOr404(req, res); if (!user) return;
-    const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id });
-    if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
-    const content = String(req.body.content || '').trim();
-    const attachments = (Array.isArray(req.body.attachments) ? req.body.attachments : []).slice(0, 6);
-    if (!content && !attachments.length) return res.status(400).json({ success: false, message: '请输入问题或添加图片' });
-    topic.messages.push({ role: 'staff', content: content || '请分析本轮上传的图文资料', staff: req.staff._id, staffName: req.staff.name || '', staffRole: ROLE_LABEL[req.staff.role] || req.staff.role, attachments });
-    await topic.save();
-
-    const snapshot = await buildContext(user, topic.contextScopes);
-    const isSupplement = topic.messages.length > 1;
-    const history = topic.messages.slice(isSupplement ? -7 : -13, -1).map(item => ({ role: item.role === 'ai' ? 'assistant' : 'user', content: item.content }));
-    const topicGuide = [topic.title, topic.description, topic.templateSnapshot?.outputGuide ? `固定研判输出：${topic.templateSnapshot.outputGuide}` : ''].filter(Boolean).join('\n');
-    const incrementalGuide = isSupplement
-      ? '这是一次补充讨论。只回答本轮新增信息，严禁重述既往完整病史、检查清单、管理方案或原分析。输出最多3个短段：1.新增信息解读；2.修订说明（没有则写“无修订”）；3.对阶段性结论的影响。全文控制在300个中文字以内，每段最多3点。最新更正信息优先于旧信息。'
-      : '这是本主题首次讨论，请围绕本轮问题形成初步分析，并标明待确认信息。';
-    const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: `【专项研判主题与要求】\n${topicGuide}\n\n【分析方式】\n${incrementalGuide}\n\n【本轮新增信息】\n${content || '请分析本轮上传的图文资料'}`, context: snapshot, attachments, history, maxTokens: isSupplement ? 500 : 1800 });
-    if (!result.content) throw new Error(`${result.provider} 未返回可展示的分析内容`);
-    topic.providerSessionId = result.sessionId || topic.providerSessionId;
-    topic.messages.push({ role: 'ai', content: result.content, provider: result.provider, providerModel: result.model, durationMs: result.durationMs, attachments: result.files, evidenceRefs: snapshot.sources, contextSnapshot: snapshot });
-    topic.lastActivityAt = new Date();
-    await topic.save();
-    res.json({ success: true, data: forClient(topic), provider: result.provider });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    const accepted = await acceptSend(AiCaseReview, {
+      patientId: user._id, topicId: req.params.topicId,
+      staff: { _id: req.staff._id, name: req.staff.name, role: req.staff.role, roleLabel: ROLE_LABEL[req.staff.role] },
+      ...Object.fromEntries(['content', 'attachments', 'requestId'].map(key => [key, req.body[key]])),
+    });
+    const { topic } = accepted;
+    res.status(topic.generation?.status === 'running' ? 202 : 200).json({ success: true, data: forClient(topic) });
+    if (!accepted.claimed) return;
+    // Send acknowledgement before the potentially slow AI call; the client polls persisted state.
+    void finishSend(AiCaseReview, topic, async () => {
+      const message = topic.messages.find(item => item.role === 'staff' && item.requestId === topic.generation.requestId);
+      const { content, attachments } = message;
+      const snapshot = await buildContext(user, topic.contextScopes);
+      const isSupplement = topic.messages.length > 1;
+      const history = topic.messages.slice(isSupplement ? -7 : -13, -1).map(item => ({ role: item.role === 'ai' ? 'assistant' : 'user', content: item.content }));
+      const topicGuide = [topic.title, topic.description, topic.templateSnapshot?.outputGuide ? `固定研判输出：${topic.templateSnapshot.outputGuide}` : ''].filter(Boolean).join('\n');
+      const incrementalGuide = isSupplement
+        ? '这是一次补充讨论。只回答本轮新增信息，严禁重述既往完整病史、检查清单、管理方案或原分析。输出最多3个短段：1.新增信息解读；2.修订说明（没有则写“无修订”）；3.对阶段性结论的影响。全文控制在300个中文字以内，每段最多3点。最新更正信息优先于旧信息。'
+        : '这是本主题首次讨论，请围绕本轮问题形成初步分析，并标明待确认信息。';
+      const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: `【专项研判主题与要求】\n${topicGuide}\n\n【分析方式】\n${incrementalGuide}\n\n【本轮新增信息】\n${content || '请分析本轮上传的图文资料'}`, context: snapshot, attachments, history, maxTokens: isSupplement ? 500 : 1800 });
+      return { result, snapshot };
+    }).catch(err => console.error('[ai-case-review] Persisting reply state failed:', err.message));
+  } catch (err) { res.status(err.status || 500).json({ success: false, message: err.message }); }
 });
 
 router.patch('/patients/:patientId/ai-case-reviews/:topicId/messages/:messageId', staffAuth, async (req, res) => {
@@ -315,6 +319,7 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId/messages/:messageId'
     const user = await caseReviewPatientOr404(req, res); if (!user) return;
     const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id });
     if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
+    if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在回复，请等待本轮完成后修改' });
     const message = topic.messages.id(req.params.messageId);
     if (!message) return res.status(404).json({ success: false, message: '讨论记录不存在' });
     const content = String(req.body.content || '').trim();
@@ -334,6 +339,7 @@ router.delete('/patients/:patientId/ai-case-reviews/:topicId/messages/:messageId
     const user = await caseReviewPatientOr404(req, res); if (!user) return;
     const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id });
     if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
+    if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在回复，请等待本轮完成后修改' });
     const index = topic.messages.findIndex(item => String(item._id) === req.params.messageId);
     if (index < 0) return res.status(404).json({ success: false, message: '讨论记录不存在' });
     const deleteCount = topic.messages[index].role === 'staff' && topic.messages[index + 1]?.role === 'ai' ? 2 : 1;
@@ -350,6 +356,7 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAut
     const user = await caseReviewPatientOr404(req, res); if (!user) return;
     const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id });
     if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
+    if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在回复，请等待本轮完成后修改' });
     if (!topic.messages.length) return res.status(400).json({ success: false, message: '暂无讨论内容' });
     const transcript = topic.messages.map(item => `${item.role === 'ai' ? 'AI' : `${item.staffName}（${item.staffRole}）`}：${item.content}`).join('\n');
     const prompt = `请将以下医护团队专题研判整理为简明、可执行的阶段性结论。固定使用六个栏目：核心结论、已确认事实、阶段变化、重点风险、下一步行动、待补信息。以时间较新的更正和补充为准，排除已被修订的信息，只把当前正确、有效的信息写入结论；若存在实质修订，在“阶段变化”中说明修订了什么。每栏最多5条，每条只表达一个要点；下一步行动必须写清事项、时间或频次、责任角色（资料不足写“待确认”）。不要输出Markdown符号、横线、免责声明、生成时间或审核人；不得把AI推测写成已确认事实，不得提出与本主题无关的疫苗、营养、就医或检查建议。${topic.templateSnapshot?.outputGuide ? `本主题重点输出范围：${topic.templateSnapshot.outputGuide}。` : ''}\n\n主题：${topic.title}\n${transcript}`;
@@ -368,6 +375,7 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId/conclusion', staffAu
     const user = await caseReviewPatientOr404(req, res); if (!user) return;
     const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id });
     if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
+    if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在回复，请等待本轮完成后修改' });
     const content = String(req.body.content || topic.conclusion?.content || '').trim();
     if (!content) return res.status(400).json({ success: false, message: '结论不能为空' });
     const structured = toStructuredAssessment(content, topic.title);

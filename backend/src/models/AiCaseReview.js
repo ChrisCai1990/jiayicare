@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const messageSchema = new mongoose.Schema({
+  requestId: { type: String, default: '' },
   role: { type: String, enum: ['staff', 'ai'], required: true },
   content: { type: String, required: true },
   staff: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
@@ -49,11 +50,18 @@ const aiCaseReviewSchema = new mongoose.Schema({
   preferredProvider: { type: String, enum: ['auto', 'workbuddy', 'qwen', 'deepseek'], default: 'qwen' },
   providerSessionId: { type: String, default: '' },
   messages: [messageSchema],
+  generation: {
+    requestId: String,
+    token: String,
+    status: { type: String, enum: ['running', 'completed', 'failed'] },
+    startedAt: Date,
+    error: String,
+  },
   conclusion: { type: conclusionSchema, default: () => ({}) },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
   createdByName: { type: String, default: '' },
   lastActivityAt: { type: Date, default: Date.now, index: true },
-}, { timestamps: true });
+}, { timestamps: true, optimisticConcurrency: true });
 
 aiCaseReviewSchema.index({ user: 1, status: 1, lastActivityAt: -1 });
 
