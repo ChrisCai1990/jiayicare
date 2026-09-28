@@ -287,6 +287,10 @@ export const adminAPI = {
   reviewMedicalResourceKnowledge: (id, action, note = '') => req(`/medical-resource-knowledge/${id}/review`, { method: 'PATCH', body: JSON.stringify({ action, note }) }),
   archiveMedicalResourceKnowledge: (id, note = '') => req(`/medical-resource-knowledge/${id}/archive`, { method: 'PATCH', body: JSON.stringify({ note }) }),
   reviseMedicalResourceKnowledge: (id) => req(`/medical-resource-knowledge/${id}/revise`, { method: 'POST' }),
+  medicalDeliveryResources: (params = {}) => req('/medical-delivery-resources?' + new URLSearchParams(params)),
+  createMedicalDeliveryResource: (data) => req('/medical-delivery-resources', { method: 'POST', body: JSON.stringify(data) }),
+  updateMedicalDeliveryResource: (id, data) => req(`/medical-delivery-resources/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  toggleMedicalDeliveryResource: (id) => req(`/medical-delivery-resources/${id}/toggle`, { method: 'PATCH' }),
 
   // 会员标签
   memberTags:        ()         => req('/member-tags'),

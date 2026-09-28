@@ -27,6 +27,7 @@ const MedicalInstitution = require('../models/MedicalInstitution');
 const MedicalDepartment = require('../models/MedicalDepartment');
 const MedicalExpert = require('../models/MedicalExpert');
 const MedicalResourceKnowledge = require('../models/MedicalResourceKnowledge');
+const MedicalDeliveryResource = require('../models/MedicalDeliveryResource');
 
 // ─────────────────────────────────────────────────────────────
 // 工具：拼音首字母助记码（简单实现，正式可接 pinyin 库）
@@ -949,6 +950,7 @@ router.get('/lab-test-packages', adminAuth, async (req, res) => {
 });
 makeProjectCRUD(LabTestPackage, 'lab-test-packages');
 makeProjectCRUD(ServiceItem,    'service-items');
+makeProjectCRUD(MedicalDeliveryResource, 'medical-delivery-resources');
 makeProjectCRUD(OtherCharge,    'other-charges');
 
 // ── 特殊检查项目（额外支持软删除和检查类型筛选）──────────────────
