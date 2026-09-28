@@ -337,6 +337,34 @@ async function createPrescriptionMedicationDrafts(task, reportIds) {
     Medication.find({ user: task.patientId, stopped: false, aiStatus: { $ne: 'rejected' } }).select('name brandName specification dosage frequency timing').lean(),
   ]);
   try {
+    // 审核人对每条药已明确选择“新增为当前用药”时，直接用已核对的结构化字段建草稿，
+    // 不再让通用 AI 二次猜测，且“仅保留处方”与“已匹配”不会创建重复用药。
+    const hasExplicitMedicationActions = reports.some(report => (report.reportItems || []).some(item => item?.itemType === 'medication' && item?.medicationAction));
+    if (hasExplicitMedicationActions) {
+      const created = [];
+      for (const report of reports) {
+        for (const [index, item] of (report.reportItems || []).entries()) {
+          if (item?.itemType !== 'medication' || item?.medicationAction !== 'create') continue;
+          const name = nonempty(item.genericName || item.name);
+          const dosageMatch = String(item.referenceRange || '').match(/每次\s*([^\s，。；;]+)/);
+          const frequencyMatch = String(item.referenceRange || '').match(/每(?:天|日)\s*([^，。；;]+)/);
+          const dosage = nonempty(dosageMatch?.[1]);
+          const frequency = frequencyMatch ? `每天${nonempty(frequencyMatch[1])}` : '';
+          if (!name || !dosage || !frequency) continue;
+          const instruction = `${item.findings || ''} ${item.sourceSection || ''}`;
+          const method = (instruction.match(/口服|外用|注射|含服|吸入/) || [])[0] || '口服';
+          const timing = (instruction.match(/餐前|餐后|餐中|早饭后|晚饭后|睡前/) || [])[0] || '';
+          const sourceRecordKey = `prescription_report_review:${report._id}:${index}:${name}:${dosage}:${frequency}`;
+          const medication = await Medication.findOneAndUpdate({ user: task.patientId, sourceRecordKey }, { $setOnInsert: {
+            user: task.patientId, name, brandName: nonempty(item.brandName), specification: nonempty(item.value), dosage, method, frequency, timing,
+            startDate: nonempty(item.examDate || report.checkDate), purpose: nonempty(item.diagnosis), note: '依据已审核处方新增，待健康顾问确认。', imageUrls: report.fileUrls || [], active: true, stopped: false,
+            createdByStaff: true, staffId: task.assignedTo || null, createdByName: '处方审核', aiStatus: 'pending', aiGeneratedBy: '已审核处方/医嘱', sourceType: 'manual', sourceRecordKey,
+          } }, { upsert: true, new: true, setDefaultsOnInsert: true });
+          if (medication?._id) created.push(medication);
+        }
+      }
+      return created;
+    }
     const { chat } = require('./ai');
     const evidence = reports.map(report => ({ id: report._id, title: report.title, reportItems: report.reportItems, aiSummary: report.aiSummary, keyFindings: report.keyFindings, note: report.note }));
     const raw = await chat([{ role: 'user', content: `你是处方信息录入助手。仅从已审核处方中提取明确记载、且相对当前用药属于新增的药物；病史仅用于识别同名药和核对，不得推断、推荐或调整用药。剂量或频次不明确的条目不要输出。仅输出JSON数组，每项格式：{"name":"通用名","brandName":"商品名或空","specification":"规格或空","dosage":"单次剂量","method":"用法","frequency":"频次","timing":"服药时机或空","startDate":"YYYY-MM-DD或空","endDate":"YYYY-MM-DD或空","purpose":"处方记载用途或空","sourceReportId":"来源报告ID"}。\n病史：${JSON.stringify({ chronicDiseases: patient?.chronicDiseases, healthProfile: patient?.healthProfile }).slice(0, 10000)}\n当前用药：${JSON.stringify(current).slice(0, 10000)}\n已审核处方：${JSON.stringify(evidence).slice(0, 18000)}` }], { maxTokens: 1400, temperature: 0, jsonMode: true, timeoutMs: 60000 });

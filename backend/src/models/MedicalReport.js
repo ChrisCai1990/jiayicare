@@ -31,6 +31,7 @@ const reportItemSchema = new mongoose.Schema({
   genericName:    { type: String, default: '' }, // 处方药品化学名/通用名
   brandName:      { type: String, default: '' }, // 处方药品商品名
   medicationId:   { type: String, default: '' }, // 已匹配的客户用药档案 ID
+  medicationAction: { type: String, enum: ['matched', 'create', 'keep'], default: 'create' }, // 审核后关联/新建/仅保留处方
   orderName:      { type: String, default: '' }, // 所属检验医嘱组名（用于编辑时还原分组）
   sourcePage:     { type: Number, default: null }, // 原报告页码，供医护审核快速定位
 

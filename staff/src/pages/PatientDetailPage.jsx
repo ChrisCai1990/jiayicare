@@ -3629,7 +3629,7 @@ export default function PatientDetailPage() {
         if (latestReport.documentCategory === 'prescription_order') {
           const names = splitPrescriptionName(it)
           const matched = it.medicationId ? currentMedications.find(med => String(med._id) === String(it.medicationId)) : matchCurrentMedication(names.genericName, names.brandName)
-          return { ...it, ...names, name: names.genericName, itemType: 'medication', medicationId: matched?._id ? String(matched._id) : '' }
+          return { ...it, ...names, name: names.genericName, itemType: 'medication', medicationId: matched?._id ? String(matched._id) : '', medicationAction: matched?._id ? 'matched' : (it.medicationAction || 'create') }
         }
         const isImg = it.itemType === 'imaging'
         if (isImg && !it.findings && it.value) return { ...it, findings: it.value, value: '' }
@@ -12256,13 +12256,16 @@ export default function PatientDetailPage() {
                                 <input type="date" style={{ ...inp, width: 160, marginLeft: 8 }} value={String(it.examDate || '').slice(0, 10)} onChange={e => updItem(i, { examDate: e.target.value })} />
                               </label>
                               {isPrescription && <label style={{ display: 'block', fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 6 }}>匹配当前用药信息
-                                <select style={{ ...inp, width: '100%', marginTop: 4 }} value={it.medicationId || ''} onChange={e => {
+                                <select style={{ ...inp, width: '100%', marginTop: 4 }} value={it.medicationId || (it.medicationAction === 'keep' ? '__keep__' : '__create__')} onChange={e => {
                                   const matched = medications.find(med => String(med._id) === e.target.value)
+                                  if (e.target.value === '__create__') { updItem(i, { medicationId: '', medicationAction: 'create' }); return }
+                                  if (e.target.value === '__keep__') { updItem(i, { medicationId: '', medicationAction: 'keep' }); return }
                                   updItem(i, matched
-                                    ? { medicationId: String(matched._id), genericName: matched.name || it.genericName || it.name || '', brandName: matched.brandName || it.brandName || '', name: matched.name || it.name || '' }
-                                    : { medicationId: '' })
+                                    ? { medicationId: String(matched._id), medicationAction: 'matched', genericName: matched.name || it.genericName || it.name || '', brandName: matched.brandName || it.brandName || '', name: matched.name || it.name || '' }
+                                    : { medicationId: '', medicationAction: 'create' })
                                 }}>
-                                  <option value="">未匹配当前用药（保留本次处方原文）</option>
+                                  <option value="__create__">新增为当前用药（提交后待确认）</option>
+                                  <option value="__keep__">仅保留本次处方原文，不纳入当前用药</option>
                                   {medications.map(med => <option key={med._id} value={med._id}>{med.name}{med.brandName ? `（${med.brandName}）` : ''}{med.specification ? ` · ${med.specification}` : ''}</option>)}
                                 </select>
                               </label>}
