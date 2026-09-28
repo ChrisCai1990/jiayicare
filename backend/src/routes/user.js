@@ -1741,6 +1741,56 @@ router.get('/family-links/search', auth, async (req, res) => {
   }
 });
 
+// GET /api/user/family-links/:memberId/service-overview
+// 家庭成员视图只返回服务管理信息，不返回健康档案、病历、报告、用药或健康计划。
+router.get('/family-links/:memberId/service-overview', auth, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.memberId)) {
+      return res.status(400).json({ success: false, message: '家庭成员信息无效' });
+    }
+    const owner = await User.findById(req.user._id).select('familyLinks');
+    const link = owner?.familyLinks?.find(item => String(item.linkedUser) === String(req.params.memberId));
+    if (!link) return res.status(403).json({ success: false, message: '您未关联此家庭成员' });
+
+    const member = await User.findOne({ _id: req.params.memberId, isDeleted: { $ne: true } })
+      .select('name gender birthDate');
+    if (!member) return res.status(404).json({ success: false, message: '家庭成员不存在' });
+
+    const orders = await Order.find({ user: member._id })
+      .select('serviceName status tradeStatus fulfillmentStatus scheduledAt desiredServiceDate completedAt createdAt')
+      .sort({ createdAt: -1 })
+      .limit(12)
+      .lean();
+    const activeOrders = orders.filter(order => !['completed', 'cancelled'].includes(order.status)
+      && !['completed', 'closed', 'refunded'].includes(order.tradeStatus));
+    const appointments = orders
+      .filter(order => order.scheduledAt || order.desiredServiceDate)
+      .slice(0, 5)
+      .map(order => ({
+        serviceName: order.serviceName || '服务安排',
+        status: order.fulfillmentStatus || order.status || '',
+        scheduledAt: order.scheduledAt || null,
+        desiredServiceDate: order.desiredServiceDate || null,
+      }));
+
+    res.json({ success: true, data: {
+      member: {
+        _id: member._id,
+        name: member.name || '家庭成员',
+        relation: link.relation || '家庭成员',
+      },
+      service: {
+        activeCount: activeOrders.length,
+        latestStatus: activeOrders[0]?.fulfillmentStatus || activeOrders[0]?.status || '',
+        latestServiceName: activeOrders[0]?.serviceName || '',
+      },
+      appointments,
+    } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '获取家庭服务信息失败', error: err.message });
+  }
+});
+
 // POST /api/user/family-links — 向已注册用户发送家庭成员邀请（需确认）
 router.post('/family-links', auth, async (req, res) => {
   try {

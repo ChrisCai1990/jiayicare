@@ -420,6 +420,7 @@ export const familyAPI = {
 
 export const familyLinksAPI = {
   list: () => request('/user/family-links'),
+  serviceOverview: (memberId) => request(`/user/family-links/${memberId}/service-overview`),
   search: (q) => request(`/user/family-links/search?q=${encodeURIComponent(q)}`),
   add: (linkedUserId, relation) => request('/user/family-links', { method: 'POST', body: JSON.stringify({ linkedUserId, relation }) }),
   remove: (linkId) => request(`/user/family-links/${linkId}`, { method: 'DELETE' }),

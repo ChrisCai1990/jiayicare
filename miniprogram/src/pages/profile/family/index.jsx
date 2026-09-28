@@ -127,7 +127,33 @@ function AddLinkModal({ onClose, onSaved }) {
   );
 }
 
-function LinkCard({ link, onDelete }) {
+function FamilyServiceModal({ data, onClose }) {
+  const appointments = data?.appointments || [];
+  const dateText = (value) => value ? new Date(value).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' }) : '待安排';
+  return (
+    <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}>
+      <View style={{ backgroundColor: '#fff', borderRadius: '24px 24px 0 0', padding: `${spacing.lg}px ${spacing.lg}px ${spacing.xl + 12}px`, width: '100%', boxSizing: 'border-box' }}>
+        <Text style={{ fontSize: '17px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{data.member.name}的服务安排</Text>
+        <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginTop: '4px' }}>仅展示服务进度与预约安排，不展示健康档案和医疗资料</Text>
+        <View style={{ backgroundColor: colors.primary10, borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginTop: `${spacing.lg}px` }}>
+          <Text style={{ fontSize: '13px', color: colors.textSecondary, display: 'block' }}>进行中的服务</Text>
+          <Text style={{ fontSize: '22px', fontWeight: 700, color: colors.primary, marginTop: '2px' }}>{data.service.activeCount} 项</Text>
+          {!!data.service.latestServiceName && <Text style={{ fontSize: '12px', color: colors.textSecondary, display: 'block', marginTop: '4px' }}>{data.service.latestServiceName}{data.service.latestStatus ? ` · ${data.service.latestStatus}` : ''}</Text>}
+        </View>
+        <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginTop: `${spacing.lg}px`, marginBottom: `${spacing.sm}px` }}>预约安排</Text>
+        {appointments.length ? appointments.map((item, index) => (
+          <View key={`${item.serviceName}-${index}`} style={{ display: 'flex', alignItems: 'center', padding: '11px 0', borderBottom: index === appointments.length - 1 ? 'none' : `1px solid ${colors.borderLight}` }}>
+            <View style={{ flex: 1 }}><Text style={{ fontSize: '14px', color: colors.textPrimary, display: 'block' }}>{item.serviceName}</Text><Text style={{ fontSize: '12px', color: colors.textMuted }}>{item.status || '等待安排'}</Text></View>
+            <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 600 }}>{dateText(item.scheduledAt || item.desiredServiceDate)}</Text>
+          </View>
+        )) : <Text style={{ fontSize: '13px', color: colors.textMuted, display: 'block', padding: '12px 0' }}>暂无预约安排</Text>}
+        <View onClick={onClose} style={{ textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary, marginTop: `${spacing.md}px` }}><Text style={{ color: '#fff', fontSize: '15px', fontWeight: 700 }}>知道了</Text></View>
+      </View>
+    </View>
+  );
+}
+
+function LinkCard({ link, onDelete, onView }) {
   const u = link.user;
   const icon = REL_ICON[link.relation] || '👤';
   return (
@@ -145,7 +171,10 @@ function LinkCard({ link, onDelete }) {
         {!!u.age && <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block' }}>{u.age} 岁</Text>}
         <Text style={{ fontSize: '11px', color: colors.success }}>已注册用户</Text>
       </View>
-      <Text onClick={onDelete} style={{ fontSize: '16px', color: colors.danger, padding: '8px' }}>🗑</Text>
+      <View style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+        <Text onClick={onView} style={{ fontSize: '12px', color: colors.primary, padding: '6px' }}>查看服务</Text>
+        <Text onClick={onDelete} style={{ fontSize: '15px', color: colors.danger, padding: '6px' }}>🗑</Text>
+      </View>
     </View>
   );
 }
@@ -157,6 +186,7 @@ export default function FamilyMembersPage() {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [handlingInvite, setHandlingInvite] = useState(null);
+  const [serviceOverview, setServiceOverview] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -198,6 +228,15 @@ export default function FamilyMembersPage() {
         catch (e) { Taro.showToast({ title: e.message || '操作失败', icon: 'none' }); }
       },
     });
+  };
+
+  const handleViewService = async (link) => {
+    try {
+      const res = await familyLinksAPI.serviceOverview(link.user._id);
+      if (res.success) setServiceOverview(res.data);
+    } catch (e) {
+      Taro.showToast({ title: e.message || '服务信息加载失败', icon: 'none' });
+    }
   };
 
   return (
@@ -256,13 +295,14 @@ export default function FamilyMembersPage() {
           <>
             <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: `${spacing.sm}px` }}>共 {links.length} 位家庭成员</Text>
             {links.map((link) => (
-              <LinkCard key={link._id} link={link} onDelete={() => handleDelete(link)} />
+              <LinkCard key={link._id} link={link} onDelete={() => handleDelete(link)} onView={() => handleViewService(link)} />
             ))}
           </>
         ) : null}
       </View>
 
       {showAdd && <AddLinkModal onClose={() => setShowAdd(false)} onSaved={load} />}
+      {serviceOverview && <FamilyServiceModal data={serviceOverview} onClose={() => setServiceOverview(null)} />}
     </View>
   );
 }
