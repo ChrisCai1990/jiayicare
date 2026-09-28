@@ -132,7 +132,7 @@ function FamilyServiceModal({ data, onClose }) {
   const dateText = (value) => value ? new Date(value).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' }) : '待安排';
   return (
     <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}>
-      <View style={{ backgroundColor: '#fff', borderRadius: '24px 24px 0 0', padding: `${spacing.lg}px ${spacing.lg}px ${spacing.xl + 12}px`, width: '100%', boxSizing: 'border-box' }}>
+      <ScrollView scrollY style={{ backgroundColor: '#fff', borderRadius: '24px 24px 0 0', padding: `${spacing.lg}px ${spacing.lg}px ${spacing.xl + 12}px`, width: '100%', maxHeight: '80vh', boxSizing: 'border-box' }}>
         <Text style={{ fontSize: '17px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{data.member.name}的服务安排</Text>
         <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginTop: '4px' }}>仅展示服务进度与预约安排，不展示健康档案和医疗资料</Text>
         <View style={{ backgroundColor: colors.primary10, borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginTop: `${spacing.lg}px` }}>
@@ -140,15 +140,15 @@ function FamilyServiceModal({ data, onClose }) {
           <Text style={{ fontSize: '22px', fontWeight: 700, color: colors.primary, marginTop: '2px' }}>{data.service.activeCount} 项</Text>
           {!!data.service.latestServiceName && <Text style={{ fontSize: '12px', color: colors.textSecondary, display: 'block', marginTop: '4px' }}>{data.service.latestServiceName}{data.service.latestStatus ? ` · ${data.service.latestStatus}` : ''}</Text>}
         </View>
-        <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginTop: `${spacing.lg}px`, marginBottom: `${spacing.sm}px` }}>预约安排</Text>
+        <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginTop: `${spacing.lg}px`, marginBottom: `${spacing.sm}px` }}>服务时间安排（最近5项）</Text>
         {appointments.length ? appointments.map((item, index) => (
           <View key={`${item.serviceName}-${index}`} style={{ display: 'flex', alignItems: 'center', padding: '11px 0', borderBottom: index === appointments.length - 1 ? 'none' : `1px solid ${colors.borderLight}` }}>
             <View style={{ flex: 1 }}><Text style={{ fontSize: '14px', color: colors.textPrimary, display: 'block' }}>{item.serviceName}</Text><Text style={{ fontSize: '12px', color: colors.textMuted }}>{item.status || '等待安排'}</Text></View>
-            <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 600 }}>{dateText(item.scheduledAt || item.desiredServiceDate)}</Text>
+            <View><Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 600 }}>{dateText(item.scheduledAt || item.desiredServiceDate)}</Text><Text style={{display:'block',fontSize:'11px',color:colors.textMuted}}>{item.dateLabel || '待确认'}</Text></View>
           </View>
         )) : <Text style={{ fontSize: '13px', color: colors.textMuted, display: 'block', padding: '12px 0' }}>暂无预约安排</Text>}
         <View onClick={onClose} style={{ textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary, marginTop: `${spacing.md}px` }}><Text style={{ color: '#fff', fontSize: '15px', fontWeight: 700 }}>知道了</Text></View>
-      </View>
+      </ScrollView>
     </View>
   );
 }
