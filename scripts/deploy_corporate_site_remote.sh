@@ -34,8 +34,12 @@ restore() {
 }
 trap restore ERR
 
-grep -q 'server_name jiaycare.com www.jiaycare.com;' "$app_config"
-sed -i '0,/server_name jiaycare\.com www\.jiaycare\.com;/s//server_name jiaycare.com;/' "$app_config"
+if grep -q 'server_name jiaycare.com www.jiaycare.com;' "$app_config"; then
+  sed -i '0,/server_name jiaycare\.com www\.jiaycare\.com;/s//server_name jiaycare.com;/' "$app_config"
+elif ! grep -q 'server_name jiaycare.com;' "$app_config"; then
+  echo "Unexpected primary-site server_name; refusing to deploy." >&2
+  exit 1
+fi
 
 install -d -m 755 "$site_root"
 install -m 644 "$stage_root/index.html" "$site_root/index.html"
