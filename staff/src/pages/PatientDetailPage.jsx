@@ -640,7 +640,8 @@ const DOCUMENT_CATEGORIES = [
   { key: 'other_customer_material', label: '其他资料' },
 ]
 const DOCUMENT_CATEGORY_LABEL = Object.fromEntries(DOCUMENT_CATEGORIES.map(item => [item.key, item.label]))
-const HEALTH_COURSE_DOCUMENT_CATEGORIES = new Set(['outpatient_record', 'inpatient_record', 'prescription_order', 'exam_report', 'lab_report'])
+// 用药信息在“用药”模块审核后即完成闭环，不再要求健康顾问重复审核同一处方的健康变化。
+const HEALTH_COURSE_DOCUMENT_CATEGORIES = new Set(['outpatient_record', 'inpatient_record', 'exam_report', 'lab_report'])
 const inferDocumentCategory = report => {
   // 已保存的资料分类是人工选择；标题推断仅用于没有分类的历史资料。
   if (DOCUMENT_CATEGORY_LABEL[report.documentCategory]) return report.documentCategory

@@ -34,6 +34,16 @@ test('report follow-up draft review is shown only in the AI review queue', () =>
   assert.match(aiTodos, /report_followup_review/)
 })
 
+test('prescription review does not create a duplicate health-course review, while clinical drafts appear in AI todos', () => {
+  const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8')
+  const patientDetail = fs.readFileSync(path.join(__dirname, '../../staff/src/pages/PatientDetailPage.jsx'), 'utf8')
+  assert.match(route, /HEALTH_COURSE_DOCUMENTS = new Set\(\['outpatient_record', 'inpatient_record', 'exam_report', 'lab_report'\]\)/)
+  assert.match(route, /documentCategory: \{ \$ne: 'prescription_order' \}/)
+  assert.match(route, /type: 'health_course_review'/)
+  assert.match(aiTodos, /health_course_review/)
+  assert.doesNotMatch(patientDetail.match(/const HEALTH_COURSE_DOCUMENT_CATEGORIES[^\n]+/)[0], /prescription_order/)
+})
+
 test('follow-up counters and list exclude service executor, supervisor and insurance work items', () => {
   const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8')
   const reports = route.slice(route.indexOf("router.get('/reports'"), route.indexOf("router.get('/staff-list'"))
