@@ -6,6 +6,7 @@ import { userAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
+import { entrySourceLabel, savedEntrySource } from '../../utils/entrySource';
 
 // 首次登录最小化建档：姓名+身份证号+联系电话，其余健康信息交给问卷库分批采集。
 export default function OnboardingPage() {
@@ -21,6 +22,7 @@ export default function OnboardingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [healthMonitoringConsent, setHealthMonitoringConsent] = useState(false);
+  const entrySource = savedEntrySource();
 
   const canSubmit = name.trim() && idNumber.trim() && contactPhone.trim() && residence.length >= 2 && !submitting;
   const needsPhoneVerification = contactPhone.trim() !== (user?.phone || '').trim();
@@ -50,11 +52,15 @@ export default function OnboardingPage() {
         verificationCode: needsPhoneVerification ? verificationCode.trim() : undefined,
         residence: { province: residence[0], city: residence[1], district: residence[2] || '' },
         healthMonitoringConsent,
+        entrySource,
       });
       if (res.success) {
         if (res.data.token) await login({ ...res.data.user, onboardingCompleted: true }, res.data.token);
         else updateUser({ ...res.data.user, onboardingCompleted: true });
-        Taro.switchTab({ url: '/pages/home/index' });
+        let target = '';
+        try { target = Taro.getStorageSync('jy_post_login_url') || ''; Taro.removeStorageSync('jy_post_login_url'); } catch {}
+        if (target) Taro.redirectTo({ url: target });
+        else Taro.switchTab({ url: '/pages/home/index' });
       } else {
         setErrorMsg(res.message || '提交失败，请重试');
       }
@@ -148,6 +154,12 @@ export default function OnboardingPage() {
           <Text style={{ flex: 1, fontSize: '13px', color: colors.textSecondary }}>同意开启免费血压、体重监测提醒（可在提醒管理中随时关闭）</Text>
           <Switch checked={healthMonitoringConsent} onChange={e => setHealthMonitoringConsent(e.detail.value)} color={colors.primary} />
         </View>
+
+        {!!entrySource && (
+          <View style={{ backgroundColor: colors.primary10, borderRadius: `${radius.sm}px`, padding: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>
+            <Text style={{ fontSize: '12px', color: colors.primary, lineHeight: '18px' }}>本次服务入口：{entrySourceLabel(entrySource)}。该信息仅用于服务衔接与来源统计。</Text>
+          </View>
+        )}
 
         {!!errorMsg && (
           <View style={{ backgroundColor: colors.danger10, borderRadius: `${radius.sm}px`, padding: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>

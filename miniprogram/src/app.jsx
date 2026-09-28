@@ -5,6 +5,7 @@ import { View, Text } from '@tarojs/components';
 import { AuthProvider } from './context/AuthContext';
 import { refreshUnreadBadge } from './utils/unreadBadge';
 import { captureInviteCode } from './utils/invitation';
+import { captureEntrySource } from './utils/entrySource';
 
 import './app.less';
 
@@ -47,12 +48,14 @@ class App extends Component {
     try {
       const launch = Taro.getLaunchOptionsSync?.() || {};
       captureInviteCode(launch.query || {});
+      captureEntrySource(launch.query || {});
     } catch {}
   }
   componentDidShow() {
     try {
       const entry = Taro.getEnterOptionsSync?.() || {};
       captureInviteCode(entry.query || {});
+      captureEntrySource(entry.query || {});
     } catch {}
     this.refreshUnread();
     clearInterval(this.unreadPollTimer);

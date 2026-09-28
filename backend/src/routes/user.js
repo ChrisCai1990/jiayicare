@@ -412,7 +412,7 @@ router.put('/me', auth, async (req, res) => {
 // 其余健康信息（既往史/生活方式/心理健康等）交给问卷库分批推送采集，不在此处重复询问
 router.post('/onboarding', auth, async (req, res) => {
   try {
-    const { name, idNumber, idType, contactPhone, verificationCode, residence, healthMonitoringConsent } = req.body;
+    const { name, idNumber, idType, contactPhone, verificationCode, residence, healthMonitoringConsent, entrySource } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ success: false, message: '请填写姓名' });
     if (!idNumber || !idNumber.trim()) return res.status(400).json({ success: false, message: `请填写${idType === 'passport' ? '护照号' : '身份证号'}` });
     if (!contactPhone || !contactPhone.trim()) return res.status(400).json({ success: false, message: '请填写联系电话' });
@@ -455,6 +455,15 @@ router.post('/onboarding', auth, async (req, res) => {
       onboardingCompletedAt: new Date(),
       healthMonitoringConsentAt: healthMonitoringConsent === true ? new Date() : null,
     };
+    const entrySourceLabels = {
+      official_site: '官网服务入口',
+      wechat_service: '微信客服',
+      partner: '合作机构转介',
+      staff_referral: '工作人员转介',
+    };
+    const verifiedEntrySource = entrySourceLabels[String(entrySource || '').trim().toLowerCase()] || '';
+    // `source` 同时可由工作人员维护；只在其尚为空时写入小程序码的首次来源。
+    if (verifiedEntrySource && !String(req.user.source || '').trim()) updateData.source = verifiedEntrySource;
     if (residence?.province && residence?.city) updateData.residence = { province: String(residence.province).trim(), city: String(residence.city).trim(), district: String(residence.district || '').trim() };
     updateData.idNumber = normalizedIdNumber;
     updateData.idType = isPassport ? 'passport' : 'idCard';
@@ -505,6 +514,7 @@ router.post('/onboarding', auth, async (req, res) => {
         : '';
       if (transferredReferralCode) setData.referralCode = transferredReferralCode;
       if (!idOwner.name || idOwner.name === '微信用户') setData.name = name.trim();
+      if (verifiedEntrySource && !String(idOwner.source || '').trim()) setData.source = verifiedEntrySource;
 
       // 先释放临时账号上的唯一登录字段，再写入既有档案。
       const releasedUniqueFields = { phone: 1, wechatOpenid: 1, wechatMpOpenid: 1 };

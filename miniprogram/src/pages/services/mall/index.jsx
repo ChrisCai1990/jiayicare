@@ -531,6 +531,19 @@ export default function ServiceMallPage() {
       });
       return;
     }
+    if (!user.onboardingCompleted) {
+      try {
+        const query = [routeParams.productId && `productId=${routeParams.productId}`, routeParams.shareToken && `shareToken=${routeParams.shareToken}`].filter(Boolean).join('&');
+        Taro.setStorageSync('jy_post_login_url', `/pages/services/mall/index${query ? `?${query}` : ''}`);
+      } catch {}
+      Taro.showModal({
+        title: '先完成实名建档',
+        content: '提交服务前，需要完成登录、姓名、身份证或护照号及联系电话的建档核验。',
+        confirmText: '去建档',
+        showCancel: false,
+      }).then(() => Taro.navigateTo({ url: '/pages/onboarding/index' }));
+      return;
+    }
     setPurchaseMode(mode);
     setSelectedService(svc);
   };
