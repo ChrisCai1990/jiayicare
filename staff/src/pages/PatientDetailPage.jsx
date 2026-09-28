@@ -3600,13 +3600,37 @@ export default function PatientDetailPage() {
     }
     // 每次打开审核弹窗都重新拉取归类目录，确保管理后端新增/修改的分类实时生效
     staffAPI.getScreeningCatalog().then(res => setScreeningCatalog(res.data || [])).catch(() => {})
+    let currentMedications = medications
+    if (latestReport.documentCategory === 'prescription_order') {
+      try {
+        const medicationRes = await staffAPI.getPatientMedications(id)
+        currentMedications = medicationRes.data || []
+        setMedications(currentMedications)
+      } catch {}
+    }
+    const medicationKey = value => String(value || '').toLowerCase().replace(/[\s（）()【】\[\]·、，,.-]/g, '')
+    const splitPrescriptionName = item => {
+      const rawName = String(item.genericName || item.name || '').trim()
+      const brandName = String(item.brandName || '').trim()
+      if (brandName) return { genericName: rawName, brandName }
+      const bracket = rawName.match(/^(.+?)[（(]([^（）()]+)[）)]/)
+      return bracket ? { genericName: bracket[1].trim(), brandName: bracket[2].trim() } : { genericName: rawName, brandName: '' }
+    }
+    const matchCurrentMedication = (genericName, brandName) => currentMedications.find(med => {
+      const candidates = [med.name, med.brandName].map(medicationKey).filter(Boolean)
+      return [genericName, brandName].map(medicationKey).filter(Boolean).some(value => candidates.includes(value))
+    })
     // 旧数据迁移：只有明确标记为 imaging 的旧记录才把 value 搬到 findings。
     // 不能用“内容长度 > 40”猜类型，否则用户只是打开并保存，字段内容也会被改写。
     const items = JSON.parse(JSON.stringify(latestReport.reportItems || []))
       .filter(it => it.name && String(it.name).trim())
       .map(it => {
         // 旧处方曾借用 lab 类型；打开审核时即迁移为独立药品类型，保存后持久化。
-        if (latestReport.documentCategory === 'prescription_order') return { ...it, itemType: 'medication' }
+        if (latestReport.documentCategory === 'prescription_order') {
+          const names = splitPrescriptionName(it)
+          const matched = it.medicationId ? currentMedications.find(med => String(med._id) === String(it.medicationId)) : matchCurrentMedication(names.genericName, names.brandName)
+          return { ...it, ...names, name: names.genericName, itemType: 'medication', medicationId: matched?._id ? String(matched._id) : '' }
+        }
         const isImg = it.itemType === 'imaging'
         if (isImg && !it.findings && it.value) return { ...it, findings: it.value, value: '' }
         return it
@@ -12189,11 +12213,20 @@ export default function PatientDetailPage() {
                                 </button>
                               </div>
                               <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
-                                <div style={{ flex: 2 }}>
+                                {isPrescription ? <>
+                                  <div style={{ flex: 1.35 }}>
+                                    <div style={{ fontSize: 10, color: '#8AA89C', marginBottom: 2 }}>化学名 / 通用名</div>
+                                    <input style={{ ...inp, fontWeight: 600, width: '100%' }} value={it.genericName || it.name || ''} placeholder="如：匹维溴铵片" onChange={e => updItem(i, { genericName: e.target.value, name: e.target.value })} />
+                                  </div>
+                                  <div style={{ flex: 1 }}>
+                                    <div style={{ fontSize: 10, color: '#8AA89C', marginBottom: 2 }}>商品名</div>
+                                    <input style={{ ...inp, width: '100%' }} value={it.brandName || ''} placeholder="原件未写可留空" onChange={e => updItem(i, { brandName: e.target.value })} />
+                                  </div>
+                                </> : <div style={{ flex: 2 }}>
                                   {isImaging(it) && <div style={{ fontSize: 10, color: '#8AA89C', marginBottom: 2 }}>原报告项目</div>}
-                                  <input style={{ ...inp, fontWeight: 600, width: '100%' }} value={it.name || ''} placeholder={isPrescription ? '药品名称' : '项目名称'} onChange={e => updItem(i, { name: e.target.value })} />
+                                  <input style={{ ...inp, fontWeight: 600, width: '100%' }} value={it.name || ''} placeholder="项目名称" onChange={e => updItem(i, { name: e.target.value })} />
                                   {reportNameCorrection(it) && <button type="button" className="btn btn-secondary btn-sm" onClick={() => updItem(i, reportNameCorrection(it))}>名称改为“{it.sourceSection}”，原文保留至检查结果</button>}
-                                </div>
+                                </div>}
                                 {isImaging(it) ? (
                                   <div style={{ width: 110 }}>
                                     <div style={{ fontSize: 10, color: '#8AA89C', marginBottom: 2 }}>检查部位</div>
@@ -12222,6 +12255,17 @@ export default function PatientDetailPage() {
                               <label style={{ display: 'block', fontSize: 10, color: '#6B7E75', marginBottom: 6 }}>{isPrescription ? '处方开具日期（仅原件明确归属时填写）' : '项目检查日期（仅原件明确归属时填写）'}
                                 <input type="date" style={{ ...inp, width: 160, marginLeft: 8 }} value={String(it.examDate || '').slice(0, 10)} onChange={e => updItem(i, { examDate: e.target.value })} />
                               </label>
+                              {isPrescription && <label style={{ display: 'block', fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 6 }}>匹配当前用药信息
+                                <select style={{ ...inp, width: '100%', marginTop: 4 }} value={it.medicationId || ''} onChange={e => {
+                                  const matched = medications.find(med => String(med._id) === e.target.value)
+                                  updItem(i, matched
+                                    ? { medicationId: String(matched._id), genericName: matched.name || it.genericName || it.name || '', brandName: matched.brandName || it.brandName || '', name: matched.name || it.name || '' }
+                                    : { medicationId: '' })
+                                }}>
+                                  <option value="">未匹配当前用药（保留本次处方原文）</option>
+                                  {medications.map(med => <option key={med._id} value={med._id}>{med.name}{med.brandName ? `（${med.brandName}）` : ''}{med.specification ? ` · ${med.specification}` : ''}</option>)}
+                                </select>
+                              </label>}
                               {isImaging(it) && <>
                                 <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, margin: '2px 0' }}>检查结果（原报告同行内容）</div>
                                 <textarea style={{ ...inp, minHeight: 58, lineHeight: 1.6, resize: 'vertical', marginBottom: 6 }} value={it.findings || ''} placeholder="该项目对应的完整原文结果" onChange={e => updItem(i, { findings: e.target.value })} />
