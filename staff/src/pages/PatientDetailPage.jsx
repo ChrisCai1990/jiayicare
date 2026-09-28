@@ -8902,40 +8902,45 @@ export default function PatientDetailPage() {
                   <span className="card-title" style={{ color: '#0077B6' }}>用药信息待核对·需健康顾问确认资料一致性</span>
                   <span style={{ background: '#0077B615', color: '#0077B6', fontSize: 11, fontWeight: 700, borderRadius: 99, padding: '1px 8px' }}>{pendingMeds.length}</span>
                 </div>
-                <table className="table" style={{ marginBottom: 0 }}>
-                  <thead><tr><th>药品名称</th><th>剂量</th><th>用法/频次</th><th>服用目的</th><th>附件</th><th>录入人</th><th>操作</th></tr></thead>
-                  <tbody>
-                    {pendingMeds.map(m => (
-                      <tr key={m._id} style={{ background: '#F5FBFF' }}>
-                        <td style={{ fontWeight: 600 }}>{m.name}{m.brandName ? <span style={{ fontSize: 11, color: '#8AA89C', marginLeft: 4 }}>({m.brandName})</span> : ''}</td>
-                        <td>{m.dosage}</td>
-                        <td style={{ fontSize: 12 }}>{m.method} · {m.frequency}{m.timing ? ` · ${m.timing}` : ''}</td>
-                        <td style={{ fontSize: 12, color: '#4A6558' }}>{m.purpose || '-'}</td>
-                        <td><RecordImageAttachments imageUrls={m.imageUrls} onPreview={setPreviewImageUrl} /></td>
-                        <td style={{ fontSize: 12, color: '#8AA89C' }}>{m.createdByName || '-'}</td>
-                        <td>
+                <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {pendingMeds.map(m => (
+                    <div key={m._id} style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, .9fr) minmax(360px, 1.35fr)', border: '1px solid #CFE7F5', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
+                      <div style={{ padding: 14, background: '#F5FBFF', borderRight: '1px solid #CFE7F5' }}>
+                        <div style={{ fontWeight: 700, color: '#0077B6', marginBottom: 8 }}>处方依据</div>
+                        <div style={{ fontSize: 12, color: '#4A6558', marginBottom: 10 }}>原始处方附件（点击可放大核对）</div>
+                        <RecordImageAttachments imageUrls={m.imageUrls} onPreview={setPreviewImageUrl} />
+                        <div style={{ fontSize: 12, color: '#6F8D80', marginTop: 12 }}>录入来源：{m.createdByName || m.aiGeneratedBy || '处方审核'}</div>
+                        {m.note && <div style={{ fontSize: 12, color: '#4A6558', marginTop: 6 }}>处方说明：{m.note}</div>}
+                      </div>
+                      <div style={{ padding: 14 }}>
+                        <div style={{ fontWeight: 700, color: '#176B52', marginBottom: 10 }}>拟入当前用药</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '10px 20px', fontSize: 13 }}>
+                          <div><span style={{ color: '#7A9588' }}>化学名：</span><strong>{m.name || '-'}</strong></div>
+                          <div><span style={{ color: '#7A9588' }}>商品名：</span>{m.brandName || '-'}</div>
+                          <div><span style={{ color: '#7A9588' }}>规格：</span>{m.specification || '-'}</div>
+                          <div><span style={{ color: '#7A9588' }}>剂量：</span>{m.dosage || '-'}</div>
+                          <div><span style={{ color: '#7A9588' }}>用法/频次：</span>{[m.method, m.frequency, m.timing].filter(Boolean).join(' · ') || '-'}</div>
+                          <div><span style={{ color: '#7A9588' }}>开始日期：</span>{m.startDate || '-'}</div>
+                          <div style={{ gridColumn: '1 / -1' }}><span style={{ color: '#7A9588' }}>服用目的：</span>{m.purpose || '-'}</div>
+                        </div>
+                        <div style={{ borderTop: '1px solid #E5EFEA', marginTop: 14, paddingTop: 12 }}>
                           {canApproveMed ? (
-                            <div style={{ display: 'flex', gap: 6 }}>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                               <button className="btn btn-sm" style={{ background: '#0077B6', color: '#fff' }} onClick={() => reviewMedication(m._id, 'approve')}>确认一致</button>
                               <button className="btn btn-secondary btn-sm" onClick={() => {
                                 setMedForm({ name: m.name, brandName: m.brandName || '', specification: m.specification || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: m.startDate || '', endDate: m.endDate || '', purpose: m.purpose || '', note: m.note || '', imageUrls: m.imageUrls || [] })
                                 setEditingMed(m._id); setShowMedModal(true)
-                              }}>编辑</button>
-                              <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
-                                onClick={() => { if (window.confirm('确认退回并删除这条待核对记录？')) reviewMedication(m._id, 'reject') }}>退回订正</button>
+                              }}>编辑后确认</button>
+                              <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }} onClick={() => { if (window.confirm('确认退回并删除这条待核对记录？')) reviewMedication(m._id, 'reject') }}>退回订正</button>
                             </div>
                           ) : (staff?._id && String(m.staffId) === String(staff._id)) ? (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <span style={{ fontSize: 12, color: '#8AA89C' }}>等待健康顾问核对信息</span>
-                              <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
-                                onClick={() => { if (window.confirm('确认撤回这条你提交的待核对记录？')) reviewMedication(m._id, 'withdraw') }}>撤回</button>
-                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ fontSize: 12, color: '#8AA89C' }}>等待健康顾问核对信息</span><button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }} onClick={() => { if (window.confirm('确认撤回这条你提交的待核对记录？')) reviewMedication(m._id, 'withdraw') }}>撤回</button></div>
                           ) : <span style={{ fontSize: 12, color: '#8AA89C' }}>等待健康顾问核对信息</span>}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
