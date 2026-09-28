@@ -666,7 +666,10 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
       || (task.sourceType === 'order' && /^(medical_proxy|medication_proxy|checkup_appointment):/.test(String(task.workflowKey || '')) && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'insurance_service' && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'annual_service' && ['executor', 'supervisor'].includes(task.taskRole))
-      || (['professional_assessment', 'report_followup'].includes(task.sourceType) && ['executor', 'supervisor'].includes(task.taskRole))
+      || (task.sourceType === 'professional_assessment' && ['executor', 'supervisor'].includes(task.taskRole))
+      // 报告随访草稿审核属于 AI 审核队列，而不是已进入服务执行的流程任务；
+      // 否则它会与同一报告的“待解读”项分散展示，造成重复处理的错觉。
+      || (task.sourceType === 'report_followup' && task.workflowKey !== 'report_followup:advisor_review' && ['executor', 'supervisor'].includes(task.taskRole))
       || (task.sourceType === 'scheduled' && (task.tags || []).includes('保险服务'))
       || (require('../utils/healthManagementRollout').enabledForPatient(task.patientId?._id || task.patientId) && require('../../../shared/annualServiceItem.cjs').needsBooking(task));
     if (!isServiceTask) return false;
@@ -12234,6 +12237,29 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           summary: `${r.title} · 健管专员已审核，请查看并向客户解读`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${r.user?._id}?tab=reports&reportId=${r._id}`,
+        });
+      });
+    }
+
+    // 报告 AI 随访草稿和报告解读同属健康顾问的审核阶段，统一进入 AI 审核队列。
+    // 该任务过去显示在“服务流程任务”中，会让同一报告看起来有两条待办。
+    if (isSuper || role === 'familyDoctor') {
+      const reportFollowUpFilter = {
+        sourceType: 'report_followup', workflowKey: 'report_followup:advisor_review',
+        status: { $in: ['planned', 'in_progress', 'missed'] },
+        ...(isSuper ? {} : { assignedTo: req.staff._id }),
+      };
+      const reportFollowUpReviews = await FollowUp.find(reportFollowUpFilter)
+        .populate('patientId', 'name').sort({ createdAt: -1 }).limit(50).lean();
+      reportFollowUpReviews.forEach(task => {
+        if (!inMyScope(task.patientId?._id)) return;
+        const createdAt = task.createdAt || now;
+        todos.push({
+          id: 'reportfollowup_' + task._id, type: 'report_followup_review', label: '报告随访草稿待审核', priority: 2,
+          patientName: task.patientId?.name || '未知', patientId: String(task.patientId?._id || ''),
+          summary: `${task.theme || '报告随访'} · 请核对 AI 草稿后确认是否派发后续随访`,
+          createdAt, overdue: (now - new Date(createdAt)) > DAY,
+          link: `/patients/${task.patientId?._id}/annual-health#report-followup-drafts`,
         });
       });
     }

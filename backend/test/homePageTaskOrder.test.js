@@ -24,6 +24,16 @@ test('workbench labels distinguish service execution from AI review', () => {
   assert.match(aiTodos, /会转入上方服务流程/)
 })
 
+test('report follow-up draft review is shown only in the AI review queue', () => {
+  const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8')
+  const serviceTasks = route.slice(route.indexOf("router.get('/service-tasks'"), route.indexOf('// ── GET /api/staff/patients'))
+  const aiTodosRoute = route.slice(route.indexOf("router.get('/ai-todos'"), route.indexOf("router.patch('/service-proposals"))
+  assert.match(serviceTasks, /task\.workflowKey !== 'report_followup:advisor_review'/)
+  assert.match(aiTodosRoute, /type: 'report_followup_review'/)
+  assert.match(aiTodosRoute, /报告随访草稿待审核/)
+  assert.match(aiTodos, /report_followup_review/)
+})
+
 test('follow-up counters and list exclude service executor, supervisor and insurance work items', () => {
   const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8')
   const reports = route.slice(route.indexOf("router.get('/reports'"), route.indexOf("router.get('/staff-list'"))
