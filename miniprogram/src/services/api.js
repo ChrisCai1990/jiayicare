@@ -343,8 +343,8 @@ export const servicesAPI = {
   claimProductShare: (token) => request(`/services/product-shares/${token}/claim`, { method: 'POST' }),
   list: () => request('/services'),
   packages: () => request('/services/packages'),
-  order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken = '', desiredServiceDate = '', serviceRequirements = '') =>
-    request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken, desiredServiceDate, serviceRequirements }) }),
+  order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken = '', desiredServiceDate = '', serviceRequirements = '', expectedAmount) =>
+    request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken, desiredServiceDate, serviceRequirements, expectedAmount }) }),
   inquire: (serviceId, note, specificationLabel) =>
     request('/services/inquiries', { method: 'POST', body: JSON.stringify({ serviceId, note, specificationLabel }) }),
   coupons: () => request('/services/coupons'),

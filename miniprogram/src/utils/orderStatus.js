@@ -8,6 +8,7 @@ export const ORDER_TABS = [
 ];
 
 export function getOrderCategory(order = {}) {
+  if (order.tradeStatus === 'closed' || order.status === 'cancelled') return 'all';
   if (['refund_pending', 'partially_refunded', 'refunded'].includes(order.tradeStatus)
     || ['requested', 'processing', 'refunded', 'rejected'].includes(order.refundStatus)) return 'afterSale';
   if (order.tradeStatus === 'awaiting_payment') return 'payment';

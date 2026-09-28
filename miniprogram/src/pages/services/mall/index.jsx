@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, Textarea, ScrollView, Image, Input, Button, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
-import { servicesAPI, authAPI, userAPI, mediaUrl } from '../../../services/api';
+import { servicesAPI, authAPI, userAPI, paymentsAPI, mediaUrl } from '../../../services/api';
 import { useAuth } from '../../../context/AuthContext';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
@@ -154,6 +154,8 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
   const [payMethod, setPayMethod] = useState('wechat_pay');
   const [serviceAgreed, setServiceAgreed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const pendingOrderRef = useRef(null);
   const [submitted, setSubmitted] = useState(false);
   const [errMsg, setErrMsg] = useState('');
   const hasSpecs = !!(item?.servicePrices && item.servicePrices.length > 0);
@@ -205,9 +207,11 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
   const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundApplied) * 100) / 100);
 
   const handleSubmit = async () => {
+    if (submittingRef.current) return;
     if (requiresServiceDetails && !desiredServiceDate) { setErrMsg('请选择期望服务时间'); return; }
     if (requiresServiceDetails && !serviceRequirements.trim()) { setErrMsg('请填写具体服务需求'); return; }
     if (!serviceAgreed) { setErrMsg('请先阅读并同意《健康管理服务说明》'); return; }
+    submittingRef.current = true;
     setSubmitting(true); setErrMsg('');
     try {
       // Always refresh the payer OpenID from the current WeChat session before
@@ -234,13 +238,23 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
         updateUser(boundUser);
       }
       const noteWithSpec = [currentSpecLabel ? `规格：${currentSpecLabel}（¥${currentPrice}）` : '', note.trim()].filter(Boolean).join('；');
+      const checkoutKey = JSON.stringify([currentSpecLabel, couponId, fundApplied, finalPrice, desiredServiceDate, serviceRequirements.trim(), note.trim()]);
+      if (isPay && pendingOrderRef.current && pendingOrderRef.current.key !== checkoutKey) {
+        throw new Error('已有待支付订单；如需修改，请先到“我的订单”取消原订单后重新购买');
+      }
       const res = isPay
-        ? await servicesAPI.order(item.id, noteWithSpec, payMethod, fundApplied, couponId, currentSpecLabel || undefined, shareToken, desiredServiceDate, serviceRequirements.trim())
+        ? (pendingOrderRef.current
+          ? await paymentsAPI.retry(pendingOrderRef.current.id)
+          : await servicesAPI.order(item.id, noteWithSpec, payMethod, fundApplied, couponId, currentSpecLabel || undefined, shareToken, desiredServiceDate, serviceRequirements.trim(), finalPrice))
         : await servicesAPI.inquire(item.id, note.trim(), currentSpecLabel || undefined);
       if (res.success) {
+        const orderId = res.data?.orderId || res.data?.order?._id || pendingOrderRef.current?.id;
+        if (isPay && orderId) pendingOrderRef.current = { id: orderId, key: checkoutKey };
         if (res.data?.paymentParams) {
           await requestWechatPayment(res.data.paymentParams);
-          await waitForPayment(res.data.orderId);
+          await waitForPayment(orderId);
+        } else if (isPay && !res.data?.alreadyPaid && res.data?.paymentStatus !== 'paid') {
+          throw new Error('付款结果待确认，请稍后在“我的订单”查看');
         }
         setSubmitted(true);
       }
@@ -248,6 +262,7 @@ function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
     } catch (e) {
       setErrMsg(e.message || '网络错误，请检查连接后重试');
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };

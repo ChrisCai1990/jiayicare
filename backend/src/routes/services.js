@@ -274,7 +274,7 @@ router.post('/order', auth, async (req, res) => {
       name: product.name,
       // 商城展示和后台日常改价都以“收费项目”servicePrices 为准；SKU
       // 只补充次数、有效期等履约信息，不能用残留旧价覆盖页面显示价。
-      price: selectedPrice ? selectedPrice.price : (selectedSku ? selectedSku.price : product.originalPrice),
+      price: selectedPrice ? selectedPrice.price : product.originalPrice,
       specificationLabel: selectedSku?.label || selectedPrice?.label || '',
       skuCode: selectedSku?.code || '',
       skuTotalUnits: selectedSku?.totalUnits || 0,
@@ -420,6 +420,13 @@ router.post('/order', auth, async (req, res) => {
   }
 
   const paidAmount = Math.max(0, Math.round((priceAfterCoupon - fundUsed) * 100) / 100);
+
+  // Check the amount the customer actually confirmed before reserving stock or creating an order.
+  if (req.body.expectedAmount != null && (!Number.isFinite(Number(req.body.expectedAmount))
+    || Math.round(Number(req.body.expectedAmount) * 100) !== Math.round(paidAmount * 100))) {
+    return res.status(409).json({ success: false, code: 'CHECKOUT_QUOTE_CHANGED',
+      message: `结算金额已变化，当前应付¥${paidAmount.toFixed(2)}，请返回商城刷新并重新确认` });
+  }
 
   // 真实服务统一使用普通微信小程序支付。最终入账只接受微信回调或服务端主动查单，
   // 绝不以客户端 requestPayment 的 success 回调直接确认已支付。
@@ -607,6 +614,7 @@ router.post('/order', auth, async (req, res) => {
       status: 'created',
       amount: paidAmount,
       outTradeNo,
+      payerOpenid: req.user.wechatMpOpenid,
     });
     try {
       const prepay = await wechatPay.createJsapiPayment({

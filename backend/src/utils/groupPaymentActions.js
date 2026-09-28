@@ -6,12 +6,12 @@ const { paymentOrderQuery, paymentAllocations } = require('./checkoutAmounts');
 
 async function withGroupLock(order, work) {
   const token = crypto.randomBytes(16).toString('hex');
-  const claimed = await Order.findOneAndUpdate({ _id: order.checkoutGroupId, user: order.user,
+  const claimed = await Order.findOneAndUpdate({ _id: order.checkoutGroupId || order._id, user: order.user,
     $or: [{ checkoutActionLockUntil: null }, { checkoutActionLockUntil: { $lt: new Date() } }],
   }, { $set: { checkoutActionLockUntil: new Date(Date.now() + 120000), checkoutActionLockToken: token } }, { new: true });
   if (!claimed) throw new Error('合并订单正在处理，请稍后刷新');
   try { return await work(); }
-  finally { await Order.updateOne({ _id: order.checkoutGroupId, checkoutActionLockToken: token }, { $set: { checkoutActionLockUntil: null, checkoutActionLockToken: '' } }); }
+  finally { await Order.updateOne({ _id: order.checkoutGroupId || order._id, checkoutActionLockToken: token }, { $set: { checkoutActionLockUntil: null, checkoutActionLockToken: '' } }); }
 }
 
 async function recoverIfPaid(payment) {

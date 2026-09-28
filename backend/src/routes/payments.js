@@ -103,66 +103,79 @@ router.get('/:orderId/status', auth, async (req, res) => {
 });
 
 router.post('/:orderId/retry', auth, async (req, res) => {
-  const order = await Order.findOne({ _id: req.params.orderId, user: req.user._id });
+  let order = await Order.findOne({ _id: req.params.orderId, user: req.user._id });
   if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
   if (order.checkoutGroupId) {
     try { return res.json({ success: true, data: await require('../utils/groupPaymentActions').retryGroupPayment(order, req.user) }); }
     catch (error) { return res.status(409).json({ success: false, message: error.message }); }
   }
-  if (order.paymentStatus === 'paid') return res.json({ success: true, data: { order, alreadyPaid: true } });
-  if (['closed', 'refunded'].includes(order.tradeStatus)) return res.status(409).json({ success: false, message: '订单已关闭，不能继续支付' });
-  const payment = await Payment.findOne({ ...paymentOrderQuery(order._id), status: { $in: ['processing', 'succeeded', 'created'] }, channel: 'wechat_pay' }).sort({ createdAt: -1 });
-  if (payment?.status === 'succeeded') {
-    const paidOrder = await confirmPayment({ outTradeNo: payment.outTradeNo, transactionId: payment.transactionId, paidAt: payment.paidAt, snapshot: { source: 'retry_recovery', tradeState: 'SUCCESS' } });
-    return res.json({ success: true, data: { order: paidOrder, alreadyPaid: true } });
-  }
-  if (!payment || (!payment.prepayId && !payment.allocations?.length)) return res.status(409).json({ success: false, message: '原支付单已失效，请取消订单后重新下单' });
-  try {
-    const remote = await wechatPay.queryOrder(payment.outTradeNo);
-    if (remote.trade_state === 'SUCCESS') {
-      const paidOrder = await confirmPayment({ outTradeNo: payment.outTradeNo, transactionId: remote.transaction_id, paidAt: remote.success_time ? new Date(remote.success_time) : new Date(), snapshot: { source: 'retry_query', tradeState: remote.trade_state } });
+  try { return await require('../utils/groupPaymentActions').withGroupLock(order, async () => {
+    order = await Order.findById(order._id);
+    if (order.paymentStatus === 'paid') return res.json({ success: true, data: { order, alreadyPaid: true } });
+    if (['closed', 'refunded'].includes(order.tradeStatus)) return res.status(409).json({ success: false, message: '订单已关闭，不能继续支付' });
+    const payment = await Payment.findOne({ ...paymentOrderQuery(order._id), channel: 'wechat_pay' }).sort({ createdAt: -1 });
+    if (payment?.status === 'succeeded') {
+      const paidOrder = await confirmPayment({ outTradeNo: payment.outTradeNo, transactionId: payment.transactionId, paidAt: payment.paidAt, snapshot: { source: 'retry_recovery', tradeState: 'SUCCESS' } });
       return res.json({ success: true, data: { order: paidOrder, alreadyPaid: true } });
     }
-  } catch (err) { console.error('[wechat-pay-retry-query]', err.message); }
-  if (!req.user.wechatMpOpenid) return res.status(400).json({ success: false, message: '请先绑定当前微信身份后再支付' });
+    if (!payment) return res.status(409).json({ success: false, message: '原支付单已失效，请取消订单后重新下单' });
+    let remoteState;
+    try {
+      const remote = await wechatPay.queryOrder(payment.outTradeNo);
+      remoteState = remote.trade_state;
+      if (remote.trade_state === 'SUCCESS') {
+        const paidOrder = await confirmPayment({ outTradeNo: payment.outTradeNo, transactionId: remote.transaction_id, paidAt: remote.success_time ? new Date(remote.success_time) : new Date(), snapshot: { source: 'retry_query', tradeState: remote.trade_state } });
+        return res.json({ success: true, data: { order: paidOrder, alreadyPaid: true } });
+      }
+    } catch (err) {
+      if (err.code !== 'ORDER_NOT_EXIST') return res.status(409).json({ success: false, message: '微信付款状态暂时无法确认，请稍后重试' });
+      remoteState = 'NOT_FOUND';
+    }
+    if (!req.user.wechatMpOpenid) return res.status(400).json({ success: false, message: '请先绑定当前微信身份后再支付' });
+    if (remoteState === 'USERPAYING') return res.status(409).json({ success: false, message: '微信正在确认付款，请稍后刷新订单' });
+    if (remoteState === 'NOTPAY' && payment.prepayId && payment.payerOpenid === req.user.wechatMpOpenid
+      && Date.now() - new Date(payment.createdAt).getTime() < 90 * 60 * 1000) {
+      return res.json({ success: true, data: { order, paymentParams: wechatPay.buildClientParams(payment.prepayId) } });
+    }
 
-  // A prepay_id is tied to the payer OpenID used when it was created. Reusing
-  // an earlier prepay after the member refreshes their WeChat binding triggers
-  // “下单账号与支付账号不一致”. Close it and create a fresh payment for the
-  // current WeChat session instead.
-  try { await wechatPay.closeOrder(payment.outTradeNo); } catch (err) {
-    console.warn('[wechat-pay-retry-close]', err.message);
-    // Creating another merchant payment when closing the old one is uncertain
-    // can charge the same group twice. ORDER_NOT_EXIST is safe to replace.
-    if (err.code !== 'ORDER_NOT_EXIST') return res.status(409).json({ success: false, message: '原付款状态待确认，请稍后刷新订单再试' });
-  }
-  payment.status = 'closed';
-  payment.closedAt = new Date();
-  await payment.save();
+    // A prepay_id is tied to the payer OpenID used when it was created. Reusing
+    // an earlier prepay after the member refreshes their WeChat binding triggers
+    // “下单账号与支付账号不一致”. Close it and create a fresh payment for the
+    // current WeChat session instead.
+    try { if (!['CLOSED', 'REVOKED', 'NOT_FOUND'].includes(remoteState)) await wechatPay.closeOrder(payment.outTradeNo); } catch (err) {
+      console.warn('[wechat-pay-retry-close]', err.message);
+      // Creating another merchant payment when closing the old one is uncertain
+      // can charge the same group twice. ORDER_NOT_EXIST is safe to replace.
+      if (err.code !== 'ORDER_NOT_EXIST') return res.status(409).json({ success: false, message: '原付款状态待确认，请稍后刷新订单再试' });
+    }
+    payment.status = 'closed';
+    payment.closedAt = new Date();
+    await payment.save();
 
-  const outTradeNo = `JY${Date.now()}${order._id.toString().slice(-8)}`.slice(0, 32);
-  const amount = Number(order.paymentExpectedAmount || payment.amount || 0);
-  const nextPayment = await Payment.create({
-    order: order._id, user: req.user._id, channel: 'wechat_pay', status: 'created', amount, outTradeNo,
-  });
-  try {
-    const prepay = await wechatPay.createJsapiPayment({
-      description: order.serviceName || '健康管理服务', outTradeNo, amount,
-      openid: req.user.wechatMpOpenid, attach: order._id.toString(),
+    const outTradeNo = `JY${Date.now()}${order._id.toString().slice(-8)}`.slice(0, 32);
+    const amount = Number(order.paymentExpectedAmount ?? payment.amount);
+    const nextPayment = await Payment.create({
+      order: order._id, user: req.user._id, channel: 'wechat_pay', status: 'created', amount, outTradeNo, payerOpenid: req.user.wechatMpOpenid,
     });
-    nextPayment.prepayId = prepay.prepayId;
-    nextPayment.status = 'processing';
-    await nextPayment.save();
-    order.paymentId = nextPayment._id;
-    order.paymentOutTradeNo = outTradeNo;
-    await order.save();
-    return res.json({ success: true, data: { order, paymentParams: prepay.client } });
-  } catch (err) {
-    nextPayment.status = 'failed';
-    nextPayment.failureMessage = err.message;
-    await nextPayment.save();
-    return res.status(503).json({ success: false, message: `重新发起微信支付失败：${err.message}` });
-  }
+    try {
+      const prepay = await wechatPay.createJsapiPayment({
+        description: order.serviceName || '健康管理服务', outTradeNo, amount,
+        openid: req.user.wechatMpOpenid, attach: order._id.toString(),
+      });
+      nextPayment.prepayId = prepay.prepayId;
+      nextPayment.status = 'processing';
+      await nextPayment.save();
+      order.paymentId = nextPayment._id;
+      order.paymentOutTradeNo = outTradeNo;
+      await order.save();
+      return res.json({ success: true, data: { order, paymentParams: prepay.client } });
+    } catch (err) {
+      nextPayment.status = 'processing';
+      nextPayment.failureMessage = err.message;
+      await nextPayment.save();
+      return res.status(503).json({ success: false, message: `重新发起微信支付失败：${err.message}` });
+    }
+  }); } catch (error) { return res.status(409).json({ success: false, message: error.message }); }
 });
 
 module.exports = router;

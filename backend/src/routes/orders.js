@@ -107,7 +107,7 @@ router.patch('/:id/service-details', auth, async (req, res) => {
 // 取消订单（仅限 pending 状态）
 router.patch('/:id/cancel', auth, async (req, res) => {
   try {
-    const order = await Order.findOne({ _id: req.params.id, user: req.user._id });
+    let order = await Order.findOne({ _id: req.params.id, user: req.user._id });
     if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
     if (order.status !== 'pending') {
       return res.status(400).json({ success: false, message: '该订单状态不可取消' });
@@ -119,57 +119,61 @@ router.patch('/:id/cancel', auth, async (req, res) => {
       try { return res.json(await require('../utils/groupPaymentActions').cancelGroupPayment(order)); }
       catch (error) { return res.status(409).json({ success: false, message: error.message }); }
     }
-    const payment = await Payment.findOne({ ...require('../utils/checkoutAmounts').paymentOrderQuery(order._id), status: { $in: ['created', 'processing', 'succeeded'] } }).sort({ createdAt: -1 });
-    if (payment?.status === 'succeeded') {
-      await require('../utils/orderSettlement').confirmPayment({
-        outTradeNo: payment.outTradeNo, transactionId: payment.transactionId, paidAt: payment.paidAt,
-        snapshot: { source: 'cancel_guard', tradeState: 'SUCCESS' },
-      });
-      return res.status(409).json({ success: false, message: '微信已确认支付成功，不能取消；如不需要服务请申请退款' });
-    }
-    if (payment) {
-      try {
-        const remote = await wechatPay.queryOrder(payment.outTradeNo);
-        if (remote.trade_state === 'SUCCESS') {
-          await require('../utils/orderSettlement').confirmPayment({ outTradeNo: payment.outTradeNo, transactionId: remote.transaction_id, paidAt: remote.success_time ? new Date(remote.success_time) : new Date(), snapshot: { source: 'cancel_query', tradeState: remote.trade_state } });
-          return res.status(409).json({ success: false, message: '微信已确认支付成功，不能取消；如不需要服务请申请退款' });
-        }
-      } catch (err) { console.error('[cancel-payment-query]', err.message); }
-      try {
-        await wechatPay.closeOrder(payment.outTradeNo);
-      } catch (err) {
-        console.error('[close-payment]', err.message);
+    return await require('../utils/groupPaymentActions').withGroupLock(order, async () => {
+      order = await Order.findById(order._id);
+      if (order.paymentStatus === 'paid' || order.status !== 'pending') return res.status(409).json({ success: false, message: '订单状态已变化，请刷新后重试' });
+      const payment = await Payment.findOne({ ...require('../utils/checkoutAmounts').paymentOrderQuery(order._id), status: { $in: ['created', 'processing', 'succeeded'] } }).sort({ createdAt: -1 });
+      if (payment?.status === 'succeeded') {
+        await require('../utils/orderSettlement').confirmPayment({
+          outTradeNo: payment.outTradeNo, transactionId: payment.transactionId, paidAt: payment.paidAt,
+          snapshot: { source: 'cancel_guard', tradeState: 'SUCCESS' },
+        });
+        return res.status(409).json({ success: false, message: '微信已确认支付成功，不能取消；如不需要服务请申请退款' });
+      }
+      if (payment) {
         try {
           const remote = await wechatPay.queryOrder(payment.outTradeNo);
           if (remote.trade_state === 'SUCCESS') {
-            await require('../utils/orderSettlement').confirmPayment({ outTradeNo: payment.outTradeNo, transactionId: remote.transaction_id, paidAt: remote.success_time ? new Date(remote.success_time) : new Date(), snapshot: { source: 'cancel_recheck', tradeState: remote.trade_state } });
+            await require('../utils/orderSettlement').confirmPayment({ outTradeNo: payment.outTradeNo, transactionId: remote.transaction_id, paidAt: remote.success_time ? new Date(remote.success_time) : new Date(), snapshot: { source: 'cancel_query', tradeState: remote.trade_state } });
             return res.status(409).json({ success: false, message: '微信已确认支付成功，不能取消；如不需要服务请申请退款' });
           }
-        } catch (queryErr) { console.error('[cancel-payment-recheck]', queryErr.message); }
-        return res.status(409).json({ success: false, message: '支付状态正在确认，暂不能取消，请稍后刷新订单' });
+        } catch (err) { console.error('[cancel-payment-query]', err.message); }
+        try {
+          await wechatPay.closeOrder(payment.outTradeNo);
+        } catch (err) {
+          console.error('[close-payment]', err.message);
+          try {
+            const remote = await wechatPay.queryOrder(payment.outTradeNo);
+            if (remote.trade_state === 'SUCCESS') {
+              await require('../utils/orderSettlement').confirmPayment({ outTradeNo: payment.outTradeNo, transactionId: remote.transaction_id, paidAt: remote.success_time ? new Date(remote.success_time) : new Date(), snapshot: { source: 'cancel_recheck', tradeState: remote.trade_state } });
+              return res.status(409).json({ success: false, message: '微信已确认支付成功，不能取消；如不需要服务请申请退款' });
+            }
+          } catch (queryErr) { console.error('[cancel-payment-recheck]', queryErr.message); }
+          return res.status(409).json({ success: false, message: '支付状态正在确认，暂不能取消，请稍后刷新订单' });
+        }
+        payment.status = 'closed'; payment.closedAt = new Date(); await payment.save();
       }
-      payment.status = 'closed'; payment.closedAt = new Date(); await payment.save();
-    }
-    order.status = 'cancelled';
-    order.tradeStatus = 'closed';
-    await order.save();
-    await require('../utils/orderInventory').releaseOrderInventory(order);
-    await require('../utils/healthFundPayment').reverseHealthFund({ order, remark: `订单${order.serviceName}取消返还` });
-    if (order.couponId) {
-      const Coupon = require('../models/Coupon');
-      await Coupon.updateOne(
-        { _id: order.couponId, usedOrderId: order._id, status: 'used' },
-        { status: 'active', usedAt: null, usedOrderId: null },
+      order.status = 'cancelled';
+      order.tradeStatus = 'closed';
+      await order.save();
+      await require('../utils/orderInventory').releaseOrderInventory(order);
+      await require('../utils/healthFundPayment').reverseHealthFund({ order, remark: `订单${order.serviceName}取消返还` });
+      if (order.couponId) {
+        const Coupon = require('../models/Coupon');
+        await Coupon.updateOne(
+          { _id: order.couponId, usedOrderId: order._id, status: 'used' },
+          { status: 'active', usedAt: null, usedOrderId: null },
+        );
+      }
+      await refundOrderPoints(order); // 若下单时预记过消费积分，取消订单要退回
+      // 联动取消该订单生成的随访待办（sourceType='order'），此前只改订单状态，随访记录仍是 planned，
+      // 导致用户端"待办任务"和医护端工作台永久残留一条订单已取消却还在等安排的僵尸待办
+      await FollowUp.updateMany(
+        { sourceOrderId: order._id, status: { $nin: ['completed', 'cancelled'] } },
+        { $set: { status: 'cancelled', cancelReason: '订单已取消' } }
       );
-    }
-    await refundOrderPoints(order); // 若下单时预记过消费积分，取消订单要退回
-    // 联动取消该订单生成的随访待办（sourceType='order'），此前只改订单状态，随访记录仍是 planned，
-    // 导致用户端"待办任务"和医护端工作台永久残留一条订单已取消却还在等安排的僵尸待办
-    await FollowUp.updateMany(
-      { sourceOrderId: order._id, status: { $nin: ['completed', 'cancelled'] } },
-      { $set: { status: 'cancelled', cancelReason: '订单已取消' } }
-    );
-    res.json({ success: true, message: '订单已取消', data: order });
+      res.json({ success: true, message: '订单已取消', data: order });
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: '取消失败', error: err.message });
   }

@@ -38,7 +38,7 @@ function checkout(result, overrides = {}) {
   const end = source.indexOf('\n  if (paid)', start);
   const events = [];
   const ctx = { checkedIds: ['product-1'], msg: { _id: 'push-1' }, fundApplied: 0, couponId: null, payMethod: 'wechat',
-    payingRef: { current: false }, pendingOrderId: '', finalPrice: 6800, setCheckoutQuote: value => events.push(['quote', value]), setPendingOrderId: () => {},
+    payingRef: { current: false }, paymentActivityRef: { current: false }, pendingOrderId: '', finalPrice: 6800, setCheckoutQuote: value => events.push(['quote', value]), setPendingOrderId: () => {},
     setPaying: value => events.push(['paying', value]), setPayError: value => events.push(['error', value]), setPaid: value => events.push(['paid', value]),
     pushRecordsAPI: { pay: async (id, params) => { events.push(['create', params.paymentCapability]); return result; } },
     requestWechatPayment: async () => { events.push(['cashier']); }, waitForPayment: async () => { events.push(['confirmed']); }, ...overrides };

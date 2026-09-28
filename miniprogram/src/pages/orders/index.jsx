@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { View, Text } from '@tarojs/components';
 import Taro, { useDidShow, useRouter } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
@@ -37,6 +37,7 @@ export default function OrdersPage() {
   const router = useRouter();
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
+  const payingRef = useRef(false);
   const initialTab = ORDER_TABS.some((tab) => tab.key === router.params?.tab) ? router.params.tab : 'all';
   const [activeTab, setActiveTab] = useState(initialTab);
 
@@ -79,6 +80,8 @@ export default function OrdersPage() {
   };
 
   const continuePayment = async (id) => {
+    if (payingRef.current) return;
+    payingRef.current = true;
     try {
       const bound = await authAPI.bindWechat();
       if (!bound.success) throw new Error(bound.message || '微信身份绑定失败');
@@ -98,6 +101,9 @@ export default function OrdersPage() {
       load();
     } catch (err) {
       Taro.showToast({ title: err.message || '支付失败', icon: 'none' });
+    } finally {
+      payingRef.current = false;
+      load();
     }
   };
 

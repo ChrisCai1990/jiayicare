@@ -14,6 +14,7 @@ const paymentSchema = new mongoose.Schema({
   currency: { type: String, default: 'CNY' },
   outTradeNo: { type: String, required: true, unique: true, index: true },
   prepayId: { type: String, default: '' },
+  payerOpenid: { type: String, default: '' },
   transactionId: { type: String, default: '', index: true },
   failureCode: { type: String, default: '' },
   failureMessage: { type: String, default: '' },

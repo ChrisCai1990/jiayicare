@@ -136,6 +136,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
   const [showNotif, setShowNotif] = useState(false);
   const [notifTab, setNotifTab] = useState('全部');
   const [detailMsg, setDetailMsg] = useState(null);
+  const paymentActivityRef = useRef(false);
   const [pendingQuestionnaireIds, setPendingQuestionnaireIds] = useState(new Set());
   const [pendingQuestionnaireAssignmentIds, setPendingQuestionnaireAssignmentIds] = useState(new Set());
   const listPollRef = useRef(null);
@@ -187,7 +188,10 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
       if (!listLoadingRef.current) loadMessages();
     }, 5000);
   });
-  useDidHide(() => { clearInterval(listPollRef.current); listPollRef.current = null; });
+  useDidHide(() => {
+    clearInterval(listPollRef.current); listPollRef.current = null;
+    if (!paymentActivityRef.current) { setShowNotif(false); setDetailMsg(null); }
+  });
   useEffect(() => () => clearInterval(listPollRef.current), []);
   useEffect(() => { if (refreshKey) loadMessages(); }, [refreshKey, loadMessages]);
 
@@ -226,6 +230,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
   });
 
   const openNotifications = async (tab) => {
+    setDetailMsg(null);
     setNotifTab(tab);
     setShowNotif(true);
     // 进入通知分类即视为已经查看该分类；待填问卷必须提交后才消除，因此不在这里清除。
@@ -346,13 +351,13 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
           setTab={openNotifications}
           loadError={loadError}
           onRetry={loadMessages}
-          onClose={() => setShowNotif(false)}
+          onClose={() => { setShowNotif(false); setDetailMsg(null); }}
           onPress={(m) => { setShowNotif(false); markReadAndOpenDetail(m); }}
         />
       )}
 
       {detailMsg && (
-        <MessageDetailModal msg={detailMsg} onClose={() => setDetailMsg(null)} />
+        <MessageDetailModal key={detailMsg._id} msg={detailMsg} paymentActivityRef={paymentActivityRef} onClose={() => { setDetailMsg(null); setShowNotif(true); }} />
       )}
     </View>
   );
@@ -416,9 +421,9 @@ function NotifModal({ messages, tab, setTab, onClose, onPress, loadError, onRetr
   );
 }
 
-function MessageDetailModal({ msg, onClose }) {
+function MessageDetailModal({ msg, onClose, paymentActivityRef }) {
   if (msg.type === 'product') {
-    return <ProductPushDetail msg={msg} onClose={onClose} />;
+    return <ProductPushDetail msg={msg} onClose={onClose} paymentActivityRef={paymentActivityRef} />;
   }
   const conf = NOTIF_TYPE_CONFIG[msg.type] || { icon: '💬', color: colors.primary };
   const openQuestionnaire = () => {
@@ -460,7 +465,7 @@ function MessageDetailModal({ msg, onClose }) {
 
 const RENEWAL_PAYMENT_METHODS = [{ key: 'wechat', label: '微信支付' }];
 
-function ProductPushDetail({ msg, onClose }) {
+function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false } }) {
   const { user, updateUser } = useAuth();
   const productList = (msg.products && msg.products.length > 0)
     ? msg.products
@@ -512,6 +517,7 @@ function ProductPushDetail({ msg, onClose }) {
     if (!checkedIds.length || payingRef.current) return;
     if (pendingOrderId) { Taro.navigateTo({ url: '/pages/orders/index?tab=payment' }); return; }
     payingRef.current = true;
+    paymentActivityRef.current = true;
     setPaying(true); setPayError('');
     try {
       const result = await pushRecordsAPI.pay(msg._id, { selectedProductIds: checkedIds, useHealthFund: fundApplied, couponId, paymentMethod: payMethod, paymentCapability: 'wechat_jsapi_v1', expectedAmount: finalPrice });
@@ -530,6 +536,7 @@ function ProductPushDetail({ msg, onClose }) {
       setPayError(e.message || '下单失败，请稍后重试');
     } finally {
       payingRef.current = false;
+      paymentActivityRef.current = false;
       setPaying(false);
     }
   };
