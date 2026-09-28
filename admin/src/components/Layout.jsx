@@ -39,8 +39,8 @@ const NAV_SECTIONS = [
       { label: '部门管理', icon: 'department', path: '/settings/departments' },
       { label: '角色管理', icon: 'role', path: '/settings/roles' },
       { label: '员工管理', icon: 'staff', path: '/settings/employees' },
-      { label: '医疗资源库', icon: 'medical', path: '/settings/medical-resources' },
-      { label: '就医资源知识库', icon: 'medical', path: '/settings/medical-resource-knowledge' },
+      { label: '就医协助知识库', icon: 'medical', path: '/settings/medical-resource-knowledge' },
+      { label: '医院 / 科室 / 专家档案', icon: 'medical', path: '/settings/medical-resources' },
       { label: '会员设置', icon: 'member', path: '/settings/members' },
       { label: '健康评分配置', icon: 'score', path: '/settings/scoring' },
       { label: 'AI 每日关怀', icon: 'care', path: '/settings/daily-care' },
@@ -83,7 +83,7 @@ const NAV_GROUPS = {
   },
   '基础设置': {
     '组织与人员': ['/settings/company', '/settings/departments', '/settings/roles', '/settings/employees'],
-    '会员与医疗资源': ['/settings/medical-resources', '/settings/members', '/settings/scoring'],
+    '会员与医疗资源': ['/settings/medical-resource-knowledge', '/settings/medical-resources', '/settings/members', '/settings/scoring'],
     '智能与服务流程': ['/settings/daily-care', '/settings/health-assistant', '/settings/ai-usage', '/settings/supply-workflow', '/settings/service-workflow-alignment', '/settings/review-experience'],
   },
   '项目设置': {
