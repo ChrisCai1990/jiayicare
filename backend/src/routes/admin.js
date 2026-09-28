@@ -44,6 +44,7 @@ const Commission    = require('../models/Commission');
 const PushRecord    = require('../models/PushRecord');
 const FollowUp      = require('../models/FollowUp');
 const adminAuth = require('../middleware/adminAuth');
+const { entryCode } = require('../utils/wechatMiniProgramCode');
 const router = express.Router();
 
 // ── 图片上传（multer） ───────────────────────────────────────────
@@ -63,6 +64,24 @@ const upload = multer({
     if (/^image\//.test(file.mimetype) || file.mimetype === 'application/pdf') cb(null, true);
     else cb(new Error('仅支持图片（JPG/PNG/HEIC 等）或 PDF 文件'));
   },
+});
+
+// 仅管理员可生成渠道专属小程序码。码只携带固定来源，不含客户身份或健康资料。
+router.get('/mini-program/entry-codes/:source', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅超级管理员可生成小程序码' });
+  try {
+    const result = await entryCode(req.params.source);
+    res.set({
+      'Content-Type': 'image/png',
+      'Content-Disposition': `attachment; filename="jiaycare-${result.source}.png"`,
+      'Cache-Control': 'no-store',
+      'X-Jiaycare-Entry-Source': encodeURIComponent(result.label),
+    });
+    res.send(result.image);
+  } catch (error) {
+    const message = error.message || '生成小程序码失败';
+    res.status(/不支持|仅超级管理员/.test(message) ? 400 : 502).json({ success: false, message });
+  }
 });
 
 // ── 显式初始化管理员账号（仅创建，不在启动时重置密码） ──────────
