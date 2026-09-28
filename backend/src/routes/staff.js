@@ -172,6 +172,13 @@ function withSignedHealthRecord(record) {
   return withSafeHealthRecordImages(record, signStoredUrl);
 }
 
+// 用药/营养素附件同样存储在私有 OSS；列表必须返回短时签名链接，不能把原始对象地址交给浏览器。
+function withSignedRecordAttachments(record) {
+  const obj = record.toObject ? record.toObject() : { ...record };
+  obj.imageUrls = (obj.imageUrls || []).map(url => signStoredUrl(url));
+  return obj;
+}
+
 function withSignedMessageMedia(message) {
   const obj = message.toObject ? message.toObject() : { ...message };
   const urls = obj.imageUrls?.length ? obj.imageUrls : (obj.imageUrl ? [obj.imageUrl] : []);
@@ -8650,8 +8657,8 @@ router.put('/patients/:id/supply-reminders/:kind/:recordId', staffAuth, checkPer
 
 router.get('/patients/:id/medications', staffAuth, async (req, res) => {
   try {
-    const meds = await Medication.find({ user: req.params.id }).sort({ createdAt: -1 });
-    res.json({ success: true, data: meds });
+    const meds = await Medication.find({ user: req.params.id }).sort({ createdAt: -1 }).lean();
+    res.json({ success: true, data: meds.map(withSignedRecordAttachments) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -8792,8 +8799,8 @@ router.delete('/patients/:id/medications/:medId', staffAuth, async (req, res) =>
 // 停用后从列表消失、跟真删除没区别——医护端无法找回来查看或恢复。改为返回全部，前端按 stopped 标注状态。
 router.get('/patients/:id/supplements', staffAuth, async (req, res) => {
   try {
-    const sups = await Supplement.find({ user: req.params.id }).sort({ createdAt: -1 });
-    res.json({ success: true, data: sups });
+    const sups = await Supplement.find({ user: req.params.id }).sort({ createdAt: -1 }).lean();
+    res.json({ success: true, data: sups.map(withSignedRecordAttachments) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
