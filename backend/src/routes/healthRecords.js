@@ -339,7 +339,8 @@ router.post('/', auth, async (req, res) => {
       require('../utils/annualPlanMonitoringReminders').syncServiceCycleMonitoringReminders(req.user._id).catch(() => {});
     }
 
-    res.status(201).json({ success: true, data: record, message: '记录成功' });
+    const feedback = await require('../utils/metabolicPilot').feedbackAfterSave(req.user, record);
+    res.status(201).json({ success: true, data: record, feedback, message: '记录成功' });
   } catch (err) {
     if (err.code === 11000) return res.status(409).json({ success: false, message: '这张图片已经提交过，请在健康记录中查看' });
     res.status(500).json({ success: false, message: '保存记录失败', error: err.message });
@@ -373,7 +374,8 @@ router.put('/:id', auth, async (req, res) => {
       require('../utils/annualPlanMonitoringReminders').syncServiceCycleMonitoringReminders(req.user._id).catch(() => {});
     }
 
-    res.json({ success: true, data: record, message: '修改成功' });
+    const feedback = await require('../utils/metabolicPilot').feedbackAfterSave(req.user, record);
+    res.json({ success: true, data: record, feedback, message: '修改成功' });
   } catch (err) {
     res.status(500).json({ success: false, message: '修改失败', error: err.message });
   }

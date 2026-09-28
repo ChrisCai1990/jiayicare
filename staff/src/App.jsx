@@ -42,6 +42,7 @@ import AnnualMgmtPlanPage from './pages/AnnualMgmtPlanPage'
 import MonthlyServiceReviewPage from './pages/MonthlyServiceReviewPage'
 import PlanModulesPage from './pages/PlanModulesPage'
 import DailyCheckinPage from './pages/DailyCheckinPage'
+import MetabolicPilotPage from './pages/MetabolicPilotPage'
 import ForcePasswordChangePage from './pages/ForcePasswordChangePage'
 import ServiceAssistantPage from './pages/ServiceAssistantPage'
 import ContentReviewsPage from './pages/ContentReviewsPage'
@@ -69,6 +70,7 @@ export const ROUTE_MODULE = {
   '/team': 'team',
   '/operations': 'operations',
   '/daily-checkin': 'daily_checkin',
+  '/metabolic-pilot': 'daily_checkin',
 }
 
 // 判断某员工是否有权访问某模块（view 权限）。
@@ -207,6 +209,7 @@ export default function App() {
               <Route path="marketing" element={<MarketingPage />} />
               <Route path="visitor-leads" element={<VisitorLeadsPage />} />
               <Route path="daily-checkin" element={<DailyCheckinPage />} />
+              <Route path="metabolic-pilot" element={<MetabolicPilotPage />} />
               <Route path="content-reviews" element={<ContentReviewHistoryPage />} />
               <Route path="content-reviews/:id" element={<ContentReviewsPage />} />
             </Route>

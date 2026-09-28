@@ -25,6 +25,7 @@ import HealthPlanTemplatePage from './pages/HealthPlanTemplatePage'
 import AiCaseReviewTemplatePage from './pages/AiCaseReviewTemplatePage'
 import AnnualPlanPage from './pages/AnnualPlanPage'
 import Layout from './components/Layout'
+import MetabolicPilotPage from './pages/MetabolicPilotPage'
 
 // 基本设置
 import CompanyInfoPage    from './pages/settings/CompanyInfoPage'
@@ -133,6 +134,7 @@ export default function App() {
               <Route path="ops-dashboard" element={<OpsDashboardPage />} />
               <Route path="care-quality" element={<CareQualityPage />} />
               <Route path="research-care-journeys" element={<ResearchCareJourneysPage />} />
+              <Route path="metabolic-pilot" element={<MetabolicPilotPage />} />
               <Route path="health-plan-templates" element={<HealthPlanTemplatePage />} />
               <Route path="ai-case-review-templates" element={<AiCaseReviewTemplatePage />} />
 

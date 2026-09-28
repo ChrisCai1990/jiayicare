@@ -47,6 +47,12 @@ async function reqRoot(path, opts = {}) {
   return data
 }
 
+export const metabolicPilotAPI = {
+  get: () => reqRoot('/metabolic-pilot/admin'),
+  config: data => reqRoot('/metabolic-pilot/admin/config', {method:'PUT',body:JSON.stringify(data)}),
+  invite: data => reqRoot('/metabolic-pilot/admin/invite', {method:'POST',body:JSON.stringify(data)}),
+  access: (id,action) => reqRoot(`/metabolic-pilot/admin/${id}`, {method:'PATCH',body:JSON.stringify({action})}),
+}
 export const adminAPI = {
   researchJourneys: (year) => req(`/research-care-journeys/journeys?${new URLSearchParams(year ? { year } : {})}`),
   enrollResearchJourney: data => req('/research-care-journeys/journeys', { method: 'POST', body: JSON.stringify(data) }),

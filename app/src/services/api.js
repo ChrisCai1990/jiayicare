@@ -74,6 +74,10 @@ async function request(path, options = {}) {
   }
 }
 
+export const metabolicPilotAPI = {
+  get: () => request('/metabolic-pilot/me'),
+  action: data => request('/metabolic-pilot/me', {method:'POST',body:JSON.stringify(data)}),
+};
 // ── Auth ─────────────────────────────────────────────────────────
 export const authAPI = {
   sendCode: (phone) =>

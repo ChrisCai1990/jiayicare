@@ -106,7 +106,12 @@ export default function AddRecordPage() {
 
     setSaving(true);
     try {
-      await recordsAPI.create(payload);
+      const result = await recordsAPI.create(payload);
+      if (result.feedback) {
+        await Taro.showModal({title:result.feedback.title,content:result.feedback.text + (result.feedback.action ? '\n\n可以尝试：' + result.feedback.action.text : ''),showCancel:false,confirmText:'知道了'});
+        Taro.navigateBack();
+        return;
+      }
       Taro.showToast({ title: '保存成功', icon: 'success' });
       setTimeout(() => Taro.navigateBack(), 800);
     } catch (err) {
