@@ -136,6 +136,19 @@ const normalizeRiskTagValues = values => [...new Set((Array.isArray(values) ? va
   .map(value => value.trim())
   .filter(Boolean))]
 
+// 年度小结的每个专项以“专项名：内容”开头。旧版数据会把影像报告内部的多行
+// 编号原样保存；这些续行没有专项标题，应继续归属到上一个专项，不能被渲染为
+// 新的编号卡片。
+const screeningSummaryDisplayLines = summary => String(summary || '')
+  .split(/\r?\n+/)
+  .map(line => line.trim())
+  .filter(Boolean)
+  .reduce((lines, line) => {
+    if (/^[^：:]+[：:]/.test(line) || !lines.length) lines.push(line)
+    else lines[lines.length - 1] = `${lines[lines.length - 1]} ${line}`
+    return lines
+  }, [])
+
 function HealthPortraitOverview({ user, reports = [] }) {
   const [expandedGroups, setExpandedGroups] = useState({})
   const profile = user.healthProfile || {}
@@ -6268,7 +6281,7 @@ export default function PatientDetailPage() {
                                   [key]: { ...(prev[key] || {}), summary: e.target.value },
                                 }))} />
                             ) : <div style={{ marginTop: 12, padding: '2px 4px', fontSize: 14, color: '#4A6558', lineHeight: 1.85 }}>
-                              {(sections[key]?.summary || '暂无相关资料').split(/\n+/).map(v => v.trim()).filter(Boolean).map((line, i) => {
+                              {screeningSummaryDisplayLines(sections[key]?.summary || '暂无相关资料').map((line, i) => {
                                 const matched = line.match(/^([^：:]+)[：:]\s*(.*)$/)
                                 return <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
                                   <span style={{ flexShrink: 0, width: 20, height: 20, borderRadius: '50%', background: '#1E6B50', color: '#fff', fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>{i + 1}</span>

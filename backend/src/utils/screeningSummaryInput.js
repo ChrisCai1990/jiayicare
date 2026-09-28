@@ -134,7 +134,12 @@ function ensureLpla2InCardiovascularSummary(summary, groups) {
 function conclusionTextForItem(item) {
   const name = String(item?.name || '').trim();
   const value = String(item?.value || '').trim();
-  const conclusion = String(item?.conclusion || '').trim();
+  // 一份影像检查的主要结论常以多行编号列出。年度小结以“每个专项一行”作为
+  // 展示契约，不能把内部换行透传出去，否则前端会把同一检查的后续编号误当作
+  // 独立专项。用分号保留各条所见之间的边界。
+  const conclusion = String(item?.conclusion || '')
+    .replace(/\s*\r?\n+\s*/g, '；')
+    .trim();
   if (item?.itemType === 'imaging' && conclusion) {
     return name && !conclusion.includes(name) ? `${name}：${conclusion}` : conclusion;
   }
