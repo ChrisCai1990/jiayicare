@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { buildCatalog } from './build-catalog.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -68,12 +69,12 @@ function renderArticle(article, previewLabel) {
     : `
         <li>${escapeHtml(source.name)}</li>`).join('');
   const label = previewLabel ? '<p class="draft-notice">内部预览：本页尚未公开发布。</p>' : '';
-  const reviewMeta = previewLabel ? '' : '<p class="review-meta">内容已完成专业审核</p>';
+  const reviewMeta = previewLabel ? '' : `<p class="review-meta">内容已完成专业审核 · 审核日期：${escapeHtml(article.reviewedAt)} · <a href="../editorial-policy.html">审核与更新原则</a></p>`;
   const stylesheetPath = previewLabel ? '../../styles.css' : '../styles.css';
   const canonicalUrl = `${siteUrl.replace(/\/$/, '')}/guides/${article.slug}.html`;
   const structuredData = previewLabel ? '' : `\n  <link rel="canonical" href="${canonicalUrl}">\n  <script type="application/ld+json">${JSON.stringify({
     '@context': 'https://schema.org', '@type': 'Article', headline: article.title,
-    description: article.summary, dateModified: article.updatedAt, inLanguage: 'zh-CN',
+    description: article.summary, datePublished: article.reviewedAt || article.updatedAt, dateModified: article.updatedAt, inLanguage: 'zh-CN',
     author: { '@type': 'Organization', name: '嘉医汇健康知识中心' },
     publisher: { '@type': 'Organization', name: '杭州嘉医汇健康管理有限公司', url: `${siteUrl.replace(/\/$/, '')}/` },
     mainEntityOfPage: canonicalUrl
@@ -90,7 +91,7 @@ function renderArticle(article, previewLabel) {
 </head>
 <body>
   <main class="article-shell">
-    <a class="back-link" href="../index.html">← 返回健康知识中心</a>
+    <nav class="article-navigation" aria-label="页面导航"><a href="https://www.jiaycare.com/">嘉医汇官网</a><a href="https://www.jiaycare.com/services/">服务体系</a><a class="back-link" href="../index.html">← 返回理解健康</a></nav>
     <article>
       ${label ? `${label}\n      ` : ''}<p class="eyebrow">健康教育 · 更新于 ${escapeHtml(article.updatedAt)}</p>
       <h1>${escapeHtml(article.title)}</h1>
@@ -145,6 +146,8 @@ if (!isPreview) {
   fs.writeFileSync(feedPath, feed, 'utf8');
 }
 
+const catalogPages = isPreview ? [] : buildCatalog(siteDirectory, siteUrl).filter(page => page !== 'index.html');
+
 const staticGuides = isPublish && fs.existsSync(path.join(siteDirectory, 'guides'))
   ? fs.readdirSync(path.join(siteDirectory, 'guides'))
       .filter((file) => file.endsWith('.html') && !eligible.some((article) => `${article.slug}.html` === file))
@@ -152,7 +155,7 @@ const staticGuides = isPublish && fs.existsSync(path.join(siteDirectory, 'guides
   : [];
 const generatedGuides = eligible.map((article) => `guides/${article.slug}.html`);
 const staticPages = ['index.html', 'start-here.html', 'ai-consultation.html', 'service-guide.html', 'faq.html', 'editorial-policy.html', 'privacy-policy.html'];
-const urls = isPreview ? generatedGuides : [...staticPages, ...staticGuides, ...generatedGuides];
+const urls = isPreview ? generatedGuides : [...staticPages, ...catalogPages, ...staticGuides, ...generatedGuides];
 const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((url) => {
   const resolvedUrl = url === 'index.html' ? '' : url;
   const article = eligible.find((item) => `guides/${item.slug}.html` === url);

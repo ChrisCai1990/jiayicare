@@ -23,7 +23,7 @@ const robots = read('robots.txt');
 const sitemap = read('sitemap.xml');
 const privacyPage = path.join(siteDirectory, 'privacy-policy.html');
 
-if (!indexPage.includes('嘉医汇健康知识中心')) blockers.push('首页缺少知识中心标题。');
+if (!indexPage.includes('嘉医汇健康知识中心') && !indexPage.includes('理解健康')) blockers.push('首页缺少知识中心标题。');
 if (!indexPage.includes('start-here.html') || !consultationPage.includes('tel:19106761448')) {
   blockers.push('咨询承接页或客服电话入口配置不完整。');
 }
