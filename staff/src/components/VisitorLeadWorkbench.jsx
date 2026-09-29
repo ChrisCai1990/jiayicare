@@ -18,6 +18,7 @@ export default function VisitorLeadWorkbench({ toast }) {
   const [edit, setEdit] = useState(null), [form, setForm] = useState({}), [busy, setBusy] = useState(false)
   const [patients, setPatients] = useState([]), [search, setSearch] = useState(''), [options, setOptions] = useState({ orders: [], plans: [] })
   const [modalError, setModalError] = useState(''), [searching, setSearching] = useState(false)
+  const [manualCustomer, setManualCustomer] = useState(false), [matchHint, setMatchHint] = useState('')
   const generation = useRef(0), submitting = useRef(false), dialogVersion = useRef(0)
   async function load() {
     const ticket = ++generation.current; setLoading(true); setError('')
@@ -32,8 +33,24 @@ export default function VisitorLeadWorkbench({ toast }) {
   function closeDialog() { if (submitting.current) return; dialogVersion.current++; setEdit(null) }
   async function open(row, action) {
     const version = ++dialogVersion.current
-    setEdit({ row, action }); setModalError(''); setPatients([]); setSearch(''); setSearching(false); setOptions({ orders: [], plans: [] })
+    setEdit({ row, action }); setModalError(''); setPatients([]); setSearch(row.phone || ''); setManualCustomer(false); setMatchHint(''); setSearching(false); setOptions({ orders: [], plans: [] })
     setForm({ note: '', need: row.summary || row.topic || '', serviceDirection: '', patientId: '', customerConfirmed: false, nextContactAt: nextDay(), orderId: '', planId: '' })
+    if (action === 'convert') {
+      setSearching(true); setMatchHint('正在按联系电话查找已有客户…')
+      try {
+        const r = await staffAPI.matchVisitorLeadCustomer(row._id)
+        if (version !== dialogVersion.current) return
+        const matches = r.data || []; setPatients(matches)
+        if (matches.length === 1) {
+          setForm(prev => ({ ...prev, patientId: matches[0]._id, customerConfirmed: false }))
+          setMatchHint('已按联系电话找到已有客户，请核对后确认。')
+        } else {
+          setManualCustomer(true)
+          setMatchHint(matches.length ? '找到多个客户，请核对并选择本次服务对象。' : '未找到可关联的同手机号客户，可手动查找已有档案。')
+        }
+      } catch (e) { if (version === dialogVersion.current) { setManualCustomer(true); setMatchHint('自动查找失败，请手动搜索。'); setModalError(e.message) } }
+      finally { if (version === dialogVersion.current) setSearching(false) }
+    }
     if (action === 'link') {
       setSearching(true)
       try { const r = await staffAPI.getServiceIntakeOptions(row._id); if (version === dialogVersion.current) setOptions(r.data) }
@@ -44,12 +61,13 @@ export default function VisitorLeadWorkbench({ toast }) {
   async function searchPatients() {
     if (!search.trim() || searching) return
     const version = dialogVersion.current; setSearching(true); setModalError('')
-    try { const r = await staffAPI.getPatients({ search: search.trim(), limit: 20 }); if (version === dialogVersion.current) setPatients(r.data?.patients || []) }
+    try { const r = await staffAPI.getPatients({ search: search.trim(), limit: 20 }); if (version === dialogVersion.current) { setPatients(r.data?.patients || []); setForm(prev => ({ ...prev, patientId: '', customerConfirmed: false })); setMatchHint(r.data?.patients?.length ? '请选择已核实的客户。' : '未找到可关联客户，请核对搜索条件。') } }
     catch (e) { if (version === dialogVersion.current) setModalError(e.message) }
     finally { if (version === dialogVersion.current) setSearching(false) }
   }
   async function save(event) {
-    event.preventDefault(); if (submitting.current) return
+    event.preventDefault(); if (submitting.current || searching) return
+    if (edit.action === 'convert' && (!form.patientId || !form.customerConfirmed)) { setModalError('请核对客户并勾选确认后保存'); return }
     submitting.current = true; setBusy(true); setModalError('')
     try {
       const { row, action } = edit
@@ -136,9 +154,20 @@ export default function VisitorLeadWorkbench({ toast }) {
       <form onSubmit={save}><div className="modal-header"><h3>{edit.action === 'contacted' ? '记录联系结果' : '服务承接'}</h3><button type="button" className="btn btn-secondary" disabled={busy} onClick={closeDialog}>关闭</button></div>
       <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
         {edit.action === 'convert' && <>
-          <label>搜索已有客户（姓名或手机号）<div style={{ display: 'flex', gap: 8 }}><input className="form-control" value={search} onChange={e => setSearch(e.target.value)} /><button type="button" className="btn btn-secondary" disabled={searching} onClick={searchPatients}>搜索</button></div></label>
-          <label>客户<select required className="form-control" value={form.patientId} onChange={field('patientId')}><option value="">请选择已核实身份的客户</option>{patients.map(p => <option key={p._id} value={p._id}>{p.name} · {p.phone}</option>)}</select></label>
-          <p>没有客户档案时，请先通过现有建档流程完成授权与建档，再回到此处关联。</p>
+          <section className="consultation-content">
+            <h4>关联已有客户</h4>
+            <p className="consultation-caption">本次咨询：{edit.row.name} · {edit.row.phone}</p>
+            <p role="status" className="consultation-caption">{matchHint}</p>
+            {!manualCustomer && form.patientId && <>
+              <p><strong>{patients.find(p => p._id === form.patientId)?.name}</strong> · {patients.find(p => p._id === form.patientId)?.phone}</p>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setManualCustomer(true); setForm(v => ({ ...v, patientId: '', customerConfirmed: false })) }}>更换客户</button>
+            </>}
+            {manualCustomer && <>
+              <label>查找已有客户<div style={{ display: 'flex', gap: 8, marginTop: 8 }}><input aria-label="查找已有客户" className="form-control" style={{ minWidth: 0 }} value={search} onChange={e => setSearch(e.target.value)} placeholder="姓名或手机号" /><button type="button" className="btn btn-secondary" style={{ flexShrink: 0, whiteSpace: 'nowrap' }} disabled={searching} onClick={searchPatients}>搜索</button></div></label>
+              <label>选择客户<select required className="form-control" value={form.patientId} onChange={e => { setForm(v => ({ ...v, patientId: e.target.value, customerConfirmed: false })) }}><option value="">请选择已核实身份的客户</option>{patients.map(p => <option key={p._id} value={p._id}>{p.name} · {p.phone}</option>)}</select></label>
+              <p className="consultation-caption">仅正式承接服务时需要关联档案；只记录联系结果无需建档。新客户可在完成建档后返回关联。</p>
+            </>}
+          </section>
           <label>服务方向<select required className="form-control" value={form.serviceDirection} onChange={field('serviceDirection')}><option value="">请选择</option>{Object.entries(directions).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
           <label>确认后的服务需求<textarea required maxLength={1000} className="form-control" value={form.need} onChange={field('need')} /></label>
           <label><input required type="checkbox" checked={form.customerConfirmed} onChange={e => setForm(v => ({ ...v, customerConfirmed: e.target.checked }))} /> 已向客户核实身份，并确认可关联本次服务需求</label>

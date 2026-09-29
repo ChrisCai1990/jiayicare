@@ -419,6 +419,7 @@ export const staffAPI = {
   getConsultationTodos: () => req('/staff/marketing/visitor-leads/workbench'),
   getVisitorLeads:   (p={}) => req('/staff/marketing/visitor-leads?' + qs(p)),
   updateVisitorLead: (id,d) => req(`/staff/marketing/visitor-leads/${id}`, { method: 'PATCH', body: JSON.stringify(d) }),
+  matchVisitorLeadCustomer: id => req(`/staff/marketing/visitor-leads/${id}/customer-match`),
   convertVisitorLead: (id,d) => req(`/staff/marketing/visitor-leads/${id}/convert`, { method: 'POST', body: JSON.stringify(d) }),
   getServiceIntakes: (p={}) => req('/staff/marketing/service-intakes?' + qs(p)),
   getServiceIntakeOptions: id => req(`/staff/marketing/service-intakes/${id}/options`),

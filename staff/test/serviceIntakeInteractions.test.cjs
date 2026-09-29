@@ -98,3 +98,44 @@ test('website summary and chronological contact records remain separate with exp
     assert.ok(sections[1].textContent.indexOf('客户暂不需要') < sections[1].textContent.indexOf('电话确认'));
   } finally { await view.close() }
 });
+
+
+for (const count of [0, 1, 2]) test(`customer matching with ${count} results avoids duplicate entry and requires confirmation`, async () => {
+  const row={_id:'lead',name:'咨询客户',phone:'19900000000',status:'contacted'};
+  const matches=Array.from({length:count},(_,i)=>({_id:'p'+i,name:'已有客户'+i,phone:row.phone}));
+  let submitted=false;
+  const View=load('components/VisitorLeadWorkbench.jsx',{'../api':{staffAPI:{
+    getVisitorLeads:async()=>({data:[row],total:1,limit:50}),
+    matchVisitorLeadCustomer:async id=>{assert.equal(id,'lead');return {data:matches}},
+    convertVisitorLead:async()=>{submitted=true},
+  }}}).default;
+  const view=await mount(React.createElement(MemoryRouter,null,React.createElement(View,{toast:()=>{}})));
+  try {
+    await click(view.container,'确认客户与服务需求');
+    const dialog=view.container.querySelector('[role=dialog]');
+    assert.equal(!!dialog.querySelector('input[aria-label="查找已有客户"]'),count!==1);
+    assert.equal(dialog.querySelector('input[type=checkbox]').checked,false);
+    await act(async()=>dialog.querySelector('form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})));
+    assert.equal(submitted,false);
+    if(count===1) {
+      assert.match(dialog.textContent,/已有客户0/);
+      await click(dialog,'更换客户');
+      assert.equal(dialog.querySelector('select').value,'');
+    }
+  } finally {await view.close()}
+});
+
+test('late customer match cannot overwrite a newly opened contact dialog', async () => {
+  let resolve;
+  const row={_id:'lead',name:'咨询客户',phone:'19900000000',status:'contacted'};
+  const View=load('components/VisitorLeadWorkbench.jsx',{'../api':{staffAPI:{getVisitorLeads:async()=>({data:[row],total:1,limit:50}),matchVisitorLeadCustomer:()=>new Promise(r=>{resolve=r})}}}).default;
+  const view=await mount(React.createElement(MemoryRouter,null,React.createElement(View,{toast:()=>{}})));
+  try {
+    await click(view.container,'确认客户与服务需求');
+    await click(view.container.querySelector('[role=dialog]'),'关闭');
+    await click(view.container,'追加联系记录');
+    await act(async()=>resolve({data:[{_id:'late',name:'迟到客户',phone:row.phone}]}));
+    assert.doesNotMatch(view.container.querySelector('[role=dialog]').textContent,/迟到客户/);
+    assert.equal(view.container.querySelector('button[type=submit]').disabled,false);
+  } finally {await view.close()}
+});

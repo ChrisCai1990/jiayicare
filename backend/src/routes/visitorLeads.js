@@ -72,6 +72,14 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
     res.json({ success: true, data: rows.map(row => ({ ...row, intakeId: linked.has(id(row)) ? row._id : null,
       responseDueAt: responseDueAt(row.createdAt), overdue: row.status === 'new' && +responseDueAt(row.createdAt) < Date.now() })), total, page, limit });
   }));
+  router.get('/visitor-leads/:id/customer-match', checkPermission('leads', 'view'), wrap(async (req, res) => {
+    const row = await lead(req);
+    const visible = await getVisiblePlanPatientIds(req.staff);
+    const rows = row.phone ? await User.find({ ...scope(req), phone: row.phone, isDeleted: { $ne: true },
+      ...(visible ? { _id: { $in: visible } } : {}),
+    }).select('_id name phone').lean() : [];
+    res.json({ success: true, data: rows });
+  }));
   router.patch('/visitor-leads/:id', checkPermission('leads', 'edit'), wrap(async (req, res) => {
     const row = await lead(req), status = req.body.status;
     if (row.acceptance) fail('线索已进入服务承接，请在承接记录中继续跟进', 409);

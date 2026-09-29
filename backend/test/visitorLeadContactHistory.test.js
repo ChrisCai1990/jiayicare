@@ -32,3 +32,19 @@ test('contact history preserves legacy content and original contact time when cl
   assert.equal(contacted.body.$set.contactedAt, contacted.body.$set.contactEvents[3].at);
   await assert.rejects(update(row, 'contacted', '冲突提交', true), /刚刚发生变化/);
 });
+
+
+test('automatic customer match uses exact phone and retains tenant, visibility and archive filters', async () => {
+  const start=source.indexOf("    const row = await lead(req);",source.indexOf("'/visitor-leads/:id/customer-match'"));
+  const end=source.indexOf("  }));",start);
+  let filter, output;
+  await vm.runInNewContext(`(async () => { ${source.slice(start,end)} })()`,{
+    req:{staff:{_id:'planner'}}, lead:async()=>({phone:'19900000000'}),
+    getVisiblePlanPatientIds:async()=>['allowed'], scope:()=>({tenantId:'tenant'}),
+    User:{find:value=>{filter=value;return {select:()=>({lean:async()=>[]})}}},
+    res:{json:value=>{output=value}},
+  });
+  assert.equal(filter.phone,'19900000000');assert.equal(filter.tenantId,'tenant');
+  assert.equal(filter._id.$in[0],'allowed');assert.equal(filter.isDeleted.$ne,true);
+  assert.equal(output.data.length,0);
+});
