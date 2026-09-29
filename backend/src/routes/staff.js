@@ -1861,7 +1861,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
       .populate('sourceHealthPlanId', 'title description content type status')
       .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard workflowStageKey')
       .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
-      .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt orderNo initiationSource serviceWorkflowSnapshot supplementFulfillment medicalProxyPlan medicalReminderIntake'),
+      .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt orderNo initiationSource serviceWorkflowSnapshot supplementFulfillment medicalProxyPlan medicalReminderIntake handledBy fulfillmentType fulfillmentStatus'),
     FollowUp.countDocuments(filter),
   ]);
   res.json({
@@ -1975,7 +1975,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
       .populate('sourceHealthPlanId', 'title description content type')
       .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard workflowStageKey')
       .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
-      .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod initiationSource createdAt orderNo serviceWorkflowSnapshot supplementFulfillment medicalProxyPlan medicalReminderIntake');
+      .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod initiationSource createdAt orderNo serviceWorkflowSnapshot supplementFulfillment medicalProxyPlan medicalReminderIntake handledBy fulfillmentType fulfillmentStatus');
 
   // 获取本页会员最近一次打卡（健康记录）时间
   const patientIds = [...new Set(followUps.map(f => f.patientId?._id).filter(Boolean))];
@@ -8163,6 +8163,8 @@ router.post('/orders/:id/medical-reminder-draft', staffAuth, async (req, res) =>
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+router.use('/order-shipments', staffAuth, require('./orderShipments'));
+
 router.patch('/orders/:id/start', staffAuth, async (req, res) => {
   try {
     const { action = 'schedule', scheduledAt, note } = req.body;
@@ -8172,6 +8174,15 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
     const actionableOrder = await Order.exists({ _id: req.params.id, ...require('../utils/orderWorkItem').activeOrderWorkItemQuery() });
     if (!actionableOrder) return res.status(409).json({ success: false, message: '订单已退款、取消、完成或尚未支付，不能继续生成服务方案' });
     const currentOrder = await Order.findById(req.params.id);
+    let shippingManager = null;
+    if (require('../../../shared/orderShipping.cjs').isShippingOrder(currentOrder)) {
+      if (!['healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '请由健康规划师确认配送需求' });
+      const patient = await User.findById(currentOrder.user).select('assignedHealthManager assignedHealthPlanner').lean();
+      if (req.staff.role !== 'superadmin' && String(patient?.assignedHealthPlanner || currentOrder.supervisorId || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '只能确认本人负责的订单' });
+      shippingManager = patient?.assignedHealthManager;
+      if (!shippingManager) return res.status(409).json({ success: false, message: '请先分配客户的健管专员，再确认发货交接' });
+      if (['shipped', 'completed', 'cancelled'].includes(currentOrder.fulfillmentStatus)) return res.status(409).json({ success: false, message: '订单已处理，请刷新查看进度' });
+    }
     const supplementArchive = require('../utils/orderSupplementArchive');
     const supplementProduct = await Product.findById(currentOrder.serviceId).select('name category serviceWorkflow').lean().catch(() => null);
     if (supplementArchive.isSupplementOrder(currentOrder, supplementProduct || {})) {
@@ -8244,12 +8255,13 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
     }
     const newStatus = 'scheduled';
     const update = { status: newStatus, handledBy: req.staff._id };
+    if (shippingManager) Object.assign(update, { currentAssignee: shippingManager, currentStage: 'awaiting_shipment', fulfillmentStatus: 'awaiting_shipment' });
     if (scheduledAt) update.scheduledAt = new Date(scheduledAt);
     if (note) update.note = note;
     const order = await Order.findByIdAndUpdate(req.params.id, update, { new: true })
       .populate('user', 'name phone');
     if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
-    res.json({ success: true, data: order, message: '服务已安排' });
+    res.json({ success: true, data: order, message: shippingManager ? '已转健管专员待发货' : '服务已安排' });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });
   }

@@ -3,6 +3,8 @@ import { getToken } from '../api'
 import { loadFollowUpPages } from '../utils/loadFollowUpPages.mjs'
 import AiWorkbenchProvider from '../components/AiWorkbenchProvider'
 import ConsultationTodosPanel from '../components/ConsultationTodosPanel'
+import OrderShipmentsPanel from '../components/OrderShipmentsPanel'
+import orderShipping from '../../../shared/orderShipping.cjs'
 import { useNotificationSummary } from '../components/NotificationSummary'
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -102,6 +104,7 @@ export default function HomePage() {
       </div>
 
       {['healthPlanner', 'superadmin'].includes(staff?.role) && <ConsultationTodosPanel />}
+      {['healthManager', 'superadmin'].includes(staff?.role) && <OrderShipmentsPanel />}
 
       {/* 数据卡片 */}
       <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)', marginBottom: 24 }}>
@@ -144,7 +147,7 @@ export default function HomePage() {
                       {task ? (supervisor?.supervisionProgress?.current?.length
                         ? supervisor.supervisionProgress.current.map(step => <div key={step.id}>当前环节：{step.label} · 处理人：{step.assignee}{step.blocked ? ' · 等待前置环节' : ''}</div>)
                         : task.supervisionProgress?.message || `当前环节：${task.theme || '待核对'} · 处理人：${task.assignedTo?.name || '待分配'}`)
-                        : '待健康规划师确认客户需求并转交下一环节'}
+                        : orderShipping.shippingProgress(order) || '待健康规划师确认客户需求并转交下一环节'}
                     </div>
                   </div>
                 </div>
