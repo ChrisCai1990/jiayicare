@@ -34,7 +34,7 @@ export default function MetabolicPilotCard({ refreshKey=0,onStatus,feedback }) {
         <Text style={{...para,fontSize:'11px'}}>系统自动反馈 · 依据当前有效记录更新</Text>
       </View>}
       {active&&action&&<View><Text style={{...para,fontWeight:700}}>你可以尝试：{action.title}</Text><Text style={para}>{action.text}</Text>
-        <View style={{display:'flex',gap:'6px'}}>{[['try','愿意尝试'],['later','稍后再说'],['unsuitable','不适合我']].map(([choice,label])=><Button key={choice} size="mini" disabled={busy} onClick={()=>act('choose',{id:action.id,choice})}>{label}</Button>)}</View>
+        <View style={{display:'flex',gap:'6px'}}>{[['try','愿意尝试'],['later','稍后再说'],['unsuitable','不适合我']].map(([choice,label])=>{const selected=data.actionChoice?.id===action.id&&data.actionChoice.choice===choice;return <Button key={choice} size="mini" disabled={busy} style={{backgroundColor:selected?'#1E6B50':'#fff',color:selected?'#fff':'#274838',border:selected?'1px solid #1E6B50':'1px solid #CDDCD5'}} onClick={()=>act('choose',{id:action.id,choice})}>{selected?'✓ ':''}{label}</Button>})}</View>
         {data.actionChoice?.id===action.id&&<Text style={para}>已保存你的选择，可以随时调整。</Text>}
       </View>}
       {data.reminder&&<Text style={para}>{data.reminder}</Text>}

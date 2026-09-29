@@ -301,7 +301,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
   };
 
   if (threadRole) {
-    return <ConversationThread key={`${user?._id}:${threadRole}`} role={threadRole} member={directMember || careTeamMember(threadRole)} active={pageVisible} embedded={embedded} assistantConfig={assistantConfig} onClose={() => { setThreadRole(null); setDirectMember(null); loadMessages(); }} />;
+    return <ConversationThread key={`${user?._id}:${threadRole}`} role={threadRole} member={directMember || careTeamMember(threadRole)} active={pageVisible} embedded={embedded} assistantConfig={assistantConfig} closeLabel={directMember ? '返回首页' : '返回'} onClose={() => { if (directMember) { Taro.switchTab({ url: '/pages/home/index' }).then(() => { setThreadRole(null); setDirectMember(null); }).catch(() => Taro.showToast({ title: '返回失败，请点击底部首页', icon: 'none' })); } else { setThreadRole(null); loadMessages(); } }} />;
   }
 
   return (
@@ -703,7 +703,7 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
 
 const ROLE_META = Object.fromEntries(ROLE_DEFS.map((role) => [role.key, role]));
 
-function ConversationThread({ role, member, onClose, embedded = false, active = true }) {
+function ConversationThread({ role, member, onClose, closeLabel = '返回', embedded = false, active = true }) {
   const { statusBarHeight } = useNavBar();
   const [msgs, setMsgs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1007,7 +1007,7 @@ function ConversationThread({ role, member, onClose, embedded = false, active = 
         </View>
       )}
       <View style={{ display: 'flex', alignItems: 'center', flexShrink: 0, position: 'relative', zIndex: 20, padding: `${embedded ? 10 : statusBarHeight + 8}px ${spacing.lg}px ${spacing.sm}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
-        <View onClick={onClose} style={{ minWidth: '64px', padding: '8px 0', marginRight: '8px' }}><Text style={{ fontSize: '14px', color: colors.primary, fontWeight: 600 }}>‹ 返回</Text></View>
+        <View onClick={onClose} style={{ minWidth: '64px', padding: '8px 0', marginRight: '8px' }}><Text style={{ fontSize: '14px', color: colors.primary, fontWeight: 600 }}>‹ {closeLabel}</Text></View>
         <View style={{ flex: 1, textAlign: 'center' }}>
           <Text style={{ fontSize: '16px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{member?.name ? `${member.name} · ${meta.label}` : meta.label}</Text>
           <Text style={{ fontSize: '11px', color: !meta.aiEnabled || humanActive ? '#D97706' : colors.success }}>● {!meta.aiEnabled ? '人工服务' : humanActive ? '人工服务中' : 'AI在线'}</Text>

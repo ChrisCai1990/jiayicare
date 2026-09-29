@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
@@ -57,6 +57,8 @@ export default function RecordsIndexPage() {
   const [bodyCompHistory, setBodyCompHistory] = useState([]);
   const [showAllRecords, setShowAllRecords] = useState(false);
 
+  const trendGeneration = useRef(0);
+  const [trendError,setTrendError] = useState('');
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -68,6 +70,7 @@ export default function RecordsIndexPage() {
 
   useDidShow(() => {
     load();
+    loadTrends();
     userAPI.getMe().then((res) => {
       if (res?.success && res.data) {
         updateUser(res.data);
@@ -77,27 +80,23 @@ export default function RecordsIndexPage() {
     }).catch(() => {});
   });
 
-  useEffect(() => {
-    Promise.allSettled([
-      recordsAPI.trend('bloodPressure'),
-      recordsAPI.trend('bloodSugar'),
-      recordsAPI.trend('sleep'),
-      recordsAPI.trend('heartRate'),
-      recordsAPI.trend('weight'),
-    ]).then(([bp, bs, sl, hr, wt]) => {
-      if (bp.status === 'fulfilled' && bp.value?.data) {
-        setBpTrend(bp.value.data.slice(-10).map((r) => ({ label: new Date(r.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }), value: r.extra?.sys || parseFloat(r.value) || 0 })));
-      }
-      if (bs.status === 'fulfilled' && bs.value?.data) {
-        setBsTrend(bs.value.data.slice(-10).map((r) => ({ label: new Date(r.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }), value: parseFloat(r.value) || 0 })));
-      }
-      if (sl.status === 'fulfilled' && sl.value?.data) {
-        setSleepTrend(sl.value.data.slice(-10).map((r) => ({ label: new Date(r.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }), value: parseFloat(r.value) || 0 })));
-      }
-      if (hr.status === 'fulfilled' && hr.value?.data) setHeartTrend(hr.value.data.slice(-10).map((r) => ({ label: new Date(r.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }), value: parseFloat(r.value) || 0 })));
-      if (wt.status === 'fulfilled' && wt.value?.data) setWeightTrend(wt.value.data.slice(-10).map((r) => ({ label: new Date(r.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }), value: parseFloat(r.value) || 0 })));
+  async function loadTrends() {
+    const generation=++trendGeneration.current;
+    const types=['bloodPressure','bloodSugar','sleep','heartRate','weight'];
+    const results=await Promise.allSettled(types.map(type=>recordsAPI.trend(type)));
+    if(generation!==trendGeneration.current)return;
+    const setters=[setBpTrend,setBsTrend,setSleepTrend,setHeartTrend,setWeightTrend];
+    setTrendError(results.some(result=>result.status==='rejected'||result.value?.success===false)?'部分趋势更新失败，点击重试':'');
+    results.forEach((result,index)=>{
+      if(result.status!=='fulfilled'||result.value?.success===false||!Array.isArray(result.value?.data))return;
+      const points=result.value.data.map(row=>{
+        const date=new Date(row.recordedAt);
+        const value=Number.parseFloat(index===0?(row.extra?.sys??row.value):row.value);
+        return {label:`${pad2(date.getMonth()+1)}-${pad2(date.getDate())}`,recordedAt:row.recordedAt,value,time:date.getTime(),displayValue:index===0&&row.extra?.dia!=null?`${value}/${row.extra.dia}`:String(value)};
+      }).filter(row=>Number.isFinite(row.value)&&Number.isFinite(row.time)).sort((a,b)=>a.time-b.time).slice(-10);
+      setters[index](points);
     });
-  }, []);
+  }
 
   const filtered = records.filter((r) => r.type === filter);
   const dailyRecords = records.filter((r) => DAILY_TYPES.includes(r.type));
@@ -132,6 +131,7 @@ export default function RecordsIndexPage() {
 
         <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, display: 'block', marginBottom: `${spacing.sm}px` }}>健康数据趋势</Text>
 
+        {!!trendError&&<Text onClick={loadTrends} style={{display:'block',color:colors.danger,fontSize:'13px',marginBottom:'8px'}}>{trendError}</Text>}
         {/* 趋势图 Tab：血压/血糖/睡眠 */}
         {(bpTrend.length > 0 || bsTrend.length > 0 || sleepTrend.length > 0 || heartTrend.length > 0 || weightTrend.length > 0) && (
           <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px`, boxShadow: shadow.card }}>
@@ -147,6 +147,10 @@ export default function RecordsIndexPage() {
               ))}
             </View>
             <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginBottom: '4px' }}>{trendMap[trendTab].label}</Text>
+            {trendMap[trendTab].data.length>0?<View style={{marginBottom:'10px'}}>
+              <Text style={{fontSize:'26px',fontWeight:800,color:trendMap[trendTab].color,display:'block'}}>{trendMap[trendTab].data[trendMap[trendTab].data.length-1].displayValue} {TYPE_META[trendTab].unit}</Text>
+              <Text style={{fontSize:'12px',color:colors.textSecondary,display:'block',marginTop:'4px'}}>最近记录：{formatRecordDate(trendMap[trendTab].data[trendMap[trendTab].data.length-1].recordedAt)}</Text>
+            </View>:<Text style={{display:'block',color:colors.textSecondary}}>暂无{TYPE_META[trendTab].label}记录</Text>}
             <TrendChart points={trendMap[trendTab].data} height={120} color={trendMap[trendTab].color} mode="line" />
           </View>
         )}

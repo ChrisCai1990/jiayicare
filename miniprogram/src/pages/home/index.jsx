@@ -390,8 +390,10 @@ export default function HomePage() {
 
         <View style={{marginBottom:'24px'}}>
           <Text style={{fontSize:'17px',fontWeight:700,color:colors.textPrimary,display:'block',marginBottom:'12px'}}>我的权益</Text>
-          <View style={{display:'flex',gap:'10px'}}>
-            {[['plan','会员权益','查看计划与使用情况','🎁'],['fund','健康基金',user?.healthFund?.total!=null?`余额 ¥${Number(user.healthFund.total).toFixed(2)}`:'查看余额与收支明细','💰']].map(([section,title,subtitle,icon])=><View key={section} onClick={()=>Taro.navigateTo({url:'/pages/profile/benefits/index?section='+section})} style={{flex:1,minWidth:0,backgroundColor:'#fff',borderRadius:'18px',padding:'14px 11px',display:'flex',alignItems:'center',gap:'9px'}}><Icon name={icon} size={22} color={colors.primary}/><View style={{flex:1,minWidth:0}}><Text style={{fontSize:'13px',fontWeight:600,display:'block',color:colors.textPrimary}}>{title}</Text><Text style={{fontSize:'11px',color:colors.textSecondary,display:'block',marginTop:'4px'}}>{subtitle} ›</Text></View></View>)}
+          <View onClick={()=>Taro.navigateTo({url:'/pages/profile/benefits/index?section=plan'})} style={{backgroundColor:'#fff',borderRadius:'18px',padding:'18px',display:'flex',alignItems:'center',gap:'12px'}}>
+            <Icon name="🎁" size={24} color={colors.primary}/>
+            <View style={{flex:1,minWidth:0}}><Text style={{fontSize:'15px',fontWeight:600,display:'block',color:colors.textPrimary}}>会员权益</Text><Text style={{fontSize:'12px',color:colors.textSecondary,display:'block',marginTop:'5px'}}>查看计划、使用情况与健康基金</Text>{user?.healthFund?.total!=null&&<Text style={{fontSize:'13px',color:colors.primary,display:'block',marginTop:'7px'}}>健康基金余额 ¥{Number(user.healthFund.total).toFixed(2)}</Text>}</View>
+            <Text style={{color:colors.primary}}>›</Text>
           </View>
         </View>
         <View style={{ marginBottom: `${spacing.lg}px` }}>

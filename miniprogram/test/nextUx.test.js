@@ -97,13 +97,13 @@ test('failed image never creates a partial report; uncertain save explicitly ask
   const k=uploadHarness({failSave:true}),q=k.button().props.onClick();k.picker.resolve({tempFilePaths:['a.jpg']});k.firstImage.resolve();await q;assert(k.state.some(s=>typeof s==='string'&&s.includes('保存结果尚未确认')));
 });
 
-test('direct manager entry renders the existing role thread and returns to all role conversations',async()=>{
-  const states=[],refs=[];let si=0,ri=0,show,pending={role:'manager',member:{kind:'healthManager',name:'测试健管'}};
+test('direct manager entry renders the existing role thread and returns to home',async()=>{
+  const states=[],refs=[];let si=0,ri=0,show,returnedTo,pending={role:'manager',member:{kind:'healthManager',name:'测试健管'}};
   const React={createElement:(type,props,...children)=>({type,props:props||{},children}),useState:init=>{const i=si++;if(!(i in states))states[i]=typeof init==='function'?init():init;return [states[i],v=>states[i]=typeof v==='function'?v(states[i]):v];},useRef:init=>{const i=ri++;return refs[i]||(refs[i]={current:init});},useCallback:f=>f,useEffect(){}};
   const api={list:async()=>({success:true,data:[]}),pending:async()=>({success:true,data:[]})};
   const Page=moduleFor('pages/messages/index.jsx',{
     react:React,'@tarojs/components':{View:'View',Text:'Text',Input:'Input',ScrollView:'ScrollView',Image:'Image'},
-    '@tarojs/taro':{useDidShow:f=>show=f,useDidHide(){},getStorageSync(){}},
+    '@tarojs/taro':{useDidShow:f=>show=f,useDidHide(){},getStorageSync(){},switchTab:async({url})=>{returnedTo=url;}},
     '../../theme':{colors:{},spacing:{},radius:{},shadow:{}},'../../hooks/useNavBar':()=>({statusBarHeight:0}),
     '../../context/AuthContext':{useAuth:()=>({user:{_id:'u',careTeam:[{kind:'healthManager',name:'测试健管'}]}})},
     '../../services/api':{messagesAPI:api,pushRecordsAPI:api,questionnaireAPI:api},'../../components/Icon':'Icon',
@@ -113,8 +113,40 @@ test('direct manager entry renders the existing role thread and returns to all r
   }).default;
   const render=()=>{si=0;ri=0;return Page({embedded:true});};
   render();show();await flush();const thread=render();assert.equal(thread.props.role,'manager');assert.equal(thread.props.member.name,'测试健管');assert.equal(typeof thread.type,'function');
-  thread.props.onClose();const list=render();assert.equal(list.type,'View');
+  assert.equal(thread.props.closeLabel,'返回首页');thread.props.onClose();await flush();assert.equal(returnedTo,'/pages/home/index');const list=render();assert.equal(list.type,'View');
+  const flatten=n=>!n||typeof n!=='object'?[]:[n,...(n.children||[]).flat(Infinity).flatMap(flatten)];
+  returnedTo=null;flatten(list).find(n=>n.props.key==='manager').props.onClick();const normal=render();assert.equal(normal.props.closeLabel,'返回');normal.props.onClose();await flush();assert.equal(returnedTo,null);assert.equal(render().type,'View');
   clearInterval(refs.find(r=>r.current&&typeof r.current==='object'&&r.current._onTimeout)?.current);
   const {getConversationRole}=require('../../backend/src/utils/conversationRoles');
   assert.equal(getConversationRole(thread.props.role).staffRole,'healthManager');
+});
+
+function componentHarness(file,mocks) {
+  const state=[],refs=[],effects=[];let si=0,ri=0,show;
+  const React={createElement:(type,props,...children)=>({type,props:props||{},children}),useState:init=>{const i=si++;if(!(i in state))state[i]=typeof init==='function'?init():init;return [state[i],v=>state[i]=typeof v==='function'?v(state[i]):v];},useRef:init=>{const i=ri++;return refs[i]||(refs[i]={current:init});},useCallback:f=>f,useEffect:f=>effects.push(f)};
+  const Page=moduleFor(file,{react:React,'@tarojs/components':{View:'View',Text:'Text',Button:'Button',Input:'Input',Textarea:'Textarea',Picker:'Picker',ScrollView:'ScrollView'},...mocks,'@tarojs/taro':{...mocks['@tarojs/taro'],useDidShow:f=>show=f}}).default;
+  const render=()=>{si=0;ri=0;return Page({});};
+  const nodes=n=>!n||typeof n!=='object'?[]:[n,...(n.children||[]).flat(Infinity).flatMap(nodes)];
+  const text=n=>typeof n==='string'||typeof n==='number'?String(n):n&&typeof n==='object'?(n.children||[]).flat(Infinity).map(text).join(''):'';
+  return {render,nodes,text,state, mount:async()=>{render();effects.splice(0).forEach(f=>f());await flush();},show:async()=>{show();await flush();}};
+}
+test('pilot action tick follows saved choice and remains correct after reload',async()=>{
+  const data={status:'active',available:true,startedAt:'2026-09-29',summary:{week:1,checkpoints:[],action:{id:'meal',title:'餐食'}},actionChoice:{id:'meal',choice:'try'}};
+  const h=componentHarness('components/MetabolicPilotCard.jsx',{'../services/api':{metabolicPilotAPI:{get:async()=>({data}),action:async body=>{data.actionChoice={id:body.id,choice:body.choice};}}}});
+  await h.mount();let buttons=h.nodes(h.render()).filter(n=>n.type==='Button');assert.equal(h.text(buttons.find(n=>h.text(n).includes('愿意尝试'))),'✓ 愿意尝试');
+  await buttons.find(n=>h.text(n)==='稍后再说').props.onClick();buttons=h.nodes(h.render()).filter(n=>n.type==='Button');assert.equal(h.text(buttons.find(n=>h.text(n).includes('稍后再说'))),'✓ 稍后再说');assert.equal(h.text(buttons.find(n=>h.text(n).includes('愿意尝试'))),'愿意尝试');
+});
+test('care upload shows a readable disabled submit and requires real files plus confirmation',async()=>{
+  let completed=0;const data={canUpload:true,reports:[],plans:[]};
+  const h=componentHarness('pages/tasks/report-upload/index.jsx',{'@tarojs/taro':{getCurrentInstance:()=>({router:{params:{flowId:'f'}}}),getFileSystemManager:()=>({readFileSync:()=>'base64'})},'../../../hooks/useNavBar':()=>({statusBarHeight:0}),'../../../services/api':{tasksAPI:{careReports:async()=>({data}),addCareReport:async()=>({data}),completeCareReports:async()=>{completed++;return {data:{...data,completed:true}}}},reportsAPI:{uploadBase64:async()=>({data:{uploadToken:'t'}})}},'../../../utils/imagePicker':{chooseImageWithPrivacy:async()=>({tempFilePaths:['a.jpg']})}});
+  const find=label=>h.nodes(h.render()).find(n=>n.type==='Button'&&h.text(n).includes(label));
+  await h.mount();let submit=find('提交全部资料');assert.equal(submit.props.disabled,true);assert.equal(submit.props.style.color,'#465B50');assert(h.text(h.render()).includes('请先选择至少一份'));
+  find('我确认').props.onClick();await find('提交全部资料').props.onClick();assert.equal(completed,0);
+  await find('选择报告').props.onClick();assert.equal(find('提交全部资料').props.disabled,true);find('我确认').props.onClick();assert.equal(find('提交全部资料').props.disabled,false);await find('提交全部资料').props.onClick();assert.equal(completed,1);assert(h.text(h.render()).includes('本次资料已提交'));
+});
+test('records refresh daily weight when shown again and keep body composition separate',async()=>{
+  let value='50';const calls=[];
+  const h=componentHarness('pages/records/index/index.jsx',{'../../../theme':{colors:{},spacing:{},radius:{},shadow:{}},'../../../hooks/useNavBar':()=>({statusBarHeight:0}),'../../../components/Icon':'Icon','../../../components/TrendChart':'TrendChart','../../../context/AuthContext':{useAuth:()=>({updateUser(){}})},'../../../services/api':{recordsAPI:{list:async()=>({success:true,data:[]}),trend:async type=>{calls.push(type);return {success:true,data:type==='weight'?[{value,recordedAt:'2026-09-29T04:00:00Z'}]:[]};}},userAPI:{getMe:async()=>({success:true,data:{bodyComposition:{weight:50.1,measuredAt:'2026-05-23'}}})}}});
+  await h.mount();await h.show();const weightTab=h.nodes(h.render()).find(n=>n.type==='View'&&n.props.onClick&&h.text(n)==='体重');weightTab.props.onClick();assert(h.text(h.render()).includes('50 kg'));assert(h.text(h.render()).includes('50.1 kg'));
+  value='51';await h.show();assert.equal(calls.filter(t=>t==='weight').length,2);assert(h.text(h.render()).includes('51 kg'));assert(h.text(h.render()).includes('50.1 kg'));const chart=h.nodes(h.render()).find(n=>n.type==='TrendChart');assert.equal(chart.props.points[0].label,'09-29');
 });

@@ -14,7 +14,9 @@ export default function CareReportUpload(){
   const [data,setData]=useState(null),[rows,setRows]=useState([]),[busy,setBusy]=useState(false),[error,setError]=useState(''),[confirmed,setConfirmed]=useState(false);
   const lock=useRef(false);
   const pickLock=useRef(false);
-  const [picking,setPicking]=useState(false),[progress,setProgress]=useState('');
+  const [picking,setPicking]=useState(false),[progress,setProgress]=useState(''),[showPlans,setShowPlans]=useState(false);
+  const submitHint=!rows.length&&!data?.reports?.length?'请先选择至少一份报告、病历或医嘱':rows.some(r=>!r.title.trim())?'请填写每份资料的名称':!confirmed?'请确认本次资料已选择齐全':'';
+  const submitDisabled=busy||picking||!!submitHint||!data?.canUpload||!!data?.completed;
   useEffect(()=>{tasksAPI.careReports(flowId).then(r=>setData(r.data)).catch(e=>setError(e.message))},[flowId]);
   const change=(id,patch)=>{setConfirmed(false);setRows(old=>old.map(r=>r.id===id?{...r,...patch}:r))};
   async function pick(){
@@ -24,7 +26,7 @@ export default function CareReportUpload(){
     }catch(e){if(!isImagePickerCancelled(e))showImagePickerError(e)}finally{pickLock.current=false;setPicking(false)}
   }
   async function submit(){
-    if(lock.current||pickLock.current||!confirmed)return;lock.current=true;setBusy(true);setError('');
+    if(lock.current||pickLock.current||submitDisabled)return;lock.current=true;setBusy(true);setError('');
     try{
       for(const r of rows){
         if(r.saved)continue;
@@ -48,14 +50,18 @@ export default function CareReportUpload(){
     {!!error&&<View style={{...card,color:'#B91C1C'}}>{error}</View>}
     {!data&&<Text>正在加载…</Text>}
     {data&&<View style={card}>对应就医：{data.serviceTitle}<Text style={{display:'block',marginTop:'6px'}}>日期：{data.visitDate||'待核对'} · 服务编号：{data.serviceCode}</Text></View>}
-    {data?.plans?.map(p=><View key={p._id} style={card}><Text style={{fontWeight:700,display:'block'}}>{p.title}</Text><Text style={{display:'block',whiteSpace:'pre-wrap',lineHeight:'24px',marginTop:'8px'}}>{p.description}</Text></View>)}
+    {!!data?.plans?.length&&<Button onClick={()=>setShowPlans(!showPlans)}>{showPlans?'收起就医安排':'查看就医安排'}</Button>}
+    {showPlans&&data?.plans?.map(p=><View key={p._id} style={card}><Text style={{fontWeight:700,display:'block'}}>{p.title}</Text><Text style={{display:'block',whiteSpace:'pre-wrap',lineHeight:'24px',marginTop:'8px'}}>{p.description}</Text></View>)}
     {data?.completed?<View style={card}>本次资料已提交，上传提醒已结束。健管专员继续审核。需要追加时，请使用常规报告上传入口。</View>:data?.canUpload?<>
       <View style={card}>可同时上传多个类目的资料，每张分别分类。全部上传成功后才结束本次提醒。{data.reports.map(r=><Text key={r._id} style={{display:'block',marginTop:'8px'}}>已留存：{r.title}</Text>)}</View>
       <Button disabled={busy||picking} onClick={pick}>{picking?'正在选择…':'＋ 选择报告、病历或医嘱（可多选）'}</Button>
       {!!progress&&<Text style={{display:'block',padding:'12px 0',color:'#1E6B50'}}>{progress}</Text>}
       {rows.map(r=><View key={r.id} style={card}><Text>资料名称</Text><Input disabled={busy||r.saved} value={r.title} onInput={e=>change(r.id,{title:e.detail.value})} style={{height:'48px',borderBottom:'1px solid #ddd'}}/><Picker disabled={busy||r.saved} mode="selector" range={labels} value={categories.indexOf(r.category)} onChange={e=>change(r.id,{category:categories[Number(e.detail.value)]})}><View style={{padding:'16px 0'}}>资料类型：{labels[categories.indexOf(r.category)]} ▾</View></Picker>{r.saved?<Text>已上传</Text>:<Button disabled={busy} onClick={()=>{setRows(old=>old.filter(v=>v.id!==r.id));setConfirmed(false)}}>移除未上传项</Button>}</View>)}
       <Button disabled={busy} onClick={()=>setConfirmed(!confirmed)}>{confirmed?'☑':'☐'} 我确认本次资料已选择齐全</Button>
-      <Button disabled={busy||picking||!confirmed||(!rows.length&&!data.reports.length)||rows.some(r=>!r.title.trim())} onClick={submit}>{busy?'正在上传，请勿离开…':'提交全部资料，完成本次上传'}</Button>
+      <View style={{marginTop:'12px',paddingBottom:'env(safe-area-inset-bottom)'}}>
+        {!!submitHint&&<Text style={{display:'block',fontSize:'13px',color:'#5E6E66',marginBottom:'8px'}}>{submitHint}</Text>}
+        <Button disabled={submitDisabled} style={{backgroundColor:submitDisabled?'#DCE5DF':'#1E6B50',color:submitDisabled?'#465B50':'#fff',fontSize:'16px',fontWeight:600,borderRadius:'12px',padding:'6px 0'}} onClick={submit}>{busy?'正在上传，请勿离开…':'提交全部资料'}</Button>
+      </View>
     </>:data&&<View style={card}>本次资料已转入后续处理，追加资料请使用常规入口。</View>}
   </View>;
 }
