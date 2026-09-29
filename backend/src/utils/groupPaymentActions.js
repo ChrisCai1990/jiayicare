@@ -37,7 +37,9 @@ async function closePayment(payment) {
   payment.status = 'closed'; payment.closedAt = new Date(); await payment.save();
 }
 
-async function retryGroupPayment(order, user) {
+async function retryGroupPayment(order, user, scene = 'jsapi') {
+  const appPayment = scene === 'app';
+  if (appPayment) wechatPay.assertAppReady();
   return withGroupLock(order, async () => {
     const currentOrder = await Order.findById(order._id);
     if (['closed', 'refunded'].includes(currentOrder?.tradeStatus)) throw new Error('订单已关闭或退款，不能继续支付');
@@ -47,14 +49,14 @@ async function retryGroupPayment(order, user) {
     const rows = paymentAllocations(payment);
     const orders = await Order.find({ _id: { $in: rows.map(row => row.order) }, user: user._id });
     if (orders.length !== rows.length || orders.some(item => ['closed', 'refunded'].includes(item.tradeStatus) || ['paid', 'refunded'].includes(item.paymentStatus))) throw new Error('合并订单状态已变化，请刷新后重试');
-    if (!user.wechatMpOpenid) throw new Error('请先绑定当前微信身份后再支付');
+    if (!appPayment && !user.wechatMpOpenid) throw new Error('请先绑定当前微信身份后再支付');
     await closePayment(payment);
     const outTradeNo = `JY${Date.now()}${crypto.randomBytes(4).toString('hex')}`;
     const next = await Payment.create({ order: payment.order, allocations: rows, user: user._id,
-      channel: 'wechat_pay', status: 'created', amount: payment.amount, outTradeNo });
+      channel: 'wechat_pay', status: 'created', amount: payment.amount, outTradeNo, tradeType: appPayment ? 'APP' : 'JSAPI', appId: appPayment ? process.env.WECHAT_APP_APPID : '' });
     await Order.updateMany({ _id: { $in: rows.map(row => row.order) } }, { $set: { paymentId: next._id, paymentOutTradeNo: outTradeNo } });
     try {
-      const prepay = await wechatPay.createJsapiPayment({ description: `合并购买${rows.length}件商品`, outTradeNo, amount: payment.amount, openid: user.wechatMpOpenid, attach: String(payment.order) });
+      const prepay = await (appPayment ? wechatPay.createAppPayment : wechatPay.createJsapiPayment)({ description: `合并购买${rows.length}件商品`, outTradeNo, amount: payment.amount, openid: user.wechatMpOpenid, attach: String(payment.order) });
       next.prepayId = prepay.prepayId; next.status = 'processing'; await next.save();
       return { order: await Order.findById(order._id), paymentParams: prepay.client, checkoutAmount: payment.amount, orderIds: rows.map(row => row.order) };
     } catch (error) {

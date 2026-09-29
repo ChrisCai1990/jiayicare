@@ -4,14 +4,14 @@ const fs = require('fs');
 
 const API_HOST = 'api.mch.weixin.qq.com';
 
-function config() {
+function config(scene = 'jsapi') {
   const readPem = (inlineValue, filePath) => {
     if (inlineValue) return String(inlineValue).replace(/\\n/g, '\n');
     if (filePath) return fs.readFileSync(filePath, 'utf8');
     return '';
   };
   const value = {
-    appid: process.env.WECHAT_MP_APPID,
+    appid: scene === 'app' ? process.env.WECHAT_APP_APPID : (process.env.WECHAT_MP_APPID || process.env.WECHAT_APP_APPID),
     mchid: process.env.WECHAT_PAY_MCH_ID,
     serialNo: process.env.WECHAT_PAY_SERIAL_NO,
     privateKey: readPem(process.env.WECHAT_PAY_PRIVATE_KEY, process.env.WECHAT_PAY_PRIVATE_KEY_PATH),
@@ -99,6 +99,34 @@ function buildClientParams(prepayId) {
   return { timeStamp, nonceStr, package: packageValue, signType: 'RSA', paySign: sign(`${cfg.appid}\n${timeStamp}\n${nonceStr}\n${packageValue}\n`, cfg.privateKey) };
 }
 
+// APP signing uses raw prepay_id, unlike the JSAPI package=prepay_id form.
+function assertAppReady() {
+  if (process.env.WECHAT_APP_PAY_ENABLED !== 'true') throw new Error('App微信支付尚未开通，请稍后再试');
+  const cfg = config('app');
+  if (!/^wx[0-9a-f]{16}$/i.test(cfg.appid || '')) throw new Error('移动应用AppID尚未配置');
+  if (cfg.appid === process.env.WECHAT_MP_APPID) throw new Error('App支付不能使用小程序AppID');
+  return cfg;
+}
+function buildAppClientParams(prepayId) {
+  const cfg = assertAppReady();
+  if (!prepayId) throw new Error('缺少App预支付标识');
+  const timeStamp = Math.floor(Date.now() / 1000).toString();
+  const nonceStr = nonce();
+  return { appId: cfg.appid, partnerId: cfg.mchid, prepayId, package: 'Sign=WXPay', timeStamp, nonceStr,
+    sign: sign(`${cfg.appid}\n${timeStamp}\n${nonceStr}\n${prepayId}\n`, cfg.privateKey) };
+}
+async function createAppPayment({ description, outTradeNo, amount, attach = '' }) {
+  const cfg = assertAppReady();
+  const total = Math.round(Number(amount) * 100);
+  if (!Number.isSafeInteger(total) || total <= 0) throw new Error('支付金额无效');
+  const data = await apiRequest('POST', '/v3/pay/transactions/app', {
+    appid: cfg.appid, mchid: cfg.mchid, description: String(description).slice(0, 127),
+    out_trade_no: outTradeNo, notify_url: cfg.notifyUrl, attach: String(attach).slice(0, 128),
+    amount: { total, currency: 'CNY' },
+  });
+  return { prepayId: data.prepay_id, client: buildAppClientParams(data.prepay_id) };
+}
+
 function queryOrder(outTradeNo) {
   const cfg = config();
   return apiRequest('GET', `/v3/pay/transactions/out-trade-no/${encodeURIComponent(outTradeNo)}?mchid=${encodeURIComponent(cfg.mchid)}`);
@@ -163,6 +191,9 @@ function decryptResource(resource) {
 
 module.exports = {
   config,
+  assertAppReady,
+  buildAppClientParams,
+  createAppPayment,
   createJsapiPayment,
   buildClientParams,
   queryOrder,

@@ -29,7 +29,9 @@ function harness(config = {}) {
     './orderSettlement': { confirmPayment: async () => { events.push(['settle']); orders.forEach(o => { o.paymentStatus = 'paid'; }); } },
     './orderInventory': { releaseOrderInventory: async o => events.push(['release', o._id]) },
   };
-  const ctx = { module: { exports: {} }, require: name => { if (!(name in mocks)) throw new Error(name); return mocks[name]; } };
+  mocks['./wechatPay'].assertAppReady = () => {};
+  mocks['./wechatPay'].createAppPayment = async args => { events.push(['appGateway', args]); return { prepayId: 'native', client: { appId: 'wx1111111111111111', prepayId: 'native' } }; };
+  const ctx = { process: { env: { WECHAT_APP_APPID: 'wx1111111111111111' } }, module: { exports: {} }, require: name => { if (!(name in mocks)) throw new Error(name); return mocks[name]; } };
   vm.runInNewContext(fs.readFileSync(require.resolve('../src/utils/groupPaymentActions'), 'utf8'), ctx);
   return { ...ctx.module.exports, orders, payments, events, user: { _id: 'u', wechatMpOpenid: 'openid' } };
 }
@@ -81,4 +83,12 @@ test('shipping report waits for all items and carries every physical package', (
   assert.equal(groupShippingPayload(orders, [first]), null);
   const result = groupShippingPayload(orders, [first, { order: 'b', status: 'shipped', trackingNo: 't2', deliveryCompany: 'SF' }]);
   assert.equal(result.delivery_mode, 2); assert.equal(result.shipping_list.length, 2); assert.equal(result.is_all_delivered, true);
+});
+
+test('APP group retry creates one full-amount native payment without mini openid', async () => {
+  const h = harness(); delete h.user.wechatMpOpenid;
+  const result = await h.retryGroupPayment(h.orders[1], h.user, 'app');
+  assert.equal(result.checkoutAmount, 7118.44);
+  assert.equal(h.events.find(e => e[0] === 'appGateway')[1].amount, 7118.44);
+  assert.equal(h.payments.at(-1).tradeType, 'APP');
 });

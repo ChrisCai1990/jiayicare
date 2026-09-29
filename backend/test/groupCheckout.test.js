@@ -33,7 +33,9 @@ function harness(config = {}) {
     './wechatPay': { createJsapiPayment: async args => { events.push(['gateway', args]); if (config.gatewayError) throw new Error('timeout'); return { prepayId: 'prepay', client: { package: 'prepay_id=prepay', paySign: 'sig' } }; } },
     './orderSettlement': { confirmPayment: async () => { events.push(['settlement']); if (config.settlementError) throw new Error('temporary failure'); } },
   };
-  const ctx = { module: { exports: {} }, require: name => { if (!(name in mocks)) throw new Error(name); return mocks[name]; } };
+  mocks['./wechatPay'].assertAppReady = () => {};
+  mocks['./wechatPay'].createAppPayment = async args => { events.push(['appGateway', args]); return { prepayId: 'native', client: { appId: 'wx1111111111111111', prepayId: 'native' } }; };
+  const ctx = { process: { env: { WECHAT_APP_APPID: 'wx1111111111111111' } }, module: { exports: {} }, require: name => { if (!(name in mocks)) throw new Error(name); return mocks[name]; } };
   vm.runInNewContext(fs.readFileSync(require.resolve('../src/utils/pushGroupCheckout'), 'utf8'), ctx);
   return { ...ctx.module.exports, events, orders, payments, items, products, user, record,
     run: options => ctx.module.exports.createPushGroupCheckout({ record, user, items, options: { paymentMethod: 'wechat', ...(options || {}) } }) };
@@ -128,4 +130,12 @@ test('ineligible membership or eligibility failure cannot reserve stock or creat
   }
   const cash = harness({ fundEligible: false });
   await cash.run(); assert.equal(cash.payments[0].amount, 7118.44);
+});
+
+test('APP multi-item checkout uses one native payment without mini openid', async () => {
+  const h = harness(); delete h.user.wechatMpOpenid;
+  const result = await h.run({ paymentScene: 'app', expectedAmount: 7118.44 });
+  assert.equal(result.success, true); assert.equal(h.payments.length, 1);
+  assert.equal(h.payments[0].tradeType, 'APP');
+  assert.equal(h.events.filter(e => e[0] === 'appGateway').length, 1);
 });

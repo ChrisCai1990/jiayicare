@@ -12,6 +12,10 @@ function harness(options = {}) {
     return { trade_state: payments.length > 1 ? 'NOTPAY' : (options.remote || 'NOTPAY') };
   }, closeOrder: async () => events.push('close'), buildClientParams: id => ({ package: id }),
   createJsapiPayment: async input => { events.push(['create', input.amount]); if (options.createFail) throw new Error('timeout'); return { prepayId: 'next', client: { package: 'next' } }; } };
+  pay.assertAppReady = () => { if (options.appDisabled) throw Error('disabled'); };
+  pay.createAppPayment = async input => { events.push(['app', input.amount]); return { prepayId: 'native', client: { appId: 'wx1111111111111111', prepayId: 'native' } }; };
+  pay.buildAppClientParams = id => ({ appId: 'wx1111111111111111', prepayId: id });
+  if (options.nativeExisting) Object.assign(payments[0], { tradeType: 'APP', appId: 'wx1111111111111111', createdAt: new Date() });
   const mocks = {
     express: { Router: () => ({ get() {}, post: (path, ...handlers) => { if (path === '/:orderId/retry') handler = handlers.at(-1); } }) },
     '../middleware/auth': {}, '../models/Order': { findOne: async () => order, findById: async () => order },
@@ -26,10 +30,10 @@ function harness(options = {}) {
   };
   vm.runInNewContext(fs.readFileSync(require.resolve('../src/routes/payments'), 'utf8'), { module: { exports: {} }, require: name => {
     if (!(name in mocks)) throw new Error(name); return mocks[name];
-  }, console });
+  }, console, process: { env: { WECHAT_APP_APPID: 'wx1111111111111111' } } });
   return { events, payments, order, run: async () => {
     let result; const res = { status: () => res, json: data => { result = data; return res; } };
-    await handler({ params: { orderId: 'o' }, user: { _id: 'u', wechatMpOpenid: 'current' } }, res); return result;
+    await handler({ body: options.native ? { paymentScene: 'app' } : {}, params: { orderId: 'o' }, user: { _id: 'u', wechatMpOpenid: options.native ? undefined : 'current' } }, res); return result;
   } };
 }
 test('retry replaces a closed WeChat payment without trying to close it again', async () => {
@@ -72,4 +76,20 @@ test('a mismatched confirmed amount is rejected before order creation', () => {
     vm.runInNewContext(`this.result = (() => { ${source.slice(start, end)} return 'accepted'; })();`, ctx);
     assert.equal(expectedAmount === 20000 ? ctx.result : ctx.result.code, expectedAmount === 20000 ? 'accepted' : 'CHECKOUT_QUOTE_CHANGED');
   }
+});
+
+
+test('APP retry has no mini payer dependency and closes JSAPI prepay before creating APP', async () => {
+  const h = harness({ native: true }); assert.equal((await h.run()).success, true);
+  assert.deepEqual(h.events, ['close', ['app', 20000]]);
+  assert.equal(h.payments.at(-1).tradeType, 'APP');
+});
+test('APP same-scene retry reuses matching prepay, disabled channel never mutates payment', async () => {
+  const h = harness({ native: true, nativeExisting: true }); assert.equal((await h.run()).data.paymentParams.prepayId, 'old');
+  assert.equal(h.events.length, 0);
+  const disabled = harness({ native: true, appDisabled: true }); assert.equal((await disabled.run()).success, false); assert.equal(disabled.events.length, 0);
+});
+test('mini retry cannot reuse APP prepay parameters', async () => {
+  const h = harness({ nativeExisting: true }); assert.equal((await h.run()).success, true);
+  assert.deepEqual(h.events, ['close', ['create', 20000]]);
 });

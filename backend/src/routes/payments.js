@@ -53,6 +53,12 @@ router.post('/wechat/refund-notify', async (req, res) => {
   } catch (err) { return notifyError(res, err); }
 });
 
+router.get('/capabilities', auth, (req, res) => {
+  let app = false;
+  try { wechatPay.assertAppReady(); app = true; } catch {}
+  res.json({ success: true, data: { app } });
+});
+
 router.get('/:orderId/status', auth, async (req, res) => {
   const order = await Order.findOne({ _id: req.params.orderId, user: req.user._id });
   if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
@@ -103,10 +109,12 @@ router.get('/:orderId/status', auth, async (req, res) => {
 });
 
 router.post('/:orderId/retry', auth, async (req, res) => {
+  const appPayment = req.body?.paymentScene === 'app';
+  if (appPayment) { try { wechatPay.assertAppReady(); } catch (e) { return res.status(503).json({ success: false, message: e.message }); } }
   let order = await Order.findOne({ _id: req.params.orderId, user: req.user._id });
   if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
   if (order.checkoutGroupId) {
-    try { return res.json({ success: true, data: await require('../utils/groupPaymentActions').retryGroupPayment(order, req.user) }); }
+    try { return res.json({ success: true, data: await require('../utils/groupPaymentActions').retryGroupPayment(order, req.user, appPayment ? 'app' : 'jsapi') }); }
     catch (error) { return res.status(409).json({ success: false, message: error.message }); }
   }
   try { return await require('../utils/groupPaymentActions').withGroupLock(order, async () => {
@@ -131,11 +139,12 @@ router.post('/:orderId/retry', auth, async (req, res) => {
       if (err.code !== 'ORDER_NOT_EXIST') return res.status(409).json({ success: false, message: '微信付款状态暂时无法确认，请稍后重试' });
       remoteState = 'NOT_FOUND';
     }
-    if (!req.user.wechatMpOpenid) return res.status(400).json({ success: false, message: '请先绑定当前微信身份后再支付' });
+    if (!appPayment && !req.user.wechatMpOpenid) return res.status(400).json({ success: false, message: '请先绑定当前微信身份后再支付' });
     if (remoteState === 'USERPAYING') return res.status(409).json({ success: false, message: '微信正在确认付款，请稍后刷新订单' });
-    if (remoteState === 'NOTPAY' && payment.prepayId && payment.payerOpenid === req.user.wechatMpOpenid
+    if (remoteState === 'NOTPAY' && payment.prepayId
+      && (appPayment ? payment.tradeType === 'APP' && payment.appId === process.env.WECHAT_APP_APPID : payment.tradeType !== 'APP' && payment.payerOpenid === req.user.wechatMpOpenid)
       && Date.now() - new Date(payment.createdAt).getTime() < 90 * 60 * 1000) {
-      return res.json({ success: true, data: { order, paymentParams: wechatPay.buildClientParams(payment.prepayId) } });
+      return res.json({ success: true, data: { order, paymentParams: (appPayment ? wechatPay.buildAppClientParams : wechatPay.buildClientParams)(payment.prepayId) } });
     }
 
     // A prepay_id is tied to the payer OpenID used when it was created. Reusing
@@ -155,10 +164,10 @@ router.post('/:orderId/retry', auth, async (req, res) => {
     const outTradeNo = `JY${Date.now()}${order._id.toString().slice(-8)}`.slice(0, 32);
     const amount = Number(order.paymentExpectedAmount ?? payment.amount);
     const nextPayment = await Payment.create({
-      order: order._id, user: req.user._id, channel: 'wechat_pay', status: 'created', amount, outTradeNo, payerOpenid: req.user.wechatMpOpenid,
+      order: order._id, user: req.user._id, channel: 'wechat_pay', status: 'created', amount, outTradeNo, payerOpenid: appPayment ? '' : req.user.wechatMpOpenid, tradeType: appPayment ? 'APP' : 'JSAPI', appId: appPayment ? process.env.WECHAT_APP_APPID : '',
     });
     try {
-      const prepay = await wechatPay.createJsapiPayment({
+      const prepay = await (appPayment ? wechatPay.createAppPayment : wechatPay.createJsapiPayment)({
         description: order.serviceName || '健康管理服务', outTradeNo, amount,
         openid: req.user.wechatMpOpenid, attach: order._id.toString(),
       });

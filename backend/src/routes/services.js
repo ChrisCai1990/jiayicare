@@ -244,6 +244,8 @@ router.post('/inquiries', auth, async (req, res) => {
 // useHealthFund: 本次要抵扣的健康基金金额（元，<= 余额 且 <= 订单原价）
 // couponId: 本次要使用的优惠券 _id（amount 满减 或 percent 折扣，两者可叠加使用）
 router.post('/order', auth, async (req, res) => {
+  const appPayment = req.body.paymentScene === 'app';
+  if (appPayment) { try { require('../utils/wechatPay').assertAppReady(); } catch (e) { return res.status(503).json({ success: false, message: e.message }); } }
   const { serviceId, specificationLabel, note, paymentMethod = 'wechat_pay', useHealthFund, couponId, shareToken = '', desiredServiceDate, serviceRequirements, serviceProviderConsent, bundleSelections = [] } = req.body;
   if (!serviceId) {
     return res.status(400).json({ success: false, message: '请指定服务项目' });
@@ -437,7 +439,7 @@ router.post('/order', auth, async (req, res) => {
   if (paidAmount > 0 && commercePaymentChannel !== 'wechat_pay') {
     return res.status(409).json({ success: false, message: '该商品当前未配置普通微信支付，请联系客服' });
   }
-  if (paidAmount > 0 && !req.user.wechatMpOpenid) {
+  if (paidAmount > 0 && !appPayment && !req.user.wechatMpOpenid) {
     return res.status(400).json({ success: false, message: '请先使用微信登录绑定当前小程序账号后再支付' });
   }
 
@@ -614,10 +616,11 @@ router.post('/order', auth, async (req, res) => {
       status: 'created',
       amount: paidAmount,
       outTradeNo,
-      payerOpenid: req.user.wechatMpOpenid,
+      payerOpenid: appPayment ? '' : req.user.wechatMpOpenid,
+      tradeType: appPayment ? 'APP' : 'JSAPI', appId: appPayment ? process.env.WECHAT_APP_APPID : '',
     });
     try {
-      const prepay = await wechatPay.createJsapiPayment({
+      const prepay = await (appPayment ? wechatPay.createAppPayment : wechatPay.createJsapiPayment)({
         description: service.name,
         outTradeNo,
         amount: paidAmount,
@@ -631,6 +634,11 @@ router.post('/order', auth, async (req, res) => {
       await order.save();
       paymentParams = prepay.client;
     } catch (err) {
+      if (appPayment) {
+        payment.status = 'processing'; payment.failureMessage = err.message; await payment.save();
+        order.paymentId = payment._id; await order.save();
+        return res.status(503).json({ success: false, message: '付款结果待确认，请在我的订单查看或继续支付，勿重复购买', data: { orderId: order._id } });
+      }
       payment.status = 'failed';
       payment.failureCode = err.code || 'CREATE_PAYMENT_FAILED';
       payment.failureMessage = err.message;

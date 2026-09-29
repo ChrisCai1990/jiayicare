@@ -73,6 +73,8 @@ async function createPushGroupCheckout({ record, user, items, options }) {
 }
 
 async function createLocked({ record, user, items, options }) {
+  const appPayment = options.paymentScene === 'app';
+  if (appPayment) wechatPay.assertAppReady();
   if (items.length > 10 || new Set(items.map(p => String(p.productId))).size !== items.length) throw checkoutError('每次最多合并 10 件不同商品，请重新选择');
   const pending = await Order.findOne({ user: user._id, pushRecordId: record._id, serviceId: { $in: items.map(p => String(p.productId)) }, paymentStatus: 'pending', tradeStatus: { $ne: 'closed' } });
   if (pending) throw checkoutError('这些商品已有待支付订单，请前往“我的订单”继续支付，或取消后重新选择');
@@ -95,7 +97,7 @@ async function createLocked({ record, user, items, options }) {
   }
   if (finalPrice > 0) {
     if (options.paymentMethod !== 'wechat') throw checkoutError('合并付款须使用微信支付', 400);
-    if (!user.wechatMpOpenid) throw checkoutError('请先使用微信登录绑定当前小程序账号后再支付', 400);
+    if (!appPayment && !user.wechatMpOpenid) throw checkoutError('请先使用微信登录绑定当前小程序账号后再支付', 400);
     if (products.some(p => p.paymentChannel !== 'wechat_pay')) throw checkoutError('所选商品中有商品未配置普通微信支付，请联系客服');
   }
   const outTradeNo = `JY${Date.now()}${new mongoose.Types.ObjectId().toString().slice(-8)}`.slice(0, 32);
@@ -133,7 +135,7 @@ async function createLocked({ record, user, items, options }) {
       unownedReservations.delete(product._id);
     }
     payment = await Payment.create({ order: ids[0], allocations: orders.map((order, index) => ({ order: order._id, amount: quote.allocations[index].cash })), user: user._id,
-      channel: finalPrice > 0 ? 'wechat_pay' : 'health_fund', amount: finalPrice, outTradeNo, status: 'created' });
+      channel: finalPrice > 0 ? 'wechat_pay' : 'health_fund', amount: finalPrice, outTradeNo, tradeType: appPayment ? 'APP' : 'JSAPI', appId: appPayment ? process.env.WECHAT_APP_APPID : '', status: 'created' });
     await Order.updateMany({ _id: { $in: ids } }, { $set: { paymentId: payment._id } });
     if (finalPrice === 0) {
       settlementAttempted = true;
@@ -141,7 +143,7 @@ async function createLocked({ record, user, items, options }) {
       return { success: true, data: { orderId: ids[0], orderIds: ids, paymentStatus: 'paid' }, summary: quote.summary };
     }
     gatewayAttempted = true;
-    const prepay = await wechatPay.createJsapiPayment({ description: `${items[0].name}等${items.length}件商品`, outTradeNo, amount: finalPrice, openid: user.wechatMpOpenid, attach: String(ids[0]) });
+    const prepay = await (appPayment ? wechatPay.createAppPayment : wechatPay.createJsapiPayment)({ description: `${items[0].name}等${items.length}件商品`, outTradeNo, amount: finalPrice, openid: user.wechatMpOpenid, attach: String(ids[0]) });
     payment.prepayId = prepay.prepayId; payment.status = 'processing'; await payment.save();
     return { success: true, data: { orderId: ids[0], orderIds: ids, paymentParams: prepay.client, paymentStatus: 'pending' }, summary: quote.summary };
   } catch (error) {

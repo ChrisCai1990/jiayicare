@@ -1355,7 +1355,9 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
     // Released clients before 1.0.166 never call requestPayment and would show
     // success immediately after this API returned. Refuse to create any order
     // unless the client explicitly declares the verified JSAPI flow.
-    if (paymentCapability !== 'wechat_jsapi_v1') {
+    const appPayment = req.body.paymentScene === 'app';
+    if (appPayment) { try { require('../utils/wechatPay').assertAppReady(); } catch (e) { return res.status(503).json({ success: false, message: e.message }); } }
+    if ((appPayment && paymentCapability !== 'wechat_app_v1') || (!appPayment && paymentCapability !== 'wechat_jsapi_v1')) {
       return res.status(426).json({ success: false, code: 'PUSH_PAYMENT_UPGRADE_REQUIRED', message: '当前版本暂不支持在推荐页直接支付，请关闭此页后前往“商城”选择该服务并完成微信支付' });
     }
     // 新版组合推送使用 products；旧版单品推送只有 productId/price/title。
@@ -1483,7 +1485,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
     if (!product) return res.status(409).json({ success: false, message: '该服务已下架或发生调整，请联系健康规划师重新推荐' });
     if (finalPrice > 0 && paymentMethod !== 'wechat') return res.status(400).json({ success: false, message: '该服务须使用微信小程序支付' });
     if (finalPrice > 0 && product.paymentChannel !== 'wechat_pay') return res.status(409).json({ success: false, message: '该商品当前未配置普通微信支付，请联系客服' });
-    if (finalPrice > 0 && !req.user.wechatMpOpenid) return res.status(400).json({ success: false, message: '请先使用微信登录绑定当前小程序账号后再支付' });
+    if (finalPrice > 0 && !appPayment && !req.user.wechatMpOpenid) return res.status(400).json({ success: false, message: '请先使用微信登录绑定当前小程序账号后再支付' });
 
     // The legacy pushed checkout created an unpaid order and follow-up without
     // opening WeChat Pay. Close those placeholders when the member retries so
@@ -1532,9 +1534,9 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
     }
 
     if (finalPrice > 0) {
-      const payment = await Payment.create({ order: orders[0]._id, user: req.user._id, channel: 'wechat_pay', status: 'created', amount: finalPrice, outTradeNo });
+      const payment = await Payment.create({ order: orders[0]._id, user: req.user._id, channel: 'wechat_pay', status: 'created', amount: finalPrice, outTradeNo, tradeType: appPayment ? 'APP' : 'JSAPI', appId: appPayment ? process.env.WECHAT_APP_APPID : '' });
       try {
-        const prepay = await wechatPay.createJsapiPayment({ description: toPay[0].name, outTradeNo, amount: finalPrice, openid: req.user.wechatMpOpenid, attach: orders[0]._id.toString() });
+        const prepay = await (appPayment ? wechatPay.createAppPayment : wechatPay.createJsapiPayment)({ description: toPay[0].name, outTradeNo, amount: finalPrice, openid: req.user.wechatMpOpenid, attach: orders[0]._id.toString() });
         payment.prepayId = prepay.prepayId;
         payment.status = 'processing';
         await payment.save();
@@ -1543,6 +1545,11 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
         if (!record.readAt) await PushRecord.updateOne({ _id: record._id }, { readAt: new Date() });
         return res.json({ success: true, message: '订单已创建，请完成微信支付；支付结果以微信服务端确认为准', data: { orderId: orders[0]._id, orderNo: outTradeNo, paymentParams: prepay.client, paymentStatus: 'pending' }, summary: { totalPrice, couponDiscount, fundUsed, finalPrice } });
       } catch (error) {
+        if (appPayment) {
+          payment.status = 'processing'; payment.failureMessage = error.message; await payment.save();
+          orders[0].paymentId = payment._id; await orders[0].save();
+          return res.status(503).json({ success: false, message: '付款结果待确认，请在我的订单查看或继续支付，勿重复购买', data: { orderId: orders[0]._id } });
+        }
         payment.status = 'failed'; payment.failureCode = error.code || 'CREATE_PAYMENT_FAILED'; payment.failureMessage = error.message;
         await payment.save();
         orders[0].tradeStatus = 'closed'; orders[0].paymentStatus = 'failed'; await orders[0].save();
