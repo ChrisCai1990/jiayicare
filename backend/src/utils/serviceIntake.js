@@ -28,7 +28,7 @@ function progress(intake, order, plan, tasks = [], now = new Date()) {
   const linked = Boolean(intake.orderId || intake.planId);
   const missing = Boolean((intake.orderId && !order) || (intake.planId && !plan));
   const canClose = !missing && !active.length && (!order || orderEnded) && (!plan || planEnded);
-  let stage = '待落实服务', waiting = '请确认服务安排并关联实际订单或服务方案';
+  let stage = '待落实服务', waiting = '请确认服务安排并关联本次订单';
   if (missing) { stage = '关联记录待核对'; waiting = '关联记录不可见或不存在，请核对原服务'; }
   else if (intake.status === 'closed') { stage = '承接已关闭'; waiting = intake.closureReason; }
   else if (order && !orderEnded && !['paid', 'fulfilling', 'completed'].includes(order.tradeStatus) && order.paymentStatus !== 'paid') { stage = '待确认支付'; waiting = '以原订单支付状态为准，不重复创建订单'; }

@@ -43,7 +43,7 @@ export default function VisitorLeadWorkbench({ toast }) {
   async function open(row, action) {
     const version = ++dialogVersion.current
     setEdit({ row, action }); setModalError(''); setPatients([]); setSearch(row.phone || ''); setManualCustomer(false); setMatchHint(''); setSearching(false); setOptions({ orders: [], plans: [] })
-    setForm({ note: '', need: row.summary || row.topic || '', serviceDirection: '', patientId: '', customerConfirmed: false, nextContactAt: nextDay(), orderId: '', planId: '' })
+    setForm({ note: '', need: row.summary || row.topic || '', serviceDirection: '', patientId: '', customerConfirmed: false, nextContactAt: nextDay(), orderId: '' })
     if (action === 'convert') {
       setSearching(true); setMatchHint('正在按联系电话查找已有客户…')
       try {
@@ -76,6 +76,7 @@ export default function VisitorLeadWorkbench({ toast }) {
   }
   async function save(event) {
     event.preventDefault(); if (submitting.current || searching) return
+    if (edit.action === 'link' && !form.orderId) { setModalError('请选择本次订单'); return }
     if (edit.action === 'convert' && (!form.patientId || !form.customerConfirmed)) { setModalError('请核对客户并勾选确认后保存'); return }
     submitting.current = true; setBusy(true); setModalError('')
     try {
@@ -204,9 +205,8 @@ export default function VisitorLeadWorkbench({ toast }) {
           <label><input required type="checkbox" checked={form.customerConfirmed} onChange={e => setForm(v => ({ ...v, customerConfirmed: e.target.checked }))} /> 已向客户核实身份，并确认可关联本次服务需求</label>
         </>}
         {edit.action === 'link' && <>
-          <label>本次订单<select className="form-control" value={form.orderId} onChange={field('orderId')}><option value="">请选择订单</option>{options.orders.map(o => <option key={o._id} value={o._id}>{o.serviceName} · {when(o.createdAt)}</option>)}</select></label>
-          <label>本次服务方案<select className="form-control" value={form.planId} onChange={field('planId')}><option value="">请选择方案</option>{options.plans.map(p => <option key={p._id} value={p._id}>{p.title}</option>)}</select></label>
-          <p>请只选择本次需求对应的服务；关联后保留原订单与服务流程。</p>
+          <label>本次订单<select required className="form-control" value={form.orderId} onChange={field('orderId')}><option value="">请选择订单</option>{options.orders.map(o => <option key={o._id} value={o._id}>{o.serviceName} · {when(o.createdAt)}</option>)}</select></label>
+          <p>请选择本次需求对应的订单，后续办理沿用原订单流程。</p>
         </>}
         {['convert', 'link', 'followup'].includes(edit.action) && <label>下次跟进时间<input required className="form-control" type="datetime-local" value={form.nextContactAt} onChange={field('nextContactAt')} /></label>}
         {edit.action !== 'convert' && <label>{edit.action === 'close' ? '承接结论及后续安排' : '本次沟通记录'}<textarea required placeholder="请记录联系渠道、客户诉求、沟通结果及约定安排" maxLength={['contacted', 'closed', 'new'].includes(edit.action) ? 500 : 1000} className="form-control" value={form.note} onChange={field('note')} /></label>}
