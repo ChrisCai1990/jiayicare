@@ -10,6 +10,7 @@ const labels=['检查报告','门诊病历','处方/医嘱单'];
 const absenceReasons=['暂未拿到资料，后续补传','已就医，未做检查且无资料','未打印或未取得病历','其他情况'];
 const absenceKinds=['pending','no_exam','no_print','other'];
 const Button=props=><NativeButton {...props} style={{fontSize:'14px',lineHeight:'22px',padding:'11px 14px',margin:'8px 0',borderRadius:'12px',color:'#274838',backgroundColor:'#fff',...props.style}}/>;
+const formatSubmittedAt=value=>{const d=new Date(value);return Number.isNaN(d.getTime())?'未记录':`${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日 ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;};
 const card={padding:'16px',marginTop:'12px',borderRadius:'16px',backgroundColor:'#fff'};
 export default function CareReportUpload(){
   const flowId=Taro.getCurrentInstance().router?.params?.flowId;
@@ -21,7 +22,17 @@ export default function CareReportUpload(){
   const [picking,setPicking]=useState(false),[progress,setProgress]=useState(''),[showPlans,setShowPlans]=useState(false);
   const submitHint=!rows.length&&!data?.reports?.length?'请先选择至少一份报告、病历或医嘱':rows.some(r=>!r.title.trim())?'请填写每份资料的名称':!confirmed?'请确认本次资料已选择齐全':'';
   const submitDisabled=busy||picking||!!submitHint||!data?.canUpload||!!data?.completed;
-  useEffect(()=>{tasksAPI.careReports(flowId).then(r=>{setData(r.data);if(r.data.declaration){setAbsence(true);setReason(absenceReasons[absenceKinds.indexOf(r.data.declaration.kind)]||absenceReasons[0]);setNote(r.data.declaration.note||'');}}).catch(e=>setError(e.message))},[flowId]);
+  const [loading,setLoading]=useState(true);
+  const loadGeneration=useRef(0);
+  async function load(){
+    const generation=++loadGeneration.current;setLoading(true);setError('');
+    try{const r=await tasksAPI.careReports(flowId);if(generation!==loadGeneration.current)return;
+      if(r?.success===false||!r?.data)throw new Error(r?.message||'暂时无法加载反馈');
+      setData(r.data);if(r.data.declaration){setAbsence(true);setReason(absenceReasons[absenceKinds.indexOf(r.data.declaration.kind)]||absenceReasons[0]);setNote(r.data.declaration.note||'');}
+    }catch(e){if(generation===loadGeneration.current)setError(e.message||'服务暂时不可用，请稍后重试');}
+    finally{if(generation===loadGeneration.current)setLoading(false);}
+  }
+  useEffect(()=>{load();return()=>{loadGeneration.current++}},[flowId]);
   const change=(id,patch)=>{setConfirmed(false);setRows(old=>old.map(r=>r.id===id?{...r,...patch}:r))};
   async function pick(){
     if(lock.current||pickLock.current)return;pickLock.current=true;setPicking(true);
@@ -66,11 +77,11 @@ export default function CareReportUpload(){
     <Text style={{fontSize:'22px',lineHeight:'30px',fontWeight:700,display:'block',margin:'16px 0 6px'}}>本次就医反馈</Text>
     <Text style={{fontSize:'13px',color:'#66796F'}}>上传已有资料，或说明本次实际情况</Text>
     {!!error&&<View style={{...card,color:'#B91C1C'}}>{error}</View>}
-    {!data&&<Text>正在加载…</Text>}
+    {loading&&!data&&<Text>正在加载…</Text>}{!loading&&!data&&<Button onClick={load}>重新加载反馈</Button>}
     {data&&<View style={card}><Text style={{display:'block',fontWeight:600}}>{data.serviceTitle}</Text><Text style={{display:'block',marginTop:'6px'}}>{data.visitDate||'日期待核对'} · 服务编号 {data.serviceCode}</Text></View>}
     {!!data?.plans?.length&&<Text onClick={()=>setShowPlans(!showPlans)} style={{display:'block',fontSize:'13px',color:'#1E6B50',margin:'10px 4px'}}>{showPlans?'收起就医安排 ∧':'查看就医安排 ›'}</Text>}
     {showPlans&&data?.plans?.map(p=><View key={p._id} style={card}><Text style={{fontWeight:700,display:'block'}}>{p.title}</Text><Text style={{display:'block',whiteSpace:'pre-wrap',lineHeight:'24px',marginTop:'8px'}}>{p.description}</Text></View>)}
-    {data?.declaration&&!data.completed&&!data.noDocumentsVerified&&<View style={{...card,backgroundColor:'#E6F1EB'}}><Text style={{display:'block',fontWeight:600}}>已反馈，待专员核实</Text><Text style={{display:'block',marginTop:'6px',color:'#52695D'}}>{data.declaration.label}。如获得资料，可切换到“上传资料”补充。</Text></View>}
+    {data?.declaration&&!data.completed&&!data.noDocumentsVerified&&<View style={{...card,backgroundColor:'#E6F1EB'}}><Text style={{display:'block',fontWeight:600}}>已反馈，待专员核实</Text><Text style={{display:'block',marginTop:'6px',color:'#52695D'}}>{data.declaration.label}</Text><Text style={{display:'block',marginTop:'8px'}}>补充说明：{data.declaration.note||'未填写'}</Text><Text style={{display:'block',fontSize:'12px',color:'#66796F',marginTop:'8px'}}>提交时间：{formatSubmittedAt(data.declaration.submittedAt)} · 待专员核实</Text></View>}
     {data?.noDocumentsVerified?<View style={card}>专员已核实本次无可提供资料，你无需继续上传。</View>:data?.completed?<View style={card}>本次资料已提交，上传提醒已结束。健管专员继续审核。需要追加时，请使用常规报告上传入口。</View>:data?.canUpload?<>
       <View style={{display:'flex',gap:'10px',marginTop:'18px'}}>{[['上传资料',false],['没有可上传资料',true]].map(([label,value])=><Button key={label} disabled={busy||picking} style={{flex:1,backgroundColor:absence===value?'#1E6B50':'#fff',color:absence===value?'#fff':'#274838'}} onClick={()=>setAbsence(value)}>{label}</Button>)}</View>
       {!absence&&<View style={card}>

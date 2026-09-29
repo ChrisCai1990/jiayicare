@@ -34,6 +34,7 @@ function projectTasks(f) {
     if(['draft','review'].includes(s.stage)&&s.data?.audit)plans.push({_id:`care-plan:${f._id}:review`,careFlowId:String(f._id),customerReadOnly:true,type:'followup',title:`就医后健康计划 · ${s.title||'本次就医'}`,status:'pending',priority:'low',scheduleLabel:'待顾问确认',assignee:'健康顾问',description:'本次报告及病历已由健管专员审核。健康顾问正在核对后续随访时间和内容，确认后将在健康计划中显示；请以最终确认的信息为准。'});
     if(s.customerUpload?.declaration&&!s.customerUpload?.completedAt&&!s.data?.upload?.noDocuments)for(const plan of plans){
       plan.documentDeclaration=s.customerUpload.declaration;
+      plan.customerActionRequired=false;
       if(plan.uploadReminder){plan.scheduleLabel='已反馈，待专员核实';plan.assignee='健管专员';plan.title=`资料情况待核实 · ${s.title||'本次就医'}`;plan.description=`客户已反馈：${s.customerUpload.declaration.label}。${s.customerUpload.declaration.note||''}\n等待健管专员核实，拿到资料后仍可补传。`;}
     }
     return plans;

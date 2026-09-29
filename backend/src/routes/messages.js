@@ -91,6 +91,7 @@ router.get('/thread/:role', auth, async (req, res) => {
     ChatConversationState.findOne({ conversationId }).select('humanActive takenOverAt').lean(),
   ]);
   const messages = newestMessages.map(withSignedMessageMedia);
+  if(role==='manager')messages.push(...await require('../utils/careFlowFeedbackMessages').list(req.user._id,req.user.tenantId));
   // 旧版健康规划师曾使用 ChatLog。只在读取时并入统一线程；今后的消息均写入 Message。
   if (role === 'planner') {
     plannerLogs.forEach((log) => {

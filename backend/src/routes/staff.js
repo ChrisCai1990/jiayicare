@@ -9767,6 +9767,7 @@ router.get('/user-messages/:userId/thread', staffAuth, async (req, res) => {
       ChatConversationState.findOne({ conversationId }).select('humanActive takenOverAt takenOverBy').lean(),
     ]);
     const messages = newestMessages.map(withSignedMessageMedia);
+    if(role==='manager')messages.push(...await require('../utils/careFlowFeedbackMessages').list(req.params.userId,req.staff.tenantId));
     if (role === 'planner') {
       plannerLogs.forEach(log => {
         if (log.userMessage) messages.push({ _id: `chat-user:${log._id}`, user: log.user, type: 'user', sender: '客户', content: log.userMessage, imageUrl: log.imageUrl || '', audioUrl: log.audioUrl || '', audioDuration: log.audioDuration || 0, audioTranscript: log.audioTranscript || '', createdAt: log.createdAt });

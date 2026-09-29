@@ -105,12 +105,14 @@ async function replyWithAI({ userId, recipient, content, conversationId }) {
     if (await ChatConversationState.exists(humanPresentQuery(conversationId))) return;
     const [history, user, healthContext, orderServiceContext] = await Promise.all([
       Message.find({ conversationId, recalled: { $ne: true } }).sort({ createdAt: -1 }).limit(20).select('type content audioTranscript createdAt').lean(),
-      User.findById(userId).select('name gender preferredTitle').lean(),
+      User.findById(userId).select('name gender preferredTitle tenantId').lean(),
       buildHealthContext(userId),
       recipient === 'planner' ? buildOrderServiceContext(userId, conversationId) : '',
     ]);
 
-    history.reverse();
+    const feedback=recipient==='manager'?await require('./careFlowFeedbackMessages').list(userId,user?.tenantId):[];
+    history.push(...feedback);
+    history.sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
     // 只保留与最新一条连续的对话段；长时间前的旧话题不参与本轮推理。
     let segmentStart = 0;
     for (let i = history.length - 1; i > 0; i -= 1) {
@@ -123,7 +125,7 @@ async function replyWithAI({ userId, recipient, content, conversationId }) {
     const isFirstAIReply = !recentHistory.some(m => m.type !== 'user');
     const disclaimer = isFirstAIReply ? FULL_DISCLAIMER : SHORT_DISCLAIMER;
     const title = resolveTitle(user);
-    const systemPrompt = buildSystemPrompt(isFirstAIReply, title, healthContext, orderServiceContext);
+    const systemPrompt = buildSystemPrompt(isFirstAIReply, title, [healthContext,feedback.length?'客户已保存的当前就医反馈（不是人工核实结论；不要沿用旧聊天中的补传要求）：\n'+feedback.map(m=>m.content).join('\n'):''].filter(Boolean).join('\n'), orderServiceContext);
 
     const chatMessages = recentHistory.map(m => ({
       role: m.type === 'user' ? 'user' : 'assistant',

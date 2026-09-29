@@ -305,7 +305,8 @@ export default function HomePage() {
     ...followupTaskItems.filter((item) => item.sourceType !== 'symptom'),
   ];
 
-  const taskCards = homeTaskCards(allPendingTaskItems);
+  const submittedFeedback=homeTaskCards(allPendingTaskItems.filter(t=>t.documentDeclaration||t.customerActionRequired===false));
+  const taskCards = homeTaskCards(allPendingTaskItems.filter(t=>!t.documentDeclaration&&t.customerActionRequired!==false));
   const showScoreTrend = () => Taro.showModal({title:'健康评分趋势',content:(scoreHistory.length ? scoreHistory.map(h => `${h.date}：${h.score} 分`).join('\n') : '暂无历史评分记录') + '\n\n评分仅供健康管理参考，不作为医学诊断。',showCancel:false});
 
   const markTaskDone = async () => {
@@ -388,6 +389,7 @@ export default function HomePage() {
           )}
         </View>
 
+        {submittedFeedback.length>0&&<View onClick={()=>Taro.navigateTo({url:'/pages/tasks/index?feedback=1'})} style={{backgroundColor:'#fff',borderRadius:'14px',padding:'14px 16px',marginBottom:'20px',display:'flex',justifyContent:'space-between'}}><Text style={{fontSize:'13px',color:colors.textSecondary}}>已提交反馈 · {submittedFeedback.length} 项待团队处理</Text><Text style={{fontSize:'13px',color:colors.primary}}>查看 ›</Text></View>}
         <View style={{marginBottom:'24px'}}>
           <Text style={{fontSize:'17px',fontWeight:700,color:colors.textPrimary,display:'block',marginBottom:'12px'}}>我的权益</Text>
           <View onClick={()=>Taro.navigateTo({url:'/pages/profile/benefits/index?section=plan'})} style={{backgroundColor:'#fff',borderRadius:'18px',padding:'18px',display:'flex',alignItems:'center',gap:'12px'}}>

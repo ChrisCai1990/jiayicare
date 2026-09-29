@@ -45,12 +45,15 @@ export default function TasksPage() {
     ...tasks.map(t => ({ ...t, _kind: 'task', _status: t.status === 'cancelled' ? 'cancelled' : t.status === 'completed' ? 'done' : 'active' })),
     ...followups.map(f => ({ ...f, _kind: 'followup', _status: f.status === 'cancelled' ? 'cancelled' : (f.completedByUser || f.status === 'completed') ? 'done' : 'active' })),
   ];
+  const [showFeedback,setShowFeedback]=useState(Taro.getCurrentInstance().router?.params?.feedback==='1');
   const today = new Date();
   const todayKey = today.toISOString().slice(0, 10);
   const weekEnd = new Date(today); weekEnd.setDate(today.getDate() + 7);
   const monthEnd = new Date(today); monthEnd.setMonth(today.getMonth() + 1);
   const visible = normalized.filter(item => {
     if (item._status !== 'active') return false;
+    if(showFeedback)return !!item.documentDeclaration&&(item.uploadReminder||!normalized.some(t=>t.careFlowId===item.careFlowId&&t.uploadReminder));
+    if(item.documentDeclaration||item.customerActionRequired===false)return false;
     if (timeFilter === '全部') return true;
     const key = dateKey(item);
     if (!key) return true;
@@ -67,6 +70,7 @@ export default function TasksPage() {
         <View style={{ width: '28px' }} />
       </View>
       <View style={{ padding: `${spacing.md}px ${spacing.lg}px 0` }}>
+        <View style={{display:'flex',gap:'16px',marginBottom:'14px'}}>{[['待处理',false],['已提交反馈',true]].map(([label,value])=><Text key={label} onClick={()=>setShowFeedback(value)} style={{color:showFeedback===value?colors.primary:colors.textMuted,fontWeight:showFeedback===value?700:400}}>{label}</Text>)}</View>
         <ScrollView scrollX style={{ whiteSpace: 'nowrap', marginBottom: `${spacing.md}px` }}><View style={{ display: 'inline-flex', gap: '8px' }}>
           {TIME_TABS.map(tab => <View key={tab} onClick={() => setTimeFilter(tab)} style={{ padding: '6px 14px', borderRadius: `${radius.full}px`, backgroundColor: timeFilter === tab ? colors.primary10 : '#fff', border: `1px solid ${timeFilter === tab ? colors.primary : colors.border}` }}><Text style={{ fontSize: '12px', color: timeFilter === tab ? colors.primary : colors.textSecondary }}>{tab}</Text></View>)}
         </View></ScrollView>
@@ -78,7 +82,7 @@ export default function TasksPage() {
                 <Text style={{ fontSize: '12px', color: colors.textMuted }}>{item.staffId?.name || item.assignee || '健康管理团队'} · {dateKey(item)||item.scheduleLabel} {item.dueTime||''}</Text>
                 {!!item.description && <Text style={{display:'block',whiteSpace:'pre-wrap',lineHeight:'24px',fontSize:'13px',marginTop:'8px'}}>{item.description}</Text>}{!!item.content && <Text style={{ fontSize: '12px', color: colors.textSecondary, marginTop: '4px' }}>{item.content}</Text>}
               </View>
-              <View onClick={e => {e.stopPropagation();item.canUploadReports ? Taro.navigateTo({url:'/pages/tasks/report-upload/index?flowId='+item.careFlowId}) : item.customerReadOnly ? Taro.showModal({title:item.title,content:item.description,showCancel:false}) : item.workflowKey === 'medical_reminder:documents' ? Taro.navigateTo({ url: '/pages/records/upload/index' }) : item._kind === 'followup' ? doneFollowup(item) : completeTask(item._id)}} style={{ padding: '7px 14px', backgroundColor: colors.primary10, borderRadius: `${radius.full}px` }}><Text style={{ fontSize: '12px', color: colors.primary, fontWeight: 700 }}>{item.canUploadReports ? '直接上传' : item.customerReadOnly ? '查看安排' : item.workflowKey === 'medical_reminder:documents' ? '上传资料' : '完成'}</Text></View>
+              <View onClick={e => {e.stopPropagation();item.canUploadReports ? Taro.navigateTo({url:'/pages/tasks/report-upload/index?flowId='+item.careFlowId}) : item.customerReadOnly ? Taro.showModal({title:item.title,content:item.description,showCancel:false}) : item.workflowKey === 'medical_reminder:documents' ? Taro.navigateTo({ url: '/pages/records/upload/index' }) : item._kind === 'followup' ? doneFollowup(item) : completeTask(item._id)}} style={{ padding: '7px 14px', backgroundColor: colors.primary10, borderRadius: `${radius.full}px` }}><Text style={{ fontSize: '12px', color: colors.primary, fontWeight: 700 }}>{item.documentDeclaration ? '查看反馈' : item.canUploadReports ? '直接上传' : item.customerReadOnly ? '查看安排' : item.workflowKey === 'medical_reminder:documents' ? '上传资料' : '完成'}</Text></View>
             </View>
           </View>
         ))}
