@@ -83,7 +83,10 @@ export default function VisitorLeadWorkbench({ toast }) {
       const { row, action } = edit
       if (action === 'convert') await staffAPI.convertVisitorLead(row._id, { ...form, nextContactAt: new Date(form.nextContactAt).toISOString() })
       else if (['contacted', 'closed', 'new'].includes(action)) await staffAPI.updateVisitorLead(row._id, { status: action, contactNote: form.note, baseUpdatedAt: row.updatedAt })
-      else await staffAPI.updateServiceIntake(row._id, { ...form, action, revision: row.revision, ...(action !== 'close' ? { nextContactAt: new Date(form.nextContactAt).toISOString() } : {}) })
+      else {
+        const { nextContactAt, ...values } = form
+        await staffAPI.updateServiceIntake(row._id, { ...values, action, revision: row.revision, ...(action !== 'close' ? { nextContactAt: new Date(nextContactAt).toISOString() } : {}) })
+      }
       setEdit(null); window.dispatchEvent(new Event('consultation-retry')); toast('已保存'); await load()
     } catch (e) { setModalError(e.message || '保存失败，请核对后重试') }
     finally { submitting.current = false; setBusy(false) }
@@ -161,12 +164,13 @@ export default function VisitorLeadWorkbench({ toast }) {
           <div className="intake-actions">
             <div className="intake-actions-main">{row.status === 'open' && <>
               {!row.orderId && !row.planId && <button className="btn btn-primary" onClick={() => open(row, 'link')}>关联实际服务</button>}
-              <button className={`btn ${row.orderId || row.planId ? 'btn-primary' : 'btn-secondary'}`} onClick={() => open(row, 'followup')}>追加跟进</button>
+              <button className={`btn ${(row.orderId || row.planId) && !row.progress.canClose ? 'btn-primary' : 'btn-secondary'}`} onClick={() => open(row, 'followup')}>追加跟进</button>
+              <button className={`btn ${row.progress.canClose ? 'btn-primary' : 'btn-secondary'}`} disabled={!row.progress.canClose} title={!row.progress.canClose ? '关联服务尚未结束，请先处理原订单及待办' : undefined} onClick={() => open(row, 'close')}>结束跟进</button>
             </>}</div>
             <div className="intake-actions-secondary">
               <button className="consultation-text-button" onClick={() => nav(`/patients/${row.patientId}`)}>客户档案与订单</button>
               {row.planId && <button className="consultation-text-button" onClick={() => nav(`/plans/${row.planId}`)}>打开服务方案</button>}
-              {row.status === 'open' && <button className="consultation-text-button" disabled={!row.progress.canClose} title={!row.progress.canClose ? '原服务仍在办理，结束后可记录结论' : undefined} onClick={() => open(row, 'close')}>记录承接结论</button>}
+
             </div>
           </div>
           <details className="intake-history"><summary>跟进记录（{row.events?.length || 0}）</summary>
@@ -183,7 +187,7 @@ export default function VisitorLeadWorkbench({ toast }) {
       <button className="btn btn-secondary" disabled={page * result.limit >= result.total || loading} onClick={() => setPage(p => p + 1)}>下一页</button>
     </div>}
     {edit && <div className="modal-overlay" onClick={closeDialog}><div className="modal" role="dialog" aria-modal="true" aria-label="服务承接" onClick={e => e.stopPropagation()} style={{ maxWidth: 620, width: '94vw', maxHeight: '90vh', overflowY: 'auto' }}>
-      <form onSubmit={save}><div className="modal-header"><h3>{edit.action === 'contacted' ? '记录联系结果' : '服务承接'}</h3><button type="button" className="btn btn-secondary" disabled={busy} onClick={closeDialog}>关闭</button></div>
+      <form onSubmit={save}><div className="modal-header"><h3>{edit.action === 'close' ? '结束跟进' : edit.action === 'contacted' ? '记录联系结果' : '服务承接'}</h3><button type="button" className="btn btn-secondary" disabled={busy} onClick={closeDialog}>关闭</button></div>
       <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
         {edit.action === 'convert' && <>
           <section className="consultation-content">
@@ -210,9 +214,10 @@ export default function VisitorLeadWorkbench({ toast }) {
         </>}
         {['convert', 'link', 'followup'].includes(edit.action) && <label>下次跟进时间<input required className="form-control" type="datetime-local" value={form.nextContactAt} onChange={field('nextContactAt')} /></label>}
         {edit.action !== 'convert' && <label>{edit.action === 'close' ? '承接结论及后续安排' : '本次沟通记录'}<textarea required placeholder="请记录联系渠道、客户诉求、沟通结果及约定安排" maxLength={['contacted', 'closed', 'new'].includes(edit.action) ? 500 : 1000} className="form-control" value={form.note} onChange={field('note')} /></label>}
+        {edit.action === 'close' && <p className="consultation-caption">填写结束原因后，本条将移出工作台，历史记录保留在“已关闭”中，无需再安排下次跟进。</p>}
         {edit.action === 'contacted' && <p className="consultation-caption">保存时记录本次联系时间，线索将移出工作台，可在“已联系”中查看和继续承接。</p>}
         {modalError && <p role="alert" style={{ color: '#b91c1c' }}>{modalError}</p>}
-      </div><div className="modal-footer"><button type="submit" className="btn btn-primary" disabled={busy || searching}>{busy ? '正在保存…' : '确认保存'}</button></div></form>
+      </div><div className="modal-footer"><button type="submit" className="btn btn-primary" disabled={busy || searching}>{busy ? '正在保存…' : edit.action === 'close' ? '确认结束跟进' : '确认保存'}</button></div></form>
     </div></div>}
   </>
 }

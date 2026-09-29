@@ -186,3 +186,21 @@ test('direct service link defaults to open rather than lead status', async () =>
   const view=await mount(React.createElement(MemoryRouter,{initialEntries:['/visitor-leads?workbench=intakes&itemId=target']},React.createElement(View,{toast:()=>{}})));
   try {assert.equal(query.status,'open');assert.equal(query.itemId,'target')}finally{await view.close()}
 });
+
+
+test('ending followup requires conclusion but no next date and removes closed record from open list', async () => {
+ let saved;
+ const row={_id:'i',revision:3,status:'open',customer:{name:'示例客户'},orderId:'o',progress:{stage:'原服务已结束',current:[],canClose:true}};
+ const View=load('components/VisitorLeadWorkbench.jsx',{'../api':{staffAPI:{getServiceIntakes:async()=>({data:saved?[]:[row],total:saved?0:1,limit:50}),updateServiceIntake:async(id,body)=>{saved={id,body}}}}}).default;
+ const view=await mount(React.createElement(MemoryRouter,{initialEntries:['/visitor-leads?workbench=intakes']},React.createElement(View,{toast:()=>{}})));
+ try {
+  await click(view.container,'结束跟进');
+  const dialog=view.container.querySelector('[role=dialog]');
+  assert.equal(dialog.querySelector('input[type=datetime-local]'),null);
+  assert.equal(dialog.querySelector('textarea').required,true);
+  await act(async()=>{const input=dialog.querySelector('textarea');Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value').set.call(input,'客户无需继续跟进');input.dispatchEvent(new window.Event('input',{bubbles:true}))});
+  await act(async()=>dialog.querySelector('form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})));
+  assert.equal(saved.id,'i');assert.equal(saved.body.action,'close');assert.equal(saved.body.revision,3);assert.equal('nextContactAt' in saved.body,false);
+  assert.match(view.container.textContent,/当前没有符合条件/);
+ } finally {await view.close()}
+});
