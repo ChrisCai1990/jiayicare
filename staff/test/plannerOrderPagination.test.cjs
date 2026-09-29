@@ -43,7 +43,7 @@ async function setup(count) {
     '../components/Pagination': load('components/Pagination.jsx'),
     '../utils/plannerOrderProgress.mjs': { plannerOrderRows, isCustomerOrder },
   }
-  for (const name of ['AiTodosPanel', 'SymptomTodosPanel', 'FollowUpsPanel', 'ServiceTasksPanel', 'MonthlyReviewWorkbench']) {
+  for (const name of ['ConsultationTodosPanel', 'AiTodosPanel', 'SymptomTodosPanel', 'FollowUpsPanel', 'ServiceTasksPanel', 'MonthlyReviewWorkbench']) {
     mocks[`../components/${name}`] = { __esModule: true, default: () => null }
   }
   const Home = load('pages/HomePage.jsx', mocks).default
