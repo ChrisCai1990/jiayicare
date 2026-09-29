@@ -6,6 +6,18 @@ const report = { reportItems: [
   { itemId: 'dental', name: '口腔', status: 'unknown', findings: '牙结石', sourcePage: 4 },
   { itemId: 'normal', name: '血常规', status: 'normal', value: '正常' },
 ] };
+test('同报告明确数值范围内的未知标记无需重复核对，不猜测复杂范围或覆盖异常', () => {
+  const { withinSourceRange, reviewView } = require('../src/utils/reportIssues');
+  for (const [value, range] of [['10.83', '3—100'], ['0.292', '0.15—1.00'], ['2.10nmol/L', '0.98—2.99'], ['108.51nmol/L', '57.1—178.5']]) {
+    const source = { id: 'lab', status: 'unknown', evidence: `结果：${value}\n参考范围：${range}` };
+    assert.equal(withinSourceRange(source), true);
+    const view = reviewView({ purpose: 'annual_report_input', status: 'advisor_review', issueSources: [source], issueDrafts: [], issueCoverage: [{ sourceId: 'lab', status: 'pending' }] });
+    assert.equal(view.issueCoverage[0].status, 'normal');
+    assert.equal(withinSourceRange({ ...source, status: 'abnormal' }), false);
+    assert.equal(withinSourceRange({ ...source, evidence: source.evidence + '\n其他异常所见' }), false);
+  }
+  for (const evidence of ['结果：12\n参考范围：3—10', '结果：2\n参考范围：成人1—3，儿童2—5', '结果：2\n参考范围：<3', '结果：2mg/L\n参考范围：1—3g/L', '结果：2↑\n参考范围：1—3']) assert.equal(withinSourceRange({ evidence }), false);
+});
 test('胃镜和口腔无建议也保留，漏提和错误正常分类不能吞掉异常', () => {
   const result = reconcile(issueSources(report), [{ sourceId: 'item:gastric', status: 'normal' }, { sourceId: 'item:normal', status: 'normal' }]);
   assert.equal(result.coverage.length, 3); assert.equal(result.issues.length, 1);

@@ -2,6 +2,21 @@ const { randomUUID } = require('node:crypto');
 const PURPOSE = 'annual_report_input';
 const text = value => typeof value === 'string' ? value.trim() : '';
 
+// Compare only an unambiguous single value with its own closed reference range.
+// No medical thresholds, unit conversion, or inference from narrative findings.
+function withinSourceRange(source) {
+  if (['abnormal', 'attention'].includes(source.status)) return false;
+  const lines = text(source.evidence).split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  if (lines.length !== 2) return false;
+  const number = '(-?(?:\\d+(?:\\.\\d+)?|\\.\\d+))';
+  const unit = '([A-Za-zμµ%][A-Za-zμµ%/·^0-9²³]*|)';
+  const value = lines[0].match(new RegExp('^结果[：:]\\s*' + number + '\\s*' + unit + '$'));
+  const range = lines[1].replace(/[—–−~～至]/g, '-').match(new RegExp('^参考范围[：:]\\s*' + number + '\\s*-\\s*' + number + '\\s*' + unit + '$'));
+  if (!value || !range || (range[3] && range[3] !== value[2])) return false;
+  const actual = Number(value[1]), low = Number(range[1]), high = Number(range[2]);
+  return [actual, low, high].every(Number.isFinite) && low <= high && actual >= low && actual <= high;
+}
+
 // Keep evidence outside model-authored text. Every parsed source gets a coverage row.
 function issueSources(report) {
   const sources = (report.reportItems || []).map((item, index) => ({
@@ -26,9 +41,9 @@ function reconcile(sources, answers) {
     const flagged = ['abnormal', 'attention'].includes(source.status);
     const valid = answer && ['normal', 'problem', 'uncertain'].includes(answer.status);
     const status = flagged ? 'problem' : valid && source.evidence ? answer.status
-      : source.status === 'normal' && source.evidence ? 'normal' : 'pending';
+      : (source.status === 'normal' && source.evidence) || withinSourceRange(source) ? 'normal' : 'pending';
     coverage.push({ sourceId: source.id, name: source.name, page: source.page, status,
-      reason: !source.evidence ? '已解析项目缺少结果，需核对原件' : !valid ? (flagged ? '原资料标记异常或需关注' : source.status === 'normal' ? '原已审核资料标记正常' : '尚未判断，待核对资料，不等于异常') : flagged && answer.status === 'normal' ? '原资料已标异常，保留问题待核对' : text(answer.reason) });
+      reason: !source.evidence ? '已解析项目缺少结果，需核对原件' : !valid ? (flagged ? '原资料标记异常或需关注' : withinSourceRange(source) ? '数值在本报告明确参考范围内，无其他异常标记' : source.status === 'normal' ? '原已审核资料标记正常' : '尚未判断，待核对资料，不等于异常') : flagged && answer.status === 'normal' ? '原资料已标异常，保留问题待核对' : text(answer.reason) });
     if (status === 'normal' || status === 'pending') continue;
     const original = text(answer?.originalRecommendation);
     // Only verbatim source text can be presented as an original recommendation.
@@ -120,7 +135,11 @@ function reviewView(document) {
   const kept = (row.issueDrafts || []).filter(issue => !fallbackIds.has(issue.id) || preserve(issue)
     || baseline.issues.some(item => item.id === issue.id));
   return { ...row, issueDrafts: kept, issueCoverage: (row.issueCoverage || []).map(item => {
-    if (!fallbackIds.has(item.sourceId)) return item;
+    if (!fallbackIds.has(item.sourceId)) {
+      if (item.status === 'pending' && !kept.some(issue => issue.id === item.sourceId)
+        && withinSourceRange(sources.find(source => source.id === item.sourceId) || {})) return { ...item, status: 'normal', reason: '数值在本报告明确参考范围内，无其他异常标记' };
+      return item;
+    }
     if (kept.some(issue => issue.id === item.sourceId)) return { ...item, status: 'problem', reason: '原资料异常或已有顾问处理内容，保留核对' };
     return baseline.coverage.find(source => source.sourceId === item.sourceId) || item;
   }) };
@@ -141,4 +160,4 @@ function resolveCoverage(row, decisions = {}) {
   });
   return { issueDrafts: drafts, issueCoverage: coverage };
 }
-module.exports = { PURPOSE, issueSources, reconcile, extractIssues, validateIssues, annualIssueEvidence, reviewView, resolveCoverage };
+module.exports = { PURPOSE, issueSources, reconcile, extractIssues, validateIssues, annualIssueEvidence, reviewView, resolveCoverage, withinSourceRange };

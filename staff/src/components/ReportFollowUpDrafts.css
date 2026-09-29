@@ -20,3 +20,8 @@
 .report-issues-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.report-issues-confirm{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;background:#edf5f0;padding:16px;margin-top:16px;border-radius:9px}.report-issues-confirm label{font-size:13px;line-height:1.7}.report-issues-confirm button{background:#1e6b50;color:white;border-color:#1e6b50}
 .report-issues-error{color:#b42318}.report-issues-success{color:#1e6b50;background:#edf5f0;padding:12px;border-radius:8px}
 @media(max-width:700px){.report-issues{padding:15px}.report-issue-columns{grid-template-columns:1fr}.report-issue-card{padding:12px}.report-issues-confirm button{width:100%}}
+.report-issue-compact{padding:14px 16px;margin:10px 0}.report-issue-compact>header{margin-bottom:5px}
+.report-issues .report-issue-summary{font-size:13px;color:#61746a;margin:4px 0 10px}
+.report-issue-compact label{margin-top:8px}.report-issue-compact textarea{min-height:64px;padding:8px 10px}
+.report-issue-row{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.report-issue-row label{flex-direction:row;align-items:center;font-weight:400}.report-issue-row select{width:auto;padding:5px 9px;font-size:13px}
+.report-issue-compact .report-issue-evidence{margin-top:6px}.report-issues-coverage{padding:10px 14px;margin:12px 0}.report-issues-coverage>p{margin:0}
