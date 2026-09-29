@@ -69,7 +69,7 @@ function renderArticle(article, previewLabel) {
     : `
         <li>${escapeHtml(source.name)}</li>`).join('');
   const label = previewLabel ? '<p class="draft-notice">内部预览：本页尚未公开发布。</p>' : '';
-  const reviewMeta = previewLabel ? '' : `<p class="review-meta">内容已完成专业审核 · 审核日期：${escapeHtml(article.reviewedAt)} · <a href="../editorial-policy.html">审核与更新原则</a></p>`;
+  const reviewMeta = previewLabel ? '' : `<p class="review-meta">${article.contentType === 'service' ? '服务内容经业务确认 · 确认日期：' : '内容已完成专业审核 · 审核日期：'}${escapeHtml(article.reviewedAt)} · <a href="../editorial-policy.html">审核与更新原则</a></p>`;
   const stylesheetPath = previewLabel ? '../../styles.css' : '../styles.css';
   const canonicalUrl = `${siteUrl.replace(/\/$/, '')}/guides/${article.slug}.html`;
   const structuredData = previewLabel ? '' : `\n  <link rel="canonical" href="${canonicalUrl}">\n  <script type="application/ld+json">${JSON.stringify({
@@ -93,7 +93,7 @@ function renderArticle(article, previewLabel) {
   <main class="article-shell">
     <nav class="article-navigation" aria-label="页面导航"><a href="https://www.jiaycare.com/">嘉医汇官网</a><a href="https://www.jiaycare.com/services/">服务体系</a><a class="back-link" href="../index.html">← 返回理解健康</a></nav>
     <article>
-      ${label ? `${label}\n      ` : ''}<p class="eyebrow">健康教育 · 更新于 ${escapeHtml(article.updatedAt)}</p>
+      ${label ? `${label}\n      ` : ''}<p class="eyebrow">${article.contentType === 'service' ? '服务说明' : '健康教育'} · 更新于 ${escapeHtml(article.updatedAt)}</p>
       <h1>${escapeHtml(article.title)}</h1>
       <p class="lead">${escapeHtml(article.summary)}</p>
       ${reviewMeta ? `${reviewMeta}\n` : ''}${sections}

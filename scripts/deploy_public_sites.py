@@ -18,7 +18,7 @@ REMOTE_REPO = '/var/www/jiayicare'
 PUBLIC = {'corporate-site': '/var/www/jiayicare-static/corporate', 'geo-knowledge-center': '/var/www/jiayicare-static/knowledge'}
 
 def git(*args):
-    return subprocess.check_output(['git', *args], cwd=ROOT, text=True).strip()
+    return subprocess.check_output(['git', *args], cwd=ROOT, text=True, encoding='utf-8').strip()
 
 def run(client, command):
     _, out, err = client.exec_command(command, timeout=120)
@@ -67,7 +67,7 @@ def main():
         sftp = client.open_sftp()
         # Runtime publication may have newer articles than the Git snapshot.
         live_catalog = json.loads(sftp.open(PUBLIC['geo-knowledge-center'] + '/published-articles.json').read())
-        local_catalog = json.loads((ROOT / 'geo-knowledge-center/published-articles.json').read_text('utf-8'))
+        local_catalog = json.loads(git('show', f'{base}:geo-knowledge-center/published-articles.json'))
         if live_catalog != local_catalog:
             raise RuntimeError('Live content catalogue changed; preserve it before deploying')
         for index, item in enumerate(files):
