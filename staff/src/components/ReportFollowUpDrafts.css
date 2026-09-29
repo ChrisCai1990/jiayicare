@@ -1,0 +1,22 @@
+.report-issues{background:#fff;border:1px solid #d7e4dd;border-radius:14px;padding:24px;margin-bottom:24px;color:#1a2b24}
+.report-issues p{line-height:1.65;margin:8px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.report-issues-heading,.report-issues-report>header,.report-issue-card>header{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.report-issues-heading{justify-content:space-between;align-items:flex-start}.report-issues-heading>div{flex:1;min-width:240px}
+.report-issues h3{margin:0 0 8px;font-size:20px}.report-issues h4{margin:0;font-size:17px}
+.report-issues-heading p{color:#61746a;font-size:14px;max-width:850px}
+.report-issues button{border:1px solid #c9d8cf;border-radius:7px;background:#f5f8f6;color:#245a43;padding:8px 13px;cursor:pointer;font:inherit;font-size:13px}
+.report-issues button:disabled{opacity:.5;cursor:not-allowed}.report-issues button:focus-visible,.report-issues summary:focus-visible{outline:2px solid #1e6b50;outline-offset:3px}
+.report-issues-report{border-top:1px solid #e2e8e4;margin-top:22px;padding-top:22px}
+.report-issue-tag{display:inline-block;font-size:12px;color:#516b5e;background:#edf3ef;padding:4px 9px;border-radius:20px}
+.report-issues-coverage{background:#f4f7f5;border:1px solid #e1e9e4;border-radius:9px;padding:14px 16px;margin:16px 0;font-size:13px}.report-issues-coverage li{margin:10px 0}
+.report-issues summary{cursor:pointer;color:#285d47;padding:6px 0}.report-issues pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:280px;overflow:auto}
+.report-issue-card{border:1px solid #dce5df;border-radius:10px;margin:14px 0;padding:18px}.report-issue-card>header{margin-bottom:12px}
+.report-issue-card>header strong{flex:1;min-width:160px;overflow-wrap:anywhere}.report-issue-number{display:grid;place-items:center;background:#eaf2ed;border-radius:50%;width:26px;height:26px;font-size:13px}
+.report-issue-card fieldset{border:0;padding:0;margin:0;min-width:0}.report-issue-card label{display:flex;flex-direction:column;gap:7px;font-size:13px;font-weight:600;margin-top:14px}
+.report-issue-card input,.report-issue-card textarea,.report-issue-card select{box-sizing:border-box;width:100%;border:1px solid #cbd8d0;border-radius:7px;padding:10px 12px;background:#fff;color:#1a2b24;font:inherit;font-size:14px;line-height:1.6}
+.report-issue-card textarea{resize:vertical}.report-issue-card select{max-width:320px}.report-issue-card :disabled{color:#51635a;background:#f8faf9}
+.report-issue-evidence{margin-top:12px;font-size:13px}.report-issue-evidence p{max-height:260px;overflow:auto;padding:12px;background:#f5f7f6}
+.report-issue-columns{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;font-size:13px}.report-issue-original,.report-issue-proposal{padding:14px;border-radius:8px;background:#f5f7f6}.report-issue-proposal{background:#fff9ec}.report-issue-proposal button{margin:5px 6px 0 0}
+.report-issues-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.report-issues-confirm{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;background:#edf5f0;padding:16px;margin-top:16px;border-radius:9px}.report-issues-confirm label{font-size:13px;line-height:1.7}.report-issues-confirm button{background:#1e6b50;color:white;border-color:#1e6b50}
+.report-issues-error{color:#b42318}.report-issues-success{color:#1e6b50;background:#edf5f0;padding:12px;border-radius:8px}
+@media(max-width:700px){.report-issues{padding:15px}.report-issue-columns{grid-template-columns:1fr}.report-issue-card{padding:12px}.report-issues-confirm button{width:100%}}

@@ -10944,7 +10944,9 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     const consistency = require('../utils/annualGenerationConsistency');
     const clinicalRules = require('../utils/annualClinicalRules');
     const timeline = clinicalRules.reportTimeline(reports);
+    const confirmedReportIssues = closedLoop ? await require('../utils/reportIssues').annualIssueEvidence(user._id) : [];
     const evidence = [
+      ...confirmedReportIssues,
       ...confirmedCaseReviews.map(item => ({ id: `review:${item._id}`, content: item.conclusion })),
       ...confirmedCaseReviews.flatMap(item => (Array.isArray(item.conclusion?.structured?.actions) ? item.conclusion.structured.actions : []).map((action, index) => ({ id: `review:${item._id}:action:${index}`, content: action }))),
       ...professionalAssessments.map(item => ({ id: `assessment:${item._id}`, content: item })),
@@ -10979,7 +10981,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     };
     const generation = closedLoop ? await consistency.reuseAnnualGeneration(
       require('mongoose').connection.db.collection('annual_generation_snapshots'),
-      { patientId: String(user._id), year, templateId: String(templateId), ruleVersion: 4, model: process.env.QWEN_API_KEY ? 'qwen-plus' : 'deepseek-chat', prompt: checkedPrompt.split(todayText).join('<EXECUTION_DATE>'), sourceSnapshot: { sections: s, reports, confirmedCaseReviews, professionalAssessments, continuity: preparation.continuity || null, notes }, catalog: availableAnnualFollowUpCatalog }, generate,
+      { patientId: String(user._id), year, templateId: String(templateId), ruleVersion: 5, model: process.env.QWEN_API_KEY ? 'qwen-plus' : 'deepseek-chat', prompt: checkedPrompt.split(todayText).join('<EXECUTION_DATE>'), sourceSnapshot: { sections: s, reports, confirmedReportIssues, confirmedCaseReviews, professionalAssessments, continuity: preparation.continuity || null, notes }, catalog: availableAnnualFollowUpCatalog }, generate,
     ) : { raw: await generate() };
     const raw = generation.raw;
     const generationDay = generation.createdAt ? new Date(new Date(generation.createdAt).getTime() + 8 * 3600000).toISOString().slice(0, 10) : todayText;

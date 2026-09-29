@@ -9,6 +9,25 @@ const { sourceDigest } = require('../src/utils/reportFollowUpSource');
 const { publishReportFollowUps } = require('../src/utils/dynamicAssessmentFollowUps');
 const { isServiceRequest } = require('../src/utils/followUpServiceState');
 
+test('年度问题队列保留无建议异常，完成仅更新资料不派发执行随访', async t => {
+  const report = { _id: 'report', user: 'patient', audit_status: 'audited', reportItems: [{ name: '胃镜', status: 'abnormal', findings: '胃炎' }], followUpSourceEvent: { sequence: 1 } };
+  let current = { _id: 'draft', patientId: 'patient', reportId: 'report', purpose: 'annual_report_input', status: 'advisor_review', __v: 0, sourceSequence: 1, sourceKey: `report:1:${sourceDigest(report)}`, followUpAutomation: { status: 'queued' } };
+  t.mock.method(Draft, 'findById', async () => current);
+  t.mock.method(Report, 'findById', () => ({ lean: async () => report }));
+  t.mock.method(User, 'findById', () => ({ select: () => ({ lean: async () => ({ assignedFamilyDoctor: 'advisor' }) }) }));
+  t.mock.method(Draft, 'findOneAndUpdate', async (q, u) => { assert.equal(q.__v, current.__v); current = { ...current, ...u.$set, __v: current.__v + 1 }; return current; });
+  t.mock.method(require('../src/utils/reportIssues'), 'extractIssues', async value => { assert.equal(value.reportItems[0].findings, '胃炎'); return { issues: [{ id: 'gastric', title: '胃炎', originalRecommendation: '' }], coverage: [{ sourceId: 'gastric', status: 'problem' }], sources: [] }; });
+  t.mock.method(FollowUp, 'updateOne', async () => { throw Error('不应派执行任务'); });
+  const result = await require('../src/utils/reportFollowUpAutomation').generateReportIssues('draft', { automatic: true });
+  assert.equal(result.status, 'advisor_review'); assert.equal(result.issueDrafts.length, 1); assert.equal(result.followUpAutomation.status, 'ready');
+});
+
+test('年度问题已确认不进入旧发布重试', async t => {
+  t.mock.method(FollowUp, 'updateMany', async () => ({}));
+  t.mock.method(FollowUp, 'findOneAndUpdate', async () => { throw Error('不能重开随访发布'); });
+  await syncReportReviewTask({ _id: 'draft', patientId: 'patient', purpose: 'annual_report_input', status: 'approved', followUpPublication: { status: 'annual_input' } });
+});
+
 test('报告事件按唯一来源键落库后才标记完成，专用服务不调用AI或新增审核任务', async t => {
   const report = { _id: 'report', user: 'patient', audit_status: 'audited', sourceOrderId: 'order', followUpSourceEvent: { status: 'queued', sequence: 1, digest: 'digest' } };
   t.mock.method(Draft, 'findOne', () => ({ lean: async () => null }));

@@ -36,6 +36,17 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
   }));
   router.post('/:id/generate', staffAuth, wrap(async (req, res) => {
     const row = await load(req);
+    if (req.body.issueMode === true) {
+      if (!['advisor_review', 'no_action', 'excluded'].includes(row.status) || req.body.revision !== row.__v
+        || ['running', 'queued'].includes(row.followUpAutomation?.status)) fail('草稿正在处理或状态已更新，请刷新');
+      await workflow.assertReportDraftSource({ ...(row.toObject ? row.toObject() : row), purpose: 'annual_report_input' });
+      const updated = await Draft.findOneAndUpdate({ _id: row._id, status: row.status, __v: row.__v }, {
+        $set: { purpose: 'annual_report_input', status: 'advisor_review', followUpAutomation: { status: 'queued', message: '已排队，正在逐项核对完整已解析资料。' } }, $inc: { __v: 1 },
+      }, { new: true });
+      if (!updated) fail('草稿已更新，请刷新');
+      workflow.wakeReportDraftWorker();
+      return res.status(202).json({ success: true, data: updated });
+    }
     if (row.status !== 'advisor_review') fail('当前草稿不可重新生成');
     if (row.followUpAutomation?.status === 'skipped' && req.body.confirmIncrement !== true) fail('请先核对旧随访，确认仅补充新增事项');
     await workflow.assertReportDraftSource(row);
@@ -45,7 +56,41 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
   router.post('/:id/review', staffAuth, wrap(async (req, res) => {
     let row = await load(req);
     const action = req.body.action;
+    if (['save_issues', 'confirm_issues', 'manual_issues'].includes(action)) {
+      const issues = require('../utils/reportIssues');
+      if (!['advisor_review', 'no_action', 'excluded'].includes(row.status) || req.body.revision !== row.__v
+        || row.followUpAutomation?.status === 'running') fail('草稿状态已更新，请刷新');
+      await workflow.assertReportDraftSource({ ...(row.toObject ? row.toObject() : row), purpose: issues.PURPOSE });
+      let issueDrafts, issueCoverage = row.issueCoverage || [], issueSources = row.issueSources || [];
+      if (action === 'manual_issues') {
+        if (row.purpose === issues.PURPOSE && row.issueSources?.length) {
+          issueDrafts = row.issueDrafts;
+        } else {
+          const report = await require('../models/MedicalReport').findById(row.reportId).lean();
+          issueSources = issues.issueSources(report);
+          const initial = issues.reconcile(issueSources, []);
+          issueDrafts = initial.issues; issueCoverage = initial.coverage;
+        }
+      } else {
+        if (row.purpose !== issues.PURPOSE || row.followUpAutomation?.status !== 'ready') fail('请先重新提取问题或转人工核对');
+        if (action === 'confirm_issues' && req.body.coverageReviewed !== true) fail('请确认已核对资料覆盖范围及全部问题');
+        try { issueDrafts = issues.validateIssues(req.body.issueDrafts, row.issueDrafts || [], { confirm: action === 'confirm_issues' }); }
+        catch (error) { fail(error.message, 400); }
+      }
+      const confirmed = action === 'confirm_issues';
+      row = await Draft.findOneAndUpdate({ _id: row._id, status: row.status, __v: row.__v }, {
+        $set: { purpose: issues.PURPOSE, status: confirmed ? 'approved' : 'advisor_review', issueDrafts, issueCoverage, issueSources,
+          followUpAutomation: { status: 'ready', message: confirmed ? '问题及建议已确认，编制年度方案时自动融合；尚未生成执行随访。' : '问题及建议已保存，请核对覆盖范围后确认。' },
+          ...(confirmed ? { advisorReviewedBy: req.staff._id, advisorReviewedAt: new Date(), followUpPublication: { status: 'annual_input', message: '已作为年度方案编制依据，不在此处派发执行任务。' } } : {}) },
+        $inc: { __v: 1 }, $push: { auditLog: { action, at: new Date(), by: req.staff._id, coverageReviewed: confirmed } },
+      }, { new: true });
+      if (!row) fail('草稿已更新，请刷新');
+      if (confirmed) await workflow.completeReportReview(row._id);
+      else await workflow.syncReportReviewTask(row);
+      return res.json({ success: true, data: row });
+    }
     if (!['approve', 'reject', 'take_over'].includes(action)) fail('审核动作无效', 400);
+    if (row.purpose === 'annual_report_input') fail('请使用问题及建议确认入口，此处不发布随访');
     const serviceReview = action === 'approve' && req.body.serviceReviewId;
     if (serviceReview) await require('../utils/checkupMergedOutcome').runtime().assertDraft(row, req.staff, serviceReview);
     if (serviceReview && row.status === 'approved' && row.followUpPublication?.status === 'published') {

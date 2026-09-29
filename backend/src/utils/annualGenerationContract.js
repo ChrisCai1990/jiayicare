@@ -29,6 +29,7 @@ function annualGenerationPrompt(prompt, catalog, evidence, allowedKeys) {
   return prompt.slice(0, start) + marker + '\n' + JSON.stringify(annualGenerationExample(catalog, evidence, allowedKeys), null, 2)
     + '\n以上是字段结构示例，不是客户建议。无依据的类别返回空数组，年度体检返回空对象；不要为填满示例而新增事项。每条事项（包括年度体检和个性化事项）都必须包含basisSummary及非空sourceIds，且来源ID必须来自下方清单。不得输出未允许模块，包括monitoring。'
     + '\n【必须逐项核对的来源】' + JSON.stringify(evidence)
+    + '\nreport_issue开头的来源是顾问已确认的报告问题及建议，同样属于年度方案主题范围，不得因主评估未提及而忽略。逐项与现有建议合并去重；顾问确认建议为准，原文时间要求须保留。仅待核实/待评估的问题不能直接升级为治疗或检查安排。每个问题均须在evidenceCoverage中记录纳入或暂缓及具体原因。'
     + '\n每个来源在evidenceCoverage中恰好出现一次，status仅限included/deferred/not_applicable；reason必须具体。included必须有事项的sourceIds引用；存在矛盾或信息不足时deferred交顾问确认，不自行编造。项目名称简短。'
     + '\n日期为AI建议就医/复查日期，不是已预约：以原检查日期timingBaseDate（YYYY-MM-DD）起算，根据已审来源及风险评估间隔timingIntervalMonths，换算具体visit_time/time/date（YYYY-MM-DD）；timingReason解释依据及不确定性，供健康顾问审核。已有明确医嘱优先。不能因尚未预约就全部填待确认；无法可靠确定基准或间隔才留空并说明，不得捏造检查日期。预约安排日期由系统提前7天计算，不由AI重复生成。科室可给初步建议；医院和专家不确定留空，不把偏好当已预约。focus必须为逐行文本，不得为对象。';
 }

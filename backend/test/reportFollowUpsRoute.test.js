@@ -18,6 +18,22 @@ async function request(t, body) {
   const response = await fetch(`http://127.0.0.1:${server.address().port}/${ids.draft}/review`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   return { status: response.status, body: await response.json() };
 }
+
+test('问题确认仅存年度依据，零执行派单，旧发布入口拒绝', async t => {
+  actor = { _id: ids.advisor, role: 'familyDoctor' }; visible = [ids.patient];
+  const issues = [{ id: 'item:gastric', title: '胃镜异常', evidence: '原文胃炎', advisorRecommendation: '' }];
+  let current = row({ purpose: 'annual_report_input', issueDrafts: issues });
+  t.mock.method(Draft, 'findById', async () => current);
+  t.mock.method(workflow, 'assertReportDraftSource', async () => {});
+  t.mock.method(workflow, 'completeReportReview', async () => {});
+  t.mock.method(Draft, 'findOneAndUpdate', async (query, update) => { assert.equal(query.__v, 0); current = { ...current, ...update.$set, __v: 1 }; return current; });
+  t.mock.method(FollowUp, 'updateOne', async () => { throw Error('不应派发执行任务'); });
+  assert.equal((await request(t, { action: 'approve', revision: 0 })).status, 409);
+  assert.equal((await request(t, { action: 'confirm_issues', revision: 0, issueDrafts: issues })).status, 409);
+  const result = await request(t, { action: 'confirm_issues', revision: 0, coverageReviewed: true, issueDrafts: [{ ...issues[0], evidence: '篡改', advisorRecommendation: '结合原报告补充评估' }] });
+  assert.equal(result.status, 200); assert.equal(result.body.data.followUpPublication.status, 'annual_input');
+  assert.equal(result.body.data.issueDrafts[0].evidence, '原文胃炎');
+});
 test('非顾问及无客户权限不能审核报告草稿', async t => {
   actor = { _id: ids.advisor, role: 'healthManager' }; visible = [ids.patient];
   t.mock.method(Draft, 'findById', async () => row());
