@@ -2902,16 +2902,28 @@ export default function PatientDetailPage() {
       .catch(() => {})
   }
 
-  const openHealthCourseReview = async report => {
+  const openHealthCourseReview = async (report, { pendingOnly = false } = {}) => {
+    const patientId = id
     setHealthCourseSaving(true)
     setHealthCourseError('')
     try {
-      const response = await staffAPI.generateHealthCourseDraft(report._id)
-      const draft = response.data || {}
+      let draft
+      if (pendingOnly) {
+        const response = await staffAPI.getReport(report._id)
+        report = response.data
+        if (activePatientId.current !== patientId) return
+        if (!report || String(report.user?._id || report.user || '') !== String(patientId)) throw new Error('该资料不属于当前会员，请返回工作台重新打开任务')
+        if (report.healthCourseDraft?.status !== 'pending_review') throw new Error('该健康变化已处理或不再待审核，请返回工作台刷新任务')
+        draft = report.healthCourseDraft
+      } else {
+        const response = await staffAPI.generateHealthCourseDraft(report._id)
+        draft = response.data || {}
+      }
+      if (activePatientId.current !== patientId) return
       setHealthCourseReview({ report, diseaseName: draft.recommendedDiseaseName || '', content: draft.content || '', examination: draft.examination || '', diagnosis: draft.diagnosis || '', medicationChange: draft.medicationChange || '', treatmentResponse: draft.treatmentResponse || '', nextPlan: draft.nextPlan || '' })
-      await loadReports()
-    } catch (err) { toast(err.message || 'AI提取健康变化失败') }
-    finally { setHealthCourseSaving(false) }
+      if (!pendingOnly) await loadReports()
+    } catch (err) { if (activePatientId.current === patientId) toast(err.message || (pendingOnly ? '加载待审健康变化失败，请重试' : 'AI提取健康变化失败')) }
+    finally { if (activePatientId.current === patientId) setHealthCourseSaving(false) }
   }
 
   const reviewHealthCourseDraft = async action => {
@@ -2925,6 +2937,11 @@ export default function PatientDetailPage() {
       await staffAPI.reviewHealthCourseDraft(report._id, { action, ...form })
       toast(action === 'approve' ? '已由健康顾问审核并写入健康变化时间轴' : '已忽略本次AI草稿，原始资料仍保留')
       setHealthCourseReview(null)
+      if (location.state?.sourceTodo?.id === `healthcourse_${report._id}`) {
+        const search = new URLSearchParams(location.search)
+        search.delete('reportId')
+        nav(location.pathname + (search.toString() ? `?${search}` : ''), { replace: true, state: {} })
+      }
       await Promise.all([loadReports(), load()])
     } catch (err) { setHealthCourseError(err.message || '审核失败') }
     finally { setHealthCourseSaving(false) }
@@ -2932,6 +2949,7 @@ export default function PatientDetailPage() {
 
   useEffect(() => {
     const reportId = new URLSearchParams(location.search).get('reportId')
+    if (location.state?.sourceTodo?.type === 'health_course_review') return
     if (tab === 'reports' && reportId) openReportDetail({ _id: reportId, title: '待处理体检报告' })
   }, [tab, location.search])
 
@@ -4255,11 +4273,13 @@ export default function PatientDetailPage() {
             <div style={{ fontSize: 13, fontWeight: 700, color: '#8A5A00' }}>当前处理：{location.state.sourceTodo.label || '待处理任务'}</div>
             <div style={{ fontSize: 13, color: '#4A6558', marginTop: 3, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.6 }}>{location.state.sourceTodo.summary || '请核对本页对应信息并完成处理'}</div>
             {location.state.sourceTodo.updateLocation && <div style={{ fontSize: 12, color: '#8A5A00', marginTop: 4, fontWeight: 600 }}>更新位置：{location.state.sourceTodo.updateLocation}</div>}
+            {location.state.sourceTodo.type === 'health_course_review' && <div style={{ fontSize: 12, color: '#8A5A00', marginTop: 4 }}>点击“去审核健康变化”，核对草稿后选择“确认并写入健康变化”或“不入档”。仅隐藏提示不会完成任务。</div>}
             {location.state.sourceTodo.type === 'risk_review' && tab !== 'ai-risk' && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => setTab('ai-risk')}>查看完整风险依据</button>}
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {location.state.sourceTodo.type === 'health_course_review' && ['familyDoctor', 'superadmin'].includes(staff?.role) && <button type="button" className="btn btn-primary btn-sm" disabled={healthCourseSaving} onClick={() => openHealthCourseReview({ _id: location.state.sourceTodo.id.replace(/^healthcourse_/, '') }, { pendingOnly: true })}>{healthCourseSaving ? '加载中…' : '去审核健康变化'}</button>}
             {location.state.sourceTodo.type === 'risk_review' && <button type="button" className="btn btn-primary btn-sm" disabled={riskApproving} onClick={handleCloseRiskTodo}>{riskApproving ? '处理中…' : '已核对，确认关闭任务'}</button>}
-            <button className="btn btn-secondary btn-sm" onClick={() => nav(location.pathname + location.search, { replace: true, state: {} })}>{location.state.sourceTodo.type === 'risk_review' ? '仅隐藏提示' : '关闭提示'}</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => nav(location.pathname + location.search, { replace: true, state: {} })}>{['risk_review', 'health_course_review'].includes(location.state.sourceTodo.type) ? '仅隐藏提示' : '关闭提示'}</button>
           </div>
         </div>
       )}
