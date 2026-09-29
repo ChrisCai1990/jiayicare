@@ -18,7 +18,7 @@ REMOTE_REPO = '/var/www/jiayicare'
 PUBLIC = {'corporate-site': '/var/www/jiayicare-static/corporate', 'geo-knowledge-center': '/var/www/jiayicare-static/knowledge'}
 
 def git(*args):
-    return subprocess.check_output(['git', *args], cwd=ROOT, text=True).strip()
+    return subprocess.check_output(['git', *args], cwd=ROOT, text=True, encoding='utf-8').strip()
 
 def run(client, command):
     _, out, err = client.exec_command(command, timeout=120)
