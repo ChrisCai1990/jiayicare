@@ -1,23 +1,28 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { staffAPI } from '../api'
 import './ReportFollowUpDrafts.css'
-import { compactEvidence, evidenceSummary } from '../utils/reportIssuePresentation'
+import { compactEvidence, evidenceSummary, groupedIssues, problemGroups } from '../utils/reportIssuePresentation'
 
 const PURPOSE = 'annual_report_input'
 const statusLabel = { advisor_review: '待顾问确认', approved: '已确认', rejected: '未采纳', excluded: '已有服务承接', superseded: '来源已更新', no_action: '待重新核对' }
 
 export function ReportIssueCard({ issue, index, disabled, onChange }) {
   const proposal = issue.originalRecommendation || issue.suggestedRecommendation
+  const sources = issue.sourceRefs || [{ sourceName: issue.sourceName, page: issue.page, excerpt: issue.evidence }]
   return <article className="report-issue-card report-issue-compact">
     <header><span className="report-issue-number">{index + 1}</span><strong>{issue.title || '待补充问题'}</strong><span className="report-issue-tag">{issue.decision === 'exclude' ? '不纳入' : issue.advisorRecommendation ? '已填写建议' : proposal ? '待确认建议' : '待补建议'}</span></header>
     {issue.evidence && <p className="report-issue-summary">{evidenceSummary(issue.evidence)}</p>}
+    {sources.length > 1 && <p className="report-issue-summary">合并 {new Set(sources.map(source => source.sourceId || source.sourceName)).size} 处依据：{[...new Set(sources.map(source => source.sourceName))].join('、')}。不同日期及描述请在来源中核对。</p>}
+    {issue.reviewCarryover && <p className="report-issues-error">已有顾问意见保留，请核对其对应问题；未自动拆分或改写。</p>}
+    {issue.recommendationConflict && <div className="report-issues-error">原有顾问意见不一致，请统一确认：{issue.advisorAlternatives?.map((note, i) => <p key={i}>{note}</p>)}</div>}
     <fieldset disabled={disabled}>
       <label>顾问确认建议<textarea value={issue.advisorRecommendation || ''} maxLength={6000} rows={2} placeholder="填写处理建议，供年度方案融合" onChange={e => onChange({ advisorRecommendation: e.target.value })} /></label>
       <div className="report-issue-row"><label>年度方案<select value={issue.decision || 'include'} onChange={e => onChange({ decision: e.target.value })}><option value="include">纳入编制参考</option><option value="exclude">暂不纳入</option></select></label>{proposal && !disabled && <button type="button" onClick={() => onChange({ advisorRecommendation: proposal })}>{issue.originalRecommendation ? '采用原文建议' : '带入系统建议'}</button>}</div>
       {issue.decision === 'exclude' && <label>不纳入原因<input maxLength={2000} value={issue.exclusionReason || ''} onChange={e => onChange({ exclusionReason: e.target.value })} placeholder="例如：与另一问题合并" /></label>}
-      <details className="report-issue-evidence"><summary>依据与建议来源 · {issue.sourceName || '顾问补充'}{issue.page ? ` · 第${issue.page}页` : ''}</summary>
+      <details className="report-issue-evidence"><summary>依据与建议来源 · {sources.length}处</summary>
         <label>问题名称<input value={issue.title || ''} maxLength={200} onChange={e => onChange({ title: e.target.value })} /></label>
-        <p>{compactEvidence(issue.evidence) || '顾问补充事项，请在建议中说明依据。'}</p>
+        <label>问题分组<select value={issue.group || groupedIssues([issue])[0]?.key || 'other'} onChange={e => onChange({ group: e.target.value })}>{problemGroups.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+        {sources.map((source, i) => <div key={i} className="report-problem-source"><b>{source.sourceName || '顾问补充'}{source.page ? ` · 第${source.page}页` : ''}{source.date ? ` · ${String(source.date).slice(0, 10)}` : ''}</b><p>{compactEvidence(source.excerpt || source.evidence) || '请在建议中说明依据。'}</p>{source.evidence && source.evidence !== source.excerpt && <details><summary>查看该检查完整原文</summary><p>{compactEvidence(source.evidence)}</p></details>}</div>)}
         {issue.originalRecommendation && <p><b>原文建议：</b>{issue.originalRecommendation}</p>}
         {issue.suggestedRecommendation && issue.suggestedRecommendation !== issue.originalRecommendation && <p><b>系统建议草稿（待审核）：</b>{issue.suggestedRecommendation}</p>}
         {issue.timing && <p>原文时间要求：{issue.timing}</p>}
@@ -45,7 +50,7 @@ export default function ReportFollowUpDrafts({ patientId, canEdit }) {
   }, [rows, dirty, patientId])
   const update = (id, drafts) => { setDirtyRows(prev => ({ ...prev, [id]: true })); setReviewed(prev => ({ ...prev, [id]: false })); setRows(prev => prev.map(row => row._id === id ? { ...row, issueDrafts: drafts } : row)) }
   const act = async (row, action, coverageDecisions) => {
-    if (action === 'generate' && (dirty || row.issueDrafts?.length || row.followUpDrafts?.length) && !window.confirm('重新从完整已解析资料提取问题，将替换当前问题草稿。已保存的上一版会保留审核记录，是否继续？')) return
+    if (action === 'generate' && (dirty || row.issueDrafts?.length || row.followUpDrafts?.length) && !window.confirm('将按健康问题重新整理并合并多处来源。已保存的顾问意见会保留，无法准确对应的意见单列待核对；未保存编辑会被替换。是否继续？')) return
     const requestedPatient = patientId
     setBusy(true); setError('')
     try {
@@ -71,12 +76,12 @@ export default function ReportFollowUpDrafts({ patientId, canEdit }) {
         <header><h4>{row.title}</h4><span className="report-issue-tag">{historical ? '历史随访记录' : statusLabel[row.status]}</span></header>
         <p>{annual ? row.followUpAutomation?.message : historical ? '保留原已审核随访及执行记录。' : '旧版仅整理后续行动，可能遗漏未写建议的异常。请重新提取完整问题清单。'}</p>
         {annual && <div className="report-issues-coverage"><p><b>{drafts.length}项问题建议</b>{pending.length > 0 && <> · {pending.length}项资料待核对</>} · {coverage.filter(item => item.status === 'normal').length}项正常或无需跟进，已略过</p>
-          {!!pending.length && <details><summary>尚待判断的资料（{pending.length}项）</summary><p>可点击“重新提取问题”自动判断，或查看下列原文后选择是否需要跟进。</p><ul>{pending.map(item => <li key={item.sourceId}><b>{item.name}</b>{item.page ? ` · 第${item.page}页` : ''}<details><summary>{evidenceSummary(row.issueSources?.find(source => source.id === item.sourceId)?.evidence) || '查看原文'}</summary><p>{compactEvidence(row.issueSources?.find(source => source.id === item.sourceId)?.evidence) || '缺少结果，请核对原件'}</p></details>{editable && <div className="report-issues-actions"><button disabled={busy} onClick={() => act(row, 'resolve_coverage', { [item.sourceId]: 'normal' })}>已核对，无需跟进</button><button disabled={busy} onClick={() => act(row, 'resolve_coverage', { [item.sourceId]: 'problem' })}>列入问题建议</button></div>}</li>)}</ul></details>}
+          {!!pending.length && <details><summary>尚待判断的资料（{pending.length}项）</summary><p>可点击“按问题重新整理”自动判断，或查看下列原文后选择是否需要跟进。</p><ul>{pending.map(item => <li key={item.sourceId}><b>{item.name}</b>{item.page ? ` · 第${item.page}页` : ''}<details><summary>{evidenceSummary(row.issueSources?.find(source => source.id === item.sourceId)?.evidence) || '查看原文'}</summary><p>{compactEvidence(row.issueSources?.find(source => source.id === item.sourceId)?.evidence) || '缺少结果，请核对原件'}</p></details>{editable && <div className="report-issues-actions"><button disabled={busy} onClick={() => act(row, 'resolve_coverage', { [item.sourceId]: 'normal' })}>已核对，无需跟进</button><button disabled={busy} onClick={() => act(row, 'resolve_coverage', { [item.sourceId]: 'problem' })}>列入问题建议</button></div>}</li>)}</ul></details>}
           <details><summary>资料来源（仅供查阅）</summary>{coverage.length ? <ul>{coverage.map(item => <li key={item.sourceId}><b>{item.name}</b>{item.page ? `（第${item.page}页）` : ''}：{{ normal: '正常或无需跟进', problem: '已列入问题', uncertain: '具体问题待核实', pending: '尚未判断' }[item.status]}{item.reason ? `；${item.reason}` : ''}<details><summary>查看该项原文</summary><p>{compactEvidence(row.issueSources?.find(source => source.id === item.sourceId)?.evidence) || '缺少结果，需核对原件'}</p></details></li>)}</ul> : <p>没有可核对的结构化资料，请核对原件并补充问题。</p>}</details></div>}
-        {annual && drafts.map((issue, index) => <ReportIssueCard key={issue.id} issue={issue} index={index} disabled={busy || !editable} onChange={patch => update(row._id, drafts.map((item, i) => i === index ? { ...item, ...patch } : item))} />)}
+        {annual && groupedIssues(drafts).map(group => <section key={group.key} className="report-problem-group"><h4>{group.label}<span>{group.issues.length}个问题</span></h4>{group.issues.map((issue, index) => <ReportIssueCard key={issue.id} issue={issue} index={index} disabled={busy || !editable} onChange={patch => update(row._id, drafts.map(item => item.id === issue.id ? { ...item, ...patch } : item))} />)}</section>)}
         {!annual && <details><summary>查看旧版内容及来源</summary>{(row.followUpDrafts || []).map((item, i) => <div key={i}><b>{item.title}</b><p>{item.content}</p></div>)}<pre>{JSON.stringify(row.sourceSnapshot, null, 2)}</pre></details>}
         {available && <div className="report-issues-actions">
-          <button disabled={busy || ['running', 'queued'].includes(status)} onClick={() => act(row, 'generate')}>{annual ? '重新提取问题' : '提取完整问题及建议'}</button>
+          <button disabled={busy || ['running', 'queued'].includes(status)} onClick={() => act(row, 'generate')}>按问题重新整理</button>
           {(!annual || status === 'failed') && <button disabled={busy || status === 'running'} onClick={() => act(row, 'manual_issues')}>转人工逐项核对</button>}
           {editable && <><button disabled={busy} onClick={() => update(row._id, [...drafts, { id: `manual:${crypto.randomUUID()}`, title: '', advisorRecommendation: '', decision: 'include' }])}>补充问题</button><button disabled={busy} onClick={() => act(row, 'save_issues')}>保存草稿</button></>}
         </div>}

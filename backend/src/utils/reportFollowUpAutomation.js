@@ -100,6 +100,7 @@ async function generateReportIssues(id, options = {}) {
     const patient = await User.findById(row.patientId).select('tenantId assignedFamilyDoctor').lean();
     if (!patient?.assignedFamilyDoctor) throw new Error('缺少健康顾问');
     const result = await require('./aiBudget').withAiContext({ actorId: String(patient.assignedFamilyDoctor), tenantId: String(patient.tenantId || ''), business: 'other', stage: 'report_issue_draft', stopState: {} }, () => issues.extractIssues(report));
+    result.issues = issues.preserveOpinions(result.issues, row.issueDrafts || []);
     await assertReportDraftSource({ ...(row.toObject ? row.toObject() : row), purpose: issues.PURPOSE });
     const updated = await Draft.findOneAndUpdate(guard, { $set: {
       issueDrafts: result.issues, issueCoverage: result.coverage, issueSources: result.sources, followUpDraftGeneratedAt: new Date(),

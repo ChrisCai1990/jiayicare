@@ -25,3 +25,4 @@
 .report-issue-compact label{margin-top:8px}.report-issue-compact textarea{min-height:64px;padding:8px 10px}
 .report-issue-row{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.report-issue-row label{flex-direction:row;align-items:center;font-weight:400}.report-issue-row select{width:auto;padding:5px 9px;font-size:13px}
 .report-issue-compact .report-issue-evidence{margin-top:6px}.report-issues-coverage{padding:10px 14px;margin:12px 0}.report-issues-coverage>p{margin:0}
+.report-problem-group{margin-top:22px}.report-problem-group>h4{display:flex;align-items:center;gap:10px;border-left:3px solid #1e6b50;padding-left:10px}.report-problem-group>h4>span{font-size:12px;font-weight:400;color:#61746a}.report-problem-source{padding:10px;border-top:1px solid #e2e8e4;margin-top:8px}

@@ -32,7 +32,7 @@ test('原文建议不允许伪造，系统建议不能自动成为顾问确认�
 });
 test('批次之外及过长项目不截断，保留待核实和完整原文', async () => {
   const long = '所见'.repeat(10000); let count = 0;
-  const result = await extractIssues({ reportItems: [...Array.from({ length: 25 }, (_, i) => ({ itemId: String(i), name: `检查${i}`, findings: '待核实' })), { itemId: 'long', name: '长报告', findings: long }] }, { chat: async messages => { count++; return JSON.stringify({ items: JSON.parse(messages[0].content).map(item => ({ sourceId: item.id, status: 'uncertain' })) }); } });
+  const result = await extractIssues({ reportItems: [...Array.from({ length: 25 }, (_, i) => ({ itemId: String(i), name: `检查${i}`, findings: '待核实' })), { itemId: 'long', name: '长报告', findings: long }] }, { chat: async messages => { count++; return JSON.stringify({ items: JSON.parse(messages[0].content).map(item => ({ sourceId: item.id, status: 'uncertain', problems: [{ title: item.name, quote: item.evidence }] })) }); } });
   assert.equal(count, 3); assert.equal(result.coverage.length, 26); assert.equal(result.issues.length, 25);
   assert.equal(result.sources.find(row => row.id === 'item:long').evidence, long);
   assert.equal(result.coverage.find(row => row.sourceId === 'item:long').status, 'pending');
@@ -73,4 +73,53 @@ test('年度只融合已确认且当前有效来源，排除项不生成行动�
   const rows = [{ _id: 'draft', patientId: 'patient', reportId: 'report', sourceSequence: 2, sourceKey: `report:2:${sourceDigest(current)}`, issueDrafts: [{ id: 'gastric', title: '胃镜异常', advisorRecommendation: '顾问确认意见' }, { id: 'dental', decision: 'exclude' }] }, { _id: 'old', sourceSequence: 1 }];
   const result = await annualIssueEvidence('patient', { Draft: { find: query => { assert.equal(query.status, 'approved'); return { sort: () => ({ lean: async () => rows }) }; } }, Report: { findById: () => ({ lean: async () => current }) } });
   assert.equal(result.length, 1); assert.equal(result[0].content.recommendation, '顾问确认意见');
+});
+
+test('一份CT拆成多个问题，脂肪肝跨检查合并且代谢问题保持独立', () => {
+  const sources = [
+    { id: 'ct', name: '胸部CT', status: 'abnormal', date: '2026-08-01', page: 20, evidence: '肺内结节。脂肪肝。' },
+    { id: 'us', name: '肝脏超声', status: 'abnormal', date: '2026-09-01', page: 21, evidence: '轻度脂肪肝。' },
+    { id: 'lab', name: '甘油三酯', status: 'abnormal', evidence: '甘油三酯升高' },
+  ];
+  const result = reconcile(sources, [
+    { sourceId: 'ct', status: 'problem', problems: [{ title: '肺结节', quote: '肺内结节' }, { title: '脂肪肝', quote: '脂肪肝' }] },
+    { sourceId: 'us', status: 'problem', problems: [{ title: '轻度脂肪肝', quote: '轻度脂肪肝' }] },
+    { sourceId: 'lab', status: 'problem', problems: [{ title: '甘油三酯升高', quote: '甘油三酯升高' }] },
+  ]);
+  assert.equal(result.issues.length, 3);
+  const liver = result.issues.find(x => x.problemKey === 'fatty_liver');
+  assert.deepEqual(liver.sourceIds, ['ct', 'us']);
+  assert.deepEqual(liver.sourceRefs.map(x => x.date), ['2026-08-01', '2026-09-01']);
+  assert.equal(result.issues.filter(x => x.group === 'metabolic').length, 2);
+  assert.equal(result.issues.find(x => x.problemKey === 'lung_nodule').group, 'respiratory');
+  assert.throws(() => reconcile(sources, [{ sourceId: 'ct', status: 'problem', problems: [{ title: '肺结节', quote: '编造结论' }] }]), /原文依据/);
+});
+
+test('合并保留顾问不同意见，重新整理保留未对应意见且ID不冲突', () => {
+  const { mergeProblems, identity } = require('../../shared/reportProblems.cjs');
+  const { preserveOpinions } = require('../src/utils/reportIssues');
+  const old = [{ id: 'a', title: '脂肪肝', advisorRecommendation: '意见甲' }, { id: 'b', title: '轻度脂肪肝', advisorRecommendation: '意见乙' }];
+  const merged = mergeProblems(old);
+  assert.equal(merged.length, 1); assert.equal(merged[0].advisorRecommendation, '');
+  assert.deepEqual(merged[0].advisorAlternatives, ['意见甲', '意见乙']);
+  assert.equal(merged[0].recommendationConflict, true);
+  assert.notEqual(identity('未见脂肪肝'), identity('脂肪肝'));
+  const next = [{ id: 'a', title: '脂肪肝', problemKey: 'fatty_liver' }];
+  assert.equal(preserveOpinions(next, old)[0].recommendationConflict, true);
+  const separate = preserveOpinions(next, [...old, { id: 'a', title: '脂肪肝', decision: 'exclude', exclusionReason: '另案处理' }, { id: 'manual:note', title: '其他', advisorRecommendation: '保留' }]);
+  assert.equal(new Set(separate.map(x => x.id)).size, separate.length);
+  assert.ok(separate.some(x => x.advisorRecommendation === '保留' && x.reviewCarryover));
+  const renamed = validateIssues([{ ...merged[0], title: '肝内病灶' }], merged)[0];
+  assert.equal(renamed.problemKey, '肝内病灶');
+});
+
+test('年度同一问题跨已确认报告汇总，保留不同日期和各顾问意见', async () => {
+  const { sourceDigest } = require('../src/utils/reportFollowUpSource');
+  const reports = ['ct', 'us'].map((id, i) => ({ ...report, _id: id, user: 'patient', audit_status: 'audited', checkDate: `2026-0${i+8}-01`, followUpSourceEvent: { sequence: 1 } }));
+  const rows = reports.map((r, i) => ({ _id: `draft${i}`, patientId: 'patient', reportId: r._id, sourceSequence: 1, sourceKey: `${r._id}:1:${sourceDigest(r)}`, issueDrafts: [{ id: 'liver', title: i ? '轻度脂肪肝' : '脂肪肝', advisorRecommendation: `意见${i}` }] }));
+  const result = await annualIssueEvidence('patient', { Draft: { find: () => ({ sort: () => ({ lean: async () => rows }) }) }, Report: { findById: id => ({ lean: async () => reports.find(r => r._id === id) }) } });
+  assert.equal(result.length, 1);
+  assert.equal(result[0].content.sourceReviews.length, 2);
+  assert.equal(result[0].content.sourceReviews[1].checkDate, '2026-09-01');
+  assert.match(result[0].content.recommendation, /意见0\n意见1/);
 });

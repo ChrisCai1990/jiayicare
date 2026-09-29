@@ -1,3 +1,8 @@
+import problemTaxonomy from '../../../shared/reportProblems.cjs'
+export const problemGroups = problemTaxonomy.GROUPS
+export function groupedIssues(issues) {
+  return problemGroups.map(([key, label]) => ({ key, label, issues: issues.filter(issue => (issue.group || problemTaxonomy.groupFor(issue.title)) === key) })).filter(group => group.issues.length)
+}
 // Display-only deduplication. The original report and saved evidence stay intact.
 export function compactEvidence(value = '') {
   const seen = new Set()
