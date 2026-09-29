@@ -9,6 +9,8 @@ import Icon from '../../components/Icon';
 import { chooseImageWithPrivacy, showImagePickerError } from '../../utils/imagePicker';
 import { requestWechatPayment, waitForPayment } from '../../utils/wechatPay';
 import { refreshUnreadBadge, withUnreadBadgeUpdate } from '../../utils/unreadBadge';
+import { consumeManagerConversation } from '../../utils/managerConversation';
+import { createRefreshController } from '../../utils/refreshController';
 import { maxFundDeduction as maxSingleFundDeduction, maxGroupFundDeduction } from '../../utils/healthFundCheckout';
 
 // 完整对齐 app/src/screens/messages/MessagesScreen.js 的固定角色分组方案。
@@ -133,6 +135,20 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [threadRole, setThreadRole] = useState(null);
+  const [directMember, setDirectMember] = useState(null);
+  const [pageVisible, setPageVisible] = useState(true);
+  const conversationUserRef = useRef(user?._id);
+  useEffect(() => {
+    if (conversationUserRef.current !== user?._id) {
+      conversationUserRef.current = user?._id;
+      setThreadRole(null); setDirectMember(null); setMessages([]);
+    }
+  }, [user?._id]);
+  const openRequestedConversation = () => {
+    const requested = consumeManagerConversation(user?._id);
+    if (requested) { setDirectMember(requested.member); setThreadRole(requested.role); }
+  };
+  useEffect(() => { openRequestedConversation(); }, [user?._id]);
   const [showNotif, setShowNotif] = useState(false);
   const [notifTab, setNotifTab] = useState('全部');
   const [detailMsg, setDetailMsg] = useState(null);
@@ -147,8 +163,18 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
     const requestId = ++listRequestRef.current;
     listLoadingRef.current = true;
     try {
+      const publish = (promise, push) => promise.then(result => {
+        if (requestId === listRequestRef.current && result?.success && Array.isArray(result.data)) {
+          setMessages(previous => [
+            ...previous.filter(message => !!message.isPushRecord !== push),
+            ...(push ? result.data.map(normalizePushRecord) : result.data),
+          ].sort((a,b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
+          setLoading(false);
+        }
+        return result;
+      });
       const [msgRes, pushRes, pendingRes] = await Promise.allSettled([
-        messagesAPI.list(), pushRecordsAPI.list(), questionnaireAPI.pending(),
+        publish(messagesAPI.list(), false), publish(pushRecordsAPI.list(), true), questionnaireAPI.pending(),
       ]);
       if (requestId !== listRequestRef.current) return;
       // Each source replaces only its own snapshot. A failed questionnaire
@@ -180,6 +206,8 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
   }, []);
 
   useDidShow(() => {
+    setPageVisible(true);
+    openRequestedConversation();
     loadMessages();
     clearInterval(listPollRef.current);
     // The request timeout is longer than the polling interval. Do not keep
@@ -189,10 +217,13 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
     }, 5000);
   });
   useDidHide(() => {
+    setPageVisible(false);
+    listRequestRef.current += 1;
+    listLoadingRef.current = false;
     clearInterval(listPollRef.current); listPollRef.current = null;
     if (!paymentActivityRef.current) { setShowNotif(false); setDetailMsg(null); }
   });
-  useEffect(() => () => clearInterval(listPollRef.current), []);
+  useEffect(() => () => { clearInterval(listPollRef.current); listRequestRef.current += 1; }, []);
   useEffect(() => { if (refreshKey) loadMessages(); }, [refreshKey, loadMessages]);
 
   // 系统消息有时也会携带 conversationId。它仍然属于用户通知，不能因为
@@ -253,6 +284,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
   const openConv = async (conv) => {
     if (conv.kind === 'role' && conv.assigned === false && !conv.hasHistory) return;
     if (conv.kind === 'notif') { setShowNotif(true); return; }
+    setDirectMember(null);
     setThreadRole(conv.key);
   };
 
@@ -269,7 +301,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, assista
   };
 
   if (threadRole) {
-    return <ConversationThread role={threadRole} member={careTeamMember(threadRole)} embedded={embedded} assistantConfig={assistantConfig} onClose={() => { setThreadRole(null); loadMessages(); }} />;
+    return <ConversationThread key={`${user?._id}:${threadRole}`} role={threadRole} member={directMember || careTeamMember(threadRole)} active={pageVisible} embedded={embedded} assistantConfig={assistantConfig} onClose={() => { setThreadRole(null); setDirectMember(null); loadMessages(); }} />;
   }
 
   return (
@@ -671,13 +703,15 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
 
 const ROLE_META = Object.fromEntries(ROLE_DEFS.map((role) => [role.key, role]));
 
-function ConversationThread({ role, member, onClose, embedded = false }) {
+function ConversationThread({ role, member, onClose, embedded = false, active = true }) {
   const { statusBarHeight } = useNavBar();
   const [msgs, setMsgs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [humanActive, setHumanActive] = useState(false);
+  const [threadError, setThreadError] = useState('');
+  const [sendError, setSendError] = useState('');
   const [unreadAnchorId, setUnreadAnchorId] = useState('');
   const [scrollTarget, setScrollTarget] = useState('');
   const [scrollTop, setScrollTop] = useState(0);
@@ -732,9 +766,10 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
     return () => clearInterval(timer);
   }, [playingMessageId]);
 
-  const loadThread = useCallback(async () => {
-    try {
-      const res = await withUnreadBadgeUpdate(() => messagesAPI.getThread(role));
+  const applyThread = useCallback((res) => {
+      if (!res?.success || !Array.isArray(res.data)) throw new Error('会话暂未加载，请重试');
+      setThreadError('');
+      setLoading(false);
       const nextMessages = res.data || [];
       const signature = nextMessages.map((message) => `${message._id}:${message.updatedAt || message.createdAt}:${message.recalled ? 1 : 0}`).join('|');
       if (signature !== messageSignatureRef.current) {
@@ -755,26 +790,33 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
       } else if (!unreadAnchorId && hasNewMessage) {
         scrollToThreadBottom();
       }
-    } catch {}
-    setLoading(false);
   }, [role, unreadAnchorId, scrollToThreadBottom]);
 
+  const loadThread = () => pollRef.current?.refresh();
   const refreshAfterSend = () => {
-    // 用户消息先返回，AI回复通常晚约1～3秒入库；分段刷新避免只在AI生成前刷新一次。
-    [500, 1800, 4000].forEach((delay) => setTimeout(loadThread, delay));
+    pollRef.current?.refresh();
   };
 
   useEffect(() => {
-    loadThread();
-    // 小程序无SSE支持；对话页用短轮询及时接住通常1～2秒生成的AI回复。
-    pollRef.current = setInterval(loadThread, 2000);
-    return () => clearInterval(pollRef.current);
-  }, [loadThread]);
+    const controller = createRefreshController({
+      request: () => withUnreadBadgeUpdate(() => messagesAPI.getThread(role)),
+      onData: applyThread,
+      onError: error => { setThreadError(error.message || '会话暂未加载，请重试'); setLoading(false); },
+    });
+    pollRef.current = controller;
+    if (active) controller.start();
+    return () => { controller.stop(); if (pollRef.current === controller) pollRef.current = null; };
+  }, [role, applyThread]);
+  useEffect(() => {
+    if (active) pollRef.current?.start();
+    else { pollRef.current?.stop(); audioPlayerRef.current?.stop?.(); }
+  }, [active]);
 
   const send = async () => {
     const text = input.trim();
     if ((!text && !foodImages.length) || sending) return;
     setSending(true);
+    setSendError('');
     setInput('');
     try {
       let extra = {};
@@ -782,6 +824,8 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
         extra = { images: foodImages.map(({ data, mimeType }) => ({ data, mimeType })) };
       }
       const res = await messagesAPI.send(role, text || '图片记录', extra);
+      if (!res?.success) throw new Error(res?.message || '消息未发送成功');
+      pollRef.current?.invalidate();
       if (res?.data) setMsgs((prev) => (prev.some((m) => m._id === res.data._id) ? prev : [...prev, res.data]));
       setUnreadAnchorId('');
       scrollToThreadBottom();
@@ -789,8 +833,9 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
       // 服务团队频道只负责沟通，不把每轮问答自动写成“日常健康打卡”。
       // 用户需要形成饮食记录时，应从专门的营养记录入口明确提交餐食/照片。
       refreshAfterSend();
-    } catch {
+    } catch (error) {
       setInput(text);
+      setSendError(error.message || '发送失败，内容已保留，请重试');
     } finally {
       setSending(false);
     }
@@ -819,6 +864,8 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
       const res = await messagesAPI.send(role, '', {
         audio: { data: `data:audio/mpeg;base64,${base64}`, mimeType: 'audio/mpeg', duration: Math.max(1, Math.ceil(duration / 1000)) },
       });
+      if (!res?.success) throw new Error(res?.message || '语音发送失败');
+      pollRef.current?.invalidate();
       if (res?.data) setMsgs((prev) => [...prev, res.data]);
       setUnreadAnchorId('');
       scrollToThreadBottom();
@@ -962,16 +1009,18 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
       <View style={{ display: 'flex', alignItems: 'center', flexShrink: 0, position: 'relative', zIndex: 20, padding: `${embedded ? 10 : statusBarHeight + 8}px ${spacing.lg}px ${spacing.sm}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
         <View onClick={onClose} style={{ minWidth: '64px', padding: '8px 0', marginRight: '8px' }}><Text style={{ fontSize: '14px', color: colors.primary, fontWeight: 600 }}>‹ 返回</Text></View>
         <View style={{ flex: 1, textAlign: 'center' }}>
-          <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{meta.label}</Text>
+          <Text style={{ fontSize: '16px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{member?.name ? `${member.name} · ${meta.label}` : meta.label}</Text>
           <Text style={{ fontSize: '11px', color: !meta.aiEnabled || humanActive ? '#D97706' : colors.success }}>● {!meta.aiEnabled ? '人工服务' : humanActive ? '人工服务中' : 'AI在线'}</Text>
         </View>
         <View style={{ width: '20px' }} />
       </View>
 
+      {!!threadError && <Text onClick={loadThread} style={{padding:'10px 16px',fontSize:'13px',color:colors.danger}}>{threadError} · 点击重试</Text>}
+      {!!sendError && <Text style={{padding:'10px 16px',fontSize:'13px',color:colors.danger}}>{sendError}</Text>}
       <ScrollView scrollY scrollTop={scrollTop} scrollIntoView={scrollTarget} scrollAnchoring scrollWithAnimation style={{ flex: 1, height: 0, minHeight: 0, padding: `${spacing.lg}px`, boxSizing: 'border-box' }}>
         {loading ? (
           <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
-        ) : msgs.length === 0 ? (
+        ) : msgs.length === 0 ? (threadError ? null : (
           <View style={{ textAlign: 'center', padding: '60px 0' }}>
             <View style={{ width: '64px', height: '64px', borderRadius: '32px', backgroundColor: meta.color + '30', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
               <Icon name={meta.icon} size={28} color={meta.color} />
@@ -979,7 +1028,7 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
             <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '8px' }}>{meta.label}</Text>
             <Text style={{ fontSize: '13px', color: colors.textMuted }}>发送消息，您的{meta.label}会在工作时间内回复您</Text>
           </View>
-        ) : (
+        )) : (
           msgs.map((m, i) => {
             const isMine = m.type === 'user';
             const currentDate = new Date(m.createdAt);
