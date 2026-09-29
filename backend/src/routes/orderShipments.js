@@ -15,7 +15,7 @@ async function scope(staff) {
 router.get('/', async (req, res) => {
   try {
     // Read-only projection also covers legacy confirmations; no duplicate task or migration.
-    const orders = await Order.find(await scope(req.staff)).populate('user', 'name deliveryAddress contactPhone phone').sort({ createdAt: 1 }).lean();
+    const orders = await Order.find(await scope(req.staff)).populate('user', 'name contactName deliveryAddress contactPhone phone').sort({ createdAt: 1 }).lean();
     const candidates = orders.filter(hasShippingHandoff);
     const shipped = await Fulfillment.find({ order: { $in: candidates.map(o => o._id) }, status: { $in: ['shipped', 'completed', 'cancelled'] } }).distinct('order');
     const excluded = new Set(shipped.map(String));
