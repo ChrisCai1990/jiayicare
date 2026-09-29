@@ -21,7 +21,14 @@ function responseDueAt(createdAt) {
   }
   return new Date(+d - 8 * 3600000);
 }
+function consultationStatus(intake) { return intake.orderId ? 'closed' : intake.status; }
+function consultationStatusFilter(status) {
+  if (status === 'open') return { status: 'open', orderId: null };
+  if (status === 'closed') return { $or: [{ status: 'closed' }, { orderId: { $ne: null } }] };
+  return {};
+}
 function progress(intake, order, plan, tasks = [], now = new Date()) {
+  if (intake.orderId) return { stage: '已转入订单流程', waiting: '咨询跟进已结束，支付和服务办理请在原订单中继续', canClose: true, overdue: false, current: [] };
   const active = tasks.filter(t => ['planned', 'in_progress', 'missed'].includes(t.status) && t.taskRole !== 'supervisor');
   const orderEnded = order && (['completed', 'closed', 'refunded'].includes(order.tradeStatus) || ['completed', 'cancelled'].includes(order.status));
   const planEnded = plan && ['completed', 'cancelled'].includes(plan.status);
@@ -38,4 +45,4 @@ function progress(intake, order, plan, tasks = [], now = new Date()) {
   return { stage, waiting, canClose, overdue: intake.status === 'open' && +new Date(intake.nextContactAt) < +now,
     current: active.map(t => ({ id: id(t), label: t.theme || '待处理事项', assignee: t.assignedTo?.name || '未明确处理人', blocked: !!t.isBlocked })) };
 }
-module.exports = { id, fail, futureDate, responseDueAt, progress };
+module.exports = { id, fail, futureDate, responseDueAt, progress, consultationStatus, consultationStatusFilter };

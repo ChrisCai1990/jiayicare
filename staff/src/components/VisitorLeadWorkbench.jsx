@@ -85,7 +85,7 @@ export default function VisitorLeadWorkbench({ toast }) {
       else if (['contacted', 'closed', 'new'].includes(action)) await staffAPI.updateVisitorLead(row._id, { status: action, contactNote: form.note, baseUpdatedAt: row.updatedAt })
       else {
         const { nextContactAt, ...values } = form
-        await staffAPI.updateServiceIntake(row._id, { ...values, action, revision: row.revision, ...(action !== 'close' ? { nextContactAt: new Date(nextContactAt).toISOString() } : {}) })
+        await staffAPI.updateServiceIntake(row._id, { ...values, action, revision: row.revision, ...(['convert', 'followup'].includes(action) ? { nextContactAt: new Date(nextContactAt).toISOString() } : {}) })
       }
       setEdit(null); window.dispatchEvent(new Event('consultation-retry')); toast('已保存'); await load()
     } catch (e) { setModalError(e.message || '保存失败，请核对后重试') }
@@ -144,15 +144,14 @@ export default function VisitorLeadWorkbench({ toast }) {
         </> : <>
           <header className="consultation-lead-header">
             <div><span className="consultation-eyebrow">服务承接</span><h3>{row.customer?.name || '客户'}<span className="consultation-topic">{directions[row.serviceDirection] || '服务咨询'}</span></h3></div>
-            <span className={`consultation-status ${row.status === 'open' ? 'contacted' : 'closed'}`}>{row.status === 'open' ? '跟进中' : '已关闭'}</span>
+            <span className={`consultation-status ${row.status === 'open' ? 'contacted' : 'closed'}`}>{row.orderId ? '已转订单' : row.status === 'open' ? '跟进中' : '已结束'}</span>
           </header>
           <div className="intake-overview">
             <section className="intake-need"><h4>服务需求</h4><p>{row.need || '未填写'}</p>
               <div className="intake-progress"><strong>{row.progress.stage}</strong><p>{row.progress.waiting}</p></div>
             </section>
             <section className={`intake-schedule ${row.progress.overdue ? 'overdue' : ''}`}>
-              <h4>{row.status === 'open' ? '下次跟进时间' : '原定跟进时间'}</h4><strong>{when(row.nextContactAt)}</strong>
-              <p>北京时间{row.progress.overdue ? ' · 已逾期' : ''}</p>
+              {row.orderId ? <><h4>咨询跟进</h4><strong>已结束 · 转入订单</strong><p>无需再安排咨询跟进时间</p></> : <><h4>{row.status === 'open' ? '下次跟进时间' : '原定跟进时间'}</h4><strong>{when(row.nextContactAt)}</strong><p>北京时间{row.progress.overdue ? ' · 已逾期' : ''}</p></>}
             </section>
           </div>
           {(row.order || row.plan || row.progress.current.length > 0) && <section className="intake-linked">
@@ -210,14 +209,14 @@ export default function VisitorLeadWorkbench({ toast }) {
         </>}
         {edit.action === 'link' && <>
           <label>本次订单<select required className="form-control" value={form.orderId} onChange={field('orderId')}><option value="">请选择订单</option>{options.orders.map(o => <option key={o._id} value={o._id}>{o.serviceName} · {when(o.createdAt)}</option>)}</select></label>
-          <p>请选择本次需求对应的订单，后续办理沿用原订单流程。</p>
+          <p>关联订单后，本次咨询跟进即结束并移出工作台；支付及服务办理在订单中继续。</p>
         </>}
-        {['convert', 'link', 'followup'].includes(edit.action) && <label>下次跟进时间<input required className="form-control" type="datetime-local" value={form.nextContactAt} onChange={field('nextContactAt')} /></label>}
+        {['convert', 'followup'].includes(edit.action) && <label>下次跟进时间<input required className="form-control" type="datetime-local" value={form.nextContactAt} onChange={field('nextContactAt')} /></label>}
         {edit.action !== 'convert' && <label>{edit.action === 'close' ? '承接结论及后续安排' : '本次沟通记录'}<textarea required placeholder="请记录联系渠道、客户诉求、沟通结果及约定安排" maxLength={['contacted', 'closed', 'new'].includes(edit.action) ? 500 : 1000} className="form-control" value={form.note} onChange={field('note')} /></label>}
         {edit.action === 'close' && <p className="consultation-caption">填写结束原因后，本条将移出工作台，历史记录保留在“已关闭”中，无需再安排下次跟进。</p>}
         {edit.action === 'contacted' && <p className="consultation-caption">保存时记录本次联系时间，线索将移出工作台，可在“已联系”中查看和继续承接。</p>}
         {modalError && <p role="alert" style={{ color: '#b91c1c' }}>{modalError}</p>}
-      </div><div className="modal-footer"><button type="submit" className="btn btn-primary" disabled={busy || searching}>{busy ? '正在保存…' : edit.action === 'close' ? '确认结束跟进' : '确认保存'}</button></div></form>
+      </div><div className="modal-footer"><button type="submit" className="btn btn-primary" disabled={busy || searching}>{busy ? '正在保存…' : edit.action === 'close' ? '确认结束跟进' : edit.action === 'link' ? '关联订单并结束跟进' : '确认保存'}</button></div></form>
     </div></div>}
   </>
 }

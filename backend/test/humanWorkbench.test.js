@@ -74,6 +74,7 @@ test('consultation queue excludes all contacted leads and preserves independent 
   const intakes = [
     { _id: 'linked', tenantId: null, status: 'open', ownerId: 'a', patientId: 'p', nextContactAt: '2026-09-01' },
     { _id: 'closed-intake', tenantId: null, status: 'closed', ownerId: 'a', patientId: 'p' },
+    { _id: 'legacy-order', tenantId: null, status: 'open', ownerId: 'a', patientId: 'p', orderId:'order', nextContactAt:'2026-09-01' },
   ];
   const result = await consultationTodos({ _id: 'a', role: 'healthPlanner' }, ['p'], { Lead: model(leads), Intake: model(intakes) }, now);
   assert.deepEqual(new Set(result.map(r => r.id)), new Set(['lead_new', 'intake_linked']));

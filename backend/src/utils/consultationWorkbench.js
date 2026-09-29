@@ -7,7 +7,7 @@ async function consultationTodos(staff, visibleIds, { Lead, Intake }, now = new 
   // Linked service intakes own follow-up reminders, including historical reopened leads.
   const linked = await Intake.find({ ...scope, _id: { $in: leads.map(l => l._id) } }).select('_id').lean();
   const linkedIds = new Set(linked.map(row => String(row._id)));
-  const intakes = await Intake.find({ ...scope, status: 'open', ...(isSuper ? {} : { ownerId: staff._id }),
+  const intakes = await Intake.find({ ...scope, status: 'open', orderId: null, ...(isSuper ? {} : { ownerId: staff._id }),
     ...(visibleIds ? { patientId: { $in: visibleIds } } : {}) }).sort({ nextContactAt: 1 }).lean();
   const rows = leads.filter(row => !linkedIds.has(String(row._id))).map(row => ({
     id: `lead_${row._id}`, label: '官网咨询待联系', kind: 'lead',

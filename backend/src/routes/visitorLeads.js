@@ -8,7 +8,7 @@ const User = require('../models/User');
 const Order = require('../models/Order');
 const Plan = require('../models/HealthPlan');
 const FollowUp = require('../models/FollowUp');
-const { id, fail, futureDate, responseDueAt, progress } = require('../utils/serviceIntake');
+const { id, fail, futureDate, responseDueAt, progress, consultationStatus, consultationStatusFilter } = require('../utils/serviceIntake');
 const { normalizeText } = require('../utils/visitorAssistantSafety');
 
 module.exports = ({ getVisiblePlanPatientIds }) => {
@@ -54,7 +54,7 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
         ...(row.orderId ? [{ sourceOrderId: row.orderId }] : []), ...(row.planId ? [{ sourceHealthPlanId: row.planId }] : []),
       ], status: { $in: ['planned', 'in_progress', 'missed'] } }).select('theme status taskRole isBlocked assignedTo').populate('assignedTo', 'name').lean() : [],
     ]);
-    return { ...row, customer, order, plan, progress: progress(row, order, plan, tasks) };
+    return { ...row, status: consultationStatus(row), customer, order, plan, progress: progress(row, order, plan, tasks) };
   }
   router.get('/visitor-leads/workbench', checkPermission('leads', 'view'), wrap(async (req, res) => {
     const visible = await getVisiblePlanPatientIds(req.staff);
@@ -127,10 +127,10 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
   router.get('/service-intakes', checkPermission('leads', 'view'), wrap(async (req, res) => {
     const visible = await getVisiblePlanPatientIds(req.staff);
     const filter = { ...scope(req), ...ownerScope(req), ...(visible ? { patientId: { $in: visible } } : {}),
-      ...(['open', 'closed'].includes(req.query.status) ? { status: req.query.status } : {}) };
+      ...consultationStatusFilter(req.query.status) };
     if (req.query.itemId) { if (!mongoose.isValidObjectId(req.query.itemId)) fail('事项标识无效'); filter._id = req.query.itemId; }
     const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1), limit = 20;
-    const [rows, total, overdue] = await Promise.all([Intake.find(filter).sort({ nextContactAt: 1, _id: 1 }).skip((page - 1) * limit).limit(limit).lean(), Intake.countDocuments(filter), Intake.countDocuments({ ...filter, status: 'open', nextContactAt: { $lt: new Date() } })]);
+    const [rows, total, overdue] = await Promise.all([Intake.find(filter).sort({ nextContactAt: 1, _id: 1 }).skip((page - 1) * limit).limit(limit).lean(), Intake.countDocuments(filter), Intake.countDocuments({ ...filter, ...consultationStatusFilter('open'), nextContactAt: { $lt: new Date() } })]);
     res.json({ success: true, data: await Promise.all(rows.map(row => details(req, row))), total, page, limit, overdue });
   }));
   router.get('/service-intakes/:id/options', checkPermission('leads', 'view'), checkPermission('patients', 'view'), wrap(async (req, res) => {
@@ -143,7 +143,7 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
   }));
   router.patch('/service-intakes/:id', checkPermission('leads', 'edit'), wrap(async (req, res) => {
     const row = await load(req), body = req.body;
-    if (row.status !== 'open' || body.revision !== row.revision) fail('承接已变化或已关闭，请刷新', 409);
+    if (consultationStatus(row) !== 'open' || body.revision !== row.revision) fail('承接已变化或已关闭，请刷新', 409);
     const note = normalizeText(body.note, 1000); if (!note) fail('请填写本次跟进记录');
     const set = {}, action = body.action;
     if (action === 'link') {
@@ -155,7 +155,8 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
       if ((body.orderId && !order) || (body.planId && !plan)) fail('只能关联同客户、同机构的服务', 403);
       if (plan?.sourceOrderId && id(plan.sourceOrderId) !== id(order)) fail('所选方案与订单不一致，请同时选择方案所属订单');
       set.orderId = order?._id || null; set.planId = plan?._id || null;
-      set.nextContactAt = futureDate(body.nextContactAt);
+      if (order) { set.status = 'closed'; set.closureReason = '已转入订单流程：' + note; }
+      else set.nextContactAt = futureDate(body.nextContactAt);
     } else if (action === 'followup') set.nextContactAt = futureDate(body.nextContactAt);
     else if (action === 'close') {
       const current = await details(req, row);

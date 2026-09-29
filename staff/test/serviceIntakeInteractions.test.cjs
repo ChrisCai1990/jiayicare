@@ -204,3 +204,18 @@ test('ending followup requires conclusion but no next date and removes closed re
   assert.match(view.container.textContent,/当前没有符合条件/);
  } finally {await view.close()}
 });
+
+
+test('linking an order ends consultation without asking for another followup date', async () => {
+ let saved;
+ const row={_id:'i',revision:1,status:'open',customer:{name:'示例'},progress:{stage:'待落实服务',current:[],canClose:true}};
+ const View=load('components/VisitorLeadWorkbench.jsx',{'../api':{staffAPI:{getServiceIntakes:async()=>({data:saved?[]:[row],total:saved?0:1,limit:50}),getServiceIntakeOptions:async()=>({data:{orders:[{_id:'order',serviceName:'示例订单'}]}}),updateServiceIntake:async(id,body)=>{saved=body}}}}).default;
+ const view=await mount(React.createElement(MemoryRouter,{initialEntries:['/visitor-leads?workbench=intakes']},React.createElement(View,{toast:()=>{}})));
+ try {
+  await click(view.container,'关联实际服务');const dialog=view.container.querySelector('[role=dialog]');
+  assert.equal(dialog.querySelector('input[type=datetime-local]'),null);
+  await act(async()=>{const select=dialog.querySelector('select');select.value='order';select.dispatchEvent(new window.Event('change',{bubbles:true}))});
+  await act(async()=>dialog.querySelector('form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})));
+  assert.equal(saved.action,'link');assert.equal(saved.orderId,'order');assert.equal('nextContactAt' in saved,false);
+ } finally {await view.close()}
+});

@@ -83,26 +83,23 @@ test('public lead to service intake uses real isolated Mongo/HTTP, role gates an
     order = await Order.create({ user: user._id, serviceId: 'test', serviceName: '虚构就医服务', paymentStatus: 'paid', tradeStatus: 'paid' });
     const wrongOrder = await Order.create({ user: user2._id, serviceId: 'test', serviceName: '其他客户服务' });
     plan = await Plan.create({ patientId: user._id, staffId: planner._id, type: 'medical_assist', title: '虚构服务方案', sourceOrderId: order._id, status: 'active' });
-    const body = { action: 'link', revision: intake.revision, note: '确认本次服务关联', nextContactAt: convert().nextContactAt };
+    const body = { action: 'link', revision: intake.revision, note: '确认本次服务关联' };
     assert.equal((await call(planner, '/staff/service-intakes/' + intake._id, 'PATCH', { ...body, orderId: String(wrongOrder._id) })).status, 403);
     assert.equal((await call(planner, '/staff/service-intakes/' + intake._id, 'PATCH', { ...body, planId: String(plan._id) })).status, 400);
     const r = await call(planner, '/staff/service-intakes/' + intake._id, 'PATCH', { ...body, orderId: String(order._id), planId: String(plan._id) });
     assert.equal(r.status, 200); intake = r.body.data;
     assert.equal(await Order.countDocuments(), 2); assert.equal(await Plan.countDocuments(), 1);
   });
-  await t.test('reads original progress; open service and pending tasks block intake closure', async () => {
-    const close = () => call(planner, '/staff/service-intakes/' + intake._id, 'PATCH', { action: 'close', revision: intake.revision, note: '已核对原服务结果和后续安排' });
-    assert.equal((await close()).status, 409);
+  await t.test('order linking closes consultation immediately without ending order or its tasks', async () => {
+    assert.equal(intake.status, 'closed');
+    assert.equal((await Order.findById(order._id)).tradeStatus, 'paid');
     task = await FollowUp.create({ staffId: planner._id, assignedTo: planner._id, patientId: user._id, sourceOrderId: order._id, status: 'planned', theme: '待回收资料' });
-    await Order.updateOne({ _id: order._id }, { $set: { status: 'completed', tradeStatus: 'completed' } });
-    await Plan.updateOne({ _id: plan._id }, { $set: { status: 'completed' } });
-    assert.equal((await close()).status, 409);
-    const rows = (await call(planner, '/staff/service-intakes')).body.data;
-    assert.equal(rows[0].progress.current[0].label, '待回收资料');
-    await FollowUp.updateOne({ _id: task._id }, { $set: { status: 'completed' } });
-    assert.equal((await close()).status, 200);
-    assert.equal((await close()).status, 409);
-    assert.equal((await FollowUp.findById(task._id)).status, 'completed');
+    const rows = (await call(planner, '/staff/service-intakes?status=closed')).body.data;
+    assert.equal(rows.length, 1); assert.equal(rows[0].progress.stage, '已转入订单流程');
+    assert.equal((await call(planner, '/staff/service-intakes?status=open')).body.total, 0);
+    const retry = await call(planner, '/staff/service-intakes/' + intake._id, 'PATCH', {action:'followup',revision:intake.revision,note:'不应重新跟进'});
+    assert.equal(retry.status,409);
+    assert.equal((await FollowUp.findById(task._id)).status,'planned');
   });
   await t.test('closed intake removes its workbench reminder without resurrecting the source lead', async () => {
     assert.equal((await call(planner, '/staff/visitor-leads/workbench')).body.total, 0);
