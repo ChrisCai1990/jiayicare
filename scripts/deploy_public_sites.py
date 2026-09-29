@@ -67,7 +67,7 @@ def main():
         sftp = client.open_sftp()
         # Runtime publication may have newer articles than the Git snapshot.
         live_catalog = json.loads(sftp.open(PUBLIC['geo-knowledge-center'] + '/published-articles.json').read())
-        local_catalog = json.loads((ROOT / 'geo-knowledge-center/published-articles.json').read_text('utf-8'))
+        local_catalog = json.loads(git('show', f'{base}:geo-knowledge-center/published-articles.json'))
         if live_catalog != local_catalog:
             raise RuntimeError('Live content catalogue changed; preserve it before deploying')
         for index, item in enumerate(files):

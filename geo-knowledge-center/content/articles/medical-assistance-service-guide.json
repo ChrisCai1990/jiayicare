@@ -63,9 +63,10 @@
       "url": "https://jiaycare.com/knowledge/ai-consultation.html?source=article_medical_assistance#handoff-form"
     }
   ],
-  "status": "review",
+  "status": "published",
   "updatedAt": "2026-09-29",
-  "reviewedBy": "",
-  "reviewedAt": "",
-  "reviewNotes": "业务核对项目范围、权益和收费表述；就医及疾病相关边界待指定健康顾问审核。含84天营养管理表述的稿件同时由指定营养师审核。尚未提交审核系统，不记录虚假审核结果。"
+  "reviewedBy": "用户：服务规则确认及直接发布授权",
+  "reviewedAt": "2026-09-29",
+  "reviewNotes": "用户确认业务规则并明确授权直接发布。属于服务说明，不声称完成医师或营养师专业审核。",
+  "contentType": "service"
 }
