@@ -33,6 +33,9 @@ function advance(state, actor, action, data, at = new Date()) {
       // An upstream correction invalidates an already-generated downstream draft.
       // It stays in the audit history, but must be regenerated before approval.
       if (s.data.draft && ['advisor', 'execute', 'upload', 'audit'].includes(stage)) s.draftStale = true;
+    } else if (stage === 'followup' && data.value?.followupNeeded === false) {
+      s.stage = 'closed';
+      Object.assign(event, { before, after: structuredClone(s.data), followupNeeded: false });
     } else {
       const path=config.pathFor(s);
       s.stage = path[path.indexOf(stage) + 1] || 'closed';

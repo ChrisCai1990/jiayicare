@@ -38,7 +38,7 @@ function setup(stage='booking', rolloutEnabled=true){
   const tasks=new Map([['flow',{_id:'flow',careFlowId:'flow',status:'planned'}],['parent',{_id:'parent',plannedContent:'原年度顾问内容',status:'planned'}]]);
   const reports=new Map([['report',{_id:'report',user:'patient',tenantId:null,audit_status:'audited',title:'测试病历',reportItems:[],aiSummary:'已审核内容'}]]);
   const admins=new Map(Object.values(people).map(p=>[p.id,{_id:p.id,...p,tenantId:null,staffStatus:'active'}]));
-  const Flow=model(flows),Task=model(tasks),Report=model(reports),User=model(new Map([['patient',{_id:'patient',tenantId:null,assignedFamilyDoctor:'familyDoctor',assignedMedicalAssistant:'medicalAssistant'}]]));
+  const Flow=model(flows),Task=model(tasks),Report=model(reports),User=model(new Map([['patient',{_id:'patient',tenantId:null,assignedFamilyDoctor:'familyDoctor',assignedHealthPlanner:'healthPlanner',assignedMedicalAssistant:'medicalAssistant'}]]));
   const api=runtime({Flow,Task,Report,User,Admin:model(admins),enabled:()=>rolloutEnabled});
   return {flows,tasks,reports,api,Flow,Task};
 }
@@ -66,6 +66,7 @@ test('pure reminder visits use upload/audit/advisor path without dispatch; idemp
  s.reports.get('report').audit_status='unaudited';
  await assert.rejects(complete(s,{note:'审核'}),/每份/);
  s.reports.get('report').audit_status='audited';await complete(s,{note:'已审核'});
+ await complete(s,{followupNeeded:true,note:'需要健康顾问核对后续随访'});
  assert.equal(s.tasks.get('flow').status,'in_progress');
  await generate(s.api,'flow',actor('draft'),false,async()=>JSON.stringify({content:'医嘱随访草稿',date:'2099-01-01'}));
  assert.equal(s.flows.get('flow').state.stage,'review');
@@ -73,7 +74,7 @@ test('pure reminder visits use upload/audit/advisor path without dispatch; idemp
  await s.api.sync(final);
  assert.equal(s.tasks.get('flow').status,'completed');assert.equal(s.tasks.get('flow').plannedContent,'原年度计划');
  assert.equal([...s.tasks.values()].filter(t=>t.sourceScheduleKey==='care-followup:flow').length,1);
- assert.ok([...s.tasks.values()].every(t=>!['healthPlanner','medicalAssistant'].includes(t.assignedTo)));
+ assert.ok([...s.tasks.values()].every(t=>!['healthPlanner','medicalAssistant'].includes(t.assignedTo)||t.status==='completed'));
 });
 test('专员结束后健管承接报告，客户上传资料可关联，跨客户资料和未审核资料不能过关',async()=>{
  const s=setup('execute');await complete(s,{text:'检查安排已交接'});
@@ -85,7 +86,7 @@ test('专员结束后健管承接报告，客户上传资料可关联，跨客�
  await assert.rejects(complete(s,{reportIds:['foreign'],note:'核对'}),/不属于/);
  await complete(s,{reportIds:['customer'],note:'已核对是本次检查报告'});
  await assert.rejects(complete(s,{note:'审核'}),/每份/);
- s.reports.get('customer').audit_status='audited';await complete(s,{note:'资料齐全已审核'});assert.equal(s.flows.get('flow').state.stage,'draft');
+ s.reports.get('customer').audit_status='audited';await complete(s,{note:'资料齐全已审核'});assert.equal(s.flows.get('flow').state.stage,'followup');
 });
 test('已有上传任务归属自愈仅改当前活动负责人，留痕且不重复建任务',async()=>{
  const s=setup('upload'),flow=s.flows.get('flow'),key=hash('care:flow:0');
@@ -140,6 +141,7 @@ test('完整执行、审核、生成、顾问审核链路；重复同步只生�
   await complete(s,{text:'专家意见与办理结果'});
   await complete(s,{reportIds:['report'],note:'本次资料齐全'});
   await complete(s,{note:'逐份已核对'});
+  await complete(s,{followupNeeded:true,note:'需要健康顾问制定随访'});
   assert.equal(s.flows.get('flow').state.stage,'draft');assert.equal(s.tasks.get('flow').status,'planned');
   await generate(s.api,'flow',actor('draft'),false,async()=>JSON.stringify({content:'跟进专家要求',date:'2099-01-01'}));
   assert.equal(s.flows.get('flow').state.stage,'review');
@@ -205,5 +207,6 @@ test('健管核实无资料需要客户反馈和依据，不可丢弃已有报�
  await assert.rejects(run({noDocuments:true,reportIds:[],note:''}),/完整填写/);
  flow.state.data.upload.reportIds=['report'];await assert.rejects(run({noDocuments:true,reportIds:[],note:'已核实'}),/已有资料/);flow.state.data.upload.reportIds=[];
  await run({noDocuments:true,reportIds:[],note:'已向客户核实，仅咨询无资料'});assert.equal(x.flows.get('flow').state.stage,'audit');assert.equal(x.flows.get('flow').state.data.upload.noDocuments,true);
- await x.api.action('flow',actor('audit'),{action:'complete',revision:x.flows.get('flow').revision,confirmed:true,value:{note:'核实记录确认，后续顾问跟进'}});assert.equal(x.flows.get('flow').state.stage,'draft');
+ await x.api.action('flow',actor('audit'),{action:'complete',revision:x.flows.get('flow').revision,confirmed:true,value:{note:'核实记录确认，后续顾问跟进'}});assert.equal(x.flows.get('flow').state.stage,'followup');
+ await x.api.action('flow',actor('followup'),{action:'complete',revision:x.flows.get('flow').revision,confirmed:true,value:{followupNeeded:false,note:'本次无资料且无后续随访事项'}});assert.equal(x.flows.get('flow').state.stage,'closed');assert.equal(x.tasks.get('flow').status,'completed');
 });

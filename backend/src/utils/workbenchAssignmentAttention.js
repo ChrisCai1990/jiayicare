@@ -7,11 +7,12 @@ const ROLES = {
 
 // A read-only exception projection. It never claims, completes or recreates business tasks.
 async function loadAssignmentAttention(staff, models = {}) {
-  if (!['superadmin', 'healthPlanner'].includes(staff.role)) return [];
+  // 缺少负责人的异常需要平台管理员修正人员归属或历史任务，
+  // 不是健康规划师的业务待办，不能混入其工作台。
+  if (staff.role !== 'superadmin') return [];
   const model = name => models[name] || require('../models/' + name);
   const tenantId = staff.tenantId || null;
-  const patients = await model('User').find({ tenantId, isDeleted: { $ne: true },
-    ...(staff.role === 'healthPlanner' ? { assignedHealthPlanner: staff._id } : {}) })
+  const patients = await model('User').find({ tenantId, isDeleted: { $ne: true } })
     .select('name assignedHealthManager assignedFamilyDoctor assignedNutritionist assignedHealthPlanner assignedRehabSpecialist assignedTcmDoctor archiveDraft aiHealthSummary').lean();
   if (!patients.length) return [];
   const users = new Map(patients.map(p => [String(p._id), p]));

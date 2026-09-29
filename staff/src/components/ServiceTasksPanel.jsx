@@ -142,6 +142,9 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
   const isActionableNow = service => {
     const task = service.task
     if(task.feedbackReview)return task.taskRole==='executor'&&!task.isBlocked;
+    // 规划师的督办卡平时只是进度视图；一旦逾期，就需要进入当前待办，
+    // 以便及时催办和处理异常，而不是只能从“全部计划”里翻找。
+    if (task.taskRole === 'supervisor') return bucketOf(task.date) === 'overdue'
     return task.taskRole === 'executor' && !task.isBlocked && bucketOf(task.date) !== 'week'
       && bucketOf(task.date) !== 'month' && bucketOf(task.date) !== 'later'
   }

@@ -54,13 +54,15 @@ function runtime(injected = {}) {
       }
     } else {
       const review = s.data.review;
-      if (!review?.content || !validDate(review.date)) fail('缺少顾问最终审核的随访计划');
-      await Task.updateOne({ _id: hash(`care-followup:${flow._id}`) }, { $setOnInsert: {
-        patientId: flow.patientId, staffId: s.people.familyDoctor.id, assignedTo: s.people.healthManager.id,
-        sourceType: 'scheduled', sourceId: flow._id, sourceScheduleKey: `care-followup:${flow._id}`,
-        theme: `就医后随访 · ${s.title}`, date: new Date(`${review.date}T09:00:00+08:00`), remindAt: new Date(`${review.date}T09:00:00+08:00`),
-        content: review.content, plannedContent: review.content, aiStatus: 'approved', status: 'planned',
-      } }, { upsert: true });
+      if (s.data.followup?.followupNeeded !== false) {
+        if (!review?.content || !validDate(review.date)) fail('缺少顾问最终审核的随访计划');
+        await Task.updateOne({ _id: hash(`care-followup:${flow._id}`) }, { $setOnInsert: {
+          patientId: flow.patientId, staffId: s.people.familyDoctor.id, assignedTo: s.people.healthManager.id,
+          sourceType: 'scheduled', sourceId: flow._id, sourceScheduleKey: `care-followup:${flow._id}`,
+          theme: `就医后随访 · ${s.title}`, date: new Date(`${review.date}T09:00:00+08:00`), remindAt: new Date(`${review.date}T09:00:00+08:00`),
+          content: review.content, plannedContent: review.content, aiStatus: 'approved', status: 'planned',
+        } }, { upsert: true });
+      }
       // Only the service coordination closes here. Original clinical follow-up and annual plan remain intact.
       await Task.updateOne({ _id: flow._id, careFlowId: flow._id }, { $set: { status: 'completed', completedAt: new Date() } });
       await Flow.updateOne({ _id: flow._id, tenantId: flow.tenantId, 'state.stage': 'closed' }, { $set: { 'state.finalized': true } });
@@ -82,9 +84,9 @@ function runtime(injected = {}) {
     const patient=await User.findOne({_id:task.patientId,tenantId:tenant(actor)}).lean();
     if(!patient)fail('客户归属不一致',403);
     const people={};
-    for(const [role,personId] of Object.entries({healthManager:task.assignedTo||task.staffId,familyDoctor:patient.assignedFamilyDoctor})){
+    for(const [role,personId] of Object.entries({healthManager:task.assignedTo||task.staffId,healthPlanner:patient.assignedHealthPlanner,familyDoctor:patient.assignedFamilyDoctor})){
       const p=await Admin.findOne({_id:personId,role,staffStatus:'active',tenantId:tenant(actor)}).lean();
-      if(!p)fail('就医记录已保存；请先配置有效的健管专员及健康顾问，再重试转交');
+      if(!p)fail('就医记录已保存；请先配置有效的健管专员、健康规划师及健康顾问，再重试转交');
       people[role]={id:id(p._id),name:p.name,role};
     }
     const claimed=await Task.updateOne({_id:task._id,updatedAt:task.updatedAt,status:task.status,'serviceTracking.linkId':null},{$set:{careFlowId:task._id,formData:{...(task.formData||{}),careFlowMode:'reminder'}}});
@@ -186,6 +188,10 @@ function runtime(injected = {}) {
         if(!rows.length&&s.data.upload?.noDocuments===true)return {note:text(input.note,5000),reports:[],noDocuments:true};
         if (!rows.length || rows.some(r => r.audit_status !== 'audited')) fail('请先在报告管理中完成每份资料的审核');
         return { note: text(input.note, 5000), reports: rows.map(r => ({ id: id(r._id), title: r.title, checkDate: r.checkDate, hospital: r.hospital, reportItems: r.reportItems, aiSummary: r.aiSummary, audited_at: r.audited_at })) };
+      }
+      case 'followup': {
+        if (typeof input.followupNeeded !== 'boolean') fail('请选择是否需要后续随访', 400);
+        return { followupNeeded: input.followupNeeded, note: text(input.note, 2000), decidedBy: id(actor._id), decidedAt: new Date() };
       }
       case 'review': {
         if (s.draftStale || !s.data.draft?.content) fail('上游已修订或尚无草稿，请先重新生成随访草稿');

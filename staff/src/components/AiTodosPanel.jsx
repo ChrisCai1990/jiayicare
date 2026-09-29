@@ -54,7 +54,9 @@ const TYPE_CONFIG = {
 }
 
 function formatTime(date) {
+  if (!date) return '时间未记录'
   const d = new Date(date)
+  if (!Number.isFinite(d.getTime())) return '时间未记录'
   const now = new Date()
   const diff = now - d
   if (diff < 60 * 60 * 1000) return `${Math.floor(diff / 60000)}分钟前`
@@ -77,7 +79,8 @@ export default function AiTodosPanel() {
   const nav = useNavigate()
   const { staff } = useStaff()
   const { data: allTodos, setData: setTodos, loading, error: loadError, refresh: refreshTodos } = useAiWorkbench()
-  const todos = allTodos.filter(t => !['symptom_verify', 'symptom_review'].includes(t.type))
+  const todos = allTodos.filter(t => !['symptom_verify', 'symptom_review'].includes(t.type)
+    && (staff?.role === 'superadmin' || t.type !== 'assignment_attention'))
   const [page, setPage] = useState(0)
   const [group, setGroup] = useState('all')
   const [query, setQuery] = useState('')
