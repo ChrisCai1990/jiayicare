@@ -7,6 +7,18 @@ const babel = require('@babel/core');
 const read = file => fs.readFileSync(path.join(__dirname, '../src', file), 'utf8');
 const deferred = () => { let resolve, reject; const promise = new Promise((a,b) => { resolve=a; reject=b; }); return { promise, resolve, reject }; };
 const flush = () => new Promise(resolve => setImmediate(resolve));
+
+test('home combines only the explicit same-flow arrangement/upload pair without mutating tasks',()=>{
+  const {homeTaskCards}=moduleFor('utils/homeTaskCards.js');
+  const arrangement={_id:'care-plan:f:arrangement',careFlowId:'f',customerReadOnly:true,title:'本次就医安排 · 检查',scheduleLabel:'已安排'};
+  const upload={_id:'care-plan:f:upload',careFlowId:'f',customerReadOnly:true,canUploadReports:true,uploadReminder:true};
+  const other={_id:'care-plan:g:upload',careFlowId:'g',customerReadOnly:true,canUploadReports:true,uploadReminder:true};
+  const original=JSON.stringify([arrangement,upload,other]);
+  const cards=homeTaskCards([arrangement,upload,other]);assert.equal(cards.length,2);assert.equal(cards[0].uploadTask,upload);assert.equal(cards[1],other);assert.equal(JSON.stringify([arrangement,upload,other]),original);
+  assert.equal(homeTaskCards([arrangement,upload,{...upload}]).length,3);
+  assert.equal(homeTaskCards([{...arrangement,_id:'legacy'},upload]).length,2);
+  assert.equal(homeTaskCards([arrangement])[0].uploadTask,undefined);
+});
 function moduleFor(file, mocks = {}) {
   const code = babel.transformSync(read(file), { configFile:false, babelrc:false,
     presets:[require.resolve('@babel/preset-react')], plugins:[require.resolve('@babel/plugin-transform-modules-commonjs')] }).code;

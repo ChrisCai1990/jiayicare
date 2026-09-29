@@ -8,6 +8,7 @@ import TrendChart from '../../components/TrendChart';
 import Icon from '../../components/Icon';
 import useNavBar from '../../hooks/useNavBar';
 import { openManagerConversation } from '../../utils/managerConversation';
+import { homeTaskCards } from '../../utils/homeTaskCards';
 
 // 对齐 app/src/screens/home/HomeScreen.js（2026-07-18 首页瘦身+打卡页重构后）：
 // 打卡网格已抽离到独立页 pages/checkin/index，首页只保留入口按钮；健康管家团队卡片已移至"我的"页。
@@ -61,29 +62,24 @@ function urgencyByDate(dateVal) {
   return 'low';
 }
 
-function TaskItemRow({ task, isLast, onPress }) {
+function TaskItemRow({ task, onPress }) {
   const urgency = task.scheduleLabel ? {...URGENCY_CONFIG.low,label:task.scheduleLabel} : URGENCY_CONFIG[task.priority] || URGENCY_CONFIG.low;
-  const iconCfg = task.canUploadReports ? {icon:'📋',bg:'#E8F3FB'} : TASK_ICON_CONFIG[task.type] || TASK_ICON_CONFIG.checkup;
-  return (
-    <View onClick={() => onPress(task)} style={{
-      display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, padding: '14px 0',
-      borderBottom: isLast ? 'none' : `1px solid ${colors.borderLight}`,
-    }}>
-      <View style={{ width: '44px', height: '44px', borderRadius: '13px', backgroundColor: iconCfg.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <Icon name={iconCfg.icon} size={20} />
-      </View>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: '-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical',overflow:'hidden' }}>{String(task.title||'健康安排').split(/[（(]/)[0].trim()}</Text>
-        <Text style={{ fontSize: '12px', color: colors.textMuted, marginTop: '2px' }} numberOfLines={1}>{task.assignee} · {displayTaskDate(task.dueDate || task.date)} {task.dueTime}</Text>
-      </View>
-      <View style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-        <View style={{ padding: '4px 10px', borderRadius: `${radius.full}px`, backgroundColor: urgency.bg }}>
-          <Text style={{ fontSize: '11px', fontWeight: 700, color: urgency.color }}>{urgency.label}</Text>
-        </View>
-        <Text style={{ fontSize: '14px', color: colors.textMuted }}>›</Text>
-      </View>
+  const upload = task.uploadTask || (task.canUploadReports ? task : null);
+  const title = task.uploadTask ? String(task.title || '').replace(/^本次就医安排\s*·\s*/, '') : task.title || '健康安排';
+  return <View style={{backgroundColor:'#fff',borderRadius:'18px',padding:'16px',marginBottom:'10px'}}>
+    <View onClick={() => onPress(task)} style={{display:'flex',alignItems:'center',gap:'10px'}}>
+      <View style={{width:'36px',height:'36px',borderRadius:'11px',backgroundColor:colors.primary10,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Icon name="📋" size={19} color={colors.primary}/></View>
+      <View style={{flex:1,minWidth:0}}><Text style={{display:'block',fontSize:'15px',fontWeight:600,color:colors.textPrimary}}>{title}</Text><Text style={{display:'block',fontSize:'12px',color:colors.textSecondary,marginTop:'3px'}}>{task.assignee} · {displayTaskDate(task.dueDate || task.date)} {task.dueTime}</Text></View>
+      <Text style={{fontSize:'12px',color:colors.primary,flexShrink:0}}>{upload ? '详情 ›' : urgency.label+' ›'}</Text>
     </View>
-  );
+    {upload && <>
+      <Text style={{display:'block',margin:'10px 0 12px 46px',fontSize:'12px',color:colors.textSecondary}}>{task.assignee} · {urgency.label}</Text>
+      <View style={{display:'flex',alignItems:'center',gap:'10px',backgroundColor:colors.primary10,borderRadius:'12px',padding:'12px'}}>
+        <View style={{flex:1,minWidth:0}}><Text style={{display:'block',fontSize:'11px',color:colors.primary}}>需要你处理</Text><Text style={{display:'block',fontSize:'13px',color:colors.textPrimary,marginTop:'4px'}}>检查后上传报告及病历</Text></View>
+        <View onClick={() => Taro.navigateTo({url:'/pages/tasks/report-upload/index?flowId='+encodeURIComponent(upload.careFlowId)})} style={{padding:'10px',backgroundColor:colors.primary,borderRadius:'9px',flexShrink:0}}><Text style={{fontSize:'13px',color:'#fff'}}>上传报告</Text></View>
+      </View>
+    </>}
+  </View>;
 }
 
 function ReminderItemRow({ reminder, isLast }) {
@@ -309,6 +305,9 @@ export default function HomePage() {
     ...followupTaskItems.filter((item) => item.sourceType !== 'symptom'),
   ];
 
+  const taskCards = homeTaskCards(allPendingTaskItems);
+  const showScoreTrend = () => Taro.showModal({title:'健康评分趋势',content:(scoreHistory.length ? scoreHistory.map(h => `${h.date}：${h.score} 分`).join('\n') : '暂无历史评分记录') + '\n\n评分仅供健康管理参考，不作为医学诊断。',showCancel:false});
+
   const markTaskDone = async () => {
     if (!taskDetail || taskDetail.customerReadOnly) return;
     try {
@@ -329,35 +328,31 @@ export default function HomePage() {
         <Text style={{fontSize:'11px',color:colors.textMuted,display:'block',marginTop:'4px'}}>健康有人管，生活更安心</Text>
       </View>
       <View style={{ padding: `0 ${spacing.lg}px` }}>
-        <View style={{backgroundColor:'#fff',borderRadius:'18px',padding:'16px',marginBottom:'18px'}}>
+        <View style={{backgroundColor:'#fff',borderRadius:'18px',padding:'18px',marginBottom:'22px'}}>
           <View style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'10px'}}>
             <View style={{flex:1,minWidth:0}}><Text style={{fontSize:'12px',color:colors.textMuted,display:'block'}}>{name}，{greeting}</Text><Text style={{fontSize:'19px',fontWeight:600,color:colors.textPrimary,display:'block',marginTop:'6px'}}>照顾好今天的你</Text></View>
-            <View onClick={()=>Taro.showModal({title:'健康评分',content:'评分依据已记录的健康信息计算，仅供健康管理参考，不作为医学诊断。',showCancel:false})} style={{padding:'8px 10px',borderRadius:'12px',backgroundColor:colors.primary10,textAlign:'center',flexShrink:0}}>
-              <Text style={{fontSize:'26px',fontWeight:700,color:colors.primary,display:'block'}}>{scoreDisplay ?? '--'}</Text><Text style={{fontSize:'10px',color:colors.textMuted}}>健康评分 / 100</Text>
+            <View onClick={showScoreTrend} style={{padding:'8px 10px',borderRadius:'12px',backgroundColor:colors.primary10,textAlign:'center',flexShrink:0}}>
+              <Text style={{fontSize:'26px',fontWeight:700,color:colors.primary,display:'block'}}>{scoreDisplay ?? '--'}</Text><Text style={{fontSize:'10px',color:colors.textMuted}}>健康评分 ›</Text>
             </View>
           </View>
-          <Text style={{fontSize:'12px',lineHeight:'19px',color:colors.textSecondary,display:'block',margin:'12px 0'}}>{sectionState.dashboard === 'error' ? '健康概览暂未更新，点击下方重试' : trendActionText || '记录近期变化，帮助了解健康趋势'}</Text>
+          <View onClick={sectionState.dashboard === 'error' ? loadCore : showScoreTrend} style={{display:'flex',alignItems:'center',gap:'7px',margin:'14px 0'}}><Icon name="📈" size={16} color={colors.textSecondary}/><Text style={{flex:1,fontSize:'12px',color:colors.textSecondary}}>{sectionState.dashboard === 'error' ? '健康概览暂未更新' : (trendActionText || '记录近期变化，了解健康趋势').split('，')[0]}</Text><Text style={{fontSize:'12px',color:colors.primary}}>{sectionState.dashboard === 'error' ? '重试 ›' : '查看趋势 ›'}</Text></View>
           <View onClick={()=>Taro.navigateTo({url:'/pages/checkin/index'})} style={{display:'flex',alignItems:'center',gap:'9px',backgroundColor:colors.primary,borderRadius:'12px',padding:'13px 15px'}}>
-            <Icon name="✅" size={19} color="#fff"/><Text style={{flex:1,fontSize:'15px',fontWeight:600,color:'#fff'}}>记录健康数据</Text><Text style={{color:'#fff'}}>›</Text>
+            <Text style={{fontSize:'22px',color:'#fff'}}>＋</Text><Text style={{flex:1,fontSize:'15px',fontWeight:600,color:'#fff'}}>记录健康数据</Text><Text style={{color:'#fff'}}>›</Text>
           </View>
-          <Text style={{fontSize:'11px',color:colors.textMuted,display:'block',textAlign:'center',marginTop:'10px'}}>{growth.totalCheckinDays>0?`近30天已记录 ${growth.totalCheckinDays} 天 · 每一次记录，多一份了解`:'每一次记录，都多一份了解'}</Text>
+          <Text style={{fontSize:'11px',color:colors.textMuted,display:'block',textAlign:'center',marginTop:'10px'}}>{growth.totalCheckinDays>0?`近30天已记录 ${growth.totalCheckinDays} 天`:'每一次记录，都多一份了解'}</Text>
         </View>
 
-        <View onClick={() => openManagerConversation(authUser?._id)} style={{ display:'flex', alignItems:'center', gap:'10px', padding:'12px 14px', backgroundColor:'#fff', borderRadius:'14px', marginBottom:'18px' }}>
-          <Icon name="💬" size={20} color={colors.primary} />
-          <View style={{flex:1}}><Text style={{display:'block',fontSize:'14px',fontWeight:600,color:colors.textPrimary}}>联系健管专员{manager?.name ? ' · ' + manager.name : ''}</Text><Text style={{display:'block',fontSize:'12px',color:colors.textSecondary,marginTop:'3px'}}>{!token ? '登录后查看专属服务团队' : manager ? '就医安排、资料上传和日常服务咨询' : '暂未分配健管专员'}</Text></View><Text style={{color:colors.primary}}>›</Text>
-        </View>
         {/* 待办任务：像素级对齐app端TaskItem/ReminderItem图标行+紧急度徽章，
             "随访"已移出Tab，"全部"入口跳转独立随访页（2026-07-18 Tab结构调整） */}
         <View style={{ marginBottom: `${spacing.lg}px` }}>
           <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
             <Text style={{ fontSize: '17px', fontWeight: 700, color: colors.textPrimary }}>近期安排</Text>
             <View onClick={() => Taro.navigateTo({ url: '/pages/tasks/index' })} style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-              <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 500 }}>全部</Text>
+              <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 500 }}>查看全部</Text>
               <Text style={{ fontSize: '13px', color: colors.primary }}>›</Text>
             </View>
           </View>
-          <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, overflow: 'hidden', padding: `0 ${spacing.md}px` }}>
+          <View>
             {sectionError(['dashboard','tasks','followups']) && <Text onClick={loadCore} style={{display:'block',padding:'12px 0',fontSize:'13px',color:colors.danger}}>部分健康安排暂未加载，点击重试{allPendingTaskItems.length ? '；下方保留已加载内容' : ''}</Text>}
             {!token ? <Text onClick={() => Taro.navigateTo({url:'/pages/auth/login/index'})} style={{display:'block',padding:'20px 0',fontSize:'13px',color:colors.primary}}>登录后查看你的健康安排 ›</Text> : tasksLoading && allPendingTaskItems.length === 0 && todayReminders.length === 0 ? (
               <Text style={{ fontSize: '13px', color: colors.textMuted, display: 'block', padding: '20px 0', textAlign: 'center' }}>加载中...</Text>
@@ -368,8 +363,8 @@ export default function HomePage() {
               </View>
             )) : (
               <>
-                {allPendingTaskItems.slice(0, 3).map((t, i, arr) => (
-                  <TaskItemRow key={t._id || i} task={t} isLast={i === arr.length - 1 && todayReminders.length === 0} onPress={t=>t.canUploadReports?Taro.navigateTo({url:'/pages/tasks/report-upload/index?flowId='+t.careFlowId}):setTaskDetail(t)} />
+                {taskCards.slice(0, 3).map((t, i, arr) => (
+                  <TaskItemRow key={t._id || i} task={t} isLast={i === arr.length - 1 && todayReminders.length === 0} onPress={t=>setTaskDetail(t)} />
                 ))}
                 {todayReminders.map((r, i) => (
                   <ReminderItemRow key={r._id || i} reminder={r} isLast={i === todayReminders.length - 1} />
@@ -377,10 +372,10 @@ export default function HomePage() {
               </>
             )}
           </View>
-          {allPendingTaskItems.length > 3 && (
+          {taskCards.length > 3 && (
             <View onClick={() => Taro.navigateTo({ url: '/pages/tasks/index' })} style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px', padding: '0 4px' }}>
               <Text style={{ fontSize: '12px', color: colors.primary }}>⋯</Text>
-              <Text style={{ fontSize: '11px', color: colors.primary, fontWeight: 500, flex: 1 }}>还有 {allPendingTaskItems.length - 3} 项健康计划 · 查看全部</Text>
+              <Text style={{ fontSize: '11px', color: colors.primary, fontWeight: 500, flex: 1 }}>还有 {taskCards.length - 3} 项健康计划 · 查看全部</Text>
               <Text style={{ fontSize: '12px', color: colors.primary }}>›</Text>
             </View>
           )}
@@ -396,7 +391,7 @@ export default function HomePage() {
         <View style={{marginBottom:'24px'}}>
           <Text style={{fontSize:'17px',fontWeight:700,color:colors.textPrimary,display:'block',marginBottom:'12px'}}>我的权益</Text>
           <View style={{display:'flex',gap:'10px'}}>
-            {[['plan','会员权益','查看计划与使用情况','🎁'],['fund','健康基金',user?.healthFund?.total!=null?`余额 ¥${Number(user.healthFund.total).toFixed(2)}`:'查看余额与收支明细','💰']].map(([section,title,subtitle,icon])=><View key={section} onClick={()=>Taro.navigateTo({url:'/pages/profile/benefits/index?section='+section})} style={{flex:1,minWidth:0,backgroundColor:'#fff',borderRadius:'16px',padding:'13px'}}><Icon name={icon} size={20} color={colors.primary}/><Text style={{fontSize:'15px',fontWeight:600,display:'block',marginTop:'10px',color:colors.textPrimary}}>{title} ›</Text><Text style={{fontSize:'11px',color:colors.textMuted,display:'block',marginTop:'5px'}}>{subtitle}</Text></View>)}
+            {[['plan','会员权益','查看计划与使用情况','🎁'],['fund','健康基金',user?.healthFund?.total!=null?`余额 ¥${Number(user.healthFund.total).toFixed(2)}`:'查看余额与收支明细','💰']].map(([section,title,subtitle,icon])=><View key={section} onClick={()=>Taro.navigateTo({url:'/pages/profile/benefits/index?section='+section})} style={{flex:1,minWidth:0,backgroundColor:'#fff',borderRadius:'18px',padding:'14px 11px',display:'flex',alignItems:'center',gap:'9px'}}><Icon name={icon} size={22} color={colors.primary}/><View style={{flex:1,minWidth:0}}><Text style={{fontSize:'13px',fontWeight:600,display:'block',color:colors.textPrimary}}>{title}</Text><Text style={{fontSize:'11px',color:colors.textSecondary,display:'block',marginTop:'4px'}}>{subtitle} ›</Text></View></View>)}
           </View>
         </View>
         <View style={{ marginBottom: `${spacing.lg}px` }}>
@@ -418,6 +413,10 @@ export default function HomePage() {
         </View>
 
       </View>
+      <View style={{padding:'0 20px'}}><View onClick={() => openManagerConversation(authUser?._id)} style={{ display:'flex', alignItems:'center', gap:'10px', padding:'12px 14px', backgroundColor:'#fff', borderRadius:'14px', marginBottom:'18px' }}>
+          <Icon name="💬" size={20} color={colors.primary} />
+          <View style={{flex:1}}><Text style={{display:'block',fontSize:'14px',fontWeight:600,color:colors.textPrimary}}>联系健管专员{manager?.name ? ' · ' + manager.name : ''}</Text><Text style={{display:'block',fontSize:'12px',color:colors.textSecondary,marginTop:'3px'}}>{!token ? '登录后查看专属服务团队' : manager ? '就医安排、资料上传和日常服务咨询' : '暂未分配健管专员'}</Text></View><Text style={{color:colors.primary}}>›</Text>
+        </View></View>
       {/* 底部占位，对齐app端 <View style={{height: spacing.xl*2}}/> */}
       <View style={{ height: '24px' }} />
 
