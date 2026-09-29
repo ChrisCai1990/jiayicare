@@ -7,7 +7,7 @@ test('service workbench groups workflow tasks into one current-stage card', () =
   const source = fs.readFileSync(path.join(__dirname, '../src/components/ServiceTasksPanel.jsx'), 'utf8');
   assert.match(source, /serviceTaskGroupKey\(task\)/);
   assert.match(source, /sequenceByKey/);
-  assert.match(source, /task: proxyAction \|\| supervisor \|\| service\.tasks\[0\]/);
+  assert.match(source, /task: service\.tasks\.find\(task => task\.feedbackReview\) \|\| proxyAction \|\| supervisor \|\| service\.tasks\[0\]/);
   assert.match(source, /当前环节 · 共\{service\.totalSteps\}环节/);
   assert.match(source, /\{serviceGroups\.length\}/);
   assert.doesNotMatch(source, /前序：/);

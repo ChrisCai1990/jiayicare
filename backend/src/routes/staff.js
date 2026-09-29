@@ -679,6 +679,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     : []).map(String));
   const careIds = queriedTasks.map(task => task.careFlowId).filter(Boolean);
   const careCases = careIds.length ? await require('../models/CareFlow').find({ _id: { $in: careIds }, tenantId: req.staff.tenantId || null }).lean() : [];
+  const feedbackFor = task => require('../utils/careFlowFeedbackTask').feedbackForTask(task,careCases.find(c=>String(c._id)===String(task.careFlowId)));
   const tasks = queriedTasks.filter(task => {
     if (task.careFlowId && task.taskRole !== 'supervisor') {
       const c = careCases.find(c => String(c._id) === String(task.careFlowId));
@@ -705,10 +706,12 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     if (status && status !== 'active' && task.status !== status) return false;
     if (includeFuture !== '1' && task.remindAt && task.remindAt > now) return false;
     return true;
-  }).slice(0, requestedLimit);
+  }).sort((a,b)=>Number(!!feedbackFor(b))-Number(!!feedbackFor(a))).slice(0, requestedLimit);
   const supervisionProgress = await require('../utils/supervisionProgress').loadSupervisionProgress(tasks, FollowUp);
   res.json({ success: true, data: tasks.map(task => {
     const item = withSignedServiceChecklist(task);
+    const feedbackReview=feedbackFor(task);
+    if(feedbackReview){item.feedbackReview=feedbackReview;item.theme=feedbackReview.theme;}
     const isLegacyInsurance = item.sourceType === 'scheduled' && (item.tags || []).includes('保险服务');
     if (isLegacyInsurance) {
       item.taskRole = 'executor';

@@ -122,7 +122,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
     // The API returns this staff member's tasks. A read-only supervisor card must
     // not hide their actionable assignment for the same service.
     const proxyAction = service.tasks.find(task => (orderService ? task.taskRole === 'executor' && task.workflowKey !== 'medication_proxy:progress' : String(task.workflowKey || '').startsWith('medical_proxy:') && task.workflowKey !== 'medical_proxy:supervise') && !task.isBlocked && ['planned', 'in_progress', 'missed'].includes(task.status))
-    return { ...service, task: proxyAction || supervisor || service.tasks[0], totalSteps: workflowModules.length || service.tasks.length }
+    return { ...service, task: service.tasks.find(task => task.feedbackReview) || proxyAction || supervisor || service.tasks[0], totalSteps: workflowModules.length || service.tasks.length }
   })
   const now = new Date()
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -139,6 +139,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
   }
   const isActionableNow = service => {
     const task = service.task
+    if(task.feedbackReview)return task.taskRole==='executor'&&!task.isBlocked;
     return task.taskRole === 'executor' && !task.isBlocked && bucketOf(task.date) !== 'week'
       && bucketOf(task.date) !== 'month' && bucketOf(task.date) !== 'later'
   }
@@ -157,6 +158,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
     })
     .sort((a, b) => {
       const priority = service => {
+        if(service.task.feedbackReview)return -1;
         const bucket = bucketOf(service.task.date)
         return bucket === 'overdue' ? 0 : bucket === 'today' ? 1 : bucket === 'week' ? 2 : bucket === 'month' ? 3 : 4
       }
@@ -171,6 +173,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
   const openTask = async (task) => {
     if (task.taskRole === 'supervisor' && task.workflowKey === 'medical_proxy:supervise'
       && /专家约诊/.test(task.theme || '')) return
+    if (task.feedbackReview) { setDispatchTask(task); return }
     if (annualDispatch.dedicated(task)) { setDispatchTask(task); return }
     if (task.sourceType === 'report_followup' && task.workflowKey === 'report_followup:advisor_review') {
       nav(`/patients/${task.patientId?._id}/annual-health#report-followup-drafts`)
@@ -268,6 +271,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600, fontSize: 13, color: '#1A2B24' }}>
                 {serviceTaskTitle(task)}
+                {task.feedbackReview&&<span style={{marginLeft:8,fontSize:11,color:'#1E6B50',background:'#EAF5F0',padding:'2px 6px',borderRadius:8}}>客户已反馈 · 待你核实</span>}
                 {isReadOnlyExpertSupervision && <span style={{ marginLeft: 8, fontSize: 11, color: '#1E6B50', background: '#EAF5F0', padding: '2px 6px', borderRadius: 8 }}>只读督办</span>}
                 {progress && <span style={{ marginLeft: 8, fontSize: 11, color: '#1E6B50', background: '#EAF5F0', padding: '2px 6px', borderRadius: 8 }}>进度 {progress.step}/{progress.total || 5}</span>}
                 {service.totalSteps > 1 && <span style={{ marginLeft: 8, fontSize: 11, color: '#1E6B50', background: '#EAF5F0', padding: '2px 6px', borderRadius: 8 }}>当前环节 · 共{service.totalSteps}环节</span>}
@@ -284,6 +288,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
                 {(task.supervisionProgress?.current || []).map(row => <div key={row.id}>当前环节：<b>{row.label}</b> · 处理人：{row.assignee}{row.blocked ? ' · 等待解锁' : ''}</div>)}
                 <div>{task.supervisionProgress?.message || '进度待核对，未推断服务已完成'}</div>
               </div>}
+              {task.feedbackReview&&<div style={{marginTop:8,padding:10,borderRadius:8,background:'#EAF5F0',color:'#274838',fontSize:12}}><div>{task.feedbackReview.label}</div>{task.feedbackReview.note&&<div style={{whiteSpace:'pre-wrap',marginTop:4}}>补充：{task.feedbackReview.note}</div>}<button type="button" className="btn btn-primary btn-sm" style={{marginTop:8}} onClick={e=>{e.stopPropagation();openTask(task)}}>查看反馈并核实</button></div>}
               {progress && <div style={{ fontSize: 12, color: '#52685D', marginTop: 3 }}>当前阶段：<b>{progress.label}</b>　下一步：{progress.next}</div>}
               {progress?.steps && <div style={{ marginTop: 7, maxWidth: 680 }}>
                 <div style={{ height: 7, borderRadius: 99, background: '#E3ECE7', overflow: 'hidden' }}>
