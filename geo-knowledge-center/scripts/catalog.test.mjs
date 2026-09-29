@@ -25,6 +25,7 @@ test('without JavaScript, every published article is reachable through real pagi
   assert.equal((first.match(/class="article-card"/g) || []).length, 6);
   assert.equal((second.match(/class="article-card"/g) || []).length, 1);
   assert.match(first, /href="articles-page-2.html#latest"/);
+  for (let i = 0; i < 7; i += 1) assert.ok(read('sitemap.xml').includes(`/guides/article-${i}.html`));
   assert.match(second, /href="guides\/article-0.html"/);
   assert.match(second, /canonical" href="https:\/\/jiaycare.com\/knowledge\/articles-page-2.html"/);
 });

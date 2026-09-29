@@ -38,7 +38,9 @@ export function buildCatalog(siteDirectory = root, siteUrl = 'https://jiaycare.c
   const sitemapPath = path.join(siteDirectory, 'sitemap.xml');
   if (fs.existsSync(sitemapPath)) {
     let sitemap = fs.readFileSync(sitemapPath, 'utf8').replace(/\s*<url><loc>[^<]*\/articles-page-\d+\.html<\/loc>(?:<lastmod>[^<]*<\/lastmod>)?<\/url>/g, '');
-    const extra = pages.filter(file => file !== 'index.html').map(file => `  <url><loc>${siteUrl.replace(/\/$/, '')}/${file}</loc></url>\n`).join('');
+    const base = siteUrl.replace(/\/$/, '');
+    const articleUrls = articles.filter(item => !sitemap.includes(`<loc>${base}/${item.href}</loc>`)).map(item => `  <url><loc>${base}/${item.href}</loc>${item.updatedAt ? `<lastmod>${escape(item.updatedAt)}</lastmod>` : ''}</url>\n`).join('');
+    const extra = articleUrls + pages.filter(file => file !== 'index.html').map(file => `  <url><loc>${base}/${file}</loc></url>\n`).join('');
     fs.writeFileSync(sitemapPath, sitemap.replace('</urlset>', extra + '</urlset>'));
   }
   return pages;
