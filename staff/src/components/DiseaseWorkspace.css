@@ -1,0 +1,66 @@
+.disease-workspace{--dw-ink:#223d35;--dw-muted:#70827b;--dw-line:#e4ece8;color:var(--dw-ink);overflow:hidden;font-size:14px}
+.disease-workspace .card-body{padding:24px!important}
+.disease-workspace p{line-height:1.7;margin:0}
+.disease-workspace h3,.disease-workspace h4{margin:0;color:var(--dw-ink);line-height:1.5}
+.disease-workspace h4{font-size:15px;font-weight:650}
+.disease-workspace .btn{font-size:13px;min-height:36px;white-space:normal;line-height:1.5;flex-shrink:0}
+.disease-workspace .btn:focus-visible,.disease-workspace summary:focus-visible,.disease-tabs button:focus-visible{outline:2px solid #1e6b50;outline-offset:3px}
+.disease-header{gap:20px!important;align-items:center!important;background:#fafcfb;border-bottom:1px solid var(--dw-line)!important}
+.disease-header .card-title{color:var(--dw-ink)!important;font-size:17px}
+.disease-selector{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+.disease-selector:has(>button:only-child){display:none}
+.disease-heading{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:22px}
+.disease-eyebrow{font-size:11px;font-weight:600;letter-spacing:1px;color:var(--dw-muted)}
+.disease-heading h3{font-size:20px;margin:5px 0 10px;font-weight:650;overflow-wrap:anywhere}
+.disease-counts{display:flex;gap:16px;color:var(--dw-muted);font-size:12px}
+.disease-delete{color:#a85850!important;background:transparent!important;border-color:var(--dw-line)!important;font-size:12px!important}
+.disease-tabs{display:flex;gap:4px;border-bottom:1px solid var(--dw-line);margin-bottom:24px;overflow-x:auto}
+.disease-tabs button{font:inherit;white-space:nowrap;color:var(--dw-muted);border:0;border-bottom:3px solid transparent;background:transparent;padding:12px 18px;cursor:pointer}
+.disease-tabs button.active{color:#1e6b50;border-bottom-color:#1e6b50;font-weight:650;background:linear-gradient(transparent,#f3f8f5)}
+.disease-toolbar{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:22px;flex-wrap:wrap}
+.disease-toolbar p{font-size:12px;color:var(--dw-muted);margin-top:4px;max-width:620px}
+.disease-actions{display:flex;gap:8px;flex-wrap:wrap}
+.disease-badge{display:inline-flex;align-items:center;font-size:11px;line-height:1.6;background:#edf5f0;border:1px solid #dceae1;color:#487560;padding:3px 8px;border-radius:5px;font-weight:500}
+.disease-timeline{padding-top:2px}
+.disease-event{display:grid;grid-template-columns:118px minmax(0,1fr);gap:24px;position:relative;padding-bottom:20px}
+.disease-event:before{content:'';position:absolute;left:129px;top:10px;bottom:-10px;border-left:1px solid #d7e6dd}
+.disease-event:last-child:before{bottom:28px}
+.disease-event:after{content:'';position:absolute;left:125px;top:10px;width:9px;height:9px;background:#5c977c;border:3px solid white;box-shadow:0 0 0 1px #d7e6dd;border-radius:50%;box-sizing:border-box}
+.disease-event-date{padding-top:3px;display:flex;flex-direction:column;gap:7px}
+.disease-event-date strong{font-size:13px;font-variant-numeric:tabular-nums}
+.disease-event-date span{font-size:11px;color:var(--dw-muted)}
+.disease-event-card{border:1px solid var(--dw-line);border-radius:10px;padding:16px 18px;min-width:0;background:white}
+.disease-event-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
+.disease-event-heading>div{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.disease-event-heading strong{font-size:13px;font-weight:600}
+.disease-event-heading .btn{min-height:28px;font-size:12px;padding:3px 10px}
+.disease-event-summary{font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.85!important}
+.disease-disclosure{border-top:1px solid #eef2ef;margin-top:14px;padding-top:12px;font-size:12px;color:var(--dw-muted)}
+.disease-workspace summary{cursor:pointer;line-height:1.7}
+.disease-facts{margin:12px 0;font-size:13px;line-height:1.8}
+.disease-facts>div{display:grid;grid-template-columns:84px minmax(0,1fr);gap:12px;padding:7px 0}
+.disease-facts dt{color:var(--dw-muted)}
+.disease-facts dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--dw-ink)}
+.disease-meta{font-size:11px!important;color:var(--dw-muted);line-height:1.7}
+.disease-pagination{border-top:1px solid var(--dw-line);padding-top:16px;display:flex;justify-content:space-between;align-items:center;gap:12px;color:var(--dw-muted);font-size:12px}
+.disease-pagination>div{display:flex;align-items:center;gap:14px}
+.disease-stage-controls{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;padding:20px;background:#f6f9f7;border:1px solid var(--dw-line);border-radius:10px;margin-bottom:28px}
+.disease-date-label{display:flex;flex-direction:column;gap:8px;font-size:12px;color:#536b60}
+.disease-date-label input{height:38px;min-width:190px;max-width:100%;border:1px solid #ceddd4;border-radius:6px;padding:7px 12px;background:white;color:var(--dw-ink);font:inherit;font-size:14px}
+.disease-stage-controls>.btn{height:38px}
+.disease-stage-controls>.disease-meta{padding-bottom:9px}
+.disease-section-heading{display:flex;gap:10px;align-items:center;margin:24px 0 16px}
+.disease-empty{text-align:center;background:#fafcfb;border:1px dashed #dce6df;border-radius:10px;padding:36px 20px;margin:12px 0}
+.disease-empty-symbol{display:flex;align-items:center;justify-content:center;width:42px;height:42px;margin:0 auto 12px;border-radius:12px;background:#eaf2ed;color:#739582;font-size:24px}
+.disease-empty p{font-size:12px;color:var(--dw-muted);margin-top:6px}
+.disease-stage-draft{padding:20px;border:1px solid #dedbbd;border-radius:10px;background:#fffef8;margin:20px 0}
+.disease-stage-draft>p{font-size:12px;color:var(--dw-muted);margin:8px 0 14px}
+.disease-stage-draft>label{font-size:12px;color:#536b60}
+.disease-stage-draft textarea{margin:6px 0 12px;resize:vertical;line-height:1.8;font-size:14px}
+.disease-stage-record{padding:16px 18px;border:1px solid var(--dw-line);border-radius:8px;margin:10px 0}
+.disease-stage-record>summary{font-size:13px;font-weight:600}
+.disease-stage-record>p{font-size:12px;color:var(--dw-muted);margin:12px 0}
+.disease-baseline-row{display:grid;grid-template-columns:140px minmax(0,1fr);gap:20px;padding:15px 4px;border-bottom:1px solid #edf1ee;font-size:14px}
+.disease-baseline-row>span:first-child{color:#70827b!important;font-size:12px;text-align:left!important}
+.disease-baseline-row>span:last-child{overflow-wrap:anywhere}
+@media(max-width:760px){.disease-workspace .card-body{padding:16px!important}.disease-header{flex-wrap:wrap}.disease-heading{align-items:flex-start;gap:10px}.disease-heading h3{font-size:17px}.disease-delete{max-width:95px}.disease-tabs button{padding:10px 12px;font-size:13px}.disease-event{grid-template-columns:minmax(0,1fr);gap:10px;padding-left:20px}.disease-event:before{left:4px}.disease-event:after{left:0}.disease-event-date{flex-direction:row;align-items:center}.disease-event-card{padding:14px}.disease-facts>div{grid-template-columns:1fr;gap:2px}.disease-baseline-row{grid-template-columns:1fr;gap:6px}.disease-stage-controls{padding:16px}.disease-stage-controls>.disease-meta{width:100%;padding:0}.disease-pagination{flex-wrap:wrap}.disease-actions{width:100%}}
