@@ -8,7 +8,7 @@ test('legacy confirmed product appears as awaiting shipment, specialised service
   assert.equal(shippingProgress({ ...order, handledBy: null }), '');
   assert.equal(shippingProgress({ ...order, status: 'pending' }), '');
   assert.match(shippingProgress({ ...order, fulfillmentStatus: 'shipped' }), /已发货/);
-  assert.equal(isShippingOrder({ ...order, serviceWorkflowSnapshot: { key: 'supplement_supply' } }), false);
+  assert.equal(isShippingOrder({ ...order, serviceWorkflowSnapshot: { key: 'nutrition_intervention' } }), true);
   assert.equal(isShippingOrder({ serviceName: '专家约诊' }), false);
 });
 
