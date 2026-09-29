@@ -9,7 +9,10 @@ import SymptomTodosPanel from '../components/SymptomTodosPanel'
 import FollowUpsPanel from '../components/FollowUpsPanel'
 import ServiceTasksPanel from '../components/ServiceTasksPanel'
 import MonthlyReviewWorkbench from '../components/MonthlyReviewWorkbench'
+import Pagination from '../components/Pagination'
 import { isCustomerOrder, plannerOrderRows } from '../utils/plannerOrderProgress.mjs'
+
+const ORDERS_PER_PAGE = 5
 
 const DISEASE_COLOR = {
   '高血压': '#e74c3c', '糖尿病': '#e67e22', '高血脂': '#f39c12',
@@ -29,6 +32,8 @@ export default function HomePage() {
   const [pendingOrders, setPendingOrders] = useState([])
   const [completedOrders, setCompletedOrders] = useState([])
   const [orderHistoryOpen, setOrderHistoryOpen] = useState(false)
+  const [orderPage, setOrderPage] = useState(1)
+  const [orderHistoryPage, setOrderHistoryPage] = useState(1)
   const [serviceTasks, setServiceTasks] = useState([])
 
   useEffect(() => {
@@ -77,6 +82,12 @@ export default function HomePage() {
     .filter(item => isCustomerOrder(item.sourceOrderId, item))
     .sort((a, b) => new Date(b.completedAt || 0) - new Date(a.completedAt || 0))
     .map(item => [String(item.sourceOrderId?._id || item._id), item])).values()]
+  const orderPageCount = Math.max(1, Math.ceil(orderRows.length / ORDERS_PER_PAGE))
+  const currentOrderPage = Math.min(orderPage, orderPageCount)
+  const visibleOrderRows = orderRows.slice((currentOrderPage - 1) * ORDERS_PER_PAGE, currentOrderPage * ORDERS_PER_PAGE)
+  const orderHistoryPageCount = Math.max(1, Math.ceil(orderHistoryRows.length / ORDERS_PER_PAGE))
+  const currentOrderHistoryPage = Math.min(orderHistoryPage, orderHistoryPageCount)
+  const visibleOrderHistoryRows = orderHistoryRows.slice((currentOrderHistoryPage - 1) * ORDERS_PER_PAGE, currentOrderHistoryPage * ORDERS_PER_PAGE)
 
   return (
     <div className="page">
@@ -118,11 +129,11 @@ export default function HomePage() {
             {orderHistoryRows.length > 0 && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOrderHistoryOpen(value => !value)}>{orderHistoryOpen ? '收起已处理预约' : `查看已处理预约 ${orderHistoryRows.length}`}</button>}
           </div>
           <div className="card-body" style={{ padding: '8px 20px' }}>
-            {orderRows.map(({ id, pending: f, supervisor, task: serviceTask, action }, i) => {
+            {visibleOrderRows.map(({ id, pending: f, supervisor, task: serviceTask, action }, i) => {
               const task = supervisor || serviceTask
               const order = task?.sourceOrderId || f?.sourceOrderId
               const openTarget = action || (supervisor && !/专家约诊/.test(supervisor.theme || '') ? supervisor : null) || (!task ? f : null)
-              return <div key={id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: i < orderRows.length - 1 ? '1px solid #f0ede8' : 'none', cursor: openTarget ? 'pointer' : 'default' }} onClick={() => { if (openTarget) nav(`/patients/${openTarget.patientId?._id}?tab=followups`, { state: { openFollowUp: openTarget } }) }}>
+              return <div key={id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: i < visibleOrderRows.length - 1 ? '1px solid #f0ede8' : 'none', cursor: openTarget ? 'pointer' : 'default' }} onClick={() => { if (openTarget) nav(`/patients/${openTarget.patientId?._id}?tab=followups`, { state: { openFollowUp: openTarget } }) }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                   <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24', minWidth: 60, flexShrink: 0 }}>{(task || f)?.patientId?.name || '未知'}</span>
                   <div style={{ minWidth: 0 }}>
@@ -139,12 +150,18 @@ export default function HomePage() {
                 <span style={{ fontSize: 12, color: '#aaa', flexShrink: 0, marginLeft: 12 }}>{action ? '待我办理' : task ? '流程进行中' : `下单 ${new Date(order?.createdAt || f.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}</span>
               </div>
             })}
+            {orderRows.length > ORDERS_PER_PAGE && <nav aria-label="用户下单服务进程分页" style={{ paddingBottom: 8 }}>
+              <Pagination compact page={currentOrderPage} totalPages={orderPageCount} onChange={setOrderPage} />
+            </nav>}
             {orderHistoryOpen && <div style={{ borderTop: '1px solid #E3ECE7', marginTop: 8, paddingTop: 10 }}>
               <div style={{ fontWeight: 600, color: '#52685D', marginBottom: 6 }}>过往已处理预约（不代表服务已结束）</div>
-              {orderHistoryRows.map(item => <div key={item._id} onClick={() => nav(`/patients/${item.patientId?._id}?tab=followups`)} style={{ padding: '9px 0', borderBottom: '1px solid #F0EDE8', cursor: 'pointer' }}>
+              {visibleOrderHistoryRows.map(item => <div key={item._id} onClick={() => nav(`/patients/${item.patientId?._id}?tab=followups`)} style={{ padding: '9px 0', borderBottom: '1px solid #F0EDE8', cursor: 'pointer' }}>
                 <b>{item.patientId?.name || '未知客户'}</b> · {item.sourceOrderId?.serviceName || item.theme} · {item.completedAt ? new Date(item.completedAt).toLocaleString('zh-CN') : '已处理'}
                 <div style={{ color: '#667085', fontSize: 12, whiteSpace: 'pre-wrap' }}>{item.executedContent || item.content || '点击查看客户服务档案'}</div>
               </div>)}
+              {orderHistoryRows.length > ORDERS_PER_PAGE && <nav aria-label="已处理预约分页" style={{ paddingBottom: 8 }}>
+                <Pagination compact page={currentOrderHistoryPage} totalPages={orderHistoryPageCount} onChange={setOrderHistoryPage} />
+              </nav>}
             </div>}
           </div>
         </div>
