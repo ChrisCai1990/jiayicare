@@ -2,7 +2,9 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { staffAPI } from '../api'
 
-const when = value => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '—'
+const when = value => value && Number.isFinite(+new Date(value)) ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '未记录'
+const statuses = { new: '待联系', contacted: '已联系', closed: '已关闭' }
+const actions = { new: '重新跟进', contacted: '联系客户', closed: '关闭线索' }
 const directions = { medical_assistance: '就医协助', metabolic_84: '84 天体重管理', long_term: '长期健康管理' }
 const nextDay = () => { const d = new Date(Date.now() + 86400000); return new Date(+d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16) }
 
@@ -54,7 +56,7 @@ export default function VisitorLeadWorkbench({ toast }) {
       if (action === 'convert') await staffAPI.convertVisitorLead(row._id, { ...form, nextContactAt: new Date(form.nextContactAt).toISOString() })
       else if (['contacted', 'closed', 'new'].includes(action)) await staffAPI.updateVisitorLead(row._id, { status: action, contactNote: form.note, baseUpdatedAt: row.updatedAt })
       else await staffAPI.updateServiceIntake(row._id, { ...form, action, revision: row.revision, ...(action !== 'close' ? { nextContactAt: new Date(form.nextContactAt).toISOString() } : {}) })
-      setEdit(null); toast('已保存'); await load()
+      setEdit(null); window.dispatchEvent(new Event('consultation-retry')); toast('已保存'); await load()
     } catch (e) { setModalError(e.message || '保存失败，请核对后重试') }
     finally { submitting.current = false; setBusy(false) }
   }
@@ -75,14 +77,33 @@ export default function VisitorLeadWorkbench({ toast }) {
     {loading ? <p>正在加载…</p> : result.data?.length ? <div style={{ display: 'grid', gap: 14 }}>{result.data.map(row => <article className="card" key={row._id}>
       <div className="card-body">
         {tab === 'leads' ? <>
-          <h3>{row.name} · {row.topic}</h3><p>{row.phone} · {[row.city, row.contactWindow].filter(Boolean).join(' / ')}</p>
-          <p style={{ whiteSpace: 'pre-wrap' }}>{row.summary || '未填写沟通要点'}</p>
-          <p>来源：{row.source} · 提交：{when(row.createdAt)} · 负责人：{row.assignedTo?.name || '待认领'}</p>
-          {row.status === 'new' && <p style={{ color: row.overdue ? '#b91c1c' : '#52655b' }}>{row.overdue ? '已超过首次响应时间 · ' : '首次响应截止：'}{when(row.responseDueAt)}</p>}
-          {row.contactNote && <p>联系记录：{row.contactNote}</p>}
+          <header className="consultation-lead-header">
+            <div><span className="consultation-eyebrow">官网咨询</span><h3>{row.name}<span className="consultation-topic">{row.topic || '服务咨询'}</span></h3></div>
+            <span className={`consultation-status ${row.status}`}>{statuses[row.status]}</span>
+          </header>
+          <div className="consultation-meta">
+            <span>联系电话<strong>{row.phone}</strong></span><span>所在城市<strong>{row.city || '未提供'}</strong></span>
+            <span>方便联系时段<strong>{row.contactWindow || '未提供'}</strong></span><span>负责人<strong>{row.assignedTo?.name || '待认领'}</strong></span>
+          </div>
+          <div className="consultation-content-grid">
+            <section className="consultation-content"><h4>网页咨询内容</h4><p className="consultation-time">提交时间：{when(row.createdAt)}（北京时间）</p>
+              <p className="consultation-copy">{row.summary || '访客未提交咨询内容，请联系时补充确认。'}</p>
+              <p className="consultation-caption">访客确认提交的咨询摘要 · 来源：{row.source || '官网'}</p>
+            </section>
+            <section className="consultation-content contact"><h4>人工联系记录</h4>
+              {(row.contactEvents?.length ? [...row.contactEvents].reverse() : row.contactNote ? [{ status: row.status, note: row.contactNote, at: row.contactedAt }] : []).map((event, index) => <div className="consultation-event" key={event._id || index}>
+                <p className="consultation-time">{actions[event.status] || '联系记录'} · {when(event.at)}{event.at ? '（北京时间）' : ''}{event.actorName ? ` · ${event.actorName}` : ''}</p>
+                <p className="consultation-copy">{event.note}</p>
+              </div>)}
+              {!row.contactEvents?.length && !row.contactNote && <p className="consultation-caption">尚未记录联系结果。</p>}
+            </section>
+          </div>
+          {row.status === 'new' && <p className={`consultation-deadline ${row.overdue ? 'overdue' : ''}`}>{row.overdue ? '已逾期 · ' : ''}首次响应截止：{when(row.responseDueAt)}（北京时间）</p>}
+          {row.acceptance && !row.intakeId && <p className="consultation-deadline">服务承接尚未完成，请点击下方按钮继续确认。</p>}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {row.status === 'new' && <button className="btn btn-primary" onClick={() => open(row, 'contacted')}>记录联系并承接</button>}
+            {row.status === 'new' && <button className="btn btn-primary" onClick={() => open(row, 'contacted')}>记录联系结果</button>}
             {row.intakeId ? <button className="btn btn-primary" onClick={() => switchTab('intakes')}>查看服务承接</button> : row.status === 'contacted' && <button className="btn btn-primary" onClick={() => open(row, 'convert')}>确认客户与服务需求</button>}
+            {row.status === 'contacted' && !row.intakeId && !row.acceptance && <button className="btn btn-secondary" onClick={() => open(row, 'contacted')}>追加联系记录</button>}
             {row.status === 'contacted' && !row.intakeId && <button className="btn btn-secondary" onClick={() => open(row, 'closed')}>不再跟进</button>}
             {row.status === 'closed' && <button className="btn btn-secondary" onClick={() => open(row, 'new')}>重新跟进</button>}
           </div>
@@ -112,7 +133,7 @@ export default function VisitorLeadWorkbench({ toast }) {
       <button className="btn btn-secondary" disabled={page * result.limit >= result.total || loading} onClick={() => setPage(p => p + 1)}>下一页</button>
     </div>
     {edit && <div className="modal-overlay" onClick={closeDialog}><div className="modal" role="dialog" aria-modal="true" aria-label="服务承接" onClick={e => e.stopPropagation()} style={{ maxWidth: 620, width: '94vw', maxHeight: '90vh', overflowY: 'auto' }}>
-      <form onSubmit={save}><div className="modal-header"><h3>服务承接</h3><button type="button" className="btn btn-secondary" disabled={busy} onClick={closeDialog}>关闭</button></div>
+      <form onSubmit={save}><div className="modal-header"><h3>{edit.action === 'contacted' ? '记录联系结果' : '服务承接'}</h3><button type="button" className="btn btn-secondary" disabled={busy} onClick={closeDialog}>关闭</button></div>
       <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
         {edit.action === 'convert' && <>
           <label>搜索已有客户（姓名或手机号）<div style={{ display: 'flex', gap: 8 }}><input className="form-control" value={search} onChange={e => setSearch(e.target.value)} /><button type="button" className="btn btn-secondary" disabled={searching} onClick={searchPatients}>搜索</button></div></label>
@@ -128,7 +149,8 @@ export default function VisitorLeadWorkbench({ toast }) {
           <p>请只选择本次需求对应的服务；关联后保留原订单与服务流程。</p>
         </>}
         {['convert', 'link', 'followup'].includes(edit.action) && <label>下次跟进时间<input required className="form-control" type="datetime-local" value={form.nextContactAt} onChange={field('nextContactAt')} /></label>}
-        {edit.action !== 'convert' && <label>{edit.action === 'close' ? '承接结论及后续安排' : '本次沟通记录'}<textarea required maxLength={1000} className="form-control" value={form.note} onChange={field('note')} /></label>}
+        {edit.action !== 'convert' && <label>{edit.action === 'close' ? '承接结论及后续安排' : '本次沟通记录'}<textarea required placeholder="请记录联系渠道、客户诉求、沟通结果及约定安排" maxLength={['contacted', 'closed', 'new'].includes(edit.action) ? 500 : 1000} className="form-control" value={form.note} onChange={field('note')} /></label>}
+        {edit.action === 'contacted' && <p className="consultation-caption">保存时记录本次联系时间，线索将移出工作台，可在“已联系”中查看和继续承接。</p>}
         {modalError && <p role="alert" style={{ color: '#b91c1c' }}>{modalError}</p>}
       </div><div className="modal-footer"><button type="submit" className="btn btn-primary" disabled={busy || searching}>{busy ? '正在保存…' : '确认保存'}</button></div></form>
     </div></div>}

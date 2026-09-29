@@ -61,7 +61,7 @@ test('actual parse filter includes failed ordinary reports, excludes manual-only
   assert.equal(matches(report), true);
   for (const patch of [{ type: 'functional' }, { aiStatus: 'processing' }, { audit_status: 'audited' }, { user: 'other' }, { fileUrl: '' }]) assert.equal(matches({ ...report, ...patch }), false);
 });
-test('consultation queue keeps contacted leads, interrupted conversion and open intakes, removes closed work and duplicates', async () => {
+test('consultation queue excludes all contacted leads and preserves independent open service followups', async () => {
   const leads = [
     { _id: 'new', name: 'new', status: 'new', tenantId: null, createdAt: '2026-09-01' },
     { _id: 'contacted', status: 'contacted', assignedTo: 'a', tenantId: null, createdAt: '2026-09-01' },
@@ -76,11 +76,12 @@ test('consultation queue keeps contacted leads, interrupted conversion and open 
     { _id: 'closed-intake', tenantId: null, status: 'closed', ownerId: 'a', patientId: 'p' },
   ];
   const result = await consultationTodos({ _id: 'a', role: 'healthPlanner' }, ['p'], { Lead: model(leads), Intake: model(intakes) }, now);
-  assert.deepEqual(new Set(result.map(r => r.id)), new Set(['lead_new', 'lead_contacted', 'lead_retry', 'intake_linked']));
+  assert.deepEqual(new Set(result.map(r => r.id)), new Set(['lead_new', 'intake_linked']));
   assert.equal(result.find(r => r.id === 'intake_linked').overdue, true);
-  assert.equal(result.find(r => r.id === 'lead_contacted').overdue, false);
+  assert.ok(result.every(r => r.dueAt));
+  assert.equal(result.find(r => r.id === 'lead_new').kind, 'lead');
   assert.ok(result.every(r => r.link.includes('itemId=')));
-  assert.match(result.find(r => r.id === 'lead_retry').label, /中断/);
+  assert.ok(!result.some(r => ['lead_contacted', 'lead_retry'].includes(r.id)));
 });
 test('assignment exceptions are scoped, detect inactive staff and vanish when the responsible role is restored', async () => {
   const patients = [{ _id: 'p', tenantId: null, assignedHealthPlanner: 'planner', assignedFamilyDoctor: 'inactive', aiHealthSummary: doctor },

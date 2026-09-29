@@ -17,6 +17,13 @@ const visitorLeadSchema = new mongoose.Schema({
   assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   contactNote: { type: String, default: '', maxlength: 500 },
   contactedAt: { type: Date, default: null },
+  contactEvents: [{
+    status: { type: String, enum: ['new', 'contacted', 'closed'] },
+    note: { type: String, maxlength: 500 },
+    at: { type: Date, default: null },
+    actorName: { type: String, default: '' },
+    actorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  }],
 }, { timestamps: true });
 
 visitorLeadSchema.index({ createdAt: -1 });

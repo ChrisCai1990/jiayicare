@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 
+const when = value => value && Number.isFinite(+new Date(value)) ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '未记录'
+
 export default function ConsultationTodosPanel() {
   const nav = useNavigate()
   const [items, setItems] = useState([]), [error, setError] = useState(''), [loading, setLoading] = useState(true)
@@ -29,9 +31,11 @@ export default function ConsultationTodosPanel() {
       {error && <p role="alert">{error} <button onClick={() => window.dispatchEvent(new Event('consultation-retry'))}>重试</button></p>}
       {loading ? <p>加载中...</p> : !error && !items.length && <p>暂无待联系或待跟进事项。</p>}
       {items.slice(currentPage * 10, currentPage * 10 + 10).map(item => <button key={item.id} type="button" onClick={() => nav(item.link)}
-        style={{ display: 'block', width: '100%', textAlign: 'left', border: 0, borderBottom: '1px solid #eee', background: 'none', padding: 12, cursor: 'pointer' }}>
-        <strong>{item.overdue ? '逾期 · ' : ''}{item.label} · {item.name}</strong><div>{item.summary}</div>
-        <small>跟进期限：{item.dueAt ? new Date(item.dueAt).toLocaleString('zh-CN') : '待核对'}</small>
+        className={`consultation-todo ${item.overdue ? 'overdue' : ''}`}>
+        <span className="consultation-todo-main"><span className="consultation-eyebrow">{item.label}</span><strong>{item.name} · {item.summary}</strong>
+          {item.consultation && <span className="consultation-todo-summary">{item.consultation}</span>}
+          <small>提交时间：{when(item.createdAt)}（北京时间）</small></span>
+        <span className="consultation-todo-due"><span>{item.overdue ? '已逾期 · ' : ''}{item.kind === 'lead' ? '首次响应截止' : '下次跟进时间'}</span><strong>{when(item.dueAt)}</strong><small>北京时间 · 查看详情 →</small></span>
       </button>)}
       {items.length > 10 && <div><button disabled={!currentPage} onClick={() => setPage(currentPage - 1)}>上一页</button>
         <span> {currentPage + 1} / {Math.ceil(items.length / 10)} </span>

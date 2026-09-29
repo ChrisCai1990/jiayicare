@@ -1,3 +1,4 @@
+@import './components/ConsultationWorkbench.css';
 @keyframes spin { to { transform: rotate(360deg); } }
 
 :root {

@@ -22,7 +22,7 @@ function load(relative, mocks, suffix = '') {
   vm.runInNewContext(code, {
     module, exports: module.exports,
     require: name => name in mocks ? mocks[name] : name.startsWith('.') ? load(path.relative(path.resolve(__dirname, '../src'), path.resolve(path.dirname(filename), name + (path.extname(name) ? '' : '.js'))), mocks) : require(name),
-    window, document, console, setTimeout, clearTimeout, setInterval, clearInterval, Event: window.Event,
+    window, document, console, URLSearchParams, setTimeout, clearTimeout, setInterval, clearInterval, Event: window.Event,
   }, { filename })
   return module.exports
 }
@@ -76,4 +76,25 @@ test('late lead list cannot replace service progress; closing an options request
     await act(async()=>options({data:{orders:[],plans:[]}}));
     assert.match(view.container.querySelector('[role=dialog]').textContent,/下次跟进时间/);
   }finally{await view.close()}
+});
+
+
+test('website summary and chronological contact records remain separate with explicit Beijing times', async () => {
+  const row = { _id:'lead', name:'虚构咨询', status:'contacted', summary:'网页上确认的服务问题', createdAt:'2026-09-29T01:00:00Z', contactEvents:[
+    { status:'contacted', note:'电话确认需求', at:'2026-09-29T02:30:00Z', actorName:'规划师' },
+    { status:'closed', note:'客户暂不需要服务', at:'2026-09-29T03:00:00Z' },
+  ] };
+  const View=load('components/VisitorLeadWorkbench.jsx',{'../api':{staffAPI:{getVisitorLeads:async()=>({data:[row],total:1,limit:50})}}}).default;
+  const view=await mount(React.createElement(MemoryRouter,null,React.createElement(View,{toast:()=>{}})));
+  try {
+    const sections=view.container.querySelectorAll('.consultation-content');
+    assert.match(sections[0].textContent,/网页上确认的服务问题/);
+    assert.doesNotMatch(sections[0].textContent,/电话确认需求/);
+    assert.match(sections[1].textContent,/电话确认需求/);
+    assert.match(sections[1].textContent,/10:30:00/);
+    assert.match(sections[1].textContent,/11:00:00/);
+    assert.match(sections[0].textContent,/9:00:00/);
+    assert.match(sections[0].textContent,/北京时间/);
+    assert.ok(sections[1].textContent.indexOf('客户暂不需要') < sections[1].textContent.indexOf('电话确认'));
+  } finally { await view.close() }
 });

@@ -1,0 +1,37 @@
+
+.consultation-lead-header { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom:20px; }
+.consultation-eyebrow { display:block; color:#527363; font-size:12px; font-weight:600; margin-bottom:6px; }
+.consultation-lead-header h3 { margin:0; font-size:20px; display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+.consultation-topic { font-size:14px; font-weight:400; color:#51665b; }
+.consultation-status { flex-shrink:0; padding:5px 12px; border-radius:20px; font-size:12px; font-weight:600; background:#edf1ee; color:#52645a; }
+.consultation-status.new { background:#fff2db; color:#945514; }
+.consultation-status.contacted { background:#e5f3ec; color:#1e6b50; }
+.consultation-meta { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; padding:16px 0; border-top:1px solid #edf0ed; margin-bottom:8px; }
+.consultation-meta span { color:#66796e; font-size:12px; }
+.consultation-meta strong { display:block; font-size:14px; color:#243d30; font-weight:500; margin-top:6px; overflow-wrap:anywhere; }
+.consultation-content-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:8px 0 20px; }
+.consultation-content { min-width:0; border:1px solid #e2eae4; border-radius:12px; padding:18px; background:#f8faf8; }
+.consultation-content.contact { background:#fff; }
+.consultation-content h4 { font-size:14px; margin:0 0 10px; color:#1e6b50; }
+.consultation-content .consultation-copy { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.75; margin:10px 0; font-size:14px; }
+.consultation-time, .consultation-caption { font-size:12px; color:#64756a; line-height:1.6; margin:4px 0; overflow-wrap:anywhere; }
+.consultation-event + .consultation-event { border-top:1px solid #e6ece7; padding-top:12px; margin-top:12px; }
+.consultation-deadline { padding:10px 14px; border-radius:8px; background:#edf5f0; color:#315d47; font-size:13px; margin:0 0 16px; }
+.consultation-deadline.overdue { color:#a14223; background:#fff2e9; }
+.consultation-todo { display:flex; align-items:center; justify-content:space-between; gap:20px; width:100%; text-align:left; border:1px solid #e2eae4; border-radius:12px; background:#fff; padding:18px 20px; margin-bottom:12px; cursor:pointer; color:#243d30; font:inherit; }
+.consultation-todo:hover { background:#f6faf7; border-color:#aac9b5; }
+.consultation-todo:focus-visible { outline:2px solid #1e6b50; outline-offset:3px; }
+.consultation-todo-main { display:grid; gap:6px; min-width:0; }
+.consultation-todo-main strong { font-size:15px; overflow-wrap:anywhere; }
+.consultation-todo small { color:#64756a; font-size:12px; }
+.consultation-todo-summary { color:#596e60; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.consultation-todo-due { display:grid; gap:6px; flex-shrink:0; text-align:right; font-size:12px; }
+.consultation-todo-due strong { font-size:14px; color:#1e6b50; }
+.consultation-todo.overdue { border-left:3px solid #c8753b; }
+.consultation-todo.overdue .consultation-todo-due strong { color:#a14223; }
+@media(max-width:760px) {
+  .consultation-meta { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .consultation-content-grid { grid-template-columns:1fr; }
+  .consultation-todo { align-items:stretch; flex-direction:column; gap:12px; padding:16px; }
+  .consultation-todo-due { text-align:left; padding-top:10px; border-top:1px solid #e6ece7; }
+}

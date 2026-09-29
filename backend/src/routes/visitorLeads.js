@@ -79,8 +79,13 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
     if (!['new', 'contacted', 'closed'].includes(status)) fail('线索状态不正确');
     const note = normalizeText(req.body.contactNote, 500);
     if (!note) fail('请填写本次联系记录或关闭原因');
+    const recordedAt = new Date();
+    const events = [...(row.contactEvents || [])];
+    if (!events.length && row.contactNote) events.push({ status: row.status, note: row.contactNote, at: row.contactedAt || null });
+    events.push({ status, note, at: recordedAt, actorId: req.staff._id, actorName: req.staff.name || '' });
     const saved = await Lead.findOneAndUpdate({ _id: row._id, ...scope(req), updatedAt: row.updatedAt, acceptance: null }, { $set: {
-      status, assignedTo: req.staff._id, contactNote: note, contactedAt: status === 'new' ? null : new Date(),
+      status, assignedTo: req.staff._id, contactNote: note, contactEvents: events,
+      ...(status === 'contacted' ? { contactedAt: recordedAt } : {}),
     } }, { new: true }).lean();
     if (!saved) fail('线索刚刚发生变化，请刷新', 409);
     res.json({ success: true, data: saved });
