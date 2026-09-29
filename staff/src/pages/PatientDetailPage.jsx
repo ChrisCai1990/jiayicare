@@ -1,3 +1,4 @@
+import { taskProgress, readableServiceText } from '../utils/staffWorkspace'
 import ReportReviewQuality, { useReportReviewActivity } from '../components/ReportReviewQuality'
 import ClinicalDocumentReviewFields from '../components/ClinicalDocumentReviewFields'
 import MembershipBenefitsSummary from '../components/MembershipBenefitsSummary'
@@ -688,23 +689,24 @@ function ServiceJourneyPanel({ reports, plans, followUps, serviceRecords, onNavi
     return () => window.removeEventListener('scroll', updateCompact)
   }, [])
   const confirmedPlans = plans.filter(item => item.confirmedAt || item.status === 'active')
-  const finishedTasks = followUps.filter(item => ['completed', 'done'].includes(item.status)).length
-  const activeTasks = followUps.filter(item => ['planned', 'pending', 'in_progress', 'missed'].includes(item.status)).length
+  const progress = taskProgress(followUps)
+  const finishedTasks = progress.completed
+  const activeTasks = progress.remaining
   const assessments = serviceRecords.filter(item => ['stage_assessment', 'phase_assessment'].includes(item.type))
   const deliveryRecords = serviceRecords.filter(item => !['stage_assessment', 'phase_assessment'].includes(item.type))
   const steps = [
-    { label: '资料归集', detail: reports.length ? `${reports.length}份原始资料` : '尚无原始资料', tab: 'reports', reached: reports.length > 0 },
-    { label: '方案建立', detail: confirmedPlans.length ? `${confirmedPlans.length}个已确认方案` : plans.length ? `${plans.length}个方案待确认` : '尚无服务方案', tab: 'plans', reached: plans.length > 0 },
-    { label: '服务执行', detail: activeTasks ? `${activeTasks}项待执行` : followUps.length ? `${finishedTasks}/${followUps.length}项已完成` : '尚未生成执行任务', tab: 'followups', reached: followUps.length > 0 },
-    { label: '阶段评估', detail: assessments.length ? `${assessments.length}次已归档评估` : '等待阶段评估', tab: 'aiReview', reached: assessments.length > 0, disabled: !stageAssessmentEnabled },
-    { label: '持续服务档案', detail: deliveryRecords.length ? `${deliveryRecords.length}条服务记录` : '等待执行结果归档', tab: 'serviceRecords', reached: deliveryRecords.length > 0 },
+    { label: '资料归集', detail: reports.length ? `${reports.length}份原始资料` : '尚无原始资料', tab: 'reports', reached: reports.length > 0, state: reports.length ? '已有资料' : '待归集' },
+    { label: '方案建立', detail: confirmedPlans.length ? `${confirmedPlans.length}个已确认方案` : plans.length ? `${plans.length}个方案待确认` : '尚无服务方案', tab: 'plans', reached: plans.length > 0, state: confirmedPlans.length ? '已有确认方案' : plans.length ? '待确认' : '待开始' },
+    { label: '服务执行', detail: activeTasks ? `${activeTasks}项待执行` : progress.total ? `${finishedTasks}/${progress.total}项已完成` : '尚未生成执行任务', tab: 'followups', reached: progress.total > 0, state: progress.state },
+    { label: '阶段评估', detail: assessments.length ? `${assessments.length}次已归档评估` : '等待阶段评估', tab: 'aiReview', state: assessments.length ? '已有评估' : '待评估', reached: assessments.length > 0, disabled: !stageAssessmentEnabled },
+    { label: '持续服务档案', detail: deliveryRecords.length ? `${deliveryRecords.length}条服务记录` : '等待执行结果归档', tab: 'serviceRecords', state: deliveryRecords.length ? '持续记录' : '待归档', reached: deliveryRecords.length > 0 },
   ]
-  const currentIndex = Math.max(0, steps.reduce((latest, step, index) => step.reached ? index : latest, -1))
+  const currentIndex = activeTasks ? 2 : plans.some(plan => !plan.confirmedAt && plan.status !== 'active' && plan.status !== 'completed') ? 1 : Math.max(0, steps.reduce((latest, step, index) => step.reached ? index : latest, -1))
   return <div className="card" style={{ marginBottom: 16, border: '1px solid #CFE2D8', position: 'sticky', top: 8, zIndex: 30, boxShadow: compact ? '0 5px 18px rgba(30,107,80,.14)' : undefined }}>
-    <div className="card-header" style={{ padding: compact ? '9px 14px' : undefined }}><div style={{ display: 'flex', alignItems: compact ? 'center' : 'flex-start', gap: 12, flexWrap: 'wrap' }}><div className="card-title">客户全周期服务进程</div>{compact && <><span style={{ color: '#1E6B50', fontWeight: 700, fontSize: 12 }}>当前：{currentIndex + 1}. {steps[currentIndex].label}</span><span style={{ color: '#65776F', fontSize: 12 }}>{steps[currentIndex].detail}</span></>} {!compact && <div style={{ width: '100%', marginTop: 4, color: '#65776F', fontSize: 12 }}>方案、任务和归档记录实时互通；点击节点可进入对应工作页面</div>}</div></div>
+    <div className="card-header" style={{ padding: compact ? '9px 14px' : undefined }}><div style={{ display: 'flex', alignItems: compact ? 'center' : 'flex-start', gap: 12, flexWrap: 'wrap' }}><div className="card-title">客户全周期服务进程</div>{compact && <><span style={{ color: '#1E6B50', fontWeight: 700, fontSize: 12 }}>关注：{currentIndex + 1}. {steps[currentIndex].label}</span><span style={{ color: '#65776F', fontSize: 12 }}>{steps[currentIndex].detail}</span></>} {!compact && <div style={{ width: '100%', marginTop: 4, color: '#65776F', fontSize: 12 }}>跨方案服务概览 · 有记录不代表已完成；具体进度请进入对应方案查看</div>}</div></div>
     <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(5,minmax(120px,1fr))', gap: compact ? 5 : 8, padding: compact ? '7px 14px 10px' : 14 }}>
       {steps.map((step, index) => <button key={step.label} type="button" disabled={step.disabled} title={step.disabled ? '该客户尚未启用阶段性评估' : `进入${step.label}`} onClick={() => !step.disabled && onNavigate(step.tab)} style={{ border: `1px solid ${index === currentIndex ? '#1E6B50' : step.reached ? '#9FD0B8' : '#DFE7E3'}`, borderRadius: 9, background: index === currentIndex ? '#EAF6F0' : step.reached ? '#F4FAF7' : '#FAFBFA', padding: compact ? '6px 8px' : '11px 9px', cursor: step.disabled ? 'default' : 'pointer', textAlign: 'left', opacity: step.disabled ? .72 : 1 }}>
-        <div style={{ fontSize: 12, fontWeight: 800, color: step.reached ? '#166447' : '#7C8D85' }}>{step.reached ? '✓' : index === currentIndex ? '●' : '○'} {index + 1}. {step.label}</div>
+        <div style={{ fontSize: 12, fontWeight: 800, color: step.reached ? '#166447' : '#7C8D85' }}>{step.state === '已完成' ? '✓' : step.reached ? '●' : '○'} {index + 1}. {step.label} · {step.state}</div>
         {!compact && <div style={{ fontSize: 11, color: '#65776F', marginTop: 5, lineHeight: 1.45 }}>{step.detail}</div>}
       </button>)}
     </div>
@@ -4368,7 +4370,7 @@ export default function PatientDetailPage() {
         }
         if (qResponses.length > 0) {
           return (
-            <div style={{ marginBottom: 12, padding: '8px 14px', background: '#F6F9F7', borderRadius: 8, border: '1px solid #D8EDE3', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <details style={{ marginBottom: 10 }}><summary style={{ cursor: 'pointer', fontSize: 13, color: '#4A6558' }}>从已答问卷整理档案变化</summary><div style={{ marginBottom: 12, padding: '8px 14px', background: '#F6F9F7', borderRadius: 8, border: '1px solid #D8EDE3', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 13, color: '#4A6558' }}>📝 从已答问卷识别档案变化：</span>
               <select id="qresp-select" className="form-control" style={{ width: 'auto', maxWidth: 320, fontSize: 13, padding: '4px 8px' }} defaultValue={qResponses[0].responseId}>
                 {qResponses.map(r => <option key={r.responseId} value={r.responseId}>{r.title}（{new Date(r.submittedAt).toLocaleDateString('zh-CN')}）</option>)}
@@ -4377,7 +4379,7 @@ export default function PatientDetailPage() {
                 onClick={() => handleGenerateArchiveDraft(document.getElementById('qresp-select')?.value)}>
                 {archiveBusy ? '生成中…' : '生成变化草稿'}
               </button>
-            </div>
+            </div></details>
           )
         }
         return null
@@ -4399,12 +4401,16 @@ export default function PatientDetailPage() {
         </div>
       ))}
 
+      <details style={{ marginBottom: 12, border: '1px solid #D8EDE3', borderRadius: 8, padding: '10px 14px' }}>
+        <summary style={{ cursor: 'pointer', color: '#4A6558', fontSize: 13 }}>档案变更与历史记录（展开核对）</summary>
       {/* 问卷自动写入档案的历史记录（无冲突项，系统已直接写入，供健康顾问核查） */}
       <ArchiveChangeLogPanel log={user.archiveChangeLog} />
       <ArchiveVersionHistoryPanel history={user.archiveVersionHistory} />
       <ArchiveAutoLogPanel log={user.archiveAutoLog} />
       {/* 健管专员人工确认的追加式档案变化记录 */}
       <ArchiveConfirmLogPanel log={user.archiveConfirmLog} />
+
+      </details>
 
       <ServiceJourneyPanel reports={reports} plans={plans} followUps={followUps} serviceRecords={serviceRecords} onNavigate={setTab} stageAssessmentEnabled />
 
@@ -5052,7 +5058,7 @@ export default function PatientDetailPage() {
                       {new Date(f.date).toLocaleDateString('zh-CN')}
                     </span>
                     <span style={{ fontSize: 12, color: '#4A6558' }}>[{TYPE_MAP[f.type]}]</span>
-                    <span style={{ fontSize: 13, color: '#1A2B24', flex: 1 }}>{f.content || '无内容'}</span>
+                    <span style={{ fontSize: 13, color: '#1A2B24', flex: 1 }}>{readableServiceText(f.content) || '无内容'}</span>
                     <span style={{ fontSize: 12, color: '#8AA89C' }}>{f.staffId?.name}</span>
                   </div>
                 ))

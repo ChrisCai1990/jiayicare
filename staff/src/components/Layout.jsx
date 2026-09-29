@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useStaff } from '../App'
-import { staffAPI } from '../api'
+import { NotificationSummaryProvider, useNotificationSummary } from './NotificationSummary'
 import AppIcon from './AppIcon'
 
 // moduleKey: 对应 StaffRole 里的权限模块 key，无 key 表示所有人可见
@@ -30,34 +30,16 @@ const ALL_NAV = [
 ]
 
 export default function Layout() {
+  const { staff } = useStaff()
+  return <NotificationSummaryProvider key={staff?._id || staff?.id || staff?.username}><LayoutContent /></NotificationSummaryProvider>
+}
+
+function LayoutContent() {
   const { staff, logout } = useStaff()
   const nav = useNavigate()
   const loc = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [notifBadge, setNotifBadge] = useState(0)
-
-  useEffect(() => {
-    const fetch = async () => {
-      try {
-        const r = await staffAPI.getNotifications()
-        const s = r.data?.summary || {}
-        setNotifBadge((s.pendingReferralCount || 0) + (s.unreadMessageCount || 0) + (s.unreadRepliedCount || 0))
-      } catch {}
-    }
-    fetch()
-    const timer = setInterval(fetch, 60000)
-    // 消息页把消息标为已读后会派发此事件，侧边栏红点立即重新计算，避免"已读了红点还在"的错觉
-    window.addEventListener('notif-refresh', fetch)
-    return () => { clearInterval(timer); window.removeEventListener('notif-refresh', fetch) }
-  }, [])
-
-  // 切换页面时也刷新一次红点（离开消息页后即时反映已读状态）
-  useEffect(() => {
-    staffAPI.getNotifications().then(r => {
-      const s = r.data?.summary || {}
-      setNotifBadge((s.pendingReferralCount || 0) + (s.unreadMessageCount || 0) + (s.unreadRepliedCount || 0))
-    }).catch(() => {})
-  }, [loc.pathname])
+  const { count: notifBadge } = useNotificationSummary()
 
   const handleLogout = () => {
     if (window.confirm('确定要退出登录吗？')) {

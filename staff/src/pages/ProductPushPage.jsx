@@ -1,3 +1,4 @@
+import { usePatientSearch, PatientSearchStatus } from '../components/PatientPicker'
 import React, { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { staffAPI } from '../api'
@@ -26,7 +27,7 @@ export default function ProductPushPage() {
   useEffect(() => {
     Promise.all([
       staffAPI.getProducts(),
-      staffAPI.getPatients({ limit: 200 }),
+      requestedPatientId ? staffAPI.getPatient(requestedPatientId).then(r => ({ data: { patients: [r.data.user] } })) : Promise.resolve({ data: { patients: [] } }),
       staffAPI.getPushRecords({ type: 'product', limit: 20 }),
       staffAPI.getProductCategories().catch(() => ({ data: { categories: [] } })),
     ]).then(([p, pt, pr, cat]) => {
@@ -309,6 +310,7 @@ function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrice
   const [selectedPatients, setSelectedPatients] = useState(() => patients.some(patient => String(patient._id || patient.id) === initialPatientId) ? [initialPatientId] : [])
   const [search, setSearch] = useState('')
   const [pushing, setPushing] = useState(false)
+  const [pushError, setPushError] = useState('')
   const [staffList, setStaffList] = useState([])
   // 岗位服务人选择：{ [productId]: { [role]: staffId } }
   const [performers, setPerformers] = useState({})
@@ -333,13 +335,13 @@ function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrice
   const setPerformer = (productId, role, staffId) =>
     setPerformers(prev => ({ ...prev, [productId]: { ...(prev[productId] || {}), [role]: staffId } }))
 
-  const filtered = patients.filter(p =>
-    !search || p.name?.includes(search) || p.phone?.includes(search)
-  )
+  const patientSearch = usePatientSearch(search)
+  const filtered = patientSearch.patients
+
 
   const handlePush = async () => {
     if (!selectedPatients.length) return
-    setPushing(true)
+    setPushing(true); setPushError('')
     try {
       // 把各产品各岗位选定的人展平成 [{productId, role, staffId}]
       const servicePerformers = []
@@ -356,7 +358,7 @@ function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrice
       })
       onSaved(selectedPatients.length)
     } catch (e) {
-      console.error(e)
+      setPushError(e.message || '推送失败，请重试')
     } finally {
       setPushing(false)
     }
@@ -426,10 +428,11 @@ function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrice
             style={{ marginBottom: 10 }}
           />
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-            <button className="btn btn-secondary btn-sm" onClick={() => setSelectedPatients(filtered.map(p => p._id))}>全选</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => setSelectedPatients(previous => [...new Set([...previous, ...filtered.map(p => p._id)])])}>选择本页</button>
             <button className="btn btn-secondary btn-sm" onClick={() => setSelectedPatients([])}>清空</button>
             <span style={{ fontSize: 13, color: '#1E6B50', lineHeight: '28px' }}>已选 {selectedPatients.length} 人</span>
           </div>
+          <PatientSearchStatus search={patientSearch} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {filtered.map(p => (
               <div key={p._id} onClick={() => toggle(p._id)} style={{
@@ -456,6 +459,7 @@ function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrice
             ))}
           </div>
         </div>
+        {pushError && <div role="alert" className="login-err" style={{ margin: 12 }}>{pushError}</div>}
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
           <button className="btn btn-primary" onClick={handlePush} disabled={!selectedPatients.length || pushing}>

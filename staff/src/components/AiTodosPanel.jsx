@@ -1,3 +1,4 @@
+import { filterReviewTodos } from '../utils/staffWorkspace'
 import React, { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
@@ -59,11 +60,11 @@ function formatTime(date) {
   return `${Math.floor(diff / 86400000)}天前`
 }
 
-const PAGE_SIZE = 5
+const PAGE_SIZE = 20
 const TODO_GROUPS = [
   { key: 'all', label: '全部' },
   { key: 'report', label: '报告与资料', types: ['report_parse','report_review','report_interpretation','report_followup_review','health_course_review','report_plan_conflict','archive_review','summary_review','lifestyle_review','dietary_survey_review','medication_review','supplement_review'] },
-  { key: 'plan', label: '方案与评估', types: ['trend_review','plan_review','nutrition_plan_review','checkup_plan_review','phase_assessment_review','annual_renewal_confirmation','followup_review','service_draft_review','medical_assist_plan_review','service_proposal_review','report_followup_review'] },
+  { key: 'plan', label: '方案与评估', types: ['trend_review','plan_review','nutrition_plan_review','checkup_plan_review','phase_assessment_review','annual_renewal_confirmation','followup_review','service_draft_review','medical_assist_plan_review','service_proposal_review'] },
   { key: 'risk', label: '风险与异常', types: ['risk_review','bp_alert_review','risk_alert','transfer_human','wecom_kf_handoff','checkup_handoff_attention','checkup_preparation_dispatch'] },
   { key: 'content', label: '内容与安排', types: ['geo_content_review','checkup_handoff_pending','push_review','draft_review','supply_intake','supply_medication_risk_review','supply_supplement_risk_review','supply_arrangement','supply_fulfillment','supply_receipt'] },
 ]
@@ -77,6 +78,11 @@ export default function AiTodosPanel() {
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(0)
   const [group, setGroup] = useState('all')
+  const [query, setQuery] = useState('')
+  const [age, setAge] = useState('all')
+  const [priority, setPriority] = useState('all')
+  const [sort, setSort] = useState('priority')
+  const [loadError, setLoadError] = useState('')
   const [supplyTodo, setSupplyTodo] = useState(null)
   const [checkupTodo, setCheckupTodo] = useState(null)
 
@@ -84,9 +90,10 @@ export default function AiTodosPanel() {
     if (!silent) setLoading(true)
     return staffAPI.getAiTodos()
       .then(r => {
+        setLoadError('')
         setTodos((r.data || []).filter(t => !['symptom_verify', 'symptom_review'].includes(t.type)))
       })
-      .catch(() => {})
+      .catch(err => setLoadError(err.message || '待审任务加载失败'))
       .finally(() => { if (!silent) setLoading(false) })
   }, [])
 
@@ -162,11 +169,12 @@ export default function AiTodosPanel() {
       .catch(() => {})
   }
 
-  if (loading) return null
+  if (loading) return <div className="card" role="status" style={{ padding: 16 }}>待审任务加载中…</div>
 
   const activeGroup = TODO_GROUPS.find(item => item.key === group)
-  const filteredTodos = group === 'all' ? todos : todos.filter(todo => activeGroup?.types?.includes(todo.type))
-  const overdueCount = filteredTodos.filter(t => t.overdue).length
+  const groupedTodos = group === 'all' ? todos : todos.filter(todo => activeGroup?.types?.includes(todo.type))
+  const filteredTodos = filterReviewTodos(groupedTodos, { query, age, priority, sort, config: TYPE_CONFIG })
+  const overdueCount = todos.filter(t => t.overdue).length
   const pageCount = Math.max(1, Math.ceil(filteredTodos.length / PAGE_SIZE))
   const curPage = Math.min(page, pageCount - 1)
   const pageTodos = filteredTodos.slice(curPage * PAGE_SIZE, curPage * PAGE_SIZE + PAGE_SIZE)
@@ -207,10 +215,25 @@ export default function AiTodosPanel() {
           })}
         </div>
       )}
-      <div className="card-body" style={{ padding: '4px 20px 12px' }}>
-        {todos.length === 0 && (
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '10px 20px' }}>
+        <input className="form-input" aria-label="搜索待审任务" placeholder="搜索会员、任务或内容" value={query} onChange={e => { setQuery(e.target.value); setPage(0) }} style={{ flex: '1 1 200px' }} />
+        <select className="form-input" aria-label="待审等待时长" value={age} onChange={e => { setAge(e.target.value); setPage(0) }} style={{ width: 'auto' }}>
+          <option value="all">全部等待时长</option><option value="overdue">超过24小时</option><option value="week">超过7天</option>
+        </select>
+        <select className="form-input" aria-label="待审优先级" value={priority} onChange={e => { setPriority(e.target.value); setPage(0) }} style={{ width: 'auto' }}>
+          <option value="all">全部优先级</option><option value="urgent">优先核对风险与异常</option>
+        </select>
+        <select className="form-input" aria-label="待审排序" value={sort} onChange={e => { setSort(e.target.value); setPage(0) }} style={{ width: 'auto' }}>
+          <option value="priority">优先级优先，同级最久优先</option><option value="oldest">等待最久优先</option>
+        </select>
+        <button className="btn btn-secondary btn-sm" onClick={() => { setGroup('all'); setQuery(''); setAge('all'); setPriority('all'); setSort('priority'); setPage(0) }}>清除筛选</button>
+        <span role="status" style={{ width: '100%', fontSize: 12, color: '#65776F' }}>匹配 {filteredTodos.length} 项 · 每页20项 · {staff?.role === 'superadmin' ? '当前为全平台待审视图' : '仅显示当前账号可审核任务'}。历史提醒请进入原记录核对后处理。</span>
+      </div>
+      {loadError && <div role="alert" className="login-err" style={{ margin: '0 20px 10px' }}>{loadError} <button onClick={() => refreshTodos()}>重试</button></div>}
+      <div className="card-body" style={{ padding: '4px 20px 12px', maxHeight: 560, overflowY: 'auto' }}>
+        {!loadError && filteredTodos.length === 0 && (
           <div style={{ color: '#8AA89C', fontSize: 13, textAlign: 'center', padding: '16px 0' }}>
-            暂无待审核任务
+            {todos.length ? '没有匹配的待审任务，请调整筛选。' : '暂无待审核任务'}
           </div>
         )}
         {pageTodos.map((todo, i) => {

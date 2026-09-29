@@ -1,11 +1,12 @@
+import PatientPicker from '../components/PatientPicker'
 import { useReportReviewActivity } from '../components/ReportReviewQuality'
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { staffAPI, API_ORIGIN } from '../api'
 import { isImageReportFile, isPdfReportFile } from '../utils/reportFileType'
 import { useToast, usePermission } from '../App'
 import Pagination from '../components/Pagination'
 
-const REPORT_TYPE = { annual:'年度体检', blood:'血液检查', ultrasound:'超声检查', radiology:'放射检查', mri:'磁共振', ecg:'心电图', endoscopy:'内镜', pathology:'病理', other:'其他' }
+const REPORT_TYPE = { annual:'年度体检', blood:'血液检查', ultrasound:'超声检查', radiology:'放射检查', mri:'磁共振', ecg:'心电图', endoscopy:'内镜', pathology:'病理', other:'其他', body_comp:'身体成分', functional:'功能医学' }
 const AUDIT_STATUS = { unaudited:'待审核', audited:'已审核', rejected:'已驳回' }
 const AUDIT_COLOR = { unaudited:'#D97706', audited:'#22A06B', rejected:'#DC3545' }
 
@@ -28,19 +29,22 @@ export default function ReportsPage() {
   const [editForm, setEditForm] = useState({ title: '', type: 'annual', hospital: '', date: '', note: '' })
   const reviewActivityFlush = useReportReviewActivity((showDetail?.audit_status !== 'audited' ? showDetail?._id : null) || editModal?._id)
   const [editSaving, setEditSaving] = useState(false)
-  const [patients, setPatients] = useState([])
+  const [loadError, setLoadError] = useState('')
   const [limit, setLimit] = useState(20)
+  const listRequest = useRef(0)
 
   const load = useCallback(async () => {
-    setLoading(true)
+    const request = ++listRequest.current
+    setLoading(true); setLoadError('')
     try {
       const res = await staffAPI.getReports({ status: statusFilter, search, page, limit })
+      if (request !== listRequest.current) return
       setReports(res.data.reports); setTotal(res.data.total)
-    } finally { setLoading(false) }
+    } catch (err) { if (request === listRequest.current) setLoadError(err.message || '报告加载失败') }
+    finally { if (request === listRequest.current) setLoading(false) }
   }, [statusFilter, search, page, limit])
 
-  useEffect(() => { load() }, [load])
-  useEffect(() => { staffAPI.getPatients({ limit: 200 }).then(r => setPatients(r.data.patients)).catch(() => {}) }, [])
+  useEffect(() => { load(); return () => { listRequest.current += 1 } }, [load])
 
   // 搜索防抖：停止输入 400ms 后再请求，避免每敲一个字就打后端
   useEffect(() => {
@@ -102,9 +106,10 @@ export default function ReportsPage() {
         />
       </div>
 
+      {loadError && <div role="alert" className="login-err">{loadError} <button className="btn btn-secondary" onClick={load}>重试</button></div>}
       <div className="card">
         {loading ? <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>加载中...</div>
-        : reports.length === 0 ? <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无报告</div>
+        : loadError ? null : reports.length === 0 ? <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无报告</div>
         : <table className="table">
             <thead><tr><th>标题</th><th>会员</th><th>类型</th><th>医院</th><th>日期</th><th>审核时间 / 时长</th><th>审核状态</th><th>上传人</th><th>操作</th></tr></thead>
             <tbody>
@@ -148,7 +153,7 @@ export default function ReportsPage() {
         pageSize={limit} onPageSizeChange={size => { setLimit(size); setPage(1) }} />
 
       {/* 上传弹窗 */}
-      {showUpload && <UploadModal patients={patients} onClose={() => setShowUpload(false)} onSaved={() => { setShowUpload(false); toast('上传成功'); load() }} />}
+      {showUpload && <UploadModal onClose={() => setShowUpload(false)} onSaved={() => { setShowUpload(false); toast('上传成功'); load() }} />}
 
       {/* 详情弹窗 */}
       {showDetail && (
@@ -305,7 +310,9 @@ export default function ReportsPage() {
 
 const PLAN_TYPE_LABEL = { checkup:'体检方案', health:'健康管理方案', followup:'随访计划', nutrition:'营养干预', rehab:'运动康复', tcm:'中医方案' }
 
-function UploadModal({ patients, onClose, onSaved }) {
+function UploadModal({ onClose, onSaved }) {
+  const patientRequest = useRef(0)
+  useEffect(() => () => { patientRequest.current += 1 }, [])
   const [form, setForm] = useState({ patientId: '', title: '', type: 'annual', hospital: '', date: '', note: '', planId: '', planItemId: '' })
   const [fileData, setFileData] = useState(null) // { content, mimeType, fileSize, name }
   const [saving, setSaving] = useState(false)
@@ -330,16 +337,17 @@ function UploadModal({ patients, onClose, onSaved }) {
   }
 
   // 切换会员时加载该会员的待完成方案项目
-  const handlePatientChange = async (e) => {
-    const patientId = e.target.value
+  const handlePatientChange = async (patientId) => {
+    const request = ++patientRequest.current
     setForm(f => ({ ...f, patientId, planId: '', planItemId: '' }))
-    if (!patientId) { setPlanItems([]); return }
+    setPlanItems([])
+    if (!patientId) { setLoadingItems(false); return }
     setLoadingItems(true)
     try {
       const res = await staffAPI.getActivePlanItems(patientId)
-      setPlanItems(res.data)
-    } catch { setPlanItems([]) }
-    finally { setLoadingItems(false) }
+      if (request === patientRequest.current) setPlanItems(res.data)
+    } catch (err) { if (request === patientRequest.current) setError(err.message || '关联项目加载失败，可重新选择会员重试') }
+    finally { if (request === patientRequest.current) setLoadingItems(false) }
   }
 
   // 选择关联项目后自动填充标题
@@ -381,10 +389,7 @@ function UploadModal({ patients, onClose, onSaved }) {
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">选择会员 *</label>
-            <select className="form-input" value={form.patientId} onChange={handlePatientChange}>
-              <option value="">-- 请选择会员 --</option>
-              {patients.map(p => <option key={p._id} value={p._id}>{p.name} · {p.phone}</option>)}
-            </select>
+            <PatientPicker value={form.patientId} onChange={handlePatientChange} />
           </div>
 
           {/* 关联待完成项目 */}
@@ -432,7 +437,7 @@ function UploadModal({ patients, onClose, onSaved }) {
             <textarea className="form-input" rows={2} value={form.note} onChange={set('note')} />
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">选择文件（PDF/图片，最大5MB）</label>
+            <label className="form-label">选择文件（PDF/图片，最大7MB）</label>
             <input
               type="file"
               accept="image/*,application/pdf"

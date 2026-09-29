@@ -1,3 +1,4 @@
+import { usePatientSearch, PatientSearchStatus } from '../components/PatientPicker'
 import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
 import { useToast } from '../App'
@@ -318,23 +319,26 @@ function ResponsesModal({ questionnaire, filterPatientId, onClose }) {
 }
 
 // ── 推送弹窗 ────────────────────────────────────────────────
-function PushQuestionnaireModal({ questionnaire, patients, onClose, onSaved }) {
+function PushQuestionnaireModal({ questionnaire, onClose, onSaved }) {
   const [selected, setSelected] = useState([])
   const [deadline, setDeadline] = useState('')
   const [search, setSearch] = useState('')
   const [pushing, setPushing] = useState(false)
+  const [pushError, setPushError] = useState('')
   const toggle = id => setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
 
-  const filtered = patients.filter(p => !search || p.name?.includes(search) || p.phone?.includes(search))
+  const patientSearch = usePatientSearch(search)
+  const filtered = patientSearch.patients
+
 
   const handlePush = async () => {
     if (!selected.length) return
-    setPushing(true)
+    setPushing(true); setPushError('')
     try {
       await staffAPI.pushQuestionnaire(questionnaire._id, { patientIds: selected, deadline })
       onSaved(selected.length)
-    } catch {
-      onSaved(selected.length)
+    } catch (err) {
+      setPushError(err.message || '推送失败，请重试')
     } finally {
       setPushing(false)
     }
@@ -355,9 +359,10 @@ function PushQuestionnaireModal({ questionnaire, patients, onClose, onSaved }) {
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#4A6558' }}>选择会员（已选 {selected.length} 人）</div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
             <input className="form-input" placeholder="搜索姓名/手机" value={search} onChange={e => setSearch(e.target.value)} style={{ flex: 1, minWidth: 120 }} />
-            <button className="btn btn-secondary btn-sm" onClick={() => setSelected(filtered.map(p => p._id))}>全选</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => setSelected(previous => [...new Set([...previous, ...filtered.map(p => p._id)])])}>选择本页</button>
             <button className="btn btn-secondary btn-sm" onClick={() => setSelected([])}>清空</button>
           </div>
+          <PatientSearchStatus search={patientSearch} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {filtered.map(p => (
               <div key={p._id} onClick={() => toggle(p._id)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8, border: `1px solid ${selected.includes(p._id) ? '#1E6B50' : '#E0D9CE'}`, background: selected.includes(p._id) ? '#E8F5EF' : '#fff', cursor: 'pointer' }}>
@@ -370,6 +375,7 @@ function PushQuestionnaireModal({ questionnaire, patients, onClose, onSaved }) {
             ))}
           </div>
         </div>
+        {pushError && <div role="alert" className="login-err" style={{ margin: 12 }}>{pushError}</div>}
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
           <button className="btn btn-primary" onClick={handlePush} disabled={!selected.length || pushing}>
@@ -386,7 +392,6 @@ export default function QuestionnairePushPage() {
   const toast = useToast()
   const [questionnaires, setQuestionnaires] = useState([])
   const [pushRecords, setPushRecords] = useState([])
-  const [patients, setPatients] = useState([])
   const [loading, setLoading] = useState(true)
   const [pushModal, setPushModal] = useState(null)
   const [viewModal, setViewModal] = useState(null)   // { questionnaire, filterPatientId? }
@@ -398,11 +403,9 @@ export default function QuestionnairePushPage() {
     Promise.all([
       staffAPI.getQuestionnaires(),
       staffAPI.getPushRecords({ type: 'questionnaire', limit: 50 }),
-      staffAPI.getPatients({ limit: 200 }),
-    ]).then(([q, pr, pt]) => {
+    ]).then(([q, pr]) => {
       setQuestionnaires(q.data)
       setPushRecords(pr.data.records)
-      setPatients(pt.data.patients)
     }).catch(console.error).finally(() => setLoading(false))
   }, [])
 
@@ -558,7 +561,6 @@ export default function QuestionnairePushPage() {
       {pushModal && (
         <PushQuestionnaireModal
           questionnaire={pushModal}
-          patients={patients}
           onClose={() => setPushModal(null)}
           onSaved={async (n) => { setPushModal(null); toast(`问卷已推送给 ${n} 位会员`); await reload() }}
         />

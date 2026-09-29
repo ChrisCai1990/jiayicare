@@ -1,3 +1,4 @@
+import { usePatientSearch, PatientSearchStatus } from '../components/PatientPicker'
 import React, { useEffect, useState, useCallback } from 'react'
 import { staffAPI } from '../api'
 import { useToast } from '../App'
@@ -12,7 +13,6 @@ export default function KnowledgePage() {
   const [catFilter, setCatFilter] = useState('')
   const [search, setSearch] = useState('')
   const [showCreate, setShowCreate] = useState(false)
-  const [patients, setPatients] = useState([])
   const [pushModal, setPushModal] = useState(null) // knowledgeItem
 
   const load = useCallback(async () => {
@@ -24,7 +24,6 @@ export default function KnowledgePage() {
   }, [catFilter, search])
 
   useEffect(() => { load() }, [load])
-  useEffect(() => { staffAPI.getPatients({ limit: 200 }).then(r => setPatients(r.data.patients)).catch(() => {}) }, [])
 
   const handleDelete = async id => {
     if (!window.confirm('确定删除？')) return
@@ -90,7 +89,7 @@ export default function KnowledgePage() {
       </div>
 
       {showCreate && <CreateKnowledgeModal onClose={() => setShowCreate(false)} onSaved={() => { setShowCreate(false); toast('内容已创建'); load() }} />}
-      {pushModal && <PushModal item={pushModal} patients={patients} onClose={() => setPushModal(null)} onSaved={(n) => { setPushModal(null); toast(`已推送给 ${n} 位会员`) }} />}
+      {pushModal && <PushModal item={pushModal} onClose={() => setPushModal(null)} onSaved={(n) => { setPushModal(null); toast(`已推送给 ${n} 位会员`) }} />}
     </div>
   )
 }
@@ -178,22 +177,22 @@ function CreateKnowledgeModal({ onClose, onSaved }) {
   )
 }
 
-function PushModal({ item, patients, onClose, onSaved }) {
+function PushModal({ item, onClose, onSaved }) {
   const [selected, setSelected] = useState([])
   const [pushing, setPushing] = useState(false)
+  const [pushError, setPushError] = useState('')
   const [search, setSearch] = useState('') // 客户多时靠滚动找不过来，按姓名/手机号搜索（2026-07-17反馈）
   const toggle = id => setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
-  const filtered = search.trim()
-    ? patients.filter(p => (p.name || '').includes(search.trim()) || (p.phone || '').includes(search.trim()))
-    : patients
-  const selectAll = () => setSelected(filtered.map(p => p._id))
+  const patientSearch = usePatientSearch(search)
+  const filtered = patientSearch.patients
+  const selectAll = () => setSelected(previous => [...new Set([...previous, ...filtered.map(p => p._id)])])
   const clearAll = () => setSelected([])
 
   const handlePush = async () => {
     if (!selected.length) return
-    setPushing(true)
+    setPushing(true); setPushError('')
     try { await staffAPI.pushKnowledge(item._id, selected); onSaved(selected.length) }
-    catch { onSaved(selected.length) }
+    catch (err) { setPushError(err.message || '推送失败，请重试') }
     finally { setPushing(false) }
   }
 
@@ -208,10 +207,11 @@ function PushModal({ item, patients, onClose, onSaved }) {
           <input className="form-input" placeholder="🔍 搜索会员姓名/手机号..." value={search}
             onChange={e => setSearch(e.target.value)} style={{ marginBottom: 10 }} />
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-            <button className="btn btn-secondary btn-sm" onClick={selectAll}>全选 ({filtered.length})</button>
+            <button className="btn btn-secondary btn-sm" onClick={selectAll}>选择本页 ({filtered.length})</button>
             <button className="btn btn-secondary btn-sm" onClick={clearAll}>清空</button>
             <span style={{ fontSize: 13, color: '#1E6B50', lineHeight: '28px' }}>已选 {selected.length} 人</span>
           </div>
+          <PatientSearchStatus search={patientSearch} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {filtered.length === 0 && (
               <div style={{ padding: 20, textAlign: 'center', color: '#aaa', fontSize: 13 }}>没有匹配的会员</div>
@@ -227,6 +227,7 @@ function PushModal({ item, patients, onClose, onSaved }) {
             ))}
           </div>
         </div>
+        {pushError && <div role="alert" className="login-err" style={{ margin: 12 }}>{pushError}</div>}
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
           <button className="btn btn-primary" onClick={handlePush} disabled={!selected.length || pushing}>{pushing ? '推送中...' : `推送给 ${selected.length} 人`}</button>

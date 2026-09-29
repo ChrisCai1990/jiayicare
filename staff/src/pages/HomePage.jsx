@@ -1,3 +1,4 @@
+import { useNotificationSummary } from '../components/NotificationSummary'
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
@@ -19,10 +20,11 @@ export default function HomePage() {
   const nav = useNavigate()
   const [reports, setReports] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [unreadMsgCount, setUnreadMsgCount] = useState(0)
+  const notification = useNotificationSummary()
+  const unreadMsgCount = notification.count ?? '—'
   const [checkinRecords, setCheckinRecords] = useState([])
   const [checkupProgress, setCheckupProgress] = useState([])
-  const [expiringPatients, setExpiringPatients] = useState([])
+  const expiringPatients = notification.data?.expiringPatients || []
   const [pendingOrders, setPendingOrders] = useState([])
   const [completedOrders, setCompletedOrders] = useState([])
   const [orderHistoryOpen, setOrderHistoryOpen] = useState(false)
@@ -59,34 +61,6 @@ export default function HomePage() {
         .catch(() => {})
     }
 
-    Promise.allSettled([
-      staffAPI.getNotifications(),
-      staffAPI.getUserMessages(),
-    ]).then(([notifRes, msgRes]) => {
-      if (notifRes.status === 'fulfilled') {
-        const s = notifRes.value.data?.summary || {}
-        setExpiringPatients(notifRes.value.data?.expiringPatients || [])
-        const messages = msgRes.status === 'fulfilled' ? (msgRes.value.data || []) : []
-        const userUnread = msgRes.status === 'fulfilled' ? (msgRes.value.unreadCount ?? messages.filter(m => m.staffUnread).length) : 0
-        setUnreadMsgCount((s.pendingReferralCount || 0) + (s.unreadRepliedCount || 0) + userUnread)
-      }
-      if (msgRes.status === 'fulfilled' && notifRes.status !== 'fulfilled') {
-        const messages = msgRes.value.data || []
-        setUnreadMsgCount(msgRes.value.unreadCount ?? messages.filter(m => m.staffUnread).length ?? 0)
-      }
-    })
-  }, [])
-
-  useEffect(() => {
-    const refreshMessageCount = () => Promise.all([staffAPI.getNotifications(), staffAPI.getUserMessages()])
-      .then(([notifRes, msgRes]) => {
-        const summary = notifRes.data?.summary || {}
-        const userUnread = msgRes.unreadCount ?? (msgRes.data || []).filter(m => m.staffUnread).length
-        setUnreadMsgCount((summary.pendingReferralCount || 0) + (summary.unreadRepliedCount || 0) + userUnread)
-      })
-      .catch(() => {})
-    const timer = setInterval(refreshMessageCount, 5000)
-    return () => clearInterval(timer)
   }, [])
 
   if (loading) return <div className="page-loading">加载中...</div>
@@ -155,6 +129,7 @@ export default function HomePage() {
         <StatCard icon="⏰" label="逾期随访" value={reports?.overdue ?? '-'} color="#DC3545" onClick={() => nav(followUpUrl({ status: 'active', dateTo: yesterdayKey }))} />
         <StatCard icon="✅" label="今日健康监测" value={checkinRecords.length} color="#D97706" onClick={() => nav('/daily-checkin')} />
         <StatCard icon="🔔" label="消息通知" value={unreadMsgCount} color="#DC3545" onClick={() => nav('/notifications')} />
+        {notification.error && <span role="alert" style={{ color: '#B42318', fontSize: 12 }}>通知更新失败，显示上次结果 <button onClick={() => window.dispatchEvent(new Event('notif-refresh'))}>重试</button></span>}
       </div>
 
       {/* 用户端购买的服务单独展示；医护端发起的服务只在下方任务区出现。 */}

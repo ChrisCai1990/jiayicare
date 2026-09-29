@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import { followUpDateRange } from '../utils/staffWorkspace'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast, useStaff, can } from '../App'
@@ -169,12 +170,13 @@ export default function FollowUpsPage() {
   const sourceType = searchParams.get('sourceType') || ''
   const [patientName,  setPatientName]  = useState('')
   const [assignedTo,   setAssignedTo]   = useState('')
-  const [dateFrom,     setDateFrom]     = useState(searchParams.has('dateFrom') ? searchParams.get('dateFrom') : (sourceType === 'order' ? '' : todayStr))
+  const [dateFrom,     setDateFrom]     = useState(searchParams.has('dateFrom') ? searchParams.get('dateFrom') : '')
   const [dateTo,       setDateTo]       = useState(searchParams.get('dateTo') || '')
   const [dateField,    setDateField]    = useState(searchParams.get('dateField') === 'completedAt' ? 'completedAt' : 'date')
   const [loading,      setLoading]      = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [showModal,    setShowModal]    = useState(false)  // 保留状态但不再使用新建入口
-  // 注：dateFrom 默认今天开始，dateTo 默认空（不限结束），显示所有待随访记录
+  // 默认包含逾期任务；从工作台跳转时保留显式日期范围。
 
   // 执行随访 modal
   const [execItem,     setExecItem]     = useState(null)
@@ -222,21 +224,24 @@ export default function FollowUpsPage() {
   useEffect(() => { staffAPI.getStaffList().then(r => setStaffList((r.data || []).filter(s => s.role !== 'healthPlanner'))).catch(() => {}) }, [])
 
   const [limit, setLimit] = useState(20)
+  const listRequest = useRef(0)
 
   const load = useCallback(async () => {
-    setLoading(true)
+    const request = ++listRequest.current
+    setLoading(true); setLoadError('')
     try {
       const res = await staffAPI.getFollowUps({ page, limit, status: statusTab, patientName, assignedTo, dateFrom, dateTo, dateField, sourceType, ...(sourceType ? { scope: 'assigned' } : { excludeSourceType: 'order' }) })
+      if (request !== listRequest.current) return
       setFollowUps(res.data.followUps)
       setTotal(res.data.total)
     } catch (err) {
-      console.error(err)
+      if (request === listRequest.current) setLoadError(err.message || '随访加载失败')
     } finally {
-      setLoading(false)
+      if (request === listRequest.current) setLoading(false)
     }
   }, [page, limit, statusTab, patientName, assignedTo, dateFrom, dateTo, dateField, sourceType])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { load(); return () => { listRequest.current += 1 } }, [load])
 
   const handleSearch = (e) => { e.preventDefault(); setPage(1); load() }
 
@@ -436,17 +441,26 @@ export default function FollowUpsPage() {
             </div>
             <button className="btn btn-primary btn-sm" type="submit">搜索</button>
             <button className="btn btn-secondary btn-sm" type="button" onClick={() => {
-              setPatientName(''); setAssignedTo(''); setDateFrom(todayStr); setDateTo(''); setDateField('date'); setPage(1)
+              setPatientName(''); setAssignedTo(''); setDateFrom(''); setDateTo(''); setDateField('date'); setPage(1)
             }}>重置</button>
           </form>
         </div>
       </div>
 
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+        {[['overdue', '逾期未完成'], ['today', '今天'], ['week', '未来7天'], ['all', '全部日期']].map(([key, label]) => <button className="btn btn-secondary btn-sm" key={key} onClick={() => {
+          const range = followUpDateRange(key, todayStr)
+          setDateFrom(range.from); setDateTo(range.to); setDateField('date'); setPage(1)
+          if (range.status) setStatusTab(range.status)
+        }}>{label}</button>)}
+        <span style={{ fontSize: 12, color: '#65776F', alignSelf: 'center' }}>当前{dateField === 'completedAt' ? '完成' : '计划'}日期：{dateFrom || '不限开始'} 至 {dateTo || '不限结束'}</span>
+      </div>
+      {loadError && <div role="alert" className="login-err">{loadError} <button onClick={load} className="btn btn-secondary">重试</button></div>}
       {/* 列表：卡片化展示，替代原来密集的8列表格 */}
       {loading ? (
         <div className="card" style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>加载中...</div>
-      ) : followUps.length === 0 ? (
-        <div className="card" style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无随访记录</div>
+      ) : loadError ? null : followUps.length === 0 ? (
+        <div className="card" style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>当前筛选下没有随访记录，可选择“全部日期”查看。</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {followUps.map(f => {
