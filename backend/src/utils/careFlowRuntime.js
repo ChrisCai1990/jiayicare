@@ -170,6 +170,11 @@ function runtime(injected = {}) {
         return { text: result, onsite: outcomes };
       }
       case 'upload': {
+        if(input.noDocuments===true){
+          if((input.reportIds||[]).length||(s.data.upload?.reportIds||[]).length)fail('已有资料不可按无资料处理');
+          if(!s.customerUpload?.declaration)fail('请先取得客户资料情况反馈');
+          return {reportIds:[],noDocuments:true,note:text(input.note,3000),verifiedBy:id(actor._id),verifiedAt:new Date()};
+        }
         if(!Array.isArray(input.reportIds) || !input.reportIds.length || input.reportIds.length>50) fail('请选择本次有效报告或病历');
         const selected = [...new Set(input.reportIds.map(String))];
         const documents = await Report.find({_id:{$in:selected},user:flow.patientId,tenantId:flow.tenantId}).lean();
@@ -178,6 +183,7 @@ function runtime(injected = {}) {
       }
       case 'audit': {
         const rows = await reports(flow);
+        if(!rows.length&&s.data.upload?.noDocuments===true)return {note:text(input.note,5000),reports:[],noDocuments:true};
         if (!rows.length || rows.some(r => r.audit_status !== 'audited')) fail('请先在报告管理中完成每份资料的审核');
         return { note: text(input.note, 5000), reports: rows.map(r => ({ id: id(r._id), title: r.title, checkDate: r.checkDate, hospital: r.hospital, reportItems: r.reportItems, aiSummary: r.aiSummary, audited_at: r.audited_at })) };
       }

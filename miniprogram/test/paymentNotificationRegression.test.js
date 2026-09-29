@@ -33,6 +33,7 @@ test('opening notifications clears previous product detail; hiding clears stale 
   const state = { detail: { _id: 'old' }, shown: false };
   const ctx = { setDetailMsg: value => { state.detail = value; }, setShowNotif: value => { state.shown = value; },
     setNotifTab() {}, notificationsForTab: () => [], paymentActivityRef: { current: false },
+    setPageVisible() {}, listRequestRef: { current: 0 }, listLoadingRef: { current: false },
     clearInterval() {}, listPollRef: { current: null }, useDidHide: callback => { ctx.hide = callback; } };
   let start = source.indexOf('  const openNotifications = async'); let end = source.indexOf('\n  const openConv', start);
   vm.runInNewContext(`${source.slice(start, end)}\nthis.open = openNotifications;`, ctx);

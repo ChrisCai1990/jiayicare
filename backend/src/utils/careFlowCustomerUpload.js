@@ -12,6 +12,7 @@ function runtime(deps={}) {
     return f;
   }
   function writable(f) {
+    if(f.state.data.upload?.noDocuments)fail('专员已核实本次无资料，追加资料请联系专员');
     if(f.state.customerUpload?.completedAt)fail('本次资料已提交，追加资料请使用常规上传入口');
     if(!['upload','audit'].includes(f.state.stage))fail('当前不在资料收集环节，请联系健管专员');
   }
@@ -19,7 +20,7 @@ function runtime(deps={}) {
     const f=await load(id,user);
     const reports=await Report.find({_id:{$in:f.state.data.upload?.reportIds||[]},user:user._id,tenantId:user.tenantId||null}).select('_id title documentCategory audit_status').lean();
     const projection=require('./careFlowClientPlans');
-    return {id:String(f._id),...projection.uploadContext(f),completed:!!f.state.customerUpload?.completedAt,canUpload:!f.state.customerUpload?.completedAt&&['upload','audit'].includes(f.state.stage),plans:projection.project(f),reports};
+    return {id:String(f._id),...projection.uploadContext(f),noDocumentsVerified:!!f.state.data.upload?.noDocuments,completed:!!f.state.customerUpload?.completedAt,canUpload:!f.state.data.upload?.noDocuments&&!f.state.customerUpload?.completedAt&&['upload','audit'].includes(f.state.stage),declaration:f.state.customerUpload?.declaration||null,plans:projection.project(f),reports};
   }
   async function save(f,user,fields,event) {
     const r=await Flow.updateOne({_id:f._id,patientId:user._id,tenantId:user.tenantId||null,revision:f.revision},{$set:fields,$inc:{revision:1},$push:{events:{...event,at:new Date(),by:String(user._id),role:'customer',stage:f.state.stage}}});
@@ -39,6 +40,18 @@ function runtime(deps={}) {
     if(!(f.state.data.upload?.reportIds||[]).map(String).includes(reportId))await save(f,user,{'state.data.upload.reportIds':ids},{action:'customer_report_uploaded',reportId,title,category});
     return {reportId,...await view(id,user)};
   }
+  async function declare(id,user,body={}) {
+    const f=await load(id,user);writable(f);
+    const reasons={pending:'暂未拿到资料',no_exam:'已就医，未做检查且没有可提供的资料',no_print:'未打印或未取得病历',other:'其他情况'};
+    if(!reasons[body.kind])fail('请选择资料情况',400);
+    const note=String(body.note||'').trim();
+    if(note.length>500||body.kind==='other'&&!note)fail('请填写500字以内的具体情况',400);
+    const previous=f.state.customerUpload?.declaration;
+    if(previous?.kind===body.kind&&previous.note===note)return view(id,user);
+    const declaration={kind:body.kind,label:reasons[body.kind],note,submittedAt:new Date(),status:'pending_review'};
+    await save(f,user,{'state.customerUpload.declaration':declaration},{action:'customer_documents_declared',declaration});
+    return view(id,user);
+  }
   async function complete(id,user,body) {
     const f=await load(id,user);
     if(body.confirmed!==true)fail('请确认本次资料已上传完毕',400);
@@ -52,6 +65,6 @@ function runtime(deps={}) {
     await save(f,user,{'state.customerUpload':{completedAt:new Date(),reportIds:ids}},{action:'customer_upload_completed',reportIds:ids});
     return view(id,user);
   }
-  return {view,add,complete};
+  return {view,add,complete,declare};
 }
 module.exports={runtime};
