@@ -1,5 +1,6 @@
+import { useAiWorkbench } from './AiWorkbenchProvider'
 import { filterReviewTodos } from '../utils/staffWorkspace'
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useStaff } from '../App'
@@ -75,46 +76,16 @@ const SUPPLY_TYPES = new Set(['supply_intake','supply_medication_risk_review','s
 export default function AiTodosPanel() {
   const nav = useNavigate()
   const { staff } = useStaff()
-  const [todos, setTodos] = useState([])
-  const [loading, setLoading] = useState(true)
+  const { data: allTodos, setData: setTodos, loading, error: loadError, refresh: refreshTodos } = useAiWorkbench()
+  const todos = allTodos.filter(t => !['symptom_verify', 'symptom_review'].includes(t.type))
   const [page, setPage] = useState(0)
   const [group, setGroup] = useState('all')
   const [query, setQuery] = useState('')
   const [age, setAge] = useState('all')
   const [priority, setPriority] = useState('all')
   const [sort, setSort] = useState('priority')
-  const [loadError, setLoadError] = useState('')
   const [supplyTodo, setSupplyTodo] = useState(null)
   const [checkupTodo, setCheckupTodo] = useState(null)
-
-  const refreshTodos = useCallback(({ silent = false } = {}) => {
-    if (!silent) setLoading(true)
-    return staffAPI.getAiTodos()
-      .then(r => {
-        setLoadError('')
-        setTodos((r.data || []).filter(t => !['symptom_verify', 'symptom_review'].includes(t.type)))
-      })
-      .catch(err => setLoadError(err.message || '待审任务加载失败'))
-      .finally(() => { if (!silent) setLoading(false) })
-  }, [])
-
-  useEffect(() => {
-    refreshTodos()
-
-    // 待办可能在详情页、另一个浏览器窗口或其他岗位协作中完成。窗口重新获得焦点、
-    // 页面从后台恢复以及短周期轮询时都向服务端复核，避免所有岗位看到已经处理完的旧项。
-    const refreshIfVisible = () => {
-      if (document.visibilityState === 'visible') refreshTodos({ silent: true })
-    }
-    window.addEventListener('focus', refreshIfVisible)
-    document.addEventListener('visibilitychange', refreshIfVisible)
-    const timer = window.setInterval(refreshIfVisible, 30000)
-    return () => {
-      window.removeEventListener('focus', refreshIfVisible)
-      document.removeEventListener('visibilitychange', refreshIfVisible)
-      window.clearInterval(timer)
-    }
-  }, [refreshTodos])
 
   const resolveAlert = (e, todo) => {
     e.stopPropagation()

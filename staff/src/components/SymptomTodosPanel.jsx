@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react'
+import { useAiWorkbench } from './AiWorkbenchProvider'
+import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useStaff } from '../App'
@@ -6,17 +7,9 @@ import { useStaff } from '../App'
 export default function SymptomTodosPanel() {
   const nav = useNavigate()
   const { staff } = useStaff()
-  const [todos, setTodos] = useState([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    staffAPI.getAiTodos()
-      .then(r => setTodos((r.data || []).filter(t => ['symptom_verify', 'symptom_review'].includes(t.type))))
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
-
-  if (!['healthManager', 'familyDoctor', 'superadmin'].includes(staff?.role) || loading) return null
+  const { data, setData: setTodos, loading, error, refresh } = useAiWorkbench()
+  const todos = data.filter(t => ['symptom_verify', 'symptom_review'].includes(t.type))
+  if (!['healthManager', 'familyDoctor', 'superadmin'].includes(staff?.role)) return null
 
   const resolve = async (e, todo) => {
     e.stopPropagation()
@@ -37,7 +30,9 @@ export default function SymptomTodosPanel() {
         </div>
       </div>
       <div className="card-body" style={{ padding: '4px 20px 12px' }}>
-        {todos.length === 0 ? (
+        {loading && <div role="status">正在加载不适主诉…</div>}
+        {error && <div role="alert" style={{ color: '#B42318', padding: 12 }}>不适主诉加载失败：{error} <button onClick={refresh}>重试</button></div>}
+        {!loading && !error && todos.length === 0 ? (
           <div style={{ color: '#8AA89C', fontSize: 13, textAlign: 'center', padding: '16px 0' }}>暂无待处理不适主诉</div>
         ) : todos.map((todo, index) => (
           <div key={todo.id} onClick={() => nav(todo.link, { state: { sourceTodo: todo } })} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', cursor: 'pointer', borderBottom: index < todos.length - 1 ? '1px solid #F0EDE8' : 'none' }}>

@@ -17,7 +17,7 @@ function load(file, mocks = {}) {
   const filename = path.resolve(__dirname, '../src', file)
   const module = { exports: {} }
   vm.runInNewContext(transformSync(fs.readFileSync(filename, 'utf8'), { loader: 'jsx', format: 'cjs' }).code, {
-    module, exports: module.exports, console,
+    module, exports: module.exports, console, window, document,
     require: name => name in mocks ? mocks[name] : require(name),
   })
   return module.exports
@@ -34,11 +34,14 @@ async function setup(count) {
   const mocks = {
     'react-router-dom': { useNavigate: () => (...args) => navigations.push(args) },
     '../App': { useStaff: () => ({ staff: { role: 'healthPlanner' } }) },
-    '../api': { staffAPI: {
+    '../api': { getToken: () => 'test', staffAPI: {
       getReports2: async () => ({ data: {} }), getCheckinOverview: async () => ({ data: [] }),
       getCheckupProgress: async () => ({ data: [] }), getVisitorLeads: async () => ({ data: [] }),
-      getFollowUps: async ({ status }) => ({ data: { followUps: status === 'completed' ? history : orders } }),
+      getFollowUps: async ({ status, page, limit }) => ({ data: { followUps: (status === 'completed' ? history : orders).slice((page - 1) * limit, page * limit), total: count, page, limit } }),
     } },
+    '../hooks/useWorkbenchResource': load('hooks/useWorkbenchResource.js'),
+    '../utils/loadFollowUpPages.mjs': await import('../src/utils/loadFollowUpPages.mjs'),
+    '../components/AiWorkbenchProvider': { __esModule: true, default: ({ children }) => children },
     '../components/NotificationSummary': { useNotificationSummary: () => ({ count: 0 }) },
     '../components/Pagination': load('components/Pagination.jsx'),
     '../utils/plannerOrderProgress.mjs': { plannerOrderRows, isCustomerOrder },

@@ -2360,6 +2360,10 @@ export default function PatientDetailPage() {
   const [aiSourceGroup, setAiSourceGroup] = useState(null) // { title, ids }
   // 场景八：健康关注提示（内部沿用既有风险数据结构）
   const [riskYear, setRiskYear] = useState(null)             // 当前查看的AI风险评估年度
+  useEffect(() => {
+    const targetYear = new URLSearchParams(location.search).get('riskYear')
+    setRiskYear(targetYear && /^\d{4}$/.test(targetYear) ? targetYear : null)
+  }, [location.search])
   const [riskGenerating, setRiskGenerating] = useState(false)
   const [riskApproving, setRiskApproving] = useState(false)
   const [editingRisk, setEditingRisk] = useState(false)      // 是否处于编辑态
@@ -3504,7 +3508,7 @@ export default function PatientDetailPage() {
       const entry = res.data?.byYear?.[year] || {}
       const records = Array.isArray(entry.records) ? entry.records : (entry.sections ? [entry] : [])
       const record = records.find(item => item.scope === 'nutrition' || item.scope === 'all' || item.sections?.lifestyle_assessment)
-      setLifestyleAiDraft({ year, recordIndex: Math.max(0, records.indexOf(record)), section: record?.sections?.lifestyle_assessment || null })
+      setLifestyleAiDraft({ year, recordIndex: Math.max(0, records.indexOf(record)), _reviewToken: record?._reviewToken, section: record?.sections?.lifestyle_assessment || null })
       toast('AI已结合近30天打卡形成生活方式草稿，请营养师核对')
     } catch (err) { toast(err.message || 'AI生活方式分析生成失败') }
     finally { setLifestyleAiGenerating(false) }
@@ -3513,7 +3517,7 @@ export default function PatientDetailPage() {
   const handleApproveLifestyleDraft = async () => {
     if (!lifestyleAiDraft) return
     try {
-      await staffAPI.updateAIHealthSummary(id, { action: 'approve', scope: 'nutrition', year: lifestyleAiDraft.year, recordIndex: lifestyleAiDraft.recordIndex })
+      await staffAPI.updateAIHealthSummary(id, { action: 'approve', scope: 'nutrition', year: lifestyleAiDraft.year, recordIndex: lifestyleAiDraft.recordIndex, expectedRecordToken: lifestyleAiDraft._reviewToken })
       toast('生活方式分析已由营养师审核，正式分析结果已更新')
       setLifestyleAiDraft(null)
       load()
@@ -3916,10 +3920,18 @@ export default function PatientDetailPage() {
     return out
   }
 
+  const summaryReviewToken = (year, index) => {
+    const summary = data?.user?.aiHealthSummary || {}
+    const y = String(year || summary.latestYear || Object.keys(summary.byYear || {}).sort((a, b) => Number(b) - Number(a))[0] || new Date().getFullYear())
+    const entry = summary.byYear?.[y] || summary
+    return (Array.isArray(entry.records) ? entry.records[index || 0] : entry)?._reviewToken
+  }
+
   const handleSaveAISummary = async (approve = false) => {
     try {
       const payload = {
         sections: cleanSections(aiSummaryForm.sections),
+        expectedRecordToken: aiSummaryForm._reviewToken,
         ...(aiYear ? { year: aiYear } : {}),
         ...(editingAISummary ? { scope: editingAISummary, recordIndex: aiRecordIndex[editingAISummary] } : {}),
         ...(approve ? { action: 'approve' } : {}),
@@ -3931,11 +3943,12 @@ export default function PatientDetailPage() {
     } catch (err) { toast(err.message || '保存失败') }
   }
 
-  const handleSaveAISection = async (sectionKey, approve = false, sectionValue = undefined) => {
+  const handleSaveAISection = async (sectionKey, approve = false, sectionValue = undefined, target = {}) => {
     try {
       const res = await staffAPI.updateAIHealthSummary(id, {
         sections: { [sectionKey]: sectionValue === undefined ? cleanSections(aiSummaryForm.sections)?.[sectionKey] : sectionValue },
-        sectionKey, year: aiYear, scope: sectionKey === 'lifestyle_assessment' ? 'nutrition' : 'doctor',
+        expectedRecordToken: target.expectedRecordToken || (editingAISummary ? aiSummaryForm._reviewToken : summaryReviewToken(aiYear, aiRecordIndex[sectionKey === 'lifestyle_assessment' ? 'nutrition' : 'doctor'])),
+        sectionKey, year: target.year || aiYear, scope: sectionKey === 'lifestyle_assessment' ? 'nutrition' : 'doctor',
         recordIndex: aiRecordIndex[sectionKey === 'lifestyle_assessment' ? 'nutrition' : 'doctor'],
         ...(approve ? { action: 'approve' } : {}),
       })
@@ -3950,7 +3963,7 @@ export default function PatientDetailPage() {
     const label = scope === 'nutrition' ? '生活方式评估' : '5维度分析'
     if (!window.confirm(`请确认您已完整查看并核对本次${label}内容。\n审核通过后将作为正式分析结果展示，是否继续？`)) return
     try {
-      await staffAPI.updateAIHealthSummary(id, { action: 'approve', scope, recordIndex, ...(year ? { year } : {}) })
+      await staffAPI.updateAIHealthSummary(id, { action: 'approve', scope, recordIndex, expectedRecordToken: summaryReviewToken(year, recordIndex), ...(year ? { year } : {}) })
       toast(`${label}已审核通过`)
       load()
     } catch (err) { toast(err.message || '操作失败') }
@@ -7985,10 +7998,10 @@ export default function PatientDetailPage() {
             </span>
             {!isEditing ? <>
               <button className="btn btn-secondary btn-sm" onClick={() => {
-                setAiSummaryForm({ sections: JSON.parse(JSON.stringify(ais.sections || {})) }); setAiYear(curYear)
+                setAiSummaryForm({ _reviewToken: doctorRecord._reviewToken, sections: JSON.parse(JSON.stringify(ais.sections || {})) }); setAiYear(curYear)
                 setAiRecordIndex(v => ({ ...v, doctor: doctorRecord._recordIndex || 0 })); setEditingAISummary('doctor'); setEditingAISection(sectionKey)
               }}>编辑本板块</button>
-              <button className="btn btn-primary btn-sm" onClick={() => handleSaveAISection(sectionKey, true, ais.sections?.[sectionKey])}>审核本板块</button>
+              <button className="btn btn-primary btn-sm" onClick={() => handleSaveAISection(sectionKey, true, ais.sections?.[sectionKey], { year: curYear, expectedRecordToken: doctorRecord._reviewToken })}>审核本板块</button>
             </> : <>
               <button className="btn btn-secondary btn-sm" onClick={() => { setEditingAISummary(false); setEditingAISection('') }}>取消</button>
               <button className="btn btn-secondary btn-sm" onClick={() => handleSaveAISection(sectionKey, false)}>临时保存</button>
@@ -8377,7 +8390,7 @@ export default function PatientDetailPage() {
               )}
               {!editingAISummary && aiAnalysisView === 'doctor' && hasDoctorData && (roleScope === 'doctor' || roleScope === 'all') && (
                 <button className="btn btn-secondary btn-sm" onClick={() => {
-                  setAiSummaryForm({ sections: JSON.parse(JSON.stringify(ais.sections || {})) })
+                  setAiSummaryForm({ _reviewToken: doctorRecord._reviewToken, sections: JSON.parse(JSON.stringify(ais.sections || {})) })
                   setAiYear(curYear)
                   setAiRecordIndex(v => ({ ...v, doctor: doctorRecord._recordIndex || 0 }))
                   setEditingAISummary('doctor')
@@ -8385,7 +8398,7 @@ export default function PatientDetailPage() {
               )}
               {!editingAISummary && aiAnalysisView === 'nutrition' && hasLifestyle && (roleScope === 'nutrition' || roleScope === 'all') && (
                 <button className="btn btn-secondary btn-sm" onClick={() => {
-                  setAiSummaryForm({ sections: JSON.parse(JSON.stringify(ais.sections || {})) })
+                  setAiSummaryForm({ _reviewToken: nutritionRecord._reviewToken, sections: JSON.parse(JSON.stringify(ais.sections || {})) })
                   setAiYear(curYear)
                   setAiRecordIndex(v => ({ ...v, nutrition: nutritionRecord._recordIndex || 0 }))
                   setEditingAISummary('nutrition')

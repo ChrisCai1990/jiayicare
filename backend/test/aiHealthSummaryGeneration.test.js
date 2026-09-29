@@ -52,3 +52,34 @@ test('gateway HTML timeout produces a readable error and preserves prerequisite 
   reply = { status: 403, ok: false, json: async () => ({ message: '先审核', needReportAudit: true }) };
   await assert.rejects(context.req('/test'), error => error.needReportAudit === true);
 });
+
+
+test('generation cannot overwrite a concurrent review; successful generation supplies review tokens', async () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
+  const code = source.slice(source.indexOf('const activeAIHealthSummaryJobs = new Set();'), source.indexOf('// 单项重新生成'));
+  let handler, matchedCount = 0, writeFilter;
+  const user = { _id: 'member', aiHealthSummary: {} };
+  const query = { populate() { return this; }, then(resolve) { return Promise.resolve(user).then(resolve); } };
+  vm.runInNewContext(code, {
+    router: { post(_path, _auth, callback) { handler = callback; } }, staffAuth() {},
+    User: { findById: () => query, collection: { updateOne: async filter => { writeFilter = filter; return { matchedCount }; } } },
+    DOCTOR_KEYS: ['medical_priority'], LIFESTYLE_KEY: 'lifestyle_assessment',
+    withReviewTokens: require('../src/utils/summaryReviewVersion').withReviewTokens,
+    generateHealthSummarySections: async () => ({ sections: { medical_priority: { summary: '合成结果' } }, failed: false }),
+    require: name => {
+      if (name.endsWith('packageFeatureEntitlements')) return { getAiEntitlements: async () => ({ aiHealthAnalysis: true }) };
+      if (name.endsWith('serviceAccess')) return { resolveServiceAccess: async () => ({}) };
+      if (name.endsWith('reportAuditGate')) return { checkReportAuditGate: async () => null };
+      throw new Error(name);
+    },
+  });
+  const req = { params: { id: 'member' }, body: { scope: 'doctor', year: '2026' }, staff: { role: 'familyDoctor' } };
+  const response = () => ({ statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } });
+  const conflict = response(); await handler(req, conflict);
+  assert.equal(conflict.statusCode, 409); assert.match(conflict.body.message, /原审核结果已保留/);
+  assert.ok(writeFilter.$or, 'new/empty summary still has an atomic condition');
+  matchedCount = 1;
+  const success = response(); await handler(req, success);
+  assert.equal(success.statusCode, 200, JSON.stringify(success.body));
+  assert.match(success.body.data.byYear[2026].records[0]._reviewToken, /^[a-f0-9]{64}$/);
+});

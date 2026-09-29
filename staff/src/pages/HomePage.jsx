@@ -1,3 +1,7 @@
+import useWorkbenchResource from '../hooks/useWorkbenchResource'
+import { getToken } from '../api'
+import { loadFollowUpPages } from '../utils/loadFollowUpPages.mjs'
+import AiWorkbenchProvider from '../components/AiWorkbenchProvider'
 import ConsultationTodosPanel from '../components/ConsultationTodosPanel'
 import { useNotificationSummary } from '../components/NotificationSummary'
 import React, { useEffect, useState } from 'react'
@@ -29,8 +33,15 @@ export default function HomePage() {
   const [checkinRecords, setCheckinRecords] = useState([])
   const [checkupProgress, setCheckupProgress] = useState([])
   const expiringPatients = notification.data?.expiringPatients || []
-  const [pendingOrders, setPendingOrders] = useState([])
-  const [completedOrders, setCompletedOrders] = useState([])
+  const ordersResource = useWorkbenchResource(async () => {
+    const [pending, completed] = await Promise.all([
+      loadFollowUpPages(staffAPI.getFollowUps, { status: 'active', sourceType: 'order', scope: 'assigned', includeFuture: '1' }),
+      loadFollowUpPages(staffAPI.getFollowUps, { status: 'completed', sourceType: 'order', scope: 'assigned' }),
+    ])
+    return { pending, completed }
+  }, getToken(), { pending: [], completed: [] })
+  const pendingOrders = ordersResource.data.pending
+  const completedOrders = ordersResource.data.completed
   const [orderHistoryOpen, setOrderHistoryOpen] = useState(false)
   const [orderPage, setOrderPage] = useState(1)
   const [orderHistoryPage, setOrderHistoryPage] = useState(1)
@@ -49,18 +60,6 @@ export default function HomePage() {
     staffAPI.getCheckupProgress()
       .then(r => setCheckupProgress(r.data || []))
       .catch(() => {})
-
-    // 服务预约类待办（用户下单商城服务后生成）容易被淹没在普通随访任务列表里，单独摘出来醒目提醒
-    // 个人工作台只显示明确指派给本人（或本人创建且尚未另行指派）的预约。
-    // 健康顾问可在会员详情中查看名下会员全量记录，但未扭转给本人的任务不能进入个人待办。
-    staffAPI.getFollowUps({ status: 'planned', sourceType: 'order', scope: 'assigned', limit: 20 })
-      .then(r => setPendingOrders(r.data?.followUps || []))
-      .catch(() => {})
-    staffAPI.getFollowUps({ status: 'completed', sourceType: 'order', scope: 'assigned', limit: 100 })
-      .then(r => setCompletedOrders(r.data?.followUps || []))
-      .catch(() => {})
-
-
 
   }, [])
 
@@ -119,7 +118,7 @@ export default function HomePage() {
       </div>
 
       {/* 用户端购买的服务单独展示；医护端发起的服务只在下方任务区出现。 */}
-      {(orderRows.length > 0 || orderHistoryRows.length > 0) && (
+      {(ordersResource.loading || ordersResource.error || orderRows.length > 0 || orderHistoryRows.length > 0) && (
         <div className="card" style={{ marginBottom: 20, border: '1.5px solid #22A06B40' }}>
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -129,6 +128,8 @@ export default function HomePage() {
             {orderHistoryRows.length > 0 && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOrderHistoryOpen(value => !value)}>{orderHistoryOpen ? '收起已处理预约' : `查看已处理预约 ${orderHistoryRows.length}`}</button>}
           </div>
           <div className="card-body" style={{ padding: '8px 20px' }}>
+            {ordersResource.loading && <div role="status">正在加载服务预约…</div>}
+            {ordersResource.error && <div role="alert" style={{ color: '#B42318', padding: 12 }}>服务预约未完整加载：{ordersResource.error} <button onClick={ordersResource.refresh}>重试</button></div>}
             {visibleOrderRows.map(({ id, pending: f, supervisor, task: serviceTask, action }, i) => {
               const task = supervisor || serviceTask
               const order = task?.sourceOrderId || f?.sourceOrderId
@@ -172,8 +173,7 @@ export default function HomePage() {
       <ServiceTasksPanel onTasksLoaded={setServiceTasks} />
 
       {/* AI 待审核任务面板 */}
-      <SymptomTodosPanel />
-      <AiTodosPanel />
+      <AiWorkbenchProvider><SymptomTodosPanel /><AiTodosPanel /></AiWorkbenchProvider>
 
       {/* 待随访任务面板 */}
       <FollowUpsPanel />

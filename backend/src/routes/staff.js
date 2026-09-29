@@ -1,3 +1,4 @@
+const { withReviewTokens, resolveReviewRecord } = require('../utils/summaryReviewVersion');
 const { withAiContext } = require('../utils/aiBudget');
 const { ROLE_FIELDS: PHASE_ROLE_FIELDS, ROLE_LABELS: PHASE_ROLE_LABELS, currentReviewer: phaseReviewer, isAssignedPhaseReviewer, reviewQueueFilter } = require('../utils/phaseAssessmentRouting');
 const { isAiControlError, rethrowAiControl } = require('../utils/aiBudgetPolicy');
@@ -1183,6 +1184,7 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
   }
 
   const displayedUser = user.toObject();
+  displayedUser.aiHealthSummary = withReviewTokens(displayedUser.aiHealthSummary);
   displayedUser.lifestyle_data = require('../utils/effectiveLifestyle').effectiveLifestyle(displayedUser);
   res.json({ success: true, data: { user: displayedUser, recentFollowUps, recentRecords, insuranceCoverage, insuranceCases } });
 });
@@ -1940,21 +1942,40 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
     if (dateTo) { const end = new Date(dateTo); end.setDate(end.getDate() + 1); filter[rangeField].$lt = end; }
   }
 
-  const skip = (Number(page) - 1) * Number(limit);
-  const [followUps, total] = await Promise.all([
-    FollowUp.find(filter)
-      .sort({ date: 1 })
-      .skip(skip)
-      .limit(Number(limit))
+  let workbenchSummary;
+  if (req.query.workbench === 'human') {
+    const { humanFollowUpQuery, timeBuckets } = require('../utils/humanFollowUpQuery');
+    filter.status = { $in: ['planned', 'in_progress', 'missed'] };
+    filter.$and.push(humanFollowUpQuery);
+    if (req.query.assigneeName) {
+      const escaped = String(req.query.assigneeName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const owners = await Admin.find({ name: { $regex: escaped, $options: 'i' } }).distinct('_id');
+      filter.$and.push({ assignedTo: { $in: owners } });
+    }
+    const buckets = timeBuckets(req.query.dayStart);
+    const actionable = { 'serviceTracking.status': { $ne: 'waiting' } };
+    const counts = await Promise.all(Object.entries(buckets).map(async ([key, range]) =>
+      [key, await FollowUp.countDocuments({ $and: [filter, actionable, range] })]));
+    const waiting = await FollowUp.countDocuments({ $and: [filter, { 'serviceTracking.status': 'waiting' }] });
+    workbenchSummary = { counts: Object.fromEntries(counts), waiting };
+    filter.$and.push(req.query.workbenchTime === 'waiting' ? { 'serviceTracking.status': 'waiting' } : actionable);
+    filter.$and.push(buckets[req.query.workbenchTime] || {});
+  }
+  const requestedLimit = Math.max(1, Math.trunc(Number(limit)) || 20);
+  const pageSize = req.query.workbench === 'human' ? Math.min(200, requestedLimit) : requestedLimit;
+  const total = await FollowUp.countDocuments(filter);
+  const currentPage = Math.max(1, Math.min(Math.trunc(Number(page)) || 1, Math.max(1, Math.ceil(total / pageSize))));
+  const followUps = await FollowUp.find(filter)
+      .sort(status === 'completed' ? { completedAt: -1, _id: -1 } : { date: 1, _id: 1 })
+      .skip((currentPage - 1) * pageSize)
+      .limit(pageSize)
       .populate('patientId', 'name phone gender age chronicDiseases')
       .populate('staffId', 'name role title')
       .populate('assignedTo', 'name role')
       .populate('sourceHealthPlanId', 'title description content type')
       .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard workflowStageKey')
       .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
-      .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod initiationSource createdAt orderNo serviceWorkflowSnapshot supplementFulfillment medicalProxyPlan medicalReminderIntake'),
-    FollowUp.countDocuments(filter),
-  ]);
+      .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod initiationSource createdAt orderNo serviceWorkflowSnapshot supplementFulfillment medicalProxyPlan medicalReminderIntake');
 
   // 获取本页会员最近一次打卡（健康记录）时间
   const patientIds = [...new Set(followUps.map(f => f.patientId?._id).filter(Boolean))];
@@ -1972,7 +1993,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
     patientLastRecord: f.patientId ? (lastRecordMap[String(f.patientId._id)] || null) : null,
   }));
 
-  res.json({ success: true, data: { followUps: followUpsWithRecord, total } });
+  res.json({ success: true, data: { followUps: followUpsWithRecord, total, page: currentPage, limit: pageSize, workbenchSummary } });
 });
 
 // ── POST /api/staff/followups ─────────────────────────────────────
@@ -10270,11 +10291,13 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       byYear, latestYear: year,
     };
 
-    await User.collection.updateOne(
-      { _id: new mongoose.Types.ObjectId(req.params.id) },
+    const saved = await User.collection.updateOne(
+      { _id: user._id, ...(Object.keys(existing).length ? { aiHealthSummary: existing }
+        : { $or: [{ aiHealthSummary: {} }, { aiHealthSummary: null }] }) },
       { $set: { aiHealthSummary: summary } }
     );
-    res.json({ success: true, data: summary });
+    if (!saved.matchedCount) return res.status(409).json({ success: false, message: '生成期间已有分析被更新，请刷新核对后重新生成；原审核结果已保留' });
+    res.json({ success: true, data: withReviewTokens(summary) });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   } finally {
@@ -10335,7 +10358,7 @@ router.post('/patients/:id/ai-health-summary/regenerate-item', staffAuth, async 
     summary.byYear[y] = entry;
     if (String(summary.latestYear) === y || !summary.latestYear) summary.sections = entry.sections;
     await User.collection.updateOne({ _id: user._id }, { $set: { aiHealthSummary: summary } });
-    res.json({ success: true, data: summary, item: updatedItem });
+    res.json({ success: true, data: withReviewTokens(summary), item: updatedItem });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -10345,8 +10368,8 @@ router.post('/patients/:id/ai-health-summary/regenerate-item', staffAuth, async 
 // PATCH /api/staff/patients/:id/ai-health-summary
 router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
   try {
-    const { sections, sectionNotes, action, scope, year, recordIndex, sectionKey } = req.body;
-    const user = await User.findById(req.params.id);
+    const { sections, sectionNotes, action, scope, year, recordIndex, sectionKey, expectedRecordToken } = req.body;
+    const user = await User.findById(req.params.id).lean();
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
     const current = user.aiHealthSummary || {};
     const updated = { ...current };
@@ -10356,16 +10379,10 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     const yearEntry = byYear[y] || (!Object.keys(byYear).length && current.sections ? current : {});
     // 兼容旧结构（无records数组），历史数据只有一条记录时包装成数组
     const records = Array.isArray(yearEntry.records) ? [...yearEntry.records] : (yearEntry.sections ? [yearEntry] : []);
-    // recordIndex 不传默认操作最新一条（index 0，数组已按时间新到旧排序）——绝大多数审核场景
-    // 都是审核"最新生成的这一条"，只有回看历史记录时才需要显式指定要审核哪一条
     const sc = scope || 'all';
-    const defaultIdx = sc === 'nutrition'
-      ? records.findIndex(r => r.scope === 'nutrition' || r.scope === 'all' || (!r.scope && r.sections?.[LIFESTYLE_KEY]))
-      : records.findIndex(r => r.scope === 'doctor' || r.scope === 'all' || (!r.scope && DOCTOR_KEYS.some(k => r.sections?.[k])));
-    const idx = Number.isInteger(recordIndex) ? recordIndex : Math.max(defaultIdx, 0);
-    if (idx < 0 || idx >= records.length) {
-      return res.status(400).json({ success: false, message: '记录不存在' });
-    }
+    // Resolve the exact content the reviewer saw, independent of array order.
+    const idx = resolveReviewRecord(records, expectedRecordToken);
+    if (idx < 0) return res.status(409).json({ success: false, message: '该分析记录已变化或页面版本过旧，请刷新后重新核对再提交' });
     const entry = { ...records[idx] };
     const beforeSection = sectionKey ? entry.sections?.[sectionKey] : null;
     if (sections !== undefined) {
@@ -10431,10 +10448,13 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     updated.byYear = byYear;
     // 顶层镜像始终由两条独立链各自的“最新一条”合成，审核营养师记录（它可能不是全局 index 0）
     // 也能立即同步到用户端与其他下游，同时不会改动健康顾问链。
-    const latestDoctor = records.find(r => r.scope === 'doctor' || r.scope === 'all' || (!r.scope && DOCTOR_KEYS.some(k => r.sections?.[k]))) || {};
-    const latestNutrition = records.find(r => r.scope === 'nutrition' || r.scope === 'all' || (!r.scope && r.sections?.[LIFESTYLE_KEY])) || {};
+    const mirrorYear = Object.keys(byYear).sort((a, b) => Number(b) - Number(a))[0] || y;
+    const mirrorEntry = byYear[mirrorYear];
+    const mirrorRecords = Array.isArray(mirrorEntry.records) ? mirrorEntry.records : [mirrorEntry];
+    const latestDoctor = mirrorRecords.find(r => r.scope === 'doctor' || r.scope === 'all' || (!r.scope && DOCTOR_KEYS.some(k => r.sections?.[k]))) || {};
+    const latestNutrition = mirrorRecords.find(r => r.scope === 'nutrition' || r.scope === 'all' || (!r.scope && r.sections?.[LIFESTYLE_KEY])) || {};
     updated.sections = { ...(latestDoctor.sections || {}), ...(latestNutrition.sections || {}) };
-    updated.generatedAt = records[0]?.generatedAt || updated.generatedAt;
+    updated.generatedAt = mirrorRecords[0]?.generatedAt || updated.generatedAt;
     updated.doctorApprovedAt = latestDoctor.doctorApprovedAt || latestDoctor.approvedAt || null;
     updated.doctorApprovedBy = latestDoctor.doctorApprovedBy || latestDoctor.approvedBy || null;
     updated.nutritionApprovedAt = latestNutrition.nutritionApprovedAt || latestNutrition.approvedAt || null;
@@ -10447,12 +10467,13 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       updated.approvedAt = null;
       updated.approvedBy = null;
     }
-    updated.latestYear = y;
-    await User.collection.updateOne(
-      { _id: new mongoose.Types.ObjectId(req.params.id) },
+    updated.latestYear = mirrorYear;
+    const saved = await User.collection.updateOne(
+      { _id: user._id, aiHealthSummary: current },
       { $set: { aiHealthSummary: updated } }
     );
-    res.json({ success: true, data: updated, record: entry, recordIndex: idx });
+    if (!saved.matchedCount) return res.status(409).json({ success: false, message: '分析记录刚被更新，请刷新后重新核对，未保存本次审核' });
+    res.json({ success: true, data: withReviewTokens(updated), record: withReviewTokens(entry), recordIndex: idx });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -10704,7 +10725,7 @@ router.post('/patients/:id/ai-health-summary/discussions/apply', staffAuth, asyn
     summary.byYear = { ...(summary.byYear || {}), [y]: yearEntry };
     if (String(summary.latestYear) === y || !summary.latestYear) summary.sections = yearEntry.sections;
     await User.collection.updateOne({ _id: user._id }, { $set: { aiHealthSummary: summary } });
-    res.json({ success: true, data: summary, section: updatedSection });
+    res.json({ success: true, data: withReviewTokens(summary), section: updatedSection });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -12772,29 +12793,29 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
-    // ── 健康顾问：风险预警待处理 → User.aiRiskAssessment(按年度) 最近一年 高/危急 且未审核 ──
+    // ── 健康顾问：风险预警待处理 → User.aiRiskAssessment(按年度) 所有年度 高/危急 且未审核 ──
     if (can('risk_review')) {
       const riskFilter = { aiRiskAssessment: { $ne: null }, ...(myPatientIds ? { _id: { $in: myPatientIds } } : {}) };
       const riskUsers = await User.find(riskFilter).select('name aiRiskAssessment').lean();
       riskUsers.forEach(u => {
         const byYear = riskByYear(u.aiRiskAssessment);
         const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a));
-        const y = years[0];
-        if (!y) return;
+        for (const y of years) {
         const ra = byYear[y] || {};
-        if (!ra.alerted || ra.approvedAt) return;
+        if (!ra.alerted || ra.approvedAt) continue;
         const createdAt = ra.generatedAt || now;
         const critical = ra.overallLevel === 'critical';
         todos.push({
-          id: 'risk_' + u._id, type: 'risk_review',
+          id: 'risk_' + u._id + '_' + y, type: 'risk_review',
           year: y,
           label: critical ? '风险预警·危急值' : '风险预警·高风险', priority: 1,
           patientName: u.name || '未知', patientId: String(u._id),
-          summary: ra.overallSummary || 'AI检测到高风险，请健康顾问审核',
+          summary: `${y}年 · ${ra.overallSummary || 'AI检测到高风险，请健康顾问审核'}`,
           updateLocation: '更多 → 健康关注提示 → 查看四个维度的风险因素和建议',
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
-          link: `/patients/${u._id}?tab=ai-risk`,
+          link: `/patients/${u._id}?tab=ai-risk&riskYear=${encodeURIComponent(y)}`,
         });
+        }
       });
     }
 
