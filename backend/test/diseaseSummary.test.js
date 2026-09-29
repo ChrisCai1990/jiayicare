@@ -71,13 +71,9 @@ test('AI draft generated against old course entries cannot overwrite newer recor
   const { response, written } = await saveHarness({ ...payload, expectedRecordVersion: 'old' }).run();
   assert.equal(response.code, 409); assert.equal(written, undefined);
 });
-test('confirming identical AI summary updates coverage without adding duplicate history', async () => {
+test('old clients cannot overwrite the initial overview with subsequent AI summaries', async () => {
   const { response, written } = await saveHarness({ ...payload, expectedRecordVersion: recordVersion(record) }).run();
-  assert.equal(response.code, 200);
-  const saved = written.update.$set.diseaseRecords[0];
-  assert.equal(saved.summaryHistory.length, 0);
-  assert.equal(saved.summary.coveredChanges.length, 2);
-  assert.ok(saved.summary.coverageConfirmedAt);
+  assert.equal(response.code, 409); assert.equal(written, undefined);
 });
 
 test('draft endpoint scopes patient and reports, returns only a draft, and detects changed source data', async () => {

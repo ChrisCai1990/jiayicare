@@ -25,24 +25,17 @@ async function setup(api) {
   await act(async () => root.render(React.createElement(module.exports, { patientId: 'patient', user: { diseaseRecords: [{ _id: 'record', name: '测试专病', summary, summaryHistory: [{ ...summary, archivedAt: '2026-09-17T11:39:34Z' }, { ...summary, archivedAt: '2026-09-17T11:40:59Z' }], courseEntries: [] }] }, serviceRecords: [], onSaved: async () => {}, toast: () => {} })));
   return { container, async click(text) { const b = [...container.querySelectorAll('button')].find(b => b.textContent === text); assert.ok(b, text); await act(async () => b.click()); }, async close() { await act(async () => root.unmount()); container.remove(); } };
 }
-test('duplicate history is grouped with both audit times; AI draft requires explicit saving', async () => {
-  let saves = 0, sent;
-  const h = await setup({ generateDiseaseSummary: async () => ({ data: { summary: { chiefComplaint: '含后续资料的新摘要' }, expectedRecordVersion: 'version', coverage: { courseCount: 7, reportCount: 1 } } }), updateDiseaseRecordSummary: async (_, body) => { saves++; sent = body; return {}; } });
+test('initial overview only allows correction; history is collapsed and subsequent AI has a separate tab', async () => {
+  let saves=0;
+  const h=await setup({updateDiseaseRecordSummary:async()=>{saves++;return{}}});
   try {
-    await h.click('修订历史（1）');
-    assert.match(h.container.textContent, /相同内容 2 次留痕/);
-    await h.click('专病概况'); await h.click('修订健康信息摘要'); await h.click('结合后续资料更新摘要');
-    assert.equal(saves, 0);
-    assert.match(h.container.textContent, /已纳入 7 条健康变化、1 份关联报告/);
-    assert.equal(h.container.querySelector('textarea').value, '含后续资料的新摘要');
-    await h.click('保存摘要'); assert.equal(saves, 1); assert.equal(sent.expectedRecordVersion, 'version');
-  } finally { await h.close(); }
-});
-test('generation error keeps editable original summary with visible error and no save', async () => {
-  const h = await setup({ generateDiseaseSummary: async () => { throw new Error('服务不可用'); }, updateDiseaseRecordSummary: () => { throw new Error('unexpected save'); } });
-  try {
-    await h.click('修订健康信息摘要'); await h.click('结合后续资料更新摘要');
-    assert.equal(h.container.querySelector('[role=alert]').textContent, '服务不可用');
-    assert.equal(h.container.querySelector('textarea').value, '初次资料');
-  } finally { await h.close(); }
+    assert.ok(h.container.textContent.includes('首次专病概况'));
+    assert.ok(h.container.textContent.includes('阶段性概要'));
+    assert.ok(!h.container.textContent.includes('服务与跟进记录'));
+    assert.ok(h.container.querySelector('details > summary').textContent.includes('修订留痕'));
+    await h.click('纠正首次概况');
+    assert.ok(!h.container.textContent.includes('结合后续资料更新摘要'));
+    assert.equal(saves,0);
+    await h.click('保存摘要'); assert.equal(saves,1);
+  } finally {await h.close()}
 });
