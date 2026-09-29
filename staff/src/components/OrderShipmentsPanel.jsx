@@ -18,6 +18,7 @@ export default function OrderShipmentsPanel() {
   const [company, setCompany] = useState(''), [tracking, setTracking] = useState('')
   const [shippingContact, setShippingContact] = useState({ recipientName: '', recipientPhone: '', deliveryAddress: '' })
   const [busy, setBusy] = useState(false), [error, setError] = useState('')
+  if (!resource.loading && !resource.error && !resource.data.length) return null
   return <section className="shipment-panel">
     <div className="shipment-panel__heading">
       <div><span className="shipment-panel__eyebrow">订单履约</span><h2>待发货订单 <b>{resource.data.length}</b></h2></div>
@@ -26,7 +27,6 @@ export default function OrderShipmentsPanel() {
     <div className="shipment-panel__content">
       {resource.loading && <p className="shipment-panel__empty">正在加载订单…</p>}
       {resource.error && <p className="shipment-panel__empty" role="alert">{resource.error} <button onClick={resource.refresh}>重试</button></p>}
-      {!resource.loading && !resource.error && !resource.data.length && <p className="shipment-panel__empty">暂无待发货订单</p>}
       {resource.data.map(order => <article className="shipment-order" key={order._id}>
         <div className="shipment-order__main">
           <div className="shipment-order__top">
