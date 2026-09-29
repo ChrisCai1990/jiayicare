@@ -88,6 +88,7 @@ function renderArticle(article, previewLabel) {
   <meta name="description" content="${escapeHtml(article.summary)}">
   <title>${escapeHtml(article.title)}｜嘉医汇健康知识中心</title>${structuredData}
   <link rel="stylesheet" href="${stylesheetPath}">
+  <meta property="og:title" content="${escapeHtml(article.title)}"><meta property="og:description" content="${escapeHtml(article.summary)}"><meta property="og:url" content="${canonicalUrl}"><meta property="og:image" content="https://jiaycare.com/knowledge/assets/jiayihui-logo.png">
 </head>
 <body>
   <main class="article-shell">
@@ -102,11 +103,7 @@ function renderArticle(article, previewLabel) {
         <ul>${sources}
         </ul>
       </section>
-      <section class="article-cta">
-        <h2>需要进一步了解服务安排？</h2>
-        <p>如需梳理非医疗健康管理服务需求，可先使用咨询准备助手；请勿提交病历、检查报告、指标或用药信息。</p>
-        <a class="button button-primary" href="../ai-consultation.html?source=geo_${escapeHtml(article.slug)}">AI 梳理咨询需求</a>
-      </section>
+<section class="article-cta"><h2>下一步，选择适合的入口</h2><p>可直接申请工作人员联系，无需先使用 AI。具体商品价格及会员抵扣，请在小程序商城查看。</p><a class="button button-primary" href="../ai-consultation.html?source=geo_article#handoff-form">申请工作人员联系</a> <a class="button button-secondary" href="https://www.jiaycare.com/services/start.html#miniprogram">查看商城价格</a></section>
       <aside class="medical-note">本页用于健康教育，不替代医生的诊断、治疗建议或紧急医疗服务。如有不适或个体化健康问题，请及时咨询专业人员。</aside>
     </article>
     <p class="content-governance"><a href="../editorial-policy.html">查看内容审核与更新原则</a></p>
