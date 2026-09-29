@@ -89,18 +89,21 @@ export default function VisitorLeadWorkbench({ toast }) {
   }
   const field = key => e => setForm(prev => ({ ...prev, [key]: e.target.value }))
   return <>
-    {itemId && <p role="status">已定位工作台事项 <button className="btn btn-secondary" onClick={() => setItemId('')}>查看全部</button></p>}
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+    {itemId && <div className="consultation-focus" role="status"><span>当前仅显示这一条记录</span><button className="consultation-text-button" onClick={() => { setItemId(''); setPage(1) }}>查看全部记录</button></div>}
+    <div className="consultation-toolbar">
+      <div className="consultation-tabs">
       <button className={`btn ${tab === 'leads' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => switchTab('leads')}>官网咨询</button>
       <button className={`btn ${tab === 'intakes' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => switchTab('intakes')}>服务承接与进度</button>
+      </div><div className="consultation-filters">
       <select aria-label="筛选状态" className="form-control" style={{ width: 140 }} value={status} onChange={e => { setStatus(e.target.value); setPage(1) }}>
         {tab === 'leads' ? <><option value="new">待联系</option><option value="contacted">已联系</option><option value="closed">已关闭</option></> : <><option value="open">跟进中</option><option value="closed">已关闭</option></>}
-        <option value="">全部</option>
+        <option value="">全部状态</option>
       </select>
       <button className="btn btn-secondary" disabled={loading} onClick={load}>刷新</button>
+      </div>
     </div>
     {error && <p role="alert" style={{ color: '#b91c1c' }}>{error}</p>}
-    {tab === 'intakes' && <p>待跟进超时：{result.overdue || 0} 项。这里只追踪承接，实际支付、履约和专业审核在原服务中办理。</p>}
+    {tab === 'intakes' && !loading && <div className="consultation-list-summary"><span>服务承接 · {result.total || 0} 条</span>{result.overdue > 0 && <span className="consultation-overdue">{result.overdue} 项跟进逾期</span>}</div>}
     {loading ? <p>正在加载…</p> : result.data?.length ? <div style={{ display: 'grid', gap: 14 }}>{result.data.map(row => <article className="card" key={row._id}>
       <div className="card-body">
         {tab === 'leads' ? <>
@@ -135,30 +138,49 @@ export default function VisitorLeadWorkbench({ toast }) {
             {row.status === 'closed' && <button className="btn btn-secondary" onClick={() => open(row, 'new')}>重新跟进</button>}
           </div>
         </> : <>
-          <h3>{row.customer?.name} · {directions[row.serviceDirection]}</h3><p>{row.need}</p>
-          <p><strong>{row.progress.stage}</strong> · {row.progress.waiting}</p>
-          <p>来源：{row.source} · 下次跟进：{when(row.nextContactAt)} {row.progress.overdue && <strong style={{ color: '#b91c1c' }}>已超时</strong>}</p>
-          {row.order && <p>关联订单：{row.order.serviceName} · {row.order.tradeStatus || row.order.status}</p>}
-          {row.plan && <p>关联服务：{row.plan.title}</p>}
-          {!!row.progress.current.length && <ul>{row.progress.current.map(task => <li key={task.id}>{task.label} · {task.assignee}{task.blocked ? ' · 等待前置环节' : ''}</li>)}</ul>}
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button className="btn btn-secondary" onClick={() => nav(`/patients/${row.patientId}`)}>客户档案与订单</button>
-            {row.planId && <button className="btn btn-secondary" onClick={() => nav(`/plans/${row.planId}`)}>打开服务方案</button>}
-            {row.status === 'open' && <>
-              {!row.orderId && !row.planId && <button className="btn btn-primary" onClick={() => open(row, 'link')}>关联实际服务</button>}
-              <button className="btn btn-secondary" onClick={() => open(row, 'followup')}>追加跟进</button>
-              <button className="btn btn-secondary" disabled={!row.progress.canClose} onClick={() => open(row, 'close')}>记录承接结论</button>
-            </>}
+          <header className="consultation-lead-header">
+            <div><span className="consultation-eyebrow">服务承接</span><h3>{row.customer?.name || '客户'}<span className="consultation-topic">{directions[row.serviceDirection] || '服务咨询'}</span></h3></div>
+            <span className={`consultation-status ${row.status === 'open' ? 'contacted' : 'closed'}`}>{row.status === 'open' ? '跟进中' : '已关闭'}</span>
+          </header>
+          <div className="intake-overview">
+            <section className="intake-need"><h4>服务需求</h4><p>{row.need || '未填写'}</p>
+              <div className="intake-progress"><strong>{row.progress.stage}</strong><p>{row.progress.waiting}</p></div>
+            </section>
+            <section className={`intake-schedule ${row.progress.overdue ? 'overdue' : ''}`}>
+              <h4>{row.status === 'open' ? '下次跟进时间' : '原定跟进时间'}</h4><strong>{when(row.nextContactAt)}</strong>
+              <p>北京时间{row.progress.overdue ? ' · 已逾期' : ''}</p>
+            </section>
           </div>
-          <details style={{ marginTop: 12 }}><summary>跟进记录（{row.events?.length || 0}）</summary>{row.events?.map((item, i) => <p key={i}>{when(item.at)} · {item.note}</p>)}</details>
+          {(row.order || row.plan || row.progress.current.length > 0) && <section className="intake-linked">
+            <h4>已关联服务</h4>
+            {row.order && <p>订单：{row.order.serviceName} · {row.order.tradeStatus || row.order.status}</p>}
+            {row.plan && <p>方案：{row.plan.title}</p>}
+            {!!row.progress.current.length && <ul>{row.progress.current.map(task => <li key={task.id}>{task.label} · {task.assignee}{task.blocked ? ' · 等待前置环节' : ''}</li>)}</ul>}
+          </section>}
+          <div className="intake-actions">
+            <div className="intake-actions-main">{row.status === 'open' && <>
+              {!row.orderId && !row.planId && <button className="btn btn-primary" onClick={() => open(row, 'link')}>关联实际服务</button>}
+              <button className={`btn ${row.orderId || row.planId ? 'btn-primary' : 'btn-secondary'}`} onClick={() => open(row, 'followup')}>追加跟进</button>
+            </>}</div>
+            <div className="intake-actions-secondary">
+              <button className="consultation-text-button" onClick={() => nav(`/patients/${row.patientId}`)}>客户档案与订单</button>
+              {row.planId && <button className="consultation-text-button" onClick={() => nav(`/plans/${row.planId}`)}>打开服务方案</button>}
+              {row.status === 'open' && <button className="consultation-text-button" disabled={!row.progress.canClose} title={!row.progress.canClose ? '原服务仍在办理，结束后可记录结论' : undefined} onClick={() => open(row, 'close')}>记录承接结论</button>}
+            </div>
+          </div>
+          <details className="intake-history"><summary>跟进记录（{row.events?.length || 0}）</summary>
+            {row.events?.length ? [...row.events].reverse().map((item, i) => <div className="consultation-event" key={i}><p className="consultation-time">{when(item.at)}（北京时间）</p><p className="intake-note">{item.note}</p></div>) : <p className="consultation-caption">暂无跟进记录</p>}
+            <p className="consultation-caption">来源：{row.source || '未记录'}</p>
+          </details>
+
         </>}
       </div>
     </article>)}</div> : <p>当前没有符合条件的记录。</p>}
-    <div style={{ display: 'flex', gap: 12, marginTop: 16, alignItems: 'center' }}>
+    {result.total > result.limit && <div className="consultation-pagination">
       <button className="btn btn-secondary" disabled={page <= 1 || loading} onClick={() => setPage(p => p - 1)}>上一页</button>
       <span>第 {page} 页 · 共 {result.total || 0} 条</span>
       <button className="btn btn-secondary" disabled={page * result.limit >= result.total || loading} onClick={() => setPage(p => p + 1)}>下一页</button>
-    </div>
+    </div>}
     {edit && <div className="modal-overlay" onClick={closeDialog}><div className="modal" role="dialog" aria-modal="true" aria-label="服务承接" onClick={e => e.stopPropagation()} style={{ maxWidth: 620, width: '94vw', maxHeight: '90vh', overflowY: 'auto' }}>
       <form onSubmit={save}><div className="modal-header"><h3>{edit.action === 'contacted' ? '记录联系结果' : '服务承接'}</h3><button type="button" className="btn btn-secondary" disabled={busy} onClick={closeDialog}>关闭</button></div>
       <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
