@@ -66,6 +66,19 @@ test('public lead to service intake uses real isolated Mongo/HTTP, role gates an
     assert.equal(intake.source, publicInput.source); assert.equal(intake.need, '安排一次就医协助服务');
     assert.equal(await FollowUp.countDocuments(), 0); assert.equal(await Order.countDocuments(), 0);
   });
+  await t.test('workbench projects open intake, links exact record and enforces role and tenant gates', async () => {
+    assert.equal((await call(null, '/staff/visitor-leads/workbench')).status, 401);
+    assert.equal((await call(doctor, '/staff/visitor-leads/workbench')).status, 403);
+    assert.equal((await call(outsider, '/staff/visitor-leads/workbench')).body.total, 0);
+    const output = await call(planner, '/staff/visitor-leads/workbench');
+    assert.equal(output.status, 200); assert.equal(output.body.total, 1);
+    assert.equal(output.body.data[0].id, 'intake_' + leadId);
+    assert.match(output.body.data[0].link, /workbench=intakes/);
+    const exact = await call(planner, '/staff/service-intakes?itemId=' + leadId);
+    assert.equal(exact.body.total, 1);
+    assert.equal((await call(other, '/staff/service-intakes?itemId=' + leadId)).body.total, 0);
+    assert.equal((await call(planner, '/staff/service-intakes?itemId=invalid')).status, 400);
+  });
   await t.test('service link checks patient and plan/order consistency, does not create business records', async () => {
     order = await Order.create({ user: user._id, serviceId: 'test', serviceName: '虚构就医服务', paymentStatus: 'paid', tradeStatus: 'paid' });
     const wrongOrder = await Order.create({ user: user2._id, serviceId: 'test', serviceName: '其他客户服务' });
@@ -90,6 +103,9 @@ test('public lead to service intake uses real isolated Mongo/HTTP, role gates an
     assert.equal((await close()).status, 200);
     assert.equal((await close()).status, 409);
     assert.equal((await FollowUp.findById(task._id)).status, 'completed');
+  });
+  await t.test('closed intake removes its workbench reminder without resurrecting the source lead', async () => {
+    assert.equal((await call(planner, '/staff/visitor-leads/workbench')).body.total, 0);
   });
   await t.test('intake remains traceable after public-lead retention and respects reassignment', async () => {
     await Lead.deleteOne({ _id: leadId });

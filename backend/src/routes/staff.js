@@ -623,8 +623,10 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
   const filter = { assignedTo: { $in: [req.staff._id, staffId] } };
   // 历史任务的 assignedTo 同时存在 ObjectId 与字符串两种存储形态；原生集合按两种类型
   // 一并取回，再 hydrate/populate，避免负责人正确的预约任务被类型转换静默漏掉。
-  const requestedLimit = Math.min(Number(limit) || 100, 200);
-  const rawTasks = await FollowUp.collection.find(filter).sort(status === 'completed' ? { completedAt: -1 } : { date: 1 }).limit(1000).toArray();
+  const requestedLimit = status === 'active' ? undefined : Math.min(Number(limit) || 100, 200);
+  if (status === 'active') filter.status = { $in: ['planned', 'in_progress', 'missed'] };
+  else if (status) filter.status = status;
+  const rawTasks = await FollowUp.collection.find(filter).sort(status === 'completed' ? { completedAt: -1 } : { date: 1 }).toArray();
   const queriedTasks = rawTasks.map(task => FollowUp.hydrate(task));
   await FollowUp.populate(queriedTasks, [
     { path: 'patientId', select: 'name phone gender age chronicDiseases' },
@@ -10351,7 +10353,7 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     const byYear = { ...(updated.byYear || {}) };
     // 编辑/审核针对具体年度（默认顶层年度或当前年）
     const y = String(year || updated.latestYear || (updated.generatedAt ? new Date(updated.generatedAt).getFullYear() : new Date().getFullYear()));
-    const yearEntry = byYear[y] || {};
+    const yearEntry = byYear[y] || (!Object.keys(byYear).length && current.sections ? current : {});
     // 兼容旧结构（无records数组），历史数据只有一条记录时包装成数组
     const records = Array.isArray(yearEntry.records) ? [...yearEntry.records] : (yearEntry.sections ? [yearEntry] : []);
     // recordIndex 不传默认操作最新一条（index 0，数组已按时间新到旧排序）——绝大多数审核场景
@@ -12210,6 +12212,7 @@ router.patch('/content-reviews/:id/review', staffAuth, async (req, res) => {
 
 router.get('/ai-todos', staffAuth, async (req, res) => {
   try {
+    const { summaryTodos, visibleTodo } = require('../utils/humanWorkbench');
     const role = req.staff.role;
     const isSuper = role === 'superadmin';
     // 当前角色能审核哪些场景类型；超管看全部
@@ -12233,7 +12236,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       const reviewFilter = isSuper
         ? { status: { $in: ['pending', 'changes_requested', 'ready_to_publish'] }, currentRole: { $in: ['nutritionist', 'familyDoctor', 'healthPlanner'] } }
         : { status: role === 'healthPlanner' ? 'ready_to_publish' : { $in: ['pending', 'changes_requested'] }, currentRole: role };
-      const contentReviews = await ContentReview.find(reviewFilter).sort({ updatedAt: -1 }).limit(50).lean();
+      const contentReviews = await ContentReview.find(reviewFilter).sort({ updatedAt: -1 }).lean();
       contentReviews.forEach(item => todos.push({
         id: `geo_content_${item._id}`,
         type: 'geo_content_review',
@@ -12283,11 +12286,12 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     // 因此按 assignedTo（而不是客户的当前角色归属）展示，避免任务在转派后消失。
     const kfHandoffFilter={tags:{$all:['微信客服','需人工接管']},status:{$in:['planned','in_progress']}};
     if(!isSuper) kfHandoffFilter.assignedTo=req.staff._id;
-    const kfHandoffs=await FollowUp.find(kfHandoffFilter).sort({createdAt:-1}).limit(100)
+    const kfHandoffs=await FollowUp.find(kfHandoffFilter).sort({createdAt:-1})
       .populate('patientId','name preferredTitle').lean();
     kfHandoffs.forEach(task=>{
       const patient=task.patientId;
       todos.push({
+        assignedTo: String(task.assignedTo || ''),
         id:'wecomkf_'+task._id,type:'wecom_kf_handoff',label:'微信客服待人工接管',priority:1,
         patientName:patient?.preferredTitle||patient?.name||'已解绑客户',patientId:String(patient?._id||''),
         summary:'请在企业微信客服后台接管；客户原文不在此展示。',
@@ -12297,8 +12301,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     });
 
     if (can('service_proposal_review')) {
-      const proposalFilter = { status: 'pending', planner: req.staff._id };
-      const proposals = await ServiceProposal.find(proposalFilter).populate('user', 'name phone').sort({ createdAt: -1 }).limit(50).lean();
+      const proposalFilter = { status: 'pending', ...(isSuper ? {} : { planner: req.staff._id }) };
+      const proposals = await ServiceProposal.find(proposalFilter).populate('user', 'name phone').sort({ createdAt: -1 }).lean();
       proposals.forEach(proposal => todos.push({
         id: 'serviceproposal_' + proposal._id, type: 'service_proposal_review', label: '服务方案草稿待审核', priority: 2,
         patientName: proposal.user?.name || '未知', patientId: String(proposal.user?._id || ''),
@@ -12315,7 +12319,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     // 必须已有实际文件，避免体检计划预先生成的空报告占位记录成为待办。
     if (can('report_parse')) {
       const parseFilter = {
-        aiStatus: 'none',
+        aiStatus: { $in: ['none', 'failed'] },
         audit_status: { $nin: ['audited', 'rejected'] },
         $nor: [manualOnlyReportFilter],
         $or: [
@@ -12326,13 +12330,13 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
       };
       const toParseReports = await MedicalReport.find(parseFilter)
-        .populate('user', 'name phone').sort({ createdAt: -1 }).limit(50).lean();
+        .populate('user', 'name phone').sort({ createdAt: -1 }).lean();
       toParseReports.forEach(r => {
         const createdAt = r.createdAt;
         todos.push({
-          id: 'reportparse_' + r._id, type: 'report_parse', label: '体检报告待解析', priority: 2,
+          id: 'reportparse_' + r._id, type: 'report_parse', label: r.aiStatus === 'failed' ? '报告解析失败·待人工处理' : '体检报告待解析', priority: r.aiStatus === 'failed' ? 1 : 2,
           patientName: r.user?.name || '未知', patientId: String(r.user?._id || ''),
-          summary: `${r.title} · ${r.uploadedBy ? '医护上传' : '客户上传体检报告'}，待处理`,
+          summary: `${r.title} · ${r.aiStatus === 'failed' ? '请重试解析或人工核对资料' : r.uploadedBy ? '医护上传' : '客户上传体检报告'}，待处理`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${r.user?._id}?tab=reports&reportId=${r._id}`,
         });
@@ -12351,7 +12355,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
       };
       const pendingReports = await MedicalReport.find(reportFilter)
-        .populate('user', 'name phone').sort({ updatedAt: -1 }).limit(50).lean();
+        .populate('user', 'name phone').sort({ updatedAt: -1 }).lean();
       pendingReports.forEach(r => {
         const createdAt = r.updatedAt || r.createdAt;
         const isOutpatientMaterial = ['prescription_order', 'outpatient_record'].includes(r.documentCategory) || /门诊一站式/.test(r.title || '');
@@ -12374,7 +12378,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         { 'legacyDispatchIntent.status': 'pending', 'legacyDispatchIntent.createdAt': { $lt: new Date(Date.now() - 5 * 60 * 1000) } },
       ],
         ...(myPatientIds ? { user: { $in: myPatientIds } } : {}) })
-        .select('_id user title planId planItemSync legacyReviewWrite legacyDispatchIntent updatedAt').populate('user', 'name').sort({ updatedAt: -1 }).limit(50).lean();
+        .select('_id user title planId planItemSync legacyReviewWrite legacyDispatchIntent updatedAt').populate('user', 'name').sort({ updatedAt: -1 }).lean();
       conflicts.forEach(r => {
         if (!r.user?._id) return;
         const legacyStalled = r.legacyReviewWrite?.status === 'running';
@@ -12403,7 +12407,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
       };
       const reportsToInterpret = await MedicalReport.find(interpretationFilter)
-        .populate('user', 'name phone').sort({ audited_at: -1, updatedAt: -1 }).limit(50).lean();
+        .populate('user', 'name phone').sort({ audited_at: -1, updatedAt: -1 }).lean();
       reportsToInterpret.forEach(r => {
         const createdAt = r.audited_at || r.updatedAt || r.createdAt;
         todos.push({
@@ -12425,7 +12429,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         ...(isSuper ? {} : { assignedTo: req.staff._id }),
       };
       const reportFollowUpReviews = await FollowUp.find(reportFollowUpFilter)
-        .populate('patientId', 'name').sort({ createdAt: -1 }).limit(50).lean();
+        .populate('patientId', 'name').sort({ createdAt: -1 }).lean();
       reportFollowUpReviews.forEach(task => {
         if (!inMyScope(task.patientId?._id)) return;
         const createdAt = task.createdAt || now;
@@ -12449,7 +12453,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
       };
       const healthCourseReports = await MedicalReport.find(healthCourseFilter)
-        .populate('user', 'name diseaseRecords medicalRecord').sort({ 'healthCourseDraft.generatedAt': -1, updatedAt: -1 }).limit(50).lean();
+        .populate('user', 'name diseaseRecords medicalRecord').sort({ 'healthCourseDraft.generatedAt': -1, updatedAt: -1 }).lean();
       healthCourseReports.forEach(report => {
         if (findReportArchive(normalizedDiseaseRecords(report.user || {}),report._id)) return;
         const createdAt = report.healthCourseDraft?.generatedAt || report.updatedAt || report.createdAt || now;
@@ -12470,7 +12474,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         'symptomWorkflow.status': { $in: ['pending_manager', 'pending_doctor'] },
         'symptomWorkflow.verifiedAt': null,
         ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
-      }).populate('user', 'name phone').sort({ recordedAt: -1 }).limit(50).lean();
+      }).populate('user', 'name phone').sort({ recordedAt: -1 }).lean();
       records.forEach(r => todos.push({
         id: 'symptom_verify_' + r._id,
         type: 'symptom_verify',
@@ -12494,7 +12498,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
       };
       const symptomRecords = await HealthRecord.find(symptomFilter)
-        .populate('user', 'name phone').sort({ recordedAt: -1 }).limit(50).lean();
+        .populate('user', 'name phone').sort({ recordedAt: -1 }).lean();
       symptomRecords.forEach(r => {
         todos.push({
           id: 'symptom_' + r._id,
@@ -12519,7 +12523,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
       };
       const dietaryResponses = await QuestionnaireResponse.find(dietaryFilter)
-        .populate('user', 'name phone').sort({ submittedAt: -1 }).limit(50).lean();
+        .populate('user', 'name phone').sort({ submittedAt: -1 }).lean();
       dietaryResponses.forEach(r => {
         const createdAt = r.submittedAt || r.createdAt;
         todos.push({
@@ -12536,7 +12540,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     if (can('archive_review')) {
       const archiveFilter = { archiveDraft: { $ne: null }, ...(myPatientIds ? { _id: { $in: myPatientIds } } : {}) };
       const draftUsers = await User.find(archiveFilter)
-        .select('name archiveDraft updatedAt').limit(50).lean();
+        .select('name archiveDraft updatedAt').lean();
       draftUsers.forEach(u => {
         const d = u.archiveDraft || {};
         const cnt = Array.isArray(d.items) ? d.items.length : (d.fields ? Object.keys(d.fields).length : 0);
@@ -12557,54 +12561,15 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       // 否则用当前角色对应的会员范围（myPatientIds 已按 role 算好）
       const sumFilter = { aiHealthSummary: { $ne: null }, ...(myPatientIds ? { _id: { $in: myPatientIds } } : {}) };
       const sumUsers = await User.find(sumFilter)
-        .select('name aiHealthSummary').limit(100).lean();
-      sumUsers.forEach(u => {
-        const root = u.aiHealthSummary || {};
-        // 兼容旧数据（无 byYear）
-        let byYear = root.byYear || {};
-        if (Object.keys(byYear).length === 0 && root.sections) {
-          const oy = String(root.generatedAt ? new Date(root.generatedAt).getFullYear() : 2026);
-          byYear = { [oy]: { records: [{ sections: root.sections, generatedAt: root.generatedAt, approvedAt: root.approvedAt }] } };
-        }
-        // 取最近一个已生成年度
-        const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a));
-        const y = years[0];
-        if (!y) return;
-        const yearEntry = byYear[y] || {};
-        // 历史记录制：待办只关心该年度最新一条记录（records[0]，数组已按时间新到旧排序）
-        const records = Array.isArray(yearEntry.records) ? yearEntry.records : (yearEntry.sections ? [yearEntry] : []);
-        const e = records[0] || {};
-        if (!e.sections) return;
-        const createdAt = e.generatedAt || now;
-        const overdue = (now - new Date(createdAt)) > DAY;
-        // 健康顾问审 5 维（整体未通过 && 医师维度未通过；自助生成的免审核，不进队列）
-        if (can('summary_review') && e.source !== 'self_service' && !e.approvedAt && !e.doctorApprovedAt) {
-          todos.push({
-            id: 'summary_' + u._id, type: 'summary_review', label: 'AI健康信息整理待核对（5维度）', priority: 2,
-            patientName: u.name || '未知', patientId: String(u._id),
-            summary: `${y}年度 · 肿瘤/心脑血管/慢病/体检全面性/优先医疗问题`,
-            createdAt, overdue, link: `/patients/${u._id}?tab=ai&aiYear=${y}`,
-          });
-        }
-        // 营养师审「生活方式评估」单维度
-        const hasLifestyle = !!e.sections.lifestyle_assessment &&
-          ((e.sections.lifestyle_assessment.items || []).length > 0 || e.sections.lifestyle_assessment.summary);
-        if (can('lifestyle_review') && e.source !== 'self_service' && hasLifestyle && !e.approvedAt && !e.nutritionApprovedAt) {
-          todos.push({
-            id: 'lifestyle_' + u._id, type: 'lifestyle_review', label: '生活方式评估待审核', priority: 3,
-            patientName: u.name || '未知', patientId: String(u._id),
-            summary: `${y}年度 · AI健康信息整理「生活方式信息」维度`,
-            createdAt, overdue, link: `/patients/${u._id}?tab=ai&aiYear=${y}`,
-          });
-        }
-      });
+        .select('name aiHealthSummary').lean();
+      sumUsers.forEach(u => todos.push(...summaryTodos(u, can, now)));
     }
 
     // ── 健康顾问：AI用药建议待审核 ──
     if (can('medication_review')) {
       const medFilter = { aiStatus: 'pending', ...(myPatientIds ? { user: { $in: myPatientIds } } : {}) };
       const pendingMeds = await Medication.find(medFilter)
-        .populate('user', 'name').sort({ createdAt: -1 }).limit(50).lean();
+        .populate('user', 'name').sort({ createdAt: -1 }).lean();
       pendingMeds.forEach(m => {
         const createdAt = m.createdAt || new Date();
         todos.push({
@@ -12621,7 +12586,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     if (can('supplement_review')) {
       const supFilter = { aiStatus: 'pending', ...(myPatientIds ? { user: { $in: myPatientIds } } : {}) };
       const pendingSups = await Supplement.find(supFilter)
-        .populate('user', 'name').sort({ createdAt: -1 }).limit(50).lean();
+        .populate('user', 'name').sort({ createdAt: -1 }).lean();
       pendingSups.forEach(s => {
         const createdAt = s.createdAt || new Date();
         todos.push({
@@ -12650,7 +12615,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       if (todoType === 'supply_medication_risk_review') supplyFilter.planType = 'medication';
       if (todoType === 'supply_supplement_risk_review') supplyFilter.planType = 'supplement';
       const duePlans = await RecurringSupplyPlan.find(supplyFilter)
-        .populate('patientId', 'name').sort({ nextDueDate: 1 }).limit(50).lean();
+        .populate('patientId', 'name').sort({ nextDueDate: 1 }).lean();
       duePlans.forEach(p => {
         const itemLabel = p.planType === 'medication' ? '药品' : '营养素';
         const actionLabel = {
@@ -12675,7 +12640,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     if (can('nutrition_plan_review')) {
       const nutriPlanFilter = { type: 'nutrition', 'content.aiStatus': 'pending', ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
       const nutritionPlans = await HealthPlan.find(nutriPlanFilter)
-        .populate('patientId', 'name').sort({ createdAt: -1 }).limit(50).lean();
+        .populate('patientId', 'name').sort({ createdAt: -1 }).lean();
       nutritionPlans.forEach(p => {
         const createdAt = p.createdAt || new Date();
         todos.push({
@@ -12693,7 +12658,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       // 已推送方案已进入岗位执行流，不再重复作为“AI待审核”出现。
       const medicalAssistPlanFilter = { type: 'medical_assist', status: 'draft', 'content.aiStatus': 'pending', ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
       const medicalAssistPlans = await HealthPlan.find(medicalAssistPlanFilter)
-        .populate('patientId', 'name').populate('sourceOrderId', 'serviceName specificationLabel note serviceRequirements').sort({ createdAt: -1 }).limit(50).lean();
+        .populate('patientId', 'name').populate('sourceOrderId', 'serviceName specificationLabel note serviceRequirements').sort({ createdAt: -1 }).lean();
       medicalAssistPlans.filter(p => !require('../utils/medicationProxyWorkflow').isMedicationProxyOrder(p.sourceOrderId)).forEach(p => {
         const createdAt = p.createdAt || new Date();
         todos.push({
@@ -12710,7 +12675,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     if (can('checkup_plan_review')) {
       const checkupPlanFilter = { type: 'annual_checkup', 'content.aiStatus': 'pending', ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
       const checkupPlans = await HealthPlan.find(checkupPlanFilter)
-        .populate('patientId', 'name').sort({ createdAt: -1 }).limit(50).lean();
+        .populate('patientId', 'name').sort({ createdAt: -1 }).lean();
       checkupPlans.forEach(p => {
         const createdAt = p.createdAt || new Date();
         todos.push({
@@ -12756,7 +12721,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     // 阶段性评估按领域进入对应岗位；综合/升级评估归健康顾问，旧营养记录保留原路径。
     if (isSuper || PHASE_ROLE_FIELDS[role]) {
       const assessmentFilter = { ...reviewQueueFilter(isSuper ? 'superadmin' : role), ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
-      const assessments = await PhaseAssessment.find(assessmentFilter).populate('patientId', `name ${Object.values(PHASE_ROLE_FIELDS).join(' ')}`).sort({ createdAt: -1 }).limit(50).lean();
+      const assessments = await PhaseAssessment.find(assessmentFilter).populate('patientId', `name ${Object.values(PHASE_ROLE_FIELDS).join(' ')}`).sort({ createdAt: -1 }).lean();
       assessments.filter(item => item.patientId && isAssignedPhaseReviewer(item.patientId, req.staff, phaseReviewer(item))).forEach(item => todos.push({
         id: 'phase_assessment_' + item._id, type: 'phase_assessment_review', label: item.status === 'archive_pending' ? '阶段性评估已审核·待归档重试' : item.status === 'rejected' ? '阶段性评估待AI重生成' : `阶段性评估待${PHASE_ROLE_LABELS[phaseReviewer(item)]}审核`, priority: item.status === 'doctor_review' ? 3 : 2,
         patientName: item.patientId?.name || '未知', patientId: String(item.patientId?._id || ''),
@@ -12768,8 +12733,11 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
 
     // ── 方案确认后自动生成的随访计划待审核：按 reviewRole 分流（未设置的旧数据默认归健康顾问）──
     if (canFollowupReview) {
-      const pendingFollowUps = await FollowUp.find({ aiStatus: 'pending' })
-        .populate('patientId', 'name').sort({ date: 1 }).limit(50).lean();
+      const pendingFollowUps = await FollowUp.find({ aiStatus: 'pending',
+        ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}),
+        ...(isSuper ? {} : role === 'familyDoctor' ? { $or: [{ reviewRole: 'familyDoctor' }, { reviewRole: null }, { reviewRole: '' }] } : { reviewRole: role }),
+      })
+        .populate('patientId', 'name').sort({ date: 1 }).lean();
       pendingFollowUps.forEach(f => {
         const belongsToRole = f.reviewRole || 'familyDoctor';
         if (!isSuper && belongsToRole !== role) return;
@@ -12790,7 +12758,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     if (can('bp_alert_review')) {
       const bpFilter = { type: 'bloodPressure', aiAlertStatus: 'pending', ...(myPatientIds ? { user: { $in: myPatientIds } } : {}) };
       const alertRecords = await HealthRecord.find(bpFilter)
-        .populate('user', 'name').sort({ recordedAt: -1 }).limit(50).lean();
+        .populate('user', 'name').sort({ recordedAt: -1 }).lean();
       alertRecords.forEach(r => {
         const createdAt = r.recordedAt || r.createdAt;
         const sys = r.extra?.sys || String(r.value).split('/')[0];
@@ -12807,7 +12775,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     // ── 健康顾问：风险预警待处理 → User.aiRiskAssessment(按年度) 最近一年 高/危急 且未审核 ──
     if (can('risk_review')) {
       const riskFilter = { aiRiskAssessment: { $ne: null }, ...(myPatientIds ? { _id: { $in: myPatientIds } } : {}) };
-      const riskUsers = await User.find(riskFilter).select('name aiRiskAssessment').limit(200).lean();
+      const riskUsers = await User.find(riskFilter).select('name aiRiskAssessment').lean();
       riskUsers.forEach(u => {
         const byYear = riskByYear(u.aiRiskAssessment);
         const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a));
@@ -12842,7 +12810,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       if (myPatientIds) draftFilter.patientId = { $in: myPatientIds };
       const draftLabel = { routine: '日常随访', doctor_followup: '健康顾问跟进', nutrition: '营养干预' };
       const pendingDrafts = await ServiceRecord.find(draftFilter)
-        .populate('patientId', 'name').sort({ aiGeneratedAt: -1 }).limit(50).lean();
+        .populate('patientId', 'name').sort({ aiGeneratedAt: -1 }).lean();
       pendingDrafts.forEach(r => {
         const createdAt = r.aiGeneratedAt || r.createdAt;
         todos.push({
@@ -12860,7 +12828,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     if (can('transfer_human')) {
       const transferFilter = { transferred: true, resolved: false, ...(myPatientIds ? { user: { $in: myPatientIds } } : {}) };
       const pendingTransfers = await ChatLog.find(transferFilter)
-        .populate('user', 'name phone').sort({ createdAt: -1 }).limit(50).lean();
+        .populate('user', 'name phone').sort({ createdAt: -1 }).lean();
       pendingTransfers.forEach(c => {
         const createdAt = c.createdAt;
         todos.push({
@@ -12877,7 +12845,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     if (isSuper || role === 'familyDoctor') {
       const interestFilter = { status: 'published', response: 'interested', handledAt: null,
         ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
-      const interests = await AnnualServiceRecommendation.find(interestFilter).sort({ respondedAt: -1 }).limit(100)
+      const interests = await AnnualServiceRecommendation.find(interestFilter).sort({ respondedAt: -1 })
         .populate('patientId', 'name').populate('planId', 'year').lean();
       interests.filter(item => item.patientId && item.planId).forEach(item => todos.push({
         id: 'annual_service_interest_' + item._id, type: 'annual_service_interest', label: '年度服务建议·客户需要协助', priority: 1,
@@ -12890,8 +12858,9 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
 
     // 统一归属闸门：非超管的所有工作台任务最终都必须属于本人可见客户范围。
     // 各任务查询仍尽量提前按归属过滤以控制数据量；这里负责兜底，防止新增任务类型漏加条件。
-    // GEO 稿件不关联会员，须绕开会员归属闸门；其余任务仍严格按本人会员范围过滤。
-    const scopedTodos = isSuper ? todos : todos.filter(todo => todo.type === 'geo_content_review' || inMyScope(todo.patientId));
+    // GEO 稿件按指定审核人、客服接管按实际指派人校验；其余按本人会员范围过滤。
+    todos.push(...await require('../utils/workbenchAssignmentAttention').loadAssignmentAttention(req.staff));
+    const scopedTodos = todos.filter(todo => visibleTodo(todo, req.staff, inMyScope));
 
     // 按优先级排序：priority越小越紧急，同级按时间倒序；超时优先
     scopedTodos.sort((a, b) => {

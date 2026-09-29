@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { staffAPI } from '../api'
 
 const when = value => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '—'
@@ -8,7 +8,10 @@ const nextDay = () => { const d = new Date(Date.now() + 86400000); return new Da
 
 export default function VisitorLeadWorkbench({ toast }) {
   const nav = useNavigate()
-  const [tab, setTab] = useState('leads'), [status, setStatus] = useState('new'), [page, setPage] = useState(1)
+  const location = useLocation()
+  const params = new URLSearchParams(location.search)
+  const [itemId, setItemId] = useState(params.get('itemId') || '')
+  const [tab, setTab] = useState(params.get('workbench') === 'intakes' ? 'intakes' : 'leads'), [status, setStatus] = useState(params.get('status') || 'new'), [page, setPage] = useState(1)
   const [result, setResult] = useState({ data: [], total: 0, limit: 20 }), [loading, setLoading] = useState(false), [error, setError] = useState('')
   const [edit, setEdit] = useState(null), [form, setForm] = useState({}), [busy, setBusy] = useState(false)
   const [patients, setPatients] = useState([]), [search, setSearch] = useState(''), [options, setOptions] = useState({ orders: [], plans: [] })
@@ -17,13 +20,13 @@ export default function VisitorLeadWorkbench({ toast }) {
   async function load() {
     const ticket = ++generation.current; setLoading(true); setError('')
     try {
-      const data = await (tab === 'leads' ? staffAPI.getVisitorLeads : staffAPI.getServiceIntakes)({ status, page })
+      const data = await (tab === 'leads' ? staffAPI.getVisitorLeads : staffAPI.getServiceIntakes)({ status, page, ...(itemId ? { itemId } : {}) })
       if (ticket === generation.current) setResult(data)
     } catch (e) { if (ticket === generation.current) setError(e.message) }
     finally { if (ticket === generation.current) setLoading(false) }
   }
-  useEffect(() => { load(); return () => { generation.current++ } }, [tab, status, page])
-  function switchTab(value) { setTab(value); setStatus(value === 'leads' ? 'new' : 'open'); setPage(1) }
+  useEffect(() => { load(); return () => { generation.current++ } }, [tab, status, page, itemId])
+  function switchTab(value) { setItemId(''); setTab(value); setStatus(value === 'leads' ? 'new' : 'open'); setPage(1) }
   function closeDialog() { if (submitting.current) return; dialogVersion.current++; setEdit(null) }
   async function open(row, action) {
     const version = ++dialogVersion.current
@@ -57,6 +60,7 @@ export default function VisitorLeadWorkbench({ toast }) {
   }
   const field = key => e => setForm(prev => ({ ...prev, [key]: e.target.value }))
   return <>
+    {itemId && <p role="status">已定位工作台事项 <button className="btn btn-secondary" onClick={() => setItemId('')}>查看全部</button></p>}
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
       <button className={`btn ${tab === 'leads' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => switchTab('leads')}>官网咨询</button>
       <button className={`btn ${tab === 'intakes' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => switchTab('intakes')}>服务承接与进度</button>

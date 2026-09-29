@@ -53,6 +53,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
   const { staff } = useStaff()
   const [dispatchTask, setDispatchTask] = useState(null)
   const [items, setItems] = useState([])
+  const [loadError, setLoadError] = useState('')
   // 默认只看今天需要亲自处理的事项；任务堆积时不会再把未来计划、督办卡和
   // 等待上游的任务混在最前面。
   const [group, setGroup] = useState('actionable')
@@ -79,10 +80,11 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
     const refresh = () => staffAPI.getServiceTasks({ status: 'active', includeFuture: '1', limit: 100 })
       .then(r => {
         const tasks = (r.data || []).filter(task => task.taskRole === 'supervisor' || task.serviceTracking?.status !== 'waiting')
+        setLoadError('')
         setItems(tasks)
         onTasksLoaded?.(tasks)
       })
-      .catch(() => {})
+      .catch(error => setLoadError(error.message || '服务待办加载失败，请刷新重试'))
     refresh()
     const refreshIfVisible = () => { if (document.visibilityState === 'visible') refresh() }
     window.addEventListener('focus', refreshIfVisible)
@@ -235,6 +237,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
         </div>
         <button type="button" className="btn btn-secondary btn-sm" onClick={showHistory}>{historyOpen ? '收起已处理' : '查看已处理'}</button>
       </div>
+      {loadError && <div role="alert" style={{ padding: '10px 20px', color: '#B42318' }}>{loadError}；当前列表可能不是最新结果。</div>}
       <div style={{ padding: '10px 20px 2px' }}>
         <input type="search" className="form-input" aria-label="搜索服务任务" placeholder="搜索客户姓名、手机号、服务名称或任务" value={search}
           onChange={event => { setSearch(event.target.value); setPage(1) }} />
@@ -251,7 +254,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
         })}
       </div>
       <div className="card-body" style={{ padding: '8px 20px' }}>
-        {!pagedServices.length && <div style={{ padding: '12px 0', color: '#667085', fontSize: 13 }}>没有找到匹配的服务任务</div>}
+        {!loadError && !pagedServices.length && <div style={{ padding: '12px 0', color: '#667085', fontSize: 13 }}>没有找到匹配的服务任务</div>}
         {pagedServices.map((service, index) => {
           const task = service.task
           const isFuture = task.date && new Date(task.date).getTime() > Date.now()

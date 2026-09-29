@@ -16,5 +16,5 @@ test('service tasks use the native ownership query before server-side filtering'
   assert.doesNotMatch(route[0], /FollowUp\.find\(filter\)/)
   assert.match(route[0], /const isServiceTask = \(task\.sourceType === 'health_plan'/)
   assert.match(route[0], /!\['planned', 'in_progress', 'missed'\]\.includes\(task\.status\)/)
-  assert.doesNotMatch(route[0], /status.*\$in.*planned.*in_progress.*missed/)
+  assert.match(route[0], /status.*\$in.*planned.*in_progress.*missed/)
 })

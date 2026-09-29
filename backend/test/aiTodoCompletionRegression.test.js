@@ -42,7 +42,7 @@ test('AI todo aggregation scopes patient tasks while allowing non-patient GEO re
     staffRouteSource.indexOf("router.patch('/service-proposals/:id/review'"),
   );
 
-  assert.match(todoRoute, /const scopedTodos = isSuper \? todos : todos\.filter\(todo => todo\.type === 'geo_content_review' \|\| inMyScope\(todo\.patientId\)\)/);
+  assert.match(todoRoute, /const scopedTodos = todos\.filter\(todo => visibleTodo\(todo, req\.staff, inMyScope\)\)/);
   assert.match(todoRoute, /data: scopedTodos, total: scopedTodos\.length/);
 });
 

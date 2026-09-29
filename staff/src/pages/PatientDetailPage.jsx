@@ -1,3 +1,4 @@
+import { summaryTarget } from '../utils/workbenchTargets'
 import { taskProgress, readableServiceText } from '../utils/staffWorkspace'
 import diseaseSummaryHelpers from '../../../shared/diseaseSummary.cjs'
 import archiveHelpers from '../../../shared/diseaseReportArchive.cjs'
@@ -2346,6 +2347,15 @@ export default function PatientDetailPage() {
   const [aiYear, setAiYear] = useState(null)        // 当前查看的AI健康分析年度
   const [aiRecordIndex, setAiRecordIndex] = useState({ doctor: 0, nutrition: 0 })
   const [aiAnalysisView, setAiAnalysisView] = useState('doctor')
+  const [aiTodoTargetMissing, setAiTodoTargetMissing] = useState(false)
+  useEffect(() => {
+    if (!data?.user) return
+    const target = summaryTarget(data.user.aiHealthSummary, location.search)
+    setAiTodoTargetMissing(!!target?.missing)
+    if (!target) return
+    setAiYear(target.year); setScreeningWorkspaceView('analysis'); setAiAnalysisView(target.scope)
+    if (!target.missing) setAiRecordIndex(v => ({ ...v, [target.scope]: target.index }))
+  }, [location.search, data?.user?.aiHealthSummary])
   const [lastRegeneratedItem, setLastRegeneratedItem] = useState('')
   const [aiSourceGroup, setAiSourceGroup] = useState(null) // { title, ids }
   // 场景八：健康关注提示（内部沿用既有风险数据结构）
@@ -7915,12 +7925,13 @@ export default function PatientDetailPage() {
 
       {/* ── AI Tab ── */}
       {tab === 'ai' && screeningWorkspaceView === 'analysis' && (() => {
+        if (aiTodoTargetMissing) return <div role="alert" className="card">该待审记录已变化或被删除，请返回工作台刷新后重新进入。<button onClick={() => nav('/')}>返回工作台</button></div>
         const aisRoot = user.aiHealthSummary || {}
         // 按年度组织（兼容旧数据：无 byYear 但有 sections → 归到其年份或2026）
         let byYear = aisRoot.byYear || {}
         if (Object.keys(byYear).length === 0 && aisRoot.sections) {
           const oy = String(aisRoot.generatedAt ? new Date(aisRoot.generatedAt).getFullYear() : 2026)
-          byYear = { [oy]: { sections: aisRoot.sections, generatedAt: aisRoot.generatedAt, approvedAt: aisRoot.approvedAt, approvedBy: aisRoot.approvedBy } }
+          byYear = { [oy]: { ...aisRoot } }
         }
         const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a))
         const nowY = new Date().getFullYear()

@@ -56,9 +56,15 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
     ]);
     return { ...row, customer, order, plan, progress: progress(row, order, plan, tasks) };
   }
+  router.get('/visitor-leads/workbench', checkPermission('leads', 'view'), wrap(async (req, res) => {
+    const visible = await getVisiblePlanPatientIds(req.staff);
+    const data = await require('../utils/consultationWorkbench').consultationTodos(req.staff, visible, { Lead, Intake });
+    res.json({ success: true, data, total: data.length });
+  }));
   router.get('/visitor-leads', checkPermission('leads', 'view'), wrap(async (req, res) => {
     const filter = { ...scope(req), ...(req.staff.role === 'superadmin' ? {} : { $or: [{ assignedTo: null }, { assignedTo: req.staff._id }] }),
       ...(['new', 'contacted', 'closed'].includes(req.query.status) ? { status: req.query.status } : {}) };
+    if (req.query.itemId) { if (!mongoose.isValidObjectId(req.query.itemId)) fail('事项标识无效'); filter._id = req.query.itemId; }
     const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1), limit = 50;
     const [rows, total] = await Promise.all([Lead.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).populate('assignedTo', 'name').lean(), Lead.countDocuments(filter)]);
     const intakes = await Intake.find({ _id: { $in: rows.map(r => r._id) }, ...scope(req), ...ownerScope(req) }).select('_id').lean();
@@ -109,6 +115,7 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
     const visible = await getVisiblePlanPatientIds(req.staff);
     const filter = { ...scope(req), ...ownerScope(req), ...(visible ? { patientId: { $in: visible } } : {}),
       ...(['open', 'closed'].includes(req.query.status) ? { status: req.query.status } : {}) };
+    if (req.query.itemId) { if (!mongoose.isValidObjectId(req.query.itemId)) fail('事项标识无效'); filter._id = req.query.itemId; }
     const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1), limit = 20;
     const [rows, total, overdue] = await Promise.all([Intake.find(filter).sort({ nextContactAt: 1, _id: 1 }).skip((page - 1) * limit).limit(limit).lean(), Intake.countDocuments(filter), Intake.countDocuments({ ...filter, status: 'open', nextContactAt: { $lt: new Date() } })]);
     res.json({ success: true, data: await Promise.all(rows.map(row => details(req, row))), total, page, limit, overdue });

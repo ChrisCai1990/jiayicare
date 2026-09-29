@@ -8,6 +8,7 @@ import SupplyWorkflowModal from './SupplyWorkflowModal'
 import CheckupHandoffTodoModal from './CheckupHandoffTodoModal'
 
 const TYPE_CONFIG = {
+  assignment_attention: { icon: '⚠️', label: '待办缺少有效负责人', color: '#DC3545', priority: 1 },
   report_parse:    { icon: '📄', label: '体检报告待解析', color: '#D97706', priority: 2 },
   report_interpretation: { icon: '🩺', label: '体检报告待解读', color: '#0F766E', priority: 2 },
   report_followup_review: { icon: '📅', label: '报告随访草稿待审核', color: '#0F766E', priority: 2 },
@@ -65,7 +66,7 @@ const TODO_GROUPS = [
   { key: 'all', label: '全部' },
   { key: 'report', label: '报告与资料', types: ['report_parse','report_review','report_interpretation','report_followup_review','health_course_review','report_plan_conflict','archive_review','summary_review','lifestyle_review','dietary_survey_review','medication_review','supplement_review'] },
   { key: 'plan', label: '方案与评估', types: ['trend_review','plan_review','nutrition_plan_review','checkup_plan_review','phase_assessment_review','annual_renewal_confirmation','followup_review','service_draft_review','medical_assist_plan_review','service_proposal_review'] },
-  { key: 'risk', label: '风险与异常', types: ['risk_review','bp_alert_review','risk_alert','transfer_human','wecom_kf_handoff','checkup_handoff_attention','checkup_preparation_dispatch'] },
+  { key: 'risk', label: '风险与异常', types: ['assignment_attention','risk_review','bp_alert_review','risk_alert','transfer_human','wecom_kf_handoff','checkup_handoff_attention','checkup_preparation_dispatch'] },
   { key: 'content', label: '内容与安排', types: ['geo_content_review','checkup_handoff_pending','push_review','draft_review','supply_intake','supply_medication_risk_review','supply_supplement_risk_review','supply_arrangement','supply_fulfillment','supply_receipt'] },
 ]
 
@@ -184,9 +185,9 @@ export default function AiTodosPanel() {
       <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <div className="card-title">AI 待审核任务</div>
+            <div className="card-title">待审核与异常处理</div>
             {staff?.roleLabel && staff?.role !== 'superadmin' && (
-              <span style={{ fontSize: 12, color: '#8AA89C' }}>· {staff.roleLabel}（仅显示本人可审核项）</span>
+              <span style={{ fontSize: 12, color: '#8AA89C' }}>· {staff.roleLabel}（本人待审与需协调事项）</span>
             )}
             {todos.length > 0 && (
               <span style={{
@@ -201,7 +202,7 @@ export default function AiTodosPanel() {
               </span>
             )}
           </div>
-          <div style={{ marginTop: 3, fontSize: 12, color: '#667085' }}>AI 生成内容或 AI 触发提醒的人工核对；完成后如需办理，会转入上方服务流程。</div>
+          <div style={{ marginTop: 3, fontSize: 12, color: '#667085' }}>人工审核、AI 草稿核对和责任异常；缺少负责人时请先核对归属及原任务指派。</div>
         </div>
         {['nutritionist', 'familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && <button onClick={() => nav('/content-reviews')} style={{ border: 'none', background: 'none', color: '#1E6B50', cursor: 'pointer', fontSize: 12 }}>审核记录</button>}
       </div>
@@ -227,7 +228,7 @@ export default function AiTodosPanel() {
           <option value="priority">优先级优先，同级最久优先</option><option value="oldest">等待最久优先</option>
         </select>
         <button className="btn btn-secondary btn-sm" onClick={() => { setGroup('all'); setQuery(''); setAge('all'); setPriority('all'); setSort('priority'); setPage(0) }}>清除筛选</button>
-        <span role="status" style={{ width: '100%', fontSize: 12, color: '#65776F' }}>匹配 {filteredTodos.length} 项 · 每页{PAGE_SIZE}项 · {staff?.role === 'superadmin' ? '当前为全平台待审视图' : '仅显示当前账号可审核任务'}。历史提醒请进入原记录核对后处理。</span>
+        <span role="status" style={{ width: '100%', fontSize: 12, color: '#65776F' }}>匹配 {filteredTodos.length} 项 · 每页{PAGE_SIZE}项 · {staff?.role === 'superadmin' ? '当前为全平台待审视图' : '显示当前账号待审事项及需协调的异常'}。历史提醒请进入原记录核对后处理。</span>
       </div>
       {loadError && <div role="alert" className="login-err" style={{ margin: '0 20px 10px' }}>{loadError} <button onClick={() => refreshTodos()}>重试</button></div>}
       <div className="card-body" style={{ padding: '4px 20px 12px', maxHeight: 560, overflowY: 'auto' }}>
