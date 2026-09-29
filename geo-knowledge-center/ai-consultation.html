@@ -33,7 +33,7 @@
     (function () {
       var consent = document.getElementById('consent'), chat = document.getElementById('chat'), message = document.getElementById('message'), history = [], handoffNotes = [], selectedTopic = '', summaryEdited = false;
       var cityInput = document.getElementById('handoff-city'), contactWindowInput = document.getElementById('handoff-contact-window'), topicInput = document.getElementById('handoff-topic'), summaryInput = document.getElementById('handoff-summary');
-      var handoffPending = false;
+      var handoffPending = false, handoffRequestId = null, handoffPayloadKey = null;
       var source = new URLSearchParams(window.location.search).get('source') || 'website_ai';
       if (!/^[a-z0-9_-]{1,40}$/i.test(source)) source = 'website_ai';
       function append(text, kind) { var el = document.createElement('p'); el.className = kind === 'user' ? 'user-message' : 'assistant-message'; el.textContent = text; chat.appendChild(el); chat.scrollTop = chat.scrollHeight; }
@@ -55,8 +55,9 @@
       });
       document.getElementById('handoff-form').addEventListener('submit', async function (event) {
         event.preventDefault(); if (handoffPending || !consented()) return; var formElement = event.currentTarget, form = new FormData(formElement), result = document.getElementById('handoff-result'); var payload = { consent: true, source: source }; form.forEach(function (value, key) { payload[key] = value; });
+        var payloadKey = JSON.stringify(payload); if (!handoffRequestId || payloadKey !== handoffPayloadKey) { var bytes = new Uint8Array(16); window.crypto.getRandomValues(bytes); handoffRequestId = Array.from(bytes, function (v) { return v.toString(16).padStart(2, '0'); }).join(''); handoffPayloadKey = payloadKey; } payload.requestId = handoffRequestId;
         var submitButton = formElement.querySelector('button[type=submit]'); handoffPending = true; submitButton.disabled = true; submitButton.textContent = '正在提交…';
-        try { var response = await fetch('/api/visitor-assistant/handoff', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); var body = await response.json(); if (!response.ok || !body.success) throw new Error(body.message || '提交失败'); result.textContent = body.message; formElement.reset(); handoffNotes = []; selectedTopic = ''; summaryEdited = false; }
+        try { var response = await fetch('/api/visitor-assistant/handoff', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); var body = await response.json(); if (!response.ok || !body.success) throw new Error(body.message || '提交失败'); result.textContent = body.message; handoffRequestId = null; handoffPayloadKey = null; formElement.reset(); handoffNotes = []; selectedTopic = ''; summaryEdited = false; }
         catch (error) { result.textContent = error.message; }
         finally { handoffPending = false; submitButton.disabled = false; submitButton.textContent = '提交线下沟通申请'; }
       });
