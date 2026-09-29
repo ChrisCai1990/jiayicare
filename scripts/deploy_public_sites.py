@@ -105,7 +105,20 @@ with open('/tmp/jiayicare-public-sites.lock','w') as lock:
  for i,item in enumerate(manifest['files']):
   if item['before'] is not None:shutil.copy2(item['target'],backup/('file-'+str(i)))
  git('fetch',str(stage/'release.bundle'),'HEAD')
- git('merge','--ff-only',manifest['revision'])
+ # Preserve runtime-generated articles before Git starts tracking them.
+ untracked=set(git('ls-files','--others','--exclude-standard').splitlines())
+ relocated=[]
+ try:
+  for i,item in enumerate(manifest['files']):
+   if item['source'] not in untracked:continue
+   source=pathlib.Path(repo)/item['source']
+   if not item['source'].startswith('geo-knowledge-center/guides/') or source.suffix!='.html' or digest(source)!=item['before']:raise RuntimeError('Untracked source differs from published article: '+item['source'])
+   saved=backup/('source-'+str(i));shutil.move(source,saved);relocated.append((source,saved))
+  git('merge','--ff-only',manifest['revision'])
+ except Exception:
+  for source,saved in relocated:
+   if not source.exists():shutil.copy2(saved,source)
+  raise
  applied=[]
  try:
   for i,item in enumerate(manifest['files']):
