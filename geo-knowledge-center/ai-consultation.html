@@ -3,27 +3,29 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="嘉医汇 AI 咨询准备助手，帮助梳理非医疗健康管理服务需求。">
-  <title>AI 咨询准备｜嘉医汇</title>
-  <link rel="stylesheet" href="styles.css">
+  <meta name="description" content="咨询嘉医汇服务安排，可直接申请工作人员联系，或用 AI 辅助整理非医疗服务需求。">
+  <title>服务咨询与联系申请｜嘉医汇</title>
+  <link rel="canonical" href="https://jiaycare.com/knowledge/ai-consultation.html">
+  <link rel="stylesheet" href="styles.css?v=20260929-handoff">
 </head>
 <body>
   <header class="site-header"><nav class="shell nav"><a class="brand" href="index.html" aria-label="嘉医汇健康知识中心首页"><span class="brand-logo-stack"><img class="brand-logo" src="assets/jiayihui-logo.png" alt="嘉医汇"><span class="brand-slogan">与远见者 · 共守健康</span></span><span class="brand-title">健康知识中心</span></a></nav></header>
   <main class="article-shell"><nav class="article-navigation" aria-label="页面导航"><a href="https://www.jiaycare.com/">嘉医汇官网</a><a href="https://www.jiaycare.com/services/">服务体系</a><a class="back-link" href="index.html">← 返回理解健康</a></nav><article>
-    <p class="eyebrow">嘉医汇服务支持</p><h1>AI 咨询准备助手</h1><p class="lead">先把非医疗健康管理需求梳理清楚，再由工作人员确认后续服务安排。</p>
+    <p class="eyebrow">嘉医汇服务支持</p><h1>咨询服务安排</h1><p class="lead">可以直接申请工作人员联系，也可以先用 AI 整理服务需求。</p><p><a class="button button-primary" href="#handoff-form">申请工作人员联系</a> <a href="https://www.jiaycare.com/services/start.html#miniprogram">查看小程序商城价格</a></p>
     <div class="medical-note"><strong>请勿输入医疗信息。</strong>不要提交症状、病历、检查报告或指标、用药信息；这不是医疗问诊入口。胸痛、呼吸困难、意识不清等紧急情况，请立即拨打120或前往急诊。</div>
     <section class="assistant-panel" id="assistant-panel">
-      <label class="consent"><input id="consent" type="checkbox"> 我已阅读<a href="privacy-policy.html">隐私政策</a>，同意嘉医汇为回应本次咨询处理我主动提交的非医疗咨询信息；提交线下申请时，本次非医疗沟通要点会由我确认后带入。</label>
+      <label class="consent"><input id="consent" type="checkbox"> 我已阅读<a href="privacy-policy.html">隐私政策</a>，同意嘉医汇为回应本次 AI 咨询处理我主动提交的非医疗咨询信息。</label>
       <div class="quick-topics"><button type="button" data-topic="体重管理">体重管理</button><button type="button" data-topic="生活方式安排">生活方式安排</button><button type="button" data-topic="体检资料整理">体检资料整理</button><button type="button" data-topic="了解服务流程">了解服务流程</button></div>
       <div id="chat" class="visitor-chat" aria-live="polite"><p class="assistant-message">你好，我可以帮助整理非医疗健康管理服务需求。你目前更想了解哪一类服务？</p></div>
       <form id="chat-form" class="chat-form"><label for="message">咨询方向</label><textarea id="message" maxlength="500" placeholder="例如：我想了解体重管理服务的准备流程" required></textarea><button class="button button-primary" type="submit">发送</button></form>
     </section>
-    <section><h2>需要线下进一步沟通？</h2><p>仅留下必要联系方式和经您确认的非医疗沟通要点，健康规划师将据此确认服务安排。不会提交完整聊天记录；请勿填写任何医疗信息。</p>
+    <section>
       <form id="handoff-form" class="handoff-form">
-        <label>姓名<input name="name" maxlength="30" required></label><label>手机号<input name="phone" inputmode="numeric" maxlength="11" required></label>
-        <label>所在城市<input id="handoff-city" name="city" maxlength="40"></label><label>方便联系时间<input id="handoff-contact-window" name="contactWindow" maxlength="60" placeholder="例如：工作日18:00后"></label>
-        <label>咨询方向<select id="handoff-topic" name="topic" required><option value="">请选择</option><option>体重管理</option><option>生活方式安排</option><option>体检资料整理</option><option>了解服务流程</option><option>就医协助</option><option>长期健康管理</option></select></label>
-        <label>本次沟通要点（已自动带入，可补充）<textarea id="handoff-summary" name="summary" maxlength="500" placeholder="例如：希望了解服务流程和需要准备的生活方式记录"></textarea></label><button class="button button-primary" type="submit">提交线下沟通申请</button><p id="handoff-result" class="form-result" aria-live="polite" aria-atomic="true"></p>
+        <div class="handoff-intro"><h2>申请工作人员联系</h2><p>无需先与 AI 对话。留下基础联系信息，由工作人员确认服务安排；如使用过 AI，请核对自动带入的沟通要点。不会提交完整聊天记录，请勿填写病历、报告或用药信息。</p><p>工作日 9:00–17:00 收到申请后 2 小时内回复；非营业时间的申请，在下一服务时段优先响应。</p></div>
+        <label>姓名<input name="name" autocomplete="name" maxlength="30" required></label><label>手机号<input name="phone" type="tel" autocomplete="tel-national" inputmode="numeric" pattern="1[3-9][0-9]{9}" title="请输入11位中国大陆手机号" maxlength="11" required></label>
+        <label>所在城市（选填）<input id="handoff-city" name="city" maxlength="40"></label><label>方便联系时间（选填）<input id="handoff-contact-window" name="contactWindow" maxlength="60" placeholder="例如：工作日14:00–17:00"></label>
+        <label>咨询方向<select id="handoff-topic" name="topic" required><option value="">请选择</option><option value="体重管理">84 天体重与代谢管理</option><option>生活方式安排</option><option>体检资料整理</option><option>了解服务流程</option><option>就医协助</option><option value="长期健康管理">一年期健康管理</option></select></label>
+        <label>服务需求（选填；如有带入内容，请核对）<textarea id="handoff-summary" name="summary" maxlength="500" placeholder="例如：希望了解服务流程和需要准备的生活方式记录"></textarea></label><label class="consent handoff-consent"><input id="handoff-consent" type="checkbox" required>我已阅读<a href="privacy-policy.html">隐私政策</a>，同意嘉医汇为回应本次申请处理上述联系方式和经我确认的服务需求。</label><button class="button button-primary" type="submit">提交联系申请</button><p id="handoff-result" class="form-result" aria-live="polite" aria-atomic="true"></p>
       </form>
     </section>
     <p class="support-line">也可直接拨打客服电话：<a href="tel:19106761448">19106761448</a></p>
@@ -36,6 +38,8 @@
       var handoffPending = false, handoffRequestId = null, handoffPayloadKey = null;
       var source = new URLSearchParams(window.location.search).get('source') || 'website_ai';
       if (!/^[a-z0-9_-]{1,40}$/i.test(source)) source = 'website_ai';
+      var sourceTopics = { corporate_medical: '就医协助', corporate_metabolic: '体重管理', corporate_longterm: '长期健康管理' };
+      if (sourceTopics[source]) topicInput.value = sourceTopics[source];
       function append(text, kind) { var el = document.createElement('p'); el.className = kind === 'user' ? 'user-message' : 'assistant-message'; el.textContent = text; chat.appendChild(el); chat.scrollTop = chat.scrollHeight; }
       function consented() { if (consent.checked) return true; alert('请先阅读并勾选信息处理说明。'); return false; }
       function syncHandoffSummary() { if (!summaryEdited) summaryInput.value = handoffNotes.length ? handoffNotes.map(function (note, index) { return (index + 1) + '. ' + note; }).join('\n') : ''; }
@@ -54,12 +58,12 @@
         catch (error) { var hint = String(error.message || '暂时无法回复'); append(hint.includes('19106761448') ? hint : hint + ' 也可拨打客服电话19106761448。', 'assistant'); }
       });
       document.getElementById('handoff-form').addEventListener('submit', async function (event) {
-        event.preventDefault(); if (handoffPending || !consented()) return; var formElement = event.currentTarget, form = new FormData(formElement), result = document.getElementById('handoff-result'); var payload = { consent: true, source: source }; form.forEach(function (value, key) { payload[key] = value; });
+        event.preventDefault(); if (handoffPending) return; if (!document.getElementById('handoff-consent').checked) { document.getElementById('handoff-result').textContent = '请先阅读并勾选本次申请的信息处理说明。'; document.getElementById('handoff-consent').focus(); return; } var formElement = event.currentTarget, form = new FormData(formElement), result = document.getElementById('handoff-result'); var payload = { consent: true, source: source }; form.forEach(function (value, key) { payload[key] = value; });
         var payloadKey = JSON.stringify(payload); if (!handoffRequestId || payloadKey !== handoffPayloadKey) { var bytes = new Uint8Array(16); window.crypto.getRandomValues(bytes); handoffRequestId = Array.from(bytes, function (v) { return v.toString(16).padStart(2, '0'); }).join(''); handoffPayloadKey = payloadKey; } payload.requestId = handoffRequestId;
         var submitButton = formElement.querySelector('button[type=submit]'); handoffPending = true; submitButton.disabled = true; submitButton.textContent = '正在提交…';
         try { var response = await fetch('/api/visitor-assistant/handoff', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); var body = await response.json(); if (!response.ok || !body.success) throw new Error(body.message || '提交失败'); result.textContent = body.message; handoffRequestId = null; handoffPayloadKey = null; formElement.reset(); handoffNotes = []; selectedTopic = ''; summaryEdited = false; }
         catch (error) { result.textContent = error.message; }
-        finally { handoffPending = false; submitButton.disabled = false; submitButton.textContent = '提交线下沟通申请'; }
+        finally { handoffPending = false; submitButton.disabled = false; submitButton.textContent = '提交联系申请'; }
       });
     }());
   </script>
