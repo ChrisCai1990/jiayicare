@@ -52,7 +52,13 @@ router.post('/handoff', async (req, res) => {
   if (!name || !/^1\d{10}$/.test(phone)) return res.status(400).json({ success: false, message: '请填写姓名和有效的中国大陆手机号。' });
   if (!topic) return res.status(400).json({ success: false, message: '请选择或填写咨询方向。' });
   if (hasEmergency(summary) || hasMedicalDetail(summary)) return res.status(400).json({ success: false, message: '线下对接申请中请勿填写病历、症状、检查指标或用药信息；相关问题请直接咨询正规医疗机构。' });
-  const lead = await VisitorLead.create({ name, phone, city, contactWindow, topic, summary, source, consentAt: new Date() });
+  const fields = { name, phone, city, contactWindow, topic, summary, source };
+  if (body.requestId && !/^[a-zA-Z0-9_-]{16,100}$/.test(body.requestId)) return res.status(400).json({ success: false, message: '提交标识无效，请刷新后重试。' });
+  // Built-in _id uniqueness also protects concurrent retries without a migration.
+  const requestKey = body.requestId ? require('crypto').createHash('sha256').update(JSON.stringify([body.requestId, fields])).digest('hex').slice(0, 24) : null;
+  let lead;
+  try { lead = await VisitorLead.create({ ...(requestKey ? { _id: requestKey } : {}), ...fields, consentAt: new Date() }); }
+  catch (error) { if (!requestKey || error.code !== 11000) throw error; lead = { _id: requestKey }; }
   return res.status(201).json({ success: true, data: { id: lead._id }, message: '已收到您的咨询申请。嘉医汇工作人员将根据您留下的联系方式确认服务安排。' });
 });
 

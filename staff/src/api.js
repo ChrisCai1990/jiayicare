@@ -412,6 +412,10 @@ export const staffAPI = {
   deleteLevel:       (id)   => req(`/staff/marketing/levels/${id}`, { method: 'DELETE' }),
   getVisitorLeads:   (p={}) => req('/staff/marketing/visitor-leads?' + qs(p)),
   updateVisitorLead: (id,d) => req(`/staff/marketing/visitor-leads/${id}`, { method: 'PATCH', body: JSON.stringify(d) }),
+  convertVisitorLead: (id,d) => req(`/staff/marketing/visitor-leads/${id}/convert`, { method: 'POST', body: JSON.stringify(d) }),
+  getServiceIntakes: (p={}) => req('/staff/marketing/service-intakes?' + qs(p)),
+  getServiceIntakeOptions: id => req(`/staff/marketing/service-intakes/${id}/options`),
+  updateServiceIntake: (id,d) => req(`/staff/marketing/service-intakes/${id}`, { method: 'PATCH', body: JSON.stringify(d) }),
 
   getActivities:     (p={}) => req('/staff/marketing/activities?' + qs(p)),
   createActivity:    (data) => req('/staff/marketing/activities', { method: 'POST', body: JSON.stringify(data) }),
