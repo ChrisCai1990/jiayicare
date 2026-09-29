@@ -58,15 +58,16 @@ test('反馈核实动作首屏可见，确认仍需显式勾选并保留原反�
  const config=require('../../shared/careFlow.cjs');let submitted;
  const data={_id:'flow',revision:3,patientId:'p',reports:[],events:[],state:{title:'合成服务',stage:'upload',people:{healthManager:{id:'m',role:'healthManager',name:'测试专员'}},data:{},returns:[],customerUpload:{declaration:{label:'合成原反馈',submittedAt:'2026-01-02T03:04:00Z'}}}};
  const blank=()=>null;
- const Card=load('components/CareFlowCard.jsx',{'../api':{careFlowAPI:{action:async(id,payload)=>{submitted=payload;return {data}},get:async()=>({data})}},'../../../shared/careFlow.cjs':config,'../../../shared/annualBookingPlan.cjs':{bookingSlots:()=>[]},'../../../shared/annualConsultationBrief.cjs':{consultationBrief:()=>({})},'./CareFlowHandoff':blank,'./CareFlowReviewEvidence':blank,'./CareFlowReportUploads':blank,'./CareFlowExaminations':{__esModule:true,default:blank,initialExaminations:()=>[]}}).default;
+ const Card=load('components/CareFlowCard.jsx',{'../api':{careFlowAPI:{action:async(id,payload)=>{submitted=payload;return {data}},get:async()=>({data})}},'../../../shared/careFlow.cjs':config,'../../../shared/annualBookingPlan.cjs':{bookingSlots:()=>[]},'../../../shared/annualConsultationBrief.cjs':{consultationBrief:()=>({})},'./CareFlowHandoff':blank,'./CareFlowReviewEvidence':blank,'./CareFlowReportUploads':()=>React.createElement('div',null,'上传测试区域'),'./CareFlowExaminations':{__esModule:true,default:blank,initialExaminations:()=>[]}}).default;
  window.HTMLElement.prototype.scrollIntoView=function(){};
  const view=await mount(React.createElement(Card,{task:{_id:'t'},staff:{_id:'m',role:'healthManager'},initialData:data}));
  try{
  assert.match(view.container.textContent,/客户提交：2026年1月2日/);
  const confirm=[...view.container.querySelectorAll('button')].find(b=>b.textContent==='确认核实并提交');assert.equal(confirm.disabled,true);
  await click(view.container,'退回修订');assert.equal(view.container.querySelector('details[aria-label="退回修订"]').open,true);
- const box=view.container.querySelector('textarea');await act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value').set.call(box,'测试核实依据');box.dispatchEvent(new window.Event('input',{bubbles:true}));});
- const checks=view.container.querySelectorAll('input[type="checkbox"]');for(const c of checks)await act(async()=>c.click());
- assert.equal(confirm.disabled,false);await click(view.container,'确认核实并提交');assert.equal(submitted.action,'complete');assert.equal(submitted.value.note,'测试核实依据');assert.equal(data.state.customerUpload.declaration.label,'合成原反馈');
+ assert.match(view.container.textContent,/上传测试区域/);
+ const noDocs=view.container.querySelector('input[type="checkbox"]');await act(async()=>noDocs.click());
+ assert.doesNotMatch(view.container.textContent,/上传测试区域/);assert.match(view.container.textContent,/补充核实意见（选填）/);
+ assert.equal(confirm.disabled,false);await click(view.container,'确认核实并提交');assert.equal(submitted.action,'complete');assert.equal(submitted.confirmed,true);assert.equal(submitted.value.noDocuments,true);assert.equal(submitted.value.note,'已核实客户反馈：合成原反馈');assert.equal(data.state.customerUpload.declaration.label,'合成原反馈');
  }finally{await view.close();}
 });
