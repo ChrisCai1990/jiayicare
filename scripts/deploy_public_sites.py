@@ -79,7 +79,7 @@ def main():
             sftp.put(str(ROOT / item['source']), f'{stage}/file-{index}')
         with tempfile.TemporaryDirectory(prefix='jiayicare-public-bundle-') as temp:
             bundle = Path(temp) / 'release.bundle'
-            subprocess.run(['git', 'bundle', 'create', str(bundle), f'{base}..{revision}'], cwd=ROOT, check=True)
+            subprocess.run(['git', 'bundle', 'create', str(bundle), f'{base}..HEAD'], cwd=ROOT, check=True)
             sftp.put(str(bundle), stage + '/release.bundle')
         manifest = {'base': base, 'revision': revision, 'files': files, 'catalogHash': hashlib.sha256(sftp.open(PUBLIC['geo-knowledge-center'] + '/published-articles.json').read()).hexdigest()}
         with sftp.open(stage + '/manifest.json', 'w') as out:
@@ -104,7 +104,7 @@ with open('/tmp/jiayicare-public-sites.lock','w') as lock:
  shutil.copy2(stage/'manifest.json',backup/'manifest.json')
  for i,item in enumerate(manifest['files']):
   if item['before'] is not None:shutil.copy2(item['target'],backup/('file-'+str(i)))
- git('fetch',str(stage/'release.bundle'),manifest['revision'])
+ git('fetch',str(stage/'release.bundle'),'HEAD')
  git('merge','--ff-only',manifest['revision'])
  applied=[]
  try:
