@@ -3,20 +3,20 @@ const Order = require('../models/Order');
 const User = require('../models/User');
 const Fulfillment = require('../models/Fulfillment');
 const { activeOrderWorkItemQuery } = require('../utils/orderWorkItem');
-const { isShippingOrder } = require('../../../shared/orderShipping.cjs');
+const { isShippingOrder, hasShippingHandoff } = require('../../../shared/orderShipping.cjs');
 
 router.use((req, res, next) => ['healthManager', 'superadmin'].includes(req.staff.role)
   ? next() : res.status(403).json({ success: false, message: '仅健管专员可处理发货' }));
 
 async function scope(staff) {
   const patients = await User.find(staff.role === 'superadmin' ? {} : { assignedHealthManager: staff._id }).distinct('_id');
-  return { ...activeOrderWorkItemQuery(), user: { $in: patients }, status: 'scheduled', handledBy: { $ne: null } };
+  return { ...activeOrderWorkItemQuery(), user: { $in: patients }, status: 'scheduled' };
 }
 router.get('/', async (req, res) => {
   try {
     // Read-only projection also covers legacy confirmations; no duplicate task or migration.
     const orders = await Order.find(await scope(req.staff)).populate('user', 'name deliveryAddress contactPhone phone').sort({ createdAt: 1 }).lean();
-    const candidates = orders.filter(isShippingOrder);
+    const candidates = orders.filter(hasShippingHandoff);
     const shipped = await Fulfillment.find({ order: { $in: candidates.map(o => o._id) }, status: { $in: ['shipped', 'completed', 'cancelled'] } }).distinct('order');
     const excluded = new Set(shipped.map(String));
     res.json({ success: true, data: candidates.filter(o => !['shipped', 'completed', 'cancelled'].includes(o.fulfillmentStatus) && !excluded.has(String(o._id))) });
@@ -29,7 +29,7 @@ router.patch('/:id', async (req, res) => {
     if (!deliveryCompany || !trackingNo) return res.status(400).json({ success: false, message: '请填写快递公司和运单号' });
     const filter = { ...await scope(req.staff), _id: req.params.id };
     const order = await Order.findOne(filter);
-    if (!order || !isShippingOrder(order)) return res.status(409).json({ success: false, message: '订单不可发货或不属于当前专员' });
+    if (!order || !hasShippingHandoff(order)) return res.status(409).json({ success: false, message: '订单尚未由健康规划师确认发货，或不属于当前专员' });
     const fulfillment = await Fulfillment.findOneAndUpdate({ order: order._id }, { $setOnInsert: {
       order: order._id, user: order.user, type: 'delivery_and_service', status: 'awaiting_shipment',
     } }, { upsert: true, new: true });

@@ -1,14 +1,15 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { isShippingOrder, shippingProgress } = require('../../shared/orderShipping.cjs');
+const { isShippingOrder, hasShippingHandoff, shippingProgress } = require('../../shared/orderShipping.cjs');
 
 test('legacy confirmed product appears as awaiting shipment, specialised services stay separate', () => {
-  const order = { serviceName: '营养改变生活', status: 'scheduled', handledBy: 'planner' };
+  const order = { serviceName: '营养改变生活', status: 'scheduled', supervisorId: 'planner', note: '已确认服务任务：寄到家里' };
   assert.match(shippingProgress(order), /待健管专员发货/);
-  assert.equal(shippingProgress({ ...order, handledBy: null }), '');
+  assert.equal(shippingProgress({ ...order, supervisorId: null }), '');
   assert.equal(shippingProgress({ ...order, status: 'pending' }), '');
   assert.match(shippingProgress({ ...order, fulfillmentStatus: 'shipped' }), /已发货/);
   assert.equal(isShippingOrder({ ...order, serviceWorkflowSnapshot: { key: 'nutrition_intervention' } }), true);
+  assert.equal(hasShippingHandoff({ ...order, note: '客户想寄到家里' }), false);
   assert.equal(isShippingOrder({ serviceName: '专家约诊' }), false);
 });
 
@@ -16,12 +17,13 @@ test('shipment HTTP: role, owner, cancelled order, validation, list and duplicat
   const express = require('express');
   const Order = require('../src/models/Order'), User = require('../src/models/User'), Fulfillment = require('../src/models/Fulfillment');
   const original = [Order.find, Order.findOne, Order.updateOne, User.find, Fulfillment.find, Fulfillment.findOneAndUpdate];
-  const order = { _id: 'order', user: 'patient', serviceName: '营养改变生活', status: 'scheduled', handledBy: 'planner' };
+  const order = { _id: 'order', user: 'patient', serviceName: '营养改变生活', status: 'scheduled', supervisorId: 'planner', note: '已确认服务任务：寄到家里' };
   let permitted = true, shipped = false, updates = 0;
   User.find = filter => { assert.deepEqual(filter, { assignedHealthManager: 'manager' }); return { distinct: async () => ['patient'] }; };
   function checkScope(filter) {
     assert.deepEqual(filter.user, { $in: ['patient'] });
     assert.equal(filter.status, 'scheduled');
+    assert.equal(filter.handledBy, undefined);
     assert.ok(!filter.tradeStatus.$in.includes('refunded'));
     assert.ok(!filter.refundStatus.$in.includes('processing'));
   }
