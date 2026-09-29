@@ -60,7 +60,7 @@ function formatTime(date) {
   return `${Math.floor(diff / 86400000)}天前`
 }
 
-const PAGE_SIZE = 20
+const PAGE_SIZE = 5
 const TODO_GROUPS = [
   { key: 'all', label: '全部' },
   { key: 'report', label: '报告与资料', types: ['report_parse','report_review','report_interpretation','report_followup_review','health_course_review','report_plan_conflict','archive_review','summary_review','lifestyle_review','dietary_survey_review','medication_review','supplement_review'] },
@@ -227,7 +227,7 @@ export default function AiTodosPanel() {
           <option value="priority">优先级优先，同级最久优先</option><option value="oldest">等待最久优先</option>
         </select>
         <button className="btn btn-secondary btn-sm" onClick={() => { setGroup('all'); setQuery(''); setAge('all'); setPriority('all'); setSort('priority'); setPage(0) }}>清除筛选</button>
-        <span role="status" style={{ width: '100%', fontSize: 12, color: '#65776F' }}>匹配 {filteredTodos.length} 项 · 每页20项 · {staff?.role === 'superadmin' ? '当前为全平台待审视图' : '仅显示当前账号可审核任务'}。历史提醒请进入原记录核对后处理。</span>
+        <span role="status" style={{ width: '100%', fontSize: 12, color: '#65776F' }}>匹配 {filteredTodos.length} 项 · 每页{PAGE_SIZE}项 · {staff?.role === 'superadmin' ? '当前为全平台待审视图' : '仅显示当前账号可审核任务'}。历史提醒请进入原记录核对后处理。</span>
       </div>
       {loadError && <div role="alert" className="login-err" style={{ margin: '0 20px 10px' }}>{loadError} <button onClick={() => refreshTodos()}>重试</button></div>}
       <div className="card-body" style={{ padding: '4px 20px 12px', maxHeight: 560, overflowY: 'auto' }}>
