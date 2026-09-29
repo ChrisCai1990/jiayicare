@@ -54,7 +54,7 @@ test('待核实反馈优先显示，未来日期也可处理，并打开同一�
  try{await settle();assert.match(view.container.textContent,/客户已反馈 · 待你核实/);assert.match(view.container.textContent,/合成反馈/);assert.match(view.container.textContent,/客户提交：2026年1月2日/);assert.ok(view.container.textContent.indexOf('合成反馈')<view.container.textContent.indexOf('旧任务0'));await click(view.container,'查看反馈并核实');assert.match(view.container.textContent,/已打开任务:feedback/);}finally{await view.close();}
 });
 
-test('反馈核实动作首屏可见，确认仍需显式勾选并保留原反馈',async()=>{
+test('核实操作合并到底部，确认仍需显式勾选并保留原反馈',async()=>{
  const config=require('../../shared/careFlow.cjs');let submitted;
  const data={_id:'flow',revision:3,patientId:'p',reports:[],events:[],state:{title:'合成服务',stage:'upload',people:{healthManager:{id:'m',role:'healthManager',name:'测试专员'}},data:{},returns:[],customerUpload:{declaration:{label:'合成原反馈',submittedAt:'2026-01-02T03:04:00Z'}}}};
  const blank=()=>null;
@@ -63,11 +63,31 @@ test('反馈核实动作首屏可见，确认仍需显式勾选并保留原反�
  const view=await mount(React.createElement(Card,{task:{_id:'t'},staff:{_id:'m',role:'healthManager'},initialData:data}));
  try{
  assert.match(view.container.textContent,/客户提交：2026年1月2日/);
- const confirm=[...view.container.querySelectorAll('button')].find(b=>b.textContent==='确认核实并提交');assert.equal(confirm.disabled,true);
+ const confirm=[...view.container.querySelectorAll('button')].find(b=>b.textContent==='确认核实并提交');assert.equal(confirm.disabled,true);assert.equal(view.container.querySelectorAll('.care-flow-actions .btn-primary').length,1);assert.doesNotMatch(view.container.textContent,/填写 \/ 修改核实意见|完成本环节，交下一步/);
  await click(view.container,'退回修订');assert.equal(view.container.querySelector('details[aria-label="退回修订"]').open,true);
  assert.match(view.container.textContent,/上传测试区域/);
  const noDocs=view.container.querySelector('input[type="checkbox"]');await act(async()=>noDocs.click());
  assert.doesNotMatch(view.container.textContent,/上传测试区域/);assert.match(view.container.textContent,/补充核实意见（选填）/);
  assert.equal(confirm.disabled,false);await click(view.container,'确认核实并提交');assert.equal(submitted.action,'complete');assert.equal(submitted.confirmed,true);assert.equal(submitted.value.noDocuments,true);assert.equal(submitted.value.note,'已核实客户反馈：合成原反馈');assert.equal(data.state.customerUpload.declaration.label,'合成原反馈');
  }finally{await view.close();}
+});
+
+
+test('无资料审核隐藏报告入口，空意见定位字段且不提交，保留权限',async()=>{
+ const config=require('../../shared/careFlow.cjs');let calls=0;
+ const data={_id:'flow',revision:3,patientId:'p',reports:[],events:[],state:{title:'合成服务',stage:'audit',people:{healthManager:{id:'m',role:'healthManager',name:'测试专员'}},data:{upload:{noDocuments:true}},returns:[],customerUpload:{declaration:{label:'合成反馈'}}}};
+ const blank=()=>null;
+ const Card=load('components/CareFlowCard.jsx',{'../api':{careFlowAPI:{action:async()=>{calls++;return {data}}}},'../../../shared/careFlow.cjs':config,'../../../shared/annualBookingPlan.cjs':{bookingSlots:()=>[]},'../../../shared/annualConsultationBrief.cjs':{consultationBrief:()=>({})},'./CareFlowHandoff':blank,'./CareFlowReviewEvidence':blank,'./CareFlowReportUploads':blank,'./CareFlowExaminations':{__esModule:true,default:blank,initialExaminations:()=>[]}}).default;
+ window.HTMLElement.prototype.scrollIntoView=function(){};
+ const view=await mount(React.createElement(Card,{task:{_id:'t'},staff:{_id:'m',role:'healthManager'},initialData:data}));
+ try{
+ assert.doesNotMatch(view.container.textContent,/打开客户报告管理/);
+ await act(async()=>view.container.querySelector('input[type="checkbox"]').click());
+ await click(view.container,'确认核实并提交');assert.equal(calls,0);
+ assert.match(view.container.textContent,/请填写本次核实意见/);
+ assert.equal(document.activeElement,view.container.querySelector('textarea[aria-invalid="true"]'));
+ assert.ok(view.container.querySelector('.care-flow-form').compareDocumentPosition(view.container.querySelector('.care-flow-reference'))&window.Node.DOCUMENT_POSITION_FOLLOWING);
+ }finally{await view.close()}
+ const other=await mount(React.createElement(Card,{task:{_id:'t'},staff:{_id:'other',role:'healthManager'},initialData:data}));
+ try{assert.equal(other.container.querySelector('.care-flow-actions'),null)}finally{await other.close()}
 });

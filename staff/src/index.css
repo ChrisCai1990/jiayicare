@@ -478,3 +478,12 @@ textarea.form-control { resize: vertical; }
   .card-header { padding: 12px 14px; }
   .card-body { padding: 14px; }
 }
+
+/* Keep the current care-flow task ahead of background references. */
+.care-flow-form { padding: 16px; border: 1px solid #DFE8E2; border-radius: 12px; background: #fff; }
+.care-flow-reference { border-top: 1px solid #DFE8E2; padding-top: 16px; }
+.care-flow-card summary { cursor: pointer; color: #65776F; }
+.care-flow-reference > details { margin-top: 12px; }
+.care-flow-actions { position: sticky; bottom: -16px; z-index: 3; display: flex; justify-content: flex-end; gap: 10px; padding: 14px 0; background: #fff; border-top: 1px solid #DFE8E2; }
+.care-flow-form [aria-invalid="true"] { border-color: #B91C1C; }
+@media (max-width: 600px) { .care-flow-actions { bottom: -12px; } .care-flow-actions .btn { flex: 1; } }
