@@ -1,0 +1,17 @@
+// Display-only deduplication. The original report and saved evidence stay intact.
+export function compactEvidence(value = '') {
+  const seen = new Set()
+  return String(value).split(/\r?\n/).map(line => line.trim()).filter(line => {
+    if (!line) return false
+    const key = line.replace(/\s+/g, '')
+    if (seen.has(key)) return false
+    seen.add(key); return true
+  }).join('\n')
+}
+
+export function evidenceSummary(value = '') {
+  const lines = compactEvidence(value).split('\n')
+  if (lines[0]?.startsWith('结果')) return lines.filter(line => /^结果|^参考范围/.test(line)).join('；')
+  const conclusion = lines.find(line => /^\d+[.、．]/.test(line)) || lines[0] || ''
+  return conclusion.length > 85 ? conclusion.slice(0, 85) + '…' : conclusion
+}
