@@ -1231,6 +1231,8 @@ router.patch('/insurance-cases/:caseId/steps/:stepId', staffAuth, async (req, re
 });
 
 const MEDICAL_SUMMARY_FIELDS = ['chiefComplaint', 'presentIllness', 'physicalExam', 'epidemiologicalHistory', 'initialDiagnosis', 'currentMedication'];
+const { summaryKey } = require('../../../shared/diseaseSummary.cjs');
+const { recordVersion, generateDiseaseSummary } = require('../utils/diseaseSummary');
 const cleanMedicalText = (value, max = 10000) => String(value ?? '').trim().slice(0, max);
 const mergedHealthChange = body => {
   const parts = [cleanMedicalText(body.content, 20000), cleanMedicalText(body.symptoms, 5000)].filter(Boolean);
@@ -1287,6 +1289,26 @@ const normalizedDiseaseRecords = patient => {
 };
 
 // 一项疾病对应一份专病档案；服务记录通过 diseaseName 与它关联。
+router.post('/patients/:id/disease-records/:recordId/summary-draft', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可汇总专病摘要' });
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(value => String(value) === String(req.params.id))) return res.status(403).json({ success: false, message: '无此会员权限' });
+    const patient = await User.findById(req.params.id).select('diseaseRecords medicalRecord').lean();
+    if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+    const record = (patient.diseaseRecords || []).find(item => String(item._id) === req.params.recordId);
+    if (!record) return res.status(404).json({ success: false, message: '请先保存专病档案，再汇总摘要' });
+    const reportIds = [...new Set((record.courseEntries || []).map(item => String(item.sourceReportId || '')).filter(value => mongoose.isValidObjectId(value)))];
+    const reports = await MedicalReport.find({ _id: { $in: reportIds }, user: patient._id, audit_status: 'audited' })
+      .select('title date checkDate hospital institution documentCategory aiSummary reportItems clinicalReview').lean();
+    const result = await generateDiseaseSummary(record, reports, require('../utils/ai').chat);
+    const latest = await User.findById(req.params.id).select('diseaseRecords').lean();
+    const current = latest?.diseaseRecords?.find(item => String(item._id) === req.params.recordId);
+    if (!current || recordVersion(current) !== result.expectedRecordVersion) return res.status(409).json({ success: false, message: '生成期间专病资料已更新，请重新生成' });
+    res.json({ success: true, data: result });
+  } catch (err) { res.status(400).json({ success: false, message: err.message }); }
+});
+
 router.put('/patients/:id/disease-records/summary', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
   try {
     const patient = await User.findById(req.params.id).select('diseaseRecords medicalRecord').lean();
@@ -1299,6 +1321,9 @@ router.put('/patients/:id/disease-records/summary', staffAuth, checkPermission('
     const records = normalizedDiseaseRecords(patient);
     const recordId = cleanMedicalText(req.body.recordId, 100);
     let record = records.find(item => recordId && String(item._id) === recordId) || records.find(item => item.name === name);
+    if (req.body.expectedRecordVersion && (!record || recordVersion(record) !== req.body.expectedRecordVersion)) return res.status(409).json({ success: false, message: '专病资料已更新，请重新加载或生成摘要，避免覆盖新资料' });
+    const nextSummary = { ...summary, ...cleanHealthInfoProvenance(req.body) };
+    if (record && record.name === name && summaryKey(record.summary) === summaryKey(nextSummary)) return res.json({ success: true, data: record, unchanged: true, message: '摘要内容未变化，无需重复保存' });
     const now = new Date();
     const operator = req.staff.name || req.staff.username || '';
     if (!record) {
@@ -1308,8 +1333,9 @@ router.put('/patients/:id/disease-records/summary', staffAuth, checkPermission('
       record.summaryHistory = [...(record.summaryHistory || []), { ...record.summary, archivedAt: now, archivedById: req.staff._id, archivedByName: operator }].slice(-100);
     }
     record.name = name;
-    record.summary = { ...summary, ...cleanHealthInfoProvenance(req.body), updatedAt: now, updatedById: req.staff._id, updatedByName: operator };
-    await User.collection.updateOne({ _id: patient._id }, { $set: { diseaseRecords: records } });
+    record.summary = { ...nextSummary, updatedAt: now, updatedById: req.staff._id, updatedByName: operator };
+    const saved = await User.collection.updateOne({ _id: patient._id, diseaseRecords: patient.diseaseRecords === undefined ? { $exists: false } : patient.diseaseRecords }, { $set: { diseaseRecords: records } });
+    if (!saved.matchedCount) return res.status(409).json({ success: false, message: '专病资料已更新，请刷新后重试' });
     res.json({ success: true, data: record });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
