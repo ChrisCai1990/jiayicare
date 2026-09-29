@@ -27,7 +27,7 @@ export default function VisitorLeadWorkbench({ toast }) {
   function closeDialog() { if (submitting.current) return; dialogVersion.current++; setEdit(null) }
   async function open(row, action) {
     const version = ++dialogVersion.current
-    setEdit({ row, action }); setModalError(''); setPatients([]); setSearch(''); setOptions({ orders: [], plans: [] })
+    setEdit({ row, action }); setModalError(''); setPatients([]); setSearch(''); setSearching(false); setOptions({ orders: [], plans: [] })
     setForm({ note: '', need: row.summary || row.topic || '', serviceDirection: '', patientId: '', customerConfirmed: false, nextContactAt: nextDay(), orderId: '', planId: '' })
     if (action === 'link') {
       setSearching(true)
