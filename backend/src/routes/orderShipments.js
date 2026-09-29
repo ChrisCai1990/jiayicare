@@ -26,6 +26,10 @@ router.patch('/:id', async (req, res) => {
   try {
     const deliveryCompany = String(req.body.deliveryCompany || '').trim().slice(0, 100);
     const trackingNo = String(req.body.trackingNo || '').trim().slice(0, 100);
+    const recipientName = String(req.body.recipientName || '').trim().slice(0, 50);
+    const recipientPhone = String(req.body.recipientPhone || '').trim().slice(0, 50);
+    const deliveryAddress = String(req.body.deliveryAddress || '').trim().slice(0, 300);
+    if (!recipientName || !recipientPhone || !deliveryAddress) return res.status(400).json({ success: false, message: '请完整填写收件人、联系电话和配送地址' });
     if (!deliveryCompany || !trackingNo) return res.status(400).json({ success: false, message: '请填写快递公司和运单号' });
     const filter = { ...await scope(req.staff), _id: req.params.id };
     const order = await Order.findOne(filter);
@@ -35,7 +39,7 @@ router.patch('/:id', async (req, res) => {
     } }, { upsert: true, new: true });
     if (['shipped', 'completed', 'cancelled'].includes(fulfillment.status)) return res.status(409).json({ success: false, message: '该订单已处理，请刷新列表' });
     const updated = await Fulfillment.findOneAndUpdate({ _id: fulfillment._id, status: fulfillment.status }, { $set: {
-      status: 'shipped', deliveryCompany, trackingNo, assignedStaff: [req.staff._id],
+      status: 'shipped', deliveryCompany, trackingNo, recipientName, recipientPhone, deliveryAddress, assignedStaff: [req.staff._id],
     } }, { new: true });
     if (!updated) return res.status(409).json({ success: false, message: '发货状态已变化，请刷新列表' });
     await Order.updateOne(filter, { $set: { fulfillmentId: updated._id, fulfillmentStatus: 'shipped', tradeStatus: 'fulfilling', currentStage: 'shipping', currentAssignee: req.staff._id } });

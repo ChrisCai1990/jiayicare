@@ -8,7 +8,7 @@ const displayNote = note => String(note || '').split('\n')
   .join(' · ').trim()
 
 const amount = order => Number(order.paidAmount || 0) + Number(order.healthFundAmount || 0)
-const recipient = order => order.user?.contactName || order.user?.name || '请核实收件人'
+const recipient = order => order.user?.contactName || order.user?.name || ''
 const contactPhone = order => order.user?.contactPhone || order.user?.phone || '请核实联系电话'
 const deliveryAddress = order => order.user?.deliveryAddress || '请先与客户核实收货地址'
 
@@ -16,6 +16,7 @@ export default function OrderShipmentsPanel() {
   const resource = useWorkbenchResource(async () => (await staffAPI.getOrderShipments()).data || [], getToken(), [])
   const [selected, setSelected] = useState(null)
   const [company, setCompany] = useState(''), [tracking, setTracking] = useState('')
+  const [shippingContact, setShippingContact] = useState({ recipientName: '', recipientPhone: '', deliveryAddress: '' })
   const [busy, setBusy] = useState(false), [error, setError] = useState('')
   return <section className="shipment-panel">
     <div className="shipment-panel__heading">
@@ -39,18 +40,18 @@ export default function OrderShipmentsPanel() {
           <div className="shipment-order__address"><span>配送至</span><p>{deliveryAddress(order)}<i />{recipient(order)} · {contactPhone(order)}</p></div>
           {displayNote(order.note) && <p className="shipment-order__note">备注：{displayNote(order.note)}</p>}
         </div>
-        <button className="btn btn-primary shipment-order__action" onClick={() => { setSelected(order); setCompany(''); setTracking(''); setError('') }}>登记发货 <span>→</span></button>
+        <button className="btn btn-primary shipment-order__action" onClick={() => { setSelected(order); setCompany(''); setTracking(''); setShippingContact({ recipientName: recipient(order), recipientPhone: contactPhone(order), deliveryAddress: deliveryAddress(order) }); setError('') }}>登记发货 <span>→</span></button>
       </article>)}
     </div>
     {selected && <div className="modal-overlay"><form className="modal" onSubmit={async e => {
       e.preventDefault(); if (busy) return; setBusy(true); setError('')
-      try { await staffAPI.shipOrder(selected._id, { deliveryCompany: company, trackingNo: tracking }); setSelected(null); await resource.refresh() }
+      try { await staffAPI.shipOrder(selected._id, { deliveryCompany: company, trackingNo: tracking, ...shippingContact }); setSelected(null); await resource.refresh() }
       catch (err) { setError(err.message) } finally { setBusy(false) }
     }}><div className="modal-header"><h3>登记发货 · {selected.user?.name}</h3></div><div className="modal-body">
-      <div className="shipment-recipient"><div><span>收件人</span><strong>{recipient(selected)}</strong></div><div><span>联系电话</span><strong>{contactPhone(selected)}</strong></div><div className="shipment-recipient__address"><span>配送地址</span><strong>{deliveryAddress(selected)}</strong></div></div>
+      <div className="shipment-recipient shipment-recipient--editing"><p>已带入客户档案；本次修改仅用于此订单发货。</p><label>收件人<input className="form-input" required value={shippingContact.recipientName} onChange={e => setShippingContact(value => ({ ...value, recipientName: e.target.value }))} /></label><label>联系电话<input className="form-input" required value={shippingContact.recipientPhone} onChange={e => setShippingContact(value => ({ ...value, recipientPhone: e.target.value }))} /></label><label className="shipment-recipient__address">配送地址<input className="form-input" required value={shippingContact.deliveryAddress} onChange={e => setShippingContact(value => ({ ...value, deliveryAddress: e.target.value }))} /></label></div>
       <label>快递公司<input className="form-input" required value={company} onChange={e => setCompany(e.target.value)} /></label>
       <label>运单号<input className="form-input" required value={tracking} onChange={e => setTracking(e.target.value)} /></label>
       {error && <p role="alert" style={{ color: '#B42318' }}>{error}</p>}
-    </div><div className="modal-footer"><button type="button" disabled={busy} onClick={() => setSelected(null)}>取消</button><button className="btn btn-primary" disabled={busy || !company.trim() || !tracking.trim()}>{busy ? '提交中…' : '确认已发货'}</button></div></form></div>}
+    </div><div className="modal-footer"><button type="button" disabled={busy} onClick={() => setSelected(null)}>取消</button><button className="btn btn-primary" disabled={busy || !company.trim() || !tracking.trim() || !shippingContact.recipientName.trim() || !shippingContact.recipientPhone.trim() || !shippingContact.deliveryAddress.trim()}>{busy ? '提交中…' : '确认已发货'}</button></div></form></div>}
   </section>
 }

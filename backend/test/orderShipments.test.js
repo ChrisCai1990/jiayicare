@@ -51,7 +51,7 @@ test('shipment HTTP: role, owner, cancelled order, validation, list and duplicat
   assert.equal((await call(null, 'healthPlanner')).status, 403);
   assert.equal((await call()).body.data.length, 1);
   assert.equal((await call({})).status, 400);
-  const shipping = { deliveryCompany: '测试快递', trackingNo: 'TEST123' };
+  const shipping = { deliveryCompany: '测试快递', trackingNo: 'TEST123', recipientName: '王女士', recipientPhone: '13958025661', deliveryAddress: '杭州市萧山区江峰商务名座1-1015室' };
   permitted = false; assert.equal((await call(shipping)).status, 409);
   permitted = true; assert.equal((await call(shipping)).status, 200);
   assert.equal((await call(shipping)).status, 409);
