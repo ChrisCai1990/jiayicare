@@ -75,8 +75,8 @@ function TaskItemRow({ task, onPress }) {
     {upload && <>
       <Text style={{display:'block',margin:'10px 0 12px 46px',fontSize:'12px',color:colors.textSecondary}}>{task.assignee} · {urgency.label}</Text>
       <View style={{display:'flex',alignItems:'center',gap:'10px',backgroundColor:colors.primary10,borderRadius:'12px',padding:'12px'}}>
-        <View style={{flex:1,minWidth:0}}><Text style={{display:'block',fontSize:'11px',color:colors.primary}}>需要你处理</Text><Text style={{display:'block',fontSize:'13px',color:colors.textPrimary,marginTop:'4px'}}>检查后上传报告及病历</Text></View>
-        <View onClick={() => Taro.navigateTo({url:'/pages/tasks/report-upload/index?flowId='+encodeURIComponent(upload.careFlowId)})} style={{padding:'10px',backgroundColor:colors.primary,borderRadius:'9px',flexShrink:0}}><Text style={{fontSize:'13px',color:'#fff'}}>上传报告</Text></View>
+        <View style={{flex:1,minWidth:0}}><Text style={{display:'block',fontSize:'11px',color:colors.primary}}>{upload.documentDeclaration?'已反馈，待专员核实':'需要你处理'}</Text><Text style={{display:'block',fontSize:'13px',color:colors.textPrimary,marginTop:'4px'}}>{upload.documentDeclaration?upload.documentDeclaration.label:'就医后提交资料或说明情况'}</Text></View>
+        <View onClick={() => Taro.navigateTo({url:'/pages/tasks/report-upload/index?flowId='+encodeURIComponent(upload.careFlowId)})} style={{padding:'10px',backgroundColor:colors.primary,borderRadius:'9px',flexShrink:0}}><Text style={{fontSize:'13px',color:'#fff'}}>{upload.documentDeclaration?'查看反馈':'提交资料'}</Text></View>
       </View>
     </>}
   </View>;

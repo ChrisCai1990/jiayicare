@@ -196,3 +196,14 @@ test('生成期间新版本不被过期AI响应覆盖',async()=>{
   await assert.rejects(generate(s.api,'flow',actor('draft'),false,async()=>{s.flows.get('flow').revision++;s.flows.get('flow').state.data.advisor.text='新修订';return '{"content":"旧响应","date":""}'}),/未覆盖/);
   assert.equal(s.flows.get('flow').state.data.advisor.text,'新修订');assert.equal(s.flows.get('flow').state.data.draft,undefined);
 });
+
+test('健管核实无资料需要客户反馈和依据，不可丢弃已有报告',async()=>{
+ const x=setup('upload');const flow=x.flows.get('flow');flow.state.data.upload.reportIds=[];
+ const run=value=>x.api.action('flow',actor('upload'),{action:'complete',revision:x.flows.get('flow').revision,value,confirmed:true});
+ await assert.rejects(run({noDocuments:true,reportIds:[],note:'已核实'}),/客户资料情况/);
+ flow.state.customerUpload={declaration:{kind:'no_exam',label:'未做检查'}};
+ await assert.rejects(run({noDocuments:true,reportIds:[],note:''}),/完整填写/);
+ flow.state.data.upload.reportIds=['report'];await assert.rejects(run({noDocuments:true,reportIds:[],note:'已核实'}),/已有资料/);flow.state.data.upload.reportIds=[];
+ await run({noDocuments:true,reportIds:[],note:'已向客户核实，仅咨询无资料'});assert.equal(x.flows.get('flow').state.stage,'audit');assert.equal(x.flows.get('flow').state.data.upload.noDocuments,true);
+ await x.api.action('flow',actor('audit'),{action:'complete',revision:x.flows.get('flow').revision,confirmed:true,value:{note:'核实记录确认，后续顾问跟进'}});assert.equal(x.flows.get('flow').state.stage,'draft');
+});

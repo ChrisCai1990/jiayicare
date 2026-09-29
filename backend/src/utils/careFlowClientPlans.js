@@ -1,6 +1,6 @@
 function project(flow) {
   const s=flow.state;
-  if(s.mode==='reminder')return [{_id:`care-plan:${flow._id}:visit`,careFlowId:String(flow._id),customerReadOnly:true,canUploadReports:!s.customerUpload?.completedAt&&['upload','audit'].includes(s.stage),
+  if(s.mode==='reminder')return [{_id:`care-plan:${flow._id}:visit`,careFlowId:String(flow._id),customerReadOnly:true,canUploadReports:!s.data?.upload?.noDocuments&&!s.customerUpload?.completedAt&&['upload','audit'].includes(s.stage),
     title:`已就医 · ${s.title}`,type:'followup',status:'completed',priority:'low',scheduleLabel:'已就医',dueDate:s.data.visit?.date,assignee:'健管专员',description:`已记录本次就医日期：${s.data.visit?.date||'待核对'}。请提交本次病历、处方或检查报告，由健管专员审核。`}];
   if(!s.data?.execute || !['upload','audit','draft','review','closed'].includes(s.stage)) return [];
   const booked=s.data.booking?.entries||[],actual=s.data.execute.onsite||[];
@@ -16,7 +16,7 @@ function project(flow) {
     `专家：${e.expert||'未指定专家'}`,
   ].join('\n')).join('\n\n');
   return [{
-    _id:`care-plan:${flow._id}:arrangement`,careFlowId:String(flow._id),customerReadOnly:true,canUploadReports:!s.customerUpload?.completedAt&&['upload','audit'].includes(s.stage),
+    _id:`care-plan:${flow._id}:arrangement`,careFlowId:String(flow._id),customerReadOnly:true,canUploadReports:!s.data?.upload?.noDocuments&&!s.customerUpload?.completedAt&&['upload','audit'].includes(s.stage),
     title:`本次就医安排 · ${s.title||entries[0].title||'就医服务'}`,
     type:'followup',status:['draft','review','closed'].includes(s.stage)?'completed':'pending',priority:'low',assignee:'健管专员',
     scheduleLabel:scheduled.length?'已安排':'待安排',dueDate:scheduled[0]?.date,dueTime:scheduled[0]?.time,
@@ -30,8 +30,12 @@ function uploadContext(flow) {
 }
 function projectTasks(f) {
     const plans=project(f),s=f.state;
-    if(plans.length&&['upload','audit'].includes(s.stage)&&!s.customerUpload?.completedAt){const c=uploadContext(f);plans.push({_id:`care-plan:${f._id}:upload`,careFlowId:String(f._id),customerReadOnly:true,canUploadReports:true,uploadReminder:true,type:'upload',title:`上传报告及病历 · ${c.serviceTitle}${c.visitDate?`（${c.visitDate}）`:''}`,status:'pending',priority:'low',scheduleLabel:'待上传',dueDate:c.visitDate||undefined,assignee:'本人',description:`对应就医：${c.serviceTitle}\n日期：${c.visitDate||'待核对'}\n服务编号：${c.serviceCode}\n可在此直接上传门诊病历、医嘱单和检查报告。确认全部上传后，本提醒结束；健管专员继续审核。`});}
+    if(!s.data?.upload?.noDocuments&&plans.length&&['upload','audit'].includes(s.stage)&&!s.customerUpload?.completedAt){const c=uploadContext(f);plans.push({_id:`care-plan:${f._id}:upload`,careFlowId:String(f._id),customerReadOnly:true,canUploadReports:true,uploadReminder:true,type:'upload',title:`上传报告及病历 · ${c.serviceTitle}${c.visitDate?`（${c.visitDate}）`:''}`,status:'pending',priority:'low',scheduleLabel:'待上传',dueDate:c.visitDate||undefined,assignee:'本人',description:`对应就医：${c.serviceTitle}\n日期：${c.visitDate||'待核对'}\n服务编号：${c.serviceCode}\n可在此直接上传门诊病历、医嘱单和检查报告。确认全部上传后，本提醒结束；健管专员继续审核。`});}
     if(['draft','review'].includes(s.stage)&&s.data?.audit)plans.push({_id:`care-plan:${f._id}:review`,careFlowId:String(f._id),customerReadOnly:true,type:'followup',title:`就医后健康计划 · ${s.title||'本次就医'}`,status:'pending',priority:'low',scheduleLabel:'待顾问确认',assignee:'健康顾问',description:'本次报告及病历已由健管专员审核。健康顾问正在核对后续随访时间和内容，确认后将在健康计划中显示；请以最终确认的信息为准。'});
+    if(s.customerUpload?.declaration&&!s.customerUpload?.completedAt&&!s.data?.upload?.noDocuments)for(const plan of plans){
+      plan.documentDeclaration=s.customerUpload.declaration;
+      if(plan.uploadReminder){plan.scheduleLabel='已反馈，待专员核实';plan.assignee='健管专员';plan.title=`资料情况待核实 · ${s.title||'本次就医'}`;plan.description=`客户已反馈：${s.customerUpload.declaration.label}。${s.customerUpload.declaration.note||''}\n等待健管专员核实，拿到资料后仍可补传。`;}
+    }
     return plans;
 }
 async function clientPlans(user) {

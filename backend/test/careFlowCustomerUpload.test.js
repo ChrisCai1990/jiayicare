@@ -44,3 +44,23 @@ test('拒绝跨客户、跨租户、无凭证、非法类目、空资料、漏�
   x.flow.state.stage='audit';await x.api.add(x.id,x.user,x.input('two'));assert.equal(x.flow.state.stage,'audit');
   x.reports.delete(x.flow.state.data.upload.reportIds[0]);await assert.rejects(x.api.complete(x.id,x.user,{confirmed:true}),/资料已变更/);
 });
+
+test('无资料声明持久化、幂等且跨客户隔离；不创建报告或完成上传',async()=>{
+ const x=setup();const result=await x.api.declare(x.id,x.user,{kind:'no_exam',note:'仅咨询，无检查'});
+ assert.equal(result.declaration.kind,'no_exam');assert.equal(result.completed,false);assert.equal(result.canUpload,true);assert.equal(x.reports.size,0);
+ const revision=x.flow.revision;await x.api.declare(x.id,x.user,{kind:'no_exam',note:'仅咨询，无检查'});assert.equal(x.flow.revision,revision);
+ await assert.rejects(x.api.declare(x.id,{...x.user,_id:'c'.repeat(24)},{kind:'pending'}),/任务不存在/);
+ await assert.rejects(x.api.declare(x.id,x.user,{kind:'other'}),/具体情况/);
+ await assert.rejects(x.api.declare(x.id,x.user,{kind:'unknown'}),/请选择/);
+ x.race();await assert.rejects(x.api.declare(x.id,x.user,{kind:'no_print'}),/刷新重试/);assert.equal(x.flow.state.customerUpload.declaration.kind,'no_exam');
+});
+
+test('声明后首页改为专员待核实，核实无资料后停止客户上传任务',async()=>{
+ const x=setup();x.flow.state.data.execute.onsite=[{id:'visit',type:'consultation',title:'门诊',status:'done'}];
+ const project=require('../src/utils/careFlowClientPlans').projectTasks;
+ await x.api.declare(x.id,x.user,{kind:'no_print',note:'医院没有打印'});
+ let task=project(x.flow).find(t=>t.uploadReminder);assert.equal(task.scheduleLabel,'已反馈，待专员核实');assert.equal(task.assignee,'健管专员');assert.equal(task.documentDeclaration.kind,'no_print');
+ x.flow.state.data.upload.noDocuments=true;
+ assert.equal(project(x.flow).some(t=>t.uploadReminder),false);assert.equal((await x.api.view(x.id,x.user)).canUpload,false);
+ await assert.rejects(x.api.declare(x.id,x.user,{kind:'pending'}),/专员已核实/);
+});

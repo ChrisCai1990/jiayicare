@@ -209,6 +209,7 @@ export const supplementsAPI = {
 export const tasksAPI = {
   careReports: id => request(`/tasks/care-flow/${id}/reports`),
   addCareReport: (id,data) => request(`/tasks/care-flow/${id}/reports`,{method:'POST',body:JSON.stringify(data)}),
+  declareCareReports: (id,data) => request(`/tasks/care-flow/${id}/reports/declaration`,{method:'POST',body:JSON.stringify(data)}),
   completeCareReports: id => request(`/tasks/care-flow/${id}/reports/complete`,{method:'POST',body:JSON.stringify({confirmed:true})}),
   list: () => request('/tasks'),
   setStatus: (id, status) => request(`/tasks/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),

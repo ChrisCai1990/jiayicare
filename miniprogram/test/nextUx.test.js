@@ -123,7 +123,7 @@ test('direct manager entry renders the existing role thread and returns to home'
 
 function componentHarness(file,mocks) {
   const state=[],refs=[],effects=[];let si=0,ri=0,show;
-  const React={createElement:(type,props,...children)=>({type,props:props||{},children}),useState:init=>{const i=si++;if(!(i in state))state[i]=typeof init==='function'?init():init;return [state[i],v=>state[i]=typeof v==='function'?v(state[i]):v];},useRef:init=>{const i=ri++;return refs[i]||(refs[i]={current:init});},useCallback:f=>f,useEffect:f=>effects.push(f)};
+  const React={createElement:(type,props,...children)=>typeof type==='function'?type({...props,children:children.length?children:props?.children}):({type,props:props||{},children:children.length?children:[props?.children]}),useState:init=>{const i=si++;if(!(i in state))state[i]=typeof init==='function'?init():init;return [state[i],v=>state[i]=typeof v==='function'?v(state[i]):v];},useRef:init=>{const i=ri++;return refs[i]||(refs[i]={current:init});},useCallback:f=>f,useEffect:f=>effects.push(f)};
   const Page=moduleFor(file,{react:React,'@tarojs/components':{View:'View',Text:'Text',Button:'Button',Input:'Input',Textarea:'Textarea',Picker:'Picker',ScrollView:'ScrollView'},...mocks,'@tarojs/taro':{...mocks['@tarojs/taro'],useDidShow:f=>show=f}}).default;
   const render=()=>{si=0;ri=0;return Page({});};
   const nodes=n=>!n||typeof n!=='object'?[]:[n,...(n.children||[]).flat(Infinity).flatMap(nodes)];
@@ -151,14 +151,8 @@ test('records refresh daily weight when shown again and keep body composition se
   value='51';await h.show();assert.equal(calls.filter(t=>t==='weight').length,2);assert(h.text(h.render()).includes('51 kg'));assert(h.text(h.render()).includes('50.1 kg'));const chart=h.nodes(h.render()).find(n=>n.type==='TrendChart');assert.equal(chart.props.points[0].label,'09-29');
 });
 
-test('no-document explanation reaches manager without completing uploads; unassigned users cannot send',async()=>{
-  let sends=0,completions=0,assigned=true,payload,resolveSend;
-  const h=componentHarness('pages/tasks/report-upload/index.jsx',{'@tarojs/taro':{getCurrentInstance:()=>({router:{params:{flowId:'f'}}})},'../../../hooks/useNavBar':()=>({statusBarHeight:0}),'../../../services/api':{tasksAPI:{careReports:async()=>({data:{canUpload:true,completed:false,reports:[],plans:[],serviceTitle:'本次检查',serviceCode:'case123'}}),completeCareReports:async()=>{completions++;}},reportsAPI:{},userAPI:{getMe:async()=>({success:true,data:{careTeam:assigned?[{kind:'healthManager'}]:[]}})},messagesAPI:{send:async(...args)=>{sends++;payload=args;await new Promise(resolve=>resolveSend=resolve);return {success:true};}}},'../../../utils/imagePicker':{}});
-  const button=label=>h.nodes(h.render()).find(n=>n.type==='Button'&&h.text(n).includes(label));
-  await h.mount();button('说明情况给').props.onClick();button('本次没有').props.onClick();assigned=false;await button('提交说明给').props.onClick();assert.equal(sends,0);assert(h.text(h.render()).includes('暂未找到所属健管专员'));assigned=true;const send=button('提交说明给').props.onClick;const pending=send();send();await flush();assert.equal(sends,1);assert.equal(payload[0],'manager');assert(payload[1].includes('case123'));assert(payload[1].includes('本次没有报告或病历'));assert.equal(payload[2].suppressAI,true);resolveSend();await pending;assert.equal(completions,0);assert(h.text(h.render()).includes('等待核实'));assert.equal(button('提交全部资料').props.disabled,true);
-  await button('说明已发送').props.onClick();assert.equal(sends,1);
-});
-test('absence send failure preserves explanation and does not claim successful submission',async()=>{
-  const h=componentHarness('pages/tasks/report-upload/index.jsx',{'@tarojs/taro':{getCurrentInstance:()=>({router:{params:{flowId:'f'}}})},'../../../hooks/useNavBar':()=>({statusBarHeight:0}),'../../../services/api':{tasksAPI:{careReports:async()=>({data:{canUpload:true,reports:[],plans:[]}})},userAPI:{getMe:async()=>({success:true,data:{careTeam:[{kind:'healthManager'}]}})},messagesAPI:{send:async()=>{throw Error('timeout')}}},'../../../utils/imagePicker':{}});
-  const button=label=>h.nodes(h.render()).find(n=>n.type==='Button'&&h.text(n).includes(label));await h.mount();button('说明情况给').props.onClick();await button('提交说明给').props.onClick();assert(h.text(h.render()).includes('核对消息'));assert(!h.text(h.render()).includes('说明已发送给健管专员'));assert.equal(button('提交说明给').props.disabled,false);
+test('document feedback persists on service without completing uploads or sending duplicate requests',async()=>{
+  let calls=0,finish;const data={canUpload:true,reports:[],plans:[]};
+  const h=componentHarness('pages/tasks/report-upload/index.jsx',{'@tarojs/taro':{getCurrentInstance:()=>({router:{params:{flowId:'f'}}})},'../../../hooks/useNavBar':()=>({statusBarHeight:0}),'../../../services/api':{tasksAPI:{careReports:async()=>({data}),declareCareReports:async(id,body)=>{calls++;assert.equal(id,'f');assert.equal(body.kind,'no_exam');await new Promise(resolve=>finish=resolve);return {success:true,data:{...data,declaration:{...body,label:'已就医，未做检查且无资料'}}};}}},'../../../utils/imagePicker':{}});
+  const button=label=>h.nodes(h.render()).find(n=>n.type==='Button'&&h.text(n).includes(label));await h.mount();button('没有可上传资料').props.onClick();button('已就医').props.onClick();const send=button('提交情况反馈').props.onClick;const p=send();send();await flush();assert.equal(calls,1);finish();await p;assert(h.text(h.render()).includes('已反馈，待专员核实'));assert(!h.text(h.render()).includes('提交全部资料'));
 });
