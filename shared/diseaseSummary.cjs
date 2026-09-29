@@ -12,4 +12,18 @@ function groupSummaryHistory(history = []) {
   }
   return groups.reverse();
 }
-module.exports = { SUMMARY_FIELDS, summaryKey, groupSummaryHistory };
+const changeStamp = entry => {
+  const value = entry.updatedAt || entry.recordedAt;
+  return { id: String(entry._id || ''), version: value && !Number.isNaN(Date.parse(value)) ? new Date(value).toISOString() : '' };
+};
+function summaryCoverageState(record) {
+  const entries = record.courseEntries || [], covered = record.summary?.coveredChanges;
+  const pending = entries.filter(entry => {
+    const stamp = changeStamp(entry);
+    return Array.isArray(covered) ? !covered.some(item => item.id === stamp.id && item.version === stamp.version)
+      : !record.summary?.updatedAt || !stamp.version || new Date(stamp.version) > new Date(record.summary.updatedAt);
+  });
+  const dates = entries.map(e => e.occurredAt).filter(Boolean).sort((a,b) => new Date(a) - new Date(b));
+  return { pendingCount: pending.length, coverageKnown: Array.isArray(covered), latestOccurredAt: dates.at(-1) || null };
+}
+module.exports = { SUMMARY_FIELDS, summaryKey, groupSummaryHistory, changeStamp, summaryCoverageState };

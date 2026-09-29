@@ -29,9 +29,9 @@ test('duplicate history is grouped with both audit times; AI draft requires expl
   let saves = 0, sent;
   const h = await setup({ generateDiseaseSummary: async () => ({ data: { summary: { chiefComplaint: '含后续资料的新摘要' }, expectedRecordVersion: 'version', coverage: { courseCount: 7, reportCount: 1 } } }), updateDiseaseRecordSummary: async (_, body) => { saves++; sent = body; return {}; } });
   try {
-    await h.click('摘要历史（1）');
+    await h.click('修订历史（1）');
     assert.match(h.container.textContent, /相同内容 2 次留痕/);
-    await h.click('专病健康信息摘要'); await h.click('修订健康信息摘要'); await h.click('结合后续资料更新摘要');
+    await h.click('专病概况'); await h.click('修订健康信息摘要'); await h.click('结合后续资料更新摘要');
     assert.equal(saves, 0);
     assert.match(h.container.textContent, /已纳入 7 条健康变化、1 份关联报告/);
     assert.equal(h.container.querySelector('textarea').value, '含后续资料的新摘要');

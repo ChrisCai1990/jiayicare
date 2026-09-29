@@ -111,6 +111,7 @@ router.use('/followups', require('./followUpServices'));
 router.use('/followups', require('./annualCheckupPreparation'));
 router.use('/report-followups', require('./reportFollowUps')({ getVisiblePlanPatientIds }));
 router.use('/marketing', require('./visitorLeads')({ getVisiblePlanPatientIds }));
+router.use('/patients', require('./diseaseActivity')({ getVisiblePlanPatientIds }));
 const activeReportParseJobs = new Set();
 
 // 这两类资料仍可上传、由人工审核/录入，但不得触发视觉模型。documentCategory
@@ -1231,7 +1232,7 @@ router.patch('/insurance-cases/:caseId/steps/:stepId', staffAuth, async (req, re
 });
 
 const MEDICAL_SUMMARY_FIELDS = ['chiefComplaint', 'presentIllness', 'physicalExam', 'epidemiologicalHistory', 'initialDiagnosis', 'currentMedication'];
-const { summaryKey } = require('../../../shared/diseaseSummary.cjs');
+const { summaryKey, changeStamp } = require('../../../shared/diseaseSummary.cjs');
 const { recordVersion, generateDiseaseSummary } = require('../utils/diseaseSummary');
 const cleanMedicalText = (value, max = 10000) => String(value ?? '').trim().slice(0, max);
 const mergedHealthChange = body => {
@@ -1323,17 +1324,21 @@ router.put('/patients/:id/disease-records/summary', staffAuth, checkPermission('
     let record = records.find(item => recordId && String(item._id) === recordId) || records.find(item => item.name === name);
     if (req.body.expectedRecordVersion && (!record || recordVersion(record) !== req.body.expectedRecordVersion)) return res.status(409).json({ success: false, message: '专病资料已更新，请重新加载或生成摘要，避免覆盖新资料' });
     const nextSummary = { ...summary, ...cleanHealthInfoProvenance(req.body) };
-    if (record && record.name === name && summaryKey(record.summary) === summaryKey(nextSummary)) return res.json({ success: true, data: record, unchanged: true, message: '摘要内容未变化，无需重复保存' });
+    const contentUnchanged = record && record.name === name && summaryKey(record.summary) === summaryKey(nextSummary);
+    if (contentUnchanged && !req.body.expectedRecordVersion) return res.json({ success: true, data: record, unchanged: true, message: '摘要内容未变化，无需重复保存' });
     const now = new Date();
     const operator = req.staff.name || req.staff.username || '';
     if (!record) {
       record = { _id: new mongoose.Types.ObjectId(), name, summaryHistory: [], courseEntries: [] };
       records.push(record);
-    } else if (hasMedicalSummary(record.summary)) {
+    } else if (!contentUnchanged && hasMedicalSummary(record.summary)) {
       record.summaryHistory = [...(record.summaryHistory || []), { ...record.summary, archivedAt: now, archivedById: req.staff._id, archivedByName: operator }].slice(-100);
     }
     record.name = name;
-    record.summary = { ...nextSummary, updatedAt: now, updatedById: req.staff._id, updatedByName: operator };
+    record.summary = { ...record.summary, ...nextSummary,
+      ...(contentUnchanged ? {} : { updatedAt: now, updatedById: req.staff._id, updatedByName: operator }),
+      ...(req.body.expectedRecordVersion ? { coveredChanges: (record.courseEntries || []).map(changeStamp), coverageConfirmedAt: now, coverageConfirmedByName: operator } : {}),
+    };
     const saved = await User.collection.updateOne({ _id: patient._id, diseaseRecords: patient.diseaseRecords === undefined ? { $exists: false } : patient.diseaseRecords }, { $set: { diseaseRecords: records } });
     if (!saved.matchedCount) return res.status(409).json({ success: false, message: '专病资料已更新，请刷新后重试' });
     res.json({ success: true, data: record });
@@ -1348,19 +1353,30 @@ router.post('/patients/:id/disease-records/course-entries', staffAuth, checkPerm
     const content = mergedHealthChange(req.body);
     if (!name) return res.status(400).json({ success: false, message: '请先选择专病' });
     if (!content) return res.status(400).json({ success: false, message: '请填写本次健康变化' });
+    let dailySource = null;
+    if (req.body.sourceHealthRecordId) {
+      if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '日常变化请由健康顾问核对归档' });
+      const scope = await getVisiblePlanPatientIds(req.staff);
+      if (scope && !scope.some(value => String(value) === req.params.id)) return res.status(403).json({ success: false, message: '无此会员权限' });
+      dailySource = await HealthRecord.findOne({ _id: req.body.sourceHealthRecordId, user: patient._id, deletedAt: null }).select('label value unit note recordedAt type status').lean();
+      if (!dailySource) return res.status(404).json({ success: false, message: '来源反馈不存在或已删除' });
+    }
     const records = normalizedDiseaseRecords(patient);
     const recordId = cleanMedicalText(req.body.recordId, 100);
     let record = records.find(item => recordId && String(item._id) === recordId) || records.find(item => item.name === name);
     if (!record) { record = { _id: new mongoose.Types.ObjectId(), name, summary: {}, summaryHistory: [], courseEntries: [] }; records.push(record); }
+    if (dailySource && (record.courseEntries || []).some(entry => String(entry.sourceHealthRecordId || '') === String(dailySource._id))) return res.json({ success: true, unchanged: true, message: '该日常反馈已归档到当前专病' });
     const entry = {
       _id: new mongoose.Types.ObjectId(), occurredAt: req.body.occurredAt && !Number.isNaN(Date.parse(req.body.occurredAt)) ? new Date(req.body.occurredAt) : new Date(), content,
       symptoms: '', examination: cleanMedicalText(req.body.examination, 5000), diagnosis: cleanMedicalText(req.body.diagnosis, 5000),
       medicationChange: cleanMedicalText(req.body.medicationChange, 5000), treatmentResponse: cleanMedicalText(req.body.treatmentResponse, 5000), nextPlan: cleanMedicalText(req.body.nextPlan, 5000),
       ...cleanHealthInfoProvenance(req.body),
+      ...(dailySource ? { sourceHealthRecordId: dailySource._id, sourceLabel: '日常健康反馈', sourceSnapshot: dailySource } : {}),
       recordedAt: new Date(), recordedById: req.staff._id, recordedByName: req.staff.name || req.staff.username || '', recordedByRole: req.staff.role || '',
     };
     record.courseEntries = [entry, ...(record.courseEntries || [])].slice(0, 500);
-    await User.collection.updateOne({ _id: patient._id }, { $set: { diseaseRecords: records } });
+    const saved = await User.collection.updateOne({ _id: patient._id, diseaseRecords: patient.diseaseRecords === undefined ? { $exists: false } : patient.diseaseRecords }, { $set: { diseaseRecords: records } });
+    if (!saved.matchedCount) return res.status(409).json({ success: false, message: '专病档案已更新，请刷新后重试' });
     res.status(201).json({ success: true, data: entry });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });

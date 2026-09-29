@@ -89,6 +89,8 @@ export const staffAPI = {
   addMedicalCourseEntry: (id, d) => req(`/staff/patients/${id}/medical-record/course-entries`, { method: 'POST', body: JSON.stringify(d) }),
   updateDiseaseRecordSummary: (id, d) => req(`/staff/patients/${id}/disease-records/summary`, { method: 'PUT', body: JSON.stringify(d) }),
   generateDiseaseSummary: (id, recordId) => req(`/staff/patients/${id}/disease-records/${recordId}/summary-draft`, { method: 'POST' }),
+  getDiseaseActivity: id => req(`/staff/patients/${id}/disease-activity`),
+  linkDiseaseService: (id, recordId, key, action = 'link') => req(`/staff/patients/${id}/disease-records/${recordId}/service-links`, { method: 'POST', body: JSON.stringify({ key, action }) }),
   addDiseaseCourseEntry: (id, d) => req(`/staff/patients/${id}/disease-records/course-entries`, { method: 'POST', body: JSON.stringify(d) }),
   deleteDiseaseRecord: (id, recordId) => req(`/staff/patients/${id}/disease-records/${recordId}`, { method: 'DELETE' }),
   removeDiseaseGroup: (id, diseaseName) => req(`/staff/patients/${id}/disease-record-by-name`, { method: 'DELETE', body: JSON.stringify({ diseaseName }) }),

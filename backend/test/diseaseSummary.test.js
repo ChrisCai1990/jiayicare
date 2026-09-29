@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
-const { SUMMARY_FIELDS, summaryKey, groupSummaryHistory } = require('../../shared/diseaseSummary.cjs');
+const { SUMMARY_FIELDS, summaryKey, groupSummaryHistory, changeStamp } = require('../../shared/diseaseSummary.cjs');
 const { recordVersion, buildSummaryContext, generateDiseaseSummary } = require('../src/utils/diseaseSummary');
 const summary = Object.fromEntries(SUMMARY_FIELDS.map(k => [k, '旧资料']));
 const record = { _id: 'record', name: '测试专病', summary: { ...summary, sourceType: 'medical_record', verificationStatus: 'verified' }, summaryHistory: [], courseEntries: [
@@ -44,7 +44,7 @@ function saveHarness(body, matchedCount = 1) {
   const context = { router: { put: (path, ...fns) => { handler = fns.at(-1); } }, staffAuth: () => {}, checkPermission: () => {},
     User: { findById: () => ({ select: () => ({ lean: async () => patient }) }), collection: { updateOne: async (filter, update) => { written = { filter, update }; return { matchedCount }; } } },
     cleanMedicalText: v => String(v || '').trim(), MEDICAL_SUMMARY_FIELDS: SUMMARY_FIELDS,
-    normalizedDiseaseRecords: p => p.diseaseRecords.map(r => ({ ...r })), recordVersion, summaryKey,
+    normalizedDiseaseRecords: p => p.diseaseRecords.map(r => ({ ...r })), recordVersion, summaryKey, changeStamp,
     cleanHealthInfoProvenance: b => ({ sourceType: b.sourceType, verificationStatus: b.verificationStatus }), hasMedicalSummary: s => !!s?.chiefComplaint,
   };
   const start = routeSource.indexOf("router.put('/patients/:id/disease-records/summary'");
@@ -70,6 +70,14 @@ test('changed save archives exactly once and atomically checks the original reco
 test('AI draft generated against old course entries cannot overwrite newer records', async () => {
   const { response, written } = await saveHarness({ ...payload, expectedRecordVersion: 'old' }).run();
   assert.equal(response.code, 409); assert.equal(written, undefined);
+});
+test('confirming identical AI summary updates coverage without adding duplicate history', async () => {
+  const { response, written } = await saveHarness({ ...payload, expectedRecordVersion: recordVersion(record) }).run();
+  assert.equal(response.code, 200);
+  const saved = written.update.$set.diseaseRecords[0];
+  assert.equal(saved.summaryHistory.length, 0);
+  assert.equal(saved.summary.coveredChanges.length, 2);
+  assert.ok(saved.summary.coverageConfirmedAt);
 });
 
 test('draft endpoint scopes patient and reports, returns only a draft, and detects changed source data', async () => {
