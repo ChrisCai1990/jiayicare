@@ -4,6 +4,7 @@ const staffAuth = require('../middleware/staffAuth');
 const User = require('../models/User');
 const MedicalReport = require('../models/MedicalReport');
 const { generateDiseaseSummary, recordVersion } = require('../utils/diseaseSummary');
+const { sourceIds } = require('../../../shared/diseaseReportArchive.cjs');
 const { baseVersion, stageScope, stageFields } = require('../utils/diseaseStages');
 module.exports = ({ getVisiblePlanPatientIds }) => {
   const router = express.Router();
@@ -28,7 +29,7 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
       const found = await getRecord(req, res); if (!found) return;
       const { patient, record } = found;
       const scoped = stageScope(record, req.body.cutoff);
-      const ids = [...new Set(scoped.record.courseEntries.map(e => String(e.sourceReportId || '')).filter(mongoose.isValidObjectId))];
+      const ids = [...new Set(scoped.record.courseEntries.flatMap(sourceIds).filter(mongoose.isValidObjectId))];
       const reports = await reportsFor(patient, ids);
       // Reports are evidence for the reviewed timeline; never ingest unrelated/unreviewed uploads.
       if (reports.length !== ids.length) throw new Error('关联报告已变化或尚未审核，请先核对来源资料');

@@ -7,7 +7,7 @@ function buildSummaryContext(record, reports) {
     content: e.content || '', symptoms: e.symptoms || '', examination: e.examination || '', diagnosis: e.diagnosis || '',
     medicationChange: e.medicationChange || '', treatmentResponse: e.treatmentResponse || '', nextPlan: e.nextPlan || '',
     sourceType: e.sourceType || '', sourceInstitution: e.sourceInstitution || '', verificationStatus: e.verificationStatus || '',
-    sourceReportId: String(e.sourceReportId || ''),
+    sourceReportId: String(e.sourceReportId || ''), sourceReportIds:(e.sourceReportIds || []).map(String),
   })).sort((a, b) => String(a.occurredAt || '').localeCompare(String(b.occurredAt || '')));
   const sources = reports.map(r => ({ id: String(r._id), title: r.title, date: r.checkDate || r.date || null,
     hospital: r.hospital || r.institution || '', documentCategory: r.documentCategory,

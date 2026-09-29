@@ -8,7 +8,7 @@ const start = page.indexOf('  const openHealthCourseReview =');
 const end = page.indexOf('\n  useEffect(', start);
 function harness(getReport, save = async () => {}) {
   const calls = {};
-  const ctx = { id: 'patient', activePatientId: { current: 'patient' },
+  const ctx = { data:{user:{diseaseRecords:[]}}, archiveHelpers:{findReportArchive:()=>null}, setCourseArchivePreview:v=>{calls.archive=v}, setDiseaseReportPicker:()=>{}, id: 'patient', activePatientId: { current: 'patient' },
     staffAPI: { getReport, generateHealthCourseDraft: () => { throw new Error('Must not regenerate AI'); }, reviewHealthCourseDraft: save },
     setHealthCourseSaving: v => { calls.saving = v; }, setHealthCourseError: v => { calls.error = v; },
     setHealthCourseReview: v => { calls.review = v; }, toast: v => { calls.toast = v; },
@@ -66,3 +66,5 @@ test('only a successful explicit decision clears the matching task context', asy
   await h.reviewHealthCourseDraft('approve');
   assert.equal(h.calls.nav, undefined); assert.equal(h.calls.error, 'save failed');
 });
+
+test('viewing an already archived report bypasses draft loading and AI',async()=>{const h=harness(async()=>{throw Error('should not load draft')});const archive={diseaseName:'专病',entry:{content:'已归档'}};h.ctx.archiveHelpers.findReportArchive=()=>archive;await h.openHealthCourseReview({_id:'report'});assert.equal(h.calls.archive,archive);assert.equal(h.calls.review,undefined)});

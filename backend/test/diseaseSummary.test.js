@@ -41,7 +41,7 @@ const routeSource = fs.readFileSync(require.resolve('../src/routes/staff'), 'utf
 function saveHarness(body, matchedCount = 1) {
   const patient = { _id: 'patient', diseaseRecords: [structuredClone(record)] };
   let handler, written;
-  const context = { router: { put: (path, ...fns) => { handler = fns.at(-1); } }, staffAuth: () => {}, checkPermission: () => {},
+  const context = { sourceIds:require('../../shared/diseaseReportArchive.cjs').sourceIds, router: { put: (path, ...fns) => { handler = fns.at(-1); } }, staffAuth: () => {}, checkPermission: () => {},
     User: { findById: () => ({ select: () => ({ lean: async () => patient }) }), collection: { updateOne: async (filter, update) => { written = { filter, update }; return { matchedCount }; } } },
     cleanMedicalText: v => String(v || '').trim(), MEDICAL_SUMMARY_FIELDS: SUMMARY_FIELDS,
     normalizedDiseaseRecords: p => p.diseaseRecords.map(r => ({ ...r })), recordVersion, summaryKey, changeStamp,
@@ -81,7 +81,7 @@ test('draft endpoint scopes patient and reports, returns only a draft, and detec
   const end = routeSource.indexOf("router.put('/patients/:id/disease-records/summary'", start);
   for (const scenario of ['allowed', 'outsider', 'changed']) {
     let handler, query, generated = false, reads = 0;
-    const context = {
+    const context = { sourceIds:require('../../shared/diseaseReportArchive.cjs').sourceIds,
       router: { post: (path, ...fns) => { handler = fns.at(-1); } }, staffAuth: () => {}, checkPermission: () => {},
       getVisiblePlanPatientIds: async () => scenario === 'outsider' ? [] : ['patient'],
       User: { findById: () => ({ select: () => ({ lean: async () => ({ _id: 'patient', diseaseRecords: [{ ...record, ...(scenario === 'changed' && ++reads > 1 ? { name: '已修改' } : {}) }] }) }) }) },

@@ -113,6 +113,7 @@ router.use('/report-followups', require('./reportFollowUps')({ getVisiblePlanPat
 router.use('/marketing', require('./visitorLeads')({ getVisiblePlanPatientIds }));
 router.use('/patients', require('./diseaseActivity')({ getVisiblePlanPatientIds }));
 router.use('/patients', require('./diseaseStages')({ getVisiblePlanPatientIds }));
+router.use('/patients', require('./diseaseReportLinks')({ getVisiblePlanPatientIds }));
 const activeReportParseJobs = new Set();
 
 // 这两类资料仍可上传、由人工审核/录入，但不得触发视觉模型。documentCategory
@@ -1236,6 +1237,7 @@ router.patch('/insurance-cases/:caseId/steps/:stepId', staffAuth, async (req, re
 });
 
 const MEDICAL_SUMMARY_FIELDS = ['chiefComplaint', 'presentIllness', 'physicalExam', 'epidemiologicalHistory', 'initialDiagnosis', 'currentMedication'];
+const { findReportArchive, sourceIds } = require('../../../shared/diseaseReportArchive.cjs');
 const { summaryKey, changeStamp } = require('../../../shared/diseaseSummary.cjs');
 const { recordVersion, generateDiseaseSummary } = require('../utils/diseaseSummary');
 const cleanMedicalText = (value, max = 10000) => String(value ?? '').trim().slice(0, max);
@@ -1255,6 +1257,8 @@ async function generateHealthCourseDraft(report) {
   if (!report?.user || !HEALTH_COURSE_DOCUMENTS.has(report.documentCategory)) return null;
   const patient = await User.findById(report.user).select('diseaseRecords').lean();
   if (!patient) return null;
+  const archived = findReportArchive(patient.diseaseRecords, report._id);
+  if (archived) return { alreadyArchived:true, archive:archived };
   const diseaseNames = (patient.diseaseRecords || []).map(item => item.name).filter(Boolean);
   const evidence = courseEvidence(report);
   const input = JSON.stringify({ ...evidence, existingDiseases:diseaseNames });
@@ -1306,7 +1310,7 @@ router.post('/patients/:id/disease-records/:recordId/summary-draft', staffAuth, 
     if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
     const record = (patient.diseaseRecords || []).find(item => String(item._id) === req.params.recordId);
     if (!record) return res.status(404).json({ success: false, message: '请先保存专病档案，再汇总摘要' });
-    const reportIds = [...new Set((record.courseEntries || []).map(item => String(item.sourceReportId || '')).filter(value => mongoose.isValidObjectId(value)))];
+    const reportIds = [...new Set((record.courseEntries || []).flatMap(sourceIds).filter(value => mongoose.isValidObjectId(value)))];
     const reports = await MedicalReport.find({ _id: { $in: reportIds }, user: patient._id, audit_status: 'audited' })
       .select('title date checkDate hospital institution documentCategory aiSummary reportItems clinicalReview').lean();
     const result = await generateDiseaseSummary(record, reports, require('../utils/ai').chat);
@@ -4836,6 +4840,9 @@ router.post('/medical-reports/:id/health-course-draft', staffAuth, async (req, r
     if (!report) return res.status(404).json({ success:false, message:'医疗资料不存在' });
     const scope = await getVisiblePlanPatientIds(req.staff);
     if (scope && !scope.some(id => String(id) === String(report.user))) return res.status(403).json({ success:false, message:'无此会员权限' });
+    const archivePatient = await User.findById(report.user).select('diseaseRecords medicalRecord').lean();
+    const archive = findReportArchive(normalizedDiseaseRecords(archivePatient || {}), report._id);
+    if (archive) return res.json({ success:true, data:{ alreadyArchived:true, archive } });
     if (report.healthCourseDraft?.status === 'approved') return res.status(409).json({ success:false, message:'该病历已归档，请在诊疗时间轴修订原记录' });
     if (!HEALTH_COURSE_DOCUMENTS.has(report.documentCategory)) return res.status(400).json({ success:false, message:'仅门诊病历、住院病历和检验检查资料支持提取健康变化；用药信息请在用药模块审核' });
     if (report.audit_status !== 'audited') return res.status(409).json({ success:false, message:'请先完成医疗资料审核，再生成入档草稿' });
@@ -4852,6 +4859,9 @@ router.put('/medical-reports/:id/health-course-draft', staffAuth, async (req, re
     if (!report || !report.healthCourseDraft) return res.status(404).json({ success:false, message:'待审核草稿不存在' });
     const scope = await getVisiblePlanPatientIds(req.staff);
     if (scope && !scope.some(id => String(id) === String(report.user))) return res.status(403).json({ success:false, message:'无此会员权限' });
+    const archivePatient = await User.findById(report.user).select('diseaseRecords medicalRecord').lean();
+    const archive = findReportArchive(normalizedDiseaseRecords(archivePatient || {}), report._id);
+    if (archive) return res.json({ success:true, data:{ alreadyArchived:true, archive }, unchanged:true });
     if (report.audit_status !== 'audited' || report.healthCourseDraft.status !== 'pending_review') return res.status(409).json({ success:false, message:'病历或草稿状态已变化，请刷新' });
     if (!['approve','dismiss'].includes(req.body.action)) return res.status(400).json({ success:false, message:'无效审核操作' });
     if (report.healthCourseDraft.sourceVersion && report.healthCourseDraft.sourceVersion !== recordVersion(courseEvidence(report))) return res.status(409).json({ success:false, message:'来源病历已修改，请重新提取草稿' });
@@ -12439,8 +12449,9 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
       };
       const healthCourseReports = await MedicalReport.find(healthCourseFilter)
-        .populate('user', 'name').sort({ 'healthCourseDraft.generatedAt': -1, updatedAt: -1 }).limit(50).lean();
+        .populate('user', 'name diseaseRecords medicalRecord').sort({ 'healthCourseDraft.generatedAt': -1, updatedAt: -1 }).limit(50).lean();
       healthCourseReports.forEach(report => {
+        if (findReportArchive(normalizedDiseaseRecords(report.user || {}),report._id)) return;
         const createdAt = report.healthCourseDraft?.generatedAt || report.updatedAt || report.createdAt || now;
         todos.push({
           id: 'healthcourse_' + report._id, type: 'health_course_review', label: '健康变化待审核', priority: 2,

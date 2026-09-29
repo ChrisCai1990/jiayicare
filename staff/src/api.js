@@ -88,6 +88,7 @@ export const staffAPI = {
   updateMedicalRecordSummary: (id, d) => req(`/staff/patients/${id}/medical-record/summary`, { method: 'PUT', body: JSON.stringify(d) }),
   addMedicalCourseEntry: (id, d) => req(`/staff/patients/${id}/medical-record/course-entries`, { method: 'POST', body: JSON.stringify(d) }),
   updateDiseaseRecordSummary: (id, d) => req(`/staff/patients/${id}/disease-records/summary`, { method: 'PUT', body: JSON.stringify(d) }),
+  linkDiseaseReport: (id,recordId,data) => req(`/staff/patients/${id}/disease-records/${recordId}/report-links`, { method:'POST', body:JSON.stringify(data) }),
   generateDiseaseStage: (id, recordId, cutoff) => req(`/staff/patients/${id}/disease-records/${recordId}/stage-draft`, { method:'POST', body:JSON.stringify({ cutoff }) }),
   confirmDiseaseStage: (id, recordId, data) => req(`/staff/patients/${id}/disease-records/${recordId}/stages`, { method:'POST', body:JSON.stringify(data) }),
   generateDiseaseSummary: (id, recordId) => req(`/staff/patients/${id}/disease-records/${recordId}/summary-draft`, { method: 'POST' }),
