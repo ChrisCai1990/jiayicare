@@ -7,7 +7,7 @@ const { renderToStaticMarkup } = require('react-dom/server');
 
 function panel(states, navigate = () => {}) {
   const source = fs.readFileSync(require.resolve('../../staff/src/components/ConsultationTodosPanel.jsx'), 'utf8')
-    .replace(/^import .*\n/gm, '').replace('export default function', 'function');
+    .replace(/^import [^\r\n]*\r?\n/gm, '').replace('export default function', 'function');
   const compiled = require('@babel/core').transformSync(source + '\nConsultationTodosPanel;', { configFile: false, babelrc: false, presets: [require.resolve('@babel/preset-react')] }).code;
   let index = 0;
   const Component = vm.runInNewContext(compiled, { React, useEffect() {}, useState: () => [states[index++], () => {}], useNavigate: () => navigate });
