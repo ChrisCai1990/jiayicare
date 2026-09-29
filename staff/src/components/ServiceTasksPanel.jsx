@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
-import { formatChineseDate } from '../utils/date'
+import { formatChineseDate, formatChineseDateTime } from '../utils/date'
 import { isCheckupDesignStage } from '../utils/checkupTaskRouting'
 import { useStaff } from '../App'
 import AnnualDispatchCard from './AnnualDispatchCard'
@@ -288,7 +288,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
                 {(task.supervisionProgress?.current || []).map(row => <div key={row.id}>当前环节：<b>{row.label}</b> · 处理人：{row.assignee}{row.blocked ? ' · 等待解锁' : ''}</div>)}
                 <div>{task.supervisionProgress?.message || '进度待核对，未推断服务已完成'}</div>
               </div>}
-              {task.feedbackReview&&<div style={{marginTop:8,padding:10,borderRadius:8,background:'#EAF5F0',color:'#274838',fontSize:12}}><div>{task.feedbackReview.label}</div>{task.feedbackReview.note&&<div style={{whiteSpace:'pre-wrap',marginTop:4}}>补充：{task.feedbackReview.note}</div>}<button type="button" className="btn btn-primary btn-sm" style={{marginTop:8}} onClick={e=>{e.stopPropagation();openTask(task)}}>查看反馈并核实</button></div>}
+              {task.feedbackReview&&<div style={{marginTop:8,padding:10,borderRadius:8,background:'#EAF5F0',color:'#274838',fontSize:12}}><div style={{fontWeight:600,marginBottom:6}}>客户提交：{formatChineseDateTime(task.feedbackReview.submittedAt)||'时间未记录'}</div><div>{task.feedbackReview.label}</div>{task.feedbackReview.note&&<div style={{whiteSpace:'pre-wrap',marginTop:4}}>补充：{task.feedbackReview.note}</div>}<button type="button" className="btn btn-primary btn-sm" style={{marginTop:8}} onClick={e=>{e.stopPropagation();openTask(task)}}>查看反馈并核实</button></div>}
               {progress && <div style={{ fontSize: 12, color: '#52685D', marginTop: 3 }}>当前阶段：<b>{progress.label}</b>　下一步：{progress.next}</div>}
               {progress?.steps && <div style={{ marginTop: 7, maxWidth: 680 }}>
                 <div style={{ height: 7, borderRadius: 99, background: '#E3ECE7', overflow: 'hidden' }}>
@@ -323,9 +323,9 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
         </div>)}
       </div>}
       {dispatchTask && <div className="modal-overlay"><div className="modal" style={{ maxWidth: 780 }}>
-        <div className="modal-header"><h3>{dispatchTask.formData?.careFlowMode==='reminder' ? '就医提醒 · 资料与随访审核' : dispatchTask.careFlowId ? '就医协助 · 全流程办理' : annualDispatch.isExecution(dispatchTask) ? '就医协助 · 办理记录' : '就医协助 · 派单安排'}</h3><button className="modal-close" onClick={() => setDispatchTask(null)}>×</button></div>
+        <div className="modal-header"><h3>{dispatchTask.feedbackReview ? '核实客户就医反馈' : dispatchTask.formData?.careFlowMode==='reminder' ? '就医提醒 · 资料与随访审核' : dispatchTask.careFlowId ? '就医协助 · 全流程办理' : annualDispatch.isExecution(dispatchTask) ? '就医协助 · 办理记录' : '就医协助 · 派单安排'}</h3><button className="modal-close" onClick={() => setDispatchTask(null)}>×</button></div>
         <div className="modal-body"><AnnualDispatchCard key={dispatchTask._id} task={dispatchTask} staff={staff} onLinked={updated => { setDispatchTask(updated); staffAPI.getServiceTasks({ status: 'active', includeFuture: '1', limit: 100 }).then(r => setItems(r.data || [])) }} /></div>
-        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setDispatchTask(null)}>关闭</button></div>
+        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setDispatchTask(null)}>返回工作台</button></div>
       </div></div>}
     </div>
   )

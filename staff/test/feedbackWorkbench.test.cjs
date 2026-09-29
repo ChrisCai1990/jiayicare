@@ -47,9 +47,26 @@ async function input(container, value) {
 }
 
 test('待核实反馈优先显示，未来日期也可处理，并打开同一任务',async()=>{
- const task={_id:'feedback',careFlowId:'f',taskRole:'executor',status:'planned',date:'2099-01-01',createdAt:'2026-01-01',theme:'核实客户就医反馈',patientId:{_id:'p',name:'合成客户'},feedbackReview:{label:'合成反馈',note:'仅测试'}};
+ const task={_id:'feedback',careFlowId:'f',taskRole:'executor',status:'planned',date:'2099-01-01',createdAt:'2026-01-01',theme:'核实客户就医反馈',patientId:{_id:'p',name:'合成客户'},feedbackReview:{label:'合成反馈',note:'仅测试',submittedAt:'2026-01-02T03:04:00Z'}};
  const others=Array.from({length:6},(_,i)=>({...task,_id:'old'+i,careFlowId:'old'+i,feedbackReview:null,theme:'旧任务'+i,date:'2020-01-01'}));
  const Panel=load('components/ServiceTasksPanel.jsx',{'../api':{staffAPI:{getServiceTasks:async()=>({data:[...others,task]})}},'../App':{useStaff:()=>({staff:{role:'healthManager'}})},'./AnnualDispatchCard':{__esModule:true,default:({task})=>React.createElement('div',null,'已打开任务:'+task._id)},'../../../shared/annualDispatch.cjs':{dedicated:()=>false,isExecution:()=>false},'../utils/serviceTaskTitle.mjs':{serviceTaskTitle:t=>t.theme},'../utils/plannerOrderProgress.mjs':{isCustomerOrder:()=>false,serviceTaskGroupKey:t=>t.careFlowId}}).default;
  const view=await mount(React.createElement(MemoryRouter,null,React.createElement(Panel)));
- try{await settle();assert.match(view.container.textContent,/客户已反馈 · 待你核实/);assert.match(view.container.textContent,/合成反馈/);assert.ok(view.container.textContent.indexOf('合成反馈')<view.container.textContent.indexOf('旧任务0'));await click(view.container,'查看反馈并核实');assert.match(view.container.textContent,/已打开任务:feedback/);}finally{await view.close();}
+ try{await settle();assert.match(view.container.textContent,/客户已反馈 · 待你核实/);assert.match(view.container.textContent,/合成反馈/);assert.match(view.container.textContent,/客户提交：2026年1月2日/);assert.ok(view.container.textContent.indexOf('合成反馈')<view.container.textContent.indexOf('旧任务0'));await click(view.container,'查看反馈并核实');assert.match(view.container.textContent,/已打开任务:feedback/);}finally{await view.close();}
+});
+
+test('反馈核实动作首屏可见，确认仍需显式勾选并保留原反馈',async()=>{
+ const config=require('../../shared/careFlow.cjs');let submitted;
+ const data={_id:'flow',revision:3,patientId:'p',reports:[],events:[],state:{title:'合成服务',stage:'upload',people:{healthManager:{id:'m',role:'healthManager',name:'测试专员'}},data:{},returns:[],customerUpload:{declaration:{label:'合成原反馈',submittedAt:'2026-01-02T03:04:00Z'}}}};
+ const blank=()=>null;
+ const Card=load('components/CareFlowCard.jsx',{'../api':{careFlowAPI:{action:async(id,payload)=>{submitted=payload;return {data}},get:async()=>({data})}},'../../../shared/careFlow.cjs':config,'../../../shared/annualBookingPlan.cjs':{bookingSlots:()=>[]},'../../../shared/annualConsultationBrief.cjs':{consultationBrief:()=>({})},'./CareFlowHandoff':blank,'./CareFlowReviewEvidence':blank,'./CareFlowReportUploads':blank,'./CareFlowExaminations':{__esModule:true,default:blank,initialExaminations:()=>[]}}).default;
+ window.HTMLElement.prototype.scrollIntoView=function(){};
+ const view=await mount(React.createElement(Card,{task:{_id:'t'},staff:{_id:'m',role:'healthManager'},initialData:data}));
+ try{
+ assert.match(view.container.textContent,/客户提交：2026年1月2日/);
+ const confirm=[...view.container.querySelectorAll('button')].find(b=>b.textContent==='确认核实并提交');assert.equal(confirm.disabled,true);
+ await click(view.container,'退回修订');assert.equal(view.container.querySelector('details[aria-label="退回修订"]').open,true);
+ const box=view.container.querySelector('textarea');await act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value').set.call(box,'测试核实依据');box.dispatchEvent(new window.Event('input',{bubbles:true}));});
+ const checks=view.container.querySelectorAll('input[type="checkbox"]');for(const c of checks)await act(async()=>c.click());
+ assert.equal(confirm.disabled,false);await click(view.container,'确认核实并提交');assert.equal(submitted.action,'complete');assert.equal(submitted.value.note,'测试核实依据');assert.equal(data.state.customerUpload.declaration.label,'合成原反馈');
+ }finally{await view.close();}
 });
