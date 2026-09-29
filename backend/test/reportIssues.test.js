@@ -8,9 +8,9 @@ const report = { reportItems: [
 ] };
 test('胃镜和口腔无建议也保留，漏提和错误正常分类不能吞掉异常', () => {
   const result = reconcile(issueSources(report), [{ sourceId: 'item:gastric', status: 'normal' }, { sourceId: 'item:normal', status: 'normal' }]);
-  assert.equal(result.coverage.length, 3); assert.equal(result.issues.length, 2);
+  assert.equal(result.coverage.length, 3); assert.equal(result.issues.length, 1);
   assert.equal(result.issues[0].page, 12); assert.match(result.issues[0].evidence, /胃窦黏膜糜烂/);
-  assert.equal(result.issues[1].needsVerification, true); assert.equal(result.issues[1].originalRecommendation, '');
+  assert.equal(result.coverage.find(row => row.sourceId === 'item:dental').status, 'pending');
 });
 test('原文建议不允许伪造，系统建议不能自动成为顾问确认意见', () => {
   const result = reconcile(issueSources(report), [{ sourceId: 'item:dental', status: 'problem', originalRecommendation: '马上洁牙', suggestedRecommendation: '口腔评估及是否需洁牙' }]);
@@ -21,8 +21,30 @@ test('原文建议不允许伪造，系统建议不能自动成为顾问确认�
 test('批次之外及过长项目不截断，保留待核实和完整原文', async () => {
   const long = '所见'.repeat(10000); let count = 0;
   const result = await extractIssues({ reportItems: [...Array.from({ length: 25 }, (_, i) => ({ itemId: String(i), name: `检查${i}`, findings: '待核实' })), { itemId: 'long', name: '长报告', findings: long }] }, { chat: async messages => { count++; return JSON.stringify({ items: JSON.parse(messages[0].content).map(item => ({ sourceId: item.id, status: 'uncertain' })) }); } });
-  assert.equal(count, 3); assert.equal(result.coverage.length, 26); assert.equal(result.issues.length, 26);
-  assert.equal(result.issues.find(row => row.id === 'item:long').evidence, long);
+  assert.equal(count, 3); assert.equal(result.coverage.length, 26); assert.equal(result.issues.length, 25);
+  assert.equal(result.sources.find(row => row.id === 'item:long').evidence, long);
+  assert.equal(result.coverage.find(row => row.sourceId === 'item:long').status, 'pending');
+});
+
+test('123项人工兜底只保留11项已标问题，104项正常不审核，8项单独判断', () => {
+  const { reviewView, resolveCoverage } = require('../src/utils/reportIssues');
+  const sources = Array.from({ length: 123 }, (_, i) => ({ id: String(i), name: `项目${i}`, status: i < 104 ? 'normal' : i < 115 ? 'abnormal' : 'unknown', evidence: '原始结果' }));
+  const row = { purpose: 'annual_report_input', status: 'advisor_review', issueSources: sources,
+    issueCoverage: sources.map(source => ({ sourceId: source.id, status: 'uncertain', reason: '未获得完整提取结果，需顾问核对' })),
+    issueDrafts: sources.map(source => ({ id: source.id, title: source.name, advisorRecommendation: '', originalRecommendation: '', suggestedRecommendation: '' })) };
+  const view = reviewView(row);
+  assert.equal(view.issueDrafts.length, 11); assert.equal(view.issueCoverage.filter(x => x.status === 'normal').length, 104);
+  assert.equal(view.issueCoverage.filter(x => x.status === 'pending').length, 8); assert.equal(row.issueDrafts.length, 123);
+  const resolved = resolveCoverage(view, { '115': 'normal', '116': 'problem' });
+  assert.equal(resolved.issueDrafts.length, 12); assert.equal(resolved.issueCoverage.filter(x => x.status === 'pending').length, 6);
+  row.issueDrafts[0].advisorRecommendation = '已有人工意见';
+  assert.equal(reviewView(row).issueDrafts.length, 12);
+});
+
+test('AI漏答或无效返回不能伪装成123项临床待核实', async () => {
+  for (const response of ['{}', '{"items":[]}', '{"items":[null]}']) {
+    await assert.rejects(extractIssues(report, { chat: async () => response }), /缺项或格式无效/);
+  }
 });
 test('确认前逐项填写建议或排除原因，不允许删除问题或篡改原文', () => {
   const stored = reconcile(issueSources(report), []).issues;

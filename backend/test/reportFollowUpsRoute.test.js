@@ -34,6 +34,18 @@ test('问题确认仅存年度依据，零执行派单，旧发布入口拒绝',
   assert.equal(result.status, 200); assert.equal(result.body.data.followUpPublication.status, 'annual_input');
   assert.equal(result.body.data.issueDrafts[0].evidence, '原文胃炎');
 });
+
+test('待判断资料不能静默确认，顾问可逐项标为无需跟进并留审计', async t => {
+  actor = { _id: ids.advisor, role: 'familyDoctor' }; visible = [ids.patient];
+  let current = row({ purpose: 'annual_report_input', issueDrafts: [], issueSources: [{ id: 'u', name: '资料', evidence: '原文', status: 'unknown' }], issueCoverage: [{ sourceId: 'u', status: 'pending' }] });
+  t.mock.method(Draft, 'findById', async () => current);
+  t.mock.method(workflow, 'assertReportDraftSource', async () => {});
+  t.mock.method(workflow, 'syncReportReviewTask', async () => {});
+  t.mock.method(Draft, 'findOneAndUpdate', async (query, update) => { assert.equal(update.$push.auditLog.coverageDecisions.u, 'normal'); current = { ...current, ...update.$set }; return current; });
+  assert.equal((await request(t, { action: 'confirm_issues', revision: 0, coverageReviewed: true, issueDrafts: [] })).status, 409);
+  const result = await request(t, { action: 'resolve_coverage', revision: 0, issueDrafts: [], coverageDecisions: { u: 'normal' } });
+  assert.equal(result.status, 200); assert.equal(result.body.data.issueCoverage[0].status, 'normal'); assert.equal(result.body.data.issueDrafts.length, 0);
+});
 test('非顾问及无客户权限不能审核报告草稿', async t => {
   actor = { _id: ids.advisor, role: 'healthManager' }; visible = [ids.patient];
   t.mock.method(Draft, 'findById', async () => row());

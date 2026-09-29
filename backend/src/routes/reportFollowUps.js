@@ -32,7 +32,7 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
     await visible(req, req.params.patientId);
     if (!require('../utils/healthManagementRollout').enabledForPatient(req.params.patientId)) return res.json({ success: true, data: [], enabled: false });
     const rows = await Draft.find({ patientId: req.params.patientId }).sort({ createdAt: -1 }).limit(100).lean();
-    res.json({ success: true, data: rows });
+    res.json({ success: true, data: rows.map(require('../utils/reportIssues').reviewView) });
   }));
   router.post('/:id/generate', staffAuth, wrap(async (req, res) => {
     const row = await load(req);
@@ -56,8 +56,9 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
   router.post('/:id/review', staffAuth, wrap(async (req, res) => {
     let row = await load(req);
     const action = req.body.action;
-    if (['save_issues', 'confirm_issues', 'manual_issues'].includes(action)) {
+    if (['save_issues', 'confirm_issues', 'manual_issues', 'resolve_coverage'].includes(action)) {
       const issues = require('../utils/reportIssues');
+      row = issues.reviewView(row);
       if (!['advisor_review', 'no_action', 'excluded'].includes(row.status) || req.body.revision !== row.__v
         || row.followUpAutomation?.status === 'running') fail('草稿状态已更新，请刷新');
       await workflow.assertReportDraftSource({ ...(row.toObject ? row.toObject() : row), purpose: issues.PURPOSE });
@@ -73,16 +74,22 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
         }
       } else {
         if (row.purpose !== issues.PURPOSE || row.followUpAutomation?.status !== 'ready') fail('请先重新提取问题或转人工核对');
+        if (action === 'confirm_issues' && issueCoverage.some(item => item.status === 'pending')) fail('请先核对尚未判断的资料项目，或重新运行自动提取');
         if (action === 'confirm_issues' && req.body.coverageReviewed !== true) fail('请确认已核对资料覆盖范围及全部问题');
         try { issueDrafts = issues.validateIssues(req.body.issueDrafts, row.issueDrafts || [], { confirm: action === 'confirm_issues' }); }
         catch (error) { fail(error.message, 400); }
+        if (action === 'resolve_coverage') {
+          try { ({ issueDrafts, issueCoverage } = issues.resolveCoverage({ ...row, issueDrafts }, req.body.coverageDecisions)); }
+          catch (error) { fail(error.message, 400); }
+        }
       }
       const confirmed = action === 'confirm_issues';
       row = await Draft.findOneAndUpdate({ _id: row._id, status: row.status, __v: row.__v }, {
         $set: { purpose: issues.PURPOSE, status: confirmed ? 'approved' : 'advisor_review', issueDrafts, issueCoverage, issueSources,
           followUpAutomation: { status: 'ready', message: confirmed ? '问题及建议已确认，编制年度方案时自动融合；尚未生成执行随访。' : '问题及建议已保存，请核对覆盖范围后确认。' },
           ...(confirmed ? { advisorReviewedBy: req.staff._id, advisorReviewedAt: new Date(), followUpPublication: { status: 'annual_input', message: '已作为年度方案编制依据，不在此处派发执行任务。' } } : {}) },
-        $inc: { __v: 1 }, $push: { auditLog: { action, at: new Date(), by: req.staff._id, coverageReviewed: confirmed } },
+        $inc: { __v: 1 }, $push: { auditLog: { action, at: new Date(), by: req.staff._id, coverageReviewed: confirmed,
+          ...(action === 'resolve_coverage' ? { coverageDecisions: req.body.coverageDecisions } : {}) } },
       }, { new: true });
       if (!row) fail('草稿已更新，请刷新');
       if (confirmed) await workflow.completeReportReview(row._id);

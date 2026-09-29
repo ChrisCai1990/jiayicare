@@ -40,14 +40,14 @@ export default function ReportFollowUpDrafts({ patientId, canEdit }) {
     return () => clearTimeout(timer)
   }, [rows, dirty, patientId])
   const update = (id, drafts) => { setDirtyRows(prev => ({ ...prev, [id]: true })); setReviewed(prev => ({ ...prev, [id]: false })); setRows(prev => prev.map(row => row._id === id ? { ...row, issueDrafts: drafts } : row)) }
-  const act = async (row, action) => {
+  const act = async (row, action, coverageDecisions) => {
     if (action === 'generate' && (dirty || row.issueDrafts?.length || row.followUpDrafts?.length) && !window.confirm('重新从完整已解析资料提取问题，将替换当前问题草稿。已保存的上一版会保留审核记录，是否继续？')) return
     const requestedPatient = patientId
     setBusy(true); setError('')
     try {
       const result = action === 'generate'
         ? await staffAPI.generateReportFollowUpDraft(row._id, { revision: row.__v, issueMode: true })
-        : await staffAPI.reviewReportFollowUpDraft(row._id, { action, revision: row.__v, issueDrafts: row.issueDrafts || [], coverageReviewed: reviewed[row._id] === true })
+        : await staffAPI.reviewReportFollowUpDraft(row._id, { action, revision: row.__v, issueDrafts: row.issueDrafts || [], coverageReviewed: reviewed[row._id] === true, coverageDecisions })
       if (activePatient.current !== requestedPatient) return
       setRows(prev => prev.map(item => item._id === row._id ? result.data : item)); setReviewed(prev => ({ ...prev, [row._id]: false })); setDirtyRows(prev => ({ ...prev, [row._id]: false }))
     } catch (e) { if (activePatient.current === requestedPatient) setError(e.message) } finally { if (activePatient.current === requestedPatient) setBusy(false) }
@@ -62,10 +62,13 @@ export default function ReportFollowUpDrafts({ patientId, canEdit }) {
       const available = canEdit && ['advisor_review', 'no_action', 'excluded'].includes(row.status)
       const editable = available && annual && status === 'ready'
       const coverage = row.issueCoverage || [], drafts = row.issueDrafts || []
+      const pending = coverage.filter(item => item.status === 'pending')
       return <article key={row._id} className="report-issues-report">
         <header><h4>{row.title}</h4><span className="report-issue-tag">{historical ? '历史随访记录' : statusLabel[row.status]}</span></header>
         <p>{annual ? row.followUpAutomation?.message : historical ? '保留原已审核随访及执行记录。' : '旧版仅整理后续行动，可能遗漏未写建议的异常。请重新提取完整问题清单。'}</p>
-        {annual && <div className="report-issues-coverage"><b>资料覆盖核对</b><p>已解析资料 {coverage.length} 项 · 问题及待核实 {drafts.length} 项 · 未提取到明确异常 {coverage.filter(item => item.status === 'normal').length} 项</p><p>仅覆盖已解析内容。缺页、未识别的检查须对照原件补充，不能视为无异常。</p><details><summary>查看全部项目及核对状态</summary>{coverage.length ? <ul>{coverage.map(item => <li key={item.sourceId}><b>{item.name}</b>{item.page ? `（第${item.page}页）` : ''}：{{ normal: '未提取到明确异常', problem: '已列入问题', uncertain: '待核实' }[item.status]}{item.reason ? `；${item.reason}` : ''}<details><summary>查看该项原文</summary><p>{row.issueSources?.find(source => source.id === item.sourceId)?.evidence || '缺少结果，需核对原件'}</p></details></li>)}</ul> : <p>没有可核对的结构化资料，请核对原件并补充问题。</p>}</details></div>}
+        {annual && <div className="report-issues-coverage"><b>资料覆盖核对</b><p>资料共 {coverage.length} 项 · 需审核建议 {drafts.length} 项 · 正常或无需跟进 {coverage.filter(item => item.status === 'normal').length} 项 · 尚待判断 {pending.length} 项</p><p>正常项目无需逐项填写建议；尚待判断不代表异常。仅覆盖已解析资料。</p>
+          {!!pending.length && <details open><summary>尚待判断的资料（{pending.length}项）</summary><p>可点击“重新提取问题”自动判断，或查看下列原文后选择是否需要跟进。</p><ul>{pending.map(item => <li key={item.sourceId}><b>{item.name}</b>{item.page ? ` · 第${item.page}页` : ''}<p>{row.issueSources?.find(source => source.id === item.sourceId)?.evidence || '缺少结果，请核对原件'}</p>{editable && <div className="report-issues-actions"><button disabled={busy} onClick={() => act(row, 'resolve_coverage', { [item.sourceId]: 'normal' })}>已核对，无需跟进</button><button disabled={busy} onClick={() => act(row, 'resolve_coverage', { [item.sourceId]: 'problem' })}>列入问题建议</button></div>}</li>)}</ul></details>}
+          <details><summary>查看全部资料记录（无需重复审核正常项）</summary>{coverage.length ? <ul>{coverage.map(item => <li key={item.sourceId}><b>{item.name}</b>{item.page ? `（第${item.page}页）` : ''}：{{ normal: '正常或无需跟进', problem: '已列入问题', uncertain: '具体问题待核实', pending: '尚未判断' }[item.status]}{item.reason ? `；${item.reason}` : ''}<details><summary>查看该项原文</summary><p>{row.issueSources?.find(source => source.id === item.sourceId)?.evidence || '缺少结果，需核对原件'}</p></details></li>)}</ul> : <p>没有可核对的结构化资料，请核对原件并补充问题。</p>}</details></div>}
         {annual && drafts.map((issue, index) => <ReportIssueCard key={issue.id} issue={issue} index={index} disabled={busy || !editable} onChange={patch => update(row._id, drafts.map((item, i) => i === index ? { ...item, ...patch } : item))} />)}
         {!annual && <details><summary>查看旧版内容及来源</summary>{(row.followUpDrafts || []).map((item, i) => <div key={i}><b>{item.title}</b><p>{item.content}</p></div>)}<pre>{JSON.stringify(row.sourceSnapshot, null, 2)}</pre></details>}
         {available && <div className="report-issues-actions">
