@@ -139,3 +139,50 @@ test('late customer match cannot overwrite a newly opened contact dialog', async
     assert.equal(view.container.querySelector('button[type=submit]').disabled,false);
   } finally {await view.close()}
 });
+
+
+test('loaded lead switches to its exact intake without rendering lead data as service progress', async () => {
+  let finish, query;
+  const row={_id:'lead',intakeId:'intake-1',name:'咨询客户',status:'contacted'};
+  const View=load('components/VisitorLeadWorkbench.jsx',{'../api':{staffAPI:{
+    getVisitorLeads:async()=>({data:[row],total:1,limit:50}),
+    getServiceIntakes:args=>{query=args;return new Promise(resolve=>{finish=resolve})},
+  }}}).default;
+  const view=await mount(React.createElement(MemoryRouter,null,React.createElement(View,{toast:()=>{}})));
+  try {
+    await click(view.container,'查看服务承接');
+    assert.match(view.container.textContent,/正在加载/);
+    assert.equal(query.itemId,'intake-1');assert.equal(query.status,'');
+    await act(async()=>finish({data:[{_id:'intake-1',customer:{name:'已关联客户'},status:'closed',progress:{stage:'承接已关闭',current:[],canClose:true}}],total:1,limit:50}));
+    assert.match(view.container.textContent,/已关联客户/);
+    assert.match(view.container.textContent,/承接已关闭/);
+    await click(view.container,'官网咨询');
+    assert.match(view.container.textContent,/咨询客户/);
+  } finally {await view.close()}
+});
+
+
+test('service load failure stays visible and refresh recovers without stale lead rows', async () => {
+  let fail=true;
+  const View=load('components/VisitorLeadWorkbench.jsx',{'../api':{staffAPI:{
+    getVisitorLeads:async()=>({data:[{_id:'lead',name:'原咨询',status:'contacted',intakeId:'target'}],total:1,limit:50}),
+    getServiceIntakes:async()=>{if(fail) throw Error('暂时无法加载');return {data:[],total:0,limit:50}},
+  }}}).default;
+  const view=await mount(React.createElement(MemoryRouter,null,React.createElement(View,{toast:()=>{}})));
+  try {
+    await click(view.container,'查看服务承接');
+    assert.match(view.container.querySelector('[role=alert]').textContent,/暂时无法加载/);
+    assert.doesNotMatch(view.container.textContent,/原咨询/);
+    fail=false;await click(view.container,'刷新');
+    assert.equal(view.container.querySelector('[role=alert]'),null);
+    await click(view.container,'服务承接与进度');
+    assert.doesNotMatch(view.container.textContent,/正在加载/);
+  } finally {await view.close()}
+});
+
+test('direct service link defaults to open rather than lead status', async () => {
+  let query;
+  const View=load('components/VisitorLeadWorkbench.jsx',{'../api':{staffAPI:{getServiceIntakes:async args=>{query=args;return {data:[],total:0,limit:50}}}}}).default;
+  const view=await mount(React.createElement(MemoryRouter,{initialEntries:['/visitor-leads?workbench=intakes&itemId=target']},React.createElement(View,{toast:()=>{}})));
+  try {assert.equal(query.status,'open');assert.equal(query.itemId,'target')}finally{await view.close()}
+});

@@ -13,7 +13,7 @@ export default function VisitorLeadWorkbench({ toast }) {
   const location = useLocation()
   const params = new URLSearchParams(location.search)
   const [itemId, setItemId] = useState(params.get('itemId') || '')
-  const [tab, setTab] = useState(params.get('workbench') === 'intakes' ? 'intakes' : 'leads'), [status, setStatus] = useState(params.get('status') || 'new'), [page, setPage] = useState(1)
+  const [tab, setTab] = useState(params.get('workbench') === 'intakes' ? 'intakes' : 'leads'), [status, setStatus] = useState(params.get('status') ?? (params.get('workbench') === 'intakes' ? 'open' : 'new')), [page, setPage] = useState(1)
   const [result, setResult] = useState({ data: [], total: 0, limit: 20 }), [loading, setLoading] = useState(false), [error, setError] = useState('')
   const [edit, setEdit] = useState(null), [form, setForm] = useState({}), [busy, setBusy] = useState(false)
   const [patients, setPatients] = useState([]), [search, setSearch] = useState(''), [options, setOptions] = useState({ orders: [], plans: [] })
@@ -29,7 +29,16 @@ export default function VisitorLeadWorkbench({ toast }) {
     finally { if (ticket === generation.current) setLoading(false) }
   }
   useEffect(() => { load(); return () => { generation.current++ } }, [tab, status, page, itemId])
-  function switchTab(value) { setItemId(''); setTab(value); setStatus(value === 'leads' ? 'new' : 'open'); setPage(1) }
+  function switchTab(value, targetId = '') {
+    // Invalidate pending requests and clear the previous tab's differently shaped rows before rendering.
+    generation.current++
+    setResult({ data: [], total: 0, limit: 20 }); setError('')
+    const nextStatus = targetId ? '' : value === 'leads' ? 'new' : 'open'
+    const changed = tab !== value || itemId !== targetId || status !== nextStatus || page !== 1
+    setLoading(changed)
+    setItemId(targetId); setTab(value); setStatus(nextStatus); setPage(1)
+    if (!changed) load()
+  }
   function closeDialog() { if (submitting.current) return; dialogVersion.current++; setEdit(null) }
   async function open(row, action) {
     const version = ++dialogVersion.current
@@ -120,7 +129,7 @@ export default function VisitorLeadWorkbench({ toast }) {
           {row.acceptance && !row.intakeId && <p className="consultation-deadline">服务承接尚未完成，请点击下方按钮继续确认。</p>}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {row.status === 'new' && <button className="btn btn-primary" onClick={() => open(row, 'contacted')}>记录联系结果</button>}
-            {row.intakeId ? <button className="btn btn-primary" onClick={() => switchTab('intakes')}>查看服务承接</button> : row.status === 'contacted' && <button className="btn btn-primary" onClick={() => open(row, 'convert')}>确认客户与服务需求</button>}
+            {row.intakeId ? <button className="btn btn-primary" onClick={() => switchTab('intakes', row.intakeId)}>查看服务承接</button> : row.status === 'contacted' && <button className="btn btn-primary" onClick={() => open(row, 'convert')}>确认客户与服务需求</button>}
             {row.status === 'contacted' && !row.intakeId && !row.acceptance && <button className="btn btn-secondary" onClick={() => open(row, 'contacted')}>追加联系记录</button>}
             {row.status === 'contacted' && !row.intakeId && <button className="btn btn-secondary" onClick={() => open(row, 'closed')}>不再跟进</button>}
             {row.status === 'closed' && <button className="btn btn-secondary" onClick={() => open(row, 'new')}>重新跟进</button>}
