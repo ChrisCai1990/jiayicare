@@ -312,7 +312,7 @@ router.post('/patients/:patientId/ai-case-reviews/:topicId/messages', staffAuth,
         ? '这是一次补充讨论。只回答本轮新增信息，严禁重述既往完整病史、检查清单、管理方案或原分析。输出最多3个短段：1.新增信息解读；2.修订说明（没有则写“无修订”）；3.对阶段性结论的影响。全文控制在300个中文字以内，每段最多3点。最新更正信息优先于旧信息。'
         : '这是本主题首次讨论，请围绕本轮问题形成初步分析，并标明待确认信息。';
       const result = await providerAdapter.reply({ preferred: topic.preferredProvider, sessionId: topic.providerSessionId || String(topic._id), prompt: `【专项研判主题与要求】\n${topicGuide}\n\n【分析方式】\n${incrementalGuide}\n\n【本轮新增信息】\n${content || '请分析本轮上传的图文资料'}`, context: snapshot, attachments, history, maxTokens: isSupplement ? 500 : 1800 });
-      return { result, snapshot };
+      return { result, snapshot: result.contextSnapshot || snapshot };
     });
     if (legacy) {
       await completion;
