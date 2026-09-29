@@ -1,3 +1,5 @@
+const { canAccessContentReview } = require('./contentReviewAccess');
+
 const CONTENT_REVIEW_SEEDS = [
   { slug: 'health-management-first-consultation', title: '第一次了解健康管理服务前，可以先准备什么？', summary: '服务沟通前的资料与边界说明。', sourceUpdatedAt: '2026-09-24', reviewChain: ['nutritionist'], sourceContent: '本文为健康管理服务说明，不替代诊断、处方或急诊处置。\n\n首次沟通前，可准备近期体检报告、既往健康资料、当前生活方式记录，以及最希望解决的一个问题。\n\n服务人员会协助梳理资料、安排沟通与后续服务；出现胸痛、呼吸困难、意识改变等紧急情况，请及时线下就医。' },
   { slug: 'lipids-first-steps', title: '体检提示血脂异常后，先准备哪些信息？', summary: '体检提示血脂异常后的资料整理与就医边界说明。', sourceUpdatedAt: '2026-09-23', reviewChain: ['nutritionist', 'familyDoctor'], nutritionReview: { status: 'approved', reviewedByName: '吴苗苗营养师', reviewedAt: new Date('2026-09-23T00:00:00.000Z') }, sourceContent: '体检报告提示血脂异常时，先不要仅凭单次结果自行判断或自行用药。\n\n建议准备：完整体检报告（含采血日期与是否空腹）、既往血脂结果、目前服用的药物或营养补充剂、近期饮食与运动情况，以及家族心血管病史等。\n\n可先记录近期外食、饮酒、含糖饮料、油炸及高脂食物的频率，作为与营养师沟通生活方式的素材。\n\n如有明显胸痛、气促、晕厥等不适，请及时线下就医。本内容仅用于健康教育和资料准备，不提供诊断、治疗或用药建议。' },
@@ -68,6 +70,7 @@ async function ensureContentReviews(ContentReview) {
 function reviewField(role) { return role === 'nutritionist' ? 'nutritionReview' : 'doctorReview'; }
 
 function advanceReview(record, role, action, note, staff) {
+  if (!canAccessContentReview(staff) || (staff.role !== 'superadmin' && staff.role !== role)) throw new Error('当前账号无此审核权限');
   if (!['nutritionist', 'familyDoctor'].includes(role) || record.currentRole !== role) throw new Error('当前账号无此审核权限');
   if (!['approve', 'return'].includes(action)) throw new Error('审核操作无效');
   if (action === 'return' && !String(note || '').trim()) throw new Error('退回时请说明修改意见');

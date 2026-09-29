@@ -37,6 +37,7 @@ const HealthPlan = require('../models/HealthPlan');
 const KnowledgeItem = require('../models/KnowledgeItem');
 const ContentReview = require('../models/ContentReview');
 const { ensureContentReviews, advanceReview } = require('../utils/contentReviewWorkflow');
+const { canAccessContentReview } = require('../utils/contentReviewAccess');
 const { publishGeoArticle } = require('../utils/geoStaticPublisher');
 const PushRecord = require('../models/PushRecord');
 const Commission = require('../models/Commission');
@@ -12074,7 +12075,7 @@ router.get('/content-reviews', staffAuth, async (req, res) => {
   try {
     const role = req.staff.role;
     const isSuper = role === 'superadmin';
-    if (!isSuper && !['nutritionist', 'familyDoctor', 'healthPlanner'].includes(role)) return res.status(403).json({ success: false, message: '当前角色无内容审核权限' });
+    if (!canAccessContentReview(req.staff)) return res.status(403).json({ success: false, message: '当前账号不是 GEO 内容审核负责人' });
     await ensureContentReviews(ContentReview);
     const history = req.query.history === '1';
     const filter = isSuper
@@ -12090,7 +12091,7 @@ router.get('/content-reviews', staffAuth, async (req, res) => {
 router.patch('/content-reviews/:id/review', staffAuth, async (req, res) => {
   try {
     const role = req.staff.role;
-    if (!['superadmin', 'nutritionist', 'familyDoctor', 'healthPlanner'].includes(role)) return res.status(403).json({ success: false, message: '当前角色无内容审核权限' });
+    if (!canAccessContentReview(req.staff)) return res.status(403).json({ success: false, message: '当前账号不是 GEO 内容审核负责人' });
     const record = await ContentReview.findById(req.params.id);
     if (!record) return res.status(404).json({ success: false, message: '审核稿不存在' });
     if (role === 'healthPlanner' && req.body?.action === 'publish') {
@@ -12151,8 +12152,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     const DAY = 24 * 60 * 60 * 1000;
     const todos = [];
 
-    // 官网 GEO 稿件没有绑定会员，不能套用会员归属过滤；只展示当前审核角色的稿件。
-    if (isSuper || ['nutritionist', 'familyDoctor', 'healthPlanner'].includes(role)) {
+    // GEO 不绑定会员，先按指定负责人校验，再按当前审核环节筛选，不能广播给同岗位人员。
+    if (canAccessContentReview(req.staff)) {
       await ensureContentReviews(ContentReview);
       const reviewFilter = isSuper
         ? { status: { $in: ['pending', 'changes_requested', 'ready_to_publish'] }, currentRole: { $in: ['nutritionist', 'familyDoctor', 'healthPlanner'] } }
