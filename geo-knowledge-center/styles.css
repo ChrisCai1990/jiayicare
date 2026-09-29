@@ -53,3 +53,5 @@ h1 { max-width:760px; font-size:clamp(2.05rem,5vw,4.25rem); }
 [hidden]{display:none!important}.article-navigation{display:flex;flex-wrap:wrap;gap:12px 22px;font-size:.94rem}.nav{flex-wrap:wrap}.nav-links{flex-wrap:wrap;gap:12px 18px}.article-pagination a{display:inline-flex;align-items:center;justify-content:center}.generated-updates{scroll-margin-top:130px}@media(max-width:760px){.nav-links{width:100%;padding-bottom:12px}.nav{padding-top:12px}.article-navigation{font-size:.86rem}}
 
 #handoff-form{scroll-margin-top:130px}.handoff-form .handoff-intro,.handoff-form .handoff-consent{grid-column:1/-1}.handoff-form .handoff-consent input{width:auto;padding:0;vertical-align:middle}.handoff-intro h2{margin-top:0}
+
+#topics,#latest,#articles{scroll-margin-top:160px}.reading-topics{background:#edf5f1}.reading-topic-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px}.reading-topic-grid .topic-card{display:block}.reading-topic-grid a:hover{border-color:var(--green-deep)}.reading-topic-grid a:focus-visible{outline:3px solid var(--green-deep);outline-offset:4px}@media(max-width:760px){.reading-topic-grid{grid-template-columns:1fr}}
