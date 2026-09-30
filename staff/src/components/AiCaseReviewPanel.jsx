@@ -390,6 +390,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
           <div><div style={{ fontSize: 18, fontWeight: 700 }}>{active.title}</div><div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center', color: '#65776F', fontSize: 12, marginTop: 5 }}><span style={{ background: '#E8F4EE', color: '#176347', borderRadius: 12, padding: '2px 8px' }}>{topicTypeLabel(active)}</span><span>创建：{formatDateTime(active.createdAt)}</span><span>更新：{formatDateTime(active.updatedAt)}</span><span>参与人员：{participantNames.join('、') || '待记录'}</span></div></div>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => setHeaderExpanded(value => !value)}>{headerExpanded ? '收起主题资料' : '展开主题资料'}</button>
         </div>
+        {['familyDoctor','superadmin'].includes(staff?.role) && <ReviewPlanAmendment key={active._id} patientId={patientId} topicId={active._id} scope="topic" />}
         {headerExpanded && <>
         <div style={{ color: '#4A6558', fontSize: 13, marginTop: 9 }}>{active.description || '围绕该问题持续讨论，资料和结论均保存在客户专项资料库。'}</div>
         <div style={{ color: '#4A6558', fontSize: 12, marginTop: 7 }}>参与人员：{participantNames.join('、') || '待记录'} · 当前模型：{PROVIDER_LABEL}</div>

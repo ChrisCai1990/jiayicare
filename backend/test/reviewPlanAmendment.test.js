@@ -28,7 +28,8 @@ test('HTTP权限、跨患者来源、版本冲突和成功留痕，AI使用隔�
  const topic={title:'测试',messages:[{_id:messageId,role:'ai',content:'复查项目',createdAt:new Date()}]};
  const paths=['../src/middleware/staffAuth','../src/models/AnnualPlan','../src/models/AiCaseReview','../src/utils/ai'].map(p=>require.resolve(p));
  const old=paths.map(p=>require.cache[p]);let role='familyDoctor',visible=[patient],sourceExists=true;
- const mocks=[(req,res,next)=>{req.staff={role,_id:id()};next()}, {findOne:q=>({lean:async()=>q.patientId===patient?plan:null}),updateOne:async(q,u)=>{written={q,u};return {modifiedCount:1}}}, {findOne:q=>({lean:async()=>sourceExists&&q.user===patient?topic:null})},{chat:async()=>JSON.stringify({items:[item]})}];
+ let aiInput;
+ const mocks=[(req,res,next)=>{req.staff={role,_id:id()};next()}, {findOne:q=>({select:()=>({lean:async()=>q.patientId===patient?plan:null})}),updateOne:async(q,u)=>{written={q,u};return {modifiedCount:1}}}, {findOne:q=>({lean:async()=>sourceExists&&q.user===patient?topic:null})},{chat:async messages=>{aiInput=JSON.parse(messages[0].content);return JSON.stringify({items:[item]})}}];
  paths.forEach((p,i)=>require.cache[p]={id:p,filename:p,loaded:true,exports:mocks[i]});
  const route=require.resolve('../src/routes/reviewPlanAmendments');delete require.cache[route];
  const app=express();app.use(express.json());app.use(require(route)({getVisiblePlanPatientIds:async()=>visible}));
@@ -42,4 +43,20 @@ test('HTTP权限、跨患者来源、版本冲突和成功留痕，AI使用隔�
  assert.equal((await call({action:'apply',...preview.data,confirmed:true})).success,true);
  assert.equal(written.u.$push.supplementRevisions.taskStatus,'not_created');assert.deepEqual(written.q.updatedAt,plan.updatedAt);
  assert.equal(written.u.$set.moduleData.abnormal_followup.records.length,1);
+ topic.messages.push({_id:id(),role:'staff',content:'更正前面意见，请按最新讨论'});
+ const batch=await call({action:'preview',scope:'topic',messageId:undefined});
+ assert.equal(batch.success,true);assert.equal(aiInput.discussion.messages.length,2);assert.deepEqual(aiInput.existingPlan,plan.moduleData);
+ topic.messages.push({_id:id(),role:'ai',content:'又有新的意见'});
+ assert.equal((await call({action:'apply',...batch.data,confirmed:true,messageId:undefined})).status,409);
+});
+test('不规范/相对日期可进入预览，待确认可保存而不编造日期',()=>{
+ const {previewItems}=require('../src/utils/reviewPlanAmendment');
+ assert.deepEqual(previewItems([]),[]);
+ for(const date of ['三个月后','2026-02-30','2026-11-01']) {
+   const result=previewItems([{...item,date}])[0];
+   assert.equal(result.date,'');assert.equal(result.datePending,true);assert.equal(result.timeWindow,date);
+   const saved=apply({abnormal_followup:{records:[{items:item.title,time:'2026-10-01'}]}},[result],{});
+   assert.equal(saved.moduleData.abnormal_followup.records[0].time,'');assert.equal(saved.moduleData.abnormal_followup.records[0].timingStatus,'pending_confirmation');
+ }
+ assert.equal(previewItems([{...item,date:'2026-11-01',timingReason:'已核实原文日期'}])[0].date,'2026-11-01');
 });
