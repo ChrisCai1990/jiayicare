@@ -60,3 +60,22 @@ test('repairs timing source on an existing checkup without replacing action or b
   await assert.rejects(validateOrRepairAnnual(raw, check, async () => reply('fake')), /原检查日期/);
   await assert.rejects(validateOrRepairAnnual(raw, check, async () => reply('')), /缺少有效事项/);
 });
+
+
+test('valid corrected candidate is retained when AI appends an unnecessary invalid timing patch', async () => {
+  const raw = rawPlan(); raw.annual_checkup.focus = '';
+  const result = await validateOrRepairAnnual(raw, validate, async () => JSON.stringify({
+    annual_checkup: {...raw.annual_checkup, focus: '检查乙'}, evidenceCoverage: raw.evidenceCoverage,
+    timingCorrections: [{module: 'annual_checkup', index: 0, timingSourceId: '', timingBaseDate: ''}],
+  }));
+  validate(result); assert.equal(result.annual_checkup.focus, '检查乙');
+  assert.deepEqual(result.checkup_completion, raw.checkup_completion);
+});
+
+test('stored valid rejected candidate completes without any further AI request', async () => {
+  const db = {doc: null, async findOne(){return structuredClone(this.doc)}, async updateOne(q,u){Object.assign(this.doc,u.$set);return {modifiedCount:1}}};
+  const {fingerprint,reuseAnnualGeneration} = require('../src/utils/annualGenerationConsistency');
+  const input={patientId:'p'};db.doc={_id:fingerprint(input),status:'failed',owner:'old',rejectedRaw:rawPlan()};
+  const result=await reuseAnnualGeneration(db,input,raw=>validateOrRepairAnnual(raw,validate,()=>assert.fail('no AI request')));
+  assert.equal(db.doc.status,'ready');validate(result.raw);
+});

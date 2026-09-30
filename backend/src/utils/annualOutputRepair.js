@@ -21,6 +21,9 @@ async function validateOrRepairAnnual(raw, validate, complete) {
     }
     // Only these two fields are patchable. Ignore attempted changes to other modules.
     candidate = normalizeAnnualOutput({ ...candidate, annual_checkup: parsed.annual_checkup, evidenceCoverage: parsed.evidenceCoverage });
+    // The annual/coverage correction may already resolve all failures. Extra patches
+    // are not authoritative and must not invalidate a fully checked candidate.
+    try { validate(candidate); return candidate; } catch { /* Repair remaining failures below. */ }
     // Permit only source/date metadata corrections on existing actions; never remove or rewrite actions.
     if (parsed.timingCorrections !== undefined) {
       if (!Array.isArray(parsed.timingCorrections)) throw new Error('时间来源校正格式无效');
