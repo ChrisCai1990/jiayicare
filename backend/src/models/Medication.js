@@ -46,6 +46,7 @@ const medicationSchema = new mongoose.Schema({
     startDate:    { type: String, default: '' },
     endDate:      { type: String, default: '' },
     remindTime:   { type: String, default: '09:00' },
+    remindTimes:  { type: [String], default: undefined },
     note:         { type: String, default: '' },
     updatedAt:    { type: Date, default: null },
     updatedBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },

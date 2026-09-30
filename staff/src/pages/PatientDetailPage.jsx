@@ -1,3 +1,4 @@
+import MedicationReminderModal from '../components/MedicationReminderModal'
 import { summaryTarget } from '../utils/workbenchTargets'
 import { taskProgress, readableServiceText } from '../utils/staffWorkspace'
 import diseaseSummaryHelpers from '../../../shared/diseaseSummary.cjs'
@@ -2128,8 +2129,6 @@ export default function PatientDetailPage() {
       if (kind === 'medication') await loadMedications(); else await loadSupplements()
     } catch (err) { toast(err.message || '操作失败') }
   }
-  const [reminderForm, setReminderForm] = useState({ intervalDays: 30, startDate: '', endDate: '', remindTime: '09:00', note: '' })
-  const [reminderSaving, setReminderSaving] = useState(false)
   const [stoppingSup, setStoppingSup] = useState(null) // 待确认停用的营养素记录
   const [editingSupAiApprove, setEditingSupAiApprove] = useState(false)
   const [followUpFilter, setFollowUpFilter] = useState('all') // all | pending | done
@@ -9122,16 +9121,8 @@ export default function PatientDetailPage() {
                             {!m.stopped && m.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'medication', record: m }); setSupplyForm(supplyFormFor(m, shanghaiDateInput())) }}>调整配药方式</button>}
                             {!m.stopped && m.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => stopSupplyReminder('medication', m)}>停止自动配药任务</button>}
                             {!m.stopped && <button className="btn btn-sm" style={{ background: '#F3EEFF', color: '#7C3AED', border: '1px solid #C4B5FD' }} onClick={() => {
-                              const today = new Date().toISOString().slice(0, 10)
                               setReminderMed(m)
-                              setReminderForm({
-                                intervalDays: m.reminder?.intervalDays || 30,
-                                startDate: m.reminder?.startDate || today,
-                                endDate: m.reminder?.endDate || m.endDate || '',
-                                remindTime: m.reminder?.remindTime || '09:00',
-                                note: m.reminder?.note || '',
-                              })
-                            }}>✨ AI用药提醒</button>}
+                            }}>用药提醒</button>}
                             {!m.stopped && <button className="btn btn-sm" style={{ background: '#fff8e1', color: '#D97706', border: '1px solid #D97706' }}
                                 onClick={() => setStoppingMed(m)}>
                                 标记已停止使用
@@ -9425,33 +9416,13 @@ export default function PatientDetailPage() {
               }}
             />
           )}
-          {reminderMed && (
-            <div className="modal-overlay">
-              <div className="modal" style={{ maxWidth: 520 }}>
-                <div className="modal-header">
-                  <div><h3 className="modal-title">✨ AI用药提醒</h3><div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>{reminderMed.name} · 自动生成客户与健管专员的随访计划</div></div>
-                  <button className="modal-close" onClick={() => setReminderMed(null)}>×</button>
-                </div>
-                <div className="modal-body">
-                  <div style={{ padding: 12, marginBottom: 16, borderRadius: 8, background: '#F5F3FF', color: '#6D28D9', fontSize: 13 }}>
-                    系统会按周期生成“服药情况、不适反应、续药需求”随访。提醒只用于健康管理，不替代医生处方或停药医嘱。
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                    <div className="form-group"><label className="form-label">提醒周期</label><select className="form-input" value={reminderForm.intervalDays} onChange={e => setReminderForm(f => ({ ...f, intervalDays: Number(e.target.value) }))}><option value={1}>每天</option><option value={3}>每3天</option><option value={7}>每周</option><option value={14}>每2周</option><option value={30}>每月</option><option value={90}>每3个月</option></select></div>
-                    <div className="form-group"><label className="form-label">提醒时间</label><input className="form-input" type="time" value={reminderForm.remindTime} onChange={e => setReminderForm(f => ({ ...f, remindTime: e.target.value }))} /></div>
-                    <div className="form-group"><label className="form-label">开始日期</label><input className="form-input" type="date" value={reminderForm.startDate} onChange={e => setReminderForm(f => ({ ...f, startDate: e.target.value }))} /></div>
-                    <div className="form-group"><label className="form-label">结束日期（不填则生成未来一年）</label><input className="form-input" type="date" value={reminderForm.endDate} onChange={e => setReminderForm(f => ({ ...f, endDate: e.target.value }))} /></div>
-                    <div className="form-group" style={{ gridColumn: '1/-1' }}><label className="form-label">提醒备注</label><textarea className="form-input" rows={3} placeholder="如：重点询问头晕、水肿等不适" value={reminderForm.note} onChange={e => setReminderForm(f => ({ ...f, note: e.target.value }))} /></div>
-                  </div>
-                </div>
-                <div className="modal-footer">
-                  {reminderMed.reminder?.enabled && <button className="btn btn-secondary" style={{ color: '#DC3545' }} disabled={reminderSaving} onClick={async () => { setReminderSaving(true); try { await staffAPI.setMedicationReminder(id, reminderMed._id, { ...reminderForm, enabled: false }); toast('已关闭提醒，未来未完成计划已取消'); setReminderMed(null); loadMedications() } catch (err) { toast(err.message) } finally { setReminderSaving(false) } }}>关闭提醒</button>}
-                  <button className="btn btn-ghost" onClick={() => setReminderMed(null)}>取消</button>
-                  <button className="btn btn-primary" disabled={reminderSaving || !reminderForm.startDate} onClick={async () => { setReminderSaving(true); try { const r = await staffAPI.setMedicationReminder(id, reminderMed._id, { ...reminderForm, enabled: true }); toast(r.message || '提醒已设置'); setReminderMed(null); loadMedications() } catch (err) { toast(err.message) } finally { setReminderSaving(false) } }}>{reminderSaving ? '生成中...' : '生成随访计划'}</button>
-                </div>
-              </div>
-            </div>
-          )}
+          {reminderMed && <MedicationReminderModal medication={reminderMed}
+            onClose={() => setReminderMed(null)}
+            onSave={async (payload) => {
+              const result = await staffAPI.setMedicationReminder(id, reminderMed._id, payload)
+              toast(result.message || '提醒已设置')
+              loadMedications()
+            }} />}
           {stoppingSup && (
             <ConfirmStopModal
               title="停用营养素"

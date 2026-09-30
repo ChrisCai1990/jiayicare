@@ -1,0 +1,34 @@
+const test=require('node:test'), assert=require('node:assert/strict'), crypto=require('node:crypto');
+test('isolated HTTP: multi-dose save, repeat save, customer completion, human handoff and disable', {skip:!process.env.MEDICATION_TEST_MONGO_BIN}, async t=>{
+  const {spawn}=require('node:child_process'), fs=require('node:fs'), os=require('node:os'), path=require('node:path');
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'med-reminder-test-'));
+  const proc=spawn(process.env.MEDICATION_TEST_MONGO_BIN,['--dbpath',dir,'--port','27968','--bind_ip','127.0.0.1','--logpath',path.join(dir,'mongo.log')],{windowsHide:true,stdio:'ignore'});
+  const mongoose=require('mongoose'), express=require('express'), jwt=require('jsonwebtoken');
+  let server;
+  t.after(async()=>{if(server) await new Promise(r=>server.close(r));await mongoose.disconnect();proc.kill();});
+  process.env.JWT_SECRET=crypto.randomBytes(32).toString('hex');
+  await mongoose.connect('mongodb://127.0.0.1:27968/med_reminder_'+crypto.randomBytes(6).toString('hex'),{serverSelectionTimeoutMS:15000});
+  const Admin=require('../src/models/Admin'), User=require('../src/models/User'), Medication=require('../src/models/Medication'), FollowUp=require('../src/models/FollowUp');
+  const staff=await Admin.create({username:'reminder_test',name:'测试健管',role:'healthManager',password:crypto.randomBytes(20).toString('hex')});
+  const patient=await User.create({name:'隔离测试客户',phone:'19900007968',assignedHealthManager:staff._id});
+  const med=await Medication.create({user:patient._id,staffId:staff._id,name:'隔离测试药',dosage:'1粒',frequency:'一天3次',timing:'餐后'});
+  const app=express();app.use(express.json());app.use('/staff',require('../src/routes/staff'));app.use('/user',require('../src/routes/user'));
+  server=await new Promise(r=>{const s=app.listen(0,'127.0.0.1',()=>r(s))});
+  const st=jwt.sign({type:'admin',id:String(staff._id)},process.env.JWT_SECRET), ut=jwt.sign({id:String(patient._id)},process.env.JWT_SECRET);
+  async function call(url,method,body,token=st){const res=await fetch(`http://127.0.0.1:${server.address().port}${url}`,{method,headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:body?JSON.stringify(body):undefined});return {status:res.status,body:await res.json()}}
+  const start=new Date(Date.now()+86400000).toISOString().slice(0,10), end=new Date(Date.now()+3*86400000).toISOString().slice(0,10);
+  const url=`/staff/patients/${patient._id}/medications/${med._id}/reminder`, body={enabled:true,intervalDays:1,startDate:start,endDate:end,remindTimes:['08:00','12:00','18:00']};
+  let r=await call(url,'PUT',body);assert.equal(r.status,200,JSON.stringify(r));assert.equal(r.body.generated,9);
+  r=await call(url,'PUT',body);assert.equal(r.status,200);assert.equal(await FollowUp.countDocuments({sourceId:med._id}),9);
+  let rows=await FollowUp.find({sourceId:med._id}).sort({date:1});
+  assert.match(rows[0].theme,/08:00/);assert.match(rows[0].plannedContent,/餐后/);
+  r=await call(`/user/followup-tasks/${rows[0]._id}/done`,'PATCH',{done:true,needFollowUp:false},ut);assert.equal(r.status,200,JSON.stringify(r));
+  r=await call(`/user/followup-tasks/${rows[1]._id}/done`,'PATCH',{done:true,needFollowUp:true},ut);assert.equal(r.status,200,JSON.stringify(r));
+  r=await call(url,'PUT',body);assert.equal(r.body.generated,7);assert.equal(await FollowUp.countDocuments({sourceId:med._id}),9);
+  const human=require('../src/utils/humanFollowUpQuery').humanFollowUpQuery;
+  assert.equal(await FollowUp.countDocuments({$and:[{sourceId:med._id},human]}),1);
+  r=await call('/user/followup-tasks','GET',null,ut);assert.equal(r.status,200,JSON.stringify(r));assert.equal(r.body.data.filter(x=>x.sourceType==='medication_reminder').length,8);
+  r=await call(url,'PUT',{...body,remindTimes:['99:00']});assert.equal(r.status,400);assert.equal(await FollowUp.countDocuments({sourceId:med._id}),9);
+  r=await call(url,'PUT',{enabled:false,startDate:'invalid'});assert.equal(r.status,200);assert.equal(await FollowUp.countDocuments({sourceId:med._id}),2);
+  const stored=await Medication.findById(med._id);assert.equal(stored.reminder.enabled,false);assert.deepEqual(Array.from(stored.reminder.remindTimes),body.remindTimes);
+});
