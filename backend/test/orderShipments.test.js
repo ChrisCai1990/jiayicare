@@ -11,6 +11,7 @@ test('legacy confirmed product appears as awaiting shipment, specialised service
   assert.equal(isShippingOrder({ ...order, serviceWorkflowSnapshot: { key: 'nutrition_intervention' } }), true);
   assert.equal(hasShippingHandoff({ ...order, note: '客户想寄到家里' }), false);
   assert.equal(isShippingOrder({ serviceName: '专家约诊' }), false);
+  assert.equal(isShippingOrder({ serviceName: '精准基因检测' }), true);
 });
 
 test('shipment HTTP: role, owner, cancelled order, validation, list and duplicate protection', async t => {
