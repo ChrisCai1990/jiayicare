@@ -387,6 +387,8 @@ export const staffAPI = {
   generateReportFollowUpDraft: (id, data) => req(`/staff/report-followups/${id}/generate`, { method: 'POST', body: JSON.stringify(data) }),
   reviewReportFollowUpDraft: (id, data) => req(`/staff/report-followups/${id}/review`, { method: 'POST', body: JSON.stringify(data) }),
   saveAnnualPlan:       (patientId, data) => req(`/staff/patients/${patientId}/annual-plan`, { method: 'PUT', body: JSON.stringify(data) }),
+  reviewPlanChoices: patientId => req(`/staff/patients/${patientId}/review-plan-amendment`),
+  reviewPlanAmendment: (patientId, data) => req(`/staff/patients/${patientId}/review-plan-amendment`, { method:'POST', body:JSON.stringify(data) }),
   deleteAnnualPlan:     (patientId, year, planType, reason) => req(`/staff/patients/${patientId}/annual-plan?year=${year}&planType=${encodeURIComponent(planType)}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
   getSupplyPlan:        (planId) => req(`/staff/supply-plans/${planId}`),
   submitSupplyIntake:   (planId, data) => req(`/staff/supply-plans/${planId}/intake`, { method: 'PATCH', body: JSON.stringify(data) }),
