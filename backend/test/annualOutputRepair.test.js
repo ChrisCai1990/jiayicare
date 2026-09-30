@@ -45,3 +45,18 @@ test('invalid correction cannot weaken validation; one call only and failed cand
     assert.equal(calls, 1); assert.equal(raw.annual_checkup.focus, '');
   }
 });
+
+
+test('repairs timing source on an existing checkup without replacing action or bypassing validation', async () => {
+  const raw = rawPlan(); Object.assign(raw.checkup_completion[0], { timingSourceId: 'missing:0', timingBaseDate: '2026-08-01' });
+  const timeline = [{ id: 'report:real:0', date: '2026-08-01', group: 'test' }];
+  const check = candidate => { validateAnnualRaw(candidate, catalog, evidence, keys); validateClinicalRules(candidate, timeline, evidence); };
+  const reply = source => JSON.stringify({ annual_checkup: raw.annual_checkup, evidenceCoverage: raw.evidenceCoverage,
+    checkup_completion: [], timingCorrections: [{module: 'checkup_completion', index: 0, timingSourceId: source, timingBaseDate: '2026-08-01', dateSelectionReason: '对应检查原日期'}] });
+  const result = await validateOrRepairAnnual(raw, check, async () => reply('report:real:0'));
+  assert.equal(result.checkup_completion.length, 1); assert.equal(result.checkup_completion[0].items, '检查甲');
+  assert.equal(result.checkup_completion[0].time, raw.checkup_completion[0].time);
+  assert.equal(raw.checkup_completion[0].timingSourceId, 'missing:0'); check(result);
+  await assert.rejects(validateOrRepairAnnual(raw, check, async () => reply('fake')), /原检查日期/);
+  await assert.rejects(validateOrRepairAnnual(raw, check, async () => reply('')), /缺少有效事项/);
+});
