@@ -6,6 +6,7 @@ import { userAPI } from '../../../services/api';
 import { colors, radius, spacing } from '../../../theme';
 import useNavBar from '../../../hooks/useNavBar';
 import inviteShareCover from '../../../assets/invite-share-cover.png';
+import { formatChineseDateTime } from '../../../utils/date';
 
 export default function InvitePage() {
   const { user } = useAuth();
@@ -68,13 +69,13 @@ export default function InvitePage() {
       {!loading && !error && invitees.length === 0 && <Text style={{ display: 'block', padding: '22px 0 6px', textAlign: 'center', color: colors.textMuted, fontSize: '13px' }}>暂无成功邀请记录</Text>}
       {!loading && !error && invitees.map((item, index) => (
         <View key={item._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '15px 0', borderTop: index === 0 ? 'none' : `1px solid ${colors.border}` }}>
-          <View>
+          <View style={{ flex: 1, minWidth: 0, marginRight: '12px' }}>
             <Text style={{ display: 'block', color: colors.textPrimary, fontSize: '14px', fontWeight: 600 }}>{item.name || '好友'}</Text>
-            <Text style={{ display: 'block', marginTop: '5px', color: colors.textMuted, fontSize: '12px' }}>{item.invitedAt ? new Date(item.invitedAt).toLocaleString('zh-CN') : '邀请关系已建立'}</Text>
+            <Text style={{ display: 'block', marginTop: '5px', color: colors.textMuted, fontSize: '12px' }}>{formatChineseDateTime(item.invitedAt) || '邀请关系已建立'}</Text>
           </View>
-          <View style={{ alignItems: 'flex-end', maxWidth: '122px' }}>
-            <Text style={{ color: item.rewarded ? colors.primary : colors.textMuted, fontSize: '12px', textAlign: 'right' }}>{item.rewarded ? '奖励已到账' : (reward?.enabled ? '待完成健康问卷' : '已邀请')}</Text>
-            {!item.rewarded && reward?.enabled && <Text style={{ marginTop: '3px', color: colors.textMuted, fontSize: '10px', textAlign: 'right' }}>完成后自动到账</Text>}
+          <View style={{ flexShrink: 0, maxWidth: '122px' }}>
+            <Text style={{ display: 'block', color: item.rewarded ? colors.primary : colors.textMuted, fontSize: '12px', textAlign: 'right' }}>{item.rewarded ? '奖励已到账' : (reward?.enabled ? '待完成健康问卷' : '已邀请')}</Text>
+            {!item.rewarded && reward?.enabled && <Text style={{ display: 'block', marginTop: '3px', color: colors.textMuted, fontSize: '10px', textAlign: 'right' }}>完成后自动到账</Text>}
           </View>
         </View>
       ))}
