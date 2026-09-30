@@ -7868,10 +7868,13 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       if (!require('../utils/annualPlanSourceMatches').annualPlanSourceMatches(sourcePlan, normalizedTemplate, servicePlanCode, version.strategyType)) return res.status(409).json({ success: false, message: '原年度方案与所选服务版本不匹配，请刷新核对' });
     }
     const selector = sourcePlan ? { _id: sourcePlan._id } : legacy ? { _id: legacy._id } : { patientId: req.params.id, year: targetYear, planType: servicePlanCode };
-    const frozen = closedLoop ? await AnnualPlan.findOne(selector).select('confirmedAt frozenAt pushedAt').lean() : null;
+    const existingVersion = await AnnualPlan.findOne(selector).select('updatedAt confirmedAt frozenAt pushedAt +supplementRevisions').lean();
+    try { require('../utils/annualPlanVersion').assertPlanVersion(existingVersion, req.body.baseUpdatedAt); }
+    catch (error) { return res.status(error.statusCode || 409).json({success:false,message:error.message}); }
+    const frozen = closedLoop ? existingVersion : null;
     if (frozen?.confirmedAt || frozen?.frozenAt || frozen?.pushedAt) return res.status(409).json({ success: false, message: '已推送或已确认方案不可直接覆盖；请在补充依据入口保存修订草稿，执行任务保持不变' });
     const plan = await AnnualPlan.findOneAndUpdate(
-      frozen ? { ...selector, confirmedAt: null, frozenAt: null, pushedAt: null } : selector,
+      { ...selector, ...(existingVersion ? {updatedAt:existingVersion.updatedAt} : {}), ...(frozen ? {confirmedAt:null,frozenAt:null,pushedAt:null} : {}) },
       { planType: servicePlanCode, servicePlanCode, strategyType: version.strategyType, clientBrand: patient.clientBrand,
         memberTypeSnapshot: patient.memberType || '',
         servicePackageSnapshot: packageRecord ? { id: packageRecord._id, name: packageRecord.name, capturedAt: new Date() } : { name: patient.servicePackage || '', capturedAt: new Date() },
@@ -7880,7 +7883,7 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
         templateSnapshot: template ? { name: template.name, type: template.type, content: template.content, capturedAt: new Date() } : null,
         createdBy: req.staff._id, reviewStatus: 'pending', reviewedBy: null, reviewedAt: null, reviewNote: '',
         pushedAt: null, pushedBy: null, confirmedAt: null },
-      { upsert: !frozen, new: true, setDefaultsOnInsert: true }
+      { upsert: !existingVersion, new: true, setDefaultsOnInsert: true }
     );
     if (!plan) return res.status(409).json({ success: false, message: '方案状态已变化，请刷新后核对' });
     res.json({ success: true, data: plan });

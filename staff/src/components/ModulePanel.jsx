@@ -218,7 +218,7 @@ export function ModulePanel({ moduleKey, def, data, onChange }) {
           {def.name}
           {hasContent && <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#1E6B50', flexShrink: 0 }} title="已有内容" />}
           {def.multi && records.length > 0 && (
-            <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>{records.length} 条</span>
+            <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>{records.length} 条{records.some(row => row.reviewAmendmentSource) && ` · 含研判补录 ${records.filter(row => row.reviewAmendmentSource).length} 项`}</span>
           )}
         </span>
         {def.multi && (

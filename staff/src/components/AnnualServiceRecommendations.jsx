@@ -67,8 +67,8 @@ export default function AnnualServiceRecommendations({ planId, pushedAt, canEdit
     finally { setBusy(false) }
   }
 
-  return <section style={{ background: '#fff', border: '1px solid #CFE3D9', borderRadius: 12, marginBottom: 16, padding: 18 }}>
-    <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24' }}>💡 服务建议（非执行任务）</div>
+  return <details key={planId || 'unsaved'} style={{ background: '#fff', border: '1px solid #CFE3D9', borderRadius: 12, marginBottom: 16, padding: 18 }}>
+    <summary style={{ cursor: 'pointer', fontSize: 16, fontWeight: 700, color: '#1A2B24' }}>💡 服务建议（非执行任务） · 点击展开</summary>
     <div style={{ fontSize: 12, color: '#6B8177', margin: '5px 0 14px' }}>健康顾问核实依据后单独发布。客户选择“需要协助”只记录意向；具体服务仍须由工作人员按现有流程发起。</div>
     {!planId && <div style={{ color: '#8AA89C', fontSize: 13 }}>请先保存年度方案，再添加服务建议。</div>}
     {loadError && <p role="alert" style={{color: '#b42318'}}>{loadError}</p>}
@@ -101,5 +101,5 @@ export default function AnnualServiceRecommendations({ planId, pushedAt, canEdit
       </fieldset>
       <div style={{ display: 'flex', gap: 10, marginTop: 12 }}><button type="button" disabled={busy || !!loadError} onClick={save}>确认并保存建议草稿</button>{editingId && <button type="button" onClick={reset}>取消编辑</button>}</div>
     </div>}
-  </section>
+  </details>
 }

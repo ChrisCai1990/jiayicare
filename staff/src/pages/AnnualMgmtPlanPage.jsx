@@ -351,6 +351,35 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [saving, setSaving]         = useState(false)
   const [pushing, setPushing]       = useState(false)
   const [dirty, setDirty]           = useState(false)
+  const [remotePlanChanged, setRemotePlanChanged] = useState(false)
+  useEffect(() => setRemotePlanChanged(false), [id, year, planType])
+  const currentPlanVersion = plansByType[planType]?.updatedAt
+  useEffect(() => {
+    if (!patientMode || !planType || !currentPlanVersion) return
+    let active = true, fetching = false
+    const refresh = async () => {
+      if (fetching || document.visibilityState === 'hidden') return
+      fetching = true
+      try {
+        const res = await staffAPI.getAnnualPlan(id, year)
+        if (!active) return
+        const list = Array.isArray(res.data) ? res.data : [res.data].filter(Boolean)
+        const latest = list.find(p => (p.servicePlanCode || p.planType) === planType)
+        if (!latest || latest.updatedAt === currentPlanVersion) return
+        if (dirty) { setRemotePlanChanged(true); return }
+        setPlansByType(prev => ({ ...prev, [planType]: latest }))
+        setModuleData(latest.moduleData || {})
+        setPushedAt(latest.pushedAt || null)
+        setConfirmedAt(latest.confirmedAt || null)
+        setRemotePlanChanged(false)
+      } catch { /* Existing content stays visible; saving still checks the server version. */ }
+      finally { fetching = false }
+    }
+    refresh()
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => { active = false; window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh) }
+  }, [patientMode, id, year, planType, currentPlanVersion, dirty])
   const [pushedAt, setPushedAt]     = useState(null)
   const [confirmedAt, setConfirmedAt] = useState(null)
   const [aiPlanLoading, setAiPlanLoading] = useState(false)
@@ -507,6 +536,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   }
 
   const handleSave = async () => {
+    if (remotePlanChanged) { toast('方案已有补录，请先加载最新方案再保存'); return }
     if (!planType) { toast('请先选择方案类型'); return }
     const now = new Date()
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
@@ -524,7 +554,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       if (patientMode) {
         const selectedTemplate = adminTemplates.find(t => t._id === selectedTemplateId)
         const servicePlanCode = annualTemplateCode(planType, selectedTemplate)
-        const res = await staffAPI.saveAnnualPlan(id, { planType: servicePlanCode, servicePlanCode, sourcePlanId: plansByType[planType]?._id || null, moduleData, year, continuitySource, templateId: selectedTemplateId || null, templateName: selectedTemplate?.content?.planName || selectedTemplate?.name || '' })
+        const res = await staffAPI.saveAnnualPlan(id, { planType: servicePlanCode, servicePlanCode, sourcePlanId: plansByType[planType]?._id || null, baseUpdatedAt: plansByType[planType]?.updatedAt || null, moduleData, year, continuitySource, templateId: selectedTemplateId || null, templateName: selectedTemplate?.content?.planName || selectedTemplate?.name || '' })
         const saved = res.data
         if (saved) {
           setPlansByType(prev => {
@@ -844,6 +874,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       </div>
 
       {generationError && <div role="alert" style={{ padding: 16, marginBottom: 16, background: '#FFF1F2', color: '#9F1239', borderRadius: 10 }}>生成未完成：{generationError}。已有方案未被本次生成替换。</div>}
+      {remotePlanChanged && <div role="alert" style={{padding:12,background:'#FFF4D6',marginBottom:12}}>方案已有新补录，当前未保存编辑尚未覆盖。<button onClick={() => { if (window.confirm('放弃当前未保存编辑，加载最新方案？')) window.location.reload() }}>加载最新方案</button></div>}
+      {patientMode && plansByType[planType]?.updatedAt && <div style={{color:'#65776F',marginBottom:12}}>方案最后更新：{new Date(plansByType[planType].updatedAt).toLocaleString('zh-CN')}</div>}
       <details className="annual-plan-secondary" open={!patientMode || !closedLoopEnabled || window.location.hash === '#professional-assessments' || undefined}>
         <summary>方案准备与专业评估{preparation?.checklist && ` · 已完成 ${preparation.checklist.progress.completed}/${preparation.checklist.progress.total}`}</summary>
       {patientMode && closedLoopEnabled && canEdit && <AnnualPlanSupplement key={`${id}:${year}:${planType}:${selectedTemplateId}`} patientId={id} year={year} planType={planType} template={adminTemplates.find(t => t._id === selectedTemplateId)} templateId={selectedTemplateId} plan={plansByType[planType]} moduleData={moduleData} canEdit={canEdit} blocked={preparationBlocked} toast={toast} onApply={data => { setModuleData(data); setDirty(true) }} />}

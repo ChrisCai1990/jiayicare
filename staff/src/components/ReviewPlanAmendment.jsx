@@ -13,7 +13,7 @@ export default function ReviewPlanAmendment({patientId,topicId,message,scope = '
   const edit=(index,key,value)=>setDraft(d=>({...d,items:d.items.map((r,i)=>i===index?{...r,[key]:value,...(key==='key'?{target:-1}:{})}:r)}))
   return <div style={{marginTop:10}}>
     <button className="btn btn-secondary btn-sm" disabled={busy} onClick={start}>{scope==='topic'?'统一整理本主题补漏':'单条补入年度方案'}</button>
-    {saved&&<div role="status" style={{color:'#1E6B50'}}>{saved}</div>}
+    {saved&&<div role="status" style={{color:'#1E6B50'}}>{saved} <a href={`/patients/${patientId}/annual-health?year=${plan?.year}&planType=${encodeURIComponent(plan?.planType||'')}`}>查看更新后的年度方案</a></div>}
     {open&&<section style={{padding:12,border:'1px solid #B7D8C9',borderRadius:8,marginTop:8}}>
       <b>核对后补入，保留其他方案内容</b>
       <select className="form-input" disabled={busy} value={planId} onChange={e=>{setPlanId(e.target.value);setDraft(null)}}><option value="">请选择年度方案</option>{plans.map(p=><option key={p._id} value={p._id}>{p.year}年 · {p.templateName||p.planType}</option>)}</select>
