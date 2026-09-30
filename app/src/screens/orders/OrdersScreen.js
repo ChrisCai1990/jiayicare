@@ -1,12 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, SafeAreaView, RefreshControl, Modal,
-  ActivityIndicator,
+  ActivityIndicator, AppState, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
-import { ordersAPI } from '../../services/api';
+import { ordersAPI, paymentsAPI } from '../../services/api';
+import { prepareNativePayment, completeNativePayment } from '../../utils/nativePayment';
+import { tradeLabel, canCancelOrder } from '../../utils/orderPaymentStatus';
 import EmptyState from '../../components/EmptyState';
 
 // ── 订单状态配置 ──────────────────────────────────────────────────
@@ -17,7 +19,7 @@ const STATUS_CONFIG = {
   cancelled: { label: '已取消', bg: '#F5F5F5', color: '#8AA89C', icon: 'close-circle-outline' },
 };
 
-const FILTER_TABS = ['全部', '待联系', '已安排', '已完成', '已取消'];
+const FILTER_TABS = ['全部', '待支付', '待联系', '已安排', '已完成', '已取消'];
 const STATUS_MAP  = { '待联系': 'pending', '已安排': 'scheduled', '已完成': 'completed', '已取消': 'cancelled' };
 
 function fmtDate(str) {
@@ -58,9 +60,9 @@ function ConfirmModal({ visible, title, message, onConfirm, onCancel, confirmTex
 }
 
 // ── 订单卡片 ──────────────────────────────────────────────────────
-function OrderCard({ order, onCancel }) {
+function OrderCard({ order, onCancel, onPay, paying }) {
   const st = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending;
-  const canCancel = order.status === 'pending' || order.status === 'scheduled';
+  const canCancel = canCancelOrder(order);
   const totalUnits = Math.max(1, Number(order.totalUnits) || 1);
   const usedUnits = Math.min(totalUnits, Math.max(0, Number(order.usedUnits) || 0));
   const remainingUnits = Math.max(0, totalUnits - usedUnits);
@@ -72,7 +74,7 @@ function OrderCard({ order, onCancel }) {
       <View style={styles.orderCardTop}>
         <View style={[styles.statusBadge, { backgroundColor: st.bg }]}>
           <Ionicons name={st.icon} size={12} color={st.color} />
-          <Text style={[styles.statusText, { color: st.color }]}>{st.label}</Text>
+          <Text style={[styles.statusText, { color: st.color }]}>{tradeLabel(order) || st.label}</Text>
         </View>
         <Text style={styles.orderDate}>预约于 {fmtDate(order.createdAt)}</Text>
       </View>
@@ -90,6 +92,8 @@ function OrderCard({ order, onCancel }) {
         </View>
       </View>
 
+      {order.paymentExpectedAmount != null && <Text style={styles.noteText}>{order.paymentStatus === 'paid' ? '实付' : '应付'} ¥{Number(order.paymentStatus === 'paid' ? order.paidAmount ?? order.paymentExpectedAmount : order.paymentExpectedAmount).toFixed(2)}</Text>}
+      {order.tradeStatus === 'awaiting_payment' && <TouchableOpacity disabled={paying} style={styles.cancelBtn} onPress={() => onPay(order)}><Text style={{ color: colors.primary }}>{paying ? '付款确认中…' : '继续微信支付'}</Text></TouchableOpacity>}
       {/* 备注 */}
       {(totalUnits > 1 || (order.serviceItemsSnapshot || []).length > 0) && (
         <View style={styles.usageCard}>
@@ -124,7 +128,9 @@ function OrderCard({ order, onCancel }) {
       )}
 
       {/* 进度条 / 已取消标记 */}
-      {order.status === 'cancelled' ? (
+      {order.tradeStatus ? (
+        <View style={styles.cancelledBar}><Text style={styles.noteText}>{tradeLabel(order)}</Text></View>
+      ) : order.status === 'cancelled' ? (
         <View style={styles.cancelledBar}>
           <Ionicons name="close-circle" size={15} color={colors.danger} />
           <Text style={styles.cancelledBarText}>预约已取消</Text>
@@ -183,11 +189,14 @@ function OrderCard({ order, onCancel }) {
 }
 
 // ── 主页面 ────────────────────────────────────────────────────────
-export default function OrdersScreen({ navigation }) {
+export default function OrdersScreen({ navigation, route }) {
   const [orders, setOrders]         = useState([]);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab]   = useState('全部');
+  const [loadError, setLoadError] = useState('');
+  const [paying, setPaying] = useState(false);
+  const payingRef = useRef(false);
 
   // 取消确认弹窗状态
   const [cancelTarget, setCancelTarget]     = useState(null); // 当前要取消的 order
@@ -196,14 +205,49 @@ export default function OrdersScreen({ navigation }) {
 
   const loadOrders = useCallback(async () => {
     try {
+      setLoadError('');
       const res = await ordersAPI.list();
-      if (res.success) setOrders(res.data);
+      if (!res.success) throw new Error(res.message || '订单加载失败');
+      if (res.success) {
+        const rows = res.data || [];
+        const pending = rows.filter(o => o.tradeStatus === 'awaiting_payment').slice(0, 10);
+        const refreshed = await Promise.allSettled(pending.map(o => paymentsAPI.status(o._id)));
+        const updates = new Map(refreshed.filter(r => r.status === 'fulfilled' && r.value?.success && r.value.data?.order).map(r => [String(r.value.data.order._id), r.value.data.order]));
+        setOrders(rows.map(o => ({ ...o, ...(updates.get(String(o._id)) || {}) })));
+      }
     } catch (err) {
-      // 静默处理：不使用 Alert
+      setLoadError(err.message || '订单加载失败，请下拉重试');
     } finally { setLoading(false); setRefreshing(false); }
   }, []);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
+  useEffect(() => {
+    const refresh = () => { loadOrders(); };
+    const unfocus = navigation?.addListener?.('focus', refresh);
+    const listener = AppState.addEventListener('change', state => { if (state === 'active') refresh(); });
+    return () => { unfocus?.(); listener.remove(); };
+  }, [navigation, loadOrders]);
+  const continuePayment = async order => {
+    if (payingRef.current) return;
+    const confirmed = !order.checkoutGroupId || await new Promise(resolve => Alert.alert('继续合并支付', '本次会支付该合并订单内全部待付款商品，是否继续？', [
+      { text: '取消', style: 'cancel', onPress: () => resolve(false) },
+      { text: '继续', onPress: () => resolve(true) },
+    ], { cancelable: true, onDismiss: () => resolve(false) }));
+    if (!confirmed || payingRef.current) return;
+    payingRef.current = true; setPaying(true);
+    try {
+      await prepareNativePayment();
+      const result = await paymentsAPI.retry(order._id);
+      if (result.data?.orderIds?.length > 1 && result.data?.paymentParams) {
+        const agreed = await new Promise(resolve => Alert.alert('确认合并付款', `共${result.data.orderIds.length}件商品，合计¥${Number(result.data.checkoutAmount).toFixed(2)}`, [{ text: '取消', style: 'cancel', onPress: () => resolve(false) }, { text: '支付', onPress: () => resolve(true) }], { cancelable: true, onDismiss: () => resolve(false) }));
+        if (!agreed) return;
+      }
+      await completeNativePayment(result);
+      Alert.alert('付款已确认', '订单付款已由服务端确认。');
+    } catch (error) { Alert.alert('付款提示', error.message || '请刷新订单确认付款状态'); }
+    finally { payingRef.current = false; setPaying(false); loadOrders(); }
+  };
+
 
   // 点击"取消预约"按钮 → 打开确认弹窗
   const handleCancel = (order) => {
@@ -213,17 +257,15 @@ export default function OrdersScreen({ navigation }) {
 
   // 确认取消
   const confirmCancel = async () => {
-    if (!cancelTarget) return;
+    if (!cancelTarget || cancelling) return;
     setCancelling(true);
     setCancelError('');
     try {
       const res = await ordersAPI.cancel(cancelTarget._id);
       if (res.success) {
-        setOrders(prev => prev.map(o =>
-          o._id === cancelTarget._id ? { ...o, status: 'cancelled' } : o
-        ));
+        await loadOrders();
         setCancelTarget(null);
-      }
+      } else { throw new Error(res.message || '取消失败'); }
     } catch (err) {
       setCancelError(err.message || '操作失败，请稍后重试');
     } finally {
@@ -232,7 +274,9 @@ export default function OrdersScreen({ navigation }) {
   };
 
   const filtered = orders.filter(o => {
+    if (route?.params?.orderId && String(o._id) !== String(route.params.orderId)) return false;
     if (activeTab === '全部') return true;
+    if (activeTab === '待支付') return o.tradeStatus === 'awaiting_payment';
     return o.status === STATUS_MAP[activeTab];
   });
 
@@ -259,9 +303,11 @@ export default function OrdersScreen({ navigation }) {
       {/* 状态说明栏 */}
       <View style={styles.tipBar}>
         <Ionicons name="information-circle-outline" size={14} color={colors.textMuted} />
-        <Text style={styles.tipText}>预约提交后，健管师将在 1-2 个工作日内联系您</Text>
+        <Text style={styles.tipText}>付款与服务进度以订单最新状态为准</Text>
       </View>
 
+      {!!loadError && <Text style={{ color: colors.danger, padding: 12 }}>{loadError}</Text>}
+      {!!route?.params?.orderId && <TouchableOpacity onPress={() => navigation.setParams({ orderId: undefined })}><Text style={{ color: colors.primary, padding: 12 }}>查看全部订单</Text></TouchableOpacity>}
       {/* 筛选 Tab */}
       <ScrollView
         horizontal
@@ -304,7 +350,7 @@ export default function OrdersScreen({ navigation }) {
           />
         ) : (
           filtered.map(order => (
-            <OrderCard key={order._id} order={order} onCancel={handleCancel} />
+            <OrderCard key={order._id} order={order} onCancel={handleCancel} onPay={continuePayment} paying={paying} />
           ))
         )}
         <View style={{ height: spacing.xl }} />
@@ -314,7 +360,7 @@ export default function OrdersScreen({ navigation }) {
       <ConfirmModal
         visible={!!cancelTarget}
         title="取消预约"
-        message="确定取消本次预约吗？取消后可能需要重新预约。"
+        message={cancelTarget?.checkoutGroupId ? '这会取消本次合并付款的全部待支付商品，是否继续？' : '确定取消本次订单吗？取消后需要重新下单。'}
         confirmText="确定取消"
         cancelText="暂不取消"
         confirmDanger

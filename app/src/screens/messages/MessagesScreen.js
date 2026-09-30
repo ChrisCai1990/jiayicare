@@ -11,6 +11,8 @@ import { mockMessages } from '../../data/mockData';
 import { useAuth } from '../../context/AuthContext';
 import Avatar from '../../components/Avatar';
 import EmptyState from '../../components/EmptyState';
+import { prepareNativePayment, completeNativePayment } from '../../utils/nativePayment';
+import { maxGroupFundDeduction } from '../../utils/healthFundPreview';
 import tts from '../../utils/tts';
 
 // 兼容数据库中已经生成的旧角色名称，确保历史消息也使用当前人物定位。
@@ -52,6 +54,7 @@ function normalizePushRecord(pr) {
     price: pr.price || null,
     productName: pr.title || '',
     productId: pr.productId || null,
+    fundProduct: pr.fundProduct || null,
     products: pr.products || [],
   };
 }
@@ -107,19 +110,20 @@ const CAT_COLOR_MAP = {
 
 const RENEWAL_PAYMENT_METHODS = [
   { key: 'wechat', label: '微信支付', icon: 'logo-wechat', color: '#07C160' },
-  { key: 'alipay', label: '支付宝',   icon: 'card-outline', color: '#1677FF' },
 ];
 
-function ProductPushDetail({ msg, onClose }) {
+function ProductPushDetail({ msg, onClose, navigation }) {
   const { user } = useAuth();
   // products 数组：新版多产品；兜底：用旧版单产品构造一条
   const productList = (msg.products && msg.products.length > 0)
     ? msg.products
-    : (msg.productId ? [{ productId: msg.productId, name: msg.productName, price: msg.price, category: '', icon: '🛍' }] : []);
+    : (msg.productId ? [{ productId: msg.productId, name: msg.productName, price: msg.price, fundProduct: msg.fundProduct, category: '', icon: '🛍' }] : []);
 
   const [checkedIds, setCheckedIds] = useState(() => productList.map(p => p.productId));
   const [paying, setPaying] = useState(false);
   const [paid, setPaid] = useState(false);
+  const payRef = useRef(false);
+  const [paymentResult, setPaymentResult] = useState(null);
   const [payError, setPayError] = useState('');
   const [payMethod, setPayMethod] = useState('wechat');
 
@@ -151,23 +155,32 @@ function ProductPushDetail({ msg, onClose }) {
       )
     : 0;
   const priceAfterCoupon = Math.max(0, Math.round((total - couponDiscount) * 100) / 100);
-  const fundApplied = useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, priceAfterCoupon) : 0;
+  const fundApplied = useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, maxGroupFundDeduction(user?.healthFund, priceAfterCoupon, productList.filter(p => checkedIds.includes(p.productId)))) : 0;
   const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundApplied) * 100) / 100);
 
   const handlePay = async () => {
-    if (!checkedIds.length) return;
+    if (!checkedIds.length || payRef.current) return;
+    payRef.current = true;
     setPaying(true); setPayError('');
     try {
-      await pushRecordsAPI.pay(msg._id, {
+      await prepareNativePayment();
+      const result = await pushRecordsAPI.pay(msg._id, {
         selectedProductIds: checkedIds,
         useHealthFund: fundApplied,
         couponId,
         paymentMethod: payMethod,
+        paymentScene: 'app', paymentCapability: 'wechat_app_v1', expectedAmount: finalPrice,
       });
+      if (!result?.success) throw new Error(result?.message || '订单提交失败，请刷新订单确认');
+      setPaymentResult(result);
       setPaid(true);
+      const order = await completeNativePayment(result);
+      setPaymentResult({ ...result, data: { ...result.data, paymentStatus: order.paymentStatus } });
     } catch (e) {
-      setPayError(e.message || '下单失败，请稍后重试');
+      setPayError(e.message || '请先查看我的订单，避免重复购买');
+      if (e.data?.orderId) { setPaymentResult({ data: e.data }); setPaid(true); }
     } finally {
+      payRef.current = false;
       setPaying(false);
     }
   };
@@ -182,11 +195,13 @@ function ProductPushDetail({ msg, onClose }) {
               <Ionicons name="checkmark-circle" size={40} color={colors.success} />
             </View>
             <Text style={{ fontSize: 20, fontWeight: '800', color: colors.textPrimary, marginBottom: 8 }}>订单已提交</Text>
+            {!!payError && <Text style={{ color: colors.danger }}>{payError}</Text>}
+            <TouchableOpacity onPress={() => { onClose(); navigation.navigate('Orders', { orderId: paymentResult?.data?.orderId }); }}><Text style={{ color: colors.primary, padding: 12 }}>查看订单 / 继续支付</Text></TouchableOpacity>
             <Text style={{ fontSize: 14, color: colors.textMuted, marginBottom: 8 }}>
-              共 {checkedItems.length} 项，实付 ¥{finalPrice}
+              共 {checkedItems.length} 项 · {paymentResult?.data?.paymentStatus === 'paid' ? '付款已确认' : '付款待确认'}
             </Text>
             <Text style={{ fontSize: 13, color: colors.textMuted, textAlign: 'center', paddingHorizontal: 32, lineHeight: 20, marginBottom: 32 }}>
-              健管专员将尽快与您确认并安排后续服务
+              {paymentResult?.data?.paymentStatus === 'paid' ? '付款已由服务端确认，请在我的订单查看后续安排。' : '提交订单不代表付款成功，请在我的订单查看状态。'}
             </Text>
             <TouchableOpacity style={[styles.detailBuyBtn, { paddingHorizontal: 40 }]} onPress={onClose} activeOpacity={0.85}>
               <Text style={styles.detailBuyBtnText}>完成</Text>
@@ -414,7 +429,7 @@ function MessageDetailModal({ msg, onClose, navigation, onReply }) {
 
   // 产品推送：专用多选支付界面
   if (msg.type === 'product') {
-    return <ProductPushDetail msg={msg} onClose={onClose} />;
+    return <ProductPushDetail msg={msg} onClose={onClose} navigation={navigation} />;
   }
 
   const conf = TYPE_CONFIG[msg.type] || TYPE_CONFIG.system;
@@ -695,6 +710,8 @@ export default function MessagesScreen({ navigation }) {
 
   const handlePress = async (msg) => {
     const msgId = msg._id || msg.id;
+    const orderId = msg.action?.orderId || msg.orderId;
+    if (orderId) { setSelectedMsg(null); navigation.navigate('Orders', { orderId }); return; }
     // 可操作消息（如家庭成员邀请）：直接跳到对应页面处理，不弹详情，省去用户自己找入口
     // 可操作消息（家庭成员邀请 / 每日打卡关怀等）：直接跳对应页面处理，不弹详情
     const isActionable = msg.action?.type === 'family_invite' || msg.action?.type === 'checkin';
@@ -824,7 +841,7 @@ export default function MessagesScreen({ navigation }) {
       </ScrollView>
 
       {selectedMsg && (
-        <MessageDetailModal msg={selectedMsg} onClose={() => setSelectedMsg(null)} navigation={navigation} onReply={(to) => { setReplyTo(to); }} />
+        <MessageDetailModal key={selectedMsg._id || selectedMsg.id} msg={selectedMsg} onClose={() => setSelectedMsg(null)} navigation={navigation} onReply={(to) => { setReplyTo(to); }} />
       )}
       {threadRole && (
         <ConversationThreadModal role={threadRole} onClose={() => { setThreadRole(null); loadMessages(); }} />
@@ -833,7 +850,7 @@ export default function MessagesScreen({ navigation }) {
         visible={showNotifModal}
         messages={notifMessages}
         onClose={() => setShowNotifModal(false)}
-        onPress={(msg) => { setShowNotifModal(false); setSelectedMsg(msg); }}
+        onPress={(msg) => { setShowNotifModal(false); handlePress(msg); }}
         onMarkRead={async (msg) => {
           if (!msg.unread) return;
           try {

@@ -6,6 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { familyLinksAPI } from '../../services/api';
+import FamilyServiceModal from './FamilyServiceModal';
 
 const RELATIONS = ['配偶', '父亲', '母亲', '子女', '兄弟', '姐妹', '祖父', '祖母', '其他'];
 
@@ -138,7 +139,7 @@ function AddLinkModal({ onClose, onSaved }) {
   );
 }
 
-function LinkCard({ link, onDelete }) {
+function LinkCard({ link, onDelete, onView }) {
   const u = link.user;
   const icon = { '配偶': 'heart', '父亲': 'man', '母亲': 'woman', '子女': 'happy', '兄弟': 'people', '姐妹': 'people' }[link.relation] || 'person';
   return (
@@ -156,6 +157,9 @@ function LinkCard({ link, onDelete }) {
         {u.age ? <Text style={styles.memberMeta}>{u.age} 岁</Text> : null}
         <Text style={styles.memberLinked}>已注册用户</Text>
       </View>
+      <TouchableOpacity onPress={onView} accessibilityRole="button" accessibilityLabel={`查看${u.name}的服务`} style={styles.deleteBtn}>
+        <Text style={{ color: colors.primary }}>查看服务</Text>
+      </TouchableOpacity>
       <TouchableOpacity onPress={onDelete} style={styles.deleteBtn}>
         <Ionicons name="trash-outline" size={18} color={colors.danger} />
       </TouchableOpacity>
@@ -168,6 +172,7 @@ export default function FamilyMembersScreen({ navigation }) {
   const [pendingInvites, setPendingInvites] = useState([]);
   const [loading, setLoading]       = useState(true);
   const [showAdd, setShowAdd]       = useState(false);
+  const [serviceMember, setServiceMember] = useState(null);
   const [handlingInvite, setHandlingInvite] = useState(null);
 
   const load = useCallback(async () => {
@@ -293,13 +298,14 @@ export default function FamilyMembersScreen({ navigation }) {
           <>
             <Text style={styles.sectionLabel}>共 {links.length} 位家庭成员</Text>
             {links.map(link => (
-              <LinkCard key={link._id} link={link} onDelete={() => handleDelete(link)} />
+              <LinkCard key={link._id} link={link} onDelete={() => handleDelete(link)} onView={() => setServiceMember(link.user)} />
             ))}
           </>
         ) : null}
       </ScrollView>
 
       {showAdd && <AddLinkModal onClose={() => setShowAdd(false)} onSaved={load} />}
+      {serviceMember && <FamilyServiceModal key={serviceMember._id} memberId={serviceMember._id} onClose={() => setServiceMember(null)} />}
     </SafeAreaView>
   );
 }

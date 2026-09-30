@@ -35,6 +35,11 @@ if (!Array.isArray(appConfig.android?.permissions) || !appConfig.android.permiss
   warnings.push('Android 权限清单为空，请确认是否符合实际功能。');
 }
 
+// First store release explicitly requires native WeChat payment readiness.
+if (process.env.EXPO_PUBLIC_WECHAT_APP_PAY_ENABLED !== 'true') blockers.push('App原生微信支付尚未启用；移动应用审核/商户绑定和联调完成前不可提审。');
+if (!/^wx[0-9a-f]{16}$/i.test(process.env.EXPO_PUBLIC_WECHAT_APP_APPID || '')) blockers.push('缺少微信开放平台移动应用AppID（不能使用小程序AppID）。');
+if (!/^https:\/\/.+\/$/.test(process.env.EXPO_PUBLIC_WECHAT_UNIVERSAL_LINK || '')) blockers.push('缺少已验证的iOS Universal Link（HTTPS且以/结尾）。');
+
 if (warnings.length) {
   console.log('发布前提醒：');
   warnings.forEach((warning) => console.log(`- ${warning}`));

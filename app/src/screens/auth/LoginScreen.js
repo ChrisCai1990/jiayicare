@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, SafeAreaView, KeyboardAvoidingView,
-  Platform, ActivityIndicator, Dimensions, ScrollView,
+  Platform, ActivityIndicator, Dimensions, ScrollView, Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
@@ -14,7 +14,7 @@ const { height: SCREEN_H } = Dimensions.get('window');
 // 微信 OAuth 配置（需在微信开放平台申请）
 const WECHAT_APPID = process.env.EXPO_PUBLIC_WECHAT_APPID || '';
 const REDIRECT_URI = encodeURIComponent(
-  (typeof window !== 'undefined' ? window.location.origin : 'http://121.40.156.39') + '/auth/wechat/callback'
+  (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://jiaycare.com') + '/auth/wechat/callback'
 );
 // 判断是否在微信浏览器内
 const isInWechat = typeof navigator !== 'undefined' && /MicroMessenger/i.test(navigator.userAgent);
@@ -29,10 +29,17 @@ export default function LoginScreen({ navigation }) {
   const [phoneFocused, setPhoneFocused] = useState(false);
   const [codeFocused, setCodeFocused] = useState(false);
   const [notRegistered, setNotRegistered] = useState(false);
+  const [hasAgreed, setHasAgreed] = useState(false);
+
+  const requireConsent = () => {
+    if (hasAgreed) return true;
+    setError('请先阅读并同意用户协议和隐私政策');
+    return false;
+  };
 
   // 检测微信 OAuth 回调（URL 中含 ?code=）
   useEffect(() => {
-    if (Platform.OS !== 'web') return;
+    if (Platform.OS !== 'web' || !hasAgreed) return;
     const params = new URLSearchParams(window.location.search);
     const wxCode = params.get('code');
     const wxState = params.get('state');
@@ -44,28 +51,31 @@ export default function LoginScreen({ navigation }) {
     setLoading(true);
     authAPI.wechatLogin(wxCode)
       .then(res => { if (res.success) login(res.data.user, res.data.token); })
-      .catch(() => {})
+      .catch(err => setError(err.message || '微信登录失败，请重试'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [hasAgreed]);
+
+  useEffect(() => {
+    if (countdown <= 0) return undefined;
+    const timer = setTimeout(() => setCountdown(value => Math.max(0, value - 1)), 1000);
+    return () => clearTimeout(timer);
+  }, [countdown]);
 
   const sendCode = async () => {
-    if (!phone || phone.length < 11) return;
+    if (loading || !requireConsent() || !/^1\d{10}$/.test(phone)) return;
     setError('');
     try {
       setLoading(true);
-      const res = await authAPI.sendCode(phone);
-      if (res.code) setCode(res.code);
+      await authAPI.sendCode(phone);
       setCountdown(60);
-      const timer = setInterval(() => {
-        setCountdown(prev => { if (prev <= 1) { clearInterval(timer); return 0; } return prev - 1; });
-      }, 1000);
+
     } catch (err) {
       setError(err.message || '验证码发送失败，请稍后重试');
     } finally { setLoading(false); }
   };
 
   const handleLogin = async () => {
-    if (!phone || !code) return;
+    if (loading || !requireConsent() || !/^1\d{10}$/.test(phone) || !/^\d{6}$/.test(code)) return;
     setError('');
     setNotRegistered(false);
     try {
@@ -81,20 +91,8 @@ export default function LoginScreen({ navigation }) {
     } finally { setLoading(false); }
   };
 
-  const demoLogin = async () => {
-    setError('');
-    try {
-      setLoading(true);
-      const r1 = await authAPI.sendCode('13800138000');
-      const r2 = await authAPI.login('13800138000', r1.code || '123456');
-      if (r2.success) await login(r2.data.user, r2.data.token);
-    } catch (err) {
-      setError(err.message || '演示登录失败，请稍后重试');
-    } finally { setLoading(false); }
-  };
-
-  const canSend = phone.length === 11 && countdown === 0;
-  const canLogin = phone.length === 11 && code.length === 6;
+  const canSend = /^1\d{10}$/.test(phone) && countdown === 0;
+  const canLogin = /^1\d{10}$/.test(phone) && /^\d{6}$/.test(code);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -113,22 +111,6 @@ export default function LoginScreen({ navigation }) {
           <Text style={styles.brandSlogan}>健康有人管 · 生活更安心</Text>
         </View>
 
-        {/* 底部数据背书行 */}
-        <View style={styles.trustRow}>
-          {[
-            { num: '10,000+', label: '服务用户' },
-            { num: '300+',    label: '签约医生' },
-            { num: '99%',     label: '满意度' },
-          ].map((item, i) => (
-            <React.Fragment key={i}>
-              {i > 0 && <View style={styles.trustDivider} />}
-              <View style={styles.trustItem}>
-                <Text style={styles.trustNum}>{item.num}</Text>
-                <Text style={styles.trustLabel}>{item.label}</Text>
-              </View>
-            </React.Fragment>
-          ))}
-        </View>
       </View>
 
       {/* ── 表单区域 ───────────────────────────────────────────────── */}
@@ -146,7 +128,7 @@ export default function LoginScreen({ navigation }) {
           <View style={styles.pullHandle} />
 
           <Text style={styles.formTitle}>手机号登录</Text>
-          <Text style={styles.formSubtitle}>手机号验证码登录，新用户自动注册</Text>
+          <Text style={styles.formSubtitle}>使用手机号和短信验证码登录</Text>
 
           {/* 手机号输入框 */}
           <View style={[styles.field, phoneFocused && styles.fieldFocused]}>
@@ -210,10 +192,9 @@ export default function LoginScreen({ navigation }) {
               </Text>
               <TouchableOpacity
                 style={styles.notRegBtn}
-                onPress={() => {
-                  if (typeof window !== 'undefined') {
-                    window.open('tel:19106761448');
-                  }
+                onPress={async () => {
+                  try { await Linking.openURL('tel:19106761448'); }
+                  catch { setError('无法打开拨号，请手动拨打 19106761448'); }
                 }}
                 activeOpacity={0.8}
               >
@@ -225,6 +206,25 @@ export default function LoginScreen({ navigation }) {
               </TouchableOpacity>
             </View>
           )}
+
+          <View style={styles.agreementRow}>
+            <TouchableOpacity
+              accessibilityRole="checkbox"
+              accessibilityLabel="同意用户协议和隐私政策"
+              accessibilityState={{ checked: hasAgreed, disabled: loading }}
+              disabled={loading}
+              onPress={() => { setHasAgreed(value => !value); setError(''); }}
+              style={styles.agreementCheck}
+            >
+              <Ionicons name={hasAgreed ? 'checkbox' : 'square-outline'} size={24} color={colors.primary} />
+            </TouchableOpacity>
+            <Text style={styles.agreement}>
+              我已阅读并同意{' '}
+              <Text style={styles.agreeLink} onPress={() => navigation.navigate('Legal', { type: 'terms' })}>《用户协议》</Text>
+              {' '}及{' '}
+              <Text style={styles.agreeLink} onPress={() => navigation.navigate('Legal', { type: 'privacy' })}>《隐私政策》</Text>
+            </Text>
+          </View>
 
           {/* 登录按钮 */}
           <TouchableOpacity
@@ -239,26 +239,13 @@ export default function LoginScreen({ navigation }) {
             }
           </TouchableOpacity>
 
-          {/* 分隔线 */}
-          <View style={styles.divRow}>
-            <View style={styles.divLine} />
-            <Text style={styles.divText}>或</Text>
-            <View style={styles.divLine} />
-          </View>
-
-          {/* 其他登录方式 */}
           <View style={styles.altRow}>
-            {/* 演示一键登录 */}
-            <TouchableOpacity style={[styles.altBtn, { flex: 1 }]} onPress={demoLogin} disabled={loading} activeOpacity={0.8}>
-              <Ionicons name="flash" size={15} color={colors.primary} />
-              <Text style={styles.altBtnText}>演示体验</Text>
-            </TouchableOpacity>
-
             {/* 微信登录（仅 web 且配置了 AppID 时显示） */}
             {Platform.OS === 'web' && WECHAT_APPID ? (
               <TouchableOpacity
                 style={[styles.altBtn, { flex: 1 }]}
                 onPress={() => {
+                  if (!requireConsent()) return;
                   const scope = isInWechat ? 'snsapi_userinfo' : 'snsapi_login';
                   const baseUrl = isInWechat
                     ? 'https://open.weixin.qq.com/connect/oauth2/authorize'
@@ -274,12 +261,7 @@ export default function LoginScreen({ navigation }) {
             ) : null}
           </View>
 
-          <Text style={styles.agreement}>
-            登录代表同意{' '}
-            <Text style={styles.agreeLink} onPress={() => navigation.navigate('Legal', { type: 'terms' })}>《用户协议》</Text>
-            {' '}及{' '}
-            <Text style={styles.agreeLink} onPress={() => navigation.navigate('Legal', { type: 'privacy' })}>《隐私政策》</Text>
-          </Text>
+
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -416,7 +398,9 @@ const styles = StyleSheet.create({
   },
   altBtnText: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
 
-  agreement: { textAlign: 'center', fontSize: 11, color: colors.textMuted, marginTop: spacing.md },
+  agreementRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md },
+  agreementCheck: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  agreement: { flex: 1, fontSize: 12, lineHeight: 20, color: colors.textSecondary },
   agreeLink: { color: colors.primary, fontWeight: '500' },
 
   // 未开通会员卡片

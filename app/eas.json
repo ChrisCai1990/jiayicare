@@ -5,11 +5,20 @@
   },
   "build": {
     "preview": {
+      "developmentClient": false,
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://app.joinwehealth.com/api",
+        "EXPO_PUBLIC_WECHAT_APP_PAY_ENABLED": "false",
+        "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
       }
     },
     "production": {
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://app.joinwehealth.com/api"
+      },
       "ios": {},
       "android": {
         "buildType": "app-bundle"

@@ -1,4 +1,5 @@
 // ─── API Service ─────────────────────────────────────────────────
+import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://jiaycare.com/api';
@@ -63,6 +64,7 @@ async function request(path, options = {}) {
       const errMsg = data.message + (data.error ? `（${data.error}）` : '') || `请求失败(${res.status})`;
       const err = new Error(errMsg);
       if (data.code) err.code = data.code;
+      err.data = data.data;
       throw err;
     }
     return data;
@@ -232,8 +234,9 @@ export const checkupAPI = {
 export const servicesAPI = {
   list:  ()                    => request('/services'),
   packages: ()                 => request('/services/packages'),
-  order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, serviceProviderConsent) =>
-    request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, serviceProviderConsent }) }),
+  order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, serviceProviderConsent, expectedAmount) =>
+    request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, serviceProviderConsent, expectedAmount, paymentScene: Platform.OS === 'web' ? undefined : 'app' }) }),
+  inquiry: (serviceId, note, specificationLabel) => request('/services/inquiries', { method: 'POST', body: JSON.stringify({ serviceId, note, specificationLabel }) }),
   coupons: () => request('/services/coupons'),
 };
 
@@ -246,6 +249,12 @@ export const partnerBenefitsAPI = {
 export const ordersAPI = {
   list:   ()    => request('/orders'),
   cancel: (id)  => request(`/orders/${id}/cancel`, { method: 'PATCH' }),
+};
+
+export const paymentsAPI = {
+  capabilities: () => request('/payments/capabilities'),
+  status: id => request(`/payments/${encodeURIComponent(id)}/status`),
+  retry: id => request(`/payments/${encodeURIComponent(id)}/retry`, { method: 'POST', body: JSON.stringify({ paymentScene: 'app' }) }),
 };
 
 // ── Feedback ──────────────────────────────────────────────────────
@@ -307,6 +316,7 @@ export const familyAPI = {
 
 // 系统内家庭成员关联（需求6/18）
 export const familyLinksAPI = {
+  serviceOverview: (memberId) => request(`/user/family-links/${encodeURIComponent(memberId)}/service-overview`),
   list:           ()                       => request('/user/family-links'),
   search:         (q)                      => request(`/user/family-links/search?q=${encodeURIComponent(q)}`),
   add:            (linkedUserId, relation) => request('/user/family-links', { method: 'POST', body: JSON.stringify({ linkedUserId, relation }) }),

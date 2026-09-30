@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, SafeAreaView, Modal, TextInput, ActivityIndicator, Image, useWindowDimensions,
@@ -6,6 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow, gradient } from '../../theme';
 import { servicesAPI, mediaUrl } from '../../services/api';
+import { prepareNativePayment, completeNativePayment } from '../../utils/nativePayment';
 import { useAuth } from '../../context/AuthContext';
 import { maxFundDeduction } from '../../utils/healthFundPreview';
 
@@ -133,13 +134,15 @@ function ServiceDetailModal({ item, onClose, onBuy, onPay }) {
 
 // ── 购买确认弹窗 ────────────────────────────────────────────────────
 // mode: 'consult' 预约咨询（走线索，健管师联系）| 'pay' 自主付费（选支付方式，生成待收款订单）
-function PurchaseModal({ item, mode = 'consult', onClose }) {
+function PurchaseModal({ item, mode = 'consult', onClose, navigation }) {
   const { user } = useAuth();
   const isPay = mode === 'pay';
   const [note, setNote]           = useState('');
   const [payMethod, setPayMethod] = useState('wechat');
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const submitRef = useRef(false);
+  const [orderResult, setOrderResult] = useState(null);
   const [errMsg, setErrMsg]       = useState('');
   const [serviceProviderConsent, setServiceProviderConsent] = useState(false);
   // 多规格：默认选第一个规格
@@ -179,29 +182,39 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
   const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundApplied) * 100) / 100);
 
   const handleSubmit = async () => {
+    if (submitRef.current) return;
     if (item.serviceProvider === 'jiayihui_health' && !serviceProviderConsent) {
       setErrMsg('请先确认本次服务由杭州嘉医汇健康管理有限公司提供');
       return;
     }
+    submitRef.current = true;
     setSubmitting(true);
     setErrMsg('');
     try {
+      if (isPay) await prepareNativePayment();
       // 把选中的规格名一并写进备注，让健管师明确客户选了哪个规格
       const noteWithSpec = [currentSpecLabel ? `规格：${currentSpecLabel}（¥${currentPrice}）` : '', note.trim()].filter(Boolean).join('；');
       // 付费模式带上支付方式，后端据此标记订单为线上支付并生成待收款任务
-      const res = await servicesAPI.order(
-        item.id, noteWithSpec, isPay ? payMethod : undefined,
+      const res = isPay ? await servicesAPI.order(
+        item.id, noteWithSpec, isPay ? 'wechat_pay' : undefined,
         isPay ? fundApplied : undefined, isPay ? couponId : undefined,
-        currentSpecLabel || undefined, serviceProviderConsent
-      );
+        currentSpecLabel || undefined, serviceProviderConsent, isPay ? finalPrice : undefined
+      ) : await servicesAPI.inquiry(item.id, noteWithSpec, currentSpecLabel || undefined);
       if (res.success) {
+        setOrderResult(res);
         setSubmitted(true);
+        if (isPay) {
+          const order = await completeNativePayment(res);
+          setOrderResult({ ...res, data: { ...res.data, paymentStatus: order.paymentStatus } });
+        }
       } else {
         setErrMsg(res.message || '提交失败，请重试');
       }
     } catch (e) {
-      setErrMsg(e.message || '网络错误，请检查连接后重试');
+      setErrMsg(e.message || '网络错误，请先查看我的订单，避免重复购买');
+      if (e.data?.orderId) { setOrderResult({ data: e.data }); setSubmitted(true); }
     } finally {
+      submitRef.current = false;
       setSubmitting(false);
     }
   };
@@ -217,10 +230,13 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
             <Text style={styles.successTitle}>{isPay ? '订单已提交' : '预约申请已提交'}</Text>
             <Text style={styles.successDesc}>
               {isPay
-                ? `已为您生成 ¥${finalPrice} 的订单${finalPrice > 0 ? `（${PAY_METHOD_LABEL[payMethod] || payMethod}）` : '（已用健康基金/优惠券全额抵扣）'}。完成付款后，健管师将与您联系预约具体服务时间，可在「我的订单」查看进度。`
+                ? (orderResult?.data?.paymentStatus === 'paid'
+                  ? '服务端已确认该订单付款完成，可在我的订单查看进度。'
+                  : '订单已提交，付款尚未确认。请在我的订单查看状态；提交订单不代表付款成功。')
                 : '健管师将在 1-2 个工作日内与您联系，请保持手机畅通。'}
             </Text>
-            <TouchableOpacity style={styles.successBtn} onPress={onClose} activeOpacity={0.85}>
+            {!!errMsg && <Text style={{ color: colors.danger }}>{errMsg}</Text>}
+            <TouchableOpacity style={styles.successBtn} onPress={() => { onClose(); if (isPay) navigation.navigate('Orders', { orderId: orderResult?.data?.orderId }); }} activeOpacity={0.85}>
               <Text style={styles.successBtnText}>知道了</Text>
             </TouchableOpacity>
           </View>
@@ -301,7 +317,7 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
             <>
               <Text style={styles.noteLabel}>支付方式</Text>
               <View style={styles.payMethodRow}>
-                {[{ key: 'wechat', label: '微信支付', icon: 'logo-wechat' }, { key: 'alipay', label: '支付宝', icon: 'wallet-outline' }].map(m => (
+                {[{ key: 'wechat', label: '微信支付', icon: 'logo-wechat' }].map(m => (
                   <TouchableOpacity
                     key={m.key}
                     style={[styles.payMethodChip, payMethod === m.key && styles.payMethodChipActive]}
@@ -736,7 +752,7 @@ export default function ServiceMallScreen({ navigation, route }) {
 
       {/* Purchase Modal */}
       {selectedService && (
-        <PurchaseModal item={selectedService} mode={purchaseMode} onClose={() => setSelectedService(null)} />
+        <PurchaseModal navigation={navigation} item={selectedService} mode={purchaseMode} onClose={() => setSelectedService(null)} />
       )}
     </SafeAreaView>
   );

@@ -3,13 +3,17 @@
     "name": "嘉医汇健康管家",
     "slug": "jiayicare",
     "version": "1.0.0",
-    "platforms": ["ios", "android", "web"],
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/jiayicare-brand-icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": false,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/jiayicare-brand-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -24,13 +28,16 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/jiayicare-brand-icon.png",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": false,
       "package": "com.jiayicare.app",
       "versionCode": 1,
-      "permissions": ["CAMERA", "READ_MEDIA_IMAGES"]
+      "permissions": [
+        "CAMERA",
+        "READ_MEDIA_IMAGES"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -47,7 +54,7 @@
     ],
     "extra": {
       "release": {
-        "privacyPolicyUrl": "https://jiaycare.com/privacy-policy.html"
+        "privacyPolicyUrl": "https://app.joinwehealth.com/privacy-policy.html"
       },
       "eas": {
         "projectId": "87f6e7f1-8bbe-4969-8faf-1954318111a7"

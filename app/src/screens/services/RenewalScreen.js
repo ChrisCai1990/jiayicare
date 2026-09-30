@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, SafeAreaView, Modal, ActivityIndicator, Alert,
@@ -6,6 +6,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
+import { prepareNativePayment, completeNativePayment } from '../../utils/nativePayment';
+import { maxFundDeduction } from '../../utils/healthFundPreview';
 import { servicesAPI, messagesAPI } from '../../services/api';
 
 function PackageCard({ pkg, selected, onSelect }) {
@@ -55,16 +57,16 @@ function PackageCard({ pkg, selected, onSelect }) {
 
 const PAYMENT_METHODS = [
   { key: 'wechat', label: '微信支付', icon: 'logo-wechat', color: '#07C160' },
-  { key: 'alipay', label: '支付宝',   icon: 'card-outline', color: '#1677FF' },
-  { key: 'bank',   label: '银行转账', icon: 'business-outline', color: '#6B7280' },
 ];
 
 // ── 确认弹窗（自带 loading/error 状态 + 健康基金/优惠券抵扣）────────
-function ConfirmModal({ pkg, visible, onClose, onSuccess, isRenewal }) {
+function ConfirmModal({ pkg, visible, onClose, onSuccess, isRenewal, navigation }) {
   const { user } = useAuth();
   const [payMethod, setPayMethod] = useState('wechat');
   const [submitting, setSubmitting] = useState(false);
   const [errMsg, setErrMsg] = useState('');
+  const busyRef = useRef(false);
+  const [pendingOrderId, setPendingOrderId] = useState('');
 
   const fundBalance = user?.healthFund?.total || 0;
   const [useFund, setUseFund] = useState(false);
@@ -89,23 +91,30 @@ function ConfirmModal({ pkg, visible, onClose, onSuccess, isRenewal }) {
       )
     : 0;
   const priceAfterCoupon = Math.max(0, Math.round((pkg.price - couponDiscount) * 100) / 100);
-  const fundApplied = useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, priceAfterCoupon) : 0;
+  const fundApplied = useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, maxFundDeduction(user?.healthFund, priceAfterCoupon, pkg)) : 0;
   const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundApplied) * 100) / 100);
 
   const handleSubmit = async () => {
+    if (busyRef.current || pendingOrderId) return;
+    busyRef.current = true;
     setErrMsg('');
     setSubmitting(true);
     try {
+      await prepareNativePayment();
       const noteLabel = isRenewal ? `续约申请：${pkg.name}（${pkg.duration}）` : `服务包申请：${pkg.name}（${pkg.duration}）`;
-      const res = await servicesAPI.order(pkg.id, noteLabel, payMethod, fundApplied, couponId);
+      const res = await servicesAPI.order(pkg.id, noteLabel, 'wechat_pay', fundApplied, couponId, undefined, undefined, finalPrice);
       if (res.success) {
+        setPendingOrderId(res.data?.orderId || '');
+        await completeNativePayment(res);
         onSuccess(res.data?.orderNo || '');
       } else {
         setErrMsg(res.message || '提交失败，请重试');
       }
     } catch (e) {
-      setErrMsg(e.message || '网络错误，请检查连接后重试');
+      setErrMsg(e.message || '付款未确认，请查看我的订单');
+      if (e.data?.orderId) setPendingOrderId(e.data.orderId);
     } finally {
+      busyRef.current = false;
       setSubmitting(false);
     }
   };
@@ -115,6 +124,7 @@ function ConfirmModal({ pkg, visible, onClose, onSuccess, isRenewal }) {
       <View style={styles.modalOverlay}>
         <View style={styles.modalCard}>
           <View style={styles.modalHandle} />
+          {!!pendingOrderId && <TouchableOpacity onPress={() => { onClose(); navigation.navigate('Orders', { orderId: pendingOrderId }); }}><Text style={{ color: colors.primary, padding: 12 }}>查看订单 / 继续支付</Text></TouchableOpacity>}
           <Text style={styles.modalTitle}>{isRenewal ? '确认续约' : '确认开通'}</Text>
 
           <View style={styles.modalSummary}>
@@ -456,7 +466,7 @@ export default function RenewalScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      <ConfirmModal
+      <ConfirmModal navigation={navigation}
         pkg={selected}
         visible={confirming}
         isRenewal={false}

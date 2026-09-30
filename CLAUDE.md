@@ -1,3 +1,5 @@
+> 2026-09-30 Android预览整合：基于最新主干3ff83cb4，独立目录app-preview-20260930，仅整合App修复/依赖，后端不变；npm ci与19项App测试、Android Metro导出通过。范围冻结以APK交付为下一目标。云构建/真机仍以随后结果为准，详见docs/APP_PREVIEW_20260930.md。
+
 > 2026-09-30：处方附件预览失败源于临时预览URL被保存回imageUrls。用药新建/编辑按同客户记录解析回原始附件，拒绝跨客户及循环引用；OSS签名查询不进入对象key。专项验证及定向恢复见 docs/MEDICATION_ATTACHMENT_PREVIEW_20260930.md。
 
 > 2026-09-30：企业赠送单次洁牙（1次，截至2026-10-31）按企业显式开启；患者唯一台账从待核对开始，顾问确认未用、登记工作人员已确认预约、完成核销或补历史记录。版本与主键防重复，不自动预约或扣权益。见 docs/DENTAL_SERVICE_RECOMMENDATIONS_20260930.md。
