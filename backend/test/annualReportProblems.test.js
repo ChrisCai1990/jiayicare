@@ -1,6 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const service = require('../src/utils/annualReportProblems');
+test('生产无自动索引时同客户年度仍使用相同主键，年度及客户隔离', () => {
+  assert.equal(service.recordId('ABC', '2026'), service.recordId('abc', 2026));
+  assert.notEqual(service.recordId('abc', 2026), service.recordId('abc', 2025));
+  assert.notEqual(service.recordId('abc', 2026), service.recordId('abd', 2026));
+  assert.match(service.recordId('abc', 2026), /^[a-f0-9]{24}$/);
+});
 const reports = [
   { _id: 'ct', reportYear: 2026, checkDate: '2026-08-01', title: 'CT', reportItems: [{ name: '胸部CT', findings: '肺结节。脂肪肝。', status: 'abnormal' }] },
   { _id: 'us', reportYear: 2026, checkDate: '2026-09-01', title: '超声及血脂', reportItems: [{ name: '肝脏超声', findings: '脂肪肝', status: 'abnormal' }] },

@@ -4,6 +4,8 @@ const reportIssues = require('./reportIssues');
 const fail = (message, statusCode = 409) => { throw Object.assign(new Error(message), { statusCode }); };
 const text = value => typeof value === 'string' ? value.trim() : '';
 const Model = () => require('../models/AnnualReportProblemReview');
+// Production may disable automatic secondary indexes. The primary key also fences first-create races.
+const recordId = (patientId, year) => createHash('sha256').update(`annual-report-problems:${String(patientId).toLowerCase()}:${Number(year)}`).digest('hex').slice(0, 24);
 const validYear = year => Number.isInteger(Number(year)) && Number(year) >= 2000 && Number(year) <= 2100;
 const timedOut = row => row.status === 'generating' && Date.now() - new Date(row.startedAt).getTime() > 15 * 60 * 1000;
 
@@ -128,4 +130,4 @@ async function annualEvidence(patientId, year) {
     content: { problem: topic.title, analysis: topic.analysis, recommendation: topic.recommendation, findings: topic.findings, advisorReviewedAt: row.reviewedAt } }));
 }
 
-module.exports = { validYear, timedOut, buildContext, loadContext, compileTopics, synthesize, validateReview, generate, annualEvidence };
+module.exports = { recordId, validYear, timedOut, buildContext, loadContext, compileTopics, synthesize, validateReview, generate, annualEvidence };

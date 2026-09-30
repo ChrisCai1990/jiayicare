@@ -33,7 +33,7 @@ module.exports = ({ visible }) => {
     const context = await service.loadContext(scope.patientId, scope.year);
     if (!context.reports.length) fail('本年度暂无已审核且已标明年度的报告', 400);
     let row;
-    try { row = await Model.findOneAndUpdate(scope, { $setOnInsert: { ...scope, status: 'empty', __v: 0 } }, { upsert: true, new: true }).lean(); }
+    try { row = await Model.findOneAndUpdate(scope, { $setOnInsert: { _id: service.recordId(scope.patientId, scope.year), ...scope, status: 'empty', __v: 0 } }, { upsert: true, new: true }).lean(); }
     catch (error) { if (error.code !== 11000) throw error; row = await Model.findOne(scope).lean(); }
     if (req.body.revision !== row.__v && !(req.body.revision == null && row.status === 'empty')) fail('内容已更新，请刷新');
     if (row.status === 'generating' && !service.timedOut(row)) fail('正在综合整理，请稍后查看');
