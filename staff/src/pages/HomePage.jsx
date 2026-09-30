@@ -103,6 +103,20 @@ export default function HomePage() {
         </button>
       </div>
 
+      {/* 数据卡片 */}
+      <div className="stats-grid home-stats">
+        <StatCard icon="📞" label="今日随访" value={reports?.today ? <FollowUpStatValue {...reports.today}
+          onPending={() => nav(followUpUrl({ status: 'active', dateFrom: todayKey, dateTo: todayKey }))}
+          onCompleted={() => nav(followUpUrl({ status: 'completed', dateFrom: todayKey, dateTo: todayKey, dateField: 'completedAt' }))} /> : '-'} color="#0077B6" compact />
+        <StatCard icon="📅" label="本月随访" value={reports?.month ? <FollowUpStatValue {...reports.month}
+          onPending={() => nav(followUpUrl({ status: 'active', dateFrom: monthStartKey, dateTo: monthEndKey }))}
+          onCompleted={() => nav(followUpUrl({ status: 'completed', dateFrom: monthStartKey, dateTo: monthEndKey, dateField: 'completedAt' }))} /> : '-'} color="#22A06B" compact />
+        <StatCard icon="⏰" label="逾期随访" value={reports?.overdue ?? '-'} color="#DC3545" onClick={() => nav(followUpUrl({ status: 'active', dateTo: yesterdayKey }))} />
+        <StatCard icon="✅" label="今日健康监测" value={checkinRecords.length} color="#D97706" onClick={() => nav('/daily-checkin')} />
+        <StatCard icon="🔔" label="消息通知" value={unreadMsgCount} color="#DC3545" onClick={() => nav('/notifications')} />
+        {notification.error && <span role="alert" style={{ color: '#B42318', fontSize: 12 }}>通知更新失败，显示上次结果 <button onClick={() => window.dispatchEvent(new Event('notif-refresh'))}>重试</button></span>}
+      </div>
+
       <AiWorkbenchProvider>
       <SymptomTodosPanel />
       {['healthPlanner', 'superadmin'].includes(staff?.role) && <ConsultationTodosPanel />}
@@ -169,20 +183,6 @@ export default function HomePage() {
       {/* 待随访任务面板 */}
       <FollowUpsPanel />
       </AiWorkbenchProvider>
-
-      {/* 数据卡片 */}
-      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)', marginBottom: 24 }}>
-        <StatCard icon="📞" label="今日随访" value={reports?.today ? <FollowUpStatValue {...reports.today}
-          onPending={() => nav(followUpUrl({ status: 'active', dateFrom: todayKey, dateTo: todayKey }))}
-          onCompleted={() => nav(followUpUrl({ status: 'completed', dateFrom: todayKey, dateTo: todayKey, dateField: 'completedAt' }))} /> : '-'} color="#0077B6" compact />
-        <StatCard icon="📅" label="本月随访" value={reports?.month ? <FollowUpStatValue {...reports.month}
-          onPending={() => nav(followUpUrl({ status: 'active', dateFrom: monthStartKey, dateTo: monthEndKey }))}
-          onCompleted={() => nav(followUpUrl({ status: 'completed', dateFrom: monthStartKey, dateTo: monthEndKey, dateField: 'completedAt' }))} /> : '-'} color="#22A06B" compact />
-        <StatCard icon="⏰" label="逾期随访" value={reports?.overdue ?? '-'} color="#DC3545" onClick={() => nav(followUpUrl({ status: 'active', dateTo: yesterdayKey }))} />
-        <StatCard icon="✅" label="今日健康监测" value={checkinRecords.length} color="#D97706" onClick={() => nav('/daily-checkin')} />
-        <StatCard icon="🔔" label="消息通知" value={unreadMsgCount} color="#DC3545" onClick={() => nav('/notifications')} />
-        {notification.error && <span role="alert" style={{ color: '#B42318', fontSize: 12 }}>通知更新失败，显示上次结果 <button onClick={() => window.dispatchEvent(new Event('notif-refresh'))}>重试</button></span>}
-      </div>
 
       {/* 即将到期客户（30天内，提前一月提醒续约） */}
       {expiringPatients.length > 0 && (

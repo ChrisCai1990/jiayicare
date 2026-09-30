@@ -496,3 +496,12 @@ textarea.form-control { resize: vertical; }
 .annual-plan-footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; }
 .annual-plan-footer a { text-decoration: none; }
 @media (max-width: 680px) { .workbench-compact { flex-wrap: wrap; padding: 12px; } .annual-plan-action-buttons { width: 100%; } }
+
+/* Workload overview stays above task queues without occupying a tall first screen. */
+.home-stats { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+.home-stats .stat-card { padding: 14px 12px; gap: 10px; min-width: 0; }
+.home-stats .stat-card-icon { width: 38px; height: 38px; font-size: 20px; flex-shrink: 0; }
+.home-stats .stat-card-value, .home-stats .followup-stat-value strong { font-size: 24px; }
+.home-stats .followup-stat-label { font-size: 12px; }
+@media (max-width: 1200px) { .home-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 680px) { .home-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .home-stats .stat-card { padding: 12px 10px; gap: 8px; } .home-stats .stat-card-value, .home-stats .followup-stat-value strong { font-size: 20px; } .home-stats .stat-card-icon { width: 30px; height: 30px; font-size: 18px; } }
