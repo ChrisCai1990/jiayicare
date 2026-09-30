@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { staffAPI } from '../api'
 import './CoreHealthArchive.css'
 
-export const CORE_LABELS = { family: '家族史', disease: '疾病史与当前状态', allergy: '过敏史与不良反应史', medication: '用药与营养补充剂', symptom: '不适主诉与症状', routine: '基础信息与其他常规项目' }
+export const CORE_LABELS = { family: '家族史', disease: '疾病史与当前状态', allergy: '过敏史与不良反应史', medication: '首次建档用药与营养补充剂', symptom: '建档主诉与症状', routine: '基础信息与其他常规项目' }
 const definitions = {
-  family: [['disease','疾病或健康问题'],['relationship','与客户的关系'],['person','人员称谓（如大姐，可选）'],['onsetAge','发病年龄'],['diagnosedAt','确诊时间'],['status','当前情况'],['source','信息来源'],['note','备注']],
+  medication: [['name','药物／营养补充剂名称'],['kind','类型（药物／营养补充剂）'],['dosage','建档时剂量'],['frequency','建档时频次'],['purpose','使用原因'],['startedAt','开始使用时间'],['baselineAt','建档时间'],['source','信息来源'],['note','备注']],
+  family: [['disease','疾病或健康问题'],['personName','姓名（选填）'],['relationship','与客户的关系'],['onsetAge','发病年龄'],['diagnosedAt','确诊时间'],['status','当前情况'],['source','信息来源'],['note','备注']],
   disease: [['disease','疾病名称'],['institution','诊断机构'],['diagnosedAt','确诊时间'],['status','当前状态'],['statusAt','状态变化／逆转时间'],['evidence','状态判断依据'],['treatment','治疗经过'],['effect','治疗效果'],['source','信息来源'],['note','备注']],
   allergy: [['substance','过敏原或相关产品'],['kind','过敏／不良反应类型'],['reaction','具体反应'],['occurredAt','发生时间'],['severity','严重程度'],['treatment','处理情况'],['source','信息来源'],['note','备注']],
   symptom: [['symptom','不适主诉与症状'],['startedAt','开始时间'],['frequency','频率'],['severity','程度及生活影响'],['status','当前状态'],['statusAt','状态变化时间'],['institution','诊断机构'],['diagnosis','诊断名称（与自述症状区分）'],['diagnosedAt','诊断时间'],['medicationNote','用药情况说明（完整用药在统一模块维护）'],['treatment','其他治疗措施'],['effect','治疗效果'],['source','信息来源'],['note','备注']],
@@ -17,33 +18,16 @@ const when = value => value ? new Date(value).toLocaleString('zh-CN') : ''
 const legacyFields = {
   family: ['familyHistoryNote', 'familyHistory'], disease: ['pastHistory', 'medicalHistory'],
   allergy: ['drugAllergy', 'foodAllergy', 'allergies'], symptom: ['recentSymptoms'],
-  medication: ['medicHistory', 'recentMedication', 'medications', 'supplementHistory', 'recentSupplement'],
+  medication: ['medicHistory', 'recentMedication', 'supplementHistory', 'recentSupplement'],
 }
 export function ArchiveSource({ user, section }) {
   const items = user.initialArchiveReview?.items?.filter(item => item.section === section) || []
-  const legacy = (legacyFields[section] || []).map(k => format(user.healthProfile?.[k])).filter(Boolean)
+  const legacyLabels = {familyHistoryNote:'家族史',familyHistory:'既有家族记录',pastHistory:'既往疾病',medicalHistory:'既有疾病记录',drugAllergy:'药物过敏',foodAllergy:'食物过敏',allergies:'过敏与不良反应',recentSymptoms:'建档前近期症状',medicHistory:'建档时长期用药',recentMedication:'建档前近1月用药',supplementHistory:'建档时长期营养补充剂',recentSupplement:'建档前近1月营养补充剂'}
+  const legacy = (legacyFields[section] || []).map(k => ({label:legacyLabels[k],value:format(user.healthProfile?.[k])})).filter(item => item.value)
   if (!items.length && !legacy.length) return <p className="core-muted">问卷未填写或尚未采集，不代表没有相关情况。</p>
-  return <details className="core-source" open={!user.coreHealthArchive?.[section]}><summary>问卷原始回答与历史摘要（供核对）</summary>
-    {items.length ? items.map((item,i) => <div key={i}><b>{item.label}：</b>{format(item.answer)}{item.imported === false && <span className="core-muted"> · 待核对补充</span>}</div>) : <div>{legacy.join('；')}</div>}
+  return <details className="core-source"><summary>问卷原始回答与历史摘要（供核对）</summary>
+    {items.length ? items.map((item,i) => <div key={i}><b>{item.label}：</b>{format(item.answer)}{item.imported === false && <span className="core-muted"> · 待核对补充</span>}</div>) : <div>{section === 'medication' && <p className="core-muted">以下为历史档案摘要，请核实是否对应首次建档时的情况。</p>}{legacy.map((item,i)=><div key={i}><b>{item.label}：</b>{item.value}</div>)}</div>}
   </details>
-}
-
-export function CurrentMedicationSummary({ user, onNavigate }) {
-  const [records,setRecords] = useState(null)
-  const [error,setError] = useState('')
-  const [attempt,setAttempt] = useState(0)
-  useEffect(() => {
-    let active=true
-    setRecords(null);setError('')
-    Promise.all([staffAPI.getPatientMedications(user._id),staffAPI.getPatientSupplements(user._id)]).then(([med,sup]) => {
-      if(active)setRecords([...(med.data || []).map(r=>({...r,kind:'药物'})),...(sup.data || []).map(r=>({...r,kind:'营养补充剂'}))].filter(r=>!r.stopped && r.active !== false))
-    }).catch(err=>{if(active)setError(err.message || '用药摘要加载失败')})
-    return ()=>{active=false}
-  },[user._id,attempt])
-  return <div className="card core-archive"><div className="card-header"><div className="card-title">用药与营养补充剂</div><button className="btn btn-secondary btn-sm" onClick={()=>onNavigate('medications')}>查看／维护完整记录</button></div><div className="card-body">
-    {error ? <div role="alert">{error} <button className="btn btn-secondary btn-sm" onClick={()=>setAttempt(v=>v+1)}>重试</button></div> : records === null ? <p className="core-muted">正在读取统一记录…</p> : records.length ? records.map((r,i)=><div className="core-source" key={`${r.kind}-${r._id || i}`}><b>{r.name || r.productName || '未命名'}</b> · {r.kind} · {r.dosage || '剂量待补充'} · {r.frequency || '频次待补充'}{r.aiStatus === 'pending' ? ' · 待专业审核' : ''}</div>) : <p className="core-muted">暂无当前使用记录，问卷自述需人工核实后完善。</p>}
-    <ArchiveSource user={user} section="medication"/>
-  </div></div>
 }
 
 export function CoreArchiveSection({ user, section, onSaved, onNavigate, canEdit }) {
@@ -51,11 +35,10 @@ export function CoreArchiveSection({ user, section, onSaved, onNavigate, canEdit
   const [form, setForm] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [view, setView] = useState('current')
+  const [expanded, setExpanded] = useState(false)
   const fields = definitions[section]
   const records = current.records || []
-  const ended = row => ['缓解','已结束'].includes(row.status)
-  const visible = section === 'symptom' ? records.filter(row => view === 'history' ? ended(row) : !ended(row)) : records
+  const visible = records
   async function save() {
     setBusy(true); setError('')
     try { await staffAPI.saveCoreArchive(user._id, section, form); setForm(null); await onSaved() }
@@ -63,18 +46,21 @@ export function CoreArchiveSection({ user, section, onSaved, onNavigate, canEdit
     finally { setBusy(false) }
   }
   return <section className="card core-archive" id={`core-${section}`}>
-    <div className="card-header"><div><div className="card-title">{CORE_LABELS[section]}</div><span className="core-muted">{presenceLabels[current.presence]}{user.initialArchiveReview && ` · ${reviewLabels[user.initialArchiveReview.sections?.[section]?.status || 'pending']}`}</span></div>
+    <div className="card-header"><div><button type="button" className="core-section-toggle card-title" aria-expanded={expanded} aria-controls={`core-body-${section}`} onClick={() => setExpanded(v => !v)}>{CORE_LABELS[section]} <span>{expanded ? "收起 ⌃" : "展开 ⌄"}</span></button><span className="core-muted">{presenceLabels[current.presence]}{user.initialArchiveReview && ` · ${reviewLabels[user.initialArchiveReview.sections?.[section]?.status || 'pending']}`}</span></div>
       {canEdit && <button className="btn btn-secondary btn-sm" onClick={() => { setError(''); setForm(JSON.parse(JSON.stringify(current))) }}>补充／修改</button>}
     </div>
-    <div className="card-body">
+    {section === 'symptom' && <p className="core-section-description">来源：健康档案与建档问卷，记录建档前近3个月或更长时间的主诉与症状。</p>}
+    {section === 'medication' && <p className="core-section-description">记录首次建档时的使用情况；后续服用中及已停用的记录在“用药与营养补充剂”维护。</p>}
+    <div className="card-body" id={`core-body-${section}`} hidden={!expanded}>
       <ArchiveSource user={user} section={section}/>
-      {section === 'symptom' && <div className="core-actions">{[['current','当前不适'],['history','既往记录']].map(([key,label]) => <button key={key} className={`btn btn-sm ${view === key ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setView(key)}>{label}（{records.filter(r => key === 'history' ? ended(r) : !ended(r)).length}）</button>)}<button className="btn btn-secondary btn-sm" onClick={() => onNavigate('medications')}>查看用药与营养补充剂</button></div>}
-      <div className="core-records">{visible.map(row => <article className="core-record" key={row.id}>
-        <div className="core-record-title"><strong>{section === 'family' ? `${row.relationship} ${row.person || ''} · ${row.disease}` : row[fields[0][0]]}</strong><span>{row.status || row.severity || ''}</span></div>
+
+      <div className="core-records">{visible.map(row => <details className="core-record" key={row.id} open={section !== 'symptom'}>
+        <summary className="core-record-title"><strong>{section === 'family' ? `${row.personName || "姓名未填写"} · ${row.relationship} · ${row.disease}` : section === 'symptom' ? `${row.startedAt || "时间待补充"} · ${row.symptom}` : row[fields[0][0]]}</strong><span>{row.status || row.severity || ''}</span></summary>
         <div className="core-grid">{fields.slice(1).filter(([key]) => row[key] && key !== 'note').map(([key,label]) => <div key={key}><span className="core-muted">{label}：</span>{row[key]}</div>)}</div>
+        {section === 'family' && row.person && <p className="core-muted">原人员称谓：{row.person}</p>}
         {row.note && <p>{row.note}</p>}
         {!!row.timeline?.length && <details><summary>状态变化记录（{row.timeline.length}）</summary>{[...row.timeline].reverse().map((t,i) => <div key={i}>{t.statusAt || '发生时间未填写'} · {t.status} {t.evidence && `· ${t.evidence}`}<small className="core-muted">　录入：{t.recordedByName} {when(t.recordedAt)}</small></div>)}</details>}
-      </article>)}</div>
+      </details>)}</div>
       {!visible.length && <p className="core-muted">{current.presence === 'present' ? '此视图暂无记录。' : presenceLabels[current.presence]}</p>}
       {current.updatedAt && <p className="core-muted">最近更新：{current.updatedByName} · {when(current.updatedAt)}</p>}
       {!!user.coreHealthArchiveHistory?.filter(h => h.section === section).length && <details><summary>查看修改历史</summary>{user.coreHealthArchiveHistory.filter(h => h.section === section).slice().reverse().map((h,i) => <div className="core-source" key={i}><b>{when(h.at)} · {h.byName}</b><div>修改前：{presenceLabels[h.before.presence]} {(h.before.records || []).map(r => fields.map(([k,l]) => r[k] ? `${l}：${r[k]}` : '').filter(Boolean).join(' · ')).join('；')}</div><div>修改后：{presenceLabels[h.after.presence]} {(h.after.records || []).map(r => fields.map(([k,l]) => r[k] ? `${l}：${r[k]}` : '').filter(Boolean).join(' · ')).join('；')}</div></div>)}</details>}
@@ -104,7 +90,7 @@ export function InitialArchiveReview({ user, onSaved, onNavigate, canEdit }) {
     catch (err) { setError(err.message || '复核失败') } finally { setBusy(false) }
   }
   return <section className="card core-archive" id="initial-archive-review"><div className="card-header"><div><div className="card-title">初次建档复核 · {count}/6</div><div className="core-muted">{review.questionnaireTitle} · 提交于 {when(review.submittedAt)} · {review.status === 'completed' ? '已完成' : '问卷已写入，待人工逐项核实'}</div></div></div><div className="card-body core-review-grid">
-    {Object.entries(CORE_LABELS).map(([key,label]) => { const state=review.sections?.[key] || {}; return <div className="core-record" key={key}><strong>{label}</strong><p>{reviewLabels[state.status || 'pending']}</p>{state.note && <p>{state.note}</p>}{state.reviewedAt && <small className="core-muted">{state.reviewedByName} · {when(state.reviewedAt)}</small>}<div className="core-actions"><button className="btn btn-secondary btn-sm" onClick={() => onNavigate(key === 'medication' ? 'medications' : key === 'symptom' ? 'symptoms' : 'records',key)}>查看／完善</button>{canEdit && review.status !== 'completed' && <button className="btn btn-primary btn-sm" onClick={() => {setSelected(key);setNote(state.note || '');setChecked(state.checkedQuestionIds || []);setError('')}}>复核</button>}</div></div> })}
+    {Object.entries(CORE_LABELS).map(([key,label]) => { const state=review.sections?.[key] || {}; return <div className="core-record" key={key}><strong>{label}</strong><p>{reviewLabels[state.status || 'pending']}</p>{state.note && <p>{state.note}</p>}{state.reviewedAt && <small className="core-muted">{state.reviewedByName} · {when(state.reviewedAt)}</small>}<div className="core-actions"><button className="btn btn-secondary btn-sm" onClick={() => onNavigate(key === 'symptom' ? 'symptoms' : 'records',key)}>查看／完善</button>{canEdit && review.status !== 'completed' && <button className="btn btn-primary btn-sm" onClick={() => {setSelected(key);setNote(state.note || '');setChecked(state.checkedQuestionIds || []);setError('')}}>复核</button>}</div></div> })}
     {selected && <div className="modal-overlay"><div className="modal core-modal"><div className="modal-header"><h3>复核 · {CORE_LABELS[selected]}</h3><button className="modal-close" disabled={busy} onClick={() => setSelected(null)}>×</button></div><div className="modal-body"><ArchiveSource user={user} section={selected}/><div>{(review.items || []).filter(item => item.section === selected).map((item,i) => <label className="core-source" style={{display:'block'}} key={i}><input type="checkbox" checked={checked.includes(item.questionId)} onChange={e => setChecked(e.target.checked ? [...checked,item.questionId] : checked.filter(k => k !== item.questionId))}/> 已核实：{item.label}<div className="core-muted">原回答：{format(item.answer)}<br/>当前档案：{format(valueAt(user,item.path)) || '尚未填写'}</div></label>)}</div><p>先在所属板块核对并修改档案，再确认本板块复核结果。用药核实不替代原有专业审核。</p><label>核实依据／待补充内容<textarea className="form-control" value={note} onChange={e=>setNote(e.target.value)} rows={3} maxLength={4000}/></label>{error && <div role="alert" className="core-error">{error}</div>}</div><div className="modal-footer"><button className="btn btn-secondary" disabled={busy} onClick={()=>confirm('needs_info')}>标记待补充</button><button className="btn btn-primary" disabled={busy} onClick={()=>confirm('reviewed')}>{busy ? '保存中…' : '确认已核实'}</button></div></div></div>}
   </div></section>
 }

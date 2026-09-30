@@ -1,4 +1,4 @@
-import { CoreArchiveSection, InitialArchiveReview, ArchiveSource, CurrentMedicationSummary } from '../components/CoreHealthArchive'
+import { CoreArchiveSection, InitialArchiveReview, ArchiveSource } from '../components/CoreHealthArchive'
 import followUpReview from '../../../shared/followUpReview.cjs'
 import followUpDetailView from '../utils/followUpDetail.cjs'
 import MedicationReminderModal from '../components/MedicationReminderModal'
@@ -2294,6 +2294,7 @@ export default function PatientDetailPage() {
   }
 
   const setAllArchiveSections = (collapsed) => {
+    archiveSectionsRef.current?.querySelectorAll('.core-section-toggle').forEach(button => { if (button.getAttribute('aria-expanded') !== String(!collapsed)) button.click() })
     archiveSectionsRef.current?.querySelectorAll('.card').forEach(card => {
       const header = Array.from(card.children).find(child => child.classList?.contains('card-header'))
       if (header && !card.classList.contains('core-archive')) card.classList.toggle('archive-collapsed', collapsed)
@@ -3007,6 +3008,7 @@ export default function PatientDetailPage() {
     const healthRecordId = new URLSearchParams(location.search).get('healthRecordId')
     if (tab !== 'symptoms' || !healthRecordId) return
     setExpandedSymptoms(previous => new Set([...previous, String(healthRecordId)]))
+    const dailyCard = document.querySelector('.daily-symptom-card'); if(dailyCard) dailyCard.open = true
     setTimeout(() => document.getElementById(`symptom-record-${healthRecordId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100)
   }, [tab, location.search, healthRecords.length])
 
@@ -5178,7 +5180,7 @@ export default function PatientDetailPage() {
         {tab === 'records' && healthBaseView === 'profile' && <>
         {/* ── 健康监测数据补录 ── */}
         {['family','disease','allergy'].map(section => <CoreArchiveSection key={section} user={user} section={section} onSaved={load} onNavigate={setTab} canEdit={['healthManager','familyDoctor','medicalAssistant','superadmin','platformSuper'].includes(staff?.role)}/>)}
-        <CurrentMedicationSummary user={user} onNavigate={setTab}/>
+        <CoreArchiveSection user={user} section="medication" onSaved={load} onNavigate={setTab} canEdit={['healthManager','familyDoctor','medicalAssistant','superadmin','platformSuper'].includes(staff?.role)}/>
 
         {/* ── 健康评分卡片 ── */}
         {(() => {
@@ -5811,7 +5813,7 @@ export default function PatientDetailPage() {
               <div className="card-header">
                 <div>
                   <div className="card-title">生活方式变化记录</div>
-                  <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>按时间追踪生活习惯改变及同期健康状况变化</div>
+                  <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>来源：医护人员保存或记录生活方式变化；系统自动摘要由已填信息归纳</div>
                 </div>
                 <span style={{ fontSize: 12, color: '#4A6558' }}>共 {entries.length} 次</span>
               </div>
@@ -5838,11 +5840,12 @@ export default function PatientDetailPage() {
                         ))}
                         {detailChanges.map(([key, change]) => (
                           <div key={key} style={{ display: 'grid', gridTemplateColumns: '90px 1fr', gap: 10, fontSize: 12 }}>
-                            <b style={{ color: '#1E6B50' }}>{key}</b>
+                            <b style={{ color: '#1E6B50' }}>{key === 'autoSummaryFlags' ? '系统自动摘要' : key === 'summaryOverride' ? '人工摘要' : key}</b>
                             <span style={{ color: '#4A6558' }}>{Array.isArray(change.to) ? change.to.join('、') : String(change.to || '清空')}</span>
                           </div>
                         ))}
                       </div>
+                      {Object.hasOwn(entry.changes?.lifestyle_data || {}, 'autoSummaryFlags') && <p style={{fontSize:12,color:'#65776F'}}>系统自动摘要：保存生活方式时，根据饮食、运动、过敏或营养干预、排便等已填信息生成；不代表新发生的不适或独立随访。</p>}
                       {entry.healthStatusChange && <div style={{ marginTop: 10, padding: '9px 11px', background: '#fff', border: '1px solid #DDE8E2', borderRadius: 8, fontSize: 12, color: '#4A6558' }}><b style={{ color: '#1A2B24' }}>同期健康状况变化：</b>{entry.healthStatusChange}</div>}
                     </div>
                   )
@@ -7494,7 +7497,7 @@ export default function PatientDetailPage() {
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-header">
             <div>
-              <div className="card-title">今日健康状态 / 不适主诉</div>
+              <div className="card-title">当前主诉与症状</div>
               <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>来自客户每日打卡或医护人员补充记录</div>
             </div>
           </div>
@@ -8920,7 +8923,6 @@ export default function PatientDetailPage() {
       {/* ── Medications Tab ── */}
       {tab === 'medications' && (
         <div>
-          <ArchiveSource user={user} section="medication"/>
           {/* 子 tab 切换 */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
             {[{ key: 'med', label: '💊 用药信息管理' }, { key: 'sup', label: '🥗 营养补充信息管理' }].map(t => (
@@ -10008,17 +10010,17 @@ export default function PatientDetailPage() {
         <>
           <CoreArchiveSection user={user} section="symptom" onSaved={load} onNavigate={setTab} canEdit={['healthManager','familyDoctor','medicalAssistant','superadmin','platformSuper'].includes(staff?.role)}/>
 
-          <div className="card" style={{ marginBottom: 16 }}>
-            <div className="card-header">
+          <details className="card daily-symptom-card" style={{ marginBottom: 16 }}>
+            <summary className="card-header" style={{cursor:"pointer"}}>
               <div>
-                <div className="card-title">今日健康状态 / 不适主诉</div>
-                <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>近一年不适、处理方案及后续记录集中展示</div>
+                <div className="card-title">当前主诉与症状 <span style={{fontSize:12,color:"#65776F",fontWeight:400}}>（点击展开／收起）</span></div>
+                <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>来源：用户端提交或健管专员随访发现；近一年记录按时间展示</div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ fontSize: 12, color: '#4A6558' }}>共 {healthRecords.length} 条</span>
-                <button className="btn btn-primary btn-sm" onClick={() => setAddingSymptom(true)}>＋ 新增不适主诉</button>
+                <button className="btn btn-primary btn-sm" onClick={e => {e.preventDefault();setAddingSymptom(true)}}>＋ 新增不适主诉</button>
               </div>
-            </div>
+            </summary>
             <div style={{ padding: '14px 20px' }}>
               {healthRecords.length === 0 ? (
                 <div style={{ color: '#8AA89C', fontSize: 14, textAlign: 'center', padding: '20px 0' }}>近一年暂无不适主诉记录</div>
@@ -10044,8 +10046,8 @@ export default function PatientDetailPage() {
                         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
                           <div style={{ minWidth: 0, flex: 1, cursor: 'pointer' }} onClick={toggleExpanded}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <span style={{ color: '#1A2B24', fontSize: 14, lineHeight: 1.6, fontWeight: 700 }}>{record.value || record.note || '未填写具体内容'}</span>
                               <span style={{ color: '#4A6558', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>{new Date(record.recordedAt).toLocaleDateString('zh-CN')}</span>
+                              <span style={{ color: '#1A2B24', fontSize: 14, lineHeight: 1.6, fontWeight: 700 }}>{record.value || record.note || '未填写具体内容'}</span>
                               <span style={{ color: '#8AA89C', fontSize: 12 }}>{isExpanded ? '收起' : '展开详情'} {isExpanded ? '⌃' : '⌄'}</span>
                             </div>
                             {isExpanded && <>
@@ -10072,7 +10074,7 @@ export default function PatientDetailPage() {
                 </div>
               )}
             </div>
-          </div>
+          </details>
           {editingSymptom && (
             <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setEditingSymptom(null)}>
               <div className="modal" style={{ maxWidth: 520 }}>
@@ -10093,7 +10095,7 @@ export default function PatientDetailPage() {
           {addingSymptom && (
             <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setAddingSymptom(false)}>
               <div className="modal" style={{ maxWidth: 520 }}>
-                <div className="modal-header"><h3 className="modal-title">新增今日健康状态 / 不适主诉</h3><button className="modal-close" onClick={() => setAddingSymptom(false)}>×</button></div>
+                <div className="modal-header"><h3 className="modal-title">新增当前主诉与症状</h3><button className="modal-close" onClick={() => setAddingSymptom(false)}>×</button></div>
                 <div className="modal-body">
                   <label className="form-label">不适主诉 *</label>
                   <textarea className="form-input" rows={3} value={newSymptomForm.value} onChange={e => setNewSymptomForm(f => ({ ...f, value: e.target.value }))} placeholder="请填写症状、部位、持续时间和程度" />

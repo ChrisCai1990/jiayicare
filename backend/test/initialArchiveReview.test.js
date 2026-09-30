@@ -51,7 +51,7 @@ test('review requires explicit section data, checked questions and note, complet
   assert.throws(()=>reviewSection(user,'family',{...payload,checkedQuestionIds:[]},actor),/逐项/);
   assert.throws(()=>reviewSection(user,'family',{...payload,note:''},actor),/依据/);
   for(const key of Object.keys(SECTION_LABELS)) {
-    if(['disease','allergy','symptom'].includes(key))user.coreHealthArchive[key]={presence:'none'};
+    if(['disease','allergy','symptom','medication'].includes(key))user.coreHealthArchive[key]={presence:'none'};
     const result=reviewSection(user,key,{...payload,revision:user.initialArchiveReview.revision},actor);
     user.initialArchiveReview=result.update.$set.initialArchiveReview;
     if(key!=='routine')assert.equal(user.initialArchiveReview.status,'pending');
@@ -71,4 +71,14 @@ test('allergy correction updates legacy readers and preserves original evidence 
   const mutation=saveSection({_id:'u',healthProfile:{drugAllergy:'旧自述'}},'allergy',{revision:0,presence:'present',records:[{substance:'测试药物',kind:'药物不良反应',reaction:'皮疹'}]},actor);
   assert.match(mutation.update.$set['healthProfile.drugAllergy'],/皮疹/);
   assert.equal(mutation.update.$push.coreHealthArchiveHistory.legacyBefore.drugAllergy,'旧自述');
+});
+
+
+test('initial medication baseline never rewrites live medication fields or collections',()=>{
+  const u={_id:'u',healthProfile:{medicHistory:'原问卷自述',medications:['当前药物']}};
+  const result=saveSection(u,'medication',{revision:0,presence:'present',records:[{name:'建档时药物',dosage:'旧剂量',baselineAt:'2024年'}]},actor);
+  assert.deepEqual(Object.keys(result.update.$set),['coreHealthArchive.medication']);
+  assert.equal(result.update.$set['coreHealthArchive.medication'].records[0].name,'建档时药物');
+  assert.equal(Object.hasOwn(result.filter,'undefined'),false);
+  assert.deepEqual(u.healthProfile.medications,['当前药物']);
 });

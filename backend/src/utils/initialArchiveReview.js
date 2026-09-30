@@ -2,9 +2,10 @@ const { randomUUID } = require('node:crypto');
 const { isDeepStrictEqual } = require('node:util');
 const { FIELD_MAP } = require('../config/archiveFields');
 const { getByPath } = require('./archiveImport');
-const SECTION_LABELS = { family: '家族史', disease: '疾病史与当前状态', allergy: '过敏史与不良反应史', medication: '用药与营养补充剂', symptom: '不适主诉与症状', routine: '基础信息与其他常规项目' };
+const SECTION_LABELS = { family: '家族史', disease: '疾病史与当前状态', allergy: '过敏史与不良反应史', medication: '首次建档用药与营养补充剂', symptom: '建档主诉与症状', routine: '基础信息与其他常规项目' };
 const FIELDS = {
-  family: ['disease', 'relationship', 'person', 'onsetAge', 'diagnosedAt', 'status', 'note', 'source'],
+  medication: ['name','kind','dosage','frequency','purpose','startedAt','baselineAt','source','note'],
+  family: ['disease', 'relationship', 'personName', 'person', 'onsetAge', 'diagnosedAt', 'status', 'note', 'source'],
   disease: ['disease', 'institution', 'diagnosedAt', 'status', 'statusAt', 'evidence', 'treatment', 'effect', 'note', 'source'],
   allergy: ['substance', 'kind', 'reaction', 'occurredAt', 'severity', 'treatment', 'note', 'source'],
   symptom: ['symptom', 'startedAt', 'frequency', 'severity', 'status', 'statusAt', 'institution', 'diagnosis', 'diagnosedAt', 'treatment', 'effect', 'medicationNote', 'note', 'source'],
@@ -58,7 +59,7 @@ function saveSection(user, key, payload, actor, now = new Date()) {
       if (row[field] != null && (typeof row[field] !== 'string' || row[field].length > 4000)) fail('字段内容无效或过长');
       next[field] = (row[field] || '').trim();
     }
-    if (!next[FIELDS[key][0]]) fail('请填写疾病、过敏原或症状');
+    if (!next[FIELDS[key][0]]) fail('请填写疾病、药物、过敏原或症状名称');
     if (key === 'family' && !next.relationship) fail('请填写亲属关系');
     if (['disease', 'symptom'].includes(key)) {
       const allowed = key === 'disease' ? ['持续','缓解','已逆转','复发','已结束','不详'] : ['持续','间歇出现','缓解','已结束','不详'];
@@ -78,14 +79,14 @@ function saveSection(user, key, payload, actor, now = new Date()) {
   const summaries = records.map(row => FIELDS[key].filter(f => f !== 'source').map(f => row[f]).filter(Boolean).join(' · '));
   const summary = payload.presence === 'none' ? '未报告已知相关情况' : payload.presence === 'unknown' ? '不详' : summaries.join('；');
   const path = { family: 'healthProfile.familyHistoryNote', disease: 'healthProfile.pastHistory', allergy: 'healthProfile.allergies', symptom: 'healthProfile.recentSymptoms' }[key];
-  set[path] = ['allergy', 'symptom'].includes(key) ? (records.length ? summaries : summary ? [summary] : []) : summary;
+  if (path) set[path] = ['allergy', 'symptom'].includes(key) ? (records.length ? summaries : summary ? [summary] : []) : summary;
   if (key === 'allergy') {
     // Old allergy consumers must see the revised record rather than a stale questionnaire answer.
     set['healthProfile.drugAllergy'] = records.filter(r => /药/.test(r.kind)).map(r => `${r.substance}：${r.reaction}`).join('；') || (records.length ? '详见过敏史与不良反应史' : summary);
     set['healthProfile.foodAllergy'] = records.filter(r => /食/.test(r.kind)).map(r => `${r.substance}：${r.reaction}`).join('；') || (records.length ? '详见过敏史与不良反应史' : summary);
   }
   if (user.initialArchiveReview?.sections?.[key]?.status === 'reviewed' && user.initialArchiveReview.status !== 'completed') set[`initialArchiveReview.sections.${key}`] = { status: 'pending' };
-  return { filter: { _id: user._id, [`coreHealthArchive.${key}`]: user.coreHealthArchive?.[key] ?? null, [path]: getByPath(user, path) ?? null, initialArchiveReview: user.initialArchiveReview ?? null },
+  return { filter: { _id: user._id, [`coreHealthArchive.${key}`]: user.coreHealthArchive?.[key] ?? null, ...(path ? { [path]: getByPath(user, path) ?? null } : {}), initialArchiveReview: user.initialArchiveReview ?? null },
     update: { $set: set, $push: { coreHealthArchiveHistory: { section: key, before: old, after: next, legacyBefore: user.healthProfile || {}, at: now, by: actor._id, byName: actor.name || '' } } } };
 }
 function reviewSection(user, key, payload, actor, now = new Date()) {
