@@ -8845,13 +8845,13 @@ router.post('/patients/:id/medications', staffAuth, async (req, res) => {
       user: req.params.id, name, brandName: brandName || '', specification: specification || '', dosage, method: method || '口服',
       frequency, timing: timing || '', startDate: startDate || '', endDate: endDate || '',
       purpose: purpose || '', note: note || '', createdByStaff: true, staffId: req.staff._id,
-      imageUrls: Array.isArray(imageUrls) ? imageUrls.filter(url => typeof url === 'string' && url.trim()).slice(0, 6) : [],
+      imageUrls: await require('../utils/medicationAttachmentStorage').normalizeMedicationAttachments(imageUrls, req.params.id, Medication),
       createdByName: req.staff.name || '',
       aiStatus: needReview ? 'pending' : null,
     });
     await require('../utils/annualPlanPreparationTasks').completeAnnualPreparationTask(req.params.id, 'medications').catch(() => {});
     res.status(201).json({ success: true, data: med });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(err.statusCode || 500).json({ success: false, message: err.message }); }
 });
 
 // 客户用药提醒；多时间排期沿用客户自助完成/显式人工跟进入口。
@@ -8897,12 +8897,12 @@ router.patch('/patients/:id/medications/:medId', staffAuth, async (req, res) => 
     } else {
       const allowed = ['name', 'brandName', 'specification', 'dosage', 'method', 'frequency', 'timing', 'startDate', 'endDate', 'purpose', 'note', 'imageUrls'];
       allowed.forEach(key => { if (req.body[key] !== undefined) med[key] = req.body[key]; });
-      if (req.body.imageUrls !== undefined) med.imageUrls = Array.isArray(req.body.imageUrls) ? req.body.imageUrls.filter(url => typeof url === 'string' && url.trim()).slice(0, 6) : [];
+      if (req.body.imageUrls !== undefined) med.imageUrls = await require('../utils/medicationAttachmentStorage').normalizeMedicationAttachments(req.body.imageUrls, req.params.id, Medication);
     }
     await med.save();
     await require('../utils/combinedMedicationReminder').refreshExistingPlan(req.params.id);
     res.json({ success: true, data: med });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(err.statusCode || 500).json({ success: false, message: err.message }); }
 });
 
 // 真正的物理删除（此前这里只是设 active=false，跟"停用"按钮效果重复，名为删除实际不可用；
@@ -8919,7 +8919,7 @@ router.delete('/patients/:id/medications/:medId', staffAuth, async (req, res) =>
     await FollowUp.deleteMany({ sourceType: 'medication_reminder', sourceId: med._id, status: { $in: ['planned', 'in_progress'] } });
     await FollowUp.deleteMany({ sourceType: 'supply_reminder', sourceId: med._id, status: { $in: ['planned', 'in_progress'] } });
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(err.statusCode || 500).json({ success: false, message: err.message }); }
 });
 
 // ── 会员营养素管理（医护端 CRUD）──────────────────────────────────

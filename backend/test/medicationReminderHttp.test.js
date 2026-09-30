@@ -26,6 +26,14 @@ test('isolated HTTP: one recurring plan, grouped notifications, toggles and one 
   }
   assert.equal(await Reminder.countDocuments({user:patient._id}),1);assert.equal(await FollowUp.countDocuments({patientId:patient._id}),0);
   r=await call('/reminders','GET',null,ut);assert.equal(r.status,200);assert.equal(r.body.data.length,0);
+  process.env.OSS_BUCKET='attachment-test-bucket';
+  const originalAttachment='https://attachment-test-bucket.oss-cn-beijing.aliyuncs.com/reports/test.png';
+  await Medication.updateOne({_id:med._id},{$set:{imageUrls:[originalAttachment]}});
+  const previewAttachment=`/api/staff/patients/${patient._id}/medications/${med._id}/attachments/0/preview?token=expired`;
+  for(let i=0;i<2;i++) {
+    const saved=await call(`/staff/patients/${patient._id}/medications/${med._id}`,'PATCH',{imageUrls:[previewAttachment]});
+    assert.equal(saved.status,200,JSON.stringify(saved));assert.deepEqual(Array.from((await Medication.findById(med._id)).imageUrls),[originalAttachment]);
+  }
   const scheduler=require('../src/utils/combinedMedicationReminder');
   const at=new Date(`${start}T08:00:00+08:00`);
   assert.equal(await scheduler.scanMedicationReminders(new Date(+at-1)),0);

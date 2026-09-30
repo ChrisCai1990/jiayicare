@@ -30,6 +30,6 @@ test('medication and supplement records persist image attachments', () => {
 
   for (const source of [medicationCreate, medicationUpdate, supplementCreate, supplementUpdate]) {
     assert.match(source, /imageUrls/);
-    assert.match(source, /slice\(0, 6\)/);
+    assert.match(source, /slice\(0, 6\)|normalizeMedicationAttachments/);
   }
 });

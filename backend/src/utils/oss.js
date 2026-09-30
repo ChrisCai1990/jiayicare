@@ -126,8 +126,12 @@ async function getObjectStream(key, headers = {}) {
 // 从 OSS URL 提取 key
 function urlToKey(url) {
   const bucket = process.env.OSS_BUCKET;
-  const match = url.match(new RegExp(`${bucket}[^/]*/(.+)$`));
-  return match ? match[1] : null;
+  if (!bucket || typeof url !== 'string') return null;
+  try {
+    const parsed = new URL(url);
+    if (!['https:', 'http:'].includes(parsed.protocol) || !parsed.hostname.startsWith(`${bucket}.`)) return null;
+    return decodeURIComponent(parsed.pathname.replace(/^\//, '')) || null;
+  } catch { return null; }
 }
 
 module.exports = { uploadBase64, uploadBuffer, deleteFile, getSignedUrl, signStoredUrl, getObjectStream, getClient, urlToKey, convertHeicBase64IfNeeded };
