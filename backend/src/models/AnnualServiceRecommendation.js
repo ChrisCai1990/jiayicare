@@ -9,6 +9,7 @@ const schema = new mongoose.Schema({
   recommendation: { type: String, required: true, trim: true, maxlength: 300 },
   timeframe: { type: String, trim: true, maxlength: 120, default: '' },
   plannedFollowUpDate: { type: String, default: '' }, // 内部联系/协调计划日期
+  followUpReminderEnabled: { type: Boolean, default: false }, // 仅显式开启的新提醒；旧建议不自动补派
   appointmentDate: { type: String, default: '' }, // 已与机构确认的服务日期
   nextStep: { type: String, trim: true, maxlength: 300, default: '' },
   selectedOptions: { type: [mongoose.Schema.Types.Mixed], default: [] },

@@ -9,6 +9,7 @@ import SupplyWorkflowModal from './SupplyWorkflowModal'
 import CheckupHandoffTodoModal from './CheckupHandoffTodoModal'
 
 const TYPE_CONFIG = {
+  annual_service_interest: { icon: '📅', label: '年度服务建议跟进', color: '#1E6B50', priority: 2 },
   assignment_attention: { icon: '⚠️', label: '待办缺少有效负责人', color: '#DC3545', priority: 1 },
   report_parse:    { icon: '📄', label: '体检报告待解析', color: '#D97706', priority: 2 },
   report_interpretation: { icon: '🩺', label: '体检报告待解读', color: '#0F766E', priority: 2 },
@@ -71,7 +72,7 @@ const TODO_GROUPS = [
   { key: 'report', label: '报告与资料', types: ['report_parse','report_review','report_interpretation','report_followup_review','health_course_review','report_plan_conflict','archive_review','summary_review','lifestyle_review','dietary_survey_review','medication_review','supplement_review'] },
   { key: 'plan', label: '方案与评估', types: ['annual_plan_input_review','trend_review','plan_review','nutrition_plan_review','checkup_plan_review','phase_assessment_review','annual_renewal_confirmation','followup_review','service_draft_review','medical_assist_plan_review','service_proposal_review'] },
   { key: 'risk', label: '风险与异常', types: ['assignment_attention','risk_review','bp_alert_review','risk_alert','transfer_human','wecom_kf_handoff','checkup_handoff_attention','checkup_preparation_dispatch'] },
-  { key: 'content', label: '内容与安排', types: ['geo_content_review','checkup_handoff_pending','push_review','draft_review','supply_intake','supply_medication_risk_review','supply_supplement_risk_review','supply_arrangement','supply_fulfillment','supply_receipt'] },
+  { key: 'content', label: '内容与安排', types: ['annual_service_interest','geo_content_review','checkup_handoff_pending','push_review','draft_review','supply_intake','supply_medication_risk_review','supply_supplement_risk_review','supply_arrangement','supply_fulfillment','supply_receipt'] },
 ]
 
 const SUPPLY_TYPES = new Set(['supply_intake','supply_medication_risk_review','supply_supplement_risk_review','supply_arrangement','supply_fulfillment','supply_receipt'])

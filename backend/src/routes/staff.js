@@ -7778,7 +7778,7 @@ router.post('/annual-plans/:planId/service-recommendations/:recommendationId/han
     const note = String(req.body.note || '').trim();
     if (!note || note.length > 500) return res.status(400).json({ success: false, message: '请填写不超过500字的实际联系或服务发起记录' });
     const row = await AnnualServiceRecommendation.findOneAndUpdate(
-      { _id: req.params.recommendationId, planId: plan._id, status: 'published', response: 'interested', handledAt: null },
+      { _id: req.params.recommendationId, planId: plan._id, ...require('../../../shared/annualServiceReminder.cjs').query() },
       { $set: { handledAt: new Date(), handledBy: req.staff._id, handlingNote: note } }, { new: true });
     if (!row) return res.status(409).json({ success: false, message: '客户意向已变化或该建议已处理，请刷新' });
     res.json({ success: true, data: row });
@@ -12790,19 +12790,13 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
-    // 客户主动选择“需要协助”后才成为顾问待处理意向；不生成服务执行任务或订单。
+    // Read-only projection: customer interest and opted-in due dates share one source and one reminder.
     if (isSuper || role === 'familyDoctor') {
-      const interestFilter = { status: 'published', response: 'interested', handledAt: null,
-        ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
+      const reminders = require('../../../shared/annualServiceReminder.cjs');
+      const interestFilter = { ...reminders.query(), ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
       const interests = await AnnualServiceRecommendation.find(interestFilter).sort({ respondedAt: -1 })
         .populate('patientId', 'name').populate('planId', 'year').lean();
-      interests.filter(item => item.patientId && item.planId).forEach(item => todos.push({
-        id: 'annual_service_interest_' + item._id, type: 'annual_service_interest', label: '年度服务建议·客户需要协助', priority: 1,
-        patientName: item.patientId.name || '会员', patientId: String(item.patientId._id),
-        summary: `${item.recommendation}；请联系客户确认需求，再按现有服务流程发起。`,
-        createdAt: item.respondedAt || item.updatedAt, overdue: (now - new Date(item.respondedAt || item.updatedAt)) > DAY,
-        link: `/patients/${item.patientId._id}/annual-health?year=${item.planId.year}`,
-      }));
+      interests.filter(item => item.patientId && item.planId && reminders.actionable(item)).forEach(item => todos.push(reminders.todo(item)));
     }
 
     // 统一归属闸门：非超管的所有工作台任务最终都必须属于本人可见客户范围。
