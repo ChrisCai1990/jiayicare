@@ -1,6 +1,24 @@
 const ACTIVE_ORDER_TRADE_STATUSES = ['paid', 'fulfilling', 'partially_refunded'];
 const ACTIVE_ORDER_REFUND_STATUSES = ['', 'none', 'failed', 'partially_refunded'];
 
+async function reconcileShippingOrderHandoffs(patientId = null) {
+  const Order = require('../models/Order');
+  const FollowUp = require('../models/FollowUp');
+  const { hasShippingHandoff } = require('../../../shared/orderShipping.cjs');
+  const orders = await Order.find({ ...activeOrderWorkItemQuery(), status: 'scheduled', ...(patientId ? { user: patientId } : {}) })
+    .select('_id serviceName note supervisorId currentStage fulfillmentStatus shippingHandoffAt updatedAt').lean();
+  const orderIds = orders.filter(hasShippingHandoff).map(order => order._id);
+  if (!orderIds.length) return 0;
+  const result = await FollowUp.updateMany({
+    sourceType: 'order', sourceOrderId: { $in: orderIds }, status: { $in: ['planned', 'in_progress', 'missed'] },
+    $or: [{ workflowKey: '' }, { workflowKey: null }, { workflowKey: { $exists: false } }],
+  }, { $set: {
+    status: 'completed', completedAt: new Date(), completedBy: 'system',
+    executedContent: '订单已由健康规划师确认并转交配送环节。该记录已归档；后续发货进度请查看订单发货记录。',
+  } });
+  return result.modifiedCount || 0;
+}
+
 async function reconcileInactiveOrderWorkItems(patientId = null) {
   const Order = require('../models/Order');
   const FollowUp = require('../models/FollowUp');
@@ -109,5 +127,6 @@ module.exports = {
   ACTIVE_ORDER_REFUND_STATUSES,
   activeOrderWorkItemQuery,
   reconcileInactiveOrderWorkItems,
+  reconcileShippingOrderHandoffs,
   restoreOrderAfterRefundFailure,
 };

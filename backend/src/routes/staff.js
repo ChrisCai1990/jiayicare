@@ -1883,6 +1883,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
   const serviceLinkTaskIds = await FollowUp.find({ assignedTo: req.staff._id, 'serviceTracking.linkId': { $exists: true } }).distinct('_id');
   await require('../utils/followUpServiceLink').safeReconcileServiceLinks({ $or: [{ followUpId: { $in: serviceLinkTaskIds } }, { requestTaskId: { $in: serviceLinkTaskIds } }] });
   const { page = 1, limit = 20, status = '', dateFrom = '', dateTo = '', dateField = 'date', patientName = '', assignedTo = '', sourceType = '', excludeSourceType = '', scope = '', includeFuture = '' } = req.query;
+  if (sourceType === 'order') await require('../utils/orderWorkItem').reconcileShippingOrderHandoffs();
 
   // 如果按会员姓名搜索，先查出匹配的用户ID
   let patientFilter = {};
@@ -8255,12 +8256,13 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
     }
     const newStatus = 'scheduled';
     const update = { status: newStatus, handledBy: req.staff._id };
-    if (shippingManager) Object.assign(update, { currentAssignee: shippingManager, currentStage: 'awaiting_shipment', fulfillmentStatus: 'awaiting_shipment' });
+    if (shippingManager) Object.assign(update, { currentAssignee: shippingManager, currentStage: 'awaiting_shipment', fulfillmentStatus: 'awaiting_shipment', shippingHandoffAt: new Date(), shippingHandoffBy: req.staff._id });
     if (scheduledAt) update.scheduledAt = new Date(scheduledAt);
     if (note) update.note = note;
     const order = await Order.findByIdAndUpdate(req.params.id, update, { new: true })
       .populate('user', 'name phone');
     if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
+    if (shippingManager) await FollowUp.updateMany({ sourceType: 'order', sourceOrderId: order._id, status: { $in: ['planned', 'in_progress', 'missed'] }, $or: [{ workflowKey: '' }, { workflowKey: null }, { workflowKey: { $exists: false } }] }, { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', executedContent: '已确认配送需求并转交健管专员发货。' } });
     res.json({ success: true, data: order, message: shippingManager ? '已转健管专员待发货' : '服务已安排' });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });

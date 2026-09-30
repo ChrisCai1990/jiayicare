@@ -1,6 +1,8 @@
 import React, { useState } from 'react'
 import { staffAPI, getToken } from '../api'
 import useWorkbenchResource from '../hooks/useWorkbenchResource'
+import { useStaff } from '../App'
+import Pagination from './Pagination'
 import './OrderShipmentsPanel.css'
 
 const displayNote = note => String(note || '').split('\n')
@@ -11,18 +13,23 @@ const amount = order => Number(order.paidAmount || 0) + Number(order.healthFundA
 const recipient = order => order.user?.contactName || order.user?.name || ''
 const contactPhone = order => order.user?.contactPhone || order.user?.phone || '请核实联系电话'
 const deliveryAddress = order => order.user?.deliveryAddress || '请先与客户核实收货地址'
+const time = value => value ? new Date(value).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '历史记录未留时间'
 
 export default function OrderShipmentsPanel() {
+  const { staff } = useStaff()
   const resource = useWorkbenchResource(async () => (await staffAPI.getOrderShipments()).data || [], getToken(), [])
+  const [historyOpen, setHistoryOpen] = useState(false), [historyPage, setHistoryPage] = useState(1)
+  const history = useWorkbenchResource(async () => (await staffAPI.getOrderShipments({ view: 'history', page: historyPage, limit: 5 })).data || { items: [], total: 0, totalPages: 1 }, `${getToken()}:shipment-history:${historyPage}`, { items: [], total: 0, totalPages: 1 })
   const [selected, setSelected] = useState(null)
   const [company, setCompany] = useState(''), [tracking, setTracking] = useState('')
   const [shippingContact, setShippingContact] = useState({ recipientName: '', recipientPhone: '', deliveryAddress: '' })
   const [busy, setBusy] = useState(false), [error, setError] = useState('')
-  if (!resource.loading && !resource.error && !resource.data.length) return null
+  const canShip = ['healthManager', 'superadmin'].includes(staff?.role)
+  if (!resource.loading && !resource.error && !resource.data.length && !history.loading && !history.error && !history.data.total) return null
   return <section className="shipment-panel">
     <div className="shipment-panel__heading">
-      <div><span className="shipment-panel__eyebrow">订单履约</span><h2>待发货订单 <b>{resource.data.length}</b></h2></div>
-      <span className="shipment-panel__hint">确认快递信息后即可完成登记</span>
+      <div><span className="shipment-panel__eyebrow">订单履约</span><h2>{resource.data.length ? <>待发货订单 <b>{resource.data.length}</b></> : '订单发货记录'}</h2></div>
+      <span className="shipment-panel__hint">{resource.data.length ? '确认快递信息后即可完成登记' : '可查看已处理的发货记录'}</span>
     </div>
     <div className="shipment-panel__content">
       {resource.loading && <p className="shipment-panel__empty">正在加载订单…</p>}
@@ -40,8 +47,14 @@ export default function OrderShipmentsPanel() {
           <div className="shipment-order__address"><span>配送至</span><p>{deliveryAddress(order)}<i />{recipient(order)} · {contactPhone(order)}</p></div>
           {displayNote(order.note) && <p className="shipment-order__note">备注：{displayNote(order.note)}</p>}
         </div>
-        <button className="btn btn-primary shipment-order__action" onClick={() => { setSelected(order); setCompany(''); setTracking(''); setShippingContact({ recipientName: recipient(order), recipientPhone: contactPhone(order), deliveryAddress: deliveryAddress(order) }); setError('') }}>登记发货 <span>→</span></button>
+        {canShip ? <button className="btn btn-primary shipment-order__action" onClick={() => { setSelected(order); setCompany(''); setTracking(''); setShippingContact({ recipientName: recipient(order), recipientPhone: contactPhone(order), deliveryAddress: deliveryAddress(order) }); setError('') }}>登记发货 <span>→</span></button> : <span className="shipment-order__status">已转健管专员发货</span>}
       </article>)}
+      {history.error && <p className="shipment-panel__empty" role="alert">历史记录加载失败：{history.error}</p>}
+      {history.data.total > 0 && <div className="shipment-history"><button type="button" className="btn btn-secondary btn-sm" onClick={() => setHistoryOpen(value => !value)}>{historyOpen ? '收起已处理发货' : `查看已处理发货 ${history.data.total}`}</button>
+        {historyOpen && <div className="shipment-history__list">{history.data.items.map(order => <article key={order._id} className="shipment-history__item"><div><b>{order.user?.name || '客户信息待核实'} · {order.serviceName}</b><p>下单：{time(order.createdAt)}　规划师确认：{time(order.shippingHandoffAt)}　发货：{time(order.fulfillment?.shippedAt || order.fulfillment?.updatedAt)}</p><p>{order.fulfillment?.deliveryCompany || '快递公司待补'} · {order.fulfillment?.trackingNo || '运单号待补'}</p></div><span>已发货</span></article>)}
+          {history.data.totalPages > 1 && <Pagination compact page={history.data.page} totalPages={history.data.totalPages} onChange={setHistoryPage} />}
+        </div>}
+      </div>}
     </div>
     {selected && <div className="modal-overlay"><form className="modal" onSubmit={async e => {
       e.preventDefault(); if (busy) return; setBusy(true); setError('')

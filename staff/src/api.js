@@ -74,7 +74,7 @@ export const serviceGroupAPI = {
 }
 
 export const staffAPI = {
-  getOrderShipments: () => req('/staff/order-shipments'),
+  getOrderShipments: (p = {}) => req('/staff/order-shipments?' + qs(p)),
   shipOrder: (id, data) => req(`/staff/order-shipments/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   // Auth
   login: (username, password) => req('/staff/login', { method: 'POST', body: JSON.stringify({ username, password }) }),

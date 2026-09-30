@@ -93,6 +93,8 @@ const orderSchema = new mongoose.Schema({
   supervisorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null, index: true },
   currentStage: { type: String, default: 'intake' },
   currentAssignee: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  shippingHandoffAt: { type: Date, default: null },
+  shippingHandoffBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   closureMode: { type: String, enum: ['automatic', 'planner_review'], default: 'planner_review' },
   supervisionStatus: { type: String, enum: ['pending_intake', 'in_progress', 'needs_attention', 'pending_closure', 'completed', 'cancelled'], default: 'pending_intake' },
 

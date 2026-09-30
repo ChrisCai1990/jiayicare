@@ -5,15 +5,34 @@ const Fulfillment = require('../models/Fulfillment');
 const { activeOrderWorkItemQuery } = require('../utils/orderWorkItem');
 const { isShippingOrder, hasShippingHandoff } = require('../../../shared/orderShipping.cjs');
 
-router.use((req, res, next) => ['healthManager', 'superadmin'].includes(req.staff.role)
-  ? next() : res.status(403).json({ success: false, message: '仅健管专员可处理发货' }));
+router.use((req, res, next) => ['healthManager', 'healthPlanner', 'superadmin'].includes(req.staff.role)
+  ? next() : res.status(403).json({ success: false, message: '无权查看订单发货流程' }));
 
 async function scope(staff) {
+  if (staff.role === 'healthPlanner') return { supervisorId: staff._id };
+  if (staff.role === 'superadmin') return {};
   const patients = await User.find(staff.role === 'superadmin' ? {} : { assignedHealthManager: staff._id }).distinct('_id');
   return { ...activeOrderWorkItemQuery(), user: { $in: patients }, status: 'scheduled' };
 }
 router.get('/', async (req, res) => {
   try {
+    const view = String(req.query.view || 'current');
+    if (view === 'history') {
+      const limit = Math.min(20, Math.max(1, Number(req.query.limit) || 5));
+      const requestedPage = Math.max(1, Number(req.query.page) || 1);
+      const baseScope = await scope(req.staff);
+      const shipmentOrderIds = req.staff.role === 'healthManager'
+        ? await Fulfillment.find({ assignedStaff: req.staff._id, status: { $in: ['shipped', 'completed'] } }).distinct('order') : [];
+      const ownership = req.staff.role === 'healthManager' ? { $or: [{ user: baseScope.user }, { _id: { $in: shipmentOrderIds } }] } : baseScope;
+      const filter = { $and: [ownership, { $or: [{ fulfillmentStatus: { $in: ['shipped', 'completed'] } }, { _id: { $in: shipmentOrderIds } }] }] };
+      const total = await Order.countDocuments(filter);
+      const page = Math.min(requestedPage, Math.max(1, Math.ceil(total / limit)));
+      const orders = await Order.find(filter).sort({ updatedAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit)
+        .populate('user', 'name contactName deliveryAddress contactPhone phone').lean();
+      const fulfillments = await Fulfillment.find({ order: { $in: orders.map(order => order._id) } }).lean();
+      const fulfillmentByOrder = new Map(fulfillments.map(item => [String(item.order), item]));
+      return res.json({ success: true, data: { items: orders.map(order => ({ ...order, fulfillment: fulfillmentByOrder.get(String(order._id)) || null })), total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) } });
+    }
     // Read-only projection also covers legacy confirmations; no duplicate task or migration.
     const orders = await Order.find(await scope(req.staff)).populate('user', 'name contactName deliveryAddress contactPhone phone').sort({ createdAt: 1 }).lean();
     const candidates = orders.filter(hasShippingHandoff);
@@ -24,6 +43,7 @@ router.get('/', async (req, res) => {
 });
 router.patch('/:id', async (req, res) => {
   try {
+    if (!['healthManager', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健管专员可登记发货' });
     const deliveryCompany = String(req.body.deliveryCompany || '').trim().slice(0, 100);
     const trackingNo = String(req.body.trackingNo || '').trim().slice(0, 100);
     const recipientName = String(req.body.recipientName || '').trim().slice(0, 50);
@@ -39,7 +59,7 @@ router.patch('/:id', async (req, res) => {
     } }, { upsert: true, new: true });
     if (['shipped', 'completed', 'cancelled'].includes(fulfillment.status)) return res.status(409).json({ success: false, message: '该订单已处理，请刷新列表' });
     const updated = await Fulfillment.findOneAndUpdate({ _id: fulfillment._id, status: fulfillment.status }, { $set: {
-      status: 'shipped', deliveryCompany, trackingNo, recipientName, recipientPhone, deliveryAddress, assignedStaff: [req.staff._id],
+      status: 'shipped', shippedAt: new Date(), deliveryCompany, trackingNo, recipientName, recipientPhone, deliveryAddress, assignedStaff: [req.staff._id],
     } }, { new: true });
     if (!updated) return res.status(409).json({ success: false, message: '发货状态已变化，请刷新列表' });
     await Order.updateOne(filter, { $set: { fulfillmentId: updated._id, fulfillmentStatus: 'shipped', tradeStatus: 'fulfilling', currentStage: 'shipping', currentAssignee: req.staff._id } });

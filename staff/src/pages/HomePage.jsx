@@ -118,7 +118,7 @@ export default function HomePage() {
         {notification.error && <span role="alert" style={{ color: '#B42318', fontSize: 12 }}>通知更新失败，显示上次结果 <button onClick={() => window.dispatchEvent(new Event('notif-refresh'))}>重试</button></span>}
       </div>
 
-      {['healthManager', 'superadmin'].includes(staff?.role) && <OrderShipmentsPanel />}
+      {['healthManager', 'healthPlanner', 'superadmin'].includes(staff?.role) && <OrderShipmentsPanel />}
 
       {/* 用户端购买的服务单独展示；医护端发起的服务只在下方任务区出现。 */}
       {(ordersResource.loading || ordersResource.error || orderRows.length > 0 || orderHistoryRows.length > 0) && (

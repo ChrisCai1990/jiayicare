@@ -27,7 +27,13 @@ test('shipment HTTP: role, owner, cancelled order, validation, list and duplicat
     assert.ok(!filter.tradeStatus.$in.includes('refunded'));
     assert.ok(!filter.refundStatus.$in.includes('processing'));
   }
-  Order.find = filter => { checkScope(filter); return { populate: () => ({ sort: () => ({ lean: async () => [order] }) }) }; };
+  Order.find = filter => {
+    if (filter.supervisorId) {
+      assert.equal(filter.supervisorId, 'manager');
+      return { populate: () => ({ sort: () => ({ lean: async () => [order] }) }) };
+    }
+    checkScope(filter); return { populate: () => ({ sort: () => ({ lean: async () => [order] }) }) };
+  };
   Order.findOne = async filter => { checkScope(filter); return permitted ? order : null; };
   Order.updateOne = async (filter, update) => { checkScope(filter); assert.equal(update.$set.fulfillmentStatus, 'shipped'); updates++; };
   Fulfillment.find = () => ({ distinct: async () => shipped ? ['order'] : [] });
@@ -48,10 +54,11 @@ test('shipment HTTP: role, owner, cancelled order, validation, list and duplicat
   const call = async (body, role) => { const r = await fetch(`http://127.0.0.1:${server.address().port}/${body ? 'order' : ''}`, {
     method: body ? 'PATCH' : 'GET', headers: { 'Content-Type': 'application/json', ...(role ? { 'x-role': role } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}),
   }); return { status: r.status, body: await r.json() }; };
-  assert.equal((await call(null, 'healthPlanner')).status, 403);
+  assert.equal((await call(null, 'healthPlanner')).status, 200);
   assert.equal((await call()).body.data.length, 1);
   assert.equal((await call({})).status, 400);
   const shipping = { deliveryCompany: '测试快递', trackingNo: 'TEST123', recipientName: '王女士', recipientPhone: '13958025661', deliveryAddress: '杭州市萧山区江峰商务名座1-1015室' };
+  assert.equal((await call(shipping, 'healthPlanner')).status, 403);
   permitted = false; assert.equal((await call(shipping)).status, 409);
   permitted = true; assert.equal((await call(shipping)).status, 200);
   assert.equal((await call(shipping)).status, 409);

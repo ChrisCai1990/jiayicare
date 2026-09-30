@@ -22,6 +22,7 @@ const fulfillmentSchema = new mongoose.Schema({
   recipientName: { type: String, default: '' },
   recipientPhone: { type: String, default: '' },
   deliveryAddress: { type: String, default: '' },
+  shippedAt: { type: Date, default: null },
   wechatDeliveryStatus: { type: String, enum: ['not_reported', 'reported', 'failed'], default: 'not_reported' },
   wechatDeliveryReportedAt: { type: Date, default: null },
   completedAt: { type: Date, default: null },
