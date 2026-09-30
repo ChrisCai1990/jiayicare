@@ -1,3 +1,5 @@
+import followUpReview from '../../../shared/followUpReview.cjs'
+import followUpDetailView from '../utils/followUpDetail.cjs'
 import MedicationReminderModal from '../components/MedicationReminderModal'
 import { summaryTarget } from '../utils/workbenchTargets'
 import { taskProgress, readableServiceText } from '../utils/staffWorkspace'
@@ -9742,7 +9744,7 @@ export default function PatientDetailPage() {
               <tbody>
                 {(() => {
                   const reviewRoleLabel = role => ({ familyDoctor: '健康顾问', nutritionist: '营养师', healthPlanner: '健康规划师' })[role || 'familyDoctor'] || '指定专员'
-                  const canReview = f => f.aiStatus === 'pending' && (staff?.role === 'superadmin' || (staff?.role === (f.reviewRole || 'familyDoctor') && (!f.assignedTo || String(f.assignedTo?._id || f.assignedTo) === String(staff?._id))))
+                  const canReview = f => followUpReview.canReview(f, staff, user)
                   const renderRow = (f) => (
                     <tr key={f._id} style={{ cursor: 'pointer', background: f.aiStatus === 'pending' ? '#FFFBEB' : undefined }} onClick={() => (isCheckupAppointmentBookingTask(f) || isCheckupMedicalExecutionTask(f) || isCheckupManagerReviewTask(f)) ? openExec(f) : isCheckupAdvisorReviewTask(f) ? setCheckupAdvisorReview(f) : setFollowUpDetail(f)}>
                       <td style={{ fontSize: 13, color: '#666' }}>{new Date(f.date).toLocaleDateString('zh-CN')}</td>
@@ -11262,15 +11264,16 @@ export default function PatientDetailPage() {
               {!annualServiceItem.isAssistance(followUpDetail) && !annualDispatch.dedicated(followUpDetail) && <>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 {[
-                  { label: '随访日期', value: new Date(followUpDetail.date).toLocaleDateString('zh-CN') },
+                  { label: followUpDetail.status === 'completed' ? '随访日期' : '计划随访日期', value: followUpDetailView.displayDate(followUpDetail.date) },
                   { label: '随访方式', value: TYPE_MAP[followUpDetail.type] || followUpDetail.type || '-' },
                   { label: '随访状态', value: STATUS_MAP[followUpDetail.status] || followUpDetail.status || '-' },
-                  { label: '随访人员', value: followUpDetail.assignedTo?.name || followUpDetail.staffId?.name || '-' },
+                  { label: '计划审核人', value: (() => { const reviewer = followUpReview.reviewer(followUpDetail, user); return reviewer?.name || staffList.find(s => String(s._id) === String(reviewer?._id || reviewer))?.name || '待指定' })() },
+                  { label: '随访执行人', value: (() => { const executor = followUpReview.executor(followUpDetail, user); return executor?.name || staffList.find(s => String(s._id) === String(executor?._id || executor))?.name || '待指定' })() },
                   { label: '参与人员', value: followUpDetail.participants || '-' },
                   { label: '随访主题', value: followUpDetail.theme || followUpDetail.planName || '-' },
                   { label: '建立时间', value: followUpDetail.createdAt ? new Date(followUpDetail.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-' },
                   { label: '执行时间', value: followUpDetail.completedAt ? new Date(followUpDetail.completedAt).toLocaleString('zh-CN', { hour12: false }) : '-' },
-                  { label: '下次随访', value: followUpDetail.nextFollowUpDate ? new Date(followUpDetail.nextFollowUpDate).toLocaleDateString('zh-CN') : '-' },
+                  { label: '下次跟进日期', value: followUpDetail.nextFollowUpDate ? followUpDetailView.displayDate(followUpDetail.nextFollowUpDate) : '-' },
                 ].map(({ label, value }) => (
                   <div key={label}>
                     <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 3 }}>{label}</div>
@@ -11284,12 +11287,12 @@ export default function PatientDetailPage() {
                   <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 6 }}>关联订单</div>
                   <div style={{ background: '#E8F5EF', borderRadius: 8, padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: 14, fontWeight: 600, color: '#1A2B24' }}>{followUpDetail.sourceOrderId.serviceName}</span>
-                      <span style={{ fontSize: 14, fontWeight: 700, color: '#DC3545' }}>¥{followUpDetail.sourceOrderId.paidAmount ?? followUpDetail.sourceOrderId.servicePrice}</span>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: '#1A2B24' }}>{followUpDetail.sourceOrderId.serviceName || '关联订单信息暂未完整加载'}</span>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: '#DC3545' }}>{followUpDetailView.orderAmount(followUpDetail.sourceOrderId)}</span>
                     </div>
                     <div style={{ fontSize: 12, color: '#4A6558' }}>
                       支付方式：{{ wechat: '微信', alipay: '支付宝', onsite: '到店', healthFund: '健康基金抵扣', '': '未支付' }[followUpDetail.sourceOrderId.paymentMethod] || '-'}
-                      <span style={{ marginLeft: 12 }}>下单时间：{new Date(followUpDetail.sourceOrderId.createdAt).toLocaleString('zh-CN')}</span>
+                      <span style={{ marginLeft: 12 }}>下单时间：{followUpDetailView.displayDate(followUpDetail.sourceOrderId.createdAt, true)}</span>
                     </div>
                     <button className="btn btn-secondary btn-sm" style={{ alignSelf: 'flex-start', marginTop: 4 }}
                       onClick={() => { setFollowUpDetail(null); setTab('consumption') }}>查看消费记录</button>
@@ -11411,7 +11414,8 @@ export default function PatientDetailPage() {
             </div>
             <div className="modal-footer">
               {medicalProxyStage(followUpDetail) === 'supervise' && /就医规划/.test(followUpDetail.sourceOrderId?.serviceName || followUpDetail.theme || '') && ['planned', 'in_progress'].includes(followUpDetail.status) && hasPlanningAdvice(planningAdviceFromTask(followUpDetail)) && <button className="btn btn-primary" onClick={() => { const task = { ...followUpDetail, formData: { ...followUpDetail.formData, medicalPlanning: true, advisorSnapshot: planningAdviceFromTask(followUpDetail) } }; setFollowUpDetail(null); openExec(task) }}>记录客户沟通与后续服务意向</button>}
-              {followUpDetail.aiStatus === 'pending' && <>
+              {followUpDetail.aiStatus === 'pending' && !followUpReview.canReview(followUpDetail, staff, user) && <div style={{ fontSize: 13, color: '#4A6558' }}>待指定审核人员确认；当前账号无审核权限。</div>}
+              {followUpReview.canReview(followUpDetail, staff, user) && <>
                 <button className="btn btn-secondary" onClick={async () => {
                   try {
                     const rejectReason = window.prompt('请填写驳回原因：', '')
@@ -11445,7 +11449,7 @@ export default function PatientDetailPage() {
                 type: followUpDetail.type || 'phone',
                 theme: followUpDetail.theme || '',
                 content: followUpDetail.content || '',
-                assignedTo: followUpDetail.assignedTo?._id || followUpDetail.assignedTo || '',
+                assignedTo: (() => { const executor = followUpReview.executor(followUpDetail, user); return executor?._id || executor || '' })(),
                 nextFollowUpDate: followUpDetail.nextFollowUpDate ? new Date(followUpDetail.nextFollowUpDate).toISOString().slice(0, 10) : '',
               })}>编辑</button>}
               <button className="btn btn-secondary" onClick={() => setFollowUpDetail(null)}>关闭</button>
@@ -11483,11 +11487,11 @@ export default function PatientDetailPage() {
                 </div>
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">随访人员</label>
+                <label className="form-label">随访执行人</label>
                 <select className="form-input" value={editingFollowUp.assignedTo}
                   disabled={['completed', 'cancelled'].includes(followUpDetail.status)}
                   onChange={e => setEditingFollowUp(f => ({ ...f, assignedTo: e.target.value }))}>
-                  <option value="">-- 当前登录人 --</option>
+                  <option value="">-- 请选择随访执行人 --</option>
                   {staffList.map(s => <option key={s._id} value={s._id}>{s.name} · {s.roleLabel || s.role}</option>)}
                 </select>
                 {['completed', 'cancelled'].includes(followUpDetail.status) && (
@@ -11522,7 +11526,7 @@ export default function PatientDetailPage() {
                     nextFollowUpDate: editingFollowUp.nextFollowUpDate || null,
                   })
                   toast('已保存')
-                  setEditingFollowUp(null); setFollowUpDetail(res.data); loadFollowUps()
+                  setEditingFollowUp(null); setFollowUpDetail(followUpDetailView.mergeFollowUpDetail(followUpDetail, res.data, staffList)); loadFollowUps()
                 } catch (err) { toast(err.message || '保存失败') }
                 finally { setFollowUpSaving(false) }
               }}>{followUpSaving ? '保存中...' : followUpDetail.status === 'completed' ? '保存记录' : '保存计划'}</button>

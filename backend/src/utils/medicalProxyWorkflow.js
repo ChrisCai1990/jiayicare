@@ -313,7 +313,7 @@ async function createPostVisitFollowUpPlan(task, order, patient, reportIds, { me
       'formData.reportIds': reportIds, 'formData.auditSummary': task.formData?.auditSummary || '' } });
   return FollowUp.findOneAndUpdate(
     { sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `${schedulePrefix}:${order._id}` },
-    { $setOnInsert: { patientId: task.patientId, staffId: patient.assignedFamilyDoctor, assignedTo: patient.assignedFamilyDoctor, date: followUpDate, remindAt: followUpDate, type: 'other', status: 'planned', theme, content, plannedContent: content, tags: [medicalEscort ? '就医陪同' : '专家约诊', '就诊后随访'], sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `${schedulePrefix}:${order._id}`, aiStatus: 'pending', reviewRole: 'familyDoctor', formData: { reportIds, auditSummary: task.formData?.auditSummary || '', generatedFromExpertAppointment: !medicalEscort, generatedFromMedicalEscort: medicalEscort } } },
+    { $setOnInsert: { patientId: task.patientId, staffId: patient.assignedFamilyDoctor, reviewAssignedTo: patient.assignedFamilyDoctor, assignedTo: patient.assignedHealthManager || null, date: followUpDate, remindAt: followUpDate, type: 'other', status: 'planned', theme, content, plannedContent: content, tags: [medicalEscort ? '就医陪同' : '专家约诊', '就诊后随访'], sourceType: 'order', sourceOrderId: order._id, sourceScheduleKey: `${schedulePrefix}:${order._id}`, aiStatus: 'pending', reviewRole: 'familyDoctor', formData: { reportIds, auditSummary: task.formData?.auditSummary || '', generatedFromExpertAppointment: !medicalEscort, generatedFromMedicalEscort: medicalEscort } } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
 }

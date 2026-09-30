@@ -92,6 +92,7 @@ const followUpSchema = new mongoose.Schema({
   // 待审核归属角色：为空时按固定规则由健康顾问审核（年度管理方案）；health_plan来源按方案类型区分（营养方案→营养师，体检方案→健康顾问）
   // Keep legacy medicalAssistant values readable/saveable: older medical-assist tasks were
   // written through findOneAndUpdate without validators. New tasks belong to healthPlanner.
+  reviewAssignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 审核人，与随访执行人 assignedTo 独立
   reviewRole: { type: String, enum: ['familyDoctor', 'nutritionist', 'medicalAssistant', 'healthPlanner', null], default: null },
 }, { timestamps: true });
 

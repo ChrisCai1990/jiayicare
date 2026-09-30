@@ -1,3 +1,4 @@
+const followUpReview = require('../../../shared/followUpReview.cjs');
 const { withReviewTokens, resolveReviewRecord } = require('../utils/summaryReviewVersion');
 const { withAiContext } = require('../utils/aiBudget');
 const { ROLE_FIELDS: PHASE_ROLE_FIELDS, ROLE_LABELS: PHASE_ROLE_LABELS, currentReviewer: phaseReviewer, isAssignedPhaseReviewer, reviewQueueFilter } = require('../utils/phaseAssessmentRouting');
@@ -2244,7 +2245,9 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   // 查询强制转换后误报“随访记录不存在”。
   const followUp = await FollowUp.findById(req.params.id);
   if (!followUp) return res.status(404).json({ success: false, message: '随访记录不存在' });
-  const canUpdate = req.staff.role === 'superadmin'
+  const planReviewPatient = followUpReview.postVisit(followUp) && followUp.aiStatus === 'pending' ? await User.findById(followUp.patientId).select('assignedFamilyDoctor assignedHealthManager').lean() : null;
+  if (planReviewPatient && ['in_progress', 'completed'].includes(req.body.status)) return res.status(409).json({ success: false, message: '请先由健康顾问审核随访计划，再执行随访' });
+  const canUpdate = (planReviewPatient && followUpReview.canReview(followUp, req.staff, planReviewPatient)) || req.staff.role === 'superadmin'
     || String(followUp.staffId || '') === String(req.staff._id)
     || String(followUp.assignedTo || '') === String(req.staff._id);
   if (!canUpdate) return res.status(403).json({ success: false, message: '该任务未分配给当前账号，无法保存' });
@@ -2462,7 +2465,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     }
   }
   const isSuper = req.staff.role === 'superadmin';
-  const isOwner = isSuper || String(followUp.staffId) === String(req.staff._id);
+  const isOwner = isSuper || String(followUp.staffId) === String(req.staff._id) || (planReviewPatient && followUpReview.canReview(followUp, req.staff, planReviewPatient));
   // 计划层字段（何时、谁负责、要不要做）只有创建人（或超管）能改；执行人只能填写执行结果，
   // 不能擅自改动创建人定下的随访安排——避免执行人绕过创建人调整计划本身
   const OWNER_ONLY = ['date', 'theme', 'type', 'assignedTo', 'nextFollowUpDate', 'tags'];
@@ -2805,7 +2808,8 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
     if (req.staff.role !== 'superadmin' && req.staff.role !== requiredRole) {
       return res.status(403).json({ success: false, message: '该随访计划不属于您的审核角色' });
     }
-    if (req.staff.role !== 'superadmin' && followUp.assignedTo && String(followUp.assignedTo) !== String(req.staff._id)) {
+    const reviewPatient = followUpReview.postVisit(followUp) ? await User.findById(followUp.patientId).select('assignedFamilyDoctor assignedHealthManager').lean() : null;
+    if (!followUpReview.canReview(followUp, req.staff, reviewPatient)) {
       return res.status(403).json({ success: false, message: '仅该客户指定的健康顾问可审核此随访计划' });
     }
 
@@ -2852,6 +2856,11 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
       return res.json({ success: true, message: '已驳回' });
     }
 
+    if (followUpReview.postVisit(followUp)) {
+      const executorId = followUpReview.executor(followUp, reviewPatient);
+      followUp.reviewAssignedTo = followUpReview.reviewer(followUp, reviewPatient);
+      followUp.assignedTo = executorId;
+    }
     const EDITABLE = ['date', 'theme', 'type', 'assignedTo', 'content'];
     if (edits && typeof edits === 'object') {
       EDITABLE.forEach(k => { if (edits[k] !== undefined) followUp[k] = edits[k]; });
@@ -2863,6 +2872,7 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
         followUp.formData = { ...followUp.formData, managerReview };
       }
     }
+    if (followUpReview.postVisit(followUp) && !followUp.assignedTo) return res.status(400).json({ success: false, message: '请先选择实际执行随访的人员' });
     // 待约检的健康顾问审核是服务的最后一步。使用原子更新写入审核任务、订单和督办状态，
     // 避免先将 aiStatus 写为 approved、后续订单更新异常时留下“页面还在但无法再次审核”的半完成任务。
     if (followUp.sourceType === 'order' && followUp.formData?.generatedFromCheckupAppointment && followUp.sourceOrderId) {
@@ -12734,10 +12744,11 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}),
         ...(isSuper ? {} : role === 'familyDoctor' ? { $or: [{ reviewRole: 'familyDoctor' }, { reviewRole: null }, { reviewRole: '' }] } : { reviewRole: role }),
       })
-        .populate('patientId', 'name').sort({ date: 1 }).lean();
+        .populate('patientId', 'name assignedFamilyDoctor assignedHealthManager').sort({ date: 1 }).lean();
       pendingFollowUps.forEach(f => {
         const belongsToRole = f.reviewRole || 'familyDoctor';
         if (!isSuper && belongsToRole !== role) return;
+        if (!followUpReview.canReview(f, req.staff, f.patientId)) return;
         if (!inMyScope(f.patientId?._id)) return;
         const createdAt = f.createdAt || new Date();
         const sourceLabel = f.sourceType === 'ai_review' ? '（AI月度回顾）' : f.sourceType === 'health_plan' ? '（方案确认后生成）' : '（方案排期）';
