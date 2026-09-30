@@ -80,3 +80,45 @@ test('实际问题卡主视图呈现完整分析建议，原始检查来源折�
   assert.doesNotMatch(html, /<textarea|现有资料尚不足|details open/);
   assert.match(html, /修改分析与建议/); assert.match(html, /待顾问审核/);
 });
+
+
+test('提取超时仅重试当前小批次，完成的来源不重复请求，重试保留超时预算', async () => {
+  const report = { reportItems: Array.from({length: 7}, (_, i) => ({itemId: String(i), name: `项目${i}`, findings: '待判断'})) };
+  const calls = [];
+  const result = await require('../src/utils/reportIssues').extractIssues(report, {
+    batchSize: 6, timeoutMs: 120000, retryTimeout: true,
+    chat: async (messages, options) => {
+      const group = JSON.parse(messages[0].content); calls.push(group.map(x => x.sourceId));
+      assert.equal(options.timeoutMs, 120000);
+      if (calls.length === 2) throw Object.assign(new Error('timeout'), {code: 'AI_TIMEOUT'});
+      return JSON.stringify({ items: group.map(x => ({sourceId: x.sourceId, status: 'normal', problems: []})) });
+    },
+  });
+  assert.deepEqual(calls.map(x => x.length), [6, 1, 1]); assert.deepEqual(calls[1], calls[2]);
+  assert.equal(result.coverage.length, 7);
+});
+
+test('连续超时停止且不返回空成功；非超时错误不自动重试', async () => {
+  for (const code of ['AI_TIMEOUT', 'AI_BUDGET_PAUSED']) {
+    let count = 0;
+    await assert.rejects(require('../src/utils/reportIssues').extractIssues({ reportItems: [{ findings: '待判断' }] }, {
+      retryTimeout: true, chat: async () => { count++; throw Object.assign(new Error('failed'), { code }); },
+    }), {code});
+    assert.equal(count, code === 'AI_TIMEOUT' ? 2 : 1);
+  }
+});
+
+
+test('失败页提供重试入口，不显示零问题或空覆盖记录', () => {
+  const React = require('react'), { renderToStaticMarkup } = require('react-dom/server');
+  const source = require('fs').readFileSync(require('path').join(__dirname, '../../staff/src/components/AnnualReportProblems.jsx'), 'utf8');
+  const code = require('esbuild').transformSync(source.replace(/^import .*$/gm, '').replace('export function', 'function').replace('export default function', 'function') + '\nAnnualReportProblems;', {loader: 'jsx'}).code;
+  let index = 0;
+  const Component = require('vm').runInNewContext(code, { React,
+    useState: value => [index++ === 0 ? { reportCount: 4, data: { status: 'failed', topics: [], coverage: [], message: 'AI响应超时' } } : value, () => {}],
+    useRef: value => ({current: value}), useEffect() {},
+  });
+  const html = renderToStaticMarkup(React.createElement(Component, {patientId: 'p', year: 2026, canEdit: true}));
+  assert.match(html, /重新生成问题与建议/); assert.match(html, /AI响应超时/);
+  assert.doesNotMatch(html, /0个综合管理问题|资料范围与整理依据/);
+});

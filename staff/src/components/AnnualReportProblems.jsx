@@ -54,18 +54,18 @@ export default function AnnualReportProblems({ patientId, year, canEdit }) {
     finally { if (active.current === scope && ticket === request.current) setBusy(false) }
   }
   return <section id="report-followup-drafts" className="report-issues">
-    <header className="report-issues-heading"><div><h3>{year}年度管理问题</h3><p>多处检查整合为一个管理问题，形成综合分析和建议，由健康顾问审核。</p></div><button disabled={busy} onClick={() => { if (!dirty || window.confirm('刷新会替换未保存修改，是否继续？')) load() }}>刷新状态</button></header>
-    <div className="report-issues-overview"><span>本年度 {view.reportCount} 份已审核报告</span>{row && <b>{topics.length}个综合管理问题</b>}{row?.status === 'approved' && <b>健康顾问已审核</b>}</div>
+    <header className="report-issues-heading"><div><h3>{year}年 · 问题与建议</h3><p>合并相关检查 → 分析与建议 → 顾问审核</p></div><button disabled={busy} onClick={() => { if (!dirty || window.confirm('刷新会替换未保存修改，是否继续？')) load() }}>刷新</button></header>
+    <div className="report-issues-overview"><span>本年度 {view.reportCount} 份已审核报告</span>{(topics.length > 0 || ['ready', 'approved'].includes(row?.status)) && <b>{topics.length}个综合管理问题</b>}{row?.status === 'approved' && <b>健康顾问已审核</b>}</div>
     {error && <p role="alert" className="report-issues-error">{error}</p>}
     {view.stale && <p className="report-issues-error">来源资料已更新，请重新综合整理后审核。</p>}
-    {row?.message && <p role="status">{row.message}</p>}
+    {row?.message && <p role="status">{row.status === 'failed' && row.message.startsWith('综合整理未完成') ? '上次生成未完成，请重新生成问题与建议。' : row.message}</p>}
     {row?.canRetry && <p className="report-issues-error">本次生成等待过久，可点击重新综合整理重试。</p>}
-    {!row && !busy && <p>点击生成后，系统将合并同一问题的多处证据，统筹相关代谢问题，直接给出分析和建议草稿。</p>}
-    {canEdit && <div className="report-issues-actions"><button disabled={busy || generating || !view.reportCount} onClick={() => act('generate')}>{generating ? '正在综合整理…' : topics.length ? '重新综合整理' : '生成综合问题、分析与建议'}</button></div>}
+
+    {canEdit && <div className="report-issues-actions"><button className="annual-problem-generate" disabled={busy || generating || !view.reportCount} onClick={() => act('generate')}>{generating ? '正在综合整理…' : row?.status === 'failed' ? '重新生成问题与建议' : topics.length ? '重新整理' : '生成问题与建议'}</button></div>}
     {row?.status === 'failed' && topics.length > 0 && <p>下方保留上次草稿，仅供对照；本次生成尚未成功。</p>}
     {topics.map((topic, index) => <AnnualProblemCard key={`${scope}:${topic.id}`} topic={topic} index={index} disabled={!editable} approved={row?.status === 'approved'} onChange={patch => update(topic.id, patch)} />)}
     {row?.status === 'ready' && !topics.length && <p>已核对的资料未整理出需要管理的问题，请顾问确认资料范围。</p>}
-    {row && <details className="report-issues-coverage"><summary>资料范围与整理依据（{row.coverage?.length || 0}项）</summary>
+    {!!row?.coverage?.length && <details className="report-issues-coverage"><summary>资料范围与整理依据（{row.coverage?.length || 0}项）</summary>
       <p>正常或无需跟进：{row.coverage?.filter(item => item.status === 'normal').length || 0}项。覆盖范围仅限本年度已审核且已解析报告。</p>
       {row.summaryReference && <details><summary>参考的已审核年度筛查小结</summary>{[['tumor_risk', '肿瘤筛查'], ['cardiovascular_risk', '心脑血管病筛查'], ['chronic_disease', '慢性病及其他']].map(([key, label]) => <div key={key}><b>{label}</b><p>{row.summaryReference.sections?.[key]?.summary || '暂无内容'}</p></div>)}</details>}
       {!!row.priorAdvice?.length && <details><summary>既有顾问意见（保留供核对）</summary>{row.priorAdvice.map((advice, i) => <p key={i}><b>{advice.problem}：</b>{advice.recommendation}{advice.exclusionReason ? `；原不纳入原因：${advice.exclusionReason}` : ''}</p>)}</details>}

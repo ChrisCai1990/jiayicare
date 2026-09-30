@@ -34,3 +34,9 @@
 .annual-problem-findings{display:flex;gap:6px;flex-wrap:wrap;font-size:12px;color:#516b5e}.annual-problem-findings span{background:#f0f5f2;padding:4px 8px;border-radius:5px}
 .annual-problem-card .annual-problem-review{display:flex;align-items:center;gap:10px 20px;flex-wrap:wrap;border-top:1px solid #e2e8e4;padding-top:12px}
 .annual-problem-review label{flex-direction:row;align-items:center;font-weight:400;margin:0}.annual-problem-review input[type=checkbox]{width:auto}.annual-problem-review label:has(input:not([type=checkbox])){flex-basis:100%}
+
+.annual-plan-secondary { margin: 20px 0; border: 1px solid #d7e4dd; border-radius: 12px; background: white; padding: 16px 20px; }
+.annual-plan-secondary > summary { cursor: pointer; color: #52685d; font-weight: 600; }
+.annual-plan-secondary[open] > summary { margin-bottom: 18px; }
+.report-issues-actions .annual-problem-generate { background: #1e6b50; color: white; border-color: #1e6b50; font-weight: 600; }
+.report-issues-actions .annual-problem-generate:disabled { opacity: .55; }
