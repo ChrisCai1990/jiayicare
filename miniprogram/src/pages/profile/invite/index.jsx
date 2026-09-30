@@ -13,6 +13,7 @@ export default function InvitePage() {
   const goBack = () => Taro.navigateBack({ delta: 1 }).catch(() => Taro.switchTab({ url: '/pages/profile/index/index' }));
   const [code, setCode] = useState(user?.referralCode || '');
   const [invitees, setInvitees] = useState([]);
+  const [reward, setReward] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const loadReferrals = () => {
@@ -22,6 +23,7 @@ export default function InvitePage() {
       if (!res?.success) return;
       setCode(res.data?.referralCode || '');
       setInvitees(Array.isArray(res.data?.invitees) ? res.data.invitees : []);
+      setReward(res.data?.reward || null);
     }).catch((err) => {
       setError(err?.message || '邀请记录加载失败');
     }).finally(() => setLoading(false));
@@ -49,6 +51,10 @@ export default function InvitePage() {
     <View style={{ margin: `${spacing.lg}px`, padding: '28px 22px', backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, textAlign: 'center' }}>
       <Text style={{ display: 'block', fontSize: '16px', fontWeight: 700, color: colors.textPrimary }}>把健康理念分享给身边的人</Text>
       <Text style={{ display: 'block', marginTop: '8px', fontSize: '14px', lineHeight: '22px', color: colors.textSecondary }}>健康可控，人生方可从容。</Text>
+      {reward?.enabled && <View style={{ marginTop: '16px', padding: '12px 14px', backgroundColor: '#F1F7F4', borderRadius: `${radius.sm}px`, textAlign: 'left' }}>
+        <Text style={{ display: 'block', color: colors.primary, fontSize: '13px', fontWeight: 700 }}>邀请奖励说明</Text>
+        <Text style={{ display: 'block', marginTop: '4px', color: colors.textSecondary, fontSize: '12px', lineHeight: '19px' }}>好友完成健康问卷后，您可获 ¥{reward.inviterAmount} 健康基金，好友可获 ¥{reward.inviteeAmount}；奖励将自动到账并发送系统通知。</Text>
+      </View>}
       <Button openType="share" disabled={!code} style={{ marginTop: '24px', backgroundColor: colors.primary, color: '#fff', border: 'none', borderRadius: `${radius.full}px`, fontSize: '16px', fontWeight: 700 }}>邀请好友</Button>
       <Text style={{ display: 'block', marginTop: '13px', color: colors.textMuted, fontSize: '12px' }}>点击按钮，选择微信好友发送</Text>
     </View>
@@ -66,7 +72,10 @@ export default function InvitePage() {
             <Text style={{ display: 'block', color: colors.textPrimary, fontSize: '14px', fontWeight: 600 }}>{item.name || '好友'}</Text>
             <Text style={{ display: 'block', marginTop: '5px', color: colors.textMuted, fontSize: '12px' }}>{item.invitedAt ? new Date(item.invitedAt).toLocaleString('zh-CN') : '邀请关系已建立'}</Text>
           </View>
-          <Text style={{ color: item.rewarded ? colors.primary : colors.textMuted, fontSize: '12px' }}>{item.rewarded ? '奖励已到账' : '已邀请'}</Text>
+          <View style={{ alignItems: 'flex-end', maxWidth: '122px' }}>
+            <Text style={{ color: item.rewarded ? colors.primary : colors.textMuted, fontSize: '12px', textAlign: 'right' }}>{item.rewarded ? '奖励已到账' : (reward?.enabled ? '待完成健康问卷' : '已邀请')}</Text>
+            {!item.rewarded && reward?.enabled && <Text style={{ marginTop: '3px', color: colors.textMuted, fontSize: '10px', textAlign: 'right' }}>完成后自动到账</Text>}
+          </View>
         </View>
       ))}
     </View>

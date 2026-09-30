@@ -85,11 +85,21 @@ async function applyOnboardingRewards(user, inviteCode, pendingInviterId) {
 
 router.get('/referrals', auth, async (req, res) => {
   try {
-    const invitees = await User.find({ invitedBy: req.user._id, isDeleted: { $ne: true } })
-      .select('name invitedAt referralRewardGrantedAt')
-      .sort({ invitedAt: -1, createdAt: -1 }).limit(100).lean();
+    const [invitees, policyRow] = await Promise.all([
+      User.find({ invitedBy: req.user._id, isDeleted: { $ne: true } })
+        .select('name invitedAt referralRewardGrantedAt')
+        .sort({ invitedAt: -1, createdAt: -1 }).limit(100).lean(),
+      SystemConfig.findOne({ key: 'healthFundPolicy' }).select('value').lean(),
+    ]);
+    const policy = policyRow?.value || {};
     res.json({ success: true, data: {
       referralCode: req.user.referralCode || '', total: invitees.length,
+      reward: {
+        enabled: policy.inviteEnabled === true,
+        inviterAmount: Math.max(0, Number(policy.inviterAmount) || 0),
+        inviteeAmount: Math.max(0, Number(policy.inviteeAmount) || 0),
+        condition: '好友完成健康问卷后发放',
+      },
       invitees: invitees.map(item => ({ _id: item._id, name: item.name || '好友', invitedAt: item.invitedAt, rewarded: !!item.referralRewardGrantedAt })),
     } });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
