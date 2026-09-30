@@ -1015,7 +1015,7 @@ router.get('/annual-mgmt-plans', auth, async (req, res) => {
     const { buildAnnualPlanDisplayItems, customerModuleData } = require('../utils/annualPlanPresentation');
     const AnnualServiceRecommendation = require('../models/AnnualServiceRecommendation');
     const suggestions = await AnnualServiceRecommendation.find({ patientId: req.user._id, planId: { $in: plans.map(plan => plan._id) }, status: 'published' })
-      .select('planId finding evidence recommendation timeframe nextStep selectedOptions response publishedAt').sort({ publishedAt: 1 }).lean();
+      .select('planId finding evidence recommendation timeframe appointmentDate nextStep selectedOptions response publishedAt').sort({ publishedAt: 1 }).lean();
     const giftService = require('../utils/dentalGift');
     const giftContext = await giftService.context(req.user._id);
     const gift = giftContext ? giftService.view(giftContext.row) : null;

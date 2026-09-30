@@ -10,6 +10,13 @@ function normalizeRecommendationInput(body = {}) {
   if (!result.finding || !result.evidence || !result.recommendation) {
     throw Object.assign(new Error('请填写发现的问题、客观依据和服务建议'), { statusCode: 400 });
   }
+  for (const key of ['plannedFollowUpDate','appointmentDate']) {
+    const value=body[key] == null ? '' : body[key];
+    if (typeof value!=='string' || (value && (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(Date.parse(value)) || new Date(value).toISOString().slice(0,10)!==value))) {
+      throw Object.assign(new Error(`${key==='plannedFollowUpDate'?'计划跟进日期':'预约服务日期'}无效，请重新选择`),{statusCode:400});
+    }
+    result[key]=value;
+  }
   return result;
 }
 
@@ -58,6 +65,7 @@ function selectCatalogOptions(input = [], catalog = []) {
 async function recommendationOptions(plan, refs) { return selectCatalogOptions(refs, await serviceCatalog(plan)); }
 function customerRecommendation(row) {
   const choices = (row.selectedOptions || []).map(item => `${item.type === 'institution' ? '可选机构' : '可选套餐'}：${item.name}${item.address ? `（${item.address}）` : ''}${item.includedService ? `；包含：${item.includedService}` : ''}${typeof item.price === 'number' ? `；目录标价¥${item.price}，实际价格以确认时为准` : ''}`);
-  return { ...row, nextStep: [row.nextStep, ...choices].filter(Boolean).join('\n') };
+  const {plannedFollowUpDate,...publicRow}=row;
+  return { ...publicRow, timeframe:[row.timeframe,row.appointmentDate?`预约服务日期：${row.appointmentDate}`:''].filter(Boolean).join('；'), nextStep: [row.nextStep, ...choices].filter(Boolean).join('\n') };
 }
 module.exports = { dentalProductQuery, dentalProductDetail, normalizeRecommendationInput, dentalDrafts, serviceCatalog, selectCatalogOptions, recommendationOptions, customerRecommendation };

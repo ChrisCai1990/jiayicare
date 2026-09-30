@@ -51,3 +51,12 @@ test('口腔年卡按包含服务匹配洁牙，保留成人儿童区别，不�
   assert.match(details,/成人1次/);assert.match(details,/儿童1次/);
   assert.equal(dentalProductDetail({description:'不含洁牙；洗牙另收费'}),'');
 });
+
+test('服务日期严格校验且可留空，客户不收到内部联系日期',()=>{
+ const base={finding:'问题',evidence:'报告',recommendation:'服务'};
+ const result=normalizeRecommendationInput({...base,plannedFollowUpDate:'2026-10-01',appointmentDate:'2026-10-08'});
+ assert.equal(result.plannedFollowUpDate,'2026-10-01');assert.equal(result.appointmentDate,'2026-10-08');
+ for(const value of ['2026-02-30','明天',123])assert.throws(()=>normalizeRecommendationInput({...base,plannedFollowUpDate:value}),/日期无效/);
+ assert.equal(normalizeRecommendationInput(base).appointmentDate,'');
+ const shown=customerRecommendation(result);assert.equal(shown.plannedFollowUpDate,undefined);assert.match(shown.timeframe,/2026-10-08/);
+});
