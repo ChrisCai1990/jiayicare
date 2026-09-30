@@ -55,6 +55,7 @@ export const metabolicPilotAPI = {
   access: (id,action) => reqRoot(`/metabolic-pilot/admin/${id}`, {method:'PATCH',body:JSON.stringify({action})}),
 }
 export const adminAPI = {
+  importPatientHealthRecords: (id, data) => req(`/patients/${id}/health-records/import`, { method: 'POST', body: JSON.stringify(data) }),
   researchJourneys: (year) => req(`/research-care-journeys/journeys?${new URLSearchParams(year ? { year } : {})}`),
   enrollResearchJourney: data => req('/research-care-journeys/journeys', { method: 'POST', body: JSON.stringify(data) }),
   getCareQuality: () => req('/care-quality'),

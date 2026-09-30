@@ -1040,14 +1040,14 @@ function RequisitionModal({ patientId, onClose, onSaved, prefillTitle = '', pref
 function AISectionCard({ title, icon, color, children }) {
   const [expanded, setExpanded] = useState(false)
   return (
-    <div className="card" style={{ marginBottom: 14 }}>
-      <button type="button" onClick={() => setExpanded(v => !v)}
+    <div className="card ai-result-row" style={{ marginBottom: 6 }}>
+      <button type="button" aria-expanded={expanded} onClick={() => setExpanded(v => !v)}
         style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '12px 20px 10px',
           border: 'none', borderBottom: expanded ? '1px solid #F0EDE7' : 'none', background: 'transparent',
           textAlign: 'left', cursor: 'pointer' }}>
-        <span style={{ fontSize: 17 }}>{icon}</span>
+
         <span style={{ fontWeight: 700, fontSize: 14, color: '#1A2B24', flex: 1 }}>{title}</span>
-        <span style={{ width: 9, height: 9, borderRadius: '50%', background: color, flexShrink: 0 }} />
+
         <span style={{ color: '#8AA89C', fontSize: 13 }}>{expanded ? '收起 ▲' : '展开 ▼'}</span>
       </button>
       {expanded && <div style={{ padding: '12px 20px' }}>{children}</div>}
@@ -7473,25 +7473,6 @@ export default function PatientDetailPage() {
         {/* ── 4.2 身体成分指标 ── */}
         {tab === 'records' && healthBaseView === 'monitoring' && <>
         <InitialHealthRecordForm patientId={user._id} onSaved={load} toast={toast} />
-        <BatchHealthRecordImport patient={user} onSaved={load} toast={toast} />
-        <div className="card" style={{ marginBottom: 16 }}>
-          <div className="card-header">
-            <div><div className="card-title">健康设备与辅助器械</div><div style={{ marginTop: 4, fontSize: 12, color: '#8AA89C' }}>呼吸机等设备在此登记；下次维护时间会同步为负责人工作台随访任务</div></div>
-            {!editingEquipment ? <button className="btn btn-secondary btn-sm" onClick={event => { event.currentTarget.closest('.card')?.classList.remove('archive-collapsed'); setEquipmentForm((user.healthEquipment || []).length ? JSON.parse(JSON.stringify(user.healthEquipment)) : [blankEquipment()]); setEditingEquipment(true) }}>编辑设备</button> : <div style={{ display: 'flex', gap: 8 }}><button className="btn btn-secondary btn-sm" onClick={() => setEquipmentForm(v => [...v, blankEquipment()])}>＋ 添加设备</button><button className="btn btn-primary btn-sm" onClick={handleSaveEquipment}>保存并同步任务</button><button className="btn btn-secondary btn-sm" onClick={() => setEditingEquipment(false)}>取消</button></div>}
-          </div>
-          <div className="card-body">
-            {editingEquipment ? <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {equipmentForm.map((device, index) => <div key={device.id || index} style={{ border: '1px solid #DCE5E0', borderRadius: 10, padding: 12 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(150px,1fr))', gap: 10 }}>
-                  {[['type','设备类型'],['brand','品牌'],['model','型号'],['purchaseDate','购买时间'],['purchasePlace','购买渠道/地点'],['startedAt','开始使用时间'],['reason','使用原因/医嘱'],['usageFrequency','使用频率'],['parameters','参数或医嘱'],['adherence','使用依从性'],['cleanFrequency','清洗频率'],['disinfectionFrequency','消毒频率'],['consumableCycle','耗材更换周期'],['lastMaintenanceDate','最近维护时间'],['nextMaintenanceDate','下次维护时间'],['exceptions','异常情况'],['status','状态']].map(([key,label]) => <label key={key} style={{ fontSize: 12, color: '#65776F' }}>{label}<input className="form-input" type={key.endsWith('Date') || key === 'startedAt' ? 'date' : 'text'} value={device[key] || ''} onChange={e => setEquipmentForm(list => list.map((item,i) => i === index ? { ...item, [key]: e.target.value } : item))} style={{ marginTop: 4 }} /></label>)}
-                </div>
-                <button className="btn btn-danger btn-sm" style={{ marginTop: 10 }} onClick={() => setEquipmentForm(list => list.filter((_,i) => i !== index))}>移除设备</button>
-              </div>)}
-            </div> : (user.healthEquipment || []).length ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 10 }}>
-              {(user.healthEquipment || []).map((device,index) => <div key={device.id || index} style={{ padding: 13, border: '1px solid #DCE5E0', borderRadius: 10, background: '#FAFCFB' }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><b style={{ color: '#1E6B50' }}>{device.type || '健康设备'} {device.brand || ''} {device.model || ''}</b><span className="badge badge-success">{device.status || '使用中'}</span></div><div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.8, color: '#4A6558' }}>购买：{device.purchaseDate || '-'} · {device.purchasePlace || '-'}<br/>使用：{device.usageFrequency || '-'}；清洗：{device.cleanFrequency || '-'}；消毒：{device.disinfectionFrequency || '-'}<br/>耗材：{device.consumableCycle || '-'}；下次维护：{device.nextMaintenanceDate || '-'}</div></div>)}
-            </div> : <div style={{ color: '#8AA89C', fontSize: 13 }}>暂无设备记录。点击“编辑设备”可登记呼吸机、制氧机、血压计等。</div>}
-          </div>
-        </div>
         {false && <>
         {/* 不适主诉已迁移到独立的“健康画像”Tab，保留原实现片段便于历史逻辑核对。 */}
         <div className="card" style={{ marginBottom: 16 }}>
@@ -7607,45 +7588,6 @@ export default function PatientDetailPage() {
 
         </>}
 
-        {/* ── 慢病分级 ── */}
-        {user.chronicDiseases?.length > 0 && (
-          <div className="card" style={{ marginBottom: 16 }}>
-            <div className="card-header">
-              <div className="card-title">慢病分级（用于评分）</div>
-              {!editingDiseaseSeverity
-                ? <button className="btn btn-secondary btn-sm" onClick={() => setEditingDiseaseSeverity(true)}>编辑</button>
-                : <div style={{ display: 'flex', gap: 8 }}>
-                    <button className="btn btn-primary btn-sm" onClick={handleSaveDiseaseSeverity}>保存</button>
-                    <button className="btn btn-secondary btn-sm" onClick={() => { setEditingDiseaseSeverity(false); setSeverityForm(user.chronicDiseaseSeverity || {}) }}>取消</button>
-                  </div>
-              }
-            </div>
-            <div style={{ padding: '12px 20px' }}>
-              <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 10 }}>设置每种慢性病的严重程度，影响基础健康分扣分幅度</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px 20px' }}>
-                {user.chronicDiseases.map(disease => (
-                  <div key={disease}>
-                    <div style={{ fontSize: 13, color: '#1A2B24', fontWeight: 500, marginBottom: 4 }}>{disease}</div>
-                    {editingDiseaseSeverity ? (
-                      <select className="form-control" style={{ fontSize: 13 }}
-                        value={severityForm[disease] || 1}
-                        onChange={e => setSeverityForm(f => ({ ...f, [disease]: parseInt(e.target.value) }))}>
-                        <option value={1}>一级（早/轻症，无并发症）</option>
-                        <option value={2}>二级（中症，有并发症风险）</option>
-                        <option value={3}>三级（重症/终末期）</option>
-                      </select>
-                    ) : (
-                      <span style={{ fontSize: 13, color: '#4A6558' }}>
-                        {['一级（轻症）','二级（中症）','三级（重症）'][(user.chronicDiseaseSeverity?.[disease] || 1) - 1]}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* 健康趋势图 */}
         {(() => {
           const srcRecords = trendRecords ?? recentRecords ?? [];
@@ -7739,7 +7681,8 @@ export default function PatientDetailPage() {
             <div className="card" style={{ marginTop: 16 }}>
               <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
                 <div className="card-title">健康数据趋势</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              </div>
+                <div style={{ padding: '12px 20px 0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <input type="date" className="form-control" style={{ width: 136, fontSize: 12, padding: '4px 8px' }}
                     value={trendStartDate} onChange={e => setTrendStartDate(e.target.value)} placeholder="开始日期" />
                   <span style={{ fontSize: 12, color: '#aaa' }}>—</span>
@@ -7753,7 +7696,6 @@ export default function PatientDetailPage() {
                     {charts.length > 0 && <button className="btn btn-secondary btn-sm" onClick={downloadCharts} title="下载趋势图">下载图表</button>}
                   </>}
                 </div>
-              </div>
               {trendLoading ? (
                 <div style={{ padding: 40, textAlign: 'center', color: '#aaa', fontSize: 13 }}>加载中…</div>
               ) : charts.length >= 1 ? (
@@ -7773,7 +7715,7 @@ export default function PatientDetailPage() {
 
         {/* 日常健康打卡数据 */}
         <div id="submitted-health-records" className="card" style={{ marginTop: 16, scrollMarginTop: 20 }}>
-          <div className="card-header"><div className="card-title">日常健康打卡数据（每类型最近10条）</div></div>
+          <div className="card-header"><div className="card-title">日常监测记录</div></div>
           {recentRecords?.length > 0 ? (
             <table className="table">
               <thead>
@@ -7855,6 +7797,24 @@ export default function PatientDetailPage() {
           ) : (
             <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无健康打卡记录</div>
           )}
+        </div>
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-header">
+            <div><div className="card-title">健康设备与辅助器械</div><div style={{ marginTop: 4, fontSize: 12, color: '#8AA89C' }}>呼吸机等设备在此登记；下次维护时间会同步为负责人工作台随访任务</div></div>
+            {!editingEquipment ? <button className="btn btn-secondary btn-sm" onClick={event => { event.currentTarget.closest('.card')?.classList.remove('archive-collapsed'); setEquipmentForm((user.healthEquipment || []).length ? JSON.parse(JSON.stringify(user.healthEquipment)) : [blankEquipment()]); setEditingEquipment(true) }}>编辑设备</button> : <div style={{ display: 'flex', gap: 8 }}><button className="btn btn-secondary btn-sm" onClick={() => setEquipmentForm(v => [...v, blankEquipment()])}>＋ 添加设备</button><button className="btn btn-primary btn-sm" onClick={handleSaveEquipment}>保存并同步任务</button><button className="btn btn-secondary btn-sm" onClick={() => setEditingEquipment(false)}>取消</button></div>}
+          </div>
+          <div className="card-body">
+            {editingEquipment ? <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {equipmentForm.map((device, index) => <div key={device.id || index} style={{ border: '1px solid #DCE5E0', borderRadius: 10, padding: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(150px,1fr))', gap: 10 }}>
+                  {[['type','设备类型'],['brand','品牌'],['model','型号'],['purchaseDate','购买时间'],['purchasePlace','购买渠道/地点'],['startedAt','开始使用时间'],['reason','使用原因/医嘱'],['usageFrequency','使用频率'],['parameters','参数或医嘱'],['adherence','使用依从性'],['cleanFrequency','清洗频率'],['disinfectionFrequency','消毒频率'],['consumableCycle','耗材更换周期'],['lastMaintenanceDate','最近维护时间'],['nextMaintenanceDate','下次维护时间'],['exceptions','异常情况'],['status','状态']].map(([key,label]) => <label key={key} style={{ fontSize: 12, color: '#65776F' }}>{label}<input className="form-input" type={key.endsWith('Date') || key === 'startedAt' ? 'date' : 'text'} value={device[key] || ''} onChange={e => setEquipmentForm(list => list.map((item,i) => i === index ? { ...item, [key]: e.target.value } : item))} style={{ marginTop: 4 }} /></label>)}
+                </div>
+                <button className="btn btn-danger btn-sm" style={{ marginTop: 10 }} onClick={() => setEquipmentForm(list => list.filter((_,i) => i !== index))}>移除设备</button>
+              </div>)}
+            </div> : (user.healthEquipment || []).length ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 10 }}>
+              {(user.healthEquipment || []).map((device,index) => <div key={device.id || index} style={{ padding: 13, border: '1px solid #DCE5E0', borderRadius: 10, background: '#FAFCFB' }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><b style={{ color: '#1E6B50' }}>{device.type || '健康设备'} {device.brand || ''} {device.model || ''}</b><span className="badge badge-success">{device.status || '使用中'}</span></div><div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.8, color: '#4A6558' }}>购买：{device.purchaseDate || '-'} · {device.purchasePlace || '-'}<br/>使用：{device.usageFrequency || '-'}；清洗：{device.cleanFrequency || '-'}；消毒：{device.disinfectionFrequency || '-'}<br/>耗材：{device.consumableCycle || '-'}；下次维护：{device.nextMaintenanceDate || '-'}</div></div>)}
+            </div> : <div style={{ color: '#8AA89C', fontSize: 13 }}>暂无设备记录。点击“编辑设备”可登记呼吸机、制氧机、血压计等。</div>}
+          </div>
         </div>
         </>}
         </div>
@@ -8139,7 +8099,7 @@ export default function PatientDetailPage() {
         return (
           <div ref={archiveSectionsRef} className="health-archive-sections" onClick={handleArchiveSectionClick}>
             <style>{`.health-archive-sections>.card{transition:box-shadow .2s}.health-archive-sections .archive-collapsed>:not(.card-header){display:none!important}.health-archive-sections .card-header[data-archive-toggle="true"]{cursor:pointer}.health-archive-sections .card-header[data-archive-toggle="true"]:after{content:'⌃';margin-left:10px;color:#1E6B50;font-size:18px}.health-archive-sections .archive-collapsed>.card-header[data-archive-toggle="true"]:after{content:'⌄'}`}</style>
-            <details style={{ marginBottom: 12, padding: '8px 12px', border: '1px solid #DCE5E0', borderRadius: 9, background: '#FAFBFA' }}><summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>生成依据</summary><div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.8, color: '#65776F' }}>AI读取已确认档案、历年体检与检验检查、专项筛查、健康监测、问卷和近期打卡，按年度与历史数据比较。5维分析须由家庭医生审核，生活方式分析须由营养师审核；未审核内容仅为草稿。</div></details>
+
             {/* 前置要求：健康顾问生成AI健康分析/风险评估前必须先查看确认健康档案（2026-07-28改造，
                 不再逐份审核报告数据本身，那是健管专员audit_status的职责） */}
             {['familyDoctor', 'superadmin'].includes(staff?.role) && pendingDoctorAuditReports.length > 0 && (() => {
@@ -8161,21 +8121,16 @@ export default function PatientDetailPage() {
                 </div>
               )
             })()}
-            <div className="card" style={{ marginBottom: 12 }}>
-              <div className="card-header"><div><div className="card-title">{curYear}年度重点</div><div style={{ marginTop: 4, fontSize: 12, color: '#8AA89C' }}>先看结论与待办；生成、版本和详细依据按需展开</div></div></div>
-              <div className="card-body" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                <span style={{ padding: '6px 10px', borderRadius: 8, background: hasDoctorData ? '#E8F5EF' : '#F3F4F6', color: hasDoctorData ? '#1E6B50' : '#64748B', fontSize: 12 }}>{hasDoctorData ? '已形成5维健康结论' : '5维健康结论待生成'}</span>
-                <span style={{ padding: '6px 10px', borderRadius: 8, background: hasLifestyle ? '#ECFDF5' : '#F3F4F6', color: hasLifestyle ? '#15803D' : '#64748B', fontSize: 12 }}>{hasLifestyle ? '已形成生活方式结论' : '生活方式结论待生成'}</span>
-                <span style={{ padding: '6px 10px', borderRadius: 8, background: '#FFF7ED', color: '#9A3412', fontSize: 12 }}>待查看报告 {pendingDoctorAuditReports.filter(r => !r.familyDoctorViewedAt).length} 份</span>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            <h3 style={{ margin: '4px 0 12px', fontSize: 17 }}>{curYear}年度健康信息整理</h3>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
               <button className={`btn btn-sm ${aiAnalysisView === 'doctor' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setAiAnalysisView('doctor'); setEditingAISummary(false) }}>家庭医生5维分析</button>
               <button className={`btn btn-sm ${aiAnalysisView === 'nutrition' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setAiAnalysisView('nutrition'); setEditingAISummary(false) }}>营养师生活方式分析</button>
-              <span style={{ alignSelf: 'center', fontSize: 12, color: '#8AA89C' }}>团队成员均可查看已审核结果；生成、编辑和审核按专业角色控制</span>
+
             </div>
             <details style={{ marginBottom: 12, padding: '10px 12px', border: '1px solid #DCE5E0', borderRadius: 9, background: '#FAFBFA' }}>
-              <summary style={{ cursor: 'pointer', fontWeight: 700, color: '#1E6B50' }}>生成、年度与历史版本管理</summary>
+              <summary style={{ cursor: 'pointer', fontWeight: 700, color: '#1E6B50' }}>评估管理与依据</summary>
+            <details style={{ marginBottom: 12, padding: '8px 12px', border: '1px solid #DCE5E0', borderRadius: 9, background: '#FAFBFA' }}><summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>生成依据</summary><div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.8, color: '#65776F' }}>AI读取已确认档案、历年体检与检验检查、专项筛查、健康监测、问卷和近期打卡，按年度与历史数据比较。5维分析须由家庭医生审核，生活方式分析须由营养师审核；未审核内容仅为草稿。</div></details>
+<p style={{ fontSize: 12, color: '#65776F' }}>团队成员可查看已审核结果，生成和审核按专业角色权限开放。</p>
               {aiSummaryLoading && <div role="status" style={{ marginTop: 10, color: '#1E6B50' }}>正在生成，资料较多时可能需要2–4分钟，请勿重复提交。</div>}
               {aiSummaryError && <div role="alert" style={{ marginTop: 10, color: '#B91C1C' }}>{aiSummaryError}</div>}
               <div style={{ marginTop: 12 }}>
@@ -8348,11 +8303,6 @@ export default function PatientDetailPage() {
               </div>
             ) : (
               <>
-                {aiAnalysisView === 'doctor' && hasDoctorData && (
-                  <div style={{ margin: '6px 0 12px', padding: '10px 14px', borderRadius: 8, background: '#E8F5EF', color: '#1E6B50', fontWeight: 800 }}>
-                    健康顾问 · 5维健康信息整理
-                  </div>
-                )}
                 {aiAnalysisView === 'doctor' && hasDoctorData && <>
                 {(() => {
                   const groups = [
@@ -8373,9 +8323,9 @@ export default function PatientDetailPage() {
                     return [title, hospital, date].filter(Boolean).join(' · ')
                   }
                   return (
-                    <details className="card" style={{ marginBottom: 12, padding: '10px 14px', background: '#F0F7FF', border: '1px solid #BFDBFE' }}>
-                      <summary style={{ fontSize: 12, fontWeight: 700, color: '#1D4ED8', cursor: 'pointer' }}>
-                        🔗 本次5维分析依据（按分析板块对应，点击展开）
+                    <details className="card" style={{ marginBottom: 12, padding: '10px 14px', background: '#FAFBFA', border: '1px solid #DCE5E0' }}>
+                      <summary style={{ fontSize: 12, fontWeight: 500, color: '#65776F', cursor: 'pointer' }}>
+                        本次分析引用资料
                       </summary>
                       <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
                         {groups.map(([label, ids]) => (
@@ -8573,8 +8523,9 @@ export default function PatientDetailPage() {
                       {sec.checkup_completeness?.suggestion && <div style={{ fontSize: 13, lineHeight: 1.7, color: '#1A2B24', background: '#F2EDE3', borderRadius: 8, padding: '9px 12px', marginTop: 2 }}>{sec.checkup_completeness.suggestion}</div>}
                     </div>
                   )}
-                </AISectionCard>
                 <AISummaryDiscussionPanel patientId={id} year={curYear} recordIndex={doctorRecord._recordIndex} discussions={doctorRecord.discussions || []} staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} title="体检资料覆盖 · AI讨论" sectionKey="checkup_completeness" />
+                </AISectionCard>
+
 
                 {/* 板块五：需优先解决的医疗问题 */}
                 <AISectionCard title="需优先关注的信息" icon="🏥" color="#DC2626">
@@ -8631,8 +8582,9 @@ export default function PatientDetailPage() {
                       </div>
                     )
                   )}
-                </AISectionCard>
                 <AISummaryDiscussionPanel patientId={id} year={curYear} recordIndex={doctorRecord._recordIndex} discussions={doctorRecord.discussions || []} staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} title="需优先关注的信息 · AI讨论" sectionKey="medical_priority" />
+                </AISectionCard>
+
                 </>}
 
                 {/* 板块六：生活方式评估（结合最近一次体检 + 膳食调查综合概述） */}
@@ -8677,8 +8629,9 @@ export default function PatientDetailPage() {
                       </div>
                     )
                   )}
+                <AISummaryDiscussionPanel patientId={id} year={curYear} recordIndex={nutritionRecord._recordIndex} discussions={nutritionRecord.discussions || []} staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} title="生活方式分析 · AI讨论" sectionKey="lifestyle_assessment" />
                 </AISectionCard>
-                <AISummaryDiscussionPanel patientId={id} year={curYear} recordIndex={nutritionRecord._recordIndex} discussions={nutritionRecord.discussions || []} staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} title="生活方式分析 · AI讨论" sectionKey="lifestyle_assessment" /></>}
+                </>}
               </>
             )}
           </div>
@@ -10005,7 +9958,46 @@ export default function PatientDetailPage() {
       })()}
 
       {/* ── Health Portrait Tab ── */}
-      {tab === 'portrait' && <><HealthPortraitOverview user={user} reports={reports} /><button className="btn btn-secondary" onClick={() => setTab('symptoms')}>查看不适主诉与症状</button></>}
+      {tab === 'portrait' && <><HealthPortraitOverview user={user} reports={reports} />        {/* ── 慢病分级 ── */}
+        {user.chronicDiseases?.length > 0 && (
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="card-header">
+              <div className="card-title">慢病分级</div>
+              {!editingDiseaseSeverity
+                ? <button className="btn btn-secondary btn-sm" onClick={() => setEditingDiseaseSeverity(true)}>编辑</button>
+                : <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-primary btn-sm" onClick={handleSaveDiseaseSeverity}>保存</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => { setEditingDiseaseSeverity(false); setSeverityForm(user.chronicDiseaseSeverity || {}) }}>取消</button>
+                  </div>
+              }
+            </div>
+            <div style={{ padding: '12px 20px' }}>
+              <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 10 }}>设置每种慢性病的严重程度，影响基础健康分扣分幅度</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px 20px' }}>
+                {user.chronicDiseases.map(disease => (
+                  <div key={disease}>
+                    <div style={{ fontSize: 13, color: '#1A2B24', fontWeight: 500, marginBottom: 4 }}>{disease}</div>
+                    {editingDiseaseSeverity ? (
+                      <select className="form-control" style={{ fontSize: 13 }}
+                        value={severityForm[disease] || 1}
+                        onChange={e => setSeverityForm(f => ({ ...f, [disease]: parseInt(e.target.value) }))}>
+                        <option value={1}>一级（早/轻症，无并发症）</option>
+                        <option value={2}>二级（中症，有并发症风险）</option>
+                        <option value={3}>三级（重症/终末期）</option>
+                      </select>
+                    ) : (
+                      <span style={{ fontSize: 13, color: '#4A6558' }}>
+                        {['一级（轻症）','二级（中症）','三级（重症）'][(user.chronicDiseaseSeverity?.[disease] || 1) - 1]}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+<button className="btn btn-secondary" onClick={() => setTab('symptoms')}>查看不适主诉与症状</button></>}
       {tab === 'symptoms' && (
         <>
           <CoreArchiveSection user={user} section="symptom" onSaved={load} onNavigate={setTab} canEdit={['healthManager','familyDoctor','medicalAssistant','superadmin','platformSuper'].includes(staff?.role)}/>
@@ -14670,130 +14662,6 @@ function FamilyTab({ patientId, user, onRefresh }) {
 }
 
 
-const HEALTH_IMPORT_HEADERS = ['身份证号码', '姓名', '添加时间', '身高(CM)', '体重(KG)', 'BMI', '体温(℃)', '呼吸(次/分)', '脉搏(次/分)', '收缩压', '舒张压', '血糖(mmol/L)', '氧饱和度(%)', '疼痛评分(0-10)', '左眼视力', '右眼视力', '眼轴(mm)', '腰围(cm)', '臀围(cm)', '腰臀比', '备注']
-const WIDE_HEALTH_COLUMNS = [
-  ['身高(cm)', '身高'], ['体重(kg)', '体重'], ['BMI', 'BMI'], ['体温(℃)', '体温'], ['呼吸(次/分)', '呼吸'], ['脉搏(次/分)', '脉搏'],
-  ['血糖(mmol/L)', '血糖'], ['血氧饱和度(%)', '血氧饱和度'], ['疼痛评分(0-10)', '疼痛评分'], ['左眼视力', '左眼视力'], ['右眼视力', '右眼视力'],
-  ['眼轴(mm)', '眼轴'], ['腰围(cm)', '腰围'], ['臀围(cm)', '臀围'], ['腰臀比', '腰臀比'],
-]
-
-function parseHealthImportCsv(text) {
-  const rows = []
-  let row = [], cell = '', quoted = false
-  const source = String(text || '').replace(/^\uFEFF/, '')
-  for (let i = 0; i < source.length; i += 1) {
-    const ch = source[i]
-    if (ch === '"' && quoted && source[i + 1] === '"') { cell += '"'; i += 1 }
-    else if (ch === '"') quoted = !quoted
-    else if (ch === ',' && !quoted) { row.push(cell.trim()); cell = '' }
-    else if ((ch === '\n' || ch === '\r') && !quoted) {
-      if (ch === '\r' && source[i + 1] === '\n') i += 1
-      row.push(cell.trim()); cell = ''
-      if (row.some(Boolean)) rows.push(row)
-      row = []
-    } else cell += ch
-  }
-  row.push(cell.trim()); if (row.some(Boolean)) rows.push(row)
-  if (!rows.length) return []
-  const headers = rows[0].map(x => x.trim()
-    .replace(/^添加时间$/, '测量时间')
-    .replace(/\(CM\)/i, '(cm)')
-    .replace(/\(KG\)/i, '(kg)')
-    .replace(/^氧饱和度\(%\)$/, '血氧饱和度(%)'))
-  const isWide = !headers.includes('数据类型')
-  const required = isWide ? ['身份证号码', '姓名', '测量时间'] : ['身份证号码', '姓名', '测量时间', '数据类型']
-  if (required.some(x => !headers.includes(x))) throw new Error(`模板缺少必填列：${required.join('、')}`)
-  let inheritedId = '', inheritedName = ''
-  const parsed = []
-  rows.slice(1).forEach((cols, rowIndex) => {
-    const get = name => cols[headers.indexOf(name)] || ''
-    inheritedId = get('身份证号码') || inheritedId
-    inheritedName = get('姓名') || inheritedName
-    const common = { idNumber: inheritedId, name: inheritedName, recordedAt: get('测量时间'), note: get('备注'), sourceRowNumber: rowIndex + 2 }
-    if (!isWide) {
-      parsed.push({ ...common, type: get('数据类型'), systolic: get('收缩压'), diastolic: get('舒张压'), value: get('数值') })
-      return
-    }
-    const systolic = get('收缩压'), diastolic = get('舒张压')
-    if (systolic || diastolic) parsed.push({ ...common, type: '血压', systolic, diastolic, value: '' })
-    WIDE_HEALTH_COLUMNS.forEach(([column, type]) => {
-      const value = get(column)
-      if (value !== '') parsed.push({ ...common, type, systolic: '', diastolic: '', value })
-    })
-  })
-  return parsed.filter(x => x.recordedAt || x.type || x.value || x.systolic || x.diastolic)
-}
-
-function BatchHealthRecordImport({ patient, onSaved, toast: toastFn }) {
-  const inputRef = useRef(null)
-  const [fileName, setFileName] = useState('')
-  const [rows, setRows] = useState([])
-  const [preview, setPreview] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const canImport = patient.idType !== 'passport' && !!patient.idNumber
-
-  const downloadTemplate = () => {
-    if (!canImport) return toastFn('请先在基本信息中登记客户身份证号码')
-    const sample = [patient.idNumber, patient.name || '', '2024-01-15 08:30', '170', '70.2', '24.3', '36.5', '16', '74', '101', '68', '5.8', '98', '0', '1.0', '1.0', '24.1', '82', '96', '0.85', '早晨测量']
-    const csv = [HEALTH_IMPORT_HEADERS, sample].map(row => row.map(value => `"${String(value || '').replace(/"/g, '""')}"`).join(',')).join('\r\n')
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `历史健康数据导入模板_${patient.name || '客户'}.csv`; a.click(); URL.revokeObjectURL(a.href)
-  }
-
-  const chooseFile = async event => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
-    try {
-      const parsed = parseHealthImportCsv(await file.text())
-      if (!parsed.length) throw new Error('文件中没有数据')
-      setLoading(true); setFileName(file.name); setRows(parsed); setPreview(null)
-      const res = await staffAPI.importPatientHealthRecords(patient._id, { rows: parsed, fileName: file.name, preview: true })
-      setPreview(res.data)
-    } catch (error) { setRows([]); setPreview(null); toastFn(error.message || '文件解析失败') }
-    finally { setLoading(false) }
-  }
-
-  const confirmImport = async () => {
-    if (!preview?.summary?.ready) return
-    setLoading(true)
-    try {
-      const res = await staffAPI.importPatientHealthRecords(patient._id, { rows, fileName, preview: false })
-      toastFn(`成功导入 ${res.data.imported} 条历史健康数据`)
-      setRows([]); setPreview(null); setFileName(''); onSaved()
-    } catch (error) { toastFn(error.message || '导入失败') }
-    finally { setLoading(false) }
-  }
-
-  const downloadFailures = () => {
-    const failed = preview?.rows?.filter(row => row.status !== 'ready') || []
-    const csv = [['原文件行号', '状态', '原因'], ...failed.map(row => [row.rowNumber, row.status === 'duplicate' ? '重复' : '错误', row.message])]
-      .map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\r\n')
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })); a.download = `导入失败明细_${patient.name || '客户'}.csv`; a.click(); URL.revokeObjectURL(a.href)
-  }
-
-  return (
-    <div className="card" style={{ marginTop: 16 }}>
-      <div className="card-header"><div className="card-title">历史健康数据批量导入</div></div>
-      <div className="card-body">
-        <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 12 }}>横向模板每个测量时间一行、各指标分列，空白指标自动跳过；身份证号码精准匹配当前客户，姓名二次校验。同一客户后续行可留空身份证和姓名，系统会自动沿用上一行；旧版纵向模板仍可继续导入，单次最多1000条健康记录。</div>
-        {!canImport && <div style={{ padding: '9px 12px', marginBottom: 12, borderRadius: 8, color: '#B45309', background: '#FFF7E8', fontSize: 13 }}>该客户尚未登记身份证号码，请先完善基本信息后再导入。</div>}
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button className="btn btn-secondary btn-sm" onClick={downloadTemplate} disabled={!canImport}>下载CSV模板</button>
-          <button className="btn btn-primary btn-sm" onClick={() => inputRef.current?.click()} disabled={!canImport || loading}>{loading ? '处理中…' : '上传并预检'}</button>
-          <input ref={inputRef} type="file" accept=".csv,text/csv" hidden onChange={chooseFile} />
-        </div>
-        {preview && <div style={{ marginTop: 14, padding: 12, borderRadius: 8, background: '#F7FAF8' }}>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>{fileName}</div>
-          <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 13 }}><span style={{ color: '#1E6B50' }}>可导入 {preview.summary.ready}</span><span style={{ color: '#D97706' }}>重复 {preview.summary.duplicate}</span><span style={{ color: '#DC3545' }}>错误 {preview.summary.error}</span></div>
-          {preview.rows.some(row => row.status !== 'ready') && <div style={{ marginTop: 8, maxHeight: 140, overflow: 'auto', fontSize: 12, color: '#6B7280' }}>{preview.rows.filter(row => row.status !== 'ready').slice(0, 20).map(row => <div key={row.rowNumber}>第{row.rowNumber}行：{row.message}</div>)}</div>}
-          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}><button className="btn btn-primary btn-sm" disabled={!preview.summary.ready || loading} onClick={confirmImport}>确认导入 {preview.summary.ready} 条</button>{(preview.summary.error + preview.summary.duplicate) > 0 && <button className="btn btn-secondary btn-sm" onClick={downloadFailures}>下载失败明细</button>}</div>
-        </div>}
-      </div>
-    </div>
-  )
-}
-
 // -- InitialHealthRecordForm component
 function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
   const [open, setOpen] = React.useState(false)
@@ -14896,11 +14764,11 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
 
   if (!open) {
     return (
-      <div className="card" style={{ marginTop: 16 }}>
-        <div className="card-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div className="monitoring-toolbar" style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontWeight: 600, fontSize: 14 }}>健康监测数据补录</div>
-            <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>录入后直接同步到用户端，格式与用户打卡完全一致</div>
+            <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>查看日常监测，也可补录单次测量</div>
           </div>
           <button className="btn btn-primary btn-sm" onClick={() => setOpen(true)}>+ 录入数据</button>
         </div>

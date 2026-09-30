@@ -29,6 +29,7 @@ const NAV_SECTIONS = [
       { label: '健康方案模板', icon: 'template', path: '/health-plan-templates' },
       { label: '专项研判设置', icon: 'medical', path: '/ai-case-review-templates' },
       { label: '问卷管理', icon: 'form', path: '/questionnaires' },
+      { label: '历史健康数据导入', icon: 'history', path: '/health-data-import' },
       { label: '信息变更记录', icon: 'history', path: '/change-logs' },
     ],
   },

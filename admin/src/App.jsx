@@ -1,3 +1,4 @@
+import HealthDataImportPage from './pages/HealthDataImportPage'
 import React, { useState, useEffect, createContext, useContext } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { getToken, clearToken } from './api'
@@ -118,6 +119,7 @@ export default function App() {
             <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<DashboardPage />} />
+              <Route path="health-data-import" element={<HealthDataImportPage />} />
               <Route path="patients" element={<PatientsPage />} />
               <Route path="patients/:id" element={<PatientDetailPage />} />
               <Route path="patients/:id/annual-plan" element={<AnnualPlanPage />} />
