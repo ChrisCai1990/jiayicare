@@ -14,17 +14,23 @@ async function scope(staff) {
   const patients = await User.find(staff.role === 'superadmin' ? {} : { assignedHealthManager: staff._id }).distinct('_id');
   return { ...activeOrderWorkItemQuery(), user: { $in: patients }, status: 'scheduled' };
 }
+async function historyOwnership(staff) {
+  if (staff.role === 'superadmin') return {};
+  if (staff.role === 'healthPlanner') {
+    const patients = await User.find({ assignedHealthPlanner: staff._id }).distinct('_id');
+    return { $or: [{ supervisorId: staff._id }, { user: { $in: patients } }] };
+  }
+  const patients = await User.find({ assignedHealthManager: staff._id }).distinct('_id');
+  return { user: { $in: patients } };
+}
 router.get('/', async (req, res) => {
   try {
     const view = String(req.query.view || 'current');
     if (view === 'history') {
       const limit = Math.min(20, Math.max(1, Number(req.query.limit) || 5));
       const requestedPage = Math.max(1, Number(req.query.page) || 1);
-      const baseScope = await scope(req.staff);
-      const shipmentOrderIds = req.staff.role === 'healthManager'
-        ? await Fulfillment.find({ assignedStaff: req.staff._id, status: { $in: ['shipped', 'completed'] } }).distinct('order') : [];
-      const ownership = req.staff.role === 'healthManager' ? { $or: [{ user: baseScope.user }, { _id: { $in: shipmentOrderIds } }] } : baseScope;
-      const filter = { $and: [ownership, { $or: [{ fulfillmentStatus: { $in: ['shipped', 'completed', 'cancelled'] } }, { _id: { $in: shipmentOrderIds } }] }] };
+      const ownership = await historyOwnership(req.staff);
+      const filter = { $and: [ownership, { fulfillmentStatus: { $in: ['shipped', 'completed', 'cancelled'] } }] };
       // 旧系统曾给服务类订单也写入 fulfillmentStatus，不能据此把服务误当作实物发货。
       // 发货页只展示明确属于实物配送的订单。
       const allShipmentOrders = (await Order.find(filter).sort({ updatedAt: -1, _id: -1 })
