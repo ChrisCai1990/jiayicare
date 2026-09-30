@@ -334,7 +334,8 @@ router.post('/:id/submit', auth, async (req, res) => {
         console.error('[psych-scale-import] 心理量表自动写入档案失败', e.message);
       }
     } else {
-      // 普通问卷：自动生成健康档案导入草稿（问卷题目若绑定了档案字段）→ 待健管专员审核写入
+      // 初次健康问卷先写入，再按板块复核；后续问卷继续生成变化草稿。
+      let initialImportAttempt = false;
       try {
         const hasMapping = (questionnaire.questions || []).some(q => q.archiveField);
         if (hasMapping) {
@@ -342,17 +343,27 @@ router.post('/:id/submit', auth, async (req, res) => {
           const fullUser = await User.findById(req.user._id).lean();
           const draft = buildArchiveDraft(fullUser, questionnaire, response);
 
-          // 普通问卷不再直接改健康档案；新增和冲突信息统一由健管核对后生成新版本。
-          const changedItems = draft.items.filter(item => item.existing !== item.valueStr);
-          if (changedItems.length > 0) {
-            await User.collection.updateOne(
-              { _id: req.user._id },
-              { $set: { archiveDraft: { ...draft, items: changedItems, autoItems: [], conflictItems: changedItems } } }
-            );
+          const { initialImport, isIntake } = require('../utils/initialArchiveReview');
+          // Only the first intake response is auto-written. Later responses retain change review.
+          const previous = isIntake(questionnaire) ? await QuestionnaireResponse.exists({ user: req.user._id, questionnaire: questionnaire._id, _id: { $lt: response._id } }) : true;
+          const mutation = !previous ? initialImport(fullUser, questionnaire, response, draft) : null;
+          if (mutation) {
+            initialImportAttempt = true;
+            const result = await User.collection.updateOne(mutation.filter, mutation.update);
+            if (!result.matchedCount) throw new Error('初次建档写入发生冲突，请在问卷原始资料中重新导入');
+          } else {
+            const changedItems = draft.items.filter(item => item.existing !== item.valueStr);
+            if (changedItems.length > 0) {
+              await User.collection.updateOne({ _id: req.user._id },
+                { $set: { archiveDraft: { ...draft, items: changedItems, autoItems: [], conflictItems: changedItems } } });
+            }
           }
         }
       } catch (e) {
         console.error('[archive-import] 自动导入健康档案失败', e.message);
+        if (initialImportAttempt) {
+          await User.collection.updateOne({ _id: req.user._id, initialArchiveReview: null }, { $set: { initialArchiveImportPending: { responseId: response._id, createdAt: new Date() } } });
+        }
       }
     }
 

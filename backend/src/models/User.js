@@ -256,6 +256,11 @@ const userSchema = new mongoose.Schema({
   // changes: { diet: { from, to }, exercise: { from, to }, ... }
   lifestyleHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
   // 问卷自动导入健康档案的待审核草稿（{generatedAt,questionnaireId,responseId,status,items[]}）
+  coreHealthArchive: { type: mongoose.Schema.Types.Mixed, default: {} },
+  coreHealthArchiveHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  initialArchiveImportPending: { type: mongoose.Schema.Types.Mixed, default: null },
+  initialArchiveReview: { type: mongoose.Schema.Types.Mixed, default: null },
+  initialArchiveReviewHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
   archiveDraft: { type: mongoose.Schema.Types.Mixed, default: null },
   // 问卷无冲突自动写入档案的留痕日志（最近20条，供健康顾问查看系统自动做了什么改动）
   // [{ questionnaireTitle, appliedAt, items: [{path,label,valueStr}] }]

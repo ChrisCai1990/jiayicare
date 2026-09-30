@@ -1,3 +1,4 @@
+import { CoreArchiveSection, InitialArchiveReview, ArchiveSource, CurrentMedicationSummary } from '../components/CoreHealthArchive'
 import followUpReview from '../../../shared/followUpReview.cjs'
 import followUpDetailView from '../utils/followUpDetail.cjs'
 import MedicationReminderModal from '../components/MedicationReminderModal'
@@ -1993,7 +1994,7 @@ export default function PatientDetailPage() {
   const [loading, setLoading] = useState(true)
   const requestedTab = new URLSearchParams(location.search).get('tab') || 'info'
   const requestedServiceView = new URLSearchParams(location.search).get('serviceView') || 'overview'
-  const initialTab = requestedTab === 'monitoring' ? 'records' : requestedTab
+  const initialTab = new URLSearchParams(location.search).has('healthRecordId') && requestedTab === 'portrait' ? 'symptoms' : ['monitoring', 'archive'].includes(requestedTab) ? 'records' : requestedTab
   const [tab, setTab] = useState(initialTab === 'requisitions' ? 'info' : initialTab)
   const [healthBaseView, setHealthBaseView] = useState(requestedTab === 'monitoring' ? 'monitoring' : 'profile')
   const [screeningWorkspaceView, setScreeningWorkspaceView] = useState('screening')
@@ -2258,7 +2259,7 @@ export default function PatientDetailPage() {
     if (!['records', 'ai'].includes(tab) || !archiveSectionsRef.current) return
     archiveSectionsRef.current.querySelectorAll('.card').forEach(card => {
       const header = Array.from(card.children).find(child => child.classList?.contains('card-header'))
-      if (header) {
+      if (header && !card.classList.contains('core-archive')) {
         header.dataset.archiveToggle = 'true'
         header.title = '点击收起或展开此板块'
         if (!card.dataset.archiveInitialized) {
@@ -2295,7 +2296,7 @@ export default function PatientDetailPage() {
   const setAllArchiveSections = (collapsed) => {
     archiveSectionsRef.current?.querySelectorAll('.card').forEach(card => {
       const header = Array.from(card.children).find(child => child.classList?.contains('card-header'))
-      if (header) card.classList.toggle('archive-collapsed', collapsed)
+      if (header && !card.classList.contains('core-archive')) card.classList.toggle('archive-collapsed', collapsed)
     })
   }
   const [editingSymptom, setEditingSymptom] = useState(null)
@@ -2516,7 +2517,7 @@ export default function PatientDetailPage() {
       setBodyCompForm(res.data.user.bodyComposition || {})
       setAiSummaryForm(res.data.user.aiHealthSummary || {})
       // Saves refresh visible screening data without holding the whole page open.
-      if (refreshScreening && ['records', 'portrait', 'ai'].includes(tab)) loadScreening()
+      if (refreshScreening && ['records', 'portrait', 'symptoms', 'ai'].includes(tab)) loadScreening()
     } catch (err) {
       if (!isCurrent()) return
       setLoadError(err.status === 403 ? '无权限查看该会员' : (err.message || '会员不存在'))
@@ -3004,7 +3005,7 @@ export default function PatientDetailPage() {
 
   useEffect(() => {
     const healthRecordId = new URLSearchParams(location.search).get('healthRecordId')
-    if (tab !== 'portrait' || !healthRecordId) return
+    if (tab !== 'symptoms' || !healthRecordId) return
     setExpandedSymptoms(previous => new Set([...previous, String(healthRecordId)]))
     setTimeout(() => document.getElementById(`symptom-record-${healthRecordId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100)
   }, [tab, location.search, healthRecords.length])
@@ -3166,7 +3167,7 @@ export default function PatientDetailPage() {
     }
     else if (tab === 'referrals') loadPatientReferrals()
     else if (tab === 'medications') { loadMedications(); loadSupplements() }
-    else if (tab === 'portrait') {
+    else if (tab === 'portrait' || tab === 'symptoms') {
       loadScreening()
       if (reports.length === 0) loadReports()
     }
@@ -3454,7 +3455,9 @@ export default function PatientDetailPage() {
 
   const handleSaveHealth = async () => {
     try {
-      await staffAPI.updatePatient(id, healthForm)
+      const profile = { ...healthForm.healthProfile }
+      for (const key of ['familyHistoryNote','pastHistory','drugAllergy','foodAllergy','recentSymptoms','medicHistory','supplementHistory','recentMedication','recentSupplement']) delete profile[key]
+      await staffAPI.updatePatient(id, { ...healthForm, healthProfile: profile })
       toast('健康档案已保存')
       setEditingHealth(false)
       load()
@@ -4492,19 +4495,18 @@ export default function PatientDetailPage() {
 
       <ServiceJourneyPanel reports={reports} plans={plans} followUps={followUps} serviceRecords={serviceRecords} onNavigate={setTab} stageAssessmentEnabled />
 
+      {user.initialArchiveImportPending && <div className="card" style={{padding:16,marginBottom:16}}>初次问卷已保存，档案写入待重试。<button className="btn btn-primary btn-sm" disabled={archiveBusy} onClick={async () => {setArchiveBusy(true);try{await staffAPI.retryInitialArchive(id);await load()}catch(err){toast(err.message)}finally{setArchiveBusy(false)}}}>重新写入初次档案</button></div>}
       {/* Tabs */}
       {(() => {
         const groups = [
           { key: 'overview', label: '客户概览', tabs: [{ key: 'info', label: '客户概览' }] },
           { key: 'healthData', label: '健康资料', tabs: [
             { key: 'records', label: '健康基础与生活方式' },
-            { key: 'ai', label: '专项筛查与核查' },
-            { key: 'medications', label: '用药与营养素' },
+            { key: 'symptoms', label: '不适主诉与症状' },
+            { key: 'medications', label: '用药与营养补充剂' },
+            { key: 'ai', label: '专项筛查与评估' },
             { key: 'reports', label: '原始资料' },
-          ] },
-          { key: 'healthPortrait', label: '健康画像', tabs: [
-            { key: 'portrait', label: '综合画像' },
-            { key: 'aiCase', label: '专项研判' },
+            { key: 'portrait', label: '健康画像' },
           ] },
           { key: 'serviceManagement', label: '服务管理', tabs: [
             { key: 'plans', label: '服务方案' },
@@ -4517,13 +4519,13 @@ export default function PatientDetailPage() {
           { key: 'family', label: '家庭信息', tabs: [{ key: 'family', label: '家庭信息' }] },
           { key: 'membership', label: '会员信息', tabs: [{ key: 'membership', label: '会员信息' }] },
         ]
-        const activeGroup = groups.find(group => group.tabs.some(item => item.key === tab))
+        const activeGroup = groups.find(group => group.tabs.some(item => item.key === (tab === 'aiCase' ? 'ai' : tab)))
         const secondaryTabs = activeGroup?.tabs || []
         const showSecondaryTabs = secondaryTabs.length > 1
         const renderTab = t => (
           <button
             key={t.key}
-            className={`tab-btn ${tab === t.key ? 'active' : ''}`}
+            className={`tab-btn ${(tab === 'aiCase' ? 'ai' : tab) === t.key ? 'active' : ''}`}
             onClick={() => setTab(t.key)}
           >
             {t.label}
@@ -4536,6 +4538,11 @@ export default function PatientDetailPage() {
           {showSecondaryTabs && <div className="tabs patient-secondary-tabs">{secondaryTabs.map(renderTab)}</div>}
         </div>
       })()}
+
+      {['ai', 'aiCase'].includes(tab) && <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14 }}>
+        {[['screening','筛查与评估结果'],['analysis','AI健康信息整理'],['specialty','专项研判']].map(([key,label]) => <button key={key} className={`btn btn-sm ${(tab === 'aiCase' ? key === 'specialty' : screeningWorkspaceView === key) ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setTab(key === 'specialty' ? 'aiCase' : 'ai'); if (key !== 'specialty') setScreeningWorkspaceView(key) }}>{label}</button>)}
+      </div>}
+      {['records','symptoms','medications'].includes(tab) && <InitialArchiveReview user={user} onSaved={load} canEdit={['healthManager','familyDoctor','medicalAssistant','superadmin','platformSuper'].includes(staff?.role)} onNavigate={(target,section) => { setTab(target); if(target==='records') setHealthBaseView('profile'); requestAnimationFrame(() => document.getElementById(`core-${section}`)?.scrollIntoView({behavior:'smooth',block:'start'})) }} />}
 
       {tab === 'aiReview' && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} mode="assessment" onNavigate={setTab} />}
       {tab === 'aiCase' && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} mode="specialty" />}
@@ -5161,13 +5168,6 @@ export default function PatientDetailPage() {
             { key: 'monitoring', label: '健康监测' },
           ].map(item => <button key={item.key} type="button" className={`btn btn-sm ${healthBaseView === item.key ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setHealthBaseView(item.key)}>{item.label}</button>)}
         </div>}
-        {tab === 'ai' && <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-          {[
-            { key: 'screening', label: '专项筛查结果' },
-            { key: 'metrics', label: '体检关键指标' },
-            { key: 'analysis', label: 'AI健康信息整理' },
-          ].map(item => <button key={item.key} type="button" className={`btn btn-sm ${screeningWorkspaceView === item.key ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setScreeningWorkspaceView(item.key)}>{item.label}</button>)}
-        </div>}
         {tab === 'records' && <div className="archive-toolbar" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
           <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); setAllArchiveSections(true) }}>全部收起</button>
           <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); setAllArchiveSections(false) }}>全部展开</button>
@@ -5176,9 +5176,9 @@ export default function PatientDetailPage() {
             一致的情况无需人工再次确认，故此处不再重复放置整体人工审核开关 */}
 
         {tab === 'records' && healthBaseView === 'profile' && <>
-        {/* ── 初始健康数据录入 ── */}
-        <InitialHealthRecordForm patientId={user._id} onSaved={() => load()} toast={toast} />
-        <BatchHealthRecordImport patient={user} onSaved={() => load()} toast={toast} />
+        {/* ── 健康监测数据补录 ── */}
+        {['family','disease','allergy'].map(section => <CoreArchiveSection key={section} user={user} section={section} onSaved={load} onNavigate={setTab} canEdit={['healthManager','familyDoctor','medicalAssistant','superadmin','platformSuper'].includes(staff?.role)}/>)}
+        <CurrentMedicationSummary user={user} onNavigate={setTab}/>
 
         {/* ── 健康评分卡片 ── */}
         {(() => {
@@ -5377,11 +5377,6 @@ export default function PatientDetailPage() {
                   </div>
                 </div>
                 {[
-                  { key: 'drugAllergy', label: '药物过敏', nested: true },
-                  { key: 'foodAllergy', label: '食物过敏', nested: true },
-                  { key: 'pastHistory', label: '既往史', nested: true },
-                  { key: 'medicHistory', label: '是否长期服用中药或西药', nested: true },
-                  { key: 'supplementHistory', label: '是否有长期服用营养补剂', nested: true },
                   { key: 'surgeryHistory', label: '手术史', nested: true },
                   { key: 'traumaHistory', label: '外伤史', nested: false },
                   { key: 'transfusionHistory', label: '输血史', nested: false },
@@ -5389,7 +5384,6 @@ export default function PatientDetailPage() {
                   { key: 'infectiousHistory', label: '传染病史', nested: false },
                   { key: 'vaccinationHistory', label: '预防接种史', nested: false },
                   { key: 'otherDiseaseHistory', label: '其他特殊疾病史', nested: false },
-                  { key: 'familyHistoryNote', label: '家族史', nested: true },
                   ...(user.gender === '女' ? [
                     { key: 'sexualHistory', label: '是否有性生活史', nested: true },
                     { key: 'menstrualHistory', label: '月经史', nested: true },
@@ -5407,77 +5401,7 @@ export default function PatientDetailPage() {
                   </div>
                 ))}
                 <div style={{ fontWeight: 600, fontSize: 13, color: '#1E6B50', marginTop: 8, marginBottom: 4 }}>近期健康状态</div>
-                <div>
-                  <label style={{ fontSize: 12, color: '#8AA89C' }}>最近3个月躯体症状</label>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
-                    {(() => {
-                      const symptoms = healthForm.healthProfile?.recentSymptoms || []
-                      const noSymptom = symptoms.includes('无躯体症状')
-                      const otherEntry = symptoms.find(s => s.startsWith('其他'))
-                      const otherText = otherEntry ? otherEntry.replace(/^其他[:：]?/, '') : ''
-                      const OPTS = ['头痛','头晕','胸闷','乏力','失眠','焦虑/抑郁','消化不良','关节疼痛','皮肤问题']
-                      const updateSymptoms = (next) => setHealthForm(p => ({ ...p, healthProfile: { ...p.healthProfile, recentSymptoms: next } }))
-                      return (
-                        <>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12, padding: '3px 8px', borderRadius: 20, border: `1px solid ${noSymptom ? '#1E6B50' : '#E0D9CE'}`, background: noSymptom ? '#E8F5EF' : '#fff', color: noSymptom ? '#1E6B50' : '#4A6558' }}>
-                            <input type="checkbox" style={{ display: 'none' }} checked={noSymptom}
-                              onChange={e => updateSymptoms(e.target.checked ? ['无躯体症状'] : [])} />
-                            无躯体症状
-                          </label>
-                          {OPTS.map(s => {
-                            const checked = !noSymptom && symptoms.includes(s)
-                            return (
-                              <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12, padding: '3px 8px', borderRadius: 20, border: `1px solid ${checked ? '#1E6B50' : '#E0D9CE'}`, background: checked ? '#E8F5EF' : '#fff', color: checked ? '#1E6B50' : '#4A6558' }}>
-                                <input type="checkbox" style={{ display: 'none' }} checked={checked}
-                                  onChange={e => {
-                                    const cur = symptoms.filter(x => x !== '无躯体症状')
-                                    updateSymptoms(e.target.checked ? [...cur, s] : cur.filter(x => x !== s))
-                                  }} />{s}
-                              </label>
-                            )
-                          })}
-                          {(() => {
-                            const otherChecked = !noSymptom && symptoms.some(s => s.startsWith('其他'))
-                            return (
-                              <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12, padding: '3px 8px', borderRadius: 20, border: `1px solid ${otherChecked ? '#1E6B50' : '#E0D9CE'}`, background: otherChecked ? '#E8F5EF' : '#fff', color: otherChecked ? '#1E6B50' : '#4A6558' }}>
-                                <input type="checkbox" style={{ display: 'none' }} checked={otherChecked}
-                                  onChange={e => {
-                                    const cur = symptoms.filter(x => x !== '无躯体症状' && !x.startsWith('其他'))
-                                    updateSymptoms(e.target.checked ? [...cur, '其他'] : cur)
-                                  }} />
-                                其他
-                                {otherChecked && (
-                                  <input
-                                    type="text"
-                                    placeholder="请说明"
-                                    value={otherText}
-                                    onClick={e => e.preventDefault()}
-                                    onChange={e => {
-                                      const cur = symptoms.filter(x => x !== '无躯体症状' && !x.startsWith('其他'))
-                                      const text = e.target.value
-                                      updateSymptoms([...cur, text ? `其他：${text}` : '其他'])
-                                    }}
-                                    style={{ marginLeft: 4, border: 'none', outline: 'none', background: 'transparent', fontSize: 12, width: 100, color: '#1A2B24' }}
-                                  />
-                                )}
-                              </label>
-                            )
-                          })()}
-                        </>
-                      )
-                    })()}
-                  </div>
-                </div>
-                {[
-                  { key: 'recentMedication', label: '最近1个月是否服用中药或西药' },
-                  { key: 'recentSupplement', label: '最近1个月是否服用营养补剂' },
-                ].map(({ key, label }) => (
-                  <div key={key}>
-                    <label style={{ fontSize: 12, color: '#8AA89C' }}>{label}</label>
-                    <textarea className="form-control" rows={2} value={healthForm.healthProfile?.[key] || ''}
-                      onChange={e => setHealthForm(p => ({ ...p, healthProfile: { ...p.healthProfile, [key]: e.target.value } }))} />
-                  </div>
-                ))}
+                <p style={{color:"#65776F",fontSize:13}}>家族史、疾病史、过敏与不良反应请在上方独立区块维护；症状和用药请进入对应标签。</p>
               </div>
             ) : (() => {
               const Field = ({ label, val, full }) => !val ? null : (
@@ -5494,14 +5418,11 @@ export default function PatientDetailPage() {
                   icon: '🩸', title: '基础信息', color: '#0077B6',
                   fields: [
                     <Field key="bt" label="血型" val={bloodType || '-'} />,
-                    <Field key="da" label="药物过敏" val={user.healthProfile?.drugAllergy} />,
-                    <Field key="fa" label="食物过敏" val={user.healthProfile?.foodAllergy} />,
                   ],
                 },
                 {
                   icon: '📋', title: '病史', color: '#D97706',
                   fields: [
-                    <Field key="ph" label="既往史" val={user.healthProfile?.pastHistory} full />,
                     <Field key="sh" label="手术史" val={user.healthProfile?.surgeryHistory} />,
                     <Field key="th" label="外伤史" val={user.traumaHistory} />,
                     <Field key="tf" label="输血史" val={user.transfusionHistory} />,
@@ -5509,14 +5430,11 @@ export default function PatientDetailPage() {
                     <Field key="ih" label="传染病史" val={user.infectiousHistory} />,
                     <Field key="vh" label="预防接种史" val={user.vaccinationHistory} />,
                     <Field key="oh" label="其他特殊疾病史" val={user.otherDiseaseHistory} full />,
-                    <Field key="fh" label="家族史" val={user.healthProfile?.familyHistoryNote} full />,
                   ],
                 },
                 {
-                  icon: '💊', title: '用药及补剂', color: '#16A34A',
+                  icon: '💊', title: '用药与营养补充剂', color: '#16A34A',
                   fields: [
-                    <Field key="mh" label="长期用药（中/西药）" val={user.healthProfile?.medicHistory} />,
-                    <Field key="suh" label="长期服用营养补剂" val={user.healthProfile?.supplementHistory} />,
                   ],
                 },
                 ...(user.gender === '女' ? [{
@@ -5530,9 +5448,6 @@ export default function PatientDetailPage() {
                 {
                   icon: '🩺', title: '近期健康状态', color: '#7C3AED',
                   fields: [
-                    <Field key="sym" label="躯体症状" val={symptoms} full />,
-                    <Field key="rm" label="近期用药（中/西药）" val={user.healthProfile?.recentMedication} />,
-                    <Field key="rs" label="近期营养补剂" val={user.healthProfile?.recentSupplement} />,
                   ],
                 },
               ].filter(sec => sec.fields.some(f => f !== null))
@@ -7051,7 +6966,7 @@ export default function PatientDetailPage() {
         )}
 
         {/* ── 体检关键指标 ── */}
-        {tab === 'ai' && screeningWorkspaceView === 'metrics' && <>
+        {tab === 'ai' && screeningWorkspaceView === 'screening' && <>
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-header">
             <div className="card-title">体检关键指标</div>
@@ -7429,29 +7344,10 @@ export default function PatientDetailPage() {
         </div>
         </>}
 
-        {/* ── 4.2 身体成分指标 ── */}
-        {tab === 'records' && healthBaseView === 'monitoring' && <>
+        {tab === 'ai' && screeningWorkspaceView === 'screening' && <>
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-header">
-            <div><div className="card-title">健康设备与辅助器械</div><div style={{ marginTop: 4, fontSize: 12, color: '#8AA89C' }}>呼吸机等设备在此登记；下次维护时间会同步为负责人工作台随访任务</div></div>
-            {!editingEquipment ? <button className="btn btn-secondary btn-sm" onClick={event => { event.currentTarget.closest('.card')?.classList.remove('archive-collapsed'); setEquipmentForm((user.healthEquipment || []).length ? JSON.parse(JSON.stringify(user.healthEquipment)) : [blankEquipment()]); setEditingEquipment(true) }}>编辑设备</button> : <div style={{ display: 'flex', gap: 8 }}><button className="btn btn-secondary btn-sm" onClick={() => setEquipmentForm(v => [...v, blankEquipment()])}>＋ 添加设备</button><button className="btn btn-primary btn-sm" onClick={handleSaveEquipment}>保存并同步任务</button><button className="btn btn-secondary btn-sm" onClick={() => setEditingEquipment(false)}>取消</button></div>}
-          </div>
-          <div className="card-body">
-            {editingEquipment ? <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {equipmentForm.map((device, index) => <div key={device.id || index} style={{ border: '1px solid #DCE5E0', borderRadius: 10, padding: 12 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(150px,1fr))', gap: 10 }}>
-                  {[['type','设备类型'],['brand','品牌'],['model','型号'],['purchaseDate','购买时间'],['purchasePlace','购买渠道/地点'],['startedAt','开始使用时间'],['reason','使用原因/医嘱'],['usageFrequency','使用频率'],['parameters','参数或医嘱'],['adherence','使用依从性'],['cleanFrequency','清洗频率'],['disinfectionFrequency','消毒频率'],['consumableCycle','耗材更换周期'],['lastMaintenanceDate','最近维护时间'],['nextMaintenanceDate','下次维护时间'],['exceptions','异常情况'],['status','状态']].map(([key,label]) => <label key={key} style={{ fontSize: 12, color: '#65776F' }}>{label}<input className="form-input" type={key.endsWith('Date') || key === 'startedAt' ? 'date' : 'text'} value={device[key] || ''} onChange={e => setEquipmentForm(list => list.map((item,i) => i === index ? { ...item, [key]: e.target.value } : item))} style={{ marginTop: 4 }} /></label>)}
-                </div>
-                <button className="btn btn-danger btn-sm" style={{ marginTop: 10 }} onClick={() => setEquipmentForm(list => list.filter((_,i) => i !== index))}>移除设备</button>
-              </div>)}
-            </div> : (user.healthEquipment || []).length ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 10 }}>
-              {(user.healthEquipment || []).map((device,index) => <div key={device.id || index} style={{ padding: 13, border: '1px solid #DCE5E0', borderRadius: 10, background: '#FAFCFB' }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><b style={{ color: '#1E6B50' }}>{device.type || '健康设备'} {device.brand || ''} {device.model || ''}</b><span className="badge badge-success">{device.status || '使用中'}</span></div><div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.8, color: '#4A6558' }}>购买：{device.purchaseDate || '-'} · {device.purchasePlace || '-'}<br/>使用：{device.usageFrequency || '-'}；清洗：{device.cleanFrequency || '-'}；消毒：{device.disinfectionFrequency || '-'}<br/>耗材：{device.consumableCycle || '-'}；下次维护：{device.nextMaintenanceDate || '-'}</div></div>)}
-            </div> : <div style={{ color: '#8AA89C', fontSize: 13 }}>暂无设备记录。点击“编辑设备”可登记呼吸机、制氧机、血压计等。</div>}
-          </div>
-        </div>
-        <div className="card" style={{ marginBottom: 16 }}>
-          <div className="card-header">
-            <div className="card-title">身体成分指标</div>
+            <div className="card-title">身体成分评估</div>
             {!editingBodyComp ? (
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="btn btn-secondary btn-sm" onClick={() => { setBodyCompNewRecord(false); setBodyCompForm(user.bodyComposition || {}); setEditingBodyComp(true) }}>编辑当前</button>
@@ -7569,6 +7465,30 @@ export default function PatientDetailPage() {
           </div>
         </div>
 
+        </>}
+
+        {/* ── 4.2 身体成分指标 ── */}
+        {tab === 'records' && healthBaseView === 'monitoring' && <>
+        <InitialHealthRecordForm patientId={user._id} onSaved={load} toast={toast} />
+        <BatchHealthRecordImport patient={user} onSaved={load} toast={toast} />
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-header">
+            <div><div className="card-title">健康设备与辅助器械</div><div style={{ marginTop: 4, fontSize: 12, color: '#8AA89C' }}>呼吸机等设备在此登记；下次维护时间会同步为负责人工作台随访任务</div></div>
+            {!editingEquipment ? <button className="btn btn-secondary btn-sm" onClick={event => { event.currentTarget.closest('.card')?.classList.remove('archive-collapsed'); setEquipmentForm((user.healthEquipment || []).length ? JSON.parse(JSON.stringify(user.healthEquipment)) : [blankEquipment()]); setEditingEquipment(true) }}>编辑设备</button> : <div style={{ display: 'flex', gap: 8 }}><button className="btn btn-secondary btn-sm" onClick={() => setEquipmentForm(v => [...v, blankEquipment()])}>＋ 添加设备</button><button className="btn btn-primary btn-sm" onClick={handleSaveEquipment}>保存并同步任务</button><button className="btn btn-secondary btn-sm" onClick={() => setEditingEquipment(false)}>取消</button></div>}
+          </div>
+          <div className="card-body">
+            {editingEquipment ? <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {equipmentForm.map((device, index) => <div key={device.id || index} style={{ border: '1px solid #DCE5E0', borderRadius: 10, padding: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(150px,1fr))', gap: 10 }}>
+                  {[['type','设备类型'],['brand','品牌'],['model','型号'],['purchaseDate','购买时间'],['purchasePlace','购买渠道/地点'],['startedAt','开始使用时间'],['reason','使用原因/医嘱'],['usageFrequency','使用频率'],['parameters','参数或医嘱'],['adherence','使用依从性'],['cleanFrequency','清洗频率'],['disinfectionFrequency','消毒频率'],['consumableCycle','耗材更换周期'],['lastMaintenanceDate','最近维护时间'],['nextMaintenanceDate','下次维护时间'],['exceptions','异常情况'],['status','状态']].map(([key,label]) => <label key={key} style={{ fontSize: 12, color: '#65776F' }}>{label}<input className="form-input" type={key.endsWith('Date') || key === 'startedAt' ? 'date' : 'text'} value={device[key] || ''} onChange={e => setEquipmentForm(list => list.map((item,i) => i === index ? { ...item, [key]: e.target.value } : item))} style={{ marginTop: 4 }} /></label>)}
+                </div>
+                <button className="btn btn-danger btn-sm" style={{ marginTop: 10 }} onClick={() => setEquipmentForm(list => list.filter((_,i) => i !== index))}>移除设备</button>
+              </div>)}
+            </div> : (user.healthEquipment || []).length ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 10 }}>
+              {(user.healthEquipment || []).map((device,index) => <div key={device.id || index} style={{ padding: 13, border: '1px solid #DCE5E0', borderRadius: 10, background: '#FAFCFB' }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><b style={{ color: '#1E6B50' }}>{device.type || '健康设备'} {device.brand || ''} {device.model || ''}</b><span className="badge badge-success">{device.status || '使用中'}</span></div><div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.8, color: '#4A6558' }}>购买：{device.purchaseDate || '-'} · {device.purchasePlace || '-'}<br/>使用：{device.usageFrequency || '-'}；清洗：{device.cleanFrequency || '-'}；消毒：{device.disinfectionFrequency || '-'}<br/>耗材：{device.consumableCycle || '-'}；下次维护：{device.nextMaintenanceDate || '-'}</div></div>)}
+            </div> : <div style={{ color: '#8AA89C', fontSize: 13 }}>暂无设备记录。点击“编辑设备”可登记呼吸机、制氧机、血压计等。</div>}
+          </div>
+        </div>
         {false && <>
         {/* 不适主诉已迁移到独立的“健康画像”Tab，保留原实现片段便于历史逻辑核对。 */}
         <div className="card" style={{ marginBottom: 16 }}>
@@ -9000,6 +8920,7 @@ export default function PatientDetailPage() {
       {/* ── Medications Tab ── */}
       {tab === 'medications' && (
         <div>
+          <ArchiveSource user={user} section="medication"/>
           {/* 子 tab 切换 */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
             {[{ key: 'med', label: '💊 用药信息管理' }, { key: 'sup', label: '🥗 营养补充信息管理' }].map(t => (
@@ -10082,9 +10003,11 @@ export default function PatientDetailPage() {
       })()}
 
       {/* ── Health Portrait Tab ── */}
-      {tab === 'portrait' && (
+      {tab === 'portrait' && <><HealthPortraitOverview user={user} reports={reports} /><button className="btn btn-secondary" onClick={() => setTab('symptoms')}>查看不适主诉与症状</button></>}
+      {tab === 'symptoms' && (
         <>
-          <HealthPortraitOverview user={user} reports={reports} />
+          <CoreArchiveSection user={user} section="symptom" onSaved={load} onNavigate={setTab} canEdit={['healthManager','familyDoctor','medicalAssistant','superadmin','platformSuper'].includes(staff?.role)}/>
+
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-header">
               <div>
@@ -14974,7 +14897,7 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
       <div className="card" style={{ marginTop: 16 }}>
         <div className="card-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <div style={{ fontWeight: 600, fontSize: 14 }}>初始健康数据录入</div>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>健康监测数据补录</div>
             <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>录入后直接同步到用户端，格式与用户打卡完全一致</div>
           </div>
           <button className="btn btn-primary btn-sm" onClick={() => setOpen(true)}>+ 录入数据</button>
@@ -14986,7 +14909,7 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
   return (
     <div className="card" style={{ marginTop: 16 }}>
       <div className="card-header">
-        <div className="card-title">初始健康数据录入</div>
+        <div className="card-title">健康监测数据补录</div>
         <button className="btn btn-secondary btn-sm" onClick={() => { setOpen(false); reset() }}>取消</button>
       </div>
       <div className="card-body">

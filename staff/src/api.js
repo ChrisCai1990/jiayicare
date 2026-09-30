@@ -74,6 +74,9 @@ export const serviceGroupAPI = {
 }
 
 export const staffAPI = {
+  retryInitialArchive: id => req(`/staff/patients/${id}/initial-archive-review/retry`, {method:'POST',body:'{}'}),
+  saveCoreArchive: (id, section, data) => req(`/staff/patients/${id}/core-health-archive/${section}`, { method: 'PUT', body: JSON.stringify(data) }),
+  reviewInitialArchive: (id, section, data) => req(`/staff/patients/${id}/initial-archive-review/${section}`, { method: 'PUT', body: JSON.stringify(data) }),
   getOrderShipments: (p = {}) => req('/staff/order-shipments?' + qs(p)),
   shipOrder: (id, data) => req(`/staff/order-shipments/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   // Auth

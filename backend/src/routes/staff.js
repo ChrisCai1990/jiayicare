@@ -114,6 +114,7 @@ router.use('/followups', require('./followUpServices'));
 router.use('/followups', require('./annualCheckupPreparation'));
 router.use('/report-followups', require('./reportFollowUps')({ getVisiblePlanPatientIds }));
 router.use('/marketing', require('./visitorLeads')({ getVisiblePlanPatientIds }));
+router.use('/patients', require('./coreHealthArchive')({ getVisiblePlanPatientIds }));
 router.use('/patients', require('./diseaseActivity')({ getVisiblePlanPatientIds }));
 router.use('/patients', require('./diseaseStages')({ getVisiblePlanPatientIds }));
 router.use('/patients', require('./diseaseReportLinks')({ getVisiblePlanPatientIds }));
@@ -1514,7 +1515,7 @@ router.post('/patients/:id/medical-record/course-entries', staffAuth, checkPermi
 
 // ── PUT /api/staff/patients/:id ───────────────────────────────────
 router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
-  const existingPatient = await User.findById(req.params.id).select('phone contactPhone lifestyle lifestyle_data').lean();
+  const existingPatient = await User.findById(req.params.id).select('phone contactPhone lifestyle lifestyle_data coreHealthArchive healthProfile').lean();
   if (!existingPatient) return res.status(404).json({ success: false, message: '会员不存在' });
   const allowed = [
     'name', 'phone', 'gender', 'age', 'height', 'weight', 'preferredTitle',
@@ -1673,6 +1674,14 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
     });
     if (Array.isArray(req.body.healthProfile.recentSymptoms)) {
       updateData['healthProfile.recentSymptoms'] = req.body.healthProfile.recentSymptoms;
+    }
+  }
+
+  for (const [key, paths] of Object.entries({ family:['familyHistoryNote'], disease:['pastHistory'], allergy:['drugAllergy','foodAllergy','allergies'], symptom:['recentSymptoms'] })) {
+    if (!existingPatient.coreHealthArchive?.[key]) continue;
+    for (const path of paths) {
+      const field = `healthProfile.${path}`;
+      if (Object.hasOwn(updateData,field) && !require('node:util').isDeepStrictEqual(updateData[field],existingPatient.healthProfile?.[path])) return res.status(409).json({success:false,message:'此信息已有独立档案，请在家族史、疾病史、过敏史或不适症状板块修改'});
     }
   }
 
@@ -12569,6 +12578,20 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           link: `/patients/${r.user?._id}?tab=archive&responseId=${r._id}`,
         });
       });
+    }
+
+    if (can('archive_review')) {
+      const pendingInitial = await User.find({ 'initialArchiveReview.status': 'pending', ...(myPatientIds ? { _id: { $in: myPatientIds } } : {}) }).select('name initialArchiveReview').lean();
+      const failedInitial = await User.find({ initialArchiveImportPending: { $ne: null }, ...(myPatientIds ? { _id: { $in: myPatientIds } } : {}) }).select('name initialArchiveImportPending').lean();
+      for (const u of failedInitial) todos.push({ id:'initial_import_'+u._id, type:'archive_review', label:'初次建档写入待重试', priority:2, patientId:String(u._id), patientName:u.name || '未知', summary:'原始问卷已保存，请重新写入并复核', createdAt:u.initialArchiveImportPending.createdAt, link:`/patients/${u._id}?tab=records` });
+      const { SECTION_LABELS } = require('../utils/initialArchiveReview');
+      for (const u of pendingInitial) {
+        const review = u.initialArchiveReview;
+        const pending = Object.keys(SECTION_LABELS).filter(k => review.sections?.[k]?.status !== 'reviewed');
+        todos.push({ id: 'initial_archive_' + u._id, type: 'archive_review', label: '初次建档待复核', priority: 3,
+          patientName: u.name || '未知', patientId: String(u._id), summary: `已复核 ${6 - pending.length}/6：待核对${pending.map(k => SECTION_LABELS[k]).join('、')}`,
+          createdAt: review.createdAt, overdue: (now - new Date(review.createdAt)) > DAY, link: `/patients/${u._id}?tab=records&initialReview=1` });
+      }
     }
 
     // ── 健管专员：健康档案问卷 AI 识别草稿待审核（archiveDraft 非空）──
