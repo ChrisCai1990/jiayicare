@@ -9,6 +9,7 @@ const schema = new mongoose.Schema({
   recommendation: { type: String, required: true, trim: true, maxlength: 300 },
   timeframe: { type: String, trim: true, maxlength: 120, default: '' },
   nextStep: { type: String, trim: true, maxlength: 300, default: '' },
+  selectedOptions: { type: [mongoose.Schema.Types.Mixed], default: [] },
   status: { type: String, enum: ['draft', 'published'], default: 'draft' },
   response: { type: String, enum: ['none', 'interested', 'declined'], default: 'none' },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },

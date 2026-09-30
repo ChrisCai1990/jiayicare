@@ -7673,7 +7673,7 @@ router.get('/monthly-service-reviews/workbench', staffAuth, async (req, res) => 
 const AnnualServiceRecommendation = require('../models/AnnualServiceRecommendation');
 const { normalizeRecommendationInput } = require('../utils/annualServiceRecommendation');
 async function accessibleRecommendationPlan(req, res) {
-  const plan = await AnnualPlan.findById(req.params.planId).select('patientId pushedAt').lean();
+  const plan = await AnnualPlan.findById(req.params.planId).select('patientId pushedAt year').lean();
   if (!plan) { res.status(404).json({ success: false, message: '年度方案不存在' }); return null; }
   const visibleIds = await getVisiblePlanPatientIds(req.staff);
   if (visibleIds && !visibleIds.some(id => String(id) === String(plan.patientId))) {
@@ -7687,7 +7687,9 @@ router.get('/annual-plans/:planId/service-recommendations', staffAuth, async (re
     const plan = await accessibleRecommendationPlan(req, res);
     if (!plan) return;
     const rows = await AnnualServiceRecommendation.find({ planId: plan._id }).sort({ createdAt: 1 }).lean();
-    res.json({ success: true, data: rows });
+    const services = require('../utils/annualServiceRecommendation');
+    const [catalog, reports] = await Promise.all([services.serviceCatalog(plan), MedicalReport.find({user: plan.patientId, audit_status: 'audited'}).select('title audit_status reportYear checkDate reportItems examDescription examConclusion examMainConclusions').lean()]);
+    res.json({ success: true, data: rows, catalog, suggestions: services.dentalDrafts(reports, plan.year, rows) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -7697,6 +7699,7 @@ router.post('/annual-plans/:planId/service-recommendations', staffAuth, async (r
     const plan = await accessibleRecommendationPlan(req, res);
     if (!plan) return;
     const fields = normalizeRecommendationInput(req.body);
+    fields.selectedOptions = await require('../utils/annualServiceRecommendation').recommendationOptions(plan, req.body.selectedOptions || []);
     const row = await AnnualServiceRecommendation.create({ ...fields, planId: plan._id, patientId: plan.patientId, createdBy: req.staff._id });
     res.status(201).json({ success: true, data: row });
   } catch (err) { res.status(err.statusCode || 500).json({ success: false, message: err.message }); }
@@ -7711,6 +7714,7 @@ router.patch('/annual-plans/:planId/service-recommendations/:recommendationId', 
     const current = await AnnualServiceRecommendation.findOne(filter).lean();
     if (!current) return res.status(409).json({ success: false, message: '建议已发布或不存在，不能覆盖；请新增一条建议' });
     const fields = normalizeRecommendationInput({ ...current, ...req.body });
+    fields.selectedOptions = await require('../utils/annualServiceRecommendation').recommendationOptions(plan, req.body.selectedOptions ?? current.selectedOptions ?? []);
     const row = await AnnualServiceRecommendation.findOneAndUpdate(filter, { $set: fields }, { new: true });
     if (!row) return res.status(409).json({ success: false, message: '建议状态已变化，请刷新' });
     res.json({ success: true, data: row });
@@ -7723,9 +7727,12 @@ router.post('/annual-plans/:planId/service-recommendations/:recommendationId/pub
     const plan = await accessibleRecommendationPlan(req, res);
     if (!plan) return;
     if (!plan.pushedAt) return res.status(409).json({ success: false, message: '请先审核并推送年度方案，再发布服务建议' });
+    const draft = await AnnualServiceRecommendation.findOne({ _id: req.params.recommendationId, planId: plan._id, status: 'draft' }).lean();
+    if (!draft) return res.status(409).json({ success: false, message: '建议状态已变化，请刷新' });
+    const selectedOptions = await require('../utils/annualServiceRecommendation').recommendationOptions(plan, draft.selectedOptions || []);
     const row = await AnnualServiceRecommendation.findOneAndUpdate(
-      { _id: req.params.recommendationId, planId: plan._id, status: 'draft' },
-      { $set: { status: 'published', publishedAt: new Date(), publishedBy: req.staff._id } }, { new: true });
+      { _id: req.params.recommendationId, planId: plan._id, status: 'draft', updatedAt: draft.updatedAt },
+      { $set: { status: 'published', selectedOptions, publishedAt: new Date(), publishedBy: req.staff._id } }, { new: true });
     if (!row) return res.status(409).json({ success: false, message: '建议已发布或不存在，请刷新' });
     res.json({ success: true, data: row });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }

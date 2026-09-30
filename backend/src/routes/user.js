@@ -1015,11 +1015,11 @@ router.get('/annual-mgmt-plans', auth, async (req, res) => {
     const { buildAnnualPlanDisplayItems, customerModuleData } = require('../utils/annualPlanPresentation');
     const AnnualServiceRecommendation = require('../models/AnnualServiceRecommendation');
     const suggestions = await AnnualServiceRecommendation.find({ patientId: req.user._id, planId: { $in: plans.map(plan => plan._id) }, status: 'published' })
-      .select('planId finding evidence recommendation timeframe nextStep response publishedAt').sort({ publishedAt: 1 }).lean();
+      .select('planId finding evidence recommendation timeframe nextStep selectedOptions response publishedAt').sort({ publishedAt: 1 }).lean();
     const byPlan = new Map();
     suggestions.forEach(row => {
       const key = String(row.planId);
-      byPlan.set(key, [...(byPlan.get(key) || []), row]);
+      byPlan.set(key, [...(byPlan.get(key) || []), require('../utils/annualServiceRecommendation').customerRecommendation(row)]);
     });
     res.json({ success: true, data: plans.map(plan => ({ ...plan, moduleData: customerModuleData(plan.moduleData), displayItems: buildAnnualPlanDisplayItems(plan.moduleData), serviceRecommendations: byPlan.get(String(plan._id)) || [] })) });
   } catch (err) {
@@ -1041,7 +1041,7 @@ router.patch('/annual-mgmt-plans/:id/service-recommendations/:recommendationId/r
     const row = await AnnualServiceRecommendation.findOneAndUpdate(
       { ...filter, response: current.response },
       { $set: { response: req.body.response, respondedAt: new Date(), handledAt: null, handledBy: null, handlingNote: '' } }, { new: true })
-      .select('planId finding evidence recommendation timeframe nextStep response publishedAt');
+      .select('planId finding evidence recommendation timeframe nextStep selectedOptions response publishedAt');
     if (!row) return res.status(409).json({ success: false, message: '建议状态已变化，请刷新后重试' });
     res.json({ success: true, data: row });
   } catch (err) { res.status(500).json({ success: false, message: '保存选择失败' }); }

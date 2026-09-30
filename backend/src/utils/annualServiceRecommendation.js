@@ -13,4 +13,44 @@ function normalizeRecommendationInput(body = {}) {
   return result;
 }
 
-module.exports = { normalizeRecommendationInput };
+function dentalDrafts(reports, year, existing = []) {
+  if (existing.some(row => /牙结石/.test(row.finding || '') && /洁牙|洗牙/.test(row.recommendation || ''))) return [];
+  const evidence = [];
+  for (const report of reports) {
+    if (report.audit_status !== 'audited' || Number(report.reportYear || String(report.checkDate || '').slice(0, 4)) !== Number(year)) continue;
+    for (const source of require('./reportIssues').issueSources(report)) {
+      const quote = source.evidence.split(/[。；;\n]/).find(line => /牙结石/.test(line) && !/无.{0,6}牙结石|未见.{0,6}牙结石|未发现.{0,6}牙结石|牙结石.{0,4}(?:未见|阴性)|疑似|可能|已清除|已去除|已洁牙|既往|病史/.test(line));
+      if (quote) evidence.push(`${report.title || '体检报告'}${report.checkDate ? `（${report.checkDate}）` : ''} · ${source.name}：${quote.trim()}`);
+    }
+  }
+  if (!evidence.length) return [];
+  return [{ finding: '体检发现牙结石', evidence: [...new Set(evidence)].join('；').slice(0, 500), recommendation: '洁牙服务', timeframe: '与客户商定', nextStep: '具体洁牙方式由接诊口腔医生确定。', selectedOptions: [] }];
+}
+
+async function serviceCatalog(plan) {
+  const patient = await require('../models/User').findById(plan.patientId).select('tenantId').lean();
+  if (!patient) throw Object.assign(new Error('客户不存在'), { statusCode: 404 });
+  const tenantId = patient.tenantId || null;
+  const [institutions, products] = await Promise.all([
+    require('../models/MedicalInstitution').find({ tenantId, status: 'active', $or: [{ name: /口腔|牙科/ }, { aliases: /口腔|牙科/ }] }).select('name address region').sort({ name: 1 }).lean(),
+    require('../models/Product').find({ tenantId, status: 'on', name: /洁牙|洗牙/ }).select('name serviceLocation originalPrice').sort({ sortOrder: 1 }).lean(),
+  ]);
+  return [...institutions.map(row => ({ type: 'institution', id: String(row._id), name: row.name, address: row.address || row.region || '' })),
+    ...products.map(row => ({ type: 'product', id: String(row._id), name: row.name, address: row.serviceLocation || '', price: row.originalPrice }))];
+}
+function selectCatalogOptions(input = [], catalog = []) {
+  if (!Array.isArray(input) || input.length > 10) throw Object.assign(new Error('最多选择10个机构或套餐'), { statusCode: 400 });
+  const used = new Set();
+  return input.map(ref => {
+    const key = `${ref?.type}:${ref?.id}`;
+    const match = catalog.find(item => item.type === ref?.type && item.id === String(ref?.id));
+    if (!match || used.has(key)) throw Object.assign(new Error('所选机构或套餐已不可用，请重新选择'), { statusCode: 409 });
+    used.add(key); return { ...match };
+  });
+}
+async function recommendationOptions(plan, refs) { return selectCatalogOptions(refs, await serviceCatalog(plan)); }
+function customerRecommendation(row) {
+  const choices = (row.selectedOptions || []).map(item => `${item.type === 'institution' ? '可选机构' : '可选套餐'}：${item.name}${item.address ? `（${item.address}）` : ''}${typeof item.price === 'number' ? `；目录标价¥${item.price}，实际价格以确认时为准` : ''}`);
+  return { ...row, nextStep: [row.nextStep, ...choices].filter(Boolean).join('\n') };
+}
+module.exports = { normalizeRecommendationInput, dentalDrafts, serviceCatalog, selectCatalogOptions, recommendationOptions, customerRecommendation };
