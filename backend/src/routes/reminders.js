@@ -7,6 +7,7 @@ const router = express.Router();
 // 判断某提醒今天是否激活
 function isActiveToday(r) {
   if (!r.enabled) return false;
+  if (r.sourceKey === 'medication:combined') return !!r.nextMedicationAt && require('../../../shared/medicationReminder.cjs').beijingDate(new Date(r.nextMedicationAt)) === require('../../../shared/medicationReminder.cjs').beijingDate();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -82,8 +83,8 @@ router.post('/', auth, async (req, res) => {
 router.patch('/:id', auth, async (req, res) => {
   const current = await Reminder.findOne({ _id: req.params.id, user: req.user._id });
   if (!current) return res.status(404).json({ success: false, message: '提醒不存在' });
-  if (current.systemManaged && (typeof req.body.enabled !== 'boolean' || Object.keys(req.body).some(key => key !== 'enabled'))) return res.status(400).json({ success: false, message: '系统监测提醒仅支持开启或关闭' });
-  if (current.systemManaged && req.body.enabled && !req.user.healthMonitoringConsentAt) return res.status(409).json({ success: false, message: '请先同意开启免费健康监测提醒' });
+  if (current.systemManaged && (typeof req.body.enabled !== 'boolean' || Object.keys(req.body).some(key => key !== 'enabled'))) return res.status(400).json({ success: false, message: '系统提醒仅支持开启或关闭' });
+  if (current.systemManaged && current.sourceKey !== 'medication:combined' && req.body.enabled && !req.user.healthMonitoringConsentAt) return res.status(409).json({ success: false, message: '请先同意开启免费健康监测提醒' });
   const update = { ...req.body };
   if (current.systemManaged && req.body.enabled !== undefined) update.userDisabled = req.body.enabled === false;
   const reminder = await Reminder.findOneAndUpdate(
@@ -99,7 +100,7 @@ router.patch('/:id', auth, async (req, res) => {
 router.patch('/:id/toggle', auth, async (req, res) => {
   const reminder = await Reminder.findOne({ _id: req.params.id, user: req.user._id });
   if (!reminder) return res.status(404).json({ success: false, message: '提醒不存在' });
-  if (reminder.systemManaged && !reminder.enabled && !req.user.healthMonitoringConsentAt) return res.status(409).json({ success: false, message: '请先同意开启免费健康监测提醒' });
+  if (reminder.systemManaged && reminder.sourceKey !== 'medication:combined' && !reminder.enabled && !req.user.healthMonitoringConsentAt) return res.status(409).json({ success: false, message: '请先同意开启免费健康监测提醒' });
   reminder.enabled = !reminder.enabled;
   if (reminder.systemManaged) reminder.userDisabled = !reminder.enabled;
   await reminder.save();
@@ -113,7 +114,7 @@ router.delete('/:id', auth, async (req, res) => {
     reminder.enabled = false;
     reminder.userDisabled = true;
     await reminder.save();
-    return res.json({ success: true, message: '已关闭系统监测提醒' });
+    return res.json({ success: true, message: '已关闭系统提醒' });
   }
   await Reminder.findOneAndDelete({ _id: req.params.id, user: req.user._id });
   res.json({ success: true, message: '删除成功' });

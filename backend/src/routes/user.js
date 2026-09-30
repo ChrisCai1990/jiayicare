@@ -1216,6 +1216,7 @@ router.get('/followup-tasks', auth, async (req, res) => {
       // 岗位执行与督办属于医护内部工作流。客户只查看已推送的服务方案，
       // 不应看到、也不能代替医护人员完成这些内部任务。
       $nor: [
+        { workflowKey: 'medication:staff-followup' },
         { sourceType: 'annual_service' },
         { sourceType: 'annual_coordination' },
         { sourceType: 'order', workflowKey: { $not: /^medical_reminder:(?:followup|documents)$/ } },
@@ -1254,6 +1255,8 @@ router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
   try {
     const followup = await FollowUp.findOne({ _id: req.params.id, patientId: req.user._id });
     if (!followup) return res.status(404).json({ success: false, message: '随访任务不存在' });
+    if (followup.formData?.autoEndedAt) return res.status(409).json({ success: false, message: '当天提醒已结束，执行情况未确认；请查看今天的提醒' });
+    if (followup.workflowKey === 'medication:staff-followup') return res.status(403).json({ success: false, message: '该事项由健管专员持续跟进' });
     if(followup.careFlowId)return res.status(409).json({success:false,message:'本事项已进入资料与随访审核，请从健康计划上传本次资料；不能直接标记服务结束'});
     if (followup.sourceType === 'annual_service') return res.status(403).json({ message: '派单及办理任务仅由医护工作台处理' });
     if (require('../utils/followUpContinuity').requiresOutcomeReview(followup)) {

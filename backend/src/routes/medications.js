@@ -37,6 +37,7 @@ router.patch('/:id/stop', auth, async (req, res) => {
     { new: true }
   );
   if (!med) return res.status(404).json({ success: false, message: '药品不存在' });
+  await require('../utils/combinedMedicationReminder').refreshExistingPlan(req.user._id);
   res.json({ success: true, data: med, message: '已标记停用' });
 });
 
@@ -67,6 +68,7 @@ router.delete('/:id', auth, async (req, res) => {
     { _id: req.params.id, user: req.user._id },
     { active: false }
   );
+  await require('../utils/combinedMedicationReminder').refreshExistingPlan(req.user._id);
   res.json({ success: true, message: '删除成功' });
 });
 

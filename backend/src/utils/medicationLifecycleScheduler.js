@@ -19,7 +19,7 @@ async function stopExpiredTreatments() {
     },
   };
   const [medications, supplements] = await Promise.all([
-    Medication.updateMany(filter, update),
+    Medication.updateMany({ ...filter, endDate: { $ne: '', $lt: today } }, update),
     Supplement.updateMany(filter, update),
   ]);
   const count = (medications.modifiedCount || 0) + (supplements.modifiedCount || 0);

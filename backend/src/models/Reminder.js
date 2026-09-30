@@ -32,6 +32,10 @@ const reminderSchema = new mongoose.Schema({
 
   // recurring：提醒时间 + 重复规则
   reminderTime:       { type: String, default: '08:00' },  // HH:mm
+  reminderTimes: { type: [String], default: undefined },
+  medicationWindowDate: { type: String, default: '' },
+  nextMedicationAt: { type: Date, default: null },
+  lastMedicationAt: { type: Date, default: null },
   daysOfWeek:         [{ type: String }],                   // [] = 每天，['Mon','Wed',...] = 指定星期
   customEveryNDays:   { type: Number },                     // 每 N 天一次（与 daysOfWeek 互斥）
   startDate:          { type: Date },                        // 开始日期（可选）

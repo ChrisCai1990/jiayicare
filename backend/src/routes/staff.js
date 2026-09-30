@@ -8900,6 +8900,7 @@ router.patch('/patients/:id/medications/:medId', staffAuth, async (req, res) => 
       if (req.body.imageUrls !== undefined) med.imageUrls = Array.isArray(req.body.imageUrls) ? req.body.imageUrls.filter(url => typeof url === 'string' && url.trim()).slice(0, 6) : [];
     }
     await med.save();
+    await require('../utils/combinedMedicationReminder').refreshExistingPlan(req.params.id);
     res.json({ success: true, data: med });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -8914,6 +8915,7 @@ router.delete('/patients/:id/medications/:medId', staffAuth, async (req, res) =>
       return res.status(403).json({ success: false, message: '仅记录创建人可删除' });
     }
     await med.deleteOne();
+    await require('../utils/combinedMedicationReminder').refreshExistingPlan(req.params.id);
     await FollowUp.deleteMany({ sourceType: 'medication_reminder', sourceId: med._id, status: { $in: ['planned', 'in_progress'] } });
     await FollowUp.deleteMany({ sourceType: 'supply_reminder', sourceId: med._id, status: { $in: ['planned', 'in_progress'] } });
     res.json({ success: true });

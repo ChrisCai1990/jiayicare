@@ -1,9 +1,8 @@
-const { randomUUID } = require('node:crypto');
 const { schedule } = require('../../../shared/medicationReminder.cjs');
+const { syncCombinedMedicationReminder } = require('./combinedMedicationReminder');
 const saving = new Set();
-
-async function saveReminder({ med, patientId, staff, body, FollowUp, User, now = new Date() }) {
-  const key = String(med._id);
+async function saveReminder({ med, patientId, staff, body, FollowUp, now = new Date(), sync = syncCombinedMedicationReminder }) {
+  const key = String(patientId);
   if (saving.has(key)) throw Object.assign(new Error('提醒正在保存，请稍后重试'), { statusCode: 409 });
   saving.add(key);
   try {
@@ -11,39 +10,20 @@ async function saveReminder({ med, patientId, staff, body, FollowUp, User, now =
     let config;
     try { config = enabled ? schedule(body, med, now) : null; }
     catch (err) { throw Object.assign(err, { statusCode: 400 }); }
-    const base = { patientId, sourceType: 'medication_reminder', sourceId: med._id };
-    // Only replace untouched future reminders. Completed records and explicit human
-    // handoffs remain evidence, including when their scheduled date is in the future.
-    const replaceable = { ...base, status: 'planned', date: { $gte: now }, tags: { $nin: ['人工跟进'] }, completedByUser: { $ne: true } };
-    const old = await FollowUp.find(replaceable).select('_id').lean();
-    const protectedRows = enabled ? await FollowUp.find({ ...base, status: { $ne: 'cancelled' }, $or: [
-      { status: { $ne: 'planned' } }, { tags: '人工跟进' }, { completedByUser: true },
-    ] }).select('date').lean() : [];
-    const occupied = new Set(protectedRows.map(row => +new Date(row.date)));
-    const patient = enabled ? await User.findById(patientId).select('assignedHealthManager') : null;
-    const assignee = patient?.assignedHealthManager || med.staffId || staff._id;
-    const batch = `medication:${randomUUID()}`;
-    const rows = (config?.dates || []).filter(({ date }) => !occupied.has(+date)).map(({ date, time }) => ({
-      ...base, staffId: assignee, assignedTo: assignee, date, type: 'other', status: 'planned',
-      theme: `用药提醒 · ${med.name} · ${time}`,
-      plannedContent: `请按医嘱使用${med.name}（${med.dosage}，${med.frequency}${med.timing ? `，${med.timing}` : ''}）。本次提醒时间：${time}（北京时间）。服用后可确认完成，如有不适或需要帮助请联系健管专员。${config.note ? `\n提醒备注：${config.note}` : ''}`,
-      tags: ['用药提醒', 'AI自动计划'], sourceScheduleKey: batch,
-    }));
     const previous = med.reminder?.toObject?.() || med.reminder || {};
-    try {
-      if (rows.length) await FollowUp.insertMany(rows);
-      const { dates, ...stored } = config || {};
-      med.reminder = { ...previous, ...stored, enabled, updatedAt: now, updatedBy: staff._id };
-      await med.save();
-    } catch (err) {
-      // insertMany may have partially succeeded; clean only this attempt, leaving
-      // the previous schedule intact on validation/storage failure.
-      await FollowUp.deleteMany({ ...base, sourceScheduleKey: batch });
-      med.reminder = previous;
-      throw err;
-    }
-    if (old.length) await FollowUp.deleteMany({ ...replaceable, _id: { $in: old.map(row => row._id) } });
-    return { generated: rows.length, message: enabled ? `已生成${rows.length}次客户用药提醒` : '已关闭用药提醒，已完成记录和人工跟进保留' };
+    const { dates, ...stored } = config || {};
+    med.reminder = { ...previous, ...stored, enabled, updatedAt: now, updatedBy: staff._id };
+    await med.save();
+    let plan;
+    try { plan = await sync(patientId, now); }
+    catch (err) { med.reminder = previous; await med.save(); throw err; }
+    // Keep clinical/human evidence. Replace untouched legacy dose tasks only after
+    // the single recurring reminder is durably available.
+    await FollowUp.updateMany({ patientId, sourceType: 'medication_reminder', status: 'planned',
+      'formData.medicationPlanId': { $exists: false }, date: { $gte: now }, tags: { $nin: ['人工跟进'] }, completedByUser: { $ne: true }, 'progressRecords.0': { $exists: false } },
+      { $set: { status: 'cancelled', cancelReason: '已合并至客户持续用药提醒，同一时间的药物合并通知' } });
+    return { generated: plan?.enabled ? 1 : 0, reminderId: plan?._id,
+      message: enabled ? '已保存用药提醒；同一时间的药物合并为一条消息，到点提醒' : '已关闭该药提醒，其他药物提醒保留' };
   } finally { saving.delete(key); }
 }
 module.exports = { saveReminder };

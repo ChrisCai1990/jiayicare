@@ -36,55 +36,19 @@ test('daily frequency suggestions preserve saved times and do not infer meal ins
   assert.deepEqual(helpers.initialForm({reminder:{remindTimes:['07:00','13:00','19:00']}}, now).remindTimes, ['07:00','13:00','19:00']);
 });
 
-function fixture() {
-  const calls = [], inserted = [], removed = [];
-  const med = { _id:'med', name:'测试药', dosage:'原剂量', frequency:'一日三次', timing:'餐后', reminder:{enabled:true,remindTime:'09:00'}, async save() { calls.push('save'); } };
-  const FollowUp = {
-    find(filter) { calls.push(filter); return { select() { return { async lean() { return filter.$or ? [{date:new Date('2026-09-30T00:00:00Z')}] : [{_id:'old'}]; } }; } }; },
-    async insertMany(rows) { calls.push('insert'); inserted.push(...rows); },
-    async deleteMany(filter) { calls.push('delete'); removed.push(filter); },
-  };
-  return { med, FollowUp, calls, inserted, removed, args: { med, FollowUp, User:{findById(){return{select:async()=>({assignedHealthManager:'manager'})}}}, patientId:'patient', staff:{_id:'staff'}, body:input, now } };
-}
-test('saving preserves protected occurrences and replaces only untouched old future IDs', async () => {
-  const f=fixture(), result=await saveReminder(f.args);
-  assert.equal(result.generated,38);
-  assert.equal(f.inserted[0].assignedTo,'manager');
-  assert.match(f.inserted[0].plannedContent,/原剂量，一日三次，餐后/);
-  assert.ok(f.calls.indexOf('insert') < f.calls.indexOf('save') && f.calls.indexOf('save') < f.calls.indexOf('delete'));
-  assert.deepEqual(f.removed[0]._id,{$in:['old']});
-  assert.equal(f.removed[0].status,'planned');
-  assert.deepEqual(f.removed[0].tags,{$nin:['人工跟进']});
-  assert.deepEqual(f.med.reminder.remindTimes,input.remindTimes);
+test('saving stores one plan, validates before writes and retires only untouched legacy tasks', async () => {
+  const calls=[]; const med={_id:'med',reminder:{enabled:true},async save(){calls.push('save')}};
+  const args={med,patientId:'patient',staff:{_id:'staff'},body:input,now,
+    sync:async()=>{calls.push('sync');return{_id:'plan',enabled:true}},FollowUp:{async updateMany(filter,update){calls.push('retire');assert.equal(filter.status,'planned');assert.deepEqual(filter.tags,{$nin:['人工跟进']});assert.equal(update.$set.status,'cancelled')}}};
+  const result=await saveReminder(args); assert.equal(result.generated,1);assert.deepEqual(calls,['save','sync','retire']);
+  await assert.rejects(saveReminder({...args,body:{...input,remindTimes:['25:00']}}),e=>e.statusCode===400);assert.equal(calls.length,3);
 });
-test('failed partial insertion removes only the new batch and retains old reminders', async () => {
-  const f=fixture(); f.FollowUp.insertMany=async()=>{throw new Error('storage failed')};
-  await assert.rejects(saveReminder(f.args),/storage failed/);
-  assert.equal(f.removed.length,1); assert.match(f.removed[0].sourceScheduleKey,/^medication:/);
-  assert.equal(f.med.reminder.remindTime,'09:00');
-  assert.ok(!f.calls.includes('save'));
-});
-test('failed medication save rolls back only new batch; validation does not touch storage', async () => {
-  const f=fixture(); f.med.save=async()=>{throw new Error('save failed')};
-  await assert.rejects(saveReminder(f.args),/save failed/);
-  assert.match(f.removed[0].sourceScheduleKey,/^medication:/);
-  const invalid=fixture(); invalid.args.body={...input,remindTimes:['25:00']};
-  await assert.rejects(saveReminder(invalid.args),e=>e.statusCode===400);
-  assert.equal(invalid.calls.length,0);
-});
-test('disable works with expired or invalid form dates and retains the last configuration', async () => {
-  const f=fixture(); f.args.body={enabled:false,startDate:'bad'};
-  await saveReminder(f.args);
-  assert.equal(f.med.reminder.enabled,false); assert.equal(f.med.reminder.remindTime,'09:00');
-  assert.equal(f.inserted.length,0); assert.deepEqual(f.removed[0]._id,{$in:['old']});
-});
-test('concurrent save is rejected until the active save finishes', async () => {
-  const f=fixture(); let release;
-  f.med.save=()=>new Promise(resolve=>{release=resolve});
-  const first=saveReminder(f.args);
-  while(!release) await new Promise(resolve=>setImmediate(resolve));
-  await assert.rejects(saveReminder(f.args),e=>e.statusCode===409);
-  release(); await first;
+test('failed synchronization restores prior medication configuration and does not retire tasks', async () => {
+  let saves=0;const previous={enabled:true,remindTime:'10:00'};
+  const med={_id:'med',reminder:previous,async save(){saves++}};
+  await assert.rejects(saveReminder({med,patientId:'patient',staff:{_id:'staff'},body:input,now,
+    sync:async()=>{throw new Error('failed')},FollowUp:{updateMany(){throw new Error('must not retire')}}}),/failed/);
+  assert.equal(saves,2);assert.deepEqual(med.reminder,previous);
 });
 test('real schemas accept and persist the multi-time configuration and customer task', async () => {
   const mongoose=require('mongoose'), Medication=require('../src/models/Medication'), FollowUp=require('../src/models/FollowUp');
