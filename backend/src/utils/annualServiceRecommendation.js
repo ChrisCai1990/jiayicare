@@ -27,16 +27,23 @@ function dentalDrafts(reports, year, existing = []) {
   return [{ finding: '体检发现牙结石', evidence: [...new Set(evidence)].join('；').slice(0, 500), recommendation: '洁牙服务', timeframe: '与客户商定', nextStep: '具体洁牙方式由接诊口腔医生确定。', selectedOptions: [] }];
 }
 
+function dentalProductQuery(tenantId) {
+  return { tenantId, status: 'on', $or: ['name', 'subtitle', 'features', 'description', 'serviceItems.name', 'aiProfile.includedItems'].map(field => ({ [field]: /洁牙|洗牙/ })) };
+}
+function dentalProductDetail(row) {
+  const included = [...(row.aiProfile?.includedItems || []), ...(row.serviceItems || []).map(item => item.name), ...(row.features || []), ...(row.description || '').split(/[\n；;]/)];
+  return [...new Set(included.filter(line => typeof line === 'string' && /洁牙|洗牙/.test(line) && !/不含|不包含|不提供|不适用|不包括|除外|另收费/.test(line)).map(line => line.trim()))].slice(0, 4).join('；');
+}
 async function serviceCatalog(plan) {
   const patient = await require('../models/User').findById(plan.patientId).select('tenantId').lean();
   if (!patient) throw Object.assign(new Error('客户不存在'), { statusCode: 404 });
   const tenantId = patient.tenantId || null;
   const [institutions, products] = await Promise.all([
     require('../models/MedicalInstitution').find({ tenantId, status: 'active', $or: [{ name: /口腔|牙科/ }, { aliases: /口腔|牙科/ }] }).select('name address region').sort({ name: 1 }).lean(),
-    require('../models/Product').find({ tenantId, status: 'on', name: /洁牙|洗牙/ }).select('name serviceLocation originalPrice').sort({ sortOrder: 1 }).lean(),
+    require('../models/Product').find(dentalProductQuery(tenantId)).select('name subtitle features description serviceItems aiProfile.includedItems serviceLocation originalPrice').sort({ sortOrder: 1 }).lean(),
   ]);
   return [...institutions.map(row => ({ type: 'institution', id: String(row._id), name: row.name, address: row.address || row.region || '' })),
-    ...products.map(row => ({ type: 'product', id: String(row._id), name: row.name, address: row.serviceLocation || '', price: row.originalPrice }))];
+    ...products.filter(row => /洁牙|洗牙/.test(row.name) || dentalProductDetail(row)).map(row => ({ type: 'product', id: String(row._id), name: row.name, address: row.serviceLocation || '', price: row.originalPrice, includedService: dentalProductDetail(row) }))];
 }
 function selectCatalogOptions(input = [], catalog = []) {
   if (!Array.isArray(input) || input.length > 10) throw Object.assign(new Error('最多选择10个机构或套餐'), { statusCode: 400 });
@@ -50,7 +57,7 @@ function selectCatalogOptions(input = [], catalog = []) {
 }
 async function recommendationOptions(plan, refs) { return selectCatalogOptions(refs, await serviceCatalog(plan)); }
 function customerRecommendation(row) {
-  const choices = (row.selectedOptions || []).map(item => `${item.type === 'institution' ? '可选机构' : '可选套餐'}：${item.name}${item.address ? `（${item.address}）` : ''}${typeof item.price === 'number' ? `；目录标价¥${item.price}，实际价格以确认时为准` : ''}`);
+  const choices = (row.selectedOptions || []).map(item => `${item.type === 'institution' ? '可选机构' : '可选套餐'}：${item.name}${item.address ? `（${item.address}）` : ''}${item.includedService ? `；包含：${item.includedService}` : ''}${typeof item.price === 'number' ? `；目录标价¥${item.price}，实际价格以确认时为准` : ''}`);
   return { ...row, nextStep: [row.nextStep, ...choices].filter(Boolean).join('\n') };
 }
-module.exports = { normalizeRecommendationInput, dentalDrafts, serviceCatalog, selectCatalogOptions, recommendationOptions, customerRecommendation };
+module.exports = { dentalProductQuery, dentalProductDetail, normalizeRecommendationInput, dentalDrafts, serviceCatalog, selectCatalogOptions, recommendationOptions, customerRecommendation };

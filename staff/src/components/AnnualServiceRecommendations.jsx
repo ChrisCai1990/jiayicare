@@ -73,7 +73,7 @@ export default function AnnualServiceRecommendations({ planId, pushedAt, canEdit
     {rows.map(row => <div key={row._id} style={{ borderTop: '1px solid #E8EEE9', padding: '12px 0', fontSize: 13, lineHeight: 1.7 }}>
       <div><strong>{row.recommendation}</strong> <span style={{ color: row.status === 'published' ? '#1E6B50' : '#D97706' }}>· {row.status === 'published' ? '已发布' : '草稿'}</span></div>
       <div>发现：{row.finding}；依据：{row.evidence}</div>
-      {(row.selectedOptions || []).map(option => <div key={`${option.type}:${option.id}`}>{option.type === 'institution' ? '可选机构' : '可选套餐'}：{option.name}{option.address ? ` · ${option.address}` : ''}{typeof option.price === 'number' ? ` · 目录标价 ¥${option.price}（实际价格以确认时为准）` : ''}</div>)}
+      {(row.selectedOptions || []).map(option => <div key={`${option.type}:${option.id}`}>{option.type === 'institution' ? '可选机构' : '可选套餐'}：{option.name}{option.address ? ` · ${option.address}` : ''}{option.includedService ? ` · 包含：${option.includedService}` : ''}{typeof option.price === 'number' ? ` · 目录标价 ¥${option.price}（实际价格以确认时为准）` : ''}</div>)}
       {row.timeframe && <div>建议时机：{row.timeframe}</div>}
       {row.nextStep && <div>下一步：{row.nextStep}</div>}
       {row.status === 'published' && <div style={{ color: '#1E6B50' }}>客户选择：{row.response === 'interested' ? '需要协助，请人工联系并发起服务' : row.response === 'declined' ? '暂不安排' : '尚未选择'}</div>}
@@ -92,9 +92,9 @@ export default function AnnualServiceRecommendations({ planId, pushedAt, canEdit
       </label>)}
       <fieldset disabled={busy || !!loadError} style={{border: '1px solid #d9e2dc', borderRadius: 8, margin: '14px 0', padding: 12}}>
         <legend>可选机构及套餐（顾问确认）</legend>
-        <p style={{fontSize: 12, color: '#6B8177'}}>机构和套餐分别来自系统目录，服务地点及价格以联系确认时为准。</p>
+        <p style={{fontSize: 12, color: '#6B8177'}}>选择服务机构或套餐；年卡、组合套餐需核对适用人群及包含次数；如属会员赠送，优先核对并使用已有权益。</p>
         {!catalog.length && <p>暂无匹配的口腔机构或洁牙套餐，待顾问补充目录。</p>}
-        {catalog.map(option => { const checked = (draft.selectedOptions || []).some(item => item.type === option.type && item.id === option.id); return <label key={`${option.type}:${option.id}`} style={{display: 'block', margin: '8px 0'}}><input type="checkbox" checked={checked} onChange={event => setDraft(prev => ({...prev, selectedOptions: event.target.checked ? [...(prev.selectedOptions || []), option] : prev.selectedOptions.filter(item => item.type !== option.type || item.id !== option.id)}))} />{option.type === 'institution' ? '机构：' : '套餐：'}{option.name}{option.address ? ` · ${option.address}` : ''}{typeof option.price === 'number' ? ` · 目录标价 ¥${option.price}` : ''}</label> })}
+        {catalog.map(option => { const checked = (draft.selectedOptions || []).some(item => item.type === option.type && item.id === option.id); return <label key={`${option.type}:${option.id}`} style={{display: 'block', margin: '8px 0'}}><input type="checkbox" checked={checked} onChange={event => setDraft(prev => ({...prev, selectedOptions: event.target.checked ? [...(prev.selectedOptions || []), option] : prev.selectedOptions.filter(item => item.type !== option.type || item.id !== option.id)}))} />{option.type === 'institution' ? '机构：' : '套餐：'}{option.name}{option.address ? ` · ${option.address}` : ''}{option.includedService ? ` · 包含：${option.includedService}` : ''}{typeof option.price === 'number' ? ` · 目录标价 ¥${option.price}` : ''}</label> })}
       </fieldset>
       <div style={{ display: 'flex', gap: 10, marginTop: 12 }}><button type="button" disabled={busy || !!loadError} onClick={save}>确认并保存建议草稿</button>{editingId && <button type="button" onClick={reset}>取消编辑</button>}</div>
     </div>}

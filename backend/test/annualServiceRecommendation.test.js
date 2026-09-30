@@ -41,3 +41,13 @@ test('机构套餐只接受目录ID，忽略伪造名称价格，停用或跨目
   const customer=customerRecommendation({nextStep:'具体方式由医生确定',selectedOptions:options});
   assert.match(customer.nextStep,/洁牙套餐.*100/);assert.match(customer.nextStep,/实际价格以确认时为准/);
 });
+
+
+test('口腔年卡按包含服务匹配洁牙，保留成人儿童区别，不推荐明确排除的项目', () => {
+  const {dentalProductQuery,dentalProductDetail}=require('../src/utils/annualServiceRecommendation');
+  const query=dentalProductQuery('tenant');assert.equal(query.tenantId,'tenant');assert.equal(query.status,'on');
+  assert.ok(query.$or.some(item=>item['aiProfile.includedItems']));assert.ok(query.$or.some(item=>item.description));
+  const details=dentalProductDetail({name:'口腔365年卡',description:'舒适超声波洁牙（成人1次）\n儿童洁牙（儿童1次）'});
+  assert.match(details,/成人1次/);assert.match(details,/儿童1次/);
+  assert.equal(dentalProductDetail({description:'不含洁牙；洗牙另收费'}),'');
+});
