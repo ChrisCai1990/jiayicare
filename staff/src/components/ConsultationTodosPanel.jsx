@@ -24,6 +24,7 @@ export default function ConsultationTodosPanel() {
     return () => { alive = false; window.clearInterval(timer); window.removeEventListener('focus', refresh); window.removeEventListener('consultation-retry', refresh) }
   }, [])
   const currentPage = Math.min(page, Math.max(0, Math.ceil(items.length / 10) - 1))
+  if (!loading && !error && !items.length) return <section className="workbench-compact" aria-label="官网咨询与服务跟进待办"><span>官网咨询与服务跟进 · 暂无待办</span><button className="btn btn-secondary btn-sm" onClick={() => nav('/visitor-leads')}>全部咨询</button></section>
   return <section className="card" style={{ marginBottom: 20 }} aria-label="官网咨询与服务跟进待办">
     <div className="card-header"><div className="card-title">官网咨询与服务跟进 · {items.length} 项 · {items.filter(i => i.overdue).length} 项逾期</div>
       <button className="btn btn-secondary btn-sm" onClick={() => nav('/visitor-leads')}>全部咨询</button></div>

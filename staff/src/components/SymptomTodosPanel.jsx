@@ -21,6 +21,8 @@ export default function SymptomTodosPanel() {
     } catch (err) { window.alert(err.message || '处理失败') }
   }
 
+  if (!loading && !error && !todos.length) return null
+
   return (
     <div className="card" style={{ marginBottom: 20, border: todos.length ? '1.5px solid #DC354550' : undefined }}>
       <div className="card-header">

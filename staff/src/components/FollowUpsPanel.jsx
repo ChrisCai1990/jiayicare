@@ -42,6 +42,8 @@ export default function FollowUpsPanel() {
   const curPage = (data.page || 1) - 1
   const pageItems = items
 
+  if (!loading && !error && !total && !data.workbenchSummary?.waiting && !searchName && timeGroup === 'all') return <section className="workbench-compact"><span>待随访任务 · 暂无待办</span><button className="btn btn-secondary btn-sm" onClick={() => nav('/followups')}>查看全部</button></section>
+
   return (
     <div className="card" style={{ marginBottom: 20, border: overdueCount > 0 ? '1.5px solid #DC354540' : undefined }}>
       <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

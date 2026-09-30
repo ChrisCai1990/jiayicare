@@ -801,7 +801,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     <div style={{ maxWidth: 860, margin: '0 auto', padding: '24px 20px 80px' }}>
 
       {/* 顶部导航 */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+      <div id="annual-plan-actions" className="annual-plan-actions" style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <button
           onClick={goBack}
           style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#4A6558', padding: 4 }}
@@ -822,7 +822,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             {yearOptions.map(y => <option key={y} value={y}>{y}年</option>)}
           </select>
         )}
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div className="annual-plan-action-buttons" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
           {patientMode && monthlyReviewEnabled && <button className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${id}/monthly-reviews`)}>月度服务复盘</button>}
           {pushedAt && !dirty && (
             <span style={{ fontSize: 12, color: '#22A06B', background: '#E8F5EF', padding: '4px 10px', borderRadius: 20 }}>
@@ -1098,37 +1098,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         </div>
       )}
 
-      {/* 底部保存 */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-        {canEdit && ((!patientMode && plan) || (patientMode && plansByType[planType])) && (
-          <button onClick={handleDelete} style={{ background: '#fff', color: '#DC2626', border: '1px solid #FCA5A5', padding: '10px 20px', borderRadius: 8, cursor: 'pointer', fontSize: 14 }}>
-            删除方案
-          </button>
-        )}
-        <button
-          onClick={goBack}
-          style={{ background: '#fff', color: '#666', border: '1px solid #ddd', padding: '10px 24px', borderRadius: 8, cursor: 'pointer', fontSize: 14 }}
-        >
-          返回方案列表
-        </button>
-        {patientMode && canEdit && (
-          <button
-            onClick={handlePush}
-            disabled={pushing || dirty || !planType}
-            style={{ background: '#0077B6', color: '#fff', border: 'none', padding: '10px 24px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (pushing || dirty || !planType) ? 0.5 : 1 }}
-          >
-            {pushing ? '推送中...' : '推送给客户'}
-          </button>
-        )}
-        {canEdit && (
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            style={{ background: '#1E6B50', color: '#fff', border: 'none', padding: '10px 28px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: saving ? 0.7 : 1 }}
-          >
-            {saving ? '保存中...' : '保存年度管理方案'}
-          </button>
-        )}
+      <div className="annual-plan-footer">
+        <button className="btn btn-secondary" onClick={goBack}>返回方案列表</button>
+        <a className="btn btn-secondary" href="#annual-plan-actions">返回顶部操作</a>
       </div>
     </div>
     </StaffListContext.Provider>

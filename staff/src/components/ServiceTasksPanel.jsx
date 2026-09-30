@@ -54,6 +54,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
   const [dispatchTask, setDispatchTask] = useState(null)
   const [items, setItems] = useState([])
   const [loadError, setLoadError] = useState('')
+  const [loading, setLoading] = useState(true)
   // 默认只看今天需要亲自处理的事项；任务堆积时不会再把未来计划、督办卡和
   // 等待上游的任务混在最前面。
   const [group, setGroup] = useState('actionable')
@@ -85,6 +86,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
         onTasksLoaded?.(tasks)
       })
       .catch(error => setLoadError(error.message || '服务待办加载失败，请刷新重试'))
+      .finally(() => setLoading(false))
     refresh()
     const refreshIfVisible = () => { if (document.visibilityState === 'visible') refresh() }
     window.addEventListener('focus', refreshIfVisible)
@@ -228,6 +230,8 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
     nav(`/patients/${task.patientId?._id}?tab=followups`, { state: { openFollowUp: task } })
   }
 
+  if (!loading && !loadError && !serviceGroups.length && !historyOpen) return <section id="service-tasks-panel" className="workbench-compact"><span>服务流程任务（执行/督办） · 暂无待办</span><button type="button" className="btn btn-secondary btn-sm" onClick={showHistory}>查看已处理</button></section>
+
   return (
     <div id="service-tasks-panel" className="card" style={{ marginBottom: 20, border: '1.5px solid #1E6B5035' }}>
       <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -240,6 +244,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
         </div>
         <button type="button" className="btn btn-secondary btn-sm" onClick={showHistory}>{historyOpen ? '收起已处理' : '查看已处理'}</button>
       </div>
+      {loading && <div role="status" style={{ padding: 16 }}>正在加载服务任务…</div>}
       {loadError && <div role="alert" style={{ padding: '10px 20px', color: '#B42318' }}>{loadError}；当前列表可能不是最新结果。</div>}
       <div style={{ padding: '10px 20px 2px' }}>
         <input type="search" className="form-input" aria-label="搜索服务任务" placeholder="搜索客户姓名、手机号、服务名称或任务" value={search}
@@ -257,7 +262,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
         })}
       </div>
       <div className="card-body" style={{ padding: '8px 20px' }}>
-        {!loadError && !pagedServices.length && <div style={{ padding: '12px 0', color: '#667085', fontSize: 13 }}>没有找到匹配的服务任务</div>}
+        {!loading && !loadError && !pagedServices.length && <div style={{ padding: '12px 0', color: '#667085', fontSize: 13 }}>没有找到匹配的服务任务</div>}
         {pagedServices.map((service, index) => {
           const task = service.task
           const isFuture = task.date && new Date(task.date).getTime() > Date.now()

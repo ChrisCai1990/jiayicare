@@ -26,6 +26,7 @@ export default function OrderShipmentsPanel() {
   const [busy, setBusy] = useState(false), [error, setError] = useState('')
   const canShip = ['healthManager', 'superadmin'].includes(staff?.role)
   if (!resource.loading && !resource.error && !resource.data.length && !history.loading && !history.error && !history.data.total) return null
+  if (!resource.loading && !resource.error && !resource.data.length && !history.loading && !history.error && !historyOpen && !selected) return <section className="workbench-compact"><span>订单发货 · 暂无待发货</span><button type="button" className="btn btn-secondary btn-sm" onClick={() => setHistoryOpen(true)}>查看已处理发货 {history.data.total}</button></section>
   return <section className="shipment-panel">
     <div className="shipment-panel__heading">
       <div><span className="shipment-panel__eyebrow">订单履约</span><h2>{resource.data.length ? <>待发货订单 <b>{resource.data.length}</b></> : '订单发货记录'}</h2></div>

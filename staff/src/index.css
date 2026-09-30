@@ -487,3 +487,12 @@ textarea.form-control { resize: vertical; }
 .care-flow-actions { position: sticky; bottom: -16px; z-index: 3; display: flex; justify-content: flex-end; gap: 10px; padding: 14px 0; background: #fff; border-top: 1px solid #DFE8E2; }
 .care-flow-form [aria-invalid="true"] { border-color: #B91C1C; }
 @media (max-width: 600px) { .care-flow-actions { bottom: -12px; } .care-flow-actions .btn { flex: 1; } }
+
+/* Compact empty work queues retain their history and navigation actions. */
+.workbench-compact { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; margin-bottom: 12px; border: 1px solid #e1e9e4; border-radius: 10px; background: #fff; color: #52685d; font-size: 13px; }
+.workbench-compact > button { flex-shrink: 0; }
+.annual-plan-actions, .annual-plan-action-buttons { flex-wrap: wrap; }
+.annual-plan-actions { scroll-margin-top: 70px; }
+.annual-plan-footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; }
+.annual-plan-footer a { text-decoration: none; }
+@media (max-width: 680px) { .workbench-compact { flex-wrap: wrap; padding: 12px; } .annual-plan-action-buttons { width: 100%; } }
