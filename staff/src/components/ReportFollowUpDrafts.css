@@ -26,3 +26,8 @@
 .report-issue-row{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.report-issue-row label{flex-direction:row;align-items:center;font-weight:400}.report-issue-row select{width:auto;padding:5px 9px;font-size:13px}
 .report-issue-compact .report-issue-evidence{margin-top:6px}.report-issues-coverage{padding:10px 14px;margin:12px 0}.report-issues-coverage>p{margin:0}
 .report-problem-group{margin-top:22px}.report-problem-group>h4{display:flex;align-items:center;gap:10px;border-left:3px solid #1e6b50;padding-left:10px}.report-problem-group>h4>span{font-size:12px;font-weight:400;color:#61746a}.report-problem-source{padding:10px;border-top:1px solid #e2e8e4;margin-top:8px}
+.report-screening-reference{border-left:3px solid #1e6b50;background:#f5f8f6;padding:14px 16px;margin:18px 0;font-size:13px}
+.report-issues-overview{display:flex;gap:10px 22px;flex-wrap:wrap;font-size:13px;margin:16px 0;color:#516b5e}.report-issues-overview b{color:#1e6b50}
+.report-issue-analysis{border-top:1px solid #edf1ee;margin-top:12px;padding-top:12px;font-size:14px}.report-issue-analysis>b{font-size:13px;color:#315743}
+.report-issue-recommendations{background:#f4f8f5;border-radius:7px;padding:8px 12px;margin:12px 0;font-size:14px}
+.report-issue-analysis p{margin:5px 0}.report-issue-card fieldset{margin-top:12px}

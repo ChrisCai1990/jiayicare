@@ -6,6 +6,26 @@ const report = { reportItems: [
   { itemId: 'dental', name: '口腔', status: 'unknown', findings: '牙结石', sourcePage: 4 },
   { itemId: 'normal', name: '血常规', status: 'normal', value: '正常' },
 ] };
+test('明确正常结论归档，复查要求、异常标记及混合所见不能被忽略', () => {
+  const { explicitNormal, reviewView } = require('../src/utils/reportIssues');
+  const source = { id: 'us', name: '甲状腺超声', status: 'unknown', evidence: '未见明显异常' };
+  assert.equal(explicitNormal(source), true);
+  assert.equal(reconcile([source], []).coverage[0].status, 'normal');
+  const row = { purpose: 'annual_report_input', status: 'advisor_review', issueSources: [source], issueDrafts: [], issueCoverage: [{ sourceId: 'us', status: 'pending' }] };
+  assert.equal(reviewView(row).issueCoverage[0].status, 'normal');
+  assert.equal(row.issueCoverage[0].status, 'pending');
+  for (const evidence of ['未见明显异常，建议年度复查', '未见明显异常\n肺结节', '未见明显异常改变以外的病变']) assert.equal(explicitNormal({ ...source, evidence }), false);
+  assert.equal(explicitNormal({ ...source, status: 'abnormal' }), false);
+  assert.equal(explicitNormal({ ...source, status: 'attention' }), false);
+});
+
+test('问题分析与建议分开保存，不能由客户端篡改系统分析', () => {
+  const result = reconcile(issueSources(report), [{ sourceId: 'item:gastric', status: 'problem', problems: [{ title: '胃窦黏膜糜烂', quote: '胃窦黏膜糜烂', analysis: '胃镜记录黏膜糜烂，需结合病理资料核对。', suggestedRecommendation: '补充病理资料后评估' }] }]);
+  const issue = result.issues[0];
+  assert.match(issue.analysis, /病理资料/);
+  assert.equal(issue.advisorRecommendation, '');
+  assert.equal(validateIssues([{ ...issue, analysis: '篡改分析' }], result.issues)[0].analysis, issue.analysis);
+});
 test('同报告明确数值范围内的未知标记无需重复核对，不猜测复杂范围或覆盖异常', () => {
   const { withinSourceRange, reviewView } = require('../src/utils/reportIssues');
   for (const [value, range] of [['10.83', '3—100'], ['0.292', '0.15—1.00'], ['2.10nmol/L', '0.98—2.99'], ['108.51nmol/L', '57.1—178.5']]) {

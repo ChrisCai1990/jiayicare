@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-test('紧凑问题卡默认仅问题和建议，来源折叠且重复CT结论只展示一次', async () => {
+test('问题分析与建议默认可见，来源折叠且重复CT结论只展示一次', async () => {
   const React = require('react'), { renderToStaticMarkup } = require('react-dom/server');
   const source = fs.readFileSync(path.join(__dirname, '../../staff/src/components/ReportFollowUpDrafts.jsx'), 'utf8');
   const component = source.slice(source.indexOf('export function ReportIssueCard'), source.indexOf('export default function'));
@@ -15,15 +15,24 @@ test('紧凑问题卡默认仅问题和建议，来源折叠且重复CT结论只
   assert.doesNotMatch(html, /type="date"|需规划师安排服务|终审并发布/);
   assert.doesNotMatch(html, /原文未明确建议|尚无建议草稿|details open/);
   assert.match(html, /rows="2"/);
+  const beforeDetails = html.slice(0, html.indexOf('<details'));
+  assert.match(beforeDetails, /问题分析/);
+  assert.match(beforeDetails, /系统建议草稿/);
+  assert.match(beforeDetails, /结合病理资料评估/);
+  const reference = { status: 'approved', sections: { chronic_disease: { summary: '已审核内容' } } };
+  const rows = [{ year: 2026, records: [{ status: 'draft' }, reference] }, { year: 2025, status: 'approved' }];
+  assert.equal(helpers.approvedScreeningReference(rows, 2026), reference);
+  assert.equal(helpers.approvedScreeningReference(rows, 2027), null);
+  assert.equal(helpers.approvedScreeningReference([{ year: 2026, status: 'draft' }], 2026), null);
   const ct = '胸廓对称。\n1.肺内结节（建议年度复查）\n2.肺内纤维索条影\n1.肺内结节（建议年度复查）\n2.肺内纤维索条影\n3.另一不同结论';
   assert.equal(helpers.compactEvidence(ct).split('1.肺内结节').length, 2);
   assert.match(helpers.compactEvidence(ct), /另一不同结论/);
   if (process.env.REPORT_ISSUE_PREVIEW) {
     const css = fs.readFileSync(path.join(__dirname, '../../staff/src/components/ReportFollowUpDrafts.css'), 'utf8');
     const examples = [
-      { title: '脂肪肝', group: 'metabolic', evidence: '脂肪肝', suggestedRecommendation: '结合代谢指标评估', sourceRefs: [{ sourceId: 'ct', sourceName: '胸部CT', page: 20, date: '2026-08-01', excerpt: '附见：脂肪肝' }, { sourceId: 'us', sourceName: '肝脏超声', page: 21, date: '2026-09-01', excerpt: '轻度脂肪肝' }] },
-      { title: '甘油三酯升高', group: 'metabolic', evidence: '结果：2.52mmol/L\n参考范围：0.45—1.81', sourceName: '血脂检查', page: 11 },
-      { title: '肺内结节', group: 'respiratory', evidence: '肺内结节', originalRecommendation: '建议年度复查', sourceName: '胸部CT', page: 20 },
+      { title: '脂肪肝', group: 'metabolic', evidence: '脂肪肝', analysis: '两次检查均记录脂肪肝，日期和描述程度不同，需结合代谢指标核对后确定管理方向。', suggestedRecommendation: '结合代谢指标评估', sourceRefs: [{ sourceId: 'ct', sourceName: '胸部CT', page: 20, date: '2026-08-01', excerpt: '附见：脂肪肝' }, { sourceId: 'us', sourceName: '肝脏超声', page: 21, date: '2026-09-01', excerpt: '轻度脂肪肝' }] },
+      { title: '甘油三酯升高', group: 'metabolic', evidence: '结果：2.52mmol/L\n参考范围：0.45—1.81', analysis: '结果高于本报告参考范围，需结合其他代谢指标和检查条件评估。', suggestedRecommendation: '核对既往结果及本次检查条件后，由顾问确定后续安排。', sourceName: '血脂检查', page: 11 },
+      { title: '肺内结节', group: 'respiratory', evidence: '肺内结节', analysis: '报告记录肺内结节并提出年度复查要求，应核对既往影像和检查日期。', originalRecommendation: '建议年度复查', sourceName: '胸部CT', page: 20 },
     ];
     const mergedHtml = renderToStaticMarkup(React.createElement(Card, {issue:examples[0], index:0,disabled:false,onChange(){}}));
     assert.match(mergedHtml, /合并 2 处依据/);

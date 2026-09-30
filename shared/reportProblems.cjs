@@ -35,7 +35,7 @@ function mergeProblems(issues) {
     current.memberIds = unique([...current.memberIds, ...(issue.memberIds || [issue.id])]);
     current.sourceIds = unique([...current.sourceIds, ...(issue.sourceIds || refs.map(ref => ref.sourceId))]);
     for (const ref of refs) if (!current.sourceRefs.some(old => old.sourceId === ref.sourceId && old.excerpt === ref.excerpt)) current.sourceRefs.push(ref);
-    for (const field of ['originalRecommendation', 'suggestedRecommendation', 'timing', 'exclusionReason']) current[field] = unique([current[field], issue[field]]).join('\n');
+    for (const field of ['analysis', 'originalRecommendation', 'suggestedRecommendation', 'timing', 'exclusionReason']) current[field] = unique([current[field], issue[field]]).join('\n');
     const opinions = unique([...(current.advisorAlternatives || []), ...(issue.advisorAlternatives || []), current.advisorRecommendation, issue.advisorRecommendation]);
     if (opinions.length > 1) { current.advisorAlternatives = opinions; current.advisorRecommendation = ''; current.recommendationConflict = true; }
     else if (!current.recommendationConflict) current.advisorRecommendation = opinions[0] || '';

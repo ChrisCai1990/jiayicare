@@ -1,5 +1,10 @@
 import problemTaxonomy from '../../../shared/reportProblems.cjs'
 export const problemGroups = problemTaxonomy.GROUPS
+export function approvedScreeningReference(rows, year) {
+  const annual = rows.find(row => Number(row.year) === Number(year))
+  const records = annual ? (annual.records?.length ? annual.records : [annual]) : []
+  return records.find(record => record.status === 'approved') || null
+}
 export function groupedIssues(issues) {
   return problemGroups.map(([key, label]) => ({ key, label, issues: issues.filter(issue => (issue.group || problemTaxonomy.groupFor(issue.title)) === key) })).filter(group => group.issues.length)
 }
