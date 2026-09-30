@@ -17,8 +17,16 @@ function hasShippingHandoff(order = {}) {
     && !!order.supervisorId
     && (order.currentStage === 'awaiting_shipment' || /^已确认服务任务[:：]/m.test(String(order.note || '')));
 }
+function isWorkbenchShippingOrder(order = {}) {
+  return isShippingOrder(order)
+    && order.status !== 'cancelled'
+    && order.fulfillmentStatus !== 'cancelled'
+    && !['closed', 'refunded'].includes(order.tradeStatus)
+    && order.paymentStatus !== 'refunded'
+    && order.refundStatus !== 'refunded';
+}
 function shippingProgress(order = {}) {
   if (!hasShippingHandoff(order)) return '';
   return order.fulfillmentStatus === 'shipped' ? '健管专员已发货' : '健康规划师已确认，待健管专员发货';
 }
-module.exports = { isShippingOrder, hasShippingHandoff, shippingProgress };
+module.exports = { isShippingOrder, isWorkbenchShippingOrder, hasShippingHandoff, shippingProgress };

@@ -2,6 +2,50 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { isShippingOrder, hasShippingHandoff, shippingProgress } = require('../../shared/orderShipping.cjs');
 
+test('workbench shipment history excludes cancelled/refunded orders before counting and pagination for every role', async t => {
+  const express = require('express');
+  const Order = require('../src/models/Order'), User = require('../src/models/User'), Fulfillment = require('../src/models/Fulfillment');
+  const original = [Order.find, User.find, Fulfillment.find];
+  const base = { serviceName: '维生素D', status: 'scheduled', fulfillmentStatus: 'shipped', supervisorId: 'staff', currentStage: 'awaiting_shipment' };
+  const hidden = [
+    { status: 'cancelled' }, { fulfillmentStatus: 'cancelled' }, { tradeStatus: 'closed' },
+    { tradeStatus: 'refunded' }, { paymentStatus: 'refunded' }, { refundStatus: 'refunded' },
+  ].map((state, index) => ({ ...base, ...state, _id: `hidden-${index}` }));
+  const visible = [
+    { ...base, _id: 'shipped' },
+    { ...base, _id: 'completed', status: 'completed', fulfillmentStatus: 'completed' },
+    { ...base, _id: 'partial', refundStatus: 'partially_refunded', tradeStatus: 'partially_refunded' },
+  ];
+  let history = true;
+  Order.find = filter => {
+    if (history) assert.deepEqual(filter.$and[1].fulfillmentStatus.$in, ['shipped', 'completed']);
+    const query = { sort: () => query, populate: () => query, lean: async () => history ? [...hidden, ...visible] : hidden };
+    return query;
+  };
+  User.find = () => ({ distinct: async () => ['patient'] });
+  Fulfillment.find = () => ({ lean: async () => [], distinct: async () => [] });
+  const app = express();
+  app.use((req, res, next) => { req.staff = { _id: 'staff', role: req.headers['x-role'] }; next(); });
+  app.use(require('../src/routes/orderShipments'));
+  const server = await new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
+  t.after(async () => {
+    await new Promise(resolve => server.close(resolve));
+    [Order.find, User.find, Fulfillment.find] = original;
+  });
+  for (const role of ['healthManager', 'healthPlanner', 'superadmin']) {
+    history = true;
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/?view=history&page=2&limit=2`, { headers: { 'x-role': role } });
+    assert.equal(response.status, 200);
+    const { data } = await response.json();
+    assert.equal(data.total, 3);
+    assert.equal(data.totalPages, 2);
+    assert.deepEqual(data.items.map(order => order._id), ['partial']);
+    history = false;
+    const current = await fetch(`http://127.0.0.1:${server.address().port}/`, { headers: { 'x-role': role } });
+    assert.deepEqual((await current.json()).data, []);
+  }
+});
+
 test('legacy confirmed product appears as awaiting shipment, specialised services stay separate', () => {
   const order = { serviceName: '营养改变生活', status: 'scheduled', supervisorId: 'planner', note: '已确认服务任务：寄到家里' };
   assert.match(shippingProgress(order), /待健管专员发货/);

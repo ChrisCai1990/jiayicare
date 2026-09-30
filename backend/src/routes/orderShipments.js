@@ -3,7 +3,7 @@ const Order = require('../models/Order');
 const User = require('../models/User');
 const Fulfillment = require('../models/Fulfillment');
 const { activeOrderWorkItemQuery } = require('../utils/orderWorkItem');
-const { isShippingOrder, hasShippingHandoff } = require('../../../shared/orderShipping.cjs');
+const { isWorkbenchShippingOrder, hasShippingHandoff } = require('../../../shared/orderShipping.cjs');
 
 router.use((req, res, next) => ['healthManager', 'healthPlanner', 'superadmin'].includes(req.staff.role)
   ? next() : res.status(403).json({ success: false, message: '无权查看订单发货流程' }));
@@ -30,11 +30,11 @@ router.get('/', async (req, res) => {
       const limit = Math.min(20, Math.max(1, Number(req.query.limit) || 5));
       const requestedPage = Math.max(1, Number(req.query.page) || 1);
       const ownership = await historyOwnership(req.staff);
-      const filter = { $and: [ownership, { fulfillmentStatus: { $in: ['shipped', 'completed', 'cancelled'] } }] };
+      const filter = { $and: [ownership, { fulfillmentStatus: { $in: ['shipped', 'completed'] } }] };
       // 旧系统曾给服务类订单也写入 fulfillmentStatus，不能据此把服务误当作实物发货。
       // 发货页只展示明确属于实物配送的订单。
       const allShipmentOrders = (await Order.find(filter).sort({ updatedAt: -1, _id: -1 })
-        .populate('user', 'name contactName deliveryAddress contactPhone phone').lean()).filter(isShippingOrder);
+        .populate('user', 'name contactName deliveryAddress contactPhone phone').lean()).filter(isWorkbenchShippingOrder);
       const total = allShipmentOrders.length;
       const page = Math.min(requestedPage, Math.max(1, Math.ceil(total / limit)));
       const orders = allShipmentOrders.slice((page - 1) * limit, page * limit);
@@ -44,7 +44,7 @@ router.get('/', async (req, res) => {
     }
     // Read-only projection also covers legacy confirmations; no duplicate task or migration.
     const orders = await Order.find(await scope(req.staff)).populate('user', 'name contactName deliveryAddress contactPhone phone').sort({ createdAt: 1 }).lean();
-    const candidates = orders.filter(hasShippingHandoff);
+    const candidates = orders.filter(order => isWorkbenchShippingOrder(order) && hasShippingHandoff(order));
     const shipped = await Fulfillment.find({ order: { $in: candidates.map(o => o._id) }, status: { $in: ['shipped', 'completed', 'cancelled'] } }).distinct('order');
     const excluded = new Set(shipped.map(String));
     res.json({ success: true, data: candidates.filter(o => !['shipped', 'completed', 'cancelled'].includes(o.fulfillmentStatus) && !excluded.has(String(o._id))) });
