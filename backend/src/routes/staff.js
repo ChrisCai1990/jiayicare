@@ -12441,7 +12441,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
-    // 报告 AI 随访草稿和报告解读同属健康顾问的审核阶段，统一进入 AI 审核队列。
+    // 按来源草稿用途区分年度方案资料审核与报告随访审核。
     // 该任务过去显示在“服务流程任务”中，会让同一报告看起来有两条待办。
     if (isSuper || role === 'familyDoctor') {
       const reportFollowUpFilter = {
@@ -12451,13 +12451,23 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       };
       const reportFollowUpReviews = await FollowUp.find(reportFollowUpFilter)
         .populate('patientId', 'name').sort({ createdAt: -1 }).lean();
+      const reviewDrafts = await require('../models/ReportFollowUpDraft').find({
+        _id: { $in: reportFollowUpReviews.map(task => task.sourceId).filter(Boolean) },
+      }).select('_id purpose title').lean();
+      const reviewDraftById = new Map(reviewDrafts.map(draft => [String(draft._id), draft]));
       reportFollowUpReviews.forEach(task => {
         if (!inMyScope(task.patientId?._id)) return;
         const createdAt = task.createdAt || now;
+        const draft = reviewDraftById.get(String(task.sourceId));
+        const annualInput = draft?.purpose === 'annual_report_input';
         todos.push({
-          id: 'reportfollowup_' + task._id, type: 'report_followup_review', label: '报告随访草稿待审核', priority: 2,
+          id: 'reportfollowup_' + task._id,
+          type: annualInput ? 'annual_plan_input_review' : 'report_followup_review',
+          label: annualInput ? '年度方案待审核' : '报告随访草稿待审核', priority: 2,
           patientName: task.patientId?.name || '未知', patientId: String(task.patientId?._id || ''),
-          summary: `${task.theme || '报告随访'} · 请核对 AI 草稿后确认是否派发后续随访`,
+          summary: annualInput
+            ? `${draft.title || '报告问题及建议'} · 请审核报告问题及建议，确认后用于年度方案制定`
+            : `${task.theme || '报告随访'} · 请核对 AI 草稿后确认是否派发后续随访`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${task.patientId?._id}/annual-health#report-followup-drafts`,
         });

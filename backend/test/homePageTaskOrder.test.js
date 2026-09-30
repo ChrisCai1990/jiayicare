@@ -29,7 +29,7 @@ test('report follow-up draft review is shown only in the AI review queue', () =>
   const serviceTasks = route.slice(route.indexOf("router.get('/service-tasks'"), route.indexOf('// ── GET /api/staff/patients'))
   const aiTodosRoute = route.slice(route.indexOf("router.get('/ai-todos'"), route.indexOf("router.patch('/service-proposals"))
   assert.match(serviceTasks, /task\.workflowKey !== 'report_followup:advisor_review'/)
-  assert.match(aiTodosRoute, /type: 'report_followup_review'/)
+  assert.match(aiTodosRoute, /type: annualInput \? 'annual_plan_input_review' : 'report_followup_review'/)
   assert.match(aiTodosRoute, /报告随访草稿待审核/)
   assert.match(aiTodos, /report_followup_review/)
 })
