@@ -11042,11 +11042,13 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     ];
     const carePreferences = require('../utils/carePreferences').carePreferenceContext(user);
     const checkedPrompt = closedLoop ? require('../utils/annualGenerationContract').annualGenerationPrompt(prompt, availableAnnualFollowUpCatalog, evidence, allowedKeys) + '\n' + clinicalRules.clinicalRulesPrompt + '\n就医偏好（仅物流参考，不作为医学依据或生成门槛；无已核实医院库时医院留空）：' + JSON.stringify(carePreferences) + (supplement ? '\n【补充生成模式】只针对supplement中的顾问选定依据提出新增或需调整事项，不重新生成整份，不重复已落实行动。原方案仅供对照，不是新的医学依据：' + JSON.stringify(supplement.baseModuleData) + '\n未涉及的模块返回空，不能把未输出当作取消。年度focus只给新增重点，不重复原项目；其他原内容由系统保留。每项补充建议sourceIds必须包含supplement及具体来源。' : '') : prompt;
-    const generate = async () => {
-      const text = await chat([{ role: 'user', content: checkedPrompt }], { maxTokens: 6000, temperature: 0, jsonMode: true, timeoutMs: 90000 });
-      let parsed;
-      try { parsed = JSON.parse(text.trim().replace(/^```(?:json)?\s*|\s*```$/g, '')); }
-      catch { throw Object.assign(new Error('AI返回的方案内容不完整，未替换现有方案'), { statusCode: 502 }); }
+    const generate = async (resumeRaw = null) => {
+      let parsed = resumeRaw;
+      if (!parsed) {
+        const text = await chat([{ role: 'user', content: checkedPrompt }], { maxTokens: 6000, temperature: 0, jsonMode: true, timeoutMs: 90000 });
+        try { parsed = JSON.parse(text.trim().replace(/^```(?:json)?\s*|\s*```$/g, '')); }
+        catch { throw Object.assign(new Error('AI返回的方案内容不完整，未替换现有方案'), { statusCode: 502 }); }
+      }
       try {
         if (closedLoop) {
           const repair = require('../utils/annualOutputRepair');
@@ -11057,7 +11059,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
             { role: 'user', content: checkedPrompt },
             { role: 'assistant', content: JSON.stringify(candidate) },
             { role: 'user', content: repair.correctionInstruction + '\n校验问题：' + message },
-          ], { maxTokens: 6000, temperature: 0, jsonMode: true, timeoutMs: 45000 }));
+          ], { maxTokens: 6000, temperature: 0, jsonMode: true, timeoutMs: 120000 }));
         }
         return parsed;
       }

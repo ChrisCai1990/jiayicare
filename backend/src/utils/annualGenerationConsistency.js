@@ -12,18 +12,18 @@ async function reuseAnnualGeneration(collection, input, generate) {
   if (prior?.status === 'ready') return { raw: prior.raw, fingerprint: id, reused: true, createdAt: prior.createdAt };
   const createdAt = new Date();
   if (prior) {
-    if (prior.status !== 'failed' && createdAt - new Date(prior.createdAt) < 180000) throw fail('相同依据正在生成，请稍后重试');
+    if (prior.status !== 'failed' && createdAt - new Date(prior.createdAt) < 300000) throw fail('相同依据正在生成，请稍后重试');
     const claimed = await collection.updateOne({ _id: id, owner: prior.owner, status: prior.status }, { $set: { status: 'running', owner, createdAt } });
     if (!claimed.modifiedCount) throw fail('相同依据正在生成，请稍后重试');
   } else try { await collection.insertOne({ _id: id, patientId: input.patientId, status: 'running', owner, createdAt, input }); }
   catch (error) { if (error.code === 11000) throw fail('相同依据正在生成，请稍后重试'); throw error; }
   try {
-    const raw = await generate();
+    const raw = await generate(prior?.status === 'failed' ? prior.rejectedRaw || null : null);
     const saved = await collection.updateOne({ _id: id, owner, status: 'running' }, { $set: { status: 'ready', raw, finishedAt: new Date() } });
     if (!saved.modifiedCount) throw fail('生成锁已变化，请重新读取草稿');
     return { raw, fingerprint: id, reused: false, createdAt };
   } catch (error) {
-    await collection.updateOne({ _id: id, owner }, { $set: { status: 'failed', finishedAt: new Date(), errorCode: 'GENERATION_VALIDATION_FAILED', ...(error.generationRaw ? { rejectedRaw: error.generationRaw } : {}) } });
+    await collection.updateOne({ _id: id, owner }, { $set: { status: 'failed', finishedAt: new Date(), errorCode: error.code === 'AI_TIMEOUT' ? 'AI_TIMEOUT' : 'GENERATION_VALIDATION_FAILED', rejectedRaw: error.generationRaw || null } });
     throw error;
   }
 }

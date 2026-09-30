@@ -42,3 +42,19 @@ test('annual review scope uses current year and excludes archived and unrelated 
   assert.equal(q.status.$ne, 'archived'); assert.deepEqual(q.$and[0].$or[0].reviewType.$in, ['annual', 'medical', 'specialty', 'checkup']);
   assert.equal(q.$and[1].$or[0]['conclusion.confirmedAt'].$gte.toISOString(), '2025-12-31T16:00:00.000Z');
 });
+
+
+test('explicit retry resumes rejected draft with same sources; changed sources never reuse it', async () => {
+  const db = store(), input = {patientId: 'resume', source: 1}, draft = {annual_checkup: {focus: '待核对'}};
+  await assert.rejects(reuseAnnualGeneration(db, input, async () => { throw Object.assign(new Error('timeout'), {code: 'AI_TIMEOUT', generationRaw: draft}); }));
+  assert.equal(db.docs.get(fingerprint(input)).errorCode, 'AI_TIMEOUT');
+  const result = await reuseAnnualGeneration(db, input, async resumed => { assert.deepEqual(resumed, draft); return {corrected: true}; });
+  assert.deepEqual(result.raw, {corrected: true});
+  await reuseAnnualGeneration(db, {...input, source: 2}, async resumed => {assert.equal(resumed, null); return {};});
+});
+
+test('active correction retains lock beyond old three-minute window', async () => {
+  const db = store(), input = {patientId: 'busy'};
+  await db.insertOne({_id: fingerprint(input), status: 'running', owner: 'active', createdAt: new Date(Date.now()-210000)});
+  await assert.rejects(reuseAnnualGeneration(db, input, async () => assert.fail('must not run')), /正在生成/);
+});
