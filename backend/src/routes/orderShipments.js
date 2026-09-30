@@ -25,10 +25,13 @@ router.get('/', async (req, res) => {
         ? await Fulfillment.find({ assignedStaff: req.staff._id, status: { $in: ['shipped', 'completed'] } }).distinct('order') : [];
       const ownership = req.staff.role === 'healthManager' ? { $or: [{ user: baseScope.user }, { _id: { $in: shipmentOrderIds } }] } : baseScope;
       const filter = { $and: [ownership, { $or: [{ fulfillmentStatus: { $in: ['shipped', 'completed'] } }, { _id: { $in: shipmentOrderIds } }] }] };
-      const total = await Order.countDocuments(filter);
+      // 旧系统曾给服务类订单也写入 fulfillmentStatus，不能据此把服务误当作实物发货。
+      // 发货页只展示明确属于实物配送的订单。
+      const allShipmentOrders = (await Order.find(filter).sort({ updatedAt: -1, _id: -1 })
+        .populate('user', 'name contactName deliveryAddress contactPhone phone').lean()).filter(isShippingOrder);
+      const total = allShipmentOrders.length;
       const page = Math.min(requestedPage, Math.max(1, Math.ceil(total / limit)));
-      const orders = await Order.find(filter).sort({ updatedAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit)
-        .populate('user', 'name contactName deliveryAddress contactPhone phone').lean();
+      const orders = allShipmentOrders.slice((page - 1) * limit, page * limit);
       const fulfillments = await Fulfillment.find({ order: { $in: orders.map(order => order._id) } }).lean();
       const fulfillmentByOrder = new Map(fulfillments.map(item => [String(item.order), item]));
       return res.json({ success: true, data: { items: orders.map(order => ({ ...order, fulfillment: fulfillmentByOrder.get(String(order._id)) || null })), total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) } });
