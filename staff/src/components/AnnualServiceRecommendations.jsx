@@ -1,3 +1,4 @@
+import './AnnualServiceRecommendations.css'
 import DentalGiftCard from './DentalGiftCard'
 import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
@@ -67,8 +68,9 @@ export default function AnnualServiceRecommendations({ planId, pushedAt, canEdit
     finally { setBusy(false) }
   }
 
-  return <details key={planId || 'unsaved'} style={{ background: '#fff', border: '1px solid #CFE3D9', borderRadius: 12, marginBottom: 16, padding: 18 }}>
-    <summary style={{ cursor: 'pointer', fontSize: 16, fontWeight: 700, color: '#1A2B24' }}>💡 服务建议（非执行任务） · 点击展开</summary>
+  return <details key={planId || 'unsaved'} className="annual-service-card">
+    <summary className="annual-service-card__summary"><span>服务建议 <small>非执行任务</small></span><span className="annual-service-card__chevron">⌄</span></summary>
+    <div className="annual-service-card__body">
     <div style={{ fontSize: 12, color: '#6B8177', margin: '5px 0 14px' }}>健康顾问核实依据后单独发布。客户选择“需要协助”只记录意向；具体服务仍须由工作人员按现有流程发起。</div>
     {!planId && <div style={{ color: '#8AA89C', fontSize: 13 }}>请先保存年度方案，再添加服务建议。</div>}
     {loadError && <p role="alert" style={{color: '#b42318'}}>{loadError}</p>}
@@ -81,10 +83,10 @@ export default function AnnualServiceRecommendations({ planId, pushedAt, canEdit
       {row.nextStep && <div>下一步：{row.nextStep}</div>}
       {row.status === 'published' && <div style={{ color: '#1E6B50' }}>客户选择：{row.response === 'interested' ? '需要协助，请人工联系并发起服务' : row.response === 'declined' ? '暂不安排' : '尚未选择'}</div>}
       {row.handledAt && <div style={{ color: '#6B8177' }}>已处理：{row.handlingNote}</div>}
-      {canEdit && row.status === 'published' && row.response === 'interested' && !row.handledAt && <button type="button" disabled={busy} onClick={() => markHandled(row)}>记录联系或服务发起结果</button>}
+      {canEdit && row.status === 'published' && row.response === 'interested' && !row.handledAt && <button className="service-button" type="button" disabled={busy} onClick={() => markHandled(row)}>记录联系或服务发起结果</button>}
       {canEdit && row.status === 'draft' && <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
-        <button type="button" disabled={busy} onClick={() => { setEditingId(row._id); setDraft(Object.fromEntries(Object.keys(EMPTY).map(key => [key, row[key] || EMPTY[key]]))) }}>编辑草稿</button>
-        <button type="button" disabled={busy || !pushedAt} onClick={() => publish(row)}>发布给客户</button>
+        <button className="service-button" type="button" disabled={busy} onClick={() => { setEditingId(row._id); setDraft(Object.fromEntries(Object.keys(EMPTY).map(key => [key, row[key] || EMPTY[key]]))) }}>编辑草稿</button>
+        <button className="service-button" type="button" disabled={busy || !pushedAt} onClick={() => publish(row)}>发布给客户</button>
       </div>}
     </div>)}
     {planId && canEdit && <div style={{ borderTop: '1px solid #E8EEE9', paddingTop: 12 }}>
@@ -99,7 +101,8 @@ export default function AnnualServiceRecommendations({ planId, pushedAt, canEdit
         {!catalog.length && <p>暂无匹配的口腔机构或洁牙套餐，待顾问补充目录。</p>}
         {catalog.map(option => { const checked = (draft.selectedOptions || []).some(item => item.type === option.type && item.id === option.id); return <label key={`${option.type}:${option.id}`} style={{display: 'block', margin: '8px 0'}}><input type="checkbox" checked={checked} onChange={event => setDraft(prev => ({...prev, selectedOptions: event.target.checked ? [...(prev.selectedOptions || []), option] : prev.selectedOptions.filter(item => item.type !== option.type || item.id !== option.id)}))} />{option.type === 'institution' ? '机构：' : '套餐：'}{option.name}{option.address ? ` · ${option.address}` : ''}{option.includedService ? ` · 包含：${option.includedService}` : ''}{typeof option.price === 'number' ? ` · 目录标价 ¥${option.price}` : ''}</label> })}
       </fieldset>
-      <div style={{ display: 'flex', gap: 10, marginTop: 12 }}><button type="button" disabled={busy || !!loadError} onClick={save}>确认并保存建议草稿</button>{editingId && <button type="button" onClick={reset}>取消编辑</button>}</div>
+      <div style={{ display: 'flex', gap: 10, marginTop: 12 }}><button className="service-button service-button--primary" type="button" disabled={busy || !!loadError} onClick={save}>确认并保存建议草稿</button>{editingId && <button className="service-button" type="button" onClick={reset}>取消编辑</button>}</div>
     </div>}
+    </div>
   </details>
 }

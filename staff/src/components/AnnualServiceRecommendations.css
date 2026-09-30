@@ -1,0 +1,38 @@
+.annual-service-card{background:#fff;border:1px solid #dce6df;border-radius:14px;margin-bottom:16px;color:#203b30;overflow:hidden}
+.annual-service-card__summary{display:flex;justify-content:space-between;align-items:center;gap:16px;cursor:pointer;padding:20px 24px;font-size:17px;font-weight:650;list-style:none}
+.annual-service-card__summary::-webkit-details-marker{display:none}
+.annual-service-card__summary small{font-size:12px;font-weight:400;color:#77877e;margin-left:8px}
+.annual-service-card__chevron{font-size:22px;color:#8ba196;transition:transform .15s}
+.annual-service-card[open]>.annual-service-card__summary .annual-service-card__chevron{transform:rotate(180deg)}
+.annual-service-card__body{padding:0 24px 24px}
+.annual-service-card .service-button{appearance:none;border:1px solid #cbdcd2;background:#fff;border-radius:8px;padding:9px 15px;min-height:38px;font:inherit;font-size:13px;font-weight:600;color:#24634c;cursor:pointer;line-height:1.4}
+.annual-service-card .service-button:hover{background:#eff6f2;border-color:#87b59e}
+.annual-service-card .service-button--primary{background:#206c51;border-color:#206c51;color:#fff}
+.annual-service-card .service-button--primary:hover{background:#18573f}
+.annual-service-card button:disabled,.annual-service-card fieldset:disabled button{opacity:.55;cursor:wait}
+.annual-service-card :is(button,input,textarea,summary):focus-visible{outline:2px solid #3e9374;outline-offset:3px}
+.dental-benefit{border:1px solid #dce9e1;border-radius:12px;background:#f7faf8;padding:20px;margin:18px 0 24px;font-size:13px;line-height:1.65}
+.dental-benefit__header{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.dental-benefit__eyebrow{font-size:11px;letter-spacing:1px;color:#638374}
+.dental-benefit h3{font-size:19px;line-height:1.5;margin:3px 0 8px;color:#203e30}
+.dental-benefit h3 span{font-size:12px;font-weight:500;color:#347858;background:#e5f1e9;padding:3px 8px;border-radius:5px;margin-left:8px;white-space:nowrap}
+.dental-benefit__status{font-size:12px;color:#306f51;background:#e6f1eb;padding:4px 10px;border-radius:20px;white-space:nowrap}
+.dental-benefit__status.is-pending{color:#946220;background:#faf0dc}
+.dental-benefit__meta{display:flex;gap:6px 16px;flex-wrap:wrap;font-size:12px;color:#697d71}
+.dental-benefit__meta strong{font-weight:500;color:#435f50}
+.dental-benefit__hint{margin:8px 0 2px;color:#718176;font-size:12px}
+.dental-benefit__explanation{font-size:12px;color:#6f8275;margin:4px 0 14px}
+.dental-benefit summary{cursor:pointer}
+.dental-benefit__explanation p{margin:7px 0}
+.dental-benefit__booking{display:flex;gap:12px;flex-wrap:wrap;padding:10px 0;color:#597163;border-top:1px solid #e0eae3}
+.dental-benefit__form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;border:0;border-top:1px solid #e0eae3;margin:14px 0 0;padding:16px 0 0;min-width:0}
+.dental-benefit__form label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:#4b6656;font-weight:500}
+.dental-benefit__form input,.dental-benefit__form textarea{box-sizing:border-box;width:100%;min-width:0;padding:10px 12px;border:1px solid #d5e1d9;border-radius:8px;background:#fff;color:#294637;font:inherit;font-size:13px;line-height:1.5}
+.dental-benefit__form textarea{resize:vertical;min-height:80px}
+.dental-benefit__form textarea::placeholder{color:#96a49b;font-weight:400}
+.dental-benefit__wide{grid-column:1/-1}
+.dental-benefit__actions{display:flex;gap:10px;flex-wrap:wrap}
+.dental-benefit__history{font-size:12px;color:#6b7e72;border-top:1px dashed #d9e3dc;padding-top:12px}
+.dental-benefit__history>div{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-top:12px}
+.dental-benefit__history label{min-width:200px}
+@media(max-width:600px){.annual-service-card__summary{padding:16px}.annual-service-card__body{padding:0 16px 16px}.dental-benefit{padding:16px}.dental-benefit__form{grid-template-columns:1fr}.dental-benefit__header{align-items:flex-start}.dental-benefit h3{font-size:17px}.dental-benefit__history label{min-width:0;width:100%}}
