@@ -16,6 +16,7 @@ const enterpriseSchema = new mongoose.Schema({
   // 企业合同只选择后台已维护的服务包模板，不在此复制次数、节奏或AI权益。
   // 同一企业可同时配置员工包、高管包等，实际归属在关联成员时选择。
   servicePackageIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'ServicePackage' }],
+    dentalGift2026: { type: Boolean, default: false }, // 已确认企业赠送：单次洁牙1次，截至2026-10-31
   status:          { type: String, enum: ['active', 'expired', 'suspended'], default: 'active' },
   note:            { type: String, default: '' },
   // 企业赠送健康基金在客户支付时的抵扣规则。

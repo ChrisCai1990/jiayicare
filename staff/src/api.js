@@ -360,6 +360,7 @@ export const staffAPI = {
   // Annual Plan
   getAnnualHealthPlans: (year, patientName) => req(`/staff/annual-health-plans?` + qs({ year: year || '', patientName: patientName || '' })),
   getAnnualPlan:        (patientId, year) => req(`/staff/patients/${patientId}/annual-plan` + (year ? `?year=${year}` : '')),
+  updateDentalGift: (planId, data) => req(`/staff/annual-plans/${planId}/dental-gift`, {method:'POST', body:JSON.stringify(data)}),
   getAnnualServiceRecommendations: planId => req(`/staff/annual-plans/${planId}/service-recommendations`),
   addAnnualServiceRecommendation: (planId, data) => req(`/staff/annual-plans/${planId}/service-recommendations`, { method: 'POST', body: JSON.stringify(data) }),
   updateAnnualServiceRecommendation: (planId, id, data) => req(`/staff/annual-plans/${planId}/service-recommendations/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),

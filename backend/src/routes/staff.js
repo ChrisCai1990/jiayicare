@@ -7699,8 +7699,20 @@ router.get('/annual-plans/:planId/service-recommendations', staffAuth, async (re
     const rows = await AnnualServiceRecommendation.find({ planId: plan._id }).sort({ createdAt: 1 }).lean();
     const services = require('../utils/annualServiceRecommendation');
     const [catalog, reports] = await Promise.all([services.serviceCatalog(plan), MedicalReport.find({user: plan.patientId, audit_status: 'audited'}).select('title audit_status reportYear checkDate reportItems examDescription examConclusion examMainConclusions').lean()]);
-    res.json({ success: true, data: rows, catalog, suggestions: services.dentalDrafts(reports, plan.year, rows) });
+    const giftService = require('../utils/dentalGift');
+    const gift = Number(plan.year) === 2026 ? await giftService.context(plan.patientId) : null;
+    res.json({ success: true, data: rows, catalog, suggestions: services.dentalDrafts(reports, plan.year, rows), dentalGift: gift ? giftService.view(gift.row) : null });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.post('/annual-plans/:planId/dental-gift', staffAuth, async (req,res) => {
+  if (!['familyDoctor','superadmin'].includes(req.staff.role)) return res.status(403).json({success:false,message:'仅健康顾问可核对并登记赠送服务'});
+  try {
+    const plan=await accessibleRecommendationPlan(req,res); if(!plan)return;
+    if(Number(plan.year)!==2026)return res.status(409).json({success:false,message:'此权益仅适用于2026年度'});
+    const data=await require('../utils/dentalGift').update(plan.patientId,req.body,req.staff._id);
+    res.json({success:true,data});
+  } catch(e){res.status(e.statusCode||500).json({success:false,message:e.message});}
 });
 
 router.post('/annual-plans/:planId/service-recommendations', staffAuth, async (req, res) => {

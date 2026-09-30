@@ -1,3 +1,4 @@
+import DentalGiftCard from './DentalGiftCard'
 import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
 
@@ -16,13 +17,14 @@ export default function AnnualServiceRecommendations({ planId, pushedAt, canEdit
   const [editingId, setEditingId] = useState('')
   const [busy, setBusy] = useState(false)
   const [catalog, setCatalog] = useState([])
+  const [gift, setGift] = useState(null)
   const [suggested, setSuggested] = useState(false)
   const [loadError, setLoadError] = useState('')
   useEffect(() => {
     let active = true
-    setDraft(EMPTY); setEditingId(''); setCatalog([]); setRows([]); setSuggested(false); setLoadError('')
+    setGift(null); setDraft(EMPTY); setEditingId(''); setCatalog([]); setRows([]); setSuggested(false); setLoadError('')
     if (!planId) { setRows([]); return () => { active = false } }
-    staffAPI.getAnnualServiceRecommendations(planId).then(res => { if (active) { setRows(res.data || []); setCatalog(res.catalog || []); if (res.suggestions?.length) { setDraft({ ...EMPTY, ...res.suggestions[0] }); setSuggested(true) } } }).catch(err => { if (active) setLoadError(err.message || '读取服务建议失败') })
+    staffAPI.getAnnualServiceRecommendations(planId).then(res => { if (active) { setRows(res.data || []); setCatalog(res.catalog || []); setGift(res.dentalGift || null); if (res.suggestions?.length) { setDraft({ ...EMPTY, ...res.suggestions[0] }); setSuggested(true) } } }).catch(err => { if (active) setLoadError(err.message || '读取服务建议失败') })
     return () => { active = false }
   }, [planId])
 
@@ -70,6 +72,7 @@ export default function AnnualServiceRecommendations({ planId, pushedAt, canEdit
     <div style={{ fontSize: 12, color: '#6B8177', margin: '5px 0 14px' }}>健康顾问核实依据后单独发布。客户选择“需要协助”只记录意向；具体服务仍须由工作人员按现有流程发起。</div>
     {!planId && <div style={{ color: '#8AA89C', fontSize: 13 }}>请先保存年度方案，再添加服务建议。</div>}
     {loadError && <p role="alert" style={{color: '#b42318'}}>{loadError}</p>}
+    {gift && <DentalGiftCard key={`${planId}:${gift.revision}`} gift={gift} planId={planId} canEdit={canEdit} onChange={setGift} toast={toast} />}
     {rows.map(row => <div key={row._id} style={{ borderTop: '1px solid #E8EEE9', padding: '12px 0', fontSize: 13, lineHeight: 1.7 }}>
       <div><strong>{row.recommendation}</strong> <span style={{ color: row.status === 'published' ? '#1E6B50' : '#D97706' }}>· {row.status === 'published' ? '已发布' : '草稿'}</span></div>
       <div>发现：{row.finding}；依据：{row.evidence}</div>

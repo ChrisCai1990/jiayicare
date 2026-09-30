@@ -1016,10 +1016,18 @@ router.get('/annual-mgmt-plans', auth, async (req, res) => {
     const AnnualServiceRecommendation = require('../models/AnnualServiceRecommendation');
     const suggestions = await AnnualServiceRecommendation.find({ patientId: req.user._id, planId: { $in: plans.map(plan => plan._id) }, status: 'published' })
       .select('planId finding evidence recommendation timeframe nextStep selectedOptions response publishedAt').sort({ publishedAt: 1 }).lean();
+    const giftService = require('../utils/dentalGift');
+    const giftContext = await giftService.context(req.user._id);
+    const gift = giftContext ? giftService.view(giftContext.row) : null;
     const byPlan = new Map();
     suggestions.forEach(row => {
       const key = String(row.planId);
-      byPlan.set(key, [...(byPlan.get(key) || []), require('../utils/annualServiceRecommendation').customerRecommendation(row)]);
+      const display = require('../utils/annualServiceRecommendation').customerRecommendation(row);
+      if (gift && plans.some(plan => String(plan._id)===key && Number(plan.year)===2026) && /洁牙|洗牙/.test(row.recommendation || '')) {
+        display.nextStep = [`企业会员赠送单次洁牙1次，有效期至${gift.expiresAt}。${gift.expired ? '权益已过期；历史使用记录以核对为准。' : '由工作人员协助预约，无需自行购买年卡。'}`,
+          ({unknown:'使用情况由工作人员核对。',available:'已核对未使用，工作人员将与您商定时间。',booked:`已登记预约：${gift.institution}，${gift.appointmentDate}。`,used:`已完成并登记使用：${gift.completedDate}。`})[gift.status], row.nextStep].filter(Boolean).join('\n');
+      }
+      byPlan.set(key, [...(byPlan.get(key) || []), display]);
     });
     res.json({ success: true, data: plans.map(plan => ({ ...plan, moduleData: customerModuleData(plan.moduleData), displayItems: buildAnnualPlanDisplayItems(plan.moduleData), serviceRecommendations: byPlan.get(String(plan._id)) || [] })) });
   } catch (err) {
