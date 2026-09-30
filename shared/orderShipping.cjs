@@ -2,11 +2,12 @@ function isShippingOrder(order = {}) {
   // Keep this aligned with the planner's customer-delivery conversation.
   // “营养改变生活” is configured as nutrition_intervention, but it is still
   // a warehouse-delivered product instead of an appointment workflow.
-  if (String(order.serviceName || '').trim() === '营养改变生活') return true;
+  const name = String(order.serviceName || '').trim();
+  if (name === '营养改变生活' || /维生素|营养素|益生菌|鱼油|蛋白粉|辅酶|代餐/.test(name)) return true;
   const key = order.serviceWorkflowSnapshot?.key;
   return key === 'supplement_supply'
     || (key === 'nutrition_intervention' && order.fulfillmentType === 'delivery_and_service')
-    || (!key && order.fulfillmentType === 'delivery_and_service' && /营养补充|营养代餐|代餐|营养素/.test(String(order.serviceName || '')));
+    || (!key && order.fulfillmentType === 'delivery_and_service' && /营养补充|营养代餐|代餐|营养素/.test(name));
 }
 function hasShippingHandoff(order = {}) {
   return isShippingOrder(order)

@@ -24,7 +24,7 @@ router.get('/', async (req, res) => {
       const shipmentOrderIds = req.staff.role === 'healthManager'
         ? await Fulfillment.find({ assignedStaff: req.staff._id, status: { $in: ['shipped', 'completed'] } }).distinct('order') : [];
       const ownership = req.staff.role === 'healthManager' ? { $or: [{ user: baseScope.user }, { _id: { $in: shipmentOrderIds } }] } : baseScope;
-      const filter = { $and: [ownership, { $or: [{ fulfillmentStatus: { $in: ['shipped', 'completed'] } }, { _id: { $in: shipmentOrderIds } }] }] };
+      const filter = { $and: [ownership, { $or: [{ fulfillmentStatus: { $in: ['shipped', 'completed', 'cancelled'] } }, { _id: { $in: shipmentOrderIds } }] }] };
       // 旧系统曾给服务类订单也写入 fulfillmentStatus，不能据此把服务误当作实物发货。
       // 发货页只展示明确属于实物配送的订单。
       const allShipmentOrders = (await Order.find(filter).sort({ updatedAt: -1, _id: -1 })
