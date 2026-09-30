@@ -32,11 +32,9 @@ function deductionLimit(type, value, orderAmount) {
 function productDeductionLimit(rule, orderAmount) {
   const mode = rule?.mode || 'inherit';
   if (mode === 'disabled') return 0;
-  const platformMaximum = deductionLimit('percentage', 20, orderAmount);
-  // 无论余额来自首登、邀请、积分兑换或企业赠送，最终均由商品定义上限；
-  // 未单独配置的商品继承 20% 的平台上限。
-  if (['inherit', 'unlimited'].includes(mode)) return platformMaximum;
-  return Math.min(platformMaximum, deductionLimit(mode, rule?.value, orderAmount));
+  // 保留旧商品的20%额度；显式商品规则不再受平台比例限制。
+  if (['inherit', 'unlimited'].includes(mode)) return deductionLimit('percentage', 20, orderAmount);
+  return Math.min(orderAmount, deductionLimit(mode, rule?.value, orderAmount));
 }
 
 function corporateProductEligible(policy, productId, category, productRule) {
@@ -151,7 +149,7 @@ async function validateHealthFundDeduction({ user, requested, orderAmount, categ
     personalAvailable,
     corporateAvailable,
     corporateEligible: corporateEligible && enterpriseEnabled,
-    productRule: productRule || (Number.isFinite(finalProductLimit) && finalProductLimit < orderAmount
+    productRule: productRule || (productLimit !== undefined && Number.isFinite(finalProductLimit)
       ? { mode: 'fixedAmount', value: finalProductLimit }
       : { mode: 'inherit', value: 0 }),
   });

@@ -22,7 +22,7 @@ const EMPTY_FORM = {
   fulfillmentType: 'offline_service', paymentChannel: 'wechat_pay', bookingRequired: true,
   deliveryRequired: false, serviceLocation: '', validityDays: 365,
   refundPolicy: '服务开始前可申请退款；已发生的第三方费用及已完成服务不予退还。', skus: [],
-  healthFundDeduction: { mode: 'inherit', value: 0 },
+  healthFundDeduction: { mode: 'disabled', value: 0 },
   memberBundle: { enabled:false, allowedMembershipTiers:['consumer365','annual','therapy','enterprise'], selectionCount: 3, validityDays:730, purchaseLimitPerMembership:1, transferRemainingOnce:true, discountRules:[{ key:'standard', label:'会员专享价', discountRate:0.7 }], selectableProducts:[] },
   performanceRule: { ruleType: 'none', referrerRate: 0, fulfillerRate: 0, referrerAmount: 0, fulfillerAmount: 0 },
   servicePerformerRoles: [],
@@ -468,6 +468,8 @@ function ProductModal({ product, categories, onClose, onSaved }) {
   }
 
   const save = async () => {
+    const fundValue = Number(form.healthFundDeduction?.value)
+    if (form.healthFundDeduction?.mode === 'percentage' && (!Number.isFinite(fundValue) || fundValue < 1 || fundValue > 100)) { toast('商品抵扣比例须为1%-100%'); return }
     if (!form.name || !form.category || form.originalPrice === '') {
       toast('❌ 产品名称、分类、原价为必填项')
       return
@@ -704,14 +706,14 @@ function ProductModal({ product, categories, onClose, onSaved }) {
               <div className="form-group">
                 <label className="form-label">该产品健康基金抵扣方式</label>
                 <select className="form-input" value={rule.mode} onChange={e=>setRule('mode',e.target.value)}>
-                  <option value="inherit">继承平台规则（默认最高20%）</option>
+                  <option value="inherit">沿用旧规则（20%）</option>
                   <option value="disabled">不支持健康基金抵扣</option>
                   <option value="percentage">按产品应付金额比例</option>
                 </select>
               </div>
               {rule.mode==='percentage' && <div className="form-group">
-                <label className="form-label">最高抵扣比例（1%-20%）</label>
-                <input className="form-input" type="number" min="1" max="20" value={rule.value||0} onChange={e=>setRule('value',e.target.value)}/>
+                <label className="form-label">最高抵扣比例（1%-100%）</label>
+                <input className="form-input" type="number" min="1" max="100" value={rule.value||0} onChange={e=>setRule('value',e.target.value)}/>
               </div>}
             </div>
           })()}

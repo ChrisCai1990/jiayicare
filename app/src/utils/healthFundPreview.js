@@ -15,7 +15,8 @@ function corporateProductEligible(policy, product, rule) {
 }
 function productCap(rule, amount) {
   if (rule?.mode === 'disabled') return 0;
-  return Math.min(amount * .2, policyLimit(rule?.mode, rule?.value, amount));
+  if (!rule?.mode || ['inherit', 'unlimited'].includes(rule.mode)) return amount * .2;
+  return Math.min(amount, policyLimit(rule.mode, rule.value, amount));
 }
 function enterpriseEligible(healthFund, amount, product) {
   const enterprise = healthFund?.enterprise;
