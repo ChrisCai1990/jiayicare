@@ -697,7 +697,7 @@ export default function FollowUpsPage() {
                 </select>
               </div>
               <div>
-                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>{editItem.status === 'completed' ? '随访记录内容' : '计划内容'}</label>
+                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>{editItem.status === 'completed' ? '随访记录内容' : '随访内容'}</label>
                 <textarea className="form-control" rows={4} value={editForm.content}
                   onChange={e => setEditForm(f => ({ ...f, content: e.target.value }))}
                   placeholder="随访内容..." />

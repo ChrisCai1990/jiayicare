@@ -11459,15 +11459,16 @@ export default function PatientDetailPage() {
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: 560 }}>
             <div className="modal-header">
-              <h3 className="modal-title">编辑随访记录</h3>
+              <h3 className="modal-title">{followUpDetail.status === 'completed' ? '编辑随访记录' : '编辑随访计划'}</h3>
               <button className="modal-close" onClick={() => setEditingFollowUp(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">随访日期</label>
+                  <label className="form-label">{followUpDetail.status === 'completed' ? '随访日期' : '计划随访日期'}</label>
                   <input type="date" className="form-input" value={editingFollowUp.date}
                     onChange={e => setEditingFollowUp(f => ({ ...f, date: e.target.value }))} />
+                  {followUpDetail.status !== 'completed' && <div style={{ fontSize: 12, color: '#4A6558', marginTop: 4 }}>计划联系客户、开展随访的日期；需要确认复诊安排时，请提前安排。</div>}
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">随访方式</label>
@@ -11499,14 +11500,15 @@ export default function PatientDetailPage() {
                   onChange={e => setEditingFollowUp(f => ({ ...f, theme: e.target.value }))} />
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">执行结果</label>
+                <label className="form-label">{followUpDetail.status === 'completed' ? '执行结果' : '随访内容'}</label>
                 <textarea className="form-input" rows={4} style={{ resize: 'vertical' }} value={editingFollowUp.content}
                   onChange={e => setEditingFollowUp(f => ({ ...f, content: e.target.value }))} />
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">下一节点日期</label>
+                <label className="form-label">下次跟进日期（选填）</label>
                 <input type="date" className="form-input" value={editingFollowUp.nextFollowUpDate}
                   onChange={e => setEditingFollowUp(f => ({ ...f, nextFollowUpDate: e.target.value }))} />
+                <div style={{ fontSize: 12, color: '#4A6558', marginTop: 4 }}>后续需要再次联系或处理事项的日期。拟复诊日期及待确认事项请写在随访内容中。</div>
               </div>
             </div>
             <div className="modal-footer">
@@ -11523,7 +11525,7 @@ export default function PatientDetailPage() {
                   setEditingFollowUp(null); setFollowUpDetail(res.data); loadFollowUps()
                 } catch (err) { toast(err.message || '保存失败') }
                 finally { setFollowUpSaving(false) }
-              }}>{followUpSaving ? '保存中...' : '保存'}</button>
+              }}>{followUpSaving ? '保存中...' : followUpDetail.status === 'completed' ? '保存记录' : '保存计划'}</button>
             </div>
           </div>
         </div>
