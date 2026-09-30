@@ -153,10 +153,7 @@ function validateIssues(input, stored, { confirm = false } = {}) {
 }
 
 async function annualIssueEvidence(patientId, dependencies = {}) {
-  if (dependencies.year) {
-    const topics = await require('./annualReportProblems').annualEvidence(patientId, dependencies.year);
-    if (topics !== null) return topics;
-  }
+  // Annual plans use their existing evidence/rules directly; no separate problem-review gate.
   const Draft = dependencies.Draft || require('../models/ReportFollowUpDraft');
   const Report = dependencies.Report || require('../models/MedicalReport');
   const rows = await Draft.find({ patientId, purpose: PURPOSE, status: 'approved' }).sort({ createdAt: -1 }).lean();

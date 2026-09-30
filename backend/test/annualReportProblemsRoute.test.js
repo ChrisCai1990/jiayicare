@@ -75,7 +75,7 @@ test('年度输入使用已审核综合主题，未审核及失效来源拒绝�
   t.mock.method(Draft, 'find', () => ({ sort: () => ({ lean: async () => [] }) }));
   await assert.rejects(service.annualEvidence(patient, 2026), /先审核/);
   current().status = 'approved';
-  const evidence = await require('../src/utils/reportIssues').annualIssueEvidence(patient, { year: 2026 });
+  const evidence = await service.annualEvidence(patient, 2026);
   assert.equal(evidence.length, 1); assert.match(evidence[0].id, /^annual_problem:/);
   assert.equal(evidence[0].content.analysis, topic.analysis);
   report.reportItems[0].findings = '新结果'; await assert.rejects(service.annualEvidence(patient, 2026), /来源已更新/);

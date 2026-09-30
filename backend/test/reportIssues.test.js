@@ -143,3 +143,15 @@ test('年度同一问题跨已确认报告汇总，保留不同日期和各顾�
   assert.equal(result[0].content.sourceReviews[1].checkDate, '2026-09-01');
   assert.match(result[0].content.recommendation, /意见0\n意见1/);
 });
+
+
+test('年度方案不再读取或等待独立年度问题审核', async () => {
+  const annual = require('../src/utils/annualReportProblems');
+  const original = annual.annualEvidence;
+  annual.annualEvidence = async () => { throw new Error('不应进入独立问题审核'); };
+  try {
+    assert.deepEqual(await annualIssueEvidence('patient', {year: 2026,
+      Draft: {find: () => ({sort: () => ({lean: async () => []})})}, Report: {},
+    }), []);
+  } finally { annual.annualEvidence = original; }
+});
