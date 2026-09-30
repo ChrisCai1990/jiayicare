@@ -84,6 +84,7 @@ async function extractIssues(report, dependencies = {}) {
   // Bound each call, never silently truncate a long report or drop remaining items.
   const batches = []; let batch = [], size = 0;
   for (const source of sources) {
+    if (dependencies.skipNormal && (withinSourceRange(source) || explicitNormal(source) || (source.status === 'normal' && source.evidence))) continue;
     const length = JSON.stringify(source).length;
     if (batch.length && (batch.length >= 12 || size + length > 18000)) { batches.push(batch); batch = []; size = 0; }
     if (length > 18000) continue; // Reconcile keeps the entire evidence as a pending item.
@@ -146,6 +147,10 @@ function validateIssues(input, stored, { confirm = false } = {}) {
 }
 
 async function annualIssueEvidence(patientId, dependencies = {}) {
+  if (dependencies.year) {
+    const topics = await require('./annualReportProblems').annualEvidence(patientId, dependencies.year);
+    if (topics !== null) return topics;
+  }
   const Draft = dependencies.Draft || require('../models/ReportFollowUpDraft');
   const Report = dependencies.Report || require('../models/MedicalReport');
   const rows = await Draft.find({ patientId, purpose: PURPOSE, status: 'approved' }).sort({ createdAt: -1 }).lean();

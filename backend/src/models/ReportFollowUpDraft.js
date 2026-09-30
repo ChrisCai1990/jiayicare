@@ -18,6 +18,7 @@ const schema = new mongoose.Schema({
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
   advisorReviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
   advisorReviewedAt: Date,
+  consolidatedReviewId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualReportProblemReview' },
   auditLog: { type: [mongoose.Schema.Types.Mixed], default: [] },
 }, { timestamps: true, optimisticConcurrency: true });
 schema.plugin(require('../utils/outcomeEvidenceFence').outcomeEvidenceFence);

@@ -27,6 +27,7 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
     require('../utils/healthManagementRollout').assertPatientEnabled(row.patientId);
     return row;
   }
+  router.use('/patients/:patientId/annual-problems/:year', require('./annualReportProblems')({ visible }));
   router.get('/patients/:patientId', staffAuth, wrap(async (req, res) => {
     if (!mongoose.isValidObjectId(req.params.patientId)) fail('客户ID无效', 400);
     await visible(req, req.params.patientId);

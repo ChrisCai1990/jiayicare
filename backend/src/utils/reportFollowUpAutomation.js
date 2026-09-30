@@ -15,6 +15,7 @@ async function syncReportReviewTask(draft) {
   if (!draft) return;
   if (!require('./healthManagementRollout').enabledForPatient(draft.patientId)) return;
   const annualInput = draft.purpose === 'annual_report_input';
+  if (annualInput && draft.consolidatedReviewId) return completeReportReview(draft._id);
   const publicationPending = !annualInput && draft.status === 'approved' && draft.followUpPublication?.status !== 'published';
   if (draft.status !== 'advisor_review' && !publicationPending) return completeReportReview(draft._id);
   if (!publicationPending && ['queued', 'running'].includes(draft.followUpAutomation?.status)) return;

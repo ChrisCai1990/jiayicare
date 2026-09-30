@@ -31,3 +31,6 @@
 .report-issue-analysis{border-top:1px solid #edf1ee;margin-top:12px;padding-top:12px;font-size:14px}.report-issue-analysis>b{font-size:13px;color:#315743}
 .report-issue-recommendations{background:#f4f8f5;border-radius:7px;padding:8px 12px;margin:12px 0;font-size:14px}
 .report-issue-analysis p{margin:5px 0}.report-issue-card fieldset{margin-top:12px}
+.annual-problem-findings{display:flex;gap:6px;flex-wrap:wrap;font-size:12px;color:#516b5e}.annual-problem-findings span{background:#f0f5f2;padding:4px 8px;border-radius:5px}
+.annual-problem-card .annual-problem-review{display:flex;align-items:center;gap:10px 20px;flex-wrap:wrap;border-top:1px solid #e2e8e4;padding-top:12px}
+.annual-problem-review label{flex-direction:row;align-items:center;font-weight:400;margin:0}.annual-problem-review input[type=checkbox]{width:auto}.annual-problem-review label:has(input:not([type=checkbox])){flex-basis:100%}

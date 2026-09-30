@@ -11028,7 +11028,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     const consistency = require('../utils/annualGenerationConsistency');
     const clinicalRules = require('../utils/annualClinicalRules');
     const timeline = clinicalRules.reportTimeline(reports);
-    const confirmedReportIssues = closedLoop ? await require('../utils/reportIssues').annualIssueEvidence(user._id) : [];
+    const confirmedReportIssues = closedLoop ? await require('../utils/reportIssues').annualIssueEvidence(user._id, { year }) : [];
     const evidence = [
       ...confirmedReportIssues,
       ...confirmedCaseReviews.map(item => ({ id: `review:${item._id}`, content: item.conclusion })),
