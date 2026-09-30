@@ -5178,10 +5178,6 @@ export default function PatientDetailPage() {
             一致的情况无需人工再次确认，故此处不再重复放置整体人工审核开关 */}
 
         {tab === 'records' && healthBaseView === 'profile' && <>
-        {/* ── 健康监测数据补录 ── */}
-        {['family','disease','allergy'].map(section => <CoreArchiveSection key={section} user={user} section={section} onSaved={load} onNavigate={setTab} canEdit={['healthManager','familyDoctor','medicalAssistant','superadmin','platformSuper'].includes(staff?.role)}/>)}
-        <CoreArchiveSection user={user} section="medication" onSaved={load} onNavigate={setTab} canEdit={['healthManager','familyDoctor','medicalAssistant','superadmin','platformSuper'].includes(staff?.role)}/>
-
         {/* ── 健康评分卡片 ── */}
         {(() => {
           const detail = user.healthScoreDetail || {}
@@ -5476,6 +5472,9 @@ export default function PatientDetailPage() {
             })()}
           </div>
         </div>
+
+        {['family','disease','allergy'].map(section => <CoreArchiveSection key={section} user={user} section={section} onSaved={load} onNavigate={setTab} canEdit={['healthManager','familyDoctor','medicalAssistant','superadmin','platformSuper'].includes(staff?.role)}/>)}
+        <CoreArchiveSection user={user} section="medication" onSaved={load} onNavigate={setTab} canEdit={['healthManager','familyDoctor','medicalAssistant','superadmin','platformSuper'].includes(staff?.role)}/>
 
         {/* ── 心理健康评估（问卷库Epworth/SCL90/SDS/SAS，会员自填自动写入）── */}
         <PsychAssessmentPanel user={user} />
@@ -9960,9 +9959,11 @@ export default function PatientDetailPage() {
       {/* ── Health Portrait Tab ── */}
       {tab === 'portrait' && <><HealthPortraitOverview user={user} reports={reports} />        {/* ── 慢病分级 ── */}
         {user.chronicDiseases?.length > 0 && (
-          <div className="card" style={{ marginBottom: 16 }}>
-            <div className="card-header">
-              <div className="card-title">慢病分级</div>
+          <details className="card chronic-severity-card" style={{ marginBottom: 16 }}>
+            <summary className="card-header" style={{ cursor: 'pointer' }}>
+              <div className="card-title">慢病分级</div><span style={{ color: '#8AA89C' }}>⌄</span>
+            </summary>
+            <div style={{ padding: '12px 20px 0', display: 'flex', justifyContent: 'flex-end' }}>
               {!editingDiseaseSeverity
                 ? <button className="btn btn-secondary btn-sm" onClick={() => setEditingDiseaseSeverity(true)}>编辑</button>
                 : <div style={{ display: 'flex', gap: 8 }}>
@@ -9994,7 +9995,7 @@ export default function PatientDetailPage() {
                 ))}
               </div>
             </div>
-          </div>
+          </details>
         )}
 
 <button className="btn btn-secondary" onClick={() => setTab('symptoms')}>查看不适主诉与症状</button></>}
