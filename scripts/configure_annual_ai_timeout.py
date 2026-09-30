@@ -12,7 +12,13 @@ if not str(p).startswith('/etc/nginx/'):
 old = p.read_text()
 marker = '# annual-ai-timeout-v1'
 if marker in old:
-    print('already configured')
+    start = old.index(marker)
+    end = old.index('\n    }', start) + len('\n    }')
+    block = old[start:end]
+    if 'ai-annual-plan' not in block or 'proxy_read_timeout 180s;' not in block:
+        if 'proxy_read_timeout 300s;' in block: print('already configured'); raise SystemExit(0)
+        raise SystemExit('Unexpected annual proxy block')
+    new = old[:start] + block.replace('proxy_read_timeout 180s;', 'proxy_read_timeout 300s;') + old[end:]
 else:
     start = old.index('    location /api/ {')
     end = old.index('\n    }', start) + len('\n    }')
@@ -22,25 +28,25 @@ else:
     targeted = block.replace('location /api/', 'location ~ ^/api/staff/patients/[a-fA-F0-9]{24}/ai-annual-plan$')
     # Quote regex: braces in a regex otherwise conflict with nginx block parsing.
     targeted = targeted.replace('location ~ ^/api/staff/patients/[a-fA-F0-9]{24}/ai-annual-plan$', 'location ~ "^/api/staff/patients/[a-fA-F0-9]{24}/ai-annual-plan$"')
-    targeted = targeted.replace('\n    }', '\n        proxy_read_timeout 180s;\n    }')
+    targeted = targeted.replace('\n    }', '\n        proxy_read_timeout 300s;\n    }')
     new = old[:start] + '    ' + marker + '\n' + targeted + '\n' + old[start:]
-    if APPLY:
-        backup_dir = Path('/etc/nginx/annual-ai-backups')
-        backup_dir.mkdir(exist_ok=True)
-        backup = backup_dir / (p.name + '.' + datetime.datetime.now().strftime('%Y%m%d%H%M%S') + '.bak')
-        backup.write_text(old)
-        p.write_text(new)
-        try:
-            subprocess.run(['nginx', '-t'], check=True)
-            subprocess.run(['systemctl', 'reload', 'nginx'], check=True)
-        except BaseException:
-            p.write_text(old)
-            subprocess.run(['nginx', '-t'], check=True)
-            subprocess.run(['systemctl', 'reload', 'nginx'], check=True)
-            raise
-        print('configured 180s; backup:', backup)
-    else:
-        print('dry run: targeted annual AI proxy 180s')
+if APPLY:
+    backup_dir = Path('/etc/nginx/annual-ai-backups')
+    backup_dir.mkdir(exist_ok=True)
+    backup = backup_dir / (p.name + '.' + datetime.datetime.now().strftime('%Y%m%d%H%M%S') + '.bak')
+    backup.write_text(old)
+    p.write_text(new)
+    try:
+        subprocess.run(['nginx', '-t'], check=True)
+        subprocess.run(['systemctl', 'reload', 'nginx'], check=True)
+    except BaseException:
+        p.write_text(old)
+        subprocess.run(['nginx', '-t'], check=True)
+        subprocess.run(['systemctl', 'reload', 'nginx'], check=True)
+        raise
+    print('configured 300s; backup:', backup)
+else:
+    print('dry run: targeted annual AI proxy 300s')
 '''
 if __name__ == '__main__':
     client = connect()
