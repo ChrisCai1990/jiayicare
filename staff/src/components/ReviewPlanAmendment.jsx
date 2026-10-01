@@ -86,6 +86,11 @@ export default function ReviewPlanAmendment({patientId,topicId,message,scope = '
           {Number(item.target)>=0&&<div style={{whiteSpace:'pre-wrap',background:'#F3F6F4'}}>原内容：{plan?.moduleData?.[item.key]?.records?.[item.target]?.reason||'未填写原因'}</div>}
           {[['title','事项'],['reason','客观依据'],['advice','处理建议'],['timeWindow','建议时机（如三个月后）'],['date','明确日期（可留空）'],['timingReason','时间依据']].map(([k,l])=><label key={k} style={{display:'block'}}>{l}{['reason','advice','timingReason'].includes(k)?<textarea className="form-input" value={item[k]||''} onChange={e=>edit(index,k,e.target.value)}/>:<input className="form-input" disabled={busy||(k==='date'&&item.datePending)} type={k==='date'?'date':'text'} value={item[k]||''} onChange={e=>edit(index,k,e.target.value)}/>}</label>)}
           <label><input type="checkbox" checked={!!item.datePending} onChange={e=>edit(index,'datePending',e.target.checked)}/> 日期待确认（先保存建议；若更新旧事项，将清除其原日期）</label>
+          <details open={['precautions','customerAction','frequency'].some(k=>!!item[k])}>
+            <summary>研判带入的执行要求</summary>
+            <p>仅提取研判已明确的内容；未提及的字段保留原方案，顾问可核对修改。</p>
+            {[['precautions','客户注意事项'],['customerAction','客户行动'],['frequency','执行频次']].map(([k,label])=><label key={k} style={{display:'block'}}>{label}<textarea className="form-input" value={item[k]||''} placeholder="研判未明确，暂无补充" onChange={e=>edit(index,k,e.target.value)}/></label>)}
+          </details>
         </div>)}
         <button className="btn btn-primary" disabled={busy||!draft.items.some(i=>i.selected!==false)} onClick={()=>run('apply')}>{busy?'保存中…':'确认并保存到年度方案'}</button>
       </>}

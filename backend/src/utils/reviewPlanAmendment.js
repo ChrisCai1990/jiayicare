@@ -26,6 +26,11 @@ function clean(items) {
       if (out[key].length > (key==='title' ? 200 : 4000)) throw Error('补充内容过长');
     }
     if (!out.title || !out.reason || !out.advice) throw Error('请填写事项、依据和处理建议');
+    for (const key of ['precautions','customerAction','frequency']) {
+      if (!Object.hasOwn(item,key)) continue;
+      if (typeof item[key] !== 'string' || item[key].length > 4000) throw Error('研判补充字段格式无效或过长');
+      out[key]=item[key].trim();
+    }
     if (out.datePending) out.date='';
     if (out.date && (!validDate(out.date) || !out.timingReason)) throw Error(`“${out.title}”：请填写有效日期及时间依据，或选择“日期待确认”`);
     return out;
@@ -73,7 +78,11 @@ function apply(base, items, source, catalog=[]) {
     if (index>=rows.length) throw Error('原事项已变化，请重新预览');
     const before=index>=0?rows[index]:null;
     const after={...before,[fields[item.key]]:item.title,reason:`${item.reason}\n处理建议：${item.advice}`,personalizedAdvice:item.advice,
-      reviewAmendmentSource:source};
+      basisSummary:item.reason,reviewAmendmentSource:source};
+    for (const key of ['precautions','customerAction','frequency']) {
+      if (Object.hasOwn(item,key)) after[key]=item[key];
+      else if(origin && Object.hasOwn(origin,key) && !Object.hasOwn(after,key)) after[key]=origin[key];
+    }
     if(item.key==='personalized_followups') {
       const template=catalog.find(t=>t.id===item.standardPlanId);
       if(!template || template.hash!==item.templateHash) throw Error('请选择有效Admin模板；模板已变化时请重新打开预览');

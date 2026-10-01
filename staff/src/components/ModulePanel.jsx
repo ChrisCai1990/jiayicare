@@ -142,6 +142,11 @@ export function FieldInput({ field, value, onChange }) {
 export function RecordEditor({ def, record, onChange, onDelete, index, total }) {
   const [open, setOpen] = useState(index === 0 && total === 1)
   const summary = record[def.summaryKey] || `${def.summaryLabel} ${index + 1}`
+  const [supplementalKeys] = useState(() => def.reviewDriven ? def.fields.filter(field=>['notes','basisSummary','precautions','customerAction'].includes(field.key) && !readableValue(record[field.key]).trim()).map(field=>field.key) : [])
+  const optionalEmpty = field => supplementalKeys.includes(field.key)
+  const renderField = field => <FieldRow key={field.key} label={def.reviewDriven ? ({notes:'内部备注',basisSummary:'制定依据',precautions:'客户注意事项'}[field.key] || field.label) : field.label} internal={field.internal}>
+    <FieldInput field={def.reviewDriven && ['basisSummary','precautions','customerAction'].includes(field.key) ? {...field,placeholder:'研判未明确，暂无补充；可核对后修改'} : field} value={field.concretePlan ? concretePlanText(record[field.key], record.standardPlanName) : record[field.key]} onChange={val => onChange({ ...record, [field.key]: val, ...(field.appointmentDate ? { appointmentSchedulingVersion: 1 } : {}) })} />
+  </FieldRow>
   return (
     <div style={{ border: '1px solid #E8E3DC', borderRadius: 8, marginBottom: 8, background: '#FAFAF8' }}>
       <div style={{ display: 'flex', alignItems: 'center', padding: '9px 12px', cursor: 'pointer' }} onClick={() => setOpen(v => !v)}>
@@ -156,11 +161,9 @@ export function RecordEditor({ def, record, onChange, onDelete, index, total }) 
       </div>
       {open && (
         <div style={{ padding: '0 12px 12px', borderTop: '1px solid #F0EDE7' }}>
-          {def.fields.map(field => (
-            <FieldRow key={field.key} label={field.label} internal={field.internal}>
-              <FieldInput field={field} value={field.concretePlan ? concretePlanText(record[field.key], record.standardPlanName) : record[field.key]} onChange={val => onChange({ ...record, [field.key]: val, ...(field.appointmentDate ? { appointmentSchedulingVersion: 1 } : {}) })} />
-            </FieldRow>
-          ))}
+          {def.reviewDriven && <p style={{fontSize:12,color:'#64796E'}}>内容由研判补入后带入，顾问核对即可；缺项可回研判提取补充，无需重新生成整份方案。</p>}
+          {def.fields.filter(field=>!optionalEmpty(field)).map(renderField)}
+          {def.fields.some(optionalEmpty) && <details style={{marginTop:12}}><summary style={{cursor:'pointer'}}>其他补充（研判未明确）</summary>{def.fields.filter(optionalEmpty).map(renderField)}</details>}
           {def.templateFields?.length > 0 && <details style={{ marginTop: 16, padding: 12, background: '#F0F5F2', borderRadius: 8 }}>
             <summary style={{ cursor: 'pointer', color: '#4A6558', fontSize: 13 }}>查看模板依据</summary>
             {def.templateFields.map(field => <FieldRow key={field.key} label={field.label}>
