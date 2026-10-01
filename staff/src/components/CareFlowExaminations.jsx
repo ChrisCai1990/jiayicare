@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React from 'react'
 export function initialExaminations(state) {
   const rows=(state.data.booking?.entries||[]).filter(e=>e.type==='exam'||e.mode==='onsite')
@@ -6,7 +7,7 @@ export function initialExaminations(state) {
 }
 export default function CareFlowExaminations({rows,onChange}) {
   const change=(i,k,v)=>onChange(rows.map((r,j)=>i===j?{...r,[k]:v}:r))
-  const field=(e,i,k,label,type='text')=><label style={{display:'grid',gap:6,minWidth:0}}>{label}<input className="form-input" style={{width:'100%',minHeight:46,padding:12,boxSizing:'border-box'}} type={type} value={e[k]||''} onChange={v=>change(i,k,v.target.value)}/></label>
+  const field=(e,i,k,label,type='text')=><label style={{display:'grid',gap:6,minWidth:0}}>{label}<DateField className="form-input" style={{width:'100%',minHeight:46,padding:12,boxSizing:'border-box'}} type={type} value={e[k]||''} onChange={v=>change(i,k,v.target.value)}/></label>
   return <section style={{display:'grid',gap:16}}><h4>专家确认后的检查与预约</h4><p>按专家实际意见记录更换、增补或取消；原计划保留。变更须填写专家意见，未预约事项须说明后续安排。</p>{rows.map((e,i)=><section key={e.id} style={{padding:18,border:'1px solid #C9DED4',borderRadius:12,display:'grid',gap:12}}>
     {e.id?.startsWith('added-')&&!e.confirmedAt&&<button type="button" className="btn" style={{justifySelf:'end',color:'#B91C1C'}} onClick={()=>onChange(rows.filter((_,j)=>j!==i))}>删除新增项目</button>}
     {field(e,i,'title','实际检查项目')}

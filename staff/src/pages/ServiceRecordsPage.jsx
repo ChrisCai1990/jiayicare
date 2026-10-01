@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
@@ -784,7 +785,7 @@ function ServiceRecordModal({ patients, defaultType, onClose, onSaved }) {
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">记录日期</label>
-              <input className="form-input" type="date" value={date} onChange={e => setDate(e.target.value)} />
+              <DateField className="form-input" type="date" value={date} onChange={e => setDate(e.target.value)} />
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">标题（可选）</label>

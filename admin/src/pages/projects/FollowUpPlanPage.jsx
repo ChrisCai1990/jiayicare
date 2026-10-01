@@ -1,3 +1,4 @@
+import DateField from '../../../../shared/DateField.jsx'
 import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
@@ -320,7 +321,7 @@ export default function FollowUpPlanPage() {
                             })}
                           </div>
                         ) : field.type === 'date' ? (
-                          <input
+                          <DateField
                             className="form-input"
                             type="date"
                             style={{ fontSize: 13 }}
@@ -328,7 +329,7 @@ export default function FollowUpPlanPage() {
                             onChange={e => setDefaultContent(field.label, e.target.value)}
                           />
                         ) : (
-                          <input
+                          <DateField
                             className="form-input"
                             type={field.type === 'number' ? 'number' : 'text'}
                             style={{ fontSize: 13 }}
@@ -385,7 +386,7 @@ export default function FollowUpPlanPage() {
                       </div>
                     ) : (
                       <div style={{ marginBottom: 8 }}>
-                        <input className="form-input" type="date" value={cycle.cycleDate}
+                        <DateField className="form-input" type="date" value={cycle.cycleDate}
                           onChange={e => updateCycle(idx, 'cycleDate', e.target.value)} />
                       </div>
                     )}

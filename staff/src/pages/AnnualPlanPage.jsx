@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useState, useCallback, createContext, useContext } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
@@ -252,7 +253,7 @@ function StaffSelectInput({ value, onChange, placeholder }) {
 // ── 日期输入 ──────────────────────────────────────────────────────────
 function DateInput({ value, onChange, placeholder }) {
   return (
-    <input
+    <DateField
       type="date"
       value={value || ''}
       onChange={e => onChange(e.target.value)}

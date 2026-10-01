@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import { useState } from 'react'
 import { staffAPI } from '../api'
 
@@ -40,7 +41,7 @@ export default function ExpertAppointmentRescheduleForm({ task, onSaved }) {
       {slots.length > 1 && <label>选择需要改期的预约<select className="form-control" value={slotIndex} onChange={e => { const index = Number(e.target.value); setSlotIndex(index); setAppointmentDate(slots[index].appointmentDate || ''); setAppointmentTime(slots[index].appointmentTime || '') }}>{slots.map((row, index) => <option key={index} value={index}>{index + 1}. {row.department || row.expert || '预约'} · {row.appointmentDate} {row.appointmentTime}</option>)}</select></label>}
       <div style={{ fontSize: 12, color: '#63766D' }}>仅记录已经与医院及客户确认的新时间；保存后同步通知客户并更新就诊提醒，本单仍停留在等待就诊资料环节。</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <label>新预约日期 *<input className="form-control" type="date" value={appointmentDate} onChange={e => setAppointmentDate(e.target.value)} /></label>
+        <label>新预约日期 *<DateField className="form-control" type="date" value={appointmentDate} onChange={e => setAppointmentDate(e.target.value)} /></label>
         <label>新预约时间 *<input className="form-control" type="time" value={appointmentTime} onChange={e => setAppointmentTime(e.target.value)} /></label>
       </div>
       <label>改期原因与确认情况 *<textarea className="form-control" rows={2} value={reason} onChange={e => setReason(e.target.value)} /></label>

@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { staffAPI, API_ORIGIN } from '../api'
@@ -182,7 +183,7 @@ function AddItemPanel({ plan, onAdded, onCancel }) {
         {/* 年度体检使用方案级统一时间，其余方案仍可逐项安排 */}
         {plan.type !== 'annual_checkup' && <div>
           <label className="form-label" style={{ fontSize: 11 }}>计划日期</label>
-          <input className="form-input" type="date" value={form.scheduledDate} onChange={e => set('scheduledDate', e.target.value)} />
+          <DateField className="form-input" type="date" value={form.scheduledDate} onChange={e => set('scheduledDate', e.target.value)} />
         </div>}
 
         {/* 注意事项 */}
@@ -518,7 +519,7 @@ export default function PlanDetailPage() {
                 {plan.type === 'annual_checkup' && (
                   <div className="form-group" style={{ marginBottom: 12 }}>
                     <label className="form-label">统一体检时间</label>
-                    <input className="form-input" type="date" value={editForm.checkupDate || ''}
+                    <DateField className="form-input" type="date" value={editForm.checkupDate || ''}
                       onChange={e => setEditForm(f => ({ ...f, checkupDate: e.target.value }))} />
                   </div>
                 )}
@@ -730,7 +731,7 @@ export default function PlanDetailPage() {
               </div>
               {plan.type !== 'annual_checkup' && <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">计划日期</label>
-                <input className="form-input" type="date" value={editingItemForm.scheduledDate}
+                <DateField className="form-input" type="date" value={editingItemForm.scheduledDate}
                   onChange={e => setEditingItemForm(f => ({ ...f, scheduledDate: e.target.value }))} />
               </div>}
               <div className="form-group" style={{ marginBottom: 0 }}>

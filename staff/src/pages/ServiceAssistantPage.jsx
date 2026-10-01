@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { serviceGroupAPI as api, staffAPI } from "../api";
@@ -489,7 +490,7 @@ export default function ServiceAssistantPage() {
         <div className="sa-fields">
           <label>
             {form.kind === 'record' ? '沟通日期' : '跟进日期'}
-            <input
+            <DateField
               required={form.sourceType !== 'wecom_archive'}
               type="date"
               value={form.dueAt}
@@ -949,7 +950,7 @@ export default function ServiceAssistantPage() {
                 </label>
                 <label>
                   检查日期
-                  <input
+                  <DateField
                     type="date"
                     value={reportDate}
                     onChange={(e) => setReportDate(e.target.value)}

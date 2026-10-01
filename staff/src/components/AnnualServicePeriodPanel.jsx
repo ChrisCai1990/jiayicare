@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
 import AnnualServicePeriodCorrection from './AnnualServicePeriodCorrection'
@@ -38,8 +39,8 @@ export default function AnnualServicePeriodPanel({ planId, staff }) {
           <label>合同编号<input className="form-input" value={form.contractReference} onChange={e => update('contractReference', e.target.value)} maxLength={200} /></label>
           <label><input type="checkbox" checked={form.verified} onChange={e => update('verified', e.target.checked)} /> 已核验线下合同及约定服务期</label>
         </>}
-        <label>服务开始日期<input className="form-input" type="date" value={form.startDate} onChange={e => update('startDate', e.target.value)} /></label>
-        <label>服务结束日期<input className="form-input" type="date" value={form.endDate} onChange={e => update('endDate', e.target.value)} /></label>
+        <label>服务开始日期<DateField className="form-input" type="date" value={form.startDate} onChange={e => update('startDate', e.target.value)} /></label>
+        <label>服务结束日期<DateField className="form-input" type="date" value={form.endDate} onChange={e => update('endDate', e.target.value)} /></label>
         <button className="btn btn-primary" disabled={busy} onClick={save}>{busy ? '确认中…' : '确认续约凭据及服务期'}</button>
       </div> : <p>由该客户所属健康规划师在工作台核对凭据。</p>}
       {data.period && <AnnualServicePeriodCorrection key={planId} planId={planId} period={data.period} staff={staff} reload={async () => { const res = await staffAPI.getAnnualServicePeriod(planId); setData(res.data) }} />}

@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React,{useEffect,useRef,useState} from 'react';
 import {serviceGroupAPI as api} from '../api';
 
@@ -54,7 +55,7 @@ export default function GroupMaterialInbox({group,caps,busy,run,can}) {
       {can('patients','edit')&&new Set(rows.filter(r=>selected.includes(r._id)).map(r=>r.sender)).size===1&&<label className="sa-check"><input type="checkbox" checked={rememberSender} onChange={e=>setRememberSender(e.target.checked)}/>发送人就是所选成员，记住此对应关系</label>}
       <label>归档用途<select required value={purpose} disabled={busy} onChange={e=>setPurpose(e.target.value)}><option value="">请选择用途</option><option value="checkin">日常检测原图（血压、血糖等）</option><option value="report">就诊／检查资料（待解析）</option></select></label>
       <label>检测／资料名称<input required maxLength={160} value={title} disabled={busy} onChange={e=>setTitle(e.target.value)}/></label>
-      <label>检测／资料日期<input type="date" required value={date} disabled={busy} onChange={e=>setDate(e.target.value)}/></label>
+      <label>检测／资料日期<DateField type="date" required value={date} disabled={busy} onChange={e=>setDate(e.target.value)}/></label>
       {purpose==='report'&&<label>就诊资料类别<select value={category} disabled={busy} onChange={e=>setCategory(e.target.value)}>{Object.entries({outpatient_record:'门诊病历',inpatient_record:'住院病历',lab_report:'检验报告',exam_report:'检查报告',prescription_order:'处方',physical_exam:'体检报告',other_customer_material:'其他资料'}).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>}
       {caps?.materialScheduleConfigured&&<button value="schedule" className="sa-primary" disabled={busy||!allowed||!patientId||!purpose}>保存信息，定时归档</button>}
       <button value="now" disabled={busy||!allowed||!patientId||!purpose}>立即归档</button>

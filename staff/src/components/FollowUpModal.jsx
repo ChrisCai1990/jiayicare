@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useState, useEffect, useRef } from 'react'
 import { staffAPI } from '../api'
 
@@ -540,7 +541,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">随访日期</label>
-                <input className="form-input" type="date" value={form.date} onChange={set('date')} />
+                <DateField className="form-input" type="date" value={form.date} onChange={set('date')} />
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">随访方式</label>
@@ -693,7 +694,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
                 <div style={{ display: 'flex', gap: 8 }}>
                   <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
                     <label className="form-label" style={{ fontSize: 12 }}>{isAdHocMedicalReminder ? '建议完成日期' : '建议复查时间'}</label>
-                    <input className="form-input" type="date" value={revisitDate} onChange={e => setRevisitDate(e.target.value)} />
+                    <DateField className="form-input" type="date" value={revisitDate} onChange={e => setRevisitDate(e.target.value)} />
                   </div>
                   <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
                     <label className="form-label" style={{ fontSize: 12 }}>{isAdHocMedicalReminder && reminderKind === 'medication' ? '配药机构（选填）' : isAdHocMedicalReminder ? '建议医院（选填）' : '建议复查医院'}</label>
@@ -863,7 +864,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
                             })}
                           </div>
                         ) : field.type === 'date' ? (
-                          <input
+                          <DateField
                             className="form-input"
                             type="date"
                             style={{ fontSize: 13 }}
@@ -871,7 +872,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
                             onChange={e => setSchemeFormData(d => ({ ...d, [field.label]: e.target.value }))}
                           />
                         ) : (
-                          <input
+                          <DateField
                             className="form-input"
                             type={field.type === 'number' ? 'number' : 'text'}
                             style={{ fontSize: 13 }}
@@ -920,7 +921,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
                   </span>
 
                   {/* 具体日期 */}
-                  <input
+                  <DateField
                     className="form-input"
                     type="date"
                     value={row.date}

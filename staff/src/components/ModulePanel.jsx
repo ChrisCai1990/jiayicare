@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useState, createContext, useContext } from 'react'
 import appointment from '../../../shared/annualAppointment.cjs'
 import DateInput from './DateInput'
@@ -93,7 +94,7 @@ export function FieldInput({ field, value, onChange }) {
   }
   if (field.type === 'date' || field.type === 'time') {
     return (
-      <>{field.type === 'date' && field.appointmentDate ? <DateInput value={value} onChange={onChange} label={field.label} style={inputStyle} /> : <input type={field.type} value={value || ''} onChange={e => onChange(e.target.value)} style={inputStyle} />}
+      <>{field.type === 'date' && field.appointmentDate ? <DateInput value={value} onChange={onChange} label={field.label} style={inputStyle} /> : <DateField type={field.type} value={value || ''} onChange={e => onChange(e.target.value)} style={inputStyle} />}
       {field.appointmentDate && <div style={{ fontSize: 12, marginTop: 6 }}>预约安排日：{appointment.appointmentDay(value) || '待确定建议日期'}（提前7天；到期一周内完成预约安排，逾期立即处理）</div>}</>
     )
   }

@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useState, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { staffAPI, API_ORIGIN } from '../api'
@@ -695,7 +696,7 @@ function RespondModal({ referral, onClose, onRespond }) {
                 {consultation.feedbackType === 'external_medical_record' && <>
                   <div style={{padding:'11px 12px',background:'#EFF7FC',borderLeft:'3px solid #0077B6',borderRadius:7,fontSize:13,lineHeight:1.7}}><div style={{fontWeight:800,color:'#006AA3'}}>本次转介对象（不可修改）</div><div>{[expert.institutionName, expert.campus, expert.departmentName, expert.name && `${expert.name}${expert.title ? `（${expert.title}）` : ''}`].filter(Boolean).join(' · ') || '转介对象信息待补充'}</div></div>
                   <div style={{padding:'12px',border:'1px solid #DCE8E3',borderRadius:8,background:'#FAFCFB'}}><div style={{fontWeight:700,marginBottom:7}}>上传病历并智能提取</div><div style={{fontSize:12,color:'#65776F',marginBottom:9}}>支持图片或PDF。AI只按病历原文回填，提交前必须人工核对。</div><label className="btn btn-secondary btn-sm" style={{display:'inline-block',cursor:recordExtracting?'not-allowed':'pointer'}}>{recordExtracting?'识别中…':'选择病历文件'}<input type="file" accept="image/*,application/pdf" disabled={recordExtracting} onChange={handleMedicalRecordUpload} style={{display:'none'}} /></label>{recordProgress && <div style={{fontSize:12,color:recordProgress.startsWith('AI已')?'#1E6B50':'#0077B6',marginTop:8}}>{recordProgress}</div>}</div>
-                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}><div><label className="form-label">发生/就诊日期</label><input type="date" className="form-input" value={consultation.sourceDate} onChange={e=>setConsultation(c=>({...c,sourceDate:e.target.value}))}/></div><div><label className="form-label">核验状态</label><select className="form-input" value={consultation.verificationStatus} onChange={e=>setConsultation(c=>({...c,verificationStatus:e.target.value}))}><option value="pending_verification">待人工核验</option><option value="source_verified">已核对病历原件</option></select></div></div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}><div><label className="form-label">发生/就诊日期</label><DateField type="date" className="form-input" value={consultation.sourceDate} onChange={e=>setConsultation(c=>({...c,sourceDate:e.target.value}))}/></div><div><label className="form-label">核验状态</label><select className="form-input" value={consultation.verificationStatus} onChange={e=>setConsultation(c=>({...c,verificationStatus:e.target.value}))}><option value="pending_verification">待人工核验</option><option value="source_verified">已核对病历原件</option></select></div></div>
                   {[['diagnosis','医疗机构诊断归档'],['examinationAdvice','医疗机构检查意见归档'],['treatmentAdvice','医疗机构治疗意见归档'],['medicationAdvice','医疗机构用药医嘱归档']].map(([key,label]) => <div className="form-group" style={{ marginBottom:0 }} key={key}><label className="form-label">{label}</label><textarea className="form-input" rows={2} value={consultation[key]} onChange={e => setConsultation(c => ({...c,[key]:e.target.value}))} placeholder="上传病历后由AI自动回填，请人工核对" /></div>)}
                   <label style={{ display:'flex', alignItems:'center', gap:7, fontSize:13 }}><input type="checkbox" checked={consultation.diagnosisChanged} onChange={e => setConsultation(c => ({...c,diagnosisChanged:e.target.checked}))} />医疗机构诊断有更新，建议人工修订健康信息摘要</label>
                 </>}
@@ -1144,7 +1145,7 @@ function DraftReviewModal({ draft, onClose, onDone }) {
           </div>
           <div>
             <label style={{ fontSize: 12, color: '#8AA89C' }}>下次随访日期（可选）</label>
-            <input type="date" className="form-control" value={form.nextDate} onChange={e => setForm(f => ({ ...f, nextDate: e.target.value }))} />
+            <DateField type="date" className="form-control" value={form.nextDate} onChange={e => setForm(f => ({ ...f, nextDate: e.target.value }))} />
           </div>
         </div>
         <div className="modal-footer">

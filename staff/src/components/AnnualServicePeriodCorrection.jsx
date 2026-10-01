@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
 
@@ -61,7 +62,7 @@ export default function AnnualServicePeriodCorrection({ planId, period, staff, r
           <p>默认只改尚未派发日期。可另行确认改期未开始、未关联服务的待执行事项；已执行、已关联及相对周期不改。修订原因请填在审核意见中。</p>
           <label><input type="checkbox" checked={includeIssued} onChange={e => { setIncludeIssued(e.target.checked); setAck(false) }} /> 包含已派发待执行任务（须数据库支持事务；一项不满足则整批不改）</label>
           {(correction.impact?.planDates || []).filter(row => row.amendable).map(row => <label key={dateKey(row)} style={{ display: 'block', marginBottom: 8 }}>{row.moduleKey} 第{row.index + 1}项 · 原日期 {row.date}
-            <input className="form-input" type="date" min={correction.proposed.startDate} max={correction.proposed.endDate} value={dateDrafts[dateKey(row)] || ''} onChange={e => { const value = e.target.value; setDateDrafts(current => ({ ...current, [dateKey(row)]: value })); setAck(false) }} />
+            <DateField className="form-input" type="date" min={correction.proposed.startDate} max={correction.proposed.endDate} value={dateDrafts[dateKey(row)] || ''} onChange={e => { const value = e.target.value; setDateDrafts(current => ({ ...current, [dateKey(row)]: value })); setAck(false) }} />
           </label>)}
         </details>
         <textarea className="form-input" aria-label="更正审核意见" placeholder="审核意见（退回必填）" value={note} maxLength={2000} onChange={e => setNote(e.target.value)} />
@@ -79,8 +80,8 @@ export default function AnnualServicePeriodCorrection({ planId, period, staff, r
         <label>合同编号<input className="form-input" value={form.contractReference} maxLength={200} onChange={e => update('contractReference', e.target.value)} /></label>
         <label><input type="checkbox" checked={form.verified} onChange={e => update('verified', e.target.checked)} /> 已核验合同及拟更正服务期</label>
       </>}
-      <label>拟开始日期<input className="form-input" type="date" value={form.startDate} onChange={e => update('startDate', e.target.value)} /></label>
-      <label>拟结束日期<input className="form-input" type="date" value={form.endDate} onChange={e => update('endDate', e.target.value)} /></label>
+      <label>拟开始日期<DateField className="form-input" type="date" value={form.startDate} onChange={e => update('startDate', e.target.value)} /></label>
+      <label>拟结束日期<DateField className="form-input" type="date" value={form.endDate} onChange={e => update('endDate', e.target.value)} /></label>
       <label>更正原因<textarea className="form-input" value={form.reason} maxLength={2000} onChange={e => update('reason', e.target.value)} /></label>
       <div><button className="btn btn-primary" disabled={busy || !form.reason?.trim()} onClick={() => run('', form)}>提交健康顾问审核</button> <button className="btn" disabled={busy} onClick={() => setEditing(false)}>取消编辑</button></div>
     </div>}

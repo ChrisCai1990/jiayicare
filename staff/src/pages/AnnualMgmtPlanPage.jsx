@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import '../components/ReportFollowUpDrafts.css'
 import React, { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
@@ -965,7 +966,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
                 {item.followUpDrafts.map((draft, index) => <fieldset key={index} disabled={assessmentBusy || !canEdit || item.status !== 'advisor_review'} style={{ border: '1px solid #E8E3DA', borderRadius: 8, padding: 10, marginTop: 8 }}>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <input aria-label={`随访${index + 1}标题`} value={draft.title} maxLength={40} onChange={e => updateAssessmentFollowUpDraft(item._id, index, { title: e.target.value })} style={{ flex: 1, minWidth: 150 }} />
-                    <input aria-label={`随访${index + 1}日期`} type="date" value={draft.date} onChange={e => updateAssessmentFollowUpDraft(item._id, index, { date: e.target.value })} />
+                    <DateField aria-label={`随访${index + 1}日期`} type="date" value={draft.date} onChange={e => updateAssessmentFollowUpDraft(item._id, index, { date: e.target.value })} />
                     <select aria-label={`随访${index + 1}类型`} value={draft.category} onChange={e => updateAssessmentFollowUpDraft(item._id, index, { category: e.target.value })}>
                       <option value="medical_visit">安排就医</option><option value="examination">完善检查</option><option value="review">复查随访</option><option value="lifestyle">生活方式</option><option value="information">资料核对</option>
                     </select>

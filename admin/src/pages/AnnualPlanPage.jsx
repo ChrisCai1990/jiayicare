@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { adminAPI } from '../api'
@@ -102,7 +103,7 @@ function SelectInput({ value, onChange, options, placeholder }) {
 }
 
 function DateInput({ value, onChange }) {
-  return <input type="date" value={value || ''} onChange={e => onChange(e.target.value)}
+  return <DateField type="date" value={value || ''} onChange={e => onChange(e.target.value)}
     style={{ width: '100%', padding: '7px 10px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
 }
 

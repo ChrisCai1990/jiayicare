@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import { CoreArchiveSection, InitialArchiveReview, ArchiveSource } from '../components/CoreHealthArchive'
 import followUpReview from '../../../shared/followUpReview.cjs'
 import followUpDetailView from '../utils/followUpDetail.cjs'
@@ -493,7 +494,7 @@ function LabField({ label, unit, value, onChange, placeholder, type }) {
   return (
     <div>
       <span style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3 }}>{label}{unit ? ` (${unit})` : ''}</span>
-      <input className="form-control" type={type || 'text'} value={value} placeholder={placeholder || ''} onChange={onChange} style={{ fontSize: 13 }} />
+      <DateField className="form-control" type={type || 'text'} value={value} placeholder={placeholder || ''} onChange={onChange} style={{ fontSize: 13 }} />
     </div>
   )
 }
@@ -863,7 +864,7 @@ function DiseaseArchivePanel({ patientId, user, serviceRecords, onSaved, onOpenR
       </div>}
     </div>
     {editingSummary && <div className="modal-overlay" onClick={closeSummary}><div className="modal" style={{ maxWidth:720 }} onClick={e => e.stopPropagation()}><div className="modal-header"><h3 className="modal-title">首次专病概况（建立或纠错）</h3><button className="modal-close" onClick={closeSummary}>×</button></div><div className="modal-body" style={{ display:'grid', gap:10 }}>{summaryError && <div role="alert" style={{ color:'#B42318', padding:10, background:'#FFF0F0' }}>{summaryError}</div>}<div><label className="form-label">专病名称 *</label><input disabled={generatingSummary || saving} className="form-control" value={summaryForm.diseaseName || ''} onChange={e => setSummaryForm(f => ({...f,diseaseName:e.target.value}))} placeholder="如：眩晕（前庭神经炎）" /></div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}><div><label className="form-label">信息来源 *</label><select disabled={generatingSummary || saving} className="form-control" value={summaryForm.sourceType} onChange={e=>setSummaryForm(f=>({...f,sourceType:e.target.value}))}>{Object.entries(sourceLabels).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div><div><label className="form-label">核验状态 *</label><select disabled={generatingSummary || saving} className="form-control" value={summaryForm.verificationStatus} onChange={e=>setSummaryForm(f=>({...f,verificationStatus:e.target.value}))}>{Object.entries(verifyLabels).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div></div>{summaryForm.sourceType !== 'client_report' && <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:10}}><input disabled={generatingSummary || saving} className="form-control" placeholder="来源医疗机构" value={summaryForm.sourceInstitution} onChange={e=>setSummaryForm(f=>({...f,sourceInstitution:e.target.value}))}/><input disabled={generatingSummary || saving} className="form-control" placeholder="科室" value={summaryForm.sourceDepartment} onChange={e=>setSummaryForm(f=>({...f,sourceDepartment:e.target.value}))}/><input disabled={generatingSummary || saving} className="form-control" placeholder="医生" value={summaryForm.sourceDoctor} onChange={e=>setSummaryForm(f=>({...f,sourceDoctor:e.target.value}))}/></div>}{[['chiefComplaint','主诉/主要健康诉求',2],['presentIllness','首次发病及建档时病情',5],['physicalExam','医疗机构检查信息',2],['epidemiologicalHistory','相关接触/流行病学信息',2],['initialDiagnosis','医疗机构诊断归档',2],['currentMedication','医疗机构治疗及用药信息',3]].map(([key,label,rows]) => <div key={key}><label className="form-label">{label}</label><textarea disabled={generatingSummary || saving} className="form-control" rows={rows} value={summaryForm[key] || ''} onChange={e => setSummaryForm(f => ({...f,[key]:e.target.value}))} /></div>)}</div><div className="modal-footer"><button className="btn btn-secondary" onClick={closeSummary}>取消</button><button className="btn btn-primary" disabled={saving || generatingSummary || !summaryForm.diseaseName?.trim()} onClick={saveSummary}>{saving?'保存中…':'保存摘要'}</button></div></div></div>}
-    {addingCourse && <div className="modal-overlay" onClick={() => setAddingCourse(false)}><div className="modal" style={{ maxWidth:720 }} onClick={e => e.stopPropagation()}><div className="modal-header"><h3 className="modal-title">记录「{activeName}」健康变化</h3><button className="modal-close" onClick={() => setAddingCourse(false)}>×</button></div><div className="modal-body" style={{ display:'grid', gap:10 }}><div style={{ padding:'9px 12px', background:'#EFF8F3', color:'#1E6B50', borderRadius:8, fontSize:12 }}>记录日常症状、重要监测变化及就诊结果；联系、协调和服务过程继续在原随访计划和服务记录中查看。平台不形成诊疗结论。</div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}><div><label className="form-label">信息来源 *</label><select className="form-control" value={courseForm.sourceType} onChange={e=>setCourseForm(f=>({...f,sourceType:e.target.value}))}>{Object.entries(sourceLabels).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div><div><label className="form-label">核验状态 *</label><select className="form-control" value={courseForm.verificationStatus} onChange={e=>setCourseForm(f=>({...f,verificationStatus:e.target.value}))}>{Object.entries(verifyLabels).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div></div>{courseForm.sourceType !== 'client_report' && <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:10}}><input className="form-control" placeholder="来源医疗机构" value={courseForm.sourceInstitution} onChange={e=>setCourseForm(f=>({...f,sourceInstitution:e.target.value}))}/><input className="form-control" placeholder="科室" value={courseForm.sourceDepartment} onChange={e=>setCourseForm(f=>({...f,sourceDepartment:e.target.value}))}/><input className="form-control" placeholder="医生" value={courseForm.sourceDoctor} onChange={e=>setCourseForm(f=>({...f,sourceDoctor:e.target.value}))}/></div>}{courseForm.sourceHealthRecordId && <div style={{ padding:10, background:'#FFF8E8', fontSize:12 }}>已带入日常反馈原文。默认日期为来源记录日期，请核对实际发生日期；确认归档不会改变原始反馈或其处理状态。</div>}<div><label className="form-label">发生日期</label><input type="date" className="form-control" value={courseForm.occurredAt} onChange={e => setCourseForm(f => ({...f,occurredAt:e.target.value}))} /></div><div><label className="form-label">本次健康及症状变化 *</label><textarea className="form-control" rows={5} value={courseForm.content} onChange={e => setCourseForm(f => ({...f,content:e.target.value}))} placeholder="统一记录本次健康状态、症状和主观感受的变化" /></div>{[['examination','医疗机构检查信息'],['diagnosis','医疗机构诊断归档'],['medicationChange','医疗机构用药医嘱归档'],['treatmentResponse','治疗后反馈'],['nextPlan','后续协作事项']].map(([key,label]) => <div key={key}><label className="form-label">{label}</label><textarea className="form-control" rows={2} value={courseForm[key]} onChange={e => setCourseForm(f => ({...f,[key]:e.target.value}))} /></div>)}</div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => setAddingCourse(false)}>取消</button><button className="btn btn-primary" disabled={saving || !courseForm.content.trim()} onClick={saveCourse}>{saving?'保存中…':'追加健康变化'}</button></div></div></div>}
+    {addingCourse && <div className="modal-overlay" onClick={() => setAddingCourse(false)}><div className="modal" style={{ maxWidth:720 }} onClick={e => e.stopPropagation()}><div className="modal-header"><h3 className="modal-title">记录「{activeName}」健康变化</h3><button className="modal-close" onClick={() => setAddingCourse(false)}>×</button></div><div className="modal-body" style={{ display:'grid', gap:10 }}><div style={{ padding:'9px 12px', background:'#EFF8F3', color:'#1E6B50', borderRadius:8, fontSize:12 }}>记录日常症状、重要监测变化及就诊结果；联系、协调和服务过程继续在原随访计划和服务记录中查看。平台不形成诊疗结论。</div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}><div><label className="form-label">信息来源 *</label><select className="form-control" value={courseForm.sourceType} onChange={e=>setCourseForm(f=>({...f,sourceType:e.target.value}))}>{Object.entries(sourceLabels).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div><div><label className="form-label">核验状态 *</label><select className="form-control" value={courseForm.verificationStatus} onChange={e=>setCourseForm(f=>({...f,verificationStatus:e.target.value}))}>{Object.entries(verifyLabels).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div></div>{courseForm.sourceType !== 'client_report' && <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:10}}><input className="form-control" placeholder="来源医疗机构" value={courseForm.sourceInstitution} onChange={e=>setCourseForm(f=>({...f,sourceInstitution:e.target.value}))}/><input className="form-control" placeholder="科室" value={courseForm.sourceDepartment} onChange={e=>setCourseForm(f=>({...f,sourceDepartment:e.target.value}))}/><input className="form-control" placeholder="医生" value={courseForm.sourceDoctor} onChange={e=>setCourseForm(f=>({...f,sourceDoctor:e.target.value}))}/></div>}{courseForm.sourceHealthRecordId && <div style={{ padding:10, background:'#FFF8E8', fontSize:12 }}>已带入日常反馈原文。默认日期为来源记录日期，请核对实际发生日期；确认归档不会改变原始反馈或其处理状态。</div>}<div><label className="form-label">发生日期</label><DateField type="date" className="form-control" value={courseForm.occurredAt} onChange={e => setCourseForm(f => ({...f,occurredAt:e.target.value}))} /></div><div><label className="form-label">本次健康及症状变化 *</label><textarea className="form-control" rows={5} value={courseForm.content} onChange={e => setCourseForm(f => ({...f,content:e.target.value}))} placeholder="统一记录本次健康状态、症状和主观感受的变化" /></div>{[['examination','医疗机构检查信息'],['diagnosis','医疗机构诊断归档'],['medicationChange','医疗机构用药医嘱归档'],['treatmentResponse','治疗后反馈'],['nextPlan','后续协作事项']].map(([key,label]) => <div key={key}><label className="form-label">{label}</label><textarea className="form-control" rows={2} value={courseForm[key]} onChange={e => setCourseForm(f => ({...f,[key]:e.target.value}))} /></div>)}</div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => setAddingCourse(false)}>取消</button><button className="btn btn-primary" disabled={saving || !courseForm.content.trim()} onClick={saveCourse}>{saving?'保存中…':'追加健康变化'}</button></div></div></div>}
   </>
 }
 
@@ -961,7 +962,7 @@ function RequisitionModal({ patientId, onClose, onSaved, prefillTitle = '', pref
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">要求完成日期（可选）</label>
-              <input className="form-input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+              <DateField className="form-input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
             </div>
             <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
               <label className="form-label">整体备注（可选）</label>
@@ -1632,7 +1633,7 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div>
               <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3 }}>评估日期</label>
-              <input className="form-control" type="date" value={form.evaluatedAt}
+              <DateField className="form-control" type="date" value={form.evaluatedAt}
                 onChange={e => setForm(f => ({ ...f, evaluatedAt: e.target.value }))} style={{ width: 180 }} />
             </div>
             <div style={{ background: '#FAFAF8', border: '1px solid #F0EDE7', borderRadius: 8, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -4573,7 +4574,7 @@ export default function PatientDetailPage() {
                   ].map(({ key, label, type }) => (
                     <div key={key} className="form-group" style={{ marginBottom: 0 }}>
                       <label style={{ fontSize: 12, color: '#8AA89C' }}>{label}</label>
-                      <input className="form-input" type={type || 'text'} value={basicInfoForm[key] || ''}
+                      <DateField className="form-input" type={type || 'text'} value={basicInfoForm[key] || ''}
                         onChange={e => setBasicInfoForm(f => ({ ...f, [key]: e.target.value }))} />
                     </div>
                   ))}
@@ -4605,7 +4606,7 @@ export default function PatientDetailPage() {
                   ].map(({ key, label, type }) => (
                     <div key={key} className="form-group" style={{ marginBottom: 0 }}>
                       <label style={{ fontSize: 12, color: '#8AA89C' }}>{label}</label>
-                      <input className="form-input" type={type || 'text'} value={basicInfoForm[key] || ''}
+                      <DateField className="form-input" type={type || 'text'} value={basicInfoForm[key] || ''}
                         onChange={e => setBasicInfoForm(f => ({ ...f, [key]: e.target.value }))} />
                     </div>
                   ))}
@@ -4865,12 +4866,12 @@ export default function PatientDetailPage() {
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">服务开始时间</label>
-                    <input className="form-input" type="date" value={editForm.serviceStartDate}
+                    <DateField className="form-input" type="date" value={editForm.serviceStartDate}
                       onChange={e => setEditForm(f => ({ ...f, serviceStartDate: e.target.value }))} />
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">服务到期时间</label>
-                    <input className="form-input" type="date" value={editForm.serviceExpiry}
+                    <DateField className="form-input" type="date" value={editForm.serviceExpiry}
                       onChange={e => setEditForm(f => ({ ...f, serviceExpiry: e.target.value }))} />
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
@@ -5039,7 +5040,7 @@ export default function PatientDetailPage() {
             <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
               <label className="form-group"><span className="form-label">服务场景 *</span><select className="form-input" value={insuranceCaseForm.scenario} onChange={e => setInsuranceCaseForm(f => ({ ...f, scenario: e.target.value }))}><option value="outpatient">门诊就医</option><option value="inpatient">计划住院</option><option value="emergency">急诊</option><option value="special_drug">特药/院外药</option><option value="reimbursement">事后报销</option><option value="dispute">理赔争议</option></select></label>
               <label className="form-group"><span className="form-label">案件名称 *</span><input className="form-input" value={insuranceCaseForm.title} onChange={e => setInsuranceCaseForm(f => ({ ...f, title: e.target.value }))} placeholder="如：9月门诊报销" /></label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}><label className="form-group"><span className="form-label">发生日期</span><input className="form-input" type="date" value={insuranceCaseForm.occurredAt} onChange={e => setInsuranceCaseForm(f => ({ ...f, occurredAt: e.target.value }))} /></label><label className="form-group"><span className="form-label">预计费用</span><input className="form-input" type="number" value={insuranceCaseForm.estimatedAmount} onChange={e => setInsuranceCaseForm(f => ({ ...f, estimatedAmount: e.target.value }))} /></label></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}><label className="form-group"><span className="form-label">发生日期</span><DateField className="form-input" type="date" value={insuranceCaseForm.occurredAt} onChange={e => setInsuranceCaseForm(f => ({ ...f, occurredAt: e.target.value }))} /></label><label className="form-group"><span className="form-label">预计费用</span><input className="form-input" type="number" value={insuranceCaseForm.estimatedAmount} onChange={e => setInsuranceCaseForm(f => ({ ...f, estimatedAmount: e.target.value }))} /></label></div>
               <label className="form-group"><span className="form-label">客户诉求与补充说明</span><textarea className="form-input" rows={4} value={insuranceCaseForm.note} onChange={e => setInsuranceCaseForm(f => ({ ...f, note: e.target.value }))} /></label>
             </div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowInsuranceCase(false)}>取消</button><button className="btn btn-primary" disabled={insuranceCaseSaving || !insuranceCaseForm.title.trim()} onClick={createInsuranceCase}>{insuranceCaseSaving ? '创建中…' : '创建案件与待办'}</button></div>
           </div></div>}
@@ -5116,7 +5117,7 @@ export default function PatientDetailPage() {
               {editingEquipment ? <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {equipmentForm.map((device, index) => <div key={device.id || index} style={{ border: '1px solid #DCE5E0', borderRadius: 10, padding: 12 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(150px,1fr))', gap: 10 }}>
-                    {[['type','设备类型'],['brand','品牌'],['model','型号'],['purchaseDate','购买时间'],['purchasePlace','购买渠道/地点'],['startedAt','开始使用时间'],['reason','使用原因/医嘱'],['usageFrequency','使用频率'],['parameters','参数或医嘱'],['adherence','使用依从性'],['cleanFrequency','清洗频率'],['disinfectionFrequency','消毒频率'],['consumableCycle','耗材更换周期'],['lastMaintenanceDate','最近维护时间'],['nextMaintenanceDate','下次维护时间'],['exceptions','异常情况'],['status','状态']].map(([key,label]) => <label key={key} style={{ fontSize: 12, color: '#65776F' }}>{label}<input className="form-input" type={key.endsWith('Date') || key === 'startedAt' ? 'date' : 'text'} value={device[key] || ''} onChange={e => setEquipmentForm(list => list.map((item,i) => i === index ? { ...item, [key]: e.target.value } : item))} style={{ marginTop: 4 }} /></label>)}
+                    {[['type','设备类型'],['brand','品牌'],['model','型号'],['purchaseDate','购买时间'],['purchasePlace','购买渠道/地点'],['startedAt','开始使用时间'],['reason','使用原因/医嘱'],['usageFrequency','使用频率'],['parameters','参数或医嘱'],['adherence','使用依从性'],['cleanFrequency','清洗频率'],['disinfectionFrequency','消毒频率'],['consumableCycle','耗材更换周期'],['lastMaintenanceDate','最近维护时间'],['nextMaintenanceDate','下次维护时间'],['exceptions','异常情况'],['status','状态']].map(([key,label]) => <label key={key} style={{ fontSize: 12, color: '#65776F' }}>{label}<DateField className="form-input" type={key.endsWith('Date') || key === 'startedAt' ? 'date' : 'text'} value={device[key] || ''} onChange={e => setEquipmentForm(list => list.map((item,i) => i === index ? { ...item, [key]: e.target.value } : item))} style={{ marginTop: 4 }} /></label>)}
                   </div>
                   <button className="btn btn-danger btn-sm" style={{ marginTop: 10 }} onClick={() => setEquipmentForm(list => list.filter((_,i) => i !== index))}>移除设备</button>
                 </div>)}
@@ -5335,7 +5336,7 @@ export default function PatientDetailPage() {
 
         {addingMedicalCourse && <div className="modal-overlay" onClick={() => setAddingMedicalCourse(false)}><div className="modal" style={{ maxWidth: 720 }} onClick={e => e.stopPropagation()}><div className="modal-header"><h3 className="modal-title">续写病历</h3><button className="modal-close" onClick={() => setAddingMedicalCourse(false)}>×</button></div><div className="modal-body" style={{ display: 'grid', gap: 10 }}>
           <div style={{ padding: '9px 12px', background: '#EFF8F3', color: '#1E6B50', borderRadius: 8, fontSize: 12 }}>无需重复完整病史，只记录相对当前摘要发生的变化。</div>
-          <div><label className="form-label">发生日期</label><input type="date" className="form-control" value={medicalCourseForm.occurredAt} onChange={e => setMedicalCourseForm(f => ({ ...f, occurredAt: e.target.value }))} /></div>
+          <div><label className="form-label">发生日期</label><DateField type="date" className="form-control" value={medicalCourseForm.occurredAt} onChange={e => setMedicalCourseForm(f => ({ ...f, occurredAt: e.target.value }))} /></div>
           <div><label className="form-label">本次健康及症状变化 *</label><textarea className="form-control" rows={5} value={medicalCourseForm.content} onChange={e => setMedicalCourseForm(f => ({ ...f, content: e.target.value }))} placeholder="统一记录本次健康状态、症状和主观感受的变化" /></div>
           {[['examination', '新检查结果'], ['diagnosis', '诊断变化'], ['medicationChange', '用药调整'], ['treatmentResponse', '治疗反应／不良反应'], ['nextPlan', '下一步计划']].map(([key, label]) => <div key={key}><label className="form-label">{label}</label><textarea className="form-control" rows={2} value={medicalCourseForm[key]} onChange={e => setMedicalCourseForm(f => ({ ...f, [key]: e.target.value }))} /></div>)}
           <div><label className="form-label">关联专病</label><input className="form-control" value={medicalCourseForm.linkedDiseases} onChange={e => setMedicalCourseForm(f => ({ ...f, linkedDiseases: e.target.value }))} placeholder="例如：焦虑／惊恐发作" /></div>
@@ -5866,7 +5867,7 @@ export default function PatientDetailPage() {
                 <div className="modal-body">
                   <div style={{ padding: '9px 11px', background: '#F0FAF6', color: '#1E6B50', borderRadius: 8, fontSize: 12, marginBottom: 14 }}>只填写本次发生改变的项目；未填写的项目保持原记录不变。</div>
                   <label className="form-label">变化发生日期</label>
-                  <input className="form-input" type="date" value={lifestyleChangeForm.effectiveAt} onChange={e => setLifestyleChangeForm(f => ({ ...f, effectiveAt: e.target.value }))} style={{ maxWidth: 220, marginBottom: 14 }} />
+                  <DateField className="form-input" type="date" value={lifestyleChangeForm.effectiveAt} onChange={e => setLifestyleChangeForm(f => ({ ...f, effectiveAt: e.target.value }))} style={{ maxWidth: 220, marginBottom: 14 }} />
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 18px' }}>
                     {fields.map(([key, label]) => (
                       <div key={key}>
@@ -6910,7 +6911,7 @@ export default function PatientDetailPage() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">检查日期</label>
-                    <input className="form-input" type="date" value={screeningForm.checkDate}
+                    <DateField className="form-input" type="date" value={screeningForm.checkDate}
                       onChange={e => setScreeningForm(f => ({ ...f, checkDate: e.target.value }))} />
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
@@ -7032,7 +7033,7 @@ export default function PatientDetailPage() {
                   </div>
                   <div>
                     <span style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3 }}>检测日期</span>
-                    <input className="form-control" type="date" value={labForm.labDate || ''}
+                    <DateField className="form-control" type="date" value={labForm.labDate || ''}
                       onChange={e => setLabForm(f => ({ ...f, labDate: e.target.value }))} style={{ fontSize: 13, width: 200 }} />
                   </div>
                 </div>
@@ -7377,7 +7378,7 @@ export default function PatientDetailPage() {
                 ))}
                 <div>
                   <span style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3 }}>测量日期</span>
-                  <input className="form-control" type="date" value={bodyCompForm.measuredAt || ''}
+                  <DateField className="form-control" type="date" value={bodyCompForm.measuredAt || ''}
                     onChange={e => setBodyCompForm(f => ({ ...f, measuredAt: e.target.value }))} style={{ fontSize: 13 }} />
                 </div>
               </div>
@@ -7424,7 +7425,7 @@ export default function PatientDetailPage() {
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                                 <div style={{ fontSize: 11, color: '#8AA89C' }}>测量日期</div>
-                                <input className="form-control" type="date" style={{ fontSize: 12, padding: '3px 6px', width: 140 }}
+                                <DateField className="form-control" type="date" style={{ fontSize: 12, padding: '3px 6px', width: 140 }}
                                   value={historyEditForm.measuredAt || ''}
                                   onChange={e => setHistoryEditForm(f => ({ ...f, measuredAt: e.target.value }))} />
                               </div>
@@ -7682,10 +7683,10 @@ export default function PatientDetailPage() {
                 <div className="card-title">健康数据趋势</div>
               </div>
                 <div style={{ padding: '12px 20px 0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <input type="date" className="form-control" style={{ width: 136, fontSize: 12, padding: '4px 8px' }}
+                  <DateField type="date" className="form-control" style={{ width: 136, fontSize: 12, padding: '4px 8px' }}
                     value={trendStartDate} onChange={e => setTrendStartDate(e.target.value)} placeholder="开始日期" />
                   <span style={{ fontSize: 12, color: '#aaa' }}>—</span>
-                  <input type="date" className="form-control" style={{ width: 136, fontSize: 12, padding: '4px 8px' }}
+                  <DateField type="date" className="form-control" style={{ width: 136, fontSize: 12, padding: '4px 8px' }}
                     value={trendEndDate} onChange={e => setTrendEndDate(e.target.value)} placeholder="结束日期" />
                   <button className="btn btn-primary btn-sm" onClick={loadTrend} disabled={trendLoading}>
                     {trendLoading ? '加载中…' : '查询'}
@@ -7806,7 +7807,7 @@ export default function PatientDetailPage() {
             {editingEquipment ? <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {equipmentForm.map((device, index) => <div key={device.id || index} style={{ border: '1px solid #DCE5E0', borderRadius: 10, padding: 12 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(150px,1fr))', gap: 10 }}>
-                  {[['type','设备类型'],['brand','品牌'],['model','型号'],['purchaseDate','购买时间'],['purchasePlace','购买渠道/地点'],['startedAt','开始使用时间'],['reason','使用原因/医嘱'],['usageFrequency','使用频率'],['parameters','参数或医嘱'],['adherence','使用依从性'],['cleanFrequency','清洗频率'],['disinfectionFrequency','消毒频率'],['consumableCycle','耗材更换周期'],['lastMaintenanceDate','最近维护时间'],['nextMaintenanceDate','下次维护时间'],['exceptions','异常情况'],['status','状态']].map(([key,label]) => <label key={key} style={{ fontSize: 12, color: '#65776F' }}>{label}<input className="form-input" type={key.endsWith('Date') || key === 'startedAt' ? 'date' : 'text'} value={device[key] || ''} onChange={e => setEquipmentForm(list => list.map((item,i) => i === index ? { ...item, [key]: e.target.value } : item))} style={{ marginTop: 4 }} /></label>)}
+                  {[['type','设备类型'],['brand','品牌'],['model','型号'],['purchaseDate','购买时间'],['purchasePlace','购买渠道/地点'],['startedAt','开始使用时间'],['reason','使用原因/医嘱'],['usageFrequency','使用频率'],['parameters','参数或医嘱'],['adherence','使用依从性'],['cleanFrequency','清洗频率'],['disinfectionFrequency','消毒频率'],['consumableCycle','耗材更换周期'],['lastMaintenanceDate','最近维护时间'],['nextMaintenanceDate','下次维护时间'],['exceptions','异常情况'],['status','状态']].map(([key,label]) => <label key={key} style={{ fontSize: 12, color: '#65776F' }}>{label}<DateField className="form-input" type={key.endsWith('Date') || key === 'startedAt' ? 'date' : 'text'} value={device[key] || ''} onChange={e => setEquipmentForm(list => list.map((item,i) => i === index ? { ...item, [key]: e.target.value } : item))} style={{ marginTop: 4 }} /></label>)}
                 </div>
                 <button className="btn btn-danger btn-sm" style={{ marginTop: 10 }} onClick={() => setEquipmentForm(list => list.filter((_,i) => i !== index))}>移除设备</button>
               </div>)}
@@ -9146,7 +9147,7 @@ export default function PatientDetailPage() {
             <div className="modal" style={{ maxWidth: 680, maxHeight: '92vh', overflowY: 'auto' }}>
               <div className="modal-header"><h3 className="modal-title">定期配取 · {supplyTarget.record.name}</h3><button className="modal-close" onClick={() => setSupplyTarget(null)}>✕</button></div>
               <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
-                <label>{supplyForm.mode === 'proxy' ? '首次期望送达日期' : '首次提醒日期'}<input className="form-input" type="date" min={shanghaiDateInput()} value={supplyForm.firstDate} onChange={e => setSupplyForm(f => ({ ...f, firstDate: e.target.value }))} /></label>
+                <label>{supplyForm.mode === 'proxy' ? '首次期望送达日期' : '首次提醒日期'}<DateField className="form-input" type="date" min={shanghaiDateInput()} value={supplyForm.firstDate} onChange={e => setSupplyForm(f => ({ ...f, firstDate: e.target.value }))} /></label>
                 {supplyForm.mode === 'proxy' && <label>期望配送时间<input className="form-input" value={supplyForm.deliveryTime} onChange={e => setSupplyForm(f => ({ ...f, deliveryTime: e.target.value }))} placeholder="如：当天18:00前、09:00-12:00" /></label>}
                 <label>每隔多少天提醒<input className="form-input" type="number" min="1" max="365" value={supplyForm.intervalDays} onChange={e => setSupplyForm(f => ({ ...f, intervalDays: e.target.value }))} /></label>
                 <label>服务方式<select className="form-input" value={supplyForm.mode} onChange={e => setSupplyForm(f => ({ ...f, mode: e.target.value }))}><option value="visit">提醒客户自行就医/配取</option><option value="proxy">我方代配服务</option></select></label>
@@ -9203,7 +9204,7 @@ export default function PatientDetailPage() {
                   ].map(({ k, label, full, placeholder, type }) => (
                     <div key={k} className="form-group" style={{ gridColumn: full ? '1/-1' : 'auto', marginBottom: 0 }}>
                       <label className="form-label">{label}</label>
-                      <input className="form-input" type={type || 'text'} placeholder={placeholder} value={medForm[k] || ''}
+                      <DateField className="form-input" type={type || 'text'} placeholder={placeholder} value={medForm[k] || ''}
                         onChange={e => setMedForm(f => ({ ...f, [k]: e.target.value }))} />
                     </div>
                   ))}
@@ -9254,7 +9255,7 @@ export default function PatientDetailPage() {
                   ].map(({ k, label, full, placeholder, type }) => (
                     <div key={k} className="form-group" style={{ gridColumn: full ? '1/-1' : 'auto', marginBottom: 0 }}>
                       <label className="form-label">{label}</label>
-                      <input className="form-input" type={type || 'text'} placeholder={placeholder} value={supForm[k] || ''}
+                      <DateField className="form-input" type={type || 'text'} placeholder={placeholder} value={supForm[k] || ''}
                         onChange={e => setSupForm(f => ({ ...f, [k]: e.target.value }))} />
                     </div>
                   ))}
@@ -10095,7 +10096,7 @@ export default function PatientDetailPage() {
                   <label className="form-label" style={{ marginTop: 12 }}>随访补充说明</label>
                   <textarea className="form-input" rows={2} value={newSymptomForm.note} onChange={e => setNewSymptomForm(f => ({ ...f, note: e.target.value }))} placeholder="例如：电话随访获知、已给予的初步建议" />
                   <label className="form-label" style={{ marginTop: 12 }}>发生 / 记录时间</label>
-                  <input className="form-input" type="datetime-local" value={newSymptomForm.recordedAt} onChange={e => setNewSymptomForm(f => ({ ...f, recordedAt: e.target.value }))} />
+                  <DateField className="form-input" type="datetime-local" value={newSymptomForm.recordedAt} onChange={e => setNewSymptomForm(f => ({ ...f, recordedAt: e.target.value }))} />
                   <div style={{ marginTop: 8, fontSize: 12, color: '#8AA89C' }}>保存后会记录录入人员，并同步展示到客户端健康档案。</div>
                 </div>
                 <div className="modal-footer">
@@ -10958,7 +10959,7 @@ export default function PatientDetailPage() {
                     <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 12 }}>
                       <div className="form-group" style={{ marginBottom: 0 }}>
                         <label className="form-label">建议随访日期</label>
-                        <input type="date" className="form-input"
+                        <DateField type="date" className="form-input"
                           value={d.suggestedDate || ''} onChange={e => setD({ suggestedDate: e.target.value })} />
                       </div>
                       <div className="form-group" style={{ marginBottom: 0 }}>
@@ -11388,7 +11389,7 @@ export default function PatientDetailPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">{followUpDetail.status === 'completed' ? '随访日期' : '计划随访日期'}</label>
-                  <input type="date" className="form-input" value={editingFollowUp.date}
+                  <DateField type="date" className="form-input" value={editingFollowUp.date}
                     onChange={e => setEditingFollowUp(f => ({ ...f, date: e.target.value }))} />
                   {followUpDetail.status !== 'completed' && <div style={{ fontSize: 12, color: '#4A6558', marginTop: 4 }}>计划联系客户、开展随访的日期；需要确认复诊安排时，请提前安排。</div>}
                 </div>
@@ -11428,7 +11429,7 @@ export default function PatientDetailPage() {
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">下次跟进日期（选填）</label>
-                <input type="date" className="form-input" value={editingFollowUp.nextFollowUpDate}
+                <DateField type="date" className="form-input" value={editingFollowUp.nextFollowUpDate}
                   onChange={e => setEditingFollowUp(f => ({ ...f, nextFollowUpDate: e.target.value }))} />
                 <div style={{ fontSize: 12, color: '#4A6558', marginTop: 4 }}>后续需要再次联系或处理事项的日期。拟复诊日期及待确认事项请写在随访内容中。</div>
               </div>
@@ -11484,7 +11485,7 @@ export default function PatientDetailPage() {
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">检查日期</label>
-                <input className="form-input" type="date" value={editingReportForm.date || ''}
+                <DateField className="form-input" type="date" value={editingReportForm.date || ''}
                   onChange={e => setEditingReportForm(f => ({ ...f, date: e.target.value }))} />
               </div>
               {/* 原始资料分类与上传、列表共用；不能修改专项筛查 type/screeningL1。 */}
@@ -11927,7 +11928,7 @@ export default function PatientDetailPage() {
             <div className="modal-body">
               <div style={{ padding: 12, marginBottom: 14, borderRadius: 8, background: '#FFF7E6', color: '#8A5A00', fontSize: 13 }}>AI仅从已审核原始资料中整理草稿，不新增诊断或治疗意见。健康顾问核对、修改并确认后，才会进入专病健康变化时间轴；原始资料与审核人员、时间会一并保留。</div>
               {healthCourseError && <div style={{ padding: 10, marginBottom: 12, borderRadius: 8, background: '#FFF0F0', color: '#B42318', fontSize: 13 }}>{healthCourseError}</div>}
-              <div className="form-group"><label>实际就诊 / 会诊日期 *</label><input className="form-input" type="date" value={healthCourseReview.occurredAt} onChange={event => setHealthCourseReview(value => ({ ...value, occurredAt:event.target.value }))} /><small>核对原病历日期，上传日期不等于就诊日期。</small></div>
+              <div className="form-group"><label>实际就诊 / 会诊日期 *</label><DateField className="form-input" type="date" value={healthCourseReview.occurredAt} onChange={event => setHealthCourseReview(value => ({ ...value, occurredAt:event.target.value }))} /><small>核对原病历日期，上传日期不等于就诊日期。</small></div>
               <div className="form-group"><label>归入专病档案 *</label><select className="form-input" value={healthCourseReview.diseaseName} onChange={event => setHealthCourseReview(value => ({ ...value, diseaseName: event.target.value }))}><option value="">请选择已有专病</option>{(data?.user?.diseaseRecords || []).map(record => <option key={record._id || record.name} value={record.name}>{record.name}</option>)}</select></div>
               {[
                 ['content', '本次健康及症状变化 *', 4], ['examination', '医疗机构检查信息', 3], ['diagnosis', '医疗机构诊断归档', 3], ['medicationChange', '医疗机构用药医嘱归档', 3], ['treatmentResponse', '治疗后反馈', 3], ['nextPlan', '后续安排', 3],
@@ -12285,7 +12286,7 @@ export default function PatientDetailPage() {
                                 <button onClick={() => delItem(i)} style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14 }}>✕</button>
                               </div>
                               <label style={{ display: 'block', fontSize: 10, color: '#6B7E75', marginBottom: 6 }}>{isPrescription ? '处方开具日期（仅原件明确归属时填写）' : '项目检查日期（仅原件明确归属时填写）'}
-                                <input type="date" style={{ ...inp, width: 160, marginLeft: 8 }} value={String(it.examDate || '').slice(0, 10)} onChange={e => updItem(i, { examDate: e.target.value })} />
+                                <DateField type="date" style={{ ...inp, width: 160, marginLeft: 8 }} value={String(it.examDate || '').slice(0, 10)} onChange={e => updItem(i, { examDate: e.target.value })} />
                               </label>
                               {isPrescription && <label style={{ display: 'block', fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 6 }}>匹配当前用药信息
                                 <select style={{ ...inp, width: '100%', marginTop: 4 }} value={it.medicationId || (it.medicationAction === 'keep' ? '__keep__' : '__create__')} onChange={e => {
@@ -12555,7 +12556,7 @@ export default function PatientDetailPage() {
                   </div>
                   <div>
                     <label style={{ fontSize: 12, color: '#8AA89C' }}>下次随访日期（可选）</label>
-                    <input type="date" className="form-control" value={form.nextDate} onChange={e => setForm(f => ({ ...f, nextDate: e.target.value }))} />
+                    <DateField type="date" className="form-control" value={form.nextDate} onChange={e => setForm(f => ({ ...f, nextDate: e.target.value }))} />
                   </div>
                 </div>
                 <div className="modal-footer">
@@ -12712,7 +12713,7 @@ export default function PatientDetailPage() {
                                 {isEditing ? (
                                   <div>
                                     <textarea value={editSuppContent} onChange={e => setEditSuppContent(e.target.value)} rows={3} style={{ width: '100%', padding: '6px 8px', border: '1px solid #E0D9CE', borderRadius: 6, fontSize: 13, boxSizing: 'border-box', resize: 'vertical', marginBottom: 6, fontFamily: 'inherit' }} />
-                                    <input type="date" value={editSuppDate} onChange={e => setEditSuppDate(e.target.value)} style={{ padding: '4px 8px', border: '1px solid #E0D9CE', borderRadius: 6, fontSize: 12, marginBottom: 8 }} />
+                                    <DateField type="date" value={editSuppDate} onChange={e => setEditSuppDate(e.target.value)} style={{ padding: '4px 8px', border: '1px solid #E0D9CE', borderRadius: 6, fontSize: 12, marginBottom: 8 }} />
                                     <div style={{ display: 'flex', gap: 6 }}>
                                       <button onClick={handleSaveSupp} disabled={saving} style={{ fontSize: 12, color: '#fff', background: '#1E6B50', border: 'none', borderRadius: 6, padding: '4px 12px', cursor: 'pointer' }}>{saving ? '保存中...' : '保存'}</button>
                                       <button onClick={() => setEditingSuppId(null)} style={{ fontSize: 12, color: '#666', background: '#EDEDEB', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>取消</button>
@@ -12740,7 +12741,7 @@ export default function PatientDetailPage() {
                       <div><label className="form-label">标题</label><input className="form-input" value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} /></div>
                       <div><label className="form-label">详细内容</label><textarea className="form-input" rows={4} value={editForm.content} onChange={e => setEditForm(f => ({ ...f, content: e.target.value }))} /></div>
                       <div><label className="form-label">结果/建议</label><textarea className="form-input" rows={3} value={editForm.result} onChange={e => setEditForm(f => ({ ...f, result: e.target.value }))} /></div>
-                      <div><label className="form-label">下次计划日期</label><input className="form-input" type="date" value={editForm.nextDate} onChange={e => setEditForm(f => ({ ...f, nextDate: e.target.value }))} /></div>
+                      <div><label className="form-label">下次计划日期</label><DateField className="form-input" type="date" value={editForm.nextDate} onChange={e => setEditForm(f => ({ ...f, nextDate: e.target.value }))} /></div>
                       {(showSRDetail.type === 'disease_mgmt' || showSRDetail.type === 'medical_visit') && (
                         <div>
                           <label className="form-label">附件 <span style={{ color: '#8AA89C', fontWeight: 400, fontSize: 12 }}>（就医病历/检查单，图片或PDF）</span></label>
@@ -12768,9 +12769,9 @@ export default function PatientDetailPage() {
                       <div style={{ fontSize: 13, color: '#8AA89C', marginBottom: 4 }}>为此记录追加补充，不影响原始内容</div>
                       {showSRDetail.type === 'medical_visit' && (staff?.role === 'superadmin' || String(showSRDetail.staffId?._id || showSRDetail.staffId || '') === String(staff?._id || '')) && <div><label className="form-label">补充类型</label><select className="form-input" value={suppKind} onChange={e => setSuppKind(e.target.value)}><option value="note">一般补充</option><option value="ad_hoc_visit">临时加诊</option></select></div>}
                       {suppKind === 'ad_hoc_visit' && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                        {[['hospital', '医院'], ['department', '科室'], ['expert', '专家'], ['appointmentAt', '就诊时间']].map(([key, label]) => <div key={key}><label className="form-label">{label} *</label><input className="form-input" type={key === 'appointmentAt' ? 'datetime-local' : 'text'} value={suppVisit[key]} onChange={e => setSuppVisit(v => ({ ...v, [key]: e.target.value }))} /></div>)}
+                        {[['hospital', '医院'], ['department', '科室'], ['expert', '专家'], ['appointmentAt', '就诊时间']].map(([key, label]) => <div key={key}><label className="form-label">{label} *</label><DateField className="form-input" type={key === 'appointmentAt' ? 'datetime-local' : 'text'} value={suppVisit[key]} onChange={e => setSuppVisit(v => ({ ...v, [key]: e.target.value }))} /></div>)}
                       </div>}
-                      <div><label className="form-label">补充日期</label><input className="form-input" type="date" value={suppDate} onChange={e => setSuppDate(e.target.value)} /></div>
+                      <div><label className="form-label">补充日期</label><DateField className="form-input" type="date" value={suppDate} onChange={e => setSuppDate(e.target.value)} /></div>
                       <div><label className="form-label">补充内容 *</label><textarea className="form-input" rows={5} placeholder={suppKind === 'ad_hoc_visit' ? '记录加诊原因、就诊结果和后续安排' : '补充实际情况'} value={suppContent} onChange={e => setSuppContent(e.target.value)} /></div>
                       {suppKind === 'ad_hoc_visit' && <div><label className="form-label">加诊资料（可选）</label><input type="file" accept="image/*,.pdf" multiple onChange={async e => { const files = Array.from(e.target.files || []); e.target.value = ''; setAttachUploading(true); try { for (const file of files) { const res = await staffAPI.uploadReportFile(file, () => {}); setSuppAttachments(previous => [...previous, { url: res.url, ossKey: res.ossKey || '', name: file.name, mimeType: res.mimeType, fileSize: String(res.fileSize || '') }]) } } catch (error) { setSuppError(error.message || '上传失败') } finally { setAttachUploading(false) } }} />{attachUploading && <span>上传中…</span>}{suppAttachments.map((file, index) => <div key={index}>{file.name} <button type="button" onClick={() => setSuppAttachments(files => files.filter((_, i) => i !== index))}>移除</button></div>)}</div>}
                       {suppError && <div style={{ color: '#B42318', fontSize: 13 }}>{suppError}</div>}
@@ -13527,12 +13528,12 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
             <div style={{ fontSize: 11, color: '#8AA89C' }}>{isSupplementOrder ? '先登记履约订单号，待客户确认收到后结束订单。' : isCheckupAppointment ? '请根据对话确认约检信息。确认后将直接转交健管专员预约开检查单号和检查日专家号。' : isMedicalReminder ? 'AI可从完整对话中整理六项复查信息；确认后自动生成随访计划并转健康顾问审核。' : isMedicationProxy ? '启动后从订单对话和持续用药档案整理药品信息，再由规划师人工核对。' : isExpertAppointment ? '完整确认约诊建议后转给健管专员预约；再次退回时仍使用本页面，并自动保留上次填写内容。' : isMedicalPlanning ? '核对客户诉求和预期沟通时段后，直接转给健康顾问评估；客户上传的报告仍由健管专员独立审核。' : isMedicalProxy ? '先完整核对本次沟通内容；确认后由您指导客户上传并选定资料，健管专员审核后交健康顾问。您将持续督办直到代诊完成。' : '请在本单对话中确认服务信息，确认后进入后续执行流程。'}</div>
             {isMedicalReminder ? <div style={{ display: 'grid', gap: 8 }}>
               <div style={{ textAlign: 'right' }}><button type="button" className="btn btn-secondary btn-sm" disabled={extractingReminder} onClick={extractMedicalReminder}>{extractingReminder ? 'AI整理中…' : 'AI获取对话信息'}</button></div>
-              {[['visitDate','就医日期','date'],['medicalIssue','就医问题'],['visitGoal','就医目标'],['hospitalSuggestion','医院建议'],['departmentSuggestion','科室建议'],['expertSuggestion','专家建议']].map(([key,label,type]) => <label key={key} style={{ fontSize: 12, fontWeight: 600 }}>{label} *{type === 'date' ? <input className="form-input" type="date" value={medicalReminder[key] || ''} onChange={e => updateMedicalReminder(key, e.target.value)} /> : <textarea className="form-input" rows={2} value={medicalReminder[key] || ''} onChange={e => updateMedicalReminder(key, e.target.value)} />}</label>)}
+              {[['visitDate','就医日期','date'],['medicalIssue','就医问题'],['visitGoal','就医目标'],['hospitalSuggestion','医院建议'],['departmentSuggestion','科室建议'],['expertSuggestion','专家建议']].map(([key,label,type]) => <label key={key} style={{ fontSize: 12, fontWeight: 600 }}>{label} *{type === 'date' ? <DateField className="form-input" type="date" value={medicalReminder[key] || ''} onChange={e => updateMedicalReminder(key, e.target.value)} /> : <textarea className="form-input" rows={2} value={medicalReminder[key] || ''} onChange={e => updateMedicalReminder(key, e.target.value)} />}</label>)}
             </div> : isCheckupAppointment ? <div style={{ display: 'grid', gap: 10 }}>
               <div style={{ fontSize: 12, color: '#8AA89C' }}>确认客户期望日期、检查项目、机构、专家和空腹要求后，转健管专员预约两个号。</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <label style={{ fontSize: 12, fontWeight: 600 }}>期望检查开始日期（如有）<input className="form-input" type="date" value={serviceTime} onChange={e => setServiceTime(e.target.value)} /></label>
-                <label style={{ fontSize: 12, fontWeight: 600 }}>期望检查结束日期（如有）<input className="form-input" type="date" min={serviceTime || undefined} value={serviceTimeEnd} onChange={e => setServiceTimeEnd(e.target.value)} /></label>
+                <label style={{ fontSize: 12, fontWeight: 600 }}>期望检查开始日期（如有）<DateField className="form-input" type="date" value={serviceTime} onChange={e => setServiceTime(e.target.value)} /></label>
+                <label style={{ fontSize: 12, fontWeight: 600 }}>期望检查结束日期（如有）<DateField className="form-input" type="date" min={serviceTime || undefined} value={serviceTimeEnd} onChange={e => setServiceTimeEnd(e.target.value)} /></label>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <label style={{ fontSize: 12, fontWeight: 600 }}>约检类型<select className="form-input" value={checkupAppointmentType} onChange={e => setCheckupAppointmentType(e.target.value)}><option value="normal">常规约检</option><option value="special">特殊约检</option></select></label>
@@ -13550,11 +13551,11 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
             {(!isMedicalProxy || !proxyReviewReady || isExpertAppointment) ? <>
               {isMedicalProxy && <div style={{ textAlign: 'right' }}><button type="button" className="btn btn-secondary btn-sm" onClick={fillFromConversation}>从对话自动填入</button></div>}
               <div style={{ display: 'grid', gridTemplateColumns: isMedicalPlanning ? '1fr 1fr 1fr' : '1fr 1fr', gap: 12 }}>
-                <label style={{ fontSize: 12, fontWeight: 600 }}>{isMedicalPlanning ? '预期沟通日期' : '期望开始日期'}<input className="form-input" type="date" value={serviceTime} onChange={e => { setServiceTime(e.target.value); if (isMedicalPlanning) setServiceTimeEnd(e.target.value); setProxyReviewReady(false) }} /></label>
+                <label style={{ fontSize: 12, fontWeight: 600 }}>{isMedicalPlanning ? '预期沟通日期' : '期望开始日期'}<DateField className="form-input" type="date" value={serviceTime} onChange={e => { setServiceTime(e.target.value); if (isMedicalPlanning) setServiceTimeEnd(e.target.value); setProxyReviewReady(false) }} /></label>
                 {isMedicalPlanning ? <>
                   <label style={{ fontSize: 12, fontWeight: 600 }}>可沟通开始时间<input className="form-input" type="time" value={communicationTimeStart} onChange={e => { setCommunicationTimeStart(e.target.value); setProxyReviewReady(false) }} /></label>
                   <label style={{ fontSize: 12, fontWeight: 600 }}>可沟通结束时间<input className="form-input" type="time" value={communicationTimeEnd} onChange={e => { setCommunicationTimeEnd(e.target.value); setProxyReviewReady(false) }} /></label>
-                </> : <label style={{ fontSize: 12, fontWeight: 600 }}>期望结束日期<input className="form-input" type="date" min={serviceTime} value={serviceTimeEnd} onChange={e => { setServiceTimeEnd(e.target.value); setProxyReviewReady(false) }} /></label>}
+                </> : <label style={{ fontSize: 12, fontWeight: 600 }}>期望结束日期<DateField className="form-input" type="date" min={serviceTime} value={serviceTimeEnd} onChange={e => { setServiceTimeEnd(e.target.value); setProxyReviewReady(false) }} /></label>}
               </div>
               {isMedicalProxy ? <>
                 {isExpertAppointment && <>
@@ -13916,7 +13917,7 @@ function UploadReportModal({ patientId, onClose, onSaved }) {
             </div>
             <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
               <label className="form-label">报告日期 {metaDetecting && <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>识别中…</span>}</label>
-              <input className="form-input" type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
+              <DateField className="form-input" type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
             </div>
           </div>
 
@@ -14096,12 +14097,12 @@ export function GiftModal({ patientId, patientName, onClose, onSaved }) {
             {form.giftType !== 'coupon' && (
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">有效期开始</label>
-                <input className="form-input" type="date" value={form.validFrom} onChange={set('validFrom')} />
+                <DateField className="form-input" type="date" value={form.validFrom} onChange={set('validFrom')} />
               </div>
             )}
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">有效期结束</label>
-              <input className="form-input" type="date" value={form.validTo} onChange={set('validTo')} />
+              <DateField className="form-input" type="date" value={form.validTo} onChange={set('validTo')} />
             </div>
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
@@ -14791,7 +14792,7 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
         {/* 归属日期：老客户历史数据补录用，默认今天，可选任意过去日期（2026-07-10 金娟） */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, padding: '10px 12px', background: '#F0FAF5', borderRadius: 8 }}>
           <span style={{ fontSize: 13, color: '#1A2B24', fontWeight: 600 }}>数据归属日期</span>
-          <input type="date" value={recordDate} max={todayISO}
+          <DateField type="date" value={recordDate} max={todayISO}
             onChange={e => e.target.value && setRecordDate(e.target.value)}
             style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid #D0E0D8', fontSize: 13 }} />
           {recordDate !== todayISO && (
@@ -15041,7 +15042,7 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, initialBri
           {planType === 'annual_checkup' && <>
             <div className="form-group" style={{ marginBottom: 12 }}>
               <label className="form-label">期望服务时间 *</label>
-              <input className="form-input" type="date" value={desiredServiceDate} min={new Date().toISOString().slice(0, 10)} onChange={e => setDesiredServiceDate(e.target.value)} />
+              <DateField className="form-input" type="date" value={desiredServiceDate} min={new Date().toISOString().slice(0, 10)} onChange={e => setDesiredServiceDate(e.target.value)} />
             </div>
             <div className="form-group" style={{ marginBottom: 12 }}>
               <label className="form-label">具体服务需求 *</label>

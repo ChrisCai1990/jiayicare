@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import './AnnualServiceRecommendations.css'
 import serviceReminder from '../../../shared/annualServiceReminder.cjs'
 import DentalGiftCard from './DentalGiftCard'
@@ -105,7 +106,7 @@ export default function AnnualServiceRecommendations({ planId, pushedAt, canEdit
       <label style={{ display: 'block', marginTop: 10, fontSize: 13 }}><input type="checkbox" checked={draft.followUpReminderEnabled === true} onChange={e => setDraft(prev => ({ ...prev, followUpReminderEnabled: e.target.checked }))} /> 按计划跟进日期提醒健康顾问（填写日期并发布后生效，不创建服务订单）</label>
       {INPUTS.map(([key, label, placeholder]) => <label key={key} style={{ display: 'block', fontSize: 12, color: '#4A6558', marginTop: 10 }}>
         {label}{['finding', 'evidence', 'recommendation'].includes(key) ? ' *' : ''}
-        <input type={key.endsWith('Date')?'date':'text'} value={draft[key]} onChange={event => setDraft(prev => ({ ...prev, [key]: event.target.value }))} placeholder={placeholder} style={{ display: 'block', boxSizing: 'border-box', width: '100%', maxWidth:key.endsWith('Date')?320:undefined, marginTop: 4, padding: '8px 10px', border: '1px solid #D9E2DC', borderRadius: 7 }} />
+        <DateField type={key.endsWith('Date')?'date':'text'} value={draft[key]} onChange={event => setDraft(prev => ({ ...prev, [key]: event.target.value }))} placeholder={placeholder} style={{ display: 'block', boxSizing: 'border-box', width: '100%', maxWidth:key.endsWith('Date')?320:undefined, marginTop: 4, padding: '8px 10px', border: '1px solid #D9E2DC', borderRadius: 7 }} />
         {key.endsWith('Date') && <small style={{display:'block',marginTop:4,color:'#77877e'}}>{placeholder}{key==='plannedFollowUpDate'?'；发布后可按此日期提醒健康顾问联系客户。':''}</small>}
       </label>)}
       <fieldset disabled={busy || !!loadError} style={{border: '1px solid #d9e2dc', borderRadius: 8, margin: '14px 0', padding: 12}}>

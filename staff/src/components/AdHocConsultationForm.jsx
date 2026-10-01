@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useState } from 'react'
 import { staffAPI } from '../api'
 
@@ -17,7 +18,7 @@ export default function AdHocConsultationForm({ task }) {
     appointmentTime: '', costNotice: '', notes: '', customerConfirmed: false })
   const set = (key, value) => setForm(previous => ({ ...previous, [key]: value }))
   const field = (key, label, type = 'text') => <label style={{ display: 'grid', gap: 4, fontSize: 13 }} key={key}>
-    {label}<input className="form-control" type={type} value={form[key]} onChange={event => set(key, event.target.value)} />
+    {label}<DateField className="form-control" type={type} value={form[key]} onChange={event => set(key, event.target.value)} />
   </label>
   const submit = async () => {
     setError(''); setSaving(true)

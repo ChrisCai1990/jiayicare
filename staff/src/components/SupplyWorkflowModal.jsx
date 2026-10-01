@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
 
@@ -80,7 +81,7 @@ export default function SupplyWorkflowModal({ todo, onClose, onDone }) {
           <h4>专业审核结论</h4><JsonDraft value={plan.riskReview} />
           <h4>AI履约草稿</h4><JsonDraft value={plan.arrangement?.aiDraft} />
           <button disabled={busy} style={{ ...buttonStyle, background: '#4A6558' }} onClick={() => run(() => staffAPI.generateSupplyArrangementDraft(planId), false)}>AI生成/刷新履约草稿</button>
-          {plan.fulfillmentMode === 'hospital_assisted' && <><label style={labelStyle}>医院预约时间（必填）</label><input type="datetime-local" value={form.appointmentAt} onChange={e => set('appointmentAt', e.target.value)} style={inputStyle} /></>}
+          {plan.fulfillmentMode === 'hospital_assisted' && <><label style={labelStyle}>医院预约时间（必填）</label><DateField type="datetime-local" value={form.appointmentAt} onChange={e => set('appointmentAt', e.target.value)} style={inputStyle} /></>}
           <label style={labelStyle}>医院/平台/供应渠道与执行说明</label><textarea value={form.note} onChange={e => set('note', e.target.value)} style={inputStyle} rows={3} />
           <div style={{ marginTop: 16 }}><button disabled={busy} style={buttonStyle} onClick={() => run(() => staffAPI.confirmSupplyArrangement(planId, { appointmentAt: form.appointmentAt || null, note: form.note }))}>人工审核并确认安排</button></div>
         </>}
