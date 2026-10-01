@@ -22,10 +22,10 @@ test('typing, correction, clear and calendar selection preserve the controlled d
   compiled._compile(output, filename)
   const DateInput = compiled.exports.default
   let value = ''
-  function App() {
+  function App(props) {
     const [date, setDate] = React.useState('')
     value = date
-    return React.createElement(DateInput, { value: date, onChange: setDate, label: '建议就医/检查日期' })
+    return React.createElement(DateInput, { ...props, value: date, onChange: setDate, label: '建议就医/检查日期' })
   }
   const root = createRoot(document.getElementById('root'))
   await React.act(async () => root.render(React.createElement(App)))
@@ -44,6 +44,14 @@ test('typing, correction, clear and calendar selection preserve the controlled d
   assert.equal(value, '')
   await React.act(async () => fireChange(document.querySelector('input[type=date]'), '2026-12-31'))
   assert.equal(input.value, '2026-12-31')
+  await React.act(async () => root.render(React.createElement(App, { max: '2026-10-31', name: 'visitDate' })))
+  assert.equal(input.checkValidity(), false)
+  assert.equal(input.name, 'visitDate')
+  await change('20261001')
+  assert.equal(input.checkValidity(), true)
+  await React.act(async () => root.render(React.createElement(App, { disabled: true })))
+  assert.equal(input.disabled, true)
+  assert.equal(document.querySelector('input[type=date]').disabled, true)
   await React.act(async () => root.unmount())
   dom.window.close()
 })

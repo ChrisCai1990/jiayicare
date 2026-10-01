@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useState } from 'react'
 import { adminAPI, API_ORIGIN } from '../api'
 import { useToast } from '../App'
@@ -132,7 +133,7 @@ function InsurancePolicyModal({ enterprise, employees, onClose, toast }) {
         <button className="btn btn-sm btn-secondary" onClick={() => { setSelectedId(''); setSelectedUsers(new Set()); setEnrollmentDetails({}); setForm({ year: new Date().getFullYear(), name: `${new Date().getFullYear()}年度高端医疗险`, insurerName: '', policyNumber: '', startAt: '', endAt: '', servicePhone: '', claimContact: '', status: 'draft', note: '', rules: [] }) }}>＋新方案</button>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-        {[['方案名称','name'],['保险年度','year'],['保险公司','insurerName'],['保单/团险编号','policyNumber'],['保障开始','startAt'],['保障结束','endAt'],['服务电话','servicePhone'],['理赔联系人','claimContact']].map(([label,key]) => <label key={key} className="form-group"><span className="form-label">{label}</span><input className="form-input" type={key === 'year' ? 'number' : key.endsWith('At') ? 'date' : 'text'} value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))} /></label>)}
+        {[['方案名称','name'],['保险年度','year'],['保险公司','insurerName'],['保单/团险编号','policyNumber'],['保障开始','startAt'],['保障结束','endAt'],['服务电话','servicePhone'],['理赔联系人','claimContact']].map(([label,key]) => <label key={key} className="form-group"><span className="form-label">{label}</span><DateField className="form-input" type={key === 'year' ? 'number' : key.endsWith('At') ? 'date' : 'text'} value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))} /></label>)}
         <label className="form-group"><span className="form-label">状态</span><select className="form-input" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}><option value="draft">整理中</option><option value="review">待复核</option><option value="active">生效中</option><option value="expired">已到期</option></select></label>
       </div>
       <div style={{ marginTop: 18, fontWeight: 700 }}>场景化保障规则</div>
@@ -147,7 +148,7 @@ function InsurancePolicyModal({ enterprise, employees, onClose, toast }) {
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 10 }}>
         <label className="form-group"><span className="form-label">手册核实状态</span><select className="form-input" value={form.serviceManual?.verificationStatus || 'missing'} onChange={e => setManual('verificationStatus', e.target.value)}><option value="missing">资料待补</option><option value="review">待复核</option><option value="verified">已按正式资料核实</option></select></label>
-        <label className="form-group"><span className="form-label">最后核实日期</span><input className="form-input" type="date" value={form.serviceManual?.verifiedAt?.slice?.(0, 10) || form.serviceManual?.verifiedAt || ''} onChange={e => setManual('verifiedAt', e.target.value || null)} /></label>
+        <label className="form-group"><span className="form-label">最后核实日期</span><DateField className="form-input" type="date" value={form.serviceManual?.verifiedAt?.slice?.(0, 10) || form.serviceManual?.verifiedAt || ''} onChange={e => setManual('verifiedAt', e.target.value || null)} /></label>
         <label className="form-group"><span className="form-label">核实人</span><input className="form-input" value={form.serviceManual?.verifiedByName || ''} onChange={e => setManual('verifiedByName', e.target.value)} /></label>
       </div>
       <div style={{ marginTop: 22, display: 'flex', alignItems: 'center', gap: 10 }}><div style={{ fontWeight: 700 }}>医院预约路径规则</div><button type="button" className="btn btn-sm btn-secondary" onClick={addHospitalBookingRule}>＋ 添加医院规则</button></div>
@@ -168,7 +169,7 @@ function InsurancePolicyModal({ enterprise, employees, onClose, toast }) {
             <input className="form-input" value={item.leadTime || ''} onChange={e => setHospitalBookingRule(index, 'leadTime', e.target.value)} placeholder="提前预约要求，如提前2个工作日" />
             <input className="form-input" value={item.requiredInfo || ''} onChange={e => setHospitalBookingRule(index, 'requiredInfo', e.target.value)} placeholder="预约所需信息" />
             <select className="form-input" value={item.verificationStatus || 'missing'} onChange={e => setHospitalBookingRule(index, 'verificationStatus', e.target.value)}><option value="missing">资料待补</option><option value="review">待复核</option><option value="verified">已核实</option></select>
-            <input className="form-input" type="date" value={item.verifiedAt?.slice?.(0, 10) || item.verifiedAt || ''} onChange={e => setHospitalBookingRule(index, 'verifiedAt', e.target.value || null)} />
+            <DateField className="form-input" type="date" value={item.verifiedAt?.slice?.(0, 10) || item.verifiedAt || ''} onChange={e => setHospitalBookingRule(index, 'verifiedAt', e.target.value || null)} />
             <input className="form-input" value={item.sourceReference || ''} onChange={e => setHospitalBookingRule(index, 'sourceReference', e.target.value)} placeholder="依据：手册/邮件/联系人" />
           </div>
           <textarea className="form-input" rows={2} style={{ marginTop: 8 }} value={item.notes || ''} onChange={e => setHospitalBookingRule(index, 'notes', e.target.value)} placeholder="特殊限制或操作说明" />
@@ -260,11 +261,11 @@ function EnterpriseModal({ enterprise, servicePackages, onClose, onSaved }) {
           </div>
           <div className="form-group">
             <label className="form-label">合同开始日期</label>
-            <input className="form-input" type="date" value={form.contractStartAt} onChange={e => set('contractStartAt', e.target.value)} />
+            <DateField className="form-input" type="date" value={form.contractStartAt} onChange={e => set('contractStartAt', e.target.value)} />
           </div>
           <div className="form-group">
             <label className="form-label">合同结束日期</label>
-            <input className="form-input" type="date" value={form.contractEndAt} onChange={e => set('contractEndAt', e.target.value)} />
+            <DateField className="form-input" type="date" value={form.contractEndAt} onChange={e => set('contractEndAt', e.target.value)} />
           </div>
           <div className="form-group" style={{ gridColumn: '1/-1' }}>
             <label className="form-label">企业合同服务包</label>
@@ -705,9 +706,9 @@ function HrDataModal({ enterprise, onClose, onSaved, toast }) {
     <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
       <label className="form-label">服务起止</label>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <input className="form-input" type="date" value={form[startKey] || ''} onChange={e => set(startKey, e.target.value)} />
+        <DateField className="form-input" type="date" value={form[startKey] || ''} onChange={e => set(startKey, e.target.value)} />
         <span style={{ color: '#888' }}>至</span>
-        <input className="form-input" type="date" value={form[endKey] || ''} onChange={e => set(endKey, e.target.value)} />
+        <DateField className="form-input" type="date" value={form[endKey] || ''} onChange={e => set(endKey, e.target.value)} />
       </div>
     </div>
   )
@@ -833,7 +834,7 @@ function HrDataModal({ enterprise, onClose, onSaved, toast }) {
                 <option value="平台赠送">平台赠送</option>
               </select>
               <input className="form-input" type="number" value={t.amount} onChange={e => setFundTx(i, 'amount', e.target.value)} placeholder="金额 ¥" />
-              <input className="form-input" type="date" value={t.date} onChange={e => setFundTx(i, 'date', e.target.value)} />
+              <DateField className="form-input" type="date" value={t.date} onChange={e => setFundTx(i, 'date', e.target.value)} />
               <input className="form-input" value={t.note} onChange={e => setFundTx(i, 'note', e.target.value)} placeholder="备注" />
               <button type="button" onClick={() => rmFundTx(i)} style={{ color: '#c0392b', background: 'none', border: 'none', cursor: 'pointer', fontSize: 18 }}>×</button>
             </div>

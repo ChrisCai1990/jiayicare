@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { staffAPI } from '../api'
@@ -211,7 +212,7 @@ export default function VisitorLeadWorkbench({ toast }) {
           <label>本次订单<select required className="form-control" value={form.orderId} onChange={field('orderId')}><option value="">请选择订单</option>{options.orders.map(o => <option key={o._id} value={o._id}>{o.serviceName} · {when(o.createdAt)}</option>)}</select></label>
           <p>关联订单后，本次咨询跟进即结束并移出工作台；支付及服务办理在订单中继续。</p>
         </>}
-        {['convert', 'followup'].includes(edit.action) && <label>下次跟进时间<input required className="form-control" type="datetime-local" value={form.nextContactAt} onChange={field('nextContactAt')} /></label>}
+        {['convert', 'followup'].includes(edit.action) && <label>下次跟进时间<DateField required className="form-control" type="datetime-local" value={form.nextContactAt} onChange={field('nextContactAt')} /></label>}
         {edit.action !== 'convert' && <label>{edit.action === 'close' ? '承接结论及后续安排' : '本次沟通记录'}<textarea required placeholder="请记录联系渠道、客户诉求、沟通结果及约定安排" maxLength={['contacted', 'closed', 'new'].includes(edit.action) ? 500 : 1000} className="form-control" value={form.note} onChange={field('note')} /></label>}
         {edit.action === 'close' && <p className="consultation-caption">填写结束原因后，本条将移出工作台，历史记录保留在“已关闭”中，无需再安排下次跟进。</p>}
         {edit.action === 'contacted' && <p className="consultation-caption">保存时记录本次联系时间，线索将移出工作台，可在“已联系”中查看和继续承接。</p>}

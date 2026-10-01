@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import { usePatientSearch, PatientSearchStatus } from '../components/PatientPicker'
 import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
@@ -354,7 +355,7 @@ function PushQuestionnaireModal({ questionnaire, onClose, onSaved }) {
         <div className="modal-body" style={{ flex: 1, overflowY: 'auto' }}>
           <div className="form-group">
             <label className="form-label">截止日期（可选）</label>
-            <input className="form-input" type="date" value={deadline} onChange={e => setDeadline(e.target.value)} />
+            <DateField className="form-input" type="date" value={deadline} onChange={e => setDeadline(e.target.value)} />
           </div>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#4A6558' }}>选择会员（已选 {selected.length} 人）</div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>

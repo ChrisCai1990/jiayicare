@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useState, useRef } from 'react'
 import { adminAPI } from '../api'
 import { useToast } from '../App'
@@ -591,7 +592,7 @@ function QuestionnaireModal({ questionnaire, onClose, onSaved }) {
               </div>
               <div style={{ flex: 1, minWidth: 160 }}>
                 <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>截止日期（可选）</div>
-                <input type="date" className="form-input" value={form.deadline}
+                <DateField type="date" className="form-input" value={form.deadline}
                   onChange={e => set('deadline', e.target.value)} />
               </div>
               <div style={{ minWidth: 140, display: 'flex', flexDirection: 'column', gap: 4 }}>

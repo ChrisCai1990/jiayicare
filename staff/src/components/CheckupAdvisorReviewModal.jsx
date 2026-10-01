@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useMemo, useState } from 'react'
 import { staffAPI } from '../api'
 
@@ -55,7 +56,7 @@ export default function CheckupAdvisorReviewModal({ task, onClose, onDone, onOpe
           <textarea className="form-control" rows={6} value={followUpContent} onChange={event => setFollowUpContent(event.target.value)} />
         </label>
         <label style={{ display: 'grid', gap: 6, color: '#51665C', fontWeight: 650 }}>建议随访日期 *
-          <input className="form-control" type="date" value={followUpDate} onChange={event => setFollowUpDate(event.target.value)} />
+          <DateField className="form-control" type="date" value={followUpDate} onChange={event => setFollowUpDate(event.target.value)} />
         </label>
         <label style={{ display: 'grid', gap: 6, color: '#51665C', fontWeight: 650 }}>退回说明（退回时必填）
           <textarea className="form-control" rows={2} value={returnNote} onChange={event => setReturnNote(event.target.value)} placeholder="例如：请补充某项报告的原始内容或修正随访建议" />

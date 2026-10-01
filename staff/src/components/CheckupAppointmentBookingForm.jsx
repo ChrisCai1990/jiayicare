@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React from 'react'
 
 export const isCheckupAppointmentBookingTask = task => task?.sourceType === 'order'
@@ -40,7 +41,7 @@ function AppointmentFields({ title, value, onChange, hint, specialCheck = false 
       <label style={{ fontSize: 12, color: '#65776F' }}>科室 *<input className="form-control" value={value.department || ''} onChange={e => update('department', e.target.value)} /></label>
       <label style={{ fontSize: 12, color: '#65776F' }}>具体地点 *<input className="form-control" placeholder="例如：3号楼 2层 B区" value={value.location || ''} onChange={e => update('location', e.target.value)} /></label>
       <label style={{ fontSize: 12, color: '#65776F' }}>医生/专家{specialCheck ? '（如需指定）' : ' *'}<input className="form-control" value={value.doctor || ''} onChange={e => update('doctor', e.target.value)} /></label>
-      <label style={{ fontSize: 12, color: '#65776F' }}>预约日期 *<input type="date" className="form-control" value={value.date || ''} onChange={e => update('date', e.target.value)} /></label>
+      <label style={{ fontSize: 12, color: '#65776F' }}>预约日期 *<DateField type="date" className="form-control" value={value.date || ''} onChange={e => update('date', e.target.value)} /></label>
       <label style={{ fontSize: 12, color: '#65776F' }}>预约时间 *<input type="time" className="form-control" value={value.time || ''} onChange={e => update('time', e.target.value)} /></label>
       <div style={{ alignSelf: 'end', fontSize: 12, color: '#65776F', lineHeight: 1.55 }}>{hint}</div>
     </div>

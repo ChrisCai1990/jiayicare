@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useState } from 'react'
 import { staffAPI } from '../api'
 
@@ -49,6 +50,6 @@ export default function OutpatientPostVisitReviewForm({ task, value, onChange })
     </section>
     <label style={labelStyle}>资料查看结论 *<textarea className="form-control" rows={4} value={data.reviewSummary} onChange={e => update({ reviewSummary: e.target.value })} placeholder="概括检查情况、专家诊疗意见、用药及后续关注重点" /></label>
     <label style={labelStyle}>后续随访内容 *<textarea className="form-control" rows={4} value={data.followUpContent} onChange={e => update({ followUpContent: e.target.value })} placeholder="填写需要跟进的症状、用药、检查结果、复查或复诊事项" /></label>
-    <label style={labelStyle}>首次随访日期 *<input type="date" className="form-control" value={data.followUpDate} onChange={e => update({ followUpDate: e.target.value })} /></label>
+    <label style={labelStyle}>首次随访日期 *<DateField type="date" className="form-control" value={data.followUpDate} onChange={e => update({ followUpDate: e.target.value })} /></label>
   </div>
 }

@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useState } from 'react'
 import { staffAPI } from '../api'
 import { useStaff } from '../App'
@@ -49,7 +50,7 @@ export default function FollowUpOutcomeReview({ item, onSaved, submitApi = staff
           const change = patch => setDrafts(rows => rows.map(row => row._id === d._id ? { ...row, followUpDrafts: row.followUpDrafts.map((v, j) => i === j ? { ...v, ...patch } : v) } : row))
           return <fieldset key={i} disabled={busy || d.status === 'approved'}>
             <input aria-label="后续标题" value={f.title || ''} onChange={e => change({ title: e.target.value })} />
-            <input aria-label="后续日期" type="date" value={f.date || ''} onChange={e => change({ date: e.target.value })} />
+            <DateField aria-label="后续日期" type="date" value={f.date || ''} onChange={e => change({ date: e.target.value })} />
             <textarea aria-label="后续内容" value={f.content || ''} onChange={e => change({ content: e.target.value })} />
             <label><input type="checkbox" checked={f.requiresService === true} onChange={e => change({ requiresService: e.target.checked })} />需规划师安排服务</label>
             <button onClick={() => setDrafts(rows => rows.map(row => row._id === d._id ? { ...row, followUpDrafts: row.followUpDrafts.filter((_, j) => i !== j) } : row))}>移除不适用安排</button>

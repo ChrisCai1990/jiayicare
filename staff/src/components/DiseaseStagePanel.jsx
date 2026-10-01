@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useState } from 'react'
 import { staffAPI } from '../api'
 import { useStaff } from '../App'
@@ -23,7 +24,7 @@ export default function DiseaseStagePanel({ patientId, dossier, onSaved }) {
   }
   return <div className="disease-section disease-stage">
     <div className="disease-toolbar"><div><h4>生成阶段概要</h4><p>汇总首次概况与已归档诊疗记录，核对后独立保存。</p></div><span className="disease-badge">AI 辅助 · 顾问审核</span></div>
-    {canReview && <div className="disease-stage-controls"><label className="disease-date-label">概要截止日期 <input className="form-control" aria-label="概要截止日期" type="date" value={cutoff} disabled={busy} onChange={e=>setCutoff(e.target.value)} /></label><button className="btn btn-primary btn-sm" disabled={busy || !dossier._id || dossier._id === 'legacy'} onClick={generate}>{busy?'处理中…':'AI生成阶段概要草稿'}</button><span className="disease-meta">仅纳入截止日期内已归档的记录</span></div>}
+    {canReview && <div className="disease-stage-controls"><label className="disease-date-label">概要截止日期 <DateField className="form-control" aria-label="概要截止日期" type="date" value={cutoff} disabled={busy} onChange={e=>setCutoff(e.target.value)} /></label><button className="btn btn-primary btn-sm" disabled={busy || !dossier._id || dossier._id === 'legacy'} onClick={generate}>{busy?'处理中…':'AI生成阶段概要草稿'}</button><span className="disease-meta">仅纳入截止日期内已归档的记录</span></div>}
     {(!dossier._id || dossier._id === 'legacy') && <p>请先保存首次专病概况。</p>}
     {error && <p role="alert" style={{color:'#B42318'}}>{error}</p>}
     {draft && <div className="disease-stage-draft"><b>待顾问审核 · 截至 {draft.cutoff}</b><p>已纳入 {draft.coverage.courseCount} 条诊疗记录、{draft.coverage.reportCount} 份报告；{draft.excludedCount || 0} 条因超出日期、日期缺失或待核验未纳入。</p>

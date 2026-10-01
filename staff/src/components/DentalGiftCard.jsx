@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, {useState} from 'react'
 import {staffAPI} from '../api'
 export default function DentalGiftCard({gift,planId,canEdit,onChange,toast}) {
@@ -20,14 +21,14 @@ export default function DentalGiftCard({gift,planId,canEdit,onChange,toast}) {
     {gift.completedDate && <div className="dental-benefit__booking"><span>完成日期</span><strong>{gift.completedDate}</strong></div>}
     {canEdit && gift.status!=='used' && <fieldset disabled={busy} className="dental-benefit__form">
       {['available','booked'].includes(gift.status) && !gift.expired && <label>已确认的服务机构<input value={institution} maxLength={200} placeholder="填写已联系确认的机构名称" onChange={e=>setInstitution(e.target.value)} /></label>}
-      {gift.status!=='unknown' && <label>{gift.expired?'实际完成日期':gift.status==='booked'?'预约日期／实际完成日期':'预约日期'}<input type="date" value={date} max={gift.expiresAt} onChange={e=>setDate(e.target.value)} /></label>}
+      {gift.status!=='unknown' && <label>{gift.expired?'实际完成日期':gift.status==='booked'?'预约日期／实际完成日期':'预约日期'}<DateField type="date" value={date} max={gift.expiresAt} onChange={e=>setDate(e.target.value)} /></label>}
       <label className="dental-benefit__wide">核对或服务记录<textarea value={note} maxLength={500} rows={3} onChange={e=>setNote(e.target.value)} placeholder="填写核对结果、预约确认或完成凭据" /></label>
       <div className="dental-benefit__actions dental-benefit__wide">
         {gift.status==='unknown' && !gift.expired && <button className="service-button service-button--primary" type="button" onClick={()=>action('verify')}>{busy?'保存中…':'确认未使用'}</button>}
         {['available','booked'].includes(gift.status) && !gift.expired && <button className="service-button service-button--primary" type="button" onClick={()=>action('book')}>{gift.status==='booked'?'更新预约':'登记预约'}</button>}
         {gift.status==='booked' && <button className="service-button" type="button" onClick={()=>action('complete')}>确认完成并核销</button>}
       </div>
-      {gift.status==='unknown' && <details className="dental-benefit__history dental-benefit__wide"><summary>此前已使用？补登记历史记录</summary><div><label>实际完成日期<input type="date" value={date} max={gift.expiresAt} onChange={e=>setDate(e.target.value)} /></label><button className="service-button" type="button" onClick={()=>action('historical')}>保存历史使用记录</button></div></details>}
+      {gift.status==='unknown' && <details className="dental-benefit__history dental-benefit__wide"><summary>此前已使用？补登记历史记录</summary><div><label>实际完成日期<DateField type="date" value={date} max={gift.expiresAt} onChange={e=>setDate(e.target.value)} /></label><button className="service-button" type="button" onClick={()=>action('historical')}>保存历史使用记录</button></div></details>}
     </fieldset>}
   </section>
 }

@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
 import { BookingSummary } from './AnnualBookingCard'
@@ -23,7 +24,7 @@ export default function OnsiteBookingCard({ task, staff }) {
           <b>登记现场预约结果 · {e.title}</b>
           {!e.department && <p>顾问尚未明确检查科室，请先核对顾问要求，不可自行决定科室。</p>}
           {!e.hospital && <label>实际预约医院<input className="form-input" value={form.hospital || ''} onChange={ev => change('hospital', ev.target.value)} /></label>}
-          <label>检查日期<input className="form-input" type="date" value={form.date || ''} onChange={ev => change('date', ev.target.value)} /></label>
+          <label>检查日期<DateField className="form-input" type="date" value={form.date || ''} onChange={ev => change('date', ev.target.value)} /></label>
           <label>具体时间<input className="form-input" type="time" value={form.time || ''} onChange={ev => change('time', ev.target.value)} /></label>
           <label>现场结果备注<textarea className="form-input" value={form.note || ''} maxLength={2000} onChange={ev => change('note', ev.target.value)} /></label>
           <button type="button" className="btn btn-primary" disabled={busy || !form.date || !form.time || !e.department || !(e.hospital || form.hospital)} onClick={async () => {

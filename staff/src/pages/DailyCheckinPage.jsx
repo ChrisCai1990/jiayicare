@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useState, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { staffAPI } from '../api'
@@ -134,7 +135,7 @@ export default function DailyCheckinPage() {
             </div>
             <div>
               <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>按日期筛选</label>
-              <input className="form-control" type="date" value={dateFilter}
+              <DateField className="form-control" type="date" value={dateFilter}
                 onChange={e => setDateFilter(e.target.value)} />
             </div>
             <button className="btn btn-primary btn-sm" onClick={load}>搜索</button>

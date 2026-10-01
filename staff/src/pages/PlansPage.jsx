@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { staffAPI } from '../api'
@@ -1027,7 +1028,7 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
             </div>}
             {!isMedicalProxy && !isExpertAppointment && <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">{form.serviceDomain === 'checkup' ? '体检日期' : '主服务日期'} *</label>
-              <input className="form-input" type="date" value={form.serviceDate}
+              <DateField className="form-input" type="date" value={form.serviceDate}
                 onChange={e => set('serviceDate', e.target.value)} />
             </div>}
             {!isMedicalProxy && !isExpertAppointment && renderField(isMedicalEscort ? '整体时间安排 *' : '具体时间安排', 'serviceTime', 0, '如：09:30，或 09:00-11:30')}
@@ -1102,8 +1103,8 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
             </div>}
             {['high_end', 'commercial_insurance'].includes(form.insuranceUse) && <div style={{ fontSize: 12, color: '#8A6D3B' }}>健管专员预约前需核实医院、院区、门诊类型及商保直付或报销适用情况。</div>}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">期望开始日期 *</label><input className="form-input" type="date" value={form.preferredDateStart} onChange={e => set('preferredDateStart', e.target.value)} /></div>
-              <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">期望结束日期 *</label><input className="form-input" type="date" min={form.preferredDateStart} value={form.preferredDateEnd} onChange={e => set('preferredDateEnd', e.target.value)} /></div>
+              <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">期望开始日期 *</label><DateField className="form-input" type="date" value={form.preferredDateStart} onChange={e => set('preferredDateStart', e.target.value)} /></div>
+              <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">期望结束日期 *</label><DateField className="form-input" type="date" min={form.preferredDateStart} value={form.preferredDateEnd} onChange={e => set('preferredDateEnd', e.target.value)} /></div>
             </div>
             <div style={{ padding: 10, borderRadius: 8, background: '#EFF8F4', color: '#1E6B50', fontSize: 13 }}>健康顾问提交后，将直接生成健管专员的专家预约任务；预约完成后通知客户并结束服务。</div>
           </>}

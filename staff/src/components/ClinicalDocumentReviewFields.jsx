@@ -1,6 +1,7 @@
+import DateField from '../../../shared/DateField.jsx'
 import React from 'react'
 
-const Field = ({ label, value, onChange, area = false, type = 'text' }) => <label className="form-group" style={{ marginBottom: 0 }}><span className="form-label">{label}</span>{area ? <textarea className="form-input" rows={2} value={value || ''} onChange={e => onChange(e.target.value)} /> : <input type={type} className="form-input" value={value || ''} onChange={e => onChange(e.target.value)} />}</label>
+const Field = ({ label, value, onChange, area = false, type = 'text' }) => <label className="form-group" style={{ marginBottom: 0 }}><span className="form-label">{label}</span>{area ? <textarea className="form-input" rows={2} value={value || ''} onChange={e => onChange(e.target.value)} /> : <DateField type={type} className="form-input" value={value || ''} onChange={e => onChange(e.target.value)} />}</label>
 
 export default function ClinicalDocumentReviewFields({ category, value = {}, onChange }) {
   if (!['prescription_order', 'outpatient_record', 'inpatient_record'].includes(category)) return null

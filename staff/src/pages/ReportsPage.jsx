@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import PatientPicker from '../components/PatientPicker'
 import { useReportReviewActivity } from '../components/ReportReviewQuality'
 import React, { useEffect, useState, useCallback, useRef } from 'react'
@@ -255,7 +256,7 @@ export default function ReportsPage() {
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">报告日期</label>
-                  <input className="form-input" type="date" value={editForm.date} onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))} />
+                  <DateField className="form-input" type="date" value={editForm.date} onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))} />
                 </div>
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
@@ -425,7 +426,7 @@ function UploadModal({ onClose, onSaved }) {
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">报告日期</label>
-              <input className="form-input" type="date" value={form.date} onChange={set('date')} />
+              <DateField className="form-input" type="date" value={form.date} onChange={set('date')} />
             </div>
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>

@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
 import { useToast } from '../App'
@@ -206,11 +207,11 @@ function ActivitiesTab({ toast }) {
             )}
             <div>
               <label style={{ fontSize: 12, color: '#8AA89C' }}>开始日期</label>
-              <input className="form-control" type="date" value={form.startDate} onChange={set('startDate')} />
+              <DateField className="form-control" type="date" value={form.startDate} onChange={set('startDate')} />
             </div>
             <div>
               <label style={{ fontSize: 12, color: '#8AA89C' }}>结束日期</label>
-              <input className="form-control" type="date" value={form.endDate} onChange={set('endDate')} />
+              <DateField className="form-control" type="date" value={form.endDate} onChange={set('endDate')} />
             </div>
             <div style={{ gridColumn: 'span 2' }}>
               <label style={{ fontSize: 12, color: '#8AA89C' }}>活动说明</label>

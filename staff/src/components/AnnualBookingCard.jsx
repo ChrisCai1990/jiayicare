@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useState } from 'react'
 import { staffAPI } from '../api'
 import itemTools from '../../../shared/annualServiceItem.cjs'
@@ -46,7 +47,7 @@ export default function AnnualBookingCard({ task, staff, onLinked }) {
           {!s.department && <p role="alert" style={{ color: '#B45309' }}>顾问尚未明确科室，请先由健康顾问补充；健管专员不代定科室。</p>}
           {!s.hospital && <label>实际预约医院（顾问未指定）<input className="form-input" maxLength={200} value={e.hospital} onChange={ev => change(s.id, 'hospital', ev.target.value)} /></label>}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16 }}>
-            <label>实际预约日期<input className="form-input" type="date" value={e.date} onChange={ev => change(s.id, 'date', ev.target.value)} /></label>
+            <label>实际预约日期<DateField className="form-input" type="date" value={e.date} onChange={ev => change(s.id, 'date', ev.target.value)} /></label>
             <label>具体时间<input className="form-input" type="time" value={e.time} onChange={ev => change(s.id, 'time', ev.target.value)} /></label>
           </div>
         </>}

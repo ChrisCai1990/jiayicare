@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
@@ -305,7 +306,7 @@ export default function NewPatientPage() {
               </F>
               <F label="性别"><select className="form-input" value={form.gender} onChange={set('gender')}><option value="未知">未知</option><option value="男">男</option><option value="女">女</option></select></F>
               <F label="出生日期">
-                <input className="form-input" type="date" value={form.birthDate}
+                <DateField className="form-input" type="date" value={form.birthDate}
                   onChange={handleBirthDateChange}
                   max={new Date().toISOString().slice(0, 10)}
                   min="1900-01-01" />
@@ -481,7 +482,7 @@ export default function NewPatientPage() {
                 ].map(f => (
                   <div key={f.key} className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label" style={{ fontSize: 12 }}>{f.label}</label>
-                    <input className="form-input" type={f.type} value={form.childProfile[f.key]} onChange={setChild(f.key)} />
+                    <DateField className="form-input" type={f.type} value={form.childProfile[f.key]} onChange={setChild(f.key)} />
                   </div>
                 ))}
                 {[
@@ -671,8 +672,8 @@ export default function NewPatientPage() {
                   {serviceOptions.map(p => <option key={p._id || p.name} value={p.name}>{p.name}</option>)}
                 </select>
               </F>
-              <F label="服务开始日期"><input className="form-input" type="date" value={form.serviceStartDate} onChange={set('serviceStartDate')} /></F>
-              <F label="服务到期日期"><input className="form-input" type="date" value={form.serviceExpiry} onChange={set('serviceExpiry')} /></F>
+              <F label="服务开始日期"><DateField className="form-input" type="date" value={form.serviceStartDate} onChange={set('serviceStartDate')} /></F>
+              <F label="服务到期日期"><DateField className="form-input" type="date" value={form.serviceExpiry} onChange={set('serviceExpiry')} /></F>
               <F label="会员来源"><select className="form-input" value={form.source} onChange={set('source')}><option value="">未填写</option>{SOURCE_OPTIONS.map(s => <option key={s}>{s}</option>)}</select></F>
               <F label="备注" span={2}><textarea className="form-input" rows={3} value={form.remark} onChange={set('remark')} style={{ resize: 'vertical' }} /></F>
             </Grid>

@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import { followUpDateRange } from '../utils/staffWorkspace'
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -433,11 +434,11 @@ export default function FollowUpsPage() {
             </div>
             <div>
               <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>开始日期</label>
-              <input className="form-control" type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+              <DateField className="form-control" type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
             </div>
             <div>
               <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>结束日期</label>
-              <input className="form-control" type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} />
+              <DateField className="form-control" type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} />
             </div>
             <button className="btn btn-primary btn-sm" type="submit">搜索</button>
             <button className="btn btn-secondary btn-sm" type="button" onClick={() => {
@@ -681,7 +682,7 @@ export default function FollowUpsPage() {
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
                 <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>计划日期</label>
-                <input type="date" className="form-control" value={editForm.date}
+                <DateField type="date" className="form-control" value={editForm.date}
                   onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))} />
               </div>
               <div>

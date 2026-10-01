@@ -1,3 +1,4 @@
+import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { staffAPI } from '../api'
@@ -117,7 +118,7 @@ export default function MonthlyServiceReviewPage() {
           {(actions || []).map((action, index) => <div key={action._id || index} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10, alignItems: 'center' }}>
             <input className="form-input" style={{ flex: 2, minWidth: 180 }} placeholder="具体行动" value={action.title} disabled={!canOrganize || review.status === 'confirmed'} onChange={e => setAction(index, { title: e.target.value })} />
             <select className="form-input" style={{ flex: 1, minWidth: 150 }} value={action.assigneeId} disabled={!canOrganize || review.status === 'confirmed'} onChange={e => setAction(index, { assigneeId: e.target.value })}><option value="">选择责任人</option>{staffList.filter(item => item.staffStatus !== 'inactive').map(item => <option key={item._id} value={item._id}>{item.name} · {item.role}</option>)}</select>
-            <input className="form-input" type="date" value={action.dueAt} disabled={!canOrganize || review.status === 'confirmed'} onChange={e => setAction(index, { dueAt: e.target.value })} />
+            <DateField className="form-input" type="date" value={action.dueAt} disabled={!canOrganize || review.status === 'confirmed'} onChange={e => setAction(index, { dueAt: e.target.value })} />
             {review.status === 'draft' && canOrganize && <button className="btn btn-secondary btn-sm" onClick={() => setActions(items => items.filter((_, i) => i !== index))}>移除</button>}
             {review.status === 'confirmed' && <span>{action.status === 'completed' ? '✓ 已完成' : <button className="btn btn-secondary btn-sm" disabled={busy || (staff?.role !== 'superadmin' && toId(action.assigneeId) !== toId(staff?._id))} onClick={() => run(() => staffAPI.completeMonthlyReviewAction(review._id, action._id), '行动项已完成')}>标记完成</button>}</span>}
           </div>)}
