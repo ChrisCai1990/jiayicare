@@ -109,6 +109,7 @@ const { tagReportPageItems, sortReportItemsBySource, stripReportSourceOrder } = 
 const { stepsForInsuranceScenario } = require('../utils/insuranceServiceWorkflow');
 const { canUseInsuranceCoverage, isInsuranceScenario } = require('../utils/insuranceCoverage');
 const router = express.Router();
+router.use('/service-supervision', require('./advisorSupervision'));
 router.use('/patients', require('./reviewPlanAmendments')({ getVisiblePlanPatientIds }));
 router.use('/patients', require('./annualExecutionReview')({ getVisiblePlanPatientIds }));
 router.use('/followups', require('./followUpServices'));
@@ -7854,22 +7855,9 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权编辑该会员的年度方案' });
     if (!planType && !requestedServicePlanCode) return res.status(400).json({ success: false, message: '缺少服务版本' });
-    const todayText = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
-    const personalized = moduleData?.personalized_followups?.records || [];
-    const allServiceRows = Object.values(moduleData || {}).flatMap(module => Array.isArray(module?.records) ? module.records : [module]).filter(Boolean);
-    const invalidServiceMode = allServiceRows.find(item => item.serviceMode && !['reminder', 'single', 'managed'].includes(item.serviceMode));
-    const missingSingleType = allServiceRows.find(item => item.serviceMode === 'single' && !item.serviceType);
-    if (invalidServiceMode) return res.status(400).json({ success: false, message: '服务落地方式无效' });
-    if (missingSingleType) return res.status(400).json({ success: false, message: '选择单项服务后，请明确代约、代诊、陪诊、陪检或会诊协调' });
-    const invalidPersonalized = personalized.find(item =>
-      !item.followUpStaff || !item.executionDate ||
-      String(item.executionDate).slice(0, 10) < todayText ||
-      (item.collaborator && !item.collaborationDate) ||
-      (item.collaborationDate && !item.collaborator) ||
-      (item.collaborationDate && String(item.collaborationDate).slice(0, 10) < todayText)
-    );
-    if (invalidPersonalized) {
-      return res.status(400).json({ success: false, message: '每项随访都要选择主执行人和有效的未来日期；协同执行人和日期需要同时填写' });
+    if (req.body.saveDraft !== true) {
+      const issue = require('../utils/annualPlanPublishValidation').validate(moduleData);
+      if (issue) return res.status(400).json({ success:false, message:issue });
     }
     const targetYear = year || new Date().getFullYear();
     const closedLoop = require('../utils/healthManagementRollout').enabledForPatient(req.params.id);
@@ -7881,7 +7869,7 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     if (!template) return res.status(400).json({ success: false, message: '请选择有效的Admin年度管理服务版本' });
     const patient = await User.findById(req.params.id).select('clientBrand memberType servicePackage assignedHealthManager').lean();
     if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
-    if (closedLoop) {
+    if (closedLoop && req.body.saveDraft !== true) {
       try { moduleData = require('../utils/annualItemManagement').normalizeAnnualItems(moduleData || {}, patient.assignedHealthManager); }
       catch (error) { return res.status(error.statusCode || 400).json({ success: false, message: error.message }); }
     }
@@ -8128,6 +8116,13 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
       $or: [{ formalizedAt: { $ne: null } }, { pushedAt: { $ne: null } }, { confirmedAt: { $ne: null } }],
     }).select('_id templateName').lean();
     if (otherFormal) return res.status(409).json({ success: false, message: `本年度已有正式年度方案${otherFormal.templateName ? `“${otherFormal.templateName}”` : ''}，不能重复发布` });
+    }
+    const issue = require('../utils/annualPlanPublishValidation').validate(plan.moduleData);
+    if (issue) return res.status(400).json({ success:false, message:issue });
+    if (closedLoop) {
+      const patient = await User.findById(req.params.id).select('assignedHealthManager').lean();
+      try { plan.moduleData = require('../utils/annualItemManagement').normalizeAnnualItems(plan.moduleData || {}, patient?.assignedHealthManager); }
+      catch (error) { return res.status(400).json({success:false,message:error.message}); }
     }
     plan.reviewStatus = 'approved';
     plan.reviewedBy = req.staff._id;
