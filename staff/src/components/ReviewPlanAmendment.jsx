@@ -3,6 +3,21 @@ import React, { useState } from 'react'
 import { staffAPI } from '../api'
 const labels={medical_treatment:'医疗问题解决',checkup_completion:'体检完善',abnormal_followup:'异常复查提醒',vaccine:'疫苗接种',personalized_followups:'个性化方案（Admin模板）'}
 const rowTitle=row=>row?.items||row?.name||row?.department||row?.standardPlanName||'已移除原分类事项'
+function TemplateSearch({catalog,value,onChange,disabled}) {
+  const [query,setQuery]=useState('')
+  const words=query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
+  const matches=catalog.filter(t=>words.every(word=>`${t.name} ${t.content||''}`.toLocaleLowerCase().includes(word)))
+  const selected=catalog.find(t=>t.id===value)
+  return <div style={{marginTop:6}}>
+    <input className="form-input" type="search" aria-label="搜索Admin标准模板" placeholder="搜索模板，如：饮水、营养、生活方式" value={query} disabled={disabled} onChange={e=>setQuery(e.target.value)} />
+    {query&&<div style={{fontSize:12,color:'#718375',margin:'5px 0'}}>匹配 {matches.length} 项{!matches.length?'，请更换关键词':''}</div>}
+    <select className="form-input" aria-label="选择Admin标准模板" disabled={disabled} value={value} size={words.length?Math.min(6,Math.max(2,matches.length+1)):undefined} style={{marginTop:6}} onChange={e=>{onChange(e);setQuery('')}}>
+      <option value="">请选择模板</option>
+      {selected&&!matches.some(t=>t.id===value)&&<option value={value}>已选：{selected.name}</option>}
+      {matches.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
+    </select>
+  </div>
+}
 export default function ReviewPlanAmendment({patientId,topicId,message,scope = 'message'}) {
   const [open,setOpen]=useState(false),[plans,setPlans]=useState([]),[planId,setPlanId]=useState(''),[draft,setDraft]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[saved,setSaved]=useState('')
   const [catalog,setCatalog]=useState([])
@@ -56,7 +71,7 @@ export default function ReviewPlanAmendment({patientId,topicId,message,scope = '
           <h4>2. 调整内容：{item.moveFrom?rowTitle(plan?.moduleData?.[item.moveFrom.key]?.records?.[item.moveFrom.index]):item.title}</h4>
           <label><input type="checkbox" checked={item.selected!==false} onChange={e=>edit(index,'selected',e.target.checked)}/>纳入此项</label>
           <select className="form-input" value={item.key} onChange={e=>edit(index,'key',e.target.value)}>{Object.entries(labels).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select>
-          {item.key==='personalized_followups'&&<label>Admin标准模板<select className="form-input" value={item.standardPlanId||''} onChange={e=>{const t=catalog.find(t=>t.id===e.target.value);setDraft(d=>({...d,items:d.items.map((r,i)=>i===index?{...r,standardPlanId:t?.id||'',templateHash:t?.hash||'',title:t?.name||r.title}:r)}))}}><option value="">请选择模板</option>{catalog.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select>{(()=>{const t=catalog.find(t=>t.id===item.standardPlanId);return t&&<details><summary>标准内容与周期（按库保留）</summary><p>{t.content}</p><p>{t.schedule}</p></details>})()}</label>}
+          {item.key==='personalized_followups'&&<div style={{marginTop:12}}>Admin标准模板<TemplateSearch catalog={catalog} disabled={busy} value={item.standardPlanId||''} onChange={e=>{const t=catalog.find(t=>t.id===e.target.value);setDraft(d=>({...d,items:d.items.map((r,i)=>i===index?{...r,standardPlanId:t?.id||'',templateHash:t?.hash||'',title:t?.name||r.title}:r)}))}} />{(()=>{const t=catalog.find(t=>t.id===item.standardPlanId);return t&&<details><summary>标准内容与周期（按库保留）</summary><p>{t.content}</p><p>{t.schedule}</p></details>})()}</div>}
           {item.moveFrom&&<div style={{background:'#FFF4D6',padding:8}}>确认后从“{labels[item.moveFrom.key]}”移除：{rowTitle(plan?.moduleData?.[item.moveFrom.key]?.records?.[item.moveFrom.index])}，并保留迁移记录。请将下方处理建议修订为最终确认内容。</div>}
           <label>新增或更新<select className="form-input" value={item.target??-1} onChange={e=>edit(index,'target',Number(e.target.value))}><option value={-1}>新增（同名事项自动合并）</option>{(plan?.moduleData?.[item.key]?.records||[]).map((r,i)=><option key={i} value={i}>更新：{rowTitle(r)}</option>)}</select></label>
           {Number(item.target)>=0&&<div style={{whiteSpace:'pre-wrap',background:'#F3F6F4'}}>原内容：{plan?.moduleData?.[item.key]?.records?.[item.target]?.reason||'未填写原因'}</div>}
