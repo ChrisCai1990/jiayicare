@@ -89,3 +89,14 @@ test('显式删除留原因及原内容，批量删除不串位且AI不得删除
  assert.throws(()=>apply(base,[remove(9)],{}));
  assert.throws(()=>previewItems([remove(0)]),/顾问手动/);
 });
+
+ test('研判执行要求带入、缺省保留、明确清除与审计',()=>{
+ const base={abnormal_followup:{records:[{items:'CYFRA21-1',precautions:'旧注意',customerAction:'旧行动',frequency:'单次',notes:'内部记录'}]}};
+ const updated=apply(base,[{...item,precautions:'讨论明确的准备',customerAction:'记录结果'}],{});
+ const row=updated.moduleData.abnormal_followup.records[0];
+ assert.equal(row.basisSummary,item.reason);assert.equal(row.precautions,'讨论明确的准备');assert.equal(row.customerAction,'记录结果');assert.equal(row.frequency,'单次');assert.equal(row.notes,'内部记录');
+ assert.equal(updated.changes[0].before.precautions,'旧注意');
+ assert.equal(apply(base,[item],{}).moduleData.abnormal_followup.records[0].precautions,'旧注意');
+ assert.equal(apply(base,[{...item,precautions:''}],{}).moduleData.abnormal_followup.records[0].precautions,'');
+ assert.throws(()=>clean([{...item,customerAction:{text:'非法'}}]));
+ });

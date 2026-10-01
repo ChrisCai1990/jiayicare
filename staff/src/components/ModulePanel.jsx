@@ -1,6 +1,7 @@
 import React, { useState, createContext, useContext } from 'react'
 import appointment from '../../../shared/annualAppointment.cjs'
 import DateInput from './DateInput'
+import { concretePlanText } from '../utils/annualItemLayout.mjs'
 
 function readableValue(value) {
   if (Array.isArray(value)) return value.map(readableValue).filter(Boolean).join('\n')
@@ -142,6 +143,11 @@ export function FieldInput({ field, value, onChange }) {
 export function RecordEditor({ def, record, onChange, onDelete, index, total }) {
   const [open, setOpen] = useState(index === 0 && total === 1)
   const summary = record[def.summaryKey] || `${def.summaryLabel} ${index + 1}`
+  const [supplementalKeys] = useState(() => def.reviewDriven ? def.fields.filter(field=>['notes','basisSummary','precautions','customerAction'].includes(field.key) && !readableValue(record[field.key]).trim()).map(field=>field.key) : [])
+  const optionalEmpty = field => supplementalKeys.includes(field.key)
+  const renderField = field => <FieldRow key={field.key} label={def.reviewDriven ? ({notes:'内部备注',basisSummary:'制定依据',precautions:'客户注意事项'}[field.key] || field.label) : field.label} internal={field.internal}>
+    <FieldInput field={def.reviewDriven && ['basisSummary','precautions','customerAction'].includes(field.key) ? {...field,placeholder:'研判未明确，暂无补充；可核对后修改'} : field} value={field.concretePlan ? concretePlanText(record[field.key], record.standardPlanName) : record[field.key]} onChange={val => onChange({ ...record, [field.key]: val, ...(field.appointmentDate ? { appointmentSchedulingVersion: 1 } : {}) })} />
+  </FieldRow>
   return (
     <div style={{ border: '1px solid #E8E3DC', borderRadius: 8, marginBottom: 8, background: '#FAFAF8' }}>
       <div style={{ display: 'flex', alignItems: 'center', padding: '9px 12px', cursor: 'pointer' }} onClick={() => setOpen(v => !v)}>
@@ -156,11 +162,15 @@ export function RecordEditor({ def, record, onChange, onDelete, index, total }) 
       </div>
       {open && (
         <div style={{ padding: '0 12px 12px', borderTop: '1px solid #F0EDE7' }}>
-          {def.fields.map(field => (
-            <FieldRow key={field.key} label={field.label} internal={field.internal}>
-              <FieldInput field={field} value={record[field.key]} onChange={val => onChange({ ...record, [field.key]: val, ...(field.appointmentDate ? { appointmentSchedulingVersion: 1 } : {}) })} />
-            </FieldRow>
-          ))}
+          {def.reviewDriven && <p style={{fontSize:12,color:'#64796E'}}>内容由研判补入后带入，顾问核对即可；缺项可回研判提取补充，无需重新生成整份方案。</p>}
+          {def.fields.filter(field=>!optionalEmpty(field)).map(renderField)}
+          {def.fields.some(optionalEmpty) && <details style={{marginTop:12}}><summary style={{cursor:'pointer'}}>其他补充（研判未明确）</summary>{def.fields.filter(optionalEmpty).map(renderField)}</details>}
+          {def.templateFields?.length > 0 && <details style={{ marginTop: 16, padding: 12, background: '#F0F5F2', borderRadius: 8 }}>
+            <summary style={{ cursor: 'pointer', color: '#4A6558', fontSize: 13 }}>查看模板依据</summary>
+            {def.templateFields.map(field => <FieldRow key={field.key} label={field.label}>
+              <div style={{ paddingTop: 7, fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{readableValue(record[field.key]) || '未填写'}</div>
+            </FieldRow>)}
+          </details>}
           {def.annualServiceArrangement && <>
             <FieldRow label="随访人员"><div style={{ paddingTop: 8 }}>{def.managerName}</div></FieldRow>
             <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #D7E4DD' }}><b>服务安排</b><div style={{ fontSize: 12, marginTop: 4 }}>先确定本项管理内容，再按客户需求选择服务；原健管随访持续保留。</div>
