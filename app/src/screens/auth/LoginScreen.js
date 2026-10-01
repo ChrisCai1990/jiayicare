@@ -99,18 +99,19 @@ export default function LoginScreen({ navigation }) {
 
       {/* ── 顶部 Hero ──────────────────────────────────────────────── */}
       <View style={styles.heroArea}>
-        {/* 背景装饰：右上角淡光晕 */}
-        <View style={styles.glowDot} />
-
         <View style={styles.logoBlock}>
-          {/* 品牌标志 */}
-          <View style={styles.logoMark}>
-            <Ionicons name="medical" size={28} color="#5EC99B" />
-          </View>
-          <Text style={styles.brandName}>嘉医汇健康管家</Text>
-          <Text style={styles.brandSlogan}>健康有人管 · 生活更安心</Text>
+          <View style={styles.logoMark} />
+          <Text style={styles.brandName}>嘉医汇</Text>
+          <Text style={styles.brandSlogan}>全生命周期健康管理</Text>
         </View>
-
+        <View style={styles.trustRow}>
+          {[{ num: '10,000+', label: '服务用户' }, { num: '300+', label: '签约医生' }, { num: '99%', label: '满意度' }].map(item => (
+            <View key={item.label} style={styles.trustItem}>
+              <Text style={styles.trustNum}>{item.num}</Text>
+              <Text style={styles.trustLabel}>{item.label}</Text>
+            </View>
+          ))}
+        </View>
       </View>
 
       {/* ── 表单区域 ───────────────────────────────────────────────── */}
@@ -127,12 +128,16 @@ export default function LoginScreen({ navigation }) {
           {/* 顶部圆角拉手 */}
           <View style={styles.pullHandle} />
 
+          <TouchableOpacity style={styles.browseBtn} onPress={() => navigation.navigate('Main')} activeOpacity={0.8}>
+            <Text style={styles.browseBtnText}>暂不登录，先浏览</Text>
+          </TouchableOpacity>
+
           <Text style={styles.formTitle}>手机号登录</Text>
-          <Text style={styles.formSubtitle}>使用手机号和短信验证码登录</Text>
+          <Text style={styles.formSubtitle}>手机号验证码登录，新用户自动注册</Text>
 
           {/* 手机号输入框 */}
           <View style={[styles.field, phoneFocused && styles.fieldFocused]}>
-            <Text style={styles.prefixText}>CN +86</Text>
+            <Text style={styles.prefixText}>+86</Text>
             <View style={styles.fieldDivider} />
             <TextInput
               style={styles.fieldInput}
@@ -149,7 +154,6 @@ export default function LoginScreen({ navigation }) {
 
           {/* 验证码输入框 */}
           <View style={[styles.field, codeFocused && styles.fieldFocused]}>
-            <Ionicons name="shield-outline" size={17} color={colors.textMuted} style={{ marginRight: 10 }} />
             <TextInput
               style={[styles.fieldInput, { flex: 1 }]}
               placeholder="输入验证码"
@@ -273,7 +277,7 @@ const styles = StyleSheet.create({
 
   // ── Hero 区域
   heroArea: {
-    height: SCREEN_H * 0.38,
+    height: SCREEN_H * 0.35,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
     paddingBottom: spacing.lg,
@@ -282,16 +286,10 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'hidden',
   },
-  glowDot: {
-    position: 'absolute', width: 260, height: 260, borderRadius: 130,
-    backgroundColor: 'rgba(30,107,80,0.18)',
-    top: -80, right: -80,
-  },
   logoBlock: { alignItems: 'center', flex: 1, justifyContent: 'center' },
   logoMark: {
     width: 72, height: 72, borderRadius: 22,
     backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
     alignItems: 'center', justifyContent: 'center',
     marginBottom: 14,
   },
@@ -333,6 +331,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
     alignSelf: 'center', marginBottom: 20,
   },
+  browseBtn: {
+    height: 46, borderRadius: radius.md, backgroundColor: colors.white,
+    borderWidth: 1.5, borderColor: colors.primary,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 16,
+  },
+  browseBtnText: { fontSize: 16, fontWeight: '700', color: colors.primary },
   formTitle: {
     fontSize: 22, fontWeight: '800', color: colors.textPrimary,
     marginBottom: 4, letterSpacing: -0.4,

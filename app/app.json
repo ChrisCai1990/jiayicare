@@ -33,7 +33,7 @@
       },
       "edgeToEdgeEnabled": false,
       "package": "com.jiayicare.app",
-      "versionCode": 2,
+      "versionCode": 4,
       "permissions": [
         "CAMERA",
         "READ_MEDIA_IMAGES"
