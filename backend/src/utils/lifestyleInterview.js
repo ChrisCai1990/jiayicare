@@ -70,7 +70,7 @@ async function handle(req,res) {
 
    }
    const interview={...prepared,notes,method,patientVersion:body.patientVersion,phase:body.action==='draft'?'draft':'applying',submissionId:new (require('mongoose').Types.ObjectId)(),by:req.staff._id,byName:req.staff.name||req.staff.username,at:new Date(),questionnaireId:template._id,questions:template.questions};
-   task=await FollowUp.findOneAndUpdate({_id:task._id,updatedAt:task.updatedAt,aiStatus:task.aiStatus,status:task.status},{$set:{'formData.lifestyleInterview':interview,plannedContent:task.plannedContent||task.content}},{new:true}).lean();
+   task=await FollowUp.findOneAndUpdate({_id:task._id,updatedAt:task.updatedAt,aiStatus:task.aiStatus,status:task.status},{$set:{formData:{...(task.formData||{}),lifestyleInterview:interview},plannedContent:task.plannedContent||task.content}},{new:true}).lean();
    if(!task)throw fail('任务已更新，请刷新');
    if(body.action==='draft')return res.json({success:true,data:task});
   }
