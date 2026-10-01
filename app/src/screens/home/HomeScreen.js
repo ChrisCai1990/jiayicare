@@ -8,7 +8,7 @@ import Svg, { Polyline, Circle } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
-import { userAPI, systemAPI, followupTasksAPI, tasksAPI, servicesAPI } from '../../services/api';
+import { userAPI, systemAPI, followupTasksAPI, tasksAPI, servicesAPI, storage } from '../../services/api';
 import AnimatedNumber from '../../components/AnimatedNumber';
 import { homeTaskCards } from '../../utils/homeTaskCards';
 
@@ -232,55 +232,51 @@ export default function HomeScreen({ navigation }) {
   const [taskDetailModal, setTaskDetailModal] = useState(null);
   const [taskCompleting, setTaskCompleting]   = useState(false);
   const openingManagerRef = useRef(false);
+  const loadRequestRef = useRef(0);
+  const sessionRef = useRef(token);
+  sessionRef.current = token;
   const fileInputRef = useRef(null);
 
   const loadData = useCallback(async () => {
+    const requestId = ++loadRequestRef.current;
+    const current = () => requestId === loadRequestRef.current && sessionRef.current === token;
+    if (!token) { setDashData(null); setScoreHistory([]); setAllTasks([]); setFollowupPlans([]); }
+    const load = async (request, apply) => {
+      try { const result = await request(); if (current() && result?.success) apply(result.data); }
+      catch { /* Each section can fail independently. */ }
+    };
     try {
-      const [dashRes, followupRes, tasksRes, servicesRes] =
-        await Promise.allSettled([
-          token ? userAPI.getDashboard() : Promise.resolve(null),
-          token ? followupTasksAPI.list() : Promise.resolve(null),
-          token ? tasksAPI.list() : Promise.resolve(null),
-          servicesAPI.list(),
-        ]);
-
-      if (dashRes.status === 'fulfilled' && dashRes.value?.success) {
-        setDashData(dashRes.value.data);
-        if (dashRes.value.data?.scoreHistory?.length > 0) {
-          setScoreHistory(dashRes.value.data.scoreHistory);
-        }
-      }
-      if (followupRes.status === 'fulfilled' && followupRes.value?.success) {
-        setFollowupPlans(followupRes.value.data || []);
-      }
-      if (tasksRes.status === 'fulfilled' && tasksRes.value?.success) {
-        setAllTasks((tasksRes.value.data || []).filter(t => t.status === 'pending'));
-      }
-      if (servicesRes.status === 'fulfilled' && servicesRes.value?.success) {
-        setPopularServices((servicesRes.value.data?.services || []).slice(0, 4));
-      }
+      const jobs = [load(() => servicesAPI.list(), data => setPopularServices((data?.services || []).slice(0, 4)))];
+      if (token) jobs.push(
+        load(() => userAPI.getDashboard(), data => { setDashData(data); setScoreHistory(data?.scoreHistory || []); }),
+        load(() => followupTasksAPI.list(), data => setFollowupPlans(data || [])),
+        load(() => tasksAPI.list(), data => setAllTasks((data || []).filter(t => t.status === 'pending')))
+      );
+      await Promise.all(jobs);
     } catch {}
-    finally { setLoading(false); setRefreshing(false); }
+    finally { if (current()) { setLoading(false); setRefreshing(false); } }
   }, [token]);
 
   useEffect(() => {
     loadData();
-    // 系统推送检查：每天最多触发一次（localStorage 记录日期）
-    try {
+    return () => { loadRequestRef.current++; };
+  }, [loadData]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const timer = setTimeout(async () => {
+      try {
       const pushKey = 'jy_last_push';
       const today = toLocalDateStr(new Date());
-      const lastPush = localStorage.getItem(pushKey);
-      if (token && lastPush !== today) {
-        systemAPI.push().then((res) => {
-          localStorage.setItem(pushKey, today);
-          // 若浏览器通知已授权且有新推送，弹出系统通知
-          if (res?.pushed?.length > 0 && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-            new Notification('嘉医管家健康提醒', { body: res.pushed[0], icon: '/favicon.ico' });
-          }
-        }).catch(() => {}); // 静默失败，不影响首页加载
+      const lastPush = await storage.getItem(pushKey);
+      if (lastPush !== today && sessionRef.current === token) {
+        await systemAPI.push();
+        await storage.setItem(pushKey, today);
       }
-    } catch {}
-  }, [loadData, token]);
+      } catch { /* Push failure must not block the home page. */ }
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [token]);
 
   // 从录入页返回时自动刷新（focus listener）
   useEffect(() => {
@@ -316,7 +312,7 @@ export default function HomeScreen({ navigation }) {
   };
 
   // 合并两个来源：dashData 有服务器评分等，authUser 在编辑资料后立即更新（身高体重等）
-  const user  = { ...(dashData?.user || {}), ...(authUser || {}) };
+  const user  = { ...(authUser || {}), ...(dashData?.user || {}) };
   const todayReminders  = dashData?.todayReminders || [];
   // has_any_health_data：后端返回，用于判断新用户空状态
   const hasAnyHealthData = dashData?.has_any_health_data ?? isDemo;
