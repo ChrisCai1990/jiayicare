@@ -59,6 +59,7 @@ import OutpatientEscortVisitForm, { emptyOutpatientEscortVisit, isOutpatientEsco
 import OutpatientPostVisitReviewForm, { emptyOutpatientPostVisitReview, isOutpatientPostVisitReviewTask, validateOutpatientPostVisitReview } from '../components/OutpatientPostVisitReviewForm'
 import MedicalProxyStageForm, { medicalProxyStage, validateMedicalProxyStage } from '../components/MedicalProxyStageForm'
 import { serviceTaskTitle } from '../utils/serviceTaskTitle.mjs'
+import { buildExecutionRows, executionRowCategory, executionRowStatus, executionServiceCurrentTask } from '../utils/executionTaskRows.mjs'
 import ExpertAppointmentRescheduleForm, { ExpertAppointmentHistory } from '../components/ExpertAppointmentRescheduleForm'
 import AdHocConsultationForm from '../components/AdHocConsultationForm'
 import MedicationProxyStageForm, { medicationProxyStage } from '../components/MedicationProxyStageForm'
@@ -2584,8 +2585,18 @@ export default function PatientDetailPage() {
 
   const loadFollowUps = async () => {
     try {
-      const res = await staffAPI.getPatientFollowUps(id, { limit: 200 })
-      setFollowUps(res.data.followUps)
+      const items = []
+      let page = 1
+      let total = 0
+      do {
+        const res = await staffAPI.getPatientFollowUps(id, { limit: 200, page })
+        const batch = res.data.followUps || []
+        items.push(...batch)
+        total = res.data.total || items.length
+        if (!batch.length) break
+        page += 1
+      } while (items.length < total)
+      setFollowUps([...new Map(items.map(item => [item._id, item])).values()])
     } catch {}
   }
   const openPostCheckupReview = async (followUpId) => {
@@ -9479,18 +9490,6 @@ export default function PatientDetailPage() {
             const IN_PROGRESS_STATUSES = ['in_progress', 'missed']
             const DONE_STATUSES = ['completed']
             const CANCELLED_STATUSES = ['cancelled']
-            const executionCategoryOf = task => {
-              const text = `${task.theme || ''} ${task.content || task.taskRequirements || task.plannedContent || ''} ${task.type || ''} ${task.sourceType || ''}`
-              if (task.sourceType === 'supply_reminder' || task.sourceOrderId?.medicalProxyPlan?.medicationProxy || task.sourceOrderId?.medicalProxyPlan?.supplementProxy || (task.tags || []).includes('配药与营养补充')) return 'supply'
-              if (/营养|饮食|膳食|体重管理/.test(text)) return 'nutrition'
-              // 体检、复查和疫苗任务常会同时提到“血压、体重、监测”等检查背景。
-              // 先按任务目的归类，避免被普通指标关键词抢到“健康监测”。
-              if (/体检|复查|检验|检查|筛查|疫苗/.test(text)) return 'checkup'
-              if (/就医|会诊|医院|挂号|陪诊|代诊|科室|医生/.test(text)) return 'medical'
-              if (/血压|血糖|体重|睡眠|运动|饮水|监测|打卡/.test(text)) return 'monitoring'
-              if (/专病|慢病|疾病管理/.test(text)) return 'disease'
-              return 'communication'
-            }
             // 同一订单下的预约、人员安排、执行、资料审核和督办是一次服务的内部岗位流转，
             // 客户档案只计作一条综合服务。AI 生成的后续随访计划 workflowKey 为空，仍单独展示便于审核。
             const supplyReminderOrderMap = new Map(followUps
@@ -9524,66 +9523,27 @@ export default function PatientDetailPage() {
                 && candidate.status === 'completed'
                 && (candidate.sourceOrderId?.status === 'completed' || candidate.sourceHealthPlanId?.status === 'completed'))
             const visibleFollowUps = followUps.filter(task => !isSupersededDuplicateServiceTask(task) && !isCancelledStageOfCompletedService(task))
-            const displayTaskCount = tasks => {
-              const seenServices = new Set()
-              return tasks.reduce((count, task) => {
-                if (!isOrderServiceWorkflowTask(task)) return count + 1
-                const key = serviceGroupKey(task)
-                if (seenServices.has(key)) return count
-                seenServices.add(key)
-                return count + 1
-              }, 0)
-            }
             const EXECUTION_CATEGORIES = [
               ['all', '全部任务'], ['nutrition', '营养干预'], ['monitoring', '健康监测'],
               ['checkup', '体检与复查'], ['medical', '就医协助'], ['supply', '配药与营养补充'], ['disease', '专病管理'], ['communication', '客户沟通'],
             ]
-            const statusFiltered = followUpFilter === 'planned' ? visibleFollowUps.filter(f => PLANNED_STATUSES.includes(f.status))
-              : followUpFilter === 'in_progress' ? visibleFollowUps.filter(f => IN_PROGRESS_STATUSES.includes(f.status))
-              : followUpFilter === 'done' ? visibleFollowUps.filter(f => DONE_STATUSES.includes(f.status))
-              : followUpFilter === 'cancelled' ? visibleFollowUps.filter(f => CANCELLED_STATUSES.includes(f.status))
-              : visibleFollowUps
-            const filtered = statusFiltered.filter(task => executionCategory === 'all' || executionCategoryOf(task) === executionCategory)
-            const plannedCount = followUps.filter(f => PLANNED_STATUSES.includes(f.status)).length
-            const inProgressCount = followUps.filter(f => IN_PROGRESS_STATUSES.includes(f.status)).length
-            const doneCount = followUps.filter(f => DONE_STATUSES.includes(f.status)).length
-            const cancelledCount = followUps.filter(f => CANCELLED_STATUSES.includes(f.status)).length
-
             // 日常监测随访（sourceType=scheduled，theme形如"日常监测随访 · xxx"）按频率每天/每周生成一条占位，
             // 同一客户能连续攒出十几二十条同主题记录，把就医随访/体检提醒/订单预约等真正有意义的记录
             // 挤到分页很后面（2026-07-13 反馈：客户详情页只看到7/25之后的，7/14的记录翻不到）。
             // 这里按"主题+状态"分组折叠成一行，组内明细可展开查看，折叠行取组内最新日期用于排序，
             // 保证真实记录不再被同质占位淹没。
-            const MONITOR_PREFIX = '日常监测随访 · '
-            const monitorGroups = {} // key: theme+status → { theme, status, items: [] }
-            const orderServiceGroups = {}
-            const rows = [] // 最终渲染的行：单项任务、日常监测分组或订单服务分组
-            filtered.forEach(f => {
-              if (isOrderServiceWorkflowTask(f)) {
-                const key = serviceGroupKey(f)
-                if (!orderServiceGroups[key]) {
-                  orderServiceGroups[key] = { type: 'order_service', key, items: [] }
-                  rows.push(orderServiceGroups[key])
-                }
-                orderServiceGroups[key].items.push(f)
-              } else if (f.sourceType === 'scheduled' && (f.theme || '').startsWith(MONITOR_PREFIX)) {
-                const key = f.theme + '|' + f.status
-                if (!monitorGroups[key]) {
-                  monitorGroups[key] = { type: 'group', key, theme: f.theme, status: f.status, items: [] }
-                  rows.push(monitorGroups[key])
-                }
-                monitorGroups[key].items.push(f)
-              } else {
-                rows.push({ type: 'single', item: f })
-              }
-            })
+            const allRows = buildExecutionRows(visibleFollowUps, isOrderServiceWorkflowTask, serviceGroupKey)
+            const categoryRows = executionCategory === 'all' ? allRows : allRows.filter(row => executionRowCategory(row) === executionCategory)
+            const rows = categoryRows.filter(row => followUpFilter === 'all'
+              || (followUpFilter === 'planned' && PLANNED_STATUSES.includes(executionRowStatus(row)))
+              || (followUpFilter === 'in_progress' && IN_PROGRESS_STATUSES.includes(executionRowStatus(row)))
+              || (followUpFilter === 'done' && DONE_STATUSES.includes(executionRowStatus(row)))
+              || (followUpFilter === 'cancelled' && CANCELLED_STATUSES.includes(executionRowStatus(row))))
             // 排序方向：待随访/随访中是还没发生的未来计划，按日期从近到远（离今天最近的先处理）；
             // 已随访/已取消是历史事件，按最近发生的在前。"全部"tab混合两类，按每行自身状态各自判断方向。
             const isFutureStatus = (status) => PLANNED_STATUSES.includes(status) || IN_PROGRESS_STATUSES.includes(status)
-            const serviceCurrentTask = row => row.items.find(item => /:supervise$/.test(item.workflowKey || '') && ['planned', 'in_progress', 'missed'].includes(item.status))
-              || row.items.find(item => ['planned', 'in_progress', 'missed'].includes(item.status))
-              || [...row.items].sort((a, b) => new Date(b.completedAt || b.updatedAt || b.createdAt || b.date) - new Date(a.completedAt || a.updatedAt || a.createdAt || a.date))[0]
-            const rowStatus = (row) => row.type === 'group' ? row.status : row.type === 'order_service' ? serviceCurrentTask(row).status : row.item.status
+            const serviceCurrentTask = executionServiceCurrentTask
+            const rowStatus = executionRowStatus
             const rowDate = (row) => row.type === 'group'
               ? (isFutureStatus(row.status) ? Math.min(...row.items.map(i => new Date(i.date).getTime())) : Math.max(...row.items.map(i => new Date(i.date).getTime())))
               : row.type === 'order_service' ? new Date(serviceCurrentTask(row).date).getTime()
@@ -9601,24 +9561,24 @@ export default function PatientDetailPage() {
             <>
             <div style={{ display: 'flex', gap: 7, padding: '12px 16px 2px', flexWrap: 'wrap', borderBottom: '1px solid #EDF1EF' }}>
               {EXECUTION_CATEGORIES.map(([key, label]) => {
-                const count = key === 'all' ? displayTaskCount(visibleFollowUps) : displayTaskCount(visibleFollowUps.filter(task => executionCategoryOf(task) === key))
+                const count = key === 'all' ? allRows.length : allRows.filter(row => executionRowCategory(row) === key).length
                 return <button key={key} type="button" className={executionCategory === key ? 'btn btn-sm' : 'btn btn-secondary btn-sm'} style={executionCategory === key ? { background: '#1E6B50', color: '#fff' } : {}} onClick={() => setExecutionCategory(key)}>{label} {count}</button>
               })}
             </div>
             <div style={{ display: 'flex', gap: 6, padding: '10px 16px 0' }}>
               {[
-                { k: 'all', label: `全部 ${displayTaskCount(visibleFollowUps)}` },
-                { k: 'planned', label: `待执行 ${displayTaskCount(visibleFollowUps.filter(f => PLANNED_STATUSES.includes(f.status)))}` },
-                { k: 'in_progress', label: `执行中 ${displayTaskCount(visibleFollowUps.filter(f => IN_PROGRESS_STATUSES.includes(f.status)))}` },
-                { k: 'done', label: `已完成 ${displayTaskCount(visibleFollowUps.filter(f => DONE_STATUSES.includes(f.status)))}` },
-                { k: 'cancelled', label: `已取消 ${displayTaskCount(visibleFollowUps.filter(f => CANCELLED_STATUSES.includes(f.status)))}` },
+                { k: 'all', label: `全部 ${categoryRows.length}` },
+                { k: 'planned', label: `待执行 ${categoryRows.filter(row => PLANNED_STATUSES.includes(rowStatus(row))).length}` },
+                { k: 'in_progress', label: `执行中 ${categoryRows.filter(row => IN_PROGRESS_STATUSES.includes(rowStatus(row))).length}` },
+                { k: 'done', label: `已完成 ${categoryRows.filter(row => DONE_STATUSES.includes(rowStatus(row))).length}` },
+                { k: 'cancelled', label: `已取消 ${categoryRows.filter(row => CANCELLED_STATUSES.includes(rowStatus(row))).length}` },
               ].map(t => (
                 <button key={t.k} className={followUpFilter === t.k ? 'btn btn-sm' : 'btn btn-secondary btn-sm'}
                   style={followUpFilter === t.k ? { background: '#1E6B50', color: '#fff' } : {}}
                   onClick={() => setFollowUpFilter(t.k)}>{t.label}</button>
               ))}
             </div>
-            {filtered.length === 0 ? (
+            {rows.length === 0 ? (
               <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>当前分类和状态下暂无执行任务</div>
             ) : (
             <table className="table">
@@ -9714,7 +9674,7 @@ export default function PatientDetailPage() {
                       const current = serviceCurrentTask(row)
                       const orderTask = row.items.find(item => item.sourceType === 'order' && item.sourceOrderId)
                       const serviceName = orderTask?.sourceOrderId?.serviceName || current.sourceOrderId?.serviceName || current.sourceHealthPlanId?.title || (isMedicalEscortTask(current) ? '就医陪同服务' : /营养/.test(current.theme || '') ? '代配营养素服务' : '就医协助服务')
-                      const completed = row.items.every(item => ['completed', 'cancelled'].includes(item.status)) && row.items.some(item => item.status === 'completed')
+                      const completed = rowStatus(row) === 'completed'
                       const completedAt = row.items.map(item => item.completedAt).filter(Boolean).sort().at(-1)
                       const serviceStageRank = item => item.sourceType === 'supply_reminder' ? 99 : ({ booking: 10, planner: 20, execute: 30, resolution: 40, supervise: 50 })[String(item.workflowKey || '').replace('medical_proxy:', '')] || 0
                       const serviceDetail = { ...current, completedAt: completedAt || current.completedAt, sourceOrderId: orderTask?.sourceOrderId || current.sourceOrderId, _serviceItems: [...row.items].sort((a, b) => {
@@ -9731,7 +9691,7 @@ export default function PatientDetailPage() {
                         <td style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>{current.createdAt ? new Date(current.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
                         <td style={{ fontSize: 12, color: '#65776F', whiteSpace: 'nowrap' }}>{completedAt ? new Date(completedAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
                         <td><span className="badge badge-info">综合服务</span></td>
-                        <td><span style={{ fontSize: 13, fontWeight: 500, color: FOLLOWUP_LIST_STATUS_COLOR[current.status] || '#666' }}>{FOLLOWUP_LIST_STATUS_MAP[current.status] || current.status}</span></td>
+                        <td><span style={{ fontSize: 13, fontWeight: 500, color: FOLLOWUP_LIST_STATUS_COLOR[rowStatus(row)] || '#666' }}>{FOLLOWUP_LIST_STATUS_MAP[rowStatus(row)] || rowStatus(row)}</span></td>
                         <td style={{ fontSize: 13, color: '#666' }}>{current.assignedTo?.name || current.staffId?.name || '-'}</td>
                         <td style={{ fontSize: 13, color: '#1A2B24', maxWidth: 300 }}><div><span style={{ fontSize: 11, color: '#22A06B', background: '#22A06B18', padding: '1px 6px', borderRadius: 4, marginRight: 4 }}>一次服务</span><b>{serviceName}</b></div><div style={{ marginTop: 4, color: '#65776F' }}>{completed ? '服务结果' : '当前进度'}：{stageText || '处理中'}</div></td>
                         <td style={{ fontSize: 12, color: '#8AA89C' }}>{current.nextFollowUpDate ? new Date(current.nextFollowUpDate).toLocaleDateString('zh-CN') : '-'}</td>
