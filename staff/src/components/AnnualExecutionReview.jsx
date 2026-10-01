@@ -1,0 +1,76 @@
+import React, { useEffect, useRef, useState } from 'react'
+import { staffAPI } from '../api'
+
+const statusName = { planned: '待执行', pending: '待处理', in_progress: '进行中', completed: '已完成', cancelled: '已取消', missed: '逾期' }
+const dateText = value => value ? String(value).slice(0, 10) : '日期未定'
+const display = row => row ? `${row.title} · ${row.datePending ? '日期待确认' : dateText(row.date)}${row.timing ? ` · ${row.timing}` : ''}\n${row.advice || '未填写建议'}` : '无'
+
+export default function AnnualExecutionReview({ patientId, planId, planVersion, canEdit }) {
+  const [data, setData] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false)
+  const [note, setNote] = useState(''), [outcome, setOutcome] = useState('unchanged'), [message, setMessage] = useState('')
+  const seq = useRef(0), section = useRef(null)
+  const reload = async () => {
+    const version = ++seq.current
+    try {
+      const response = await staffAPI.getAnnualExecutionReview(patientId, planId)
+      if (version === seq.current) { setData(response.data); setError('') }
+    } catch (e) { if (version === seq.current) setError(e.message || '加载执行核对失败') }
+  }
+  useEffect(() => {
+    setData(null); setNote(''); setMessage('')
+    return () => { seq.current++ }
+  }, [patientId, planId])
+  useEffect(() => { reload(); return () => { seq.current++ } }, [patientId, planId, planVersion])
+  const pending = (data?.reviews || []).filter(r => r.status === 'pending')
+  const done = (data?.reviews || []).filter(r => r.status === 'reviewed')
+  useEffect(() => {
+    if (data && window.location.hash === '#annual-execution-review') section.current?.scrollIntoView?.({ block: 'start' })
+  }, [data])
+  const submit = async () => {
+    if (busy || !note.trim() || error) return
+    setBusy(true); setError(''); setMessage('')
+    try {
+      const result = await staffAPI.completeAnnualExecutionReview(patientId, planId, { outcome, note: note.trim(), baseUpdatedAt: data.baseUpdatedAt, taskVersion: data.taskVersion })
+      setMessage(result.message); setNote(''); await reload()
+    } catch (e) { setError(e.message || '保存失败，请重试') }
+    finally { setBusy(false) }
+  }
+  if (!data && !error) return null
+  if (!data?.reviews?.length && !error) return null
+  return <section ref={section} id="annual-execution-review" className="card" style={{ marginBottom: 16, padding: 16, border: pending.length ? '1px solid #E4BE75' : undefined }}>
+    <h3 style={{ margin: '0 0 8px' }}>方案修订后的执行核对{pending.length ? ` · ${pending.length}次待核对` : ''}</h3>
+    {error && <div role="alert">{error} <button className="btn btn-secondary btn-sm" disabled={busy} onClick={reload}>刷新核对</button></div>}
+    {message && <p role="status">{message}</p>}
+    {pending.length > 0 && <>
+      <p>健康顾问核对以下变更是否影响执行；需要调整时，请先到原服务流程完成安排，再记录结果。</p>
+      {pending.map(r => <details key={r.id} open={pending.length === 1} style={{ marginBottom: 10 }}>
+        <summary>{dateText(r.createdAt)} · {r.changes.map(c => c.title).join('、')}</summary>
+        {r.changes.map((change, index) => <div key={index} style={{ background: '#F7F9F8', marginTop: 8, padding: 10 }}>
+          <strong>{change.module} · {change.action}：{change.title}</strong>
+          {change.deletionReason && <p>移除原因：{change.deletionReason}</p>}
+          <p style={{ whiteSpace: 'pre-wrap' }}>原方案：{display(change.before)}</p>
+          <p style={{ whiteSpace: 'pre-wrap' }}>修订后方案：{display(change.after)}</p>
+        </div>)}
+      </details>)}
+      <details style={{ margin: '12px 0' }}>
+        <summary>本方案直接关联的执行安排：{data.totals.followUps}条医护事项、{data.totals.tasks}条会员任务</summary>
+        <p>以下为核对时的参考。就医、订单等其他关联服务请在会员原流程核对。</p>
+        {data.followUps.map(row => <div key={row._id} style={{ margin: '8px 0' }}>
+          <a href={`/patients/${patientId}?tab=followups&followUpId=${row._id}`}>{row.theme || '随访事项'}</a> · {statusName[row.status] || '待核对状态'} · {dateText(row.date)} · {row.assignedTo?.name || '未指定执行人'}
+        </div>)}
+        {data.tasks.map(row => <div key={row._id} style={{ margin: '8px 0' }}>{row.title} · {statusName[row.status] || '待核对状态'} · {dateText(row.dueDate)}（会员任务）</div>)}
+        {(data.totals.followUps > data.followUps.length || data.totals.tasks > data.tasks.length) && <p>每类最多展示100条，请到原流程核对其余事项。</p>}
+        {!data.totals.followUps && !data.totals.tasks && <p>没有直接关联记录，不代表其他服务流程中没有安排。</p>}
+      </details>
+      <p><a href={`/patients/${patientId}?tab=followups`}>打开会员执行事项</a></p>
+      {canEdit ? <div style={{ display: 'grid', gap: 8 }}>
+        <label>核对结论 <select className="form-input" value={outcome} disabled={busy} onChange={e => setOutcome(e.target.value)}>
+          <option value="unchanged">现有执行安排无需调整</option><option value="arranged">已在原流程完成调整或衔接</option>
+        </select></label>
+        <textarea className="form-input" aria-label="执行安排核对说明" maxLength={1000} placeholder="填写实际核对结果；如已调整，请说明事项、负责人及原流程记录。" value={note} disabled={busy} onChange={e => setNote(e.target.value)} />
+        <div><button className="btn btn-primary btn-sm" disabled={busy || !!error || !note.trim()} onClick={submit}>{busy ? '保存中…' : '记录核对结果'}</button></div>
+      </div> : <p>待健康顾问核对；执行岗位继续使用原事项入口。</p>}
+    </>}
+    {done.length > 0 && <details style={{ marginTop: 12 }}><summary>已核对记录（{done.length}）</summary>{done.map(r => <p key={r.id}>{dateText(r.reviewedAt)} · {r.reviewedByName || '健康顾问'} · {r.outcome === 'arranged' ? '已衔接原流程' : '无需调整'}<br />{r.note}</p>)}</details>}
+  </section>
+}

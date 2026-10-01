@@ -54,10 +54,11 @@ module.exports=({getVisiblePlanPatientIds})=>{
       const items=logic.clean(req.body.items), amendmentId=logic.hash({planId,sourceHash,items});
       const catalog=items.some(item=>item.key==='personalized_followups')?await logic.templateCatalog():[];
       const {moduleData,changes}=logic.apply(plan.moduleData,items,{topicId,...(scope==='topic'?{scope}:{messageId})},catalog);
-      const revision={id:amendmentId,status:'applied',createdAt:new Date(),createdBy:req.staff._id,source,sourceHash,baseUpdatedAt:plan.updatedAt,changes,taskStatus:'not_created'};
+      const executionReview=require('../utils/annualExecutionReview').markForReview(plan,changes);
+      const revision={...(executionReview?{executionReview}:{}),id:amendmentId,status:'applied',createdAt:new Date(),createdBy:req.staff._id,source,sourceHash,baseUpdatedAt:plan.updatedAt,changes,taskStatus:'not_created'};
       const saved=await Plan.updateOne({_id:plan._id,patientId:req.amendmentPatientId,updatedAt:plan.updatedAt,'supplementRevisions.id':{$ne:amendmentId}},{$set:{moduleData},$push:{supplementRevisions:revision}});
       if(!saved.modifiedCount) return res.status(409).json({success:false,message:'方案已变化或已补入，请刷新核对'});
-      res.json({success:true,message:'已补入年度方案；未创建或调整执行任务',data:{planId,amendmentId}});
+      res.json({success:true,message:executionReview?'已补入年度方案，执行安排核对已进入健康顾问工作台；原执行任务保持原状态':'已补入年度方案；未创建或调整执行任务',data:{planId,amendmentId}});
     }catch(e){res.status(400).json({success:false,message:e.message});}
   });
   return router;

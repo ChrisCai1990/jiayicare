@@ -6,6 +6,7 @@ import { useToast, useStaff } from '../App'
 import { StaffListContext, ModulePanel } from '../components/ModulePanel'
 import AnnualServicePeriodPanel from '../components/AnnualServicePeriodPanel'
 import AnnualPlanSupplement from '../components/AnnualPlanSupplement'
+import AnnualExecutionReview from '../components/AnnualExecutionReview'
 import AnnualServiceRecommendations from '../components/AnnualServiceRecommendations'
 import { annualPlanReturnTarget } from '../utils/annualPlanNavigation.mjs'
 import assessmentCriteria from '../../../shared/annualAssessmentCriteria.json'
@@ -878,6 +879,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       {patientMode && plansByType[planType]?.updatedAt && <div style={{color:'#65776F',marginBottom:12}}>方案最后更新：{new Date(plansByType[planType].updatedAt).toLocaleString('zh-CN')}</div>}
       <details className="annual-plan-secondary" open={!patientMode || !closedLoopEnabled || window.location.hash === '#professional-assessments' || undefined}>
         <summary>方案准备与专业评估{preparation?.checklist && ` · 已完成 ${preparation.checklist.progress.completed}/${preparation.checklist.progress.total}`}</summary>
+      {patientMode && plansByType[planType]?._id && <AnnualExecutionReview key={`${id}:${plansByType[planType]._id}`} patientId={id} planId={plansByType[planType]._id} planVersion={currentPlanVersion} canEdit={canEdit} />}
       {patientMode && closedLoopEnabled && canEdit && <AnnualPlanSupplement key={`${id}:${year}:${planType}:${selectedTemplateId}`} patientId={id} year={year} planType={planType} template={adminTemplates.find(t => t._id === selectedTemplateId)} templateId={selectedTemplateId} plan={plansByType[planType]} moduleData={moduleData} canEdit={canEdit} blocked={preparationBlocked} toast={toast} onApply={data => { setModuleData(data); setDirty(true) }} />}
       {patientMode && closedLoopEnabled && preparation?.checklist && (
         <div style={{ background: preparation.checklist.ready ? '#F0FDF4' : '#FFFDF7', border: `1px solid ${preparation.checklist.ready ? '#86EFAC' : '#F3D49A'}`, borderRadius: 12, padding: 18, marginBottom: 20 }}>

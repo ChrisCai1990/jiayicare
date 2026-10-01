@@ -110,6 +110,7 @@ const { stepsForInsuranceScenario } = require('../utils/insuranceServiceWorkflow
 const { canUseInsuranceCoverage, isInsuranceScenario } = require('../utils/insuranceCoverage');
 const router = express.Router();
 router.use('/patients', require('./reviewPlanAmendments')({ getVisiblePlanPatientIds }));
+router.use('/patients', require('./annualExecutionReview')({ getVisiblePlanPatientIds }));
 router.use('/followups', require('./followUpServices'));
 router.use('/followups', require('./annualCheckupPreparation'));
 router.use('/report-followups', require('./reportFollowUps')({ getVisiblePlanPatientIds }));
@@ -10686,7 +10687,7 @@ router.post('/patients/:id/annual-supplement-revision', staffAuth, async (req, r
     const preview = require('../../../shared/annualSupplement.cjs').applySupplement(plan.moduleData || {}, req.body.changes);
     const revisionId = require('../utils/annualGenerationConsistency').fingerprint({ planId: String(plan._id), sources, changes: req.body.changes });
     const revision = { id: revisionId, status: 'pending_review', createdAt: new Date(), createdBy: req.staff._id, baseUpdatedAt: plan.updatedAt, sources, changes: req.body.changes, moduleData: preview };
-    const saved = await AnnualPlan.updateOne({ _id: plan._id, updatedAt: plan.updatedAt, 'supplementRevisions.id': { $ne: revisionId } }, { $push: { supplementRevisions: { $each: [revision], $slice: -20 } } });
+    const saved = await AnnualPlan.updateOne({ _id: plan._id, updatedAt: plan.updatedAt, 'supplementRevisions.id': { $ne: revisionId } }, { $push: { supplementRevisions: revision } });
     if (!saved.modifiedCount) return res.status(409).json({ success: false, message: '方案已变化，请刷新后重试' });
     res.json({ success: true, message: '修订建议已留档，原方案及执行任务未改变' });
   } catch (error) { res.status(error.statusCode || 400).json({ success: false, message: error.message }); }
@@ -12837,6 +12838,19 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           link: `/patients/${c.user?._id}?openChat=1`,
         });
       });
+    }
+
+    // New confirmed-plan amendments are one actionable review per plan, never historical backfill.
+    if (isSuper || role === 'familyDoctor') {
+      const executionReview = require('../utils/annualExecutionReview');
+      const users = await User.find({ isDeleted: { $ne: true },
+        ...(req.staff.tenantId ? { tenantId: req.staff.tenantId } : {}),
+        ...(myPatientIds ? { _id: { $in: myPatientIds } } : {}),
+      }).select('_id').lean();
+      const changedPlans = await AnnualPlan.find({ patientId: { $in: users.map(u => u._id) },
+        supplementRevisions: { $elemMatch: { status: 'applied', 'executionReview.version': 1, 'executionReview.status': 'pending' } },
+      }).select('patientId year planType servicePlanCode +supplementRevisions').populate('patientId', 'name').lean();
+      changedPlans.forEach(plan => { if (plan.patientId) { const task = executionReview.todo(plan); if (task) todos.push(task); } });
     }
 
     // Read-only projection: customer interest and opted-in due dates share one source and one reminder.

@@ -18,7 +18,7 @@ const annualPlanSchema = new mongoose.Schema({
   year:       { type: Number, default: () => new Date().getFullYear() },
   moduleData: { type: mongoose.Schema.Types.Mixed, default: {} }, // { moduleKey: { enabled, field1, field2... } }
   notes:      { type: String, default: '' },
-  supplementRevisions: { type: [mongoose.Schema.Types.Mixed], default: [], select: false }, // 内部修订建议，不改正式版/任务
+  supplementRevisions: { type: [mongoose.Schema.Types.Mixed], default: [], select: false }, // 内部修订历史及执行核对凭据；默认不向客户返回
   continuitySource: {
     previousPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan' },
     annualReviewId: { type: mongoose.Schema.Types.ObjectId, ref: 'PhaseAssessment' },
