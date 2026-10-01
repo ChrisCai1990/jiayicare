@@ -2729,7 +2729,7 @@ export default function PatientDetailPage() {
     try {
       await staffAPI.updateFollowUp(execItem._id, {
         type: execForm.type,
-        content: execForm.content.trim() || (isCheckupAppointmentBooking ? '已完成待约检预约，转交就医专员执行。' : medicationStage ? `代配药${medicationStage}环节已完成` : proxyStage ? (isMedicalEscortTask(execItem) ? ({ planner: '健康规划师已安排陪同就医专员', execute: '就医专员已完成陪同并提交资料审核', post_visit_audit: '健管专员已完成陪同资料审核归档' }[proxyStage] || '陪同就医服务环节已完成') : execForm.formData?.medicalPlanning ? proxyStage === 'advisor' ? '健康顾问已完成就医规划建议，转健康规划师与客户沟通' : '健康规划师已与客户确认就医规划及后续服务意向' : proxyStage === 'booking' && isMedicalProxyMedicationTask(execItem) ? '代配药门诊预约已完成，转健康规划师安排执行人员' : `医疗代诊${{ intake: '资料核对', collect: '资料收集', audit: '资料审核', advisor: '方案确认', planner: '方案复核', booking: '专家门诊预约', execute: '执行' }[proxyStage]}已完成`) : isAdvisorAssessment ? '已完成就医评估并确定推荐医院、科室、专家及预计检查安排' : isOutpatientAppointment ? '已完成代诊约诊服务安排' : isStaffAssignment ? '已完成首次代诊与检查日陪诊人员安排' : isEscortVisit ? '已完成检查及专家门诊陪诊，当日检验检查单和门诊病历已打印上传' : isPostVisitReview ? '已查看陪诊资料并生成后续随访计划' : summarizeServiceChecklist(submittedChecklist, execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor')),
+        content: execForm.content.trim() || (isCheckupAppointmentBooking ? '已完成待约检预约，转交就医专员执行。' : medicationStage ? `代配药${medicationStage}环节已完成` : proxyStage ? (isMedicalEscortTask(execItem) ? ({ planner: '健康规划师已安排陪同就医专员', execute: '就医专员已完成陪同并提交资料审核', post_visit_audit: '健管专员已完成陪同资料审核归档' }[proxyStage] || '陪同就医服务环节已完成') : execForm.formData?.medicalPlanning ? proxyStage === 'advisor' ? '健康顾问已完成就医规划建议，转健康规划师与客户沟通' : '健康规划师已与客户确认就医规划及后续服务意向' : proxyStage === 'booking' && isMedicalProxyMedicationTask(execItem) ? '代配药门诊预约已完成，转健康规划师安排执行人员' : `医疗代诊${{ intake: '资料核对', collect: '资料收集', audit: '资料审核', advisor: '方案确认', planner: '方案复核', booking: '专家门诊预约', execute: '执行', post_visit_audit: '就诊资料审核', post_visit_review: '就诊资料查看' }[proxyStage] || '服务环节'}已完成`) : isAdvisorAssessment ? '已完成就医评估并确定推荐医院、科室、专家及预计检查安排' : isOutpatientAppointment ? '已完成代诊约诊服务安排' : isStaffAssignment ? '已完成首次代诊与检查日陪诊人员安排' : isEscortVisit ? '已完成检查及专家门诊陪诊，当日检验检查单和门诊病历已打印上传' : isPostVisitReview ? '已查看陪诊资料并生成后续随访计划' : summarizeServiceChecklist(submittedChecklist, execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor')),
         status: isReportCollection
           ? (reportClosure?.collectionStatus === 'complete' ? 'completed' : 'in_progress')
           : execItem.taskRole === 'supervisor'
@@ -11229,6 +11229,10 @@ export default function PatientDetailPage() {
                 <strong>就诊安排</strong>
                 {followUpDetailView.appointmentLines(followUpDetail.sourceOrderId?.medicalProxyPlan, followUpDetail.sourceOrderId?.medicalProxyPlan?.booking).map((line,i)=><div key={i} style={{marginTop:6,whiteSpace:'pre-wrap'}}>{line}</div>)}
               </div>}
+              {/专家约诊/.test(followUpDetail.sourceOrderId?.serviceName || '') && <>
+                {['healthManager','superadmin'].includes(staff?.role) && <ExpertAppointmentRescheduleForm key={followUpDetail.sourceOrderId?.updatedAt} task={followUpDetail} onSaved={()=>{setFollowUpDetail(null);loadFollowUps();toast('预约变更已保存，请重新打开查看')}}/>}
+                {!!followUpDetail.sourceOrderId?.medicalProxyPlan?.bookingChanges?.length && <details><summary>预约变更记录</summary>{followUpDetail.sourceOrderId.medicalProxyPlan.bookingChanges.map((change,i)=><div key={i} style={{padding:12,borderBottom:'1px solid #ddd'}}><b>{change.kind==='correction'?'历史补正':'预约变更'} · {change.changedByName || '工作人员'} · {new Date(change.changedAt).toLocaleString('zh-CN')}</b><p>原安排：{followUpDetailView.appointmentLines({}, {...change.from,appointmentExpert:change.from?.expert}).join('；')}</p><p>新安排：{followUpDetailView.appointmentLines({}, {...change.to,appointmentExpert:change.to?.expert}).join('；')}</p><p>原因：{change.reason}</p></div>)}</details>}
+              </>}
               {followUpDetail._serviceItems?.length > 0 && (
                 <div>
                   <div style={{ fontSize: 12, color: '#1E6B50', marginBottom: 8, fontWeight: 700 }}>本次服务完整过程</div>
@@ -11242,7 +11246,7 @@ export default function PatientDetailPage() {
                       const purchaseType = ({ online: '互联网药房', pharmacy: '其他药房', other_hospital: '其他医院或门诊' })[item.formData?.resolutionType] || ''
                       const purchaseChannel = item.formData?.purchaseChannel || purchaseType
                       const structuredResolution = item.formData?.resolutionType === 'refund' ? '无可行配药渠道，已按客户确认方案退费结案' : purchaseActor && `${purchaseActor}${purchaseChannel ? `（渠道：${purchaseChannel}）` : ''}`
-                      const detail = stage === 'resolution' && structuredResolution ? structuredResolution : rawDetail
+                      const detail = (stage === 'resolution' && structuredResolution ? structuredResolution : rawDetail).replace('医疗代诊undefined已完成', `${stageLabel}已完成`)
                       const time = item.completedAt || item.updatedAt || item.createdAt || item.date
                       const resolutionExecutor = followUpDetail._serviceItems.find(serviceItem => serviceItem.workflowKey === 'medical_proxy:resolution')
                       const executor = item.sourceType === 'supply_reminder'
