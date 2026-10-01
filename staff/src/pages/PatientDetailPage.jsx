@@ -11182,7 +11182,7 @@ export default function PatientDetailPage() {
               <button className="modal-close" onClick={() => setFollowUpDetail(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {annualNutrition.isTask(followUpDetail) && <AnnualNutritionAssessmentForm key={`${followUpDetail._id}:${followUpDetail.updatedAt}`} task={followUpDetail} staff={staff} onSaved={updated=>{setFollowUpDetail(updated);loadFollowUps();load();toast(updated.aiStatus==='pending'?'已写入生活方式档案并提交评估':'访谈草稿已保存')}}/>}
+              {annualNutrition.isTask(followUpDetail) && <AnnualNutritionAssessmentForm key={`${followUpDetail._id}:${followUpDetail.updatedAt}`} task={followUpDetail} staff={staff} onSaved={updated=>{setFollowUpDetail(updated);loadFollowUps();load();toast(updated.status==='completed'?'已写入生活方式档案并完成评估':'访谈草稿已保存')}}/>}
               <FollowUpServiceLinkCard key={followUpDetail._id} task={followUpDetail} staff={staff} onLinked={updated => { setFollowUpDetail(updated); loadFollowUps() }} />
               {!annualDispatch.dedicated(followUpDetail) && <OnsiteBookingCard key={`onsite-${followUpDetail._id}`} task={followUpDetail} staff={staff} />}
               <AnnualCheckupPreparationCard key={`checkup:${followUpDetail._id}`} task={followUpDetail} staff={staff} onSaved={updated => { setFollowUpDetail(updated); loadFollowUps() }} />

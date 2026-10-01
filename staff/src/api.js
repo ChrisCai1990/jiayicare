@@ -74,6 +74,7 @@ export const serviceGroupAPI = {
 }
 
 export const staffAPI = {
+  previewAnnualLifestyle: (id,index) => req(`/staff/annual-plans/${id}/lifestyle-interview-preview?index=${index}`),
   getServiceSupervision: () => req('/staff/service-supervision'),
   getSupervisionTask: id => req(`/staff/service-supervision/tasks/${id}`),
   sendServiceSupervision: data => req('/staff/service-supervision/requests', { method: 'POST', body: JSON.stringify(data) }),

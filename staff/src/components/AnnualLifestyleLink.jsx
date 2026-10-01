@@ -1,0 +1,7 @@
+import React,{useState} from 'react'
+import {staffAPI} from '../api'
+export default function AnnualLifestyleLink({planId,index,dirty}) {
+ const [data,setData]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false)
+ async function open(){setBusy(true);setError('');try{const r=await staffAPI.previewAnnualLifestyle(planId,index);setData(r.data)}catch(e){setError(e.message)}finally{setBusy(false)}}
+ return <div><button type="button" disabled={!planId||dirty||busy} onClick={open}>{busy?'正在打开…':'查看关联生活方式问卷'}</button>{(!planId||dirty)&&<small> 请先暂存方案，再查看对应问卷</small>}{error&&<p role="alert">{error}</p>}{data&&<div role="dialog" aria-label="关联生活方式问卷" style={{position:'fixed',inset:30,zIndex:2000,background:'white',padding:24,overflow:'auto',boxShadow:'0 0 0 100vmax #0007'}}><button type="button" onClick={()=>setData(null)}>关闭问卷预览</button><h2>{data.template.title||data.template.name}</h2><p>关联事项：{data.row.standardPlanName} · 随访日期：{data.row.executionDate}</p>{data.taskId?<a href={`/patients/${data.patientId}?tab=followups&followUpId=${data.taskId}`}>打开营养师评估任务</a>:<p>尚未生成对应执行任务。此处预览的是任务使用的同一份问卷，不会提交答案或修改档案。</p>}<p>营养师逐项核实后写入生活方式档案，确认后完成评估。</p>{(data.template.questions||[]).map((q,i)=><section key={q.id} style={{borderBottom:'1px solid #eee',padding:'12px 0'}}><strong>{i+1}. {q.text}</strong><p>{(q.options||[]).map(o=>typeof o==='string'?o:o.label||o.text||o.value).join(' / ')}</p></section>)}</div>}</div>
+}

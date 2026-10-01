@@ -55,7 +55,7 @@ async function handle(req,res) {
    return res.json({success:true,data:{task,template,initialAnswers:answers,archive,sourceResponseId:response?._id,patientVersion:fingerprint(user),gender:user.gender}});
   }
   const body=req.body,old=task.formData?.lifestyleInterview;
-  if(task.aiStatus==='pending'||task.status==='completed')throw fail('评估已提交审核，请刷新');
+  if(task.status==='completed')throw fail('评估已完成，请刷新');
   if(!['planned','in_progress','missed'].includes(task.status))throw fail('任务已结束');
   if(!['draft','submit'].includes(body.action))throw fail('操作无效',400);
   if(old?.phase!=='applying') {
@@ -67,7 +67,7 @@ async function handle(req,res) {
     if(body.templateVersion!==new Date(template.updatedAt).toISOString())throw fail('问卷模板已更新，请重新打开核对');
     if(body.patientVersion!==fingerprint(user))throw fail('生活方式档案已更新，请重新打开核对');
     if(prepared.items.some(i=>present(i.from)&&JSON.stringify(i.from)!==JSON.stringify(i.value))&&body.confirmConflicts!==true)throw fail('请确认已核对与原档案不同的内容',400);
-    if(!user.assignedFamilyDoctor)throw fail('请先分配健康顾问',400);
+
    }
    const interview={...prepared,notes,method,patientVersion:body.patientVersion,phase:body.action==='draft'?'draft':'applying',submissionId:new (require('mongoose').Types.ObjectId)(),by:req.staff._id,byName:req.staff.name||req.staff.username,at:new Date(),questionnaireId:template._id,questions:template.questions};
    task=await FollowUp.findOneAndUpdate({_id:task._id,updatedAt:task.updatedAt,aiStatus:task.aiStatus,status:task.status},{$set:{'formData.lifestyleInterview':interview,plannedContent:task.plannedContent||task.content}},{new:true}).lean();
@@ -90,8 +90,8 @@ async function handle(req,res) {
   }
   await QuestionnaireResponse.updateOne({_id:interview.submissionId},{$setOnInsert:{questionnaire:template._id,user:user._id,answers:interview.verified,submittedAt:interview.at,proxyEntry:{by:interview.by,byName:interview.byName,method:interview.method,sourceFollowUpId:task._id,pendingQuestionIds:interview.pending},nutritionistReview:{status:'reviewed',by:interview.by,byName:interview.byName,at:interview.at}}},{upsert:true});
   const result=['生活方式访谈评估',`方式：${interview.method}`,`营养师意见：${interview.notes}`,`已核实 ${Object.keys(interview.verified).length} 项；待确认 ${interview.pending.length} 项`,...interview.questions.filter(q=>Object.hasOwn(interview.verified,q.id)).map(q=>`${q.text}：${answerToText(interview.verified[q.id])}`)].join('\n');
-  const event={action:'submitted',result,by:interview.by,at:new Date(),sourceResponseId:interview.submissionId};
-  const saved=await FollowUp.findOneAndUpdate({_id:task._id,status:task.status,aiStatus:task.aiStatus,assignedTo:task.assignedTo,'formData.lifestyleInterview.phase':'applying','formData.lifestyleInterview.submissionId':interview.submissionId},{$set:{'formData.lifestyleInterview.phase':'submitted',content:result,executedContent:result,status:'in_progress',aiStatus:'pending',reviewRole:'familyDoctor',reviewAssignedTo:user.assignedFamilyDoctor,isBlocked:true,'formData.nutritionResultReview':event},$push:{'formData.nutritionResultHistory':event}},{new:true});
+  const event={action:'completed',result,by:interview.by,at:new Date(),sourceResponseId:interview.submissionId};
+  const saved=await FollowUp.findOneAndUpdate({_id:task._id,status:task.status,aiStatus:task.aiStatus,assignedTo:task.assignedTo,'formData.lifestyleInterview.phase':'applying','formData.lifestyleInterview.submissionId':interview.submissionId},{$set:{'formData.lifestyleInterview.phase':'submitted',content:result,executedContent:result,status:'completed',completedAt:new Date(),completedBy:'staff',aiStatus:'approved',reviewRole:null,reviewAssignedTo:null,isBlocked:false,'formData.nutritionResultReview':event},$push:{'formData.nutritionResultHistory':event}},{new:true});
   if(!saved)throw fail('任务已变化，请刷新核对提交状态');
   res.json({success:true,data:saved});
  }catch(e){res.status(e.statusCode||500).json({success:false,message:e.message});}
@@ -103,7 +103,7 @@ async function start(req,res) {
   const user=await User.findById(req.params.id).lean();
   if(!user)throw fail('会员不存在',404);
   if(req.staff.role!=='superadmin'&&(req.staff.role!=='nutritionist'||String(user.assignedNutritionist)!==String(req.staff._id)))throw fail('仅所属营养师可开始访谈',403);
-  if(!user.assignedNutritionist||!user.assignedFamilyDoctor)throw fail('请先分配营养师及健康顾问',400);
+  if(!user.assignedNutritionist)throw fail('请先分配营养师',400);
   const active=await FollowUp.findOne({patientId:user._id,status:{$in:['planned','in_progress','missed']},$or:[{sourceType:'scheduled',workflowKey:'annual_nutrition_assessment',sourceAnnualPlanId:{$ne:null}},{sourceType:'professional_assessment',workflowKey:'lifestyle_interview'}]}).sort({createdAt:-1}).lean();
   if(active)return res.json({success:true,data:active});
   let taskId=user.lifestyleInterviewTaskId;
@@ -113,8 +113,27 @@ async function start(req,res) {
    const claimed=await User.updateOne({_id:user._id,lifestyleInterviewTaskId:user.lifestyleInterviewTaskId||null},{$set:{lifestyleInterviewTaskId:taskId}});
    if(!claimed.matchedCount)throw fail('另一处正在开始访谈，请重试');
   }
-  const task=await FollowUp.findOneAndUpdate({_id:taskId},{$setOnInsert:{staffId:req.staff._id,patientId:user._id,assignedTo:user.assignedNutritionist,date:new Date(),type:'phone',status:'in_progress',sourceType:'professional_assessment',workflowKey:'lifestyle_interview',theme:'生活方式访谈与核实',content:'营养师使用膳食调查问卷逐项核实生活方式，记录访谈意见并更新档案。',aiStatus:'approved',reviewRole:'familyDoctor',reviewAssignedTo:user.assignedFamilyDoctor}},{upsert:true,new:true});
+  const task=await FollowUp.findOneAndUpdate({_id:taskId},{$setOnInsert:{staffId:req.staff._id,patientId:user._id,assignedTo:user.assignedNutritionist,date:new Date(),type:'phone',status:'in_progress',sourceType:'professional_assessment',workflowKey:'lifestyle_interview',theme:'生活方式访谈与核实',content:'营养师使用膳食调查问卷逐项核实生活方式，记录访谈意见并更新档案。',aiStatus:'approved',reviewRole:null,reviewAssignedTo:null}},{upsert:true,new:true});
   res.json({success:true,data:task});
  }catch(e){res.status(e.statusCode||500).json({success:false,message:e.message});}
 }
 module.exports.start=start;
+
+// Read-only preview from a saved annual item; never creates an execution task.
+module.exports.preview=async(req,res)=>{
+ try {
+  const plan=await require('../models/AnnualPlan').findById(req.params.id).lean();
+  if(!plan)throw fail('方案不存在',404);
+  const user=await require('../models/User').findById(plan.patientId).lean();
+  const roleFields={nutritionist:'assignedNutritionist',familyDoctor:'assignedFamilyDoctor',healthManager:'assignedHealthManager',healthPlanner:'assignedHealthPlanner'};
+  const field=roleFields[req.staff.role];
+  if(req.staff.role!=='superadmin'&&(!field||String(user?.[field])!==String(req.staff._id)))throw fail('无权查看此方案',403);
+  const index=Number(req.query.index),row=plan.moduleData?.personalized_followups?.records?.[index];
+  if(!Number.isInteger(index)||index<0||!require('../../../shared/annualNutrition.cjs').isRow(row))throw fail('营养评估事项不存在',404);
+  const template=await require('../models/DynamicQuestionnaire').DynamicQuestionnaire.findById(QUESTIONNAIRE_ID).lean();
+  if(!template||template.deletedAt)throw fail('关联问卷不可用',404);
+  const date=new Date(row.executionDate);
+  const task=Number.isNaN(+date)?null:await require('../models/FollowUp').findOne({sourceAnnualPlanId:plan._id,patientId:plan.patientId,workflowKey:'annual_nutrition_assessment',status:{$ne:'cancelled'},sourceScheduleKey:`personalized:${row.standardPlanId||index}:0:${date.toISOString().slice(0,10)}`}).lean();
+  res.json({success:true,data:{template,row,patientId:plan.patientId,taskId:task?._id}});
+ }catch(e){res.status(e.statusCode||500).json({success:false,message:e.message});}
+};

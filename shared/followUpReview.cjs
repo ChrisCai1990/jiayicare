@@ -13,6 +13,7 @@ function executor(item, patient) {
   return item.assignedTo;
 }
 function canReview(item, staff, patient) {
+  if (require('./annualNutrition.cjs').isTask(item)) return false;
   if (item?.aiStatus !== 'pending' || !staff?.role) return false;
   if (staff.role === 'superadmin') return true;
   if (staff.role !== (item.reviewRole || 'familyDoctor')) return false;

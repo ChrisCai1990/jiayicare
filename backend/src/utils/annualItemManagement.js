@@ -5,7 +5,7 @@ function normalizeAnnualItems(data, managerId, team = {}) {
     if (data?.[key]?.enabled === false || !Array.isArray(data?.[key]?.records)) continue;
     result[key] = { ...data[key], records: data[key].records.map(row => {
       if (key === 'personalized_followups' && require('../../../shared/annualNutrition.cjs').isRow(row)) {
-        if (!team.assignedNutritionist || !team.assignedFamilyDoctor) throw Object.assign(new Error('请先为客户分配营养师及健康顾问'), {statusCode:400});
+        if (!team.assignedNutritionist) throw Object.assign(new Error('请先为客户分配营养师'), {statusCode:400});
         return {...row,directNutritionAssessment:true,managementFollowUpVersion:2,followUpStaff:String(team.assignedNutritionist),ownerRole:'营养师',collaborator:'',collaborationDate:'',frequency:'单次',serviceMode:'reminder',serviceType:'',managedServiceType:''};
       }
       if (!managerId) throw Object.assign(new Error('请先为客户分配健管专员'), { statusCode: 400 });

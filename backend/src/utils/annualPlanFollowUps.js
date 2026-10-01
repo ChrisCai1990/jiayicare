@@ -222,7 +222,7 @@ async function buildAnnualPlanFollowUps(plan) {
         const nutrition = rec.directNutritionAssessment === true;
         push(date, `${nutrition ? '营养评估' : '标准随访'} · ${rec.standardPlanName || rec.items || '年度管理'}`, content, nutrition ? patient?.assignedNutritionist : patient?.assignedHealthManager,
           `personalized:${rec.standardPlanId || recordIndex}:${cycleIndex}:${date.toISOString().slice(0, 10)}`, rec);
-        if (nutrition && created.length && patient?.assignedNutritionist) Object.assign(created[created.length-1], {workflowKey:'annual_nutrition_assessment',reviewAssignedTo:patient.assignedFamilyDoctor,reviewRole:'familyDoctor'});
+        if (nutrition && created.length && patient?.assignedNutritionist) Object.assign(created[created.length-1], {workflowKey:'annual_nutrition_assessment',reviewAssignedTo:null,reviewRole:null});
       });
       if (!rec.managementFollowUpVersion && rec.collaborator && rec.collaborationDate) {
         const collaborationDate = new Date(rec.collaborationDate);

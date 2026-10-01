@@ -1080,7 +1080,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             <ModulePanel
               key={entry.key}
               moduleKey={entry.key}
-              def={entry.key === 'personalized_followups' || (patientMode && closedLoopEnabled) ? annualItemLayout(entry.key, entry.def, patient?.assignedHealthManager?.name || staffList.find(s => String(s._id) === String(patient?.assignedHealthManager?._id || patient?.assignedHealthManager))?.name, patient?.assignedNutritionist?.name || staffList.find(s => String(s._id) === String(patient?.assignedNutritionist?._id || patient?.assignedNutritionist))?.name) : entry.def}
+              def={entry.key === 'personalized_followups' || (patientMode && closedLoopEnabled) ? annualItemLayout(entry.key, entry.def, patient?.assignedHealthManager?.name || staffList.find(s => String(s._id) === String(patient?.assignedHealthManager?._id || patient?.assignedHealthManager))?.name, patient?.assignedNutritionist?.name || staffList.find(s => String(s._id) === String(patient?.assignedNutritionist?._id || patient?.assignedNutritionist))?.name, patientMode ? plansByType[planType]?._id : plan?._id, dirty) : entry.def}
               data={moduleData[entry.key] || {}}
               onChange={handleModuleChange}
             />

@@ -2251,6 +2251,7 @@ router.post('/followups/:id/outcome-review', staffAuth, async (req, res) => {
   } catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.message }); }
 });
 
+router.get('/annual-plans/:id/lifestyle-interview-preview', staffAuth, require('../utils/lifestyleInterview').preview);
 router.post('/patients/:id/lifestyle-interview/start', staffAuth, require('../utils/lifestyleInterview').start);
 router.get('/followups/:id/lifestyle-interview', staffAuth, require('../utils/lifestyleInterview').handle);
 router.post('/followups/:id/lifestyle-interview', staffAuth, require('../utils/lifestyleInterview').handle);

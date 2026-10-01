@@ -9,7 +9,7 @@ test('only verified responses map to archives; missing is not no; preserve basel
  assert.notEqual(fingerprint(user),fingerprint({...user,lifestyle_data:{breakfastTime:'09:00'}}));
  assert.throws(()=>prepare(user,template,{confirmed:'invalid'}));
 });
-test('interview save then submit archives once, retries interrupted response write, and sends advisor review',async t=>{
+test('interview save then submit archives once, retries interrupted response write, and completes without advisor review',async t=>{
  const FollowUp=require('../src/models/FollowUp'),User=require('../src/models/User'),{DynamicQuestionnaire,QuestionnaireResponse}=require('../src/models/DynamicQuestionnaire');
  let task={_id:'task',patientId:'patient',sourceType:'scheduled',sourceAnnualPlanId:'plan',workflowKey:'annual_nutrition_assessment',assignedTo:'nutrition',status:'planned',aiStatus:'approved',content:'requirements',updatedAt:new Date('2026-10-01'),formData:{}};
  let user={_id:'patient',assignedNutritionist:'nutrition',assignedFamilyDoctor:'advisor',lifestyle_data:{breakfastTime:'07:00'},lifestyleHistory:[]};
@@ -29,7 +29,7 @@ test('interview save then submit archives once, retries interrupted response wri
  assert.equal((await invoke({...body,action:'submit',baseUpdatedAt:task.updatedAt.toISOString()})).code,500);
  assert.equal(archiveWrites,1);assert.equal(task.formData.lifestyleInterview.phase,'applying');assert.equal(user.lifestyle_data.breakfastTime,'07:00');assert.equal(effectiveLifestyle(user).breakfastTime,'08:00');
  assert.equal((await invoke({action:'submit'})).code,500);assert.equal(archiveWrites,1);
- interrupt=false;assert.equal((await invoke({action:'submit'})).code,200);assert.equal(archiveWrites,1);assert.equal(responseWrites,1);assert.equal(task.aiStatus,'pending');assert.equal(task.reviewAssignedTo,'advisor');assert.equal(task.formData.lifestyleInterview.phase,'submitted');
+ interrupt=false;assert.equal((await invoke({action:'submit'})).code,200);assert.equal(archiveWrites,1);assert.equal(responseWrites,1);assert.equal(task.status,'completed');assert.equal(task.aiStatus,'approved');assert.equal(task.reviewAssignedTo,null);assert.equal(task.formData.lifestyleInterview.phase,'submitted');
  assert.equal((await invoke(body)).code,409);
 });
 
@@ -53,4 +53,17 @@ test('starting an interview recovers its patient pointer and reuses active task'
  await require('../src/utils/lifestyleInterview').start(req,res);assert.equal(result.data.workflowKey,'lifestyle_interview');
  await require('../src/utils/lifestyleInterview').start(req,res);assert.equal(upserts,1);assert.equal(result.data._id,'reserved-task');
  assert.equal(require('../../shared/annualNutrition.cjs').isTask(active),true);
+});
+
+test('annual questionnaire preview resolves the saved item and enforces membership access without writes',async t=>{
+ const Plan=require('../src/models/AnnualPlan'),User=require('../src/models/User'),FollowUp=require('../src/models/FollowUp'),{DynamicQuestionnaire}=require('../src/models/DynamicQuestionnaire');
+ const row={defaultRole:'nutritionist',standardPlanId:'nutrition-template',executionDate:'2026-10-12'};
+ t.mock.method(Plan,'findById',()=>({lean:async()=>({_id:'plan',patientId:'patient',moduleData:{personalized_followups:{records:[row]}}})}));
+ t.mock.method(User,'findById',()=>({lean:async()=>({assignedNutritionist:'nutrition'})}));
+ t.mock.method(DynamicQuestionnaire,'findById',id=>{assert.equal(id,template._id);return{lean:async()=>template}});
+ t.mock.method(FollowUp,'findOne',q=>{assert.equal(q.sourceAnnualPlanId,'plan');assert.equal(q.sourceScheduleKey,'personalized:nutrition-template:0:2026-10-12');return{lean:async()=>({_id:'task'})}});
+ const invoke=async(id,index)=>{let code=200,data;const res={status:n=>{code=n;return res},json:d=>data=d};await require('../src/utils/lifestyleInterview').preview({params:{id:'plan'},query:{index},staff:{role:'nutritionist',_id:id}},res);return{code,data}};
+ assert.equal((await invoke('wrong','0')).code,403);
+ assert.equal((await invoke('nutrition','4')).code,404);
+ const result=await invoke('nutrition','0');assert.equal(result.code,200);assert.equal(result.data.data.taskId,'task');assert.equal(result.data.data.template._id,template._id);
 });
