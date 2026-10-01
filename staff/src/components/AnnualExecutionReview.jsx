@@ -2,7 +2,12 @@ import React, { useEffect, useRef, useState } from 'react'
 import { staffAPI } from '../api'
 
 const statusName = { planned: '待执行', pending: '待处理', in_progress: '进行中', completed: '已完成', cancelled: '已取消', missed: '逾期' }
-const dateText = value => value ? String(value).slice(0, 10) : '日期未定'
+const dateText = value => {
+  if (!value) return '日期未定'
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return String(value)
+  const date = new Date(value)
+  return Number.isFinite(date.getTime()) ? date.toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : String(value)
+}
 const display = row => row ? `${row.title} · ${row.datePending ? '日期待确认' : dateText(row.date)}${row.timing ? ` · ${row.timing}` : ''}\n${row.advice || '未填写建议'}` : '无'
 
 export default function AnnualExecutionReview({ patientId, planId, planVersion, canEdit }) {
