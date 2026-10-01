@@ -16,7 +16,13 @@ const INPUTS = [
   ['nextStep', '下一步说明', '如：具体洁牙方式由接诊口腔医生确定'],
 ]
 
-export default function AnnualServiceRecommendations({ planId, pushedAt, canEdit, toast }) {
+export default function AnnualServiceRecommendations({ planId, pushedAt, canEdit, toast, patient, staffList=[] }) {
+
+  const person = field => patient?.[field]?.name || staffList.find(s=>String(s._id)===String(patient?.[field]?._id||patient?.[field]))?.name || '待分配'
+  const adult = Number(patient?.age) >= 18
+  const visibleOption = option => !adult || !/儿童|少儿|幼儿/.test(option.name || '') || /成人|家庭|全家/.test(option.name || '')
+  const summary = option => [...new Set(String(option.includedService||'').split(/[；;\n]/).map(x=>x.trim()).filter(x=>x&&(!adult||!/儿童|少儿|幼儿/.test(x))))].join('；')
+  const optionCard = option => <div className="service-option-card"><strong>{option.name}</strong>{option.address&&<div>{option.address}</div>}{summary(option)&&<div>{summary(option)}</div>}{typeof option.price==='number'&&<small>目录价 ¥{option.price} · 实际价格以确认为准</small>}{adult&&/儿童|少儿|幼儿/.test(option.includedService||'')&&<details><summary>组合套餐完整内容</summary><div>{option.includedService}</div></details>}</div>
   const [rows, setRows] = useState([])
   const [draft, setDraft] = useState(EMPTY)
   const [editingId, setEditingId] = useState('')
@@ -84,11 +90,12 @@ export default function AnnualServiceRecommendations({ planId, pushedAt, canEdit
     <div style={{ fontSize: 12, color: '#6B8177', margin: '5px 0 14px' }}>健康顾问核实依据后单独发布。客户选择“需要协助”只记录意向；具体服务仍须由工作人员按现有流程发起。</div>
     {!planId && <div style={{ color: '#8AA89C', fontSize: 13 }}>请先保存年度方案，再添加服务建议。</div>}
     {loadError && <p role="alert" style={{color: '#b42318'}}>{loadError}</p>}
+    <div className="service-option-card">服务建议跟进：{person('assignedFamilyDoctor')}（健康顾问） · 预约协调：{person('assignedHealthPlanner')}（健康规划师）</div>
     {gift && <DentalGiftCard key={`${planId}:${gift.revision}`} gift={gift} planId={planId} canEdit={canEdit} onChange={setGift} toast={toast} />}
     {rows.map(row => <div id={`service-recommendation-${row._id}`} key={row._id} style={{ borderTop: '1px solid #E8EEE9', padding: '12px 0', fontSize: 13, lineHeight: 1.7 }}>
       <div><strong>{row.recommendation}</strong> <span style={{ color: row.status === 'published' ? '#1E6B50' : '#D97706' }}>· {row.status === 'published' ? '已发布' : '草稿'}</span></div>
       <div>发现：{row.finding}；依据：{row.evidence}</div>
-      {(row.selectedOptions || []).map(option => <div key={`${option.type}:${option.id}`}>{option.type === 'institution' ? '可选机构' : '可选套餐'}：{option.name}{option.address ? ` · ${option.address}` : ''}{option.includedService ? ` · 包含：${option.includedService}` : ''}{typeof option.price === 'number' ? ` · 目录标价 ¥${option.price}（实际价格以确认时为准）` : ''}</div>)}
+      {(row.selectedOptions || []).filter(visibleOption).map(option => <div key={`${option.type}:${option.id}`}>{optionCard(option)}</div>)}
       {row.timeframe && <div>建议时机：{row.timeframe}</div>}
       <div>计划跟进日期：{row.plannedFollowUpDate || '待安排'} · 预约服务日期：{row.appointmentDate || '待确认'}</div>
       {row.followUpReminderEnabled && row.plannedFollowUpDate && <div>到期提醒：已开启（健康顾问工作台）</div>}
@@ -113,7 +120,7 @@ export default function AnnualServiceRecommendations({ planId, pushedAt, canEdit
         <legend>可选机构及套餐（顾问确认）</legend>
         <p style={{fontSize: 12, color: '#6B8177'}}>选择服务机构或套餐；年卡、组合套餐需核对适用人群及包含次数；如属会员赠送，优先核对并使用已有权益。</p>
         {!catalog.length && <p>暂无匹配的口腔机构或洁牙套餐，待顾问补充目录。</p>}
-        {catalog.map(option => { const checked = (draft.selectedOptions || []).some(item => item.type === option.type && item.id === option.id); return <label key={`${option.type}:${option.id}`} style={{display: 'block', margin: '8px 0'}}><input type="checkbox" checked={checked} onChange={event => setDraft(prev => ({...prev, selectedOptions: event.target.checked ? [...(prev.selectedOptions || []), option] : prev.selectedOptions.filter(item => item.type !== option.type || item.id !== option.id)}))} />{option.type === 'institution' ? '机构：' : '套餐：'}{option.name}{option.address ? ` · ${option.address}` : ''}{option.includedService ? ` · 包含：${option.includedService}` : ''}{typeof option.price === 'number' ? ` · 目录标价 ¥${option.price}` : ''}</label> })}
+        {catalog.filter(visibleOption).map(option => { const checked=(draft.selectedOptions||[]).some(item=>item.type===option.type&&item.id===option.id); return <div key={`${option.type}:${option.id}`} className="service-option-choice"><input aria-label={`选择${option.name}`} type="checkbox" checked={checked} onChange={event=>setDraft(prev=>({...prev,selectedOptions:event.target.checked?[...(prev.selectedOptions||[]),option]:prev.selectedOptions.filter(item=>item.type!==option.type||item.id!==option.id)}))}/>{optionCard(option)}</div> })}
       </fieldset>
       <div style={{ display: 'flex', gap: 10, marginTop: 12 }}><button className="service-button service-button--primary" type="button" disabled={busy || !!loadError} onClick={save}>确认并保存建议草稿</button>{editingId && <button className="service-button" type="button" onClick={reset}>取消编辑</button>}</div>
     </div>}

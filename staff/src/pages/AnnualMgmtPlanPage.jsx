@@ -1085,7 +1085,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               onChange={handleModuleChange}
             />
           ))}
-          {patientMode && <AnnualServiceRecommendations planId={plansByType[planType]?._id} pushedAt={pushedAt} canEdit={canEdit} toast={toast} />}
+          {patientMode && <AnnualServiceRecommendations patient={patient} staffList={staffList} planId={plansByType[planType]?._id} pushedAt={pushedAt} canEdit={canEdit} toast={toast} />}
           {visibleModuleEntries.length === 0 && (
             <div style={{ background: '#fff', border: '1px solid #E0D9CE', borderRadius: 12, padding: '30px 20px', textAlign: 'center', color: '#8AA89C' }}>
               尚未生成适用方案。点击“AI生成方案”后，系统会依次筛查就医安排、体检完善、定期复查、疫苗接种和年度体检；无适用内容的板块不会展示。

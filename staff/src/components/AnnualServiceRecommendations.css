@@ -36,3 +36,5 @@
 .dental-benefit__history>div{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-top:12px}
 .dental-benefit__history label{min-width:200px}
 @media(max-width:600px){.annual-service-card__summary{padding:16px}.annual-service-card__body{padding:0 16px 16px}.dental-benefit{padding:16px}.dental-benefit__form{grid-template-columns:1fr}.dental-benefit__header{align-items:flex-start}.dental-benefit h3{font-size:17px}.dental-benefit__history label{min-width:0;width:100%}}
+
+.service-option-card{padding:12px 14px;margin:8px 0;border:1px solid #dce7e1;border-radius:10px;background:#fff;line-height:1.7}.service-option-card strong{display:block;color:#234b3c}.service-option-card small{color:#71847b}.service-option-choice{display:flex;align-items:flex-start;gap:10px}.service-option-choice>input{margin-top:24px}.service-option-choice>.service-option-card{flex:1}.service-option-card details{font-size:12px;color:#71847b}

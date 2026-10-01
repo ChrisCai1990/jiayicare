@@ -195,6 +195,7 @@ export function ModulePanel({ moduleKey, def, data, onChange }) {
   const enabled = data.enabled !== false
 
   const set = (fieldKey, val) => onChange(moduleKey, fieldKey, val)
+  const directNutrition = def.personalizedAssignment && annualNutrition.isRow(data)
 
   // 判断是否有已填写的字段（用于显示小圆点提示）
   const hasContent = def.multi
