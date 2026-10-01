@@ -1033,7 +1033,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         <div style={{ marginBottom: 20 }}>
           <div style={{ marginBottom: 12, padding: '12px 14px', borderRadius: 10, background: '#F0F7F4', color: '#4A6558', fontSize: 13, lineHeight: 1.7 }}>
             <strong style={{ color: '#1E6B50' }}>生成依据：</strong>
-            已确认健康资料与阶段性评估决定调用哪些Admin标准随访方案；页面完整保留标准内容和周期，AI只能填写“个性化调整”，不能改名或另创方案，最终由健康顾问确认执行人和日期。
+            根据已确认健康资料和评估生成具体方案，由健康顾问审核内容、执行人和日期；标准内容与周期可展开“查看模板依据”查阅。
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24' }}>方案板块</div>
@@ -1082,7 +1082,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             <ModulePanel
               key={entry.key}
               moduleKey={entry.key}
-              def={patientMode && closedLoopEnabled ? annualItemLayout(entry.key, entry.def, patient?.assignedHealthManager?.name || staffList.find(s => String(s._id) === String(patient?.assignedHealthManager?._id || patient?.assignedHealthManager))?.name) : entry.def}
+              def={entry.key === 'personalized_followups' || (patientMode && closedLoopEnabled) ? annualItemLayout(entry.key, entry.def, patient?.assignedHealthManager?.name || staffList.find(s => String(s._id) === String(patient?.assignedHealthManager?._id || patient?.assignedHealthManager))?.name) : entry.def}
               data={moduleData[entry.key] || {}}
               onChange={handleModuleChange}
             />

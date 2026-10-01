@@ -1,5 +1,6 @@
 import React, { useState, createContext, useContext } from 'react'
 import appointment from '../../../shared/annualAppointment.cjs'
+import { concretePlanText } from '../utils/annualItemLayout.mjs'
 
 function readableValue(value) {
   if (Array.isArray(value)) return value.map(readableValue).filter(Boolean).join('\n')
@@ -157,9 +158,15 @@ export function RecordEditor({ def, record, onChange, onDelete, index, total }) 
         <div style={{ padding: '0 12px 12px', borderTop: '1px solid #F0EDE7' }}>
           {def.fields.map(field => (
             <FieldRow key={field.key} label={field.label} internal={field.internal}>
-              <FieldInput field={field} value={record[field.key]} onChange={val => onChange({ ...record, [field.key]: val, ...(field.appointmentDate ? { appointmentSchedulingVersion: 1 } : {}) })} />
+              <FieldInput field={field} value={field.concretePlan ? concretePlanText(record[field.key], record.standardPlanName) : record[field.key]} onChange={val => onChange({ ...record, [field.key]: val, ...(field.appointmentDate ? { appointmentSchedulingVersion: 1 } : {}) })} />
             </FieldRow>
           ))}
+          {def.templateFields?.length > 0 && <details style={{ marginTop: 16, padding: 12, background: '#F0F5F2', borderRadius: 8 }}>
+            <summary style={{ cursor: 'pointer', color: '#4A6558', fontSize: 13 }}>查看模板依据</summary>
+            {def.templateFields.map(field => <FieldRow key={field.key} label={field.label}>
+              <div style={{ paddingTop: 7, fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{readableValue(record[field.key]) || '未填写'}</div>
+            </FieldRow>)}
+          </details>}
           {def.annualServiceArrangement && <>
             <FieldRow label="随访人员"><div style={{ paddingTop: 8 }}>{def.managerName}</div></FieldRow>
             <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #D7E4DD' }}><b>服务安排</b><div style={{ fontSize: 12, marginTop: 4 }}>先确定本项管理内容，再按客户需求选择服务；原健管随访持续保留。</div>
