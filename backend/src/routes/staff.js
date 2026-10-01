@@ -109,6 +109,7 @@ const { tagReportPageItems, sortReportItemsBySource, stripReportSourceOrder } = 
 const { stepsForInsuranceScenario } = require('../utils/insuranceServiceWorkflow');
 const { canUseInsuranceCoverage, isInsuranceScenario } = require('../utils/insuranceCoverage');
 const router = express.Router();
+router.use('/service-supervision', require('./advisorSupervision'));
 router.use('/patients', require('./reviewPlanAmendments')({ getVisiblePlanPatientIds }));
 router.use('/patients', require('./annualExecutionReview')({ getVisiblePlanPatientIds }));
 router.use('/followups', require('./followUpServices'));

@@ -14,6 +14,7 @@ import AiTodosPanel from '../components/AiTodosPanel'
 import SymptomTodosPanel from '../components/SymptomTodosPanel'
 import FollowUpsPanel from '../components/FollowUpsPanel'
 import ServiceTasksPanel from '../components/ServiceTasksPanel'
+import ServiceSupervisionPanel from '../components/ServiceSupervisionPanel'
 import MonthlyReviewWorkbench from '../components/MonthlyReviewWorkbench'
 import Pagination from '../components/Pagination'
 import { isCustomerOrder, plannerOrderRows } from '../utils/plannerOrderProgress.mjs'
@@ -119,6 +120,7 @@ export default function HomePage() {
 
       <AiWorkbenchProvider>
       <SymptomTodosPanel />
+      <ServiceSupervisionPanel />
       {['healthPlanner', 'superadmin'].includes(staff?.role) && <ConsultationTodosPanel />}
       {['healthManager', 'healthPlanner', 'superadmin'].includes(staff?.role) && <OrderShipmentsPanel />}
 

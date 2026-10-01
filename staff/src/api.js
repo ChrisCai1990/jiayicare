@@ -74,6 +74,10 @@ export const serviceGroupAPI = {
 }
 
 export const staffAPI = {
+  getServiceSupervision: () => req('/staff/service-supervision'),
+  getSupervisionTask: id => req(`/staff/service-supervision/tasks/${id}`),
+  sendServiceSupervision: data => req('/staff/service-supervision/requests', { method: 'POST', body: JSON.stringify(data) }),
+  respondServiceSupervision: (id, data) => req(`/staff/service-supervision/requests/${id}/respond`, { method: 'POST', body: JSON.stringify(data) }),
   retryInitialArchive: id => req(`/staff/patients/${id}/initial-archive-review/retry`, {method:'POST',body:'{}'}),
   saveCoreArchive: (id, section, data) => req(`/staff/patients/${id}/core-health-archive/${section}`, { method: 'PUT', body: JSON.stringify(data) }),
   reviewInitialArchive: (id, section, data) => req(`/staff/patients/${id}/initial-archive-review/${section}`, { method: 'PUT', body: JSON.stringify(data) }),
