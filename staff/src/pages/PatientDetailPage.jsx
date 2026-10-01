@@ -11225,6 +11225,10 @@ export default function PatientDetailPage() {
                   </div>
                 </div>
               )}
+              {followUpDetailView.appointmentLines(followUpDetail.sourceOrderId?.medicalProxyPlan, followUpDetail.sourceOrderId?.medicalProxyPlan?.booking).length > 0 && <div style={{background:'#EFF8F4',borderRadius:8,padding:14}}>
+                <strong>就诊安排</strong>
+                {followUpDetailView.appointmentLines(followUpDetail.sourceOrderId?.medicalProxyPlan, followUpDetail.sourceOrderId?.medicalProxyPlan?.booking).map((line,i)=><div key={i} style={{marginTop:6,whiteSpace:'pre-wrap'}}>{line}</div>)}
+              </div>}
               {followUpDetail._serviceItems?.length > 0 && (
                 <div>
                   <div style={{ fontSize: 12, color: '#1E6B50', marginBottom: 8, fontWeight: 700 }}>本次服务完整过程</div>
@@ -11251,6 +11255,7 @@ export default function PatientDetailPage() {
                         </div>
                         <div style={{ fontSize: 12, color: '#65776F', marginTop: 3 }}>{STATUS_MAP[item.status] || item.status}{executor?.name ? ` · ${executor.name}` : ''}</div>
                         {detail && <div style={{ fontSize: 13, color: '#1A2B24', marginTop: 5, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{detail}</div>}
+                        {followUpDetailView.appointmentLines({}, item.formData || {}).map((line,i)=><div key={i} style={{fontSize:13,marginTop:5}}>{line}</div>)}
                       </div>
                     })}
                   </div>
