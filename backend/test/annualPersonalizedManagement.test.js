@@ -1,0 +1,31 @@
+const test=require('node:test'),assert=require('node:assert/strict');
+const {normalizeAnnualItems}=require('../src/utils/annualItemManagement');
+const {buildAnnualPlanServiceTasks}=require('../src/utils/annualPlanServiceTasks');
+const itemTools=require('../../shared/annualServiceItem.cjs');
+test('个性化事项仅一次健管随访，营养服务需求由健管安排并精确关联',async t=>{
+ const manager='aaaaaaaaaaaaaaaaaaaaaaaa';
+ const date=new Date(Date.now()+30*86400000).toISOString().slice(0,10);
+ const original={executionDate:date,standardPlanId:'template',standardPlanName:'营养评估',followUpStaff:'wrong',collaborator:'bbbbbbbbbbbbbbbbbbbbbbbb',collaborationDate:date,sourceCycles:[{cycleType:'relative',cycleDuration:60,cycleUnit:'day'}],serviceMode:'single',serviceType:'nutrition_assessment'};
+ const moduleData=normalizeAnnualItems({personalized_followups:{records:[original]}},manager);
+ assert.equal(original.collaborator,'bbbbbbbbbbbbbbbbbbbbbbbb');
+ const row=moduleData.personalized_followups.records[0];assert.equal(row.collaborator,'');assert.equal(row.followUpStaff,manager);
+ const User=require('../src/models/User'),Admin=require('../src/models/Admin');
+ t.mock.method(User,'findById',()=>({select:()=>({lean:async()=>({assignedHealthManager:manager})})}));
+ t.mock.method(Admin,'find',()=>({select:()=>({lean:async()=>[]})}));
+ const plan={_id:'p',patientId:'u',confirmedAt:new Date(),moduleData};
+ const tasks=await require('../src/utils/annualPlanFollowUps').buildAnnualPlanFollowUps(plan);
+ assert.equal(tasks.length,1);assert.equal(tasks[0].assignedTo,manager);assert.equal(tasks[0].date.toISOString().slice(0,10),date);
+ const requests=buildAnnualPlanServiceTasks(plan,{assignedHealthManager:manager,assignedHealthPlanner:'planner'});
+ assert.equal(requests.length,1);assert.equal(requests[0].assignedTo,manager);
+ const request={...requests[0],sourceType:'annual_service',workflowKey:'service_request',sourceScheduleKey:requests[0].key};
+ assert.equal(itemTools.isNutritionRequest(request),true);assert.equal(itemTools.followUpKey(request),tasks[0].sourceScheduleKey);
+ assert.equal(itemTools.isManagerRequest({...request,sourceType:'professional_assessment'}),false);
+ assert.throws(()=>normalizeAnnualItems({personalized_followups:{records:[original]}},null),/分配健管/);
+});
+test('个性化表单仅显示一个日期，无主协同人，服务字段独立',async()=>{
+ const {annualItemLayout}=await import('../../staff/src/utils/annualItemLayout.mjs');
+ const def={fields:['executionDate','followUpStaff','collaborator','collaborationDate','frequency','serviceMode','serviceType'].map(key=>({key}))};
+ const view=annualItemLayout('personalized_followups',def,'健管');
+ assert.deepEqual(view.fields.map(f=>f.key),['executionDate']);assert.equal(view.fields[0].label,'随访日期');
+ assert.equal(view.managerName,'健管');assert.ok(view.serviceFields[1].options.some(o=>o.value==='nutrition_assessment'));
+});

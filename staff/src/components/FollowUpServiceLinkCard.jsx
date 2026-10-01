@@ -12,7 +12,7 @@ export default function FollowUpServiceLinkCard({ task, staff, onLinked }) {
 }
 function LegacyServiceLinkCard({ task, staff, onLinked }) {
   const request = task.taskRole === 'supervisor' && ((['professional_assessment', 'report_followup'].includes(task.sourceType) && task.workflowKey === `${task.sourceType}:service_request`) || (task.sourceType === 'annual_service' && task.workflowKey === 'service_request'))
-  const canLink = request && (staff?.role === 'superadmin' || (staff?.role === 'healthPlanner' && String(task.assignedTo?._id || task.assignedTo) === String(staff._id)))
+  const canLink = request && (staff?.role === 'superadmin' || (staff?.role === (itemTools.isManagerRequest(task) ? 'healthManager' : 'healthPlanner') && String(task.assignedTo?._id || task.assignedTo) === String(staff._id)))
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -36,6 +36,7 @@ function LegacyServiceLinkCard({ task, staff, onLinked }) {
   const canChoose = canLink && data && (!data.link || data.link.status === 'attention') && !['completed', 'cancelled'].includes(task.status)
   return <section style={{ border: '1px solid #B2D8C7', borderRadius: 8, padding: 12, background: '#F6FBF8', fontSize: 13 }}>
     <b>服务与随访关联</b>
+    {itemTools.isNutritionRequest(task) && <p>请按营养服务流程安排营养师及评估日期，再关联本客户的营养服务方案；原健管随访保留进度记录。</p>}
     {tracking && <div style={{ marginTop: 8 }}>{tracking.title}<br />{tracking.message || '等待服务进度同步'}</div>}
     {loading && <p>正在读取服务…</p>}
     {error && <p role="alert" style={{ color: '#DC3545' }}>{error}</p>}

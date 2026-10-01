@@ -188,7 +188,7 @@ async function buildAnnualPlanFollowUps(plan) {
   // ⑤ 个性化随访方案：AI只能从Admin启用的标准随访方案库筛选，健康顾问
   // 补齐负责人并审核年度总方案。客户确认后按标准方案周期直接生成执行计划。
   const personalizedRecords = moduleData.personalized_followups?.records;
-  if (Array.isArray(personalizedRecords)) {
+  if (moduleData.personalized_followups?.enabled !== false && Array.isArray(personalizedRecords)) {
     const baseDate = new Date(plan.confirmedAt || Date.now());
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     const horizonEnd = new Date(Date.now() + HORIZON_DAYS * 86400000);
@@ -197,7 +197,7 @@ async function buildAnnualPlanFollowUps(plan) {
       const cycles = Array.isArray(rec.sourceCycles) ? rec.sourceCycles : [];
       const dates = [];
       if (rec.executionDate && !isNaN(new Date(rec.executionDate).getTime())) dates.push(new Date(rec.executionDate));
-      cycles.forEach(cycle => {
+      (rec.managementFollowUpVersion === 1 ? [] : cycles).forEach(cycle => {
         if (!dates.length && cycle.cycleType === 'date' && cycle.cycleDate) {
           const fixed = new Date(cycle.cycleDate);
           if (fixed >= todayStart) dates.push(fixed);
@@ -222,7 +222,7 @@ async function buildAnnualPlanFollowUps(plan) {
         push(date, `标准随访 · ${rec.standardPlanName || rec.items || '年度管理'}`, content, patient?.assignedHealthManager,
           `personalized:${rec.standardPlanId || recordIndex}:${cycleIndex}:${date.toISOString().slice(0, 10)}`, rec);
       });
-      if (rec.collaborator && rec.collaborationDate) {
+      if (rec.managementFollowUpVersion !== 1 && rec.collaborator && rec.collaborationDate) {
         const collaborationDate = new Date(rec.collaborationDate);
         if (!isNaN(collaborationDate.getTime()) && collaborationDate >= todayStart && collaborationDate <= horizonEnd) {
           push(collaborationDate, `协同执行 · ${rec.items || rec.standardPlanName || '年度管理'}`, content, rec.collaborator,

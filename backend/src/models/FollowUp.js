@@ -42,7 +42,7 @@ const followUpSchema = new mongoose.Schema({
   taskRole: { type: String, enum: ['executor', 'supervisor', ''], default: '' },
   workflowKey: { type: String, default: '' }, // 同一子方案内对应的岗位任务方案ID；支持一站式服务拆成多组任务
   deliveryMode: { type: String, enum: ['reminder', 'single', 'managed', ''], default: '' },
-  deliveryType: { type: String, enum: ['proxy_booking', 'proxy_visit', 'escort_visit', 'escort_exam', 'consult_coordination', ''], default: '' },
+  deliveryType: { type: String, enum: ['proxy_booking', 'proxy_visit', 'escort_visit', 'escort_exam', 'consult_coordination', 'nutrition_assessment', ''], default: '' },
   dependsOnTaskId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUp', default: null },
   isBlocked: { type: Boolean, default: false }, // 前置节点未完成时不进入任何工作台/客户任务
   activationEvent: { type: String, enum: ['', 'customer_plan_confirmed', 'booking_completed', 'onsite_completed', 'executor_completed', 'checkup_report_uploaded', 'previous_stage_approved', 'previous_completed', 'report_audited', 'result_review_completed', 'outpatient_reports_audited'], default: '' },

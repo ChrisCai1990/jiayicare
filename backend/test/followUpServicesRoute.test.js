@@ -148,3 +148,17 @@ for (const conflict of [false, true]) test(`年度需求关联与改期并发保
   assert.equal((await request(t, { targetType: 'order', targetId: ids.target, followUpId: ids.parent })).status, conflict ? 409 : 200);
   assert.deepEqual(events, conflict ? [ids.request] : [ids.request, ids.parent, 'link']);
 });
+
+for (const scenario of ['wrong-owner','wrong-role','wrong-service','valid']) test(`营养服务健管关联权限：${scenario}`,async t=>{
+ actor={_id:scenario==='wrong-owner'?ids.planner:ids.manager,role:scenario==='wrong-role'?'healthPlanner':'healthManager'};
+ const annual={...task,date:new Date(),updatedAt:new Date(),assignedTo:ids.manager,sourceType:'annual_service',workflowKey:'service_request',sourceAnnualPlanId:ids.target,sourceScheduleKey:'service-request:personalized_followups:0:2026-10-10',formData:{serviceRequest:{moduleKey:'personalized_followups',recordIndex:0,serviceType:'nutrition_assessment',itemSnapshot:{managementFollowUpVersion:1,standardPlanId:'template'}}}};
+ t.mock.method(FollowUp,'findById',()=>Object.assign(Promise.resolve(annual),{populate:async()=>annual}));
+ t.mock.method(FollowUp,'findOne',async query=>{assert.equal(query.patientId,ids.patient);assert.equal(query.sourceScheduleKey,'personalized:template:0:2026-10-10');return {_id:ids.parent,date:new Date(),updatedAt:new Date(),assignedTo:ids.manager}});
+ const HealthPlan=require('../src/models/HealthPlan');
+ t.mock.method(HealthPlan,'findOne',query=>{assert.equal(query.patientId,ids.patient);return {lean:async()=>({type:scenario==='wrong-service'?'medical_assist':'nutrition',status:'active',title:'营养服务'})}});
+ t.mock.method(Link,'findOne',async()=>null);let writes=0;
+ t.mock.method(Link,'create',async row=>{writes++;return {...row,_id:'link'}});
+ t.mock.method(FollowUp,'updateOne',async()=>({matchedCount:1,modifiedCount:1}));
+ const result=await request(t,{targetType:'health_plan',targetId:ids.target,followUpId:ids.parent});
+ assert.equal(result.status,scenario==='valid'?200:scenario==='wrong-service'?400:403);assert.equal(writes,scenario==='valid'?1:0);
+});

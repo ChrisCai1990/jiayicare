@@ -6,6 +6,7 @@ function followUpKey(task) {
   if (!request || !match || request.moduleKey !== match[1]) return null;
   if (match[1] === 'annual_checkup') return `annual_checkup:${match[2]}`;
   const row = request.itemSnapshot || {};
+  if (match[1] === 'personalized_followups') return `personalized:${row.standardPlanId || request.recordIndex}:0:${match[2]}`;
   const fallback = { medical_treatment: '就医安排', specialist_collab: '联合会诊', checkup_completion: '体检完善', abnormal_followup: '异常复查', vaccine: '疫苗接种', functional_medicine: '功能医学检测' };
   const label = String(row.hospital || row.name || row.items || row.standardPlanName || fallback[match[1]] || '').trim();
   return label ? `${match[1]}:${match[2]}:${label}` : null;
@@ -22,4 +23,6 @@ function needsBooking(task) {
 function isBookingRequest(task) {
   return task.sourceType === 'annual_service' && task.workflowKey === 'service_request' && appointmentModules.includes(task.formData?.serviceRequest?.moduleKey);
 }
-module.exports = { followUpKey, isAssistance, needsBooking, isBookingRequest };
+function isManagerRequest(task) { return task?.sourceType === 'annual_service' && task.workflowKey === 'service_request' && task.formData?.serviceRequest?.moduleKey === 'personalized_followups' && task.formData.serviceRequest.itemSnapshot?.managementFollowUpVersion === 1; }
+function isNutritionRequest(task) { return isManagerRequest(task) && task.formData.serviceRequest.serviceType === 'nutrition_assessment'; }
+module.exports = { followUpKey, isAssistance, needsBooking, isBookingRequest, isManagerRequest, isNutritionRequest };

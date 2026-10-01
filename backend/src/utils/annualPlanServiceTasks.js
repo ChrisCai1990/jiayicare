@@ -21,19 +21,19 @@ function buildAnnualPlanServiceTasks(plan, patient = {}) {
     const evidence = record.basisSummary || record.reason || record.matchReason || '';
     rows.push({
       key: `service-request:${moduleKey}:${index}:${identityDate.toISOString().slice(0, 10)}`,
-      date: executionDate, assignedTo: patient.assignedHealthPlanner || null,
+      date: executionDate, assignedTo: (moduleKey === 'personalized_followups' && record.managementFollowUpVersion === 1 ? patient.assignedHealthManager : patient.assignedHealthPlanner) || null,
       stage: 'service_request', taskRole: 'supervisor', theme: `服务需求待安排 · ${label}`,
       content: [
         `服务模式：${mode === 'managed' ? '全托管' : '单项服务'}`, record.serviceType && `服务类型：${record.serviceType}`,
         mode === 'managed' && record.managedServiceType && `一站式类型：${record.managedServiceType === 'checkup' ? '体检一站式' : '门诊一站式'}`,
         `管理事项：${label}`, evidence && `设置依据：${evidence}`, record.customerAction && `客户行动：${record.customerAction}`,
         record.precautions && `注意事项：${record.precautions}`,
-        '处理要求：健康规划师核对信息后，选择已经跑通的服务流程并安排后续岗位流转。',
+        moduleKey === 'personalized_followups' && record.managementFollowUpVersion === 1 ? '处理要求：健管专员跟进并安排所选服务；营养评估通过营养服务流程确认营养师及评估日期，再关联实际服务。' : '处理要求：健康规划师核对信息后，选择已经跑通的服务流程并安排后续岗位流转。',
       ].filter(Boolean).join('\n'),
       formData: { serviceRequest: { moduleKey, recordIndex: index, mode, serviceType: record.serviceType || '', itemSnapshot: record } },
     });
   };
-  MODULES.forEach(([key, dateField, fallback]) => (moduleData[key]?.records || []).forEach((record, index) => add(key, record, index, record[dateField], fallback)));
+  MODULES.forEach(([key, dateField, fallback]) => { if (moduleData[key]?.enabled !== false) (moduleData[key]?.records || []).forEach((record, index) => add(key, record, index, record[dateField], fallback)); });
   [['annual_checkup', 'date', '年度体检'], ['lifestyle', 'date', '生活方式干预'], ['quarterly_eval', 'date', '季度评估']].forEach(([key, dateField, fallback]) => {
     const record = moduleData[key]; if (record?.enabled !== false && record) add(key, record, 0, record[dateField], fallback);
   });
@@ -47,7 +47,7 @@ async function syncAnnualPlanServiceTasks(plan) {
   if (plan.continuitySource?.previousPlanId) plan = { ...(gate.executionPlan || (plan.toObject ? plan.toObject() : plan)), confirmedAt: gate.anchor };
   const FollowUp = require('../models/FollowUp');
   const User = require('../models/User');
-  const patient = await User.findById(plan.patientId).select('assignedHealthPlanner').lean();
+  const patient = await User.findById(plan.patientId).select('assignedHealthPlanner assignedHealthManager').lean();
   const rows = buildAnnualPlanServiceTasks(plan, patient || {});
   const assignableRows = rows.filter(row => row.assignedTo);
   let created = 0; let updated = 0;
@@ -75,7 +75,7 @@ async function syncAnnualPlanServiceTasks(plan) {
   }
   const desired = (plan.continuitySource?.previousPlanId ? rows : assignableRows).map(row => row.key);
   await FollowUp.updateMany({ sourceAnnualPlanId: plan._id, sourceType: 'annual_service', workflowKey: 'service_request', annualDispatch: null, careFlowId: null, sourceScheduleKey: { $nin: desired }, status: { $in: ['planned', 'in_progress'] }, ...(plan.continuitySource?.previousPlanId ? { 'serviceTracking.linkId': null } : {}) }, { $set: { status: 'cancelled', cancelReason: '年度方案已调整或改为仅提醒' } });
-  return { created, updated, warnings: patient?.assignedHealthPlanner ? [] : rows.map(row => `${row.theme}尚未绑定健康规划师`) };
+  return { created, updated, warnings: rows.filter(row=>!row.assignedTo).map(row => `${row.theme}尚未绑定对应负责人`) };
 }
 
 module.exports = { buildAnnualPlanServiceTasks, syncAnnualPlanServiceTasks };

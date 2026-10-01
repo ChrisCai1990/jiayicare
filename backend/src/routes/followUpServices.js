@@ -24,7 +24,8 @@ async function loadServiceRequest(req, res, next) {
   const task = await FollowUp.findById(id);
   if (!task || !isServiceRequest(task)) return res.status(404).json({ success: false, message: '服务需求不存在' });
   if (task.careFlowId) return res.status(409).json({message:'请在完整就医流程中办理'});
-  if (req.staff.role !== 'superadmin' && (req.staff.role !== 'healthPlanner' || String(task.assignedTo) !== String(req.staff._id))) return res.status(403).json({ success: false, message: '仅本任务健康规划师可安排服务' });
+  const arrangingRole = require('../../../shared/annualServiceItem.cjs').isManagerRequest(task) ? 'healthManager' : 'healthPlanner';
+  if (req.staff.role !== 'superadmin' && (req.staff.role !== arrangingRole || String(task.assignedTo) !== String(req.staff._id))) return res.status(403).json({ success: false, message: '仅本任务负责人员可安排服务' });
   if (!require('../utils/healthManagementRollout').enabledForPatient(task.patientId)) return res.status(403).json({ success: false, code: 'HEALTH_MANAGEMENT_NOT_ENABLED', message: '该客户暂未开放新版健康管理闭环' });
   req.serviceRequest = task;
   next();
@@ -56,13 +57,14 @@ router.post('/:id/annual-booking', staffAuth, async (req, res) => {
 router.get('/:id/service-link-options', staffAuth, loadServiceRequest, async (req, res) => {
   const task = req.serviceRequest;
   await reconcileServiceLinks({ requestTaskId: task._id });
+  const nutrition = require('../../../shared/annualServiceItem.cjs').isNutritionRequest(task);
   const [orders, plans, followUps, link] = await Promise.all([
     Order.find({ user: task.patientId, orderType: 'service', ...require('../utils/orderWorkItem').activeOrderWorkItemQuery() }).select('serviceName orderNo status totalUnits usedUnits createdAt').sort({ createdAt: -1 }).limit(100).lean(),
     HealthPlan.find({ patientId: task.patientId, type: { $in: ['medical_assist', 'annual_checkup', 'nutrition', 'rehab', 'tcm', 'psychology'] }, status: 'active' }).select('title type status createdAt').sort({ createdAt: -1 }).limit(100).lean(),
     FollowUp.find(followUpFilter(task)).select('theme date assignedTo serviceTracking annualBooking').populate('assignedTo', 'name').lean(),
     Link.findOne({ requestTaskId: task._id }).lean(),
   ]);
-  res.json({ success: true, data: { orders, plans, followUps, link } });
+  res.json({ success: true, data: { orders: nutrition ? [] : orders, plans: nutrition ? plans.filter(p=>p.type==='nutrition') : plans, followUps, link } });
 });
 
 router.post('/:id/service-link', staffAuth, loadServiceRequest, async (req, res) => {
@@ -81,6 +83,7 @@ router.post('/:id/service-link', staffAuth, loadServiceRequest, async (req, res)
   if (!parent?.assignedTo) return res.status(400).json({ success: false, message: '请选择同一来源、已审核且已分配健管专员的未完成随访' });
   if (require('../../../shared/annualServiceItem.cjs').isBookingRequest(task) && !existing && !require('../../../shared/annualBookingPlan.cjs').bookingReady(parent.annualBooking)) return res.status(409).json({ success: false, message: '请先由健管专员确认本事项预约安排，规划师再安排服务' });
   if (!target || serviceOutcome(targetType, target).status !== 'waiting') return res.status(409).json({ success: false, message: '服务不可关联，请确认属于本客户且正在有效执行' });
+  if (require('../../../shared/annualServiceItem.cjs').isNutritionRequest(task) && (targetType !== 'health_plan' || target.type !== 'nutrition')) return res.status(400).json({ success:false, message:'营养评估请关联本客户有效的营养服务方案' });
   const title = targetType === 'order' ? target.serviceName : target.title;
   let link;
   try {

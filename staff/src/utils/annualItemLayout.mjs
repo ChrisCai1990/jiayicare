@@ -2,11 +2,13 @@ export const simpleAnnualModules = ['medical_treatment', 'checkup_completion', '
 export function annualItemLayout(key, def, managerName) {
   if (key === 'personalized_followups') {
     const templateKeys = new Set(['standardPlanName', 'standardContent', 'standardSchedule'])
-    return { ...def, reviewDriven: true,
+    const hidden = new Set([...templateKeys, 'followUpStaff', 'collaborator', 'collaborationDate', 'frequency', 'ownerRole', 'serviceMode', 'serviceType', 'basisSummary'])
+    return { ...def, reviewDriven: true, annualServiceArrangement: true, managerName: managerName || '未分配健管专员，请先完善客户归属',
+      serviceFields: def.fields.filter(f => ['serviceMode','serviceType'].includes(f.key)).map(f => f.key === 'serviceType' ? {...f, options:[...(f.options || []), {value:'nutrition_assessment',label:'营养评估服务'}]} : f),
       templateFields: def.fields.filter(f => templateKeys.has(f.key)),
-      fields: def.fields.filter(f => !templateKeys.has(f.key)).map(f => f.key === 'personalization'
+      fields: def.fields.filter(f => !hidden.has(f.key)).map(f => f.key === 'personalization'
         ? { ...f, concretePlan: true, label: '具体方案', rows: 5, placeholder: '填写本客户具体要做的事、执行要求及跟进安排' }
-        : f.key === 'matchReason' ? { ...f, label: '制定依据' } : f),
+        : f.key === 'matchReason' ? { ...f, label: '制定依据' } : f.key === 'executionDate' ? {...f,label:'随访日期'} : f),
     }
   }
   if (!simpleAnnualModules.includes(key)) return def

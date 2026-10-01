@@ -5,7 +5,7 @@ function validate(data = {}, today = new Date(Date.now() + 8 * 3600000).toISOStr
   if (rows.some(r => r.serviceMode === 'single' && !r.serviceType)) return '推送前请补全单项服务类型；当前可暂存草稿';
   const validDate = d => /^\d{4}-\d{2}-\d{2}$/.test(d || '') && Number.isFinite(Date.parse(d)) && new Date(d).toISOString().slice(0,10) === d && d >= today;
   const personalized = data?.personalized_followups?.enabled === false ? [] : data?.personalized_followups?.records || [];
-  if (personalized.some(r => !r.followUpStaff || !validDate(r.executionDate) || (r.collaborator && !validDate(r.collaborationDate)) || (r.collaborationDate && !r.collaborator))) return '推送前请补全每项随访的主执行人及不早于今天的执行日期，协同执行人和日期须同时填写；当前可暂存草稿';
+  if (personalized.some(r => !validDate(r.executionDate))) return '推送前请补全每项随访日期（不早于今天）；由客户所属健管专员跟进，当前可暂存草稿';
   return '';
 }
 module.exports = { validate };
