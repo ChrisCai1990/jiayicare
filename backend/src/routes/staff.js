@@ -2251,6 +2251,9 @@ router.post('/followups/:id/outcome-review', staffAuth, async (req, res) => {
   } catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.message }); }
 });
 
+router.get('/followups/:id/lifestyle-interview', staffAuth, require('../utils/lifestyleInterview').handle);
+router.post('/followups/:id/lifestyle-interview', staffAuth, require('../utils/lifestyleInterview').handle);
+
 router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
   // 历史任务的 staffId/assignedTo 可能以字符串保存，而当前账号 _id 是 ObjectId。
   // 先按任务 ID 读取，再统一转成字符串校验；否则负责人明明正确也会被 Mongoose
@@ -2264,9 +2267,10 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     || String(followUp.assignedTo || '') === String(req.staff._id);
   if (!canUpdate) return res.status(403).json({ success: false, message: '该任务未分配给当前账号，无法保存' });
   if (require('../../../shared/annualNutrition.cjs').isTask(followUp)) {
+    if (followUp.formData?.lifestyleInterview?.phase === 'applying') return res.status(409).json({message:'请在生活方式访谈表中继续完成提交'});
     if (req.body.status === 'completed' || ['draft','submit'].includes(req.body.assessmentAction)) {
-      try { const data=await require('../utils/annualNutritionReview').transition({task:followUp,actor:req.staff,body:req.body,FollowUp,User}); return res.json({success:true,data,message:req.body.assessmentAction==='draft'?'评估草稿已保存':'评估结果已提交健康顾问审核'}); }
-      catch(error) { return res.status(error.statusCode||500).json({success:false,message:error.message}); }
+      return res.status(400).json({message:'请使用生活方式访谈表核实并提交评估'});
+
     }
     if (followUp.aiStatus === 'pending' || followUp.status === 'completed') return res.status(409).json({message:'评估结果已提交，请通过审核入口处理'});
   }
@@ -2497,7 +2501,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   if (req.body.formData !== undefined) {
     const incoming = req.body.formData && typeof req.body.formData === 'object' && !Array.isArray(req.body.formData)
       ? { ...req.body.formData } : {};
-    if (require('../../../shared/annualNutrition.cjs').isTask(followUp)) { incoming.nutritionAssessment=followUp.formData?.nutritionAssessment; incoming.nutritionResultReview=followUp.formData?.nutritionResultReview; incoming.nutritionResultHistory=followUp.formData?.nutritionResultHistory; }
+    if (require('../../../shared/annualNutrition.cjs').isTask(followUp)) { incoming.lifestyleInterview=followUp.formData?.lifestyleInterview; incoming.nutritionAssessment=followUp.formData?.nutritionAssessment; incoming.nutritionResultReview=followUp.formData?.nutritionResultReview; incoming.nutritionResultHistory=followUp.formData?.nutritionResultHistory; }
     delete incoming.adHocMedicalReminder;
     delete incoming.reminderKind;
     if (followUp.formData?.adHocMedicalReminder === true) {
@@ -15162,7 +15166,7 @@ router.get('/patients/:id/questionnaire-responses', staffAuth, async (req, res) 
     const data = responses
       .filter(r => r.questionnaire && (r.questionnaire.questions || []).some(q => q.archiveField))
       .map(r => {
-        const draft = buildArchiveDraft(archiveUser || {}, r.questionnaire, r);
+        const draft = buildArchiveDraft(r.proxyEntry ? {...archiveUser,lifestyle_data:require('../utils/effectiveLifestyle').effectiveLifestyle(archiveUser||{})} : archiveUser || {}, r.questionnaire, r);
         const draftByQuestionId = new Map((draft.items || []).map(item => [String(item.questionId), item]));
         const answers = (r.questionnaire.questions || []).flatMap(question => {
           const answer = r.answers?.[question.id];
@@ -15174,7 +15178,7 @@ router.get('/patients/:id/questionnaire-responses', staffAuth, async (req, res) 
             archiveField: question.archiveField || '', baselineValue: archiveItem?.existing || '',
             normalizedValue: archiveItem?.valueStr || '',
             changed: !!archiveItem && archiveItem.existing !== archiveItem.valueStr,
-            confirmed: !!archiveItem && confirmedChanges.has(`${String(r._id)}:${archiveItem.path}:${String(archiveItem.valueStr ?? '')}`),
+            confirmed: !!archiveItem && (confirmedChanges.has(`${String(r._id)}:${archiveItem.path}:${String(archiveItem.valueStr ?? '')}`) || !!r.proxyEntry && (archiveUser?.lifestyleHistory||[]).some(row=>row.interviewId===String(r._id))),
             coreNeed: /体检|需求|期望|关注|预算|机构|医院|日期|时间/.test(question.text || ''),
           }];
         });
@@ -15182,6 +15186,7 @@ router.get('/patients/:id/questionnaire-responses', staffAuth, async (req, res) 
         responseId: r._id, questionnaireId: r.questionnaire._id, title: r.questionnaire.title, submittedAt: r.submittedAt,
         sourceOrderId: r.sourceOrderId || null, answers,
         // 前端据此判断是否为膳食调查问卷、要不要展示营养师复核按钮
+        proxyEntry: r.proxyEntry || null,
         isDietarySurvey: String(r.questionnaire._id) === DIETARY_SURVEY_QUESTIONNAIRE_ID,
         nutritionistReview: r.nutritionistReview || null,
       }});

@@ -4460,7 +4460,7 @@ export default function PatientDetailPage() {
             <details style={{ marginBottom: 10 }}><summary style={{ cursor: 'pointer', fontSize: 13, color: '#4A6558' }}>从已答问卷整理档案变化</summary><div style={{ marginBottom: 12, padding: '8px 14px', background: '#F6F9F7', borderRadius: 8, border: '1px solid #D8EDE3', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 13, color: '#4A6558' }}>📝 从已答问卷识别档案变化：</span>
               <select id="qresp-select" className="form-control" style={{ width: 'auto', maxWidth: 320, fontSize: 13, padding: '4px 8px' }} defaultValue={qResponses[0].responseId}>
-                {qResponses.map(r => <option key={r.responseId} value={r.responseId}>{r.title}（{new Date(r.submittedAt).toLocaleDateString('zh-CN')}）</option>)}
+                {qResponses.map(r => <option key={r.responseId} value={r.responseId}>{r.proxyEntry ? '营养师代填 · ' : ''}{r.title}（{new Date(r.submittedAt).toLocaleDateString('zh-CN')}）</option>)}
               </select>
               <button className="btn btn-secondary btn-sm" disabled={archiveBusy}
                 onClick={() => handleGenerateArchiveDraft(document.getElementById('qresp-select')?.value)}>
@@ -5512,6 +5512,7 @@ export default function PatientDetailPage() {
                 <div><div className="card-title">生活方式摘要</div><div style={{ marginTop: 4, fontSize: 12, color: '#8AA89C' }}>正式档案默认收起；AI可结合近30天打卡形成变化分析，经营养师审核后再更新</div></div>
                 {!editingLifestyle
                   ? <div style={{ display: 'flex', gap: 8 }}>
+                      {followUps.filter(f=>annualNutrition.isTask(f)&&f.status!=='cancelled').map(f=><button key={f._id} className="btn btn-primary btn-sm" onClick={()=>setFollowUpDetail(f)}>生活方式访谈 · {f.status==='completed'?'查看记录':'代填 / 核实问卷'}</button>)}
                       <button className="btn btn-primary btn-sm" onClick={() => setShowLifestyleChangeModal(true)}>＋ 新增变化</button>
                       <button className="btn btn-secondary btn-sm" disabled={lifestyleAiGenerating} onClick={handleGenerateLifestyleDraft}>{lifestyleAiGenerating ? 'AI整理中…' : 'AI整理打卡变化'}</button>
                       <button className="btn btn-secondary btn-sm" onClick={() => setLifestyleDetailsOpen(v => !v)}>{lifestyleDetailsOpen ? '收起详细档案' : '展开详细档案'}</button>
@@ -5849,7 +5850,8 @@ export default function PatientDetailPage() {
                         ))}
                       </div>
                       {Object.hasOwn(entry.changes?.lifestyle_data || {}, 'autoSummaryFlags') && <p style={{fontSize:12,color:'#65776F'}}>系统自动摘要：保存生活方式时，根据饮食、运动、过敏或营养干预、排便等已填信息生成；不代表新发生的不适或独立随访。</p>}
-                      {entry.healthStatusChange && <div style={{ marginTop: 10, padding: '9px 11px', background: '#fff', border: '1px solid #DDE8E2', borderRadius: 8, fontSize: 12, color: '#4A6558' }}><b style={{ color: '#1A2B24' }}>同期健康状况变化：</b>{entry.healthStatusChange}</div>}
+                      {entry.interviewId && <p style={{fontSize:12,color:'#65776F'}}>营养师代填问卷 · {entry.method} · 已核实内容写入档案</p>}
+                      {entry.healthStatusChange && <div style={{ marginTop: 10, padding: '9px 11px', background: '#fff', border: '1px solid #DDE8E2', borderRadius: 8, fontSize: 12, color: '#4A6558' }}><b style={{ color: '#1A2B24' }}>{entry.interviewId ? '营养师评估意见：' : '同期健康状况变化：'}</b>{entry.healthStatusChange}</div>}
                     </div>
                   )
                 })}
@@ -11179,7 +11181,7 @@ export default function PatientDetailPage() {
               <button className="modal-close" onClick={() => setFollowUpDetail(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {annualNutrition.isTask(followUpDetail) && <AnnualNutritionAssessmentForm key={`${followUpDetail._id}:${followUpDetail.updatedAt}`} task={followUpDetail} staff={staff} onSaved={updated=>{setFollowUpDetail(updated);loadFollowUps()}}/>}
+              {annualNutrition.isTask(followUpDetail) && <AnnualNutritionAssessmentForm key={`${followUpDetail._id}:${followUpDetail.updatedAt}`} task={followUpDetail} staff={staff} onSaved={updated=>{setFollowUpDetail(updated);loadFollowUps();load();toast(updated.aiStatus==='pending'?'已写入生活方式档案并提交评估':'访谈草稿已保存')}}/>}
               <FollowUpServiceLinkCard key={followUpDetail._id} task={followUpDetail} staff={staff} onLinked={updated => { setFollowUpDetail(updated); loadFollowUps() }} />
               {!annualDispatch.dedicated(followUpDetail) && <OnsiteBookingCard key={`onsite-${followUpDetail._id}`} task={followUpDetail} staff={staff} />}
               <AnnualCheckupPreparationCard key={`checkup:${followUpDetail._id}`} task={followUpDetail} staff={staff} onSaved={updated => { setFollowUpDetail(updated); loadFollowUps() }} />

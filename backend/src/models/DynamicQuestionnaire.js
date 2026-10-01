@@ -61,6 +61,7 @@ const questionnaireResponseSchema = new mongoose.Schema({
   questionnaire: { type: mongoose.Schema.Types.ObjectId, ref: 'DynamicQuestionnaire', required: true },
   user:          { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   answers:       { type: mongoose.Schema.Types.Mixed, default: {} },
+  proxyEntry: { type: mongoose.Schema.Types.Mixed, default: null }, // 营养师访谈代填来源及待确认题目
   totalScore:    { type: Number, default: 0 }, // 自动计算总分
   factorScores:  { type: mongoose.Schema.Types.Mixed, default: {} }, // 按题目factor分组的均分（如SCL90十因子）
   submittedAt:   { type: Date, default: Date.now },
