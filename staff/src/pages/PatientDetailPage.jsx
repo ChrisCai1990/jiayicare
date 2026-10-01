@@ -9495,7 +9495,7 @@ export default function PatientDetailPage() {
             const supplyReminderOrderMap = new Map(followUps
               .filter(task => task.sourceType === 'order' && task.sourceOrderId?.medicalProxyPlan?.sourceSupplyReminderTaskId)
               .map(task => [String(task.sourceOrderId.medicalProxyPlan.sourceSupplyReminderTaskId), String(task.sourceOrderId._id)]))
-            const isInsuranceCaseTask = task => ['insurance_service', 'scheduled'].includes(task.sourceType)
+            const isInsuranceCaseTask = task => ['insurance_case', 'insurance_service', 'scheduled'].includes(task.sourceType)
               && task.sourceId && /高端医疗险/.test(`${task.theme || ''} ${(task.tags || []).join(' ')}`)
             const serviceGroupKey = task => String(
               (isInsuranceCaseTask(task) && `insurance:${task.sourceId?._id || task.sourceId}`)

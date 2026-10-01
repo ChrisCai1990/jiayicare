@@ -7,7 +7,8 @@ test('routine cancelled and daily dose rows disappear, while actual follow-up ev
   const base = { sourceType: 'medication_reminder', status: 'cancelled', tags: ['用药提醒'], executedContent: '', completedAt: null };
   assert.equal(sift(routineMedicationNoiseFilter)(base), true);
   assert.equal(sift(routineMedicationNoiseFilter)({ ...base, status: 'planned', sourceScheduleKey: 'medication-day-slot:patient:time' }), true);
-  assert.equal(sift(routineMedicationNoiseFilter)({ ...base, tags: ['人工跟进'] }), false);
+  assert.equal(sift(routineMedicationNoiseFilter)({ ...base, tags: ['人工跟进'] }), true);
+  assert.equal(sift(routineMedicationNoiseFilter)({ ...base, status: 'planned', tags: ['人工跟进'], sourceScheduleKey: 'medication-day-slot:patient:time' }), false);
   assert.equal(sift(routineMedicationNoiseFilter)({ ...base, progressRecords: [{ requestId: 'reviewed' }] }), false);
   assert.equal(sift(routineMedicationNoiseFilter)({ ...base, completedByUser: true }), false);
   assert.equal(sift(disposableMedicationSlotsFilter)({ ...base, sourceScheduleKey: 'medication-day-slot:patient:time' }), true);

@@ -2,7 +2,6 @@
 // execution history. Keep any row with customer/staff activity for audit.
 const noActivity = {
   sourceType: 'medication_reminder',
-  tags: { $nin: ['人工跟进'] },
   completedByUser: { $ne: true },
   completedAt: null,
   'progressRecords.0': { $exists: false },
@@ -13,14 +12,15 @@ const routineMedicationNoiseFilter = {
   ...noActivity,
   $or: [
     { status: 'cancelled' },
-    { status: 'planned', sourceScheduleKey: /^medication-day-slot:/ },
-    { status: 'planned', 'formData.medicationPlanId': { $exists: true } },
+    { status: 'planned', tags: { $nin: ['人工跟进'] }, sourceScheduleKey: /^medication-day-slot:/ },
+    { status: 'planned', tags: { $nin: ['人工跟进'] }, 'formData.medicationPlanId': { $exists: true } },
   ],
 };
 
 const disposableMedicationSlotsFilter = {
   ...noActivity,
   status: { $in: ['planned', 'cancelled'] },
+  tags: { $nin: ['人工跟进'] },
   $or: [
     { sourceScheduleKey: /^medication-day-slot:/ },
     { 'formData.medicationPlanId': { $exists: true } },

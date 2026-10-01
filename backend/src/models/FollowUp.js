@@ -80,7 +80,7 @@ const followUpSchema = new mongoose.Schema({
   checkupPreparationCompletion: { type: mongoose.Schema.Types.Mixed, default: null }, // 服务验收回写凭据，不接受通用编辑
   checkupPreparationActivation: { type: mongoose.Schema.Types.Mixed, default: null }, // 准备承接的同文档执行凭据，不接受通用编辑
   sourceHealthPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null }, // 来自AI体检/营养方案确认后自动生成
-  sourceType: { type: String, enum: ['scheduled', 'ai_review', 'health_plan', 'insurance_service', 'annual_coordination', 'annual_service', 'annual_preparation', 'professional_assessment', 'report_followup', 'medication_reminder', 'supply_reminder', 'order', 'symptom', null], default: null },
+  sourceType: { type: String, enum: ['scheduled', 'ai_review', 'health_plan', 'insurance_case', 'insurance_service', 'annual_coordination', 'annual_service', 'annual_preparation', 'professional_assessment', 'report_followup', 'medication_reminder', 'supply_reminder', 'order', 'symptom', null], default: null },
   sourceId: { type: mongoose.Schema.Types.ObjectId, default: null }, // 通用来源ID；symptom 时关联 HealthRecord
   sourceOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null }, // sourceType='order'时关联的订单，供详情弹窗展示订单号/金额/支付方式
   reminderCount: { type: Number, default: 0, min: 0 },

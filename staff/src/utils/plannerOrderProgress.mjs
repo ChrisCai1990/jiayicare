@@ -12,7 +12,7 @@ export function isCustomerOrder(order, task) {
 export function serviceTaskGroupKey(task) {
   if (task.annualBookingTask || (task.sourceType === 'annual_service' && task.workflowKey === 'service_request')) return `request:${task._id}`
   if (task.sourceType === 'order' && orderId(task.sourceOrderId)) return `order:${orderId(task.sourceOrderId)}`
-  if (['insurance_service', 'scheduled'].includes(task.sourceType) && task.sourceId
+  if (['insurance_case', 'insurance_service', 'scheduled'].includes(task.sourceType) && task.sourceId
     && /高端医疗险/.test(`${task.theme || ''} ${(task.tags || []).join(' ')}`)) return `insurance:${orderId(task.sourceId)}`
   return task.coordinationGroupId || `task:${task._id}`
 }

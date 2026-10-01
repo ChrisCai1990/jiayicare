@@ -30,7 +30,7 @@ test('different orders remain separate and active service has one current status
 
 test('one insurance case with executor, supervisor and legacy row stays one service', () => {
   const tasks = [
-    { _id: 'old', sourceType: 'scheduled', sourceId: 'case-1', theme: '高端医疗险：3月门诊报销', status: 'in_progress' },
+    { _id: 'old', sourceType: 'insurance_case', sourceId: 'case-1', theme: '高端医疗险：3月门诊报销', status: 'in_progress' },
     { _id: 'executor', sourceType: 'insurance_service', sourceId: 'case-1', taskRole: 'executor', theme: '高端医疗险：3月门诊报销', status: 'planned' },
     { _id: 'supervisor', sourceType: 'insurance_service', sourceId: 'case-1', theme: '高端医疗险督办：3月门诊报销', status: 'planned' },
   ]
