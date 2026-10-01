@@ -57,7 +57,7 @@ module.exports=({getVisiblePlanPatientIds})=>{
       const revision={id:amendmentId,status:'applied',createdAt:new Date(),createdBy:req.staff._id,source,sourceHash,baseUpdatedAt:plan.updatedAt,changes,taskStatus:'not_created'};
       const saved=await Plan.updateOne({_id:plan._id,patientId:req.amendmentPatientId,updatedAt:plan.updatedAt,'supplementRevisions.id':{$ne:amendmentId}},{$set:{moduleData},$push:{supplementRevisions:revision}});
       if(!saved.modifiedCount) return res.status(409).json({success:false,message:'方案已变化或已补入，请刷新核对'});
-      res.json({success:true,message:'已补入年度方案；未创建或调整执行任务',data:{planId,amendmentId}});
+      res.json({success:true,message:'年度方案调整已保存；未创建、调整或删除执行任务',data:{planId,amendmentId}});
     }catch(e){res.status(400).json({success:false,message:e.message});}
   });
   return router;

@@ -8,6 +8,11 @@ function clean(items) {
   return items.map(item => {
     if (!Object.hasOwn(fields, item.key)) throw Error('不支持的方案板块');
     const out = { key:item.key, target:Number.isInteger(item.target) ? item.target : -1 };
+    if(item.operation==='remove') {
+      const deletionReason=typeof item.deletionReason==='string'?item.deletionReason.trim():'';
+      if(out.target<0 || !deletionReason || deletionReason.length>500 || item.moveFrom) throw Error('请选择原事项并填写删除原因（不超过500字）');
+      return {...out,operation:'remove',deletionReason};
+    }
     out.standardPlanId=typeof item.standardPlanId==='string'?item.standardPlanId:'';
     out.templateHash=typeof item.templateHash==='string'?item.templateHash:'';
     if(item.moveFrom) {
@@ -31,6 +36,7 @@ function validDate(value) {return /^\d{4}-\d{2}-\d{2}$/.test(value||'') && Numbe
 function previewItems(items) {
   if (!Array.isArray(items)) throw Error('补充项格式无效，请重试');
   if (!items.length) return [];
+  if(items.some(item=>item.operation==='remove')) throw Error('删除须由顾问手动选择，不能由AI直接提出删除操作');
   return clean(items.map(item=>{
     const uncertain=!!item.date && (!validDate(item.date)||!String(item.timingReason||'').trim());
     return {...item,date:uncertain?'':item.date,timeWindow:item.timeWindow||(uncertain?String(item.date):''),datePending:uncertain||item.datePending===true};
@@ -49,6 +55,12 @@ function sourceFor(topic,topicId,messageId,scope) {
 function apply(base, items, source, catalog=[]) {
   const next = JSON.parse(JSON.stringify(base || {})), changes=[], removals=[];
   for (const item of clean(items)) {
+    if(item.operation==='remove') {
+      const before=base?.[item.key]?.records?.[item.target];
+      if(!before || removals.some(r=>r.key===item.key&&r.index===item.target)) throw Error('待删除事项不存在或重复选择');
+      removals.push({key:item.key,index:item.target,before,after:null,operation:'remove',deletionReason:item.deletionReason});
+      continue;
+    }
     const origin=item.moveFrom ? base?.[item.moveFrom.key]?.records?.[item.moveFrom.index] : null;
     if(item.moveFrom) {
       if(!origin || removals.some(r=>r.key===item.moveFrom.key && r.index===item.moveFrom.index)) throw Error('迁移来源已变化或重复选择');

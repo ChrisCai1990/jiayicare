@@ -23,19 +23,27 @@ export default function ReviewPlanAmendment({patientId,topicId,message,scope = '
   const [catalog,setCatalog]=useState([])
   const plan=plans.find(p=>p._id===planId)
   const start=async()=>{setOpen(true);setDraft(null);setBusy(true);setError('');try{const r=await staffAPI.reviewPlanChoices(patientId);setPlans(r.data||[]);setCatalog(r.catalog||[]);setPlanId(r.data?.[0]?._id||'')}catch(e){setError(e.message)}finally{setBusy(false)}}
-  const run=async action=>{setBusy(true);setError('');try{
+  const run=async action=>{if(action==='apply'&&draft?.items.some(i=>i.operation==='remove'&&i.selected!==false)&&!window.confirm('确认从年度方案删除所选事项？将保留原内容和删除原因，已有执行任务不会自动删除。'))return;setBusy(true);setError('');try{
     const r=await staffAPI.reviewPlanAmendment(patientId,{action,planId,topicId,messageId:message?._id,scope,...(action==='apply'?{...draft,items:draft.items.filter(i=>i.selected!==false),confirmed:true}:{})})
     if(action.startsWith('preview'))setDraft(r.data);else {setSaved(r.message);setDraft(null);setOpen(false)}
   }catch(e){setError(e.message)}finally{setBusy(false)}}
   const edit=(index,key,value)=>setDraft(d=>({...d,items:d.items.map((r,i)=>i===index?{...r,[key]:value,...(key==='key'?{target:-1}:{})}:r)}))
-  const originals=Object.keys(labels).filter(key=>key!=='personalized_followups').flatMap(key=>(plan?.moduleData?.[key]?.records||[]).map((row,index)=>({key,index,row})))
+  const originals=Object.keys(labels).flatMap(key=>(plan?.moduleData?.[key]?.records||[]).map((row,index)=>({key,index,row})))
   const history=(plan?.amendments||[]).filter(r=>scope==='topic'?r.topicId===topicId:r.messageId===message?._id)
-  const chooseOriginal=async (key,index,row)=>{
+  const chooseOriginal=async (key,index,row,operation)=>{
     setBusy(true);setError('')
     try {
       const base=draft || (await staffAPI.reviewPlanAmendment(patientId,{action:'preview-manual',planId,topicId,messageId:message?._id,scope})).data
       if(base.baseUpdatedAt!==plan.updatedAt) throw Error('方案已更新，请关闭后重新打开，核对最新事项再选择')
-      const exists=base.items.findIndex(item=>item.moveFrom?.key===key&&item.moveFrom?.index===index)
+      const exists=base.items.findIndex(item=>item.operation==='remove'?item.key===key&&item.target===index:item.moveFrom?.key===key&&item.moveFrom?.index===index)
+      if(operation==='remove'){
+        const removal={key,target:index,title:rowTitle(row),operation:'remove',deletionReason:''};
+        setDraft({...base,items:exists>=0?base.items.map((r,i)=>i===exists?(r.operation==='remove'?{...r,selected:r.selected===false}:removal):r):[...base.items,removal]});return;
+      }
+      if(exists>=0 && base.items[exists].operation==='remove') {
+        if(base.items[exists].selected!==false){setError('请先取消待删除项，再调整分类');return}
+        setDraft({...base,items:base.items.map((r,i)=>i===exists?{key:'personalized_followups',target:-1,title:rowTitle(row),reason:row.basisSummary||row.reason||'',advice:row.personalizedAdvice||row.reason||'',date:'',datePending:true,moveFrom:{key,index}}:r)});return
+      }
       if(exists>=0) setDraft({...base,items:base.items.map((r,i)=>i===exists?{...r,selected:r.selected===false}:r)})
       else setDraft({...base,items:[...base.items,{key:'personalized_followups',target:-1,title:rowTitle(row),reason:row.basisSummary||row.reason||'',advice:row.personalization||row.personalizedAdvice||row.reason||'',date:'',datePending:true,timeWindow:'',timingReason:'',moveFrom:{key,index}}]})
     }catch(e){setError(e.message)}finally{setBusy(false)}
@@ -49,25 +57,26 @@ export default function ReviewPlanAmendment({patientId,topicId,message,scope = '
       {!plans.length&&!busy&&<p>请先保存年度方案，再从研判沟通补入。</p>}
       <p>{scope==='topic'?'对照整个主题的最终意见、已有方案和补入记录，整理待新增或更新事项。':'只提取本条回复的行动建议。'}日期未明确可标记待确认，先保存建议。保存不会创建或调整执行任务。</p>
       {plan&&<section className="amendment-picker">
-        <h4>1. 选择要调整的事项</h4><p>点击对应事项的“调整此项”，可多选。选中后在下方选择模板并核对内容。</p>
+        <h4>1. 选择要调整的事项</h4><p>可选择调整或删除。删除先标记，在下方填写原因，确认保存后才生效。</p>
         <div className="amendment-picker__grid">{originals.map(({key,index,row})=>{
           const selected=draft?.items.some(item=>item.moveFrom?.key===key&&item.moveFrom?.index===index&&item.selected!==false)
+          const removing=draft?.items.some(item=>item.operation==='remove'&&item.key===key&&item.target===index&&item.selected!==false)
           return <article key={`${key}:${index}`} className={`amendment-picker__item ${selected?'is-selected':''}`}>
             <span className="amendment-picker__category">{labels[key]} · 第{index+1}项</span>
             <strong>{rowTitle(row)}</strong>
             <p>{row.reason||row.basisSummary||row.personalizedAdvice||'暂无原建议内容'}</p>
-            <button className={`btn btn-sm ${selected?'btn-primary':'btn-secondary'}`} disabled={busy} onClick={()=>chooseOriginal(key,index,row)}>{selected?'已选择 · 点击取消':'调整此项'}</button>
+            {key!=='personalized_followups'&&<button className={`btn btn-sm ${selected?'btn-primary':'btn-secondary'}`} disabled={busy||removing} onClick={()=>chooseOriginal(key,index,row)}>{selected?'已选择 · 点击取消':'调整此项'}</button>} <button className="btn btn-secondary btn-sm" style={{color:'#B42318'}} disabled={busy} onClick={()=>chooseOriginal(key,index,row,'remove')}>{removing?'已标记删除 · 撤销':'删除此项'}</button>
           </article>
         })}</div>
         {!originals.length&&<p>此方案暂无可迁移的事项，请核对所选年度方案。</p>}
       </section>}
-      {!!history.length&&<details className="amendment-history"><summary>历史补录记录 · {history.length} 次</summary>{[...history].reverse().map((r,i)=><details key={i}><summary>{[...new Set((r.changes||[]).map(c=>rowTitle(c.after||c.before)))].join('、') || '方案调整'} <small> · {new Date(r.createdAt).toLocaleString('zh-CN')}</small></summary>{(r.changes||[]).map((c,j)=><div key={j}>{labels[c.key]}：{rowTitle(c.after||c.before)}<p>{c.after?.reason||'已从原分类移除并留痕'}</p></div>)}</details>)}</details>}
+      {!!history.length&&<details className="amendment-history"><summary>历史补录记录 · {history.length} 次</summary>{[...history].reverse().map((r,i)=><details key={i}><summary>{[...new Set((r.changes||[]).map(c=>rowTitle(c.after||c.before)))].join('、') || '方案调整'} <small> · {new Date(r.createdAt).toLocaleString('zh-CN')}</small></summary>{(r.changes||[]).map((c,j)=><div key={j}>{labels[c.key]}：{rowTitle(c.after||c.before)}<p>{c.operation==='remove'?`删除原因：${c.deletionReason}`:c.after?.reason||'已从原分类移除并留痕'}</p></div>)}</details>)}</details>}
       {(plan?.pushedAt||plan?.confirmedAt||plan?.frozenAt)&&<p style={{color:'#A15C00'}}>此方案已发布或确认：本次为留痕修订，确认后客户查看的方案内容也会更新，既有任务保持不变。</p>}
       {!draft&&<button className="btn btn-primary btn-sm" disabled={busy||!planId} onClick={()=>run('preview')}>{busy?'正在提取…':'提取补充项并预览'}</button>}
       {!draft&&<button className="btn btn-secondary btn-sm" disabled={busy||!planId} onClick={()=>run('preview-manual')}>调整已有事项分类（不调用AI）</button>}
       {draft&&<><details><summary>查看原回复及依据</summary><div style={{whiteSpace:'pre-wrap'}}>{draft.source.content || draft.source.messages?.map(m=>`${m.role==='ai'?'AI':'医护'}：${m.content}`).join('\n\n')}</div>{draft.source.evidence?.map((e,i)=><div key={i}>{typeof e==='string'?e:JSON.stringify(e)}</div>)}</details>
         {!draft.items.length&&<p>尚未选择调整项。请在上方点击“调整此项”；AI未提取到新增建议也可手动选择。</p>}
-        {draft.items.map((item,index)=><div key={index} className="amendment-editor">
+        {draft.items.map((item,index)=>item.operation==='remove'?<div key={index} className="amendment-editor" style={{borderColor:'#F3CCCC'}}><h4 style={{color:'#B42318'}}>待删除：{item.title}</h4><label><input type="checkbox" checked={item.selected!==false} onChange={e=>edit(index,'selected',e.target.checked)}/>确认移除此事项</label><p>仅从年度方案移除，保留审计记录；已有任务需另行处理。</p><label>删除原因<textarea className="form-input" maxLength={500} value={item.deletionReason} onChange={e=>edit(index,'deletionReason',e.target.value)} placeholder="如：重复事项、后续研判已调整处理方式" /></label></div>:<div key={index} className="amendment-editor">
           <h4>2. 调整内容：{item.moveFrom?rowTitle(plan?.moduleData?.[item.moveFrom.key]?.records?.[item.moveFrom.index]):item.title}</h4>
           <label><input type="checkbox" checked={item.selected!==false} onChange={e=>edit(index,'selected',e.target.checked)}/>纳入此项</label>
           <select className="form-input" value={item.key} onChange={e=>edit(index,'key',e.target.value)}>{Object.entries(labels).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select>
