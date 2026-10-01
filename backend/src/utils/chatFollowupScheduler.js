@@ -1,53 +1,81 @@
+const { randomUUID } = require('crypto');
 const Message = require('../models/Message');
+const User = require('../models/User');
+const Admin = require('../models/Admin');
 const SystemConfig = require('../models/SystemConfig');
+const Schedule = require('../models/ChatFollowupSchedule');
 const { generateChatFollowupDraft } = require('./chatFollowupDraft');
-
-// 每半月自动为「健管专员」「营养师」两个频道批量生成随访草稿（待专员审核后才正式入档）。
-// 健康顾问频道不纳入自动生成——医疗沟通更谨慎，保留人工在消息页手动触发（见 chatFollowupDraft.js）。
-// 只处理半月内有新聊天的会话，避免给沉默会话生成空草稿；由 generateChatFollowupDraft 内部的
-// "接续上次截止点"逻辑保证不会因为半月才跑一次而漏掉中间的聊天内容。
-
-const AUTO_ROLES = ['manager', 'nutritionist'];
-const HALF_MONTH_MS = 15 * 24 * 60 * 60 * 1000;
+const { runWithoutTenantScope } = require('./tenantScope');
+const { withAiContext } = require('./aiBudget');
+const PERIOD = 15 * 86400000, HOUR = 3600000, LIMIT = 5;
+const ID = 'nutrition-chat-v1';
 
 async function scanAndGenerateChatFollowupDrafts() {
-  let enabled = true;
-  try {
+  return runWithoutTenantScope(async () => {
+    // Configuration read failures fail closed; explicit administrator opt-out is preserved.
     const cfg = await SystemConfig.findOne({ key: 'chatFollowupAutoDraft' }).lean();
-    if (cfg && cfg.value && cfg.value.enabled === false) enabled = false;
-  } catch (e) { /* 无配置表也不阻塞，默认开启 */ }
-  if (!enabled) { console.log('[chat-followup] 自动生成已被管理员关闭，跳过'); return; }
-
-  const since = new Date(Date.now() - HALF_MONTH_MS);
-  let created = 0, skipped = 0;
-
-  for (const role of AUTO_ROLES) {
-    // 近半月内有新聊天的会话（conversationId 形如 `${patientId}_${role}`）
-    const activeConvIds = await Message.distinct('conversationId', {
-      conversationId: { $regex: `_${role}$` },
-      createdAt: { $gte: since },
-    });
-
-    for (const convId of activeConvIds) {
-      const patientId = convId.slice(0, convId.length - role.length - 1);
-      try {
-        const result = await generateChatFollowupDraft({ patientId, role, range: 'week', staffId: null });
-        if (result.status === 'created') created++;
-        else skipped++;
-      } catch (e) {
-        console.error(`[chat-followup] 会员 ${patientId} 角色 ${role} 自动生成失败`, e.message);
-        skipped++;
+    if (cfg?.value?.enabled === false) return;
+    const now = new Date();
+    try {
+      await Schedule.updateOne({ _id: ID }, { $setOnInsert: {
+        activatedAt: now, cycleStart: now, nextRunAt: new Date(+now + PERIOD), cursor: '',
+      } }, { upsert: true });
+    } catch (e) { if (e.code !== 11000) throw e; }
+    const token = randomUUID();
+    const state = await Schedule.findOneAndUpdate({ _id: ID, nextRunAt: { $lte: now },
+      $or: [{ leaseUntil: null }, { leaseUntil: { $lte: now } }],
+    }, { $set: { token, leaseUntil: new Date(+now + HOUR), nextRunAt: new Date(+now + HOUR) } }, { new: true });
+    if (!state) return;
+    const end = state.cycleEnd || now;
+    await Schedule.updateOne({ _id: ID, token }, { $set: { cycleEnd: end } });
+    const conversations = await Message.aggregate([
+      { $match: { conversationId: { $regex: '^[a-fA-F0-9]{24}_nutritionist$', $gt: state.cursor || '' },
+        createdAt: { $gt: state.cycleStart, $lte: end } } },
+      { $group: { _id: '$conversationId' } }, { $sort: { _id: 1 } }, { $limit: LIMIT + 1 },
+    ]);
+    let processed = 0;
+    for (const conversation of conversations.slice(0, LIMIT)) {
+      // Recheck the lease and switch before every potential paid call.
+      if (!await Schedule.exists({ _id: ID, token, leaseUntil: { $gt: new Date() } })) return;
+      const current = await SystemConfig.findOne({ key: 'chatFollowupAutoDraft' }).lean();
+      if (current?.value?.enabled === false) break;
+      const patientId = conversation._id.split('_')[0];
+      const user = await User.findOne({ _id: patientId, isDeleted: { $ne: true } }).select('tenantId assignedNutritionist');
+      // Only generate where an active, same-tenant nutritionist can actually review.
+      const reviewer = user?.assignedNutritionist && await Admin.exists({ _id: user.assignedNutritionist,
+        role: 'nutritionist', staffStatus: { $ne: 'inactive' }, tenantId: user.tenantId || null });
+      if (user && !reviewer) {
+        await require('./chatFollowupGuard').withDraftGuard({ patientId, tenantId: user.tenantId,
+          automaticCycle: new Date(end).toISOString(), minimumRangeStart: state.activatedAt, maximumRangeEnd: end },
+          async () => ({ status: 'failed', message: '缺少同机构在岗营养师，请先核对会员归属，再重试或人工整理' }));
       }
+      if (reviewer) {
+        try {
+          await withAiContext({ tenantId: String(user.tenantId || ''), actorId: String(user.assignedNutritionist) },
+            () => generateChatFollowupDraft({ patientId, role: 'nutritionist', range: 'week',
+              automaticCycle: new Date(end).toISOString(), minimumRangeStart: state.activatedAt, maximumRangeEnd: end }));
+        } catch (e) { console.error('[chat-followup] 调度保留当前位置', patientId, e.message); throw e; }
+      }
+      const moved = await Schedule.updateOne({ _id: ID, token, leaseUntil: { $gt: new Date() } }, { $set: { cursor: conversation._id } });
+      if (!moved.matchedCount) return;
+      processed++;
     }
-  }
-  if (created > 0) console.log(`[chat-followup] 自动生成 ${created} 条随访草稿待审核（跳过 ${skipped}）`);
+    // A switch change must not advance the unprocessed cursor or complete the cycle.
+    const finalCfg = await SystemConfig.findOne({ key: 'chatFollowupAutoDraft' }).lean();
+    const finished = finalCfg?.value?.enabled !== false && conversations.length <= LIMIT && processed === conversations.length;
+    await Schedule.updateOne({ _id: ID, token }, { $set: finished ? {
+      cycleStart: end, cycleEnd: null, cursor: '', leaseUntil: null,
+      nextRunAt: new Date(Math.max(+new Date(end) + PERIOD, Date.now() + HOUR)),
+    } : { leaseUntil: null } });
+  });
 }
-
-// 每半月扫描一次。启动时不立即跑（避免每次部署重启都触发），仅按周期执行。
+let timer;
 function startChatFollowupScheduler() {
-  setInterval(() => {
-    scanAndGenerateChatFollowupDrafts().catch(e => console.error('[chat-followup] 定时扫描失败', e.message));
-  }, HALF_MONTH_MS);
+  if (timer) return timer;
+  const tick = () => scanAndGenerateChatFollowupDrafts().catch(e => console.error('[chat-followup] 调度暂停', e.message));
+  tick(); // Initializes a future deadline only; never backfills on first deployment.
+  timer = setInterval(tick, 5 * 60000);
+  timer.unref?.();
+  return timer;
 }
-
-module.exports = { scanAndGenerateChatFollowupDrafts, startChatFollowupScheduler };
+module.exports = { scanAndGenerateChatFollowupDrafts, startChatFollowupScheduler, PERIOD, HOUR, LIMIT };

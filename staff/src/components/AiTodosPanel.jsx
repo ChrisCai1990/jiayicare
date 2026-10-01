@@ -43,6 +43,7 @@ const TYPE_CONFIG = {
   checkup_handoff_pending: { icon: '🏥', label: '体检服务待承接', color: '#0077B6', priority: 2 },
   checkup_preparation_dispatch: { icon: '📋', label: '体检准备派发待核对', color: '#D97706', priority: 2 },
   followup_review:      { icon: '📅', label: '随访计划待审核', color: '#0077B6', priority: 3 },
+  chat_followup_failed: { icon: '🥗', label: '营养聊天草稿需处理', color: '#D97706', priority: 2 },
   service_draft_review: { icon: '🤖', label: 'AI随访草稿待审核', color: '#7C3AED', priority: 3 },
   medical_assist_plan_review: { icon: '🚑', label: 'AI就医协助方案待审核', color: '#0077B6', priority: 2 },
   supply_intake:       { icon: '📦', label: '补充信息待采集', color: '#D97706', priority: 2 },
@@ -71,7 +72,7 @@ const TODO_GROUPS = [
   { key: 'all', label: '全部' },
   { key: 'report', label: '报告与资料', types: ['report_parse','report_review','report_interpretation','report_followup_review','health_course_review','report_plan_conflict','archive_review','summary_review','lifestyle_review','dietary_survey_review','medication_review','supplement_review'] },
   { key: 'plan', label: '方案与评估', types: ['annual_plan_input_review','trend_review','plan_review','nutrition_plan_review','checkup_plan_review','phase_assessment_review','annual_renewal_confirmation','followup_review','service_draft_review','medical_assist_plan_review','service_proposal_review'] },
-  { key: 'risk', label: '风险与异常', types: ['assignment_attention','risk_review','bp_alert_review','risk_alert','transfer_human','wecom_kf_handoff','checkup_handoff_attention','checkup_preparation_dispatch'] },
+  { key: 'risk', label: '风险与异常', types: ['chat_followup_failed','assignment_attention','risk_review','bp_alert_review','risk_alert','transfer_human','wecom_kf_handoff','checkup_handoff_attention','checkup_preparation_dispatch'] },
   { key: 'content', label: '内容与安排', types: ['annual_service_interest','geo_content_review','checkup_handoff_pending','push_review','draft_review','supply_intake','supply_medication_risk_review','supply_supplement_risk_review','supply_arrangement','supply_fulfillment','supply_receipt'] },
 ]
 
@@ -91,6 +92,26 @@ export default function AiTodosPanel() {
   const [sort, setSort] = useState('priority')
   const [supplyTodo, setSupplyTodo] = useState(null)
   const [checkupTodo, setCheckupTodo] = useState(null)
+
+  const [chatBusy, setChatBusy] = useState(null)
+  const handleChatFailure = async (e, todo, retry) => {
+    e.stopPropagation()
+    if (chatBusy) return
+    let note
+    if (retry) {
+      if (!window.confirm('重新调用AI整理营养聊天草稿？生成后仍需人工审核。')) return
+    } else {
+      note = window.prompt('请填写实际处理说明（如已人工整理记录，或核对后无需成稿）：')
+      if (!note?.trim()) return
+    }
+    setChatBusy(todo.id)
+    try {
+      if (retry) await staffAPI.generateChatFollowupDraft(todo.patientId, 'nutritionist', 'week', todo.jobToken)
+      else await staffAPI.resolveChatFollowupFailure(todo.patientId, todo.jobToken, note.trim())
+      await refreshTodos({ silent: true })
+    } catch (error) { window.alert(error.message || '处理失败，请重试'); await refreshTodos({ silent: true }) }
+    finally { setChatBusy(null) }
+  }
 
   const resolveAlert = (e, todo) => {
     e.stopPropagation()
@@ -285,6 +306,11 @@ export default function AiTodosPanel() {
                     onClick={(e) => resolveWecomKfHandoff(e, todo)}
                     style={{ fontSize: 11, color: '#1E6B50', background: 'none', border: '1px solid #1E6B50', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}
                   >已在企微接管</button>
+                ) : todo.type === 'chat_followup_failed' && todo.canResolve ? (
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button style={{ fontSize: 11, color: '#1E6B50', background: 'none', border: '1px solid #1E6B50', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }} disabled={!!chatBusy} onClick={e => handleChatFailure(e, todo, true)}>重试生成</button>
+                    <button style={{ fontSize: 11, color: '#D97706', background: 'none', border: '1px solid #D97706', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }} disabled={!!chatBusy} onClick={e => handleChatFailure(e, todo, false)}>已人工处理</button>
+                  </div>
                 ) : todo.type === 'service_proposal_review' ? (
                   <div style={{ display: 'flex', gap: 4 }}>
                     <button onClick={(e) => reviewServiceProposal(e, todo, 'approve')}

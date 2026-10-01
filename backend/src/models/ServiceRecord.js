@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 // 统一服务记录：就医协助、心理咨询、运动复健、中医评估、专科会诊
 const serviceRecordSchema = new mongoose.Schema({
+  tenantId: { type: mongoose.Schema.Types.ObjectId, default: null },
   sourceGroupImageSha256: {type:String, default:undefined},
   sourceGroupMessageId: {type:String, default:undefined},
   // AI定时自动生成的草稿在专员审核前尚无明确负责人，故非必填；审核确认时补上审核人

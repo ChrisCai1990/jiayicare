@@ -159,7 +159,7 @@ app.listen(PORT, () => {
   // 首页「健康团队今日动态」：每天凌晨批量生成健康顾问/营养师/健康管理师/AI健康分析反馈，次日首页直接读现成结果
   require('./utils/dailyTeamInsightScheduler').startDailyTeamInsightScheduler();
 
-  // 健管专员/营养师与会员的聊天记录，每半月自动提炼生成随访草稿待审核（健康顾问频道保留人工触发）
+  // 营养聊天草稿：持久化半月周期、限流与异常待办；已停用频道不参与
   require('./utils/chatFollowupScheduler').startChatFollowupScheduler();
 
   // 年度管理方案的"日常监测/季度评估"随访占位滚动窗口补生成，每天扫描一次

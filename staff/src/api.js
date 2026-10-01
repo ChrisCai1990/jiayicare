@@ -288,7 +288,8 @@ export const staffAPI = {
   editServiceSupplement:   (id, suppId, d) => req(`/staff/service-records/${id}/supplement/${suppId}`, { method: 'PUT', body: JSON.stringify(d) }),
   deleteServiceSupplement: (id, suppId)    => req(`/staff/service-records/${id}/supplement/${suppId}`, { method: 'DELETE' }),
   deleteServiceRecord:  (id)     => req(`/staff/service-records/${id}`, { method: 'DELETE' }),
-  generateChatFollowupDraft: (patientId, role, range) => req(`/staff/patients/${patientId}/chat-followup/ai-draft`, { method: 'POST', body: JSON.stringify({ role, range }) }),
+  resolveChatFollowupFailure: (patientId, token, note) => req(`/staff/patients/${patientId}/chat-followup/resolve`, { method: 'POST', body: JSON.stringify({ token, note }) }),
+  generateChatFollowupDraft: (patientId, role, range, jobToken) => req(`/staff/patients/${patientId}/chat-followup/ai-draft`, { method: 'POST', body: JSON.stringify({ role, range, jobToken }) }),
   reviewRoutineDraft:   (id, d)     => req(`/staff/service-records/${id}/ai-review`, { method: 'PATCH', body: JSON.stringify(d) }),
 
   // Commission
