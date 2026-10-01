@@ -73,7 +73,9 @@ test('advisor supervision: scoped projections and internal correspondence', { sk
     assert.equal((await loadServices(advisor)).length, 2);
   });
   await t.test('remind/coordinate reach correct people, concurrency dedupes and never writes source', async () => {
-    await reset(); await task(); const row = (await call(advisor)).body.data.services[0], before = await snapshot();
+    await reset(); await task({ coordinationGroupId: 'explicit-service' });
+    await task({ coordinationGroupId: 'explicit-service', taskRole: 'supervisor', assignedTo: planner._id });
+    const row = (await call(advisor)).body.data.services[0], before = await snapshot();
     const payload = { serviceKey: row.key, version: row.version, kind: 'remind', recipientId: String(manager._id), note: '请核对实际进度' };
     assert.equal((await call(stranger, '/requests', payload)).status, 404);
     assert.equal((await call(manager, '/requests', payload)).status, 403);
@@ -89,6 +91,16 @@ test('advisor supervision: scoped projections and internal correspondence', { sk
     assert.equal((await call(advisor)).body.data.services[0].history[0].response, '已联系，待确认时间');
     assert.equal((await call(advisor, '/requests', { ...payload, kind: 'coordinate', recipientId: String(planner._id) })).status, 200);
     assert.equal((await call(planner)).body.data.inbox.length, 1); assert.equal(await snapshot(), before);
+  });
+  await t.test('legacy tasks retain staffId owner; customer planner is not a task coordinator', async () => {
+    await reset(); const own = await task({ assignedTo: null, staffId: advisor._id });
+    assert.equal((await loadServices(advisor)).length, 0);
+    await Task.collection.updateOne({ _id: own._id }, { $set: { assignedTo: manager._id, date: new Date('2099-01-01') } });
+    const row = (await loadServices(advisor))[0];
+    assert.equal(row.current[0].person.id, String(manager._id)); assert.equal(row.coordinator, null); assert.equal(row.attention, false);
+    assert.equal((await call(advisor, '/requests', { serviceKey: row.key, version: row.version, kind: 'coordinate', recipientId: String(planner._id), note: '不能默认转交' })).status, 409);
+    await Task.collection.updateOne({ _id: own._id }, { $set: { assignedTo: null, staffId: manager._id } });
+    assert.equal((await loadServices(advisor))[0].current[0].person.id, String(manager._id));
   });
   await t.test('stale version, disabled staff, terminal source and changed responsibility are safe', async () => {
     await reset(); const original = await task(); let row = (await call(advisor)).body.data.services[0];

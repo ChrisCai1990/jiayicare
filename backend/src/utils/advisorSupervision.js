@@ -14,7 +14,6 @@ const id = value => String(value?._id || value || '');
 const active = row => ['planned', 'in_progress', 'missed'].includes(row.status);
 const hash = value => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const stageLabels = { intake: '确认需求与安排', booking: '预约安排', planner: '规划师协调派单', execute: '服务执行', medical: '就医办理', manager_review: '健管核实资料', advisor_review: '顾问审核', resolution: '处理服务结果', pending_closure: '规划师核对结案', awaiting_shipment: '待健管专员发货', shipped: '已发货', registered: '登记服务', verifying: '核对保障', materials: '收集材料', submitted: '已提交申请', reviewing: '审核中', supplement: '补充材料', paid: '核对赔付结果', partially_paid: '核对部分赔付', denied: '核对拒赔结果' };
-const roleFields = { familyDoctor: 'assignedFamilyDoctor', nutritionist: 'assignedNutritionist', healthPlanner: 'assignedHealthPlanner', healthManager: 'assignedHealthManager' };
 const stamp = row => [id(row._id), row.updatedAt || row.createdAt || null, row.status, row.revision];
 const samePatient = (row, patientId) => id(row?.patientId || row?.user) === id(patientId);
 const target = (patientId, taskId, type) => `/patients/${patientId}?tab=${taskId ? 'followups' : type === 'plan' ? 'plans' : type === 'insurance' ? 'info' : type === 'order' ? 'consumption' : 'followups'}${taskId ? `&supervisionTaskId=${taskId}` : ''}`;
@@ -102,7 +101,9 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
     const ready = execution.filter(t => !t.isBlocked);
     let current = (ready.length ? ready : execution).map(t => {
       const role = t.aiStatus === 'pending' ? t.reviewRole || 'familyDoctor' : null;
-      const owner = role ? t.reviewAssignedTo || (review.postVisit(t) ? p.assignedFamilyDoctor : p[roleFields[role]]) : review.executor(t, p);
+      // Match the original follow-up queue: explicit assignee wins; legacy
+      // records without assignedTo belong to staffId, not the customer's team.
+      const owner = role ? review.reviewer(t, p) : t.assignedTo || t.staffId;
       return { taskId: id(t), label: t.aiStatus === 'pending' ? `${t.theme || '随访计划'} · 待审核` : t.theme || '待处理事项',
         person: person(owner, role), blocked: !!t.isBlocked, dueAt: t.date || t.remindAt || null };
     });
@@ -125,10 +126,13 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
     }
     if (!includeOwn && current.every(c => c.person?.id === id(actor))) continue;
     if (!includeOwn) current = current.filter(c => c.person?.id !== id(actor));
-    const coordinator = person(s.state?.people?.healthPlanner?.id || s.supervisorId, 'healthPlanner') || person(p.assignedHealthPlanner, 'healthPlanner');
+    const explicitCoordinator = s.state?.people?.healthPlanner?.id || s.supervisorId;
+    const supervisors = [...new Set(remaining.filter(t => t.taskRole === 'supervisor').map(t => id(t.assignedTo)).filter(Boolean))];
+    const coordinatorId = explicitCoordinator || (supervisors.length === 1 ? supervisors[0] : null);
+    const coordinator = person(coordinatorId, 'healthPlanner');
     const reasons = [];
     if (current.some(c => !c.person)) reasons.push('当前处理人待核对');
-    if (!coordinator) reasons.push('规划师待核对');
+    if (coordinatorId && !coordinator) reasons.push('原协调人待核对');
     if (current.some(c => c.blocked)) reasons.push('等待前置环节');
     const day = date => new Date(date).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
     if (current.some(c => c.dueAt && day(c.dueAt) < day(now))) reasons.push('已逾期');

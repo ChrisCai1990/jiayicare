@@ -70,9 +70,9 @@ export default function ServiceSupervisionPanel() {
           <span>{c.label} · {c.person?.name || '处理人待核对'}{c.blocked ? ' · 等待前置环节' : ''} · 计划时间：{date(c.dueAt)}</span>
           {c.person && <button className="btn btn-secondary btn-sm" disabled={!!resource.error} onClick={() => start({ service: s, kind: 'remind', person: c.person })}>提醒处理人</button>}
         </div>)}
-        <p>下一步：{s.current.some(c => c.blocked) ? '等待前置事项完成；受阻时请规划师协调。' : s.current.some(c => !c.person) ? '请规划师核对负责人及服务承接。' : '由当前处理人在原服务中办理并记录结果。'}</p>
+        <p>下一步：{s.current.some(c => c.blocked) ? '等待原任务的前置事项完成。' : s.current.some(c => !c.person) ? '原任务负责人待核对，不自动转交其他人员。' : '由当前处理人在原服务中办理并记录结果。'}</p>
         <div style={{ color: '#667085', whiteSpace: 'pre-wrap' }}>最新进展：{s.latest ? `${date(s.latest.at)} · ${s.latest.content}` : '暂无处理记录，请查看原服务进度。'}</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 8 }}><span>协调规划师：{s.coordinator?.name || '待核对'}</span><button className="btn btn-secondary btn-sm" onClick={() => openSource(s)}>查看原服务</button>{s.coordinator && <button className="btn btn-secondary btn-sm" disabled={!!resource.error} onClick={() => start({ service: s, kind: 'coordinate', person: s.coordinator })}>请求规划师协调</button>}</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 8 }}>{s.coordinator && <span>原服务协调规划师：{s.coordinator.name}</span>}<button className="btn btn-secondary btn-sm" onClick={() => openSource(s)}>查看原服务</button>{s.coordinator && <button className="btn btn-secondary btn-sm" disabled={!!resource.error} onClick={() => start({ service: s, kind: 'coordinate', person: s.coordinator })}>请求规划师协调</button>}</div>
         {!!s.history.length && history(s)}
       </article>)}
       {rows.length > 5 && <Pagination compact page={currentPage} totalPages={Math.ceil(rows.length / 5)} onChange={setPage} />}
