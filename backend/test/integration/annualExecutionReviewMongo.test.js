@@ -106,4 +106,15 @@ test('annual execution review: authenticated HTTP and real Mongo', { skip: proce
     assert.equal(logic.pending(after).length, 1);
   });
 
+  await t.test('latest explicit removal is retained and creates a review without deleting execution records', async () => {
+    const preview = await call('review-plan-amendment', 'familyDoctor', { action: 'preview-manual', planId, topicId, messageId });
+    const result = await call('review-plan-amendment', 'familyDoctor', { action: 'apply', planId, topicId, messageId, confirmed: true, ...preview.data,
+      items: [{ key: 'abnormal_followup', target: 0, operation: 'remove', deletionReason: '合成去重依据' }] });
+    assert.equal(result.success, true);
+    const plan = await Plan.findById(planId).select('+supplementRevisions').lean(), revision = plan.supplementRevisions.at(-1);
+    assert.equal(revision.executionReview.status, 'pending'); assert.equal(logic.summary(revision.changes[0]).action, '移除事项');
+    assert.equal(logic.summary(revision.changes[0]).deletionReason, '合成去重依据');
+    assert.equal((await FollowUp.findById(followId)).status, 'planned'); assert.equal((await Task.findById(taskId)).status, 'completed');
+  });
+
 });

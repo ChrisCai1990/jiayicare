@@ -76,3 +76,16 @@ test('跨板块迁移两项不串位，标准内容来自目录并保留原依�
  assert.throws(()=>apply(base,[items[0],items[0]],{},catalog),/重复选择/);
  const retry=apply(result.moduleData,[{...items[0],moveFrom:undefined}],{},catalog);assert.equal(retry.moduleData.personalized_followups.records.length,2);
 });
+
+test('显式删除留原因及原内容，批量删除不串位且AI不得删除',()=>{
+ const {previewItems}=require('../src/utils/reviewPlanAmendment');
+ const base={abnormal_followup:{records:[{items:'A'},{items:'B'},{items:'C'}]}};
+ const remove=target=>({key:'abnormal_followup',target,operation:'remove',deletionReason:'重复事项'});
+ const result=apply(base,[remove(0),remove(2)],{});
+ assert.deepEqual(result.moduleData.abnormal_followup.records,[{items:'B'}]);
+ assert.equal(result.changes[0].deletionReason,'重复事项');assert.equal(result.changes[0].before.items,'C');assert.equal(base.abnormal_followup.records.length,3);
+ assert.throws(()=>apply(base,[{...remove(0),deletionReason:''}],{}));
+ assert.throws(()=>apply(base,[remove(0),remove(0)],{}));
+ assert.throws(()=>apply(base,[remove(9)],{}));
+ assert.throws(()=>previewItems([remove(0)]),/顾问手动/);
+});
