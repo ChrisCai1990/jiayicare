@@ -7,6 +7,7 @@ const router = express.Router();
 // 判断某提醒今天是否激活
 function isActiveToday(r) {
   if (!r.enabled) return false;
+  if (r.sourceKey?.startsWith('health-data:')) return require('../utils/annualPlanMonitoringReminders').activeToday(r);
   if (r.sourceKey === 'medication:combined') return !!r.nextMedicationAt && require('../../../shared/medicationReminder.cjs').beijingDate(new Date(r.nextMedicationAt)) === require('../../../shared/medicationReminder.cjs').beijingDate();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -41,7 +42,7 @@ function isActiveToday(r) {
 // GET / — 列出所有提醒
 router.get('/', auth, async (req, res) => {
   const { category } = req.query;
-  const query = { user: req.user._id, $or: [{ systemManaged: { $ne: true } }, { systemManaged: true, sourceKey: /^service-cycle:/ }, { systemManaged: true, sourceKey: 'medication:combined' }] };
+  const query = { user: req.user._id, $or: [{ systemManaged: { $ne: true } }, { systemManaged: true, sourceKey: /^service-cycle:/ }, { systemManaged: true, sourceKey: 'medication:combined' }, { systemManaged: true, sourceKey: /^health-data:/ }] };
   if (category) query.category = category;
   const reminders = await Reminder.find(query).sort({ createdAt: -1 });
 
@@ -64,7 +65,7 @@ router.patch('/monitoring-consent', auth, async (req, res) => {
 
 // GET /today — 仅返回今日激活的提醒
 router.get('/today', auth, async (req, res) => {
-  const all = await Reminder.find({ user: req.user._id, enabled: true, $or: [{ systemManaged: { $ne: true } }, { systemManaged: true, sourceKey: 'medication:combined' }, ...(req.user.healthMonitoringConsentAt ? [{ systemManaged: true, sourceKey: /^service-cycle:/ }] : [])] });
+  const all = await Reminder.find({ user: req.user._id, enabled: true, $or: [{ systemManaged: { $ne: true } }, { systemManaged: true, sourceKey: 'medication:combined' }, { systemManaged: true, sourceKey: /^health-data:/ }, ...(req.user.healthMonitoringConsentAt ? [{ systemManaged: true, sourceKey: /^service-cycle:/ }] : [])] });
   const today = all.filter(isActiveToday).map(r => r.toObject());
   res.json({ success: true, data: today });
 });
@@ -84,7 +85,7 @@ router.patch('/:id', auth, async (req, res) => {
   const current = await Reminder.findOne({ _id: req.params.id, user: req.user._id });
   if (!current) return res.status(404).json({ success: false, message: '提醒不存在' });
   if (current.systemManaged && (typeof req.body.enabled !== 'boolean' || Object.keys(req.body).some(key => key !== 'enabled'))) return res.status(400).json({ success: false, message: '系统提醒仅支持开启或关闭' });
-  if (current.systemManaged && current.sourceKey !== 'medication:combined' && req.body.enabled && !req.user.healthMonitoringConsentAt) return res.status(409).json({ success: false, message: '请先同意开启免费健康监测提醒' });
+  if (current.systemManaged && current.sourceKey !== 'medication:combined' && !current.sourceKey?.startsWith('health-data:') && req.body.enabled && !req.user.healthMonitoringConsentAt) return res.status(409).json({ success: false, message: '请先同意开启免费健康监测提醒' });
   const update = { ...req.body };
   if (current.systemManaged && req.body.enabled !== undefined) update.userDisabled = req.body.enabled === false;
   const reminder = await Reminder.findOneAndUpdate(
@@ -100,7 +101,7 @@ router.patch('/:id', auth, async (req, res) => {
 router.patch('/:id/toggle', auth, async (req, res) => {
   const reminder = await Reminder.findOne({ _id: req.params.id, user: req.user._id });
   if (!reminder) return res.status(404).json({ success: false, message: '提醒不存在' });
-  if (reminder.systemManaged && reminder.sourceKey !== 'medication:combined' && !reminder.enabled && !req.user.healthMonitoringConsentAt) return res.status(409).json({ success: false, message: '请先同意开启免费健康监测提醒' });
+  if (reminder.systemManaged && reminder.sourceKey !== 'medication:combined' && !reminder.sourceKey?.startsWith('health-data:') && !reminder.enabled && !req.user.healthMonitoringConsentAt) return res.status(409).json({ success: false, message: '请先同意开启免费健康监测提醒' });
   reminder.enabled = !reminder.enabled;
   if (reminder.systemManaged) reminder.userDisabled = !reminder.enabled;
   await reminder.save();

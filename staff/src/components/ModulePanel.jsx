@@ -1,3 +1,4 @@
+import HealthDataPlanFields from './HealthDataPlanFields'
 import AnnualLifestyleLink from './AnnualLifestyleLink'
 import annualNutrition from '../../../shared/annualNutrition.cjs'
 import DateField from '../../../shared/DateField.jsx'
@@ -175,6 +176,7 @@ export function RecordEditor({ def, record, onChange, onDelete, index, total }) 
               <div style={{ paddingTop: 7, fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{readableValue(record[field.key]) || '未填写'}</div>
             </FieldRow>)}
           </details>}
+          {def.personalizedAssignment && !directNutrition && <HealthDataPlanFields value={record.healthDataPlan} onChange={val=>onChange({...record,healthDataPlan:val})}/>}
           {directNutrition && <FieldRow label="评估人员"><div style={{paddingTop:8}}>{def.nutritionName}<AnnualLifestyleLink planId={def.nutritionPlanId} index={typeof index === 'number' ? index : 0} dirty={def.planDirty}/></div></FieldRow>}
           {def.annualServiceArrangement && !directNutrition && <>
             <FieldRow label="随访人员"><div style={{ paddingTop: 8 }}>{def.managerName}</div></FieldRow>

@@ -72,3 +72,14 @@ test('service waiting permits original plan notes without unlocking service stat
   assert.deepEqual(row.serviceTracking, { status: 'waiting', revision: 2 });
   assert.equal(row.progressRecords.length, 1);
 });
+
+test('health recording keeps one task and advances its workbench date by the follow-up interval',async()=>{
+ const s=setup({formData:{healthDataPlan:{enabled:true,followUpDays:14}},date:new Date('2026-10-01')});
+ const now=new Date('2026-10-01T09:00:00+08:00');
+ const body={...s.args.body,nextContactAt:null};
+ const result=await saveProgress({...s.args,body,now});
+ assert.equal(+result.date,+now+14*86400000);assert.equal(+result.nextFollowUpDate,+result.date);
+ assert.equal(result.progressRecords.length,1);assert.equal(result.status,'in_progress');
+ await saveProgress({...s.args,body,now});assert.equal(s.get().progressRecords.length,1);
+ await assert.rejects(saveProgress({...s.args,body:{...body,requestId:'new-contact-003',updatedAt:result.updatedAt,nextContactAt:'2026-09-30'},now}),{statusCode:400});
+});

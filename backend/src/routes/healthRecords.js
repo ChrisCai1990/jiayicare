@@ -296,6 +296,7 @@ router.post('/', auth, async (req, res) => {
         status: { $in: ['planned', 'in_progress'] },
         date: { $gte: todayStart, $lte: todayEnd },
         checkInItems: type,
+        'formData.healthDataPlan.enabled': { $ne: true },
       });
       if (matched.length > 0) {
         const ids = matched.map(f => f._id);

@@ -194,6 +194,7 @@ async function buildAnnualPlanFollowUps(plan) {
     const horizonEnd = new Date(Date.now() + HORIZON_DAYS * 86400000);
     personalizedRecords.forEach((rec, recordIndex) => {
       if (isAnnualUmbrellaRecord(rec)) return;
+      if (rec.healthDataPlan?.id && rec.healthDataPlan.enabled === false) return;
       const cycles = Array.isArray(rec.sourceCycles) ? rec.sourceCycles : [];
       const dates = [];
       if (rec.executionDate && !isNaN(new Date(rec.executionDate).getTime())) dates.push(new Date(rec.executionDate));
@@ -218,6 +219,18 @@ async function buildAnnualPlanFollowUps(plan) {
         rec.precautions && `注意事项：${rec.precautions}`,
         rec.customerAction && `客户行动：${rec.customerAction}`,
       ].filter(Boolean).join('\n');
+      const healthDataPlan = !rec.directNutritionAssessment && rec.healthDataPlan?.enabled ? require('../../../shared/healthDataPlan.cjs').normalize(rec.healthDataPlan) : null;
+      if (healthDataPlan) {
+        // Stable identity excludes dates: advancing the next contact never creates a new task.
+        const date = dates[0];
+        if (date && date <= horizonEnd) {
+          const before=created.length;
+          push(date, `记录健康数据 · ${require('../../../shared/healthDataPlan.cjs').KINDS[healthDataPlan.kind]}`, content, patient?.assignedHealthManager,
+            `health-data:${healthDataPlan.id}`, rec);
+          if(created.length>before) Object.assign(created.at(-1), {tags:['人工跟进'], formData:{healthDataPlan}, repeatDaily:false});
+        }
+        return;
+      }
       dates.filter(date => !isNaN(date.getTime()) && date >= todayStart && date <= horizonEnd).forEach((date, cycleIndex) => {
         const nutrition = rec.directNutritionAssessment === true;
         push(date, `${nutrition ? '营养评估' : '标准随访'} · ${rec.standardPlanName || rec.items || '年度管理'}`, content, nutrition ? patient?.assignedNutritionist : patient?.assignedHealthManager,
@@ -254,9 +267,12 @@ async function syncAnnualPlanFollowUps(plan) {
     status: { $ne: 'completed' },
   });
   const toCreate = await buildAnnualPlanFollowUps(plan);
+  await require('./annualHealthDataReminders').sync(plan);
   const existing = await FollowUp.find({ sourceAnnualPlanId: plan._id, sourceType: 'scheduled' }).sort({ createdAt: 1 });
   const desiredKeys = new Set(toCreate.map(row => row.sourceScheduleKey));
   let created = 0;
+  await FollowUp.updateMany({sourceAnnualPlanId:plan._id,sourceType:'scheduled',sourceScheduleKey:{$regex:'^health-data:',$nin:[...desiredKeys]},status:{$in:['planned','in_progress','missed']}},
+    {$set:{status:'cancelled',cancelReason:'健康数据周期跟进已从方案关闭'}});
 
   for (const row of toCreate) {
     // sourceScheduleKey 旧版含数组下标，方案编辑后会变化；始终以业务内容匹配，兼容并清理旧键。
@@ -271,7 +287,14 @@ async function syncAnnualPlanFollowUps(plan) {
       assertAmendedRowUnchanged(plan, row.sourceScheduleKey, keep.date, row.date);
       if (plan.continuitySource?.previousPlanId && ['completed', 'cancelled'].includes(keep.status)) continue;
       if (keep.sourceScheduleKey !== row.sourceScheduleKey) keep.sourceScheduleKey = row.sourceScheduleKey;
-      if (keep.aiStatus === 'pending') {
+      if(row.formData?.healthDataPlan && keep.status==='cancelled' && keep.cancelReason==='健康数据周期跟进已从方案关闭') {
+        keep.status='planned'; keep.cancelReason='';
+      }
+      if (row.formData?.healthDataPlan && !['completed','cancelled'].includes(keep.status)) {
+        keep.formData={...(keep.formData||{}),healthDataPlan:row.formData.healthDataPlan}; keep.markModified('formData');
+        keep.tags=[...new Set([...(keep.tags||[]),'人工跟进'])]; keep.repeatDaily=false;
+      }
+      if (keep.aiStatus === 'pending' && !keep.formData?.healthDataPlan) {
         ['patientId', 'staffId', 'assignedTo', 'date', 'theme', 'content', 'aiStatus', 'reviewRole', 'deliveryMode', 'deliveryType'].forEach(k => { keep[k] = row[k]; });
       }
       // 自动排期仍未执行时，用方案中的完整结构化内容修复旧版只保存了“空腹”等
@@ -293,6 +316,10 @@ async function syncAnnualPlanFollowUps(plan) {
         const result = await require('./annualDispatchOnce').insertAnnualOnce(FollowUp, plan, 'scheduled', row.sourceScheduleKey,
           { sourceAnnualPlanId: plan._id, sourceType: 'scheduled', sourceScheduleKey: row.sourceScheduleKey }, row);
         created += result.upsertedCount || 0;
+      } else if (row.formData?.healthDataPlan) {
+        const crypto=require('node:crypto'),mongoose=require('mongoose');
+        const _id=new mongoose.Types.ObjectId(crypto.createHash('sha256').update(`${plan._id}:${row.sourceScheduleKey}`).digest('hex').slice(0,24));
+        const result=await FollowUp.updateOne({_id},{$setOnInsert:row},{upsert:true,setDefaultsOnInsert:true}); created+=result.upsertedCount||0;
       } else { await FollowUp.create(row); created++; }
     }
   }

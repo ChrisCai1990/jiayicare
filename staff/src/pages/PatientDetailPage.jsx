@@ -7498,7 +7498,7 @@ export default function PatientDetailPage() {
           <div className="card-header">
             <div>
               <div className="card-title">当前主诉与症状</div>
-              <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>来自客户每日打卡或医护人员补充记录</div>
+              <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>来自客户记录健康数据或医护人员补充记录</div>
             </div>
           </div>
           <div style={{ padding: '12px 20px' }}>

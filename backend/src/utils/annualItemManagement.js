@@ -9,9 +9,10 @@ function normalizeAnnualItems(data, managerId, team = {}) {
         return {...row,directNutritionAssessment:true,managementFollowUpVersion:2,followUpStaff:String(team.assignedNutritionist),ownerRole:'营养师',collaborator:'',collaborationDate:'',frequency:'单次',serviceMode:'reminder',serviceType:'',managedServiceType:''};
       }
       if (!managerId) throw Object.assign(new Error('请先为客户分配健管专员'), { statusCode: 400 });
+      const healthDataPlan = key === 'personalized_followups' ? require('../../../shared/healthDataPlan.cjs').normalize(row.healthDataPlan) : null;
       const mode = row.serviceMode || 'reminder';
       if (mode === 'managed' && !['outpatient', 'checkup'].includes(row.managedServiceType)) throw Object.assign(new Error('请选择本项的门诊一站式或体检一站式服务'), { statusCode: 400 });
-      return { ...row, ...(key === 'personalized_followups' ? {managementFollowUpVersion:1,collaborator:'',collaborationDate:''} : {}), frequency: '单次', coordinator: '', ownerRole: '健管专员', followUpStaff: String(managerId), serviceMode: mode,
+      return { ...row, ...(key === 'personalized_followups' ? {healthDataPlan:healthDataPlan || (row.healthDataPlan?.id ? {...row.healthDataPlan,enabled:false} : null)} : {}), ...(key === 'personalized_followups' ? {managementFollowUpVersion:1,collaborator:'',collaborationDate:''} : {}), frequency: '单次', coordinator: '', ownerRole: '健管专员', followUpStaff: String(managerId), serviceMode: mode,
         serviceType: mode === 'single' ? row.serviceType : '', managedServiceType: mode === 'managed' ? row.managedServiceType : '' };
     }) };
   }
