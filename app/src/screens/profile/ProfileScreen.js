@@ -481,7 +481,7 @@ export default function ProfileScreen({ navigation }) {
                   key={i}
                   style={styles.teamCard}
                   activeOpacity={0.8}
-                  onPress={() => navigation.navigate('Chat')}
+                  onPress={() => navigation.navigate('Messages')}
                 >
                   <View style={[styles.teamAvatar, { backgroundColor: member.bg }]}>
                     <Text style={styles.teamAvatarText}>{member.name[0]}</Text>

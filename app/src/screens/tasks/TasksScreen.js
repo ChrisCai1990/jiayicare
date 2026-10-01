@@ -332,8 +332,9 @@ function ReminderCard({ reminder, onToggle }) {
 }
 
 // ── 主页面 ────────────────────────────────────────────────────────
-export default function TasksScreen({ navigation }) {
+export default function TasksScreen({ navigation, route }) {
   const { isDemo } = useAuth();
+  const [showFeedback,setShowFeedback] = useState(!!route?.params?.feedback);
   const [filter, setFilter]       = useState('全部');
   const [tasks, setTasks]         = useState([]);
   const [reminders, setReminders] = useState([]);
@@ -555,13 +556,16 @@ export default function TasksScreen({ navigation }) {
 
   // 状态筛选：active=未随访(默认，即原有全部/今日/本周/本月的时间筛选对象)，done=已随访，cancelled=已取消
   const baseList = statusFilter === 'done' ? completedItems : statusFilter === 'cancelled' ? cancelledItems : allItems;
+  const activeList = baseList.filter(item => showFeedback
+    ? !!item.documentDeclaration && (item.uploadReminder || !baseList.some(t => t.careFlowId === item.careFlowId && t.uploadReminder))
+    : !item.documentDeclaration && item.customerActionRequired !== false);
 
   const filteredTasks = (() => {
     if (statusFilter !== 'active') return baseList; // 已随访/已取消不再叠加时间维度，直接展示全部
-    if (filter === '今日') return [...tasks.filter(t => t.status !== 'completed' && (!t.dueDate || t.dueDate <= today)), ...reminders.filter(r => r.enabled && r.isActiveToday).map(reminderToItem)];
-    if (filter === '本周') return baseList.filter(t => !t.dueDate || t.dueDate <= weekEnd);
-    if (filter === '本月') return baseList.filter(t => !t.dueDate || t.dueDate <= monthEnd);
-    return baseList;
+    if (filter === '今日') return activeList.filter(t => !t.dueDate || t.dueDate <= today);
+    if (filter === '本周') return activeList.filter(t => !t.dueDate || t.dueDate <= weekEnd);
+    if (filter === '本月') return activeList.filter(t => !t.dueDate || t.dueDate <= monthEnd);
+    return activeList;
   })();
 
   const pendingCount   = tasks.filter(t => t.status === 'pending').length;
@@ -614,6 +618,7 @@ export default function TasksScreen({ navigation }) {
         ))}
       </View>
 
+      <View style={{flexDirection:'row',gap:20,paddingHorizontal:spacing.lg,paddingVertical:10}}>{[['待处理',false],['已提交反馈',true]].map(([label,value])=><TouchableOpacity key={label} onPress={()=>{setShowFeedback(value);setStatusFilter('active')}}><Text style={{color:showFeedback===value?colors.primary:colors.textMuted,fontWeight:showFeedback===value?'700':'400'}}>{label}</Text></TouchableOpacity>)}</View>
       {/* Status filter tabs：未随访/已随访/已取消 */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.filterScroll, { paddingBottom: 0 }]} contentContainerStyle={{ gap: spacing.sm, paddingHorizontal: spacing.lg }}>
         {STATUS_FILTER_TABS.map(tab => (

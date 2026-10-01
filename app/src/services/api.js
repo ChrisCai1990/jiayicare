@@ -147,6 +147,7 @@ export const supplementsAPI = {
 // ── Tasks ─────────────────────────────────────────────────────────
 export const tasksAPI = {
   careReports: id => request(`/tasks/care-flow/${id}/reports`),
+  declareCareReports: (id,data) => request(`/tasks/care-flow/${id}/reports/declaration`,{method:'POST',body:JSON.stringify(data)}),
   addCareReport: (id,data) => request(`/tasks/care-flow/${id}/reports`,{method:'POST',body:JSON.stringify(data)}),
   completeCareReports: id => request(`/tasks/care-flow/${id}/reports/complete`,{method:'POST',body:JSON.stringify({confirmed:true})}),
   list:       () => request('/tasks'),

@@ -48,15 +48,13 @@ const Tab = createBottomTabNavigator();
 const TAB_CONFIG = [
   { name: 'Home',         label: '首页',    icon: 'home',         component: HomeScreen },
   { name: 'Records',      label: '健康档案', icon: 'heart',        component: RecordsScreen },
-  { name: 'Planning',     label: '健康管家', icon: 'compass',      component: ChatScreen },
+  { name: 'Planning',     label: '健康管家', icon: 'chatbubbles',  component: MessagesScreen },
   { name: 'Profile',      label: '我的',    icon: 'person',       component: ProfileScreen },
 ];
 
 function MainTabs() {
   const { token } = useAuth();
   // 和小程序一致：访客可先浏览公开首页，个人档案和健康管家须登录后进入。
-  const visibleTabs = token ? TAB_CONFIG : TAB_CONFIG.filter(tab => tab.name === 'Home');
-
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -82,11 +80,19 @@ function MainTabs() {
         },
       })}
     >
-      {visibleTabs.map(tab => (
+      {TAB_CONFIG.map(tab => (
         <Tab.Screen
           key={tab.name}
           name={tab.name}
           component={tab.component}
+          listeners={({ navigation }) => ({
+            tabPress: event => {
+              if (!token && tab.name !== 'Home') {
+                event.preventDefault();
+                navigation.getParent()?.navigate('Login');
+              }
+            },
+          })}
           options={{
             tabBarLabel: tab.label,
           }}
@@ -159,6 +165,7 @@ export default function Navigation() {
             <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
             <Stack.Screen name="ComingSoon" component={ComingSoonScreen} />
             <Stack.Screen name="Orders" component={OrdersScreen} />
+            <Stack.Screen name="Messages" component={MessagesScreen} />
             <Stack.Screen name="Renewal" component={RenewalScreen} />
             <Stack.Screen name="Legal" component={LegalScreen} />
             <Stack.Screen name="Benefits" component={BenefitsScreen} />

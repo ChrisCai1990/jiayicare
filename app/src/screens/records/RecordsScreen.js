@@ -627,7 +627,6 @@ export default function RecordsScreen({ navigation }) {
       <View style={styles.header}>
         <View>
           <Text style={styles.pageTitle}>健康档案</Text>
-          <Text style={styles.syncInfo}>最后同步：{today}</Text>
         </View>
       </View>
 
@@ -638,24 +637,22 @@ export default function RecordsScreen({ navigation }) {
         }
       >
         <View style={styles.section}>
-          <TouchableOpacity
-            style={styles.reportUploadEntry}
-            activeOpacity={0.85}
-            onPress={() => navigation.navigate('ReportUpload')}
-          >
-            <View style={styles.reportUploadIcon}>
-              <Ionicons name="cloud-upload-outline" size={24} color={colors.white} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.reportUploadTitle}>上传体检/检查报告</Text>
-              <Text style={styles.reportUploadDesc}>支持相册多选、拍照及 PDF，上传后自动解析归档</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.white} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.reportManageLink} onPress={() => navigation.navigate('MedicalReports')}>
-            <Ionicons name="documents-outline" size={16} color={colors.primary} />
-            <Text style={styles.reportManageText}>查看已上传报告</Text>
-          </TouchableOpacity>
+          <Text style={{fontSize:11,fontWeight:'700',color:colors.textMuted,marginBottom:8}}>档案工具</Text>
+          <View style={{flexDirection:'row',gap:8}}>
+            {[
+              {label:'上传报告',hint:'拍照或相册',icon:'cloud-upload-outline',route:'ReportUpload',primary:true},
+              {label:'报告记录',hint:'查看原始资料',icon:'document-text-outline',route:'MedicalReports'},
+              {label:'健康报告',hint:'汇总与趋势',icon:'bar-chart-outline',route:'HealthReport'},
+            ].map(action => <TouchableOpacity
+              key={action.label}
+              onPress={() => navigation.navigate(action.route)}
+              style={{flex:1,minWidth:0,backgroundColor:action.primary?colors.primary:colors.white,borderRadius:radius.md,borderWidth:1,borderColor:action.primary?colors.primary:colors.border,paddingVertical:14,paddingHorizontal:5,alignItems:'center'}}
+            >
+              <Ionicons name={action.icon} size={20} color={action.primary?colors.white:colors.primary}/>
+              <Text style={{fontSize:12,fontWeight:'700',color:action.primary?colors.white:colors.textPrimary,marginTop:6}}>{action.label}</Text>
+              <Text style={{fontSize:9,color:action.primary?'rgba(255,255,255,0.72)':colors.textMuted,marginTop:2}}>{action.hint}</Text>
+            </TouchableOpacity>)}
+          </View>
         </View>
 
         {/* ── AI健康信息整理入口 ───────────────────────────────── */}

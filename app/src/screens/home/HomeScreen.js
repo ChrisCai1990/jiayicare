@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, SafeAreaView, RefreshControl,
-  Modal,
+  Modal, Alert,
 } from 'react-native';
 import Svg, { Polyline, Circle } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +10,7 @@ import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { userAPI, systemAPI, followupTasksAPI, tasksAPI, servicesAPI } from '../../services/api';
 import AnimatedNumber from '../../components/AnimatedNumber';
+import { homeTaskCards } from '../../utils/homeTaskCards';
 
 // 本地日期字符串（YYYY-MM-DD）——不能用 toISOString()，那是 UTC 日期，国内时区凌晨0-8点时
 // 会比本地日期整整慢一天，导致"今天/昨天/前天"打卡归属日算错（2026-07-13 排查昨日打卡问题时发现）
@@ -90,13 +91,14 @@ function deriveCheckInFromTheme(theme) {
 const TASK_TABS = ['全部', '今日', '本周', '本月'];
 
 // ── 任务行 ────────────────────────────────────────────────────────
-function TaskItem({ task, isLast, onPress }) {
+function TaskItem({ task, isLast, onPress, onUpload }) {
   const urgency = task.scheduleLabel ? {...URGENCY_CONFIG.low,label:task.scheduleLabel} : URGENCY_CONFIG[task.priority] || URGENCY_CONFIG.low;
+  const upload = task.uploadTask || (task.canUploadReports ? task : null);
   const iconCfg = task.uploadReminder ? {icon:'cloud-upload-outline',bg:'#E8F3FB',color:colors.primary} : TASK_ICON_CONFIG[task.type] || TASK_ICON_CONFIG.checkup;
 
   return (
-    <TouchableOpacity
-      style={[styles.taskItem, !isLast && styles.taskItemBorder]}
+    <View style={!isLast && styles.taskItemBorder}><TouchableOpacity
+      style={styles.taskItem}
       activeOpacity={0.7}
       onPress={() => onPress && onPress(task)}
     >
@@ -104,18 +106,20 @@ function TaskItem({ task, isLast, onPress }) {
         <Ionicons name={iconCfg.icon} size={20} color={iconCfg.color} />
       </View>
       <View style={styles.taskBody}>
-        <Text style={styles.taskTitle} numberOfLines={2}>{String(task.title||'健康安排').split(/[（(]/)[0].trim()}</Text>
+        <Text style={styles.taskTitle} numberOfLines={2}>{String(task.uploadTask?String(task.title||'').replace(/^本次就医安排\s*·\s*/,''):task.title||'健康安排').split(/[（(]/)[0].trim()}</Text>
         <Text style={styles.taskMeta} numberOfLines={1}>
           {task.assignee} · {task.dueDate} {task.dueTime}
         </Text>
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
         <View style={[styles.urgencyBadge, { backgroundColor: urgency.bg }]}>
-          <Text style={[styles.urgencyText, { color: urgency.color }]}>{urgency.label}</Text>
+          <Text style={[styles.urgencyText, { color: urgency.color }]}>{upload?'详情':urgency.label}</Text>
         </View>
         <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
       </View>
     </TouchableOpacity>
+    {upload&&<View style={{marginHorizontal:16,marginBottom:12,padding:12,backgroundColor:colors.primary10,borderRadius:12,flexDirection:'row',alignItems:'center',gap:8}}><View style={{flex:1}}><Text style={{fontSize:11,color:colors.primary}}>{upload.documentDeclaration?'已反馈，待专员核实':'需要你处理'}</Text><Text style={{fontSize:13,color:colors.textPrimary,marginTop:3}}>{upload.documentDeclaration?.label||'就医后提交资料或说明情况'}</Text></View><TouchableOpacity onPress={()=>onUpload?.(upload)} style={{backgroundColor:colors.primary,borderRadius:9,padding:9}}><Text style={{color:'#fff',fontSize:12}}>{upload.documentDeclaration?'查看反馈':'提交资料'}</Text></TouchableOpacity></View>}
+    </View>
   );
 }
 
@@ -227,6 +231,7 @@ export default function HomeScreen({ navigation }) {
   // 任务详情弹窗
   const [taskDetailModal, setTaskDetailModal] = useState(null);
   const [taskCompleting, setTaskCompleting]   = useState(false);
+  const openingManagerRef = useRef(false);
   const fileInputRef = useRef(null);
 
   const loadData = useCallback(async () => {
@@ -288,6 +293,27 @@ export default function HomeScreen({ navigation }) {
 
   const onRefresh = () => { setRefreshing(true); loadData(); };
   const goProtected = (screen) => navigation.navigate(token ? screen : 'Login');
+
+  const openManagerConversation = async () => {
+    if (!token) { navigation.navigate('Login'); return; }
+    if (openingManagerRef.current) return;
+    openingManagerRef.current = true;
+    try {
+      const response = await userAPI.getMe();
+      const currentId = String(authUser?._id || authUser?.id || '');
+      if (!response?.success || !currentId || String(response.data?._id || response.data?.id || '') !== currentId) {
+        throw new Error('身份信息未能确认，请重新登录后重试');
+      }
+      const manager = (Array.isArray(response.data.careTeam) ? response.data.careTeam : [])
+        .find(member => member.kind === 'healthManager');
+      if (!manager) throw new Error('暂未分配健管专员，请在“我的”中查看服务团队');
+      navigation.navigate('Planning', { openRole: 'manager', userId: currentId });
+    } catch (error) {
+      Alert.alert('联系健管专员', error.message || '暂时无法打开会话，请重试');
+    } finally {
+      openingManagerRef.current = false;
+    }
+  };
 
   // 合并两个来源：dashData 有服务器评分等，authUser 在编辑资料后立即更新（身高体重等）
   const user  = { ...(dashData?.user || {}), ...(authUser || {}) };
@@ -374,6 +400,8 @@ export default function HomeScreen({ navigation }) {
     ...allTasks,
     ...activeFollowupTaskItems.filter(item => item.sourceType !== 'symptom'),
   ];
+  const submittedFeedback = homeTaskCards(allPendingTaskItems.filter(t => t.documentDeclaration || t.customerActionRequired === false));
+  const taskCards = homeTaskCards(allPendingTaskItems.filter(t => !t.documentDeclaration && t.customerActionRequired !== false));
 
   if (loading) {
     return <SafeAreaView style={styles.container}><HomeScreenSkeleton /></SafeAreaView>;
@@ -388,7 +416,7 @@ export default function HomeScreen({ navigation }) {
         {/* ── 顶部 Logo 栏 ──────────────────────────────────────── */}
         <View style={styles.topBar}>
           <View>
-            <Text style={styles.logo}>嘉医汇健康管家</Text>
+            <Text style={styles.logo}>嘉医汇 · 嘉医管家</Text>
             <Text style={styles.logoSub}>健康有人管 · 生活更安心</Text>
           </View>
           <TouchableOpacity
@@ -402,7 +430,7 @@ export default function HomeScreen({ navigation }) {
         <View style={styles.body}>
 
           <View style={{backgroundColor:'#fff',borderRadius:20,padding:20,marginBottom:22}}>
-            <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:10}}><View style={{flex:1}}><Text style={{fontSize:12,color:colors.textMuted}}>{name}，{greeting}</Text><Text style={{fontSize:20,fontWeight:'700',color:colors.textPrimary,marginTop:6}}>一起照顾好今天的你</Text></View><View style={{backgroundColor:colors.primary10,borderRadius:12,padding:10,alignItems:'center'}}><Text style={{fontSize:26,fontWeight:'700',color:colors.primary}}>{scoreDisplay ?? '--'}</Text><Text style={{fontSize:10,color:colors.textMuted}}>健康评分 / 100</Text></View></View>
+            <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:10}}><View style={{flex:1}}><Text style={{fontSize:12,color:colors.textMuted}}>{name}，{greeting}</Text><Text style={{fontSize:20,fontWeight:'700',color:colors.textPrimary,marginTop:6}}>照顾好今天的你</Text></View><TouchableOpacity onPress={() => Alert.alert('健康评分趋势', `${scoreHistory.length ? scoreHistory.map(item => `${item.date}：${item.score} 分`).join('\n') : '暂无历史评分记录'}\n\n评分仅供健康管理参考，不作为医学诊断。`)} style={{backgroundColor:colors.primary10,borderRadius:12,padding:10,alignItems:'center'}}><Text style={{fontSize:26,fontWeight:'700',color:colors.primary}}>{scoreDisplay ?? '--'}</Text><Text style={{fontSize:10,color:colors.textMuted}}>健康评分 ›</Text></TouchableOpacity></View>
             <Text style={{fontSize:12,color:colors.textSecondary,lineHeight:19,marginVertical:16}}>{trendActionText || '记录近期变化，帮助了解健康趋势'}</Text>
             <TouchableOpacity style={{flexDirection:'row',alignItems:'center',gap:9,backgroundColor:colors.primary,borderRadius:12,padding:14}} onPress={()=>goProtected('Checkin')}><Ionicons name="add-circle-outline" size={20} color="#fff"/><Text style={{flex:1,fontSize:15,fontWeight:'600',color:'#fff'}}>记录健康数据</Text><Ionicons name="chevron-forward" size={18} color="#fff"/></TouchableOpacity>
             <Text style={{fontSize:11,color:colors.textMuted,textAlign:'center',marginTop:10}}>{dashData?.growth?.totalCheckinDays>0?`近30天已记录 ${dashData.growth.totalCheckinDays} 天 · 每一次记录，多一份了解`:'每一次记录，都多一份了解'}</Text>
@@ -453,16 +481,16 @@ export default function HomeScreen({ navigation }) {
               </TouchableOpacity>
             </View>
             <View style={styles.taskCard}>
-              {allPendingTaskItems.length === 0 && todayReminders.length === 0 ? (
+              {taskCards.length === 0 && todayReminders.length === 0 ? (
                 <View style={styles.emptyTask}>
                   <Ionicons name="checkmark-circle-outline" size={32} color={colors.success} />
                   <Text style={styles.emptyTaskText}>暂无待办任务</Text>
                 </View>
               ) : (
                 <>
-                  {allPendingTaskItems.slice(0, 3).map((t, i, arr) => {
+                  {taskCards.slice(0, 3).map((t, i, arr) => {
                     const isLast = i === arr.length - 1 && todayReminders.length === 0;
-                    return <TaskItem key={t._id || t.id || i} task={t} isLast={isLast} onPress={t=>t.uploadReminder?navigation.navigate('ReportUpload',{careFlowId:t.careFlowId}):setTaskDetailModal(t)} />;
+                    return <TaskItem key={t._id || t.id || i} task={t} isLast={isLast} onPress={t=>t.uploadReminder?navigation.navigate('ReportUpload',{careFlowId:t.careFlowId}):setTaskDetailModal(t)} onUpload={upload=>navigation.navigate('ReportUpload',{careFlowId:upload.careFlowId})}/>;
                   })}
                   {todayReminders.map((r, i) => (
                     <ReminderItem
@@ -474,14 +502,14 @@ export default function HomeScreen({ navigation }) {
                 </>
               )}
             </View>
-            {allPendingTaskItems.length > 3 && (
+            {taskCards.length > 3 && (
               <TouchableOpacity
                 style={styles.reminderHint}
                 onPress={() => goProtected('Tasks')}
                 activeOpacity={0.7}
               >
                 <Ionicons name="ellipsis-horizontal-circle-outline" size={12} color={colors.primary} />
-                <Text style={styles.reminderHintText}>还有 {allPendingTaskItems.length - 3} 项待办 · 查看全部</Text>
+                <Text style={styles.reminderHintText}>还有 {taskCards.length - 3} 项待办 · 查看全部</Text>
                 <Ionicons name="chevron-forward" size={12} color={colors.primary} />
               </TouchableOpacity>
             )}
@@ -496,12 +524,23 @@ export default function HomeScreen({ navigation }) {
                 <Ionicons name="chevron-forward" size={12} color={colors.primary} />
               </TouchableOpacity>
             )}
+            {submittedFeedback.length>0&&<TouchableOpacity onPress={()=>token?navigation.navigate('Tasks',{feedback:true}):navigation.navigate('Login')} style={{backgroundColor:'#fff',borderRadius:14,padding:14,marginTop:10,flexDirection:'row',justifyContent:'space-between'}}><Text style={{fontSize:13,color:colors.textSecondary}}>已提交反馈 · {submittedFeedback.length} 项待团队处理</Text><Text style={{fontSize:13,color:colors.primary}}>查看 ›</Text></TouchableOpacity>}
           </View>
 
           <View style={{marginBottom:24,order:2}}>
-            <Text style={[styles.sectionTitle,{fontSize:17,color:colors.textPrimary}]}>我的会员权益</Text>
-            <View style={{flexDirection:'row',gap:10}}>{[['plan','会员权益','查看计划与使用情况','ribbon-outline'],['fund','健康基金',user?.healthFund?.total!=null?`余额 ¥${Number(user.healthFund.total).toFixed(2)}`:'查看余额与收支明细','wallet-outline']].map(([section,title,subtitle,icon])=><TouchableOpacity key={section} onPress={()=>token?navigation.navigate('Benefits',{section}):navigation.navigate('Login')} style={{flex:1,backgroundColor:'#fff',borderRadius:16,padding:16}}><Ionicons name={icon} size={22} color={colors.primary}/><Text style={{fontSize:15,fontWeight:'600',marginTop:10,color:colors.textPrimary}}>{title} ›</Text><Text style={{fontSize:11,color:colors.textMuted,marginTop:5}}>{subtitle}</Text></TouchableOpacity>)}</View>
+            <Text style={[styles.sectionTitle,{fontSize:17,color:colors.textPrimary}]}>我的权益</Text>
+            <TouchableOpacity onPress={()=>token?navigation.navigate('Benefits',{section:'plan'}):navigation.navigate('Login')} style={{backgroundColor:'#fff',borderRadius:18,padding:18,flexDirection:'row',alignItems:'center',gap:12}}>
+              <Ionicons name="gift-outline" size={25} color={colors.primary}/>
+              <View style={{flex:1}}><Text style={{fontSize:15,fontWeight:'600',color:colors.textPrimary}}>会员权益</Text><Text style={{fontSize:12,color:colors.textSecondary,marginTop:5}}>查看计划、使用情况与健康基金</Text>{user?.healthFund?.total!=null&&<Text style={{fontSize:13,color:colors.primary,marginTop:7}}>健康基金余额 ¥{Number(user.healthFund.total).toFixed(2)}</Text>}</View>
+              <Ionicons name="chevron-forward" size={18} color={colors.primary}/>
+            </TouchableOpacity>
           </View>
+
+          <TouchableOpacity onPress={openManagerConversation} style={{backgroundColor:'#fff',borderRadius:14,padding:14,marginBottom:18,flexDirection:'row',alignItems:'center',gap:10}}>
+            <Ionicons name="chatbubbles-outline" size={22} color={colors.primary}/>
+            <View style={{flex:1}}><Text style={{fontSize:14,fontWeight:'600',color:colors.textPrimary}}>联系健管专员</Text><Text style={{fontSize:12,color:colors.textSecondary,marginTop:3}}>{!token?'登录后查看专属服务团队':'就医安排、资料上传和日常服务咨询'}</Text></View>
+            <Ionicons name="chevron-forward" size={16} color={colors.primary}/>
+          </TouchableOpacity>
 
 
         </View>

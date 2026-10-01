@@ -646,7 +646,7 @@ function ComposeModal({ visible, onClose, onSent, initialContent = '', initialTo
   );
 }
 
-export default function MessagesScreen({ navigation }) {
+export default function MessagesScreen({ navigation, route }) {
   const { isDemo, user } = useAuth();
   const careTeamKinds = new Set((user?.careTeam || []).map(m => m.kind));
   const hasRole = (key) => {
@@ -665,6 +665,16 @@ export default function MessagesScreen({ navigation }) {
   const [replyTo, setReplyTo] = useState('manager');
   const [threadRole, setThreadRole] = useState(null);
   const [showNotifModal, setShowNotifModal] = useState(false);
+
+  useEffect(() => {
+    if (route?.params?.openRole !== 'manager') return;
+    const requestedUserId = String(route.params.userId || '');
+    const currentUserId = String(user?._id || user?.id || '');
+    if (requestedUserId && requestedUserId === currentUserId) {
+      setThreadRole('manager');
+    }
+    navigation.setParams({ openRole: undefined, userId: undefined });
+  }, [navigation, route?.params?.openRole, route?.params?.userId, user?._id, user?.id]);
 
   const tabs = ['全部', '专属团队', '系统', '推送'];
 
@@ -784,7 +794,7 @@ export default function MessagesScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.pageTitle}>消息</Text>
+        <Text style={styles.pageTitle}>健康管家</Text>
         {totalUnread > 0 && (
           <View style={styles.unreadBadge}>
             <Text style={styles.unreadBadgeText}>{totalUnread > 99 ? '99+' : totalUnread}</Text>
