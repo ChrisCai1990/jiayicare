@@ -1,3 +1,4 @@
+import ProfessionalAssessmentFields from '../components/ProfessionalAssessmentFields'
 import DateField from '../../../shared/DateField.jsx'
 import '../components/ReportFollowUpDrafts.css'
 import React, { useEffect, useState, useCallback } from 'react'
@@ -971,9 +972,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           <details style={{ marginTop: 14 }}>
             <summary style={{ cursor: 'pointer', color: '#1E6B50', fontWeight: 600 }}>＋ 新建专业评估记录</summary>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10, marginTop: 12 }}>
-              <input value={assessmentDraft.domain} onChange={e => setAssessmentDraft(prev => ({ ...prev, domain: e.target.value }))} placeholder="评估领域，如心血管/生长发育/中医健康" className="form-control" />
-              <input value={assessmentDraft.title} onChange={e => setAssessmentDraft(prev => ({ ...prev, title: e.target.value }))} placeholder="评估标题" className="form-control" />
-              {[['facts','客观评估结论（必填，每行一项）'],['risks','重点关注（每行一项）'],['missingInformation','待补信息（每行一项）'],['recommendations','管理建议：就医、检查、复查或生活方式（每行一项）']].map(([key, label]) => <textarea key={key} value={assessmentDraft[key]} onChange={e => setAssessmentDraft(prev => ({ ...prev, [key]: e.target.value }))} placeholder={label} rows={3} className="form-control" style={{ gridColumn: '1 / -1' }} />)}
+              <div style={{gridColumn:"1 / -1"}}><ProfessionalAssessmentFields value={assessmentDraft} onChange={setAssessmentDraft}/></div>
               <button onClick={handleCreateAssessment} disabled={assessmentSaving} className="btn btn-primary" style={{ justifySelf: 'start' }}>{assessmentSaving ? '保存中…' : '保存评估草稿'}</button>
             </div>
           </details>

@@ -2264,8 +2264,8 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     || String(followUp.assignedTo || '') === String(req.staff._id);
   if (!canUpdate) return res.status(403).json({ success: false, message: '该任务未分配给当前账号，无法保存' });
   if (require('../../../shared/annualNutrition.cjs').isTask(followUp)) {
-    if (req.body.status === 'completed') {
-      try { const data=await require('../utils/annualNutritionReview').transition({task:followUp,actor:req.staff,body:req.body,FollowUp,User}); return res.json({success:true,data,message:'评估结果已提交健康顾问审核'}); }
+    if (req.body.status === 'completed' || ['draft','submit'].includes(req.body.assessmentAction)) {
+      try { const data=await require('../utils/annualNutritionReview').transition({task:followUp,actor:req.staff,body:req.body,FollowUp,User}); return res.json({success:true,data,message:req.body.assessmentAction==='draft'?'评估草稿已保存':'评估结果已提交健康顾问审核'}); }
       catch(error) { return res.status(error.statusCode||500).json({success:false,message:error.message}); }
     }
     if (followUp.aiStatus === 'pending' || followUp.status === 'completed') return res.status(409).json({message:'评估结果已提交，请通过审核入口处理'});
@@ -2497,7 +2497,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   if (req.body.formData !== undefined) {
     const incoming = req.body.formData && typeof req.body.formData === 'object' && !Array.isArray(req.body.formData)
       ? { ...req.body.formData } : {};
-    if (require('../../../shared/annualNutrition.cjs').isTask(followUp)) { incoming.nutritionResultReview=followUp.formData?.nutritionResultReview; incoming.nutritionResultHistory=followUp.formData?.nutritionResultHistory; }
+    if (require('../../../shared/annualNutrition.cjs').isTask(followUp)) { incoming.nutritionAssessment=followUp.formData?.nutritionAssessment; incoming.nutritionResultReview=followUp.formData?.nutritionResultReview; incoming.nutritionResultHistory=followUp.formData?.nutritionResultHistory; }
     delete incoming.adHocMedicalReminder;
     delete incoming.reminderKind;
     if (followUp.formData?.adHocMedicalReminder === true) {

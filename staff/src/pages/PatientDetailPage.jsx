@@ -1,3 +1,5 @@
+import AnnualNutritionAssessmentForm from '../components/AnnualNutritionAssessmentForm'
+import annualNutrition from '../../../shared/annualNutrition.cjs'
 import DateField from '../../../shared/DateField.jsx'
 import { CoreArchiveSection, InitialArchiveReview, ArchiveSource } from '../components/CoreHealthArchive'
 import followUpReview from '../../../shared/followUpReview.cjs'
@@ -2601,7 +2603,7 @@ export default function PatientDetailPage() {
       .then(res => {
         if (cancelled) return
         const target = res.data?.followUps?.[0]
-        if (annualDispatch.dedicated(target)) setFollowUpDetail(target)
+        if (annualNutrition.isTask(target) || annualDispatch.dedicated(target)) setFollowUpDetail(target)
         else if (isCheckupAdvisorReviewTask(target)) setCheckupAdvisorReview(target)
         else if (target?.aiStatus === 'pending') setFollowUpDetail(target)
         else toast('该随访审核任务已处理或不存在')
@@ -2612,6 +2614,7 @@ export default function PatientDetailPage() {
 
   // 执行随访：填写随访结果、标记完成/随访中，逻辑与 FollowUpsPage.jsx 一致
   const openExec = (f) => {
+    if (annualNutrition.isTask(f)) { setFollowUpDetail(f); return }
     if (medicalProxyStage(f) === 'post_visit_audit') { loadServiceRecords(); loadReports() }
     // Workbench appointment projection is not an execution checklist. Keep the
     // advisor plan visible and use the dedicated receipt without ending follow-up.
@@ -11176,11 +11179,12 @@ export default function PatientDetailPage() {
               <button className="modal-close" onClick={() => setFollowUpDetail(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {annualNutrition.isTask(followUpDetail) && <AnnualNutritionAssessmentForm key={`${followUpDetail._id}:${followUpDetail.updatedAt}`} task={followUpDetail} staff={staff} onSaved={updated=>{setFollowUpDetail(updated);loadFollowUps()}}/>}
               <FollowUpServiceLinkCard key={followUpDetail._id} task={followUpDetail} staff={staff} onLinked={updated => { setFollowUpDetail(updated); loadFollowUps() }} />
               {!annualDispatch.dedicated(followUpDetail) && <OnsiteBookingCard key={`onsite-${followUpDetail._id}`} task={followUpDetail} staff={staff} />}
               <AnnualCheckupPreparationCard key={`checkup:${followUpDetail._id}`} task={followUpDetail} staff={staff} onSaved={updated => { setFollowUpDetail(updated); loadFollowUps() }} />
               {/* 基本信息 */}
-              {!annualServiceItem.isAssistance(followUpDetail) && !annualDispatch.dedicated(followUpDetail) && <>
+              {!annualNutrition.isTask(followUpDetail) && !annualServiceItem.isAssistance(followUpDetail) && !annualDispatch.dedicated(followUpDetail) && <>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 {[
                   { label: followUpDetail.status === 'completed' ? '随访日期' : '计划随访日期', value: followUpDetailView.displayDate(followUpDetail.date) },
@@ -11343,15 +11347,15 @@ export default function PatientDetailPage() {
                     await staffAPI.reviewFollowUp(followUpDetail._id, { action: 'reject', rejectReason: rejectReason.trim() })
                     setFollowUpDetail(null); loadFollowUps(); toast('已驳回')
                   } catch (err) { toast(err.message || '驳回失败') }
-                }}>驳回计划</button>
+                }}>{annualNutrition.isTask(followUpDetail) ? '退回评估' : '驳回计划'}</button>
                 <button className="btn btn-primary" onClick={async () => {
                   try {
                     await staffAPI.reviewFollowUp(followUpDetail._id, { action: 'approve' })
                     setFollowUpDetail(null); loadFollowUps(); toast('已通过审核')
                   } catch (err) { toast(err.message || '审核失败') }
-                }}>确认随访计划</button>
+                }}>{annualNutrition.isTask(followUpDetail) ? '通过评估审核' : '确认随访计划'}</button>
               </>}
-              {annualBookingPlan.canEditPlan(followUpDetail, staff?.role) && medicalProxyStage(followUpDetail) !== 'supervise' && followUpDetail.serviceTracking?.status !== 'waiting' && <button className="btn btn-secondary" style={{ color: '#DC3545' }}
+              {!annualNutrition.isTask(followUpDetail) && annualBookingPlan.canEditPlan(followUpDetail, staff?.role) && medicalProxyStage(followUpDetail) !== 'supervise' && followUpDetail.serviceTracking?.status !== 'waiting' && <button className="btn btn-secondary" style={{ color: '#DC3545' }}
                 onClick={async () => {
                   if (!window.confirm('确认删除这条随访记录？删除后不可恢复。')) return
                   try {
@@ -11363,7 +11367,7 @@ export default function PatientDetailPage() {
                     setFollowUpDetail(null); loadFollowUps()
                   } catch (err) { toast(err.message || '删除失败') }
                 }}>删除</button>}
-              {annualBookingPlan.canEditPlan(followUpDetail, staff?.role) && medicalProxyStage(followUpDetail) !== 'supervise' && followUpDetail.serviceTracking?.status !== 'waiting' && <button className="btn btn-secondary" onClick={() => setEditingFollowUp({
+              {!annualNutrition.isTask(followUpDetail) && annualBookingPlan.canEditPlan(followUpDetail, staff?.role) && medicalProxyStage(followUpDetail) !== 'supervise' && followUpDetail.serviceTracking?.status !== 'waiting' && <button className="btn btn-secondary" onClick={() => setEditingFollowUp({
                 date: followUpDetail.date ? new Date(followUpDetail.date).toISOString().slice(0, 10) : '',
                 type: followUpDetail.type || 'phone',
                 theme: followUpDetail.theme || '',

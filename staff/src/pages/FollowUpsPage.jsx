@@ -1,3 +1,4 @@
+import annualNutrition from '../../../shared/annualNutrition.cjs'
 import DateField from '../../../shared/DateField.jsx'
 import { followUpDateRange } from '../utils/staffWorkspace'
 import React, { useEffect, useState, useCallback, useRef } from 'react'
@@ -247,7 +248,7 @@ export default function FollowUpsPage() {
   const handleSearch = (e) => { e.preventDefault(); setPage(1); load() }
 
   const openExec = (f) => {
-    if (annualDispatch.dedicated(f)) { nav(`/patients/${f.patientId?._id || f.patientId}?tab=followups&followUpId=${f._id}`); return }
+    if (annualNutrition.isTask(f) || annualDispatch.dedicated(f)) { nav(`/patients/${f.patientId?._id || f.patientId}?tab=followups&followUpId=${f._id}`); return }
     setExecItem(f)
     const checklist = checkupConclusionStage(f) ? [] : normalizeServiceChecklist(f.serviceChecklist, f.taskPurposes, f.dependsOnTaskId?.serviceChecklist)
     setExecForm({ type: f.type || 'phone', content: '', status: 'completed', serviceChecklist: normalizeCheckupOnsiteChecklist(f, checklist), appointmentDetails: bookingDetailsFromTask(f), formData: isCheckupAppointmentBookingTask(f) ? checkupAppointmentBookingFromTask(f) : isOutpatientAppointmentTask(f) ? emptyOutpatientAppointment(f, f.formData) : isOutpatientStaffAssignmentTask(f) ? emptyOutpatientStaffAssignment(f.formData) : isOutpatientProxyVisitTask(f) ? emptyOutpatientProxyVisit(f, f.formData) : isOutpatientEscortVisitTask(f) ? emptyOutpatientEscortVisit(f, f.formData) : isOutpatientPostVisitReviewTask(f) ? emptyOutpatientPostVisitReview(f.formData) : emptyOutpatientAssessment(f.formData) })
@@ -480,7 +481,7 @@ export default function FollowUpsPage() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
                       <span style={{ color: '#1E6B50', cursor: 'pointer', fontWeight: 700, fontSize: 15 }}
                         title="打开本条随访"
-                        onClick={() => isPendingExec(f) || isCheckupAppointmentBookingTask(f) ? openExec(f) : setDetailItem(f)}>
+                        onClick={() => annualNutrition.isTask(f) || isPendingExec(f) || isCheckupAppointmentBookingTask(f) ? openExec(f) : setDetailItem(f)}>
                         {f.patientId?.name || '-'}
                       </span>
                       <span style={{ fontSize: 12, color: '#8AA89C' }}>{f.patientId?.phone}</span>

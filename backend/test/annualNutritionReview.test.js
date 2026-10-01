@@ -31,3 +31,17 @@ test('营养评估仅派营养师一项，不生成健管或规划师需求',asy
  assert.equal(rows.length,1);assert.equal(rows[0].assignedTo,team.assignedNutritionist);assert.equal(rows[0].reviewAssignedTo,team.assignedFamilyDoctor);assert.equal(rows[0].aiStatus,'approved');
  assert.equal(require('../src/utils/annualPlanServiceTasks').buildAnnualPlanServiceTasks(plan,team).length,0);
 });
+
+test('structured nutrition draft, validation, submission and stale update protection',async()=>{
+ let task={_id:'task',sourceType:'scheduled',workflowKey:'annual_nutrition_assessment',sourceAnnualPlanId:'plan',assignedTo:'nutrition',content:'requirements',status:'planned',aiStatus:'approved',updatedAt:1,formData:{preserved:true}};
+ const User={findById:()=>({select:()=>({lean:async()=>({assignedFamilyDoctor:'advisor'})})})};
+ const FollowUp={findOneAndUpdate:async(q,u)=>{task={...task,...u.$set,updatedAt:task.updatedAt+1};return task}};
+ const run=body=>transition({task,actor:{_id:'nutrition',role:'nutritionist'},body,User,FollowUp});
+ await run({assessmentAction:'draft',nutritionAssessment:{title:'nutrition'}});
+ assert.equal(task.status,'planned');assert.equal(task.aiStatus,'approved');assert.equal(task.formData.preserved,true);assert.equal(task.plannedContent,'requirements');
+ await assert.rejects(()=>run({assessmentAction:'submit',nutritionAssessment:{title:'nutrition'}}),e=>e.statusCode===400);
+ await assert.rejects(()=>run({assessmentAction:'draft',nutritionAssessment:{},baseUpdatedAt:1}),/刷新/);
+ await run({assessmentAction:'submit',nutritionAssessment:{title:'nutrition',facts:'findings',recommendations:'advice'}});
+ assert.equal(task.aiStatus,'pending');assert.equal(task.formData.nutritionAssessment.facts,'findings');assert.equal(task.formData.nutritionResultHistory[0].assessment.recommendations,'advice');assert.match(task.executedContent,/findings/);
+ await assert.rejects(()=>run({assessmentAction:'draft',nutritionAssessment:{facts:'overwrite'}}),/审核/);
+});
