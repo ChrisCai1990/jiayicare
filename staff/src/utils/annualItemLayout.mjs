@@ -1,9 +1,9 @@
 export const simpleAnnualModules = ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'annual_checkup']
-export function annualItemLayout(key, def, managerName) {
+export function annualItemLayout(key, def, managerName, nutritionName) {
   if (key === 'personalized_followups') {
     const templateKeys = new Set(['standardPlanName', 'standardContent', 'standardSchedule'])
     const hidden = new Set([...templateKeys, 'followUpStaff', 'collaborator', 'collaborationDate', 'frequency', 'ownerRole', 'serviceMode', 'serviceType', 'basisSummary'])
-    return { ...def, reviewDriven: true, annualServiceArrangement: true, managerName: managerName || '未分配健管专员，请先完善客户归属',
+    return { ...def, personalizedAssignment:true, nutritionName:nutritionName || '未分配营养师，请先完善客户归属', reviewDriven: true, annualServiceArrangement: true, managerName: managerName || '未分配健管专员，请先完善客户归属',
       serviceFields: def.fields.filter(f => ['serviceMode','serviceType'].includes(f.key)).map(f => f.key === 'serviceType' ? {...f, options:[...(f.options || []), {value:'nutrition_assessment',label:'营养评估服务'}]} : f),
       templateFields: def.fields.filter(f => templateKeys.has(f.key)),
       fields: def.fields.filter(f => !hidden.has(f.key)).map(f => f.key === 'personalization'

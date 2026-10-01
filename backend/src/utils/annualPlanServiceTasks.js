@@ -13,6 +13,7 @@ function buildAnnualPlanServiceTasks(plan, patient = {}) {
   const moduleData = plan.moduleData || {};
   const rows = [];
   const add = (moduleKey, record, index, date, fallback) => {
+    if (record.directNutritionAssessment === true) return;
     const mode = record.serviceMode || 'reminder';
     if (!['single', 'managed'].includes(mode)) return;
     const executionDate = validDate(date) || new Date(plan.confirmedAt || Date.now());

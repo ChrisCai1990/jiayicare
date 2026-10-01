@@ -3,6 +3,7 @@ function postVisit(item) {
   return item?.sourceType === 'order' && (!!item.formData?.generatedFromExpertAppointment || !!item.formData?.generatedFromMedicalEscort || /^(expert_appointment_followup|medical_escort_followup):/.test(item.sourceScheduleKey || ''));
 }
 function reviewer(item, patient) {
+  if (require('./annualNutrition.cjs').isTask(item)) return patient?.assignedFamilyDoctor || item?.reviewAssignedTo || null;
   return item?.reviewAssignedTo || (postVisit(item) ? patient?.assignedFamilyDoctor : item?.assignedTo) || null;
 }
 function executor(item, patient) {

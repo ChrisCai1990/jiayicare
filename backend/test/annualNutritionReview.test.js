@@ -1,0 +1,33 @@
+const test=require('node:test'),assert=require('node:assert/strict');
+const {transition}=require('../src/utils/annualNutritionReview');
+test('营养任务由本人提交，同一任务顾问审核、退回再提交、冲突保护',async()=>{
+ let task={_id:'task',sourceType:'scheduled',workflowKey:'annual_nutrition_assessment',sourceAnnualPlanId:'plan',assignedTo:'nutrition',content:'评估要求',status:'planned',aiStatus:'approved',updatedAt:1};
+ const User={findById:()=>({select:()=>({lean:async()=>({assignedFamilyDoctor:'advisor'})})})};
+ let conflict=false;
+ const FollowUp={findOneAndUpdate:async(q,u)=>{assert.equal(q.updatedAt,task.updatedAt);if(conflict)return null;task={...task,...u.$set,updatedAt:task.updatedAt+1};return task}};
+ const run=(actor,body,review=false)=>transition({task,actor,body,review,User,FollowUp});
+ await assert.rejects(()=>run({_id:'wrong',role:'nutritionist'},{content:'结果'}),/仅本任务/);
+ await assert.rejects(()=>run({_id:'nutrition',role:'nutritionist'},{}),/填写/);
+ await run({_id:'nutrition',role:'nutritionist'},{executedContent:'评估结果'});
+ assert.equal(task.aiStatus,'pending');assert.equal(task.reviewAssignedTo,'advisor');assert.equal(task.plannedContent,'评估要求');assert.equal(task.status,'in_progress');
+ await assert.rejects(()=>run({_id:'nutrition',role:'nutritionist'},{action:'approve'},true),/顾问/);
+ await run({_id:'advisor',role:'familyDoctor'},{action:'reject',rejectReason:'补充依据'},true);
+ assert.equal(task.status,'planned');assert.equal(task.assignedTo,'nutrition');
+ await run({_id:'nutrition',role:'nutritionist'},{content:'补全结果'});
+ conflict=true;await assert.rejects(()=>run({_id:'advisor',role:'familyDoctor'},{action:'approve'},true),/已变化/);conflict=false;
+ await run({_id:'advisor',role:'familyDoctor'},{action:'approve'},true);
+ assert.equal(task.status,'completed');assert.equal(task.formData.nutritionResultHistory.length,4);
+});
+test('营养评估仅派营养师一项，不生成健管或规划师需求',async t=>{
+ const team={assignedNutritionist:'bbbbbbbbbbbbbbbbbbbbbbbb',assignedFamilyDoctor:'cccccccccccccccccccccccc'};
+ const date=new Date(Date.now()+30*86400000).toISOString().slice(0,10);
+ const input={personalized_followups:{records:[{defaultRole:'nutritionist',standardPlanId:'template',executionDate:date,sourceCycles:[{cycleType:'relative',cycleDuration:10,cycleUnit:'day'}]}]}};
+ const normalize=require('../src/utils/annualItemManagement').normalizeAnnualItems;
+ assert.throws(()=>normalize(input,null,{}),/分配营养师/);
+ const plan={_id:'plan',patientId:'patient',moduleData:normalize(input,null,team)};
+ const User=require('../src/models/User'),Admin=require('../src/models/Admin');
+ t.mock.method(User,'findById',()=>({select:()=>({lean:async()=>team})}));t.mock.method(Admin,'find',()=>({select:()=>({lean:async()=>[]})}));
+ const rows=await require('../src/utils/annualPlanFollowUps').buildAnnualPlanFollowUps(plan);
+ assert.equal(rows.length,1);assert.equal(rows[0].assignedTo,team.assignedNutritionist);assert.equal(rows[0].reviewAssignedTo,team.assignedFamilyDoctor);assert.equal(rows[0].aiStatus,'approved');
+ assert.equal(require('../src/utils/annualPlanServiceTasks').buildAnnualPlanServiceTasks(plan,team).length,0);
+});

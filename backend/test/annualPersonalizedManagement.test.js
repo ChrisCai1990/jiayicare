@@ -5,7 +5,7 @@ const itemTools=require('../../shared/annualServiceItem.cjs');
 test('个性化事项仅一次健管随访，营养服务需求由健管安排并精确关联',async t=>{
  const manager='aaaaaaaaaaaaaaaaaaaaaaaa';
  const date=new Date(Date.now()+30*86400000).toISOString().slice(0,10);
- const original={executionDate:date,standardPlanId:'template',standardPlanName:'营养评估',followUpStaff:'wrong',collaborator:'bbbbbbbbbbbbbbbbbbbbbbbb',collaborationDate:date,sourceCycles:[{cycleType:'relative',cycleDuration:60,cycleUnit:'day'}],serviceMode:'single',serviceType:'nutrition_assessment'};
+ const original={executionDate:date,standardPlanId:'template',standardPlanName:'营养评估',followUpStaff:'wrong',collaborator:'bbbbbbbbbbbbbbbbbbbbbbbb',collaborationDate:date,sourceCycles:[{cycleType:'relative',cycleDuration:60,cycleUnit:'day'}],serviceMode:'single',serviceType:'proxy_booking'};
  const moduleData=normalizeAnnualItems({personalized_followups:{records:[original]}},manager);
  assert.equal(original.collaborator,'bbbbbbbbbbbbbbbbbbbbbbbb');
  const row=moduleData.personalized_followups.records[0];assert.equal(row.collaborator,'');assert.equal(row.followUpStaff,manager);
@@ -18,7 +18,7 @@ test('个性化事项仅一次健管随访，营养服务需求由健管安排�
  const requests=buildAnnualPlanServiceTasks(plan,{assignedHealthManager:manager,assignedHealthPlanner:'planner'});
  assert.equal(requests.length,1);assert.equal(requests[0].assignedTo,manager);
  const request={...requests[0],sourceType:'annual_service',workflowKey:'service_request',sourceScheduleKey:requests[0].key};
- assert.equal(itemTools.isNutritionRequest(request),true);assert.equal(itemTools.followUpKey(request),tasks[0].sourceScheduleKey);
+ assert.equal(itemTools.isManagerRequest(request),true);assert.equal(itemTools.followUpKey(request),tasks[0].sourceScheduleKey);
  assert.equal(itemTools.isManagerRequest({...request,sourceType:'professional_assessment'}),false);
  assert.throws(()=>normalizeAnnualItems({personalized_followups:{records:[original]}},null),/分配健管/);
 });

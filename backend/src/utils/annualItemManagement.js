@@ -1,10 +1,14 @@
 const MODULES = ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'personalized_followups'];
-function normalizeAnnualItems(data, managerId) {
+function normalizeAnnualItems(data, managerId, team = {}) {
   const result = { ...data };
   for (const key of MODULES) {
     if (data?.[key]?.enabled === false || !Array.isArray(data?.[key]?.records)) continue;
-    if (data[key].records.length && !managerId) throw Object.assign(new Error('请先为客户分配健管专员'), { statusCode: 400 });
     result[key] = { ...data[key], records: data[key].records.map(row => {
+      if (key === 'personalized_followups' && require('../../../shared/annualNutrition.cjs').isRow(row)) {
+        if (!team.assignedNutritionist || !team.assignedFamilyDoctor) throw Object.assign(new Error('请先为客户分配营养师及健康顾问'), {statusCode:400});
+        return {...row,directNutritionAssessment:true,managementFollowUpVersion:2,followUpStaff:String(team.assignedNutritionist),ownerRole:'营养师',collaborator:'',collaborationDate:'',frequency:'单次',serviceMode:'reminder',serviceType:'',managedServiceType:''};
+      }
+      if (!managerId) throw Object.assign(new Error('请先为客户分配健管专员'), { statusCode: 400 });
       const mode = row.serviceMode || 'reminder';
       if (mode === 'managed' && !['outpatient', 'checkup'].includes(row.managedServiceType)) throw Object.assign(new Error('请选择本项的门诊一站式或体检一站式服务'), { statusCode: 400 });
       return { ...row, ...(key === 'personalized_followups' ? {managementFollowUpVersion:1,collaborator:'',collaborationDate:''} : {}), frequency: '单次', coordinator: '', ownerRole: '健管专员', followUpStaff: String(managerId), serviceMode: mode,

@@ -1,3 +1,4 @@
+import annualNutrition from '../../../shared/annualNutrition.cjs'
 import DateField from '../../../shared/DateField.jsx'
 import React, { useState, createContext, useContext } from 'react'
 import appointment from '../../../shared/annualAppointment.cjs'
@@ -143,6 +144,7 @@ export function FieldInput({ field, value, onChange }) {
 // ── 单条记录编辑区（多条模块用）─────────────────────────────────────
 export function RecordEditor({ def, record, onChange, onDelete, index, total }) {
   const [open, setOpen] = useState(index === 0 && total === 1)
+  const directNutrition = def.personalizedAssignment && annualNutrition.isRow(record)
   const summary = record[def.summaryKey] || `${def.summaryLabel} ${index + 1}`
   const [supplementalKeys] = useState(() => def.reviewDriven ? def.fields.filter(field=>['notes','basisSummary','precautions','customerAction'].includes(field.key) && !readableValue(record[field.key]).trim()).map(field=>field.key) : [])
   const optionalEmpty = field => supplementalKeys.includes(field.key)
@@ -172,7 +174,8 @@ export function RecordEditor({ def, record, onChange, onDelete, index, total }) 
               <div style={{ paddingTop: 7, fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{readableValue(record[field.key]) || '未填写'}</div>
             </FieldRow>)}
           </details>}
-          {def.annualServiceArrangement && <>
+          {directNutrition && <FieldRow label="评估人员"><div style={{paddingTop:8}}>{def.nutritionName}<p style={{fontSize:12}}>营养师提交评估结果后，由健康顾问审核。</p></div></FieldRow>}
+          {def.annualServiceArrangement && !directNutrition && <>
             <FieldRow label="随访人员"><div style={{ paddingTop: 8 }}>{def.managerName}</div></FieldRow>
             <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #D7E4DD' }}><b>服务安排</b><div style={{ fontSize: 12, marginTop: 4 }}>先确定本项管理内容，再按客户需求选择服务；原健管随访持续保留。</div>
               {(def.serviceFields || []).filter(f => f.key !== 'serviceType' || record.serviceMode === 'single').map(field => <FieldRow key={field.key} label={field.label}><FieldInput field={field} value={record[field.key]} onChange={val => onChange({ ...record, [field.key]: val, ...(field.key === 'serviceMode' ? { serviceType: '', managedServiceType: '' } : {}) })} /></FieldRow>)}
@@ -283,7 +286,8 @@ export function ModulePanel({ moduleKey, def, data, onChange }) {
                 <FieldInput field={field} value={data[field.key]} onChange={val => { set(field.key, val); if (field.appointmentDate) set('appointmentSchedulingVersion', 1) }} />
               </FieldRow>
             ))}
-            {def.annualServiceArrangement && <>
+            {directNutrition && <FieldRow label="评估人员"><div style={{paddingTop:8}}>{def.nutritionName}<p style={{fontSize:12}}>营养师提交评估结果后，由健康顾问审核。</p></div></FieldRow>}
+          {def.annualServiceArrangement && !directNutrition && <>
               <FieldRow label="随访人员">{def.managerName}</FieldRow>
               <h4>服务安排</h4>
               {(def.serviceFields || []).filter(f => f.key !== 'serviceType' || data.serviceMode === 'single').map(field => <FieldRow key={field.key} label={field.label}><FieldInput field={field} value={data[field.key]} onChange={val => { set(field.key, val); if (field.key === 'serviceMode') { set('serviceType', ''); set('managedServiceType', '') } }} /></FieldRow>)}

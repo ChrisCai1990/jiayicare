@@ -51,7 +51,7 @@ async function buildAnnualPlanFollowUps(plan) {
   // 就医提醒属于健管专员的落地执行事项。健康顾问/规划师负责制定与审核方案，
   // 不能因为方案记录里误填了 followUpStaff，就把就医提醒挂到他们的个人随访。
   const User = require('../models/User');
-  const patient = await User.findById(plan.patientId).select('assignedHealthManager').lean();
+  const patient = await User.findById(plan.patientId).select('assignedHealthManager assignedNutritionist assignedFamilyDoctor').lean();
 
   // "协调专员/评估人员"字段存的是 Admin _id（staff-select 选择器），拼进 content 前要解析成姓名，
   // 否则客户端会看到一串无意义的 ObjectId 字符串。一次性查出本方案里出现过的所有员工id。
@@ -197,7 +197,7 @@ async function buildAnnualPlanFollowUps(plan) {
       const cycles = Array.isArray(rec.sourceCycles) ? rec.sourceCycles : [];
       const dates = [];
       if (rec.executionDate && !isNaN(new Date(rec.executionDate).getTime())) dates.push(new Date(rec.executionDate));
-      (rec.managementFollowUpVersion === 1 ? [] : cycles).forEach(cycle => {
+      (rec.managementFollowUpVersion >= 1 ? [] : cycles).forEach(cycle => {
         if (!dates.length && cycle.cycleType === 'date' && cycle.cycleDate) {
           const fixed = new Date(cycle.cycleDate);
           if (fixed >= todayStart) dates.push(fixed);
@@ -219,10 +219,12 @@ async function buildAnnualPlanFollowUps(plan) {
         rec.customerAction && `客户行动：${rec.customerAction}`,
       ].filter(Boolean).join('\n');
       dates.filter(date => !isNaN(date.getTime()) && date >= todayStart && date <= horizonEnd).forEach((date, cycleIndex) => {
-        push(date, `标准随访 · ${rec.standardPlanName || rec.items || '年度管理'}`, content, patient?.assignedHealthManager,
+        const nutrition = rec.directNutritionAssessment === true;
+        push(date, `${nutrition ? '营养评估' : '标准随访'} · ${rec.standardPlanName || rec.items || '年度管理'}`, content, nutrition ? patient?.assignedNutritionist : patient?.assignedHealthManager,
           `personalized:${rec.standardPlanId || recordIndex}:${cycleIndex}:${date.toISOString().slice(0, 10)}`, rec);
+        if (nutrition && created.length && patient?.assignedNutritionist) Object.assign(created[created.length-1], {workflowKey:'annual_nutrition_assessment',reviewAssignedTo:patient.assignedFamilyDoctor,reviewRole:'familyDoctor'});
       });
-      if (rec.managementFollowUpVersion !== 1 && rec.collaborator && rec.collaborationDate) {
+      if (!rec.managementFollowUpVersion && rec.collaborator && rec.collaborationDate) {
         const collaborationDate = new Date(rec.collaborationDate);
         if (!isNaN(collaborationDate.getTime()) && collaborationDate >= todayStart && collaborationDate <= horizonEnd) {
           push(collaborationDate, `协同执行 · ${rec.items || rec.standardPlanName || '年度管理'}`, content, rec.collaborator,
@@ -265,6 +267,7 @@ async function syncAnnualPlanFollowUps(plan) {
     if (matches.length) {
       // 优先保留已执行，其次保留已审核记录；相同排期的待审副本直接清理。
       const keep = matches.find(item => item.status === 'completed') || matches.find(item => item.aiStatus === 'approved') || matches[0];
+      if (require('../../../shared/annualNutrition.cjs').isTask(keep)) continue;
       assertAmendedRowUnchanged(plan, row.sourceScheduleKey, keep.date, row.date);
       if (plan.continuitySource?.previousPlanId && ['completed', 'cancelled'].includes(keep.status)) continue;
       if (keep.sourceScheduleKey !== row.sourceScheduleKey) keep.sourceScheduleKey = row.sourceScheduleKey;
