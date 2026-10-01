@@ -9495,8 +9495,11 @@ export default function PatientDetailPage() {
             const supplyReminderOrderMap = new Map(followUps
               .filter(task => task.sourceType === 'order' && task.sourceOrderId?.medicalProxyPlan?.sourceSupplyReminderTaskId)
               .map(task => [String(task.sourceOrderId.medicalProxyPlan.sourceSupplyReminderTaskId), String(task.sourceOrderId._id)]))
+            const isInsuranceCaseTask = task => ['insurance_service', 'scheduled'].includes(task.sourceType)
+              && task.sourceId && /高端医疗险/.test(`${task.theme || ''} ${(task.tags || []).join(' ')}`)
             const serviceGroupKey = task => String(
-              task.formData?.medicalProxyOrderId
+              (isInsuranceCaseTask(task) && `insurance:${task.sourceId?._id || task.sourceId}`)
+              || task.formData?.medicalProxyOrderId
               || (task.sourceType === 'supply_reminder' && supplyReminderOrderMap.get(String(task._id)))
               || task.sourceOrderId?._id || task.sourceOrderId
               || task.sourceHealthPlanId?._id || task.sourceHealthPlanId
@@ -9504,7 +9507,7 @@ export default function PatientDetailPage() {
             )
             const medicalWorkflowKey = key => /^(medical_proxy|medication_proxy|medical_reminder|checkup_appointment):/.test(String(key || ''))
               || /^system:(outpatient_|medical_document_collection)/.test(String(key || ''))
-            const isOrderServiceWorkflowTask = task => (task.sourceType === 'order'
+            const isOrderServiceWorkflowTask = task => isInsuranceCaseTask(task) || (task.sourceType === 'order'
               && (medicalWorkflowKey(task.workflowKey) || /代配药|代取药|代配营养素|医疗代诊|专家约诊|陪同就医|陪诊|门诊一站式|代约检|约检/.test(task.sourceOrderId?.serviceName || '')))
               || (task.sourceType === 'health_plan' && task.sourceHealthPlanId?.type === 'medical_assist')
               || (task.sourceType === 'supply_reminder' && (task.formData?.medicalProxyOrderId || supplyReminderOrderMap.has(String(task._id))))
@@ -9525,7 +9528,7 @@ export default function PatientDetailPage() {
             const visibleFollowUps = followUps.filter(task => !isSupersededDuplicateServiceTask(task) && !isCancelledStageOfCompletedService(task))
             const EXECUTION_CATEGORIES = [
               ['all', '全部任务'], ['nutrition', '营养干预'], ['monitoring', '健康监测'],
-              ['checkup', '体检与复查'], ['medical', '就医协助'], ['supply', '配药与营养补充'], ['disease', '专病管理'], ['communication', '客户沟通'],
+              ['checkup', '体检与复查'], ['medical', '就医协助'], ['insurance', '保险服务'], ['supply', '配药与营养补充'], ['disease', '专病管理'], ['communication', '客户沟通'],
             ]
             // 日常监测随访（sourceType=scheduled，theme形如"日常监测随访 · xxx"）按频率每天/每周生成一条占位，
             // 同一客户能连续攒出十几二十条同主题记录，把就医随访/体检提醒/订单预约等真正有意义的记录
@@ -9673,7 +9676,7 @@ export default function PatientDetailPage() {
                     if (row.type === 'order_service') {
                       const current = serviceCurrentTask(row)
                       const orderTask = row.items.find(item => item.sourceType === 'order' && item.sourceOrderId)
-                      const serviceName = orderTask?.sourceOrderId?.serviceName || current.sourceOrderId?.serviceName || current.sourceHealthPlanId?.title || (isMedicalEscortTask(current) ? '就医陪同服务' : /营养/.test(current.theme || '') ? '代配营养素服务' : '就医协助服务')
+                      const serviceName = orderTask?.sourceOrderId?.serviceName || current.sourceOrderId?.serviceName || current.sourceHealthPlanId?.title || (isInsuranceCaseTask(current) ? current.theme : isMedicalEscortTask(current) ? '就医陪同服务' : /营养/.test(current.theme || '') ? '代配营养素服务' : '就医协助服务')
                       const completed = rowStatus(row) === 'completed'
                       const completedAt = row.items.map(item => item.completedAt).filter(Boolean).sort().at(-1)
                       const serviceStageRank = item => item.sourceType === 'supply_reminder' ? 99 : ({ booking: 10, planner: 20, execute: 30, resolution: 40, supervise: 50 })[String(item.workflowKey || '').replace('medical_proxy:', '')] || 0

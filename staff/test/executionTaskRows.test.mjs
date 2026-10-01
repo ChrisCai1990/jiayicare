@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildExecutionRows, executionRowCategory, executionRowStatus, executionServiceCurrentTask } from '../src/utils/executionTaskRows.mjs'
+import { serviceTaskGroupKey } from '../src/utils/plannerOrderProgress.mjs'
 
 const order = { _id: 'order-1', serviceName: '专家约诊服务', status: 'completed' }
 const stages = [
@@ -25,4 +26,19 @@ test('different orders remain separate and active service has one current status
   const rows = buildExecutionRows([...stages, { ...stages[1], _id: 'second-execute', sourceOrderId: second }], task => task.sourceType === 'order', task => task.sourceOrderId._id)
   assert.equal(rows.length, 2)
   assert.equal(executionRowStatus(rows[1]), 'planned')
+})
+
+test('one insurance case with executor, supervisor and legacy row stays one service', () => {
+  const tasks = [
+    { _id: 'old', sourceType: 'scheduled', sourceId: 'case-1', theme: '高端医疗险：3月门诊报销', status: 'in_progress' },
+    { _id: 'executor', sourceType: 'insurance_service', sourceId: 'case-1', taskRole: 'executor', theme: '高端医疗险：3月门诊报销', status: 'planned' },
+    { _id: 'supervisor', sourceType: 'insurance_service', sourceId: 'case-1', theme: '高端医疗险督办：3月门诊报销', status: 'planned' },
+  ]
+  const rows = buildExecutionRows(tasks, task => Boolean(task.sourceId), task => `insurance:${task.sourceId}`)
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].items.length, 3)
+  assert.equal(new Set(tasks.map(serviceTaskGroupKey)).size, 1)
+  assert.equal(executionRowCategory(rows[0]), 'insurance')
+  assert.equal(executionRowStatus(rows[0]), 'in_progress')
+  assert.equal(executionServiceCurrentTask(rows[0])._id, 'executor')
 })

@@ -42,6 +42,7 @@ const LoginSession = require('../models/LoginSession');
 const VerificationCode = require('../models/VerificationCode');
 const HealthFundTransaction = require('../models/HealthFundTransaction');
 const FollowUp         = require('../models/FollowUp');
+const { routineMedicationNoiseFilter } = require('../utils/medicationFollowUpVisibility');
 const ExamRequisition  = require('../models/ExamRequisition');
 const AnnualPlan       = require('../models/AnnualPlan');
 const { followUpTaskRequirements } = require('../utils/medicalAssistRequirements');
@@ -1210,6 +1211,7 @@ router.get('/followup-tasks', auth, async (req, res) => {
   try {
     const followups = await FollowUp.find({
       patientId: req.user._id,
+      $nor: [routineMedicationNoiseFilter],
       aiStatus: { $ne: 'pending' },
       status: { $in: ['planned', 'in_progress', 'missed'] },
       isBlocked: { $ne: true },

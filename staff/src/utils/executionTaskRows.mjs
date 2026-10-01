@@ -2,6 +2,7 @@ const ACTIVE = ['planned', 'in_progress', 'missed']
 const latest = items => [...items].sort((a, b) => new Date(b.completedAt || b.updatedAt || b.createdAt || b.date) - new Date(a.completedAt || a.updatedAt || a.createdAt || a.date))[0]
 
 export function executionCategoryOf(task) {
+  if (task.sourceType === 'insurance_service' || /高端医疗险/.test(`${task.theme || ''} ${(task.tags || []).join(' ')}`)) return 'insurance'
   const serviceName = task.sourceOrderId?.serviceName || task.sourceHealthPlanId?.title || ''
   if (task.sourceType === 'supply_reminder' || task.sourceOrderId?.medicalProxyPlan?.medicationProxy || task.sourceOrderId?.medicalProxyPlan?.supplementProxy || (task.tags || []).includes('配药与营养补充')) return 'supply'
   // Order identity takes precedence over stage descriptions. Every stage of one
@@ -49,6 +50,11 @@ export function buildExecutionRows(tasks, isServiceTask, serviceGroupKey) {
 }
 
 export function executionServiceCurrentTask(row) {
+  if (row.items.some(item => item.sourceType === 'insurance_service' || /高端医疗险/.test(item.theme || ''))) {
+    return latest(row.items.filter(item => item.taskRole === 'executor' && ACTIVE.includes(item.status)))
+      || latest(row.items.filter(item => ['in_progress', 'missed'].includes(item.status)))
+      || latest(row.items.filter(item => item.status === 'planned')) || latest(row.items)
+  }
   const orderStatus = row.items.find(item => item.sourceOrderId?.status)?.sourceOrderId?.status
   const planStatus = row.items.find(item => item.sourceHealthPlanId?.status)?.sourceHealthPlanId?.status
   if (orderStatus === 'completed' || planStatus === 'completed') return latest(row.items.filter(item => item.status === 'completed')) || latest(row.items)
@@ -60,6 +66,12 @@ export function executionServiceCurrentTask(row) {
 export function executionRowStatus(row) {
   if (row.type === 'group') return row.status
   if (row.type === 'single') return row.item.status
+  if (row.items.some(item => item.sourceType === 'insurance_service' || /高端医疗险/.test(item.theme || ''))) {
+    if (row.items.some(item => ['in_progress', 'missed'].includes(item.status))) return 'in_progress'
+    if (row.items.some(item => item.status === 'planned')) return 'planned'
+    if (row.items.some(item => item.status === 'completed')) return 'completed'
+    return 'cancelled'
+  }
   const orderStatus = row.items.find(item => item.sourceOrderId?.status)?.sourceOrderId?.status
   const planStatus = row.items.find(item => item.sourceHealthPlanId?.status)?.sourceHealthPlanId?.status
   if (orderStatus === 'completed' || planStatus === 'completed') return 'completed'

@@ -2,33 +2,17 @@ const crypto = require('node:crypto');
 const mongoose = require('mongoose');
 const { SOURCE_KEY, groupedSlots, medicationLine, slotContent } = require('../../../shared/combinedMedicationReminder.cjs');
 const { beijingDate } = require('../../../shared/medicationReminder.cjs');
+const { disposableMedicationSlotsFilter } = require('./medicationFollowUpVisibility');
 const planId = user => new mongoose.Types.ObjectId(crypto.createHash('sha256').update(`${SOURCE_KEY}:${user}`).digest('hex').slice(0,24));
 function models() { return { Medication: require('../models/Medication'), Reminder: require('../models/Reminder'), Message: require('../models/Message') }; }
 async function refreshDailyMedicationWindow(plan, meds, now = new Date()) {
-  const FollowUp = require('../models/FollowUp'), User = require('../models/User');
-  const today = beijingDate(now), start = new Date(`${today}T00:00:00+08:00`), end = new Date(+start + 86400000);
-  const untouched = { patientId: plan.user, sourceType: 'medication_reminder', 'formData.medicationPlanId': String(plan._id),
-    status: 'planned', completedByUser: { $ne: true }, tags: { $nin: ['人工跟进'] }, 'progressRecords.0': { $exists: false } };
-  await FollowUp.updateMany({ ...untouched, date: { $lt: start } }, { $set: { status: 'cancelled', cancelReason: '当天提醒已自动结束，执行情况未确认', 'formData.autoEndedAt': now, 'formData.executionStatus': 'unconfirmed' } });
-  const slots = plan.enabled ? groupedSlots(meds, now).filter(s => s.date < end) : [];
-  const keep = slots.map(s => s.date);
-  await FollowUp.updateMany({ ...untouched, date: { $gte: now, $lt: end, $nin: keep } },
-    { $set: { status: 'cancelled', cancelReason: '用药提醒已关闭或调整' } });
-  const patient = await User.findById(plan.user).select('assignedHealthManager').lean();
-  const assignee = patient?.assignedHealthManager || meds.find(m=>m.staffId)?.staffId;
-  if (slots.length && !assignee) throw new Error('缺少用药提醒负责人');
-  for (const slot of slots) {
-    const key = `medication-day-slot:${plan.user}:${slot.date.toISOString()}`;
-    const _id = new mongoose.Types.ObjectId(crypto.createHash('sha256').update(key).digest('hex').slice(0,24));
-    const content = slotContent(slot);
-    await FollowUp.updateOne({ _id }, { $setOnInsert: { patientId: plan.user, staffId: assignee, assignedTo: assignee,
-      date: slot.date, type: 'other', status: 'planned', sourceType: 'medication_reminder', sourceId: plan._id,
-      theme: `${slot.time} 用药提醒（${slot.medications.length}种药）`, plannedContent: content,
-      tags: ['用药提醒','AI自动计划'], sourceScheduleKey: key, formData: { medicationPlanId: String(plan._id) } } }, { upsert: true, setDefaultsOnInsert: true });
-    await FollowUp.updateOne({ ...untouched, _id }, { $set: { plannedContent: content, theme: `${slot.time} 用药提醒（${slot.medications.length}种药）` } });
-  }
+  const FollowUp = require('../models/FollowUp');
+  const today = beijingDate(now);
+  // The Reminder is the durable plan and Message records individual doses.
+  // Retire only untouched slots from the former daily FollowUp generator.
+  await FollowUp.deleteMany({ patientId: plan.user, ...disposableMedicationSlotsFilter });
   await models().Reminder.updateOne({ _id: plan._id }, { $set: { medicationWindowDate: today } });
-  return slots.length;
+  return 0;
 }
 async function syncCombinedMedicationReminder(user, now = new Date()) {
   const { Medication, Reminder } = models();

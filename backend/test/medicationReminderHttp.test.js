@@ -25,7 +25,7 @@ test('isolated HTTP: one recurring plan, grouped notifications, toggles and one 
     const response=await call(`/staff/patients/${patient._id}/medications/${extra._id}/reminder`,'PUT',body);assert.equal(response.status,200,JSON.stringify(response));
   }
   assert.equal(await Reminder.countDocuments({user:patient._id}),1);assert.equal(await FollowUp.countDocuments({patientId:patient._id}),0);
-  r=await call('/reminders','GET',null,ut);assert.equal(r.status,200);assert.equal(r.body.data.length,0);
+  r=await call('/reminders','GET',null,ut);assert.equal(r.status,200);assert.equal(r.body.data.length,1);assert.equal(r.body.data[0].sourceKey,'medication:combined');
   process.env.OSS_BUCKET='attachment-test-bucket';
   const originalAttachment='https://attachment-test-bucket.oss-cn-beijing.aliyuncs.com/reports/test.png';
   await Medication.updateOne({_id:med._id},{$set:{imageUrls:[originalAttachment]}});
@@ -52,20 +52,22 @@ test('isolated HTTP: one recurring plan, grouped notifications, toggles and one 
   // Late after outage: no old-dose messages, only advance the schedule.
   await scheduler.scanMedicationReminders(new Date(`${start}T19:00:00+08:00`));assert.equal(await Message.countDocuments({user:patient._id}),2);
   plan=await Reminder.findOne({user:patient._id});assert.ok(+plan.nextMedicationAt>+new Date(`${start}T19:00:00+08:00`));
-  r=await call('/user/followup-tasks','GET',null,ut);assert.equal(r.status,200);assert.equal(r.body.data.filter(x=>x.sourceType==='medication_reminder').length,3);
+  r=await call('/user/followup-tasks','GET',null,ut);assert.equal(r.status,200);assert.equal(r.body.data.filter(x=>x.sourceType==='medication_reminder').length,0);
   const legacy=await FollowUp.insertMany(Array.from({length:6},(_,i)=>({patientId:patient._id,staffId:staff._id,assignedTo:staff._id,sourceId:med._id,sourceType:'medication_reminder',status:'planned',date:new Date(+at+i*3600000),tags:['人工跟进']})));
   const consolidate=require('../src/utils/consolidateMedicationFollowUps').consolidateMedicationFollowUps;
   const consolidated=await consolidate(patient._id,{expectedName:patient.name,now:new Date(`${start}T19:00:00+08:00`)});assert.equal(consolidated.retired,6);
-  assert.equal(await FollowUp.countDocuments({patientId:patient._id,status:'planned'}),4);
+  assert.equal(await FollowUp.countDocuments({patientId:patient._id,status:'planned'}),1);
   const again=await consolidate(patient._id,{expectedName:patient.name,now:new Date(`${start}T19:00:00+08:00`)});assert.equal(String(again.staffTaskId),String(consolidated.staffTaskId));assert.equal(again.retired,0);
-  r=await call('/user/followup-tasks','GET',null,ut);assert.equal(r.body.data.length,3);
+  r=await call('/user/followup-tasks','GET',null,ut);assert.equal(r.body.data.length,0);
   r=await call(`/user/followup-tasks/${consolidated.staffTaskId}/done`,'PATCH',{done:true},ut);assert.equal(r.status,403);
   assert.equal(await FollowUp.countDocuments({patientId:patient._id,status:'cancelled'}),6);
+  const routineSlots=await FollowUp.insertMany(['planned','cancelled'].map((status,i)=>({patientId:patient._id,staffId:staff._id,assignedTo:staff._id,sourceType:'medication_reminder',sourceId:plan._id,status,date:new Date(+at+i*3600000),tags:['用药提醒','AI自动计划'],sourceScheduleKey:`medication-day-slot:${patient._id}:${i}`,formData:{medicationPlanId:String(plan._id)}})));
+  r=await call(`/staff/patients/${patient._id}/followups?limit=200`,'GET',null,st);assert.equal(r.status,200);assert.equal(r.body.data.followUps.some(x=>routineSlots.some(slot=>String(slot._id)===String(x._id))),false);
   const nextDay=new Date(+new Date(`${start}T00:00:00+08:00`)+86400000);
   await scheduler.scanMedicationReminders(nextDay);
   const activeDoses=await FollowUp.find({patientId:patient._id,sourceType:'medication_reminder',status:'planned'}).lean();
-  const ended=await FollowUp.find({patientId:patient._id,'formData.autoEndedAt':{$exists:true}}).lean();assert.equal(ended.length,3);assert.ok(ended.every(x=>x.status==='cancelled' && x.formData.executionStatus==='unconfirmed' && !x.completedAt));
-  assert.equal(activeDoses.length,3);assert.ok(activeDoses.every(x=>+x.date>=+nextDay && +x.date<+nextDay+86400000));
+  assert.equal(await FollowUp.countDocuments({_id:{$in:routineSlots.map(x=>x._id)}}),0);
+  assert.equal(activeDoses.length,0);
   assert.equal(await Message.countDocuments({user:patient._id}),2);
   await Medication.updateMany({user:patient._id},{$set:{stopped:true}});await scheduler.refreshExistingPlan(patient._id);
   plan=await Reminder.findOne({user:patient._id});assert.equal(plan.enabled,false);assert.equal(plan.nextMedicationAt,null);

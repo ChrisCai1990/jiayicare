@@ -41,7 +41,7 @@ function isActiveToday(r) {
 // GET / — 列出所有提醒
 router.get('/', auth, async (req, res) => {
   const { category } = req.query;
-  const query = { user: req.user._id, $or: [{ systemManaged: { $ne: true } }, { systemManaged: true, sourceKey: /^service-cycle:/ }] };
+  const query = { user: req.user._id, $or: [{ systemManaged: { $ne: true } }, { systemManaged: true, sourceKey: /^service-cycle:/ }, { systemManaged: true, sourceKey: 'medication:combined' }] };
   if (category) query.category = category;
   const reminders = await Reminder.find(query).sort({ createdAt: -1 });
 
@@ -64,7 +64,7 @@ router.patch('/monitoring-consent', auth, async (req, res) => {
 
 // GET /today — 仅返回今日激活的提醒
 router.get('/today', auth, async (req, res) => {
-  const all = await Reminder.find({ user: req.user._id, enabled: true, $or: [{ systemManaged: { $ne: true } }, ...(req.user.healthMonitoringConsentAt ? [{ systemManaged: true, sourceKey: /^service-cycle:/ }] : [])] });
+  const all = await Reminder.find({ user: req.user._id, enabled: true, $or: [{ systemManaged: { $ne: true } }, { systemManaged: true, sourceKey: 'medication:combined' }, ...(req.user.healthMonitoringConsentAt ? [{ systemManaged: true, sourceKey: /^service-cycle:/ }] : [])] });
   const today = all.filter(isActiveToday).map(r => r.toObject());
   res.json({ success: true, data: today });
 });

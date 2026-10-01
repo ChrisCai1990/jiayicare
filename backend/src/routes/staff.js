@@ -31,6 +31,7 @@ const User = require('../models/User');
 const PointsLog = require('../models/PointsLog');
 const ChatLog = require('../models/ChatLog');
 const FollowUp = require('../models/FollowUp');
+const { routineMedicationNoiseFilter } = require('../utils/medicationFollowUpVisibility');
 const HealthRecord = require('../models/HealthRecord');
 const { calcStatus: calcHealthRecordStatus } = require('../utils/healthRecordStatus');
 const MedicalReport = require('../models/MedicalReport');
@@ -1156,7 +1157,7 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
   }
 
   // 获取最近3条随访记录
-  const recentFollowUps = await FollowUp.find({ patientId: user._id })
+  const recentFollowUps = await FollowUp.find({ patientId: user._id, $nor: [routineMedicationNoiseFilter] })
     .sort({ date: -1 })
     .limit(3)
     .populate('staffId', 'name role');
@@ -1863,7 +1864,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
   await require('../utils/orderWorkItem').reconcileInactiveOrderWorkItems(req.params.id);
   await require('../utils/followUpServiceLink').safeReconcileServiceLinks({ patientId: req.params.id });
 
-  const filter = { patientId: req.params.id, ...(followUpId ? { _id: followUpId } : {}) };
+  const filter = { patientId: req.params.id, ...(followUpId ? { _id: followUpId } : { $nor: [routineMedicationNoiseFilter] }) };
   const [followUps, total] = await Promise.all([
     FollowUp.find(filter)
       .sort({ date: -1 })
@@ -1924,6 +1925,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
     { $or: [{ taskRole: '' }, { taskRole: null }, { taskRole: { $exists: false } }] },
     { sourceType: { $ne: 'insurance_service' } },
     { tags: { $nin: ['保险服务'] } },
+    { $nor: [routineMedicationNoiseFilter] },
   ] };
   if (sourceType) filter.sourceType = sourceType;
   if (sourceType === 'order' && status !== 'completed') {
