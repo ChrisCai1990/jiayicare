@@ -27,6 +27,7 @@ import AiCaseReviewTemplatePage from './pages/AiCaseReviewTemplatePage'
 import AnnualPlanPage from './pages/AnnualPlanPage'
 import Layout from './components/Layout'
 import MetabolicPilotPage from './pages/MetabolicPilotPage'
+import ChangePasswordPage from './pages/ChangePasswordPage'
 
 // 基本设置
 import CompanyInfoPage    from './pages/settings/CompanyInfoPage'
@@ -103,8 +104,19 @@ function ToastProvider({ children }) {
 function RequireAuth({ children }) {
   const { admin } = useAdmin()
   const token = getToken()
+  const location = useLocation()
   if (!admin || !token) return <Navigate to="/login" replace />
+  if (admin.mustChangePassword && location.pathname !== '/change-password') return <Navigate to="/change-password" replace />
+  if (!admin.mustChangePassword && location.pathname === '/change-password') return <Navigate to={admin.role === 'platformSuper' ? '/tenants' : '/dashboard'} replace />
+  if (admin.role === 'platformSuper' && location.pathname !== '/tenants' && location.pathname !== '/settings/ai-usage' && location.pathname !== '/change-password' && location.pathname !== '/') {
+    return <Navigate to="/tenants" replace />
+  }
   return children
+}
+
+function HomeRoute() {
+  const { admin } = useAdmin()
+  return <Navigate to={admin?.role === 'platformSuper' ? '/tenants' : '/dashboard'} replace />
 }
 
 export default function App() {
@@ -117,7 +129,8 @@ export default function App() {
             <Route path="/hr/*" element={<HrApp />} />
             <Route path="/public/ops/:slug" element={<PublicOpsDashboardPage />} />
             <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
-              <Route index element={<Navigate to="/dashboard" replace />} />
+              <Route index element={<HomeRoute />} />
+              <Route path="change-password" element={<ChangePasswordPage />} />
               <Route path="dashboard" element={<DashboardPage />} />
               <Route path="health-data-import" element={<HealthDataImportPage />} />
               <Route path="patients" element={<PatientsPage />} />

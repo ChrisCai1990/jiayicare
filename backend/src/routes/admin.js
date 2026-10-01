@@ -7,6 +7,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const multer = require('multer');
 const Admin = require('../models/Admin');
+const Tenant = require('../models/Tenant');
 const User = require('../models/User');
 const HealthRecord = require('../models/HealthRecord');
 const Task = require('../models/Task');
@@ -156,6 +157,10 @@ router.post('/login', async (req, res) => {
   if (admin.role === 'enterprise_hr') {
     return res.status(403).json({ success: false, message: '企业HR账号请使用企业客户专属登录入口' });
   }
+  const tenant = admin.tenantId ? await Tenant.findById(admin.tenantId).select('name logo themeColor status').lean() : null;
+  if (admin.tenantId && (!tenant || tenant.status !== 'active')) {
+    return res.status(403).json({ success: false, message: '所属机构已停用或不存在' });
+  }
   const token = jwt.sign(
     { id: admin._id, type: 'admin', role: admin.role },
     process.env.JWT_SECRET,
@@ -165,9 +170,22 @@ router.post('/login', async (req, res) => {
     success: true,
     data: {
       token,
-      admin: { _id: admin._id, name: admin.name, role: admin.role, title: admin.title },
+      admin: { _id: admin._id, name: admin.name, role: admin.role, title: admin.title, tenantId: admin.tenantId || null, tenantName: tenant?.name || (admin.role === 'platformSuper' ? '嘉静佑辰' : '嘉医汇'), tenantLogo: tenant?.logo || '', mustChangePassword: !!admin.mustChangePassword },
     },
   });
+});
+
+router.put('/me/password', adminAuth, async (req, res) => {
+  const { oldPassword, newPassword } = req.body || {};
+  if (typeof oldPassword !== 'string' || typeof newPassword !== 'string' || newPassword.length < 10 || newPassword.length > 128 || oldPassword === newPassword) {
+    return res.status(400).json({ success: false, message: '请输入当前密码及10至128位的新密码，且新密码不能与当前密码相同' });
+  }
+  const admin = await Admin.findById(req.admin._id);
+  if (!admin || !(await admin.comparePassword(oldPassword))) return res.status(400).json({ success: false, message: '当前密码不正确' });
+  admin.password = newPassword;
+  admin.mustChangePassword = false;
+  await admin.save();
+  res.json({ success: true, message: '密码已修改' });
 });
 
 // ── GET /api/admin/dashboard ──────────────────────────────────────
@@ -1339,7 +1357,6 @@ router.delete('/staff/:id', adminAuth, async (req, res) => {
 });
 
 // ── 机构/租户管理（SaaS：平台超管跨机构运营）─────────────────────────
-const Tenant = require('../models/Tenant');
 const { runWithoutTenantScope } = require('../utils/tenantScope');
 
 // 仅平台超管可管理机构（跨租户运营方）
@@ -1364,10 +1381,35 @@ router.get('/tenants', adminAuth, requirePlatformSuper, async (req, res) => {
   res.json({ success: true, data: tenants });
 });
 
+// 平台按明确选择的机构查看客户名册；每次查看先留审计记录。
+router.get('/tenants/:id/customers', adminAuth, requirePlatformSuper, async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: '机构 ID 无效' });
+  const tenant = await Tenant.findById(req.params.id).select('name code').lean();
+  if (!tenant) return res.status(404).json({ success: false, message: '机构不存在' });
+  const page = Math.max(1, Math.min(10000, Number.parseInt(req.query.page, 10) || 1));
+  const tenantId = tenant._id;
+  await mongoose.connection.db.collection('platform_access_audits').insertOne({
+    actorId: req.admin._id, tenantId, action: 'view_customer_roster',
+    at: new Date(), ip: req.ip, page,
+  });
+  const filter = { tenantId, isDeleted: { $ne: true } };
+  const [total, rows] = await Promise.all([
+    User.countDocuments(filter),
+    User.find(filter).select('name phone createdAt isRegisteredClient').sort({ createdAt: -1, _id: -1 }).skip((page - 1) * 20).limit(20).lean(),
+  ]);
+  res.json({ success: true, data: { tenant: { _id: tenant._id, name: tenant.name, code: tenant.code }, rows, total, page, pageSize: 20 } });
+});
+
 // POST /api/admin/tenants — 新建机构，并为其创建一个 superadmin 账号（归属该机构）
 router.post('/tenants', adminAuth, requirePlatformSuper, async (req, res) => {
+  if (process.env.ENABLE_EXTERNAL_TENANTS !== 'true') {
+    return res.status(403).json({ success: false, message: '外部机构接入尚未开放' });
+  }
   const { code, name, slogan, logo, themeColor, adminUsername, adminPassword } = req.body;
   if (!code || !name) return res.status(400).json({ success: false, message: '机构标识和名称为必填项' });
+  if ((adminUsername || adminPassword) && (!adminUsername || typeof adminPassword !== 'string' || adminPassword.length < 10 || adminPassword.length > 128)) {
+    return res.status(400).json({ success: false, message: '创建机构管理员时须填写用户名和10至128位初始密码' });
+  }
   const dup = await Tenant.findOne({ code });
   if (dup) return res.status(400).json({ success: false, message: '该机构标识已存在' });
   const tenant = await Tenant.create({ code, name, slogan: slogan || '', logo: logo || '', themeColor: themeColor || '#1E6B50' });
@@ -1382,7 +1424,7 @@ router.post('/tenants', adminAuth, requirePlatformSuper, async (req, res) => {
     }
     createdAdmin = await Admin.create({
       username: adminUsername, password: adminPassword, name: `${name}管理员`,
-      role: 'superadmin', phone: `t_${code}`, tenantId: tenant._id,
+      role: 'superadmin', phone: `t_${code}`, tenantId: tenant._id, mustChangePassword: true,
     });
   }
   res.json({ success: true, data: { tenant, adminId: createdAdmin?._id || null }, message: '机构创建成功' });

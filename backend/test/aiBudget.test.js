@@ -112,26 +112,21 @@ test('Mongo integration: concurrent reservations, timeout accounting, circuits a
       assert.equal((await collection('ai_budget_counters').findOne({ _id: `page:${'b'.repeat(24)}:2` })).calls, 2);
       assert.equal((await collection('ai_budget_counters').findOne({ _id: `page:${'c'.repeat(24)}:2` })).calls, 1);
     });
-    await t.test('management API enforces roles, version conflicts, allowance and resume preserves progress', async () => {
+    await t.test('platform budget API enforces roles and hides report-level controls', async () => {
       await reset({});
       require('express-async-errors');
       const express = require('express');
       const jwt = require('jsonwebtoken');
       const Admin = require('../src/models/Admin');
-      const MedicalReport = require('../src/models/MedicalReport');
       const previousSecret = process.env.JWT_SECRET;
       process.env.JWT_SECRET = 'isolated-ai-budget-integration-test-only';
       const adminId = new mongoose.Types.ObjectId(), staffId = new mongoose.Types.ObjectId(), tenantAdminId = new mongoose.Types.ObjectId();
-      await Admin.collection.insertMany([{ _id: adminId, username: 'budget_admin', role: 'superadmin' }, { _id: staffId, username: 'budget_staff', role: 'healthManager' }, { _id: tenantAdminId, username: 'budget_tenant', role: 'superadmin', tenantId: new mongoose.Types.ObjectId() }]);
+      await Admin.collection.insertMany([{ _id: adminId, username: 'budget_admin', role: 'platformSuper' }, { _id: staffId, username: 'budget_staff', role: 'healthManager' }, { _id: tenantAdminId, username: 'budget_tenant', role: 'superadmin', tenantId: new mongoose.Types.ObjectId() }]);
       const app = express(); app.use(express.json()); app.use('/api/admin/ai-control', require('../src/routes/aiControl'));
       app.use((error, req, res, next) => res.status(500).json({ message: error.message }));
       const server = await new Promise(resolve => { const value = app.listen(0, '127.0.0.1', () => resolve(value)); });
       const base = `http://127.0.0.1:${server.address().port}/api/admin/ai-control`;
       const request = (path = '', body, actor = adminId, method = body ? 'POST' : 'GET') => fetch(base + path, { method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt.sign({ type: 'admin', id: String(actor) }, process.env.JWT_SECRET)}` }, ...(body ? { body: JSON.stringify(body) } : {}) });
-      const staffPath = require.resolve('../src/routes/staff');
-      const previousStaff = require.cache[staffPath];
-      let scheduled;
-      require.cache[staffPath] = { id: staffPath, filename: staffPath, loaded: true, exports: { scheduleReportParse: id => { scheduled = id; } } };
       try {
         assert.equal((await fetch(base)).status, 401);
         assert.equal((await request('', null, staffId)).status, 403);
@@ -140,18 +135,11 @@ test('Mongo integration: concurrent reservations, timeout accounting, circuits a
         assert.equal((await request('/policy', { policy: { ...DEFAULT_POLICY, paused: true }, revision: 0 }, adminId, 'PUT')).status, 200);
         assert.equal((await request('/policy', { policy: DEFAULT_POLICY, revision: 0 }, adminId, 'PUT')).status, 409);
         const reportId = new mongoose.Types.ObjectId();
-        const progress = { version: 2, nextPage: 9, allItems: [{ name: 'test', value: '1' }] };
-        await MedicalReport.collection.insertOne({ _id: reportId, aiStatus: 'failed', parseJob: { status: 'paused', progress } });
-        assert.equal((await request(`/reports/${reportId}/allowance`, { tokens: 10000, calls: 2 })).status, 200);
-        assert.equal((await request(`/reports/${reportId}/resume`, {})).status, 200);
-        assert.equal(scheduled, String(reportId));
-        const resumed = await MedicalReport.collection.findOne({ _id: reportId });
-        assert.deepEqual(resumed.parseJob.progress, progress);
-        assert.equal(resumed.aiStatus, 'processing');
-        assert.equal((await request(`/reports/${reportId}/resume`, {})).status, 409);
-        assert.equal((await collection('ai_budget_counters').findOne({ _id: `report:${reportId}` })).extraTokens, 10000);
+        assert.equal((await request('/usage')).status, 403);
+        assert.equal((await request('/reports')).status, 403);
+        assert.equal((await request(`/reports/${reportId}/allowance`, { tokens: 10000, calls: 2 })).status, 403);
+        assert.equal((await request(`/reports/${reportId}/resume`, {})).status, 403);
       } finally {
-        if (previousStaff) require.cache[staffPath] = previousStaff; else delete require.cache[staffPath];
         if (previousSecret === undefined) delete process.env.JWT_SECRET; else process.env.JWT_SECRET = previousSecret;
         await new Promise(resolve => server.close(resolve));
       }

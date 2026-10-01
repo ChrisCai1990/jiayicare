@@ -23,7 +23,7 @@ export default function LoginPage() {
       const res = await adminAPI.login(username.trim(), password)
       setToken(res.data.token)
       login(res.data.admin)
-      nav('/dashboard', { replace: true })
+      nav(res.data.admin.mustChangePassword ? '/change-password' : res.data.admin.role === 'platformSuper' ? '/tenants' : '/dashboard', { replace: true })
     } catch (err) {
       setError(err.message || '登录失败，请检查用户名和密码')
     } finally {
@@ -36,8 +36,8 @@ export default function LoginPage() {
       <div className="login-card">
         <div className="login-logo">
           <div style={{ fontSize: 40, marginBottom: 8 }}>🏥</div>
-          <div className="login-logo-title">嘉医管家</div>
-          <div className="login-logo-sub">医护管理后台 · 仅限授权人员使用</div>
+          <div className="login-logo-title">健康管理平台</div>
+          <div className="login-logo-sub">机构及平台管理后台 · 仅限授权人员使用</div>
         </div>
 
         {error && <div className="login-err">⚠️ {error}</div>}

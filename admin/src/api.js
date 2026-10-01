@@ -68,6 +68,7 @@ export const adminAPI = {
   addAiAllowance: (id, data) => req(`/ai-control/reports/${id}/allowance`, { method: 'POST', body: JSON.stringify(data) }),
   resumeAiReport: id => req(`/ai-control/reports/${id}/resume`, { method: 'POST', body: '{}' }),
   login:            (username, password) => req('/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
+  changePassword:   (oldPassword, newPassword) => req('/me/password', { method: 'PUT', body: JSON.stringify({ oldPassword, newPassword }) }),
   dashboard:        ()                   => req('/dashboard'),
   patients:         (params = {})        => req('/patients?' + new URLSearchParams(params).toString()),
   patientDetail:    (id)                 => req(`/patients/${id}`),
@@ -118,6 +119,7 @@ export const adminAPI = {
 
   // 机构/租户管理（SaaS，仅平台超管）
   tenants:      ()           => req('/tenants'),
+  tenantCustomers: (id, page = 1) => req(`/tenants/${id}/customers?page=${page}`),
   createTenant: (data)       => req('/tenants', { method: 'POST', body: JSON.stringify(data) }),
   updateTenant: (id, data)   => req(`/tenants/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteTenant: (id)         => req(`/tenants/${id}`, { method: 'DELETE' }),

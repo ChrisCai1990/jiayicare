@@ -73,7 +73,7 @@ const NAV_SECTIONS = [
   {
     label: '平台运营',
     platformOnly: true,
-    items: [{ label: '机构管理', icon: 'tenant', path: '/tenants' }],
+    items: [{ label: '机构管理', icon: 'tenant', path: '/tenants' }, { label: '平台 AI 预算', icon: 'chart', path: '/settings/ai-usage' }],
   },
 ]
 
@@ -142,12 +142,12 @@ export default function Layout() {
   const loc = useLocation()
   const visibleSections = useMemo(
     () => NAV_SECTIONS
-      .filter(section => !section.platformOnly || admin?.role === 'platformSuper')
+      .filter(section => admin?.role === 'platformSuper' ? section.platformOnly : !section.platformOnly)
       .map(section => ({
         ...section,
         items: section.items.filter(item =>
           (!item.superadminOnly || admin?.role === 'superadmin')
-          && (!item.aiControlOnly || admin?.role === 'platformSuper' || (admin?.role === 'superadmin' && !admin?.tenantId))),
+          && (!item.aiControlOnly || admin?.role === 'platformSuper')),
       })),
     [admin?.role, admin?.tenantId],
   )
@@ -173,6 +173,7 @@ export default function Layout() {
   }, [activeSection, activeGroup, loc.pathname])
 
   useEffect(() => {
+    if (admin?.role === 'platformSuper') return
     let cancelled = false
     const loadPending = async () => {
       try {
@@ -183,7 +184,7 @@ export default function Layout() {
     loadPending()
     const timer = setInterval(loadPending, 30000)
     return () => { cancelled = true; clearInterval(timer) }
-  }, [])
+  }, [admin?.role])
 
   const handleLogout = () => {
     if (window.confirm('确定要退出登录吗？')) {
@@ -197,10 +198,10 @@ export default function Layout() {
       {mobileOpen && <button className="sidebar-scrim" aria-label="关闭菜单" onClick={() => setMobileOpen(false)} />}
       <aside className={`sidebar ${mobileOpen ? 'mobile-open' : ''}`}>
         <div className="sidebar-logo">
-          <div className="sidebar-logo-mark"><span>嘉</span></div>
+          <div className="sidebar-logo-mark"><span>{admin?.tenantName?.slice(0, 1) || '管'}</span></div>
           <div className="sidebar-logo-text">
-            <div className="sidebar-logo-title">嘉医管家</div>
-            <div className="sidebar-logo-sub">运营管理中心</div>
+            <div className="sidebar-logo-title">{admin?.tenantName || '健康管理平台'}</div>
+            <div className="sidebar-logo-sub">{admin?.role === 'platformSuper' ? '平台运营中心' : '机构管理中心'}</div>
           </div>
         </div>
 

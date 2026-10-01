@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const https = require('https');
 const crypto = require('crypto');
 const User = require('../models/User');
+const { jiayihuiTenantId } = require('../utils/jiayihuiTenant');
 const Message = require('../models/Message');
 const LoginSession = require('../models/LoginSession');
 const HealthFundTransaction = require('../models/HealthFundTransaction');
@@ -69,7 +70,7 @@ async function applyFirstLoginRewards(user, inviteCode) {
     }
   }
   if (!inviteCode || user.invitedBy) return;
-  const inviter = await User.findOne({ referralCode: String(inviteCode), isDeleted: { $ne: true }, _id: { $ne: user._id } }).select('_id');
+  const inviter = await User.findOne({ referralCode: String(inviteCode), tenantId: user.tenantId, isDeleted: { $ne: true }, _id: { $ne: user._id } }).select('_id');
   if (!inviter) return;
   const claimed = await User.findOneAndUpdate(
     { _id: user._id, invitedBy: null },
@@ -82,7 +83,7 @@ async function applyFirstLoginRewards(user, inviteCode) {
 async function rememberPendingInvitation(user, inviteCode) {
   const code = String(inviteCode || '').trim().toLowerCase();
   if (!code || user.invitedBy) return;
-  const inviter = await User.findOne({ referralCode: code, isDeleted: { $ne: true }, _id: { $ne: user._id } }).select('_id');
+  const inviter = await User.findOne({ referralCode: code, tenantId: user.tenantId, isDeleted: { $ne: true }, _id: { $ne: user._id } }).select('_id');
   if (!inviter) return;
   await User.updateOne(
     { _id: user._id, invitedBy: null },
@@ -252,12 +253,13 @@ router.post('/login', async (req, res) => {
   // 查找用户（新手机号自动创建账号）
   if (phone === DEMO_PHONE) return res.status(403).json({ success: false, message: '演示账号已停用' });
   const isDemo = false;
-  let user = await User.findOne({ phone });
+  const jiayihuiId = await jiayihuiTenantId();
+  let user = await User.findOne({ phone, tenantId: { $in: [jiayihuiId, null] } });
   if (user?.isDeleted) return res.status(403).json({ success: false, message: '该会员信息已停用，如需恢复请联系管理员' });
   const isNew = !user; // 修复：在创建前判断，而非硬编码 false
 
   if (isNew) {
-    user = await User.create({ phone });
+    user = await User.create({ phone, tenantId: jiayihuiId });
     // 仅演示账号填充演示数据；真实新用户初始为空数据
     if (isDemo) {
       seedUserData(user._id).catch(console.error);
@@ -269,7 +271,7 @@ router.post('/login', async (req, res) => {
   if (!isDemo && wxLoginCode && process.env.WECHAT_MP_APPID && process.env.WECHAT_MP_SECRET) {
     const sessionData = await httpsGet(`https://api.weixin.qq.com/sns/jscode2session?appid=${process.env.WECHAT_MP_APPID}&secret=${process.env.WECHAT_MP_SECRET}&js_code=${encodeURIComponent(wxLoginCode)}&grant_type=authorization_code`);
     if (!sessionData.errcode && sessionData.openid) {
-      const occupied = await User.findOne({ wechatMpOpenid: sessionData.openid, _id: { $ne: user._id } });
+      const occupied = await User.findOne({ wechatMpOpenid: sessionData.openid, tenantId: { $in: [jiayihuiId, null] }, _id: { $ne: user._id } });
       if (occupied?.phone && occupied.phone !== DEMO_PHONE) return res.status(409).json({ success: false, message: '该微信已绑定其他手机号账户，请联系客服合并账户' });
       if (occupied) await User.updateOne({ _id: occupied._id }, { $unset: { wechatMpOpenid: 1 } });
       user = await User.findByIdAndUpdate(user._id, { wechatMpOpenid: sessionData.openid }, { new: true });
@@ -350,13 +352,15 @@ router.post('/wechat', async (req, res) => {
     const wxUser = await httpsGet(userUrl);
 
     // 3. 查找或创建用户（以 openid 为唯一键）
-    let user = await User.findOne({ wechatOpenid: openid });
+    const jiayihuiId = await jiayihuiTenantId();
+    let user = await User.findOne({ wechatOpenid: openid, tenantId: { $in: [jiayihuiId, null] } });
     if (user?.isDeleted) return res.status(403).json({ success: false, message: '该会员信息已停用，如需恢复请联系管理员' });
     const isNew = !user;
     if (!user) {
       user = await User.create({
         wechatOpenid: openid,
         name: wxUser.nickname || '微信用户',
+        tenantId: jiayihuiId,
       });
     } else if (wxUser.nickname && !user.name) {
       user = await User.findByIdAndUpdate(user._id, { name: wxUser.nickname }, { new: true });
@@ -404,7 +408,8 @@ router.post('/wechat-mp', async (req, res) => {
     const { openid } = sessionData;
 
     // 查找或创建用户（以 wechatMpOpenid 为唯一键）
-    let user = await User.findOne({ wechatMpOpenid: openid });
+    const jiayihuiId = await jiayihuiTenantId();
+    let user = await User.findOne({ wechatMpOpenid: openid, tenantId: { $in: [jiayihuiId, null] } });
     // 历史版本曾把体验者的 OpenID 绑定到演示账号；首次再次登录时自动释放并建真实新账号。
     if (user?.phone === DEMO_PHONE) {
       await User.updateOne({ _id: user._id }, { $unset: { wechatMpOpenid: 1 } });
@@ -416,6 +421,7 @@ router.post('/wechat-mp', async (req, res) => {
       user = await User.create({
         wechatMpOpenid: openid,
         name: userInfo?.nickName || '微信用户',
+        tenantId: jiayihuiId,
       });
     } else if (userInfo?.nickName && !user.name) {
       user = await User.findByIdAndUpdate(user._id, { name: userInfo.nickName }, { new: true });
@@ -474,9 +480,10 @@ router.post('/wechat-mp/phone-login', async (req, res) => {
     }
 
     const openid = sessionData.openid;
+    const jiayihuiId = await jiayihuiTenantId();
     let [openidUser, phoneUser] = await Promise.all([
-      User.findOne({ wechatMpOpenid: openid }),
-      User.findOne({ phone }),
+      User.findOne({ wechatMpOpenid: openid, tenantId: { $in: [jiayihuiId, null] } }),
+      User.findOne({ phone, tenantId: { $in: [jiayihuiId, null] } }),
     ]);
     if (openidUser?.isDeleted || phoneUser?.isDeleted) {
       return res.status(403).json({ success: false, message: '该会员信息已停用，如需恢复请联系管理员' });
@@ -499,7 +506,7 @@ router.post('/wechat-mp/phone-login', async (req, res) => {
         $set: { phone, contactPhone: phone },
       }, { new: true });
     } else {
-      user = await User.create({ phone, contactPhone: phone, wechatMpOpenid: openid, name: '微信用户' });
+      user = await User.create({ phone, contactPhone: phone, wechatMpOpenid: openid, name: '微信用户', tenantId: jiayihuiId });
     }
 
     if (!user.referralCode) {
@@ -537,7 +544,7 @@ router.post('/wechat-mp/bind', requireUser, async (req, res) => {
       return res.status(400).json({ success: false, message: `微信身份绑定失败：${sessionData.errmsg || sessionData.errcode || '未返回 openid'}` });
     }
 
-    const occupied = await User.findOne({ wechatMpOpenid: sessionData.openid, _id: { $ne: req.user._id } });
+    const occupied = await User.findOne({ wechatMpOpenid: sessionData.openid, tenantId: req.user.tenantId, _id: { $ne: req.user._id } });
     if (occupied?.phone && occupied.phone !== DEMO_PHONE) {
       return res.status(409).json({ success: false, message: '该微信已绑定其他手机号账户，请联系客服合并账户' });
     }

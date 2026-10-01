@@ -6,9 +6,8 @@ const { collection, ensure, store } = require('../utils/aiBudgetStore');
 const { DEFAULT_POLICY, validatePolicy, periodKeys } = require('../utils/aiBudgetPolicy');
 
 function canManageAi(admin) {
-  // Shared supplier keys pay for all tenants. Tenant superadmins must not see or alter
-  // another institution's usage. Legacy unassigned superadmin is the current operator.
-  return admin?.role === 'platformSuper' || (admin?.role === 'superadmin' && !admin?.tenantId);
+  // Shared supplier keys and total budgets belong to the platform operator.
+  return admin?.role === 'platformSuper';
 }
 router.use(adminAuth, (req, res, next) => canManageAi(req.admin) ? next() : res.status(403).json({ success: false, message: '仅平台管理员可管理 AI 总预算' }));
 
@@ -16,34 +15,31 @@ router.get('/', async (req, res) => {
   const { day, month } = periodKeys();
   const policy = await store.policy();
   const circuitsPage = Math.max(1, Math.min(10000, Number.parseInt(req.query.circuitsPage, 10) || 1));
-  const pausedReportsPage = Math.max(1, Math.min(10000, Number.parseInt(req.query.pausedReportsPage, 10) || 1));
   const pageSize = 20;
   const pausedFilter = { 'parseJob.status': 'paused' };
-  const [counters, circuitsTotal, pausedReportsTotal, circuitRows, pausedReportRows] = await Promise.all([
+  const globalCircuitFilter = { _id: { $not: /:report:/ } };
+  const [counters, circuitsTotal, pausedReportsTotal, circuitRows] = await Promise.all([
     collection('ai_budget_counters').find({ _id: { $in: [`day:${day}`, `month:${month}`, `business:ocr:${day}`, `business:other:${day}`] } }).toArray(),
-    collection('ai_circuits').countDocuments({}),
+    collection('ai_circuits').countDocuments(globalCircuitFilter),
     collection('medicalreports').countDocuments(pausedFilter),
-    collection('ai_circuits').find({}).sort({ paused: -1, updatedAt: -1, _id: 1 }).skip((circuitsPage - 1) * pageSize).limit(pageSize + 1).toArray(),
-    collection('medicalreports').find(pausedFilter, {
-    projection: { _id: 1, title: 1, user: 1, checkDate: 1, date: 1, 'parseJob.message': 1, 'parseJob.pausedAt': 1 },
-    }).sort({ 'parseJob.pausedAt': -1, _id: -1 }).skip((pausedReportsPage - 1) * pageSize).limit(pageSize + 1).toArray(),
+    collection('ai_circuits').find(globalCircuitFilter).sort({ paused: -1, updatedAt: -1, _id: 1 }).skip((circuitsPage - 1) * pageSize).limit(pageSize + 1).toArray(),
   ]);
-  const visiblePausedReports = pausedReportRows.slice(0, pageSize);
-  const customers = await collection('users').find({ _id: { $in: visiblePausedReports.map(row => row.user).filter(Boolean) } }, { projection: { name: 1 } }).toArray();
-  const customerNames = new Map(customers.map(row => [String(row._id), row.name]));
-  const pausedReports = visiblePausedReports.map(row => ({
-    ...row,
-    customerName: customerNames.get(String(row.user)) || '未关联客户',
-    reportTitle: row.title || '未命名报告',
-    reportDate: row.checkDate || row.date || '',
-  }));
-  const recentChanges = await collection('ai_control_audit').find({}, { projection: { before: 0, after: 0 } }).sort({ at: -1 }).limit(10).toArray();
+  const recentChanges = await collection('ai_control_audit').find({ action: { $in: ['policy', 'reset_circuit'] } }, { projection: { before: 0, after: 0, target: 0 } }).sort({ at: -1 }).limit(10).toArray();
   res.json({ success: true, data: {
     policy, defaults: DEFAULT_POLICY, counters,
     circuits: circuitRows.slice(0, pageSize), circuitsPage, circuitsTotal, circuitsHasMore: circuitRows.length > pageSize,
-    pausedReports, pausedReportsPage, pausedReportsTotal, pausedReportsHasMore: pausedReportRows.length > pageSize,
+    pausedReports: [], pausedReportsPage: 1, pausedReportsTotal, pausedReportsHasMore: false,
     recentChanges, day, month,
   } });
+});
+
+// Report names, customer names and report-level controls belong to the
+// institution. The platform console exposes only aggregate usage and policy.
+router.use((req, res, next) => {
+  if (req.path === '/usage' || req.path.startsWith('/reports')) {
+    return res.status(403).json({ success: false, message: '报告和客户明细由所属机构处理' });
+  }
+  next();
 });
 
 router.get('/reports', async (req, res) => {
@@ -114,6 +110,7 @@ router.post('/circuits/reset', async (req, res) => {
   // OCR circuits may be scoped to a single report page. Keep accepting the
   // legacy report-wide form so an administrator can clear older records too.
   if (typeof req.body.key !== 'string' || !/^[\w-]+:[\w-]+(?::report:[a-f\d]{24}(?::page:[1-9]\d*)?)?$/.test(req.body.key)) return res.status(400).json({ success: false, message: '模型标识无效' });
+  if (req.body.key.includes(':report:')) return res.status(403).json({ success: false, message: '报告级异常由所属机构处理' });
   await collection('ai_control_audit').insertOne({ _id: randomUUID(), action: 'reset_circuit', target: req.body.key, at: new Date(), actorId: String(req.admin._id) });
   await collection('ai_circuits').updateOne({ _id: req.body.key }, { $set: { paused: false, failures: 0, updatedAt: new Date() } });
   res.json({ success: true });

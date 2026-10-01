@@ -1,6 +1,8 @@
 const jwt = require('jsonwebtoken');
 const Admin = require('../models/Admin');
+const Tenant = require('../models/Tenant');
 const { tenantContext } = require('../utils/tenantScope');
+const { platformAdminMayAccess } = require('../utils/adminAccess');
 
 module.exports = async (req, res, next) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
@@ -16,6 +18,18 @@ module.exports = async (req, res, next) => {
     // 企业HR账号只能访问 /api/enterprise-hr 独立只读聚合接口，禁止访问超管/医护端全部接口
     if (admin.role === 'enterprise_hr') {
       return res.status(403).json({ success: false, message: '企业HR账号无权限访问该接口' });
+    }
+    if (admin.tenantId) {
+      const tenant = await Tenant.findById(admin.tenantId).select('status').lean();
+      if (!tenant || tenant.status !== 'active') {
+        return res.status(403).json({ success: false, message: '所属机构已停用或不存在' });
+      }
+    }
+    if (admin.role === 'platformSuper' && !platformAdminMayAccess(req.originalUrl)) {
+      return res.status(403).json({ success: false, message: '平台管理员不能访问机构业务数据，请使用所属机构账号' });
+    }
+    if (admin.mustChangePassword && String(req.originalUrl).split('?')[0] !== '/api/admin/me/password') {
+      return res.status(403).json({ success: false, message: '请先修改初始密码' });
     }
     req.admin = admin;
     tenantContext(req, res, next);

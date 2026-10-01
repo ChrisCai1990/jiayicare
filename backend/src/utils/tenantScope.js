@@ -9,12 +9,12 @@ const als = new AsyncLocalStorage();
 const BYPASS = Symbol('tenantScope:bypass');
 
 // Express中间件：在 staffAuth/auth 等鉴权中间件之后挂载，把当前请求的 tenantId 放进上下文
-// req.staff 或 req.user 上没有 tenantId（如未来平台超管角色）时，视为 bypass，不做过滤
+// 历史未标机构的账号只能访问历史未标机构数据；平台超管可看汇总。
 function tenantContext(req, res, next) {
   const actor = req.staff || req.user || req.admin;
   const tenantId = actor?.tenantId || null;
-  const isPlatformSuper = actor?.role === 'platformSuper'; // 预留：平台超管角色可跨机构查看全部数据
-  als.run({ tenantId: isPlatformSuper ? BYPASS : tenantId }, () => require('./aiBudget').withAiContext({ actorId: actor?._id ? String(actor._id) : '', tenantId: tenantId ? String(tenantId) : '' }, next));
+  const isPlatformSuper = actor?.role === 'platformSuper';
+  als.run({ tenantId: isPlatformSuper || !actor ? BYPASS : tenantId }, () => require('./aiBudget').withAiContext({ actorId: actor?._id ? String(actor._id) : '', tenantId: tenantId ? String(tenantId) : '' }, next));
 }
 
 function getCurrentTenantId() {
@@ -30,20 +30,28 @@ function runWithoutTenantScope(fn) {
 // Mongoose 插件：挂载到需要按机构隔离的 Schema 上，自动在 find/findOne/findById/count/update 等
 // 查询前注入 tenantId 过滤条件；写入（save/create）前自动补上当前 tenantId
 function tenantScopePlugin(schema) {
-  const queryMiddlewareNames = ['find', 'findOne', 'findOneAndUpdate', 'findOneAndDelete', 'countDocuments', 'updateMany', 'deleteMany'];
+  const queryMiddlewareNames = [
+    'find', 'findOne', 'findOneAndUpdate', 'findOneAndDelete', 'findOneAndReplace',
+    'countDocuments', 'distinct', 'updateOne', 'updateMany', 'replaceOne', 'deleteOne', 'deleteMany',
+  ];
 
   queryMiddlewareNames.forEach(name => {
     schema.pre(name, function () {
       const tenantId = getCurrentTenantId();
-      if (tenantId === BYPASS || tenantId === undefined) return; // 平台超管/内部脚本：不加过滤，查全量
-      // tenantId 为 null（未登录上下文、或该请求方尚未关联任何机构，如历史遗留数据迁移期）：
-      // 同样不强制加 tenantId:null 过滤，避免把"暂未打标"的存量数据（现有嘉医汇数据）意外查漏。
-      // 这是有意的宽松策略：第一阶段只做"能力具备"，不做"强制生效"，等存量数据回填 tenantId 后
-      // 再收紧为"必须显式指定 tenantId 才能查询"。
-      if (!tenantId) return;
-      const cond = this.getQuery ? this.getQuery() : this._conditions;
-      if (cond.tenantId === undefined) this.where({ tenantId });
+      if (!als.getStore() || tenantId === BYPASS) return;
+      // A caller-supplied tenantId must never disable the authenticated tenant
+      // boundary. Mongoose merges this into the query, replacing any foreign
+      // tenantId that came from a route parameter or request body.
+      this.where({ tenantId: tenantId || null });
     });
+  });
+
+  schema.pre('aggregate', function () {
+    const tenantId = getCurrentTenantId();
+    if (!als.getStore() || tenantId === BYPASS) return;
+    const pipeline = this.pipeline();
+    const firstStageMustRemainFirst = pipeline[0]?.$geoNear || pipeline[0]?.$search || pipeline[0]?.$vectorSearch;
+    pipeline.splice(firstStageMustRemainFirst ? 1 : 0, 0, { $match: { tenantId: tenantId || null } });
   });
 
   schema.pre('save', function (next) {
