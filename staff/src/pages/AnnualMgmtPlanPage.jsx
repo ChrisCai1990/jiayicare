@@ -12,6 +12,7 @@ import { annualPlanReturnTarget } from '../utils/annualPlanNavigation.mjs'
 import assessmentCriteria from '../../../shared/annualAssessmentCriteria.json'
 import { annualTemplateCode, matchingAnnualTemplate } from '../utils/annualTemplateSelection.mjs'
 import { annualItemLayout } from '../utils/annualItemLayout.mjs'
+import { calendarDate } from '../utils/calendarDate'
 import { supplementalAssessmentNote } from '../utils/annualAssessmentNote.mjs'
 
 // ── 方案类型 ─────────────────────────────────────────────────────────
@@ -539,23 +540,20 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const handleSave = async () => {
     if (remotePlanChanged) { toast('方案已有补录，请先加载最新方案再保存'); return }
     if (!planType) { toast('请先选择方案类型'); return }
-    const now = new Date()
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-    const personalized = moduleData.personalized_followups?.records || []
-    const invalid = personalized.find(item =>
-      !item.followUpStaff || !item.executionDate ||
-      (item.executionDate && item.executionDate < today) ||
-      (item.collaborationDate && item.collaborationDate < today) ||
-      (item.collaborator && !item.collaborationDate) ||
-      (item.collaborationDate && !item.collaborator)
-    )
-    if (invalid) { toast('每项随访都要选择主执行人和不早于今天的执行日期；协同执行人和日期需要同时填写'); return }
+    for (const { key, def } of templateModuleEntries) {
+      const data = moduleData[key]
+      if (!data || data.enabled === false) continue
+      for (const record of def.multi ? data.records || [] : [data]) {
+        const invalidDate = def.fields.find(field => field.type === 'date' && record[field.key] && !calendarDate(record[field.key]))
+        if (invalidDate) { toast(`${def.name}：请填写完整有效的${invalidDate.label}，如 2026-10-01`); return }
+      }
+    }
     setSaving(true)
     try {
       if (patientMode) {
         const selectedTemplate = adminTemplates.find(t => t._id === selectedTemplateId)
         const servicePlanCode = annualTemplateCode(planType, selectedTemplate)
-        const res = await staffAPI.saveAnnualPlan(id, { planType: servicePlanCode, servicePlanCode, sourcePlanId: plansByType[planType]?._id || null, baseUpdatedAt: plansByType[planType]?.updatedAt || null, moduleData, year, continuitySource, templateId: selectedTemplateId || null, templateName: selectedTemplate?.content?.planName || selectedTemplate?.name || '' })
+        const res = await staffAPI.saveAnnualPlan(id, { planType: servicePlanCode, servicePlanCode, saveDraft: true, sourcePlanId: plansByType[planType]?._id || null, baseUpdatedAt: plansByType[planType]?.updatedAt || null, moduleData, year, continuitySource, templateId: selectedTemplateId || null, templateName: selectedTemplate?.content?.planName || selectedTemplate?.name || '' })
         const saved = res.data
         if (saved) {
           setPlansByType(prev => {
@@ -869,7 +867,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             disabled={saving}
             style={{ background: '#1E6B50', color: '#fff', border: 'none', padding: '8px 20px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: saving ? 0.7 : 1 }}
           >
-            {saving ? '保存中...' : '保存方案'}
+            {saving ? '保存中...' : '暂存草稿'}
           </button>
         </div>
       </div>
@@ -1102,7 +1100,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
 
       <div className="annual-plan-footer">
         <button className="btn btn-secondary" onClick={goBack}>返回方案列表</button>
-        <a className="btn btn-secondary" href="#annual-plan-actions">返回顶部操作</a>
+        <button className="btn btn-primary" disabled={saving} onClick={handleSave}>{saving ? '保存中…' : '暂存草稿'}</button>
       </div>
     </div>
     </StaffListContext.Provider>
