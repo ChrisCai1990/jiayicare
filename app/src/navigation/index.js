@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Platform } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -100,7 +100,7 @@ export default function Navigation() {
   const { token, user, loading } = useAuth();
 
   // 检测分享链接（仅 web）
-  const shareToken = typeof window !== 'undefined'
+  const shareToken = Platform.OS === 'web' && typeof window !== 'undefined' && window.location
     ? new URLSearchParams(window.location.search).get('share')
     : null;
 
