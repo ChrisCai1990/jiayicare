@@ -41,3 +41,16 @@ test('skip rules omit inapplicable questions and explicit negative arrays remain
  assert.deepEqual(r.items[0].value,[]);
 });
 
+
+test('starting an interview recovers its patient pointer and reuses active task',async t=>{
+ const User=require('../src/models/User'),FollowUp=require('../src/models/FollowUp');
+ const user={_id:'patient',assignedNutritionist:'nutrition',assignedFamilyDoctor:'advisor',lifestyleInterviewTaskId:'reserved-task'};
+ let active=null,upserts=0;const chain=v=>({lean:async()=>v,sort:()=>chain(v)});
+ t.mock.method(User,'findById',()=>chain(user));t.mock.method(FollowUp,'findOne',()=>chain(active));t.mock.method(FollowUp,'findById',()=>chain(null));
+ t.mock.method(FollowUp,'findOneAndUpdate',async(q,u)=>{upserts++;assert.equal(q._id,'reserved-task');active={_id:q._id,...u.$setOnInsert};return active});
+ let result;const res={json:d=>{result=d},status:()=>res};
+ const req={params:{id:'patient'},staff:{_id:'nutrition',role:'nutritionist'}};
+ await require('../src/utils/lifestyleInterview').start(req,res);assert.equal(result.data.workflowKey,'lifestyle_interview');
+ await require('../src/utils/lifestyleInterview').start(req,res);assert.equal(upserts,1);assert.equal(result.data._id,'reserved-task');
+ assert.equal(require('../../shared/annualNutrition.cjs').isTask(active),true);
+});

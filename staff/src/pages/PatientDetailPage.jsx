@@ -5512,6 +5512,7 @@ export default function PatientDetailPage() {
                 <div><div className="card-title">生活方式摘要</div><div style={{ marginTop: 4, fontSize: 12, color: '#8AA89C' }}>正式档案默认收起；AI可结合近30天打卡形成变化分析，经营养师审核后再更新</div></div>
                 {!editingLifestyle
                   ? <div style={{ display: 'flex', gap: 8 }}>
+                      {['nutritionist','superadmin'].includes(staff.role)&&<button className="btn btn-primary btn-sm" onClick={async()=>{try{const res=await staffAPI.startLifestyleInterview(id);setFollowUpDetail(res.data);loadFollowUps()}catch(e){toast(e.message)}}}>开始生活方式访谈</button>}
                       {followUps.filter(f=>annualNutrition.isTask(f)&&f.status!=='cancelled').map(f=><button key={f._id} className="btn btn-primary btn-sm" onClick={()=>setFollowUpDetail(f)}>生活方式访谈 · {f.status==='completed'?'查看记录':'代填 / 核实问卷'}</button>)}
                       <button className="btn btn-primary btn-sm" onClick={() => setShowLifestyleChangeModal(true)}>＋ 新增变化</button>
                       <button className="btn btn-secondary btn-sm" disabled={lifestyleAiGenerating} onClick={handleGenerateLifestyleDraft}>{lifestyleAiGenerating ? 'AI整理中…' : 'AI整理打卡变化'}</button>

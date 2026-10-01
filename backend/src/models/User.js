@@ -254,6 +254,7 @@ const userSchema = new mongoose.Schema({
   lifestyle_data: { type: mongoose.Schema.Types.Mixed, default: {} },
   // 生活方式变更历史：每条只保存本次发生变化的字段，保留录入人和时间，避免覆盖后无法追溯。
   // changes: { diet: { from, to }, exercise: { from, to }, ... }
+  lifestyleInterviewTaskId: {type: mongoose.Schema.Types.ObjectId, ref:'FollowUp', default:null},
   lifestyleHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
   // 问卷自动导入健康档案的待审核草稿（{generatedAt,questionnaireId,responseId,status,items[]}）
   coreHealthArchive: { type: mongoose.Schema.Types.Mixed, default: {} },
