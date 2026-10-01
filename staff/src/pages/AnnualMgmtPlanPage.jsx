@@ -12,6 +12,7 @@ import { annualPlanReturnTarget } from '../utils/annualPlanNavigation.mjs'
 import assessmentCriteria from '../../../shared/annualAssessmentCriteria.json'
 import { annualTemplateCode, matchingAnnualTemplate } from '../utils/annualTemplateSelection.mjs'
 import { annualItemLayout } from '../utils/annualItemLayout.mjs'
+import { calendarDate } from '../utils/calendarDate'
 import { supplementalAssessmentNote } from '../utils/annualAssessmentNote.mjs'
 
 // ── 方案类型 ─────────────────────────────────────────────────────────
@@ -539,6 +540,14 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const handleSave = async () => {
     if (remotePlanChanged) { toast('方案已有补录，请先加载最新方案再保存'); return }
     if (!planType) { toast('请先选择方案类型'); return }
+    for (const { key, def } of templateModuleEntries) {
+      const data = moduleData[key]
+      if (!data || data.enabled === false) continue
+      for (const record of def.multi ? data.records || [] : [data]) {
+        const invalidDate = def.fields.find(field => field.type === 'date' && record[field.key] && !calendarDate(record[field.key]))
+        if (invalidDate) { toast(`${def.name}：请填写完整有效的${invalidDate.label}，如 2026-10-01`); return }
+      }
+    }
     const now = new Date()
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
     const personalized = moduleData.personalized_followups?.records || []
