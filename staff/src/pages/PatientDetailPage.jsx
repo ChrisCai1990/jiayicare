@@ -58,7 +58,8 @@ import OutpatientProxyVisitForm, { emptyOutpatientProxyVisit, isOutpatientProxyV
 import OutpatientEscortVisitForm, { emptyOutpatientEscortVisit, isOutpatientEscortVisitTask, validateOutpatientEscortVisit } from '../components/OutpatientEscortVisitForm'
 import OutpatientPostVisitReviewForm, { emptyOutpatientPostVisitReview, isOutpatientPostVisitReviewTask, validateOutpatientPostVisitReview } from '../components/OutpatientPostVisitReviewForm'
 import MedicalProxyStageForm, { medicalProxyStage, validateMedicalProxyStage } from '../components/MedicalProxyStageForm'
-import ExpertAppointmentRescheduleForm from '../components/ExpertAppointmentRescheduleForm'
+import { serviceTaskTitle } from '../utils/serviceTaskTitle.mjs'
+import ExpertAppointmentRescheduleForm, { ExpertAppointmentHistory } from '../components/ExpertAppointmentRescheduleForm'
 import AdHocConsultationForm from '../components/AdHocConsultationForm'
 import MedicationProxyStageForm, { medicationProxyStage } from '../components/MedicationProxyStageForm'
 import femalePortraitPhoto from '../assets/health-portrait-female.webp'
@@ -95,6 +96,7 @@ const isMedicalProxyMedicationTask = task => /代配药|代取药/.test([
   task?.sourceOrderId?.specificationLabel,
   task?.sourceOrderId?.serviceRequirements,
 ].filter(Boolean).join(' '))
+const isExpertAppointmentTask = task => /专家约诊/.test(task?.sourceOrderId?.serviceName || serviceTaskTitle(task))
 const isMedicalEscortTask = task => task?.formData?.medicalEscort === true
   || task?.formData?.planSnapshot?.medicalEscort === true
   || task?.sourceOrderId?.medicalProxyPlan?.medicalEscort === true
@@ -2729,7 +2731,7 @@ export default function PatientDetailPage() {
     try {
       await staffAPI.updateFollowUp(execItem._id, {
         type: execForm.type,
-        content: execForm.content.trim() || (isCheckupAppointmentBooking ? '已完成待约检预约，转交就医专员执行。' : medicationStage ? `代配药${medicationStage}环节已完成` : proxyStage ? (isMedicalEscortTask(execItem) ? ({ planner: '健康规划师已安排陪同就医专员', execute: '就医专员已完成陪同并提交资料审核', post_visit_audit: '健管专员已完成陪同资料审核归档' }[proxyStage] || '陪同就医服务环节已完成') : execForm.formData?.medicalPlanning ? proxyStage === 'advisor' ? '健康顾问已完成就医规划建议，转健康规划师与客户沟通' : '健康规划师已与客户确认就医规划及后续服务意向' : proxyStage === 'booking' && isMedicalProxyMedicationTask(execItem) ? '代配药门诊预约已完成，转健康规划师安排执行人员' : `医疗代诊${{ intake: '资料核对', collect: '资料收集', audit: '资料审核', advisor: '方案确认', planner: '方案复核', booking: '专家门诊预约', execute: '执行', post_visit_audit: '就诊资料审核', post_visit_review: '就诊资料查看' }[proxyStage] || '服务环节'}已完成`) : isAdvisorAssessment ? '已完成就医评估并确定推荐医院、科室、专家及预计检查安排' : isOutpatientAppointment ? '已完成代诊约诊服务安排' : isStaffAssignment ? '已完成首次代诊与检查日陪诊人员安排' : isEscortVisit ? '已完成检查及专家门诊陪诊，当日检验检查单和门诊病历已打印上传' : isPostVisitReview ? '已查看陪诊资料并生成后续随访计划' : summarizeServiceChecklist(submittedChecklist, execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor')),
+        content: execForm.content.trim() || (isCheckupAppointmentBooking ? '已完成待约检预约，转交就医专员执行。' : medicationStage ? `代配药${medicationStage}环节已完成` : proxyStage ? (isMedicalEscortTask(execItem) ? ({ planner: '健康规划师已安排陪同就医专员', execute: '就医专员已完成陪同并提交资料审核', post_visit_audit: '健管专员已完成陪同资料审核归档' }[proxyStage] || '陪同就医服务环节已完成') : execForm.formData?.medicalPlanning ? proxyStage === 'advisor' ? '健康顾问已完成就医规划建议，转健康规划师与客户沟通' : '健康规划师已与客户确认就医规划及后续服务意向' : proxyStage === 'booking' && isMedicalProxyMedicationTask(execItem) ? '代配药门诊预约已完成，转健康规划师安排执行人员' : proxyStage === 'booking' && isExpertAppointmentTask(execItem) ? '专家约诊已完成' : `医疗代诊${{ intake: '资料核对', collect: '资料收集', audit: '资料审核', advisor: '方案确认', planner: '方案复核', booking: '专家门诊预约', execute: '执行', post_visit_audit: '就诊资料审核', post_visit_review: '就诊资料查看' }[proxyStage] || '服务环节'}已完成`) : isAdvisorAssessment ? '已完成就医评估并确定推荐医院、科室、专家及预计检查安排' : isOutpatientAppointment ? '已完成代诊约诊服务安排' : isStaffAssignment ? '已完成首次代诊与检查日陪诊人员安排' : isEscortVisit ? '已完成检查及专家门诊陪诊，当日检验检查单和门诊病历已打印上传' : isPostVisitReview ? '已查看陪诊资料并生成后续随访计划' : summarizeServiceChecklist(submittedChecklist, execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor')),
         status: isReportCollection
           ? (reportClosure?.collectionStatus === 'complete' ? 'completed' : 'in_progress')
           : execItem.taskRole === 'supervisor'
@@ -9653,13 +9655,13 @@ export default function PatientDetailPage() {
                         {f.sourceType === 'order' && (
                           <div style={{ marginBottom: 2 }}>
                             <span style={{ fontSize: 11, color: '#22A06B', background: '#22A06B18', padding: '1px 6px', borderRadius: 4, marginRight: 4 }}>服务预约</span>
-                            <span style={{ fontWeight: 600 }}>{f.theme}</span>
+                            <span style={{ fontWeight: 600 }}>{serviceTaskTitle(f)}</span>
                           </div>
                         )}
                         {(() => {
                           // 旧任务会把注意事项（如“空腹”）放在 content，而计划主体保存在
                           // theme / taskRequirements / plannedContent。不能用第一个非空字段遮住其余内容。
-                          const content = [...new Set([f.theme, f.taskRequirements, f.plannedContent, f.content]
+                          const content = [...new Set([serviceTaskTitle(f), f.taskRequirements, f.plannedContent, f.content]
                             .map(value => String(value || '').trim()).filter(Boolean))].join('；')
                           return content ? (content.length > 60 ? content.slice(0, 60) + '…' : content) : '-'
                         })()}
@@ -11084,7 +11086,7 @@ export default function PatientDetailPage() {
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setExecItem(null) }}>
           <div className="modal" style={{ maxWidth: (isCheckupAppointmentBookingTask(execItem) || medicalProxyStage(execItem) || medicationProxyStage(execItem) || isCheckupBookingTask(execItem) || isCheckupOnsiteTask(execItem) || isCheckupReportCollectionTask(execItem) || isOutpatientAdvisorAssessmentTask(execItem) || isOutpatientAppointmentTask(execItem) || isOutpatientStaffAssignmentTask(execItem) || isOutpatientEscortVisitTask(execItem) || isOutpatientPostVisitReviewTask(execItem)) ? 780 : 520 }}>
             <div className="modal-header">
-              <h3 className="modal-title">{checkupConclusionStage(execItem) ? (checkupConclusionStage(execItem) === 'final_acceptance' ? '体检最终验收' : '体检结果评估与后续安排') : isCheckupAppointmentBookingTask(execItem) ? '待约检 · 三号预约' : medicationProxyStage(execItem) ? ({ intake: '代配药 · 核对用药信息', advisor: '代配药 · 顾问评估', review: '代配药 · 规划师确认', booking: '代配药 · 医院预约', planner: '代配药 · 健康规划师分配执行人员', execute: '代配药 · 采购与配送' }[medicationProxyStage(execItem)]) : medicalProxyStage(execItem) ? (isMedicalEscortTask(execItem) ? ({ planner: '陪同就医 · 健康规划师安排人员', execute: '陪同就医 · 执行记录', post_visit_audit: '陪同就医 · 健管专员审核资料', supervise: '陪同就医 · 督办进度' }[medicalProxyStage(execItem)] || '陪同就医服务任务') : isMedicalProxyMedicationTask(execItem) && medicalProxyStage(execItem) === 'booking' ? '代配药 · 健管专员确认预约' : isMedicalProxyMedicationTask(execItem) && medicalProxyStage(execItem) === 'planner' ? '代配药 · 健康规划师安排执行人员' : /就医规划/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? medicalProxyStage(execItem) === 'advisor' ? '就医规划 · 健康顾问提出建议' : '就医规划 · 健康规划师客户沟通与结案' : ({ intake: '医疗代诊 · 核对既有资料', collect: '医疗代诊 · 指导上传并选定资料', audit: '医疗代诊 · 健管审核资料', advisor: '医疗代诊 · 健康顾问确认方案', planner: '医疗代诊 · 健康规划师复核方案', booking: '专家约诊 · 健管专员确认预约', execute: '医疗代诊 · 执行结果', appointment_review: '专家约诊 · 健康顾问确认约诊建议', post_visit_audit: '专家约诊 · 健管专员审核就诊资料', post_visit_review: '专家约诊 · 健康顾问查看就诊资料' }[medicalProxyStage(execItem)] || '专家约诊服务任务')) : isOutpatientEscortVisitTask(execItem) ? '记录检查及专家门诊陪诊' : isOutpatientPostVisitReviewTask(execItem) ? '查看陪诊资料并制定随访计划' : isOutpatientAppointmentTask(execItem) ? '安排代诊约诊服务' : isOutpatientStaffAssignmentTask(execItem) ? '安排门诊执行人员' : isOutpatientAdvisorAssessmentTask(execItem) ? '健康顾问就医评估' : isCheckupReportCollectionTask(execItem) ? '确认或上传体检报告' : isCheckupBookingTask(execItem) ? '确认体检预约并交接陪诊' : execItem.taskRole === 'supervisor' ? '核对代办结果与检查单' : execItem.taskRole ? '记录事务完成情况' : '执行随访'}</h3>
+              <h3 className="modal-title">{checkupConclusionStage(execItem) ? (checkupConclusionStage(execItem) === 'final_acceptance' ? '体检最终验收' : '体检结果评估与后续安排') : isCheckupAppointmentBookingTask(execItem) ? '待约检 · 三号预约' : medicationProxyStage(execItem) ? ({ intake: '代配药 · 核对用药信息', advisor: '代配药 · 顾问评估', review: '代配药 · 规划师确认', booking: '代配药 · 医院预约', planner: '代配药 · 健康规划师分配执行人员', execute: '代配药 · 采购与配送' }[medicationProxyStage(execItem)]) : medicalProxyStage(execItem) ? (isMedicalEscortTask(execItem) ? ({ planner: '陪同就医 · 健康规划师安排人员', execute: '陪同就医 · 执行记录', post_visit_audit: '陪同就医 · 健管专员审核资料', supervise: '陪同就医 · 督办进度' }[medicalProxyStage(execItem)] || '陪同就医服务任务') : isMedicalProxyMedicationTask(execItem) && medicalProxyStage(execItem) === 'booking' ? '代配药 · 健管专员确认预约' : isMedicalProxyMedicationTask(execItem) && medicalProxyStage(execItem) === 'planner' ? '代配药 · 健康规划师安排执行人员' : /就医规划/.test(`${execItem.theme || ''} ${execItem.sourceOrderId?.serviceName || ''}`) ? medicalProxyStage(execItem) === 'advisor' ? '就医规划 · 健康顾问提出建议' : '就医规划 · 健康规划师客户沟通与结案' : ({ intake: '医疗代诊 · 核对既有资料', collect: '医疗代诊 · 指导上传并选定资料', audit: '医疗代诊 · 健管审核资料', advisor: '医疗代诊 · 健康顾问确认方案', planner: '医疗代诊 · 健康规划师复核方案', booking: isExpertAppointmentTask(execItem) ? '专家约诊 · 健管专员确认预约' : '医疗代诊 · 健管专员预约门诊', execute: '医疗代诊 · 执行结果', appointment_review: '专家约诊 · 健康顾问确认约诊建议', post_visit_audit: '专家约诊 · 健管专员审核就诊资料', post_visit_review: '专家约诊 · 健康顾问查看就诊资料' }[medicalProxyStage(execItem)] || '专家约诊服务任务')) : isOutpatientEscortVisitTask(execItem) ? '记录检查及专家门诊陪诊' : isOutpatientPostVisitReviewTask(execItem) ? '查看陪诊资料并制定随访计划' : isOutpatientAppointmentTask(execItem) ? '安排代诊约诊服务' : isOutpatientStaffAssignmentTask(execItem) ? '安排门诊执行人员' : isOutpatientAdvisorAssessmentTask(execItem) ? '健康顾问就医评估' : isCheckupReportCollectionTask(execItem) ? '确认或上传体检报告' : isCheckupBookingTask(execItem) ? '确认体检预约并交接陪诊' : execItem.taskRole === 'supervisor' ? '核对代办结果与检查单' : execItem.taskRole ? '记录事务完成情况' : '执行随访'}</h3>
               <button className="modal-close" onClick={() => setExecItem(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', overscrollBehavior: 'contain' }}>
@@ -11110,7 +11112,7 @@ export default function PatientDetailPage() {
                 {execItem.theme && (
                   <div style={{ display: 'flex', gap: 8 }}>
                     <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>{execItem.taskRole ? '事务名称：' : '随访主题：'}</span>
-                    <span style={{ fontSize: 13 }}>{execItem.theme}</span>
+                    <span style={{ fontSize: 13 }}>{serviceTaskTitle(execItem)}</span>
                   </div>
                 )}
                 {execItem.content && (
@@ -11196,7 +11198,7 @@ export default function PatientDetailPage() {
                   { label: '计划审核人', value: (() => { const reviewer = followUpReview.reviewer(followUpDetail, user); return reviewer?.name || staffList.find(s => String(s._id) === String(reviewer?._id || reviewer))?.name || '待指定' })() },
                   { label: '随访执行人', value: (() => { const executor = followUpReview.executor(followUpDetail, user); return executor?.name || staffList.find(s => String(s._id) === String(executor?._id || executor))?.name || '待指定' })() },
                   { label: '参与人员', value: followUpDetail.participants || '-' },
-                  { label: '随访主题', value: followUpDetail.theme || followUpDetail.planName || '-' },
+                  { label: '随访主题', value: serviceTaskTitle(followUpDetail) || followUpDetail.planName || '-' },
                   { label: '建立时间', value: followUpDetail.createdAt ? new Date(followUpDetail.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-' },
                   { label: '执行时间', value: followUpDetail.completedAt ? new Date(followUpDetail.completedAt).toLocaleString('zh-CN', { hour12: false }) : '-' },
                   { label: '下次跟进日期', value: followUpDetail.nextFollowUpDate ? followUpDetailView.displayDate(followUpDetail.nextFollowUpDate) : '-' },
@@ -11230,8 +11232,8 @@ export default function PatientDetailPage() {
                 {followUpDetailView.appointmentLines(followUpDetail.sourceOrderId?.medicalProxyPlan, followUpDetail.sourceOrderId?.medicalProxyPlan?.booking).map((line,i)=><div key={i} style={{marginTop:6,whiteSpace:'pre-wrap'}}>{line}</div>)}
               </div>}
               {/专家约诊/.test(followUpDetail.sourceOrderId?.serviceName || '') && <>
-                {['healthManager','superadmin'].includes(staff?.role) && <ExpertAppointmentRescheduleForm key={followUpDetail.sourceOrderId?.updatedAt} task={followUpDetail} onSaved={()=>{setFollowUpDetail(null);loadFollowUps();toast('预约变更已保存，请重新打开查看')}}/>}
-                {!!followUpDetail.sourceOrderId?.medicalProxyPlan?.bookingChanges?.length && <details><summary>预约变更记录</summary>{followUpDetail.sourceOrderId.medicalProxyPlan.bookingChanges.map((change,i)=><div key={i} style={{padding:12,borderBottom:'1px solid #ddd'}}><b>{change.kind==='correction'?'历史补正':'预约变更'} · {change.changedByName || '工作人员'} · {new Date(change.changedAt).toLocaleString('zh-CN')}</b><p>原安排：{followUpDetailView.appointmentLines({}, {...change.from,appointmentExpert:change.from?.expert}).join('；')}</p><p>新安排：{followUpDetailView.appointmentLines({}, {...change.to,appointmentExpert:change.to?.expert}).join('；')}</p><p>原因：{change.reason}</p></div>)}</details>}
+                {['healthManager','superadmin'].includes(staff?.role) && <ExpertAppointmentRescheduleForm key={followUpDetail.sourceOrderId?.updatedAt} task={followUpDetail} showHistory={false} onSaved={()=>{setFollowUpDetail(null);loadFollowUps();toast('预约变更已保存，请重新打开查看')}}/>}
+                <ExpertAppointmentHistory order={followUpDetail.sourceOrderId} />
               </>}
               {followUpDetail._serviceItems?.length > 0 && (
                 <div>
@@ -11382,7 +11384,7 @@ export default function PatientDetailPage() {
               {!annualNutrition.isTask(followUpDetail) && annualBookingPlan.canEditPlan(followUpDetail, staff?.role) && medicalProxyStage(followUpDetail) !== 'supervise' && followUpDetail.serviceTracking?.status !== 'waiting' && <button className="btn btn-secondary" onClick={() => setEditingFollowUp({
                 date: followUpDetail.date ? new Date(followUpDetail.date).toISOString().slice(0, 10) : '',
                 type: followUpDetail.type || 'phone',
-                theme: followUpDetail.theme || '',
+                theme: serviceTaskTitle(followUpDetail),
                 content: followUpDetail.content || '',
                 assignedTo: (() => { const executor = followUpReview.executor(followUpDetail, user); return executor?._id || executor || '' })(),
                 nextFollowUpDate: followUpDetail.nextFollowUpDate ? new Date(followUpDetail.nextFollowUpDate).toISOString().slice(0, 10) : '',

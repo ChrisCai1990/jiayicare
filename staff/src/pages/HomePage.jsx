@@ -18,6 +18,7 @@ import ServiceSupervisionPanel from '../components/ServiceSupervisionPanel'
 import MonthlyReviewWorkbench from '../components/MonthlyReviewWorkbench'
 import Pagination from '../components/Pagination'
 import { isCustomerOrder, plannerOrderRows } from '../utils/plannerOrderProgress.mjs'
+import { serviceTaskTitle } from '../utils/serviceTaskTitle.mjs'
 
 const ORDERS_PER_PAGE = 5
 
@@ -145,12 +146,12 @@ export default function HomePage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                   <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24', minWidth: 60, flexShrink: 0 }}>{(task || f)?.patientId?.name || '未知'}</span>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13, color: '#1A2B24', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order?.serviceName || f?.theme || task?.theme}{order && <span style={{ color: '#D97706', marginLeft: 8 }}>支付 ¥{(Number(order.paidAmount || 0) + Number(order.healthFundAmount || 0)).toFixed(2)}</span>}</div>
+                    <div style={{ fontSize: 13, color: '#1A2B24', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order?.serviceName || (f && serviceTaskTitle(f)) || (task && serviceTaskTitle(task))}{order && <span style={{ color: '#D97706', marginLeft: 8 }}>支付 ¥{(Number(order.paidAmount || 0) + Number(order.healthFundAmount || 0)).toFixed(2)}</span>}</div>
                     {(order?.scheduledAt || order?.note || f?.content) && <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order?.scheduledAt && `预约时间：${new Date(order.scheduledAt).toLocaleString('zh-CN')} · `}备注：{order?.note || f?.content || '未填写，请联系客户确认时间'}</div>}
                     <div style={{ fontSize: 12, color: '#1E6B50', marginTop: 5 }}>
                       {task ? (supervisor?.supervisionProgress?.current?.length
                         ? supervisor.supervisionProgress.current.map(step => <div key={step.id}>当前环节：{step.label} · 处理人：{step.assignee}{step.blocked ? ' · 等待前置环节' : ''}</div>)
-                        : task.supervisionProgress?.message || `当前环节：${task.theme || '待核对'} · 处理人：${task.assignedTo?.name || '待分配'}`)
+                        : task.supervisionProgress?.message || `当前环节：${serviceTaskTitle(task) || '待核对'} · 处理人：${task.assignedTo?.name || '待分配'}`)
                         : orderShipping.shippingProgress(order) || '待健康规划师确认客户需求并转交下一环节'}
                     </div>
                   </div>
@@ -164,7 +165,7 @@ export default function HomePage() {
             {orderHistoryOpen && <div style={{ borderTop: '1px solid #E3ECE7', marginTop: 8, paddingTop: 10 }}>
               <div style={{ fontWeight: 600, color: '#52685D', marginBottom: 6 }}>过往已处理预约（不代表服务已结束）</div>
               {visibleOrderHistoryRows.map(item => <div key={item._id} onClick={() => nav(`/patients/${item.patientId?._id}?tab=followups`)} style={{ padding: '9px 0', borderBottom: '1px solid #F0EDE8', cursor: 'pointer' }}>
-                <b>{item.patientId?.name || '未知客户'}</b> · {item.sourceOrderId?.serviceName || item.theme} · {item.completedAt ? new Date(item.completedAt).toLocaleString('zh-CN') : '已处理'}
+                <b>{item.patientId?.name || '未知客户'}</b> · {item.sourceOrderId?.serviceName || serviceTaskTitle(item)} · {item.completedAt ? new Date(item.completedAt).toLocaleString('zh-CN') : '已处理'}
                 <div style={{ color: '#667085', fontSize: 12, whiteSpace: 'pre-wrap' }}>{item.executedContent || item.content || '点击查看客户服务档案'}</div>
               </div>)}
               {orderHistoryRows.length > ORDERS_PER_PAGE && <nav aria-label="已处理预约分页" style={{ paddingBottom: 8 }}>

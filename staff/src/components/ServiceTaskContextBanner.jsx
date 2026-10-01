@@ -2,6 +2,7 @@ import React from 'react'
 import { checkupConclusionStage } from '../utils/checkupTaskRouting'
 import { isCheckupBookingTask, isCheckupOnsiteTask } from './CheckupBookingForm'
 import { isCheckupReportCollectionTask } from './CheckupReportCollectionForm'
+import { serviceTaskTitle } from '../utils/serviceTaskTitle.mjs'
 
 const isCheckupPlan = task => {
   const plan = task?.sourceHealthPlanId
@@ -19,7 +20,7 @@ function nodeLabel(task) {
   if (isCheckupOnsiteTask(task)) return '体检日陪诊执行'
   if (isCheckupBookingTask(task)) return '体检预约确认'
   if (task?.taskRole === 'supervisor') return '独立服务订单督办核验'
-  return task?.theme || '服务任务执行'
+  return serviceTaskTitle(task) || '服务任务执行'
 }
 
 export default function ServiceTaskContextBanner({ task }) {

@@ -507,8 +507,8 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceT
       patientId: order.user, staffId: plannerId, assignedTo: plannerId, type: 'other', status: 'in_progress',
       date, remindAt: new Date(), sourceType: 'order', sourceOrderId: order._id,
       workflowKey: `${PREFIX}supervise`, taskRole: 'supervisor',
-      theme: medicalPlanning ? `就医规划：健康规划师全程督办 · ${order.serviceName}` : `医疗代诊：健康规划师全程督办 · ${order.serviceName}`,
-      plannedContent: medicalPlanning ? `服务内容：${serviceContent}\n客户诉求：${customerNeed}\n预期沟通时段：${communicationWindow.communicationDate} ${communicationWindow.communicationTimeStart}–${communicationWindow.communicationTimeEnd}\n健康顾问提出就医规划建议后，与客户沟通是否需要其他就医协助服务，再由规划师结案。` : `期望服务日期：${date.toLocaleDateString('zh-CN')} 至 ${endDate.toLocaleDateString('zh-CN')}\n服务内容：${serviceContent}\n客户诉求：${customerNeed}\n持续督办资料审核、健康顾问方案确认和就医专员代诊；代诊执行结束后关闭。`,
+      theme: medicalPlanning ? `就医规划：健康规划师全程督办 · ${order.serviceName}` : /专家约诊/.test(order.serviceName || '') ? `专家约诊：健康规划师全程督办 · ${order.serviceName}` : `医疗代诊：健康规划师全程督办 · ${order.serviceName}`,
+      plannedContent: medicalPlanning ? `服务内容：${serviceContent}\n客户诉求：${customerNeed}\n预期沟通时段：${communicationWindow.communicationDate} ${communicationWindow.communicationTimeStart}–${communicationWindow.communicationTimeEnd}\n健康顾问提出就医规划建议后，与客户沟通是否需要其他就医协助服务，再由规划师结案。` : /专家约诊/.test(order.serviceName || '') ? `期望服务日期：${date.toLocaleDateString('zh-CN')} 至 ${endDate.toLocaleDateString('zh-CN')}\n约诊需求：${serviceContent}\n持续督办专家门诊预约、客户通知和就诊后资料审核；约诊服务完成后关闭。` : `期望服务日期：${date.toLocaleDateString('zh-CN')} 至 ${endDate.toLocaleDateString('zh-CN')}\n服务内容：${serviceContent}\n客户诉求：${customerNeed}\n持续督办资料审核、健康顾问方案确认和就医专员代诊；代诊执行结束后关闭。`,
       formData: { medicalPlanning, serviceContent, customerNeed, preferredDateStart: dateInput(date), preferredDateEnd: dateInput(endDate), currentStage: /专家约诊/.test(order.serviceName || '') ? 'booking' : medicalPlanning ? 'advisor' : 'collect' },
     } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
@@ -725,7 +725,7 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
     const booking = await FollowUp.create({
       patientId: patient._id, staffId: advisorId, assignedTo: patient.assignedHealthManager,
       type: 'other', status: 'planned', date: initialTaskDate, remindAt: initialTaskDate, sourceType: 'order', sourceOrderId: order._id,
-      workflowKey: `${PREFIX}booking`, taskRole: 'executor', theme: supplyProxy ? `${supplementProxy ? '代配营养素' : '代配药'}：健管专员确认采购安排 · ${serviceName}` : `医疗代诊：健管专员完成专家门诊预约 · ${serviceName}`,
+      workflowKey: `${PREFIX}booking`, taskRole: 'executor', theme: supplyProxy ? `${supplementProxy ? '代配营养素' : '代配药'}：健管专员确认采购安排 · ${serviceName}` : `专家约诊：健管专员完成专家门诊预约 · ${serviceName}`,
       plannedContent: supplyProxy ? `系统已根据${supplementProxy ? '营养素' : '用药'}档案自动发起服务，请核对采购渠道、数量和配送时间；确认后转健康规划师安排执行人员。` : '健康顾问已发起专家约诊，请完成预约并记录实际日期时间。',
       formData: {
         planSnapshot: { ...plan, serviceContent: appointmentRequirement, initiationSource: STAFF_DIRECT_SOURCE },

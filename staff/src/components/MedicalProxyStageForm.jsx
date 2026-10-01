@@ -92,7 +92,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
   const stage = medicalProxyStage(task)
   const appointmentRequirementText = value.planSnapshot?.serviceContent || task?.formData?.planSnapshot?.serviceContent || task?.sourceOrderId?.serviceRequirements || ''
   const appointmentRequirement = parseAppointmentRequirement(appointmentRequirementText)
-  const isExpertAppointment = /专家约诊|专家门诊预约/.test(`${task?.theme || ''} ${task?.sourceOrderId?.serviceName || ''}`)
+  const isExpertAppointment = /专家约诊/.test(task?.sourceOrderId?.serviceName || task?.theme || '')
   const isHighEndInsurance = /(?:保险类型：高端险|费用与保险：(使用高端医疗险|商保))/.test(appointmentRequirementText)
   const isMedicationProxy = value.medicationProxy === true || /代配药|代取药/.test(`${task?.theme || ''} ${task?.sourceOrderId?.serviceName || ''}`)
   const isSupplementProxy = value.supplementProxy === true || /代配营养素/.test(`${task?.theme || ''} ${task?.sourceOrderId?.serviceName || ''}`)

@@ -17,9 +17,10 @@ test('confirmed appointment reschedule preserves one order and refreshes task, r
   const routes = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
   const scheduler = fs.readFileSync(path.join(__dirname, '../src/utils/appointmentReminderScheduler.js'), 'utf8');
   assert.match(routes, /followups\/:id\/expert-appointment\/reschedule/);
-  assert.match(routes, /workflowKey: 'medical_proxy:post_visit_audit', assignedTo: req\.staff\._id/);
+  assert.match(routes, /workflowKey: \{ \$in: \['medical_proxy:post_visit_audit','medical_proxy:booking','medical_proxy:supervise'\] \}/);
+  assert.match(routes, /assignedHealthManager\) !== String\(req\.staff\._id\)/);
   assert.match(routes, /'medicalProxyPlan\.bookingChanges': change/);
-  assert.match(routes, /'formData\.appointmentAt': latestAt/);
+  assert.match(routes, /FollowUp\.updateMany\(\{ sourceOrderId: order\._id, workflowKey: 'medical_proxy:post_visit_audit'/);
   assert.match(routes, /scheduleExpertAppointmentReminders\(\{ order: updated, appointmentDate: new Date\(`\$\{row\.appointmentDate\}T\$\{row\.appointmentTime\}:00\+08:00`\), appointmentText, slotIndex: index \}\)/);
   assert.match(routes, /title: '专家预约改期通知'/);
   assert.match(scheduler, /currentAppointments\.includes\(new Date\(reminder\.appointmentAt\)\.getTime\(\)\)/);

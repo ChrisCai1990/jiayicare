@@ -1,6 +1,8 @@
 import annualNutrition from '../../../shared/annualNutrition.cjs'
 import DateField from '../../../shared/DateField.jsx'
 import { followUpDateRange } from '../utils/staffWorkspace'
+import { serviceTaskTitle } from '../utils/serviceTaskTitle.mjs'
+import { ExpertAppointmentHistory } from '../components/ExpertAppointmentRescheduleForm'
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { staffAPI } from '../api'
@@ -98,7 +100,8 @@ function DetailModal({ item, onClose }) {
           <Row label="计划日期" value={formatChineseDate(item.date)} />
           <Row label="制定人" value={item.staffId?.name} />
           <Row label="制定时间" value={item.createdAt ? formatChineseDateTime(item.createdAt) : ''} />
-          <Row label="随访主题" value={item.theme} />
+          <Row label="随访主题" value={serviceTaskTitle(item)} />
+          <ExpertAppointmentHistory order={item.sourceOrderId} />
           <Row label="随访方式" value={FOLLOWUP_TYPE[item.type] || item.type} />
           {item.routinePeriod && <Row label="周期类型" value={ROUTINE_PERIOD[item.routinePeriod] || item.routinePeriod} />}
           <Row label="执行人" value={item.assignedTo?.name || '未指定'} />
@@ -203,7 +206,7 @@ export default function FollowUpsPage() {
     setEditItem(f)
     setEditForm({
       date: f.date ? f.date.slice(0, 10) : '',
-      theme: f.theme || '',
+      theme: serviceTaskTitle(f),
       type: f.type || 'phone',
       content: f.content || '',
       assignedTo: f.assignedTo?._id || '',
@@ -496,7 +499,7 @@ export default function FollowUpsPage() {
                       )}
                     </div>
                     <div style={{ fontSize: 13, color: '#4A6558', marginBottom: 4 }}>
-                      {f.theme || '常规随访'}
+                      {serviceTaskTitle(f) || '常规随访'}
                       <span style={{ color: '#C0B8AE', margin: '0 6px' }}>·</span>
                       <span style={{ color: '#8AA89C' }}>{formatChineseDate(f.nextFollowUpDate||f.date)}{f.nextFollowUpDate?'（下次跟进）':''}</span>
                       {f.assignedTo?.name && <><span style={{ color: '#C0B8AE', margin: '0 6px' }}>·</span><span style={{ color: '#8AA89C' }}>负责人 {f.assignedTo.name}</span></>}
@@ -582,7 +585,7 @@ export default function FollowUpsPage() {
                 {execItem.theme && (
                   <div style={{ display: 'flex', gap: 8 }}>
                     <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>{execItem.taskRole ? '事务名称：' : '随访主题：'}</span>
-                    <span style={{ fontSize: 13 }}>{execItem.theme}</span>
+                    <span style={{ fontSize: 13 }}>{serviceTaskTitle(execItem)}</span>
                   </div>
                 )}
                 {(execItem.content || execItem.plannedContent) && (

@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const Admin = require('../src/models/Admin');
 const FollowUp = require('../src/models/FollowUp');
+const HealthPlan = require('../src/models/HealthPlan');
 const MedicalReport = require('../src/models/MedicalReport');
 const User = require('../src/models/User');
 const Order = require('../src/models/Order');
@@ -12,17 +13,39 @@ const { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, ext
 test('starting a second paid medical order does not cancel the first order executor', async () => {
   const previous = { exists: FollowUp.exists, find: FollowUp.find, upsert: FollowUp.findOneAndUpdate, updateMany: FollowUp.updateMany, userFind: User.findById };
   const cancelled = [];
+  const created = [];
   try {
     FollowUp.exists = async () => false;
     FollowUp.find = () => ({ sort: () => ({ limit: () => ({ select: () => ({ lean: async () => [] }) }) }) });
-    FollowUp.findOneAndUpdate = async (filter, update) => ({ _id: filter.workflowKey, createdAt: new Date(), ...update.$setOnInsert });
+    FollowUp.findOneAndUpdate = async (filter, update) => { const task = { _id: filter.workflowKey, createdAt: new Date(), ...update.$setOnInsert }; created.push(task); return task; };
     FollowUp.updateMany = async (filter, update) => { cancelled.push({ filter, update }); return { modifiedCount: 0 }; };
     User.findById = () => ({ select: () => ({ lean: async () => ({ assignedHealthManager: 'manager' }) }) });
     await startMedicalProxyWorkflow({ _id: 'second-order', user: 'patient', serviceName: '专家约诊服务' }, 'planner', '2026-12-01', null, '专家门诊', '');
+    assert.match(created.find(task => task.workflowKey === 'medical_proxy:supervise').theme, /^专家约诊：/);
+    assert.doesNotMatch(created.find(task => task.workflowKey === 'medical_proxy:supervise').plannedContent, /代诊/);
     assert.equal(cancelled.some(({ filter }) => filter.sourceOrderId?.$ne === 'second-order' && filter.workflowKey?.$in?.includes('medical_proxy:booking')), false);
   } finally {
     FollowUp.exists = previous.exists; FollowUp.find = previous.find; FollowUp.findOneAndUpdate = previous.upsert;
     FollowUp.updateMany = previous.updateMany; User.findById = previous.userFind;
+  }
+});
+
+test('advisor initiated expert appointment creates expert appointment tasks', async () => {
+  const previous = { orderCreate: Order.create, orderUpdate: Order.updateOne, taskCreate: FollowUp.create, planCreate: HealthPlan.create };
+  try {
+    Order.create = async row => ({ _id: 'expert-order', ...row });
+    Order.updateOne = async () => ({ modifiedCount: 1 });
+    FollowUp.create = async row => ({ _id: `task-${row.workflowKey}`, ...row });
+    HealthPlan.create = async row => ({ _id: 'expert-plan', ...row });
+    const result = await startStaffMedicalProxyWorkflow({
+      patient: { _id: 'patient', assignedHealthManager: 'manager', assignedHealthPlanner: 'planner' }, advisorId: 'advisor',
+      plan: { appointmentOnly: true, preferredDateStart: '2026-10-02', preferredDateEnd: '2026-10-05' },
+    });
+    assert.equal(result.order.serviceName, '专家约诊服务');
+    assert.match(result.booking.theme, /^专家约诊：/);
+    assert.match(result.supervisor.theme, /^专家约诊：/);
+  } finally {
+    Order.create = previous.orderCreate; Order.updateOne = previous.orderUpdate; FollowUp.create = previous.taskCreate; HealthPlan.create = previous.planCreate;
   }
 });
 
