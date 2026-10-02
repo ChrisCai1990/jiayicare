@@ -3,16 +3,95 @@ const FollowUp = require('../models/FollowUp');
 const MedicalReport = require('../models/MedicalReport');
 const Medication = require('../models/Medication');
 const Order = require('../models/Order');
+const Product = require('../models/Product');
 const ServiceRecord = require('../models/ServiceRecord');
 const HealthPlan = require('../models/HealthPlan');
 const User = require('../models/User');
+const mongoose = require('mongoose');
 const { createHash } = require('node:crypto');
 const { needsPlannerDispatch } = require('./proxyPlannerDispatch');
+const PackageEntitlement = require('../models/PackageEntitlement');
+const { applicableEntitlements } = require('./packageEntitlements');
 
 const PREFIX = 'medical_proxy:';
 const STAGES = ['collect', 'audit', 'advisor', 'planner', 'booking', 'execute'];
 const ALL_STAGES = [...STAGES, 'appointment_review', 'post_visit_audit', 'post_visit_review'];
 const STAFF_DIRECT_SOURCE = 'staff_direct';
+async function settleCompletedMedicalOrder(order, actorId) {
+  if ((order.packageEntitlementUsage || Number(order.paidAmount || 0) > 0)
+    && Number(order.totalUnits || 1) === 1 && Number(order.usedUnits || 0) < 1 && actorId) {
+    const completedAt = order.completedAt || new Date();
+    const updated = await Order.findOneAndUpdate({ _id: order._id, status: 'completed', usedUnits: { $lt: 1 } }, {
+      $set: { usedUnits: 1 }, $push: { redemptions: { sequence: 1, redeemedAt: completedAt,
+        redeemedBy: actorId, note: '就医协助实际服务完成后自动核销' } },
+    }, { new: true });
+    if (updated) order = updated;
+  }
+  await require('./packageServiceRedemption').safeReconcilePackageOrder(order);
+  if (order.paymentStatus === 'paid' && Number(order.paidAmount || 0) > 0)
+    await require('./commissionSettlement').settleOrderCommission(order);
+}
+async function reserveStaffMedicalBenefit(patientId, order, serviceName) {
+  if (!mongoose.isValidObjectId(patientId)) return { status: 'not_covered' };
+  const coveredName = /医疗代诊/.test(serviceName) ? '医疗代诊服务'
+    : /^陪同.*服务$/.test(serviceName) ? '就医陪同服务' : '';
+  if (!coveredName) return { status: 'not_covered' };
+  let rows = await applicableEntitlements(patientId);
+  if (!rows.length) {
+    const user = await User.findById(patientId).select('_id tenantId clientBrand servicePackage serviceStartDate serviceExpiry familyLinks').lean();
+    if (user) {
+      await require('./packageServiceRedemption').ensureEffectiveServiceLedger(user);
+      rows = await applicableEntitlements(patientId);
+    }
+  }
+  const matches = rows.flatMap(entitlement => (entitlement.rights?.productEntitlements || [])
+    .map((right, index) => ({ entitlement, right, index }))
+    .filter(({ right }) => right.productName === coveredName));
+  if (!matches.length) return await Product.exists({ name: coveredName, status: 'on' })
+    ? { status: 'paid_required' } : { status: 'not_covered' };
+  if (new Set(matches.map(({ right }) => `${right.productId}:${right.specificationLabel || ''}`)).size > 1)
+    return { status: 'ambiguous' };
+  if (matches.some(({ entitlement }) => entitlement.historyVerified === false))
+    return { status: 'history_pending' };
+  for (const { entitlement, right, index } of matches) {
+    const poolIndex = right.poolKey
+      ? (entitlement.rights.sharedEntitlementPools || []).findIndex(pool => pool.key === right.poolKey) : -1;
+    if (right.poolKey && poolIndex < 0) continue;
+    const path = poolIndex >= 0 ? `rights.sharedEntitlementPools.${poolIndex}.remainingCount`
+      : `rights.productEntitlements.${index}.remainingCount`;
+    const now = new Date();
+    const result = await PackageEntitlement.updateOne({ _id: entitlement._id, status: 'active',
+      historyVerified: { $ne: false }, validFrom: { $lte: now }, validUntil: { $gte: now },
+      [path]: { $gte: 1 } }, { $inc: { [path]: -1 }, $push: { usageRecords: {
+      productId: right.productId, productName: right.productName,
+      poolKey: poolIndex >= 0 ? right.poolKey : '', usedByUserId: patientId,
+      executionOrderId: order._id, usedAt: now, status: 'reserved',
+      note: '健康顾问发起就医协助服务',
+    } } });
+    if (result.modifiedCount !== 1) continue;
+    try {
+      order.serviceId = String(right.productId);
+      order.paymentStatus = 'paid';
+      order.tradeStatus = 'paid';
+      order.paidAmount = 0;
+      order.paymentExpectedAmount = 0;
+      order.paidAt = now;
+      order.status = 'scheduled';
+      order.packageEntitlementUsage = { entitlementId: entitlement._id,
+        sourceOrderId: entitlement.sourceOrderId, ownerUserId: entitlement.ownerUserId,
+        productId: right.productId, poolKey: poolIndex >= 0 ? right.poolKey : '',
+        rightIndex: index, reservedAt: now };
+      await order.save();
+      return { status: 'reserved' };
+    } catch (error) {
+      await PackageEntitlement.updateOne({ _id: entitlement._id,
+        usageRecords: { $elemMatch: { executionOrderId: order._id, status: 'reserved' } } },
+      { $inc: { [path]: 1 }, $set: { 'usageRecords.$.status': 'cancelled' } });
+      throw error;
+    }
+  }
+  return { status: 'exhausted' };
+}
 const isMedicalProxyOrder = orderOrName => orderOrName?.serviceWorkflowSnapshot?.key === 'medical_proxy'
   || /医疗代诊|专家约诊|就医规划/.test(String(typeof orderOrName === 'object' ? orderOrName?.serviceName : orderOrName || ''));
 const stageOf = task => task?.sourceType === 'order' && String(task.workflowKey || '').startsWith(PREFIX)
@@ -650,6 +729,19 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
     serviceWorkflowSnapshot: { key: 'medical_proxy', source: STAFF_DIRECT_SOURCE },
     medicalProxyPlan: (supplyProxy || medicalEscort) ? { ...plan, initiationSource: STAFF_DIRECT_SOURCE } : null,
   });
+  let benefit;
+  try { benefit = await reserveStaffMedicalBenefit(patient._id, order, serviceName); }
+  catch (error) {
+    await Order.deleteOne({ _id: order._id, status: 'pending', paymentStatus: 'unpaid' });
+    throw error;
+  }
+  if (['history_pending', 'exhausted', 'ambiguous', 'paid_required'].includes(benefit.status)) {
+    await Order.deleteOne({ _id: order._id, status: 'pending', paymentStatus: 'unpaid' });
+    throw Object.assign(new Error(benefit.status === 'history_pending'
+      ? '服务包历史次数待核对，请先由医护端超管核对'
+      : benefit.status === 'ambiguous' ? '同名服务有多个收费规格，请在会员权益中选择具体服务'
+        : '套餐无可用次数，请先购买对应付费服务'), { status: 409 });
+  }
   // 专家约诊是订单驱动的轻量流程，过去只生成了健管任务，导致健康顾问在
   // “服务方案”总览中看不到任何记录，无法确认发起是否成功。同步写入一份
   // 只读的方案回执，让方案列表和任务工作台指向同一 sourceOrderId。
@@ -1025,6 +1117,7 @@ async function advanceMedicalProxyWorkflow(task) {
       }
       order.status = 'completed'; order.tradeStatus = 'completed'; order.completedAt = new Date();
       await order.save();
+      await settleCompletedMedicalOrder(order, task.assignedTo);
       await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } }, { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', 'formData.currentStage': 'completed', content: '陪同资料已由健管专员审核归档，就医陪同服务结束。' } });
       await Order.updateOne({ _id: order._id }, { $set: { currentStage: 'completed', currentAssignee: null, supervisionStatus: 'completed' } });
       return;
@@ -1038,6 +1131,7 @@ async function advanceMedicalProxyWorkflow(task) {
     await MedicalReport.updateMany({ _id: { $in: ids }, user: task.patientId, audit_status: 'audited' }, { $set: { familyDoctorViewedAt: new Date() } });
     order.status = 'completed'; order.tradeStatus = 'completed'; order.completedAt = new Date();
     await order.save();
+    await settleCompletedMedicalOrder(order, task.assignedTo);
     await FollowUp.updateOne({ sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } }, { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', 'formData.currentStage': 'completed', content: order.medicalProxyPlan?.adHocConsultation ? '临时加诊资料已由健管专员审核、健康顾问查看，服务结束。' : '就诊后资料已由健管专员审核并由健康顾问查看，专家约诊服务结束。' } });
     return;
   }
@@ -1117,6 +1211,7 @@ async function advanceMedicalProxyWorkflow(task) {
       order.tradeStatus = 'completed';
       order.completedAt = new Date();
       await order.save();
+      await settleCompletedMedicalOrder(order, task.assignedTo);
     }
     await FollowUp.updateOne(
       { sourceType: 'order', sourceOrderId: order._id, workflowKey: `${PREFIX}supervise`, status: { $in: ['planned', 'in_progress'] } },
@@ -1243,4 +1338,4 @@ async function ensureStaffExpertAppointmentTasksForStaff(staff) {
   }
   return created;
 }
-module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, supplyResolutionSummary, createPrescriptionMedicationDrafts, createClinicalPrescriptionMedicationDrafts, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, ensureStaffExpertAppointmentTasksForStaff, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, autoAdvancePostVisitAuditAfterReportAudit, validateMedicalProxyStage, advanceMedicalProxyWorkflow };
+module.exports = { isMedicalProxyOrder, stageOf, preparationDueDate, reportIdsFromTask, findRecentSelectedReportIds, extractMedicalProxyRechecks, medicalEscortAttachmentEntries, supplyResolutionSummary, createPrescriptionMedicationDrafts, createClinicalPrescriptionMedicationDrafts, startMedicalProxyWorkflow, startStaffMedicalProxyWorkflow, reserveStaffMedicalBenefit, ensureStaffExpertAppointmentTasksForStaff, upsertMedicalProxyServiceRecord, repairCompletedMedicalEscortAuditTasks, autoAdvancePostVisitAuditAfterReportAudit, validateMedicalProxyStage, advanceMedicalProxyWorkflow };

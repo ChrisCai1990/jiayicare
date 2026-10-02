@@ -7407,7 +7407,7 @@ router.post('/patients/:id/package-entitlements/:entitlementId/use', staffAuth, 
     // 若是同一商品的不同收费规格，前端会传 entitlementKey，避免误扣。
     const candidates = entitlements.map(entitlement => {
       const matchingIndexes = (entitlement.rights?.productEntitlements || []).map((item, index) => ({ item, index })).filter(({ item }) =>
-        entitlementKey ? String(item.entitlementKey || '') === entitlementKey : String(item.productId) === productId,
+        String(item.productId) === productId && (!entitlementKey || String(item.entitlementKey || '') === entitlementKey),
       );
       if (!entitlementKey && matchingIndexes.length > 1) return { entitlement, ambiguous: true };
       const productRightIndex = matchingIndexes[0]?.index ?? -1;
@@ -8389,6 +8389,43 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
     const actionableOrder = await Order.exists({ _id: req.params.id, ...require('../utils/orderWorkItem').activeOrderWorkItemQuery() });
     if (!actionableOrder) return res.status(409).json({ success: false, message: '订单已退款、取消、完成或尚未支付，不能继续生成服务方案' });
     const currentOrder = await Order.findById(req.params.id);
+    if (action === 'actual_start' && !req.body.actualPackageService) {
+      if (!['healthPlanner', 'superadmin'].includes(req.staff.role))
+        return res.status(403).json({ success: false, message: '付费服务由健康规划师确认实际启动' });
+      if (!currentOrder || currentOrder.orderType !== 'service' || currentOrder.status !== 'scheduled' || currentOrder.packageEntitlementUsage
+        || currentOrder.paymentStatus !== 'paid' || Number(currentOrder.paidAmount || 0) <= 0
+        || Number(currentOrder.totalUnits || 1) !== 1 || currentOrder.serviceItemsSnapshot?.length)
+        return res.status(409).json({ success: false, message: '仅已付款、已安排的单次付费服务可确认实际启动' });
+      const patient = await User.findById(currentOrder.user).select('assignedHealthPlanner').lean();
+      if (req.staff.role !== 'superadmin' && String(patient?.assignedHealthPlanner || currentOrder.supervisorId || '') !== String(req.staff._id))
+        return res.status(403).json({ success: false, message: '只能确认本人负责的服务' });
+      const evidence = String(req.body.evidence || '').trim();
+      if (!evidence) return res.status(400).json({ success: false, message: '请填写实际启动的服务内容' });
+      const now = new Date();
+      const hasWorkflow = !!currentOrder.serviceWorkflowSnapshot?.key;
+      const updated = await Order.findOneAndUpdate({ _id: currentOrder._id, orderType: 'service', status: 'scheduled',
+        $or: [{ usedUnits: { $lt: 1 } }, { usedUnits: { $exists: false } }],
+        serviceStartedAt: null, paymentStatus: 'paid' }, {
+        $set: { serviceStartedAt: now, serviceStartedBy: req.staff._id,
+          serviceStartEvidence: evidence.slice(0, 1000), usedUnits: 1,
+          status: hasWorkflow ? 'scheduled' : 'completed', tradeStatus: hasWorkflow ? 'fulfilling' : 'completed',
+          ...(hasWorkflow ? {} : { completedAt: now, fulfillmentStatus: 'completed' }) },
+        $push: { redemptions: { sequence: 1, redeemedAt: now, redeemedBy: req.staff._id,
+          note: evidence.slice(0, 1000) } },
+      }, { new: true });
+      if (!updated) return res.status(409).json({ success: false, message: '服务已启动或已核销，请刷新记录' });
+      try {
+        await Fulfillment.findOneAndUpdate({ order: updated._id },
+          { $set: { status: hasWorkflow ? 'in_service' : 'completed', note: evidence.slice(0, 1000),
+            ...(hasWorkflow ? {} : { completedAt: now }) },
+            $setOnInsert: { order: updated._id, user: updated.user,
+              type: updated.fulfillmentType || 'offline_service' } }, { upsert: true });
+        if (!hasWorkflow) await require('../utils/commissionSettlement').settleOrderCommission(updated);
+      } catch (error) { console.error('[paid-service-start] follow-up settlement pending', updated._id, error.message); }
+      return res.json({ success: true, data: updated, message: hasWorkflow
+        ? '实际服务已启动，付费订单自动核销1次；后续任务继续执行至结案'
+        : '实际服务已启动，付费订单自动核销并完成' });
+    }
     if (req.body.actualPackageService && ['actual_start', 'complete'].includes(action)) {
       if (!currentOrder?.packageEntitlementUsage || currentOrder.status !== 'scheduled')
         return res.status(409).json({ success: false, message: '仅已安排的套餐履约单可以确认实际启动或完成' });

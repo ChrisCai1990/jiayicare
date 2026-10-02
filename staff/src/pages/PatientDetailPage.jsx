@@ -9391,7 +9391,12 @@ export default function PatientDetailPage() {
               {['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && (
                 <button className="btn btn-secondary btn-sm" disabled={aiMedicalAssistGenerating}
                   onClick={() => nav(`/plans?type=medical_assist&patientId=${encodeURIComponent(id)}&patientName=${encodeURIComponent(data?.user?.name || '')}&openPlan=medical_assist`)}>
-                  {aiMedicalAssistGenerating ? '生成中…' : '✨ 发起就医协助方案'}
+                  {aiMedicalAssistGenerating ? '生成中…' : '✨ 创建就医协助方案'}
+                </button>
+              )}
+              {['familyDoctor', 'healthPlanner', 'superadmin'].includes(staff?.role) && (
+                <button className="btn btn-secondary btn-sm" onClick={() => setTab('consumption')}>
+                  发起就医协助服务（套餐优先）
                 </button>
               )}
               {['healthPlanner', 'superadmin'].includes(staff?.role) && (
@@ -10689,10 +10694,10 @@ export default function PatientDetailPage() {
           })),
         ])
         const startIncludedService = async item => {
-          if (!item.entitlement || !item.productId || !window.confirm(`确认从「${item.packageName}」发起「${item.name}」吗？本次生成 ¥0 履约单并预占 1 次，服务完成后核销。`)) return
+          if (!item.entitlement || !item.productId || !window.confirm(`确认发起「${item.name}」吗？系统优先使用最早到期的有效套餐，预占 1 次；实际启动后自动核销。`)) return
           setUsingEntitlementId(item.key)
           try {
-            const result = await staffAPI.usePackageEntitlement(id, item.entitlement._id, { productId: item.productId, entitlementKey: item.entitlementKey })
+            const result = await staffAPI.usePackageEntitlement(id, 'auto', { productId: item.productId, entitlementKey: item.entitlementKey })
             setPatientOrders(previous => [result.data.executionOrder, ...previous])
             await loadMembership()
             toast(result.message || '已生成 ¥0 履约单')
@@ -10834,6 +10839,23 @@ export default function PatientDetailPage() {
                                 finally { setRedeemingOrderId(null) }
                               }}>{redeemingOrderId === order._id ? '处理中…' : Number(order.totalUnits || 1) === 1 ? '确认实际启动·自动核销' : '确认实际启动'}</button>
                           )}
+                          {order.orderType === 'service' && order.status === 'scheduled' && !order.packageEntitlementUsage
+                            && order.paymentStatus === 'paid' && Number(order.paidAmount || 0) > 0
+                            && Number(order.totalUnits || 1) === 1 && !(order.serviceItemsSnapshot || []).length
+                            && !order.serviceStartedAt && ['healthPlanner', 'superadmin'].includes(staff?.role) && (
+                            <button className="btn btn-sm" disabled={redeemingOrderId === order._id}
+                              style={{ background: '#22A06B', color: '#fff', border: 'none' }} onClick={async () => {
+                                const evidence = window.prompt('请填写实际启动的服务内容；确认后自动核销本次付费服务：', '')
+                                if (!evidence?.trim()) return
+                                setRedeemingOrderId(order._id)
+                                try {
+                                  const res = await staffAPI.startOrder(order._id, { action: 'actual_start', evidence: evidence.trim() })
+                                  setPatientOrders(prev => prev.map(o => o._id === order._id ? res.data : o))
+                                  toast(res.message || '已自动核销')
+                                } catch (err) { toast(err.message || '操作失败') }
+                                finally { setRedeemingOrderId(null) }
+                              }}>{redeemingOrderId === order._id ? '处理中…' : '确认实际启动·自动核销'}</button>
+                          )}
                           {order.status === 'scheduled' && order.packageEntitlementUsage && order.serviceStartedAt
                             && Number(order.totalUnits || 1) === 1 && !(order.serviceItemsSnapshot || []).length
                             && !order.serviceWorkflowSnapshot?.key && (
@@ -10847,7 +10869,7 @@ export default function PatientDetailPage() {
                               finally { setRedeemingOrderId(null) }
                             }}>完成服务</button>
                           )}
-                          {order.status === 'scheduled' && (!order.packageEntitlementUsage || (order.serviceStartedAt && Number(order.totalUnits || 1) > 1)) && (order.usedUnits || 0) < (order.totalUnits || 1) && !(order.serviceItemsSnapshot || []).length && (
+                          {order.status === 'scheduled' && (Number(order.totalUnits || 1) > 1 || (!order.packageEntitlementUsage && !(order.orderType === 'service' && order.paymentStatus === 'paid' && Number(order.paidAmount || 0) > 0))) && (order.usedUnits || 0) < (order.totalUnits || 1) && !(order.serviceItemsSnapshot || []).length && (
                             <button className="btn btn-sm" disabled={redeemingOrderId === order._id}
                               style={{ background: '#22A06B', color: '#fff', border: 'none' }} onClick={async () => {
                               const note = window.prompt(`确认核销第 ${(order.usedUnits || 0) + 1}/${order.totalUnits || 1} 次服务。\n可填写本次服务备注（可留空）：`, '')
