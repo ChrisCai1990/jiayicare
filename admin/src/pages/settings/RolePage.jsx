@@ -16,9 +16,11 @@ const PLAN_TYPES = [
 
 // 医护端（staff portal）功能模块权限配置
 const MODULES = [
+  { key: 'service_assistant', label: '家庭服务助手', actions: ['view'] },
   { key: 'patients',        label: '我的会员',     actions: ['view', 'create', 'edit', 'delete'] },
   { key: 'followups',       label: '随访管理',     actions: ['view', 'create', 'edit', 'delete'] },
   { key: 'plans',           label: '健康方案',     actions: ['view', 'create', 'edit', 'delete'], planTypes: PLAN_TYPES },
+  { key: 'medical_resources', label: '就医资源', actions: ['view'] },
   { key: 'reports',         label: '报告管理',     actions: ['view', 'audit', 'delete'] },
   { key: 'abnormal_review', label: '异常复查',     actions: ['view', 'create', 'edit'] },
   { key: 'service_records', label: '服务记录',     actions: ['view', 'create', 'edit', 'delete'] },

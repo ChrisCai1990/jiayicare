@@ -3165,7 +3165,7 @@ router.get('/medical-resources', staffAuth, async (req, res) => {
 });
 
 // 仅返回已发布且仍在复核有效期内的资源知识；内部来源、责任人和审核备注不下发给医护端。
-router.get('/medical-resource-knowledge', staffAuth, async (req, res) => {
+router.get('/medical-resource-knowledge', staffAuth, checkPermission('medical_resources', 'view'), async (req, res) => {
   const q = String(req.query.q || '').trim();
   const kind = String(req.query.kind || '').trim();
   const filter = {

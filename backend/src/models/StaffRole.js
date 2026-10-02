@@ -5,9 +5,11 @@ const staffRoleSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   permissions: {
     // 医护端模块权限：{ view, create, edit, delete, audit, send }
+    service_assistant: { type: Object, default: {} },
     patients:        { type: Object, default: {} },
     followups:       { type: Object, default: {} },
     plans:           { type: Object, default: {} },
+    medical_resources: { type: Object, default: {} },
     reports:         { type: Object, default: {} },
     abnormal_review: { type: Object, default: {} },
     service_records: { type: Object, default: {} },
