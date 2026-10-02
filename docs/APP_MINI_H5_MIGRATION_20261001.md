@@ -38,6 +38,7 @@
 - 2026-10-02 首次将独立预览页暂存到 `https://jiaycare.com/mobile-preview/` 后，本机 Edge 发现空白页与 React #31；原因是 npm workspace 将 Taro 依赖提升到根目录的 React 19，而小程序使用 React 18。已在 H5 Webpack 配置中固定 React 18，先用本地资源覆盖同源 URL 验证登录页，再备份替换独立预览。线上匿名登录页现返回 200、可见，浏览器无脚本错误；原版站点和 `/api/health` 同时返回 200。未修改 Nginx 或运行中的业务进程。部署脚本保留被替换预览的备份，普通生产发布仍遵循标准流程。
 - 2026-10-02 再跑平台桥接、H5 录音、报告预览、登录及支付回归共 16 项，全部通过。当前桌面环境未提供 ADB、EAS CLI；尝试临时运行 EAS CLI 遇到 Windows pnpm 缓存符号链接权限错误。Android APK 构建及真机验收仍未完成，不应把已发布的 H5 预览当作新版 App 交付。
 - 2026-10-02 复查发现普通站点发布清空了 `app/dist/mobile-preview`，该网址退回旧 Expo 网页。重新以 React 18 构建 H5（仅体积警告），通过独立脚本恢复 48 个文件到该预览目录；浏览器现显示 Taro 访客首页，脚本均从 `/mobile-preview/js/` 加载且无页面错误。该目录仍会被后续普通站点发布清空，需在正式 App 验收前改成持久托管位置或纳入安全的标准发布流程。
+- 2026-10-02 已从独立分支 `app-shared-h5-preview-20261002` 的 `7c36ca79` 通过 Expo GitHub 构建 `shared-h5-preview` Android APK，构建 ID `d7c2efaf-b500-44e4-bbc3-acbe85b53c84` 成功。APK 存于工作区外层 `mobile-test-apks/jiayicare-shared-h5-preview-20261002.apk`，大小 66,787,976 字节，SHA-256 `9C31656796A27FFEB93608D38C693E49DB2935E24284E0400EEFD277E346EA2C`。该 APK 尚未华为真机安装/登录/业务验收，不代表正式交付。已从 Google 官方来源准备 ADB 37.0.1，当前 `adb devices` 未发现设备，正等待手机连接。
 
 ## 未完成，禁止交付为正式 App
 
