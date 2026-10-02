@@ -3,6 +3,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast, usePermission, useStaff } from '../App'
+import NutritionAssessmentFields, { initialNutritionAssessment, missingNutritionAssessment } from '../components/NutritionAssessmentFields'
 
 const TYPE_LABEL = {
   annual_checkup:  '年度体检方案',
@@ -137,7 +138,7 @@ export default function PlansPage() {
           <button className="btn btn-primary btn-sm" onClick={() => setShowCheckupModal(true)}>＋ 新增年度体检方案</button>
         )}
         {typeFilter === 'nutrition' && can('plans', 'create') && ['nutritionist', 'superadmin'].includes(staff?.role) && (
-          <button className="btn btn-primary btn-sm" onClick={() => setShowNutritionModal(true)}>＋ 新增营养干预方案</button>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowNutritionModal(true)}>＋ 生成营养干预方案</button>
         )}
         {typeFilter === 'annual_mgmt' && can('plans', 'create') && ['familyDoctor', 'superadmin'].includes(staff?.role) && (
           <button className="btn btn-primary btn-sm" onClick={() => setShowAhModal(true)}>＋ 新增年度管理方案</button>
@@ -246,7 +247,7 @@ export default function PlansPage() {
           </div>
           {showCheckupModal   && <AnnualCheckupPlanModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} onClose={() => closePlanModal(setShowCheckupModal)} onSaved={() => { closePlanModal(setShowCheckupModal); loadPlans(); toast('体检方案已创建') }} />}
           {showMedicalModal   && <MedicalAssistPlanModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} onClose={() => closePlanModal(setShowMedicalModal)} onSaved={() => { closePlanModal(setShowMedicalModal); loadPlans(); toast('就医协助方案已创建') }} />}
-          {showNutritionModal && <NutritionPlanModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} onClose={() => closePlanModal(setShowNutritionModal)} onSaved={() => { closePlanModal(setShowNutritionModal); loadPlans(); toast('营养干预方案已创建') }} />}
+          {showNutritionModal && <NutritionAIDraftModal initialPatientId={initialPatientId} initialPatientName={initialPatientName} onClose={() => closePlanModal(setShowNutritionModal)} onSaved={plan => { closePlanModal(setShowNutritionModal); loadPlans(); toast('AI营养草稿已生成，请核对后推送'); nav(`/plans/${plan._id}/modules`) }} />}
           {showModal && <NewPlanModal type={typeFilter || 'annual_checkup'} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); loadPlans(); toast('方案已创建') }} />}
         </>
       )}
@@ -1157,202 +1158,97 @@ function MedicalAssistPlanModal({ onClose, onSaved, initialPatientId = '', initi
   )
 }
 
-// ── 营养干预方案：两步创建弹窗 ───────────────────────────────────────
-const MEALS = [
-  { timeKey: 'breakfastTime', contentKey: 'breakfast', label: '早餐', timePlaceholder: '如：07:00' },
-  { timeKey: 'lunchTime',     contentKey: 'lunch',     label: '午餐', timePlaceholder: '如：12:00' },
-  { timeKey: 'dinnerTime',    contentKey: 'dinner',    label: '晚餐', timePlaceholder: '如：18:30' },
-  { timeKey: 'snackTime',     contentKey: 'snack',     label: '加餐', timePlaceholder: '如：15:00（选填）', rows: 2 },
-]
-const NUTRITION_INIT = {
-  dailyWater: '',
-  breakfastTime: '', breakfast: '',
-  lunchTime: '',     lunch: '',
-  dinnerTime: '',    dinner: '',
-  snackTime: '',     snack: '',
-  cookingMethod: '', mealOrder: '', dietPrinciple: '',
-  nutritionSupplements: '', exerciseSuggestion: '',
-  allowedFoods: '', forbiddenFoods: '',
-}
-
-function NutritionPlanModal({ onClose, onSaved, initialPatientId = '', initialPatientName = '' }) {
-  const [step, setStep]               = useState(1)
-  const [templates, setTemplates]     = useState([])
-  const [loadingTpls, setLoadingTpls] = useState(true)
-  const [tplError, setTplError]       = useState('')
+// 统一走“核实资料 → AI 草稿 → 营养师审核”流程，模板只提供约束与参考。
+function NutritionAIDraftModal({ onClose, onSaved, initialPatientId = '', initialPatientName = '' }) {
+  const [patientId, setPatientId] = useState(initialPatientId)
+  const [patient, setPatient] = useState(null)
+  const [templates, setTemplates] = useState([])
   const [selectedTpl, setSelectedTpl] = useState(null)
-  const [form, setForm]               = useState(NUTRITION_INIT)
-  const set                           = (k, v) => setForm(p => ({ ...p, [k]: v }))
-  const [planTitle, setPlanTitle]     = useState('')
-  const [patientId, setPatientId]     = useState(initialPatientId)
-  const [year, setYear]               = useState(new Date().getFullYear())
-  const [description, setDescription] = useState('')
-  const [saving, setSaving]           = useState(false)
-  const [error, setError]             = useState('')
+  const [step, setStep] = useState(1)
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [goal, setGoal] = useState('')
+  const [assessment, setAssessment] = useState(() => initialNutritionAssessment())
 
   useEffect(() => {
-    staffAPI.getPlanTemplates('nutrition')
-      .then(res => setTemplates(res.data || []))
-      .catch(err => setTplError(err.message || '加载失败'))
-      .finally(() => setLoadingTpls(false))
-  }, [])
-
-  const selectTemplate = (tpl) => {
-    setSelectedTpl(tpl)
-    const c = tpl.content || {}
-    setPlanTitle(tpl.name || '')
-    setForm({ ...NUTRITION_INIT, ...Object.fromEntries(Object.keys(NUTRITION_INIT).map(k => [k, c[k] || ''])) })
-    setDescription(c.description || '')   // 预填模板里设置的标准化方案说明，创建时可再修改
-    setStep(2); setError('')
-  }
-
-  const handleSubmit = async () => {
-    if (!patientId)        { setError('请搜索并选择会员'); return }
-    if (!planTitle.trim()) { setError('请填写方案名称'); return }
-    setError(''); setSaving(true)
-    try {
-      const items = []
-      MEALS.forEach(m => {
-        if (form[m.contentKey]) {
-          const t = form[m.timeKey] ? `（${form[m.timeKey]}）` : ''
-          items.push({ name: `${m.label}${t}：${form[m.contentKey]}`, category: '饮食干预' })
-        }
+    setPatient(null)
+    setTemplates([])
+    setSelectedTpl(null)
+    setStep(1)
+    setAssessment(initialNutritionAssessment())
+    setGoal('')
+    setError('')
+    if (!patientId) { setLoading(false); return }
+    let active = true
+    setLoading(true)
+    Promise.all([staffAPI.getPatient(patientId), staffAPI.getPlanTemplates('nutrition', patientId)])
+      .then(([patientResult, templateResult]) => {
+        if (!active) return
+        const user = patientResult.data?.user
+        setPatient(user || null)
+        setAssessment(initialNutritionAssessment(user))
+        setTemplates(templateResult.data || [])
       })
-      if (form.dailyWater)           items.push({ name: `每日饮水：${form.dailyWater} ml`, category: '饮食干预' })
-      if (form.dietPrinciple)        items.push({ name: `膳食原则：${form.dietPrinciple}`, category: '饮食干预' })
-      if (form.nutritionSupplements) items.push({ name: `营养素：${form.nutritionSupplements}`, category: '营养干预' })
-      if (form.exerciseSuggestion)   items.push({ name: `运动：${form.exerciseSuggestion}`, category: '运动干预' })
-      await staffAPI.createPlan({ patientId, type: 'nutrition', title: planTitle, description, year, items, content: { ...form } })
-      onSaved()
-    } catch (err) { setError(err.message) } finally { setSaving(false) }
+      .catch(err => { if (active) setError(err.message || '加载会员资料与模板失败') })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [patientId])
+
+  const selectTemplate = template => {
+    setSelectedTpl(template)
+    setAssessment(current => ({ ...current, templateCompatibilityConfirmed: false }))
+    setError('')
+    setStep(2)
   }
 
-  const iStyle = { width: '100%', padding: '7px 10px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit' }
+  const generate = async () => {
+    if (!patientId || !selectedTpl || !patient) { setError('请先选择会员和模板'); return }
+    const missing = missingNutritionAssessment(assessment, goal)
+    if (missing.length) { setError(`生成前请补齐：${missing.join('、')}`); return }
+    if (assessment.riskStatus === 'specialist') { setError('此客户需专业评估，请先完成评估后人工制定方案'); return }
+    setError('')
+    setSaving(true)
+    try {
+      const result = await staffAPI.generateAINutritionPlan(patientId, selectedTpl._id, { ...assessment, goal: goal.trim() })
+      await onSaved(result.data)
+    } catch (err) { setError(err.message || '生成失败，请核对资料后重试') }
+    finally { setSaving(false) }
+  }
 
-  if (step === 1) return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 520 }}>
-        <div className="modal-header">
-          <h3 className="modal-title">新建营养干预方案 — 选择方案模板</h3>
-          <button className="modal-close" onClick={onClose}>✕</button>
-        </div>
-        <div className="modal-body" style={{ maxHeight: 440, overflowY: 'auto' }}>
-          {loadingTpls && <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>加载模板中...</div>}
-          {tplError && <div style={{ color: '#DC3545', fontSize: 13, padding: '8px 12px', background: '#FEF2F2', borderRadius: 8 }}>⚠️ {tplError}</div>}
-          {!loadingTpls && !tplError && templates.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>暂无可用模板，请先在超管后台创建营养干预方案模板</div>}
-          {templates.map(tpl => {
-            const c = tpl.content || {}
-            return (
-              <div key={tpl._id} onClick={() => selectTemplate(tpl)}
-                style={{ border: '1px solid #E0D9CE', borderRadius: 10, padding: '14px 18px', marginBottom: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14 }}
-                onMouseEnter={e => { e.currentTarget.style.border = '1px solid #7C3AED'; e.currentTarget.style.background = '#F3E8FF' }}
-                onMouseLeave={e => { e.currentTarget.style.border = '1px solid #E0D9CE'; e.currentTarget.style.background = '#fff' }}
-              >
-                <span style={{ fontSize: 26 }}>🥗</span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24' }}>{tpl.name}</div>
-                  {c.dietPrinciple && <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>{c.dietPrinciple}</div>}
-                  {c.dailyWater && <div style={{ fontSize: 12, color: '#4A6558', marginTop: 2 }}>每日饮水：{c.dailyWater} ml</div>}
-                </div>
-                <span style={{ color: '#7C3AED', fontSize: 18 }}>→</span>
-              </div>
-            )
-          })}
-        </div>
-        <div className="modal-footer"><button className="btn btn-secondary" onClick={onClose}>取消</button></div>
+  return <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="modal" style={{ maxWidth: 700, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+      <div className="modal-header">
+        <h3 className="modal-title">生成营养干预方案 · {step === 1 ? '选择会员和模板' : '核实资料'}</h3>
+        <button className="modal-close" onClick={onClose}>✕</button>
+      </div>
+      {error && <div role="alert" className="login-err" style={{ margin: '8px 20px' }}>⚠️ {error}</div>}
+      <div className="modal-body" style={{ flex: 1, overflowY: 'auto', display: 'grid', gap: 14 }}>
+        {step === 1 ? <>
+          <div className="form-group"><label className="form-label">选择会员 *</label><PatientSearchInput value={patientId} onChange={setPatientId} initialSelectedId={initialPatientId} initialSelectedName={initialPatientName} /></div>
+          {loading && <div>正在加载会员资料与适用模板…</div>}
+          {patient && !loading && <>
+            <div style={{ color: '#52675D', fontSize: 13 }}>请选择本次干预的模板。模板内容仅作约束与参考，选择后还需核实客户资料并生成草稿。</div>
+            {!templates.length && <div style={{ color: '#8A6A35' }}>没有可用的营养方案模板，请先在管理端配置。</div>}
+            {templates.map(template => <button key={template._id} type="button" onClick={() => selectTemplate(template)} style={{ textAlign: 'left', padding: 12, border: '1px solid #D9E3DC', background: '#fff', borderRadius: 8, cursor: 'pointer' }}>
+              <strong>{template.name}</strong>
+              {template.content?.dietPrinciple && <div style={{ marginTop: 5, color: '#63766C', fontSize: 12 }}>{template.content.dietPrinciple}</div>}
+            </button>)}
+          </>}
+        </> : <>
+          <div style={{ padding: 12, borderRadius: 8, background: '#F3E8FF', color: '#6330BA' }}>会员：{patient?.name || initialPatientName}　模板：{selectedTpl?.name}</div>
+          <label className="form-label">本次营养目标 *<textarea className="form-input" rows={2} value={goal} onChange={e => setGoal(e.target.value)} placeholder="填写已与客户确认的具体营养目标" /></label>
+          <NutritionAssessmentFields patient={patient} value={assessment} onChange={setAssessment} />
+          <div style={{ color: '#52675D', fontSize: 12 }}>点击生成后会进入待审核方案。营养师需逐项核对餐次、分量及禁忌，再推送给客户。</div>
+        </>}
+      </div>
+      <div className="modal-footer">
+        {step === 2 && <button className="btn btn-secondary" disabled={saving} onClick={() => setStep(1)}>← 更换模板</button>}
+        <button className="btn btn-secondary" disabled={saving} onClick={onClose}>取消</button>
+        {step === 2 && <button className="btn btn-primary" disabled={saving} onClick={generate}>{saving ? 'AI生成中…' : '生成AI营养草稿'}</button>}
       </div>
     </div>
-  )
-
-  return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 620, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
-        <div className="modal-header">
-          <h3 className="modal-title">新建营养干预方案</h3>
-          <button className="modal-close" onClick={onClose}>✕</button>
-        </div>
-        {error && <div className="login-err" style={{ margin: '0 20px 8px' }}>⚠️ {error}</div>}
-        <div className="modal-body" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* 已选模板 */}
-          <div style={{ background: '#F3E8FF', borderRadius: 8, padding: '8px 14px', fontSize: 13, color: '#7C3AED', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>已选模板：<strong>{selectedTpl?.name}</strong></span>
-            <button type="button" onClick={() => setStep(1)} style={{ marginLeft: 'auto', fontSize: 12, color: '#7C3AED', background: 'none', border: '1px solid #7C3AED', borderRadius: 14, padding: '2px 10px', cursor: 'pointer' }}>更换模板</button>
-          </div>
-          {/* 搜索会员 */}
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">搜索会员 *</label>
-            <PatientSearchInput value={patientId} onChange={setPatientId} initialSelectedId={initialPatientId} initialSelectedName={initialPatientName} />
-          </div>
-          {/* 方案名称 */}
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">方案名称 *</label>
-            <input className="form-input" value={planTitle} onChange={e => setPlanTitle(e.target.value)} placeholder="营养干预方案名称" />
-          </div>
-          {/* 方案说明（紧跟名称，纲领性内容前置） */}
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">方案说明</label>
-            <textarea className="form-input" rows={3} placeholder="简要说明方案目标" value={description} onChange={e => setDescription(e.target.value)} />
-          </div>
-          {/* 每日饮水 */}
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">每日饮水量（毫升）</label>
-            <input className="form-input" value={form.dailyWater} onChange={e => set('dailyWater', e.target.value)} placeholder="如：2000" />
-          </div>
-          {/* 三餐安排 */}
-          {MEALS.map(m => (
-            <div key={m.contentKey} style={{ border: '1px solid #ece8e0', borderRadius: 8, padding: 12, background: '#faf8f5' }}>
-              <div style={{ fontWeight: 600, fontSize: 13, color: '#333', marginBottom: 8 }}>{m.label}</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: 8 }}>
-                <div>
-                  <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 4 }}>进餐时间</div>
-                  <input value={form[m.timeKey]} onChange={e => set(m.timeKey, e.target.value)} placeholder={m.timePlaceholder} style={iStyle} />
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 4 }}>食物内容</div>
-                  <textarea rows={m.rows || 3} value={form[m.contentKey]} onChange={e => set(m.contentKey, e.target.value)} placeholder="食物种类、份量描述" style={{ ...iStyle, resize: 'vertical' }} />
-                </div>
-              </div>
-            </div>
-          ))}
-          {/* 两栏简单字段 */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            {[
-              { k: 'cookingMethod', l: '烹饪方式',   p: '推荐：蒸煮炖；避免：油炸' },
-              { k: 'mealOrder',     l: '进餐顺序',   p: '如：汤→蔬菜→肉→主食' },
-              { k: 'dietPrinciple', l: '膳食总原则', p: '如：低盐低脂、高纤维' },
-            ].map(({ k, l, p }) => (
-              <div key={k} className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">{l}</label>
-                <input className="form-input" value={form[k]} onChange={e => set(k, e.target.value)} placeholder={p} />
-              </div>
-            ))}
-          </div>
-          {/* 全宽 textarea */}
-          {[
-            { k: 'nutritionSupplements', l: '现有营养补充信息（仅记录）', p: '仅记录客户已在使用的产品及信息来源，不生成推荐或剂量建议', rows: 3 },
-            { k: 'exerciseSuggestion',   l: '运动建议',       p: '运动类型、频率、时长、强度', rows: 3 },
-            { k: 'allowedFoods',         l: '推荐食物',       p: '逗号分隔', rows: 2 },
-            { k: 'forbiddenFoods',       l: '禁忌食物',       p: '逗号分隔', rows: 2 },
-          ].map(({ k, l, p, rows }) => (
-            <div key={k} className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">{l}</label>
-              <textarea className="form-input" rows={rows} value={form[k]} onChange={e => set(k, e.target.value)} placeholder={p} />
-            </div>
-          ))}
-          {/* 方案年度 */}
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">方案年度</label>
-            <input className="form-input" type="number" value={year} onChange={e => setYear(Number(e.target.value))} />
-          </div>
-        </div>
-        <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={() => setStep(1)}>← 重新选模板</button>
-          <button className="btn btn-secondary" onClick={onClose}>取消</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '创建中...' : '创建营养干预方案'}</button>
-        </div>
-      </div>
-    </div>
-  )
+  </div>
 }
 
 // 随访表字段类型标签

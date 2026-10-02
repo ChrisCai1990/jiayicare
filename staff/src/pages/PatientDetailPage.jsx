@@ -1,4 +1,5 @@
 import AnnualNutritionAssessmentForm from '../components/AnnualNutritionAssessmentForm'
+import NutritionAssessmentFields, { initialNutritionAssessment, missingNutritionAssessment } from '../components/NutritionAssessmentFields'
 import annualNutrition from '../../../shared/annualNutrition.cjs'
 import DateField from '../../../shared/DateField.jsx'
 import { CoreArchiveSection, InitialArchiveReview, ArchiveSource } from '../components/CoreHealthArchive'
@@ -15040,11 +15041,7 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, patient, i
   // 就医场景每次的具体情况差异很大（去哪家医院/是否加急/会员状况等），需要专员当场填一句
   // 简要说明，AI结合这句话+模板类型生成初稿，而不是完全靠AI自己猜（2026-07-13需求）
   const [briefNote, setBriefNote] = useState(initialBriefNote)
-  const [nutritionAssessment, setNutritionAssessment] = useState({
-    height: patient?.height || '', weight: patient?.weight || '', currentDiet: patient?.lifestyle_data?.diet || '',
-    metric: '', baseline: '', target: '', reviewDate: '', medicalReview: '', practicalConstraints: '',
-    allergyStatus: '', allergyDetails: '', riskStatus: '', templateCompatibilityConfirmed: false,
-  })
+  const [nutritionAssessment, setNutritionAssessment] = useState(() => initialNutritionAssessment(patient))
   const setNutritionField = (key, value) => setNutritionAssessment(current => ({ ...current, [key]: value }))
 
   useEffect(() => {
@@ -15072,13 +15069,9 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, patient, i
     if (planType === 'annual_checkup' && !desiredServiceDate) { toast('请选择期望服务时间'); return }
     if (planType === 'annual_checkup' && !serviceRequirements.trim()) { toast('请填写具体服务需求'); return }
     if (planType === 'nutrition') {
-      const required = [['height', '身高'], ['weight', '体重'], ['currentDiet', '近期实际饮食'], ['metric', '观察指标'], ['baseline', '基线'], ['target', '阶段目标'], ['reviewDate', '复盘日期'], ['medicalReview', '疾病、用药及检查核对'], ['practicalConstraints', '偏好与执行条件'], ['allergyStatus', '食物过敏核对'], ['riskStatus', '风险分流']]
-      const missing = required.filter(([key]) => !String(nutritionAssessment[key] || '').trim()).map(([, label]) => label)
-      if (!briefNote.trim()) missing.unshift('本次营养目标')
-      if (nutritionAssessment.allergyStatus === 'confirmed_present' && !nutritionAssessment.allergyDetails.trim()) missing.push('食物过敏详情')
+      const missing = missingNutritionAssessment(nutritionAssessment, briefNote)
       if (missing.length) { toast(`请先补齐：${missing.join('、')}`); return }
       if (nutritionAssessment.riskStatus === 'specialist') { toast('此客户需专业评估，请先完成评估后人工制定方案'); return }
-      if (!nutritionAssessment.templateCompatibilityConfirmed) { toast('请先核对所选模板的适用性及过敏禁忌'); return }
     }
     setGenerating(true)
     try {
@@ -15145,20 +15138,7 @@ function SelectTemplateAndGenerateModal({ planType, title, patientId, patient, i
           </div>
         </div>
         <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
-          {planType === 'nutrition' && <div style={{ display: 'grid', gap: 12, marginBottom: 18 }}>
-            <div style={{ fontWeight: 700 }}>生成前营养评估 · 由营养师核实</div>
-            <div style={{ color: '#66776E', fontSize: 12 }}>档案值仅作预填；请核对后填写。本次记录将与方案一同保存。需要专业评估的客户请先评估并人工制定方案。</div>
-            <div style={{ color: '#52675D', fontSize: 12 }}>档案年龄：{patient?.age || '未录入（请先在客户基本信息中补齐）'}；档案食物过敏：{patient?.healthProfile?.foodAllergy || '未记录，不能按无过敏处理'}</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              {[['height', '身高（cm）'], ['weight', '体重（kg）'], ['metric', '观察指标'], ['baseline', '已核实基线'], ['target', '阶段目标']].map(([key, label]) => <label key={key} className="form-label">{label} *<input className="form-input" value={nutritionAssessment[key]} onChange={e => setNutritionField(key, e.target.value)} /></label>)}
-              <label className="form-label">阶段复盘日期 *<DateField className="form-input" type="date" value={nutritionAssessment.reviewDate} onChange={e => setNutritionField('reviewDate', e.target.value)} /></label>
-            </div>
-            {[['currentDiet', '近期实际饮食（餐次、食物、饮料与大致分量）'], ['medicalReview', '疾病、用药及相关检查核对（注明未掌握的项目）'], ['practicalConstraints', '饮食偏好与执行条件（时间、做饭、外卖、预算等）']].map(([key, label]) => <label key={key} className="form-label">{label} *<textarea className="form-input" rows={2} value={nutritionAssessment[key]} onChange={e => setNutritionField(key, e.target.value)} /></label>)}
-            <label className="form-label">食物过敏核对 *<select className="form-input" value={nutritionAssessment.allergyStatus} onChange={e => setNutritionField('allergyStatus', e.target.value)}><option value="">请选择已核实结果</option><option value="confirmed_none">已核实，无已知食物过敏</option><option value="confirmed_present">已核实，有食物过敏</option></select></label>
-            {nutritionAssessment.allergyStatus === 'confirmed_present' && <label className="form-label">过敏食物及反应 *<textarea className="form-input" rows={2} value={nutritionAssessment.allergyDetails} onChange={e => setNutritionField('allergyDetails', e.target.value)} /></label>}
-            <label className="form-label">专业风险分流 *<select className="form-input" value={nutritionAssessment.riskStatus} onChange={e => setNutritionField('riskStatus', e.target.value)}><option value="">请选择</option><option value="standard">已核对，适用普通成人膳食方案</option><option value="specialist">需专业评估或特殊疾病营养路径</option></select></label>
-            <label className="form-label"><input type="checkbox" checked={nutritionAssessment.templateCompatibilityConfirmed} onChange={e => setNutritionField('templateCompatibilityConfirmed', e.target.checked)} /> 已核对所选模板适用于本客户，且与食物过敏、疾病要求及本次目标不冲突 *</label>
-          </div>}
+          {planType === 'nutrition' && <NutritionAssessmentFields patient={patient} value={nutritionAssessment} onChange={setNutritionAssessment} />}
           <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 12 }}>
             方案的标准内容以模板为准，AI只会结合会员情况在模板基础上做定制，不会脱离模板另起一套。
           </div>

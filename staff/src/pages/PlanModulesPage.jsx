@@ -416,6 +416,7 @@ export default function PlanModulesPage() {
 
   const canEdit = !!plan?.canManage
   const canDelete = !!plan?.canDelete
+  const legacyNutritionDraft = plan?.type === 'nutrition' && !plan.pushedAt && !plan.content?.nutritionAssessment
 
   const handleModuleChange = useCallback((moduleKey, fieldKey, value) => {
     setModuleData(prev => ({
@@ -477,6 +478,7 @@ export default function PlanModulesPage() {
   }
 
   const handlePush = async () => {
+    if (legacyNutritionDraft) { toast('这份草稿没有个体化生成依据，请重新生成AI营养草稿'); return }
     if (dirty) { toast('有未保存的更改，请先保存再推送'); return }
     const pendingReview = plan.content?.aiStatus === 'pending'
     const outpatientService = isOutpatientOneStop(plan.content || {}, plan.title)
@@ -606,15 +608,24 @@ export default function PlanModulesPage() {
           {canEdit && !(isOutpatientService && plan.pushedAt) && (
             <button
               onClick={handlePush}
-              disabled={pushing || dirty}
-              title={dirty ? '请先保存更改，再推送给客户' : ''}
-              style={{ background: '#0077B6', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, opacity: (pushing || dirty) ? 0.5 : 1 }}
+              disabled={pushing || dirty || legacyNutritionDraft}
+              title={legacyNutritionDraft ? '这份旧草稿未经过个体化生成，请重新生成' : dirty ? '请先保存更改，再推送给客户' : ''}
+              style={{ background: '#0077B6', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, opacity: (pushing || dirty || legacyNutritionDraft) ? 0.5 : 1 }}
             >
               {pushing ? '启动中...' : isOutpatientService ? '启动服务并转交健管专员' : plan.content?.aiStatus === 'pending' ? '审核通过并推送' : plan.pushedAt ? '重新推送' : '推送给客户'}
             </button>
           )}
         </div>
       </div>
+
+      {legacyNutritionDraft && <div role="alert" style={{ background: '#FFF8E8', border: '1px solid #E5C67B', borderRadius: 10, padding: 16, marginBottom: 20, color: '#6C531E' }}>
+        <strong>这份草稿仅复制了模板，未生成个体化营养方案。</strong>
+        <div style={{ marginTop: 6, fontSize: 13 }}>旧草稿会保留供核对。请核实客户资料并生成新草稿，再由营养师审核推送。</div>
+        <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 10 }} onClick={() => {
+          const patientId = plan.patientId?._id || plan.patientId
+          nav(`/plans?type=nutrition&openPlan=nutrition&patientId=${encodeURIComponent(patientId)}&patientName=${encodeURIComponent(plan.patientId?.name || '')}`)
+        }}>重新生成AI营养草稿</button>
+      </div>}
 
       {isCheckupService && <CheckupServiceWorkspace plan={plan} moduleData={moduleData} onOpenPatient={() => nav(`/patients/${plan.patientId?._id}`)} />}
 
