@@ -662,7 +662,7 @@ async function startMedicalProxyWorkflow(order, plannerId, serviceTime, serviceT
   return task;
 }
 
-async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
+async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan, executionOrder = null }) {
   const appointmentOnly = plan.appointmentOnly === true;
   const medicationProxy = plan.medicationProxy === true;
   const supplementProxy = plan.supplementProxy === true;
@@ -718,7 +718,7 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
     if (reminder?._id) plan.sourceFollowUpId = reminder._id;
   }
   const serviceName = plan.adHocConsultation === true ? '临时加诊服务' : medicalEscort ? `${escortLabels[plan.escortCategory] || '陪同就医'}服务` : medicationProxy ? '代配药服务' : supplementProxy ? '代配营养素服务' : appointmentOnly ? '专家约诊服务' : '医疗代诊服务';
-  const order = await Order.create({
+  const orderFields = {
     user: patient._id, tenantId: patient.tenantId || null, serviceId: `annual-member-medical-proxy-${Date.now()}`,
     serviceName, servicePrice: 0, unitPrice: 0, paymentStatus: 'unpaid', tradeStatus: 'fulfilling',
     status: 'pending', initiationSource: STAFF_DIRECT_SOURCE,
@@ -728,15 +728,26 @@ async function startStaffMedicalProxyWorkflow({ patient, advisorId, plan }) {
     serviceRequirements: medicalEscort ? [plan.adHocConsultation ? '客户现场提出临时加诊并已确认' : escortLabels[plan.escortCategory], `服务日期：${plan.escortDate || ''}`, `整体时间：${plan.escortTime || ''}`, plan.hospital, plan.campus, ...escortArrangementLines(plan), plan.escortGoal, plan.adHocConsultation && `门诊费用告知：${plan.costNotice}`, plan.transport, plan.hotel, plan.notes].filter(Boolean).join('；') : (appointmentOnly || supplyProxy) ? appointmentRequirement : `${plan.proxyGoal}\n${plan.communicationContent}`,
     serviceWorkflowSnapshot: { key: 'medical_proxy', source: STAFF_DIRECT_SOURCE },
     medicalProxyPlan: (supplyProxy || medicalEscort) ? { ...plan, initiationSource: STAFF_DIRECT_SOURCE } : null,
-  });
+  };
+  let order;
+  if (executionOrder) {
+    order = await Order.findOneAndUpdate({ _id: executionOrder._id, user: patient._id,
+      status: 'pending', serviceStartedAt: null, 'packageEntitlementUsage.entitlementId': { $exists: true } },
+    { $set: { desiredServiceDate: orderFields.desiredServiceDate,
+      desiredServiceDateEnd: orderFields.desiredServiceDateEnd, scheduledAt: orderFields.scheduledAt,
+      serviceRequirements: orderFields.serviceRequirements,
+      serviceWorkflowSnapshot: { ...(executionOrder.serviceWorkflowSnapshot || {}), key: 'medical_proxy', source: STAFF_DIRECT_SOURCE },
+      medicalProxyPlan: orderFields.medicalProxyPlan, status: 'scheduled', tradeStatus: 'fulfilling' } }, { new: true });
+    if (!order) throw Object.assign(new Error('该套餐履约单已办理或已取消，请刷新后查看'), { status: 409 });
+  } else order = await Order.create(orderFields);
   let benefit;
-  try { benefit = await reserveStaffMedicalBenefit(patient._id, order, serviceName); }
+  try { benefit = executionOrder ? { status: 'reserved' } : await reserveStaffMedicalBenefit(patient._id, order, serviceName); }
   catch (error) {
-    await Order.deleteOne({ _id: order._id, status: 'pending', paymentStatus: 'unpaid' });
+    if (!executionOrder) await Order.deleteOne({ _id: order._id, status: 'pending', paymentStatus: 'unpaid' });
     throw error;
   }
   if (['history_pending', 'exhausted', 'ambiguous', 'paid_required'].includes(benefit.status)) {
-    await Order.deleteOne({ _id: order._id, status: 'pending', paymentStatus: 'unpaid' });
+    if (!executionOrder) await Order.deleteOne({ _id: order._id, status: 'pending', paymentStatus: 'unpaid' });
     throw Object.assign(new Error(benefit.status === 'history_pending'
       ? '服务包历史次数待核对，请先由医护端超管核对'
       : benefit.status === 'ambiguous' ? '同名服务有多个收费规格，请在会员权益中选择具体服务'

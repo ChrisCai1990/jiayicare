@@ -3385,8 +3385,24 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
     if (!patient.assignedHealthPlanner) return res.status(400).json({ success: false, message: '该客户尚未分配健康规划师，请先分配' });
     planContent = { ...planContent, staffId: '', staffName: '', supervisorId: patient.assignedHealthPlanner, transport: '', hotel: '' };
   }
+  let sourceOrder = null;
+  if (req.body.reservedOrderId) {
+    if (type !== 'medical_assist' || !['familyDoctor', 'healthPlanner', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅就医协助岗位可继续套餐履约单' });
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(patientId))) return res.status(403).json({ success: false, message: '无权为该会员建立服务方案' });
+    sourceOrder = await Order.findOne({ _id: req.body.reservedOrderId, user: patientId,
+      status: 'pending', serviceStartedAt: null, 'packageEntitlementUsage.entitlementId': { $exists: true } });
+    if (!sourceOrder || !/就医|代办|代诊|陪同|陪诊|约诊|挂号|复诊/.test(sourceOrder.serviceName || '')) return res.status(409).json({ success: false, message: '所选套餐履约单无效或已办理，请刷新服务清单' });
+    const productName = String(sourceOrder.serviceName || '');
+    const templateName = String(planContent.templateName || title || '');
+    const compatible = /代办/.test(productName) ? /代办/.test(templateName)
+      : /陪同|陪诊/.test(productName) ? /陪同|陪诊/.test(templateName)
+        : templateName.includes(productName.replace(/服务$/, ''));
+    if (!compatible) return res.status(400).json({ success: false, message: '所选方案模板与套餐服务产品不匹配' });
+    if (await HealthPlan.exists({ patientId, sourceOrderId: sourceOrder._id, type: 'medical_assist' })) return res.status(409).json({ success: false, message: '该服务已有就医协助方案，请打开原方案继续' });
+  }
   const plan = await HealthPlan.create({
-    staffId: req.staff._id, patientId, type, title,
+    staffId: req.staff._id, patientId, type, title, sourceOrderId: sourceOrder?._id || null,
     description: type === 'medical_assist' && isAgencyMedicalAssistPlan(planContent, title) ? '' : (description || ''), year: year || new Date().getFullYear(),
     startDate: startDate ? new Date(startDate) : null,
     endDate: endDate ? new Date(endDate) : null,
@@ -3397,6 +3413,14 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
     content: planContent,
     status: 'draft',
   });
+  if (sourceOrder) {
+    const linked = await Order.updateOne({ _id: sourceOrder._id, status: 'pending', medicalAssistPlanId: null },
+      { $set: { medicalAssistPlanId: plan._id, currentStage: 'plan_draft' } });
+    if (linked.modifiedCount !== 1) {
+      await HealthPlan.deleteOne({ _id: plan._id, status: 'draft' });
+      return res.status(409).json({ success: false, message: '套餐履约单已由其他操作接续，请刷新后查看' });
+    }
+  }
   res.json({ success: true, data: plan });
 });
 
@@ -3467,7 +3491,8 @@ router.get('/patients/:id/medication-proxy/defaults', staffAuth, async (req, res
 });
 
 router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => {
-  if (!['familyDoctor', 'healthManager', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问或健管专员可发起服务' });
+  if (!['familyDoctor', 'healthManager', 'healthPlanner', 'superadmin'].includes(req.staff.role)
+    || (req.staff.role === 'healthPlanner' && !req.body.reservedOrderId)) return res.status(403).json({ success: false, message: '请从已匹配套餐的服务清单发起就医协助' });
   try {
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权为该会员发起服务' });
@@ -3478,6 +3503,7 @@ router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => 
     const medicalEscort = req.body.medicalEscort === true;
     if (req.staff.role === 'healthManager' && !medicationProxy) return res.status(403).json({ success: false, message: '健管专员仅可在客户确认后发起代配药或代配营养素服务' });
     if (req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅该客户的健康顾问可发起' });
+    if (req.staff.role === 'healthPlanner' && String(patient.assignedHealthPlanner || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅该客户的健康规划师可继续套餐服务' });
     if (req.staff.role === 'healthManager' && String(patient.assignedHealthManager || '') !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅该客户的健管专员可发起代配服务' });
     if (medicationProxy) {
       const submittedItems = req.body.medicationItems === undefined ? null : req.body.medicationItems;
@@ -3555,9 +3581,27 @@ router.post('/patients/:id/medical-proxy/start', staffAuth, async (req, res) => 
     }
     if (appointmentOnly && (req.body.preferredDateEnd < req.body.preferredDateStart || !/^\d{4}-\d{2}-\d{2}$/.test(req.body.preferredDateStart) || !/^\d{4}-\d{2}-\d{2}$/.test(req.body.preferredDateEnd))) return res.status(400).json({ success: false, message: '请填写有效的期望日期区间' });
     if (appointmentOnly && (!['general', 'expert', 'special', 'international'].includes(req.body.clinicType) || !['self_pay', 'medical_insurance', 'commercial_insurance', 'high_end'].includes(req.body.insuranceUse))) return res.status(400).json({ success: false, message: '请选择门诊类型和费用与保险方式' });
+    let executionOrder = null;
+    if (req.body.reservedOrderId) {
+      executionOrder = await Order.findOne({ _id: req.body.reservedOrderId, user: patient._id,
+        status: 'pending', serviceStartedAt: null, 'packageEntitlementUsage.entitlementId': { $exists: true } });
+      if (!executionOrder) return res.status(409).json({ success: false, message: '套餐履约单不存在或已办理，请刷新服务清单' });
+      const compatible = medicalEscort ? /陪同|陪诊/.test(executionOrder.serviceName || '')
+        : /代办|代诊|约诊|挂号|复诊/.test(executionOrder.serviceName || '');
+      if (!compatible) return res.status(400).json({ success: false, message: '所选方案与预占的服务产品不匹配' });
+      if (await HealthPlan.exists({ patientId: patient._id, sourceOrderId: executionOrder._id, type: 'medical_assist' })
+        || await FollowUp.exists({ sourceType: 'order', sourceOrderId: executionOrder._id, workflowKey: /^medical_proxy:/ }))
+        return res.status(409).json({ success: false, message: '这笔服务已有就医协助流程，请从原流程继续' });
+    }
     // 服务由健管专员触发时，仍关联客户的健康顾问作为专业责任岗位；未分配健康顾问时由发起健管专员留痕。
-    const advisorId = req.staff.role === 'healthManager' ? (patient.assignedFamilyDoctor || req.staff._id) : req.staff._id;
-    const result = await require('../utils/medicalProxyWorkflow').startStaffMedicalProxyWorkflow({ patient, advisorId, plan: { ...req.body, initiatedByStaff: req.staff._id } });
+    const advisorId = ['healthManager', 'healthPlanner'].includes(req.staff.role) ? (patient.assignedFamilyDoctor || req.staff._id) : req.staff._id;
+    const result = await require('../utils/medicalProxyWorkflow').startStaffMedicalProxyWorkflow({ patient, advisorId, executionOrder, plan: { ...req.body, initiatedByStaff: req.staff._id } });
+    if (executionOrder) {
+      const started = await Order.findOneAndUpdate({ _id: executionOrder._id, status: 'scheduled', serviceStartedAt: null },
+        { $set: { serviceStartedAt: new Date(), serviceStartedBy: req.staff._id,
+          serviceStartEvidence: '已提交就医协助服务方案并生成岗位任务' } }, { new: true });
+      if (started) await require('../utils/packageServiceRedemption').safeReconcilePackageOrder(started);
+    }
     res.json({ success: true, data: { orderId: result.order._id, supervisorTaskId: result.supervisor?._id || null, bookingTaskId: result.booking?._id || null, plannerTaskId: result.planner?._id || null } });
   } catch (err) { res.status(err.status || 500).json({ success: false, message: err.message }); }
 });
@@ -4146,6 +4190,14 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
       },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
+    // 套餐服务的方案正式推送即进入实际执行；同一预占单自动核销一次。
+    if (plan.sourceOrderId) {
+      const started = await Order.findOneAndUpdate({ _id: plan.sourceOrderId, user: plan.patientId,
+        status: 'pending', serviceStartedAt: null, 'packageEntitlementUsage.entitlementId': { $exists: true } },
+      { $set: { status: 'scheduled', tradeStatus: 'fulfilling', serviceStartedAt: new Date(),
+        serviceStartedBy: req.staff._id, serviceStartEvidence: `已推送就医协助方案：${plan.title}` } }, { new: true });
+      if (started) await require('../utils/packageServiceRedemption').safeReconcilePackageOrder(started);
+    }
   }
   if (plan.type === 'nutrition' && plan.content?.nutritionTaskVersion === 1) {
     setImmediate(() => {
@@ -7455,9 +7507,12 @@ router.post('/patients/:id/package-entitlements/:entitlementId/use', staffAuth, 
   try {
     const patient = await User.findById(req.params.id).select('tenantId familyLinks').lean();
     if (!patient) return res.status(404).json({ success: false, message: '客户不存在' });
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(item => String(item) === String(patient._id))) return res.status(403).json({ success: false, message: '无权为该会员发起服务' });
     const productId = String(req.body.productId || '');
     const entitlementKey = String(req.body.entitlementKey || '');
     if (!mongoose.isValidObjectId(productId)) return res.status(400).json({ success: false, message: '请选择商城产品' });
+    // 未办理的同款履约单就是本次服务的凭据；刷新或重复点击时继续原单，不再预占一次。
     const entitlements = await require('../utils/packageEntitlements').applicableEntitlements(patient._id);
     const autoMatch = String(req.params.entitlementId) === 'auto';
     // 医护端“发起服务”不需要先人工判断客户属于哪一个年度包。权益台账已经
@@ -7480,6 +7535,13 @@ router.post('/patients/:id/package-entitlements/:entitlementId/use', staffAuth, 
       return { entitlement, productRightIndex, productRight, poolIndex, available };
     }).filter(Boolean);
     if (autoMatch && candidates.some(item => item.ambiguous)) return res.status(400).json({ success: false, message: '该商品包含多个收费规格，请先选择具体服务规格' });
+    const pendingOrders = await Order.find({ user: patient._id, serviceId: productId,
+      status: 'pending', serviceStartedAt: null, 'packageEntitlementUsage.entitlementId': { $exists: true } }).sort({ createdAt: 1 }).lean();
+    const existingOrder = pendingOrders.find(order => candidates.some(item => !item.ambiguous
+      && String(item.entitlement._id) === String(order.packageEntitlementUsage?.entitlementId)
+      && item.productRightIndex === order.packageEntitlementUsage?.rightIndex
+      && (autoMatch || String(item.entitlement._id) === String(req.params.entitlementId))));
+    if (existingOrder) return res.json({ success: true, data: { executionOrder: existingOrder, reused: true }, message: '已找到待办理的套餐履约单，继续原单，不重复预占' });
     const selected = autoMatch
       ? candidates.find(item => !item.ambiguous && item.available >= 1)
       : candidates.find(item => String(item.entitlement._id) === String(req.params.entitlementId));
