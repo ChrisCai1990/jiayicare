@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const followUpSchema = new mongoose.Schema({
+  tenantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', default: null, index: true },
   staffId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true }, // 随访人
   patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User',  required: true }, // 会员
   date:      { type: Date, default: Date.now },
@@ -110,6 +111,8 @@ for (const method of ['find', 'findOne', 'findOneAndUpdate']) followUpSchema.pos
 });
 followUpSchema.add({ outcomeClosureIntent: { type: mongoose.Schema.Types.Mixed, default: null } });
 followUpSchema.plugin(require('../utils/outcomeEvidenceFence').outcomeEvidenceFence);
+followUpSchema.plugin(require('../utils/patientTenantFence').patientTenantFence);
+followUpSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);
 followUpSchema.index({ staffId: 1, date: -1 });
 followUpSchema.index({ assessmentActionKey: 1 }, { unique: true, sparse: true });
 followUpSchema.index({ annualDispatchKey: 1 }, { unique: true, sparse: true });

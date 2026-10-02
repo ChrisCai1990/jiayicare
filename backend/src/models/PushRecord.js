@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 // 统一推送记录：科普/方案/问卷/注意事项等推送给会员的记录
 const pushRecordSchema = new mongoose.Schema({
+  tenantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', default: null, index: true },
   staffId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
   patientId:  { type: mongoose.Schema.Types.ObjectId, ref: 'User',  required: true },
   type: {
@@ -50,5 +51,7 @@ pushRecordSchema.index({ patientId: 1, createdAt: -1 });
 pushRecordSchema.index({ staffId: 1, createdAt: -1 });
 pushRecordSchema.index({ patientId: 1, questionnaireId: 1, sourceOrderId: 1 });
 pushRecordSchema.index({ patientId: 1, questionnaireId: 1, sourceHealthPlanId: 1 });
+pushRecordSchema.plugin(require('../utils/patientTenantFence').patientTenantFence);
+pushRecordSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);
 
 module.exports = mongoose.model('PushRecord', pushRecordSchema);

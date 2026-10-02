@@ -8,6 +8,17 @@ const als = new AsyncLocalStorage();
 // 用于"平台超管"或系统内部任务（如定时任务、脚本）需要跨机构查询时的哨兵值
 const BYPASS = Symbol('tenantScope:bypass');
 
+function changesTenantId(update, tenantId) {
+  if (!update) return false;
+  if (Array.isArray(update)) return update.some(stage => /"tenantId(?:\.[^"]*)?"\s*:/.test(JSON.stringify(stage)));
+  if (Object.prototype.hasOwnProperty.call(update, 'tenantId')) return true;
+  return Object.entries(update).some(([operator, fields]) => operator.startsWith('$') &&
+    fields && typeof fields === 'object' && Object.entries(fields).some(([field, value]) => {
+      if (field !== 'tenantId' && !field.startsWith('tenantId.')) return false;
+      return !(operator === '$setOnInsert' && field === 'tenantId' && String(value) === String(tenantId));
+    }));
+}
+
 // Express中间件：在 staffAuth/auth 等鉴权中间件之后挂载，把当前请求的 tenantId 放进上下文
 // 历史未标机构的账号只能访问历史未标机构数据；平台超管可看汇总。
 function tenantContext(req, res, next) {
@@ -39,13 +50,13 @@ function tenantScopePlugin(schema) {
     schema.pre(name, function () {
       const tenantId = getCurrentTenantId();
       if (!als.getStore() || tenantId === BYPASS) return;
+      if (name === 'replaceOne' || name === 'findOneAndReplace') {
+        throw new Error('机构业务请求不能整体替换记录');
+      }
       // The filter alone cannot protect ownership if an update moves a document
       // to another tenant. Keep tenantId immutable for authenticated requests.
       const update = typeof this.getUpdate === 'function' ? this.getUpdate() : null;
-      if (update && (Array.isArray(update)
-        ? update.some(stage => /"tenantId(?:\.[^"]*)?"\s*:/.test(JSON.stringify(stage)))
-        : Object.keys(update).some(key => key === 'tenantId' ||
-          (key.startsWith('$') && Object.keys(update[key] || {}).some(field => field === 'tenantId' || field.startsWith('tenantId.')))))) {
+      if (changesTenantId(update, tenantId)) {
         throw new Error('机构归属不可通过业务请求修改');
       }
       // A caller-supplied tenantId must never disable the authenticated tenant

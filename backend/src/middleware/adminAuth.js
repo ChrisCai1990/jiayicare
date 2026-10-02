@@ -19,6 +19,9 @@ module.exports = async (req, res, next) => {
     if (admin.role === 'enterprise_hr') {
       return res.status(403).json({ success: false, message: '企业HR账号无权限访问该接口' });
     }
+    if (admin.role !== 'platformSuper' && !admin.tenantId) {
+      return res.status(403).json({ success: false, message: '管理员未归属机构' });
+    }
     if (admin.tenantId) {
       const tenant = await Tenant.findById(admin.tenantId).select('status').lean();
       if (!tenant || tenant.status !== 'active') {

@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const Tenant = require('../models/Tenant');
 const LoginSession = require('../models/LoginSession');
 const { tenantContext } = require('../utils/tenantScope');
 
@@ -34,6 +35,9 @@ module.exports = async (req, res, next) => {
     if (!user || user.isDeleted) {
       return res.status(401).json({ success: false, message: '用户不存在' });
     }
+    if (!user.tenantId) return res.status(403).json({ success: false, message: '账号未归属机构' });
+    const tenant = await Tenant.findById(user.tenantId).select('status').lean();
+    if (!tenant || tenant.status !== 'active') return res.status(403).json({ success: false, message: '所属机构已停用或不存在' });
 
     req.user = user;
     tenantContext(req, res, next);

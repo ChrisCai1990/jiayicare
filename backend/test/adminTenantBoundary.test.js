@@ -51,6 +51,18 @@ test('tenant writes cannot move or insert records into another institution', asy
         new Promise((done, fail) => schema.s.hooks.execPre('updateOne', moving, [], error => error ? fail(error) : done())),
         /机构归属不可通过业务请求修改/
       );
+      const ownUpsert = Model.updateOne({ name: 'new' }, { $setOnInsert: { tenantId: own } }, { upsert: true });
+      await new Promise((done, fail) => schema.s.hooks.execPre('updateOne', ownUpsert, [], error => error ? fail(error) : done()));
+      const foreignUpsert = Model.updateOne({ name: 'new' }, { $setOnInsert: { tenantId: foreign } }, { upsert: true });
+      await assert.rejects(
+        new Promise((done, fail) => schema.s.hooks.execPre('updateOne', foreignUpsert, [], error => error ? fail(error) : done())),
+        /机构归属不可通过业务请求修改/
+      );
+      const replacement = Model.replaceOne({ name: 'old' }, { name: 'new' });
+      await assert.rejects(
+        new Promise((done, fail) => schema.s.hooks.execPre('replaceOne', replacement, [], error => error ? fail(error) : done())),
+        /不能整体替换记录/
+      );
 
       const docs = [{ name: 'new' }];
       await new Promise((done, fail) => schema.s.hooks.execPre('insertMany', Model, [docs], error => error ? fail(error) : done()));

@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const Admin = require('../models/Admin');
+const Tenant = require('../models/Tenant');
 const { tenantContext } = require('../utils/tenantScope');
 
 // 医护端角色列表
@@ -24,6 +25,10 @@ module.exports = async (req, res, next) => {
     if (!STAFF_ROLES.includes(admin.role)) {
       return res.status(403).json({ success: false, message: '无医护端权限' });
     }
+    if (!admin.tenantId) return res.status(403).json({ success: false, message: '员工未归属机构' });
+    const tenant = await Tenant.findById(admin.tenantId).select('status').lean();
+    if (!tenant || tenant.status !== 'active') return res.status(403).json({ success: false, message: '所属机构已停用或不存在' });
+    if (admin.mustChangePassword) return res.status(403).json({ success: false, message: '请先修改初始密码' });
     req.staff = admin;
     tenantContext(req, res, next);
   } catch (err) {

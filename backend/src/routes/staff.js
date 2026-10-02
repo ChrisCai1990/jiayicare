@@ -636,7 +636,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
   }
   // 首页工作台需要同时展示“等待上一环节”的串行任务，让接手人提前知道后续工作。
   // isBlocked 只限制办理，不应让任务从负责人视野里完全消失。
-  const filter = { assignedTo: { $in: [req.staff._id, staffId] } };
+  const filter = { assignedTo: { $in: [req.staff._id, staffId] }, tenantId: req.staff.tenantId };
   // 历史任务的 assignedTo 同时存在 ObjectId 与字符串两种存储形态；原生集合按两种类型
   // 一并取回，再 hydrate/populate，避免负责人正确的预约任务被类型转换静默漏掉。
   const requestedLimit = status === 'active' ? undefined : Math.min(Number(limit) || 100, 200);
