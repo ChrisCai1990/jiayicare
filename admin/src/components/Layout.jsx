@@ -47,7 +47,7 @@ const NAV_SECTIONS = [
       { label: '健康评分配置', icon: 'score', path: '/settings/scoring' },
       { label: 'AI 每日关怀', icon: 'care', path: '/settings/daily-care' },
       { label: '健康助手配置', icon: 'settings', path: '/settings/health-assistant' },
-      { label: 'AI 用量管理', icon: 'chart', path: '/settings/ai-usage', aiControlOnly: true },
+      { label: '本机构 AI 用量', icon: 'chart', path: '/settings/ai-usage', superadminOnly: true },
       { label: '服务流程管理', icon: 'settings', path: '/settings/supply-workflow' },
       { label: '成熟流程对齐', icon: 'settings', path: '/settings/service-workflow-alignment' },
       { label: '小程序审核体验', icon: 'settings', path: '/settings/review-experience' },

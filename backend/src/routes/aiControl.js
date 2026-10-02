@@ -9,6 +9,47 @@ function canManageAi(admin) {
   // Shared supplier keys and total budgets belong to the platform operator.
   return admin?.role === 'platformSuper';
 }
+// Usage is attributed from each call's recorded tenantId. Missing or unknown
+// ownership is kept separate; it must never be assigned to a real institution.
+router.get('/tenant-usage', adminAuth, async (req, res) => {
+  const platform = req.admin.role === 'platformSuper';
+  if (!platform && req.admin.role !== 'superadmin') return res.status(403).json({ success: false, message: '无权查看机构 AI 用量' });
+  const { day, month } = periodKeys();
+  const dayStart = new Date(`${day}T00:00:00+08:00`);
+  const monthStart = new Date(`${month}-01T00:00:00+08:00`);
+  const [year, monthNumber] = month.split('-').map(Number);
+  const monthEnd = new Date(Date.UTC(year, monthNumber, 1) - 8 * 3600000);
+  const match = { createdAt: { $gte: monthStart, $lt: monthEnd } };
+  if (!platform) match.tenantId = { $in: [String(req.admin.tenantId), req.admin.tenantId] };
+  const today = { $gte: ['$createdAt', dayStart] };
+  const usedTokens = { $ifNull: ['$actualTokens', { $ifNull: ['$reservedTokens', 0] }] };
+  const usedMicros = { $ifNull: ['$costMicros', { $ifNull: ['$reservedMicros', 0] }] };
+  const sumIf = (condition, value) => ({ $sum: { $cond: [condition, value, 0] } });
+  const group = {
+    _id: '$tenantId',
+    todayTokens: sumIf(today, usedTokens), monthTokens: { $sum: usedTokens },
+    todayCalls: sumIf(today, 1), monthCalls: { $sum: 1 },
+    todayMicros: sumIf(today, usedMicros), monthMicros: { $sum: usedMicros },
+    todayOcrCalls: sumIf({ $and: [today, { $eq: ['$business', 'ocr'] }] }, 1),
+    monthOcrCalls: sumIf({ $eq: ['$business', 'ocr'] }, 1),
+    todayOtherCalls: sumIf({ $and: [today, { $ne: ['$business', 'ocr'] }] }, 1),
+    monthOtherCalls: sumIf({ $ne: ['$business', 'ocr'] }, 1),
+  };
+  const [tenants, aggregates] = await Promise.all([
+    collection('tenants').find(platform ? {} : { _id: req.admin.tenantId }, { projection: { name: 1, code: 1, status: 1 } }).sort({ createdAt: 1, _id: 1 }).toArray(),
+    collection('ai_usage').aggregate([{ $match: match }, { $group: group }]).toArray(),
+  ]);
+  const fields = ['todayTokens', 'monthTokens', 'todayCalls', 'monthCalls', 'todayMicros', 'monthMicros', 'todayOcrCalls', 'monthOcrCalls', 'todayOtherCalls', 'monthOtherCalls'];
+  const empty = () => Object.fromEntries(fields.map(key => [key, 0]));
+  const rows = tenants.map(tenant => ({ tenantId: String(tenant._id), name: tenant.name, code: tenant.code, status: tenant.status, ...empty() }));
+  const byId = new Map(rows.map(row => [row.tenantId, row]));
+  const unattributed = { ...empty() };
+  for (const aggregate of aggregates) {
+    const target = byId.get(String(aggregate._id || '')) || unattributed;
+    for (const field of fields) target[field] += Number(aggregate[field] || 0);
+  }
+  res.json({ success: true, data: { day, month, rows, ...(platform ? { unattributed } : {}) } });
+});
 router.use(adminAuth, (req, res, next) => canManageAi(req.admin) ? next() : res.status(403).json({ success: false, message: '仅平台管理员可管理 AI 总预算' }));
 
 router.get('/', async (req, res) => {
