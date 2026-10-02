@@ -52,24 +52,24 @@ test('manager entry validates fresh assignment, uses existing tab, consumes once
 
 function homeHarness() {
   const source=read('pages/home/index.jsx'),begin=source.indexOf('  const loadCore = useCallback'),end=source.indexOf('\n  useEffect',begin);
-  const state={sections:{},tasks:[],followups:[],services:[],dashboard:null};
-  const ds={dashboard:deferred(),tasks:deferred(),followups:deferred(),services:deferred()};
+  const state={sections:{},tasks:[],followups:[],services:[],dashboard:null,pilot:null};
+  const ds={dashboard:deferred(),tasks:deferred(),followups:deferred(),services:deferred(),pilot:deferred()};
   const ctx={useCallback:f=>f,authLoading:false,token:'a',sessionRef:{current:'a'},loadRequestRef:{current:0},
     setLoading:v=>state.loading=v,setSectionState:v=>state.sections=typeof v==='function'?v(state.sections):v,
-    setDashData:v=>state.dashboard=v,setTasks:v=>state.tasks=v,setFollowups:v=>state.followups=v,setPopularServices:v=>state.services=v,
-    userAPI:{getDashboard:()=>ds.dashboard.promise},tasksAPI:{list:()=>ds.tasks.promise},followupTasksAPI:{list:()=>ds.followups.promise},servicesAPI:{list:()=>ds.services.promise}};
+    setDashData:v=>state.dashboard=v,setTasks:v=>state.tasks=v,setFollowups:v=>state.followups=v,setPopularServices:v=>state.services=v,setPilotData:v=>state.pilot=v,
+    userAPI:{getDashboard:()=>ds.dashboard.promise},tasksAPI:{list:()=>ds.tasks.promise},followupTasksAPI:{list:()=>ds.followups.promise},servicesAPI:{list:()=>ds.services.promise},metabolicPilotAPI:{get:()=>ds.pilot.promise}};
   vm.runInNewContext(source.slice(begin,end)+'\nthis.run=loadCore;',ctx);return {state,ds,ctx};
 }
 test('home shows tasks while services are pending and preserves failures as error, not empty success',async()=>{
   const {state,ds,ctx}=homeHarness(),p=ctx.run();
   ds.tasks.resolve({success:true,data:[{_id:'t',status:'pending'}]});await flush();assert.equal(state.tasks.length,1);assert.equal(state.sections.tasks,'ready');assert.equal(state.sections.services,'loading');
   ds.dashboard.reject(Error('offline'));ds.followups.resolve({success:true,data:[]});await flush();assert.equal(state.sections.dashboard,'error');
-  ds.services.resolve({success:true,data:{services:[]}});await p;assert.equal(state.loading,false);assert.equal(state.sections.dashboard,'error');
+  ds.services.resolve({success:true,data:{services:[]}});ds.pilot.resolve({success:true,data:{help:{status:'closed',reply:'已回复'}}});await p;assert.equal(state.loading,false);assert.equal(state.sections.dashboard,'error');assert.equal(state.pilot.help.reply,'已回复');
 });
 test('responses issued under a previous home session cannot repopulate its private records',async()=>{
   const {state,ds,ctx}=homeHarness(),p=ctx.run();ctx.sessionRef.current='b';
-  ds.tasks.resolve({success:true,data:[{_id:'old',status:'pending'}]});ds.followups.resolve({success:true,data:[]});ds.dashboard.resolve({success:true,data:{name:'old'}});ds.services.resolve({success:true,data:{services:[]}});await p;
-  assert.equal(state.tasks.length,0);assert.equal(state.dashboard,null);
+  ds.tasks.resolve({success:true,data:[{_id:'old',status:'pending'}]});ds.followups.resolve({success:true,data:[]});ds.dashboard.resolve({success:true,data:{name:'old'}});ds.services.resolve({success:true,data:{services:[]}});ds.pilot.resolve({success:true,data:{help:{status:'closed',reply:'旧回复'}}});await p;
+  assert.equal(state.tasks.length,0);assert.equal(state.dashboard,null);assert.equal(state.pilot,null);
 });
 
 function uploadHarness({ failImage=false, failSave=false }={}) {
