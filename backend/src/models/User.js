@@ -218,6 +218,8 @@ const userSchema = new mongoose.Schema({
   // 生产灰度能力必须逐客户显式开启；默认关闭，避免新功能误触达非试点客户。
   aiPilotFeatures: {
     stageAssessment: { type: Boolean, default: false },
+    stageAssessmentFrequency: { type: String, enum: ['', 'biweekly', 'monthly', 'quarterly'], default: '' },
+    stageAssessmentDomain: { type: String, enum: ['', 'comprehensive', 'nutrition', 'exercise', 'tcm'], default: '' },
   },
   chronicDiseases: { type: [String], default: [] }, // 慢病标签，如 ['高血压','糖尿病']
   healthRiskTags: {

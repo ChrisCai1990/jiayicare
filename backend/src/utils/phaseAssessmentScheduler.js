@@ -1,7 +1,9 @@
+const crypto = require('crypto');
 const AnnualPlan = require('../models/AnnualPlan');
 const PlanTemplate = require('../models/PlanTemplate');
 const User = require('../models/User');
 const PhaseAssessment = require('../models/PhaseAssessment');
+const PhaseAssessmentGeneration = require('../models/PhaseAssessmentGeneration');
 const { buildStageAssessmentContext } = require('./aiCaseReviewContext');
 const { chat } = require('./ai');
 const { routingFor, ROLE_FIELDS, ROLE_LABELS } = require('./phaseAssessmentRouting');
@@ -64,8 +66,23 @@ async function createAssessment({ plan, user, template, periodOverride = null, a
   const basePeriod = periodOverride || periodFor(frequency, new Date(), assessmentAnchor);
   const period = basePeriod && { ...basePeriod, key: `${basePeriod.key}:${routing.assessmentDomain}` };
   if (!period) return null;
-  const existing = await PhaseAssessment.exists({ annualPlanId: plan._id, templateId: template._id, periodKey: { $in: [period.key, basePeriod.key] } });
+  const existingFilter = { annualPlanId: plan._id, templateId: template._id, periodKey: { $in: [period.key, basePeriod.key] } };
+  const existing = await PhaseAssessment.exists(existingFilter);
   if (existing) return null;
+  const generationId = crypto.createHash('sha256').update([plan._id, template._id, period.key].join(':')).digest('hex');
+  const token = crypto.randomUUID();
+  try {
+    await PhaseAssessmentGeneration.findOneAndUpdate({ _id: generationId, $or: [
+      { status: 'failed' },
+      { status: 'generating', startedAt: { $lt: new Date(Date.now() - 10 * 60000) } },
+    ] }, { $set: { patientId: user._id, annualPlanId: plan._id, templateId: template._id,
+      periodKey: period.key, status: 'generating', token, startedAt: new Date(), error: '' } },
+    { upsert: true, new: true, setDefaultsOnInsert: true });
+  } catch (error) {
+    if (error.code === 11000) return null; // Another worker already owns this period.
+    throw error;
+  }
+  try {
   const templateWindowDays = [7, 14, 30, 90, 365].includes(template.content?.windowDays) ? template.content.windowDays : frequency === 'yearly' ? 365 : frequency === 'quarterly' ? 90 : 30;
   const windowDays = contextWindow ? Math.max(1, Math.ceil((new Date(contextWindow.end) - new Date(contextWindow.start)) / 86400000)) : templateWindowDays;
   const context = await buildStageAssessmentContext(user, windowDays, contextWindow);
@@ -87,12 +104,23 @@ async function createAssessment({ plan, user, template, periodOverride = null, a
 一、${outputSections[0]}；二、${outputSections[1]}；三、${outputSections[2]}；四、${outputSections[3]}。
 第一部分只写${windowDays}天窗口内的监测变化和覆盖情况；第二部分只分析阶段变化与饮食、运动、睡眠、饮酒、情绪、依从性的时间关联，证据不足写“可能相关/待验证”，不得写成因果；第三部分写可能风险及数据缺口，体检只作基线背景；第四部分写下一周期可执行计划，注明事项、频次、责任角色和复评时间。每栏最多6条，每条先写简短判断标签，再用冒号补充依据。`;
   const content = await chat([{ role: 'user', content: prompt }], { provider: 'qwen', systemPrompt: '只基于提供资料评估，不能补造事实。', maxTokens: 1400, temperature: 0.05, timeoutMs: 90000 });
-  return PhaseAssessment.create({
+  if (!await PhaseAssessmentGeneration.exists({ _id: generationId, token, status: 'generating' })) return null;
+  const item = await PhaseAssessment.create({
     patientId: user._id, annualPlanId: plan._id, templateId: template._id,
     assessmentMode, sourceNutritionPlanId, interventionWeek, ...routing,
     periodKey: period.key, periodLabel: period.label, content,
     evidenceSources: context.sources || [], templateSnapshot: { name: template.name, frequency, windowDays, focus, instructions, minimumData, outputSections, triggerRule: template.content?.triggerRule || '' },
   });
+  await PhaseAssessmentGeneration.updateOne({ _id: generationId, token }, { $set: { status: 'completed', assessmentId: item._id || null } });
+  return item;
+  } catch (error) {
+    if (error.code === 11000 && await PhaseAssessment.exists(existingFilter)) {
+      await PhaseAssessmentGeneration.updateOne({ _id: generationId, token }, { $set: { status: 'completed' } });
+      return null;
+    }
+    await PhaseAssessmentGeneration.updateOne({ _id: generationId, token }, { $set: { status: 'failed', error: String(error.message || error).slice(0, 300) } });
+    throw error;
+  }
 }
 
 async function scanAndCreatePhaseAssessments() {
@@ -104,17 +132,18 @@ async function scanAndCreatePhaseAssessments() {
   const seenPatients = new Set();
   for (const plan of plans) {
     if (seenPatients.has(String(plan.patientId))) continue;
-    let user, gate, frequency, pilotMonthly = false;
+    let user, gate, frequency, pilotFrequency = false;
     try {
       user = await User.findById(plan.patientId).select('name age gender chronicDiseases healthProfile lifestyle aiHealthSummary clientBrand aiPilotFeatures serviceStartDate serviceExpiry isDeleted assignedFamilyDoctor assignedNutritionist assignedRehabSpecialist assignedTcmDoctor');
       if (!user || user.isDeleted || user.aiPilotFeatures?.stageAssessment !== true) continue;
       gate = await require('./annualPeriodicGate').annualPeriodicGate(plan, user);
       const rights = await require('./packageFeatureEntitlements').getAiEntitlements(user, gate.access);
       if (!gate.allowed || !rights.phaseAssessment || !eligibleForAutomaticAssessment(user, new Date(), gate.access)) continue;
-      // Explicitly opted-in pilot members may use their one active monthly template
-      // while older package snapshots have no stored assessment frequency.
-      pilotMonthly = !rights.phaseAssessmentFrequency && templates.some(t => t.content?.frequency === 'monthly' && t.clientBrand === user.clientBrand);
-      frequency = pilotMonthly ? 'monthly' : rights.phaseAssessmentFrequency;
+      // A patient-specific pilot setting fills a missing frozen package frequency;
+      // a template alone never grants an assessment cadence.
+      const configured = user.aiPilotFeatures?.stageAssessmentFrequency;
+      pilotFrequency = !rights.phaseAssessmentFrequency && ['biweekly', 'monthly', 'quarterly'].includes(configured);
+      frequency = pilotFrequency ? configured : rights.phaseAssessmentFrequency;
       if (!['biweekly', 'monthly', 'quarterly'].includes(frequency)) continue;
     } catch (error) {
       console.error('[phase-assessment] eligibility failed', String(plan.patientId), error.message);
@@ -122,14 +151,14 @@ async function scanAndCreatePhaseAssessments() {
     }
     seenPatients.add(String(plan.patientId));
     const eligibleTemplates = templates.filter(t => !t.clientBrand || t.clientBrand === user.clientBrand)
-      .filter(t => t.content?.frequency !== 'yearly' && (!pilotMonthly || t.content?.frequency === 'monthly'))
+      .filter(t => t.content?.frequency !== 'yearly' && (!pilotFrequency || t.content?.frequency === frequency))
       // 优先用同频模板；没有时复用已启用的标准模板，但由服务包频率决定实际节点。
       .sort((a, b) => Number(b.content?.frequency === frequency) - Number(a.content?.frequency === frequency)
         || Number(b.clientBrand === user.clientBrand) - Number(a.clientBrand === user.clientBrand));
-    for (const template of pilotMonthly ? eligibleTemplates.slice(0, 1) : eligibleTemplates) {
+    for (const template of pilotFrequency ? eligibleTemplates.slice(0, 1) : eligibleTemplates) {
       const completed = completedCalendarPeriod(frequency, new Date(), gate.anchor);
       if (['monthly', 'quarterly'].includes(frequency) && !completed) continue;
-      try { if (await createAssessment({ plan, user, template, assessmentDomain: pilotMonthly ? 'nutrition' : undefined, assessmentAnchor: gate.anchor, frequencyOverride: frequency,
+      try { if (await createAssessment({ plan, user, template, assessmentDomain: pilotFrequency ? user.aiPilotFeatures.stageAssessmentDomain || undefined : undefined, assessmentAnchor: gate.anchor, frequencyOverride: frequency,
         periodOverride: completed && { key: completed.key, label: completed.label }, contextWindow: completed && { start: completed.start, end: completed.end } })) created++; }
       catch (error) { console.error('[phase-assessment] create failed', String(plan.patientId), error.message); }
     }

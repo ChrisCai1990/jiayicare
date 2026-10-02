@@ -4,6 +4,7 @@ const AnnualPlan = require('../src/models/AnnualPlan');
 const User = require('../src/models/User');
 const Template = require('../src/models/PlanTemplate');
 const Assessment = require('../src/models/PhaseAssessment');
+const Generation = require('../src/models/PhaseAssessmentGeneration');
 const Supply = require('../src/models/RecurringSupplyPlan');
 const Message = require('../src/models/Message');
 const gate = require('../src/utils/annualPeriodicGate');
@@ -29,6 +30,9 @@ test.beforeEach(t => {
   t.mock.method(User, 'findById', () => ({ select: async () => user }));
   t.mock.method(Assessment, 'exists', async () => saved.length > 0);
   t.mock.method(Assessment, 'create', async row => { saved.push(row); return row; });
+  t.mock.method(Generation, 'findOneAndUpdate', async () => ({}));
+  t.mock.method(Generation, 'exists', async () => true);
+  t.mock.method(Generation, 'updateOne', async () => ({}));
   t.mock.method(gate, 'annualPeriodicGate', async () => ({ allowed: true, anchor: new Date('2019-01-01'), access: { active: true, endDate: '2099-01-01' } }));
 });
 test('月度自动评估只生成刚结束的月份，已被替代的八月旧稿不影响九月', () => {
@@ -42,7 +46,7 @@ test('月度自动评估只生成刚结束的月份，已被替代的八月旧�
 test('显式试点客户沿用已启用的月度模板，生成营养师待审九月评估', async t => {
   t.mock.method(packageFeatures, 'getAiEntitlements', async () => ({ phaseAssessment: true, phaseAssessmentFrequency: '' }));
   t.mock.method(Template, 'find', () => ({ lean: async () => [{ _id: 't', clientBrand: 'jinyisen', content: { frequency: 'monthly' } }] }));
-  t.mock.method(User, 'findById', () => ({ select: async () => ({ ...user, clientBrand: 'jinyisen', assignedNutritionist: 'nutritionist' }) }));
+  t.mock.method(User, 'findById', () => ({ select: async () => ({ ...user, clientBrand: 'jinyisen', assignedNutritionist: 'nutritionist', aiPilotFeatures: { stageAssessment: true, stageAssessmentFrequency: 'monthly', stageAssessmentDomain: 'nutrition' } }) }));
   assert.equal(await scanAndCreatePhaseAssessments(), 1);
   assert.equal(saved[0].periodKey.endsWith(':nutrition'), true);
   assert.equal(saved[0].primaryReviewRole, 'nutritionist');
